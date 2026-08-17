@@ -25,6 +25,8 @@ const PENDING_EXPIRY_MS = 30 * 60_000
 export interface SyncerDeps {
   store: MessageStore
   settings: () => Settings
+  /** Resolves a working adb path, or throws a message the user can act on. */
+  adbPath: () => Promise<string>
   apiKeyPresent: () => boolean
   onMessages: (messages: SmsMessage[]) => void
   onDevice: (device: DeviceInfo | null) => void
@@ -72,7 +74,8 @@ export class Syncer {
       const settings = this.deps.settings()
       this.deps.onPhase('connecting')
 
-      const device = await resolveDevice(settings.adbPath, settings.deviceSerial)
+      const adbPath = await this.deps.adbPath()
+      const device = await resolveDevice(adbPath, settings.deviceSerial)
       this.deps.onDevice(device)
 
       if (!device) {
@@ -88,7 +91,7 @@ export class Syncer {
         this.lastDeviceSerial = device.serial
       }
 
-      const ctx: AdbContext = { adbPath: settings.adbPath, serial: device.serial }
+      const ctx: AdbContext = { adbPath, serial: device.serial }
       this.deps.onPhase('syncing')
 
       const cursor = this.deps.store.cursor(device.serial)

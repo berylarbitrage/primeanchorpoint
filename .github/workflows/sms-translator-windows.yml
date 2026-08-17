@@ -16,6 +16,24 @@ permissions:
   contents: write
 
 jobs:
+  # Some assertions cannot run on Windows (a fake adb .exe cannot be synthesised
+  # there), so the full suite runs on Linux as well.
+  test-linux:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/sms-translator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: apps/sms-translator/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
   build:
     runs-on: windows-latest
     defaults:

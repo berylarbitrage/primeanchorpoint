@@ -18,7 +18,7 @@
     "build:renderer": "vite build",
     "start": "cross-env NODE_ENV=production electron .",
     "dist": "npm run build && electron-builder --win",
-    "test": "npm run build:electron && node test/parse-sms.js && node test/send-button.js",
+    "test": "npm run build:electron && node test/parse-sms.js && node test/send-button.js && node test/locate-adb.js",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit"
   },
   "dependencies": {

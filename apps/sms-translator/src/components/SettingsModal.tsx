@@ -24,6 +24,10 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
     setScanError(null)
     try {
       setDevices(await sms.listDevices())
+      // The app searches common install locations when the configured path
+      // does not work, so show the path it actually settled on.
+      const current = await sms.getSettings()
+      setDraft((prev) => (prev.adbPath === current.adbPath ? prev : { ...prev, adbPath: current.adbPath }))
     } catch (err) {
       setDevices([])
       setScanError(errorText(err))
@@ -118,8 +122,8 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
           <label>adb 可执行文件路径</label>
           <input value={draft.adbPath} onChange={(e) => set('adbPath', e.target.value)} />
           <span className="hint">
-            已加入 PATH 时填 <code>adb</code> 即可，否则填完整路径，例如
-            <code> C:\platform-tools\adb.exe</code>。
+            会自动在常见位置查找（PATH、C:\platform-tools、下载文件夹、Android
+            Studio SDK 等）。找不到时再手动填 <code>adb.exe</code> 的完整路径。
           </span>
         </div>
 

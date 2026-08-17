@@ -41,8 +41,11 @@ Windows 桌面短信收件箱：把安卓手机的短信同步到电脑，用 Cl
 
 1. **Windows 10/11**，Node.js 20+（仅开发/打包需要，最终用户装 exe 即可）。
 2. **Android Platform Tools（adb）**：从
-   <https://developer.android.com/tools/releases/platform-tools> 下载解压，
-   把目录加进 PATH，或在应用设置里填 `adb.exe` 的完整路径。
+   <https://developer.android.com/tools/releases/platform-tools> 下载解压即可。
+   **不用配环境变量**——软件会自动在这些位置找：PATH、`C:\platform-tools`、
+   `C:\Android\platform-tools`、下载文件夹、桌面、Android Studio 的 SDK 目录
+   （`%LOCALAPPDATA%\Android\Sdk`）、`ANDROID_HOME`。都找不到时，才需要在设置里
+   手填 `adb.exe` 的完整路径。找到之后路径会自动写回设置里显示出来。
 3. **手机开启 USB 调试**：设置 → 关于手机 → 连点「版本号」7 次 → 返回 →
    开发者选项 → 打开「USB 调试」。插上数据线后，手机会弹出授权框，勾选
    「一律允许」。
@@ -180,6 +183,7 @@ adb shell content query --uri content://sms --projection _id:body
 ```
 electron/            主进程
   adb/adb.ts         adb 进程封装、设备发现、shell 引号转义
+  adb/locate.ts      自动查找 adb（常见安装位置，有测试）
   adb/sms.ts         content://sms 查询与行解析（最脆弱的一块，有测试）
   adb/send.ts        SENDTO intent + 界面发送按钮识别（有测试）
   adb/contacts.ts    联系人姓名查询（尽力而为）
@@ -196,6 +200,7 @@ src/                 渲染进程（React）
 shared/types.ts      主进程与渲染进程共用的类型
 test/parse-sms.js    短信解析测试
 test/send-button.js  发送按钮识别测试
+test/locate-adb.js   adb 自动查找测试
 build/make-icon.py   纯 Python 生成应用图标（无需 Pillow）
 ```
 

@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { app, ipcMain, type BrowserWindow } from 'electron'
 import { listDevices, resolveDevice } from './adb/adb'
+import { AdbLocator } from './adb/locate'
 import { sendSms } from './adb/send'
 import { normalisePeer } from './adb/sms'
 import { SettingsStore } from './settings'
@@ -21,6 +22,7 @@ let settings: SettingsStore
 let store: MessageStore
 let syncer: Syncer
 let queue: TranslationQueue
+let locator: AdbLocator
 let window: BrowserWindow | null = null
 
 /** Phase reported by the syncer, kept separate from the translation indicator. */
@@ -78,6 +80,12 @@ export function registerIpc(win: BrowserWindow): void {
   store = new MessageStore(path.join(userData, 'data'))
   store.load()
 
+  locator = new AdbLocator(
+    () => settings.public().adbPath,
+    // Persist whatever we found so the UI shows the path actually in use.
+    (adbPath) => settings.update({ adbPath }),
+  )
+
   queue = new TranslationQueue({
     store,
     options: () => {
@@ -101,6 +109,7 @@ export function registerIpc(win: BrowserWindow): void {
   syncer = new Syncer({
     store,
     settings: () => settings.public(),
+    adbPath: () => locator.require(),
     apiKeyPresent: () => Boolean(settings.apiKey()),
     onMessages: emitMessages,
     onRemoved: emitRemoved,
@@ -117,7 +126,10 @@ export function registerIpc(win: BrowserWindow): void {
     onNeedTranslation: (ids) => queue.enqueue(ids),
   })
 
-  handle('devices:list', (): Promise<DeviceInfo[]> => listDevices(settings.public().adbPath))
+  handle('devices:list', async (): Promise<DeviceInfo[]> => {
+    const adbPath = await locator.require()
+    return listDevices(adbPath)
+  })
 
   handle('devices:select', async (serial: string | null): Promise<Settings> => {
     const updated = settings.update({ deviceSerial: serial })
@@ -131,10 +143,11 @@ export function registerIpc(win: BrowserWindow): void {
 
   handle('sms:send', async (to: string, body: string): Promise<SendResult> => {
     const current = settings.public()
-    const target = await resolveDevice(current.adbPath, current.deviceSerial)
+    const adbPath = await locator.require()
+    const target = await resolveDevice(adbPath, current.deviceSerial)
     if (!target) return { ok: false, note: 'No Android device connected.' }
 
-    const outcome = await sendSms({ adbPath: current.adbPath, serial: target.serial }, to, body, {
+    const outcome = await sendSms({ adbPath, serial: target.serial }, to, body, {
       method: current.sendMethod,
       tapDelayMs: current.sendTapDelayMs,
     })
@@ -192,6 +205,7 @@ export function registerIpc(win: BrowserWindow): void {
   handle('settings:set', (patch: Partial<Settings>): Settings => {
     const before = settings.public()
     const updated = settings.update(patch)
+    if (before.adbPath !== updated.adbPath) locator.reset()
     if (before.pollIntervalMs !== updated.pollIntervalMs) syncer.restart()
     if (updated.autoTranslate && settings.apiKey()) {
       queue.enqueue(store.untranslated().map((m) => m.id))
