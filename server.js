@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-17b · 仓库打卡台 /kiosk?site=ID: 平板固定仓库, 员工输8位密码打卡',
+  tag: '2026-08-17c · 联系人资料: 新增说什么语言(中/英/西,可多选), 去掉Email栏',
   started: new Date().toISOString(),
 };
 
@@ -2960,6 +2960,8 @@ try { db.exec(`CREATE INDEX IF NOT EXISTS idx_sms_messages_created ON sms_messag
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN work_state TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN is_foreman INTEGER DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN is_lead INTEGER DEFAULT 0`); } catch(e) {}
+// 说什么语言: JSON 数组, 子集 ["zh","en","es"], 可多选
+try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN spoken_langs TEXT DEFAULT '[]'`); } catch(e) {}
 // 工作经历: 一个人可能干过多个公司, [{company, role, date}] 带大概日期
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN work_history TEXT DEFAULT '[]'`); } catch(e) {}
 // WhatsApp 支持: 同一收件箱, 线程按渠道区分 (sms | whatsapp)
@@ -30512,7 +30514,7 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
 // GET /api/sms/threads/:id — thread detail
 app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
   try {
-    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.email as contact_email, c.employee_id, c.tags as contact_tags, c.notes as contact_notes, c.work_state as contact_work_state, c.is_foreman as contact_is_foreman, c.is_lead as contact_is_lead, c.opted_out as contact_opted_out, c.cs_hidden as contact_cs_hidden, c.work_history as contact_work_history,
+    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.email as contact_email, c.employee_id, c.tags as contact_tags, c.notes as contact_notes, c.work_state as contact_work_state, c.is_foreman as contact_is_foreman, c.is_lead as contact_is_lead, c.opted_out as contact_opted_out, c.cs_hidden as contact_cs_hidden, c.work_history as contact_work_history, c.spoken_langs as contact_spoken_langs,
       emp.state as emp_state, emp.pay_rate as emp_pay_rate, emp.pay_type as emp_pay_type, emp.status as emp_status,
       a.username as agent_username
       FROM sms_threads t
@@ -30559,7 +30561,8 @@ app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
         pay_type: thread.emp_pay_type || '',
         opted_out: thread.contact_opted_out,
         cs_hidden: thread.contact_cs_hidden,
-        work_history: thread.contact_work_history
+        work_history: thread.contact_work_history,
+        spoken_langs: thread.contact_spoken_langs || '[]'
       }
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -30810,9 +30813,17 @@ app.post('/api/sms/threads/:id/notes', requireAdmin, requireSmsAccess, (req, res
 // PUT /api/sms/contacts/:id
 app.put('/api/sms/contacts/:id', requireAdmin, requireSmsAccess, (req, res) => {
   try {
-    const { name, company, email, tags, notes, work_state, is_foreman, is_lead, work_history, cs_hidden } = req.body;
+    const { name, company, email, tags, notes, work_state, is_foreman, is_lead, work_history, cs_hidden, spoken_langs } = req.body;
     const contact = db.prepare('SELECT * FROM sms_contacts WHERE id=?').get(req.params.id);
     if (!contact) return res.status(404).json({ error: 'Contact not found' });
+    // 说什么语言: 只接受 zh/en/es 的子集
+    let sl;
+    if (spoken_langs !== undefined) {
+      try {
+        const arr = typeof spoken_langs === 'string' ? JSON.parse(spoken_langs) : spoken_langs;
+        sl = JSON.stringify((Array.isArray(arr) ? arr : []).filter(x => ['zh', 'en', 'es'].includes(x)));
+      } catch (_) { sl = undefined; }
+    }
     const isAdmin = req.userRole === 'admin';
     // 工作经历: [{company, role, date}] 最多 20 条, 逐字段截断
     let wh;
@@ -30837,6 +30848,7 @@ app.put('/api/sms/contacts/:id', requireAdmin, requireSmsAccess, (req, res) => {
       is_foreman: is_foreman !== undefined ? (is_foreman ? 1 : 0) : (contact.is_foreman ? 1 : 0),
       is_lead: is_lead !== undefined ? (is_lead ? 1 : 0) : (contact.is_lead ? 1 : 0),
       work_history: wh !== undefined ? wh : (contact.work_history || '[]'),
+      spoken_langs: sl !== undefined ? sl : (contact.spoken_langs || '[]'),
       // 对客服隐藏: 仅 admin 可设
       cs_hidden: (isAdmin && cs_hidden !== undefined) ? (cs_hidden ? 1 : 0) : (contact.cs_hidden ? 1 : 0)
     };
@@ -30846,8 +30858,8 @@ app.put('/api/sms/contacts/:id', requireAdmin, requireSmsAccess, (req, res) => {
       const oldV = (k === 'is_foreman' || k === 'is_lead') ? (contact[k] ? 1 : 0) : (contact[k] ?? '');
       if (String(next[k] ?? '') !== String(oldV)) changes[k] = { from: oldV, to: next[k] };
     }
-    db.prepare(`UPDATE sms_contacts SET name=?, company=?, email=?, tags=?, notes=?, work_state=?, is_foreman=?, is_lead=?, work_history=?, cs_hidden=?, updated_at=datetime('now') WHERE id=?`)
-      .run(next.name, next.company, next.email, next.tags, next.notes, next.work_state, next.is_foreman, next.is_lead, next.work_history, next.cs_hidden, contact.id);
+    db.prepare(`UPDATE sms_contacts SET name=?, company=?, email=?, tags=?, notes=?, work_state=?, is_foreman=?, is_lead=?, work_history=?, spoken_langs=?, cs_hidden=?, updated_at=datetime('now') WHERE id=?`)
+      .run(next.name, next.company, next.email, next.tags, next.notes, next.work_state, next.is_foreman, next.is_lead, next.work_history, next.spoken_langs, next.cs_hidden, contact.id);
     if (Object.keys(changes).length) smsAudit('contact', contact.id, 'updated', 'agent', req.userId, { by: req.userName, changes });
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
