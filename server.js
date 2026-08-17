@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-17 · 扫码入职发8位打卡密码: 打卡机/仓库签到皆可免短信打卡',
+  tag: '2026-08-17b · 仓库打卡台 /kiosk?site=ID: 平板固定仓库, 员工输8位密码打卡',
   started: new Date().toISOString(),
 };
 
@@ -3533,6 +3533,17 @@ app.get('/checkin', (req, res, next) => {
         const lang = req.query.lang ? '&lang=' + encodeURIComponent(String(req.query.lang)) : '';
         return res.redirect(302, '/checkin?site=' + s.id + lang);
       }
+    } catch (_) {}
+  }
+  next();
+});
+// 仓库打卡台同样支持 /kiosk?wh=仓库代码 → /kiosk?site=ID
+app.get('/kiosk', (req, res, next) => {
+  if (req.query.wh && !req.query.site) {
+    try {
+      const s = db.prepare('SELECT id FROM job_sites WHERE UPPER(code)=? AND active=1 ORDER BY id DESC LIMIT 1')
+        .get(String(req.query.wh).trim().toUpperCase());
+      if (s) return res.redirect(302, '/kiosk?site=' + s.id);
     } catch (_) {}
   }
   next();
@@ -25758,81 +25769,10 @@ function _inheritTimeclockCode2Emp(employeeId, code) {
   } catch (e) { console.error('[timeclock-code] backfill failed:', e.message); }
 }
 
-// POST /api/checkin/punch
-app.post('/api/checkin/punch', async (req, res) => {
-  const { site_id, phone, token, latitude, longitude, accuracy, photo, punch_type: requestedPunchType, device_id } = req.body;
-  if (!site_id || !token) return res.status(400).json({ error: '缺少必要参数' });
-
-  // Verify token
-  const sess = _checkinTokens[token];
-  if (!sess || sess.expires < Date.now()) {
-    return res.status(401).json({ error: '会话已过期，请重新验证' });
-  }
-  if (sess.site_id !== parseInt(site_id)) {
-    return res.status(400).json({ error: '工作地点不匹配' });
-  }
-
-  // Get site info
-  const site = db.prepare('SELECT id, name, code, latitude, longitude, radius_meters, timezone FROM job_sites WHERE id=? AND active=1').get(parseInt(site_id));
-  if (!site) return res.status(404).json({ error: '未找到该工作地点' });
-
-  // Verify GPS is within radius
-  if (latitude == null || longitude == null) {
-    return res.status(400).json({ error: '无法获取您的位置信息，请开启定位权限' });
-  }
-  const dist = haversineDistance(latitude, longitude, site.latitude, site.longitude);
-  const maxRadius = site.radius_meters || 200;
-  const gpsAccuracy = Math.min(Number(accuracy) || 0, 5000);
-  if (dist > maxRadius + gpsAccuracy) {
-    const distStr = dist >= 1000 ? `${(dist / 1000).toFixed(1)}km` : `${Math.round(dist)}m`;
-    return res.status(400).json({ error: `您的位置不在工作地点范围内（距离约${distStr}），请到达工作地点后再签到` });
-  }
-
-  // Save photo/video if provided
-  let photoFilename = null;
-  if (photo) {
-    try {
-      const m = /^data:(image|video)\/([A-Za-z0-9.+-]+);base64,/.exec(photo);
-      const kind = m ? m[1] : 'image';
-      const subtypeRaw = (m ? m[2] : 'jpeg').toLowerCase();
-      const extMap = { jpeg: 'jpg', 'svg+xml': 'svg', quicktime: 'mov', 'x-matroska': 'mkv', 'x-msvideo': 'avi' };
-      const ext = extMap[subtypeRaw] || subtypeRaw.replace(/[^a-z0-9]/g, '') || (kind === 'video' ? 'mp4' : 'jpg');
-      const base64Data = photo.replace(/^data:(image|video)\/[A-Za-z0-9.+-]+;base64,/, '');
-      const buf = Buffer.from(base64Data, 'base64');
-      photoFilename = `checkin-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
-      const contentType = `${kind}/${subtypeRaw === 'jpg' ? 'jpeg' : subtypeRaw}`;
-      await storage.putObject(`checkin_photos/${photoFilename}`, buf, { contentType });
-    } catch (e) {
-      console.error('[Checkin] Photo save error:', e.message);
-    }
-  }
-
-  const siteTimezone = site.timezone || 'America/Chicago';
-  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
-
-  // Check if employee already has an open entry today at this site
-  const empDbId = sess.employee_id;
-  if (!empDbId) return res.status(400).json({ error: '未找到对应的员工记录' });
-
-  // 防代打卡：同一台设备近一天内为多个不同工人打卡 → 双向标记疑似代打卡。
-  // 设备标识是前端 localStorage 里的匿名随机串，清掉可绕过，但配合短信警告足以威慑常规代打。
-  const deviceId = String(device_id || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 64);
-  let suspectNote = '';
-  if (deviceId) {
-    const others = db.prepare(`SELECT DISTINCT COALESCE(NULLIF(TRIM(e.first_name || ' ' || e.last_name), ''), '#' || t.employee_id) AS nm
-      FROM time_entries t LEFT JOIN employees e ON t.employee_id = e.id
-      WHERE t.checkin_device_id = ? AND t.employee_id != ? AND DATE(t.clock_in) >= DATE('now', '-1 day')`)
-      .all(deviceId, empDbId);
-    if (others.length) {
-      suspectNote = '同一设备近一天内还为其他工人打卡: ' + others.map(o => o.nm).slice(0, 5).join(', ');
-      db.prepare(`UPDATE time_entries SET suspect_proxy = 1,
-          suspect_note = CASE WHEN COALESCE(suspect_note, '') = '' THEN '同一设备近一天内还为其他工人打卡' ELSE suspect_note END
-        WHERE checkin_device_id = ? AND employee_id != ? AND DATE(clock_in) >= DATE('now', '-1 day')`)
-        .run(deviceId, empDbId);
-      console.log(`[Checkin] SUSPECT proxy punch: employee ${empDbId}, device ${deviceId.slice(0, 12)}…, ${suspectNote}`);
-    }
-  }
-
+// ─── 打卡落库核心（/checkin 与 /kiosk 共用）───
+// 依据该员工当天在该仓库的 open entry 决定实际动作，写入/更新 time_entries。
+// 返回 { action, entryId, clockTime }。
+function _recordSitePunch({ empDbId, site, siteTimezone, now, latitude, longitude, photoFilename, requestedPunchType }) {
   // Get today's date in site timezone
   const todayInTz = new Date().toLocaleDateString('en-CA', { timeZone: siteTimezone }); // YYYY-MM-DD
 
@@ -25918,6 +25858,87 @@ app.post('/api/checkin/punch', async (req, res) => {
     clockTime = now;
   }
 
+  return { action, entryId, clockTime };
+}
+
+// POST /api/checkin/punch
+app.post('/api/checkin/punch', async (req, res) => {
+  const { site_id, phone, token, latitude, longitude, accuracy, photo, punch_type: requestedPunchType, device_id } = req.body;
+  if (!site_id || !token) return res.status(400).json({ error: '缺少必要参数' });
+
+  // Verify token
+  const sess = _checkinTokens[token];
+  if (!sess || sess.expires < Date.now()) {
+    return res.status(401).json({ error: '会话已过期，请重新验证' });
+  }
+  if (sess.site_id !== parseInt(site_id)) {
+    return res.status(400).json({ error: '工作地点不匹配' });
+  }
+
+  // Get site info
+  const site = db.prepare('SELECT id, name, code, latitude, longitude, radius_meters, timezone FROM job_sites WHERE id=? AND active=1').get(parseInt(site_id));
+  if (!site) return res.status(404).json({ error: '未找到该工作地点' });
+
+  // Verify GPS is within radius
+  if (latitude == null || longitude == null) {
+    return res.status(400).json({ error: '无法获取您的位置信息，请开启定位权限' });
+  }
+  const dist = haversineDistance(latitude, longitude, site.latitude, site.longitude);
+  const maxRadius = site.radius_meters || 200;
+  const gpsAccuracy = Math.min(Number(accuracy) || 0, 5000);
+  if (dist > maxRadius + gpsAccuracy) {
+    const distStr = dist >= 1000 ? `${(dist / 1000).toFixed(1)}km` : `${Math.round(dist)}m`;
+    return res.status(400).json({ error: `您的位置不在工作地点范围内（距离约${distStr}），请到达工作地点后再签到` });
+  }
+
+  // Save photo/video if provided
+  let photoFilename = null;
+  if (photo) {
+    try {
+      const m = /^data:(image|video)\/([A-Za-z0-9.+-]+);base64,/.exec(photo);
+      const kind = m ? m[1] : 'image';
+      const subtypeRaw = (m ? m[2] : 'jpeg').toLowerCase();
+      const extMap = { jpeg: 'jpg', 'svg+xml': 'svg', quicktime: 'mov', 'x-matroska': 'mkv', 'x-msvideo': 'avi' };
+      const ext = extMap[subtypeRaw] || subtypeRaw.replace(/[^a-z0-9]/g, '') || (kind === 'video' ? 'mp4' : 'jpg');
+      const base64Data = photo.replace(/^data:(image|video)\/[A-Za-z0-9.+-]+;base64,/, '');
+      const buf = Buffer.from(base64Data, 'base64');
+      photoFilename = `checkin-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
+      const contentType = `${kind}/${subtypeRaw === 'jpg' ? 'jpeg' : subtypeRaw}`;
+      await storage.putObject(`checkin_photos/${photoFilename}`, buf, { contentType });
+    } catch (e) {
+      console.error('[Checkin] Photo save error:', e.message);
+    }
+  }
+
+  const siteTimezone = site.timezone || 'America/Chicago';
+  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+  // Check if employee already has an open entry today at this site
+  const empDbId = sess.employee_id;
+  if (!empDbId) return res.status(400).json({ error: '未找到对应的员工记录' });
+
+  // 防代打卡：同一台设备近一天内为多个不同工人打卡 → 双向标记疑似代打卡。
+  // 设备标识是前端 localStorage 里的匿名随机串，清掉可绕过，但配合短信警告足以威慑常规代打。
+  const deviceId = String(device_id || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 64);
+  let suspectNote = '';
+  if (deviceId) {
+    const others = db.prepare(`SELECT DISTINCT COALESCE(NULLIF(TRIM(e.first_name || ' ' || e.last_name), ''), '#' || t.employee_id) AS nm
+      FROM time_entries t LEFT JOIN employees e ON t.employee_id = e.id
+      WHERE t.checkin_device_id = ? AND t.employee_id != ? AND DATE(t.clock_in) >= DATE('now', '-1 day')`)
+      .all(deviceId, empDbId);
+    if (others.length) {
+      suspectNote = '同一设备近一天内还为其他工人打卡: ' + others.map(o => o.nm).slice(0, 5).join(', ');
+      db.prepare(`UPDATE time_entries SET suspect_proxy = 1,
+          suspect_note = CASE WHEN COALESCE(suspect_note, '') = '' THEN '同一设备近一天内还为其他工人打卡' ELSE suspect_note END
+        WHERE checkin_device_id = ? AND employee_id != ? AND DATE(clock_in) >= DATE('now', '-1 day')`)
+        .run(deviceId, empDbId);
+      console.log(`[Checkin] SUSPECT proxy punch: employee ${empDbId}, device ${deviceId.slice(0, 12)}…, ${suspectNote}`);
+    }
+  }
+
+  const { action, entryId, clockTime } = _recordSitePunch({
+    empDbId, site, siteTimezone, now, latitude, longitude, photoFilename, requestedPunchType
+  });
   // 把设备标识和疑似标记落到本次涉及的工时记录上（新建和更新的打卡都覆盖）
   if (entryId && (deviceId || suspectNote)) {
     db.prepare(`UPDATE time_entries SET
@@ -25946,6 +25967,88 @@ app.post('/api/checkin/punch', async (req, res) => {
     employee_id: sess.worker_code,
     clock_time: displayTime,
     photo_saved: !!photoFilename,
+    entry_id: entryId
+  });
+});
+
+// ─── 🖥️ 仓库打卡台 (kiosk)：平板固定在仓库，员工输入自己的 8 位打卡密码打卡 ───
+// 页面按仓库绑定 (/kiosk?site=ID)，身份完全由打卡密码确定；平板就在仓库现场，
+// 位置按仓库自身坐标记录 (geo_verified=1)，不做共享设备的代打卡标记。
+
+// 仓库合法性 + 密码 → 员工。失败返回 {error, status}，成功返回 {site, emp}。
+function _kioskAuth(req) {
+  const b = req.body || {};
+  const siteId = parseInt(b.site_id);
+  const pw = String(b.password || '').trim();
+  if (!siteId || !pw) return { status: 400, error: '缺少必要参数' };
+  if (!/^\d{8}$/.test(pw)) return { status: 400, error: '打卡密码为 8 位数字' };
+  const site = db.prepare('SELECT id, name, code, latitude, longitude, radius_meters, timezone FROM job_sites WHERE id=? AND active=1').get(siteId);
+  if (!site) return { status: 404, error: '未找到该工作地点' };
+  const ipKey = 'kiosk:' + (req.ip || req.connection.remoteAddress || '?');
+  if (_tcCodeThrottled(ipKey)) return { status: 429, error: '尝试次数过多，请 15 分钟后再试' };
+  const emp = _empByTimeclockCode(pw);
+  if (!emp) { _tcCodeFail(ipKey); return { status: 401, error: '打卡密码错误或员工已离职' }; }
+  _tcCodeOk(ipKey);
+  return { site, emp };
+}
+
+// POST /api/kiosk/status { site_id, password } → 员工姓名 + 今天在该仓库的打卡状态
+app.post('/api/kiosk/status', (req, res) => {
+  const a = _kioskAuth(req);
+  if (a.error) return res.status(a.status).json({ error: a.error });
+  const { site, emp } = a;
+  const tz = site.timezone || 'America/Chicago';
+  const todayInTz = new Date().toLocaleDateString('en-CA', { timeZone: tz });
+  const openEnt = db.prepare(
+    "SELECT id, clock_in, on_break FROM time_entries WHERE employee_id=? AND status='open' AND site_id=? AND date(clock_in)=?"
+  ).get(emp.id, site.id, todayInTz);
+  const fmtTz = v => {
+    const d = _utcEntryDate(v);
+    return d ? d.toLocaleTimeString('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+  };
+  res.json({
+    success: true,
+    name: `${emp.first_name} ${emp.last_name}`.trim(),
+    employee_id: emp.employee_id,
+    clocked_in: !!openEnt,
+    on_break: openEnt ? !!openEnt.on_break : false,
+    clock_in_time: openEnt ? fmtTz(openEnt.clock_in) : null,
+    suggested_punch_type: openEnt ? (openEnt.on_break ? 'break_end' : 'out') : 'in'
+  });
+});
+
+// POST /api/kiosk/punch { site_id, password, punch_type } → 打卡落库
+app.post('/api/kiosk/punch', (req, res) => {
+  const a = _kioskAuth(req);
+  if (a.error) return res.status(a.status).json({ error: a.error });
+  const { site, emp } = a;
+  const siteTimezone = site.timezone || 'America/Chicago';
+  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  const { action, entryId, clockTime } = _recordSitePunch({
+    empDbId: emp.id, site, siteTimezone, now,
+    latitude: site.latitude, longitude: site.longitude,
+    photoFilename: null,
+    requestedPunchType: String((req.body || {}).punch_type || '')
+  });
+  // 标记来源为该仓库的打卡台（共享设备，不做同设备代打卡判定）
+  if (entryId) {
+    try {
+      db.prepare(`UPDATE time_entries SET checkin_device_id = CASE WHEN COALESCE(checkin_device_id,'')='' THEN ? ELSE checkin_device_id END WHERE id=?`)
+        .run('kiosk-site-' + site.id, entryId);
+    } catch (_) {}
+  }
+  const displayTime = new Date(clockTime.replace(' ', 'T') + 'Z').toLocaleString('zh-CN', {
+    timeZone: siteTimezone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false
+  });
+  res.json({
+    success: true,
+    action,
+    name: `${emp.first_name} ${emp.last_name}`.trim(),
+    employee_id: emp.employee_id,
+    clock_time: displayTime,
     entry_id: entryId
   });
 });
