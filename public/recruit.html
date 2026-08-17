@@ -320,26 +320,12 @@ async function load() {
   try {
     USER = await api('/admin/me');
     document.getElementById('roleTag').textContent = '👤 ' + (USER.display_name || USER.username || '');
-    // 仓库下拉: 工作地点 + 合作公司两个来源合并去重, 再加手填
+    // 仓库下拉: 服务端合并好的 名字+地址（工作地点 + 合作公司），客服账号也可访问
     try {
-      const [sites, partners] = await Promise.all([
-        api('/admin/job-sites').catch(() => []),
-        api('/admin/partners').catch(() => [])
-      ]);
-      const names = [
-        ...(Array.isArray(sites) ? sites : []).map(s => (s && s.name) || ''),
-        ...(Array.isArray(partners) ? partners : []).map(p => (p && p.name) || '')
-      ].filter(Boolean);
-      _warehouses = [...new Set(names)];
-      // 仓库名 → 地址 (工作地点的 address 优先, 合作公司其次)
+      const whs = await api('/admin/recruit-warehouses');
+      _warehouses = (Array.isArray(whs) ? whs : []).map(w => w && w.name).filter(Boolean);
       _whAddr = {};
-      (Array.isArray(partners) ? partners : []).forEach(pt => {
-        if (!pt || !pt.name) return;
-        let a = pt.address || '';
-        if (!a && pt.addresses) { try { const arr = JSON.parse(pt.addresses); if (Array.isArray(arr) && arr.length) a = arr[0].address || arr[0] || ''; } catch (_) {} }
-        if (a) _whAddr[pt.name] = String(a);
-      });
-      (Array.isArray(sites) ? sites : []).forEach(st => { if (st && st.name && st.address) _whAddr[st.name] = String(st.address); });
+      (Array.isArray(whs) ? whs : []).forEach(w => { if (w && w.name && w.address) _whAddr[w.name] = String(w.address); });
     } catch (_) { _warehouses = []; }
     renderWhOptions('');
     await reload();
