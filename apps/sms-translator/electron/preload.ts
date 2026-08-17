@@ -16,7 +16,8 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
 }
 
 const bridge: SmsBridge = {
-  listDevices: () => ipcRenderer.invoke('devices:list') as Promise<DeviceInfo[]>,
+  listDevices: (adbPath) =>
+    ipcRenderer.invoke('devices:list', adbPath) as Promise<DeviceInfo[]>,
   selectDevice: (serial) => ipcRenderer.invoke('devices:select', serial) as Promise<Settings>,
 
   listMessages: () => ipcRenderer.invoke('sms:list') as Promise<SmsMessage[]>,

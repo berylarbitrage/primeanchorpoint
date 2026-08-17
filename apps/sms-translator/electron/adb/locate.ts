@@ -55,6 +55,32 @@ export async function verifyAdb(adbPath: string): Promise<boolean> {
 }
 
 /**
+ * Expand one candidate into the paths worth trying.
+ *
+ * People routinely paste the *folder* they extracted rather than the exe, so a
+ * directory expands to the binaries inside it instead of being discarded.
+ */
+function expand(candidate: string): string[] {
+  const looksLikePath = candidate.includes('/') || candidate.includes('\\')
+  if (!looksLikePath) return [candidate] // bare name — let the OS search PATH
+
+  let stat: fs.Stats
+  try {
+    stat = fs.statSync(candidate)
+  } catch {
+    return [] // does not exist; skip without spawning anything
+  }
+
+  if (!stat.isDirectory()) return [candidate]
+  return [
+    path.join(candidate, 'adb.exe'),
+    path.join(candidate, 'adb'),
+    path.join(candidate, 'platform-tools', 'adb.exe'),
+    path.join(candidate, 'platform-tools', 'adb'),
+  ].filter((p) => fs.existsSync(p))
+}
+
+/**
  * Return a working adb path, or null if none was found.
  *
  * `configured` is tried first so an explicit setting always wins. Bare names
@@ -67,15 +93,17 @@ export async function findAdb(
   candidates: string[] = defaultCandidates(),
 ): Promise<string | null> {
   const seen = new Set<string>()
-  const ordered = [configured.trim(), ...candidates].filter((c) => {
-    if (!c || seen.has(c)) return false
-    seen.add(c)
-    return true
-  })
+  const ordered: string[] = []
+  for (const raw of [configured.trim(), ...candidates]) {
+    if (!raw) continue
+    for (const candidate of expand(raw)) {
+      if (seen.has(candidate)) continue
+      seen.add(candidate)
+      ordered.push(candidate)
+    }
+  }
 
   for (const candidate of ordered) {
-    const looksLikePath = candidate.includes('/') || candidate.includes('\\')
-    if (looksLikePath && !fs.existsSync(candidate)) continue
     if (await verifyAdb(candidate)) return candidate
   }
   return null
@@ -105,29 +133,38 @@ export class AdbLocator {
     this.inFlight = null
   }
 
-  /** Resolve adb, or throw a message the user can act on. */
-  async require(): Promise<string> {
-    const found = await this.locate()
+  /**
+   * Resolve adb, or throw a message the user can act on.
+   *
+   * `preferred` lets the settings dialog scan with the path the user is
+   * currently typing, before they have saved it.
+   */
+  async require(preferred?: string): Promise<string> {
+    const found = await this.locate(preferred)
     if (!found) throw new Error(ADB_MISSING_MESSAGE)
     return found
   }
 
-  async locate(): Promise<string | null> {
-    const configured = this.configured().trim()
-    if (this.resolved && this.resolved === configured) return this.resolved
-    if (this.inFlight) return this.inFlight
+  async locate(preferred?: string): Promise<string | null> {
+    const configured = (preferred ?? this.configured()).trim()
 
-    this.inFlight = (async () => {
+    if (this.resolved && this.resolved === configured) return this.resolved
+    // An explicit override must not be answered from a cache built for a
+    // different path, and must not race a background resolve.
+    if (!preferred && this.inFlight) return this.inFlight
+
+    const work = (async () => {
       const found = await findAdb(configured)
       this.resolved = found
-      if (found && found !== configured) this.onResolved(found)
+      if (found && found !== this.configured().trim()) this.onResolved(found)
       return found
     })()
 
+    if (!preferred) this.inFlight = work
     try {
-      return await this.inFlight
+      return await work
     } finally {
-      this.inFlight = null
+      if (!preferred) this.inFlight = null
     }
   }
 }

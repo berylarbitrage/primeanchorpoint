@@ -64,7 +64,7 @@ async function main() {
   check('a missing candidate is skipped, not spawned', await findAdb(missing, [missing]), null)
 
   if (isWindows) {
-    console.log('skip 4 positive-path assertions (cannot fake an adb .exe on Windows)')
+    console.log('skip positive-path assertions (cannot fake an adb .exe on Windows)')
   } else {
     check('accepts a binary that identifies itself as adb', await verifyAdb(realAdb), true)
     check('rejects adb that exits non-zero', await verifyAdb(brokenAdb), false)
@@ -75,6 +75,24 @@ async function main() {
       realAdb,
     )
     check('empty configured path is skipped', await findAdb('   ', [realAdb]), realAdb)
+
+    // People paste the folder they extracted, not the exe inside it.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adb-dir-'))
+    const inDir = path.join(dir, 'adb')
+    fs.copyFileSync(realAdb, inDir)
+    fs.chmodSync(inDir, 0o755)
+    check('a folder containing adb is accepted', await findAdb(dir, []), inDir)
+
+    // ...and sometimes the folder one level above platform-tools.
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'adb-parent-'))
+    fs.mkdirSync(path.join(parent, 'platform-tools'))
+    const nested = path.join(parent, 'platform-tools', 'adb')
+    fs.copyFileSync(realAdb, nested)
+    fs.chmodSync(nested, 0o755)
+    check('a folder containing platform-tools/adb is accepted', await findAdb(parent, []), nested)
+
+    fs.rmSync(dir, { recursive: true, force: true })
+    fs.rmSync(parent, { recursive: true, force: true })
   }
 
   fs.rmSync(tmp, { recursive: true, force: true })

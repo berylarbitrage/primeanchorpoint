@@ -23,7 +23,7 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
   async function scan(): Promise<void> {
     setScanError(null)
     try {
-      setDevices(await sms.listDevices())
+      setDevices(await sms.listDevices(draft.adbPath))
       // The app searches common install locations when the configured path
       // does not work, so show the path it actually settled on.
       const current = await sms.getSettings()

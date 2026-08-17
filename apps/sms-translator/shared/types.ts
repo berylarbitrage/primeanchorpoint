@@ -142,7 +142,8 @@ export interface DraftTranslation {
 
 /** The surface exposed on `window.sms` by the preload script. */
 export interface SmsBridge {
-  listDevices(): Promise<DeviceInfo[]>
+  /** `adbPath` overrides the saved setting, for scanning an unsaved edit. */
+  listDevices(adbPath?: string): Promise<DeviceInfo[]>
   selectDevice(serial: string | null): Promise<Settings>
 
   listMessages(): Promise<SmsMessage[]>

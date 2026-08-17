@@ -126,8 +126,10 @@ export function registerIpc(win: BrowserWindow): void {
     onNeedTranslation: (ids) => queue.enqueue(ids),
   })
 
-  handle('devices:list', async (): Promise<DeviceInfo[]> => {
-    const adbPath = await locator.require()
+  handle('devices:list', async (adbPathOverride?: string): Promise<DeviceInfo[]> => {
+    // The settings dialog scans with the path in its input box, which may not
+    // be saved yet — otherwise "rescan" silently tests the old value.
+    const adbPath = await locator.require(adbPathOverride)
     return listDevices(adbPath)
   })
 
