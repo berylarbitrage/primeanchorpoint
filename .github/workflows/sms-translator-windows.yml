@@ -11,6 +11,13 @@ on:
     tags:
       - 'sms-translator-v*'
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: >
+          Publish a Release under this tag (e.g. sms-translator-v0.1.0). The tag
+          is created at the current commit. Leave empty to only build artifacts.
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -76,14 +83,34 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      # Tagging `sms-translator-v1.2.3` publishes a Release with a permanent
-      # download link, which is what non-technical users should be sent.
+      # A Release gives a permanent download link, which is what non-technical
+      # users should be sent. Two ways in: push a `sms-translator-v*` tag, or run
+      # this workflow manually with `release_tag` set (the runner creates the tag).
+      #
+      # Note: every line below must stay indented — a PowerShell here-string
+      # starting at column 0 is not valid inside a YAML block scalar.
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/sms-translator-v')
+        if: startsWith(github.ref, 'refs/tags/sms-translator-v') || inputs.release_tag != ''
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
+          $tag = if ($env:RELEASE_TAG) { $env:RELEASE_TAG } else { $env:GITHUB_REF_NAME }
           $files = (Get-ChildItem release -Filter *.exe).FullName
-          $notes = "Windows build of SMS Translator. Setup.exe installs it; Portable.exe runs without installing. The binaries are unsigned, so SmartScreen warns on first run - click More info, then Run anyway. Requires Android Platform Tools (adb) and USB debugging enabled on the phone; see apps/sms-translator/README.md for setup."
-          gh release create "$env:GITHUB_REF_NAME" $files --title "SMS Translator $env:GITHUB_REF_NAME" --notes $notes
+          $notes = @(
+            '安卓短信翻译收件箱 — Windows 版。',
+            '',
+            '- `SMS Translator-*-Setup.exe` — 安装版',
+            '- `SMS Translator-*-Portable.exe` — 免安装，双击就跑',
+            '',
+            '**首次运行 Windows 会拦一下**：这个 exe 没有代码签名证书，会弹「Windows 已保护你的电脑」。点「更多信息」→「仍要运行」。',
+            '',
+            '**还需要 adb**：下载 [Android Platform Tools](https://developer.android.com/tools/releases/platform-tools) 解压即可，不用配环境变量——软件会自动在常见位置查找，找不到时点设置里的「浏览…」选中 `adb.exe`。手机上还要打开 USB 调试，或用无线调试（不插线）。',
+            '',
+            '**仅支持 Android。** iOS 不向第三方开放短信接口。发短信是唤起手机短信 App 再自动点发送，不是真正的直发；图片短信只收不发。',
+            '',
+            '完整说明见 `apps/sms-translator/README.md`。'
+          ) -join "`n"
+          # `gh release create` creates the tag at --target when it does not exist.
+          gh release create $tag $files --target $env:GITHUB_SHA --title "SMS Translator $tag" --notes $notes
