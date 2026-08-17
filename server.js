@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-17h · 客服可见/可联系还没建档的申请人(电话保持隐藏)',
+  tag: '2026-08-17i · 客服可见全部对话(仅退订/管理员隐藏除外), 电话打码规则不变',
   started: new Date().toISOString(),
 };
 
@@ -30514,7 +30514,7 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
 
     // 对客服(非 admin)不可见: 回了 STOP 退订的、admin 设为隐藏的、以及
     // 未入职的(未关联员工档案, 即列表里标「未入职」的联系人)
-    if (req.userRole !== 'admin') where += ` AND COALESCE(c.opted_out,0)=0 AND COALESCE(c.cs_hidden,0)=0 AND (c.employee_id IS NOT NULL OR c.applicant_id IS NOT NULL)`;
+    if (req.userRole !== 'admin') where += ` AND COALESCE(c.opted_out,0)=0 AND COALESCE(c.cs_hidden,0)=0`;
 
     const countSql = `SELECT COUNT(*) as total FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE ${where}`;
     const total = db.prepare(countSql).get(...params).total;
@@ -30575,8 +30575,8 @@ app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
       LEFT JOIN admin_users a ON a.id=t.assigned_agent_id
       WHERE t.id=?`).get(req.params.id);
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
-    // 退订 / admin 隐藏 / 既无员工档案也无入职申请的联系人, 对客服(非 admin)不可见
-    if (req.userRole !== 'admin' && (thread.contact_opted_out || thread.contact_cs_hidden || (!thread.employee_id && !thread.contact_applicant_id))) return res.status(403).json({ error: '该对话仅管理员可见' });
+    // 退订 / admin 隐藏的联系人, 对客服(非 admin)不可见 (是否建档/申请不再限制)
+    if (req.userRole !== 'admin' && (thread.contact_opted_out || thread.contact_cs_hidden)) return res.status(403).json({ error: '该对话仅管理员可见' });
     const wsResolved = _smsResolvedState(thread);
 
     smsAudit('thread', thread.id, 'viewed', 'agent', req.userId, {});
@@ -30647,8 +30647,8 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
   try {
     const thread = db.prepare(`SELECT t.*, c.phone_e164, c.opted_out, c.cs_hidden, c.name AS contact_name, c.employee_id AS contact_employee_id, c.applicant_id AS contact_applicant_id FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?`).get(req.params.id);
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
-    // 既无员工档案也无入职申请 / admin 隐藏的联系人, 客服(非 admin)不能回复
-    if (req.userRole !== 'admin' && (thread.cs_hidden || (!thread.contact_employee_id && !thread.contact_applicant_id))) return res.status(403).json({ error: '该对话仅管理员可见' });
+    // admin 隐藏的联系人, 客服(非 admin)不能回复 (是否建档/申请不再限制)
+    if (req.userRole !== 'admin' && thread.cs_hidden) return res.status(403).json({ error: '该对话仅管理员可见' });
     // Twilio 合规: 对方已回 STOP 退订, 继续发会被 Twilio 拒 (21610) 且损害账号信誉
     if (thread.opted_out) return res.status(400).json({ error: '⚠️ 对方已回复 STOP 退订, 禁止发送。对方回复 START 后才能恢复。' });
 
