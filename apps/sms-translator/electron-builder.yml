@@ -1,0 +1,33 @@
+appId: com.primeanchor.smstranslator
+productName: SMS Translator
+copyright: Copyright © 2026
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+  - '!**/*.map'
+win:
+  icon: build/icon.ico
+  # Unsigned: SmartScreen will warn on first run. Signing needs a paid
+  # certificate, so that is left to whoever publishes this.
+  signAndEditExecutable: true
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: SMS Translator
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  artifactName: ${productName}-${version}-Setup.${ext}
+portable:
+  artifactName: ${productName}-${version}-Portable.${ext}

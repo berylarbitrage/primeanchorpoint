@@ -1,0 +1,8 @@
+node_modules/
+dist/
+dist-electron/
+release/
+*.local
+.DS_Store
+preview/.staging/
+preview/out/
