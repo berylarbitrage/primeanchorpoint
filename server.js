@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-17d · 招工问题模板: 选工种生成标准翻译提问(会不会做/有没有朋友/会英语)',
+  tag: '2026-08-17e · SMS联系人按电话自动关联员工档案(含离职), 客服可见全部员工对话',
   started: new Date().toISOString(),
 };
 
@@ -2962,6 +2962,8 @@ try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN is_foreman INTEGER DEFAULT 0`
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN is_lead INTEGER DEFAULT 0`); } catch(e) {}
 // 说什么语言: JSON 数组, 子集 ["zh","en","es"], 可多选
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN spoken_langs TEXT DEFAULT '[]'`); } catch(e) {}
+// admin 手动解除过员工关联的联系人不再被按电话自动重新关联
+try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN no_auto_link INTEGER DEFAULT 0`); } catch(e) {}
 // 工作经历: 一个人可能干过多个公司, [{company, role, date}] 带大概日期
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN work_history TEXT DEFAULT '[]'`); } catch(e) {}
 // WhatsApp 支持: 同一收件箱, 线程按渠道区分 (sms | whatsapp)
@@ -29950,8 +29952,39 @@ function smsGetOrCreateContact(phoneE164) {
     const info = db.prepare('INSERT INTO sms_contacts (phone_e164) VALUES (?)').run(phoneE164);
     contact = db.prepare('SELECT * FROM sms_contacts WHERE id=?').get(info.lastInsertRowid);
   }
+  return _smsAutoLinkEmployee(contact);
+}
+
+// 电话能对上员工档案(任意状态, 不只在职)的联系人自动关联 —— 客服在 SMS Inbox
+// 只能看到已关联员工档案的联系人, 不自动关联的话员工发来短信客服也看不到。
+// 多个档案同号时优先在职、其次取最新的; admin 手动关联/解除仍可覆盖。
+function _smsAutoLinkEmployee(contact) {
+  if (!contact || contact.employee_id || contact.no_auto_link) return contact;
+  try {
+    const digits10 = String(contact.phone_e164 || '').replace(/\D/g, '').slice(-10);
+    if (digits10.length !== 10) return contact;
+    const emp = db.prepare(`SELECT id, first_name, last_name FROM employees WHERE phone10(phone)=? ORDER BY (status='active') DESC, id DESC LIMIT 1`).get(digits10);
+    if (!emp) return contact;
+    db.prepare(`UPDATE sms_contacts SET employee_id=?, updated_at=datetime('now') WHERE id=? AND employee_id IS NULL`).run(emp.id, contact.id);
+    contact.employee_id = emp.id;
+    const empName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim();
+    if (!contact.name && empName) {
+      db.prepare(`UPDATE sms_contacts SET name=? WHERE id=? AND COALESCE(name,'')=''`).run(empName, contact.id);
+      contact.name = empName;
+    }
+    smsAudit('contact', contact.id, 'employee_linked', 'system', null, { employee_id: emp.id, auto: 'phone_match' });
+  } catch (e) { console.error('[SMS] auto-link employee failed:', e.message); }
   return contact;
 }
+
+// 启动回填: 存量联系人里电话能对上员工档案的一并自动关联
+// (只补 employee_id 为空的, 幂等; admin 手动解除过的 no_auto_link=1 不动)
+try {
+  const _unlinked = db.prepare('SELECT id, phone_e164, name, employee_id, no_auto_link FROM sms_contacts WHERE employee_id IS NULL AND COALESCE(no_auto_link,0)=0').all();
+  let _linkedN = 0;
+  for (const c of _unlinked) { if (_smsAutoLinkEmployee(c).employee_id) _linkedN++; }
+  if (_linkedN) console.log(`[SMS] startup backfill: auto-linked ${_linkedN}/${_unlinked.length} contacts to employee records by phone`);
+} catch (e) { console.error('[SMS] contact-employee backfill error:', e.message); }
 
 // ─── Find active thread or create new one (channel: 'sms' | 'whatsapp') ───
 function smsFindOrCreateThread(contactId, twilioNumber, channel = 'sms') {
@@ -31126,8 +31159,11 @@ app.put('/api/sms/contacts/:id/link-employee', requireAdmin, requireRole('admin'
       if (empName && (!contact.name || req.userRole !== 'admin')) {
         db.prepare('UPDATE sms_contacts SET name=?, updated_at=datetime(\'now\') WHERE id=?').run(empName, contact.id);
       }
+      // 手动关联视为明确意愿, 清掉「不要自动关联」标记
+      db.prepare('UPDATE sms_contacts SET no_auto_link=0 WHERE id=?').run(contact.id);
     } else {
-      db.prepare('UPDATE sms_contacts SET employee_id=NULL, updated_at=datetime(\'now\') WHERE id=?').run(contact.id);
+      // 手动解除: 同时标记不要再按电话自动重新关联
+      db.prepare('UPDATE sms_contacts SET employee_id=NULL, no_auto_link=1, updated_at=datetime(\'now\') WHERE id=?').run(contact.id);
     }
     smsAudit('contact', contact.id, 'employee_linked', 'agent', req.userId, { employee_id });
     res.json({ success: true });
