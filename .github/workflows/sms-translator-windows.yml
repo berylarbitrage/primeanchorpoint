@@ -1,0 +1,71 @@
+name: Build SMS Translator (Windows)
+
+# Builds the Windows installer on a real Windows runner. Cross-building from
+# Linux is possible but needs Wine to stamp the exe's icon and metadata, so the
+# downloadable binaries are produced here instead.
+
+on:
+  push:
+    branches:
+      - 'claude/windows-sms-translator-**'
+    tags:
+      - 'sms-translator-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: apps/sms-translator
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: apps/sms-translator/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build renderer and main process
+        run: npm run build
+
+      - name: Package Windows installer and portable exe
+        run: npx electron-builder --win --x64 --publish never
+
+      - name: List build output
+        run: Get-ChildItem release -Filter *.exe | Select-Object Name, Length
+        shell: pwsh
+
+      # Downloadable from the run's summary page for 90 days.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sms-translator-windows
+          path: apps/sms-translator/release/*.exe
+          if-no-files-found: error
+          retention-days: 90
+
+      # Tagging `sms-translator-v1.2.3` publishes a Release with a permanent
+      # download link, which is what non-technical users should be sent.
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/sms-translator-v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $files = (Get-ChildItem release -Filter *.exe).FullName
+          $notes = "Windows build of SMS Translator. Setup.exe installs it; Portable.exe runs without installing. The binaries are unsigned, so SmartScreen warns on first run - click More info, then Run anyway. Requires Android Platform Tools (adb) and USB debugging enabled on the phone; see apps/sms-translator/README.md for setup."
+          gh release create "$env:GITHUB_REF_NAME" $files --title "SMS Translator $env:GITHUB_REF_NAME" --notes $notes

@@ -4,6 +4,11 @@
   "version": "0.1.0",
   "private": true,
   "description": "Windows desktop SMS inbox that mirrors an Android phone over ADB and translates/screens messages with Claude",
+  "author": "Prime Anchor",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/berylarbitrage/primeanchorpoint.git"
+  },
   "main": "dist-electron/electron/main.js",
   "scripts": {
     "dev": "concurrently -k -n vite,app -c cyan,magenta \"vite\" \"npm:dev:app\"",
@@ -13,7 +18,7 @@
     "build:renderer": "vite build",
     "start": "cross-env NODE_ENV=production electron .",
     "dist": "npm run build && electron-builder --win",
-    "test": "npm run build:electron && node test/parse-sms.js",
+    "test": "npm run build:electron && node test/parse-sms.js && node test/send-button.js",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit"
   },
   "dependencies": {

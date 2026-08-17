@@ -7,6 +7,25 @@ Windows 桌面短信收件箱：把安卓手机的短信同步到电脑，用 Cl
 
 ---
 
+## 下载（Windows）
+
+不需要自己编译。每次代码推到这个分支，GitHub Actions 会在真正的 Windows 机器上
+打好包：
+
+- **打了 tag 的正式版**：仓库 → **Releases** → 下载
+  - `SMS Translator-x.y.z-Setup.exe` — 安装版
+  - `SMS Translator-x.y.z-Portable.exe` — 免安装，双击就跑
+- **最新构建**：仓库 → **Actions** → 选 `Build SMS Translator (Windows)` 最近一次
+  运行 → 页面底部 **Artifacts** → `sms-translator-windows`（zip，解压后是同样两个 exe）
+
+> **SmartScreen 会拦一下。** 这个 exe 没有代码签名证书（签名证书要花钱买），
+> Windows 首次运行会弹「Windows 已保护你的电脑」。点**「更多信息」→「仍要运行」**
+> 即可。介意的话就自己编译（见下方）。
+
+下载完还需要装 adb 并打开手机的 USB 调试，见「先决条件」。
+
+---
+
 ## 它能做什么
 
 - **读取手机短信**：通过 ADB 直接读手机的短信数据库，手机上**不需要装任何 App**。
@@ -47,10 +66,32 @@ cd apps\sms-translator
 npm install
 
 npm run dev      # 开发模式（Vite HMR + Electron）
-npm test         # 跑短信解析测试
+npm test         # 跑解析与发送按钮识别测试
 npm run build    # 编译
 npm run dist     # 打包成 Windows 安装包，输出在 release\
 ```
+
+---
+
+## 三星用户请先做这一步
+
+三星 One UI 允许电脑读短信库，所以正常情况下可以直接用。插上手机后先跑一次
+这条命令确认：
+
+```powershell
+adb shell content query --uri content://sms --projection _id:body
+```
+
+- 有 `Row: 0 _id=... body=...` 这样的输出 → 没问题，正常使用。
+- 出现 `Permission Denial` → 你这台的系统禁掉了，除非 root 否则无解。
+
+另外两点三星相关的：
+
+- **一定要在手机上点「允许 USB 调试」的授权框**，勾上「一律允许」，否则
+  `adb devices` 只会显示 `unauthorized`。
+- 三星的默认短信 App 是 **Samsung Messages**（`com.samsung.android.messaging`），
+  发送按钮识别已经按它的控件 id 做了适配和测试。如果你把默认短信 App 换成了
+  Google Messages，也同样支持。
 
 ---
 
@@ -67,15 +108,25 @@ iOS 不向第三方开放读取或发送短信的接口。这个应用对 iPhone
 安卓**没有**提供给电脑的直发短信接口。`service call isms` 那套办法依赖每个
 安卓版本各不相同的事务号，极其脆弱。所以本应用的做法是：
 
-1. 用 `am start` 唤起手机的默认短信 App，并把收件人和内容预填好；
-2. 模拟按下「方向键右 + 回车」，落在发送按钮上。
+1. 用 `am start` 唤起手机的默认短信 App，把收件人和内容预填好；
+2. 读取手机当前界面（`uiautomator dump`），找到发送按钮，`input tap` 点它。
+
+三档发送方式（设置里可切）：
+
+| 方式 | 说明 |
+| --- | --- |
+| **识别发送按钮**（默认，三星适用） | 从界面层级里找 `send_button` 之类的控件再点。跨 ROM 可靠。找不到时自动退回模拟按键，并在界面上提示你去手机确认 |
+| 模拟方向键+回车 | 原生 AOSP 界面能用，三星 One UI 上多半点不中。保留作为备选 |
+| 仅填好草稿 | 只预填，发送键由你在手机上按。最稳妥 |
+
+按钮识别做了防误触：`resend`（重发）、`sender`（发件人）、`send_later`（定时发送）、
+附件/表情/相机等控件会被显式排除，置信度不够就宁可不点。这部分有测试覆盖
+（`npm test`，含三星 One UI 和 Google Messages 的真实界面层级样本）。
 
 后果：
 
 - **发送时手机屏幕会亮起并短暂显示短信 App**，这是正常的。
-- 在高度定制的 ROM（部分 MIUI / ColorOS / Flyme）上，按键可能点不中发送按钮。
-  **第一次发送请盯着手机屏幕确认**；如果没点中，去设置里改成「仅填好草稿，
-  由我在手机上确认发送」，或把「点击发送前等待」调大（App 启动慢时）。
+- **第一次发送请盯着手机屏幕确认**。这一步无法在没有真机的情况下验证。
 - 发出的短信会先以「发送中」的样子出现在界面上，等下一次同步从手机数据库读到
   真正那条之后自动替换。30 分钟内手机数据库里没有出现对应记录的，会被判定为
   没发出去并移除。
@@ -130,7 +181,7 @@ adb shell content query --uri content://sms --projection _id:body
 electron/            主进程
   adb/adb.ts         adb 进程封装、设备发现、shell 引号转义
   adb/sms.ts         content://sms 查询与行解析（最脆弱的一块，有测试）
-  adb/send.ts        通过 SENDTO intent 发送
+  adb/send.ts        SENDTO intent + 界面发送按钮识别（有测试）
   adb/contacts.ts    联系人姓名查询（尽力而为）
   store.ts           JSONL 追加式存储 + 定期压缩（无原生依赖）
   settings.ts        设置持久化，API key 走 safeStorage
@@ -144,6 +195,8 @@ src/                 渲染进程（React）
   components/        Sidebar / Thread / Composer / SettingsModal
 shared/types.ts      主进程与渲染进程共用的类型
 test/parse-sms.js    短信解析测试
+test/send-button.js  发送按钮识别测试
+build/make-icon.py   纯 Python 生成应用图标（无需 Pillow）
 ```
 
 ### 一些实现上的取舍
@@ -155,3 +208,7 @@ test/parse-sms.js    短信解析测试
   `body` 强制放在投影的最后一列，这样只有最后一个字段可以包含任意文本。
 - **同步游标带 60 秒重叠**：手机偶尔会写入时间戳略早于上一条的记录（校时、
   长短信重组），严格的 `date >` 游标会永久漏掉它们。
+- **发送按钮靠界面识别而非固定坐标**：坐标会随机型、分辨率、字号、深浅色主题变化，
+  读界面层级则跨 ROM 稳定。宁可识别不出来退回备选方案，也不乱点。
+- **Windows 包在 GitHub Actions 上打**：在 Linux 上交叉编译 Windows 目标需要 Wine
+  才能给 exe 写图标和版本信息，用真正的 Windows runner 更省事也更可靠。

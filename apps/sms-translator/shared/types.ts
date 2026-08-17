@@ -79,7 +79,7 @@ export interface DeviceInfo {
   ready: boolean
 }
 
-export type SendMethod = 'intent' | 'manual'
+export type SendMethod = 'ui' | 'keyevent' | 'manual'
 
 export interface Settings {
   adbPath: string
@@ -111,7 +111,7 @@ export const DEFAULT_SETTINGS: Settings = {
   pollIntervalMs: 6000,
   autoSync: true,
   initialImportDays: 90,
-  sendMethod: 'intent',
+  sendMethod: 'ui',
   sendTapDelayMs: 1500,
   batchSize: 20,
   hasApiKey: false,

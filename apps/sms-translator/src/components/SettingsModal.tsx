@@ -200,18 +200,20 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
             value={draft.sendMethod}
             onChange={(e) => set('sendMethod', e.target.value as Settings['sendMethod'])}
           >
-            <option value="intent">自动发送（唤起短信 App 并自动点发送）</option>
+            <option value="ui">自动发送 · 识别界面上的发送按钮（推荐，三星适用）</option>
+            <option value="keyevent">自动发送 · 模拟方向键+回车（仅原生 AOSP 界面）</option>
             <option value="manual">仅填好草稿，由我在手机上确认发送</option>
           </select>
           <span className="hint">
-            Android 没有开放给电脑的直接发短信接口。自动模式靠模拟按键点「发送」，在
-            高度定制的 ROM 上可能点不中——第一次发送请盯着手机屏幕确认。
+            Android 没有开放给电脑的直接发短信接口，只能唤起手机短信 App 再替你点发送。
+            推荐档会读取手机当前界面、找到发送按钮再点，三星 One UI 能正常工作；找不到
+            按钮时会自动退回模拟按键并提示你。<b>第一次发送请盯着手机屏幕确认。</b>
           </span>
         </div>
 
-        {draft.sendMethod === 'intent' && (
+        {draft.sendMethod !== 'manual' && (
           <div className="field">
-            <label>点击「发送」前等待（毫秒）</label>
+            <label>等待短信 App 出现（毫秒）</label>
             <input
               type="number"
               min={300}
@@ -219,7 +221,7 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
               value={draft.sendTapDelayMs}
               onChange={(e) => set('sendTapDelayMs', Number(e.target.value) || 1500)}
             />
-            <span className="hint">短信 App 启动慢的话调大一些。</span>
+            <span className="hint">三星建议 1500–2500；短信 App 启动慢就调大。</span>
           </div>
         )}
 
