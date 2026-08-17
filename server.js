@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-17e · SMS联系人按电话自动关联员工档案(含离职), 客服可见全部员工对话',
+  tag: '2026-08-17f · 发起对话搜人列表显示州',
   started: new Date().toISOString(),
 };
 
@@ -31822,20 +31822,22 @@ app.get('/api/sms/people-search', requireAdmin, requireSmsAccess, (req, res) => 
     const digitsLike = digits ? `%${digits}%` : '%%%NOMATCH%%%';
     // admin 设为隐藏的员工, 客服搜不到
     const hideFilter = req.userRole !== 'admin' ? ` AND NOT EXISTS (SELECT 1 FROM sms_contacts sc WHERE sc.employee_id = employees.id AND sc.cs_hidden = 1)` : '';
-    const emps = db.prepare(`SELECT id, first_name, last_name, phone, position, status FROM employees
+    const emps = db.prepare(`SELECT id, first_name, last_name, phone, position, status, state FROM employees
       WHERE phone != '' AND (? = '' OR first_name LIKE ? OR last_name LIKE ? OR (first_name || ' ' || last_name) LIKE ? OR phone LIKE ? OR position LIKE ?
         OR replace(replace(replace(replace(replace(phone,'(',''),')',''),'-',''),' ',''),'+','') LIKE ?)${hideFilter}
       ORDER BY (status='active') DESC, first_name, last_name LIMIT 30`).all(q, like, like, like, like, like, digitsLike);
     const _mask = req.userRole !== 'admin';
     // 申请人(还没建档)只有 admin 能看到; 客服只能看到管理员建立过档案的员工
-    const apps = _mask ? [] : db.prepare(`SELECT id, name, phone, position, partner_name FROM applicant_submissions
+    const apps = _mask ? [] : db.prepare(`SELECT id, name, phone, position, partner_name, state, apply_state FROM applicant_submissions
       WHERE phone != '' AND (? = '' OR name LIKE ? OR phone LIKE ? OR position LIKE ? OR partner_name LIKE ?)
       ORDER BY id DESC LIMIT 30`).all(q, like, like, like, like);
     const people = [
       // 员工=已入职 → 客服可见尾号
       ...emps.map(e => ({ type: 'employee', ref_id: e.id, name: (e.first_name + ' ' + (e.last_name || '')).trim(), phone: _mask ? smsMaskPhone(e.phone) : e.phone,
+        state: (e.state || '').toUpperCase(),
         extra: [e.position, e.status === 'active' ? '在职' : e.status].filter(Boolean).join(' · ') })),
       ...apps.map(a => ({ type: 'applicant', ref_id: a.id, name: a.name, phone: a.phone,
+        state: String(a.apply_state || a.state || '').toUpperCase(),
         extra: [a.position, a.partner_name].filter(Boolean).join(' · ') })),
     ];
     res.json({ people });

@@ -2373,6 +2373,7 @@ async function ncSearch() {
       + '<span style="flex-shrink:0;font-size:.66rem;font-weight:700;border-radius:5px;padding:2px 6px;' + (p.type === 'employee' ? 'background:#d1fae5;color:#065f46' : 'background:#fef3c7;color:#92400e') + '">' + (p.type === 'employee' ? '员工' : '申请') + '</span>'
       + '<span style="flex:1;min-width:0"><b style="font-size:.85rem">' + esc(titleCase(p.name) || '(无名)') + '</b>'
       + (p.extra ? '<span style="font-size:.72rem;color:var(--gray-400);margin-left:6px">' + esc(p.extra) + '</span>' : '') + '</span>'
+      + (p.state ? '<span style="flex-shrink:0;font-size:.7rem;font-weight:700;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:5px;padding:1px 6px">📍 ' + esc(p.state) + '</span>' : '')
       + '<span style="font-size:.76rem;color:var(--gray-500)">' + esc(p.phone) + '</span></div>'
     ).join('');
     window._ncPeople = people;
