@@ -7,6 +7,7 @@ import type {
   SmsBridge,
   SmsMessage,
   SyncStatus,
+  WirelessResult,
 } from '../shared/types'
 
 function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
@@ -21,6 +22,17 @@ const bridge: SmsBridge = {
   browseForAdb: () =>
     ipcRenderer.invoke('adb:browse') as Promise<{ path: string | null; error?: string }>,
   selectDevice: (serial) => ipcRenderer.invoke('devices:select', serial) as Promise<Settings>,
+
+  pairWireless: (address, code) =>
+    ipcRenderer.invoke('wireless:pair', address, code) as Promise<WirelessResult>,
+  connectWireless: (address) =>
+    ipcRenderer.invoke('wireless:connect', address) as Promise<WirelessResult>,
+  disconnectWireless: (address) =>
+    ipcRenderer.invoke('wireless:disconnect', address) as Promise<WirelessResult>,
+  enableWirelessOverUsb: () =>
+    ipcRenderer.invoke('wireless:enableOverUsb') as Promise<
+      WirelessResult & { suggestedAddress?: string }
+    >,
 
   listMessages: () => ipcRenderer.invoke('sms:list') as Promise<SmsMessage[]>,
   sync: (mode) => ipcRenderer.invoke('sms:sync', mode) as Promise<{ imported: number }>,

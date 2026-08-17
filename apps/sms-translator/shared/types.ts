@@ -84,6 +84,10 @@ export type SendMethod = 'ui' | 'keyevent' | 'manual'
 export interface Settings {
   adbPath: string
   deviceSerial: string | null
+  /** `host:port` from the phone's Wireless debugging screen. Empty = USB only. */
+  wirelessAddress: string
+  /** Re-run `adb connect` when the wireless device drops off the list. */
+  wirelessAutoReconnect: boolean
   targetLanguage: string
   /** Language outgoing drafts get translated into. Empty = same as targetLanguage. */
   outgoingLanguage: string
@@ -103,6 +107,8 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   adbPath: 'adb',
   deviceSerial: null,
+  wirelessAddress: '',
+  wirelessAutoReconnect: true,
   targetLanguage: '简体中文',
   outgoingLanguage: '',
   autoTranslate: true,
@@ -135,6 +141,12 @@ export interface SendResult {
   message?: SmsMessage
 }
 
+export interface WirelessResult {
+  ok: boolean
+  message: string
+  address?: string
+}
+
 export interface DraftTranslation {
   text: string
   targetLang: string
@@ -147,6 +159,13 @@ export interface SmsBridge {
   /** Opens a native file picker for adb; saves and returns it when valid. */
   browseForAdb(): Promise<{ path: string | null; error?: string }>
   selectDevice(serial: string | null): Promise<Settings>
+
+  /** Wireless debugging: pair once, then connect whenever needed. */
+  pairWireless(address: string, code: string): Promise<WirelessResult>
+  connectWireless(address: string): Promise<WirelessResult>
+  disconnectWireless(address: string): Promise<WirelessResult>
+  /** Switch a USB-connected phone into wireless mode (pre-Android-11 route). */
+  enableWirelessOverUsb(): Promise<WirelessResult & { suggestedAddress?: string }>
 
   listMessages(): Promise<SmsMessage[]>
   sync(mode: 'full' | 'incremental'): Promise<{ imported: number }>

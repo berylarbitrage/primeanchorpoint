@@ -1,4 +1,5 @@
-import { resolveDevice, type AdbContext } from '../adb/adb'
+import { listDevices, resolveDevice, type AdbContext } from '../adb/adb'
+import { connectWireless } from '../adb/wireless'
 import { ContactResolver } from '../adb/contacts'
 import { querySms } from '../adb/sms'
 import type { MessageStore } from '../store'
@@ -75,13 +76,34 @@ export class Syncer {
       this.deps.onPhase('connecting')
 
       const adbPath = await this.deps.adbPath()
-      const device = await resolveDevice(adbPath, settings.deviceSerial)
+      let device = await resolveDevice(adbPath, settings.deviceSerial)
+
+      // A wireless device drops off whenever the phone sleeps or the WiFi
+      // blips. Reconnecting is cheap and silent, so do it before reporting a
+      // failure the user would have to act on.
+      if (!device && settings.wirelessAddress && settings.wirelessAutoReconnect) {
+        this.deps.onPhase('connecting', `正在重新连接 ${settings.wirelessAddress}…`)
+        const reconnected = await connectWireless(
+          { adbPath, serial: null },
+          settings.wirelessAddress,
+        )
+        if (reconnected.ok) {
+          device = await resolveDevice(adbPath, settings.deviceSerial)
+        }
+      }
+
       this.deps.onDevice(device)
 
       if (!device) {
+        const anyDevice = await listDevices(adbPath).catch(() => [])
+        const unauthorized = anyDevice.some((d) => d.state === 'unauthorized')
         this.deps.onPhase(
           'error',
-          'No Android device with USB debugging is connected. Run "adb devices" to check.',
+          unauthorized
+            ? '手机已连上，但还没授权。请在手机屏幕上点「允许 USB 调试」，并勾选「一律允许」。'
+            : settings.wirelessAddress
+              ? `连不上 ${settings.wirelessAddress}。请确认手机和电脑在同一个 WiFi、手机的「无线调试」是开着的（关掉再打开会换端口，需要重新填地址）。`
+              : '没有检测到手机。请用 USB 线连接并开启 USB 调试，或在设置里配置无线连接。',
         )
         return { imported: 0 }
       }

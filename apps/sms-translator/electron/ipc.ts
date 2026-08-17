@@ -2,6 +2,13 @@ import path from 'node:path'
 import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
 import { listDevices, resolveDevice } from './adb/adb'
 import { AdbLocator, verifyAdb } from './adb/locate'
+import {
+  connectWireless,
+  disconnectWireless,
+  enableTcpip,
+  pairWireless,
+  readWifiAddress,
+} from './adb/wireless'
 import { sendSms } from './adb/send'
 import { normalisePeer } from './adb/sms'
 import { SettingsStore } from './settings'
@@ -16,6 +23,7 @@ import type {
   Settings,
   SmsMessage,
   SyncStatus,
+  WirelessResult,
 } from '../shared/types'
 
 let settings: SettingsStore
@@ -168,6 +176,48 @@ export function registerIpc(win: BrowserWindow): void {
     void syncer.sync('incremental').catch(() => {})
     return updated
   })
+
+  handle('wireless:pair', async (address: string, code: string): Promise<WirelessResult> => {
+    const adbPath = await locator.require()
+    return pairWireless({ adbPath, serial: null }, address, code)
+  })
+
+  handle('wireless:connect', async (address: string): Promise<WirelessResult> => {
+    const adbPath = await locator.require()
+    const result = await connectWireless({ adbPath, serial: null }, address)
+    if (result.ok && result.address) {
+      // Remember it so the syncer can reconnect on its own after a drop.
+      settings.update({ wirelessAddress: result.address, deviceSerial: result.address })
+      void syncer.sync('incremental').catch(() => {})
+    }
+    return result
+  })
+
+  handle('wireless:disconnect', async (address: string): Promise<WirelessResult> => {
+    const adbPath = await locator.require()
+    const result = await disconnectWireless({ adbPath, serial: null }, address)
+    settings.update({ wirelessAddress: '', deviceSerial: null })
+    return result
+  })
+
+  handle(
+    'wireless:enableOverUsb',
+    async (): Promise<WirelessResult & { suggestedAddress?: string }> => {
+      const adbPath = await locator.require()
+      const current = settings.public()
+      const usb = await resolveDevice(adbPath, current.deviceSerial)
+      if (!usb) {
+        return { ok: false, message: '请先用 USB 线把手机连上，再点这个按钮。' }
+      }
+      const ctx = { adbPath, serial: usb.serial }
+      const ip = await readWifiAddress(ctx)
+      const result = await enableTcpip(ctx)
+      return {
+        ...result,
+        suggestedAddress: ip && result.ok ? `${ip}:5555` : undefined,
+      }
+    },
+  )
 
   handle('sms:list', (): SmsMessage[] => store.all())
 

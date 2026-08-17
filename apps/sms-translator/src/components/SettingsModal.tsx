@@ -14,6 +14,10 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
   const [devices, setDevices] = useState<DeviceInfo[]>([])
   const [scanError, setScanError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [pairAddress, setPairAddress] = useState('')
+  const [pairCode, setPairCode] = useState('')
+  const [wirelessBusy, setWirelessBusy] = useState(false)
+  const [wirelessNote, setWirelessNote] = useState<{ text: string; ok: boolean } | null>(null)
 
   useEffect(() => {
     void scan()
@@ -47,6 +51,22 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
     } catch (err) {
       setDevices([])
       setScanError(errorText(err))
+    }
+  }
+
+  async function runWireless(
+    action: () => Promise<{ ok: boolean; message: string }>,
+  ): Promise<void> {
+    setWirelessBusy(true)
+    setWirelessNote(null)
+    try {
+      const result = await action()
+      setWirelessNote({ text: result.message, ok: result.ok })
+      if (result.ok) setDevices(await sms.listDevices(draft.adbPath).catch(() => []))
+    } catch (err) {
+      setWirelessNote({ text: errorText(err), ok: false })
+    } finally {
+      setWirelessBusy(false)
     }
   }
 
@@ -190,6 +210,113 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
             <button type="button" className="btn ghost" onClick={() => set('deviceSerial', null)}>
               自动选择
             </button>
+          </div>
+        </div>
+
+        <div className="field">
+          <label>无线连接（不用一直插着数据线）</label>
+          <span className="hint">
+            手机上打开：设置 → 开发者选项 → <b>无线调试</b>（打开它），要求手机和电脑
+            在<b>同一个 WiFi</b>。首次需要配对一次。
+          </span>
+
+          <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+            <span className="hint">
+              <b>第 1 步 · 配对</b>（只需做一次）：点手机上的「使用配对码配对设备」，
+              把弹出框里的 <b>IP 地址和端口</b> 与 <b>6 位配对码</b> 填到这里。
+            </span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                style={{ flex: 2, minWidth: 0 }}
+                placeholder="配对地址，如 192.168.1.5:37419"
+                value={pairAddress}
+                onChange={(e) => setPairAddress(e.target.value)}
+              />
+              <input
+                style={{ flex: 1, minWidth: 0 }}
+                placeholder="配对码"
+                value={pairCode}
+                onChange={(e) => setPairCode(e.target.value)}
+              />
+              <button
+                type="button"
+                className="btn"
+                disabled={wirelessBusy || !pairAddress.trim() || !pairCode.trim()}
+                onClick={() => void runWireless(() => sms.pairWireless(pairAddress, pairCode))}
+              >
+                配对
+              </button>
+            </div>
+
+            <span className="hint" style={{ marginTop: 6 }}>
+              <b>第 2 步 · 连接</b>：填「无线调试」<b>主界面</b>上显示的那一组地址和端口
+              —— <b>和配对对话框里的端口不是同一个</b>，这是最容易填错的地方。
+            </span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                style={{ flex: 1, minWidth: 0 }}
+                placeholder="连接地址，如 192.168.1.5:41234"
+                value={draft.wirelessAddress}
+                onChange={(e) => set('wirelessAddress', e.target.value)}
+              />
+              <button
+                type="button"
+                className="btn primary"
+                disabled={wirelessBusy || !draft.wirelessAddress.trim()}
+                onClick={() =>
+                  void runWireless(() => sms.connectWireless(draft.wirelessAddress))
+                }
+              >
+                {wirelessBusy ? '处理中…' : '连接'}
+              </button>
+              <button
+                type="button"
+                className="btn ghost"
+                disabled={wirelessBusy || !draft.wirelessAddress.trim()}
+                onClick={() =>
+                  void runWireless(() => sms.disconnectWireless(draft.wirelessAddress))
+                }
+              >
+                断开
+              </button>
+            </div>
+
+            <label className="check" style={{ marginTop: 4 }}>
+              <input
+                type="checkbox"
+                checked={draft.wirelessAutoReconnect}
+                onChange={(e) => set('wirelessAutoReconnect', e.target.checked)}
+              />
+              <span>断线后自动重连（手机息屏或 WiFi 抖动都会掉线，建议开着）</span>
+            </label>
+
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
+              <button
+                type="button"
+                className="btn ghost"
+                disabled={wirelessBusy}
+                onClick={() =>
+                  void runWireless(async () => {
+                    const result = await sms.enableWirelessOverUsb()
+                    if (result.suggestedAddress) {
+                      set('wirelessAddress', result.suggestedAddress)
+                    }
+                    return result
+                  })
+                }
+              >
+                安卓 10 及更早：先插线，点这里切到无线
+              </button>
+            </div>
+
+            {wirelessNote && (
+              <span
+                className="hint"
+                style={{ color: wirelessNote.ok ? 'var(--ok)' : 'var(--danger)' }}
+              >
+                {wirelessNote.text}
+              </span>
+            )}
           </div>
         </div>
 
