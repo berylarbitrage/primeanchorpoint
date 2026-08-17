@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-17g · 发起对话搜人不再只显示30人, 显示员工总数与缺电话计数',
+  tag: '2026-08-17h · 客服可见/可联系还没建档的申请人(电话保持隐藏)',
   started: new Date().toISOString(),
 };
 
@@ -2964,6 +2964,8 @@ try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN is_lead INTEGER DEFAULT 0`); 
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN spoken_langs TEXT DEFAULT '[]'`); } catch(e) {}
 // admin 手动解除过员工关联的联系人不再被按电话自动重新关联
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN no_auto_link INTEGER DEFAULT 0`); } catch(e) {}
+// 还没建档的申请人: 电话对上入职申请时记录 applicant_id, 客服同样可见可联系
+try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN applicant_id INTEGER DEFAULT NULL`); } catch(e) {}
 // 工作经历: 一个人可能干过多个公司, [{company, role, date}] 带大概日期
 try { db.exec(`ALTER TABLE sms_contacts ADD COLUMN work_history TEXT DEFAULT '[]'`); } catch(e) {}
 // WhatsApp 支持: 同一收件箱, 线程按渠道区分 (sms | whatsapp)
@@ -29959,20 +29961,37 @@ function smsGetOrCreateContact(phoneE164) {
 // 只能看到已关联员工档案的联系人, 不自动关联的话员工发来短信客服也看不到。
 // 多个档案同号时优先在职、其次取最新的; admin 手动关联/解除仍可覆盖。
 function _smsAutoLinkEmployee(contact) {
-  if (!contact || contact.employee_id || contact.no_auto_link) return contact;
+  if (!contact || contact.no_auto_link) return contact;
   try {
     const digits10 = String(contact.phone_e164 || '').replace(/\D/g, '').slice(-10);
     if (digits10.length !== 10) return contact;
-    const emp = db.prepare(`SELECT id, first_name, last_name FROM employees WHERE phone10(phone)=? ORDER BY (status='active') DESC, id DESC LIMIT 1`).get(digits10);
-    if (!emp) return contact;
-    db.prepare(`UPDATE sms_contacts SET employee_id=?, updated_at=datetime('now') WHERE id=? AND employee_id IS NULL`).run(emp.id, contact.id);
-    contact.employee_id = emp.id;
-    const empName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim();
-    if (!contact.name && empName) {
-      db.prepare(`UPDATE sms_contacts SET name=? WHERE id=? AND COALESCE(name,'')=''`).run(empName, contact.id);
-      contact.name = empName;
+    if (!contact.employee_id) {
+      const emp = db.prepare(`SELECT id, first_name, last_name FROM employees WHERE phone10(phone)=? ORDER BY (status='active') DESC, id DESC LIMIT 1`).get(digits10);
+      if (emp) {
+        db.prepare(`UPDATE sms_contacts SET employee_id=?, updated_at=datetime('now') WHERE id=? AND employee_id IS NULL`).run(emp.id, contact.id);
+        contact.employee_id = emp.id;
+        const empName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim();
+        if (!contact.name && empName) {
+          db.prepare(`UPDATE sms_contacts SET name=? WHERE id=? AND COALESCE(name,'')=''`).run(empName, contact.id);
+          contact.name = empName;
+        }
+        smsAudit('contact', contact.id, 'employee_linked', 'system', null, { employee_id: emp.id, auto: 'phone_match' });
+        return contact;
+      }
     }
-    smsAudit('contact', contact.id, 'employee_linked', 'system', null, { employee_id: emp.id, auto: 'phone_match' });
+    // 没有员工档案 → 看是否提交过入职申请 (申请人也要让客服看到并能联系)
+    if (!contact.employee_id && !contact.applicant_id) {
+      const sub = db.prepare(`SELECT id, name FROM applicant_submissions WHERE phone10(phone)=? ORDER BY id DESC LIMIT 1`).get(digits10);
+      if (sub) {
+        db.prepare(`UPDATE sms_contacts SET applicant_id=?, updated_at=datetime('now') WHERE id=? AND applicant_id IS NULL`).run(sub.id, contact.id);
+        contact.applicant_id = sub.id;
+        if (!contact.name && sub.name) {
+          db.prepare(`UPDATE sms_contacts SET name=? WHERE id=? AND COALESCE(name,'')=''`).run(String(sub.name).slice(0, 120), contact.id);
+          contact.name = sub.name;
+        }
+        smsAudit('contact', contact.id, 'applicant_linked', 'system', null, { applicant_id: sub.id, auto: 'phone_match' });
+      }
+    }
   } catch (e) { console.error('[SMS] auto-link employee failed:', e.message); }
   return contact;
 }
@@ -29980,9 +29999,9 @@ function _smsAutoLinkEmployee(contact) {
 // 启动回填: 存量联系人里电话能对上员工档案的一并自动关联
 // (只补 employee_id 为空的, 幂等; admin 手动解除过的 no_auto_link=1 不动)
 try {
-  const _unlinked = db.prepare('SELECT id, phone_e164, name, employee_id, no_auto_link FROM sms_contacts WHERE employee_id IS NULL AND COALESCE(no_auto_link,0)=0').all();
+  const _unlinked = db.prepare('SELECT id, phone_e164, name, employee_id, applicant_id, no_auto_link FROM sms_contacts WHERE employee_id IS NULL AND applicant_id IS NULL AND COALESCE(no_auto_link,0)=0').all();
   let _linkedN = 0;
-  for (const c of _unlinked) { if (_smsAutoLinkEmployee(c).employee_id) _linkedN++; }
+  for (const c of _unlinked) { const r = _smsAutoLinkEmployee(c); if (r.employee_id || r.applicant_id) _linkedN++; }
   if (_linkedN) console.log(`[SMS] startup backfill: auto-linked ${_linkedN}/${_unlinked.length} contacts to employee records by phone`);
 } catch (e) { console.error('[SMS] contact-employee backfill error:', e.message); }
 
@@ -30495,7 +30514,7 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
 
     // 对客服(非 admin)不可见: 回了 STOP 退订的、admin 设为隐藏的、以及
     // 未入职的(未关联员工档案, 即列表里标「未入职」的联系人)
-    if (req.userRole !== 'admin') where += ` AND COALESCE(c.opted_out,0)=0 AND COALESCE(c.cs_hidden,0)=0 AND c.employee_id IS NOT NULL`;
+    if (req.userRole !== 'admin') where += ` AND COALESCE(c.opted_out,0)=0 AND COALESCE(c.cs_hidden,0)=0 AND (c.employee_id IS NOT NULL OR c.applicant_id IS NOT NULL)`;
 
     const countSql = `SELECT COUNT(*) as total FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE ${where}`;
     const total = db.prepare(countSql).get(...params).total;
@@ -30547,7 +30566,7 @@ app.get('/api/sms/threads', requireAdmin, requireSmsAccess, (req, res) => {
 // GET /api/sms/threads/:id — thread detail
 app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
   try {
-    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.email as contact_email, c.employee_id, c.tags as contact_tags, c.notes as contact_notes, c.work_state as contact_work_state, c.is_foreman as contact_is_foreman, c.is_lead as contact_is_lead, c.opted_out as contact_opted_out, c.cs_hidden as contact_cs_hidden, c.work_history as contact_work_history, c.spoken_langs as contact_spoken_langs,
+    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.name as contact_name, c.company as contact_company, c.email as contact_email, c.employee_id, c.tags as contact_tags, c.notes as contact_notes, c.work_state as contact_work_state, c.is_foreman as contact_is_foreman, c.is_lead as contact_is_lead, c.opted_out as contact_opted_out, c.cs_hidden as contact_cs_hidden, c.work_history as contact_work_history, c.spoken_langs as contact_spoken_langs, c.applicant_id as contact_applicant_id,
       emp.state as emp_state, emp.pay_rate as emp_pay_rate, emp.pay_type as emp_pay_type, emp.status as emp_status,
       a.username as agent_username
       FROM sms_threads t
@@ -30556,8 +30575,8 @@ app.get('/api/sms/threads/:id', requireAdmin, requireSmsAccess, (req, res) => {
       LEFT JOIN admin_users a ON a.id=t.assigned_agent_id
       WHERE t.id=?`).get(req.params.id);
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
-    // 退订 / admin 隐藏 / 未入职(未关联员工档案)的联系人, 对客服(非 admin)不可见
-    if (req.userRole !== 'admin' && (thread.contact_opted_out || thread.contact_cs_hidden || !thread.employee_id)) return res.status(403).json({ error: '该对话仅管理员可见' });
+    // 退订 / admin 隐藏 / 既无员工档案也无入职申请的联系人, 对客服(非 admin)不可见
+    if (req.userRole !== 'admin' && (thread.contact_opted_out || thread.contact_cs_hidden || (!thread.employee_id && !thread.contact_applicant_id))) return res.status(403).json({ error: '该对话仅管理员可见' });
     const wsResolved = _smsResolvedState(thread);
 
     smsAudit('thread', thread.id, 'viewed', 'agent', req.userId, {});
@@ -30626,10 +30645,10 @@ app.get('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, (req, r
 // POST /api/sms/threads/:id/messages — send a reply
 app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async (req, res) => {
   try {
-    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.opted_out, c.cs_hidden, c.name AS contact_name, c.employee_id AS contact_employee_id FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?`).get(req.params.id);
+    const thread = db.prepare(`SELECT t.*, c.phone_e164, c.opted_out, c.cs_hidden, c.name AS contact_name, c.employee_id AS contact_employee_id, c.applicant_id AS contact_applicant_id FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?`).get(req.params.id);
     if (!thread) return res.status(404).json({ error: 'Thread not found' });
-    // 未入职 / admin 隐藏的联系人, 客服(非 admin)不能回复
-    if (req.userRole !== 'admin' && (thread.cs_hidden || !thread.contact_employee_id)) return res.status(403).json({ error: '该对话仅管理员可见' });
+    // 既无员工档案也无入职申请 / admin 隐藏的联系人, 客服(非 admin)不能回复
+    if (req.userRole !== 'admin' && (thread.cs_hidden || (!thread.contact_employee_id && !thread.contact_applicant_id))) return res.status(403).json({ error: '该对话仅管理员可见' });
     // Twilio 合规: 对方已回 STOP 退订, 继续发会被 Twilio 拒 (21610) 且损害账号信誉
     if (thread.opted_out) return res.status(400).json({ error: '⚠️ 对方已回复 STOP 退订, 禁止发送。对方回复 START 后才能恢复。' });
 
@@ -31827,16 +31846,17 @@ app.get('/api/sms/people-search', requireAdmin, requireSmsAccess, (req, res) => 
         OR replace(replace(replace(replace(replace(phone,'(',''),')',''),'-',''),' ',''),'+','') LIKE ?)${hideFilter}
       ORDER BY (status='active') DESC, first_name, last_name LIMIT 500`).all(q, like, like, like, like, like, digitsLike);
     const _mask = req.userRole !== 'admin';
-    // 申请人(还没建档)只有 admin 能看到; 客服只能看到管理员建立过档案的员工
-    const apps = _mask ? [] : db.prepare(`SELECT id, name, phone, position, partner_name, state, apply_state FROM applicant_submissions
-      WHERE phone != '' AND (? = '' OR name LIKE ? OR phone LIKE ? OR position LIKE ? OR partner_name LIKE ?)
+    // 申请人(还没建档)客服也能看到并发起对话, 但看不到电话 (admin 隐藏的照样不给看)
+    const appHideFilter = _mask ? ` AND NOT EXISTS (SELECT 1 FROM sms_contacts sc WHERE sc.applicant_id = applicant_submissions.id AND sc.cs_hidden = 1)` : '';
+    const apps = db.prepare(`SELECT id, name, phone, position, partner_name, state, apply_state FROM applicant_submissions
+      WHERE phone != '' AND (? = '' OR name LIKE ? OR phone LIKE ? OR position LIKE ? OR partner_name LIKE ?)${appHideFilter}
       ORDER BY id DESC LIMIT 200`).all(q, like, like, like, like);
     const people = [
       // 员工=已入职 → 客服可见尾号
       ...emps.map(e => ({ type: 'employee', ref_id: e.id, name: (e.first_name + ' ' + (e.last_name || '')).trim(), phone: _mask ? smsMaskPhone(e.phone) : e.phone,
         state: (e.state || '').toUpperCase(),
         extra: [e.position, e.status === 'active' ? '在职' : e.status].filter(Boolean).join(' · ') })),
-      ...apps.map(a => ({ type: 'applicant', ref_id: a.id, name: a.name, phone: a.phone,
+      ...apps.map(a => ({ type: 'applicant', ref_id: a.id, name: a.name, phone: _mask ? '' : a.phone,
         state: String(a.apply_state || a.state || '').toUpperCase(),
         extra: [a.position, a.partner_name].filter(Boolean).join(' · ') })),
     ];
@@ -31851,8 +31871,6 @@ app.get('/api/sms/people-search', requireAdmin, requireSmsAccess, (req, res) => 
 app.post('/api/sms/start-thread', requireAdmin, requireSmsAccess, (req, res) => {
   try {
     const b = req.body || {};
-    // 申请人(未建档)只有 admin 能发起对话
-    if (b.type === 'applicant' && req.userRole !== 'admin') return res.status(403).json({ error: '申请人需要管理员建档后才能联系' });
     // 优先按 type+ref_id 由服务器查电话 (客服端电话是打码的, 不能直接用)
     let phoneRaw = String(b.phone || '');
     if (b.type === 'employee' && b.ref_id) {
@@ -31867,6 +31885,7 @@ app.post('/api/sms/start-thread', requireAdmin, requireSmsAccess, (req, res) => 
     const contact = smsGetOrCreateContact(phoneE164);
     if (b.name && !contact.name) db.prepare(`UPDATE sms_contacts SET name=?, updated_at=datetime('now') WHERE id=?`).run(String(b.name).slice(0, 120), contact.id);
     if (b.employee_id && !contact.employee_id) db.prepare(`UPDATE sms_contacts SET employee_id=?, updated_at=datetime('now') WHERE id=?`).run(parseInt(b.employee_id) || null, contact.id);
+    if (b.type === 'applicant' && b.ref_id && !contact.applicant_id) db.prepare(`UPDATE sms_contacts SET applicant_id=?, updated_at=datetime('now') WHERE id=?`).run(parseInt(b.ref_id) || null, contact.id);
     const channel = b.channel === 'whatsapp' ? 'whatsapp' : 'sms';
     const twilioNumber = (channel === 'whatsapp' ? (process.env.TWILIO_WHATSAPP_FROM || TWILIO_FROM) : TWILIO_FROM) || process.env.TWILIO_PHONE_NUMBER || '';
     const thread = smsFindOrCreateThread(contact.id, twilioNumber, channel);
