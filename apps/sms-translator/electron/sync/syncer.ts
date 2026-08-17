@@ -2,8 +2,16 @@ import { listDevices, resolveDevice, type AdbContext } from '../adb/adb'
 import { connectWireless } from '../adb/wireless'
 import { ContactResolver } from '../adb/contacts'
 import { querySms } from '../adb/sms'
+import {
+  buildMessage,
+  queryMms,
+  queryMmsAddress,
+  queryParts,
+  readPart,
+  type MmsPart,
+} from '../adb/mms'
 import type { MessageStore } from '../store'
-import type { DeviceInfo, Settings, SmsMessage } from '../../shared/types'
+import type { Attachment, DeviceInfo, Settings, SmsMessage } from '../../shared/types'
 
 /**
  * Re-read a small window before the cursor on every incremental sync. Phones
@@ -22,6 +30,31 @@ const PENDING_MATCH_MS = 10 * 60_000
  * placeholder is retired rather than left as a phantom message.
  */
 const PENDING_EXPIRY_MS = 30 * 60_000
+
+/**
+ * Cap on attachments downloaded per sync. Each one is a separate adb round-trip,
+ * and a first import covering months could otherwise stall the first sync for a
+ * long time. Whatever is skipped gets picked up on the following passes.
+ */
+const MAX_ATTACHMENTS_PER_SYNC = 12
+
+/** Extension to save an attachment under, from its declared content type. */
+function extensionFor(contentType: string): string {
+  const map: Record<string, string> = {
+    'image/jpeg': '.jpg',
+    'image/jpg': '.jpg',
+    'image/png': '.png',
+    'image/gif': '.gif',
+    'image/webp': '.webp',
+    'image/bmp': '.bmp',
+    'image/heic': '.heic',
+    'video/mp4': '.mp4',
+    'video/3gpp': '.3gp',
+    'audio/mpeg': '.mp3',
+    'audio/amr': '.amr',
+  }
+  return map[contentType] ?? '.bin'
+}
 
 export interface SyncerDeps {
   store: MessageStore
@@ -126,8 +159,15 @@ export class Syncer {
       }
 
       const fetched = await querySms(ctx, device.serial, { sinceMs })
+      if (settings.includeMms) {
+        fetched.push(...(await this.fetchMms(ctx, device.serial, sinceMs)))
+      }
       const changed = this.deps.store.upsertFromDevice(fetched)
       this.prunePending()
+
+      if (settings.includeMms) {
+        await this.downloadAttachments(ctx, device.serial, settings)
+      }
 
       // Attach contact names for addresses we have not resolved yet.
       const unresolved = [
@@ -171,6 +211,127 @@ export class Syncer {
       throw err
     } finally {
       this.inFlight = false
+    }
+  }
+
+  /**
+   * Read MMS messages and assemble them from their separate tables.
+   *
+   * Failures here are swallowed: MMS is a bonus, and a ROM that blocks the MMS
+   * tables must not break SMS syncing.
+   */
+  private async fetchMms(
+    ctx: AdbContext,
+    deviceSerial: string,
+    sinceMs: number,
+  ): Promise<SmsMessage[]> {
+    try {
+      const rows = await queryMms(ctx, { sinceMs })
+      if (!rows.length) return []
+
+      const parts = await queryParts(
+        ctx,
+        rows.map((r) => r.id),
+      )
+      const byMid = new Map<number, MmsPart[]>()
+      for (const part of parts) {
+        const list = byMid.get(part.mid)
+        if (list) list.push(part)
+        else byMid.set(part.mid, [part])
+      }
+
+      // Addresses need one adb call each, so reuse the address already known
+      // for the thread (MMS and SMS share `threads`) wherever possible.
+      const threadAddress = new Map<number, string>()
+      for (const existing of this.deps.store.all()) {
+        if (existing.threadId && existing.address && !threadAddress.has(existing.threadId)) {
+          threadAddress.set(existing.threadId, existing.address)
+        }
+      }
+
+      const messages: SmsMessage[] = []
+      for (const row of rows) {
+        let address = threadAddress.get(row.threadId) ?? ''
+        if (!address) {
+          address = await queryMmsAddress(ctx, row.id, row.direction)
+          if (address) threadAddress.set(row.threadId, address)
+        }
+        messages.push(buildMessage(deviceSerial, row, address, byMid.get(row.id) ?? []))
+      }
+      return messages
+    } catch {
+      return []
+    }
+  }
+
+  /**
+   * Fetch the bytes for attachments we do not have yet, a bounded number per
+   * sync. A failure is recorded on the attachment so the message still shows
+   * and the UI can say why the picture is missing.
+   */
+  private async downloadAttachments(
+    ctx: AdbContext,
+    deviceSerial: string,
+    settings: Settings,
+  ): Promise<void> {
+    const maxBytes = Math.max(64, settings.maxAttachmentKb) * 1024
+    const pending: { message: SmsMessage; attachment: Attachment }[] = []
+
+    for (const message of this.deps.store.all()) {
+      if (message.deviceSerial !== deviceSerial || !message.attachments) continue
+      for (const attachment of message.attachments) {
+        const have = attachment.file && this.deps.store.hasAttachment(attachment.file)
+        if (have || attachment.error) continue
+        pending.push({ message, attachment })
+      }
+    }
+    if (!pending.length) return
+
+    const batch = pending.slice(0, MAX_ATTACHMENTS_PER_SYNC)
+    const updates: { id: string; partial: Partial<SmsMessage> }[] = []
+
+    for (const { message, attachment } of batch) {
+      let next: Attachment
+      try {
+        const data = await readPart(ctx, attachment.partId, maxBytes)
+        const file = this.deps.store.writeAttachment(
+          deviceSerial,
+          attachment.partId,
+          extensionFor(attachment.contentType),
+          data,
+        )
+        next = { ...attachment, file, bytes: data.length, error: undefined }
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err)
+        next = {
+          ...attachment,
+          error: /exceeded/.test(detail)
+            ? `附件超过 ${settings.maxAttachmentKb} KB 的上限，已跳过。可在设置里调大。`
+            : detail,
+        }
+      }
+
+      const merged = (message.attachments ?? []).map((a) =>
+        a.partId === attachment.partId ? next : a,
+      )
+      // Re-read: an earlier iteration in this same batch may have updated it.
+      const current = this.deps.store.get(message.id)
+      const base = current?.attachments ?? merged
+      updates.push({
+        id: message.id,
+        partial: {
+          attachments: base.map((a) => (a.partId === attachment.partId ? next : a)),
+        },
+      })
+    }
+
+    if (updates.length) this.deps.onMessages(this.deps.store.patchMany(updates))
+
+    if (pending.length > batch.length) {
+      this.deps.onPhase(
+        'idle',
+        `还有 ${pending.length - batch.length} 个附件待下载，会在后续同步中继续。`,
+      )
     }
   }
 

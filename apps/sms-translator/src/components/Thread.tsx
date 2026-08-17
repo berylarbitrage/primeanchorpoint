@@ -11,6 +11,7 @@ import {
   type Filters,
 } from '../lib/derive'
 import Composer from './Composer'
+import AttachmentView from './AttachmentView'
 
 interface Props {
   conversation: Conversation | null
@@ -63,7 +64,11 @@ export default function Thread({
   }
 
   const untranslated = conversation.messages
-    .filter((m) => m.translationState !== 'done' && m.body.trim())
+    .filter(
+      (m) =>
+        m.translationState !== 'done' &&
+        (m.body.trim() !== '' || (m.attachments?.length ?? 0) > 0),
+    )
     .map((m) => m.id)
 
   let previousDay = ''
@@ -150,6 +155,16 @@ function MessageBubble({
       {heading && <div className="day-heading">{heading}</div>}
       <div className={`msg ${message.direction}`}>
         <div className={`bubble${risk >= 4 ? ' risky' : ''}`}>
+          {message.subject && <div className="subject">{message.subject}</div>}
+
+          {message.attachments?.map((attachment) => (
+            <AttachmentView
+              key={attachment.partId}
+              messageId={message.id}
+              attachment={attachment}
+            />
+          ))}
+
           {hasTranslation ? (
             <>
               {showOriginal && (
@@ -160,13 +175,16 @@ function MessageBubble({
               )}
               <div className="translated">{translated}</div>
             </>
-          ) : (
+          ) : message.body.trim() ? (
             <div className="translated">{message.body}</div>
-          )}
+          ) : null}
 
-          {message.translationState === 'pending' && message.body.trim() && (
-            <div className="pending-note">翻译中…</div>
-          )}
+          {message.translationState === 'pending' &&
+            (message.body.trim() || message.attachments?.length) && (
+              <div className="pending-note">
+                {message.attachments?.length ? '识别图片中…' : '翻译中…'}
+              </div>
+            )}
           {message.translationState === 'error' && (
             <div className="error-note">翻译失败：{message.translationError}</div>
           )}
@@ -180,6 +198,7 @@ function MessageBubble({
           <span>{formatTime(message.date)}</span>
           {message.pending && <span>发送中…</span>}
           {message.translation?.sourceLang && <span>{message.translation.sourceLang}</span>}
+          {message.kind === 'mms' && <span>图片短信</span>}
           {message.analysis && <span>{categoryLabel(message.analysis.category)}</span>}
           {riskLabel(risk) && (
             <span style={{ color: risk >= 4 ? 'var(--danger)' : 'var(--warn)' }}>

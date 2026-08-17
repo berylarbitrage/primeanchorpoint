@@ -105,6 +105,14 @@ export function registerIpc(win: BrowserWindow): void {
         classify: current.classify,
         batchSize: current.batchSize,
         enabled: current.autoTranslate,
+        describeImages: current.describeImages,
+      }
+    },
+    readImage: (file) => {
+      try {
+        return store.hasAttachment(file) ? store.readAttachment(file) : null
+      } catch {
+        return null
       }
     },
     onChanged: emitMessages,
@@ -239,6 +247,7 @@ export function registerIpc(win: BrowserWindow): void {
     const optimistic: SmsMessage = {
       id: `local:${target.serial}:${Date.now()}`,
       deviceSerial: target.serial,
+      kind: 'sms',
       rawId: -1,
       threadId: 0,
       address: to,
@@ -266,6 +275,25 @@ export function registerIpc(win: BrowserWindow): void {
       .map((m) => ({ id: m.id, partial: { readLocal: true } }))
     if (updates.length) emitMessages(store.patchMany(updates))
   })
+
+  handle(
+    'mms:readAttachment',
+    async (messageId: string, partId: number): Promise<{ dataUrl?: string; error?: string }> => {
+      const message = store.get(messageId)
+      const attachment = message?.attachments?.find((a) => a.partId === partId)
+      if (!attachment) return { error: '找不到这个附件。' }
+      if (attachment.error) return { error: attachment.error }
+      if (!attachment.file || !store.hasAttachment(attachment.file)) {
+        return { error: '附件还没下载下来，下一次同步会重试。' }
+      }
+      try {
+        const bytes = store.readAttachment(attachment.file)
+        return { dataUrl: `data:${attachment.contentType};base64,${bytes.toString('base64')}` }
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
 
   handle('translate:retry', (ids: string[]) => {
     queue.requeue(ids)

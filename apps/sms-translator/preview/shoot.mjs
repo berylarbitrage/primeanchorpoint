@@ -68,6 +68,7 @@ console.log('conversations rendered:', await page.locator('.conversation').count
 const shots = [
   ['inbox', async () => page.locator('.conversation').filter({ hasText: 'DHL' }).first().click()],
   ['thread', async () => page.locator('.conversation').filter({ hasText: 'Marta' }).first().click()],
+  ['mms', async () => page.locator('.conversation').filter({ hasText: '447700900123' }).first().click()],
   ['filter', async () => page.getByRole('button', { name: '可疑及以上' }).click()],
 ]
 for (const [name, act] of shots) {

@@ -577,3 +577,47 @@ textarea:focus {
 .device.selected {
   border-color: var(--accent);
 }
+
+/* ---------- MMS attachments ---------- */
+
+.bubble .subject {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.attachment {
+  margin: 0 0 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.attachment img {
+  max-width: 100%;
+  max-height: 320px;
+  border-radius: 8px;
+  display: block;
+  object-fit: contain;
+  background: #0b0e12;
+}
+
+.attachment figcaption {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  border-left: 2px solid var(--border-strong);
+  padding-left: 8px;
+}
+
+.attachment-note {
+  font-size: 12px;
+  color: var(--text-faint);
+  padding: 8px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.attachment-note.error {
+  color: var(--danger);
+  border-color: var(--danger);
+}

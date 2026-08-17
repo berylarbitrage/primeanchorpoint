@@ -20,6 +20,23 @@ function isTombstone(record: LogRecord): record is Tombstone {
 }
 
 /**
+ * Keep locally-derived attachment fields (the downloaded file, its description)
+ * while letting the phone stay authoritative about which parts exist.
+ */
+function mergeAttachments(
+  existing: SmsMessage['attachments'],
+  incoming: SmsMessage['attachments'],
+): SmsMessage['attachments'] {
+  if (!incoming) return existing
+  if (!existing) return incoming
+  const byId = new Map(existing.map((a) => [a.partId, a]))
+  return incoming.map((a) => {
+    const prev = byId.get(a.partId)
+    return prev ? { ...a, file: prev.file, bytes: prev.bytes, description: prev.description, error: prev.error } : a
+  })
+}
+
+/**
  * Append-only JSONL store with periodic compaction.
  *
  * Deliberately not SQLite: better-sqlite3 is a native module that has to be
@@ -34,13 +51,18 @@ export class MessageStore {
   private linesOnDisk = 0
   private compactTimer: NodeJS.Timeout | null = null
 
+  /** Where MMS attachments are written. Kept out of the log to stay small. */
+  readonly mediaDir: string
+
   constructor(private readonly dir: string) {
     this.logPath = path.join(dir, 'messages.jsonl')
     this.metaPath = path.join(dir, 'meta.json')
+    this.mediaDir = path.join(dir, 'media')
   }
 
   load(): void {
     fs.mkdirSync(this.dir, { recursive: true })
+    fs.mkdirSync(this.mediaDir, { recursive: true })
 
     if (fs.existsSync(this.logPath)) {
       const raw = fs.readFileSync(this.logPath, 'utf8')
@@ -106,6 +128,8 @@ export class MessageStore {
           translationError: existing.translationError,
           translation: existing.translation,
           analysis: existing.analysis,
+          // Downloaded files and their descriptions are ours, not the phone's.
+          attachments: mergeAttachments(existing.attachments, message.attachments),
         }
         if (JSON.stringify(merged) === JSON.stringify(existing)) continue
         this.messages.set(merged.id, merged)
@@ -142,6 +166,40 @@ export class MessageStore {
     return changed
   }
 
+  /**
+   * Write an attachment to the media directory and return its file name.
+   *
+   * The file name is derived from the device serial and the provider's part id,
+   * so re-syncing the same message overwrites rather than accumulating copies.
+   */
+  writeAttachment(deviceSerial: string, partId: number, ext: string, data: Buffer): string {
+    const safeSerial = deviceSerial.replace(/[^A-Za-z0-9._-]/g, '_')
+    const name = `${safeSerial}-${partId}${ext}`
+    fs.writeFileSync(path.join(this.mediaDir, name), data)
+    return name
+  }
+
+  attachmentPath(file: string): string {
+    // Guard against a crafted record escaping the media directory.
+    const resolved = path.resolve(this.mediaDir, file)
+    if (resolved !== path.join(this.mediaDir, path.basename(file))) {
+      throw new Error(`Refusing to read outside the media directory: ${file}`)
+    }
+    return resolved
+  }
+
+  hasAttachment(file: string): boolean {
+    try {
+      return fs.existsSync(this.attachmentPath(file))
+    } catch {
+      return false
+    }
+  }
+
+  readAttachment(file: string): Buffer {
+    return fs.readFileSync(this.attachmentPath(file))
+  }
+
   /** Delete records outright (used to retire superseded optimistic sends). */
   remove(ids: string[]): string[] {
     const removed: string[] = []
@@ -163,7 +221,8 @@ export class MessageStore {
   untranslated(limit = 500): SmsMessage[] {
     const out: SmsMessage[] = []
     for (const message of this.all()) {
-      if (message.translationState === 'pending' && message.body.trim()) {
+      const hasWork = message.body.trim() !== '' || (message.attachments?.length ?? 0) > 0
+      if (message.translationState === 'pending' && hasWork) {
         out.push(message)
         if (out.length >= limit) break
       }

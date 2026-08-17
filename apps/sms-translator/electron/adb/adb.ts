@@ -80,6 +80,73 @@ export function runAdb(
   })
 }
 
+/**
+ * Run an adb command and collect stdout as raw bytes.
+ *
+ * Needed for MMS attachments: `adb shell` can translate line endings, which
+ * silently corrupts binary payloads, so those go through `adb exec-out`, and the
+ * output must never be decoded as text.
+ */
+export function runAdbBinary(
+  ctx: AdbContext,
+  args: string[],
+  opts: { timeoutMs?: number; maxBytes?: number } = {},
+): Promise<{ code: number; stdout: Buffer; stderr: string }> {
+  const timeoutMs = opts.timeoutMs ?? 60_000
+  const maxBytes = opts.maxBytes ?? 8 * 1024 * 1024
+  const full = ctx.serial ? ['-s', ctx.serial, ...args] : args
+
+  return new Promise((resolve, reject) => {
+    let child
+    try {
+      child = spawn(ctx.adbPath, full, { windowsHide: true })
+    } catch (err) {
+      reject(new AdbError(`Could not start adb at "${ctx.adbPath}": ${String(err)}`))
+      return
+    }
+
+    const chunks: Buffer[] = []
+    let size = 0
+    let stderr = ''
+    let settled = false
+
+    const finish = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      fn()
+    }
+
+    const timer = setTimeout(() => {
+      finish(() => {
+        child.kill()
+        reject(new AdbError(`adb ${full.join(' ')} timed out after ${timeoutMs}ms`))
+      })
+    }, timeoutMs)
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      size += chunk.length
+      if (size > maxBytes) {
+        finish(() => {
+          child.kill()
+          reject(new AdbError(`adb output exceeded ${maxBytes} bytes`))
+        })
+        return
+      }
+      chunks.push(chunk)
+    })
+    child.stderr.setEncoding('utf8')
+    child.stderr.on('data', (d: string) => (stderr += d))
+
+    child.on('error', (err) => {
+      finish(() => reject(new AdbError(`Could not run adb at "${ctx.adbPath}": ${err.message}`)))
+    })
+    child.on('close', (code) => {
+      finish(() => resolve({ code: code ?? -1, stdout: Buffer.concat(chunks), stderr }))
+    })
+  })
+}
+
 /** Run an adb command and throw unless it exited cleanly. */
 export async function runAdbChecked(
   ctx: AdbContext,

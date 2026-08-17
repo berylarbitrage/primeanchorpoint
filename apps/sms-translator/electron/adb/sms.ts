@@ -1,28 +1,12 @@
 import { AdbError, runAdbChecked, shellQuote, type AdbContext } from './adb'
+import { isEmptyResult, isPermissionDenied, parseContentRows, value } from './rows'
 import type { Direction, SmsMessage } from '../../shared/types'
 
 /**
- * Columns we ask the SMS content provider for. `body` MUST stay last: the
- * provider prints rows as `key=value, key=value, ...` with no escaping, so the
- * only field allowed to contain arbitrary text is the trailing one.
+ * Columns we ask the SMS content provider for. `body` MUST stay last — see the
+ * note in rows.ts: only the final column may contain arbitrary text.
  */
 const COLUMNS = ['_id', 'thread_id', 'address', 'date', 'type', 'read', 'body'] as const
-
-/**
- * Built from COLUMNS: `_id=(.*?), thread_id=(.*?), ... , body=([\s\S]*)`.
- * Anchoring on the literal next column name is what makes this survive commas
- * inside `address` or `body`.
- */
-const ROW_RE = new RegExp(
-  '^' +
-    COLUMNS.map((c, i) =>
-      i === COLUMNS.length - 1
-        ? `${c}=([\\s\\S]*)$`
-        : `${c}=(.*?), (?=${COLUMNS[i + 1]}=)`,
-    ).join(''),
-)
-
-const ROW_PREFIX = /^Row: \d+ /
 
 /** Android's `sms.type` column. 1 = inbox, 2 = sent; 4/5/6 are outbox states. */
 function directionFromType(type: number): Direction | null {
@@ -49,10 +33,6 @@ export function normalisePeer(address: string): string {
   if (!digits) return trimmed.toUpperCase()
   if (digits.length <= 8) return digits // short code / service number
   return digits.slice(-10)
-}
-
-function parseValue(raw: string): string {
-  return raw === 'NULL' ? '' : raw
 }
 
 export interface QueryOptions {
@@ -88,13 +68,13 @@ export async function querySms(
 
   const out = await runAdbChecked(ctx, args, { timeoutMs: opts.timeoutMs ?? 120_000 })
 
-  if (/Permission Denial|SecurityException/i.test(out)) {
+  if (isPermissionDenied(out)) {
     throw new AdbError(
       'The phone refused to share content://sms. This ROM blocks shell access to the ' +
         'SMS provider — see the troubleshooting section of the README.',
     )
   }
-  if (/^No result found\.?$/im.test(out.trim())) return []
+  if (isEmptyResult(out)) return []
 
   return parseRows(out, deviceSerial)
 }
@@ -102,37 +82,27 @@ export async function querySms(
 export function parseRows(out: string, deviceSerial: string): SmsMessage[] {
   const messages: SmsMessage[] = []
 
-  // A body may contain newlines, so split on the start-of-row marker rather
-  // than on line boundaries.
-  const chunks = out.split(/\r?\n(?=Row: \d+ )/)
-
-  for (const chunk of chunks) {
-    const row = chunk.replace(/\r/g, '').trim()
-    if (!ROW_PREFIX.test(row)) continue
-
-    const match = ROW_RE.exec(row.replace(ROW_PREFIX, ''))
-    if (!match) continue
-
-    const [, rawId, threadId, address, date, type, read, body] = match
-    const direction = directionFromType(Number(type))
+  for (const row of parseContentRows(out, COLUMNS)) {
+    const direction = directionFromType(Number(row.type))
     if (!direction) continue
 
-    const id = Number(rawId)
-    const dateMs = Number(date)
+    const id = Number(row._id)
+    const dateMs = Number(row.date)
     if (!Number.isFinite(id) || !Number.isFinite(dateMs)) continue
 
-    const addr = parseValue(address)
+    const addr = value(row.address)
     messages.push({
       id: `${deviceSerial}:${id}`,
       deviceSerial,
+      kind: 'sms',
       rawId: id,
-      threadId: Number(threadId) || 0,
+      threadId: Number(row.thread_id) || 0,
       address: addr,
       peer: normalisePeer(addr),
       date: dateMs,
       direction,
-      body: parseValue(body),
-      readOnDevice: parseValue(read) === '1',
+      body: value(row.body),
+      readOnDevice: value(row.read) === '1',
       readLocal: direction === 'out',
       translationState: 'pending',
     })

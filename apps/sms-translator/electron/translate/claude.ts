@@ -24,6 +24,36 @@ export interface TranslateOptions {
   classify: boolean
 }
 
+export interface ImageInput {
+  /** Base64 data with no prefix. */
+  data: string
+  /** One of the media types the API accepts. */
+  mediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
+}
+
+const DESCRIBE_SCHEMA = {
+  type: 'object',
+  properties: {
+    description: { type: 'string' },
+    text_in_image: { type: 'string' },
+    source_language: { type: 'string' },
+    translation: { type: 'string' },
+    category: { type: 'string', enum: CATEGORIES },
+    risk: { type: 'integer', enum: [0, 1, 2, 3, 4, 5] },
+    summary: { type: 'string' },
+  },
+  required: [
+    'description',
+    'text_in_image',
+    'source_language',
+    'translation',
+    'category',
+    'risk',
+    'summary',
+  ],
+  additionalProperties: false,
+} as const
+
 /**
  * Structured-output schema. Note the constraints the API does NOT support:
  * no `minimum`/`maximum`, no `minLength`/`maxLength`. `risk` therefore uses an
@@ -168,6 +198,93 @@ export async function translateBatch(
     })
   }
   return out
+}
+
+export interface DescribeResult {
+  description: string
+  textInImage: string
+  sourceLanguage: string
+  translation: string
+  category: Category
+  risk: number
+  summary: string
+}
+
+/**
+ * Handle a picture message: describe the image, transcribe any text in it, and
+ * translate both that and the message body.
+ *
+ * Scam SMS is often just a screenshot, so reading the text out of the image is
+ * the part that actually matters for screening — a description alone would miss
+ * it. Runs one request per message rather than batching, because images are big.
+ */
+export async function describeImageMessage(
+  images: ImageInput[],
+  body: string,
+  opts: TranslateOptions,
+): Promise<DescribeResult> {
+  if (!opts.apiKey) throw new Error('No Anthropic API key configured.')
+  if (!images.length) throw new Error('No image supplied.')
+
+  const system = [
+    `You are triaging a picture message (MMS) for a desktop inbox. Answer in ${opts.targetLanguage}.`,
+    '',
+    '- description: one or two sentences on what the picture shows.',
+    '- text_in_image: transcribe ALL text visible in the picture, verbatim, in its',
+    '  original language. Keep codes, amounts, URLs, and phone numbers exact.',
+    '  Empty string if there is no text.',
+    `- translation: translate the message text and any text in the picture into`,
+    `  ${opts.targetLanguage}. If both exist, put the message text first.`,
+    '- source_language: the language of the text you translated.',
+    opts.classify
+      ? '- category / risk / summary: as for a text message. Screenshots of fake ' +
+        'invoices, payment demands, login pages, and prize claims are common scam ' +
+        'formats — weigh what the picture shows, not just the message text.'
+      : '- set category to "other", risk to 0, and summary to an empty string.',
+    '',
+    'Return only the fields in the schema.',
+  ].join('\n')
+
+  const content: unknown[] = images.map((image) => ({
+    type: 'image',
+    source: { type: 'base64', media_type: image.mediaType, data: image.data },
+  }))
+  content.push({
+    type: 'text',
+    text: body.trim()
+      ? `Message text sent with the picture:\n${body}`
+      : 'The message has no text, only the picture.',
+  })
+
+  const params = {
+    model: opts.model,
+    max_tokens: 4000,
+    system,
+    output_config: {
+      effort: 'low',
+      format: { type: 'json_schema', schema: DESCRIBE_SCHEMA },
+    },
+    messages: [{ role: 'user', content }],
+  }
+
+  const response = await client(opts.apiKey).messages.create(
+    params as unknown as Anthropic.MessageCreateParamsNonStreaming,
+  )
+
+  const parsed = firstJson(response) as Record<string, unknown>
+  const category = CATEGORIES.includes(parsed.category as Category)
+    ? (parsed.category as Category)
+    : 'other'
+  const risk = Number(parsed.risk)
+  return {
+    description: String(parsed.description ?? ''),
+    textInImage: String(parsed.text_in_image ?? ''),
+    sourceLanguage: String(parsed.source_language ?? ''),
+    translation: String(parsed.translation ?? ''),
+    category,
+    risk: Number.isFinite(risk) ? Math.min(5, Math.max(0, Math.round(risk))) : 0,
+    summary: String(parsed.summary ?? ''),
+  }
 }
 
 /** Translate an outgoing draft into the recipient's language. */

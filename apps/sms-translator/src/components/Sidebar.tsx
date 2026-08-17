@@ -125,8 +125,11 @@ export default function Sidebar({
 
       <div className="conversations">
         {conversations.map((conversation) => {
+          const last = conversation.last
           const preview =
-            conversation.last.translation?.text?.trim() || conversation.last.body
+            last.translation?.text?.trim() ||
+            last.body.trim() ||
+            (last.attachments?.length ? '［图片］' : '')
           return (
             <button
               key={conversation.peer}

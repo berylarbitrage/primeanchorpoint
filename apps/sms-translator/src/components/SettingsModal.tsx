@@ -146,6 +146,47 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
         <label className="check">
           <input
             type="checkbox"
+            checked={draft.includeMms}
+            onChange={(e) => set('includeMms', e.target.checked)}
+          />
+          <span>
+            同时同步图片短信（MMS）
+            <span className="hint" style={{ display: 'block' }}>
+              图片会下载到本机显示。只读不发——电脑端发送仍然是纯文字。
+            </span>
+          </span>
+        </label>
+
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={draft.describeImages}
+            onChange={(e) => set('describeImages', e.target.checked)}
+          />
+          <span>
+            让 Claude 读图（描述内容 + 识别图中文字）
+            <span className="hint" style={{ display: 'block' }}>
+              截图式的诈骗短信全靠这个才能筛出来。每张图一次请求，比纯文字贵不少；
+              不需要就关掉。
+            </span>
+          </span>
+        </label>
+
+        <div className="field">
+          <label>单个附件大小上限（KB）</label>
+          <input
+            type="number"
+            min={64}
+            step={256}
+            value={draft.maxAttachmentKb}
+            onChange={(e) => set('maxAttachmentKb', Number(e.target.value) || 2048)}
+          />
+          <span className="hint">超过就跳过不下载，并在那条短信上标注原因。</span>
+        </div>
+
+        <label className="check">
+          <input
+            type="checkbox"
             checked={draft.classify}
             onChange={(e) => set('classify', e.target.checked)}
           />

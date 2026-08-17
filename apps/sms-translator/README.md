@@ -34,6 +34,8 @@ Windows 桌面短信收件箱：把安卓手机的短信同步到电脑，用 Cl
 - **筛查**：全文搜索（原文+译文同时匹配）、按类别筛（验证码 / 银行 / 物流 /
   营销 / 垃圾 / 疑似诈骗…）、按诈骗风险分筛、仅未读、仅未翻译。
 - **诈骗识别**：每条短信给 0–5 的风险分和一句话摘要，高风险的会标红。
+- **图片短信（MMS）**：图片会下载下来在会话里显示，并可让 Claude 描述内容 +
+  **识别图中文字**——截图式的诈骗短信只有靠这个才筛得出来。**只收不发**，见下方说明。
 
 ---
 
@@ -75,6 +77,36 @@ npm test         # 跑解析与发送按钮识别测试
 npm run build    # 编译
 npm run dist     # 打包成 Windows 安装包，输出在 release\
 ```
+
+---
+
+## 图片短信（MMS）
+
+**只支持接收，不支持发送。** 这不是偷懒，是两边难度差得太远：
+
+| | 状况 |
+| --- | --- |
+| **接收 / 查看图片** | 已实现。图片在 `content://mms/part`，通过 `adb exec-out content read` 取出二进制存到本机 |
+| **发送图片** | **没做。** 安卓 7 起禁止把 `file://` 传给其它 App（`FileUriExposedException`），必须用 `content://` 授权；从 adb 这种「外部」身份构造别的 App 认的 content URI 没有干净办法，各家 ROM 表现还不一样。电脑端发送保持纯文字 |
+
+相关设置（默认都开着）：
+
+- **同时同步图片短信（MMS）** — 关掉就只读纯文字短信
+- **让 Claude 读图** — 描述图片内容 + 识别图中文字。**每张图一次请求，比纯文字贵不少**，
+  不需要筛图片就关掉
+- **单个附件大小上限** — 默认 2048 KB，超过就跳过并在那条短信上标注原因
+
+图片存在 `%APPDATA%\sms-translator\data\media\`。为了不让消息日志膨胀，
+图片不进日志，界面显示时按需读取。
+
+MMS 和 SMS 的存储结构完全不同，有两个坑值得记下来（都有测试覆盖）：
+
+- **`mms.date` 的单位是秒，不是毫秒**。直接用会让所有图片短信掉到 1970 年。
+- **发件人不在消息表里**，在单独的 `content://mms/<id>/addr`，靠 PDU 头类型区分
+  （137 = 发件人，151 = 收件人），里面还混着一行代表「我自己」的占位地址。
+
+另外图片二进制必须走 `adb exec-out` 而不是 `adb shell`——后者会改写换行符，
+悄悄把图片弄坏，而且要等到很久以后打开文件才发现。
 
 ---
 
@@ -213,9 +245,11 @@ adb shell content query --uri content://sms --projection _id:body
 
 ```
 electron/            主进程
-  adb/adb.ts         adb 进程封装、设备发现、shell 引号转义
+  adb/adb.ts         adb 进程封装、设备发现、shell 引号转义、二进制安全输出
+  adb/rows.ts        content query 输出的通用行解析（靠列名锚定）
+  adb/mms.ts         MMS 消息/分部/地址查询、附件读取（有测试）
   adb/locate.ts      自动查找 adb（常见安装位置，有测试）
-  adb/sms.ts         content://sms 查询与行解析（最脆弱的一块，有测试）
+  adb/sms.ts         content://sms 查询（有测试）
   adb/send.ts        SENDTO intent + 界面发送按钮识别（有测试）
   adb/wireless.ts    WiFi 无线调试：配对/连接/断开、自动重连（有测试）
   adb/contacts.ts    联系人姓名查询（尽力而为）
@@ -234,6 +268,7 @@ test/parse-sms.js    短信解析测试
 test/send-button.js  发送按钮识别测试
 test/locate-adb.js   adb 自动查找测试
 test/wireless.js     无线连接输出解析测试
+test/parse-mms.js    MMS 解析测试（秒/毫秒、addr 类型、SMIL 过滤）
 build/make-icon.py   纯 Python 生成应用图标（无需 Pillow）
 preview/            用假数据渲染界面并截图（没手机时验证 UI 用）
 ```
@@ -249,6 +284,9 @@ preview/            用假数据渲染界面并截图（没手机时验证 UI �
   长短信重组），严格的 `date >` 游标会永久漏掉它们。
 - **发送按钮靠界面识别而非固定坐标**：坐标会随机型、分辨率、字号、深浅色主题变化，
   读界面层级则跨 ROM 稳定。宁可识别不出来退回备选方案，也不乱点。
+- **图片不进消息日志**：base64 塞进 JSONL 会让它膨胀到不可用。图片按文件存，
+  界面要显示时通过 IPC 按需读成 data URL（页面 CSP 只允许 `data:` 图片，
+  直接给文件路径也用不了）。
 - **`adb connect` 的成功与否只能看输出，不能看退出码**：连接失败时它照样返回 0，
   信了退出码就会报告一个根本不存在的连接，然后在后面莫名其妙地失败。
 - **Windows 包在 GitHub Actions 上打**：在 Linux 上交叉编译 Windows 目标需要 Wine

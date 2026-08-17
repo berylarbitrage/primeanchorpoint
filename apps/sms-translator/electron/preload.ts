@@ -39,6 +39,12 @@ const bridge: SmsBridge = {
   send: (to, body) => ipcRenderer.invoke('sms:send', to, body) as Promise<SendResult>,
   markThreadRead: (peer) => ipcRenderer.invoke('sms:markThreadRead', peer) as Promise<void>,
 
+  readAttachment: (messageId, partId) =>
+    ipcRenderer.invoke('mms:readAttachment', messageId, partId) as Promise<{
+      dataUrl?: string
+      error?: string
+    }>,
+
   retranslate: (ids) => ipcRenderer.invoke('translate:retry', ids) as Promise<void>,
   translateDraft: (text) =>
     ipcRenderer.invoke('translate:draft', text) as Promise<DraftTranslation>,

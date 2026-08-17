@@ -10,6 +10,7 @@
         deviceSerial: 'R5CX90ABCDE',
         rawId: 0,
         threadId: 1,
+        kind: 'sms',
         readOnDevice: true,
         readLocal: true,
         translationState: 'done',
@@ -80,6 +81,25 @@
     }),
   ]
 
+  // A picture message (MMS): scam screenshot with Claude's OCR of the image.
+  const FAKE_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUAAAADICAIAAAAWZq/8AAACk0lEQVR42u3dR04DARREQY7JglPbYJvknOOYsGeuMAs0av2S6gQtvXU/NM0PEOrBBCBgQMCAgEHAgIABAQMCBgEDAgYEDAIGBAwIGBAwCBgQMPAPAY8en4BQAgYBAwIGBAwCBgQMCBgQMAgYEDAgYBAwIGBAwICAQcCAgAEBAwIGAQMCBgQMJQO+33+BUAIGAQMCBgQMZQJuml8glHdCcC8KCBgQMJQJ+Hb7AUIJGAQM9BTwNxBKwJAc8PX6DYQSMAgYEDAgYCgT8OXyBYQSMAgYEDAgYCgT8Pn8BYRqA74DoQQMAgYEDHQL+HS6A6EEDAIGegq4AUIJGJIDPh4bIJSAQcCAgAEBQ5mAD4cbEErAIGBAwICAoUzA+/0NCNUGfAVCCRgEDAgY6BbwbncFQgkYBAz0FPAFCCVgSA54u70AoQQMAgYEDAgYygS82ZyBUAIGAQMCBgQMZQJer89AqDbgExBKwCBgQMBAt4BXqxMQSsAgYKCngI9AKAFDcsDL5REIJWAQMCBgQMBQJuDF4gCEEjAIGBAwIGAoE/B8fgBCtQHvgVACBgEDAga6BTyb7YFQAgYBAz0FvANCCRiSA55Od0AoAYOAAQEDAoYyAX9+boFQAgYBAwIGBAxlAv742AKh2oA3QCgBg4ABAQPdAn5/3wChBAwCBnoKeA2EEjAkB/z2tgZCCRgEDAgYEDCUCfj1dQWEEjAIGBAwIGAoE/BksgJCtQEvgVACBgEDAga6BTweL4FQAgYBAz0FvABCCRiSAx6NFkAoAYOAAQEDAoYyAb+8zIFQAgYBAwIGBAxlAn5+ngOh2oBnQCgBg4ABAQPdAh4OZ0AoAYOAgZ4CngKhBAzJAQ8GUyCUgEHAgICBTv4ATXyechNC0aEAAAAASUVORK5CYII='
+  messages.push(
+    msg({
+      id: 'f1', rawId: 61, threadId: 8, address: '+447700900123', peer: '7700900123',
+      kind: 'mms', date: now - 22 * min, direction: 'in', readLocal: false,
+      body: 'See attached invoice, payment is overdue.',
+      attachments: [
+        {
+          partId: 9001, contentType: 'image/png', name: 'invoice.png', file: 'demo.png',
+          bytes: 716,
+          description: '一张伪造的缴费通知截图，顶部有红色横幅，写着账户已逾期。\n\n图中文字：URGENT — Account suspended. Pay £248.00 within 24 hours at secure-billing-uk.co/pay to avoid legal action. Ref 88213.',
+        },
+      ],
+      translation: { text: '见附件账单，款项已逾期。\n\n（图中文字）紧急——账户已停用。请在 24 小时内到 secure-billing-uk.co/pay 支付 £248.00，否则将采取法律行动。编号 88213。', sourceLang: 'English', targetLang: '简体中文', model: 'claude-opus-5', at: now },
+      analysis: { category: 'fraud', risk: 5, summary: '伪造缴费通知截图，制造紧迫感索要付款，域名不是正规机构。', at: now },
+    }),
+  )
+
   const settings = {
     adbPath: 'C:\\platform-tools\\adb.exe',
     deviceSerial: '192.168.1.42:41235',
@@ -93,6 +113,9 @@
     pollIntervalMs: 6000,
     autoSync: true,
     initialImportDays: 90,
+    includeMms: true,
+    maxAttachmentKb: 2048,
+    describeImages: true,
     sendMethod: 'ui',
     sendTapDelayMs: 1500,
     batchSize: 20,
@@ -116,6 +139,7 @@
     disconnectWireless: async () => ({ ok: true, message: '已断开。' }),
     enableWirelessOverUsb: async () => ({ ok: true, message: 'ok' }),
     listMessages: async () => messages,
+    readAttachment: async () => ({ dataUrl: FAKE_PNG }),
     sync: async () => ({ imported: 0 }),
     send: async () => ({ ok: true }),
     markThreadRead: async () => {},

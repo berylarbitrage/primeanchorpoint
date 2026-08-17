@@ -43,10 +43,26 @@ export interface Analysis {
   at: number
 }
 
+export interface Attachment {
+  /** Row id in `content://mms/part` — unique per device. */
+  partId: number
+  contentType: string
+  name?: string
+  /** File name under the app's media directory, once downloaded. */
+  file?: string
+  bytes?: number
+  /** Set when the download failed; the message still shows, minus the image. */
+  error?: string
+  /** Claude's description / OCR of the image, when enabled. */
+  description?: string
+}
+
 export interface SmsMessage {
   /** `${deviceSerial}:${androidRowId}` — stable across syncs. */
   id: string
   deviceSerial: string
+  /** MMS is stored in different tables and can carry attachments. */
+  kind: 'sms' | 'mms'
   rawId: number
   threadId: number
   /** Phone number exactly as Android stored it. */
@@ -58,6 +74,9 @@ export interface SmsMessage {
   date: number
   direction: Direction
   body: string
+  /** MMS subject line, when the sender set one. */
+  subject?: string
+  attachments?: Attachment[]
   /** Read flag as reported by the phone. */
   readOnDevice: boolean
   /** Read flag maintained by this app (the phone's flag is not writable over adb). */
@@ -97,6 +116,12 @@ export interface Settings {
   pollIntervalMs: number
   autoSync: boolean
   initialImportDays: number
+  /** Read MMS as well as SMS, downloading picture attachments. */
+  includeMms: boolean
+  /** Largest attachment to download, in KB. Bigger ones are skipped. */
+  maxAttachmentKb: number
+  /** Ask Claude to describe / OCR picture attachments. Costs extra per image. */
+  describeImages: boolean
   sendMethod: SendMethod
   sendTapDelayMs: number
   batchSize: number
@@ -117,6 +142,9 @@ export const DEFAULT_SETTINGS: Settings = {
   pollIntervalMs: 6000,
   autoSync: true,
   initialImportDays: 90,
+  includeMms: true,
+  maxAttachmentKb: 2048,
+  describeImages: true,
   sendMethod: 'ui',
   sendTapDelayMs: 1500,
   batchSize: 20,
@@ -171,6 +199,9 @@ export interface SmsBridge {
   sync(mode: 'full' | 'incremental'): Promise<{ imported: number }>
   send(to: string, body: string): Promise<SendResult>
   markThreadRead(peer: string): Promise<void>
+
+  /** Attachment bytes as a data: URL, loaded on demand (never kept in the store). */
+  readAttachment(messageId: string, partId: number): Promise<{ dataUrl?: string; error?: string }>
 
   retranslate(ids: string[]): Promise<void>
   translateDraft(text: string): Promise<DraftTranslation>

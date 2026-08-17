@@ -1,11 +1,31 @@
 import type { SmsMessage } from '../../shared/types'
 import type { MessageStore } from '../store'
-import { translateBatch, type TranslateItem, type TranslateOptions } from './claude'
+import {
+  describeImageMessage,
+  translateBatch,
+  type ImageInput,
+  type TranslateItem,
+  type TranslateOptions,
+} from './claude'
+
+/** Media types the Messages API accepts for image blocks. */
+const SUPPORTED_IMAGE_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+])
 
 export interface QueueDeps {
   store: MessageStore
   /** Resolved fresh on every batch so settings changes take effect immediately. */
-  options: () => TranslateOptions & { batchSize: number; enabled: boolean }
+  options: () => TranslateOptions & {
+    batchSize: number
+    enabled: boolean
+    describeImages: boolean
+  }
+  /** Reads a downloaded attachment for the image path. Null when unavailable. */
+  readImage: (file: string) => Buffer | null
   onChanged: (messages: SmsMessage[]) => void
   onProgress: (pending: number) => void
 }
@@ -59,6 +79,95 @@ export class TranslationQueue {
     this.queued.clear()
   }
 
+  /** Downloaded, API-supported images attached to a message. */
+  private imagesFor(message: SmsMessage): { input: ImageInput; partId: number }[] {
+    const out: { input: ImageInput; partId: number }[] = []
+    for (const attachment of message.attachments ?? []) {
+      if (!attachment.file || attachment.error) continue
+      if (!SUPPORTED_IMAGE_TYPES.has(attachment.contentType)) continue
+      const bytes = this.deps.readImage(attachment.file)
+      if (!bytes) continue
+      out.push({
+        partId: attachment.partId,
+        input: {
+          data: bytes.toString('base64'),
+          mediaType: attachment.contentType as ImageInput['mediaType'],
+        },
+      })
+    }
+    return out
+  }
+
+  /** One request per picture message: describe, transcribe, translate, classify. */
+  private async processPicture(
+    id: string,
+    opts: TranslateOptions & { describeImages: boolean },
+  ): Promise<void> {
+    const message = this.deps.store.get(id)
+    if (!message) return
+    const images = this.imagesFor(message)
+    if (!images.length) return
+
+    try {
+      const result = await describeImageMessage(
+        images.map((i) => i.input),
+        message.body,
+        opts,
+      )
+      const now = Date.now()
+      const described = new Set(images.map((i) => i.partId))
+      this.deps.onChanged(
+        this.deps.store.patchMany([
+          {
+            id,
+            partial: {
+              translationState: 'done',
+              translationError: undefined,
+              translation: {
+                text: result.translation,
+                sourceLang: result.sourceLanguage,
+                targetLang: opts.targetLanguage,
+                model: opts.model,
+                at: now,
+              },
+              analysis: opts.classify
+                ? {
+                    category: result.category,
+                    risk: result.risk,
+                    summary: result.summary,
+                    at: now,
+                  }
+                : undefined,
+              attachments: (message.attachments ?? []).map((a) =>
+                described.has(a.partId)
+                  ? {
+                      ...a,
+                      description: [result.description, result.textInImage]
+                        .filter((part) => part.trim())
+                        .join('\n\n'),
+                    }
+                  : a,
+              ),
+            },
+          },
+        ]),
+      )
+    } catch (err) {
+      this.deps.onChanged(
+        this.deps.store.patchMany([
+          {
+            id,
+            partial: {
+              translationState: 'error',
+              translationError: err instanceof Error ? err.message : String(err),
+            },
+          },
+        ]),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 3_000))
+    }
+  }
+
   private async drain(): Promise<void> {
     if (this.running || this.stopped) return
     this.running = true
@@ -73,9 +182,26 @@ export class TranslationQueue {
         this.deps.onProgress(this.queue.length)
 
         const items: TranslateItem[] = []
+        const pictureIds: string[] = []
         for (const id of batchIds) {
           const message = this.deps.store.get(id)
-          if (!message || !message.body.trim()) continue
+          if (!message) continue
+
+          // A picture message needs the image itself, so it takes its own
+          // request instead of joining the text batch.
+          if (opts.describeImages && this.imagesFor(message).length) {
+            pictureIds.push(id)
+            continue
+          }
+          if (!message.body.trim()) {
+            // Nothing to translate and no picture to look at.
+            this.deps.onChanged(
+              this.deps.store.patchMany([
+                { id, partial: { translationState: 'skipped' as const } },
+              ]),
+            )
+            continue
+          }
           items.push({
             id,
             body: message.body,
@@ -83,6 +209,8 @@ export class TranslationQueue {
             sender: message.contact || message.address,
           })
         }
+
+        for (const id of pictureIds) await this.processPicture(id, opts)
         if (!items.length) continue
 
         try {
