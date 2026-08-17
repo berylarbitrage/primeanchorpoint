@@ -235,6 +235,7 @@ test/send-button.js  发送按钮识别测试
 test/locate-adb.js   adb 自动查找测试
 test/wireless.js     无线连接输出解析测试
 build/make-icon.py   纯 Python 生成应用图标（无需 Pillow）
+preview/            用假数据渲染界面并截图（没手机时验证 UI 用）
 ```
 
 ### 一些实现上的取舍

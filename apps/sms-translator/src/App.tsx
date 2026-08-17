@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Settings, SmsMessage, SyncStatus } from '../shared/types'
 import { DEFAULT_SETTINGS } from '../shared/types'
 import { errorText, sms } from './lib/bridge'
-import { buildConversations, mergeMessages, EMPTY_FILTERS, type Filters } from './lib/derive'
+import {
+  buildConversations,
+  filtersActive,
+  mergeMessages,
+  EMPTY_FILTERS,
+  type Filters,
+} from './lib/derive'
 import Sidebar from './components/Sidebar'
 import Thread from './components/Thread'
 import SettingsModal from './components/SettingsModal'
@@ -60,6 +66,15 @@ export default function App() {
     () => allConversations.find((c) => c.peer === selectedPeer) ?? null,
     [allConversations, selectedPeer],
   )
+
+  // Filtering out the open conversation would otherwise leave the right pane
+  // empty; move to the first match instead. Not marked read — the user did not
+  // deliberately open it.
+  useEffect(() => {
+    if (!filtersActive(filters) || conversations.length === 0) return
+    if (selectedPeer && conversations.some((c) => c.peer === selectedPeer)) return
+    setSelectedPeer(conversations[0].peer)
+  }, [conversations, filters, selectedPeer])
 
   const selectPeer = useCallback((peer: string) => {
     setSelectedPeer(peer)
