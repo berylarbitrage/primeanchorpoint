@@ -127,7 +127,10 @@ export interface SyncStatus {
 
 export interface SendResult {
   ok: boolean
-  /** Present when `sendMethod` is 'manual' or the automatic tap could not be confirmed. */
+  /**
+   * Always set on success: says how the message was confirmed (button tapped,
+   * fell back to key events, or left for the user to send on the phone).
+   */
   note?: string
   message?: SmsMessage
 }
