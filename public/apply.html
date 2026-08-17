@@ -231,6 +231,11 @@
     <div class="check">✓</div>
     <h2 id="t-okTitle">¡Enviado!</h2>
     <div class="meta" id="t-okMsg">Gracias. Hemos recibido tu solicitud.</div>
+    <div id="tcCodeBox" style="display:none;margin-top:1.1rem;background:#F0F7FF;border:2px solid #4A90D9;border-radius:12px;padding:1rem 1.2rem">
+      <div id="t-tcCodeTitle" style="font-size:.85rem;font-weight:700;color:#0F2B5B"></div>
+      <div id="tcCodeValue" style="font-size:2rem;font-weight:800;letter-spacing:.18em;color:#0F2B5B;margin:.4rem 0;font-variant-numeric:tabular-nums"></div>
+      <div id="t-tcCodeNote" style="font-size:.78rem;color:#5F6B7A;line-height:1.5"></div>
+    </div>
   </div>
 
   <div id="foremanDone" class="ok-state" style="display:none">
@@ -257,6 +262,7 @@ const I18N = {
     ssnFront: 'SSN — Frente', ssnBack: 'SSN — Reverso', eadFront: 'EAD — Frente', eadBack: 'EAD — Reverso',
     optional: '(opcional)', cam: 'Tomar foto', gal: 'Galería', submitBtn: 'Enviar solicitud', submitting: 'Enviando…',
     okTitle: '¡Enviado!', okMsg: 'Gracias. Hemos recibido tu solicitud.',
+    tcCodeTitle: '🔑 Tu contraseña de fichaje', tcCodeNote: 'Úsala en el reloj checador para marcar entrada/salida. También te la enviamos por SMS. Guárdala y no la compartas.',
     privacy: 'Tus documentos se transmiten de forma segura y solo los usa el equipo de RR. HH. para verificar tu elegibilidad de empleo.',
     sendingTo: 'Para: ', codeSent: 'Código enviado. Revisa tus mensajes.', codeOk: '✓ Verificado correctamente',
     errNoToken: 'Escanea el código QR oficial para acceder a esta página.', invalid: 'Enlace inválido o expirado',
@@ -275,6 +281,7 @@ const I18N = {
     ssnFront: 'SSN — Front', ssnBack: 'SSN — Back', eadFront: 'EAD — Front', eadBack: 'EAD — Back',
     optional: '(optional)', cam: 'Take photo', gal: 'Album', submitBtn: 'Submit application', submitting: 'Submitting…',
     okTitle: 'Submitted!', okMsg: 'Thank you. We have received your application.',
+    tcCodeTitle: '🔑 Your clock-in password', tcCodeNote: 'Enter it at the time clock to punch in/out. We also sent it to your phone by SMS. Keep it private.',
     privacy: 'Your documents are transmitted securely and used only by the HR team to verify your employment eligibility.',
     sendingTo: 'For: ', codeSent: 'Code sent. Check your messages.', codeOk: '✓ Verified successfully',
     errNoToken: 'Please scan the official QR code to access this page.', invalid: 'Link invalid or expired',
@@ -293,6 +300,7 @@ const I18N = {
     ssnFront: 'SSN 正面', ssnBack: 'SSN 反面', eadFront: 'EAD 正面', eadBack: 'EAD 反面',
     optional: '（选填）', cam: '拍照', gal: '相册', submitBtn: '提交申请', submitting: '提交中…',
     okTitle: '提交成功', okMsg: '谢谢！我们已收到您的申请。',
+    tcCodeTitle: '🔑 您的打卡密码', tcCodeNote: '打卡机上输入此密码即可打卡。密码已同时短信发送到您的手机，请妥善保管、不要转发他人。',
     privacy: '您的证件通过安全通道传输，仅供人力资源团队核验入职资格使用。',
     sendingTo: '应聘公司：', codeSent: '验证码已发送，请查收。', codeOk: '✓ 验证成功',
     errNoToken: '请通过专属二维码访问此页面。', invalid: '链接无效或已失效',
@@ -667,6 +675,12 @@ async function submitForm() {
       if (j.intake_url) document.getElementById('foremanIntakeLink').href = j.intake_url;
       document.getElementById('foremanDone').style.display = '';
     } else {
+      if (j.timeclock_code) {
+        document.getElementById('t-tcCodeTitle').textContent = L.tcCodeTitle;
+        document.getElementById('tcCodeValue').textContent = j.timeclock_code;
+        document.getElementById('t-tcCodeNote').textContent = L.tcCodeNote;
+        document.getElementById('tcCodeBox').style.display = '';
+      }
       document.getElementById('okState').style.display = '';
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
