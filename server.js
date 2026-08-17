@@ -29686,17 +29686,92 @@ function smsGetNotifyAgents(thread) {
 
 // ─── Translation Helper ───
 const SMS_LANG_MAP = { en: 'en', es: 'es', zh: 'zh-CN' };
+// ─── 仓库工种行话词典 ─────────────────────────────────────────────
+// 免费机翻会把仓库行话翻得离谱：cherry picker → 摘樱桃的人、reach → 到达、
+// 叉车 → carretilla elevadora（西班牙本土说法，墨西哥工人叫 montacargas）。
+// 做法：翻译前把命中的术语抠出来换成纯数字占位符（机翻不会改动数字），
+// 翻完再按目标语言放回正确说法。数组顺序重要——带「司机/工人」的长写法
+// 放在裸词前面，先匹配长的。zh 列的模式在中文原文里匹配（含中英混写），
+// latin 列的在英/西语原文里匹配（翻回中文时用）。
+const JOB_TERMS = [
+  { out: { es: 'operador de montacargas (sit-down)', en: 'sit-down forklift driver', zh: '普通（坐驾）叉车司机' },
+    zh: /(?:普通|坐驾式?)叉车(?:司机|工人|工|手)/g, latin: /sit[\s-]?down\s+forklift\s+(?:driver|operator)/gi },
+  { out: { es: 'montacargas (sit-down)', en: 'sit-down forklift', zh: '普通（坐驾）叉车' },
+    zh: /(?:普通|坐驾式?)叉车/g, latin: /sit[\s-]?down\s+forklift|sit[\s-]?down(?=\s|$|[,.;!?])/gi },
+  { out: { es: 'operador de montacargas reach', en: 'reach truck operator', zh: 'Reach（站驾高位叉车）司机' },
+    zh: /(?:高位叉车|高叉|站驾叉车|(?<![A-Za-z])reach(?:\s*truck)?)(?:司机|工人|工|手)/gi, latin: /reach\s*truck\s*(?:driver|operator)/gi },
+  { out: { es: 'montacargas reach', en: 'reach truck', zh: 'Reach（站驾高位叉车）' },
+    zh: /高位叉车|高叉|站驾叉车|(?<![A-Za-z])reach\s*truck|(?<![A-Za-z])reach(?![A-Za-z])/gi, latin: /reach\s*truck|(?<![A-Za-z])reach(?![A-Za-z])/gi },
+  { out: { es: 'operador de cherry picker', en: 'cherry picker operator', zh: 'Cherry Picker（高空拣货车）司机' },
+    zh: /(?:cherry\s*picker|樱桃车)(?:司机|工人|工|手)/gi, latin: /cherry\s*picker\s*(?:driver|operator)/gi },
+  { out: { es: 'cherry picker', en: 'cherry picker', zh: 'Cherry Picker（高空拣货车）' },
+    zh: /cherry\s*picker|樱桃车/gi, latin: /cherry\s*picker/gi },
+  { out: { es: 'operador de order picker', en: 'order picker operator', zh: 'Order Picker（拣货车）司机' },
+    zh: /(?:order\s*picker|拣货车)(?:司机|工人|工|手)/gi, latin: /order\s*picker\s*(?:driver|operator)/gi },
+  { out: { es: 'order picker', en: 'order picker', zh: 'Order Picker（拣货车）' },
+    zh: /order\s*picker|拣货车/gi, latin: /order\s*picker/gi },
+  { out: { es: 'trabajadores para descargar contenedores (lumper)', en: 'container unloaders (lumper)', zh: '卸柜工' },
+    zh: /卸(?:货柜|集装箱|柜)(?:工人|工|师傅)/g, latin: /container\s+unloaders?|(?<![A-Za-z])lumpers?(?![A-Za-z])/gi },
+  { out: { es: 'descargar contenedores', en: 'unload containers', zh: '卸柜' },
+    zh: /卸(?:货柜|集装箱|柜)/g, latin: /container\s+unloading|descargar?\s+contenedores/gi },
+  { out: { es: 'trabajadores para cargar contenedores', en: 'container loaders', zh: '装柜工' },
+    zh: /装(?:货柜|集装箱|柜)(?:工人|工|师傅)/g, latin: /container\s+loaders?/gi },
+  { out: { es: 'cargar contenedores', en: 'load containers', zh: '装柜' },
+    zh: /装(?:货柜|集装箱|柜)/g, latin: /container\s+loading|cargar\s+contenedores/gi },
+  { out: { es: 'pallet jack eléctrico (patín eléctrico)', en: 'electric pallet jack', zh: '电动拖板车' },
+    zh: /电动(?:拖板车|托板车|拖车)|electric\s*pallet\s*jack/gi, latin: /electric\s*pallet\s*jack|pat[íi]n\s*el[ée]ctrico/gi },
+  { out: { es: 'pallet jack (patín)', en: 'pallet jack', zh: '拖板车' },
+    zh: /拖板车|托板车|pallet\s*jack/gi, latin: /pallet\s*jack|(?<![A-Za-z])pat[íi]n(?![A-Za-z])/gi },
+  { out: { es: 'operador de montacargas clamp', en: 'clamp truck operator', zh: '夹抱叉车司机' },
+    zh: /夹抱车?(?:司机|工人|工|手)/g, latin: /clamp\s*truck\s*(?:driver|operator)/gi },
+  { out: { es: 'montacargas clamp', en: 'clamp truck', zh: '夹抱叉车' },
+    zh: /夹抱叉?车|clamp\s*truck/gi, latin: /clamp\s*truck/gi },
+  { out: { es: 'operador de montacargas', en: 'forklift driver', zh: '叉车司机' },
+    zh: /叉车(?:司机|工人|工|手)/g, latin: /forklift\s*(?:driver|operator)|operador\s+de\s+montacargas/gi },
+  { out: { es: 'montacargas', en: 'forklift', zh: '叉车' },
+    zh: /叉车/g, latin: /(?<![A-Za-z])forklift(?![A-Za-z])|(?<![A-Za-z])montacargas(?![A-Za-z])/gi },
+];
+// 占位符：翻译不会动的纯数字串，形如 (740047)。翻完按序号放回术语。
+function _jobTermToken(i) { return '(74' + String(i).padStart(2, '0') + '47)'; }
+function _jobTermTokenize(text, from, to) {
+  const restore = [];
+  if (!['es', 'en', 'zh'].includes(to)) return { text, restore };
+  let out = String(text);
+  JOB_TERMS.forEach(term => {
+    const pat = from === 'zh' ? term.zh : term.latin;
+    if (!pat || !term.out[to]) return;
+    pat.lastIndex = 0;
+    if (!pat.test(out)) return;
+    const idx = restore.length;
+    restore.push(term.out[to]);
+    pat.lastIndex = 0;
+    out = out.replace(pat, _jobTermToken(idx));
+  });
+  return { text: out, restore };
+}
+function _jobTermRestore(text, restore) {
+  let out = String(text);
+  restore.forEach((word, i) => {
+    // 机翻偶尔会在括号/数字间加空格，宽松匹配
+    out = out.replace(new RegExp('\\(\\s*74\\s*' + String(i).padStart(2, '0') + '\\s*47\\s*\\)', 'g'), word);
+  });
+  return out;
+}
+
 async function translateText(text, fromLang, toLang) {
   if (!text || !text.trim()) return '';
   const from = SMS_LANG_MAP[fromLang] || fromLang;
   const to   = SMS_LANG_MAP[toLang]   || toLang;
   if (from === to) return text;
+  // 仓库工种行话先抠出来占位，避免机翻乱翻（cherry picker → 摘樱桃的人）
+  const g = _jobTermTokenize(text, from, to);
   try {
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(from)}&tl=${encodeURIComponent(to)}&dt=t&q=${encodeURIComponent(text)}`;
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(from)}&tl=${encodeURIComponent(to)}&dt=t&q=${encodeURIComponent(g.text)}`;
     const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
     if (!r.ok) return '';
     const data = await r.json();
-    return (data[0] || []).map(s => s[0] || '').join('');
+    const raw = (data[0] || []).map(s => s[0] || '').join('');
+    return raw ? _jobTermRestore(raw, g.restore) : '';
   } catch(e) {
     console.error('[translateText]', e.message);
     return '';
