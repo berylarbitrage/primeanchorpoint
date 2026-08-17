@@ -546,7 +546,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <input id="whDate" type="month" style="flex:1.6;margin:0;min-width:0" title="大概时间(选个月份就行)">
       <button type="button" class="filter-btn" onclick="addWorkHistory()" style="flex-shrink:0">+ 加</button>
     </div>
-    <div id="emailRowWrap"><label>Email</label><input id="editEmail" placeholder="Email"></div>
+    <label>说什么语言 Language（可多选）</label>
+    <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;border:1px solid var(--gray-200);border-radius:8px;padding:7px 12px"><input type="checkbox" id="editLangZh" style="width:auto;margin:0">🇨🇳 中文</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;border:1px solid var(--gray-200);border-radius:8px;padding:7px 12px"><input type="checkbox" id="editLangEn" style="width:auto;margin:0">🇺🇸 English 英语</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;border:1px solid var(--gray-200);border-radius:8px;padding:7px 12px"><input type="checkbox" id="editLangEs" style="width:auto;margin:0">🇲🇽 Español 西语</label>
+    </div>
     <label>标签（做过的工种 / 在哪里上过班）</label>
     <div id="editTagChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;min-height:24px"></div>
     <div id="editTagPresets" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
@@ -1977,13 +1982,13 @@ function showEditContactModal() {
   const compEl = document.getElementById('editCompany');
   compEl.disabled = !_isAdminEc;
   compEl.style.background = _isAdminEc ? 'var(--white)' : 'var(--gray-100)';
-  // 客服连邮箱都不显示 (服务器返回时也已抹掉)
-  document.getElementById('emailRowWrap').style.display = _isAdminEc ? '' : 'none';
-  const emailEl = document.getElementById('editEmail');
-  emailEl.readOnly = !_isAdminEc;
-  emailEl.style.background = _isAdminEc ? '' : 'var(--gray-100)';
   _fillCompanySelect(currentContact.company || '');
-  document.getElementById('editEmail').value = currentContact.email || '';
+  // 说什么语言 (可多选, 客服也可改)
+  let _slangs = [];
+  try { _slangs = JSON.parse(currentContact.spoken_langs || '[]'); } catch (_) {}
+  document.getElementById('editLangZh').checked = _slangs.includes('zh');
+  document.getElementById('editLangEn').checked = _slangs.includes('en');
+  document.getElementById('editLangEs').checked = _slangs.includes('es');
   _editEmp = undefined;
   document.getElementById('editEmpSearch').value = '';
   document.getElementById('editEmpResults').style.display = 'none';
@@ -2097,12 +2102,16 @@ async function saveContact() {
       work_state: document.getElementById('editWorkState').value.trim().toUpperCase(),
       is_foreman: document.getElementById('editIsForeman').checked ? 1 : 0,
       is_lead: document.getElementById('editIsLead').checked ? 1 : 0,
-      work_history: JSON.stringify(_editWH)
+      work_history: JSON.stringify(_editWH),
+      spoken_langs: JSON.stringify([
+        ...(document.getElementById('editLangZh').checked ? ['zh'] : []),
+        ...(document.getElementById('editLangEn').checked ? ['en'] : []),
+        ...(document.getElementById('editLangEs').checked ? ['es'] : []),
+      ])
     };
     if (isAdmin) {
       payload.name = document.getElementById('editName').value.trim();
       payload.company = document.getElementById('editCompany').value.trim();
-      payload.email = document.getElementById('editEmail').value.trim();
       payload.cs_hidden = document.getElementById('editCsHidden').checked ? 1 : 0;
     }
     await api('/sms/contacts/' + currentContact.id, { method: 'PUT', body: JSON.stringify(payload) });
