@@ -2368,7 +2368,12 @@ async function ncSearch() {
     const r = await api('/sms/people-search?q=' + encodeURIComponent(document.getElementById('ncSearch').value.trim()));
     const people = r.people || [];
     if (!people.length) { box.innerHTML = '<div style="padding:12px;color:var(--gray-400);text-align:center">没找到，换个关键词试试</div>'; return; }
-    box.innerHTML = people.map((p, i) =>
+    const nEmp = people.filter(x => x.type === 'employee').length;
+    const nApp = people.length - nEmp;
+    box.innerHTML = '<div style="padding:6px 12px;font-size:.72rem;color:var(--gray-400);background:#fafafa;border-bottom:1px solid var(--gray-200);position:sticky;top:0">'
+      + '共 ' + nEmp + ' 名员工' + (nApp ? ' · ' + nApp + ' 名申请人' : '')
+      + (r.no_phone_count ? '（另有 ' + r.no_phone_count + ' 人档案没填电话，发不了短信）' : '') + '</div>'
+      + people.map((p, i) =>
       '<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--gray-200);cursor:pointer" onclick="ncStart(' + i + ')">'
       + '<span style="flex-shrink:0;font-size:.66rem;font-weight:700;border-radius:5px;padding:2px 6px;' + (p.type === 'employee' ? 'background:#d1fae5;color:#065f46' : 'background:#fef3c7;color:#92400e') + '">' + (p.type === 'employee' ? '员工' : '申请') + '</span>'
       + '<span style="flex:1;min-width:0"><b style="font-size:.85rem">' + esc(titleCase(p.name) || '(无名)') + '</b>'
