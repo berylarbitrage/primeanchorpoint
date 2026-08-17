@@ -144,6 +144,8 @@ export interface DraftTranslation {
 export interface SmsBridge {
   /** `adbPath` overrides the saved setting, for scanning an unsaved edit. */
   listDevices(adbPath?: string): Promise<DeviceInfo[]>
+  /** Opens a native file picker for adb; saves and returns it when valid. */
+  browseForAdb(): Promise<{ path: string | null; error?: string }>
   selectDevice(serial: string | null): Promise<Settings>
 
   listMessages(): Promise<SmsMessage[]>

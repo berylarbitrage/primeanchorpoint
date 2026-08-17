@@ -111,8 +111,8 @@ export async function findAdb(
 
 export const ADB_MISSING_MESSAGE =
   '找不到 adb。请到 https://developer.android.com/tools/releases/platform-tools ' +
-  '下载 Platform Tools，解压后在下面的「adb 可执行文件路径」里填 adb.exe 的完整路径' +
-  '（例如 C:\\platform-tools\\adb.exe），然后点「重新扫描」。'
+  '下载 Platform Tools 并解压，然后点上面的「浏览…」选中解压出来的 platform-tools ' +
+  '文件夹里的 adb.exe。（不用手打路径，也不用配环境变量。）'
 
 /**
  * Caches the resolved adb path for the process, and writes it back into

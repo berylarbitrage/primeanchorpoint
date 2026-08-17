@@ -1,7 +1,7 @@
 import path from 'node:path'
-import { app, ipcMain, type BrowserWindow } from 'electron'
+import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
 import { listDevices, resolveDevice } from './adb/adb'
-import { AdbLocator } from './adb/locate'
+import { AdbLocator, verifyAdb } from './adb/locate'
 import { sendSms } from './adb/send'
 import { normalisePeer } from './adb/sms'
 import { SettingsStore } from './settings'
@@ -131,6 +131,36 @@ export function registerIpc(win: BrowserWindow): void {
     // be saved yet — otherwise "rescan" silently tests the old value.
     const adbPath = await locator.require(adbPathOverride)
     return listDevices(adbPath)
+  })
+
+  // Typing a path by hand is the step people get wrong, so let them pick the
+  // file. The choice is verified here rather than saved blindly.
+  handle('adb:browse', async (): Promise<{ path: string | null; error?: string }> => {
+    if (!window) return { path: null }
+    const result = await dialog.showOpenDialog(window, {
+      title: '选择 adb 可执行文件',
+      properties: ['openFile'],
+      filters:
+        process.platform === 'win32'
+          ? [
+              { name: 'adb', extensions: ['exe'] },
+              { name: '所有文件', extensions: ['*'] },
+            ]
+          : [{ name: '所有文件', extensions: ['*'] }],
+    })
+    const chosen = result.canceled ? undefined : result.filePaths[0]
+    if (!chosen) return { path: null }
+
+    if (!(await verifyAdb(chosen))) {
+      return {
+        path: null,
+        error: `选中的文件不是 adb：${chosen}。请选择 platform-tools 文件夹里的 adb.exe。`,
+      }
+    }
+
+    settings.update({ adbPath: chosen })
+    locator.reset()
+    return { path: chosen }
   })
 
   handle('devices:select', async (serial: string | null): Promise<Settings> => {

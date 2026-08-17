@@ -20,6 +20,22 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  async function browse(): Promise<void> {
+    setScanError(null)
+    try {
+      const result = await sms.browseForAdb()
+      if (result.error) {
+        setScanError(result.error)
+        return
+      }
+      if (!result.path) return // cancelled
+      setDraft((prev) => ({ ...prev, adbPath: result.path as string }))
+      setDevices(await sms.listDevices(result.path))
+    } catch (err) {
+      setScanError(errorText(err))
+    }
+  }
+
   async function scan(): Promise<void> {
     setScanError(null)
     try {
@@ -120,10 +136,20 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
 
         <div className="field">
           <label>adb 可执行文件路径</label>
-          <input value={draft.adbPath} onChange={(e) => set('adbPath', e.target.value)} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              style={{ flex: 1, minWidth: 0 }}
+              value={draft.adbPath}
+              onChange={(e) => set('adbPath', e.target.value)}
+            />
+            <button type="button" className="btn" onClick={() => void browse()}>
+              浏览…
+            </button>
+          </div>
           <span className="hint">
-            会自动在常见位置查找（PATH、C:\platform-tools、下载文件夹、Android
-            Studio SDK 等）。找不到时再手动填 <code>adb.exe</code> 的完整路径。
+            一般不用管——会自动在常见位置查找（PATH、<code>C:\platform-tools</code>、
+            下载文件夹、桌面、Android Studio 的 SDK 目录）。找不到时点「浏览…」
+            选中 platform-tools 文件夹里的 <code>adb.exe</code> 即可，不用手打。
           </span>
         </div>
 
