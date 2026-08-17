@@ -8829,8 +8829,8 @@ function requireAdmin(req, res, next) {
   // 客服(cs)专用账号: 只允许 SMS Inbox + 会计对账页(只读+批注), 其余管理后台一律 403
   if (session.role === 'cs') {
     const p = req.originalUrl.split('?')[0];
-    const csAllowed = p.startsWith('/api/sms/') || p.startsWith('/api/acct/') || p === '/api/admin/me' || p === '/api/admin/logout';
-    if (!csAllowed) return res.status(403).json({ error: '客服账号仅限使用 SMS Inbox (/sms-inbox) 和会计对账页 (/accounting)' });
+    const csAllowed = p.startsWith('/api/sms/') || p.startsWith('/api/acct/') || p.startsWith('/api/admin/recruit-') || p === '/api/admin/me' || p === '/api/admin/logout';
+    if (!csAllowed) return res.status(403).json({ error: '客服账号仅限使用 SMS Inbox (/sms-inbox)、会计对账 (/accounting) 和每日招工 (/recruit)' });
   }
   // 会计(accounting)专用账号: 只读发票与银行流水 + 圈选批注，其余管理后台一律 403
   if (session.role === 'accounting') {
@@ -25902,6 +25902,29 @@ function _recruitCleanShifts(v) {
   } catch (_) { return ''; }
 }
 // 列表: 在招的全部 + 最近 30 天内关闭/找到人的 (核对历史一目了然)
+// 招工页的仓库下拉：只给 名字+地址（工作地点 + 合作公司合并去重）。单独出
+// 这个瘦接口是为了让客服(cs)账号也能用招工页，而不必开放含费率/联系人等
+// 敏感信息的 /api/admin/partners 全量接口。
+app.get('/api/admin/recruit-warehouses', requireAdmin, (req, res) => {
+  try {
+    const out = new Map(); // name → address
+    try {
+      db.prepare("SELECT name, address FROM job_sites WHERE active=1").all()
+        .forEach(s => { if (s.name) out.set(s.name, s.address || ''); });
+    } catch (_) {}
+    try {
+      db.prepare("SELECT name, address, addresses FROM partners WHERE active=1").all().forEach(pt => {
+        if (!pt.name) return;
+        let a = pt.address || '';
+        if (!a && pt.addresses) { try { const arr = JSON.parse(pt.addresses); if (Array.isArray(arr) && arr.length) a = arr[0].address || arr[0] || ''; } catch (_) {} }
+        if (!out.has(pt.name)) out.set(pt.name, String(a || ''));
+        else if (!out.get(pt.name) && a) out.set(pt.name, String(a));
+      });
+    } catch (_) {}
+    res.json([...out.entries()].map(([name, address]) => ({ name, address })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/admin/recruit-jobs', requireAdmin, (req, res) => {
   try {
     const jobs = db.prepare(`SELECT * FROM recruit_jobs
