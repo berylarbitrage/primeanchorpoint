@@ -472,6 +472,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <button class="note-toggle" id="assistBtn" onclick="requestAssist('对话求助', null)" title="请求管理员协助" style="color:#dc2626">&#127384;</button>
       <button class="note-toggle" id="noteToggle" onclick="toggleNoteMode()" title="Internal note">&#128221;</button>
       <button class="note-toggle" id="templateToggle" onclick="toggleTemplates()" title="Quick replies">&#9889;</button>
+      <button class="note-toggle" onclick="showRecruitQModal()" title="招工问题模板: 选工种, 生成标准翻译的提问">&#128188;</button>
       <textarea id="replyInput" rows="1" placeholder="输入消息…" oninput="autoGrow(this);onComposeInput()"></textarea>
       <button class="send-btn" id="sendBtn" onclick="sendReply()" title="Send">&#9654;</button>
     </div>
@@ -673,6 +674,25 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
     <div style="display:flex;gap:8px;margin-top:10px">
       <button class="btn" id="evalRunBtn" onclick="runEvaluation()">开始评估</button>
       <button class="close-modal" onclick="document.getElementById('evalModal').classList.remove('show')" style="margin:0">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- 💼 招工问题模板 -->
+<div class="modal-bg" id="recruitQModal">
+  <div class="modal" style="max-width:560px">
+    <h3>&#128188; 招工问题模板</h3>
+    <label>问题类型</label>
+    <div id="rqTypes" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+    <div id="rqJobsWrap">
+      <label>工种（可多选）</label>
+      <div id="rqJobs" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+    </div>
+    <label>预览（中文进记录，发送右边的标准翻译，不走机器翻译）</label>
+    <div id="rqPreview" style="border:1px solid var(--gray-200);border-radius:var(--radius);padding:10px 12px;font-size:.84rem;background:#f9fafb;margin-bottom:10px;min-height:52px;line-height:1.5"></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn" onclick="insertRecruitQ()" style="margin:0;flex:1">填入发送框</button>
+      <button class="close-modal" onclick="document.getElementById('recruitQModal').classList.remove('show')" style="margin:0;width:auto;padding:10px 18px">取消</button>
     </div>
   </div>
 </div>
@@ -1430,6 +1450,8 @@ function renderDetail() {
   noteMode = false;
   _composeNoTranslate = false;
   _composeNoTranslateText = '';
+  _presetTranslation = null;
+  _presetTranslationFor = '';
   _clearSendError();
   document.getElementById('replyBar').classList.remove('note-mode');
   document.getElementById('noteToggle').classList.remove('active');
@@ -1605,6 +1627,14 @@ async function sendReply() {
     return;
   }
 
+  // 招工问题模板: 中文进记录, 发送配套的标准翻译, 不再机器翻译
+  if (_presetTranslation && body === _presetTranslationFor) {
+    btn.disabled = true;
+    await doSendMessage(body, false, _presetTranslation);
+    btn.disabled = false;
+    return;
+  }
+
   // If languages differ, show translation confirmation first
   if (currentContactLang && currentAgentLang && currentContactLang !== currentAgentLang) {
     btn.disabled = true;
@@ -1669,7 +1699,7 @@ function _clearSendError() {
   if (el) el.style.display = 'none';
 }
 
-async function doSendMessage(body, noTranslate) {
+async function doSendMessage(body, noTranslate, presetTranslation) {
   const input = document.getElementById('replyInput');
   const btn = document.getElementById('sendBtn');
   btn.disabled = true;
@@ -1688,7 +1718,8 @@ async function doSendMessage(body, noTranslate) {
     document.getElementById('translatePreview').style.display = 'none';
 
     const r = await api('/sms/threads/' + currentThread.id + '/messages', {
-      method: 'POST', body: JSON.stringify(noTranslate ? { body, no_translate: true } : { body })
+      method: 'POST', body: JSON.stringify(noTranslate ? { body, no_translate: true }
+        : (presetTranslation ? { body, preset_translation: presetTranslation } : { body }))
     });
     if (r && r.success && r.message) {
       // Replace temp message with real one
@@ -1697,6 +1728,8 @@ async function doSendMessage(body, noTranslate) {
       renderMessages();
       _composeNoTranslate = false;
       _composeNoTranslateText = '';
+      _presetTranslation = null;
+      _presetTranslationFor = '';
       _clearSendError();
     } else {
       // 服务器拒绝 (如对方已退订 / AI 拦截 / Twilio 报错) — 撤掉临时气泡, 把文字放回输入框
@@ -3145,6 +3178,89 @@ function toggleLeadFilter() {
   leadFilter = !leadFilter;
   document.getElementById('leadFilterBtn').classList.toggle('active', leadFilter);
   loadThreads();
+}
+
+// ─── 💼 招工问题模板: 选工种生成标准翻译的提问 (不走机器翻译, 避免"卸柜"被翻错) ───
+const RECRUIT_JOBS = [
+  { key: 'forklift', zh: '普通叉车司机',                en: 'forklift driver',                                      es: 'conductor de montacargas' },
+  { key: 'cherry',   zh: '高位叉车 Cherry Picker 操作员', en: 'cherry picker operator',                               es: 'operador de cherry picker' },
+  { key: 'unload',   zh: '卸柜工（卸集装箱）',            en: 'container unloader (unloading shipping containers)',   es: 'descargador de contenedores' },
+  { key: 'loader',   zh: '装卸工',                      en: 'loader/unloader',                                      es: 'cargador y descargador' },
+  { key: 'picker',   zh: '拣货员',                      en: 'order picker',                                         es: 'surtidor de pedidos (picker)' },
+  { key: 'packer',   zh: '打包员',                      en: 'packer',                                               es: 'empacador' },
+  { key: 'sorter',   zh: '分拣员',                      en: 'sorter',                                               es: 'clasificador' },
+  { key: 'general',  zh: '普工',                        en: 'general warehouse worker',                             es: 'trabajador general de almacén' },
+];
+const RECRUIT_QTYPES = [
+  { key: 'hiring', label: '📢 招人：有没有人可以介绍', needJobs: true,
+    zh: js => `我们现在需要招${js.map(j=>j.zh).join('、')}，你们有人可以介绍吗？`,
+    en: js => `Hi! We are currently hiring: ${js.map(j=>j.en).join(', ')}. Would you or someone you know be interested? Referrals are welcome.`,
+    es: js => `¡Hola! Estamos contratando: ${js.map(j=>j.es).join(', ')}. ¿Le interesa a usted o conoce a alguien? Se agradecen las recomendaciones.` },
+  { key: 'self', label: '🙋 问本人会不会做', needJobs: true,
+    zh: js => js.length === 1 ? `请问你会做${js[0].zh}的工作吗？有相关经验吗？` : `请问你会做这些工作吗：${js.map(j=>j.zh).join('、')}？有相关经验吗？`,
+    en: js => js.length === 1 ? `Can you work as a ${js[0].en}? Do you have experience?` : `Can you do any of these jobs: ${js.map(j=>j.en).join(', ')}? Do you have experience?`,
+    es: js => js.length === 1 ? `¿Sabe trabajar como ${js[0].es}? ¿Tiene experiencia?` : `¿Sabe hacer alguno de estos trabajos: ${js.map(j=>j.es).join(', ')}? ¿Tiene experiencia?` },
+  { key: 'friend', label: '👥 问有没有朋友会做', needJobs: true,
+    zh: js => js.length === 1 ? `你有朋友会做${js[0].zh}吗？有的话可以介绍给我们，我们正在招人。` : `你有朋友会做这些工作吗：${js.map(j=>j.zh).join('、')}？有的话可以介绍给我们，我们正在招人。`,
+    en: js => js.length === 1 ? `Do you have any friends who can work as a ${js[0].en}? We are hiring — feel free to refer them to us.` : `Do you have any friends who can do these jobs: ${js.map(j=>j.en).join(', ')}? We are hiring — feel free to refer them to us.`,
+    es: js => js.length === 1 ? `¿Tiene amigos que puedan trabajar como ${js[0].es}? Estamos contratando; puede recomendárnoslos.` : `¿Tiene amigos que sepan hacer alguno de estos trabajos: ${js.map(j=>j.es).join(', ')}? Estamos contratando; puede recomendárnoslos.` },
+  { key: 'english', label: '🇺🇸 问会不会英语', needJobs: false,
+    zh: () => `请问你会说英语吗？`,
+    en: () => `Do you speak English?`,
+    es: () => `¿Habla usted inglés?` },
+];
+let _rqType = 'hiring';
+let _rqJobs = new Set();
+let _presetTranslation = null;      // 标准模板译文 (发送时代替机器翻译)
+let _presetTranslationFor = '';     // 与之配套的中文原文 (输入框被改动后自动失效)
+
+function showRecruitQModal() {
+  renderRecruitQ();
+  document.getElementById('recruitQModal').classList.add('show');
+}
+function _rqSetType(k) { _rqType = k; renderRecruitQ(); }
+function _rqToggleJob(k) { _rqJobs.has(k) ? _rqJobs.delete(k) : _rqJobs.add(k); renderRecruitQ(); }
+function _rqLang() { return currentContactLang === 'en' ? 'en' : (currentContactLang === 'zh' ? 'zh' : 'es'); }
+function _rqBuild() {
+  const qt = RECRUIT_QTYPES.find(q => q.key === _rqType);
+  if (!qt) return null;
+  const jobs = RECRUIT_JOBS.filter(j => _rqJobs.has(j.key));
+  if (qt.needJobs && !jobs.length) return { qt, jobs, zh: '', tx: '' };
+  const lang = _rqLang();
+  return { qt, jobs, zh: qt.zh(jobs), tx: lang === 'zh' ? '' : qt[lang](jobs) };
+}
+function renderRecruitQ() {
+  document.getElementById('rqTypes').innerHTML = RECRUIT_QTYPES.map(q =>
+    '<button type="button" class="filter-btn' + (q.key === _rqType ? ' active' : '') + '" onclick="_rqSetType(\'' + q.key + '\')">' + q.label + '</button>').join('');
+  const qt = RECRUIT_QTYPES.find(q => q.key === _rqType);
+  document.getElementById('rqJobsWrap').style.display = qt && qt.needJobs ? '' : 'none';
+  document.getElementById('rqJobs').innerHTML = RECRUIT_JOBS.map(j =>
+    '<button type="button" class="filter-btn' + (_rqJobs.has(j.key) ? ' active' : '') + '" onclick="_rqToggleJob(\'' + j.key + '\')">' + esc(j.zh) + '</button>').join('');
+  const b = _rqBuild();
+  const prev = document.getElementById('rqPreview');
+  if (!b || (b.qt.needJobs && !b.jobs.length)) {
+    prev.innerHTML = '<span style="color:var(--gray-400)">先选至少一个工种</span>';
+    return;
+  }
+  const langName = { es: '西语', en: '英语', zh: '中文' }[_rqLang()];
+  prev.innerHTML = '<div style="margin-bottom:4px"><b>中文:</b> ' + esc(b.zh) + '</div>'
+    + (b.tx ? '<div style="color:#0f766e"><b>发送 (' + langName + '):</b> ' + esc(b.tx) + '</div>'
+            : '<div style="color:var(--gray-400)">对方语言是中文, 直接发送中文</div>');
+}
+function insertRecruitQ() {
+  const b = _rqBuild();
+  if (!b || (b.qt.needJobs && !b.jobs.length)) { toast('先选至少一个工种'); return; }
+  document.getElementById('recruitQModal').classList.remove('show');
+  if (noteMode) toggleNoteMode();
+  const inp = document.getElementById('replyInput');
+  inp.value = b.zh;
+  _composeNoTranslate = false; _composeNoTranslateText = '';
+  _presetTranslation = b.tx || null;
+  _presetTranslationFor = b.zh;
+  document.getElementById('translatePreview').style.display = 'none';
+  autoGrow(inp);
+  inp.focus();
+  toast(b.tx ? '已填入 — 将按标准翻译发送, 检查后点发送' : '已填入 — 检查后点发送');
 }
 
 // ─── Phase 2: Quick Reply Templates ───

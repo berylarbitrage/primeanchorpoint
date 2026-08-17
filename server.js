@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-17c · 联系人资料: 新增说什么语言(中/英/西,可多选), 去掉Email栏',
+  tag: '2026-08-17d · 招工问题模板: 选工种生成标准翻译提问(会不会做/有没有朋友/会英语)',
   started: new Date().toISOString(),
 };
 
@@ -30600,7 +30600,7 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
     // Twilio 合规: 对方已回 STOP 退订, 继续发会被 Twilio 拒 (21610) 且损害账号信誉
     if (thread.opted_out) return res.status(400).json({ error: '⚠️ 对方已回复 STOP 退订, 禁止发送。对方回复 START 后才能恢复。' });
 
-    const { body, no_translate } = req.body;
+    const { body, no_translate, preset_translation } = req.body;
     if (!body || !body.trim()) return res.status(400).json({ error: 'Message body required' });
 
     // Check permission: only assigned agent or admin can reply
@@ -30633,9 +30633,15 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
     // no_translate: 面试确认/工作要求等双语模板原样发送, 不再机器翻译
     let bodyToSend = body.trim();
     if (!no_translate) {
-      const freshThread2 = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(thread.id);
-      const translated = await translateText(body.trim(), freshThread2.agent_lang || 'zh', freshThread2.contact_lang || 'es');
-      bodyToSend = translated || body.trim();
+      const presetTx = String(preset_translation || '').trim().slice(0, 1500);
+      if (presetTx) {
+        // 招工问题等标准模板自带人工翻译: 中文进记录, 发送固定译文, 不再机器翻译
+        bodyToSend = presetTx;
+      } else {
+        const freshThread2 = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(thread.id);
+        const translated = await translateText(body.trim(), freshThread2.agent_lang || 'zh', freshThread2.contact_lang || 'es');
+        bodyToSend = translated || body.trim();
+      }
       // 客服消息不允许以中文发出 (中文只作输入, 必须由系统翻成西语/英语再发)。
       // 也兜住翻译失败回退原文的情况, 避免中文原文直接发给对方。
       if (req.userRole !== 'admin' && /[㐀-鿿豈-﫿]/.test(bodyToSend)) {
