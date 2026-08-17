@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-07-12au · 扫码审核页:公司/批次分组可点击折叠 + 一键折叠全部',
+  tag: '2026-08-17b · 仓库打卡台 /kiosk?site=ID: 平板固定仓库, 员工输8位密码打卡',
   started: new Date().toISOString(),
 };
 
@@ -996,6 +996,10 @@ try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN apply_state TEXT DEF
 // inbox is driven by this linked employee reaching 在职 (after starting 待入职) —
 // NOT by any matching employee being active, which would archive legacy records.
 try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN employee_id INTEGER`); } catch(e) {}
+// 8 位数字打卡密码：新员工扫码提交入职表后发放（屏幕显示 + 短信），可在员工打卡机
+// (/timeclock) 和仓库签到 (/checkin) 代替短信验证码使用。建档时继承到 employees.timeclock_code。
+try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN timeclock_code TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_apl_tc_code ON applicant_submissions(timeclock_code) WHERE timeclock_code != ''`); } catch(e) {}
 db.exec(`CREATE TABLE IF NOT EXISTS applicant_docs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   submission_id INTEGER NOT NULL,
@@ -1148,6 +1152,9 @@ try { db.exec(`ALTER TABLE employees ADD COLUMN extra_emails TEXT DEFAULT '[]'`)
 try { db.exec(`ALTER TABLE employees ADD COLUMN street2 TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN middle_name TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN social_media TEXT DEFAULT '{}'`); } catch(e) {}
+// 8 位数字打卡密码（见 applicant_submissions.timeclock_code）
+try { db.exec(`ALTER TABLE employees ADD COLUMN timeclock_code TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_emp_tc_code ON employees(timeclock_code) WHERE timeclock_code != ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_status TEXT DEFAULT 'unpaid'`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_receipt_path TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_receipt_paths TEXT DEFAULT NULL`); } catch(e) {}
@@ -3526,6 +3533,17 @@ app.get('/checkin', (req, res, next) => {
         const lang = req.query.lang ? '&lang=' + encodeURIComponent(String(req.query.lang)) : '';
         return res.redirect(302, '/checkin?site=' + s.id + lang);
       }
+    } catch (_) {}
+  }
+  next();
+});
+// 仓库打卡台同样支持 /kiosk?wh=仓库代码 → /kiosk?site=ID
+app.get('/kiosk', (req, res, next) => {
+  if (req.query.wh && !req.query.site) {
+    try {
+      const s = db.prepare('SELECT id FROM job_sites WHERE UPPER(code)=? AND active=1 ORDER BY id DESC LIMIT 1')
+        .get(String(req.query.wh).trim().toUpperCase());
+      if (s) return res.redirect(302, '/kiosk?site=' + s.id);
     } catch (_) {}
   }
   next();
@@ -15327,6 +15345,28 @@ function _partnerByApplyToken(token) {
   } catch (_) {}
   return db.prepare("SELECT id, name FROM partners WHERE applicant_form_token=? AND applicant_form_token!=''").get(token);
 }
+// 申请单关联到员工档案时，把打卡密码带到档案上（档案没有密码才补，不覆盖）
+function _inheritTimeclockCode(submissionId, employeeId) {
+  if (!employeeId) return;
+  try {
+    const sub = db.prepare('SELECT timeclock_code FROM applicant_submissions WHERE id=?').get(submissionId);
+    if (!sub || !sub.timeclock_code) return;
+    db.prepare(`UPDATE employees SET timeclock_code=? WHERE id=? AND (timeclock_code IS NULL OR timeclock_code='')`)
+      .run(sub.timeclock_code, employeeId);
+  } catch (e) { console.error('[timeclock-code] inherit failed:', e.message); }
+}
+
+// 生成不重复的 8 位数字打卡密码（首位非 0；与现有员工/申请单都不冲突）
+function _genTimeclockCode() {
+  for (let i = 0; i < 100; i++) {
+    const code = String(crypto.randomInt(10000000, 100000000));
+    const inEmp = db.prepare('SELECT id FROM employees WHERE timeclock_code=?').get(code);
+    const inSub = db.prepare('SELECT id FROM applicant_submissions WHERE timeclock_code=?').get(code);
+    if (!inEmp && !inSub) return code;
+  }
+  throw new Error('timeclock code space exhausted');
+}
+
 // Normalize a US phone to E.164 (last 10 digits → +1XXXXXXXXXX). Best-effort.
 function _normApplyPhone(raw) {
   const d = String(raw || '').replace(/\D/g, '');
@@ -15616,7 +15656,17 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
         docMeta.push({ docType, key: fileKey, originalname: f.originalname || '', mime: f.mimetype || '' });
       }
     }
-    res.json({ success: true, id: subId });
+    // 发放 8 位打卡密码：提交成功页面显示，并短信发到刚验证过的手机号
+    let timeclockCode = '';
+    try {
+      timeclockCode = _genTimeclockCode();
+      db.prepare('UPDATE applicant_submissions SET timeclock_code=? WHERE id=?').run(timeclockCode, subId);
+    } catch (e) { console.error('[apply] timeclock code gen failed:', e.message); }
+    res.json({ success: true, id: subId, timeclock_code: timeclockCode });
+    if (timeclockCode) {
+      sendSMS(phone, `【Prime Anchor Workforce】您的打卡密码 Your clock-in password: ${timeclockCode}\n打卡机输入此密码即可打卡 Enter it at the time clock to punch in/out.\n请妥善保管，不要转发他人 Keep it private.`)
+        .catch(e => console.error('[apply] timeclock code SMS failed:', e.message));
+    }
     // 后台把刚上传的证件文件就地加密 (不阻塞响应)
     setImmediate(async () => {
       try {
@@ -15927,6 +15977,7 @@ app.patch('/api/admin/applicant-submissions/:id', requireAdmin, blockManager, (r
     const empId = req.body.employee_id ? parseInt(req.body.employee_id) : null;
     const r = db.prepare('UPDATE applicant_submissions SET employee_id=? WHERE id=?').run(empId, req.params.id);
     if (!r.changes) return res.status(404).json({ error: 'Not found' });
+    _inheritTimeclockCode(req.params.id, empId);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -19371,6 +19422,7 @@ app.post('/api/admin/employees/:id/relink-submission', requireAdmin, (req, res) 
     const sub = db.prepare('SELECT id, employee_id FROM applicant_submissions WHERE id=?').get(sid);
     if (!sub) return res.status(404).json({ error: 'Submission not found' });
     db.prepare('UPDATE applicant_submissions SET employee_id=? WHERE id=?').run(emp.id, sid);
+    _inheritTimeclockCode(sid, emp.id);
     res.json({ ok: true, submission_id: sid, employee_id: emp.id, previous_owner: sub.employee_id || null });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -23014,8 +23066,51 @@ app.get('/api/admin/background-checks/:id/file', (req, res, next) => {
 
 // ─── TIME CLOCK EMPLOYEE SELF-SERVICE ───
 
+// 8 位打卡密码 → 员工档案。优先员工表；还没建档的申请人（扫码填表后直接来打卡）自动建档。
+function _empByTimeclockCode(code) {
+  const emp = db.prepare("SELECT * FROM employees WHERE timeclock_code=? AND status='active'").get(code);
+  if (emp) return emp;
+  const sub = db.prepare('SELECT * FROM applicant_submissions WHERE timeclock_code=?').get(code);
+  if (!sub) return null;
+  if (sub.employee_id) {
+    const linked = db.prepare('SELECT * FROM employees WHERE id=?').get(sub.employee_id);
+    if (linked) return linked.status === 'active' ? linked : null;  // 已离职 → 不放行
+  }
+  try {
+    const created = _employeeFromApplicant(sub);
+    return db.prepare('SELECT * FROM employees WHERE id=?').get(created.id);
+  } catch (e) {
+    console.error('[Timeclock] auto-create from applicant failed:', e.message);
+    return null;
+  }
+}
+
+// 打卡密码尝试限流：防止在打卡机页面暴力猜 8 位密码
+const _tcCodeFails = {};   // key → { count, until }
+function _tcCodeThrottled(key) {
+  const f = _tcCodeFails[key];
+  return !!(f && f.count >= 10 && f.until > Date.now());
+}
+function _tcCodeFail(key) {
+  const f = _tcCodeFails[key] || { count: 0, until: 0 };
+  f.count++; f.until = Date.now() + 15 * 60 * 1000;
+  _tcCodeFails[key] = f;
+}
+function _tcCodeOk(key) { delete _tcCodeFails[key]; }
+
 app.get('/api/timeclock/status/:empCode', (req, res) => {
-  const emp = db.prepare("SELECT id,first_name,last_name,employee_id,position FROM employees WHERE employee_id=? AND status='active'").get(req.params.empCode.toUpperCase());
+  const rawCode = String(req.params.empCode || '').trim();
+  let emp;
+  if (/^\d{8}$/.test(rawCode)) {
+    // 8 位纯数字 → 按打卡密码识别身份
+    const ipKey = 'ip:' + (req.ip || req.connection.remoteAddress || '?');
+    if (_tcCodeThrottled(ipKey)) return res.status(429).json({ error: '尝试次数过多，请 15 分钟后再试' });
+    emp = _empByTimeclockCode(rawCode);
+    if (!emp) { _tcCodeFail(ipKey); return res.status(404).json({ error: '打卡密码错误或员工已离职' }); }
+    _tcCodeOk(ipKey);
+  } else {
+    emp = db.prepare("SELECT id,first_name,last_name,employee_id,position FROM employees WHERE employee_id=? AND status='active'").get(rawCode.toUpperCase());
+  }
   if (!emp) return res.status(404).json({ error: '未找到员工或员工已离职' });
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(emp.id);
   const today = new Date().toISOString().slice(0,10);
@@ -23024,8 +23119,12 @@ app.get('/api/timeclock/status/:empCode', (req, res) => {
   const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - (weekAgo.getDay() || 7) + 1);
   const weekEntries = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND clock_in>=? AND status='closed'").all(emp.id, weekAgo.toISOString());
   const weekHours = weekEntries.reduce((s,e) => s + (e.total_hours||0), 0);
-  // Fetch configured work sites for this employee (via active assignments)
-  const sites = db.prepare(`
+  // Fetch configured work sites for this employee (via active assignments).
+  // 容错: 这段旧查询引用了 inquiries.worker_code(现 schema 已不存在), 一旦抛错会把整个
+  // status 接口打成 500 —— 工作地点以 employee_jobs(sites2) 为准, 这里失败就当没有。
+  let sites = [];
+  try {
+    sites = db.prepare(`
     SELECT DISTINCT js.id, js.name, js.latitude, js.longitude, js.radius_meters
     FROM assignments a
     JOIN jobs j ON a.job_id = j.id
@@ -23038,6 +23137,7 @@ app.get('/api/timeclock/status/:empCode', (req, res) => {
     WHERE e.id = ? AND a.status IN ('assigned','working') AND js.latitude IS NOT NULL
     LIMIT 10
   `).all(emp.id);
+  } catch (e) { /* legacy schema mismatch → employee_jobs 查询兜底 */ }
   // Also check employee_jobs table
   const sites2 = db.prepare(`
     SELECT DISTINCT js.id, js.name, js.latitude, js.longitude, js.radius_meters
@@ -23064,10 +23164,21 @@ app.post('/api/timeclock/punch', (req, res) => {
   const { employee_id, pin, punch_type, latitude, longitude } = req.body;
   if (!employee_id || !pin) return res.status(400).json({ error: '请输入员工编号和 PIN' });
   const ptype = punch_type || 'toggle'; // legacy: no punch_type = auto toggle
-  const emp = db.prepare("SELECT * FROM employees WHERE employee_id=? AND status='active'").get(employee_id.toUpperCase());
-  if (!emp) return res.status(401).json({ error: '未找到员工或员工已离职' });
-  if (!emp.pin_hash) return res.status(401).json({ error: 'PIN 未设置，请联系管理员' });
-  if (!verifyPin(pin, emp.pin_salt, emp.pin_hash)) return res.status(401).json({ error: 'PIN 错误' });
+  const rawId = String(employee_id).trim();
+  let emp;
+  if (/^\d{8}$/.test(rawId)) {
+    // 8 位打卡密码：密码本身即身份+凭证（唯一且保密），无需另设 PIN
+    const ipKey = 'ip:' + (req.ip || req.connection.remoteAddress || '?');
+    if (_tcCodeThrottled(ipKey)) return res.status(429).json({ error: '尝试次数过多，请 15 分钟后再试' });
+    emp = _empByTimeclockCode(rawId);
+    if (!emp || String(pin).trim() !== rawId) { _tcCodeFail(ipKey); return res.status(401).json({ error: '打卡密码错误或员工已离职' }); }
+    _tcCodeOk(ipKey);
+  } else {
+    emp = db.prepare("SELECT * FROM employees WHERE employee_id=? AND status='active'").get(rawId.toUpperCase());
+    if (!emp) return res.status(401).json({ error: '未找到员工或员工已离职' });
+    if (!emp.pin_hash) return res.status(401).json({ error: 'PIN 未设置，请联系管理员' });
+    if (!verifyPin(pin, emp.pin_salt, emp.pin_hash)) return res.status(401).json({ error: 'PIN 错误' });
+  }
 
   const now = new Date().toISOString();
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(emp.id);
@@ -25399,11 +25510,12 @@ function _employeeFromApplicant(sub) {
   const lastName = nameParts.slice(1).join(' ');
   const today = new Date().toISOString().slice(0, 10);
   const insert = empId => db.prepare(`INSERT INTO employees
-      (employee_id, first_name, last_name, email, phone, address, city, state, zip, hire_date, position, status, notes)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,'active',?)`)
+      (employee_id, first_name, last_name, email, phone, address, city, state, zip, hire_date, position, status, notes, timeclock_code)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,'active',?,?)`)
     .run(empId, firstName, lastName, sub.email || '', sub.phone || '',
       [sub.address1, sub.address2].filter(Boolean).join(' '), sub.city || '', sub.state || '', sub.zip || '',
-      today, sub.position || '', `打卡自动建档 · 来自入职申请 #${sub.id}${sub.partner_name ? ' (' + sub.partner_name + ')' : ''}`);
+      today, sub.position || '', `打卡自动建档 · 来自入职申请 #${sub.id}${sub.partner_name ? ' (' + sub.partner_name + ')' : ''}`,
+      sub.timeclock_code || '');
   let r;
   try { r = insert(nextEmployeeId(sub.state, today)); }
   catch (e) {
@@ -25537,22 +25649,26 @@ app.post('/api/checkin/verify', (req, res) => {
     }
   }
 
-  // Generate session token
+  // Clean up the used code
+  delete _checkinCodes[normalizedPhone];
+
+  return _checkinIssueSession(res, normalizedPhone, parseInt(site_id), empDbId, empId, empName);
+});
+
+// 身份验证通过（短信验证码或打卡密码）后统一发会话 token + 当前打卡状态
+function _checkinIssueSession(res, normalizedPhone, siteIdInt, empDbId, empId, empName) {
   const token = crypto.randomBytes(24).toString('hex');
   _checkinTokens[token] = {
     phone: normalizedPhone,
     employee_id: empDbId,
     worker_code: empId,
     name: empName,
-    site_id: parseInt(site_id),
+    site_id: siteIdInt,
     expires: Date.now() + 30 * 60 * 1000 // 30 min
   };
 
-  // Clean up the used code
-  delete _checkinCodes[normalizedPhone];
-
   // Determine current punch state for this employee today at this site
-  const siteForState = db.prepare('SELECT timezone FROM job_sites WHERE id=? AND active=1').get(parseInt(site_id));
+  const siteForState = db.prepare('SELECT timezone FROM job_sites WHERE id=? AND active=1').get(siteIdInt);
   const tzForState = (siteForState && siteForState.timezone) || 'America/Chicago';
   const todayForState = new Date().toLocaleDateString('en-CA', { timeZone: tzForState });
   let suggestedPunchType = 'in';
@@ -25561,7 +25677,7 @@ app.post('/api/checkin/verify', (req, res) => {
   if (empDbId) {
     const openEnt = db.prepare(
       "SELECT id, on_break, break_records FROM time_entries WHERE employee_id=? AND status='open' AND site_id=? AND date(clock_in)=?"
-    ).get(empDbId, parseInt(site_id), todayForState);
+    ).get(empDbId, siteIdInt, todayForState);
     if (openEnt) {
       hasOpenEntry = true;
       onBreak = !!openEnt.on_break;
@@ -25579,83 +25695,84 @@ app.post('/api/checkin/verify', (req, res) => {
     has_open_entry: hasOpenEntry,
     on_break: onBreak
   });
+}
+
+// POST /api/checkin/verify-password — 用入职时发放的 8 位打卡密码代替短信验证码
+app.post('/api/checkin/verify-password', (req, res) => {
+  const { phone, password, site_id } = req.body || {};
+  if (!phone || !password || !site_id) return res.status(400).json({ error: '缺少必要参数' });
+  const pw = String(password).trim();
+  if (!/^\d{8}$/.test(pw)) return res.status(400).json({ error: '打卡密码为 8 位数字' });
+  const digits10 = String(phone).replace(/\D/g, '').slice(-10);
+  const normalizedPhone = formatPhoneE164(phone);
+  const throttleKey = 'ci:' + digits10;
+  if (_tcCodeThrottled(throttleKey)) return res.status(429).json({ error: '尝试次数过多，请 15 分钟后再试' });
+
+  // 按手机号找人（与短信验证码通道同一套顺序），再核对打卡密码
+  let empName = '', empId = '', empDbId = null, expected = null;
+  const worker = db.prepare(
+    "SELECT id, name, phone, employee_id, worker_code FROM worker_accounts WHERE active=1 AND phone10(phone)=?"
+  ).get(digits10);
+  let emp = null;
+  if (worker && worker.employee_id) emp = db.prepare('SELECT * FROM employees WHERE id=?').get(worker.employee_id);
+  if (!worker && !emp) emp = db.prepare("SELECT * FROM employees WHERE phone10(phone)=? AND status='active'").get(digits10);
+
+  if (emp) {
+    expected = emp.timeclock_code || '';
+    if (!expected) {
+      // 档案上还没有密码（例如后台手动建档）→ 回退到该员工关联的申请单上的密码
+      const linkedSub = db.prepare(`SELECT timeclock_code FROM applicant_submissions WHERE employee_id=? AND timeclock_code!='' ORDER BY id DESC LIMIT 1`).get(emp.id);
+      if (linkedSub) {
+        expected = linkedSub.timeclock_code;
+        _inheritTimeclockCode2Emp(emp.id, expected);
+      }
+    }
+    empName = `${emp.first_name} ${emp.last_name}`.trim();
+    empId = emp.employee_id || '';
+    empDbId = emp.id;
+    if (worker) {
+      if (worker.name) empName = worker.name;
+      if (worker.worker_code) empId = worker.worker_code;
+    }
+  } else if (worker) {
+    expected = '';   // 工人账号未关联员工档案 → 没有可用的打卡密码
+    empName = worker.name || '';
+  } else {
+    // 还没建档的申请人：密码对上才自动建档（与短信验证码通道的自动建档一致）
+    const sub = _checkinApplicantByPhone(digits10);
+    if (!sub) return res.status(404).json({ error: '该手机号未在系统中注册' });
+    expected = sub.timeclock_code || '';
+    if (expected && expected === pw) {
+      try {
+        const created = _employeeFromApplicant(sub);
+        empName = `${created.first_name} ${created.last_name}`.trim();
+        empId = created.employee_id || '';
+        empDbId = created.id;
+      } catch (e) {
+        console.error('[Checkin] Auto-create employee failed:', e.message);
+        return res.status(500).json({ error: '系统暂时无法完成建档，请稍后重试或联系管理员' });
+      }
+    }
+  }
+
+  if (!expected) return res.status(400).json({ error: '该账号未设置打卡密码，请使用短信验证码打卡' });
+  if (expected !== pw) { _tcCodeFail(throttleKey); return res.status(401).json({ error: '打卡密码错误' }); }
+  _tcCodeOk(throttleKey);
+
+  return _checkinIssueSession(res, normalizedPhone, parseInt(site_id), empDbId, empId, empName);
 });
 
-// POST /api/checkin/punch
-app.post('/api/checkin/punch', async (req, res) => {
-  const { site_id, phone, token, latitude, longitude, accuracy, photo, punch_type: requestedPunchType, device_id } = req.body;
-  if (!site_id || !token) return res.status(400).json({ error: '缺少必要参数' });
+// 把申请单上的密码补写到员工档案（档案没有密码才补）
+function _inheritTimeclockCode2Emp(employeeId, code) {
+  try {
+    db.prepare(`UPDATE employees SET timeclock_code=? WHERE id=? AND (timeclock_code IS NULL OR timeclock_code='')`).run(code, employeeId);
+  } catch (e) { console.error('[timeclock-code] backfill failed:', e.message); }
+}
 
-  // Verify token
-  const sess = _checkinTokens[token];
-  if (!sess || sess.expires < Date.now()) {
-    return res.status(401).json({ error: '会话已过期，请重新验证' });
-  }
-  if (sess.site_id !== parseInt(site_id)) {
-    return res.status(400).json({ error: '工作地点不匹配' });
-  }
-
-  // Get site info
-  const site = db.prepare('SELECT id, name, code, latitude, longitude, radius_meters, timezone FROM job_sites WHERE id=? AND active=1').get(parseInt(site_id));
-  if (!site) return res.status(404).json({ error: '未找到该工作地点' });
-
-  // Verify GPS is within radius
-  if (latitude == null || longitude == null) {
-    return res.status(400).json({ error: '无法获取您的位置信息，请开启定位权限' });
-  }
-  const dist = haversineDistance(latitude, longitude, site.latitude, site.longitude);
-  const maxRadius = site.radius_meters || 200;
-  const gpsAccuracy = Math.min(Number(accuracy) || 0, 5000);
-  if (dist > maxRadius + gpsAccuracy) {
-    const distStr = dist >= 1000 ? `${(dist / 1000).toFixed(1)}km` : `${Math.round(dist)}m`;
-    return res.status(400).json({ error: `您的位置不在工作地点范围内（距离约${distStr}），请到达工作地点后再签到` });
-  }
-
-  // Save photo/video if provided
-  let photoFilename = null;
-  if (photo) {
-    try {
-      const m = /^data:(image|video)\/([A-Za-z0-9.+-]+);base64,/.exec(photo);
-      const kind = m ? m[1] : 'image';
-      const subtypeRaw = (m ? m[2] : 'jpeg').toLowerCase();
-      const extMap = { jpeg: 'jpg', 'svg+xml': 'svg', quicktime: 'mov', 'x-matroska': 'mkv', 'x-msvideo': 'avi' };
-      const ext = extMap[subtypeRaw] || subtypeRaw.replace(/[^a-z0-9]/g, '') || (kind === 'video' ? 'mp4' : 'jpg');
-      const base64Data = photo.replace(/^data:(image|video)\/[A-Za-z0-9.+-]+;base64,/, '');
-      const buf = Buffer.from(base64Data, 'base64');
-      photoFilename = `checkin-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
-      const contentType = `${kind}/${subtypeRaw === 'jpg' ? 'jpeg' : subtypeRaw}`;
-      await storage.putObject(`checkin_photos/${photoFilename}`, buf, { contentType });
-    } catch (e) {
-      console.error('[Checkin] Photo save error:', e.message);
-    }
-  }
-
-  const siteTimezone = site.timezone || 'America/Chicago';
-  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
-
-  // Check if employee already has an open entry today at this site
-  const empDbId = sess.employee_id;
-  if (!empDbId) return res.status(400).json({ error: '未找到对应的员工记录' });
-
-  // 防代打卡：同一台设备近一天内为多个不同工人打卡 → 双向标记疑似代打卡。
-  // 设备标识是前端 localStorage 里的匿名随机串，清掉可绕过，但配合短信警告足以威慑常规代打。
-  const deviceId = String(device_id || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 64);
-  let suspectNote = '';
-  if (deviceId) {
-    const others = db.prepare(`SELECT DISTINCT COALESCE(NULLIF(TRIM(e.first_name || ' ' || e.last_name), ''), '#' || t.employee_id) AS nm
-      FROM time_entries t LEFT JOIN employees e ON t.employee_id = e.id
-      WHERE t.checkin_device_id = ? AND t.employee_id != ? AND DATE(t.clock_in) >= DATE('now', '-1 day')`)
-      .all(deviceId, empDbId);
-    if (others.length) {
-      suspectNote = '同一设备近一天内还为其他工人打卡: ' + others.map(o => o.nm).slice(0, 5).join(', ');
-      db.prepare(`UPDATE time_entries SET suspect_proxy = 1,
-          suspect_note = CASE WHEN COALESCE(suspect_note, '') = '' THEN '同一设备近一天内还为其他工人打卡' ELSE suspect_note END
-        WHERE checkin_device_id = ? AND employee_id != ? AND DATE(clock_in) >= DATE('now', '-1 day')`)
-        .run(deviceId, empDbId);
-      console.log(`[Checkin] SUSPECT proxy punch: employee ${empDbId}, device ${deviceId.slice(0, 12)}…, ${suspectNote}`);
-    }
-  }
-
+// ─── 打卡落库核心（/checkin 与 /kiosk 共用）───
+// 依据该员工当天在该仓库的 open entry 决定实际动作，写入/更新 time_entries。
+// 返回 { action, entryId, clockTime }。
+function _recordSitePunch({ empDbId, site, siteTimezone, now, latitude, longitude, photoFilename, requestedPunchType }) {
   // Get today's date in site timezone
   const todayInTz = new Date().toLocaleDateString('en-CA', { timeZone: siteTimezone }); // YYYY-MM-DD
 
@@ -25741,6 +25858,87 @@ app.post('/api/checkin/punch', async (req, res) => {
     clockTime = now;
   }
 
+  return { action, entryId, clockTime };
+}
+
+// POST /api/checkin/punch
+app.post('/api/checkin/punch', async (req, res) => {
+  const { site_id, phone, token, latitude, longitude, accuracy, photo, punch_type: requestedPunchType, device_id } = req.body;
+  if (!site_id || !token) return res.status(400).json({ error: '缺少必要参数' });
+
+  // Verify token
+  const sess = _checkinTokens[token];
+  if (!sess || sess.expires < Date.now()) {
+    return res.status(401).json({ error: '会话已过期，请重新验证' });
+  }
+  if (sess.site_id !== parseInt(site_id)) {
+    return res.status(400).json({ error: '工作地点不匹配' });
+  }
+
+  // Get site info
+  const site = db.prepare('SELECT id, name, code, latitude, longitude, radius_meters, timezone FROM job_sites WHERE id=? AND active=1').get(parseInt(site_id));
+  if (!site) return res.status(404).json({ error: '未找到该工作地点' });
+
+  // Verify GPS is within radius
+  if (latitude == null || longitude == null) {
+    return res.status(400).json({ error: '无法获取您的位置信息，请开启定位权限' });
+  }
+  const dist = haversineDistance(latitude, longitude, site.latitude, site.longitude);
+  const maxRadius = site.radius_meters || 200;
+  const gpsAccuracy = Math.min(Number(accuracy) || 0, 5000);
+  if (dist > maxRadius + gpsAccuracy) {
+    const distStr = dist >= 1000 ? `${(dist / 1000).toFixed(1)}km` : `${Math.round(dist)}m`;
+    return res.status(400).json({ error: `您的位置不在工作地点范围内（距离约${distStr}），请到达工作地点后再签到` });
+  }
+
+  // Save photo/video if provided
+  let photoFilename = null;
+  if (photo) {
+    try {
+      const m = /^data:(image|video)\/([A-Za-z0-9.+-]+);base64,/.exec(photo);
+      const kind = m ? m[1] : 'image';
+      const subtypeRaw = (m ? m[2] : 'jpeg').toLowerCase();
+      const extMap = { jpeg: 'jpg', 'svg+xml': 'svg', quicktime: 'mov', 'x-matroska': 'mkv', 'x-msvideo': 'avi' };
+      const ext = extMap[subtypeRaw] || subtypeRaw.replace(/[^a-z0-9]/g, '') || (kind === 'video' ? 'mp4' : 'jpg');
+      const base64Data = photo.replace(/^data:(image|video)\/[A-Za-z0-9.+-]+;base64,/, '');
+      const buf = Buffer.from(base64Data, 'base64');
+      photoFilename = `checkin-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
+      const contentType = `${kind}/${subtypeRaw === 'jpg' ? 'jpeg' : subtypeRaw}`;
+      await storage.putObject(`checkin_photos/${photoFilename}`, buf, { contentType });
+    } catch (e) {
+      console.error('[Checkin] Photo save error:', e.message);
+    }
+  }
+
+  const siteTimezone = site.timezone || 'America/Chicago';
+  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+  // Check if employee already has an open entry today at this site
+  const empDbId = sess.employee_id;
+  if (!empDbId) return res.status(400).json({ error: '未找到对应的员工记录' });
+
+  // 防代打卡：同一台设备近一天内为多个不同工人打卡 → 双向标记疑似代打卡。
+  // 设备标识是前端 localStorage 里的匿名随机串，清掉可绕过，但配合短信警告足以威慑常规代打。
+  const deviceId = String(device_id || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 64);
+  let suspectNote = '';
+  if (deviceId) {
+    const others = db.prepare(`SELECT DISTINCT COALESCE(NULLIF(TRIM(e.first_name || ' ' || e.last_name), ''), '#' || t.employee_id) AS nm
+      FROM time_entries t LEFT JOIN employees e ON t.employee_id = e.id
+      WHERE t.checkin_device_id = ? AND t.employee_id != ? AND DATE(t.clock_in) >= DATE('now', '-1 day')`)
+      .all(deviceId, empDbId);
+    if (others.length) {
+      suspectNote = '同一设备近一天内还为其他工人打卡: ' + others.map(o => o.nm).slice(0, 5).join(', ');
+      db.prepare(`UPDATE time_entries SET suspect_proxy = 1,
+          suspect_note = CASE WHEN COALESCE(suspect_note, '') = '' THEN '同一设备近一天内还为其他工人打卡' ELSE suspect_note END
+        WHERE checkin_device_id = ? AND employee_id != ? AND DATE(clock_in) >= DATE('now', '-1 day')`)
+        .run(deviceId, empDbId);
+      console.log(`[Checkin] SUSPECT proxy punch: employee ${empDbId}, device ${deviceId.slice(0, 12)}…, ${suspectNote}`);
+    }
+  }
+
+  const { action, entryId, clockTime } = _recordSitePunch({
+    empDbId, site, siteTimezone, now, latitude, longitude, photoFilename, requestedPunchType
+  });
   // 把设备标识和疑似标记落到本次涉及的工时记录上（新建和更新的打卡都覆盖）
   if (entryId && (deviceId || suspectNote)) {
     db.prepare(`UPDATE time_entries SET
@@ -25769,6 +25967,88 @@ app.post('/api/checkin/punch', async (req, res) => {
     employee_id: sess.worker_code,
     clock_time: displayTime,
     photo_saved: !!photoFilename,
+    entry_id: entryId
+  });
+});
+
+// ─── 🖥️ 仓库打卡台 (kiosk)：平板固定在仓库，员工输入自己的 8 位打卡密码打卡 ───
+// 页面按仓库绑定 (/kiosk?site=ID)，身份完全由打卡密码确定；平板就在仓库现场，
+// 位置按仓库自身坐标记录 (geo_verified=1)，不做共享设备的代打卡标记。
+
+// 仓库合法性 + 密码 → 员工。失败返回 {error, status}，成功返回 {site, emp}。
+function _kioskAuth(req) {
+  const b = req.body || {};
+  const siteId = parseInt(b.site_id);
+  const pw = String(b.password || '').trim();
+  if (!siteId || !pw) return { status: 400, error: '缺少必要参数' };
+  if (!/^\d{8}$/.test(pw)) return { status: 400, error: '打卡密码为 8 位数字' };
+  const site = db.prepare('SELECT id, name, code, latitude, longitude, radius_meters, timezone FROM job_sites WHERE id=? AND active=1').get(siteId);
+  if (!site) return { status: 404, error: '未找到该工作地点' };
+  const ipKey = 'kiosk:' + (req.ip || req.connection.remoteAddress || '?');
+  if (_tcCodeThrottled(ipKey)) return { status: 429, error: '尝试次数过多，请 15 分钟后再试' };
+  const emp = _empByTimeclockCode(pw);
+  if (!emp) { _tcCodeFail(ipKey); return { status: 401, error: '打卡密码错误或员工已离职' }; }
+  _tcCodeOk(ipKey);
+  return { site, emp };
+}
+
+// POST /api/kiosk/status { site_id, password } → 员工姓名 + 今天在该仓库的打卡状态
+app.post('/api/kiosk/status', (req, res) => {
+  const a = _kioskAuth(req);
+  if (a.error) return res.status(a.status).json({ error: a.error });
+  const { site, emp } = a;
+  const tz = site.timezone || 'America/Chicago';
+  const todayInTz = new Date().toLocaleDateString('en-CA', { timeZone: tz });
+  const openEnt = db.prepare(
+    "SELECT id, clock_in, on_break FROM time_entries WHERE employee_id=? AND status='open' AND site_id=? AND date(clock_in)=?"
+  ).get(emp.id, site.id, todayInTz);
+  const fmtTz = v => {
+    const d = _utcEntryDate(v);
+    return d ? d.toLocaleTimeString('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+  };
+  res.json({
+    success: true,
+    name: `${emp.first_name} ${emp.last_name}`.trim(),
+    employee_id: emp.employee_id,
+    clocked_in: !!openEnt,
+    on_break: openEnt ? !!openEnt.on_break : false,
+    clock_in_time: openEnt ? fmtTz(openEnt.clock_in) : null,
+    suggested_punch_type: openEnt ? (openEnt.on_break ? 'break_end' : 'out') : 'in'
+  });
+});
+
+// POST /api/kiosk/punch { site_id, password, punch_type } → 打卡落库
+app.post('/api/kiosk/punch', (req, res) => {
+  const a = _kioskAuth(req);
+  if (a.error) return res.status(a.status).json({ error: a.error });
+  const { site, emp } = a;
+  const siteTimezone = site.timezone || 'America/Chicago';
+  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  const { action, entryId, clockTime } = _recordSitePunch({
+    empDbId: emp.id, site, siteTimezone, now,
+    latitude: site.latitude, longitude: site.longitude,
+    photoFilename: null,
+    requestedPunchType: String((req.body || {}).punch_type || '')
+  });
+  // 标记来源为该仓库的打卡台（共享设备，不做同设备代打卡判定）
+  if (entryId) {
+    try {
+      db.prepare(`UPDATE time_entries SET checkin_device_id = CASE WHEN COALESCE(checkin_device_id,'')='' THEN ? ELSE checkin_device_id END WHERE id=?`)
+        .run('kiosk-site-' + site.id, entryId);
+    } catch (_) {}
+  }
+  const displayTime = new Date(clockTime.replace(' ', 'T') + 'Z').toLocaleString('zh-CN', {
+    timeZone: siteTimezone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false
+  });
+  res.json({
+    success: true,
+    action,
+    name: `${emp.first_name} ${emp.last_name}`.trim(),
+    employee_id: emp.employee_id,
+    clock_time: displayTime,
     entry_id: entryId
   });
 });

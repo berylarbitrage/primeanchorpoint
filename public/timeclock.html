@@ -99,10 +99,11 @@ body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;di
     <h2>🔍 输入员工编号</h2>
     <div id="idErr" class="msg msg-err"></div>
     <div class="field">
-      <label>员工编号</label>
-      <input type="text" id="empIdInput" placeholder="例：EMEE-MEL-030126-000001" maxlength="40"
+      <label>员工编号 或 8位打卡密码</label>
+      <input type="text" id="empIdInput" placeholder="员工编号 / 8位打卡密码" maxlength="40"
         autocomplete="off" style="text-transform:uppercase;font-size:.9rem;letter-spacing:.04em"
         onkeydown="if(event.key==='Enter')lookupEmployee()">
+      <div style="font-size:.72rem;color:var(--gray-400);margin-top:5px">新员工：入职登记后短信收到的 8 位打卡密码可直接输入</div>
     </div>
     <button class="btn-big btn-lookup" id="lookupBtn" onclick="lookupEmployee()">查询状态 →</button>
   </div>
@@ -234,9 +235,13 @@ function setGpsBar(cls, icon, text) {
 }
 
 // Lookup
+let _loginRaw = '';        // 查询时输入的原文; 8 位纯数字 = 打卡密码模式(免 PIN)
+const _isCodeLogin = () => /^\d{8}$/.test(_loginRaw);
+
 async function lookupEmployee() {
   const raw = document.getElementById('empIdInput').value.trim().toUpperCase();
-  if (!raw) { showMsg('idErr', '请输入员工编号', 'err'); return; }
+  if (!raw) { showMsg('idErr', '请输入员工编号或打卡密码', 'err'); return; }
+  _loginRaw = raw;
   hideMsg('idErr');
   const btn = document.getElementById('lookupBtn');
   btn.disabled = true; btn.textContent = '查询中…';
@@ -326,6 +331,8 @@ function confirmPunch(type) {
   else { warnEl.style.display = 'none'; }
 
   document.getElementById('pinInput').value = '';
+  // 用 8 位打卡密码登录时密码即凭证, 不再要求输入 PIN
+  document.getElementById('pinInput').style.display = _isCodeLogin() ? 'none' : '';
   document.getElementById('pinErr').textContent = '';
   const btn = document.getElementById('pinConfirmBtn');
   btn.disabled = false; btn.textContent = '确认打卡';
@@ -339,7 +346,8 @@ function closePinModal() {
 }
 
 async function submitPin() {
-  const pin = document.getElementById('pinInput').value.trim();
+  const codeMode = _isCodeLogin();
+  const pin = codeMode ? _loginRaw : document.getElementById('pinInput').value.trim();
   if (!pin) { document.getElementById('pinErr').textContent = '请输入 PIN'; return; }
   document.getElementById('pinErr').textContent = '';
   const btn = document.getElementById('pinConfirmBtn');
@@ -347,7 +355,7 @@ async function submitPin() {
 
   try {
     const body = {
-      employee_id: currentEmp.employee.employee_id,
+      employee_id: codeMode ? _loginRaw : currentEmp.employee.employee_id,
       pin,
       punch_type: pendingPunchType
     };
