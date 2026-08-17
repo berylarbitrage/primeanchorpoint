@@ -36974,8 +36974,11 @@ function _invpGetDates() {
   const dates = [];
   const cur = new Date(ps + 'T00:00:00');
   const end = new Date(pe + 'T00:00:00');
+  // 用本地日期拼 key——不能用 toISOString()：它按 UTC 取日期，在 UTC+8（国内）
+  // 浏览器上会把整列日期提前一天（8/3 变 8/2），与考勤按天数据对不上。
+  const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   while (cur <= end) {
-    dates.push(cur.toISOString().slice(0, 10));
+    dates.push(ymd(cur));
     cur.setDate(cur.getDate() + 1);
   }
   return dates;
@@ -37038,6 +37041,17 @@ function renderInvpManualTable(skipSave) {
   if (!dates.length) {
     wrap.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">请先设置服务周期开始和结束日期</div>';
     return;
+  }
+  // Excel 导入时服务周期还没定的行（pendingHours）：现在周期有了，补摊到每天。
+  {
+    let filled = 0;
+    (window._invpManualEmps || []).forEach(e => {
+      if (!(Number(e.pendingHours) > 0)) return;
+      const hasDay = Object.values(e.days || {}).some(v => parseFloat(v) > 0);
+      if (!hasDay) { _invpDistributeHours(e, Number(e.pendingHours), dates); filled++; }
+      delete e.pendingHours;
+    });
+    if (filled && window.showToast) showToast(`已把 Excel 导入的 ${filled} 名员工的工时按服务周期摊到每天`, 'success', 5000);
   }
 
   // 从「按月付款」转入的发票，每行带真实「付给工人」时薪 emp.wage_rate;此时多显示一列
@@ -37682,6 +37696,11 @@ function invpApplyExcelData(data) {
         if (i === dates.length - 1) emp.days[d] = (Math.round((total - acc) * 100) / 100).toFixed(2);
         else { emp.days[d] = perDay.toFixed(2); acc += perDay; }
       });
+    } else if (total > 0) {
+      // 服务周期还没定（比如 Excel 文件被改过名、文件名里没有账期）——以前这里
+      // 会把工时静默丢掉，表格全是 0。现在记成待摊工时，等设置了服务周期后
+      // 由 renderInvpManualTable 自动摊到每天。
+      emp.pendingHours = total;
     }
     return emp;
   });
@@ -37691,6 +37710,9 @@ function invpApplyExcelData(data) {
   if (carried) showToast(`已按姓名保留 ${carried} 行原有的分包商/介绍人等信息`, 'success', 4000);
   if (data._fixedRows && data._fixedRows.length) {
     showToast(`🔒 ${data._fixedRows.length} 行的正常/加班拆分无法用 40h/周规则复现（补差价/跨账期行），已按 Excel 原样锁定计算：${data._fixedRows.join('、')}`, 'warning', 9000);
+  }
+  if ((window._invpManualEmps || []).some(e => Number(e.pendingHours) > 0)) {
+    showToast('⚠️ Excel 里没找到服务周期（文件名可能被改过）——请设置上方「服务周期」，工时会自动按天填入。', 'warning', 10000);
   }
 }
 
