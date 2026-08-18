@@ -345,7 +345,19 @@ function MessageBubble({
 
         <div className="footline">
           <span>{formatTime(message.date)}</span>
-          {message.pending && <span>发送中…</span>}
+          {message.pending && (
+            <span title="手机把这条写进短信库之后，这里就会换成手机里的那条">
+              已交给手机发送…
+            </span>
+          )}
+          {message.unconfirmed && (
+            <span
+              style={{ color: 'var(--warn)' }}
+              title="三星在对方也支持时会走 RCS（聊天消息），那种消息不会写进手机的短信库，所以这里读不到——不代表没发出去"
+            >
+              已发出 · 手机短信库里查不到
+            </span>
+          )}
           {message.translation?.sourceLang && <span>{message.translation.sourceLang}</span>}
           {message.kind === 'mms' && <span>图片短信</span>}
           {message.analysis && <span>{categoryLabel(message.analysis.category)}</span>}

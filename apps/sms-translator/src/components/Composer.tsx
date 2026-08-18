@@ -66,15 +66,17 @@ export default function Composer({
     onDraftChange?.(text)
   }
 
-  async function translate(): Promise<void> {
-    if (!draft.trim()) return
+  async function translate(): Promise<boolean> {
+    if (!draft.trim()) return false
     setBusy('translating')
     setNote(null)
     try {
       const result = await sms.translateDraft(draft, language)
       setPreview({ text: result.text, lang: result.targetLang })
+      return true
     } catch (err) {
       setNote({ text: errorText(err), error: true })
+      return false
     } finally {
       setBusy('none')
     }
@@ -115,24 +117,36 @@ export default function Composer({
   }
 
   const languageLabel = language || '（跟设置一致）'
+  // A language was chosen for this conversation: the draft is meant to go out
+  // translated, so translating comes first and the result is shown before send.
+  const translating = language.trim() !== '' && canTranslate
 
   return (
     <div className="composer">
       <textarea
         value={draft}
-        placeholder={`发给 ${to}（Ctrl+Enter 直接发送原文）`}
+        placeholder={
+          translating
+            ? `发给 ${to}（写中文即可，Ctrl+Enter 先翻成${language}）`
+            : `发给 ${to}（Ctrl+Enter 直接发送原文）`
+        }
         onChange={(e) => edit(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
             e.preventDefault()
-            void send(draft)
+            // Same rule as the buttons: with a language chosen, show the
+            // translation first rather than firing the original off.
+            if (translating && !preview) void translate()
+            else void send(preview?.text ?? draft)
           }
         }}
       />
 
       {preview && (
         <div className="preview">
-          <span className="label">译文（{preview.lang}）— 发送的将是这段文字</span>
+          <span className="label">
+            Claude 译文（{preview.lang}）— 点「发送译文」发出去的就是这段
+          </span>
           {preview.text}
         </div>
       )}
@@ -173,34 +187,69 @@ export default function Composer({
           ))}
         </select>
 
-        <button
-          type="button"
-          className="btn"
-          disabled={!canTranslate || !draft.trim() || busy !== 'none'}
-          onClick={() => void translate()}
-          title={canTranslate ? `翻译成 ${languageLabel}` : '请先在设置里填入 Anthropic API key'}
-        >
-          {busy === 'translating' ? '翻译中…' : '翻译草稿'}
-        </button>
-
-        {preview && (
+        {/* With a language chosen, translating is the point — so it is the main
+            button, and the translation is shown before anything is sent. */}
+        {translating && !preview && (
           <button
             type="button"
             className="btn primary"
-            disabled={busy !== 'none' || disabled}
-            onClick={() => void send(preview.text)}
+            disabled={!canTranslate || !draft.trim() || busy !== 'none'}
+            onClick={() => void translate()}
+            title={canTranslate ? `翻译成 ${languageLabel}` : '请先在设置里填入 Anthropic API key'}
           >
-            发送译文
+            {busy === 'translating' ? '翻译中…' : `译成 ${languageLabel} 并预览`}
           </button>
+        )}
+
+        {!translating && (
+          <button
+            type="button"
+            className="btn"
+            disabled={!canTranslate || !draft.trim() || busy !== 'none'}
+            onClick={() => void translate()}
+            title={canTranslate ? '翻译草稿' : '请先在设置里填入 Anthropic API key'}
+          >
+            {busy === 'translating' ? '翻译中…' : '翻译草稿'}
+          </button>
+        )}
+
+        {preview && (
+          <>
+            <button
+              type="button"
+              className="btn primary"
+              disabled={busy !== 'none' || disabled}
+              onClick={() => void send(preview.text)}
+            >
+              {busy === 'sending'
+                ? '发送中…'
+                : busy === 'checking'
+                  ? '检查中…'
+                  : `发送译文（${preview.lang}）`}
+            </button>
+            <button
+              type="button"
+              className="btn ghost"
+              disabled={busy !== 'none'}
+              onClick={() => void translate()}
+            >
+              重新翻译
+            </button>
+          </>
         )}
 
         <button
           type="button"
-          className={preview ? 'btn' : 'btn primary'}
+          className={preview || translating ? 'btn ghost' : 'btn primary'}
           disabled={!draft.trim() || busy !== 'none' || disabled}
           onClick={() => void send(draft)}
+          title={translating ? '不翻译，把你写的原样发出去' : ''}
         >
-          {busy === 'sending' ? '发送中…' : busy === 'checking' ? '检查中…' : '发送原文'}
+          {busy === 'sending' && !preview
+            ? '发送中…'
+            : translating
+              ? '直接发原文'
+              : '发送原文'}
         </button>
       </div>
 

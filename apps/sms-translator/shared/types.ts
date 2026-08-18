@@ -88,6 +88,12 @@ export interface SmsMessage {
   /** Set on messages this app sent, before the phone's SMS database catches up. */
   pending?: boolean
   /**
+   * Sent from here, but the phone never wrote it to its SMS database — which
+   * happens when the message went out as RCS / chat rather than as SMS. Kept in
+   * the thread rather than dropped: it really was sent.
+   */
+  unconfirmed?: boolean
+  /**
    * Translation state at the time this message was last pushed to the website.
    * Undefined = never pushed. Compared against `translationState` so a message
    * pushed before its translation arrived gets pushed again with it.

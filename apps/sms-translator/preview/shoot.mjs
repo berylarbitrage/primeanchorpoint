@@ -86,10 +86,21 @@ const shots = [
     },
   ],
   [
+    'translated',
+    async () => {
+      // A conversation with a language set: the translation must be visible
+      // before anything is sent.
+      await page.getByRole('button', { name: /^译成 .* 并预览$/ }).click()
+      await page.waitForSelector('.preview', { timeout: 10_000 })
+    },
+  ],
+  [
     'blocked',
     async () => {
       await page.getByPlaceholder(/^发给/).fill('我的验证码是 884213，你先用')
-      await page.getByRole('button', { name: '发送原文' }).click()
+      // This conversation has a language set, so the plain-send button is the
+      // "send it untranslated" one.
+      await page.getByRole('button', { name: '直接发原文' }).click()
       await page.waitForSelector('.blocked', { timeout: 10_000 })
     },
   ],
