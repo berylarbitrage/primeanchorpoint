@@ -131,6 +131,53 @@ function client(apiKey: string): Anthropic {
 }
 
 /**
+ * `effort` is not accepted by every model — Haiku 4.5 and Sonnet 4.5 reject it
+ * with a 400. The parameter is an optimisation (it keeps cheap calls cheap), so
+ * it is simply left off where it does not apply.
+ */
+function supportsEffort(model: string): boolean {
+  return !/haiku|sonnet-4-5/i.test(model)
+}
+
+/** `output_config` for a model: the schema always, the effort hint when allowed. */
+function outputConfig(model: string, schema: unknown, effort: 'low' | 'medium' = 'low'): unknown {
+  return supportsEffort(model)
+    ? { effort, format: { type: 'json_schema', schema } }
+    : { format: { type: 'json_schema', schema } }
+}
+
+/**
+ * One request, with the two failure modes that actually happen handled:
+ * a model that rejects `effort` (retry once without it) and everything else
+ * turned into a readable message.
+ */
+async function createMessage(
+  apiKey: string,
+  params: Record<string, unknown>,
+): Promise<Anthropic.Message> {
+  try {
+    return await client(apiKey).messages.create(
+      params as unknown as Anthropic.MessageCreateParamsNonStreaming,
+    )
+  } catch (err) {
+    // Belt and braces: if a model rejects effort despite the check above, drop
+    // it and try again rather than failing the user's translation.
+    const rejectsEffort =
+      err instanceof Anthropic.APIError && err.status === 400 && /effort/i.test(err.message)
+    const config = params.output_config as { effort?: unknown } | undefined
+    if (rejectsEffort && config?.effort !== undefined) {
+      const { effort: _dropped, ...rest } = config
+      return client(apiKey)
+        .messages.create({ ...params, output_config: rest } as unknown as Anthropic.MessageCreateParamsNonStreaming)
+        .catch((retryErr: unknown) => {
+          throw friendlyError(retryErr)
+        })
+    }
+    throw friendlyError(err)
+  }
+}
+
+/**
  * Turn an SDK error into something worth showing a non-technical user.
  *
  * Without this the renderer prints the raw body, e.g.
@@ -191,10 +238,7 @@ export async function translateBatch(
     model: opts.model,
     max_tokens: 8000,
     system: systemPrompt(opts.targetLanguage, opts.classify),
-    output_config: {
-      effort: 'low',
-      format: { type: 'json_schema', schema: BATCH_SCHEMA },
-    },
+    output_config: outputConfig(opts.model, BATCH_SCHEMA),
     messages: [
       {
         role: 'user',
@@ -203,11 +247,7 @@ export async function translateBatch(
     ],
   }
 
-  const response = await client(opts.apiKey)
-    .messages.create(params as unknown as Anthropic.MessageCreateParamsNonStreaming)
-    .catch((err: unknown) => {
-      throw friendlyError(err)
-    })
+  const response = await createMessage(opts.apiKey, params)
 
   const parsed = firstJson(response) as { results?: unknown }
   const results = Array.isArray(parsed.results) ? parsed.results : []
@@ -293,18 +333,11 @@ export async function describeImageMessage(
     model: opts.model,
     max_tokens: 4000,
     system,
-    output_config: {
-      effort: 'low',
-      format: { type: 'json_schema', schema: DESCRIBE_SCHEMA },
-    },
+    output_config: outputConfig(opts.model, DESCRIBE_SCHEMA),
     messages: [{ role: 'user', content }],
   }
 
-  const response = await client(opts.apiKey)
-    .messages.create(params as unknown as Anthropic.MessageCreateParamsNonStreaming)
-    .catch((err: unknown) => {
-      throw friendlyError(err)
-    })
+  const response = await createMessage(opts.apiKey, params)
 
   const parsed = firstJson(response) as Record<string, unknown>
   const category = CATEGORIES.includes(parsed.category as Category)
@@ -338,18 +371,11 @@ export async function translateDraft(
       'Keep codes, numbers, names, and URLs exactly as written.',
       'Return only the translation — no notes, no alternatives, no quotes.',
     ].join('\n'),
-    output_config: {
-      effort: 'low',
-      format: { type: 'json_schema', schema: DRAFT_SCHEMA },
-    },
+    output_config: outputConfig(opts.model, DRAFT_SCHEMA),
     messages: [{ role: 'user', content: text }],
   }
 
-  const response = await client(opts.apiKey)
-    .messages.create(params as unknown as Anthropic.MessageCreateParamsNonStreaming)
-    .catch((err: unknown) => {
-      throw friendlyError(err)
-    })
+  const response = await createMessage(opts.apiKey, params)
 
   const parsed = firstJson(response) as { translation?: unknown; source_language?: unknown }
   return {
@@ -415,18 +441,11 @@ export async function screenDraft(
       '',
       'reason 用中文写一句话，说清楚拦在哪里；放行时 reason 为空字符串。',
     ].join('\n'),
-    output_config: {
-      effort: 'low',
-      format: { type: 'json_schema', schema: SCREEN_SCHEMA },
-    },
+    output_config: outputConfig(opts.model, SCREEN_SCHEMA),
     messages: [{ role: 'user', content: '待发送短信草稿: ' + JSON.stringify(text.slice(0, 2000)) }],
   }
 
-  const response = await client(opts.apiKey)
-    .messages.create(params as unknown as Anthropic.MessageCreateParamsNonStreaming)
-    .catch((err: unknown) => {
-      throw friendlyError(err)
-    })
+  const response = await createMessage(opts.apiKey, params)
 
   const parsed = firstJson(response) as {
     flagged?: unknown
@@ -439,3 +458,6 @@ export async function screenDraft(
     categories: Array.isArray(parsed.categories) ? parsed.categories.map(String) : [],
   }
 }
+
+/** Exported for tests. */
+export const __testing = { supportsEffort, outputConfig }
