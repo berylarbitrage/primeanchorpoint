@@ -68,12 +68,15 @@ export interface Conversation {
   categories: Category[]
   /** How many messages pass the active filters. */
   matchCount: number
+  pinned: boolean
 }
 
 export function buildConversations(
   messages: SmsMessage[],
   filters: Filters,
+  pinnedPeers: string[] = [],
 ): Conversation[] {
+  const pinned = new Set(pinnedPeers)
   const groups = new Map<string, SmsMessage[]>()
   for (const message of messages) {
     const list = groups.get(message.peer)
@@ -113,10 +116,14 @@ export function buildConversations(
       maxRisk,
       categories: [...categories],
       matchCount,
+      pinned: pinned.has(peer),
     })
   }
 
-  conversations.sort((a, b) => b.last.date - a.last.date)
+  // Pinned conversations stay on top; everything else is newest-first.
+  conversations.sort((a, b) =>
+    a.pinned === b.pinned ? b.last.date - a.last.date : a.pinned ? -1 : 1,
+  )
   return conversations
 }
 

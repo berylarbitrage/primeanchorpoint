@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
+import { app, clipboard, dialog, ipcMain, type BrowserWindow } from 'electron'
 import { listDevices, resolveDevice } from './adb/adb'
 import { AdbLocator, verifyAdb } from './adb/locate'
 import {
@@ -9,7 +9,8 @@ import {
   pairWireless,
   readWifiAddress,
 } from './adb/wireless'
-import { sendSms } from './adb/send'
+import { dialNumber, sendSms } from './adb/send'
+import { listPhoneContacts } from './adb/contacts'
 import { normalisePeer } from './adb/sms'
 import { SettingsStore } from './settings'
 import { MessageStore } from './store'
@@ -17,6 +18,7 @@ import { Syncer } from './sync/syncer'
 import { TranslationQueue } from './translate/queue'
 import { translateDraft } from './translate/claude'
 import type {
+  Contact,
   DeviceInfo,
   DraftTranslation,
   SendResult,
@@ -38,6 +40,8 @@ let syncPhase: 'idle' | 'connecting' | 'syncing' | 'error' = 'idle'
 let syncDetail: string | undefined
 let lastSyncAt: number | undefined
 let device: DeviceInfo | null = null
+/** Phone book, read once per session (see the contacts:list handler). */
+let contactBook: Contact[] | null = null
 let pendingTranslations = 0
 
 function currentStatus(): SyncStatus {
@@ -130,6 +134,7 @@ export function registerIpc(win: BrowserWindow): void {
     onMessages: emitMessages,
     onRemoved: emitRemoved,
     onDevice: (found) => {
+      if (found?.serial !== device?.serial) contactBook = null
       device = found
       emitStatus()
     },
@@ -274,6 +279,72 @@ export function registerIpc(win: BrowserWindow): void {
       .filter((m) => m.peer === peer && !m.readLocal)
       .map((m) => ({ id: m.id, partial: { readLocal: true } }))
     if (updates.length) emitMessages(store.patchMany(updates))
+  })
+
+  // Only incoming messages can be unread; marking our own sent ones would make
+  // the conversation permanently bold.
+  handle('sms:markThreadUnread', (peer: string) => {
+    const updates = store
+      .all()
+      .filter((m) => m.peer === peer && m.direction === 'in' && m.readLocal)
+      .map((m) => ({ id: m.id, partial: { readLocal: false } }))
+    if (updates.length) emitMessages(store.patchMany(updates))
+  })
+
+  handle('sms:markAllRead', () => {
+    const updates = store
+      .all()
+      .filter((m) => !m.readLocal)
+      .map((m) => ({ id: m.id, partial: { readLocal: true } }))
+    if (updates.length) emitMessages(store.patchMany(updates))
+  })
+
+  handle('sms:delete', (ids: string[]) => {
+    emitRemoved(store.remove(ids, true))
+  })
+
+  handle('sms:deleteThread', (peer: string) => {
+    const ids = store
+      .all()
+      .filter((m) => m.peer === peer)
+      .map((m) => m.id)
+    emitRemoved(store.remove(ids, true))
+    const current = settings.public()
+    if (current.pinnedPeers.includes(peer)) {
+      settings.update({ pinnedPeers: current.pinnedPeers.filter((p) => p !== peer) })
+    }
+  })
+
+  handle('sms:setPinned', (peer: string, pinned: boolean): Settings => {
+    const current = settings.public().pinnedPeers.filter((p) => p !== peer)
+    return settings.update({ pinnedPeers: pinned ? [...current, peer] : current })
+  })
+
+  // The phone book changes rarely and the query is slow enough to notice, so it
+  // is read once per session unless the user asks for a refresh.
+  handle('contacts:list', async (refresh?: boolean): Promise<Contact[]> => {
+    if (contactBook && !refresh) return contactBook
+    const adbPath = await locator.require()
+    const target = await resolveDevice(adbPath, settings.public().deviceSerial)
+    if (!target) return contactBook ?? []
+    contactBook = await listPhoneContacts({ adbPath, serial: target.serial })
+    return contactBook
+  })
+
+  handle('phone:dial', async (number: string): Promise<{ ok: boolean; message: string }> => {
+    const adbPath = await locator.require()
+    const target = await resolveDevice(adbPath, settings.public().deviceSerial)
+    if (!target) return { ok: false, message: '手机没连上，没法拨号。' }
+    try {
+      await dialNumber({ adbPath, serial: target.serial }, number)
+      return { ok: true, message: '已在手机上打开拨号界面，请在手机上按拨号键。' }
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  handle('clipboard:write', (text: string) => {
+    clipboard.writeText(text)
   })
 
   handle(

@@ -77,6 +77,15 @@ const shots = [
   ['mms', async () => page.locator('.conversation').filter({ hasText: '447700900123' }).first().click()],
   ['filter', async () => page.getByRole('button', { name: '可疑及以上' }).click()],
   [
+    'compose',
+    async () => {
+      await page.goto(`${base}/index.html`, { waitUntil: 'networkidle' })
+      await page.getByRole('button', { name: '＋ 新短信' }).click()
+      await page.getByPlaceholder('号码，或联系人名字').fill('ma')
+      await page.waitForSelector('.suggestion')
+    },
+  ],
+  [
     'error',
     async () => {
       await page.goto(`${base}/index.html?state=error`, { waitUntil: 'networkidle' })

@@ -120,6 +120,7 @@
     sendTapDelayMs: 1500,
     batchSize: 20,
     hasApiKey: true,
+    pinnedPeers: ['4155550142'],
   }
 
   const status = {
@@ -152,6 +153,23 @@
     sync: async () => ({ imported: 0 }),
     send: async () => ({ ok: true }),
     markThreadRead: async () => {},
+    markThreadUnread: async () => {},
+    markAllRead: async () => {},
+    deleteMessages: async () => {},
+    deleteConversation: async () => {},
+    setPinned: async (peer, pinned) => {
+      settings.pinnedPeers = pinned
+        ? [...settings.pinnedPeers, peer]
+        : settings.pinnedPeers.filter((p) => p !== peer)
+      return settings
+    },
+    listContacts: async () => [
+      { name: 'Marta Ruiz', number: '+34611223344' },
+      { name: '王 小明', number: '+8613800138000' },
+      { name: 'Ruiz, Marta（工作）', number: '+14155550142' },
+    ],
+    dial: async () => ({ ok: true, message: '已在手机上打开拨号界面。' }),
+    copyText: async () => {},
     retranslate: async () => {},
     translateDraft: async () => ({ text: '', targetLang: '简体中文' }),
     getSettings: async () => settings,

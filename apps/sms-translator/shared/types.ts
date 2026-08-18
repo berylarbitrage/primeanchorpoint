@@ -89,6 +89,13 @@ export interface SmsMessage {
   pending?: boolean
 }
 
+/** A phone-book entry, used by the "new message" recipient picker. */
+export interface Contact {
+  name: string
+  /** The number exactly as the contacts provider stores it. */
+  number: string
+}
+
 export interface DeviceInfo {
   serial: string
   state: string
@@ -105,6 +112,8 @@ export interface Settings {
   deviceSerial: string | null
   /** `host:port` from the phone's Wireless debugging screen. Empty = USB only. */
   wirelessAddress: string
+  /** Conversations kept at the top of the list, newest-first within the group. */
+  pinnedPeers: string[]
   /** Re-run `adb connect` when the wireless device drops off the list. */
   wirelessAutoReconnect: boolean
   targetLanguage: string
@@ -133,6 +142,7 @@ export const DEFAULT_SETTINGS: Settings = {
   adbPath: 'adb',
   deviceSerial: null,
   wirelessAddress: '',
+  pinnedPeers: [],
   wirelessAutoReconnect: true,
   targetLanguage: '简体中文',
   outgoingLanguage: '',
@@ -199,6 +209,27 @@ export interface SmsBridge {
   sync(mode: 'full' | 'incremental'): Promise<{ imported: number }>
   send(to: string, body: string): Promise<SendResult>
   markThreadRead(peer: string): Promise<void>
+  markThreadUnread(peer: string): Promise<void>
+  markAllRead(): Promise<void>
+
+  /**
+   * Remove messages from this app only — the phone's own copy is untouched,
+   * because the shell user is not the default SMS app and cannot write to the
+   * SMS provider. Deleted ids are remembered so a later sync does not bring
+   * them back.
+   */
+  deleteMessages(ids: string[]): Promise<void>
+  deleteConversation(peer: string): Promise<void>
+
+  /** Pin/unpin a conversation to the top of the list. */
+  setPinned(peer: string, pinned: boolean): Promise<Settings>
+
+  /** Phone book, for addressing a new message by name. Empty when unreadable. */
+  listContacts(refresh?: boolean): Promise<Contact[]>
+  /** Open the phone's dialler on a number (does not place the call). */
+  dial(number: string): Promise<{ ok: boolean; message: string }>
+  /** Put text on the Windows clipboard. */
+  copyText(text: string): Promise<void>
 
   /** Attachment bytes as a data: URL, loaded on demand (never kept in the store). */
   readAttachment(messageId: string, partId: number): Promise<{ dataUrl?: string; error?: string }>

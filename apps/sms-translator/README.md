@@ -30,7 +30,10 @@ Windows 桌面短信收件箱：把安卓手机的短信同步到电脑，用 Cl
 
 - **读取手机短信**：通过 ADB 直接读手机的短信数据库，手机上**不需要装任何 App**。
 - **双语显示**：每条短信同时显示原文和译文，可一键隐藏原文。
-- **发短信**：在电脑上写，可先翻译成对方的语言再发。
+- **发短信**：在电脑上写，可先翻译成对方的语言再发。**可以主动发给任意号码**
+  ——点「＋ 新短信」，填号码或直接搜手机通讯录里的联系人，不必等对方先来短信。
+- **收件箱该有的操作**：置顶会话、标为未读 / 全部已读、删除（本软件内）、
+  复制原文或译文、转发、拨号（在手机上打开拨号界面）、每个会话的草稿自动保留。
 - **筛查**：全文搜索（原文+译文同时匹配）、按类别筛（验证码 / 银行 / 物流 /
   营销 / 垃圾 / 疑似诈骗…）、按诈骗风险分筛、仅未读、仅未翻译。
 - **诈骗识别**：每条短信给 0–5 的风险分和一句话摘要，高风险的会标红。
@@ -226,7 +229,13 @@ adb shell content query --uri content://sms --projection _id:body
 
 ### 5. 联系人姓名是尽力而为
 
-姓名通过联系人 provider 查询，很多系统不允许，查不到就只显示号码。这不影响其它功能。
+姓名通过联系人 provider 查询，很多系统不允许，查不到就只显示号码，「新短信」的
+联系人搜索也会是空的——这时直接填号码即可，不影响其它功能。
+
+### 6. 删除只删本软件里的
+
+同样是没有写权限：**删除只是把短信从这个软件里去掉，手机上的那条还在**。删掉的
+消息 id 会记下来，之后同步不会再把它们拉回来。要真正删除请在手机上删。
 
 ---
 
@@ -260,7 +269,7 @@ electron/            主进程
   adb/sms.ts         content://sms 查询（有测试）
   adb/send.ts        SENDTO intent + 界面发送按钮识别（有测试）
   adb/wireless.ts    WiFi 无线调试：配对/连接/断开、自动重连（有测试）
-  adb/contacts.ts    联系人姓名查询（尽力而为）
+  adb/contacts.ts    联系人姓名查询 + 通讯录列表（尽力而为，有测试）
   store.ts           JSONL 追加式存储 + 定期压缩（无原生依赖）
   settings.ts        设置持久化，API key 走 safeStorage
   sync/syncer.ts     轮询同步、增量游标、乐观发送记录的回收
@@ -270,13 +279,15 @@ electron/            主进程
   preload.ts         contextBridge 暴露的 window.sms
 src/                 渲染进程（React）
   lib/derive.ts      会话分组、筛选、格式化
-  components/        Sidebar / Thread / Composer / SettingsModal
+  components/        Sidebar / Thread / Composer / NewMessage / SettingsModal
 shared/types.ts      主进程与渲染进程共用的类型
 test/parse-sms.js    短信解析测试
 test/send-button.js  发送按钮识别测试
 test/locate-adb.js   adb 自动查找测试
 test/wireless.js     无线连接输出解析测试
 test/parse-mms.js    MMS 解析测试（秒/毫秒、addr 类型、SMIL 过滤）
+test/contacts.js     通讯录解析测试（名字里的逗号、重复号码）
+test/store.js        删除后不被同步重新拉回来的测试
 build/make-icon.py   纯 Python 生成应用图标（无需 Pillow）
 preview/            用假数据渲染界面并截图（没手机时验证 UI 用）
 ```

@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
+  Contact,
   DeviceInfo,
   DraftTranslation,
   SendResult,
@@ -38,6 +39,18 @@ const bridge: SmsBridge = {
   sync: (mode) => ipcRenderer.invoke('sms:sync', mode) as Promise<{ imported: number }>,
   send: (to, body) => ipcRenderer.invoke('sms:send', to, body) as Promise<SendResult>,
   markThreadRead: (peer) => ipcRenderer.invoke('sms:markThreadRead', peer) as Promise<void>,
+  markThreadUnread: (peer) => ipcRenderer.invoke('sms:markThreadUnread', peer) as Promise<void>,
+  markAllRead: () => ipcRenderer.invoke('sms:markAllRead') as Promise<void>,
+
+  deleteMessages: (ids) => ipcRenderer.invoke('sms:delete', ids) as Promise<void>,
+  deleteConversation: (peer) => ipcRenderer.invoke('sms:deleteThread', peer) as Promise<void>,
+  setPinned: (peer, pinned) =>
+    ipcRenderer.invoke('sms:setPinned', peer, pinned) as Promise<Settings>,
+
+  listContacts: (refresh) => ipcRenderer.invoke('contacts:list', refresh) as Promise<Contact[]>,
+  dial: (number) =>
+    ipcRenderer.invoke('phone:dial', number) as Promise<{ ok: boolean; message: string }>,
+  copyText: (text) => ipcRenderer.invoke('clipboard:write', text) as Promise<void>,
 
   readAttachment: (messageId, partId) =>
     ipcRenderer.invoke('mms:readAttachment', messageId, partId) as Promise<{
