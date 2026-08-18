@@ -148,6 +148,13 @@ export interface Settings {
   outgoingLanguage: string
   /** Per-conversation override of that language, remembered per number. */
   outgoingLanguageByPeer: Record<string, string>
+  /**
+   * Language messages FROM this number get translated into. Empty follows
+   * `targetLanguage`. Set here or on the website's phone page.
+   */
+  incomingLanguageByPeer: Record<string, string>
+  /** Numbers whose incoming messages should NOT be auto-translated. */
+  noAutoTranslatePeers: string[]
   /** Check outgoing drafts with Claude before sending. */
   screenOutgoing: boolean
   /** Aliases and notes, keyed by normalised number. */
@@ -201,6 +208,8 @@ export const DEFAULT_SETTINGS: Settings = {
   targetLanguage: '简体中文',
   outgoingLanguage: '',
   outgoingLanguageByPeer: {},
+  incomingLanguageByPeer: {},
+  noAutoTranslatePeers: [],
   screenOutgoing: true,
   peerNotes: {},
   peerNotesAt: {},

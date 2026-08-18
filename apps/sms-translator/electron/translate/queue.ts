@@ -26,6 +26,12 @@ export interface QueueDeps {
   }
   /** Reads a downloaded attachment for the image path. Null when unavailable. */
   readImage: (file: string) => Buffer | null
+  /**
+   * Language incoming messages from this number should be translated into.
+   * Empty means "use the global setting" — set per conversation on the phone
+   * page and in the desktop settings.
+   */
+  languageFor?: (peer: string) => string
   onChanged: (messages: SmsMessage[]) => void
   onProgress: (pending: number) => void
 }
@@ -98,6 +104,11 @@ export class TranslationQueue {
     return out
   }
 
+  /** The language this conversation is read in, falling back to the global one. */
+  private targetFor(peer: string, fallback: string): string {
+    return (this.deps.languageFor?.(peer) || '').trim() || fallback
+  }
+
   /** One request per picture message: describe, transcribe, translate, classify. */
   private async processPicture(
     id: string,
@@ -107,6 +118,9 @@ export class TranslationQueue {
     if (!message) return
     const images = this.imagesFor(message)
     if (!images.length) return
+
+    const target = this.targetFor(message.peer, opts.targetLanguage)
+    opts = { ...opts, targetLanguage: target }
 
     try {
       const result = await describeImageMessage(
@@ -207,12 +221,35 @@ export class TranslationQueue {
             body: message.body,
             direction: message.direction,
             sender: message.contact || message.address,
+            target: this.targetFor(message.peer, opts.targetLanguage),
           })
         }
 
         for (const id of pictureIds) await this.processPicture(id, opts)
         if (!items.length) continue
 
+        // One request per target language: a batch carries a single "translate
+        // into X" instruction, and conversations can each pick their own.
+        const groups = new Map<string, TranslateItem[]>()
+        for (const item of items) {
+          const list = groups.get(item.target ?? opts.targetLanguage)
+          if (list) list.push(item)
+          else groups.set(item.target ?? opts.targetLanguage, [item])
+        }
+
+        for (const [language, group] of groups) {
+          await this.translateGroup(group, { ...opts, targetLanguage: language })
+        }
+      }
+    } finally {
+      this.running = false
+      this.deps.onProgress(this.queue.length)
+    }
+  }
+
+  /** One batch, one target language. */
+  private async translateGroup(items: TranslateItem[], opts: TranslateOptions): Promise<void> {
+    {
         try {
           const results = await translateBatch(items, opts)
           const byId = new Map(results.map((r) => [r.id, r]))
@@ -271,10 +308,6 @@ export class TranslationQueue {
           // rate limit) does not burn through the whole queue instantly.
           await new Promise((resolve) => setTimeout(resolve, 5_000))
         }
-      }
-    } finally {
-      this.running = false
-      this.deps.onProgress(this.queue.length)
     }
   }
 }

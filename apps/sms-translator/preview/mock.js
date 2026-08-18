@@ -123,6 +123,8 @@
     hasApiKey: true,
     pinnedPeers: ['4155550142'],
     outgoingLanguageByPeer: { '4611223344': 'Español' },
+    incomingLanguageByPeer: { '4611223344': '简体中文' },
+    noAutoTranslatePeers: [],
     screenOutgoing: true,
     peerNotesAt: {},
     peerNotes: { '4611223344': { alias: 'Marta（西班牙同事）', note: '周二 10 点开会，记得带七月报告的打印件。' } },

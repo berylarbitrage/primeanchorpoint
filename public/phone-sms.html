@@ -100,6 +100,23 @@ button,input,select,textarea{font-family:inherit}
 .action-btn.primary{background:var(--sky);color:#fff;border-color:var(--sky)}
 .action-btn.primary:hover{background:var(--blue)}
 .action-btn.danger{color:var(--red);border-color:#fecaca}
+.lang-bar{background:#f0fdf4;border-bottom:1px solid #bbf7d0;padding:6px 12px;display:flex;gap:8px;
+  align-items:center;flex-wrap:wrap;font-size:.78rem;color:var(--gray-600)}
+.lang-bar select{border:1px solid var(--gray-200);border-radius:var(--radius);padding:3px 8px;font-size:.78rem;
+  background:var(--white);color:var(--gray-800)}
+.lang-bar .spacer{flex:1}
+.lang-bar label{display:flex;align-items:center;gap:4px;cursor:pointer}
+.tag-bar{background:var(--white);padding:4px 12px 8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;
+  border-bottom:1px solid var(--gray-200)}
+.tag{background:#eef2ff;color:#3730a3;font-size:.72rem;font-weight:600;padding:2px 9px;border-radius:10px;
+  display:inline-flex;align-items:center;gap:5px}
+.tag button{border:0;background:transparent;color:#6366f1;cursor:pointer;font-size:.8rem;line-height:1;padding:0}
+.tag-add{border:1px dashed var(--gray-200);background:transparent;color:var(--gray-400);font-size:.72rem;
+  padding:2px 9px;border-radius:10px;cursor:pointer}
+.tag-add:hover{border-color:var(--sky);color:var(--sky)}
+.star-btn{border:0;background:transparent;cursor:pointer;font-size:.9rem;line-height:1;padding:0 2px}
+.msg-star{color:var(--accent)}
+.load-more{padding:10px;text-align:center}
 .note-strip{background:#fef9c3;border-bottom:1px solid #fde68a;color:#92400e;font-size:.8rem;
   padding:7px 14px;white-space:pre-wrap}
 
@@ -197,9 +214,13 @@ button,input,select,textarea{font-family:inherit}
     <div class="filters">
       <input type="search" id="q" placeholder="搜原文 / 译文 / 号码…" oninput="debounced()">
       <div class="filter-row">
-        <button class="chip" id="riskChip" onclick="toggleRisk()" title="只看 AI 判为可疑或诈骗的短信">🚨 可疑</button>
-        <button class="chip" id="queuedChip" onclick="toggleQueued()" title="只看还没发出去的">✎ 待发送</button>
+        <button class="chip" id="unreadChip" onclick="toggleFilter('unread')" title="只看有新消息的会话">未读</button>
+        <button class="chip" id="riskChip" onclick="toggleFilter('risk')" title="只看 AI 判为可疑或诈骗的短信">🚨 可疑</button>
+        <button class="chip" id="starChip" onclick="toggleFilter('star')" title="只看标了星的消息">★ 星标</button>
+        <button class="chip" id="queuedChip" onclick="toggleFilter('queued')" title="只看还没发出去的">✎ 待发送</button>
+        <button class="chip" id="closedChip" onclick="toggleFilter('closed')" title="看已关闭的会话">✓ 已关闭</button>
       </div>
+      <div class="filter-row" id="tagRow"></div>
     </div>
     <div class="threads" id="threads"></div>
   </div>
@@ -213,6 +234,8 @@ button,input,select,textarea{font-family:inherit}
 let TOKEN = localStorage.getItem('pa_phone_sms_token') || '';
 let MESSAGES = [], OUTBOX = [], NOTES = {}, DEVICES = [];
 let PEER = null, RISK = false, QUEUED_ONLY = false, COMPOSING = false;
+let STARRED_ONLY = false, UNREAD_ONLY = false, SHOW_CLOSED = false, TAG_FILTER = '';
+let LIMIT = 400, TOTAL = 0;
 let searchTimer = null;
 
 const RISK_LABELS = { personal:'私人', verification:'验证码', bank:'银行', delivery:'物流',
@@ -295,34 +318,88 @@ function start() {
 }
 
 function debounced() { clearTimeout(searchTimer); searchTimer = setTimeout(() => load(), 400); }
-function toggleRisk() {
-  RISK = !RISK;
-  document.getElementById('riskChip').classList.toggle('on', RISK);
+// 一个开关一个筛选。risk / star / closed 要重新问服务器（分页和条件在那边），
+// unread / queued 只是把已经拿到的会话过一遍。
+function toggleFilter(which) {
+  if (which === 'risk') RISK = !RISK;
+  if (which === 'star') STARRED_ONLY = !STARRED_ONLY;
+  if (which === 'closed') SHOW_CLOSED = !SHOW_CLOSED;
+  if (which === 'unread') UNREAD_ONLY = !UNREAD_ONLY;
+  if (which === 'queued') QUEUED_ONLY = !QUEUED_ONLY;
+  syncChips();
+  if (which === 'risk' || which === 'star' || which === 'closed') load();
+  else render();
+}
+
+function pickTag(tag) {
+  TAG_FILTER = TAG_FILTER === tag ? '' : tag;
+  syncChips();
   load();
 }
-function toggleQueued() {
-  QUEUED_ONLY = !QUEUED_ONLY;
+
+function syncChips() {
+  document.getElementById('riskChip').classList.toggle('on', RISK);
+  document.getElementById('starChip').classList.toggle('on', STARRED_ONLY);
+  document.getElementById('closedChip').classList.toggle('on', SHOW_CLOSED);
+  document.getElementById('unreadChip').classList.toggle('on', UNREAD_ONLY);
   document.getElementById('queuedChip').classList.toggle('on', QUEUED_ONLY);
-  render();
 }
 
 async function load(silent) {
   try {
     const q = document.getElementById('q').value.trim();
-    let url = '/device-sms/messages?limit=800';
+    let url = '/device-sms/messages?limit=' + LIMIT;
     if (RISK) url += '&risk=2';
+    if (STARRED_ONLY) url += '&starred=1';
+    if (TAG_FILTER) url += '&tag=' + encodeURIComponent(TAG_FILTER);
+    // 默认只看进行中的；点了「已关闭」就只看关闭的
+    url += '&status=' + (SHOW_CLOSED ? 'closed' : 'open');
     if (q) url += '&q=' + encodeURIComponent(q);
     const r = await api(url);
+    TOTAL = r.total || 0;
     MESSAGES = r.messages || [];
     OUTBOX = r.outbox || [];
     DEVICES = r.devices || [];
     NOTES = {};
-    for (const n of r.notes || []) NOTES[n.peer] = { alias: n.alias || '', note: n.note || '' };
+    for (const n of r.notes || []) {
+      let tags = [];
+      try { tags = JSON.parse(n.tags || '[]'); } catch (_) { tags = []; }
+      NOTES[n.peer] = {
+        alias: n.alias || '', note: n.note || '', tags: Array.isArray(tags) ? tags : [],
+        status: n.status || 'open', contact_lang: n.contact_lang || '', agent_lang: n.agent_lang || '',
+        auto_translate: n.auto_translate === undefined ? 1 : n.auto_translate,
+        read_at: n.read_at || null
+      };
+    }
+    renderTagRow();
     document.getElementById('deviceInfo').textContent = DEVICES.length
       ? DEVICES.map(d => (d.name || '电脑') + (d.last_push_at ? ' · ' + timeAgo(d.last_push_at) + '同步' : ' · 还没推过')).join('　')
       : '还没连电脑 — 点 ⚙';
     render();
   } catch (e) { if (!silent) console.error(e); }
+}
+
+/** 所有会话用过的标签，做成一排可点的筛选。 */
+function renderTagRow() {
+  const seen = new Set();
+  for (const state of Object.values(NOTES)) for (const t of state.tags || []) seen.add(t);
+  const row = document.getElementById('tagRow');
+  const tags = [...seen].sort();
+  row.innerHTML = tags.map(t =>
+    '<button class="chip' + (TAG_FILTER === t ? ' on' : '') + '" onclick="pickTag(\'' + esc(t) + '\')">🏷 '
+    + esc(t) + '</button>').join('');
+  row.style.display = tags.length ? '' : 'none';
+}
+
+/** 有没有比「读到这儿」更新的收到消息。 */
+function unreadCount(list, readAt) {
+  const mark = readAt ? new Date(sqlTime(readAt)).getTime() : 0;
+  let n = 0;
+  for (const m of list) {
+    if (m.queued || m.direction !== 'in') continue;
+    if (new Date(sqlTime(m.sent_at)).getTime() > mark) n++;
+  }
+  return n;
 }
 
 /* 已收到的 + 排队待发的合成一条时间线。 */
@@ -356,11 +433,20 @@ function conversations() {
     // 号码用最近一条真实短信上的，排队中的那些没有权威号码
     const real = list.filter(m => !m.queued);
     const address = (real.length ? real[real.length - 1].address : last.address) || peer;
-    out.push({ peer, list, last, maxRisk, queued, address, note: noted.note || '',
-      title: noted.alias || name || fmtPhone(address) || peer });
+    out.push({
+      peer, list, last, maxRisk, queued, address,
+      note: noted.note || '', tags: noted.tags || [], status: noted.status || 'open',
+      contactLang: noted.contact_lang || '', agentLang: noted.agent_lang || '',
+      autoTranslate: noted.auto_translate === undefined ? 1 : noted.auto_translate,
+      unread: unreadCount(list, noted.read_at),
+      title: noted.alias || name || fmtPhone(address) || peer
+    });
   }
   out.sort((a, b) => (sqlTime(a.last.sent_at) < sqlTime(b.last.sent_at) ? 1 : -1));
-  return QUEUED_ONLY ? out.filter(c => c.queued > 0) : out;
+  let filtered = out;
+  if (QUEUED_ONLY) filtered = filtered.filter(c => c.queued > 0);
+  if (UNREAD_ONLY) filtered = filtered.filter(c => c.unread > 0);
+  return filtered;
 }
 
 function riskBadge(score, category) {
@@ -400,10 +486,22 @@ function renderThreads(convos) {
       + '<div class="ti-preview">' + esc(preview.slice(0, 90)) + '</div>'
       + (c.note ? '<div class="ti-note">📝 ' + esc(c.note) + '</div>' : '')
       + '<div class="ti-meta">'
+      + (c.unread ? '<span class="badge" style="background:#2563eb;color:#fff">' + c.unread + ' 条新</span>' : '')
       + riskBadge(c.maxRisk, (c.list.find(m => Number(m.risk_score) === c.maxRisk) || {}).risk_category)
       + (c.queued ? '<span class="badge queued">待发送 ' + c.queued + '</span>' : '')
+      + (c.status === 'closed' ? '<span class="badge">已关闭</span>' : '')
+      + (c.contactLang ? '<span class="badge">→ ' + esc(c.contactLang) + '</span>' : '')
+      + (c.tags || []).map(t => '<span class="tag">🏷 ' + esc(t) + '</span>').join('')
       + '</div></div></button>';
-  }).join('');
+  }).join('')
+  + (MESSAGES.length < TOTAL
+      ? '<div class="load-more"><button class="action-btn" onclick="loadMore()">加载更多（共 ' + TOTAL + ' 条）</button></div>'
+      : '');
+}
+
+function loadMore() {
+  LIMIT += 400;
+  load();
 }
 
 function renderDetail(convos) {
@@ -452,7 +550,13 @@ function renderDetail(convos) {
       + esc(m.body || (m.has_media ? '［图片短信］' : ''))
       + (showBoth ? '<div class="msg-translation">' + esc(translated) + '</div>' : '')
       + '</div>'
-      + '<div class="msg-meta"><span>' + fmtClock(m.sent_at) + '</span>'
+      + '<div class="msg-meta">'
+      + '<button class="star-btn' + (Number(m.starred) ? ' msg-star' : '') + '"'
+      + ' title="' + (Number(m.starred) ? '取消星标' : '标记这条，可以在「★ 星标」里回看') + '"'
+      + ' onclick="toggleStar(' + m.id + ',' + (Number(m.starred) ? 0 : 1) + ')">'
+      + (Number(m.starred) ? '★' : '☆') + '</button>'
+      + '<span>' + fmtClock(m.sent_at) + '</span>'
+      + (m.star_note ? '<span style="color:var(--blue)">📌 ' + esc(m.star_note) + '</span>' : '')
       + (m.kind === 'mms' ? '<span>图片短信</span>' : '')
       + (m.source_lang ? '<span>' + esc(m.source_lang) + '</span>' : '')
       + riskBadge(m.risk_score, m.risk_category)
@@ -460,11 +564,36 @@ function renderDetail(convos) {
       + '</div></div>';
   }).join('');
 
+  const langOptions = (selected) => ['', ...LANGUAGES]
+    .map(l => '<option value="' + esc(l) + '"' + (l === selected ? ' selected' : '') + '>'
+      + (l ? esc(l) : '（默认）') + '</option>').join('');
+
   el.innerHTML = contactBar(convo.title, fmtPhone(convo.address), false)
     + '<div class="action-bar">'
     + '<button class="action-btn" onclick="editNote()">📝 备注</button>'
+    + '<button class="action-btn" onclick="editTags()">🏷 标签</button>'
+    + '<button class="action-btn" onclick="markUnread()">标为未读</button>'
+    + '<button class="action-btn" onclick="toggleStatus()">'
+    + (convo.status === 'closed' ? '重新打开' : '✓ 关闭会话') + '</button>'
     + '<button class="action-btn" onclick="startNew()">✎ 新短信</button>'
+    + '<div style="flex:1"></div>'
+    + (convo.unread ? '<span class="badge" style="background:#2563eb;color:#fff">' + convo.unread + ' 条新</span>' : '')
     + '</div>'
+    // 语言对：和 SMS Inbox 那边一样的两个下拉 —— 对方写什么语言、我读什么语言
+    + '<div class="lang-bar">'
+    + '<span>对方：</span><select id="contactLang" onchange="saveLang()">' + langOptions(convo.contactLang) + '</select>'
+    + '<span>我的：</span><select id="agentLang" onchange="saveLang()">' + langOptions(convo.agentLang) + '</select>'
+    + '<div class="spacer"></div>'
+    + '<label title="关掉之后这个会话收到的消息就不再自动翻译">'
+    + '<input type="checkbox" id="autoTr" ' + (convo.autoTranslate ? 'checked' : '') + ' onchange="saveLang()">'
+    + '收到的消息自动翻译</label>'
+    + '<button class="action-btn" onclick="retranslate()" title="让电脑把这个会话重新翻译一遍">🔁 重新翻译</button>'
+    + '</div>'
+    + ((convo.tags || []).length
+        ? '<div class="tag-bar">' + convo.tags.map(t => '<span class="tag">🏷 ' + esc(t)
+            + '<button title="去掉这个标签" onclick="removeTag(\'' + esc(t) + '\')">×</button></span>').join('')
+          + '<button class="tag-add" onclick="editTags()">+ 标签</button></div>'
+        : '')
     + (noted.note ? '<div class="note-strip">📝 ' + esc(noted.note) + '</div>' : '')
     + '<div class="messages" id="messages">' + body + '</div>'
     + replyBar(false);
@@ -512,6 +641,12 @@ function pick(peer) {
   PEER = peer;
   document.getElementById('app').classList.add('show-thread');
   render();
+  // 打开就算读过了（跟手机上的已读无关，手机那边我们写不了）
+  const state = NOTES[peer] || (NOTES[peer] = {});
+  state.read_at = new Date().toISOString();
+  void api('/device-sms/peer', { method: 'POST', body: JSON.stringify({ peer, read: true }) })
+    .then(() => renderThreads(conversations()))
+    .catch(() => {});
 }
 
 function startNew() {
@@ -576,6 +711,70 @@ async function cancelQueued(id) {
   if (!(await confirmBox('撤掉这条还没发出去的短信？'))) return;
   await api('/device-sms/outbox/' + id, { method: 'DELETE' });
   load(true);
+}
+
+/* ── 会话上的动作 ── */
+async function savePeer(patch) {
+  const peer = PEER;
+  if (!peer) return;
+  await api('/device-sms/peer', { method: 'POST', body: JSON.stringify({ peer, ...patch }) });
+  await load(true);
+}
+
+function saveLang() {
+  void savePeer({
+    contact_lang: document.getElementById('contactLang').value,
+    agent_lang: document.getElementById('agentLang').value,
+    auto_translate: document.getElementById('autoTr').checked
+  });
+}
+
+function markUnread() { void savePeer({ read: false }); }
+
+function toggleStatus() {
+  const convo = conversations().find(c => c.peer === PEER);
+  if (!convo) return;
+  void savePeer({ status: convo.status === 'closed' ? 'open' : 'closed' });
+}
+
+function removeTag(tag) {
+  const convo = conversations().find(c => c.peer === PEER);
+  if (!convo) return;
+  void savePeer({ tags: (convo.tags || []).filter(t => t !== tag) });
+}
+
+function editTags() {
+  const convo = conversations().find(c => c.peer === PEER);
+  if (!convo) return;
+  openModal('<h2>标签 · ' + esc(convo.title) + '</h2>'
+    + '<label for="tagInput">用逗号分开</label>'
+    + '<input id="tagInput" placeholder="例如：工地, 房东, 重要" value="' + esc((convo.tags || []).join(', ')) + '">'
+    + '<div class="hint">标签会出现在左边的筛选栏里，点一下就只看带这个标签的会话。</div>'
+    + '<div class="row"><button class="action-btn" onclick="closeModal()">取消</button>'
+    + '<button class="action-btn primary" id="tagSave">保存</button></div>');
+  document.getElementById('tagInput').focus();
+  document.getElementById('tagSave').onclick = async () => {
+    const tags = document.getElementById('tagInput').value.split(/[,，]/).map(t => t.trim()).filter(Boolean);
+    closeModal();
+    await savePeer({ tags });
+  };
+}
+
+async function toggleStar(id, on) {
+  await api('/device-sms/messages/' + id + '/star', {
+    method: 'POST', body: JSON.stringify({ starred: !!on })
+  });
+  await load(true);
+}
+
+async function retranslate() {
+  const convo = conversations().find(c => c.peer === PEER);
+  if (!convo) return;
+  if (!(await confirmBox('让电脑把这个会话重新翻译一遍？电脑要开着、并且填了 API key。'))) return;
+  const r = await api('/device-sms/retranslate', { method: 'POST', body: JSON.stringify({ peer: convo.peer }) });
+  openModal('<h2>已排队</h2><div class="hint">标记了 ' + (r.marked || 0)
+    + ' 条。电脑几秒后会取走重翻，翻好会自动推回来。</div>'
+    + '<div class="row"><button class="action-btn primary" onclick="closeModal()">好</button></div>');
 }
 
 /* ── 弹窗 ── */

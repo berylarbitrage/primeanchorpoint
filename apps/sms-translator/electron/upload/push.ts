@@ -138,13 +138,49 @@ export interface OutboxItem {
   translate_to?: string
 }
 
-/** Alias + note for one number, shared between the website and this app. */
+/** Everything the website keeps about one number, shared with this app. */
 export interface RemoteNote {
   peer: string
   alias?: string
   note?: string
+  /** Language the other side writes in — outgoing drafts are translated to it. */
+  contact_lang?: string
+  /** Language I read in — incoming messages are translated to it. */
+  agent_lang?: string
+  /** 0 = this conversation is not auto-translated. */
+  auto_translate?: number
   /** SQLite `datetime('now')` — UTC, no timezone marker. */
   updated_at?: string
+}
+
+/** A message the website asked to have translated again. */
+export interface RetranslateItem {
+  remote_id: string
+  peer: string
+}
+
+/**
+ * Messages the website wants re-translated.
+ *
+ * The website has no API key, so "重新翻译" there can only raise a flag; this
+ * machine is the one that can actually call Claude. The flag clears when a
+ * fresh translation is pushed back up.
+ */
+export async function fetchRetranslate(
+  target: PushTarget,
+  fetchImpl: typeof fetch = fetch,
+): Promise<RetranslateItem[]> {
+  if (!target.url.trim() || !target.token.trim()) return []
+  try {
+    const res = await fetchImpl(`${endpointBase(target.url)}/retranslate`, {
+      headers: { authorization: `Bearer ${target.token}` },
+    })
+    if (!res.ok) return []
+    const body = (await res.json()) as { messages?: RetranslateItem[] }
+    return Array.isArray(body.messages) ? body.messages : []
+  } catch {
+    return []
+  }
 }
 
 /**

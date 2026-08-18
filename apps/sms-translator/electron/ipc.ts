@@ -21,6 +21,7 @@ import { WebServer, generatePassword, localUrls } from './web/server'
 import { redactForRemote, sanitiseRemoteArgs } from './web/remote'
 import {
   fetchNotes,
+  fetchRetranslate,
   fetchOutbox,
   pendingUploads,
   pushMessages,
@@ -205,8 +206,42 @@ async function sendOne(to: string, body: string): Promise<SendResult> {
   return { ok: outcome.ok, note: outcome.note, message: optimistic }
 }
 
-/** Don't hit the website more often than this while polling for queued sends. */
-const OUTBOX_POLL_MS = 15_000
+/**
+ * Re-translate whatever the website asked for.
+ *
+ * Ids on the website are this app's own message ids, so the mapping is direct:
+ * mark them pending and let the queue do the work. The new translation goes up
+ * on the next push, which clears the flag server-side.
+ */
+async function drainRetranslate(): Promise<void> {
+  const current = settings.public()
+  if (!current.uploadEnabled || !settings.apiKey()) return
+
+  const wanted = await fetchRetranslate({ url: current.uploadUrl, token: current.uploadToken })
+  if (!wanted.length) return
+
+  const ids = wanted.map((item) => item.remote_id).filter((id) => Boolean(store.get(id)))
+  if (!ids.length) return
+
+  emitMessages(
+    store.patchMany(
+      ids.map((id) => ({
+        id,
+        partial: { translationState: 'pending' as const, translationError: undefined },
+      })),
+    ),
+  )
+  queue.requeue(ids)
+}
+
+/**
+ * How often to ask the website whether anything is waiting to be sent.
+ *
+ * This is the floor on how long a message written on the web page sits before
+ * the phone even starts sending it, so it is deliberately short; the request
+ * itself is a few hundred bytes.
+ */
+const OUTBOX_POLL_MS = 5_000
 let outboxCheckedAt = 0
 let outboxBusy = false
 
@@ -226,6 +261,7 @@ async function drainOutbox(): Promise<void> {
 
   const target = { url: current.uploadUrl, token: current.uploadToken }
   void syncNotes()
+  void drainRetranslate()
   const queued = await fetchOutbox(target)
   if (!queued.length) return
 
@@ -317,8 +353,40 @@ async function syncNotes(): Promise<void> {
       changed = true
     }
   }
-  if (changed) {
-    settings.update({ peerNotes: merged })
+  // 对方语言 / 我的语言 are set on the website too; mirror them into the maps
+  // the composer and the translation queue read.
+  const outgoingLangs = { ...current.outgoingLanguageByPeer }
+  const incomingLangs = { ...current.incomingLanguageByPeer }
+  const noAuto = new Set(current.noAutoTranslatePeers)
+  const noAutoBefore = noAuto.size
+  let langsChanged = false
+  for (const note of remote) {
+    if (note.auto_translate === 0) noAuto.add(note.peer)
+    else if (note.auto_translate === 1) noAuto.delete(note.peer)
+    const contact = (note.contact_lang ?? '').trim()
+    const agent = (note.agent_lang ?? '').trim()
+    if (contact && outgoingLangs[note.peer] !== contact) {
+      outgoingLangs[note.peer] = contact
+      langsChanged = true
+    }
+    if (agent && incomingLangs[note.peer] !== agent) {
+      incomingLangs[note.peer] = agent
+      langsChanged = true
+    }
+  }
+
+  const autoChanged =
+    noAuto.size !== noAutoBefore ||
+    current.noAutoTranslatePeers.some((peer) => !noAuto.has(peer))
+
+  if (changed || langsChanged || autoChanged) {
+    settings.update({
+      ...(changed ? { peerNotes: merged } : {}),
+      ...(langsChanged
+        ? { outgoingLanguageByPeer: outgoingLangs, incomingLanguageByPeer: incomingLangs }
+        : {}),
+      ...(autoChanged ? { noAutoTranslatePeers: [...noAuto] } : {}),
+    })
     window?.webContents.send('sms:settings', settings.public())
   }
 
@@ -389,6 +457,7 @@ export function registerIpc(win: BrowserWindow): void {
         describeImages: current.describeImages,
       }
     },
+    languageFor: (peer) => settings.public().incomingLanguageByPeer[peer] ?? '',
     readImage: (file) => {
       try {
         return store.hasAttachment(file) ? store.readAttachment(file) : null
@@ -428,7 +497,12 @@ export function registerIpc(win: BrowserWindow): void {
       }
       emitStatus()
     },
-    onNeedTranslation: (ids) => queue.enqueue(ids),
+    onNeedTranslation: (ids) => {
+      // A conversation with 「收到的消息自动翻译」 off still syncs and still gets
+      // pushed — it just does not spend a Claude call unless asked (重新翻译).
+      const off = new Set(settings.public().noAutoTranslatePeers)
+      queue.enqueue(off.size ? ids.filter((id) => !off.has(store.get(id)?.peer ?? '')) : ids)
+    },
   })
 
   handle('devices:list', async (adbPathOverride?: string): Promise<DeviceInfo[]> => {
