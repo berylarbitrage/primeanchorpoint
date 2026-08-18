@@ -264,7 +264,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
 
 /* 📌 消息标记 (分类+备注) 显示在气泡下方 */
 .msg-mark{font-size:.74rem;color:#92400e;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:3px 10px;margin-top:3px;max-width:82%;word-break:break-word}
-.msg-risk{font-size:.72rem;margin:2px 0 0;display:flex;align-items:center;gap:5px;flex-wrap:wrap}
 .msg-row.outbound .msg-mark{align-self:flex-end}
 .msg-row.inbound .msg-mark{align-self:flex-start}
 
@@ -401,7 +400,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
         <button class="filter-btn" id="unreadFilterBtn" onclick="toggleUnreadFilter()">未读</button>
         <button class="filter-btn" id="foremanFilterBtn" onclick="toggleForemanFilter()" title="只看标了 🦺 工头（负责招人）的联系人">🦺 工头</button>
         <button class="filter-btn" id="leadFilterBtn" onclick="toggleLeadFilter()" title="只看标了 🏭 领班（管理仓库）的联系人">🏭 领班</button>
-        <button class="filter-btn" id="riskFilterBtn" onclick="toggleRiskFilter()" title="只看 AI 判为可疑或诈骗的对话（风险分 ≥ 2）">🚨 可疑</button>
       </div>
     </div>
     <div class="pull-indicator" id="pullIndicator">Pull to refresh...</div>
@@ -901,7 +899,6 @@ let msgRefreshInterval = null;
 let unreadFilter = false;
 let foremanFilter = false;
 let leadFilter = false;
-let riskFilter = false;      // 🚨 只看 AI 判为可疑的对话 (risk >= 2)
 let dashboardVisible = false;
 let templates = [];
 let currentContactLang = 'es';
@@ -1182,7 +1179,6 @@ async function fetchThreads(silent) {
     if (unreadFilter) url += '&unread=1';
     if (foremanFilter) url += '&foreman=1';
     if (leadFilter) url += '&lead=1';
-    if (riskFilter) url += '&risk=2';
     const r = await api(url);
     listTotal = r.total || 0;
     if (listPage === 1) {
@@ -1267,24 +1263,6 @@ function fmtWhDate(d) {
   return m ? m[1].slice(2) + '/' + m[2] : String(d || '');
 }
 
-// ─── 🚨 诈骗筛查: 分数 → 小标签 ───
-// 服务器给每条收到的短信打 0-5 分 + 分类 (见 server.js 的 aiScreenInboundSms)。
-// 0/1 分不显示 —— 正常消息占绝大多数, 全都挂个绿标只会变成视觉噪音。
-const RISK_CATEGORY_LABELS = {
-  personal: '私人', verification: '验证码', bank: '银行', delivery: '物流',
-  service: '服务通知', marketing: '营销', spam: '垃圾', fraud: '诈骗', other: '其他'
-};
-function riskChip(score, category) {
-  const n = Number(score);
-  if (!Number.isFinite(n) || n < 2) return '';
-  const label = n >= 4 ? '高风险' : '可疑';
-  const cat = RISK_CATEGORY_LABELS[category] || '';
-  const color = n >= 4 ? { bg: '#fee2e2', fg: '#b91c1c' } : { bg: '#fef3c7', fg: '#92400e' };
-  return '<span title="AI 诈骗筛查: ' + n + '/5' + (cat ? ' · ' + cat : '') + '"'
-    + ' style="background:' + color.bg + ';color:' + color.fg + ';font-size:.7rem;font-weight:700;'
-    + 'padding:1px 7px;border-radius:10px;white-space:nowrap">🚨 ' + label + (cat ? ' · ' + cat : '') + '</span>';
-}
-
 function renderThreadList() {
   const el = document.getElementById('threadList');
   if (currentThreads.length === 0) {
@@ -1320,7 +1298,6 @@ function renderThreadList() {
     const foreman = t.contact.is_foreman ? '<span class="ti-foreman" title="工头(负责招人)">🦺</span>' : '';
     const lead = t.contact.is_lead ? '<span class="ti-foreman" title="领班(管理仓库)" style="border-color:#0d9488;left:-5px;right:auto">🏭</span>' : '';
     const chanBadge = t.channel === 'whatsapp' ? '<span class="ti-chan-wa" title="WhatsApp">' + waLogo(11) + '</span>' : '';
-    const riskBadge = riskChip(t.max_risk, t.top_risk_category);
     return '<div class="thread-item' + (isUnread ? ' unread' : '') + '" onclick="openThread(' + t.id + ')">'
       + '<div class="ti-avwrap"><div class="ti-avatar" title="' + esc(av.tip) + '" style="' + av.css + '">' + esc(initials) + '</div>' + chanBadge + foreman + lead + '</div>'
       + '<div class="ti-body">'
@@ -1328,7 +1305,7 @@ function renderThreadList() {
       + '<span class="ti-phone">' + esc(fmtPhone(t.contact.phone_e164)) + '</span>'
       + '<span class="ti-time">' + time + '</span></div>'
       + '<div class="ti-preview">' + preview + '</div>'
-      + '<div class="ti-meta">' + riskBadge + (t.contact.cs_hidden ? '<span title="对客服隐藏 (仅管理员可见此对话)" style="background:#fee2e2;color:#b91c1c;font-size:.72rem;font-weight:700;padding:1px 6px;border-radius:10px;white-space:nowrap">🙈</span>' : '') + followUpBadge(t)
+      + '<div class="ti-meta">' + (t.contact.cs_hidden ? '<span title="对客服隐藏 (仅管理员可见此对话)" style="background:#fee2e2;color:#b91c1c;font-size:.72rem;font-weight:700;padding:1px 6px;border-radius:10px;white-space:nowrap">🙈</span>' : '') + followUpBadge(t)
       + (t.channel === 'whatsapp'
         ? '<span title="WhatsApp 对话" style="background:#dcfce7;color:#15803d;font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:10px;line-height:1.2;white-space:nowrap;display:inline-flex;align-items:center;gap:3px">' + waLogo(11) + 'WhatsApp</span>'
         : '<span title="短信 SMS" style="background:#e0f2fe;color:#0369a1;font-size:.78rem;font-weight:700;padding:1px 6px;border-radius:10px;line-height:1.2">💬</span>')
@@ -1541,11 +1518,6 @@ function renderMessages() {
           + (dir === 'outbound' ? '🧑‍💼 ' : '') + esc(senderName) + '</div>';
         lastSender = senderKey;
       }
-      // 收到的短信才筛查; 分数够高时在气泡下面写清楚为什么可疑
-      const riskHtml = (dir === 'inbound' && Number(item.risk_score) >= 2)
-        ? '<div class="msg-risk">' + riskChip(item.risk_score, item.risk_category)
-          + (item.risk_summary ? ' <span style="color:#92400e">' + esc(item.risk_summary) + '</span>' : '') + '</div>'
-        : '';
       const _mds = item.starred ? markDataSummary(item) : '';
       const markHtml = (item.starred && (item.mark_tag || item.mark_note || _mds))
         ? '<div class="msg-mark">📌 ' + (item.mark_tag ? '<b>' + esc(item.mark_tag) + '</b>' : '')
@@ -1554,8 +1526,7 @@ function renderMessages() {
         : '';
       html += '<div class="msg-row ' + dir + '">'
         + senderHtml
-        + '<div class="msg-bubble" onclick="bubbleMark(' + item.id + ')" title="点击标注这条消息（类别+备注）"' + (item.starred ? ' style="box-shadow:0 0 0 2px #f59e0b"' : (Number(item.risk_score) >= 4 ? ' style="box-shadow:0 0 0 2px #ef4444"' : '')) + '>' + esc(item.body) + translationHtml + '</div>'
-        + riskHtml
+        + '<div class="msg-bubble" onclick="bubbleMark(' + item.id + ')" title="点击标注这条消息（类别+备注）"' + (item.starred ? ' style="box-shadow:0 0 0 2px #f59e0b"' : '') + '>' + esc(item.body) + translationHtml + '</div>'
         + markHtml
         + '<div class="msg-meta">' + fmtTime(item._time)
         + (dir === 'outbound' ? ' &middot; ' + statusIcon : '')
@@ -3152,12 +3123,6 @@ function markAssist() {
 function toggleUnreadFilter() {
   unreadFilter = !unreadFilter;
   document.getElementById('unreadFilterBtn').classList.toggle('active', unreadFilter);
-  loadThreads();
-}
-// 🚨 只看可疑对话 (收到的短信被 AI 打了 2 分以上)
-function toggleRiskFilter() {
-  riskFilter = !riskFilter;
-  document.getElementById('riskFilterBtn').classList.toggle('active', riskFilter);
   loadThreads();
 }
 // 🦺 只看工头
