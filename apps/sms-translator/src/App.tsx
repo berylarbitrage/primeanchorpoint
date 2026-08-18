@@ -63,12 +63,12 @@ export default function App() {
 
   // All conversations, unfiltered — used for the "N / M matched" counter.
   const allConversations = useMemo(
-    () => buildConversations(messages, EMPTY_FILTERS, settings.pinnedPeers),
-    [messages, settings.pinnedPeers],
+    () => buildConversations(messages, EMPTY_FILTERS, settings.pinnedPeers, settings.peerNotes),
+    [messages, settings.pinnedPeers, settings.peerNotes],
   )
   const conversations = useMemo(
-    () => buildConversations(messages, filters, settings.pinnedPeers),
-    [messages, filters, settings.pinnedPeers],
+    () => buildConversations(messages, filters, settings.pinnedPeers, settings.peerNotes),
+    [messages, filters, settings.pinnedPeers, settings.peerNotes],
   )
 
   const unreadTotal = useMemo(
@@ -105,6 +105,14 @@ export default function App() {
 
   const togglePin = useCallback(async (peer: string, pinned: boolean) => {
     setSettings(await sms.setPinned(peer, pinned))
+  }, [])
+
+  const setPeerNote = useCallback(async (peer: string, alias: string, note: string) => {
+    setSettings(await sms.setPeerNote(peer, { alias, note }))
+  }, [])
+
+  const setOutgoingLanguage = useCallback(async (peer: string, language: string) => {
+    setSettings(await sms.setOutgoingLanguage(peer, language))
   }, [])
 
   const markUnread = useCallback((peer: string) => {
@@ -294,6 +302,10 @@ export default function App() {
             onForward={(body) => setCompose({ body })}
             onDial={(number) => void dial(number)}
             onCopy={copyText}
+            onSaveNote={(peer, alias, note) => void setPeerNote(peer, alias, note)}
+            language={selected ? (settings.outgoingLanguageByPeer[selected.peer] ?? '') : ''}
+            onLanguageChange={(peer, language) => void setOutgoingLanguage(peer, language)}
+            screenOutgoing={settings.screenOutgoing}
             canTranslate={settings.hasApiKey}
           />
         )}

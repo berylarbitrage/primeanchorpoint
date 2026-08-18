@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SmsMessage } from '../../shared/types'
 import {
   categoryLabel,
@@ -31,6 +31,11 @@ interface Props {
   onForward: (body: string) => void
   onDial: (number: string) => void
   onCopy: (text: string) => void
+  onSaveNote: (peer: string, alias: string, note: string) => void
+  /** Language drafts to this conversation get translated into ('' = default). */
+  language: string
+  onLanguageChange: (peer: string, language: string) => void
+  screenOutgoing: boolean
   canTranslate: boolean
 }
 
@@ -56,9 +61,14 @@ export default function Thread({
   onForward,
   onDial,
   onCopy,
+  onSaveNote,
+  language,
+  onLanguageChange,
+  screenOutgoing,
   canTranslate,
 }: Props) {
   const scroller = useRef<HTMLDivElement>(null)
+  const [editingNote, setEditingNote] = useState(false)
   const active = filtersActive(filters)
 
   const visible = useMemo(() => {
@@ -120,6 +130,9 @@ export default function Thread({
         >
           拨号
         </button>
+        <button type="button" className="btn ghost" onClick={() => setEditingNote((v) => !v)}>
+          备注
+        </button>
         <button
           type="button"
           className="btn ghost"
@@ -148,6 +161,26 @@ export default function Thread({
           翻译剩余 {untranslated.length} 条
         </button>
       </header>
+
+      {editingNote ? (
+        <NoteEditor
+          key={conversation.peer}
+          alias={conversation.note?.alias ?? ''}
+          note={conversation.note?.note ?? ''}
+          fallbackTitle={conversation.address}
+          onCancel={() => setEditingNote(false)}
+          onSave={(alias, note) => {
+            onSaveNote(conversation.peer, alias, note)
+            setEditingNote(false)
+          }}
+        />
+      ) : (
+        conversation.note?.note && (
+          <div className="peer-note" onClick={() => setEditingNote(true)} title="点一下修改备注">
+            📝 {conversation.note.note}
+          </div>
+        )
+      )}
 
       <div className="messages" ref={scroller}>
         {active && (
@@ -189,9 +222,55 @@ export default function Thread({
         initialDraft={draft}
         onDraftChange={(text) => onDraftChange(conversation.peer, text)}
         onSend={onSend}
+        language={language}
+        onLanguageChange={(next) => onLanguageChange(conversation.peer, next)}
+        screen={screenOutgoing}
         canTranslate={canTranslate}
       />
     </section>
+  )
+}
+
+interface NoteEditorProps {
+  alias: string
+  note: string
+  fallbackTitle: string
+  onSave: (alias: string, note: string) => void
+  onCancel: () => void
+}
+
+/**
+ * Alias and note for one number. Both live in this app only — the phone's
+ * contacts are not writable over adb, and overwriting someone's phone book from
+ * a desktop tool would be the wrong default even if they were.
+ */
+function NoteEditor({ alias, note, fallbackTitle, onSave, onCancel }: NoteEditorProps) {
+  const [draftAlias, setDraftAlias] = useState(alias)
+  const [draftNote, setDraftNote] = useState(note)
+
+  return (
+    <div className="note-editor">
+      <input
+        autoFocus
+        placeholder={`备注名（留空就显示 ${fallbackTitle}）`}
+        value={draftAlias}
+        onChange={(e) => setDraftAlias(e.target.value)}
+      />
+      <textarea
+        placeholder="备注：这个号码是谁、聊到哪儿了、要记住的事…"
+        value={draftNote}
+        onChange={(e) => setDraftNote(e.target.value)}
+      />
+      <div className="row">
+        <button type="button" className="btn primary" onClick={() => onSave(draftAlias, draftNote)}>
+          保存备注
+        </button>
+        <button type="button" className="btn ghost" onClick={onCancel}>
+          取消
+        </button>
+        <span className="hint">只存在这台电脑上，不会写回手机通讯录。</span>
+      </div>
+    </div>
   )
 }
 

@@ -121,6 +121,9 @@
     batchSize: 20,
     hasApiKey: true,
     pinnedPeers: ['4155550142'],
+    outgoingLanguageByPeer: { '4611223344': 'Español' },
+    screenOutgoing: true,
+    peerNotes: { '4611223344': { alias: 'Marta（西班牙同事）', note: '周二 10 点开会，记得带七月报告的打印件。' } },
     webEnabled: true,
     webPort: 8848,
     webPassword: 'k7m2xr9dqp',
@@ -174,7 +177,19 @@
     dial: async () => ({ ok: true, message: '已在手机上打开拨号界面。' }),
     copyText: async () => {},
     retranslate: async () => {},
-    translateDraft: async () => ({ text: '', targetLang: '简体中文' }),
+    translateDraft: async (text, lang) => ({ text: '（译文示例）' + text, targetLang: lang || '简体中文' }),
+    screenDraft: async (text) =>
+      /打钱|验证码是|卡号/.test(text)
+        ? { flagged: true, reason: '这条像是在把验证码或钱的事发给别人，先确认一下。', categories: ['fraud'] }
+        : { flagged: false, reason: '', categories: [] },
+    setOutgoingLanguage: async (peer, language) => {
+      settings.outgoingLanguageByPeer = { ...settings.outgoingLanguageByPeer, [peer]: language }
+      return settings
+    },
+    setPeerNote: async (peer, note) => {
+      settings.peerNotes = { ...settings.peerNotes, [peer]: note }
+      return settings
+    },
     getSettings: async () => settings,
     setSettings: async () => settings,
     setApiKey: async () => settings,

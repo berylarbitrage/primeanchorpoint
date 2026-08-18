@@ -16,7 +16,7 @@ import { SettingsStore } from './settings'
 import { MessageStore } from './store'
 import { Syncer } from './sync/syncer'
 import { TranslationQueue } from './translate/queue'
-import { translateDraft } from './translate/claude'
+import { screenDraft, translateDraft } from './translate/claude'
 import { WebServer, generatePassword, localUrls } from './web/server'
 import { redactForRemote, sanitiseRemoteArgs } from './web/remote'
 import {
@@ -29,6 +29,8 @@ import {
 } from './upload/push'
 import type {
   Contact,
+  DraftScreening,
+  PeerNote,
   DeviceInfo,
   DraftTranslation,
   SendResult,
@@ -228,6 +230,26 @@ async function drainOutbox(): Promise<void> {
   try {
     for (const item of queued) {
       try {
+        // The website has no API key, so the outgoing check can only happen
+        // here. A flagged message comes back as a failure with the reason, so
+        // whoever wrote it sees why and can rewrite it (or send it from here,
+        // where there is an override).
+        if (current.screenOutgoing && settings.apiKey()) {
+          const verdict = await screenDraft(item.body, {
+            apiKey: settings.apiKey(),
+            model: current.model,
+          }).catch(() => null)
+          if (verdict?.flagged) {
+            await reportOutbox(
+              target,
+              item.id,
+              false,
+              `发送前检查拦下了：${verdict.reason || '内容可能有问题'}。确认没问题的话，在电脑上重发一次。`,
+            )
+            continue
+          }
+        }
+
         const result = await sendOne(item.to_address, item.body)
         await reportOutbox(target, item.id, result.ok, result.note ?? '')
       } catch (err) {
@@ -526,15 +548,37 @@ export function registerIpc(win: BrowserWindow): void {
     queue.requeue(ids)
   })
 
-  handle('translate:draft', async (text: string): Promise<DraftTranslation> => {
+  handle('translate:draft', async (text: string, override?: string): Promise<DraftTranslation> => {
     const current = settings.public()
-    const target = current.outgoingLanguage.trim() || current.targetLanguage
+    const target = (override ?? '').trim() || current.outgoingLanguage.trim() || current.targetLanguage
     const result = await translateDraft(text, {
       apiKey: settings.apiKey(),
       model: current.model,
       targetLanguage: target,
     })
     return { text: result.text, targetLang: target }
+  })
+
+  handle('translate:screen', async (text: string): Promise<DraftScreening> => {
+    const current = settings.public()
+    return screenDraft(text, { apiKey: settings.apiKey(), model: current.model })
+  })
+
+  handle('settings:outgoingLanguage', (peer: string, language: string): Settings => {
+    const map = { ...settings.public().outgoingLanguageByPeer }
+    // Empty means "follow the global setting" — stored as an absence, not a blank.
+    if (language.trim()) map[peer] = language.trim()
+    else delete map[peer]
+    return settings.update({ outgoingLanguageByPeer: map })
+  })
+
+  handle('settings:peerNote', (peer: string, note: PeerNote): Settings => {
+    const map = { ...settings.public().peerNotes }
+    const alias = (note.alias ?? '').trim()
+    const text = (note.note ?? '').trim()
+    if (alias || text) map[peer] = { ...(alias ? { alias } : {}), ...(text ? { note: text } : {}) }
+    else delete map[peer]
+    return settings.update({ peerNotes: map })
   })
 
   handle('settings:get', (): Settings => settings.public())

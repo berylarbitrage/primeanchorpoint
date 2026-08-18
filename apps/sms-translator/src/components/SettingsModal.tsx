@@ -399,6 +399,23 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
         </label>
 
         <div className="field">
+          <label>发送前检查</label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={draft.screenOutgoing}
+              onChange={(e) => set('screenOutgoing', e.target.checked)}
+            />
+            发送前让 AI 看一眼草稿
+          </label>
+          <span className="hint">
+            辱骂威胁、把验证码或卡号发给别人、答应打钱、明显的诈骗话术会被拦下来并说明
+            原因；确认没问题可以点「我确认，仍然发送」照发。语气重但正常的对话不会拦。
+            每条多花一次很便宜的调用，没填 API key 时自动跳过。
+          </span>
+        </div>
+
+        <div className="field">
           <label>发送方式</label>
           <select
             value={draft.sendMethod}

@@ -95,6 +95,21 @@ export interface SmsMessage {
   uploadedState?: TranslationState
 }
 
+/** Per-conversation notes kept by this app (the phone is never written to). */
+export interface PeerNote {
+  /** Display name to use instead of the number / phone-book name. */
+  alias?: string
+  /** Free text shown in the conversation header. */
+  note?: string
+}
+
+/** Verdict on an outgoing draft, from `screenDraft`. */
+export interface DraftScreening {
+  flagged: boolean
+  reason: string
+  categories: string[]
+}
+
 /** A phone-book entry, used by the "new message" recipient picker. */
 export interface Contact {
   name: string
@@ -125,6 +140,12 @@ export interface Settings {
   targetLanguage: string
   /** Language outgoing drafts get translated into. Empty = same as targetLanguage. */
   outgoingLanguage: string
+  /** Per-conversation override of that language, remembered per number. */
+  outgoingLanguageByPeer: Record<string, string>
+  /** Check outgoing drafts with Claude before sending. */
+  screenOutgoing: boolean
+  /** Aliases and notes, keyed by normalised number. */
+  peerNotes: Record<string, PeerNote>
   autoTranslate: boolean
   classify: boolean
   model: string
@@ -165,6 +186,9 @@ export const DEFAULT_SETTINGS: Settings = {
   wirelessAutoReconnect: true,
   targetLanguage: '简体中文',
   outgoingLanguage: '',
+  outgoingLanguageByPeer: {},
+  screenOutgoing: true,
+  peerNotes: {},
   autoTranslate: true,
   classify: true,
   model: 'claude-opus-5',
@@ -278,7 +302,14 @@ export interface SmsBridge {
   readAttachment(messageId: string, partId: number): Promise<{ dataUrl?: string; error?: string }>
 
   retranslate(ids: string[]): Promise<void>
-  translateDraft(text: string): Promise<DraftTranslation>
+  /** `targetLanguage` overrides the configured outgoing language for this draft. */
+  translateDraft(text: string, targetLanguage?: string): Promise<DraftTranslation>
+  /** Check a draft before sending. Throws if no API key is configured. */
+  screenDraft(text: string): Promise<DraftScreening>
+
+  /** Remember the language used for one conversation, and its alias / note. */
+  setOutgoingLanguage(peer: string, language: string): Promise<Settings>
+  setPeerNote(peer: string, note: PeerNote): Promise<Settings>
 
   getSettings(): Promise<Settings>
   setSettings(patch: Partial<Settings>): Promise<Settings>

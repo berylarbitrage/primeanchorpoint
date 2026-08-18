@@ -859,3 +859,58 @@ textarea:focus {
     width: 94vw;
   }
 }
+
+/* ---------- per-conversation notes, send-language, blocked drafts ---------- */
+
+.peer-note {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-raised));
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  white-space: pre-wrap;
+}
+
+.note-editor {
+  display: grid;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+
+.note-editor textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+
+.note-editor .row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.composer select {
+  flex: none;
+  max-width: 16em;
+}
+
+/* A draft the outgoing check stopped. Deliberately loud: it is asking for a
+   second look, not reporting an error. */
+.blocked {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg-raised));
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.blocked .row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}

@@ -77,6 +77,23 @@ const shots = [
   ['mms', async () => page.locator('.conversation').filter({ hasText: '447700900123' }).first().click()],
   ['filter', async () => page.getByRole('button', { name: '可疑及以上' }).click()],
   [
+    'note',
+    async () => {
+      await page.goto(`${base}/index.html`, { waitUntil: 'networkidle' })
+      await page.locator('.conversation').filter({ hasText: 'Marta' }).first().click()
+      await page.getByPlaceholder(/^发给/).fill('好的，明天见')
+      await page.waitForTimeout(200)
+    },
+  ],
+  [
+    'blocked',
+    async () => {
+      await page.getByPlaceholder(/^发给/).fill('我的验证码是 884213，你先用')
+      await page.getByRole('button', { name: '发送原文' }).click()
+      await page.waitForSelector('.blocked', { timeout: 10_000 })
+    },
+  ],
+  [
     'compose',
     async () => {
       await page.goto(`${base}/index.html`, { waitUntil: 'networkidle' })

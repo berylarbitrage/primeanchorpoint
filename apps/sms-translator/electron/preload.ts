@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
   Contact,
+  DraftScreening,
   DeviceInfo,
   DraftTranslation,
   SendResult,
@@ -61,8 +62,13 @@ const bridge: SmsBridge = {
     }>,
 
   retranslate: (ids) => ipcRenderer.invoke('translate:retry', ids) as Promise<void>,
-  translateDraft: (text) =>
-    ipcRenderer.invoke('translate:draft', text) as Promise<DraftTranslation>,
+  translateDraft: (text, targetLanguage) =>
+    ipcRenderer.invoke('translate:draft', text, targetLanguage) as Promise<DraftTranslation>,
+  screenDraft: (text) => ipcRenderer.invoke('translate:screen', text) as Promise<DraftScreening>,
+
+  setOutgoingLanguage: (peer, language) =>
+    ipcRenderer.invoke('settings:outgoingLanguage', peer, language) as Promise<Settings>,
+  setPeerNote: (peer, note) => ipcRenderer.invoke('settings:peerNote', peer, note) as Promise<Settings>,
 
   getSettings: () => ipcRenderer.invoke('settings:get') as Promise<Settings>,
   setSettings: (patch) => ipcRenderer.invoke('settings:set', patch) as Promise<Settings>,
