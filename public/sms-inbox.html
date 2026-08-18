@@ -446,6 +446,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
         <option value="es">西班牙语</option>
       </select>
       <span class="lb-hint" style="margin-left:auto;font-size:.68rem;color:#4ade80">✓ 收到的消息自动翻译</span>
+      <button id="retransBtn" onclick="retranslateThread()" title="用新翻译引擎把本对话所有消息重新翻译一遍（收到的消息会更新存档）" style="border:1px solid var(--gray-200);background:#fff;border-radius:6px;padding:2px 8px;font-size:.7rem;cursor:pointer;color:var(--gray-600)">🔄 重新翻译</button>
     </div>
     <div class="messages-area" id="messagesArea"></div>
     <div class="history-panel" id="historyPanel"></div>
@@ -1783,6 +1784,18 @@ function updateThreadLangs() {
   autoTranslateMessages(true);
 }
 
+// 🔄 手动把本对话所有消息重新翻译一遍 (收到的消息服务器端写回存档)
+async function retranslateThread() {
+  if (!currentThread) return;
+  const btn = document.getElementById('retransBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '🔄 翻译中…'; }
+  try {
+    await autoTranslateMessages(true);
+    toast('已重新翻译');
+  } catch (_) { toast('重新翻译失败，请重试'); }
+  if (btn) { btn.disabled = false; btn.textContent = '🔄 重新翻译'; }
+}
+
 let _autoTranslateAbort = 0;
 async function autoTranslateMessages(force) {
   if (!currentContactLang || !currentAgentLang || currentContactLang === currentAgentLang) return;
@@ -1805,7 +1818,7 @@ async function autoTranslateMessages(force) {
   const promises = [];
   if (inboundItems.length) {
     promises.push(
-      api('/sms/translate-batch', { method: 'POST', body: JSON.stringify({ items: inboundItems, from: currentContactLang, to: currentAgentLang }) })
+      api('/sms/translate-batch', { method: 'POST', body: JSON.stringify({ items: inboundItems, from: currentContactLang, to: currentAgentLang, thread_id: currentThread && currentThread.id, save: true }) })
         .then(r => ({ dir: 'inbound', results: r.results || {} }))
         .catch(() => ({ dir: 'inbound', results: {} }))
     );
