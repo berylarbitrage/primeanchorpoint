@@ -13,8 +13,10 @@
  */
 const path = require('node:path')
 const dist = path.join(__dirname, '..', 'dist-electron', 'electron')
-const { needsPush, pendingUploads, serialise, pushMessages, uploadedPatches, PUSH_BATCH } =
-  require(path.join(dist, 'upload', 'push.js'))
+const {
+  needsPush, pendingUploads, serialise, pushMessages, uploadedPatches, PUSH_BATCH,
+  endpointBase, fetchOutbox, reportOutbox,
+} = require(path.join(dist, 'upload', 'push.js'))
 const { redactForRemote, sanitiseRemoteArgs } = require(path.join(dist, 'web', 'remote.js'))
 
 let failures = 0
@@ -124,6 +126,58 @@ async function main() {
     uploadedPatches([message({ translationState: 'done' })]),
     [{ id: 'dev:1', partial: { uploadedState: 'done' } }],
   )
+
+  // --- the website outbox (messages written on the web page) ---
+  check(
+    'the outbox URL is derived from the push URL',
+    endpointBase('https://example.com/api/device-sms/push'),
+    'https://example.com/api/device-sms',
+  )
+  check(
+    'a trailing slash does not break it',
+    endpointBase('https://example.com/api/device-sms/push/'),
+    'https://example.com/api/device-sms',
+  )
+
+  let outboxUrl = ''
+  const queued = await fetchOutbox(
+    { url: 'https://example.com/api/device-sms/push', token: 'tok' },
+    async (url) => {
+      outboxUrl = url
+      return { ok: true, status: 200, json: async () => ({ messages: [{ id: 7, to_address: '+1555', body: 'hi', peer: '', attempts: 0 }] }) }
+    },
+  )
+  check('queued sends are fetched', queued.length, 1)
+  check('from the outbox endpoint', outboxUrl, 'https://example.com/api/device-sms/outbox')
+
+  check(
+    'an unreachable website yields nothing rather than throwing',
+    await fetchOutbox({ url: 'https://example.com/x/push', token: 't' }, async () => {
+      throw new Error('offline')
+    }),
+    [],
+  )
+  check(
+    'and so does an unconfigured one',
+    await fetchOutbox({ url: '', token: '' }, async () => {
+      throw new Error('should not be called')
+    }),
+    [],
+  )
+
+  let reported = null
+  await reportOutbox(
+    { url: 'https://example.com/api/device-sms/push', token: 'tok' },
+    7,
+    false,
+    '手机没连上',
+    async (url, init) => {
+      reported = { url, body: JSON.parse(init.body) }
+      return { ok: true, status: 200, text: async () => '{}' }
+    },
+  )
+  check('a failure is reported back', reported.body, { ok: false, note: '手机没连上' })
+  check('to that item', reported.url, 'https://example.com/api/device-sms/outbox/7/result')
 
   // --- what a LAN browser may see / change ---
   const settings = {

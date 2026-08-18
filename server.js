@@ -30422,6 +30422,24 @@ db.exec(`CREATE TABLE IF NOT EXISTS device_sms_messages (
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_device_sms_sent ON device_sms_messages(sent_at)`); } catch(e) {}
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_device_sms_peer ON device_sms_messages(device_id, peer, sent_at)`); } catch(e) {}
 
+// 网页上写的短信排在这里, 由那台连着手机的电脑取走、用 adb 发出去, 再回报结果。
+// 网站自己发不了 —— 号码在手机里, 不是 Twilio 的号。
+db.exec(`CREATE TABLE IF NOT EXISTS device_sms_outbox (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id INTEGER DEFAULT NULL,
+  to_address TEXT NOT NULL,
+  peer TEXT DEFAULT '',
+  body TEXT NOT NULL,
+  status TEXT DEFAULT 'pending',
+  note TEXT DEFAULT '',
+  attempts INTEGER DEFAULT 0,
+  created_by TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now')),
+  taken_at TEXT DEFAULT NULL,
+  done_at TEXT DEFAULT NULL
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_device_outbox_status ON device_sms_outbox(status, id)`); } catch(e) {}
+
 function deviceSmsHashToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
 }
@@ -30495,6 +30513,59 @@ app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
   }
 });
 
+// POST /api/device-sms/send — 网页上写一条短信, 排队等电脑发
+// 这里只入队。真正发出去要靠那台连着手机的电脑 (见下面两个接口)。
+app.post('/api/device-sms/send', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const body = String((req.body || {}).body || '').trim();
+    const to = String((req.body || {}).to || '').trim();
+    const peer = String((req.body || {}).peer || '').trim();
+    if (!to) return res.status(400).json({ error: '没有收件人' });
+    if (!body) return res.status(400).json({ error: '内容是空的' });
+    if (body.length > 2000) return res.status(400).json({ error: '内容太长了' });
+    // 字母开头的服务号码 (银行/快递) 回不了, 电脑那边也发不出去, 先在这里拦掉
+    if (!/[0-9]/.test(to)) return res.status(400).json({ error: '这个号码不能回复短信（是服务号）' });
+    const info = db.prepare(`INSERT INTO device_sms_outbox (to_address, peer, body, created_by) VALUES (?,?,?,?)`)
+      .run(to, peer, body, req.userName || '');
+    res.json({ success: true, id: info.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/device-sms/outbox — 电脑取待发送的短信 (设备令牌鉴权)
+app.get('/api/device-sms/outbox', deviceSmsAuth, (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT id, to_address, peer, body, attempts FROM device_sms_outbox
+      WHERE status='pending' ORDER BY id ASC LIMIT 10`).all();
+    if (rows.length) {
+      const mark = db.prepare(`UPDATE device_sms_outbox SET attempts=attempts+1, taken_at=datetime('now'), device_id=? WHERE id=?`);
+      for (const row of rows) mark.run(req.smsDevice.id, row.id);
+    }
+    // 试了 5 次还没成功的不再发, 免得电脑一直在那儿重试同一条
+    db.prepare(`UPDATE device_sms_outbox SET status='failed', note=COALESCE(NULLIF(note,''),'重试多次仍未成功'), done_at=datetime('now')
+      WHERE status='pending' AND attempts >= 5`).run();
+    res.json({ messages: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/device-sms/outbox/:id/result — 电脑回报发送结果
+app.post('/api/device-sms/outbox/:id/result', deviceSmsAuth, (req, res) => {
+  try {
+    const ok = Boolean((req.body || {}).ok);
+    const note = String((req.body || {}).note || '').slice(0, 300);
+    db.prepare(`UPDATE device_sms_outbox SET status=?, note=?, done_at=datetime('now') WHERE id=?`)
+      .run(ok ? 'sent' : 'failed', note, req.params.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/device-sms/outbox/:id — 撤掉一条还没发出去的
+app.delete('/api/device-sms/outbox/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const info = db.prepare(`DELETE FROM device_sms_outbox WHERE id=? AND status IN ('pending','failed')`).run(req.params.id);
+    res.json({ success: true, deleted: info.changes });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/device-sms/messages — 网页端读取 (个人手机短信, 只有 admin 能看)
 app.get('/api/device-sms/messages', requireAdmin, requireRole('admin'), (req, res) => {
   try {
@@ -30513,7 +30584,10 @@ app.get('/api/device-sms/messages', requireAdmin, requireRole('admin'), (req, re
     }
     const rows = db.prepare(`SELECT * FROM device_sms_messages WHERE ${where} ORDER BY sent_at DESC LIMIT ?`).all(...params, limit);
     const devices = db.prepare('SELECT id, name, serial, last_push_at, message_count FROM device_sms_devices WHERE active=1').all();
-    res.json({ messages: rows.reverse(), devices });
+    // 还没发出去的 / 发失败的也一起给, 页面上排在对话末尾显示状态
+    const outbox = db.prepare(`SELECT id, to_address, peer, body, status, note, created_at FROM device_sms_outbox
+      WHERE status IN ('pending','failed') ORDER BY id ASC LIMIT 100`).all();
+    res.json({ messages: rows.reverse(), devices, outbox });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

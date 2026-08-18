@@ -19,7 +19,14 @@ import { TranslationQueue } from './translate/queue'
 import { translateDraft } from './translate/claude'
 import { WebServer, generatePassword, localUrls } from './web/server'
 import { redactForRemote, sanitiseRemoteArgs } from './web/remote'
-import { pendingUploads, pushMessages, uploadedPatches, needsPush } from './upload/push'
+import {
+  fetchOutbox,
+  pendingUploads,
+  pushMessages,
+  reportOutbox,
+  uploadedPatches,
+  needsPush,
+} from './upload/push'
 import type {
   Contact,
   DeviceInfo,
@@ -153,6 +160,85 @@ async function pushToWebsite(): Promise<void> {
   }
 }
 
+/**
+ * Hand one message to the phone. Shared by the UI and by the website outbox —
+ * both need the same optimistic record and the same follow-up sync.
+ */
+async function sendOne(to: string, body: string): Promise<SendResult> {
+  const current = settings.public()
+  const adbPath = await locator.require()
+  const target = await resolveDevice(adbPath, current.deviceSerial)
+  if (!target) return { ok: false, note: '手机没连上，发不出去。' }
+
+  const outcome = await sendSms({ adbPath, serial: target.serial }, to, body, {
+    method: current.sendMethod,
+    tapDelayMs: current.sendTapDelayMs,
+  })
+
+  // Show the message right away. The next sync reads the phone's own copy and
+  // retires this placeholder (see Syncer.prunePending).
+  const optimistic: SmsMessage = {
+    id: `local:${target.serial}:${Date.now()}`,
+    deviceSerial: target.serial,
+    kind: 'sms',
+    rawId: -1,
+    threadId: 0,
+    address: to,
+    peer: normalisePeer(to),
+    date: Date.now(),
+    direction: 'out',
+    body,
+    readOnDevice: true,
+    readLocal: true,
+    translationState: 'skipped',
+    pending: true,
+  }
+  emitMessages(store.upsertFromDevice([optimistic]))
+
+  // Give the phone a moment to write the row, then pick it up.
+  setTimeout(() => void syncer.sync('incremental').catch(() => {}), 4_000)
+
+  return { ok: outcome.ok, note: outcome.note, message: optimistic }
+}
+
+/** Don't hit the website more often than this while polling for queued sends. */
+const OUTBOX_POLL_MS = 15_000
+let outboxCheckedAt = 0
+let outboxBusy = false
+
+/**
+ * Send whatever was written on the website.
+ *
+ * The website has no phone — it can only queue. This machine is the one holding
+ * the phone, so it polls, sends, and reports back. Sends are serial: each one
+ * drives the phone's SMS app through the UI, and two at once would fight over
+ * the screen.
+ */
+async function drainOutbox(): Promise<void> {
+  const current = settings.public()
+  if (!current.uploadEnabled || outboxBusy) return
+  if (Date.now() - outboxCheckedAt < OUTBOX_POLL_MS) return
+  outboxCheckedAt = Date.now()
+
+  const target = { url: current.uploadUrl, token: current.uploadToken }
+  const queued = await fetchOutbox(target)
+  if (!queued.length) return
+
+  outboxBusy = true
+  try {
+    for (const item of queued) {
+      try {
+        const result = await sendOne(item.to_address, item.body)
+        await reportOutbox(target, item.id, result.ok, result.note ?? '')
+      } catch (err) {
+        await reportOutbox(target, item.id, false, err instanceof Error ? err.message : String(err))
+      }
+    }
+  } finally {
+    outboxBusy = false
+  }
+}
+
 function webStatus(): WebStatus {
   const current = settings.public()
   return {
@@ -245,6 +331,7 @@ export function registerIpc(win: BrowserWindow): void {
       if (phase === 'idle') {
         lastSyncAt = Date.now()
         void pushToWebsite()
+        void drainOutbox()
       }
       emitStatus()
     },
@@ -340,42 +427,7 @@ export function registerIpc(win: BrowserWindow): void {
 
   handle('sms:sync', (mode: 'full' | 'incremental') => syncer.sync(mode))
 
-  handle('sms:send', async (to: string, body: string): Promise<SendResult> => {
-    const current = settings.public()
-    const adbPath = await locator.require()
-    const target = await resolveDevice(adbPath, current.deviceSerial)
-    if (!target) return { ok: false, note: 'No Android device connected.' }
-
-    const outcome = await sendSms({ adbPath, serial: target.serial }, to, body, {
-      method: current.sendMethod,
-      tapDelayMs: current.sendTapDelayMs,
-    })
-
-    // Show the message right away. The next sync reads the phone's own copy and
-    // retires this placeholder (see Syncer.prunePending).
-    const optimistic: SmsMessage = {
-      id: `local:${target.serial}:${Date.now()}`,
-      deviceSerial: target.serial,
-      kind: 'sms',
-      rawId: -1,
-      threadId: 0,
-      address: to,
-      peer: normalisePeer(to),
-      date: Date.now(),
-      direction: 'out',
-      body,
-      readOnDevice: true,
-      readLocal: true,
-      translationState: 'skipped',
-      pending: true,
-    }
-    emitMessages(store.upsertFromDevice([optimistic]))
-
-    // Give the phone a moment to write the row, then pick it up.
-    setTimeout(() => void syncer.sync('incremental').catch(() => {}), 4_000)
-
-    return { ok: outcome.ok, note: outcome.note, message: optimistic }
-  })
+  handle('sms:send', (to: string, body: string): Promise<SendResult> => sendOne(to, body))
 
   handle('sms:markThreadRead', (peer: string) => {
     const updates = store
@@ -519,6 +571,8 @@ export function registerIpc(win: BrowserWindow): void {
 
   handle('upload:now', async (): Promise<UploadStatus> => {
     await pushToWebsite()
+    outboxCheckedAt = 0 // an explicit "sync now" should not wait out the poll gap
+    await drainOutbox()
     return uploadStatus()
   })
 
