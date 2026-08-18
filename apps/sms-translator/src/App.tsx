@@ -22,6 +22,9 @@ export default function App() {
   const [showOriginal, setShowOriginal] = useState(true)
   const [showSettings, setShowSettings] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  // Which error text the user has dismissed. Keyed by the text itself so a
+  // different error re-opens the banner instead of staying hidden.
+  const [dismissedError, setDismissedError] = useState<string | null>(null)
 
   useEffect(() => {
     void (async () => {
@@ -101,6 +104,20 @@ export default function App() {
     }
   }, [])
 
+  // Once the error clears, forget the dismissal — if the same failure comes
+  // back on the next sync the user should see it again.
+  useEffect(() => {
+    if (status.phase !== 'error') setDismissedError(null)
+  }, [status.phase])
+
+  // The topbar can only show a clipped one-liner, and these messages are the
+  // ones that tell the user what to actually do (authorise the phone, turn on
+  // wireless debugging). They get a full-width banner instead.
+  const errorBanner =
+    status.phase === 'error' && status.detail && status.detail !== dismissedError
+      ? status.detail
+      : null
+
   const dotClass =
     status.phase === 'error'
       ? 'error'
@@ -117,7 +134,9 @@ export default function App() {
 
         <div className="status">
           <span className={`dot ${dotClass}`} />
-          <span className="detail">{describeStatus(status)}</span>
+          <span className="detail" title={describeStatus(status)}>
+            {describeStatus(status)}
+          </span>
         </div>
 
         <div className="spacer" />
@@ -143,6 +162,23 @@ export default function App() {
           设置
         </button>
       </header>
+
+      {errorBanner && (
+        <div className="banner error" role="alert">
+          <span className="text">{errorBanner}</span>
+          <button type="button" className="btn ghost" onClick={() => setShowSettings(true)}>
+            打开设置
+          </button>
+          <button
+            type="button"
+            className="btn ghost"
+            title="关闭"
+            onClick={() => setDismissedError(errorBanner)}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       <div className="body">
         <Sidebar

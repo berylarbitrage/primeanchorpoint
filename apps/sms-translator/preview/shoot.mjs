@@ -21,12 +21,17 @@ if (!existsSync(join(dist, 'index.html'))) {
   process.exit(1)
 }
 
-const { chromium } = await import(
-  process.env.PREVIEW_PLAYWRIGHT ?? 'playwright'
-).catch(() => {
+// PREVIEW_PLAYWRIGHT may point at a CommonJS entry, whose named exports are not
+// always detected — fall back to the default export.
+const pw = await import(process.env.PREVIEW_PLAYWRIGHT ?? 'playwright').catch(() => {
   console.error('Playwright not found. Install it, or set PREVIEW_PLAYWRIGHT to its entry point.')
   process.exit(1)
 })
+const chromium = pw.chromium ?? pw.default?.chromium
+if (!chromium) {
+  console.error('The module at PREVIEW_PLAYWRIGHT does not export chromium.')
+  process.exit(1)
+}
 
 // Stage dist/ + mock.js with the injection applied.
 mkdirSync(staging, { recursive: true })
@@ -42,7 +47,8 @@ writeFileSync(join(staging, 'index.html'), html)
 
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png' }
 const server = createServer((req, res) => {
-  const file = join(staging, (req.url ?? '/').split('?')[0] === '/' ? 'index.html' : (req.url ?? '').slice(1))
+  const path = (req.url ?? '/').split('?')[0]
+  const file = join(staging, path === '/' ? 'index.html' : path.slice(1))
   if (!existsSync(file)) {
     res.writeHead(404).end()
     return
@@ -70,6 +76,13 @@ const shots = [
   ['thread', async () => page.locator('.conversation').filter({ hasText: 'Marta' }).first().click()],
   ['mms', async () => page.locator('.conversation').filter({ hasText: '447700900123' }).first().click()],
   ['filter', async () => page.getByRole('button', { name: '可疑及以上' }).click()],
+  [
+    'error',
+    async () => {
+      await page.goto(`${base}/index.html?state=error`, { waitUntil: 'networkidle' })
+      await page.waitForSelector('.banner.error', { timeout: 10_000 })
+    },
+  ],
 ]
 for (const [name, act] of shots) {
   await act()

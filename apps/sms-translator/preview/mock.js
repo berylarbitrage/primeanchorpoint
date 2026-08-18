@@ -129,6 +129,15 @@
     pendingTranslations: 1,
   }
 
+  // `?state=error` renders the failure the user actually hits first, so the
+  // long message can be checked for readability.
+  if (location.search.includes('state=error')) {
+    status.phase = 'error'
+    status.device = null
+    status.detail =
+      '手机已连上，但还没授权。请在手机屏幕上点「允许 USB 调试」，并勾选「一律允许」。'
+  }
+
   const noop = () => () => {}
   window.sms = {
     listDevices: async () => [status.device],

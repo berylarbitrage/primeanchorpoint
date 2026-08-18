@@ -100,8 +100,8 @@ textarea:focus {
 /* ---------- layout ---------- */
 
 .app {
-  display: grid;
-  grid-template-rows: auto 1fr;
+  display: flex;
+  flex-direction: column;
   height: 100%;
 }
 
@@ -159,7 +159,35 @@ textarea:focus {
 .body {
   display: grid;
   grid-template-columns: 340px 1fr;
+  flex: 1;
   min-height: 0;
+}
+
+/* An error the user has to act on. The topbar clips its one-liner, so the whole
+   message is repeated here, wrapped, until it is dismissed or resolved. */
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.banner.error {
+  background: color-mix(in srgb, var(--danger) 14%, var(--bg-raised));
+  border-bottom-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+  color: var(--text);
+}
+
+.banner .text {
+  flex: 1;
+  white-space: pre-wrap;
+}
+
+.banner .btn {
+  flex: none;
 }
 
 /* ---------- sidebar ---------- */
