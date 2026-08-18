@@ -3,172 +3,255 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>手机短信 · Prime Anchor</title>
+<title>手机短信 — Prime Anchor</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <!--
-  老板【个人手机】里的短信。公司号码的短信在 /sms-inbox.html，那是 Twilio 的；
-  这一页的数据是桌面版「SMS 译信」用 adb 从手机读出来、翻译并筛查完之后推上来的
-  （POST /api/device-sms/push，设备令牌鉴权）。手机短信只有连着它的那台电脑读得到，
-  所以这里是只读的：要回短信请在手机或那台电脑上操作。
+  老板【个人手机】里的短信。公司号码的短信在 /sms-inbox.html（走 Twilio）；这一页
+  的数据是桌面版「SMS 译信」用 adb 从手机读出来、翻译并筛查完之后推上来的
+  （POST /api/device-sms/push，设备令牌鉴权）。手机短信只有连着它的那台电脑读得到。
+
+  发短信同理：网页只入队，那台电脑取走后用手机发出去再回报结果。
+
+  样式刻意跟 sms-inbox.html 对齐（同一套变量、同样的卡片和气泡）——同一个人在两个
+  页面之间来回切，长得不一样只会让人觉得这页是半成品。
 -->
 <style>
-  :root{--amber:#b45309;--bg:#fffbf3;--card:#fff;--line:#f3e8cd;--ink:#1f2937;--dim:#6b7280;--faint:#9ca3af}
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
-  header{position:sticky;top:0;z-index:5;background:#fff;border-bottom:1px solid var(--line);padding:10px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-  h1{font-size:1.05rem;margin:0;color:var(--amber)}
-  .sub{font-size:.78rem;color:var(--dim)}
-  .spacer{flex:1}
-  button,input,select{font:inherit}
-  button{padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--ink);cursor:pointer}
-  button:hover{border-color:#f5d78e}
-  button.on{background:#fef3c7;border-color:#fcd34d;color:#92400e;font-weight:700}
-  button.primary{background:var(--amber);border-color:var(--amber);color:#fff;font-weight:600}
-  input[type=text],input[type=password]{padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;min-width:0}
-  .wrap{display:grid;grid-template-columns:320px 1fr;gap:0;height:calc(100vh - 56px)}
-  .pane{display:grid;grid-template-rows:1fr auto;min-height:0}
-  .list{border-right:1px solid var(--line);overflow-y:auto;min-height:0}
-  .thread{width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;padding:11px 14px;display:grid;gap:3px;cursor:pointer}
-  .thread:hover{background:#fffcf2}
-  .thread.on{background:#fff7e6;box-shadow:inset 3px 0 0 var(--amber)}
-  .thread .top{display:flex;gap:8px;align-items:baseline}
-  .thread .name{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .thread .when{margin-left:auto;font-size:.72rem;color:var(--faint);white-space:nowrap}
-  .thread .preview{font-size:.82rem;color:var(--dim);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-  .msgs{overflow-y:auto;min-height:0;padding:16px;display:flex;flex-direction:column;gap:10px}
-  .msg{max-width:min(72ch,86%);display:grid;gap:3px}
-  .msg.out{margin-left:auto;text-align:right}
-  .bubble{background:#fff;border:1px solid var(--line);border-radius:14px;padding:9px 13px;white-space:pre-wrap;word-break:break-word;text-align:left}
-  .msg.out .bubble{background:#fff7e6;border-color:#fcd34d}
-  .bubble.risky{border-color:#fca5a5;box-shadow:0 0 0 2px #fee2e2}
-  .tr{border-top:1px dashed var(--line);margin-top:6px;padding-top:6px;color:#111}
-  .orig{color:var(--dim);font-size:.88rem}
-  .foot{font-size:.72rem;color:var(--faint);display:flex;gap:8px;flex-wrap:wrap}
-  .msg.out .foot{justify-content:flex-end}
-  .chip{font-size:.7rem;font-weight:700;padding:1px 8px;border-radius:999px;white-space:nowrap}
-  .chip.warn{background:#fef3c7;color:#92400e}
-  .chip.danger{background:#fee2e2;color:#b91c1c}
-  .empty{padding:40px 20px;text-align:center;color:var(--dim)}
-  .back{display:none;align-self:flex-start}
-  .notebar{display:flex;gap:8px;align-items:center;padding:8px 12px;margin-bottom:6px;border-radius:10px;
-    background:#fffbeb;border:1px solid var(--line);font-size:.82rem}
-  .notebar span{flex:1;white-space:pre-wrap}
-  .notebar button{padding:3px 10px;font-size:.75rem}
-  .compose{border-top:1px solid var(--line);background:#fff;padding:10px 14px;display:grid;gap:8px}
-  .compose textarea{width:100%;min-height:64px;resize:vertical;padding:9px 12px;border:1px solid var(--line);
-    border-radius:12px;font:inherit;background:#fff;color:var(--ink)}
-  .compose .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .compose .note{font-size:.78rem;color:var(--dim)}
-  .compose .note.err{color:#b91c1c}
-  .msg.queued .bubble{background:#fffbeb;border-style:dashed;color:var(--dim)}
-  .gate{max-width:340px;margin:12vh auto;display:grid;gap:10px;padding:0 16px}
-  .err{color:#b91c1c;font-size:.85rem;min-height:20px}
-  .setup{padding:16px;border-top:1px solid var(--line);background:#fff}
-  .setup code{background:#fffbeb;border:1px solid var(--line);border-radius:6px;padding:2px 8px;user-select:all;word-break:break-all}
-  .setup .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
-  @media(max-width:760px){
-    .wrap{grid-template-columns:1fr;height:calc(100vh - 84px)}
-    .list{border-right:0}
-    .wrap.show-thread .list{display:none}
-    .wrap:not(.show-thread) .pane{display:none}
-    /* 手机上列表被会话顶掉了, 得给一条回去的路 */
-    .back{display:inline-block}
-  }
+:root{--blue:#92400e;--sky:#b45309;--sky-light:#fef3c7;--accent:#f59e0b;--white:#fff;--off-white:#fffbeb;
+  --gray-100:#f3f4f6;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A;--gray-800:#2D3748;
+  --red:#E63946;--green:#2D9D78;--radius:8px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'DM Sans',"Microsoft YaHei",sans-serif;background:var(--off-white);color:var(--gray-800);
+  height:100vh;overflow:hidden}
+button,input,select,textarea{font-family:inherit}
+
+/* ── 登录 ── */
+.gate{height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.gate-card{background:var(--white);border:1px solid #fde68a;border-radius:16px;padding:28px 24px;
+  width:min(360px,100%);box-shadow:0 4px 20px rgba(146,64,14,.08);display:grid;gap:12px;text-align:center}
+.gate-card img{width:64px;margin:0 auto 4px}
+.gate-card h1{font-size:1.1rem;color:var(--sky)}
+.gate-card p{font-size:.8rem;color:var(--gray-600);line-height:1.5}
+.gate-card input{padding:10px 14px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:16px;outline:none}
+.gate-card input:focus{border-color:var(--sky)}
+.err{color:var(--red);font-size:.8rem;min-height:18px}
+
+/* ── 框架 ── */
+.app{display:flex;height:100vh}
+.sidebar{width:340px;flex-shrink:0;background:var(--white);border-right:1.5px solid #fde68a;
+  display:flex;flex-direction:column;min-width:0}
+.detail{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--off-white)}
+.header{background:var(--white);border-bottom:1.5px solid #fde68a;padding:10px 14px;display:flex;
+  align-items:center;gap:8px;flex-shrink:0;min-height:52px}
+.header .title{font-size:1rem;font-weight:700;color:var(--sky);display:flex;align-items:center;gap:6px}
+.header .sub{display:block;font-size:.7rem;color:var(--gray-400);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;max-width:100%}
+.icon-btn{width:34px;height:34px;border-radius:50%;border:1px solid var(--gray-200);background:var(--white);
+  color:var(--gray-600);cursor:pointer;font-size:.95rem;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.icon-btn:hover{border-color:var(--sky);color:var(--sky)}
+
+/* ── 筛选 ── */
+.filters{padding:10px 12px;display:grid;gap:8px;border-bottom:1px solid var(--gray-200)}
+.filters input[type=search]{width:100%;padding:9px 14px;border:1px solid var(--gray-200);border-radius:20px;
+  font-size:.85rem;outline:none}
+.filters input[type=search]:focus{border-color:var(--sky)}
+.filter-row{display:flex;gap:6px;flex-wrap:wrap}
+.chip{padding:4px 12px;border-radius:20px;border:1px solid var(--gray-200);background:var(--white);
+  color:var(--gray-600);font-size:.75rem;font-weight:600;cursor:pointer}
+.chip:hover{border-color:var(--sky);color:var(--sky)}
+.chip.on{background:var(--sky);border-color:var(--sky);color:#fff}
+.chip.primary{background:var(--sky);border-color:var(--sky);color:#fff}
+.chip.primary:hover{background:var(--blue);color:#fff}
+
+/* ── 会话列表 ── */
+.threads{flex:1;overflow-y:auto;padding:8px}
+.thread-item{display:flex;align-items:flex-start;gap:10px;padding:11px 13px;margin-bottom:8px;
+  background:var(--white);border:1px solid #f3e8cd;border-radius:14px;box-shadow:0 1px 3px rgba(146,64,14,.06);
+  cursor:pointer;transition:box-shadow .15s,border-color .15s;width:100%;text-align:left}
+.thread-item:hover{border-color:#f5d78e;box-shadow:0 3px 12px rgba(146,64,14,.12)}
+.thread-item.on{background:#fffcf2;border-color:#fde68a;border-left:4px solid var(--accent)}
+.ti-avatar{width:40px;height:40px;border-radius:50%;background:#dbeafe;color:#1d4ed8;display:flex;
+  align-items:center;justify-content:center;font-weight:700;font-size:.85rem;flex-shrink:0}
+.ti-avatar.risky{background:#fee2e2;color:#b91c1c}
+.ti-body{flex:1;min-width:0}
+.ti-top{display:flex;align-items:center;gap:6px}
+.ti-name{font-size:.88rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
+.ti-phone{font-size:.75rem;color:var(--gray-400);white-space:nowrap}
+.ti-time{font-size:.72rem;color:var(--gray-400);margin-left:auto;white-space:nowrap;flex-shrink:0}
+.ti-preview{font-size:.82rem;color:var(--gray-600);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.ti-note{font-size:.75rem;color:var(--blue);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ti-meta{display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap}
+.badge{font-size:.68rem;font-weight:700;padding:1px 8px;border-radius:10px;white-space:nowrap;
+  background:var(--gray-100);color:var(--gray-600)}
+.badge.warn{background:#fef3c7;color:#92400e}
+.badge.danger{background:#fee2e2;color:#b91c1c}
+.badge.queued{background:#e0f2fe;color:#0369a1}
+
+/* ── 会话内容 ── */
+.contact-bar{background:var(--white);border-bottom:1px solid var(--gray-200);padding:9px 14px;
+  display:flex;align-items:center;gap:10px;flex-shrink:0}
+.contact-name{font-size:.9rem;font-weight:600}
+.contact-phone{font-size:.78rem;color:var(--gray-400)}
+.action-bar{background:var(--white);padding:6px 12px;border-bottom:1px solid var(--gray-200);
+  display:flex;gap:6px;flex-wrap:wrap;flex-shrink:0;align-items:center}
+.action-btn{padding:5px 14px;border-radius:var(--radius);font-size:.78rem;font-weight:600;cursor:pointer;
+  border:1px solid var(--gray-200);background:var(--white);color:var(--gray-600)}
+.action-btn:hover{border-color:var(--sky);color:var(--sky)}
+.action-btn.primary{background:var(--sky);color:#fff;border-color:var(--sky)}
+.action-btn.primary:hover{background:var(--blue)}
+.action-btn.danger{color:var(--red);border-color:#fecaca}
+.note-strip{background:#fef9c3;border-bottom:1px solid #fde68a;color:#92400e;font-size:.8rem;
+  padding:7px 14px;white-space:pre-wrap}
+
+.messages{flex:1;overflow-y:auto;padding:12px 14px 8px;display:flex;flex-direction:column;gap:4px}
+.msg-row{display:flex;flex-direction:column}
+.msg-row.in{align-items:flex-start}
+.msg-row.out{align-items:flex-end}
+.msg-bubble{max-width:82%;padding:10px 14px;border-radius:16px;font-size:.88rem;line-height:1.45;word-wrap:break-word}
+.msg-row.in .msg-bubble{background:var(--gray-100);color:var(--gray-800);border-bottom-left-radius:4px}
+.msg-row.out .msg-bubble{background:#2563eb;color:#fff;border-bottom-right-radius:4px}
+.msg-row.queued .msg-bubble{background:var(--white);color:var(--gray-600);border:1px dashed var(--accent)}
+.msg-bubble.risky{box-shadow:0 0 0 2px #fca5a5}
+.msg-translation{font-size:.78rem;margin-top:5px;padding-top:5px;border-top:1px solid rgba(255,255,255,.3)}
+.msg-row.in .msg-translation{border-top-color:var(--gray-200);color:#111}
+.msg-meta{font-size:.68rem;color:var(--gray-400);margin-top:3px;padding:0 4px;display:flex;align-items:center;
+  gap:6px;flex-wrap:wrap}
+.msg-row.out .msg-meta{justify-content:flex-end}
+.msg-fail{color:var(--red)}
+.date-divider{text-align:center;padding:12px 0 6px;font-size:.72rem;color:var(--gray-400);font-weight:600}
+
+/* ── 写短信 ── */
+.reply-bar{background:var(--white);border-top:1.5px solid var(--gray-200);padding:8px 10px;
+  display:flex;align-items:flex-end;gap:8px;flex-shrink:0;flex-wrap:wrap}
+.reply-bar textarea{flex:1;min-width:180px;resize:none;border:1px solid var(--gray-200);border-radius:20px;
+  padding:10px 16px;font-size:16px;outline:none;max-height:120px;min-height:42px;line-height:1.4}
+.reply-bar textarea:focus{border-color:var(--sky)}
+.reply-bar select{border:1px solid var(--gray-200);border-radius:20px;padding:9px 12px;font-size:.8rem;
+  color:var(--gray-600);background:var(--white);outline:none}
+.reply-bar .send-btn{width:42px;height:42px;border-radius:50%;background:var(--sky);color:#fff;border:none;
+  font-size:1.05rem;cursor:pointer;flex-shrink:0}
+.reply-bar .send-btn:hover{background:var(--blue)}
+.reply-bar .send-btn:disabled{opacity:.4;cursor:not-allowed}
+.reply-hint{flex-basis:100%;font-size:.72rem;color:var(--gray-400);padding:0 6px}
+.reply-hint.err{color:var(--red)}
+.to-row{flex-basis:100%;display:flex;align-items:center;gap:8px}
+.to-row input{flex:1;border:1px solid var(--gray-200);border-radius:20px;padding:9px 16px;font-size:.9rem;outline:none}
+
+/* ── 空状态 ── */
+.empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  color:var(--gray-400);text-align:center;padding:30px}
+.empty img{width:56px;opacity:.75;margin-bottom:6px}
+.empty .big{font-size:.95rem;font-weight:600;color:var(--gray-600)}
+.empty .small{font-size:.8rem;line-height:1.6}
+
+/* ── 弹窗（浏览器自带的 prompt 太丑，全部自己画）── */
+.modal-back{position:fixed;inset:0;background:rgba(45,55,72,.45);display:flex;align-items:center;
+  justify-content:center;padding:20px;z-index:50}
+.modal{background:var(--white);border-radius:16px;padding:20px;width:min(420px,100%);display:grid;gap:10px;
+  box-shadow:0 10px 40px rgba(0,0,0,.2);max-height:90vh;overflow-y:auto}
+.modal h2{font-size:.95rem;color:var(--sky)}
+.modal label{font-size:.75rem;color:var(--gray-600);font-weight:600}
+.modal input,.modal textarea{border:1px solid var(--gray-200);border-radius:var(--radius);padding:9px 12px;
+  font-size:.9rem;outline:none;width:100%;font-family:inherit}
+.modal textarea{min-height:80px;resize:vertical}
+.modal input:focus,.modal textarea:focus{border-color:var(--sky)}
+.modal .row{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
+.modal .hint{font-size:.75rem;color:var(--gray-600);line-height:1.6}
+.modal code{background:var(--off-white);border:1px solid #fde68a;border-radius:6px;padding:2px 8px;
+  font-size:.8rem;user-select:all;word-break:break-all;display:inline-block;margin-top:3px}
+
+/* ── 手机 ── */
+.back-btn{display:none}
+@media(max-width:760px){
+  .sidebar{width:100%;border-right:0}
+  .app.show-thread .sidebar{display:none}
+  .app:not(.show-thread) .detail{display:none}
+  .ti-name{max-width:none}
+  .back-btn{display:flex}
+}
 </style>
 </head>
 <body>
 
-<div id="gate" class="gate">
-  <h1>手机短信</h1>
-  <div class="sub">仅限管理员账号。这里是从你手机同步上来的私人短信。</div>
-  <input type="text" id="user" placeholder="用户名" autocomplete="username">
-  <input type="password" id="pw" placeholder="密码" autocomplete="current-password">
-  <button class="primary" onclick="login()">登录</button>
-  <div class="err" id="gateErr"></div>
+<div class="gate" id="gate" style="display:none">
+  <div class="gate-card">
+    <img src="logo.svg" alt="">
+    <h1>手机短信</h1>
+    <p>仅限管理员账号。这里是从你手机同步上来的私人短信。</p>
+    <input type="text" id="user" placeholder="用户名" autocomplete="username">
+    <input type="password" id="pw" placeholder="密码" autocomplete="current-password">
+    <button class="chip primary" style="padding:10px" onclick="login()">登录</button>
+    <div class="err" id="gateErr"></div>
+  </div>
 </div>
 
-<div id="app" style="display:none">
-  <header>
-    <h1>手机短信</h1>
-    <span class="sub" id="deviceInfo"></span>
-    <div class="spacer"></div>
-    <button class="primary" onclick="startNew()" title="给一个新号码发短信">＋ 新短信</button>
-    <input type="text" id="q" placeholder="搜原文 / 译文 / 号码…" oninput="debounced()">
-    <button id="riskBtn" onclick="toggleRisk()" title="只看 AI 判为可疑或诈骗的短信">🚨 可疑</button>
-    <button onclick="load()" title="刷新">↻</button>
-    <button onclick="toggleSetup()" title="连接这台电脑 / 清空数据">⚙</button>
-  </header>
-
-  <div id="setup" class="setup" style="display:none">
-    <div class="row">
-      <b>连接一台电脑</b>
-      <span class="sub">在桌面版「SMS 译信」的设置里填上网址和令牌，它就会把手机短信推到这里。</span>
+<div class="app" id="app" style="display:none">
+  <div class="sidebar">
+    <div class="header">
+      <span class="title"><img src="logo.svg" alt="" style="height:22px">手机短信</span>
+      <div style="flex:1;min-width:0"><span class="sub" id="deviceInfo"></span></div>
+      <button class="icon-btn" onclick="startNew()" title="给新号码发短信">✎</button>
+      <button class="icon-btn" onclick="load()" title="刷新">↻</button>
+      <button class="icon-btn" onclick="openSetup()" title="连接电脑 / 清空数据">⚙</button>
     </div>
-    <div class="row">
-      <span class="sub">推送网址</span><code id="pushUrl"></code>
-    </div>
-    <div class="row">
-      <button class="primary" onclick="newToken()">生成新令牌</button>
-      <code id="tokenOut" style="display:none"></code>
-      <span class="sub">令牌只显示这一次，关掉就看不到了；丢了就再生成一个。</span>
-    </div>
-    <div class="row" id="deviceRows"></div>
-    <div class="row">
-      <button onclick="wipe()" style="color:#b91c1c;border-color:#fca5a5">清空所有手机短信</button>
-      <span class="sub">把已经推上来的私人短信从服务器上全部删掉。手机和电脑上的不受影响。</span>
-    </div>
-  </div>
-
-  <div class="wrap" id="wrap">
-    <div class="list" id="list"></div>
-    <div class="pane" id="pane">
-      <div class="msgs" id="msgs"></div>
-      <div class="compose" id="compose" style="display:none">
-        <div class="row" id="toRow" style="display:none">
-          <span class="note">发给</span>
-          <input type="text" id="toInput" placeholder="号码，例如 +13128437890" style="flex:1">
-        </div>
-        <textarea id="draft" placeholder="写短信…（发出去的是手机号本人发的）"></textarea>
-        <div class="row">
-          <select id="langSel" title="让电脑先把它翻译成这个语言再发">
-            <option value="">不翻译，原样发</option>
-            <option value="English">译成 English</option>
-            <option value="Español">译成 Español</option>
-            <option value="简体中文">译成 简体中文</option>
-            <option value="繁體中文">译成 繁體中文</option>
-            <option value="Tiếng Việt">译成 Tiếng Việt</option>
-            <option value="한국어">译成 한국어</option>
-            <option value="日本語">译成 日本語</option>
-          </select>
-          <button class="primary" id="sendBtn" onclick="queueSend()">发送</button>
-          <span class="note" id="sendNote">电脑收到后会用手机发出去，手机要连着那台电脑。</span>
-        </div>
+    <div class="filters">
+      <input type="search" id="q" placeholder="搜原文 / 译文 / 号码…" oninput="debounced()">
+      <div class="filter-row">
+        <button class="chip" id="riskChip" onclick="toggleRisk()" title="只看 AI 判为可疑或诈骗的短信">🚨 可疑</button>
+        <button class="chip" id="queuedChip" onclick="toggleQueued()" title="只看还没发出去的">✎ 待发送</button>
       </div>
     </div>
+    <div class="threads" id="threads"></div>
   </div>
+
+  <div class="detail" id="detail"></div>
 </div>
+
+<div id="modalHost"></div>
 
 <script>
 let TOKEN = localStorage.getItem('pa_phone_sms_token') || '';
-let MESSAGES = [];
-let OUTBOX = [];
-let NOTES = {};        // peer -> {alias, note}
-let COMPOSING = false; // 正在给一个新号码写
-let PEER = null;
-let RISK = false;
-let timer = null;
+let MESSAGES = [], OUTBOX = [], NOTES = {}, DEVICES = [];
+let PEER = null, RISK = false, QUEUED_ONLY = false, COMPOSING = false;
+let searchTimer = null;
 
 const RISK_LABELS = { personal:'私人', verification:'验证码', bank:'银行', delivery:'物流',
   service:'服务通知', marketing:'营销', spam:'垃圾', fraud:'诈骗', other:'其他' };
+const LANGUAGES = ['English','Español','简体中文','繁體中文','Tiếng Việt','한국어','日本語'];
 
-// SQLite 的 datetime('now') 是 UTC、又不带时区标记，直接给 new Date() 会被当成
-// 本地时间（差几个小时），排序时也和推上来的 ISO 时间串比不出正确先后。
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* SQLite 的 datetime('now') 是 UTC 又不带时区标记，直接给 new Date() 会被当本地时间。 */
 function sqlTime(value) {
   const raw = String(value || '').trim();
   if (!raw) return '';
   return /[TZ]/.test(raw) ? raw : raw.replace(' ', 'T') + 'Z';
 }
-
-function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmtPhone(e164) {
+  if (!e164) return '';
+  const d = String(e164).replace(/\D/g, '');
+  if (d.length === 11 && d[0] === '1') return '(' + d.substr(1,3) + ') ' + d.substr(4,3) + '-' + d.substr(7);
+  if (d.length === 10) return '(' + d.substr(0,3) + ') ' + d.substr(3,3) + '-' + d.substr(6);
+  return String(e164);
+}
+function timeAgo(value) {
+  const d = new Date(sqlTime(value));
+  if (isNaN(d)) return '';
+  const diff = (Date.now() - d.getTime()) / 1000;
+  if (diff < 60) return '刚刚';
+  if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
+  if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
+  if (diff < 172800) return '昨天';
+  return d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+}
+function fmtClock(value) {
+  const d = new Date(sqlTime(value));
+  return isNaN(d) ? '' : d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+}
+function dayLabel(value) {
+  const d = new Date(sqlTime(value));
+  return isNaN(d) ? '' : d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
+}
 
 async function api(path, opts = {}) {
   const res = await fetch('/api' + path, {
@@ -205,27 +288,22 @@ async function login() {
 }
 
 function start() {
-  document.getElementById('draft').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void queueSend(); }
-  });
   document.getElementById('gate').style.display = 'none';
   document.getElementById('app').style.display = '';
-  document.getElementById('pushUrl').textContent = location.origin + '/api/device-sms/push';
   load();
-  // 电脑那边同步完才会推上来，隔一会儿看一次就够了
-  setInterval(() => load(true), 30000);
+  setInterval(() => load(true), 20000);
 }
 
-function debounced() { clearTimeout(timer); timer = setTimeout(() => load(), 400); }
+function debounced() { clearTimeout(searchTimer); searchTimer = setTimeout(() => load(), 400); }
 function toggleRisk() {
   RISK = !RISK;
-  document.getElementById('riskBtn').classList.toggle('on', RISK);
+  document.getElementById('riskChip').classList.toggle('on', RISK);
   load();
 }
-function toggleSetup() {
-  const el = document.getElementById('setup');
-  el.style.display = el.style.display === 'none' ? '' : 'none';
-  if (el.style.display === '') void loadDevices();
+function toggleQueued() {
+  QUEUED_ONLY = !QUEUED_ONLY;
+  document.getElementById('queuedChip').classList.toggle('on', QUEUED_ONLY);
+  render();
 }
 
 async function load(silent) {
@@ -237,22 +315,22 @@ async function load(silent) {
     const r = await api(url);
     MESSAGES = r.messages || [];
     OUTBOX = r.outbox || [];
+    DEVICES = r.devices || [];
     NOTES = {};
     for (const n of r.notes || []) NOTES[n.peer] = { alias: n.alias || '', note: n.note || '' };
-    const devices = r.devices || [];
-    document.getElementById('deviceInfo').textContent = devices.length
-      ? devices.map(d => (d.name || '电脑') + (d.last_push_at ? ' · ' + fmt(sqlTime(d.last_push_at)) + ' 同步' : ' · 还没推过')).join('　')
-      : '还没有连接任何电脑 —— 点右上角 ⚙ 生成令牌';
+    document.getElementById('deviceInfo').textContent = DEVICES.length
+      ? DEVICES.map(d => (d.name || '电脑') + (d.last_push_at ? ' · ' + timeAgo(d.last_push_at) + '同步' : ' · 还没推过')).join('　')
+      : '还没连电脑 — 点 ⚙';
     render();
   } catch (e) { if (!silent) console.error(e); }
 }
 
-// 已发的 + 排队待发的合到一起。待发的用 queued 标记, 排在对话末尾。
+/* 已收到的 + 排队待发的合成一条时间线。 */
 function allItems() {
   const queued = OUTBOX.map(o => ({
     id: 'q' + o.id, outbox_id: o.id, queued: true, status: o.status, note: o.note,
     peer: o.peer || o.to_address, address: o.to_address, direction: 'out', kind: 'sms',
-    body: o.body, translated_body: '', sent_at: sqlTime(o.created_at),
+    body: o.body, translated_body: '', sent_at: sqlTime(o.created_at)
   }));
   return MESSAGES.concat(queued);
 }
@@ -266,174 +344,206 @@ function conversations() {
   }
   const out = [];
   for (const [peer, list] of groups) {
-    list.sort((a, b) => (a.sent_at < b.sent_at ? -1 : 1));
+    list.sort((a, b) => (sqlTime(a.sent_at) < sqlTime(b.sent_at) ? -1 : 1));
     const last = list[list.length - 1];
-    let maxRisk = 0, name = '';
+    let maxRisk = 0, name = '', queued = 0;
     for (const m of list) {
       if (Number(m.risk_score) > maxRisk) maxRisk = Number(m.risk_score);
       if (m.contact) name = m.contact;
+      if (m.queued) queued++;
     }
     const noted = NOTES[peer] || {};
-    out.push({ peer, list, last, maxRisk, note: noted.note || '',
-      title: noted.alias || name || last.address || peer });
+    // 号码用最近一条真实短信上的，排队中的那些没有权威号码
+    const real = list.filter(m => !m.queued);
+    const address = (real.length ? real[real.length - 1].address : last.address) || peer;
+    out.push({ peer, list, last, maxRisk, queued, address, note: noted.note || '',
+      title: noted.alias || name || fmtPhone(address) || peer });
   }
-  out.sort((a, b) => (a.last.sent_at < b.last.sent_at ? 1 : -1));
-  return out;
+  out.sort((a, b) => (sqlTime(a.last.sent_at) < sqlTime(b.last.sent_at) ? 1 : -1));
+  return QUEUED_ONLY ? out.filter(c => c.queued > 0) : out;
 }
 
-function riskChip(score, category) {
+function riskBadge(score, category) {
   const n = Number(score);
   if (!Number.isFinite(n) || n < 2) return '';
   const cat = RISK_LABELS[category] || '';
-  return '<span class="chip ' + (n >= 4 ? 'danger' : 'warn') + '" title="AI 诈骗筛查 ' + n + '/5">🚨 '
+  return '<span class="badge ' + (n >= 4 ? 'danger' : 'warn') + '" title="AI 诈骗筛查 ' + n + '/5">🚨 '
     + (n >= 4 ? '高风险' : '可疑') + (cat ? ' · ' + cat : '') + '</span>';
-}
-
-function fmt(ts) {
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return '';
-  const today = new Date();
-  const sameDay = d.toDateString() === today.toDateString();
-  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  return sameDay ? time : d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + time;
 }
 
 function render() {
   const convos = conversations();
-  const list = document.getElementById('list');
+  renderThreads(convos);
+  renderDetail(convos);
+}
+
+function renderThreads(convos) {
+  const el = document.getElementById('threads');
   if (!convos.length) {
-    list.innerHTML = '<div class="empty">还没有短信。<br><br>在那台连着手机的电脑上打开桌面版「SMS 译信」，'
-      + '设置里填上推送网址和令牌（点右上角 ⚙）。</div>';
-    document.getElementById('msgs').innerHTML = '';
+    el.innerHTML = '<div class="empty" style="padding:40px 16px"><div class="big">没有会话</div>'
+      + '<div class="small">' + (MESSAGES.length
+          ? '换个搜索词，或者关掉上面的筛选。'
+          : '在那台连着手机的电脑上打开桌面版「SMS 译信」，设置里填上推送网址和令牌（点右上角 ⚙）。')
+      + '</div></div>';
     return;
   }
-  if (!convos.some(c => c.peer === PEER)) PEER = convos[0].peer;
+  el.innerHTML = convos.map(c => {
+    const initials = (c.title || '?').replace(/[^0-9A-Za-z一-龥]/g, '').slice(0, 2).toUpperCase() || '#';
+    const preview = (c.last.direction === 'out' ? '我: ' : '')
+      + (c.last.translated_body || c.last.body || (c.last.has_media ? '［图片］' : ''));
+    return '<button class="thread-item' + (c.peer === PEER && !COMPOSING ? ' on' : '') + '" onclick="pick(\'' + esc(c.peer) + '\')">'
+      + '<div class="ti-avatar' + (c.maxRisk >= 4 ? ' risky' : '') + '">' + esc(initials) + '</div>'
+      + '<div class="ti-body">'
+      + '<div class="ti-top"><span class="ti-name">' + esc(c.title) + '</span>'
+      + '<span class="ti-phone">' + esc(fmtPhone(c.address)) + '</span>'
+      + '<span class="ti-time">' + timeAgo(c.last.sent_at) + '</span></div>'
+      + '<div class="ti-preview">' + esc(preview.slice(0, 90)) + '</div>'
+      + (c.note ? '<div class="ti-note">📝 ' + esc(c.note) + '</div>' : '')
+      + '<div class="ti-meta">'
+      + riskBadge(c.maxRisk, (c.list.find(m => Number(m.risk_score) === c.maxRisk) || {}).risk_category)
+      + (c.queued ? '<span class="badge queued">待发送 ' + c.queued + '</span>' : '')
+      + '</div></div></button>';
+  }).join('');
+}
 
-  list.innerHTML = convos.map(c =>
-    '<button class="thread' + (c.peer === PEER ? ' on' : '') + '" onclick="pick(\'' + esc(c.peer) + '\')">'
-    + '<div class="top"><span class="name">' + esc(c.title) + '</span>'
-    + '<span class="when">' + fmt(c.last.sent_at) + '</span></div>'
-    + '<div class="preview">' + (c.last.direction === 'out' ? '我: ' : '')
-    + esc((c.last.translated_body || c.last.body || (c.last.has_media ? '［图片］' : '')).slice(0, 120)) + '</div>'
-    + (c.note ? '<div class="preview" style="color:var(--amber)">📝 ' + esc(c.note.slice(0, 60)) + '</div>' : '')
-    + (c.maxRisk >= 2 ? '<div>' + riskChip(c.maxRisk, (c.list.find(m => Number(m.risk_score) === c.maxRisk) || {}).risk_category) + '</div>' : '')
-    + '</button>').join('');
+function renderDetail(convos) {
+  const el = document.getElementById('detail');
+
+  if (COMPOSING) {
+    el.innerHTML = contactBar('新短信', '填一个号码', true)
+      + '<div class="empty"><img src="logo.svg" alt=""><div class="big">写给一个新号码</div>'
+      + '<div class="small">上面填号码，下面写内容。<br>发出去的是你手机号本人发的。</div></div>'
+      + replyBar(true);
+    wireReply();
+    document.getElementById('toInput').focus();
+    return;
+  }
 
   const convo = convos.find(c => c.peer === PEER);
-  // 写新短信时没有对话, 输入框照样要在, 只是多一行填号码
-  document.getElementById('compose').style.display = (convo || COMPOSING) ? '' : 'none';
-  document.getElementById('toRow').style.display = COMPOSING ? '' : 'none';
-  if (COMPOSING) {
-    document.getElementById('msgs').innerHTML =
-      '<button class="back" onclick="backToList()">‹ 返回列表</button>'
-      + '<div class="empty">写给一个新号码：上面填号码，下面写内容。</div>';
+  if (!convo) {
+    el.innerHTML = '<div class="empty"><img src="logo.svg" alt=""><div class="big">从左边选一个会话</div>'
+      + '<div class="small">这里是你手机里的短信，由那台连着手机的电脑同步上来。<br>'
+      + '写短信也可以 — 电脑会替你用手机发出去。</div></div>';
     return;
   }
 
   const noted = NOTES[convo.peer] || {};
-  const noteBar = '<div class="notebar">'
-    + '<span>' + (noted.note ? '📝 ' + esc(noted.note) : '<span style="color:var(--faint)">还没有备注</span>') + '</span>'
-    + '<button onclick="editNote()">备注</button>'
-    + '<button onclick="dialPeer()" title="在手机上打开拨号盘">拨号</button>'
-    + '</div>';
-  document.getElementById('msgs').innerHTML =
-    '<button class="back" onclick="backToList()">‹ 返回列表</button>'
-    + noteBar
-    + convo.list.map(m => {
+  let lastDay = '';
+  const body = convo.list.map(m => {
+    const day = dayLabel(m.sent_at);
+    const divider = day && day !== lastDay ? '<div class="date-divider">' + esc(day) + '</div>' : '';
+    lastDay = day;
+
     if (m.queued) {
-      return '<div class="msg out queued">'
-        + '<div class="bubble">' + esc(m.body) + '</div>'
-        + '<div class="foot">'
+      return divider + '<div class="msg-row out queued">'
+        + '<div class="msg-bubble">' + esc(m.body) + '</div>'
+        + '<div class="msg-meta">'
         + (m.status === 'failed'
-            ? '<span style="color:#b91c1c">发送失败' + (m.note ? '：' + esc(m.note) : '') + '</span>'
-            : '<span>待发送 · 等电脑把它发出去</span>')
-        + '<button style="padding:0 8px;font-size:.72rem" onclick="cancelQueued(' + m.outbox_id + ')">撤掉</button>'
+            ? '<span class="msg-fail">发送失败：' + esc(m.note || '未知原因') + '</span>'
+            : '<span>待发送 · 等电脑发出去</span>')
+        + '<button class="action-btn" style="padding:1px 8px;font-size:.7rem" onclick="cancelQueued(' + m.outbox_id + ')">撤掉</button>'
         + '</div></div>';
     }
-    return renderMessage(m);
-  }).join('');
 
-  const msgs = document.getElementById('msgs');
-  msgs.scrollTop = msgs.scrollHeight;
-}
-
-function renderMessage(m) {
-  return (function () {
     const translated = (m.translated_body || '').trim();
     const showBoth = translated && translated !== (m.body || '').trim();
-    const risky = Number(m.risk_score) >= 4;
-    return '<div class="msg ' + (m.direction === 'out' ? 'out' : 'in') + '">'
-      + '<div class="bubble' + (risky ? ' risky' : '') + '">'
-      + (showBoth ? '<div class="orig">' + esc(m.body) + '</div><div class="tr">' + esc(translated) + '</div>'
-                  : esc(m.body || (m.has_media ? '［图片短信］' : '')))
+    return divider + '<div class="msg-row ' + (m.direction === 'out' ? 'out' : 'in') + '">'
+      + '<div class="msg-bubble' + (Number(m.risk_score) >= 4 ? ' risky' : '') + '">'
+      + esc(m.body || (m.has_media ? '［图片短信］' : ''))
+      + (showBoth ? '<div class="msg-translation">' + esc(translated) + '</div>' : '')
       + '</div>'
-      + '<div class="foot"><span>' + fmt(m.sent_at) + '</span>'
+      + '<div class="msg-meta"><span>' + fmtClock(m.sent_at) + '</span>'
       + (m.kind === 'mms' ? '<span>图片短信</span>' : '')
       + (m.source_lang ? '<span>' + esc(m.source_lang) + '</span>' : '')
-      + riskChip(m.risk_score, m.risk_category)
+      + riskBadge(m.risk_score, m.risk_category)
       + (m.risk_summary && Number(m.risk_score) >= 2 ? '<span>' + esc(m.risk_summary) + '</span>' : '')
       + '</div></div>';
-  })();
+  }).join('');
+
+  el.innerHTML = contactBar(convo.title, fmtPhone(convo.address), false)
+    + '<div class="action-bar">'
+    + '<button class="action-btn" onclick="editNote()">📝 备注</button>'
+    + '<button class="action-btn" onclick="startNew()">✎ 新短信</button>'
+    + '</div>'
+    + (noted.note ? '<div class="note-strip">📝 ' + esc(noted.note) + '</div>' : '')
+    + '<div class="messages" id="messages">' + body + '</div>'
+    + replyBar(false);
+
+  const box = document.getElementById('messages');
+  box.scrollTop = box.scrollHeight;
+  wireReply();
+}
+
+function contactBar(title, sub, composing) {
+  return '<div class="contact-bar">'
+    + '<button class="icon-btn back-btn" onclick="backToList()" title="返回">‹</button>'
+    + '<div style="flex:1;min-width:0"><div class="contact-name">' + esc(title) + '</div>'
+    + '<div class="contact-phone">' + esc(sub) + '</div></div>'
+    + (composing ? '<button class="action-btn" onclick="backToList()">取消</button>' : '')
+    + '</div>';
+}
+
+function replyBar(composing) {
+  return '<div class="reply-bar">'
+    + (composing
+        ? '<div class="to-row"><span style="font-size:.8rem;color:var(--gray-600)">发给</span>'
+          + '<input type="text" id="toInput" placeholder="号码，例如 +13128437890"></div>'
+        : '')
+    + '<select id="langSel" title="让电脑先翻译成这个语言再发">'
+    + '<option value="">不翻译</option>'
+    + LANGUAGES.map(l => '<option value="' + l + '">译成 ' + l + '</option>').join('')
+    + '</select>'
+    + '<textarea id="draft" rows="1" placeholder="写短信…"></textarea>'
+    + '<button class="send-btn" id="sendBtn" onclick="queueSend()" title="发送（Ctrl+Enter）">&#9654;</button>'
+    + '<div class="reply-hint" id="sendNote">电脑收到后会用手机发出去 — 电脑要开着、手机要连着。</div>'
+    + '</div>';
+}
+
+function wireReply() {
+  const box = document.getElementById('draft');
+  if (!box) return;
+  box.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void queueSend(); }
+  });
 }
 
 function pick(peer) {
-  if (peer !== PEER) document.getElementById('langSel').value = '';
   COMPOSING = false;
   PEER = peer;
-  document.getElementById('wrap').classList.add('show-thread');
+  document.getElementById('app').classList.add('show-thread');
   render();
 }
 
 function startNew() {
   COMPOSING = true;
   PEER = null;
-  // 语言是跟着某个对话选的，换人写就别把上一次的语言带过来
-  document.getElementById('langSel').value = '';
-  document.getElementById('draft').value = '';
-  document.getElementById('wrap').classList.add('show-thread');
+  document.getElementById('app').classList.add('show-thread');
   render();
-  document.getElementById('toInput').focus();
 }
 
-async function editNote() {
-  const convo = conversations().find(c => c.peer === PEER);
-  if (!convo) return;
-  const current = NOTES[convo.peer] || {};
-  const alias = prompt('备注名（留空就显示号码）', current.alias || '');
-  if (alias === null) return;
-  const note = prompt('备注（这个号码是谁、聊到哪儿了）', current.note || '');
-  if (note === null) return;
-  await api('/device-sms/notes', {
-    method: 'POST',
-    body: JSON.stringify({ peer: convo.peer, alias, note })
-  });
-  await load(true);
-}
-
-async function dialPeer() {
-  const convo = conversations().find(c => c.peer === PEER);
-  if (!convo) return;
-  alert('在手机上拨 ' + (convo.last.address || convo.peer) + '。（网页这边没法控制手机拨号，桌面版可以。）');
+function backToList() {
+  COMPOSING = false;
+  document.getElementById('app').classList.remove('show-thread');
+  render();
 }
 
 async function queueSend() {
-  const convo = COMPOSING ? null : conversations().find(c => c.peer === PEER);
+  const convos = conversations();
+  const convo = COMPOSING ? null : convos.find(c => c.peer === PEER);
   const note = document.getElementById('sendNote');
   const box = document.getElementById('draft');
   const body = box.value.trim();
   const translateTo = document.getElementById('langSel').value;
-  note.className = 'note';
-  if (!convo && !COMPOSING) { return; }
-  if (!body) { note.textContent = '还没写内容。'; note.className = 'note err'; return; }
+  note.className = 'reply-hint';
+  if (!convo && !COMPOSING) return;
+  if (!body) { note.textContent = '还没写内容。'; note.className = 'reply-hint err'; return; }
 
-  // 号码：新短信取输入框里的，回复取这个对话里最近一条真实短信的地址
   let to = '';
   if (COMPOSING) {
     to = document.getElementById('toInput').value.trim();
-    if (!to) { note.textContent = '先填收件号码。'; note.className = 'note err'; return; }
+    if (!to) { note.textContent = '先填收件号码。'; note.className = 'reply-hint err'; return; }
   } else {
-    const real = convo.list.filter(m => !m.queued);
-    to = (real.length ? real[real.length - 1].address : '') || convo.peer;
+    to = convo.address;
   }
 
   const btn = document.getElementById('sendBtn');
@@ -444,63 +554,111 @@ async function queueSend() {
       method: 'POST',
       body: JSON.stringify({ to, peer, body, translate_to: translateTo })
     });
-    if (!r.success) { note.textContent = r.error || '排队失败'; note.className = 'note err'; return; }
-    box.value = '';
-    note.textContent = translateTo
-      ? `已排队。电脑会先把它翻成${translateTo}，再用手机发出去。`
-      : '已排队，等电脑发出去（电脑要开着、手机要连着）。';
+    if (!r.success) { note.textContent = r.error || '排队失败'; note.className = 'reply-hint err'; return; }
     if (COMPOSING) { COMPOSING = false; PEER = peer; }
     await load(true);
+    // load() 重画了整个面板, 提示要写到新的那个节点上
+    const hint = document.getElementById('sendNote');
+    if (hint) {
+      hint.textContent = translateTo
+        ? '已排队。电脑会先翻成' + translateTo + '，再用手机发出去。'
+        : '已排队，等电脑发出去。';
+    }
   } catch (e) {
     note.textContent = e.message;
-    note.className = 'note err';
+    note.className = 'reply-hint err';
   } finally {
     btn.disabled = false;
   }
 }
 
 async function cancelQueued(id) {
-  if (!confirm('撤掉这条还没发出去的短信？')) return;
+  if (!(await confirmBox('撤掉这条还没发出去的短信？'))) return;
   await api('/device-sms/outbox/' + id, { method: 'DELETE' });
   load(true);
 }
 
-function backToList() {
-  COMPOSING = false;
-  document.getElementById('wrap').classList.remove('show-thread');
-  render();
+/* ── 弹窗 ── */
+function closeModal() { document.getElementById('modalHost').innerHTML = ''; }
+
+function openModal(html) {
+  document.getElementById('modalHost').innerHTML =
+    '<div class="modal-back" onclick="if(event.target===this)closeModal()"><div class="modal">' + html + '</div></div>';
 }
 
-async function loadDevices() {
+function confirmBox(text) {
+  return new Promise((resolve) => {
+    openModal('<h2>确认</h2><div class="hint">' + esc(text) + '</div>'
+      + '<div class="row"><button class="action-btn" id="mCancel">取消</button>'
+      + '<button class="action-btn primary" id="mOk">确定</button></div>');
+    document.getElementById('mCancel').onclick = () => { closeModal(); resolve(false); };
+    document.getElementById('mOk').onclick = () => { closeModal(); resolve(true); };
+  });
+}
+
+function editNote() {
+  const convo = conversations().find(c => c.peer === PEER);
+  if (!convo) return;
+  const current = NOTES[convo.peer] || {};
+  openModal('<h2>备注 · ' + esc(fmtPhone(convo.address)) + '</h2>'
+    + '<label for="nAlias">备注名</label>'
+    + '<input id="nAlias" placeholder="留空就显示号码" value="' + esc(current.alias || '') + '">'
+    + '<label for="nNote">备注</label>'
+    + '<textarea id="nNote" placeholder="这个号码是谁、聊到哪儿了、要记住的事…">' + esc(current.note || '') + '</textarea>'
+    + '<div class="hint">桌面版「SMS 译信」里是同一份备注，两边都能改。</div>'
+    + '<div class="row"><button class="action-btn" onclick="closeModal()">取消</button>'
+    + '<button class="action-btn primary" id="nSave">保存</button></div>');
+  document.getElementById('nAlias').focus();
+  document.getElementById('nSave').onclick = async () => {
+    const alias = document.getElementById('nAlias').value;
+    const note = document.getElementById('nNote').value;
+    closeModal();
+    await api('/device-sms/notes', { method: 'POST', body: JSON.stringify({ peer: convo.peer, alias, note }) });
+    await load(true);
+  };
+}
+
+async function openSetup() {
   const r = await api('/device-sms/devices');
-  document.getElementById('deviceRows').innerHTML = (r.devices || []).map(d =>
-    '<span class="sub">' + esc(d.name || '电脑') + (d.active ? '' : '（已停用）')
+  const rows = (r.devices || []).map(d =>
+    '<div class="hint">' + esc(d.name || '电脑') + (d.active ? '' : '（已停用）')
     + ' · ' + (d.message_count || 0) + ' 条'
-    + (d.active ? ' <button onclick="revoke(' + d.id + ')">停用</button>' : '') + '</span>').join('　');
-}
+    + (d.active ? ' <button class="action-btn" style="padding:1px 8px" onclick="revoke(' + d.id + ')">停用</button>' : '')
+    + '</div>').join('') || '<div class="hint">还没连过电脑。</div>';
 
-async function newToken() {
-  const name = prompt('给这台电脑起个名字', '我的电脑');
-  if (name === null) return;
-  const r = await api('/device-sms/devices', { method: 'POST', body: JSON.stringify({ name }) });
-  if (!r.token) { alert(r.error || '生成失败'); return; }
-  const out = document.getElementById('tokenOut');
-  out.style.display = '';
-  out.textContent = r.token;
-  void loadDevices();
+  openModal('<h2>连接电脑</h2>'
+    + '<div class="hint">在桌面版「SMS 译信」的 设置 → 同步到公司网站 里填这两样：</div>'
+    + '<div class="hint">推送网址<br><code>' + location.origin + '/api/device-sms/push</code></div>'
+    + '<div id="tokenBox"></div>'
+    + '<div class="row" style="justify-content:flex-start">'
+    + '<button class="action-btn primary" id="newTok">生成新令牌</button></div>'
+    + '<div class="hint">令牌只显示这一次，关掉就看不到了；丢了再生成一个。</div>'
+    + '<div style="border-top:1px solid var(--gray-200);padding-top:8px">' + rows + '</div>'
+    + '<div class="row" style="justify-content:space-between">'
+    + '<button class="action-btn danger" id="wipeBtn">清空所有手机短信</button>'
+    + '<button class="action-btn" onclick="closeModal()">关闭</button></div>');
+
+  document.getElementById('newTok').onclick = async () => {
+    const res = await api('/device-sms/devices', { method: 'POST', body: JSON.stringify({ name: '我的电脑' }) });
+    document.getElementById('tokenBox').innerHTML = res.token
+      ? '<div class="hint">设备令牌（只显示这一次）<br><code>' + esc(res.token) + '</code></div>'
+      : '<div class="hint" style="color:var(--red)">' + esc(res.error || '生成失败') + '</div>';
+  };
+  document.getElementById('wipeBtn').onclick = async () => {
+    closeModal();
+    if (!(await confirmBox('把服务器上所有手机短信删掉？不可撤销。手机和电脑上的不受影响。'))) return;
+    const res = await api('/device-sms/messages', { method: 'DELETE' });
+    await load(true);
+    openModal('<h2>已清空</h2><div class="hint">删除了 ' + (res.deleted || 0) + ' 条。</div>'
+      + '<div class="row"><button class="action-btn primary" onclick="closeModal()">好</button></div>');
+  };
 }
 
 async function revoke(id) {
-  if (!confirm('停用这台电脑的令牌？已经推上来的短信还留着。')) return;
+  closeModal();
+  if (!(await confirmBox('停用这台电脑的令牌？已经推上来的短信还留着。'))) return;
   await api('/device-sms/devices/' + id, { method: 'DELETE' });
-  void loadDevices();
-}
-
-async function wipe() {
-  if (!confirm('把服务器上所有手机短信删掉？这一步不可撤销（手机和电脑上的不受影响）。')) return;
-  const r = await api('/device-sms/messages', { method: 'DELETE' });
-  alert('已删除 ' + (r.deleted || 0) + ' 条。');
-  load();
+  openSetup();
 }
 
 if (TOKEN) {
