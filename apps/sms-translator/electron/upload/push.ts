@@ -126,3 +126,61 @@ export function uploadedPatches(
 ): { id: string; partial: { uploadedState: TranslationState } }[] {
   return messages.map((m) => ({ id: m.id, partial: { uploadedState: m.translationState } }))
 }
+
+/** One queued message the website is waiting for this machine to send. */
+export interface OutboxItem {
+  id: number
+  to_address: string
+  peer: string
+  body: string
+  attempts: number
+}
+
+/**
+ * The push endpoint and the outbox live side by side; the user only ever
+ * configures one URL, so the rest are derived from it.
+ */
+export function endpointBase(pushUrl: string): string {
+  return pushUrl.trim().replace(/\/+$/, '').replace(/\/push$/, '')
+}
+
+/** Queued messages waiting to go out. An unreachable website is not an error. */
+export async function fetchOutbox(
+  target: PushTarget,
+  fetchImpl: typeof fetch = fetch,
+): Promise<OutboxItem[]> {
+  if (!target.url.trim() || !target.token.trim()) return []
+  try {
+    const res = await fetchImpl(`${endpointBase(target.url)}/outbox`, {
+      headers: { authorization: `Bearer ${target.token}` },
+    })
+    if (!res.ok) return []
+    const body = (await res.json()) as { messages?: OutboxItem[] }
+    return Array.isArray(body.messages) ? body.messages : []
+  } catch {
+    return []
+  }
+}
+
+/** Tell the website how a queued message went. */
+export async function reportOutbox(
+  target: PushTarget,
+  id: number,
+  ok: boolean,
+  note: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<void> {
+  try {
+    await fetchImpl(`${endpointBase(target.url)}/outbox/${id}/result`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${target.token}`,
+      },
+      body: JSON.stringify({ ok, note }),
+    })
+  } catch {
+    // The website will hand it back on the next poll; five failed attempts
+    // there mark it failed, so nothing is stuck for ever.
+  }
+}
