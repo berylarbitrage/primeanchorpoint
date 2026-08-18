@@ -239,7 +239,9 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
             {devices.length === 0 && (
               <span className="hint">
                 没有检测到设备。请开启「开发者选项 → USB 调试」，插上数据线后在手机上允许
-                调试授权。
+                调试授权。三星手机若开关是灰的、写着「已被自动拦截器阻止（Blocked by Auto
+                Blocker）」，先到 设置 → 安全和隐私 → <b>自动拦截器</b> 里关掉它，USB 调试
+                和无线调试才能打开。
               </span>
             )}
             {scanError && <span className="hint" style={{ color: 'var(--danger)' }}>{scanError}</span>}

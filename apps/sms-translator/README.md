@@ -48,12 +48,17 @@ Windows 桌面短信收件箱：把安卓手机的短信同步到电脑，用 Cl
    `C:\Android\platform-tools`、下载文件夹、桌面、Android Studio 的 SDK 目录
    （`%LOCALAPPDATA%\Android\Sdk`）、`ANDROID_HOME`。都找不到时，才需要在设置里
    手填 `adb.exe` 的完整路径。找到之后路径会自动写回设置里显示出来。
-3. **手机开启调试**：设置 → 关于手机 → 连点「版本号」7 次 → 返回 → 开发者选项。
+3. **三星手机先关掉「自动拦截器」**：One UI 6.1 起，设置 → 安全和隐私 →
+   **自动拦截器（Auto Blocker）** 默认会拦下 USB 指令，开发者选项里的「USB 调试」和
+   「无线调试」会变成**灰色、点不动**，下面小字写着 `Blocked by Auto Blocker`。
+   把它关掉（或关掉其中拦 USB 的那一项）之后开关才可用。用完想恢复可以再打开，
+   但下次连电脑还得再关一次。
+4. **手机开启调试**：设置 → 关于手机 → 连点「版本号」7 次 → 返回 → 开发者选项。
    然后二选一：
    - **USB**：打开「USB 调试」，插上数据线，手机弹授权框时勾「一律允许」。
    - **WiFi 无线（安卓 11+，不用插线）**：打开「无线调试」，在软件设置的
      「无线连接」里配对一次即可。详见下方「无线连接」。
-4. **Anthropic API key**：<https://console.anthropic.com/> 创建，首次启动时填进设置。
+5. **Anthropic API key**：<https://console.anthropic.com/> 创建，首次启动时填进设置。
 
 验证连接：
 
@@ -151,7 +156,10 @@ adb shell content query --uri content://sms --projection _id:body
 - 有 `Row: 0 _id=... body=...` 这样的输出 → 没问题，正常使用。
 - 出现 `Permission Denial` → 你这台的系统禁掉了，除非 root 否则无解。
 
-另外两点三星相关的：
+另外几点三星相关的：
+
+- **开关是灰的、写着 `Blocked by Auto Blocker`** → 设置 → 安全和隐私 → 自动拦截器，
+  关掉它。这是三星拦 USB 指令的功能，USB 调试和无线调试都会被它锁住。
 
 - **一定要在手机上点「允许 USB 调试」的授权框**，勾上「一律允许」，否则
   `adb devices` 只会显示 `unauthorized`。

@@ -108,6 +108,8 @@ jobs:
             '',
             '**还需要 adb**：下载 [Android Platform Tools](https://developer.android.com/tools/releases/platform-tools) 解压即可，不用配环境变量——软件会自动在常见位置查找，找不到时点设置里的「浏览…」选中 `adb.exe`。手机上还要打开 USB 调试，或用无线调试（不插线）。',
             '',
+            '**三星用户注意**：如果开发者选项里的「USB 调试」是灰色的、写着 `Blocked by Auto Blocker`，先到 设置 → 安全和隐私 → **自动拦截器（Auto Blocker）** 里把它关掉，否则电脑连不上手机。',
+            '',
             '**仅支持 Android。** iOS 不向第三方开放短信接口。发短信是唤起手机短信 App 再自动点发送，不是真正的直发；图片短信只收不发。',
             '',
             '完整说明见 `apps/sms-translator/README.md`。'
