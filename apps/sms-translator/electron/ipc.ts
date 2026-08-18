@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
+import { app, clipboard, dialog, ipcMain, type BrowserWindow } from 'electron'
 import { listDevices, resolveDevice } from './adb/adb'
 import { AdbLocator, verifyAdb } from './adb/locate'
 import {
@@ -9,20 +9,27 @@ import {
   pairWireless,
   readWifiAddress,
 } from './adb/wireless'
-import { sendSms } from './adb/send'
+import { dialNumber, sendSms } from './adb/send'
+import { listPhoneContacts } from './adb/contacts'
 import { normalisePeer } from './adb/sms'
 import { SettingsStore } from './settings'
 import { MessageStore } from './store'
 import { Syncer } from './sync/syncer'
 import { TranslationQueue } from './translate/queue'
 import { translateDraft } from './translate/claude'
+import { WebServer, generatePassword, localUrls } from './web/server'
+import { redactForRemote, sanitiseRemoteArgs } from './web/remote'
+import { pendingUploads, pushMessages, uploadedPatches, needsPush } from './upload/push'
 import type {
+  Contact,
   DeviceInfo,
   DraftTranslation,
   SendResult,
   Settings,
   SmsMessage,
   SyncStatus,
+  UploadStatus,
+  WebStatus,
   WirelessResult,
 } from '../shared/types'
 
@@ -31,13 +38,25 @@ let store: MessageStore
 let syncer: Syncer
 let queue: TranslationQueue
 let locator: AdbLocator
+let web: WebServer | null = null
+let webError: string | undefined
 let window: BrowserWindow | null = null
+
+let uploadBusy = false
+let uploadError: string | undefined
+let lastPushAt: number | undefined
+let lastSaved: number | undefined
+
+/** Every IPC handler by name, so the web server can call the same code. */
+const handlers = new Map<string, (...args: never[]) => unknown>()
 
 /** Phase reported by the syncer, kept separate from the translation indicator. */
 let syncPhase: 'idle' | 'connecting' | 'syncing' | 'error' = 'idle'
 let syncDetail: string | undefined
 let lastSyncAt: number | undefined
 let device: DeviceInfo | null = null
+/** Phone book, read once per session (see the contacts:list handler). */
+let contactBook: Contact[] | null = null
 let pendingTranslations = 0
 
 function currentStatus(): SyncStatus {
@@ -60,22 +79,105 @@ function currentStatus(): SyncStatus {
 function emitMessages(messages: SmsMessage[]): void {
   if (!messages.length) return
   window?.webContents.send('sms:messages', messages)
+  web?.broadcast('messages', messages)
 }
 
 function emitRemoved(ids: string[]): void {
   if (!ids.length) return
   window?.webContents.send('sms:removed', ids)
+  web?.broadcast('removed', ids)
 }
 
 function emitStatus(): void {
-  window?.webContents.send('sms:status', currentStatus())
+  const status = currentStatus()
+  window?.webContents.send('sms:status', status)
+  web?.broadcast('status', status)
 }
 
 function handle<T extends unknown[], R>(
   channel: string,
   fn: (...args: T) => Promise<R> | R,
 ): void {
+  handlers.set(channel, fn as (...args: never[]) => unknown)
   ipcMain.handle(channel, async (_event, ...args) => fn(...(args as T)))
+}
+
+function uploadStatus(): UploadStatus {
+  const current = settings.public()
+  return {
+    enabled: current.uploadEnabled,
+    pending: current.uploadEnabled ? store.all().filter(needsPush).length : 0,
+    lastPushAt,
+    lastSaved,
+    error: uploadError,
+  }
+}
+
+/**
+ * Send whatever is outstanding to the website.
+ *
+ * Runs after every sync and after translations land, so the website copy trails
+ * this app by one pass rather than needing its own schedule. One batch per call
+ * keeps a first import from turning into a long upload; the next pass takes the
+ * rest.
+ */
+async function pushToWebsite(): Promise<void> {
+  const current = settings.public()
+  if (!current.uploadEnabled || uploadBusy) return
+
+  const batch = pendingUploads(store.all())
+  if (!batch.length) {
+    uploadError = undefined
+    return
+  }
+
+  uploadBusy = true
+  try {
+    const result = await pushMessages(
+      { url: current.uploadUrl, token: current.uploadToken },
+      current.deviceSerial ?? device?.serial ?? '',
+      batch,
+    )
+    if (result.ok) {
+      uploadError = undefined
+      lastPushAt = Date.now()
+      lastSaved = result.saved
+      // Recorded only after the server accepted them, so a failed push is
+      // retried rather than silently dropped.
+      store.patchMany(uploadedPatches(batch))
+    } else {
+      uploadError = result.error
+    }
+  } finally {
+    uploadBusy = false
+  }
+}
+
+function webStatus(): WebStatus {
+  const current = settings.public()
+  return {
+    running: web?.running() ?? false,
+    port: current.webPort,
+    urls: web?.running() ? localUrls(current.webPort) : [],
+    password: current.webPassword,
+    error: webError,
+  }
+}
+
+/** Apply the current settings to the web server: start, stop, or rebind. */
+async function restartWeb(): Promise<void> {
+  if (!web) return
+  web.stop()
+  webError = undefined
+  const current = settings.public()
+  if (!current.webEnabled) return
+  if (!current.webPassword) {
+    // Never serve the inbox without a password, even for a moment.
+    settings.update({ webPassword: generatePassword() })
+  }
+  const result = await web.start()
+  if (!result.ok) webError = result.error
+  emitStatus()
 }
 
 export function registerIpc(win: BrowserWindow): void {
@@ -119,6 +221,9 @@ export function registerIpc(win: BrowserWindow): void {
     onProgress: (pending) => {
       pendingTranslations = pending
       emitStatus()
+      // Translations land after the sync that fetched them, so push again once
+      // the queue drains — that pass carries the translated text.
+      if (pending === 0) void pushToWebsite()
     },
   })
 
@@ -130,13 +235,17 @@ export function registerIpc(win: BrowserWindow): void {
     onMessages: emitMessages,
     onRemoved: emitRemoved,
     onDevice: (found) => {
+      if (found?.serial !== device?.serial) contactBook = null
       device = found
       emitStatus()
     },
     onPhase: (phase, detail) => {
       syncPhase = phase
       syncDetail = detail
-      if (phase === 'idle') lastSyncAt = Date.now()
+      if (phase === 'idle') {
+        lastSyncAt = Date.now()
+        void pushToWebsite()
+      }
       emitStatus()
     },
     onNeedTranslation: (ids) => queue.enqueue(ids),
@@ -276,6 +385,72 @@ export function registerIpc(win: BrowserWindow): void {
     if (updates.length) emitMessages(store.patchMany(updates))
   })
 
+  // Only incoming messages can be unread; marking our own sent ones would make
+  // the conversation permanently bold.
+  handle('sms:markThreadUnread', (peer: string) => {
+    const updates = store
+      .all()
+      .filter((m) => m.peer === peer && m.direction === 'in' && m.readLocal)
+      .map((m) => ({ id: m.id, partial: { readLocal: false } }))
+    if (updates.length) emitMessages(store.patchMany(updates))
+  })
+
+  handle('sms:markAllRead', () => {
+    const updates = store
+      .all()
+      .filter((m) => !m.readLocal)
+      .map((m) => ({ id: m.id, partial: { readLocal: true } }))
+    if (updates.length) emitMessages(store.patchMany(updates))
+  })
+
+  handle('sms:delete', (ids: string[]) => {
+    emitRemoved(store.remove(ids, true))
+  })
+
+  handle('sms:deleteThread', (peer: string) => {
+    const ids = store
+      .all()
+      .filter((m) => m.peer === peer)
+      .map((m) => m.id)
+    emitRemoved(store.remove(ids, true))
+    const current = settings.public()
+    if (current.pinnedPeers.includes(peer)) {
+      settings.update({ pinnedPeers: current.pinnedPeers.filter((p) => p !== peer) })
+    }
+  })
+
+  handle('sms:setPinned', (peer: string, pinned: boolean): Settings => {
+    const current = settings.public().pinnedPeers.filter((p) => p !== peer)
+    return settings.update({ pinnedPeers: pinned ? [...current, peer] : current })
+  })
+
+  // The phone book changes rarely and the query is slow enough to notice, so it
+  // is read once per session unless the user asks for a refresh.
+  handle('contacts:list', async (refresh?: boolean): Promise<Contact[]> => {
+    if (contactBook && !refresh) return contactBook
+    const adbPath = await locator.require()
+    const target = await resolveDevice(adbPath, settings.public().deviceSerial)
+    if (!target) return contactBook ?? []
+    contactBook = await listPhoneContacts({ adbPath, serial: target.serial })
+    return contactBook
+  })
+
+  handle('phone:dial', async (number: string): Promise<{ ok: boolean; message: string }> => {
+    const adbPath = await locator.require()
+    const target = await resolveDevice(adbPath, settings.public().deviceSerial)
+    if (!target) return { ok: false, message: '手机没连上，没法拨号。' }
+    try {
+      await dialNumber({ adbPath, serial: target.serial }, number)
+      return { ok: true, message: '已在手机上打开拨号界面，请在手机上按拨号键。' }
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  handle('clipboard:write', (text: string) => {
+    clipboard.writeText(text)
+  })
+
   handle(
     'mms:readAttachment',
     async (messageId: string, partId: number): Promise<{ dataUrl?: string; error?: string }> => {
@@ -317,6 +492,13 @@ export function registerIpc(win: BrowserWindow): void {
     const updated = settings.update(patch)
     if (before.adbPath !== updated.adbPath) locator.reset()
     if (before.pollIntervalMs !== updated.pollIntervalMs) syncer.restart()
+    if (
+      before.webEnabled !== updated.webEnabled ||
+      before.webPort !== updated.webPort ||
+      before.webPassword !== updated.webPassword
+    ) {
+      void restartWeb()
+    }
     if (updated.autoTranslate && settings.apiKey()) {
       queue.enqueue(store.untranslated().map((m) => m.id))
     }
@@ -333,6 +515,46 @@ export function registerIpc(win: BrowserWindow): void {
 
   handle('status:get', (): SyncStatus => currentStatus())
 
+  handle('upload:status', (): UploadStatus => uploadStatus())
+
+  handle('upload:now', async (): Promise<UploadStatus> => {
+    await pushToWebsite()
+    return uploadStatus()
+  })
+
+  handle('web:status', (): WebStatus => webStatus())
+
+  handle('web:restart', async (): Promise<WebStatus> => {
+    await restartWeb()
+    return webStatus()
+  })
+
+  handle('web:newPassword', async (): Promise<WebStatus> => {
+    settings.update({ webPassword: generatePassword() })
+    // The password is checked per request, but existing browser sessions keep
+    // their token — a fresh password should lock them out too.
+    await restartWeb()
+    return webStatus()
+  })
+
+  web = new WebServer({
+    // Packaged, main.js sits in dist-electron/electron/, and the renderer in
+    // dist/ next to it — the same path loadFile() uses.
+    distDir: path.join(__dirname, '..', '..', 'dist'),
+    invoke: async (channel, args) => {
+      const fn = handlers.get(channel)
+      if (!fn) throw new Error(`未知的操作：${channel}`)
+      // A browser shares the inbox, not the credentials behind it — see web/remote.ts.
+      const result = await (fn as (...a: unknown[]) => unknown)(
+        ...sanitiseRemoteArgs(channel, args),
+      )
+      return redactForRemote(channel, result)
+    },
+    password: () => settings.public().webPassword,
+    port: () => settings.public().webPort,
+  })
+  if (settings.public().webEnabled) void restartWeb()
+
   syncer.start()
   void syncer.sync('incremental').catch(() => {})
   if (settings.public().autoTranslate && settings.apiKey()) {
@@ -341,6 +563,8 @@ export function registerIpc(win: BrowserWindow): void {
 }
 
 export function disposeIpc(): void {
+  web?.stop()
+  web = null
   syncer?.stop()
   queue?.stop()
   store?.dispose()

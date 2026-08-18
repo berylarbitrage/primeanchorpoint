@@ -5,6 +5,12 @@ import type { SmsMessage } from '../shared/types'
 interface Meta {
   /** Highest message timestamp seen per device, used as the incremental cursor. */
   cursors: Record<string, number>
+  /**
+   * Ids the user deleted here. The phone keeps its own copy — the shell user
+   * cannot write to the SMS provider — so without this list the very next sync
+   * would import them again.
+   */
+  deleted: string[]
 }
 
 /** Tombstone written to the log when a record is removed. */
@@ -47,7 +53,8 @@ export class MessageStore {
   private readonly logPath: string
   private readonly metaPath: string
   private messages = new Map<string, SmsMessage>()
-  private meta: Meta = { cursors: {} }
+  private meta: Meta = { cursors: {}, deleted: [] }
+  private deleted = new Set<string>()
   private linesOnDisk = 0
   private compactTimer: NodeJS.Timeout | null = null
 
@@ -84,9 +91,10 @@ export class MessageStore {
     if (fs.existsSync(this.metaPath)) {
       try {
         const parsed = JSON.parse(fs.readFileSync(this.metaPath, 'utf8')) as Partial<Meta>
-        this.meta = { cursors: parsed.cursors ?? {} }
+        this.meta = { cursors: parsed.cursors ?? {}, deleted: parsed.deleted ?? [] }
+        this.deleted = new Set(this.meta.deleted)
       } catch {
-        this.meta = { cursors: {} }
+        this.meta = { cursors: {}, deleted: [] }
       }
     }
   }
@@ -116,6 +124,7 @@ export class MessageStore {
   upsertFromDevice(incoming: SmsMessage[]): SmsMessage[] {
     const changed: SmsMessage[] = []
     for (const message of incoming) {
+      if (this.deleted.has(message.id)) continue
       const existing = this.messages.get(message.id)
       if (existing) {
         // The phone is authoritative for the message itself; we keep our own
@@ -128,6 +137,8 @@ export class MessageStore {
           translationError: existing.translationError,
           translation: existing.translation,
           analysis: existing.analysis,
+          // Bookkeeping for the website push — ours, not the phone's.
+          uploadedState: existing.uploadedState,
           // Downloaded files and their descriptions are ours, not the phone's.
           attachments: mergeAttachments(existing.attachments, message.attachments),
         }
@@ -200,11 +211,35 @@ export class MessageStore {
     return fs.readFileSync(this.attachmentPath(file))
   }
 
-  /** Delete records outright (used to retire superseded optimistic sends). */
-  remove(ids: string[]): string[] {
+  /**
+   * Delete records outright.
+   *
+   * `permanent` marks them as deleted by the user, so a later sync will not
+   * re-import them. Superseded optimistic sends are removed without it: those
+   * ids are local placeholders the phone never had.
+   */
+  remove(ids: string[], permanent = false): string[] {
     const removed: string[] = []
     for (const id of ids) {
       if (this.messages.delete(id)) removed.push(id)
+      else if (permanent) removed.push(id)
+    }
+    if (permanent) {
+      let added = false
+      for (const id of ids) {
+        if (!this.deleted.has(id)) {
+          this.deleted.add(id)
+          added = true
+        }
+      }
+      if (added) {
+        // Bounded so a user who deletes for years cannot grow meta.json without
+        // limit. The oldest ids fall off first; those messages are long past
+        // the sync window and will not come back anyway.
+        this.meta.deleted = [...this.deleted].slice(-20_000)
+        this.deleted = new Set(this.meta.deleted)
+        this.writeMeta()
+      }
     }
     if (removed.length) {
       this.appendRaw(removed.map((id) => ({ id, deleted: true as const })))

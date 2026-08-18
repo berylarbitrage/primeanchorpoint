@@ -6,10 +6,23 @@ interface Props {
   /** Resolves to an error message, or null on success. */
   onSend: (to: string, body: string) => Promise<string | null>
   canTranslate: boolean
+  /** Restored draft for this conversation, or a body being forwarded. */
+  initialDraft?: string
+  /** Called on every edit so the parent can keep the draft across switches. */
+  onDraftChange?: (text: string) => void
+  /** No recipient yet — the box is visible but nothing can be sent. */
+  disabled?: boolean
 }
 
-export default function Composer({ to, onSend, canTranslate }: Props) {
-  const [draft, setDraft] = useState('')
+export default function Composer({
+  to,
+  onSend,
+  canTranslate,
+  initialDraft,
+  onDraftChange,
+  disabled = false,
+}: Props) {
+  const [draft, setDraft] = useState(initialDraft ?? '')
   const [preview, setPreview] = useState<{ text: string; lang: string } | null>(null)
   const [busy, setBusy] = useState<'none' | 'translating' | 'sending'>('none')
   const [note, setNote] = useState<{ text: string; error: boolean } | null>(null)
@@ -34,8 +47,14 @@ export default function Composer({ to, onSend, canTranslate }: Props) {
     }
   }
 
+  function edit(text: string): void {
+    setDraft(text)
+    setPreview(null)
+    onDraftChange?.(text)
+  }
+
   async function send(body: string): Promise<void> {
-    if (!body.trim()) return
+    if (!body.trim() || disabled) return
     setBusy('sending')
     setNote(null)
     const error = await onSend(to, body)
@@ -46,6 +65,7 @@ export default function Composer({ to, onSend, canTranslate }: Props) {
     }
     setDraft('')
     setPreview(null)
+    onDraftChange?.('')
   }
 
   return (
@@ -53,10 +73,7 @@ export default function Composer({ to, onSend, canTranslate }: Props) {
       <textarea
         value={draft}
         placeholder={`发给 ${to}（Ctrl+Enter 直接发送原文）`}
-        onChange={(e) => {
-          setDraft(e.target.value)
-          setPreview(null)
-        }}
+        onChange={(e) => edit(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
             e.preventDefault()
@@ -87,7 +104,7 @@ export default function Composer({ to, onSend, canTranslate }: Props) {
           <button
             type="button"
             className="btn primary"
-            disabled={busy !== 'none'}
+            disabled={busy !== 'none' || disabled}
             onClick={() => void send(preview.text)}
           >
             发送译文
@@ -97,7 +114,7 @@ export default function Composer({ to, onSend, canTranslate }: Props) {
         <button
           type="button"
           className={preview ? 'btn' : 'btn primary'}
-          disabled={!draft.trim() || busy !== 'none'}
+          disabled={!draft.trim() || busy !== 'none' || disabled}
           onClick={() => void send(draft)}
         >
           {busy === 'sending' ? '发送中…' : '发送原文'}

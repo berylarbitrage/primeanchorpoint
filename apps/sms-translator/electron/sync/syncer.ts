@@ -136,7 +136,7 @@ export class Syncer {
             ? '手机已连上，但还没授权。请在手机屏幕上点「允许 USB 调试」，并勾选「一律允许」。'
             : settings.wirelessAddress
               ? `连不上 ${settings.wirelessAddress}。请确认手机和电脑在同一个 WiFi、手机的「无线调试」是开着的（关掉再打开会换端口，需要重新填地址）。`
-              : '没有检测到手机。请用 USB 线连接并开启 USB 调试，或在设置里配置无线连接。',
+              : '没有检测到手机。请用 USB 线连接并开启「开发者选项 → USB 调试」，或在设置里配置无线连接。三星手机如果这个开关是灰的、写着「已被自动拦截器阻止（Blocked by Auto Blocker）」，先到 设置 → 安全和隐私 → 自动拦截器 里把它关掉。',
         )
         return { imported: 0 }
       }

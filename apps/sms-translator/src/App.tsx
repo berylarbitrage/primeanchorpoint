@@ -11,6 +11,7 @@ import {
 } from './lib/derive'
 import Sidebar from './components/Sidebar'
 import Thread from './components/Thread'
+import NewMessage from './components/NewMessage'
 import SettingsModal from './components/SettingsModal'
 
 export default function App() {
@@ -22,6 +23,14 @@ export default function App() {
   const [showOriginal, setShowOriginal] = useState(true)
   const [showSettings, setShowSettings] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  // Which error text the user has dismissed. Keyed by the text itself so a
+  // different error re-opens the banner instead of staying hidden.
+  const [dismissedError, setDismissedError] = useState<string | null>(null)
+  // Unsent text, per conversation, so switching threads does not lose it.
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  // Non-null while writing to a number that has no conversation yet.
+  const [compose, setCompose] = useState<{ body?: string } | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
 
   useEffect(() => {
     void (async () => {
@@ -54,12 +63,17 @@ export default function App() {
 
   // All conversations, unfiltered — used for the "N / M matched" counter.
   const allConversations = useMemo(
-    () => buildConversations(messages, EMPTY_FILTERS),
-    [messages],
+    () => buildConversations(messages, EMPTY_FILTERS, settings.pinnedPeers),
+    [messages, settings.pinnedPeers],
   )
   const conversations = useMemo(
-    () => buildConversations(messages, filters),
-    [messages, filters],
+    () => buildConversations(messages, filters, settings.pinnedPeers),
+    [messages, filters, settings.pinnedPeers],
+  )
+
+  const unreadTotal = useMemo(
+    () => allConversations.reduce((sum, c) => sum + c.unread, 0),
+    [allConversations],
   )
 
   const selected = useMemo(
@@ -77,9 +91,61 @@ export default function App() {
   }, [conversations, filters, selectedPeer])
 
   const selectPeer = useCallback((peer: string) => {
+    setCompose(null)
     setSelectedPeer(peer)
     void sms.markThreadRead(peer)
   }, [])
+
+  // A short-lived line under the topbar for things that need acknowledging but
+  // not acting on ("copied", "the dialler is open on your phone").
+  const flash = useCallback((text: string) => {
+    setToast(text)
+    window.setTimeout(() => setToast((current) => (current === text ? null : current)), 4000)
+  }, [])
+
+  const togglePin = useCallback(async (peer: string, pinned: boolean) => {
+    setSettings(await sms.setPinned(peer, pinned))
+  }, [])
+
+  const markUnread = useCallback((peer: string) => {
+    void sms.markThreadUnread(peer)
+  }, [])
+
+  const deleteConversation = useCallback(
+    (peer: string) => {
+      const conversation = allConversations.find((c) => c.peer === peer)
+      const count = conversation?.messages.length ?? 0
+      const ok = window.confirm(
+        `从本软件删除「${conversation?.title ?? peer}」的 ${count} 条短信？\n\n` +
+          '手机里的短信不会被删除（电脑端没有这个权限），但删掉后同步不会再把它们拉回来。',
+      )
+      if (!ok) return
+      void sms.deleteConversation(peer)
+      if (selectedPeer === peer) setSelectedPeer(null)
+    },
+    [allConversations, selectedPeer],
+  )
+
+  const deleteMessage = useCallback((id: string) => {
+    void sms.deleteMessages([id])
+  }, [])
+
+  const copyText = useCallback(
+    (text: string) => {
+      if (!text.trim()) return
+      void sms.copyText(text)
+      flash('已复制到剪贴板。')
+    },
+    [flash],
+  )
+
+  const dial = useCallback(
+    async (number: string) => {
+      const result = await sms.dial(number)
+      flash(result.message)
+    },
+    [flash],
+  )
 
   const handleSend = useCallback(async (to: string, body: string): Promise<string | null> => {
     try {
@@ -101,6 +167,20 @@ export default function App() {
     }
   }, [])
 
+  // Once the error clears, forget the dismissal — if the same failure comes
+  // back on the next sync the user should see it again.
+  useEffect(() => {
+    if (status.phase !== 'error') setDismissedError(null)
+  }, [status.phase])
+
+  // The topbar can only show a clipped one-liner, and these messages are the
+  // ones that tell the user what to actually do (authorise the phone, turn on
+  // wireless debugging). They get a full-width banner instead.
+  const errorBanner =
+    status.phase === 'error' && status.detail && status.detail !== dismissedError
+      ? status.detail
+      : null
+
   const dotClass =
     status.phase === 'error'
       ? 'error'
@@ -117,7 +197,9 @@ export default function App() {
 
         <div className="status">
           <span className={`dot ${dotClass}`} />
-          <span className="detail">{describeStatus(status)}</span>
+          <span className="detail" title={describeStatus(status)}>
+            {describeStatus(status)}
+          </span>
         </div>
 
         <div className="spacer" />
@@ -144,24 +226,77 @@ export default function App() {
         </button>
       </header>
 
-      <div className="body">
+      {errorBanner && (
+        <div className="banner error" role="alert">
+          <span className="text">{errorBanner}</span>
+          <button type="button" className="btn ghost" onClick={() => setShowSettings(true)}>
+            打开设置
+          </button>
+          <button
+            type="button"
+            className="btn ghost"
+            title="关闭"
+            onClick={() => setDismissedError(errorBanner)}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      {toast && <div className="banner">{toast}</div>}
+
+      {/* On a phone the two panes cannot share the screen: `show-thread` hands
+          it to whichever one the user is actually looking at. */}
+      <div className={`body${compose || selectedPeer ? ' show-thread' : ''}`}>
         <Sidebar
           conversations={conversations}
           totalConversations={allConversations.length}
-          selectedPeer={selectedPeer}
+          selectedPeer={compose ? null : selectedPeer}
           filters={filters}
+          unreadTotal={unreadTotal}
           onFiltersChange={setFilters}
           onSelect={selectPeer}
+          onCompose={() => setCompose({})}
+          onTogglePin={(peer, pinned) => void togglePin(peer, pinned)}
+          onMarkUnread={markUnread}
+          onDelete={deleteConversation}
+          onMarkAllRead={() => void sms.markAllRead()}
         />
-        <Thread
-          conversation={selected}
-          filters={filters}
-          showOriginal={showOriginal}
-          onToggleOriginal={() => setShowOriginal((v) => !v)}
-          onRetranslate={(ids) => void sms.retranslate(ids)}
-          onSend={handleSend}
-          canTranslate={settings.hasApiKey}
-        />
+        {compose ? (
+          <NewMessage
+            initialBody={compose.body}
+            known={allConversations.map((c) => ({ title: c.title, address: c.address }))}
+            onSend={handleSend}
+            onSent={(to) => {
+              setCompose(null)
+              // The optimistic record lands under the normalised peer, which is
+              // what the conversation list is keyed by.
+              setSelectedPeer(normalisePeerLike(to))
+            }}
+            onCancel={() => setCompose(null)}
+            canTranslate={settings.hasApiKey}
+          />
+        ) : (
+          <Thread
+            onBack={() => setSelectedPeer(null)}
+            conversation={selected}
+            filters={filters}
+            showOriginal={showOriginal}
+            draft={selected ? drafts[selected.peer] : undefined}
+            onDraftChange={(peer, text) => setDrafts((current) => ({ ...current, [peer]: text }))}
+            onToggleOriginal={() => setShowOriginal((v) => !v)}
+            onRetranslate={(ids) => void sms.retranslate(ids)}
+            onSend={handleSend}
+            onTogglePin={(peer, pinned) => void togglePin(peer, pinned)}
+            onMarkUnread={markUnread}
+            onDeleteConversation={deleteConversation}
+            onDeleteMessage={deleteMessage}
+            onForward={(body) => setCompose({ body })}
+            onDial={(number) => void dial(number)}
+            onCopy={copyText}
+            canTranslate={settings.hasApiKey}
+          />
+        )}
       </div>
 
       {showSettings && (
@@ -173,6 +308,19 @@ export default function App() {
       )}
     </div>
   )
+}
+
+/**
+ * Mirror of the main process's `normalisePeer` (last 10 digits), so a message
+ * just sent to a new number selects the conversation it will land in.
+ */
+function normalisePeerLike(address: string): string {
+  const trimmed = address.trim()
+  if (!trimmed) return '(unknown)'
+  const digits = trimmed.replace(/[^\d]/g, '')
+  if (!digits) return trimmed.toUpperCase()
+  if (digits.length <= 8) return digits
+  return digits.slice(-10)
 }
 
 function describeStatus(status: SyncStatus): string {

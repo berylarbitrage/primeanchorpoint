@@ -87,6 +87,19 @@ export interface SmsMessage {
   analysis?: Analysis
   /** Set on messages this app sent, before the phone's SMS database catches up. */
   pending?: boolean
+  /**
+   * Translation state at the time this message was last pushed to the website.
+   * Undefined = never pushed. Compared against `translationState` so a message
+   * pushed before its translation arrived gets pushed again with it.
+   */
+  uploadedState?: TranslationState
+}
+
+/** A phone-book entry, used by the "new message" recipient picker. */
+export interface Contact {
+  name: string
+  /** The number exactly as the contacts provider stores it. */
+  number: string
 }
 
 export interface DeviceInfo {
@@ -105,6 +118,8 @@ export interface Settings {
   deviceSerial: string | null
   /** `host:port` from the phone's Wireless debugging screen. Empty = USB only. */
   wirelessAddress: string
+  /** Conversations kept at the top of the list, newest-first within the group. */
+  pinnedPeers: string[]
   /** Re-run `adb connect` when the wireless device drops off the list. */
   wirelessAutoReconnect: boolean
   targetLanguage: string
@@ -127,12 +142,26 @@ export interface Settings {
   batchSize: number
   /** True when an API key is stored; the key itself is never sent to the renderer. */
   hasApiKey: boolean
+
+  /** Push messages to the company website so they can be read from anywhere. */
+  uploadEnabled: boolean
+  /** Full push endpoint, e.g. https://example.com/api/device-sms/push */
+  uploadUrl: string
+  /** Device token issued by the website's 手机短信 page. */
+  uploadToken: string
+
+  /** Serve the same inbox to browsers on the local network. */
+  webEnabled: boolean
+  webPort: number
+  /** Password those browsers must enter. Generated on first enable. */
+  webPassword: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   adbPath: 'adb',
   deviceSerial: null,
   wirelessAddress: '',
+  pinnedPeers: [],
   wirelessAutoReconnect: true,
   targetLanguage: '简体中文',
   outgoingLanguage: '',
@@ -149,6 +178,12 @@ export const DEFAULT_SETTINGS: Settings = {
   sendTapDelayMs: 1500,
   batchSize: 20,
   hasApiKey: false,
+  uploadEnabled: false,
+  uploadUrl: '',
+  uploadToken: '',
+  webEnabled: false,
+  webPort: 8848,
+  webPassword: '',
 }
 
 export interface SyncStatus {
@@ -175,6 +210,24 @@ export interface WirelessResult {
   address?: string
 }
 
+/** Last known state of the website push, for the settings dialog. */
+export interface UploadStatus {
+  enabled: boolean
+  pending: number
+  lastPushAt?: number
+  lastSaved?: number
+  error?: string
+}
+
+export interface WebStatus {
+  running: boolean
+  port: number
+  /** Every address this machine can be opened at, e.g. http://192.168.1.20:8848. */
+  urls: string[]
+  password: string
+  error?: string
+}
+
 export interface DraftTranslation {
   text: string
   targetLang: string
@@ -199,6 +252,27 @@ export interface SmsBridge {
   sync(mode: 'full' | 'incremental'): Promise<{ imported: number }>
   send(to: string, body: string): Promise<SendResult>
   markThreadRead(peer: string): Promise<void>
+  markThreadUnread(peer: string): Promise<void>
+  markAllRead(): Promise<void>
+
+  /**
+   * Remove messages from this app only — the phone's own copy is untouched,
+   * because the shell user is not the default SMS app and cannot write to the
+   * SMS provider. Deleted ids are remembered so a later sync does not bring
+   * them back.
+   */
+  deleteMessages(ids: string[]): Promise<void>
+  deleteConversation(peer: string): Promise<void>
+
+  /** Pin/unpin a conversation to the top of the list. */
+  setPinned(peer: string, pinned: boolean): Promise<Settings>
+
+  /** Phone book, for addressing a new message by name. Empty when unreadable. */
+  listContacts(refresh?: boolean): Promise<Contact[]>
+  /** Open the phone's dialler on a number (does not place the call). */
+  dial(number: string): Promise<{ ok: boolean; message: string }>
+  /** Put text on the Windows clipboard. */
+  copyText(text: string): Promise<void>
 
   /** Attachment bytes as a data: URL, loaded on demand (never kept in the store). */
   readAttachment(messageId: string, partId: number): Promise<{ dataUrl?: string; error?: string }>
@@ -211,6 +285,15 @@ export interface SmsBridge {
   setApiKey(key: string): Promise<Settings>
 
   getStatus(): Promise<SyncStatus>
+
+  /** Website push: current state, and a way to send everything outstanding now. */
+  getUploadStatus(): Promise<UploadStatus>
+  pushNow(): Promise<UploadStatus>
+
+  /** Local-network sharing: current state, and a way to restart it. */
+  getWebStatus(): Promise<WebStatus>
+  restartWebServer(): Promise<WebStatus>
+  regenerateWebPassword(): Promise<WebStatus>
 
   onMessages(cb: (messages: SmsMessage[]) => void): () => void
   onRemoved(cb: (ids: string[]) => void): () => void

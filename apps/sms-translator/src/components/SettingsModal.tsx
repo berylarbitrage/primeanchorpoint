@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { DeviceInfo, Settings } from '../../shared/types'
+import type { DeviceInfo, Settings, UploadStatus, WebStatus } from '../../shared/types'
 import { errorText, sms } from '../lib/bridge'
 
 interface Props {
@@ -18,9 +18,13 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
   const [pairCode, setPairCode] = useState('')
   const [wirelessBusy, setWirelessBusy] = useState(false)
   const [wirelessNote, setWirelessNote] = useState<{ text: string; ok: boolean } | null>(null)
+  const [webStatus, setWebStatus] = useState<WebStatus | null>(null)
+  const [uploadStatus, setUploadStatus] = useState<UploadStatus | null>(null)
 
   useEffect(() => {
     void scan()
+    void sms.getWebStatus().then(setWebStatus).catch(() => {})
+    void sms.getUploadStatus().then(setUploadStatus).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -239,7 +243,9 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
             {devices.length === 0 && (
               <span className="hint">
                 没有检测到设备。请开启「开发者选项 → USB 调试」，插上数据线后在手机上允许
-                调试授权。
+                调试授权。三星手机若开关是灰的、写着「已被自动拦截器阻止（Blocked by Auto
+                Blocker）」，先到 设置 → 安全和隐私 → <b>自动拦截器</b> 里关掉它，USB 调试
+                和无线调试才能打开。
               </span>
             )}
             {scanError && <span className="hint" style={{ color: 'var(--danger)' }}>{scanError}</span>}
@@ -422,6 +428,164 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
             <span className="hint">三星建议 1500–2500；短信 App 启动慢就调大。</span>
           </div>
         )}
+
+        <div className="field">
+          <label>同步到公司网站（出门在外也能看）</label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={draft.uploadEnabled}
+              onChange={(e) => set('uploadEnabled', e.target.checked)}
+            />
+            把手机短信推送到网站
+          </label>
+          <span className="hint">
+            每次同步之后，这台电脑会把读到的短信（含译文和风险分）推到公司网站的
+            「手机短信」页面，登录管理员账号就能随时查看，不需要这台电脑一直开着。
+            <b>你的私人短信会存在服务器上</b>，网站那一页上可以随时一键清空。
+            图片本身不上传，只标注「有图片」。
+          </span>
+
+          {draft.uploadEnabled && (
+            <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+              <input
+                placeholder="推送网址，如 https://primeanchorworkforce.com/api/device-sms/push"
+                value={draft.uploadUrl}
+                onChange={(e) => set('uploadUrl', e.target.value.trim())}
+              />
+              <input
+                placeholder="设备令牌（在网站「手机短信」页面点「生成新令牌」）"
+                value={draft.uploadToken}
+                onChange={(e) => set('uploadToken', e.target.value.trim())}
+              />
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() =>
+                    void (async () => {
+                      try {
+                        onSaved(await sms.setSettings(draft))
+                        setUploadStatus(await sms.pushNow())
+                      } catch (err) {
+                        setScanError(errorText(err))
+                      }
+                    })()
+                  }
+                >
+                  保存并立即推送
+                </button>
+                <span className="hint">
+                  {uploadStatus?.error
+                    ? uploadStatus.error
+                    : uploadStatus?.lastPushAt
+                      ? `上次推送 ${new Date(uploadStatus.lastPushAt).toLocaleTimeString()}，${uploadStatus.lastSaved ?? 0} 条；还有 ${uploadStatus.pending} 条待推`
+                      : `还有 ${uploadStatus?.pending ?? 0} 条待推送`}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="field">
+          <label>网页共享（同一个 WiFi 下别人也能看）</label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={draft.webEnabled}
+              onChange={(e) => set('webEnabled', e.target.checked)}
+            />
+            开启网页访问
+          </label>
+          <span className="hint">
+            开启后，<b>这台电脑</b>会在局域网里提供一个网页，别人用手机或平板的浏览器
+            打开就能看短信、看译文、搜索筛选，也能发短信。手机必须一直连着这台电脑，
+            电脑关机或软件退出就打不开了。第一次开启时 Windows 防火墙会弹窗，请点
+            「允许访问」。
+          </span>
+
+          {draft.webEnabled && (
+            <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span className="hint" style={{ minWidth: '4em' }}>端口</span>
+                <input
+                  type="number"
+                  min={1024}
+                  max={65535}
+                  style={{ width: 120 }}
+                  value={draft.webPort}
+                  onChange={(e) => set('webPort', Number(e.target.value) || 8848)}
+                />
+                <span className="hint">被占用就换一个，比如 8849。</span>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span className="hint" style={{ minWidth: '4em' }}>访问密码</span>
+                <code className="password">{webStatus?.password || '（保存后生成）'}</code>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={() =>
+                    void sms
+                      .regenerateWebPassword()
+                      .then((status) => {
+                        setWebStatus(status)
+                        setDraft((prev) => ({ ...prev, webPassword: status.password }))
+                      })
+                      .catch(() => {})
+                  }
+                >
+                  换一个
+                </button>
+              </div>
+              <span className="hint">
+                谁拿到这个密码，谁就能读你所有短信、也能用你的号码发短信——只发给你
+                信得过的人。换密码会把已经登录的浏览器全部踢下线。
+              </span>
+
+              <div>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() =>
+                    void (async () => {
+                      // Applied without closing the dialog, so the address and
+                      // password can be read (and typed into a phone) right here.
+                      try {
+                        onSaved(await sms.setSettings(draft))
+                        const status = await sms.restartWebServer()
+                        setWebStatus(status)
+                        setDraft((prev) => ({ ...prev, webPassword: status.password }))
+                      } catch (err) {
+                        setScanError(errorText(err))
+                      }
+                    })()
+                  }
+                >
+                  应用并显示网址
+                </button>
+              </div>
+
+              {webStatus?.error && (
+                <span className="hint" style={{ color: 'var(--danger)' }}>{webStatus.error}</span>
+              )}
+
+              {webStatus?.running && webStatus.urls.length > 0 && (
+                <div className="hint">
+                  <div>在手机浏览器里打开（要连同一个 WiFi）：</div>
+                  {webStatus.urls.map((url) => (
+                    <div key={url}>
+                      <code className="password">{url}</code>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!webStatus?.running && !webStatus?.error && (
+                <span className="hint">保存后网页服务才会启动，网址会显示在这里。</span>
+              )}
+            </div>
+          )}
+        </div>
 
         <div className="field">
           <label>每批翻译条数</label>

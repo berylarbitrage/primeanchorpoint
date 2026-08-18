@@ -15,11 +15,22 @@ import AttachmentView from './AttachmentView'
 
 interface Props {
   conversation: Conversation | null
+  /** Narrow screens only: go back to the conversation list. */
+  onBack: () => void
   filters: Filters
   showOriginal: boolean
+  draft?: string
+  onDraftChange: (peer: string, text: string) => void
   onToggleOriginal: () => void
   onRetranslate: (ids: string[]) => void
   onSend: (to: string, body: string) => Promise<string | null>
+  onTogglePin: (peer: string, pinned: boolean) => void
+  onMarkUnread: (peer: string) => void
+  onDeleteConversation: (peer: string) => void
+  onDeleteMessage: (id: string) => void
+  onForward: (body: string) => void
+  onDial: (number: string) => void
+  onCopy: (text: string) => void
   canTranslate: boolean
 }
 
@@ -30,11 +41,21 @@ function dayKey(ts: number): string {
 
 export default function Thread({
   conversation,
+  onBack,
   filters,
   showOriginal,
+  draft,
+  onDraftChange,
   onToggleOriginal,
   onRetranslate,
   onSend,
+  onTogglePin,
+  onMarkUnread,
+  onDeleteConversation,
+  onDeleteMessage,
+  onForward,
+  onDial,
+  onCopy,
   canTranslate,
 }: Props) {
   const scroller = useRef<HTMLDivElement>(null)
@@ -76,11 +97,44 @@ export default function Thread({
   return (
     <section className="thread">
       <header className="thread-header">
+        <button type="button" className="btn ghost back" onClick={onBack} title="返回会话列表">
+          ‹ 返回
+        </button>
         <div className="who">
           <strong>{conversation.title}</strong>
           <span>{conversation.address}</span>
         </div>
         <div style={{ flex: 1 }} />
+        <button
+          type="button"
+          className="btn ghost"
+          onClick={() => onTogglePin(conversation.peer, !conversation.pinned)}
+        >
+          {conversation.pinned ? '取消置顶' : '置顶'}
+        </button>
+        <button
+          type="button"
+          className="btn ghost"
+          onClick={() => onDial(conversation.address)}
+          title="在手机上打开拨号界面（不会自动拨出去）"
+        >
+          拨号
+        </button>
+        <button
+          type="button"
+          className="btn ghost"
+          onClick={() => onMarkUnread(conversation.peer)}
+        >
+          标为未读
+        </button>
+        <button
+          type="button"
+          className="btn ghost danger"
+          onClick={() => onDeleteConversation(conversation.peer)}
+          title="从本软件删除这个会话；手机里的短信不受影响"
+        >
+          删除会话
+        </button>
         <button type="button" className="btn ghost" onClick={onToggleOriginal}>
           {showOriginal ? '隐藏原文' : '显示原文'}
         </button>
@@ -113,6 +167,9 @@ export default function Thread({
               heading={heading}
               showOriginal={showOriginal}
               onRetranslate={() => onRetranslate([message.id])}
+              onDelete={() => onDeleteMessage(message.id)}
+              onForward={() => onForward(message.translation?.text?.trim() || message.body)}
+              onCopy={onCopy}
               canTranslate={canTranslate}
             />
           )
@@ -126,7 +183,14 @@ export default function Thread({
         )}
       </div>
 
-      <Composer to={conversation.address} onSend={onSend} canTranslate={canTranslate} />
+      <Composer
+        key={conversation.peer}
+        to={conversation.address}
+        initialDraft={draft}
+        onDraftChange={(text) => onDraftChange(conversation.peer, text)}
+        onSend={onSend}
+        canTranslate={canTranslate}
+      />
     </section>
   )
 }
@@ -136,6 +200,9 @@ interface BubbleProps {
   heading: string | null
   showOriginal: boolean
   onRetranslate: () => void
+  onDelete: () => void
+  onForward: () => void
+  onCopy: (text: string) => void
   canTranslate: boolean
 }
 
@@ -144,6 +211,9 @@ function MessageBubble({
   heading,
   showOriginal,
   onRetranslate,
+  onDelete,
+  onForward,
+  onCopy,
   canTranslate,
 }: BubbleProps) {
   const translated = message.translation?.text?.trim() ?? ''
@@ -210,6 +280,30 @@ function MessageBubble({
               重新翻译
             </button>
           )}
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={() => onCopy(message.body)}
+            disabled={!message.body.trim()}
+          >
+            复制原文
+          </button>
+          {hasTranslation && (
+            <button type="button" className="btn ghost" onClick={() => onCopy(translated)}>
+              复制译文
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={onForward}
+            disabled={!message.body.trim() && !translated}
+          >
+            转发
+          </button>
+          <button type="button" className="btn ghost danger" onClick={onDelete}>
+            删除
+          </button>
         </div>
       </div>
     </>

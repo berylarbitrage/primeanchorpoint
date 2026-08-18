@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
+  Contact,
   DeviceInfo,
   DraftTranslation,
   SendResult,
@@ -7,6 +8,8 @@ import type {
   SmsBridge,
   SmsMessage,
   SyncStatus,
+  UploadStatus,
+  WebStatus,
   WirelessResult,
 } from '../shared/types'
 
@@ -38,6 +41,18 @@ const bridge: SmsBridge = {
   sync: (mode) => ipcRenderer.invoke('sms:sync', mode) as Promise<{ imported: number }>,
   send: (to, body) => ipcRenderer.invoke('sms:send', to, body) as Promise<SendResult>,
   markThreadRead: (peer) => ipcRenderer.invoke('sms:markThreadRead', peer) as Promise<void>,
+  markThreadUnread: (peer) => ipcRenderer.invoke('sms:markThreadUnread', peer) as Promise<void>,
+  markAllRead: () => ipcRenderer.invoke('sms:markAllRead') as Promise<void>,
+
+  deleteMessages: (ids) => ipcRenderer.invoke('sms:delete', ids) as Promise<void>,
+  deleteConversation: (peer) => ipcRenderer.invoke('sms:deleteThread', peer) as Promise<void>,
+  setPinned: (peer, pinned) =>
+    ipcRenderer.invoke('sms:setPinned', peer, pinned) as Promise<Settings>,
+
+  listContacts: (refresh) => ipcRenderer.invoke('contacts:list', refresh) as Promise<Contact[]>,
+  dial: (number) =>
+    ipcRenderer.invoke('phone:dial', number) as Promise<{ ok: boolean; message: string }>,
+  copyText: (text) => ipcRenderer.invoke('clipboard:write', text) as Promise<void>,
 
   readAttachment: (messageId, partId) =>
     ipcRenderer.invoke('mms:readAttachment', messageId, partId) as Promise<{
@@ -54,6 +69,13 @@ const bridge: SmsBridge = {
   setApiKey: (key) => ipcRenderer.invoke('settings:setApiKey', key) as Promise<Settings>,
 
   getStatus: () => ipcRenderer.invoke('status:get') as Promise<SyncStatus>,
+
+  getUploadStatus: () => ipcRenderer.invoke('upload:status') as Promise<UploadStatus>,
+  pushNow: () => ipcRenderer.invoke('upload:now') as Promise<UploadStatus>,
+
+  getWebStatus: () => ipcRenderer.invoke('web:status') as Promise<WebStatus>,
+  restartWebServer: () => ipcRenderer.invoke('web:restart') as Promise<WebStatus>,
+  regenerateWebPassword: () => ipcRenderer.invoke('web:newPassword') as Promise<WebStatus>,
 
   onMessages: (cb) => subscribe<SmsMessage[]>('sms:messages', cb),
   onRemoved: (cb) => subscribe<string[]>('sms:removed', cb),

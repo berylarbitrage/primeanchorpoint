@@ -12,8 +12,14 @@ interface Props {
   totalConversations: number
   selectedPeer: string | null
   filters: Filters
+  unreadTotal: number
   onFiltersChange: (filters: Filters) => void
   onSelect: (peer: string) => void
+  onCompose: () => void
+  onTogglePin: (peer: string, pinned: boolean) => void
+  onMarkUnread: (peer: string) => void
+  onDelete: (peer: string) => void
+  onMarkAllRead: () => void
 }
 
 export default function Sidebar({
@@ -21,8 +27,14 @@ export default function Sidebar({
   totalConversations,
   selectedPeer,
   filters,
+  unreadTotal,
   onFiltersChange,
   onSelect,
+  onCompose,
+  onTogglePin,
+  onMarkUnread,
+  onDelete,
+  onMarkAllRead,
 }: Props) {
   const active = filtersActive(filters)
 
@@ -36,6 +48,21 @@ export default function Sidebar({
   return (
     <aside className="sidebar">
       <div className="filters">
+        <div className="sidebar-actions">
+          <button type="button" className="btn primary" onClick={onCompose}>
+            ＋ 新短信
+          </button>
+          <button
+            type="button"
+            className="btn ghost"
+            disabled={unreadTotal === 0}
+            onClick={onMarkAllRead}
+            title="把所有会话标记为已读（只影响本软件）"
+          >
+            全部已读{unreadTotal > 0 ? ` (${unreadTotal})` : ''}
+          </button>
+        </div>
+
         <input
           type="search"
           placeholder="搜索原文、译文、号码…"
@@ -131,13 +158,19 @@ export default function Sidebar({
             last.body.trim() ||
             (last.attachments?.length ? '［图片］' : '')
           return (
-            <button
+            <div
               key={conversation.peer}
+              className={`conversation-row${conversation.pinned ? ' pinned' : ''}`}
+            >
+            <button
               type="button"
               className={`conversation${conversation.peer === selectedPeer ? ' active' : ''}`}
               onClick={() => onSelect(conversation.peer)}
             >
-              <div className="name">{conversation.title}</div>
+              <div className="name">
+                {conversation.pinned && <span className="pin" title="已置顶">📌</span>}
+                {conversation.title}
+              </div>
               <div className="when">{formatTime(conversation.last.date)}</div>
               <div className="preview">
                 {conversation.last.direction === 'out' ? '我: ' : ''}
@@ -163,6 +196,35 @@ export default function Sidebar({
                 )}
               </div>
             </button>
+
+            {/* Kept out of the row button: nesting buttons is invalid HTML. */}
+            <div className="row-actions">
+              <button
+                type="button"
+                className="icon-btn"
+                title={conversation.pinned ? '取消置顶' : '置顶'}
+                onClick={() => onTogglePin(conversation.peer, !conversation.pinned)}
+              >
+                {conversation.pinned ? '取消置顶' : '置顶'}
+              </button>
+              <button
+                type="button"
+                className="icon-btn"
+                title="标记为未读"
+                onClick={() => onMarkUnread(conversation.peer)}
+              >
+                标未读
+              </button>
+              <button
+                type="button"
+                className="icon-btn danger"
+                title="从本软件删除这个会话（手机里的短信不动）"
+                onClick={() => onDelete(conversation.peer)}
+              >
+                删除
+              </button>
+            </div>
+            </div>
           )
         })}
 

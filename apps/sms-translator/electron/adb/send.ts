@@ -250,3 +250,20 @@ export async function sendSms(
 
 /** Exported for tests. */
 export const __testing = { parseNodes, scoreSendCandidate, parseBounds }
+
+/**
+ * Open the phone's dialler on a number.
+ *
+ * ACTION_DIAL only *shows* the number — placing the call needs CALL_PHONE,
+ * which the shell user does not hold, and dialling someone by accident from a
+ * desktop app would be worse than one extra tap on the phone.
+ */
+export async function dialNumber(ctx: AdbContext, number: string): Promise<void> {
+  const digits = number.replace(/[^\d+*#;,]/g, '')
+  if (!digits) throw new AdbError(`"${number}" 不是可拨的号码。`)
+  await runAdbChecked(
+    ctx,
+    ['shell', 'am', 'start', '-a', 'android.intent.action.DIAL', '-d', shellQuote(`tel:${digits}`)],
+    { timeoutMs: 15_000 },
+  )
+}

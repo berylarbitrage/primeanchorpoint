@@ -120,6 +120,10 @@
     sendTapDelayMs: 1500,
     batchSize: 20,
     hasApiKey: true,
+    pinnedPeers: ['4155550142'],
+    webEnabled: true,
+    webPort: 8848,
+    webPassword: 'k7m2xr9dqp',
   }
 
   const status = {
@@ -127,6 +131,15 @@
     device: { serial: '192.168.1.42:41235', state: 'device', model: 'SM_S928B', ready: true },
     lastSyncAt: now - 30 * 1000,
     pendingTranslations: 1,
+  }
+
+  // `?state=error` renders the failure the user actually hits first, so the
+  // long message can be checked for readability.
+  if (location.search.includes('state=error')) {
+    status.phase = 'error'
+    status.device = null
+    status.detail =
+      '手机已连上，但还没授权。请在手机屏幕上点「允许 USB 调试」，并勾选「一律允许」。'
   }
 
   const noop = () => () => {}
@@ -143,12 +156,37 @@
     sync: async () => ({ imported: 0 }),
     send: async () => ({ ok: true }),
     markThreadRead: async () => {},
+    markThreadUnread: async () => {},
+    markAllRead: async () => {},
+    deleteMessages: async () => {},
+    deleteConversation: async () => {},
+    setPinned: async (peer, pinned) => {
+      settings.pinnedPeers = pinned
+        ? [...settings.pinnedPeers, peer]
+        : settings.pinnedPeers.filter((p) => p !== peer)
+      return settings
+    },
+    listContacts: async () => [
+      { name: 'Marta Ruiz', number: '+34611223344' },
+      { name: '王 小明', number: '+8613800138000' },
+      { name: 'Ruiz, Marta（工作）', number: '+14155550142' },
+    ],
+    dial: async () => ({ ok: true, message: '已在手机上打开拨号界面。' }),
+    copyText: async () => {},
     retranslate: async () => {},
     translateDraft: async () => ({ text: '', targetLang: '简体中文' }),
     getSettings: async () => settings,
     setSettings: async () => settings,
     setApiKey: async () => settings,
     getStatus: async () => status,
+    getWebStatus: async () => ({
+      running: true,
+      port: 8848,
+      urls: ['http://192.168.1.20:8848'],
+      password: 'k7m2xr9dqp',
+    }),
+    restartWebServer: async () => window.sms.getWebStatus(),
+    regenerateWebPassword: async () => window.sms.getWebStatus(),
     onMessages: noop,
     onRemoved: noop,
     onStatus: noop,

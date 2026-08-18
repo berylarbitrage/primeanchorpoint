@@ -100,8 +100,8 @@ textarea:focus {
 /* ---------- layout ---------- */
 
 .app {
-  display: grid;
-  grid-template-rows: auto 1fr;
+  display: flex;
+  flex-direction: column;
   height: 100%;
 }
 
@@ -159,7 +159,35 @@ textarea:focus {
 .body {
   display: grid;
   grid-template-columns: 340px 1fr;
+  flex: 1;
   min-height: 0;
+}
+
+/* An error the user has to act on. The topbar clips its one-liner, so the whole
+   message is repeated here, wrapped, until it is dismissed or resolved. */
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.banner.error {
+  background: color-mix(in srgb, var(--danger) 14%, var(--bg-raised));
+  border-bottom-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+  color: var(--text);
+}
+
+.banner .text {
+  flex: 1;
+  white-space: pre-wrap;
+}
+
+.banner .btn {
+  flex: none;
 }
 
 /* ---------- sidebar ---------- */
@@ -220,9 +248,67 @@ textarea:focus {
   color: var(--text-faint);
 }
 
+.sidebar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.sidebar-actions .btn {
+  flex: 1;
+}
+
 .conversations {
   overflow-y: auto;
   min-height: 0;
+}
+
+/* The row wraps the conversation button plus its actions; the actions cannot
+   live inside the button (nested buttons are invalid). */
+.conversation-row {
+  position: relative;
+  border-bottom: 1px solid var(--border);
+}
+
+.conversation-row .row-actions {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  display: none;
+  gap: 4px;
+}
+
+.conversation-row:hover .row-actions,
+.conversation-row:focus-within .row-actions {
+  display: flex;
+}
+
+.icon-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--text-dim);
+}
+
+.icon-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.icon-btn.danger:hover,
+.btn.danger:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.conversation .name .pin {
+  margin-right: 4px;
+  font-size: 12px;
+}
+
+.conversation-row.pinned .conversation {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
 .conversation {
@@ -232,7 +318,6 @@ textarea:focus {
   width: 100%;
   text-align: left;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
 }
 
 .conversation:hover {
@@ -413,6 +498,18 @@ textarea:focus {
   font-size: 11px;
   color: var(--text-faint);
   flex-wrap: wrap;
+}
+
+/* Per-message actions (copy, forward, delete, retranslate) would drown the
+   text if they were always visible; they appear on hover, like a mail client. */
+.msg .footline .btn {
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+
+.msg:hover .footline .btn,
+.msg .footline .btn:focus-visible {
+  opacity: 1;
 }
 
 .msg .summary {
@@ -620,4 +717,145 @@ textarea:focus {
 .attachment-note.error {
   color: var(--danger);
   border-color: var(--danger);
+}
+
+/* ---------- new message ---------- */
+
+.new-message {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  overflow-y: auto;
+  min-height: 0;
+  align-content: start;
+}
+
+.new-message .field-label {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.suggestions {
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.suggestion {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 10px;
+  text-align: left;
+  background: var(--bg-raised);
+}
+
+.suggestion:hover {
+  background: var(--bg-input);
+}
+
+.suggestion .name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suggestion .number {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.suggestion .source {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* Web-sharing address and password: made to be read off the screen and typed
+   into a phone, so they get their own high-contrast treatment. */
+.password {
+  display: inline-block;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text);
+  user-select: all;
+}
+
+/* ---------- narrow screens (phones and tablets on the LAN page) ---------- */
+
+.thread-header .back {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .body {
+    grid-template-columns: 1fr;
+  }
+
+  /* One pane at a time: the list until a conversation is open, then the thread. */
+  .body > .thread {
+    display: none;
+  }
+
+  .body.show-thread > .sidebar {
+    display: none;
+  }
+
+  .body.show-thread > .thread {
+    display: grid;
+  }
+
+  .thread-header .back {
+    display: inline-flex;
+  }
+
+  .thread-header {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  /* Six actions plus a title do not fit a phone at full size. */
+  .thread-header .btn {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+
+  .topbar {
+    flex-wrap: wrap;
+  }
+
+  .status {
+    max-width: 100%;
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .msg .bubble {
+    max-width: 88vw;
+  }
+
+  /* Touch has no hover, so per-message actions must always be reachable. */
+  .msg .footline .btn,
+  .conversation-row .row-actions {
+    opacity: 1;
+  }
+
+  .conversation-row .row-actions {
+    display: flex;
+    position: static;
+    justify-content: flex-end;
+    padding: 0 12px 8px;
+  }
+
+  .modal {
+    width: 94vw;
+  }
 }
