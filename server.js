@@ -30461,12 +30461,22 @@ db.exec(`CREATE TABLE IF NOT EXISTS device_sms_outbox (
   status TEXT DEFAULT 'pending',
   note TEXT DEFAULT '',
   attempts INTEGER DEFAULT 0,
+  translate_to TEXT DEFAULT '',
   created_by TEXT DEFAULT '',
   created_at TEXT DEFAULT (datetime('now')),
   taken_at TEXT DEFAULT NULL,
   done_at TEXT DEFAULT NULL
 )`);
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_device_outbox_status ON device_sms_outbox(status, id)`); } catch(e) {}
+try { db.exec(`ALTER TABLE device_sms_outbox ADD COLUMN translate_to TEXT DEFAULT ''`); } catch(e) {}
+
+// 每个号码的备注名和备注。网页和桌面版共用这一份, 谁改得晚谁算数(updated_at)。
+db.exec(`CREATE TABLE IF NOT EXISTS device_sms_peer_notes (
+  peer TEXT PRIMARY KEY,
+  alias TEXT DEFAULT '',
+  note TEXT DEFAULT '',
+  updated_at TEXT DEFAULT (datetime('now'))
+)`);
 
 function deviceSmsHashToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
@@ -30553,8 +30563,9 @@ app.post('/api/device-sms/send', requireAdmin, requireRole('admin'), (req, res) 
     if (body.length > 2000) return res.status(400).json({ error: '内容太长了' });
     // 字母开头的服务号码 (银行/快递) 回不了, 电脑那边也发不出去, 先在这里拦掉
     if (!/[0-9]/.test(to)) return res.status(400).json({ error: '这个号码不能回复短信（是服务号）' });
-    const info = db.prepare(`INSERT INTO device_sms_outbox (to_address, peer, body, created_by) VALUES (?,?,?,?)`)
-      .run(to, peer, body, req.userName || '');
+    const translateTo = String((req.body || {}).translate_to || '').slice(0, 40);
+    const info = db.prepare(`INSERT INTO device_sms_outbox (to_address, peer, body, translate_to, created_by) VALUES (?,?,?,?,?)`)
+      .run(to, peer, body, translateTo, req.userName || '');
     res.json({ success: true, id: info.lastInsertRowid });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -30562,7 +30573,7 @@ app.post('/api/device-sms/send', requireAdmin, requireRole('admin'), (req, res) 
 // GET /api/device-sms/outbox — 电脑取待发送的短信 (设备令牌鉴权)
 app.get('/api/device-sms/outbox', deviceSmsAuth, (req, res) => {
   try {
-    const rows = db.prepare(`SELECT id, to_address, peer, body, attempts FROM device_sms_outbox
+    const rows = db.prepare(`SELECT id, to_address, peer, body, attempts, translate_to FROM device_sms_outbox
       WHERE status='pending' ORDER BY id ASC LIMIT 10`).all();
     if (rows.length) {
       const mark = db.prepare(`UPDATE device_sms_outbox SET attempts=attempts+1, taken_at=datetime('now'), device_id=? WHERE id=?`);
@@ -30594,6 +30605,39 @@ app.delete('/api/device-sms/outbox/:id', requireAdmin, requireRole('admin'), (re
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// 备注: 网页和桌面版都能读写。桌面版用设备令牌, 网页用管理员登录。
+function deviceSmsNotesHandler(req, res) {
+  try {
+    res.json({ notes: db.prepare('SELECT peer, alias, note, updated_at FROM device_sms_peer_notes').all() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+app.get('/api/device-sms/notes', requireAdmin, requireRole('admin'), deviceSmsNotesHandler);
+app.get('/api/device-sms/device-notes', deviceSmsAuth, deviceSmsNotesHandler);
+
+function deviceSmsSaveNotes(req, res) {
+  try {
+    const list = Array.isArray((req.body || {}).notes) ? req.body.notes : [req.body || {}];
+    const upsert = db.prepare(`INSERT INTO device_sms_peer_notes (peer, alias, note, updated_at)
+      VALUES (?,?,?,datetime('now'))
+      ON CONFLICT(peer) DO UPDATE SET alias=excluded.alias, note=excluded.note, updated_at=datetime('now')`);
+    const del = db.prepare('DELETE FROM device_sms_peer_notes WHERE peer=?');
+    let saved = 0;
+    for (const item of list.slice(0, 500)) {
+      const peer = String(item.peer || '').trim().slice(0, 40);
+      if (!peer) continue;
+      const alias = String(item.alias || '').trim().slice(0, 120);
+      const note = String(item.note || '').trim().slice(0, 2000);
+      // 两个都空 = 删掉这条备注, 而不是留一行空的
+      if (!alias && !note) del.run(peer);
+      else upsert.run(peer, alias, note);
+      saved++;
+    }
+    res.json({ success: true, saved });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+app.post('/api/device-sms/notes', requireAdmin, requireRole('admin'), deviceSmsSaveNotes);
+app.post('/api/device-sms/device-notes', deviceSmsAuth, deviceSmsSaveNotes);
+
 // GET /api/device-sms/messages — 网页端读取 (个人手机短信, 只有 admin 能看)
 app.get('/api/device-sms/messages', requireAdmin, requireRole('admin'), (req, res) => {
   try {
@@ -30615,7 +30659,8 @@ app.get('/api/device-sms/messages', requireAdmin, requireRole('admin'), (req, re
     // 还没发出去的 / 发失败的也一起给, 页面上排在对话末尾显示状态
     const outbox = db.prepare(`SELECT id, to_address, peer, body, status, note, created_at FROM device_sms_outbox
       WHERE status IN ('pending','failed') ORDER BY id ASC LIMIT 100`).all();
-    res.json({ messages: rows.reverse(), devices, outbox });
+    const notes = db.prepare('SELECT peer, alias, note FROM device_sms_peer_notes').all();
+    res.json({ messages: rows.reverse(), devices, outbox, notes });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

@@ -1,4 +1,4 @@
-import type { Category, SmsMessage } from '../../shared/types'
+import type { Category, PeerNote, SmsMessage } from '../../shared/types'
 
 export interface Filters {
   query: string
@@ -69,12 +69,15 @@ export interface Conversation {
   /** How many messages pass the active filters. */
   matchCount: number
   pinned: boolean
+  /** Alias and free-text note kept by this app, if any. */
+  note?: PeerNote
 }
 
 export function buildConversations(
   messages: SmsMessage[],
   filters: Filters,
   pinnedPeers: string[] = [],
+  peerNotes: Record<string, PeerNote> = {},
 ): Conversation[] {
   const pinned = new Set(pinnedPeers)
   const groups = new Map<string, SmsMessage[]>()
@@ -106,9 +109,11 @@ export function buildConversations(
       if (message.contact) contact = message.contact
     }
 
+    const note = peerNotes[peer]
     conversations.push({
       peer,
-      title: contact || last.address || peer,
+      // An alias set here wins: it is the name the user chose for this number.
+      title: note?.alias || contact || last.address || peer,
       address: last.address || peer,
       messages: list,
       last,
@@ -117,6 +122,7 @@ export function buildConversations(
       categories: [...categories],
       matchCount,
       pinned: pinned.has(peer),
+      note,
     })
   }
 

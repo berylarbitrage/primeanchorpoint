@@ -134,6 +134,17 @@ export interface OutboxItem {
   peer: string
   body: string
   attempts: number
+  /** Language the website asked for; empty means send it as written. */
+  translate_to?: string
+}
+
+/** Alias + note for one number, shared between the website and this app. */
+export interface RemoteNote {
+  peer: string
+  alias?: string
+  note?: string
+  /** SQLite `datetime('now')` — UTC, no timezone marker. */
+  updated_at?: string
 }
 
 /**
@@ -182,5 +193,44 @@ export async function reportOutbox(
   } catch {
     // The website will hand it back on the next poll; five failed attempts
     // there mark it failed, so nothing is stuck for ever.
+  }
+}
+
+/** Notes stored on the website. Used to keep both sides in step. */
+export async function fetchNotes(
+  target: PushTarget,
+  fetchImpl: typeof fetch = fetch,
+): Promise<RemoteNote[]> {
+  if (!target.url.trim() || !target.token.trim()) return []
+  try {
+    const res = await fetchImpl(`${endpointBase(target.url)}/device-notes`, {
+      headers: { authorization: `Bearer ${target.token}` },
+    })
+    if (!res.ok) return []
+    const body = (await res.json()) as { notes?: RemoteNote[] }
+    return Array.isArray(body.notes) ? body.notes : []
+  } catch {
+    return []
+  }
+}
+
+/** Send this machine's notes up so the website shows the same names. */
+export async function pushNotes(
+  target: PushTarget,
+  notes: RemoteNote[],
+  fetchImpl: typeof fetch = fetch,
+): Promise<void> {
+  if (!notes.length || !target.url.trim() || !target.token.trim()) return
+  try {
+    await fetchImpl(`${endpointBase(target.url)}/device-notes`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${target.token}`,
+      },
+      body: JSON.stringify({ notes }),
+    })
+  } catch {
+    // Notes are cosmetic; the next cycle tries again.
   }
 }

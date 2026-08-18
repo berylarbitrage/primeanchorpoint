@@ -88,11 +88,32 @@ export interface SmsMessage {
   /** Set on messages this app sent, before the phone's SMS database catches up. */
   pending?: boolean
   /**
+   * Sent from here, but the phone never wrote it to its SMS database — which
+   * happens when the message went out as RCS / chat rather than as SMS. Kept in
+   * the thread rather than dropped: it really was sent.
+   */
+  unconfirmed?: boolean
+  /**
    * Translation state at the time this message was last pushed to the website.
    * Undefined = never pushed. Compared against `translationState` so a message
    * pushed before its translation arrived gets pushed again with it.
    */
   uploadedState?: TranslationState
+}
+
+/** Per-conversation notes kept by this app (the phone is never written to). */
+export interface PeerNote {
+  /** Display name to use instead of the number / phone-book name. */
+  alias?: string
+  /** Free text shown in the conversation header. */
+  note?: string
+}
+
+/** Verdict on an outgoing draft, from `screenDraft`. */
+export interface DraftScreening {
+  flagged: boolean
+  reason: string
+  categories: string[]
 }
 
 /** A phone-book entry, used by the "new message" recipient picker. */
@@ -125,9 +146,23 @@ export interface Settings {
   targetLanguage: string
   /** Language outgoing drafts get translated into. Empty = same as targetLanguage. */
   outgoingLanguage: string
+  /** Per-conversation override of that language, remembered per number. */
+  outgoingLanguageByPeer: Record<string, string>
+  /** Check outgoing drafts with Claude before sending. */
+  screenOutgoing: boolean
+  /** Aliases and notes, keyed by normalised number. */
+  peerNotes: Record<string, PeerNote>
+  /** When each note was last edited here, for the website merge. */
+  peerNotesAt: Record<string, number>
   autoTranslate: boolean
   classify: boolean
   model: string
+  /**
+   * Model for the two things you wait on: translating a draft before sending,
+   * and the pre-send check. Both are one short message and both block the send,
+   * so they run on the fastest model rather than the most capable one.
+   */
+  fastModel: string
   pollIntervalMs: number
   autoSync: boolean
   initialImportDays: number
@@ -165,9 +200,14 @@ export const DEFAULT_SETTINGS: Settings = {
   wirelessAutoReconnect: true,
   targetLanguage: '简体中文',
   outgoingLanguage: '',
+  outgoingLanguageByPeer: {},
+  screenOutgoing: true,
+  peerNotes: {},
+  peerNotesAt: {},
   autoTranslate: true,
   classify: true,
   model: 'claude-opus-5',
+  fastModel: 'claude-haiku-4-5',
   pollIntervalMs: 6000,
   autoSync: true,
   initialImportDays: 90,
@@ -278,7 +318,14 @@ export interface SmsBridge {
   readAttachment(messageId: string, partId: number): Promise<{ dataUrl?: string; error?: string }>
 
   retranslate(ids: string[]): Promise<void>
-  translateDraft(text: string): Promise<DraftTranslation>
+  /** `targetLanguage` overrides the configured outgoing language for this draft. */
+  translateDraft(text: string, targetLanguage?: string): Promise<DraftTranslation>
+  /** Check a draft before sending. Throws if no API key is configured. */
+  screenDraft(text: string): Promise<DraftScreening>
+
+  /** Remember the language used for one conversation, and its alias / note. */
+  setOutgoingLanguage(peer: string, language: string): Promise<Settings>
+  setPeerNote(peer: string, note: PeerNote): Promise<Settings>
 
   getSettings(): Promise<Settings>
   setSettings(patch: Partial<Settings>): Promise<Settings>
@@ -298,4 +345,6 @@ export interface SmsBridge {
   onMessages(cb: (messages: SmsMessage[]) => void): () => void
   onRemoved(cb: (ids: string[]) => void): () => void
   onStatus(cb: (status: SyncStatus) => void): () => void
+  /** Settings changed in the main process (e.g. notes edited on the website). */
+  onSettings(cb: (settings: Settings) => void): () => void
 }

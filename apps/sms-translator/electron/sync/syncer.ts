@@ -25,11 +25,14 @@ const OVERLAP_MS = 60_000
 const PENDING_MATCH_MS = 10 * 60_000
 
 /**
- * An optimistic send the phone never wrote to its SMS database within this
- * window did not go out. The phone's database is the source of truth, so the
- * placeholder is retired rather than left as a phantom message.
+ * How long to wait for the phone to write its own copy of a message we sent.
+ *
+ * Past this the message is not dropped: Samsung sends over RCS whenever the
+ * other side supports it, and an RCS message never reaches the SMS provider at
+ * all. It is marked unconfirmed instead, so a message that really did go out
+ * stays in the thread and says what is uncertain about it.
  */
-const PENDING_EXPIRY_MS = 30 * 60_000
+const PENDING_EXPIRY_MS = 5 * 60_000
 
 /**
  * Cap on attachments downloaded per sync. Each one is a separate adb round-trip,
@@ -350,6 +353,7 @@ export class Syncer {
       .filter((m) => !m.pending && m.direction === 'out')
 
     const drop: string[] = []
+    const stale: { id: string; partial: { pending: boolean; unconfirmed: boolean } }[] = []
     for (const candidate of pending) {
       const matched = real.some(
         (m) =>
@@ -357,9 +361,15 @@ export class Syncer {
           m.body.trim() === candidate.body.trim() &&
           Math.abs(m.date - candidate.date) < PENDING_MATCH_MS,
       )
-      if (matched || now - candidate.date > PENDING_EXPIRY_MS) drop.push(candidate.id)
+      // The phone's own copy supersedes ours; anything else that has waited long
+      // enough is kept but no longer claims to be in flight.
+      if (matched) drop.push(candidate.id)
+      else if (now - candidate.date > PENDING_EXPIRY_MS) {
+        stale.push({ id: candidate.id, partial: { pending: false, unconfirmed: true } })
+      }
     }
 
     if (drop.length) this.deps.onRemoved(this.deps.store.remove(drop))
+    if (stale.length) this.deps.onMessages(this.deps.store.patchMany(stale))
   }
 }

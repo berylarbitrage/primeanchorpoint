@@ -130,12 +130,29 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
         </div>
 
         <div className="field">
-          <label>模型</label>
+          <label>模型（收到的短信：翻译 + 风险判断）</label>
           <select value={draft.model} onChange={(e) => set('model', e.target.value)}>
-            <option value="claude-opus-5">claude-opus-5（质量最好）</option>
-            <option value="claude-sonnet-5">claude-sonnet-5（更快更便宜）</option>
-            <option value="claude-haiku-4-5">claude-haiku-4-5（最便宜）</option>
+            <option value="claude-opus-5">claude-opus-5（判断最准，但最慢，忙的时候还会排队）</option>
+            <option value="claude-sonnet-5">claude-sonnet-5（快很多，判断也够用）</option>
+            <option value="claude-haiku-4-5">claude-haiku-4-5（最快最便宜）</option>
           </select>
+          <span className="hint">
+            嫌慢就换 Sonnet 或 Haiku。Opus 在高峰期经常返回「忙不过来」，软件会自动
+            重试几次，但等待就是这么来的。
+          </span>
+        </div>
+
+        <div className="field">
+          <label>模型（发送前：翻译草稿 + 安全检查）</label>
+          <select value={draft.fastModel} onChange={(e) => set('fastModel', e.target.value)}>
+            <option value="claude-haiku-4-5">claude-haiku-4-5（最快，推荐）</option>
+            <option value="claude-sonnet-5">claude-sonnet-5</option>
+            <option value="claude-opus-5">claude-opus-5（最慢，一般没必要）</option>
+          </select>
+          <span className="hint">
+            这两件事你是站在那儿等结果的，所以默认用最快的模型。短信就一两句话，
+            Haiku 完全够翻。
+          </span>
         </div>
 
         <label className="check">
@@ -397,6 +414,23 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
           />
           <span>后台自动同步新短信</span>
         </label>
+
+        <div className="field">
+          <label>发送前检查</label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={draft.screenOutgoing}
+              onChange={(e) => set('screenOutgoing', e.target.checked)}
+            />
+            发送前让 AI 看一眼草稿
+          </label>
+          <span className="hint">
+            辱骂威胁、把验证码或卡号发给别人、答应打钱、明显的诈骗话术会被拦下来并说明
+            原因；确认没问题可以点「我确认，仍然发送」照发。语气重但正常的对话不会拦。
+            每条多花一次很便宜的调用，没填 API key 时自动跳过。
+          </span>
+        </div>
 
         <div className="field">
           <label>发送方式</label>

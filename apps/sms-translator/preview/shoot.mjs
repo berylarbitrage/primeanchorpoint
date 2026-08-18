@@ -77,6 +77,34 @@ const shots = [
   ['mms', async () => page.locator('.conversation').filter({ hasText: '447700900123' }).first().click()],
   ['filter', async () => page.getByRole('button', { name: '可疑及以上' }).click()],
   [
+    'note',
+    async () => {
+      await page.goto(`${base}/index.html`, { waitUntil: 'networkidle' })
+      await page.locator('.conversation').filter({ hasText: 'Marta' }).first().click()
+      await page.getByPlaceholder(/^发给/).fill('好的，明天见')
+      await page.waitForTimeout(200)
+    },
+  ],
+  [
+    'translated',
+    async () => {
+      // A conversation with a language set: the translation must be visible
+      // before anything is sent.
+      await page.getByRole('button', { name: /^译成 .* 并预览$/ }).click()
+      await page.waitForSelector('.preview', { timeout: 10_000 })
+    },
+  ],
+  [
+    'blocked',
+    async () => {
+      await page.getByPlaceholder(/^发给/).fill('我的验证码是 884213，你先用')
+      // This conversation has a language set, so the plain-send button is the
+      // "send it untranslated" one.
+      await page.getByRole('button', { name: '直接发原文' }).click()
+      await page.waitForSelector('.blocked', { timeout: 10_000 })
+    },
+  ],
+  [
     'compose',
     async () => {
       await page.goto(`${base}/index.html`, { waitUntil: 'networkidle' })

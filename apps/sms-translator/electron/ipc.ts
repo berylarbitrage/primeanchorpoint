@@ -16,19 +16,23 @@ import { SettingsStore } from './settings'
 import { MessageStore } from './store'
 import { Syncer } from './sync/syncer'
 import { TranslationQueue } from './translate/queue'
-import { translateDraft } from './translate/claude'
+import { screenDraft, translateDraft } from './translate/claude'
 import { WebServer, generatePassword, localUrls } from './web/server'
 import { redactForRemote, sanitiseRemoteArgs } from './web/remote'
 import {
+  fetchNotes,
   fetchOutbox,
   pendingUploads,
   pushMessages,
+  pushNotes,
   reportOutbox,
   uploadedPatches,
   needsPush,
 } from './upload/push'
 import type {
   Contact,
+  DraftScreening,
+  PeerNote,
   DeviceInfo,
   DraftTranslation,
   SendResult,
@@ -221,6 +225,7 @@ async function drainOutbox(): Promise<void> {
   outboxCheckedAt = Date.now()
 
   const target = { url: current.uploadUrl, token: current.uploadToken }
+  void syncNotes()
   const queued = await fetchOutbox(target)
   if (!queued.length) return
 
@@ -228,7 +233,49 @@ async function drainOutbox(): Promise<void> {
   try {
     for (const item of queued) {
       try {
-        const result = await sendOne(item.to_address, item.body)
+        // The website has no API key, so the outgoing check can only happen
+        // here. A flagged message comes back as a failure with the reason, so
+        // whoever wrote it sees why and can rewrite it (or send it from here,
+        // where there is an override).
+        if (current.screenOutgoing && settings.apiKey()) {
+          const verdict = await screenDraft(item.body, {
+            apiKey: settings.apiKey(),
+            model: current.fastModel || current.model,
+          }).catch(() => null)
+          if (verdict?.flagged) {
+            await reportOutbox(
+              target,
+              item.id,
+              false,
+              `发送前检查拦下了：${verdict.reason || '内容可能有问题'}。确认没问题的话，在电脑上重发一次。`,
+            )
+            continue
+          }
+        }
+
+        // The website can ask for a language; this side has the API key, so the
+        // translation happens here and what goes out is the translated text.
+        let body = item.body
+        if (item.translate_to && settings.apiKey()) {
+          try {
+            const translated = await translateDraft(item.body, {
+              apiKey: settings.apiKey(),
+              model: current.fastModel || current.model,
+              targetLanguage: item.translate_to,
+            })
+            if (translated.text.trim()) body = translated.text
+          } catch (err) {
+            await reportOutbox(
+              target,
+              item.id,
+              false,
+              `翻译成${item.translate_to}时出错：${err instanceof Error ? err.message : String(err)}`,
+            )
+            continue
+          }
+        }
+
+        const result = await sendOne(item.to_address, body)
         await reportOutbox(target, item.id, result.ok, result.note ?? '')
       } catch (err) {
         await reportOutbox(target, item.id, false, err instanceof Error ? err.message : String(err))
@@ -237,6 +284,52 @@ async function drainOutbox(): Promise<void> {
   } finally {
     outboxBusy = false
   }
+}
+
+/**
+ * Keep aliases and notes the same on both sides.
+ *
+ * Whoever edited last wins: the website stamps `updated_at`, this side stamps
+ * `peerNotesAt` when the user edits here. Cosmetic data, so a lost race costs a
+ * label, not a message.
+ */
+async function syncNotes(): Promise<void> {
+  const current = settings.public()
+  if (!current.uploadEnabled) return
+  const target = { url: current.uploadUrl, token: current.uploadToken }
+
+  const remote = await fetchNotes(target)
+  const remoteByPeer = new Map(remote.map((n) => [n.peer, n]))
+
+  const merged = { ...current.peerNotes }
+  let changed = false
+  for (const note of remote) {
+    const local = merged[note.peer]
+    const same = (local?.alias ?? '') === (note.alias ?? '') && (local?.note ?? '') === (note.note ?? '')
+    if (same) continue
+    const stamp = Date.parse((note.updated_at ?? '').replace(' ', 'T') + 'Z')
+    const localStamp = current.peerNotesAt?.[note.peer] ?? 0
+    if (Number.isFinite(stamp) && stamp > localStamp) {
+      const alias = (note.alias ?? '').trim()
+      const text = (note.note ?? '').trim()
+      if (alias || text) merged[note.peer] = { ...(alias ? { alias } : {}), ...(text ? { note: text } : {}) }
+      else delete merged[note.peer]
+      changed = true
+    }
+  }
+  if (changed) {
+    settings.update({ peerNotes: merged })
+    window?.webContents.send('sms:settings', settings.public())
+  }
+
+  // Anything this side knows that the website does not, or knows differently.
+  const outgoing = Object.entries(settings.public().peerNotes)
+    .filter(([peer, note]) => {
+      const there = remoteByPeer.get(peer)
+      return (there?.alias ?? '') !== (note.alias ?? '') || (there?.note ?? '') !== (note.note ?? '')
+    })
+    .map(([peer, note]) => ({ peer, alias: note.alias ?? '', note: note.note ?? '' }))
+  if (outgoing.length) await pushNotes(target, outgoing)
 }
 
 function webStatus(): WebStatus {
@@ -526,15 +619,39 @@ export function registerIpc(win: BrowserWindow): void {
     queue.requeue(ids)
   })
 
-  handle('translate:draft', async (text: string): Promise<DraftTranslation> => {
+  handle('translate:draft', async (text: string, override?: string): Promise<DraftTranslation> => {
     const current = settings.public()
-    const target = current.outgoingLanguage.trim() || current.targetLanguage
+    const target = (override ?? '').trim() || current.outgoingLanguage.trim() || current.targetLanguage
     const result = await translateDraft(text, {
       apiKey: settings.apiKey(),
-      model: current.model,
+      model: current.fastModel || current.model,
       targetLanguage: target,
     })
     return { text: result.text, targetLang: target }
+  })
+
+  handle('translate:screen', async (text: string): Promise<DraftScreening> => {
+    const current = settings.public()
+    return screenDraft(text, { apiKey: settings.apiKey(), model: current.fastModel || current.model })
+  })
+
+  handle('settings:outgoingLanguage', (peer: string, language: string): Settings => {
+    const map = { ...settings.public().outgoingLanguageByPeer }
+    // Empty means "follow the global setting" — stored as an absence, not a blank.
+    if (language.trim()) map[peer] = language.trim()
+    else delete map[peer]
+    return settings.update({ outgoingLanguageByPeer: map })
+  })
+
+  handle('settings:peerNote', (peer: string, note: PeerNote): Settings => {
+    const stamps = { ...(settings.public().peerNotesAt ?? {}), [peer]: Date.now() }
+    settings.update({ peerNotesAt: stamps })
+    const map = { ...settings.public().peerNotes }
+    const alias = (note.alias ?? '').trim()
+    const text = (note.note ?? '').trim()
+    if (alias || text) map[peer] = { ...(alias ? { alias } : {}), ...(text ? { note: text } : {}) }
+    else delete map[peer]
+    return settings.update({ peerNotes: map })
   })
 
   handle('settings:get', (): Settings => settings.public())
