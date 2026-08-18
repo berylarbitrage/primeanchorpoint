@@ -53,11 +53,13 @@ export default function App() {
       setMessages((current) => current.filter((m) => !drop.has(m.id)))
     })
     const offStatus = sms.onStatus(setStatus)
+    const offSettings = sms.onSettings(setSettings)
 
     return () => {
       offMessages()
       offRemoved()
       offStatus()
+      offSettings()
     }
   }, [])
 

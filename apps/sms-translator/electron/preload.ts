@@ -86,6 +86,7 @@ const bridge: SmsBridge = {
   onMessages: (cb) => subscribe<SmsMessage[]>('sms:messages', cb),
   onRemoved: (cb) => subscribe<string[]>('sms:removed', cb),
   onStatus: (cb) => subscribe<SyncStatus>('sms:status', cb),
+  onSettings: (cb) => subscribe<Settings>('sms:settings', cb),
 }
 
 contextBridge.exposeInMainWorld('sms', bridge)

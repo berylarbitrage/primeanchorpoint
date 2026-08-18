@@ -110,6 +110,7 @@
     autoTranslate: true,
     classify: true,
     model: 'claude-opus-5',
+    fastModel: 'claude-haiku-4-5',
     pollIntervalMs: 6000,
     autoSync: true,
     initialImportDays: 90,
@@ -123,6 +124,7 @@
     pinnedPeers: ['4155550142'],
     outgoingLanguageByPeer: { '4611223344': 'Español' },
     screenOutgoing: true,
+    peerNotesAt: {},
     peerNotes: { '4611223344': { alias: 'Marta（西班牙同事）', note: '周二 10 点开会，记得带七月报告的打印件。' } },
     webEnabled: true,
     webPort: 8848,
@@ -205,5 +207,6 @@
     onMessages: noop,
     onRemoved: noop,
     onStatus: noop,
+    onSettings: noop,
   }
 })()

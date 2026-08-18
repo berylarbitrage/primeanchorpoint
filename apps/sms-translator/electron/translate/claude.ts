@@ -124,7 +124,38 @@ function systemPrompt(targetLanguage: string, classify: boolean): string {
 }
 
 function client(apiKey: string): Anthropic {
-  return new Anthropic({ apiKey, maxRetries: 3 })
+  // 529 (overloaded) is a 5xx, so the SDK retries it — but the default of two
+  // attempts is not enough when the model itself is busy, and the user just
+  // sees a raw error where a translation should be.
+  return new Anthropic({ apiKey, maxRetries: 6 })
+}
+
+/**
+ * Turn an SDK error into something worth showing a non-technical user.
+ *
+ * Without this the renderer prints the raw body, e.g.
+ * `529 {"type":"error","error":{"type":"overloaded_error",...}}`.
+ */
+export function friendlyError(err: unknown): Error {
+  if (err instanceof Anthropic.APIError) {
+    const status = err.status
+    if (status === 529 || status === 503) {
+      return new Error('Claude 现在太忙了（已经自动重试过几次）。等一下再点一次，或在设置里把模型换成 Haiku（更快、更少排队）。')
+    }
+    if (status === 429) {
+      return new Error('调用太频繁，被限流了。等一会儿再试；如果一直这样，可以在设置里调小「每批翻译条数」。')
+    }
+    if (status === 401 || status === 403) {
+      return new Error('API key 不对或没有权限。请到 console.anthropic.com 重新生成一个填进设置里。')
+    }
+    if (status === 400 && /credit|balance|quota/i.test(err.message)) {
+      return new Error('Anthropic 账户余额不足。到 console.anthropic.com 的 Plans & Billing 里充值后再用。')
+    }
+    if (status && status >= 500) {
+      return new Error(`Claude 服务端出错（${status}），稍后再试。`)
+    }
+  }
+  return err instanceof Error ? err : new Error(String(err))
 }
 
 function firstJson(response: Anthropic.Message): unknown {
@@ -172,9 +203,11 @@ export async function translateBatch(
     ],
   }
 
-  const response = await client(opts.apiKey).messages.create(
-    params as unknown as Anthropic.MessageCreateParamsNonStreaming,
-  )
+  const response = await client(opts.apiKey)
+    .messages.create(params as unknown as Anthropic.MessageCreateParamsNonStreaming)
+    .catch((err: unknown) => {
+      throw friendlyError(err)
+    })
 
   const parsed = firstJson(response) as { results?: unknown }
   const results = Array.isArray(parsed.results) ? parsed.results : []
@@ -267,9 +300,11 @@ export async function describeImageMessage(
     messages: [{ role: 'user', content }],
   }
 
-  const response = await client(opts.apiKey).messages.create(
-    params as unknown as Anthropic.MessageCreateParamsNonStreaming,
-  )
+  const response = await client(opts.apiKey)
+    .messages.create(params as unknown as Anthropic.MessageCreateParamsNonStreaming)
+    .catch((err: unknown) => {
+      throw friendlyError(err)
+    })
 
   const parsed = firstJson(response) as Record<string, unknown>
   const category = CATEGORIES.includes(parsed.category as Category)
@@ -310,9 +345,11 @@ export async function translateDraft(
     messages: [{ role: 'user', content: text }],
   }
 
-  const response = await client(opts.apiKey).messages.create(
-    params as unknown as Anthropic.MessageCreateParamsNonStreaming,
-  )
+  const response = await client(opts.apiKey)
+    .messages.create(params as unknown as Anthropic.MessageCreateParamsNonStreaming)
+    .catch((err: unknown) => {
+      throw friendlyError(err)
+    })
 
   const parsed = firstJson(response) as { translation?: unknown; source_language?: unknown }
   return {
@@ -385,9 +422,11 @@ export async function screenDraft(
     messages: [{ role: 'user', content: '待发送短信草稿: ' + JSON.stringify(text.slice(0, 2000)) }],
   }
 
-  const response = await client(opts.apiKey).messages.create(
-    params as unknown as Anthropic.MessageCreateParamsNonStreaming,
-  )
+  const response = await client(opts.apiKey)
+    .messages.create(params as unknown as Anthropic.MessageCreateParamsNonStreaming)
+    .catch((err: unknown) => {
+      throw friendlyError(err)
+    })
 
   const parsed = firstJson(response) as {
     flagged?: unknown

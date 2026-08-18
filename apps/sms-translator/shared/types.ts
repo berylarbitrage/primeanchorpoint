@@ -152,9 +152,17 @@ export interface Settings {
   screenOutgoing: boolean
   /** Aliases and notes, keyed by normalised number. */
   peerNotes: Record<string, PeerNote>
+  /** When each note was last edited here, for the website merge. */
+  peerNotesAt: Record<string, number>
   autoTranslate: boolean
   classify: boolean
   model: string
+  /**
+   * Model for the two things you wait on: translating a draft before sending,
+   * and the pre-send check. Both are one short message and both block the send,
+   * so they run on the fastest model rather than the most capable one.
+   */
+  fastModel: string
   pollIntervalMs: number
   autoSync: boolean
   initialImportDays: number
@@ -195,9 +203,11 @@ export const DEFAULT_SETTINGS: Settings = {
   outgoingLanguageByPeer: {},
   screenOutgoing: true,
   peerNotes: {},
+  peerNotesAt: {},
   autoTranslate: true,
   classify: true,
   model: 'claude-opus-5',
+  fastModel: 'claude-haiku-4-5',
   pollIntervalMs: 6000,
   autoSync: true,
   initialImportDays: 90,
@@ -335,4 +345,6 @@ export interface SmsBridge {
   onMessages(cb: (messages: SmsMessage[]) => void): () => void
   onRemoved(cb: (ids: string[]) => void): () => void
   onStatus(cb: (status: SyncStatus) => void): () => void
+  /** Settings changed in the main process (e.g. notes edited on the website). */
+  onSettings(cb: (settings: Settings) => void): () => void
 }
