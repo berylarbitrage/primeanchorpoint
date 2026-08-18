@@ -107,6 +107,15 @@ body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;di
         <button class="btn-code" id="btnSendCode" onclick="sendCode()">发送验证码</button>
       </div>
     </div>
+    <div id="pwBox" style="display:none">
+      <div class="field">
+        <label id="pwLabel">打卡密码（8位数字）</label>
+        <input type="password" id="pwInput" maxlength="8" inputmode="numeric" autocomplete="off"
+          placeholder="••••••••" style="letter-spacing:.25em;text-align:center;font-size:1.15rem">
+      </div>
+      <button class="btn btn-primary" id="btnPwVerify" onclick="verifyPassword()">确认</button>
+    </div>
+    <a id="pwToggle" onclick="togglePwMode()" style="display:block;text-align:center;margin-top:.8rem;font-size:.82rem;color:var(--sky);font-weight:600;cursor:pointer;text-decoration:underline">🔑 有打卡密码？免短信直接打卡</a>
   </div>
 
   <!-- Register prompt: phone not in system → fill onboarding form first -->
@@ -222,6 +231,7 @@ const CI_LANG = {
     subtitle: '仓库签到',
     s1Title: '输入手机号', s1PhoneLabel: '手机号码',
     btnSendCode: '发送验证码', btnSendingCode: '发送中...',
+    pwToggleOn: '🔑 有打卡密码？免短信直接打卡', pwToggleOff: '↩ 改用短信验证码', pwLabel: '打卡密码（8位数字）', pwBtn: '确认', pwVerifying: '验证中...', errPw: '请输入 8 位打卡密码',
     s2Title: '输入验证码', s2Sent: '验证码已发送至',
     codeInputPlaceholder: '输入6位验证码',
     btnVerify: '验证',
@@ -264,6 +274,7 @@ const CI_LANG = {
     subtitle: 'Warehouse Check-in',
     s1Title: 'Enter Phone Number', s1PhoneLabel: 'Phone Number',
     btnSendCode: 'Send Code', btnSendingCode: 'Sending...',
+    pwToggleOn: '🔑 Have a clock-in password? Skip the SMS code', pwToggleOff: '↩ Use SMS code instead', pwLabel: 'Clock-in password (8 digits)', pwBtn: 'Confirm', pwVerifying: 'Verifying...', errPw: 'Please enter your 8-digit clock-in password',
     s2Title: 'Enter Verification Code', s2Sent: 'Code sent to',
     codeInputPlaceholder: 'Enter 6-digit code',
     btnVerify: 'Verify',
@@ -306,6 +317,7 @@ const CI_LANG = {
     subtitle: 'Registro de Entrada',
     s1Title: 'Ingrese Número de Teléfono', s1PhoneLabel: 'Número de Teléfono',
     btnSendCode: 'Enviar Código', btnSendingCode: 'Enviando...',
+    pwToggleOn: '🔑 ¿Tiene contraseña de fichaje? Entre sin SMS', pwToggleOff: '↩ Usar código SMS', pwLabel: 'Contraseña de fichaje (8 dígitos)', pwBtn: 'Confirmar', pwVerifying: 'Verificando...', errPw: 'Ingrese su contraseña de fichaje de 8 dígitos',
     s2Title: 'Ingrese el Código', s2Sent: 'Código enviado a',
     codeInputPlaceholder: 'Ingrese código de 6 dígitos',
     btnVerify: 'Verificar',
@@ -391,6 +403,9 @@ function ciSetLang(lang) {
   document.getElementById('s1Title').textContent = t.s1Title;
   document.getElementById('s1PhoneLabel').textContent = t.s1PhoneLabel;
   document.getElementById('btnSendCode').textContent = t.btnSendCode;
+  document.getElementById('pwLabel').textContent = t.pwLabel;
+  document.getElementById('btnPwVerify').textContent = t.pwBtn;
+  document.getElementById('pwToggle').textContent = _pwMode ? t.pwToggleOff : t.pwToggleOn;
   document.getElementById('s2Title').textContent = t.s2Title;
   document.getElementById('codeInput').placeholder = t.codeInputPlaceholder;
   document.getElementById('btnVerify').textContent = t.btnVerify;
@@ -508,6 +523,54 @@ async function sendCode() {
   } finally {
     btn.disabled = false;
     btn.textContent = t.btnSendCode;
+  }
+}
+
+// ─── 打卡密码通道: 输手机号 + 8位密码, 免短信验证码 ───
+let _pwMode = false;
+function togglePwMode() {
+  _pwMode = !_pwMode;
+  const t = CI_LANG[_ciLang];
+  document.getElementById('pwBox').style.display = _pwMode ? 'block' : 'none';
+  document.getElementById('btnSendCode').style.display = _pwMode ? 'none' : '';
+  document.getElementById('pwToggle').textContent = _pwMode ? t.pwToggleOff : t.pwToggleOn;
+  hideMsg('msg1');
+  if (_pwMode) document.getElementById('pwInput').focus();
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const pw = document.getElementById('pwInput');
+  pw.addEventListener('input', function() { this.value = this.value.replace(/\D/g, '').slice(0, 8); });
+  pw.addEventListener('keydown', e => { if (e.key === 'Enter') verifyPassword(); });
+});
+
+async function verifyPassword() {
+  const t = CI_LANG[_ciLang];
+  const raw = phoneInput.value.replace(/\D/g, '');
+  if (raw.length < 10) return showMsg('msg1', t.errPhone, 'err');
+  const pw = document.getElementById('pwInput').value.trim();
+  if (!/^\d{8}$/.test(pw)) return showMsg('msg1', t.errPw, 'err');
+  hideMsg('msg1');
+  const btn = document.getElementById('btnPwVerify');
+  btn.disabled = true;
+  btn.textContent = t.pwVerifying;
+  try {
+    const d = await api('/api/checkin/verify-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: raw, password: pw, site_id: _siteId })
+    });
+    _phone = raw;
+    _token = d.token;
+    _empInfo = { name: d.name, employee_id: d.employee_id, phone: d.phone };
+    _suggestedPunchType = d.suggested_punch_type || 'in';
+    renderPunchTypeGrid();
+    goStep(3);
+  } catch (e) {
+    if (e.data && e.data.need_register && (e.data.apply_url || e.data.apply_qr)) showRegisterCard(e.data);
+    else showMsg('msg1', xlateErr(e.message), 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = t.pwBtn;
   }
 }
 

@@ -7999,7 +7999,8 @@ tr:hover td.invp-frz{background:var(--sky-light)}
           <button type="button" id="eSSNEye" onclick="toggleSSNVisibility()" title="查看完整SSN" style="position:absolute;right:6px;background:none;border:none;cursor:pointer;color:#6b7280;font-size:1rem;line-height:1;padding:2px;display:none">👁</button>
         </div>
       </div>
-      <div class="field"><label>打卡 PIN (4-6位数字)</label><input id="ePin" type="password" placeholder="员工打卡时使用" maxlength="6"></div>
+      <div class="field"><label>打卡 PIN (4-6位数字)</label><input id="ePin" type="password" placeholder="员工打卡时使用" maxlength="6">
+        <div id="eTcCode" style="display:none;margin-top:.35rem;font-size:.78rem;color:var(--gray-600)"></div></div>
     </div>
   </div>
   <div class="field"><label>备注</label><textarea id="eNotes" placeholder="其他备注信息..."></textarea></div>
@@ -16413,6 +16414,9 @@ function openEmpModal(id) {
     document.getElementById('eSSN').removeAttribute('data-ssn-full');
     document.getElementById('eSSNEye').style.display = 'none';
     document.getElementById('ePin').value      = '';
+    const tcEl = document.getElementById('eTcCode');
+    if (e.timeclock_code) { tcEl.style.display = ''; tcEl.innerHTML = '🔑 打卡密码（扫码入职发放）：<b style="font-family:ui-monospace,monospace;letter-spacing:.1em;color:#0F2B5B">' + esc(e.timeclock_code) + '</b>'; }
+    else { tcEl.style.display = 'none'; tcEl.innerHTML = ''; }
     // Show masked SSN and reveal button if SSN is stored
     if (e.ssn_last4) {
       const ssnInp = document.getElementById('eSSN');
@@ -16459,6 +16463,7 @@ function openEmpModal(id) {
      'eHire','eEmgName','eEmgPhone','eEmgRel','eNotes','eSSN','ePin',
      'eSocialWhatsapp','eSocialWechat','eSocialFacebook','eSocialInstagram'].forEach(id=>{const el=document.getElementById(id);if(el){el.value='';delete el.dataset.ssnMasked;delete el.dataset.ssnFull;delete el.dataset.ssnStatus;}});
     document.getElementById('eSSNEye').style.display = 'none';
+    { const tcEl = document.getElementById('eTcCode'); if (tcEl) { tcEl.style.display = 'none'; tcEl.innerHTML = ''; } }
     document.getElementById('eHire').value = new Date().toLocaleDateString('en-CA');
     fillStateSelect(document.getElementById('eState'), '');
     document.getElementById('eStatus').value  = 'active';
@@ -28652,11 +28657,19 @@ async function loadJobSites() {
     <td>${s.active ? '<span style="color:var(--green);font-weight:600">启用</span>' : '<span style="color:var(--gray-400)">禁用</span>'}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-sm" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe" onclick="showSiteQR(${s.id})">📱 二维码</button>
+      <button class="btn btn-sm" style="background:#fdf4ff;color:#86198f;border:1px solid #f0abfc" onclick="openSiteKiosk(${s.id})" title="仓库平板打卡台：固定放仓库的平板打开此页面，员工输 8 位打卡密码打卡">🖥️ 打卡台</button>
       <button class="btn btn-sm" style="background:#f0fdf4;color:#166534;border:1px solid #bbf7d0" onclick="showSiteLocateLink(${s.id})">📍 定位</button>
       <button class="btn btn-sm" onclick="editJobSite(${s.id})">编辑</button>
       <button class="btn btn-sm btn-red" onclick="deleteJobSite(${s.id})">删除</button>
     </td>
   </tr>`).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:2rem">暂无仓库，请添加</td></tr>';
+}
+
+// 仓库打卡台链接：复制到剪贴板并新窗口打开（放到仓库平板的浏览器里全屏使用）
+function openSiteKiosk(siteId) {
+  const url = location.origin + '/kiosk?site=' + siteId;
+  try { navigator.clipboard.writeText(url).then(() => showToast('打卡台链接已复制：' + url, 'success', 3500)).catch(()=>{}); } catch (_) {}
+  window.open(url, '_blank');
 }
 
 async function _loadSitePartners() {
@@ -42034,6 +42047,7 @@ function renderApplicantInbox() {
             <div>📞 ${esc(s.phone || '—')} ${vBadge(s.phone_verified)}</div>
             <div style="word-break:break-all">✉️ ${esc(s.email || '—')} ${vBadge(s.email_verified)}</div>
             ${addrLine ? `<div style="word-break:break-word">📍 ${esc(addrLine)} ${s.address_verified ? vBadge(true) : ''}</div>` : ''}
+            ${s.timeclock_code ? `<div>🔑 打卡密码 <b style="font-family:ui-monospace,monospace;letter-spacing:.1em;color:#0F2B5B">${esc(s.timeclock_code)}</b></div>` : ''}
           </div>
         </div>
         <div style="flex:0 0 auto;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:.4rem">

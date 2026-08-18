@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Prime Anchor Workforce — 仓库打卡台</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<style>
+:root{--blue:#0F2B5B;--sky:#4A90D9;--green:#2D9D78;--red:#E63946;--orange:#F5A623;--off:#F7F8FA;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+html,body{height:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-serif;background:var(--blue);color:#fff;display:flex;flex-direction:column;overflow:hidden;touch-action:manipulation}
+/* Header */
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:.9rem 1.4rem;flex-shrink:0}
+.hdr-left{display:flex;align-items:center;gap:.8rem;min-width:0}
+.hdr-left img{width:42px;height:auto;flex-shrink:0}
+.hdr-title{font-size:1.05rem;font-weight:700;line-height:1.25}
+.hdr-site{font-size:.85rem;color:rgba(255,255,255,.65);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hdr-right{text-align:right;flex-shrink:0}
+.hdr-clock{font-size:1.7rem;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:.03em;line-height:1.1}
+.hdr-date{font-size:.8rem;color:rgba(255,255,255,.6);margin-top:2px}
+.lang-bar{display:flex;gap:.35rem;justify-content:center;padding:.15rem 0 .5rem;flex-shrink:0}
+.lang-btn{padding:.28rem .85rem;border:1.5px solid rgba(255,255,255,.35);border-radius:20px;background:transparent;color:rgba(255,255,255,.65);font-size:.8rem;font-weight:600;cursor:pointer;font-family:inherit}
+.lang-btn.active{background:#fff;color:var(--blue);border-color:#fff}
+/* Screens */
+.stage{flex:1;display:flex;align-items:center;justify-content:center;padding:0 1rem 1.2rem;min-height:0}
+.screen{display:none;width:100%;max-width:540px}
+.screen.active{display:block}
+/* Screen 1: keypad */
+.pw-hint{text-align:center;font-size:1.05rem;font-weight:700;margin-bottom:.9rem}
+.pw-dots{display:flex;justify-content:center;gap:.7rem;margin-bottom:.5rem}
+.pw-dot{width:20px;height:20px;border-radius:50%;border:2.5px solid rgba(255,255,255,.5);transition:all .12s}
+.pw-dot.on{background:#fff;border-color:#fff}
+.pw-err{text-align:center;color:#FFB3B9;font-size:.95rem;font-weight:700;min-height:1.4em;margin-bottom:.5rem}
+.keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:.7rem;max-width:400px;margin:0 auto}
+.key{padding:0;height:min(11.5vh,84px);border:none;border-radius:16px;background:rgba(255,255,255,.12);color:#fff;font-size:2rem;font-weight:700;cursor:pointer;font-family:inherit;transition:background .1s}
+.key:active{background:rgba(255,255,255,.32)}
+.key.fn{font-size:1.25rem;background:rgba(255,255,255,.06);color:rgba(255,255,255,.8)}
+@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-10px)}40%,80%{transform:translateX(10px)}}
+.shake{animation:shake .4s}
+/* Screen 2: actions */
+.who-card{background:#fff;color:#1a2433;border-radius:20px;padding:1.4rem 1.5rem;box-shadow:0 10px 44px rgba(0,0,0,.3)}
+.who-name{font-size:1.55rem;font-weight:800;color:var(--blue);text-align:center}
+.who-status{text-align:center;font-size:.95rem;color:var(--gray-600);margin:.45rem 0 1.1rem;font-weight:600}
+.who-status .on{color:var(--green)}.who-status .brk{color:var(--orange)}.who-status .offd{color:var(--gray-400)}
+.act-grid{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
+.act-btn{border:none;border-radius:16px;padding:1.15rem .5rem;font-size:1.15rem;font-weight:800;cursor:pointer;font-family:inherit;color:#fff;display:flex;flex-direction:column;align-items:center;gap:.3rem;opacity:.92;transition:transform .08s}
+.act-btn:active{transform:scale(.97)}
+.act-btn .ic{font-size:1.7rem}
+.act-in{background:var(--green)}.act-out{background:var(--red)}.act-bs{background:var(--orange)}.act-be{background:var(--sky)}
+.act-btn.suggest{outline:4px solid #FFD666;outline-offset:2px;opacity:1}
+.act-cancel{margin-top:1rem;width:100%;padding:.85rem;border:2px solid var(--gray-200);border-radius:12px;background:#fff;color:var(--gray-600);font-size:1rem;font-weight:700;cursor:pointer;font-family:inherit}
+.count-note{text-align:center;color:var(--gray-400);font-size:.78rem;margin-top:.7rem}
+/* Screen 3: result */
+.res-card{background:#fff;color:#1a2433;border-radius:20px;padding:2rem 1.5rem;text-align:center;box-shadow:0 10px 44px rgba(0,0,0,.3)}
+.res-ic{width:96px;height:96px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:3.2rem;margin-bottom:.9rem}
+.res-ok .res-ic{background:#E8F5E9;color:var(--green)}
+.res-title{font-size:1.5rem;font-weight:800;color:var(--blue)}
+.res-name{font-size:1.1rem;color:var(--gray-600);font-weight:700;margin-top:.3rem}
+.res-time{font-size:1rem;color:var(--gray-600);margin-top:.55rem;font-variant-numeric:tabular-nums}
+.res-note{margin-top:1rem;color:var(--gray-400);font-size:.82rem}
+.foot{flex-shrink:0;text-align:center;font-size:.7rem;color:rgba(255,255,255,.35);padding:0 1rem .6rem}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <div class="hdr-left">
+    <img src="logo.svg" alt="">
+    <div>
+      <div class="hdr-title">Prime Anchor Workforce</div>
+      <div class="hdr-site" id="siteName">…</div>
+    </div>
+  </div>
+  <div class="hdr-right">
+    <div class="hdr-clock" id="clock">--:--:--</div>
+    <div class="hdr-date" id="clockDate"></div>
+  </div>
+</div>
+<div class="lang-bar">
+  <button class="lang-btn" id="kLangZh" onclick="setKLang('zh')">中文</button>
+  <button class="lang-btn" id="kLangEn" onclick="setKLang('en')">English</button>
+  <button class="lang-btn" id="kLangEs" onclick="setKLang('es')">Español</button>
+</div>
+
+<div class="stage">
+  <!-- Screen 1: password keypad -->
+  <div class="screen active" id="scrPw">
+    <div class="pw-hint" id="pwHint">输入您的 8 位打卡密码</div>
+    <div class="pw-dots" id="pwDots"></div>
+    <div class="pw-err" id="pwErr"></div>
+    <div class="keypad" id="keypad">
+      <button class="key" onclick="kp('1')">1</button>
+      <button class="key" onclick="kp('2')">2</button>
+      <button class="key" onclick="kp('3')">3</button>
+      <button class="key" onclick="kp('4')">4</button>
+      <button class="key" onclick="kp('5')">5</button>
+      <button class="key" onclick="kp('6')">6</button>
+      <button class="key" onclick="kp('7')">7</button>
+      <button class="key" onclick="kp('8')">8</button>
+      <button class="key" onclick="kp('9')">9</button>
+      <button class="key fn" id="keyClear" onclick="kpClear()">清空</button>
+      <button class="key" onclick="kp('0')">0</button>
+      <button class="key fn" onclick="kpBack()">⌫</button>
+    </div>
+  </div>
+
+  <!-- Screen 2: choose action -->
+  <div class="screen" id="scrAct">
+    <div class="who-card">
+      <div class="who-name" id="whoName"></div>
+      <div class="who-status" id="whoStatus"></div>
+      <div class="act-grid">
+        <button class="act-btn act-in" id="btnIn" onclick="doPunch('in')"><span class="ic">▶</span><span id="lblIn">上班打卡</span></button>
+        <button class="act-btn act-out" id="btnOut" onclick="doPunch('out')"><span class="ic">◼</span><span id="lblOut">下班打卡</span></button>
+        <button class="act-btn act-bs" id="btnBs" onclick="doPunch('break_start')"><span class="ic">⏸</span><span id="lblBs">休息开始</span></button>
+        <button class="act-btn act-be" id="btnBe" onclick="doPunch('break_end')"><span class="ic">▶▶</span><span id="lblBe">休息结束</span></button>
+      </div>
+      <button class="act-cancel" id="btnCancel" onclick="resetToPw()">取消</button>
+      <div class="count-note" id="actCount"></div>
+    </div>
+  </div>
+
+  <!-- Screen 3: result -->
+  <div class="screen" id="scrRes">
+    <div class="res-card res-ok">
+      <div class="res-ic" id="resIc">✓</div>
+      <div class="res-title" id="resTitle"></div>
+      <div class="res-name" id="resName"></div>
+      <div class="res-time" id="resTime"></div>
+      <div class="res-note" id="resNote"></div>
+    </div>
+  </div>
+</div>
+<div class="foot">Prime Anchor Point LLC · Warehouse Time Clock Kiosk</div>
+
+<script>
+const KL = {
+  zh: {
+    pwHint: '输入您的 8 位打卡密码', clear: '清空', cancel: '取消',
+    errReq: '网络错误，请重试', checking: '验证中…',
+    stOff: '今天还未打上班卡', stOn: t => '上班中 · 上班时间 ' + t, stBrk: '休息中',
+    btnIn: '上班打卡', btnOut: '下班打卡', btnBs: '休息开始', btnBe: '休息结束',
+    resTitle: { in: '上班打卡成功', out: '下班打卡成功', break_start: '休息开始', break_end: '休息结束' },
+    resNote: '页面将自动返回', actCount: s => s + ' 秒后自动返回',
+  },
+  en: {
+    pwHint: 'Enter your 8-digit clock-in password', clear: 'Clear', cancel: 'Cancel',
+    errReq: 'Network error, please retry', checking: 'Checking…',
+    stOff: 'Not clocked in yet today', stOn: t => 'Clocked in at ' + t, stBrk: 'On break',
+    btnIn: 'Clock In', btnOut: 'Clock Out', btnBs: 'Break Start', btnBe: 'Break End',
+    resTitle: { in: 'Clocked In', out: 'Clocked Out', break_start: 'Break Started', break_end: 'Break Ended' },
+    resNote: 'Returning automatically', actCount: s => 'Auto return in ' + s + 's',
+  },
+  es: {
+    pwHint: 'Ingrese su contraseña de 8 dígitos', clear: 'Borrar', cancel: 'Cancelar',
+    errReq: 'Error de red, intente de nuevo', checking: 'Verificando…',
+    stOff: 'Aún no ha marcado entrada hoy', stOn: t => 'Entrada marcada a las ' + t, stBrk: 'En descanso',
+    btnIn: 'Entrada', btnOut: 'Salida', btnBs: 'Inicio Descanso', btnBe: 'Fin Descanso',
+    resTitle: { in: 'Entrada Registrada', out: 'Salida Registrada', break_start: 'Descanso Iniciado', break_end: 'Descanso Terminado' },
+    resNote: 'Regresando automáticamente', actCount: s => 'Regresa en ' + s + 's',
+  },
+};
+// 服务器返回的错误信息是中文，非中文界面时映射成对应语言
+const ERR_MAP = {
+  '打卡密码错误或员工已离职': { en: 'Wrong password, or employee is no longer active', es: 'Contraseña incorrecta o empleado inactivo' },
+  '打卡密码为 8 位数字': { en: 'Password must be 8 digits', es: 'La contraseña debe tener 8 dígitos' },
+  '尝试次数过多，请 15 分钟后再试': { en: 'Too many attempts. Try again in 15 minutes', es: 'Demasiados intentos. Intente en 15 minutos' },
+  '未找到该工作地点': { en: 'Work site not found', es: 'Sitio de trabajo no encontrado' },
+  '缺少必要参数': { en: 'Missing parameters', es: 'Faltan parámetros' },
+};
+
+let _kl = localStorage.getItem('kiosk_lang') || 'zh';
+let _pw = '';
+let _pwLocked = false;     // true while a status request is in flight
+let _actTimer = null, _actLeft = 0;
+let _resTimer = null;
+
+const $ = id => document.getElementById(id);
+const _siteId = new URLSearchParams(location.search).get('site') || '';
+
+function setKLang(l) {
+  _kl = l; localStorage.setItem('kiosk_lang', l);
+  ['zh','en','es'].forEach(x => $('kLang' + x.charAt(0).toUpperCase() + x.slice(1)).classList.toggle('active', x === l));
+  const t = KL[l];
+  $('pwHint').textContent = t.pwHint;
+  $('keyClear').textContent = t.clear;
+  $('btnCancel').textContent = t.cancel;
+  $('lblIn').textContent = t.btnIn; $('lblOut').textContent = t.btnOut;
+  $('lblBs').textContent = t.btnBs; $('lblBe').textContent = t.btnBe;
+}
+function xerr(msg) {
+  if (_kl !== 'zh' && ERR_MAP[msg] && ERR_MAP[msg][_kl]) return ERR_MAP[msg][_kl];
+  return msg;
+}
+
+// Live clock
+(function tick() {
+  const now = new Date();
+  $('clock').textContent = now.toLocaleTimeString('en-GB', { hour12: false });
+  $('clockDate').textContent = now.toLocaleDateString(_kl === 'zh' ? 'zh-CN' : _kl === 'es' ? 'es-MX' : 'en-US',
+    { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+  setTimeout(tick, 1000);
+})();
+
+// Site name
+(async function () {
+  if (!_siteId) { $('siteName').textContent = '⚠ missing ?site='; return; }
+  try {
+    const r = await fetch('/api/checkin/site-info?site=' + encodeURIComponent(_siteId));
+    const d = await r.json();
+    $('siteName').textContent = d && d.name ? d.name + (d.code ? ' (' + d.code + ')' : '') : '⚠';
+    if (d && d.name) document.title = d.name + ' — 打卡台 Time Clock';
+  } catch (_) { $('siteName').textContent = '⚠'; }
+})();
+
+// ── Screen switching ──
+function showScr(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  $(id).classList.add('active');
+}
+function resetToPw() {
+  clearInterval(_actTimer); clearTimeout(_resTimer);
+  _pw = ''; _pwLocked = false;
+  renderDots(); $('pwErr').textContent = '';
+  showScr('scrPw');
+}
+
+// ── Keypad ──
+function renderDots() {
+  $('pwDots').innerHTML = Array.from({ length: 8 }, (_, i) =>
+    `<span class="pw-dot${i < _pw.length ? ' on' : ''}"></span>`).join('');
+}
+renderDots();
+function kp(d) {
+  if (_pwLocked || _pw.length >= 8) return;
+  $('pwErr').textContent = '';
+  _pw += d; renderDots();
+  if (_pw.length === 8) checkPw();
+}
+function kpBack() { if (_pwLocked) return; _pw = _pw.slice(0, -1); renderDots(); $('pwErr').textContent = ''; }
+function kpClear() { if (_pwLocked) return; _pw = ''; renderDots(); $('pwErr').textContent = ''; }
+// 实体键盘（有些平板接了键盘）也能用
+document.addEventListener('keydown', e => {
+  if (!$('scrPw').classList.contains('active')) return;
+  if (/^[0-9]$/.test(e.key)) kp(e.key);
+  else if (e.key === 'Backspace') kpBack();
+  else if (e.key === 'Escape') kpClear();
+});
+
+async function checkPw() {
+  _pwLocked = true;
+  $('pwErr').textContent = KL[_kl].checking;
+  try {
+    const r = await fetch('/api/kiosk/status', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ site_id: _siteId, password: _pw })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || KL[_kl].errReq);
+    _pwLocked = false;
+    $('pwErr').textContent = '';
+    buildActScreen(d);
+  } catch (e) {
+    _pwLocked = false; _pw = ''; renderDots();
+    $('pwErr').textContent = xerr(e.message);
+    const pad = $('keypad'); pad.classList.remove('shake'); void pad.offsetWidth; pad.classList.add('shake');
+  }
+}
+
+// ── Action screen ──
+function buildActScreen(d) {
+  const t = KL[_kl];
+  $('whoName').textContent = '👋 ' + d.name;
+  let st;
+  if (!d.clocked_in) st = `<span class="offd">● ${t.stOff}</span>`;
+  else if (d.on_break) st = `<span class="brk">● ${t.stBrk}</span>`;
+  else st = `<span class="on">● ${t.stOn(d.clock_in_time || '')}</span>`;
+  $('whoStatus').innerHTML = st;
+  const map = { in: 'btnIn', out: 'btnOut', break_start: 'btnBs', break_end: 'btnBe' };
+  Object.values(map).forEach(id => $(id).classList.remove('suggest'));
+  if (map[d.suggested_punch_type]) $(map[d.suggested_punch_type]).classList.add('suggest');
+  showScr('scrAct');
+  // 无操作自动返回，避免下一位员工看到上一位的信息
+  clearInterval(_actTimer);
+  _actLeft = 30;
+  $('actCount').textContent = t.actCount(_actLeft);
+  _actTimer = setInterval(() => {
+    _actLeft--;
+    if (_actLeft <= 0) return resetToPw();
+    $('actCount').textContent = t.actCount(_actLeft);
+  }, 1000);
+}
+
+let _punching = false;
+async function doPunch(type) {
+  if (_punching) return;
+  _punching = true;
+  clearInterval(_actTimer);
+  try {
+    const r = await fetch('/api/kiosk/punch', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ site_id: _siteId, password: _pw, punch_type: type })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || KL[_kl].errReq);
+    showResult(d);
+  } catch (e) {
+    $('whoStatus').innerHTML = '<span style="color:var(--red)">' + xerr(e.message) + '</span>';
+    buildCountRestart();
+  } finally {
+    _punching = false;
+  }
+}
+function buildCountRestart() {
+  clearInterval(_actTimer);
+  _actLeft = 15;
+  _actTimer = setInterval(() => { if (--_actLeft <= 0) resetToPw(); }, 1000);
+}
+
+// ── Result screen ──
+function showResult(d) {
+  const t = KL[_kl];
+  const icons = { in: '✅', out: '👋', break_start: '⏸', break_end: '▶▶' };
+  $('resIc').textContent = icons[d.action] || '✓';
+  $('resTitle').textContent = t.resTitle[d.action] || d.action;
+  $('resName').textContent = d.name;
+  $('resTime').textContent = d.clock_time || '';
+  $('resNote').textContent = t.resNote;
+  showScr('scrRes');
+  _pw = '';
+  clearTimeout(_resTimer);
+  _resTimer = setTimeout(resetToPw, 5000);
+}
+
+setKLang(_kl);
+</script>
+</body>
+</html>
