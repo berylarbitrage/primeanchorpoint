@@ -30470,13 +30470,29 @@ db.exec(`CREATE TABLE IF NOT EXISTS device_sms_outbox (
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_device_outbox_status ON device_sms_outbox(status, id)`); } catch(e) {}
 try { db.exec(`ALTER TABLE device_sms_outbox ADD COLUMN translate_to TEXT DEFAULT ''`); } catch(e) {}
 
-// 每个号码的备注名和备注。网页和桌面版共用这一份, 谁改得晚谁算数(updated_at)。
+// 每个号码的会话设置：备注名、备注、标签、状态、语言、已读位置。
+// 网页和桌面版共用这一份, 谁改得晚谁算数(updated_at)。
 db.exec(`CREATE TABLE IF NOT EXISTS device_sms_peer_notes (
   peer TEXT PRIMARY KEY,
   alias TEXT DEFAULT '',
   note TEXT DEFAULT '',
   updated_at TEXT DEFAULT (datetime('now'))
 )`);
+// 后加的列 (老库也能平滑升级)
+try { db.exec(`ALTER TABLE device_sms_peer_notes ADD COLUMN tags TEXT DEFAULT '[]'`); } catch(e) {}
+try { db.exec(`ALTER TABLE device_sms_peer_notes ADD COLUMN status TEXT DEFAULT 'open'`); } catch(e) {}
+try { db.exec(`ALTER TABLE device_sms_peer_notes ADD COLUMN contact_lang TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE device_sms_peer_notes ADD COLUMN agent_lang TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE device_sms_peer_notes ADD COLUMN auto_translate INTEGER DEFAULT 1`); } catch(e) {}
+// 未读判定用「读到哪一刻」而不是每条一个标记: 少写很多行, 也不用跟手机对齐
+try { db.exec(`ALTER TABLE device_sms_peer_notes ADD COLUMN read_at TEXT DEFAULT NULL`); } catch(e) {}
+
+// 星标 / 重新翻译标记挂在消息上
+try { db.exec(`ALTER TABLE device_sms_messages ADD COLUMN starred INTEGER DEFAULT 0`); } catch(e) {}
+try { db.exec(`ALTER TABLE device_sms_messages ADD COLUMN star_note TEXT DEFAULT ''`); } catch(e) {}
+// 网页点「重新翻译」时置 1; 电脑取走重翻后推回来会清掉
+try { db.exec(`ALTER TABLE device_sms_messages ADD COLUMN needs_retranslate INTEGER DEFAULT 0`); } catch(e) {}
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_device_sms_starred ON device_sms_messages(starred)`); } catch(e) {}
 
 function deviceSmsHashToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
@@ -30514,7 +30530,10 @@ app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
         source_lang=COALESCE(NULLIF(excluded.source_lang,''), device_sms_messages.source_lang),
         risk_score=COALESCE(excluded.risk_score, device_sms_messages.risk_score),
         risk_category=COALESCE(NULLIF(excluded.risk_category,''), device_sms_messages.risk_category),
-        risk_summary=COALESCE(NULLIF(excluded.risk_summary,''), device_sms_messages.risk_summary)`);
+        risk_summary=COALESCE(NULLIF(excluded.risk_summary,''), device_sms_messages.risk_summary),
+        -- 推上来新译文就说明电脑已经重翻过了
+        needs_retranslate=CASE WHEN NULLIF(excluded.translated_body,'') IS NOT NULL THEN 0
+                               ELSE device_sms_messages.needs_retranslate END`);
 
     let saved = 0;
     const write = db.transaction((rows) => {
@@ -30605,10 +30624,11 @@ app.delete('/api/device-sms/outbox/:id', requireAdmin, requireRole('admin'), (re
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 备注: 网页和桌面版都能读写。桌面版用设备令牌, 网页用管理员登录。
+// 会话设置: 网页和桌面版都能读写。桌面版用设备令牌, 网页用管理员登录。
 function deviceSmsNotesHandler(req, res) {
   try {
-    res.json({ notes: db.prepare('SELECT peer, alias, note, updated_at FROM device_sms_peer_notes').all() });
+    res.json({ notes: db.prepare(`SELECT peer, alias, note, tags, status, contact_lang, agent_lang,
+      auto_translate, read_at, updated_at FROM device_sms_peer_notes`).all() });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 app.get('/api/device-sms/notes', requireAdmin, requireRole('admin'), deviceSmsNotesHandler);
@@ -30636,31 +30656,115 @@ function deviceSmsSaveNotes(req, res) {
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 app.post('/api/device-sms/notes', requireAdmin, requireRole('admin'), deviceSmsSaveNotes);
+
+// POST /api/device-sms/peer — 改一个会话的某几项 (只改传上来的字段)
+app.post('/api/device-sms/peer', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const body = req.body || {};
+    const peer = String(body.peer || '').trim().slice(0, 40);
+    if (!peer) return res.status(400).json({ error: '缺少 peer' });
+    db.prepare(`INSERT OR IGNORE INTO device_sms_peer_notes (peer) VALUES (?)`).run(peer);
+
+    const sets = [], params = [];
+    const put = (col, value) => { sets.push(col + '=?'); params.push(value); };
+    if (body.alias !== undefined) put('alias', String(body.alias).trim().slice(0, 120));
+    if (body.note !== undefined) put('note', String(body.note).trim().slice(0, 2000));
+    if (body.tags !== undefined) {
+      const tags = (Array.isArray(body.tags) ? body.tags : [])
+        .map(t => String(t).trim().slice(0, 30)).filter(Boolean).slice(0, 20);
+      put('tags', JSON.stringify([...new Set(tags)]));
+    }
+    if (body.status !== undefined) put('status', body.status === 'closed' ? 'closed' : 'open');
+    if (body.contact_lang !== undefined) put('contact_lang', String(body.contact_lang).slice(0, 40));
+    if (body.agent_lang !== undefined) put('agent_lang', String(body.agent_lang).slice(0, 40));
+    if (body.auto_translate !== undefined) put('auto_translate', body.auto_translate ? 1 : 0);
+    // read: true = 现在读到这儿了; false = 标为未读
+    if (body.read !== undefined) put('read_at', body.read ? new Date().toISOString() : null);
+    if (!sets.length) return res.json({ success: true });
+
+    params.push(peer);
+    db.prepare(`UPDATE device_sms_peer_notes SET ${sets.join(', ')}, updated_at=datetime('now') WHERE peer=?`).run(...params);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/device-sms/messages/:id/star — 星标一条消息 (可带一句备注)
+app.post('/api/device-sms/messages/:id/star', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const on = (req.body || {}).starred ? 1 : 0;
+    const note = String((req.body || {}).note || '').slice(0, 300);
+    db.prepare('UPDATE device_sms_messages SET starred=?, star_note=? WHERE id=?').run(on, on ? note : '', req.params.id);
+    res.json({ success: true, starred: !!on });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/device-sms/retranslate — 让电脑重新翻译某个会话 (或指定几条)
+// 网站自己翻不了 —— API key 在那台电脑上, 这里只是打个标记。
+app.post('/api/device-sms/retranslate', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const body = req.body || {};
+    const peer = String(body.peer || '').trim();
+    const ids = Array.isArray(body.ids) ? body.ids.map(Number).filter(Number.isFinite).slice(0, 500) : [];
+    let marked = 0;
+    if (ids.length) {
+      const mark = db.prepare('UPDATE device_sms_messages SET needs_retranslate=1 WHERE id=?');
+      for (const id of ids) marked += mark.run(id).changes;
+    } else if (peer) {
+      marked = db.prepare('UPDATE device_sms_messages SET needs_retranslate=1 WHERE peer=?').run(peer).changes;
+    } else {
+      return res.status(400).json({ error: '要么给 peer, 要么给 ids' });
+    }
+    res.json({ success: true, marked });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/device-sms/retranslate — 电脑取要重翻的消息 (设备令牌)
+app.get('/api/device-sms/retranslate', deviceSmsAuth, (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT remote_id, peer FROM device_sms_messages
+      WHERE needs_retranslate=1 ORDER BY id DESC LIMIT 200`).all();
+    res.json({ messages: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.post('/api/device-sms/device-notes', deviceSmsAuth, deviceSmsSaveNotes);
 
 // GET /api/device-sms/messages — 网页端读取 (个人手机短信, 只有 admin 能看)
 app.get('/api/device-sms/messages', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const limit = Math.min(1000, Math.max(1, parseInt(req.query.limit) || 500));
+    const offset = Math.max(0, parseInt(req.query.offset) || 0);
     const minRisk = parseInt(req.query.risk) || 0;
     const q = String(req.query.q || '').trim();
     const peer = String(req.query.peer || '').trim();
+    const tag = String(req.query.tag || '').trim();
+    const status = String(req.query.status || '').trim();
     let where = '1=1';
     const params = [];
-    if (minRisk > 0) { where += ' AND COALESCE(risk_score,0) >= ?'; params.push(minRisk); }
-    if (peer) { where += ' AND peer = ?'; params.push(peer); }
+    if (minRisk > 0) { where += ' AND COALESCE(m.risk_score,0) >= ?'; params.push(minRisk); }
+    if (peer) { where += ' AND m.peer = ?'; params.push(peer); }
+    if (String(req.query.starred || '') === '1') where += ' AND m.starred=1';
     if (q) {
-      where += ' AND (body LIKE ? OR translated_body LIKE ? OR contact LIKE ? OR address LIKE ?)';
+      where += ' AND (m.body LIKE ? OR m.translated_body LIKE ? OR m.contact LIKE ? OR m.address LIKE ? OR n.alias LIKE ? OR n.note LIKE ?)';
       const like = `%${q}%`;
-      params.push(like, like, like, like);
+      params.push(like, like, like, like, like, like);
     }
-    const rows = db.prepare(`SELECT * FROM device_sms_messages WHERE ${where} ORDER BY sent_at DESC LIMIT ?`).all(...params, limit);
+    // 标签和状态是按会话记的, 所以连到会话设置表上过滤
+    if (tag) { where += ' AND COALESCE(n.tags, \'[]\') LIKE ?'; params.push(`%"${tag}"%`); }
+    if (status === 'open') where += " AND COALESCE(n.status,'open') = 'open'";
+    if (status === 'closed') where += " AND COALESCE(n.status,'open') = 'closed'";
+
+    const rows = db.prepare(`SELECT m.* FROM device_sms_messages m
+      LEFT JOIN device_sms_peer_notes n ON n.peer = m.peer
+      WHERE ${where} ORDER BY m.sent_at DESC LIMIT ? OFFSET ?`).all(...params, limit, offset);
+    const total = db.prepare(`SELECT COUNT(*) AS n FROM device_sms_messages m
+      LEFT JOIN device_sms_peer_notes n ON n.peer = m.peer WHERE ${where}`).get(...params).n;
     const devices = db.prepare('SELECT id, name, serial, last_push_at, message_count FROM device_sms_devices WHERE active=1').all();
     // 还没发出去的 / 发失败的也一起给, 页面上排在对话末尾显示状态
     const outbox = db.prepare(`SELECT id, to_address, peer, body, status, note, created_at FROM device_sms_outbox
       WHERE status IN ('pending','failed') ORDER BY id ASC LIMIT 100`).all();
-    const notes = db.prepare('SELECT peer, alias, note FROM device_sms_peer_notes').all();
-    res.json({ messages: rows.reverse(), devices, outbox, notes });
+    const notes = db.prepare(`SELECT peer, alias, note, tags, status, contact_lang, agent_lang,
+      auto_translate, read_at FROM device_sms_peer_notes`).all();
+    res.json({ messages: rows.reverse(), devices, outbox, notes, total, offset, limit });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

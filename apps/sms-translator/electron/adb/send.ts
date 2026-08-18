@@ -125,30 +125,70 @@ function scoreSendCandidate(node: UiNode): number {
  * sending work on OEM skins (Samsung One UI in particular), where the AOSP
  * "focus right, press enter" trick lands on the wrong control.
  */
-async function findSendButton(ctx: AdbContext): Promise<UiNode | null> {
-  const dump = await runAdb(ctx, ['shell', 'uiautomator', 'dump', DUMP_PATH], {
+/**
+ * Read the current view hierarchy.
+ *
+ * `exec-out uiautomator dump --compressed /dev/tty` gets it in ONE adb round
+ * trip; the old dump-to-file-then-`cat`-then-`rm` route was three, and three
+ * round trips is most of why sending felt slow. `--compressed` also drops the
+ * purely decorative nodes, so there is far less XML to move and to parse.
+ *
+ * Not every ROM accepts `/dev/tty`, so the file route stays as a fallback.
+ */
+async function dumpUi(ctx: AdbContext): Promise<string> {
+  const direct = await runAdb(
+    ctx,
+    ['exec-out', 'uiautomator', 'dump', '--compressed', '/dev/tty'],
+    { timeoutMs: 25_000 },
+  ).catch(() => null)
+  if (direct && direct.code === 0 && direct.stdout.includes('<node')) return direct.stdout
+
+  const dump = await runAdb(ctx, ['shell', 'uiautomator', 'dump', '--compressed', DUMP_PATH], {
     timeoutMs: 25_000,
   })
-  if (dump.code !== 0) return null
+  if (dump.code !== 0) return ''
 
   const xml = await runAdb(ctx, ['shell', 'cat', DUMP_PATH], { timeoutMs: 20_000 })
   // Best-effort cleanup; a leftover file is harmless.
   void runAdb(ctx, ['shell', 'rm', '-f', DUMP_PATH], { timeoutMs: 10_000 }).catch(() => {})
+  return xml.code === 0 ? xml.stdout : ''
+}
 
-  if (xml.code !== 0 || !xml.stdout.includes('<node')) return null
-
+/** The best send-button candidate in a dump, or null if none is convincing. */
+function pickSendButton(xml: string): UiNode | null {
+  if (!xml.includes('<node')) return null
   let best: UiNode | null = null
   let bestScore = 0
-  for (const node of parseNodes(xml.stdout)) {
+  for (const node of parseNodes(xml)) {
     const score = scoreSendCandidate(node)
     if (score > bestScore) {
       bestScore = score
       best = node
     }
   }
-
   // Require more than "it is merely clickable" before tapping anything.
   return bestScore >= 9 ? best : null
+}
+
+/**
+ * Wait for the SMS app to draw its send button, looking as it goes.
+ *
+ * The old code slept for the whole configured delay and *then* looked once. On
+ * a phone that was ready in 300ms that threw away a second per message, and on
+ * a slow one a single look often missed. Now the first look happens almost
+ * immediately and repeats until the deadline: fast phones get fast, slow phones
+ * still work.
+ */
+async function findSendButton(ctx: AdbContext, budgetMs: number): Promise<UiNode | null> {
+  const deadline = Date.now() + Math.max(budgetMs * 2, 4_000)
+  let wait = 350
+  for (;;) {
+    await delay(wait)
+    const found = pickSendButton(await dumpUi(ctx))
+    if (found) return found
+    if (Date.now() >= deadline) return null
+    wait = 600
+  }
 }
 
 /**
@@ -211,10 +251,8 @@ export async function sendSms(
     }
   }
 
-  await delay(Math.max(300, opts.tapDelayMs))
-
   if (opts.method === 'ui') {
-    const button = await findSendButton(ctx)
+    const button = await findSendButton(ctx, opts.tapDelayMs)
     if (button) {
       await runAdbChecked(ctx, [
         'shell',
@@ -240,6 +278,9 @@ export async function sendSms(
     }
   }
 
+  // The keyevent route cannot tell whether the app is ready, so it keeps the
+  // plain wait.
+  await delay(Math.max(300, opts.tapDelayMs))
   await runAdbChecked(ctx, ['shell', 'input', 'keyevent', String(KEYCODE_DPAD_RIGHT)])
   await runAdbChecked(ctx, ['shell', 'input', 'keyevent', String(KEYCODE_ENTER)])
   return {
@@ -249,7 +290,7 @@ export async function sendSms(
 }
 
 /** Exported for tests. */
-export const __testing = { parseNodes, scoreSendCandidate, parseBounds }
+export const __testing = { parseNodes, scoreSendCandidate, parseBounds, pickSendButton }
 
 /**
  * Open the phone's dialler on a number.

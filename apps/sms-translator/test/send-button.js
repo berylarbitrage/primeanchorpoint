@@ -12,7 +12,7 @@ const path = require('node:path')
 const { __testing } = require(
   path.join(__dirname, '..', 'dist-electron', 'electron', 'adb', 'send.js'),
 )
-const { parseNodes, scoreSendCandidate, parseBounds } = __testing
+const { parseNodes, scoreSendCandidate, parseBounds, pickSendButton } = __testing
 
 let failures = 0
 function check(label, actual, expected) {
@@ -97,6 +97,25 @@ check(
   parseNodes(samsung).length,
   5,
 )
+
+// --- picking the button out of a whole dump ---
+// A compressed dump from Samsung Messages: an attach button, the text box, and
+// the send button. Only the last one may ever be tapped.
+const DUMP = `<?xml version='1.0' encoding='UTF-8'?>
+<hierarchy rotation="0">
+  <node index="0" text="" resource-id="com.samsung.android.messaging:id/attach_button" class="android.widget.ImageButton" package="com.samsung.android.messaging" content-desc="添加附件" clickable="true" bounds="[24,1800][120,1900]" />
+  <node index="1" text="你好" resource-id="com.samsung.android.messaging:id/message_edit_text" class="android.widget.EditText" package="com.samsung.android.messaging" content-desc="" clickable="true" bounds="[130,1800][900,1900]" />
+  <node index="2" text="" resource-id="com.samsung.android.messaging:id/send_button1" class="android.widget.Button" package="com.samsung.android.messaging" content-desc="发送" clickable="true" bounds="[920,1800][1040,1900]" />
+</hierarchy>`
+
+const picked = pickSendButton(DUMP)
+check('the send button is found in a real dump', picked && picked.resourceId, 'com.samsung.android.messaging:id/send_button1')
+check('and it is the one that gets tapped', picked && picked.center, { x: 980, y: 1850 })
+
+check('a dump with no send button yields nothing', pickSendButton(`<?xml version='1.0'?>
+<hierarchy><node index="0" text="" resource-id="com.android.systemui:id/clock" class="android.widget.TextView" package="com.android.systemui" content-desc="" clickable="false" bounds="[0,0][100,50]" /></hierarchy>`), null)
+check('an empty dump yields nothing, not a crash', pickSendButton(''), null)
+check('a truncated dump yields nothing', pickSendButton('<?xml version'), null)
 
 console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`)
 process.exit(failures === 0 ? 0 : 1)

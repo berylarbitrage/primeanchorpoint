@@ -6,6 +6,12 @@ export interface TranslateItem {
   body: string
   direction: 'in' | 'out'
   sender: string
+  /**
+   * Language this one should be translated into. Used by the queue to group a
+   * batch — a request carries a single target — and ignored here, where the
+   * target comes from the options.
+   */
+  target?: string
 }
 
 export interface TranslateResult {
