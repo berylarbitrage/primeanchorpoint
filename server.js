@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-17k · SMS对话/招工帖翻译改用Claude(口语化+行话表), Google机翻兜底',
+  tag: '2026-08-17l · 对话可一键重新翻译旧消息(Claude), 收到的消息译文写回存档',
   started: new Date().toISOString(),
 };
 
@@ -31025,10 +31025,22 @@ app.post('/api/sms/translate', requireAdmin, requireSmsAccess, async (req, res) 
 });
 
 // POST /api/sms/translate-batch — translate multiple texts at once
+// save + thread_id: 收到的消息(inbound)重翻后写回 translated_body, 下次打开不再是旧机翻。
+// 写回时原文一律从库里取(不信客户端), 且仅限该线程的 inbound; 发出的消息(outbound)
+// 的 translated_body 是当时真实发出的内容, 永不改写。
 app.post('/api/sms/translate-batch', requireAdmin, requireSmsAccess, async (req, res) => {
   try {
-    const { items, from, to } = req.body; // items: [{id, text}]
+    const { items, from, to, thread_id, save } = req.body; // items: [{id, text}]
     if (!Array.isArray(items) || !from || !to) return res.status(400).json({ error: 'items, from, to required' });
+    const doSave = !!save && !!parseInt(thread_id);
+    let saveOk = false;
+    if (doSave) {
+      // 客服只能对自己可见的线程写回 (与线程可见性同一套规则)
+      const t = db.prepare(`SELECT t.id, c.opted_out, c.cs_hidden, c.employee_id FROM sms_threads t JOIN sms_contacts c ON c.id=t.contact_id WHERE t.id=?`).get(parseInt(thread_id));
+      saveOk = !!t && (req.userRole === 'admin' || (!t.opted_out && !t.cs_hidden && !!t.employee_id));
+    }
+    const getMsg = db.prepare(`SELECT id, body FROM sms_messages WHERE id=? AND thread_id=? AND direction='inbound'`);
+    const updMsg = db.prepare(`UPDATE sms_messages SET translated_body=? WHERE id=?`);
     const results = {};
     // Translate in parallel (limit concurrency to 5)
     const chunks = [];
@@ -31036,8 +31048,17 @@ app.post('/api/sms/translate-batch', requireAdmin, requireSmsAccess, async (req,
     for (const chunk of chunks) {
       await Promise.all(chunk.map(async (item) => {
         try {
-          const translated = await aiTranslateSms(item.text, from, to);
-          if (translated && translated !== item.text) results[item.id] = translated;
+          let text = item.text;
+          let dbMsg = null;
+          if (doSave && saveOk) {
+            dbMsg = getMsg.get(parseInt(item.id) || 0, parseInt(thread_id));
+            if (dbMsg && dbMsg.body && dbMsg.body.trim()) text = dbMsg.body;
+          }
+          const translated = await aiTranslateSms(text, from, to);
+          if (translated && translated !== text) {
+            results[item.id] = translated;
+            if (dbMsg) { try { updMsg.run(translated, dbMsg.id); } catch (_) {} }
+          }
         } catch(e) {}
       }));
     }
