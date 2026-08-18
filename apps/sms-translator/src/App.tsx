@@ -245,7 +245,9 @@ export default function App() {
 
       {toast && <div className="banner">{toast}</div>}
 
-      <div className="body">
+      {/* On a phone the two panes cannot share the screen: `show-thread` hands
+          it to whichever one the user is actually looking at. */}
+      <div className={`body${compose || selectedPeer ? ' show-thread' : ''}`}>
         <Sidebar
           conversations={conversations}
           totalConversations={allConversations.length}
@@ -276,6 +278,7 @@ export default function App() {
           />
         ) : (
           <Thread
+            onBack={() => setSelectedPeer(null)}
             conversation={selected}
             filters={filters}
             showOriginal={showOriginal}

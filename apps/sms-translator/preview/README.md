@@ -20,6 +20,15 @@ Point it at a specific browser with `PREVIEW_CHROMIUM=/path/to/chrome`, and at a
 Playwright installed outside the project with
 `PREVIEW_PLAYWRIGHT=/path/to/playwright/index.js`.
 
+`web.mjs` is the same idea for **LAN web sharing**: it starts the real
+`WebServer` over the real `dist/`, logs in with a browser, and screenshots the
+result at desktop and phone widths — the login round trip, the injected
+`web-bridge.js`, and the responsive layout, none of which the unit tests cover.
+
+```sh
+node preview/web.mjs               # writes preview/out/web-*.png
+```
+
 `?state=error` swaps the mocked status for a connection failure, which is how
 the error banner gets checked — the topbar clips long messages, so the banner is
 the only place the user can actually read them.

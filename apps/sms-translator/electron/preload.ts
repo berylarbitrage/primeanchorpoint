@@ -8,6 +8,7 @@ import type {
   SmsBridge,
   SmsMessage,
   SyncStatus,
+  WebStatus,
   WirelessResult,
 } from '../shared/types'
 
@@ -67,6 +68,10 @@ const bridge: SmsBridge = {
   setApiKey: (key) => ipcRenderer.invoke('settings:setApiKey', key) as Promise<Settings>,
 
   getStatus: () => ipcRenderer.invoke('status:get') as Promise<SyncStatus>,
+
+  getWebStatus: () => ipcRenderer.invoke('web:status') as Promise<WebStatus>,
+  restartWebServer: () => ipcRenderer.invoke('web:restart') as Promise<WebStatus>,
+  regenerateWebPassword: () => ipcRenderer.invoke('web:newPassword') as Promise<WebStatus>,
 
   onMessages: (cb) => subscribe<SmsMessage[]>('sms:messages', cb),
   onRemoved: (cb) => subscribe<string[]>('sms:removed', cb),

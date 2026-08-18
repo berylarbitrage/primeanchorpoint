@@ -121,6 +121,9 @@
     batchSize: 20,
     hasApiKey: true,
     pinnedPeers: ['4155550142'],
+    webEnabled: true,
+    webPort: 8848,
+    webPassword: 'k7m2xr9dqp',
   }
 
   const status = {
@@ -176,6 +179,14 @@
     setSettings: async () => settings,
     setApiKey: async () => settings,
     getStatus: async () => status,
+    getWebStatus: async () => ({
+      running: true,
+      port: 8848,
+      urls: ['http://192.168.1.20:8848'],
+      password: 'k7m2xr9dqp',
+    }),
+    restartWebServer: async () => window.sms.getWebStatus(),
+    regenerateWebPassword: async () => window.sms.getWebStatus(),
     onMessages: noop,
     onRemoved: noop,
     onStatus: noop,

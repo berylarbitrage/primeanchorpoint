@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { DeviceInfo, Settings } from '../../shared/types'
+import type { DeviceInfo, Settings, WebStatus } from '../../shared/types'
 import { errorText, sms } from '../lib/bridge'
 
 interface Props {
@@ -18,9 +18,11 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
   const [pairCode, setPairCode] = useState('')
   const [wirelessBusy, setWirelessBusy] = useState(false)
   const [wirelessNote, setWirelessNote] = useState<{ text: string; ok: boolean } | null>(null)
+  const [webStatus, setWebStatus] = useState<WebStatus | null>(null)
 
   useEffect(() => {
     void scan()
+    void sms.getWebStatus().then(setWebStatus).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -424,6 +426,106 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
             <span className="hint">三星建议 1500–2500；短信 App 启动慢就调大。</span>
           </div>
         )}
+
+        <div className="field">
+          <label>网页共享（同一个 WiFi 下别人也能看）</label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={draft.webEnabled}
+              onChange={(e) => set('webEnabled', e.target.checked)}
+            />
+            开启网页访问
+          </label>
+          <span className="hint">
+            开启后，<b>这台电脑</b>会在局域网里提供一个网页，别人用手机或平板的浏览器
+            打开就能看短信、看译文、搜索筛选，也能发短信。手机必须一直连着这台电脑，
+            电脑关机或软件退出就打不开了。第一次开启时 Windows 防火墙会弹窗，请点
+            「允许访问」。
+          </span>
+
+          {draft.webEnabled && (
+            <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span className="hint" style={{ minWidth: '4em' }}>端口</span>
+                <input
+                  type="number"
+                  min={1024}
+                  max={65535}
+                  style={{ width: 120 }}
+                  value={draft.webPort}
+                  onChange={(e) => set('webPort', Number(e.target.value) || 8848)}
+                />
+                <span className="hint">被占用就换一个，比如 8849。</span>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span className="hint" style={{ minWidth: '4em' }}>访问密码</span>
+                <code className="password">{webStatus?.password || '（保存后生成）'}</code>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={() =>
+                    void sms
+                      .regenerateWebPassword()
+                      .then((status) => {
+                        setWebStatus(status)
+                        setDraft((prev) => ({ ...prev, webPassword: status.password }))
+                      })
+                      .catch(() => {})
+                  }
+                >
+                  换一个
+                </button>
+              </div>
+              <span className="hint">
+                谁拿到这个密码，谁就能读你所有短信、也能用你的号码发短信——只发给你
+                信得过的人。换密码会把已经登录的浏览器全部踢下线。
+              </span>
+
+              <div>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() =>
+                    void (async () => {
+                      // Applied without closing the dialog, so the address and
+                      // password can be read (and typed into a phone) right here.
+                      try {
+                        onSaved(await sms.setSettings(draft))
+                        const status = await sms.restartWebServer()
+                        setWebStatus(status)
+                        setDraft((prev) => ({ ...prev, webPassword: status.password }))
+                      } catch (err) {
+                        setScanError(errorText(err))
+                      }
+                    })()
+                  }
+                >
+                  应用并显示网址
+                </button>
+              </div>
+
+              {webStatus?.error && (
+                <span className="hint" style={{ color: 'var(--danger)' }}>{webStatus.error}</span>
+              )}
+
+              {webStatus?.running && webStatus.urls.length > 0 && (
+                <div className="hint">
+                  <div>在手机浏览器里打开（要连同一个 WiFi）：</div>
+                  {webStatus.urls.map((url) => (
+                    <div key={url}>
+                      <code className="password">{url}</code>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!webStatus?.running && !webStatus?.error && (
+                <span className="hint">保存后网页服务才会启动，网址会显示在这里。</span>
+              )}
+            </div>
+          )}
+        </div>
 
         <div className="field">
           <label>每批翻译条数</label>

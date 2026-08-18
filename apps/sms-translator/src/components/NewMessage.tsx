@@ -92,6 +92,9 @@ export default function NewMessage({
   return (
     <section className="thread">
       <header className="thread-header">
+        <button type="button" className="btn ghost back" onClick={onCancel} title="返回会话列表">
+          ‹ 返回
+        </button>
         <div className="who">
           <strong>新短信</strong>
           <span>填号码或搜索联系人</span>

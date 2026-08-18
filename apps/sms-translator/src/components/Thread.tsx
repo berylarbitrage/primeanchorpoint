@@ -15,6 +15,8 @@ import AttachmentView from './AttachmentView'
 
 interface Props {
   conversation: Conversation | null
+  /** Narrow screens only: go back to the conversation list. */
+  onBack: () => void
   filters: Filters
   showOriginal: boolean
   draft?: string
@@ -39,6 +41,7 @@ function dayKey(ts: number): string {
 
 export default function Thread({
   conversation,
+  onBack,
   filters,
   showOriginal,
   draft,
@@ -94,6 +97,9 @@ export default function Thread({
   return (
     <section className="thread">
       <header className="thread-header">
+        <button type="button" className="btn ghost back" onClick={onBack} title="返回会话列表">
+          ‹ 返回
+        </button>
         <div className="who">
           <strong>{conversation.title}</strong>
           <span>{conversation.address}</span>

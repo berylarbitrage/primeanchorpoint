@@ -136,6 +136,12 @@ export interface Settings {
   batchSize: number
   /** True when an API key is stored; the key itself is never sent to the renderer. */
   hasApiKey: boolean
+
+  /** Serve the same inbox to browsers on the local network. */
+  webEnabled: boolean
+  webPort: number
+  /** Password those browsers must enter. Generated on first enable. */
+  webPassword: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -159,6 +165,9 @@ export const DEFAULT_SETTINGS: Settings = {
   sendTapDelayMs: 1500,
   batchSize: 20,
   hasApiKey: false,
+  webEnabled: false,
+  webPort: 8848,
+  webPassword: '',
 }
 
 export interface SyncStatus {
@@ -183,6 +192,15 @@ export interface WirelessResult {
   ok: boolean
   message: string
   address?: string
+}
+
+export interface WebStatus {
+  running: boolean
+  port: number
+  /** Every address this machine can be opened at, e.g. http://192.168.1.20:8848. */
+  urls: string[]
+  password: string
+  error?: string
 }
 
 export interface DraftTranslation {
@@ -242,6 +260,11 @@ export interface SmsBridge {
   setApiKey(key: string): Promise<Settings>
 
   getStatus(): Promise<SyncStatus>
+
+  /** Local-network sharing: current state, and a way to restart it. */
+  getWebStatus(): Promise<WebStatus>
+  restartWebServer(): Promise<WebStatus>
+  regenerateWebPassword(): Promise<WebStatus>
 
   onMessages(cb: (messages: SmsMessage[]) => void): () => void
   onRemoved(cb: (ids: string[]) => void): () => void

@@ -17,6 +17,7 @@ import { MessageStore } from './store'
 import { Syncer } from './sync/syncer'
 import { TranslationQueue } from './translate/queue'
 import { translateDraft } from './translate/claude'
+import { WebServer, generatePassword, localUrls } from './web/server'
 import type {
   Contact,
   DeviceInfo,
@@ -25,6 +26,7 @@ import type {
   Settings,
   SmsMessage,
   SyncStatus,
+  WebStatus,
   WirelessResult,
 } from '../shared/types'
 
@@ -33,7 +35,12 @@ let store: MessageStore
 let syncer: Syncer
 let queue: TranslationQueue
 let locator: AdbLocator
+let web: WebServer | null = null
+let webError: string | undefined
 let window: BrowserWindow | null = null
+
+/** Every IPC handler by name, so the web server can call the same code. */
+const handlers = new Map<string, (...args: never[]) => unknown>()
 
 /** Phase reported by the syncer, kept separate from the translation indicator. */
 let syncPhase: 'idle' | 'connecting' | 'syncing' | 'error' = 'idle'
@@ -64,22 +71,54 @@ function currentStatus(): SyncStatus {
 function emitMessages(messages: SmsMessage[]): void {
   if (!messages.length) return
   window?.webContents.send('sms:messages', messages)
+  web?.broadcast('messages', messages)
 }
 
 function emitRemoved(ids: string[]): void {
   if (!ids.length) return
   window?.webContents.send('sms:removed', ids)
+  web?.broadcast('removed', ids)
 }
 
 function emitStatus(): void {
-  window?.webContents.send('sms:status', currentStatus())
+  const status = currentStatus()
+  window?.webContents.send('sms:status', status)
+  web?.broadcast('status', status)
 }
 
 function handle<T extends unknown[], R>(
   channel: string,
   fn: (...args: T) => Promise<R> | R,
 ): void {
+  handlers.set(channel, fn as (...args: never[]) => unknown)
   ipcMain.handle(channel, async (_event, ...args) => fn(...(args as T)))
+}
+
+function webStatus(): WebStatus {
+  const current = settings.public()
+  return {
+    running: web?.running() ?? false,
+    port: current.webPort,
+    urls: web?.running() ? localUrls(current.webPort) : [],
+    password: current.webPassword,
+    error: webError,
+  }
+}
+
+/** Apply the current settings to the web server: start, stop, or rebind. */
+async function restartWeb(): Promise<void> {
+  if (!web) return
+  web.stop()
+  webError = undefined
+  const current = settings.public()
+  if (!current.webEnabled) return
+  if (!current.webPassword) {
+    // Never serve the inbox without a password, even for a moment.
+    settings.update({ webPassword: generatePassword() })
+  }
+  const result = await web.start()
+  if (!result.ok) webError = result.error
+  emitStatus()
 }
 
 export function registerIpc(win: BrowserWindow): void {
@@ -388,6 +427,13 @@ export function registerIpc(win: BrowserWindow): void {
     const updated = settings.update(patch)
     if (before.adbPath !== updated.adbPath) locator.reset()
     if (before.pollIntervalMs !== updated.pollIntervalMs) syncer.restart()
+    if (
+      before.webEnabled !== updated.webEnabled ||
+      before.webPort !== updated.webPort ||
+      before.webPassword !== updated.webPassword
+    ) {
+      void restartWeb()
+    }
     if (updated.autoTranslate && settings.apiKey()) {
       queue.enqueue(store.untranslated().map((m) => m.id))
     }
@@ -404,6 +450,35 @@ export function registerIpc(win: BrowserWindow): void {
 
   handle('status:get', (): SyncStatus => currentStatus())
 
+  handle('web:status', (): WebStatus => webStatus())
+
+  handle('web:restart', async (): Promise<WebStatus> => {
+    await restartWeb()
+    return webStatus()
+  })
+
+  handle('web:newPassword', async (): Promise<WebStatus> => {
+    settings.update({ webPassword: generatePassword() })
+    // The password is checked per request, but existing browser sessions keep
+    // their token — a fresh password should lock them out too.
+    await restartWeb()
+    return webStatus()
+  })
+
+  web = new WebServer({
+    // Packaged, main.js sits in dist-electron/electron/, and the renderer in
+    // dist/ next to it — the same path loadFile() uses.
+    distDir: path.join(__dirname, '..', '..', 'dist'),
+    invoke: async (channel, args) => {
+      const fn = handlers.get(channel)
+      if (!fn) throw new Error(`未知的操作：${channel}`)
+      return (fn as (...a: unknown[]) => unknown)(...args)
+    },
+    password: () => settings.public().webPassword,
+    port: () => settings.public().webPort,
+  })
+  if (settings.public().webEnabled) void restartWeb()
+
   syncer.start()
   void syncer.sync('incremental').catch(() => {})
   if (settings.public().autoTranslate && settings.apiKey()) {
@@ -412,6 +487,8 @@ export function registerIpc(win: BrowserWindow): void {
 }
 
 export function disposeIpc(): void {
+  web?.stop()
+  web = null
   syncer?.stop()
   queue?.stop()
   store?.dispose()
