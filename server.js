@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-17l · 对话可一键重新翻译旧消息(Claude), 收到的消息译文写回存档',
+  tag: '2026-08-17m · 历史收件短信全量自动重翻(Claude后台迁移, 断点续跑)',
   started: new Date().toISOString(),
 };
 
@@ -30180,6 +30180,45 @@ async function aiTranslateSms(text, fromLang, toLang) {
   // Claude 不可用/超时/失败 → 回退 Google 机翻 (带行话占位保护), 保证消息总能发出去
   return translateText(text, fromLang, toLang);
 }
+
+// ─── 一次性迁移: 历史收到的短信全部用 Claude 重新翻译 (后台慢慢跑, 断点续跑) ───
+// 只重翻 inbound(对方发来的); outbound 的 translated_body 是当时真实发出的内容不动。
+async function _smsRetranslateMigration() {
+  const KEY = 'sms_retranslate_v1_last_id';
+  const DONE = 'sms_retranslate_v1_done';
+  try {
+    const doneRow = db.prepare('SELECT value FROM app_settings WHERE key=?').get(DONE);
+    if (doneRow && doneRow.value === '1') return;
+    if (!process.env.ANTHROPIC_API_KEY) { console.log('[SMS Retranslate] 未配置 ANTHROPIC_API_KEY, 跳过(下次启动重试)'); return; }
+    const setKV = (k, v) => db.prepare('INSERT INTO app_settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(k, String(v));
+    let lastId = 0;
+    const r = db.prepare('SELECT value FROM app_settings WHERE key=?').get(KEY);
+    if (r) lastId = parseInt(r.value) || 0;
+    let n = 0;
+    console.log(`[SMS Retranslate] 开始重翻历史收件 (从消息 id ${lastId} 之后)`);
+    for (;;) {
+      const rows = db.prepare(`SELECT m.id, m.body, t.contact_lang, t.agent_lang FROM sms_messages m JOIN sms_threads t ON t.id=m.thread_id
+        WHERE m.direction='inbound' AND m.id > ? AND COALESCE(m.body,'') != '' ORDER BY m.id LIMIT 4`).all(lastId);
+      if (!rows.length) break;
+      await Promise.all(rows.map(async m => {
+        const from = m.contact_lang || 'es', to = m.agent_lang || 'zh';
+        if (from === to) return;
+        try {
+          const tx = await aiTranslateSms(m.body, from, to);
+          if (tx && tx.trim() && tx !== m.body) db.prepare('UPDATE sms_messages SET translated_body=? WHERE id=?').run(tx.trim(), m.id);
+        } catch (_) {}
+      }));
+      lastId = rows[rows.length - 1].id;
+      n += rows.length;
+      setKV(KEY, lastId);
+      if (n % 40 === 0) console.log(`[SMS Retranslate] 已处理 ${n} 条 (最后 id ${lastId})`);
+      await new Promise(rs => setTimeout(rs, 250));   // 轻限速, 不挤占正常翻译
+    }
+    setKV(DONE, '1');
+    console.log(`[SMS Retranslate] 完成: 共重翻 ${n} 条历史收件`);
+  } catch (e) { console.error('[SMS Retranslate]', e.message); }
+}
+setTimeout(() => { _smsRetranslateMigration(); }, 15000);   // 启动 15 秒后开始, 不拖慢启动
 
 // ─── 管理界面三语: 批量机器翻译 + DB 缓存 (中文→EN/ES, 第一次翻过就永久缓存) ───
 db.exec(`CREATE TABLE IF NOT EXISTS ui_translations (
