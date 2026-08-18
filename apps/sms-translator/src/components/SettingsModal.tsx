@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { DeviceInfo, Settings, WebStatus } from '../../shared/types'
+import type { DeviceInfo, Settings, UploadStatus, WebStatus } from '../../shared/types'
 import { errorText, sms } from '../lib/bridge'
 
 interface Props {
@@ -19,10 +19,12 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
   const [wirelessBusy, setWirelessBusy] = useState(false)
   const [wirelessNote, setWirelessNote] = useState<{ text: string; ok: boolean } | null>(null)
   const [webStatus, setWebStatus] = useState<WebStatus | null>(null)
+  const [uploadStatus, setUploadStatus] = useState<UploadStatus | null>(null)
 
   useEffect(() => {
     void scan()
     void sms.getWebStatus().then(setWebStatus).catch(() => {})
+    void sms.getUploadStatus().then(setUploadStatus).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -426,6 +428,64 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
             <span className="hint">三星建议 1500–2500；短信 App 启动慢就调大。</span>
           </div>
         )}
+
+        <div className="field">
+          <label>同步到公司网站（出门在外也能看）</label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={draft.uploadEnabled}
+              onChange={(e) => set('uploadEnabled', e.target.checked)}
+            />
+            把手机短信推送到网站
+          </label>
+          <span className="hint">
+            每次同步之后，这台电脑会把读到的短信（含译文和风险分）推到公司网站的
+            「手机短信」页面，登录管理员账号就能随时查看，不需要这台电脑一直开着。
+            <b>你的私人短信会存在服务器上</b>，网站那一页上可以随时一键清空。
+            图片本身不上传，只标注「有图片」。
+          </span>
+
+          {draft.uploadEnabled && (
+            <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+              <input
+                placeholder="推送网址，如 https://primeanchorworkforce.com/api/device-sms/push"
+                value={draft.uploadUrl}
+                onChange={(e) => set('uploadUrl', e.target.value.trim())}
+              />
+              <input
+                placeholder="设备令牌（在网站「手机短信」页面点「生成新令牌」）"
+                value={draft.uploadToken}
+                onChange={(e) => set('uploadToken', e.target.value.trim())}
+              />
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() =>
+                    void (async () => {
+                      try {
+                        onSaved(await sms.setSettings(draft))
+                        setUploadStatus(await sms.pushNow())
+                      } catch (err) {
+                        setScanError(errorText(err))
+                      }
+                    })()
+                  }
+                >
+                  保存并立即推送
+                </button>
+                <span className="hint">
+                  {uploadStatus?.error
+                    ? uploadStatus.error
+                    : uploadStatus?.lastPushAt
+                      ? `上次推送 ${new Date(uploadStatus.lastPushAt).toLocaleTimeString()}，${uploadStatus.lastSaved ?? 0} 条；还有 ${uploadStatus.pending} 条待推`
+                      : `还有 ${uploadStatus?.pending ?? 0} 条待推送`}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
 
         <div className="field">
           <label>网页共享（同一个 WiFi 下别人也能看）</label>

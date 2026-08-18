@@ -1,7 +1,7 @@
 {
   "name": "sms-translator",
   "productName": "SMS Translator",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Windows desktop SMS inbox that mirrors an Android phone over ADB and translates/screens messages with Claude",
   "author": "Prime Anchor",
@@ -18,7 +18,7 @@
     "build:renderer": "vite build",
     "start": "cross-env NODE_ENV=production electron .",
     "dist": "npm run build && electron-builder --win",
-    "test": "npm run build:electron && node test/parse-sms.js && node test/parse-mms.js && node test/send-button.js && node test/locate-adb.js && node test/wireless.js && node test/contacts.js && node test/store.js && node test/web-server.js",
+    "test": "npm run build:electron && node test/parse-sms.js && node test/parse-mms.js && node test/send-button.js && node test/locate-adb.js && node test/wireless.js && node test/contacts.js && node test/store.js && node test/web-server.js && node test/upload.js",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit"
   },
   "dependencies": {

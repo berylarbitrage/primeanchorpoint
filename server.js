@@ -30035,6 +30035,178 @@ app.post('/api/sms/webhook/inbound', express.urlencoded({ extended: false }), va
   }
 });
 
+// ═══════════════════════════════════════════════════════════
+// 📱 手机短信同步 (桌面版 SMS 译信 → 网站)
+// ═══════════════════════════════════════════════════════════
+// 公司号码的短信走 Twilio, 上面那一套。这一套是另一回事: 老板【个人手机】里的
+// 短信, 由一台连着手机的 Windows 电脑用 adb 读出来、翻译好, 再推到这里, 网站上
+// 就能随时查看(手机不在身边、或人在外面时)。
+//
+// 手机短信只有连着它的那台电脑读得到 —— 浏览器不可能直接读, 所以只能这样推。
+// 推送用设备令牌鉴权(不是管理员登录): 那台电脑是无人值守的, 不该拿着人的账号。
+db.exec(`CREATE TABLE IF NOT EXISTS device_sms_devices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT DEFAULT '',
+  serial TEXT DEFAULT '',
+  token_hash TEXT NOT NULL UNIQUE,
+  active INTEGER DEFAULT 1,
+  last_push_at TEXT DEFAULT NULL,
+  message_count INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+
+db.exec(`CREATE TABLE IF NOT EXISTS device_sms_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id INTEGER NOT NULL,
+  remote_id TEXT NOT NULL,
+  peer TEXT NOT NULL,
+  address TEXT DEFAULT '',
+  contact TEXT DEFAULT '',
+  direction TEXT NOT NULL,
+  kind TEXT DEFAULT 'sms',
+  body TEXT DEFAULT '',
+  translated_body TEXT DEFAULT '',
+  source_lang TEXT DEFAULT '',
+  risk_score INTEGER DEFAULT NULL,
+  risk_category TEXT DEFAULT '',
+  risk_summary TEXT DEFAULT '',
+  has_media INTEGER DEFAULT 0,
+  sent_at TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(device_id, remote_id)
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_device_sms_sent ON device_sms_messages(sent_at)`); } catch(e) {}
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_device_sms_peer ON device_sms_messages(device_id, peer, sent_at)`); } catch(e) {}
+
+function deviceSmsHashToken(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
+
+// Bearer 令牌 → 设备。令牌只存 hash, 明文只在创建时给出一次。
+function deviceSmsAuth(req, res, next) {
+  const header = String(req.headers.authorization || '');
+  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  if (!token) return res.status(401).json({ error: 'missing token' });
+  const device = db.prepare('SELECT * FROM device_sms_devices WHERE token_hash=? AND active=1').get(deviceSmsHashToken(token));
+  if (!device) return res.status(401).json({ error: 'bad token' });
+  req.smsDevice = device;
+  next();
+}
+
+// POST /api/device-sms/push — 桌面版推送一批短信 (同一条重复推是安全的, 按 remote_id 覆盖)
+app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
+  try {
+    const body = req.body || {};
+    const list = Array.isArray(body.messages) ? body.messages.slice(0, 500) : [];
+    const serial = String(body.device_serial || '').slice(0, 80);
+    const upsert = db.prepare(`INSERT INTO device_sms_messages
+        (device_id, remote_id, peer, address, contact, direction, kind, body, translated_body, source_lang,
+         risk_score, risk_category, risk_summary, has_media, sent_at, updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+      ON CONFLICT(device_id, remote_id) DO UPDATE SET
+        peer=excluded.peer, address=excluded.address,
+        direction=excluded.direction, kind=excluded.kind, body=excluded.body,
+        has_media=excluded.has_media, sent_at=excluded.sent_at, updated_at=datetime('now'),
+        -- 后补的字段只增不减: 电脑可能先推原文(还没翻译/还没筛查完), 稍后再推一次
+        -- 带上译文和风险分。空值覆盖掉已有的译文就白翻了。
+        contact=COALESCE(NULLIF(excluded.contact,''), device_sms_messages.contact),
+        translated_body=COALESCE(NULLIF(excluded.translated_body,''), device_sms_messages.translated_body),
+        source_lang=COALESCE(NULLIF(excluded.source_lang,''), device_sms_messages.source_lang),
+        risk_score=COALESCE(excluded.risk_score, device_sms_messages.risk_score),
+        risk_category=COALESCE(NULLIF(excluded.risk_category,''), device_sms_messages.risk_category),
+        risk_summary=COALESCE(NULLIF(excluded.risk_summary,''), device_sms_messages.risk_summary)`);
+
+    let saved = 0;
+    const write = db.transaction((rows) => {
+      for (const m of rows) {
+        const remoteId = String(m.id || '').slice(0, 120);
+        const sentAt = Number(m.date);
+        if (!remoteId || !Number.isFinite(sentAt)) continue;
+        upsert.run(
+          req.smsDevice.id, remoteId,
+          String(m.peer || '').slice(0, 40), String(m.address || '').slice(0, 60),
+          String(m.contact || '').slice(0, 120),
+          m.direction === 'out' ? 'out' : 'in',
+          m.kind === 'mms' ? 'mms' : 'sms',
+          String(m.body || '').slice(0, 4000), String(m.translated_body || '').slice(0, 4000),
+          String(m.source_lang || '').slice(0, 40),
+          Number.isFinite(Number(m.risk_score)) ? Math.max(0, Math.min(5, Math.round(Number(m.risk_score)))) : null,
+          String(m.risk_category || '').slice(0, 30), String(m.risk_summary || '').slice(0, 300),
+          m.has_media ? 1 : 0,
+          new Date(sentAt).toISOString()
+        );
+        saved++;
+      }
+    });
+    write(list);
+
+    db.prepare(`UPDATE device_sms_devices SET last_push_at=datetime('now'), serial=COALESCE(NULLIF(?,''), serial),
+      message_count=(SELECT COUNT(*) FROM device_sms_messages WHERE device_id=?) WHERE id=?`)
+      .run(serial, req.smsDevice.id, req.smsDevice.id);
+
+    res.json({ success: true, saved });
+  } catch (e) {
+    console.error('[Device SMS] push error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/device-sms/messages — 网页端读取 (个人手机短信, 只有 admin 能看)
+app.get('/api/device-sms/messages', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const limit = Math.min(1000, Math.max(1, parseInt(req.query.limit) || 500));
+    const minRisk = parseInt(req.query.risk) || 0;
+    const q = String(req.query.q || '').trim();
+    const peer = String(req.query.peer || '').trim();
+    let where = '1=1';
+    const params = [];
+    if (minRisk > 0) { where += ' AND COALESCE(risk_score,0) >= ?'; params.push(minRisk); }
+    if (peer) { where += ' AND peer = ?'; params.push(peer); }
+    if (q) {
+      where += ' AND (body LIKE ? OR translated_body LIKE ? OR contact LIKE ? OR address LIKE ?)';
+      const like = `%${q}%`;
+      params.push(like, like, like, like);
+    }
+    const rows = db.prepare(`SELECT * FROM device_sms_messages WHERE ${where} ORDER BY sent_at DESC LIMIT ?`).all(...params, limit);
+    const devices = db.prepare('SELECT id, name, serial, last_push_at, message_count FROM device_sms_devices WHERE active=1').all();
+    res.json({ messages: rows.reverse(), devices });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET/POST/DELETE /api/device-sms/devices — 令牌管理 (明文令牌只在创建时返回一次)
+app.get('/api/device-sms/devices', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    res.json({ devices: db.prepare('SELECT id, name, serial, active, last_push_at, message_count, created_at FROM device_sms_devices ORDER BY id DESC').all() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/device-sms/devices', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const name = String((req.body || {}).name || '我的电脑').slice(0, 60);
+    const token = crypto.randomBytes(32).toString('hex');
+    const info = db.prepare('INSERT INTO device_sms_devices (name, token_hash) VALUES (?,?)').run(name, deviceSmsHashToken(token));
+    res.json({ success: true, id: info.lastInsertRowid, name, token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/device-sms/devices/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    // 停用而不是删除: 已经推上来的消息还要能看, 令牌本身立即失效。
+    db.prepare('UPDATE device_sms_devices SET active=0 WHERE id=?').run(req.params.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/device-sms/messages — 清空手机短信 (个人数据, 随时可以撤下来)
+app.delete('/api/device-sms/messages', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const info = db.prepare('DELETE FROM device_sms_messages').run();
+    db.prepare('UPDATE device_sms_devices SET message_count=0').run();
+    res.json({ success: true, deleted: info.changes });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ═══ Twilio Status Callback ═══
 app.post('/api/sms/webhook/status', express.urlencoded({ extended: false }), validateTwilioWebhook, (req, res) => {
   try {

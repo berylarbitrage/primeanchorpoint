@@ -87,6 +87,12 @@ export interface SmsMessage {
   analysis?: Analysis
   /** Set on messages this app sent, before the phone's SMS database catches up. */
   pending?: boolean
+  /**
+   * Translation state at the time this message was last pushed to the website.
+   * Undefined = never pushed. Compared against `translationState` so a message
+   * pushed before its translation arrived gets pushed again with it.
+   */
+  uploadedState?: TranslationState
 }
 
 /** A phone-book entry, used by the "new message" recipient picker. */
@@ -137,6 +143,13 @@ export interface Settings {
   /** True when an API key is stored; the key itself is never sent to the renderer. */
   hasApiKey: boolean
 
+  /** Push messages to the company website so they can be read from anywhere. */
+  uploadEnabled: boolean
+  /** Full push endpoint, e.g. https://example.com/api/device-sms/push */
+  uploadUrl: string
+  /** Device token issued by the website's 手机短信 page. */
+  uploadToken: string
+
   /** Serve the same inbox to browsers on the local network. */
   webEnabled: boolean
   webPort: number
@@ -165,6 +178,9 @@ export const DEFAULT_SETTINGS: Settings = {
   sendTapDelayMs: 1500,
   batchSize: 20,
   hasApiKey: false,
+  uploadEnabled: false,
+  uploadUrl: '',
+  uploadToken: '',
   webEnabled: false,
   webPort: 8848,
   webPassword: '',
@@ -192,6 +208,15 @@ export interface WirelessResult {
   ok: boolean
   message: string
   address?: string
+}
+
+/** Last known state of the website push, for the settings dialog. */
+export interface UploadStatus {
+  enabled: boolean
+  pending: number
+  lastPushAt?: number
+  lastSaved?: number
+  error?: string
 }
 
 export interface WebStatus {
@@ -260,6 +285,10 @@ export interface SmsBridge {
   setApiKey(key: string): Promise<Settings>
 
   getStatus(): Promise<SyncStatus>
+
+  /** Website push: current state, and a way to send everything outstanding now. */
+  getUploadStatus(): Promise<UploadStatus>
+  pushNow(): Promise<UploadStatus>
 
   /** Local-network sharing: current state, and a way to restart it. */
   getWebStatus(): Promise<WebStatus>

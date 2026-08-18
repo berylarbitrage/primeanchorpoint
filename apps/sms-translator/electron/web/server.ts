@@ -44,6 +44,7 @@ export const REMOTE_DENIED = new Set([
   'wireless:disconnect',
   'wireless:enableOverUsb',
   'clipboard:write',
+  'upload:now',
 ])
 
 const COOKIE = 'sms_token'

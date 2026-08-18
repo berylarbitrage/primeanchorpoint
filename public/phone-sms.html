@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>手机短信 · Prime Anchor</title>
+<!--
+  老板【个人手机】里的短信。公司号码的短信在 /sms-inbox.html，那是 Twilio 的；
+  这一页的数据是桌面版「SMS 译信」用 adb 从手机读出来、翻译并筛查完之后推上来的
+  （POST /api/device-sms/push，设备令牌鉴权）。手机短信只有连着它的那台电脑读得到，
+  所以这里是只读的：要回短信请在手机或那台电脑上操作。
+-->
+<style>
+  :root{--amber:#b45309;--bg:#fffbf3;--card:#fff;--line:#f3e8cd;--ink:#1f2937;--dim:#6b7280;--faint:#9ca3af}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  header{position:sticky;top:0;z-index:5;background:#fff;border-bottom:1px solid var(--line);padding:10px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  h1{font-size:1.05rem;margin:0;color:var(--amber)}
+  .sub{font-size:.78rem;color:var(--dim)}
+  .spacer{flex:1}
+  button,input,select{font:inherit}
+  button{padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--ink);cursor:pointer}
+  button:hover{border-color:#f5d78e}
+  button.on{background:#fef3c7;border-color:#fcd34d;color:#92400e;font-weight:700}
+  button.primary{background:var(--amber);border-color:var(--amber);color:#fff;font-weight:600}
+  input[type=text],input[type=password]{padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;min-width:0}
+  .wrap{display:grid;grid-template-columns:320px 1fr;gap:0;height:calc(100vh - 56px)}
+  .list{border-right:1px solid var(--line);overflow-y:auto;min-height:0}
+  .thread{width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;padding:11px 14px;display:grid;gap:3px;cursor:pointer}
+  .thread:hover{background:#fffcf2}
+  .thread.on{background:#fff7e6;box-shadow:inset 3px 0 0 var(--amber)}
+  .thread .top{display:flex;gap:8px;align-items:baseline}
+  .thread .name{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .thread .when{margin-left:auto;font-size:.72rem;color:var(--faint);white-space:nowrap}
+  .thread .preview{font-size:.82rem;color:var(--dim);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .msgs{overflow-y:auto;min-height:0;padding:16px;display:flex;flex-direction:column;gap:10px}
+  .msg{max-width:min(72ch,86%);display:grid;gap:3px}
+  .msg.out{margin-left:auto;text-align:right}
+  .bubble{background:#fff;border:1px solid var(--line);border-radius:14px;padding:9px 13px;white-space:pre-wrap;word-break:break-word;text-align:left}
+  .msg.out .bubble{background:#fff7e6;border-color:#fcd34d}
+  .bubble.risky{border-color:#fca5a5;box-shadow:0 0 0 2px #fee2e2}
+  .tr{border-top:1px dashed var(--line);margin-top:6px;padding-top:6px;color:#111}
+  .orig{color:var(--dim);font-size:.88rem}
+  .foot{font-size:.72rem;color:var(--faint);display:flex;gap:8px;flex-wrap:wrap}
+  .msg.out .foot{justify-content:flex-end}
+  .chip{font-size:.7rem;font-weight:700;padding:1px 8px;border-radius:999px;white-space:nowrap}
+  .chip.warn{background:#fef3c7;color:#92400e}
+  .chip.danger{background:#fee2e2;color:#b91c1c}
+  .empty{padding:40px 20px;text-align:center;color:var(--dim)}
+  .back{display:none;align-self:flex-start}
+  .gate{max-width:340px;margin:12vh auto;display:grid;gap:10px;padding:0 16px}
+  .err{color:#b91c1c;font-size:.85rem;min-height:20px}
+  .setup{padding:16px;border-top:1px solid var(--line);background:#fff}
+  .setup code{background:#fffbeb;border:1px solid var(--line);border-radius:6px;padding:2px 8px;user-select:all;word-break:break-all}
+  .setup .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+  @media(max-width:760px){
+    .wrap{grid-template-columns:1fr;height:calc(100vh - 84px)}
+    .list{border-right:0}
+    .wrap.show-thread .list{display:none}
+    .wrap:not(.show-thread) .msgs{display:none}
+    /* 手机上列表被会话顶掉了, 得给一条回去的路 */
+    .back{display:inline-block}
+  }
+</style>
+</head>
+<body>
+
+<div id="gate" class="gate">
+  <h1>手机短信</h1>
+  <div class="sub">仅限管理员账号。这里是从你手机同步上来的私人短信。</div>
+  <input type="text" id="user" placeholder="用户名" autocomplete="username">
+  <input type="password" id="pw" placeholder="密码" autocomplete="current-password">
+  <button class="primary" onclick="login()">登录</button>
+  <div class="err" id="gateErr"></div>
+</div>
+
+<div id="app" style="display:none">
+  <header>
+    <h1>手机短信</h1>
+    <span class="sub" id="deviceInfo"></span>
+    <div class="spacer"></div>
+    <input type="text" id="q" placeholder="搜原文 / 译文 / 号码…" oninput="debounced()">
+    <button id="riskBtn" onclick="toggleRisk()" title="只看 AI 判为可疑或诈骗的短信">🚨 可疑</button>
+    <button onclick="load()" title="刷新">↻</button>
+    <button onclick="toggleSetup()" title="连接这台电脑 / 清空数据">⚙</button>
+  </header>
+
+  <div id="setup" class="setup" style="display:none">
+    <div class="row">
+      <b>连接一台电脑</b>
+      <span class="sub">在桌面版「SMS 译信」的设置里填上网址和令牌，它就会把手机短信推到这里。</span>
+    </div>
+    <div class="row">
+      <span class="sub">推送网址</span><code id="pushUrl"></code>
+    </div>
+    <div class="row">
+      <button class="primary" onclick="newToken()">生成新令牌</button>
+      <code id="tokenOut" style="display:none"></code>
+      <span class="sub">令牌只显示这一次，关掉就看不到了；丢了就再生成一个。</span>
+    </div>
+    <div class="row" id="deviceRows"></div>
+    <div class="row">
+      <button onclick="wipe()" style="color:#b91c1c;border-color:#fca5a5">清空所有手机短信</button>
+      <span class="sub">把已经推上来的私人短信从服务器上全部删掉。手机和电脑上的不受影响。</span>
+    </div>
+  </div>
+
+  <div class="wrap" id="wrap">
+    <div class="list" id="list"></div>
+    <div class="msgs" id="msgs"></div>
+  </div>
+</div>
+
+<script>
+let TOKEN = localStorage.getItem('pa_phone_sms_token') || '';
+let MESSAGES = [];
+let PEER = null;
+let RISK = false;
+let timer = null;
+
+const RISK_LABELS = { personal:'私人', verification:'验证码', bank:'银行', delivery:'物流',
+  service:'服务通知', marketing:'营销', spam:'垃圾', fraud:'诈骗', other:'其他' };
+
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+async function api(path, opts = {}) {
+  const res = await fetch('/api' + path, {
+    method: opts.method || 'GET',
+    headers: { 'Authorization': 'Bearer ' + TOKEN, ...(opts.body ? { 'Content-Type': 'application/json' } : {}) },
+    body: opts.body
+  });
+  if (res.status === 401 || res.status === 403) { showGate('登录已过期，或这个账号不是管理员。'); throw new Error('unauthorized'); }
+  const text = await res.text();
+  try { return JSON.parse(text); }
+  catch (_) { throw new Error('服务器暂时不可用，等半分钟再试'); }
+}
+
+function showGate(msg) {
+  document.getElementById('gate').style.display = '';
+  document.getElementById('app').style.display = 'none';
+  if (msg) document.getElementById('gateErr').textContent = msg;
+}
+
+async function login() {
+  const username = document.getElementById('user').value.trim();
+  const password = document.getElementById('pw').value;
+  const err = document.getElementById('gateErr');
+  err.textContent = '';
+  const r = await fetch('/api/admin/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
+  }).then(x => x.json()).catch(() => ({}));
+  if (!r.success) { err.textContent = r.error || '登录失败'; return; }
+  if (r.role !== 'admin') { err.textContent = '这一页只有管理员能看（私人短信）。'; return; }
+  TOKEN = r.token;
+  localStorage.setItem('pa_phone_sms_token', TOKEN);
+  start();
+}
+
+function start() {
+  document.getElementById('gate').style.display = 'none';
+  document.getElementById('app').style.display = '';
+  document.getElementById('pushUrl').textContent = location.origin + '/api/device-sms/push';
+  load();
+  // 电脑那边同步完才会推上来，隔一会儿看一次就够了
+  setInterval(() => load(true), 30000);
+}
+
+function debounced() { clearTimeout(timer); timer = setTimeout(() => load(), 400); }
+function toggleRisk() {
+  RISK = !RISK;
+  document.getElementById('riskBtn').classList.toggle('on', RISK);
+  load();
+}
+function toggleSetup() {
+  const el = document.getElementById('setup');
+  el.style.display = el.style.display === 'none' ? '' : 'none';
+  if (el.style.display === '') void loadDevices();
+}
+
+async function load(silent) {
+  try {
+    const q = document.getElementById('q').value.trim();
+    let url = '/device-sms/messages?limit=800';
+    if (RISK) url += '&risk=2';
+    if (q) url += '&q=' + encodeURIComponent(q);
+    const r = await api(url);
+    MESSAGES = r.messages || [];
+    const devices = r.devices || [];
+    document.getElementById('deviceInfo').textContent = devices.length
+      ? devices.map(d => (d.name || '电脑') + (d.last_push_at ? ' · ' + d.last_push_at.replace('T', ' ').slice(0, 16) + ' 同步' : ' · 还没推过')).join('　')
+      : '还没有连接任何电脑 —— 点右上角 ⚙ 生成令牌';
+    render();
+  } catch (e) { if (!silent) console.error(e); }
+}
+
+function conversations() {
+  const groups = new Map();
+  for (const m of MESSAGES) {
+    const list = groups.get(m.peer) || [];
+    list.push(m);
+    groups.set(m.peer, list);
+  }
+  const out = [];
+  for (const [peer, list] of groups) {
+    list.sort((a, b) => (a.sent_at < b.sent_at ? -1 : 1));
+    const last = list[list.length - 1];
+    let maxRisk = 0, name = '';
+    for (const m of list) {
+      if (Number(m.risk_score) > maxRisk) maxRisk = Number(m.risk_score);
+      if (m.contact) name = m.contact;
+    }
+    out.push({ peer, list, last, maxRisk, title: name || last.address || peer });
+  }
+  out.sort((a, b) => (a.last.sent_at < b.last.sent_at ? 1 : -1));
+  return out;
+}
+
+function riskChip(score, category) {
+  const n = Number(score);
+  if (!Number.isFinite(n) || n < 2) return '';
+  const cat = RISK_LABELS[category] || '';
+  return '<span class="chip ' + (n >= 4 ? 'danger' : 'warn') + '" title="AI 诈骗筛查 ' + n + '/5">🚨 '
+    + (n >= 4 ? '高风险' : '可疑') + (cat ? ' · ' + cat : '') + '</span>';
+}
+
+function fmt(ts) {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '';
+  const today = new Date();
+  const sameDay = d.toDateString() === today.toDateString();
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return sameDay ? time : d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + time;
+}
+
+function render() {
+  const convos = conversations();
+  const list = document.getElementById('list');
+  if (!convos.length) {
+    list.innerHTML = '<div class="empty">还没有短信。<br><br>在那台连着手机的电脑上打开桌面版「SMS 译信」，'
+      + '设置里填上推送网址和令牌（点右上角 ⚙）。</div>';
+    document.getElementById('msgs').innerHTML = '';
+    return;
+  }
+  if (!convos.some(c => c.peer === PEER)) PEER = convos[0].peer;
+
+  list.innerHTML = convos.map(c =>
+    '<button class="thread' + (c.peer === PEER ? ' on' : '') + '" onclick="pick(\'' + esc(c.peer) + '\')">'
+    + '<div class="top"><span class="name">' + esc(c.title) + '</span>'
+    + '<span class="when">' + fmt(c.last.sent_at) + '</span></div>'
+    + '<div class="preview">' + (c.last.direction === 'out' ? '我: ' : '')
+    + esc((c.last.translated_body || c.last.body || (c.last.has_media ? '［图片］' : '')).slice(0, 120)) + '</div>'
+    + (c.maxRisk >= 2 ? '<div>' + riskChip(c.maxRisk, (c.list.find(m => Number(m.risk_score) === c.maxRisk) || {}).risk_category) + '</div>' : '')
+    + '</button>').join('');
+
+  const convo = convos.find(c => c.peer === PEER);
+  document.getElementById('msgs').innerHTML =
+    '<button class="back" onclick="backToList()">‹ 返回列表</button>'
+    + convo.list.map(m => {
+    const translated = (m.translated_body || '').trim();
+    const showBoth = translated && translated !== (m.body || '').trim();
+    const risky = Number(m.risk_score) >= 4;
+    return '<div class="msg ' + (m.direction === 'out' ? 'out' : 'in') + '">'
+      + '<div class="bubble' + (risky ? ' risky' : '') + '">'
+      + (showBoth ? '<div class="orig">' + esc(m.body) + '</div><div class="tr">' + esc(translated) + '</div>'
+                  : esc(m.body || (m.has_media ? '［图片短信］' : '')))
+      + '</div>'
+      + '<div class="foot"><span>' + fmt(m.sent_at) + '</span>'
+      + (m.kind === 'mms' ? '<span>图片短信</span>' : '')
+      + (m.source_lang ? '<span>' + esc(m.source_lang) + '</span>' : '')
+      + riskChip(m.risk_score, m.risk_category)
+      + (m.risk_summary && Number(m.risk_score) >= 2 ? '<span>' + esc(m.risk_summary) + '</span>' : '')
+      + '</div></div>';
+  }).join('');
+
+  const msgs = document.getElementById('msgs');
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function pick(peer) {
+  PEER = peer;
+  document.getElementById('wrap').classList.add('show-thread');
+  render();
+}
+
+function backToList() {
+  document.getElementById('wrap').classList.remove('show-thread');
+}
+
+async function loadDevices() {
+  const r = await api('/device-sms/devices');
+  document.getElementById('deviceRows').innerHTML = (r.devices || []).map(d =>
+    '<span class="sub">' + esc(d.name || '电脑') + (d.active ? '' : '（已停用）')
+    + ' · ' + (d.message_count || 0) + ' 条'
+    + (d.active ? ' <button onclick="revoke(' + d.id + ')">停用</button>' : '') + '</span>').join('　');
+}
+
+async function newToken() {
+  const name = prompt('给这台电脑起个名字', '我的电脑');
+  if (name === null) return;
+  const r = await api('/device-sms/devices', { method: 'POST', body: JSON.stringify({ name }) });
+  if (!r.token) { alert(r.error || '生成失败'); return; }
+  const out = document.getElementById('tokenOut');
+  out.style.display = '';
+  out.textContent = r.token;
+  void loadDevices();
+}
+
+async function revoke(id) {
+  if (!confirm('停用这台电脑的令牌？已经推上来的短信还留着。')) return;
+  await api('/device-sms/devices/' + id, { method: 'DELETE' });
+  void loadDevices();
+}
+
+async function wipe() {
+  if (!confirm('把服务器上所有手机短信删掉？这一步不可撤销（手机和电脑上的不受影响）。')) return;
+  const r = await api('/device-sms/messages', { method: 'DELETE' });
+  alert('已删除 ' + (r.deleted || 0) + ' 条。');
+  load();
+}
+
+if (TOKEN) {
+  api('/admin/me').then(r => {
+    if (r && r.username && r.role === 'admin') start();
+    else showGate(r && r.username ? '这一页只有管理员能看。' : '');
+  }).catch(() => {});
+} else {
+  showGate();
+}
+</script>
+</body>
+</html>

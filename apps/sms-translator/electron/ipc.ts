@@ -18,6 +18,8 @@ import { Syncer } from './sync/syncer'
 import { TranslationQueue } from './translate/queue'
 import { translateDraft } from './translate/claude'
 import { WebServer, generatePassword, localUrls } from './web/server'
+import { redactForRemote, sanitiseRemoteArgs } from './web/remote'
+import { pendingUploads, pushMessages, uploadedPatches, needsPush } from './upload/push'
 import type {
   Contact,
   DeviceInfo,
@@ -26,6 +28,7 @@ import type {
   Settings,
   SmsMessage,
   SyncStatus,
+  UploadStatus,
   WebStatus,
   WirelessResult,
 } from '../shared/types'
@@ -38,6 +41,11 @@ let locator: AdbLocator
 let web: WebServer | null = null
 let webError: string | undefined
 let window: BrowserWindow | null = null
+
+let uploadBusy = false
+let uploadError: string | undefined
+let lastPushAt: number | undefined
+let lastSaved: number | undefined
 
 /** Every IPC handler by name, so the web server can call the same code. */
 const handlers = new Map<string, (...args: never[]) => unknown>()
@@ -92,6 +100,57 @@ function handle<T extends unknown[], R>(
 ): void {
   handlers.set(channel, fn as (...args: never[]) => unknown)
   ipcMain.handle(channel, async (_event, ...args) => fn(...(args as T)))
+}
+
+function uploadStatus(): UploadStatus {
+  const current = settings.public()
+  return {
+    enabled: current.uploadEnabled,
+    pending: current.uploadEnabled ? store.all().filter(needsPush).length : 0,
+    lastPushAt,
+    lastSaved,
+    error: uploadError,
+  }
+}
+
+/**
+ * Send whatever is outstanding to the website.
+ *
+ * Runs after every sync and after translations land, so the website copy trails
+ * this app by one pass rather than needing its own schedule. One batch per call
+ * keeps a first import from turning into a long upload; the next pass takes the
+ * rest.
+ */
+async function pushToWebsite(): Promise<void> {
+  const current = settings.public()
+  if (!current.uploadEnabled || uploadBusy) return
+
+  const batch = pendingUploads(store.all())
+  if (!batch.length) {
+    uploadError = undefined
+    return
+  }
+
+  uploadBusy = true
+  try {
+    const result = await pushMessages(
+      { url: current.uploadUrl, token: current.uploadToken },
+      current.deviceSerial ?? device?.serial ?? '',
+      batch,
+    )
+    if (result.ok) {
+      uploadError = undefined
+      lastPushAt = Date.now()
+      lastSaved = result.saved
+      // Recorded only after the server accepted them, so a failed push is
+      // retried rather than silently dropped.
+      store.patchMany(uploadedPatches(batch))
+    } else {
+      uploadError = result.error
+    }
+  } finally {
+    uploadBusy = false
+  }
 }
 
 function webStatus(): WebStatus {
@@ -162,6 +221,9 @@ export function registerIpc(win: BrowserWindow): void {
     onProgress: (pending) => {
       pendingTranslations = pending
       emitStatus()
+      // Translations land after the sync that fetched them, so push again once
+      // the queue drains — that pass carries the translated text.
+      if (pending === 0) void pushToWebsite()
     },
   })
 
@@ -180,7 +242,10 @@ export function registerIpc(win: BrowserWindow): void {
     onPhase: (phase, detail) => {
       syncPhase = phase
       syncDetail = detail
-      if (phase === 'idle') lastSyncAt = Date.now()
+      if (phase === 'idle') {
+        lastSyncAt = Date.now()
+        void pushToWebsite()
+      }
       emitStatus()
     },
     onNeedTranslation: (ids) => queue.enqueue(ids),
@@ -450,6 +515,13 @@ export function registerIpc(win: BrowserWindow): void {
 
   handle('status:get', (): SyncStatus => currentStatus())
 
+  handle('upload:status', (): UploadStatus => uploadStatus())
+
+  handle('upload:now', async (): Promise<UploadStatus> => {
+    await pushToWebsite()
+    return uploadStatus()
+  })
+
   handle('web:status', (): WebStatus => webStatus())
 
   handle('web:restart', async (): Promise<WebStatus> => {
@@ -472,7 +544,11 @@ export function registerIpc(win: BrowserWindow): void {
     invoke: async (channel, args) => {
       const fn = handlers.get(channel)
       if (!fn) throw new Error(`未知的操作：${channel}`)
-      return (fn as (...a: unknown[]) => unknown)(...args)
+      // A browser shares the inbox, not the credentials behind it — see web/remote.ts.
+      const result = await (fn as (...a: unknown[]) => unknown)(
+        ...sanitiseRemoteArgs(channel, args),
+      )
+      return redactForRemote(channel, result)
     },
     password: () => settings.public().webPassword,
     port: () => settings.public().webPort,

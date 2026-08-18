@@ -137,6 +137,8 @@ export class MessageStore {
           translationError: existing.translationError,
           translation: existing.translation,
           analysis: existing.analysis,
+          // Bookkeeping for the website push — ours, not the phone's.
+          uploadedState: existing.uploadedState,
           // Downloaded files and their descriptions are ours, not the phone's.
           attachments: mergeAttachments(existing.attachments, message.attachments),
         }
