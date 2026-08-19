@@ -1,4 +1,4 @@
-import { listDevices, probeDevice, resolveDevice, type AdbContext } from '../adb/adb'
+import { listDevices, probeDevice, resolveDevice, runAdb, type AdbContext } from '../adb/adb'
 import { connectWireless, disconnectWireless } from '../adb/wireless'
 import { ContactResolver } from '../adb/contacts'
 import { querySms } from '../adb/sms'
@@ -152,6 +152,18 @@ export class Syncer {
             if (device && !(await probeDevice({ adbPath, serial: device.serial }))) device = null
           }
         }
+      }
+
+      // Still nothing: the cable may be fine and the adb *server* wedged.
+      // Restart it once (rate-limited) and look again before reporting.
+      if (!device && (await this.restartAdbServer(adbPath))) {
+        this.deps.onPhase('connecting', '正在重启 adb 服务…')
+        device =
+          (await resolveDevice(adbPath, settings.deviceSerial)) ??
+          (settings.wirelessAddress
+            ? await resolveDevice(adbPath, settings.wirelessAddress)
+            : null)
+        if (device && !(await probeDevice({ adbPath, serial: device.serial }))) device = null
       }
 
       this.deps.onDevice(device)
@@ -369,6 +381,24 @@ export class Syncer {
    * for the same message — matching on peer, body, and a generous time window,
    * because the phone assigns its own timestamp.
    */
+  /** Last time the adb server was restarted to revive a wedged connection. */
+  private lastAdbRestartAt = 0
+
+  /**
+   * Restart the adb server, at most once every few minutes.
+   *
+   * On Windows the adb server itself wedges — typically after Samsung's own
+   * tools (Smart Switch, drivers) grab the USB connection — and from then on
+   * every command fails even though the cable is fine. Killing the server is
+   * the standard fix; the next adb command starts a fresh one automatically.
+   */
+  private async restartAdbServer(adbPath: string): Promise<boolean> {
+    if (Date.now() - this.lastAdbRestartAt < 5 * 60_000) return false
+    this.lastAdbRestartAt = Date.now()
+    await runAdb({ adbPath, serial: null }, ['kill-server'], { timeoutMs: 10_000 }).catch(() => {})
+    return true
+  }
+
   private prunePending(): void {
     const pending = this.deps.store.pendingLocal()
     if (!pending.length) return
