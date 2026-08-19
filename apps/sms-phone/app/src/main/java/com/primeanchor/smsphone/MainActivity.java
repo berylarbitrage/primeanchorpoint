@@ -2,7 +2,10 @@ package com.primeanchor.smsphone;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.NotificationManager;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -90,6 +93,7 @@ public class MainActivity extends Activity {
         tokenInput.setText(prefs.getString("token", ""));
 
         findViewById(R.id.syncNow).setOnClickListener(v -> syncNow());
+        findViewById(R.id.diag).setOnClickListener(v -> diagReport());
         findViewById(R.id.start).setOnClickListener(v -> saveAndStart());
         findViewById(R.id.stop).setOnClickListener(v -> {
             stopService(new Intent(this, SyncService.class));
@@ -227,6 +231,114 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             return "短信库读取失败: " + e.getMessage();
         }
+    }
+
+    // ── 一键诊断：所有关键状态凑成一段文字，复制给技术支持，免得来回猜 ──
+
+    private void diagReport() {
+        Toast.makeText(this, "正在生成（要连一下网站，几秒钟）……", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            final String report = buildDiagReport();
+            runOnUiThread(() -> {
+                ClipboardManager clipboard = getSystemService(ClipboardManager.class);
+                if (clipboard != null) {
+                    clipboard.setPrimaryClip(ClipData.newPlainText("诊断报告", report));
+                }
+                new AlertDialog.Builder(this)
+                        .setTitle("诊断报告（已自动复制）")
+                        .setMessage(report + "\n\n已复制到剪贴板，去聊天里长按粘贴发出即可。")
+                        .setPositiveButton("好", null)
+                        .show();
+            });
+        }).start();
+    }
+
+    private String buildDiagReport() {
+        SharedPreferences prefs = getSharedPreferences("cfg", MODE_PRIVATE);
+        StringBuilder r = new StringBuilder("【短信同步诊断】v0.5.0\n");
+        SimpleDateFormat fmt = new SimpleDateFormat("MM-dd HH:mm:ss", Locale.getDefault());
+
+        r.append("状态: ").append(prefs.getString("status", "(无)")).append("\n");
+        long beat = prefs.getLong("beat", 0);
+        r.append("心跳: ").append(beat == 0 ? "无" : fmt.format(new Date(beat))
+                + "（" + (System.currentTimeMillis() - beat) / 1000 + " 秒前）").append("\n");
+        long cursor = prefs.getLong("cursor", 0);
+        r.append("游标: ").append(cursor == 0 ? "未开始" : fmt.format(new Date(cursor))).append("\n");
+        r.append("累计: 推 ").append(prefs.getLong("pushedTotal", 0))
+                .append(" / 发 ").append(prefs.getLong("sentTotal", 0)).append("\n");
+        r.append("上次推送: ").append(prefs.getString("lastPush", "(无)")).append("\n");
+        String lastError = prefs.getString("lastError", "");
+        r.append("最近错误: ").append(lastError.isEmpty() ? "(无)" : lastError).append("\n");
+
+        r.append("权限: 读").append(has(Manifest.permission.READ_SMS) ? "✓" : "✗")
+                .append(" 发").append(has(Manifest.permission.SEND_SMS) ? "✓" : "✗");
+        android.os.PowerManager power = getSystemService(android.os.PowerManager.class);
+        r.append(" 电池").append(power != null && power.isIgnoringBatteryOptimizations(getPackageName()) ? "✓" : "✗")
+                .append("\n");
+        r.append("默认短信App: ").append(Telephony.Sms.getDefaultSmsPackage(this)).append("\n");
+
+        r.append(smsWindow("24小时", 24L * 3600 * 1000));
+        r.append(smsWindow("7天", 7L * 24 * 3600 * 1000));
+        r.append(recentRows());
+
+        // 现场连一次网站，把结果原样带上
+        String base = prefs.getString("url", "").trim().replaceAll("/+$", "");
+        String token = prefs.getString("token", "").trim();
+        if (base.isEmpty() || token.isEmpty()) {
+            r.append("连接测试: 网址或令牌为空\n");
+        } else {
+            try {
+                org.json.JSONObject resp = Api.getJson(base + "/api/device-sms/outbox", token);
+                org.json.JSONArray queue = resp.optJSONArray("messages");
+                r.append("连接测试: 通，待发送队列 ")
+                        .append(queue == null ? 0 : queue.length()).append(" 条\n");
+            } catch (Exception e) {
+                r.append("连接测试: 失败 — ").append(e.getMessage()).append("\n");
+            }
+        }
+        return r.toString();
+    }
+
+    private String smsWindow(String label, long windowMs) {
+        try {
+            long since = System.currentTimeMillis() - windowMs;
+            int received = 0, sent = 0;
+            try (Cursor cursor = getContentResolver().query(Telephony.Sms.CONTENT_URI,
+                    new String[]{"type"}, "date > ?",
+                    new String[]{String.valueOf(since)}, null)) {
+                while (cursor != null && cursor.moveToNext()) {
+                    int type = cursor.getInt(0);
+                    if (type == Telephony.Sms.MESSAGE_TYPE_INBOX) received++;
+                    else if (type != Telephony.Sms.MESSAGE_TYPE_DRAFT) sent++;
+                }
+            }
+            return "短信库" + label + ": 收 " + received + " / 发 " + sent + "\n";
+        } catch (Exception e) {
+            return "短信库" + label + ": 读取失败 " + e.getMessage() + "\n";
+        }
+    }
+
+    private String recentRows() {
+        StringBuilder r = new StringBuilder("最近 5 条(含收发):\n");
+        SimpleDateFormat fmt = new SimpleDateFormat("MM-dd HH:mm", Locale.getDefault());
+        try (Cursor cursor = getContentResolver().query(Telephony.Sms.CONTENT_URI,
+                new String[]{"address", "date", "type", "body"}, null, null, "date DESC")) {
+            int n = 0;
+            while (cursor != null && cursor.moveToNext() && n < 5) {
+                int type = cursor.getInt(2);
+                if (type == Telephony.Sms.MESSAGE_TYPE_DRAFT) continue;
+                String body = cursor.getString(3) == null ? "" : cursor.getString(3);
+                if (body.length() > 12) body = body.substring(0, 12) + "…";
+                r.append(type == Telephony.Sms.MESSAGE_TYPE_INBOX ? "收 " : "发 ")
+                        .append(fmt.format(new Date(cursor.getLong(1)))).append(" ")
+                        .append(cursor.getString(0)).append("「").append(body).append("」\n");
+                n++;
+            }
+            if (n == 0) r.append("(一条都没有)\n");
+        } catch (Exception e) {
+            r.append("读取失败 ").append(e.getMessage()).append("\n");
+        }
+        return r.toString();
     }
 
     private boolean has(String permission) {
