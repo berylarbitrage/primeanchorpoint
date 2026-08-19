@@ -149,6 +149,10 @@ public class MainActivity extends Activity {
                 "电池不限制", "不修的话系统过一会就把同步杀了");
     }
 
+    private boolean has(String permission) {
+        return checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED;
+    }
+
     private void paint(int color, String text) {
         statusCard.setBackgroundColor(color);
         statusCard.setText(text);
