@@ -398,20 +398,33 @@ const _verifiedTarget = { phone: '', email: '' }; // value that was verified
 function showErr(msg) { const b = document.getElementById('errBox'); b.textContent = msg; b.style.display = ''; window.scrollTo({ top: 0, behavior: 'smooth' }); }
 function setMsg(ch, text, ok) { const m = document.getElementById(ch + 'Msg'); m.textContent = text || ''; m.className = 'msg' + (text ? (ok ? ' ok' : ' bad') : ''); }
 
+// 页面脚本一出错就写到错误框里 —— 手机上宁可看到错误也不能是一片白
+window.onerror = function (message) {
+  try { showErr('Error: ' + message); } catch (_) {}
+};
+
 async function init() {
   applyLang();
   if (FOREMAN) { document.getElementById('formMain').style.display = ''; return; }
   if (!TOKEN) { showErr(I18N[_lang].errNoToken); document.getElementById('partnerName').textContent = '—'; return; }
+  // 表单先亮出来：查公司信息的请求在手机网络上可能很慢甚至挂住，
+  // 不能让人对着白屏等。链接真失效了下面才收起表单报错；提交时服务器还会验 token。
+  document.getElementById('formMain').style.display = '';
   try {
     const r = await fetch('/api/apply/info?t=' + encodeURIComponent(TOKEN));
-    if (!r.ok) { const j = await r.json().catch(() => ({})); showErr(j.error || I18N[_lang].invalid); document.getElementById('partnerName').textContent = '—'; return; }
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      showErr(j.error || I18N[_lang].invalid);
+      document.getElementById('partnerName').textContent = '—';
+      document.getElementById('formMain').style.display = 'none';
+      return;
+    }
     const info = await r.json();
     _partnerName = info.partner_name || '';
     document.getElementById('partnerName').textContent = _partnerName
       ? I18N[_lang].sendingTo + _partnerName + (APPLY_STATE ? ' · 📍 ' + APPLY_STATE : '')
       : (APPLY_STATE ? '📍 ' + APPLY_STATE : '');
-    document.getElementById('formMain').style.display = '';
-  } catch (e) { showErr('Error: ' + (e.message || e)); }
+  } catch (e) { /* 网络抖一下不挡人填表 —— token 无效的话提交时服务器会拦 */ }
 }
 init();
 
