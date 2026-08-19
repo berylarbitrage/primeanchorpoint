@@ -516,6 +516,7 @@ function conversations() {
     out.push({
       peer, list, last, maxRisk, queued, address,
       note: noted.note || '', tags: noted.tags || [], status: noted.status || 'open',
+      spoken: (() => { try { return JSON.parse(noted.spoken_langs || '[]'); } catch (_) { return []; } })(),
       contactLang: noted.contact_lang || '', agentLang: noted.agent_lang || '',
       autoTranslate: noted.auto_translate === undefined ? 1 : noted.auto_translate,
       unread: unreadCount(list, noted.read_at),
@@ -571,6 +572,7 @@ function renderThreads(convos) {
       + (c.queued ? '<span class="badge queued">待发送 ' + c.queued + '</span>' : '')
       + (c.status === 'closed' ? '<span class="badge">已关闭</span>' : '')
       + (c.contactLang ? '<span class="badge">→ ' + esc(c.contactLang) + '</span>' : '')
+      + ((c.spoken || []).length ? '<span class="badge">🗣 ' + c.spoken.map(l => SPOKEN_LABELS[l] || l).join('·') + '</span>' : '')
       + (c.tags || []).map(t => '<span class="tag">🏷 ' + esc(t) + '</span>').join('')
       + '</div></div></button>';
   }).join('')
@@ -701,8 +703,10 @@ function renderDetail(convos) {
     + '收到的消息自动翻译</label>'
     + '<button class="action-btn" onclick="retranslate()" title="让电脑把这个会话重新翻译一遍">🔁 重新翻译</button>'
     + '</div>'
-    + ((convo.tags || []).length
-        ? '<div class="tag-bar">' + convo.tags.map(t => '<span class="tag">🏷 ' + esc(t)
+    + (((convo.tags || []).length || (convo.spoken || []).length)
+        ? '<div class="tag-bar">'
+          + (convo.spoken || []).map(l => '<span class="tag">🗣 ' + (SPOKEN_LABELS[l] || esc(l)) + '</span>').join('')
+          + convo.tags.map(t => '<span class="tag">🏷 ' + esc(t)
             + '<button title="去掉这个标签" onclick="removeTag(\'' + esc(t) + '\')">×</button></span>').join('')
           + '<button class="tag-add" onclick="editTags()">+ 标签</button></div>'
         : '')
@@ -1256,19 +1260,32 @@ function removeTag(tag) {
 
 /* 标签编辑：常用工种一点即加（和 SMS Inbox 同一组），已有的点 × 删，自定义回车添加。 */
 const COMMON_TAGS = ['普工', '拣货', '叉车工', '高位叉车', '卸柜工', '打包', '分拣', '装卸'];
+const SPOKEN_LABELS = { zh: '中文', en: '英语', es: '西语' };
 let TAG_DRAFT = [];
 
 function editTags() {
   const convo = conversations().find(c => c.peer === PEER);
   if (!convo) return;
   TAG_DRAFT = (convo.tags || []).slice();
+  const spoken = convo.spoken || [];
+  const langBox = (code, label) =>
+    '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.82rem;'
+    + 'border:1px solid var(--gray-200);border-radius:8px;padding:6px 12px">'
+    + '<input type="checkbox" id="spk_' + code + '"' + (spoken.includes(code) ? ' checked' : '') + '>'
+    + label + '</label>';
   openModal('<h2>标签 · ' + esc(convo.title) + '</h2>'
+    + '<div class="hint">会什么语言（可多选）</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px">'
+    + langBox('zh', '🇨🇳 中文') + langBox('en', '🇺🇸 English 英语') + langBox('es', '🇲🇽 Español 西语') + '</div>'
     + '<div class="hint">已有标签（点 × 去掉）</div>'
     + '<div class="filter-row" id="tagNow"></div>'
     + '<div class="hint">常用（做过的工种，点一下加上）</div>'
     + '<div class="filter-row" id="tagQuick"></div>'
     + '<input id="tagInput" placeholder="自定义标签，回车添加（如: GOFO上过班 / 靠谱 / 有车）">'
     + '<div class="hint">标签会出现在左边的筛选栏里，点一下就只看带这个标签的会话。</div>'
+    + '<div class="hint">备注（要求 / 上班情况等）</div>'
+    + '<textarea id="tagNote" rows="3" style="width:100%;border:1px solid var(--gray-200);border-radius:12px;'
+    + 'padding:8px 12px;font-size:.82rem;font-family:inherit;resize:vertical">' + esc(convo.note || '') + '</textarea>'
     + '<div class="row"><button class="action-btn" onclick="closeModal()">取消</button>'
     + '<button class="action-btn primary" id="tagSave">保存</button></div>');
 
@@ -1285,8 +1302,10 @@ function editTags() {
     document.getElementById('tagInput').value.split(/[,，]/).map(t => t.trim()).filter(Boolean)
       .forEach(t => { if (!TAG_DRAFT.includes(t)) TAG_DRAFT.push(t); });
     const tags = TAG_DRAFT.slice();
+    const spokenLangs = ['zh', 'en', 'es'].filter(c => document.getElementById('spk_' + c).checked);
+    const note = document.getElementById('tagNote').value.trim();
     closeModal();
-    await savePeer({ tags });
+    await savePeer({ tags, spoken_langs: spokenLangs, note });
   };
 }
 

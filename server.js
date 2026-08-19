@@ -30511,6 +30511,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS device_sms_peer_notes (
   note TEXT DEFAULT '',
   updated_at TEXT DEFAULT (datetime('now'))
 )`);
+try { db.exec(`ALTER TABLE device_sms_peer_notes ADD COLUMN spoken_langs TEXT DEFAULT ''`); } catch (e) {}
 // 后加的列 (老库也能平滑升级)
 try { db.exec(`ALTER TABLE device_sms_peer_notes ADD COLUMN tags TEXT DEFAULT '[]'`); } catch(e) {}
 try { db.exec(`ALTER TABLE device_sms_peer_notes ADD COLUMN status TEXT DEFAULT 'open'`); } catch(e) {}
@@ -30925,6 +30926,12 @@ app.post('/api/device-sms/peer', requireAdmin, requireRole('admin'), (req, res) 
     if (body.contact_lang !== undefined) put('contact_lang', String(body.contact_lang).slice(0, 40));
     if (body.agent_lang !== undefined) put('agent_lang', String(body.agent_lang).slice(0, 40));
     if (body.auto_translate !== undefined) put('auto_translate', body.auto_translate ? 1 : 0);
+    // 会什么语言（多选 zh/en/es，标记用，与翻译语言 contact_lang 无关）
+    if (body.spoken_langs !== undefined) {
+      const langs = (Array.isArray(body.spoken_langs) ? body.spoken_langs : [])
+        .map(v => String(v)).filter(v => ['zh', 'en', 'es'].includes(v));
+      put('spoken_langs', JSON.stringify([...new Set(langs)]));
+    }
     // read: true = 现在读到这儿了; false = 标为未读
     if (body.read !== undefined) put('read_at', body.read ? new Date().toISOString() : null);
     if (!sets.length) return res.json({ success: true });
@@ -31015,7 +31022,7 @@ app.get('/api/device-sms/messages', requireAdmin, requireRole('admin'), (req, re
     const outbox = db.prepare(`SELECT id, to_address, peer, body, status, note, created_at FROM device_sms_outbox
       WHERE status IN ('pending','failed') ORDER BY id ASC LIMIT 100`).all();
     const notes = db.prepare(`SELECT peer, alias, note, tags, status, contact_lang, agent_lang,
-      auto_translate, read_at FROM device_sms_peer_notes`).all();
+      auto_translate, read_at, spoken_langs FROM device_sms_peer_notes`).all();
     res.json({ messages: rows.reverse(), devices, outbox, notes, total, offset, limit });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
