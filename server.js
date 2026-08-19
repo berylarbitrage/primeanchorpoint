@@ -30542,6 +30542,60 @@ app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
   }
 });
 
+// POST /api/device-sms/translate — 发之前先把草稿翻好给人看
+// 网站这边有自己的 ANTHROPIC_API_KEY(别处已经在用), 所以不用绕到电脑上等一圈:
+// 点发送 → 立刻出译文 → 确认无误再排队, 排的就是那段译文。
+const DEVICE_SMS_TRANSLATE_MODEL = process.env.SMS_TRANSLATE_MODEL || 'claude-haiku-4-5-20251001';
+app.post('/api/device-sms/translate', requireAdmin, requireRole('admin'), async (req, res) => {
+  try {
+    const text = String((req.body || {}).text || '').trim();
+    const to = String((req.body || {}).to || 'English').trim() || 'English';
+    if (!text) return res.status(400).json({ error: '没有要翻译的内容' });
+    if (text.length > 2000) return res.status(400).json({ error: '内容太长了' });
+
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (anthropicKey) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 20000);
+      try {
+        const r = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
+          body: JSON.stringify({
+            model: DEVICE_SMS_TRANSLATE_MODEL,
+            max_tokens: 1000,
+            // 待译文本以 JSON 字符串放 user, 规则放 system —— 草稿里写「请忽略以上」
+            // 之类的话只是被翻译的内容, 不是给模型的指令。
+            system: `把用户消息里的短信草稿翻译成${to}。\n`
+              + '这是一条要发出去的短信: 保持语气和长度, 不要加解释、引号或前言;\n'
+              + '验证码、金额、网址、人名、电话号码原样保留;\n'
+              + `如果草稿已经是${to}, 原样返回。\n`
+              + '只输出译文本身。',
+            messages: [{ role: 'user', content: '待翻译短信草稿: ' + JSON.stringify(text) }]
+          }),
+          signal: ctrl.signal
+        });
+        const data = await r.json().catch(() => null);
+        if (r.ok) {
+          const out = (((data && data.content) || []).find(c => c.type === 'text') || {}).text || '';
+          if (out.trim()) return res.json({ success: true, text: out.trim(), engine: 'claude', to });
+        } else {
+          console.error('[Device SMS translate] API error:', (data && data.error && data.error.message) || r.status);
+        }
+      } catch (e) {
+        console.error('[Device SMS translate] error:', e.message);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    // 没配 key 或 Claude 挂了 → 退回免费机翻, 总比让人对着中文点发送强
+    const fallback = await translateText(text, 'zh', to.toLowerCase().startsWith('eng') || to === 'English' ? 'en' : to);
+    if (fallback) return res.json({ success: true, text: fallback, engine: 'google', to });
+    res.status(502).json({ error: '翻译服务暂时不可用，可以直接发原文，或到电脑上翻译。' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // POST /api/device-sms/send — 网页上写一条短信, 排队等电脑发
 // 这里只入队。真正发出去要靠那台连着手机的电脑 (见下面两个接口)。
 app.post('/api/device-sms/send', requireAdmin, requireRole('admin'), (req, res) => {

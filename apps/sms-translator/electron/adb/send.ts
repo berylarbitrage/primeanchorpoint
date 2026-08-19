@@ -135,15 +135,15 @@ function scoreSendCandidate(node: UiNode): number {
  *
  * Not every ROM accepts `/dev/tty`, so the file route stays as a fallback.
  */
-async function dumpUi(ctx: AdbContext): Promise<string> {
+async function dumpUi(ctx: AdbContext, prefix = ''): Promise<string> {
   const direct = await runAdb(
     ctx,
-    ['exec-out', 'uiautomator', 'dump', '--compressed', '/dev/tty'],
+    ['exec-out', `${prefix}uiautomator dump --compressed /dev/tty`],
     { timeoutMs: 25_000 },
   ).catch(() => null)
   if (direct && direct.code === 0 && direct.stdout.includes('<node')) return direct.stdout
 
-  const dump = await runAdb(ctx, ['shell', 'uiautomator', 'dump', '--compressed', DUMP_PATH], {
+  const dump = await runAdb(ctx, ['shell', `${prefix}uiautomator dump --compressed ${DUMP_PATH}`], {
     timeoutMs: 25_000,
   })
   if (dump.code !== 0) return ''
@@ -179,15 +179,23 @@ function pickSendButton(xml: string): UiNode | null {
  * immediately and repeats until the deadline: fast phones get fast, slow phones
  * still work.
  */
-async function findSendButton(ctx: AdbContext, budgetMs: number): Promise<UiNode | null> {
+async function findSendButton(
+  ctx: AdbContext,
+  budgetMs: number,
+  intent?: string,
+): Promise<UiNode | null> {
   const deadline = Date.now() + Math.max(budgetMs * 2, 4_000)
-  let wait = 350
+  // First pass: fire the intent and read the screen in the same call, with the
+  // wait happening on the phone rather than as a second round trip.
+  let prefix = intent ? `${intent} >/dev/null 2>&1; sleep 0.4; ` : ''
+  let wait = intent ? 0 : 350
   for (;;) {
-    await delay(wait)
-    const found = pickSendButton(await dumpUi(ctx))
+    if (wait) await delay(wait)
+    const found = pickSendButton(await dumpUi(ctx, prefix))
     if (found) return found
     if (Date.now() >= deadline) return null
-    wait = 600
+    prefix = ''
+    wait = 500
   }
 }
 
@@ -224,27 +232,15 @@ export async function sendSms(
     )
   }
 
-  await runAdbChecked(
-    ctx,
-    [
-      'shell',
-      'am',
-      'start',
-      '-a',
-      'android.intent.action.SENDTO',
-      '-d',
-      shellQuote(`sms:${recipient}`),
-      '--es',
-      'sms_body',
-      shellQuote(body),
-      '--ez',
-      'exit_on_sent',
-      'true',
-    ],
-    { timeoutMs: 20_000 },
-  )
+  const intent = [
+    'am start -a android.intent.action.SENDTO',
+    `-d ${shellQuote(`sms:${recipient}`)}`,
+    `--es sms_body ${shellQuote(body)}`,
+    '--ez exit_on_sent true',
+  ].join(' ')
 
   if (opts.method === 'manual') {
+    await runAdbChecked(ctx, ['shell', intent], { timeoutMs: 20_000 })
     return {
       ok: true,
       note: '草稿已在手机上打开，请在手机上点发送。',
@@ -252,7 +248,9 @@ export async function sendSms(
   }
 
   if (opts.method === 'ui') {
-    const button = await findSendButton(ctx, opts.tapDelayMs)
+    // Opening the app and reading the screen in ONE adb call: each call costs a
+    // connection setup, and this is the pair that runs on every single message.
+    const button = await findSendButton(ctx, opts.tapDelayMs, intent)
     if (button) {
       await runAdbChecked(ctx, [
         'shell',
@@ -280,6 +278,7 @@ export async function sendSms(
 
   // The keyevent route cannot tell whether the app is ready, so it keeps the
   // plain wait.
+  await runAdbChecked(ctx, ['shell', intent], { timeoutMs: 20_000 })
   await delay(Math.max(300, opts.tapDelayMs))
   await runAdbChecked(ctx, ['shell', 'input', 'keyevent', String(KEYCODE_DPAD_RIGHT)])
   await runAdbChecked(ctx, ['shell', 'input', 'keyevent', String(KEYCODE_ENTER)])

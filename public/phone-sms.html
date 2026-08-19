@@ -150,6 +150,10 @@ button,input,select,textarea{font-family:inherit}
 .reply-bar .send-btn:hover{background:var(--blue)}
 .reply-bar .send-btn:disabled{opacity:.4;cursor:not-allowed}
 .reply-hint{flex-basis:100%;font-size:.72rem;color:var(--gray-400);padding:0 6px}
+.preview-box{flex-basis:100%;background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:9px 13px;
+  font-size:.88rem;line-height:1.5;color:#1e3a5f;display:grid;gap:8px}
+.preview-box .label{font-size:.7rem;font-weight:700;color:#2563eb}
+.preview-box .row{display:flex;gap:8px;flex-wrap:wrap}
 .reply-hint.err{color:var(--red)}
 .to-row{flex-basis:100%;display:flex;align-items:center;gap:8px}
 .to-row input{flex:1;border:1px solid var(--gray-200);border-radius:20px;padding:9px 16px;font-size:.9rem;outline:none}
@@ -236,6 +240,9 @@ let MESSAGES = [], OUTBOX = [], NOTES = {}, DEVICES = [];
 let PEER = null, RISK = false, QUEUED_ONLY = false, COMPOSING = false;
 let STARRED_ONLY = false, UNREAD_ONLY = false, SHOW_CLOSED = false, TAG_FILTER = '';
 let LIMIT = 400, TOTAL = 0;
+// 默认译成英文；每个会话可以在「对方」下拉里改，改了就记住
+const DEFAULT_SEND_LANG = 'English';
+let PREVIEW = null;
 let searchTimer = null;
 
 const RISK_LABELS = { personal:'私人', verification:'验证码', bank:'银行', delivery:'物流',
@@ -613,18 +620,22 @@ function contactBar(title, sub, composing) {
 }
 
 function replyBar(composing) {
+  // 默认译成英文 —— 这台手机基本都是发给英语的人
+  const convo = COMPOSING ? null : conversations().find(c => c.peer === PEER);
+  const chosen = (convo && convo.contactLang) || DEFAULT_SEND_LANG;
   return '<div class="reply-bar">'
     + (composing
         ? '<div class="to-row"><span style="font-size:.8rem;color:var(--gray-600)">发给</span>'
           + '<input type="text" id="toInput" placeholder="号码，例如 +13128437890"></div>'
         : '')
-    + '<select id="langSel" title="让电脑先翻译成这个语言再发">'
-    + '<option value="">不翻译</option>'
-    + LANGUAGES.map(l => '<option value="' + l + '">译成 ' + l + '</option>').join('')
+    + '<div class="preview-box" id="previewBox" style="display:none"></div>'
+    + '<select id="langSel" onchange="pickSendLang(this.value)" title="发送前先翻译成这个语言">'
+    + LANGUAGES.map(l => '<option value="' + l + '"' + (l === chosen ? ' selected' : '') + '>译成 ' + l + '</option>').join('')
+    + '<option value=""' + (chosen ? '' : ' selected') + '>不翻译，直接发原文</option>'
     + '</select>'
-    + '<textarea id="draft" rows="1" placeholder="写短信…"></textarea>'
-    + '<button class="send-btn" id="sendBtn" onclick="queueSend()" title="发送（Ctrl+Enter）">&#9654;</button>'
-    + '<div class="reply-hint" id="sendNote">电脑收到后会用手机发出去 — 电脑要开着、手机要连着。</div>'
+    + '<textarea id="draft" rows="1" placeholder="写短信…（写中文即可）" oninput="clearPreview()"></textarea>'
+    + '<button class="send-btn" id="sendBtn" onclick="queueSend()" title="翻译并发送（Ctrl+Enter）">&#9654;</button>'
+    + '<div class="reply-hint" id="sendNote">选了语言就会先翻好给你看，确认后再发。</div>'
     + '</div>';
 }
 
@@ -662,43 +673,116 @@ function backToList() {
   render();
 }
 
+/** 改了发送语言就记在这个会话上，下次还用它。 */
+function pickSendLang(lang) {
+  clearPreview();
+  if (!COMPOSING && PEER) void savePeer({ contact_lang: lang });
+}
+
+function clearPreview() {
+  PREVIEW = null;
+  const box = document.getElementById('previewBox');
+  if (box) box.style.display = 'none';
+}
+
+/** 把译文摆出来，等人点确认。发出去的就是这一段。 */
+function showPreview(text, lang) {
+  PREVIEW = { text, lang };
+  const box = document.getElementById('previewBox');
+  box.style.display = '';
+  box.innerHTML = '<span class="label">译文（' + esc(lang) + '）— 点「确认发送」发出去的就是这段</span>'
+    + '<div>' + esc(text) + '</div>'
+    + '<div class="row">'
+    + '<button class="action-btn primary" onclick="confirmSend()">确认发送</button>'
+    + '<button class="action-btn" onclick="clearPreview()">改一改</button>'
+    + '<button class="action-btn" onclick="sendRaw()">直接发原文</button>'
+    + '</div>';
+}
+
+function currentTarget() {
+  if (COMPOSING) return null;
+  const convo = conversations().find(c => c.peer === PEER);
+  if (!convo) return null;
+  return { peer: convo.peer, to: convo.address };
+}
+
+/** 确认后把译文排进队列。 */
+function confirmSend() {
+  if (!PREVIEW) return;
+  void enqueue(PREVIEW.text, '');
+}
+
+/** 不翻译，把写的原样发出去。 */
+function sendRaw() {
+  const body = document.getElementById('draft').value.trim();
+  if (body) void enqueue(body, '');
+}
+
+/**
+ * 点发送：选了语言就先翻译并摆出来等确认；没选语言就直接排队。
+ *
+ * 翻译在网站这边做（服务器有自己的 API key），所以是立刻出结果，不用等那台
+ * 电脑轮询。确认之后排进队列的是【译文】，电脑拿到什么就发什么。
+ */
 async function queueSend() {
-  const convos = conversations();
-  const convo = COMPOSING ? null : convos.find(c => c.peer === PEER);
   const note = document.getElementById('sendNote');
-  const box = document.getElementById('draft');
-  const body = box.value.trim();
+  const body = document.getElementById('draft').value.trim();
   const translateTo = document.getElementById('langSel').value;
   note.className = 'reply-hint';
-  if (!convo && !COMPOSING) return;
   if (!body) { note.textContent = '还没写内容。'; note.className = 'reply-hint err'; return; }
+  if (PREVIEW) { confirmSend(); return; }
+  if (!translateTo) { void enqueue(body, ''); return; }
 
+  const btn = document.getElementById('sendBtn');
+  btn.disabled = true;
+  note.textContent = '翻译中…';
+  try {
+    const r = await api('/device-sms/translate', {
+      method: 'POST', body: JSON.stringify({ text: body, to: translateTo })
+    });
+    if (!r.success || !r.text) {
+      note.textContent = (r.error || '翻译失败') + '（可以点「直接发原文」）';
+      note.className = 'reply-hint err';
+      showPreview(body, '原文');
+      return;
+    }
+    note.textContent = '确认一下，没问题再发。';
+    showPreview(r.text, translateTo);
+  } catch (e) {
+    note.textContent = e.message;
+    note.className = 'reply-hint err';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/** 真正排进待发队列。 */
+async function enqueue(body, translateTo) {
+  const note = document.getElementById('sendNote');
+  const target = currentTarget();
   let to = '';
   if (COMPOSING) {
     to = document.getElementById('toInput').value.trim();
     if (!to) { note.textContent = '先填收件号码。'; note.className = 'reply-hint err'; return; }
   } else {
-    to = convo.address;
+    if (!target) return;
+    to = target.to;
   }
 
   const btn = document.getElementById('sendBtn');
   btn.disabled = true;
   try {
-    const peer = convo ? convo.peer : to.replace(/[^0-9]/g, '').slice(-10);
+    const peer = target ? target.peer : to.replace(/[^0-9]/g, '').slice(-10);
     const r = await api('/device-sms/send', {
-      method: 'POST',
-      body: JSON.stringify({ to, peer, body, translate_to: translateTo })
+      method: 'POST', body: JSON.stringify({ to, peer, body, translate_to: translateTo })
     });
     if (!r.success) { note.textContent = r.error || '排队失败'; note.className = 'reply-hint err'; return; }
     if (COMPOSING) { COMPOSING = false; PEER = peer; }
+    clearPreview();
     await load(true);
-    // load() 重画了整个面板, 提示要写到新的那个节点上
+    // load() 重画了整个面板, 提示写到新的那个节点上
     const hint = document.getElementById('sendNote');
-    if (hint) {
-      hint.textContent = translateTo
-        ? '已排队。电脑会先翻成' + translateTo + '，再用手机发出去。'
-        : '已排队，等电脑发出去。';
-    }
+    if (hint) hint.textContent = '已排队，电脑马上发出去。';
   } catch (e) {
     note.textContent = e.message;
     note.className = 'reply-hint err';
