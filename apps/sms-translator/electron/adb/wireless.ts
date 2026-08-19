@@ -141,3 +141,76 @@ export async function readWifiAddress(ctx: AdbContext): Promise<string | null> {
   const match = /inet\s+(\d+\.\d+\.\d+\.\d+)/.exec(result.stdout)
   return match ? match[1] : null
 }
+
+/**
+ * A phone advertising itself for wireless debugging.
+ *
+ * Android publishes both services over mDNS: `_adb-tls-pairing._tcp` while the
+ * pairing dialog is open, and `_adb-tls-connect._tcp` whenever wireless
+ * debugging is on. The connect one carries exactly the address the user is
+ * otherwise expected to copy off the phone screen — so we can just look it up
+ * instead of asking them to read two similar-looking ports correctly.
+ */
+export interface MdnsService {
+  name: string
+  type: 'connect' | 'pairing'
+  address: string
+}
+
+/**
+ * Parse `adb mdns services`.
+ *
+ * The output is tab-separated and the header line varies between versions:
+ *
+ *   List of discovered mdns services
+ *   adb-R5CX90ABCDE-Ab3xYz	_adb-tls-connect._tcp	192.168.1.42:41235
+ */
+export function parseMdnsServices(output: string): MdnsService[] {
+  const out: MdnsService[] = []
+  for (const line of output.split(/\r?\n/)) {
+    const parts = line.trim().split(/\t+|\s{2,}/).filter(Boolean)
+    if (parts.length < 3) continue
+    const [name, service, address] = parts
+    if (!/_adb-tls-(connect|pairing)\._tcp/.test(service)) continue
+    const normalised = normaliseAddress(address)
+    if (!normalised) continue
+    out.push({
+      name,
+      type: /pairing/.test(service) ? 'pairing' : 'connect',
+      address: normalised,
+    })
+  }
+  return out
+}
+
+/** Pick the address to connect to, preferring one on the same subnet as `hint`. */
+export function pickConnectAddress(services: MdnsService[], hint = ''): string | null {
+  const connects = services.filter((s) => s.type === 'connect')
+  if (!connects.length) return null
+  const prefix = hint.trim().split(':')[0].split('.').slice(0, 3).join('.')
+  if (prefix.split('.').length === 3) {
+    const sameSubnet = connects.find((s) => s.address.startsWith(prefix + '.'))
+    if (sameSubnet) return sameSubnet.address
+  }
+  return connects[0].address
+}
+
+/**
+ * Ask adb what phones are advertising themselves right now.
+ *
+ * Needs platform-tools 30+ and adb's own mDNS support; where it is missing the
+ * command fails and this simply returns nothing, leaving the manual field.
+ */
+export async function discoverWireless(ctx: AdbContext): Promise<MdnsService[]> {
+  const res = await runAdb(ctx, ['mdns', 'services'], { timeoutMs: 15_000 }).catch(() => null)
+  if (!res || res.code !== 0) return []
+  return parseMdnsServices(res.stdout)
+}
+
+/** True when two `host:port` values sit in the same /24 — a rough "same WiFi". */
+export function sameSubnet(a: string, b: string): boolean {
+  const net = (value: string) => value.trim().split(':')[0].split('.').slice(0, 3).join('.')
+  const left = net(a)
+  const right = net(b)
+  return left.split('.').length === 3 && left === right
+}

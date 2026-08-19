@@ -81,5 +81,38 @@ check(
   true,
 )
 
+
+// --- mDNS discovery: the phone advertises the connect address itself ---
+const { parseMdnsServices, pickConnectAddress, sameSubnet } = require(
+  require('node:path').join(__dirname, '..', 'dist-electron', 'electron', 'adb', 'wireless.js'),
+)
+
+const MDNS = [
+  'List of discovered mdns services',
+  'adb-R5CX90ABCDE-Ab3xYz\t_adb-tls-connect._tcp\t192.168.1.42:41235',
+  'adb-R5CX90ABCDE-Ab3xYz\t_adb-tls-pairing._tcp\t192.168.1.42:37419',
+  'adb-OTHERPHONE-Zz9\t_adb-tls-connect._tcp\t10.0.0.9:44100',
+].join('\n')
+
+const services = parseMdnsServices(MDNS)
+check('the header line is not a service', services.length, 3)
+check('pairing and connect are told apart', services.map((s) => s.type), ['connect', 'pairing', 'connect'])
+check(
+  'the connect address is the one to use',
+  pickConnectAddress(services, '192.168.1.7:5555'),
+  '192.168.1.42:41235',
+)
+check(
+  'a phone on another subnet is not preferred',
+  pickConnectAddress(services, '10.0.0.5:5555'),
+  '10.0.0.9:44100',
+)
+check('nothing advertised yields nothing', pickConnectAddress(parseMdnsServices('')), null)
+check('garbage output does not throw', parseMdnsServices('adb: unknown command'), [])
+
+check('same /24 counts as same network', sameSubnet('192.168.1.7', '192.168.1.42:41235'), true)
+check('different /24 does not', sameSubnet('192.168.1.7', '10.0.0.9:41235'), false)
+check('an empty address is never "same"', sameSubnet('', '192.168.1.42:41235'), false)
+
 console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`)
 process.exit(failures === 0 ? 0 : 1)

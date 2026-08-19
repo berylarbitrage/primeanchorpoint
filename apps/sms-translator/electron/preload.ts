@@ -37,6 +37,8 @@ const bridge: SmsBridge = {
     ipcRenderer.invoke('wireless:enableOverUsb') as Promise<
       WirelessResult & { suggestedAddress?: string }
     >,
+  discoverWireless: () =>
+    ipcRenderer.invoke('wireless:discover') as Promise<WirelessResult & { address?: string }>,
 
   listMessages: () => ipcRenderer.invoke('sms:list') as Promise<SmsMessage[]>,
   sync: (mode) => ipcRenderer.invoke('sms:sync', mode) as Promise<{ imported: number }>,

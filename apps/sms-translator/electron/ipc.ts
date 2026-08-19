@@ -5,9 +5,12 @@ import { AdbLocator, verifyAdb } from './adb/locate'
 import {
   connectWireless,
   disconnectWireless,
+  discoverWireless,
   enableTcpip,
   pairWireless,
+  pickConnectAddress,
   readWifiAddress,
+  sameSubnet,
 } from './adb/wireless'
 import { dialNumber, sendSms } from './adb/send'
 import { listPhoneContacts } from './adb/contacts'
@@ -166,13 +169,38 @@ async function pushToWebsite(): Promise<void> {
 }
 
 /**
+ * The phone this app should talk to right now.
+ *
+ * The saved serial is usually the USB one; when the cable is out the same
+ * phone is still present under its wireless address, so try both before
+ * declaring it gone.
+ */
+async function resolveTarget(adbPath: string): Promise<DeviceInfo | null> {
+  const current = settings.public()
+  const bySerial = await resolveDevice(adbPath, current.deviceSerial)
+  if (bySerial) return bySerial
+  if (!current.wirelessAddress) return null
+
+  const byWireless = await resolveDevice(adbPath, current.wirelessAddress)
+  if (byWireless) return byWireless
+
+  // The link is down at the exact moment the user hit send. One revive attempt
+  // (kick the stale entry, reconnect) turns "发送失败" into a two-second pause,
+  // which is what a flaky wireless link should feel like.
+  const ctx = { adbPath, serial: null }
+  await disconnectWireless(ctx, current.wirelessAddress).catch(() => {})
+  const revived = await connectWireless(ctx, current.wirelessAddress)
+  return revived.ok ? resolveDevice(adbPath, current.wirelessAddress) : null
+}
+
+/**
  * Hand one message to the phone. Shared by the UI and by the website outbox —
  * both need the same optimistic record and the same follow-up sync.
  */
 async function sendOne(to: string, body: string): Promise<SendResult> {
   const current = settings.public()
   const adbPath = await locator.require()
-  const target = await resolveDevice(adbPath, current.deviceSerial)
+  const target = await resolveTarget(adbPath)
   if (!target) return { ok: false, note: '手机没连上，发不出去。' }
 
   const outcome = await sendSms({ adbPath, serial: target.serial }, to, body, {
@@ -262,6 +290,12 @@ async function drainOutbox(): Promise<void> {
   const target = { url: current.uploadUrl, token: current.uploadToken }
   void syncNotes()
   void drainRetranslate()
+
+  // Taking a message off the website's queue burns one of its retry attempts,
+  // so don't take anything while the phone is unreachable — the queue keeps it
+  // and this runs again right after the link comes back.
+  if (!device) return
+
   const queued = await fetchOutbox(target)
   if (!queued.length) return
 
@@ -550,12 +584,70 @@ export function registerIpc(win: BrowserWindow): void {
 
   handle('wireless:pair', async (address: string, code: string): Promise<WirelessResult> => {
     const adbPath = await locator.require()
-    return pairWireless({ adbPath, serial: null }, address, code)
+    const ctx = { adbPath, serial: null }
+    const paired = await pairWireless(ctx, address, code)
+    if (!paired.ok) return paired
+
+    // Pairing done, and the connect port is NOT the pairing port — the mistake
+    // everyone makes. The phone advertises the right one over mDNS, so look it
+    // up and connect instead of asking the user to read it off the screen.
+    const found = pickConnectAddress(await discoverWireless(ctx), address)
+    if (!found) {
+      return {
+        ok: true,
+        message:
+          paired.message +
+          ' 没能自动找到连接地址，请填「无线调试」主界面上显示的那一组（端口和配对框里的不一样）。',
+      }
+    }
+
+    const connected = await connectWireless(ctx, found)
+    if (connected.ok && connected.address) {
+      settings.update({ wirelessAddress: connected.address, deviceSerial: connected.address })
+      void syncer.sync('incremental').catch(() => {})
+      return { ok: true, message: `配对成功，已自动连上 ${connected.address}。可以拔线了。`, address: connected.address }
+    }
+    return { ok: true, message: `${paired.message} 自动连接 ${found} 没成功：${connected.message}` }
+  })
+
+  handle('wireless:discover', async (): Promise<WirelessResult & { address?: string }> => {
+    const adbPath = await locator.require()
+    const ctx = { adbPath, serial: null }
+    const services = await discoverWireless(ctx)
+    const found = pickConnectAddress(services, settings.public().wirelessAddress)
+    if (!found) {
+      return {
+        ok: false,
+        message:
+          '没找到正在广播的手机。请确认手机上的「无线调试」是开着的、手机和电脑在同一个 WiFi，' +
+          '并且这台电脑的 adb 是新版（platform-tools 30 以上）。',
+      }
+    }
+    const connected = await connectWireless(ctx, found)
+    if (connected.ok && connected.address) {
+      settings.update({ wirelessAddress: connected.address, deviceSerial: connected.address })
+      void syncer.sync('incremental').catch(() => {})
+      return { ok: true, message: `找到并连上了 ${connected.address}。`, address: connected.address }
+    }
+    return { ok: false, message: `找到了 ${found}，但连接失败：${connected.message}`, address: found }
   })
 
   handle('wireless:connect', async (address: string): Promise<WirelessResult> => {
     const adbPath = await locator.require()
     const result = await connectWireless({ adbPath, serial: null }, address)
+    if (!result.ok) {
+      // "Same WiFi" is the assumption everything else rests on, and it is easy
+      // to break without noticing (guest network, Ethernet, VPN).
+      const mine = localUrls(0).map((url) => url.replace(/^https?:\/\//, '').replace(/:\d+$/, ''))
+      if (mine.length && !mine.some((ip) => sameSubnet(ip, address))) {
+        return {
+          ok: false,
+          message:
+            `${result.message} 另外：这台电脑的地址是 ${mine.join('、')}，和 ${address.split(':')[0]} ` +
+            '不在同一个网段——多半是手机和电脑连了不同的 WiFi（或者电脑插着网线）。',
+        }
+      }
+    }
     if (result.ok && result.address) {
       // Remember it so the syncer can reconnect on its own after a drop.
       settings.update({ wirelessAddress: result.address, deviceSerial: result.address })
@@ -648,7 +740,7 @@ export function registerIpc(win: BrowserWindow): void {
   handle('contacts:list', async (refresh?: boolean): Promise<Contact[]> => {
     if (contactBook && !refresh) return contactBook
     const adbPath = await locator.require()
-    const target = await resolveDevice(adbPath, settings.public().deviceSerial)
+    const target = await resolveTarget(adbPath)
     if (!target) return contactBook ?? []
     contactBook = await listPhoneContacts({ adbPath, serial: target.serial })
     return contactBook
@@ -656,7 +748,7 @@ export function registerIpc(win: BrowserWindow): void {
 
   handle('phone:dial', async (number: string): Promise<{ ok: boolean; message: string }> => {
     const adbPath = await locator.require()
-    const target = await resolveDevice(adbPath, settings.public().deviceSerial)
+    const target = await resolveTarget(adbPath)
     if (!target) return { ok: false, message: '手机没连上，没法拨号。' }
     try {
       await dialNumber({ adbPath, serial: target.serial }, number)

@@ -66,7 +66,21 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
     try {
       const result = await action()
       setWirelessNote({ text: result.message, ok: result.ok })
-      if (result.ok) setDevices(await sms.listDevices(draft.adbPath).catch(() => []))
+      if (result.ok) {
+        setDevices(await sms.listDevices(draft.adbPath).catch(() => []))
+        // Connecting switches the saved device to the wireless address. The
+        // draft in this dialog still holds the old USB serial — and clicking
+        // 保存 would write it back, which is exactly the "worked until I
+        // unplugged the cable" failure. Pull the fresh values into the draft.
+        const saved = await sms.getSettings().catch(() => null)
+        if (saved) {
+          setDraft((prev) => ({
+            ...prev,
+            deviceSerial: saved.deviceSerial,
+            wirelessAddress: saved.wirelessAddress,
+          }))
+        }
+      }
     } catch (err) {
       setWirelessNote({ text: errorText(err), ok: false })
     } finally {
@@ -280,14 +294,61 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
         <div className="field">
           <label>无线连接（不用一直插着数据线）</label>
           <span className="hint">
-            手机上打开：设置 → 开发者选项 → <b>无线调试</b>（打开它），要求手机和电脑
-            在<b>同一个 WiFi</b>。首次需要配对一次。
+            手机和电脑要在<b>同一个 WiFi</b>。下面两条路选一条，<b>第一条省事得多</b>。
           </span>
 
-          <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+          {/* The tcpip route needs one cable, and that is the whole setup — no
+              codes to read off a phone screen. It works on current Android too,
+              so it is offered first rather than as a legacy fallback. */}
+          <div
+            style={{
+              display: 'grid',
+              gap: 6,
+              marginTop: 8,
+              padding: '10px 12px',
+              borderRadius: 10,
+              border: '1px solid var(--border)',
+              background: 'var(--bg-raised)',
+            }}
+          >
             <span className="hint">
-              <b>第 1 步 · 配对</b>（只需做一次）：点手机上的「使用配对码配对设备」，
+              <b>办法一 · 插一次线就好（推荐）</b>：用 USB 线把手机连上电脑（手机上允许调试），
+              然后点下面这个按钮。连上之后就可以<b>把线拔了</b>。
+            </span>
+            <div>
+              <button
+                type="button"
+                className="btn primary"
+                disabled={wirelessBusy}
+                onClick={() =>
+                  void runWireless(async () => {
+                    const result = await sms.enableWirelessOverUsb()
+                    if (!result.suggestedAddress) return result
+                    set('wirelessAddress', result.suggestedAddress)
+                    // Switching the phone to TCP mode is only half of it; connect
+                    // straight away so one click really is the whole setup.
+                    const connected = await sms.connectWireless(result.suggestedAddress)
+                    return connected.ok
+                      ? { ok: true, message: `已连上 ${result.suggestedAddress}，现在可以拔线了。` }
+                      : connected
+                  })
+                }
+              >
+                {wirelessBusy ? '处理中…' : '切换到无线（先插一次 USB）'}
+              </button>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gap: 6, marginTop: 12 }}>
+            <span className="hint">
+              <b>办法二 · 完全不插线</b>（安卓 11 以上）。手机上：设置 → 开发者选项 →
+              <b>无线调试</b> —— 注意要<b>点这一行的文字进去</b>，不是只把右边的开关拨开；
+              进去之后才有「使用配对码配对设备」。
+            </span>
+            <span className="hint">
+              <b>第 1 步 · 配对</b>（只需做一次）：点「使用配对码配对设备」，
               把弹出框里的 <b>IP 地址和端口</b> 与 <b>6 位配对码</b> 填到这里。
+              这个框<b>不能关</b>，关了配对码就失效了。
             </span>
             <div style={{ display: 'flex', gap: 8 }}>
               <input
@@ -313,9 +374,27 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
             </div>
 
             <span className="hint" style={{ marginTop: 6 }}>
-              <b>第 2 步 · 连接</b>：填「无线调试」<b>主界面</b>上显示的那一组地址和端口
+              <b>第 2 步 · 连接</b>：配对成功后一般会<b>自动连上</b>，不用自己填。
+              没自动连上就点「自动查找」，还不行再手填「无线调试」<b>主界面</b>上那一组
               —— <b>和配对对话框里的端口不是同一个</b>，这是最容易填错的地方。
             </span>
+            <div>
+              <button
+                type="button"
+                className="btn"
+                disabled={wirelessBusy}
+                onClick={() =>
+                  void runWireless(async () => {
+                    const result = await sms.discoverWireless()
+                    if (result.address) set('wirelessAddress', result.address)
+                    return result
+                  })
+                }
+                title="手机开着无线调试时会在局域网里广播地址，这里直接去找"
+              >
+                {wirelessBusy ? '查找中…' : '自动查找并连接'}
+              </button>
+            </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <input
                 style={{ flex: 1, minWidth: 0 }}
@@ -353,25 +432,6 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
               />
               <span>断线后自动重连（手机息屏或 WiFi 抖动都会掉线，建议开着）</span>
             </label>
-
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
-              <button
-                type="button"
-                className="btn ghost"
-                disabled={wirelessBusy}
-                onClick={() =>
-                  void runWireless(async () => {
-                    const result = await sms.enableWirelessOverUsb()
-                    if (result.suggestedAddress) {
-                      set('wirelessAddress', result.suggestedAddress)
-                    }
-                    return result
-                  })
-                }
-              >
-                安卓 10 及更早：先插线，点这里切到无线
-              </button>
-            </div>
 
             {wirelessNote && (
               <span

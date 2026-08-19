@@ -210,3 +210,16 @@ export async function resolveDevice(
   }
   return ready.length === 1 ? ready[0] : null
 }
+
+/**
+ * Is this device actually answering, right now?
+ *
+ * `adb devices` only reports the host's bookkeeping: a wireless transport whose
+ * TCP link died shows as `device` for a while, so anything trusting that list
+ * shows "connected" while nothing works — a status that lies. One tiny real
+ * command with a short timeout settles it.
+ */
+export async function probeDevice(ctx: AdbContext): Promise<boolean> {
+  const res = await runAdb(ctx, ['shell', 'echo', 'ok'], { timeoutMs: 6_000 }).catch(() => null)
+  return Boolean(res && res.code === 0 && res.stdout.includes('ok'))
+}

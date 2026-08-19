@@ -296,6 +296,11 @@ export interface SmsBridge {
   disconnectWireless(address: string): Promise<WirelessResult>
   /** Switch a USB-connected phone into wireless mode (pre-Android-11 route). */
   enableWirelessOverUsb(): Promise<WirelessResult & { suggestedAddress?: string }>
+  /**
+   * Find the phone's connect address over mDNS — the address the user would
+   * otherwise have to copy off the Wireless debugging screen.
+   */
+  discoverWireless(): Promise<WirelessResult & { address?: string }>
 
   listMessages(): Promise<SmsMessage[]>
   sync(mode: 'full' | 'incremental'): Promise<{ imported: number }>

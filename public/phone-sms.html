@@ -909,9 +909,13 @@ async function openSetup() {
     + (d.active ? ' <button class="action-btn" style="padding:1px 8px" onclick="revoke(' + d.id + ')">停用</button>' : '')
     + '</div>').join('') || '<div class="hint">还没连过电脑。</div>';
 
-  openModal('<h2>连接电脑</h2>'
-    + '<div class="hint">在桌面版「SMS 译信」的 设置 → 同步到公司网站 里填这两样：</div>'
-    + '<div class="hint">推送网址<br><code>' + location.origin + '/api/device-sms/push</code></div>'
+  openModal('<h2>连接手机或电脑</h2>'
+    + '<div class="hint"><b>推荐：手机上装「短信同步」App</b>（到 GitHub Releases 下载 '
+    + 'SMS.Phone-*.apk 旁路安装）——手机自己推送，不需要电脑、没有掉线问题。'
+    + 'App 里填下面的网址和令牌即可。用了 App 就把电脑版的「同步到公司网站」关掉，免得短信重复。</div>'
+    + '<div class="hint">或者用电脑：桌面版「SMS 译信」的 设置 → 同步到公司网站 里填这两样：</div>'
+    + '<div class="hint">网址（App 填这个）<br><code>' + location.origin + '</code></div>'
+    + '<div class="hint">推送网址（电脑版填这个）<br><code>' + location.origin + '/api/device-sms/push</code></div>'
     + '<div id="tokenBox"></div>'
     + '<div class="row" style="justify-content:flex-start">'
     + '<button class="action-btn primary" id="newTok">生成新令牌</button></div>'
