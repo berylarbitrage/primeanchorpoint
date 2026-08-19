@@ -95,6 +95,35 @@ public class MainActivity extends Activity {
                 requestPermissions(new String[]{Manifest.permission.SEND_SMS}, REQ_FIX));
         fixNotify.setOnClickListener(v -> fixNotify());
         fixBattery.setOnClickListener(v -> askIgnoreBattery());
+
+        applyLink(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        applyLink(intent);
+    }
+
+    /**
+     * 扫码连接的最后一跳：网站 /app-connect 页的按钮打开
+     * smssync://connect?url=…&token=… ，这里把两样自动填好、存好，直接开始连。
+     * 手动复制令牌容易抄错，二维码里带的是网站自己报的域名和完整令牌，不会错。
+     */
+    private void applyLink(Intent intent) {
+        if (intent == null || intent.getData() == null) return;
+        Uri data = intent.getData();
+        if (!"smssync".equals(data.getScheme())) return;
+        String url = data.getQueryParameter("url");
+        String token = data.getQueryParameter("token");
+        if (url == null || url.trim().isEmpty() || token == null || token.trim().isEmpty()) {
+            Toast.makeText(this, "二维码里的信息不完整，回网站重新生成一个", Toast.LENGTH_LONG).show();
+            return;
+        }
+        urlInput.setText(url.trim());
+        tokenInput.setText(token.trim());
+        Toast.makeText(this, "扫码成功，网址和令牌已自动填好，正在启动……", Toast.LENGTH_LONG).show();
+        saveAndStart();
     }
 
     @Override

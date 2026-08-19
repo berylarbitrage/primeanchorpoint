@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>连接短信同步 App</title>
+<style>
+  :root { --amber:#b45309; --amber-bg:#fffbeb; --gray:#6b7280; }
+  * { box-sizing:border-box; margin:0; }
+  body { font-family:'DM Sans','PingFang SC','Microsoft YaHei',sans-serif;
+         background:var(--amber-bg); color:#1f2937; min-height:100vh;
+         display:flex; align-items:center; justify-content:center; padding:24px; }
+  .card { background:#fff; border-radius:16px; box-shadow:0 8px 30px rgba(0,0,0,.08);
+          max-width:420px; width:100%; padding:28px 24px; text-align:center; }
+  h1 { font-size:20px; margin-bottom:6px; }
+  p { font-size:14px; color:var(--gray); line-height:1.7; margin:10px 0; }
+  .big { display:block; width:100%; padding:16px; margin:18px 0 8px; border:0; border-radius:12px;
+         background:var(--amber); color:#fff; font-size:17px; font-weight:700; text-decoration:none; }
+  .alt { display:block; margin-top:14px; font-size:14px; color:var(--amber); }
+  .err { color:#c5221f; font-size:14px; }
+  code { background:#f3f4f6; border-radius:6px; padding:2px 6px; font-size:12px; word-break:break-all; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>连接「短信同步」App</h1>
+  <div id="ok" style="display:none">
+    <p>网址和令牌都在这个页面里了，点下面的按钮，App 会自动填好并开始同步。</p>
+    <a class="big" id="openApp" href="#">打开 App，自动连接</a>
+    <p>点了没反应？说明手机上还没装 App：</p>
+    <a class="alt" href="https://github.com/berylarbitrage/primeanchorpoint/releases" target="_blank" rel="noopener">
+      去下载 SMS.Phone-*.apk（装好后回到本页再点上面的按钮）</a>
+  </div>
+  <div id="bad" style="display:none">
+    <p class="err">这个链接不完整（没带上令牌）。</p>
+    <p>请回到网站「手机短信」页 → ⚙ → 生成新令牌，重新扫那个二维码。</p>
+  </div>
+</div>
+<script>
+  // 令牌放在 # 后面: 不会发给服务器, 也不会进访问日志。
+  const p = new URLSearchParams(location.hash.slice(1));
+  const url = p.get('u') || location.origin;
+  const token = p.get('t') || '';
+  if (token) {
+    document.getElementById('ok').style.display = '';
+    document.getElementById('openApp').href =
+      'smssync://connect?url=' + encodeURIComponent(url) + '&token=' + encodeURIComponent(token);
+  } else {
+    document.getElementById('bad').style.display = '';
+  }
+</script>
+</body>
+</html>

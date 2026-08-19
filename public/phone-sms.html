@@ -234,6 +234,7 @@ button,input,select,textarea{font-family:inherit}
 
 <div id="modalHost"></div>
 
+<script src="/qrcode.js"></script>
 <script>
 let TOKEN = localStorage.getItem('pa_phone_sms_token') || '';
 let MESSAGES = [], OUTBOX = [], NOTES = {}, DEVICES = [];
@@ -912,7 +913,7 @@ async function openSetup() {
   openModal('<h2>连接手机或电脑</h2>'
     + '<div class="hint"><b>推荐：手机上装「短信同步」App</b>（到 GitHub Releases 下载 '
     + 'SMS.Phone-*.apk 旁路安装）——手机自己推送，不需要电脑、没有掉线问题。'
-    + 'App 里填下面的网址和令牌即可。用了 App 就把电脑版的「同步到公司网站」关掉，免得短信重复。</div>'
+    + '装好后点下面「生成新令牌」，<b>用手机相机扫出现的二维码</b>，网址和令牌就自动填进 App 了。用了 App 就把电脑版的「同步到公司网站」关掉，免得短信重复。</div>'
     + '<div class="hint">或者用电脑：桌面版「SMS 译信」的 设置 → 同步到公司网站 里填这两样：</div>'
     + '<div class="hint">网址（App 填这个）<br><code>' + location.origin + '</code></div>'
     + '<div class="hint">推送网址（电脑版填这个）<br><code>' + location.origin + '/api/device-sms/push</code></div>'
@@ -926,10 +927,28 @@ async function openSetup() {
     + '<button class="action-btn" onclick="closeModal()">关闭</button></div>');
 
   document.getElementById('newTok').onclick = async () => {
-    const res = await api('/device-sms/devices', { method: 'POST', body: JSON.stringify({ name: '我的电脑' }) });
-    document.getElementById('tokenBox').innerHTML = res.token
-      ? '<div class="hint">设备令牌（只显示这一次）<br><code>' + esc(res.token) + '</code></div>'
-      : '<div class="hint" style="color:var(--red)">' + esc(res.error || '生成失败') + '</div>';
+    const res = await api('/device-sms/devices', { method: 'POST', body: JSON.stringify({ name: '新设备' }) });
+    if (!res.token) {
+      document.getElementById('tokenBox').innerHTML =
+        '<div class="hint" style="color:var(--red)">' + esc(res.error || '生成失败') + '</div>';
+      return;
+    }
+    // 令牌放 # 后面: 不进服务器日志。二维码里带的是当前域名, 从根上杜绝「网址填错」。
+    const link = location.origin + '/app-connect#u=' + encodeURIComponent(location.origin)
+      + '&t=' + encodeURIComponent(res.token);
+    let qrTag = '';
+    try {
+      const qr = qrcode(0, 'M');
+      qr.addData(link);
+      qr.make();
+      qrTag = qr.createImgTag(4, 8);
+    } catch (_) { /* 令牌文本照样能用 */ }
+    document.getElementById('tokenBox').innerHTML =
+      '<div class="hint" style="text-align:center"><b>手机相机对着扫一下</b><br>'
+      + qrTag.replace('<img ', '<img style="max-width:200px;width:100%;image-rendering:pixelated" ')
+      + '<br>扫出来的链接点开 → 点「打开 App，自动连接」→ 网址和令牌自动填好</div>'
+      + '<div class="hint">不方便扫码就手动填——设备令牌（只显示这一次）<br><code>'
+      + esc(res.token) + '</code></div>';
   };
   document.getElementById('wipeBtn').onclick = async () => {
     closeModal();
