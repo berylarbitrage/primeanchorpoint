@@ -153,6 +153,10 @@ button,input,select,textarea{font-family:inherit}
 .img-chip img{width:46px;height:46px;object-fit:cover;border-radius:8px}
 .img-chip button{margin-left:auto;border:none;background:none;font-size:1.05rem;cursor:pointer;color:var(--gray-600)}
 .msg-img{max-width:220px;max-height:260px;border-radius:10px;display:block;margin-top:4px}
+.onboard-strip{padding:6px 14px;font-size:.76rem;font-weight:700;border-bottom:1px solid var(--gray-200)}
+.onboard-strip.ok{background:#d1fae5;color:#065f46}
+.onboard-strip.mid{background:#fef3c7;color:#92400e}
+.onboard-strip.no{background:#fee2e2;color:#991b1b}
 
 /* ── 写短信 ── */
 .reply-bar{position:relative;background:var(--white);border-top:1.5px solid var(--gray-200);padding:8px 10px;
@@ -267,6 +271,7 @@ let PENDING_IMG = null;                                // 待发送的图片 {ty
 let NO_TRANSLATE_TEXT = '';                            // 双语模板原样发送，不再机翻
 let PRESET_TX = null, PRESET_FOR = '';                 // 招工模板的标准翻译（代替机器翻译）
 let RQ_TYPE = 'hiring', RQ_JOBS = new Set();
+const ONBOARD = {};                                    // peer → 入职档案查询结果缓存
 
 const RISK_LABELS = { personal:'私人', verification:'验证码', bank:'银行', delivery:'物流',
   service:'服务通知', marketing:'营销', spam:'垃圾', fraud:'诈骗', other:'其他' };
@@ -646,6 +651,7 @@ function renderDetail(convos) {
     + '<div style="flex:1"></div>'
     + (convo.unread ? '<span class="badge" style="background:#2563eb;color:#fff">' + convo.unread + ' 条新</span>' : '')
     + '</div>'
+    + onboardStrip(convo.peer)
     // 语言对：和 SMS Inbox 那边一样的两个下拉 —— 对方写什么语言、我读什么语言
     + '<div class="lang-bar">'
     + '<span>对方：</span><select id="contactLang" onchange="saveLang()">' + langOptions(convo.contactLang) + '</select>'
@@ -783,6 +789,40 @@ function useTpl(i) {
   NO_TRANSLATE_TEXT = (t && typeof t === 'object' && t.no_translate) ? text : '';
   document.getElementById('tplPicker').classList.remove('show');
   draft.focus();
+}
+
+/* ── 入职检验：打开会话自动按号码查员工档案 / 招工申请 ── */
+
+function onboardStrip(peer) {
+  // 短号（验证码、运营商通知）查了也是白查
+  if (!/^\d{9,}$/.test(String(peer || ''))) return '';
+  const found = ONBOARD[peer];
+  if (found === undefined) { void fetchOnboard(peer); return ''; }
+  if (!found) return '';
+  if (found.employee) {
+    const e = found.employee;
+    return '<div class="onboard-strip ok">✓ 已入职 · 员工档案 #' + e.id + ' ' + esc(e.name)
+      + (e.position ? ' · ' + esc(e.position) : '')
+      + (e.status === 'active' ? ' · 在职' : (e.status ? ' · ' + esc(e.status) : '')) + '</div>';
+  }
+  if (found.applicant) {
+    return '<div class="onboard-strip mid">⚠ 未入职 · 有招工申请 #' + found.applicant.id
+      + (found.applicant.name ? ' ' + esc(found.applicant.name) : '')
+      + (found.applicant.position ? ' · ' + esc(found.applicant.position) : '') + '</div>';
+  }
+  return '<div class="onboard-strip no">✗ 未入职 · 员工档案和招工申请里都没有这个号码</div>';
+}
+
+async function fetchOnboard(peer) {
+  ONBOARD[peer] = null; // 占位，别并发重复查
+  try {
+    const r = await api('/device-sms/onboarding?peer=' + encodeURIComponent(peer));
+    ONBOARD[peer] = { employee: r.employee || null, applicant: r.applicant || null };
+  } catch (_) {
+    delete ONBOARD[peer]; // 失败下次打开重查
+    return;
+  }
+  if (PEER === peer && !COMPOSING) render();
 }
 
 /* ── 💼 招工问题模板：选工种生成标准翻译的提问（和 SMS Inbox 同一份文案，
