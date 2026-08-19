@@ -137,8 +137,25 @@ button,input,select,textarea{font-family:inherit}
 .msg-fail{color:var(--red)}
 .date-divider{text-align:center;padding:12px 0 6px;font-size:.72rem;color:var(--gray-400);font-weight:600}
 
+/* ── 预制信息选单 + 发图片 ── */
+.tpl-picker{position:absolute;bottom:100%;left:0;right:0;background:var(--white);border:1px solid var(--gray-200);
+  border-radius:12px;max-height:320px;overflow-y:auto;box-shadow:0 -4px 16px rgba(0,0,0,.12);display:none;z-index:50}
+.tpl-picker.show{display:block}
+.tpl-item{padding:10px 14px;font-size:.78rem;cursor:pointer;border-bottom:1px solid var(--gray-100)}
+.tpl-item:hover{background:#eff6ff}
+.tpl-cat{padding:9px 14px;font-size:.8rem;font-weight:800;color:#92400e;cursor:pointer;
+  border-bottom:1px solid var(--gray-100);display:flex;justify-content:space-between;position:sticky;top:0}
+.composer-btn{width:38px;height:38px;border-radius:50%;border:1px solid var(--gray-200);background:var(--white);
+  font-size:1rem;cursor:pointer;flex:none}
+.composer-btn:hover{background:#eff6ff}
+.img-chip{flex-basis:100%;display:flex;align-items:center;gap:10px;background:#f0fdf4;border:1px solid #bbf7d0;
+  border-radius:12px;padding:6px 10px;font-size:.75rem;color:#166534}
+.img-chip img{width:46px;height:46px;object-fit:cover;border-radius:8px}
+.img-chip button{margin-left:auto;border:none;background:none;font-size:1.05rem;cursor:pointer;color:var(--gray-600)}
+.msg-img{max-width:220px;max-height:260px;border-radius:10px;display:block;margin-top:4px}
+
 /* ── 写短信 ── */
-.reply-bar{background:var(--white);border-top:1.5px solid var(--gray-200);padding:8px 10px;
+.reply-bar{position:relative;background:var(--white);border-top:1.5px solid var(--gray-200);padding:8px 10px;
   display:flex;align-items:flex-end;gap:8px;flex-shrink:0;flex-wrap:wrap}
 .reply-bar textarea{flex:1;min-width:180px;resize:none;border:1px solid var(--gray-200);border-radius:20px;
   padding:10px 16px;font-size:16px;outline:none;max-height:120px;min-height:42px;line-height:1.4}
@@ -245,6 +262,9 @@ let LIMIT = 400, TOTAL = 0;
 const DEFAULT_SEND_LANG = 'English';
 let PREVIEW = null;
 let searchTimer = null;
+let TEMPLATES = null, TPL_CATS = [], TPL_OPEN = '';   // 预制信息（和 SMS Inbox 共用一份）
+let PENDING_IMG = null;                                // 待发送的图片 {type,data,preview}
+let NO_TRANSLATE_TEXT = '';                            // 双语模板原样发送，不再机翻
 
 const RISK_LABELS = { personal:'私人', verification:'验证码', bank:'银行', delivery:'物流',
   service:'服务通知', marketing:'营销', spam:'垃圾', fraud:'诈骗', other:'其他' };
@@ -578,11 +598,11 @@ function renderDetail(convos) {
 
     if (m.queued) {
       return divider + '<div class="msg-row out queued">'
-        + '<div class="msg-bubble">' + esc(m.body) + '</div>'
+        + '<div class="msg-bubble">' + bodyHtml(m.body) + '</div>'
         + '<div class="msg-meta">'
         + (m.status === 'failed'
             ? '<span class="msg-fail">发送失败：' + esc(m.note || '未知原因') + '</span>'
-            : '<span>待发送 · 等电脑发出去</span>')
+            : '<span>待发送 · 等手机发出去</span>')
         + '<button class="action-btn" style="padding:1px 8px;font-size:.7rem" onclick="cancelQueued(' + m.outbox_id + ')">撤掉</button>'
         + '</div></div>';
     }
@@ -591,7 +611,7 @@ function renderDetail(convos) {
     const showBoth = translated && translated !== (m.body || '').trim();
     return divider + '<div class="msg-row ' + (m.direction === 'out' ? 'out' : 'in') + '">'
       + '<div class="msg-bubble' + (Number(m.risk_score) >= 4 ? ' risky' : '') + '">'
-      + esc(m.body || (m.has_media ? '［图片短信］' : ''))
+      + bodyHtml(m.body || (m.has_media ? '［图片短信］' : ''))
       + (showBoth ? '<div class="msg-translation">' + esc(translated) + '</div>' : '')
       + '</div>'
       + '<div class="msg-meta">'
@@ -671,7 +691,12 @@ function replyBar(composing) {
     + '<option value=""' + (chosen ? '' : ' selected') + '>不翻译，直接发原文</option>'
     + '</select>'
     + '<textarea id="draft" rows="1" placeholder="写短信…（写中文即可）" oninput="clearPreview()"></textarea>'
+    + '<button class="composer-btn" onclick="toggleTpl()" title="预制信息（和 SMS Inbox 共用一份）">⚡</button>'
+    + '<button class="composer-btn" onclick="pickImage()" title="发图片：对方收到图片链接，点开即看">📷</button>'
     + '<button class="send-btn" id="sendBtn" onclick="queueSend()" title="翻译并发送（Ctrl+Enter）">&#9654;</button>'
+    + '<input type="file" id="imgInput" accept="image/*" style="display:none" onchange="imageChosen(this)">'
+    + '<div class="img-chip" id="imgChip" style="display:none"></div>'
+    + '<div class="tpl-picker" id="tplPicker"></div>'
     + '<div class="reply-hint" id="sendNote">选了语言就会先翻好给你看，确认后再发。</div>'
     + '</div>';
 }
@@ -682,6 +707,124 @@ function wireReply() {
   box.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void queueSend(); }
   });
+  renderImgChip(); // 页面定时重画时别把已选的图片弄丢
+}
+
+/* ── 预制信息（数据和 SMS Inbox 同一份，在那边维护） ── */
+
+async function toggleTpl() {
+  const picker = document.getElementById('tplPicker');
+  if (!picker) return;
+  if (picker.classList.contains('show')) { picker.classList.remove('show'); return; }
+  if (TEMPLATES === null) {
+    // 不用 api()：它把 403 当成掉线踢回登录页，而共享 admin 账号读模板会 403
+    try {
+      const res = await fetch('/api/sms/templates', { headers: { 'Authorization': 'Bearer ' + TOKEN } });
+      TEMPLATES = res.ok ? ((await res.json()).templates || []) : [];
+    } catch (_) { TEMPLATES = []; }
+  }
+  TPL_OPEN = '';
+  renderTpl();
+  picker.classList.add('show');
+}
+
+function renderTpl() {
+  const picker = document.getElementById('tplPicker');
+  if (!TEMPLATES.length) {
+    picker.innerHTML = '<div class="tpl-item">还没有预制信息 — 去 SMS Inbox 页面维护，两边共用。</div>';
+    return;
+  }
+  const byCat = {};
+  TPL_CATS = [];
+  TEMPLATES.forEach((t, i) => {
+    const cat = (t && typeof t === 'object' && t.cat) ? t.cat : '其他';
+    if (!byCat[cat]) { byCat[cat] = []; TPL_CATS.push(cat); }
+    byCat[cat].push(i);
+  });
+  const item = (i) => {
+    const t = TEMPLATES[i];
+    const text = typeof t === 'string' ? t : (t.text || t.body || '');
+    const label = (t && typeof t === 'object' && t.label) ? t.label : '';
+    const zh = (t && typeof t === 'object' && t.zh) ? t.zh : '';
+    return '<div class="tpl-item" onclick="useTpl(' + i + ')">'
+      + (label ? '<div style="font-weight:700;color:#92400e;margin-bottom:2px">' + esc(label) + '</div>' : '')
+      + (zh ? '<div style="color:#0f766e;font-size:.72rem;margin-bottom:2px">' + esc(zh) + '</div>' : '')
+      + '<div style="color:var(--gray-500);font-size:.7rem;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">'
+      + esc(text) + '</div></div>';
+  };
+  if (TPL_CATS.length <= 1) {
+    picker.innerHTML = TEMPLATES.map((t, i) => item(i)).join('');
+    return;
+  }
+  picker.innerHTML = TPL_CATS.map((cat, ci) => {
+    const open = TPL_OPEN === cat;
+    return '<div class="tpl-cat" style="background:' + (open ? '#fef3c7' : '#fffbeb') + '" onclick="tplCat(' + ci + ')">'
+      + '<span>' + esc(cat) + ' <span style="font-weight:600;color:#b45309">(' + byCat[cat].length + ')</span></span>'
+      + '<span>' + (open ? '▾' : '▸') + '</span></div>'
+      + (open ? byCat[cat].map(item).join('') : '');
+  }).join('');
+}
+
+function tplCat(ci) {
+  TPL_OPEN = TPL_OPEN === TPL_CATS[ci] ? '' : TPL_CATS[ci];
+  renderTpl();
+}
+
+function useTpl(i) {
+  const t = TEMPLATES[i];
+  const text = typeof t === 'string' ? t : (t.text || t.body || '');
+  const draft = document.getElementById('draft');
+  draft.value = text;
+  clearPreview();
+  // 双语模板原样发出，不再机器翻译（改动了内容就恢复正常翻译流程）
+  NO_TRANSLATE_TEXT = (t && typeof t === 'object' && t.no_translate) ? text : '';
+  document.getElementById('tplPicker').classList.remove('show');
+  draft.focus();
+}
+
+/* ── 发图片：先传到网站，短信里带图片链接（任何手机点开即看） ── */
+
+function pickImage() { document.getElementById('imgInput').click(); }
+
+function imageChosen(input) {
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  const note = document.getElementById('sendNote');
+  if (!/^image\/(jpeg|png|gif|webp)$/.test(file.type)) {
+    note.textContent = '只支持 jpg / png / gif / webp 图片。';
+    note.className = 'reply-hint err';
+    return;
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    note.textContent = '图片太大（上限 10MB）。';
+    note.className = 'reply-hint err';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    PENDING_IMG = { type: file.type, data: String(reader.result).split(',')[1], preview: String(reader.result) };
+    renderImgChip();
+  };
+  reader.readAsDataURL(file);
+}
+
+function renderImgChip() {
+  const chip = document.getElementById('imgChip');
+  if (!chip) return;
+  if (!PENDING_IMG) { chip.style.display = 'none'; chip.innerHTML = ''; return; }
+  chip.style.display = '';
+  chip.innerHTML = '<img src="' + PENDING_IMG.preview + '">'
+    + '<span>发送时会附上这张图（对方收到图片链接）</span>'
+    + '<button title="去掉图片" onclick="clearImage()">×</button>';
+}
+
+function clearImage() { PENDING_IMG = null; renderImgChip(); }
+
+/* 短信里我们自己的图片链接直接显示成图。 */
+function bodyHtml(text) {
+  return esc(text).replace(/(https?:\/\/[^\s&<]+\/i\/[a-f0-9]{32}\.(?:jpg|png|gif|webp))/g,
+    '<a href="$1" target="_blank" rel="noopener"><img class="msg-img" src="$1" loading="lazy"></a>');
 }
 
 function pick(peer) {
@@ -766,8 +909,10 @@ async function queueSend() {
   const body = document.getElementById('draft').value.trim();
   const translateTo = document.getElementById('langSel').value;
   note.className = 'reply-hint';
-  if (!body) { note.textContent = '还没写内容。'; note.className = 'reply-hint err'; return; }
+  if (!body && !PENDING_IMG) { note.textContent = '还没写内容。'; note.className = 'reply-hint err'; return; }
+  if (!body) { void enqueue('', ''); return; }                     // 只发图片，不用翻译
   if (PREVIEW) { confirmSend(); return; }
+  if (NO_TRANSLATE_TEXT && body === NO_TRANSLATE_TEXT) { void enqueue(body, ''); return; } // 双语模板原样发
   if (!translateTo) { void enqueue(body, ''); return; }
 
   const btn = document.getElementById('sendBtn');
@@ -794,7 +939,8 @@ async function queueSend() {
 }
 
 /** 真正排进待发队列。 */
-async function enqueue(body, translateTo) {
+async function enqueue(bodyIn, translateTo) {
+  let body = bodyIn;
   const note = document.getElementById('sendNote');
   const target = currentTarget();
   let to = '';
@@ -809,17 +955,28 @@ async function enqueue(body, translateTo) {
   const btn = document.getElementById('sendBtn');
   btn.disabled = true;
   try {
+    // 带图片：先传到网站拿链接，短信正文后面跟上链接
+    if (PENDING_IMG) {
+      note.textContent = '上传图片中…';
+      const up = await api('/device-sms/media', {
+        method: 'POST', body: JSON.stringify({ type: PENDING_IMG.type, data: PENDING_IMG.data })
+      });
+      if (!up.success) { note.textContent = up.error || '图片上传失败'; note.className = 'reply-hint err'; return; }
+      body = (body ? body + '\n' : '') + location.origin + up.url;
+    }
     const peer = target ? target.peer : to.replace(/[^0-9]/g, '').slice(-10);
     const r = await api('/device-sms/send', {
       method: 'POST', body: JSON.stringify({ to, peer, body, translate_to: translateTo })
     });
     if (!r.success) { note.textContent = r.error || '排队失败'; note.className = 'reply-hint err'; return; }
     if (COMPOSING) { COMPOSING = false; PEER = peer; }
+    clearImage();
+    NO_TRANSLATE_TEXT = '';
     clearPreview();
     await load(true);
     // load() 重画了整个面板, 提示写到新的那个节点上
     const hint = document.getElementById('sendNote');
-    if (hint) hint.textContent = '已排队，电脑马上发出去。';
+    if (hint) hint.textContent = '已排队，手机马上发出去。';
   } catch (e) {
     note.textContent = e.message;
     note.className = 'reply-hint err';

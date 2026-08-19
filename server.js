@@ -30509,6 +30509,36 @@ function deviceSmsAuth(req, res, next) {
   next();
 }
 
+// ─── 发图片: 图片存服务器, 以链接形式随短信发出 ───
+// 不走彩信(MMS)协议——各运营商实现千差万别、手机上还要装新版 App;
+// 链接对方任何手机点开都能看, 自家网页上则直接显示成图片。
+const deviceSmsMediaDir = path.join(uploadsDir, 'device-sms');
+if (!fs.existsSync(deviceSmsMediaDir)) fs.mkdirSync(deviceSmsMediaDir, { recursive: true });
+const DEVICE_SMS_IMG_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp' };
+
+app.post('/api/device-sms/media', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const { type, data } = req.body || {};
+    const ext = DEVICE_SMS_IMG_TYPES[String(type)];
+    if (!ext) return res.status(400).json({ error: '只支持 jpg / png / gif / webp 图片' });
+    const buf = Buffer.from(String(data || ''), 'base64');
+    if (!buf.length) return res.status(400).json({ error: '空文件' });
+    if (buf.length > 10 * 1024 * 1024) return res.status(400).json({ error: '图片太大（上限 10MB）' });
+    const name = crypto.randomBytes(16).toString('hex') + '.' + ext;
+    fs.writeFileSync(path.join(deviceSmsMediaDir, name), buf);
+    res.json({ success: true, url: '/i/' + name });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 收短信的人要能直接点开, 所以不设登录; 文件名是 128 位随机数, 猜不出来。
+app.get('/i/:file', (req, res) => {
+  const file = String(req.params.file || '');
+  if (!/^[a-f0-9]{32}\.(jpg|png|gif|webp)$/.test(file)) return res.status(404).end();
+  const full = path.join(deviceSmsMediaDir, file);
+  if (!fs.existsSync(full)) return res.status(404).end();
+  res.sendFile(full, { maxAge: '365d' });
+});
+
 // POST /api/device-sms/push — 桌面版推送一批短信 (同一条重复推是安全的, 按 remote_id 覆盖)
 app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
   try {
