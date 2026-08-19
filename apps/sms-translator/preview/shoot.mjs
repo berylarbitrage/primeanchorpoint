@@ -114,6 +114,16 @@ const shots = [
     },
   ],
   [
+    'wireless',
+    async () => {
+      await page.goto(`${base}/index.html`, { waitUntil: 'networkidle' })
+      await page.getByRole('button', { name: '设置' }).click()
+      await page.waitForSelector('.modal')
+      await page.getByRole('button', { name: /切换到无线/ }).scrollIntoViewIfNeeded()
+      await page.waitForTimeout(300)
+    },
+  ],
+  [
     'error',
     async () => {
       await page.goto(`${base}/index.html?state=error`, { waitUntil: 'networkidle' })

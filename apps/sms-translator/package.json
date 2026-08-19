@@ -1,7 +1,7 @@
 {
   "name": "sms-translator",
   "productName": "SMS Translator",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "private": true,
   "description": "Windows desktop SMS inbox that mirrors an Android phone over ADB and translates/screens messages with Claude",
   "author": "Prime Anchor",

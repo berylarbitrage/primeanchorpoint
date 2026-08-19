@@ -198,6 +198,8 @@
     setSettings: async () => settings,
     setApiKey: async () => settings,
     getStatus: async () => status,
+    getUploadStatus: async () => ({ enabled: true, pending: 0, lastPushAt: now, lastSaved: 12 }),
+    pushNow: async () => window.sms.getUploadStatus(),
     getWebStatus: async () => ({
       running: true,
       port: 8848,
