@@ -974,29 +974,30 @@ function insertRecruitQ() {
   draft.focus();
 }
 
-/* ── 📋 发申请表：把招工申请链接（和二维码同一个表）用短信发给对方 ── */
+/* ── 📋 发申请表：给这个人造一条专属的一次性链接（填完提交即失效），短信发过去 ── */
 
-let APPLY_URL = '';
 let APPLY_TEXT = '';
 
 async function sendApplyForm() {
-  if (!APPLY_URL) {
-    try {
-      const r = await api('/admin/applicant-qr/generic');
-      APPLY_URL = r.url || '';
-    } catch (_) {}
-    if (!APPLY_URL) {
-      openModal('<h2>拿不到申请表链接</h2><div class="hint">稍后再试，或去后台「招工申请二维码」看看。</div>'
-        + '<div class="row"><button class="action-btn primary" onclick="closeModal()">好</button></div>');
-      return;
-    }
+  let url = '';
+  try {
+    const r = await api('/device-sms/apply-link', {
+      method: 'POST', body: JSON.stringify({ peer: PEER || '' })
+    });
+    if (r.success && r.url) url = location.origin + r.url;
+  } catch (_) {}
+  if (!url) {
+    openModal('<h2>拿不到申请表链接</h2><div class="hint">稍后再试。</div>'
+      + '<div class="row"><button class="action-btn primary" onclick="closeModal()">好</button></div>');
+    return;
   }
   const lang = rqLang();
-  APPLY_TEXT = lang === 'zh' ? '请点开这个链接填写我们的招工申请表：' + APPLY_URL
-    : lang === 'es' ? 'Por favor complete nuestra solicitud de empleo aquí: ' + APPLY_URL
-    : 'Please fill out our job application here: ' + APPLY_URL;
+  APPLY_TEXT = lang === 'zh' ? '请点开这个链接填写我们的招工申请表：' + url
+    : lang === 'es' ? 'Por favor complete nuestra solicitud de empleo aquí: ' + url
+    : 'Please fill out our job application here: ' + url;
   openModal('<h2>📋 发申请表</h2>'
-    + '<div class="hint">对方点开就是招工申请表（和后台二维码同一个表，填完进「申请收件箱」）。发出去的内容：</div>'
+    + '<div class="hint">这是给这个人<b>专属的一次性链接</b>：填完提交，链接自动失效，别人拿到也没用。'
+    + '填好的申请进「申请收件箱」。发出去的内容：</div>'
     + '<div style="border:1px solid var(--gray-200);border-radius:12px;padding:10px 12px;font-size:.82rem;'
     + 'background:#f9fafb;word-break:break-all;line-height:1.6">' + esc(APPLY_TEXT) + '</div>'
     + '<div class="row">'
