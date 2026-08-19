@@ -510,13 +510,16 @@ function conversations() {
     // 号码用最近一条真实短信上的，排队中的那些没有权威号码
     const real = list.filter(m => !m.queued);
     const address = (real.length ? real[real.length - 1].address : last.address) || peer;
+    // 审核通过（建了员工档案）的号码自动用档案里的名字；手动备注的别名优先
+    const onboard = ONBOARD[peer];
+    const employeeName = onboard && onboard.employee && onboard.employee.name ? onboard.employee.name : '';
     out.push({
       peer, list, last, maxRisk, queued, address,
       note: noted.note || '', tags: noted.tags || [], status: noted.status || 'open',
       contactLang: noted.contact_lang || '', agentLang: noted.agent_lang || '',
       autoTranslate: noted.auto_translate === undefined ? 1 : noted.auto_translate,
       unread: unreadCount(list, noted.read_at),
-      title: noted.alias || name || fmtPhone(address) || peer
+      title: noted.alias || employeeName || name || fmtPhone(address) || peer
     });
   }
   out.sort((a, b) => (sqlTime(a.last.sent_at) < sqlTime(b.last.sent_at) ? 1 : -1));
