@@ -5,9 +5,12 @@ import { AdbLocator, verifyAdb } from './adb/locate'
 import {
   connectWireless,
   disconnectWireless,
+  discoverWireless,
   enableTcpip,
   pairWireless,
+  pickConnectAddress,
   readWifiAddress,
+  sameSubnet,
 } from './adb/wireless'
 import { dialNumber, sendSms } from './adb/send'
 import { listPhoneContacts } from './adb/contacts'
@@ -550,12 +553,70 @@ export function registerIpc(win: BrowserWindow): void {
 
   handle('wireless:pair', async (address: string, code: string): Promise<WirelessResult> => {
     const adbPath = await locator.require()
-    return pairWireless({ adbPath, serial: null }, address, code)
+    const ctx = { adbPath, serial: null }
+    const paired = await pairWireless(ctx, address, code)
+    if (!paired.ok) return paired
+
+    // Pairing done, and the connect port is NOT the pairing port — the mistake
+    // everyone makes. The phone advertises the right one over mDNS, so look it
+    // up and connect instead of asking the user to read it off the screen.
+    const found = pickConnectAddress(await discoverWireless(ctx), address)
+    if (!found) {
+      return {
+        ok: true,
+        message:
+          paired.message +
+          ' 没能自动找到连接地址，请填「无线调试」主界面上显示的那一组（端口和配对框里的不一样）。',
+      }
+    }
+
+    const connected = await connectWireless(ctx, found)
+    if (connected.ok && connected.address) {
+      settings.update({ wirelessAddress: connected.address, deviceSerial: connected.address })
+      void syncer.sync('incremental').catch(() => {})
+      return { ok: true, message: `配对成功，已自动连上 ${connected.address}。可以拔线了。`, address: connected.address }
+    }
+    return { ok: true, message: `${paired.message} 自动连接 ${found} 没成功：${connected.message}` }
+  })
+
+  handle('wireless:discover', async (): Promise<WirelessResult & { address?: string }> => {
+    const adbPath = await locator.require()
+    const ctx = { adbPath, serial: null }
+    const services = await discoverWireless(ctx)
+    const found = pickConnectAddress(services, settings.public().wirelessAddress)
+    if (!found) {
+      return {
+        ok: false,
+        message:
+          '没找到正在广播的手机。请确认手机上的「无线调试」是开着的、手机和电脑在同一个 WiFi，' +
+          '并且这台电脑的 adb 是新版（platform-tools 30 以上）。',
+      }
+    }
+    const connected = await connectWireless(ctx, found)
+    if (connected.ok && connected.address) {
+      settings.update({ wirelessAddress: connected.address, deviceSerial: connected.address })
+      void syncer.sync('incremental').catch(() => {})
+      return { ok: true, message: `找到并连上了 ${connected.address}。`, address: connected.address }
+    }
+    return { ok: false, message: `找到了 ${found}，但连接失败：${connected.message}`, address: found }
   })
 
   handle('wireless:connect', async (address: string): Promise<WirelessResult> => {
     const adbPath = await locator.require()
     const result = await connectWireless({ adbPath, serial: null }, address)
+    if (!result.ok) {
+      // "Same WiFi" is the assumption everything else rests on, and it is easy
+      // to break without noticing (guest network, Ethernet, VPN).
+      const mine = localUrls(0).map((url) => url.replace(/^https?:\/\//, '').replace(/:\d+$/, ''))
+      if (mine.length && !mine.some((ip) => sameSubnet(ip, address))) {
+        return {
+          ok: false,
+          message:
+            `${result.message} 另外：这台电脑的地址是 ${mine.join('、')}，和 ${address.split(':')[0]} ` +
+            '不在同一个网段——多半是手机和电脑连了不同的 WiFi（或者电脑插着网线）。',
+        }
+      }
+    }
     if (result.ok && result.address) {
       // Remember it so the syncer can reconnect on its own after a drop.
       settings.update({ wirelessAddress: result.address, deviceSerial: result.address })

@@ -360,9 +360,27 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
             </div>
 
             <span className="hint" style={{ marginTop: 6 }}>
-              <b>第 2 步 · 连接</b>：填「无线调试」<b>主界面</b>上显示的那一组地址和端口
+              <b>第 2 步 · 连接</b>：配对成功后一般会<b>自动连上</b>，不用自己填。
+              没自动连上就点「自动查找」，还不行再手填「无线调试」<b>主界面</b>上那一组
               —— <b>和配对对话框里的端口不是同一个</b>，这是最容易填错的地方。
             </span>
+            <div>
+              <button
+                type="button"
+                className="btn"
+                disabled={wirelessBusy}
+                onClick={() =>
+                  void runWireless(async () => {
+                    const result = await sms.discoverWireless()
+                    if (result.address) set('wirelessAddress', result.address)
+                    return result
+                  })
+                }
+                title="手机开着无线调试时会在局域网里广播地址，这里直接去找"
+              >
+                {wirelessBusy ? '查找中…' : '自动查找并连接'}
+              </button>
+            </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <input
                 style={{ flex: 1, minWidth: 0 }}
