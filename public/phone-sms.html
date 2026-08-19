@@ -1253,21 +1253,63 @@ function removeTag(tag) {
   void savePeer({ tags: (convo.tags || []).filter(t => t !== tag) });
 }
 
+/* 标签编辑：常用工种一点即加（和 SMS Inbox 同一组），已有的点 × 删，自定义回车添加。 */
+const COMMON_TAGS = ['普工', '拣货', '叉车工', '高位叉车', '卸柜工', '打包', '分拣', '装卸'];
+let TAG_DRAFT = [];
+
 function editTags() {
   const convo = conversations().find(c => c.peer === PEER);
   if (!convo) return;
+  TAG_DRAFT = (convo.tags || []).slice();
   openModal('<h2>标签 · ' + esc(convo.title) + '</h2>'
-    + '<label for="tagInput">用逗号分开</label>'
-    + '<input id="tagInput" placeholder="例如：工地, 房东, 重要" value="' + esc((convo.tags || []).join(', ')) + '">'
+    + '<div class="hint">已有标签（点 × 去掉）</div>'
+    + '<div class="filter-row" id="tagNow"></div>'
+    + '<div class="hint">常用（做过的工种，点一下加上）</div>'
+    + '<div class="filter-row" id="tagQuick"></div>'
+    + '<input id="tagInput" placeholder="自定义标签，回车添加（如: GOFO上过班 / 靠谱 / 有车）">'
     + '<div class="hint">标签会出现在左边的筛选栏里，点一下就只看带这个标签的会话。</div>'
     + '<div class="row"><button class="action-btn" onclick="closeModal()">取消</button>'
     + '<button class="action-btn primary" id="tagSave">保存</button></div>');
-  document.getElementById('tagInput').focus();
+
+  renderTagDraft();
+  const input = document.getElementById('tagInput');
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    input.value.split(/[,，]/).map(t => t.trim()).filter(Boolean).forEach(t => tagDraftAdd(t));
+    input.value = '';
+  });
   document.getElementById('tagSave').onclick = async () => {
-    const tags = document.getElementById('tagInput').value.split(/[,，]/).map(t => t.trim()).filter(Boolean);
+    // 输入框里打了字还没按回车的也算上
+    document.getElementById('tagInput').value.split(/[,，]/).map(t => t.trim()).filter(Boolean)
+      .forEach(t => { if (!TAG_DRAFT.includes(t)) TAG_DRAFT.push(t); });
+    const tags = TAG_DRAFT.slice();
     closeModal();
     await savePeer({ tags });
   };
+}
+
+function tagDraftAdd(tag) {
+  if (!TAG_DRAFT.includes(tag)) TAG_DRAFT.push(tag);
+  renderTagDraft();
+}
+
+function tagDraftRemove(index) {
+  TAG_DRAFT.splice(index, 1);
+  renderTagDraft();
+}
+
+function renderTagDraft() {
+  const now = document.getElementById('tagNow');
+  const quick = document.getElementById('tagQuick');
+  if (!now || !quick) return;
+  now.innerHTML = TAG_DRAFT.length
+    ? TAG_DRAFT.map((t, i) => '<span class="tag">🏷 ' + esc(t)
+        + '<button title="去掉" onclick="tagDraftRemove(' + i + ')">×</button></span>').join('')
+    : '<span class="hint" style="margin:0">暂无标签</span>';
+  quick.innerHTML = COMMON_TAGS.filter(t => !TAG_DRAFT.includes(t))
+    .map(t => '<button type="button" class="chip" onclick="tagDraftAdd(\'' + t + '\')">+ ' + t + '</button>').join('')
+    || '<span class="hint" style="margin:0">常用的都加上了</span>';
 }
 
 async function toggleStar(id, on) {
