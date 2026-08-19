@@ -30539,22 +30539,36 @@ app.get('/i/:file', (req, res) => {
   res.sendFile(full, { maxAge: '365d' });
 });
 
-// GET /api/device-sms/onboarding — 这个号码在系统里入职了吗（员工档案 / 招工申请）
+// 这个号码在系统里入职了吗（员工档案 / 招工申请）——按电话尾号匹配
+function deviceSmsOnboardLookup(tail) {
+  const norm = `replace(replace(replace(replace(replace(COALESCE(phone,''),'(',''),')',''),'-',''),' ',''),'+','')`;
+  const emp = db.prepare(`SELECT id, first_name, last_name, position, status FROM employees
+    WHERE ${norm} LIKE '%' || ? ORDER BY (status='active') DESC, id DESC LIMIT 1`).get(tail);
+  const applicant = emp ? null : db.prepare(`SELECT id, name, position FROM applicant_submissions
+    WHERE ${norm} LIKE '%' || ? ORDER BY id DESC LIMIT 1`).get(tail);
+  return {
+    employee: emp ? { id: emp.id, name: ((emp.first_name || '') + ' ' + (emp.last_name || '')).trim(),
+      position: emp.position || '', status: emp.status || '' } : null,
+    applicant: applicant ? { id: applicant.id, name: applicant.name || '', position: applicant.position || '' } : null
+  };
+}
+
+// GET /api/device-sms/onboarding — peer=单个号码，或 peers=逗号分隔一批（列表页头像角标用）
 app.get('/api/device-sms/onboarding', requireAdmin, requireRole('admin'), (req, res) => {
   try {
+    const peersParam = String(req.query.peers || '');
+    if (peersParam) {
+      const results = {};
+      for (const raw of peersParam.split(',').slice(0, 100)) {
+        const digits = raw.replace(/\D/g, '');
+        if (digits.length < 7) continue;
+        results[digits] = deviceSmsOnboardLookup(digits.slice(-10));
+      }
+      return res.json({ results });
+    }
     const digits = String(req.query.peer || '').replace(/\D/g, '');
     if (digits.length < 7) return res.json({ employee: null, applicant: null });
-    const tail = digits.slice(-10);
-    const norm = `replace(replace(replace(replace(replace(COALESCE(phone,''),'(',''),')',''),'-',''),' ',''),'+','')`;
-    const emp = db.prepare(`SELECT id, first_name, last_name, position, status FROM employees
-      WHERE ${norm} LIKE '%' || ? ORDER BY (status='active') DESC, id DESC LIMIT 1`).get(tail);
-    const applicant = emp ? null : db.prepare(`SELECT id, name, position FROM applicant_submissions
-      WHERE ${norm} LIKE '%' || ? ORDER BY id DESC LIMIT 1`).get(tail);
-    res.json({
-      employee: emp ? { id: emp.id, name: ((emp.first_name || '') + ' ' + (emp.last_name || '')).trim(),
-        position: emp.position || '', status: emp.status || '' } : null,
-      applicant: applicant ? { id: applicant.id, name: applicant.name || '', position: applicant.position || '' } : null
-    });
+    res.json(deviceSmsOnboardLookup(digits.slice(-10)));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

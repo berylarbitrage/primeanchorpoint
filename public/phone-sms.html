@@ -153,6 +153,12 @@ button,input,select,textarea{font-family:inherit}
 .img-chip img{width:46px;height:46px;object-fit:cover;border-radius:8px}
 .img-chip button{margin-left:auto;border:none;background:none;font-size:1.05rem;cursor:pointer;color:var(--gray-600)}
 .msg-img{max-width:220px;max-height:260px;border-radius:10px;display:block;margin-top:4px}
+.ti-avatar{position:relative}
+.ob-dot{position:absolute;right:-3px;bottom:-3px;width:16px;height:16px;border-radius:50%;
+  font-size:10px;line-height:16px;text-align:center;color:#fff;border:1.5px solid var(--white)}
+.ob-dot.ok{background:#059669}
+.ob-dot.mid{background:#f59e0b}
+.ob-dot.no{background:#dc2626}
 .onboard-strip{padding:6px 14px;font-size:.76rem;font-weight:700;border-bottom:1px solid var(--gray-200)}
 .onboard-strip.ok{background:#d1fae5;color:#065f46}
 .onboard-strip.mid{background:#fef3c7;color:#92400e}
@@ -549,7 +555,7 @@ function renderThreads(convos) {
     const preview = (c.last.direction === 'out' ? '我: ' : '')
       + (c.last.translated_body || c.last.body || (c.last.has_media ? '［图片］' : ''));
     return '<button class="thread-item' + (c.peer === PEER && !COMPOSING ? ' on' : '') + '" onclick="pick(\'' + esc(c.peer) + '\')">'
-      + '<div class="ti-avatar' + (c.maxRisk >= 4 ? ' risky' : '') + '">' + esc(initials) + '</div>'
+      + '<div class="ti-avatar' + (c.maxRisk >= 4 ? ' risky' : '') + '">' + esc(initials) + obDot(c.peer) + '</div>'
       + '<div class="ti-body">'
       + '<div class="ti-top"><span class="ti-name">' + esc(c.title) + '</span>'
       + '<span class="ti-phone">' + esc(fmtPhone(c.address)) + '</span>'
@@ -568,6 +574,35 @@ function renderThreads(convos) {
   + (MESSAGES.length < TOTAL
       ? '<div class="load-more"><button class="action-btn" onclick="loadMore()">加载更多（共 ' + TOTAL + ' 条）</button></div>'
       : '');
+  void prefetchOnboard(convos.map(c => c.peer));
+}
+
+/** 列表头像右下角的入职角标：绿✓已入职 / 黄⚠有申请 / 红✗都没有。 */
+function obDot(peer) {
+  if (!/^\d{9,}$/.test(String(peer || ''))) return '';
+  const found = ONBOARD[peer];
+  if (!found) return '';
+  if (found.employee) return '<span class="ob-dot ok" title="已入职 · 员工档案 #' + found.employee.id + '">✓</span>';
+  if (found.applicant) return '<span class="ob-dot mid" title="未入职 · 有招工申请">!</span>';
+  return '<span class="ob-dot no" title="未入职 · 系统里没有这个号码">✗</span>';
+}
+
+/** 把列表里还没查过的号码一次问完，回来重画一遍角标。 */
+async function prefetchOnboard(peers) {
+  const todo = peers.filter(p => /^\d{9,}$/.test(String(p)) && ONBOARD[p] === undefined);
+  if (!todo.length) return;
+  todo.forEach(p => { ONBOARD[p] = null; });   // 占位，防止并发重复查
+  try {
+    const r = await api('/device-sms/onboarding?peers=' + encodeURIComponent(todo.join(',')));
+    const results = r.results || {};
+    todo.forEach(p => {
+      ONBOARD[p] = results[p] ? { employee: results[p].employee || null, applicant: results[p].applicant || null }
+                              : { employee: null, applicant: null };
+    });
+    renderThreads(conversations());
+  } catch (_) {
+    todo.forEach(p => { delete ONBOARD[p]; }); // 失败下次重画时再查
+  }
 }
 
 function loadMore() {
