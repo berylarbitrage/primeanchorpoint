@@ -169,13 +169,27 @@ async function pushToWebsite(): Promise<void> {
 }
 
 /**
+ * The phone this app should talk to right now.
+ *
+ * The saved serial is usually the USB one; when the cable is out the same
+ * phone is still present under its wireless address, so try both before
+ * declaring it gone.
+ */
+async function resolveTarget(adbPath: string): Promise<DeviceInfo | null> {
+  const current = settings.public()
+  const bySerial = await resolveDevice(adbPath, current.deviceSerial)
+  if (bySerial) return bySerial
+  return current.wirelessAddress ? resolveDevice(adbPath, current.wirelessAddress) : null
+}
+
+/**
  * Hand one message to the phone. Shared by the UI and by the website outbox —
  * both need the same optimistic record and the same follow-up sync.
  */
 async function sendOne(to: string, body: string): Promise<SendResult> {
   const current = settings.public()
   const adbPath = await locator.require()
-  const target = await resolveDevice(adbPath, current.deviceSerial)
+  const target = await resolveTarget(adbPath)
   if (!target) return { ok: false, note: '手机没连上，发不出去。' }
 
   const outcome = await sendSms({ adbPath, serial: target.serial }, to, body, {
@@ -709,7 +723,7 @@ export function registerIpc(win: BrowserWindow): void {
   handle('contacts:list', async (refresh?: boolean): Promise<Contact[]> => {
     if (contactBook && !refresh) return contactBook
     const adbPath = await locator.require()
-    const target = await resolveDevice(adbPath, settings.public().deviceSerial)
+    const target = await resolveTarget(adbPath)
     if (!target) return contactBook ?? []
     contactBook = await listPhoneContacts({ adbPath, serial: target.serial })
     return contactBook
@@ -717,7 +731,7 @@ export function registerIpc(win: BrowserWindow): void {
 
   handle('phone:dial', async (number: string): Promise<{ ok: boolean; message: string }> => {
     const adbPath = await locator.require()
-    const target = await resolveDevice(adbPath, settings.public().deviceSerial)
+    const target = await resolveTarget(adbPath)
     if (!target) return { ok: false, message: '手机没连上，没法拨号。' }
     try {
       await dialNumber({ adbPath, serial: target.serial }, number)

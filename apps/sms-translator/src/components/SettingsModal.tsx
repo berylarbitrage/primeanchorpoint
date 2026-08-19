@@ -66,7 +66,21 @@ export default function SettingsModal({ settings, onClose, onSaved }: Props) {
     try {
       const result = await action()
       setWirelessNote({ text: result.message, ok: result.ok })
-      if (result.ok) setDevices(await sms.listDevices(draft.adbPath).catch(() => []))
+      if (result.ok) {
+        setDevices(await sms.listDevices(draft.adbPath).catch(() => []))
+        // Connecting switches the saved device to the wireless address. The
+        // draft in this dialog still holds the old USB serial — and clicking
+        // 保存 would write it back, which is exactly the "worked until I
+        // unplugged the cable" failure. Pull the fresh values into the draft.
+        const saved = await sms.getSettings().catch(() => null)
+        if (saved) {
+          setDraft((prev) => ({
+            ...prev,
+            deviceSerial: saved.deviceSerial,
+            wirelessAddress: saved.wirelessAddress,
+          }))
+        }
+      }
     } catch (err) {
       setWirelessNote({ text: errorText(err), ok: false })
     } finally {

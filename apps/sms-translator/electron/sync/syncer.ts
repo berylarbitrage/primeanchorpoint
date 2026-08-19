@@ -1,5 +1,5 @@
 import { listDevices, resolveDevice, type AdbContext } from '../adb/adb'
-import { connectWireless } from '../adb/wireless'
+import { connectWireless, disconnectWireless } from '../adb/wireless'
 import { ContactResolver } from '../adb/contacts'
 import { querySms } from '../adb/sms'
 import {
@@ -114,17 +114,34 @@ export class Syncer {
       const adbPath = await this.deps.adbPath()
       let device = await resolveDevice(adbPath, settings.deviceSerial)
 
+      // The saved serial is usually the USB one. With the cable out, the same
+      // phone is still there — under its wireless address. Without this
+      // fallback, unplugging looks like the phone vanished.
+      if (!device && settings.wirelessAddress) {
+        device = await resolveDevice(adbPath, settings.wirelessAddress)
+      }
+
       // A wireless device drops off whenever the phone sleeps or the WiFi
       // blips. Reconnecting is cheap and silent, so do it before reporting a
       // failure the user would have to act on.
       if (!device && settings.wirelessAddress && settings.wirelessAutoReconnect) {
         this.deps.onPhase('connecting', `正在重新连接 ${settings.wirelessAddress}…`)
-        const reconnected = await connectWireless(
-          { adbPath, serial: null },
-          settings.wirelessAddress,
-        )
+        const ctx = { adbPath, serial: null }
+        const reconnected = await connectWireless(ctx, settings.wirelessAddress)
         if (reconnected.ok) {
-          device = await resolveDevice(adbPath, settings.deviceSerial)
+          device =
+            (await resolveDevice(adbPath, settings.wirelessAddress)) ??
+            (await resolveDevice(adbPath, settings.deviceSerial))
+        }
+        // adb's classic trap: with a half-dead link `adb connect` says
+        // "already connected" while the device sits there offline. Kicking the
+        // stale entry and connecting again is what actually revives it.
+        if (!device) {
+          await disconnectWireless(ctx, settings.wirelessAddress).catch(() => {})
+          const retried = await connectWireless(ctx, settings.wirelessAddress)
+          if (retried.ok) {
+            device = await resolveDevice(adbPath, settings.wirelessAddress)
+          }
         }
       }
 
