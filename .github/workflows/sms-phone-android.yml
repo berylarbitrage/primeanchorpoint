@@ -1,0 +1,86 @@
+name: Build SMS Phone App (Android)
+
+# 手机端「短信同步」App 的 APK 在这里编译。旁路安装（不上应用商店），所以用
+# debug 签名即可——注意 debug 密钥每次构建都不同，升级要先卸载旧版
+#（App 里只存网址和令牌，重填即可）。
+
+on:
+  push:
+    branches:
+      - 'claude/windows-sms-translator-**'
+    paths:
+      - 'apps/sms-phone/**'
+      - '.github/workflows/sms-phone-android.yml'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: >
+          Publish a Release under this tag (e.g. sms-phone-v0.1.0). Leave empty
+          to only build the artifact.
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/sms-phone
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # AGP 8.5.x 要求 Gradle 8.7+；runner 自带的版本会漂，钉死。
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.7'
+
+      - name: Build APK
+        run: gradle assembleDebug --no-daemon
+
+      - name: Name the APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk "SMS.Phone-${{ inputs.release_tag || 'dev' }}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sms-phone-apk
+          path: apps/sms-phone/SMS.Phone-*.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish GitHub Release
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          gh release create "$RELEASE_TAG" SMS.Phone-*.apk \
+            --target "$GITHUB_SHA" \
+            --title "短信同步（手机版） $RELEASE_TAG" \
+            --notes "$(cat <<'NOTES'
+          装在**手机**上的「短信同步」App —— 手机自己把短信推到公司网站、也替网站发短信。**不需要电脑、不需要数据线、没有掉线问题**（手机有网就行，WiFi 或流量都可以）。
+
+          ## 安装（只做一次）
+
+          1. 用手机浏览器打开本页，下载 `SMS.Phone-*.apk`
+          2. 点开下载的文件 → 手机会提示「不允许安装未知应用」→ 点设置里允许这个浏览器安装 → 安装
+          3. 打开 App：网址填 `https://primeanchorpoint.com`，令牌到网站「手机短信」页 → ⚙ → 生成新令牌
+          4. 点「保存并启动」→ 权限窗口**全部允许**（读短信、发短信、通知）→ 弹「忽略电池优化」选**允许**
+          5. 三星如果 SMS 权限是灰色的：应用信息 → 右上角 ⋮ → **允许受限设置**，再回来点一次启动
+
+          ## 要知道的
+
+          - **用了这个 App 就把电脑版设置里的「同步到公司网站」关掉**，不然同一条短信会出现两次
+          - 升级新版本前先卸载旧版（App 里只存网址和令牌，重装后重填即可）
+          - 只同步文字短信，图片短信暂不同步
+          - 三星建议再做一步：设置 → 电池 → 后台使用限制 → 把「短信同步」加入「不受限制的应用」
+          NOTES
+          )"

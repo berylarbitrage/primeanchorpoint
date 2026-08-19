@@ -1,0 +1,5 @@
+// 手机端「短信同步」App。零第三方依赖（HttpURLConnection + org.json 都是
+// Android 自带的），把 CI 编译失败的可能性压到最低。
+plugins {
+    id 'com.android.application' version '8.5.2' apply false
+}
