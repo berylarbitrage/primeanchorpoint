@@ -241,7 +241,7 @@ async function drainRetranslate(): Promise<void> {
  * the phone even starts sending it, so it is deliberately short; the request
  * itself is a few hundred bytes.
  */
-const OUTBOX_POLL_MS = 5_000
+const OUTBOX_POLL_MS = 3_000
 let outboxCheckedAt = 0
 let outboxBusy = false
 
