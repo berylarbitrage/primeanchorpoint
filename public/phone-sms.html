@@ -410,6 +410,42 @@ function unreadCount(list, readAt) {
   return n;
 }
 
+/* 同一条短信被两台设备各推一份(手机 + 电脑, 或换令牌后的新旧设备)时只显示一份:
+   同人、同方向、同内容、时间差 3 分钟内、来自不同设备的算重复。
+   留译文多的那份, 时间取早的那份(真实发送时间)。服务器新推的已经会拦, 这里兜住历史数据。 */
+function dedupeMessages(list) {
+  const groups = new Map();
+  for (const m of list) {
+    const body = String(m.body || '').trim();
+    if (!body) continue;
+    const k = m.peer + '|' + m.direction + '|' + body;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(m);
+  }
+  const drop = new Set();
+  for (const arr of groups.values()) {
+    if (arr.length < 2) continue;
+    arr.sort((a, b) => new Date(sqlTime(a.sent_at)) - new Date(sqlTime(b.sent_at)));
+    let kept = arr[0];
+    for (let i = 1; i < arr.length; i++) {
+      const m = arr[i];
+      const close = new Date(sqlTime(m.sent_at)) - new Date(sqlTime(kept.sent_at)) <= 180000;
+      if (close && m.device_id !== kept.device_id) {
+        if (!kept.translated_body && m.translated_body) {
+          m.sent_at = kept.sent_at;
+          drop.add(kept);
+          kept = m;
+        } else {
+          drop.add(m);
+        }
+      } else {
+        kept = m; // 隔得久或同一台设备推的 —— 是真的又发/又收了一次同样内容
+      }
+    }
+  }
+  return list.filter(m => !drop.has(m));
+}
+
 /* 已收到的 + 排队待发的合成一条时间线。 */
 function allItems() {
   const queued = OUTBOX.map(o => ({
@@ -417,7 +453,7 @@ function allItems() {
     peer: o.peer || o.to_address, address: o.to_address, direction: 'out', kind: 'sms',
     body: o.body, translated_body: '', sent_at: sqlTime(o.created_at)
   }));
-  return MESSAGES.concat(queued);
+  return dedupeMessages(MESSAGES).concat(queued);
 }
 
 function conversations() {

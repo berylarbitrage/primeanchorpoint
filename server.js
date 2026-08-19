@@ -30535,24 +30535,40 @@ app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
         needs_retranslate=CASE WHEN NULLIF(excluded.translated_body,'') IS NOT NULL THEN 0
                                ELSE device_sms_messages.needs_retranslate END`);
 
+    // 同一条真实短信可能被手机和电脑各推一份(或换过令牌后旧新设备各一份) ——
+    // 同人、同方向、同内容、时间差 3 分钟内, 且已有的那份来自别的设备, 就当重复丢弃。
+    // 同一设备自己的更新(remote_id 相同, 比如电脑补推译文)不受影响。
+    const existsSelf = db.prepare('SELECT id FROM device_sms_messages WHERE device_id=? AND remote_id=?');
+    const existsOther = db.prepare(`SELECT id FROM device_sms_messages
+      WHERE device_id != ? AND peer=? AND direction=? AND body=?
+        AND ABS(strftime('%s', sent_at) - strftime('%s', ?)) <= 180 LIMIT 1`);
+
     let saved = 0;
     const write = db.transaction((rows) => {
       for (const m of rows) {
         const remoteId = String(m.id || '').slice(0, 120);
         const sentAt = Number(m.date);
         if (!remoteId || !Number.isFinite(sentAt)) continue;
+        const peerKey = String(m.peer || '').slice(0, 40);
+        const direction = m.direction === 'out' ? 'out' : 'in';
+        const bodyText = String(m.body || '').slice(0, 4000);
+        const sentIso = new Date(sentAt).toISOString();
+        if (bodyText.trim() && !existsSelf.get(req.smsDevice.id, remoteId)
+            && existsOther.get(req.smsDevice.id, peerKey, direction, bodyText, sentIso)) {
+          continue;
+        }
         upsert.run(
           req.smsDevice.id, remoteId,
-          String(m.peer || '').slice(0, 40), String(m.address || '').slice(0, 60),
+          peerKey, String(m.address || '').slice(0, 60),
           String(m.contact || '').slice(0, 120),
-          m.direction === 'out' ? 'out' : 'in',
+          direction,
           m.kind === 'mms' ? 'mms' : 'sms',
-          String(m.body || '').slice(0, 4000), String(m.translated_body || '').slice(0, 4000),
+          bodyText, String(m.translated_body || '').slice(0, 4000),
           String(m.source_lang || '').slice(0, 40),
           Number.isFinite(Number(m.risk_score)) ? Math.max(0, Math.min(5, Math.round(Number(m.risk_score)))) : null,
           String(m.risk_category || '').slice(0, 30), String(m.risk_summary || '').slice(0, 300),
           m.has_media ? 1 : 0,
-          new Date(sentAt).toISOString()
+          sentIso
         );
         saved++;
       }
