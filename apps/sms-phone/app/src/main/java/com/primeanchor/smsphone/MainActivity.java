@@ -12,12 +12,18 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
+import android.database.Cursor;
 import android.provider.Settings;
+import android.provider.Telephony;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 /**
  * 主界面。0.2.0 重做：状态放最上面、大字、带颜色；每一项权限单独显示 ✓/✗
@@ -38,6 +44,7 @@ public class MainActivity extends Activity {
     private TextView statusCard;
     private TextView lastErrorView;
     private TextView countersView;
+    private TextView smsDbView;
     private TextView checkReadSms;
     private TextView checkSendSms;
     private TextView checkNotify;
@@ -66,6 +73,7 @@ public class MainActivity extends Activity {
         statusCard = findViewById(R.id.statusCard);
         lastErrorView = findViewById(R.id.lastError);
         countersView = findViewById(R.id.counters);
+        smsDbView = findViewById(R.id.smsDb);
         checkReadSms = findViewById(R.id.checkReadSms);
         checkSendSms = findViewById(R.id.checkSendSms);
         checkNotify = findViewById(R.id.checkNotify);
@@ -162,8 +170,11 @@ public class MainActivity extends Activity {
         lastErrorView.setVisibility(lastError.isEmpty() ? View.GONE : View.VISIBLE);
         if (!lastError.isEmpty()) lastErrorView.setText("最近一次错误：" + lastError);
 
+        String lastPush = prefs.getString("lastPush", "");
         countersView.setText("已推到网站 " + prefs.getLong("pushedTotal", 0)
-                + " 条 · 已替网站发出 " + prefs.getLong("sentTotal", 0) + " 条");
+                + " 条 · 已替网站发出 " + prefs.getLong("sentTotal", 0) + " 条"
+                + (lastPush.isEmpty() ? "" : "\n上次推送: " + lastPush));
+        smsDbView.setText(smsDbSummary());
 
         NotificationManager notifications = getSystemService(NotificationManager.class);
         PowerManager power = getSystemService(PowerManager.class);
@@ -176,6 +187,46 @@ public class MainActivity extends Activity {
         check(checkBattery, fixBattery,
                 power != null && power.isIgnoringBatteryOptimizations(getPackageName()),
                 "电池不限制", "不修的话系统过一会就把同步杀了");
+    }
+
+    /**
+     * 诊断行：手机短信库 24 小时内实际有什么。
+     * 「收 0 条」= 别人发的根本没以普通短信形式到达这台手机（多半还在走 RCS），
+     * 不是同步的问题；「收 N 条」但网站上没有 = 同步或服务器的问题。
+     */
+    private String smsDbSummary() {
+        if (!has(Manifest.permission.READ_SMS)) return "";
+        try {
+            long since = System.currentTimeMillis() - 24L * 3600 * 1000;
+            int received = 0, sent = 0;
+            String newest = "";
+            try (Cursor cursor = getContentResolver().query(Telephony.Sms.CONTENT_URI,
+                    new String[]{"address", "date", "type", "body"},
+                    "date > ?", new String[]{String.valueOf(since)}, "date DESC")) {
+                while (cursor != null && cursor.moveToNext()) {
+                    int type = cursor.getInt(2);
+                    if (type == Telephony.Sms.MESSAGE_TYPE_INBOX) {
+                        received++;
+                        if (newest.isEmpty()) {
+                            String body = cursor.getString(3) == null ? "" : cursor.getString(3);
+                            if (body.length() > 14) body = body.substring(0, 14) + "…";
+                            newest = new SimpleDateFormat("HH:mm", Locale.getDefault())
+                                    .format(new Date(cursor.getLong(1)))
+                                    + " 来自 " + cursor.getString(0) + "「" + body + "」";
+                        }
+                    } else if (type != Telephony.Sms.MESSAGE_TYPE_DRAFT) {
+                        sent++;
+                    }
+                }
+            }
+            String text = "手机短信库（24小时）: 收 " + received + " 条 / 发 " + sent + " 条";
+            text += newest.isEmpty()
+                    ? "\n一条收到的都没有 —— 别人发的还没以「普通短信」到达这台手机"
+                    : "\n最新收到: " + newest;
+            return text;
+        } catch (Exception e) {
+            return "短信库读取失败: " + e.getMessage();
+        }
     }
 
     private boolean has(String permission) {
