@@ -265,6 +265,8 @@ let searchTimer = null;
 let TEMPLATES = null, TPL_CATS = [], TPL_OPEN = '';   // 预制信息（和 SMS Inbox 共用一份）
 let PENDING_IMG = null;                                // 待发送的图片 {type,data,preview}
 let NO_TRANSLATE_TEXT = '';                            // 双语模板原样发送，不再机翻
+let PRESET_TX = null, PRESET_FOR = '';                 // 招工模板的标准翻译（代替机器翻译）
+let RQ_TYPE = 'hiring', RQ_JOBS = new Set();
 
 const RISK_LABELS = { personal:'私人', verification:'验证码', bank:'银行', delivery:'物流',
   service:'服务通知', marketing:'营销', spam:'垃圾', fraud:'诈骗', other:'其他' };
@@ -639,6 +641,7 @@ function renderDetail(convos) {
     + '<button class="action-btn" onclick="markUnread()">标为未读</button>'
     + '<button class="action-btn" onclick="toggleStatus()">'
     + (convo.status === 'closed' ? '重新打开' : '✓ 关闭会话') + '</button>'
+    + '<button class="action-btn" onclick="showRecruitQ()" title="选工种，生成标准翻译的招工提问">💼 招工问题</button>'
     + '<button class="action-btn" onclick="startNew()">✎ 新短信</button>'
     + '<div style="flex:1"></div>'
     + (convo.unread ? '<span class="badge" style="background:#2563eb;color:#fff">' + convo.unread + ' 条新</span>' : '')
@@ -782,6 +785,116 @@ function useTpl(i) {
   draft.focus();
 }
 
+/* ── 💼 招工问题模板：选工种生成标准翻译的提问（和 SMS Inbox 同一份文案，
+      不走机器翻译，避免「卸柜」这类行话被翻错） ── */
+
+const RECRUIT_JOBS = [
+  { key: 'forklift', zh: '普通叉车司机',                en: 'forklift driver',                                      es: 'conductor de montacargas' },
+  { key: 'cherry',   zh: '高位叉车 Cherry Picker 操作员', en: 'cherry picker operator',                               es: 'operador de cherry picker' },
+  { key: 'unload',   zh: '卸柜工（卸集装箱）',            en: 'container unloader (unloading shipping containers)',   es: 'descargador de contenedores' },
+  { key: 'loader',   zh: '装卸工',                      en: 'loader/unloader',                                      es: 'cargador y descargador' },
+  { key: 'picker',   zh: '拣货员',                      en: 'order picker',                                         es: 'surtidor de pedidos (picker)' },
+  { key: 'packer',   zh: '打包员',                      en: 'packer',                                               es: 'empacador' },
+  { key: 'sorter',   zh: '分拣员',                      en: 'sorter',                                               es: 'clasificador' },
+  { key: 'general',  zh: '普工',                        en: 'general warehouse worker',                             es: 'trabajador general de almacén' },
+];
+const RECRUIT_QTYPES = [
+  { key: 'hiring', label: '📢 招人：有没有人可以介绍', needJobs: true,
+    zh: js => `我们现在需要招${js.map(j=>j.zh).join('、')}，你们有人可以介绍吗？`,
+    en: js => `Hi! We are currently hiring: ${js.map(j=>j.en).join(', ')}. Would you or someone you know be interested? Referrals are welcome.`,
+    es: js => `¡Hola! Estamos contratando: ${js.map(j=>j.es).join(', ')}. ¿Le interesa a usted o conoce a alguien? Se agradecen las recomendaciones.` },
+  { key: 'self', label: '🙋 问本人会不会做', needJobs: true,
+    zh: js => js.length === 1 ? `请问你会做${js[0].zh}的工作吗？有相关经验吗？` : `请问你会做这些工作吗：${js.map(j=>j.zh).join('、')}？有相关经验吗？`,
+    en: js => js.length === 1 ? `Can you work as a ${js[0].en}? Do you have experience?` : `Can you do any of these jobs: ${js.map(j=>j.en).join(', ')}? Do you have experience?`,
+    es: js => js.length === 1 ? `¿Sabe trabajar como ${js[0].es}? ¿Tiene experiencia?` : `¿Sabe hacer alguno de estos trabajos: ${js.map(j=>j.es).join(', ')}? ¿Tiene experiencia?` },
+  { key: 'friend', label: '👥 问有没有朋友会做', needJobs: true,
+    zh: js => js.length === 1 ? `你有朋友会做${js[0].zh}吗？有的话可以介绍给我们，我们正在招人。` : `你有朋友会做这些工作吗：${js.map(j=>j.zh).join('、')}？有的话可以介绍给我们，我们正在招人。`,
+    en: js => js.length === 1 ? `Do you have any friends who can work as a ${js[0].en}? We are hiring — feel free to refer them to us.` : `Do you have any friends who can do these jobs: ${js.map(j=>j.en).join(', ')}? We are hiring — feel free to refer them to us.`,
+    es: js => js.length === 1 ? `¿Tiene amigos que puedan trabajar como ${js[0].es}? Estamos contratando; puede recomendárnoslos.` : `¿Tiene amigos que sepan hacer alguno de estos trabajos: ${js.map(j=>j.es).join(', ')}? Estamos contratando; puede recomendárnoslos.` },
+  { key: 'english', label: '🇺🇸 问会不会英语', needJobs: false,
+    zh: () => `请问你会说英语吗？`,
+    en: () => `Do you speak English?`,
+    es: () => `¿Habla usted inglés?` },
+];
+
+/** 这个会话选的发送语言 → en / es / zh（其他语言让机器翻译兜底）。 */
+function rqLang() {
+  const convo = COMPOSING ? null : conversations().find(c => c.peer === PEER);
+  const lang = (convo && convo.contactLang) || DEFAULT_SEND_LANG;
+  if (lang === 'English') return 'en';
+  if (lang === 'Español') return 'es';
+  if (lang === '简体中文' || lang === '繁體中文') return 'zh';
+  return '';
+}
+
+function rqBuild() {
+  const qt = RECRUIT_QTYPES.find(q => q.key === RQ_TYPE);
+  if (!qt) return null;
+  const jobs = RECRUIT_JOBS.filter(j => RQ_JOBS.has(j.key));
+  if (qt.needJobs && !jobs.length) return { qt, jobs, zh: '', tx: '' };
+  const lang = rqLang();
+  return { qt, jobs, zh: qt.zh(jobs), tx: (lang && lang !== 'zh') ? qt[lang](jobs) : '' };
+}
+
+function showRecruitQ() {
+  openModal('<h2>💼 招工问题模板</h2>'
+    + '<div class="hint">问题类型</div>'
+    + '<div class="filter-row" id="rqTypes"></div>'
+    + '<div id="rqJobsWrap"><div class="hint">工种（可多选）</div>'
+    + '<div class="filter-row" id="rqJobs"></div></div>'
+    + '<div class="hint">预览（发送标准翻译，不走机器翻译）</div>'
+    + '<div id="rqPreview" style="border:1px solid var(--gray-200);border-radius:12px;padding:10px 12px;'
+    + 'font-size:.82rem;background:#f9fafb;min-height:52px;line-height:1.6"></div>'
+    + '<div class="row">'
+    + '<button class="action-btn primary" onclick="insertRecruitQ()">填入发送框</button>'
+    + '<button class="action-btn" onclick="closeModal()">取消</button></div>');
+  renderRecruitQ();
+}
+
+function rqSetType(k) { RQ_TYPE = k; renderRecruitQ(); }
+function rqToggleJob(k) { RQ_JOBS.has(k) ? RQ_JOBS.delete(k) : RQ_JOBS.add(k); renderRecruitQ(); }
+
+function renderRecruitQ() {
+  document.getElementById('rqTypes').innerHTML = RECRUIT_QTYPES.map(q =>
+    '<button type="button" class="chip' + (q.key === RQ_TYPE ? ' on' : '') + '" onclick="rqSetType(\'' + q.key + '\')">' + q.label + '</button>').join('');
+  const qt = RECRUIT_QTYPES.find(q => q.key === RQ_TYPE);
+  document.getElementById('rqJobsWrap').style.display = qt && qt.needJobs ? '' : 'none';
+  document.getElementById('rqJobs').innerHTML = RECRUIT_JOBS.map(j =>
+    '<button type="button" class="chip' + (RQ_JOBS.has(j.key) ? ' on' : '') + '" onclick="rqToggleJob(\'' + j.key + '\')">' + esc(j.zh) + '</button>').join('');
+  const built = rqBuild();
+  const preview = document.getElementById('rqPreview');
+  if (!built || (built.qt.needJobs && !built.jobs.length)) {
+    preview.innerHTML = '<span style="color:var(--gray-400)">先选至少一个工种</span>';
+    return;
+  }
+  const langName = { en: '英语', es: '西语', zh: '中文' }[rqLang()] || '';
+  preview.innerHTML = '<div style="margin-bottom:4px"><b>中文：</b>' + esc(built.zh) + '</div>'
+    + (built.tx
+        ? '<div style="color:#0f766e"><b>发送（' + langName + '·标准翻译）：</b>' + esc(built.tx) + '</div>'
+        : (rqLang() === 'zh'
+            ? '<div style="color:var(--gray-400)">对方语言是中文，直接发中文</div>'
+            : '<div style="color:var(--gray-400)">这个语言没有标准翻译，会按你选的语言机器翻译</div>'));
+}
+
+function insertRecruitQ() {
+  const built = rqBuild();
+  if (!built || (built.qt.needJobs && !built.jobs.length)) return;
+  closeModal();
+  const draft = document.getElementById('draft');
+  if (!draft) return;
+  draft.value = built.zh;
+  clearPreview();
+  NO_TRANSLATE_TEXT = built.tx ? '' : built.zh;   // 中文直发时不再机翻
+  PRESET_TX = built.tx || null;                    // 有标准翻译就用它，不调翻译接口
+  PRESET_FOR = built.zh;
+  const note = document.getElementById('sendNote');
+  if (note) {
+    note.className = 'reply-hint';
+    note.textContent = built.tx ? '已填入 — 点 ▶ 会先显示标准翻译，确认后发出。' : '已填入 — 点 ▶ 直接发出中文。';
+  }
+  draft.focus();
+}
+
 /* ── 发图片：先传到网站，短信里带图片链接（任何手机点开即看） ── */
 
 function pickImage() { document.getElementById('imgInput').click(); }
@@ -913,6 +1026,11 @@ async function queueSend() {
   if (!body) { void enqueue('', ''); return; }                     // 只发图片，不用翻译
   if (PREVIEW) { confirmSend(); return; }
   if (NO_TRANSLATE_TEXT && body === NO_TRANSLATE_TEXT) { void enqueue(body, ''); return; } // 双语模板原样发
+  if (PRESET_TX && body === PRESET_FOR) {              // 招工模板：标准翻译直接进预览，不调翻译接口
+    note.textContent = '标准翻译，确认后发出。';
+    showPreview(PRESET_TX, '标准翻译');
+    return;
+  }
   if (!translateTo) { void enqueue(body, ''); return; }
 
   const btn = document.getElementById('sendBtn');
