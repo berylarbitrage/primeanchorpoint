@@ -179,7 +179,18 @@ async function resolveTarget(adbPath: string): Promise<DeviceInfo | null> {
   const current = settings.public()
   const bySerial = await resolveDevice(adbPath, current.deviceSerial)
   if (bySerial) return bySerial
-  return current.wirelessAddress ? resolveDevice(adbPath, current.wirelessAddress) : null
+  if (!current.wirelessAddress) return null
+
+  const byWireless = await resolveDevice(adbPath, current.wirelessAddress)
+  if (byWireless) return byWireless
+
+  // The link is down at the exact moment the user hit send. One revive attempt
+  // (kick the stale entry, reconnect) turns "发送失败" into a two-second pause,
+  // which is what a flaky wireless link should feel like.
+  const ctx = { adbPath, serial: null }
+  await disconnectWireless(ctx, current.wirelessAddress).catch(() => {})
+  const revived = await connectWireless(ctx, current.wirelessAddress)
+  return revived.ok ? resolveDevice(adbPath, current.wirelessAddress) : null
 }
 
 /**
@@ -279,6 +290,12 @@ async function drainOutbox(): Promise<void> {
   const target = { url: current.uploadUrl, token: current.uploadToken }
   void syncNotes()
   void drainRetranslate()
+
+  // Taking a message off the website's queue burns one of its retry attempts,
+  // so don't take anything while the phone is unreachable — the queue keeps it
+  // and this runs again right after the link comes back.
+  if (!device) return
+
   const queued = await fetchOutbox(target)
   if (!queued.length) return
 

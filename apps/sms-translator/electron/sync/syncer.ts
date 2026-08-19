@@ -1,4 +1,4 @@
-import { listDevices, resolveDevice, type AdbContext } from '../adb/adb'
+import { listDevices, probeDevice, resolveDevice, type AdbContext } from '../adb/adb'
 import { connectWireless, disconnectWireless } from '../adb/wireless'
 import { ContactResolver } from '../adb/contacts'
 import { querySms } from '../adb/sms'
@@ -121,6 +121,13 @@ export class Syncer {
         device = await resolveDevice(adbPath, settings.wirelessAddress)
       }
 
+      // `adb devices` is only the host's bookkeeping — a dead wireless link can
+      // sit there as `device` for a long while, and everything downstream then
+      // shows "connected" while nothing works. Ask the phone itself.
+      if (device && !(await probeDevice({ adbPath, serial: device.serial }))) {
+        device = null
+      }
+
       // A wireless device drops off whenever the phone sleeps or the WiFi
       // blips. Reconnecting is cheap and silent, so do it before reporting a
       // failure the user would have to act on.
@@ -132,6 +139,7 @@ export class Syncer {
           device =
             (await resolveDevice(adbPath, settings.wirelessAddress)) ??
             (await resolveDevice(adbPath, settings.deviceSerial))
+          if (device && !(await probeDevice({ adbPath, serial: device.serial }))) device = null
         }
         // adb's classic trap: with a half-dead link `adb connect` says
         // "already connected" while the device sits there offline. Kicking the
@@ -141,6 +149,7 @@ export class Syncer {
           const retried = await connectWireless(ctx, settings.wirelessAddress)
           if (retried.ok) {
             device = await resolveDevice(adbPath, settings.wirelessAddress)
+            if (device && !(await probeDevice({ adbPath, serial: device.serial }))) device = null
           }
         }
       }
@@ -155,7 +164,7 @@ export class Syncer {
           unauthorized
             ? '手机已连上，但还没授权。请在手机屏幕上点「允许 USB 调试」，并勾选「一律允许」。'
             : settings.wirelessAddress
-              ? `连不上 ${settings.wirelessAddress}。请确认手机和电脑在同一个 WiFi、手机的「无线调试」是开着的（关掉再打开会换端口，需要重新填地址）。`
+              ? `无线掉线了（${settings.wirelessAddress}）。手机息屏久了 WiFi 会睡着——点亮手机屏幕，几秒后会自动连回来。一直连不上就检查：同一个 WiFi、无线调试开着；想彻底稳就插 USB 线。`
               : '没有检测到手机。请用 USB 线连接并开启「开发者选项 → USB 调试」，或在设置里配置无线连接。三星手机如果这个开关是灰的、写着「已被自动拦截器阻止（Blocked by Auto Blocker）」，先到 设置 → 安全和隐私 → 自动拦截器 里把它关掉。',
         )
         return { imported: 0 }
