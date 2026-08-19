@@ -34,6 +34,9 @@ import java.util.Locale;
  */
 public class SyncService extends Service {
 
+    /** 界面上的「立即同步」按钮发这个 action，马上跑一轮而不等 10 秒。 */
+    public static final String ACTION_SYNC_NOW = "com.primeanchor.smsphone.SYNC_NOW";
+
     private static final String CHANNEL = "sync";
     private static final long TICK_MS = 10_000;
     /** 首次运行导入最近这么多天。 */
@@ -88,6 +91,9 @@ public class SyncService extends Service {
         if (!running) {
             running = true;
             handler.post(tick);
+        } else if (intent != null && ACTION_SYNC_NOW.equals(intent.getAction())) {
+            // 只补跑一轮，不再排一个新循环——排了就成双循环了
+            handler.post(this::doTick);
         }
         return START_STICKY;
     }
@@ -108,6 +114,9 @@ public class SyncService extends Service {
 
     private void doTick() {
         SharedPreferences prefs = getSharedPreferences("cfg", MODE_PRIVATE);
+        // 心跳：界面靠它判断服务是不是真的活着（被系统杀了心跳就停在过去）
+        prefs.edit().putLong("beat", System.currentTimeMillis()).apply();
+
         String base = prefs.getString("url", "").trim();
         String token = prefs.getString("token", "").trim();
         if (base.isEmpty() || token.isEmpty()) {
@@ -117,20 +126,29 @@ public class SyncService extends Service {
         String api = base.replaceAll("/+$", "") + "/api/device-sms";
 
         try {
-            pushNew(api, token, prefs);
-            drainOutbox(api, token);
+            int pushed = pushNew(api, token, prefs);
+            int sent = drainOutbox(api, token);
+            if (pushed > 0) {
+                prefs.edit().putLong("pushedTotal", prefs.getLong("pushedTotal", 0) + pushed).apply();
+            }
+            if (sent > 0) {
+                prefs.edit().putLong("sentTotal", prefs.getLong("sentTotal", 0) + sent).apply();
+            }
+            prefs.edit().putString("lastError", "").apply();
             status(prefs, "正常 · " + now() + " 已同步");
         } catch (Exception e) {
-            status(prefs, "出错: " + e.getMessage());
+            String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+            prefs.edit().putString("lastError", now() + " " + message).apply();
+            status(prefs, "出错: " + message);
         }
     }
 
-    private void pushNew(String api, String token, SharedPreferences prefs) throws Exception {
+    private int pushNew(String api, String token, SharedPreferences prefs) throws Exception {
         long cursor = prefs.getLong("cursor", 0);
         if (cursor == 0) cursor = System.currentTimeMillis() - FIRST_IMPORT_MS;
 
         SmsRepo.Batch batch = SmsRepo.readSince(this, cursor - OVERLAP_MS, 200);
-        if (batch.messages.length() == 0) return;
+        if (batch.messages.length() == 0) return 0;
 
         JSONObject body = new JSONObject();
         body.put("device_serial", serial());
@@ -139,12 +157,14 @@ public class SyncService extends Service {
 
         // 服务器收下了才挪游标；失败下一轮原样重推（服务器按 id 覆盖，安全）
         prefs.edit().putLong("cursor", batch.maxDate).apply();
+        return batch.messages.length();
     }
 
-    private void drainOutbox(String api, String token) throws Exception {
+    private int drainOutbox(String api, String token) throws Exception {
         JSONObject response = Api.getJson(api + "/outbox", token);
         JSONArray queued = response.optJSONArray("messages");
-        if (queued == null) return;
+        if (queued == null) return 0;
+        int sent = 0;
 
         for (int i = 0; i < queued.length(); i++) {
             JSONObject item = queued.getJSONObject(i);
@@ -163,7 +183,9 @@ public class SyncService extends Service {
             result.put("ok", ok);
             result.put("note", note);
             Api.postJson(api + "/outbox/" + id + "/result", token, result);
+            if (ok) sent++;
         }
+        return sent;
     }
 
     private void sendSms(String to, String body) {
