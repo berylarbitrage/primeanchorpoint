@@ -15341,8 +15341,24 @@ function _applyQrBase(req) {
 // modal), so we do NOT gate on the partner's `active` flag — doing so made a
 // deliberately-generated recruiting QR fail with a confusing "expired" error
 // whenever the company was temporarily inactive (e.g. mid contract re-sign).
+// 一次性申请链接：从「手机短信」页发给某个人的专属链接，提交成功即失效。
+// 二维码那份公共 token 不受影响（多人反复用）。
+db.exec(`CREATE TABLE IF NOT EXISTS apply_onetime_tokens (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT UNIQUE NOT NULL,
+  peer TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  used_at DATETIME,
+  submission_id INTEGER
+)`);
+
 function _partnerByApplyToken(token) {
   if (!token || typeof token !== 'string' || token.length < 16) return null;
+  // 一次性链接：没用过 → 按通用申请处理（partner id 0）；用过 → 无效
+  try {
+    const onetime = db.prepare('SELECT id, used_at FROM apply_onetime_tokens WHERE token=?').get(token);
+    if (onetime) return onetime.used_at ? null : { id: 0, name: '' };
+  } catch (_) {}
   // Generic (company-less) recruiting QR: its token lives in app_settings rather
   // than on a partner row. Matching submissions get the pseudo partner id 0.
   try {
@@ -15508,8 +15524,17 @@ app.get('/apply/:token', (req, res) => {
 
 // PUBLIC: minimal info so the page knows which company it's for.
 app.get('/api/apply/info', (req, res) => {
-  const p = _partnerByApplyToken(String(req.query.t || ''));
-  if (!p) return res.status(404).json({ error: '链接无效或已失效 / Invalid or expired link' });
+  const t = String(req.query.t || '');
+  const p = _partnerByApplyToken(t);
+  if (!p) {
+    let onetime = null;
+    try { onetime = db.prepare('SELECT used_at FROM apply_onetime_tokens WHERE token=?').get(t); } catch (_) {}
+    if (onetime && onetime.used_at) {
+      return res.status(404).json({ error:
+        '这份申请已经提交，链接已失效。Application already submitted — link expired. / Solicitud ya enviada — enlace vencido.' });
+    }
+    return res.status(404).json({ error: '链接无效或已失效 / Invalid or expired link' });
+  }
   res.json({ partner_id: p.id, partner_name: p.name });
 });
 
@@ -15664,6 +15689,12 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
         docMeta.push({ docType, key: fileKey, originalname: f.originalname || '', mime: f.mimetype || '' });
       }
     }
+    // 一次性链接：提交成功即作废，再打开显示已失效
+    try {
+      db.prepare(`UPDATE apply_onetime_tokens SET used_at=datetime('now'), submission_id=? WHERE token=? AND used_at IS NULL`)
+        .run(subId, token);
+    } catch (_) {}
+
     // 发放 8 位打卡密码：提交成功页面显示，并短信发到刚验证过的手机号
     let timeclockCode = '';
     try {
@@ -30554,6 +30585,16 @@ function deviceSmsOnboardLookup(tail) {
     applicant: applicant ? { id: applicant.id, name: applicant.name || '', position: applicant.position || '' } : null
   };
 }
+
+// POST /api/device-sms/apply-link — 给这个人造一条专属的一次性申请链接
+app.post('/api/device-sms/apply-link', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const peer = String((req.body || {}).peer || '').slice(0, 40);
+    const token = crypto.randomBytes(20).toString('hex');
+    db.prepare('INSERT INTO apply_onetime_tokens (token, peer) VALUES (?,?)').run(token, peer);
+    res.json({ success: true, url: '/apply/' + token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // GET /api/device-sms/onboarding — peer=单个号码，或 peers=逗号分隔一批（列表页头像角标用）
 app.get('/api/device-sms/onboarding', requireAdmin, requireRole('admin'), (req, res) => {
