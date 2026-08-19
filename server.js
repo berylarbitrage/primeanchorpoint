@@ -30539,6 +30539,25 @@ app.get('/i/:file', (req, res) => {
   res.sendFile(full, { maxAge: '365d' });
 });
 
+// GET /api/device-sms/onboarding — 这个号码在系统里入职了吗（员工档案 / 招工申请）
+app.get('/api/device-sms/onboarding', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const digits = String(req.query.peer || '').replace(/\D/g, '');
+    if (digits.length < 7) return res.json({ employee: null, applicant: null });
+    const tail = digits.slice(-10);
+    const norm = `replace(replace(replace(replace(replace(COALESCE(phone,''),'(',''),')',''),'-',''),' ',''),'+','')`;
+    const emp = db.prepare(`SELECT id, first_name, last_name, position, status FROM employees
+      WHERE ${norm} LIKE '%' || ? ORDER BY (status='active') DESC, id DESC LIMIT 1`).get(tail);
+    const applicant = emp ? null : db.prepare(`SELECT id, name, position FROM applicant_submissions
+      WHERE ${norm} LIKE '%' || ? ORDER BY id DESC LIMIT 1`).get(tail);
+    res.json({
+      employee: emp ? { id: emp.id, name: ((emp.first_name || '') + ' ' + (emp.last_name || '')).trim(),
+        position: emp.position || '', status: emp.status || '' } : null,
+      applicant: applicant ? { id: applicant.id, name: applicant.name || '', position: applicant.position || '' } : null
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // POST /api/device-sms/push — 桌面版推送一批短信 (同一条重复推是安全的, 按 remote_id 覆盖)
 app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
   try {
