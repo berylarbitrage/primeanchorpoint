@@ -7,7 +7,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="20dp">
+        android:padding="16dp">
 
         <TextView
             android:layout_width="wrap_content"
@@ -16,17 +16,146 @@
             android:textSize="22sp"
             android:textStyle="bold" />
 
+        <!-- 状态大卡片：颜色 + 文案由 MainActivity 刷新 -->
         <TextView
+            android:id="@+id/statusCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="12dp"
+            android:padding="16dp"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:lineSpacingExtra="4dp"
+            android:text="还没启动" />
+
+        <TextView
+            android:id="@+id/lastError"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="#C5221F"
             android:textSize="13sp"
-            android:text="手机自己把短信同步到公司网站，也替网站发短信。不需要电脑、不需要数据线。填好下面两项点启动，然后就不用管它了。" />
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/counters"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textSize="13sp"
+            android:text="" />
+
+        <Button
+            android:id="@+id/syncNow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="立即同步（点了几秒内见结果）" />
+
+        <!-- 自我体检 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:textStyle="bold"
+            android:textSize="16sp"
+            android:text="自我体检（有 ✗ 就点旁边的「修」）" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/checkReadSms"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/fixReadSms"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="修" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/checkSendSms"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/fixSendSms"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="修" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/checkNotify"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/fixNotify"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="修" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/checkBattery"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/fixBattery"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="修" />
+        </LinearLayout>
+
+        <!-- 设置 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:textStyle="bold"
+            android:textSize="16sp"
+            android:text="设置" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
+            android:layout_marginTop="10dp"
             android:text="网站地址" />
 
         <EditText
@@ -64,18 +193,10 @@
             android:text="停止同步" />
 
         <TextView
-            android:id="@+id/status"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:textSize="14sp"
-            android:text="状态：还没启动" />
-
-        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
             android:textSize="12sp"
-            android:text="提示：\n· 弹权限窗口时全部允许（要读短信、发短信）\n· 弹「忽略电池优化」时选允许，否则系统会把同步杀掉\n· 三星如果权限是灰的：应用信息 → 右上角 ⋮ → 允许受限设置\n· 用了这个 App，就把电脑版设置里的「同步到公司网站」关掉，不然短信会重复" />
+            android:text="提示：\n· 用了这个 App，就把电脑版设置里的「同步到公司网站」关掉，不然短信会重复\n· 三星建议：设置 → 电池 → 后台使用限制 → 把「短信同步」加入「不受限制的应用」" />
     </LinearLayout>
 </ScrollView>
