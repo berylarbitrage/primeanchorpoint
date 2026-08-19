@@ -15501,6 +15501,8 @@ app.post('/api/admin/short-link', requireAdmin, blockManager, (req, res) => {
 
 // PUBLIC: short URL that serves the mobile applicant form.
 app.get('/apply/:token', (req, res) => {
+  // 手机浏览器缓存过一份旧页面再打开就可能白屏，申请页禁缓存
+  res.set('Cache-Control', 'no-store');
   res.sendFile(path.join(__dirname, 'public', 'apply.html'));
 });
 
