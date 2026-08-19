@@ -153,10 +153,14 @@ public class SyncService extends Service {
         JSONObject body = new JSONObject();
         body.put("device_serial", serial());
         body.put("messages", batch.messages);
-        Api.postJson(api + "/push", token, body);
+        JSONObject resp = Api.postJson(api + "/push", token, body);
 
         // 服务器收下了才挪游标；失败下一轮原样重推（服务器按 id 覆盖，安全）
-        prefs.edit().putLong("cursor", batch.maxDate).apply();
+        // lastPush 给界面看：推了几条、服务器实际存了几条（重复的会被服务器丢掉）
+        prefs.edit().putLong("cursor", batch.maxDate)
+                .putString("lastPush", now() + " 推 " + batch.messages.length()
+                        + " 条，服务器存 " + resp.optInt("saved", -1) + " 条")
+                .apply();
         return batch.messages.length();
     }
 

@@ -46,6 +46,16 @@
             android:textSize="13sp"
             android:text="" />
 
+        <!-- 诊断：手机短信库 24 小时收/发实况，用来分清「短信没到手机」还是「到了没推上去」 -->
+        <TextView
+            android:id="@+id/smsDb"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textSize="13sp"
+            android:lineSpacingExtra="2dp"
+            android:text="" />
+
         <Button
             android:id="@+id/syncNow"
             android:layout_width="match_parent"
