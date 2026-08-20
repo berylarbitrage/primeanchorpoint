@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-18b · 面试登记: 员工也显示证件照片; 新增做领班/能找人两问',
+  tag: '2026-08-18c · 修复登录验证循环: MFA状态改存数据库(部署重启不再丢), 双写cookie',
   started: new Date().toISOString(),
 };
 
@@ -9069,7 +9069,20 @@ app.post('/api/quote', (req, res) => {
 const MFA_ALLOWED_PHONES = String(process.env.MFA_ALLOWED_PHONES ||
   '3128437890,2246527010,8726642397,3143270319,7088502703,7088502629,2245915888')
   .split(',').map(x => x.replace(/\D/g, '').slice(-10)).filter(x => x.length === 10);
-const _mfaPending = {};   // mfa_token → { userId, code, phone, codeExpires, sentAt, sendCount, attempts, expires }
+// 待验证状态存 DB —— 服务器每次部署都会重启, 存内存会把正在验证的人踢回登录页
+db.exec(`CREATE TABLE IF NOT EXISTS mfa_pending (
+  token TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  code TEXT DEFAULT '',
+  phone TEXT DEFAULT '',
+  code_expires INTEGER DEFAULT 0,
+  sent_at INTEGER DEFAULT 0,
+  send_count INTEGER DEFAULT 0,
+  attempts INTEGER DEFAULT 0,
+  expires INTEGER NOT NULL
+)`);
+const _mfaGet = t => db.prepare('SELECT * FROM mfa_pending WHERE token=?').get(String(t || ''));
+const _mfaDel = t => db.prepare('DELETE FROM mfa_pending WHERE token=?').run(String(t || ''));
 try { db.exec("ALTER TABLE admin_users ADD COLUMN mfa_phone TEXT DEFAULT ''"); } catch (e) {}
 db.exec(`CREATE TABLE IF NOT EXISTS mfa_trusted_devices (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -9093,9 +9106,9 @@ function _mfaHasTrust(req, userId) {
   return !!row;
 }
 function _mfaStart(user) {
-  for (const k of Object.keys(_mfaPending)) if (_mfaPending[k].expires < Date.now()) delete _mfaPending[k];
+  try { db.prepare('DELETE FROM mfa_pending WHERE expires < ?').run(Date.now()); } catch (_) {}
   const token = crypto.randomBytes(24).toString('hex');
-  _mfaPending[token] = { userId: user.id, code: '', phone: '', codeExpires: 0, sentAt: 0, sendCount: 0, attempts: 0, expires: Date.now() + 10 * 60 * 1000 };
+  db.prepare('INSERT INTO mfa_pending (token, user_id, expires) VALUES (?,?,?)').run(token, user.id, Date.now() + 10 * 60 * 1000);
   const stored = String(user.mfa_phone || '').replace(/\D/g, '').slice(-10);
   const hint = (stored && MFA_ALLOWED_PHONES.includes(stored)) ? ('••• ' + stored.slice(-4)) : '';
   return { mfa_token: token, phone_hint: hint };
@@ -9104,20 +9117,21 @@ function _mfaStart(user) {
 // 发送登录验证码 (手机号必须在白名单内; 不填手机号则用该账号上次用过的)
 app.post('/api/admin/mfa/send', loginRateLimit, async (req, res) => {
   const { mfa_token, phone } = req.body || {};
-  const p = _mfaPending[String(mfa_token || '')];
+  const p = _mfaGet(mfa_token);
   if (!p || p.expires < Date.now()) return res.status(400).json({ error: '登录会话已过期, 请重新输入账号密码' });
-  const user = db.prepare('SELECT * FROM admin_users WHERE id=?').get(p.userId);
+  const user = db.prepare('SELECT * FROM admin_users WHERE id=?').get(p.user_id);
   if (!user) return res.status(400).json({ error: '账号不存在' });
   let digits = String(phone || '').replace(/\D/g, '').slice(-10);
   if (!digits) digits = String(user.mfa_phone || '').replace(/\D/g, '').slice(-10);
   if (digits.length !== 10) return res.status(400).json({ error: '请输入接收验证码的手机号' });
   if (!MFA_ALLOWED_PHONES.includes(digits)) return res.status(403).json({ error: '该手机号不在允许登录的名单内' });
-  if (p.sendCount >= 5) return res.status(429).json({ error: '发送次数过多, 请稍后重新登录' });
-  if (Date.now() - p.sentAt < 60 * 1000) return res.status(429).json({ error: '发送太频繁, 请 1 分钟后再试' });
+  if (p.send_count >= 5) return res.status(429).json({ error: '发送次数过多, 请稍后重新登录' });
+  if (Date.now() - p.sent_at < 60 * 1000) return res.status(429).json({ error: '发送太频繁, 请 1 分钟后再试' });
   const code = String(crypto.randomInt(100000, 1000000));
   const ok = await sendSMS(digits, `【Prime Anchor】后台登录验证码: ${code}\n10 分钟内有效。不是本人操作请勿把验证码告诉任何人。`);
   if (!ok) return res.status(500).json({ error: '短信发送失败, 请稍后重试' });
-  p.code = code; p.phone = digits; p.codeExpires = Date.now() + 10 * 60 * 1000; p.sentAt = Date.now(); p.sendCount++;
+  db.prepare('UPDATE mfa_pending SET code=?, phone=?, code_expires=?, sent_at=?, send_count=send_count+1 WHERE token=?')
+    .run(code, digits, Date.now() + 10 * 60 * 1000, Date.now(), String(mfa_token));
   auditLog('login_mfa_sent', { userId: user.id, userName: user.username, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { phone_last4: digits.slice(-4) } });
   res.json({ success: true, phone_hint: '••• ' + digits.slice(-4) });
 });
@@ -9126,14 +9140,14 @@ app.post('/api/admin/mfa/send', loginRateLimit, async (req, res) => {
 app.post('/api/admin/mfa/verify', loginRateLimit, (req, res) => {
   const { mfa_token, code, trust } = req.body || {};
   const key = String(mfa_token || '');
-  const p = _mfaPending[key];
+  const p = _mfaGet(key);
   if (!p || p.expires < Date.now()) return res.status(400).json({ error: '登录会话已过期, 请重新输入账号密码' });
-  if (!p.code || p.codeExpires < Date.now()) return res.status(400).json({ error: '验证码已过期, 请重新发送' });
-  p.attempts++;
-  if (p.attempts > 5) { delete _mfaPending[key]; return res.status(429).json({ error: '尝试次数过多, 请重新登录' }); }
+  if (!p.code || p.code_expires < Date.now()) return res.status(400).json({ error: '验证码已过期, 请重新发送' });
+  db.prepare('UPDATE mfa_pending SET attempts=attempts+1 WHERE token=?').run(key);
+  if (p.attempts + 1 > 5) { _mfaDel(key); return res.status(429).json({ error: '尝试次数过多, 请重新登录' }); }
   if (String(code || '').trim() !== p.code) return res.status(401).json({ error: '验证码错误' });
-  const user = db.prepare('SELECT * FROM admin_users WHERE id=?').get(p.userId);
-  delete _mfaPending[key];
+  const user = db.prepare('SELECT * FROM admin_users WHERE id=?').get(p.user_id);
+  _mfaDel(key);
   if (!user || !user.active) return res.status(400).json({ error: '账号不可用' });
   try { db.prepare('UPDATE admin_users SET mfa_phone=? WHERE id=?').run(p.phone, user.id); } catch (_) {}
   const token = createSession(user, req);
