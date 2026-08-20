@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-17o · SMS可直接发图片(MMS/WhatsApp媒体), 聊天气泡内嵌显示图片',
+  tag: '2026-08-17p · 新增面试结果登记页 /interview-result (搜手机号+六项技能语言+备注)',
   started: new Date().toISOString(),
 };
 
@@ -25566,6 +25566,116 @@ function _employeeFromApplicant(sub) {
   console.log(`[Checkin] Auto-created employee #${newId} from applicant submission #${sub.id} (${sub.name})`);
   return db.prepare('SELECT id, first_name, last_name, employee_id FROM employees WHERE id=?').get(newId);
 }
+
+// ════════ 🎤 面试结果登记 (/interview-result) ════════
+// 面试官搜手机号 → 已有员工/申请人则登记六项技能语言 + 备注;
+// 系统没有此人 → 显示通用入职申请二维码, 让对方先扫码填个人信息。
+db.exec(`CREATE TABLE IF NOT EXISTS interview_results (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  phone TEXT NOT NULL,
+  employee_id INTEGER DEFAULT NULL,
+  applicant_id INTEGER DEFAULT NULL,
+  person_name TEXT DEFAULT '',
+  forklift INTEGER DEFAULT NULL,
+  cherry_picker INTEGER DEFAULT NULL,
+  container_unload INTEGER DEFAULT NULL,
+  lang_en INTEGER DEFAULT NULL,
+  lang_es INTEGER DEFAULT NULL,
+  lang_zh INTEGER DEFAULT NULL,
+  note TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_ivres_phone ON interview_results(phone)'); } catch (e) {}
+
+function _interviewFindPerson(digits10) {
+  const emp = db.prepare(`SELECT id, first_name, last_name, position, state, status FROM employees WHERE phone10(phone)=? ORDER BY (status='active') DESC, id DESC LIMIT 1`).get(digits10);
+  if (emp) return { type: 'employee', id: emp.id, name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim(), position: emp.position || '', state: emp.state || '', status: emp.status || '' };
+  const sub = db.prepare(`SELECT id, name, position, state, apply_state FROM applicant_submissions WHERE phone10(phone)=? ORDER BY id DESC LIMIT 1`).get(digits10);
+  if (sub) return { type: 'applicant', id: sub.id, name: sub.name || '', position: sub.position || '', state: (sub.apply_state || sub.state || ''), status: '' };
+  return null;
+}
+
+// 通用(不带公司)入职申请链接 — 与 _applyUrlForSite 的兜底逻辑一致
+function _genericApplyUrl(req) {
+  let token = '';
+  try {
+    const row = db.prepare("SELECT value FROM app_settings WHERE key='generic_applicant_form_token'").get();
+    token = (row && row.value) || '';
+    if (!token) {
+      token = crypto.randomBytes(20).toString('hex');
+      db.prepare("INSERT INTO app_settings (key, value) VALUES ('generic_applicant_form_token', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(token);
+    }
+  } catch (_) {}
+  return `${_applyQrBase(req)}/apply/${token}`;
+}
+
+// 查手机号: 有人 → 返回资料 + 最近一次登记(预填); 没人 → 返回扫码填表二维码
+app.get('/api/interview-check', requireAdmin, async (req, res) => {
+  try {
+    const digits10 = String(req.query.phone || '').replace(/\D/g, '').slice(-10);
+    if (digits10.length < 10) return res.status(400).json({ error: '请输入有效的 10 位手机号' });
+    const person = _interviewFindPerson(digits10);
+    if (!person) {
+      let applyUrl = '', applyQr = '';
+      try {
+        applyUrl = _genericApplyUrl(req);
+        applyQr = await QRCode.toDataURL(applyUrl, { errorCorrectionLevel: 'M', margin: 1, width: 260 });
+      } catch (e) { console.error('[interview] apply qr:', e.message); }
+      return res.json({ found: false, apply_url: applyUrl, apply_qr: applyQr });
+    }
+    const latest = db.prepare(`SELECT * FROM interview_results WHERE phone=? ORDER BY id DESC LIMIT 1`).get(digits10);
+    res.json({ found: true, person, latest: latest || null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 保存面试结果; 同步把「会」的技能/语言写到 SMS 联系人标签, 客服在收件箱直接能看到
+app.post('/api/interview-result', requireAdmin, (req, res) => {
+  try {
+    const b = req.body || {};
+    const digits10 = String(b.phone || '').replace(/\D/g, '').slice(-10);
+    if (digits10.length < 10) return res.status(400).json({ error: '请输入有效的 10 位手机号' });
+    const person = _interviewFindPerson(digits10);
+    if (!person) return res.status(404).json({ error: '系统里没有这个手机号, 请先让对方扫码填写个人信息' });
+    const flag = v => (v === 1 || v === '1' || v === true) ? 1 : ((v === 0 || v === '0' || v === false) ? 0 : null);
+    const vals = {
+      forklift: flag(b.forklift), cherry_picker: flag(b.cherry_picker), container_unload: flag(b.container_unload),
+      lang_en: flag(b.lang_en), lang_es: flag(b.lang_es), lang_zh: flag(b.lang_zh)
+    };
+    const note = String(b.note || '').slice(0, 2000);
+    const r = db.prepare(`INSERT INTO interview_results (phone, employee_id, applicant_id, person_name, forklift, cherry_picker, container_unload, lang_en, lang_es, lang_zh, note, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(digits10, person.type === 'employee' ? person.id : null, person.type === 'applicant' ? person.id : null, person.name,
+        vals.forklift, vals.cherry_picker, vals.container_unload, vals.lang_en, vals.lang_es, vals.lang_zh, note, req.userName || '');
+    // 同步 SMS 联系人: 会的语言进 spoken_langs, 会的技能进工种标签 (「不会」把语言移除, 技能不动)
+    try {
+      const c = db.prepare('SELECT * FROM sms_contacts WHERE phone10(phone_e164)=?').get(digits10);
+      if (c) {
+        let langs = []; try { langs = JSON.parse(c.spoken_langs || '[]'); } catch (_) {}
+        const setL = (code, v) => {
+          if (v === 1 && !langs.includes(code)) langs.push(code);
+          if (v === 0) langs = langs.filter(x => x !== code);
+        };
+        setL('en', vals.lang_en); setL('es', vals.lang_es); setL('zh', vals.lang_zh);
+        let tags = []; try { tags = JSON.parse(c.tags || '[]'); } catch (_) {}
+        const addT = (t, v) => { if (v === 1 && !tags.includes(t)) tags.push(t); };
+        addT('叉车工', vals.forklift); addT('高位叉车', vals.cherry_picker); addT('卸柜工', vals.container_unload);
+        db.prepare(`UPDATE sms_contacts SET spoken_langs=?, tags=?, updated_at=datetime('now') WHERE id=?`).run(JSON.stringify(langs), JSON.stringify(tags), c.id);
+        smsAudit('contact', c.id, 'updated', 'agent', req.userId, { by: req.userName, changes: { interview_sync: { langs, skills: tags } } });
+      }
+    } catch (e) { console.error('[interview] contact sync:', e.message); }
+    res.json({ success: true, id: r.lastInsertRowid, person });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 最近登记列表 (页面底部展示)
+app.get('/api/interview-results/recent', requireAdmin, (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT * FROM interview_results ORDER BY id DESC LIMIT 20`).all();
+    const mask = req.userRole !== 'admin';
+    res.json({ results: rows.map(r => ({ ...r, phone: mask ? smsMaskPhone(r.phone) : r.phone })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // Serve checkin page (fallback — normally handled by the static middleware;
 // the ?wh=code redirect lives right before express.static)
