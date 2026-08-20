@@ -93,6 +93,7 @@ input:focus,textarea:focus{border-color:var(--sky)}
           <div class="meta" id="pMeta"></div>
         </div>
       </div>
+      <div id="pInfo"></div>
     </div>
     <div class="card">
       <div id="qList"></div>
@@ -146,6 +147,47 @@ async function api(url, opts) {
   return d;
 }
 
+const DOC_LABELS = { ssn_front: 'SSN 正面', ssn_back: 'SSN 反面', ead_front: 'EAD 正面', ead_back: 'EAD 反面' };
+function infoRow(k, v) {
+  if (!v) return '';
+  return '<div style="display:flex;gap:.6rem;padding:.28rem 0;font-size:.84rem;border-bottom:1px dashed var(--gray-200)">'
+    + '<span style="flex:0 0 88px;color:var(--gray-400);font-weight:600">' + k + '</span>'
+    + '<span style="flex:1;word-break:break-word">' + v + '</span></div>';
+}
+function renderPersonInfo(d) {
+  const vb = ok => ok ? ' <span style="color:var(--green);font-size:.72rem;font-weight:700">✓已验证</span>' : '';
+  let html = '';
+  const e = d.employee;
+  if (e) {
+    html += '<div style="margin-top:.6rem;font-size:.76rem;font-weight:800;color:var(--gray-600)">👤 员工档案</div>';
+    html += infoRow('员工号', esc(e.employee_code));
+    html += infoRow('职位', esc(e.position));
+    html += infoRow('入职日期', esc(e.hire_date));
+    html += infoRow('州/城市', esc([e.state, e.city].filter(Boolean).join(' · ')));
+    html += infoRow('邮箱', esc(e.email));
+    html += infoRow('地址', esc(e.address));
+  }
+  const a = d.application;
+  if (a) {
+    html += '<div style="margin-top:.6rem;font-size:.76rem;font-weight:800;color:var(--gray-600)">📋 扫码填写的入职申请' + (a.created_at ? ' <span style="font-weight:400;color:var(--gray-400)">' + esc(String(a.created_at).slice(0, 16)) + '</span>' : '') + '</div>';
+    html += infoRow('姓名', esc(a.name));
+    html += infoRow('申请职位', esc(a.position));
+    html += infoRow('应聘公司', esc(a.partner_name));
+    if (a.apply_state) html += infoRow('申请地点', esc(a.apply_state));
+    html += infoRow('邮箱', a.email ? esc(a.email) + vb(a.email_verified) : '');
+    html += infoRow('地址', (a.address || a.city) ? esc([a.address, [a.city, a.state].filter(Boolean).join(', '), a.zip].filter(Boolean).join(' · ')) + vb(a.address_verified) : '');
+    if (Array.isArray(a.docs) && a.docs.length) {
+      html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:.5rem">' + a.docs.map(doc => {
+        const lb = DOC_LABELS[doc.doc_type] || doc.doc_type;
+        return '<a href="' + esc(doc.url) + '" target="_blank" style="text-decoration:none;position:relative;display:block">'
+          + '<img src="' + esc(doc.url) + '" loading="lazy" style="width:68px;height:68px;object-fit:cover;border-radius:8px;border:1px solid var(--gray-200);background:#000;display:block">'
+          + '<span style="position:absolute;left:0;right:0;bottom:0;background:rgba(15,23,42,.62);color:#fff;font-size:.6rem;font-weight:600;text-align:center;border-radius:0 0 8px 8px;padding:1px 0">' + esc(lb) + '</span></a>';
+      }).join('') + '</div>';
+    }
+  }
+  document.getElementById('pInfo').innerHTML = html;
+}
+
 async function doSearch() {
   const raw = $('phoneInput').value.replace(/\D/g, '');
   if (raw.length < 10) return showMsg('msg1', '请输入有效的 10 位手机号', 'err');
@@ -163,6 +205,7 @@ async function doSearch() {
       $('qrCard').style.display = '';
     } else {
       buildForm(d.person, d.latest);
+      renderPersonInfo(d);
       $('formCard').style.display = '';
     }
   } catch (e) {

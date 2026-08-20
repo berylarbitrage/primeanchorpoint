@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-17p · 新增面试结果登记页 /interview-result (搜手机号+六项技能语言+备注)',
+  tag: '2026-08-17q · 面试登记页显示扫码填写的全部申请信息+证件照片+员工档案',
   started: new Date().toISOString(),
 };
 
@@ -25592,7 +25592,36 @@ app.get('/api/interview-check', requireAdmin, async (req, res) => {
       return res.json({ found: false, apply_url: applyUrl, apply_qr: applyQr });
     }
     const latest = db.prepare(`SELECT * FROM interview_results WHERE phone=? ORDER BY id DESC LIMIT 1`).get(digits10);
-    res.json({ found: true, person, latest: latest || null });
+    // 扫码填写的入职申请信息 + 员工档案信息一并返回, 面试官不用再翻后台
+    const isPrivileged = req.userRole === 'admin' || req.userRole === 'staff';
+    let application = null;
+    const sub = db.prepare(`SELECT * FROM applicant_submissions WHERE phone10(phone)=? ORDER BY id DESC LIMIT 1`).get(digits10);
+    if (sub) {
+      application = {
+        id: sub.id, name: sub.name || '', position: sub.position || '', partner_name: sub.partner_name || '',
+        email: isPrivileged ? (sub.email || '') : '',
+        email_verified: !!sub.email_verified, phone_verified: !!sub.phone_verified,
+        address: [sub.address1, sub.address2].filter(Boolean).join(' '),
+        city: sub.city || '', state: sub.state || '', zip: sub.zip || '',
+        address_verified: !!sub.address_verified,
+        apply_state: sub.apply_state || '', created_at: sub.created_at || ''
+      };
+      if (isPrivileged) {
+        application.docs = db.prepare('SELECT id, doc_type FROM applicant_docs WHERE submission_id=?').all(sub.id)
+          .map(d => ({ id: d.id, doc_type: d.doc_type, url: `/api/admin/applicant-submissions/${sub.id}/docs/${d.id}/download` }));
+      }
+    }
+    let employee = null;
+    if (person.type === 'employee') {
+      const e = db.prepare('SELECT * FROM employees WHERE id=?').get(person.id);
+      if (e) employee = {
+        employee_code: e.employee_id || '', position: e.position || '', hire_date: e.hire_date || '',
+        status: e.status || '', state: e.state || '', city: e.city || '',
+        email: isPrivileged ? (e.email || '') : '',
+        address: isPrivileged ? [e.address, e.street2].filter(Boolean).join(' ') : ''
+      };
+    }
+    res.json({ found: true, person, latest: latest || null, application, employee });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
