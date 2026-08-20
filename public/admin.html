@@ -8925,7 +8925,16 @@ function logout() {
 
 // Check cookie on load — hide login immediately to avoid flash, restore if validation fails
 (function() {
-  const m = document.cookie.match(/pa_token=([^;]+)/);
+  let m = document.cookie.match(/pa_token=([^;]+)/);
+  // cookie 丢了但 /mfa 验证页存过 localStorage → 补回 cookie 继续用
+  if (!m) {
+    const ls = localStorage.getItem('adminToken') || sessionStorage.getItem('adminToken') || '';
+    if (ls) {
+      const securePart = location.protocol === 'https:' ? ';Secure' : '';
+      document.cookie = 'pa_token=' + ls + ';path=/;max-age=2592000;SameSite=Strict' + securePart;
+      m = [null, ls];
+    }
+  }
   if (m) {
     const cookieToken = m[1];
     TOKEN = cookieToken;

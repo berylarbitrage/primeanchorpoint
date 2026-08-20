@@ -134,6 +134,11 @@ async function verify() {
       sessionStorage.setItem('adminToken', d.token);
       sessionStorage.setItem('ci_rec_token', d.token);
     } catch (_) {}
+    // 双保险: 服务器已 Set-Cookie, 这里再写一遍 (与各后台页面自己的写法一致)
+    try {
+      const secure = location.protocol === 'https:' ? ';Secure' : '';
+      document.cookie = 'pa_token=' + d.token + ';path=/;max-age=2592000;SameSite=Strict' + secure;
+    } catch (_) {}
     location.replace(NEXT);
   } catch (e) {
     $('err').textContent = e.message || '验证失败';
