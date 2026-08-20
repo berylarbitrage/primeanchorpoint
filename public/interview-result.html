@@ -115,12 +115,12 @@ input:focus,textarea:focus{border-color:var(--sky)}
 
 <script>
 const QUESTIONS = [
-  { key: 'forklift',         label: '1. 会开普通叉车？' },
-  { key: 'lang_en',          label: '2. 会英语？' },
-  { key: 'lang_es',          label: '3. 会西班牙语？' },
-  { key: 'lang_zh',          label: '4. 会中文？' },
-  { key: 'cherry_picker',    label: '5. 会开高位叉车 Cherry Picker？' },
-  { key: 'container_unload', label: '6. 会卸柜？' },
+  { key: 'forklift',         group: '🔧 技能', label: '会开普通叉车？' },
+  { key: 'cherry_picker',    group: '🔧 技能', label: '会开高位叉车 Cherry Picker？' },
+  { key: 'container_unload', group: '🔧 技能', label: '会卸柜？' },
+  { key: 'lang_en',          group: '🗣 语言', label: '会英语？' },
+  { key: 'lang_es',          group: '🗣 语言', label: '会西班牙语？' },
+  { key: 'lang_zh',          group: '🗣 语言', label: '会中文？' },
 ];
 let _answers = {};          // key → 1 / 0 / undefined
 let _phone = '';
@@ -234,14 +234,21 @@ function buildForm(p, latest) {
 }
 
 function renderQuestions() {
-  $('qList').innerHTML = QUESTIONS.map(q => {
+  let html = '';
+  let lastGroup = '';
+  QUESTIONS.forEach(q => {
+    if (q.group !== lastGroup) {
+      html += '<div style="font-size:.78rem;font-weight:800;color:var(--gray-600);background:#f1f5f9;border-radius:8px;padding:.4rem .7rem;margin:' + (lastGroup ? '.8rem' : '0') + ' 0 .25rem">' + q.group + '</div>';
+      lastGroup = q.group;
+    }
     const v = _answers[q.key];
-    return '<div class="q-row"><span class="q-label">' + q.label + '</span>'
+    html += '<div class="q-row"><span class="q-label">' + q.label + '</span>'
       + '<span class="seg">'
       + '<button type="button" class="yes' + (v === 1 ? ' on' : '') + '" onclick="setAns(\'' + q.key + '\',1)">✓ 会</button>'
       + '<button type="button" class="no' + (v === 0 ? ' on' : '') + '" onclick="setAns(\'' + q.key + '\',0)">✗ 不会</button>'
       + '</span></div>';
-  }).join('');
+  });
+  $('qList').innerHTML = html;
 }
 function setAns(k, v) {
   _answers[k] = (_answers[k] === v) ? undefined : v;   // 再点一次取消
