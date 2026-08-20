@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-17n · 翻译输出强制JSON校验, 模型废话进不了库; 自动修复已存坏译文',
+  tag: '2026-08-17o · SMS可直接发图片(MMS/WhatsApp媒体), 聊天气泡内嵌显示图片',
   started: new Date().toISOString(),
 };
 
@@ -30766,8 +30766,10 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
     // Twilio 合规: 对方已回 STOP 退订, 继续发会被 Twilio 拒 (21610) 且损害账号信誉
     if (thread.opted_out) return res.status(400).json({ error: '⚠️ 对方已回复 STOP 退订, 禁止发送。对方回复 START 后才能恢复。' });
 
-    const { body, no_translate, preset_translation } = req.body;
-    if (!body || !body.trim()) return res.status(400).json({ error: 'Message body required' });
+    const { body, no_translate, preset_translation, media_url } = req.body;
+    const mediaPath = (typeof media_url === 'string' && /^\/sms-media\/sms-\d+-[a-f0-9]+\.(jpe?g|png|gif|webp)$/i.test(media_url)) ? media_url : '';
+    if ((!body || !body.trim()) && !mediaPath) return res.status(400).json({ error: 'Message body required' });
+    if (mediaPath && !BASE_URL) return res.status(400).json({ error: '服务器未配置 BASE_URL, 无法发送图片' });
 
     // Check permission: only assigned agent or admin can reply
     if (thread.assigned_agent_id && thread.assigned_agent_id !== req.userId && req.userRole !== 'admin') {
@@ -30776,7 +30778,7 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
 
     // 🛡️ AI 合规审核: 客服(非 admin)发出的每条消息先过 red-flag 检查, 命中即拦截并短信通知 admin
     // 注意: 必须在 auto-claim 之前, 否则被拦截的消息会把线程占为 claimed
-    if (req.userRole !== 'admin') {
+    if (req.userRole !== 'admin' && body && body.trim()) {
       const review = await aiReviewOutboundSms(body.trim());
       if (review && review.ok === false) {
         recordAiBlockAndNotify({
@@ -30797,8 +30799,8 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
 
     // Translate agent message (agent_lang → contact_lang) before sending
     // no_translate: 面试确认/工作要求等双语模板原样发送, 不再机器翻译
-    let bodyToSend = body.trim();
-    if (!no_translate) {
+    let bodyToSend = (body || '').trim();
+    if (!no_translate && bodyToSend) {
       const presetTx = String(preset_translation || '').trim().slice(0, 1500);
       if (presetTx) {
         // 招工问题等标准模板自带人工翻译: 中文进记录, 发送固定译文, 不再机器翻译
@@ -30820,11 +30822,11 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
 
     // Insert message first
     const statusCallbackUrl = BASE_URL ? `${BASE_URL}/api/sms/webhook/status` : '';
-    const msgInfo = db.prepare(`INSERT INTO sms_messages (thread_id, direction, source, author_agent_id, from_number, to_number, body, translated_body, delivery_status)
-      VALUES (?,?,?,?,?,?,?,?,?)`).run(thread.id, 'outbound', 'agent', req.userId, thread.twilio_number, thread.phone_e164, body.trim(), bodyToSend, 'queued');
+    const msgInfo = db.prepare(`INSERT INTO sms_messages (thread_id, direction, source, author_agent_id, from_number, to_number, body, translated_body, media_urls, num_media, delivery_status)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(thread.id, 'outbound', 'agent', req.userId, thread.twilio_number, thread.phone_e164, (body || '').trim(), bodyToSend, JSON.stringify(mediaPath ? [mediaPath] : []), mediaPath ? 1 : 0, 'queued');
 
     const messageId = msgInfo.lastInsertRowid;
-    const preview = bodyToSend.substring(0, 120);
+    const preview = (bodyToSend || '📷 图片').substring(0, 120);
 
     // Update thread
     db.prepare(`UPDATE sms_threads SET last_message_at=datetime('now'), last_outbound_at=datetime('now'), last_message_preview=?, updated_at=datetime('now') WHERE id=?`).run(preview, thread.id);
@@ -30838,14 +30840,17 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
         const isWA = (thread.channel || 'sms') === 'whatsapp';
         const waFrom = process.env.TWILIO_WHATSAPP_FROM || thread.twilio_number || TWILIO_FROM;
         const createParams = isWA
-          ? { body: bodyToSend, from: 'whatsapp:' + waFrom, to: 'whatsapp:' + thread.phone_e164 }
-          : { body: bodyToSend, from: thread.twilio_number || TWILIO_FROM, to: thread.phone_e164 };
+          ? { from: 'whatsapp:' + waFrom, to: 'whatsapp:' + thread.phone_e164 }
+          : { from: thread.twilio_number || TWILIO_FROM, to: thread.phone_e164 };
+        if (bodyToSend) createParams.body = bodyToSend;
+        // 图片作为 MMS/WhatsApp 媒体附件直接发到对方手机里, 不是链接
+        if (mediaPath) createParams.mediaUrl = [BASE_URL.replace(/\/+$/, '') + mediaPath];
         if (statusCallbackUrl) createParams.statusCallback = statusCallbackUrl;
         const msg = await twilioClient.messages.create(createParams);
         twilioSid = msg.sid;
         deliveryStatus = 'sent';
       } else {
-        console.log(`[SMS-SKIP] Twilio not configured. Would send to ${thread.phone_e164}: ${body.trim()}`);
+        console.log(`[SMS-SKIP] Twilio not configured. Would send to ${thread.phone_e164}: ${(body || '').trim()}${mediaPath ? ' [media ' + mediaPath + ']' : ''}`);
         deliveryStatus = 'sent';
       }
     } catch(e) {
@@ -31079,6 +31084,45 @@ app.patch('/api/sms/threads/:id/langs', requireAdmin, requireSmsAccess, (req, re
     db.prepare(`UPDATE sms_threads SET ${fields.join(',')} WHERE id=?`).run(...params);
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── 📷 发图片 (MMS/WhatsApp 媒体) ───
+// 图片存 R2/本地 sms_media/, 文件名含随机串不可枚举; /sms-media/ 公开路由供
+// Twilio 拉取 (发 MMS 要求媒体是公网可访问的 URL)。
+const smsMediaUpload = multer({
+  storage: r2Storage({
+    subdir: 'sms_media',
+    filename: (req, file, cb) => {
+      const ext = (path.extname(file.originalname || '').toLowerCase() || '.jpg');
+      cb(null, `sms-${Date.now()}-${crypto.randomBytes(12).toString('hex')}${ext}`);
+    }
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /^image\/(jpeg|png|gif|webp)$/i.test(file.mimetype) || /\.(jpe?g|png|gif|webp)$/i.test(file.originalname || '');
+    cb(null, ok);
+  }
+});
+
+app.post('/api/sms/upload-media', requireAdmin, requireSmsAccess, smsMediaUpload.single('image'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: '请选择图片 (jpg/png/gif/webp, 最大 5MB)' });
+  const key = req.file.key || req.file.filename || req.file.path;
+  const name = String(key).split('/').pop();
+  res.json({ success: true, url: '/sms-media/' + name });
+});
+
+app.get('/sms-media/:file', async (req, res) => {
+  try {
+    const f = String(req.params.file || '');
+    if (!/^sms-\d+-[a-f0-9]+\.(jpe?g|png|gif|webp)$/i.test(f)) return res.status(404).end();
+    const key = 'sms_media/' + f;
+    if (!(await storage.exists(key))) return res.status(404).end();
+    const ext = f.split('.').pop().toLowerCase();
+    const mime = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp' }[ext] || 'application/octet-stream';
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.send(await storage.getBuffer(key));
+  } catch (e) { res.status(500).end(); }
 });
 
 // POST /api/sms/translate — on-demand translate for preview

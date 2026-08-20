@@ -469,8 +469,15 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
         </div>
       </div>
     </div>
+    <div id="mediaPreviewBar" style="display:none;padding:6px 12px;background:#f8fafc;border-top:1px solid var(--gray-200);align-items:center;gap:10px">
+      <img id="mediaPreviewImg" style="height:52px;border-radius:8px;border:1px solid var(--gray-200)">
+      <span style="font-size:.75rem;color:var(--gray-500)">图片将随消息以彩信/媒体形式发出</span>
+      <span onclick="clearPendingMedia()" style="margin-left:auto;cursor:pointer;font-weight:800;color:var(--gray-500);padding:0 6px">&times;</span>
+    </div>
     <div class="reply-bar" id="replyBar">
       <button class="note-toggle" id="assistBtn" onclick="requestAssist('对话求助', null)" title="请求管理员协助" style="color:#dc2626">&#127384;</button>
+      <button class="note-toggle" onclick="document.getElementById('mediaFileInput').click()" title="发送图片 (对方手机里直接显示图片, 不是链接)">&#128247;</button>
+      <input type="file" id="mediaFileInput" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none" onchange="uploadPendingMedia(this)">
       <button class="note-toggle" id="noteToggle" onclick="toggleNoteMode()" title="Internal note">&#128221;</button>
       <button class="note-toggle" id="templateToggle" onclick="toggleTemplates()" title="Quick replies">&#9889;</button>
       <button class="note-toggle" onclick="showRecruitQModal()" title="招工问题模板: 选工种, 生成标准翻译的提问">&#128188;</button>
@@ -1494,6 +1501,17 @@ function agentColor(name) {
   return _AGENT_COLORS[h % _AGENT_COLORS.length];
 }
 
+// 消息里的图片 (发出的 MMS 图片 / 对方发来的彩信) 直接内嵌显示, 点击看大图
+function msgMediaHtml(item) {
+  let urls = [];
+  try { urls = JSON.parse(item.media_urls || '[]'); } catch (_) {}
+  if (!Array.isArray(urls) || !urls.length) return '';
+  return urls.map(u => {
+    const su = esc(String(u));
+    return '<img src="' + su + '" loading="lazy" style="max-width:220px;max-height:260px;border-radius:10px;display:block;margin:2px 0 4px;cursor:zoom-in;background:#eee" onclick="event.stopPropagation();window.open(this.src, \'_blank\')" onerror="this.style.display=\'none\'">';
+  }).join('');
+}
+
 function renderMessages() {
   const area = document.getElementById('messagesArea');
   // Merge messages and notes, sort by time
@@ -1554,7 +1572,7 @@ function renderMessages() {
         : '';
       html += '<div class="msg-row ' + dir + '">'
         + senderHtml
-        + '<div class="msg-bubble" onclick="bubbleMark(' + item.id + ')" title="点击标注这条消息（类别+备注）"' + (item.starred ? ' style="box-shadow:0 0 0 2px #f59e0b"' : '') + '>' + esc(item.body) + translationHtml + '</div>'
+        + '<div class="msg-bubble" onclick="bubbleMark(' + item.id + ')" title="点击标注这条消息（类别+备注）"' + (item.starred ? ' style="box-shadow:0 0 0 2px #f59e0b"' : '') + '>' + msgMediaHtml(item) + esc(item.body) + translationHtml + '</div>'
         + markHtml
         + '<div class="msg-meta">' + fmtTime(item._time)
         + (dir === 'outbound' ? ' &middot; ' + statusIcon : '')
@@ -1580,10 +1598,36 @@ function getStatusIcon(status, msgId) {
 // ─── Actions ───
 let _pendingTranslatedText = null;
 
+// ─── 📷 发图片: 上传后随下一条消息作为 MMS/媒体发出 ───
+let _pendingMedia = null;   // { url }
+async function uploadPendingMedia(inp) {
+  const f = inp.files && inp.files[0];
+  inp.value = '';
+  if (!f) return;
+  if (f.size > 5 * 1024 * 1024) { toast('图片超过 5MB，请压缩后再发'); return; }
+  toast('图片上传中…');
+  try {
+    const fd = new FormData();
+    fd.append('image', f);
+    const r = await fetch('/api/sms/upload-media', { method: 'POST', body: fd });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.url) throw new Error(j.error || '上传失败');
+    _pendingMedia = { url: j.url };
+    document.getElementById('mediaPreviewImg').src = j.url;
+    document.getElementById('mediaPreviewBar').style.display = 'flex';
+    toast('图片已就绪，点发送随消息发出（文字可留空）');
+  } catch (e) { toast('图片上传失败: ' + (e.message || e)); }
+}
+function clearPendingMedia() {
+  _pendingMedia = null;
+  document.getElementById('mediaPreviewBar').style.display = 'none';
+}
+
 async function sendReply() {
   const input = document.getElementById('replyInput');
   const body = input.value.trim();
-  if (!body || !currentThread) return;
+  if ((!body && !(_pendingMedia && !noteMode)) || !currentThread) return;
+  if (noteMode && !body) return;
 
   const btn = document.getElementById('sendBtn');
 
@@ -1636,8 +1680,8 @@ async function sendReply() {
     return;
   }
 
-  // If languages differ, show translation confirmation first
-  if (currentContactLang && currentAgentLang && currentContactLang !== currentAgentLang) {
+  // If languages differ, show translation confirmation first (纯图片无文字则直接发)
+  if (body && currentContactLang && currentAgentLang && currentContactLang !== currentAgentLang) {
     btn.disabled = true;
     try {
       const r = await api('/sms/translate', { method: 'POST', body: JSON.stringify({ text: body, from: currentAgentLang, to: currentContactLang }) });
@@ -1657,7 +1701,7 @@ async function sendReply() {
     return;
   }
 
-  // Same language, send directly
+  // Same language (or media-only, no text), send directly
   btn.disabled = true;
   await doSendMessage(body);
   btn.disabled = false;
@@ -1704,10 +1748,12 @@ async function doSendMessage(body, noTranslate, presetTranslation) {
   const input = document.getElementById('replyInput');
   const btn = document.getElementById('sendBtn');
   btn.disabled = true;
+  const media = _pendingMedia;
   // Optimistic: add message to UI immediately
   const tempMsg = {
     id: Date.now(), thread_id: currentThread.id, direction: 'outbound',
     source: 'agent', body, delivery_status: 'sending',
+    media_urls: media ? JSON.stringify([media.url]) : '[]',
     author_name: USER ? USER.username : '', created_at: new Date().toISOString(),
     _type: 'message', _time: new Date().toISOString()
   };
@@ -1718,9 +1764,11 @@ async function doSendMessage(body, noTranslate, presetTranslation) {
     input.value = '';
     document.getElementById('translatePreview').style.display = 'none';
 
+    const payload = noTranslate ? { body, no_translate: true }
+      : (presetTranslation ? { body, preset_translation: presetTranslation } : { body });
+    if (media) payload.media_url = media.url;
     const r = await api('/sms/threads/' + currentThread.id + '/messages', {
-      method: 'POST', body: JSON.stringify(noTranslate ? { body, no_translate: true }
-        : (presetTranslation ? { body, preset_translation: presetTranslation } : { body }))
+      method: 'POST', body: JSON.stringify(payload)
     });
     if (r && r.success && r.message) {
       // Replace temp message with real one
@@ -1731,6 +1779,7 @@ async function doSendMessage(body, noTranslate, presetTranslation) {
       _composeNoTranslateText = '';
       _presetTranslation = null;
       _presetTranslationFor = '';
+      clearPendingMedia();
       _clearSendError();
     } else {
       // 服务器拒绝 (如对方已退订 / AI 拦截 / Twilio 报错) — 撤掉临时气泡, 把文字放回输入框
