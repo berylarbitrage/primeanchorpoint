@@ -8708,6 +8708,7 @@ async function doLogin() {
   btn.textContent = '登录中…';
   try {
     const r = await api('/admin/login', { method: 'POST', body: JSON.stringify({ username, password }) });
+    if (r.mfa_required) { location.href = '/mfa?token=' + encodeURIComponent(r.mfa_token) + '&next=' + encodeURIComponent(location.pathname + location.search) + (r.phone_hint ? '&hint=' + encodeURIComponent(r.phone_hint) : ''); return; }
     if (r.success) {
       finishLogin(r);
     } else if (r.needs_activation) {
@@ -8740,6 +8741,7 @@ async function doActivate() {
   if (new_password !== confirm) { errEl.textContent = '两次密码不一致'; return; }
   const res = await fetch(API + '/auth/activate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, current_password, new_password }) });
   const r = await res.json();
+  if (r.mfa_required) { location.href = '/mfa?token=' + encodeURIComponent(r.mfa_token) + '&next=' + encodeURIComponent(location.pathname + location.search) + (r.phone_hint ? '&hint=' + encodeURIComponent(r.phone_hint) : ''); return; }
   if (r.success) {
     document.getElementById('activationModal').classList.remove('show');
     finishLogin(r);
