@@ -209,6 +209,7 @@
         body: JSON.stringify({ username, password }),
       });
       const data = await r.json().catch(() => ({}));
+      if (data.mfa_required) { location.href = '/mfa?token=' + encodeURIComponent(data.mfa_token) + '&next=' + encodeURIComponent(location.pathname + location.search) + (data.phone_hint ? '&hint=' + encodeURIComponent(data.phone_hint) : ''); return; }
       if (data.needs_activation) { err.textContent = '账号尚未激活，请先在管理后台完成激活'; return; }
       if (!r.ok || !data.success) { err.textContent = data.error || '用户名或密码错误'; return; }
       await init();

@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-17q · 面试登记页显示扫码填写的全部申请信息+证件照片+员工档案',
+  tag: '2026-08-18 · 后台登录两步验证: 账号密码+白名单手机短信验证码(7个号码)',
   started: new Date().toISOString(),
 };
 
@@ -9063,6 +9063,92 @@ app.post('/api/quote', (req, res) => {
 // ─── ADMIN API ───
 
 // Admin login
+// ─── 🔐 登录短信两步验证 (MFA): 账号密码 + 白名单手机短信验证码 ───
+// 验证码只允许发到公司备案的手机号 (可用 MFA_ALLOWED_PHONES 环境变量覆盖,
+// 逗号分隔); 紧急情况可设 MFA_DISABLE=1 临时关闭两步验证。
+const MFA_ALLOWED_PHONES = String(process.env.MFA_ALLOWED_PHONES ||
+  '3128437890,2246527010,8726642397,3143270319,7088502703,7088502629,2245915888')
+  .split(',').map(x => x.replace(/\D/g, '').slice(-10)).filter(x => x.length === 10);
+const _mfaPending = {};   // mfa_token → { userId, code, phone, codeExpires, sentAt, sendCount, attempts, expires }
+try { db.exec("ALTER TABLE admin_users ADD COLUMN mfa_phone TEXT DEFAULT ''"); } catch (e) {}
+db.exec(`CREATE TABLE IF NOT EXISTS mfa_trusted_devices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  token_hash TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+
+function _mfaEnabled() {
+  if (process.env.MFA_DISABLE === '1') return false;
+  // Twilio 完全没配置(本地开发)时跳过, 避免把所有人锁在门外; 生产环境必然配置了 Twilio
+  if (!twilioClient || (!TWILIO_FROM && !TWILIO_MESSAGING_SID)) { console.warn('[MFA] Twilio 未配置, 本次登录跳过短信验证'); return false; }
+  return true;
+}
+function _mfaTrustHash(t) { return crypto.createHash('sha256').update(String(t)).digest('hex'); }
+function _mfaHasTrust(req, userId) {
+  const m = (req.headers.cookie || '').match(/pa_mfa_trust=([^;]+)/);
+  if (!m) return false;
+  const row = db.prepare(`SELECT id FROM mfa_trusted_devices WHERE user_id=? AND token_hash=? AND expires_at > datetime('now')`).get(userId, _mfaTrustHash(m[1]));
+  return !!row;
+}
+function _mfaStart(user) {
+  for (const k of Object.keys(_mfaPending)) if (_mfaPending[k].expires < Date.now()) delete _mfaPending[k];
+  const token = crypto.randomBytes(24).toString('hex');
+  _mfaPending[token] = { userId: user.id, code: '', phone: '', codeExpires: 0, sentAt: 0, sendCount: 0, attempts: 0, expires: Date.now() + 10 * 60 * 1000 };
+  const stored = String(user.mfa_phone || '').replace(/\D/g, '').slice(-10);
+  const hint = (stored && MFA_ALLOWED_PHONES.includes(stored)) ? ('••• ' + stored.slice(-4)) : '';
+  return { mfa_token: token, phone_hint: hint };
+}
+
+// 发送登录验证码 (手机号必须在白名单内; 不填手机号则用该账号上次用过的)
+app.post('/api/admin/mfa/send', loginRateLimit, async (req, res) => {
+  const { mfa_token, phone } = req.body || {};
+  const p = _mfaPending[String(mfa_token || '')];
+  if (!p || p.expires < Date.now()) return res.status(400).json({ error: '登录会话已过期, 请重新输入账号密码' });
+  const user = db.prepare('SELECT * FROM admin_users WHERE id=?').get(p.userId);
+  if (!user) return res.status(400).json({ error: '账号不存在' });
+  let digits = String(phone || '').replace(/\D/g, '').slice(-10);
+  if (!digits) digits = String(user.mfa_phone || '').replace(/\D/g, '').slice(-10);
+  if (digits.length !== 10) return res.status(400).json({ error: '请输入接收验证码的手机号' });
+  if (!MFA_ALLOWED_PHONES.includes(digits)) return res.status(403).json({ error: '该手机号不在允许登录的名单内' });
+  if (p.sendCount >= 5) return res.status(429).json({ error: '发送次数过多, 请稍后重新登录' });
+  if (Date.now() - p.sentAt < 60 * 1000) return res.status(429).json({ error: '发送太频繁, 请 1 分钟后再试' });
+  const code = String(crypto.randomInt(100000, 1000000));
+  const ok = await sendSMS(digits, `【Prime Anchor】后台登录验证码: ${code}\n10 分钟内有效。不是本人操作请勿把验证码告诉任何人。`);
+  if (!ok) return res.status(500).json({ error: '短信发送失败, 请稍后重试' });
+  p.code = code; p.phone = digits; p.codeExpires = Date.now() + 10 * 60 * 1000; p.sentAt = Date.now(); p.sendCount++;
+  auditLog('login_mfa_sent', { userId: user.id, userName: user.username, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { phone_last4: digits.slice(-4) } });
+  res.json({ success: true, phone_hint: '••• ' + digits.slice(-4) });
+});
+
+// 校验验证码, 通过后正式建会话; trust=1 时 30 天内此设备免验证码
+app.post('/api/admin/mfa/verify', loginRateLimit, (req, res) => {
+  const { mfa_token, code, trust } = req.body || {};
+  const key = String(mfa_token || '');
+  const p = _mfaPending[key];
+  if (!p || p.expires < Date.now()) return res.status(400).json({ error: '登录会话已过期, 请重新输入账号密码' });
+  if (!p.code || p.codeExpires < Date.now()) return res.status(400).json({ error: '验证码已过期, 请重新发送' });
+  p.attempts++;
+  if (p.attempts > 5) { delete _mfaPending[key]; return res.status(429).json({ error: '尝试次数过多, 请重新登录' }); }
+  if (String(code || '').trim() !== p.code) return res.status(401).json({ error: '验证码错误' });
+  const user = db.prepare('SELECT * FROM admin_users WHERE id=?').get(p.userId);
+  delete _mfaPending[key];
+  if (!user || !user.active) return res.status(400).json({ error: '账号不可用' });
+  try { db.prepare('UPDATE admin_users SET mfa_phone=? WHERE id=?').run(p.phone, user.id); } catch (_) {}
+  const token = createSession(user, req);
+  auditLog('login', { userId: user.id, userName: user.username, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { role: user.role, mfa: true, mfa_phone_last4: p.phone.slice(-4) } });
+  const secure = req.protocol === 'https';
+  res.cookie('pa_token', token, { httpOnly: true, sameSite: 'Strict', secure });
+  if (trust) {
+    const trustToken = crypto.randomBytes(32).toString('hex');
+    db.prepare(`INSERT INTO mfa_trusted_devices (user_id, token_hash, expires_at) VALUES (?,?,datetime('now','+30 days'))`).run(user.id, _mfaTrustHash(trustToken));
+    res.cookie('pa_mfa_trust', trustToken, { httpOnly: true, sameSite: 'Strict', secure, maxAge: 30 * 24 * 3600 * 1000 });
+    try { db.prepare("DELETE FROM mfa_trusted_devices WHERE expires_at < datetime('now')").run(); } catch (_) {}
+  }
+  res.json({ success: true, token, user_id: user.id, role: user.role || 'staff', username: user.username, display_name: user.display_name || '' });
+});
+
 app.post('/api/admin/login', loginRateLimit, (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
@@ -9083,6 +9169,11 @@ app.post('/api/admin/login', loginRateLimit, (req, res) => {
   }
   // Password correct but account not yet self-verified — prompt user to set own password
   if (!user.active) return res.json({ needs_activation: true, username });
+  // 🔐 密码正确 → 还需短信验证码 (30 天内验证过的可信设备除外)
+  if (_mfaEnabled() && !_mfaHasTrust(req, user.id)) {
+    auditLog('login_mfa_challenge', { userId: user.id, userName: user.username, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { role: user.role } });
+    return res.json(Object.assign({ mfa_required: true }, _mfaStart(user)));
+  }
   const token = createSession(user, req);
   auditLog('login', { userId: user.id, userName: user.username, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { role: user.role } });
   res.cookie('pa_token', token, { httpOnly: true, sameSite: 'Strict', secure: req.protocol === 'https' });
@@ -9102,6 +9193,10 @@ app.post('/api/auth/activate', (req, res) => {
   const hash = hashPassword(new_password, salt);
   db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=1 WHERE id=?').run(hash, salt, user.id);
   const updatedUser = db.prepare('SELECT * FROM admin_users WHERE id=?').get(user.id);
+  // 🔐 激活完成后同样要过短信验证
+  if (_mfaEnabled() && !_mfaHasTrust(req, updatedUser.id)) {
+    return res.json(Object.assign({ success: true, mfa_required: true }, _mfaStart(updatedUser)));
+  }
   const token = createSession(updatedUser, req);
   res.json({ success: true, token, user_id: updatedUser.id, role: updatedUser.role || 'staff', username: updatedUser.username, display_name: updatedUser.display_name || '' });
 });

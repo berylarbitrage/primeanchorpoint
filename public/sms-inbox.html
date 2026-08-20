@@ -1105,6 +1105,7 @@ async function doLogin() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: u, password: p })
     }).then(r => r.json());
+    if (r.mfa_required) { location.href = '/mfa?token=' + encodeURIComponent(r.mfa_token) + '&next=' + encodeURIComponent(location.pathname + location.search) + (r.phone_hint ? '&hint=' + encodeURIComponent(r.phone_hint) : ''); return; }
     if (r.success && String(r.username).toLowerCase() === 'admin') {
       // 共享 admin 账号只能用在 admin 后台, 不能登录收件箱
       err.textContent = 'admin 账号不能登录收件箱, 请用你的个人管理员账号';
