@@ -121,6 +121,8 @@ const QUESTIONS = [
   { key: 'lang_en',          group: '🗣 语言', label: '会英语？' },
   { key: 'lang_es',          group: '🗣 语言', label: '会西班牙语？' },
   { key: 'lang_zh',          group: '🗣 语言', label: '会中文？' },
+  { key: 'can_lead',         group: '👥 管理', label: '可以做领班吗？' },
+  { key: 'can_recruit',      group: '👥 管理', label: '有能力帮忙找人吗？' },
 ];
 let _answers = {};          // key → 1 / 0 / undefined
 let _phone = '';
@@ -188,6 +190,27 @@ function renderPersonInfo(d) {
   document.getElementById('pInfo').innerHTML = html;
 }
 
+// 员工的四张证件 (SSN 正反 / EAD 正反, 汇总自档案上传+申请单+工卡库)
+async function loadEmployeeIdDocs(empId) {
+  try {
+    const d = await api('/api/admin/employees/id-docs?ids=' + empId);
+    const emp = (d.employees || [])[0];
+    if (!emp || !Array.isArray(emp.docs)) return;
+    const have = emp.docs.filter(x => x.present);
+    if (!have.length) return;
+    const html = '<div style="margin-top:.6rem;font-size:.76rem;font-weight:800;color:var(--gray-600)">🪪 已上传的证件</div>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:.4rem">' + have.map(doc => {
+        const url = '/api/admin/employees/id-doc-image/' + encodeURIComponent(doc.doc_id);
+        const inner = doc.previewable
+          ? '<img src="' + url + '" loading="lazy" style="width:68px;height:68px;object-fit:cover;border-radius:8px;border:1px solid var(--gray-200);background:#000;display:block">'
+          : '<span style="display:flex;align-items:center;justify-content:center;width:68px;height:68px;border-radius:8px;border:1px solid var(--gray-200);background:#f1f5f9;font-size:1.4rem">📄</span>';
+        return '<a href="' + url + '" target="_blank" style="text-decoration:none;position:relative;display:block">' + inner
+          + '<span style="position:absolute;left:0;right:0;bottom:0;background:rgba(15,23,42,.62);color:#fff;font-size:.6rem;font-weight:600;text-align:center;border-radius:0 0 8px 8px;padding:1px 0">' + esc(doc.label || doc.type) + '</span></a>';
+      }).join('') + '</div>';
+    document.getElementById('pInfo').insertAdjacentHTML('beforeend', html);
+  } catch (_) {}
+}
+
 async function doSearch() {
   const raw = $('phoneInput').value.replace(/\D/g, '');
   if (raw.length < 10) return showMsg('msg1', '请输入有效的 10 位手机号', 'err');
@@ -207,6 +230,7 @@ async function doSearch() {
       buildForm(d.person, d.latest);
       renderPersonInfo(d);
       $('formCard').style.display = '';
+      if (d.person.type === 'employee') loadEmployeeIdDocs(d.person.id);
     }
   } catch (e) {
     showMsg('msg1', e.message || '查询失败', 'err');
@@ -277,6 +301,7 @@ async function doSave() {
 const FLAGS = [
   ['forklift', '叉车'], ['cherry_picker', '高位叉车'], ['container_unload', '卸柜'],
   ['lang_en', '英语'], ['lang_es', '西语'], ['lang_zh', '中文'],
+  ['can_lead', '领班'], ['can_recruit', '能找人'],
 ];
 async function loadRecent() {
   try {

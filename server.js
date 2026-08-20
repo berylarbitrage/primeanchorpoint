@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-18 · 后台登录两步验证: 账号密码+白名单手机短信验证码(7个号码)',
+  tag: '2026-08-18b · 面试登记: 员工也显示证件照片; 新增做领班/能找人两问',
   started: new Date().toISOString(),
 };
 
@@ -25682,6 +25682,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS interview_results (
   created_at TEXT DEFAULT (datetime('now'))
 )`);
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_ivres_phone ON interview_results(phone)'); } catch (e) {}
+try { db.exec('ALTER TABLE interview_results ADD COLUMN can_lead INTEGER DEFAULT NULL'); } catch (e) {}
+try { db.exec('ALTER TABLE interview_results ADD COLUMN can_recruit INTEGER DEFAULT NULL'); } catch (e) {}
 
 function _interviewFindPerson(digits10) {
   const emp = db.prepare(`SELECT id, first_name, last_name, position, state, status FROM employees WHERE phone10(phone)=? ORDER BY (status='active') DESC, id DESC LIMIT 1`).get(digits10);
@@ -25723,7 +25725,11 @@ app.get('/api/interview-check', requireAdmin, async (req, res) => {
     // 扫码填写的入职申请信息 + 员工档案信息一并返回, 面试官不用再翻后台
     const isPrivileged = req.userRole === 'admin' || req.userRole === 'staff';
     let application = null;
-    const sub = db.prepare(`SELECT * FROM applicant_submissions WHERE phone10(phone)=? ORDER BY id DESC LIMIT 1`).get(digits10);
+    let sub = db.prepare(`SELECT * FROM applicant_submissions WHERE phone10(phone)=? ORDER BY id DESC LIMIT 1`).get(digits10);
+    // 电话对不上时(换过号), 用员工档案的关联申请单兜底
+    if (!sub && person.type === 'employee') {
+      sub = db.prepare(`SELECT * FROM applicant_submissions WHERE employee_id=? ORDER BY id DESC LIMIT 1`).get(person.id);
+    }
     if (sub) {
       application = {
         id: sub.id, name: sub.name || '', position: sub.position || '', partner_name: sub.partner_name || '',
@@ -25764,13 +25770,14 @@ app.post('/api/interview-result', requireAdmin, (req, res) => {
     const flag = v => (v === 1 || v === '1' || v === true) ? 1 : ((v === 0 || v === '0' || v === false) ? 0 : null);
     const vals = {
       forklift: flag(b.forklift), cherry_picker: flag(b.cherry_picker), container_unload: flag(b.container_unload),
-      lang_en: flag(b.lang_en), lang_es: flag(b.lang_es), lang_zh: flag(b.lang_zh)
+      lang_en: flag(b.lang_en), lang_es: flag(b.lang_es), lang_zh: flag(b.lang_zh),
+      can_lead: flag(b.can_lead), can_recruit: flag(b.can_recruit)
     };
     const note = String(b.note || '').slice(0, 2000);
-    const r = db.prepare(`INSERT INTO interview_results (phone, employee_id, applicant_id, person_name, forklift, cherry_picker, container_unload, lang_en, lang_es, lang_zh, note, created_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+    const r = db.prepare(`INSERT INTO interview_results (phone, employee_id, applicant_id, person_name, forklift, cherry_picker, container_unload, lang_en, lang_es, lang_zh, can_lead, can_recruit, note, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(digits10, person.type === 'employee' ? person.id : null, person.type === 'applicant' ? person.id : null, person.name,
-        vals.forklift, vals.cherry_picker, vals.container_unload, vals.lang_en, vals.lang_es, vals.lang_zh, note, req.userName || '');
+        vals.forklift, vals.cherry_picker, vals.container_unload, vals.lang_en, vals.lang_es, vals.lang_zh, vals.can_lead, vals.can_recruit, note, req.userName || '');
     // 同步 SMS 联系人: 会的语言进 spoken_langs, 会的技能进工种标签 (「不会」把语言移除, 技能不动)
     try {
       const c = db.prepare('SELECT * FROM sms_contacts WHERE phone10(phone_e164)=?').get(digits10);
@@ -25784,7 +25791,10 @@ app.post('/api/interview-result', requireAdmin, (req, res) => {
         let tags = []; try { tags = JSON.parse(c.tags || '[]'); } catch (_) {}
         const addT = (t, v) => { if (v === 1 && !tags.includes(t)) tags.push(t); };
         addT('叉车工', vals.forklift); addT('高位叉车', vals.cherry_picker); addT('卸柜工', vals.container_unload);
-        db.prepare(`UPDATE sms_contacts SET spoken_langs=?, tags=?, updated_at=datetime('now') WHERE id=?`).run(JSON.stringify(langs), JSON.stringify(tags), c.id);
+        // 领班/找人能力 → 联系人上的 领班/工头 标记 (明确回答才动, 未答不动)
+        const isLead = vals.can_lead === null ? (c.is_lead ? 1 : 0) : vals.can_lead;
+        const isForeman = vals.can_recruit === null ? (c.is_foreman ? 1 : 0) : vals.can_recruit;
+        db.prepare(`UPDATE sms_contacts SET spoken_langs=?, tags=?, is_lead=?, is_foreman=?, updated_at=datetime('now') WHERE id=?`).run(JSON.stringify(langs), JSON.stringify(tags), isLead, isForeman, c.id);
         smsAudit('contact', c.id, 'updated', 'agent', req.userId, { by: req.userName, changes: { interview_sync: { langs, skills: tags } } });
       }
     } catch (e) { console.error('[interview] contact sync:', e.message); }
