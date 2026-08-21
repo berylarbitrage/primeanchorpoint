@@ -766,6 +766,15 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
   </div>
 </div>
 
+<!-- 🛠 发送诊断 (仅 admin) -->
+<div class="modal-bg" id="smsDiagModal">
+  <div class="modal" style="max-width:620px">
+    <h3>&#128736; 短信发送诊断 <span style="font-size:.72rem;font-weight:600;color:var(--gray-400)">仅管理员</span></h3>
+    <div id="smsDiagBody" style="font-size:.85rem">加载中…</div>
+    <button class="close-modal" onclick="document.getElementById('smsDiagModal').classList.remove('show')" style="margin-top:10px">关闭</button>
+  </div>
+</div>
+
 <!-- ⚙ 管理面板 (仅 admin) — 面试/统计/账号/记录等管理功能的统一入口 -->
 <div class="modal-bg" id="adminDashModal">
   <div class="modal" style="max-width:520px">
@@ -786,6 +795,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
       <div class="dash-card" onclick="dashOpen(showBroadcastModal)">
         <span class="dash-ico">&#9993;</span>
         <div><b>群发 Broadcast</b><small>批量发送短信</small></div>
+      </div>
+      <div class="dash-card" onclick="dashOpen(showSmsDiagModal)">
+        <span class="dash-ico">&#128736;</span>
+        <div><b>发送诊断</b><small>发不出去时看这里：通道配置 + 失败统计</small></div>
       </div>
       <div class="dash-card" onclick="dashOpen(() => location.href = '/sms-stats')">
         <span class="dash-ico">&#128202;</span>
@@ -2557,6 +2570,51 @@ function ncSetChannel(ch) {
   document.getElementById('ncChanSms').className = 'filter-btn' + (ch === 'sms' ? ' active' : '');
   document.getElementById('ncChanWa').className = 'filter-btn' + (ch === 'whatsapp' ? ' active' : '');
   document.getElementById('ncWaHint').style.display = ch === 'whatsapp' ? '' : 'none';
+}
+
+// ─── 🛠 短信发送诊断 ───
+async function showSmsDiagModal() {
+  document.getElementById('smsDiagModal').classList.add('show');
+  const box = document.getElementById('smsDiagBody');
+  box.innerHTML = '加载中…';
+  try {
+    const d = await api('/sms/diagnostics');
+    if (d.error) throw new Error(d.error);
+    const acct = d.account || {};
+    const isTrial = String(acct.type || '').toLowerCase() === 'trial';
+    const row = (k, v, bad) => '<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px dashed var(--gray-200)">'
+      + '<span style="flex:0 0 130px;color:var(--gray-500);font-weight:600">' + k + '</span>'
+      + '<span style="flex:1' + (bad ? ';color:#dc2626;font-weight:700' : '') + '">' + v + '</span></div>';
+    let html = '';
+    html += row('Twilio 账号', esc(acct.friendlyName || '-') + ' · ' + esc(acct.type || '?') + (isTrial ? ' ⚠️ 试用账号只能发给已验证号码' : ''), isTrial);
+    html += row('发送通道', esc(d.send_channel || ''), !d.messaging_service_configured);
+    if (d.messaging_service) {
+      const m = d.messaging_service;
+      html += row('Messaging Service', m.error ? ('读取失败: ' + esc(m.error)) : (esc(m.name || m.sid) + (m.pool != null ? ' · 号码池 ' + m.pool + ' 个' : '')), !!m.error);
+    }
+    html += row('发送号码', esc(d.from_number || '(未配置)'), !d.from_number);
+    const sp = d.failure_spread || {};
+    html += row('失败范围', (sp.msgs || 0) + ' 条失败，涉及 ' + (sp.phones || 0) + ' 个不同号码'
+      + ((sp.phones || 0) > 2 ? ' → 多个号码都失败，基本是我们这边的通道/注册问题，不是对方手机' : ''), (sp.phones || 0) > 2);
+    const r7 = d.recent_7d || [];
+    html += row('近 7 天', r7.map(x => esc(x.st) + ' ' + x.n).join(' · ') || '无');
+    html += '<div style="margin-top:10px;font-weight:700">失败原因分布</div>';
+    html += '<table style="width:100%;font-size:.8rem;border-collapse:collapse;margin-top:4px">'
+      + (d.failures_by_code || []).map(c =>
+        '<tr><td style="padding:3px 6px;border-bottom:1px solid var(--gray-100);font-weight:700">' + esc(c.code) + '</td>'
+        + '<td style="padding:3px 6px;border-bottom:1px solid var(--gray-100)">' + c.n + ' 条</td>'
+        + '<td style="padding:3px 6px;border-bottom:1px solid var(--gray-100);color:var(--gray-500)">' + esc(TWILIO_ERR_ZH[c.code] || c.sample || '') + '</td></tr>').join('')
+      + '</table>';
+    if (!d.messaging_service_configured) {
+      html += '<div style="margin-top:10px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;color:#b91c1c;font-size:.8rem">'
+        + '⚠️ <b>没有配置 Messaging Service</b>：短信直接用号码发出，不属于任何已注册的 A2P 10DLC campaign，'
+        + '美国运营商会大量拒收（常见回码 30003/30032/30034）。请在 Twilio 建 Messaging Service、完成 A2P 注册，'
+        + '并把 <code>TWILIO_MESSAGING_SERVICE_SID</code> 配到服务器环境变量。</div>';
+    }
+    box.innerHTML = html;
+  } catch (e) {
+    box.innerHTML = '<span style="color:#dc2626">加载失败: ' + esc(e.message || '') + '</span>';
+  }
 }
 
 // ─── 📌 消息标记: 分类(卸柜/面试/发工资…) + 每类专属字段 + 备注 ───
