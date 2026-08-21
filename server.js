@@ -30917,6 +30917,8 @@ function interviewFromInbox(info) {
     const digits = String(info.phone || '').replace(/\D/g, '');
     if (digits.length < 7) return;
     const tail = digits.slice(-10);
+    const at = String(info.s701_at || '').slice(0, 30);
+    const place = String(info.s701_place || '').slice(0, 300);
     const norm = `replace(replace(replace(replace(replace(COALESCE(phone,''),'(',''),')',''),'-',''),' ',''),'+','')`;
     const open = db.prepare(`SELECT id FROM interview_registry
       WHERE ${norm} LIKE '%' || ?
@@ -30924,13 +30926,22 @@ function interviewFromInbox(info) {
         AND COALESCE(s701_result,'') NOT IN ('fail','noshow')
         AND COALESCE(wh_result,'') NOT IN ('fail','noshow')
       LIMIT 1`).get(tail);
-    if (open) return;
+    if (open) {
+      // 已经登记过还没办结：把标记里带来的时间/地点补上去（带了才覆盖）
+      if (at || place) {
+        db.prepare(`UPDATE interview_registry SET
+            s701_at = CASE WHEN ? != '' THEN ? ELSE s701_at END,
+            s701_place = CASE WHEN ? != '' THEN ? ELSE s701_place END,
+            updated_at = datetime('now') WHERE id = ?`).run(at, at, place, place, open.id);
+      }
+      return;
+    }
     const note = String(info.note || '').trim().slice(0, 500);
-    db.prepare(`INSERT INTO interview_registry (name, phone, position, notes, source, created_by)
-      VALUES (?,?,?,?,?,?)`).run(
+    db.prepare(`INSERT INTO interview_registry (name, phone, position, s701_at, s701_place, notes, source, created_by)
+      VALUES (?,?,?,?,?,?,?,?)`).run(
       String(info.name || '').trim().slice(0, 120), tail,
-      interviewPosFromTags(info.tags),
-      (note ? note + '\n' : '') + '⚡ 收件箱打「面试」标签自动登记，去补时间和地点',
+      interviewPosFromTags(info.tags), at, place,
+      (note ? note + '\n' : '') + '⚡ 收件箱标记「面试」自动登记' + (at ? '' : '，去补时间和地点'),
       String(info.source || '').slice(0, 60),
       String(info.by || '').slice(0, 80));
   } catch (e) { console.error('[面试登记] 自动迁移失败:', e.message); }
@@ -32758,6 +32769,23 @@ app.post('/api/sms/messages/:id/star', requireAdmin, requireSmsAccess, (req, res
     db.prepare(`UPDATE sms_messages SET starred=?, starred_by=?, starred_at=CASE WHEN ? THEN datetime('now') ELSE NULL END, mark_tag=?, mark_note=?, mark_data=?, updated_at=datetime('now') WHERE id=?`)
       .run(on, on ? req.userId : null, on, tag, note, data, msg.id);
     smsAudit('message', msg.id, on ? 'starred' : 'unstarred', 'agent', req.userId, { thread_id: msg.thread_id, tag });
+    // 标了「面试」→ 同步进面试登记：没有就建（姓名/工种标签跟着迁移），
+    // 已有未办结的把这里填的时间/地点补上去
+    if (on && tag === '面试') {
+      try {
+        const contact = db.prepare(`SELECT c.name, c.phone_e164, c.tags FROM sms_threads t
+          JOIN sms_contacts c ON c.id = t.contact_id WHERE t.id = ?`).get(msg.thread_id);
+        if (contact) {
+          let parsed = {}; try { parsed = JSON.parse(data || '{}'); } catch (_) {}
+          let contactTags = []; try { const a = JSON.parse(contact.tags || '[]'); contactTags = Array.isArray(a) ? a : []; } catch (_) {}
+          interviewFromInbox({ phone: contact.phone_e164, name: contact.name || '',
+            tags: contactTags,
+            note: [note, parsed.detail].filter(Boolean).join(' · '),
+            s701_at: parsed.time || '', s701_place: parsed.place || '',
+            source: 'SMS Inbox', by: req.userName || req.userId });
+        }
+      } catch (e) { console.error('[面试登记] 标记同步失败:', e.message); }
+    }
     res.json({ success: true, starred: on, tag, note, data });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
