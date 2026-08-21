@@ -127,11 +127,46 @@ async function api(path, opts = {}) {
 function showGate(msg){ document.getElementById('gate').style.display=''; document.getElementById('app').style.display='none';
   if(msg) document.getElementById('gateErr').textContent = msg; }
 
+const ERR_ZH = { 'Invalid username or password': '用户名或密码不对' };
+let PENDING_ACTIVATION = null;   // 第一次登录要自己设新密码 {username, password}
+
 async function login() {
+  const username = document.getElementById('user').value.trim();
+  const password = document.getElementById('pw').value;
+  const err = document.getElementById('gateErr');
+  err.textContent = '';
   const r = await fetch('/api/admin/login', { method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ username: document.getElementById('user').value.trim(), password: document.getElementById('pw').value })
+    body: JSON.stringify({ username, password })
   }).then(x=>x.json()).catch(()=>({}));
-  if (!r.success) { document.getElementById('gateErr').textContent = r.error || '登录失败'; return; }
+  if (r.needs_activation) { PENDING_ACTIVATION = { username, password }; showActivate(); return; }
+  if (!r.success) { err.textContent = ERR_ZH[r.error] || r.error || '登录失败（网不通？再试一次）'; return; }
+  TOKEN = r.token; ROLE = r.role || '';
+  localStorage.setItem('pa_interviews_token', TOKEN);
+  start();
+}
+
+/* 新账号第一次登录：临时密码对了，但要本人设一个新密码才算激活 */
+function showActivate() {
+  document.getElementById('gate').innerHTML =
+    '<h1 style="color:var(--amber);font-size:1.1rem">🔑 第一次登录，设置新密码</h1>'
+    + '<div class="hint" style="margin-top:8px">账号 ' + esc(PENDING_ACTIVATION.username)
+    + ' 密码正确。为了安全，请设置一个只有你自己知道的新密码，以后就用它登录。</div>'
+    + '<input id="npw1" type="password" placeholder="新密码">'
+    + '<input id="npw2" type="password" placeholder="再输一遍" onkeydown="if(event.key===\'Enter\')activate()">'
+    + '<div class="err" id="gateErr"></div>'
+    + '<button class="btn primary" style="width:100%;margin-top:12px" onclick="activate()">设置并登录</button>';
+}
+
+async function activate() {
+  const p1 = document.getElementById('npw1').value, p2 = document.getElementById('npw2').value;
+  const err = document.getElementById('gateErr');
+  if (!p1) { err.textContent = '新密码不能为空'; return; }
+  if (p1 !== p2) { err.textContent = '两次输入的不一样'; return; }
+  const r = await fetch('/api/auth/activate', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ username: PENDING_ACTIVATION.username,
+      current_password: PENDING_ACTIVATION.password, new_password: p1 })
+  }).then(x=>x.json()).catch(()=>({}));
+  if (!r.success) { err.textContent = r.error || '设置失败'; return; }
   TOKEN = r.token; ROLE = r.role || '';
   localStorage.setItem('pa_interviews_token', TOKEN);
   start();
