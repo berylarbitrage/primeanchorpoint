@@ -9175,11 +9175,12 @@ app.post('/api/admin/login', loginRateLimit, (req, res) => {
   }
   if (!user) {
     auditLog('login_failed', { ip: req.ip, connection: req.connection, headers: req.headers }, { details: { username, reason: 'user_not_found' } });
-    return res.status(401).json({ error: 'Invalid username or password' });
+    // 内部工具 + 登录限速在前面挡着：给出具体原因，省得同事排查半天
+    return res.status(401).json({ error: '没有这个用户名 / No such username' });
   }
   if (!verifyPassword(password, user.salt, user.password_hash)) {
     auditLog('login_failed', { ip: req.ip, connection: req.connection, headers: req.headers }, { details: { username, reason: 'wrong_password' } });
-    return res.status(401).json({ error: 'Invalid username or password' });
+    return res.status(401).json({ error: '密码不对 / Wrong password' });
   }
   // Password correct but account not yet self-verified — prompt user to set own password
   if (!user.active) return res.json({ needs_activation: true, username });
