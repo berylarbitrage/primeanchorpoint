@@ -30904,17 +30904,50 @@ const INTERVIEW_RESULTS = ['', 'pass', 'fail', 'noshow'];
 app.get('/api/interview-registry', requireAdmin, (req, res) => {
   try {
     const rows = db.prepare('SELECT * FROM interview_registry ORDER BY id DESC LIMIT 1000').all();
-    const partners = db.prepare(`SELECT id, name, address, addresses FROM partners
-      WHERE COALESCE(active,1)=1 ORDER BY name`).all().map(p => {
+    // 地址来源全汇总：公司档案 + 面试预设地点 + 打卡仓库 + 打卡工地，
+    // 同一个地址出现在几个系统里只留最先出现的那份（公司档案优先）。
+    const seenAddr = new Set();
+    const addrKey = a => String(a).toLowerCase().replace(/[^a-z0-9]/g, '');
+    const groups = [];
+    const addGroup = (id, name, rawAddrs) => {
       const list = [];
-      const push = v => { const s = String(v || '').trim(); if (s && !list.includes(s)) list.push(s); };
+      for (const raw of rawAddrs) {
+        const s = String(raw || '').trim();
+        if (!s || seenAddr.has(addrKey(s))) continue;
+        seenAddr.add(addrKey(s));
+        list.push(s);
+      }
+      if (list.length) groups.push({ id, name, addresses: list });
+    };
+    for (const p of db.prepare(`SELECT id, name, address, addresses FROM partners
+        WHERE COALESCE(active,1)=1 ORDER BY name`).all()) {
+      const raws = [];
       try {
         const parsed = JSON.parse(p.addresses || '[]');
-        if (Array.isArray(parsed)) for (const a of parsed) push(typeof a === 'string' ? a : (a && a.address));
+        if (Array.isArray(parsed)) for (const a of parsed) raws.push(typeof a === 'string' ? a : (a && a.address));
       } catch (_) {}
-      push(p.address);
-      return { id: p.id, name: p.name, addresses: list };
-    }).filter(p => p.addresses.length || p.name);
+      raws.push(p.address);
+      addGroup(p.id, p.name, raws);
+    }
+    try {
+      for (const l of db.prepare(`SELECT name, address FROM interview_locations
+          WHERE COALESCE(active,1)=1 AND COALESCE(address,'')!='' ORDER BY name`).all()) {
+        addGroup(null, l.name, [l.address]);
+      }
+    } catch (_) {}
+    try {
+      for (const w of db.prepare(`SELECT warehouse_name, address FROM warehouses
+          WHERE COALESCE(is_active,1)=1 AND COALESCE(address,'')!='' ORDER BY warehouse_name`).all()) {
+        addGroup(null, w.warehouse_name, [w.address]);
+      }
+    } catch (_) {}
+    try {
+      for (const s of db.prepare(`SELECT name, address, partner_id FROM job_sites
+          WHERE COALESCE(active,1)=1 AND COALESCE(address,'')!='' ORDER BY name`).all()) {
+        addGroup(s.partner_id || null, s.name, [s.address]);
+      }
+    } catch (_) {}
+    const partners = groups;
     const s = db.prepare("SELECT value FROM app_settings WHERE key='interview_701_address'").get();
     res.json({ rows, partners, s701_address: (s && s.value) || '701（办公室初试）' });
   } catch (e) { res.status(500).json({ error: e.message }); }
