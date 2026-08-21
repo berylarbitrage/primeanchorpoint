@@ -118,7 +118,7 @@
 <script>
 // 和 SMS Inbox 共用登录态：那边登过（含短信验证码 MFA），这边直接就是登录的
 let TOKEN = localStorage.getItem('adminToken') || localStorage.getItem('pa_interviews_token') || '';
-let ROWS = [], PARTNERS = [], S701 = '', ROLE = '';
+let ROWS = [], PARTNERS = [], S701 = '', S701_GUIDE = '', ROLE = '';
 let FILTER = 'todo';
 let VIEW = 'list';                       // list | week | month
 let ANCHOR = new Date();                 // 日历定位
@@ -227,6 +227,7 @@ async function load() {
   try {
     const r = await api('/interview-registry');
     ROWS = r.rows || []; PARTNERS = r.partners || []; S701 = r.s701_address || '';
+    S701_GUIDE = r.s701_guide || '';
     render();
     refreshOpenCard();
   } catch (_) {}
@@ -436,6 +437,8 @@ function card(r) {
     + '<span class="badge ' + cls + '">' + label + '</span>'
     + '<div style="flex:1"></div>'
     + chatLinks(r.phone)
+    + (String(r.phone || '').replace(/\D/g, '').length >= 10
+        ? '<button class="btn sm" onclick="sendGuide(' + r.id + ')" title="把 701 到场指南（怎么走/进哪个门/到了打谁电话）发给对方">📨 发指南</button>' : '')
     + '<button class="btn sm" onclick="editRow(' + r.id + ')" title="改姓名/电话/来源/工种/意向仓库/备注">✎ 编辑</button>'
     + '<button class="btn sm" onclick="editNotes(' + r.id + ')">📝</button>'
     + (ROLE === 'admin' ? '<button class="btn sm" onclick="delRow(' + r.id + ')">删</button>' : '')
@@ -624,6 +627,35 @@ async function saveWh(id) {
   load();
 }
 
+/* 📨 把 701 到场指南用短信发给候选人（经手机 App 的待发队列发出） */
+function sendGuide(id) {
+  const r = row(id);
+  if (!r) return;
+  if (!S701_GUIDE) {
+    openModal('<h2>还没设置面试指南</h2><div class="hint">右上角 ⚙ 里把到场指南填上再发。</div>'
+      + '<div class="row"><button class="btn primary" onclick="closeModal()">好</button></div>');
+    return;
+  }
+  openModal('<h2>📨 发面试指南 · ' + esc(r.name || fmtPhone(r.phone)) + '</h2>'
+    + '<div class="hint">发到 ' + esc(fmtPhone(r.phone)) + '，内容如下（右上角 ⚙ 可改）：</div>'
+    + '<div style="border:1px solid var(--gray-200);border-radius:12px;padding:10px 12px;font-size:.78rem;'
+    + 'background:#f9fafb;line-height:1.6;max-height:220px;overflow-y:auto;white-space:pre-wrap">' + esc(S701_GUIDE) + '</div>'
+    + '<div class="row"><button class="btn" onclick="closeModal()">取消</button>'
+    + '<button class="btn primary" onclick="confirmGuide(' + id + ')">确认发送</button></div>');
+}
+
+async function confirmGuide(id) {
+  closeModal();
+  try {
+    await api('/interview-registry/' + id + '/send-guide', { method: 'POST', body: JSON.stringify({}) });
+    openModal('<h2>已排队</h2><div class="hint">手机马上把指南发出去，会话里能看到。</div>'
+      + '<div class="row"><button class="btn primary" onclick="closeModal()">好</button></div>');
+  } catch (e) {
+    openModal('<h2>没发出去</h2><div class="hint">' + esc(e.message) + '</div>'
+      + '<div class="row"><button class="btn primary" onclick="closeModal()">好</button></div>');
+  }
+}
+
 /* 登记后整体修改：姓名/电话/来源/工种/意向仓库/备注 */
 function editRow(id) {
   const r = row(id);
@@ -684,12 +716,16 @@ function edit701() {
     + '</select>'
     + '<label>或手动填 / 微调</label>'
     + '<input id="fAddr701" value="' + esc(S701) + '">'
+    + '<label>701 到场指南（点「📨 发指南」发给候选人的就是这段话）</label>'
+    + '<textarea id="fGuide701" rows="7" style="font-size:.78rem;line-height:1.5">' + esc(S701_GUIDE) + '</textarea>'
     + '<div class="row"><button class="btn" onclick="closeModal()">取消</button>'
     + '<button class="btn primary" onclick="save701()">保存</button></div>');
 }
 async function save701() {
-  const addr = fVal('fAddr701'); closeModal();
-  try { await api('/interview-registry/meta', { method: 'POST', body: JSON.stringify({ s701_address: addr }) }); }
+  const addr = fVal('fAddr701');
+  const guide = document.getElementById('fGuide701').value.trim();
+  closeModal();
+  try { await api('/interview-registry/meta', { method: 'POST', body: JSON.stringify({ s701_address: addr, s701_guide: guide }) }); }
   catch (e) { alert(e.message); }
   load();
 }
