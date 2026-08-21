@@ -30616,6 +30616,105 @@ app.get('/api/device-sms/onboarding', requireAdmin, requireRole('admin'), (req, 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── 📋 面试登记：客服手工登记的面试流水（701 初试 → 仓库复试） ───
+// 与工人自助预约的 interviews/interview_slots 两码事：这里就是一张登记簿。
+db.exec(`CREATE TABLE IF NOT EXISTS interview_registry (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT DEFAULT '',
+  phone TEXT DEFAULT '',
+  position TEXT DEFAULT '',
+  s701_at TEXT DEFAULT '',
+  s701_result TEXT DEFAULT '',
+  wh_partner_id INTEGER,
+  wh_partner_name TEXT DEFAULT '',
+  wh_address TEXT DEFAULT '',
+  wh_at TEXT DEFAULT '',
+  wh_result TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+const INTERVIEW_RESULTS = ['', 'pass', 'fail', 'noshow'];
+
+// 列表 + 公司地址（仓库复试选地址用）+ 701 默认地址，一次给全
+app.get('/api/interview-registry', requireAdmin, (req, res) => {
+  try {
+    const rows = db.prepare('SELECT * FROM interview_registry ORDER BY id DESC LIMIT 1000').all();
+    const partners = db.prepare(`SELECT id, name, address, addresses FROM partners
+      WHERE COALESCE(active,1)=1 ORDER BY name`).all().map(p => {
+      const list = [];
+      const push = v => { const s = String(v || '').trim(); if (s && !list.includes(s)) list.push(s); };
+      try {
+        const parsed = JSON.parse(p.addresses || '[]');
+        if (Array.isArray(parsed)) for (const a of parsed) push(typeof a === 'string' ? a : (a && a.address));
+      } catch (_) {}
+      push(p.address);
+      return { id: p.id, name: p.name, addresses: list };
+    }).filter(p => p.addresses.length || p.name);
+    const s = db.prepare("SELECT value FROM app_settings WHERE key='interview_701_address'").get();
+    res.json({ rows, partners, s701_address: (s && s.value) || '701（办公室初试）' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 登记一条
+app.post('/api/interview-registry', requireAdmin, (req, res) => {
+  try {
+    const b = req.body || {};
+    const name = String(b.name || '').trim().slice(0, 120);
+    const phone = String(b.phone || '').trim().slice(0, 40);
+    if (!name && !phone) return res.status(400).json({ error: '姓名和电话至少填一个' });
+    const info = db.prepare(`INSERT INTO interview_registry (name, phone, position, s701_at, notes, created_by)
+      VALUES (?,?,?,?,?,?)`).run(
+      name, phone, String(b.position || '').trim().slice(0, 120),
+      String(b.s701_at || '').slice(0, 30), String(b.notes || '').trim().slice(0, 2000),
+      String(req.userName || req.userId || '').slice(0, 80));
+    res.json({ success: true, id: info.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 701 默认地址（仅 admin 可改）—— 必须排在 /:id 参数路由前面，不然会被吞掉
+app.post('/api/interview-registry/meta', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const addr = String((req.body || {}).s701_address || '').trim().slice(0, 300);
+    db.prepare(`INSERT INTO app_settings (key, value) VALUES ('interview_701_address', ?)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(addr);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 改一条（结果、安排仓库、备注……给什么改什么）
+app.post('/api/interview-registry/:id', requireAdmin, (req, res) => {
+  try {
+    const b = req.body || {};
+    const sets = [], params = [];
+    const put = (col, v) => { sets.push(col + '=?'); params.push(v); };
+    if (b.name !== undefined) put('name', String(b.name).trim().slice(0, 120));
+    if (b.phone !== undefined) put('phone', String(b.phone).trim().slice(0, 40));
+    if (b.position !== undefined) put('position', String(b.position).trim().slice(0, 120));
+    if (b.s701_at !== undefined) put('s701_at', String(b.s701_at).slice(0, 30));
+    if (b.s701_result !== undefined && INTERVIEW_RESULTS.includes(b.s701_result)) put('s701_result', b.s701_result);
+    if (b.wh_partner_id !== undefined) put('wh_partner_id', parseInt(b.wh_partner_id) || null);
+    if (b.wh_partner_name !== undefined) put('wh_partner_name', String(b.wh_partner_name).trim().slice(0, 160));
+    if (b.wh_address !== undefined) put('wh_address', String(b.wh_address).trim().slice(0, 300));
+    if (b.wh_at !== undefined) put('wh_at', String(b.wh_at).slice(0, 30));
+    if (b.wh_result !== undefined && INTERVIEW_RESULTS.includes(b.wh_result)) put('wh_result', b.wh_result);
+    if (b.notes !== undefined) put('notes', String(b.notes).trim().slice(0, 2000));
+    if (!sets.length) return res.json({ success: true });
+    params.push(req.params.id);
+    db.prepare(`UPDATE interview_registry SET ${sets.join(', ')}, updated_at=datetime('now') WHERE id=?`).run(...params);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/interview-registry/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    db.prepare('DELETE FROM interview_registry WHERE id=?').run(req.params.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // POST /api/device-sms/push — 桌面版推送一批短信 (同一条重复推是安全的, 按 remote_id 覆盖)
 app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
   try {

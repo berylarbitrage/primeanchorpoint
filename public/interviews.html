@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>面试登记</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--amber:#b45309;--amber-bg:#fffbeb;--sky:#0ea5e9;--blue:#2563eb;--red:#c5221f;
+    --green:#059669;--gray-100:#f3f4f6;--gray-200:#e5e7eb;--gray-400:#9ca3af;--gray-500:#6b7280;
+    --gray-600:#4b5563;--white:#fff}
+  *{box-sizing:border-box;margin:0}
+  body{font-family:'DM Sans','PingFang SC','Microsoft YaHei',sans-serif;background:var(--amber-bg);color:#1f2937;min-height:100vh}
+  .top{background:var(--white);border-bottom:1.5px solid var(--gray-200);padding:10px 16px;display:flex;
+    align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:0;z-index:20}
+  .top h1{font-size:1.05rem;color:var(--amber)}
+  .top .sub{font-size:.75rem;color:var(--gray-500)}
+  .btn{border:1px solid var(--gray-200);background:var(--white);border-radius:20px;padding:6px 14px;
+    font-size:.8rem;cursor:pointer;font-family:inherit}
+  .btn:hover{background:var(--gray-100)}
+  .btn.primary{background:var(--amber);border-color:var(--amber);color:#fff}
+  .btn.primary:hover{background:#92400e}
+  .btn.ok{background:var(--green);border-color:var(--green);color:#fff}
+  .btn.bad{background:var(--red);border-color:var(--red);color:#fff}
+  .btn.sm{padding:3px 10px;font-size:.72rem}
+  .wrap{max-width:900px;margin:0 auto;padding:14px 14px 60px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .chip{padding:4px 12px;border-radius:20px;border:1px solid var(--gray-200);background:var(--white);
+    font-size:.78rem;cursor:pointer;font-family:inherit}
+  .chip.on{background:var(--sky);border-color:var(--sky);color:#fff}
+  #q{width:100%;border:1px solid var(--gray-200);border-radius:20px;padding:8px 16px;font-size:.85rem;
+    font-family:inherit;margin-bottom:10px;outline:none}
+  #q:focus{border-color:var(--sky)}
+  .card{background:var(--white);border:1px solid var(--gray-200);border-radius:14px;padding:12px 14px;margin-bottom:10px}
+  .card .head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .card .name{font-weight:800;font-size:.95rem}
+  .card .phone{font-size:.8rem;color:var(--gray-500)}
+  .badge{font-size:.7rem;font-weight:700;padding:2px 10px;border-radius:10px;white-space:nowrap}
+  .b-701{background:#e0f2fe;color:#075985}
+  .b-arrange{background:#fef3c7;color:#92400e}
+  .b-wh{background:#ede9fe;color:#5b21b6}
+  .b-pass{background:#d1fae5;color:#065f46}
+  .b-fail{background:#fee2e2;color:#991b1b}
+  .stage{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.8rem;margin-top:8px;
+    padding:7px 10px;background:#f9fafb;border-radius:10px}
+  .stage .tag{font-weight:700;color:var(--gray-600);flex:none}
+  .stage .res-pass{color:var(--green);font-weight:700}
+  .stage .res-fail{color:var(--red);font-weight:700}
+  .notes{font-size:.76rem;color:var(--gray-600);margin-top:6px;white-space:pre-wrap}
+  .empty{text-align:center;color:var(--gray-400);padding:50px 0}
+  /* 登录 + 弹窗 */
+  #gate{max-width:340px;margin:80px auto;background:var(--white);border:1px solid var(--gray-200);
+    border-radius:16px;padding:24px}
+  #gate input{width:100%;border:1px solid var(--gray-200);border-radius:10px;padding:9px 12px;
+    font-size:.9rem;margin-top:8px;font-family:inherit}
+  .err{color:var(--red);font-size:.8rem;margin-top:8px}
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;
+    justify-content:center;z-index:50;padding:16px}
+  .modal{background:var(--white);border-radius:16px;padding:20px;max-width:460px;width:100%;
+    max-height:90vh;overflow-y:auto}
+  .modal h2{font-size:1rem;color:var(--amber);margin-bottom:10px}
+  .modal label{display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin:10px 0 4px}
+  .modal input,.modal select,.modal textarea{width:100%;border:1px solid var(--gray-200);border-radius:10px;
+    padding:8px 12px;font-size:.85rem;font-family:inherit;background:var(--white)}
+  .modal .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+  .hint{font-size:.72rem;color:var(--gray-400);margin-top:4px}
+</style>
+</head>
+<body>
+
+<div id="gate" style="display:none">
+  <h1 style="color:var(--amber);font-size:1.1rem">📋 面试登记</h1>
+  <input id="user" placeholder="用户名">
+  <input id="pw" type="password" placeholder="密码" onkeydown="if(event.key==='Enter')login()">
+  <div class="err" id="gateErr"></div>
+  <button class="btn primary" style="width:100%;margin-top:12px" onclick="login()">登录</button>
+</div>
+
+<div id="app" style="display:none">
+  <div class="top">
+    <h1>📋 面试登记</h1>
+    <span class="sub">先到 701 初试，通过再安排仓库复试</span>
+    <div style="flex:1"></div>
+    <button class="btn" id="s701Btn" onclick="edit701()">⚙ 701 地址</button>
+    <button class="btn primary" onclick="newInterview()">➕ 登记面试</button>
+  </div>
+  <div class="wrap">
+    <input id="q" placeholder="搜姓名 / 电话 / 工种 / 仓库…" oninput="render()">
+    <div class="chips" id="chips"></div>
+    <div id="list"></div>
+  </div>
+</div>
+
+<div id="modalHost"></div>
+
+<script>
+let TOKEN = localStorage.getItem('pa_interviews_token') || '';
+let ROWS = [], PARTNERS = [], S701 = '', ROLE = '';
+let FILTER = 'todo';
+
+const FILTERS = [
+  ['todo', '待处理'], ['s701', '待701初试'], ['arrange', '待安排仓库'],
+  ['wh', '待仓库复试'], ['pass', '✓ 已通过'], ['fail', '✗ 未通过/没来'], ['all', '全部'],
+];
+
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmtPhone(v){ const d = String(v||'').replace(/\D/g,''); if(d.length===11&&d[0]==='1')return '('+d.substr(1,3)+') '+d.substr(4,3)+'-'+d.substr(7); if(d.length===10)return '('+d.substr(0,3)+') '+d.substr(3,3)+'-'+d.substr(6); return String(v||''); }
+function fmtWhen(v){ if(!v) return ''; const d = new Date(v); if(isNaN(d)) return String(v);
+  return d.toLocaleDateString('zh-CN',{month:'numeric',day:'numeric',weekday:'short'}) + ' ' + d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}); }
+
+async function api(path, opts = {}) {
+  const res = await fetch('/api' + path, {
+    method: opts.method || 'GET',
+    headers: { 'Authorization': 'Bearer ' + TOKEN, ...(opts.body ? { 'Content-Type': 'application/json' } : {}) },
+    body: opts.body
+  });
+  if (res.status === 401 || res.status === 403) {
+    const j = await res.json().catch(() => ({}));
+    if (res.status === 401) { showGate('登录已过期。'); throw new Error('unauthorized'); }
+    throw new Error(j.error || '没有权限');
+  }
+  return res.json();
+}
+
+function showGate(msg){ document.getElementById('gate').style.display=''; document.getElementById('app').style.display='none';
+  if(msg) document.getElementById('gateErr').textContent = msg; }
+
+async function login() {
+  const r = await fetch('/api/admin/login', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ username: document.getElementById('user').value.trim(), password: document.getElementById('pw').value })
+  }).then(x=>x.json()).catch(()=>({}));
+  if (!r.success) { document.getElementById('gateErr').textContent = r.error || '登录失败'; return; }
+  TOKEN = r.token; ROLE = r.role || '';
+  localStorage.setItem('pa_interviews_token', TOKEN);
+  start();
+}
+
+function start(){ document.getElementById('gate').style.display='none'; document.getElementById('app').style.display='';
+  load(); setInterval(load, 30000); }
+
+async function load() {
+  try {
+    const r = await api('/interview-registry');
+    ROWS = r.rows || []; PARTNERS = r.partners || []; S701 = r.s701_address || '';
+    render();
+  } catch (_) {}
+}
+
+/* 一个人走到哪一步了 */
+function stageOf(r) {
+  if (r.wh_result === 'pass') return 'pass';
+  if (r.s701_result === 'fail' || r.wh_result === 'fail'
+      || r.s701_result === 'noshow' || r.wh_result === 'noshow') return 'fail';
+  if (r.wh_at) return 'wh';
+  if (r.s701_result === 'pass') return 'arrange';
+  return 's701';
+}
+const STAGE_BADGE = { s701:['b-701','待701初试'], arrange:['b-arrange','701✓ 待安排仓库'],
+  wh:['b-wh','待仓库复试'], pass:['b-pass','✓ 已通过'], fail:['b-fail','✗ 未通过/没来'] };
+
+function render() {
+  document.getElementById('chips').innerHTML = FILTERS.map(([k, label]) => {
+    const n = k==='all' ? ROWS.length : ROWS.filter(r => k==='todo'
+      ? ['s701','arrange','wh'].includes(stageOf(r)) : stageOf(r)===k).length;
+    return '<button class="chip'+(FILTER===k?' on':'')+'" onclick="FILTER=\''+k+'\';render()">'+label+' '+n+'</button>';
+  }).join('');
+
+  const q = document.getElementById('q').value.trim().toLowerCase();
+  let list = ROWS.filter(r => {
+    const st = stageOf(r);
+    if (FILTER==='todo' && !['s701','arrange','wh'].includes(st)) return false;
+    if (FILTER!=='todo' && FILTER!=='all' && st!==FILTER) return false;
+    if (q && !(r.name+' '+r.phone+' '+r.position+' '+r.wh_partner_name+' '+r.notes).toLowerCase().includes(q)) return false;
+    return true;
+  });
+  // 待处理按最近的面试时间排前面，办完的按登记顺序倒排
+  const timeOf = r => stageOf(r)==='wh' ? (r.wh_at||'9') : (r.s701_at||'9');
+  list.sort((a,b) => {
+    const ta = ['s701','arrange','wh'].includes(stageOf(a)), tb = ['s701','arrange','wh'].includes(stageOf(b));
+    if (ta !== tb) return ta ? -1 : 1;
+    return ta ? (timeOf(a) < timeOf(b) ? -1 : 1) : (b.id - a.id);
+  });
+
+  document.getElementById('list').innerHTML = list.length ? list.map(card).join('')
+    : '<div class="empty">没有记录。点右上角「➕ 登记面试」。</div>';
+}
+
+function resBtns(id, field, current) {
+  if (current) {
+    const label = { pass:'✓ 通过', fail:'✗ 未通过', noshow:'✗ 没来' }[current] || current;
+    return '<span class="' + (current==='pass'?'res-pass':'res-fail') + '">' + label + '</span>'
+      + ' <button class="btn sm" onclick="setResult(' + id + ',\'' + field + '\',\'\')">改</button>';
+  }
+  return '<button class="btn sm ok" onclick="setResult(' + id + ',\'' + field + '\',\'pass\')">通过</button>'
+    + '<button class="btn sm bad" onclick="setResult(' + id + ',\'' + field + '\',\'fail\')">未通过</button>'
+    + '<button class="btn sm" onclick="setResult(' + id + ',\'' + field + '\',\'noshow\')">没来</button>';
+}
+
+function card(r) {
+  const [cls, label] = STAGE_BADGE[stageOf(r)];
+  const st = stageOf(r);
+  let s701 = '<div class="stage"><span class="tag">① 701 初试</span>'
+    + '<span>' + (r.s701_at ? '🕐 ' + fmtWhen(r.s701_at) : '时间待定') + '</span>'
+    + '<span style="color:var(--gray-400)">📍 ' + esc(S701) + '</span>'
+    + '<button class="btn sm" onclick="edit701Time(' + r.id + ')">改时间</button>'
+    + '<div style="flex:1"></div>' + resBtns(r.id, 's701_result', r.s701_result) + '</div>';
+
+  let wh = '';
+  if (st === 'arrange') {
+    wh = '<div class="stage"><span class="tag">② 仓库复试</span>'
+      + '<button class="btn sm primary" onclick="arrangeWh(' + r.id + ')">安排仓库复试（选仓库和时间）</button></div>';
+  } else if (r.wh_at || r.wh_address) {
+    wh = '<div class="stage"><span class="tag">② 仓库复试</span>'
+      + '<span>🕐 ' + fmtWhen(r.wh_at) + '</span>'
+      + '<span style="color:var(--gray-400)">📍 ' + esc(r.wh_partner_name) + (r.wh_address ? ' · ' + esc(r.wh_address) : '') + '</span>'
+      + '<button class="btn sm" onclick="arrangeWh(' + r.id + ')">改</button>'
+      + '<div style="flex:1"></div>' + resBtns(r.id, 'wh_result', r.wh_result) + '</div>';
+  }
+
+  return '<div class="card">'
+    + '<div class="head"><span class="name">' + esc(r.name || '(未留名)') + '</span>'
+    + '<span class="phone">' + esc(fmtPhone(r.phone)) + '</span>'
+    + (r.position ? '<span class="badge" style="background:var(--gray-100);color:var(--gray-600)">' + esc(r.position) + '</span>' : '')
+    + '<span class="badge ' + cls + '">' + label + '</span>'
+    + '<div style="flex:1"></div>'
+    + '<button class="btn sm" onclick="editNotes(' + r.id + ')">📝</button>'
+    + (ROLE === 'admin' ? '<button class="btn sm" onclick="delRow(' + r.id + ')">删</button>' : '')
+    + '</div>'
+    + s701 + wh
+    + (r.notes ? '<div class="notes">📝 ' + esc(r.notes) + '</div>' : '')
+    + '</div>';
+}
+
+/* ── 弹窗 ── */
+function openModal(html){ document.getElementById('modalHost').innerHTML =
+  '<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal">' + html + '</div></div>'; }
+function closeModal(){ document.getElementById('modalHost').innerHTML=''; }
+function row(r){ return ROWS.find(x => x.id === r); }
+
+function newInterview() {
+  openModal('<h2>➕ 登记面试</h2>'
+    + '<label>姓名</label><input id="fName">'
+    + '<label>电话</label><input id="fPhone" placeholder="(312) 555-0100">'
+    + '<label>工种</label><input id="fPos" placeholder="如：卸柜工 / 叉车">'
+    + '<label>701 初试时间</label><input id="fAt" type="datetime-local">'
+    + '<div class="hint">初试都在：' + esc(S701) + '（右上角 ⚙ 可改）</div>'
+    + '<label>备注</label><textarea id="fNotes" rows="2"></textarea>'
+    + '<div class="row"><button class="btn" onclick="closeModal()">取消</button>'
+    + '<button class="btn primary" onclick="saveNew()">登记</button></div>');
+  document.getElementById('fName').focus();
+}
+async function saveNew() {
+  const body = { name: fVal('fName'), phone: fVal('fPhone'), position: fVal('fPos'),
+    s701_at: fVal('fAt'), notes: fVal('fNotes') };
+  if (!body.name && !body.phone) return;
+  closeModal();
+  await api('/interview-registry', { method: 'POST', body: JSON.stringify(body) });
+  load();
+}
+function fVal(id){ return document.getElementById(id).value.trim(); }
+
+async function setResult(id, field, value) {
+  await api('/interview-registry/' + id, { method: 'POST', body: JSON.stringify({ [field]: value }) });
+  load();
+}
+
+function edit701Time(id) {
+  const r = row(id);
+  openModal('<h2>701 初试时间 · ' + esc(r.name || fmtPhone(r.phone)) + '</h2>'
+    + '<input id="fAt" type="datetime-local" value="' + esc(r.s701_at || '') + '">'
+    + '<div class="row"><button class="btn" onclick="closeModal()">取消</button>'
+    + '<button class="btn primary" onclick="save701Time(' + id + ')">保存</button></div>');
+}
+async function save701Time(id) {
+  const at = fVal('fAt'); closeModal();
+  await api('/interview-registry/' + id, { method: 'POST', body: JSON.stringify({ s701_at: at }) });
+  load();
+}
+
+function arrangeWh(id) {
+  const r = row(id);
+  const opts = PARTNERS.map((p, i) => '<option value="' + i + '"'
+    + (p.name === r.wh_partner_name ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('');
+  openModal('<h2>② 安排仓库复试 · ' + esc(r.name || fmtPhone(r.phone)) + '</h2>'
+    + '<label>哪个公司/仓库</label><select id="fCo" onchange="fillAddr()"><option value="">— 选公司 —</option>' + opts + '</select>'
+    + '<label>地址</label><select id="fAddr"></select>'
+    + '<label>时间</label><input id="fAt" type="datetime-local" value="' + esc(r.wh_at || '') + '">'
+    + '<div class="row"><button class="btn" onclick="closeModal()">取消</button>'
+    + '<button class="btn primary" onclick="saveWh(' + id + ')">保存</button></div>');
+  fillAddr();
+}
+function fillAddr() {
+  const i = document.getElementById('fCo').value;
+  const p = i === '' ? null : PARTNERS[parseInt(i)];
+  document.getElementById('fAddr').innerHTML = p && p.addresses.length
+    ? p.addresses.map(a => '<option>' + esc(a) + '</option>').join('')
+    : '<option value="">（这家公司没登记地址，可先选公司）</option>';
+}
+async function saveWh(id) {
+  const i = document.getElementById('fCo').value;
+  const p = i === '' ? null : PARTNERS[parseInt(i)];
+  closeModal();
+  await api('/interview-registry/' + id, { method: 'POST', body: JSON.stringify({
+    wh_partner_id: p ? p.id : null, wh_partner_name: p ? p.name : '',
+    wh_address: document.getElementById('fAddr').value || '', wh_at: fVal('fAt') }) });
+  load();
+}
+
+function editNotes(id) {
+  const r = row(id);
+  openModal('<h2>📝 备注 · ' + esc(r.name || fmtPhone(r.phone)) + '</h2>'
+    + '<textarea id="fNotes" rows="4">' + esc(r.notes || '') + '</textarea>'
+    + '<div class="row"><button class="btn" onclick="closeModal()">取消</button>'
+    + '<button class="btn primary" onclick="saveNotes(' + id + ')">保存</button></div>');
+}
+async function saveNotes(id) {
+  const notes = document.getElementById('fNotes').value.trim(); closeModal();
+  await api('/interview-registry/' + id, { method: 'POST', body: JSON.stringify({ notes }) });
+  load();
+}
+
+function edit701() {
+  openModal('<h2>⚙ 701 初试地址</h2>'
+    + '<div class="hint">所有初试都显示这个地址（仅管理员可改）。</div>'
+    + '<input id="fAddr701" value="' + esc(S701) + '">'
+    + '<div class="row"><button class="btn" onclick="closeModal()">取消</button>'
+    + '<button class="btn primary" onclick="save701()">保存</button></div>');
+}
+async function save701() {
+  const addr = fVal('fAddr701'); closeModal();
+  try { await api('/interview-registry/meta', { method: 'POST', body: JSON.stringify({ s701_address: addr }) }); }
+  catch (e) { alert(e.message); }
+  load();
+}
+
+function delRow(id) {
+  const r = row(id);
+  openModal('<h2>删除 · ' + esc(r.name || fmtPhone(r.phone)) + '</h2>'
+    + '<div class="hint">删了就没了，一般不用删——未通过/没来留着当记录更好。</div>'
+    + '<div class="row"><button class="btn" onclick="closeModal()">取消</button>'
+    + '<button class="btn bad" onclick="doDel(' + id + ')">删除</button></div>');
+}
+async function doDel(id) {
+  closeModal();
+  await api('/interview-registry/' + id, { method: 'DELETE' });
+  load();
+}
+
+if (TOKEN) {
+  fetch('/api/admin/me', { headers: { 'Authorization': 'Bearer ' + TOKEN } })
+    .then(r => r.json()).then(r => {
+      if (r && r.username) { ROLE = r.role || ''; start(); } else showGate('');
+    }).catch(() => showGate(''));
+} else {
+  showGate('');
+}
+</script>
+</body>
+</html>
