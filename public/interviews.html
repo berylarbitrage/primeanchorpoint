@@ -417,6 +417,8 @@ function card(r) {
   let wh = '';
   if (st === 'arrange') {
     wh = '<div class="stage"><span class="tag">② 仓库复试</span>'
+      + (r.wh_address ? '<span style="color:var(--gray-400)">📍 意向: ' + esc(r.wh_partner_name)
+          + (r.wh_address ? ' · ' + esc(r.wh_address) : '') + '</span>' : '')
       + '<button class="btn sm primary" onclick="arrangeWh(' + r.id + ')">安排仓库复试（选仓库和时间）</button></div>';
   } else if (r.wh_at || r.wh_address) {
     wh = '<div class="stage"><span class="tag">② 仓库复试</span>'
@@ -434,6 +436,7 @@ function card(r) {
     + '<span class="badge ' + cls + '">' + label + '</span>'
     + '<div style="flex:1"></div>'
     + chatLinks(r.phone)
+    + '<button class="btn sm" onclick="editRow(' + r.id + ')" title="改姓名/电话/来源/工种/意向仓库/备注">✎ 编辑</button>'
     + '<button class="btn sm" onclick="editNotes(' + r.id + ')">📝</button>'
     + (ROLE === 'admin' ? '<button class="btn sm" onclick="delRow(' + r.id + ')">删</button>' : '')
     + '</div>'
@@ -618,6 +621,39 @@ async function saveWh(id) {
   await api('/interview-registry/' + id, { method: 'POST', body: JSON.stringify({
     wh_partner_id: wh.id, wh_partner_name: wh.name,
     wh_address: wh.addr, wh_at: fVal('fAt') }) });
+  load();
+}
+
+/* 登记后整体修改：姓名/电话/来源/工种/意向仓库/备注 */
+function editRow(id) {
+  const r = row(id);
+  if (!r) return;
+  const parts = String(r.position || '').split(' / ').map(s => s.trim()).filter(Boolean);
+  POS_SET = new Set(parts.filter(p => POSITIONS.includes(p)));
+  const extra = parts.filter(p => !POSITIONS.includes(p)).join(' / ');
+  openModal('<h2>✎ 编辑 · ' + esc(r.name || fmtPhone(r.phone)) + '</h2>'
+    + '<label>姓名</label><input id="fName" value="' + esc(r.name || '') + '">'
+    + '<label>电话</label><input id="fPhone" value="' + esc(r.phone || '') + '">'
+    + '<label>来源</label><select id="fSource"><option value="">— 选来源 —</option>'
+    + SOURCES.map(s => '<option' + (s === r.source ? ' selected' : '') + '>' + s + '</option>').join('') + '</select>'
+    + '<label>工种（点选，可多选）</label>'
+    + '<div class="chips" id="fPosChips" style="margin-bottom:4px"></div>'
+    + '<input id="fPos" placeholder="别的工种手填（可留空）" value="' + esc(extra) + '">'
+    + '<label>意向仓库</label>' + whPick('fWh', r.wh_partner_name, r.wh_address)
+    + '<label>备注</label><textarea id="fNotes" rows="3">' + esc(r.notes || '') + '</textarea>'
+    + '<div class="row"><button class="btn" onclick="closeModal()">取消</button>'
+    + '<button class="btn primary" onclick="saveEdit(' + id + ')">保存</button></div>');
+  renderPosChips();
+}
+
+async function saveEdit(id) {
+  const wh = whParse('fWh');
+  const position = [...POSITIONS.filter(p => POS_SET.has(p)), fVal('fPos')].filter(Boolean).join(' / ');
+  const body = { name: fVal('fName'), phone: fVal('fPhone'), position,
+    source: document.getElementById('fSource').value, notes: fVal('fNotes'),
+    wh_partner_id: wh.id, wh_partner_name: wh.name, wh_address: wh.addr };
+  closeModal();
+  await api('/interview-registry/' + id, { method: 'POST', body: JSON.stringify(body) });
   load();
 }
 
