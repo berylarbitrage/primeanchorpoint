@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-18c · 修复登录验证循环: MFA状态改存数据库(部署重启不再丢), 双写cookie',
+  tag: '2026-08-18d · 银行直连对账(Plaid): 连接公司银行自动同步交易, 逐笔审核',
   started: new Date().toISOString(),
 };
 
@@ -34769,6 +34769,291 @@ app.delete('/api/acct/annotations/:id', requireAdmin, requireAcctWrite, (req, re
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// ════════ 🏦 银行直连对账 (Plaid): 连接公司银行, 交易自动同步, 逐笔审核 ════════
+// 不用 SDK, 直接调 Plaid REST API。密钥优先环境变量 (PLAID_CLIENT_ID/PLAID_SECRET/
+// PLAID_ENV), 否则读 integration_settings(provider='plaid'), 可在页面上配置。
+db.exec(`CREATE TABLE IF NOT EXISTS bank_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id TEXT UNIQUE,
+  access_token_enc TEXT NOT NULL,
+  access_token_iv TEXT NOT NULL,
+  institution_id TEXT DEFAULT '',
+  institution_name TEXT DEFAULT '',
+  sync_cursor TEXT DEFAULT '',
+  last_sync_at TEXT DEFAULT NULL,
+  status TEXT DEFAULT 'ok',
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS bank_accounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_row_id INTEGER NOT NULL,
+  account_id TEXT UNIQUE,
+  name TEXT DEFAULT '',
+  official_name TEXT DEFAULT '',
+  mask TEXT DEFAULT '',
+  type TEXT DEFAULT '',
+  subtype TEXT DEFAULT '',
+  current_balance REAL DEFAULT NULL,
+  available_balance REAL DEFAULT NULL,
+  iso_currency TEXT DEFAULT 'USD',
+  updated_at TEXT DEFAULT (datetime('now'))
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS bank_transactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  txn_id TEXT UNIQUE,
+  account_id TEXT NOT NULL,
+  item_row_id INTEGER NOT NULL,
+  date TEXT DEFAULT '',
+  name TEXT DEFAULT '',
+  merchant TEXT DEFAULT '',
+  amount REAL DEFAULT 0,
+  pending INTEGER DEFAULT 0,
+  category TEXT DEFAULT '',
+  raw TEXT DEFAULT '{}',
+  reviewed INTEGER DEFAULT 0,
+  review_note TEXT DEFAULT '',
+  reviewed_by TEXT DEFAULT '',
+  reviewed_at TEXT DEFAULT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_banktxn_date ON bank_transactions(date)'); } catch (e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_banktxn_acct ON bank_transactions(account_id, date)'); } catch (e) {}
+
+// access_token 加密落库 (aes-256-gcm, 与 SSN 同一把密钥)
+function _bankEncTok(sv) {
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', SSN_KEY, iv);
+  let e = c.update(String(sv), 'utf8', 'hex');
+  e += c.final('hex');
+  return { enc: e + c.getAuthTag().toString('hex'), iv: iv.toString('hex') };
+}
+function _bankDecTok(enc, iv) {
+  for (const key of SSN_FALLBACK_KEYS) {
+    try {
+      const tag = Buffer.from(String(enc).slice(-32), 'hex');
+      const data = Buffer.from(String(enc).slice(0, -32), 'hex');
+      const d = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(String(iv), 'hex'));
+      d.setAuthTag(tag);
+      let out = d.update(data, undefined, 'utf8');
+      out += d.final('utf8');
+      return out;
+    } catch (_) {}
+  }
+  return '';
+}
+
+function _plaidCfg() {
+  if (process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET) {
+    return { client_id: process.env.PLAID_CLIENT_ID, secret: process.env.PLAID_SECRET, env: process.env.PLAID_ENV || 'production' };
+  }
+  try {
+    const row = db.prepare("SELECT api_key, api_secret, config FROM integration_settings WHERE provider='plaid'").get();
+    if (row && row.api_key && row.api_secret) {
+      let cfg = {}; try { cfg = JSON.parse(row.config || '{}'); } catch (_) {}
+      return { client_id: row.api_key, secret: row.api_secret, env: cfg.env || 'production' };
+    }
+  } catch (_) {}
+  return null;
+}
+async function _plaidCall(pathName, body) {
+  const cfg = _plaidCfg();
+  if (!cfg) throw new Error('Plaid 未配置');
+  const base = { sandbox: 'https://sandbox.plaid.com', development: 'https://development.plaid.com', production: 'https://production.plaid.com' }[cfg.env] || 'https://production.plaid.com';
+  const r = await fetch(base + pathName, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(Object.assign({ client_id: cfg.client_id, secret: cfg.secret }, body))
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const msg = data.error_message || data.error_code || ('HTTP ' + r.status);
+    const err = new Error(msg); err.plaid = data; throw err;
+  }
+  return data;
+}
+
+// 银行数据仅 admin / 会计可见 (客服不可见); 连接/解绑/配置仅 admin
+const requireBankView = requireRole('admin', 'accounting');
+const requireBankAdmin = requireRole('admin');
+
+// 状态: 是否已配置 + 已连接的银行与账户
+app.get('/api/acct/bank/status', requireAdmin, requireBankView, (req, res) => {
+  try {
+    const cfg = _plaidCfg();
+    const items = db.prepare('SELECT id, item_id, institution_name, last_sync_at, status, created_at FROM bank_items ORDER BY id').all();
+    const accounts = db.prepare('SELECT * FROM bank_accounts ORDER BY id').all();
+    const txnCount = db.prepare('SELECT COUNT(*) n FROM bank_transactions').get().n;
+    const unreviewed = db.prepare('SELECT COUNT(*) n FROM bank_transactions WHERE reviewed=0').get().n;
+    res.json({ configured: !!cfg, env: cfg ? cfg.env : '', is_admin: req.userRole === 'admin', items, accounts, txn_count: txnCount, unreviewed });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 保存 Plaid 密钥 (admin)
+app.post('/api/acct/bank/config', requireAdmin, requireBankAdmin, (req, res) => {
+  try {
+    const b = req.body || {};
+    const cid = String(b.client_id || '').trim(), sec = String(b.secret || '').trim();
+    const env = ['sandbox', 'production'].includes(b.env) ? b.env : 'production';
+    if (!cid || !sec) return res.status(400).json({ error: '请填写 client_id 和 secret' });
+    db.prepare(`INSERT INTO integration_settings (provider, enabled, api_key, api_secret, config, updated_at)
+      VALUES ('plaid', 1, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(provider) DO UPDATE SET enabled=1, api_key=excluded.api_key, api_secret=excluded.api_secret, config=excluded.config, updated_at=CURRENT_TIMESTAMP`)
+      .run(cid, sec, JSON.stringify({ env }));
+    auditLog('bank_config_saved', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { env } });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 创建 Plaid Link token (admin 发起连接银行)
+app.post('/api/acct/bank/link-token', requireAdmin, requireBankAdmin, async (req, res) => {
+  try {
+    const d = await _plaidCall('/link/token/create', {
+      user: { client_user_id: 'admin-' + req.userId },
+      client_name: 'Prime Anchor Point LLC',
+      products: ['transactions'],
+      country_codes: ['US'],
+      language: 'en'
+    });
+    res.json({ link_token: d.link_token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Link 完成后: public_token 换 access_token, 存银行与账户
+app.post('/api/acct/bank/exchange', requireAdmin, requireBankAdmin, async (req, res) => {
+  try {
+    const { public_token, institution_id, institution_name } = req.body || {};
+    if (!public_token) return res.status(400).json({ error: 'public_token required' });
+    const ex = await _plaidCall('/item/public_token/exchange', { public_token });
+    const tok = _bankEncTok(ex.access_token);
+    const info = db.prepare(`INSERT INTO bank_items (item_id, access_token_enc, access_token_iv, institution_id, institution_name)
+      VALUES (?,?,?,?,?)
+      ON CONFLICT(item_id) DO UPDATE SET access_token_enc=excluded.access_token_enc, access_token_iv=excluded.access_token_iv, status='ok'`)
+      .run(ex.item_id, tok.enc, tok.iv, String(institution_id || ''), String(institution_name || ''));
+    const rowId = db.prepare('SELECT id FROM bank_items WHERE item_id=?').get(ex.item_id).id;
+    // 拉账户列表
+    const ac = await _plaidCall('/accounts/get', { access_token: ex.access_token });
+    const up = db.prepare(`INSERT INTO bank_accounts (item_row_id, account_id, name, official_name, mask, type, subtype, current_balance, available_balance, iso_currency, updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,datetime('now'))
+      ON CONFLICT(account_id) DO UPDATE SET name=excluded.name, official_name=excluded.official_name, mask=excluded.mask,
+        current_balance=excluded.current_balance, available_balance=excluded.available_balance, updated_at=datetime('now')`);
+    for (const a of (ac.accounts || [])) {
+      up.run(rowId, a.account_id, a.name || '', a.official_name || '', a.mask || '', a.type || '', a.subtype || '',
+        a.balances ? a.balances.current : null, a.balances ? a.balances.available : null, (a.balances && a.balances.iso_currency_code) || 'USD');
+    }
+    auditLog('bank_connected', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { institution: institution_name || institution_id || ex.item_id } });
+    // 连上后立即同步一次交易 (异步)
+    setImmediate(() => _bankSyncItem(rowId).catch(e2 => console.error('[Bank] first sync:', e2.message)));
+    res.json({ success: true, accounts: (ac.accounts || []).length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 同步一个银行连接的交易 (transactions/sync 增量游标)
+async function _bankSyncItem(rowId) {
+  const item = db.prepare('SELECT * FROM bank_items WHERE id=?').get(rowId);
+  if (!item) return { added: 0, modified: 0, removed: 0 };
+  const accessToken = _bankDecTok(item.access_token_enc, item.access_token_iv);
+  if (!accessToken) throw new Error('access_token 解密失败');
+  let cursor = item.sync_cursor || undefined;
+  let added = 0, modified = 0, removed = 0, hasMore = true, guard = 0;
+  const insTxn = db.prepare(`INSERT INTO bank_transactions (txn_id, account_id, item_row_id, date, name, merchant, amount, pending, category, raw)
+    VALUES (?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(txn_id) DO UPDATE SET date=excluded.date, name=excluded.name, merchant=excluded.merchant,
+      amount=excluded.amount, pending=excluded.pending, category=excluded.category, raw=excluded.raw`);
+  while (hasMore && guard++ < 50) {
+    const body = { access_token: accessToken, count: 500 };
+    if (cursor) body.cursor = cursor;
+    const d = await _plaidCall('/transactions/sync', body);
+    for (const t of [...(d.added || []), ...(d.modified || [])]) {
+      const cat = (t.personal_finance_category && t.personal_finance_category.primary) || (Array.isArray(t.category) ? t.category.join(' / ') : '');
+      insTxn.run(t.transaction_id, t.account_id, rowId, t.date || '', t.name || '', (t.merchant_name || ''), t.amount || 0, t.pending ? 1 : 0, cat, JSON.stringify(t).slice(0, 8000));
+    }
+    added += (d.added || []).length; modified += (d.modified || []).length;
+    for (const t of (d.removed || [])) { db.prepare('DELETE FROM bank_transactions WHERE txn_id=?').run(t.transaction_id); removed++; }
+    // 顺带更新余额
+    for (const a of (d.accounts || [])) {
+      db.prepare(`UPDATE bank_accounts SET current_balance=?, available_balance=?, updated_at=datetime('now') WHERE account_id=?`)
+        .run(a.balances ? a.balances.current : null, a.balances ? a.balances.available : null, a.account_id);
+    }
+    cursor = d.next_cursor; hasMore = !!d.has_more;
+  }
+  db.prepare(`UPDATE bank_items SET sync_cursor=?, last_sync_at=datetime('now'), status='ok' WHERE id=?`).run(cursor || '', rowId);
+  return { added, modified, removed };
+}
+
+// 手动同步全部银行 (admin / 会计)
+app.post('/api/acct/bank/sync', requireAdmin, requireBankView, async (req, res) => {
+  try {
+    const items = db.prepare('SELECT id FROM bank_items').all();
+    const out = [];
+    for (const it of items) {
+      try { out.push(Object.assign({ item: it.id }, await _bankSyncItem(it.id))); }
+      catch (e) {
+        db.prepare(`UPDATE bank_items SET status=? WHERE id=?`).run('error: ' + String(e.message).slice(0, 120), it.id);
+        out.push({ item: it.id, error: e.message });
+      }
+    }
+    res.json({ success: true, results: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 交易列表 (筛选: 账户/关键词/日期/是否已审核)
+app.get('/api/acct/bank/transactions', requireAdmin, requireBankView, (req, res) => {
+  try {
+    const where = ['1=1']; const params = [];
+    if (req.query.account_id) { where.push('t.account_id=?'); params.push(String(req.query.account_id)); }
+    if (req.query.q) { where.push('(t.name LIKE ? OR t.merchant LIKE ? OR t.review_note LIKE ?)'); const like = '%' + String(req.query.q) + '%'; params.push(like, like, like); }
+    if (req.query.from) { where.push('t.date >= ?'); params.push(String(req.query.from)); }
+    if (req.query.to) { where.push('t.date <= ?'); params.push(String(req.query.to)); }
+    if (req.query.reviewed === '0' || req.query.reviewed === '1') { where.push('t.reviewed=?'); params.push(parseInt(req.query.reviewed)); }
+    const rows = db.prepare(`SELECT t.*, a.name AS account_name, a.mask AS account_mask, i.institution_name
+      FROM bank_transactions t
+      LEFT JOIN bank_accounts a ON a.account_id = t.account_id
+      LEFT JOIN bank_items i ON i.id = t.item_row_id
+      WHERE ${where.join(' AND ')} ORDER BY t.date DESC, t.id DESC LIMIT 1000`).all(...params);
+    res.json({ transactions: rows.map(r2 => { const { raw, ...rest } = r2; return rest; }) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 审核一笔交易 (admin / 会计): 勾已审核 + 备注
+app.post('/api/acct/bank/transactions/:id/review', requireAdmin, requireBankView, (req, res) => {
+  try {
+    const t = db.prepare('SELECT id FROM bank_transactions WHERE id=?').get(parseInt(req.params.id));
+    if (!t) return res.status(404).json({ error: 'Not found' });
+    const b = req.body || {};
+    const reviewed = b.reviewed ? 1 : 0;
+    const note = String(b.note || '').slice(0, 500);
+    db.prepare(`UPDATE bank_transactions SET reviewed=?, review_note=?, reviewed_by=?, reviewed_at=CASE WHEN ? THEN datetime('now') ELSE NULL END WHERE id=?`)
+      .run(reviewed, note, reviewed ? (req.userName || '') : '', reviewed, t.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 解绑银行 (admin): Plaid 侧 item/remove + 删本地数据 (交易保留, 标记来源已解绑)
+app.delete('/api/acct/bank/items/:id', requireAdmin, requireBankAdmin, async (req, res) => {
+  try {
+    const item = db.prepare('SELECT * FROM bank_items WHERE id=?').get(parseInt(req.params.id));
+    if (!item) return res.status(404).json({ error: 'Not found' });
+    try {
+      const tok = _bankDecTok(item.access_token_enc, item.access_token_iv);
+      if (tok) await _plaidCall('/item/remove', { access_token: tok });
+    } catch (e) { console.error('[Bank] item/remove:', e.message); }
+    db.prepare('DELETE FROM bank_items WHERE id=?').run(item.id);
+    db.prepare('DELETE FROM bank_accounts WHERE item_row_id=?').run(item.id);
+    auditLog('bank_disconnected', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { institution: item.institution_name } });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 每 6 小时自动同步一次
+setInterval(() => {
+  try {
+    if (!_plaidCfg()) return;
+    for (const it of db.prepare('SELECT id FROM bank_items').all()) {
+      _bankSyncItem(it.id).catch(e => console.error('[Bank] auto-sync item', it.id, e.message));
+    }
+  } catch (e) { console.error('[Bank] auto-sync:', e.message); }
+}, 6 * 60 * 60 * 1000);
 
 // ─── Reconciliation marks (对账备注：标注过的付款记录就不再出现) ───
 app.get('/api/admin/recon-marks', requireAdmin, blockManager, (req, res) => {
