@@ -98,7 +98,8 @@
 <div id="modalHost"></div>
 
 <script>
-let TOKEN = localStorage.getItem('pa_interviews_token') || '';
+// 和 SMS Inbox 共用登录态：那边登过（含短信验证码 MFA），这边直接就是登录的
+let TOKEN = localStorage.getItem('adminToken') || localStorage.getItem('pa_interviews_token') || '';
 let ROWS = [], PARTNERS = [], S701 = '', ROLE = '';
 let FILTER = 'todo';
 
@@ -140,9 +141,22 @@ async function login() {
   const r = await fetch('/api/admin/login', { method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ username, password })
   }).then(x=>x.json()).catch(()=>({}));
+  if (r.mfa_required) { gotoMfa(r); return; }
   if (r.needs_activation) { PENDING_ACTIVATION = { username, password }; showActivate(); return; }
   if (!r.success) { err.textContent = ERR_ZH[r.error] || r.error || '登录失败（网不通？再试一次）'; return; }
+  finishLogin(r);
+}
+
+/* 开了短信验证码（MFA）的账号：去 /mfa 输验证码，完成后带着登录态跳回本页 */
+function gotoMfa(r) {
+  location.href = '/mfa?token=' + encodeURIComponent(r.mfa_token || '')
+    + '&next=' + encodeURIComponent('/interviews')
+    + (r.phone_hint ? '&hint=' + encodeURIComponent(r.phone_hint) : '');
+}
+
+function finishLogin(r) {
   TOKEN = r.token; ROLE = r.role || '';
+  localStorage.setItem('adminToken', TOKEN);           // 和 SMS Inbox 共用
   localStorage.setItem('pa_interviews_token', TOKEN);
   start();
 }
@@ -168,10 +182,9 @@ async function activate() {
     body: JSON.stringify({ username: PENDING_ACTIVATION.username,
       current_password: PENDING_ACTIVATION.password, new_password: p1 })
   }).then(x=>x.json()).catch(()=>({}));
+  if (r.mfa_required) { gotoMfa(r); return; }
   if (!r.success) { err.textContent = r.error || '设置失败'; return; }
-  TOKEN = r.token; ROLE = r.role || '';
-  localStorage.setItem('pa_interviews_token', TOKEN);
-  start();
+  finishLogin(r);
 }
 
 function start(){ document.getElementById('gate').style.display='none'; document.getElementById('app').style.display='';
