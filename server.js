@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-18g · Teller已停服(2026-07)撤下推荐, 银行直连以Plaid为主通道',
+  tag: '2026-08-18h · 面试登记改三档: 熟练/会一点/不会 (语言:流利, 管理:可能可以)',
   started: new Date().toISOString(),
 };
 
@@ -25782,7 +25782,8 @@ app.post('/api/interview-result', requireAdmin, (req, res) => {
     if (digits10.length < 10) return res.status(400).json({ error: '请输入有效的 10 位手机号' });
     const person = _interviewFindPerson(digits10);
     if (!person) return res.status(404).json({ error: '系统里没有这个手机号, 请先让对方扫码填写个人信息' });
-    const flag = v => (v === 1 || v === '1' || v === true) ? 1 : ((v === 0 || v === '0' || v === false) ? 0 : null);
+    // 三档: 1=熟练/流利/可以  2=会一点/可能可以  0=不会  null=未作答
+    const flag = v => (v === 1 || v === '1' || v === true) ? 1 : ((v === 2 || v === '2') ? 2 : ((v === 0 || v === '0' || v === false) ? 0 : null));
     const vals = {
       forklift: flag(b.forklift), cherry_picker: flag(b.cherry_picker), container_unload: flag(b.container_unload),
       lang_en: flag(b.lang_en), lang_es: flag(b.lang_es), lang_zh: flag(b.lang_zh),
@@ -25793,7 +25794,8 @@ app.post('/api/interview-result', requireAdmin, (req, res) => {
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(digits10, person.type === 'employee' ? person.id : null, person.type === 'applicant' ? person.id : null, person.name,
         vals.forklift, vals.cherry_picker, vals.container_unload, vals.lang_en, vals.lang_es, vals.lang_zh, vals.can_lead, vals.can_recruit, note, req.userName || '');
-    // 同步 SMS 联系人: 会的语言进 spoken_langs, 会的技能进工种标签 (「不会」把语言移除, 技能不动)
+    // 同步 SMS 联系人: 「熟练/流利(=1)」的语言进 spoken_langs、技能进工种标签;
+    // 「会一点(=2)」不动联系人标记(细节看面试记录); 「不会(=0)」把语言移除
     try {
       const c = db.prepare('SELECT * FROM sms_contacts WHERE phone10(phone_e164)=?').get(digits10);
       if (c) {

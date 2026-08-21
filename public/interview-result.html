@@ -39,7 +39,9 @@ input:focus,textarea:focus{border-color:var(--sky)}
 .seg{display:flex;gap:6px;flex-shrink:0}
 .seg button{padding:.45rem .95rem;border:1.5px solid var(--gray-200);background:#fff;border-radius:8px;font-size:.86rem;font-weight:700;cursor:pointer;font-family:inherit;color:var(--gray-600)}
 .seg button.yes.on{background:#E8F5E9;border-color:var(--green);color:var(--green)}
+.seg button.mid.on{background:#FFF4E0;border-color:#F5A623;color:#b45309}
 .seg button.no.on{background:#FFEAEA;border-color:var(--red);color:var(--red)}
+.seg button{padding:.45rem .7rem}
 .qr-card{text-align:center}
 .qr-card img{width:220px;height:220px;border:2px solid var(--gray-200);border-radius:12px;padding:8px;background:#fff}
 .recent-item{padding:.55rem 0;border-bottom:1px dashed var(--gray-200);font-size:.82rem}
@@ -114,17 +116,23 @@ input:focus,textarea:focus{border-color:var(--sky)}
 </div>
 
 <script>
+// 三档: 1=熟练/流利/可以  2=会一点/可能可以(做过但不熟练)  0=不会/不行
+const GROUP_OPTS = {
+  '🔧 技能': [[1, '✓ 熟练'], [2, '◐ 会一点'], [0, '✗ 不会']],
+  '🗣 语言': [[1, '✓ 流利'], [2, '◐ 会一点'], [0, '✗ 不会']],
+  '👥 管理': [[1, '✓ 可以'], [2, '◐ 可能可以'], [0, '✗ 不行']],
+};
 const QUESTIONS = [
-  { key: 'forklift',         group: '🔧 技能', label: '会开普通叉车？' },
-  { key: 'cherry_picker',    group: '🔧 技能', label: '会开高位叉车 Cherry Picker？' },
-  { key: 'container_unload', group: '🔧 技能', label: '会卸柜？' },
-  { key: 'lang_en',          group: '🗣 语言', label: '会英语？' },
-  { key: 'lang_es',          group: '🗣 语言', label: '会西班牙语？' },
-  { key: 'lang_zh',          group: '🗣 语言', label: '会中文？' },
+  { key: 'forklift',         group: '🔧 技能', label: '开普通叉车？' },
+  { key: 'cherry_picker',    group: '🔧 技能', label: '开高位叉车 Cherry Picker？' },
+  { key: 'container_unload', group: '🔧 技能', label: '卸柜？' },
+  { key: 'lang_en',          group: '🗣 语言', label: '英语？' },
+  { key: 'lang_es',          group: '🗣 语言', label: '西班牙语？' },
+  { key: 'lang_zh',          group: '🗣 语言', label: '中文？' },
   { key: 'can_lead',         group: '👥 管理', label: '可以做领班吗？' },
   { key: 'can_recruit',      group: '👥 管理', label: '有能力帮忙找人吗？' },
 ];
-let _answers = {};          // key → 1 / 0 / undefined
+let _answers = {};          // key → 1 / 2 / 0 / undefined
 let _phone = '';
 
 const $ = id => document.getElementById(id);
@@ -249,7 +257,7 @@ function buildForm(p, latest) {
   $('pMeta').textContent = bits.join(' · ');
   _answers = {};
   if (latest) {
-    QUESTIONS.forEach(q => { if (latest[q.key] === 0 || latest[q.key] === 1) _answers[q.key] = latest[q.key]; });
+    QUESTIONS.forEach(q => { if ([0, 1, 2].includes(latest[q.key])) _answers[q.key] = latest[q.key]; });
     $('noteInput').value = latest.note || '';
   } else {
     $('noteInput').value = '';
@@ -266,10 +274,12 @@ function renderQuestions() {
       lastGroup = q.group;
     }
     const v = _answers[q.key];
+    const cls = { 1: 'yes', 2: 'mid', 0: 'no' };
+    const opts = GROUP_OPTS[q.group] || GROUP_OPTS['🔧 技能'];
     html += '<div class="q-row"><span class="q-label">' + q.label + '</span>'
       + '<span class="seg">'
-      + '<button type="button" class="yes' + (v === 1 ? ' on' : '') + '" onclick="setAns(\'' + q.key + '\',1)">✓ 会</button>'
-      + '<button type="button" class="no' + (v === 0 ? ' on' : '') + '" onclick="setAns(\'' + q.key + '\',0)">✗ 不会</button>'
+      + opts.map(([val, lb]) =>
+        '<button type="button" class="' + cls[val] + (v === val ? ' on' : '') + '" onclick="setAns(\'' + q.key + '\',' + val + ')">' + lb + '</button>').join('')
       + '</span></div>';
   });
   $('qList').innerHTML = html;
@@ -285,7 +295,7 @@ async function doSave() {
   hideMsg('msg2');
   try {
     const payload = { phone: _phone, note: $('noteInput').value.trim() };
-    QUESTIONS.forEach(q => { if (_answers[q.key] === 0 || _answers[q.key] === 1) payload[q.key] = _answers[q.key]; });
+    QUESTIONS.forEach(q => { if ([0, 1, 2].includes(_answers[q.key])) payload[q.key] = _answers[q.key]; });
     await api('/api/interview-result', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
     });
@@ -310,7 +320,9 @@ async function loadRecent() {
     if (!rows.length) { $('recentCard').style.display = 'none'; return; }
     $('recentList').innerHTML = rows.map(r => {
       const chips = FLAGS.map(([k, lb]) =>
-        r[k] === 1 ? '<span class="chip y">' + lb + '✓</span>' : (r[k] === 0 ? '<span class="chip n">' + lb + '✗</span>' : '')
+        r[k] === 1 ? '<span class="chip y">' + lb + '✓</span>'
+        : (r[k] === 2 ? '<span class="chip" style="background:#FFF4E0;color:#b45309">' + lb + '◐</span>'
+        : (r[k] === 0 ? '<span class="chip n">' + lb + '✗</span>' : ''))
       ).join('');
       const when = r.created_at ? new Date(r.created_at + 'Z').toLocaleString('zh-CN', { hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
       return '<div class="recent-item"><b>' + esc(r.person_name || '(无名)') + '</b>'
