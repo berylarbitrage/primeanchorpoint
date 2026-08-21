@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-18j · 修复发短信绕过Messaging Service(A2P未生效导致30003); 重发发译文; 新增诊断',
+  tag: '2026-08-18k · Messaging Service 可在后台直接选/填, 无需改环境变量',
   started: new Date().toISOString(),
 };
 
@@ -61,7 +61,22 @@ const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_T
   ? require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
   : null;
 const TWILIO_FROM = process.env.TWILIO_PHONE_NUMBER || '';
-const TWILIO_MESSAGING_SID = process.env.TWILIO_MESSAGING_SERVICE_SID || '';
+const TWILIO_MESSAGING_SID_ENV = process.env.TWILIO_MESSAGING_SERVICE_SID || '';
+// Messaging Service SID: 环境变量优先, 否则读后台配置 (页面可填, 免去改环境变量重启)
+// A2P 10DLC 的 campaign 注册绑在 Messaging Service 上, 不走它的流量会被运营商拒收。
+let _twMsgSvcCache = { v: null, at: 0 };
+function twilioMsgSvcSid() {
+  if (TWILIO_MESSAGING_SID_ENV) return TWILIO_MESSAGING_SID_ENV;
+  const now = Date.now();
+  if (_twMsgSvcCache.v !== null && now - _twMsgSvcCache.at < 30000) return _twMsgSvcCache.v;
+  let v = '';
+  try {
+    const row = db.prepare("SELECT config FROM integration_settings WHERE provider='twilio'").get();
+    if (row && row.config) { const c = JSON.parse(row.config); v = String(c.messaging_service_sid || ''); }
+  } catch (_) {}
+  _twMsgSvcCache = { v, at: now };
+  return v;
+}
 const TWILIO_VERIFY_SID = process.env.TWILIO_VERIFY_SERVICE_SID || '';
 
 function formatPhoneE164(phone) {
@@ -72,15 +87,16 @@ function formatPhoneE164(phone) {
 }
 
 async function sendSMS(to, body) {
-  if (!twilioClient || (!TWILIO_FROM && !TWILIO_MESSAGING_SID)) {
+  if (!twilioClient || (!TWILIO_FROM && !twilioMsgSvcSid())) {
     console.log(`[SMS-SKIP] Twilio not configured. To: ${to}, Body: ${body}`);
     return false;
   }
   const formatted = formatPhoneE164(to);
   try {
     const opts = { body, to: formatted };
-    if (TWILIO_MESSAGING_SID) {
-      opts.messagingServiceSid = TWILIO_MESSAGING_SID;
+    const _msvc = twilioMsgSvcSid();
+    if (_msvc) {
+      opts.messagingServiceSid = _msvc;
     } else {
       opts.from = TWILIO_FROM;
     }
@@ -151,12 +167,13 @@ function markOtpVerifiedByMaster(formToken, type, target) {
 // Returns detailed Twilio status for diagnostics (used by admin test endpoint)
 async function sendSMSWithDetail(to, body) {
   if (!twilioClient) return { ok: false, error: 'TWILIO_ACCOUNT_SID 或 TWILIO_AUTH_TOKEN 未配置' };
-  if (!TWILIO_FROM && !TWILIO_MESSAGING_SID) return { ok: false, error: 'TWILIO_PHONE_NUMBER 或 TWILIO_MESSAGING_SERVICE_SID 未配置' };
+  if (!TWILIO_FROM && !twilioMsgSvcSid()) return { ok: false, error: 'TWILIO_PHONE_NUMBER 或 TWILIO_MESSAGING_SERVICE_SID 未配置' };
   const formatted = formatPhoneE164(to);
   try {
     const opts = { body, to: formatted };
-    if (TWILIO_MESSAGING_SID) {
-      opts.messagingServiceSid = TWILIO_MESSAGING_SID;
+    const _msvc2 = twilioMsgSvcSid();
+    if (_msvc2) {
+      opts.messagingServiceSid = _msvc2;
     } else {
       opts.from = TWILIO_FROM;
     }
@@ -9095,7 +9112,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS mfa_trusted_devices (
 function _mfaEnabled() {
   if (process.env.MFA_DISABLE === '1') return false;
   // Twilio 完全没配置(本地开发)时跳过, 避免把所有人锁在门外; 生产环境必然配置了 Twilio
-  if (!twilioClient || (!TWILIO_FROM && !TWILIO_MESSAGING_SID)) { console.warn('[MFA] Twilio 未配置, 本次登录跳过短信验证'); return false; }
+  if (!twilioClient || (!TWILIO_FROM && !twilioMsgSvcSid())) { console.warn('[MFA] Twilio 未配置, 本次登录跳过短信验证'); return false; }
   return true;
 }
 function _mfaTrustHash(t) { return crypto.createHash('sha256').update(String(t)).digest('hex'); }
@@ -32093,10 +32110,11 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
         // 普通短信优先走 Messaging Service —— A2P 10DLC 的 campaign 注册绑定在
         // Messaging Service 上, 直接用 from:号码 发出的流量不属于任何已注册
         // campaign, 会被运营商按未注册流量拒收 (常见回码 30003/30032/30034)。
+        const _msvcSend = twilioMsgSvcSid();
         const createParams = isWA
           ? { from: 'whatsapp:' + waFrom, to: 'whatsapp:' + thread.phone_e164 }
-          : (TWILIO_MESSAGING_SID
-            ? { messagingServiceSid: TWILIO_MESSAGING_SID, to: thread.phone_e164 }
+          : (_msvcSend
+            ? { messagingServiceSid: _msvcSend, to: thread.phone_e164 }
             : { from: thread.twilio_number || TWILIO_FROM, to: thread.phone_e164 });
         if (bodyToSend) createParams.body = bodyToSend;
         // 图片作为 MMS/WhatsApp 媒体附件直接发到对方手机里, 不是链接
@@ -32484,24 +32502,55 @@ app.get('/api/sms/diagnostics', requireAdmin, requireRole('admin'), async (req, 
     }
     // Messaging Service 里的号码 + A2P 绑定情况
     let msvc = null;
-    if (twilioClient && TWILIO_MESSAGING_SID) {
+    const _msvcDiag = twilioMsgSvcSid();
+    if (twilioClient && _msvcDiag) {
       try {
-        const svc = await twilioClient.messaging.v1.services(TWILIO_MESSAGING_SID).fetch();
+        const svc = await twilioClient.messaging.v1.services(_msvcDiag).fetch();
         let poolCount = null;
-        try { poolCount = (await twilioClient.messaging.v1.services(TWILIO_MESSAGING_SID).phoneNumbers.list({ limit: 20 })).length; } catch (_) {}
+        try { poolCount = (await twilioClient.messaging.v1.services(_msvcDiag).phoneNumbers.list({ limit: 20 })).length; } catch (_) {}
         msvc = { sid: svc.sid, name: svc.friendlyName, use_case: svc.useCase || '', pool: poolCount };
       } catch (e) { msvc = { error: e.message }; }
     }
     res.json({
       account: acct,
-      messaging_service_configured: !!TWILIO_MESSAGING_SID,
+      messaging_service_configured: !!_msvcDiag,
+      messaging_service_from_env: !!TWILIO_MESSAGING_SID_ENV,
       messaging_service: msvc,
       from_number: TWILIO_FROM || '',
-      send_channel: TWILIO_MESSAGING_SID ? 'Messaging Service (推荐, A2P 注册生效)' : '直接用号码 from: (未走 A2P campaign, 容易被运营商拒收)',
+      send_channel: _msvcDiag ? 'Messaging Service (推荐, A2P 注册生效)' : '直接用号码 from: (未走 A2P campaign, 容易被运营商拒收)',
       failures_by_code: byCode,
       recent_7d: recent,
       failure_spread: spread
     });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/sms/messaging-service — 后台直接配置 Messaging Service SID (仅 admin)
+app.post('/api/sms/messaging-service', requireAdmin, requireRole('admin'), async (req, res) => {
+  try {
+    const sid = String((req.body || {}).sid || '').trim();
+    if (sid && !/^MG[0-9a-fA-F]{32}$/.test(sid)) return res.status(400).json({ error: 'Messaging Service SID 格式不对 (应为 MG 开头的 34 位)' });
+    if (sid && twilioClient) {
+      try { await twilioClient.messaging.v1.services(sid).fetch(); }
+      catch (e) { return res.status(400).json({ error: '这个 Messaging Service 在当前 Twilio 账号里找不到: ' + e.message }); }
+    }
+    const row = db.prepare("SELECT config FROM integration_settings WHERE provider='twilio'").get();
+    let cfg = {}; try { cfg = JSON.parse((row && row.config) || '{}'); } catch (_) {}
+    cfg.messaging_service_sid = sid;
+    db.prepare(`INSERT INTO integration_settings (provider, enabled, config, updated_at) VALUES ('twilio', 1, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(provider) DO UPDATE SET config=excluded.config, updated_at=CURRENT_TIMESTAMP`).run(JSON.stringify(cfg));
+    _twMsgSvcCache = { v: null, at: 0 };
+    auditLog('sms_messaging_service_set', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { sid } });
+    res.json({ success: true, sid, effective: twilioMsgSvcSid() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/sms/messaging-services — 列出账号下可选的 Messaging Service (仅 admin)
+app.get('/api/sms/messaging-services', requireAdmin, requireRole('admin'), async (req, res) => {
+  try {
+    if (!twilioClient) return res.json({ services: [] });
+    const list = await twilioClient.messaging.v1.services.list({ limit: 20 });
+    res.json({ services: list.map(x => ({ sid: x.sid, name: x.friendlyName || '', use_case: x.useCase || '' })) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -32523,8 +32572,8 @@ app.post('/api/sms/threads/:id/retry/:messageId', requireAdmin, requireSmsAccess
       const retryBody = (msg.translated_body && msg.translated_body.trim()) ? msg.translated_body : msg.body;
       const createParams = _isWA
         ? { body: retryBody, from: 'whatsapp:' + (process.env.TWILIO_WHATSAPP_FROM || msg.from_number), to: 'whatsapp:' + msg.to_number }
-        : (TWILIO_MESSAGING_SID
-          ? { body: retryBody, messagingServiceSid: TWILIO_MESSAGING_SID, to: msg.to_number }
+        : (twilioMsgSvcSid()
+          ? { body: retryBody, messagingServiceSid: twilioMsgSvcSid(), to: msg.to_number }
           : { body: retryBody, from: msg.from_number, to: msg.to_number });
       if (statusCallbackUrl) createParams.statusCallback = statusCallbackUrl;
       const result = await twilioClient.messages.create(createParams);
@@ -33454,8 +33503,8 @@ app.post('/api/sms/broadcast', requireAdmin, requireRole('admin'), async (req, r
 
         // Send SMS
         const opts = { body: bodyOut, to: phoneE164 };
-        if (TWILIO_MESSAGING_SID) {
-          opts.messagingServiceSid = TWILIO_MESSAGING_SID;
+        if (twilioMsgSvcSid()) {
+          opts.messagingServiceSid = twilioMsgSvcSid();
         } else {
           opts.from = TWILIO_FROM;
         }
@@ -33615,7 +33664,7 @@ async function ctmSendSms({ to, body, relatedCallSid = null, threadId = null, di
   if (!formatted) return { ok: false, error: 'Invalid phone number' };
   try {
     const opts = { to: formatted, body };
-    if (TWILIO_MESSAGING_SID) opts.messagingServiceSid = TWILIO_MESSAGING_SID;
+    if (twilioMsgSvcSid()) opts.messagingServiceSid = twilioMsgSvcSid();
     else opts.from = TWILIO_FROM;
     const msg = await twilioClient.messages.create(opts);
     db.prepare(`INSERT INTO comm_messages (message_sid, from_number, to_number, body, direction, status, related_call_sid, thread_id) VALUES (?,?,?,?,?,?,?,?)`)
