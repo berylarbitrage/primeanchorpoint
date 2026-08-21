@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-18i · 输入已是对方语言不再翻译; 发送失败可看Twilio具体原因',
+  tag: '2026-08-18j · 修复发短信绕过Messaging Service(A2P未生效导致30003); 重发发译文; 新增诊断',
   started: new Date().toISOString(),
 };
 
@@ -32090,9 +32090,14 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
         // WhatsApp 线程: 号码加 whatsapp: 前缀走 WhatsApp 通道
         const isWA = (thread.channel || 'sms') === 'whatsapp';
         const waFrom = process.env.TWILIO_WHATSAPP_FROM || thread.twilio_number || TWILIO_FROM;
+        // 普通短信优先走 Messaging Service —— A2P 10DLC 的 campaign 注册绑定在
+        // Messaging Service 上, 直接用 from:号码 发出的流量不属于任何已注册
+        // campaign, 会被运营商按未注册流量拒收 (常见回码 30003/30032/30034)。
         const createParams = isWA
           ? { from: 'whatsapp:' + waFrom, to: 'whatsapp:' + thread.phone_e164 }
-          : { from: thread.twilio_number || TWILIO_FROM, to: thread.phone_e164 };
+          : (TWILIO_MESSAGING_SID
+            ? { messagingServiceSid: TWILIO_MESSAGING_SID, to: thread.phone_e164 }
+            : { from: thread.twilio_number || TWILIO_FROM, to: thread.phone_e164 });
         if (bodyToSend) createParams.body = bodyToSend;
         // 图片作为 MMS/WhatsApp 媒体附件直接发到对方手机里, 不是链接
         if (mediaPath) createParams.mediaUrl = [BASE_URL.replace(/\/+$/, '') + mediaPath];
@@ -32454,6 +32459,52 @@ app.get('/api/sms/agents', requireAdmin, requireSmsAccess, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/sms/diagnostics — 发送失败诊断 (仅 admin): 账号/发送通道配置 + 失败统计
+app.get('/api/sms/diagnostics', requireAdmin, requireRole('admin'), async (req, res) => {
+  try {
+    const acct = await getTwilioAccountType();
+    // 失败按错误码统计
+    const byCode = db.prepare(`SELECT COALESCE(NULLIF(error_code,''),'(无码)') AS code, COUNT(*) n,
+        MAX(COALESCE(error_message,'')) AS sample
+      FROM sms_messages WHERE direction='outbound' AND delivery_status IN ('failed','undelivered')
+      GROUP BY code ORDER BY n DESC LIMIT 20`).all();
+    // 最近 7 天成功/失败对比
+    const recent = db.prepare(`SELECT delivery_status AS st, COUNT(*) n FROM sms_messages
+      WHERE direction='outbound' AND created_at >= datetime('now','-7 days') GROUP BY st`).all();
+    // 失败涉及多少个不同的收件号码 (判断是"某个人手机的问题"还是"我们这边的问题")
+    const spread = db.prepare(`SELECT COUNT(DISTINCT to_number) AS phones, COUNT(*) AS msgs FROM sms_messages
+      WHERE direction='outbound' AND delivery_status IN ('failed','undelivered')`).get();
+    // 发送号码池
+    let numbers = [];
+    if (twilioClient) {
+      try {
+        const list = await twilioClient.incomingPhoneNumbers.list({ limit: 20 });
+        numbers = list.map(n => ({ number: n.phoneNumber, friendly: n.friendlyName, sms: !!(n.capabilities && n.capabilities.sms) }));
+      } catch (e) { numbers = [{ error: e.message }]; }
+    }
+    // Messaging Service 里的号码 + A2P 绑定情况
+    let msvc = null;
+    if (twilioClient && TWILIO_MESSAGING_SID) {
+      try {
+        const svc = await twilioClient.messaging.v1.services(TWILIO_MESSAGING_SID).fetch();
+        let poolCount = null;
+        try { poolCount = (await twilioClient.messaging.v1.services(TWILIO_MESSAGING_SID).phoneNumbers.list({ limit: 20 })).length; } catch (_) {}
+        msvc = { sid: svc.sid, name: svc.friendlyName, use_case: svc.useCase || '', pool: poolCount };
+      } catch (e) { msvc = { error: e.message }; }
+    }
+    res.json({
+      account: acct,
+      messaging_service_configured: !!TWILIO_MESSAGING_SID,
+      messaging_service: msvc,
+      from_number: TWILIO_FROM || '',
+      send_channel: TWILIO_MESSAGING_SID ? 'Messaging Service (推荐, A2P 注册生效)' : '直接用号码 from: (未走 A2P campaign, 容易被运营商拒收)',
+      failures_by_code: byCode,
+      recent_7d: recent,
+      failure_spread: spread
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // POST /api/sms/threads/:id/retry/:messageId — retry a failed message
 app.post('/api/sms/threads/:id/retry/:messageId', requireAdmin, requireSmsAccess, async (req, res) => {
   try {
@@ -32468,9 +32519,13 @@ app.post('/api/sms/threads/:id/retry/:messageId', requireAdmin, requireSmsAccess
     const statusCallbackUrl = BASE_URL ? `${BASE_URL}/api/sms/webhook/status` : '';
     try {
       const _isWA = rc && (rc.channel || 'sms') === 'whatsapp';
+      // 重发的内容必须是当初实际发出去的那版 (译文), 不能把中文原文发给工人
+      const retryBody = (msg.translated_body && msg.translated_body.trim()) ? msg.translated_body : msg.body;
       const createParams = _isWA
-        ? { body: msg.body, from: 'whatsapp:' + (process.env.TWILIO_WHATSAPP_FROM || msg.from_number), to: 'whatsapp:' + msg.to_number }
-        : { body: msg.body, from: msg.from_number, to: msg.to_number };
+        ? { body: retryBody, from: 'whatsapp:' + (process.env.TWILIO_WHATSAPP_FROM || msg.from_number), to: 'whatsapp:' + msg.to_number }
+        : (TWILIO_MESSAGING_SID
+          ? { body: retryBody, messagingServiceSid: TWILIO_MESSAGING_SID, to: msg.to_number }
+          : { body: retryBody, from: msg.from_number, to: msg.to_number });
       if (statusCallbackUrl) createParams.statusCallback = statusCallbackUrl;
       const result = await twilioClient.messages.create(createParams);
       db.prepare(`UPDATE sms_messages SET twilio_message_sid=?, delivery_status='sent', error_code=NULL, error_message=NULL, updated_at=datetime('now') WHERE id=?`)
