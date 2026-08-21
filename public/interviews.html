@@ -76,13 +76,23 @@
   .err{color:var(--red);font-size:.8rem;margin-top:8px}
   .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;
     justify-content:center;z-index:50;padding:16px}
-  .modal{background:var(--white);border-radius:16px;padding:20px;max-width:460px;width:100%;
-    max-height:90vh;overflow-y:auto}
+  .modal{background:var(--white);border-radius:16px;padding:20px 22px;max-width:600px;width:100%;
+    max-height:92vh;overflow-y:auto}
   .modal h2{font-size:1rem;color:var(--amber);margin-bottom:10px}
   .modal label{display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin:10px 0 4px}
   .modal input,.modal select,.modal textarea{width:100%;border:1px solid var(--gray-200);border-radius:10px;
     padding:8px 12px;font-size:.85rem;font-family:inherit;background:var(--white)}
-  .modal .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+  .modal .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;
+    position:sticky;bottom:-20px;background:var(--white);padding:12px 0 4px;border-top:1px solid var(--gray-100)}
+  .modal .sec{font-size:.82rem;font-weight:800;color:var(--amber);margin:18px 0 2px;
+    padding-top:14px;border-top:1px dashed var(--gray-200)}
+  .modal .sec.first{margin-top:0;padding-top:0;border-top:none}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+  @media(max-width:480px){.grid2{grid-template-columns:1fr}}
+  .job-group{background:#f9fafb;border:1px solid var(--gray-100);border-radius:12px;
+    padding:7px 10px;margin-bottom:6px}
+  .job-group .jt{font-size:.78rem;font-weight:800;margin-bottom:5px}
+  .job-group .chip{font-size:.74rem;padding:3px 10px}
   .hint{font-size:.72rem;color:var(--gray-400);margin-top:4px}
 </style>
 </head>
@@ -499,9 +509,9 @@ function renderJobChips() {
       + ' onclick="toggleJobShift(\'' + key + '\')">' + icon + esc(label) + '</button>';
   };
   box.innerHTML = JOBS.map(j =>
-    '<div style="border:1px solid var(--gray-200);border-radius:12px;padding:6px 10px;margin-bottom:6px">'
-    + '<div style="font-size:.78rem;font-weight:800;margin-bottom:5px"'
-    + (j.address ? ' title="📍 ' + esc(j.address) + '"' : '') + '>🏭 ' + esc(j.warehouse) + ' · ' + esc(j.position) + '</div>'
+    '<div class="job-group">'
+    + '<div class="jt"' + (j.address ? ' title="📍 ' + esc(j.address) + '"' : '') + '>🏭 '
+    + esc(j.warehouse) + ' · ' + esc(j.position) + '</div>'
     + '<div class="chips" style="margin:0">'
     + ((j.shifts || []).length
         ? chip(j.id, -1, '不限班次', '') + j.shifts.map((s, si) => chip(j.id, si, s, '🕐 ')).join('')
@@ -545,21 +555,28 @@ let peopleTimer = null;
 
 function newInterview() {
   openModal('<h2>➕ 登记面试</h2>'
-    + '<label>从聊天里找人（选中自动填姓名电话）</label>'
-    + '<input id="fFind" placeholder="输名字或号码，从 SMS Inbox / 手机短信里搜…" oninput="findPeople()">'
+    + '<div class="sec first">👤 是谁</div>'
+    + '<input id="fFind" placeholder="🔍 输名字或号码，从 SMS Inbox / 手机短信里找人（选中自动填）" oninput="findPeople()" style="margin-top:6px">'
     + '<div id="fFindBox" style="border:1px solid var(--gray-200);border-radius:10px;max-height:150px;overflow-y:auto;display:none"></div>'
-    + '<label>姓名</label><input id="fName">'
-    + '<label>电话</label><input id="fPhone" placeholder="(312) 555-0100">'
+    + '<div class="grid2">'
+    + '<div><label>姓名</label><input id="fName"></div>'
+    + '<div><label>电话</label><input id="fPhone" placeholder="(312) 555-0100"></div>'
+    + '</div>'
     + '<label>来源</label><select id="fSource"><option value="">— 选来源 —</option>'
     + SOURCES.map(s => '<option>' + s + '</option>').join('') + '</select>'
-    + '<label>工种（点选，可多选）</label>'
-    + '<div class="chips" id="fPosChips" style="margin-bottom:4px"></div>'
+    + '<div class="sec">🛠 工种（点选，可多选）</div>'
+    + '<div class="chips" id="fPosChips" style="margin:8px 0 4px"></div>'
     + '<input id="fPos" placeholder="别的工种手填（可留空）">'
-    + '<label>① 初试时间</label><input id="fAt" type="datetime-local">'
-    + '<label>① 初试地点（一般是 701，也可以直接去仓库）</label>' + placePick('fPlace', '')
-    + '<label>意向岗位（可多选 — 从招工板在招的活里 link，仓库/工种/班次都在里面）</label>' + jobsPick([])
-    + '<label>意向仓库（可选 — 岗位没覆盖时手选一个仓库）</label>' + whPick('fWh', '', '')
-    + '<label>备注</label><textarea id="fNotes" rows="2"></textarea>'
+    + '<div class="sec">📍 ① 初试（一般在 701）</div>'
+    + '<div class="grid2">'
+    + '<div><label>时间</label><input id="fAt" type="datetime-local"></div>'
+    + '<div><label>地点</label>' + placePick('fPlace', '') + '</div>'
+    + '</div>'
+    + '<div class="sec">🧲 意向（初试通过后去哪 — 可跳过）</div>'
+    + '<label>在招的活（点班次即选，可多选）</label>' + jobsPick([])
+    + '<label>或手选一个仓库</label>' + whPick('fWh', '', '')
+    + '<div class="sec">📝 备注</div>'
+    + '<textarea id="fNotes" rows="2" style="margin-top:6px"></textarea>'
     + '<div class="row"><button class="btn" onclick="closeModal()">取消</button>'
     + '<button class="btn primary" onclick="saveNew()">登记</button></div>');
   POS_SET = new Set();
@@ -722,16 +739,21 @@ function editRow(id) {
   POS_SET = new Set(parts.filter(p => POSITIONS.includes(p)));
   const extra = parts.filter(p => !POSITIONS.includes(p)).join(' / ');
   openModal('<h2>✎ 编辑 · ' + esc(r.name || fmtPhone(r.phone)) + '</h2>'
-    + '<label>姓名</label><input id="fName" value="' + esc(r.name || '') + '">'
-    + '<label>电话</label><input id="fPhone" value="' + esc(r.phone || '') + '">'
+    + '<div class="sec first">👤 是谁</div>'
+    + '<div class="grid2">'
+    + '<div><label>姓名</label><input id="fName" value="' + esc(r.name || '') + '"></div>'
+    + '<div><label>电话</label><input id="fPhone" value="' + esc(r.phone || '') + '"></div>'
+    + '</div>'
     + '<label>来源</label><select id="fSource"><option value="">— 选来源 —</option>'
     + SOURCES.map(s => '<option' + (s === r.source ? ' selected' : '') + '>' + s + '</option>').join('') + '</select>'
-    + '<label>工种（点选，可多选）</label>'
-    + '<div class="chips" id="fPosChips" style="margin-bottom:4px"></div>'
+    + '<div class="sec">🛠 工种（点选，可多选）</div>'
+    + '<div class="chips" id="fPosChips" style="margin:8px 0 4px"></div>'
     + '<input id="fPos" placeholder="别的工种手填（可留空）" value="' + esc(extra) + '">'
-    + '<label>意向岗位（可多选 — 招工板在招的活，班次可具体选）</label>' + jobsPick(linkedJobsOf(r))
-    + '<label>意向仓库</label>' + whPick('fWh', r.wh_partner_name, r.wh_address)
-    + '<label>备注</label><textarea id="fNotes" rows="3">' + esc(r.notes || '') + '</textarea>'
+    + '<div class="sec">🧲 意向（初试通过后去哪）</div>'
+    + '<label>在招的活（点班次即选，可多选）</label>' + jobsPick(linkedJobsOf(r))
+    + '<label>或手选一个仓库</label>' + whPick('fWh', r.wh_partner_name, r.wh_address)
+    + '<div class="sec">📝 备注</div>'
+    + '<textarea id="fNotes" rows="3" style="margin-top:6px">' + esc(r.notes || '') + '</textarea>'
     + '<div class="row"><button class="btn" onclick="closeModal()">取消</button>'
     + '<button class="btn primary" onclick="saveEdit(' + id + ')">保存</button></div>');
   renderPosChips();
