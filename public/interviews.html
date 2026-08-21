@@ -494,9 +494,12 @@ function renderJobChips() {
   if (!box) return;
   box.innerHTML = JOBS.map(j =>
     '<button type="button" class="chip' + (JOB_SET.has(j.id) ? ' on' : '') + '" onclick="toggleJob(' + j.id + ')"'
-    + ' title="' + esc([(j.shifts || []).length ? '🕐 ' + j.shifts.join(' / ') : '', j.address ? '📍 ' + j.address : '']
-        .filter(Boolean).join('\n')) + '">'
-    + '🏭 ' + esc(j.warehouse) + ' · ' + esc(j.position) + '</button>').join('');
+    + ' style="text-align:left;border-radius:14px;line-height:1.35"'
+    + (j.address ? ' title="📍 ' + esc(j.address) + '"' : '') + '>'
+    + '🏭 ' + esc(j.warehouse) + ' · ' + esc(j.position)
+    + ((j.shifts || []).length
+        ? '<br><span style="font-size:.68rem;opacity:.85">🕐 ' + esc(j.shifts.join('　/　')) + '</span>' : '')
+    + '</button>').join('');
 }
 function toggleJob(id) {
   JOB_SET.has(id) ? JOB_SET.delete(id) : JOB_SET.add(id);

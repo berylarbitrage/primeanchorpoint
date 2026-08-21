@@ -2597,11 +2597,13 @@ function renderMarkFields(prefill) {
         + jobs.map(j => {
             const on = sel.includes(j.id);
             return '<button type="button" class="mkJobChip" data-job="' + j.id + '" onclick="_mkToggleJob(this,' + j.id + ')"'
-              + ' title="' + esc([(j.shifts && j.shifts.length) ? '🕐 ' + j.shifts.join(' / ') : '', j.address ? '📍 ' + j.address : '']
-                  .filter(Boolean).join('\n')) + '"'
-              + ' style="border:1px solid ' + (on ? 'var(--sky);background:var(--sky);color:#fff' : 'var(--gray-200);background:var(--white);color:var(--gray-600)')
-              + ';border-radius:999px;padding:4px 12px;font-size:.8rem;font-weight:600;cursor:pointer">'
-              + '🏭 ' + esc(j.warehouse) + ' · ' + esc(j.position) + '</button>';
+              + (j.address ? ' title="📍 ' + esc(j.address) + '"' : '')
+              + ' style="text-align:left;line-height:1.35;border:1px solid ' + (on ? 'var(--sky);background:var(--sky);color:#fff' : 'var(--gray-200);background:var(--white);color:var(--gray-600)')
+              + ';border-radius:14px;padding:5px 12px;font-size:.8rem;font-weight:600;cursor:pointer">'
+              + '🏭 ' + esc(j.warehouse) + ' · ' + esc(j.position)
+              + ((j.shifts && j.shifts.length)
+                  ? '<br><span style="font-size:.68rem;opacity:.85;font-weight:500">🕐 ' + esc(j.shifts.join('　/　')) + '</span>' : '')
+              + '</button>';
           }).join('')
         + '</div>'
         + '<input type="hidden" data-mkf="' + k + '" value="' + esc(sel.join(',')) + '">';
