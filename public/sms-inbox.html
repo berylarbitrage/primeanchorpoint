@@ -2285,6 +2285,16 @@ function goBack() {
 // ─── Hash routing ───
 function handleHash() {
   const hash = window.location.hash.replace('#', '');
+  if (hash.startsWith('phone=')) {
+    // 从面试登记等页面跳过来: 按号码找到(或建出)会话直接打开
+    const digits = hash.slice(6).replace(/\D/g, '');
+    if (digits.length >= 10) {
+      api('/sms/start-thread', { method: 'POST', body: JSON.stringify({ phone: '+1' + digits.slice(-10) }) })
+        .then(r => { if (r && r.thread_id) location.hash = 'thread/' + r.thread_id; })
+        .catch(() => {});
+    }
+    return;
+  }
   if (hash.startsWith('thread/')) {
     const id = parseInt(hash.split('/')[1]);
     if (id) loadThreadDetail(id);
