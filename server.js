@@ -30895,6 +30895,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS interview_registry (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 try { db.exec(`ALTER TABLE interview_registry ADD COLUMN source TEXT DEFAULT ''`); } catch (e) {}
+// 初试地点：空 = 用全局 701 默认地址；也可以选某个仓库直接去初试
+try { db.exec(`ALTER TABLE interview_registry ADD COLUMN s701_place TEXT DEFAULT ''`); } catch (e) {}
 
 const INTERVIEW_RESULTS = ['', 'pass', 'fail', 'noshow'];
 
@@ -30926,10 +30928,11 @@ app.post('/api/interview-registry', requireAdmin, (req, res) => {
     const phone = String(b.phone || '').trim().slice(0, 40);
     if (!name && !phone) return res.status(400).json({ error: '姓名和电话至少填一个' });
     const info = db.prepare(`INSERT INTO interview_registry
-      (name, phone, position, s701_at, notes, source, wh_partner_id, wh_partner_name, wh_address, created_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
+      (name, phone, position, s701_at, s701_place, notes, source, wh_partner_id, wh_partner_name, wh_address, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
       name, phone, String(b.position || '').trim().slice(0, 120),
-      String(b.s701_at || '').slice(0, 30), String(b.notes || '').trim().slice(0, 2000),
+      String(b.s701_at || '').slice(0, 30), String(b.s701_place || '').trim().slice(0, 300),
+      String(b.notes || '').trim().slice(0, 2000),
       String(b.source || '').trim().slice(0, 60),
       parseInt(b.wh_partner_id) || null,
       String(b.wh_partner_name || '').trim().slice(0, 160),
@@ -30981,6 +30984,7 @@ app.post('/api/interview-registry/:id', requireAdmin, (req, res) => {
     if (b.phone !== undefined) put('phone', String(b.phone).trim().slice(0, 40));
     if (b.position !== undefined) put('position', String(b.position).trim().slice(0, 120));
     if (b.s701_at !== undefined) put('s701_at', String(b.s701_at).slice(0, 30));
+    if (b.s701_place !== undefined) put('s701_place', String(b.s701_place).trim().slice(0, 300));
     if (b.s701_result !== undefined && INTERVIEW_RESULTS.includes(b.s701_result)) put('s701_result', b.s701_result);
     if (b.wh_partner_id !== undefined) put('wh_partner_id', parseInt(b.wh_partner_id) || null);
     if (b.wh_partner_name !== undefined) put('wh_partner_name', String(b.wh_partner_name).trim().slice(0, 160));

@@ -408,9 +408,9 @@ function chatLinks(phone) {
 function card(r) {
   const [cls, label] = STAGE_BADGE[stageOf(r)];
   const st = stageOf(r);
-  let s701 = '<div class="stage"><span class="tag">① 701 初试</span>'
+  let s701 = '<div class="stage"><span class="tag">① 初试</span>'
     + '<span>' + (r.s701_at ? '🕐 ' + fmtWhen(r.s701_at) : '时间待定') + '</span>'
-    + '<span style="color:var(--gray-400)">📍 ' + esc(S701) + '</span>'
+    + '<span style="color:var(--gray-400)">📍 ' + esc(r.s701_place || ('701 — ' + S701)) + '</span>'
     + '<button class="btn sm" onclick="edit701Time(' + r.id + ')">改时间</button>'
     + '<div style="flex:1"></div>' + resBtns(r.id, 's701_result', r.s701_result) + '</div>';
 
@@ -449,6 +449,44 @@ function closeModal(){ document.getElementById('modalHost').innerHTML=''; }
 function row(r){ return ROWS.find(x => x.id === r); }
 
 const SOURCES = ['中文网', 'Indeed', 'SMS Inbox', '手机短信', '朋友介绍', '其他'];
+
+/* ── 地点下拉（按公司分组、显示完整地址） ──
+   placePick: 初试地点用，第一项是 701 默认完整地址，value='' 表示用默认；
+   whPick:    复试仓库用，value = "公司序号|地址"。 */
+function placePick(id, current) {
+  let html = '<select id="' + id + '">'
+    + '<option value=""' + (current ? '' : ' selected') + '>📍 701（默认）— ' + esc(S701) + '</option>';
+  for (const p of PARTNERS) {
+    if (!p.addresses.length) continue;
+    html += '<optgroup label="' + esc(p.name) + '">'
+      + p.addresses.map(a => {
+          const v = p.name + ' — ' + a;
+          return '<option value="' + esc(v) + '"' + (v === current ? ' selected' : '') + '>🏭 ' + esc(v) + '</option>';
+        }).join('')
+      + '</optgroup>';
+  }
+  return html + '</select>';
+}
+
+function whPick(id, selName, selAddr) {
+  let html = '<select id="' + id + '"><option value="">— 暂不选 —</option>';
+  PARTNERS.forEach((p, i) => {
+    if (!p.addresses.length) return;
+    html += '<optgroup label="' + esc(p.name) + '">'
+      + p.addresses.map(a => '<option value="' + i + '|' + esc(a) + '"'
+          + (p.name === selName && a === selAddr ? ' selected' : '') + '>🏭 ' + esc(p.name) + ' — ' + esc(a) + '</option>').join('')
+      + '</optgroup>';
+  });
+  return html + '</select>';
+}
+
+function whParse(id) {
+  const v = document.getElementById(id).value;
+  if (!v) return { id: null, name: '', addr: '' };
+  const bar = v.indexOf('|');
+  const p = PARTNERS[parseInt(v.slice(0, bar))];
+  return p ? { id: p.id, name: p.name, addr: v.slice(bar + 1) } : { id: null, name: '', addr: '' };
+}
 let peopleTimer = null;
 
 function newInterview() {
@@ -461,16 +499,12 @@ function newInterview() {
     + '<label>来源</label><select id="fSource"><option value="">— 选来源 —</option>'
     + SOURCES.map(s => '<option>' + s + '</option>').join('') + '</select>'
     + '<label>工种</label><input id="fPos" placeholder="如：卸柜工 / 叉车">'
-    + '<label>701 初试时间</label><input id="fAt" type="datetime-local">'
-    + '<div class="hint">初试都在：' + esc(S701) + '（右上角 ⚙ 可改）</div>'
-    + '<label>意向仓库（可选 — 701 通过后复试的地方，先记上）</label>'
-    + '<select id="fCo" onchange="fillAddr()"><option value="">— 选公司 —</option>'
-    + PARTNERS.map((p, i) => '<option value="' + i + '">' + esc(p.name) + '</option>').join('') + '</select>'
-    + '<select id="fAddr" style="margin-top:6px"></select>'
+    + '<label>① 初试时间</label><input id="fAt" type="datetime-local">'
+    + '<label>① 初试地点（一般是 701，也可以直接去仓库）</label>' + placePick('fPlace', '')
+    + '<label>意向仓库（可选 — 初试通过后复试的地方，先记上）</label>' + whPick('fWh', '', '')
     + '<label>备注</label><textarea id="fNotes" rows="2"></textarea>'
     + '<div class="row"><button class="btn" onclick="closeModal()">取消</button>'
     + '<button class="btn primary" onclick="saveNew()">登记</button></div>');
-  fillAddr();
   document.getElementById('fFind').focus();
 }
 
@@ -508,12 +542,11 @@ function pickPerson(i) {
 }
 
 async function saveNew() {
-  const i = document.getElementById('fCo').value;
-  const co = i === '' ? null : PARTNERS[parseInt(i)];
+  const wh = whParse('fWh');
   const body = { name: fVal('fName'), phone: fVal('fPhone'), position: fVal('fPos'),
-    s701_at: fVal('fAt'), notes: fVal('fNotes'), source: document.getElementById('fSource').value,
-    wh_partner_id: co ? co.id : null, wh_partner_name: co ? co.name : '',
-    wh_address: co ? (document.getElementById('fAddr').value || '') : '' };
+    s701_at: fVal('fAt'), s701_place: document.getElementById('fPlace').value,
+    notes: fVal('fNotes'), source: document.getElementById('fSource').value,
+    wh_partner_id: wh.id, wh_partner_name: wh.name, wh_address: wh.addr };
   if (!body.name && !body.phone) return;
   closeModal();
   await api('/interview-registry', { method: 'POST', body: JSON.stringify(body) });
@@ -528,44 +561,34 @@ async function setResult(id, field, value) {
 
 function edit701Time(id) {
   const r = row(id);
-  openModal('<h2>701 初试时间 · ' + esc(r.name || fmtPhone(r.phone)) + '</h2>'
-    + '<input id="fAt" type="datetime-local" value="' + esc(r.s701_at || '') + '">'
+  openModal('<h2>① 初试时间 / 地点 · ' + esc(r.name || fmtPhone(r.phone)) + '</h2>'
+    + '<label>时间</label><input id="fAt" type="datetime-local" value="' + esc(r.s701_at || '') + '">'
+    + '<label>地点</label>' + placePick('fPlace', r.s701_place || '')
     + '<div class="row"><button class="btn" onclick="closeModal()">取消</button>'
     + '<button class="btn primary" onclick="save701Time(' + id + ')">保存</button></div>');
 }
 async function save701Time(id) {
-  const at = fVal('fAt'); closeModal();
-  await api('/interview-registry/' + id, { method: 'POST', body: JSON.stringify({ s701_at: at }) });
+  const at = fVal('fAt');
+  const place = document.getElementById('fPlace').value;
+  closeModal();
+  await api('/interview-registry/' + id, { method: 'POST', body: JSON.stringify({ s701_at: at, s701_place: place }) });
   load();
 }
 
 function arrangeWh(id) {
   const r = row(id);
-  const opts = PARTNERS.map((p, i) => '<option value="' + i + '"'
-    + (p.name === r.wh_partner_name ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('');
   openModal('<h2>② 安排仓库复试 · ' + esc(r.name || fmtPhone(r.phone)) + '</h2>'
-    + '<label>哪个公司/仓库</label><select id="fCo" onchange="fillAddr()"><option value="">— 选公司 —</option>' + opts + '</select>'
-    + '<label>地址</label><select id="fAddr"></select>'
+    + '<label>仓库（按公司分组，显示完整地址）</label>' + whPick('fWh', r.wh_partner_name, r.wh_address)
     + '<label>时间</label><input id="fAt" type="datetime-local" value="' + esc(r.wh_at || '') + '">'
     + '<div class="row"><button class="btn" onclick="closeModal()">取消</button>'
     + '<button class="btn primary" onclick="saveWh(' + id + ')">保存</button></div>');
-  fillAddr();
-  if (r.wh_address) document.getElementById('fAddr').value = r.wh_address;
-}
-function fillAddr() {
-  const i = document.getElementById('fCo').value;
-  const p = i === '' ? null : PARTNERS[parseInt(i)];
-  document.getElementById('fAddr').innerHTML = p && p.addresses.length
-    ? p.addresses.map(a => '<option>' + esc(a) + '</option>').join('')
-    : '<option value="">（这家公司没登记地址，可先选公司）</option>';
 }
 async function saveWh(id) {
-  const i = document.getElementById('fCo').value;
-  const p = i === '' ? null : PARTNERS[parseInt(i)];
+  const wh = whParse('fWh');
   closeModal();
   await api('/interview-registry/' + id, { method: 'POST', body: JSON.stringify({
-    wh_partner_id: p ? p.id : null, wh_partner_name: p ? p.name : '',
-    wh_address: document.getElementById('fAddr').value || '', wh_at: fVal('fAt') }) });
+    wh_partner_id: wh.id, wh_partner_name: wh.name,
+    wh_address: wh.addr, wh_at: fVal('fAt') }) });
   load();
 }
 
