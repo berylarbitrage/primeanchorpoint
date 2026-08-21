@@ -545,6 +545,7 @@ function findPeople() {
       + 'display:flex;gap:8px;align-items:center" onclick="pickPerson(' + i + ')">'
       + '<b>' + esc(p.name || '(无名)') + '</b>'
       + '<span style="color:var(--gray-500)">' + esc(fmtPhone(p.phone)) + '</span>'
+      + (p.position ? '<span style="color:var(--green);font-size:.72rem">' + esc(p.position) + '</span>' : '')
       + '<span class="badge" style="margin-left:auto;background:var(--gray-100);color:var(--gray-600)">' + esc(p.src) + '</span></div>'
     ).join('') : '<div style="padding:8px 12px;font-size:.78rem;color:var(--gray-400)">没找到，直接在下面手填也行</div>';
   }, 300);
@@ -556,6 +557,14 @@ function pickPerson(i) {
   document.getElementById('fName').value = p.name || '';
   document.getElementById('fPhone').value = p.phone || '';
   document.getElementById('fSource').value = p.src;
+  // 工种标签和备注一起迁移过来
+  if (p.position) {
+    POS_SET = new Set(p.position.split(' / ').filter(x => POSITIONS.includes(x)));
+    const extra = p.position.split(' / ').filter(x => !POSITIONS.includes(x)).join(' / ');
+    document.getElementById('fPos').value = extra;
+    renderPosChips();
+  }
+  if (p.note && !fVal('fNotes')) document.getElementById('fNotes').value = p.note;
   document.getElementById('fFindBox').style.display = 'none';
   document.getElementById('fFind').value = '';
 }
