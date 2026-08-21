@@ -583,8 +583,18 @@ async function saveNotes(id) {
 }
 
 function edit701() {
+  // 系统里所有公司的地址拉平成一个下拉，点选即填；也可以手动改
+  const options = [];
+  for (const p of PARTNERS) for (const a of p.addresses) options.push({ label: p.name + ' — ' + a, addr: a });
   openModal('<h2>⚙ 701 初试地址</h2>'
     + '<div class="hint">所有初试都显示这个地址（仅管理员可改）。</div>'
+    + '<label>从系统里的公司地址选</label>'
+    + '<select id="fAddr701Pick" onchange="if(this.value!==\'\')document.getElementById(\'fAddr701\').value=this.value">'
+    + '<option value="">— 选一个地址当默认 —</option>'
+    + options.map(o => '<option value="' + esc(o.addr) + '"' + (o.addr === S701 ? ' selected' : '') + '>'
+        + esc(o.label) + '</option>').join('')
+    + '</select>'
+    + '<label>或手动填 / 微调</label>'
     + '<input id="fAddr701" value="' + esc(S701) + '">'
     + '<div class="row"><button class="btn" onclick="closeModal()">取消</button>'
     + '<button class="btn primary" onclick="save701()">保存</button></div>');
