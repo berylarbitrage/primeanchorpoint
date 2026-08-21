@@ -2525,9 +2525,18 @@ const MARK_MSG_TPL = {
   '发工资': d => '工资通知: ' + [d.date && ('发薪日期 ' + d.date), d.amount && ('金额 ' + d.amount), d.detail].filter(Boolean).join(', '),
   '排班': d => '排班通知: ' + [d.date && ('日期 ' + d.date), d.detail].filter(Boolean).join(', ')
 };
-function _mkJobsSync() {
+function _mkToggleJob(btn, id) {
   const hidden = document.querySelector('#markFields input[data-mkf="jobs"]');
-  if (hidden) hidden.value = Array.from(document.querySelectorAll('#markFields .mkJob:checked')).map(x => x.value).join(',');
+  if (!hidden) return;
+  let cur = hidden.value.split(',').map(n => parseInt(n)).filter(Boolean);
+  if (cur.includes(id)) {
+    cur = cur.filter(x => x !== id);
+    btn.style.background = 'var(--white)'; btn.style.color = 'var(--gray-600)'; btn.style.borderColor = 'var(--gray-200)';
+  } else {
+    cur.push(id);
+    btn.style.background = 'var(--sky)'; btn.style.color = '#fff'; btn.style.borderColor = 'var(--sky)';
+  }
+  hidden.value = cur.join(',');
 }
 function _mkTogglePos(btn, name) {
   const hidden = document.querySelector('#markFields input[data-mkf="position"]');
@@ -2582,13 +2591,18 @@ function renderMarkFields(prefill) {
       const jobs = (_markPlaces && _markPlaces.jobs) || [];
       if (!jobs.length) return '';   // 招工板上没在招的活就不显示这块
       const sel = String(d[k] || '').split(',').map(n => parseInt(n)).filter(Boolean);
+      // 小胶囊按钮：点亮即选，班次/地址悬停可看
       return '<label style="margin-top:2px">' + label + '</label>'
-        + '<div style="border:1px solid var(--gray-200);border-radius:8px;max-height:150px;overflow-y:auto;padding:2px 10px;margin-bottom:4px">'
-        + jobs.map(j => '<label style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;font-size:.8rem;cursor:pointer;border-bottom:1px solid var(--gray-100)">'
-          + '<input type="checkbox" class="mkJob" value="' + j.id + '"' + (sel.includes(j.id) ? ' checked' : '') + ' onchange="_mkJobsSync()" style="margin-top:2px;width:auto">'
-          + '<span><b>' + esc(j.warehouse) + '</b> · ' + esc(j.position)
-          + (j.shifts && j.shifts.length ? '<br><span style="color:var(--gray-500);font-size:.72rem">🕐 ' + esc(j.shifts.join(' / ')) + '</span>' : '')
-          + '</span></label>').join('')
+        + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px">'
+        + jobs.map(j => {
+            const on = sel.includes(j.id);
+            return '<button type="button" class="mkJobChip" data-job="' + j.id + '" onclick="_mkToggleJob(this,' + j.id + ')"'
+              + ' title="' + esc([(j.shifts && j.shifts.length) ? '🕐 ' + j.shifts.join(' / ') : '', j.address ? '📍 ' + j.address : '']
+                  .filter(Boolean).join('\n')) + '"'
+              + ' style="border:1px solid ' + (on ? 'var(--sky);background:var(--sky);color:#fff' : 'var(--gray-200);background:var(--white);color:var(--gray-600)')
+              + ';border-radius:999px;padding:4px 12px;font-size:.8rem;font-weight:600;cursor:pointer">'
+              + '🏭 ' + esc(j.warehouse) + ' · ' + esc(j.position) + '</button>';
+          }).join('')
         + '</div>'
         + '<input type="hidden" data-mkf="' + k + '" value="' + esc(sel.join(',')) + '">';
     }
