@@ -103,11 +103,11 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
   <div id="paneBank" style="display:none">
     <!-- 未配置密钥 (仅 admin) -->
     <div class="card" id="bankCfgCard" style="display:none;max-width:620px">
-      <h3 style="margin-bottom:.35rem">⚙️ 配置银行通道（一次性，二选一即可）</h3>
-      <p style="font-size:.8rem;color:var(--g500);margin-bottom:.7rem">推荐 <b>Teller</b>：免费 100 个真实银行连接，无月费。Plaid 免费 Trial 限 10 个连接。密钥只存服务器。</p>
-      <div style="border:1px solid var(--g200);border-radius:8px;padding:.7rem .9rem;margin-bottom:.7rem">
-        <div style="font-weight:800;margin-bottom:.4rem">① Teller（推荐 · 免费 100 连接）</div>
-        <p style="font-size:.78rem;color:var(--g500);margin-bottom:.5rem">在 <a href="https://teller.io" target="_blank">teller.io</a> 注册 → Dashboard 拿 <b>Application ID</b>；正式环境还需在 Certificates 页下载 mTLS 证书（certificate.pem + private_key.pem），把两个文件内容粘贴进来。</p>
+      <h3 style="margin-bottom:.35rem">⚙️ 配置银行通道（一次性）</h3>
+      <p style="font-size:.8rem;color:var(--g500);margin-bottom:.7rem">用 <b>Plaid</b>（免费 Trial 含 10 个银行连接，一个连接=一个网银登录、下面所有账户和交易全量同步）。密钥只存服务器。</p>
+      <div style="border:1px solid var(--g200);border-radius:8px;padding:.7rem .9rem;margin-bottom:.7rem;display:none">
+        <div style="font-weight:800;margin-bottom:.4rem">Teller（已于 2026-07 停止服务，仅保留兼容）</div>
+        <p style="font-size:.78rem;color:var(--g500);margin-bottom:.5rem">Teller.io 已关停，新连接不可用。</p>
         <input type="text" id="tellerAppId" placeholder="Teller Application ID (app_xxx)" style="width:100%;margin-bottom:.4rem">
         <select id="tellerEnv" style="margin-bottom:.4rem"><option value="production">Production 正式</option><option value="development">Development</option><option value="sandbox">Sandbox 测试</option></select>
         <textarea id="tellerCert" rows="3" placeholder="certificate.pem 内容 (-----BEGIN CERTIFICATE-----…)" style="width:100%;margin-bottom:.4rem;font-family:monospace;font-size:.7rem"></textarea>
@@ -116,7 +116,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <span id="tellerCfgMsg" style="font-size:.8rem;margin-left:.5rem"></span>
       </div>
       <div style="border:1px solid var(--g200);border-radius:8px;padding:.7rem .9rem">
-        <div style="font-weight:800;margin-bottom:.4rem">② Plaid（免费 Trial 限 10 连接）</div>
+        <div style="font-weight:800;margin-bottom:.4rem">Plaid</div>
         <p style="font-size:.78rem;color:var(--g500);margin-bottom:.5rem">在 <a href="https://dashboard.plaid.com" target="_blank">dashboard.plaid.com</a> 拿 Client ID 和 Secret。</p>
         <input type="text" id="plaidCid" placeholder="Plaid Client ID" style="width:100%;margin-bottom:.4rem">
         <input type="password" id="plaidSec" placeholder="Plaid Secret" style="width:100%;margin-bottom:.4rem">
@@ -129,7 +129,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <div id="bankMain" style="display:none">
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.7rem">
         <button class="btn" id="btnTellerConnect" onclick="tellerConnect()" style="background:#0f4c6b;color:#fff;display:none">➕ 连接银行 (Teller)</button>
-        <button class="btn" id="btnBankConnect" onclick="bankConnect()" style="background:#0f4c6b;color:#fff;display:none">➕ 连接银行 (Plaid)</button>
+        <button class="btn" id="btnBankConnect" onclick="bankConnect()" style="background:#0f4c6b;color:#fff;display:none">➕ 连接银行</button>
         <button class="btn btn-outline" id="btnBankCfg" onclick="document.getElementById('bankCfgCard').style.display='';" style="display:none">⚙️ 配置</button>
         <button class="btn btn-outline" id="btnBankSync" onclick="bankSync()">🔄 立即同步</button>
         <span id="bankSyncMsg" style="font-size:.8rem;color:var(--g500)"></span>
@@ -675,7 +675,7 @@ async function bankInit(force) {
   document.getElementById('bankMain').style.display = _bankStatus.configured ? '' : 'none';
   if (!_bankStatus.configured && !isAdmin) toast('银行直连还没配置，请联系管理员', true);
   if (!_bankStatus.configured) return;
-  document.getElementById('btnTellerConnect').style.display = (isAdmin && _bankStatus.teller_configured) ? '' : 'none';
+  document.getElementById('btnTellerConnect').style.display = 'none';   // Teller 已停服 (2026-07), 不再提供新连接
   document.getElementById('btnBankConnect').style.display = (isAdmin && _bankStatus.plaid_configured) ? '' : 'none';
   document.getElementById('btnBankCfg').style.display = isAdmin ? '' : 'none';
   renderBankAccounts();

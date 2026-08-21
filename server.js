@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-18f · 银行同步准实时: 打开页面自动同步(10分钟节流)+每小时后台同步',
+  tag: '2026-08-18g · Teller已停服(2026-07)撤下推荐, 银行直连以Plaid为主通道',
   started: new Date().toISOString(),
 };
 
