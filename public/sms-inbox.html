@@ -465,6 +465,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
           <button onclick="cancelTranslateConfirm()" style="padding:4px 12px;border-radius:6px;border:1px solid #d1d5db;background:#fff;font-size:.78rem;cursor:pointer;color:#374151">取消</button>
+          <button onclick="sendOriginalNoTranslate()" title="不要这个翻译, 直接把我写的原文发出去" style="padding:4px 12px;border-radius:6px;border:1px solid #b45309;background:#fff;font-size:.78rem;font-weight:600;cursor:pointer;color:#b45309">发原文</button>
           <button onclick="confirmTranslatedSend()" style="padding:4px 12px;border-radius:6px;border:none;background:#16a34a;color:#fff;font-size:.78rem;font-weight:600;cursor:pointer">确认发送</button>
         </div>
       </div>
@@ -1545,7 +1546,7 @@ function renderMessages() {
       lastSender = '';
     } else {
       const dir = item.direction;
-      const statusIcon = getStatusIcon(item.delivery_status, item.id);
+      const statusIcon = getStatusIcon(item.delivery_status, item.id, item);
       // Show translated_body below inbound messages, or outbound original vs sent
       let translationHtml = '';
       if (dir === 'inbound' && item.translated_body && item.translated_body !== item.body) {
@@ -1586,12 +1587,50 @@ function renderMessages() {
   area.scrollTop = area.scrollHeight;
 }
 
-function getStatusIcon(status, msgId) {
+// Twilio 常见错误码 → 中文说明 (给客服看得懂的原因和处理办法)
+const TWILIO_ERR_ZH = {
+  '21610': '对方已回复 STOP 退订，运营商禁止再发。需对方回 START 才能恢复。',
+  '21612': '这个号码/通道无法发到对方运营商（常见于未注册 A2P 或号码类型不支持）。',
+  '21614': '对方号码不是有效的手机号（可能是座机或号码有误）。',
+  '21408': '没有开通给该地区/国家发短信的权限。',
+  '21211': '号码格式无效。',
+  '30003': '对方手机关机或无法接收。',
+  '30004': '对方号码屏蔽了我们的消息。',
+  '30005': '对方号码不存在或已停机。',
+  '30006': '座机或不支持短信的号码。',
+  '30007': '运营商判定为垃圾信息拦截了（内容或频率触发反垃圾）。常见于长消息/含链接/大量群发。',
+  '30008': '运营商未知错误，通常可稍后重试。',
+  '30032': 'A2P 10DLC 未注册或注册未通过，运营商拒收。需要在 Twilio 完成商业短信注册。',
+  '30034': '这个号码没有完成 A2P 10DLC 注册，运营商拒收商业短信。',
+  '30410': '运营商响应超时，可重试。',
+  '63016': 'WhatsApp: 对方 24 小时内没给我们发过消息，自由文本会被拒，需要用审核过的模板。',
+};
+function msgFailReason(m) {
+  const code = String(m.error_code || '').trim();
+  const msg = String(m.error_message || '').trim();
+  const zh = TWILIO_ERR_ZH[code] || '';
+  return { code, msg, zh, text: (zh ? zh + ' ' : '') + (code ? '[错误码 ' + code + ']' : '') + (msg ? ' ' + msg : '') };
+}
+function showFailReason(msgId) {
+  const m = currentMessages.find(x => String(x.id) === String(msgId));
+  if (!m) return;
+  const r = msgFailReason(m);
+  const body = (r.zh ? r.zh : '（Twilio 未返回中文可读原因）')
+    + (r.code ? '\n\nTwilio 错误码: ' + r.code : '')
+    + (r.msg ? '\n原始信息: ' + r.msg : '')
+    + '\n\n是否重新发送这条消息？';
+  smsConfirm(body, { confirmLabel: '重新发送', cancelLabel: '关闭' }).then(ok => { if (ok) retryMessage(msgId); });
+}
+function getStatusIcon(status, msgId, m) {
   switch(status) {
     case 'queued': case 'sending': return '<span class="msg-status" title="Sending">&#9201;</span>';
     case 'sent': return '<span class="msg-status" title="Sent">&#10003;</span>';
     case 'delivered': return '<span class="msg-status delivered" title="Delivered">&#10003;&#10003;</span>';
-    case 'failed': case 'undelivered': return '<span class="msg-status failed" title="Failed - click to retry" onclick="retryMessage(' + msgId + ')">&#10007; Failed</span>';
+    case 'failed': case 'undelivered': {
+      const r = m ? msgFailReason(m) : { text: '', zh: '' };
+      const short = r.zh ? (r.zh.length > 22 ? r.zh.slice(0, 22) + '…' : r.zh) : '点击看原因';
+      return '<span class="msg-status failed" title="' + esc(r.text || '发送失败, 点击查看原因') + '" onclick="showFailReason(' + msgId + ')" style="cursor:pointer">&#10007; 发送失败 · ' + esc(short) + '</span>';
+    }
     default: return '<span class="msg-status" title="' + esc(status || '') + '">&#10003;</span>';
   }
 }
@@ -1622,6 +1661,38 @@ async function uploadPendingMedia(inp) {
 function clearPendingMedia() {
   _pendingMedia = null;
   document.getElementById('mediaPreviewBar').style.display = 'none';
+}
+
+// 轻量语言识别 (中/西/英), 与服务器端同一套规则: 判断客服写的是不是已经是对方语言
+const _ES_W = new Set(['hola','si','sí','gracias','buenos','buenas','dias','días','tardes','noches','trabajo','trabajar','mañana','manana','cuando','cuándo','donde','dónde','como','cómo','que','qué','por','favor','necesito','puedo','voy','estoy','tengo','hay','pero','para','con','usted','ustedes','porque','ya','muy','bien','esta','está','este','hoy','semana','hora','pago','dinero','ayuda','quiero','hacer','llegar','turno','jefe','amigo','claro','vale','listo','el','la','los','las','un','una','de','en','es','se','mi','yo','tu','su']);
+const _EN_W = new Set(['the','you','yes','hello','hi','hey','thanks','thank','please','work','working','tomorrow','today','when','where','how','what','why','can','will','would','need','want','going','time','shift','job','pay','money','help','morning','week','hour','boss','friend','sure','good','see','be','am','is','are','do','not','my','me','to','at','on','in','for','and','but','i','a','of','have','get','got','ok','okay']);
+function detectLangClient(text) {
+  const t = String(text || '').trim();
+  if (!t) return '';
+  if (/[\u3400-\u9fff\uf900-\ufaff]/.test(t)) return 'zh';
+  if (/[ñ¿¡]/i.test(t)) return 'es';
+  const words = t.toLowerCase().split(/[^a-záéíóúüñ]+/).filter(Boolean);
+  if (!words.length) return '';
+  let es = 0, en = 0;
+  for (const w of words) {
+    if (_ES_W.has(w)) es++;
+    if (_EN_W.has(w)) en++;
+    if (/[áéíóú]/.test(w)) es++;
+  }
+  if (es > en) return 'es';
+  if (en > es) return 'en';
+  return '';
+}
+
+// 「发原文」: 放弃这次翻译, 把客服自己写的原文直接发出去
+async function sendOriginalNoTranslate() {
+  const body = document.getElementById('replyInput').value.trim();
+  document.getElementById('translateConfirm').style.display = 'none';
+  document.getElementById('replyInput').readOnly = false;
+  document.getElementById('sendBtn').style.display = '';
+  _pendingTranslatedText = null;
+  if (!body || !currentThread) return;
+  await doSendMessage(body, true);
 }
 
 async function sendReply() {
@@ -1667,6 +1738,14 @@ async function sendReply() {
 
   // 面试确认/工作要求模板已经是西英双语, 原样发送, 不再机器翻译
   if (_composeNoTranslate && body === _composeNoTranslateText) {
+    btn.disabled = true;
+    await doSendMessage(body, true);
+    btn.disabled = false;
+    return;
+  }
+
+  // 我写的已经是对方的语言 (例如直接用英文写给英语工人) → 不翻译, 原样发出
+  if (detectLangClient(body) === currentContactLang) {
     btn.disabled = true;
     await doSendMessage(body, true);
     btn.disabled = false;
@@ -1899,6 +1978,8 @@ function onComposeInput() {
   const text = document.getElementById('replyInput').value.trim();
   const prevEl = document.getElementById('translatePreview');
   if (!text || currentContactLang === currentAgentLang) { prevEl.style.display = 'none'; return; }
+  // 写的已经是对方语言 → 不需要翻译预览
+  if (detectLangClient(text) === currentContactLang) { prevEl.style.display = 'none'; return; }
   clearTimeout(_previewDebounce);
   _previewDebounce = setTimeout(async () => {
     try {
