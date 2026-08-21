@@ -2607,14 +2607,49 @@ async function showSmsDiagModal() {
       + '</table>';
     if (!d.messaging_service_configured) {
       html += '<div style="margin-top:10px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;color:#b91c1c;font-size:.8rem">'
-        + '⚠️ <b>没有配置 Messaging Service</b>：短信直接用号码发出，不属于任何已注册的 A2P 10DLC campaign，'
-        + '美国运营商会大量拒收（常见回码 30003/30032/30034）。请在 Twilio 建 Messaging Service、完成 A2P 注册，'
-        + '并把 <code>TWILIO_MESSAGING_SERVICE_SID</code> 配到服务器环境变量。</div>';
+        + '⚠️ <b>没有走 Messaging Service</b>：短信直接用号码发出，不属于任何已注册的 A2P 10DLC campaign，'
+        + '美国运营商（尤其 AT&T）会直接拒收，回码 30003。<br>在 Twilio 建好 Messaging Service 并完成 A2P 注册后，在下面选中它即可生效。</div>';
     }
+    // 选择 / 填写 Messaging Service
+    html += '<div style="margin-top:10px;border-top:1px solid var(--gray-200);padding-top:8px">'
+      + '<div style="font-weight:700;margin-bottom:4px">设置发送通道 (Messaging Service)</div>'
+      + (d.messaging_service_from_env
+        ? '<div style="font-size:.78rem;color:var(--gray-500)">当前由服务器环境变量指定，页面不可改。</div>'
+        : '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
+          + '<select id="msvcSel" style="flex:1;min-width:200px;padding:6px;border:1px solid var(--gray-200);border-radius:6px"><option>加载中…</option></select>'
+          + '<button class="filter-btn" onclick="saveMsgSvc()">保存并启用</button>'
+          + '<button class="filter-btn" onclick="loadMsgSvcList()">刷新列表</button>'
+          + '</div><div id="msvcMsg" style="font-size:.78rem;margin-top:4px"></div>')
+      + '</div>';
     box.innerHTML = html;
+    if (!d.messaging_service_from_env) loadMsgSvcList(d.messaging_service && d.messaging_service.sid);
   } catch (e) {
     box.innerHTML = '<span style="color:#dc2626">加载失败: ' + esc(e.message || '') + '</span>';
   }
+}
+
+async function loadMsgSvcList(current) {
+  const sel = document.getElementById('msvcSel');
+  if (!sel) return;
+  try {
+    const r = await api('/sms/messaging-services');
+    const list = (r && r.services) || [];
+    sel.innerHTML = '<option value="">— 不使用（直接用号码发，容易被拒收）—</option>'
+      + list.map(x => '<option value="' + esc(x.sid) + '"' + (x.sid === current ? ' selected' : '') + '>'
+        + esc(x.name || x.sid) + (x.use_case ? ' · ' + esc(x.use_case) : '') + '</option>').join('');
+    if (!list.length) document.getElementById('msvcMsg').innerHTML = '<span style="color:#b45309">Twilio 账号里还没有 Messaging Service，请先在 Twilio 控制台创建并完成 A2P 10DLC 注册。</span>';
+  } catch (e) { sel.innerHTML = '<option value="">读取失败: ' + esc(e.message || '') + '</option>'; }
+}
+async function saveMsgSvc() {
+  const sel = document.getElementById('msvcSel');
+  const msg = document.getElementById('msvcMsg');
+  msg.textContent = '保存中…';
+  try {
+    const r = await api('/sms/messaging-service', { method: 'POST', body: JSON.stringify({ sid: sel.value }) });
+    if (r && r.error) throw new Error(r.error);
+    msg.innerHTML = '<span style="color:#15803d">✅ 已保存，之后发出的短信都会走这个通道</span>';
+    setTimeout(showSmsDiagModal, 800);
+  } catch (e) { msg.innerHTML = '<span style="color:#dc2626">❌ ' + esc(e.message || '保存失败') + '</span>'; }
 }
 
 // ─── 📌 消息标记: 分类(卸柜/面试/发工资…) + 每类专属字段 + 备注 ───
