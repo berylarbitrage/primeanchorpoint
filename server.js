@@ -30915,6 +30915,25 @@ try {
 
 const INTERVIEW_RESULTS = ['', 'pass', 'fail', 'noshow'];
 
+try { db.exec(`ALTER TABLE interview_registry ADD COLUMN linked_jobs TEXT DEFAULT ''`); } catch (e) {}
+
+// 按 id 从招工板取活，存成 [{id,label}]（label = 仓库 · 工种（班次））
+function interviewResolveJobs(ids) {
+  const list = (Array.isArray(ids) ? ids : []).map(n => parseInt(n)).filter(Boolean).slice(0, 10);
+  const out = [];
+  for (const id of list) {
+    try {
+      const j = db.prepare('SELECT id, warehouse, position, shifts FROM recruit_jobs WHERE id=?').get(id);
+      if (!j) continue;
+      let shifts = [];
+      try { shifts = JSON.parse(j.shifts || '[]').map(s => s && s.shift).filter(Boolean); } catch (_) {}
+      out.push({ id: j.id, label: ([j.warehouse, j.position].filter(Boolean).join(' · ')
+        + (shifts.length ? '（' + shifts.join(' / ') + '）' : '')).slice(0, 160) });
+    } catch (_) {}
+  }
+  return out.length ? JSON.stringify(out) : '';
+}
+
 // 收件箱工种标签 → 面试登记的工种名（两边叫法略有出入，都认）
 const INTERVIEW_POS_MAP = {
   '普工': '普工', '拣货': '拣货员', '拣货员': '拣货员', '叉车工': '普通叉车', '普通叉车': '普通叉车',
@@ -30944,6 +30963,7 @@ function interviewFromInbox(info) {
     const position = String(info.position || '').trim().slice(0, 120) || interviewPosFromTags(info.tags);
     const whName = String(info.wh_name || '').trim().slice(0, 160);
     const whAddr = String(info.wh_address || '').trim().slice(0, 300);
+    const linkedJobs = interviewResolveJobs(info.job_ids);
     if (open) {
       // 已经登记过还没办结：把标记里带来的时间/地点/工种/意向仓库补上去（带了才覆盖）
       db.prepare(`UPDATE interview_registry SET
@@ -30952,17 +30972,18 @@ function interviewFromInbox(info) {
           position = CASE WHEN ? != '' THEN ? ELSE position END,
           wh_partner_name = CASE WHEN ? != '' THEN ? ELSE wh_partner_name END,
           wh_address = CASE WHEN ? != '' THEN ? ELSE wh_address END,
+          linked_jobs = CASE WHEN ? != '' THEN ? ELSE linked_jobs END,
           updated_at = datetime('now') WHERE id = ?`)
         .run(at, at, place, place,
           String(info.position || '').trim().slice(0, 120), String(info.position || '').trim().slice(0, 120),
-          whName, whName, whAddr, whAddr, open.id);
+          whName, whName, whAddr, whAddr, linkedJobs, linkedJobs, open.id);
       return;
     }
     const note = String(info.note || '').trim().slice(0, 500);
-    db.prepare(`INSERT INTO interview_registry (name, phone, position, s701_at, s701_place, wh_partner_name, wh_address, notes, source, created_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
+    db.prepare(`INSERT INTO interview_registry (name, phone, position, s701_at, s701_place, wh_partner_name, wh_address, linked_jobs, notes, source, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
       String(info.name || '').trim().slice(0, 120), tail,
-      position, at, place, whName, whAddr,
+      position, at, place, whName, whAddr, linkedJobs,
       (note ? note + '\n' : '') + '⚡ 收件箱标记「面试」自动登记' + (at ? '' : '，去补时间和地点'),
       String(info.source || '').slice(0, 60),
       String(info.by || '').slice(0, 80));
@@ -31019,7 +31040,17 @@ app.get('/api/interview-registry', requireAdmin, (req, res) => {
     const partners = groups;
     const s = db.prepare("SELECT value FROM app_settings WHERE key='interview_701_address'").get();
     const g = db.prepare("SELECT value FROM app_settings WHERE key='interview_701_guide'").get();
-    res.json({ rows, partners, s701_address: (s && s.value) || '701 Central Ave, University Park, IL 60484',
+    // 招工板上在招的活：面试登记可以直接关联（仓库+工种+班次）
+    let jobs = [];
+    try {
+      jobs = db.prepare(`SELECT id, warehouse, position, address, shifts FROM recruit_jobs
+        WHERE status='open' ORDER BY warehouse, position`).all().map(j => {
+        let shifts = [];
+        try { shifts = JSON.parse(j.shifts || '[]').map(x => x && x.shift).filter(Boolean); } catch (_) {}
+        return { id: j.id, warehouse: j.warehouse || '', position: j.position || '', address: j.address || '', shifts };
+      });
+    } catch (_) {}
+    res.json({ rows, partners, jobs, s701_address: (s && s.value) || '701 Central Ave, University Park, IL 60484',
       s701_guide: (g && g.value) || '' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -31032,8 +31063,8 @@ app.post('/api/interview-registry', requireAdmin, (req, res) => {
     const phone = String(b.phone || '').trim().slice(0, 40);
     if (!name && !phone) return res.status(400).json({ error: '姓名和电话至少填一个' });
     const info = db.prepare(`INSERT INTO interview_registry
-      (name, phone, position, s701_at, s701_place, notes, source, wh_partner_id, wh_partner_name, wh_address, created_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
+      (name, phone, position, s701_at, s701_place, notes, source, wh_partner_id, wh_partner_name, wh_address, linked_jobs, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       name, phone, String(b.position || '').trim().slice(0, 120),
       String(b.s701_at || '').slice(0, 30), String(b.s701_place || '').trim().slice(0, 300),
       String(b.notes || '').trim().slice(0, 2000),
@@ -31041,6 +31072,7 @@ app.post('/api/interview-registry', requireAdmin, (req, res) => {
       parseInt(b.wh_partner_id) || null,
       String(b.wh_partner_name || '').trim().slice(0, 160),
       String(b.wh_address || '').trim().slice(0, 300),
+      interviewResolveJobs(b.linked_job_ids),
       String(req.userName || req.userId || '').slice(0, 80));
     res.json({ success: true, id: info.lastInsertRowid });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -31124,6 +31156,7 @@ app.post('/api/interview-registry/:id', requireAdmin, (req, res) => {
     if (b.wh_result !== undefined && INTERVIEW_RESULTS.includes(b.wh_result)) put('wh_result', b.wh_result);
     if (b.notes !== undefined) put('notes', String(b.notes).trim().slice(0, 2000));
     if (b.source !== undefined) put('source', String(b.source).trim().slice(0, 60));
+    if (b.linked_job_ids !== undefined) put('linked_jobs', interviewResolveJobs(b.linked_job_ids));
     if (!sets.length) return res.json({ success: true });
     params.push(req.params.id);
     db.prepare(`UPDATE interview_registry SET ${sets.join(', ')}, updated_at=datetime('now') WHERE id=?`).run(...params);
@@ -32834,6 +32867,7 @@ app.post('/api/sms/messages/:id/star', requireAdmin, requireSmsAccess, (req, res
             note: [note, parsed.detail].filter(Boolean).join(' · '),
             s701_at: parsed.time || '', s701_place: parsed.place || '',
             wh_name: dash > 0 ? whRaw.slice(0, dash) : '', wh_address: dash > 0 ? whRaw.slice(dash + 3) : whRaw,
+            job_ids: String(parsed.jobs || '').split(',').map(n => parseInt(n)).filter(Boolean),
             source: 'SMS Inbox', by: req.userName || req.userId });
         }
       } catch (e) { console.error('[面试登记] 标记同步失败:', e.message); }

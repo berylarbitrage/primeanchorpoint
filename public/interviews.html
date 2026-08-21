@@ -118,7 +118,7 @@
 <script>
 // 和 SMS Inbox 共用登录态：那边登过（含短信验证码 MFA），这边直接就是登录的
 let TOKEN = localStorage.getItem('adminToken') || localStorage.getItem('pa_interviews_token') || '';
-let ROWS = [], PARTNERS = [], S701 = '', S701_GUIDE = '', ROLE = '';
+let ROWS = [], PARTNERS = [], JOBS = [], S701 = '', S701_GUIDE = '', ROLE = '';
 let FILTER = 'todo';
 let VIEW = 'list';                       // list | week | month
 let ANCHOR = new Date();                 // 日历定位
@@ -228,6 +228,7 @@ async function load() {
     const r = await api('/interview-registry');
     ROWS = r.rows || []; PARTNERS = r.partners || []; S701 = r.s701_address || '';
     S701_GUIDE = r.s701_guide || '';
+    JOBS = r.jobs || [];
     render();
     refreshOpenCard();
   } catch (_) {}
@@ -429,6 +430,11 @@ function card(r) {
       + '<div style="flex:1"></div>' + resBtns(r.id, 'wh_result', r.wh_result) + '</div>';
   }
 
+  const jobsLine = linkedJobsOf(r).length
+    ? '<div class="stage" style="background:#fff7ed"><span class="tag">🧲 意向岗位</span>'
+      + linkedJobsOf(r).map(j => '<span class="badge" style="background:#ffedd5;color:#9a3412">' + esc(j.label) + '</span>').join('')
+      + '<a class="btn sm" style="text-decoration:none;margin-left:auto" target="_blank" href="/recruit" title="去招工板看这些活">📋 招工板</a></div>'
+    : '';
   return '<div class="card">'
     + '<div class="head"><span class="name">' + esc(r.name || '(未留名)') + '</span>'
     + '<span class="phone">' + esc(fmtPhone(r.phone)) + '</span>'
@@ -443,7 +449,7 @@ function card(r) {
     + '<button class="btn sm" onclick="editNotes(' + r.id + ')">📝</button>'
     + (ROLE === 'admin' ? '<button class="btn sm" onclick="delRow(' + r.id + ')">删</button>' : '')
     + '</div>'
-    + s701 + wh
+    + s701 + wh + jobsLine
     + (r.notes ? '<div class="notes">📝 ' + esc(r.notes) + '</div>' : '')
     + '</div>';
 }
@@ -474,6 +480,24 @@ function placePick(id, current) {
       + '</optgroup>';
   }
   return html + '</select>';
+}
+
+/* 在招的活（招工板）多选：一条活 = 仓库 + 工种 + 班次 */
+function jobsPick(selIds) {
+  if (!JOBS.length) return '<div class="hint">招工板上现在没有在招的活。</div>';
+  return '<div style="border:1px solid var(--gray-200);border-radius:12px;max-height:180px;overflow-y:auto;padding:4px 10px">'
+    + JOBS.map(j => '<label style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;font-size:.8rem;cursor:pointer;border-bottom:1px solid var(--gray-100)">'
+      + '<input type="checkbox" class="jobPick" value="' + j.id + '"' + (selIds.includes(j.id) ? ' checked' : '') + ' style="margin-top:2px">'
+      + '<span><b>' + esc(j.warehouse) + '</b> · ' + esc(j.position)
+      + (j.shifts.length ? '<br><span style="color:var(--gray-500);font-size:.72rem">🕐 ' + esc(j.shifts.join(' / ')) + '</span>' : '')
+      + (j.address ? '<br><span style="color:var(--gray-400);font-size:.7rem">📍 ' + esc(j.address) + '</span>' : '')
+      + '</span></label>').join('') + '</div>';
+}
+function jobsPicked() {
+  return Array.from(document.querySelectorAll('.jobPick:checked')).map(x => parseInt(x.value)).filter(Boolean);
+}
+function linkedJobsOf(r) {
+  try { const a = JSON.parse(r.linked_jobs || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; }
 }
 
 function whPick(id, selName, selAddr) {
@@ -511,7 +535,8 @@ function newInterview() {
     + '<input id="fPos" placeholder="别的工种手填（可留空）">'
     + '<label>① 初试时间</label><input id="fAt" type="datetime-local">'
     + '<label>① 初试地点（一般是 701，也可以直接去仓库）</label>' + placePick('fPlace', '')
-    + '<label>意向仓库（可选 — 初试通过后复试的地方，先记上）</label>' + whPick('fWh', '', '')
+    + '<label>意向岗位（可多选 — 从招工板在招的活里 link，仓库/工种/班次都在里面）</label>' + jobsPick([])
+    + '<label>意向仓库（可选 — 岗位没覆盖时手选一个仓库）</label>' + whPick('fWh', '', '')
     + '<label>备注</label><textarea id="fNotes" rows="2"></textarea>'
     + '<div class="row"><button class="btn" onclick="closeModal()">取消</button>'
     + '<button class="btn primary" onclick="saveNew()">登记</button></div>');
@@ -581,7 +606,8 @@ async function saveNew() {
   const body = { name: fVal('fName'), phone: fVal('fPhone'), position,
     s701_at: fVal('fAt'), s701_place: document.getElementById('fPlace').value,
     notes: fVal('fNotes'), source: document.getElementById('fSource').value,
-    wh_partner_id: wh.id, wh_partner_name: wh.name, wh_address: wh.addr };
+    wh_partner_id: wh.id, wh_partner_name: wh.name, wh_address: wh.addr,
+    linked_job_ids: jobsPicked() };
   if (!body.name && !body.phone) return;
   closeModal();
   const created = await api('/interview-registry', { method: 'POST', body: JSON.stringify(body) });
@@ -680,6 +706,7 @@ function editRow(id) {
     + '<label>工种（点选，可多选）</label>'
     + '<div class="chips" id="fPosChips" style="margin-bottom:4px"></div>'
     + '<input id="fPos" placeholder="别的工种手填（可留空）" value="' + esc(extra) + '">'
+    + '<label>意向岗位（可多选 — 招工板在招的活）</label>' + jobsPick(linkedJobsOf(r).map(j => j.id))
     + '<label>意向仓库</label>' + whPick('fWh', r.wh_partner_name, r.wh_address)
     + '<label>备注</label><textarea id="fNotes" rows="3">' + esc(r.notes || '') + '</textarea>'
     + '<div class="row"><button class="btn" onclick="closeModal()">取消</button>'
@@ -692,7 +719,8 @@ async function saveEdit(id) {
   const position = [...POSITIONS.filter(p => POS_SET.has(p)), fVal('fPos')].filter(Boolean).join(' / ');
   const body = { name: fVal('fName'), phone: fVal('fPhone'), position,
     source: document.getElementById('fSource').value, notes: fVal('fNotes'),
-    wh_partner_id: wh.id, wh_partner_name: wh.name, wh_address: wh.addr };
+    wh_partner_id: wh.id, wh_partner_name: wh.name, wh_address: wh.addr,
+    linked_job_ids: jobsPicked() };
   closeModal();
   await api('/interview-registry/' + id, { method: 'POST', body: JSON.stringify(body) });
   load();
