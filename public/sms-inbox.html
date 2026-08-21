@@ -2483,12 +2483,20 @@ const MARK_TAG_PRESETS = ['卸柜', '面试', '发工资', '排班', '请假', '
 // 每个类别自己的表单字段: [key, 标签, 输入类型, 占位提示]; 类型 'company' 渲染成合作公司下拉
 const MARK_FIELDS = {
   '卸柜': [['container', '柜号', 'text', '如 MSKU1234567'], ['date', '日期', 'date', ''], ['detail', '具体细节', 'text', '如 早7点 / GOFO仓库 / 约2000件']],
-  '面试': [['company', '公司', 'company', ''], ['time', '时间', 'datetime-local', ''], ['detail', '地址 / 找谁', 'text', '']],
+  '面试': [['time', '时间', 'datetime-local', ''], ['place', '面试地点', 'place', ''], ['detail', '找谁 / 补充', 'text', '如: 找 John, 带好证件']],
   '发工资': [['date', '发薪日期', 'date', ''], ['amount', '金额', 'text', '如 $560'], ['detail', '方式/说明', 'text', '如 支票 / Zelle']],
   '排班': [['date', '日期', 'date', ''], ['detail', '班次详情', 'text', '如 早班 7am-3pm']],
   '请假': [['date', '开始日期', 'date', ''], ['end', '结束日期(可选)', 'date', ''], ['reason', '原因', 'text', '如 生病 / 家里有事']]
 };
 // 公司下拉选项 (来自 /sms/partners, 与列表页公司筛选同一来源)
+let _markPlaces = null;
+async function _loadMarkPlaces() {
+  if (_markPlaces) return;
+  try {
+    const r = await api('/interview-registry');
+    _markPlaces = { groups: r.partners || [], s701: r.s701_address || '' };
+  } catch (_) { _markPlaces = { groups: [], s701: '' }; }
+}
 let _markPartnerNames = [];
 async function _loadMarkPartners() {
   if (_markPartnerNames.length) return;
@@ -2500,7 +2508,7 @@ async function _loadMarkPartners() {
 // 一键生成发给对方的消息(中文, 走现有自动翻译流程翻成对方语言)
 const MARK_MSG_TPL = {
   '卸柜': d => '卸柜安排: ' + [d.container && ('柜号 ' + d.container), d.date && ('日期 ' + d.date), d.detail].filter(Boolean).join(', '),
-  '面试': d => '面试安排: ' + [d.company && ('公司 ' + d.company), d.time && ('时间 ' + String(d.time).replace('T', ' ')), d.detail].filter(Boolean).join(', '),
+  '面试': d => '面试安排: ' + [d.time && ('时间 ' + String(d.time).replace('T', ' ')), d.place && ('地点 ' + d.place), d.detail].filter(Boolean).join(', '),
   '发工资': d => '工资通知: ' + [d.date && ('发薪日期 ' + d.date), d.amount && ('金额 ' + d.amount), d.detail].filter(Boolean).join(', '),
   '排班': d => '排班通知: ' + [d.date && ('日期 ' + d.date), d.detail].filter(Boolean).join(', ')
 };
@@ -2524,6 +2532,26 @@ function renderMarkFields(prefill) {
   const locked = MARK_ADMIN_ONLY_TAGS.includes(tag) && !(USER && USER.role === 'admin');
   box.innerHTML = (locked ? '<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:6px 10px;font-size:.74rem;color:#92400e;margin-bottom:6px">🔒 ' + esc(tag) + ' 信息由管理员维护，你只能看和写备注 — 有问题点下面「请求管理员协助」</div>' : '')
     + defs.map(([k, label, type, ph]) => {
+    if (type === 'place') {
+      // 和面试登记页同一份地点：701 默认打头，仓库按公司分组、显示完整地址
+      const g = _markPlaces || { groups: [], s701: '' };
+      const def = '701 — ' + (g.s701 || '701');
+      const cur = d[k] || '';
+      let known = cur === def || !cur;
+      let opts = '<option value="' + esc(def) + '"' + (!cur || cur === def ? ' selected' : '') + '>📍 ' + esc(def) + '（默认）</option>';
+      for (const p of g.groups) {
+        if (!p.addresses || !p.addresses.length) continue;
+        opts += '<optgroup label="' + esc(p.name) + '">' + p.addresses.map(a => {
+          const v = p.name + ' — ' + a;
+          if (v === cur) known = true;
+          return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>🏭 ' + esc(v) + '</option>';
+        }).join('') + '</optgroup>';
+      }
+      if (!known) opts = '<option value="' + esc(cur) + '" selected>' + esc(cur) + '</option>' + opts;
+      return '<label style="margin-top:2px">' + label + '</label>'
+        + '<select data-mkf="' + k + '"' + (locked ? ' disabled' : '') + ' style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:4px;outline:none;background:' + (locked ? 'var(--gray-100)' : 'var(--white)') + '">'
+        + opts + '</select>';
+    }
     if (type === 'company') {
       // 下拉选公司; 老数据里的公司名不在列表时也补成一个选项, 保证能回显
       const names = _markPartnerNames.slice();
@@ -2557,7 +2585,7 @@ function toggleStar(msgId) {
   document.getElementById('markRemoveBtn').style.display = m.starred ? '' : 'none';
   let pre = {}; try { pre = JSON.parse(m.mark_data || '{}'); } catch (_) {}
   window._markPre = { tag: m.mark_tag || '', data: pre };
-  _loadMarkPartners().then(() => { _renderMarkChips(pre); });
+  Promise.all([_loadMarkPartners(), _loadMarkPlaces()]).then(() => { _renderMarkChips(pre); });
   _renderMarkChips(pre);
   document.getElementById('markAssistBtn').style.display = (USER && USER.role === 'admin') ? 'none' : '';
   document.getElementById('msgMarkModal').classList.add('show');
