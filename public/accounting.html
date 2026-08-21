@@ -133,6 +133,7 @@ async function acctLogin() {
   err.textContent = '';
   if (!username || !password) { err.textContent = '请输入用户名和密码'; return; }
   const r = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) }).then(x => x.json()).catch(() => ({}));
+  if (r.mfa_required) { location.href = '/mfa?token=' + encodeURIComponent(r.mfa_token) + '&next=' + encodeURIComponent(location.pathname + location.search) + (r.phone_hint ? '&hint=' + encodeURIComponent(r.phone_hint) : ''); return; }
   if (r.needs_activation) {
     document.getElementById('loginForm').style.display = 'none';
     document.getElementById('activateForm').style.display = '';
@@ -148,6 +149,7 @@ async function acctActivate() {
   const err = document.getElementById('actErr');
   err.textContent = '';
   const r = await fetch('/api/auth/activate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, current_password, new_password }) }).then(x => x.json()).catch(() => ({}));
+  if (r.mfa_required) { location.href = '/mfa?token=' + encodeURIComponent(r.mfa_token) + '&next=' + encodeURIComponent(location.pathname + location.search) + (r.phone_hint ? '&hint=' + encodeURIComponent(r.phone_hint) : ''); return; }
   if (!r.success) { err.textContent = r.error || '设置失败'; return; }
   finishLogin(r);
 }

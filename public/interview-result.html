@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>面试结果登记 — Prime Anchor Workforce</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<style>
+:root{--blue:#0F2B5B;--sky:#4A90D9;--green:#2D9D78;--red:#E63946;--orange:#F5A623;--off:#F7F8FA;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A;--radius:12px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-serif;background:var(--off);min-height:100vh;color:#1a2433}
+.top{background:var(--blue);color:#fff;padding:1rem 1.2rem;display:flex;align-items:center;gap:.7rem}
+.top img{width:36px;height:auto}
+.top h1{font-size:1.05rem;font-weight:800}
+.top .sub{font-size:.75rem;color:rgba(255,255,255,.65)}
+.wrap{max-width:560px;margin:0 auto;padding:1rem}
+.card{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius);padding:1rem 1.1rem;margin-bottom:.9rem;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+label{display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.35rem}
+input[type=tel],textarea{width:100%;padding:.7rem .8rem;border:1.5px solid var(--gray-200);border-radius:10px;font-size:1rem;outline:none;font-family:inherit}
+input:focus,textarea:focus{border-color:var(--sky)}
+.phone-row{display:flex;gap:.5rem}
+.phone-row input{flex:1;min-width:0}
+.phone-row .btn{flex-shrink:0;white-space:nowrap}
+.btn{padding:.7rem 1.1rem;border:none;border-radius:10px;font-size:.92rem;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-primary{background:var(--sky);color:#fff}
+.btn-green{background:var(--green);color:#fff;width:100%;padding:.9rem;font-size:1rem}
+.msg{padding:.6rem .8rem;border-radius:8px;font-size:.85rem;font-weight:600;margin-bottom:.7rem;display:none}
+.msg.show{display:block}
+.msg-err{background:#FFEAEA;color:var(--red);border:1px solid #FFC8C8}
+.msg-ok{background:#E8F5E9;color:var(--green);border:1px solid #A8D5B5}
+.person{display:flex;align-items:center;gap:.7rem;margin-bottom:.3rem}
+.person .avatar{width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#4A90D9,#1A3F7A);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.1rem;flex-shrink:0}
+.person .nm{font-weight:800;font-size:1.05rem}
+.person .meta{font-size:.76rem;color:var(--gray-400)}
+.q-row{display:flex;align-items:center;justify-content:space-between;gap:.6rem;padding:.65rem 0;border-bottom:1px dashed var(--gray-200)}
+.q-row:last-of-type{border-bottom:none}
+.q-label{font-size:.92rem;font-weight:600}
+.seg{display:flex;gap:6px;flex-shrink:0}
+.seg button{padding:.45rem .95rem;border:1.5px solid var(--gray-200);background:#fff;border-radius:8px;font-size:.86rem;font-weight:700;cursor:pointer;font-family:inherit;color:var(--gray-600)}
+.seg button.yes.on{background:#E8F5E9;border-color:var(--green);color:var(--green)}
+.seg button.no.on{background:#FFEAEA;border-color:var(--red);color:var(--red)}
+.qr-card{text-align:center}
+.qr-card img{width:220px;height:220px;border:2px solid var(--gray-200);border-radius:12px;padding:8px;background:#fff}
+.recent-item{padding:.55rem 0;border-bottom:1px dashed var(--gray-200);font-size:.82rem}
+.recent-item:last-child{border-bottom:none}
+.chip{display:inline-block;font-size:.68rem;font-weight:700;border-radius:5px;padding:1px 6px;margin:1px 2px 1px 0}
+.chip.y{background:#E8F5E9;color:var(--green)}
+.chip.n{background:#FFEAEA;color:var(--red)}
+.login-tip{text-align:center;padding:2rem 1rem}
+.login-tip a{color:var(--sky);font-weight:700}
+</style>
+</head>
+<body>
+<div class="top">
+  <img src="logo.svg" alt="">
+  <div>
+    <h1>🎤 面试结果登记</h1>
+    <div class="sub">Prime Anchor Workforce · Interview Results</div>
+  </div>
+</div>
+<div class="wrap">
+  <div id="loginTip" class="card login-tip" style="display:none">
+    ⚠️ 请先登录管理后台再使用本页面<br><br><a href="/admin.html">→ 去登录</a>
+  </div>
+
+  <!-- 搜索 -->
+  <div class="card" id="searchCard">
+    <label>面试者手机号</label>
+    <div id="msg1" class="msg"></div>
+    <div class="phone-row">
+      <input type="tel" id="phoneInput" placeholder="(xxx) xxx-xxxx" maxlength="14" inputmode="tel">
+      <button class="btn btn-primary" id="btnSearch" onclick="doSearch()">🔍 查询</button>
+    </div>
+  </div>
+
+  <!-- 没有此人 → 扫码填表 -->
+  <div class="card qr-card" id="qrCard" style="display:none">
+    <div style="font-weight:800;color:var(--orange);margin-bottom:.5rem">📋 系统里没有这个手机号</div>
+    <div style="font-size:.85rem;color:var(--gray-600);margin-bottom:.8rem">请让面试者扫描下方二维码，先填写个人信息（务必用同一个手机号），填完后回来重新查询。</div>
+    <img id="applyQrImg" alt="QR">
+    <div style="margin-top:.6rem"><a id="applyUrlLink" href="#" target="_blank" style="font-size:.8rem;color:var(--sky)">打开入职申请表 ↗</a></div>
+    <button class="btn btn-primary" style="margin-top:.8rem" onclick="doSearch()">✅ 已填写完成，重新查询</button>
+  </div>
+
+  <!-- 找到 → 登记表单 -->
+  <div id="formCard" style="display:none">
+    <div class="card">
+      <div class="person">
+        <div class="avatar" id="pAvatar">?</div>
+        <div>
+          <div class="nm" id="pName"></div>
+          <div class="meta" id="pMeta"></div>
+        </div>
+      </div>
+      <div id="pInfo"></div>
+    </div>
+    <div class="card">
+      <div id="qList"></div>
+      <div style="margin-top:.8rem">
+        <label>备注（面试表现 / 经验细节 / 期望班次等）</label>
+        <textarea id="noteInput" rows="3" placeholder="如: 开过 3 年叉车，卸柜熟练；只能上白班"></textarea>
+      </div>
+      <div id="msg2" class="msg" style="margin-top:.7rem"></div>
+      <button class="btn btn-green" id="btnSave" style="margin-top:.6rem" onclick="doSave()">💾 保存面试结果</button>
+    </div>
+  </div>
+
+  <!-- 最近登记 -->
+  <div class="card" id="recentCard" style="display:none">
+    <label>🕒 最近登记</label>
+    <div id="recentList"></div>
+  </div>
+</div>
+
+<script>
+const QUESTIONS = [
+  { key: 'forklift',         group: '🔧 技能', label: '会开普通叉车？' },
+  { key: 'cherry_picker',    group: '🔧 技能', label: '会开高位叉车 Cherry Picker？' },
+  { key: 'container_unload', group: '🔧 技能', label: '会卸柜？' },
+  { key: 'lang_en',          group: '🗣 语言', label: '会英语？' },
+  { key: 'lang_es',          group: '🗣 语言', label: '会西班牙语？' },
+  { key: 'lang_zh',          group: '🗣 语言', label: '会中文？' },
+  { key: 'can_lead',         group: '👥 管理', label: '可以做领班吗？' },
+  { key: 'can_recruit',      group: '👥 管理', label: '有能力帮忙找人吗？' },
+];
+let _answers = {};          // key → 1 / 0 / undefined
+let _phone = '';
+
+const $ = id => document.getElementById(id);
+function showMsg(id, t, type) { const el = $(id); el.className = 'msg msg-' + type + ' show'; el.textContent = t; }
+function hideMsg(id) { const el = $(id); el.className = 'msg'; }
+function esc(x) { const d = document.createElement('div'); d.textContent = String(x ?? ''); return d.innerHTML; }
+
+// phone formatting
+$('phoneInput').addEventListener('input', function () {
+  let d = this.value.replace(/\D/g, '').slice(0, 10);
+  if (d.length > 6) d = '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6);
+  else if (d.length > 3) d = '(' + d.slice(0, 3) + ') ' + d.slice(3);
+  this.value = d;
+});
+$('phoneInput').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+
+async function api(url, opts) {
+  const r = await fetch(url, opts);
+  if (r.status === 401) { $('loginTip').style.display = ''; throw new Error('请先登录管理后台'); }
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || '请求失败');
+  return d;
+}
+
+const DOC_LABELS = { ssn_front: 'SSN 正面', ssn_back: 'SSN 反面', ead_front: 'EAD 正面', ead_back: 'EAD 反面' };
+function infoRow(k, v) {
+  if (!v) return '';
+  return '<div style="display:flex;gap:.6rem;padding:.28rem 0;font-size:.84rem;border-bottom:1px dashed var(--gray-200)">'
+    + '<span style="flex:0 0 88px;color:var(--gray-400);font-weight:600">' + k + '</span>'
+    + '<span style="flex:1;word-break:break-word">' + v + '</span></div>';
+}
+function renderPersonInfo(d) {
+  const vb = ok => ok ? ' <span style="color:var(--green);font-size:.72rem;font-weight:700">✓已验证</span>' : '';
+  let html = '';
+  const e = d.employee;
+  if (e) {
+    html += '<div style="margin-top:.6rem;font-size:.76rem;font-weight:800;color:var(--gray-600)">👤 员工档案</div>';
+    html += infoRow('员工号', esc(e.employee_code));
+    html += infoRow('职位', esc(e.position));
+    html += infoRow('入职日期', esc(e.hire_date));
+    html += infoRow('州/城市', esc([e.state, e.city].filter(Boolean).join(' · ')));
+    html += infoRow('邮箱', esc(e.email));
+    html += infoRow('地址', esc(e.address));
+  }
+  const a = d.application;
+  if (a) {
+    html += '<div style="margin-top:.6rem;font-size:.76rem;font-weight:800;color:var(--gray-600)">📋 扫码填写的入职申请' + (a.created_at ? ' <span style="font-weight:400;color:var(--gray-400)">' + esc(String(a.created_at).slice(0, 16)) + '</span>' : '') + '</div>';
+    html += infoRow('姓名', esc(a.name));
+    html += infoRow('申请职位', esc(a.position));
+    html += infoRow('应聘公司', esc(a.partner_name));
+    if (a.apply_state) html += infoRow('申请地点', esc(a.apply_state));
+    html += infoRow('邮箱', a.email ? esc(a.email) + vb(a.email_verified) : '');
+    html += infoRow('地址', (a.address || a.city) ? esc([a.address, [a.city, a.state].filter(Boolean).join(', '), a.zip].filter(Boolean).join(' · ')) + vb(a.address_verified) : '');
+    if (Array.isArray(a.docs) && a.docs.length) {
+      html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:.5rem">' + a.docs.map(doc => {
+        const lb = DOC_LABELS[doc.doc_type] || doc.doc_type;
+        return '<a href="' + esc(doc.url) + '" target="_blank" style="text-decoration:none;position:relative;display:block">'
+          + '<img src="' + esc(doc.url) + '" loading="lazy" style="width:68px;height:68px;object-fit:cover;border-radius:8px;border:1px solid var(--gray-200);background:#000;display:block">'
+          + '<span style="position:absolute;left:0;right:0;bottom:0;background:rgba(15,23,42,.62);color:#fff;font-size:.6rem;font-weight:600;text-align:center;border-radius:0 0 8px 8px;padding:1px 0">' + esc(lb) + '</span></a>';
+      }).join('') + '</div>';
+    }
+  }
+  document.getElementById('pInfo').innerHTML = html;
+}
+
+// 员工的四张证件 (SSN 正反 / EAD 正反, 汇总自档案上传+申请单+工卡库)
+async function loadEmployeeIdDocs(empId) {
+  try {
+    const d = await api('/api/admin/employees/id-docs?ids=' + empId);
+    const emp = (d.employees || [])[0];
+    if (!emp || !Array.isArray(emp.docs)) return;
+    const have = emp.docs.filter(x => x.present);
+    if (!have.length) return;
+    const html = '<div style="margin-top:.6rem;font-size:.76rem;font-weight:800;color:var(--gray-600)">🪪 已上传的证件</div>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:.4rem">' + have.map(doc => {
+        const url = '/api/admin/employees/id-doc-image/' + encodeURIComponent(doc.doc_id);
+        const inner = doc.previewable
+          ? '<img src="' + url + '" loading="lazy" style="width:68px;height:68px;object-fit:cover;border-radius:8px;border:1px solid var(--gray-200);background:#000;display:block">'
+          : '<span style="display:flex;align-items:center;justify-content:center;width:68px;height:68px;border-radius:8px;border:1px solid var(--gray-200);background:#f1f5f9;font-size:1.4rem">📄</span>';
+        return '<a href="' + url + '" target="_blank" style="text-decoration:none;position:relative;display:block">' + inner
+          + '<span style="position:absolute;left:0;right:0;bottom:0;background:rgba(15,23,42,.62);color:#fff;font-size:.6rem;font-weight:600;text-align:center;border-radius:0 0 8px 8px;padding:1px 0">' + esc(doc.label || doc.type) + '</span></a>';
+      }).join('') + '</div>';
+    document.getElementById('pInfo').insertAdjacentHTML('beforeend', html);
+  } catch (_) {}
+}
+
+async function doSearch() {
+  const raw = $('phoneInput').value.replace(/\D/g, '');
+  if (raw.length < 10) return showMsg('msg1', '请输入有效的 10 位手机号', 'err');
+  hideMsg('msg1'); hideMsg('msg2');
+  const btn = $('btnSearch');
+  btn.disabled = true; btn.textContent = '查询中…';
+  $('qrCard').style.display = 'none';
+  $('formCard').style.display = 'none';
+  try {
+    const d = await api('/api/interview-check?phone=' + encodeURIComponent(raw));
+    _phone = raw;
+    if (!d.found) {
+      if (d.apply_qr) $('applyQrImg').src = d.apply_qr;
+      if (d.apply_url) $('applyUrlLink').href = d.apply_url;
+      $('qrCard').style.display = '';
+    } else {
+      buildForm(d.person, d.latest);
+      renderPersonInfo(d);
+      $('formCard').style.display = '';
+      if (d.person.type === 'employee') loadEmployeeIdDocs(d.person.id);
+    }
+  } catch (e) {
+    showMsg('msg1', e.message || '查询失败', 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = '🔍 查询';
+  }
+}
+
+function buildForm(p, latest) {
+  $('pAvatar').textContent = (p.name || '?').trim().charAt(0).toUpperCase() || '?';
+  $('pName').textContent = p.name || '(未填姓名)';
+  const bits = [
+    p.type === 'employee' ? ('员工档案' + (p.status === 'active' ? ' · 在职' : (p.status ? ' · ' + p.status : ''))) : '入职申请（未建档）',
+    p.position, p.state
+  ].filter(Boolean);
+  $('pMeta').textContent = bits.join(' · ');
+  _answers = {};
+  if (latest) {
+    QUESTIONS.forEach(q => { if (latest[q.key] === 0 || latest[q.key] === 1) _answers[q.key] = latest[q.key]; });
+    $('noteInput').value = latest.note || '';
+  } else {
+    $('noteInput').value = '';
+  }
+  renderQuestions();
+}
+
+function renderQuestions() {
+  let html = '';
+  let lastGroup = '';
+  QUESTIONS.forEach(q => {
+    if (q.group !== lastGroup) {
+      html += '<div style="font-size:.78rem;font-weight:800;color:var(--gray-600);background:#f1f5f9;border-radius:8px;padding:.4rem .7rem;margin:' + (lastGroup ? '.8rem' : '0') + ' 0 .25rem">' + q.group + '</div>';
+      lastGroup = q.group;
+    }
+    const v = _answers[q.key];
+    html += '<div class="q-row"><span class="q-label">' + q.label + '</span>'
+      + '<span class="seg">'
+      + '<button type="button" class="yes' + (v === 1 ? ' on' : '') + '" onclick="setAns(\'' + q.key + '\',1)">✓ 会</button>'
+      + '<button type="button" class="no' + (v === 0 ? ' on' : '') + '" onclick="setAns(\'' + q.key + '\',0)">✗ 不会</button>'
+      + '</span></div>';
+  });
+  $('qList').innerHTML = html;
+}
+function setAns(k, v) {
+  _answers[k] = (_answers[k] === v) ? undefined : v;   // 再点一次取消
+  renderQuestions();
+}
+
+async function doSave() {
+  const btn = $('btnSave');
+  btn.disabled = true; btn.textContent = '保存中…';
+  hideMsg('msg2');
+  try {
+    const payload = { phone: _phone, note: $('noteInput').value.trim() };
+    QUESTIONS.forEach(q => { if (_answers[q.key] === 0 || _answers[q.key] === 1) payload[q.key] = _answers[q.key]; });
+    await api('/api/interview-result', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    });
+    showMsg('msg2', '✅ 已保存（技能/语言已同步到 SMS 联系人标签）', 'ok');
+    loadRecent();
+  } catch (e) {
+    showMsg('msg2', e.message || '保存失败', 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = '💾 保存面试结果';
+  }
+}
+
+const FLAGS = [
+  ['forklift', '叉车'], ['cherry_picker', '高位叉车'], ['container_unload', '卸柜'],
+  ['lang_en', '英语'], ['lang_es', '西语'], ['lang_zh', '中文'],
+  ['can_lead', '领班'], ['can_recruit', '能找人'],
+];
+async function loadRecent() {
+  try {
+    const d = await api('/api/interview-results/recent');
+    const rows = d.results || [];
+    if (!rows.length) { $('recentCard').style.display = 'none'; return; }
+    $('recentList').innerHTML = rows.map(r => {
+      const chips = FLAGS.map(([k, lb]) =>
+        r[k] === 1 ? '<span class="chip y">' + lb + '✓</span>' : (r[k] === 0 ? '<span class="chip n">' + lb + '✗</span>' : '')
+      ).join('');
+      const when = r.created_at ? new Date(r.created_at + 'Z').toLocaleString('zh-CN', { hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+      return '<div class="recent-item"><b>' + esc(r.person_name || '(无名)') + '</b>'
+        + ' <span style="color:var(--gray-400)">' + esc(r.phone) + '</span> · ' + chips
+        + (r.note ? '<div style="color:var(--gray-600);margin-top:2px">📝 ' + esc(r.note) + '</div>' : '')
+        + '<div style="color:var(--gray-400);font-size:.72rem;margin-top:2px">' + esc(when) + (r.created_by ? ' · ' + esc(r.created_by) : '') + '</div></div>';
+    }).join('');
+    $('recentCard').style.display = '';
+  } catch (_) {}
+}
+loadRecent();
+</script>
+</body>
+</html>

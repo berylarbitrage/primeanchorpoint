@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录验证 — Prime Anchor Workforce</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<style>
+:root{--blue:#0F2B5B;--sky:#4A90D9;--green:#2D9D78;--red:#E63946;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--blue);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1rem}
+.box{background:#fff;border-radius:14px;padding:2.2rem 2rem;width:100%;max-width:380px;box-shadow:0 10px 40px rgba(0,0,0,.3);text-align:center}
+.box img{width:64px;margin-bottom:.8rem}
+h1{font-size:1.1rem;color:var(--blue);margin-bottom:.3rem}
+.sub{font-size:.82rem;color:var(--gray-400);margin-bottom:1.4rem}
+label{display:block;text-align:left;font-size:.76rem;font-weight:700;color:var(--gray-600);margin:.7rem 0 .3rem}
+input{width:100%;padding:.75rem .85rem;border:1.5px solid var(--gray-200);border-radius:10px;font-size:1rem;outline:none;font-family:inherit}
+input:focus{border-color:var(--sky)}
+.row{display:flex;gap:.5rem}
+.row input{flex:1;min-width:0}
+.btn{padding:.75rem 1rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;font-family:inherit}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-send{background:var(--sky);color:#fff;flex-shrink:0;white-space:nowrap}
+.btn-main{background:var(--green);color:#fff;width:100%;padding:.9rem;font-size:1rem;margin-top:1rem}
+.err{color:var(--red);font-size:.82rem;min-height:1.2em;margin-top:.6rem;font-weight:600}
+.hint{font-size:.78rem;color:var(--gray-400);margin-top:.35rem;text-align:left}
+.trust{display:flex;align-items:center;gap:.5rem;margin-top:.9rem;font-size:.82rem;color:var(--gray-600);text-align:left}
+.trust input{width:auto}
+a.back{display:inline-block;margin-top:1rem;font-size:.8rem;color:var(--gray-400)}
+#codeInput{letter-spacing:.35em;text-align:center;font-size:1.3rem}
+</style>
+</head>
+<body>
+<div class="box">
+  <img src="logo.svg" alt="">
+  <h1>🔐 登录短信验证</h1>
+  <div class="sub">账号密码已通过，还需验证公司备案手机</div>
+
+  <label>接收验证码的手机号</label>
+  <div class="row">
+    <input type="tel" id="phoneInput" placeholder="(xxx) xxx-xxxx" maxlength="14" inputmode="tel">
+    <button class="btn btn-send" id="btnSend" onclick="sendCode()">发送验证码</button>
+  </div>
+  <div class="hint" id="phoneHint" style="display:none"></div>
+
+  <label>短信验证码</label>
+  <input type="text" id="codeInput" placeholder="6 位数字" maxlength="6" inputmode="numeric" autocomplete="one-time-code">
+
+  <label class="trust"><input type="checkbox" id="trustChk">此设备 30 天内免短信验证</label>
+
+  <button class="btn btn-main" id="btnVerify" onclick="verify()">✅ 验证并登录</button>
+  <div class="err" id="err"></div>
+  <a class="back" href="javascript:history.back()">← 返回重新登录</a>
+</div>
+
+<script>
+const qs = new URLSearchParams(location.search);
+const MFA_TOKEN = qs.get('token') || '';
+const HINT = qs.get('hint') || '';
+let NEXT = qs.get('next') || '/admin.html';
+if (!/^\/[^/]/.test(NEXT)) NEXT = '/admin.html';   // 仅允许本站路径
+
+const $ = id => document.getElementById(id);
+if (!MFA_TOKEN) { $('err').textContent = '缺少登录会话，请返回重新登录'; }
+if (HINT) {
+  $('phoneHint').style.display = '';
+  $('phoneHint').textContent = '上次使用的号码: ' + HINT + '（留空则发到该号码）';
+}
+$('phoneInput').addEventListener('input', function () {
+  let d = this.value.replace(/\D/g, '').slice(0, 10);
+  if (d.length > 6) d = '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6);
+  else if (d.length > 3) d = '(' + d.slice(0, 3) + ') ' + d.slice(3);
+  this.value = d;
+});
+$('codeInput').addEventListener('input', function () {
+  this.value = this.value.replace(/\D/g, '').slice(0, 6);
+  if (this.value.length === 6) verify();
+});
+
+let _cd = null;
+function countdown(sec) {
+  const btn = $('btnSend');
+  clearInterval(_cd);
+  let left = sec;
+  btn.disabled = true;
+  btn.textContent = left + 's';
+  _cd = setInterval(() => {
+    left--;
+    if (left <= 0) { clearInterval(_cd); btn.disabled = false; btn.textContent = '重新发送'; return; }
+    btn.textContent = left + 's';
+  }, 1000);
+}
+
+async function sendCode() {
+  $('err').textContent = '';
+  const phone = $('phoneInput').value.replace(/\D/g, '');
+  if (!phone && !HINT) { $('err').textContent = '请输入手机号'; return; }
+  const btn = $('btnSend');
+  btn.disabled = true; btn.textContent = '发送中…';
+  try {
+    const r = await fetch('/api/admin/mfa/send', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mfa_token: MFA_TOKEN, phone })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || '发送失败');
+    countdown(60);
+    $('phoneHint').style.display = '';
+    $('phoneHint').textContent = '验证码已发送到 ' + (d.phone_hint || '') + '，10 分钟内有效';
+    $('codeInput').focus();
+  } catch (e) {
+    $('err').textContent = e.message || '发送失败';
+    btn.disabled = false; btn.textContent = '发送验证码';
+  }
+}
+
+async function verify() {
+  $('err').textContent = '';
+  const code = $('codeInput').value.trim();
+  if (code.length !== 6) { $('err').textContent = '请输入 6 位验证码'; return; }
+  const btn = $('btnVerify');
+  btn.disabled = true; btn.textContent = '验证中…';
+  try {
+    const r = await fetch('/api/admin/mfa/verify', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mfa_token: MFA_TOKEN, code, trust: $('trustChk').checked ? 1 : 0 })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.success) throw new Error(d.error || '验证失败');
+    // 各后台页面读取的存储位置不同, 全部写一遍
+    try {
+      localStorage.setItem('adminToken', d.token);
+      localStorage.setItem('acct_token', d.token);
+      sessionStorage.setItem('adminToken', d.token);
+      sessionStorage.setItem('ci_rec_token', d.token);
+    } catch (_) {}
+    // 双保险: 服务器已 Set-Cookie, 这里再写一遍 (与各后台页面自己的写法一致)
+    try {
+      const secure = location.protocol === 'https:' ? ';Secure' : '';
+      document.cookie = 'pa_token=' + d.token + ';path=/;max-age=2592000;SameSite=Strict' + secure;
+    } catch (_) {}
+    location.replace(NEXT);
+  } catch (e) {
+    $('err').textContent = e.message || '验证失败';
+    btn.disabled = false; btn.textContent = '✅ 验证并登录';
+  }
+}
+</script>
+</body>
+</html>

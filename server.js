@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-17n · 翻译输出强制JSON校验, 模型废话进不了库; 自动修复已存坏译文',
+  tag: '2026-08-18c · 修复登录验证循环: MFA状态改存数据库(部署重启不再丢), 双写cookie',
   started: new Date().toISOString(),
 };
 
@@ -9063,6 +9063,106 @@ app.post('/api/quote', (req, res) => {
 // ─── ADMIN API ───
 
 // Admin login
+// ─── 🔐 登录短信两步验证 (MFA): 账号密码 + 白名单手机短信验证码 ───
+// 验证码只允许发到公司备案的手机号 (可用 MFA_ALLOWED_PHONES 环境变量覆盖,
+// 逗号分隔); 紧急情况可设 MFA_DISABLE=1 临时关闭两步验证。
+const MFA_ALLOWED_PHONES = String(process.env.MFA_ALLOWED_PHONES ||
+  '3128437890,2246527010,8726642397,3143270319,7088502703,7088502629,2245915888')
+  .split(',').map(x => x.replace(/\D/g, '').slice(-10)).filter(x => x.length === 10);
+// 待验证状态存 DB —— 服务器每次部署都会重启, 存内存会把正在验证的人踢回登录页
+db.exec(`CREATE TABLE IF NOT EXISTS mfa_pending (
+  token TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  code TEXT DEFAULT '',
+  phone TEXT DEFAULT '',
+  code_expires INTEGER DEFAULT 0,
+  sent_at INTEGER DEFAULT 0,
+  send_count INTEGER DEFAULT 0,
+  attempts INTEGER DEFAULT 0,
+  expires INTEGER NOT NULL
+)`);
+const _mfaGet = t => db.prepare('SELECT * FROM mfa_pending WHERE token=?').get(String(t || ''));
+const _mfaDel = t => db.prepare('DELETE FROM mfa_pending WHERE token=?').run(String(t || ''));
+try { db.exec("ALTER TABLE admin_users ADD COLUMN mfa_phone TEXT DEFAULT ''"); } catch (e) {}
+db.exec(`CREATE TABLE IF NOT EXISTS mfa_trusted_devices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  token_hash TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+
+function _mfaEnabled() {
+  if (process.env.MFA_DISABLE === '1') return false;
+  // Twilio 完全没配置(本地开发)时跳过, 避免把所有人锁在门外; 生产环境必然配置了 Twilio
+  if (!twilioClient || (!TWILIO_FROM && !TWILIO_MESSAGING_SID)) { console.warn('[MFA] Twilio 未配置, 本次登录跳过短信验证'); return false; }
+  return true;
+}
+function _mfaTrustHash(t) { return crypto.createHash('sha256').update(String(t)).digest('hex'); }
+function _mfaHasTrust(req, userId) {
+  const m = (req.headers.cookie || '').match(/pa_mfa_trust=([^;]+)/);
+  if (!m) return false;
+  const row = db.prepare(`SELECT id FROM mfa_trusted_devices WHERE user_id=? AND token_hash=? AND expires_at > datetime('now')`).get(userId, _mfaTrustHash(m[1]));
+  return !!row;
+}
+function _mfaStart(user) {
+  try { db.prepare('DELETE FROM mfa_pending WHERE expires < ?').run(Date.now()); } catch (_) {}
+  const token = crypto.randomBytes(24).toString('hex');
+  db.prepare('INSERT INTO mfa_pending (token, user_id, expires) VALUES (?,?,?)').run(token, user.id, Date.now() + 10 * 60 * 1000);
+  const stored = String(user.mfa_phone || '').replace(/\D/g, '').slice(-10);
+  const hint = (stored && MFA_ALLOWED_PHONES.includes(stored)) ? ('••• ' + stored.slice(-4)) : '';
+  return { mfa_token: token, phone_hint: hint };
+}
+
+// 发送登录验证码 (手机号必须在白名单内; 不填手机号则用该账号上次用过的)
+app.post('/api/admin/mfa/send', loginRateLimit, async (req, res) => {
+  const { mfa_token, phone } = req.body || {};
+  const p = _mfaGet(mfa_token);
+  if (!p || p.expires < Date.now()) return res.status(400).json({ error: '登录会话已过期, 请重新输入账号密码' });
+  const user = db.prepare('SELECT * FROM admin_users WHERE id=?').get(p.user_id);
+  if (!user) return res.status(400).json({ error: '账号不存在' });
+  let digits = String(phone || '').replace(/\D/g, '').slice(-10);
+  if (!digits) digits = String(user.mfa_phone || '').replace(/\D/g, '').slice(-10);
+  if (digits.length !== 10) return res.status(400).json({ error: '请输入接收验证码的手机号' });
+  if (!MFA_ALLOWED_PHONES.includes(digits)) return res.status(403).json({ error: '该手机号不在允许登录的名单内' });
+  if (p.send_count >= 5) return res.status(429).json({ error: '发送次数过多, 请稍后重新登录' });
+  if (Date.now() - p.sent_at < 60 * 1000) return res.status(429).json({ error: '发送太频繁, 请 1 分钟后再试' });
+  const code = String(crypto.randomInt(100000, 1000000));
+  const ok = await sendSMS(digits, `【Prime Anchor】后台登录验证码: ${code}\n10 分钟内有效。不是本人操作请勿把验证码告诉任何人。`);
+  if (!ok) return res.status(500).json({ error: '短信发送失败, 请稍后重试' });
+  db.prepare('UPDATE mfa_pending SET code=?, phone=?, code_expires=?, sent_at=?, send_count=send_count+1 WHERE token=?')
+    .run(code, digits, Date.now() + 10 * 60 * 1000, Date.now(), String(mfa_token));
+  auditLog('login_mfa_sent', { userId: user.id, userName: user.username, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { phone_last4: digits.slice(-4) } });
+  res.json({ success: true, phone_hint: '••• ' + digits.slice(-4) });
+});
+
+// 校验验证码, 通过后正式建会话; trust=1 时 30 天内此设备免验证码
+app.post('/api/admin/mfa/verify', loginRateLimit, (req, res) => {
+  const { mfa_token, code, trust } = req.body || {};
+  const key = String(mfa_token || '');
+  const p = _mfaGet(key);
+  if (!p || p.expires < Date.now()) return res.status(400).json({ error: '登录会话已过期, 请重新输入账号密码' });
+  if (!p.code || p.code_expires < Date.now()) return res.status(400).json({ error: '验证码已过期, 请重新发送' });
+  db.prepare('UPDATE mfa_pending SET attempts=attempts+1 WHERE token=?').run(key);
+  if (p.attempts + 1 > 5) { _mfaDel(key); return res.status(429).json({ error: '尝试次数过多, 请重新登录' }); }
+  if (String(code || '').trim() !== p.code) return res.status(401).json({ error: '验证码错误' });
+  const user = db.prepare('SELECT * FROM admin_users WHERE id=?').get(p.user_id);
+  _mfaDel(key);
+  if (!user || !user.active) return res.status(400).json({ error: '账号不可用' });
+  try { db.prepare('UPDATE admin_users SET mfa_phone=? WHERE id=?').run(p.phone, user.id); } catch (_) {}
+  const token = createSession(user, req);
+  auditLog('login', { userId: user.id, userName: user.username, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { role: user.role, mfa: true, mfa_phone_last4: p.phone.slice(-4) } });
+  const secure = req.protocol === 'https';
+  res.cookie('pa_token', token, { httpOnly: true, sameSite: 'Strict', secure });
+  if (trust) {
+    const trustToken = crypto.randomBytes(32).toString('hex');
+    db.prepare(`INSERT INTO mfa_trusted_devices (user_id, token_hash, expires_at) VALUES (?,?,datetime('now','+30 days'))`).run(user.id, _mfaTrustHash(trustToken));
+    res.cookie('pa_mfa_trust', trustToken, { httpOnly: true, sameSite: 'Strict', secure, maxAge: 30 * 24 * 3600 * 1000 });
+    try { db.prepare("DELETE FROM mfa_trusted_devices WHERE expires_at < datetime('now')").run(); } catch (_) {}
+  }
+  res.json({ success: true, token, user_id: user.id, role: user.role || 'staff', username: user.username, display_name: user.display_name || '' });
+});
+
 app.post('/api/admin/login', loginRateLimit, (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
@@ -9083,6 +9183,11 @@ app.post('/api/admin/login', loginRateLimit, (req, res) => {
   }
   // Password correct but account not yet self-verified — prompt user to set own password
   if (!user.active) return res.json({ needs_activation: true, username });
+  // 🔐 密码正确 → 还需短信验证码 (30 天内验证过的可信设备除外)
+  if (_mfaEnabled() && !_mfaHasTrust(req, user.id)) {
+    auditLog('login_mfa_challenge', { userId: user.id, userName: user.username, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { role: user.role } });
+    return res.json(Object.assign({ mfa_required: true }, _mfaStart(user)));
+  }
   const token = createSession(user, req);
   auditLog('login', { userId: user.id, userName: user.username, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { role: user.role } });
   res.cookie('pa_token', token, { httpOnly: true, sameSite: 'Strict', secure: req.protocol === 'https' });
@@ -9102,6 +9207,10 @@ app.post('/api/auth/activate', (req, res) => {
   const hash = hashPassword(new_password, salt);
   db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=1 WHERE id=?').run(hash, salt, user.id);
   const updatedUser = db.prepare('SELECT * FROM admin_users WHERE id=?').get(user.id);
+  // 🔐 激活完成后同样要过短信验证
+  if (_mfaEnabled() && !_mfaHasTrust(req, updatedUser.id)) {
+    return res.json(Object.assign({ success: true, mfa_required: true }, _mfaStart(updatedUser)));
+  }
   const token = createSession(updatedUser, req);
   res.json({ success: true, token, user_id: updatedUser.id, role: updatedUser.role || 'staff', username: updatedUser.username, display_name: updatedUser.display_name || '' });
 });
@@ -25567,6 +25676,155 @@ function _employeeFromApplicant(sub) {
   return db.prepare('SELECT id, first_name, last_name, employee_id FROM employees WHERE id=?').get(newId);
 }
 
+// ════════ 🎤 面试结果登记 (/interview-result) ════════
+// 面试官搜手机号 → 已有员工/申请人则登记六项技能语言 + 备注;
+// 系统没有此人 → 显示通用入职申请二维码, 让对方先扫码填个人信息。
+db.exec(`CREATE TABLE IF NOT EXISTS interview_results (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  phone TEXT NOT NULL,
+  employee_id INTEGER DEFAULT NULL,
+  applicant_id INTEGER DEFAULT NULL,
+  person_name TEXT DEFAULT '',
+  forklift INTEGER DEFAULT NULL,
+  cherry_picker INTEGER DEFAULT NULL,
+  container_unload INTEGER DEFAULT NULL,
+  lang_en INTEGER DEFAULT NULL,
+  lang_es INTEGER DEFAULT NULL,
+  lang_zh INTEGER DEFAULT NULL,
+  note TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_ivres_phone ON interview_results(phone)'); } catch (e) {}
+try { db.exec('ALTER TABLE interview_results ADD COLUMN can_lead INTEGER DEFAULT NULL'); } catch (e) {}
+try { db.exec('ALTER TABLE interview_results ADD COLUMN can_recruit INTEGER DEFAULT NULL'); } catch (e) {}
+
+function _interviewFindPerson(digits10) {
+  const emp = db.prepare(`SELECT id, first_name, last_name, position, state, status FROM employees WHERE phone10(phone)=? ORDER BY (status='active') DESC, id DESC LIMIT 1`).get(digits10);
+  if (emp) return { type: 'employee', id: emp.id, name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim(), position: emp.position || '', state: emp.state || '', status: emp.status || '' };
+  const sub = db.prepare(`SELECT id, name, position, state, apply_state FROM applicant_submissions WHERE phone10(phone)=? ORDER BY id DESC LIMIT 1`).get(digits10);
+  if (sub) return { type: 'applicant', id: sub.id, name: sub.name || '', position: sub.position || '', state: (sub.apply_state || sub.state || ''), status: '' };
+  return null;
+}
+
+// 通用(不带公司)入职申请链接 — 与 _applyUrlForSite 的兜底逻辑一致
+function _genericApplyUrl(req) {
+  let token = '';
+  try {
+    const row = db.prepare("SELECT value FROM app_settings WHERE key='generic_applicant_form_token'").get();
+    token = (row && row.value) || '';
+    if (!token) {
+      token = crypto.randomBytes(20).toString('hex');
+      db.prepare("INSERT INTO app_settings (key, value) VALUES ('generic_applicant_form_token', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(token);
+    }
+  } catch (_) {}
+  return `${_applyQrBase(req)}/apply/${token}`;
+}
+
+// 查手机号: 有人 → 返回资料 + 最近一次登记(预填); 没人 → 返回扫码填表二维码
+app.get('/api/interview-check', requireAdmin, async (req, res) => {
+  try {
+    const digits10 = String(req.query.phone || '').replace(/\D/g, '').slice(-10);
+    if (digits10.length < 10) return res.status(400).json({ error: '请输入有效的 10 位手机号' });
+    const person = _interviewFindPerson(digits10);
+    if (!person) {
+      let applyUrl = '', applyQr = '';
+      try {
+        applyUrl = _genericApplyUrl(req);
+        applyQr = await QRCode.toDataURL(applyUrl, { errorCorrectionLevel: 'M', margin: 1, width: 260 });
+      } catch (e) { console.error('[interview] apply qr:', e.message); }
+      return res.json({ found: false, apply_url: applyUrl, apply_qr: applyQr });
+    }
+    const latest = db.prepare(`SELECT * FROM interview_results WHERE phone=? ORDER BY id DESC LIMIT 1`).get(digits10);
+    // 扫码填写的入职申请信息 + 员工档案信息一并返回, 面试官不用再翻后台
+    const isPrivileged = req.userRole === 'admin' || req.userRole === 'staff';
+    let application = null;
+    let sub = db.prepare(`SELECT * FROM applicant_submissions WHERE phone10(phone)=? ORDER BY id DESC LIMIT 1`).get(digits10);
+    // 电话对不上时(换过号), 用员工档案的关联申请单兜底
+    if (!sub && person.type === 'employee') {
+      sub = db.prepare(`SELECT * FROM applicant_submissions WHERE employee_id=? ORDER BY id DESC LIMIT 1`).get(person.id);
+    }
+    if (sub) {
+      application = {
+        id: sub.id, name: sub.name || '', position: sub.position || '', partner_name: sub.partner_name || '',
+        email: isPrivileged ? (sub.email || '') : '',
+        email_verified: !!sub.email_verified, phone_verified: !!sub.phone_verified,
+        address: [sub.address1, sub.address2].filter(Boolean).join(' '),
+        city: sub.city || '', state: sub.state || '', zip: sub.zip || '',
+        address_verified: !!sub.address_verified,
+        apply_state: sub.apply_state || '', created_at: sub.created_at || ''
+      };
+      if (isPrivileged) {
+        application.docs = db.prepare('SELECT id, doc_type FROM applicant_docs WHERE submission_id=?').all(sub.id)
+          .map(d => ({ id: d.id, doc_type: d.doc_type, url: `/api/admin/applicant-submissions/${sub.id}/docs/${d.id}/download` }));
+      }
+    }
+    let employee = null;
+    if (person.type === 'employee') {
+      const e = db.prepare('SELECT * FROM employees WHERE id=?').get(person.id);
+      if (e) employee = {
+        employee_code: e.employee_id || '', position: e.position || '', hire_date: e.hire_date || '',
+        status: e.status || '', state: e.state || '', city: e.city || '',
+        email: isPrivileged ? (e.email || '') : '',
+        address: isPrivileged ? [e.address, e.street2].filter(Boolean).join(' ') : ''
+      };
+    }
+    res.json({ found: true, person, latest: latest || null, application, employee });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 保存面试结果; 同步把「会」的技能/语言写到 SMS 联系人标签, 客服在收件箱直接能看到
+app.post('/api/interview-result', requireAdmin, (req, res) => {
+  try {
+    const b = req.body || {};
+    const digits10 = String(b.phone || '').replace(/\D/g, '').slice(-10);
+    if (digits10.length < 10) return res.status(400).json({ error: '请输入有效的 10 位手机号' });
+    const person = _interviewFindPerson(digits10);
+    if (!person) return res.status(404).json({ error: '系统里没有这个手机号, 请先让对方扫码填写个人信息' });
+    const flag = v => (v === 1 || v === '1' || v === true) ? 1 : ((v === 0 || v === '0' || v === false) ? 0 : null);
+    const vals = {
+      forklift: flag(b.forklift), cherry_picker: flag(b.cherry_picker), container_unload: flag(b.container_unload),
+      lang_en: flag(b.lang_en), lang_es: flag(b.lang_es), lang_zh: flag(b.lang_zh),
+      can_lead: flag(b.can_lead), can_recruit: flag(b.can_recruit)
+    };
+    const note = String(b.note || '').slice(0, 2000);
+    const r = db.prepare(`INSERT INTO interview_results (phone, employee_id, applicant_id, person_name, forklift, cherry_picker, container_unload, lang_en, lang_es, lang_zh, can_lead, can_recruit, note, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(digits10, person.type === 'employee' ? person.id : null, person.type === 'applicant' ? person.id : null, person.name,
+        vals.forklift, vals.cherry_picker, vals.container_unload, vals.lang_en, vals.lang_es, vals.lang_zh, vals.can_lead, vals.can_recruit, note, req.userName || '');
+    // 同步 SMS 联系人: 会的语言进 spoken_langs, 会的技能进工种标签 (「不会」把语言移除, 技能不动)
+    try {
+      const c = db.prepare('SELECT * FROM sms_contacts WHERE phone10(phone_e164)=?').get(digits10);
+      if (c) {
+        let langs = []; try { langs = JSON.parse(c.spoken_langs || '[]'); } catch (_) {}
+        const setL = (code, v) => {
+          if (v === 1 && !langs.includes(code)) langs.push(code);
+          if (v === 0) langs = langs.filter(x => x !== code);
+        };
+        setL('en', vals.lang_en); setL('es', vals.lang_es); setL('zh', vals.lang_zh);
+        let tags = []; try { tags = JSON.parse(c.tags || '[]'); } catch (_) {}
+        const addT = (t, v) => { if (v === 1 && !tags.includes(t)) tags.push(t); };
+        addT('叉车工', vals.forklift); addT('高位叉车', vals.cherry_picker); addT('卸柜工', vals.container_unload);
+        // 领班/找人能力 → 联系人上的 领班/工头 标记 (明确回答才动, 未答不动)
+        const isLead = vals.can_lead === null ? (c.is_lead ? 1 : 0) : vals.can_lead;
+        const isForeman = vals.can_recruit === null ? (c.is_foreman ? 1 : 0) : vals.can_recruit;
+        db.prepare(`UPDATE sms_contacts SET spoken_langs=?, tags=?, is_lead=?, is_foreman=?, updated_at=datetime('now') WHERE id=?`).run(JSON.stringify(langs), JSON.stringify(tags), isLead, isForeman, c.id);
+        smsAudit('contact', c.id, 'updated', 'agent', req.userId, { by: req.userName, changes: { interview_sync: { langs, skills: tags } } });
+      }
+    } catch (e) { console.error('[interview] contact sync:', e.message); }
+    res.json({ success: true, id: r.lastInsertRowid, person });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 最近登记列表 (页面底部展示)
+app.get('/api/interview-results/recent', requireAdmin, (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT * FROM interview_results ORDER BY id DESC LIMIT 20`).all();
+    const mask = req.userRole !== 'admin';
+    res.json({ results: rows.map(r => ({ ...r, phone: mask ? smsMaskPhone(r.phone) : r.phone })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Serve checkin page (fallback — normally handled by the static middleware;
 // the ?wh=code redirect lives right before express.static)
 app.get('/checkin', (req, res) => {
@@ -31519,8 +31777,10 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
     // Twilio 合规: 对方已回 STOP 退订, 继续发会被 Twilio 拒 (21610) 且损害账号信誉
     if (thread.opted_out) return res.status(400).json({ error: '⚠️ 对方已回复 STOP 退订, 禁止发送。对方回复 START 后才能恢复。' });
 
-    const { body, no_translate, preset_translation } = req.body;
-    if (!body || !body.trim()) return res.status(400).json({ error: 'Message body required' });
+    const { body, no_translate, preset_translation, media_url } = req.body;
+    const mediaPath = (typeof media_url === 'string' && /^\/sms-media\/sms-\d+-[a-f0-9]+\.(jpe?g|png|gif|webp)$/i.test(media_url)) ? media_url : '';
+    if ((!body || !body.trim()) && !mediaPath) return res.status(400).json({ error: 'Message body required' });
+    if (mediaPath && !BASE_URL) return res.status(400).json({ error: '服务器未配置 BASE_URL, 无法发送图片' });
 
     // Check permission: only assigned agent or admin can reply
     if (thread.assigned_agent_id && thread.assigned_agent_id !== req.userId && req.userRole !== 'admin') {
@@ -31529,7 +31789,7 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
 
     // 🛡️ AI 合规审核: 客服(非 admin)发出的每条消息先过 red-flag 检查, 命中即拦截并短信通知 admin
     // 注意: 必须在 auto-claim 之前, 否则被拦截的消息会把线程占为 claimed
-    if (req.userRole !== 'admin') {
+    if (req.userRole !== 'admin' && body && body.trim()) {
       const review = await aiReviewOutboundSms(body.trim());
       if (review && review.ok === false) {
         recordAiBlockAndNotify({
@@ -31550,8 +31810,8 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
 
     // Translate agent message (agent_lang → contact_lang) before sending
     // no_translate: 面试确认/工作要求等双语模板原样发送, 不再机器翻译
-    let bodyToSend = body.trim();
-    if (!no_translate) {
+    let bodyToSend = (body || '').trim();
+    if (!no_translate && bodyToSend) {
       const presetTx = String(preset_translation || '').trim().slice(0, 1500);
       if (presetTx) {
         // 招工问题等标准模板自带人工翻译: 中文进记录, 发送固定译文, 不再机器翻译
@@ -31573,11 +31833,11 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
 
     // Insert message first
     const statusCallbackUrl = BASE_URL ? `${BASE_URL}/api/sms/webhook/status` : '';
-    const msgInfo = db.prepare(`INSERT INTO sms_messages (thread_id, direction, source, author_agent_id, from_number, to_number, body, translated_body, delivery_status)
-      VALUES (?,?,?,?,?,?,?,?,?)`).run(thread.id, 'outbound', 'agent', req.userId, thread.twilio_number, thread.phone_e164, body.trim(), bodyToSend, 'queued');
+    const msgInfo = db.prepare(`INSERT INTO sms_messages (thread_id, direction, source, author_agent_id, from_number, to_number, body, translated_body, media_urls, num_media, delivery_status)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(thread.id, 'outbound', 'agent', req.userId, thread.twilio_number, thread.phone_e164, (body || '').trim(), bodyToSend, JSON.stringify(mediaPath ? [mediaPath] : []), mediaPath ? 1 : 0, 'queued');
 
     const messageId = msgInfo.lastInsertRowid;
-    const preview = bodyToSend.substring(0, 120);
+    const preview = (bodyToSend || '📷 图片').substring(0, 120);
 
     // Update thread
     db.prepare(`UPDATE sms_threads SET last_message_at=datetime('now'), last_outbound_at=datetime('now'), last_message_preview=?, updated_at=datetime('now') WHERE id=?`).run(preview, thread.id);
@@ -31591,14 +31851,17 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
         const isWA = (thread.channel || 'sms') === 'whatsapp';
         const waFrom = process.env.TWILIO_WHATSAPP_FROM || thread.twilio_number || TWILIO_FROM;
         const createParams = isWA
-          ? { body: bodyToSend, from: 'whatsapp:' + waFrom, to: 'whatsapp:' + thread.phone_e164 }
-          : { body: bodyToSend, from: thread.twilio_number || TWILIO_FROM, to: thread.phone_e164 };
+          ? { from: 'whatsapp:' + waFrom, to: 'whatsapp:' + thread.phone_e164 }
+          : { from: thread.twilio_number || TWILIO_FROM, to: thread.phone_e164 };
+        if (bodyToSend) createParams.body = bodyToSend;
+        // 图片作为 MMS/WhatsApp 媒体附件直接发到对方手机里, 不是链接
+        if (mediaPath) createParams.mediaUrl = [BASE_URL.replace(/\/+$/, '') + mediaPath];
         if (statusCallbackUrl) createParams.statusCallback = statusCallbackUrl;
         const msg = await twilioClient.messages.create(createParams);
         twilioSid = msg.sid;
         deliveryStatus = 'sent';
       } else {
-        console.log(`[SMS-SKIP] Twilio not configured. Would send to ${thread.phone_e164}: ${body.trim()}`);
+        console.log(`[SMS-SKIP] Twilio not configured. Would send to ${thread.phone_e164}: ${(body || '').trim()}${mediaPath ? ' [media ' + mediaPath + ']' : ''}`);
         deliveryStatus = 'sent';
       }
     } catch(e) {
@@ -31832,6 +32095,45 @@ app.patch('/api/sms/threads/:id/langs', requireAdmin, requireSmsAccess, (req, re
     db.prepare(`UPDATE sms_threads SET ${fields.join(',')} WHERE id=?`).run(...params);
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── 📷 发图片 (MMS/WhatsApp 媒体) ───
+// 图片存 R2/本地 sms_media/, 文件名含随机串不可枚举; /sms-media/ 公开路由供
+// Twilio 拉取 (发 MMS 要求媒体是公网可访问的 URL)。
+const smsMediaUpload = multer({
+  storage: r2Storage({
+    subdir: 'sms_media',
+    filename: (req, file, cb) => {
+      const ext = (path.extname(file.originalname || '').toLowerCase() || '.jpg');
+      cb(null, `sms-${Date.now()}-${crypto.randomBytes(12).toString('hex')}${ext}`);
+    }
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /^image\/(jpeg|png|gif|webp)$/i.test(file.mimetype) || /\.(jpe?g|png|gif|webp)$/i.test(file.originalname || '');
+    cb(null, ok);
+  }
+});
+
+app.post('/api/sms/upload-media', requireAdmin, requireSmsAccess, smsMediaUpload.single('image'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: '请选择图片 (jpg/png/gif/webp, 最大 5MB)' });
+  const key = req.file.key || req.file.filename || req.file.path;
+  const name = String(key).split('/').pop();
+  res.json({ success: true, url: '/sms-media/' + name });
+});
+
+app.get('/sms-media/:file', async (req, res) => {
+  try {
+    const f = String(req.params.file || '');
+    if (!/^sms-\d+-[a-f0-9]+\.(jpe?g|png|gif|webp)$/i.test(f)) return res.status(404).end();
+    const key = 'sms_media/' + f;
+    if (!(await storage.exists(key))) return res.status(404).end();
+    const ext = f.split('.').pop().toLowerCase();
+    const mime = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp' }[ext] || 'application/octet-stream';
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.send(await storage.getBuffer(key));
+  } catch (e) { res.status(500).end(); }
 });
 
 // POST /api/sms/translate — on-demand translate for preview

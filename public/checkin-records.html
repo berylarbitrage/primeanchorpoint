@@ -160,6 +160,7 @@ async function doLogin() {
       body: JSON.stringify({ username: u, password: p })
     });
     const d = await r.json();
+    if (d.mfa_required) { location.href = '/mfa?token=' + encodeURIComponent(d.mfa_token) + '&next=' + encodeURIComponent(location.pathname + location.search) + (d.phone_hint ? '&hint=' + encodeURIComponent(d.phone_hint) : ''); return; }
     if (!r.ok || !d.token) {
       if (d.needs_activation) throw new Error('账号需先在管理后台激活 / Account needs activation in admin portal');
       throw new Error(d.error || '登录失败 / Login failed');
