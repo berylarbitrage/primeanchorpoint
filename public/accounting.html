@@ -102,19 +102,35 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
   <!-- 🔗 银行直连 Bank Feed (Plaid 自动同步) -->
   <div id="paneBank" style="display:none">
     <!-- 未配置密钥 (仅 admin) -->
-    <div class="card" id="bankCfgCard" style="display:none;max-width:560px">
-      <h3 style="margin-bottom:.5rem">⚙️ 配置 Plaid（一次性）</h3>
-      <p style="font-size:.82rem;color:var(--g500);margin-bottom:.7rem">在 <a href="https://dashboard.plaid.com" target="_blank">dashboard.plaid.com</a> 注册后，把 Client ID 和 Secret 粘贴到这里（Production 环境；测试可选 Sandbox）。密钥只存服务器。</p>
-      <input type="text" id="plaidCid" placeholder="Plaid Client ID" style="width:100%;margin-bottom:.5rem">
-      <input type="password" id="plaidSec" placeholder="Plaid Secret" style="width:100%;margin-bottom:.5rem">
-      <select id="plaidEnv" style="margin-bottom:.7rem"><option value="production">Production 正式</option><option value="sandbox">Sandbox 测试</option></select>
-      <button class="btn" onclick="bankSaveCfg()" style="background:#0f4c6b;color:#fff">保存配置</button>
-      <span id="bankCfgMsg" style="font-size:.8rem;margin-left:.5rem"></span>
+    <div class="card" id="bankCfgCard" style="display:none;max-width:620px">
+      <h3 style="margin-bottom:.35rem">⚙️ 配置银行通道（一次性，二选一即可）</h3>
+      <p style="font-size:.8rem;color:var(--g500);margin-bottom:.7rem">推荐 <b>Teller</b>：免费 100 个真实银行连接，无月费。Plaid 免费 Trial 限 10 个连接。密钥只存服务器。</p>
+      <div style="border:1px solid var(--g200);border-radius:8px;padding:.7rem .9rem;margin-bottom:.7rem">
+        <div style="font-weight:800;margin-bottom:.4rem">① Teller（推荐 · 免费 100 连接）</div>
+        <p style="font-size:.78rem;color:var(--g500);margin-bottom:.5rem">在 <a href="https://teller.io" target="_blank">teller.io</a> 注册 → Dashboard 拿 <b>Application ID</b>；正式环境还需在 Certificates 页下载 mTLS 证书（certificate.pem + private_key.pem），把两个文件内容粘贴进来。</p>
+        <input type="text" id="tellerAppId" placeholder="Teller Application ID (app_xxx)" style="width:100%;margin-bottom:.4rem">
+        <select id="tellerEnv" style="margin-bottom:.4rem"><option value="production">Production 正式</option><option value="development">Development</option><option value="sandbox">Sandbox 测试</option></select>
+        <textarea id="tellerCert" rows="3" placeholder="certificate.pem 内容 (-----BEGIN CERTIFICATE-----…)" style="width:100%;margin-bottom:.4rem;font-family:monospace;font-size:.7rem"></textarea>
+        <textarea id="tellerKey" rows="3" placeholder="private_key.pem 内容 (-----BEGIN … PRIVATE KEY-----…)" style="width:100%;margin-bottom:.4rem;font-family:monospace;font-size:.7rem"></textarea>
+        <button class="btn" onclick="bankSaveTellerCfg()" style="background:#0f4c6b;color:#fff">保存 Teller 配置</button>
+        <span id="tellerCfgMsg" style="font-size:.8rem;margin-left:.5rem"></span>
+      </div>
+      <div style="border:1px solid var(--g200);border-radius:8px;padding:.7rem .9rem">
+        <div style="font-weight:800;margin-bottom:.4rem">② Plaid（免费 Trial 限 10 连接）</div>
+        <p style="font-size:.78rem;color:var(--g500);margin-bottom:.5rem">在 <a href="https://dashboard.plaid.com" target="_blank">dashboard.plaid.com</a> 拿 Client ID 和 Secret。</p>
+        <input type="text" id="plaidCid" placeholder="Plaid Client ID" style="width:100%;margin-bottom:.4rem">
+        <input type="password" id="plaidSec" placeholder="Plaid Secret" style="width:100%;margin-bottom:.4rem">
+        <select id="plaidEnv" style="margin-bottom:.5rem"><option value="production">Production 正式</option><option value="sandbox">Sandbox 测试</option></select>
+        <button class="btn" onclick="bankSaveCfg()" style="background:#0f4c6b;color:#fff">保存 Plaid 配置</button>
+        <span id="bankCfgMsg" style="font-size:.8rem;margin-left:.5rem"></span>
+      </div>
     </div>
 
     <div id="bankMain" style="display:none">
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.7rem">
-        <button class="btn" id="btnBankConnect" onclick="bankConnect()" style="background:#0f4c6b;color:#fff;display:none">➕ 连接银行</button>
+        <button class="btn" id="btnTellerConnect" onclick="tellerConnect()" style="background:#0f4c6b;color:#fff;display:none">➕ 连接银行 (Teller)</button>
+        <button class="btn" id="btnBankConnect" onclick="bankConnect()" style="background:#0f4c6b;color:#fff;display:none">➕ 连接银行 (Plaid)</button>
+        <button class="btn btn-outline" id="btnBankCfg" onclick="document.getElementById('bankCfgCard').style.display='';" style="display:none">⚙️ 配置</button>
         <button class="btn btn-outline" id="btnBankSync" onclick="bankSync()">🔄 立即同步</button>
         <span id="bankSyncMsg" style="font-size:.8rem;color:var(--g500)"></span>
       </div>
@@ -659,7 +675,9 @@ async function bankInit(force) {
   document.getElementById('bankMain').style.display = _bankStatus.configured ? '' : 'none';
   if (!_bankStatus.configured && !isAdmin) toast('银行直连还没配置，请联系管理员', true);
   if (!_bankStatus.configured) return;
-  document.getElementById('btnBankConnect').style.display = isAdmin ? '' : 'none';
+  document.getElementById('btnTellerConnect').style.display = (isAdmin && _bankStatus.teller_configured) ? '' : 'none';
+  document.getElementById('btnBankConnect').style.display = (isAdmin && _bankStatus.plaid_configured) ? '' : 'none';
+  document.getElementById('btnBankCfg').style.display = isAdmin ? '' : 'none';
   renderBankAccounts();
   bankLoadTxns();
 }
@@ -672,7 +690,7 @@ function renderBankAccounts() {
     const bal = a.current_balance == null ? '—' : money(a.current_balance);
     const err = String(it.status || '').startsWith('error');
     return `<div style="background:#fff;border:1px solid ${err ? '#fca5a5' : 'var(--g200)'};border-radius:10px;padding:.7rem .9rem;min-width:210px">
-      <div style="font-size:.78rem;color:var(--g500)">${esc(it.institution_name || '银行')} ·· ${esc(a.mask || '')}</div>
+      <div style="font-size:.78rem;color:var(--g500)">${esc(it.institution_name || '银行')} ·· ${esc(a.mask || '')} <span style="font-size:.62rem;background:#f1f5f9;border-radius:4px;padding:0 4px">${esc(it.provider || 'plaid')}</span></div>
       <div style="font-weight:800;font-size:.95rem;margin:.15rem 0">${esc(a.name || a.official_name || '账户')}</div>
       <div style="font-size:1.05rem;font-weight:800;color:#0f4c6b">${bal}</div>
       <div style="font-size:.7rem;color:var(--g400);margin-top:.2rem">同步: ${esc((it.last_sync_at || '—').slice(0, 16))}${err ? ' · <span style=\"color:#dc2626\">连接异常</span>' : ''}
@@ -684,6 +702,57 @@ function renderBankAccounts() {
   sel.innerHTML = '<option value="">全部账户</option>' + (st.accounts || []).map(a =>
     `<option value="${esc(a.account_id)}">${esc((byItem[a.item_row_id] || {}).institution_name || '')} ${esc(a.name || '')} ··${esc(a.mask || '')}</option>`).join('');
   sel.value = cur;
+}
+async function bankSaveTellerCfg() {
+  const msg = document.getElementById('tellerCfgMsg');
+  msg.textContent = '保存中…';
+  try {
+    await bapi('/api/acct/bank/teller-config', { method: 'POST', body: JSON.stringify({
+      application_id: document.getElementById('tellerAppId').value.trim(),
+      env: document.getElementById('tellerEnv').value,
+      cert_pem: document.getElementById('tellerCert').value.trim(),
+      key_pem: document.getElementById('tellerKey').value.trim()
+    }) });
+    msg.textContent = '✅ 已保存';
+    document.getElementById('bankCfgCard').style.display = 'none';
+    bankInit(true);
+  } catch (e) { msg.textContent = '❌ ' + (e.message || '保存失败'); }
+}
+let _tellerScriptLoaded = false;
+function _loadTellerScript() {
+  return new Promise((resolve, reject) => {
+    if (_tellerScriptLoaded && window.TellerConnect) return resolve();
+    const sc = document.createElement('script');
+    sc.src = 'https://cdn.teller.io/connect/connect.js';
+    sc.onload = () => { _tellerScriptLoaded = true; resolve(); };
+    sc.onerror = () => reject(new Error('Teller 脚本加载失败'));
+    document.head.appendChild(sc);
+  });
+}
+async function tellerConnect() {
+  const btn = document.getElementById('btnTellerConnect');
+  btn.disabled = true;
+  try {
+    await _loadTellerScript();
+    const tc = window.TellerConnect.setup({
+      applicationId: _bankStatus.teller_app_id,
+      environment: _bankStatus.teller_env || 'production',
+      products: ['transactions', 'balance'],
+      onSuccess: async (enrollment) => {
+        try {
+          await bapi('/api/acct/bank/teller-enroll', { method: 'POST', body: JSON.stringify({
+            access_token: enrollment.accessToken,
+            enrollment_id: (enrollment.enrollment && enrollment.enrollment.id) || '',
+            institution_name: (enrollment.enrollment && enrollment.enrollment.institution && enrollment.enrollment.institution.name) || ''
+          }) });
+          toast('✅ 已连接，正在同步交易…');
+          setTimeout(() => bankRefreshStatus(), 4000);
+        } catch (e) { toast('连接保存失败: ' + (e.message || ''), true); }
+      }
+    });
+    tc.open();
+  } catch (e) { toast(e.message || '发起连接失败', true); }
+  btn.disabled = false;
 }
 async function bankSaveCfg() {
   const msg = document.getElementById('bankCfgMsg');

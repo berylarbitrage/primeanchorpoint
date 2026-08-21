@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-18d · 银行直连对账(Plaid): 连接公司银行自动同步交易, 逐笔审核',
+  tag: '2026-08-18e · 银行直连新增 Teller 通道(免费100连接): 与Plaid并存, 共用审核界面',
   started: new Date().toISOString(),
 };
 
@@ -33798,6 +33798,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS bank_transactions (
   reviewed_at TEXT DEFAULT NULL,
   created_at TEXT DEFAULT (datetime('now'))
 )`);
+try { db.exec("ALTER TABLE bank_items ADD COLUMN provider TEXT DEFAULT 'plaid'"); } catch (e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_banktxn_date ON bank_transactions(date)'); } catch (e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_banktxn_acct ON bank_transactions(account_id, date)'); } catch (e) {}
 
@@ -33854,6 +33855,46 @@ async function _plaidCall(pathName, body) {
   return data;
 }
 
+// ─── Teller (免费 100 个真实连接): 第二银行通道, 与 Plaid 共用交易库/审核界面 ───
+// API 走 mTLS 客户端证书 (dashboard.teller.io 下发, sandbox 不强制); access_token
+// 做 Basic 认证用户名。金额符号: Teller 负数=支出 → 入库统一转成 Plaid 约定(正数=支出)。
+function _tellerCfg() {
+  try {
+    const row = db.prepare("SELECT api_key, config FROM integration_settings WHERE provider='teller'").get();
+    if (!row || !row.api_key) return null;
+    let cfg = {}; try { cfg = JSON.parse(row.config || '{}'); } catch (_) {}
+    const cert = cfg.cert_enc ? _bankDecTok(cfg.cert_enc, cfg.cert_iv) : '';
+    const key = cfg.key_enc ? _bankDecTok(cfg.key_enc, cfg.key_iv) : '';
+    return { application_id: row.api_key, env: cfg.env || 'production', cert, key };
+  } catch (_) { return null; }
+}
+function _tellerCall(pathName, accessToken) {
+  const cfg = _tellerCfg();
+  if (!cfg) return Promise.reject(new Error('Teller 未配置'));
+  const httpsMod = require('https');
+  const agentOpts = {};
+  if (cfg.cert && cfg.key) { agentOpts.cert = cfg.cert; agentOpts.key = cfg.key; }
+  return new Promise((resolve, reject) => {
+    const req2 = httpsMod.request({
+      hostname: 'api.teller.io', path: pathName, method: 'GET',
+      auth: accessToken + ':',
+      agent: new httpsMod.Agent(agentOpts),
+      headers: { 'Accept': 'application/json' }, timeout: 30000
+    }, r2 => {
+      let buf = '';
+      r2.on('data', c => buf += c);
+      r2.on('end', () => {
+        let data = null; try { data = JSON.parse(buf); } catch (_) {}
+        if (r2.statusCode >= 200 && r2.statusCode < 300) return resolve(data);
+        reject(new Error((data && data.error && data.error.message) || ('Teller HTTP ' + r2.statusCode)));
+      });
+    });
+    req2.on('error', reject);
+    req2.on('timeout', () => { req2.destroy(new Error('Teller 请求超时')); });
+    req2.end();
+  });
+}
+
 // 银行数据仅 admin / 会计可见 (客服不可见); 连接/解绑/配置仅 admin
 const requireBankView = requireRole('admin', 'accounting');
 const requireBankAdmin = requireRole('admin');
@@ -33862,11 +33903,16 @@ const requireBankAdmin = requireRole('admin');
 app.get('/api/acct/bank/status', requireAdmin, requireBankView, (req, res) => {
   try {
     const cfg = _plaidCfg();
-    const items = db.prepare('SELECT id, item_id, institution_name, last_sync_at, status, created_at FROM bank_items ORDER BY id').all();
+    const tcfg = _tellerCfg();
+    const items = db.prepare("SELECT id, item_id, institution_name, last_sync_at, status, created_at, COALESCE(provider,'plaid') AS provider FROM bank_items ORDER BY id").all();
     const accounts = db.prepare('SELECT * FROM bank_accounts ORDER BY id').all();
     const txnCount = db.prepare('SELECT COUNT(*) n FROM bank_transactions').get().n;
     const unreviewed = db.prepare('SELECT COUNT(*) n FROM bank_transactions WHERE reviewed=0').get().n;
-    res.json({ configured: !!cfg, env: cfg ? cfg.env : '', is_admin: req.userRole === 'admin', items, accounts, txn_count: txnCount, unreviewed });
+    res.json({
+      configured: !!(cfg || tcfg), plaid_configured: !!cfg, env: cfg ? cfg.env : '',
+      teller_configured: !!tcfg, teller_app_id: tcfg ? tcfg.application_id : '', teller_env: tcfg ? tcfg.env : '',
+      is_admin: req.userRole === 'admin', items, accounts, txn_count: txnCount, unreviewed
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -33883,6 +33929,63 @@ app.post('/api/acct/bank/config', requireAdmin, requireBankAdmin, (req, res) => 
       .run(cid, sec, JSON.stringify({ env }));
     auditLog('bank_config_saved', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { env } });
     res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 保存 Teller 配置 (admin): application_id + 环境 + mTLS 证书 (证书私钥加密落库)
+app.post('/api/acct/bank/teller-config', requireAdmin, requireBankAdmin, (req, res) => {
+  try {
+    const b = req.body || {};
+    const appId = String(b.application_id || '').trim();
+    const env = ['sandbox', 'development', 'production'].includes(b.env) ? b.env : 'production';
+    if (!appId) return res.status(400).json({ error: '请填写 Application ID' });
+    const cfg = { env };
+    const certPem = String(b.cert_pem || '').trim();
+    const keyPem = String(b.key_pem || '').trim();
+    if (certPem && keyPem) {
+      if (!/BEGIN CERTIFICATE/.test(certPem) || !/BEGIN (RSA |EC |)PRIVATE KEY/.test(keyPem)) {
+        return res.status(400).json({ error: '证书或私钥格式不对 (需要 PEM 文本)' });
+      }
+      const c = _bankEncTok(certPem); cfg.cert_enc = c.enc; cfg.cert_iv = c.iv;
+      const k = _bankEncTok(keyPem); cfg.key_enc = k.enc; cfg.key_iv = k.iv;
+    } else if (env !== 'sandbox') {
+      return res.status(400).json({ error: 'development/production 环境需要上传 Teller 的 mTLS 证书和私钥 (dashboard.teller.io → Certificates)' });
+    }
+    db.prepare(`INSERT INTO integration_settings (provider, enabled, api_key, api_secret, config, updated_at)
+      VALUES ('teller', 1, ?, '', ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(provider) DO UPDATE SET enabled=1, api_key=excluded.api_key, config=excluded.config, updated_at=CURRENT_TIMESTAMP`)
+      .run(appId, JSON.stringify(cfg));
+    auditLog('bank_config_saved', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { provider: 'teller', env } });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Teller Connect 完成后: 存 enrollment (access_token 加密), 拉账户, 首次同步
+app.post('/api/acct/bank/teller-enroll', requireAdmin, requireBankAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const accessToken = String(b.access_token || '').trim();
+    if (!accessToken) return res.status(400).json({ error: 'access_token required' });
+    const enrollId = String(b.enrollment_id || ('teller-' + Date.now()));
+    // 先验证 token 可用并取账户
+    const accounts = await _tellerCall('/accounts', accessToken);
+    if (!Array.isArray(accounts) || !accounts.length) return res.status(400).json({ error: 'Teller 未返回任何账户' });
+    const instName = String(b.institution_name || (accounts[0].institution && accounts[0].institution.name) || 'Bank');
+    const tok = _bankEncTok(accessToken);
+    db.prepare(`INSERT INTO bank_items (item_id, access_token_enc, access_token_iv, institution_id, institution_name, provider)
+      VALUES (?,?,?,?,?,'teller')
+      ON CONFLICT(item_id) DO UPDATE SET access_token_enc=excluded.access_token_enc, access_token_iv=excluded.access_token_iv, status='ok'`)
+      .run(enrollId, tok.enc, tok.iv, String((accounts[0].institution && accounts[0].institution.id) || ''), instName);
+    const rowId = db.prepare('SELECT id FROM bank_items WHERE item_id=?').get(enrollId).id;
+    const up = db.prepare(`INSERT INTO bank_accounts (item_row_id, account_id, name, official_name, mask, type, subtype, iso_currency, updated_at)
+      VALUES (?,?,?,?,?,?,?,?,datetime('now'))
+      ON CONFLICT(account_id) DO UPDATE SET name=excluded.name, mask=excluded.mask, updated_at=datetime('now')`);
+    for (const a of accounts) {
+      up.run(rowId, a.id, a.name || '', a.name || '', a.last_four || '', a.type || '', a.subtype || '', (a.currency || 'USD'));
+    }
+    auditLog('bank_connected', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { provider: 'teller', institution: instName } });
+    setImmediate(() => _bankSyncItem(rowId).catch(e2 => console.error('[Bank] teller first sync:', e2.message)));
+    res.json({ success: true, accounts: accounts.length });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -33935,6 +34038,7 @@ async function _bankSyncItem(rowId) {
   if (!item) return { added: 0, modified: 0, removed: 0 };
   const accessToken = _bankDecTok(item.access_token_enc, item.access_token_iv);
   if (!accessToken) throw new Error('access_token 解密失败');
+  if ((item.provider || 'plaid') === 'teller') return _bankSyncTellerItem(item, accessToken);
   let cursor = item.sync_cursor || undefined;
   let added = 0, modified = 0, removed = 0, hasMore = true, guard = 0;
   const insTxn = db.prepare(`INSERT INTO bank_transactions (txn_id, account_id, item_row_id, date, name, merchant, amount, pending, category, raw)
@@ -33960,6 +34064,48 @@ async function _bankSyncItem(rowId) {
   }
   db.prepare(`UPDATE bank_items SET sync_cursor=?, last_sync_at=datetime('now'), status='ok' WHERE id=?`).run(cursor || '', rowId);
   return { added, modified, removed };
+}
+
+// Teller 同步: 每账户拉最近交易 (首次多翻几页补历史) + 余额
+async function _bankSyncTellerItem(item, accessToken) {
+  const accounts = db.prepare('SELECT account_id FROM bank_accounts WHERE item_row_id=?').all(item.id);
+  const firstSync = !item.last_sync_at;
+  let added = 0;
+  const insTxn = db.prepare(`INSERT INTO bank_transactions (txn_id, account_id, item_row_id, date, name, merchant, amount, pending, category, raw)
+    VALUES (?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(txn_id) DO UPDATE SET date=excluded.date, name=excluded.name, merchant=excluded.merchant,
+      amount=excluded.amount, pending=excluded.pending, category=excluded.category, raw=excluded.raw`);
+  for (const acc of accounts) {
+    let fromId = '';
+    const maxPages = firstSync ? 8 : 1;   // 首次连补历史 (最多 8×500), 日常只拉最新一页
+    for (let page = 0; page < maxPages; page++) {
+      const qs2 = '?count=500' + (fromId ? '&from_id=' + encodeURIComponent(fromId) : '');
+      let txns;
+      try { txns = await _tellerCall('/accounts/' + encodeURIComponent(acc.account_id) + '/transactions' + qs2, accessToken); }
+      catch (e) { if (page === 0) throw e; break; }
+      if (!Array.isArray(txns) || !txns.length) break;
+      for (const t of txns) {
+        const det = t.details || {};
+        // Teller: 负数=支出 → 转成 Plaid 约定 (正数=支出)
+        const amt = -parseFloat(t.amount || '0') || 0;
+        insTxn.run(t.id, t.account_id, item.id, t.date || '', t.description || '', (det.counterparty && det.counterparty.name) || '',
+          amt, t.status === 'pending' ? 1 : 0, det.category || '', JSON.stringify(t).slice(0, 8000));
+        added++;
+      }
+      if (txns.length < 500) break;
+      fromId = txns[txns.length - 1].id;
+    }
+    // 余额
+    try {
+      const bal = await _tellerCall('/accounts/' + encodeURIComponent(acc.account_id) + '/balances', accessToken);
+      if (bal) {
+        db.prepare(`UPDATE bank_accounts SET current_balance=?, available_balance=?, updated_at=datetime('now') WHERE account_id=?`)
+          .run(parseFloat(bal.ledger) || null, parseFloat(bal.available) || null, acc.account_id);
+      }
+    } catch (e) { console.error('[Bank] teller balance:', e.message); }
+  }
+  db.prepare(`UPDATE bank_items SET last_sync_at=datetime('now'), status='ok' WHERE id=?`).run(item.id);
+  return { added, modified: 0, removed: 0 };
 }
 
 // 手动同步全部银行 (admin / 会计)
@@ -34015,10 +34161,12 @@ app.delete('/api/acct/bank/items/:id', requireAdmin, requireBankAdmin, async (re
   try {
     const item = db.prepare('SELECT * FROM bank_items WHERE id=?').get(parseInt(req.params.id));
     if (!item) return res.status(404).json({ error: 'Not found' });
-    try {
-      const tok = _bankDecTok(item.access_token_enc, item.access_token_iv);
-      if (tok) await _plaidCall('/item/remove', { access_token: tok });
-    } catch (e) { console.error('[Bank] item/remove:', e.message); }
+    if ((item.provider || 'plaid') === 'plaid') {
+      try {
+        const tok = _bankDecTok(item.access_token_enc, item.access_token_iv);
+        if (tok) await _plaidCall('/item/remove', { access_token: tok });
+      } catch (e) { console.error('[Bank] item/remove:', e.message); }
+    }
     db.prepare('DELETE FROM bank_items WHERE id=?').run(item.id);
     db.prepare('DELETE FROM bank_accounts WHERE item_row_id=?').run(item.id);
     auditLog('bank_disconnected', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { institution: item.institution_name } });
@@ -34029,7 +34177,7 @@ app.delete('/api/acct/bank/items/:id', requireAdmin, requireBankAdmin, async (re
 // 每 6 小时自动同步一次
 setInterval(() => {
   try {
-    if (!_plaidCfg()) return;
+    if (!_plaidCfg() && !_tellerCfg()) return;
     for (const it of db.prepare('SELECT id FROM bank_items').all()) {
       _bankSyncItem(it.id).catch(e => console.error('[Bank] auto-sync item', it.id, e.message));
     }
