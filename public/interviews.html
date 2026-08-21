@@ -217,6 +217,7 @@ function handleDeepLink() {
   if (!m) return;
   newInterview();
   document.getElementById('fPhone').value = m[1].slice(-10);
+  document.getElementById('fSource').value = '手机短信';
   const name = decodeURIComponent(m[2] || '');
   if (name && !/^[()\d\s+-]*$/.test(name)) document.getElementById('fName').value = name;
   history.replaceState(null, '', location.pathname);
@@ -429,6 +430,7 @@ function card(r) {
     + '<div class="head"><span class="name">' + esc(r.name || '(未留名)') + '</span>'
     + '<span class="phone">' + esc(fmtPhone(r.phone)) + '</span>'
     + (r.position ? '<span class="badge" style="background:var(--gray-100);color:var(--gray-600)">' + esc(r.position) + '</span>' : '')
+    + (r.source ? '<span class="badge" style="background:#fef3c7;color:#92400e">来源: ' + esc(r.source) + '</span>' : '')
     + '<span class="badge ' + cls + '">' + label + '</span>'
     + '<div style="flex:1"></div>'
     + chatLinks(r.phone)
@@ -446,21 +448,72 @@ function openModal(html){ document.getElementById('modalHost').innerHTML =
 function closeModal(){ document.getElementById('modalHost').innerHTML=''; }
 function row(r){ return ROWS.find(x => x.id === r); }
 
+const SOURCES = ['中文网', 'Indeed', 'SMS Inbox', '手机短信', '朋友介绍', '其他'];
+let peopleTimer = null;
+
 function newInterview() {
   openModal('<h2>➕ 登记面试</h2>'
+    + '<label>从聊天里找人（选中自动填姓名电话）</label>'
+    + '<input id="fFind" placeholder="输名字或号码，从 SMS Inbox / 手机短信里搜…" oninput="findPeople()">'
+    + '<div id="fFindBox" style="border:1px solid var(--gray-200);border-radius:10px;max-height:150px;overflow-y:auto;display:none"></div>'
     + '<label>姓名</label><input id="fName">'
     + '<label>电话</label><input id="fPhone" placeholder="(312) 555-0100">'
+    + '<label>来源</label><select id="fSource"><option value="">— 选来源 —</option>'
+    + SOURCES.map(s => '<option>' + s + '</option>').join('') + '</select>'
     + '<label>工种</label><input id="fPos" placeholder="如：卸柜工 / 叉车">'
     + '<label>701 初试时间</label><input id="fAt" type="datetime-local">'
     + '<div class="hint">初试都在：' + esc(S701) + '（右上角 ⚙ 可改）</div>'
+    + '<label>意向仓库（可选 — 701 通过后复试的地方，先记上）</label>'
+    + '<select id="fCo" onchange="fillAddr()"><option value="">— 选公司 —</option>'
+    + PARTNERS.map((p, i) => '<option value="' + i + '">' + esc(p.name) + '</option>').join('') + '</select>'
+    + '<select id="fAddr" style="margin-top:6px"></select>'
     + '<label>备注</label><textarea id="fNotes" rows="2"></textarea>'
     + '<div class="row"><button class="btn" onclick="closeModal()">取消</button>'
     + '<button class="btn primary" onclick="saveNew()">登记</button></div>');
-  document.getElementById('fName').focus();
+  fillAddr();
+  document.getElementById('fFind').focus();
 }
+
+/* 姓名电话联动：从 SMS Inbox / 手机短信的联系人里搜，点一下全填好 */
+function findPeople() {
+  clearTimeout(peopleTimer);
+  peopleTimer = setTimeout(async () => {
+    const q = fVal('fFind');
+    const box = document.getElementById('fFindBox');
+    if (!box) return;
+    if (q.length < 2) { box.style.display = 'none'; return; }
+    let people = [];
+    try { people = (await api('/interview-registry/people?q=' + encodeURIComponent(q))).people || []; }
+    catch (_) {}
+    window._people = people;
+    box.style.display = '';
+    box.innerHTML = people.length ? people.map((p, i) =>
+      '<div style="padding:7px 12px;font-size:.8rem;cursor:pointer;border-bottom:1px solid var(--gray-100);'
+      + 'display:flex;gap:8px;align-items:center" onclick="pickPerson(' + i + ')">'
+      + '<b>' + esc(p.name || '(无名)') + '</b>'
+      + '<span style="color:var(--gray-500)">' + esc(fmtPhone(p.phone)) + '</span>'
+      + '<span class="badge" style="margin-left:auto;background:var(--gray-100);color:var(--gray-600)">' + esc(p.src) + '</span></div>'
+    ).join('') : '<div style="padding:8px 12px;font-size:.78rem;color:var(--gray-400)">没找到，直接在下面手填也行</div>';
+  }, 300);
+}
+
+function pickPerson(i) {
+  const p = (window._people || [])[i];
+  if (!p) return;
+  document.getElementById('fName').value = p.name || '';
+  document.getElementById('fPhone').value = p.phone || '';
+  document.getElementById('fSource').value = p.src;
+  document.getElementById('fFindBox').style.display = 'none';
+  document.getElementById('fFind').value = '';
+}
+
 async function saveNew() {
+  const i = document.getElementById('fCo').value;
+  const co = i === '' ? null : PARTNERS[parseInt(i)];
   const body = { name: fVal('fName'), phone: fVal('fPhone'), position: fVal('fPos'),
-    s701_at: fVal('fAt'), notes: fVal('fNotes') };
+    s701_at: fVal('fAt'), notes: fVal('fNotes'), source: document.getElementById('fSource').value,
+    wh_partner_id: co ? co.id : null, wh_partner_name: co ? co.name : '',
+    wh_address: co ? (document.getElementById('fAddr').value || '') : '' };
   if (!body.name && !body.phone) return;
   closeModal();
   await api('/interview-registry', { method: 'POST', body: JSON.stringify(body) });
@@ -497,6 +550,7 @@ function arrangeWh(id) {
     + '<div class="row"><button class="btn" onclick="closeModal()">取消</button>'
     + '<button class="btn primary" onclick="saveWh(' + id + ')">保存</button></div>');
   fillAddr();
+  if (r.wh_address) document.getElementById('fAddr').value = r.wh_address;
 }
 function fillAddr() {
   const i = document.getElementById('fCo').value;
