@@ -30941,21 +30941,28 @@ function interviewFromInbox(info) {
         AND COALESCE(s701_result,'') NOT IN ('fail','noshow')
         AND COALESCE(wh_result,'') NOT IN ('fail','noshow')
       LIMIT 1`).get(tail);
+    const position = String(info.position || '').trim().slice(0, 120) || interviewPosFromTags(info.tags);
+    const whName = String(info.wh_name || '').trim().slice(0, 160);
+    const whAddr = String(info.wh_address || '').trim().slice(0, 300);
     if (open) {
-      // 已经登记过还没办结：把标记里带来的时间/地点补上去（带了才覆盖）
-      if (at || place) {
-        db.prepare(`UPDATE interview_registry SET
-            s701_at = CASE WHEN ? != '' THEN ? ELSE s701_at END,
-            s701_place = CASE WHEN ? != '' THEN ? ELSE s701_place END,
-            updated_at = datetime('now') WHERE id = ?`).run(at, at, place, place, open.id);
-      }
+      // 已经登记过还没办结：把标记里带来的时间/地点/工种/意向仓库补上去（带了才覆盖）
+      db.prepare(`UPDATE interview_registry SET
+          s701_at = CASE WHEN ? != '' THEN ? ELSE s701_at END,
+          s701_place = CASE WHEN ? != '' THEN ? ELSE s701_place END,
+          position = CASE WHEN ? != '' THEN ? ELSE position END,
+          wh_partner_name = CASE WHEN ? != '' THEN ? ELSE wh_partner_name END,
+          wh_address = CASE WHEN ? != '' THEN ? ELSE wh_address END,
+          updated_at = datetime('now') WHERE id = ?`)
+        .run(at, at, place, place,
+          String(info.position || '').trim().slice(0, 120), String(info.position || '').trim().slice(0, 120),
+          whName, whName, whAddr, whAddr, open.id);
       return;
     }
     const note = String(info.note || '').trim().slice(0, 500);
-    db.prepare(`INSERT INTO interview_registry (name, phone, position, s701_at, s701_place, notes, source, created_by)
-      VALUES (?,?,?,?,?,?,?,?)`).run(
+    db.prepare(`INSERT INTO interview_registry (name, phone, position, s701_at, s701_place, wh_partner_name, wh_address, notes, source, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
       String(info.name || '').trim().slice(0, 120), tail,
-      interviewPosFromTags(info.tags), at, place,
+      position, at, place, whName, whAddr,
       (note ? note + '\n' : '') + '⚡ 收件箱标记「面试」自动登记' + (at ? '' : '，去补时间和地点'),
       String(info.source || '').slice(0, 60),
       String(info.by || '').slice(0, 80));
@@ -32818,10 +32825,15 @@ app.post('/api/sms/messages/:id/star', requireAdmin, requireSmsAccess, (req, res
         if (contact) {
           let parsed = {}; try { parsed = JSON.parse(data || '{}'); } catch (_) {}
           let contactTags = []; try { const a = JSON.parse(contact.tags || '[]'); contactTags = Array.isArray(a) ? a : []; } catch (_) {}
+          // 意向仓库的值形如「公司 — 地址」，拆开存
+          const whRaw = String(parsed.wh || '');
+          const dash = whRaw.indexOf(' — ');
           interviewFromInbox({ phone: contact.phone_e164, name: contact.name || '',
             tags: contactTags,
+            position: [parsed.position, parsed.position_extra].filter(Boolean).join(' / '),
             note: [note, parsed.detail].filter(Boolean).join(' · '),
             s701_at: parsed.time || '', s701_place: parsed.place || '',
+            wh_name: dash > 0 ? whRaw.slice(0, dash) : '', wh_address: dash > 0 ? whRaw.slice(dash + 3) : whRaw,
             source: 'SMS Inbox', by: req.userName || req.userId });
         }
       } catch (e) { console.error('[面试登记] 标记同步失败:', e.message); }

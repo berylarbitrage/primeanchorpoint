@@ -2483,7 +2483,10 @@ const MARK_TAG_PRESETS = ['卸柜', '面试', '发工资', '排班', '请假', '
 // 每个类别自己的表单字段: [key, 标签, 输入类型, 占位提示]; 类型 'company' 渲染成合作公司下拉
 const MARK_FIELDS = {
   '卸柜': [['container', '柜号', 'text', '如 MSKU1234567'], ['date', '日期', 'date', ''], ['detail', '具体细节', 'text', '如 早7点 / GOFO仓库 / 约2000件']],
-  '面试': [['time', '时间', 'datetime-local', ''], ['place', '面试地点', 'place', ''], ['detail', '找谁 / 补充', 'text', '如: 找 John, 带好证件']],
+  '面试': [['position', '工种（点选，可多选）', 'positions', ''], ['time', '① 初试时间', 'datetime-local', ''],
+    ['place', '① 初试地点（一般是 701，也可以直接去仓库）', 'place', ''],
+    ['wh', '意向仓库（可选 — 初试通过后复试的地方）', 'whplace', ''],
+    ['detail', '找谁 / 补充', 'text', '如: 找 John, 带好证件']],
   '发工资': [['date', '发薪日期', 'date', ''], ['amount', '金额', 'text', '如 $560'], ['detail', '方式/说明', 'text', '如 支票 / Zelle']],
   '排班': [['date', '日期', 'date', ''], ['detail', '班次详情', 'text', '如 早班 7am-3pm']],
   '请假': [['date', '开始日期', 'date', ''], ['end', '结束日期(可选)', 'date', ''], ['reason', '原因', 'text', '如 生病 / 家里有事']]
@@ -2508,10 +2511,23 @@ async function _loadMarkPartners() {
 // 一键生成发给对方的消息(中文, 走现有自动翻译流程翻成对方语言)
 const MARK_MSG_TPL = {
   '卸柜': d => '卸柜安排: ' + [d.container && ('柜号 ' + d.container), d.date && ('日期 ' + d.date), d.detail].filter(Boolean).join(', '),
-  '面试': d => '面试安排: ' + [d.time && ('时间 ' + String(d.time).replace('T', ' ')), d.place && ('地点 ' + d.place), d.detail].filter(Boolean).join(', '),
+  '面试': d => '面试安排: ' + [[d.position, d.position_extra].filter(Boolean).join(' / ') && ('工种 ' + [d.position, d.position_extra].filter(Boolean).join(' / ')), d.time && ('时间 ' + String(d.time).replace('T', ' ')), d.place && ('地点 ' + d.place), d.detail].filter(Boolean).join(', '),
   '发工资': d => '工资通知: ' + [d.date && ('发薪日期 ' + d.date), d.amount && ('金额 ' + d.amount), d.detail].filter(Boolean).join(', '),
   '排班': d => '排班通知: ' + [d.date && ('日期 ' + d.date), d.detail].filter(Boolean).join(', ')
 };
+function _mkTogglePos(btn, name) {
+  const hidden = document.querySelector('#markFields input[data-mkf="position"]');
+  if (!hidden) return;
+  let cur = hidden.value ? hidden.value.split(' / ') : [];
+  if (cur.includes(name)) {
+    cur = cur.filter(x => x !== name);
+    btn.style.background = 'var(--white)'; btn.style.color = 'var(--gray-600)'; btn.style.borderColor = 'var(--gray-200)';
+  } else {
+    cur.push(name);
+    btn.style.background = 'var(--sky)'; btn.style.color = '#fff'; btn.style.borderColor = 'var(--sky)';
+  }
+  hidden.value = cur.join(' / ');
+}
 function _collectMarkData() {
   const data = {};
   document.querySelectorAll('#markFields [data-mkf]').forEach(el => {
@@ -2532,6 +2548,41 @@ function renderMarkFields(prefill) {
   const locked = MARK_ADMIN_ONLY_TAGS.includes(tag) && !(USER && USER.role === 'admin');
   box.innerHTML = (locked ? '<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:6px 10px;font-size:.74rem;color:#92400e;margin-bottom:6px">🔒 ' + esc(tag) + ' 信息由管理员维护，你只能看和写备注 — 有问题点下面「请求管理员协助」</div>' : '')
     + defs.map(([k, label, type, ph]) => {
+    if (type === 'positions') {
+      // 工种点选（和面试登记页同一组）；选中的存进隐藏 input, 手填的另存
+      const MK_POS = ['普工', '普通叉车', '高位叉车', '卸柜工', '装卸工', '拣货员', '打包员', '分拣员'];
+      const chosen = String(d[k] || '').split(' / ').map(s => s.trim()).filter(Boolean);
+      return '<label style="margin-top:2px">' + label + '</label>'
+        + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px">'
+        + MK_POS.map(p => {
+            const on = chosen.includes(p);
+            return '<button type="button" onclick="_mkTogglePos(this,\'' + p + '\')" style="border:1px solid '
+              + (on ? 'var(--sky);background:var(--sky);color:#fff' : 'var(--gray-200);background:var(--white);color:var(--gray-600)')
+              + ';border-radius:999px;padding:4px 12px;font-size:.8rem;font-weight:600;cursor:pointer">' + p + '</button>';
+          }).join('') + '</div>'
+        + '<input type="hidden" data-mkf="' + k + '" value="' + esc(chosen.filter(p => MK_POS.includes(p)).join(' / ')) + '">'
+        + '<input data-mkf="position_extra" type="text" placeholder="别的工种手填（可留空）" value="'
+        + esc(d.position_extra || chosen.filter(p => !MK_POS.includes(p)).join(' / ')) + '" style="margin-bottom:4px">';
+    }
+    if (type === 'whplace') {
+      // 意向仓库：只列仓库（不带 701 默认项），可不选
+      const g = _markPlaces || { groups: [] };
+      const cur = d[k] || '';
+      let known = !cur;
+      let opts = '<option value=""' + (!cur ? ' selected' : '') + '>— 暂不选 —</option>';
+      for (const p of g.groups) {
+        if (!p.addresses || !p.addresses.length) continue;
+        opts += '<optgroup label="' + esc(p.name) + '">' + p.addresses.map(a => {
+          const v = p.name + ' — ' + a;
+          if (v === cur) known = true;
+          return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>🏭 ' + esc(v) + '</option>';
+        }).join('') + '</optgroup>';
+      }
+      if (!known) opts = '<option value="' + esc(cur) + '" selected>' + esc(cur) + '</option>' + opts;
+      return '<label style="margin-top:2px">' + label + '</label>'
+        + '<select data-mkf="' + k + '" style="width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:4px;outline:none;background:var(--white)">'
+        + opts + '</select>';
+    }
     if (type === 'place') {
       // 和面试登记页同一份地点：701 默认打头，仓库按公司分组、显示完整地址
       const g = _markPlaces || { groups: [], s701: '' };
