@@ -2497,8 +2497,8 @@ async function _loadMarkPlaces() {
   if (_markPlaces) return;
   try {
     const r = await api('/interview-registry');
-    _markPlaces = { groups: r.partners || [], s701: r.s701_address || '' };
-  } catch (_) { _markPlaces = { groups: [], s701: '' }; }
+    _markPlaces = { groups: r.partners || [], s701: r.s701_address || '', guide: r.s701_guide || '' };
+  } catch (_) { _markPlaces = { groups: [], s701: '', guide: '' }; }
 }
 let _markPartnerNames = [];
 async function _loadMarkPartners() {
@@ -2511,7 +2511,16 @@ async function _loadMarkPartners() {
 // 一键生成发给对方的消息(中文, 走现有自动翻译流程翻成对方语言)
 const MARK_MSG_TPL = {
   '卸柜': d => '卸柜安排: ' + [d.container && ('柜号 ' + d.container), d.date && ('日期 ' + d.date), d.detail].filter(Boolean).join(', '),
-  '面试': d => '面试安排: ' + [[d.position, d.position_extra].filter(Boolean).join(' / ') && ('工种 ' + [d.position, d.position_extra].filter(Boolean).join(' / ')), d.time && ('时间 ' + String(d.time).replace('T', ' ')), d.place && ('地点 ' + d.place), d.detail].filter(Boolean).join(', '),
+  '面试': d => {
+    // 地点是 701 → 直接发完整到场指南（Allen 的电话在里面），时间/找谁附在后面
+    const guide = _markPlaces && _markPlaces.guide;
+    if (guide && d.place && String(d.place).startsWith('701')) {
+      return [guide,
+        d.time && ('Time 时间: ' + String(d.time).replace('T', ' ')),
+        d.detail].filter(Boolean).join('\n');
+    }
+    return '面试安排: ' + [[d.position, d.position_extra].filter(Boolean).join(' / ') && ('工种 ' + [d.position, d.position_extra].filter(Boolean).join(' / ')), d.time && ('时间 ' + String(d.time).replace('T', ' ')), d.place && ('地点 ' + d.place), d.detail].filter(Boolean).join(', ');
+  },
   '发工资': d => '工资通知: ' + [d.date && ('发薪日期 ' + d.date), d.amount && ('金额 ' + d.amount), d.detail].filter(Boolean).join(', '),
   '排班': d => '排班通知: ' + [d.date && ('日期 ' + d.date), d.detail].filter(Boolean).join(', ')
 };
