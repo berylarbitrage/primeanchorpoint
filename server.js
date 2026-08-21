@@ -30894,6 +30894,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS interview_registry (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
+try { db.exec(`ALTER TABLE interview_registry ADD COLUMN source TEXT DEFAULT ''`); } catch (e) {}
 
 const INTERVIEW_RESULTS = ['', 'pass', 'fail', 'noshow'];
 
@@ -30924,10 +30925,15 @@ app.post('/api/interview-registry', requireAdmin, (req, res) => {
     const name = String(b.name || '').trim().slice(0, 120);
     const phone = String(b.phone || '').trim().slice(0, 40);
     if (!name && !phone) return res.status(400).json({ error: '姓名和电话至少填一个' });
-    const info = db.prepare(`INSERT INTO interview_registry (name, phone, position, s701_at, notes, created_by)
-      VALUES (?,?,?,?,?,?)`).run(
+    const info = db.prepare(`INSERT INTO interview_registry
+      (name, phone, position, s701_at, notes, source, wh_partner_id, wh_partner_name, wh_address, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
       name, phone, String(b.position || '').trim().slice(0, 120),
       String(b.s701_at || '').slice(0, 30), String(b.notes || '').trim().slice(0, 2000),
+      String(b.source || '').trim().slice(0, 60),
+      parseInt(b.wh_partner_id) || null,
+      String(b.wh_partner_name || '').trim().slice(0, 160),
+      String(b.wh_address || '').trim().slice(0, 300),
       String(req.userName || req.userId || '').slice(0, 80));
     res.json({ success: true, id: info.lastInsertRowid });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -30940,6 +30946,28 @@ app.post('/api/interview-registry/meta', requireAdmin, requireRole('admin'), (re
     db.prepare(`INSERT INTO app_settings (key, value) VALUES ('interview_701_address', ?)
       ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(addr);
     res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/interview-registry/people — 从 SMS Inbox 和手机短信的联系人里找人，
+// 选中后姓名电话自动填进登记表（也要排在 /:id 前面）
+app.get('/api/interview-registry/people', requireAdmin, (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (q.length < 2) return res.json({ people: [] });
+    const like = `%${q}%`;
+    const digits = q.replace(/\D/g, '');
+    const digitsLike = digits.length >= 3 ? `%${digits}%` : '%NOMATCH%';
+    const inbox = db.prepare(`SELECT name, phone_e164 AS phone FROM sms_contacts
+      WHERE COALESCE(phone_e164,'') != '' AND (name LIKE ? OR phone_e164 LIKE ?)
+      ORDER BY name LIMIT 10`).all(like, digitsLike);
+    const phone = db.prepare(`SELECT alias AS name, peer AS phone FROM device_sms_peer_notes
+      WHERE COALESCE(alias,'') != '' AND (alias LIKE ? OR peer LIKE ?)
+      ORDER BY alias LIMIT 10`).all(like, digitsLike);
+    res.json({ people: [
+      ...inbox.map(p => ({ name: p.name || '', phone: p.phone, src: 'SMS Inbox' })),
+      ...phone.map(p => ({ name: p.name || '', phone: p.phone, src: '手机短信' })),
+    ].slice(0, 20) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -30960,6 +30988,7 @@ app.post('/api/interview-registry/:id', requireAdmin, (req, res) => {
     if (b.wh_at !== undefined) put('wh_at', String(b.wh_at).slice(0, 30));
     if (b.wh_result !== undefined && INTERVIEW_RESULTS.includes(b.wh_result)) put('wh_result', b.wh_result);
     if (b.notes !== undefined) put('notes', String(b.notes).trim().slice(0, 2000));
+    if (b.source !== undefined) put('source', String(b.source).trim().slice(0, 60));
     if (!sets.length) return res.json({ success: true });
     params.push(req.params.id);
     db.prepare(`UPDATE interview_registry SET ${sets.join(', ')}, updated_at=datetime('now') WHERE id=?`).run(...params);
