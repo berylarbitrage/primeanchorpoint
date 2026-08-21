@@ -30917,18 +30917,27 @@ const INTERVIEW_RESULTS = ['', 'pass', 'fail', 'noshow'];
 
 try { db.exec(`ALTER TABLE interview_registry ADD COLUMN linked_jobs TEXT DEFAULT ''`); } catch (e) {}
 
-// 按 id 从招工板取活，存成 [{id,label}]（label = 仓库 · 工种（班次））
+// 一条活的班次显示串：'早班 05:00–13:30 · $18/h'；没分班次就用统一工资
+function interviewJobShifts(j) {
+  let raw = [];
+  try { raw = JSON.parse(j.shifts || '[]'); } catch (_) {}
+  const out = (Array.isArray(raw) ? raw : [])
+    .map(s => [s && s.shift, s && s.worker_pay].filter(Boolean).join(' · ')).filter(Boolean);
+  if (!out.length && j.worker_pay) out.push(String(j.worker_pay));
+  return out;
+}
+
+// 按 id 从招工板取活，存成 [{id,label}]（label = 仓库 · 工种（班次 · 工资））
 function interviewResolveJobs(ids) {
   const list = (Array.isArray(ids) ? ids : []).map(n => parseInt(n)).filter(Boolean).slice(0, 10);
   const out = [];
   for (const id of list) {
     try {
-      const j = db.prepare('SELECT id, warehouse, position, shifts FROM recruit_jobs WHERE id=?').get(id);
+      const j = db.prepare('SELECT id, warehouse, position, shifts, worker_pay FROM recruit_jobs WHERE id=?').get(id);
       if (!j) continue;
-      let shifts = [];
-      try { shifts = JSON.parse(j.shifts || '[]').map(s => s && s.shift).filter(Boolean); } catch (_) {}
+      const shifts = interviewJobShifts(j);
       out.push({ id: j.id, label: ([j.warehouse, j.position].filter(Boolean).join(' · ')
-        + (shifts.length ? '（' + shifts.join(' / ') + '）' : '')).slice(0, 160) });
+        + (shifts.length ? '（' + shifts.join(' / ') + '）' : '')).slice(0, 220) });
     } catch (_) {}
   }
   return out.length ? JSON.stringify(out) : '';
@@ -31043,12 +31052,11 @@ app.get('/api/interview-registry', requireAdmin, (req, res) => {
     // 招工板上在招的活：面试登记可以直接关联（仓库+工种+班次）
     let jobs = [];
     try {
-      jobs = db.prepare(`SELECT id, warehouse, position, address, shifts FROM recruit_jobs
-        WHERE status='open' ORDER BY warehouse, position`).all().map(j => {
-        let shifts = [];
-        try { shifts = JSON.parse(j.shifts || '[]').map(x => x && x.shift).filter(Boolean); } catch (_) {}
-        return { id: j.id, warehouse: j.warehouse || '', position: j.position || '', address: j.address || '', shifts };
-      });
+      jobs = db.prepare(`SELECT id, warehouse, position, address, shifts, worker_pay FROM recruit_jobs
+        WHERE status='open' ORDER BY warehouse, position`).all().map(j => ({
+        id: j.id, warehouse: j.warehouse || '', position: j.position || '',
+        address: j.address || '', shifts: interviewJobShifts(j)
+      }));
     } catch (_) {}
     res.json({ rows, partners, jobs, s701_address: (s && s.value) || '701 Central Ave, University Park, IL 60484',
       s701_guide: (g && g.value) || '' });
