@@ -2525,15 +2525,18 @@ const MARK_MSG_TPL = {
   '发工资': d => '工资通知: ' + [d.date && ('发薪日期 ' + d.date), d.amount && ('金额 ' + d.amount), d.detail].filter(Boolean).join(', '),
   '排班': d => '排班通知: ' + [d.date && ('日期 ' + d.date), d.detail].filter(Boolean).join(', ')
 };
-function _mkToggleJob(btn, id) {
+function _mkToggleJob(btn, key) {
   const hidden = document.querySelector('#markFields input[data-mkf="jobs"]');
   if (!hidden) return;
-  let cur = hidden.value.split(',').map(n => parseInt(n)).filter(Boolean);
-  if (cur.includes(id)) {
-    cur = cur.filter(x => x !== id);
+  let cur = hidden.value.split(',').filter(Boolean);
+  const on = btn.getAttribute('data-on') === '1';
+  if (on) {
+    cur = cur.filter(x => x !== key);
+    btn.setAttribute('data-on', '0');
     btn.style.background = 'var(--white)'; btn.style.color = 'var(--gray-600)'; btn.style.borderColor = 'var(--gray-200)';
   } else {
-    cur.push(id);
+    cur.push(key);
+    btn.setAttribute('data-on', '1');
     btn.style.background = 'var(--sky)'; btn.style.color = '#fff'; btn.style.borderColor = 'var(--sky)';
   }
   hidden.value = cur.join(',');
@@ -2590,22 +2593,26 @@ function renderMarkFields(prefill) {
     if (type === 'jobs') {
       const jobs = (_markPlaces && _markPlaces.jobs) || [];
       if (!jobs.length) return '';   // 招工板上没在招的活就不显示这块
-      const sel = String(d[k] || '').split(',').map(n => parseInt(n)).filter(Boolean);
-      // 小胶囊按钮：点亮即选，班次/地址悬停可看
+      // 选中项形如 "id:si"（si=-1 不限班次），存 CSV 进隐藏 input
+      const sel = String(d[k] || '').split(',').filter(Boolean);
+      const chip = (id, si, text, icon) => {
+        const key = id + ':' + si;
+        const on = sel.includes(key) || (si === -1 && sel.includes(String(id)));
+        return '<button type="button" onclick="_mkToggleJob(this,\'' + key + '\')"'
+          + ' style="border:1px solid ' + (on ? 'var(--sky);background:var(--sky);color:#fff' : 'var(--gray-200);background:var(--white);color:var(--gray-600)')
+          + ';border-radius:999px;padding:4px 12px;font-size:.78rem;font-weight:600;cursor:pointer" data-on="' + (on ? 1 : 0) + '">'
+          + icon + esc(text) + '</button>';
+      };
       return '<label style="margin-top:2px">' + label + '</label>'
-        + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px">'
-        + jobs.map(j => {
-            const on = sel.includes(j.id);
-            return '<button type="button" class="mkJobChip" data-job="' + j.id + '" onclick="_mkToggleJob(this,' + j.id + ')"'
-              + (j.address ? ' title="📍 ' + esc(j.address) + '"' : '')
-              + ' style="text-align:left;line-height:1.35;border:1px solid ' + (on ? 'var(--sky);background:var(--sky);color:#fff' : 'var(--gray-200);background:var(--white);color:var(--gray-600)')
-              + ';border-radius:14px;padding:5px 12px;font-size:.8rem;font-weight:600;cursor:pointer">'
-              + '🏭 ' + esc(j.warehouse) + ' · ' + esc(j.position)
-              + ((j.shifts && j.shifts.length)
-                  ? '<br><span style="font-size:.68rem;opacity:.85;font-weight:500">🕐 ' + esc(j.shifts.join('　/　')) + '</span>' : '')
-              + '</button>';
-          }).join('')
-        + '</div>'
+        + jobs.map(j =>
+          '<div style="border:1px solid var(--gray-200);border-radius:10px;padding:6px 10px;margin-bottom:6px">'
+          + '<div style="font-size:.78rem;font-weight:800;margin-bottom:5px"'
+          + (j.address ? ' title="📍 ' + esc(j.address) + '"' : '') + '>🏭 ' + esc(j.warehouse) + ' · ' + esc(j.position) + '</div>'
+          + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
+          + ((j.shifts && j.shifts.length)
+              ? chip(j.id, -1, '不限班次', '') + j.shifts.map((s, si) => chip(j.id, si, s, '🕐 ')).join('')
+              : chip(j.id, -1, '要这个活', ''))
+          + '</div></div>').join('')
         + '<input type="hidden" data-mkf="' + k + '" value="' + esc(sel.join(',')) + '">';
     }
     if (type === 'whplace') {

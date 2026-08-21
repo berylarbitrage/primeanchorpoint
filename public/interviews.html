@@ -482,30 +482,42 @@ function placePick(id, current) {
   return html + '</select>';
 }
 
-/* 在招的活（招工板）多选：小胶囊按钮，点亮即选，班次和地址悬停可看 */
+/* 在招的活（招工板）多选：每条活一小组，班次一个一个选（"id|si"，si=-1 为不限班次） */
 let JOB_SET = new Set();
-function jobsPick(selIds) {
-  JOB_SET = new Set(selIds);
+function jobsPick(selEntries) {
+  JOB_SET = new Set((selEntries || []).map(e =>
+    (typeof e === 'object' && e ? e.id + '|' + (Number.isInteger(e.si) ? e.si : -1) : e + '|-1')));
   if (!JOBS.length) return '<div class="hint">招工板上现在没有在招的活。</div>';
-  return '<div class="chips" id="fJobChips" style="margin-bottom:4px"></div>';
+  return '<div id="fJobChips" style="margin-bottom:4px"></div>';
 }
 function renderJobChips() {
   const box = document.getElementById('fJobChips');
   if (!box) return;
+  const chip = (id, si, label, icon) => {
+    const key = id + '|' + si;
+    return '<button type="button" class="chip' + (JOB_SET.has(key) ? ' on' : '') + '"'
+      + ' onclick="toggleJobShift(\'' + key + '\')">' + icon + esc(label) + '</button>';
+  };
   box.innerHTML = JOBS.map(j =>
-    '<button type="button" class="chip' + (JOB_SET.has(j.id) ? ' on' : '') + '" onclick="toggleJob(' + j.id + ')"'
-    + ' style="text-align:left;border-radius:14px;line-height:1.35"'
-    + (j.address ? ' title="📍 ' + esc(j.address) + '"' : '') + '>'
-    + '🏭 ' + esc(j.warehouse) + ' · ' + esc(j.position)
+    '<div style="border:1px solid var(--gray-200);border-radius:12px;padding:6px 10px;margin-bottom:6px">'
+    + '<div style="font-size:.78rem;font-weight:800;margin-bottom:5px"'
+    + (j.address ? ' title="📍 ' + esc(j.address) + '"' : '') + '>🏭 ' + esc(j.warehouse) + ' · ' + esc(j.position) + '</div>'
+    + '<div class="chips" style="margin:0">'
     + ((j.shifts || []).length
-        ? '<br><span style="font-size:.68rem;opacity:.85">🕐 ' + esc(j.shifts.join('　/　')) + '</span>' : '')
-    + '</button>').join('');
+        ? chip(j.id, -1, '不限班次', '') + j.shifts.map((s, si) => chip(j.id, si, s, '🕐 ')).join('')
+        : chip(j.id, -1, '要这个活', ''))
+    + '</div></div>').join('');
 }
-function toggleJob(id) {
-  JOB_SET.has(id) ? JOB_SET.delete(id) : JOB_SET.add(id);
+function toggleJobShift(key) {
+  JOB_SET.has(key) ? JOB_SET.delete(key) : JOB_SET.add(key);
   renderJobChips();
 }
-function jobsPicked() { return Array.from(JOB_SET); }
+function jobsPicked() {
+  return Array.from(JOB_SET).map(k => {
+    const parts = k.split('|');
+    return { id: parseInt(parts[0]), si: parseInt(parts[1]) };
+  }).filter(x => x.id);
+}
 function linkedJobsOf(r) {
   try { const a = JSON.parse(r.linked_jobs || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; }
 }
@@ -717,7 +729,7 @@ function editRow(id) {
     + '<label>工种（点选，可多选）</label>'
     + '<div class="chips" id="fPosChips" style="margin-bottom:4px"></div>'
     + '<input id="fPos" placeholder="别的工种手填（可留空）" value="' + esc(extra) + '">'
-    + '<label>意向岗位（可多选 — 招工板在招的活）</label>' + jobsPick(linkedJobsOf(r).map(j => j.id))
+    + '<label>意向岗位（可多选 — 招工板在招的活，班次可具体选）</label>' + jobsPick(linkedJobsOf(r))
     + '<label>意向仓库</label>' + whPick('fWh', r.wh_partner_name, r.wh_address)
     + '<label>备注</label><textarea id="fNotes" rows="3">' + esc(r.notes || '') + '</textarea>'
     + '<div class="row"><button class="btn" onclick="closeModal()">取消</button>'

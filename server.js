@@ -30927,17 +30927,27 @@ function interviewJobShifts(j) {
   return out;
 }
 
-// 按 id 从招工板取活，存成 [{id,label}]（label = 仓库 · 工种（班次 · 工资））
+// 按 id(+班次序号) 从招工板取活，存成 [{id,si,label}]。
+// si >= 0 表示选的是具体某个班次，label 只带那个班；si = -1 表示不限班次。
 function interviewResolveJobs(ids) {
-  const list = (Array.isArray(ids) ? ids : []).map(n => parseInt(n)).filter(Boolean).slice(0, 10);
+  const list = (Array.isArray(ids) ? ids : []).slice(0, 15).map(x => {
+    if (x && typeof x === 'object') {
+      const si = parseInt(x.si);
+      return { id: parseInt(x.id), si: Number.isInteger(si) ? si : -1 };
+    }
+    return { id: parseInt(x), si: -1 };
+  }).filter(x => x.id);
   const out = [];
-  for (const id of list) {
+  for (const pick of list) {
     try {
-      const j = db.prepare('SELECT id, warehouse, position, shifts, worker_pay FROM recruit_jobs WHERE id=?').get(id);
+      const j = db.prepare('SELECT id, warehouse, position, shifts, worker_pay FROM recruit_jobs WHERE id=?').get(pick.id);
       if (!j) continue;
       const shifts = interviewJobShifts(j);
-      out.push({ id: j.id, label: ([j.warehouse, j.position].filter(Boolean).join(' · ')
-        + (shifts.length ? '（' + shifts.join(' / ') + '）' : '')).slice(0, 220) });
+      const one = pick.si >= 0 && shifts[pick.si] ? shifts[pick.si] : '';
+      const chosen = one ? [one] : shifts;
+      out.push({ id: j.id, si: one ? pick.si : -1,
+        label: ([j.warehouse, j.position].filter(Boolean).join(' · ')
+          + (chosen.length ? '（' + chosen.join(' / ') + '）' : '')).slice(0, 220) });
     } catch (_) {}
   }
   return out.length ? JSON.stringify(out) : '';
@@ -32875,7 +32885,10 @@ app.post('/api/sms/messages/:id/star', requireAdmin, requireSmsAccess, (req, res
             note: [note, parsed.detail].filter(Boolean).join(' · '),
             s701_at: parsed.time || '', s701_place: parsed.place || '',
             wh_name: dash > 0 ? whRaw.slice(0, dash) : '', wh_address: dash > 0 ? whRaw.slice(dash + 3) : whRaw,
-            job_ids: String(parsed.jobs || '').split(',').map(n => parseInt(n)).filter(Boolean),
+            job_ids: String(parsed.jobs || '').split(',').filter(Boolean).map(entry => {
+              const [id, si] = entry.split(':');
+              return { id: parseInt(id), si: si === undefined ? -1 : parseInt(si) };
+            }).filter(x => x.id),
             source: 'SMS Inbox', by: req.userName || req.userId });
         }
       } catch (e) { console.error('[面试登记] 标记同步失败:', e.message); }
