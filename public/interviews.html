@@ -449,6 +449,8 @@ function closeModal(){ document.getElementById('modalHost').innerHTML=''; }
 function row(r){ return ROWS.find(x => x.id === r); }
 
 const SOURCES = ['中文网', 'Indeed', 'SMS Inbox', '手机短信', '朋友介绍', '其他'];
+const POSITIONS = ['普工', '普通叉车', '高位叉车', '卸柜工', '装卸工', '拣货员', '打包员', '分拣员'];
+let POS_SET = new Set();
 
 /* ── 地点下拉（按公司分组、显示完整地址） ──
    placePick: 初试地点用，第一项是 701 默认完整地址，value='' 表示用默认；
@@ -498,14 +500,31 @@ function newInterview() {
     + '<label>电话</label><input id="fPhone" placeholder="(312) 555-0100">'
     + '<label>来源</label><select id="fSource"><option value="">— 选来源 —</option>'
     + SOURCES.map(s => '<option>' + s + '</option>').join('') + '</select>'
-    + '<label>工种</label><input id="fPos" placeholder="如：卸柜工 / 叉车">'
+    + '<label>工种（点选，可多选）</label>'
+    + '<div class="chips" id="fPosChips" style="margin-bottom:4px"></div>'
+    + '<input id="fPos" placeholder="别的工种手填（可留空）">'
     + '<label>① 初试时间</label><input id="fAt" type="datetime-local">'
     + '<label>① 初试地点（一般是 701，也可以直接去仓库）</label>' + placePick('fPlace', '')
     + '<label>意向仓库（可选 — 初试通过后复试的地方，先记上）</label>' + whPick('fWh', '', '')
     + '<label>备注</label><textarea id="fNotes" rows="2"></textarea>'
     + '<div class="row"><button class="btn" onclick="closeModal()">取消</button>'
     + '<button class="btn primary" onclick="saveNew()">登记</button></div>');
+  POS_SET = new Set();
+  renderPosChips();
   document.getElementById('fFind').focus();
+}
+
+function renderPosChips() {
+  const box = document.getElementById('fPosChips');
+  if (!box) return;
+  box.innerHTML = POSITIONS.map((p, i) =>
+    '<button type="button" class="chip' + (POS_SET.has(p) ? ' on' : '') + '" onclick="togglePos(' + i + ')">'
+    + p + '</button>').join('');
+}
+function togglePos(i) {
+  const p = POSITIONS[i];
+  POS_SET.has(p) ? POS_SET.delete(p) : POS_SET.add(p);
+  renderPosChips();
 }
 
 /* 姓名电话联动：从 SMS Inbox / 手机短信的联系人里搜，点一下全填好 */
@@ -543,7 +562,8 @@ function pickPerson(i) {
 
 async function saveNew() {
   const wh = whParse('fWh');
-  const body = { name: fVal('fName'), phone: fVal('fPhone'), position: fVal('fPos'),
+  const position = [...POSITIONS.filter(p => POS_SET.has(p)), fVal('fPos')].filter(Boolean).join(' / ');
+  const body = { name: fVal('fName'), phone: fVal('fPhone'), position,
     s701_at: fVal('fAt'), s701_place: document.getElementById('fPlace').value,
     notes: fVal('fNotes'), source: document.getElementById('fSource').value,
     wh_partner_id: wh.id, wh_partner_name: wh.name, wh_address: wh.addr };
