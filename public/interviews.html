@@ -584,8 +584,13 @@ async function saveNew() {
     wh_partner_id: wh.id, wh_partner_name: wh.name, wh_address: wh.addr };
   if (!body.name && !body.phone) return;
   closeModal();
-  await api('/interview-registry', { method: 'POST', body: JSON.stringify(body) });
-  load();
+  const created = await api('/interview-registry', { method: 'POST', body: JSON.stringify(body) });
+  await load();
+  // 地点是 701 → 自动把到场指南弹出来，确认一下就发给对方
+  if (created && created.id && (!body.s701_place || body.s701_place.startsWith('701'))
+      && body.phone.replace(/\D/g, '').length >= 10) {
+    sendGuide(created.id);
+  }
 }
 function fVal(id){ return document.getElementById(id).value.trim(); }
 
@@ -607,7 +612,11 @@ async function save701Time(id) {
   const place = document.getElementById('fPlace').value;
   closeModal();
   await api('/interview-registry/' + id, { method: 'POST', body: JSON.stringify({ s701_at: at, s701_place: place }) });
-  load();
+  await load();
+  const r = row(id);
+  if ((!place || place.startsWith('701')) && r && String(r.phone || '').replace(/\D/g, '').length >= 10) {
+    sendGuide(id);   // 地点是 701 → 顺手把到场指南发给对方
+  }
 }
 
 function arrangeWh(id) {
@@ -716,7 +725,7 @@ function edit701() {
     + '</select>'
     + '<label>或手动填 / 微调</label>'
     + '<input id="fAddr701" value="' + esc(S701) + '">'
-    + '<label>701 到场指南（点「📨 发指南」发给候选人的就是这段话）</label>'
+    + '<label>701 到场指南（点「📨 发指南」发给候选人的就是这段话；里面的电话 737-274-4674 是 Allen 的）</label>'
     + '<textarea id="fGuide701" rows="7" style="font-size:.78rem;line-height:1.5">' + esc(S701_GUIDE) + '</textarea>'
     + '<div class="row"><button class="btn" onclick="closeModal()">取消</button>'
     + '<button class="btn primary" onclick="save701()">保存</button></div>');
