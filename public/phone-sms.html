@@ -417,6 +417,7 @@ async function load(silent) {
       ? DEVICES.map(d => (d.name || '电脑') + (d.last_push_at ? ' · ' + timeAgo(d.last_push_at) + '同步' : ' · 还没推过')).join('　')
       : '还没连电脑 — 点 ⚙';
     render();
+    handleDeepLink();
   } catch (e) { if (!silent) console.error(e); }
 }
 
@@ -688,6 +689,9 @@ function renderDetail(convos) {
     + (convo.status === 'closed' ? '重新打开' : '✓ 关闭会话') + '</button>'
     + '<button class="action-btn" onclick="showRecruitQ()" title="选工种，生成标准翻译的招工提问">💼 招工问题</button>'
     + '<button class="action-btn" onclick="sendApplyForm()" title="把招工申请表链接（和二维码同一个表）发给对方填写">📋 发申请表</button>'
+    + '<a class="action-btn" style="text-decoration:none" target="_blank" '
+    + 'href="/interviews#new=' + esc(convo.peer) + '&name=' + encodeURIComponent(convo.title || '') + '" '
+    + 'title="带着号码和名字去面试登记页登记">🗓 登记面试</a>'
     + '<button class="action-btn" onclick="startNew()">✎ 新短信</button>'
     + '<div style="flex:1"></div>'
     + (convo.unread ? '<span class="badge" style="background:#2563eb;color:#fff">' + convo.unread + ' 条新</span>' : '')
@@ -751,6 +755,20 @@ function replyBar(composing) {
     + '<div class="tpl-picker" id="tplPicker"></div>'
     + '<div class="reply-hint" id="sendNote">选了语言就会先翻好给你看，确认后再发。</div>'
     + '</div>';
+}
+
+/* 从面试登记页跳过来：#p=号码 → 打开(或新建)这个号码的对话 */
+let DEEP_DONE = false;
+function handleDeepLink() {
+  if (DEEP_DONE) return;
+  const m = location.hash.match(/p=(\d{7,})/);
+  DEEP_DONE = true;
+  if (!m) return;
+  const peer = m[1].slice(-10);
+  if (conversations().some(c => c.peer === peer)) { pick(peer); return; }
+  startNew();
+  const to = document.getElementById('toInput');
+  if (to) to.value = '+1' + peer;
 }
 
 function wireReply() {

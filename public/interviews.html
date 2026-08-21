@@ -50,6 +50,24 @@
   .stage .res-fail{color:var(--red);font-weight:700}
   .notes{font-size:.76rem;color:var(--gray-600);margin-top:6px;white-space:pre-wrap}
   .empty{text-align:center;color:var(--gray-400);padding:50px 0}
+  /* 日历 */
+  .cal-nav{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+  .cal-nav .label{font-weight:800;font-size:.95rem;color:var(--amber)}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+  .cal-head{font-size:.72rem;font-weight:700;color:var(--gray-500);text-align:center;padding:4px 0}
+  .cal-cell{background:var(--white);border:1px solid var(--gray-200);border-radius:10px;
+    min-height:86px;padding:4px;font-size:.7rem;overflow:hidden}
+  .cal-cell.dim{opacity:.45}
+  .cal-cell.today{border-color:var(--amber);border-width:2px}
+  .cal-cell .d{font-weight:800;color:var(--gray-500);margin-bottom:2px}
+  .cal-cell.today .d{color:var(--amber)}
+  .cal-week .cal-cell{min-height:190px;font-size:.76rem}
+  .cal-entry{border-radius:6px;padding:2px 5px;margin-bottom:3px;cursor:pointer;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cal-entry.k701{background:#e0f2fe;color:#075985}
+  .cal-entry.kwh{background:#ede9fe;color:#5b21b6}
+  .cal-entry.done{opacity:.55;text-decoration:line-through}
+  .cal-entry:hover{filter:brightness(.95)}
   /* 登录 + 弹窗 */
   #gate{max-width:340px;margin:80px auto;background:var(--white);border:1px solid var(--gray-200);
     border-radius:16px;padding:24px}
@@ -102,6 +120,9 @@
 let TOKEN = localStorage.getItem('adminToken') || localStorage.getItem('pa_interviews_token') || '';
 let ROWS = [], PARTNERS = [], S701 = '', ROLE = '';
 let FILTER = 'todo';
+let VIEW = 'list';                       // list | week | month
+let ANCHOR = new Date();                 // 日历定位
+let OPEN_CARD_ID = null;                 // 日历里点开的那张卡
 
 const FILTERS = [
   ['todo', '待处理'], ['s701', '待701初试'], ['arrange', '待安排仓库'],
@@ -188,13 +209,25 @@ async function activate() {
 }
 
 function start(){ document.getElementById('gate').style.display='none'; document.getElementById('app').style.display='';
-  load(); setInterval(load, 30000); }
+  load(); setInterval(load, 30000); handleDeepLink(); }
+
+/* 从手机短信页跳过来：#new=号码&name=xx → 自动打开登记弹窗填好号码和名字 */
+function handleDeepLink() {
+  const m = location.hash.match(/new=(\d{7,})(?:&name=([^&]*))?/);
+  if (!m) return;
+  newInterview();
+  document.getElementById('fPhone').value = m[1].slice(-10);
+  const name = decodeURIComponent(m[2] || '');
+  if (name && !/^[()\d\s+-]*$/.test(name)) document.getElementById('fName').value = name;
+  history.replaceState(null, '', location.pathname);
+}
 
 async function load() {
   try {
     const r = await api('/interview-registry');
     ROWS = r.rows || []; PARTNERS = r.partners || []; S701 = r.s701_address || '';
     render();
+    refreshOpenCard();
   } catch (_) {}
 }
 
@@ -211,12 +244,31 @@ const STAGE_BADGE = { s701:['b-701','待701初试'], arrange:['b-arrange','701�
   wh:['b-wh','待仓库复试'], pass:['b-pass','✓ 已通过'], fail:['b-fail','✗ 未通过/没来'] };
 
 function render() {
-  document.getElementById('chips').innerHTML = FILTERS.map(([k, label]) => {
+  const views = [['list','📋 列表'],['week','📅 本周'],['month','🗓 本月']];
+  let bar = views.map(([v, label]) =>
+    '<button class="chip'+(VIEW===v?' on':'')+'" onclick="VIEW=\''+v+'\';render()">'+label+'</button>').join('');
+  if (VIEW !== 'list') {
+    bar += '<span style="flex-basis:100%"></span>'
+      + '<button class="chip" onclick="calMove(-1)">‹ 上一'+(VIEW==='week'?'周':'月')+'</button>'
+      + '<button class="chip" onclick="ANCHOR=new Date();render()">今天</button>'
+      + '<button class="chip" onclick="calMove(1)">下一'+(VIEW==='week'?'周':'月')+' ›</button>'
+      + '<span class="cal-nav label" style="font-weight:800;color:var(--amber);align-self:center">' + calLabel() + '</span>';
+  }
+  document.getElementById('chips').innerHTML = bar
+    + '<span style="flex-basis:100%"></span>' + (VIEW==='list' ? filterChips() : '');
+  if (VIEW !== 'list') { renderCal(); return; }
+  renderList();
+}
+
+function filterChips() {
+  return FILTERS.map(([k, label]) => {
     const n = k==='all' ? ROWS.length : ROWS.filter(r => k==='todo'
       ? ['s701','arrange','wh'].includes(stageOf(r)) : stageOf(r)===k).length;
     return '<button class="chip'+(FILTER===k?' on':'')+'" onclick="FILTER=\''+k+'\';render()">'+label+' '+n+'</button>';
   }).join('');
+}
 
+function renderList() {
   const q = document.getElementById('q').value.trim().toLowerCase();
   let list = ROWS.filter(r => {
     const st = stageOf(r);
@@ -237,6 +289,101 @@ function render() {
     : '<div class="empty">没有记录。点右上角「➕ 登记面试」。</div>';
 }
 
+/* ── 日历（月/周） ── */
+
+function calMove(step) {
+  const d = new Date(ANCHOR);
+  if (VIEW === 'week') d.setDate(d.getDate() + step * 7);
+  else d.setMonth(d.getMonth() + step);
+  ANCHOR = d;
+  render();
+}
+
+function weekStart(d) { const x = new Date(d); x.setHours(0,0,0,0); x.setDate(x.getDate() - x.getDay()); return x; }
+function dayKey(d) { return d.toLocaleDateString('en-CA'); }
+
+function calLabel() {
+  if (VIEW === 'month') return ANCHOR.getFullYear() + '年' + (ANCHOR.getMonth() + 1) + '月';
+  const s = weekStart(ANCHOR), e = new Date(s); e.setDate(e.getDate() + 6);
+  return (s.getMonth()+1) + '月' + s.getDate() + '日 – ' + (e.getMonth()+1) + '月' + e.getDate() + '日';
+}
+
+/* 每条登记最多出两个日历条目：①701 初试、②仓库复试 */
+function calEntries() {
+  const q = document.getElementById('q').value.trim().toLowerCase();
+  const map = {};
+  for (const r of ROWS) {
+    if (q && !(r.name+' '+r.phone+' '+r.position+' '+r.wh_partner_name+' '+r.notes).toLowerCase().includes(q)) continue;
+    for (const [kind, at, result] of [['701', r.s701_at, r.s701_result], ['wh', r.wh_at, r.wh_result]]) {
+      if (!at) continue;
+      const d = new Date(at);
+      if (isNaN(d)) continue;
+      (map[dayKey(d)] = map[dayKey(d)] || []).push({ kind, at, result, r });
+    }
+  }
+  for (const k in map) map[k].sort((a, b) => a.at < b.at ? -1 : 1);
+  return map;
+}
+
+function calEntryHtml(e, full) {
+  const t = new Date(e.at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  const who = e.r.name || fmtPhone(e.r.phone) || '?';
+  const tag = e.kind === '701' ? '①701' : '②' + (e.r.wh_partner_name || '仓库');
+  return '<div class="cal-entry k' + (e.kind === '701' ? '701' : 'wh') + (e.result ? ' done' : '')
+    + '" onclick="openCard(' + e.r.id + ')" title="' + esc(who + ' · ' + tag) + '">'
+    + t + ' ' + esc(who) + (full ? '<br><span style="opacity:.75">' + esc(tag)
+      + (e.r.position ? ' · ' + esc(e.r.position) : '') + '</span>' : '') + '</div>';
+}
+
+function renderCal() {
+  const entries = calEntries();
+  const today = dayKey(new Date());
+  const heads = ['日','一','二','三','四','五','六'].map(d => '<div class="cal-head">' + d + '</div>').join('');
+  let cells = '';
+  if (VIEW === 'week') {
+    const start = weekStart(ANCHOR);
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start); d.setDate(d.getDate() + i);
+      const k = dayKey(d);
+      cells += '<div class="cal-cell' + (k === today ? ' today' : '') + '">'
+        + '<div class="d">' + (d.getMonth()+1) + '/' + d.getDate() + '</div>'
+        + (entries[k] || []).map(e => calEntryHtml(e, true)).join('') + '</div>';
+    }
+  } else {
+    const first = new Date(ANCHOR.getFullYear(), ANCHOR.getMonth(), 1);
+    const start = weekStart(first);
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(start); d.setDate(d.getDate() + i);
+      if (i >= 35 && d.getMonth() !== ANCHOR.getMonth()) break;
+      const k = dayKey(d);
+      cells += '<div class="cal-cell' + (d.getMonth() !== ANCHOR.getMonth() ? ' dim' : '')
+        + (k === today ? ' today' : '') + '">'
+        + '<div class="d">' + d.getDate() + '</div>'
+        + (entries[k] || []).map(e => calEntryHtml(e, false)).join('') + '</div>';
+    }
+  }
+  document.getElementById('list').innerHTML =
+    '<div class="cal-grid' + (VIEW === 'week' ? ' cal-week' : '') + '">' + heads + cells + '</div>'
+    + '<div class="hint" style="margin-top:8px">蓝色 = 701 初试 · 紫色 = 仓库复试 · 划掉 = 已出结果。点条目看详情、记结果。</div>';
+}
+
+/* 日历里点一条 → 弹出这个人的卡片，按钮全能用；操作完自动刷新弹窗 */
+function openCard(id) {
+  OPEN_CARD_ID = id;
+  const r = row(id);
+  if (!r) return;
+  openModal('<div id="cardHost">' + card(r) + '</div>'
+    + '<div class="row"><button class="btn" onclick="OPEN_CARD_ID=null;closeModal()">关闭</button></div>');
+}
+
+function refreshOpenCard() {
+  if (OPEN_CARD_ID == null) return;
+  const host = document.getElementById('cardHost');
+  const r = row(OPEN_CARD_ID);
+  if (host && r) host.innerHTML = card(r);
+  else OPEN_CARD_ID = null;
+}
+
 function resBtns(id, field, current) {
   if (current) {
     const label = { pass:'✓ 通过', fail:'✗ 未通过', noshow:'✗ 没来' }[current] || current;
@@ -246,6 +393,15 @@ function resBtns(id, field, current) {
   return '<button class="btn sm ok" onclick="setResult(' + id + ',\'' + field + '\',\'pass\')">通过</button>'
     + '<button class="btn sm bad" onclick="setResult(' + id + ',\'' + field + '\',\'fail\')">未通过</button>'
     + '<button class="btn sm" onclick="setResult(' + id + ',\'' + field + '\',\'noshow\')">没来</button>';
+}
+
+/* 联动：一键跳到这个号码在「手机短信」/「SMS Inbox」的对话 */
+function chatLinks(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (digits.length < 7) return '';
+  const ten = digits.slice(-10);
+  return '<a class="btn sm" style="text-decoration:none" target="_blank" href="/phone-sms#p=' + ten + '" title="在手机短信里打开对话">💬</a>'
+    + '<a class="btn sm" style="text-decoration:none" target="_blank" href="/sms-inbox#phone=' + ten + '" title="在 SMS Inbox 里打开对话">📨</a>';
 }
 
 function card(r) {
@@ -275,6 +431,7 @@ function card(r) {
     + (r.position ? '<span class="badge" style="background:var(--gray-100);color:var(--gray-600)">' + esc(r.position) + '</span>' : '')
     + '<span class="badge ' + cls + '">' + label + '</span>'
     + '<div style="flex:1"></div>'
+    + chatLinks(r.phone)
     + '<button class="btn sm" onclick="editNotes(' + r.id + ')">📝</button>'
     + (ROLE === 'admin' ? '<button class="btn sm" onclick="delRow(' + r.id + ')">删</button>' : '')
     + '</div>'
