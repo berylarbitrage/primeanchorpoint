@@ -30900,6 +30900,42 @@ try { db.exec(`ALTER TABLE interview_registry ADD COLUMN s701_place TEXT DEFAULT
 
 const INTERVIEW_RESULTS = ['', 'pass', 'fail', 'noshow'];
 
+// 收件箱工种标签 → 面试登记的工种名（两边叫法略有出入，都认）
+const INTERVIEW_POS_MAP = {
+  '普工': '普工', '拣货': '拣货员', '拣货员': '拣货员', '叉车工': '普通叉车', '普通叉车': '普通叉车',
+  '高位叉车': '高位叉车', '卸柜': '卸柜工', '卸柜工': '卸柜工', '打包': '打包员', '打包员': '打包员',
+  '分拣': '分拣员', '分拣员': '分拣员', '装卸': '装卸工', '装卸工': '装卸工',
+};
+function interviewPosFromTags(tags) {
+  return [...new Set((Array.isArray(tags) ? tags : []).map(t => INTERVIEW_POS_MAP[String(t).trim()]).filter(Boolean))].join(' / ');
+}
+
+// 收件箱里给会话打上「面试」标签 → 自动生成一条面试登记（信息直接迁移）。
+// 该号码已有一条没办结的登记就不重复建。
+function interviewFromInbox(info) {
+  try {
+    const digits = String(info.phone || '').replace(/\D/g, '');
+    if (digits.length < 7) return;
+    const tail = digits.slice(-10);
+    const norm = `replace(replace(replace(replace(replace(COALESCE(phone,''),'(',''),')',''),'-',''),' ',''),'+','')`;
+    const open = db.prepare(`SELECT id FROM interview_registry
+      WHERE ${norm} LIKE '%' || ?
+        AND COALESCE(wh_result,'') != 'pass'
+        AND COALESCE(s701_result,'') NOT IN ('fail','noshow')
+        AND COALESCE(wh_result,'') NOT IN ('fail','noshow')
+      LIMIT 1`).get(tail);
+    if (open) return;
+    const note = String(info.note || '').trim().slice(0, 500);
+    db.prepare(`INSERT INTO interview_registry (name, phone, position, notes, source, created_by)
+      VALUES (?,?,?,?,?,?)`).run(
+      String(info.name || '').trim().slice(0, 120), tail,
+      interviewPosFromTags(info.tags),
+      (note ? note + '\n' : '') + '⚡ 收件箱打「面试」标签自动登记，去补时间和地点',
+      String(info.source || '').slice(0, 60),
+      String(info.by || '').slice(0, 80));
+  } catch (e) { console.error('[面试登记] 自动迁移失败:', e.message); }
+}
+
 // 列表 + 公司地址（仓库复试选地址用）+ 701 默认地址，一次给全
 app.get('/api/interview-registry', requireAdmin, (req, res) => {
   try {
@@ -30994,15 +31030,19 @@ app.get('/api/interview-registry/people', requireAdmin, (req, res) => {
     const like = `%${q}%`;
     const digits = q.replace(/\D/g, '');
     const digitsLike = digits.length >= 3 ? `%${digits}%` : '%NOMATCH%';
-    const inbox = db.prepare(`SELECT name, phone_e164 AS phone FROM sms_contacts
+    const parseTags = raw => { try { const a = JSON.parse(raw || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
+    const inbox = db.prepare(`SELECT name, phone_e164 AS phone, tags, notes AS note FROM sms_contacts
       WHERE COALESCE(phone_e164,'') != '' AND (name LIKE ? OR phone_e164 LIKE ?)
       ORDER BY name LIMIT 10`).all(like, digitsLike);
-    const phone = db.prepare(`SELECT alias AS name, peer AS phone FROM device_sms_peer_notes
+    const phone = db.prepare(`SELECT alias AS name, peer AS phone, tags, note FROM device_sms_peer_notes
       WHERE COALESCE(alias,'') != '' AND (alias LIKE ? OR peer LIKE ?)
       ORDER BY alias LIMIT 10`).all(like, digitsLike);
+    // 工种标签和备注一起带上，选中的人信息直接迁移进登记表
+    const shape = (p, src) => ({ name: p.name || '', phone: p.phone, src,
+      position: interviewPosFromTags(parseTags(p.tags)), note: String(p.note || '').slice(0, 500) });
     res.json({ people: [
-      ...inbox.map(p => ({ name: p.name || '', phone: p.phone, src: 'SMS Inbox' })),
-      ...phone.map(p => ({ name: p.name || '', phone: p.phone, src: '手机短信' })),
+      ...inbox.map(p => shape(p, 'SMS Inbox')),
+      ...phone.map(p => shape(p, '手机短信')),
     ].slice(0, 20) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -31337,6 +31377,8 @@ app.post('/api/device-sms/peer', requireAdmin, requireRole('admin'), (req, res) 
     if (!peer) return res.status(400).json({ error: '缺少 peer' });
     db.prepare(`INSERT OR IGNORE INTO device_sms_peer_notes (peer) VALUES (?)`).run(peer);
 
+    const before = db.prepare('SELECT alias, note, tags FROM device_sms_peer_notes WHERE peer=?').get(peer) || {};
+    let newTags = null;
     const sets = [], params = [];
     const put = (col, value) => { sets.push(col + '=?'); params.push(value); };
     if (body.alias !== undefined) put('alias', String(body.alias).trim().slice(0, 120));
@@ -31344,7 +31386,8 @@ app.post('/api/device-sms/peer', requireAdmin, requireRole('admin'), (req, res) 
     if (body.tags !== undefined) {
       const tags = (Array.isArray(body.tags) ? body.tags : [])
         .map(t => String(t).trim().slice(0, 30)).filter(Boolean).slice(0, 20);
-      put('tags', JSON.stringify([...new Set(tags)]));
+      newTags = [...new Set(tags)];
+      put('tags', JSON.stringify(newTags));
     }
     if (body.status !== undefined) put('status', body.status === 'closed' ? 'closed' : 'open');
     if (body.contact_lang !== undefined) put('contact_lang', String(body.contact_lang).slice(0, 40));
@@ -31362,6 +31405,18 @@ app.post('/api/device-sms/peer', requireAdmin, requireRole('admin'), (req, res) 
 
     params.push(peer);
     db.prepare(`UPDATE device_sms_peer_notes SET ${sets.join(', ')}, updated_at=datetime('now') WHERE peer=?`).run(...params);
+    // 新打上「面试」标签 → 自动生成面试登记，姓名/工种/备注直接迁移
+    if (newTags && newTags.includes('面试')) {
+      let oldTags = [];
+      try { oldTags = JSON.parse(before.tags || '[]'); } catch (_) {}
+      if (!oldTags.includes('面试')) {
+        interviewFromInbox({ phone: peer,
+          name: body.alias !== undefined ? body.alias : (before.alias || ''),
+          tags: newTags,
+          note: body.note !== undefined ? body.note : (before.note || ''),
+          source: '手机短信', by: req.userName || req.userId });
+      }
+    }
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -32116,6 +32171,15 @@ app.put('/api/sms/contacts/:id', requireAdmin, requireSmsAccess, (req, res) => {
     db.prepare(`UPDATE sms_contacts SET name=?, company=?, email=?, tags=?, notes=?, work_state=?, is_foreman=?, is_lead=?, work_history=?, spoken_langs=?, cs_hidden=?, updated_at=datetime('now') WHERE id=?`)
       .run(next.name, next.company, next.email, next.tags, next.notes, next.work_state, next.is_foreman, next.is_lead, next.work_history, next.spoken_langs, next.cs_hidden, contact.id);
     if (Object.keys(changes).length) smsAudit('contact', contact.id, 'updated', 'agent', req.userId, { by: req.userName, changes });
+    // 新打上「面试」标签 → 自动生成面试登记，姓名/工种/备注直接迁移
+    try {
+      const parseT = raw => { try { const a = JSON.parse(raw || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
+      const tagsNow = parseT(next.tags), tagsWere = parseT(contact.tags);
+      if (tagsNow.includes('面试') && !tagsWere.includes('面试')) {
+        interviewFromInbox({ phone: contact.phone_e164, name: next.name || contact.name || '',
+          tags: tagsNow, note: next.notes || '', source: 'SMS Inbox', by: req.userName || req.userId });
+      }
+    } catch (_) {}
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
