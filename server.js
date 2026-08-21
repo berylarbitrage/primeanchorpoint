@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-18h · 面试登记改三档: 熟练/会一点/不会 (语言:流利, 管理:可能可以)',
+  tag: '2026-08-18i · 输入已是对方语言不再翻译; 发送失败可看Twilio具体原因',
   started: new Date().toISOString(),
 };
 
@@ -32051,8 +32051,15 @@ app.post('/api/sms/threads/:id/messages', requireAdmin, requireSmsAccess, async 
         bodyToSend = presetTx;
       } else {
         const freshThread2 = db.prepare('SELECT * FROM sms_threads WHERE id=?').get(thread.id);
-        const translated = await aiTranslateSms(body.trim(), freshThread2.agent_lang || 'zh', freshThread2.contact_lang || 'es');
-        bodyToSend = translated || body.trim();
+        const targetLang = freshThread2.contact_lang || 'es';
+        const detected = _smsDetectLang(body.trim());
+        if (detected && detected === targetLang) {
+          // 客服直接用对方的语言写的 → 原样发出, 不再多此一举翻一道
+          bodyToSend = body.trim();
+        } else {
+          const translated = await aiTranslateSms(body.trim(), freshThread2.agent_lang || 'zh', targetLang);
+          bodyToSend = translated || body.trim();
+        }
       }
       // 客服消息不允许以中文发出 (中文只作输入, 必须由系统翻成西语/英语再发)。
       // 也兜住翻译失败回退原文的情况, 避免中文原文直接发给对方。
