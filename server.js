@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-18e · 银行直连新增 Teller 通道(免费100连接): 与Plaid并存, 共用审核界面',
+  tag: '2026-08-18g · Teller已停服(2026-07)撤下推荐, 银行直连以Plaid为主通道',
   started: new Date().toISOString(),
 };
 
@@ -34932,6 +34932,13 @@ app.get('/api/acct/bank/status', requireAdmin, requireBankView, (req, res) => {
       teller_configured: !!tcfg, teller_app_id: tcfg ? tcfg.application_id : '', teller_env: tcfg ? tcfg.env : '',
       is_admin: req.userRole === 'admin', items, accounts, txn_count: txnCount, unreviewed
     });
+    // 打开银行页时后台自动同步 (10 分钟内同步过的跳过, 不阻塞响应)
+    setImmediate(() => {
+      try {
+        const stale = db.prepare(`SELECT id FROM bank_items WHERE last_sync_at IS NULL OR last_sync_at < datetime('now', '-10 minutes')`).all();
+        for (const it of stale) _bankSyncItem(it.id).catch(e => console.error('[Bank] open-sync', it.id, e.message));
+      } catch (e) { console.error('[Bank] open-sync:', e.message); }
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -35201,7 +35208,7 @@ setInterval(() => {
       _bankSyncItem(it.id).catch(e => console.error('[Bank] auto-sync item', it.id, e.message));
     }
   } catch (e) { console.error('[Bank] auto-sync:', e.message); }
-}, 6 * 60 * 60 * 1000);
+}, 60 * 60 * 1000);   // 每小时; Teller/Plaid 都是现场直连银行查询, 点「立即同步」永远拿到当下最新
 
 // ─── Reconciliation marks (对账备注：标注过的付款记录就不再出现) ───
 app.get('/api/admin/recon-marks', requireAdmin, blockManager, (req, res) => {
