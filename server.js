@@ -30898,6 +30898,21 @@ try { db.exec(`ALTER TABLE interview_registry ADD COLUMN source TEXT DEFAULT ''`
 // 初试地点：空 = 用全局 701 默认地址；也可以选某个仓库直接去初试
 try { db.exec(`ALTER TABLE interview_registry ADD COLUMN s701_place TEXT DEFAULT ''`); } catch (e) {}
 
+// 701 的真实地址和到场指南：没设置过（或还是老占位文案）时用这份默认
+try {
+  const cur = db.prepare("SELECT value FROM app_settings WHERE key='interview_701_address'").get();
+  if (!cur || !cur.value || cur.value === '701（办公室初试）') {
+    db.prepare(`INSERT INTO app_settings (key, value) VALUES ('interview_701_address', ?)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run('701 Central Ave, University Park, IL 60484');
+  }
+  const guide = db.prepare("SELECT value FROM app_settings WHERE key='interview_701_guide'").get();
+  if (!guide || !guide.value) {
+    db.prepare(`INSERT INTO app_settings (key, value) VALUES ('interview_701_guide', ?)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(
+`We're glad to move forward with the interview. You're welcome to come any time Monday through Saturday, between 9:00 AM and 3:30 PM, whichever works best for you. The address is 701 Central Ave, University Park, IL 60484. When you arrive, please don't stop at the main entrance — follow the road in, and you'll pass a large loading dock area full of trucks. Keep going until you see Door W66; the W10 emergency door is right next to it. Park and enter there, and give us a call at 737-274-4674 when you arrive. See you soon!`);
+  }
+} catch (e) { console.error('[面试登记] 默认地址/指南初始化失败:', e.message); }
+
 const INTERVIEW_RESULTS = ['', 'pass', 'fail', 'noshow'];
 
 // 收件箱工种标签 → 面试登记的工种名（两边叫法略有出入，都认）
@@ -30996,7 +31011,9 @@ app.get('/api/interview-registry', requireAdmin, (req, res) => {
     } catch (_) {}
     const partners = groups;
     const s = db.prepare("SELECT value FROM app_settings WHERE key='interview_701_address'").get();
-    res.json({ rows, partners, s701_address: (s && s.value) || '701（办公室初试）' });
+    const g = db.prepare("SELECT value FROM app_settings WHERE key='interview_701_guide'").get();
+    res.json({ rows, partners, s701_address: (s && s.value) || '701 Central Ave, University Park, IL 60484',
+      s701_guide: (g && g.value) || '' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -31025,9 +31042,15 @@ app.post('/api/interview-registry', requireAdmin, (req, res) => {
 // 701 默认地址（仅 admin 可改）—— 必须排在 /:id 参数路由前面，不然会被吞掉
 app.post('/api/interview-registry/meta', requireAdmin, requireRole('admin'), (req, res) => {
   try {
-    const addr = String((req.body || {}).s701_address || '').trim().slice(0, 300);
-    db.prepare(`INSERT INTO app_settings (key, value) VALUES ('interview_701_address', ?)
-      ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(addr);
+    const b = req.body || {};
+    if (b.s701_address !== undefined) {
+      db.prepare(`INSERT INTO app_settings (key, value) VALUES ('interview_701_address', ?)
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(String(b.s701_address).trim().slice(0, 300));
+    }
+    if (b.s701_guide !== undefined) {
+      db.prepare(`INSERT INTO app_settings (key, value) VALUES ('interview_701_guide', ?)
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(String(b.s701_guide).trim().slice(0, 1900));
+    }
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -31055,6 +31078,23 @@ app.get('/api/interview-registry/people', requireAdmin, (req, res) => {
       ...inbox.map(p => shape(p, 'SMS Inbox')),
       ...phone.map(p => shape(p, '手机短信')),
     ].slice(0, 20) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/interview-registry/:id/send-guide — 把 701 面试指南用短信发给这个人
+// （客服也能用；进 device_sms_outbox 队列，由手机 App 发出）
+app.post('/api/interview-registry/:id/send-guide', requireAdmin, (req, res) => {
+  try {
+    const r = db.prepare('SELECT * FROM interview_registry WHERE id=?').get(req.params.id);
+    if (!r) return res.status(404).json({ error: '没有这条登记' });
+    const digits = String(r.phone || '').replace(/\D/g, '');
+    if (digits.length < 10) return res.status(400).json({ error: '这条登记的电话不全，先补上' });
+    const guide = db.prepare("SELECT value FROM app_settings WHERE key='interview_701_guide'").get();
+    if (!guide || !guide.value) return res.status(400).json({ error: '还没设置面试指南（右上角 ⚙）' });
+    const ten = digits.slice(-10);
+    db.prepare(`INSERT INTO device_sms_outbox (to_address, peer, body, translate_to, created_by) VALUES (?,?,?,?,?)`)
+      .run('+1' + ten, ten, guide.value, '', req.userName || '');
+    res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
