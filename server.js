@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-22d · 查询页可录 SSN(加密存储)并显示自动生成的打卡码',
+  tag: '2026-08-22e · 审阅小窗与改资料表单: 修复审查发现的19处缺陷(选框错位/状态脱钩/空电话/州全名等)',
   started: new Date().toISOString(),
 };
 
@@ -16149,7 +16149,7 @@ app.post('/api/admin/applicant-submissions/:id/docs/:docId/verify', requireAdmin
 // 可以直接更正这几项; 每一项的改动都写进审计日志, 原值留痕。
 const APPLICANT_EDITABLE = {
   name:     { label: '姓名', max: 120, required: true },
-  phone:    { label: '电话', max: 20, norm: v => _normApplyPhone(v),
+  phone:    { label: '电话', max: 20, required: true, norm: v => _normApplyPhone(v),
               check: v => v.replace(/\D/g, '').length >= 10 || '电话至少要有 10 位数字' },
   email:    { label: '邮箱', max: 160, norm: v => String(v || '').trim().toLowerCase(),
               check: v => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v) || '邮箱格式不对' },
@@ -16184,6 +16184,15 @@ app.patch('/api/admin/applicant-submissions/:id', requireAdmin, blockManager, (r
       if (v === String(sub[col] == null ? '' : sub[col])) continue;   // 没变就不写
       sets.push(col + '=?'); vals.push(v);
       changes[col] = { label: cfg.label, from: sub[col] || '', to: v };
+    }
+    // 号码/邮箱改了 → 当初工人 OTP 验证的是旧值, "已验证"标记必须跟着摘掉
+    if (changes.phone && sub.phone_verified) {
+      sets.push('phone_verified=0');
+      changes.phone_verified = { label: '电话验证标记', from: '已验证', to: '未验证(号码已改)' };
+    }
+    if (changes.email && sub.email_verified) {
+      sets.push('email_verified=0');
+      changes.email_verified = { label: '邮箱验证标记', from: '已验证', to: '未验证(邮箱已改)' };
     }
     // 地址验证标记: 「🔍 验证地址」通过后随保存写入; 地址改了但没带新标记就自动归零
     {
