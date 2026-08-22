@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-18k · Messaging Service 可在后台直接选/填, 无需改环境变量',
+  tag: '2026-08-18l · 电话登记查询显示该员工全部证件(申请/档案/SSN卡/工卡)',
   started: new Date().toISOString(),
 };
 
@@ -17602,13 +17602,52 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
     applications.forEach(a => { try { a.docs = docsFor.all(a.id); } catch (_) { a.docs = []; } });
     const employees = db.prepare(`SELECT id, employee_id, first_name, last_name, phone, email, position, department, status, hire_date
       FROM employees`).all().filter(x => match(x.phone)).slice(0, 50);
-    // 员工如果是从招工申请创建的, 也带上当时的证件
+    // 员工的证件散在四张表里, 这里全部汇总成一个列表, 页面直接看图:
+    //   applicant_docs(扫码申请上传) / employee_documents(档案里上传) /
+    //   worker_compliance_docs(SSN 卡) / work_permit_docs(工卡 EAD)
+    // 图片走 /api/admin/employees/id-doc-image/<key>, 前缀区分来源 (wc_/wp_/ed_/纯数字)
     const subByEmp = db.prepare('SELECT id FROM applicant_submissions WHERE employee_id=? ORDER BY id DESC LIMIT 1');
+    const empDocsStmt = db.prepare(`SELECT id, doc_type, doc_label, file_name, expiry_date, uploaded_at FROM employee_documents
+      WHERE employee_id=? AND COALESCE(file_path,'')!='' ORDER BY uploaded_at DESC`);
+    const waStmt = db.prepare('SELECT id FROM worker_accounts WHERE employee_id=? ORDER BY active DESC, id ASC LIMIT 1');
+    const ssnStmt = db.prepare(`SELECT id, file_name, created_at FROM worker_compliance_docs
+      WHERE worker_account_id=? AND doc_type='ssn_card' AND COALESCE(file_path,'')!='' ORDER BY created_at DESC`);
+    const wpStmt = db.prepare(`SELECT id, file_name, doc_number, expiry_date, created_at FROM work_permit_docs
+      WHERE worker_account_id=? AND COALESCE(file_path,'')!='' ORDER BY created_at DESC`);
+    const APPLICANT_DOC_LABEL = { ssn_front: 'SSN 正面', ssn_back: 'SSN 反面', ead_front: 'EAD 正面', ead_back: 'EAD 反面' };
     employees.forEach(e => {
+      const all = [];
       try {
         const s = subByEmp.get(e.id);
-        if (s) { e.submission_id = s.id; e.docs = docsFor.all(s.id); }
+        if (s) {
+          e.submission_id = s.id;
+          e.docs = docsFor.all(s.id);
+          for (const d of e.docs) {
+            all.push({ key: String(d.id), source: '扫码申请', label: APPLICANT_DOC_LABEL[d.doc_type] || d.doc_type,
+              file_name: d.file_name || '', verify_status: d.verify_status || '' });
+          }
+        }
       } catch (_) {}
+      try {
+        for (const d of empDocsStmt.all(e.id)) {
+          all.push({ key: 'ed_' + d.id, source: '档案上传', label: d.doc_label || d.doc_type || '文件',
+            file_name: d.file_name || '', extra: d.expiry_date ? ('到期 ' + d.expiry_date) : '', at: d.uploaded_at || '' });
+        }
+      } catch (_) {}
+      try {
+        const wa = waStmt.get(e.id);
+        if (wa) {
+          for (const d of ssnStmt.all(wa.id)) {
+            all.push({ key: 'wc_' + d.id, source: 'SSN 卡', label: 'SSN 卡', file_name: d.file_name || '', at: d.created_at || '' });
+          }
+          for (const d of wpStmt.all(wa.id)) {
+            all.push({ key: 'wp_' + d.id, source: '工卡 EAD', label: '工卡 EAD', file_name: d.file_name || '',
+              extra: [d.doc_number ? '#' + d.doc_number : '', d.expiry_date ? '到期 ' + d.expiry_date : ''].filter(Boolean).join(' · '), at: d.created_at || '' });
+          }
+        }
+      } catch (_) {}
+      for (const d of all) d.url = '/api/admin/employees/id-doc-image/' + encodeURIComponent(d.key);
+      e.all_docs = all;
     });
     const foremen = db.prepare(`SELECT id, name, phone, email, warehouse, active, created_at FROM foremen`).all()
       .filter(x => match(x.phone)).slice(0, 50);
