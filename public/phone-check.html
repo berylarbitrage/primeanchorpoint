@@ -73,13 +73,20 @@ document.getElementById('phoneInput').addEventListener('keydown',e=>{if(e.key===
 function kv(lbl,val){ return val ? `<span><span class="lbl">${esc(lbl)}</span> <b>${esc(val)}</b></span>` : ''; }
 
 async function doSearch(){
+  // 缩略图点开 = 灯箱看原图 (可框选裁剪)。列表缩略图仍显示裁剪版, 原件永不改动。
+  window._docSets = window._docSets || {};
   const docThumbs=(subId,docs)=>{
     if(!subId||!Array.isArray(docs)||!docs.length) return '';
-    return '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+docs.map(d=>{
+    const setId='s'+subId;
+    window._docSets[setId]=docs.map(d=>({
+      url:'/api/admin/applicant-submissions/'+subId+'/docs/'+d.id+'/download',
+      label:DOC_LABELS[d.doc_type]||d.doc_type, sub_id:subId, doc_id:d.id, file_name:d.file_name||''
+    }));
+    return '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+docs.map((d,i)=>{
       const u='/api/admin/applicant-submissions/'+subId+'/docs/'+d.id+'/download';
       const label=DOC_LABELS[d.doc_type]||d.doc_type;
       if(/\.pdf$/i.test(d.file_name||'')) return '<a href="'+u+'" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:6px 10px;background:#eef2ff;color:#3730a3;border-radius:8px;font-size:12px;font-weight:600;text-decoration:none">📄 '+esc(label)+'</a>';
-      return '<a href="'+u+'" target="_blank" title="'+esc(label)+' (点击看大图)" style="text-decoration:none"><span style="display:block;position:relative">'
+      return '<a href="javascript:void(0)" onclick="lbOpen(window._docSets[\''+setId+'\'],'+i+')" title="'+esc(label)+' (点击看原图 / 裁剪)" style="text-decoration:none"><span style="display:block;position:relative">'
         +'<img src="'+u+'" loading="lazy" style="width:84px;height:84px;object-fit:cover;border-radius:8px;border:1px solid #dbe3ee;background:#000;display:block">'
         +'<span style="position:absolute;left:0;right:0;bottom:0;background:rgba(15,23,42,.62);color:#fff;font-size:10px;font-weight:600;text-align:center;border-radius:0 0 6px 6px;padding:1px 0">'+esc(label)+'</span>'
         +'</span></a>';
@@ -90,14 +97,19 @@ async function doSearch(){
     if(!Array.isArray(docs)||!docs.length) return '<div style="margin-top:8px;font-size:12px;color:#94a3b8">未上传任何证件</div>';
     const bySrc={};
     docs.forEach(d=>{ (bySrc[d.source||'其他']=bySrc[d.source||'其他']||[]).push(d); });
+    const setId='e'+(window._docSetSeq=(window._docSetSeq||0)+1);
+    window._docSets=window._docSets||{};
+    window._docSets[setId]=docs.map(d=>({url:d.url,label:d.label,extra:d.extra||'',file_name:d.file_name||''}));
+    let flatIdx=-1;
     return '<div style="margin-top:8px">'+Object.keys(bySrc).map(src=>
       '<div style="margin-bottom:6px">'
       +'<div style="font-size:11px;font-weight:700;color:#64748b;margin-bottom:3px">'+esc(src)+'（'+bySrc[src].length+'）</div>'
       +'<div style="display:flex;gap:8px;flex-wrap:wrap">'+bySrc[src].map(d=>{
         const u=d.url;
+        const myIdx=window._docSets[setId].findIndex(x=>x.url===d.url);
         const cap=esc(d.label||'')+(d.extra?' · '+esc(d.extra):'');
         if(/\.pdf$/i.test(d.file_name||'')) return '<a href="'+u+'" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:6px 10px;background:#eef2ff;color:#3730a3;border-radius:8px;font-size:12px;font-weight:600;text-decoration:none">📄 '+cap+'</a>';
-        return '<a href="'+u+'" target="_blank" title="'+cap+' (点击看大图)" style="text-decoration:none"><span style="display:block;position:relative">'
+        return '<a href="javascript:void(0)" onclick="lbOpen(window._docSets[\''+setId+'\'],'+myIdx+')" title="'+cap+' (点击看原图)" style="text-decoration:none"><span style="display:block;position:relative">'
           +'<img src="'+u+'" loading="lazy" onerror="this.parentNode.parentNode.parentNode.innerHTML=\'<a href=&quot;'+u+'&quot; target=_blank style=&quot;font-size:12px;color:#3730a3&quot;>📄 '+cap+'</a>\'" style="width:84px;height:84px;object-fit:cover;border-radius:8px;border:1px solid #dbe3ee;background:#000;display:block">'
           +'<span style="position:absolute;left:0;right:0;bottom:0;background:rgba(15,23,42,.62);color:#fff;font-size:10px;font-weight:600;text-align:center;border-radius:0 0 6px 6px;padding:1px 2px;line-height:1.25">'+esc(d.label||'')+'</span>'
           +'</span></a>'
@@ -134,11 +146,12 @@ async function doSearch(){
         const docs=String(a.doc_types||'').split(',').filter(Boolean);
         const le=a.linked_employee;
         // 申请里的名字是工人自己填的, 可能拼错; 档案里改过名不会回写历史记录 → 这里标注清楚
+        const editBtn = `<button onclick="editApplicantName(${a.id}, ${JSON.stringify(a.name||'')}, this)" title="修改这条申请里的姓名" style="margin-left:6px;padding:2px 8px;font-size:11px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;vertical-align:middle">✎ 改名</button>`;
         const nameLine = (le && a.name_mismatch)
           ? `<div class="nm">${esc(le.name)} <span style="font-size:12px;font-weight:600;color:#b45309">（档案正式姓名）</span></div>
              <div style="font-size:12px;color:#64748b;margin-top:2px">工人提交时填的是：<b>${esc(a.name||'—')}</b>
-               <button onclick="syncApplicantName(${a.id}, ${le.id}, this)" style="margin-left:6px;padding:2px 8px;font-size:11px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer">用档案名更正</button></div>`
-          : `<div class="nm">${esc(a.name||'—')}</div>`;
+               <button onclick="syncApplicantName(${a.id}, ${le.id}, this)" style="margin-left:6px;padding:2px 8px;font-size:11px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer">用档案名更正</button>${editBtn}</div>`
+          : `<div class="nm">${esc(a.name||'—')}${editBtn}</div>`;
         return `<div class="rec">
           ${nameLine}
           <div class="meta">
@@ -197,6 +210,137 @@ async function syncApplicantName(subId, empId, btn){
     doSearch();
   }catch(e){ alert(e.message||'更正失败'); btn.disabled=false; btn.textContent='用档案名更正'; }
 }
+
+// ══════ 证件大图查看 + 裁剪 ══════
+let _lb = { list: [], idx: 0, sel: null, drag: null };
+function lbOpen(docs, idx) {
+  _lb.list = docs; _lb.idx = idx; _lb.sel = null;
+  document.getElementById('lightbox').style.display = 'flex';
+  lbRender();
+}
+function lbClose() { document.getElementById('lightbox').style.display = 'none'; _lb.sel = null; }
+function lbNav(d) { _lb.idx = (_lb.idx + d + _lb.list.length) % _lb.list.length; _lb.sel = null; lbRender(); }
+function lbCur() { return _lb.list[_lb.idx] || {}; }
+function lbRender() {
+  const d = lbCur();
+  const img = document.getElementById('lbImg');
+  // 默认看原件 (?v=orig)，避免"点开还是缩略/裁剪版"
+  img.src = d.url + (d.url.indexOf('?') >= 0 ? '&' : '?') + 'v=orig&t=' + Date.now();
+  document.getElementById('lbCap').textContent = (d.label || '') + (d.extra ? ' · ' + d.extra : '') + '  (' + (_lb.idx + 1) + '/' + _lb.list.length + ')';
+  document.getElementById('lbSelBox').style.display = 'none';
+  // 裁剪只支持扫码申请上传的证件 (applicant_docs)
+  const canCrop = !!d.sub_id && !!d.doc_id;
+  document.getElementById('lbCropTools').style.display = canCrop ? '' : 'none';
+  document.getElementById('lbCropHint').textContent = canCrop ? '在图片上按住鼠标拖动框选要保留的区域' : '此证件来自员工档案，暂不支持在线裁剪';
+  document.getElementById('lbSaveBtn').disabled = true;
+}
+function lbDown(e) {
+  const d = lbCur(); if (!d.sub_id) return;
+  const wrap = document.getElementById('lbWrap');
+  const r = wrap.getBoundingClientRect();
+  _lb.drag = { x: e.clientX - r.left, y: e.clientY - r.top };
+  _lb.sel = null;
+  const box = document.getElementById('lbSelBox');
+  box.style.display = 'block'; box.style.left = _lb.drag.x + 'px'; box.style.top = _lb.drag.y + 'px';
+  box.style.width = '0px'; box.style.height = '0px';
+  e.preventDefault();
+}
+function lbMove(e) {
+  if (!_lb.drag) return;
+  const wrap = document.getElementById('lbWrap');
+  const r = wrap.getBoundingClientRect();
+  const x = Math.max(0, Math.min(e.clientX - r.left, r.width));
+  const y = Math.max(0, Math.min(e.clientY - r.top, r.height));
+  const left = Math.min(x, _lb.drag.x), top = Math.min(y, _lb.drag.y);
+  const w = Math.abs(x - _lb.drag.x), h = Math.abs(y - _lb.drag.y);
+  const box = document.getElementById('lbSelBox');
+  box.style.left = left + 'px'; box.style.top = top + 'px'; box.style.width = w + 'px'; box.style.height = h + 'px';
+  _lb.sel = { left, top, w, h };
+  document.getElementById('lbSaveBtn').disabled = !(w > 8 && h > 8);
+}
+function lbUp() { _lb.drag = null; }
+async function lbSaveCrop() {
+  const d = lbCur();
+  if (!d.sub_id || !_lb.sel) return;
+  const img = document.getElementById('lbImg');
+  const btn = document.getElementById('lbSaveBtn');
+  btn.disabled = true; btn.textContent = '保存中…';
+  try {
+    // 显示尺寸 → 原图像素坐标
+    const sx = img.naturalWidth / img.clientWidth, sy = img.naturalHeight / img.clientHeight;
+    const ox = img.offsetLeft, oy = img.offsetTop;
+    const cx = Math.round((_lb.sel.left - ox) * sx), cy = Math.round((_lb.sel.top - oy) * sy);
+    const cw = Math.round(_lb.sel.w * sx), ch = Math.round(_lb.sel.h * sy);
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, cw); cv.height = Math.max(1, ch);
+    cv.getContext('2d').drawImage(img, cx, cy, cw, ch, 0, 0, cv.width, cv.height);
+    const data = cv.toDataURL('image/jpeg', 0.92);
+    const r = await fetch('/api/admin/applicant-submissions/' + d.sub_id + '/docs/' + d.doc_id + '/cropped', {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.success) throw new Error(j.error || '保存失败');
+    alert('✅ 裁剪已保存（列表缩略图会显示裁剪版，原件始终保留）');
+    lbClose(); doSearch();
+  } catch (e) { alert(e.message || '保存失败'); }
+  btn.disabled = false; btn.textContent = '保存裁剪';
+}
+async function lbClearCrop() {
+  const d = lbCur();
+  if (!d.sub_id) return;
+  if (!confirm('清除这张证件的裁剪版，恢复显示原件？')) return;
+  try {
+    const r = await fetch('/api/admin/applicant-submissions/' + d.sub_id + '/docs/' + d.doc_id + '/cropped', {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: '' })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.success) throw new Error(j.error || '清除失败');
+    alert('已恢复原件'); lbClose(); doSearch();
+  } catch (e) { alert(e.message || '清除失败'); }
+}
+
+// 直接更正申请里填错的名字
+async function editApplicantName(subId, cur, btn) {
+  const nm = prompt('修改这条招工申请里的姓名：', cur || '');
+  if (nm === null) return;
+  const v = nm.trim();
+  if (!v) { alert('姓名不能为空'); return; }
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/admin/applicant-submissions/' + subId, {
+      method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: v })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.success) throw new Error(d.error || '保存失败');
+    doSearch();
+  } catch (e) { alert(e.message || '保存失败'); btn.disabled = false; }
+}
+
+document.addEventListener('keydown', e => {
+  if (document.getElementById('lightbox').style.display !== 'flex') return;
+  if (e.key === 'Escape') lbClose();
+  if (e.key === 'ArrowLeft') lbNav(-1);
+  if (e.key === 'ArrowRight') lbNav(1);
+});
 </script>
+<div id="lightbox" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.92);z-index:9999;align-items:center;justify-content:center;flex-direction:column;padding:16px">
+  <div style="color:#fff;font-size:13px;margin-bottom:6px" id="lbCap"></div>
+  <div id="lbWrap" style="position:relative;max-width:92vw;max-height:74vh;user-select:none"
+       onmousedown="lbDown(event)" onmousemove="lbMove(event)" onmouseup="lbUp()" onmouseleave="lbUp()">
+    <img id="lbImg" style="max-width:92vw;max-height:74vh;display:block;border-radius:8px;background:#000" draggable="false">
+    <div id="lbSelBox" style="display:none;position:absolute;border:2px dashed #38bdf8;background:rgba(56,189,248,.18);pointer-events:none"></div>
+  </div>
+  <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center">
+    <button onclick="lbNav(-1)" style="padding:6px 12px;border-radius:6px;border:none;background:#334155;color:#fff;cursor:pointer">← 上一张</button>
+    <button onclick="lbNav(1)" style="padding:6px 12px;border-radius:6px;border:none;background:#334155;color:#fff;cursor:pointer">下一张 →</button>
+    <span id="lbCropTools" style="display:flex;gap:8px;align-items:center">
+      <button id="lbSaveBtn" onclick="lbSaveCrop()" disabled style="padding:6px 12px;border-radius:6px;border:none;background:#0ea5e9;color:#fff;cursor:pointer">保存裁剪</button>
+      <button onclick="lbClearCrop()" style="padding:6px 12px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer">恢复原件</button>
+    </span>
+    <a id="lbDl" href="#" style="display:none"></a>
+    <button onclick="lbClose()" style="padding:6px 12px;border-radius:6px;border:none;background:#b45309;color:#fff;cursor:pointer">关闭 (Esc)</button>
+  </div>
+  <div id="lbCropHint" style="color:#94a3b8;font-size:12px;margin-top:6px"></div>
+</div>
 </body>
 </html>
