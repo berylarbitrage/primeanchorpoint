@@ -8681,6 +8681,7 @@ function finishLogin(r) {
   applyRoleUI();
   if (USER_ROLE === 'manager') { showTab('mgr-workers'); }
   else { loadDashboard(); }
+  _openDocReviewFromUrl();
   // SMS Inbox unread badge
   if (USER_ROLE === 'admin' || USER_ROLE === 'staff') {
     refreshSmsUnread();
@@ -8923,6 +8924,26 @@ function logout() {
   if (PAGE_ROLE) document.getElementById('loginSubtitle').textContent = subtitles[PAGE_ROLE] + ' 登录';
 })();
 
+// 外部页面(如电话登记查询)可用 /admin.html?doc_review=<submission_id> 直接跳进来审阅这份证件
+async function _openDocReviewFromUrl() {
+  const sid = parseInt(new URLSearchParams(location.search).get('doc_review') || '0', 10);
+  if (!sid) return;
+  try {
+    // 证件面板挂在员工档案弹窗里 → 优先打开关联员工, 没有关联就用空白弹窗承载
+    let empId = 0;
+    try {
+      const list = await api('/admin/applicant-submissions');
+      const sub = (list || []).find(x => x.id === sid);
+      if (sub && sub.employee_id) empId = sub.employee_id;
+    } catch (_) {}
+    if (empId) { if (typeof allEmployees !== 'undefined' && !allEmployees.length) { try { await loadEmployees(); } catch (_) {} } openEmpModal(empId); }
+    else openEmpModal();
+    setTimeout(() => { if (typeof renderApplicantDocPanel === 'function') renderApplicantDocPanel(sid); }, 300);
+    // 清掉参数, 避免刷新时反复弹
+    history.replaceState(null, '', location.pathname);
+  } catch (e) { console.error('[doc_review]', e); }
+}
+
 // Check cookie on load — hide login immediately to avoid flash, restore if validation fails
 (function() {
   let m = document.cookie.match(/pa_token=([^;]+)/);
@@ -8960,6 +8981,7 @@ function logout() {
         applyRoleUI();
         if (USER_ROLE === 'manager') { showTab('time'); }
         else { loadDashboard(); }
+        _openDocReviewFromUrl();
       })
       .catch(() => {
         // Only clear the token/cookie if no newer login has happened
