@@ -39,6 +39,16 @@ body{font-family:'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-ser
 .chip.gray{background:var(--gray-50);color:var(--gray-500);border-color:var(--gray-200)}
 .login-tip{display:none;text-align:center;padding:1rem;font-size:.9rem;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;margin-bottom:1rem}
 .login-tip a{color:var(--blue);font-weight:700}
+/* 证件小窗打开时: 正文靠左收窄, 右边整块让给小窗, 两边真正并排不重叠 */
+@media (min-width:1000px){
+  body.lb-open .wrap{margin-left:16px;margin-right:0;max-width:min(720px,calc(100vw - 620px));transition:max-width .18s,margin .18s}
+}
+#lightbox .lbl{margin-left:4px}
+#lightbox.compact .lbl{display:none}
+#lightbox.compact #lbCropHint{display:none}
+.af-l{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--gray-500);font-weight:700}
+.af-i{padding:7px 9px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:14px;font-family:inherit;outline:none;color:var(--gray-800);background:#fff;width:100%}
+.af-i:focus{border-color:var(--sky)}
 @media print{.searchrow button,.hint{display:none}}
 </style>
 </head>
@@ -135,6 +145,8 @@ async function doSearch(){
   const loginTip=document.getElementById('loginTip');
   const phone=(inp.value||'').trim();
   banner.className='banner'; results.innerHTML=''; loginTip.style.display='none';
+  window._appById = {};            // 上一次查询的卡片数据作废
+  window._docThumbs = docThumbs;   // 卡片重绘时还要用
   if(phone.replace(/\D/g,'').length<7){ banner.className='banner err'; banner.textContent='请输入至少 7 位的电话号码'; return; }
   btn.disabled=true; btn.textContent='查询中…';
   try{
@@ -153,28 +165,7 @@ async function doSearch(){
     let html='';
     if((data.applications||[]).length){
       html+='<div class="sec-title">📨 招工申请（'+data.applications.length+'）</div>';
-      html+=data.applications.map(a=>{
-        const addr=[a.address1,a.address2,[a.city,a.state,a.zip].filter(Boolean).join(', ')].filter(Boolean).join(', ');
-        const docs=String(a.doc_types||'').split(',').filter(Boolean);
-        const le=a.linked_employee;
-        // 申请里的名字是工人自己填的, 可能拼错; 档案里改过名不会回写历史记录 → 这里标注清楚
-        const editBtn = `<button data-name="${esc(a.name||'')}" onclick="editApplicantName(${a.id}, this.dataset.name, this)" title="修改这条申请里的姓名" style="margin-left:6px;padding:2px 8px;font-size:11px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;vertical-align:middle">✎ 改名</button>`;
-        const nameLine = (le && a.name_mismatch)
-          ? `<div class="nm">${esc(le.name)} <span style="font-size:12px;font-weight:600;color:#b45309">（档案正式姓名）</span></div>
-             <div style="font-size:12px;color:#64748b;margin-top:2px">工人提交时填的是：<b>${esc(a.name||'—')}</b>
-               <button onclick="syncApplicantName(${a.id}, ${le.id}, this)" style="margin-left:6px;padding:2px 8px;font-size:11px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer">用档案名更正</button>${editBtn}</div>`
-          : `<div class="nm">${esc(a.name||'—')}${editBtn}</div>`;
-        return `<div class="rec">
-          ${nameLine}
-          <div class="meta">
-            ${kv('电话',a.phone)} ${kv('邮箱',a.email)} ${kv('职位',a.position)}
-            ${kv('申请公司',a.partner_name)} ${kv('申请地点',a.apply_state)}
-            ${kv('状态',a.status)} ${kv('提交时间',String(a.created_at||'').slice(0,16))}
-          </div>
-          ${addr?`<div class="meta">${kv('地址',addr)}</div>`:''}
-          ${docThumbs(a.id, a.docs)}
-        </div>`;
-      }).join('');
+      html+=data.applications.map(a=>appCardHtml(a)).join('');
     }
     if((data.employees||[]).length){
       html+='<div class="sec-title">👷 员工档案（'+data.employees.length+'）</div>';
@@ -207,6 +198,108 @@ async function doSearch(){
   }
 }
 
+// ══════ 招工申请卡片: 只读视图 ⇄ 资料编辑表单（可原地重绘, 不整页刷新）══════
+const US_STATES = ['AL','AK','AZ','AR','CA','CO','CT','DE','DC','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','PR','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'];
+const APP_FIELDS = [
+  ['name','姓名 *','工人法定全名'], ['phone','电话 *','(555) 000-0000'], ['email','邮箱','name@example.com'],
+  ['position','职位','Picking / Packing …'], ['address1','街道地址','123 Main St'], ['address2','单元 / 楼层','Apt 2B（可空）'],
+  ['city','城市','Chicago'], ['state','州',''], ['zip','邮编','60601']
+];
+const APP_FIELD_CN = APP_FIELDS.reduce((m, f) => (m[f[0]] = f[1].replace(' *',''), m), {});
+window._appById = window._appById || {};
+
+function appCardHtml(a) {
+  window._appById[a.id] = a;
+  return '<div class="rec" id="appCard' + a.id + '">' + appCardInner(a) + '</div>';
+}
+function appNameMismatch(a) {
+  const le = a.linked_employee;
+  return !!(le && le.name && String(a.name || '').trim().toLowerCase() !== String(le.name).trim().toLowerCase());
+}
+function appCardInner(a) {
+  const addr = [a.address1, a.address2, [a.city, a.state, a.zip].filter(Boolean).join(', ')].filter(Boolean).join(', ');
+  const le = a.linked_employee;
+  const editBtn = `<button onclick="editApplicantInfo(${a.id})" title="核对证件后直接更正这个人的资料（姓名 / 电话 / 邮箱 / 职位 / 地址）" style="margin-left:6px;padding:2px 8px;font-size:11px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;vertical-align:middle">✎ 改资料</button>`;
+  // 申请里的名字是工人自己填的, 可能拼错; 档案里改过名不会回写历史记录 → 这里标注清楚
+  const nameLine = (le && appNameMismatch(a))
+    ? `<div class="nm">${esc(le.name)} <span style="font-size:12px;font-weight:600;color:#b45309">（档案正式姓名）</span></div>
+       <div style="font-size:12px;color:#64748b;margin-top:2px">工人提交时填的是：<b>${esc(a.name || '—')}</b>
+         <button onclick="syncApplicantName(${a.id}, ${le.id}, this)" style="margin-left:6px;padding:2px 8px;font-size:11px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer">用档案名更正</button>${editBtn}</div>`
+    : `<div class="nm">${esc(a.name || '—')}${editBtn}</div>`;
+  return `${nameLine}
+    <div class="meta">
+      ${kv('电话', a.phone)} ${kv('邮箱', a.email)} ${kv('职位', a.position)}
+      ${kv('申请公司', a.partner_name)} ${kv('申请地点', a.apply_state)}
+      ${kv('状态', a.status)} ${kv('提交时间', String(a.created_at || '').slice(0, 16))}
+    </div>
+    ${addr ? `<div class="meta">${kv('地址', addr)}</div>` : ''}
+    ${window._docThumbs ? window._docThumbs(a.id, a.docs) : ''}`;
+}
+function reRenderApp(id) {
+  const el = document.getElementById('appCard' + id);
+  if (el && window._appById[id]) el.innerHTML = appCardInner(window._appById[id]);
+}
+// 对着证件小窗改资料: 表单就在卡片上, 证件窗口是浮动的, 两边可以同时看
+function editApplicantInfo(id) {
+  const a = window._appById[id];
+  const el = document.getElementById('appCard' + id);
+  if (!a || !el) return;
+  const inp = (k, label, ph) => k === 'state'
+    ? `<label class="af-l">${esc(label)}<select id="af_${id}_${k}" class="af-i">
+        <option value="">-- 州 --</option>
+        ${US_STATES.map(x => `<option value="${x}"${String(a.state || '').toUpperCase() === x ? ' selected' : ''}>${x}</option>`).join('')}
+       </select></label>`
+    : `<label class="af-l">${esc(label)}<input id="af_${id}_${k}" class="af-i" value="${esc(a[k] || '')}" placeholder="${esc(ph || '')}" autocomplete="off"></label>`;
+  el.innerHTML = `
+    <div style="font-size:12px;font-weight:700;color:var(--blue);margin-bottom:8px">✎ 更正申请人资料
+      <span style="font-weight:400;color:var(--gray-400)">— 对着证件改；每一处改动都会记入审计日志</span></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:8px">
+      ${APP_FIELDS.map(f => inp(f[0], f[1], f[2])).join('')}
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">
+      <button id="afSave${id}" onclick="saveApplicantInfo(${id})" style="padding:7px 16px;border-radius:8px;border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">保存</button>
+      <button onclick="reRenderApp(${id})" style="padding:7px 16px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:var(--gray-600);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">取消</button>
+      <span style="font-size:11px;color:var(--gray-400)">👇 点证件缩略图会弹出小窗，可以拖到旁边一边看一边改</span>
+    </div>
+    ${window._docThumbs ? window._docThumbs(a.id, a.docs) : ''}`;
+  const first = document.getElementById('af_' + id + '_name');
+  if (first) { first.focus(); first.select(); }
+}
+async function saveApplicantInfo(id) {
+  const a = window._appById[id];
+  if (!a) return;
+  const body = {};
+  APP_FIELDS.forEach(f => {
+    const el = document.getElementById('af_' + id + '_' + f[0]);
+    if (el) body[f[0]] = el.value;
+  });
+  if (!String(body.name || '').trim()) { pcToast('姓名不能为空', 'err'); return; }
+  const btn = document.getElementById('afSave' + id);
+  if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
+  try {
+    const r = await fetch('/api/admin/applicant-submissions/' + id, {
+      method: 'PATCH', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.success) throw new Error(j.error || '保存失败');
+    const oldPhone = a.phone || '';
+    if (j.record) APP_FIELDS.forEach(f => { if (j.record[f[0]] !== undefined) a[f[0]] = j.record[f[0]]; });
+    reRenderApp(id);
+    const ch = (j.changed || []).map(k => APP_FIELD_CN[k] || k);
+    pcToast(ch.length ? ('已保存：' + ch.join('、')) : '没有改动', 'ok');
+    // 改了电话就跟着换搜索框里的号码 —— 否则再查一次这个人就查不出来了
+    if ((j.changed || []).includes('phone')) {
+      const el = document.getElementById('phoneInput');
+      if (el) el.value = a.phone || '';
+      pcToast('电话已从 ' + (oldPhone || '空') + ' 改成 ' + a.phone + ' — 搜索框已同步，重查请用新号码');
+    }
+  } catch (e) {
+    pcToast(e.message || '保存失败', 'err');
+    if (btn) { btn.disabled = false; btn.textContent = '保存'; }
+  }
+}
+
 // 用员工档案上的正式姓名更正这条招工申请里填错的名字
 async function syncApplicantName(subId, empId, btn){
   if(!await pcConfirm('把这条招工申请里的名字改成员工档案上的正式姓名？\n原来填的名字会记入审计日志。','用档案名更正')) return;
@@ -229,8 +322,19 @@ async function syncApplicantName(subId, empId, btn){
 let _lb = {
   list: [], idx: 0, sel: null, drag: null, rot: 0, img: null, showCropped: false,
   zoom: 1, edited: false, adj: { b: 100, c: 100, g: false },
-  verify: '', verifyBy: '', batch: null
+  verify: '', verifyBy: '', batch: null,
+  max: false, prevBox: null, foldH: '', selMode: false, busy: false, aiBusy: false
 };
+// 老版本 Safari (iOS 16 及更早) 不支持 canvas 的 ctx.filter, 而且是"静默失效":
+// 亮度/对比度看着没反应, 文档增强还会算出一张纯灰白空图并且能被保存覆盖显示版。
+// 这里探测一次, 不支持就走逐像素的回退实现。
+const LB_CTX_FILTER = (() => {
+  try {
+    const c = document.createElement('canvas').getContext('2d');
+    c.filter = 'blur(1px)';
+    return c.filter === 'blur(1px)';
+  } catch (_) { return false; }
+})();
 const LB_ZOOMS = [0.5, 0.75, 1, 1.5, 2, 3, 4];
 const $lb = id => document.getElementById(id);
 function lbCur() { return _lb.list[_lb.idx] || {}; }
@@ -245,16 +349,162 @@ function lbBtnActive(id, on, color) {
 }
 function lbHideSel() { const b = $lb('lbSelBox'); if (b) b.style.display = 'none'; }
 
-function lbOpen(docs, idx) {
+async function lbOpen(docs, idx) {
+  const w0 = $lb('lightbox');
+  const open = w0.style.display === 'flex';
+  // 非模态窗口: 用户随时可能去点另一张缩略图。有没保存的旋转/裁剪/增强就先问一声,
+  // 否则 lbRender 会把这些改动无声清掉。
+  if (open && lbDirty()) {
+    if (!await pcConfirm('当前这张有还没保存的修改（旋转 / 裁剪 / 增强），换一张就会丢掉。要继续吗？', '丢掉修改换下一张')) return;
+  }
+  // 连续处理进行中又去点别组的证件 → idxs 会指到新列表的错误下标, 先收尾
+  if (_lb.batch && docs !== _lb.list) lbBatchEnd(true);
   _lb.list = docs || []; _lb.idx = idx || 0;
-  $lb('lightbox').style.display = 'flex';
+  const w = $lb('lightbox');
+  const first = w.style.display !== 'flex';
+  w.style.display = 'flex';
+  if (first) lbApplyLayout();
+  // 小窗是非模态的(后面的页面照常能点能改), 快捷键只在焦点落在窗口里时才生效
+  try { w.focus({ preventScroll: true }); } catch (_) { w.focus(); }
   lbRender();
 }
 function lbClose() {
   if (_lb.batch) lbBatchEnd(true);
   $lb('lightbox').style.display = 'none';
+  document.body.classList.remove('lb-open');
   _lb.img = null; _lb.sel = null;
 }
+// ── 小窗的位置与大小 ──
+// 手机/竖屏 pad 上 560px 浮窗几乎盖满屏幕,"在旁边改资料"就没意义了 → 退化成底部抽屉
+function lbSmallScreen() { return window.innerWidth < 760; }
+function lbWinKey() { return 'pc_lb_win'; }
+function lbSaveWin() {
+  if (lbSmallScreen() || _lb.max) return;
+  const el = $lb('lightbox');
+  try {
+    localStorage.setItem(lbWinKey(), JSON.stringify({
+      l: parseFloat(el.style.left) || 0, t: parseFloat(el.style.top) || 0,
+      w: el.offsetWidth, h: el.offsetHeight
+    }));
+  } catch (_) {}
+}
+function lbLoadWin() {
+  try { return JSON.parse(localStorage.getItem(lbWinKey()) || 'null'); } catch (_) { return null; }
+}
+// 定位一律只改 left/top/width/height —— 绝不用 transform:scale,
+// 否则 getBoundingClientRect() 与 canvas 内部像素会打架, 裁剪就会存歪。
+function lbSetBox(l, t, w, h) {
+  const el = $lb('lightbox');
+  if (w != null) el.style.width = Math.max(300, Math.min(w, window.innerWidth - 8)) + 'px';
+  if (h != null) el.style.height = Math.max(200, Math.min(h, window.innerHeight - 8)) + 'px';
+  const W = el.offsetWidth;
+  el.style.left = Math.max(150 - W, Math.min(l, window.innerWidth - 150)) + 'px';   // 至少留 150px 在屏内
+  el.style.top = Math.max(0, Math.min(t, window.innerHeight - 42)) + 'px';          // 标题栏永远够得着
+  el.style.right = 'auto';
+  el.classList.toggle('compact', el.offsetWidth < 540);                              // 窄窗只留图标
+}
+function lbApplyLayout() {
+  const el = $lb('lightbox');
+  if (lbSmallScreen()) {
+    const h = Math.round(window.innerHeight * 0.62);
+    Object.assign(el.style, {
+      left: '0px', right: 'auto', top: (window.innerHeight - h) + 'px',
+      width: window.innerWidth + 'px', height: h + 'px',
+      maxWidth: 'none', minWidth: '0', borderRadius: '12px 12px 0 0'
+    });
+    $lb('lbGrip').style.display = 'none';
+    $lb('lbHead').style.cursor = 'default';
+    el.classList.add('compact');
+    document.body.classList.remove('lb-open');
+    return;
+  }
+  $lb('lbGrip').style.display = '';
+  $lb('lbHead').style.cursor = 'move';
+  el.style.borderRadius = '12px';
+  el.style.maxWidth = '96vw'; el.style.minWidth = '300px';
+  document.body.classList.add('lb-open');
+  const sv = lbLoadWin();
+  if (sv) lbSetBox(sv.l, sv.t, sv.w, sv.h);
+  else lbSetBox(window.innerWidth - 576, 64, 560, Math.round(window.innerHeight * 0.72));
+}
+// ⤢ 放大 / 还原窗口 —— 仔细看证件时铺满屏幕, 改资料时缩回小窗
+function lbToggleMax() {
+  const el = $lb('lightbox');
+  if (_lb.max) {
+    _lb.max = false;
+    lbApplyLayout();
+  } else {
+    lbSaveWin();
+    _lb.max = true;
+    Object.assign(el.style, { left: '2vw', right: 'auto', top: '2vh', width: '96vw', height: '94vh' });
+    el.classList.remove('compact');
+  }
+  $lb('lbMaxBtn').textContent = _lb.max ? '⤡' : '⤢';
+  _lb.sel = null; lbHideSel();
+  setTimeout(() => { lbFit(); lbSyncBtns(); }, 0);
+}
+// ▁ 收起: 只留标题条, 腾出地方填表; 再点展开
+function lbToggleFold() {
+  const w = $lb('lightbox'), body = $lb('lbBody');
+  const show = body.style.display === 'none';
+  body.style.display = show ? 'flex' : 'none';
+  $lb('lbGrip').style.display = (show && !lbSmallScreen()) ? '' : 'none';
+  if (show) { w.style.height = _lb.foldH || '72vh'; w.style.minHeight = ''; setTimeout(lbFit, 0); }
+  else { _lb.foldH = w.style.height; w.style.height = 'auto'; w.style.minHeight = '0'; }
+  $lb('lbFoldBtn').textContent = show ? '▁' : '▔';
+}
+// 标题栏拖动 + 右下角拖拽改大小 (鼠标 / 触摸都支持)
+function lbWinInit() {
+  const win = $lb('lightbox'), head = $lb('lbHead'), grip = $lb('lbGrip');
+  if (!win || !head || !grip) return;
+  const pt = e => (e.touches && e.touches[0]) ? e.touches[0] : e;
+  let mode = null, sx = 0, sy = 0, ox = 0, oy = 0, ow = 0, oh = 0;
+  const move = e => {
+    if (!mode) return;
+    const p = pt(e);
+    if (mode === 'drag') lbSetBox(ox + (p.clientX - sx), oy + (p.clientY - sy));
+    else {
+      lbSetBox(ox, oy, ow + (p.clientX - sx), oh + (p.clientY - sy));
+      _lb.sel = null; lbHideSel(); lbFit(); lbSyncBtns();
+    }
+    if (e.cancelable) e.preventDefault();
+  };
+  const up = () => {
+    if (!mode) return;
+    mode = null; lbSaveWin();
+    document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+    document.removeEventListener('touchmove', move); document.removeEventListener('touchend', up);
+  };
+  const down = m => e => {
+    if (lbSmallScreen()) return;
+    if (e.target && /^(BUTTON|A|INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+    mode = m;
+    const p = pt(e), r = win.getBoundingClientRect();
+    sx = p.clientX; sy = p.clientY; ox = r.left; oy = r.top; ow = r.width; oh = r.height;
+    win.style.left = r.left + 'px'; win.style.top = r.top + 'px'; win.style.right = 'auto';
+    win.style.width = r.width + 'px';
+    if (mode === 'size') win.style.height = r.height + 'px';
+    if (_lb.max) { _lb.max = false; $lb('lbMaxBtn').textContent = '⤢'; }
+    document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+    document.addEventListener('touchmove', move, { passive: false }); document.addEventListener('touchend', up);
+    if (e.cancelable) e.preventDefault();
+  };
+  const focusWin = () => { try { win.focus({ preventScroll: true }); } catch (_) { win.focus(); } };
+  win.addEventListener('mousedown', focusWin, true);
+  win.addEventListener('touchstart', focusWin, { capture: true, passive: true });
+  head.addEventListener('mousedown', down('drag'));
+  head.addEventListener('touchstart', down('drag'), { passive: false });
+  grip.addEventListener('mousedown', down('size'));
+  grip.addEventListener('touchstart', down('size'), { passive: false });
+  // 转屏 / 改窗口大小: 重新摆位, 免得小窗跑到屏幕外面去
+  window.addEventListener('resize', () => {
+    if ($lb('lightbox').style.display !== 'flex') return;
+    if (!_lb.max) lbApplyLayout();
+    _lb.sel = null; lbHideSel();
+    lbFit(); lbSyncBtns();
+  });
+}
+document.addEventListener('DOMContentLoaded', lbWinInit);
 function lbNav(step) {
   if (!_lb.list.length) return;
   _lb.idx = (_lb.idx + step + _lb.list.length) % _lb.list.length;
@@ -296,6 +546,9 @@ function lbSyncVersionUI() {
   const vb = $lb('lbVerBtn');
   vb.style.display = d.has_cropped ? '' : 'none';
   vb.textContent = _lb.showCropped ? '看原件' : '看裁剪版';
+  // 「删除裁剪版」是服务器上的删除动作, 没存过裁剪版就不该出现 (免得误点)
+  const cb = $lb('lbClearCropBtn');
+  if (cb) cb.style.display = (d.has_cropped && lbEditable(d)) ? '' : 'none';
 }
 function lbLoadImg() {
   const d = lbCur();
@@ -314,18 +567,58 @@ function lbDraw() {
   const h = swap ? img.naturalWidth : img.naturalHeight;
   cv.width = w; cv.height = h;
   const ctx = cv.getContext('2d');
+  const f = lbFilterStr();
   ctx.save();
-  const f = lbFilterStr(); if (f) ctx.filter = f;
+  if (f && LB_CTX_FILTER) ctx.filter = f;
   ctx.translate(w / 2, h / 2);
   ctx.rotate(_lb.rot * Math.PI / 180);
   ctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
   ctx.restore();
+  if (f && !LB_CTX_FILTER) lbToneFallback(ctx, w, h);   // 老 Safari: 逐像素补上调节
   lbFit();
+}
+// 亮度 → 对比度 → 黑白, 顺序与 CSS filter 一致 (grayscale 用 CSS 的 Rec.709 系数)
+function lbToneFallback(ctx, w, h) {
+  const b = _lb.adj.b / 100, c = _lb.adj.c / 100, g = _lb.adj.g;
+  const L = new Uint8ClampedArray(256);
+  for (let v = 0; v < 256; v++) L[v] = (v * b - 127.5) * c + 127.5;
+  const id = ctx.getImageData(0, 0, w, h), d = id.data;
+  for (let i = 0; i < d.length; i += 4) {
+    let r = L[d[i]], gg = L[d[i + 1]], bb = L[d[i + 2]];
+    if (g) { const y = 0.2126 * r + 0.7152 * gg + 0.0722 * bb; r = gg = bb = y; }
+    d[i] = r; d[i + 1] = gg; d[i + 2] = bb;
+  }
+  ctx.putImageData(id, 0, 0);
+}
+// 模糊也依赖 ctx.filter (🪄 和 📄 都要用它估背景) → 不支持时用"降采样再升采样"近似
+function lbBlurTo(dst, src, r) {
+  const w = src.width, h = src.height;
+  dst.width = w; dst.height = h;
+  const dx = dst.getContext('2d');
+  if (LB_CTX_FILTER) { dx.filter = 'blur(' + r + 'px)'; dx.drawImage(src, 0, 0); return dst; }
+  const k = Math.max(1, r);
+  const tw = Math.max(1, Math.round(w / k)), th = Math.max(1, Math.round(h / k));
+  const t = document.createElement('canvas'); t.width = tw; t.height = th;
+  const tc = t.getContext('2d');
+  tc.imageSmoothingEnabled = true; tc.imageSmoothingQuality = 'high';
+  tc.drawImage(src, 0, 0, tw, th);
+  dx.imageSmoothingEnabled = true; dx.imageSmoothingQuality = 'high';
+  dx.drawImage(t, 0, 0, tw, th, 0, 0, w, h);
+  return dst;
+}
+// 增强算完如果整张几乎没有明暗差, 说明这台浏览器算错了 → 丢弃, 不让它被保存覆盖原图
+function lbLooksBlank(cv) {
+  const c = cv.getContext('2d');
+  const d = c.getImageData(0, 0, cv.width, cv.height).data;
+  let lo = 255, hi = 0;
+  const step = Math.max(4, (Math.floor(d.length / 4 / 4000) || 1) * 4);
+  for (let i = 0; i < d.length; i += step) { const v = d[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+  return (hi - lo) < 8;
 }
 // 撑满可视区(小图最多放大 4 倍), 再乘手动缩放; 放大后舞台可滚动看细节
 function lbFit() {
   const cv = $lb('lbCanvas'), st = $lb('lbStage');
-  if (!cv || !st || !cv.width || !cv.height) return;
+  if (!cv || !st || !cv.width || !cv.height || !st.clientWidth) return;
   const maxW = Math.max(120, st.clientWidth - 6), maxH = Math.max(120, st.clientHeight - 6);
   const base = Math.min(maxW / cv.width, maxH / cv.height, 4);
   const scale = base * _lb.zoom;
@@ -333,7 +626,6 @@ function lbFit() {
   cv.style.height = Math.round(cv.height * scale) + 'px';
   const p = $lb('lbZoomPct'); if (p) p.textContent = Math.round(_lb.zoom * 100) + '%';
 }
-window.addEventListener('resize', () => { if ($lb('lightbox').style.display === 'flex') { _lb.sel = null; lbHideSel(); lbFit(); lbSyncBtns(); } });
 function lbZoom(dir) {
   let i = LB_ZOOMS.findIndex(z => Math.abs(z - _lb.zoom) < 0.01);
   if (i < 0) i = 2;
@@ -388,10 +680,27 @@ function lbToggleAdj() {
 }
 
 // ── 框选 (裁剪区域 / 识别区域 共用一个框) ──
+function lbPt(e) { return (e.touches && e.touches[0]) ? e.touches[0] : e; }
+// 触摸时: 只有开了 ✜ 框选 才画框, 否则手指用来滚动看大图
+function lbTouchOk(e) { return !e.touches || _lb.selMode; }
+function lbToggleSelMode() {
+  _lb.selMode = !_lb.selMode;
+  lbBtnActive('lbSelBtn', _lb.selMode, '#38bdf8');
+  pcToast(_lb.selMode ? '框选模式：手指在图上拖就是画框' : '框选模式已关：手指用来滚动看图');
+}
 function lbDown(e) {
   const cv = $lb('lbCanvas'); if (!cv.width) return;
-  const r = cv.getBoundingClientRect();
-  _lb.drag = { x: e.clientX - r.left, y: e.clientY - r.top };
+  if (!lbTouchOk(e)) return;
+  const p = lbPt(e), r = cv.getBoundingClientRect();
+  _lb.drag = { x: p.clientX - r.left, y: p.clientY - r.top };
+  // 小窗里画布很小, 指针一拖就滑出边界 → 监听挂到 document 上, 出界也不断线
+  if (!_lb.dragBound) {
+    _lb.dragBound = true;
+    document.addEventListener('mousemove', lbMove);
+    document.addEventListener('mouseup', lbUp);
+    document.addEventListener('touchmove', lbMove, { passive: false });
+    document.addEventListener('touchend', lbUp);
+  }
   _lb.sel = null;
   const box = $lb('lbSelBox');
   box.style.display = 'block';
@@ -401,9 +710,10 @@ function lbDown(e) {
 }
 function lbMove(e) {
   if (!_lb.drag) return;
-  const r = $lb('lbCanvas').getBoundingClientRect();
-  const x = Math.max(0, Math.min(e.clientX - r.left, r.width));
-  const y = Math.max(0, Math.min(e.clientY - r.top, r.height));
+  if (e.touches && e.cancelable) e.preventDefault();
+  const p = lbPt(e), r = $lb('lbCanvas').getBoundingClientRect();
+  const x = Math.max(0, Math.min(p.clientX - r.left, r.width));
+  const y = Math.max(0, Math.min(p.clientY - r.top, r.height));
   const left = Math.min(x, _lb.drag.x), top = Math.min(y, _lb.drag.y);
   const w = Math.abs(x - _lb.drag.x), h = Math.abs(y - _lb.drag.y);
   const box = $lb('lbSelBox');
@@ -412,15 +722,33 @@ function lbMove(e) {
   _lb.sel = (w > 8 && h > 8) ? { left, top, w, h } : null;
   lbSyncBtns();
 }
-function lbUp() { _lb.drag = null; }
-// 选框(显示像素) → 画布内部像素
+function lbUp() {
+  _lb.drag = null;
+  if (_lb.dragBound) {
+    _lb.dragBound = false;
+    document.removeEventListener('mousemove', lbMove);
+    document.removeEventListener('mouseup', lbUp);
+    document.removeEventListener('touchmove', lbMove);
+    document.removeEventListener('touchend', lbUp);
+  }
+}
+// 选框先归一化成比例, 再投影到画布像素 —— 窗口改大小 / 缩放 / 换设备都不会算错
+function lbSelNorm() {
+  const cv = $lb('lbCanvas'), sel = _lb.sel;
+  if (!sel || !cv.clientWidth || !cv.clientHeight) return null;
+  const nx = Math.max(0, Math.min(1, sel.left / cv.clientWidth));
+  const ny = Math.max(0, Math.min(1, sel.top / cv.clientHeight));
+  const nw = Math.max(0, Math.min(1 - nx, sel.w / cv.clientWidth));
+  const nh = Math.max(0, Math.min(1 - ny, sel.h / cv.clientHeight));
+  return (nw > 0.002 && nh > 0.002) ? { nx, ny, nw, nh } : null;
+}
 function lbSelPx() {
-  const cv = $lb('lbCanvas');
-  if (!_lb.sel || !cv.clientWidth) return null;
-  const k = cv.width / cv.clientWidth;
-  let x = Math.max(0, Math.round(_lb.sel.left * k)), y = Math.max(0, Math.round(_lb.sel.top * k));
-  let w = Math.max(8, Math.round(_lb.sel.w * k)), h = Math.max(8, Math.round(_lb.sel.h * k));
-  w = Math.min(w, cv.width - x); h = Math.min(h, cv.height - y);
+  const cv = $lb('lbCanvas'), n = lbSelNorm();
+  if (!n || !cv.width) return null;
+  const x = Math.max(0, Math.min(cv.width - 1, Math.round(n.nx * cv.width)));
+  const y = Math.max(0, Math.min(cv.height - 1, Math.round(n.ny * cv.height)));
+  const w = Math.min(cv.width - x, Math.max(1, Math.round(n.nw * cv.width)));
+  const h = Math.min(cv.height - y, Math.max(1, Math.round(n.nh * cv.height)));
   return { x, y, w, h };
 }
 
@@ -429,7 +757,7 @@ let _lbOcrP = null;
 function lbSetStatus(t) { const el = $lb('lbStatus'); if (el) el.textContent = t; }
 function lbShowText(t, rows) {
   const ta = $lb('lbTxt'), cp = $lb('lbCopyBtn');
-  ta.style.display = 'block'; ta.value = t; ta.rows = rows || 4;
+  ta.style.display = 'block'; ta.value = t; ta.rows = Math.min(rows || 4, 6);
   cp.style.display = t ? 'inline-block' : 'none';
   setTimeout(lbFit, 0);
 }
@@ -498,6 +826,12 @@ function lbCopyText() {
 // ── 🤖 AI 识读: 把当前所见整张交给服务器 (Claude / Google Vision), 结果存回该证件 ──
 async function lbAiRead() {
   const cv = $lb('lbCanvas'); if (!cv.width) return;
+  if (_lb.aiBusy) return;                       // pad 上很容易点两下, 每次都要花钱
+  _lb.aiBusy = true;
+  const btn = $lb('lbAiBtn'), label = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '识读中…'; }
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 60000);
   lbTogglePanel(true);
   lbSetStatus('🤖 AI 识读中…（约几秒）');
   try {
@@ -513,14 +847,21 @@ async function lbAiRead() {
     const body = { data: src.toDataURL('image/jpeg', 0.92) };
     if (lbEditable(d)) { body.sub_id = d.sub_id; body.doc_id = d.doc_id; }
     const r = await fetch('/api/admin/ai-read-image', {
-      method: 'POST', credentials: 'same-origin',
+      method: 'POST', credentials: 'same-origin', signal: ac.signal,
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
     lbShowAi(j, false);
     if (lbEditable(d)) { try { d.ai_text = JSON.stringify(j); } catch (_) {} }
-  } catch (e) { lbSetStatus('⚠️ ' + (e.message || e)); }
+    else lbSetStatus(($lb('lbStatus').textContent || '') + ' · 这张不是扫码申请的证件，结果不会存进系统');
+  } catch (e) {
+    lbSetStatus(e && e.name === 'AbortError' ? '⚠️ AI 识读超时（60 秒）— 请重试' : ('⚠️ ' + (e.message || e)));
+  } finally {
+    clearTimeout(timer);
+    _lb.aiBusy = false;
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
 }
 function lbFmtAi(r) {
   let out = '';
@@ -570,9 +911,15 @@ async function lbSetVerify(st) {
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.success) throw new Error(j.error || '标记失败');
     _lb.verify = next; _lb.verifyBy = '';
+    // 哪些证件算同一组由服务端说了算 (updated_ids), 前端按前缀猜只是兜底
+    const ids = Array.isArray(j.updated_ids) ? j.updated_ids.map(String) : null;
     const grp = lbGroupOf(d);
-    _lb.list.forEach(x => { if (x.sub_id === d.sub_id && lbGroupOf(x) === grp) x.verify_status = next; });
+    _lb.list.forEach(x => {
+      if (String(x.sub_id) !== String(d.sub_id)) return;
+      if (ids ? ids.includes(String(x.doc_id)) : lbGroupOf(x) === grp) x.verify_status = next;
+    });
     lbRenderVerify();
+    pcSyncDocState(d.sub_id, x => x.verify_status = next, ids);
     pcToast(next === 'real' ? '整组已标记为真' : next === 'fake' ? '整组已标记为假' : next === 'pending' ? '整组标为待确定（正反面一起）' : '已取消标记', next === 'fake' ? 'err' : 'ok');
     lbRefreshThumbBadges();
     if (_lb.batch && _lb.batch.awaitVerdict && next) { _lb.batch.awaitVerdict = false; lbBatchAdvance(); }
@@ -595,11 +942,8 @@ function lbBake(dataUrl, msg, clean) {
 // 自动色阶(去灰/校色) + 轻锐化
 function _lbAfx(cv) {
   const w = cv.width, h = cv.height, ctx = cv.getContext('2d');
-  const blur = document.createElement('canvas'); blur.width = w; blur.height = h;
-  const bx = blur.getContext('2d');
-  bx.filter = 'blur(' + Math.max(1, Math.round(w / 700)) + 'px)';
-  bx.drawImage(cv, 0, 0);
-  const idO = ctx.getImageData(0, 0, w, h), idB = bx.getImageData(0, 0, w, h);
+  const blur = lbBlurTo(document.createElement('canvas'), cv, Math.max(1, Math.round(w / 700)));
+  const idO = ctx.getImageData(0, 0, w, h), idB = blur.getContext('2d').getImageData(0, 0, w, h);
   const o = idO.data, b = idB.data;
   const hist = [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)];
   for (let i = 0; i < w * h; i++) { hist[0][o[i * 4]]++; hist[1][o[i * 4 + 1]]++; hist[2][o[i * 4 + 2]]++; }
@@ -631,6 +975,7 @@ function lbAutoFix() {
     const cx = work.getContext('2d'); cx.imageSmoothingQuality = 'high';
     cx.drawImage(cv, 0, 0, w, h);
     _lbAfx(work);
+    if (lbLooksBlank(work)) { pcToast('这台设备的浏览器算不了自动修复（结果是空白图），已取消', 'err'); return; }
     lbBake(work.toDataURL('image/jpeg', 0.92), '🪄 已增强颜色 / 对比 — 不满意点【↩ 还原】, 满意点【💾 保存】');
   } catch (e) { pcToast('自动修复失败: ' + (e.message || e), 'err'); }
 }
@@ -650,25 +995,22 @@ function lbDocEnhance() {
       d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = g;
     }
     cx.putImageData(id, 0, 0);
-    const bgc = document.createElement('canvas'); bgc.width = w; bgc.height = h;
-    const bx = bgc.getContext('2d');
-    bx.filter = 'blur(' + Math.max(6, Math.round(w / 60)) + 'px)';
-    bx.drawImage(work, 0, 0);
-    const bd = bx.getImageData(0, 0, w, h).data;
+    const bgc = lbBlurTo(document.createElement('canvas'), work, Math.max(6, Math.round(w / 60)));
+    const bd = bgc.getContext('2d').getImageData(0, 0, w, h).data;
     for (let i = 0; i < w * h; i++) {
       const v = Math.max(0, Math.min(255, 255 + (d[i * 4] - bd[i * 4]) * 2.4 - 12));
       d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v;
     }
     cx.putImageData(id, 0, 0);
-    const blc = document.createElement('canvas'); blc.width = w; blc.height = h;
-    const blx = blc.getContext('2d'); blx.filter = 'blur(1px)'; blx.drawImage(work, 0, 0);
-    const sd = blx.getImageData(0, 0, w, h).data;
+    const blc = lbBlurTo(document.createElement('canvas'), work, 1);
+    const sd = blc.getContext('2d').getImageData(0, 0, w, h).data;
     const id2 = cx.getImageData(0, 0, w, h), d2 = id2.data;
     for (let i = 0; i < w * h * 4; i += 4) {
       const v = Math.max(0, Math.min(255, d2[i] * 1.5 - sd[i] * 0.5));
       d2[i] = d2[i + 1] = d2[i + 2] = v;
     }
     cx.putImageData(id2, 0, 0);
+    if (lbLooksBlank(work)) { pcToast('这台设备的浏览器算不了文档增强（结果是空白图），已取消', 'err'); return; }
     lbBake(work.toDataURL('image/jpeg', 0.92), '📄 已增强（黑白文档模式）— 不满意点【↩ 还原】；糊得太狠的建议让对方重拍');
   } catch (e) { pcToast('增强失败: ' + (e.message || e), 'err'); }
 }
@@ -722,6 +1064,7 @@ async function lbSaveCrop() {
     return;
   }
   d.has_cropped = true;
+  pcSyncDocState(d.sub_id, x => x.has_cropped = 1, [String(d.doc_id)]);
   _lb.showCropped = true;          // 此刻画面上就是刚存的裁剪版
   lbSyncVersionUI();
   lbBustThumbs(d);
@@ -747,10 +1090,22 @@ async function lbClearCrop() {
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.success) throw new Error(j.error || '清除失败');
     d.has_cropped = false; _lb.showCropped = false;
+    pcSyncDocState(d.sub_id, x => x.has_cropped = 0, [String(d.doc_id)]);
     lbBustThumbs(d);
     lbRender();
     pcToast('已恢复原件', 'ok');
   } catch (e) { pcToast(e.message || '清除失败', 'err'); }
+}
+// 把结论 / 裁剪状态同步回卡片自己的数据 (window._appById[..].docs),
+// 否则改完资料卡片一重绘, 刚标的真假角标就没了 —— 看着像没保存成功。
+function pcSyncDocState(subId, apply, onlyDocIds) {
+  Object.values(window._appById || {}).forEach(a => {
+    if (String(a.id) !== String(subId) || !Array.isArray(a.docs)) return;
+    a.docs.forEach(doc => {
+      if (onlyDocIds && !onlyDocIds.includes(String(doc.id))) return;
+      apply(doc);
+    });
+  });
 }
 // 保存后刷新页面上该文件的缩略图 (加时间戳绕过缓存)
 function lbBustThumbs(d) {
@@ -824,8 +1179,13 @@ function lbBatchEnd(silent) {
 }
 
 document.addEventListener('keydown', e => {
-  if ($lb('lightbox').style.display !== 'flex') return;
-  if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
+  const win = $lb('lightbox');
+  if (!win || win.style.display !== 'flex') return;
+  const t = e.target;
+  if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+  if (t && t.isContentEditable) return;
+  // 证件窗口不是模态的 —— 用户可能正在旁边的表单里操作, 那时按 r 绝不能转图
+  if (t && t !== document.body && !win.contains(t)) return;
   if (e.key === 'Escape') lbClose();
   else if (e.key === 'ArrowLeft') lbNav(-1);
   else if (e.key === 'ArrowRight') lbNav(1);
@@ -833,23 +1193,6 @@ document.addEventListener('keydown', e => {
   else if (e.key === '+' || e.key === '=') lbZoom(1);
   else if (e.key === '-' || e.key === '_') lbZoom(-1);
 });
-
-// 直接更正申请里填错的名字
-async function editApplicantName(subId, cur, btn) {
-  const nm = await pcPrompt('修改这条招工申请里的姓名', cur || '');
-  if (nm === null) return;
-  const v = String(nm).trim();
-  if (!v) { pcToast('姓名不能为空', 'err'); return; }
-  btn.disabled = true;
-  try {
-    const r = await fetch('/api/admin/applicant-submissions/' + subId, {
-      method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: v })
-    });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok || !d.success) throw new Error(d.error || '保存失败');
-    doSearch(); pcToast('姓名已更新', 'ok');
-  } catch (e) { pcToast(e.message || '保存失败', 'err'); btn.disabled = false; }
-}
 
 // ══════ 页面自有风格的提示 / 确认 / 输入（替代浏览器原生 alert / confirm / prompt）══════
 function pcToast(msg, type) {
@@ -913,76 +1256,92 @@ function pcPrompt(label, value) {
 }
 </script>
 <div id="pcToastWrap" style="position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:15000;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none"></div>
-<div id="lightbox" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.95);z-index:9999;flex-direction:column;padding:10px 12px 12px">
-  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:#e2e8f0;font-size:13px;flex:0 0 auto">
-    <span id="lbCap" style="font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
-    <span style="margin-left:auto;display:flex;gap:5px;align-items:center;flex-wrap:wrap">
-      <button onclick="lbZoom(-1)" title="缩小" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">－</button>
+<!-- 证件审阅小窗: 故意不加全屏遮罩 —— 后面的页面照常能点、能滚、能改资料 -->
+<div id="lightbox" tabindex="-1" style="display:none;position:fixed;z-index:9999;top:64px;right:20px;
+     width:560px;height:72vh;max-width:96vw;max-height:94vh;min-width:300px;min-height:240px;
+     background:#0f172a;border:1px solid #334155;border-radius:12px;box-shadow:0 20px 56px rgba(15,23,42,.55);
+     flex-direction:column;overflow:hidden;outline:none;color:#e2e8f0">
+
+  <div id="lbHead" style="display:flex;align-items:center;gap:6px;padding:7px 8px 7px 11px;background:#1A3F7A;
+       cursor:move;user-select:none;-webkit-user-select:none;flex:0 0 auto">
+    <span id="lbCap" style="font-size:12px;font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">证件</span>
+    <button id="lbMaxBtn" onclick="lbToggleMax()" title="放大 / 还原窗口" style="background:transparent;border:none;color:#fff;font-size:14px;line-height:1;cursor:pointer;padding:2px 5px;font-family:inherit">⤢</button>
+    <button id="lbFoldBtn" onclick="lbToggleFold()" title="收起，只留标题条（腾地方填表）" style="background:transparent;border:none;color:#fff;font-size:14px;line-height:1;cursor:pointer;padding:2px 5px;font-family:inherit">▁</button>
+    <button onclick="lbClose()" title="关闭 (Esc)" style="background:transparent;border:none;color:#fff;font-size:14px;line-height:1;cursor:pointer;padding:2px 5px;font-family:inherit;font-size:16px">✕</button>
+  </div>
+
+  <div id="lbBody" style="display:flex;flex-direction:column;flex:1;min-height:0;padding:8px 10px 10px">
+    <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;flex:0 0 auto">
+      <button onclick="lbZoom(-1)" title="缩小" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit;font-size:12px;white-space:nowrap">－</button>
       <span id="lbZoomPct" style="min-width:3em;text-align:center;color:#94a3b8;font-size:12px">100%</span>
-      <button onclick="lbZoom(1)" title="放大" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">＋</button>
-      <button onclick="lbRotate(-90)" title="向左旋转 90°（快捷键 Shift+R）" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">↺</button>
-      <button onclick="lbRotate(90)" title="向右旋转 90°（快捷键 R）" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">↻</button>
-      <button id="lbOcrBtn" onclick="lbTogglePanel()" title="识别文字: 框选一块区域提取英文字符" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">🔍 识别</button>
-      <button onclick="lbAiRead()" title="AI 识读: 让 Claude 直接读整张证件, 提取姓名 / 证件号 / 日期" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">🤖 AI 识读</button>
-      <button id="lbAdjBtn" onclick="lbToggleAdj()" title="亮度 / 对比度 / 黑白" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">🎛 调节</button>
-      <button onclick="lbAutoFix()" title="自动修复: 自动色阶 + 轻锐化（不旋转不裁剪）" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">🪄 自动修复</button>
-      <button onclick="lbDocEnhance()" title="文档增强: 去灰底 / 均衡光照 / 拉出笔画（黑白文档模式）" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">📄 文档增强</button>
-      <button id="lbRestoreBtn" onclick="lbRestore()" title="还原: 丢掉当前所有调整, 回到系统里保存的图" style="display:none;padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">↩ 还原</button>
-      <a id="lbOrigLink" href="#" target="_blank" style="color:#93c5fd;font-size:12px;white-space:nowrap">原图 ↗</a>
-    </span>
-  </div>
-
-  <div id="lbBatchBar" style="display:none;align-items:center;gap:10px;margin-top:8px;padding:6px 10px;background:rgba(180,83,9,.28);border:1px solid #b45309;border-radius:8px;color:#fde68a;font-size:12px;flex-wrap:wrap;flex:0 0 auto"></div>
-
-  <div id="lbVerifyBar" style="display:none;align-items:center;gap:8px;margin-top:8px;padding:6px 10px;background:rgba(255,255,255,.06);border:1px solid #334155;border-radius:8px;font-size:12px;color:#cbd5e1;flex-wrap:wrap;flex:0 0 auto">
-    <span id="lbVerLabel" style="white-space:nowrap">证件结论:</span>
-    <button id="lbVerReal" onclick="lbSetVerify('real')">✅ 真</button>
-    <button id="lbVerFake" onclick="lbSetVerify('fake')">❌ 假</button>
-    <button id="lbVerPend" onclick="lbSetVerify('pending')">❓ 待确定</button>
-    <span id="lbVerInfo" style="margin-left:auto;color:#94a3b8;font-size:11px"></span>
-  </div>
-
-  <div id="lbAdjPanel" style="display:none;margin-top:8px;padding:8px 10px;background:rgba(255,255,255,.06);border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:12px;flex:0 0 auto">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><span style="white-space:nowrap">☀️ 亮度</span><input id="lbBright" type="range" min="40" max="220" value="100" style="flex:1;margin:0" oninput="lbAdjChange()"><span id="lbBrightV" style="min-width:3.2em;text-align:right">100%</span></div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><span style="white-space:nowrap">◐ 对比</span><input id="lbContrast" type="range" min="40" max="260" value="100" style="flex:1;margin:0" oninput="lbAdjChange()"><span id="lbContrastV" style="min-width:3.2em;text-align:right">100%</span></div>
-    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-      <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="lbGray" style="width:auto;margin:0" onchange="lbAdjChange()">黑白</label>
-      <button onclick="lbAdjReset()" style="padding:2px 10px;border-radius:6px;border:1px solid #475569;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">重置</button>
-      <span style="color:#94a3b8">调节同时作用于识别和保存 — 对比拉高认字更准</span>
+      <button onclick="lbZoom(1)" title="放大" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit;font-size:12px;white-space:nowrap">＋</button>
+      <button onclick="lbRotate(-90)" title="向左旋转 90°（快捷键 Shift+R）" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit;font-size:12px;white-space:nowrap">↺</button>
+      <button onclick="lbRotate(90)" title="向右旋转 90°（快捷键 R）" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit;font-size:12px;white-space:nowrap">↻</button>
+      <button id="lbSelBtn" onclick="lbToggleSelMode()" title="框选模式：pad / 手机上要先开这个，手指在图上拖才是画框（关着时手指用来滚动看图）" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit;font-size:12px;white-space:nowrap">✜<span class="lbl">框选</span></button>
+      <button id="lbOcrBtn" onclick="lbTogglePanel()" title="识别文字：框选一块区域提取英文字符" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit;font-size:12px;white-space:nowrap">🔍<span class="lbl">识别</span></button>
+      <button id="lbAiBtn" onclick="lbAiRead()" title="AI 识读：让 Claude 直接读整张证件，提取姓名 / 证件号 / 日期" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit;font-size:12px;white-space:nowrap">🤖<span class="lbl">AI 识读</span></button>
+      <button id="lbAdjBtn" onclick="lbToggleAdj()" title="亮度 / 对比度 / 黑白" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit;font-size:12px;white-space:nowrap">🎛<span class="lbl">调节</span></button>
+      <button onclick="lbAutoFix()" title="自动修复：自动色阶 + 轻锐化（不旋转不裁剪）" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit;font-size:12px;white-space:nowrap">🪄<span class="lbl">自动修复</span></button>
+      <button onclick="lbDocEnhance()" title="文档增强：去灰底 / 均衡光照 / 拉出笔画（黑白文档模式）" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit;font-size:12px;white-space:nowrap">📄<span class="lbl">文档增强</span></button>
+      <button id="lbRestoreBtn" onclick="lbRestore()" title="还原：丢掉当前所有调整，回到系统里保存的图" style="display:none;padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit;font-size:12px;white-space:nowrap">↩<span class="lbl">还原</span></button>
+      <a id="lbOrigLink" href="#" target="_blank" style="color:#93c5fd;font-size:12px;white-space:nowrap;margin-left:auto">原图 ↗</a>
     </div>
-  </div>
 
-  <div id="lbStage" style="flex:1 1 auto;min-height:0;display:flex;overflow:auto;margin-top:8px">
-    <div id="lbWrap" style="margin:auto;position:relative;user-select:none;line-height:0"
-         onmousedown="lbDown(event)" onmousemove="lbMove(event)" onmouseup="lbUp()" onmouseleave="lbUp()">
-      <canvas id="lbCanvas" style="display:block;border-radius:8px;background:#000;cursor:crosshair"></canvas>
-      <div id="lbSelBox" style="display:none;position:absolute;border:2px dashed #38bdf8;background:rgba(56,189,248,.18);pointer-events:none"></div>
+    <div id="lbBatchBar" style="display:none;align-items:center;gap:10px;margin-top:7px;padding:5px 9px;background:rgba(180,83,9,.28);border:1px solid #b45309;border-radius:8px;color:#fde68a;font-size:12px;flex-wrap:wrap;flex:0 0 auto"></div>
+
+    <div id="lbVerifyBar" style="display:none;align-items:center;gap:7px;margin-top:7px;padding:5px 9px;background:rgba(255,255,255,.06);border:1px solid #334155;border-radius:8px;font-size:12px;color:#cbd5e1;flex-wrap:wrap;flex:0 0 auto">
+      <span id="lbVerLabel" style="white-space:nowrap">证件结论:</span>
+      <button id="lbVerReal" onclick="lbSetVerify('real')">✅ 真</button>
+      <button id="lbVerFake" onclick="lbSetVerify('fake')">❌ 假</button>
+      <button id="lbVerPend" onclick="lbSetVerify('pending')">❓ 待确定</button>
+      <span id="lbVerInfo" style="margin-left:auto;color:#94a3b8;font-size:11px"></span>
     </div>
-  </div>
 
-  <div id="lbTextPanel" style="display:none;margin-top:8px;padding:8px 10px;background:rgba(255,255,255,.06);border:1px solid #334155;border-radius:8px;flex:0 0 auto">
-    <div id="lbStatus" style="font-size:12px;color:#94a3b8;margin-bottom:5px"></div>
-    <textarea id="lbTxt" readonly rows="4" style="display:none;width:100%;font-size:12px;font-family:ui-monospace,Consolas,monospace;border:1px solid #475569;border-radius:6px;padding:6px 8px;background:#0f172a;color:#e2e8f0;resize:vertical"></textarea>
-    <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-      <button onclick="lbOcr(false)" style="padding:4px 11px;border-radius:6px;border:none;background:#059669;color:#fff;cursor:pointer;font-size:12px;font-family:inherit">识别选框</button>
-      <button onclick="lbOcr(true)" style="padding:4px 11px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-size:12px;font-family:inherit">识别整张</button>
-      <button id="lbCopyBtn" onclick="lbCopyText()" style="display:none;padding:4px 11px;border-radius:6px;border:none;background:#2563eb;color:#fff;cursor:pointer;font-size:12px;font-family:inherit">📋 复制</button>
-      <button onclick="lbTogglePanel(false)" style="padding:4px 11px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#94a3b8;cursor:pointer;font-size:12px;font-family:inherit">收起</button>
+    <div id="lbAdjPanel" style="display:none;margin-top:7px;max-height:34%;overflow:auto;padding:7px 9px;background:rgba(255,255,255,.06);border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:12px;flex:0 0 auto">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><span style="white-space:nowrap">☀️ 亮度</span><input id="lbBright" type="range" min="40" max="220" value="100" style="flex:1;margin:0" oninput="lbAdjChange()"><span id="lbBrightV" style="min-width:3.2em;text-align:right">100%</span></div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><span style="white-space:nowrap">◐ 对比</span><input id="lbContrast" type="range" min="40" max="260" value="100" style="flex:1;margin:0" oninput="lbAdjChange()"><span id="lbContrastV" style="min-width:3.2em;text-align:right">100%</span></div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="lbGray" style="width:auto;margin:0" onchange="lbAdjChange()">黑白</label>
+        <button onclick="lbAdjReset()" style="padding:2px 10px;border-radius:6px;border:1px solid #475569;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit;font-size:12px">重置</button>
+        <span style="color:#94a3b8">调节同时作用于识别和保存</span>
+      </div>
     </div>
+
+    <div id="lbStage" style="flex:1 1 auto;min-height:120px;display:flex;overflow:auto;margin-top:7px;justify-content:safe center;align-items:safe center;scrollbar-gutter:stable">
+      <div id="lbWrap" style="flex:0 0 auto;position:relative;user-select:none;-webkit-user-select:none;line-height:0"
+           onmousedown="lbDown(event)" onmousemove="lbMove(event)" onmouseup="lbUp()" onmouseleave="lbUp()"
+           ontouchstart="lbDown(event)" ontouchmove="lbMove(event)" ontouchend="lbUp()" ontouchcancel="lbUp()">
+        <canvas id="lbCanvas" style="display:block;border-radius:8px;background:#000;cursor:crosshair;touch-action:none"></canvas>
+        <div id="lbSelBox" style="display:none;position:absolute;border:2px dashed #38bdf8;background:rgba(56,189,248,.18);pointer-events:none"></div>
+      </div>
+    </div>
+
+    <div id="lbTextPanel" style="display:none;margin-top:7px;max-height:38%;overflow:auto;padding:7px 9px;background:rgba(255,255,255,.06);border:1px solid #334155;border-radius:8px;flex:0 0 auto">
+      <div id="lbStatus" style="font-size:12px;color:#94a3b8;margin-bottom:5px"></div>
+      <textarea id="lbTxt" readonly rows="4" style="display:none;width:100%;font-size:12px;font-family:ui-monospace,Consolas,monospace;border:1px solid #475569;border-radius:6px;padding:6px 8px;background:#0f172a;color:#e2e8f0;resize:vertical;user-select:text;-webkit-user-select:text"></textarea>
+      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+        <button onclick="lbOcr(false)" style="padding:4px 11px;border-radius:6px;border:none;background:#059669;color:#fff;cursor:pointer;font-size:12px;font-family:inherit">识别选框</button>
+        <button onclick="lbOcr(true)" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit;font-size:12px;white-space:nowrap">识别整张</button>
+        <button id="lbCopyBtn" onclick="lbCopyText()" style="display:none;padding:4px 11px;border-radius:6px;border:none;background:#2563eb;color:#fff;cursor:pointer;font-size:12px;font-family:inherit">📋 复制</button>
+        <button onclick="lbTogglePanel(false)" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit;font-size:12px;white-space:nowrap;color:#94a3b8">收起</button>
+      </div>
+    </div>
+
+    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;justify-content:center;align-items:center;flex:0 0 auto">
+      <button onclick="lbNav(-1)" style="padding:5px 11px;border-radius:6px;border:none;background:#334155;color:#fff;cursor:pointer;font-family:inherit;font-size:12px">← 上一张</button>
+      <button onclick="lbNav(1)" style="padding:5px 11px;border-radius:6px;border:none;background:#334155;color:#fff;cursor:pointer;font-family:inherit;font-size:12px">下一张 →</button>
+      <span id="lbEditTools" style="display:none;gap:6px;align-items:center;flex-wrap:wrap">
+        <button id="lbSaveBtn" onclick="lbSaveCrop()" disabled style="padding:5px 11px;border-radius:6px;border:none;background:#0ea5e9;color:#fff;cursor:pointer;font-family:inherit;font-size:12px">💾 保存</button>
+        <button onclick="lbBatchStart()" title="逐张：转正 → 框选 → 保存 → 标真假 → 自动下一张" style="padding:5px 11px;border-radius:6px;border:none;background:#7c3aed;color:#fff;cursor:pointer;font-family:inherit;font-size:12px">✂️ 连续处理</button>
+        <button id="lbClearCropBtn" onclick="lbClearCrop()" title="删除服务器上保存的裁剪版，缩略图恢复显示原件" style="display:none;padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit;font-size:12px;white-space:nowrap;border-color:#b91c1c;color:#fca5a5">🗑 删除裁剪版</button>
+      </span>
+      <button id="lbVerBtn" onclick="lbToggleVersion()" style="display:none;padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit;font-size:12px;white-space:nowrap">看裁剪版</button>
+    </div>
+    <div id="lbCropHint" style="color:#94a3b8;font-size:11px;margin-top:5px;text-align:center;flex:0 0 auto;line-height:1.4"></div>
   </div>
 
-  <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center;flex:0 0 auto">
-    <button onclick="lbNav(-1)" style="padding:6px 12px;border-radius:6px;border:none;background:#334155;color:#fff;cursor:pointer;font-family:inherit">← 上一张</button>
-    <button onclick="lbNav(1)" style="padding:6px 12px;border-radius:6px;border:none;background:#334155;color:#fff;cursor:pointer;font-family:inherit">下一张 →</button>
-    <span id="lbEditTools" style="display:none;gap:8px;align-items:center;flex-wrap:wrap">
-      <button id="lbSaveBtn" onclick="lbSaveCrop()" disabled style="padding:6px 12px;border-radius:6px;border:none;background:#0ea5e9;color:#fff;cursor:pointer;font-family:inherit">💾 保存</button>
-      <button onclick="lbClearCrop()" style="padding:6px 12px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">恢复原件</button>
-      <button onclick="lbBatchStart()" title="逐张: 转正 → 框选 → 保存 → 标真假 → 自动下一张" style="padding:6px 12px;border-radius:6px;border:none;background:#7c3aed;color:#fff;cursor:pointer;font-family:inherit">✂️ 连续处理</button>
-    </span>
-    <button id="lbVerBtn" onclick="lbToggleVersion()" style="display:none;padding:6px 12px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">看裁剪版</button>
-    <button onclick="lbClose()" style="padding:6px 12px;border-radius:6px;border:none;background:#b45309;color:#fff;cursor:pointer;font-family:inherit">关闭 (Esc)</button>
-  </div>
-  <div id="lbCropHint" style="color:#94a3b8;font-size:12px;margin-top:6px;text-align:center;flex:0 0 auto"></div>
+  <div id="lbGrip" title="拖动这里调整窗口大小" style="position:absolute;right:0;bottom:0;width:20px;height:20px;cursor:nwse-resize;
+       background:linear-gradient(135deg,transparent 0 46%,#64748b 46% 54%,transparent 54% 62%,#64748b 62% 70%,transparent 70%)"></div>
 </div>
 </body>
 </html>
