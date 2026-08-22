@@ -46,6 +46,9 @@ body{font-family:'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-ser
 #lightbox .lbl{margin-left:4px}
 #lightbox.compact .lbl{display:none}
 #lightbox.compact #lbCropHint{display:none}
+.af-sec{font-size:11px;font-weight:700;color:var(--gray-400);letter-spacing:.06em;margin:12px 0 7px;padding-bottom:4px;border-bottom:1px solid var(--gray-100)}
+.af-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.af-wide{grid-column:1 / -1}
 .af-l{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--gray-500);font-weight:700}
 .af-i{padding:7px 9px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:14px;font-family:inherit;outline:none;color:var(--gray-800);background:#fff;width:100%}
 .af-i:focus{border-color:var(--sky)}
@@ -75,6 +78,7 @@ body{font-family:'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-ser
   <div id="results"></div>
 </div>
 
+<script src="/address-validator.js" defer></script>
 <script>
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 const DOC_LABELS={ssn_front:'SSN 正面',ssn_back:'SSN 反面',ead_front:'EAD 正面',ead_back:'EAD 反面'};
@@ -201,12 +205,14 @@ async function doSearch(){
 // ══════ 招工申请卡片: 只读视图 ⇄ 资料编辑表单（可原地重绘, 不整页刷新）══════
 const US_STATES = ['AL','AK','AZ','AR','CA','CO','CT','DE','DC','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','PR','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'];
 const APP_FIELDS = [
-  ['name','姓名 *','工人法定全名'], ['phone','电话 *','(555) 000-0000'], ['email','邮箱','name@example.com'],
-  ['position','职位','Picking / Packing …'], ['address1','街道地址','123 Main St'], ['address2','单元 / 楼层','Apt 2B（可空）'],
-  ['city','城市','Chicago'], ['state','州',''], ['zip','邮编','60601']
+  ['name','姓名 NAME *','工人法定全名'], ['phone','电话 PHONE *','(555) 000-0000'], ['email','邮箱 EMAIL','email@example.com'],
+  ['position','职位 POSITION','Picking / Packing …'], ['address1','街道地址 STREET ADDRESS *','e.g. 123 Main St'], ['address2','单元 / 楼层 UNIT / SUITE（选填）','e.g. Apt 2B, Suite 100'],
+  ['city','城市 CITY *','Chicago'], ['state','州 STATE *',''], ['zip','邮编 ZIP','60601']
 ];
-const APP_FIELD_CN = APP_FIELDS.reduce((m, f) => (m[f[0]] = f[1].replace(' *',''), m), {});
+const APP_FIELD_CN = { name:'姓名', phone:'电话', email:'邮箱', position:'职位', address1:'街道地址', address2:'单元/楼层', city:'城市', state:'州', zip:'邮编', address_verified:'地址验证标记' };
 window._appById = window._appById || {};
+// 「🔍 验证地址」通过后置真; 地址字段再被改动就归零, 保存时随表单写入
+window._afVerified = window._afVerified || {};
 
 function appCardHtml(a) {
   window._appById[a.id] = a;
@@ -232,7 +238,7 @@ function appCardInner(a) {
       ${kv('申请公司', a.partner_name)} ${kv('申请地点', a.apply_state)}
       ${kv('状态', a.status)} ${kv('提交时间', String(a.created_at || '').slice(0, 16))}
     </div>
-    ${addr ? `<div class="meta">${kv('地址', addr)}</div>` : ''}
+    ${addr ? `<div class="meta">${kv('地址', addr)} ${a.address_verified ? '<span style="color:#059669;font-weight:700;font-size:11px;white-space:nowrap">✓ 地址已验证</span>' : ''}</div>` : ''}
     ${window._docThumbs ? window._docThumbs(a.id, a.docs) : ''}`;
 }
 function reRenderApp(id) {
@@ -244,19 +250,37 @@ function editApplicantInfo(id) {
   const a = window._appById[id];
   const el = document.getElementById('appCard' + id);
   if (!a || !el) return;
-  const inp = (k, label, ph) => k === 'state'
-    ? `<label class="af-l">${esc(label)}<select id="af_${id}_${k}" class="af-i">
+  _afVerified[id] = !!a.address_verified;   // 之前验证过就带着; 地址一改就失效
+  const F = APP_FIELDS.reduce((m, f) => (m[f[0]] = f, m), {});
+  const isAddr = k => ['address1', 'address2', 'city', 'state', 'zip'].includes(k);
+  const inp = (k, wide) => {
+    const label = F[k][1], ph = F[k][2];
+    const cls = 'af-l' + (wide ? ' af-wide' : '');
+    const touch = isAddr(k) ? ` oninput="afAddrTouched(${id})"` : '';
+    if (k === 'state') return `<label class="${cls}">${esc(label)}<select id="af_${id}_${k}" class="af-i" onchange="afAddrTouched(${id})">
         <option value="">-- 州 --</option>
         ${US_STATES.map(x => `<option value="${x}"${String(a.state || '').toUpperCase() === x ? ' selected' : ''}>${x}</option>`).join('')}
-       </select></label>`
-    : `<label class="af-l">${esc(label)}<input id="af_${id}_${k}" class="af-i" value="${esc(a[k] || '')}" placeholder="${esc(ph || '')}" autocomplete="off"></label>`;
+       </select></label>`;
+    return `<label class="${cls}">${esc(label)}<input id="af_${id}_${k}" class="af-i" value="${esc(a[k] || '')}" placeholder="${esc(ph || '')}" autocomplete="off"${touch}></label>`;
+  };
   el.innerHTML = `
-    <div style="font-size:12px;font-weight:700;color:var(--blue);margin-bottom:8px">✎ 更正申请人资料
+    <div style="font-size:12px;font-weight:700;color:var(--blue)">✎ 更正申请人资料
       <span style="font-weight:400;color:var(--gray-400)">— 对着证件改；每一处改动都会记入审计日志</span></div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:8px">
-      ${APP_FIELDS.map(f => inp(f[0], f[1], f[2])).join('')}
+    <div class="af-sec">基本信息 BASIC INFO</div>
+    <div class="af-grid">
+      ${inp('name')} ${inp('phone')} ${inp('email')} ${inp('position')}
     </div>
-    <div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">
+    <div class="af-sec">地址 ADDRESS</div>
+    <div class="af-grid">
+      ${inp('address1', true)}
+      ${inp('address2', true)}
+      ${inp('city')} ${inp('state')} ${inp('zip')}
+    </div>
+    <div style="display:flex;gap:10px;margin-top:9px;align-items:center;flex-wrap:wrap">
+      <button type="button" id="afVerBtn${id}" onclick="verifyApplicantAddr(${id})" style="padding:6px 13px;border-radius:8px;border:1px solid #93c5fd;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🔍 验证地址 Verify</button>
+      <span id="afAddrStatus${id}" style="font-size:12px;font-weight:700;color:${a.address_verified ? '#059669' : 'var(--gray-400)'}">${a.address_verified ? '✓ 已验证 Verified' : '未验证 Not verified'}</span>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap">
       <button id="afSave${id}" onclick="saveApplicantInfo(${id})" style="padding:7px 16px;border-radius:8px;border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">保存</button>
       <button onclick="reRenderApp(${id})" style="padding:7px 16px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:var(--gray-600);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">取消</button>
       <span style="font-size:11px;color:var(--gray-400)">👇 点证件缩略图会弹出小窗，可以拖到旁边一边看一边改</span>
@@ -265,10 +289,50 @@ function editApplicantInfo(id) {
   const first = document.getElementById('af_' + id + '_name');
   if (first) { first.focus(); first.select(); }
 }
+// 地址字段被改过 → 之前的验证结果作废
+function afAddrTouched(id) {
+  if (!_afVerified[id]) return;
+  _afVerified[id] = false;
+  const st = document.getElementById('afAddrStatus' + id);
+  if (st) { st.textContent = '地址改过了，请重新验证'; st.style.color = '#b45309'; }
+}
+// 和后台「新增员工」同一套验证: Google 标准化 → 建议地址弹窗 → 回填 → 打勾
+async function verifyApplicantAddr(id) {
+  const g = k => document.getElementById('af_' + id + '_' + k);
+  if (!g('address1')) return;
+  const street = g('address1').value.trim(), street2 = g('address2').value.trim();
+  const city = g('city').value.trim(), state = g('state').value, zip = g('zip').value.trim();
+  const st = document.getElementById('afAddrStatus' + id);
+  if (!street && !city && !zip) { pcToast('先填地址再验证', 'err'); return; }
+  if (typeof validateAddress !== 'function') { if (st) { st.textContent = '⚠ 验证组件没加载出来，刷新页面重试'; st.style.color = '#b45309'; } return; }
+  const btn = document.getElementById('afVerBtn' + id);
+  if (btn) btn.disabled = true;
+  if (st) { st.textContent = '验证中…'; st.style.color = 'var(--gray-400)'; }
+  try {
+    const result = await validateAddress({ street, street2, city, state, zip });
+    if (result.skipped) { if (st) { st.textContent = '⚠ 验证服务未配置'; st.style.color = '#94a3b8'; } return; }
+    if (result.standardized) {
+      const sd = result.standardized;
+      g('address1').value = sd.street || '';
+      g('address2').value = sd.street2 || '';
+      g('city').value = sd.city || '';
+      g('state').value = String(sd.state || '').toUpperCase();
+      g('zip').value = sd.zip || '';
+    }
+    _afVerified[id] = result.verified === true;
+    if (st) {
+      st.textContent = _afVerified[id] ? '✓ 已验证 Verified' : '✗ 无法验证 Not verified';
+      st.style.color = _afVerified[id] ? '#059669' : '#dc2626';
+    }
+  } catch (e) {
+    _afVerified[id] = false;
+    if (st) { st.textContent = '✗ 验证失败: ' + (e.message || e); st.style.color = '#dc2626'; }
+  } finally { if (btn) btn.disabled = false; }
+}
 async function saveApplicantInfo(id) {
   const a = window._appById[id];
   if (!a) return;
-  const body = {};
+  const body = { address_verified: _afVerified[id] ? 1 : 0 };
   APP_FIELDS.forEach(f => {
     const el = document.getElementById('af_' + id + '_' + f[0]);
     if (el) body[f[0]] = el.value;
@@ -284,7 +348,10 @@ async function saveApplicantInfo(id) {
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.success) throw new Error(j.error || '保存失败');
     const oldPhone = a.phone || '';
-    if (j.record) APP_FIELDS.forEach(f => { if (j.record[f[0]] !== undefined) a[f[0]] = j.record[f[0]]; });
+    if (j.record) {
+      APP_FIELDS.forEach(f => { if (j.record[f[0]] !== undefined) a[f[0]] = j.record[f[0]]; });
+      if (j.record.address_verified !== undefined) a.address_verified = j.record.address_verified ? 1 : 0;
+    }
     reRenderApp(id);
     const ch = (j.changed || []).map(k => APP_FIELD_CN[k] || k);
     pcToast(ch.length ? ('已保存：' + ch.join('、')) : '没有改动', 'ok');
