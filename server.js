@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-18n · 电话查询页: 证件看大图/裁剪、申请人姓名可直接改',
+  tag: '2026-08-18p · 查询页证件可旋转; 一键跳后台完整审阅器(OCR/AI/增强/真假标记)',
   started: new Date().toISOString(),
 };
 

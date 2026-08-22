@@ -219,6 +219,12 @@ function lbOpen(docs, idx) {
   lbRender();
 }
 function lbClose() { document.getElementById('lightbox').style.display = 'none'; _lb.sel = null; _lb.img = null; }
+// 跳到后台的完整证件审阅器 (功能齐全: 🔍识别 🤖AI识读 🎛亮度对比 📄文档增强 ✅真假标记 ✂️连续裁剪)
+function lbOpenFullReview() {
+  const d = lbCur();
+  if (!d.sub_id) { alert('此证件来自员工档案，请在后台「员工档案 → 证件」里审阅'); return; }
+  window.open('/admin.html?doc_review=' + d.sub_id, '_blank');
+}
 function lbNav(d) { _lb.idx = (_lb.idx + d + _lb.list.length) % _lb.list.length; _lb.sel = null; _lb.rot = 0; lbRender(); }
 function lbCur() { return _lb.list[_lb.idx] || {}; }
 function lbRotate(deg) {
@@ -256,6 +262,7 @@ function lbRender() {
   document.getElementById('lbSelBox').style.display = 'none';
   const canEdit = !!d.sub_id && !!d.doc_id;
   document.getElementById('lbCropTools').style.display = canEdit ? '' : 'none';
+  document.getElementById('lbFullBtn').style.display = canEdit ? '' : 'none';
   document.getElementById('lbCropHint').textContent = canEdit
     ? '拖动框选可裁剪 · ↺ ↻ 可旋转（手机拍歪的证件转正后保存）· 原件始终保留'
     : '此证件来自员工档案，可查看和旋转，但暂不支持保存修改';
@@ -378,6 +385,7 @@ document.addEventListener('keydown', e => {
       <button id="lbSaveBtn" onclick="lbSaveCrop()" disabled style="padding:6px 12px;border-radius:6px;border:none;background:#0ea5e9;color:#fff;cursor:pointer">保存</button>
       <button onclick="lbClearCrop()" style="padding:6px 12px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer">恢复原件</button>
     </span>
+    <button id="lbFullBtn" onclick="lbOpenFullReview()" title="打开后台完整审阅器: 识别文字 / AI 识读 / 亮度对比度 / 文档增强 / 真假标记 / 连续裁剪" style="padding:6px 12px;border-radius:6px;border:none;background:#7c3aed;color:#fff;cursor:pointer">🔍 完整审阅</button>
     <button onclick="lbClose()" style="padding:6px 12px;border-radius:6px;border:none;background:#b45309;color:#fff;cursor:pointer">关闭 (Esc)</button>
   </div>
   <div id="lbCropHint" style="color:#94a3b8;font-size:12px;margin-top:6px"></div>
