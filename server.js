@@ -31300,6 +31300,216 @@ app.delete('/api/interview-registry/:id', requireAdmin, requireRole('admin'), (r
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── 🏦 Plaid 银行对账：连银行账户，自动拉余额和交易流水 ───
+// 密钥放环境变量：PLAID_CLIENT_ID / PLAID_SECRET / PLAID_ENV(sandbox|development|production)
+// access_token 用和客服密码同一套加密（csEncPw/csDecPw）落库。仅 admin 可用。
+db.exec(`CREATE TABLE IF NOT EXISTS plaid_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id TEXT UNIQUE NOT NULL,
+  access_token_enc TEXT NOT NULL,
+  institution TEXT DEFAULT '',
+  sync_cursor TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS plaid_accounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id TEXT NOT NULL,
+  account_id TEXT UNIQUE NOT NULL,
+  name TEXT DEFAULT '',
+  mask TEXT DEFAULT '',
+  type TEXT DEFAULT '',
+  subtype TEXT DEFAULT '',
+  balance_current REAL,
+  balance_available REAL,
+  currency TEXT DEFAULT 'USD',
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS plaid_transactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  txn_id TEXT UNIQUE NOT NULL,
+  account_id TEXT NOT NULL,
+  date TEXT DEFAULT '',
+  name TEXT DEFAULT '',
+  merchant TEXT DEFAULT '',
+  amount REAL DEFAULT 0,
+  currency TEXT DEFAULT 'USD',
+  category TEXT DEFAULT '',
+  pending INTEGER DEFAULT 0,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_plaid_txn_date ON plaid_transactions(date)`); } catch (e) {}
+
+const PLAID_BASES = {
+  sandbox: 'https://sandbox.plaid.com',
+  development: 'https://development.plaid.com',
+  production: 'https://production.plaid.com',
+};
+function plaidReady() { return !!(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET); }
+async function plaidPost(path, body) {
+  const env = String(process.env.PLAID_ENV || 'sandbox').toLowerCase();
+  const res = await fetch((PLAID_BASES[env] || PLAID_BASES.sandbox) + path, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: process.env.PLAID_CLIENT_ID, secret: process.env.PLAID_SECRET, ...body }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error_message || data.error_code || ('Plaid HTTP ' + res.status));
+  return data;
+}
+function plaidUpsertAccounts(itemId, accounts) {
+  const up = db.prepare(`INSERT INTO plaid_accounts
+      (item_id, account_id, name, mask, type, subtype, balance_current, balance_available, currency, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,datetime('now'))
+    ON CONFLICT(account_id) DO UPDATE SET name=excluded.name, mask=excluded.mask,
+      balance_current=excluded.balance_current, balance_available=excluded.balance_available,
+      currency=excluded.currency, updated_at=datetime('now')`);
+  for (const a of accounts || []) {
+    up.run(itemId, a.account_id, a.name || a.official_name || '', a.mask || '',
+      a.type || '', a.subtype || '',
+      a.balances ? a.balances.current : null, a.balances ? a.balances.available : null,
+      (a.balances && a.balances.iso_currency_code) || 'USD');
+  }
+}
+
+app.get('/api/plaid/status', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    res.json({ ready: plaidReady(), env: String(process.env.PLAID_ENV || 'sandbox').toLowerCase(),
+      items: db.prepare('SELECT COUNT(*) n FROM plaid_items').get().n });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/plaid/link-token', requireAdmin, requireRole('admin'), async (req, res) => {
+  try {
+    if (!plaidReady()) return res.status(400).json({ error: '还没配置 Plaid 密钥（PLAID_CLIENT_ID / PLAID_SECRET 环境变量）' });
+    const r = await plaidPost('/link/token/create', {
+      user: { client_user_id: 'primeanchor-admin-' + (req.userId || 0) },
+      client_name: 'Prime Anchor Workforce',
+      products: ['transactions'],
+      country_codes: ['US'],
+      language: 'en',
+    });
+    res.json({ link_token: r.link_token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/plaid/exchange', requireAdmin, requireRole('admin'), async (req, res) => {
+  try {
+    const publicToken = String((req.body || {}).public_token || '');
+    if (!publicToken) return res.status(400).json({ error: 'missing public_token' });
+    const ex = await plaidPost('/item/public_token/exchange', { public_token: publicToken });
+    db.prepare(`INSERT INTO plaid_items (item_id, access_token_enc, institution) VALUES (?,?,?)
+        ON CONFLICT(item_id) DO UPDATE SET access_token_enc=excluded.access_token_enc, institution=excluded.institution`)
+      .run(ex.item_id, csEncPw(ex.access_token), String((req.body || {}).institution || '').slice(0, 120));
+    const acc = await plaidPost('/accounts/get', { access_token: ex.access_token });
+    plaidUpsertAccounts(ex.item_id, acc.accounts);
+    res.json({ success: true, item_id: ex.item_id, accounts: (acc.accounts || []).length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 拉增量交易（游标式，断了下次接着拉）；顺手刷新余额
+app.post('/api/plaid/sync', requireAdmin, requireRole('admin'), async (req, res) => {
+  try {
+    if (!plaidReady()) return res.status(400).json({ error: '还没配置 Plaid 密钥' });
+    const upTxn = db.prepare(`INSERT INTO plaid_transactions
+        (txn_id, account_id, date, name, merchant, amount, currency, category, pending, updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,datetime('now'))
+      ON CONFLICT(txn_id) DO UPDATE SET date=excluded.date, name=excluded.name, merchant=excluded.merchant,
+        amount=excluded.amount, category=excluded.category, pending=excluded.pending, updated_at=datetime('now')`);
+    const delTxn = db.prepare('DELETE FROM plaid_transactions WHERE txn_id=?');
+    let added = 0, removed = 0;
+    for (const item of db.prepare('SELECT * FROM plaid_items').all()) {
+      const token = csDecPw(item.access_token_enc);
+      if (!token) continue;
+      let cursor = item.sync_cursor || undefined;
+      for (let round = 0; round < 30; round++) {
+        const r = await plaidPost('/transactions/sync', { access_token: token, cursor, count: 250 });
+        for (const t of [...(r.added || []), ...(r.modified || [])]) {
+          upTxn.run(t.transaction_id, t.account_id, t.date || '',
+            t.name || '', (t.merchant_name || ''),
+            t.amount || 0, t.iso_currency_code || 'USD',
+            (t.personal_finance_category && t.personal_finance_category.primary) || (Array.isArray(t.category) ? t.category.join(' / ') : ''),
+            t.pending ? 1 : 0);
+          added++;
+        }
+        for (const t of r.removed || []) { delTxn.run(t.transaction_id); removed++; }
+        if (r.accounts) plaidUpsertAccounts(item.item_id, r.accounts);
+        cursor = r.next_cursor;
+        if (!r.has_more) break;
+      }
+      db.prepare('UPDATE plaid_items SET sync_cursor=? WHERE id=?').run(cursor || '', item.id);
+      // 余额单独刷一次（sync 的 accounts 字段不一定带全）
+      try {
+        const acc = await plaidPost('/accounts/get', { access_token: token });
+        plaidUpsertAccounts(item.item_id, acc.accounts);
+      } catch (_) {}
+    }
+    res.json({ success: true, added, removed });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/plaid/accounts', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const items = db.prepare('SELECT id, item_id, institution, created_at FROM plaid_items').all();
+    const accounts = db.prepare('SELECT * FROM plaid_accounts ORDER BY name').all()
+      .map(a => ({ ...a, institution: (items.find(i => i.item_id === a.item_id) || {}).institution || '' }));
+    res.json({ items, accounts });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+function plaidTxnQuery(req) {
+  let where = '1=1';
+  const params = [];
+  const { start, end, account_id, q } = req.query || {};
+  if (start) { where += ' AND date >= ?'; params.push(String(start)); }
+  if (end) { where += ' AND date <= ?'; params.push(String(end)); }
+  if (account_id) { where += ' AND account_id = ?'; params.push(String(account_id)); }
+  if (q) { where += ' AND (name LIKE ? OR merchant LIKE ? OR category LIKE ?)'; const like = '%' + q + '%'; params.push(like, like, like); }
+  return { where, params };
+}
+
+app.get('/api/plaid/transactions', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const { where, params } = plaidTxnQuery(req);
+    const limit = Math.min(parseInt(req.query.limit) || 300, 2000);
+    const rows = db.prepare(`SELECT * FROM plaid_transactions WHERE ${where} ORDER BY date DESC, id DESC LIMIT ?`).all(...params, limit);
+    const total = db.prepare(`SELECT COUNT(*) n, COALESCE(SUM(amount),0) s FROM plaid_transactions WHERE ${where}`).get(...params);
+    res.json({ transactions: rows, total: total.n, sum: total.s });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 给会计的 CSV：筛选条件同上
+app.get('/api/plaid/transactions.csv', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const { where, params } = plaidTxnQuery(req);
+    const rows = db.prepare(`SELECT date, name, merchant, amount, currency, category, pending, account_id
+      FROM plaid_transactions WHERE ${where} ORDER BY date DESC LIMIT 20000`).all(...params);
+    const accNames = {};
+    for (const a of db.prepare('SELECT account_id, name, mask FROM plaid_accounts').all()) {
+      accNames[a.account_id] = a.name + (a.mask ? ' ····' + a.mask : '');
+    }
+    const escCsv = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+    const lines = ['Date,Account,Description,Merchant,Amount,Currency,Category,Pending'];
+    for (const r of rows) {
+      lines.push([r.date, accNames[r.account_id] || r.account_id, r.name, r.merchant,
+        r.amount, r.currency, r.category, r.pending ? 'yes' : ''].map(escCsv).join(','));
+    }
+    res.set('Content-Type', 'text/csv; charset=utf-8');
+    res.set('Content-Disposition', 'attachment; filename="transactions.csv"');
+    res.send('﻿' + lines.join('\n'));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/plaid/items/:id', requireAdmin, requireRole('admin'), async (req, res) => {
+  try {
+    const item = db.prepare('SELECT * FROM plaid_items WHERE id=?').get(req.params.id);
+    if (!item) return res.status(404).json({ error: 'not found' });
+    try { await plaidPost('/item/remove', { access_token: csDecPw(item.access_token_enc) }); } catch (_) {}
+    db.prepare('DELETE FROM plaid_transactions WHERE account_id IN (SELECT account_id FROM plaid_accounts WHERE item_id=?)').run(item.item_id);
+    db.prepare('DELETE FROM plaid_accounts WHERE item_id=?').run(item.item_id);
+    db.prepare('DELETE FROM plaid_items WHERE id=?').run(item.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // POST /api/device-sms/push — 桌面版推送一批短信 (同一条重复推是安全的, 按 remote_id 覆盖)
 app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
   try {
