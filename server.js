@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-18m · 招工申请显示档案正式姓名, 可一键用档案名更正填错的名字',
+  tag: '2026-08-18n · 电话查询页: 证件看大图/裁剪、申请人姓名可直接改',
   started: new Date().toISOString(),
 };
 
@@ -16139,8 +16139,20 @@ app.post('/api/admin/applicant-submissions/:id/docs/:docId/verify', requireAdmin
 // archive it only once that specific employee is onboarded → 在职).
 app.patch('/api/admin/applicant-submissions/:id', requireAdmin, blockManager, (req, res) => {
   try {
-    if (!req.body || req.body.employee_id === undefined) return res.status(400).json({ error: 'employee_id required' });
-    const empId = req.body.employee_id ? parseInt(req.body.employee_id) : null;
+    const b = req.body || {};
+    // 改名: 工人扫码时自己填的名字常有拼写错误, 允许管理员直接更正 (原名进审计)
+    if (b.name !== undefined) {
+      const sub = db.prepare('SELECT id, name FROM applicant_submissions WHERE id=?').get(req.params.id);
+      if (!sub) return res.status(404).json({ error: 'Not found' });
+      const nm = String(b.name || '').trim().slice(0, 120);
+      if (!nm) return res.status(400).json({ error: '姓名不能为空' });
+      db.prepare('UPDATE applicant_submissions SET name=? WHERE id=?').run(nm, sub.id);
+      auditLog('applicant_name_edited', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers },
+        { details: { submission_id: sub.id, from: sub.name || '', to: nm } });
+      if (b.employee_id === undefined) return res.json({ success: true, name: nm });
+    }
+    if (b.employee_id === undefined) return res.status(400).json({ error: 'employee_id or name required' });
+    const empId = b.employee_id ? parseInt(b.employee_id) : null;
     const r = db.prepare('UPDATE applicant_submissions SET employee_id=? WHERE id=?').run(empId, req.params.id);
     if (!r.changes) return res.status(404).json({ error: 'Not found' });
     _inheritTimeclockCode(req.params.id, empId);
