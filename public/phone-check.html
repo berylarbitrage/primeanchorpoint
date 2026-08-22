@@ -212,32 +212,63 @@ async function syncApplicantName(subId, empId, btn){
 }
 
 // ══════ 证件大图查看 + 裁剪 ══════
-let _lb = { list: [], idx: 0, sel: null, drag: null };
+let _lb = { list: [], idx: 0, sel: null, drag: null, rot: 0, img: null };
 function lbOpen(docs, idx) {
-  _lb.list = docs; _lb.idx = idx; _lb.sel = null;
+  _lb.list = docs; _lb.idx = idx; _lb.sel = null; _lb.rot = 0;
   document.getElementById('lightbox').style.display = 'flex';
   lbRender();
 }
-function lbClose() { document.getElementById('lightbox').style.display = 'none'; _lb.sel = null; }
-function lbNav(d) { _lb.idx = (_lb.idx + d + _lb.list.length) % _lb.list.length; _lb.sel = null; lbRender(); }
+function lbClose() { document.getElementById('lightbox').style.display = 'none'; _lb.sel = null; _lb.img = null; }
+function lbNav(d) { _lb.idx = (_lb.idx + d + _lb.list.length) % _lb.list.length; _lb.sel = null; _lb.rot = 0; lbRender(); }
 function lbCur() { return _lb.list[_lb.idx] || {}; }
+function lbRotate(deg) {
+  _lb.rot = ((_lb.rot + deg) % 360 + 360) % 360;
+  _lb.sel = null;                       // 旋转后原选框失效
+  document.getElementById('lbSelBox').style.display = 'none';
+  lbDraw();
+  lbSyncSaveBtn();
+}
+function lbSyncSaveBtn() {
+  const d = lbCur();
+  const canEdit = !!d.sub_id && !!d.doc_id;
+  // 有选框(裁剪) 或 转过角度 都可以保存
+  document.getElementById('lbSaveBtn').disabled = !canEdit || (!_lb.sel && _lb.rot === 0);
+  document.getElementById('lbSaveBtn').textContent = _lb.sel ? '保存裁剪' : (_lb.rot ? '保存旋转' : '保存');
+}
+function lbDraw() {
+  const img = _lb.img;
+  if (!img) return;
+  const cv = document.getElementById('lbCanvas');
+  const swap = (_lb.rot === 90 || _lb.rot === 270);
+  const w = swap ? img.naturalHeight : img.naturalWidth;
+  const h = swap ? img.naturalWidth : img.naturalHeight;
+  cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d');
+  ctx.save();
+  ctx.translate(w / 2, h / 2);
+  ctx.rotate(_lb.rot * Math.PI / 180);
+  ctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
+  ctx.restore();
+}
 function lbRender() {
   const d = lbCur();
-  const img = document.getElementById('lbImg');
-  // 默认看原件 (?v=orig)，避免"点开还是缩略/裁剪版"
-  img.src = d.url + (d.url.indexOf('?') >= 0 ? '&' : '?') + 'v=orig&t=' + Date.now();
   document.getElementById('lbCap').textContent = (d.label || '') + (d.extra ? ' · ' + d.extra : '') + '  (' + (_lb.idx + 1) + '/' + _lb.list.length + ')';
   document.getElementById('lbSelBox').style.display = 'none';
-  // 裁剪只支持扫码申请上传的证件 (applicant_docs)
-  const canCrop = !!d.sub_id && !!d.doc_id;
-  document.getElementById('lbCropTools').style.display = canCrop ? '' : 'none';
-  document.getElementById('lbCropHint').textContent = canCrop ? '在图片上按住鼠标拖动框选要保留的区域' : '此证件来自员工档案，暂不支持在线裁剪';
+  const canEdit = !!d.sub_id && !!d.doc_id;
+  document.getElementById('lbCropTools').style.display = canEdit ? '' : 'none';
+  document.getElementById('lbCropHint').textContent = canEdit
+    ? '拖动框选可裁剪 · ↺ ↻ 可旋转（手机拍歪的证件转正后保存）· 原件始终保留'
+    : '此证件来自员工档案，可查看和旋转，但暂不支持保存修改';
   document.getElementById('lbSaveBtn').disabled = true;
+  // 默认看原件 (?v=orig)，避免"点开还是缩略/裁剪版"
+  const im = new Image();
+  im.onload = () => { _lb.img = im; lbDraw(); lbSyncSaveBtn(); };
+  im.onerror = () => { document.getElementById('lbCap').textContent = '图片加载失败'; };
+  im.src = d.url + (d.url.indexOf('?') >= 0 ? '&' : '?') + 'v=orig&t=' + Date.now();
 }
 function lbDown(e) {
   const d = lbCur(); if (!d.sub_id) return;
-  const wrap = document.getElementById('lbWrap');
-  const r = wrap.getBoundingClientRect();
+  const r = document.getElementById('lbCanvas').getBoundingClientRect();
   _lb.drag = { x: e.clientX - r.left, y: e.clientY - r.top };
   _lb.sel = null;
   const box = document.getElementById('lbSelBox');
@@ -247,43 +278,50 @@ function lbDown(e) {
 }
 function lbMove(e) {
   if (!_lb.drag) return;
-  const wrap = document.getElementById('lbWrap');
-  const r = wrap.getBoundingClientRect();
+  const r = document.getElementById('lbCanvas').getBoundingClientRect();
   const x = Math.max(0, Math.min(e.clientX - r.left, r.width));
   const y = Math.max(0, Math.min(e.clientY - r.top, r.height));
   const left = Math.min(x, _lb.drag.x), top = Math.min(y, _lb.drag.y);
   const w = Math.abs(x - _lb.drag.x), h = Math.abs(y - _lb.drag.y);
   const box = document.getElementById('lbSelBox');
   box.style.left = left + 'px'; box.style.top = top + 'px'; box.style.width = w + 'px'; box.style.height = h + 'px';
-  _lb.sel = { left, top, w, h };
-  document.getElementById('lbSaveBtn').disabled = !(w > 8 && h > 8);
+  _lb.sel = (w > 8 && h > 8) ? { left, top, w, h } : null;
+  lbSyncSaveBtn();
 }
 function lbUp() { _lb.drag = null; }
 async function lbSaveCrop() {
   const d = lbCur();
-  if (!d.sub_id || !_lb.sel) return;
-  const img = document.getElementById('lbImg');
+  if (!d.sub_id) return;
+  if (!_lb.sel && _lb.rot === 0) return;
+  const src = document.getElementById('lbCanvas');   // 已含旋转结果
   const btn = document.getElementById('lbSaveBtn');
+  const prevText = btn.textContent;
   btn.disabled = true; btn.textContent = '保存中…';
   try {
-    // 显示尺寸 → 原图像素坐标
-    const sx = img.naturalWidth / img.clientWidth, sy = img.naturalHeight / img.clientHeight;
-    const ox = img.offsetLeft, oy = img.offsetTop;
-    const cx = Math.round((_lb.sel.left - ox) * sx), cy = Math.round((_lb.sel.top - oy) * sy);
-    const cw = Math.round(_lb.sel.w * sx), ch = Math.round(_lb.sel.h * sy);
-    const cv = document.createElement('canvas');
-    cv.width = Math.max(1, cw); cv.height = Math.max(1, ch);
-    cv.getContext('2d').drawImage(img, cx, cy, cw, ch, 0, 0, cv.width, cv.height);
-    const data = cv.toDataURL('image/jpeg', 0.92);
+    let out;
+    if (_lb.sel) {
+      // 选框是显示尺寸 → 换算成 canvas 内部像素
+      const scale = src.width / src.clientWidth;
+      const cx = Math.max(0, Math.round(_lb.sel.left * scale));
+      const cy = Math.max(0, Math.round(_lb.sel.top * scale));
+      const cw = Math.max(1, Math.round(_lb.sel.w * scale));
+      const ch = Math.max(1, Math.round(_lb.sel.h * scale));
+      out = document.createElement('canvas');
+      out.width = cw; out.height = ch;
+      out.getContext('2d').drawImage(src, cx, cy, cw, ch, 0, 0, cw, ch);
+    } else {
+      out = src;   // 只旋转、不裁剪 → 整张保存
+    }
+    const data = out.toDataURL('image/jpeg', 0.92);
     const r = await fetch('/api/admin/applicant-submissions/' + d.sub_id + '/docs/' + d.doc_id + '/cropped', {
       method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data })
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.success) throw new Error(j.error || '保存失败');
-    alert('✅ 裁剪已保存（列表缩略图会显示裁剪版，原件始终保留）');
+    alert('✅ 已保存（列表缩略图会显示这一版，原件始终保留）');
     lbClose(); doSearch();
   } catch (e) { alert(e.message || '保存失败'); }
-  btn.disabled = false; btn.textContent = '保存裁剪';
+  btn.disabled = false; btn.textContent = prevText;
 }
 async function lbClearCrop() {
   const d = lbCur();
@@ -321,23 +359,25 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') lbClose();
   if (e.key === 'ArrowLeft') lbNav(-1);
   if (e.key === 'ArrowRight') lbNav(1);
+  if (e.key === 'r' || e.key === 'R') lbRotate(e.shiftKey ? -90 : 90);
 });
 </script>
 <div id="lightbox" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.92);z-index:9999;align-items:center;justify-content:center;flex-direction:column;padding:16px">
   <div style="color:#fff;font-size:13px;margin-bottom:6px" id="lbCap"></div>
-  <div id="lbWrap" style="position:relative;max-width:92vw;max-height:74vh;user-select:none"
+  <div id="lbWrap" style="position:relative;user-select:none;line-height:0"
        onmousedown="lbDown(event)" onmousemove="lbMove(event)" onmouseup="lbUp()" onmouseleave="lbUp()">
-    <img id="lbImg" style="max-width:92vw;max-height:74vh;display:block;border-radius:8px;background:#000" draggable="false">
+    <canvas id="lbCanvas" style="max-width:92vw;max-height:70vh;display:block;border-radius:8px;background:#000;cursor:crosshair"></canvas>
     <div id="lbSelBox" style="display:none;position:absolute;border:2px dashed #38bdf8;background:rgba(56,189,248,.18);pointer-events:none"></div>
   </div>
   <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center">
     <button onclick="lbNav(-1)" style="padding:6px 12px;border-radius:6px;border:none;background:#334155;color:#fff;cursor:pointer">← 上一张</button>
     <button onclick="lbNav(1)" style="padding:6px 12px;border-radius:6px;border:none;background:#334155;color:#fff;cursor:pointer">下一张 →</button>
+    <button onclick="lbRotate(-90)" title="向左旋转 90°" style="padding:6px 12px;border-radius:6px;border:none;background:#475569;color:#fff;cursor:pointer">↺ 左转</button>
+    <button onclick="lbRotate(90)" title="向右旋转 90°" style="padding:6px 12px;border-radius:6px;border:none;background:#475569;color:#fff;cursor:pointer">↻ 右转</button>
     <span id="lbCropTools" style="display:flex;gap:8px;align-items:center">
-      <button id="lbSaveBtn" onclick="lbSaveCrop()" disabled style="padding:6px 12px;border-radius:6px;border:none;background:#0ea5e9;color:#fff;cursor:pointer">保存裁剪</button>
+      <button id="lbSaveBtn" onclick="lbSaveCrop()" disabled style="padding:6px 12px;border-radius:6px;border:none;background:#0ea5e9;color:#fff;cursor:pointer">保存</button>
       <button onclick="lbClearCrop()" style="padding:6px 12px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer">恢复原件</button>
     </span>
-    <a id="lbDl" href="#" style="display:none"></a>
     <button onclick="lbClose()" style="padding:6px 12px;border-radius:6px;border:none;background:#b45309;color:#fff;cursor:pointer">关闭 (Esc)</button>
   </div>
   <div id="lbCropHint" style="color:#94a3b8;font-size:12px;margin-top:6px"></div>
