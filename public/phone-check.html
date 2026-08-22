@@ -80,7 +80,8 @@ async function doSearch(){
     const setId='s'+subId;
     window._docSets[setId]=docs.map(d=>({
       url:'/api/admin/applicant-submissions/'+subId+'/docs/'+d.id+'/download',
-      label:DOC_LABELS[d.doc_type]||d.doc_type, sub_id:subId, doc_id:d.id, file_name:d.file_name||''
+      label:DOC_LABELS[d.doc_type]||d.doc_type, sub_id:subId, doc_id:d.id, file_name:d.file_name||'',
+      has_cropped: !!d.has_cropped
     }));
     return '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+docs.map((d,i)=>{
       const u='/api/admin/applicant-submissions/'+subId+'/docs/'+d.id+'/download';
@@ -212,9 +213,15 @@ async function syncApplicantName(subId, empId, btn){
 }
 
 // ══════ 证件大图查看 + 裁剪 ══════
-let _lb = { list: [], idx: 0, sel: null, drag: null, rot: 0, img: null };
+let _lb = { list: [], idx: 0, sel: null, drag: null, rot: 0, img: null, showCropped: false };
+function lbToggleVersion() {
+  _lb.showCropped = !_lb.showCropped;
+  _lb.rot = 0; _lb.sel = null;
+  document.getElementById('lbSelBox').style.display = 'none';
+  lbRender();
+}
 function lbOpen(docs, idx) {
-  _lb.list = docs; _lb.idx = idx; _lb.sel = null; _lb.rot = 0;
+  _lb.list = docs; _lb.idx = idx; _lb.sel = null; _lb.rot = 0; _lb.showCropped = false;
   document.getElementById('lightbox').style.display = 'flex';
   lbRender();
 }
@@ -225,7 +232,7 @@ function lbOpenFullReview() {
   if (!d.sub_id) { pcToast('此证件来自员工档案，请在后台「员工档案 → 证件」里审阅', 'err'); return; }
   window.open('/admin.html?doc_review=' + d.sub_id, '_blank');
 }
-function lbNav(d) { _lb.idx = (_lb.idx + d + _lb.list.length) % _lb.list.length; _lb.sel = null; _lb.rot = 0; lbRender(); }
+function lbNav(d) { _lb.idx = (_lb.idx + d + _lb.list.length) % _lb.list.length; _lb.sel = null; _lb.rot = 0; _lb.showCropped = false; lbRender(); }
 function lbCur() { return _lb.list[_lb.idx] || {}; }
 function lbRotate(deg) {
   _lb.rot = ((_lb.rot + deg) % 360 + 360) % 360;
@@ -255,23 +262,40 @@ function lbDraw() {
   ctx.rotate(_lb.rot * Math.PI / 180);
   ctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
   ctx.restore();
+  lbFit();
 }
+// 小图也撑满可视区(最多放大 4 倍, 再多就糊了), 免得低分辨率证件点开像缩略图
+function lbFit() {
+  const cv = document.getElementById('lbCanvas');
+  if (!cv.width || !cv.height) return;
+  const maxW = window.innerWidth * 0.92, maxH = window.innerHeight * 0.68;
+  const scale = Math.min(maxW / cv.width, maxH / cv.height, 4);
+  cv.style.width = Math.round(cv.width * scale) + 'px';
+  cv.style.height = Math.round(cv.height * scale) + 'px';
+}
+window.addEventListener('resize', () => { if (document.getElementById('lightbox').style.display === 'flex') lbFit(); });
 function lbRender() {
   const d = lbCur();
-  document.getElementById('lbCap').textContent = (d.label || '') + (d.extra ? ' · ' + d.extra : '') + '  (' + (_lb.idx + 1) + '/' + _lb.list.length + ')';
+  const verTag = d.has_cropped ? (_lb.showCropped ? ' · 正在看【裁剪版】' : ' · 正在看【原件】') : '';
+  document.getElementById('lbCap').textContent = (d.label || '') + (d.extra ? ' · ' + d.extra : '') + '  (' + (_lb.idx + 1) + '/' + _lb.list.length + ')' + verTag;
+  const vb = document.getElementById('lbVerBtn');
+  vb.style.display = d.has_cropped ? '' : 'none';
+  vb.textContent = _lb.showCropped ? '看原件' : '看裁剪版';
   document.getElementById('lbSelBox').style.display = 'none';
   const canEdit = !!d.sub_id && !!d.doc_id;
   document.getElementById('lbCropTools').style.display = canEdit ? '' : 'none';
   document.getElementById('lbFullBtn').style.display = canEdit ? '' : 'none';
   document.getElementById('lbCropHint').textContent = canEdit
-    ? '拖动框选可裁剪 · ↺ ↻ 可旋转（手机拍歪的证件转正后保存）· 原件始终保留'
+    ? (d.has_cropped
+        ? '这张已裁剪过：默认看到的是原件，点「看裁剪版」对照 · 原件永久保留，随时可「恢复原件」'
+        : '拖动框选可裁剪 · ↺ ↻ 可旋转（手机拍歪的证件转正后保存）· 原件始终保留')
     : '此证件来自员工档案，可查看和旋转，但暂不支持保存修改';
   document.getElementById('lbSaveBtn').disabled = true;
   // 默认看原件 (?v=orig)，避免"点开还是缩略/裁剪版"
   const im = new Image();
   im.onload = () => { _lb.img = im; lbDraw(); lbSyncSaveBtn(); };
   im.onerror = () => { document.getElementById('lbCap').textContent = '图片加载失败'; };
-  im.src = d.url + (d.url.indexOf('?') >= 0 ? '&' : '?') + 'v=orig&t=' + Date.now();
+  im.src = d.url + (d.url.indexOf('?') >= 0 ? '&' : '?') + (_lb.showCropped ? '' : 'v=orig&') + 't=' + Date.now();
 }
 function lbDown(e) {
   const d = lbCur(); if (!d.sub_id) return;
@@ -441,6 +465,7 @@ function pcPrompt(label, value) {
       <button id="lbSaveBtn" onclick="lbSaveCrop()" disabled style="padding:6px 12px;border-radius:6px;border:none;background:#0ea5e9;color:#fff;cursor:pointer">保存</button>
       <button onclick="lbClearCrop()" style="padding:6px 12px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer">恢复原件</button>
     </span>
+    <button id="lbVerBtn" onclick="lbToggleVersion()" style="display:none;padding:6px 12px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer">看裁剪版</button>
     <button id="lbFullBtn" onclick="lbOpenFullReview()" title="打开后台完整审阅器: 识别文字 / AI 识读 / 亮度对比度 / 文档增强 / 真假标记 / 连续裁剪" style="padding:6px 12px;border-radius:6px;border:none;background:#7c3aed;color:#fff;cursor:pointer">🔍 完整审阅</button>
     <button onclick="lbClose()" style="padding:6px 12px;border-radius:6px;border:none;background:#b45309;color:#fff;cursor:pointer">关闭 (Esc)</button>
   </div>
