@@ -85,6 +85,25 @@ async function doSearch(){
         +'</span></a>';
     }).join('')+'</div>';
   };
+  // 员工的全部证件 (扫码申请 / 档案上传 / SSN 卡 / 工卡)，按来源分组显示
+  const allDocThumbs=(docs)=>{
+    if(!Array.isArray(docs)||!docs.length) return '<div style="margin-top:8px;font-size:12px;color:#94a3b8">未上传任何证件</div>';
+    const bySrc={};
+    docs.forEach(d=>{ (bySrc[d.source||'其他']=bySrc[d.source||'其他']||[]).push(d); });
+    return '<div style="margin-top:8px">'+Object.keys(bySrc).map(src=>
+      '<div style="margin-bottom:6px">'
+      +'<div style="font-size:11px;font-weight:700;color:#64748b;margin-bottom:3px">'+esc(src)+'（'+bySrc[src].length+'）</div>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap">'+bySrc[src].map(d=>{
+        const u=d.url;
+        const cap=esc(d.label||'')+(d.extra?' · '+esc(d.extra):'');
+        if(/\.pdf$/i.test(d.file_name||'')) return '<a href="'+u+'" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:6px 10px;background:#eef2ff;color:#3730a3;border-radius:8px;font-size:12px;font-weight:600;text-decoration:none">📄 '+cap+'</a>';
+        return '<a href="'+u+'" target="_blank" title="'+cap+' (点击看大图)" style="text-decoration:none"><span style="display:block;position:relative">'
+          +'<img src="'+u+'" loading="lazy" onerror="this.parentNode.parentNode.parentNode.innerHTML=\'<a href=&quot;'+u+'&quot; target=_blank style=&quot;font-size:12px;color:#3730a3&quot;>📄 '+cap+'</a>\'" style="width:84px;height:84px;object-fit:cover;border-radius:8px;border:1px solid #dbe3ee;background:#000;display:block">'
+          +'<span style="position:absolute;left:0;right:0;bottom:0;background:rgba(15,23,42,.62);color:#fff;font-size:10px;font-weight:600;text-align:center;border-radius:0 0 6px 6px;padding:1px 2px;line-height:1.25">'+esc(d.label||'')+'</span>'
+          +'</span></a>'
+          +(d.extra?'<div style="font-size:10px;color:#64748b;max-width:84px;line-height:1.2">'+esc(d.extra)+'</div>':'');
+      }).join('')+'</div></div>').join('')+'</div>';
+  };
   const inp=document.getElementById('phoneInput');
   const btn=document.getElementById('searchBtn');
   const banner=document.getElementById('banner');
@@ -133,7 +152,7 @@ async function doSearch(){
           ${kv('员工编号',e.employee_id)} ${kv('电话',e.phone)} ${kv('邮箱',e.email)}
           ${kv('职位',e.position)} ${kv('部门',e.department)} ${kv('状态',e.status)} ${kv('入职日期',e.hire_date)}
         </div>
-        ${docThumbs(e.submission_id, e.docs)}
+        ${allDocThumbs(e.all_docs)}
       </div>`).join('');
     }
     if((data.foremen||[]).length){
