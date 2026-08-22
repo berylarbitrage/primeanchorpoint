@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-22c · 改资料表单对齐后台新增员工: 分组排版 + Google 验证地址',
+  tag: '2026-08-22d · 查询页可录 SSN(加密存储)并显示自动生成的打卡码',
   started: new Date().toISOString(),
 };
 
@@ -1017,6 +1017,10 @@ try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN employee_id INTEGER`
 // (/timeclock) 和仓库签到 (/checkin) 代替短信验证码使用。建档时继承到 employees.timeclock_code。
 try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN timeclock_code TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_apl_tc_code ON applicant_submissions(timeclock_code) WHERE timeclock_code != ''`); } catch(e) {}
+// 电话查询页可直接给申请人录 SSN — 还没建档时先加密存在申请单上, 建档/关联时自动带到员工档案
+try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN ssn_encrypted TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN ssn_iv TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN ssn_last4 TEXT DEFAULT ''`); } catch(e) {}
 db.exec(`CREATE TABLE IF NOT EXISTS applicant_docs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   submission_id INTEGER NOT NULL,
@@ -15494,14 +15498,20 @@ function _partnerByApplyToken(token) {
   } catch (_) {}
   return db.prepare("SELECT id, name FROM partners WHERE applicant_form_token=? AND applicant_form_token!=''").get(token);
 }
-// 申请单关联到员工档案时，把打卡密码带到档案上（档案没有密码才补，不覆盖）
+// 申请单关联到员工档案时，把打卡密码和先录的 SSN 带到档案上（档案没有才补，不覆盖）
 function _inheritTimeclockCode(submissionId, employeeId) {
   if (!employeeId) return;
   try {
-    const sub = db.prepare('SELECT timeclock_code FROM applicant_submissions WHERE id=?').get(submissionId);
-    if (!sub || !sub.timeclock_code) return;
-    db.prepare(`UPDATE employees SET timeclock_code=? WHERE id=? AND (timeclock_code IS NULL OR timeclock_code='')`)
-      .run(sub.timeclock_code, employeeId);
+    const sub = db.prepare('SELECT timeclock_code, ssn_encrypted, ssn_iv, ssn_last4 FROM applicant_submissions WHERE id=?').get(submissionId);
+    if (!sub) return;
+    if (sub.timeclock_code) {
+      db.prepare(`UPDATE employees SET timeclock_code=? WHERE id=? AND (timeclock_code IS NULL OR timeclock_code='')`)
+        .run(sub.timeclock_code, employeeId);
+    }
+    if (sub.ssn_encrypted) {
+      db.prepare(`UPDATE employees SET ssn_encrypted=?, ssn_iv=?, ssn_last4=? WHERE id=? AND (ssn_encrypted IS NULL OR ssn_encrypted='')`)
+        .run(sub.ssn_encrypted, sub.ssn_iv || '', sub.ssn_last4 || '', employeeId);
+    }
   } catch (e) { console.error('[timeclock-code] inherit failed:', e.message); }
 }
 
@@ -16186,8 +16196,25 @@ app.patch('/api/admin/applicant-submissions/:id', requireAdmin, blockManager, (r
         changes.address_verified = { label: '地址已验证', from: sub.address_verified ? '是' : '否', to: av ? '是' : '否' };
       }
     }
-    if (sets.length) {
-      db.prepare(`UPDATE applicant_submissions SET ${sets.join(', ')} WHERE id=?`).run(...vals, sub.id);
+    // ── SSN: 写入即加密 (AES-256-GCM), 只留末四位可见; 留空 = 不动 ──
+    // 已关联员工档案就直接写档案 (系统的正式位置); 还没建档先存申请单, 建档/关联时自动带过去。
+    if (b.ssn !== undefined && String(b.ssn).trim() !== '') {
+      const digits = String(b.ssn).replace(/\D/g, '');
+      if (digits.length !== 9) return res.status(400).json({ error: 'SSN 需要 9 位数字' });
+      const enc = encryptSSN(digits);
+      const last4 = digits.slice(-4);
+      const empRow = sub.employee_id ? db.prepare('SELECT id, ssn_last4 FROM employees WHERE id=?').get(sub.employee_id) : null;
+      if (empRow) {
+        db.prepare('UPDATE employees SET ssn_encrypted=?, ssn_iv=?, ssn_last4=? WHERE id=?').run(enc.encrypted, enc.iv, last4, empRow.id);
+        changes.ssn = { label: 'SSN', from: empRow.ssn_last4 ? '****' + empRow.ssn_last4 : '', to: '****' + last4, stored: 'employee' };
+      } else {
+        db.prepare('UPDATE applicant_submissions SET ssn_encrypted=?, ssn_iv=?, ssn_last4=? WHERE id=?').run(enc.encrypted, enc.iv, last4, sub.id);
+        changes.ssn = { label: 'SSN', from: sub.ssn_last4 ? '****' + sub.ssn_last4 : '', to: '****' + last4, stored: 'submission' };
+      }   // 审计只记末四位, 明文不落日志
+    }
+
+    if (sets.length) db.prepare(`UPDATE applicant_submissions SET ${sets.join(', ')} WHERE id=?`).run(...vals, sub.id);
+    if (Object.keys(changes).length) {
       const ctx = { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers };
       auditLog('applicant_edited', ctx, { details: { submission_id: sub.id, changes } });
       // 改名单独再记一条, 沿用原有事件名, 已有的审计筛选不受影响
@@ -16196,20 +16223,46 @@ app.patch('/api/admin/applicant-submissions/:id', requireAdmin, blockManager, (r
     }
 
     // ── 关联员工档案 ──
+    const anyField = Object.keys(APPLICANT_EDITABLE).some(k => b[k] !== undefined)
+      || b.ssn !== undefined || b.address_verified !== undefined;
     if (b.employee_id !== undefined) {
       const empId = b.employee_id ? parseInt(b.employee_id) : null;
       db.prepare('UPDATE applicant_submissions SET employee_id=? WHERE id=?').run(empId, sub.id);
       _inheritTimeclockCode(sub.id, empId);
-    } else if (!Object.keys(APPLICANT_EDITABLE).some(k => b[k] !== undefined)) {
-      return res.status(400).json({ error: 'employee_id or one of: ' + Object.keys(APPLICANT_EDITABLE).join(', ') });
+    } else if (!anyField) {
+      return res.status(400).json({ error: 'employee_id or one of: ssn, ' + Object.keys(APPLICANT_EDITABLE).join(', ') });
     }
 
-    // 只回可编辑的那几项 —— 整行会把 timeclock_code(打卡密码)之类一并带出去, 没必要
+    // 回可编辑字段 + 敏感信息的"可见部分"(SSN 末四位 / 打卡码), 表单保存后直接刷新显示
     const row = db.prepare('SELECT * FROM applicant_submissions WHERE id=?').get(sub.id);
     const record = { id: row.id };
     for (const col of Object.keys(APPLICANT_EDITABLE)) record[col] = row[col] || '';
     record.address_verified = row.address_verified ? 1 : 0;
+    const linkedEmp = row.employee_id ? db.prepare('SELECT timeclock_code, ssn_last4 FROM employees WHERE id=?').get(row.employee_id) : null;
+    record.timeclock_code = row.timeclock_code || (linkedEmp && linkedEmp.timeclock_code) || '';
+    record.ssn_last4 = (linkedEmp && linkedEmp.ssn_last4) || row.ssn_last4 || '';
     res.json({ success: true, name: row.name, changed: Object.keys(changes), record });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ADMIN: 给没有打卡码的老申请补生成一个 (新申请扫码提交时会自动生成)。幂等: 已有就返回现有的。
+app.post('/api/admin/applicant-submissions/:id/gen-timeclock-code', requireAdmin, blockManager, (req, res) => {
+  try {
+    const sub = db.prepare('SELECT id, employee_id, timeclock_code FROM applicant_submissions WHERE id=?').get(req.params.id);
+    if (!sub) return res.status(404).json({ error: 'Not found' });
+    let code = sub.timeclock_code;
+    if (!code && sub.employee_id) {
+      const emp = db.prepare('SELECT timeclock_code FROM employees WHERE id=?').get(sub.employee_id);
+      if (emp && emp.timeclock_code) code = emp.timeclock_code;   // 档案上已有就直接用, 不造第二个
+    }
+    const isNew = !code;
+    if (!code) code = _genTimeclockCode();
+    db.prepare('UPDATE applicant_submissions SET timeclock_code=? WHERE id=?').run(code, sub.id);
+    _inheritTimeclockCode(sub.id, sub.employee_id);
+    if (isNew) auditLog('applicant_timeclock_code_generated',
+      { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers },
+      { details: { submission_id: sub.id } });
+    res.json({ success: true, timeclock_code: code });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -17677,7 +17730,8 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
     if (digits.length < 7) return res.status(400).json({ error: '请输入至少 7 位的电话号码' });
     const match = v => norm(v) === digits;
     const applications = db.prepare(`SELECT s.id, s.partner_name, s.name, s.phone, s.email, s.position, s.status,
-        s.address1, s.address2, s.city, s.state, s.zip, s.address_verified, s.apply_state, s.created_at, s.employee_id,
+        s.address1, s.address2, s.city, s.state, s.zip, s.address_verified, s.timeclock_code, s.ssn_last4,
+        s.apply_state, s.created_at, s.employee_id,
         (SELECT GROUP_CONCAT(doc_type) FROM applicant_docs d WHERE d.submission_id = s.id) AS doc_types
       FROM applicant_submissions s ORDER BY s.created_at DESC`).all().filter(x => match(x.phone)).slice(0, 50);
     // 带证件明细, 页面可直接看图
@@ -17685,8 +17739,13 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
       CASE WHEN COALESCE(cropped_path,'')!='' THEN 1 ELSE 0 END AS has_cropped
       FROM applicant_docs WHERE submission_id=?`);
     applications.forEach(a => { try { a.docs = docsFor.all(a.id); } catch (_) { a.docs = []; } });
-    const employees = db.prepare(`SELECT id, employee_id, first_name, last_name, phone, email, position, department, status, hire_date
+    const employees = db.prepare(`SELECT id, employee_id, first_name, last_name, phone, email, position, department, status, hire_date, timeclock_code, ssn_last4
       FROM employees`).all().filter(x => match(x.phone)).slice(0, 50);
+    // 档案上还没有打卡码的, 借用其关联申请单上自动生成的那个 (打卡验证时也是这么找的)
+    const subCodeStmt = db.prepare(`SELECT timeclock_code FROM applicant_submissions WHERE employee_id=? AND timeclock_code!='' ORDER BY id DESC LIMIT 1`);
+    employees.forEach(e => {
+      if (!e.timeclock_code) { try { const ls = subCodeStmt.get(e.id); if (ls) e.timeclock_code = ls.timeclock_code; } catch (_) {} }
+    });
     // 员工的证件散在四张表里, 这里全部汇总成一个列表, 页面直接看图:
     //   applicant_docs(扫码申请上传) / employee_documents(档案里上传) /
     //   worker_compliance_docs(SSN 卡) / work_permit_docs(工卡 EAD)
@@ -17745,7 +17804,7 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
     });
     // 申请记录里的名字是工人当时自己填的(常有拼写错误); 管理员后来在员工档案里改了名不会回写历史记录。
     // 这里把档案上的正式姓名一并带出来, 页面上标注清楚是同一个人, 并可一键用档案名更正申请记录。
-    const empById = db.prepare('SELECT id, first_name, middle_name, last_name, employee_id FROM employees WHERE id=?');
+    const empById = db.prepare('SELECT id, first_name, middle_name, last_name, employee_id, timeclock_code, ssn_last4 FROM employees WHERE id=?');
     applications.forEach(a => {
       let emp = a.employee_id ? empById.get(a.employee_id) : null;
       if (!emp) emp = employees.find(x => match(x.phone)) || null;   // 未显式关联时按同号码的档案推断
@@ -17753,6 +17812,9 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
         const official = [emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' ').trim();
         a.linked_employee = { id: emp.id, employee_id: emp.employee_id || '', name: official };
         a.name_mismatch = !!(official && String(a.name || '').trim().toLowerCase() !== official.toLowerCase());
+        // 打卡码 / SSN 末四位: 申请单自己的优先, 没有就用档案上的 (SSN 以档案为准)
+        if (!a.timeclock_code && emp.timeclock_code) a.timeclock_code = emp.timeclock_code;
+        if (emp.ssn_last4) a.ssn_last4 = emp.ssn_last4;
       }
     });
     const foremen = db.prepare(`SELECT id, name, phone, email, warehouse, active, created_at FROM foremen`).all()
@@ -25835,6 +25897,7 @@ function _employeeFromApplicant(sub) {
   }
   const newId = r.lastInsertRowid;
   db.prepare('UPDATE applicant_submissions SET employee_id=? WHERE id=?').run(newId, sub.id);
+  _inheritTimeclockCode(sub.id, newId);   // 申请单上先录的 SSN 一并带到新档案
   console.log(`[Checkin] Auto-created employee #${newId} from applicant submission #${sub.id} (${sub.name})`);
   return db.prepare('SELECT id, first_name, last_name, employee_id FROM employees WHERE id=?').get(newId);
 }

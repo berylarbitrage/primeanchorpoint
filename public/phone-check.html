@@ -178,6 +178,8 @@ async function doSearch(){
         <div class="meta">
           ${kv('员工编号',e.employee_id)} ${kv('电话',e.phone)} ${kv('邮箱',e.email)}
           ${kv('职位',e.position)} ${kv('部门',e.department)} ${kv('状态',e.status)} ${kv('入职日期',e.hire_date)}
+          ${e.timeclock_code?`<span><span class="lbl">打卡码</span> <b style="font-family:ui-monospace,Consolas,monospace;letter-spacing:.08em;color:#047857">${esc(e.timeclock_code)}</b></span>`:''}
+          ${e.ssn_last4?`<span><span class="lbl">SSN</span> <b>****${esc(e.ssn_last4)}</b></span>`:''}
         </div>
         ${allDocThumbs(e.all_docs)}
       </div>`).join('');
@@ -209,7 +211,7 @@ const APP_FIELDS = [
   ['position','职位 POSITION','Picking / Packing …'], ['address1','街道地址 STREET ADDRESS *','e.g. 123 Main St'], ['address2','单元 / 楼层 UNIT / SUITE（选填）','e.g. Apt 2B, Suite 100'],
   ['city','城市 CITY *','Chicago'], ['state','州 STATE *',''], ['zip','邮编 ZIP','60601']
 ];
-const APP_FIELD_CN = { name:'姓名', phone:'电话', email:'邮箱', position:'职位', address1:'街道地址', address2:'单元/楼层', city:'城市', state:'州', zip:'邮编', address_verified:'地址验证标记' };
+const APP_FIELD_CN = { name:'姓名', phone:'电话', email:'邮箱', position:'职位', address1:'街道地址', address2:'单元/楼层', city:'城市', state:'州', zip:'邮编', address_verified:'地址验证标记', ssn:'SSN' };
 window._appById = window._appById || {};
 // 「🔍 验证地址」通过后置真; 地址字段再被改动就归零, 保存时随表单写入
 window._afVerified = window._afVerified || {};
@@ -237,6 +239,8 @@ function appCardInner(a) {
       ${kv('电话', a.phone)} ${kv('邮箱', a.email)} ${kv('职位', a.position)}
       ${kv('申请公司', a.partner_name)} ${kv('申请地点', a.apply_state)}
       ${kv('状态', a.status)} ${kv('提交时间', String(a.created_at || '').slice(0, 16))}
+      ${a.timeclock_code ? `<span><span class="lbl">打卡码</span> <b style="font-family:ui-monospace,Consolas,monospace;letter-spacing:.08em;color:#047857">${esc(a.timeclock_code)}</b></span>` : ''}
+      ${a.ssn_last4 ? `<span><span class="lbl">SSN</span> <b>****${esc(a.ssn_last4)}</b></span>` : ''}
     </div>
     ${addr ? `<div class="meta">${kv('地址', addr)} ${a.address_verified ? '<span style="color:#059669;font-weight:700;font-size:11px;white-space:nowrap">✓ 地址已验证</span>' : ''}</div>` : ''}
     ${window._docThumbs ? window._docThumbs(a.id, a.docs) : ''}`;
@@ -280,6 +284,16 @@ function editApplicantInfo(id) {
       <button type="button" id="afVerBtn${id}" onclick="verifyApplicantAddr(${id})" style="padding:6px 13px;border-radius:8px;border:1px solid #93c5fd;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🔍 验证地址 Verify</button>
       <span id="afAddrStatus${id}" style="font-size:12px;font-weight:700;color:${a.address_verified ? '#059669' : 'var(--gray-400)'}">${a.address_verified ? '✓ 已验证 Verified' : '未验证 Not verified'}</span>
     </div>
+    <div class="af-sec">敏感信息 SENSITIVE（安全存储）</div>
+    <div style="background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:7px 11px;font-size:11px;line-height:1.5;margin-bottom:8px">SSN 使用 AES-256-GCM 加密存储，页面只显示末四位。不修改请留空。${a.linked_employee ? '已建档 → 直接存入员工档案。' : '还没建档 → 先存在申请单上，建档时自动带过去。'}</div>
+    <div class="af-grid">
+      <label class="af-l">SSN（9 位数字）<input id="af_${id}_ssn" class="af-i" inputmode="numeric" autocomplete="off" placeholder="${a.ssn_last4 ? '已存 ****' + esc(a.ssn_last4) + ' · 留空不改' : 'XXX-XX-XXXX 或 XXXXXXXXX'}"></label>
+      <label class="af-l">打卡码（扫码提交时自动生成，打卡机 / 签到页通用）
+        ${a.timeclock_code
+          ? `<div style="padding:7px 11px;border:1.5px dashed #6ee7b7;background:#ecfdf5;border-radius:8px;font-size:17px;font-weight:800;letter-spacing:.18em;color:#047857;font-family:ui-monospace,Consolas,monospace">${esc(a.timeclock_code)}</div>`
+          : `<button type="button" id="afGenTc${id}" onclick="genApplicantTcCode(${id})" style="padding:8px 13px;border-radius:8px;border:1px solid #6ee7b7;background:#ecfdf5;color:#047857;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🎲 生成打卡码（这条申请还没有）</button>`}
+      </label>
+    </div>
     <div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap">
       <button id="afSave${id}" onclick="saveApplicantInfo(${id})" style="padding:7px 16px;border-radius:8px;border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">保存</button>
       <button onclick="reRenderApp(${id})" style="padding:7px 16px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:var(--gray-600);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">取消</button>
@@ -288,6 +302,23 @@ function editApplicantInfo(id) {
     ${window._docThumbs ? window._docThumbs(a.id, a.docs) : ''}`;
   const first = document.getElementById('af_' + id + '_name');
   if (first) { first.focus(); first.select(); }
+}
+// 老申请没有自动生成的打卡码 → 手动补一个 (幂等: 档案上已有就直接用那个)
+async function genApplicantTcCode(id) {
+  const btn = document.getElementById('afGenTc' + id);
+  if (btn) { btn.disabled = true; btn.textContent = '生成中…'; }
+  try {
+    const r = await fetch('/api/admin/applicant-submissions/' + id + '/gen-timeclock-code', { method: 'POST', credentials: 'same-origin' });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.success) throw new Error(j.error || '生成失败');
+    const a = window._appById[id];
+    if (a) a.timeclock_code = j.timeclock_code;
+    if (btn) btn.outerHTML = '<div style="padding:7px 11px;border:1.5px dashed #6ee7b7;background:#ecfdf5;border-radius:8px;font-size:17px;font-weight:800;letter-spacing:.18em;color:#047857;font-family:ui-monospace,Consolas,monospace">' + esc(j.timeclock_code) + '</div>';
+    pcToast('打卡码已生成：' + j.timeclock_code + ' — 员工在打卡机 / 签到页输入这串数字', 'ok');
+  } catch (e) {
+    pcToast(e.message || '生成失败', 'err');
+    if (btn) { btn.disabled = false; btn.textContent = '🎲 生成打卡码（这条申请还没有）'; }
+  }
 }
 // 地址字段被改过 → 之前的验证结果作废
 function afAddrTouched(id) {
@@ -338,6 +369,12 @@ async function saveApplicantInfo(id) {
     if (el) body[f[0]] = el.value;
   });
   if (!String(body.name || '').trim()) { pcToast('姓名不能为空', 'err'); return; }
+  const ssnEl = document.getElementById('af_' + id + '_ssn');
+  if (ssnEl && ssnEl.value.trim()) {
+    const d9 = ssnEl.value.replace(/\D/g, '');
+    if (d9.length !== 9) { pcToast('SSN 需要 9 位数字（可带横线）', 'err'); ssnEl.focus(); return; }
+    body.ssn = d9;
+  }
   const btn = document.getElementById('afSave' + id);
   if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
   try {
@@ -351,6 +388,8 @@ async function saveApplicantInfo(id) {
     if (j.record) {
       APP_FIELDS.forEach(f => { if (j.record[f[0]] !== undefined) a[f[0]] = j.record[f[0]]; });
       if (j.record.address_verified !== undefined) a.address_verified = j.record.address_verified ? 1 : 0;
+      if (j.record.ssn_last4 !== undefined) a.ssn_last4 = j.record.ssn_last4;
+      if (j.record.timeclock_code !== undefined) a.timeclock_code = j.record.timeclock_code;
     }
     reRenderApp(id);
     const ch = (j.changed || []).map(k => APP_FIELD_CN[k] || k);
