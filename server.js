@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-18q · 查询页改用站内风格提示/确认/输入, 去掉浏览器原生弹窗',
+  tag: '2026-08-18r · 查看器小图自动放大看清; 可切换原件/裁剪版对照',
   started: new Date().toISOString(),
 };
 
@@ -17628,7 +17628,9 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
         (SELECT GROUP_CONCAT(doc_type) FROM applicant_docs d WHERE d.submission_id = s.id) AS doc_types
       FROM applicant_submissions s ORDER BY s.created_at DESC`).all().filter(x => match(x.phone)).slice(0, 50);
     // 带证件明细, 页面可直接看图
-    const docsFor = db.prepare('SELECT id, doc_type, file_name, verify_status FROM applicant_docs WHERE submission_id=?');
+    const docsFor = db.prepare(`SELECT id, doc_type, file_name, verify_status,
+      CASE WHEN COALESCE(cropped_path,'')!='' THEN 1 ELSE 0 END AS has_cropped
+      FROM applicant_docs WHERE submission_id=?`);
     applications.forEach(a => { try { a.docs = docsFor.all(a.id); } catch (_) { a.docs = []; } });
     const employees = db.prepare(`SELECT id, employee_id, first_name, last_name, phone, email, position, department, status, hire_date
       FROM employees`).all().filter(x => match(x.phone)).slice(0, 50);
