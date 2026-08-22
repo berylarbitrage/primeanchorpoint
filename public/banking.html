@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>银行对账</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+<style>
+  :root{--amber:#b45309;--amber-bg:#fffbeb;--sky:#0ea5e9;--red:#c5221f;--green:#059669;
+    --gray-100:#f3f4f6;--gray-200:#e5e7eb;--gray-400:#9ca3af;--gray-500:#6b7280;--gray-600:#4b5563;--white:#fff}
+  *{box-sizing:border-box;margin:0}
+  body{font-family:'DM Sans','PingFang SC','Microsoft YaHei',sans-serif;background:var(--amber-bg);color:#1f2937;min-height:100vh}
+  .top{background:var(--white);border-bottom:1.5px solid var(--gray-200);padding:10px 16px;display:flex;
+    align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:0;z-index:20}
+  .top h1{font-size:1.05rem;color:var(--amber)}
+  .btn{border:1px solid var(--gray-200);background:var(--white);border-radius:20px;padding:6px 14px;
+    font-size:.8rem;cursor:pointer;font-family:inherit;text-decoration:none;color:inherit}
+  .btn:hover{background:var(--gray-100)}
+  .btn.primary{background:var(--amber);border-color:var(--amber);color:#fff}
+  .btn.primary:hover{background:#92400e}
+  .btn.sm{padding:3px 10px;font-size:.72rem}
+  .wrap{max-width:1000px;margin:0 auto;padding:14px 14px 60px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin-bottom:14px}
+  .acct{background:var(--white);border:1px solid var(--gray-200);border-radius:14px;padding:12px 14px}
+  .acct .bank{font-size:.72rem;color:var(--gray-500)}
+  .acct .nm{font-weight:800;font-size:.9rem;margin:2px 0}
+  .acct .bal{font-size:1.25rem;font-weight:800;color:var(--green)}
+  .acct .sub{font-size:.7rem;color:var(--gray-400)}
+  .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+  .filters input,.filters select{border:1px solid var(--gray-200);border-radius:10px;padding:7px 10px;
+    font-size:.8rem;font-family:inherit;background:var(--white)}
+  table{width:100%;border-collapse:collapse;background:var(--white);border-radius:14px;overflow:hidden;
+    border:1px solid var(--gray-200);font-size:.8rem}
+  th{background:var(--gray-100);text-align:left;padding:8px 10px;font-size:.72rem;color:var(--gray-600)}
+  td{padding:7px 10px;border-top:1px solid var(--gray-100)}
+  .amt-in{color:var(--green);font-weight:700}
+  .amt-out{color:#1f2937;font-weight:600}
+  .empty{text-align:center;color:var(--gray-400);padding:50px 0}
+  .setup{background:var(--white);border:1px solid var(--gray-200);border-radius:14px;padding:18px;line-height:1.9;font-size:.85rem}
+  .setup code{background:var(--gray-100);border-radius:6px;padding:2px 6px;font-size:.78rem}
+  #gate{max-width:340px;margin:80px auto;background:var(--white);border:1px solid var(--gray-200);border-radius:16px;padding:24px}
+  #gate input{width:100%;border:1px solid var(--gray-200);border-radius:10px;padding:9px 12px;font-size:.9rem;margin-top:8px;font-family:inherit}
+  .err{color:var(--red);font-size:.8rem;margin-top:8px}
+  .hint{font-size:.74rem;color:var(--gray-400)}
+  .note{font-size:.78rem;color:var(--gray-500);margin:8px 0}
+</style>
+</head>
+<body>
+
+<div id="gate" style="display:none">
+  <h1 style="color:var(--amber);font-size:1.1rem">🏦 银行对账</h1>
+  <input id="user" placeholder="用户名（仅管理员）">
+  <input id="pw" type="password" placeholder="密码" onkeydown="if(event.key==='Enter')login()">
+  <div class="err" id="gateErr"></div>
+  <button class="btn primary" style="width:100%;margin-top:12px" onclick="login()">登录</button>
+</div>
+
+<div id="app" style="display:none">
+  <div class="top">
+    <h1>🏦 银行对账</h1>
+    <span class="hint" id="envTag"></span>
+    <div style="flex:1"></div>
+    <button class="btn" id="syncBtn" onclick="syncNow()">🔄 同步交易</button>
+    <button class="btn primary" onclick="connectBank()">➕ 连接银行</button>
+  </div>
+  <div class="wrap">
+    <div id="setupBox" style="display:none" class="setup"></div>
+    <div class="cards" id="accounts"></div>
+    <div class="filters">
+      <input type="date" id="fStart" onchange="loadTxns()">
+      <span class="hint">到</span>
+      <input type="date" id="fEnd" onchange="loadTxns()">
+      <select id="fAcct" onchange="loadTxns()"><option value="">全部账户</option></select>
+      <input id="fQ" placeholder="搜描述 / 商户 / 分类…" oninput="qDebounce()" style="flex:1;min-width:160px">
+      <a class="btn" id="csvBtn" href="#">⬇ 导出 CSV 给会计</a>
+    </div>
+    <div class="note" id="sumLine"></div>
+    <div id="txns"></div>
+  </div>
+</div>
+
+<script>
+let TOKEN = localStorage.getItem('adminToken') || '';
+let ACCTS = [], qTimer = null;
+
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function money(v, cur){ if (v == null) return '—';
+  return (v < 0 ? '-' : '') + '$' + Math.abs(v).toFixed(2) + (cur && cur !== 'USD' ? ' ' + cur : ''); }
+
+async function api(path, opts = {}) {
+  const res = await fetch('/api' + path, {
+    method: opts.method || 'GET',
+    headers: { 'Authorization': 'Bearer ' + TOKEN, ...(opts.body ? { 'Content-Type': 'application/json' } : {}) },
+    body: opts.body
+  });
+  const j = await res.json().catch(() => ({}));
+  if (res.status === 401) { showGate('登录已过期'); throw new Error('unauthorized'); }
+  if (!res.ok) throw new Error(j.error || ('HTTP ' + res.status));
+  return j;
+}
+function showGate(msg){ document.getElementById('gate').style.display=''; document.getElementById('app').style.display='none';
+  if (msg) document.getElementById('gateErr').textContent = msg; }
+
+async function login() {
+  const r = await fetch('/api/admin/login', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ username: document.getElementById('user').value.trim(), password: document.getElementById('pw').value })
+  }).then(x=>x.json()).catch(()=>({}));
+  if (r.mfa_required) { location.href = '/mfa?token=' + encodeURIComponent(r.mfa_token || '') + '&next=' + encodeURIComponent('/banking'); return; }
+  if (!r.success) { document.getElementById('gateErr').textContent = r.error || '登录失败'; return; }
+  if (r.role !== 'admin') { document.getElementById('gateErr').textContent = '银行数据只有管理员能看'; return; }
+  TOKEN = r.token; localStorage.setItem('adminToken', TOKEN);
+  start();
+}
+
+function start(){ document.getElementById('gate').style.display='none'; document.getElementById('app').style.display='';
+  init(); }
+
+async function init() {
+  try {
+    const s = await api('/plaid/status');
+    document.getElementById('envTag').textContent = s.ready ? ('环境: ' + s.env) : '';
+    if (!s.ready) {
+      document.getElementById('setupBox').style.display = '';
+      document.getElementById('setupBox').innerHTML = '<b>还差一步：配置 Plaid 密钥（一次性）</b><br>'
+        + '1. 到 <a href="https://dashboard.plaid.com/signup" target="_blank" rel="noopener">dashboard.plaid.com</a> 注册（免费），拿到 <code>client_id</code> 和 <code>secret</code><br>'
+        + '2. 在网站服务器的环境变量里（和 ANTHROPIC_API_KEY 放一起）加：<br>'
+        + '<code>PLAID_CLIENT_ID=…</code>　<code>PLAID_SECRET=…</code>　<code>PLAID_ENV=sandbox</code>（先用 sandbox 测试，正式接自己银行改成 <code>production</code>，需在 Plaid 后台申请开通）<br>'
+        + '3. 重启网站后回到本页，点右上角「➕ 连接银行」。';
+      return;
+    }
+    await loadAccounts();
+    await loadTxns();
+  } catch (e) { console.error(e); }
+}
+
+async function loadAccounts() {
+  const r = await api('/plaid/accounts');
+  ACCTS = r.accounts || [];
+  const sel = document.getElementById('fAcct');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">全部账户</option>'
+    + ACCTS.map(a => '<option value="' + esc(a.account_id) + '">' + esc(a.name) + (a.mask ? ' ····' + a.mask : '') + '</option>').join('');
+  sel.value = cur;
+  document.getElementById('accounts').innerHTML = ACCTS.map(a =>
+    '<div class="acct"><div class="bank">🏦 ' + esc(a.institution || a.type) + '</div>'
+    + '<div class="nm">' + esc(a.name) + (a.mask ? ' <span class="sub">····' + a.mask + '</span>' : '') + '</div>'
+    + '<div class="bal">' + money(a.balance_current, a.currency) + '</div>'
+    + '<div class="sub">' + (a.balance_available != null ? '可用 ' + money(a.balance_available, a.currency) + ' · ' : '')
+    + esc(a.subtype || '') + '</div></div>').join('')
+    || '<div class="empty">还没连接银行账户 — 点右上角「➕ 连接银行」</div>';
+}
+
+function qDebounce(){ clearTimeout(qTimer); qTimer = setTimeout(loadTxns, 350); }
+function txnQuery() {
+  const p = new URLSearchParams();
+  const s = document.getElementById('fStart').value, e = document.getElementById('fEnd').value;
+  const a = document.getElementById('fAcct').value, q = document.getElementById('fQ').value.trim();
+  if (s) p.set('start', s); if (e) p.set('end', e);
+  if (a) p.set('account_id', a); if (q) p.set('q', q);
+  return p.toString();
+}
+
+async function loadTxns() {
+  const qs = txnQuery();
+  document.getElementById('csvBtn').href = '/api/plaid/transactions.csv?' + qs;
+  const r = await api('/plaid/transactions' + (qs ? '?' + qs : ''));
+  const rows = r.transactions || [];
+  const accName = id => { const a = ACCTS.find(x => x.account_id === id); return a ? a.name + (a.mask ? ' ····' + a.mask : '') : ''; };
+  document.getElementById('sumLine').textContent =
+    '共 ' + (r.total || 0) + ' 笔' + (rows.length < (r.total || 0) ? '（显示最近 ' + rows.length + ' 笔）' : '')
+    + ' · 净额 ' + money(-(r.sum || 0));
+  document.getElementById('txns').innerHTML = rows.length
+    ? '<table><tr><th>日期</th><th>账户</th><th>描述</th><th>分类</th><th style="text-align:right">金额</th></tr>'
+      + rows.map(t =>
+        '<tr><td>' + esc(t.date) + (t.pending ? ' <span class="hint">待清算</span>' : '') + '</td>'
+        + '<td>' + esc(accName(t.account_id)) + '</td>'
+        + '<td>' + esc(t.merchant || t.name) + '</td>'
+        + '<td class="hint">' + esc(t.category || '') + '</td>'
+        // Plaid 的正数是支出、负数是入账；显示按会计习惯反过来
+        + '<td style="text-align:right" class="' + (t.amount < 0 ? 'amt-in' : 'amt-out') + '">' + money(-t.amount, t.currency) + '</td></tr>').join('')
+      + '</table>'
+    : '<div class="empty">这个范围内没有交易。连接银行后点「🔄 同步交易」。</div>';
+}
+
+async function connectBank() {
+  try {
+    const r = await api('/plaid/link-token', { method: 'POST', body: '{}' });
+    const handler = Plaid.create({
+      token: r.link_token,
+      onSuccess: async (publicToken, metadata) => {
+        await api('/plaid/exchange', { method: 'POST', body: JSON.stringify({
+          public_token: publicToken,
+          institution: (metadata && metadata.institution && metadata.institution.name) || '' }) });
+        await syncNow();
+      },
+    });
+    handler.open();
+  } catch (e) { alert(e.message); }
+}
+
+async function syncNow() {
+  const btn = document.getElementById('syncBtn');
+  btn.disabled = true; btn.textContent = '同步中…';
+  try {
+    const r = await api('/plaid/sync', { method: 'POST', body: '{}' });
+    await loadAccounts();
+    await loadTxns();
+    btn.textContent = '🔄 同步交易';
+    document.getElementById('sumLine').textContent += ' · 刚同步: 新增/更新 ' + (r.added || 0) + ' 笔';
+  } catch (e) {
+    alert(e.message);
+    btn.textContent = '🔄 同步交易';
+  } finally { btn.disabled = false; }
+}
+
+if (TOKEN) {
+  fetch('/api/admin/me', { headers: { 'Authorization': 'Bearer ' + TOKEN } })
+    .then(r => r.json()).then(r => {
+      if (r && r.username && r.role === 'admin') start();
+      else showGate(r && r.username ? '银行数据只有管理员能看' : '');
+    }).catch(() => showGate(''));
+} else showGate('');
+</script>
+</body>
+</html>
