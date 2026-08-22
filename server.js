@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-22b · 证件审阅改成可拖动小窗, 旁边可直接更正申请人全部资料',
+  tag: '2026-08-22c · 改资料表单对齐后台新增员工: 分组排版 + Google 验证地址',
   started: new Date().toISOString(),
 };
 
@@ -16175,6 +16175,17 @@ app.patch('/api/admin/applicant-submissions/:id', requireAdmin, blockManager, (r
       sets.push(col + '=?'); vals.push(v);
       changes[col] = { label: cfg.label, from: sub[col] || '', to: v };
     }
+    // 地址验证标记: 「🔍 验证地址」通过后随保存写入; 地址改了但没带新标记就自动归零
+    {
+      const addrTouched = ['address1', 'city', 'state', 'zip'].some(k => changes[k]);
+      let av = null;
+      if (b.address_verified !== undefined) av = (b.address_verified === 1 || b.address_verified === '1' || b.address_verified === true) ? 1 : 0;
+      else if (addrTouched && sub.address_verified) av = 0;
+      if (av !== null && av !== (sub.address_verified ? 1 : 0)) {
+        sets.push('address_verified=?'); vals.push(av);
+        changes.address_verified = { label: '地址已验证', from: sub.address_verified ? '是' : '否', to: av ? '是' : '否' };
+      }
+    }
     if (sets.length) {
       db.prepare(`UPDATE applicant_submissions SET ${sets.join(', ')} WHERE id=?`).run(...vals, sub.id);
       const ctx = { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers };
@@ -16197,6 +16208,7 @@ app.patch('/api/admin/applicant-submissions/:id', requireAdmin, blockManager, (r
     const row = db.prepare('SELECT * FROM applicant_submissions WHERE id=?').get(sub.id);
     const record = { id: row.id };
     for (const col of Object.keys(APPLICANT_EDITABLE)) record[col] = row[col] || '';
+    record.address_verified = row.address_verified ? 1 : 0;
     res.json({ success: true, name: row.name, changed: Object.keys(changes), record });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -17665,7 +17677,7 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
     if (digits.length < 7) return res.status(400).json({ error: '请输入至少 7 位的电话号码' });
     const match = v => norm(v) === digits;
     const applications = db.prepare(`SELECT s.id, s.partner_name, s.name, s.phone, s.email, s.position, s.status,
-        s.address1, s.address2, s.city, s.state, s.zip, s.apply_state, s.created_at, s.employee_id,
+        s.address1, s.address2, s.city, s.state, s.zip, s.address_verified, s.apply_state, s.created_at, s.employee_id,
         (SELECT GROUP_CONCAT(doc_type) FROM applicant_docs d WHERE d.submission_id = s.id) AS doc_types
       FROM applicant_submissions s ORDER BY s.created_at DESC`).all().filter(x => match(x.phone)).slice(0, 50);
     // 带证件明细, 页面可直接看图
