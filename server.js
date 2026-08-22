@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-18r · 查看器小图自动放大看清; 可切换原件/裁剪版对照',
+  tag: '2026-08-22a · 电话查询页内置完整证件审阅器(识别文字/AI识读/亮度对比/文档增强/真伪标记/连续处理), 不再跳后台',
   started: new Date().toISOString(),
 };
 
@@ -17628,7 +17628,7 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
         (SELECT GROUP_CONCAT(doc_type) FROM applicant_docs d WHERE d.submission_id = s.id) AS doc_types
       FROM applicant_submissions s ORDER BY s.created_at DESC`).all().filter(x => match(x.phone)).slice(0, 50);
     // 带证件明细, 页面可直接看图
-    const docsFor = db.prepare(`SELECT id, doc_type, file_name, verify_status,
+    const docsFor = db.prepare(`SELECT id, doc_type, file_name, verify_status, verify_by, ai_text,
       CASE WHEN COALESCE(cropped_path,'')!='' THEN 1 ELSE 0 END AS has_cropped
       FROM applicant_docs WHERE submission_id=?`);
     applications.forEach(a => { try { a.docs = docsFor.all(a.id); } catch (_) { a.docs = []; } });
@@ -17655,8 +17655,11 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
           e.submission_id = s.id;
           e.docs = docsFor.all(s.id);
           for (const d of e.docs) {
+            // 带上 sub_id/doc_id: 查询页的证件审阅器就能对这些图做裁剪 / 真伪标记 / AI 识读
             all.push({ key: String(d.id), source: '扫码申请', label: APPLICANT_DOC_LABEL[d.doc_type] || d.doc_type,
-              file_name: d.file_name || '', verify_status: d.verify_status || '' });
+              file_name: d.file_name || '', verify_status: d.verify_status || '', verify_by: d.verify_by || '',
+              ai_text: d.ai_text || '', has_cropped: !!d.has_cropped, doc_type: d.doc_type || '',
+              sub_id: s.id, doc_id: d.id });
           }
         }
       } catch (_) {}
@@ -17678,7 +17681,13 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
           }
         }
       } catch (_) {}
-      for (const d of all) d.url = '/api/admin/employees/id-doc-image/' + encodeURIComponent(d.key);
+      // 申请证件走 applicant-submissions 下载口 (支持 ?v=orig 看原件 / 裁剪版对照);
+      // 其余来源仍走通用 id-doc-image。
+      for (const d of all) {
+        d.url = d.sub_id
+          ? '/api/admin/applicant-submissions/' + d.sub_id + '/docs/' + d.doc_id + '/download'
+          : '/api/admin/employees/id-doc-image/' + encodeURIComponent(d.key);
+      }
       e.all_docs = all;
     });
     // 申请记录里的名字是工人当时自己填的(常有拼写错误); 管理员后来在员工档案里改了名不会回写历史记录。

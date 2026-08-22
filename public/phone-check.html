@@ -71,6 +71,12 @@ const DOC_LABELS={ssn_front:'SSN 正面',ssn_back:'SSN 反面',ead_front:'EAD �
 document.getElementById('phoneInput').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});
 
 function kv(lbl,val){ return val ? `<span><span class="lbl">${esc(lbl)}</span> <b>${esc(val)}</b></span>` : ''; }
+// 证件真伪结论: 缩略图右上角小角标 + 边框颜色
+function vBadge(v){
+  const m={real:['#059669','真✓'],fake:['#dc2626','假✗'],pending:['#d97706','待定?']}[v||''];
+  return m?'<span style="position:absolute;top:2px;right:2px;background:'+m[0]+';color:#fff;font-size:9px;font-weight:700;border-radius:5px;padding:0 5px;line-height:1.5">'+m[1]+'</span>':'';
+}
+function vBorder(v){ return {real:'#6ee7b7',fake:'#fca5a5',pending:'#fcd34d'}[v||'']||'#dbe3ee'; }
 
 async function doSearch(){
   // 缩略图点开 = 灯箱看原图 (可框选裁剪)。列表缩略图仍显示裁剪版, 原件永不改动。
@@ -81,14 +87,16 @@ async function doSearch(){
     window._docSets[setId]=docs.map(d=>({
       url:'/api/admin/applicant-submissions/'+subId+'/docs/'+d.id+'/download',
       label:DOC_LABELS[d.doc_type]||d.doc_type, sub_id:subId, doc_id:d.id, file_name:d.file_name||'',
-      has_cropped: !!d.has_cropped
+      has_cropped: !!d.has_cropped, doc_type:d.doc_type||'',
+      verify_status:d.verify_status||'', verify_by:d.verify_by||'', ai_text:d.ai_text||''
     }));
     return '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+docs.map((d,i)=>{
       const u='/api/admin/applicant-submissions/'+subId+'/docs/'+d.id+'/download';
       const label=DOC_LABELS[d.doc_type]||d.doc_type;
       if(/\.pdf$/i.test(d.file_name||'')) return '<a href="'+u+'" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:6px 10px;background:#eef2ff;color:#3730a3;border-radius:8px;font-size:12px;font-weight:600;text-decoration:none">📄 '+esc(label)+'</a>';
-      return '<a href="javascript:void(0)" onclick="lbOpen(window._docSets[\''+setId+'\'],'+i+')" title="'+esc(label)+' (点击看原图 / 裁剪)" style="text-decoration:none"><span style="display:block;position:relative">'
-        +'<img src="'+u+'" loading="lazy" style="width:84px;height:84px;object-fit:cover;border-radius:8px;border:1px solid #dbe3ee;background:#000;display:block">'
+      return '<a href="javascript:void(0)" onclick="lbOpen(window._docSets[\''+setId+'\'],'+i+')" title="'+esc(label)+' (点击审阅: 旋转/裁剪/识别文字/AI 识读/标真假)" style="text-decoration:none"><span style="display:block;position:relative">'
+        +'<img src="'+u+'" loading="lazy" style="width:84px;height:84px;object-fit:cover;border-radius:8px;border:1px solid '+vBorder(d.verify_status)+';background:#000;display:block">'
+        +vBadge(d.verify_status)
         +'<span style="position:absolute;left:0;right:0;bottom:0;background:rgba(15,23,42,.62);color:#fff;font-size:10px;font-weight:600;text-align:center;border-radius:0 0 6px 6px;padding:1px 0">'+esc(label)+'</span>'
         +'</span></a>';
     }).join('')+'</div>';
@@ -100,7 +108,9 @@ async function doSearch(){
     docs.forEach(d=>{ (bySrc[d.source||'其他']=bySrc[d.source||'其他']||[]).push(d); });
     const setId='e'+(window._docSetSeq=(window._docSetSeq||0)+1);
     window._docSets=window._docSets||{};
-    window._docSets[setId]=docs.map(d=>({url:d.url,label:d.label,extra:d.extra||'',file_name:d.file_name||''}));
+    window._docSets[setId]=docs.map(d=>({url:d.url,label:d.label,extra:d.extra||'',file_name:d.file_name||'',
+      sub_id:d.sub_id||0, doc_id:d.doc_id||0, doc_type:d.doc_type||'', has_cropped:!!d.has_cropped,
+      verify_status:d.verify_status||'', verify_by:d.verify_by||'', ai_text:d.ai_text||''}));
     let flatIdx=-1;
     return '<div style="margin-top:8px">'+Object.keys(bySrc).map(src=>
       '<div style="margin-bottom:6px">'
@@ -113,6 +123,7 @@ async function doSearch(){
         return '<a href="javascript:void(0)" onclick="lbOpen(window._docSets[\''+setId+'\'],'+myIdx+')" title="'+cap+' (点击看原图)" style="text-decoration:none"><span style="display:block;position:relative">'
           +'<img src="'+u+'" loading="lazy" onerror="this.parentNode.parentNode.parentNode.innerHTML=\'<a href=&quot;'+u+'&quot; target=_blank style=&quot;font-size:12px;color:#3730a3&quot;>📄 '+cap+'</a>\'" style="width:84px;height:84px;object-fit:cover;border-radius:8px;border:1px solid #dbe3ee;background:#000;display:block">'
           +'<span style="position:absolute;left:0;right:0;bottom:0;background:rgba(15,23,42,.62);color:#fff;font-size:10px;font-weight:600;text-align:center;border-radius:0 0 6px 6px;padding:1px 2px;line-height:1.25">'+esc(d.label||'')+'</span>'
+          +vBadge(d.verify_status)
           +'</span></a>'
           +(d.extra?'<div style="font-size:10px;color:#64748b;max-width:84px;line-height:1.2">'+esc(d.extra)+'</div>':'');
       }).join('')+'</div></div>').join('')+'</div>';
@@ -212,161 +223,616 @@ async function syncApplicantName(subId, empId, btn){
   }catch(e){ pcToast(e.message||'更正失败','err'); btn.disabled=false; btn.textContent='用档案名更正'; }
 }
 
-// ══════ 证件大图查看 + 裁剪 ══════
-let _lb = { list: [], idx: 0, sel: null, drag: null, rot: 0, img: null, showCropped: false };
-function lbToggleVersion() {
-  _lb.showCropped = !_lb.showCropped;
-  _lb.rot = 0; _lb.sel = null;
-  document.getElementById('lbSelBox').style.display = 'none';
-  lbRender();
-}
-function lbOpen(docs, idx) {
-  _lb.list = docs; _lb.idx = idx; _lb.sel = null; _lb.rot = 0; _lb.showCropped = false;
-  document.getElementById('lightbox').style.display = 'flex';
-  lbRender();
-}
-function lbClose() { document.getElementById('lightbox').style.display = 'none'; _lb.sel = null; _lb.img = null; }
-// 跳到后台的完整证件审阅器 (功能齐全: 🔍识别 🤖AI识读 🎛亮度对比 📄文档增强 ✅真假标记 ✂️连续裁剪)
-function lbOpenFullReview() {
-  const d = lbCur();
-  if (!d.sub_id) { pcToast('此证件来自员工档案，请在后台「员工档案 → 证件」里审阅', 'err'); return; }
-  window.open('/admin.html?doc_review=' + d.sub_id, '_blank');
-}
-function lbNav(d) { _lb.idx = (_lb.idx + d + _lb.list.length) % _lb.list.length; _lb.sel = null; _lb.rot = 0; _lb.showCropped = false; lbRender(); }
+// ══════ 证件完整审阅器 (全部在本页完成, 不跳转) ══════
+// 旋转 / 缩放 / 框选裁剪 / 🔍框选识别文字 / 🤖AI 识读 / 🎛亮度对比黑白 /
+// 🪄自动修复 / 📄文档增强 / ✅真伪标记 / ✂️连续处理。原件永远保留 (?v=orig)。
+let _lb = {
+  list: [], idx: 0, sel: null, drag: null, rot: 0, img: null, showCropped: false,
+  zoom: 1, edited: false, adj: { b: 100, c: 100, g: false },
+  verify: '', verifyBy: '', batch: null
+};
+const LB_ZOOMS = [0.5, 0.75, 1, 1.5, 2, 3, 4];
+const $lb = id => document.getElementById(id);
 function lbCur() { return _lb.list[_lb.idx] || {}; }
-function lbRotate(deg) {
-  _lb.rot = ((_lb.rot + deg) % 360 + 360) % 360;
-  _lb.sel = null;                       // 旋转后原选框失效
-  document.getElementById('lbSelBox').style.display = 'none';
-  lbDraw();
-  lbSyncSaveBtn();
+function lbEditable(d) { d = d || lbCur(); return !!(d && d.sub_id && d.doc_id); }
+function lbAdjDefault() { return _lb.adj.b === 100 && _lb.adj.c === 100 && !_lb.adj.g; }
+function lbDirty() { return !!_lb.sel || _lb.rot !== 0 || _lb.edited || !lbAdjDefault(); }
+function lbGroupOf(d) { return String((d && (d.doc_type || d.label)) || '').split('_')[0].toLowerCase(); }
+function lbBtnActive(id, on, color) {
+  const b = $lb(id); if (!b) return;
+  b.style.background = on ? (color || '#7c3aed') : 'transparent';
+  b.style.borderColor = on ? (color || '#7c3aed') : '#64748b';
 }
-function lbSyncSaveBtn() {
+function lbHideSel() { const b = $lb('lbSelBox'); if (b) b.style.display = 'none'; }
+
+function lbOpen(docs, idx) {
+  _lb.list = docs || []; _lb.idx = idx || 0;
+  $lb('lightbox').style.display = 'flex';
+  lbRender();
+}
+function lbClose() {
+  if (_lb.batch) lbBatchEnd(true);
+  $lb('lightbox').style.display = 'none';
+  _lb.img = null; _lb.sel = null;
+}
+function lbNav(step) {
+  if (!_lb.list.length) return;
+  _lb.idx = (_lb.idx + step + _lb.list.length) % _lb.list.length;
+  lbRender();
+}
+function lbToggleVersion() { _lb.showCropped = !_lb.showCropped; lbRender({ keepVersion: true }); }
+
+// 打开/切换一张证件: 复位所有编辑状态, 读回该证件已存的结论与 AI 识读结果
+function lbRender(opts) {
+  opts = opts || {};
   const d = lbCur();
-  const canEdit = !!d.sub_id && !!d.doc_id;
-  // 有选框(裁剪) 或 转过角度 都可以保存
-  document.getElementById('lbSaveBtn').disabled = !canEdit || (!_lb.sel && _lb.rot === 0);
-  document.getElementById('lbSaveBtn').textContent = _lb.sel ? '保存裁剪' : (_lb.rot ? '保存旋转' : '保存');
+  _lb.sel = null; _lb.rot = 0; _lb.zoom = 1; _lb.edited = false;
+  _lb.adj = { b: 100, c: 100, g: false };
+  if (!opts.keepVersion) _lb.showCropped = false;
+  lbSyncAdjUI(); lbHideSel();
+  _lb.verify = d.verify_status || ''; _lb.verifyBy = d.verify_by || '';
+  const ed = lbEditable(d);
+  lbSyncVersionUI();
+  $lb('lbEditTools').style.display = ed ? 'flex' : 'none';
+  $lb('lbOrigLink').href = d.url ? (d.url + (d.url.indexOf('?') >= 0 ? '&' : '?') + 'v=orig') : '#';
+  $lb('lbCropHint').textContent = ed
+    ? (d.has_cropped
+        ? '这张已裁剪过：默认看到的是原件，点「看裁剪版」对照 · 原件永久保留，随时可「恢复原件」'
+        : '拖框圈出证件后点【保存】；不拖框就是整张保存 · ↺ ↻ 转正歪照片 · 原件始终保留')
+    : '此证件来自员工档案，可查看 / 旋转 / 调节 / 识别文字，但不支持保存修改';
+  lbRenderVerify();
+  // 换图: 清空文字面板; 该图存过 AI 识读结果就直接显示
+  $lb('lbTxt').value = ''; $lb('lbTxt').style.display = 'none'; $lb('lbCopyBtn').style.display = 'none';
+  lbSetStatus('在图上拖一个框 → 点【识别选框】提取文字；或点【🤖 AI 识读】让 Claude 读整张');
+  if (d.ai_text) { try { lbShowAi(JSON.parse(d.ai_text), true); } catch (_) {} }
+  lbLoadImg();
 }
+// 标题 + 原件/裁剪版切换按钮 (存完裁剪版后也要立刻反映出来)
+function lbSyncVersionUI() {
+  const d = lbCur();
+  const tag = d.has_cropped ? (_lb.showCropped ? ' · 正在看【裁剪版】' : ' · 正在看【原件】') : '';
+  $lb('lbCap').textContent = (d.label || '') + (d.extra ? ' · ' + d.extra : '')
+    + '  (' + (_lb.idx + 1) + '/' + _lb.list.length + ')' + tag;
+  const vb = $lb('lbVerBtn');
+  vb.style.display = d.has_cropped ? '' : 'none';
+  vb.textContent = _lb.showCropped ? '看原件' : '看裁剪版';
+}
+function lbLoadImg() {
+  const d = lbCur();
+  const im = new Image();
+  im.onload = () => { _lb.img = im; lbDraw(); lbSyncBtns(); };
+  im.onerror = () => { $lb('lbCap').textContent = '图片加载失败'; };
+  im.src = d.url + (d.url.indexOf('?') >= 0 ? '&' : '?') + (_lb.showCropped ? '' : 'v=orig&') + 't=' + Date.now();
+}
+
+// 画布 = 当前所见 (旋转 + 亮度/对比/黑白), 识别、AI、保存全都取这张画布 → 所见即所得
 function lbDraw() {
-  const img = _lb.img;
-  if (!img) return;
-  const cv = document.getElementById('lbCanvas');
+  const img = _lb.img; if (!img) return;
+  const cv = $lb('lbCanvas');
   const swap = (_lb.rot === 90 || _lb.rot === 270);
   const w = swap ? img.naturalHeight : img.naturalWidth;
   const h = swap ? img.naturalWidth : img.naturalHeight;
   cv.width = w; cv.height = h;
   const ctx = cv.getContext('2d');
   ctx.save();
+  const f = lbFilterStr(); if (f) ctx.filter = f;
   ctx.translate(w / 2, h / 2);
   ctx.rotate(_lb.rot * Math.PI / 180);
   ctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
   ctx.restore();
   lbFit();
 }
-// 小图也撑满可视区(最多放大 4 倍, 再多就糊了), 免得低分辨率证件点开像缩略图
+// 撑满可视区(小图最多放大 4 倍), 再乘手动缩放; 放大后舞台可滚动看细节
 function lbFit() {
-  const cv = document.getElementById('lbCanvas');
-  if (!cv.width || !cv.height) return;
-  const maxW = window.innerWidth * 0.92, maxH = window.innerHeight * 0.68;
-  const scale = Math.min(maxW / cv.width, maxH / cv.height, 4);
+  const cv = $lb('lbCanvas'), st = $lb('lbStage');
+  if (!cv || !st || !cv.width || !cv.height) return;
+  const maxW = Math.max(120, st.clientWidth - 6), maxH = Math.max(120, st.clientHeight - 6);
+  const base = Math.min(maxW / cv.width, maxH / cv.height, 4);
+  const scale = base * _lb.zoom;
   cv.style.width = Math.round(cv.width * scale) + 'px';
   cv.style.height = Math.round(cv.height * scale) + 'px';
+  const p = $lb('lbZoomPct'); if (p) p.textContent = Math.round(_lb.zoom * 100) + '%';
 }
-window.addEventListener('resize', () => { if (document.getElementById('lightbox').style.display === 'flex') lbFit(); });
-function lbRender() {
-  const d = lbCur();
-  const verTag = d.has_cropped ? (_lb.showCropped ? ' · 正在看【裁剪版】' : ' · 正在看【原件】') : '';
-  document.getElementById('lbCap').textContent = (d.label || '') + (d.extra ? ' · ' + d.extra : '') + '  (' + (_lb.idx + 1) + '/' + _lb.list.length + ')' + verTag;
-  const vb = document.getElementById('lbVerBtn');
-  vb.style.display = d.has_cropped ? '' : 'none';
-  vb.textContent = _lb.showCropped ? '看原件' : '看裁剪版';
-  document.getElementById('lbSelBox').style.display = 'none';
-  const canEdit = !!d.sub_id && !!d.doc_id;
-  document.getElementById('lbCropTools').style.display = canEdit ? '' : 'none';
-  document.getElementById('lbFullBtn').style.display = canEdit ? '' : 'none';
-  document.getElementById('lbCropHint').textContent = canEdit
-    ? (d.has_cropped
-        ? '这张已裁剪过：默认看到的是原件，点「看裁剪版」对照 · 原件永久保留，随时可「恢复原件」'
-        : '拖动框选可裁剪 · ↺ ↻ 可旋转（手机拍歪的证件转正后保存）· 原件始终保留')
-    : '此证件来自员工档案，可查看和旋转，但暂不支持保存修改';
-  document.getElementById('lbSaveBtn').disabled = true;
-  // 默认看原件 (?v=orig)，避免"点开还是缩略/裁剪版"
-  const im = new Image();
-  im.onload = () => { _lb.img = im; lbDraw(); lbSyncSaveBtn(); };
-  im.onerror = () => { document.getElementById('lbCap').textContent = '图片加载失败'; };
-  im.src = d.url + (d.url.indexOf('?') >= 0 ? '&' : '?') + (_lb.showCropped ? '' : 'v=orig&') + 't=' + Date.now();
+window.addEventListener('resize', () => { if ($lb('lightbox').style.display === 'flex') { _lb.sel = null; lbHideSel(); lbFit(); lbSyncBtns(); } });
+function lbZoom(dir) {
+  let i = LB_ZOOMS.findIndex(z => Math.abs(z - _lb.zoom) < 0.01);
+  if (i < 0) i = 2;
+  _lb.zoom = LB_ZOOMS[Math.max(0, Math.min(LB_ZOOMS.length - 1, i + dir))];
+  _lb.sel = null; lbHideSel(); lbFit(); lbSyncBtns();
 }
+function lbRotate(deg) {
+  _lb.rot = ((_lb.rot + deg) % 360 + 360) % 360;
+  _lb.sel = null; lbHideSel();
+  lbDraw(); lbSyncBtns();
+}
+function lbSyncBtns() {
+  const ed = lbEditable();
+  const btn = $lb('lbSaveBtn');
+  btn.disabled = !ed || !lbDirty();
+  btn.textContent = _lb.sel ? '💾 保存裁剪' : (lbDirty() ? '💾 保存整张' : '💾 保存');
+  btn.style.opacity = btn.disabled ? '.45' : '1';
+  btn.style.cursor = btn.disabled ? 'not-allowed' : 'pointer';
+  $lb('lbRestoreBtn').style.display = (_lb.edited || lbDirty()) ? '' : 'none';
+}
+
+// ── 🎛 亮度 / 对比度 / 黑白 (实时, 且识别与保存都会带上) ──
+function lbFilterStr() {
+  let f = '';
+  if (_lb.adj.b !== 100) f += 'brightness(' + _lb.adj.b + '%) ';
+  if (_lb.adj.c !== 100) f += 'contrast(' + _lb.adj.c + '%) ';
+  if (_lb.adj.g) f += 'grayscale(1) ';
+  return f.trim();
+}
+function lbAdjChange() {
+  _lb.adj.b = parseInt($lb('lbBright').value) || 100;
+  _lb.adj.c = parseInt($lb('lbContrast').value) || 100;
+  _lb.adj.g = !!$lb('lbGray').checked;
+  $lb('lbBrightV').textContent = _lb.adj.b + '%';
+  $lb('lbContrastV').textContent = _lb.adj.c + '%';
+  lbDraw(); lbSyncBtns();
+}
+function lbSyncAdjUI() {
+  $lb('lbBright').value = _lb.adj.b;
+  $lb('lbContrast').value = _lb.adj.c;
+  $lb('lbGray').checked = _lb.adj.g;
+  $lb('lbBrightV').textContent = _lb.adj.b + '%';
+  $lb('lbContrastV').textContent = _lb.adj.c + '%';
+}
+function lbAdjReset() { _lb.adj = { b: 100, c: 100, g: false }; lbSyncAdjUI(); lbDraw(); lbSyncBtns(); }
+function lbToggleAdj() {
+  const p = $lb('lbAdjPanel');
+  const on = p.style.display === 'none';
+  p.style.display = on ? 'block' : 'none';
+  lbBtnActive('lbAdjBtn', on);
+  setTimeout(lbFit, 0);
+}
+
+// ── 框选 (裁剪区域 / 识别区域 共用一个框) ──
 function lbDown(e) {
-  const d = lbCur(); if (!d.sub_id) return;
-  const r = document.getElementById('lbCanvas').getBoundingClientRect();
+  const cv = $lb('lbCanvas'); if (!cv.width) return;
+  const r = cv.getBoundingClientRect();
   _lb.drag = { x: e.clientX - r.left, y: e.clientY - r.top };
   _lb.sel = null;
-  const box = document.getElementById('lbSelBox');
-  box.style.display = 'block'; box.style.left = _lb.drag.x + 'px'; box.style.top = _lb.drag.y + 'px';
+  const box = $lb('lbSelBox');
+  box.style.display = 'block';
+  box.style.left = _lb.drag.x + 'px'; box.style.top = _lb.drag.y + 'px';
   box.style.width = '0px'; box.style.height = '0px';
   e.preventDefault();
 }
 function lbMove(e) {
   if (!_lb.drag) return;
-  const r = document.getElementById('lbCanvas').getBoundingClientRect();
+  const r = $lb('lbCanvas').getBoundingClientRect();
   const x = Math.max(0, Math.min(e.clientX - r.left, r.width));
   const y = Math.max(0, Math.min(e.clientY - r.top, r.height));
   const left = Math.min(x, _lb.drag.x), top = Math.min(y, _lb.drag.y);
   const w = Math.abs(x - _lb.drag.x), h = Math.abs(y - _lb.drag.y);
-  const box = document.getElementById('lbSelBox');
-  box.style.left = left + 'px'; box.style.top = top + 'px'; box.style.width = w + 'px'; box.style.height = h + 'px';
+  const box = $lb('lbSelBox');
+  box.style.left = left + 'px'; box.style.top = top + 'px';
+  box.style.width = w + 'px'; box.style.height = h + 'px';
   _lb.sel = (w > 8 && h > 8) ? { left, top, w, h } : null;
-  lbSyncSaveBtn();
+  lbSyncBtns();
 }
 function lbUp() { _lb.drag = null; }
+// 选框(显示像素) → 画布内部像素
+function lbSelPx() {
+  const cv = $lb('lbCanvas');
+  if (!_lb.sel || !cv.clientWidth) return null;
+  const k = cv.width / cv.clientWidth;
+  let x = Math.max(0, Math.round(_lb.sel.left * k)), y = Math.max(0, Math.round(_lb.sel.top * k));
+  let w = Math.max(8, Math.round(_lb.sel.w * k)), h = Math.max(8, Math.round(_lb.sel.h * k));
+  w = Math.min(w, cv.width - x); h = Math.min(h, cv.height - y);
+  return { x, y, w, h };
+}
+
+// ── 🔍 框选文字识别 (本地 Tesseract, 不上传) ──
+let _lbOcrP = null;
+function lbSetStatus(t) { const el = $lb('lbStatus'); if (el) el.textContent = t; }
+function lbShowText(t, rows) {
+  const ta = $lb('lbTxt'), cp = $lb('lbCopyBtn');
+  ta.style.display = 'block'; ta.value = t; ta.rows = rows || 4;
+  cp.style.display = t ? 'inline-block' : 'none';
+  setTimeout(lbFit, 0);
+}
+function lbTogglePanel(force) {
+  const p = $lb('lbTextPanel');
+  const on = (force === undefined) ? (p.style.display === 'none') : !!force;
+  p.style.display = on ? 'block' : 'none';
+  lbBtnActive('lbOcrBtn', on, '#059669');
+  setTimeout(lbFit, 0);
+}
+async function lbOcrWorker() {
+  if (_lbOcrP) return _lbOcrP;
+  _lbOcrP = (async () => {
+    if (!window.Tesseract) {
+      await new Promise((res, rej) => {
+        const sc = document.createElement('script');
+        sc.src = '/vendor/tesseract/tesseract.min.js';
+        sc.onload = res; sc.onerror = () => rej(new Error('识别组件加载失败, 请刷新重试'));
+        document.head.appendChild(sc);
+      });
+    }
+    const w = await Tesseract.createWorker('eng', 1, {
+      workerPath: '/vendor/tesseract/worker.min.js',
+      corePath: '/vendor/tesseract',
+      langPath: '/vendor/tesseract/lang'
+    });
+    await w.setParameters({ tessedit_pageseg_mode: '6' });
+    return w;
+  })();
+  _lbOcrP.catch(() => { _lbOcrP = null; });
+  return _lbOcrP;
+}
+async function lbOcr(whole) {
+  lbTogglePanel(true);
+  const cv = $lb('lbCanvas');
+  if (!cv.width) return;
+  let a = { x: 0, y: 0, w: cv.width, h: cv.height };
+  if (!whole) {
+    const sp = lbSelPx();
+    if (!sp) { lbSetStatus('请先在图上拖一个框，或点【识别整张】'); return; }
+    a = sp;
+  }
+  try {
+    lbSetStatus('⏳ 识别中…（第一次要加载引擎, 稍等几秒）');
+    const k = Math.min(3, Math.max(1, Math.ceil(700 / a.w)));
+    const out = document.createElement('canvas');
+    out.width = Math.round(a.w * k); out.height = Math.round(a.h * k);
+    const oc = out.getContext('2d');
+    oc.imageSmoothingEnabled = true; oc.imageSmoothingQuality = 'high';
+    oc.drawImage(cv, a.x, a.y, a.w, a.h, 0, 0, out.width, out.height);
+    const worker = await lbOcrWorker();
+    const { data } = await worker.recognize(out);
+    const text = String((data && data.text) || '').replace(/\n{3,}/g, '\n\n').trim();
+    lbShowText(text || '(没识别出文字, 试试放大后框小一点的区域)');
+    lbSetStatus(text ? '✅ 识别完成, 可继续框选其他区域（对比度拉高认字更准）' : '😕 没识别出文字 — 放大后重新框选试试');
+  } catch (e) { lbSetStatus('⚠️ 识别失败: ' + (e.message || e)); }
+}
+function lbCopyText() {
+  const ta = $lb('lbTxt');
+  if (!ta || !ta.value) return;
+  const done = () => lbSetStatus('📋 已复制到剪贴板');
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(done, () => { ta.select(); document.execCommand('copy'); done(); });
+  else { ta.select(); document.execCommand('copy'); done(); }
+}
+
+// ── 🤖 AI 识读: 把当前所见整张交给服务器 (Claude / Google Vision), 结果存回该证件 ──
+async function lbAiRead() {
+  const cv = $lb('lbCanvas'); if (!cv.width) return;
+  lbTogglePanel(true);
+  lbSetStatus('🤖 AI 识读中…（约几秒）');
+  try {
+    let src = cv;
+    const sc = Math.min(1, 1600 / cv.width);
+    if (sc < 1) {
+      src = document.createElement('canvas');
+      src.width = Math.round(cv.width * sc); src.height = Math.round(cv.height * sc);
+      const c2 = src.getContext('2d'); c2.imageSmoothingQuality = 'high';
+      c2.drawImage(cv, 0, 0, src.width, src.height);
+    }
+    const d = lbCur();
+    const body = { data: src.toDataURL('image/jpeg', 0.92) };
+    if (lbEditable(d)) { body.sub_id = d.sub_id; body.doc_id = d.doc_id; }
+    const r = await fetch('/api/admin/ai-read-image', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+    lbShowAi(j, false);
+    if (lbEditable(d)) { try { d.ai_text = JSON.stringify(j); } catch (_) {} }
+  } catch (e) { lbSetStatus('⚠️ ' + (e.message || e)); }
+}
+function lbFmtAi(r) {
+  let out = '';
+  if (r.parsed && (r.parsed.fields || r.parsed.doc_type)) {
+    const F = r.parsed.fields || {};
+    const L = { name: '姓名', dob: '生日', id_number: '证件号', address: '地址', issue_date: '签发日', expiry_date: '到期日', category: '类别', other: '其他' };
+    if (r.parsed.doc_type) out += '类型: ' + r.parsed.doc_type + '\n';
+    for (const k of Object.keys(L)) if (F[k]) out += L[k] + ': ' + F[k] + '\n';
+    if (r.parsed.raw_text) out += '―― 全部文字 ――\n' + r.parsed.raw_text;
+  } else out = r.raw || '(没有读到内容)';
+  return out.trim();
+}
+function lbShowAi(r, fromCache) {
+  lbTogglePanel(true);
+  const out = lbFmtAi(r);
+  lbShowText(out, 8);
+  const eng = r.engine === 'claude' ? ('Claude' + (r.model ? ' (' + r.model + ')' : '')) : 'Google Vision';
+  lbSetStatus(fromCache ? ('🤖 之前识读过 · ' + eng + ' — 再点 🤖 可重新识别') : ('🤖 识读完成 · ' + eng + ' — 号码等关键字段请人工核对'));
+}
+
+// ── ✅ 真伪结论 (按证件组: 正反面一起生效) ──
+function lbRenderVerify() {
+  const bar = $lb('lbVerifyBar');
+  if (!lbEditable()) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  const g = lbGroupOf(lbCur()).toUpperCase();
+  $lb('lbVerLabel').textContent = (g ? g + ' 整组结论:' : '证件结论:');
+  const mk = (active, on) => 'border-radius:999px;font-size:12px;padding:3px 12px;cursor:pointer;font-weight:700;white-space:nowrap;font-family:inherit;'
+    + (active ? ('background:' + on + ';color:#fff;border:1px solid ' + on) : 'background:transparent;color:#e2e8f0;border:1px solid #64748b');
+  $lb('lbVerReal').style.cssText = mk(_lb.verify === 'real', '#059669');
+  $lb('lbVerFake').style.cssText = mk(_lb.verify === 'fake', '#dc2626');
+  $lb('lbVerPend').style.cssText = mk(_lb.verify === 'pending', '#d97706');
+  const t = { real: '已标真', fake: '已标假', pending: '待确定' };
+  $lb('lbVerInfo').textContent = _lb.verify
+    ? (t[_lb.verify] + (_lb.verifyBy ? ' · ' + _lb.verifyBy : '') + ' · 再点一次取消')
+    : '未标记（正反面一起生效）';
+}
+async function lbSetVerify(st) {
+  const d = lbCur();
+  if (!lbEditable(d)) return;
+  const next = _lb.verify === st ? '' : st;
+  try {
+    const r = await fetch('/api/admin/applicant-submissions/' + d.sub_id + '/docs/' + d.doc_id + '/verify', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: next })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.success) throw new Error(j.error || '标记失败');
+    _lb.verify = next; _lb.verifyBy = '';
+    const grp = lbGroupOf(d);
+    _lb.list.forEach(x => { if (x.sub_id === d.sub_id && lbGroupOf(x) === grp) x.verify_status = next; });
+    lbRenderVerify();
+    pcToast(next === 'real' ? '整组已标记为真' : next === 'fake' ? '整组已标记为假' : next === 'pending' ? '整组标为待确定（正反面一起）' : '已取消标记', next === 'fake' ? 'err' : 'ok');
+    lbRefreshThumbBadges();
+    if (_lb.batch && _lb.batch.awaitVerdict && next) { _lb.batch.awaitVerdict = false; lbBatchAdvance(); }
+  } catch (e) { pcToast(e.message || '标记失败', 'err'); }
+}
+
+// ── 🪄 自动修复 / 📄 文档增强 (纯浏览器内存处理, 原件不动) ──
+function lbBake(dataUrl, msg, clean) {
+  const im = new Image();
+  im.onload = () => {
+    _lb.img = im; _lb.rot = 0; _lb.zoom = 1;
+    _lb.adj = { b: 100, c: 100, g: false }; lbSyncAdjUI();
+    _lb.sel = null; lbHideSel();
+    _lb.edited = !clean;
+    lbDraw(); lbSyncBtns();
+    if (msg) pcToast(msg, 'ok');
+  };
+  im.src = dataUrl;
+}
+// 自动色阶(去灰/校色) + 轻锐化
+function _lbAfx(cv) {
+  const w = cv.width, h = cv.height, ctx = cv.getContext('2d');
+  const blur = document.createElement('canvas'); blur.width = w; blur.height = h;
+  const bx = blur.getContext('2d');
+  bx.filter = 'blur(' + Math.max(1, Math.round(w / 700)) + 'px)';
+  bx.drawImage(cv, 0, 0);
+  const idO = ctx.getImageData(0, 0, w, h), idB = bx.getImageData(0, 0, w, h);
+  const o = idO.data, b = idB.data;
+  const hist = [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)];
+  for (let i = 0; i < w * h; i++) { hist[0][o[i * 4]]++; hist[1][o[i * 4 + 1]]++; hist[2][o[i * 4 + 2]]++; }
+  const lut = [];
+  for (let c = 0; c < 3; c++) {
+    const clip = w * h * 0.005;
+    let lo = 0, acc = 0;
+    while (lo < 255 && acc + hist[c][lo] < clip) { acc += hist[c][lo]; lo++; }
+    let hi = 255; acc = 0;
+    while (hi > 0 && acc + hist[c][hi] < clip) { acc += hist[c][hi]; hi--; }
+    if (hi - lo < 30) { lo = 0; hi = 255; }
+    const L = new Uint8ClampedArray(256);
+    for (let v = 0; v < 256; v++) L[v] = (v - lo) * 255 / (hi - lo);
+    lut.push(L);
+  }
+  for (let i = 0; i < w * h; i++) for (let c = 0; c < 3; c++) {
+    const v = lut[c][o[i * 4 + c]], bv = lut[c][b[i * 4 + c]];
+    o[i * 4 + c] = Math.max(0, Math.min(255, v * 1.35 - bv * 0.35));
+  }
+  ctx.putImageData(idO, 0, 0);
+}
+function lbAutoFix() {
+  const cv = $lb('lbCanvas'); if (!cv.width) return;
+  pcToast('🪄 处理中…');
+  try {
+    const s = Math.min(1, 1800 / cv.width);
+    const w = Math.max(1, Math.round(cv.width * s)), h = Math.max(1, Math.round(cv.height * s));
+    const work = document.createElement('canvas'); work.width = w; work.height = h;
+    const cx = work.getContext('2d'); cx.imageSmoothingQuality = 'high';
+    cx.drawImage(cv, 0, 0, w, h);
+    _lbAfx(work);
+    lbBake(work.toDataURL('image/jpeg', 0.92), '🪄 已增强颜色 / 对比 — 不满意点【↩ 还原】, 满意点【💾 保存】');
+  } catch (e) { pcToast('自动修复失败: ' + (e.message || e), 'err'); }
+}
+// 灰度 → 大半径背景估计(除光照不均) → 笔画增益 → 轻锐化
+function lbDocEnhance() {
+  const cv = $lb('lbCanvas'); if (!cv.width) return;
+  pcToast('📄 文档增强中…');
+  try {
+    const s = Math.min(1, 2000 / Math.max(cv.width, cv.height));
+    const w = Math.max(1, Math.round(cv.width * s)), h = Math.max(1, Math.round(cv.height * s));
+    const work = document.createElement('canvas'); work.width = w; work.height = h;
+    const cx = work.getContext('2d'); cx.imageSmoothingQuality = 'high';
+    cx.drawImage(cv, 0, 0, w, h);
+    const id = cx.getImageData(0, 0, w, h), d = id.data;
+    for (let i = 0; i < w * h; i++) {
+      const g = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+      d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = g;
+    }
+    cx.putImageData(id, 0, 0);
+    const bgc = document.createElement('canvas'); bgc.width = w; bgc.height = h;
+    const bx = bgc.getContext('2d');
+    bx.filter = 'blur(' + Math.max(6, Math.round(w / 60)) + 'px)';
+    bx.drawImage(work, 0, 0);
+    const bd = bx.getImageData(0, 0, w, h).data;
+    for (let i = 0; i < w * h; i++) {
+      const v = Math.max(0, Math.min(255, 255 + (d[i * 4] - bd[i * 4]) * 2.4 - 12));
+      d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v;
+    }
+    cx.putImageData(id, 0, 0);
+    const blc = document.createElement('canvas'); blc.width = w; blc.height = h;
+    const blx = blc.getContext('2d'); blx.filter = 'blur(1px)'; blx.drawImage(work, 0, 0);
+    const sd = blx.getImageData(0, 0, w, h).data;
+    const id2 = cx.getImageData(0, 0, w, h), d2 = id2.data;
+    for (let i = 0; i < w * h * 4; i += 4) {
+      const v = Math.max(0, Math.min(255, d2[i] * 1.5 - sd[i] * 0.5));
+      d2[i] = d2[i + 1] = d2[i + 2] = v;
+    }
+    cx.putImageData(id2, 0, 0);
+    lbBake(work.toDataURL('image/jpeg', 0.92), '📄 已增强（黑白文档模式）— 不满意点【↩ 还原】；糊得太狠的建议让对方重拍');
+  } catch (e) { pcToast('增强失败: ' + (e.message || e), 'err'); }
+}
+function lbRestore() {
+  _lb.rot = 0; _lb.zoom = 1; _lb.edited = false;
+  _lb.adj = { b: 100, c: 100, g: false };
+  _lb.sel = null; lbHideSel(); lbSyncAdjUI();
+  lbLoadImg();
+  pcToast('已还原到系统里保存的图', 'ok');
+}
+
+// ── 💾 保存: 存成"显示用裁剪版", 原件永不改动 ──
 async function lbSaveCrop() {
   const d = lbCur();
-  if (!d.sub_id) return;
-  if (!_lb.sel && _lb.rot === 0) return;
-  const src = document.getElementById('lbCanvas');   // 已含旋转结果
-  const btn = document.getElementById('lbSaveBtn');
-  const prevText = btn.textContent;
+  if (!lbEditable(d) || !lbDirty()) return;
+  const src = $lb('lbCanvas');       // 已含旋转 + 调节 + 增强
+  const btn = $lb('lbSaveBtn');
+  const prev = btn.textContent;
   btn.disabled = true; btn.textContent = '保存中…';
+  let ok = false, data = '';
   try {
-    let out;
-    if (_lb.sel) {
-      // 选框是显示尺寸 → 换算成 canvas 内部像素
-      const scale = src.width / src.clientWidth;
-      const cx = Math.max(0, Math.round(_lb.sel.left * scale));
-      const cy = Math.max(0, Math.round(_lb.sel.top * scale));
-      const cw = Math.max(1, Math.round(_lb.sel.w * scale));
-      const ch = Math.max(1, Math.round(_lb.sel.h * scale));
+    let out = src;
+    const sp = lbSelPx();
+    if (sp) {
       out = document.createElement('canvas');
-      out.width = cw; out.height = ch;
-      out.getContext('2d').drawImage(src, cx, cy, cw, ch, 0, 0, cw, ch);
-    } else {
-      out = src;   // 只旋转、不裁剪 → 整张保存
+      out.width = sp.w; out.height = sp.h;
+      out.getContext('2d').drawImage(src, sp.x, sp.y, sp.w, sp.h, 0, 0, sp.w, sp.h);
     }
-    const data = out.toDataURL('image/jpeg', 0.92);
+    // 大图按原尺寸会超上传上限 → 限制长边并用 JPEG
+    const maxDim = 2400;
+    const k = Math.min(1, maxDim / Math.max(out.width, out.height));
+    if (k < 1) {
+      const sm = document.createElement('canvas');
+      sm.width = Math.max(1, Math.round(out.width * k)); sm.height = Math.max(1, Math.round(out.height * k));
+      const c2 = sm.getContext('2d'); c2.imageSmoothingQuality = 'high';
+      c2.drawImage(out, 0, 0, sm.width, sm.height);
+      out = sm;
+    }
+    data = out.toDataURL('image/jpeg', 0.92);
     const r = await fetch('/api/admin/applicant-submissions/' + d.sub_id + '/docs/' + d.doc_id + '/cropped', {
-      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data })
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data })
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.success) throw new Error(j.error || '保存失败');
-    lbClose(); doSearch();
-    pcToast('已保存 — 列表缩略图显示这一版，原件始终保留', 'ok');
+    ok = true;
   } catch (e) { pcToast(e.message || '保存失败', 'err'); }
-  btn.disabled = false; btn.textContent = prevText;
+  btn.disabled = false; btn.textContent = prev;
+  if (!ok) {
+    if (_lb.batch) pcToast('这张没保存成功 — 请重试（不会跳过）', 'err');
+    return;
+  }
+  d.has_cropped = true;
+  _lb.showCropped = true;          // 此刻画面上就是刚存的裁剪版
+  lbSyncVersionUI();
+  lbBustThumbs(d);
+  lbBake(data, '已保存 — 列表缩略图显示这一版，原件永久保留（点「原图 ↗」随时可看）', true);
+  if (_lb.batch) {
+    if (_lb.verify) lbBatchAdvance();
+    else {
+      _lb.batch.awaitVerdict = true;
+      lbBatchBar();
+      pcToast('✂️ 已保存 — 给这组证件一个结论（真 / 假 / 待确定）就自动跳下一张');
+    }
+  }
 }
 async function lbClearCrop() {
   const d = lbCur();
-  if (!d.sub_id) return;
+  if (!lbEditable(d)) return;
   if (!await pcConfirm('清除这张证件的裁剪版，恢复显示原件？', '恢复原件')) return;
   try {
     const r = await fetch('/api/admin/applicant-submissions/' + d.sub_id + '/docs/' + d.doc_id + '/cropped', {
-      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: '' })
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: '' })
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.success) throw new Error(j.error || '清除失败');
-    lbClose(); doSearch(); pcToast('已恢复原件', 'ok');
+    d.has_cropped = false; _lb.showCropped = false;
+    lbBustThumbs(d);
+    lbRender();
+    pcToast('已恢复原件', 'ok');
   } catch (e) { pcToast(e.message || '清除失败', 'err'); }
 }
+// 保存后刷新页面上该文件的缩略图 (加时间戳绕过缓存)
+function lbBustThumbs(d) {
+  if (!d || !d.url) return;
+  const frag = d.url.split('?')[0];
+  document.querySelectorAll('#results img').forEach(im => {
+    const s = im.getAttribute('src') || '';
+    if (s.split('?')[0] === frag) im.src = frag + '?t=' + Date.now();
+  });
+}
+// 标结论后刷新缩略图角标 (不重新查询, 免得丢失当前审阅进度)
+function lbRefreshThumbBadges() {
+  _lb.list.forEach(d => {
+    if (!d.url) return;
+    const frag = d.url.split('?')[0];
+    document.querySelectorAll('#results img').forEach(im => {
+      if ((im.getAttribute('src') || '').split('?')[0] !== frag) return;
+      im.style.borderColor = vBorder(d.verify_status);
+      const holder = im.parentNode;
+      if (!holder) return;
+      const old = holder.querySelector('[data-vbadge]');
+      if (old) old.remove();
+      const html = vBadge(d.verify_status);
+      if (html) {
+        const t = document.createElement('div');
+        t.innerHTML = html;
+        const el = t.firstChild;
+        el.setAttribute('data-vbadge', '1');
+        holder.appendChild(el);
+      }
+    });
+  });
+}
+
+// ── ✂️ 连续处理: 逐张 转正→框选→保存→标结论→下一张 ──
+function lbBatchStart() {
+  const idxs = _lb.list.map((d, i) => lbEditable(d) ? i : -1).filter(i => i >= 0);
+  if (!idxs.length) { pcToast('这批证件不支持保存修改', 'err'); return; }
+  _lb.batch = { idxs, at: 0, awaitVerdict: false };
+  _lb.idx = idxs[0];
+  lbRender(); lbBatchBar();
+}
+function lbBatchBar() {
+  const b = $lb('lbBatchBar');
+  if (!_lb.batch) { b.style.display = 'none'; return; }
+  b.style.display = 'flex';
+  const lk = 'cursor:pointer;text-decoration:underline;white-space:nowrap;color:#fbbf24';
+  b.innerHTML = '<b>✂️ 连续处理 ' + (_lb.batch.at + 1) + '/' + _lb.batch.idxs.length + ' · ' + esc(lbCur().label || '') + '</b>'
+    + (_lb.batch.awaitVerdict
+        ? '<span style="color:#fcd34d;font-weight:700">⬆ 在上面给这组一个结论 → 自动跳下一张</span>'
+        : '<span style="color:#cbd5e1">歪的先 ↺ ↻ 转正 → 拖框圈出证件（不拖框＝整张）→ 点【保存】→ 标结论 → 下一张</span>')
+    + '<a style="margin-left:auto;' + lk + '" onclick="lbBatchAdvance()">跳过这张</a>'
+    + '<a style="' + lk + '" onclick="lbBatchEnd()">结束</a>';
+}
+function lbBatchAdvance() {
+  if (!_lb.batch) return;
+  _lb.batch.awaitVerdict = false;
+  _lb.batch.at++;
+  if (_lb.batch.at >= _lb.batch.idxs.length) {
+    lbBatchEnd(true);
+    pcToast('这批证件全部处理完成', 'ok');
+    return;
+  }
+  _lb.idx = _lb.batch.idxs[_lb.batch.at];
+  lbRender(); lbBatchBar();
+}
+function lbBatchEnd(silent) {
+  _lb.batch = null;
+  $lb('lbBatchBar').style.display = 'none';
+  if (!silent) pcToast('连续处理已结束');
+}
+
+document.addEventListener('keydown', e => {
+  if ($lb('lightbox').style.display !== 'flex') return;
+  if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
+  if (e.key === 'Escape') lbClose();
+  else if (e.key === 'ArrowLeft') lbNav(-1);
+  else if (e.key === 'ArrowRight') lbNav(1);
+  else if (e.key === 'r' || e.key === 'R') lbRotate(e.shiftKey ? -90 : 90);
+  else if (e.key === '+' || e.key === '=') lbZoom(1);
+  else if (e.key === '-' || e.key === '_') lbZoom(-1);
+});
 
 // 直接更正申请里填错的名字
 async function editApplicantName(subId, cur, btn) {
@@ -385,17 +851,14 @@ async function editApplicantName(subId, cur, btn) {
   } catch (e) { pcToast(e.message || '保存失败', 'err'); btn.disabled = false; }
 }
 
-document.addEventListener('keydown', e => {
-  if (document.getElementById('lightbox').style.display !== 'flex') return;
-  if (e.key === 'Escape') lbClose();
-  if (e.key === 'ArrowLeft') lbNav(-1);
-  if (e.key === 'ArrowRight') lbNav(1);
-  if (e.key === 'r' || e.key === 'R') lbRotate(e.shiftKey ? -90 : 90);
-});
-
 // ══════ 页面自有风格的提示 / 确认 / 输入（替代浏览器原生 alert / confirm / prompt）══════
 function pcToast(msg, type) {
   const wrap = document.getElementById('pcToastWrap');
+  // 审阅器是全屏的 → 提示挪到左下角, 免得盖住顶部工具条
+  const lbOn = (document.getElementById('lightbox') || {}).style && document.getElementById('lightbox').style.display === 'flex';
+  wrap.style.cssText = 'position:fixed;z-index:15000;display:flex;flex-direction:column;gap:8px;pointer-events:none;'
+    + (lbOn ? 'left:16px;bottom:16px;top:auto;transform:none;align-items:flex-start'
+            : 'top:16px;left:50%;transform:translateX(-50%);bottom:auto;align-items:center');
   const t = document.createElement('div');
   const c = type === 'err' ? { bg: '#fef2f2', bd: '#fecaca', fg: '#b91c1c', ico: '⚠️' }
           : type === 'ok' ? { bg: '#ecfdf5', bd: '#a7f3d0', fg: '#047857', ico: '✅' }
@@ -403,7 +866,8 @@ function pcToast(msg, type) {
   t.style.cssText = 'display:flex;align-items:flex-start;gap:8px;background:' + c.bg + ';border:1px solid ' + c.bd + ';color:' + c.fg
     + ';border-radius:10px;padding:10px 14px;font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(15,23,42,.12);max-width:360px;'
     + 'opacity:0;transform:translateY(-8px);transition:opacity .18s,transform .18s';
-  t.innerHTML = '<span>' + c.ico + '</span><span style="flex:1;line-height:1.45">' + esc(msg) + '</span>';
+  const hasIcon = /^[\u2190-\u2BFF\u{1F000}-\u{1FAFF}]/u.test(String(msg));
+  t.innerHTML = (hasIcon ? '' : '<span>' + c.ico + '</span>') + '<span style="flex:1;line-height:1.45">' + esc(msg) + '</span>';
   wrap.appendChild(t);
   requestAnimationFrame(() => { t.style.opacity = '1'; t.style.transform = 'translateY(0)'; });
   setTimeout(() => { t.style.opacity = '0'; t.style.transform = 'translateY(-8px)'; setTimeout(() => t.remove(), 200); }, 3200);
@@ -449,27 +913,76 @@ function pcPrompt(label, value) {
 }
 </script>
 <div id="pcToastWrap" style="position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:15000;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none"></div>
-<div id="lightbox" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.92);z-index:9999;align-items:center;justify-content:center;flex-direction:column;padding:16px">
-  <div style="color:#fff;font-size:13px;margin-bottom:6px" id="lbCap"></div>
-  <div id="lbWrap" style="position:relative;user-select:none;line-height:0"
-       onmousedown="lbDown(event)" onmousemove="lbMove(event)" onmouseup="lbUp()" onmouseleave="lbUp()">
-    <canvas id="lbCanvas" style="max-width:92vw;max-height:70vh;display:block;border-radius:8px;background:#000;cursor:crosshair"></canvas>
-    <div id="lbSelBox" style="display:none;position:absolute;border:2px dashed #38bdf8;background:rgba(56,189,248,.18);pointer-events:none"></div>
-  </div>
-  <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center">
-    <button onclick="lbNav(-1)" style="padding:6px 12px;border-radius:6px;border:none;background:#334155;color:#fff;cursor:pointer">← 上一张</button>
-    <button onclick="lbNav(1)" style="padding:6px 12px;border-radius:6px;border:none;background:#334155;color:#fff;cursor:pointer">下一张 →</button>
-    <button onclick="lbRotate(-90)" title="向左旋转 90°" style="padding:6px 12px;border-radius:6px;border:none;background:#475569;color:#fff;cursor:pointer">↺ 左转</button>
-    <button onclick="lbRotate(90)" title="向右旋转 90°" style="padding:6px 12px;border-radius:6px;border:none;background:#475569;color:#fff;cursor:pointer">↻ 右转</button>
-    <span id="lbCropTools" style="display:flex;gap:8px;align-items:center">
-      <button id="lbSaveBtn" onclick="lbSaveCrop()" disabled style="padding:6px 12px;border-radius:6px;border:none;background:#0ea5e9;color:#fff;cursor:pointer">保存</button>
-      <button onclick="lbClearCrop()" style="padding:6px 12px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer">恢复原件</button>
+<div id="lightbox" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.95);z-index:9999;flex-direction:column;padding:10px 12px 12px">
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:#e2e8f0;font-size:13px;flex:0 0 auto">
+    <span id="lbCap" style="font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+    <span style="margin-left:auto;display:flex;gap:5px;align-items:center;flex-wrap:wrap">
+      <button onclick="lbZoom(-1)" title="缩小" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">－</button>
+      <span id="lbZoomPct" style="min-width:3em;text-align:center;color:#94a3b8;font-size:12px">100%</span>
+      <button onclick="lbZoom(1)" title="放大" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">＋</button>
+      <button onclick="lbRotate(-90)" title="向左旋转 90°（快捷键 Shift+R）" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">↺</button>
+      <button onclick="lbRotate(90)" title="向右旋转 90°（快捷键 R）" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">↻</button>
+      <button id="lbOcrBtn" onclick="lbTogglePanel()" title="识别文字: 框选一块区域提取英文字符" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">🔍 识别</button>
+      <button onclick="lbAiRead()" title="AI 识读: 让 Claude 直接读整张证件, 提取姓名 / 证件号 / 日期" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">🤖 AI 识读</button>
+      <button id="lbAdjBtn" onclick="lbToggleAdj()" title="亮度 / 对比度 / 黑白" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">🎛 调节</button>
+      <button onclick="lbAutoFix()" title="自动修复: 自动色阶 + 轻锐化（不旋转不裁剪）" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">🪄 自动修复</button>
+      <button onclick="lbDocEnhance()" title="文档增强: 去灰底 / 均衡光照 / 拉出笔画（黑白文档模式）" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">📄 文档增强</button>
+      <button id="lbRestoreBtn" onclick="lbRestore()" title="还原: 丢掉当前所有调整, 回到系统里保存的图" style="display:none;padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">↩ 还原</button>
+      <a id="lbOrigLink" href="#" target="_blank" style="color:#93c5fd;font-size:12px;white-space:nowrap">原图 ↗</a>
     </span>
-    <button id="lbVerBtn" onclick="lbToggleVersion()" style="display:none;padding:6px 12px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer">看裁剪版</button>
-    <button id="lbFullBtn" onclick="lbOpenFullReview()" title="打开后台完整审阅器: 识别文字 / AI 识读 / 亮度对比度 / 文档增强 / 真假标记 / 连续裁剪" style="padding:6px 12px;border-radius:6px;border:none;background:#7c3aed;color:#fff;cursor:pointer">🔍 完整审阅</button>
-    <button onclick="lbClose()" style="padding:6px 12px;border-radius:6px;border:none;background:#b45309;color:#fff;cursor:pointer">关闭 (Esc)</button>
   </div>
-  <div id="lbCropHint" style="color:#94a3b8;font-size:12px;margin-top:6px"></div>
+
+  <div id="lbBatchBar" style="display:none;align-items:center;gap:10px;margin-top:8px;padding:6px 10px;background:rgba(180,83,9,.28);border:1px solid #b45309;border-radius:8px;color:#fde68a;font-size:12px;flex-wrap:wrap;flex:0 0 auto"></div>
+
+  <div id="lbVerifyBar" style="display:none;align-items:center;gap:8px;margin-top:8px;padding:6px 10px;background:rgba(255,255,255,.06);border:1px solid #334155;border-radius:8px;font-size:12px;color:#cbd5e1;flex-wrap:wrap;flex:0 0 auto">
+    <span id="lbVerLabel" style="white-space:nowrap">证件结论:</span>
+    <button id="lbVerReal" onclick="lbSetVerify('real')">✅ 真</button>
+    <button id="lbVerFake" onclick="lbSetVerify('fake')">❌ 假</button>
+    <button id="lbVerPend" onclick="lbSetVerify('pending')">❓ 待确定</button>
+    <span id="lbVerInfo" style="margin-left:auto;color:#94a3b8;font-size:11px"></span>
+  </div>
+
+  <div id="lbAdjPanel" style="display:none;margin-top:8px;padding:8px 10px;background:rgba(255,255,255,.06);border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-size:12px;flex:0 0 auto">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><span style="white-space:nowrap">☀️ 亮度</span><input id="lbBright" type="range" min="40" max="220" value="100" style="flex:1;margin:0" oninput="lbAdjChange()"><span id="lbBrightV" style="min-width:3.2em;text-align:right">100%</span></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><span style="white-space:nowrap">◐ 对比</span><input id="lbContrast" type="range" min="40" max="260" value="100" style="flex:1;margin:0" oninput="lbAdjChange()"><span id="lbContrastV" style="min-width:3.2em;text-align:right">100%</span></div>
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="lbGray" style="width:auto;margin:0" onchange="lbAdjChange()">黑白</label>
+      <button onclick="lbAdjReset()" style="padding:2px 10px;border-radius:6px;border:1px solid #475569;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">重置</button>
+      <span style="color:#94a3b8">调节同时作用于识别和保存 — 对比拉高认字更准</span>
+    </div>
+  </div>
+
+  <div id="lbStage" style="flex:1 1 auto;min-height:0;display:flex;overflow:auto;margin-top:8px">
+    <div id="lbWrap" style="margin:auto;position:relative;user-select:none;line-height:0"
+         onmousedown="lbDown(event)" onmousemove="lbMove(event)" onmouseup="lbUp()" onmouseleave="lbUp()">
+      <canvas id="lbCanvas" style="display:block;border-radius:8px;background:#000;cursor:crosshair"></canvas>
+      <div id="lbSelBox" style="display:none;position:absolute;border:2px dashed #38bdf8;background:rgba(56,189,248,.18);pointer-events:none"></div>
+    </div>
+  </div>
+
+  <div id="lbTextPanel" style="display:none;margin-top:8px;padding:8px 10px;background:rgba(255,255,255,.06);border:1px solid #334155;border-radius:8px;flex:0 0 auto">
+    <div id="lbStatus" style="font-size:12px;color:#94a3b8;margin-bottom:5px"></div>
+    <textarea id="lbTxt" readonly rows="4" style="display:none;width:100%;font-size:12px;font-family:ui-monospace,Consolas,monospace;border:1px solid #475569;border-radius:6px;padding:6px 8px;background:#0f172a;color:#e2e8f0;resize:vertical"></textarea>
+    <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+      <button onclick="lbOcr(false)" style="padding:4px 11px;border-radius:6px;border:none;background:#059669;color:#fff;cursor:pointer;font-size:12px;font-family:inherit">识别选框</button>
+      <button onclick="lbOcr(true)" style="padding:4px 11px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-size:12px;font-family:inherit">识别整张</button>
+      <button id="lbCopyBtn" onclick="lbCopyText()" style="display:none;padding:4px 11px;border-radius:6px;border:none;background:#2563eb;color:#fff;cursor:pointer;font-size:12px;font-family:inherit">📋 复制</button>
+      <button onclick="lbTogglePanel(false)" style="padding:4px 11px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#94a3b8;cursor:pointer;font-size:12px;font-family:inherit">收起</button>
+    </div>
+  </div>
+
+  <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center;flex:0 0 auto">
+    <button onclick="lbNav(-1)" style="padding:6px 12px;border-radius:6px;border:none;background:#334155;color:#fff;cursor:pointer;font-family:inherit">← 上一张</button>
+    <button onclick="lbNav(1)" style="padding:6px 12px;border-radius:6px;border:none;background:#334155;color:#fff;cursor:pointer;font-family:inherit">下一张 →</button>
+    <span id="lbEditTools" style="display:none;gap:8px;align-items:center;flex-wrap:wrap">
+      <button id="lbSaveBtn" onclick="lbSaveCrop()" disabled style="padding:6px 12px;border-radius:6px;border:none;background:#0ea5e9;color:#fff;cursor:pointer;font-family:inherit">💾 保存</button>
+      <button onclick="lbClearCrop()" style="padding:6px 12px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">恢复原件</button>
+      <button onclick="lbBatchStart()" title="逐张: 转正 → 框选 → 保存 → 标真假 → 自动下一张" style="padding:6px 12px;border-radius:6px;border:none;background:#7c3aed;color:#fff;cursor:pointer;font-family:inherit">✂️ 连续处理</button>
+    </span>
+    <button id="lbVerBtn" onclick="lbToggleVersion()" style="display:none;padding:6px 12px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit">看裁剪版</button>
+    <button onclick="lbClose()" style="padding:6px 12px;border-radius:6px;border:none;background:#b45309;color:#fff;cursor:pointer;font-family:inherit">关闭 (Esc)</button>
+  </div>
+  <div id="lbCropHint" style="color:#94a3b8;font-size:12px;margin-top:6px;text-align:center;flex:0 0 auto"></div>
 </div>
 </body>
 </html>
