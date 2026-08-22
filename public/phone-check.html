@@ -146,7 +146,7 @@ async function doSearch(){
         const docs=String(a.doc_types||'').split(',').filter(Boolean);
         const le=a.linked_employee;
         // 申请里的名字是工人自己填的, 可能拼错; 档案里改过名不会回写历史记录 → 这里标注清楚
-        const editBtn = `<button onclick="editApplicantName(${a.id}, ${JSON.stringify(a.name||'')}, this)" title="修改这条申请里的姓名" style="margin-left:6px;padding:2px 8px;font-size:11px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;vertical-align:middle">✎ 改名</button>`;
+        const editBtn = `<button data-name="${esc(a.name||'')}" onclick="editApplicantName(${a.id}, this.dataset.name, this)" title="修改这条申请里的姓名" style="margin-left:6px;padding:2px 8px;font-size:11px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;vertical-align:middle">✎ 改名</button>`;
         const nameLine = (le && a.name_mismatch)
           ? `<div class="nm">${esc(le.name)} <span style="font-size:12px;font-weight:600;color:#b45309">（档案正式姓名）</span></div>
              <div style="font-size:12px;color:#64748b;margin-top:2px">工人提交时填的是：<b>${esc(a.name||'—')}</b>
@@ -197,7 +197,7 @@ async function doSearch(){
 
 // 用员工档案上的正式姓名更正这条招工申请里填错的名字
 async function syncApplicantName(subId, empId, btn){
-  if(!confirm('把这条招工申请里的名字改成员工档案上的正式姓名？\n（原来填的名字会记入审计日志）')) return;
+  if(!await pcConfirm('把这条招工申请里的名字改成员工档案上的正式姓名？\n原来填的名字会记入审计日志。','用档案名更正')) return;
   btn.disabled=true; btn.textContent='更正中…';
   try{
     const r=await fetch('/api/admin/applicant-submissions/'+subId+'/sync-name',{
@@ -208,7 +208,7 @@ async function syncApplicantName(subId, empId, btn){
     const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.success) throw new Error(d.error||'更正失败');
     doSearch();
-  }catch(e){ alert(e.message||'更正失败'); btn.disabled=false; btn.textContent='用档案名更正'; }
+  }catch(e){ pcToast(e.message||'更正失败','err'); btn.disabled=false; btn.textContent='用档案名更正'; }
 }
 
 // ══════ 证件大图查看 + 裁剪 ══════
@@ -222,7 +222,7 @@ function lbClose() { document.getElementById('lightbox').style.display = 'none';
 // 跳到后台的完整证件审阅器 (功能齐全: 🔍识别 🤖AI识读 🎛亮度对比 📄文档增强 ✅真假标记 ✂️连续裁剪)
 function lbOpenFullReview() {
   const d = lbCur();
-  if (!d.sub_id) { alert('此证件来自员工档案，请在后台「员工档案 → 证件」里审阅'); return; }
+  if (!d.sub_id) { pcToast('此证件来自员工档案，请在后台「员工档案 → 证件」里审阅', 'err'); return; }
   window.open('/admin.html?doc_review=' + d.sub_id, '_blank');
 }
 function lbNav(d) { _lb.idx = (_lb.idx + d + _lb.list.length) % _lb.list.length; _lb.sel = null; _lb.rot = 0; lbRender(); }
@@ -325,31 +325,31 @@ async function lbSaveCrop() {
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.success) throw new Error(j.error || '保存失败');
-    alert('✅ 已保存（列表缩略图会显示这一版，原件始终保留）');
     lbClose(); doSearch();
-  } catch (e) { alert(e.message || '保存失败'); }
+    pcToast('已保存 — 列表缩略图显示这一版，原件始终保留', 'ok');
+  } catch (e) { pcToast(e.message || '保存失败', 'err'); }
   btn.disabled = false; btn.textContent = prevText;
 }
 async function lbClearCrop() {
   const d = lbCur();
   if (!d.sub_id) return;
-  if (!confirm('清除这张证件的裁剪版，恢复显示原件？')) return;
+  if (!await pcConfirm('清除这张证件的裁剪版，恢复显示原件？', '恢复原件')) return;
   try {
     const r = await fetch('/api/admin/applicant-submissions/' + d.sub_id + '/docs/' + d.doc_id + '/cropped', {
       method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: '' })
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.success) throw new Error(j.error || '清除失败');
-    alert('已恢复原件'); lbClose(); doSearch();
-  } catch (e) { alert(e.message || '清除失败'); }
+    lbClose(); doSearch(); pcToast('已恢复原件', 'ok');
+  } catch (e) { pcToast(e.message || '清除失败', 'err'); }
 }
 
 // 直接更正申请里填错的名字
 async function editApplicantName(subId, cur, btn) {
-  const nm = prompt('修改这条招工申请里的姓名：', cur || '');
+  const nm = await pcPrompt('修改这条招工申请里的姓名', cur || '');
   if (nm === null) return;
-  const v = nm.trim();
-  if (!v) { alert('姓名不能为空'); return; }
+  const v = String(nm).trim();
+  if (!v) { pcToast('姓名不能为空', 'err'); return; }
   btn.disabled = true;
   try {
     const r = await fetch('/api/admin/applicant-submissions/' + subId, {
@@ -357,8 +357,8 @@ async function editApplicantName(subId, cur, btn) {
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok || !d.success) throw new Error(d.error || '保存失败');
-    doSearch();
-  } catch (e) { alert(e.message || '保存失败'); btn.disabled = false; }
+    doSearch(); pcToast('姓名已更新', 'ok');
+  } catch (e) { pcToast(e.message || '保存失败', 'err'); btn.disabled = false; }
 }
 
 document.addEventListener('keydown', e => {
@@ -368,7 +368,63 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') lbNav(1);
   if (e.key === 'r' || e.key === 'R') lbRotate(e.shiftKey ? -90 : 90);
 });
+
+// ══════ 页面自有风格的提示 / 确认 / 输入（替代浏览器原生 alert / confirm / prompt）══════
+function pcToast(msg, type) {
+  const wrap = document.getElementById('pcToastWrap');
+  const t = document.createElement('div');
+  const c = type === 'err' ? { bg: '#fef2f2', bd: '#fecaca', fg: '#b91c1c', ico: '⚠️' }
+          : type === 'ok' ? { bg: '#ecfdf5', bd: '#a7f3d0', fg: '#047857', ico: '✅' }
+          : { bg: '#eff6ff', bd: '#bfdbfe', fg: '#1d4ed8', ico: 'ℹ️' };
+  t.style.cssText = 'display:flex;align-items:flex-start;gap:8px;background:' + c.bg + ';border:1px solid ' + c.bd + ';color:' + c.fg
+    + ';border-radius:10px;padding:10px 14px;font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(15,23,42,.12);max-width:360px;'
+    + 'opacity:0;transform:translateY(-8px);transition:opacity .18s,transform .18s';
+  t.innerHTML = '<span>' + c.ico + '</span><span style="flex:1;line-height:1.45">' + esc(msg) + '</span>';
+  wrap.appendChild(t);
+  requestAnimationFrame(() => { t.style.opacity = '1'; t.style.transform = 'translateY(0)'; });
+  setTimeout(() => { t.style.opacity = '0'; t.style.transform = 'translateY(-8px)'; setTimeout(() => t.remove(), 200); }, 3200);
+}
+function _pcModal(inner) {
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:14000;display:flex;align-items:center;justify-content:center;padding:16px';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:14px;box-shadow:0 18px 50px rgba(15,23,42,.28);width:100%;max-width:420px;overflow:hidden';
+    box.innerHTML = inner;
+    ov.appendChild(box);
+    document.body.appendChild(ov);
+    const done = v => { ov.remove(); document.removeEventListener('keydown', onKey, true); resolve(v); };
+    const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); done(null); } };
+    document.addEventListener('keydown', onKey, true);
+    ov.addEventListener('click', e => { if (e.target === ov) done(null); });
+    const inp = box.querySelector('input');
+    setTimeout(() => { if (inp) { inp.focus(); inp.select(); } }, 30);
+    box.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => {
+      done(b.dataset.act === 'ok' ? (inp ? inp.value : true) : null);
+    }));
+    if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') done(inp.value); });
+  });
+}
+const _pcBtnStyle = 'padding:8px 16px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit';
+function pcConfirm(msg, okLabel) {
+  return _pcModal(
+    '<div style="padding:20px 22px 6px;font-size:14px;color:#0f172a;line-height:1.6;white-space:pre-line">' + esc(msg) + '</div>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;padding:14px 22px 18px">'
+    + '<button data-act="cancel" style="' + _pcBtnStyle + ';background:#fff;color:#475569;border:1px solid #cbd5e1">取消</button>'
+    + '<button data-act="ok" style="' + _pcBtnStyle + ';background:#0F2B5B;color:#fff;border:none">' + esc(okLabel || '确定') + '</button>'
+    + '</div>').then(v => v !== null);
+}
+function pcPrompt(label, value) {
+  return _pcModal(
+    '<div style="padding:20px 22px 4px;font-size:13px;font-weight:700;color:#334155">' + esc(label) + '</div>'
+    + '<div style="padding:0 22px"><input type="text" value="' + esc(value || '') + '" style="width:100%;padding:10px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:15px;outline:none;font-family:inherit"></div>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;padding:14px 22px 18px">'
+    + '<button data-act="cancel" style="' + _pcBtnStyle + ';background:#fff;color:#475569;border:1px solid #cbd5e1">取消</button>'
+    + '<button data-act="ok" style="' + _pcBtnStyle + ';background:#0F2B5B;color:#fff;border:none">保存</button>'
+    + '</div>');
+}
 </script>
+<div id="pcToastWrap" style="position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:15000;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none"></div>
 <div id="lightbox" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.92);z-index:9999;align-items:center;justify-content:center;flex-direction:column;padding:16px">
   <div style="color:#fff;font-size:13px;margin-bottom:6px" id="lbCap"></div>
   <div id="lbWrap" style="position:relative;user-select:none;line-height:0"
