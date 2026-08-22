@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-18l · 电话登记查询显示该员工全部证件(申请/档案/SSN卡/工卡)',
+  tag: '2026-08-18m · 招工申请显示档案正式姓名, 可一键用档案名更正填错的名字',
   started: new Date().toISOString(),
 };
 
@@ -16148,6 +16148,24 @@ app.patch('/api/admin/applicant-submissions/:id', requireAdmin, blockManager, (r
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ADMIN: 用员工档案上的正式姓名更正招工申请里的名字 (工人自己填错时). 原名写入备注留痕。
+app.post('/api/admin/applicant-submissions/:id/sync-name', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const sub = db.prepare('SELECT id, name, employee_id FROM applicant_submissions WHERE id=?').get(req.params.id);
+    if (!sub) return res.status(404).json({ error: 'Not found' });
+    const empId = parseInt((req.body && req.body.employee_id) || sub.employee_id || 0);
+    const emp = empId ? db.prepare('SELECT id, first_name, middle_name, last_name FROM employees WHERE id=?').get(empId) : null;
+    if (!emp) return res.status(400).json({ error: '这条申请还没有关联的员工档案' });
+    const official = [emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' ').trim();
+    if (!official) return res.status(400).json({ error: '员工档案里没有姓名' });
+    const oldName = sub.name || '';
+    db.prepare('UPDATE applicant_submissions SET name=?, employee_id=COALESCE(employee_id, ?) WHERE id=?').run(official, emp.id, sub.id);
+    auditLog('applicant_name_synced', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers },
+      { details: { submission_id: sub.id, from: oldName, to: official, employee_id: emp.id } });
+    res.json({ success: true, name: official, previous: oldName });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ADMIN: delete a submission and its documents.
 app.delete('/api/admin/applicant-submissions/:id', requireAdmin, requireRole('admin'), async (req, res) => {
   try {
@@ -17594,7 +17612,7 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
     if (digits.length < 7) return res.status(400).json({ error: '请输入至少 7 位的电话号码' });
     const match = v => norm(v) === digits;
     const applications = db.prepare(`SELECT s.id, s.partner_name, s.name, s.phone, s.email, s.position, s.status,
-        s.address1, s.address2, s.city, s.state, s.zip, s.apply_state, s.created_at,
+        s.address1, s.address2, s.city, s.state, s.zip, s.apply_state, s.created_at, s.employee_id,
         (SELECT GROUP_CONCAT(doc_type) FROM applicant_docs d WHERE d.submission_id = s.id) AS doc_types
       FROM applicant_submissions s ORDER BY s.created_at DESC`).all().filter(x => match(x.phone)).slice(0, 50);
     // 带证件明细, 页面可直接看图
@@ -17648,6 +17666,18 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
       } catch (_) {}
       for (const d of all) d.url = '/api/admin/employees/id-doc-image/' + encodeURIComponent(d.key);
       e.all_docs = all;
+    });
+    // 申请记录里的名字是工人当时自己填的(常有拼写错误); 管理员后来在员工档案里改了名不会回写历史记录。
+    // 这里把档案上的正式姓名一并带出来, 页面上标注清楚是同一个人, 并可一键用档案名更正申请记录。
+    const empById = db.prepare('SELECT id, first_name, middle_name, last_name, employee_id FROM employees WHERE id=?');
+    applications.forEach(a => {
+      let emp = a.employee_id ? empById.get(a.employee_id) : null;
+      if (!emp) emp = employees.find(x => match(x.phone)) || null;   // 未显式关联时按同号码的档案推断
+      if (emp) {
+        const official = [emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' ').trim();
+        a.linked_employee = { id: emp.id, employee_id: emp.employee_id || '', name: official };
+        a.name_mismatch = !!(official && String(a.name || '').trim().toLowerCase() !== official.toLowerCase());
+      }
     });
     const foremen = db.prepare(`SELECT id, name, phone, email, warehouse, active, created_at FROM foremen`).all()
       .filter(x => match(x.phone)).slice(0, 50);

@@ -132,8 +132,15 @@ async function doSearch(){
       html+=data.applications.map(a=>{
         const addr=[a.address1,a.address2,[a.city,a.state,a.zip].filter(Boolean).join(', ')].filter(Boolean).join(', ');
         const docs=String(a.doc_types||'').split(',').filter(Boolean);
+        const le=a.linked_employee;
+        // 申请里的名字是工人自己填的, 可能拼错; 档案里改过名不会回写历史记录 → 这里标注清楚
+        const nameLine = (le && a.name_mismatch)
+          ? `<div class="nm">${esc(le.name)} <span style="font-size:12px;font-weight:600;color:#b45309">（档案正式姓名）</span></div>
+             <div style="font-size:12px;color:#64748b;margin-top:2px">工人提交时填的是：<b>${esc(a.name||'—')}</b>
+               <button onclick="syncApplicantName(${a.id}, ${le.id}, this)" style="margin-left:6px;padding:2px 8px;font-size:11px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer">用档案名更正</button></div>`
+          : `<div class="nm">${esc(a.name||'—')}</div>`;
         return `<div class="rec">
-          <div class="nm">${esc(a.name||'—')}</div>
+          ${nameLine}
           <div class="meta">
             ${kv('电话',a.phone)} ${kv('邮箱',a.email)} ${kv('职位',a.position)}
             ${kv('申请公司',a.partner_name)} ${kv('申请地点',a.apply_state)}
@@ -173,6 +180,22 @@ async function doSearch(){
   }finally{
     btn.disabled=false; btn.textContent='🔍 查询';
   }
+}
+
+// 用员工档案上的正式姓名更正这条招工申请里填错的名字
+async function syncApplicantName(subId, empId, btn){
+  if(!confirm('把这条招工申请里的名字改成员工档案上的正式姓名？\n（原来填的名字会记入审计日志）')) return;
+  btn.disabled=true; btn.textContent='更正中…';
+  try{
+    const r=await fetch('/api/admin/applicant-submissions/'+subId+'/sync-name',{
+      method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({employee_id:empId})
+    });
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.success) throw new Error(d.error||'更正失败');
+    doSearch();
+  }catch(e){ alert(e.message||'更正失败'); btn.disabled=false; btn.textContent='用档案名更正'; }
 }
 </script>
 </body>
