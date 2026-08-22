@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 // notable changes; `commit` comes from the host (Render sets RENDER_GIT_COMMIT).
 const BUILD_INFO = {
   commit: (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').slice(0, 7) || 'dev',
-  tag: '2026-08-22a · 电话查询页内置完整证件审阅器(识别文字/AI识读/亮度对比/文档增强/真伪标记/连续处理), 不再跳后台',
+  tag: '2026-08-22b · 证件审阅改成可拖动小窗, 旁边可直接更正申请人全部资料',
   started: new Date().toISOString(),
 };
 
@@ -16135,28 +16135,69 @@ app.post('/api/admin/applicant-submissions/:id/docs/:docId/verify', requireAdmin
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ADMIN: link a submission to the employee created from it (so the inbox can
-// archive it only once that specific employee is onboarded → 在职).
+// 工人扫码时自己填的资料常有错(名字拼错、地址漏门牌、电话打错一位)。管理员核对证件后
+// 可以直接更正这几项; 每一项的改动都写进审计日志, 原值留痕。
+const APPLICANT_EDITABLE = {
+  name:     { label: '姓名', max: 120, required: true },
+  phone:    { label: '电话', max: 20, norm: v => _normApplyPhone(v),
+              check: v => v.replace(/\D/g, '').length >= 10 || '电话至少要有 10 位数字' },
+  email:    { label: '邮箱', max: 160, norm: v => String(v || '').trim().toLowerCase(),
+              check: v => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v) || '邮箱格式不对' },
+  position: { label: '职位', max: 120 },
+  address1: { label: '街道地址', max: 200 },
+  address2: { label: '单元 / 楼层', max: 200 },
+  city:     { label: '城市', max: 100 },
+  state:    { label: '州', max: 60, norm: v => String(v || '').trim().toUpperCase() },
+  zip:      { label: '邮编', max: 20 },
+};
+
+// ADMIN: 更正申请人资料, 和/或把这条申请关联到由它建立的员工档案
+// (关联后收件箱只在那个员工真正入职时才归档这条申请)。
 app.patch('/api/admin/applicant-submissions/:id', requireAdmin, blockManager, (req, res) => {
   try {
     const b = req.body || {};
-    // 改名: 工人扫码时自己填的名字常有拼写错误, 允许管理员直接更正 (原名进审计)
-    if (b.name !== undefined) {
-      const sub = db.prepare('SELECT id, name FROM applicant_submissions WHERE id=?').get(req.params.id);
-      if (!sub) return res.status(404).json({ error: 'Not found' });
-      const nm = String(b.name || '').trim().slice(0, 120);
-      if (!nm) return res.status(400).json({ error: '姓名不能为空' });
-      db.prepare('UPDATE applicant_submissions SET name=? WHERE id=?').run(nm, sub.id);
-      auditLog('applicant_name_edited', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers },
-        { details: { submission_id: sub.id, from: sub.name || '', to: nm } });
-      if (b.employee_id === undefined) return res.json({ success: true, name: nm });
+    const sub = db.prepare('SELECT * FROM applicant_submissions WHERE id=?').get(req.params.id);
+    if (!sub) return res.status(404).json({ error: 'Not found' });
+
+    // ── 资料更正 ──
+    const sets = [], vals = [], changes = {};
+    for (const [col, cfg] of Object.entries(APPLICANT_EDITABLE)) {
+      if (b[col] === undefined) continue;
+      let v = cfg.norm ? cfg.norm(b[col]) : String(b[col] || '').trim();
+      v = String(v).slice(0, cfg.max);
+      if (!v) {
+        if (cfg.required) return res.status(400).json({ error: cfg.label + '不能为空' });
+      } else if (cfg.check) {
+        const r = cfg.check(v);
+        if (r !== true) return res.status(400).json({ error: r });
+      }
+      if (v === String(sub[col] == null ? '' : sub[col])) continue;   // 没变就不写
+      sets.push(col + '=?'); vals.push(v);
+      changes[col] = { label: cfg.label, from: sub[col] || '', to: v };
     }
-    if (b.employee_id === undefined) return res.status(400).json({ error: 'employee_id or name required' });
-    const empId = b.employee_id ? parseInt(b.employee_id) : null;
-    const r = db.prepare('UPDATE applicant_submissions SET employee_id=? WHERE id=?').run(empId, req.params.id);
-    if (!r.changes) return res.status(404).json({ error: 'Not found' });
-    _inheritTimeclockCode(req.params.id, empId);
-    res.json({ success: true });
+    if (sets.length) {
+      db.prepare(`UPDATE applicant_submissions SET ${sets.join(', ')} WHERE id=?`).run(...vals, sub.id);
+      const ctx = { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers };
+      auditLog('applicant_edited', ctx, { details: { submission_id: sub.id, changes } });
+      // 改名单独再记一条, 沿用原有事件名, 已有的审计筛选不受影响
+      if (changes.name) auditLog('applicant_name_edited', ctx,
+        { details: { submission_id: sub.id, from: changes.name.from, to: changes.name.to } });
+    }
+
+    // ── 关联员工档案 ──
+    if (b.employee_id !== undefined) {
+      const empId = b.employee_id ? parseInt(b.employee_id) : null;
+      db.prepare('UPDATE applicant_submissions SET employee_id=? WHERE id=?').run(empId, sub.id);
+      _inheritTimeclockCode(sub.id, empId);
+    } else if (!Object.keys(APPLICANT_EDITABLE).some(k => b[k] !== undefined)) {
+      return res.status(400).json({ error: 'employee_id or one of: ' + Object.keys(APPLICANT_EDITABLE).join(', ') });
+    }
+
+    // 只回可编辑的那几项 —— 整行会把 timeclock_code(打卡密码)之类一并带出去, 没必要
+    const row = db.prepare('SELECT * FROM applicant_submissions WHERE id=?').get(sub.id);
+    const record = { id: row.id };
+    for (const col of Object.keys(APPLICANT_EDITABLE)) record[col] = row[col] || '';
+    res.json({ success: true, name: row.name, changed: Object.keys(changes), record });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
