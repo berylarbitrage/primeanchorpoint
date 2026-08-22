@@ -88,7 +88,7 @@ function kv(lbl,val){ return val ? `<span><span class="lbl">${esc(lbl)}</span> <
 // 证件真伪结论: 缩略图右上角小角标 + 边框颜色
 function vBadge(v){
   const m={real:['#059669','真✓'],fake:['#dc2626','假✗'],pending:['#d97706','待定?']}[v||''];
-  return m?'<span style="position:absolute;top:2px;right:2px;background:'+m[0]+';color:#fff;font-size:9px;font-weight:700;border-radius:5px;padding:0 5px;line-height:1.5">'+m[1]+'</span>':'';
+  return m?'<span data-vbadge="1" style="position:absolute;top:2px;right:2px;background:'+m[0]+';color:#fff;font-size:9px;font-weight:700;border-radius:5px;padding:0 5px;line-height:1.5">'+m[1]+'</span>':'';
 }
 function vBorder(v){ return {real:'#6ee7b7',fake:'#fca5a5',pending:'#fcd34d'}[v||'']||'#dbe3ee'; }
 
@@ -98,7 +98,11 @@ async function doSearch(){
   const docThumbs=(subId,docs)=>{
     if(!subId||!Array.isArray(docs)||!docs.length) return '';
     const setId='s'+subId;
-    window._docSets[setId]=docs.map(d=>({
+    // 原地重建 (保住数组引用): 已打开的小窗 _lb.list 和连续处理都指向这个数组,
+    // 换成新数组会让它们拿到过期的结论/裁剪状态
+    const arr = window._docSets[setId] = window._docSets[setId] || [];
+    arr.length = 0;
+    docs.forEach(d => arr.push({
       url:'/api/admin/applicant-submissions/'+subId+'/docs/'+d.id+'/download',
       label:DOC_LABELS[d.doc_type]||d.doc_type, sub_id:subId, doc_id:d.id, file_name:d.file_name||'',
       has_cropped: !!d.has_cropped, doc_type:d.doc_type||'',
@@ -116,13 +120,15 @@ async function doSearch(){
     }).join('')+'</div>';
   };
   // 员工的全部证件 (扫码申请 / 档案上传 / SSN 卡 / 工卡)，按来源分组显示
-  const allDocThumbs=(docs)=>{
+  const allDocThumbs=(empId,docs)=>{
     if(!Array.isArray(docs)||!docs.length) return '<div style="margin-top:8px;font-size:12px;color:#94a3b8">未上传任何证件</div>';
     const bySrc={};
     docs.forEach(d=>{ (bySrc[d.source||'其他']=bySrc[d.source||'其他']||[]).push(d); });
-    const setId='e'+(window._docSetSeq=(window._docSetSeq||0)+1);
+    const setId='e'+empId;
     window._docSets=window._docSets||{};
-    window._docSets[setId]=docs.map(d=>({url:d.url,label:d.label,extra:d.extra||'',file_name:d.file_name||'',
+    const arr=window._docSets[setId]=window._docSets[setId]||[];
+    arr.length=0;
+    docs.forEach(d=>arr.push({url:d.url,label:d.label,extra:d.extra||'',file_name:d.file_name||'',
       sub_id:d.sub_id||0, doc_id:d.doc_id||0, doc_type:d.doc_type||'', has_cropped:!!d.has_cropped,
       verify_status:d.verify_status||'', verify_by:d.verify_by||'', ai_text:d.ai_text||''}));
     let flatIdx=-1;
@@ -181,7 +187,7 @@ async function doSearch(){
           ${e.timeclock_code?`<span><span class="lbl">打卡码</span> <b style="font-family:ui-monospace,Consolas,monospace;letter-spacing:.08em;color:#047857">${esc(e.timeclock_code)}</b></span>`:''}
           ${e.ssn_last4?`<span><span class="lbl">SSN</span> <b>****${esc(e.ssn_last4)}</b></span>`:''}
         </div>
-        ${allDocThumbs(e.all_docs)}
+        ${allDocThumbs(e.id, e.all_docs)}
       </div>`).join('');
     }
     if((data.foremen||[]).length){
@@ -206,6 +212,14 @@ async function doSearch(){
 
 // ══════ 招工申请卡片: 只读视图 ⇄ 资料编辑表单（可原地重绘, 不整页刷新）══════
 const US_STATES = ['AL','AK','AZ','AR','CA','CO','CT','DE','DC','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','PR','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'];
+// 老申请里的州可能是全名 (工人自己填的) → 映射成两字母码; 认不出的原样保留, 绝不静默清空
+const US_STATE_NAME2CODE = {'ALABAMA':'AL','ALASKA':'AK','ARIZONA':'AZ','ARKANSAS':'AR','CALIFORNIA':'CA','COLORADO':'CO','CONNECTICUT':'CT','DELAWARE':'DE','FLORIDA':'FL','GEORGIA':'GA','HAWAII':'HI','IDAHO':'ID','ILLINOIS':'IL','INDIANA':'IN','IOWA':'IA','KANSAS':'KS','KENTUCKY':'KY','LOUISIANA':'LA','MAINE':'ME','MARYLAND':'MD','MASSACHUSETTS':'MA','MICHIGAN':'MI','MINNESOTA':'MN','MISSISSIPPI':'MS','MISSOURI':'MO','MONTANA':'MT','NEBRASKA':'NE','NEVADA':'NV','NEW HAMPSHIRE':'NH','NEW JERSEY':'NJ','NEW MEXICO':'NM','NEW YORK':'NY','NORTH CAROLINA':'NC','NORTH DAKOTA':'ND','OHIO':'OH','OKLAHOMA':'OK','OREGON':'OR','PENNSYLVANIA':'PA','PUERTO RICO':'PR','RHODE ISLAND':'RI','SOUTH CAROLINA':'SC','SOUTH DAKOTA':'SD','TENNESSEE':'TN','TEXAS':'TX','UTAH':'UT','VERMONT':'VT','VIRGINIA':'VA','WASHINGTON':'WA','WEST VIRGINIA':'WV','WISCONSIN':'WI','WYOMING':'WY','DISTRICT OF COLUMBIA':'DC','WASHINGTON DC':'DC'};
+function normStateCode(v) {
+  const u = String(v || '').trim().toUpperCase();
+  if (!u) return '';
+  if (US_STATES.includes(u)) return u;
+  return US_STATE_NAME2CODE[u] || u;   // 认不出 → 原样保留
+}
 const APP_FIELDS = [
   ['name','姓名 NAME *','工人法定全名'], ['phone','电话 PHONE *','(555) 000-0000'], ['email','邮箱 EMAIL','email@example.com'],
   ['position','职位 POSITION','Picking / Packing …'], ['address1','街道地址 STREET ADDRESS *','e.g. 123 Main St'], ['address2','单元 / 楼层 UNIT / SUITE（选填）','e.g. Apt 2B, Suite 100'],
@@ -261,10 +275,15 @@ function editApplicantInfo(id) {
     const label = F[k][1], ph = F[k][2];
     const cls = 'af-l' + (wide ? ' af-wide' : '');
     const touch = isAddr(k) ? ` oninput="afAddrTouched(${id})"` : '';
-    if (k === 'state') return `<label class="${cls}">${esc(label)}<select id="af_${id}_${k}" class="af-i" onchange="afAddrTouched(${id})">
+    if (k === 'state') {
+      const stVal = normStateCode(a.state);
+      const unknown = stVal && !US_STATES.includes(stVal);
+      return `<label class="${cls}">${esc(label)}<select id="af_${id}_${k}" class="af-i" onchange="afAddrTouched(${id})">
         <option value="">-- 州 --</option>
-        ${US_STATES.map(x => `<option value="${x}"${String(a.state || '').toUpperCase() === x ? ' selected' : ''}>${x}</option>`).join('')}
+        ${unknown ? `<option value="${esc(stVal)}" selected>${esc(stVal)}（原值）</option>` : ''}
+        ${US_STATES.map(x => `<option value="${x}"${stVal === x ? ' selected' : ''}>${x}</option>`).join('')}
        </select></label>`;
+    }
     return `<label class="${cls}">${esc(label)}<input id="af_${id}_${k}" class="af-i" value="${esc(a[k] || '')}" placeholder="${esc(ph || '')}" autocomplete="off"${touch}></label>`;
   };
   el.innerHTML = `
@@ -364,11 +383,17 @@ async function saveApplicantInfo(id) {
   const a = window._appById[id];
   if (!a) return;
   const body = { address_verified: _afVerified[id] ? 1 : 0 };
+  // 只提交真正改过的字段 —— 免得把打开表单之后别人改过的值又静默改回去
   APP_FIELDS.forEach(f => {
     const el = document.getElementById('af_' + id + '_' + f[0]);
-    if (el) body[f[0]] = el.value;
+    if (!el) return;
+    const orig = f[0] === 'state' ? normStateCode(a.state) : String(a[f[0]] == null ? '' : a[f[0]]);
+    if (String(el.value) !== orig) body[f[0]] = el.value;
   });
-  if (!String(body.name || '').trim()) { pcToast('姓名不能为空', 'err'); return; }
+  const nameEl = document.getElementById('af_' + id + '_name');
+  if (nameEl && !nameEl.value.trim()) { pcToast('姓名不能为空', 'err'); nameEl.focus(); return; }
+  const phoneEl = document.getElementById('af_' + id + '_phone');
+  if (phoneEl && phoneEl.value.replace(/\D/g, '').length < 10) { pcToast('电话不能为空，至少 10 位数字', 'err'); phoneEl.focus(); return; }
   const ssnEl = document.getElementById('af_' + id + '_ssn');
   if (ssnEl && ssnEl.value.trim()) {
     const d9 = ssnEl.value.replace(/\D/g, '');
@@ -418,7 +443,9 @@ async function syncApplicantName(subId, empId, btn){
     });
     const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.success) throw new Error(d.error||'更正失败');
-    doSearch();
+    const a=window._appById[subId];
+    if(a){ a.name=d.name||a.name; reRenderApp(subId); }
+    pcToast('姓名已更正为档案名：'+(d.name||''),'ok');
   }catch(e){ pcToast(e.message||'更正失败','err'); btn.disabled=false; btn.textContent='用档案名更正'; }
 }
 
@@ -466,6 +493,12 @@ async function lbOpen(docs, idx) {
   // 连续处理进行中又去点别组的证件 → idxs 会指到新列表的错误下标, 先收尾
   if (_lb.batch && docs !== _lb.list) lbBatchEnd(true);
   _lb.list = docs || []; _lb.idx = idx || 0;
+  // 同组内点了另一张 → 进度跟着对齐过去, 免得计数错乱漏掉证件
+  if (_lb.batch) {
+    const at = _lb.batch.idxs.indexOf(_lb.idx);
+    if (at >= 0) { _lb.batch.at = at; _lb.batch.awaitVerdict = false; }
+    else lbBatchEnd(true);   // 点的是 PDF 等处理不了的 → 结束
+  }
   const w = $lb('lightbox');
   const first = w.style.display !== 'flex';
   w.style.display = 'flex';
@@ -473,9 +506,14 @@ async function lbOpen(docs, idx) {
   // 小窗是非模态的(后面的页面照常能点能改), 快捷键只在焦点落在窗口里时才生效
   try { w.focus({ preventScroll: true }); } catch (_) { w.focus(); }
   lbRender();
+  if (_lb.batch) lbBatchBar();
 }
 function lbClose() {
   if (_lb.batch) lbBatchEnd(true);
+  // 复位 收起/最大化, 免得下次打开是只有标题条的空壳或占满屏的巨窗
+  const body = $lb('lbBody');
+  if (body && body.style.display === 'none') lbToggleFold();
+  if (_lb.max) { _lb.max = false; $lb('lbMaxBtn').textContent = '⤢'; }
   $lb('lightbox').style.display = 'none';
   document.body.classList.remove('lb-open');
   _lb.img = null; _lb.sel = null;
@@ -555,8 +593,8 @@ function lbToggleFold() {
   const show = body.style.display === 'none';
   body.style.display = show ? 'flex' : 'none';
   $lb('lbGrip').style.display = (show && !lbSmallScreen()) ? '' : 'none';
-  if (show) { w.style.height = _lb.foldH || '72vh'; w.style.minHeight = ''; setTimeout(lbFit, 0); }
-  else { _lb.foldH = w.style.height; w.style.height = 'auto'; w.style.minHeight = '0'; }
+  if (show) { w.style.height = _lb.foldH || '72vh'; w.style.minHeight = ''; lbPanelsChanged(); }
+  else { _lb.sel = null; lbHideSel(); _lb.foldH = w.style.height; w.style.height = 'auto'; w.style.minHeight = '0'; }
   $lb('lbFoldBtn').textContent = show ? '▁' : '▔';
 }
 // 标题栏拖动 + 右下角拖拽改大小 (鼠标 / 触摸都支持)
@@ -606,6 +644,10 @@ function lbWinInit() {
   window.addEventListener('resize', () => {
     if ($lb('lightbox').style.display !== 'flex') return;
     if (!_lb.max) lbApplyLayout();
+    if ($lb('lbBody').style.display === 'none') {   // 收起状态: 高度保持贴合标题条
+      const w2 = $lb('lightbox');
+      w2.style.height = 'auto'; w2.style.minHeight = '0';
+    }
     _lb.sel = null; lbHideSel();
     lbFit(); lbSyncBtns();
   });
@@ -633,7 +675,7 @@ function lbRender(opts) {
   $lb('lbOrigLink').href = d.url ? (d.url + (d.url.indexOf('?') >= 0 ? '&' : '?') + 'v=orig') : '#';
   $lb('lbCropHint').textContent = ed
     ? (d.has_cropped
-        ? '这张已裁剪过：默认看到的是原件，点「看裁剪版」对照 · 原件永久保留，随时可「恢复原件」'
+        ? '这张已裁剪过：默认看到的是原件，点「看裁剪版」对照 · 原件永久保留，「🗑 删除裁剪版」可恢复显示原件'
         : '拖框圈出证件后点【保存】；不拖框就是整张保存 · ↺ ↻ 转正歪照片 · 原件始终保留')
     : '此证件来自员工档案，可查看 / 旋转 / 调节 / 识别文字，但不支持保存修改';
   lbRenderVerify();
@@ -687,7 +729,10 @@ function lbDraw() {
 function lbToneFallback(ctx, w, h) {
   const b = _lb.adj.b / 100, c = _lb.adj.c / 100, g = _lb.adj.g;
   const L = new Uint8ClampedArray(256);
-  for (let v = 0; v < 256; v++) L[v] = (v * b - 127.5) * c + 127.5;
+  for (let v = 0; v < 256; v++) {
+    const t = Math.min(255, Math.max(0, v * b));   // CSS filter 每级各自钳位
+    L[v] = (t - 127.5) * c + 127.5;
+  }
   const id = ctx.getImageData(0, 0, w, h), d = id.data;
   for (let i = 0; i < d.length; i += 4) {
     let r = L[d[i]], gg = L[d[i + 1]], bb = L[d[i + 2]];
@@ -777,12 +822,17 @@ function lbSyncAdjUI() {
   $lb('lbContrastV').textContent = _lb.adj.c + '%';
 }
 function lbAdjReset() { _lb.adj = { b: 100, c: 100, g: false }; lbSyncAdjUI(); lbDraw(); lbSyncBtns(); }
+// 面板开合改变了画布显示尺寸 → 旧选框的像素坐标全部失效, 必须作废重画
+function lbPanelsChanged() {
+  _lb.sel = null; lbHideSel();
+  setTimeout(() => { lbFit(); lbSyncBtns(); }, 0);
+}
 function lbToggleAdj() {
   const p = $lb('lbAdjPanel');
   const on = p.style.display === 'none';
   p.style.display = on ? 'block' : 'none';
   lbBtnActive('lbAdjBtn', on);
-  setTimeout(lbFit, 0);
+  lbPanelsChanged();
 }
 
 // ── 框选 (裁剪区域 / 识别区域 共用一个框) ──
@@ -792,6 +842,9 @@ function lbTouchOk(e) { return !e.touches || _lb.selMode; }
 function lbToggleSelMode() {
   _lb.selMode = !_lb.selMode;
   lbBtnActive('lbSelBtn', _lb.selMode, '#38bdf8');
+  // 框选时手指不能触发滚动; 关掉后手指恢复平移看大图
+  const cv = $lb('lbCanvas');
+  if (cv) cv.style.touchAction = _lb.selMode ? 'none' : '';
   pcToast(_lb.selMode ? '框选模式：手指在图上拖就是画框' : '框选模式已关：手指用来滚动看图');
 }
 function lbDown(e) {
@@ -865,14 +918,15 @@ function lbShowText(t, rows) {
   const ta = $lb('lbTxt'), cp = $lb('lbCopyBtn');
   ta.style.display = 'block'; ta.value = t; ta.rows = Math.min(rows || 4, 6);
   cp.style.display = t ? 'inline-block' : 'none';
-  setTimeout(lbFit, 0);
+  lbPanelsChanged();
 }
 function lbTogglePanel(force) {
   const p = $lb('lbTextPanel');
-  const on = (force === undefined) ? (p.style.display === 'none') : !!force;
+  const was = p.style.display !== 'none';
+  const on = (force === undefined) ? !was : !!force;
   p.style.display = on ? 'block' : 'none';
   lbBtnActive('lbOcrBtn', on, '#059669');
-  setTimeout(lbFit, 0);
+  if (on !== was) lbPanelsChanged();   // 状态没变(比如识别时 force=true 但已开着)就别动选框
 }
 async function lbOcrWorker() {
   if (_lbOcrP) return _lbOcrP;
@@ -934,7 +988,7 @@ async function lbAiRead() {
   const cv = $lb('lbCanvas'); if (!cv.width) return;
   if (_lb.aiBusy) return;                       // pad 上很容易点两下, 每次都要花钱
   _lb.aiBusy = true;
-  const btn = $lb('lbAiBtn'), label = btn ? btn.textContent : '';
+  const btn = $lb('lbAiBtn'), label = btn ? btn.innerHTML : '';
   if (btn) { btn.disabled = true; btn.textContent = '识读中…'; }
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 60000);
@@ -959,14 +1013,20 @@ async function lbAiRead() {
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
     lbShowAi(j, false);
-    if (lbEditable(d)) { try { d.ai_text = JSON.stringify(j); } catch (_) {} }
+    if (lbEditable(d)) {
+      try {
+        const cached = JSON.stringify(j);
+        d.ai_text = cached;
+        pcSyncDocState(d.sub_id, x => { x.ai_text = cached; }, [String(d.doc_id)]);
+      } catch (_) {}
+    }
     else lbSetStatus(($lb('lbStatus').textContent || '') + ' · 这张不是扫码申请的证件，结果不会存进系统');
   } catch (e) {
     lbSetStatus(e && e.name === 'AbortError' ? '⚠️ AI 识读超时（60 秒）— 请重试' : ('⚠️ ' + (e.message || e)));
   } finally {
     clearTimeout(timer);
     _lb.aiBusy = false;
-    if (btn) { btn.disabled = false; btn.textContent = label; }
+    if (btn) { btn.disabled = false; btn.innerHTML = label; }
   }
 }
 function lbFmtAi(r) {
@@ -1212,6 +1272,14 @@ function pcSyncDocState(subId, apply, onlyDocIds) {
       apply(doc);
     });
   });
+  // 同一张证件可能同时出现在「招工申请」和「员工档案」两个列表里 → 每一份都同步
+  Object.values(window._docSets || {}).forEach(arr => {
+    (Array.isArray(arr) ? arr : []).forEach(d => {
+      if (String(d.sub_id) !== String(subId)) return;
+      if (onlyDocIds && !onlyDocIds.includes(String(d.doc_id))) return;
+      apply(d);
+    });
+  });
 }
 // 保存后刷新页面上该文件的缩略图 (加时间戳绕过缓存)
 function lbBustThumbs(d) {
@@ -1376,7 +1444,7 @@ function pcPrompt(label, value) {
     <button onclick="lbClose()" title="关闭 (Esc)" style="background:transparent;border:none;color:#fff;font-size:14px;line-height:1;cursor:pointer;padding:2px 5px;font-family:inherit;font-size:16px">✕</button>
   </div>
 
-  <div id="lbBody" style="display:flex;flex-direction:column;flex:1;min-height:0;padding:8px 10px 10px">
+  <div id="lbBody" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:auto;padding:8px 10px 10px">
     <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;flex:0 0 auto">
       <button onclick="lbZoom(-1)" title="缩小" style="padding:3px 9px;border-radius:6px;border:1px solid #64748b;background:transparent;color:#e2e8f0;cursor:pointer;font-family:inherit;font-size:12px;white-space:nowrap">－</button>
       <span id="lbZoomPct" style="min-width:3em;text-align:center;color:#94a3b8;font-size:12px">100%</span>
@@ -1415,9 +1483,8 @@ function pcPrompt(label, value) {
 
     <div id="lbStage" style="flex:1 1 auto;min-height:120px;display:flex;overflow:auto;margin-top:7px;justify-content:safe center;align-items:safe center;scrollbar-gutter:stable">
       <div id="lbWrap" style="flex:0 0 auto;position:relative;user-select:none;-webkit-user-select:none;line-height:0"
-           onmousedown="lbDown(event)" onmousemove="lbMove(event)" onmouseup="lbUp()" onmouseleave="lbUp()"
-           ontouchstart="lbDown(event)" ontouchmove="lbMove(event)" ontouchend="lbUp()" ontouchcancel="lbUp()">
-        <canvas id="lbCanvas" style="display:block;border-radius:8px;background:#000;cursor:crosshair;touch-action:none"></canvas>
+           onmousedown="lbDown(event)" ontouchstart="lbDown(event)">
+        <canvas id="lbCanvas" style="display:block;border-radius:8px;background:#000;cursor:crosshair"></canvas>
         <div id="lbSelBox" style="display:none;position:absolute;border:2px dashed #38bdf8;background:rgba(56,189,248,.18);pointer-events:none"></div>
       </div>
     </div>
