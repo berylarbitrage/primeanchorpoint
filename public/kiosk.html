@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Prime Anchor Workforce — 仓库打卡台</title>
-<link rel="icon" href="logo.svg" type="image/svg+xml">
+<title>打卡台 Time Clock</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%8F%B0%3C/text%3E%3C/svg%3E">
 <style>
 :root{--blue:#0F2B5B;--sky:#4A90D9;--green:#2D9D78;--red:#E63946;--orange:#F5A623;--off:#F7F8FA;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A}
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
@@ -60,15 +60,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-seri
 .res-time{font-size:1rem;color:var(--gray-600);margin-top:.55rem;font-variant-numeric:tabular-nums}
 .res-note{margin-top:1rem;color:var(--gray-400);font-size:.82rem}
 .foot{flex-shrink:0;text-align:center;font-size:.7rem;color:rgba(255,255,255,.35);padding:0 1rem .6rem}
+.alt-btn{flex:1;padding:.8rem .4rem;border:1.5px solid rgba(255,255,255,.3);border-radius:14px;background:transparent;color:rgba(255,255,255,.85);font-size:1rem;font-weight:700;cursor:pointer;font-family:inherit}
+.alt-btn:active{background:rgba(255,255,255,.15)}
 </style>
 </head>
 <body>
 <div class="hdr">
   <div class="hdr-left">
-    <img src="logo.svg" alt="">
     <div>
-      <div class="hdr-title">Prime Anchor Workforce</div>
-      <div class="hdr-site" id="siteName">…</div>
+      <div class="hdr-title" id="siteName">…</div>
     </div>
   </div>
   <div class="hdr-right">
@@ -102,6 +102,47 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-seri
       <button class="key" onclick="kp('0')">0</button>
       <button class="key fn" onclick="kpBack()">⌫</button>
     </div>
+    <div style="display:flex;gap:.7rem;max-width:400px;margin:.85rem auto 0">
+      <button class="alt-btn" onclick="scanStart()">📷 <span id="lblScan">扫码打卡</span></button>
+      <button class="alt-btn" onclick="forgotStart()">❓ <span id="lblForgot">忘记密码</span></button>
+    </div>
+  </div>
+
+  <!-- Screen: QR scan punch -->
+  <div class="screen" id="scrScan">
+    <div style="text-align:center">
+      <div class="pw-hint" id="scanHint">将您的打卡二维码对准摄像头</div>
+      <video id="scanVid" autoplay playsinline muted style="width:min(92vw,420px);height:min(52vh,320px);object-fit:cover;border-radius:18px;background:#0b1f42"></video>
+      <div class="pw-err" id="scanErr" style="margin-top:.5rem"></div>
+      <button class="act-cancel" style="max-width:420px" id="btnScanCancel" onclick="scanStop(true)">取消</button>
+    </div>
+  </div>
+
+  <!-- Screen: forgot password (phone lookup) -->
+  <div class="screen" id="scrForgot">
+    <div class="pw-hint" id="fpHint">输入您的手机号（10 位）</div>
+    <div class="pw-dots" id="fpDots" style="gap:.45rem"></div>
+    <div class="pw-err" id="fpErr"></div>
+    <div class="keypad">
+      <button class="key" onclick="fp('1')">1</button>
+      <button class="key" onclick="fp('2')">2</button>
+      <button class="key" onclick="fp('3')">3</button>
+      <button class="key" onclick="fp('4')">4</button>
+      <button class="key" onclick="fp('5')">5</button>
+      <button class="key" onclick="fp('6')">6</button>
+      <button class="key" onclick="fp('7')">7</button>
+      <button class="key" onclick="fp('8')">8</button>
+      <button class="key" onclick="fp('9')">9</button>
+      <button class="key fn" id="fpKeyClear" onclick="fpClear()">清空</button>
+      <button class="key" onclick="fp('0')">0</button>
+      <button class="key fn" onclick="fpBack()">⌫</button>
+    </div>
+    <button class="act-cancel" style="max-width:400px;margin:.85rem auto 0;display:block" id="btnFpCancel" onclick="resetToPw()">取消</button>
+  </div>
+
+  <!-- Screen: forgot result (SMS sent / register QR) -->
+  <div class="screen" id="scrFRes">
+    <div class="res-card" id="fresCard"></div>
   </div>
 
   <!-- Screen 2: choose action -->
@@ -135,7 +176,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-seri
     </div>
   </div>
 </div>
-<div class="foot">Prime Anchor Point LLC · Warehouse Time Clock Kiosk</div>
+<div class="foot"></div>
 
 <script>
 const KL = {
@@ -147,6 +188,12 @@ const KL = {
     resTitle: { in: '上班打卡成功', out: '下班打卡成功', break_start: '休息开始', break_end: '休息结束' },
     resNote: '页面将自动返回', actCount: s => s + ' 秒后自动返回',
     camHint: '打卡时会自动拍照留档', resPhoto: '📷 已拍照留档',
+    lblScan: '扫码打卡', lblForgot: '忘记密码',
+    scanHint: '将您的打卡二维码对准摄像头', scanBadQr: '不是有效的打卡二维码', scanNoCam: '无法打开摄像头',
+    fpHint: '输入您的手机号（10 位）',
+    fpSent: l4 => '打卡密码和二维码已用短信发送到尾号 ' + l4 + ' 的手机，请查收',
+    fpSmsFail: '短信发送失败，请联系管理员', fpNotFound: '手机号未登记',
+    fpRegHint: '用您的手机扫描下方二维码，填写入职申请注册账号，提交后会收到打卡密码', fpOk: '好的',
   },
   en: {
     pwHint: 'Enter your 8-digit clock-in password', clear: 'Clear', cancel: 'Cancel',
@@ -156,6 +203,12 @@ const KL = {
     resTitle: { in: 'Clocked In', out: 'Clocked Out', break_start: 'Break Started', break_end: 'Break Ended' },
     resNote: 'Returning automatically', actCount: s => 'Auto return in ' + s + 's',
     camHint: 'A photo is taken when you punch', resPhoto: '📷 Photo saved',
+    lblScan: 'Scan QR', lblForgot: 'Forgot password',
+    scanHint: 'Hold your QR code up to the camera', scanBadQr: 'Not a valid time-clock QR code', scanNoCam: 'Cannot open camera',
+    fpHint: 'Enter your phone number (10 digits)',
+    fpSent: l4 => 'Your password and QR code were sent by SMS to the phone ending in ' + l4,
+    fpSmsFail: 'SMS failed to send. Please contact a manager.', fpNotFound: 'Phone number not found',
+    fpRegHint: 'Scan the QR code below with your phone to register. You will receive your clock-in password after submitting.', fpOk: 'OK',
   },
   es: {
     pwHint: 'Ingrese su contraseña de 8 dígitos', clear: 'Borrar', cancel: 'Cancelar',
@@ -165,6 +218,12 @@ const KL = {
     resTitle: { in: 'Entrada Registrada', out: 'Salida Registrada', break_start: 'Descanso Iniciado', break_end: 'Descanso Terminado' },
     resNote: 'Regresando automáticamente', actCount: s => 'Regresa en ' + s + 's',
     camHint: 'Se toma una foto al marcar', resPhoto: '📷 Foto guardada',
+    lblScan: 'Escanear QR', lblForgot: 'Olvidé mi contraseña',
+    scanHint: 'Acerque su código QR a la cámara', scanBadQr: 'Código QR no válido', scanNoCam: 'No se puede abrir la cámara',
+    fpHint: 'Ingrese su número de teléfono (10 dígitos)',
+    fpSent: l4 => 'Su contraseña y código QR fueron enviados por SMS al teléfono que termina en ' + l4,
+    fpSmsFail: 'Error al enviar SMS. Contacte a un gerente.', fpNotFound: 'Teléfono no registrado',
+    fpRegHint: 'Escanee el código QR con su teléfono para registrarse. Recibirá su contraseña después de enviar la solicitud.', fpOk: 'OK',
   },
 };
 // 服务器返回的错误信息是中文，非中文界面时映射成对应语言
@@ -174,6 +233,7 @@ const ERR_MAP = {
   '尝试次数过多，请 15 分钟后再试': { en: 'Too many attempts. Try again in 15 minutes', es: 'Demasiados intentos. Intente en 15 minutos' },
   '未找到该工作地点': { en: 'Work site not found', es: 'Sitio de trabajo no encontrado' },
   '缺少必要参数': { en: 'Missing parameters', es: 'Faltan parámetros' },
+  '请输入 10 位手机号': { en: 'Please enter a 10-digit phone number', es: 'Ingrese un teléfono de 10 dígitos' },
 };
 
 let _kl = localStorage.getItem('kiosk_lang') || 'zh';
@@ -195,6 +255,127 @@ function setKLang(l) {
   $('lblIn').textContent = t.btnIn; $('lblOut').textContent = t.btnOut;
   $('lblBs').textContent = t.btnBs; $('lblBe').textContent = t.btnBe;
   $('camHint').textContent = t.camHint;
+  $('lblScan').textContent = t.lblScan; $('lblForgot').textContent = t.lblForgot;
+  $('scanHint').textContent = t.scanHint; $('btnScanCancel').textContent = t.cancel;
+  $('fpHint').textContent = t.fpHint; $('fpKeyClear').textContent = t.clear; $('btnFpCancel').textContent = t.cancel;
+}
+
+// ── 扫码打卡: 员工把自己的打卡二维码对准摄像头, 内容等同 8 位密码 ──
+let _scanStream = null, _scanTimer = null, _jsqrLoading = null;
+function _loadJsQR() {
+  if (window.jsQR) return Promise.resolve();
+  if (_jsqrLoading) return _jsqrLoading;
+  _jsqrLoading = new Promise((ok, bad) => {
+    const s = document.createElement('script');
+    s.src = '/js/jsqr.min.js';
+    s.onload = ok; s.onerror = () => { _jsqrLoading = null; bad(new Error('QR 组件加载失败')); };
+    document.head.appendChild(s);
+  });
+  return _jsqrLoading;
+}
+async function scanStart() {
+  showScr('scrScan');
+  $('scanErr').textContent = '';
+  try {
+    _scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 } }, audio: false });
+    $('scanVid').srcObject = _scanStream;
+  } catch (_) { $('scanErr').textContent = KL[_kl].scanNoCam; return; }
+  let detector = null;
+  if ('BarcodeDetector' in window) {
+    try { detector = new BarcodeDetector({ formats: ['qr_code'] }); } catch (_) {}
+  }
+  if (!detector) { try { await _loadJsQR(); } catch (e) { $('scanErr').textContent = e.message; return; } }
+  const cvs = document.createElement('canvas');
+  const tickScan = async () => {
+    if (!_scanStream) return;
+    const v = $('scanVid');
+    if (v.videoWidth) {
+      try {
+        let text = '';
+        if (detector) {
+          const codes = await detector.detect(v);
+          if (codes && codes.length) text = codes[0].rawValue || '';
+        } else {
+          const w = 480, h = Math.round(v.videoHeight * (w / v.videoWidth)) || 360;
+          cvs.width = w; cvs.height = h;
+          const ctx = cvs.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(v, 0, 0, w, h);
+          const img = ctx.getImageData(0, 0, w, h);
+          const r = window.jsQR(img.data, w, h);
+          if (r && r.data) text = r.data;
+        }
+        if (text && handleScanCode(text)) return; // 有效码 → 结束扫描
+        if (text) $('scanErr').textContent = KL[_kl].scanBadQr; // 无效码 → 提示并继续扫
+      } catch (_) {}
+    }
+    _scanTimer = setTimeout(tickScan, 250);
+  };
+  tickScan();
+}
+// 有效的打卡二维码 (PAWTC:12345678 或纯 8 位数字) → 当作密码走原有流程
+function handleScanCode(text) {
+  const m = /^(?:PAWTC:)?(\d{8})$/.exec(String(text || '').trim());
+  if (!m) return false;
+  scanStop();
+  _pw = m[1]; renderDots();
+  showScr('scrPw');
+  checkPw();
+  return true;
+}
+function scanStop(backToPw) {
+  clearTimeout(_scanTimer); _scanTimer = null;
+  if (_scanStream) { _scanStream.getTracks().forEach(tr => tr.stop()); _scanStream = null; }
+  $('scanVid').srcObject = null;
+  if (backToPw) resetToPw();
+}
+
+// ── 忘记密码: 输手机号 → 短信发密码+二维码; 未登记 → 显示注册二维码 ──
+let _fp = '', _fpBusy = false;
+function forgotStart() { _fp = ''; _fpBusy = false; renderFpDots(); $('fpErr').textContent = ''; showScr('scrForgot'); }
+function renderFpDots() {
+  $('fpDots').innerHTML = Array.from({ length: 10 }, (_, i) => `<span class="pw-dot${i < _fp.length ? ' on' : ''}"></span>`).join('');
+}
+function fp(d) { if (_fpBusy || _fp.length >= 10) return; $('fpErr').textContent = ''; _fp += d; renderFpDots(); if (_fp.length === 10) fpSubmit(); }
+function fpBack() { if (_fpBusy) return; _fp = _fp.slice(0, -1); renderFpDots(); $('fpErr').textContent = ''; }
+function fpClear() { if (_fpBusy) return; _fp = ''; renderFpDots(); $('fpErr').textContent = ''; }
+async function fpSubmit() {
+  _fpBusy = true;
+  $('fpErr').textContent = KL[_kl].checking;
+  try {
+    const r = await fetch('/api/kiosk/forgot', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ site_id: _siteId, phone: _fp }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || KL[_kl].errReq);
+    _fpBusy = false; $('fpErr').textContent = '';
+    if (d.found) showFResFound(d); else showFResRegister();
+  } catch (e) {
+    _fpBusy = false; _fp = ''; renderFpDots();
+    $('fpErr').textContent = xerr(e.message);
+  }
+}
+function showFResFound(d) {
+  const t = KL[_kl];
+  $('fresCard').innerHTML = `<div class="res-ic" style="background:#E8F5E9;color:var(--green)">💬</div>
+    <div class="res-title">👋 ${(d.name || '').replace(/[<>&]/g, '')}</div>
+    <div class="res-time" style="margin-top:.6rem">${t.fpSent(d.phone_last4 || '')}</div>
+    ${d.sms_sent ? '' : `<div class="pw-err" style="margin-top:.4rem">${t.fpSmsFail}</div>`}
+    <button class="act-cancel" onclick="resetToPw()">${t.fpOk}</button>`;
+  showScr('scrFRes');
+  clearTimeout(_resTimer); _resTimer = setTimeout(resetToPw, 30000);
+}
+async function showFResRegister() {
+  const t = KL[_kl];
+  $('fresCard').innerHTML = `<div class="res-title">${t.fpNotFound}</div>
+    <div class="res-time" style="margin:.6rem 0">${t.fpRegHint}</div>
+    <div id="regQrBox" style="margin:.4rem 0">…</div>
+    <button class="act-cancel" onclick="resetToPw()">${t.fpOk}</button>`;
+  showScr('scrFRes');
+  clearTimeout(_resTimer); _resTimer = setTimeout(resetToPw, 60000);
+  try {
+    const r = await fetch('/api/kiosk/register-qr');
+    const d = await r.json();
+    if (d.qr_data_url) $('regQrBox').innerHTML = `<img src="${d.qr_data_url}" alt="QR" style="width:210px;border-radius:12px">`;
+  } catch (_) { $('regQrBox').textContent = '⚠'; }
 }
 
 // ── 前置摄像头：进入操作屏时打开预览，打卡瞬间抓一帧随打卡上传 ──
@@ -256,8 +437,8 @@ function showScr(id) {
 }
 function resetToPw() {
   clearInterval(_actTimer); clearTimeout(_resTimer);
-  camStop();
-  _pw = ''; _pwLocked = false;
+  camStop(); scanStop();
+  _pw = ''; _pwLocked = false; _fp = ''; _fpBusy = false;
   renderDots(); $('pwErr').textContent = '';
   showScr('scrPw');
 }
@@ -276,12 +457,15 @@ function kp(d) {
 }
 function kpBack() { if (_pwLocked) return; _pw = _pw.slice(0, -1); renderDots(); $('pwErr').textContent = ''; }
 function kpClear() { if (_pwLocked) return; _pw = ''; renderDots(); $('pwErr').textContent = ''; }
-// 实体键盘（有些平板接了键盘）也能用
+// 实体键盘（有些平板接了键盘）也能用；忘记密码屏同样支持
 document.addEventListener('keydown', e => {
-  if (!$('scrPw').classList.contains('active')) return;
-  if (/^[0-9]$/.test(e.key)) kp(e.key);
-  else if (e.key === 'Backspace') kpBack();
-  else if (e.key === 'Escape') kpClear();
+  const pwActive = $('scrPw').classList.contains('active');
+  const fpActive = $('scrForgot').classList.contains('active');
+  if (!pwActive && !fpActive) return;
+  const h = pwActive ? { d: kp, b: kpBack, c: kpClear } : { d: fp, b: fpBack, c: fpClear };
+  if (/^[0-9]$/.test(e.key)) h.d(e.key);
+  else if (e.key === 'Backspace') h.b();
+  else if (e.key === 'Escape') h.c();
 });
 
 async function checkPw() {
