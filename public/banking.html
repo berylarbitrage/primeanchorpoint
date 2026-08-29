@@ -608,7 +608,8 @@ function _bsPayeeOptionDefs(direction) {
     { v: BS_PAYEE_CHECK_DEP, t: '📥 存支票（选对方）', d: 'in' },
     { v: BS_PAYEE_CHECK_WD, t: '📤 取支票（选对方）', d: 'out' },
     { v: BS_PAYEE_NA, t: '🚫 无关', d: 'both' },
-    { v: BS_PAYEE_EMP, t: '👷 公司员工（填姓名）', d: 'out' },
+    // 员工两向都可能: 支出=发工资, 收入=员工退款/还款
+    { v: BS_PAYEE_EMP, t: '👷 公司员工（填姓名）', d: 'both' },
     { v: BS_PAYEE_PALLET, t: direction === 'in' ? '🪵 木板钱（选客户）' : '🪵 木板钱（选供应商）', d: 'both' },
   ];
 }
