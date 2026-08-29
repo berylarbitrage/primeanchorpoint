@@ -445,18 +445,20 @@ function camStart() {
     .finally(() => { _camStarting = null; });
   return _camStarting;
 }
-// 画到 canvas 并检查不是全黑帧 (摄像头刚启动/隐藏视频被冻结时会抓到全黑)
+// 画到 canvas 并标记是否为暗帧。暗帧不丢弃 (夜间/暗环境的真实画面亮度也很低,
+// 丢了会导致整条记录没照片) —— 只用于「优先选亮帧」的偏好, 拍不到亮的就用暗的。
 function _frameToCanvas(src, sw, sh) {
   const w = 640, h = Math.round(sh * (w / sw)) || 480;
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   const ctx = c.getContext('2d');
   ctx.drawImage(src, 0, 0, w, h);
+  c.isDark = false;
   try {
     const d = ctx.getImageData(0, 0, w, h).data;
     let sum = 0, n = 0;
     for (let i = 0; i < d.length; i += 4 * 101) { sum += d[i] + d[i + 1] + d[i + 2]; n += 3; }
-    if (n && (sum / n) < 4) return null; // 全黑帧 → 当作没拍到, 让上层重试
+    c.isDark = !!n && (sum / n) < 4;
   } catch (_) {}
   return c;
 }
@@ -495,16 +497,17 @@ function camComposite() {
   shots.forEach((s, i) => ctx.drawImage(s, i * fw, 0, fw, fh));
   return c.toDataURL('image/jpeg', 0.72);
 }
-// 打卡瞬间取一帧; 摄像头没就绪或抓到黑帧就在 maxMs 内重试, 拍不到照常打卡
+// 打卡瞬间取一帧; 优先等一张亮帧, 超时就用最后抓到的帧 (哪怕偏暗), 保证有照片
 async function camShotWait(maxMs) {
   const t0 = Date.now();
   camStart();
-  while (Date.now() - t0 < (maxMs || 2500)) {
-    const shot = await camShot();
-    if (shot) return shot;
+  let last = null;
+  while (Date.now() - t0 < (maxMs || 1200)) {
+    const c = await camGrabCanvas();
+    if (c) { last = c; if (!c.isDark) break; }
     await new Promise(r2 => setTimeout(r2, 150));
   }
-  return camShot();
+  return last ? last.toDataURL('image/jpeg', 0.7) : null;
 }
 function xerr(msg) {
   if (_kl !== 'zh' && ERR_MAP[msg] && ERR_MAP[msg][_kl]) return ERR_MAP[msg][_kl];
