@@ -2655,6 +2655,11 @@ try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN links TEXT DEFAULT '[]
 try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN category TEXT DEFAULT ''`); } catch(e) {}
 // 一笔支出可以覆盖多张发票，每张各自的账期和金额：JSON [{inv, ps, pe, amt}]
 try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN inv_items TEXT DEFAULT '[]'`); } catch(e) {}
+// 银行直连 (Plaid) 交易的标注也存这张表：plaid_txn_id 关联 plaid_transactions.txn_id,
+// 挂在该 Plaid 账户对应的虚拟账单 (bank_statements.source='plaid:<account_id>') 下,
+// 编辑/照片/删除复用 /api/admin/bank-statements/:id/boxes/* 一套接口。
+try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN plaid_txn_id TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_bstxn_plaid ON bank_statement_txns(plaid_txn_id)`); } catch(e) {}
 // ─── 会计只读批注 (accounting review annotations) ───
 // The accounting role can VIEW invoices & bank statements but not edit them;
 // its only write surface is this table: a circled region (normalized 0..1
@@ -31580,11 +31585,17 @@ app.post('/api/plaid/sync', requireAdmin, requireRole('admin'), async (req, res)
   try {
     if (!plaidReady()) return res.status(400).json({ error: '还没配置 Plaid 密钥' });
     let added = 0, removed = 0;
+    const errors = [];
+    // 单个连接出错 (如换环境后遗留的旧 sandbox token) 只记录, 不中断其它连接的同步
     for (const item of db.prepare('SELECT * FROM plaid_items').all()) {
-      const r = await plaidSyncItem(item);
-      added += r.added; removed += r.removed;
+      try {
+        const r = await plaidSyncItem(item);
+        added += r.added; removed += r.removed;
+      } catch (e) {
+        errors.push({ id: item.id, institution: item.institution || '', error: e.message });
+      }
     }
-    res.json({ success: true, added, removed });
+    res.json({ success: true, added, removed, errors });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -31637,6 +31648,56 @@ app.get('/api/plaid/transactions.csv', requireAdmin, requireRole('admin'), (req,
     res.set('Content-Type', 'text/csv; charset=utf-8');
     res.set('Content-Disposition', 'attachment; filename="transactions.csv"');
     res.send('﻿' + lines.join('\n'));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── 银行直连交易标注：复用银行账单 PDF 的 box 标注体系 ──
+// 每个 Plaid 账户对应一条虚拟账单 (source='plaid:<account_id>'), 该账户交易的标注
+// 挂在它下面; 建好后前端直接用 /api/admin/bank-statements/:id/boxes/* 编辑/传照片/删除,
+// 收支分类分析、发票关联、pallet 外部同步等下游功能自动包含这些标注。
+function plaidAnnStatementId(accountId) {
+  const key = 'plaid:' + accountId;
+  const found = db.prepare('SELECT id FROM bank_statements WHERE source=?').get(key);
+  if (found) return found.id;
+  const acc = db.prepare('SELECT * FROM plaid_accounts WHERE account_id=?').get(accountId);
+  const item = acc ? db.prepare('SELECT institution FROM plaid_items WHERE item_id=?').get(acc.item_id) : null;
+  const ins = db.prepare(`INSERT INTO bank_statements (source, bank, account_name, file_name, created_by)
+    VALUES (?,?,?,?,?)`).run(key, (item && item.institution) || '银行直连',
+      acc ? ((acc.name || '账户') + (acc.mask ? ' ····' + acc.mask : '')) : String(accountId), '', 'plaid');
+  return ins.lastInsertRowid;
+}
+function plaidAnnWithPhotos(row) {
+  let keys = [];
+  try { keys = JSON.parse(row.photos || '[]'); } catch (e) { keys = []; }
+  row.photos_urls = (Array.isArray(keys) ? keys : []).filter(Boolean).map(k => `/uploads/${path.basename(k)}`);
+  return row;
+}
+// 所有 Plaid 交易的标注, 按 plaid_txn_id 键成 map (银行对账页给每行画徽章用)
+app.get('/api/plaid/annotations', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT id, statement_id, plaid_txn_id, txn_date, amount, note, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, inv_items, category
+      FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id<>''`).all();
+    const map = {};
+    for (const r of rows) map[r.plaid_txn_id] = plaidAnnWithPhotos(r);
+    res.json({ annotations: map });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 找到或创建某笔 Plaid 交易的标注 (日期/金额/方向按交易预填, Plaid 正数=支出)
+app.post('/api/plaid/annotations', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const txnId = String((req.body && req.body.txn_id) || '');
+    if (!txnId) return res.status(400).json({ error: '缺少 txn_id' });
+    const txn = db.prepare('SELECT * FROM plaid_transactions WHERE txn_id=?').get(txnId);
+    if (!txn) return res.status(404).json({ error: '交易不存在' });
+    let row = db.prepare(`SELECT * FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id=?`).get(txnId);
+    if (!row) {
+      const sid = plaidAnnStatementId(txn.account_id);
+      db.prepare(`INSERT INTO bank_statement_txns (statement_id, kind, plaid_txn_id, txn_date, amount, direction, description)
+        VALUES (?,'box',?,?,?,?,?)`).run(sid, txnId, txn.date || '', Math.abs(txn.amount || 0),
+          (txn.amount || 0) > 0 ? 'out' : 'in', txn.merchant || txn.name || '');
+      row = db.prepare(`SELECT * FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id=?`).get(txnId);
+    }
+    res.json(plaidAnnWithPhotos(row));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -34734,7 +34795,7 @@ app.post('/api/admin/bank-statements', requireAdmin, blockManager, bankStmtUploa
 app.get('/api/admin/bank-statements', requireAdmin, blockManager, (req, res) => {
   try {
     const rows = db.prepare(`SELECT id, source, bank, account_name, operator, period, period_start, period_end, file_name, file_path, txn_count, total_in, total_out, notes, created_by, created_at
-      FROM bank_statements ORDER BY created_at DESC`).all();
+      FROM bank_statements WHERE source NOT LIKE 'plaid:%' ORDER BY created_at DESC`).all();
     const boxStmt = db.prepare(`SELECT id, txn_date, amount, note, page, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, inv_items, links, used_invoice_id, used_kind, category FROM bank_statement_txns
       WHERE statement_id=? AND kind='box' ORDER BY page ASC, box_y ASC, id ASC`);
     const usedInvStmt = db.prepare('SELECT invoice_number, company_name FROM invoices WHERE id=?');
