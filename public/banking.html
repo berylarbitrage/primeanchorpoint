@@ -63,6 +63,7 @@
     <h1>🏦 银行对账</h1>
     <span class="hint" id="envTag"></span>
     <div style="flex:1"></div>
+    <button class="btn" id="whBtn" onclick="testWebhook()" style="display:none">📡 测试 Webhook</button>
     <button class="btn" id="syncBtn" onclick="syncNow()">🔄 同步交易</button>
     <button class="btn primary" onclick="connectBank()">➕ 连接银行</button>
   </div>
@@ -122,6 +123,7 @@ async function init() {
   try {
     const s = await api('/plaid/status');
     document.getElementById('envTag').textContent = s.ready ? ('环境: ' + s.env) : '';
+    if (s.ready && s.env === 'sandbox') document.getElementById('whBtn').style.display = '';
     if (!s.ready) {
       document.getElementById('setupBox').style.display = '';
       document.getElementById('setupBox').innerHTML = '<b>还差一步：配置 Plaid 密钥（一次性）</b><br>'
@@ -199,6 +201,27 @@ async function connectBank() {
     });
     handler.open();
   } catch (e) { alert(e.message); }
+}
+
+// Plaid Dashboard「Call endpoints」任务：注册 webhook 地址并让 Plaid 发一条
+// NEW_ACCOUNTS_AVAILABLE 测试 webhook，然后查收件记录确认打到了
+async function testWebhook() {
+  const btn = document.getElementById('whBtn');
+  btn.disabled = true; btn.textContent = '测试中…';
+  try {
+    const r = await api('/plaid/fire-test-webhook', { method: 'POST', body: '{}' });
+    const ok = (r.results || []).filter(x => x.fired).length;
+    const errs = (r.results || []).filter(x => x.error);
+    // 稍等一两秒让 Plaid 把 webhook 打回来，再查收件记录
+    await new Promise(r2 => setTimeout(r2, 2500));
+    const ev = await api('/plaid/webhook-events');
+    const recent = (ev.events || []).filter(e => e.webhook_code === 'NEW_ACCOUNTS_AVAILABLE').length;
+    alert('已请求 Plaid 发送 ' + ok + ' 条测试 webhook（地址: ' + r.webhook_url + '）\n'
+      + '服务器已收到 NEW_ACCOUNTS_AVAILABLE 事件: ' + recent + ' 条'
+      + (recent ? ' ✅' : '\n（还没收到 — 若服务器不是公网地址，Plaid 打不进来）')
+      + (errs.length ? '\n失败: ' + errs.map(x => x.error).join('; ') : ''));
+  } catch (e) { alert(e.message); }
+  finally { btn.disabled = false; btn.textContent = '📡 测试 Webhook'; }
 }
 
 async function syncNow() {
