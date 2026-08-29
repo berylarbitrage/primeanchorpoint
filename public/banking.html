@@ -9,60 +9,100 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
 <style>
-  :root{--amber:#b45309;--amber-bg:#fffbeb;--sky:#0ea5e9;--red:#c5221f;--green:#059669;
-    --gray-100:#f3f4f6;--gray-200:#e5e7eb;--gray-300:#d1d5db;--gray-400:#9ca3af;--gray-500:#6b7280;--gray-600:#4b5563;--white:#fff}
+  :root{
+    --amber:#b45309;--amber-deep:#92400e;--amber-100:#fef3c7;--amber-50:#fffbeb;--amber-soft:#fde68a;
+    --bg:#f8f4ea;--card:#ffffff;--ink:#292524;--red:#c5221f;--green:#047857;--green-bright:#059669;
+    --gray-50:#fafaf9;--gray-100:#f4f4f2;--gray-200:#e7e5e4;--gray-300:#d6d3d1;--gray-400:#a8a29e;
+    --gray-500:#78716c;--gray-600:#57534e;--white:#fff;
+    --radius:14px;--shadow:0 1px 2px rgba(41,37,36,.05),0 4px 16px rgba(41,37,36,.05)}
   *{box-sizing:border-box;margin:0}
-  body{font-family:'DM Sans','PingFang SC','Microsoft YaHei',sans-serif;background:var(--amber-bg);color:#1f2937;min-height:100vh}
-  .top{background:var(--white);border-bottom:1.5px solid var(--gray-200);padding:10px 16px;display:flex;
+  body{font-family:'DM Sans','PingFang SC','Microsoft YaHei',sans-serif;background:var(--bg);color:var(--ink);min-height:100vh}
+  ::selection{background:var(--amber-100)}
+  .top{background:rgba(255,255,255,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--gray-200);padding:12px 20px;display:flex;
     align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:0;z-index:20}
-  .top h1{font-size:1.05rem;color:var(--amber)}
-  .btn{border:1px solid var(--gray-200);background:var(--white);border-radius:20px;padding:6px 14px;
-    font-size:.8rem;cursor:pointer;font-family:inherit;text-decoration:none;color:inherit}
-  .btn:hover{background:var(--gray-100)}
-  .btn.primary{background:var(--amber);border-color:var(--amber);color:#fff}
-  .btn.primary:hover{background:#92400e}
-  .btn.sm{padding:3px 10px;font-size:.72rem}
-  .wrap{max-width:1000px;margin:0 auto;padding:14px 14px 60px}
-  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin-bottom:14px}
-  .acct{background:var(--white);border:1px solid var(--gray-200);border-radius:14px;padding:12px 14px}
-  .acct .bank{font-size:.72rem;color:var(--gray-500)}
-  .acct .nm{font-weight:800;font-size:.9rem;margin:2px 0}
-  .acct .bal{font-size:1.25rem;font-weight:800;color:var(--green)}
-  .acct .sub{font-size:.7rem;color:var(--gray-400)}
-  .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
-  .filters input,.filters select{border:1px solid var(--gray-200);border-radius:10px;padding:7px 10px;
-    font-size:.8rem;font-family:inherit;background:var(--white)}
-  table{width:100%;border-collapse:collapse;background:var(--white);border-radius:14px;overflow:hidden;
-    border:1px solid var(--gray-200);font-size:.8rem}
-  th{background:var(--gray-100);text-align:left;padding:8px 10px;font-size:.72rem;color:var(--gray-600)}
-  td{padding:7px 10px;border-top:1px solid var(--gray-100)}
-  .amt-in{color:var(--green);font-weight:700}
-  .amt-out{color:#1f2937;font-weight:600}
-  .empty{text-align:center;color:var(--gray-400);padding:50px 0}
-  .setup{background:var(--white);border:1px solid var(--gray-200);border-radius:14px;padding:18px;line-height:1.9;font-size:.85rem}
+  .top h1{font-size:1.08rem;color:var(--amber);letter-spacing:.2px}
+  .btn{border:1px solid var(--gray-200);background:var(--white);border-radius:999px;padding:7px 16px;
+    font-size:.8rem;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:none;color:var(--gray-600);
+    transition:background .15s,border-color .15s,transform .15s;box-shadow:0 1px 2px rgba(41,37,36,.04)}
+  .btn:hover{background:var(--gray-50);border-color:var(--gray-300);transform:translateY(-1px)}
+  .btn.primary{background:linear-gradient(135deg,#d97706,var(--amber));border-color:transparent;color:#fff;box-shadow:0 2px 8px rgba(180,83,9,.3)}
+  .btn.primary:hover{background:linear-gradient(135deg,var(--amber),var(--amber-deep))}
+  .btn.sm{padding:4px 12px;font-size:.72rem}
+  .btn:disabled{opacity:.55;cursor:default;transform:none}
+  .wrap{max-width:1080px;margin:0 auto;padding:20px 16px 80px}
+  /* 账户卡片 */
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-bottom:18px}
+  .acct{background:var(--card);border:1px solid var(--gray-200);border-radius:var(--radius);padding:14px 16px 14px 18px;
+    box-shadow:var(--shadow);transition:box-shadow .15s,transform .15s;position:relative;overflow:hidden}
+  .acct::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,#f59e0b,var(--amber))}
+  .acct:hover{transform:translateY(-2px);box-shadow:0 4px 20px rgba(41,37,36,.1)}
+  .acct .bank{font-size:.72rem;color:var(--gray-500);font-weight:600;letter-spacing:.3px}
+  .acct .nm{font-weight:800;font-size:.92rem;margin:3px 0}
+  .acct .bal{font-size:1.45rem;font-weight:800;color:var(--green);letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+  .acct .sub{font-size:.72rem;color:var(--gray-400);margin-top:2px}
+  /* 筛选工具条 */
+  .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:4px;background:var(--card);
+    border:1px solid var(--gray-200);border-radius:var(--radius);padding:10px 12px;box-shadow:var(--shadow)}
+  .filters input,.filters select{border:1px solid var(--gray-200);border-radius:9px;padding:7px 10px;
+    font-size:.8rem;font-family:inherit;background:var(--gray-50);color:var(--ink);transition:border-color .15s,box-shadow .15s}
+  .filters input:focus,.filters select:focus{outline:none;border-color:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.15);background:#fff}
+  .note{font-size:.78rem;color:var(--gray-500);margin:10px 4px}
+  /* 交易表 */
+  table{width:100%;border-collapse:separate;border-spacing:0;background:var(--card);border-radius:var(--radius);overflow:hidden;
+    border:1px solid var(--gray-200);font-size:.8rem;box-shadow:var(--shadow)}
+  th{background:var(--gray-50);text-align:left;padding:10px 12px;font-size:.7rem;color:var(--gray-500);font-weight:700;
+    letter-spacing:.5px;border-bottom:1px solid var(--gray-200)}
+  td{padding:9px 12px;border-top:1px solid var(--gray-100);vertical-align:middle}
+  table tr:hover td{background:#fffdf5}
+  .amt-in{color:var(--green-bright);font-weight:700;font-variant-numeric:tabular-nums}
+  .amt-out{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+  /* 分类徽章 */
+  .cat-b{display:inline-block;padding:2px 9px;border-radius:999px;font-size:.68rem;font-weight:600;white-space:nowrap;
+    background:var(--gray-100);color:var(--gray-500)}
+  .cat-in{background:#ecfdf5;color:#047857}
+  .cat-tin{background:#f0fdfa;color:#0f766e}
+  .cat-tout{background:#eff6ff;color:#1d4ed8}
+  .cat-loan{background:#faf5ff;color:#7e22ce}
+  .cat-fee{background:#fffbeb;color:#b45309}
+  .cat-gov{background:#f1f5f9;color:#475569}
+  /* 分组头（按周/按月） */
+  .grp-head td{background:linear-gradient(90deg,#fef3c7,#fdf6e3);cursor:pointer;font-size:.78rem;padding:9px 12px;
+    border-top:1px solid var(--amber-soft);user-select:none;white-space:nowrap}
+  .grp-head:hover td{background:linear-gradient(90deg,#fde68a,#fef3c7)}
+  .grp-arrow{display:inline-block;font-size:.6rem;color:var(--amber);width:14px}
+  .grp-chip{display:inline-block;padding:1px 9px;border-radius:999px;font-size:.7rem;font-weight:700;background:rgba(255,255,255,.75);
+    font-variant-numeric:tabular-nums}
+  .empty{text-align:center;color:var(--gray-400);padding:60px 0;font-size:.88rem}
+  .setup{background:var(--card);border:1px solid var(--gray-200);border-radius:var(--radius);padding:18px;line-height:1.9;
+    font-size:.85rem;box-shadow:var(--shadow)}
   .setup code{background:var(--gray-100);border-radius:6px;padding:2px 6px;font-size:.78rem}
-  #gate{max-width:340px;margin:80px auto;background:var(--white);border:1px solid var(--gray-200);border-radius:16px;padding:24px}
-  #gate input{width:100%;border:1px solid var(--gray-200);border-radius:10px;padding:9px 12px;font-size:.9rem;margin-top:8px;font-family:inherit}
+  #gate{max-width:340px;margin:90px auto;background:var(--card);border:1px solid var(--gray-200);border-radius:18px;padding:28px;box-shadow:var(--shadow)}
+  #gate input{width:100%;border:1px solid var(--gray-200);border-radius:10px;padding:10px 12px;font-size:.9rem;margin-top:8px;font-family:inherit;background:var(--gray-50)}
+  #gate input:focus{outline:none;border-color:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.15);background:#fff}
   .err{color:var(--red);font-size:.8rem;margin-top:8px}
   .hint{font-size:.74rem;color:var(--gray-400)}
-  .note{font-size:.78rem;color:var(--gray-500);margin:8px 0}
   /* ── 交易标注抽屉（复刻后台银行账单的标注面板）── */
-  #annDrawer{position:fixed;top:0;right:0;bottom:0;width:min(390px,100vw);background:#fff;border-left:1px solid var(--gray-200);
-    box-shadow:-8px 0 30px rgba(15,23,42,.12);z-index:60;display:none;flex-direction:column}
+  #annBackdrop{position:fixed;inset:0;background:rgba(41,37,36,.28);z-index:55;display:none}
+  #annBackdrop.open{display:block}
+  #annDrawer{position:fixed;top:0;right:0;bottom:0;width:min(400px,100vw);background:var(--card);border-left:1px solid var(--gray-200);
+    box-shadow:-12px 0 40px rgba(41,37,36,.18);z-index:60;display:none;flex-direction:column}
   #annDrawer.open{display:flex}
-  #annHead{padding:10px 14px;border-bottom:1px solid var(--gray-200);display:flex;align-items:center;gap:8px}
-  #annBody{flex:1;overflow:auto;padding:10px 12px}
-  .ann-add{border:1px dashed var(--gray-400);background:#fff;border-radius:999px;padding:2px 10px;font-size:.72rem;
-    color:var(--gray-500);cursor:pointer;font-family:inherit;white-space:nowrap}
-  .ann-add:hover{border-color:var(--amber);color:var(--amber)}
+  #annHead{padding:12px 16px;border-bottom:1px solid var(--gray-100);display:flex;align-items:center;gap:8px;
+    background:linear-gradient(180deg,#fffbeb,#fff)}
+  #annBody{flex:1;overflow:auto;padding:12px 14px}
+  .ann-add{border:1px dashed var(--gray-300);background:transparent;border-radius:999px;padding:3px 11px;font-size:.72rem;
+    color:var(--gray-400);cursor:pointer;font-family:inherit;white-space:nowrap;transition:border-color .15s,color .15s,background .15s}
+  .ann-add:hover{border-color:var(--amber);color:var(--amber);background:var(--amber-50)}
   .ann-chip{display:inline-flex;align-items:center;gap:4px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;
-    border-radius:999px;padding:2px 10px;font-size:.72rem;cursor:pointer;font-family:inherit;max-width:180px;overflow:hidden;
-    text-overflow:ellipsis;white-space:nowrap}
+    border-radius:999px;padding:3px 11px;font-size:.72rem;font-weight:600;cursor:pointer;font-family:inherit;max-width:190px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:background .15s}
+  .ann-chip:hover{background:#dbeafe}
   #annToast{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:99;display:none;background:#16a34a;color:#fff;
-    padding:7px 16px;border-radius:8px;font-size:.82rem;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+    padding:8px 18px;border-radius:10px;font-size:.82rem;box-shadow:0 8px 24px rgba(0,0,0,.25)}
   #annLightbox{position:fixed;inset:0;z-index:98;background:rgba(15,23,42,.85);display:none;align-items:center;justify-content:center;cursor:zoom-out}
   #annLightbox img{max-width:92vw;max-height:92vh;border-radius:8px}
   #annLightbox iframe{width:92vw;height:92vh;border:none;background:#fff;border-radius:8px}
+  @media (max-width:640px){ .wrap{padding:12px 8px 60px} td,th{padding:8px 8px} }
 </style>
 </head>
 <body>
@@ -106,6 +146,7 @@
   </div>
 </div>
 
+<div id="annBackdrop" onclick="annClose()"></div>
 <div id="annDrawer">
   <div id="annHead">
     <div style="flex:1;min-width:0">
@@ -230,6 +271,8 @@ const PLAID_CAT_ZH = {
   TRANSPORTATION: '交通', TRAVEL: '差旅', RENT_AND_UTILITIES: '房租/水电',
 };
 function catZh(c) { return PLAID_CAT_ZH[c] || c || ''; }
+const PLAID_CAT_CLS = { INCOME: 'cat-in', TRANSFER_IN: 'cat-tin', TRANSFER_OUT: 'cat-tout', LOAN_PAYMENTS: 'cat-loan', BANK_FEES: 'cat-fee', GOVERNMENT_AND_NON_PROFIT: 'cat-gov' };
+function catBadge(c) { return c ? '<span class="cat-b ' + (PLAID_CAT_CLS[c] || '') + '">' + esc(catZh(c)) + '</span>' : ''; }
 async function loadCats() {
   try {
     const r = await api('/plaid/txn-categories');
@@ -257,8 +300,9 @@ async function loadTxns() {
     '<tr' + (grp ? ' data-grp="' + esc(grp) + '"' : '') + '><td style="white-space:nowrap">' + esc(t.date) + (t.pending ? ' <span class="hint">待清算</span>' : '') + '</td>'
     + '<td>' + esc(accName(t.account_id)) + '</td>'
     + '<td>' + esc(t.merchant || t.name) + '</td>'
-    + '<td class="hint" style="white-space:nowrap" title="' + esc(t.category || '') + '">' + esc(catZh(t.category)) + '</td>'
-    + '<td style="text-align:right;white-space:nowrap" class="' + (t.amount < 0 ? 'amt-in' : 'amt-out') + '">' + money(-t.amount, t.currency) + '</td>'
+    + '<td style="white-space:nowrap" title="' + esc(t.category || '') + '">' + catBadge(t.category) + '</td>'
+    + '<td style="text-align:right;white-space:nowrap" class="' + (t.amount < 0 ? 'amt-in' : 'amt-out') + '">'
+    + (t.amount < 0 ? '+' : '−') + money(Math.abs(t.amount), t.currency) + '</td>'
     + '<td class="ann-cell" data-txn="' + esc(t.txn_id) + '">' + annChipHtml(t.txn_id) + '</td></tr>';
   const head = '<tr><th style="white-space:nowrap">日期</th><th>账户</th><th>描述</th><th style="white-space:nowrap">分类</th><th style="text-align:right">金额</th><th>标注</th></tr>';
   const view = document.getElementById('fView').value;
@@ -280,12 +324,12 @@ async function loadTxns() {
     }
     body = groups.map(g => {
       const net = g.inSum - g.outSum;
-      return '<tr class="grp-head" onclick="toggleGrp(this,\'' + esc(g.key) + '\')" style="cursor:pointer;background:#fef3c7">'
-        + '<td colspan="6" style="font-size:.78rem"><span class="grp-arrow">▼</span> <b>📅 ' + esc(g.label) + '</b>'
-        + ' · ' + g.txns.length + ' 笔'
-        + ' · 收入 <span class="amt-in">' + money(g.inSum) + '</span>'
-        + ' · 支出 <span class="amt-out">−' + money(g.outSum) + '</span>'
-        + ' · 净额 <span style="font-weight:800;color:' + (net >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (net >= 0 ? '+' : '−') + money(Math.abs(net)) + '</span>'
+      return '<tr class="grp-head" onclick="toggleGrp(this,\'' + esc(g.key) + '\')">'
+        + '<td colspan="6"><span class="grp-arrow">▼</span> <b>📅 ' + esc(g.label) + '</b>'
+        + ' <span class="hint">' + g.txns.length + ' 笔</span> '
+        + ' <span class="grp-chip" style="color:#047857">收入 +' + money(g.inSum) + '</span>'
+        + ' <span class="grp-chip" style="color:#57534e">支出 −' + money(g.outSum) + '</span>'
+        + ' <span class="grp-chip" style="color:' + (net >= 0 ? '#047857' : '#c5221f') + '">净额 ' + (net >= 0 ? '+' : '−') + money(Math.abs(net)) + '</span>'
         + '</td></tr>'
         + g.txns.map(t => rowHtml(t, g.key)).join('');
     }).join('');
@@ -1320,12 +1364,14 @@ async function annOpen(txnId) {
       ? (t.date + ' · ' + (t.merchant || t.name || '') + ' · ' + money(-t.amount, t.currency))
       : ((box.txn_date || '') + ' · $' + (box.amount || 0));
     document.getElementById('annDrawer').classList.add('open');
+    document.getElementById('annBackdrop').classList.add('open');
     _bsRenderBoxPanel();
     annRefreshChip(box);
   } catch (e) { showToast(e.message || '打开标注失败', 'error'); }
 }
 function annClose() {
   document.getElementById('annDrawer').classList.remove('open');
+  document.getElementById('annBackdrop').classList.remove('open');
   _annOpenId = null;
 }
 
