@@ -8887,11 +8887,12 @@ function requireAdmin(req, res, next) {
     const csAllowed = p.startsWith('/api/sms/') || p.startsWith('/api/acct/') || p.startsWith('/api/admin/recruit-') || p.startsWith('/api/plaid/') || p === '/api/admin/me' || p === '/api/admin/logout';
     if (!csAllowed) return res.status(403).json({ error: '客服账号仅限使用 SMS Inbox (/sms-inbox)、会计对账 (/accounting)、银行对账 (/banking) 和每日招工 (/recruit)' });
   }
-  // 会计(accounting)专用账号: 只读发票与银行流水 + 圈选批注，其余管理后台一律 403
+  // 会计(accounting)专用账号: 只读发票与银行流水 + 圈选批注 + 银行对账页
+  // (/api/plaid/ 下只读+标注, 标注需管理员审核), 其余管理后台一律 403
   if (session.role === 'accounting') {
     const p = req.originalUrl.split('?')[0];
-    const acctAllowed = p.startsWith('/api/acct/') || p === '/api/admin/me' || p === '/api/admin/logout';
-    if (!acctAllowed) return res.status(403).json({ error: '会计账号仅限使用对账查看页 (/accounting)' });
+    const acctAllowed = p.startsWith('/api/acct/') || p.startsWith('/api/plaid/') || p === '/api/admin/me' || p === '/api/admin/logout';
+    if (!acctAllowed) return res.status(403).json({ error: '会计账号仅限使用对账查看页 (/accounting) 和银行对账页 (/banking)' });
   }
   const _u = db.prepare('SELECT assigned_partner_ids, assigned_employee_ids, assigned_job_ids FROM admin_users WHERE id=?').get(session.userId);
   req.assignedPartnerIds = (_u && _u.assigned_partner_ids) || '';
@@ -31508,7 +31509,7 @@ function plaidUpsertAccounts(itemId, accounts) {
   }
 }
 
-app.get('/api/plaid/status', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
+app.get('/api/plaid/status', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
   try {
     res.json({ ready: plaidReady(), env: String(process.env.PLAID_ENV || 'sandbox').toLowerCase(),
       items: db.prepare('SELECT COUNT(*) n FROM plaid_items').get().n });
@@ -31604,7 +31605,7 @@ app.post('/api/plaid/sync', requireAdmin, requireRole('admin'), async (req, res)
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/plaid/accounts', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
+app.get('/api/plaid/accounts', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
   try {
     const items = db.prepare('SELECT id, item_id, institution, created_at FROM plaid_items').all();
     const accounts = db.prepare('SELECT * FROM plaid_accounts ORDER BY name').all()
@@ -31626,7 +31627,7 @@ function plaidTxnQuery(req) {
 }
 
 // 全部交易的分类清单（分类筛选下拉用，含每类笔数）
-app.get('/api/plaid/txn-categories', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
+app.get('/api/plaid/txn-categories', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
   try {
     const rows = db.prepare(`SELECT COALESCE(category,'') AS category, COUNT(*) AS n
       FROM plaid_transactions GROUP BY COALESCE(category,'') ORDER BY n DESC`).all();
@@ -31634,7 +31635,7 @@ app.get('/api/plaid/txn-categories', requireAdmin, requireRole('admin', 'cs'), (
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/plaid/transactions', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
+app.get('/api/plaid/transactions', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
   try {
     const { where, params } = plaidTxnQuery(req);
     const limit = Math.min(parseInt(req.query.limit) || 300, 2000);
@@ -31645,7 +31646,7 @@ app.get('/api/plaid/transactions', requireAdmin, requireRole('admin', 'cs'), (re
 });
 
 // 给会计的 CSV：筛选条件同上
-app.get('/api/plaid/transactions.csv', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
+app.get('/api/plaid/transactions.csv', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
   try {
     const { where, params } = plaidTxnQuery(req);
     const rows = db.prepare(`SELECT date, name, merchant, amount, currency, category, pending, account_id
@@ -31688,7 +31689,7 @@ function plaidAnnWithPhotos(row) {
   return row;
 }
 // 所有 Plaid 交易的标注, 按 plaid_txn_id 键成 map (银行对账页给每行画徽章用)
-app.get('/api/plaid/annotations', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
+app.get('/api/plaid/annotations', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
   try {
     const rows = db.prepare(`SELECT id, statement_id, plaid_txn_id, txn_date, amount, note, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, inv_items, category, ann_status, ann_by
       FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id<>''`).all();
@@ -31698,7 +31699,7 @@ app.get('/api/plaid/annotations', requireAdmin, requireRole('admin', 'cs'), (req
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // 找到或创建某笔 Plaid 交易的标注 (日期/金额/方向按交易预填, Plaid 正数=支出)
-app.post('/api/plaid/annotations', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
+app.post('/api/plaid/annotations', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
   try {
     const txnId = String((req.body && req.body.txn_id) || '');
     if (!txnId) return res.status(400).json({ error: '缺少 txn_id' });
@@ -31710,7 +31711,7 @@ app.post('/api/plaid/annotations', requireAdmin, requireRole('admin', 'cs'), (re
       db.prepare(`INSERT INTO bank_statement_txns (statement_id, kind, plaid_txn_id, txn_date, amount, direction, description, ann_status, ann_by)
         VALUES (?,'box',?,?,?,?,?,?,?)`).run(sid, txnId, txn.date || '', Math.abs(txn.amount || 0),
           (txn.amount || 0) > 0 ? 'out' : 'in', txn.merchant || txn.name || '',
-          req.userRole === 'cs' ? 'pending' : '', req.userName || '');
+          req.userRole !== 'admin' ? 'pending' : '', req.userName || '');
       row = db.prepare(`SELECT * FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id=?`).get(txnId);
     }
     res.json(plaidAnnWithPhotos(row));
@@ -31719,7 +31720,7 @@ app.post('/api/plaid/annotations', requireAdmin, requireRole('admin', 'cs'), (re
 
 // 修改一条交易标注 (admin 与客服共用; 客服的每次修改都会把标注置为「待审核」)。
 // 金额与收支方向跟着银行交易, 客服不可改; 管理员的方向纠正走 direction 字段。
-app.put('/api/plaid/annotations/:id', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
+app.put('/api/plaid/annotations/:id', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const row = db.prepare(`SELECT * FROM bank_statement_txns WHERE id=? AND kind='box' AND plaid_txn_id<>''`).get(id);
@@ -31736,7 +31737,7 @@ app.put('/api/plaid/annotations/:id', requireAdmin, requireRole('admin', 'cs'), 
         })));
       } catch (e2) { invItemsVal = row.inv_items; }
     }
-    const isCs = req.userRole === 'cs';
+    const isCs = req.userRole !== 'admin'; // 客服/会计的改动都需审核
     const annStatus = isCs ? 'pending' : row.ann_status;
     const annBy = isCs ? (req.userName || '') : row.ann_by;
     db.prepare(`UPDATE bank_statement_txns SET
@@ -31779,7 +31780,7 @@ app.delete('/api/plaid/annotations/:id', requireAdmin, requireRole('admin'), (re
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // 标注传照片 (admin 与客服共用; 客服上传同样置为待审核)
-app.post('/api/plaid/annotations/:id/photos', requireAdmin, requireRole('admin', 'cs'), containerSubmitPhotoUpload.array('photos', 12), (req, res) => {
+app.post('/api/plaid/annotations/:id/photos', requireAdmin, requireRole('admin', 'cs', 'accounting'), containerSubmitPhotoUpload.array('photos', 12), (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const row = db.prepare(`SELECT photos FROM bank_statement_txns WHERE id=? AND kind='box' AND plaid_txn_id<>''`).get(id);
@@ -31788,7 +31789,7 @@ app.post('/api/plaid/annotations/:id/photos', requireAdmin, requireRole('admin',
     if (!Array.isArray(keys)) keys = [];
     (req.files || []).forEach(f => { const k = f.key || f.path; if (k) keys.push(k); });
     keys = keys.slice(0, 24);
-    const isCs = req.userRole === 'cs';
+    const isCs = req.userRole !== 'admin'; // 客服/会计的改动都需审核
     db.prepare(`UPDATE bank_statement_txns SET photos=?, ann_status=CASE WHEN ? THEN 'pending' ELSE ann_status END,
         ann_by=CASE WHEN ? THEN ? ELSE ann_by END, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
       .run(JSON.stringify(keys), isCs ? 1 : 0, isCs ? 1 : 0, req.userName || '', id);
@@ -31796,7 +31797,7 @@ app.post('/api/plaid/annotations/:id/photos', requireAdmin, requireRole('admin',
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // 标注删照片 (admin 与客服共用)
-app.delete('/api/plaid/annotations/:id/photos', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
+app.delete('/api/plaid/annotations/:id/photos', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const target = path.basename(String((req.body && req.body.photo) || req.query.photo || ''));
@@ -31806,7 +31807,7 @@ app.delete('/api/plaid/annotations/:id/photos', requireAdmin, requireRole('admin
     let keys = []; try { keys = JSON.parse(row.photos || '[]'); } catch (e2) { keys = []; }
     const kept = (Array.isArray(keys) ? keys : []).filter(k => path.basename(k) !== target);
     const removed = (Array.isArray(keys) ? keys : []).find(k => path.basename(k) === target);
-    const isCs = req.userRole === 'cs';
+    const isCs = req.userRole !== 'admin'; // 客服/会计的改动都需审核
     db.prepare(`UPDATE bank_statement_txns SET photos=?, ann_status=CASE WHEN ? THEN 'pending' ELSE ann_status END,
         ann_by=CASE WHEN ? THEN ? ELSE ann_by END, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
       .run(JSON.stringify(kept), isCs ? 1 : 0, isCs ? 1 : 0, req.userName || '', id);
