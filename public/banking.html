@@ -583,6 +583,9 @@ function _bsPayeeLabel(direction) { return direction === 'in' ? '谁付的' : '�
 // 银行直连的收支方向由交易金额定死, 所以下拉只列与方向相符的选项。
 function _bsPayeeOptionDefs(direction) {
   return [
+    // 最常用的两个放最前面, 免得在长列表里翻不到
+    { v: BS_PAYEE_EMP, t: '👷 公司员工（填姓名）', d: 'both' },
+    { v: BS_PAYEE_PALLET, t: direction === 'in' ? '🪵 木板钱（选客户）' : '🪵 木板钱（选供应商）', d: 'both' },
     { v: BS_PAYEE_BANKFEE, t: '🏦 银行费用', d: 'out' },
     { v: BS_PAYEE_OFFICE, t: '🧾 公司办公费用（选分类）', d: 'out' },
     { v: BS_PAYEE_COMPFEE, t: '🏛️ 公司相关费用（税务/成立费，选分类）', d: 'out' },
@@ -608,9 +611,6 @@ function _bsPayeeOptionDefs(direction) {
     { v: BS_PAYEE_CHECK_DEP, t: '📥 存支票（选对方）', d: 'in' },
     { v: BS_PAYEE_CHECK_WD, t: '📤 取支票（选对方）', d: 'out' },
     { v: BS_PAYEE_NA, t: '🚫 无关', d: 'both' },
-    // 员工两向都可能: 支出=发工资, 收入=员工退款/还款
-    { v: BS_PAYEE_EMP, t: '👷 公司员工（填姓名）', d: 'both' },
-    { v: BS_PAYEE_PALLET, t: direction === 'in' ? '🪵 木板钱（选客户）' : '🪵 木板钱（选供应商）', d: 'both' },
   ];
 }
 function _bsPayeeOptions(current, direction) {
