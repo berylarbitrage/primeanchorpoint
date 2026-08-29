@@ -26562,17 +26562,30 @@ app.post('/api/kiosk/status', (req, res) => {
   });
 });
 
-// POST /api/kiosk/punch { site_id, password, punch_type } → 打卡落库
-app.post('/api/kiosk/punch', (req, res) => {
+// POST /api/kiosk/punch { site_id, password, punch_type, photo_data? } → 打卡落库
+// photo_data: 打卡台前置摄像头自动拍的现场照 (base64 dataURI)。拍不到照样打卡。
+app.post('/api/kiosk/punch', async (req, res) => {
   const a = _kioskAuth(req);
   if (a.error) return res.status(a.status).json({ error: a.error });
   const { site, emp } = a;
+  let photoFilename = null;
+  const photo = (req.body || {}).photo_data;
+  if (photo && typeof photo === 'string' && photo.length < 8 * 1024 * 1024) {
+    try {
+      const m = /^data:image\/([A-Za-z0-9.+-]+);base64,/.exec(photo);
+      const subtypeRaw = (m ? m[1] : 'jpeg').toLowerCase();
+      const ext = { jpeg: 'jpg' }[subtypeRaw] || subtypeRaw.replace(/[^a-z0-9]/g, '') || 'jpg';
+      const buf = Buffer.from(photo.replace(/^data:image\/[A-Za-z0-9.+-]+;base64,/, ''), 'base64');
+      photoFilename = `kiosk-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
+      await storage.putObject(`checkin_photos/${photoFilename}`, buf, { contentType: `image/${subtypeRaw === 'jpg' ? 'jpeg' : subtypeRaw}` });
+    } catch (e) { console.error('[Kiosk] Photo save error:', e.message); photoFilename = null; }
+  }
   const siteTimezone = site.timezone || 'America/Chicago';
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
   const { action, entryId, clockTime } = _recordSitePunch({
     empDbId: emp.id, site, siteTimezone, now,
     latitude: site.latitude, longitude: site.longitude,
-    photoFilename: null,
+    photoFilename,
     requestedPunchType: String((req.body || {}).punch_type || '')
   });
   // 标记来源为该仓库的打卡台（共享设备，不做同设备代打卡判定）
@@ -26594,8 +26607,86 @@ app.post('/api/kiosk/punch', (req, res) => {
     name: `${emp.first_name} ${emp.last_name}`.trim(),
     employee_id: emp.employee_id,
     clock_time: displayTime,
+    photo_saved: !!photoFilename,
     entry_id: entryId
   });
+});
+
+// ── 打卡台辅助: 扫码打卡 / 忘记密码(手机号找回) / 注册二维码 ──
+// 员工个人打卡二维码内容 = 前缀 + 8 位打卡密码, 打卡台扫码等同输入密码
+const KIOSK_QR_PREFIX = 'PAWTC:';
+
+// POST /api/kiosk/forgot { site_id, phone } → 手机号在系统里: 返回姓名并把
+// 密码 + 二维码链接用英文短信发到该手机号; 不在: found:false (前端显示注册二维码)。
+app.post('/api/kiosk/forgot', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const siteId = parseInt(b.site_id);
+    const last10 = String(b.phone || '').replace(/\D/g, '').slice(-10);
+    if (!siteId || last10.length !== 10) return res.status(400).json({ error: '请输入 10 位手机号' });
+    if (!db.prepare('SELECT id FROM job_sites WHERE id=? AND active=1').get(siteId)) return res.status(404).json({ error: '未找到该工作地点' });
+    const ipKey = 'kioskforgot:' + (req.ip || req.connection.remoteAddress || '?');
+    if (_tcCodeThrottled(ipKey)) return res.status(429).json({ error: '尝试次数过多，请 15 分钟后再试' });
+    const likeTail = '%' + last10;
+    const normPhone = col => `replace(replace(replace(replace(replace(COALESCE(${col},''),'-',''),' ',''),'(',''),')',''),'+','')`;
+    let emp = db.prepare(`SELECT * FROM employees WHERE status='active' AND ${normPhone('phone')} LIKE ?`).get(likeTail);
+    let sub = null;
+    if (!emp) {
+      sub = db.prepare(`SELECT * FROM applicant_submissions WHERE ${normPhone('phone')} LIKE ? ORDER BY id DESC`).get(likeTail);
+      if (sub && sub.employee_id) {
+        const linked = db.prepare('SELECT * FROM employees WHERE id=?').get(sub.employee_id);
+        if (linked && linked.status !== 'active') { _tcCodeFail(ipKey); return res.json({ found: false }); }
+        if (linked) emp = linked;
+      }
+    }
+    if (!emp && !sub) { _tcCodeFail(ipKey); return res.json({ found: false }); }
+    _tcCodeOk(ipKey);
+    // 老记录没有打卡密码的补生成一个
+    let code = (emp && emp.timeclock_code) || (sub && sub.timeclock_code) || '';
+    if (!code) {
+      code = _genTimeclockCode();
+      if (emp) db.prepare('UPDATE employees SET timeclock_code=? WHERE id=?').run(code, emp.id);
+      else db.prepare('UPDATE applicant_submissions SET timeclock_code=? WHERE id=?').run(code, sub.id);
+    }
+    const name = emp ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim() : String((sub && sub.name) || '').trim();
+    const toPhone = (emp && emp.phone) || (sub && sub.phone) || last10;
+    const qrUrl = _applyQrBase(req) + '/my-qr?c=' + code;
+    let smsSent = false;
+    try {
+      smsSent = !!(await sendSMS(toPhone,
+        `[Prime Anchor Workforce] Your clock-in password: ${code}\nYour time-clock QR code: ${qrUrl}\nEnter the password or show the QR at the time clock. Keep it private.`));
+    } catch (e) { console.error('[Kiosk] forgot SMS error:', e.message); }
+    res.json({ found: true, name, phone_last4: last10.slice(-4), sms_sent: smsSent });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 打卡台「手机号未登记」时显示的注册二维码 (指向入职申请页)
+app.get('/api/kiosk/register-qr', async (req, res) => {
+  try {
+    const url = _applyQrBase(req) + '/apply';
+    const qr = await QRCode.toDataURL(url, { width: 360, margin: 1 });
+    res.json({ url, qr_data_url: qr });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 员工个人打卡二维码页 (短信里的链接): 显示姓名 + 二维码 + 密码
+app.get('/my-qr', async (req, res) => {
+  const code = String(req.query.c || '').trim();
+  const ipKey = 'myqr:' + (req.ip || req.connection.remoteAddress || '?');
+  if (!/^\d{8}$/.test(code) || _tcCodeThrottled(ipKey)) return res.status(404).send('Not found');
+  const emp = _empByTimeclockCode(code);
+  if (!emp) { _tcCodeFail(ipKey); return res.status(404).send('Not found'); }
+  _tcCodeOk(ipKey);
+  const qr = await QRCode.toDataURL(KIOSK_QR_PREFIX + code, { width: 480, margin: 1 });
+  const nm = `${emp.first_name || ''} ${emp.last_name || ''}`.trim().replace(/[<>&]/g, '');
+  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Time Clock QR</title></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;text-align:center;padding:2rem 1rem;background:#f7f8fa;color:#1a2433">
+<h2 style="margin:0 0 .2rem">${nm}</h2>
+<p style="color:#5f6b7a;margin:.3rem 0 1rem">Time Clock QR Code · 打卡二维码</p>
+<img src="${qr}" alt="QR" style="width:min(320px,80vw);border-radius:12px;background:#fff;padding:12px;box-shadow:0 4px 20px rgba(0,0,0,.08)">
+<p style="font-size:1.4rem;font-weight:800;letter-spacing:.15em;margin:1rem 0 .4rem">${code}</p>
+<p style="color:#5f6b7a;font-size:.85rem;max-width:420px;margin:0 auto;line-height:1.6">Show this QR code or enter the password above at the time clock.<br>打卡时扫此二维码，或输入上面的 8 位密码。<br>请截图保存，不要转发他人 Keep it private.</p>
+</body></html>`);
 });
 
 // ─── 打卡记录查看页（需管理/经理账号登录） ───
