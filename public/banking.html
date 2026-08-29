@@ -30,16 +30,16 @@
   .btn.sm{padding:4px 12px;font-size:.72rem}
   .btn:disabled{opacity:.55;cursor:default;transform:none}
   .wrap{max-width:1080px;margin:0 auto;padding:20px 16px 80px}
-  /* 账户卡片 */
-  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-bottom:18px}
-  .acct{background:var(--card);border:1px solid var(--gray-200);border-radius:var(--radius);padding:14px 16px 14px 18px;
-    box-shadow:var(--shadow);transition:box-shadow .15s,transform .15s;position:relative;overflow:hidden}
+  /* 账户小卡：放在交易表下面右下角, 不占页面头部空间 */
+  .cards{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end;margin:16px 0 0}
+  .acct{background:var(--card);border:1px solid var(--gray-200);border-radius:12px;padding:9px 14px 9px 15px;
+    box-shadow:var(--shadow);transition:box-shadow .15s,transform .15s;position:relative;overflow:hidden;min-width:190px}
   .acct::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,#f59e0b,var(--amber))}
   .acct:hover{transform:translateY(-2px);box-shadow:0 4px 20px rgba(41,37,36,.1)}
-  .acct .bank{font-size:.72rem;color:var(--gray-500);font-weight:600;letter-spacing:.3px}
-  .acct .nm{font-weight:800;font-size:.92rem;margin:3px 0}
-  .acct .bal{font-size:1.45rem;font-weight:800;color:var(--green);letter-spacing:-.5px;font-variant-numeric:tabular-nums}
-  .acct .sub{font-size:.72rem;color:var(--gray-400);margin-top:2px}
+  .acct .bank{font-size:.68rem;color:var(--gray-500);font-weight:600;letter-spacing:.3px}
+  .acct .nm{font-weight:800;font-size:.8rem;margin:2px 0}
+  .acct .bal{font-size:1.05rem;font-weight:800;color:var(--green);letter-spacing:-.3px;font-variant-numeric:tabular-nums}
+  .acct .sub{font-size:.68rem;color:var(--gray-400);margin-top:1px}
   /* 筛选工具条 */
   .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:4px;background:var(--card);
     border:1px solid var(--gray-200);border-radius:var(--radius);padding:10px 12px;box-shadow:var(--shadow)}
@@ -126,7 +126,6 @@
   </div>
   <div class="wrap">
     <div id="setupBox" style="display:none" class="setup"></div>
-    <div class="cards" id="accounts"></div>
     <div class="filters">
       <input type="date" id="fStart" onchange="loadTxns()">
       <span class="hint">到</span>
@@ -143,6 +142,7 @@
     </div>
     <div class="note" id="sumLine"></div>
     <div id="txns"></div>
+    <div class="cards" id="accounts"></div>
   </div>
 </div>
 
