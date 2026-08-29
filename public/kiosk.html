@@ -713,6 +713,20 @@ function showResult(d) {
 }
 
 setKLang(_kl);
+// ── 自动更新: 平板上页面常开不刷新, 部署新版后永远跑旧代码 → 定时对比服务器版本, 空闲时自动刷新 ──
+let _pageVer = null;
+async function _verCheck() {
+  try {
+    const d = await (await fetch('/api/kiosk/version')).json();
+    if (!d || !d.v) return;
+    if (_pageVer === null) { _pageVer = d.v; return; } // 首次记录自己加载的版本
+    if (d.v !== _pageVer && $('scrPw').classList.contains('active') && !_pw && !_punching && !_scanning) {
+      location.reload();
+    }
+  } catch (_) {}
+}
+_verCheck();
+setInterval(_verCheck, 5 * 60 * 1000);
 camStart(); // 页面打开即申请摄像头: 装机时授权一次, 之后打卡抓拍/扫码即刻可用
 // 全程每秒滚动预拍并保留最近 3 帧: 任何时刻点打卡, 立即拼出三连拍 (专用打卡平板, 开销可忽略)
 setInterval(async () => {
