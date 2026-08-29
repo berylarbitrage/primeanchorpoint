@@ -10,7 +10,7 @@
 <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
 <style>
   :root{--amber:#b45309;--amber-bg:#fffbeb;--sky:#0ea5e9;--red:#c5221f;--green:#059669;
-    --gray-100:#f3f4f6;--gray-200:#e5e7eb;--gray-400:#9ca3af;--gray-500:#6b7280;--gray-600:#4b5563;--white:#fff}
+    --gray-100:#f3f4f6;--gray-200:#e5e7eb;--gray-300:#d1d5db;--gray-400:#9ca3af;--gray-500:#6b7280;--gray-600:#4b5563;--white:#fff}
   *{box-sizing:border-box;margin:0}
   body{font-family:'DM Sans','PingFang SC','Microsoft YaHei',sans-serif;background:var(--amber-bg);color:#1f2937;min-height:100vh}
   .top{background:var(--white);border-bottom:1.5px solid var(--gray-200);padding:10px 16px;display:flex;
@@ -46,6 +46,23 @@
   .err{color:var(--red);font-size:.8rem;margin-top:8px}
   .hint{font-size:.74rem;color:var(--gray-400)}
   .note{font-size:.78rem;color:var(--gray-500);margin:8px 0}
+  /* ── 交易标注抽屉（复刻后台银行账单的标注面板）── */
+  #annDrawer{position:fixed;top:0;right:0;bottom:0;width:min(390px,100vw);background:#fff;border-left:1px solid var(--gray-200);
+    box-shadow:-8px 0 30px rgba(15,23,42,.12);z-index:60;display:none;flex-direction:column}
+  #annDrawer.open{display:flex}
+  #annHead{padding:10px 14px;border-bottom:1px solid var(--gray-200);display:flex;align-items:center;gap:8px}
+  #annBody{flex:1;overflow:auto;padding:10px 12px}
+  .ann-add{border:1px dashed var(--gray-400);background:#fff;border-radius:999px;padding:2px 10px;font-size:.72rem;
+    color:var(--gray-500);cursor:pointer;font-family:inherit;white-space:nowrap}
+  .ann-add:hover{border-color:var(--amber);color:var(--amber)}
+  .ann-chip{display:inline-flex;align-items:center;gap:4px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;
+    border-radius:999px;padding:2px 10px;font-size:.72rem;cursor:pointer;font-family:inherit;max-width:180px;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  #annToast{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:99;display:none;background:#16a34a;color:#fff;
+    padding:7px 16px;border-radius:8px;font-size:.82rem;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+  #annLightbox{position:fixed;inset:0;z-index:98;background:rgba(15,23,42,.85);display:none;align-items:center;justify-content:center;cursor:zoom-out}
+  #annLightbox img{max-width:92vw;max-height:92vh;border-radius:8px}
+  #annLightbox iframe{width:92vw;height:92vh;border:none;background:#fff;border-radius:8px}
 </style>
 </head>
 <body>
@@ -82,6 +99,20 @@
     <div id="txns"></div>
   </div>
 </div>
+
+<div id="annDrawer">
+  <div id="annHead">
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:800;font-size:.88rem">🧾 交易标注</div>
+      <div id="annTxnInfo" class="hint" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+    </div>
+    <span id="bsEdStatus" class="hint"></span>
+    <button class="btn sm" onclick="annClose()">✕ 关闭</button>
+  </div>
+  <div id="annBody"></div>
+</div>
+<div id="annToast"></div>
+<div id="annLightbox" onclick="this.style.display='none';this.innerHTML=''"></div>
 
 <script>
 let TOKEN = localStorage.getItem('adminToken') || '';
@@ -134,6 +165,7 @@ async function init() {
       return;
     }
     await loadAccounts();
+    await annLoadAll();
     await loadTxns();
     plaidOauthResume();
   } catch (e) { console.error(e); }
@@ -188,15 +220,17 @@ async function loadTxns() {
   document.getElementById('sumLine').textContent =
     '共 ' + (r.total || 0) + ' 笔' + (rows.length < (r.total || 0) ? '（显示最近 ' + rows.length + ' 笔）' : '')
     + ' · 净额 ' + money(-(r.sum || 0));
+  _TXNS = rows;
   document.getElementById('txns').innerHTML = rows.length
-    ? '<table><tr><th>日期</th><th>账户</th><th>描述</th><th>分类</th><th style="text-align:right">金额</th></tr>'
+    ? '<table><tr><th>日期</th><th>账户</th><th>描述</th><th>分类</th><th style="text-align:right">金额</th><th>标注</th></tr>'
       + rows.map(t =>
         '<tr><td>' + esc(t.date) + (t.pending ? ' <span class="hint">待清算</span>' : '') + '</td>'
         + '<td>' + esc(accName(t.account_id)) + '</td>'
         + '<td>' + esc(t.merchant || t.name) + '</td>'
         + '<td class="hint">' + esc(t.category || '') + '</td>'
         // Plaid 的正数是支出、负数是入账；显示按会计习惯反过来
-        + '<td style="text-align:right" class="' + (t.amount < 0 ? 'amt-in' : 'amt-out') + '">' + money(-t.amount, t.currency) + '</td></tr>').join('')
+        + '<td style="text-align:right" class="' + (t.amount < 0 ? 'amt-in' : 'amt-out') + '">' + money(-t.amount, t.currency) + '</td>'
+        + '<td class="ann-cell" data-txn="' + esc(t.txn_id) + '">' + annChipHtml(t.txn_id) + '</td></tr>').join('')
       + '</table>'
     : '<div class="empty">这个范围内没有交易。连接银行后点「🔄 同步交易」。</div>';
 }
@@ -275,6 +309,925 @@ async function syncNow() {
     alert(e.message);
     btn.textContent = '🔄 同步交易';
   } finally { btn.disabled = false; }
+}
+
+// ════════ 🧾 交易标注：复刻后台「银行账单 PDF」的整套 box 标注面板 ════════
+// 数据同一张表 (bank_statement_txns, kind='box')，通过 plaid_txn_id 挂到银行直连交易；
+// 编辑/照片/删除直接走后台同一批 /api/admin/bank-statements/:id/boxes/* 接口，
+// 收支分类分析、发票关联、外部同步等下游功能自动包含这里做的标注。
+// 选项常量、payee 编码和小节逻辑与 admin.html 保持一致 — 改动时两边同步。
+const API = '/api';
+let _TXNS = [];
+let _annOpenId = null;            // 当前抽屉里打开的标注 id
+const ANN = {};                   // plaid_txn_id → box
+let _bsBoxList = [];              // 已加载的标注（与 ANN 同一批对象）
+let _bsCompanies = [], _bsWarehouses = [], _bsReferrers = [];
+let _bsEdRange = { start: '', end: '' }; // 银行直连交易无账单周期限制
+
+const BS_EXTRA_COMPANIES = ['Dando Chemicals US LLC', 'BOOKFREIGHT INC', 'Nova Express', '以梦为马 Yimengweima'];
+const BS_PAYEE_BANKFEE = '银行费用';
+const BS_PAYEE_CLAIM = 'Claim';
+const BS_PAYEE_CC = '还 Prime Anchor Point 信用卡';
+const BS_PAYEE_PAP = 'Prime Anchor Point 转账';
+const BS_PAYEE_PAW = 'Prime Anchor Workforce 转账';
+const BS_PAYEE_BINTIQUE = 'Bintique 货款';
+const BS_PAYEE_CASH = '取现金';
+const BS_PAYEE_CASH_DEP = '存现金';
+const BS_PAYEE_LAWSUIT = '诉讼费';
+const BS_PAYEE_LAWYER = '律师费用';
+const BS_PAYEE_RETURNED = '退回款 Returned Payment';
+const BS_PAYEE_NA = '无关';
+const BS_PAYEE_PALLET = '__pallet__';
+const BS_PALLET_PREFIX = '木板钱:';
+const BS_PALLET_CUSTOMERS_IN = ['48', 'All MATERIALS MATTER', 'Cargowill', 'DV Fulfillment LLC', 'Efulfillus', 'Jason', 'KC pallet', 'RYKM LLC', 'SLM GROUP', 'Speed C CHB', 'Wecharmer', '派速捷', '现金自提神秘人'];
+const BS_PALLET_SUPPLIERS_OUT = ['631', 'All MATERIALS MATTER', 'GOFO', 'GOFO-SELF'];
+const BS_PAYEE_CHECK_DEP = '__checkdep__';
+const BS_PAYEE_CHECK_WD = '__checkwd__';
+const BS_CHECK_DEP_PREFIX = '存支票:';
+const BS_CHECK_WD_PREFIX = '取支票:';
+const BS_PAYEE_TRUCK = '__truck__';
+const BS_TRUCK_PREFIX = '卡车费:';
+const BS_TRUCK_COMPANIES = ['BOOKFREIGHT INC', 'Dando Chemicals US LLC', 'Nova Express'];
+const BS_PAYEE_INTERNAL = '__internal__';
+const BS_INTERNAL_PREFIX = '内部转账:';
+const BS_INTERNAL_COMPANIES = ['Prime Anchor Point LLC', 'Prime Anchor Workforce Inc', 'Surplus Lane Inc'];
+const BS_PAYEE_UNLOAD = '__unload__';
+const BS_UNLOAD_PREFIX = '卸柜费:';
+const BS_PAYEE_RENT = '__rent__';
+const BS_RENT_PREFIX = '房租:';
+const BS_RENT_COMPANIES = ['Dando Chemicals US LLC'];
+const BS_PAYEE_INSUR = '__insurance__';
+const BS_INSUR_PREFIX = '保险:';
+const BS_INSUR_COMPANIES = ['桃园保险', 'State Farm'];
+const BS_PAYEE_FX = '__fx__';
+const BS_FX_PREFIX = '换汇:';
+const BS_FX_PEOPLE = ['Guiqing Jiang', 'Jiwen Wang', 'Youbao Xia'];
+const BS_PAYEE_WHDEP = '__whdep__';
+const BS_WHDEP_PREFIX = '仓库押金:';
+const BS_PAYEE_REFERRAL = '__referral__';
+const BS_REFERRAL_PREFIX = '推荐费:';
+const BS_PAYEE_WAGEBONUS = '__wagebonus__';
+const BS_WAGEBONUS_PREFIX = '发工资奖励:';
+const BS_FEE_TYPES = ['服务费 Service Fee', '支票费 Check Fee', '电汇费 Wire Fee', '账户维护费 Maintenance Fee', '账户验证费 Account Verify', '透支费 Overdraft Fee', '退票费 NSF/Returned Item', 'ATM 费 ATM Fee', '停付费 Stop Payment', '现金处理费 Cash Handling', '外币兑换费 FX Fee', '纸质对账单费 Paper Statement'];
+const BS_PAYEE_OFFICE = '办公费用';
+const BS_OFFICE_TYPES = ['Claude (Anthropic)', 'ChatGPT (OpenAI)', '软件订阅 Software', '办公用品 Supplies', '网络/电话 Internet & Phone', '域名/服务器 Domain & Hosting', '邮寄快递 Postage', '打印耗材 Printing', '会员/年费 Membership', '差旅 Travel', '其他 Other'];
+const BS_PAYEE_COMPFEE = '公司相关费用';
+const BS_COMPFEE_TYPES = ['税务 Tax', '成立费 Incorporation', '注册代理 Registered Agent', '年报/年审 Annual Report', '执照/许可 License & Permit', '政府罚款 Penalty', '律师费 Legal', '会计/报税 Accounting', '公司保险 Insurance', '其他 Other'];
+const BS_PERSONAL_CATS = ['换汇 FX', '自己工资 Own Salary', '公司转账 Company Transfer'];
+const BS_PAYEE_PEOPLE = ['Niki Zhao', 'Tiexiong Zhou', 'Beryl Zhang', 'Yizhao Cai'];
+const BS_PAYEE_EMP = '__emp__';
+const BS_EMP_PREFIX = '员工:';
+
+function showToast(msg, type, dur) {
+  const t = document.getElementById('annToast');
+  t.textContent = msg;
+  t.style.background = type === 'error' ? '#dc2626' : '#16a34a';
+  t.style.display = 'block';
+  clearTimeout(t._tm);
+  t._tm = setTimeout(() => { t.style.display = 'none'; }, dur || 2200);
+}
+function showConfirm(msg) { return Promise.resolve(confirm(msg)); }
+function showImgLightbox(url) {
+  const b = document.getElementById('annLightbox');
+  b.innerHTML = '<img src="' + esc(url) + '">';
+  b.style.display = 'flex';
+}
+function showFileLightbox(url) {
+  const b = document.getElementById('annLightbox');
+  b.innerHTML = '<iframe src="' + esc(url) + '"></iframe>';
+  b.style.display = 'flex';
+}
+
+function _bsPayeeDisplay(payee) {
+  if (!payee) return '';
+  const p = String(payee);
+  if (p.indexOf('员工:') === 0) {
+    const rest = p.slice(3); const i = rest.indexOf('|');
+    const co = i < 0 ? '' : rest.slice(0, i); const nm = i < 0 ? rest : rest.slice(i + 1);
+    return '👷 ' + [co, nm].filter(Boolean).join(' · ');
+  }
+  if (p.indexOf('木板钱:') === 0) { const cust = p.slice('木板钱:'.length); return '🪵 木板钱' + (cust ? ' · ' + cust : ''); }
+  if (p.indexOf('存支票:') === 0 || p.indexOf('取支票:') === 0) {
+    const dep = p.indexOf('存支票:') === 0;
+    const names = p.slice(4).split('|').filter(Boolean);
+    return (dep ? '📥 存支票' : '📤 取支票') + (names.length ? ' · ' + names.join('、') : '');
+  }
+  if (p.indexOf('卡车费:') === 0) { const co = p.slice('卡车费:'.length); return '🚚 卡车费' + (co ? ' · ' + co : ''); }
+  if (p.indexOf('内部转账:') === 0) { const co = p.slice('内部转账:'.length); return '🔁 内部转账' + (co ? ' · ' + co : ''); }
+  if (p.indexOf('保险:') === 0) { const co = p.slice('保险:'.length); return '🛡️ 保险费' + (co ? ' · ' + co : ''); }
+  if (p.indexOf('卸柜费:') === 0) { const co = p.slice('卸柜费:'.length); return '📦 卸柜账单' + (co ? ' · ' + co : ''); }
+  if (p.indexOf('房租:') === 0) { const co = p.slice('房租:'.length); return '🏠 房租' + (co ? ' · ' + co : ''); }
+  if (p.indexOf('换汇:') === 0) { const n = p.slice('换汇:'.length); return '💱 换汇' + (n ? ' · ' + n : ''); }
+  if (p.indexOf('仓库押金:') === 0) { const w = p.slice('仓库押金:'.length); return '🏭 仓库押金' + (w ? ' · ' + w : ''); }
+  if (p.indexOf('推荐费:') === 0) { const n = p.slice('推荐费:'.length); return '🤝 推荐费' + (n ? ' · ' + n : ''); }
+  if (p.indexOf('发工资奖励:') === 0) { const n = p.slice('发工资奖励:'.length); return '🎁 发工资奖励' + (n ? ' · ' + n : ''); }
+  return p;
+}
+function _bsIsNA(box) { return !!(box && box.payee === BS_PAYEE_NA); }
+function _bsNoteSatisfied(box) {
+  if (_bsIsNA(box)) return true;
+  if (box.note && String(box.note).trim()) return true;
+  const kind = _bsPayeeKind(box);
+  if (kind === 'pallet' && _bsPalletParse(box.payee)
+    && String(box.invoice_number || '').trim()
+    && String(box.period_start || '').trim() && String(box.period_end || '').trim()) return true;
+  if (kind === 'check' && _bsCheckParse(box.payee).names.length) return true;
+  if (kind === 'truck' && _bsTruckParse(box.payee)) return true;
+  if (kind === 'internal' && _bsInternalParse(box.payee)) return true;
+  if (kind === 'insur' && _bsInsurParse(box.payee)) return true;
+  if (kind === 'unload' && _bsUnloadParse(box.payee)
+    && String(box.invoice_number || '').trim()
+    && String(box.period_start || '').trim() && String(box.period_end || '').trim()) return true;
+  if (kind === 'rent' && _bsRentParse(box.payee)) return true;
+  if (kind === 'fx' && _bsFxParse(box.payee)) return true;
+  if (kind === 'whdep' && _bsWhdepParse(box.payee)) return true;
+  if (kind === 'referral' && _bsReferralParse(box.payee)) return true;
+  if (kind === 'wagebonus' && _bsWageBonusParse(box.payee)) return true;
+  if ((kind === 'bankfee' || kind === 'office' || kind === 'compfee' || kind === 'personal') && String(box.purpose || '').trim()) return true;
+  if (kind === 'employee' && String(box.invoice_number || '').trim()
+    && String(box.period_start || '').trim() && String(box.period_end || '').trim()) return true;
+  if (kind === 'company' && box.direction === 'in'
+    && String(box.purpose || '').trim() && String(box.invoice_number || '').trim()
+    && String(box.period_start || '').trim() && String(box.period_end || '').trim()) return true;
+  return false;
+}
+function _bsPayeeKind(box) {
+  const p = (box && box.payee) || '';
+  if (p === BS_PAYEE_BANKFEE) return 'bankfee';
+  if (p === BS_PAYEE_OFFICE) return 'office';
+  if (p === BS_PAYEE_COMPFEE) return 'compfee';
+  if (_bsIsEmp(p)) return 'employee';
+  if (_bsIsPallet(p)) return 'pallet';
+  if (_bsIsCheck(p)) return 'check';
+  if (_bsIsTruck(p)) return 'truck';
+  if (_bsIsInternal(p)) return 'internal';
+  if (_bsIsInsur(p)) return 'insur';
+  if (_bsIsUnload(p)) return 'unload';
+  if (_bsIsRent(p)) return 'rent';
+  if (_bsIsFx(p)) return 'fx';
+  if (_bsIsWhdep(p)) return 'whdep';
+  if (_bsIsReferral(p)) return 'referral';
+  if (_bsIsWageBonus(p)) return 'wagebonus';
+  if (BS_PAYEE_PEOPLE.includes(p)) return 'personal';
+  if (p && p !== BS_PAYEE_CLAIM && p !== BS_PAYEE_CC && p !== BS_PAYEE_CASH && p !== BS_PAYEE_CASH_DEP && p !== BS_PAYEE_LAWSUIT && p !== BS_PAYEE_LAWYER && p !== BS_PAYEE_NA && p !== BS_PAYEE_PAP && p !== BS_PAYEE_PAW && p !== BS_PAYEE_BINTIQUE && p !== BS_PAYEE_RETURNED) return 'company';
+  return 'none';
+}
+function _bsWantsInvoice(box) {
+  const k = _bsPayeeKind(box);
+  return k === 'employee' || k === 'unload' || k === 'pallet' || (k === 'company' && box.direction === 'in');
+}
+async function bsEnsureReferrers() {
+  if (_bsReferrers.length) return;
+  try {
+    const list = await api('/admin/referrers');
+    _bsReferrers = (Array.isArray(list) ? list : []).map(r => (r && r.name) || '').filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+  } catch (_) { _bsReferrers = []; }
+}
+async function bsEnsureWarehouses() {
+  if (_bsWarehouses.length) return;
+  try {
+    const list = await api('/admin/job-sites');
+    _bsWarehouses = (Array.isArray(list) ? list : []).map(s => (s && s.name) || '').filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+  } catch (_) { _bsWarehouses = []; }
+}
+async function bsEnsureCompanies() {
+  if (_bsCompanies.length) return;
+  let names = [];
+  try {
+    const list = await api('/admin/partners');
+    const ps = Array.isArray(list) ? list : (list && list.partners) || [];
+    names = ps.map(p => p.name).filter(Boolean);
+  } catch (_) { names = []; }
+  BS_EXTRA_COMPANIES.forEach(n => { if (n && !names.includes(n)) names.push(n); });
+  _bsCompanies = names.sort((a, b) => a.localeCompare(b));
+}
+function _bsPayeeLabel(direction) { return direction === 'in' ? '谁付的' : '付给谁'; }
+function _bsPayeeOptions(current, direction) {
+  const opt = n => `<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`;
+  const parts = [`<option value="">— 选择${_bsPayeeLabel(direction)} —</option>`,
+    `<option value="${esc(BS_PAYEE_BANKFEE)}"${current === BS_PAYEE_BANKFEE ? ' selected' : ''}>🏦 银行费用</option>`,
+    `<option value="${esc(BS_PAYEE_OFFICE)}"${current === BS_PAYEE_OFFICE ? ' selected' : ''}>🧾 公司办公费用（选分类）</option>`,
+    `<option value="${esc(BS_PAYEE_COMPFEE)}"${current === BS_PAYEE_COMPFEE ? ' selected' : ''}>🏛️ 公司相关费用（税务/成立费，选分类）</option>`,
+    `<option value="${esc(BS_PAYEE_CLAIM)}"${current === BS_PAYEE_CLAIM ? ' selected' : ''}>📋 Claim</option>`,
+    `<option value="${esc(BS_PAYEE_CC)}"${current === BS_PAYEE_CC ? ' selected' : ''}>💳 还 Prime Anchor Point 信用卡</option>`,
+    `<option value="${esc(BS_PAYEE_PAP)}"${current === BS_PAYEE_PAP ? ' selected' : ''}>🔁 Prime Anchor Point 转账</option>`,
+    `<option value="${esc(BS_PAYEE_PAW)}"${current === BS_PAYEE_PAW ? ' selected' : ''}>🔁 Prime Anchor Workforce 转账</option>`,
+    `<option value="${BS_PAYEE_INTERNAL}"${current === BS_PAYEE_INTERNAL ? ' selected' : ''}>🏦 公司内部银行转账（选公司）</option>`,
+    `<option value="${esc(BS_PAYEE_BINTIQUE)}"${current === BS_PAYEE_BINTIQUE ? ' selected' : ''}>📦 Bintique 货款</option>`,
+    `<option value="${esc(BS_PAYEE_CASH)}"${current === BS_PAYEE_CASH ? ' selected' : ''}>💵 取现金</option>`,
+    `<option value="${esc(BS_PAYEE_CASH_DEP)}"${current === BS_PAYEE_CASH_DEP ? ' selected' : ''}>💰 存现金</option>`,
+    `<option value="${esc(BS_PAYEE_LAWSUIT)}"${current === BS_PAYEE_LAWSUIT ? ' selected' : ''}>⚖️ 诉讼费</option>`,
+    `<option value="${esc(BS_PAYEE_LAWYER)}"${current === BS_PAYEE_LAWYER ? ' selected' : ''}>👨‍⚖️ 律师费用</option>`,
+    `<option value="${esc(BS_PAYEE_RETURNED)}"${current === BS_PAYEE_RETURNED ? ' selected' : ''}>↩️ 退回款 Returned Payment</option>`,
+    `<option value="${BS_PAYEE_TRUCK}"${current === BS_PAYEE_TRUCK ? ' selected' : ''}>🚚 卡车费（选公司）</option>`,
+    `<option value="${BS_PAYEE_UNLOAD}"${current === BS_PAYEE_UNLOAD ? ' selected' : ''}>📦 支付卸柜账单（选公司）</option>`,
+    `<option value="${BS_PAYEE_RENT}"${current === BS_PAYEE_RENT ? ' selected' : ''}>🏠 付房租（选公司）</option>`,
+    `<option value="${BS_PAYEE_INSUR}"${current === BS_PAYEE_INSUR ? ' selected' : ''}>🛡️ 保险费（选保险公司）</option>`,
+    `<option value="${BS_PAYEE_FX}"${current === BS_PAYEE_FX ? ' selected' : ''}>💱 换汇（选对方）</option>`,
+    `<option value="${BS_PAYEE_WHDEP}"${current === BS_PAYEE_WHDEP ? ' selected' : ''}>🏭 仓库押金（选仓库）</option>`,
+    `<option value="${BS_PAYEE_REFERRAL}"${current === BS_PAYEE_REFERRAL ? ' selected' : ''}>🤝 推荐费 Referral Fee（填推荐人）</option>`,
+    `<option value="${BS_PAYEE_WAGEBONUS}"${current === BS_PAYEE_WAGEBONUS ? ' selected' : ''}>🎁 发工资奖励（填姓名）</option>`,
+    `<option value="${BS_PAYEE_CHECK_DEP}"${current === BS_PAYEE_CHECK_DEP ? ' selected' : ''}>📥 存支票（选对方）</option>`,
+    `<option value="${BS_PAYEE_CHECK_WD}"${current === BS_PAYEE_CHECK_WD ? ' selected' : ''}>📤 取支票（选对方）</option>`,
+    `<option value="${esc(BS_PAYEE_NA)}"${current === BS_PAYEE_NA ? ' selected' : ''}>🚫 无关</option>`,
+    `<option value="${BS_PAYEE_EMP}"${current === BS_PAYEE_EMP ? ' selected' : ''}>👷 公司员工（填姓名）</option>`,
+    `<option value="${BS_PAYEE_PALLET}"${current === BS_PAYEE_PALLET ? ' selected' : ''}>🪵 木板钱（选客户）</option>`];
+  parts.push(`<optgroup label="个人">${BS_PAYEE_PEOPLE.map(opt).join('')}</optgroup>`);
+  if (_bsCompanies.length) parts.push(`<optgroup label="公司">${_bsCompanies.map(opt).join('')}</optgroup>`);
+  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_OFFICE, BS_PAYEE_COMPFEE, BS_PAYEE_CLAIM, BS_PAYEE_CC, BS_PAYEE_PAP, BS_PAYEE_PAW, BS_PAYEE_INTERNAL, BS_PAYEE_BINTIQUE, BS_PAYEE_CASH, BS_PAYEE_CASH_DEP, BS_PAYEE_LAWSUIT, BS_PAYEE_LAWYER, BS_PAYEE_RETURNED, BS_PAYEE_NA, BS_PAYEE_EMP, BS_PAYEE_PALLET, BS_PAYEE_CHECK_DEP, BS_PAYEE_CHECK_WD, BS_PAYEE_TRUCK, BS_PAYEE_UNLOAD, BS_PAYEE_RENT, BS_PAYEE_INSUR, BS_PAYEE_FX, BS_PAYEE_WHDEP, BS_PAYEE_REFERRAL, BS_PAYEE_WAGEBONUS, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
+  if (current && !known.includes(current)) parts.push(`<optgroup label="其他">${opt(current)}</optgroup>`);
+  return parts.join('');
+}
+
+function _bsIsEmp(payee) { return typeof payee === 'string' && payee.indexOf(BS_EMP_PREFIX) === 0; }
+function _bsEmpParse(payee) {
+  if (!_bsIsEmp(payee)) return { co: '', name: '' };
+  const rest = payee.slice(BS_EMP_PREFIX.length);
+  const i = rest.indexOf('|');
+  return i < 0 ? { co: '', name: rest } : { co: rest.slice(0, i), name: rest.slice(i + 1) };
+}
+function _bsEmpJoin(co, name) { return BS_EMP_PREFIX + (co || '') + '|' + (name || ''); }
+function _bsIsPallet(payee) { return typeof payee === 'string' && payee.indexOf(BS_PALLET_PREFIX) === 0; }
+function _bsPalletParse(payee) { return _bsIsPallet(payee) ? payee.slice(BS_PALLET_PREFIX.length) : ''; }
+function _bsPalletJoin(cust) { return BS_PALLET_PREFIX + (cust || ''); }
+function _bsPalletCustOptions(current, direction) {
+  const isIn = direction === 'in';
+  const parts = [`<option value="">— 选择${isIn ? '客户' : '供应商'} —</option>`];
+  const names = (isIn ? BS_PALLET_CUSTOMERS_IN : BS_PALLET_SUPPLIERS_OUT).slice();
+  if (current && !names.includes(current)) names.push(current);
+  names.forEach(n => parts.push(`<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`));
+  return parts.join('');
+}
+function bsPalletUpdate(id, el) { bsUpdateBoxField(id, 'payee', _bsPalletJoin(el.value)); bsUpdateBoxSections(id); }
+function _bsIsTruck(payee) { return typeof payee === 'string' && payee.indexOf(BS_TRUCK_PREFIX) === 0; }
+function _bsTruckParse(payee) { return _bsIsTruck(payee) ? payee.slice(BS_TRUCK_PREFIX.length) : ''; }
+function _bsTruckJoin(co) { return BS_TRUCK_PREFIX + (co || ''); }
+function _bsTruckCoOptions(current) {
+  const parts = ['<option value="">— 选择公司 —</option>'];
+  const names = BS_TRUCK_COMPANIES.slice();
+  if (current && !names.includes(current)) names.push(current);
+  names.forEach(n => parts.push(`<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`));
+  return parts.join('');
+}
+function bsTruckUpdate(id, el) { bsUpdateBoxField(id, 'payee', _bsTruckJoin(el.value)); bsUpdateBoxSections(id); }
+function _bsIsInternal(payee) { return typeof payee === 'string' && payee.indexOf(BS_INTERNAL_PREFIX) === 0; }
+function _bsInternalParse(payee) { return _bsIsInternal(payee) ? payee.slice(BS_INTERNAL_PREFIX.length) : ''; }
+function _bsInternalJoin(co) { return BS_INTERNAL_PREFIX + (co || ''); }
+function _bsInternalCoOptions(current) {
+  const parts = ['<option value="">— 选择公司 —</option>'];
+  const names = BS_INTERNAL_COMPANIES.slice();
+  if (current && !names.includes(current)) names.push(current);
+  names.forEach(n => parts.push(`<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`));
+  return parts.join('');
+}
+function bsInternalUpdate(id, el) { bsUpdateBoxField(id, 'payee', _bsInternalJoin(el.value)); bsUpdateBoxSections(id); }
+function _bsIsUnload(payee) { return typeof payee === 'string' && payee.indexOf(BS_UNLOAD_PREFIX) === 0; }
+function _bsUnloadParse(payee) { return _bsIsUnload(payee) ? payee.slice(BS_UNLOAD_PREFIX.length) : ''; }
+function _bsUnloadJoin(co) { return BS_UNLOAD_PREFIX + (co || ''); }
+function bsUnloadUpdate(id, el) { bsUpdateBoxField(id, 'payee', _bsUnloadJoin((el.value || '').trim())); bsUpdateBoxSections(id); }
+function _bsIsInsur(payee) { return typeof payee === 'string' && payee.indexOf(BS_INSUR_PREFIX) === 0; }
+function _bsInsurParse(payee) { return _bsIsInsur(payee) ? payee.slice(BS_INSUR_PREFIX.length) : ''; }
+function _bsInsurJoin(co) { return BS_INSUR_PREFIX + (co || ''); }
+function bsInsurUpdate(id, el) { bsUpdateBoxField(id, 'payee', _bsInsurJoin((el.value || '').trim())); bsUpdateBoxSections(id); }
+function _bsIsRent(payee) { return typeof payee === 'string' && payee.indexOf(BS_RENT_PREFIX) === 0; }
+function _bsRentParse(payee) { return _bsIsRent(payee) ? payee.slice(BS_RENT_PREFIX.length) : ''; }
+function _bsRentJoin(co) { return BS_RENT_PREFIX + (co || ''); }
+function _bsRentCoOptions(current) {
+  const parts = ['<option value="">— 选择公司 —</option>'];
+  const names = BS_RENT_COMPANIES.slice();
+  if (current && !names.includes(current)) names.push(current);
+  names.forEach(n => parts.push(`<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`));
+  return parts.join('');
+}
+function bsRentUpdate(id, el) { bsUpdateBoxField(id, 'payee', _bsRentJoin(el.value)); bsUpdateBoxSections(id); }
+function _bsIsFx(payee) { return typeof payee === 'string' && payee.indexOf(BS_FX_PREFIX) === 0; }
+function _bsFxParse(payee) { return _bsIsFx(payee) ? payee.slice(BS_FX_PREFIX.length) : ''; }
+function _bsFxJoin(n) { return BS_FX_PREFIX + (n || ''); }
+function _bsFxNameOptions(current) {
+  const parts = ['<option value="">— 选择对方 —</option>'];
+  const names = BS_FX_PEOPLE.slice();
+  if (current && !names.includes(current)) names.push(current);
+  names.forEach(n => parts.push(`<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`));
+  return parts.join('');
+}
+function bsFxUpdate(id, el) { bsUpdateBoxField(id, 'payee', _bsFxJoin(el.value)); bsUpdateBoxSections(id); }
+function _bsIsWhdep(payee) { return typeof payee === 'string' && payee.indexOf(BS_WHDEP_PREFIX) === 0; }
+function _bsWhdepParse(payee) { return _bsIsWhdep(payee) ? payee.slice(BS_WHDEP_PREFIX.length) : ''; }
+function _bsWhdepJoin(w) { return BS_WHDEP_PREFIX + (w || ''); }
+function _bsWhdepCoOptions(current) {
+  const parts = ['<option value="">— 选择仓库 —</option>'];
+  const names = _bsWarehouses.slice();
+  if (current && !names.includes(current)) names.push(current);
+  names.forEach(n => parts.push(`<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`));
+  return parts.join('');
+}
+function bsWhdepUpdate(id, el) { bsUpdateBoxField(id, 'payee', _bsWhdepJoin(el.value)); bsUpdateBoxSections(id); }
+function _bsIsReferral(payee) { return typeof payee === 'string' && payee.indexOf(BS_REFERRAL_PREFIX) === 0; }
+function _bsReferralParse(payee) { return _bsIsReferral(payee) ? payee.slice(BS_REFERRAL_PREFIX.length) : ''; }
+function _bsReferralJoin(n) { return BS_REFERRAL_PREFIX + (n || ''); }
+function bsReferralUpdate(id, el) { bsUpdateBoxField(id, 'payee', _bsReferralJoin((el.value || '').trim())); bsUpdateBoxSections(id); }
+function _bsIsWageBonus(payee) { return typeof payee === 'string' && payee.indexOf(BS_WAGEBONUS_PREFIX) === 0; }
+function _bsWageBonusParse(payee) { return _bsIsWageBonus(payee) ? payee.slice(BS_WAGEBONUS_PREFIX.length) : ''; }
+function _bsWageBonusJoin(n) { return BS_WAGEBONUS_PREFIX + (n || ''); }
+function bsWageBonusUpdate(id, el) { bsUpdateBoxField(id, 'payee', _bsWageBonusJoin((el.value || '').trim())); bsUpdateBoxSections(id); }
+function _bsIsCheck(payee) { return typeof payee === 'string' && (payee.indexOf(BS_CHECK_DEP_PREFIX) === 0 || payee.indexOf(BS_CHECK_WD_PREFIX) === 0); }
+function _bsCheckParse(payee) {
+  if (typeof payee !== 'string') return { type: '', names: [] };
+  if (payee.indexOf(BS_CHECK_DEP_PREFIX) === 0) return { type: 'dep', names: payee.slice(BS_CHECK_DEP_PREFIX.length).split('|').filter(Boolean) };
+  if (payee.indexOf(BS_CHECK_WD_PREFIX) === 0) return { type: 'wd', names: payee.slice(BS_CHECK_WD_PREFIX.length).split('|').filter(Boolean) };
+  return { type: '', names: [] };
+}
+function _bsCheckJoin(type, names) { return (type === 'wd' ? BS_CHECK_WD_PREFIX : BS_CHECK_DEP_PREFIX) + names.join('|'); }
+function _bsCheckPartyGroups() {
+  return [
+    { label: '个人', names: BS_PAYEE_PEOPLE },
+    { label: '客户', names: [...new Set([...BS_PALLET_CUSTOMERS_IN, ...BS_PALLET_SUPPLIERS_OUT])] },
+    { label: '公司', names: _bsCompanies },
+  ];
+}
+function _bsCheckPartyCheckboxes(box) {
+  const sel = new Set(_bsCheckParse(box.payee).names);
+  const seen = new Set();
+  const cb = n => `<label style="display:inline-flex;align-items:center;gap:.2rem;font-size:.78rem;white-space:nowrap"><input type="checkbox" value="${esc(n)}"${sel.has(n) ? ' checked' : ''} onchange="bsCheckUpdate(${box.id})">${esc(n)}</label>`;
+  let html = '';
+  _bsCheckPartyGroups().forEach(g => {
+    const names = (g.names || []).filter(n => n && !seen.has(n) && (seen.add(n), true));
+    if (!names.length) return;
+    html += `<div style="font-size:.7rem;color:var(--gray-400);margin:.25rem 0 .1rem">${g.label}</div><div style="display:flex;flex-wrap:wrap;gap:.2rem .6rem">${names.map(cb).join('')}</div>`;
+  });
+  const extra = _bsCheckParse(box.payee).names.filter(n => !seen.has(n));
+  if (extra.length) html += `<div style="font-size:.7rem;color:var(--gray-400);margin:.25rem 0 .1rem">其他</div><div style="display:flex;flex-wrap:wrap;gap:.2rem .6rem">${extra.map(cb).join('')}</div>`;
+  return html;
+}
+function bsCheckUpdate(id) {
+  const box = _bsBoxList.find(b => b.id === id);
+  const item = document.querySelector(`.bs-box-item[data-id="${id}"]`);
+  if (!box || !item) return;
+  const type = _bsCheckParse(box.payee).type || 'dep';
+  const names = [...item.querySelectorAll('.bs-check-wrap input[type=checkbox]:checked')].map(c => c.value);
+  bsUpdateBoxField(id, 'payee', _bsCheckJoin(type, names));
+}
+function _bsCompanyOptions(current) {
+  const parts = ['<option value="">— 选择公司 —</option>'];
+  const names = _bsCompanies.slice();
+  if (current && !names.includes(current)) names.push(current);
+  names.forEach(n => parts.push(`<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`));
+  return parts.join('');
+}
+function bsPayeeSelChange(id, sel) {
+  const item = sel.closest('.bs-box-item');
+  const wrap = item.querySelector('.bs-emp-wrap');
+  const pwrap = item.querySelector('.bs-pallet-wrap');
+  const cwrap = item.querySelector('.bs-check-wrap');
+  const twrap = item.querySelector('.bs-truck-wrap');
+  const uwrap = item.querySelector('.bs-unload-wrap');
+  const rwrap = item.querySelector('.bs-rent-wrap');
+  const wwrap = item.querySelector('.bs-whdep-wrap');
+  const xwrap = item.querySelector('.bs-fx-wrap');
+  const fwrap = item.querySelector('.bs-referral-wrap');
+  const bwrap = item.querySelector('.bs-wagebonus-wrap');
+  const iwrap = item.querySelector('.bs-internal-wrap');
+  const nwrap = item.querySelector('.bs-insur-wrap');
+  const hideAll = () => { if (wrap) wrap.style.display = 'none'; if (pwrap) pwrap.style.display = 'none'; if (cwrap) cwrap.style.display = 'none'; if (twrap) twrap.style.display = 'none'; if (iwrap) iwrap.style.display = 'none'; if (nwrap) nwrap.style.display = 'none'; if (uwrap) uwrap.style.display = 'none'; if (rwrap) rwrap.style.display = 'none'; if (wwrap) wwrap.style.display = 'none'; if (xwrap) xwrap.style.display = 'none'; if (fwrap) fwrap.style.display = 'none'; if (bwrap) bwrap.style.display = 'none'; };
+  if (sel.value === BS_PAYEE_EMP) {
+    hideAll();
+    if (wrap) { wrap.style.display = ''; const co = wrap.querySelector('.bs-bx-emp-co'); if (co) co.focus(); bsEmpUpdate(id, co); }
+  } else if (sel.value === BS_PAYEE_PALLET) {
+    hideAll();
+    if (pwrap) { pwrap.style.display = ''; const c = pwrap.querySelector('.bs-bx-pallet-cust'); if (c) { c.focus(); bsPalletUpdate(id, c); } }
+  } else if (sel.value === BS_PAYEE_TRUCK) {
+    hideAll();
+    if (twrap) { twrap.style.display = ''; const c = twrap.querySelector('.bs-bx-truck-co'); if (c) { c.focus(); bsTruckUpdate(id, c); } }
+  } else if (sel.value === BS_PAYEE_INTERNAL) {
+    hideAll();
+    if (iwrap) { iwrap.style.display = ''; const c = iwrap.querySelector('.bs-bx-internal-co'); if (c) { c.focus(); bsInternalUpdate(id, c); } }
+  } else if (sel.value === BS_PAYEE_INSUR) {
+    hideAll();
+    if (nwrap) { nwrap.style.display = ''; const c = nwrap.querySelector('.bs-bx-insur-co'); if (c) { c.focus(); bsInsurUpdate(id, c); } }
+  } else if (sel.value === BS_PAYEE_UNLOAD) {
+    hideAll();
+    if (uwrap) { uwrap.style.display = ''; const c = uwrap.querySelector('.bs-bx-unload-co'); if (c) { c.focus(); bsUnloadUpdate(id, c); } }
+  } else if (sel.value === BS_PAYEE_RENT) {
+    hideAll();
+    if (rwrap) {
+      rwrap.style.display = '';
+      const c = rwrap.querySelector('.bs-bx-rent-co');
+      if (c) { if (!c.value && BS_RENT_COMPANIES.length === 1) c.value = BS_RENT_COMPANIES[0]; c.focus(); bsRentUpdate(id, c); }
+    }
+  } else if (sel.value === BS_PAYEE_FX) {
+    hideAll();
+    if (xwrap) { xwrap.style.display = ''; const c = xwrap.querySelector('.bs-bx-fx-name'); if (c) { c.focus(); bsFxUpdate(id, c); } }
+  } else if (sel.value === BS_PAYEE_WHDEP) {
+    hideAll();
+    if (wwrap) { wwrap.style.display = ''; const c = wwrap.querySelector('.bs-bx-whdep-co'); if (c) { c.focus(); bsWhdepUpdate(id, c); } }
+  } else if (sel.value === BS_PAYEE_REFERRAL) {
+    hideAll();
+    if (fwrap) { fwrap.style.display = ''; const c = fwrap.querySelector('.bs-bx-referral-name'); if (c) { c.focus(); bsReferralUpdate(id, c); } }
+  } else if (sel.value === BS_PAYEE_WAGEBONUS) {
+    hideAll();
+    if (bwrap) { bwrap.style.display = ''; const c = bwrap.querySelector('.bs-bx-wagebonus-name'); if (c) { c.focus(); bsWageBonusUpdate(id, c); } }
+  } else if (sel.value === BS_PAYEE_CHECK_DEP || sel.value === BS_PAYEE_CHECK_WD) {
+    hideAll();
+    const type = sel.value === BS_PAYEE_CHECK_WD ? 'wd' : 'dep';
+    const box = _bsBoxList.find(b => b.id === id);
+    const prev = box ? _bsCheckParse(box.payee).names : [];
+    bsUpdateBoxField(id, 'payee', _bsCheckJoin(type, prev));
+    if (cwrap) cwrap.style.display = '';
+  } else {
+    hideAll();
+    bsUpdateBoxField(id, 'payee', sel.value);
+  }
+  bsUpdateBoxSections(id);
+}
+function bsEmpUpdate(id, el) {
+  const wrap = el.closest('.bs-emp-wrap');
+  if (!wrap) return;
+  const co = wrap.querySelector('.bs-bx-emp-co').value;
+  const name = wrap.querySelector('.bs-bx-emp-name').value.trim();
+  bsUpdateBoxField(id, 'payee', _bsEmpJoin(co, name));
+}
+function bsUpdateBoxSections(id) {
+  const box = _bsBoxList.find(b => b.id === id);
+  const item = document.querySelector(`.bs-box-item[data-id="${id}"]`);
+  if (!box || !item) return;
+  const kind = _bsPayeeKind(box);
+  const isIn = box.direction === 'in';
+  const fw = item.querySelector('.bs-fee-wrap');
+  const pw = item.querySelector('.bs-personal-wrap');
+  const iw = item.querySelector('.bs-income-wrap');
+  const pr = item.querySelector('.bs-purpose-row');
+  const por = item.querySelector('.bs-portion-row');
+  const plw = item.querySelector('.bs-pallet-wrap');
+  const ckw = item.querySelector('.bs-check-wrap');
+  const tkw = item.querySelector('.bs-truck-wrap');
+  const inw = item.querySelector('.bs-internal-wrap');
+  const ulw = item.querySelector('.bs-unload-wrap');
+  const rtw = item.querySelector('.bs-rent-wrap');
+  const whw = item.querySelector('.bs-whdep-wrap');
+  const ofw = item.querySelector('.bs-office-wrap');
+  const cfw = item.querySelector('.bs-compfee-wrap');
+  if (cfw) cfw.style.display = kind === 'compfee' ? '' : 'none';
+  if (plw) plw.style.display = kind === 'pallet' ? '' : 'none';
+  if (ckw) ckw.style.display = kind === 'check' ? '' : 'none';
+  if (tkw) tkw.style.display = kind === 'truck' ? '' : 'none';
+  if (inw) inw.style.display = kind === 'internal' ? '' : 'none';
+  if (ulw) ulw.style.display = kind === 'unload' ? '' : 'none';
+  const insw = item.querySelector('.bs-insur-wrap');
+  if (insw) insw.style.display = kind === 'insur' ? '' : 'none';
+  if (rtw) rtw.style.display = kind === 'rent' ? '' : 'none';
+  const fxwEl = item.querySelector('.bs-fx-wrap');
+  if (fxwEl) fxwEl.style.display = kind === 'fx' ? '' : 'none';
+  if (whw) whw.style.display = kind === 'whdep' ? '' : 'none';
+  const rfw = item.querySelector('.bs-referral-wrap');
+  if (rfw) rfw.style.display = kind === 'referral' ? '' : 'none';
+  const wbw = item.querySelector('.bs-wagebonus-wrap');
+  if (wbw) wbw.style.display = kind === 'wagebonus' ? '' : 'none';
+  if (ofw) ofw.style.display = kind === 'office' ? '' : 'none';
+  if (fw) fw.style.display = kind === 'bankfee' ? '' : 'none';
+  if (pw) pw.style.display = kind === 'personal' ? '' : 'none';
+  if (iw) iw.style.display = _bsWantsInvoice(box) ? '' : 'none';
+  if (pr) pr.style.display = (kind === 'company' && isIn) ? '' : 'none';
+  if (por) por.style.display = kind === 'employee' ? '' : 'none';
+}
+function _bsAmtFilled(box) { if (_bsIsNA(box)) return true; const v = parseFloat(box && box.amount); return !isNaN(v) && v !== 0; }
+function _bsDateInRange(d) {
+  if (!d) return true;
+  const s = _bsEdRange.start, e = _bsEdRange.end;
+  if (!s && !e) return true;
+  if (s && d < s) return false;
+  if (e && d > e) return false;
+  return true;
+}
+function _bsRangeLabel() { return `${_bsEdRange.start || '…'} ~ ${_bsEdRange.end || '…'}`; }
+function _bsDateOk(box) { return _bsIsNA(box) || (!!(box && box.txn_date) && _bsDateInRange(box.txn_date)); }
+function _bsPortionOk(box) { return _bsPayeeKind(box) !== 'employee' || !!(box && box.pay_portion); }
+function bsRecolorPortion(el) {
+  const f = !!el.value;
+  el.style.borderColor = f ? 'var(--gray-200)' : '#dc2626';
+  el.style.background = f ? '' : '#fff5f5';
+}
+function bsValidateBoxDates(id) {
+  const box = _bsBoxList.find(b => b.id === id);
+  const item = document.querySelector(`.bs-box-item[data-id="${id}"]`);
+  if (!box || !item) return true;
+  const el = item.querySelector('.bs-bx-date');
+  const empty = !box.txn_date && !_bsIsNA(box);
+  const outOfRange = box.txn_date && !_bsDateInRange(box.txn_date);
+  const bad = empty || outOfRange;
+  if (el) { el.style.borderColor = bad ? '#dc2626' : 'var(--gray-200)'; el.style.background = bad ? '#fff5f5' : ''; }
+  const errEl = item.querySelector('.bs-date-err');
+  if (errEl) errEl.textContent = outOfRange ? `⚠️ 交易日期 ${box.txn_date} 不在账单周期（${_bsRangeLabel()}）内` : '';
+  return !bad;
+}
+function bsAmtInput(id, el) {
+  const box = _bsBoxList.find(b => b.id === id);
+  if (box) box.amount = el.value;
+  const f = !!el.value.trim() && parseFloat(el.value) !== 0 && !isNaN(parseFloat(el.value));
+  el.style.borderColor = f ? 'var(--gray-200)' : '#dc2626';
+  el.style.background = f ? '' : '#fff5f5';
+}
+function bsNoteInput(id, el) {
+  const box = _bsBoxList.find(b => b.id === id);
+  if (box) box.note = el.value;
+  bsRefreshNoteState(id);
+}
+function bsRefreshNoteState(id) {
+  const box = _bsBoxList.find(b => b.id === id);
+  const item = document.querySelector(`.bs-box-item[data-id="${id}"]`);
+  if (!box || !item) return;
+  const el = item.querySelector('.bs-bx-note');
+  if (!el) return;
+  const ok = _bsNoteSatisfied(box);
+  el.style.borderColor = ok ? 'var(--gray-200)' : '#dc2626';
+  el.style.background = ok ? '' : '#fff5f5';
+  el.placeholder = ok ? '原因 / 备注（选填）' : '原因 / 备注（需补上）';
+}
+async function bsUpdateBoxField(id, field, value) {
+  const box = _bsBoxList.find(b => b.id === id);
+  if (!box) return;
+  box[field] = value;
+  try {
+    await api(`/admin/bank-statements/${box.statement_id}/boxes/${id}`, { method: 'PUT', body: JSON.stringify({ [field]: value }) });
+    const s = document.getElementById('bsEdStatus'); if (s) { s.textContent = '已保存 ✓'; setTimeout(() => { if (s.textContent === '已保存 ✓') s.textContent = ''; }, 1200); }
+  } catch (e) { showToast('保存失败：' + (e.message || e), 'error'); }
+  bsRefreshNoteState(id);
+  if (field === 'direction') {
+    const isIn = value === 'in';
+    const color = isIn ? '#059669' : '#dc2626';
+    const item = document.querySelector(`.bs-box-item[data-id="${id}"]`);
+    if (item) item.style.borderLeftColor = color;
+    if (item) { const ph = item.querySelector('.bs-bx-payee option[value=""]'); if (ph) ph.textContent = `— 选择${_bsPayeeLabel(value)} —`; }
+    if (item) {
+      const ps = item.querySelector('.bs-bx-pallet-cust');
+      if (ps) ps.innerHTML = _bsPalletCustOptions(ps.value, value);
+      const pl = item.querySelector('.bs-pallet-label');
+      if (pl) pl.textContent = value === 'in' ? '选择客户（木板卖给谁）' : '选择供应商（木板从谁那买）';
+    }
+    bsUpdateBoxSections(id);
+  }
+  annRefreshChip(box);
+}
+const _BS_MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+function _bsPad2(n) { return String(n).padStart(2, '0'); }
+function _bsParseDateRange(text) {
+  const t = String(text || '');
+  const iso = t.match(/\d{4}-\d{2}-\d{2}/g);
+  if (iso && iso.length >= 2) return { start: iso[0], end: iso[1] };
+  const mdy = t.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/g);
+  if (mdy && mdy.length >= 2) {
+    const conv = s => { const p = s.split('/'); const y = p[2].length === 2 ? '20' + p[2] : p[2]; return `${y}-${_bsPad2(p[0])}-${_bsPad2(p[1])}`; };
+    return { start: conv(mdy[0]), end: conv(mdy[1]) };
+  }
+  const monRe = /([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:\s*,?\s*(\d{4}))?/g;
+  const found = []; let m;
+  while ((m = monRe.exec(t))) { const mo = _BS_MONTHS[m[1].slice(0, 3).toLowerCase()]; if (mo) found.push({ mo, day: parseInt(m[2], 10), year: m[3] ? parseInt(m[3], 10) : null }); }
+  if (found.length >= 2) {
+    let year = null; found.forEach(f => { if (f.year) year = f.year; });
+    if (!year) { const y = t.match(/\b(20\d{2})\b/); year = y ? parseInt(y[1], 10) : null; }
+    if (year) {
+      const mk = f => `${f.year || year}-${_bsPad2(f.mo)}-${_bsPad2(f.day)}`;
+      return { start: mk(found[0]), end: mk(found[1]) };
+    }
+  }
+  return null;
+}
+function _bsInvItems(box) {
+  let a = box.inv_items;
+  if (typeof a === 'string') { try { a = JSON.parse(a || '[]'); } catch (e) { a = []; } }
+  if (!Array.isArray(a)) a = [];
+  a = a.map(x => ({ inv: String((x && x.inv) || ''), ps: String((x && x.ps) || ''), pe: String((x && x.pe) || ''), amt: String((x && x.amt) || '') }));
+  if (!a.length) a = [{ inv: box.invoice_number || '', ps: box.period_start || '', pe: box.period_end || '', amt: '' }];
+  return a;
+}
+function _bsInvSumLineHtml(box, items) {
+  if (items.length <= 1) return '';
+  const sum = items.reduce((s, it) => s + (parseFloat(it.amt) || 0), 0);
+  const boxAmt = Number(box.amount) || 0;
+  const match = !boxAmt || !sum || Math.abs(sum - boxAmt) < 0.01;
+  return `<span style="color:${match ? '#059669' : '#dc2626'}">各张金额合计 $${sum.toFixed(2)}${boxAmt ? `（这笔支出 $${boxAmt.toFixed(2)}${Math.abs(sum - boxAmt) < 0.01 ? ' ✓' : sum ? '，不一致 ⚠' : ''}）` : ''}</span>`;
+}
+function _bsInvItemsHtml(box) {
+  const items = _bsInvItems(box);
+  const many = items.length > 1;
+  const rows = items.map((it, i) => `
+    <div class="bs-inv-item" style="${many ? 'border:1px solid #bbf7d0;border-radius:6px;padding:.35rem .4rem;background:#fff;' : ''}margin-bottom:.3rem">
+      <div style="display:flex;gap:.3rem;align-items:center;margin-bottom:.25rem">
+        ${many ? `<span style="font-size:.7rem;color:#059669;font-weight:700;flex:0 0 auto">#${i + 1}</span>` : ''}
+        <input type="text" class="bs-bx-inv" placeholder="Invoice number" value="${esc(it.inv)}" onchange="bsInvItemField(${box.id},${i},'inv',this.value)" style="flex:1;min-width:0;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+        ${many ? `<a onclick="bsInvItemDel(${box.id},${i})" title="删除这张发票" style="flex:0 0 auto;color:#dc2626;cursor:pointer;font-weight:700;padding:0 .2rem">✕</a>` : ''}
+      </div>
+      <input type="text" class="bs-bx-period" placeholder="账期：可粘贴 2026-03-16 ~ 2026-03-22" value="${(it.ps || it.pe) ? esc((it.ps || '') + ' ~ ' + (it.pe || '')) : ''}" oninput="bsInvItemPeriod(${box.id},${i},this)" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;margin-bottom:.3rem">
+      <div style="display:flex;gap:.3rem">
+        <input type="date" class="bs-bx-pstart" title="账期开始" value="${esc(it.ps)}" onchange="bsInvItemField(${box.id},${i},'ps',this.value)" style="flex:1;min-width:0;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
+        <input type="date" class="bs-bx-pend" title="账期结束" value="${esc(it.pe)}" onchange="bsInvItemField(${box.id},${i},'pe',this.value)" style="flex:1;min-width:0;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
+        <input type="number" step="0.01" class="bs-bx-inv-amt" placeholder="这张金额" title="这张发票对应的金额" value="${esc(it.amt)}" onchange="bsInvItemField(${box.id},${i},'amt',this.value)" style="flex:0 0 96px;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
+      </div>
+    </div>`).join('');
+  return rows
+    + `<div class="bs-inv-sum" style="font-size:.72rem;margin-bottom:.25rem">${_bsInvSumLineHtml(box, items)}</div>`
+    + `<button type="button" onclick="bsInvItemAdd(${box.id})" style="font-size:.74rem;padding:.2rem .6rem;border:1px dashed #059669;background:#f0fdf4;color:#047857;border-radius:6px;cursor:pointer;font-weight:600">＋ 再加一张发票（各自账期/金额）</button>`;
+}
+const _bsInvSaveTimers = {};
+async function _bsInvItemsSave(box, items) {
+  box.inv_items = items;
+  box.invoice_number = items.map(x => String(x.inv || '').trim()).filter(Boolean).join(', ');
+  box.period_start = (items[0] && items[0].ps) || '';
+  box.period_end = (items[0] && items[0].pe) || '';
+  clearTimeout(_bsInvSaveTimers[box.id]);
+  _bsInvSaveTimers[box.id] = setTimeout(async () => {
+    try {
+      await api(`/admin/bank-statements/${box.statement_id}/boxes/${box.id}`, { method: 'PUT', body: JSON.stringify({
+        inv_items: JSON.stringify(_bsInvItems(box)), invoice_number: box.invoice_number,
+        period_start: box.period_start, period_end: box.period_end,
+      }) });
+      const s = document.getElementById('bsEdStatus'); if (s) { s.textContent = '已保存 ✓'; setTimeout(() => { if (s.textContent === '已保存 ✓') s.textContent = ''; }, 1200); }
+    } catch (e) { showToast('保存失败：' + (e.message || e), 'error'); }
+    bsRefreshNoteState(box.id);
+    annRefreshChip(box);
+  }, 250);
+}
+function bsInvItemField(boxId, idx, key, val) {
+  const box = _bsBoxList.find(b => b.id === boxId); if (!box) return;
+  const items = _bsInvItems(box);
+  if (!items[idx]) return;
+  items[idx][key] = String(val || '');
+  _bsInvItemsSave(box, items);
+  const item = document.querySelector(`.bs-box-item[data-id="${boxId}"]`);
+  const sumEl = item && item.querySelector('.bs-inv-sum');
+  if (sumEl) sumEl.innerHTML = _bsInvSumLineHtml(box, items);
+}
+function bsInvItemPeriod(boxId, idx, el) {
+  const rng = _bsParseDateRange(el.value);
+  if (!rng) return;
+  const wrap = el.closest('.bs-inv-item');
+  if (wrap) {
+    const ds = wrap.querySelector('.bs-bx-pstart'), de = wrap.querySelector('.bs-bx-pend');
+    if (ds) ds.value = rng.start;
+    if (de) de.value = rng.end;
+  }
+  const box = _bsBoxList.find(b => b.id === boxId); if (!box) return;
+  const items = _bsInvItems(box); if (!items[idx]) return;
+  items[idx].ps = rng.start; items[idx].pe = rng.end;
+  _bsInvItemsSave(box, items);
+}
+function bsInvItemAdd(boxId) {
+  const box = _bsBoxList.find(b => b.id === boxId); if (!box) return;
+  const items = _bsInvItems(box);
+  items.push({ inv: '', ps: '', pe: '', amt: '' });
+  box.inv_items = items;
+  _bsInvItemsSave(box, items);
+  _bsRenderBoxPanel();
+}
+function bsInvItemDel(boxId, idx) {
+  const box = _bsBoxList.find(b => b.id === boxId); if (!box) return;
+  const items = _bsInvItems(box);
+  items.splice(idx, 1);
+  box.inv_items = items;
+  _bsInvItemsSave(box, items);
+  _bsRenderBoxPanel();
+}
+function _bsIsPdfUrl(u) { return /\.pdf(\?|#|$)/i.test(String(u || '')); }
+function bsOpenAttachment(url) {
+  return fetch(url, { headers: { Authorization: `Bearer ${TOKEN}` } })
+    .then(r => r.ok ? r.blob() : Promise.reject(new Error('打开失败')))
+    .then(blob => {
+      if (_bsIsPdfUrl(url) || blob.type === 'application/pdf') {
+        const pdf = blob.type === 'application/pdf' ? blob : new Blob([blob], { type: 'application/pdf' });
+        showFileLightbox(URL.createObjectURL(pdf));
+      } else {
+        showImgLightbox(URL.createObjectURL(blob));
+      }
+    })
+    .catch(e => showToast('打开失败：' + (e.message || e), 'error'));
+}
+function bsPhotoFallback(img, url) {
+  img.onerror = null;
+  const d = document.createElement('div');
+  d.title = '查看文件'; d.onclick = () => bsOpenAttachment(url);
+  d.style.cssText = img.style.cssText + ';background:#f8fafc;display:flex;align-items:center;justify-content:center';
+  d.textContent = '📄';
+  img.replaceWith(d);
+}
+function _bsPhotoThumbInner(u, s) {
+  if (_bsIsPdfUrl(u)) {
+    return `<div onclick="bsOpenAttachment('${esc(u)}')" title="查看 PDF" style="width:${s}px;height:${s}px;border-radius:6px;border:1px solid var(--gray-200);cursor:pointer;background:#f8fafc;display:flex;flex-direction:column;align-items:center;justify-content:center;box-sizing:border-box"><span style="font-size:${Math.round(s * 0.42)}px;line-height:1">📄</span><span style="font-size:8px;color:var(--gray-500);letter-spacing:.5px">PDF</span></div>`;
+  }
+  return `<img src="${esc(u)}" onclick="bsOpenAttachment('${esc(u)}')" onerror="bsPhotoFallback(this,'${esc(u)}')" style="width:${s}px;height:${s}px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200);cursor:pointer;box-sizing:border-box">`;
+}
+function bsPhotoDragOver(e, el) { e.preventDefault(); e.stopPropagation(); el.style.background = '#eff6ff'; el.style.borderColor = '#2563eb'; }
+function bsPhotoDragLeave(e, el) { e.preventDefault(); e.stopPropagation(); el.style.background = ''; el.style.borderColor = 'var(--gray-300)'; }
+function bsPhotoDrop(e, id, el) {
+  e.preventDefault(); e.stopPropagation();
+  el.style.background = ''; el.style.borderColor = 'var(--gray-300)';
+  const files = Array.from((e.dataTransfer && e.dataTransfer.files) || [])
+    .filter(f => f && (/^image\//.test(f.type) || f.type === 'application/pdf' || /\.(jpe?g|png|heic|webp|gif|pdf)$/i.test(f.name || '')));
+  if (files.length) bsBoxUploadPhotos(id, files);
+}
+async function bsBoxUploadPhotos(id, files) {
+  if (!files || !files.length) return;
+  const box = _bsBoxList.find(b => b.id === id); if (!box) return;
+  const fd = new FormData();
+  Array.from(files).forEach(f => fd.append('photos', f));
+  try {
+    const res = await fetch(API + `/admin/bank-statements/${box.statement_id}/boxes/${id}/photos`, { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd });
+    const r = await res.json();
+    if (!r.success) throw new Error(r.error || '上传失败');
+    box.photos_urls = r.photos_urls || [];
+    _bsRenderBoxPanel();
+    showToast('照片已上传 ✓');
+  } catch (e) { showToast('上传失败：' + (e.message || e), 'error'); }
+}
+async function bsBoxDeletePhoto(id, url) {
+  if (!await showConfirm('删除这张照片？')) return;
+  const box = _bsBoxList.find(b => b.id === id); if (!box) return;
+  try {
+    const r = await api(`/admin/bank-statements/${box.statement_id}/boxes/${id}/photos`, { method: 'DELETE', body: JSON.stringify({ photo: url }) });
+    if (r && r.error) throw new Error(r.error);
+    box.photos_urls = r.photos_urls || [];
+    _bsRenderBoxPanel();
+  } catch (e) { showToast('删除失败：' + (e.message || e), 'error'); }
+}
+async function annDeleteBox(id) {
+  if (!await showConfirm('删除这条标注？照片记录会一并删除。')) return;
+  const box = _bsBoxList.find(b => b.id === id); if (!box) return;
+  try { await api(`/admin/bank-statements/${box.statement_id}/boxes/${id}`, { method: 'DELETE' }); }
+  catch (e) { showToast('删除失败：' + (e.message || e), 'error'); return; }
+  _bsBoxList = _bsBoxList.filter(b => b.id !== id);
+  if (box.plaid_txn_id) { delete ANN[box.plaid_txn_id]; annRefreshChip(box); }
+  annClose();
+}
+
+// ── 抽屉里渲染当前打开的标注（表单结构与 admin.html 的 box 卡片一致）──
+function _bsRenderBoxPanel() {
+  const panel = document.getElementById('annBody');
+  if (!panel) return;
+  const box = _bsBoxList.find(b => b.id === _annOpenId);
+  if (!box) { panel.innerHTML = ''; return; }
+  const isIn = box.direction === 'in';
+  const color = isIn ? '#059669' : '#dc2626';
+  panel.innerHTML = `<div class="bs-box-item" data-id="${box.id}" style="border:1px solid var(--gray-200);border-left:3px solid ${color};border-radius:8px;padding:.5rem .55rem;margin-bottom:.5rem">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.35rem">
+        <span style="font-weight:700;font-size:.82rem;color:${color}">🧾 标注（付给公司 / 金额 / 收支）</span>
+        <button onclick="annDeleteBox(${box.id})" title="删除" style="border:none;background:#fef2f2;color:#b91c1c;border-radius:4px;cursor:pointer;font-size:.8rem;padding:.1rem .45rem">🗑 删除</button>
+      </div>
+      <div style="display:flex;gap:.3rem;margin-bottom:.35rem">
+        <select class="bs-bx-dir" onchange="bsUpdateBoxField(${box.id},'direction',this.value)" style="flex:0 0 auto;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem">
+          <option value="out"${!isIn ? ' selected' : ''}>支出</option>
+          <option value="in"${isIn ? ' selected' : ''}>收入</option>
+        </select>
+        <input type="date" class="bs-bx-date" value="${esc(box.txn_date || '')}" onchange="bsUpdateBoxField(${box.id},'txn_date',this.value);bsValidateBoxDates(${box.id})" style="flex:1;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
+      </div>
+      <div class="bs-date-err" style="color:#dc2626;font-size:.72rem;margin:-.1rem 0 .3rem;min-height:0"></div>
+      <select class="bs-bx-payee" onchange="bsPayeeSelChange(${box.id},this)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;background:#fff">${_bsPayeeOptions(_bsIsEmp(box.payee) ? BS_PAYEE_EMP : (_bsIsPallet(box.payee) ? BS_PAYEE_PALLET : (_bsIsCheck(box.payee) ? (_bsCheckParse(box.payee).type === 'wd' ? BS_PAYEE_CHECK_WD : BS_PAYEE_CHECK_DEP) : (_bsIsTruck(box.payee) ? BS_PAYEE_TRUCK : (_bsIsInternal(box.payee) ? BS_PAYEE_INTERNAL : (_bsIsUnload(box.payee) ? BS_PAYEE_UNLOAD : (_bsIsRent(box.payee) ? BS_PAYEE_RENT : (_bsIsInsur(box.payee) ? BS_PAYEE_INSUR : (_bsIsFx(box.payee) ? BS_PAYEE_FX : (_bsIsWhdep(box.payee) ? BS_PAYEE_WHDEP : (_bsIsReferral(box.payee) ? BS_PAYEE_REFERRAL : (_bsIsWageBonus(box.payee) ? BS_PAYEE_WAGEBONUS : (box.payee || '')))))))))))), box.direction)}</select>
+      <div class="bs-emp-wrap" style="display:${_bsIsEmp(box.payee) ? '' : 'none'};background:#f8fafc;border:1px dashed var(--gray-200);border-radius:6px;padding:.4rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:var(--gray-400);margin-bottom:.25rem">先选公司，再填员工姓名</div>
+        <select class="bs-bx-emp-co" onchange="bsEmpUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;margin-bottom:.3rem;background:#fff">${_bsCompanyOptions(_bsEmpParse(box.payee).co)}</select>
+        <input type="text" class="bs-bx-emp-name" placeholder="员工姓名（多个用逗号隔开）" value="${esc(_bsEmpParse(box.payee).name)}" onchange="bsEmpUpdate(${box.id},this)" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+      </div>
+      <div class="bs-pallet-wrap" style="display:${_bsIsPallet(box.payee) ? '' : 'none'};background:#fefce8;border:1px dashed #fde68a;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
+        <div class="bs-pallet-label" style="font-size:.72rem;color:#92400e;margin-bottom:.25rem">${box.direction === 'in' ? '选择客户（木板卖给谁）' : '选择供应商（木板从谁那买）'}</div>
+        <select class="bs-bx-pallet-cust" onchange="bsPalletUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">${_bsPalletCustOptions(_bsPalletParse(box.payee), box.direction)}</select>
+      </div>
+      <div class="bs-check-wrap" style="display:${_bsIsCheck(box.payee) ? '' : 'none'};background:#eff6ff;border:1px dashed #bfdbfe;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#1d4ed8;margin-bottom:.25rem">选择对方（可多选）</div>
+        <div class="bs-check-list">${_bsCheckPartyCheckboxes(box)}</div>
+      </div>
+      <div class="bs-truck-wrap" style="display:${_bsIsTruck(box.payee) ? '' : 'none'};background:#f1f5f9;border:1px dashed #cbd5e1;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#475569;margin-bottom:.25rem">选择公司</div>
+        <select class="bs-bx-truck-co" onchange="bsTruckUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">${_bsTruckCoOptions(_bsTruckParse(box.payee))}</select>
+      </div>
+      <div class="bs-internal-wrap" style="display:${_bsIsInternal(box.payee) ? '' : 'none'};background:#eef2ff;border:1px dashed #c7d2fe;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#4338ca;margin-bottom:.25rem">选择公司（转给哪家自己的公司）</div>
+        <select class="bs-bx-internal-co" onchange="bsInternalUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">${_bsInternalCoOptions(_bsInternalParse(box.payee))}</select>
+      </div>
+      <div class="bs-unload-wrap" style="display:${_bsIsUnload(box.payee) ? '' : 'none'};background:#ecfeff;border:1px dashed #a5f3fc;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#0e7490;margin-bottom:.25rem">卸柜账单付给哪个公司</div>
+        <input class="bs-bx-unload-co" list="bsUnloadCoList-${box.id}" value="${esc(_bsUnloadParse(box.payee))}" onchange="bsUnloadUpdate(${box.id},this)" placeholder="公司名（可打字或从列表选）" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">
+        <datalist id="bsUnloadCoList-${box.id}">${(_bsCompanies || []).map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist>
+      </div>
+      <div class="bs-insur-wrap" style="display:${_bsIsInsur(box.payee) ? '' : 'none'};background:#f0fdfa;border:1px dashed #99f6e4;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#0f766e;margin-bottom:.25rem">选择保险公司</div>
+        <input class="bs-bx-insur-co" list="bsInsurCoList-${box.id}" value="${esc(_bsInsurParse(box.payee))}" onchange="bsInsurUpdate(${box.id},this)" placeholder="保险公司名（可打字或从列表选）" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">
+        <datalist id="bsInsurCoList-${box.id}">${BS_INSUR_COMPANIES.map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist>
+      </div>
+      <div class="bs-fx-wrap" style="display:${_bsIsFx(box.payee) ? '' : 'none'};background:#fefce8;border:1px dashed #fde047;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#a16207;margin-bottom:.25rem">选择对方（和谁换汇）</div>
+        <select class="bs-bx-fx-name" onchange="bsFxUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">${_bsFxNameOptions(_bsFxParse(box.payee))}</select>
+      </div>
+      <div class="bs-rent-wrap" style="display:${_bsIsRent(box.payee) ? '' : 'none'};background:#fdf4ff;border:1px dashed #e9d5ff;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#7e22ce;margin-bottom:.25rem">选择公司（房东）</div>
+        <select class="bs-bx-rent-co" onchange="bsRentUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">${_bsRentCoOptions(_bsRentParse(box.payee))}</select>
+      </div>
+      <div class="bs-whdep-wrap" style="display:${_bsIsWhdep(box.payee) ? '' : 'none'};background:#ecfeff;border:1px dashed #a5f3fc;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#0e7490;margin-bottom:.25rem">选择仓库（押金付给哪个仓库）</div>
+        <select class="bs-bx-whdep-co" onchange="bsWhdepUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">${_bsWhdepCoOptions(_bsWhdepParse(box.payee))}</select>
+      </div>
+      <div class="bs-referral-wrap" style="display:${_bsIsReferral(box.payee) ? '' : 'none'};background:#fdf2f8;border:1px dashed #fbcfe8;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#be185d;margin-bottom:.25rem">推荐人姓名（推荐费付给谁）</div>
+        <input type="text" class="bs-bx-referral-name" list="bsReferrerList" value="${esc(_bsReferralParse(box.payee))}" onchange="bsReferralUpdate(${box.id},this)" placeholder="推荐人姓名（可打字或从列表选）" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">
+      </div>
+      <div class="bs-wagebonus-wrap" style="display:${_bsIsWageBonus(box.payee) ? '' : 'none'};background:#fefce8;border:1px dashed #fde047;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#a16207;margin-bottom:.25rem">奖励发给谁（姓名，多个用逗号隔开）</div>
+        <input type="text" class="bs-bx-wagebonus-name" value="${esc(_bsWageBonusParse(box.payee))}" onchange="bsWageBonusUpdate(${box.id},this)" placeholder="姓名（多个用逗号隔开）" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">
+      </div>
+      <div class="bs-fee-wrap" style="display:${box.payee === BS_PAYEE_BANKFEE ? '' : 'none'};background:#fffbeb;border:1px dashed #fde68a;border-radius:6px;padding:.45rem .5rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#92400e;margin-bottom:.3rem">银行费用类型</div>
+        <input type="text" class="bs-bx-fee" list="bsFeeList" placeholder="如：服务费 / 支票费" value="${esc(box.payee === BS_PAYEE_BANKFEE ? (box.purpose || '') : '')}" onchange="bsUpdateBoxField(${box.id},'purpose',this.value)" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+      </div>
+      <div class="bs-office-wrap" style="display:${box.payee === BS_PAYEE_OFFICE ? '' : 'none'};background:#f0f9ff;border:1px dashed #bae6fd;border-radius:6px;padding:.45rem .5rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#0369a1;margin-bottom:.3rem">办公费用分类</div>
+        <input type="text" class="bs-bx-office" list="bsOfficeList" placeholder="如：Claude (Anthropic) / ChatGPT (OpenAI)" value="${esc(box.payee === BS_PAYEE_OFFICE ? (box.purpose || '') : '')}" onchange="bsUpdateBoxField(${box.id},'purpose',this.value)" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+      </div>
+      <div class="bs-compfee-wrap" style="display:${box.payee === BS_PAYEE_COMPFEE ? '' : 'none'};background:#faf5ff;border:1px dashed #e9d5ff;border-radius:6px;padding:.45rem .5rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#7e22ce;margin-bottom:.3rem">公司相关费用分类</div>
+        <input type="text" class="bs-bx-compfee" list="bsCompFeeList" placeholder="如：税务 Tax / 成立费 Incorporation" value="${esc(box.payee === BS_PAYEE_COMPFEE ? (box.purpose || '') : '')}" onchange="bsUpdateBoxField(${box.id},'purpose',this.value)" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+      </div>
+      <div class="bs-personal-wrap" style="display:${_bsPayeeKind(box) === 'personal' ? '' : 'none'};background:#eff6ff;border:1px dashed #bfdbfe;border-radius:6px;padding:.45rem .5rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#1d4ed8;margin-bottom:.3rem">类别（拿回家）</div>
+        <input type="text" class="bs-bx-cat" list="bsPersonalCatList" placeholder="换汇 / 自己工资 / 公司转账" value="${esc(_bsPayeeKind(box) === 'personal' ? (box.purpose || '') : '')}" onchange="bsUpdateBoxField(${box.id},'purpose',this.value)" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+      </div>
+      <div class="bs-income-wrap" style="display:${_bsWantsInvoice(box) ? '' : 'none'};background:#f0fdf4;border:1px dashed #bbf7d0;border-radius:6px;padding:.45rem .5rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#059669;margin-bottom:.3rem">Invoice / 账期</div>
+        <div class="bs-portion-row" style="display:${_bsPayeeKind(box) === 'employee' ? '' : 'none'};margin-bottom:.3rem">
+          <select class="bs-bx-portion" onchange="bsUpdateBoxField(${box.id},'pay_portion',this.value);bsRecolorPortion(this)" style="width:100%;padding:.3rem .4rem;border:1px solid ${box.pay_portion ? 'var(--gray-200)' : '#dc2626'};border-radius:6px;font-size:.82rem;${box.pay_portion ? 'background:#fff' : 'background:#fff5f5'}">
+            <option value="">— 全额 / 部分（必选）—</option>
+            <option value="full"${box.pay_portion === 'full' ? ' selected' : ''}>全额 Full</option>
+            <option value="partial"${box.pay_portion === 'partial' ? ' selected' : ''}>部分 Partial</option>
+          </select>
+        </div>
+        <div class="bs-purpose-row" style="display:${(isIn && _bsPayeeKind(box) === 'company') ? '' : 'none'}">
+          <input type="text" class="bs-bx-purpose" list="bsPurposeList" placeholder="用途（如：劳务工资）" value="${esc(box.purpose || '')}" onchange="bsUpdateBoxField(${box.id},'purpose',this.value)" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.3rem">
+        </div>
+        ${_bsInvItemsHtml(box)}
+      </div>
+      <div style="display:flex;align-items:center;gap:.3rem;margin-bottom:.35rem">
+        <span style="color:#94a3b8;font-size:.82rem">$</span>
+        <input type="number" class="bs-bx-amt" step="0.01" placeholder="金额（必填）" value="${(box.amount != null && box.amount !== 0) ? box.amount : ''}" onchange="bsUpdateBoxField(${box.id},'amount',this.value)" oninput="bsAmtInput(${box.id},this)" style="flex:1;padding:.32rem .4rem;border:1px solid ${_bsAmtFilled(box) ? 'var(--gray-200)' : '#dc2626'};border-radius:6px;font-size:.82rem;${_bsAmtFilled(box) ? '' : 'background:#fff5f5'}">
+      </div>
+      <input type="text" class="bs-bx-note" placeholder="原因 / 备注${_bsNoteSatisfied(box) ? '（选填）' : '（需补上）'}" value="${esc(box.note || '')}" onchange="bsUpdateBoxField(${box.id},'note',this.value)" oninput="bsNoteInput(${box.id},this)" style="width:100%;box-sizing:border-box;padding:.32rem .4rem;border:1px solid ${_bsNoteSatisfied(box) ? 'var(--gray-200)' : '#dc2626'};border-radius:6px;font-size:.82rem;margin-bottom:.4rem;${_bsNoteSatisfied(box) ? '' : 'background:#fff5f5'}">
+      <div class="bs-bx-photozone" ondragover="bsPhotoDragOver(event,this)" ondragleave="bsPhotoDragLeave(event,this)" ondrop="bsPhotoDrop(event,${box.id},this)" style="border:1px dashed var(--gray-300);border-radius:6px;padding:.4rem .5rem;transition:background .15s,border-color .15s">
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem;flex-wrap:wrap">
+          <span style="font-size:.75rem;color:var(--gray-500)">📷 照片${(box.photos_urls && box.photos_urls.length) ? ' (' + box.photos_urls.length + ')' : ''}</span>
+          <label style="cursor:pointer;font-size:.75rem;color:#2563eb;font-weight:600">＋ 加照片<input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="bsBoxUploadPhotos(${box.id}, this.files)"></label>
+          <span style="font-size:.72rem;color:var(--gray-400)">· 或把图片拖到这里</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:.3rem">${(box.photos_urls || []).map(u => `<div style="position:relative;width:46px;height:46px">${_bsPhotoThumbInner(u, 46)}<button onclick="bsBoxDeletePhoto(${box.id},'${esc(u)}')" title="删除照片" style="position:absolute;top:-6px;right:-6px;background:rgba(15,23,42,.85);color:#fff;border:none;border-radius:999px;width:17px;height:17px;font-size:10px;line-height:17px;cursor:pointer;padding:0">×</button></div>`).join('')}</div>
+      </div>
+    </div>`
+    + '<datalist id="bsPurposeList"><option value="劳务工资"></option></datalist>'
+    + '<datalist id="bsFeeList">' + BS_FEE_TYPES.map(f => `<option value="${esc(f)}"></option>`).join('') + '</datalist>'
+    + '<datalist id="bsOfficeList">' + BS_OFFICE_TYPES.map(f => `<option value="${esc(f)}"></option>`).join('') + '</datalist>'
+    + '<datalist id="bsCompFeeList">' + BS_COMPFEE_TYPES.map(f => `<option value="${esc(f)}"></option>`).join('') + '</datalist>'
+    + '<datalist id="bsPersonalCatList">' + BS_PERSONAL_CATS.map(c => `<option value="${esc(c)}"></option>`).join('') + '</datalist>'
+    + '<datalist id="bsReferrerList">' + (_bsReferrers || []).map(n => `<option value="${esc(n)}"></option>`).join('') + '</datalist>';
+  bsValidateBoxDates(box.id);
+}
+
+// ── 行内徽章 + 抽屉开关 ──
+function annChipHtml(txnId) {
+  const b = ANN[txnId];
+  if (!b) return '<button class="ann-add" data-txn="' + esc(txnId) + '" onclick="annOpen(this.dataset.txn)">＋ 标注</button>';
+  const warn = _bsNoteSatisfied(b) ? '' : ' <span style="color:#dc2626">⚠</span>';
+  const label = _bsPayeeDisplay(b.payee) || (b.direction === 'in' ? '收入' : '支出') + '（待填）';
+  return '<button class="ann-chip" data-txn="' + esc(txnId) + '" onclick="annOpen(this.dataset.txn)" title="' + esc(label) + '">' + esc(label) + warn + '</button>';
+}
+function annRefreshChip(box) {
+  if (!box || !box.plaid_txn_id) return;
+  const cell = document.querySelector('.ann-cell[data-txn="' + box.plaid_txn_id + '"]');
+  if (cell) cell.innerHTML = annChipHtml(box.plaid_txn_id);
+}
+function annStore(box) {
+  if (typeof box.inv_items === 'string') { try { box.inv_items = JSON.parse(box.inv_items || '[]'); } catch (e) { box.inv_items = []; } }
+  const i = _bsBoxList.findIndex(b => b.id === box.id);
+  if (i >= 0) _bsBoxList[i] = box; else _bsBoxList.push(box);
+  if (box.plaid_txn_id) ANN[box.plaid_txn_id] = box;
+  return box;
+}
+async function annLoadAll() {
+  try {
+    const r = await api('/plaid/annotations');
+    Object.values(r.annotations || {}).forEach(annStore);
+  } catch (e) { console.error(e); }
+}
+async function annOpen(txnId) {
+  try {
+    await Promise.all([bsEnsureCompanies(), bsEnsureWarehouses(), bsEnsureReferrers()]);
+    const box = annStore(await api('/plaid/annotations', { method: 'POST', body: JSON.stringify({ txn_id: txnId }) }));
+    _annOpenId = box.id;
+    const t = _TXNS.find(x => x.txn_id === txnId);
+    document.getElementById('annTxnInfo').textContent = t
+      ? (t.date + ' · ' + (t.merchant || t.name || '') + ' · ' + money(-t.amount, t.currency))
+      : ((box.txn_date || '') + ' · $' + (box.amount || 0));
+    document.getElementById('annDrawer').classList.add('open');
+    _bsRenderBoxPanel();
+    annRefreshChip(box);
+  } catch (e) { showToast(e.message || '打开标注失败', 'error'); }
+}
+function annClose() {
+  document.getElementById('annDrawer').classList.remove('open');
+  _annOpenId = null;
 }
 
 if (TOKEN) {
