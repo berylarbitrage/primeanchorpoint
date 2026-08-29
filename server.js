@@ -26562,17 +26562,30 @@ app.post('/api/kiosk/status', (req, res) => {
   });
 });
 
-// POST /api/kiosk/punch { site_id, password, punch_type } → 打卡落库
-app.post('/api/kiosk/punch', (req, res) => {
+// POST /api/kiosk/punch { site_id, password, punch_type, photo_data? } → 打卡落库
+// photo_data: 打卡台前置摄像头自动拍的现场照 (base64 dataURI)。拍不到照样打卡。
+app.post('/api/kiosk/punch', async (req, res) => {
   const a = _kioskAuth(req);
   if (a.error) return res.status(a.status).json({ error: a.error });
   const { site, emp } = a;
+  let photoFilename = null;
+  const photo = (req.body || {}).photo_data;
+  if (photo && typeof photo === 'string' && photo.length < 8 * 1024 * 1024) {
+    try {
+      const m = /^data:image\/([A-Za-z0-9.+-]+);base64,/.exec(photo);
+      const subtypeRaw = (m ? m[1] : 'jpeg').toLowerCase();
+      const ext = { jpeg: 'jpg' }[subtypeRaw] || subtypeRaw.replace(/[^a-z0-9]/g, '') || 'jpg';
+      const buf = Buffer.from(photo.replace(/^data:image\/[A-Za-z0-9.+-]+;base64,/, ''), 'base64');
+      photoFilename = `kiosk-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
+      await storage.putObject(`checkin_photos/${photoFilename}`, buf, { contentType: `image/${subtypeRaw === 'jpg' ? 'jpeg' : subtypeRaw}` });
+    } catch (e) { console.error('[Kiosk] Photo save error:', e.message); photoFilename = null; }
+  }
   const siteTimezone = site.timezone || 'America/Chicago';
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
   const { action, entryId, clockTime } = _recordSitePunch({
     empDbId: emp.id, site, siteTimezone, now,
     latitude: site.latitude, longitude: site.longitude,
-    photoFilename: null,
+    photoFilename,
     requestedPunchType: String((req.body || {}).punch_type || '')
   });
   // 标记来源为该仓库的打卡台（共享设备，不做同设备代打卡判定）
@@ -26594,6 +26607,7 @@ app.post('/api/kiosk/punch', (req, res) => {
     name: `${emp.first_name} ${emp.last_name}`.trim(),
     employee_id: emp.employee_id,
     clock_time: displayTime,
+    photo_saved: !!photoFilename,
     entry_id: entryId
   });
 });
