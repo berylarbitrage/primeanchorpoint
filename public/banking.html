@@ -254,13 +254,13 @@ async function loadTxns() {
   _TXNS = rows;
   // Plaid 的正数是支出、负数是入账；显示按会计习惯反过来
   const rowHtml = (t, grp) =>
-    '<tr' + (grp ? ' data-grp="' + esc(grp) + '"' : '') + '><td>' + esc(t.date) + (t.pending ? ' <span class="hint">待清算</span>' : '') + '</td>'
+    '<tr' + (grp ? ' data-grp="' + esc(grp) + '"' : '') + '><td style="white-space:nowrap">' + esc(t.date) + (t.pending ? ' <span class="hint">待清算</span>' : '') + '</td>'
     + '<td>' + esc(accName(t.account_id)) + '</td>'
     + '<td>' + esc(t.merchant || t.name) + '</td>'
-    + '<td class="hint" title="' + esc(t.category || '') + '">' + esc(catZh(t.category)) + '</td>'
-    + '<td style="text-align:right" class="' + (t.amount < 0 ? 'amt-in' : 'amt-out') + '">' + money(-t.amount, t.currency) + '</td>'
+    + '<td class="hint" style="white-space:nowrap" title="' + esc(t.category || '') + '">' + esc(catZh(t.category)) + '</td>'
+    + '<td style="text-align:right;white-space:nowrap" class="' + (t.amount < 0 ? 'amt-in' : 'amt-out') + '">' + money(-t.amount, t.currency) + '</td>'
     + '<td class="ann-cell" data-txn="' + esc(t.txn_id) + '">' + annChipHtml(t.txn_id) + '</td></tr>';
-  const head = '<tr><th>日期</th><th>账户</th><th>描述</th><th>分类</th><th style="text-align:right">金额</th><th>标注</th></tr>';
+  const head = '<tr><th style="white-space:nowrap">日期</th><th>账户</th><th>描述</th><th style="white-space:nowrap">分类</th><th style="text-align:right">金额</th><th>标注</th></tr>';
   const view = document.getElementById('fView').value;
   let body;
   if (!rows.length) {
