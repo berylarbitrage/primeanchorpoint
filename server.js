@@ -31580,11 +31580,17 @@ app.post('/api/plaid/sync', requireAdmin, requireRole('admin'), async (req, res)
   try {
     if (!plaidReady()) return res.status(400).json({ error: '还没配置 Plaid 密钥' });
     let added = 0, removed = 0;
+    const errors = [];
+    // 单个连接出错 (如换环境后遗留的旧 sandbox token) 只记录, 不中断其它连接的同步
     for (const item of db.prepare('SELECT * FROM plaid_items').all()) {
-      const r = await plaidSyncItem(item);
-      added += r.added; removed += r.removed;
+      try {
+        const r = await plaidSyncItem(item);
+        added += r.added; removed += r.removed;
+      } catch (e) {
+        errors.push({ id: item.id, institution: item.institution || '', error: e.message });
+      }
     }
-    res.json({ success: true, added, removed });
+    res.json({ success: true, added, removed, errors });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

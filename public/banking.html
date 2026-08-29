@@ -142,18 +142,31 @@ async function init() {
 async function loadAccounts() {
   const r = await api('/plaid/accounts');
   ACCTS = r.accounts || [];
+  const itemRowId = {};
+  (r.items || []).forEach(i => { itemRowId[i.item_id] = i.id; });
   const sel = document.getElementById('fAcct');
   const cur = sel.value;
   sel.innerHTML = '<option value="">全部账户</option>'
     + ACCTS.map(a => '<option value="' + esc(a.account_id) + '">' + esc(a.name) + (a.mask ? ' ····' + a.mask : '') + '</option>').join('');
   sel.value = cur;
   document.getElementById('accounts').innerHTML = ACCTS.map(a =>
-    '<div class="acct"><div class="bank">🏦 ' + esc(a.institution || a.type) + '</div>'
+    '<div class="acct"><div class="bank">🏦 ' + esc(a.institution || a.type)
+    + (itemRowId[a.item_id] ? ' <a href="javascript:void(0)" onclick="unlinkItem(' + itemRowId[a.item_id] + ',\'' + esc(a.institution || a.name).replace(/'/g, '') + '\')" style="color:var(--red);float:right;text-decoration:none">✕ 解绑</a>' : '')
+    + '</div>'
     + '<div class="nm">' + esc(a.name) + (a.mask ? ' <span class="sub">····' + a.mask + '</span>' : '') + '</div>'
     + '<div class="bal">' + money(a.balance_current, a.currency) + '</div>'
     + '<div class="sub">' + (a.balance_available != null ? '可用 ' + money(a.balance_available, a.currency) + ' · ' : '')
     + esc(a.subtype || '') + '</div></div>').join('')
     || '<div class="empty">还没连接银行账户 — 点右上角「➕ 连接银行」</div>';
+}
+
+async function unlinkItem(id, name) {
+  if (!confirm('确定解绑「' + name + '」这个银行连接吗？\n该连接下所有账户和已同步的交易记录都会删除。')) return;
+  try {
+    await api('/plaid/items/' + id, { method: 'DELETE' });
+    await loadAccounts();
+    await loadTxns();
+  } catch (e) { alert(e.message); }
 }
 
 function qDebounce(){ clearTimeout(qTimer); qTimer = setTimeout(loadTxns, 350); }
@@ -253,6 +266,11 @@ async function syncNow() {
     await loadTxns();
     btn.textContent = '🔄 同步交易';
     document.getElementById('sumLine').textContent += ' · 刚同步: 新增/更新 ' + (r.added || 0) + ' 笔';
+    if (r.errors && r.errors.length) {
+      alert('有 ' + r.errors.length + ' 个银行连接同步失败（其余已正常同步）：\n'
+        + r.errors.map(x => '· ' + (x.institution || '连接#' + x.id) + ': ' + x.error).join('\n')
+        + '\n\n如果是切换环境后遗留的旧测试连接，点账户卡片右上角「✕ 解绑」删掉即可。');
+    }
   } catch (e) {
     alert(e.message);
     btn.textContent = '🔄 同步交易';
