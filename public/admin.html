@@ -46164,8 +46164,8 @@ function _bsPayeeOptions(current, direction) {
     `<option value="${esc(BS_PAYEE_COMPFEE)}"${current === BS_PAYEE_COMPFEE ? ' selected' : ''}>🏛️ 公司相关费用（税务/成立费，选分类）</option>`,
     `<option value="${esc(BS_PAYEE_CLAIM)}"${current === BS_PAYEE_CLAIM ? ' selected' : ''}>📋 Claim</option>`,
     `<option value="${esc(BS_PAYEE_CC)}"${current === BS_PAYEE_CC ? ' selected' : ''}>💳 还 Prime Anchor Point 信用卡</option>`,
-    `<option value="${esc(BS_PAYEE_PAP)}"${current === BS_PAYEE_PAP ? ' selected' : ''}>🔁 Prime Anchor Point 转账</option>`,
-    `<option value="${esc(BS_PAYEE_PAW)}"${current === BS_PAYEE_PAW ? ' selected' : ''}>🔁 Prime Anchor Workforce 转账</option>`,
+    // PAP/PAW 转账两个旧选项已被「公司内部银行转账（选公司）」覆盖, 不再提供;
+    // 存过这两个值的旧标注会落到「其他」分组显示
     `<option value="${BS_PAYEE_INTERNAL}"${current === BS_PAYEE_INTERNAL ? ' selected' : ''}>🏦 公司内部银行转账（选公司）</option>`,
     `<option value="${esc(BS_PAYEE_BINTIQUE)}"${current === BS_PAYEE_BINTIQUE ? ' selected' : ''}>📦 Bintique 货款</option>`,
     `<option value="${esc(BS_PAYEE_CASH)}"${current === BS_PAYEE_CASH ? ' selected' : ''}>💵 取现金</option>`,
@@ -46189,7 +46189,7 @@ function _bsPayeeOptions(current, direction) {
   parts.push(`<optgroup label="个人">${BS_PAYEE_PEOPLE.map(opt).join('')}</optgroup>`);
   if (_bsCompanies.length) parts.push(`<optgroup label="公司">${_bsCompanies.map(opt).join('')}</optgroup>`);
   // Preserve a previously-saved custom value that matches none of the known options.
-  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_OFFICE, BS_PAYEE_COMPFEE, BS_PAYEE_CLAIM, BS_PAYEE_CC, BS_PAYEE_PAP, BS_PAYEE_PAW, BS_PAYEE_INTERNAL, BS_PAYEE_BINTIQUE, BS_PAYEE_CASH, BS_PAYEE_CASH_DEP, BS_PAYEE_LAWSUIT, BS_PAYEE_LAWYER, BS_PAYEE_RETURNED, BS_PAYEE_NA, BS_PAYEE_EMP, BS_PAYEE_PALLET, BS_PAYEE_CHECK_DEP, BS_PAYEE_CHECK_WD, BS_PAYEE_TRUCK, BS_PAYEE_UNLOAD, BS_PAYEE_RENT, BS_PAYEE_INSUR, BS_PAYEE_FX, BS_PAYEE_WHDEP, BS_PAYEE_REFERRAL, BS_PAYEE_WAGEBONUS, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
+  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_OFFICE, BS_PAYEE_COMPFEE, BS_PAYEE_CLAIM, BS_PAYEE_CC, BS_PAYEE_INTERNAL, BS_PAYEE_BINTIQUE, BS_PAYEE_CASH, BS_PAYEE_CASH_DEP, BS_PAYEE_LAWSUIT, BS_PAYEE_LAWYER, BS_PAYEE_RETURNED, BS_PAYEE_NA, BS_PAYEE_EMP, BS_PAYEE_PALLET, BS_PAYEE_CHECK_DEP, BS_PAYEE_CHECK_WD, BS_PAYEE_TRUCK, BS_PAYEE_UNLOAD, BS_PAYEE_RENT, BS_PAYEE_INSUR, BS_PAYEE_FX, BS_PAYEE_WHDEP, BS_PAYEE_REFERRAL, BS_PAYEE_WAGEBONUS, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
   if (current && !known.includes(current)) parts.push(`<optgroup label="其他">${opt(current)}</optgroup>`);
   return parts.join('');
 }

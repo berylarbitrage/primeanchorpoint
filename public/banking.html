@@ -588,8 +588,8 @@ function _bsPayeeOptionDefs(direction) {
     { v: BS_PAYEE_COMPFEE, t: '🏛️ 公司相关费用（税务/成立费，选分类）', d: 'out' },
     { v: BS_PAYEE_CLAIM, t: '📋 Claim', d: 'both' },
     { v: BS_PAYEE_CC, t: '💳 还 Prime Anchor Point 信用卡', d: 'out' },
-    { v: BS_PAYEE_PAP, t: '🔁 Prime Anchor Point 转账', d: 'both' },
-    { v: BS_PAYEE_PAW, t: '🔁 Prime Anchor Workforce 转账', d: 'both' },
+    // PAP/PAW 转账两个旧选项已被「公司内部银行转账（选公司）」覆盖, 不再提供;
+    // 存过这两个值的旧标注会显示在「其他」分组里
     { v: BS_PAYEE_INTERNAL, t: '🏦 公司内部银行转账（选公司）', d: 'both' },
     { v: BS_PAYEE_BINTIQUE, t: '📦 Bintique 货款', d: 'both' },
     { v: BS_PAYEE_CASH, t: '💵 取现金', d: 'out' },
