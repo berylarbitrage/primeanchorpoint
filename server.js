@@ -31505,6 +31505,10 @@ app.get('/api/plaid/status', requireAdmin, requireRole('admin'), (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+function plaidWebhookUrl() {
+  return (BASE_URL || 'https://primeanchorpoint.com').replace(/\/+$/, '') + '/api/webhooks/plaid';
+}
+
 app.post('/api/plaid/link-token', requireAdmin, requireRole('admin'), async (req, res) => {
   try {
     if (!plaidReady()) return res.status(400).json({ error: '还没配置 Plaid 密钥（PLAID_CLIENT_ID / PLAID_SECRET 环境变量）' });
@@ -31515,6 +31519,7 @@ app.post('/api/plaid/link-token', requireAdmin, requireRole('admin'), async (req
       country_codes: ['US'],
       language: 'en',
       redirect_uri: PLAID_OAUTH_BASE + '/banking',
+      webhook: plaidWebhookUrl(),
     });
     res.json({ link_token: r.link_token });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -31534,42 +31539,50 @@ app.post('/api/plaid/exchange', requireAdmin, requireRole('admin'), async (req, 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 拉增量交易（游标式，断了下次接着拉）；顺手刷新余额
+// 单个连接的增量同步（游标式，断了下次接着拉）；顺手刷新余额。手动同步和 webhook 共用。
+async function plaidSyncItem(item) {
+  const upTxn = db.prepare(`INSERT INTO plaid_transactions
+      (txn_id, account_id, date, name, merchant, amount, currency, category, pending, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,datetime('now'))
+    ON CONFLICT(txn_id) DO UPDATE SET date=excluded.date, name=excluded.name, merchant=excluded.merchant,
+      amount=excluded.amount, category=excluded.category, pending=excluded.pending, updated_at=datetime('now')`);
+  const delTxn = db.prepare('DELETE FROM plaid_transactions WHERE txn_id=?');
+  let added = 0, removed = 0;
+  const token = csDecPw(item.access_token_enc);
+  if (!token) return { added, removed };
+  let cursor = item.sync_cursor || undefined;
+  for (let round = 0; round < 30; round++) {
+    const r = await plaidPost('/transactions/sync', { access_token: token, cursor, count: 250 });
+    for (const t of [...(r.added || []), ...(r.modified || [])]) {
+      upTxn.run(t.transaction_id, t.account_id, t.date || '',
+        t.name || '', (t.merchant_name || ''),
+        t.amount || 0, t.iso_currency_code || 'USD',
+        (t.personal_finance_category && t.personal_finance_category.primary) || (Array.isArray(t.category) ? t.category.join(' / ') : ''),
+        t.pending ? 1 : 0);
+      added++;
+    }
+    for (const t of r.removed || []) { delTxn.run(t.transaction_id); removed++; }
+    if (r.accounts) plaidUpsertAccounts(item.item_id, r.accounts);
+    cursor = r.next_cursor;
+    if (!r.has_more) break;
+  }
+  db.prepare('UPDATE plaid_items SET sync_cursor=? WHERE id=?').run(cursor || '', item.id);
+  // 余额单独刷一次（sync 的 accounts 字段不一定带全）
+  try {
+    const acc = await plaidPost('/accounts/get', { access_token: token });
+    plaidUpsertAccounts(item.item_id, acc.accounts);
+  } catch (_) {}
+  return { added, removed };
+}
+
+// 拉增量交易
 app.post('/api/plaid/sync', requireAdmin, requireRole('admin'), async (req, res) => {
   try {
     if (!plaidReady()) return res.status(400).json({ error: '还没配置 Plaid 密钥' });
-    const upTxn = db.prepare(`INSERT INTO plaid_transactions
-        (txn_id, account_id, date, name, merchant, amount, currency, category, pending, updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,datetime('now'))
-      ON CONFLICT(txn_id) DO UPDATE SET date=excluded.date, name=excluded.name, merchant=excluded.merchant,
-        amount=excluded.amount, category=excluded.category, pending=excluded.pending, updated_at=datetime('now')`);
-    const delTxn = db.prepare('DELETE FROM plaid_transactions WHERE txn_id=?');
     let added = 0, removed = 0;
     for (const item of db.prepare('SELECT * FROM plaid_items').all()) {
-      const token = csDecPw(item.access_token_enc);
-      if (!token) continue;
-      let cursor = item.sync_cursor || undefined;
-      for (let round = 0; round < 30; round++) {
-        const r = await plaidPost('/transactions/sync', { access_token: token, cursor, count: 250 });
-        for (const t of [...(r.added || []), ...(r.modified || [])]) {
-          upTxn.run(t.transaction_id, t.account_id, t.date || '',
-            t.name || '', (t.merchant_name || ''),
-            t.amount || 0, t.iso_currency_code || 'USD',
-            (t.personal_finance_category && t.personal_finance_category.primary) || (Array.isArray(t.category) ? t.category.join(' / ') : ''),
-            t.pending ? 1 : 0);
-          added++;
-        }
-        for (const t of r.removed || []) { delTxn.run(t.transaction_id); removed++; }
-        if (r.accounts) plaidUpsertAccounts(item.item_id, r.accounts);
-        cursor = r.next_cursor;
-        if (!r.has_more) break;
-      }
-      db.prepare('UPDATE plaid_items SET sync_cursor=? WHERE id=?').run(cursor || '', item.id);
-      // 余额单独刷一次（sync 的 accounts 字段不一定带全）
-      try {
-        const acc = await plaidPost('/accounts/get', { access_token: token });
-        plaidUpsertAccounts(item.item_id, acc.accounts);
-      } catch (_) {}
+      const r = await plaidSyncItem(item);
+      added += r.added; removed += r.removed;
     }
     res.json({ success: true, added, removed });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -31636,6 +31649,87 @@ app.delete('/api/plaid/items/:id', requireAdmin, requireRole('admin'), async (re
     db.prepare('DELETE FROM plaid_accounts WHERE item_id=?').run(item.item_id);
     db.prepare('DELETE FROM plaid_items WHERE id=?').run(item.id);
     res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Plaid Webhook：接收 Plaid 事件通知（交易更新 / 连接状态 / 新账户可用） ───
+// 同时服务两套集成：/banking 的 plaid_items 和 /accounting 的 bank_items。
+// 载荷不做为数据来源（Plaid webhook 只当"该拉数据了"的信号）：只用 item_id 反查
+// 本地连接，实际数据一律用落库的 access_token 通过 Plaid API 重新拉取。
+db.exec(`CREATE TABLE IF NOT EXISTS plaid_webhook_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  webhook_type TEXT DEFAULT '',
+  webhook_code TEXT DEFAULT '',
+  item_id TEXT DEFAULT '',
+  environment TEXT DEFAULT '',
+  payload TEXT DEFAULT '{}',
+  matched TEXT DEFAULT '',
+  received_at TEXT DEFAULT (datetime('now'))
+)`);
+
+app.post('/api/webhooks/plaid', express.json({ limit: '1mb' }), (req, res) => {
+  try {
+    const b = req.body || {};
+    const type = String(b.webhook_type || '').slice(0, 60);
+    const code = String(b.webhook_code || '').slice(0, 60);
+    const itemId = String(b.item_id || '').slice(0, 120);
+    const inLegacy = itemId ? db.prepare('SELECT id FROM plaid_items WHERE item_id=?').get(itemId) : null;
+    const inBank = itemId ? db.prepare("SELECT id FROM bank_items WHERE item_id=? AND (provider IS NULL OR provider='plaid')").get(itemId) : null;
+    const matched = inLegacy ? 'plaid_items' : inBank ? 'bank_items' : '';
+    db.prepare(`INSERT INTO plaid_webhook_events (webhook_type, webhook_code, item_id, environment, payload, matched)
+      VALUES (?,?,?,?,?,?)`)
+      .run(type, code, itemId, String(b.environment || '').slice(0, 30), JSON.stringify(b).slice(0, 4000), matched);
+    db.prepare('DELETE FROM plaid_webhook_events WHERE id NOT IN (SELECT id FROM plaid_webhook_events ORDER BY id DESC LIMIT 500)').run();
+    console.log(`[Plaid Webhook] ${type}:${code} item=${itemId || '-'} matched=${matched || 'none'}`);
+    // Plaid 要求快速响应；同步动作放到响应之后
+    res.json({ received: true });
+
+    if (type === 'ITEM' && ['ERROR', 'PENDING_EXPIRATION', 'PENDING_DISCONNECT', 'USER_PERMISSION_REVOKED'].includes(code) && inBank) {
+      db.prepare('UPDATE bank_items SET status=? WHERE id=?').run('webhook: ' + code, inBank.id);
+      return;
+    }
+    const wantsSync = type === 'TRANSACTIONS' || (type === 'ITEM' && code === 'NEW_ACCOUNTS_AVAILABLE');
+    if (!wantsSync) return;
+    if (inBank) setImmediate(() => _bankSyncItem(inBank.id).catch(e => console.error('[Plaid Webhook] bank sync:', e.message)));
+    if (inLegacy) setImmediate(() => {
+      const item = db.prepare('SELECT * FROM plaid_items WHERE id=?').get(inLegacy.id);
+      if (item) plaidSyncItem(item).catch(e => console.error('[Plaid Webhook] sync:', e.message));
+    });
+  } catch (e) {
+    console.error('[Plaid Webhook]', e.message);
+    if (!res.headersSent) res.status(200).json({ received: true });
+  }
+});
+
+// 最近收到的 webhook 事件（admin 用来确认 Plaid 后台的测试有没有打到）
+app.get('/api/plaid/webhook-events', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    res.json({ webhook_url: plaidWebhookUrl(),
+      events: db.prepare('SELECT * FROM plaid_webhook_events ORDER BY id DESC LIMIT 100').all() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Plaid Dashboard「Call endpoints」任务用：给每个已连接的 sandbox item 注册 webhook
+// 地址，再让 Plaid 发一条 NEW_ACCOUNTS_AVAILABLE 测试 webhook 过来。仅 sandbox。
+app.post('/api/plaid/fire-test-webhook', requireAdmin, requireRole('admin'), async (req, res) => {
+  try {
+    if (!plaidReady()) return res.status(400).json({ error: '还没配置 Plaid 密钥' });
+    if (String(process.env.PLAID_ENV || 'sandbox').toLowerCase() !== 'sandbox') {
+      return res.status(400).json({ error: '测试 webhook 只在 sandbox 环境可用（PLAID_ENV=sandbox）' });
+    }
+    const items = db.prepare('SELECT * FROM plaid_items').all();
+    if (!items.length) return res.status(400).json({ error: '还没有已连接的 sandbox 银行 — 先点「➕ 连接银行」连一个测试银行' });
+    const results = [];
+    for (const item of items) {
+      const token = csDecPw(item.access_token_enc);
+      if (!token) { results.push({ item_id: item.item_id, error: 'token 解密失败' }); continue; }
+      try {
+        await plaidPost('/item/webhook/update', { access_token: token, webhook: plaidWebhookUrl() });
+        await plaidPost('/sandbox/item/fire_webhook', { access_token: token, webhook_type: 'ITEM', webhook_code: 'NEW_ACCOUNTS_AVAILABLE' });
+        results.push({ item_id: item.item_id, fired: true });
+      } catch (e) { results.push({ item_id: item.item_id, error: e.message }); }
+    }
+    res.json({ success: true, webhook_url: plaidWebhookUrl(), results });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -35568,7 +35662,8 @@ app.post('/api/acct/bank/link-token', requireAdmin, requireBankAdmin, async (req
       products: ['transactions'],
       country_codes: ['US'],
       language: 'en',
-      redirect_uri: PLAID_OAUTH_BASE + '/accounting'
+      redirect_uri: PLAID_OAUTH_BASE + '/accounting',
+      webhook: plaidWebhookUrl()
     });
     res.json({ link_token: d.link_token });
   } catch (e) { res.status(500).json({ error: e.message }); }
