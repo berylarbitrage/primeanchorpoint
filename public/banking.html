@@ -97,6 +97,13 @@
     border-radius:999px;padding:3px 11px;font-size:.72rem;font-weight:600;cursor:pointer;font-family:inherit;max-width:190px;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:background .15s}
   .ann-chip:hover{background:#dbeafe}
+  .ann-chip.pending{background:#fff7ed;border-color:#fed7aa;color:#c2410c}
+  .ann-chip.pending:hover{background:#ffedd5}
+  .ann-chip.approved{background:#ecfdf5;border-color:#a7f3d0;color:#047857}
+  .ann-chip.approved:hover{background:#d1fae5}
+  .ann-status{font-size:.74rem;border-radius:8px;padding:6px 10px;margin-bottom:8px;display:flex;align-items:center;flex-wrap:wrap;gap:2px}
+  .ann-status.pending{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412}
+  .ann-status.approved{background:#ecfdf5;border:1px solid #a7f3d0;color:#047857}
   #annToast{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:99;display:none;background:#16a34a;color:#fff;
     padding:8px 18px;border-radius:10px;font-size:.82rem;box-shadow:0 8px 24px rgba(0,0,0,.25)}
   #annLightbox{position:fixed;inset:0;z-index:98;background:rgba(15,23,42,.85);display:none;align-items:center;justify-content:center;cursor:zoom-out}
@@ -109,7 +116,7 @@
 
 <div id="gate" style="display:none">
   <h1 style="color:var(--amber);font-size:1.1rem">🏦 银行对账</h1>
-  <input id="user" placeholder="用户名（仅管理员）">
+  <input id="user" placeholder="用户名（管理员 / 客服）">
   <input id="pw" type="password" placeholder="密码" onkeydown="if(event.key==='Enter')login()">
   <div class="err" id="gateErr"></div>
   <button class="btn primary" style="width:100%;margin-top:12px" onclick="login()">登录</button>
@@ -122,7 +129,7 @@
     <div style="flex:1"></div>
     <button class="btn" id="whBtn" onclick="testWebhook()" style="display:none">📡 测试 Webhook</button>
     <button class="btn" id="syncBtn" onclick="syncNow()">🔄 同步交易</button>
-    <button class="btn primary" onclick="connectBank()">➕ 连接银行</button>
+    <button class="btn primary" id="connBtn" onclick="connectBank()">➕ 连接银行</button>
   </div>
   <div class="wrap">
     <div id="setupBox" style="display:none" class="setup"></div>
@@ -163,6 +170,7 @@
 
 <script>
 let TOKEN = localStorage.getItem('adminToken') || '';
+let ROLE = '';   // 'admin' | 'cs'(客服: 只读交易 + 标注, 标注需管理员审核)
 let ACCTS = [], qTimer = null;
 
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -189,7 +197,8 @@ async function login() {
   }).then(x=>x.json()).catch(()=>({}));
   if (r.mfa_required) { location.href = '/mfa?token=' + encodeURIComponent(r.mfa_token || '') + '&next=' + encodeURIComponent(location.pathname + location.search); return; }
   if (!r.success) { document.getElementById('gateErr').textContent = r.error || '登录失败'; return; }
-  if (r.role !== 'admin') { document.getElementById('gateErr').textContent = '银行数据只有管理员能看'; return; }
+  if (!['admin', 'cs'].includes(r.role)) { document.getElementById('gateErr').textContent = '银行数据只有管理员和客服能看'; return; }
+  ROLE = r.role;
   TOKEN = r.token; localStorage.setItem('adminToken', TOKEN);
   start();
 }
@@ -201,7 +210,12 @@ async function init() {
   try {
     const s = await api('/plaid/status');
     document.getElementById('envTag').textContent = s.ready ? ('环境: ' + s.env) : '';
-    if (s.ready && s.env === 'sandbox') document.getElementById('whBtn').style.display = '';
+    if (s.ready && s.env === 'sandbox' && ROLE === 'admin') document.getElementById('whBtn').style.display = '';
+    // 客服: 只读交易 + 标注, 连接/同步等管理操作隐藏
+    if (ROLE === 'cs') {
+      document.getElementById('connBtn').style.display = 'none';
+      document.getElementById('syncBtn').style.display = 'none';
+    }
     if (!s.ready) {
       document.getElementById('setupBox').style.display = '';
       document.getElementById('setupBox').innerHTML = '<b>还差一步：配置 Plaid 密钥（一次性）</b><br>'
@@ -232,7 +246,7 @@ async function loadAccounts() {
   sel.value = cur;
   document.getElementById('accounts').innerHTML = ACCTS.map(a =>
     '<div class="acct"><div class="bank">🏦 ' + esc(a.institution || a.type)
-    + (itemRowId[a.item_id] ? ' <a href="javascript:void(0)" onclick="unlinkItem(' + itemRowId[a.item_id] + ',\'' + esc(a.institution || a.name).replace(/'/g, '') + '\')" style="color:var(--red);float:right;text-decoration:none">✕ 解绑</a>' : '')
+    + (ROLE === 'admin' && itemRowId[a.item_id] ? ' <a href="javascript:void(0)" onclick="unlinkItem(' + itemRowId[a.item_id] + ',\'' + esc(a.institution || a.name).replace(/'/g, '') + '\')" style="color:var(--red);float:right;text-decoration:none">✕ 解绑</a>' : '')
     + '</div>'
     + '<div class="nm">' + esc(a.name) + (a.mask ? ' <span class="sub">····' + a.mask + '</span>' : '') + '</div>'
     + '<div class="bal">' + money(a.balance_current, a.currency) + '</div>'
@@ -983,7 +997,8 @@ async function bsUpdateBoxField(id, field, value) {
   if (!box) return;
   box[field] = value;
   try {
-    await api(`/admin/bank-statements/${box.statement_id}/boxes/${id}`, { method: 'PUT', body: JSON.stringify({ [field]: value }) });
+    const r = await api(`/plaid/annotations/${id}`, { method: 'PUT', body: JSON.stringify({ [field]: value }) });
+    if (r && r.ann_status !== undefined) { box.ann_status = r.ann_status; box.ann_by = r.ann_by || box.ann_by; annStatusLineRefresh(box); }
     const s = document.getElementById('bsEdStatus'); if (s) { s.textContent = '已保存 ✓'; setTimeout(() => { if (s.textContent === '已保存 ✓') s.textContent = ''; }, 1200); }
   } catch (e) { showToast('保存失败：' + (e.message || e), 'error'); }
   bsRefreshNoteState(id);
@@ -1072,10 +1087,11 @@ async function _bsInvItemsSave(box, items) {
   clearTimeout(_bsInvSaveTimers[box.id]);
   _bsInvSaveTimers[box.id] = setTimeout(async () => {
     try {
-      await api(`/admin/bank-statements/${box.statement_id}/boxes/${box.id}`, { method: 'PUT', body: JSON.stringify({
+      const r = await api(`/plaid/annotations/${box.id}`, { method: 'PUT', body: JSON.stringify({
         inv_items: JSON.stringify(_bsInvItems(box)), invoice_number: box.invoice_number,
         period_start: box.period_start, period_end: box.period_end,
       }) });
+      if (r && r.ann_status !== undefined) { box.ann_status = r.ann_status; box.ann_by = r.ann_by || box.ann_by; annStatusLineRefresh(box); }
       const s = document.getElementById('bsEdStatus'); if (s) { s.textContent = '已保存 ✓'; setTimeout(() => { if (s.textContent === '已保存 ✓') s.textContent = ''; }, 1200); }
     } catch (e) { showToast('保存失败：' + (e.message || e), 'error'); }
     bsRefreshNoteState(box.id);
@@ -1165,10 +1181,11 @@ async function bsBoxUploadPhotos(id, files) {
   const fd = new FormData();
   Array.from(files).forEach(f => fd.append('photos', f));
   try {
-    const res = await fetch(API + `/admin/bank-statements/${box.statement_id}/boxes/${id}/photos`, { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd });
+    const res = await fetch(API + `/plaid/annotations/${id}/photos`, { method: 'POST', headers: { Authorization: 'Bearer ' + TOKEN }, body: fd });
     const r = await res.json();
     if (!r.success) throw new Error(r.error || '上传失败');
     box.photos_urls = r.photos_urls || [];
+    if (r.ann_status) { box.ann_status = r.ann_status; annRefreshChip(box); }
     _bsRenderBoxPanel();
     showToast('照片已上传 ✓');
   } catch (e) { showToast('上传失败：' + (e.message || e), 'error'); }
@@ -1177,20 +1194,47 @@ async function bsBoxDeletePhoto(id, url) {
   if (!await showConfirm('删除这张照片？')) return;
   const box = _bsBoxList.find(b => b.id === id); if (!box) return;
   try {
-    const r = await api(`/admin/bank-statements/${box.statement_id}/boxes/${id}/photos`, { method: 'DELETE', body: JSON.stringify({ photo: url }) });
+    const r = await api(`/plaid/annotations/${id}/photos`, { method: 'DELETE', body: JSON.stringify({ photo: url }) });
     if (r && r.error) throw new Error(r.error);
     box.photos_urls = r.photos_urls || [];
+    if (r.ann_status) { box.ann_status = r.ann_status; annRefreshChip(box); }
     _bsRenderBoxPanel();
   } catch (e) { showToast('删除失败：' + (e.message || e), 'error'); }
 }
 async function annDeleteBox(id) {
   if (!await showConfirm('删除这条标注？照片记录会一并删除。')) return;
   const box = _bsBoxList.find(b => b.id === id); if (!box) return;
-  try { await api(`/admin/bank-statements/${box.statement_id}/boxes/${id}`, { method: 'DELETE' }); }
+  try { await api(`/plaid/annotations/${id}`, { method: 'DELETE' }); }
   catch (e) { showToast('删除失败：' + (e.message || e), 'error'); return; }
   _bsBoxList = _bsBoxList.filter(b => b.id !== id);
   if (box.plaid_txn_id) { delete ANN[box.plaid_txn_id]; annRefreshChip(box); }
   annClose();
+}
+// 管理员审核通过客服的标注
+async function annApprove(id) {
+  const box = _bsBoxList.find(b => b.id === id); if (!box) return;
+  try {
+    await api(`/plaid/annotations/${id}/approve`, { method: 'POST', body: '{}' });
+    box.ann_status = 'approved';
+    annRefreshChip(box);
+    _bsRenderBoxPanel();
+    showToast('已审核通过 ✓');
+  } catch (e) { showToast(e.message || '审核失败', 'error'); }
+}
+// 状态条: 待审核/已审核 提示 (客服每次保存后刷新)
+function annStatusLineHtml(box) {
+  if (box.ann_status === 'pending') {
+    return '<div class="ann-status pending" id="annStatusLine">⏳ ' + esc(box.ann_by || '客服') + ' 提交的标注，待管理员审核'
+      + (ROLE === 'admin' ? ' <button onclick="annApprove(' + box.id + ')" style="margin-left:6px;border:none;background:#16a34a;color:#fff;border-radius:6px;padding:3px 12px;font-size:.74rem;cursor:pointer;font-weight:700">✅ 审核通过</button>' : '')
+      + '</div>';
+  }
+  if (box.ann_status === 'approved') return '<div class="ann-status approved" id="annStatusLine">✅ 已审核' + (box.ann_by ? '（' + esc(box.ann_by) + ' 标注）' : '') + '</div>';
+  return '<div id="annStatusLine" style="display:none"></div>';
+}
+function annStatusLineRefresh(box) {
+  const el = document.getElementById('annStatusLine');
+  if (!el || !box || box.id !== _annOpenId) return;
+  el.outerHTML = annStatusLineHtml(box);
 }
 
 // ── 抽屉里渲染当前打开的标注（表单结构与 admin.html 的 box 卡片一致）──
@@ -1201,10 +1245,11 @@ function _bsRenderBoxPanel() {
   if (!box) { panel.innerHTML = ''; return; }
   const isIn = box.direction === 'in';
   const color = isIn ? '#059669' : '#dc2626';
-  panel.innerHTML = `<div class="bs-box-item" data-id="${box.id}" style="border:1px solid var(--gray-200);border-left:3px solid ${color};border-radius:8px;padding:.5rem .55rem;margin-bottom:.5rem">
+  panel.innerHTML = annStatusLineHtml(box)
+    + `<div class="bs-box-item" data-id="${box.id}" style="border:1px solid var(--gray-200);border-left:3px solid ${color};border-radius:8px;padding:.5rem .55rem;margin-bottom:.5rem">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.35rem">
         <span style="font-weight:700;font-size:.82rem;color:${color}">🧾 标注（付给公司 / 金额 / 收支）</span>
-        <button onclick="annDeleteBox(${box.id})" title="删除" style="border:none;background:#fef2f2;color:#b91c1c;border-radius:4px;cursor:pointer;font-size:.8rem;padding:.1rem .45rem">🗑 删除</button>
+        ${ROLE === 'admin' ? `<button onclick="annDeleteBox(${box.id})" title="删除" style="border:none;background:#fef2f2;color:#b91c1c;border-radius:4px;cursor:pointer;font-size:.8rem;padding:.1rem .45rem">🗑 删除</button>` : ''}
       </div>
       <div style="display:flex;gap:.3rem;margin-bottom:.35rem">
         <select class="bs-bx-dir" disabled title="收支方向由银行交易金额决定，不可修改" style="flex:0 0 auto;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;background:var(--gray-100);color:var(--gray-600);cursor:not-allowed">
@@ -1326,7 +1371,9 @@ function annChipHtml(txnId) {
   if (!b) return '<button class="ann-add" data-txn="' + esc(txnId) + '" onclick="annOpen(this.dataset.txn)">＋ 标注</button>';
   const warn = _bsNoteSatisfied(b) ? '' : ' <span style="color:#dc2626">⚠</span>';
   const label = _bsPayeeDisplay(b.payee) || (b.direction === 'in' ? '收入' : '支出') + '（待填）';
-  return '<button class="ann-chip" data-txn="' + esc(txnId) + '" onclick="annOpen(this.dataset.txn)" title="' + esc(label) + '">' + esc(label) + warn + '</button>';
+  const st = b.ann_status === 'pending' ? ' pending' : (b.ann_status === 'approved' ? ' approved' : '');
+  const suffix = b.ann_status === 'pending' ? ' ⏳待审核' : (b.ann_status === 'approved' ? ' ✓' : '');
+  return '<button class="ann-chip' + st + '" data-txn="' + esc(txnId) + '" onclick="annOpen(this.dataset.txn)" title="' + esc(label + suffix) + '">' + esc(label) + suffix + warn + '</button>';
 }
 function annRefreshChip(box) {
   if (!box || !box.plaid_txn_id) return;
@@ -1352,12 +1399,12 @@ async function annOpen(txnId) {
     const box = annStore(await api('/plaid/annotations', { method: 'POST', body: JSON.stringify({ txn_id: txnId }) }));
     _annOpenId = box.id;
     const t = _TXNS.find(x => x.txn_id === txnId);
-    // 收支方向由交易金额定死 (Plaid 正数=支出)；旧标注若被改错，打开时纠正回来
-    if (t) {
+    // 收支方向由交易金额定死 (Plaid 正数=支出)；旧标注若被改错，管理员打开时纠正回来
+    if (t && ROLE === 'admin') {
       const expect = (t.amount || 0) > 0 ? 'out' : 'in';
       if (box.direction !== expect) {
         box.direction = expect;
-        try { await api('/admin/bank-statements/' + box.statement_id + '/boxes/' + box.id, { method: 'PUT', body: JSON.stringify({ direction: expect }) }); } catch (e2) {}
+        try { await api('/plaid/annotations/' + box.id, { method: 'PUT', body: JSON.stringify({ direction: expect }) }); } catch (e2) {}
       }
     }
     document.getElementById('annTxnInfo').textContent = t
@@ -1378,8 +1425,8 @@ function annClose() {
 if (TOKEN) {
   fetch('/api/admin/me', { headers: { 'Authorization': 'Bearer ' + TOKEN } })
     .then(r => r.json()).then(r => {
-      if (r && r.username && r.role === 'admin') start();
-      else showGate(r && r.username ? '银行数据只有管理员能看' : '');
+      if (r && r.username && ['admin', 'cs'].includes(r.role)) { ROLE = r.role; start(); }
+      else showGate(r && r.username ? '银行数据只有管理员和客服能看' : '');
     }).catch(() => showGate(''));
 } else showGate('');
 </script>
