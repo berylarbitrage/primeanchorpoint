@@ -5,10 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>打卡台 Time Clock</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%8F%B0%3C/text%3E%3C/svg%3E">
+<link rel="manifest" href="kiosk-manifest.json">
+<meta name="theme-color" content="#0F2B5B">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
 :root{--blue:#0F2B5B;--sky:#4A90D9;--green:#2D9D78;--red:#E63946;--orange:#F5A623;--off:#F7F8FA;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A}
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
-html,body{height:100%}
+html,body{height:100%;overscroll-behavior:none}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-serif;background:var(--blue);color:#fff;display:flex;flex-direction:column;overflow:hidden;touch-action:manipulation}
 /* Header */
 .hdr{display:flex;align-items:center;justify-content:space-between;padding:.9rem 1.4rem;flex-shrink:0}
@@ -23,7 +27,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-seri
 .lang-btn{padding:.28rem .85rem;border:1.5px solid rgba(255,255,255,.35);border-radius:20px;background:transparent;color:rgba(255,255,255,.65);font-size:.8rem;font-weight:600;cursor:pointer;font-family:inherit}
 .lang-btn.active{background:#fff;color:var(--blue);border-color:#fff}
 /* Screens */
-.stage{flex:1;display:flex;align-items:center;justify-content:center;padding:0 1rem 1.2rem;min-height:0}
+.stage{flex:1;display:flex;align-items:safe center;justify-content:center;padding:.4rem 1rem 1.2rem;min-height:0;overflow:auto}
 .screen{display:none;width:100%;max-width:540px}
 .screen.active{display:block}
 /* Screen 1: keypad */
@@ -62,6 +66,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-seri
 .foot{flex-shrink:0;text-align:center;font-size:.7rem;color:rgba(255,255,255,.35);padding:0 1rem .6rem}
 .alt-btn{flex:1;padding:.8rem .4rem;border:1.5px solid rgba(255,255,255,.3);border-radius:14px;background:transparent;color:rgba(255,255,255,.85);font-size:1rem;font-weight:700;cursor:pointer;font-family:inherit}
 .alt-btn:active{background:rgba(255,255,255,.15)}
+/* 横屏平板: 左边提示/功能按钮 + 右边数字键盘 两栏排布, 避免竖列溢出跟语言栏挤在一起 */
+@media (orientation: landscape) and (max-height: 900px) {
+  #scrPw.active, #scrForgot.active{
+    display:grid;max-width:880px;column-gap:3.5rem;align-items:center;justify-content:center;
+    grid-template-columns:minmax(260px,1fr) minmax(330px,400px);
+    grid-template-areas:'hint pad' 'dots pad' 'err pad' 'alt pad';
+  }
+  #scrPw .pw-hint, #scrForgot .pw-hint{grid-area:hint;font-size:1.2rem;margin-bottom:1rem}
+  #scrPw .pw-dots, #scrForgot .pw-dots{grid-area:dots;margin-bottom:.8rem}
+  #scrPw .pw-err, #scrForgot .pw-err{grid-area:err;margin-bottom:0}
+  #scrPw .keypad, #scrForgot .keypad{grid-area:pad;margin:0;width:100%}
+  #scrPw .altrow{grid-area:alt;margin:1.4rem auto 0;width:100%;max-width:none}
+  #scrForgot .act-cancel{grid-area:alt;margin:1.4rem auto 0;max-width:none;width:100%}
+  .key{height:min(14vh,78px);font-size:1.7rem}
+  .lang-bar{padding-bottom:.8rem}
+}
 </style>
 </head>
 <body>
@@ -71,9 +91,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-seri
       <div class="hdr-title" id="siteName">…</div>
     </div>
   </div>
-  <div class="hdr-right">
-    <div class="hdr-clock" id="clock">--:--:--</div>
-    <div class="hdr-date" id="clockDate"></div>
+  <div class="hdr-right" style="display:flex;align-items:center;gap:.8rem">
+    <button id="fsBtn" onclick="goFullscreen()" title="全屏" style="border:1.5px solid rgba(255,255,255,.3);background:transparent;color:rgba(255,255,255,.7);border-radius:10px;padding:.35rem .6rem;font-size:1rem;cursor:pointer;font-family:inherit">⛶</button>
+    <div>
+      <div class="hdr-clock" id="clock">--:--:--</div>
+      <div class="hdr-date" id="clockDate"></div>
+    </div>
   </div>
 </div>
 <div class="lang-bar">
@@ -102,7 +125,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-seri
       <button class="key" onclick="kp('0')">0</button>
       <button class="key fn" onclick="kpBack()">⌫</button>
     </div>
-    <div style="display:flex;gap:.7rem;max-width:400px;margin:.85rem auto 0">
+    <div class="altrow" style="display:flex;gap:.7rem;max-width:400px;margin:.85rem auto 0">
       <button class="alt-btn" onclick="scanStart()">📷 <span id="lblScan">扫码打卡</span></button>
       <button class="alt-btn" onclick="forgotStart()">❓ <span id="lblForgot">忘记密码</span></button>
     </div>
@@ -241,7 +264,29 @@ let _actTimer = null, _actLeft = 0;
 let _resTimer = null;
 
 const $ = id => document.getElementById(id);
-const _siteId = new URLSearchParams(location.search).get('site') || '';
+// 记住仓库: 从主屏幕图标打开(没有 ?site=)时沿用上次的仓库
+const _siteParam = new URLSearchParams(location.search).get('site') || '';
+if (_siteParam) { try { localStorage.setItem('kiosk_site', _siteParam); } catch (_) {} }
+const _siteId = _siteParam || localStorage.getItem('kiosk_site') || '';
+
+// ── 打卡亭硬化: 全屏 / 屏幕常亮 / 禁长按菜单 (真正的锁定还需系统的引导式访问/固定屏幕) ──
+function goFullscreen() {
+  const el = document.documentElement;
+  const fn = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!fn) return;
+  try { const p = fn.call(el); if (p && p.catch) p.catch(() => {}); } catch (_) {}
+}
+document.addEventListener('fullscreenchange', () => {
+  $('fsBtn').style.display = document.fullscreenElement ? 'none' : '';
+});
+document.addEventListener('contextmenu', e => e.preventDefault());
+// 屏幕常亮 (Wake Lock), 熄屏/切回后自动重新申请
+let _wakeLock = null;
+async function keepAwake() {
+  try { if (navigator.wakeLock) _wakeLock = await navigator.wakeLock.request('screen'); } catch (_) {}
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
+keepAwake();
 
 function setKLang(l) {
   _kl = l; localStorage.setItem('kiosk_lang', l);
