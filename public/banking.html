@@ -92,6 +92,11 @@
       <span class="hint">到</span>
       <input type="date" id="fEnd" onchange="loadTxns()">
       <select id="fAcct" onchange="loadTxns()"><option value="">全部账户</option></select>
+      <select id="fView" onchange="localStorage.setItem('bankTxnView', this.value); loadTxns()">
+        <option value="flat">按笔显示</option>
+        <option value="week">按周显示</option>
+        <option value="month">按月显示</option>
+      </select>
       <input id="fQ" placeholder="搜描述 / 商户 / 分类…" oninput="qDebounce()" style="flex:1;min-width:160px">
       <a class="btn" id="csvBtn" href="#">⬇ 导出 CSV 给会计</a>
     </div>
@@ -164,6 +169,7 @@ async function init() {
         + '3. 重启网站后回到本页，点右上角「➕ 连接银行」。';
       return;
     }
+    try { const v = localStorage.getItem('bankTxnView'); if (v) document.getElementById('fView').value = v; } catch (e) {}
     await loadAccounts();
     await annLoadAll();
     await loadTxns();
@@ -221,18 +227,61 @@ async function loadTxns() {
     '共 ' + (r.total || 0) + ' 笔' + (rows.length < (r.total || 0) ? '（显示最近 ' + rows.length + ' 笔）' : '')
     + ' · 净额 ' + money(-(r.sum || 0));
   _TXNS = rows;
-  document.getElementById('txns').innerHTML = rows.length
-    ? '<table><tr><th>日期</th><th>账户</th><th>描述</th><th>分类</th><th style="text-align:right">金额</th><th>标注</th></tr>'
-      + rows.map(t =>
-        '<tr><td>' + esc(t.date) + (t.pending ? ' <span class="hint">待清算</span>' : '') + '</td>'
-        + '<td>' + esc(accName(t.account_id)) + '</td>'
-        + '<td>' + esc(t.merchant || t.name) + '</td>'
-        + '<td class="hint">' + esc(t.category || '') + '</td>'
-        // Plaid 的正数是支出、负数是入账；显示按会计习惯反过来
-        + '<td style="text-align:right" class="' + (t.amount < 0 ? 'amt-in' : 'amt-out') + '">' + money(-t.amount, t.currency) + '</td>'
-        + '<td class="ann-cell" data-txn="' + esc(t.txn_id) + '">' + annChipHtml(t.txn_id) + '</td></tr>').join('')
-      + '</table>'
-    : '<div class="empty">这个范围内没有交易。连接银行后点「🔄 同步交易」。</div>';
+  // Plaid 的正数是支出、负数是入账；显示按会计习惯反过来
+  const rowHtml = (t, grp) =>
+    '<tr' + (grp ? ' data-grp="' + esc(grp) + '"' : '') + '><td>' + esc(t.date) + (t.pending ? ' <span class="hint">待清算</span>' : '') + '</td>'
+    + '<td>' + esc(accName(t.account_id)) + '</td>'
+    + '<td>' + esc(t.merchant || t.name) + '</td>'
+    + '<td class="hint">' + esc(t.category || '') + '</td>'
+    + '<td style="text-align:right" class="' + (t.amount < 0 ? 'amt-in' : 'amt-out') + '">' + money(-t.amount, t.currency) + '</td>'
+    + '<td class="ann-cell" data-txn="' + esc(t.txn_id) + '">' + annChipHtml(t.txn_id) + '</td></tr>';
+  const head = '<tr><th>日期</th><th>账户</th><th>描述</th><th>分类</th><th style="text-align:right">金额</th><th>标注</th></tr>';
+  const view = document.getElementById('fView').value;
+  let body;
+  if (!rows.length) {
+    document.getElementById('txns').innerHTML = '<div class="empty">这个范围内没有交易。连接银行后点「🔄 同步交易」。</div>';
+    return;
+  }
+  if (view === 'flat') {
+    body = rows.map(t => rowHtml(t)).join('');
+  } else {
+    // 按周（周一起）或按月分组，每组带收入/支出/净额小计，点组头可折叠
+    const groups = [], byKey = {};
+    for (const t of rows) {
+      const g = view === 'week' ? txnWeek(t.date) : { key: String(t.date || '').slice(0, 7), label: String(t.date || '').slice(0, 7) };
+      if (!byKey[g.key]) { byKey[g.key] = { ...g, txns: [], inSum: 0, outSum: 0 }; groups.push(byKey[g.key]); }
+      byKey[g.key].txns.push(t);
+      if (t.amount < 0) byKey[g.key].inSum += -t.amount; else byKey[g.key].outSum += t.amount;
+    }
+    body = groups.map(g => {
+      const net = g.inSum - g.outSum;
+      return '<tr class="grp-head" onclick="toggleGrp(this,\'' + esc(g.key) + '\')" style="cursor:pointer;background:#fef3c7">'
+        + '<td colspan="6" style="font-size:.78rem"><span class="grp-arrow">▼</span> <b>📅 ' + esc(g.label) + '</b>'
+        + ' · ' + g.txns.length + ' 笔'
+        + ' · 收入 <span class="amt-in">' + money(g.inSum) + '</span>'
+        + ' · 支出 <span class="amt-out">−' + money(g.outSum) + '</span>'
+        + ' · 净额 <span style="font-weight:800;color:' + (net >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (net >= 0 ? '+' : '−') + money(Math.abs(net)) + '</span>'
+        + '</td></tr>'
+        + g.txns.map(t => rowHtml(t, g.key)).join('');
+    }).join('');
+  }
+  document.getElementById('txns').innerHTML = '<table>' + head + body + '</table>';
+}
+
+// 一笔交易所在的周（周一为一周起点）
+function txnWeek(dateStr) {
+  const d = new Date(String(dateStr || '') + 'T00:00:00');
+  if (isNaN(d)) return { key: String(dateStr || ''), label: String(dateStr || '') };
+  const fmt = x => x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
+  const mon = new Date(d); mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+  return { key: fmt(mon), label: fmt(mon) + ' ~ ' + fmt(sun) };
+}
+function toggleGrp(headRow, key) {
+  const hidden = headRow._collapsed = !headRow._collapsed;
+  headRow.parentElement.querySelectorAll('tr[data-grp="' + key + '"]').forEach(r => { r.style.display = hidden ? 'none' : ''; });
+  const a = headRow.querySelector('.grp-arrow');
+  if (a) a.textContent = hidden ? '▶' : '▼';
 }
 
 function openPlaidLink(linkToken, receivedRedirectUri) {
