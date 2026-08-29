@@ -68,6 +68,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-seri
 .alt-btn:active{background:rgba(255,255,255,.15)}
 .fp-num{text-align:center;font-size:1.8rem;font-weight:800;letter-spacing:.1em;min-height:2.6rem;margin-bottom:.5rem;font-variant-numeric:tabular-nums}
 /* 横屏平板: 左边提示/功能按钮 + 右边数字键盘 两栏排布, 避免竖列溢出跟语言栏挤在一起 */
+/* 暗环境补光: 打卡过程整页转为亮白, 屏幕本身当补光灯照亮人脸 */
+body.brite{background:#fff;color:var(--blue)}
+body.brite .hdr-site,body.brite .hdr-date{color:rgba(15,43,91,.55)}
+body.brite .pw-dot{border-color:rgba(15,43,91,.45)}
+body.brite .pw-dot.on{background:var(--blue);border-color:var(--blue)}
+body.brite .key{background:rgba(15,43,91,.08);color:var(--blue)}
+body.brite .key:active{background:rgba(15,43,91,.22)}
+body.brite .key.fn{background:rgba(15,43,91,.04);color:rgba(15,43,91,.75)}
+body.brite .lang-btn{border-color:rgba(15,43,91,.3);color:rgba(15,43,91,.6)}
+body.brite .lang-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+body.brite .alt-btn{border-color:rgba(15,43,91,.3);color:rgba(15,43,91,.78)}
+body.brite .alt-btn:active{background:rgba(15,43,91,.1)}
+body.brite .pw-err{color:var(--red)}
+body.brite .foot{color:rgba(15,43,91,.35)}
+body.brite #fsBtn{border-color:rgba(15,43,91,.3);color:rgba(15,43,91,.6)}
+body.brite #fpNum{color:rgba(15,43,91,.9)!important}
+/* 提交打卡瞬间的全屏白光闪拍层 */
+#flashOv{position:fixed;inset:0;background:#fff;z-index:9999;display:none}
 @media (orientation: landscape) and (max-height: 900px) {
   #scrPw.active, #scrForgot.active{
     display:grid;max-width:880px;column-gap:3.5rem;align-items:center;justify-content:center;
@@ -196,6 +214,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-seri
 <!-- 打卡留档拍照: 摄像头页面打开即常驻(装机时授权一次), 静默抓拍, 照片仅后台打卡记录可见 -->
 <!-- 视频元素留在屏幕内 2px 大小（近乎不可见）: 完全移出屏幕/opacity:0 时安卓 Chrome 会停止渲染帧, 抓到全黑 -->
 <video id="camVid" autoplay playsinline muted style="position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:.01;pointer-events:none"></video>
+<div id="flashOv"></div>
 <div class="foot"></div>
 
 <script>
@@ -315,6 +334,7 @@ function _loadJsQR() {
   return _jsqrLoading;
 }
 async function scanStart() {
+  briteAuto();
   showScr('scrScan');
   $('scanErr').textContent = '';
   await camStart();
@@ -372,7 +392,7 @@ function scanStop(backToPw) {
 
 // ── 忘记密码: 输手机号 → 短信发密码+二维码; 未登记 → 显示注册二维码 ──
 let _fp = '', _fpBusy = false;
-function forgotStart() { _fp = ''; _fpBusy = false; renderFpNum(); $('fpErr').textContent = ''; showScr('scrForgot'); }
+function forgotStart() { briteAuto(); _fp = ''; _fpBusy = false; renderFpNum(); $('fpErr').textContent = ''; showScr('scrForgot'); }
 function renderFpNum() {
   const el = $('fpNum');
   el.textContent = _fp || '···';
@@ -453,12 +473,12 @@ function _frameToCanvas(src, sw, sh) {
   c.width = w; c.height = h;
   const ctx = c.getContext('2d');
   ctx.drawImage(src, 0, 0, w, h);
-  c.isDark = false;
+  c.isDark = false; c.lum = 128;
   try {
     const d = ctx.getImageData(0, 0, w, h).data;
     let sum = 0, n = 0;
     for (let i = 0; i < d.length; i += 4 * 101) { sum += d[i] + d[i + 1] + d[i + 2]; n += 3; }
-    c.isDark = !!n && (sum / n) < 4;
+    if (n) { c.lum = sum / n; c.isDark = c.lum < 4; }
   } catch (_) {}
   return c;
 }
@@ -509,6 +529,31 @@ async function camShotWait(maxMs) {
   }
   return last ? last.toDataURL('image/jpeg', 0.7) : null;
 }
+// ── 暗环境补光: 光线不足时把屏幕本身当补光灯 ──
+// 1) 开始打卡 (按第一个数字/进扫码屏) 就把整页切成亮白「补光模式」, 预拍缓存里的帧都是被照亮的
+// 2) 提交打卡瞬间若画面仍偏暗, 全屏白光 ~0.6s 内闪拍 3 帧替换缓存, 保证照片能辨认
+function _envDark() {
+  const last = _recentShots[_recentShots.length - 1];
+  return !last || last.lum < 50;
+}
+function briteSet(on) {
+  document.body.classList.toggle('brite', !!on);
+  // Fully Kiosk Browser: 顺便把系统屏幕亮度拉满 (普通浏览器无此 API, 忽略)
+  if (on) { try { if (typeof fully !== 'undefined' && fully.setScreenBrightness) fully.setScreenBrightness(255); } catch (_) {} }
+}
+function briteAuto() { if (_envDark()) briteSet(true); }
+async function camFlashShots() {
+  const ov = $('flashOv');
+  ov.style.display = 'block';
+  try {
+    await new Promise(r2 => setTimeout(r2, 260)); // 等屏幕点亮 + 摄像头曝光适应
+    for (let i = 0; i < 3; i++) {
+      const c = await camGrabCanvas();
+      if (c) { _recentShots.push(c); if (_recentShots.length > 3) _recentShots.shift(); }
+      if (i < 2) await new Promise(r2 => setTimeout(r2, 170));
+    }
+  } finally { ov.style.display = 'none'; }
+}
 function xerr(msg) {
   if (_kl !== 'zh' && ERR_MAP[msg] && ERR_MAP[msg][_kl]) return ERR_MAP[msg][_kl];
   return msg;
@@ -544,6 +589,7 @@ function resetToPw() {
   scanStop();
   _pw = ''; _pwLocked = false; _fp = ''; _fpBusy = false;
   renderDots(); $('pwErr').textContent = '';
+  briteSet(false);
   showScr('scrPw');
 }
 
@@ -555,6 +601,7 @@ function renderDots() {
 renderDots();
 function kp(d) {
   if (_pwLocked || _pw.length >= 8) return;
+  if (!_pw) briteAuto(); // 开始输密码就检查光线, 暗则立即切补光模式照亮人脸
   $('pwErr').textContent = '';
   _pw += d; renderDots();
   if (_pw.length === 8) checkPw();
@@ -625,6 +672,8 @@ async function doPunchNow() {
   const btn = $('btnPunch');
   btn.style.opacity = '.6';
   try {
+    // 光线仍不足 (缓存帧偏暗/缓存空) → 全屏白光闪拍 3 帧替换缓存, 保证暗环境照片可辨认
+    if (_envDark()) { await camStart(); await camFlashShots(); }
     // 最近 3 帧拼成三连拍零等待; 极少数缓存还空时短暂等一下 (最多 1.2s), 保证记录带照片
     const photo = camComposite() || await camShotWait(1200);
     const r = await fetch('/api/kiosk/punch', {
