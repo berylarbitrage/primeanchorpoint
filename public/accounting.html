@@ -228,6 +228,7 @@ function enterMain() {
   // 银行直连: 仅 admin / 会计可见
   document.getElementById('tabBank').style.display = ['admin', 'accounting'].includes(USER.role) ? '' : 'none';
   loadAll();
+  bankOauthResume();
 }
 function acctLogout(silent) {
   if (TOKEN && !silent) fetch('/api/admin/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN } }).catch(() => {});
@@ -778,29 +779,47 @@ function _loadPlaidScript() {
     document.head.appendChild(sc);
   });
 }
+function _plaidOpenLink(linkToken, receivedRedirectUri) {
+  const handler = window.Plaid.create({
+    token: linkToken,
+    receivedRedirectUri: receivedRedirectUri || null,
+    onSuccess: async (public_token, metadata) => {
+      localStorage.removeItem('plaid_link_token_acct');
+      try {
+        const inst = (metadata && metadata.institution) || {};
+        const r = await bapi('/api/acct/bank/exchange', { method: 'POST', body: JSON.stringify({
+          public_token, institution_id: inst.institution_id || '', institution_name: inst.name || ''
+        }) });
+        toast('✅ 已连接，正在同步交易…');
+        setTimeout(() => bankRefreshStatus(), 4000);
+      } catch (e) { toast('连接保存失败: ' + (e.message || ''), true); }
+    },
+    onExit: () => { localStorage.removeItem('plaid_link_token_acct'); }
+  });
+  handler.open();
+}
 async function bankConnect() {
   const btn = document.getElementById('btnBankConnect');
   btn.disabled = true; btn.textContent = '准备中…';
   try {
     await _loadPlaidScript();
     const d = await bapi('/api/acct/bank/link-token', { method: 'POST', body: '{}' });
-    const handler = window.Plaid.create({
-      token: d.link_token,
-      onSuccess: async (public_token, metadata) => {
-        try {
-          const inst = (metadata && metadata.institution) || {};
-          const r = await bapi('/api/acct/bank/exchange', { method: 'POST', body: JSON.stringify({
-            public_token, institution_id: inst.institution_id || '', institution_name: inst.name || ''
-          }) });
-          toast('✅ 已连接，正在同步交易…');
-          setTimeout(() => bankRefreshStatus(), 4000);
-        } catch (e) { toast('连接保存失败: ' + (e.message || ''), true); }
-      },
-      onExit: () => {}
-    });
-    handler.open();
+    // OAuth 银行会整页跳去银行授权, 授权完带 oauth_state_id 跳回本页;
+    // 先存下 link_token, 跳回后由 bankOauthResume() 恢复 Link
+    localStorage.setItem('plaid_link_token_acct', d.link_token);
+    _plaidOpenLink(d.link_token);
   } catch (e) { toast(e.message || '发起连接失败', true); }
   btn.disabled = false; btn.textContent = '➕ 连接银行';
+}
+async function bankOauthResume() {
+  const stateId = new URLSearchParams(location.search).get('oauth_state_id');
+  const saved = localStorage.getItem('plaid_link_token_acct');
+  if (!stateId || !saved) return;
+  const uri = window.location.href;
+  history.replaceState(null, '', location.pathname);
+  showTab('bank');
+  try { await _loadPlaidScript(); _plaidOpenLink(saved, uri); }
+  catch (e) { toast(e.message || '恢复银行授权失败', true); }
 }
 async function bankRefreshStatus() {
   try { _bankStatus = await bapi('/api/acct/bank/status'); renderBankAccounts(); bankLoadTxns(); } catch (_) {}
