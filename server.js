@@ -26570,18 +26570,18 @@ app.post('/api/kiosk/punch', async (req, res) => {
   const a = _kioskAuth(req);
   if (a.error) return res.status(a.status).json({ error: a.error });
   const { site, emp } = a;
-  // 照片先解码好文件名入库, 实际上传放到响应之后异步做, 不拖慢打卡
-  let photoFilename = null, photoBuf = null, photoCT = '';
+  // 照片同步存好再入库响应 (小图 ~0.2s): 保证记录里的文件名一定有对应的图
+  let photoFilename = null;
   const photo = (req.body || {}).photo_data;
   if (photo && typeof photo === 'string' && photo.length < 8 * 1024 * 1024) {
     try {
       const m = /^data:image\/([A-Za-z0-9.+-]+);base64,/.exec(photo);
       const subtypeRaw = (m ? m[1] : 'jpeg').toLowerCase();
       const ext = { jpeg: 'jpg' }[subtypeRaw] || subtypeRaw.replace(/[^a-z0-9]/g, '') || 'jpg';
-      photoBuf = Buffer.from(photo.replace(/^data:image\/[A-Za-z0-9.+-]+;base64,/, ''), 'base64');
-      photoCT = `image/${subtypeRaw === 'jpg' ? 'jpeg' : subtypeRaw}`;
+      const buf = Buffer.from(photo.replace(/^data:image\/[A-Za-z0-9.+-]+;base64,/, ''), 'base64');
       photoFilename = `kiosk-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
-    } catch (e) { console.error('[Kiosk] Photo decode error:', e.message); photoFilename = null; photoBuf = null; }
+      await storage.putObject(`checkin_photos/${photoFilename}`, buf, { contentType: `image/${subtypeRaw === 'jpg' ? 'jpeg' : subtypeRaw}` });
+    } catch (e) { console.error('[Kiosk] Photo save error:', e.message); photoFilename = null; }
   }
   const siteTimezone = site.timezone || 'America/Chicago';
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
@@ -26613,10 +26613,6 @@ app.post('/api/kiosk/punch', async (req, res) => {
     photo_saved: !!photoFilename,
     entry_id: entryId
   });
-  if (photoFilename && photoBuf) {
-    storage.putObject(`checkin_photos/${photoFilename}`, photoBuf, { contentType: photoCT })
-      .catch(e => console.error('[Kiosk] Photo save error:', e.message));
-  }
 });
 
 // ── 打卡台辅助: 扫码打卡 / 忘记密码(手机号找回) / 注册二维码 ──
