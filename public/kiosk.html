@@ -150,10 +150,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-seri
     <div class="who-card">
       <div class="who-name" id="whoName"></div>
       <div class="who-status" id="whoStatus"></div>
-      <div id="camWrap" style="display:none;text-align:center;margin-bottom:1rem">
-        <video id="camVid" autoplay playsinline muted style="width:150px;height:112px;object-fit:cover;border-radius:12px;background:#e8ebf0;transform:scaleX(-1)"></video>
-        <div id="camHint" style="font-size:.72rem;color:var(--gray-400);margin-top:2px">打卡时会自动拍照留档</div>
-      </div>
+      <!-- 打卡留档拍照: 静默进行, 页面上不显示预览和提示, 照片仅后台打卡记录可见 -->
+      <video id="camVid" autoplay playsinline muted style="position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none"></video>
       <div class="act-grid">
         <button class="act-btn act-in" id="btnIn" onclick="doPunch('in')"><span class="ic">▶</span><span id="lblIn">上班打卡</span></button>
         <button class="act-btn act-out" id="btnOut" onclick="doPunch('out')"><span class="ic">◼</span><span id="lblOut">下班打卡</span></button>
@@ -254,7 +252,6 @@ function setKLang(l) {
   $('btnCancel').textContent = t.cancel;
   $('lblIn').textContent = t.btnIn; $('lblOut').textContent = t.btnOut;
   $('lblBs').textContent = t.btnBs; $('lblBe').textContent = t.btnBe;
-  $('camHint').textContent = t.camHint;
   $('lblScan').textContent = t.lblScan; $('lblForgot').textContent = t.lblForgot;
   $('scanHint').textContent = t.scanHint; $('btnScanCancel').textContent = t.cancel;
   $('fpHint').textContent = t.fpHint; $('fpKeyClear').textContent = t.clear; $('btnFpCancel').textContent = t.cancel;
@@ -386,13 +383,11 @@ async function camStart() {
     _camStream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
     $('camVid').srcObject = _camStream;
-    $('camWrap').style.display = '';
-  } catch (_) { _camStream = null; $('camWrap').style.display = 'none'; }
+  } catch (_) { _camStream = null; }
 }
 function camStop() {
   if (_camStream) { _camStream.getTracks().forEach(tr => tr.stop()); _camStream = null; }
   $('camVid').srcObject = null;
-  $('camWrap').style.display = 'none';
 }
 function camShot() {
   try {
@@ -548,7 +543,7 @@ function showResult(d) {
   $('resTitle').textContent = t.resTitle[d.action] || d.action;
   $('resName').textContent = d.name;
   $('resTime').textContent = d.clock_time || '';
-  $('resNote').textContent = (d.photo_saved ? t.resPhoto + ' · ' : '') + t.resNote;
+  $('resNote').textContent = t.resNote;
   showScr('scrRes');
   camStop();
   _pw = '';
