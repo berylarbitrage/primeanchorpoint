@@ -31611,13 +31611,23 @@ app.get('/api/plaid/accounts', requireAdmin, requireRole('admin'), (req, res) =>
 function plaidTxnQuery(req) {
   let where = '1=1';
   const params = [];
-  const { start, end, account_id, q } = req.query || {};
+  const { start, end, account_id, q, category } = req.query || {};
   if (start) { where += ' AND date >= ?'; params.push(String(start)); }
   if (end) { where += ' AND date <= ?'; params.push(String(end)); }
   if (account_id) { where += ' AND account_id = ?'; params.push(String(account_id)); }
+  if (category) { where += ' AND category = ?'; params.push(String(category)); }
   if (q) { where += ' AND (name LIKE ? OR merchant LIKE ? OR category LIKE ?)'; const like = '%' + q + '%'; params.push(like, like, like); }
   return { where, params };
 }
+
+// 全部交易的分类清单（分类筛选下拉用，含每类笔数）
+app.get('/api/plaid/txn-categories', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT COALESCE(category,'') AS category, COUNT(*) AS n
+      FROM plaid_transactions GROUP BY COALESCE(category,'') ORDER BY n DESC`).all();
+    res.json({ categories: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 app.get('/api/plaid/transactions', requireAdmin, requireRole('admin'), (req, res) => {
   try {
