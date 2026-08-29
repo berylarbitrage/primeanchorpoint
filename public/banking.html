@@ -97,6 +97,7 @@
         <option value="week">按周显示</option>
         <option value="month">按月显示</option>
       </select>
+      <select id="fCat" onchange="loadTxns()"><option value="">全部分类</option></select>
       <input id="fQ" placeholder="搜描述 / 商户 / 分类…" oninput="qDebounce()" style="flex:1;min-width:160px">
       <a class="btn" id="csvBtn" href="#">⬇ 导出 CSV 给会计</a>
     </div>
@@ -171,6 +172,7 @@ async function init() {
     }
     try { const v = localStorage.getItem('bankTxnView'); if (v) document.getElementById('fView').value = v; } catch (e) {}
     await loadAccounts();
+    await loadCats();
     await annLoadAll();
     await loadTxns();
     plaidOauthResume();
@@ -212,9 +214,32 @@ function txnQuery() {
   const p = new URLSearchParams();
   const s = document.getElementById('fStart').value, e = document.getElementById('fEnd').value;
   const a = document.getElementById('fAcct').value, q = document.getElementById('fQ').value.trim();
+  const c = document.getElementById('fCat').value;
   if (s) p.set('start', s); if (e) p.set('end', e);
   if (a) p.set('account_id', a); if (q) p.set('q', q);
+  if (c) p.set('category', c);
   return p.toString();
+}
+
+// Plaid 大分类 → 中文（Plaid 个人财务分类共 16 个大类；旧数据可能是自由文本，原样显示）
+const PLAID_CAT_ZH = {
+  INCOME: '收入', TRANSFER_IN: '转入', TRANSFER_OUT: '转出', LOAN_PAYMENTS: '贷款/还款',
+  BANK_FEES: '银行费用', ENTERTAINMENT: '娱乐', FOOD_AND_DRINK: '餐饮',
+  GENERAL_MERCHANDISE: '一般购物', HOME_IMPROVEMENT: '家居装修', MEDICAL: '医疗',
+  PERSONAL_CARE: '个人护理', GENERAL_SERVICES: '综合服务', GOVERNMENT_AND_NON_PROFIT: '政府/公益',
+  TRANSPORTATION: '交通', TRAVEL: '差旅', RENT_AND_UTILITIES: '房租/水电',
+};
+function catZh(c) { return PLAID_CAT_ZH[c] || c || ''; }
+async function loadCats() {
+  try {
+    const r = await api('/plaid/txn-categories');
+    const sel = document.getElementById('fCat');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">全部分类（' + (r.categories || []).length + ' 类）</option>'
+      + (r.categories || []).map(c =>
+        '<option value="' + esc(c.category) + '">' + esc(catZh(c.category) || '（无分类）') + '（' + c.n + ' 笔）</option>').join('');
+    sel.value = cur;
+  } catch (e) { console.error(e); }
 }
 
 async function loadTxns() {
@@ -232,7 +257,7 @@ async function loadTxns() {
     '<tr' + (grp ? ' data-grp="' + esc(grp) + '"' : '') + '><td>' + esc(t.date) + (t.pending ? ' <span class="hint">待清算</span>' : '') + '</td>'
     + '<td>' + esc(accName(t.account_id)) + '</td>'
     + '<td>' + esc(t.merchant || t.name) + '</td>'
-    + '<td class="hint">' + esc(t.category || '') + '</td>'
+    + '<td class="hint" title="' + esc(t.category || '') + '">' + esc(catZh(t.category)) + '</td>'
     + '<td style="text-align:right" class="' + (t.amount < 0 ? 'amt-in' : 'amt-out') + '">' + money(-t.amount, t.currency) + '</td>'
     + '<td class="ann-cell" data-txn="' + esc(t.txn_id) + '">' + annChipHtml(t.txn_id) + '</td></tr>';
   const head = '<tr><th>日期</th><th>账户</th><th>描述</th><th>分类</th><th style="text-align:right">金额</th><th>标注</th></tr>';
@@ -346,6 +371,7 @@ async function syncNow() {
   try {
     const r = await api('/plaid/sync', { method: 'POST', body: '{}' });
     await loadAccounts();
+    await loadCats();
     await loadTxns();
     btn.textContent = '🔄 同步交易';
     document.getElementById('sumLine').textContent += ' · 刚同步: 新增/更新 ' + (r.added || 0) + ' 笔';
