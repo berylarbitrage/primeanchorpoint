@@ -654,6 +654,21 @@ function showResult(d) {
 
 setKLang(_kl);
 camStart(); // 页面打开即申请摄像头: 装机时授权一次, 之后打卡抓拍/扫码即刻可用
+
+// ── 电池管理: 每 2 分钟上报电量, 服务器按阈值控制智能插座充/停 ──
+(async function batteryLoop() {
+  if (!navigator.getBattery || !_siteId) return;
+  try {
+    const b = await navigator.getBattery();
+    const report = () => fetch('/api/kiosk/battery', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ site_id: _siteId, level: Math.round(b.level * 100), charging: b.charging })
+    }).catch(() => {});
+    report();
+    setInterval(report, 120000);
+    b.addEventListener('levelchange', report);
+  } catch (_) {}
+})();
 </script>
 </body>
 </html>
