@@ -176,12 +176,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-seri
     <div class="who-card">
       <div class="who-name" id="whoName"></div>
       <div class="who-status" id="whoStatus"></div>
-      <div class="act-grid">
-        <button class="act-btn act-in" id="btnIn" onclick="doPunch('in')"><span class="ic">▶</span><span id="lblIn">上班打卡</span></button>
-        <button class="act-btn act-out" id="btnOut" onclick="doPunch('out')"><span class="ic">◼</span><span id="lblOut">下班打卡</span></button>
-        <button class="act-btn act-bs" id="btnBs" onclick="doPunch('break_start')"><span class="ic">⏸</span><span id="lblBs">休息开始</span></button>
-        <button class="act-btn act-be" id="btnBe" onclick="doPunch('break_end')"><span class="ic">▶▶</span><span id="lblBe">休息结束</span></button>
-      </div>
+      <button class="act-btn act-in" id="btnPunch" onclick="doPunchNow()" style="width:100%;font-size:1.6rem;padding:1.6rem .5rem"><span class="ic">👆</span><span id="lblPunch">打卡</span></button>
       <button class="act-cancel" id="btnCancel" onclick="resetToPw()">取消</button>
       <div class="count-note" id="actCount"></div>
     </div>
@@ -209,7 +204,7 @@ const KL = {
     pwHint: '输入您的 8 位打卡密码', clear: '清空', cancel: '取消',
     errReq: '网络错误，请重试', checking: '验证中…',
     stOff: '今天还未打上班卡', stOn: t => '上班中 · 上班时间 ' + t, stBrk: '休息中',
-    btnIn: '上班打卡', btnOut: '下班打卡', btnBs: '休息开始', btnBe: '休息结束',
+    btnPunch: '打卡', btnIn: '上班打卡', btnOut: '下班打卡', btnBs: '休息开始', btnBe: '休息结束',
     resTitle: { in: '上班打卡成功', out: '下班打卡成功', break_start: '休息开始', break_end: '休息结束' },
     resNote: '页面将自动返回', actCount: s => s + ' 秒后自动返回',
     camHint: '打卡时会自动拍照留档', resPhoto: '📷 已拍照留档',
@@ -224,7 +219,7 @@ const KL = {
     pwHint: 'Enter your 8-digit clock-in password', clear: 'Clear', cancel: 'Cancel',
     errReq: 'Network error, please retry', checking: 'Checking…',
     stOff: 'Not clocked in yet today', stOn: t => 'Clocked in at ' + t, stBrk: 'On break',
-    btnIn: 'Clock In', btnOut: 'Clock Out', btnBs: 'Break Start', btnBe: 'Break End',
+    btnPunch: 'Punch', btnIn: 'Clock In', btnOut: 'Clock Out', btnBs: 'Break Start', btnBe: 'Break End',
     resTitle: { in: 'Clocked In', out: 'Clocked Out', break_start: 'Break Started', break_end: 'Break Ended' },
     resNote: 'Returning automatically', actCount: s => 'Auto return in ' + s + 's',
     camHint: 'A photo is taken when you punch', resPhoto: '📷 Photo saved',
@@ -239,7 +234,7 @@ const KL = {
     pwHint: 'Ingrese su contraseña de 8 dígitos', clear: 'Borrar', cancel: 'Cancelar',
     errReq: 'Error de red, intente de nuevo', checking: 'Verificando…',
     stOff: 'Aún no ha marcado entrada hoy', stOn: t => 'Entrada marcada a las ' + t, stBrk: 'En descanso',
-    btnIn: 'Entrada', btnOut: 'Salida', btnBs: 'Inicio Descanso', btnBe: 'Fin Descanso',
+    btnPunch: 'Marcar', btnIn: 'Entrada', btnOut: 'Salida', btnBs: 'Inicio Descanso', btnBe: 'Fin Descanso',
     resTitle: { in: 'Entrada Registrada', out: 'Salida Registrada', break_start: 'Descanso Iniciado', break_end: 'Descanso Terminado' },
     resNote: 'Regresando automáticamente', actCount: s => 'Regresa en ' + s + 's',
     camHint: 'Se toma una foto al marcar', resPhoto: '📷 Foto guardada',
@@ -299,8 +294,7 @@ function setKLang(l) {
   $('pwHint').textContent = t.pwHint;
   $('keyClear').textContent = t.clear;
   $('btnCancel').textContent = t.cancel;
-  $('lblIn').textContent = t.btnIn; $('lblOut').textContent = t.btnOut;
-  $('lblBs').textContent = t.btnBs; $('lblBe').textContent = t.btnBe;
+  $('lblPunch').textContent = t.btnPunch;
   $('lblScan').textContent = t.lblScan; $('lblForgot').textContent = t.lblForgot;
   $('scanHint').textContent = t.scanHint; $('btnScanCancel').textContent = t.cancel;
   $('fpHint').textContent = t.fpHint; $('fpKeyClear').textContent = t.clear; $('btnFpCancel').textContent = t.cancel; $('btnFpGo').textContent = t.fpGo;
@@ -586,11 +580,13 @@ function buildActScreen(d) {
   else if (d.on_break) st = `<span class="brk">● ${t.stBrk}</span>`;
   else st = `<span class="on">● ${t.stOn(d.clock_in_time || '')}</span>`;
   $('whoStatus').innerHTML = st;
-  const map = { in: 'btnIn', out: 'btnOut', break_start: 'btnBs', break_end: 'btnBe' };
-  Object.values(map).forEach(id => $(id).classList.remove('suggest'));
-  if (map[d.suggested_punch_type]) $(map[d.suggested_punch_type]).classList.add('suggest');
+  // 只有一个「打卡」按钮: 上班还是下班由系统按当前状态自动判断, 不在按钮上区分
+  _punchType = d.clocked_in ? 'out' : 'in';
   showScr('scrAct');
+  // 显示姓名的同时就在后台把照片抓好, 点按钮时直接带上, 不用现拍
   camStart();
+  _preShot = null;
+  prepShotLoop();
   // 无操作自动返回，避免下一位员工看到上一位的信息
   clearInterval(_actTimer);
   _actLeft = 30;
@@ -602,16 +598,27 @@ function buildActScreen(d) {
   }, 1000);
 }
 
-let _punching = false;
-async function doPunch(type) {
+let _punching = false, _punchType = 'in', _preShot = null;
+// 操作屏停留期间每 700ms 刷新一张预拍照片, 保证点按钮那一刻手里已有最新的一帧
+async function prepShotLoop() {
+  while ($('scrAct').classList.contains('active') && !_punching) {
+    const shot = await camShot();
+    if (shot) _preShot = shot;
+    await new Promise(r2 => setTimeout(r2, 700));
+  }
+}
+async function doPunchNow() {
   if (_punching) return;
   _punching = true;
   clearInterval(_actTimer);
+  const btn = $('btnPunch');
+  btn.style.opacity = '.6';
   try {
-    const photo = await camShotWait(2500); // 拍不到（没摄像头/未授权/一直黑帧）也照常打卡
+    // 用预拍好的照片, 不等待; 万一还没有就最后快速试一次 (不阻塞超过一帧的时间)
+    const photo = _preShot || await camShot();
     const r = await fetch('/api/kiosk/punch', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ site_id: _siteId, password: _pw, punch_type: type, photo_data: photo })
+      body: JSON.stringify({ site_id: _siteId, password: _pw, punch_type: _punchType, photo_data: photo })
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || KL[_kl].errReq);
@@ -621,6 +628,7 @@ async function doPunch(type) {
     buildCountRestart();
   } finally {
     _punching = false;
+    btn.style.opacity = '';
   }
 }
 function buildCountRestart() {
