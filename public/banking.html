@@ -579,39 +579,53 @@ async function bsEnsureCompanies() {
   _bsCompanies = names.sort((a, b) => a.localeCompare(b));
 }
 function _bsPayeeLabel(direction) { return direction === 'in' ? '谁付的' : '付给谁'; }
+// 每个选项适用的收支方向: out=只在支出显示, in=只在收入显示, both=都显示。
+// 银行直连的收支方向由交易金额定死, 所以下拉只列与方向相符的选项。
+function _bsPayeeOptionDefs(direction) {
+  return [
+    { v: BS_PAYEE_BANKFEE, t: '🏦 银行费用', d: 'out' },
+    { v: BS_PAYEE_OFFICE, t: '🧾 公司办公费用（选分类）', d: 'out' },
+    { v: BS_PAYEE_COMPFEE, t: '🏛️ 公司相关费用（税务/成立费，选分类）', d: 'out' },
+    { v: BS_PAYEE_CLAIM, t: '📋 Claim', d: 'both' },
+    { v: BS_PAYEE_CC, t: '💳 还 Prime Anchor Point 信用卡', d: 'out' },
+    { v: BS_PAYEE_PAP, t: '🔁 Prime Anchor Point 转账', d: 'both' },
+    { v: BS_PAYEE_PAW, t: '🔁 Prime Anchor Workforce 转账', d: 'both' },
+    { v: BS_PAYEE_INTERNAL, t: '🏦 公司内部银行转账（选公司）', d: 'both' },
+    { v: BS_PAYEE_BINTIQUE, t: '📦 Bintique 货款', d: 'both' },
+    { v: BS_PAYEE_CASH, t: '💵 取现金', d: 'out' },
+    { v: BS_PAYEE_CASH_DEP, t: '💰 存现金', d: 'in' },
+    { v: BS_PAYEE_LAWSUIT, t: '⚖️ 诉讼费', d: 'out' },
+    { v: BS_PAYEE_LAWYER, t: '👨‍⚖️ 律师费用', d: 'out' },
+    { v: BS_PAYEE_RETURNED, t: '↩️ 退回款 Returned Payment', d: 'both' },
+    { v: BS_PAYEE_TRUCK, t: '🚚 卡车费（选公司）', d: 'out' },
+    { v: BS_PAYEE_UNLOAD, t: '📦 支付卸柜账单（选公司）', d: 'out' },
+    { v: BS_PAYEE_RENT, t: '🏠 付房租（选公司）', d: 'out' },
+    { v: BS_PAYEE_INSUR, t: '🛡️ 保险费（选保险公司）', d: 'out' },
+    { v: BS_PAYEE_FX, t: '💱 换汇（选对方）', d: 'both' },
+    { v: BS_PAYEE_WHDEP, t: '🏭 仓库押金（选仓库）', d: 'out' },
+    { v: BS_PAYEE_REFERRAL, t: '🤝 推荐费 Referral Fee（填推荐人）', d: 'out' },
+    { v: BS_PAYEE_WAGEBONUS, t: '🎁 发工资奖励（填姓名）', d: 'out' },
+    { v: BS_PAYEE_CHECK_DEP, t: '📥 存支票（选对方）', d: 'in' },
+    { v: BS_PAYEE_CHECK_WD, t: '📤 取支票（选对方）', d: 'out' },
+    { v: BS_PAYEE_NA, t: '🚫 无关', d: 'both' },
+    { v: BS_PAYEE_EMP, t: '👷 公司员工（填姓名）', d: 'out' },
+    { v: BS_PAYEE_PALLET, t: direction === 'in' ? '🪵 木板钱（选客户）' : '🪵 木板钱（选供应商）', d: 'both' },
+  ];
+}
 function _bsPayeeOptions(current, direction) {
   const opt = n => `<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`;
-  const parts = [`<option value="">— 选择${_bsPayeeLabel(direction)} —</option>`,
-    `<option value="${esc(BS_PAYEE_BANKFEE)}"${current === BS_PAYEE_BANKFEE ? ' selected' : ''}>🏦 银行费用</option>`,
-    `<option value="${esc(BS_PAYEE_OFFICE)}"${current === BS_PAYEE_OFFICE ? ' selected' : ''}>🧾 公司办公费用（选分类）</option>`,
-    `<option value="${esc(BS_PAYEE_COMPFEE)}"${current === BS_PAYEE_COMPFEE ? ' selected' : ''}>🏛️ 公司相关费用（税务/成立费，选分类）</option>`,
-    `<option value="${esc(BS_PAYEE_CLAIM)}"${current === BS_PAYEE_CLAIM ? ' selected' : ''}>📋 Claim</option>`,
-    `<option value="${esc(BS_PAYEE_CC)}"${current === BS_PAYEE_CC ? ' selected' : ''}>💳 还 Prime Anchor Point 信用卡</option>`,
-    `<option value="${esc(BS_PAYEE_PAP)}"${current === BS_PAYEE_PAP ? ' selected' : ''}>🔁 Prime Anchor Point 转账</option>`,
-    `<option value="${esc(BS_PAYEE_PAW)}"${current === BS_PAYEE_PAW ? ' selected' : ''}>🔁 Prime Anchor Workforce 转账</option>`,
-    `<option value="${BS_PAYEE_INTERNAL}"${current === BS_PAYEE_INTERNAL ? ' selected' : ''}>🏦 公司内部银行转账（选公司）</option>`,
-    `<option value="${esc(BS_PAYEE_BINTIQUE)}"${current === BS_PAYEE_BINTIQUE ? ' selected' : ''}>📦 Bintique 货款</option>`,
-    `<option value="${esc(BS_PAYEE_CASH)}"${current === BS_PAYEE_CASH ? ' selected' : ''}>💵 取现金</option>`,
-    `<option value="${esc(BS_PAYEE_CASH_DEP)}"${current === BS_PAYEE_CASH_DEP ? ' selected' : ''}>💰 存现金</option>`,
-    `<option value="${esc(BS_PAYEE_LAWSUIT)}"${current === BS_PAYEE_LAWSUIT ? ' selected' : ''}>⚖️ 诉讼费</option>`,
-    `<option value="${esc(BS_PAYEE_LAWYER)}"${current === BS_PAYEE_LAWYER ? ' selected' : ''}>👨‍⚖️ 律师费用</option>`,
-    `<option value="${esc(BS_PAYEE_RETURNED)}"${current === BS_PAYEE_RETURNED ? ' selected' : ''}>↩️ 退回款 Returned Payment</option>`,
-    `<option value="${BS_PAYEE_TRUCK}"${current === BS_PAYEE_TRUCK ? ' selected' : ''}>🚚 卡车费（选公司）</option>`,
-    `<option value="${BS_PAYEE_UNLOAD}"${current === BS_PAYEE_UNLOAD ? ' selected' : ''}>📦 支付卸柜账单（选公司）</option>`,
-    `<option value="${BS_PAYEE_RENT}"${current === BS_PAYEE_RENT ? ' selected' : ''}>🏠 付房租（选公司）</option>`,
-    `<option value="${BS_PAYEE_INSUR}"${current === BS_PAYEE_INSUR ? ' selected' : ''}>🛡️ 保险费（选保险公司）</option>`,
-    `<option value="${BS_PAYEE_FX}"${current === BS_PAYEE_FX ? ' selected' : ''}>💱 换汇（选对方）</option>`,
-    `<option value="${BS_PAYEE_WHDEP}"${current === BS_PAYEE_WHDEP ? ' selected' : ''}>🏭 仓库押金（选仓库）</option>`,
-    `<option value="${BS_PAYEE_REFERRAL}"${current === BS_PAYEE_REFERRAL ? ' selected' : ''}>🤝 推荐费 Referral Fee（填推荐人）</option>`,
-    `<option value="${BS_PAYEE_WAGEBONUS}"${current === BS_PAYEE_WAGEBONUS ? ' selected' : ''}>🎁 发工资奖励（填姓名）</option>`,
-    `<option value="${BS_PAYEE_CHECK_DEP}"${current === BS_PAYEE_CHECK_DEP ? ' selected' : ''}>📥 存支票（选对方）</option>`,
-    `<option value="${BS_PAYEE_CHECK_WD}"${current === BS_PAYEE_CHECK_WD ? ' selected' : ''}>📤 取支票（选对方）</option>`,
-    `<option value="${esc(BS_PAYEE_NA)}"${current === BS_PAYEE_NA ? ' selected' : ''}>🚫 无关</option>`,
-    `<option value="${BS_PAYEE_EMP}"${current === BS_PAYEE_EMP ? ' selected' : ''}>👷 公司员工（填姓名）</option>`,
-    `<option value="${BS_PAYEE_PALLET}"${current === BS_PAYEE_PALLET ? ' selected' : ''}>🪵 木板钱（选客户）</option>`];
+  const dir = direction === 'in' ? 'in' : 'out';
+  const parts = [`<option value="">— 选择${_bsPayeeLabel(direction)} —</option>`];
+  const known = [];
+  _bsPayeeOptionDefs(dir).forEach(o => {
+    known.push(o.v);
+    // 方向不符的选项隐藏；已保存的当前值即使方向不符也保留可见, 免得旧标注显示成空
+    if (o.d !== 'both' && o.d !== dir && o.v !== current) return;
+    parts.push(`<option value="${esc(o.v)}"${o.v === current ? ' selected' : ''}>${o.t}</option>`);
+  });
   parts.push(`<optgroup label="个人">${BS_PAYEE_PEOPLE.map(opt).join('')}</optgroup>`);
   if (_bsCompanies.length) parts.push(`<optgroup label="公司">${_bsCompanies.map(opt).join('')}</optgroup>`);
-  const known = [BS_PAYEE_BANKFEE, BS_PAYEE_OFFICE, BS_PAYEE_COMPFEE, BS_PAYEE_CLAIM, BS_PAYEE_CC, BS_PAYEE_PAP, BS_PAYEE_PAW, BS_PAYEE_INTERNAL, BS_PAYEE_BINTIQUE, BS_PAYEE_CASH, BS_PAYEE_CASH_DEP, BS_PAYEE_LAWSUIT, BS_PAYEE_LAWYER, BS_PAYEE_RETURNED, BS_PAYEE_NA, BS_PAYEE_EMP, BS_PAYEE_PALLET, BS_PAYEE_CHECK_DEP, BS_PAYEE_CHECK_WD, BS_PAYEE_TRUCK, BS_PAYEE_UNLOAD, BS_PAYEE_RENT, BS_PAYEE_INSUR, BS_PAYEE_FX, BS_PAYEE_WHDEP, BS_PAYEE_REFERRAL, BS_PAYEE_WAGEBONUS, ...BS_PAYEE_PEOPLE, ..._bsCompanies];
+  known.push(...BS_PAYEE_PEOPLE, ..._bsCompanies);
   if (current && !known.includes(current)) parts.push(`<optgroup label="其他">${opt(current)}</optgroup>`);
   return parts.join('');
 }
@@ -1148,7 +1162,7 @@ function _bsRenderBoxPanel() {
         <button onclick="annDeleteBox(${box.id})" title="删除" style="border:none;background:#fef2f2;color:#b91c1c;border-radius:4px;cursor:pointer;font-size:.8rem;padding:.1rem .45rem">🗑 删除</button>
       </div>
       <div style="display:flex;gap:.3rem;margin-bottom:.35rem">
-        <select class="bs-bx-dir" onchange="bsUpdateBoxField(${box.id},'direction',this.value)" style="flex:0 0 auto;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem">
+        <select class="bs-bx-dir" disabled title="收支方向由银行交易金额决定，不可修改" style="flex:0 0 auto;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;background:var(--gray-100);color:var(--gray-600);cursor:not-allowed">
           <option value="out"${!isIn ? ' selected' : ''}>支出</option>
           <option value="in"${isIn ? ' selected' : ''}>收入</option>
         </select>
@@ -1293,6 +1307,14 @@ async function annOpen(txnId) {
     const box = annStore(await api('/plaid/annotations', { method: 'POST', body: JSON.stringify({ txn_id: txnId }) }));
     _annOpenId = box.id;
     const t = _TXNS.find(x => x.txn_id === txnId);
+    // 收支方向由交易金额定死 (Plaid 正数=支出)；旧标注若被改错，打开时纠正回来
+    if (t) {
+      const expect = (t.amount || 0) > 0 ? 'out' : 'in';
+      if (box.direction !== expect) {
+        box.direction = expect;
+        try { await api('/admin/bank-statements/' + box.statement_id + '/boxes/' + box.id, { method: 'PUT', body: JSON.stringify({ direction: expect }) }); } catch (e2) {}
+      }
+    }
     document.getElementById('annTxnInfo').textContent = t
       ? (t.date + ' · ' + (t.merchant || t.name || '') + ' · ' + money(-t.amount, t.currency))
       : ((box.txn_date || '') + ' · $' + (box.amount || 0));
