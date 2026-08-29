@@ -31470,6 +31470,9 @@ const PLAID_BASES = {
   production: 'https://production.plaid.com',
 };
 function plaidReady() { return !!(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET); }
+// OAuth 银行 (Chase / Wells Fargo / BofA 等) 要求 link token 带 redirect_uri,
+// 且该地址必须先在 Plaid 后台登记 (Developers → API → Allowed redirect URIs)
+const PLAID_OAUTH_BASE = (process.env.PLAID_REDIRECT_BASE || 'https://primeanchorpoint.com').replace(/\/+$/, '');
 async function plaidPost(path, body) {
   const env = String(process.env.PLAID_ENV || 'sandbox').toLowerCase();
   const res = await fetch((PLAID_BASES[env] || PLAID_BASES.sandbox) + path, {
@@ -31515,6 +31518,7 @@ app.post('/api/plaid/link-token', requireAdmin, requireRole('admin'), async (req
       products: ['transactions'],
       country_codes: ['US'],
       language: 'en',
+      redirect_uri: PLAID_OAUTH_BASE + '/banking',
       webhook: plaidWebhookUrl(),
     });
     res.json({ link_token: r.link_token });
@@ -35658,6 +35662,7 @@ app.post('/api/acct/bank/link-token', requireAdmin, requireBankAdmin, async (req
       products: ['transactions'],
       country_codes: ['US'],
       language: 'en',
+      redirect_uri: PLAID_OAUTH_BASE + '/accounting',
       webhook: plaidWebhookUrl()
     });
     res.json({ link_token: d.link_token });

@@ -109,7 +109,7 @@ async function login() {
   const r = await fetch('/api/admin/login', { method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ username: document.getElementById('user').value.trim(), password: document.getElementById('pw').value })
   }).then(x=>x.json()).catch(()=>({}));
-  if (r.mfa_required) { location.href = '/mfa?token=' + encodeURIComponent(r.mfa_token || '') + '&next=' + encodeURIComponent('/banking'); return; }
+  if (r.mfa_required) { location.href = '/mfa?token=' + encodeURIComponent(r.mfa_token || '') + '&next=' + encodeURIComponent(location.pathname + location.search); return; }
   if (!r.success) { document.getElementById('gateErr').textContent = r.error || '登录失败'; return; }
   if (r.role !== 'admin') { document.getElementById('gateErr').textContent = '银行数据只有管理员能看'; return; }
   TOKEN = r.token; localStorage.setItem('adminToken', TOKEN);
@@ -135,6 +135,7 @@ async function init() {
     }
     await loadAccounts();
     await loadTxns();
+    plaidOauthResume();
   } catch (e) { console.error(e); }
 }
 
@@ -187,20 +188,39 @@ async function loadTxns() {
     : '<div class="empty">这个范围内没有交易。连接银行后点「🔄 同步交易」。</div>';
 }
 
+function openPlaidLink(linkToken, receivedRedirectUri) {
+  const handler = Plaid.create({
+    token: linkToken,
+    receivedRedirectUri: receivedRedirectUri || null,
+    onSuccess: async (publicToken, metadata) => {
+      localStorage.removeItem('plaid_link_token');
+      await api('/plaid/exchange', { method: 'POST', body: JSON.stringify({
+        public_token: publicToken,
+        institution: (metadata && metadata.institution && metadata.institution.name) || '' }) });
+      await syncNow();
+    },
+    onExit: () => { localStorage.removeItem('plaid_link_token'); },
+  });
+  handler.open();
+}
+
 async function connectBank() {
   try {
     const r = await api('/plaid/link-token', { method: 'POST', body: '{}' });
-    const handler = Plaid.create({
-      token: r.link_token,
-      onSuccess: async (publicToken, metadata) => {
-        await api('/plaid/exchange', { method: 'POST', body: JSON.stringify({
-          public_token: publicToken,
-          institution: (metadata && metadata.institution && metadata.institution.name) || '' }) });
-        await syncNow();
-      },
-    });
-    handler.open();
+    // OAuth 银行会整页跳去银行授权, 授权完带 oauth_state_id 跳回本页;
+    // 先存下 link_token, 跳回后用它 + receivedRedirectUri 恢复 Link
+    localStorage.setItem('plaid_link_token', r.link_token);
+    openPlaidLink(r.link_token);
   } catch (e) { alert(e.message); }
+}
+
+function plaidOauthResume() {
+  const stateId = new URLSearchParams(location.search).get('oauth_state_id');
+  const saved = localStorage.getItem('plaid_link_token');
+  if (!stateId || !saved) return;
+  const uri = window.location.href;
+  history.replaceState(null, '', location.pathname);
+  openPlaidLink(saved, uri);
 }
 
 // Plaid Dashboard「Call endpoints」任务：注册 webhook 地址并让 Plaid 发一条
