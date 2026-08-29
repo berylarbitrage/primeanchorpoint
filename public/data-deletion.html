@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh">
 <head>
 <meta charset="UTF-8">
 <!-- Meta Pixel Code -->
@@ -13,21 +13,28 @@
 <style>
 :root{--blue:#0F2B5B;--blue-dark:#091D40;--blue-mid:#1A3F7A;--sky:#4A90D9;--accent:#F5A623;--green:#16a34a;--white:#fff;--gray-100:#f0f2f5;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A;--gray-800:#2D3748}
 *{margin:0;padding:0;box-sizing:border-box}body{font-family:'DM Sans',sans-serif;color:var(--gray-800);background:var(--white);line-height:1.7}a{text-decoration:none;color:var(--sky)}a:hover{text-decoration:underline}
-.page-header{background:var(--blue-dark);padding:1.25rem 2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem}
+.page-header{background:var(--blue-dark);padding:1.25rem 2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
 .header-logo{display:flex;align-items:center;gap:10px}
 .header-logo img{width:32px;height:32px;object-fit:contain}
 .header-logo span{font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:.95rem;color:#fff}
 .header-logo span em{color:var(--sky);font-style:normal}
+.header-right{display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
 .back-link{font-size:.83rem;color:rgba(255,255,255,.6);transition:color .2s}.back-link:hover{color:#fff;text-decoration:none}
+.lang-switcher{display:flex;gap:.3rem}
+.lang-btn{background:none;border:1px solid rgba(255,255,255,.25);border-radius:20px;padding:.22rem .75rem;font-size:.75rem;font-weight:600;color:rgba(255,255,255,.65);cursor:pointer;transition:all .15s;font-family:inherit}
+.lang-btn:hover{border-color:var(--sky);color:#fff}
+.lang-btn.active{background:var(--sky);color:#fff;border-color:var(--sky)}
 .page-hero{background:var(--blue);padding:3.5rem 2rem 3rem;text-align:center}
 .page-hero h1{font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:2rem;color:#fff;margin-bottom:.5rem}
 .page-hero .subtitle{color:rgba(255,255,255,.5);font-size:.85rem;margin-top:.3rem}
 .content-wrap{max-width:820px;margin:0 auto;padding:3rem 2rem 5rem}
 .content-wrap h2{font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:1.15rem;color:var(--blue);margin:2.5rem 0 .75rem;padding-bottom:.4rem;border-bottom:2px solid var(--gray-100)}
-.content-wrap h2:first-child{margin-top:0}
+.lang-content>h2:first-child{margin-top:0}
 .content-wrap p{font-size:.93rem;color:var(--gray-600);margin-bottom:.9rem}
 .content-wrap ul{margin:.5rem 0 1rem 1.5rem}
 .content-wrap ul li{font-size:.93rem;color:var(--gray-600);margin-bottom:.4rem}
+.lang-content{display:none}
+.lang-content.active{display:block}
 .steps{display:grid;gap:1rem;margin:1.5rem 0}
 .step{display:flex;gap:1rem;align-items:flex-start;background:var(--gray-100);border-radius:10px;padding:1.1rem 1.25rem}
 .step-num{min-width:32px;height:32px;background:var(--blue);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.9rem;flex-shrink:0;margin-top:.1rem}
@@ -66,109 +73,294 @@
     <img src="logo.svg" alt="Prime Anchor Workforce">
     <span>PRIME ANCHOR<br><em>WORKFORCE</em></span>
   </a>
-  <a href="/" class="back-link">← Back to Home</a>
+  <div class="header-right">
+    <div class="lang-switcher">
+      <button class="lang-btn" id="langZh" onclick="setLang('zh')">中文</button>
+      <button class="lang-btn" id="langEn" onclick="setLang('en')">English</button>
+      <button class="lang-btn" id="langEs" onclick="setLang('es')">Español</button>
+    </div>
+    <a href="/" class="back-link" id="backLink">← Back to Home</a>
+  </div>
 </header>
 
 <div class="page-hero">
-  <h1>数据删除政策</h1>
-  <div class="subtitle">Data Deletion Policy</div>
-  <p style="color:rgba(255,255,255,.6);font-size:.9rem;margin-top:.5rem">Last updated: March 1, 2026</p>
+  <h1 id="heroTitle">数据删除政策</h1>
+  <div class="subtitle" id="heroSubtitle">Data Deletion Policy</div>
+  <p style="color:rgba(255,255,255,.6);font-size:.9rem;margin-top:.5rem" id="heroUpdated">Last updated: March 1, 2026</p>
 </div>
 
 <div class="content-wrap">
 
-  <!-- Chinese Section -->
-  <h2>关于数据删除 / About Data Deletion</h2>
-  <p>Prime Anchor Workforce（"公司"）尊重您对个人数据的控制权。根据《加州消费者隐私法》（CCPA/CPRA）、《伊利诺伊生物特征信息隐私法》（BIPA）及其他适用法律，您有权要求删除我们持有的您的个人信息。</p>
-  <p><em>Prime Anchor Workforce respects your right to control your personal data. Under the California Consumer Privacy Act (CCPA/CPRA), Illinois Biometric Information Privacy Act (BIPA), and other applicable laws, you have the right to request deletion of your personal information that we hold.</em></p>
+  <!-- ======================= 中文 ======================= -->
+  <div class="lang-content" id="content-zh" lang="zh">
+    <h2>关于数据删除</h2>
+    <p>Prime Anchor Workforce（"公司"）尊重您对个人数据的控制权。根据《加州消费者隐私法》（CCPA/CPRA）、《伊利诺伊生物特征信息隐私法》（BIPA）及其他适用法律，您有权要求删除我们持有的您的个人信息。</p>
 
-  <h2>如何提交删除申请 / How to Submit a Deletion Request</h2>
-  <div class="steps">
-    <div class="step">
-      <div class="step-num">1</div>
-      <div class="step-body">
-        <h4>发送删除申请 / Submit Your Request</h4>
-        <p>通过电子邮件发送删除申请至 <a href="mailto:info@primeanchorworkforce.com">info@primeanchorworkforce.com</a>，邮件主题注明：<strong>数据删除申请 / Data Deletion Request</strong></p>
-        <p><em>Send your deletion request via email to <a href="mailto:info@primeanchorworkforce.com">info@primeanchorworkforce.com</a> with the subject line: <strong>Data Deletion Request</strong></em></p>
+    <h2>如何提交删除申请</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h4>发送删除申请</h4>
+          <p>通过电子邮件发送删除申请至 <a href="mailto:info@primeanchorworkforce.com">info@primeanchorworkforce.com</a>，邮件主题注明：<strong>数据删除申请 / Data Deletion Request</strong></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>身份验证</h4>
+          <p>为保护您的数据安全，我们需要验证您的身份。请在邮件中提供：全名、注册邮箱/电话、账号用户名（如有）。</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h4>处理时间</h4>
+          <p>我们将在收到申请后 <strong>45个工作日</strong> 内处理您的请求，并发送确认邮件。如需延期，我们会提前告知。</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h4>删除确认</h4>
+          <p>完成删除后，我们将发送书面确认，说明哪些数据已被删除，哪些数据因法律要求需要保留。</p>
+        </div>
       </div>
     </div>
-    <div class="step">
-      <div class="step-num">2</div>
-      <div class="step-body">
-        <h4>身份验证 / Identity Verification</h4>
-        <p>为保护您的数据安全，我们需要验证您的身份。请在邮件中提供：全名、注册邮箱/电话、账号用户名（如有）。</p>
-        <p><em>To protect your data, we need to verify your identity. Please include: full name, registered email/phone, and account username (if applicable).</em></p>
-      </div>
+
+    <h2>可删除的数据</h2>
+    <p>应您的申请，我们可以删除以下类型的数据（在法律允许的范围内）：</p>
+    <ul>
+      <li>账户信息（用户名、密码、联系方式）</li>
+      <li>申请记录和简历</li>
+      <li>身份验证照片（自拍）</li>
+      <li>平台使用数据和日志</li>
+      <li>消息记录和沟通记录</li>
+    </ul>
+
+    <h2>必须保留的数据</h2>
+    <p>部分数据因法律义务无法立即删除，包括：</p>
+    <table class="retention-table">
+      <thead><tr><th>数据类型</th><th>保留期限</th><th>法律依据</th></tr></thead>
+      <tbody>
+        <tr><td>工资记录</td><td>7年</td><td>IRS, Department of Labor</td></tr>
+        <tr><td>I-9 就业资格表</td><td>就职后3年或离职后1年（取较长者）</td><td>8 U.S.C. § 1324a</td></tr>
+        <tr><td>工伤记录</td><td>5年</td><td>Federal Safety Regulations</td></tr>
+        <tr><td>背景调查授权</td><td>5年</td><td>FCRA 15 U.S.C. § 1681</td></tr>
+        <tr><td>税务记录</td><td>7年</td><td>IRS Rev. Proc. 98-25</td></tr>
+        <tr><td>合同和协议</td><td>合同期后5年</td><td>Illinois Statute of Limitations</td></tr>
+      </tbody>
+    </table>
+
+    <h2>账户注销</h2>
+    <p>若您希望注销 Prime Anchor Workforce 平台账户，请通过以下方式申请：</p>
+    <ul>
+      <li>登录后在"我的信息"页面提交账户注销申请</li>
+      <li>发送邮件至 <a href="mailto:info@primeanchorworkforce.com">info@primeanchorworkforce.com</a></li>
+    </ul>
+    <p>请注意：账户注销不会自动删除全部个人数据 — 如需彻底删除，可能需要另行提交数据删除申请，并受上述保留期限约束。</p>
+
+    <h2>适用的州级和联邦法律</h2>
+    <p>本政策旨在遵守以下法律：</p>
+    <ul>
+      <li>California Consumer Privacy Act / California Privacy Rights Act (CCPA/CPRA)</li>
+      <li>Illinois Biometric Information Privacy Act (BIPA) — 740 ILCS 14/</li>
+      <li>Fair Credit Reporting Act (FCRA) — 15 U.S.C. § 1681</li>
+      <li>General Data Protection Regulation (GDPR) principles (for applicable users)</li>
+      <li>Illinois Personal Information Protection Act (PIPA)</li>
+    </ul>
+
+    <div class="contact-card">
+      <h3>联系我们</h3>
+      <p>数据删除申请：</p>
+      <p>📧 <a href="mailto:info@primeanchorworkforce.com">info@primeanchorworkforce.com</a></p>
+      <p>📞 <a href="tel:+17088502703">(708) 850-2703</a></p>
+      <p style="margin-top:.75rem;font-size:.85rem;color:var(--gray-400)">邮件主题请注明：<strong>数据删除申请 / Data Deletion Request</strong></p>
     </div>
-    <div class="step">
-      <div class="step-num">3</div>
-      <div class="step-body">
-        <h4>处理时间 / Processing Time</h4>
-        <p>我们将在收到申请后 <strong>45个工作日</strong> 内处理您的请求，并发送确认邮件。如需延期，我们会提前告知。</p>
-        <p><em>We will process your request within <strong>45 business days</strong> of receipt and send a confirmation email. If an extension is needed, we will notify you in advance.</em></p>
-      </div>
-    </div>
-    <div class="step">
-      <div class="step-num">4</div>
-      <div class="step-body">
-        <h4>删除确认 / Deletion Confirmation</h4>
-        <p>完成删除后，我们将发送书面确认，说明哪些数据已被删除，哪些数据因法律要求需要保留。</p>
-        <p><em>Upon completion, we will send a written confirmation specifying what data was deleted and what data must be retained due to legal requirements.</em></p>
-      </div>
-    </div>
+
+    <div class="bilingual-note">本政策提供中文、英文和西班牙语版本。<br>如有歧义，以英文版本为准。</div>
   </div>
 
-  <h2>可删除的数据 / Data That Can Be Deleted</h2>
-  <p>应您的申请，我们可以删除以下类型的数据（在法律允许的范围内）：</p>
-  <ul>
-    <li>账户信息（用户名、密码、联系方式）/ Account information</li>
-    <li>申请记录和简历 / Job applications and resumes</li>
-    <li>身份验证照片（自拍）/ Identity verification photos (selfies)</li>
-    <li>平台使用数据和日志 / Platform usage data and logs</li>
-    <li>消息记录和沟通记录 / Message history and communications</li>
-  </ul>
+  <!-- ======================= English ======================= -->
+  <div class="lang-content" id="content-en" lang="en">
+    <h2>About Data Deletion</h2>
+    <p>Prime Anchor Workforce ("the Company") respects your right to control your personal data. Under the California Consumer Privacy Act (CCPA/CPRA), Illinois Biometric Information Privacy Act (BIPA), and other applicable laws, you have the right to request deletion of your personal information that we hold.</p>
 
-  <h2>必须保留的数据 / Data We Must Retain</h2>
-  <p>部分数据因法律义务无法立即删除，包括：</p>
-  <table class="retention-table">
-    <thead><tr><th>数据类型 / Data Type</th><th>保留期限 / Retention Period</th><th>法律依据 / Legal Basis</th></tr></thead>
-    <tbody>
-      <tr><td>工资记录 / Payroll records</td><td>7年 / 7 years</td><td>IRS, Department of Labor</td></tr>
-      <tr><td>I-9 就业资格表 / I-9 forms</td><td>就职后3年或离职后1年（取较长者）/ 3 yrs from hire or 1 yr after termination</td><td>8 U.S.C. § 1324a</td></tr>
-      <tr><td>工伤记录 / Workers' comp records</td><td>5年 / 5 years</td><td>Federal Safety Regulations</td></tr>
-      <tr><td>背景调查授权 / Background check consent</td><td>5年 / 5 years</td><td>FCRA 15 U.S.C. § 1681</td></tr>
-      <tr><td>税务记录 / Tax records</td><td>7年 / 7 years</td><td>IRS Rev. Proc. 98-25</td></tr>
-      <tr><td>合同和协议 / Contracts and agreements</td><td>合同期后5年 / 5 years after contract end</td><td>Illinois Statute of Limitations</td></tr>
-    </tbody>
-  </table>
+    <h2>How to Submit a Deletion Request</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h4>Submit Your Request</h4>
+          <p>Send your deletion request via email to <a href="mailto:info@primeanchorworkforce.com">info@primeanchorworkforce.com</a> with the subject line: <strong>Data Deletion Request</strong></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>Identity Verification</h4>
+          <p>To protect your data, we need to verify your identity. Please include: full name, registered email/phone, and account username (if applicable).</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h4>Processing Time</h4>
+          <p>We will process your request within <strong>45 business days</strong> of receipt and send a confirmation email. If an extension is needed, we will notify you in advance.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h4>Deletion Confirmation</h4>
+          <p>Upon completion, we will send a written confirmation specifying what data was deleted and what data must be retained due to legal requirements.</p>
+        </div>
+      </div>
+    </div>
 
-  <h2>账户注销 / Account Deletion</h2>
-  <p>若您希望注销 Prime Anchor Workforce 平台账户，请通过以下方式申请：</p>
-  <ul>
-    <li>登录后在"我的信息"页面提交账户注销申请</li>
-    <li>发送邮件至 <a href="mailto:info@primeanchorworkforce.com">info@primeanchorworkforce.com</a></li>
-  </ul>
-  <p><em>To delete your Prime Anchor Workforce platform account, submit a request through your profile page or email us. Note that account deletion does not automatically delete all personal data — a separate data deletion request may be needed for complete removal subject to retention requirements above.</em></p>
+    <h2>Data That Can Be Deleted</h2>
+    <p>Upon your request, we can delete the following types of data (to the extent permitted by law):</p>
+    <ul>
+      <li>Account information (username, password, contact details)</li>
+      <li>Job applications and resumes</li>
+      <li>Identity verification photos (selfies)</li>
+      <li>Platform usage data and logs</li>
+      <li>Message history and communications</li>
+    </ul>
 
-  <h2>适用的州级和联邦法律 / Applicable Laws</h2>
-  <p>This policy is designed to comply with:</p>
-  <ul>
-    <li>California Consumer Privacy Act / California Privacy Rights Act (CCPA/CPRA)</li>
-    <li>Illinois Biometric Information Privacy Act (BIPA) — 740 ILCS 14/</li>
-    <li>Fair Credit Reporting Act (FCRA) — 15 U.S.C. § 1681</li>
-    <li>General Data Protection Regulation (GDPR) principles (for applicable users)</li>
-    <li>Illinois Personal Information Protection Act (PIPA)</li>
-  </ul>
+    <h2>Data We Must Retain</h2>
+    <p>Some data cannot be deleted immediately due to legal obligations, including:</p>
+    <table class="retention-table">
+      <thead><tr><th>Data Type</th><th>Retention Period</th><th>Legal Basis</th></tr></thead>
+      <tbody>
+        <tr><td>Payroll records</td><td>7 years</td><td>IRS, Department of Labor</td></tr>
+        <tr><td>I-9 forms</td><td>3 yrs from hire or 1 yr after termination (whichever is longer)</td><td>8 U.S.C. § 1324a</td></tr>
+        <tr><td>Workers' comp records</td><td>5 years</td><td>Federal Safety Regulations</td></tr>
+        <tr><td>Background check consent</td><td>5 years</td><td>FCRA 15 U.S.C. § 1681</td></tr>
+        <tr><td>Tax records</td><td>7 years</td><td>IRS Rev. Proc. 98-25</td></tr>
+        <tr><td>Contracts and agreements</td><td>5 years after contract end</td><td>Illinois Statute of Limitations</td></tr>
+      </tbody>
+    </table>
 
-  <div class="contact-card">
-    <h3>联系我们 / Contact Us</h3>
-    <p>数据删除申请 / Data Deletion Requests:</p>
-    <p>📧 <a href="mailto:info@primeanchorworkforce.com">info@primeanchorworkforce.com</a></p>
-    <p>📞 <a href="tel:+17088502703">(708) 850-2703</a></p>
-    <p style="margin-top:.75rem;font-size:.85rem;color:var(--gray-400)">Please use the subject line: <strong>Data Deletion Request</strong> / 邮件主题：<strong>数据删除申请</strong></p>
+    <h2>Account Deletion</h2>
+    <p>To delete your Prime Anchor Workforce platform account, submit a request through one of the following:</p>
+    <ul>
+      <li>Submit an account deletion request from your "My Info" page after signing in</li>
+      <li>Email us at <a href="mailto:info@primeanchorworkforce.com">info@primeanchorworkforce.com</a></li>
+    </ul>
+    <p>Note that account deletion does not automatically delete all personal data — a separate data deletion request may be needed for complete removal, subject to the retention requirements above.</p>
+
+    <h2>Applicable State and Federal Laws</h2>
+    <p>This policy is designed to comply with:</p>
+    <ul>
+      <li>California Consumer Privacy Act / California Privacy Rights Act (CCPA/CPRA)</li>
+      <li>Illinois Biometric Information Privacy Act (BIPA) — 740 ILCS 14/</li>
+      <li>Fair Credit Reporting Act (FCRA) — 15 U.S.C. § 1681</li>
+      <li>General Data Protection Regulation (GDPR) principles (for applicable users)</li>
+      <li>Illinois Personal Information Protection Act (PIPA)</li>
+    </ul>
+
+    <div class="contact-card">
+      <h3>Contact Us</h3>
+      <p>Data Deletion Requests:</p>
+      <p>📧 <a href="mailto:info@primeanchorworkforce.com">info@primeanchorworkforce.com</a></p>
+      <p>📞 <a href="tel:+17088502703">(708) 850-2703</a></p>
+      <p style="margin-top:.75rem;font-size:.85rem;color:var(--gray-400)">Please use the subject line: <strong>Data Deletion Request</strong></p>
+    </div>
+
+    <div class="bilingual-note">This policy is provided in Chinese, English, and Spanish.<br>In case of discrepancy, the English version shall prevail.</div>
   </div>
 
-  <div class="bilingual-note">本政策提供中英双语版本 / This policy is provided in both Chinese and English.<br>如有歧义，以英文版本为准 / In case of discrepancy, the English version shall prevail.</div>
+  <!-- ======================= Español ======================= -->
+  <div class="lang-content" id="content-es" lang="es">
+    <h2>Acerca de la Eliminación de Datos</h2>
+    <p>Prime Anchor Workforce ("la Compañía") respeta su derecho a controlar sus datos personales. De conformidad con la Ley de Privacidad del Consumidor de California (CCPA/CPRA), la Ley de Privacidad de Información Biométrica de Illinois (BIPA) y otras leyes aplicables, usted tiene derecho a solicitar la eliminación de su información personal en nuestro poder.</p>
+
+    <h2>Cómo Presentar una Solicitud de Eliminación</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h4>Envíe su Solicitud</h4>
+          <p>Envíe su solicitud de eliminación por correo electrónico a <a href="mailto:info@primeanchorworkforce.com">info@primeanchorworkforce.com</a> con el asunto: <strong>Data Deletion Request</strong> (Solicitud de Eliminación de Datos)</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>Verificación de Identidad</h4>
+          <p>Para proteger sus datos, necesitamos verificar su identidad. Por favor incluya: nombre completo, correo electrónico/teléfono registrado y nombre de usuario de la cuenta (si corresponde).</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h4>Tiempo de Procesamiento</h4>
+          <p>Procesaremos su solicitud dentro de <strong>45 días hábiles</strong> a partir de su recepción y le enviaremos un correo de confirmación. Si se necesita una extensión, se lo notificaremos con antelación.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h4>Confirmación de Eliminación</h4>
+          <p>Al finalizar, le enviaremos una confirmación por escrito indicando qué datos fueron eliminados y qué datos deben conservarse por requisitos legales.</p>
+        </div>
+      </div>
+    </div>
+
+    <h2>Datos Que Se Pueden Eliminar</h2>
+    <p>A petición suya, podemos eliminar los siguientes tipos de datos (dentro de lo permitido por la ley):</p>
+    <ul>
+      <li>Información de la cuenta (nombre de usuario, contraseña, datos de contacto)</li>
+      <li>Solicitudes de empleo y currículums</li>
+      <li>Fotos de verificación de identidad (selfies)</li>
+      <li>Datos de uso de la plataforma y registros</li>
+      <li>Historial de mensajes y comunicaciones</li>
+    </ul>
+
+    <h2>Datos Que Debemos Conservar</h2>
+    <p>Algunos datos no pueden eliminarse de inmediato debido a obligaciones legales, entre ellos:</p>
+    <table class="retention-table">
+      <thead><tr><th>Tipo de Datos</th><th>Período de Conservación</th><th>Base Legal</th></tr></thead>
+      <tbody>
+        <tr><td>Registros de nómina</td><td>7 años</td><td>IRS, Department of Labor</td></tr>
+        <tr><td>Formularios I-9</td><td>3 años desde la contratación o 1 año tras la terminación (el que sea mayor)</td><td>8 U.S.C. § 1324a</td></tr>
+        <tr><td>Registros de compensación laboral</td><td>5 años</td><td>Federal Safety Regulations</td></tr>
+        <tr><td>Consentimiento de verificación de antecedentes</td><td>5 años</td><td>FCRA 15 U.S.C. § 1681</td></tr>
+        <tr><td>Registros fiscales</td><td>7 años</td><td>IRS Rev. Proc. 98-25</td></tr>
+        <tr><td>Contratos y acuerdos</td><td>5 años tras el fin del contrato</td><td>Illinois Statute of Limitations</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Eliminación de Cuenta</h2>
+    <p>Si desea eliminar su cuenta de la plataforma Prime Anchor Workforce, solicítelo mediante una de las siguientes vías:</p>
+    <ul>
+      <li>Envíe una solicitud de eliminación de cuenta desde su página "Mi Información" después de iniciar sesión</li>
+      <li>Envíe un correo a <a href="mailto:info@primeanchorworkforce.com">info@primeanchorworkforce.com</a></li>
+    </ul>
+    <p>Tenga en cuenta que la eliminación de la cuenta no elimina automáticamente todos los datos personales — puede ser necesaria una solicitud de eliminación de datos por separado para una eliminación completa, sujeta a los requisitos de conservación anteriores.</p>
+
+    <h2>Leyes Estatales y Federales Aplicables</h2>
+    <p>Esta política está diseñada para cumplir con:</p>
+    <ul>
+      <li>California Consumer Privacy Act / California Privacy Rights Act (CCPA/CPRA)</li>
+      <li>Illinois Biometric Information Privacy Act (BIPA) — 740 ILCS 14/</li>
+      <li>Fair Credit Reporting Act (FCRA) — 15 U.S.C. § 1681</li>
+      <li>General Data Protection Regulation (GDPR) principles (for applicable users)</li>
+      <li>Illinois Personal Information Protection Act (PIPA)</li>
+    </ul>
+
+    <div class="contact-card">
+      <h3>Contáctenos</h3>
+      <p>Solicitudes de eliminación de datos:</p>
+      <p>📧 <a href="mailto:info@primeanchorworkforce.com">info@primeanchorworkforce.com</a></p>
+      <p>📞 <a href="tel:+17088502703">(708) 850-2703</a></p>
+      <p style="margin-top:.75rem;font-size:.85rem;color:var(--gray-400)">Por favor use el asunto: <strong>Data Deletion Request</strong></p>
+    </div>
+
+    <div class="bilingual-note">Esta política se ofrece en chino, inglés y español.<br>En caso de discrepancia, prevalecerá la versión en inglés.</div>
+  </div>
+
 </div>
 
 <footer class="page-footer">
@@ -182,5 +374,35 @@
     <a href="/data-deletion">Data Deletion Policy</a>
   </div>
 </footer>
+
+<script>
+const HERO = {
+  zh: { title: '数据删除政策', subtitle: 'Data Deletion Policy', updated: '最后更新：2026年3月1日', back: '← 返回首页',
+        docTitle: '数据删除政策 — Prime Anchor Workforce' },
+  en: { title: 'Data Deletion Policy', subtitle: '数据删除政策 · Política de Eliminación de Datos', updated: 'Last updated: March 1, 2026', back: '← Back to Home',
+        docTitle: 'Data Deletion Policy — Prime Anchor Workforce' },
+  es: { title: 'Política de Eliminación de Datos', subtitle: 'Data Deletion Policy', updated: 'Última actualización: 1 de marzo de 2026', back: '← Volver al Inicio',
+        docTitle: 'Política de Eliminación de Datos — Prime Anchor Workforce' }
+};
+
+function setLang(lang) {
+  if (!HERO[lang]) lang = 'zh';
+  try { localStorage.setItem('pa_portal_lang', lang); } catch (_) {}
+  document.documentElement.lang = lang === 'zh' ? 'zh' : lang;
+  document.title = HERO[lang].docTitle;
+  document.getElementById('heroTitle').textContent = HERO[lang].title;
+  document.getElementById('heroSubtitle').textContent = HERO[lang].subtitle;
+  document.getElementById('heroUpdated').textContent = HERO[lang].updated;
+  document.getElementById('backLink').textContent = HERO[lang].back;
+  ['zh', 'en', 'es'].forEach(l => {
+    document.getElementById('lang' + l.charAt(0).toUpperCase() + l.slice(1)).classList.toggle('active', l === lang);
+    document.getElementById('content-' + l).classList.toggle('active', l === lang);
+  });
+}
+
+let _lang = new URLSearchParams(location.search).get('lang');
+if (!HERO[_lang]) { try { _lang = localStorage.getItem('pa_portal_lang'); } catch (_) {} }
+setLang(HERO[_lang] ? _lang : 'zh');
+</script>
 </body>
 </html>
