@@ -66,6 +66,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-seri
 .foot{flex-shrink:0;text-align:center;font-size:.7rem;color:rgba(255,255,255,.35);padding:0 1rem .6rem}
 .alt-btn{flex:1;padding:.8rem .4rem;border:1.5px solid rgba(255,255,255,.3);border-radius:14px;background:transparent;color:rgba(255,255,255,.85);font-size:1rem;font-weight:700;cursor:pointer;font-family:inherit}
 .alt-btn:active{background:rgba(255,255,255,.15)}
+.fp-num{text-align:center;font-size:1.8rem;font-weight:800;letter-spacing:.1em;min-height:2.6rem;margin-bottom:.5rem;font-variant-numeric:tabular-nums}
 /* 横屏平板: 左边提示/功能按钮 + 右边数字键盘 两栏排布, 避免竖列溢出跟语言栏挤在一起 */
 @media (orientation: landscape) and (max-height: 900px) {
   #scrPw.active, #scrForgot.active{
@@ -74,11 +75,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-seri
     grid-template-areas:'hint pad' 'dots pad' 'err pad' 'alt pad';
   }
   #scrPw .pw-hint, #scrForgot .pw-hint{grid-area:hint;font-size:1.2rem;margin-bottom:1rem}
-  #scrPw .pw-dots, #scrForgot .pw-dots{grid-area:dots;margin-bottom:.8rem}
+  #scrPw .pw-dots, #scrForgot .fp-num{grid-area:dots;margin-bottom:.8rem}
   #scrPw .pw-err, #scrForgot .pw-err{grid-area:err;margin-bottom:0}
   #scrPw .keypad, #scrForgot .keypad{grid-area:pad;margin:0;width:100%}
-  #scrPw .altrow{grid-area:alt;margin:1.4rem auto 0;width:100%;max-width:none}
-  #scrForgot .act-cancel{grid-area:alt;margin:1.4rem auto 0;max-width:none;width:100%}
+  #scrPw .altrow, #scrForgot .altrow{grid-area:alt;margin:1.4rem auto 0;width:100%;max-width:none}
   .key{height:min(14vh,78px);font-size:1.7rem}
   .lang-bar{padding-bottom:.8rem}
 }
@@ -143,8 +143,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-seri
 
   <!-- Screen: forgot password (phone lookup) -->
   <div class="screen" id="scrForgot">
-    <div class="pw-hint" id="fpHint">输入您的手机号（10 位）</div>
-    <div class="pw-dots" id="fpDots" style="gap:.45rem"></div>
+    <div class="pw-hint" id="fpHint">输入手机号（美国 10 位；其他国家含国家代码）</div>
+    <div class="fp-num" id="fpNum"></div>
     <div class="pw-err" id="fpErr"></div>
     <div class="keypad">
       <button class="key" onclick="fp('1')">1</button>
@@ -160,7 +160,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-seri
       <button class="key" onclick="fp('0')">0</button>
       <button class="key fn" onclick="fpBack()">⌫</button>
     </div>
-    <button class="act-cancel" style="max-width:400px;margin:.85rem auto 0;display:block" id="btnFpCancel" onclick="resetToPw()">取消</button>
+    <div class="altrow" style="display:flex;gap:.7rem;max-width:400px;margin:.85rem auto 0">
+      <button class="act-cancel" style="margin:0;flex:1" id="btnFpCancel" onclick="resetToPw()">取消</button>
+      <button id="btnFpGo" onclick="fpSubmit()" disabled style="flex:1.2;border:none;border-radius:12px;background:var(--green);color:#fff;font-size:1rem;font-weight:800;cursor:pointer;font-family:inherit;opacity:.5">发送</button>
+    </div>
   </div>
 
   <!-- Screen: forgot result (SMS sent / register QR) -->
@@ -211,7 +214,7 @@ const KL = {
     camHint: '打卡时会自动拍照留档', resPhoto: '📷 已拍照留档',
     lblScan: '扫码打卡', lblForgot: '忘记密码',
     scanHint: '将您的打卡二维码对准摄像头', scanBadQr: '不是有效的打卡二维码', scanNoCam: '无法打开摄像头',
-    fpHint: '输入您的手机号（10 位）',
+    fpHint: '输入手机号（美国 10 位；其他国家含国家代码）', fpGo: '发送',
     fpSent: l4 => '打卡密码和二维码已用短信发送到尾号 ' + l4 + ' 的手机，请查收',
     fpSmsFail: '短信发送失败，请联系管理员', fpNotFound: '手机号未登记',
     fpRegHint: '用您的手机扫描下方二维码，填写入职申请注册账号，提交后会收到打卡密码', fpOk: '好的',
@@ -226,7 +229,7 @@ const KL = {
     camHint: 'A photo is taken when you punch', resPhoto: '📷 Photo saved',
     lblScan: 'Scan QR', lblForgot: 'Forgot password',
     scanHint: 'Hold your QR code up to the camera', scanBadQr: 'Not a valid time-clock QR code', scanNoCam: 'Cannot open camera',
-    fpHint: 'Enter your phone number (10 digits)',
+    fpHint: 'Enter your phone number (US: 10 digits; intl: include country code)', fpGo: 'Send',
     fpSent: l4 => 'Your password and QR code were sent by SMS to the phone ending in ' + l4,
     fpSmsFail: 'SMS failed to send. Please contact a manager.', fpNotFound: 'Phone number not found',
     fpRegHint: 'Scan the QR code below with your phone to register. You will receive your clock-in password after submitting.', fpOk: 'OK',
@@ -241,7 +244,7 @@ const KL = {
     camHint: 'Se toma una foto al marcar', resPhoto: '📷 Foto guardada',
     lblScan: 'Escanear QR', lblForgot: 'Olvidé mi contraseña',
     scanHint: 'Acerque su código QR a la cámara', scanBadQr: 'Código QR no válido', scanNoCam: 'No se puede abrir la cámara',
-    fpHint: 'Ingrese su número de teléfono (10 dígitos)',
+    fpHint: 'Ingrese su teléfono (EE.UU.: 10 dígitos; internacional: con código de país)', fpGo: 'Enviar',
     fpSent: l4 => 'Su contraseña y código QR fueron enviados por SMS al teléfono que termina en ' + l4,
     fpSmsFail: 'Error al enviar SMS. Contacte a un gerente.', fpNotFound: 'Teléfono no registrado',
     fpRegHint: 'Escanee el código QR con su teléfono para registrarse. Recibirá su contraseña después de enviar la solicitud.', fpOk: 'OK',
@@ -254,7 +257,7 @@ const ERR_MAP = {
   '尝试次数过多，请 15 分钟后再试': { en: 'Too many attempts. Try again in 15 minutes', es: 'Demasiados intentos. Intente en 15 minutos' },
   '未找到该工作地点': { en: 'Work site not found', es: 'Sitio de trabajo no encontrado' },
   '缺少必要参数': { en: 'Missing parameters', es: 'Faltan parámetros' },
-  '请输入 10 位手机号': { en: 'Please enter a 10-digit phone number', es: 'Ingrese un teléfono de 10 dígitos' },
+  '请输入完整手机号（外国号码请带国家代码）': { en: 'Please enter your full phone number (include country code for non-US numbers)', es: 'Ingrese su número completo (con código de país si no es de EE.UU.)' },
 };
 
 let _kl = localStorage.getItem('kiosk_lang') || 'zh';
@@ -299,7 +302,7 @@ function setKLang(l) {
   $('lblBs').textContent = t.btnBs; $('lblBe').textContent = t.btnBe;
   $('lblScan').textContent = t.lblScan; $('lblForgot').textContent = t.lblForgot;
   $('scanHint').textContent = t.scanHint; $('btnScanCancel').textContent = t.cancel;
-  $('fpHint').textContent = t.fpHint; $('fpKeyClear').textContent = t.clear; $('btnFpCancel').textContent = t.cancel;
+  $('fpHint').textContent = t.fpHint; $('fpKeyClear').textContent = t.clear; $('btnFpCancel').textContent = t.cancel; $('btnFpGo').textContent = t.fpGo;
 }
 
 // ── 扫码打卡: 员工把自己的打卡二维码对准摄像头, 内容等同 8 位密码 ──
@@ -373,14 +376,20 @@ function scanStop(backToPw) {
 
 // ── 忘记密码: 输手机号 → 短信发密码+二维码; 未登记 → 显示注册二维码 ──
 let _fp = '', _fpBusy = false;
-function forgotStart() { _fp = ''; _fpBusy = false; renderFpDots(); $('fpErr').textContent = ''; showScr('scrForgot'); }
-function renderFpDots() {
-  $('fpDots').innerHTML = Array.from({ length: 10 }, (_, i) => `<span class="pw-dot${i < _fp.length ? ' on' : ''}"></span>`).join('');
+function forgotStart() { _fp = ''; _fpBusy = false; renderFpNum(); $('fpErr').textContent = ''; showScr('scrForgot'); }
+function renderFpNum() {
+  const el = $('fpNum');
+  el.textContent = _fp || '···';
+  el.style.color = _fp ? '#fff' : 'rgba(255,255,255,.35)';
+  const ok = _fp.length >= 7;
+  const go = $('btnFpGo');
+  go.disabled = !ok; go.style.opacity = ok ? '1' : '.5';
 }
-function fp(d) { if (_fpBusy || _fp.length >= 10) return; $('fpErr').textContent = ''; _fp += d; renderFpDots(); if (_fp.length === 10) fpSubmit(); }
-function fpBack() { if (_fpBusy) return; _fp = _fp.slice(0, -1); renderFpDots(); $('fpErr').textContent = ''; }
-function fpClear() { if (_fpBusy) return; _fp = ''; renderFpDots(); $('fpErr').textContent = ''; }
+function fp(d) { if (_fpBusy || _fp.length >= 15) return; $('fpErr').textContent = ''; _fp += d; renderFpNum(); }
+function fpBack() { if (_fpBusy) return; _fp = _fp.slice(0, -1); renderFpNum(); $('fpErr').textContent = ''; }
+function fpClear() { if (_fpBusy) return; _fp = ''; renderFpNum(); $('fpErr').textContent = ''; }
 async function fpSubmit() {
+  if (_fpBusy || _fp.length < 7) return;
   _fpBusy = true;
   $('fpErr').textContent = KL[_kl].checking;
   try {
@@ -391,7 +400,7 @@ async function fpSubmit() {
     _fpBusy = false; $('fpErr').textContent = '';
     if (d.found) showFResFound(d); else showFResRegister();
   } catch (e) {
-    _fpBusy = false; _fp = ''; renderFpDots();
+    _fpBusy = false; _fp = ''; renderFpNum();
     $('fpErr').textContent = xerr(e.message);
   }
 }
@@ -506,6 +515,7 @@ document.addEventListener('keydown', e => {
   if (/^[0-9]$/.test(e.key)) h.d(e.key);
   else if (e.key === 'Backspace') h.b();
   else if (e.key === 'Escape') h.c();
+  else if (e.key === 'Enter' && fpActive) fpSubmit();
 });
 
 async function checkPw() {
