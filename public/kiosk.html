@@ -176,8 +176,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-seri
     <div class="who-card">
       <div class="who-name" id="whoName"></div>
       <div class="who-status" id="whoStatus"></div>
-      <!-- 打卡留档拍照: 静默进行, 页面上不显示预览和提示, 照片仅后台打卡记录可见 -->
-      <video id="camVid" autoplay playsinline muted style="position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none"></video>
       <div class="act-grid">
         <button class="act-btn act-in" id="btnIn" onclick="doPunch('in')"><span class="ic">▶</span><span id="lblIn">上班打卡</span></button>
         <button class="act-btn act-out" id="btnOut" onclick="doPunch('out')"><span class="ic">◼</span><span id="lblOut">下班打卡</span></button>
@@ -200,6 +198,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-seri
     </div>
   </div>
 </div>
+<!-- 打卡留档拍照: 摄像头页面打开即常驻(装机时授权一次), 静默抓拍, 照片仅后台打卡记录可见 -->
+<!-- 视频元素留在屏幕内 2px 大小（近乎不可见）: 完全移出屏幕/opacity:0 时安卓 Chrome 会停止渲染帧, 抓到全黑 -->
+<video id="camVid" autoplay playsinline muted style="position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:.01;pointer-events:none"></video>
 <div class="foot"></div>
 
 <script>
@@ -288,7 +289,7 @@ let _wakeLock = null;
 async function keepAwake() {
   try { if (navigator.wakeLock) _wakeLock = await navigator.wakeLock.request('screen'); } catch (_) {}
 }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { keepAwake(); camStart(); } });
 keepAwake();
 
 function setKLang(l) {
@@ -306,7 +307,8 @@ function setKLang(l) {
 }
 
 // ── 扫码打卡: 员工把自己的打卡二维码对准摄像头, 内容等同 8 位密码 ──
-let _scanStream = null, _scanTimer = null, _jsqrLoading = null;
+// 复用常驻的打卡摄像头流, 扫码屏只是把它显示出来
+let _scanning = false, _scanTimer = null, _jsqrLoading = null;
 function _loadJsQR() {
   if (window.jsQR) return Promise.resolve();
   if (_jsqrLoading) return _jsqrLoading;
@@ -321,10 +323,10 @@ function _loadJsQR() {
 async function scanStart() {
   showScr('scrScan');
   $('scanErr').textContent = '';
-  try {
-    _scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 } }, audio: false });
-    $('scanVid').srcObject = _scanStream;
-  } catch (_) { $('scanErr').textContent = KL[_kl].scanNoCam; return; }
+  await camStart();
+  if (!_camStream) { $('scanErr').textContent = KL[_kl].scanNoCam; return; }
+  $('scanVid').srcObject = _camStream;
+  _scanning = true;
   let detector = null;
   if ('BarcodeDetector' in window) {
     try { detector = new BarcodeDetector({ formats: ['qr_code'] }); } catch (_) {}
@@ -332,7 +334,7 @@ async function scanStart() {
   if (!detector) { try { await _loadJsQR(); } catch (e) { $('scanErr').textContent = e.message; return; } }
   const cvs = document.createElement('canvas');
   const tickScan = async () => {
-    if (!_scanStream) return;
+    if (!_scanning) return;
     const v = $('scanVid');
     if (v.videoWidth) {
       try {
@@ -369,8 +371,8 @@ function handleScanCode(text) {
 }
 function scanStop(backToPw) {
   clearTimeout(_scanTimer); _scanTimer = null;
-  if (_scanStream) { _scanStream.getTracks().forEach(tr => tr.stop()); _scanStream = null; }
-  $('scanVid').srcObject = null;
+  _scanning = false;
+  $('scanVid').srcObject = null; // 只是不再显示, 摄像头流保持常驻供打卡抓拍
   if (backToPw) resetToPw();
 }
 
@@ -429,30 +431,67 @@ async function showFResRegister() {
   } catch (_) { $('regQrBox').textContent = '⚠'; }
 }
 
-// ── 前置摄像头：进入操作屏时打开预览，打卡瞬间抓一帧随打卡上传 ──
-let _camStream = null;
-async function camStart() {
-  if (_camStream || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+// ── 前置摄像头：页面打开即常驻（装机时授权一次），打卡瞬间抓一帧随打卡上传 ──
+let _camStream = null, _camStarting = null, _imageCapture = null;
+function camStart() {
+  if (_camStream) return Promise.resolve();
+  if (_camStarting) return _camStarting;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return Promise.resolve();
+  _camStarting = navigator.mediaDevices.getUserMedia({
+    video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false })
+    .then(s => {
+      _camStream = s;
+      const tr = s.getVideoTracks()[0];
+      if (tr) tr.addEventListener('ended', () => { _camStream = null; _imageCapture = null; });
+      // ImageCapture 直接从摄像头轨道抓帧, 不依赖隐藏 video 元素的渲染 (安卓黑帧问题)
+      try { _imageCapture = ('ImageCapture' in window && tr) ? new ImageCapture(tr) : null; } catch (_) { _imageCapture = null; }
+      $('camVid').srcObject = s;
+    })
+    .catch(() => { _camStream = null; })
+    .finally(() => { _camStarting = null; });
+  return _camStarting;
+}
+// 画到 canvas 并检查不是全黑帧 (摄像头刚启动/隐藏视频被冻结时会抓到全黑)
+function _frameToJpeg(src, sw, sh) {
+  const w = 640, h = Math.round(sh * (w / sw)) || 480;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(src, 0, 0, w, h);
   try {
-    _camStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
-    $('camVid').srcObject = _camStream;
-  } catch (_) { _camStream = null; }
+    const d = ctx.getImageData(0, 0, w, h).data;
+    let sum = 0, n = 0;
+    for (let i = 0; i < d.length; i += 4 * 101) { sum += d[i] + d[i + 1] + d[i + 2]; n += 3; }
+    if (n && (sum / n) < 4) return null; // 全黑帧 → 当作没拍到, 让上层重试
+  } catch (_) {}
+  return c.toDataURL('image/jpeg', 0.7);
 }
-function camStop() {
-  if (_camStream) { _camStream.getTracks().forEach(tr => tr.stop()); _camStream = null; }
-  $('camVid').srcObject = null;
-}
-function camShot() {
+async function camShot() {
+  if (!_camStream) return null;
+  if (_imageCapture) {
+    try {
+      const bm = await _imageCapture.grabFrame();
+      const shot = _frameToJpeg(bm, bm.width, bm.height);
+      if (bm.close) bm.close();
+      if (shot) return shot;
+    } catch (_) {}
+  }
   try {
     const v = $('camVid');
-    if (!_camStream || !v.videoWidth) return null;
-    const w = 640, h = Math.round(v.videoHeight * (w / v.videoWidth)) || 480;
-    const c = document.createElement('canvas');
-    c.width = w; c.height = h;
-    c.getContext('2d').drawImage(v, 0, 0, w, h);
-    return c.toDataURL('image/jpeg', 0.7);
+    if (!v.videoWidth) return null;
+    return _frameToJpeg(v, v.videoWidth, v.videoHeight);
   } catch (_) { return null; }
+}
+// 打卡瞬间取一帧; 摄像头没就绪或抓到黑帧就在 maxMs 内重试, 拍不到照常打卡
+async function camShotWait(maxMs) {
+  const t0 = Date.now();
+  camStart();
+  while (Date.now() - t0 < (maxMs || 2500)) {
+    const shot = await camShot();
+    if (shot) return shot;
+    await new Promise(r2 => setTimeout(r2, 150));
+  }
+  return camShot();
 }
 function xerr(msg) {
   if (_kl !== 'zh' && ERR_MAP[msg] && ERR_MAP[msg][_kl]) return ERR_MAP[msg][_kl];
@@ -486,7 +525,7 @@ function showScr(id) {
 }
 function resetToPw() {
   clearInterval(_actTimer); clearTimeout(_resTimer);
-  camStop(); scanStop();
+  scanStop();
   _pw = ''; _pwLocked = false; _fp = ''; _fpBusy = false;
   renderDots(); $('pwErr').textContent = '';
   showScr('scrPw');
@@ -569,7 +608,7 @@ async function doPunch(type) {
   _punching = true;
   clearInterval(_actTimer);
   try {
-    const photo = camShot(); // 拍不到（没摄像头/未授权）也照常打卡
+    const photo = await camShotWait(2500); // 拍不到（没摄像头/未授权/一直黑帧）也照常打卡
     const r = await fetch('/api/kiosk/punch', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ site_id: _siteId, password: _pw, punch_type: type, photo_data: photo })
@@ -600,13 +639,13 @@ function showResult(d) {
   $('resTime').textContent = d.clock_time || '';
   $('resNote').textContent = t.resNote;
   showScr('scrRes');
-  camStop();
   _pw = '';
   clearTimeout(_resTimer);
   _resTimer = setTimeout(resetToPw, 5000);
 }
 
 setKLang(_kl);
+camStart(); // 页面打开即申请摄像头: 装机时授权一次, 之后打卡抓拍/扫码即刻可用
 </script>
 </body>
 </html>
