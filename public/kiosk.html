@@ -583,10 +583,7 @@ function buildActScreen(d) {
   // 只有一个「打卡」按钮: 上班还是下班由系统按当前状态自动判断, 不在按钮上区分
   _punchType = d.clocked_in ? 'out' : 'in';
   showScr('scrAct');
-  // 显示姓名的同时就在后台把照片抓好, 点按钮时直接带上, 不用现拍
   camStart();
-  _preShot = null;
-  prepShotLoop();
   // 无操作自动返回，避免下一位员工看到上一位的信息
   clearInterval(_actTimer);
   _actLeft = 30;
@@ -599,14 +596,6 @@ function buildActScreen(d) {
 }
 
 let _punching = false, _punchType = 'in', _preShot = null;
-// 操作屏停留期间每 700ms 刷新一张预拍照片, 保证点按钮那一刻手里已有最新的一帧
-async function prepShotLoop() {
-  while ($('scrAct').classList.contains('active') && !_punching) {
-    const shot = await camShot();
-    if (shot) _preShot = shot;
-    await new Promise(r2 => setTimeout(r2, 700));
-  }
-}
 async function doPunchNow() {
   if (_punching) return;
   _punching = true;
@@ -614,8 +603,8 @@ async function doPunchNow() {
   const btn = $('btnPunch');
   btn.style.opacity = '.6';
   try {
-    // 用预拍好的照片, 不等待; 万一还没有就最后快速试一次 (不阻塞超过一帧的时间)
-    const photo = _preShot || await camShot();
+    // 用滚动预拍好的照片零等待; 极少数还没有时短暂等一下 (最多 1.2s), 保证记录带照片
+    const photo = _preShot || await camShotWait(1200);
     const r = await fetch('/api/kiosk/punch', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ site_id: _siteId, password: _pw, punch_type: _punchType, photo_data: photo })
@@ -654,6 +643,27 @@ function showResult(d) {
 
 setKLang(_kl);
 camStart(); // 页面打开即申请摄像头: 装机时授权一次, 之后打卡抓拍/扫码即刻可用
+// 全程每秒滚动预拍一张: 任何时刻点打卡, 手里都有现成的最新照片 (专用打卡平板, 开销可忽略)
+setInterval(async () => {
+  if (document.hidden || _punching) return;
+  const s = await camShot();
+  if (s) _preShot = s;
+}, 1000);
+
+// ── 电池管理: 每 2 分钟上报电量, 服务器按阈值控制智能插座充/停 ──
+(async function batteryLoop() {
+  if (!navigator.getBattery || !_siteId) return;
+  try {
+    const b = await navigator.getBattery();
+    const report = () => fetch('/api/kiosk/battery', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ site_id: _siteId, level: Math.round(b.level * 100), charging: b.charging })
+    }).catch(() => {});
+    report();
+    setInterval(report, 120000);
+    b.addEventListener('levelchange', report);
+  } catch (_) {}
+})();
 </script>
 </body>
 </html>

@@ -26570,18 +26570,18 @@ app.post('/api/kiosk/punch', async (req, res) => {
   const a = _kioskAuth(req);
   if (a.error) return res.status(a.status).json({ error: a.error });
   const { site, emp } = a;
-  // 照片先解码好文件名入库, 实际上传放到响应之后异步做, 不拖慢打卡
-  let photoFilename = null, photoBuf = null, photoCT = '';
+  // 照片同步存好再入库响应 (小图 ~0.2s): 保证记录里的文件名一定有对应的图
+  let photoFilename = null;
   const photo = (req.body || {}).photo_data;
   if (photo && typeof photo === 'string' && photo.length < 8 * 1024 * 1024) {
     try {
       const m = /^data:image\/([A-Za-z0-9.+-]+);base64,/.exec(photo);
       const subtypeRaw = (m ? m[1] : 'jpeg').toLowerCase();
       const ext = { jpeg: 'jpg' }[subtypeRaw] || subtypeRaw.replace(/[^a-z0-9]/g, '') || 'jpg';
-      photoBuf = Buffer.from(photo.replace(/^data:image\/[A-Za-z0-9.+-]+;base64,/, ''), 'base64');
-      photoCT = `image/${subtypeRaw === 'jpg' ? 'jpeg' : subtypeRaw}`;
+      const buf = Buffer.from(photo.replace(/^data:image\/[A-Za-z0-9.+-]+;base64,/, ''), 'base64');
       photoFilename = `kiosk-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
-    } catch (e) { console.error('[Kiosk] Photo decode error:', e.message); photoFilename = null; photoBuf = null; }
+      await storage.putObject(`checkin_photos/${photoFilename}`, buf, { contentType: `image/${subtypeRaw === 'jpg' ? 'jpeg' : subtypeRaw}` });
+    } catch (e) { console.error('[Kiosk] Photo save error:', e.message); photoFilename = null; }
   }
   const siteTimezone = site.timezone || 'America/Chicago';
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
@@ -26613,10 +26613,6 @@ app.post('/api/kiosk/punch', async (req, res) => {
     photo_saved: !!photoFilename,
     entry_id: entryId
   });
-  if (photoFilename && photoBuf) {
-    storage.putObject(`checkin_photos/${photoFilename}`, photoBuf, { contentType: photoCT })
-      .catch(e => console.error('[Kiosk] Photo save error:', e.message));
-  }
 });
 
 // ── 打卡台辅助: 扫码打卡 / 忘记密码(手机号找回) / 注册二维码 ──
@@ -26723,6 +26719,74 @@ app.get('/my-qr', async (req, res) => {
 <p style="font-size:1.4rem;font-weight:800;letter-spacing:.15em;margin:1rem 0 .4rem">${code}</p>
 <p style="color:#5f6b7a;font-size:.85rem;max-width:420px;margin:0 auto;line-height:1.6">Show this QR code or enter the password above at the time clock.<br>打卡时扫此二维码，或输入上面的 8 位密码。<br>请截图保存，不要转发他人 Keep it private.</p>
 </body></html>`);
+});
+
+// ── 打卡平板电池管理: 打卡页每 2 分钟上报电量, 服务器按滞回阈值控制智能插座 ──
+// 长期插电的平板不宜一直满电: 低于 KIOSK_CHARGE_ON_BELOW(默认70)% 通电充,
+// 高于 KIOSK_CHARGE_OFF_ABOVE(默认80)% 断电停, 电池大部分时间保持在 70-80%。
+// 插座驱动: Shelly Cloud (env: SHELLY_AUTH_KEY / SHELLY_DEVICE_ID / SHELLY_SERVER)。
+// 未配置插座时只记录电量, 便于后台查看。
+db.exec(`CREATE TABLE IF NOT EXISTS kiosk_battery (
+  site_id INTEGER PRIMARY KEY,
+  level INTEGER DEFAULT 0,
+  charging INTEGER DEFAULT 0,
+  plug_state TEXT DEFAULT '',
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+const KIOSK_CHARGE_ON_BELOW = parseInt(process.env.KIOSK_CHARGE_ON_BELOW || '70');
+const KIOSK_CHARGE_OFF_ABOVE = parseInt(process.env.KIOSK_CHARGE_OFF_ABOVE || '80');
+function _plugConfigured() { return !!(process.env.SHELLY_AUTH_KEY && process.env.SHELLY_DEVICE_ID && process.env.SHELLY_SERVER); }
+async function _plugSet(turnOn) {
+  const server = String(process.env.SHELLY_SERVER || '');
+  const base = /^https?:\/\//i.test(server) ? server : 'https://' + server;
+  const body = new URLSearchParams({
+    auth_key: process.env.SHELLY_AUTH_KEY, id: process.env.SHELLY_DEVICE_ID,
+    channel: '0', turn: turnOn ? 'on' : 'off',
+  });
+  const r = await fetch(base.replace(/\/+$/, '') + '/device/relay/control', {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString(),
+  });
+  if (!r.ok) throw new Error('plug HTTP ' + r.status);
+  return true;
+}
+// 打卡页上报电量 (无登录态; 只接受有效仓库, 数据无敏感性)
+app.post('/api/kiosk/battery', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const siteId = parseInt(b.site_id);
+    const level = Math.max(0, Math.min(100, parseInt(b.level)));
+    if (!siteId || !Number.isFinite(level)) return res.status(400).json({ error: 'bad params' });
+    if (!db.prepare('SELECT id FROM job_sites WHERE id=? AND active=1').get(siteId)) return res.status(404).json({ error: 'site not found' });
+    const prev = db.prepare('SELECT plug_state FROM kiosk_battery WHERE site_id=?').get(siteId);
+    let plugState = (prev && prev.plug_state) || '';
+    if (_plugConfigured()) {
+      // 滞回: 低于下限开充电, 高于上限停; 区间内维持原状, 避免频繁开关
+      let want = null;
+      if (level <= KIOSK_CHARGE_ON_BELOW) want = 'on';
+      else if (level >= KIOSK_CHARGE_OFF_ABOVE) want = 'off';
+      if (want && want !== plugState) {
+        try {
+          await _plugSet(want === 'on');
+          plugState = want;
+          console.log(`[KioskBattery] site ${siteId} level ${level}% → plug ${want}`);
+        } catch (e) { console.error('[KioskBattery] plug control failed:', e.message); }
+      }
+    }
+    db.prepare(`INSERT INTO kiosk_battery (site_id, level, charging, plug_state, updated_at)
+        VALUES (?,?,?,?,CURRENT_TIMESTAMP)
+      ON CONFLICT(site_id) DO UPDATE SET level=excluded.level, charging=excluded.charging,
+        plug_state=excluded.plug_state, updated_at=CURRENT_TIMESTAMP`)
+      .run(siteId, level, b.charging ? 1 : 0, plugState);
+    res.json({ success: true, plug_state: plugState || null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 后台查看各打卡平板的电量/插座状态
+app.get('/api/admin/kiosk-battery', requireAdmin, (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT kb.site_id, js.name AS site_name, kb.level, kb.charging, kb.plug_state, kb.updated_at
+      FROM kiosk_battery kb LEFT JOIN job_sites js ON js.id = kb.site_id ORDER BY kb.site_id`).all();
+    res.json({ plug_configured: _plugConfigured(), on_below: KIOSK_CHARGE_ON_BELOW, off_above: KIOSK_CHARGE_OFF_ABOVE, kiosks: rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ─── 打卡记录查看页（需管理/经理账号登录） ───
