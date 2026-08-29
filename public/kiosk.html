@@ -199,7 +199,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-seri
   </div>
 </div>
 <!-- 打卡留档拍照: 摄像头页面打开即常驻(装机时授权一次), 静默抓拍, 照片仅后台打卡记录可见 -->
-<video id="camVid" autoplay playsinline muted style="position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none"></video>
+<!-- 视频元素留在屏幕内 2px 大小（近乎不可见）: 完全移出屏幕/opacity:0 时安卓 Chrome 会停止渲染帧, 抓到全黑 -->
+<video id="camVid" autoplay playsinline muted style="position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:.01;pointer-events:none"></video>
 <div class="foot"></div>
 
 <script>
@@ -431,7 +432,7 @@ async function showFResRegister() {
 }
 
 // ── 前置摄像头：页面打开即常驻（装机时授权一次），打卡瞬间抓一帧随打卡上传 ──
-let _camStream = null, _camStarting = null;
+let _camStream = null, _camStarting = null, _imageCapture = null;
 function camStart() {
   if (_camStream) return Promise.resolve();
   if (_camStarting) return _camStarting;
@@ -441,32 +442,54 @@ function camStart() {
     .then(s => {
       _camStream = s;
       const tr = s.getVideoTracks()[0];
-      if (tr) tr.addEventListener('ended', () => { _camStream = null; });
+      if (tr) tr.addEventListener('ended', () => { _camStream = null; _imageCapture = null; });
+      // ImageCapture 直接从摄像头轨道抓帧, 不依赖隐藏 video 元素的渲染 (安卓黑帧问题)
+      try { _imageCapture = ('ImageCapture' in window && tr) ? new ImageCapture(tr) : null; } catch (_) { _imageCapture = null; }
       $('camVid').srcObject = s;
     })
     .catch(() => { _camStream = null; })
     .finally(() => { _camStarting = null; });
   return _camStarting;
 }
-function camShot() {
+// 画到 canvas 并检查不是全黑帧 (摄像头刚启动/隐藏视频被冻结时会抓到全黑)
+function _frameToJpeg(src, sw, sh) {
+  const w = 640, h = Math.round(sh * (w / sw)) || 480;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(src, 0, 0, w, h);
+  try {
+    const d = ctx.getImageData(0, 0, w, h).data;
+    let sum = 0, n = 0;
+    for (let i = 0; i < d.length; i += 4 * 101) { sum += d[i] + d[i + 1] + d[i + 2]; n += 3; }
+    if (n && (sum / n) < 4) return null; // 全黑帧 → 当作没拍到, 让上层重试
+  } catch (_) {}
+  return c.toDataURL('image/jpeg', 0.7);
+}
+async function camShot() {
+  if (!_camStream) return null;
+  if (_imageCapture) {
+    try {
+      const bm = await _imageCapture.grabFrame();
+      const shot = _frameToJpeg(bm, bm.width, bm.height);
+      if (bm.close) bm.close();
+      if (shot) return shot;
+    } catch (_) {}
+  }
   try {
     const v = $('camVid');
-    if (!_camStream || !v.videoWidth) return null;
-    const w = 640, h = Math.round(v.videoHeight * (w / v.videoWidth)) || 480;
-    const c = document.createElement('canvas');
-    c.width = w; c.height = h;
-    c.getContext('2d').drawImage(v, 0, 0, w, h);
-    return c.toDataURL('image/jpeg', 0.7);
+    if (!v.videoWidth) return null;
+    return _frameToJpeg(v, v.videoWidth, v.videoHeight);
   } catch (_) { return null; }
 }
-// 打卡瞬间取一帧; 摄像头还没就绪就等它最多 maxMs 再拍, 拍不到照常打卡
+// 打卡瞬间取一帧; 摄像头没就绪或抓到黑帧就在 maxMs 内重试, 拍不到照常打卡
 async function camShotWait(maxMs) {
   const t0 = Date.now();
   camStart();
-  while (Date.now() - t0 < (maxMs || 1500)) {
-    const shot = camShot();
+  while (Date.now() - t0 < (maxMs || 2500)) {
+    const shot = await camShot();
     if (shot) return shot;
-    await new Promise(r2 => setTimeout(r2, 120));
+    await new Promise(r2 => setTimeout(r2, 150));
   }
   return camShot();
 }
@@ -585,7 +608,7 @@ async function doPunch(type) {
   _punching = true;
   clearInterval(_actTimer);
   try {
-    const photo = await camShotWait(1500); // 拍不到（没摄像头/未授权）也照常打卡
+    const photo = await camShotWait(2500); // 拍不到（没摄像头/未授权/一直黑帧）也照常打卡
     const r = await fetch('/api/kiosk/punch', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ site_id: _siteId, password: _pw, punch_type: type, photo_data: photo })
