@@ -446,7 +446,7 @@ function camStart() {
   return _camStarting;
 }
 // 画到 canvas 并检查不是全黑帧 (摄像头刚启动/隐藏视频被冻结时会抓到全黑)
-function _frameToJpeg(src, sw, sh) {
+function _frameToCanvas(src, sw, sh) {
   const w = 640, h = Math.round(sh * (w / sw)) || 480;
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
@@ -458,23 +458,42 @@ function _frameToJpeg(src, sw, sh) {
     for (let i = 0; i < d.length; i += 4 * 101) { sum += d[i] + d[i + 1] + d[i + 2]; n += 3; }
     if (n && (sum / n) < 4) return null; // 全黑帧 → 当作没拍到, 让上层重试
   } catch (_) {}
-  return c.toDataURL('image/jpeg', 0.7);
+  return c;
 }
-async function camShot() {
+async function camGrabCanvas() {
   if (!_camStream) return null;
   if (_imageCapture) {
     try {
       const bm = await _imageCapture.grabFrame();
-      const shot = _frameToJpeg(bm, bm.width, bm.height);
+      const c = _frameToCanvas(bm, bm.width, bm.height);
       if (bm.close) bm.close();
-      if (shot) return shot;
+      if (c) return c;
     } catch (_) {}
   }
   try {
     const v = $('camVid');
     if (!v.videoWidth) return null;
-    return _frameToJpeg(v, v.videoWidth, v.videoHeight);
+    return _frameToCanvas(v, v.videoWidth, v.videoHeight);
   } catch (_) { return null; }
+}
+async function camShot() {
+  const c = await camGrabCanvas();
+  return c ? c.toDataURL('image/jpeg', 0.7) : null;
+}
+// 三连拍: 打卡时把滚动缓存里最近 3 帧 (约跨 3 秒) 横向拼成一张, 方便辨认是谁
+let _recentShots = [];
+function camComposite() {
+  const shots = _recentShots.slice(-3);
+  if (!shots.length) return null;
+  if (shots.length === 1) return shots[0].toDataURL('image/jpeg', 0.7);
+  const fw = 440;
+  const fh = Math.round(shots[0].height * (fw / shots[0].width)) || 330;
+  const c = document.createElement('canvas');
+  c.width = fw * shots.length; c.height = fh;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, c.width, c.height);
+  shots.forEach((s, i) => ctx.drawImage(s, i * fw, 0, fw, fh));
+  return c.toDataURL('image/jpeg', 0.72);
 }
 // 打卡瞬间取一帧; 摄像头没就绪或抓到黑帧就在 maxMs 内重试, 拍不到照常打卡
 async function camShotWait(maxMs) {
@@ -595,7 +614,7 @@ function buildActScreen(d) {
   }, 1000);
 }
 
-let _punching = false, _punchType = 'in', _preShot = null;
+let _punching = false, _punchType = 'in';
 async function doPunchNow() {
   if (_punching) return;
   _punching = true;
@@ -603,8 +622,8 @@ async function doPunchNow() {
   const btn = $('btnPunch');
   btn.style.opacity = '.6';
   try {
-    // 用滚动预拍好的照片零等待; 极少数还没有时短暂等一下 (最多 1.2s), 保证记录带照片
-    const photo = _preShot || await camShotWait(1200);
+    // 最近 3 帧拼成三连拍零等待; 极少数缓存还空时短暂等一下 (最多 1.2s), 保证记录带照片
+    const photo = camComposite() || await camShotWait(1200);
     const r = await fetch('/api/kiosk/punch', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ site_id: _siteId, password: _pw, punch_type: _punchType, photo_data: photo })
@@ -643,11 +662,11 @@ function showResult(d) {
 
 setKLang(_kl);
 camStart(); // 页面打开即申请摄像头: 装机时授权一次, 之后打卡抓拍/扫码即刻可用
-// 全程每秒滚动预拍一张: 任何时刻点打卡, 手里都有现成的最新照片 (专用打卡平板, 开销可忽略)
+// 全程每秒滚动预拍并保留最近 3 帧: 任何时刻点打卡, 立即拼出三连拍 (专用打卡平板, 开销可忽略)
 setInterval(async () => {
   if (document.hidden || _punching) return;
-  const s = await camShot();
-  if (s) _preShot = s;
+  const c = await camGrabCanvas();
+  if (c) { _recentShots.push(c); if (_recentShots.length > 3) _recentShots.shift(); }
 }, 1000);
 
 // ── 电池管理: 每 2 分钟上报电量, 服务器按阈值控制智能插座充/停 ──
