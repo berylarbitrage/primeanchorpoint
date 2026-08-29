@@ -28,29 +28,37 @@ input:focus{border-color:var(--sky)}
 .trust input{width:auto}
 a.back{display:inline-block;margin-top:1rem;font-size:.8rem;color:var(--gray-400)}
 #codeInput{letter-spacing:.35em;text-align:center;font-size:1.3rem}
+.lang-switcher{display:flex;gap:.3rem;justify-content:flex-end;margin-bottom:.4rem}
+.lang-btn{background:none;border:1px solid var(--gray-200);border-radius:20px;padding:.22rem .75rem;font-size:.75rem;font-weight:600;color:var(--gray-600);cursor:pointer;transition:all .15s;font-family:inherit}
+.lang-btn:hover{border-color:var(--sky);color:var(--sky)}
+.lang-btn.active{background:var(--sky);color:#fff;border-color:var(--sky)}
 </style>
 </head>
 <body>
 <div class="box">
+  <div class="lang-switcher">
+    <button class="lang-btn" id="langZh" onclick="setLang('zh')">中文</button>
+    <button class="lang-btn" id="langEn" onclick="setLang('en')">English</button>
+  </div>
   <img src="logo.svg" alt="">
-  <h1>🔐 登录短信验证</h1>
-  <div class="sub">账号密码已通过，还需验证公司备案手机</div>
+  <h1 id="pageTitle">🔐 登录短信验证</h1>
+  <div class="sub" id="pageSub">账号密码已通过，还需验证公司备案手机</div>
 
-  <label>接收验证码的手机号</label>
+  <label id="phoneLabel">接收验证码的手机号</label>
   <div class="row">
     <input type="tel" id="phoneInput" placeholder="(xxx) xxx-xxxx" maxlength="14" inputmode="tel">
     <button class="btn btn-send" id="btnSend" onclick="sendCode()">发送验证码</button>
   </div>
   <div class="hint" id="phoneHint" style="display:none"></div>
 
-  <label>短信验证码</label>
+  <label id="codeLabel">短信验证码</label>
   <input type="text" id="codeInput" placeholder="6 位数字" maxlength="6" inputmode="numeric" autocomplete="one-time-code">
 
-  <label class="trust"><input type="checkbox" id="trustChk">此设备 30 天内免短信验证</label>
+  <label class="trust"><input type="checkbox" id="trustChk"><span id="trustLabel">此设备 30 天内免短信验证</span></label>
 
   <button class="btn btn-main" id="btnVerify" onclick="verify()">✅ 验证并登录</button>
   <div class="err" id="err"></div>
-  <a class="back" href="javascript:history.back()">← 返回重新登录</a>
+  <a class="back" id="backLink" href="javascript:history.back()">← 返回重新登录</a>
 </div>
 
 <script>
@@ -61,11 +69,92 @@ let NEXT = qs.get('next') || '/admin.html';
 if (!/^\/[^/]/.test(NEXT)) NEXT = '/admin.html';   // 仅允许本站路径
 
 const $ = id => document.getElementById(id);
-if (!MFA_TOKEN) { $('err').textContent = '缺少登录会话，请返回重新登录'; }
-if (HINT) {
-  $('phoneHint').style.display = '';
-  $('phoneHint').textContent = '上次使用的号码: ' + HINT + '（留空则发到该号码）';
+
+const L = {
+  zh: {
+    title: '登录验证 — Prime Anchor Workforce',
+    pageTitle: '🔐 登录短信验证',
+    pageSub: '账号密码已通过，还需验证公司备案手机',
+    phoneLabel: '接收验证码的手机号',
+    codeLabel: '短信验证码',
+    codePh: '6 位数字',
+    trustLabel: '此设备 30 天内免短信验证',
+    btnSend: '发送验证码',
+    btnResend: '重新发送',
+    btnSending: '发送中…',
+    btnVerify: '✅ 验证并登录',
+    btnVerifying: '验证中…',
+    backLink: '← 返回重新登录',
+    hintLast: p => '上次使用的号码: ' + p + '（留空则发到该号码）',
+    hintSent: p => '验证码已发送到 ' + p + '，10 分钟内有效',
+    errNoToken: '缺少登录会话，请返回重新登录',
+    errNoPhone: '请输入手机号',
+    errSendFail: '发送失败',
+    errCodeLen: '请输入 6 位验证码',
+    errVerifyFail: '验证失败'
+  },
+  en: {
+    title: 'Sign-in Verification — Prime Anchor Workforce',
+    pageTitle: '🔐 SMS Sign-in Verification',
+    pageSub: 'Password accepted — please verify the phone number on file',
+    phoneLabel: 'Phone number to receive the code',
+    codeLabel: 'SMS verification code',
+    codePh: '6 digits',
+    trustLabel: 'Skip SMS verification on this device for 30 days',
+    btnSend: 'Send Code',
+    btnResend: 'Resend',
+    btnSending: 'Sending…',
+    btnVerify: '✅ Verify & Sign In',
+    btnVerifying: 'Verifying…',
+    backLink: '← Back to sign in',
+    hintLast: p => 'Last used number: ' + p + ' (leave blank to send to it)',
+    hintSent: p => 'Code sent to ' + p + ', valid for 10 minutes',
+    errNoToken: 'Missing sign-in session — please go back and sign in again',
+    errNoPhone: 'Please enter a phone number',
+    errSendFail: 'Failed to send',
+    errCodeLen: 'Please enter the 6-digit code',
+    errVerifyFail: 'Verification failed'
+  }
+};
+let _lang = qs.get('lang') || localStorage.getItem('pa_portal_lang') || 'zh';
+if (!L[_lang]) _lang = 'zh';
+function t(key) { return (L[_lang] || L.zh)[key] || ''; }
+
+// 记录当前提示/错误的状态, 切换语言时按状态重新渲染
+let _hintState = null;      // { key: 'hintLast'|'hintSent', phone: '...' }
+let _errKey = null;         // 键名(可翻译) 或 null(服务器返回的原文错误)
+let _counting = false;      // 发送按钮倒计时中
+let _sent = false;          // 已成功发送过(倒计时结束后显示"重新发送")
+
+function showErr(key) {
+  _errKey = key || null;
+  $('err').textContent = key ? t(key) : '';
 }
+function showHint(key, phone) {
+  _hintState = { key, phone };
+  $('phoneHint').style.display = '';
+  $('phoneHint').textContent = t(key)(phone);
+}
+
+function setLang(lang) {
+  _lang = L[lang] ? lang : 'zh';
+  try { localStorage.setItem('pa_portal_lang', _lang); } catch (_) {}
+  document.title = t('title');
+  document.documentElement.lang = _lang === 'zh' ? 'zh' : 'en';
+  $('langZh').classList.toggle('active', _lang === 'zh');
+  $('langEn').classList.toggle('active', _lang === 'en');
+  ['pageTitle', 'pageSub', 'phoneLabel', 'codeLabel', 'trustLabel', 'backLink']
+    .forEach(id => { $(id).textContent = t(id); });
+  $('codeInput').placeholder = t('codePh');
+  if (!_counting && !$('btnSend').disabled) $('btnSend').textContent = t(_sent ? 'btnResend' : 'btnSend');
+  if (!$('btnVerify').disabled) $('btnVerify').textContent = t('btnVerify');
+  if (_hintState) showHint(_hintState.key, _hintState.phone);
+  if (_errKey) $('err').textContent = t(_errKey);
+}
+
+if (HINT) showHint('hintLast', HINT);
+setLang(_lang);
+if (!MFA_TOKEN) showErr('errNoToken');
 $('phoneInput').addEventListener('input', function () {
   let d = this.value.replace(/\D/g, '').slice(0, 10);
   if (d.length > 6) d = '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6);
@@ -84,49 +173,50 @@ function countdown(sec) {
   let left = sec;
   btn.disabled = true;
   btn.textContent = left + 's';
+  _counting = true;
   _cd = setInterval(() => {
     left--;
-    if (left <= 0) { clearInterval(_cd); btn.disabled = false; btn.textContent = '重新发送'; return; }
+    if (left <= 0) { clearInterval(_cd); _counting = false; btn.disabled = false; btn.textContent = t('btnResend'); return; }
     btn.textContent = left + 's';
   }, 1000);
 }
 
 async function sendCode() {
-  $('err').textContent = '';
+  showErr(null);
   const phone = $('phoneInput').value.replace(/\D/g, '');
-  if (!phone && !HINT) { $('err').textContent = '请输入手机号'; return; }
+  if (!phone && !HINT) { showErr('errNoPhone'); return; }
   const btn = $('btnSend');
-  btn.disabled = true; btn.textContent = '发送中…';
+  btn.disabled = true; btn.textContent = t('btnSending');
   try {
     const r = await fetch('/api/admin/mfa/send', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mfa_token: MFA_TOKEN, phone })
     });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.error || '发送失败');
+    if (!r.ok) throw new Error(d.error || t('errSendFail'));
+    _sent = true;
     countdown(60);
-    $('phoneHint').style.display = '';
-    $('phoneHint').textContent = '验证码已发送到 ' + (d.phone_hint || '') + '，10 分钟内有效';
+    showHint('hintSent', d.phone_hint || '');
     $('codeInput').focus();
   } catch (e) {
-    $('err').textContent = e.message || '发送失败';
-    btn.disabled = false; btn.textContent = '发送验证码';
+    if (e.message) { _errKey = null; $('err').textContent = e.message; } else showErr('errSendFail');
+    btn.disabled = false; btn.textContent = t(_sent ? 'btnResend' : 'btnSend');
   }
 }
 
 async function verify() {
-  $('err').textContent = '';
+  showErr(null);
   const code = $('codeInput').value.trim();
-  if (code.length !== 6) { $('err').textContent = '请输入 6 位验证码'; return; }
+  if (code.length !== 6) { showErr('errCodeLen'); return; }
   const btn = $('btnVerify');
-  btn.disabled = true; btn.textContent = '验证中…';
+  btn.disabled = true; btn.textContent = t('btnVerifying');
   try {
     const r = await fetch('/api/admin/mfa/verify', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mfa_token: MFA_TOKEN, code, trust: $('trustChk').checked ? 1 : 0 })
     });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok || !d.success) throw new Error(d.error || '验证失败');
+    if (!r.ok || !d.success) throw new Error(d.error || t('errVerifyFail'));
     // 各后台页面读取的存储位置不同, 全部写一遍
     try {
       localStorage.setItem('adminToken', d.token);
@@ -141,8 +231,8 @@ async function verify() {
     } catch (_) {}
     location.replace(NEXT);
   } catch (e) {
-    $('err').textContent = e.message || '验证失败';
-    btn.disabled = false; btn.textContent = '✅ 验证并登录';
+    if (e.message) { _errKey = null; $('err').textContent = e.message; } else showErr('errVerifyFail');
+    btn.disabled = false; btn.textContent = t('btnVerify');
   }
 }
 </script>
