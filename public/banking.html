@@ -149,7 +149,10 @@
     </div>
     <div class="note" id="sumLine"></div>
     <div id="txns"></div>
-    <div class="cards" id="accounts"></div>
+    <div style="display:flex;justify-content:flex-end;margin-top:16px">
+      <button class="btn sm" id="acctToggle" onclick="toggleAccts()">🏦 账户信息 ▸</button>
+    </div>
+    <div class="cards" id="accounts" style="display:none"></div>
   </div>
 </div>
 
@@ -253,6 +256,14 @@ async function loadAccounts() {
     + '<div class="sub">' + (a.balance_available != null ? '可用 ' + money(a.balance_available, a.currency) + ' · ' : '')
     + esc(a.subtype || '') + '</div></div>').join('')
     || '<div class="empty">还没连接银行账户 — 点右上角「➕ 连接银行」</div>';
+}
+
+// 账户卡片默认收起, 点按钮才展开（余额不常看, 也避免旁人一眼看到）
+function toggleAccts() {
+  const el = document.getElementById('accounts');
+  const open = el.style.display === 'none';
+  el.style.display = open ? '' : 'none';
+  document.getElementById('acctToggle').textContent = open ? '🏦 账户信息 ▾' : '🏦 账户信息 ▸';
 }
 
 async function unlinkItem(id, name) {
