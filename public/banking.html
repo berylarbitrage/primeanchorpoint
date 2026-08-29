@@ -30,8 +30,8 @@
   .btn.sm{padding:4px 12px;font-size:.72rem}
   .btn:disabled{opacity:.55;cursor:default;transform:none}
   .wrap{max-width:1080px;margin:0 auto;padding:20px 16px 80px}
-  /* 账户小卡：放在交易表下面右下角, 不占页面头部空间 */
-  .cards{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end;margin:16px 0 0}
+  /* 账户小卡：默认收起, 顶栏「🏦 账户信息」点开显示在页面最上面 */
+  .cards{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 16px}
   .acct{background:var(--card);border:1px solid var(--gray-200);border-radius:12px;padding:9px 14px 9px 15px;
     box-shadow:var(--shadow);transition:box-shadow .15s,transform .15s;position:relative;overflow:hidden;min-width:190px}
   .acct::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,#f59e0b,var(--amber))}
@@ -127,12 +127,14 @@
     <h1>🏦 银行对账</h1>
     <span class="hint" id="envTag"></span>
     <div style="flex:1"></div>
+    <button class="btn" id="acctToggle" onclick="toggleAccts()">🏦 账户信息 ▸</button>
     <button class="btn" id="whBtn" onclick="testWebhook()" style="display:none">📡 测试 Webhook</button>
     <button class="btn" id="syncBtn" onclick="syncNow()">🔄 同步交易</button>
     <button class="btn primary" id="connBtn" onclick="connectBank()">➕ 连接银行</button>
   </div>
   <div class="wrap">
     <div id="setupBox" style="display:none" class="setup"></div>
+    <div class="cards" id="accounts" style="display:none"></div>
     <div class="filters">
       <input type="date" id="fStart" onchange="loadTxns()">
       <span class="hint">到</span>
@@ -150,10 +152,6 @@
     </div>
     <div class="note" id="sumLine"></div>
     <div id="txns"></div>
-    <div style="display:flex;justify-content:flex-end;margin-top:16px">
-      <button class="btn sm" id="acctToggle" onclick="toggleAccts()">🏦 账户信息 ▸</button>
-    </div>
-    <div class="cards" id="accounts" style="display:none"></div>
   </div>
 </div>
 
