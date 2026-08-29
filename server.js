@@ -86,7 +86,7 @@ function formatPhoneE164(phone) {
   return '+' + digits; // fallback: prepend + and hope for the best
 }
 
-async function sendSMS(to, body) {
+async function sendSMS(to, body, mediaUrl) {
   if (!twilioClient || (!TWILIO_FROM && !twilioMsgSvcSid())) {
     console.log(`[SMS-SKIP] Twilio not configured. To: ${to}, Body: ${body}`);
     return false;
@@ -94,6 +94,8 @@ async function sendSMS(to, body) {
   const formatted = formatPhoneE164(to);
   try {
     const opts = { body, to: formatted };
+    // 彩信附图 (MMS, 美国/加拿大支持; 其他地区可能失败, 调用方自行降级)
+    if (mediaUrl) opts.mediaUrl = Array.isArray(mediaUrl) ? mediaUrl : [mediaUrl];
     const _msvc = twilioMsgSvcSid();
     if (_msvc) {
       opts.messagingServiceSid = _msvc;
@@ -26622,17 +26624,24 @@ app.post('/api/kiosk/forgot', async (req, res) => {
   try {
     const b = req.body || {};
     const siteId = parseInt(b.site_id);
-    const last10 = String(b.phone || '').replace(/\D/g, '').slice(-10);
-    if (!siteId || last10.length !== 10) return res.status(400).json({ error: '请输入 10 位手机号' });
+    // 支持国际号码: 7-15 位数字 (美国 10 位; 其他国家带国家代码)
+    const digits = String(b.phone || '').replace(/\D/g, '');
+    if (!siteId || digits.length < 7 || digits.length > 15) return res.status(400).json({ error: '请输入完整手机号（外国号码请带国家代码）' });
     if (!db.prepare('SELECT id FROM job_sites WHERE id=? AND active=1').get(siteId)) return res.status(404).json({ error: '未找到该工作地点' });
     const ipKey = 'kioskforgot:' + (req.ip || req.connection.remoteAddress || '?');
     if (_tcCodeThrottled(ipKey)) return res.status(429).json({ error: '尝试次数过多，请 15 分钟后再试' });
-    const likeTail = '%' + last10;
     const normPhone = col => `replace(replace(replace(replace(replace(COALESCE(${col},''),'-',''),' ',''),'(',''),')',''),'+','')`;
-    let emp = db.prepare(`SELECT * FROM employees WHERE status='active' AND ${normPhone('phone')} LIKE ?`).get(likeTail);
+    // 后 7 位 SQL 预筛, 再在 JS 里做双向后缀匹配 (存的号可能带/不带国家代码)
+    const likeTail = '%' + digits.slice(-7);
+    const matchPhone = stored => {
+      const sd = String(stored || '').replace(/\D/g, '');
+      if (sd.length < 7) return false;
+      return sd === digits || sd.endsWith(digits) || digits.endsWith(sd);
+    };
+    let emp = db.prepare(`SELECT * FROM employees WHERE status='active' AND ${normPhone('phone')} LIKE ?`).all(likeTail).find(e => matchPhone(e.phone));
     let sub = null;
     if (!emp) {
-      sub = db.prepare(`SELECT * FROM applicant_submissions WHERE ${normPhone('phone')} LIKE ? ORDER BY id DESC`).get(likeTail);
+      sub = db.prepare(`SELECT * FROM applicant_submissions WHERE ${normPhone('phone')} LIKE ? ORDER BY id DESC`).all(likeTail).find(s2 => matchPhone(s2.phone)) || null;
       if (sub && sub.employee_id) {
         const linked = db.prepare('SELECT * FROM employees WHERE id=?').get(sub.employee_id);
         if (linked && linked.status !== 'active') { _tcCodeFail(ipKey); return res.json({ found: false }); }
@@ -26649,14 +26658,20 @@ app.post('/api/kiosk/forgot', async (req, res) => {
       else db.prepare('UPDATE applicant_submissions SET timeclock_code=? WHERE id=?').run(code, sub.id);
     }
     const name = emp ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim() : String((sub && sub.name) || '').trim();
-    const toPhone = (emp && emp.phone) || (sub && sub.phone) || last10;
-    const qrUrl = _applyQrBase(req) + '/my-qr?c=' + code;
+    const toPhone = (emp && emp.phone) || (sub && sub.phone) || digits;
+    // 二维码作为彩信图片直接发过去; 彩信发不出去 (国际号码等) 再降级为带链接的普通短信
+    const qrPngUrl = _applyQrBase(req) + '/my-qr.png?c=' + code;
     let smsSent = false;
     try {
       smsSent = !!(await sendSMS(toPhone,
-        `[Prime Anchor Workforce] Your clock-in password: ${code}\nYour time-clock QR code: ${qrUrl}\nEnter the password or show the QR at the time clock. Keep it private.`));
+        `[Prime Anchor Workforce] Your clock-in password: ${code}\nShow the attached QR code or enter the password at the time clock. Keep it private.`,
+        qrPngUrl));
+      if (!smsSent) {
+        smsSent = !!(await sendSMS(toPhone,
+          `[Prime Anchor Workforce] Your clock-in password: ${code}\nYour time-clock QR code: ${_applyQrBase(req) + '/my-qr?c=' + code}\nEnter the password or show the QR at the time clock. Keep it private.`));
+      }
     } catch (e) { console.error('[Kiosk] forgot SMS error:', e.message); }
-    res.json({ found: true, name, phone_last4: last10.slice(-4), sms_sent: smsSent });
+    res.json({ found: true, name, phone_last4: String(toPhone).replace(/\D/g, '').slice(-4), sms_sent: smsSent });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -26669,7 +26684,23 @@ app.get('/api/kiosk/register-qr', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 员工个人打卡二维码页 (短信里的链接): 显示姓名 + 二维码 + 密码
+// 员工个人打卡二维码 PNG (彩信附图用)
+app.get('/my-qr.png', async (req, res) => {
+  const code = String(req.query.c || '').trim();
+  const ipKey = 'myqr:' + (req.ip || req.connection.remoteAddress || '?');
+  if (!/^\d{8}$/.test(code) || _tcCodeThrottled(ipKey)) return res.status(404).send('Not found');
+  const emp = _empByTimeclockCode(code);
+  if (!emp) { _tcCodeFail(ipKey); return res.status(404).send('Not found'); }
+  _tcCodeOk(ipKey);
+  try {
+    const buf = await QRCode.toBuffer(KIOSK_QR_PREFIX + code, { width: 480, margin: 2 });
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.send(buf);
+  } catch (e) { res.status(500).send('QR error'); }
+});
+
+// 员工个人打卡二维码页 (降级短信里的链接): 显示姓名 + 二维码 + 密码
 app.get('/my-qr', async (req, res) => {
   const code = String(req.query.c || '').trim();
   const ipKey = 'myqr:' + (req.ip || req.connection.remoteAddress || '?');
