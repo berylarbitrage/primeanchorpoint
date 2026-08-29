@@ -5,10 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>打卡台 Time Clock</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%8F%B0%3C/text%3E%3C/svg%3E">
+<link rel="manifest" href="kiosk-manifest.json">
+<meta name="theme-color" content="#0F2B5B">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
 :root{--blue:#0F2B5B;--sky:#4A90D9;--green:#2D9D78;--red:#E63946;--orange:#F5A623;--off:#F7F8FA;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A}
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
-html,body{height:100%}
+html,body{height:100%;overscroll-behavior:none}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-serif;background:var(--blue);color:#fff;display:flex;flex-direction:column;overflow:hidden;touch-action:manipulation}
 /* Header */
 .hdr{display:flex;align-items:center;justify-content:space-between;padding:.9rem 1.4rem;flex-shrink:0}
@@ -71,9 +75,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','DM Sans',sans-seri
       <div class="hdr-title" id="siteName">…</div>
     </div>
   </div>
-  <div class="hdr-right">
-    <div class="hdr-clock" id="clock">--:--:--</div>
-    <div class="hdr-date" id="clockDate"></div>
+  <div class="hdr-right" style="display:flex;align-items:center;gap:.8rem">
+    <button id="fsBtn" onclick="goFullscreen()" title="全屏" style="border:1.5px solid rgba(255,255,255,.3);background:transparent;color:rgba(255,255,255,.7);border-radius:10px;padding:.35rem .6rem;font-size:1rem;cursor:pointer;font-family:inherit">⛶</button>
+    <div>
+      <div class="hdr-clock" id="clock">--:--:--</div>
+      <div class="hdr-date" id="clockDate"></div>
+    </div>
   </div>
 </div>
 <div class="lang-bar">
@@ -241,7 +248,29 @@ let _actTimer = null, _actLeft = 0;
 let _resTimer = null;
 
 const $ = id => document.getElementById(id);
-const _siteId = new URLSearchParams(location.search).get('site') || '';
+// 记住仓库: 从主屏幕图标打开(没有 ?site=)时沿用上次的仓库
+const _siteParam = new URLSearchParams(location.search).get('site') || '';
+if (_siteParam) { try { localStorage.setItem('kiosk_site', _siteParam); } catch (_) {} }
+const _siteId = _siteParam || localStorage.getItem('kiosk_site') || '';
+
+// ── 打卡亭硬化: 全屏 / 屏幕常亮 / 禁长按菜单 (真正的锁定还需系统的引导式访问/固定屏幕) ──
+function goFullscreen() {
+  const el = document.documentElement;
+  const fn = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!fn) return;
+  try { const p = fn.call(el); if (p && p.catch) p.catch(() => {}); } catch (_) {}
+}
+document.addEventListener('fullscreenchange', () => {
+  $('fsBtn').style.display = document.fullscreenElement ? 'none' : '';
+});
+document.addEventListener('contextmenu', e => e.preventDefault());
+// 屏幕常亮 (Wake Lock), 熄屏/切回后自动重新申请
+let _wakeLock = null;
+async function keepAwake() {
+  try { if (navigator.wakeLock) _wakeLock = await navigator.wakeLock.request('screen'); } catch (_) {}
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
+keepAwake();
 
 function setKLang(l) {
   _kl = l; localStorage.setItem('kiosk_lang', l);
