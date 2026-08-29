@@ -30,8 +30,8 @@
   .btn.sm{padding:4px 12px;font-size:.72rem}
   .btn:disabled{opacity:.55;cursor:default;transform:none}
   .wrap{max-width:1080px;margin:0 auto;padding:20px 16px 80px}
-  /* 账户小卡：放在交易表下面右下角, 不占页面头部空间 */
-  .cards{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end;margin:16px 0 0}
+  /* 账户小卡：默认收起, 顶栏「🏦 账户信息」点开显示在页面最上面 */
+  .cards{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 16px}
   .acct{background:var(--card);border:1px solid var(--gray-200);border-radius:12px;padding:9px 14px 9px 15px;
     box-shadow:var(--shadow);transition:box-shadow .15s,transform .15s;position:relative;overflow:hidden;min-width:190px}
   .acct::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,#f59e0b,var(--amber))}
@@ -116,7 +116,7 @@
 
 <div id="gate" style="display:none">
   <h1 style="color:var(--amber);font-size:1.1rem">🏦 银行对账</h1>
-  <input id="user" placeholder="用户名（管理员 / 客服）">
+  <input id="user" placeholder="用户名（管理员 / 客服 / 会计）">
   <input id="pw" type="password" placeholder="密码" onkeydown="if(event.key==='Enter')login()">
   <div class="err" id="gateErr"></div>
   <button class="btn primary" style="width:100%;margin-top:12px" onclick="login()">登录</button>
@@ -127,12 +127,14 @@
     <h1>🏦 银行对账</h1>
     <span class="hint" id="envTag"></span>
     <div style="flex:1"></div>
+    <button class="btn" id="acctToggle" onclick="toggleAccts()">🏦 账户信息 ▸</button>
     <button class="btn" id="whBtn" onclick="testWebhook()" style="display:none">📡 测试 Webhook</button>
     <button class="btn" id="syncBtn" onclick="syncNow()">🔄 同步交易</button>
     <button class="btn primary" id="connBtn" onclick="connectBank()">➕ 连接银行</button>
   </div>
   <div class="wrap">
     <div id="setupBox" style="display:none" class="setup"></div>
+    <div class="cards" id="accounts" style="display:none"></div>
     <div class="filters">
       <input type="date" id="fStart" onchange="loadTxns()">
       <span class="hint">到</span>
@@ -144,15 +146,12 @@
         <option value="month">按月显示</option>
       </select>
       <select id="fCat" onchange="loadTxns()"><option value="">全部分类</option></select>
+      <button class="btn sm" id="pendBtn" onclick="togglePending()" style="display:none">⏳ 待审核</button>
       <input id="fQ" placeholder="搜描述 / 商户 / 分类…" oninput="qDebounce()" style="flex:1;min-width:160px">
       <a class="btn" id="csvBtn" href="#">⬇ 导出 CSV 给会计</a>
     </div>
     <div class="note" id="sumLine"></div>
     <div id="txns"></div>
-    <div style="display:flex;justify-content:flex-end;margin-top:16px">
-      <button class="btn sm" id="acctToggle" onclick="toggleAccts()">🏦 账户信息 ▸</button>
-    </div>
-    <div class="cards" id="accounts" style="display:none"></div>
   </div>
 </div>
 
@@ -173,7 +172,7 @@
 
 <script>
 let TOKEN = localStorage.getItem('adminToken') || '';
-let ROLE = '';   // 'admin' | 'cs'(客服: 只读交易 + 标注, 标注需管理员审核)
+let ROLE = '';   // 'admin' | 'cs' | 'accounting'（客服/会计: 只读交易 + 标注, 标注需管理员审核）
 let ACCTS = [], qTimer = null;
 
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -200,7 +199,7 @@ async function login() {
   }).then(x=>x.json()).catch(()=>({}));
   if (r.mfa_required) { location.href = '/mfa?token=' + encodeURIComponent(r.mfa_token || '') + '&next=' + encodeURIComponent(location.pathname + location.search); return; }
   if (!r.success) { document.getElementById('gateErr').textContent = r.error || '登录失败'; return; }
-  if (!['admin', 'cs'].includes(r.role)) { document.getElementById('gateErr').textContent = '银行数据只有管理员和客服能看'; return; }
+  if (!['admin', 'cs', 'accounting'].includes(r.role)) { document.getElementById('gateErr').textContent = '银行数据只有管理员、客服和会计能看'; return; }
   ROLE = r.role;
   TOKEN = r.token; localStorage.setItem('adminToken', TOKEN);
   start();
@@ -214,8 +213,8 @@ async function init() {
     const s = await api('/plaid/status');
     document.getElementById('envTag').textContent = s.ready ? ('环境: ' + s.env) : '';
     if (s.ready && s.env === 'sandbox' && ROLE === 'admin') document.getElementById('whBtn').style.display = '';
-    // 客服: 只读交易 + 标注, 连接/同步等管理操作隐藏
-    if (ROLE === 'cs') {
+    // 客服/会计: 只读交易 + 标注, 连接/同步等管理操作隐藏
+    if (ROLE !== 'admin') {
       document.getElementById('connBtn').style.display = 'none';
       document.getElementById('syncBtn').style.display = 'none';
     }
@@ -314,7 +313,9 @@ async function loadTxns() {
   const qs = txnQuery();
   document.getElementById('csvBtn').href = '/api/plaid/transactions.csv?' + qs;
   const r = await api('/plaid/transactions' + (qs ? '?' + qs : ''));
-  const rows = r.transactions || [];
+  let rows = r.transactions || [];
+  // 「待审核」筛选: 只看有待审核标注的交易（在当前筛选结果里过滤）
+  if (_pendingOnly) rows = rows.filter(t => ANN[t.txn_id] && ANN[t.txn_id].ann_status === 'pending');
   const accName = id => { const a = ACCTS.find(x => x.account_id === id); return a ? a.name + (a.mask ? ' ····' + a.mask : '') : ''; };
   document.getElementById('sumLine').textContent =
     '共 ' + (r.total || 0) + ' 笔' + (rows.length < (r.total || 0) ? '（显示最近 ' + rows.length + ' 笔）' : '')
@@ -1229,6 +1230,7 @@ async function annApprove(id) {
     box.ann_status = 'approved';
     annRefreshChip(box);
     _bsRenderBoxPanel();
+    if (_pendingOnly) loadTxns();
     showToast('已审核通过 ✓');
   } catch (e) { showToast(e.message || '审核失败', 'error'); }
 }
@@ -1390,6 +1392,25 @@ function annRefreshChip(box) {
   if (!box || !box.plaid_txn_id) return;
   const cell = document.querySelector('.ann-cell[data-txn="' + box.plaid_txn_id + '"]');
   if (cell) cell.innerHTML = annChipHtml(box.plaid_txn_id);
+  updatePendBtn();
+}
+// 「待审核」筛选按钮: 有待审核标注时出现, 显示条数; 点击只看这些交易
+let _pendingOnly = false;
+function updatePendBtn() {
+  const btn = document.getElementById('pendBtn');
+  if (!btn) return;
+  const n = _bsBoxList.filter(b => b.ann_status === 'pending').length;
+  if (!n) { btn.style.display = 'none'; if (_pendingOnly) { _pendingOnly = false; loadTxns(); } return; }
+  btn.style.display = '';
+  btn.textContent = (_pendingOnly ? '✕ 退出待审核视图（' : '⏳ 待审核 ') + (_pendingOnly ? n + '）' : n + ' 条');
+  btn.style.background = _pendingOnly ? '#fff7ed' : '';
+  btn.style.borderColor = _pendingOnly ? '#fed7aa' : '';
+  btn.style.color = _pendingOnly ? '#c2410c' : '';
+}
+function togglePending() {
+  _pendingOnly = !_pendingOnly;
+  updatePendBtn();
+  loadTxns();
 }
 function annStore(box) {
   if (typeof box.inv_items === 'string') { try { box.inv_items = JSON.parse(box.inv_items || '[]'); } catch (e) { box.inv_items = []; } }
@@ -1402,6 +1423,7 @@ async function annLoadAll() {
   try {
     const r = await api('/plaid/annotations');
     Object.values(r.annotations || {}).forEach(annStore);
+    updatePendBtn();
   } catch (e) { console.error(e); }
 }
 async function annOpen(txnId) {
@@ -1436,8 +1458,8 @@ function annClose() {
 if (TOKEN) {
   fetch('/api/admin/me', { headers: { 'Authorization': 'Bearer ' + TOKEN } })
     .then(r => r.json()).then(r => {
-      if (r && r.username && ['admin', 'cs'].includes(r.role)) { ROLE = r.role; start(); }
-      else showGate(r && r.username ? '银行数据只有管理员和客服能看' : '');
+      if (r && r.username && ['admin', 'cs', 'accounting'].includes(r.role)) { ROLE = r.role; start(); }
+      else showGate(r && r.username ? '银行数据只有管理员、客服和会计能看' : '');
     }).catch(() => showGate(''));
 } else showGate('');
 </script>
