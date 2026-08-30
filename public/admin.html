@@ -1434,6 +1434,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <button class="btn btn-outline" onclick="exportTimeCSV()">导出 CSV</button>
       <button class="btn btn-accent" onclick="showTimeReport()">工时汇总报表</button>
       <button class="btn btn-outline" onclick="openInvoiceModal()" style="background:#f0fdf4;color:#16a34a;border-color:#86efac">🧾 生成发票</button>
+      <button class="btn btn-outline" onclick="openSvModal()">🏭 仓库授权</button>
       <button class="btn btn-green" onclick="openTsModal()">+ 手动录入</button>
     </div>
   </div>
@@ -8065,6 +8066,12 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 </div></div>
 
 <!-- ════ Weekly Timesheet Modal ════ -->
+<div class="modal-bg" id="svModal"><div class="modal" style="max-width:660px">
+  <h2 style="margin-bottom:.35rem">🏭 仓库方查看授权</h2>
+  <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:.9rem">开启后生成只读链接发给仓库方：对方打开链接只能看到<b>该仓库</b>的打卡时间和员工姓名，<b>看不到照片、备注、位置、工资等任何其他信息</b>。关闭授权后链接立即失效；重新开启会沿用原链接。</p>
+  <div id="svList" style="max-height:55vh;overflow:auto">加载中…</div>
+  <div style="text-align:right;margin-top:1rem"><button class="btn btn-outline" onclick="document.getElementById('svModal').classList.remove('show')">关闭</button></div>
+</div></div>
 <div class="modal-bg" id="tsModal"><div class="modal modal-xl" id="tsPrintArea">
   <div class="ts-header no-print">
     <h2>手动录入工时</h2>
@@ -18779,6 +18786,49 @@ async function generateReport() {
     </tbody></table>
     <div style="text-align:right;margin-top:1rem;font-weight:700;color:var(--blue)">总应付薪酬：$${totalPay.toFixed(2)}</div>
   ` : '<p class="empty">选定时间段内无已完成工时记录</p>';
+}
+
+// ── 仓库方查看授权: 按仓库生成/关闭只读链接 (只含打卡时间+姓名, 无照片) ──
+async function openSvModal() {
+  document.getElementById('svModal').classList.add('show');
+  loadSvLinks();
+}
+async function loadSvLinks() {
+  const box = document.getElementById('svList');
+  box.innerHTML = '加载中…';
+  const d = await api('/admin/site-view-links');
+  if (d.error) { box.innerHTML = `<span style="color:var(--red)">${d.error}</span>`; return; }
+  if (!d.length) { box.innerHTML = '<span style="color:var(--gray-400)">还没有启用中的仓库</span>'; return; }
+  box.innerHTML = d.map(s => `
+    <div style="display:flex;align-items:center;gap:.6rem;padding:.6rem .2rem;border-bottom:1px solid var(--gray-100);flex-wrap:wrap">
+      <div style="flex:1;min-width:160px">
+        <b>${s.name}</b>${s.code ? ` <span style="color:var(--gray-400);font-size:.8rem">(${s.code})</span>` : ''}
+        <span style="margin-left:.5rem;font-size:.74rem;padding:2px 8px;border-radius:999px;${s.enabled ? 'background:#E8F5E9;color:#15803d' : 'background:var(--gray-100);color:var(--gray-400)'}">${s.enabled ? '已授权' : '未开启'}</span>
+      </div>
+      ${s.enabled
+        ? `<button class="btn btn-outline btn-sm" onclick="svCopy('${s.token}')">📋 复制链接</button>
+           <button class="btn btn-outline btn-sm" style="color:var(--red);border-color:#fecaca" onclick="svDisable(${s.id})">关闭授权</button>`
+        : `<button class="btn btn-green btn-sm" onclick="svEnable(${s.id})">开启并复制链接</button>`}
+    </div>`).join('');
+}
+function svLink(token) { return location.origin + '/site-view?t=' + token; }
+async function svCopy(token) {
+  const url = svLink(token);
+  try { await navigator.clipboard.writeText(url); showToast('链接已复制，可发给仓库方'); }
+  catch (_) { prompt('复制此链接发给仓库方：', url); }
+}
+async function svEnable(id) {
+  const d = await api(`/admin/site-view-links/${id}/enable`, { method: 'POST' });
+  if (d.error) return showToast(d.error, 'error');
+  await svCopy(d.token);
+  loadSvLinks();
+}
+async function svDisable(id) {
+  if (!await showConfirm('关闭后该仓库的查看链接立即失效，确定关闭？', { confirmLabel: '关闭授权', danger: true })) return;
+  const d = await api(`/admin/site-view-links/${id}/disable`, { method: 'POST' });
+  if (d.error) return showToast(d.error, 'error');
+  showToast('已关闭授权');
+  loadSvLinks();
 }
 
 function exportTimeCSV(fromReport) {

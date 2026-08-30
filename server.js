@@ -2428,6 +2428,8 @@ try { db.exec("ALTER TABLE manager_time_entries ADD COLUMN needs_review INTEGER 
 try { db.exec("ALTER TABLE job_sites ADD COLUMN timezone TEXT DEFAULT 'America/Chicago'"); } catch {}
 try { db.exec("ALTER TABLE job_sites ADD COLUMN code TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE job_sites ADD COLUMN partner_ids TEXT DEFAULT ''"); } catch {}
+// 仓库方查看授权: 有 token 的仓库可通过 /site-view?t=TOKEN 只读查看打卡时间+姓名 (无照片)
+try { db.exec("ALTER TABLE job_sites ADD COLUMN view_token TEXT DEFAULT ''"); } catch {}
 // One-time migration: rename sites with Chinese "N号仓库" suffix to zero-padded number format
 {
   const chineseSites = db.prepare("SELECT id, name FROM job_sites WHERE name LIKE '%号仓库%'").all();
@@ -26530,6 +26532,73 @@ try {
     .update(fs.readFileSync(path.join(__dirname, 'public', 'kiosk.html'))).digest('hex').slice(0, 12);
 } catch (_) {}
 app.get('/api/kiosk/version', (req, res) => res.json({ v: _kioskPageVer }));
+
+// ─── 🏭 仓库方查看授权: 管理员按仓库生成只读链接, 仓库方只能看打卡时间+姓名, 无照片 ───
+app.get('/api/admin/site-view-links', requireAdmin, requireRole('admin'), (req, res) => {
+  const rows = db.prepare('SELECT id, name, code, active, view_token FROM job_sites WHERE active=1 ORDER BY name').all();
+  res.json(rows.map(r => ({ id: r.id, name: r.name, code: r.code || '', enabled: !!r.view_token, token: r.view_token || '' })));
+});
+app.post('/api/admin/site-view-links/:id/enable', requireAdmin, requireRole('admin'), (req, res) => {
+  const site = db.prepare('SELECT id, view_token FROM job_sites WHERE id=? AND active=1').get(req.params.id);
+  if (!site) return res.status(404).json({ error: '未找到该仓库' });
+  let token = site.view_token;
+  if (!token) {
+    token = require('crypto').randomBytes(24).toString('base64url');
+    db.prepare('UPDATE job_sites SET view_token=? WHERE id=?').run(token, site.id);
+  }
+  res.json({ ok: 1, token });
+});
+app.post('/api/admin/site-view-links/:id/disable', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare("UPDATE job_sites SET view_token='' WHERE id=?").run(req.params.id);
+  res.json({ ok: 1 });
+});
+// 公开只读接口: 凭 token 查该仓库的打卡记录。只返回姓名+时间, 绝不返回照片/备注/位置/工资
+app.get('/api/site-view', (req, res) => {
+  const ipKey = 'siteview:' + (req.ip || '?');
+  if (_tcCodeThrottled(ipKey)) return res.status(429).json({ error: '尝试次数过多，请 15 分钟后再试' });
+  const token = String(req.query.t || '').trim();
+  if (token.length < 20) { _tcCodeFail(ipKey); return res.status(401).json({ error: '链接无效或已关闭' }); }
+  const site = db.prepare("SELECT id, name, code, timezone FROM job_sites WHERE view_token=? AND view_token!='' AND active=1").get(token);
+  if (!site) { _tcCodeFail(ipKey); return res.status(401).json({ error: '链接无效或已关闭' }); }
+  _tcCodeOk(ipKey);
+  // 日期范围: 默认最近 7 天, 最长 190 天 (超出时保留靠近 to 的一段)
+  const reD = /^\d{4}-\d{2}-\d{2}$/;
+  let from = reD.test(String(req.query.from || '')) ? req.query.from : '';
+  let to = reD.test(String(req.query.to || '')) ? req.query.to : '';
+  if (!to) to = new Date().toISOString().slice(0, 10);
+  if (!from) from = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+  if (from > to) { const x = from; from = to; to = x; }
+  if ((new Date(to) - new Date(from)) > 190 * 86400000) from = new Date(new Date(to) - 190 * 86400000).toISOString().slice(0, 10);
+  const rows = db.prepare(`SELECT t.clock_in, t.clock_out, t.break_records, t.total_hours, t.status,
+      e.first_name, e.last_name
+    FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id
+    WHERE t.site_id=? AND DATE(t.clock_in)>=? AND DATE(t.clock_in)<=?
+    ORDER BY t.clock_in DESC LIMIT 2000`).all(site.id, from, to);
+  // 时间戳兼容两种存储格式: ISO (带 Z/时区) 与 SQLite 'YYYY-MM-DD HH:MM:SS' (UTC)
+  const pT = s => {
+    if (!s) return null;
+    const str = String(s);
+    const d = new Date(/[zZ]$|[+\-]\d{2}:?\d{2}$/.test(str) ? str : str.replace(' ', 'T') + 'Z');
+    return isNaN(d) ? null : d;
+  };
+  const entries = rows.map(r => {
+    let breakMin = 0, breakN = 0;
+    try {
+      for (const b of JSON.parse(r.break_records || '[]')) {
+        breakN++;
+        const bs = pT(b.start), be = pT(b.end);
+        if (bs && be) breakMin += Math.max(0, (be - bs) / 60000);
+      }
+    } catch (_) {}
+    return {
+      name: [r.first_name, r.last_name].filter(Boolean).join(' ') || '—',
+      clock_in: r.clock_in, clock_out: r.clock_out,
+      break_minutes: Math.round(breakMin), break_count: breakN,
+      total_hours: r.total_hours, status: r.status
+    };
+  });
+  res.json({ site: { name: site.name, code: site.code || '', timezone: site.timezone || 'America/Chicago' }, from, to, entries });
+});
 
 // 打卡台客户端 JS 报错上报 → 写进服务器日志, 平板出问题时可远程诊断
 const _kioskErrLog = new Map(); // ip → 最近一次上报时间, 简单限流
