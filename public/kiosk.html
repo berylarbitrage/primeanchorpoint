@@ -85,7 +85,7 @@ body.brite .foot{color:rgba(15,43,91,.35)}
 body.brite #fsBtn{border-color:rgba(15,43,91,.3);color:rgba(15,43,91,.6)}
 body.brite #fpNum{color:rgba(15,43,91,.9)!important}
 /* 提交打卡瞬间的全屏白光闪拍层 */
-#flashOv{position:fixed;inset:0;background:#fff;z-index:9999;display:none}
+#flashOv{position:fixed;inset:0;background:#fff;z-index:9999;display:none;pointer-events:none}
 @media (orientation: landscape) and (max-height: 900px) {
   #scrPw.active, #scrForgot.active{
     display:grid;max-width:880px;column-gap:3.5rem;align-items:center;justify-content:center;
@@ -217,6 +217,21 @@ body.brite #fpNum{color:rgba(15,43,91,.9)!important}
 <div id="flashOv"></div>
 <div class="foot"></div>
 
+<script>
+// 客户端报错上报 (独立 script 块: 主脚本哪怕整体解析失败也能上报) —— 平板上出问题
+// 没法接调试器, 全靠服务器日志里的 [kiosk-client-error] 远程诊断
+window.addEventListener('error', function (e) {
+  try {
+    fetch('/api/kiosk/client-error', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        site: new URLSearchParams(location.search).get('site') || '',
+        msg: String((e && e.message) || '').slice(0, 300),
+        src: (String((e && e.filename) || '').slice(0, 200)) + ':' + ((e && e.lineno) || 0),
+        ua: String(navigator.userAgent || '').slice(0, 200)
+      }) }).catch(function () {});
+  } catch (_) {}
+});
+</script>
 <script>
 const KL = {
   zh: {
@@ -409,8 +424,8 @@ async function fpSubmit() {
   _fpBusy = true;
   $('fpErr').textContent = KL[_kl].checking;
   try {
-    const r = await fetch('/api/kiosk/forgot', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ site_id: _siteId, phone: _fp }) });
+    const r = await _fetchT('/api/kiosk/forgot', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ site_id: _siteId, phone: _fp }) }, 20000);
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || KL[_kl].errReq);
     _fpBusy = false; $('fpErr').textContent = '';
@@ -486,7 +501,11 @@ async function camGrabCanvas() {
   if (!_camStream) return null;
   if (_imageCapture) {
     try {
-      const bm = await _imageCapture.grabFrame();
+      // grabFrame 在部分安卓设备上会挂起不返回 → 900ms 超时, 退回隐藏 video 抓帧
+      const bm = await Promise.race([
+        _imageCapture.grabFrame(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('grab timeout')), 900))
+      ]);
       const c = _frameToCanvas(bm, bm.width, bm.height);
       if (bm.close) bm.close();
       if (c) return c;
@@ -545,6 +564,8 @@ function briteAuto() { if (_envDark()) briteSet(true); }
 async function camFlashShots() {
   const ov = $('flashOv');
   ov.style.display = 'block';
+  // 兜底: 无论中途发生什么, 白光层最多 4 秒必然消失, 绝不挡住屏幕
+  const wd = setTimeout(() => { ov.style.display = 'none'; }, 4000);
   try {
     await new Promise(r2 => setTimeout(r2, 260)); // 等屏幕点亮 + 摄像头曝光适应
     for (let i = 0; i < 3; i++) {
@@ -552,7 +573,7 @@ async function camFlashShots() {
       if (c) { _recentShots.push(c); if (_recentShots.length > 3) _recentShots.shift(); }
       if (i < 2) await new Promise(r2 => setTimeout(r2, 170));
     }
-  } finally { ov.style.display = 'none'; }
+  } finally { clearTimeout(wd); ov.style.display = 'none'; }
 }
 function xerr(msg) {
   if (_kl !== 'zh' && ERR_MAP[msg] && ERR_MAP[msg][_kl]) return ERR_MAP[msg][_kl];
@@ -620,14 +641,29 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'Enter' && fpActive) fpSubmit();
 });
 
+// 请求卡死 (网络断/服务器重启中) 时 fetch 可能永远不返回, _pwLocked 一直为 true
+// 键盘就再也点不动了 —— 所有请求都必须带超时, 保证键盘总能恢复
+function _fetchT(url, opts, ms) {
+  const ac = ('AbortController' in window) ? new AbortController() : null;
+  const t = setTimeout(() => { try { if (ac) ac.abort(); } catch (_) {} }, ms || 12000);
+  const o = Object.assign({}, opts);
+  if (ac) o.signal = ac.signal;
+  return fetch(url, o)
+    .catch(e => { throw (e && /abort/i.test(e.name || '')) ? new Error(KL[_kl].errReq) : e; })
+    .finally(() => clearTimeout(t));
+}
 async function checkPw() {
   _pwLocked = true;
   $('pwErr').textContent = KL[_kl].checking;
+  // 兜底: 就算 fetch 连 abort 都不响应, 15 秒后也强制解锁键盘
+  const wd = setTimeout(() => {
+    if (_pwLocked) { _pwLocked = false; _pw = ''; renderDots(); $('pwErr').textContent = KL[_kl].errReq; }
+  }, 15000);
   try {
-    const r = await fetch('/api/kiosk/status', {
+    const r = await _fetchT('/api/kiosk/status', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ site_id: _siteId, password: _pw })
-    });
+    }, 10000);
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || KL[_kl].errReq);
     _pwLocked = false;
@@ -637,7 +673,7 @@ async function checkPw() {
     _pwLocked = false; _pw = ''; renderDots();
     $('pwErr').textContent = xerr(e.message);
     const pad = $('keypad'); pad.classList.remove('shake'); void pad.offsetWidth; pad.classList.add('shake');
-  }
+  } finally { clearTimeout(wd); }
 }
 
 // ── Action screen ──
@@ -676,10 +712,10 @@ async function doPunchNow() {
     if (_envDark()) { await camStart(); await camFlashShots(); }
     // 最近 3 帧拼成三连拍零等待; 极少数缓存还空时短暂等一下 (最多 1.2s), 保证记录带照片
     const photo = camComposite() || await camShotWait(1200);
-    const r = await fetch('/api/kiosk/punch', {
+    const r = await _fetchT('/api/kiosk/punch', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ site_id: _siteId, password: _pw, punch_type: _punchType, photo_data: photo })
-    });
+    }, 20000);
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || KL[_kl].errReq);
     showResult(d);
@@ -713,6 +749,20 @@ function showResult(d) {
 }
 
 setKLang(_kl);
+// ── 自动更新: 平板上页面常开不刷新, 部署新版后永远跑旧代码 → 定时对比服务器版本, 空闲时自动刷新 ──
+let _pageVer = null;
+async function _verCheck() {
+  try {
+    const d = await (await fetch('/api/kiosk/version')).json();
+    if (!d || !d.v) return;
+    if (_pageVer === null) { _pageVer = d.v; return; } // 首次记录自己加载的版本
+    if (d.v !== _pageVer && $('scrPw').classList.contains('active') && !_pw && !_punching && !_scanning) {
+      location.reload();
+    }
+  } catch (_) {}
+}
+_verCheck();
+setInterval(_verCheck, 5 * 60 * 1000);
 camStart(); // 页面打开即申请摄像头: 装机时授权一次, 之后打卡抓拍/扫码即刻可用
 // 全程每秒滚动预拍并保留最近 3 帧: 任何时刻点打卡, 立即拼出三连拍 (专用打卡平板, 开销可忽略)
 setInterval(async () => {
