@@ -2428,6 +2428,9 @@ try { db.exec("ALTER TABLE manager_time_entries ADD COLUMN needs_review INTEGER 
 try { db.exec("ALTER TABLE job_sites ADD COLUMN timezone TEXT DEFAULT 'America/Chicago'"); } catch {}
 try { db.exec("ALTER TABLE job_sites ADD COLUMN code TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE job_sites ADD COLUMN partner_ids TEXT DEFAULT ''"); } catch {}
+// 仓库方(客户企业账号)登录客户门户可看本公司仓库的打卡时间+姓名; 照片默认不可见,
+// 由管理员按公司开启此开关后才在客户门户显示
+try { db.exec("ALTER TABLE partners ADD COLUMN show_punch_photos INTEGER DEFAULT 0"); } catch {}
 // One-time migration: rename sites with Chinese "N号仓库" suffix to zero-padded number format
 {
   const chineseSites = db.prepare("SELECT id, name FROM job_sites WHERE name LIKE '%号仓库%'").all();
@@ -26530,6 +26533,117 @@ try {
     .update(fs.readFileSync(path.join(__dirname, 'public', 'kiosk.html'))).digest('hex').slice(0, 12);
 } catch (_) {}
 app.get('/api/kiosk/version', (req, res) => res.json({ v: _kioskPageVer }));
+
+// ─── 🏭 仓库方打卡记录: 客户企业账号登录客户门户查看, 照片默认不可见由管理员按公司开关 ───
+// 管理端: 列出各公司照片开关状态 (仅 admin 角色可操作)
+app.get('/api/admin/partner-photo-access', requireAdmin, requireRole('admin'), (req, res) => {
+  const rows = db.prepare(`SELECT p.id, p.name, p.show_punch_photos,
+      (SELECT COUNT(*) FROM customer_accounts c WHERE c.partner_id=p.id AND c.active=1) AS account_count,
+      (SELECT COUNT(*) FROM job_sites js WHERE js.active=1 AND (js.partner_id=p.id OR (','||js.partner_ids||',') LIKE ('%,'||p.id||',%'))) AS site_count
+    FROM partners p WHERE p.active=1 ORDER BY p.name`).all();
+  res.json(rows.map(r => ({ id: r.id, name: r.name, photos_enabled: !!r.show_punch_photos,
+    account_count: r.account_count, site_count: r.site_count })));
+});
+app.post('/api/admin/partner-photo-access/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const p = db.prepare('SELECT id FROM partners WHERE id=?').get(req.params.id);
+  if (!p) return res.status(404).json({ error: '未找到该公司' });
+  const on = req.body && (req.body.enabled === true || req.body.enabled === 1) ? 1 : 0;
+  db.prepare('UPDATE partners SET show_punch_photos=? WHERE id=?').run(on, p.id);
+  res.json({ ok: 1, photos_enabled: !!on });
+});
+
+// 该客户(partner)名下的启用仓库
+function _customerSites(pid) {
+  if (!pid) return [];
+  return db.prepare('SELECT id, name, code, timezone, partner_id, partner_ids FROM job_sites WHERE active=1').all()
+    .filter(s => s.partner_id === pid || String(s.partner_ids || '').split(',').filter(Boolean).map(Number).includes(pid));
+}
+// 时间戳兼容两种存储格式: ISO (带 Z/时区) 与 SQLite 'YYYY-MM-DD HH:MM:SS' (UTC)
+function _pTs(s) {
+  if (!s) return null;
+  const str = String(s);
+  const d = new Date(/[zZ]$|[+\-]\d{2}:?\d{2}$/.test(str) ? str : str.replace(' ', 'T') + 'Z');
+  return isNaN(d) ? null : d;
+}
+// 客户门户: 本公司仓库的打卡记录 (员工姓名+时间; photos 字段仅当照片开关开启时返回)
+app.get('/api/customer/time-records', requireCustomer, (req, res) => {
+  const pid = req.customerPartnerId;
+  const sites = _customerSites(pid);
+  if (!sites.length) return res.json({ photos_enabled: false, sites: [], entries: [], from: '', to: '' });
+  const photosEnabled = !!((db.prepare('SELECT show_punch_photos FROM partners WHERE id=?').get(pid) || {}).show_punch_photos);
+  // 日期范围: 默认最近 7 天, 最长 190 天 (超出时保留靠近 to 的一段)
+  const reD = /^\d{4}-\d{2}-\d{2}$/;
+  let from = reD.test(String(req.query.from || '')) ? req.query.from : '';
+  let to = reD.test(String(req.query.to || '')) ? req.query.to : '';
+  if (!to) to = new Date().toISOString().slice(0, 10);
+  if (!from) from = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+  if (from > to) { const x = from; from = to; to = x; }
+  if ((new Date(to) - new Date(from)) > 190 * 86400000) from = new Date(new Date(to) - 190 * 86400000).toISOString().slice(0, 10);
+  const ids = sites.map(s => s.id);
+  const rows = db.prepare(`SELECT t.site_id, t.clock_in, t.clock_out, t.break_records, t.total_hours, t.status,
+      t.clock_in_photo_path, t.punch_photo_path, e.first_name, e.last_name
+    FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id
+    WHERE t.site_id IN (${ids.map(() => '?').join(',')}) AND DATE(t.clock_in)>=? AND DATE(t.clock_in)<=?
+    ORDER BY t.clock_in DESC LIMIT 2000`).all(...ids, from, to);
+  const entries = rows.map(r => {
+    let breakMin = 0, breakN = 0;
+    const photoFiles = [];
+    if (r.clock_in_photo_path) photoFiles.push(r.clock_in_photo_path);
+    try {
+      for (const b of JSON.parse(r.break_records || '[]')) {
+        breakN++;
+        const bs = _pTs(b.start), be = _pTs(b.end);
+        if (bs && be) breakMin += Math.max(0, (be - bs) / 60000);
+        if (b.photo_path) photoFiles.push(b.photo_path);
+      }
+    } catch (_) {}
+    if (r.punch_photo_path) photoFiles.push(r.punch_photo_path);
+    const o = {
+      site_id: r.site_id,
+      name: [r.first_name, r.last_name].filter(Boolean).join(' ') || '—',
+      clock_in: r.clock_in, clock_out: r.clock_out,
+      break_minutes: Math.round(breakMin), break_count: breakN,
+      total_hours: r.total_hours, status: r.status
+    };
+    // 照片仅在管理员为该公司开启开关后返回 (且不含视频等其他媒体信息)
+    if (photosEnabled) o.photos = photoFiles.map(f => '/api/customer/punch-photo/' + encodeURIComponent(path.basename(String(f))));
+    return o;
+  });
+  res.json({
+    photos_enabled: photosEnabled, from, to,
+    sites: sites.map(s => ({ id: s.id, name: s.name, code: s.code || '', timezone: s.timezone || 'America/Chicago' })),
+    entries
+  });
+});
+// 客户门户打卡照片: 仅当该公司照片开关开启, 且该文件确属本公司仓库的打卡记录
+app.get('/api/customer/punch-photo/:filename', requireCustomer, async (req, res) => {
+  const pid = req.customerPartnerId;
+  const allowed = !!((db.prepare('SELECT show_punch_photos FROM partners WHERE id=?').get(pid) || {}).show_punch_photos);
+  if (!allowed) return res.status(403).json({ error: '未开启照片查看权限' });
+  const safeName = path.basename(req.params.filename);
+  const ids = _customerSites(pid).map(s => s.id);
+  if (!ids.length) return res.status(404).send('Not found');
+  const owner = db.prepare(`SELECT id FROM time_entries
+    WHERE site_id IN (${ids.map(() => '?').join(',')})
+      AND (clock_in_photo_path=? OR punch_photo_path=? OR break_records LIKE ?)
+    LIMIT 1`).get(...ids, safeName, safeName, '%' + safeName + '%');
+  if (!owner) return res.status(404).send('Not found');
+  let key = `punch_photos/${safeName}`;
+  if (!(await storage.exists(key))) key = `checkin_photos/${safeName}`;
+  if (!(await storage.exists(key))) return res.status(404).send('Not found');
+  if (storage.isR2()) {
+    try { return res.redirect(302, await storage.getDownloadUrl(key)); }
+    catch (e) { return res.status(404).send('Not found'); }
+  }
+  const ext = path.extname(safeName).toLowerCase();
+  const mimeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp' };
+  if (mimeMap[ext]) res.setHeader('Content-Type', mimeMap[ext]);
+  try {
+    const s = await storage.getStream(key);
+    s.on('error', () => { try { res.status(500).end(); } catch {} });
+    s.pipe(res);
+  } catch (e) { res.status(404).send('Not found'); }
+});
 
 // 打卡台客户端 JS 报错上报 → 写进服务器日志, 平板出问题时可远程诊断
 const _kioskErrLog = new Map(); // ip → 最近一次上报时间, 简单限流
