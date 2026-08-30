@@ -215,7 +215,7 @@ body.brite #fpNum{color:rgba(15,43,91,.9)!important}
 <!-- 视频元素留在屏幕内 2px 大小（近乎不可见）: 完全移出屏幕/opacity:0 时安卓 Chrome 会停止渲染帧, 抓到全黑 -->
 <video id="camVid" autoplay playsinline muted style="position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:.01;pointer-events:none"></video>
 <div id="flashOv"></div>
-<div class="foot"></div>
+<div class="foot"><span id="verTag" title="页面版本"></span></div>
 
 <script>
 // 客户端报错上报 (独立 script 块: 主脚本哪怕整体解析失败也能上报) —— 平板上出问题
@@ -755,7 +755,11 @@ async function _verCheck() {
   try {
     const d = await (await fetch('/api/kiosk/version')).json();
     if (!d || !d.v) return;
-    if (_pageVer === null) { _pageVer = d.v; return; } // 首次记录自己加载的版本
+    if (_pageVer === null) { // 首次记录自己加载的版本, 角落显示前 6 位方便确认平板跑的是哪版
+      _pageVer = d.v;
+      $('verTag').textContent = 'v ' + String(d.v).slice(0, 6);
+      return;
+    }
     if (d.v !== _pageVer && $('scrPw').classList.contains('active') && !_pw && !_punching && !_scanning) {
       location.reload();
     }
