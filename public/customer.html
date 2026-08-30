@@ -182,6 +182,7 @@ tr:last-child td{border-bottom:none}
       <a class="active" data-tab="post" onclick="showTab('post')">发布用工需求</a>
       <a data-tab="posts" onclick="showTab('posts')">我的需求记录</a>
       <a data-tab="workers" onclick="showTab('workers')">派遣工人列表</a>
+      <a data-tab="timerec" onclick="showTab('timerec')">打卡记录</a>
       <a data-tab="profile" onclick="showTab('profile')">我的信息</a>
     </nav>
     <div class="sidebar-bottom">
@@ -260,6 +261,30 @@ tr:last-child td{border-bottom:none}
           <thead><tr><th>姓名</th><th>职位</th><th>联系电话</th><th>工作岗位</th><th>工作地点</th><th>派工状态</th></tr></thead>
           <tbody id="workersTable"></tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- Time records -->
+    <div id="tabTimerec" style="display:none">
+      <div class="card">
+        <h2>打卡记录 Time Records</h2>
+        <p style="font-size:.85rem;color:var(--gray-400);margin-bottom:1rem">贵公司仓库的员工打卡记录（只读）</p>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:1rem">
+          <input type="date" id="trFrom" style="padding:.45rem .55rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:8px;font-family:inherit">
+          <span style="color:var(--gray-400);font-size:.85rem">至</span>
+          <input type="date" id="trTo" style="padding:.45rem .55rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:8px;font-family:inherit">
+          <button class="btn btn-outline" style="padding:.45rem .9rem" onclick="trQuick(0)">今天</button>
+          <button class="btn btn-outline" style="padding:.45rem .9rem" onclick="trQuick(6)">近7天</button>
+          <button class="btn btn-outline" style="padding:.45rem .9rem" onclick="trQuick(29)">近30天</button>
+          <button class="btn btn-outline" style="padding:.45rem .9rem" onclick="loadTimeRecords()">↻ 刷新</button>
+        </div>
+        <div id="trSummary" style="display:flex;gap:1.4rem;flex-wrap:wrap;font-size:.9rem;color:var(--gray-500);margin-bottom:.8rem"></div>
+        <div style="overflow-x:auto">
+        <table style="min-width:640px">
+          <thead><tr id="trHead"></tr></thead>
+          <tbody id="trTable"></tbody>
+        </table>
+        </div>
       </div>
     </div>
 
@@ -410,7 +435,8 @@ async function resetPassword() {
 
 async function showApp() {
   document.getElementById('loginWrap').style.display = 'none';
-  document.getElementById('app').style.display = '';
+  // CSS 里 #app{display:none}, 置 '' 会退回样式表仍然隐藏 —— 必须显式 block
+  document.getElementById('app').style.display = 'block';
   const me = await cApi('/me');
   if (!me) return;
   document.getElementById('customerNameDisplay').textContent = me.company_name;
@@ -426,16 +452,79 @@ function closeSidebar() {
   document.getElementById('sidebarOverlay').classList.remove('show');
 }
 function showTab(tab) {
-  ['post','posts','workers','profile'].forEach(t => {
+  ['post','posts','workers','timerec','profile'].forEach(t => {
     document.getElementById(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).style.display = t===tab?'':'none';
   });
   document.querySelectorAll('.sidebar-nav a[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  const _cLabels={post:'发布用工需求',posts:'我的需求记录',workers:'派遣工人列表',profile:'我的信息'};
+  const _cLabels={post:'发布用工需求',posts:'我的需求记录',workers:'派遣工人列表',timerec:'打卡记录',profile:'我的信息'};
   const _tEl=document.getElementById('mobilPageTitle');if(_tEl)_tEl.textContent=_cLabels[tab]||'';
   closeSidebar();
   if (tab === 'posts') loadPosts();
   else if (tab === 'workers') loadWorkers();
+  else if (tab === 'timerec') loadTimeRecords();
   else if (tab === 'profile') loadProfile();
+}
+
+// ── 打卡记录 (只读): 姓名+时间; 照片列仅当管理员为本公司开启后出现 ──
+let _trSiteTz = {};
+function _trPT(s) {
+  if (!s) return null;
+  const str = String(s);
+  const d = new Date(/[zZ]$|[+\-]\d{2}:?\d{2}$/.test(str) ? str : str.replace(' ', 'T') + 'Z');
+  return isNaN(d) ? null : d;
+}
+function _trFmtD(d, tz) { return d ? d.toLocaleDateString('zh-CN', { timeZone: tz, month: '2-digit', day: '2-digit' }) : '—'; }
+function _trFmtT(d, tz) { return d ? d.toLocaleTimeString('en-GB', { timeZone: tz, hour12: false, hour: '2-digit', minute: '2-digit' }) : '—'; }
+function trQuick(days) {
+  const now = new Date();
+  document.getElementById('trTo').value = now.toISOString().slice(0, 10);
+  document.getElementById('trFrom').value = new Date(now - days * 86400000).toISOString().slice(0, 10);
+  loadTimeRecords();
+}
+async function loadTimeRecords() {
+  const tb = document.getElementById('trTable');
+  tb.innerHTML = '<tr><td colspan="9" style="color:var(--gray-400)">加载中…</td></tr>';
+  const q = new URLSearchParams();
+  const f = document.getElementById('trFrom').value, t = document.getElementById('trTo').value;
+  if (f) q.set('from', f); if (t) q.set('to', t);
+  const d = await cApi('/time-records?' + q.toString());
+  if (!d) return;
+  if (d.error) { tb.innerHTML = `<tr><td colspan="9" style="color:#E63946">${esc(d.error)}</td></tr>`; return; }
+  if (!document.getElementById('trFrom').value) document.getElementById('trFrom').value = d.from;
+  if (!document.getElementById('trTo').value) document.getElementById('trTo').value = d.to;
+  _trSiteTz = {}; const siteName = {};
+  (d.sites || []).forEach(s => { _trSiteTz[s.id] = s.timezone; siteName[s.id] = s.name + (s.code ? ` (${s.code})` : ''); });
+  const multiSite = (d.sites || []).length > 1;
+  document.getElementById('trHead').innerHTML =
+    '<th>员工</th>' + (multiSite ? '<th>仓库</th>' : '') +
+    '<th>日期</th><th>上班</th><th>下班</th><th>休息</th><th>合计</th><th>状态</th>' +
+    (d.photos_enabled ? '<th>照片</th>' : '');
+  let totalH = 0, onDuty = 0;
+  const rows = (d.entries || []).map(e => {
+    const tz = _trSiteTz[e.site_id] || 'America/Chicago';
+    const ci = _trPT(e.clock_in), co = _trPT(e.clock_out);
+    totalH += e.total_hours || 0;
+    const isOpen = e.status === 'open';
+    if (isOpen) onDuty++;
+    const photoTd = d.photos_enabled
+      ? `<td>${(e.photos || []).slice(0, 3).map(u => `<img src="${esc(u)}" style="width:34px;height:34px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200,#e2e5ea);cursor:pointer;vertical-align:middle;margin-right:3px" onclick="window.open('${esc(u)}','_blank')">`).join('') || '<span style="color:var(--gray-400)">—</span>'}</td>`
+      : '';
+    return `<tr>
+      <td style="font-weight:600">${esc(e.name)}</td>
+      ${multiSite ? `<td style="color:var(--gray-500)">${esc(siteName[e.site_id] || '—')}</td>` : ''}
+      <td>${_trFmtD(ci || co, tz)}</td>
+      <td>${_trFmtT(ci, tz)}</td>
+      <td>${isOpen ? '<span style="color:#B87400;font-weight:700">在班</span>' : _trFmtT(co, tz)}</td>
+      <td style="color:var(--gray-400)">${e.break_minutes ? e.break_minutes + ' min' : (e.break_count ? e.break_count + ' 次' : '—')}</td>
+      <td>${e.total_hours ? e.total_hours.toFixed(2) + 'h' : (isOpen ? '—' : '0h')}</td>
+      <td>${isOpen ? '<span style="color:#B87400">● 上班中</span>' : '<span style="color:#2D9D78">● 完成</span>'}</td>
+      ${photoTd}
+    </tr>`;
+  });
+  tb.innerHTML = rows.join('') || '<tr><td colspan="9" style="color:var(--gray-400);text-align:center;padding:1.4rem">该时段没有打卡记录</td></tr>';
+  document.getElementById('trSummary').innerHTML =
+    `<span>班次 <b>${(d.entries || []).length}</b></span><span>总工时 <b>${totalH.toFixed(1)}h</b></span><span>当前在班 <b>${onDuty}</b></span>` +
+    (d.photos_enabled ? '' : '');
 }
 
 async function submitPost() {
