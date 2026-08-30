@@ -26531,6 +26531,27 @@ try {
 } catch (_) {}
 app.get('/api/kiosk/version', (req, res) => res.json({ v: _kioskPageVer }));
 
+// 打卡台客户端 JS 报错上报 → 写进服务器日志, 平板出问题时可远程诊断
+const _kioskErrLog = new Map(); // ip → 最近一次上报时间, 简单限流
+app.post('/api/kiosk/client-error', (req, res) => {
+  try {
+    const ip = req.ip || '?';
+    const last = _kioskErrLog.get(ip) || 0;
+    if (Date.now() - last > 10000) { // 每 IP 最多 10 秒一条
+      _kioskErrLog.set(ip, Date.now());
+      if (_kioskErrLog.size > 500) _kioskErrLog.clear();
+      const b = req.body || {};
+      console.log('[kiosk-client-error]', JSON.stringify({
+        site: String(b.site || '').slice(0, 20),
+        msg: String(b.msg || '').slice(0, 300),
+        src: String(b.src || '').slice(0, 200),
+        ua: String(b.ua || '').slice(0, 200)
+      }));
+    }
+  } catch (_) {}
+  res.json({ ok: 1 });
+});
+
 // 仓库合法性 + 密码 → 员工。失败返回 {error, status}，成功返回 {site, emp}。
 function _kioskAuth(req) {
   const b = req.body || {};
