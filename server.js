@@ -3595,7 +3595,10 @@ app.use((req, res, next) => {
   // 主域名 = primeanchorpoint.com (入职二维码统一印这个域); workforce 域名的
   // 旧链接仍可达, 但访客地址栏统一跳成 point
   const oldHost = /(^|\.)primeanchorworkforce\.com$/.test(host) || /\.onrender\.com$/.test(host);
-  if (oldHost && (req.method === 'GET' || req.method === 'HEAD') && !req.path.startsWith('/api/') && req.path !== '/healthz') {
+  // 图片等静态资源不跳转: 彩信附图走 onrender 直连域名 (/my-qr.png、/mms-test.png),
+  // 301 会把 Twilio 弹回抓不到的主域名 → 11200 发不出图; 资源文件也不需要地址栏统一
+  const isAssetPath = /\.(png|jpe?g|svg|gif|ico|css|js|webmanifest|woff2?|ttf|mp4|pdf)$/i.test(req.path);
+  if (oldHost && (req.method === 'GET' || req.method === 'HEAD') && !req.path.startsWith('/api/') && req.path !== '/healthz' && !isAssetPath) {
     return res.redirect(301, 'https://primeanchorpoint.com' + req.originalUrl);
   }
   next();
@@ -13748,10 +13751,16 @@ app.post('/api/admin/test-sms', requireAdmin, requireRole('admin'), async (req, 
     const t0 = Date.now();
     const ac = new AbortController();
     const tm = setTimeout(() => ac.abort(), 8000);
-    const fr = await fetch(mediaUrl, { signal: ac.signal, redirect: 'follow' });
+    // redirect:'manual' — 附图链接必须直接 200 返回图片; 任何重定向都按失败报出来
+    // (之前 follow 跟着 301 跳回主域名还显示"正常", 掩盖了 Twilio 抓图失败的真相)
+    const fr = await fetch(mediaUrl, { signal: ac.signal, redirect: 'manual' });
     clearTimeout(tm);
-    const buf = await fr.arrayBuffer();
-    mediaCheck = { ok: fr.ok && buf.byteLength > 100, status: fr.status, content_type: fr.headers.get('content-type') || '', bytes: buf.byteLength, ms: Date.now() - t0 };
+    if (fr.status >= 300 && fr.status < 400) {
+      mediaCheck = { ok: false, status: fr.status, redirect_to: String(fr.headers.get('location') || '').slice(0, 200), error: '附图链接发生重定向 → Twilio 抓图会失败，链接必须直接返回图片' };
+    } else {
+      const buf = await fr.arrayBuffer();
+      mediaCheck = { ok: fr.ok && buf.byteLength > 100, status: fr.status, content_type: fr.headers.get('content-type') || '', bytes: buf.byteLength, ms: Date.now() - t0 };
+    }
   } catch (e) { mediaCheck = { ok: false, error: String(e && (e.cause && e.cause.message || e.message) || e).slice(0, 160) }; }
   let mmsResult = null;
   try {
