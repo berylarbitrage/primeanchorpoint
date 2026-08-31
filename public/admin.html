@@ -27699,14 +27699,15 @@ const CUST_PERM_DEFS = [
   ['relabel', '改打卡含义（上班/休息/下班/作废）'],
   ['position', '修改员工职位'],
   ['kiosk', '打卡机模式 / 班型设置'],
-  ['docs', '查看工人证件（工卡 EAD/SSN）']
+  ['docs', '查看工人证件（工卡 EAD/SSN）'],
+  ['edit_time', '⏱ 修改打卡具体时间（敏感，默认关闭）']
 ];
 function custPermsOpen(id) {
   const c = (window._custAccRows || {})[id];
   if (!c) return;
   let cur = null;
   try { cur = c.perms ? JSON.parse(c.perms) : null; } catch (_) {}
-  const on = k => cur == null ? true : !!cur[k]; // 未配置 = 全部允许
+  const on = k => cur == null ? (k !== 'edit_time') : !!cur[k]; // 未配置 = 除改时间外全部允许
   const ov = document.createElement('div');
   ov.className = 'modal-bg show';
   ov.innerHTML = `<div class="modal" style="max-width:430px;padding:1.4rem 1.6rem">
