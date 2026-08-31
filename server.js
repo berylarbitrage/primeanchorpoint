@@ -27165,29 +27165,51 @@ app.post('/api/kiosk/forgot', async (req, res) => {
     const qrPngUrl = _mmsMediaBase(req) + '/my-qr.png?c=' + code;
     const mmsBody = `Prime Anchor Point: Your clock-in password is ${code}. Show the attached QR code or enter this password at the time clock. Keep it private.`;
     const linkBody = `Prime Anchor Point: Your clock-in password is ${code}. QR code: ${_applyQrBase(req) + '/my-qr?c=' + code} Show the QR or enter the password at the time clock. Keep it private.`;
-    let delivery = 'failed', usedMms = false;
-    try {
-      let r = await sendSMSWithDetail(toPhone, mmsBody, qrPngUrl);
-      if (r.ok) r = await _twWaitFinal(r);
-      usedMms = !!r.ok;
-      _kioskSmsLog(toPhone, 1, r);
-      if (!r.ok || r.status === 'failed' || r.status === 'undelivered') {
-        if (r.errorCode || r.code || r.error) console.error('[Kiosk] forgot MMS 未送达:', r.errorCode || r.code || '', r.errorMessage || r.error || '');
-        usedMms = false;
-        r = await sendSMSWithDetail(toPhone, linkBody);
-        if (r.ok) r = await _twWaitFinal(r);
-        _kioskSmsLog(toPhone, 0, r);
-      }
-      if (r.ok) {
-        delivery = r.status === 'delivered' ? 'delivered'
-          : (r.status === 'failed' || r.status === 'undelivered') ? 'failed' : 'sent';
-        if (delivery === 'failed') console.error('[Kiosk] forgot SMS 运营商拒投:', r.errorCode || '', r.errorMessage || '');
-      } else {
-        console.error('[Kiosk] forgot SMS 发送失败:', r.code || '', r.error || '');
-      }
-    } catch (e) { console.error('[Kiosk] forgot SMS error:', e.message); }
-    res.json({ found: true, name, phone_last4: String(toPhone).replace(/\D/g, '').slice(-4), sms_sent: delivery !== 'failed', delivery, mms: usedMms });
+    // 立即响应打卡台（发送+送达轮询要 10~20 秒, 不能让员工盯着「验证中」干等）,
+    // 彩信→失败降级短信→查终态整条链放到后台跑, 打卡台拿 track 号轮询显示真实送达状态
+    const trackId = crypto.randomBytes(12).toString('hex');
+    _fpTrackGC();
+    _fpTracks[trackId] = { created: Date.now(), delivery: 'sending', mms: false, done: false };
+    (async () => {
+      const tk = _fpTracks[trackId];
+      let delivery = 'failed', usedMms = false;
+      try {
+        let r = await sendSMSWithDetail(toPhone, mmsBody, qrPngUrl);
+        if (r.ok) { tk.delivery = 'sent'; tk.mms = true; r = await _twWaitFinal(r); }
+        usedMms = !!r.ok;
+        _kioskSmsLog(toPhone, 1, r);
+        if (!r.ok || r.status === 'failed' || r.status === 'undelivered') {
+          if (r.errorCode || r.code || r.error) console.error('[Kiosk] forgot MMS 未送达:', r.errorCode || r.code || '', r.errorMessage || r.error || '');
+          usedMms = false; tk.mms = false;
+          r = await sendSMSWithDetail(toPhone, linkBody);
+          if (r.ok) { tk.delivery = 'sent'; r = await _twWaitFinal(r); }
+          _kioskSmsLog(toPhone, 0, r);
+        }
+        if (r.ok) {
+          delivery = r.status === 'delivered' ? 'delivered'
+            : (r.status === 'failed' || r.status === 'undelivered') ? 'failed' : 'sent';
+          if (delivery === 'failed') console.error('[Kiosk] forgot SMS 运营商拒投:', r.errorCode || '', r.errorMessage || '');
+        } else {
+          console.error('[Kiosk] forgot SMS 发送失败:', r.code || '', r.error || '');
+        }
+      } catch (e) { console.error('[Kiosk] forgot SMS error:', e.message); }
+      tk.delivery = delivery; tk.mms = usedMms; tk.done = true;
+    })();
+    // sms_sent/delivery 为旧版打卡台页面兜底 (平板页面自动刷新前可能还跑旧代码)
+    res.json({ found: true, name, phone_last4: String(toPhone).replace(/\D/g, '').slice(-4), sms_sent: true, delivery: 'sent', track: trackId });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 找回短信后台发送任务的送达状态 (track 为一次性随机号, 只回状态不含敏感信息)
+const _fpTracks = Object.create(null);
+function _fpTrackGC() {
+  const now = Date.now();
+  for (const k in _fpTracks) if (now - _fpTracks[k].created > 10 * 60 * 1000) delete _fpTracks[k];
+}
+app.post('/api/kiosk/forgot-status', (req, res) => {
+  const t = _fpTracks[String((req.body || {}).track || '')];
+  if (!t) return res.json({ delivery: 'unknown', done: true });
+  res.json({ delivery: t.delivery, mms: t.mms, done: t.done });
 });
 
 // 打卡台「手机号未登记」时显示的注册二维码 (指向入职申请页)。

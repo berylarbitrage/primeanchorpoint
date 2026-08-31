@@ -248,7 +248,7 @@ const KL = {
     scanHint: '将您的打卡二维码对准摄像头', scanBadQr: '不是有效的打卡二维码', scanNoCam: '无法打开摄像头',
     fpHint: '输入手机号（美国 10 位；其他国家含国家代码）', fpGo: '发送',
     fpSent: l4 => '打卡密码和二维码已发送到尾号 ' + l4 + ' 的手机，请查收',
-    fpDelivered: '✓ 已确认送达', fpSlow: '如 1–2 分钟内未收到，请检查垃圾短信，或换一台手机再试',
+    fpChecking: '⏳ 正在确认送达…', fpDelivered: '✓ 已确认送达', fpSlow: '如 1–2 分钟内未收到，请检查垃圾短信，或换一台手机再试',
     fpSmsFail: '短信未能送达（该号码可能无法接收短信/彩信），请联系管理员', fpNotFound: '手机号未登记',
     fpRegHint: '用您的手机扫描下方二维码，填写入职申请注册账号，提交后会收到打卡密码', fpOk: '好的',
   },
@@ -266,7 +266,7 @@ const KL = {
     scanHint: 'Hold your QR code up to the camera', scanBadQr: 'Not a valid time-clock QR code', scanNoCam: 'Cannot open camera',
     fpHint: 'Enter your phone number (US: 10 digits; intl: include country code)', fpGo: 'Send',
     fpSent: l4 => 'Your password and QR code were sent to the phone ending in ' + l4,
-    fpDelivered: '✓ Delivered', fpSlow: 'If nothing arrives within 1–2 minutes, check spam or try again later.',
+    fpChecking: '⏳ Confirming delivery…', fpDelivered: '✓ Delivered', fpSlow: 'If nothing arrives within 1–2 minutes, check spam or try again later.',
     fpSmsFail: 'Message could not be delivered (this number may not receive SMS/MMS). Please contact a manager.', fpNotFound: 'Phone number not found',
     fpRegHint: 'Scan the QR code below with your phone to register. You will receive your clock-in password after submitting.', fpOk: 'OK',
   },
@@ -284,7 +284,7 @@ const KL = {
     scanHint: 'Acerque su código QR a la cámara', scanBadQr: 'Código QR no válido', scanNoCam: 'No se puede abrir la cámara',
     fpHint: 'Ingrese su teléfono (EE.UU.: 10 dígitos; internacional: con código de país)', fpGo: 'Enviar',
     fpSent: l4 => 'Su contraseña y código QR fueron enviados al teléfono que termina en ' + l4,
-    fpDelivered: '✓ Entregado', fpSlow: 'Si no llega en 1–2 minutos, revise el spam o intente más tarde.',
+    fpChecking: '⏳ Confirmando entrega…', fpDelivered: '✓ Entregado', fpSlow: 'Si no llega en 1–2 minutos, revise el spam o intente más tarde.',
     fpSmsFail: 'No se pudo entregar el mensaje (este número quizás no recibe SMS/MMS). Contacte a un gerente.', fpNotFound: 'Teléfono no registrado',
     fpRegHint: 'Escanee el código QR con su teléfono para registrarse. Recibirá su contraseña después de enviar la solicitud.', fpOk: 'OK',
   },
@@ -449,12 +449,44 @@ function showFResFound(d) {
   const t = KL[_kl];
   $('fresCard').innerHTML = `<div class="res-ic" style="background:#E8F5E9;color:var(--green)">💬</div>
     <div class="res-title">👋 ${(d.name || '').replace(/[<>&]/g, '')}</div>
-    ${d.sms_sent ? `<div class="res-time" style="margin-top:.6rem">${t.fpSent(d.phone_last4 || '')}${d.delivery === 'delivered' ? ` <span style="color:var(--green)">${t.fpDelivered}</span>` : ''}</div>` : ''}
-    ${d.delivery === 'sent' ? `<div class="res-time" style="margin-top:.3rem;font-size:.82rem;opacity:.75">${t.fpSlow}</div>` : ''}
+    ${d.sms_sent ? `<div class="res-time" style="margin-top:.6rem">${t.fpSent(d.phone_last4 || '')}</div>` : ''}
+    <div id="fpDlv" class="res-time" style="margin-top:.3rem;font-size:.85rem;opacity:.8">${d.track ? t.fpChecking : ''}</div>
     ${d.sms_sent ? '' : `<div class="pw-err" style="margin-top:.6rem">${t.fpSmsFail}</div>`}
     <button class="act-cancel" onclick="resetToPw()">${t.fpOk}</button>`;
   showScr('scrFRes');
-  clearTimeout(_resTimer); _resTimer = setTimeout(resetToPw, 30000);
+  clearTimeout(_resTimer); _resTimer = setTimeout(resetToPw, 60000);
+  if (d.track) fpPollDelivery(d.track);
+}
+// 送达状态小字轮询: 发送和送达确认在服务器后台跑, 这里每 2.5 秒查一次结果刷新显示
+let _fpPollTimer = null;
+function fpPollDelivery(track) {
+  clearInterval(_fpPollTimer);
+  const t = KL[_kl];
+  let tries = 0;
+  const el = () => document.getElementById('fpDlv');
+  _fpPollTimer = setInterval(async () => {
+    if (!el()) { clearInterval(_fpPollTimer); return; } // 已离开该屏幕
+    if (++tries > 12) { // ~30 秒还没终态: 提示稍等, 停止轮询
+      clearInterval(_fpPollTimer);
+      el().innerHTML = `<span style="opacity:.75">${t.fpSlow}</span>`;
+      return;
+    }
+    try {
+      const r = await fetch('/api/kiosk/forgot-status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ track }) });
+      const s = await r.json();
+      if (!el()) { clearInterval(_fpPollTimer); return; }
+      if (s.delivery === 'delivered') {
+        clearInterval(_fpPollTimer);
+        el().innerHTML = `<span style="color:var(--green);font-weight:700">${t.fpDelivered}</span>`;
+      } else if (s.done && s.delivery === 'failed') {
+        clearInterval(_fpPollTimer);
+        el().innerHTML = `<span class="pw-err">${t.fpSmsFail}</span>`;
+      } else if (s.done) { // 已发出但运营商未回执 (sent/unknown)
+        clearInterval(_fpPollTimer);
+        el().innerHTML = `<span style="opacity:.75">${t.fpSlow}</span>`;
+      }
+    } catch (_) {}
+  }, 2500);
 }
 async function showFResRegister() {
   const t = KL[_kl];
@@ -622,7 +654,7 @@ function showScr(id) {
   $(id).classList.add('active');
 }
 function resetToPw() {
-  clearInterval(_actTimer); clearTimeout(_resTimer);
+  clearInterval(_actTimer); clearTimeout(_resTimer); clearInterval(_fpPollTimer);
   scanStop();
   _pw = ''; _pwLocked = false; _fp = ''; _fpBusy = false;
   _punchShots = []; // 上一个人的画面不留给下一次打卡
