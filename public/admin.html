@@ -528,6 +528,11 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <input type="tel" id="smsTestPhone" placeholder="+1XXXXXXXXXX">
   </div>
   <div id="smsTestResult" style="display:none;margin-top:.75rem;padding:.75rem 1rem;border-radius:8px;font-size:.83rem;font-family:monospace;white-space:pre-wrap;word-break:break-all;max-height:280px;overflow:auto"></div>
+  <div style="margin-top:.9rem">
+    <div style="font-size:.82rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">📨 最近打卡找回短信（真实送达状态）</div>
+    <div id="kioskSmsLog" style="max-height:200px;overflow:auto;font-size:.74rem;font-family:monospace;background:var(--gray-100);border-radius:8px;padding:.5rem .6rem">加载中…</div>
+    <div style="font-size:.7rem;color:var(--gray-400);margin-top:.25rem">delivered=确认送达 · sent=已发出未确认 · undelivered/failed=运营商拒投（30007=垃圾过滤 30032=免费号未验证 30006=固话）</div>
+  </div>
   <div class="modal-actions">
     <button class="btn" onclick="document.getElementById('smsTestModal').classList.remove('show')">关闭</button>
     <button class="btn btn-blue" id="smsTestBtn" onclick="runSmsTest()">发送测试短信</button>
@@ -8859,6 +8864,19 @@ function openSmsTestModal() {
   document.getElementById('smsTestResult').style.display = 'none';
   document.getElementById('smsTestResult').textContent = '';
   document.getElementById('smsTestModal').classList.add('show');
+  loadKioskSmsLog();
+}
+async function loadKioskSmsLog() {
+  const el = document.getElementById('kioskSmsLog');
+  try {
+    const rows = await api('/admin/kiosk-sms-log');
+    el.innerHTML = (rows || []).length ? rows.map(r => {
+      const ok = r.status === 'delivered';
+      const bad = ['failed', 'undelivered', 'create_failed'].includes(r.status);
+      const col = ok ? '#15803d' : bad ? '#dc2626' : '#b45309';
+      return `<div style="padding:2px 0;border-bottom:1px solid var(--gray-200)">${esc((r.created_at || '').slice(5, 16))} · ${esc(r.phone)} · ${r.mms ? '彩信' : '短信'} · <b style="color:${col}">${esc(r.status || '?')}</b>${r.error_code ? ' <b style="color:#dc2626">' + esc(String(r.error_code)) + '</b>' : ''}${r.error_message ? ' ' + esc(String(r.error_message).slice(0, 70)) : ''}</div>`;
+    }).join('') : '<span style="color:var(--gray-400)">暂无记录（有人在打卡台用「忘记密码」后这里会出现）</span>';
+  } catch (e) { el.textContent = '加载失败'; }
 }
 
 async function runSmsTest() {

@@ -26943,8 +26943,41 @@ app.post('/api/kiosk/punch', async (req, res) => {
 // 员工个人打卡二维码内容 = 前缀 + 8 位打卡密码, 打卡台扫码等同输入密码
 const KIOSK_QR_PREFIX = 'PAWTC:';
 
+// 打卡找回短信发送记录: 每次尝试的真实送达状态/运营商错误码, 后台「测试短信」弹窗可查
+db.exec(`CREATE TABLE IF NOT EXISTS kiosk_sms_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  phone TEXT DEFAULT '',
+  mms INTEGER DEFAULT 0,
+  status TEXT DEFAULT '',
+  error_code TEXT DEFAULT '',
+  error_message TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+function _kioskSmsLog(phone, mms, r) {
+  try {
+    db.prepare('INSERT INTO kiosk_sms_log (phone, mms, status, error_code, error_message) VALUES (?,?,?,?,?)')
+      .run(String(phone || ''), mms ? 1 : 0, String((r && (r.ok ? r.status : 'create_failed')) || ''),
+        String((r && (r.errorCode || r.code)) || ''), String((r && (r.errorMessage || r.error)) || '').slice(0, 300));
+  } catch (e) {}
+}
+// 轮询到终态: sendSMSWithDetail 3 秒后可能仍是 sent/queued, 再等两轮共约 11 秒抓住迟到的拒投
+async function _twWaitFinal(r) {
+  if (!r || !r.ok || !r.sid || !twilioClient) return r;
+  for (let i = 0; i < 2 && !['delivered', 'failed', 'undelivered'].includes(r.status); i++) {
+    await new Promise(rs => setTimeout(rs, 4000));
+    try {
+      const u = await twilioClient.messages(r.sid).fetch();
+      r.status = u.status; r.errorCode = u.errorCode; r.errorMessage = u.errorMessage;
+    } catch (e) { break; }
+  }
+  return r;
+}
+app.get('/api/admin/kiosk-sms-log', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM kiosk_sms_log ORDER BY id DESC LIMIT 30').all());
+});
+
 // POST /api/kiosk/forgot { site_id, phone } → 手机号在系统里: 返回姓名并把
-// 密码 + 二维码(彩信附图, 中英双语)发到该手机号, 降级为带链接短信; 响应带真实送达状态
+// 密码 + 二维码(彩信附图, 纯英文)发到该手机号, 降级为带链接短信; 响应带真实送达状态
 // (delivery: delivered/sent/failed)。不在系统里: found:false (前端显示注册二维码)。
 app.post('/api/kiosk/forgot', async (req, res) => {
   try {
@@ -26985,20 +27018,24 @@ app.post('/api/kiosk/forgot', async (req, res) => {
     }
     const name = emp ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim() : String((sub && sub.name) || '').trim();
     const toPhone = (emp && emp.phone) || (sub && sub.phone) || digits;
-    // 中英双语、二维码作为彩信图片直接发 (不带链接, 减少运营商垃圾过滤);
-    // 发出后查真实送达状态 —— messages.create 成功只代表 Twilio 接单, 运营商仍可能拒投,
-    // 之前只看接单结果导致「显示已发送但实际没收到」。彩信失败/被拒再降级为带链接短信。
+    // 纯英文 GSM-7 文案 (中文/全角字符会转 UCS-2 编码, 更易被美国运营商垃圾过滤且分段翻倍);
+    // 二维码作为彩信图片直接发, 正文不带链接; 彩信失败/被拒再降级为带链接短信。
+    // 发出后轮询真实送达状态 —— messages.create 成功只代表 Twilio 接单, 运营商仍可能拒投。
     const qrPngUrl = _applyQrBase(req) + '/my-qr.png?c=' + code;
-    const mmsBody = `【Prime Anchor Workforce】打卡密码 Clock-in password: ${code}\n打卡时出示彩信中的二维码，或输入密码。请勿转发。\nShow the attached QR code or enter this password at the time clock. Keep it private.`;
-    const linkBody = `【Prime Anchor Workforce】打卡密码 Clock-in password: ${code}\n二维码 QR: ${_applyQrBase(req) + '/my-qr?c=' + code}\n打卡时出示二维码或输入密码，请勿转发 Keep it private.`;
+    const mmsBody = `Prime Anchor Workforce: Your clock-in password is ${code}. Show the attached QR code or enter this password at the time clock. Keep it private.`;
+    const linkBody = `Prime Anchor Workforce: Your clock-in password is ${code}. QR code: ${_applyQrBase(req) + '/my-qr?c=' + code} Show the QR or enter the password at the time clock. Keep it private.`;
     let delivery = 'failed', usedMms = false;
     try {
       let r = await sendSMSWithDetail(toPhone, mmsBody, qrPngUrl);
+      if (r.ok) r = await _twWaitFinal(r);
       usedMms = !!r.ok;
+      _kioskSmsLog(toPhone, 1, r);
       if (!r.ok || r.status === 'failed' || r.status === 'undelivered') {
         if (r.errorCode || r.code || r.error) console.error('[Kiosk] forgot MMS 未送达:', r.errorCode || r.code || '', r.errorMessage || r.error || '');
         usedMms = false;
         r = await sendSMSWithDetail(toPhone, linkBody);
+        if (r.ok) r = await _twWaitFinal(r);
+        _kioskSmsLog(toPhone, 0, r);
       }
       if (r.ok) {
         delivery = r.status === 'delivered' ? 'delivered'
