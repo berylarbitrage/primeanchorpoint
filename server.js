@@ -20814,6 +20814,8 @@ app.get('/api/admin/time-entries/export', (req, res, next) => {
 app.post('/api/admin/time-entries', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
   if (!d.employee_id || !d.clock_in) return res.status(400).json({ error: 'employee_id and clock_in required' });
+  if (d.clock_out && String(d.clock_out).replace('T', ' ') < String(d.clock_in).replace('T', ' '))
+    return res.status(400).json({ error: '下班时间不能早于上班时间' });
   const hrs = calcHours(d.clock_in, d.clock_out, parseInt(d.break_minutes)||0);
   const r = db.prepare(`INSERT INTO time_entries
     (employee_id,clock_in,clock_out,break_minutes,total_hours,regular_hours,overtime_hours,job_id,notes,status)
@@ -20904,6 +20906,8 @@ app.post('/api/admin/time-entries/batch', requireAdmin, blockManager, (req, res)
 
 app.put('/api/admin/time-entries/:id', requireAdmin, blockManager, staffGuard('update', 'time_entries'), (req, res) => {
   const d = req.body;
+  if (d.clock_in && d.clock_out && String(d.clock_out).replace('T', ' ') < String(d.clock_in).replace('T', ' '))
+    return res.status(400).json({ error: '下班时间不能早于上班时间' });
   const hrs = calcHours(d.clock_in, d.clock_out, parseInt(d.break_minutes)||0);
   // 手动改过时间 = 已人工核对, 顺带清掉自动打卡的待复核标记
   db.prepare(`UPDATE time_entries SET
@@ -26618,12 +26622,13 @@ function _recordAutoPunch({ empDbId, site, siteTimezone, now, latitude, longitud
   return { action: 'auto', entryId, clockTime: now, punchCount: n, needsReview };
 }
 
-// 自动模式隔天收尾: 前一天(仓库时区)没打完留下的 open 记录, 绝不让第二天续上 ——
+// 隔天收尾(所有打卡记录): 前一天(仓库时区)没收班留下的 open 记录, 绝不让第二天续上 ——
 // 封成 下班=上班、0 工时、⚠ 待复核, 后台人工补时间。每 30 分钟扫一次。
+// 规则: 当天的打卡只算当天, 下班不可能早于/跨过上班日, 第二天从头开始。
 function _autoPunchDayEnd() {
   try {
     const rows = db.prepare(
-      "SELECT t.id, t.clock_in, t.work_date, COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS tz FROM time_entries t LEFT JOIN job_sites js ON t.site_id=js.id WHERE t.status='open' AND t.punch_type='auto'"
+      "SELECT t.id, t.clock_in, t.work_date, COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS tz FROM time_entries t LEFT JOIN job_sites js ON t.site_id=js.id WHERE t.status='open'"
     ).all();
     for (const r of rows) {
       try {
@@ -26898,7 +26903,7 @@ app.post('/api/customer/punch-action', requireCustomer, (req, res) => {
   const pid = req.customerPartnerId;
   const action = String((req.body || {}).action || '');
   if (!['in', 'out', 'break_start', 'break_end'].includes(action)) return res.status(400).json({ error: '无效操作' });
-  const entry = db.prepare('SELECT id, employee_id, site_id, status, on_break, clock_in, break_records FROM time_entries WHERE id=?')
+  const entry = db.prepare('SELECT id, employee_id, site_id, status, on_break, clock_in, break_records, work_date FROM time_entries WHERE id=?')
     .get(parseInt((req.body || {}).entry_id));
   if (!entry || !entry.site_id || !entry.employee_id) return res.status(404).json({ error: '未找到该记录' });
   const site = db.prepare('SELECT * FROM job_sites WHERE id=? AND active=1').get(entry.site_id);
@@ -26910,21 +26915,32 @@ app.post('/api/customer/punch-action', requireCustomer, (req, res) => {
   if (action !== 'in' && entry.status !== 'open') return res.status(400).json({ error: '该记录已完成，只能对进行中的记录操作' });
   if (action === 'break_start' && entry.on_break) return res.status(400).json({ error: '该员工已在休息中' });
   if (action === 'break_end' && !entry.on_break) return res.status(400).json({ error: '该员工不在休息中' });
+  const siteTz = site.timezone || 'America/Chicago';
+  const todayTz = new Date().toLocaleDateString('en-CA', { timeZone: siteTz });
+  const dayOfRow = row => row.work_date || String(row.clock_in || '').slice(0, 10);
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
   const pOpen = s => new Date(String(s).replace(' ', 'T') + (/[zZ]$/.test(String(s)) ? '' : 'Z'));
+  // 隔天封单: 前一天没收班的记录, 绝不能拿「现在」当它的下班/休息时间 (会出现下班早于上班的跨天怪单)
+  const staleClose = row => db.prepare(
+    "UPDATE time_entries SET clock_out=clock_in, total_hours=0, regular_hours=0, overtime_hours=0, status='closed', on_break=0, punch_review=1 WHERE id=?"
+  ).run(row.id);
   const closeEntry = row => {
     const totalHours = Math.round(((Date.now() - pOpen(row.clock_in)) / 3600000) * 100) / 100;
     db.prepare("UPDATE time_entries SET clock_out=?, total_hours=?, regular_hours=?, overtime_hours=?, status='closed', on_break=0 WHERE id=?")
       .run(now, totalHours, Math.min(totalHours, 8), Math.max(0, totalHours - 8), row.id);
   };
+  if (action !== 'in' && dayOfRow(entry) < todayTz) {
+    staleClose(entry);
+    return res.json({ ok: 1, action: 'stale_closed', message: `该记录是 ${dayOfRow(entry)} 的，当天没有收班，已按规则封单（0 工时·待复核，请管理员补真实下班时间）。今天的班请点「上班」重新开始。` });
+  }
   let targetId = entry.id;
   if (action === 'in') {
-    // 该员工在该仓库若还有进行中的班先关掉, 再开新班 (与打卡台一致, 但不做日期查找避免跨日漏配)
-    const open = db.prepare("SELECT id, clock_in FROM time_entries WHERE employee_id=? AND site_id=? AND status='open'").get(entry.employee_id, entry.site_id);
-    if (open) closeEntry(open);
+    // 该员工在该仓库若还有进行中的班先处理掉再开新班: 当天的按现在收班, 隔天的封单待复核
+    const open = db.prepare("SELECT id, clock_in, work_date FROM time_entries WHERE employee_id=? AND site_id=? AND status='open'").get(entry.employee_id, entry.site_id);
+    if (open) { if (dayOfRow(open) < todayTz) staleClose(open); else closeEntry(open); }
     const r2 = db.prepare(
-      "INSERT INTO time_entries (employee_id, clock_in, status, site_id, geo_verified, punch_type, break_records, on_break, site_timezone) VALUES(?,?,'open',?,1,'in','[]',0,?)"
-    ).run(entry.employee_id, now, entry.site_id, site.timezone || 'America/Chicago');
+      "INSERT INTO time_entries (employee_id, clock_in, status, site_id, geo_verified, punch_type, break_records, on_break, site_timezone, work_date) VALUES(?,?,'open',?,1,'in','[]',0,?,?)"
+    ).run(entry.employee_id, now, entry.site_id, siteTz, todayTz);
     targetId = r2.lastInsertRowid;
   } else if (action === 'break_start') {
     let breaks = []; try { breaks = JSON.parse(entry.break_records || '[]'); } catch {}

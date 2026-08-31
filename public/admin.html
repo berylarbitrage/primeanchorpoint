@@ -18677,10 +18677,18 @@ async function saveTimeEntry() {
 }
 
 async function clockOutEntry(id) {
-  if (!await showConfirm('确认为该员工打卡下班（时间为现在）？')) return;
-  const now = new Date().toISOString().slice(0,16);
   const entry = allTimeEntries.find(t=>t.id===id);
   if (!entry) return;
+  // 跨天保护: 前一天的班不能拿「现在」当下班时间 (下班不能跨过上班日), 用编辑填真实时间
+  const tz = entry.display_timezone || 'America/Chicago';
+  const day = entry.work_date || String(entry.clock_in||'').slice(0,10);
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: tz });
+  if (day && day < today) {
+    showToast(`该记录是 ${day} 的，不能记「现在」为下班时间。请点「编辑」填写当天的真实下班时间。`, 'error');
+    return;
+  }
+  if (!await showConfirm('确认为该员工打卡下班（时间为现在）？')) return;
+  const now = new Date().toISOString().slice(0,16);
   await api(`/admin/time-entries/${id}`, { method:'PUT', body: JSON.stringify({ ...entry, clock_out: now }) });
   loadTimeEntries();
 }
