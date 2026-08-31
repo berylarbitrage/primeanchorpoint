@@ -93,7 +93,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gray-50);color
 .btn-blue:hover{background:#16325e}
 .btn-green{background:var(--green);color:#fff}
 table{width:100%;border-collapse:collapse;font-size:.85rem}
-th{background:var(--gray-50);padding:.6rem .75rem;text-align:left;font-weight:600;color:var(--gray-500);border-bottom:2px solid var(--gray-200)}
+th{background:var(--gray-50);padding:.6rem .75rem;text-align:left;font-weight:600;color:var(--gray-500);border-bottom:2px solid var(--gray-200);white-space:nowrap}
 td{padding:.65rem .75rem;border-bottom:1px solid var(--gray-100)}
 tr:last-child td{border-bottom:none}
 .empty{color:var(--gray-400);padding:2rem;text-align:center}
@@ -345,7 +345,7 @@ tr:last-child td{border-bottom:none}
         <p style="font-size:.85rem;color:var(--gray-400);margin-bottom:1rem">近 90 天在贵公司仓库打卡的全部工人信息（含正式派工记录）</p>
         <div style="overflow-x:auto">
         <table style="min-width:880px">
-          <thead><tr><th>姓名</th><th>员工号</th><th>职位</th><th>电话</th><th>邮箱</th><th>地址</th><th>近90天打卡</th><th>工卡</th></tr></thead>
+          <thead><tr><th>姓名</th><th>员工号</th><th>职位</th><th>电话</th><th>邮箱</th><th>地址</th><th>近90天 打卡·工时</th><th>操作</th></tr></thead>
           <tbody id="workersTable"></tbody>
         </table>
         </div>
@@ -670,8 +670,20 @@ function trRenderKioskMode(sites) {
         }).join('')}
       </div>
       ${cur ? '<div style="color:#b45309;font-size:.78rem;margin-top:.35rem">⚠ 非自动模式：打卡机上的每次打卡都按此分类记录，用完记得点回「自动」</div>' : ''}
+      <div style="display:flex;align-items:center;gap:.4rem;margin-top:.45rem;font-size:.82rem;color:var(--gray-500)">
+        班型：一天
+        <select onchange="trSetKioskBreaks(${s.id}, this.value, this)" style="padding:.25rem .4rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:7px;font-family:inherit">
+          ${[0, 1, 2, 3].map(n => `<option value="${n}"${(s.kiosk_breaks_per_day == null ? 1 : s.kiosk_breaks_per_day) === n ? ' selected' : ''}>${n === 0 ? '不休息（2 次卡）' : n + ' 次休息（' + (2 + 2 * n) + ' 次卡）'}</option>`).join('')}
+        </select>
+        <span style="color:var(--gray-400)">打卡次数不符会标 ⚠ 待复核</span>
+      </div>
     </div>`;
   }).join('');
+}
+async function trSetKioskBreaks(siteId, breaks, sel) {
+  const r = await cApi('/kiosk-breaks', { method: 'POST', body: JSON.stringify({ site_id: siteId, breaks: parseInt(breaks) }) });
+  if (!r || r.error) { showToast((r && r.error) || '设置失败', 'error'); loadTimeRecords(); return; }
+  showToast(`✅ 已设置：一天 ${breaks == 0 ? '不休息（2 次卡）' : breaks + ' 次休息（' + (2 + 2 * parseInt(breaks)) + ' 次卡）'}`);
 }
 // 站点风格的确认弹窗 (替代原生 confirm): 返回 Promise<boolean>
 function cpConfirm({ icon = '🖥', title, msg, okLabel = '确认', okBg = 'var(--blue)' }) {
@@ -912,6 +924,14 @@ function trAll() {
   document.getElementById('trTo').value = '';
   loadTimeRecords();
 }
+// 从工人列表跳到该工人的全部打卡记录 (只看TA + 全部时间范围, 汇总条即是TA的总工时)
+let _trEmpFilter = null;
+function wkGoRecords(id, name) {
+  _trEmpFilter = { id, name };
+  showTab('timerec');
+  trAll();
+}
+function trClearEmpFilter() { _trEmpFilter = null; loadTimeRecords(); }
 async function loadTimeRecords() {
   const tb = document.getElementById('trTable');
   tb.innerHTML = '<tr><td colspan="10" style="color:var(--gray-400)">加载中…</td></tr>';
@@ -920,7 +940,7 @@ async function loadTimeRecords() {
   if (f || t) _trAll = false; // 手动挑了日期就退出「全部」模式
   if (f) q.set('from', f); if (t) q.set('to', t);
   if (_trAll) q.set('all', '1');
-  const d = await cApi('/time-records?' + q.toString());
+  let d = await cApi('/time-records?' + q.toString());
   if (!d) return;
   if (d.error) { tb.innerHTML = `<tr><td colspan="10" style="color:#E63946">${esc(d.error)}</td></tr>`; return; }
   // 「全部」模式日期框留空, 免得下次刷新按具体日期(>190天会被截断)查
@@ -931,6 +951,8 @@ async function loadTimeRecords() {
   _trSiteTz = {}; const siteName = {};
   window._trSites = d.sites || []; // 打印打卡表的仓库下拉用
   (d.sites || []).forEach(s => { _trSiteTz[s.id] = s.timezone; siteName[s.id] = s.name + (s.code ? ` (${s.code})` : ''); });
+  // 只看某个工人 (从工人列表「打卡记录」跳过来)
+  if (_trEmpFilter) d = { ...d, entries: (d.entries || []).filter(e => e.emp_db_id === _trEmpFilter.id) };
   trRenderKioskMode(d.sites || []);
   const multiSite = (d.sites || []).length > 1;
   document.getElementById('trHead').innerHTML =
@@ -1000,6 +1022,7 @@ async function loadTimeRecords() {
   tb.innerHTML = rows.join('') || `<tr><td colspan="10" style="color:var(--gray-400);text-align:center;padding:1.4rem">${
     d.no_binding ? '贵公司还没有关联的仓库或打卡记录，请联系 Prime Anchor Workforce 完成绑定' : '该时段没有打卡记录（可试试「近30天」或「全部」）'}</td></tr>`;
   document.getElementById('trSummary').innerHTML =
+    (_trEmpFilter ? `<span style="background:#EEF4FF;border:1px solid #C7D7FE;border-radius:999px;padding:.15rem .7rem">👤 只看 <b>${esc(_trEmpFilter.name)}</b> <a href="javascript:void(0)" onclick="trClearEmpFilter()" style="text-decoration:none;color:#E63946;font-weight:700">✕</a></span>` : '') +
     `<span>班次 <b>${(d.entries || []).length}</b></span><span>总工时 <b>${totalH.toFixed(1)}h</b></span><span>当前在班 <b>${onDuty}</b></span>` +
     (d.photos_enabled ? '' : '');
 }
@@ -1217,8 +1240,8 @@ async function loadWorkers() {
     <td style="white-space:nowrap">${esc(w.phone||'')||'—'}</td>
     <td>${esc(w.email||'')||'—'}</td>
     <td style="font-size:.82rem;color:var(--gray-500)">${esc(w.address||'')||'—'}</td>
-    <td style="white-space:nowrap">${w.punch_days ? w.punch_days + ' 天' : (w.assign_status ? '派工·' + esc(w.assign_status) : '—')}</td>
-    <td>${w.id ? `<button class="tr-act" style="border-color:var(--blue);color:var(--blue)" onclick="wkCardOpen(${w.id})">🪪 工卡</button>` : '—'}</td>
+    <td style="white-space:nowrap">${w.punch_days ? `${w.punch_days} 天 · <b>${(w.total_hours || 0).toFixed(1)}h</b>` : (w.assign_status ? '派工·' + esc(w.assign_status) : '—')}</td>
+    <td style="white-space:nowrap">${w.id ? `<button class="tr-act" style="border-color:var(--blue);color:var(--blue)" onclick="wkCardOpen(${w.id})">🪪 工卡</button><button class="tr-act" style="border-color:#2D9D78;color:#2D9D78" onclick="wkGoRecords(${w.id}, '${esc((w.first_name||'')+' '+(w.last_name||'')).replace(/'/g,"&#39;")}')" title="查看该工人的全部打卡记录和总工时">📋 打卡记录</button>` : '—'}</td>
   </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无派遣工人信息</td></tr>';
 }
 

@@ -792,6 +792,9 @@ try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_review INTEGER DEFAULT 
 // 工作日 = 仓库当地时区的日期。clock_in 存 UTC, 晚上打卡 UTC 日期会跳到「明天」,
 // 不能用它分天 —— 按天归组必须以本列为准 (老记录为空, 查询时兼容回退)
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN work_date TEXT DEFAULT ''`); } catch(e) {}
+// 仓库自动打卡班型: 每天几次休息 (0=不休息一天2次卡, 1=4次卡, 2=6次卡...),
+// 自动归类后打卡次数 != 2+2*休息次数 → ⚠ 待复核
+try { db.exec(`ALTER TABLE job_sites ADD COLUMN kiosk_breaks_per_day INTEGER DEFAULT 1`); } catch(e) {}
 // 打卡时间编辑历史: 每次改动(后台/仓库方/系统)记谁在什么时候把什么从A改到B
 db.exec(`CREATE TABLE IF NOT EXISTS time_entry_edits (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26648,7 +26651,13 @@ function _recordAutoPunch({ empDbId, site, siteTimezone, now, latitude, longitud
     }
     const ms = new Date(last.t.replace(' ', 'T') + 'Z') - new Date(first.t.replace(' ', 'T') + 'Z');
     const totalHours = Math.round((ms / 3600000) * 100) / 100;
-    needsReview = (n < 4 || n % 2 === 1) ? 1 : 0;
+    // 期望次数按仓库设置: 2 + 2×每天休息次数 (默认 1 次休息 = 4 次卡); 次数不符 → 待复核
+    let breaksCfg = 1;
+    try {
+      const bRow = db.prepare('SELECT kiosk_breaks_per_day FROM job_sites WHERE id=?').get(site.id);
+      if (bRow && bRow.kiosk_breaks_per_day != null) breaksCfg = Math.max(0, Math.min(4, parseInt(bRow.kiosk_breaks_per_day) || 0));
+    } catch (_) {}
+    needsReview = (n === 2 + 2 * breaksCfg) ? 0 : 1;
     db.prepare(
       "UPDATE time_entries SET clock_in=?, clock_in_photo_path=?, clock_out=?, punch_photo_path=?, total_hours=?, regular_hours=?, overtime_hours=?, status='closed', break_records=?, on_break=0, raw_punches=?, punch_review=?, punch_type='auto', work_date=? WHERE id=?"
     ).run(first.t, first.p, last.t, last.p, totalHours, Math.min(totalHours, 8), Math.max(0, totalHours - 8), JSON.stringify(breaks), rawJson, needsReview, todayInTz, entryId);
@@ -26890,7 +26899,7 @@ app.post('/api/admin/partner-photo-access/:id', requireAdmin, requireRole('admin
 // 该客户(partner)名下的启用仓库
 function _customerSites(pid) {
   if (!pid) return [];
-  return db.prepare('SELECT id, name, code, address, timezone, partner_id, partner_ids, kiosk_punch_mode FROM job_sites WHERE active=1').all()
+  return db.prepare('SELECT id, name, code, address, timezone, partner_id, partner_ids, kiosk_punch_mode, kiosk_breaks_per_day FROM job_sites WHERE active=1').all()
     .filter(s => s.partner_id === pid || String(s.partner_ids || '').split(',').filter(Boolean).map(Number).includes(pid));
 }
 // 时间戳兼容两种存储格式: ISO (带 Z/时区) 与 SQLite 'YYYY-MM-DD HH:MM:SS' (UTC)
@@ -26934,7 +26943,7 @@ app.get('/api/customer/time-records', requireCustomer, (req, res) => {
     } catch (_) {}
     to = new Date().toISOString().slice(0, 10);
   }
-  const rows = db.prepare(`SELECT t.id AS entry_id, t.site_id, t.clock_in, t.clock_out, t.break_records, t.total_hours, t.status, t.on_break,
+  const rows = db.prepare(`SELECT t.id AS entry_id, t.employee_id AS emp_db_id, t.site_id, t.clock_in, t.clock_out, t.break_records, t.total_hours, t.status, t.on_break,
       t.clock_in_photo_path, t.punch_photo_path, t.work_date, t.punch_review, t.raw_punches, e.first_name, e.last_name,
       (SELECT COUNT(*) FROM time_entry_edits x WHERE x.entry_id=t.id) AS edit_count
     FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id
@@ -26954,7 +26963,7 @@ app.get('/api/customer/time-records', requireCustomer, (req, res) => {
     } catch (_) {}
     if (r.punch_photo_path) photoFiles.push(r.punch_photo_path);
     const o = {
-      entry_id: r.entry_id, site_id: r.site_id, on_break: !!r.on_break,
+      entry_id: r.entry_id, emp_db_id: r.emp_db_id, site_id: r.site_id, on_break: !!r.on_break,
       name: [r.first_name, r.last_name].filter(Boolean).join(' ') || '—',
       clock_in: r.clock_in, clock_out: r.clock_out,
       break_minutes: Math.round(breakMin), break_count: breakN,
@@ -26970,7 +26979,7 @@ app.get('/api/customer/time-records', requireCustomer, (req, res) => {
   });
   res.json({
     photos_enabled: photosEnabled, from, to,
-    sites: sites.map(s => ({ id: s.id, name: s.name, code: s.code || '', timezone: s.timezone || 'America/Chicago', kiosk_punch_mode: s.kiosk_punch_mode || '' })),
+    sites: sites.map(s => ({ id: s.id, name: s.name, code: s.code || '', timezone: s.timezone || 'America/Chicago', kiosk_punch_mode: s.kiosk_punch_mode || '', kiosk_breaks_per_day: s.kiosk_breaks_per_day == null ? 1 : s.kiosk_breaks_per_day })),
     entries,
     no_binding: !sites.length && !entries.length
   });
@@ -26985,6 +26994,17 @@ app.post('/api/customer/kiosk-mode', requireCustomer, (req, res) => {
   if (!mine) return res.status(403).json({ error: '无权设置该仓库' });
   db.prepare('UPDATE job_sites SET kiosk_punch_mode=? WHERE id=?').run(mode, siteId);
   res.json({ ok: 1, mode });
+});
+// 仓库方设置每天几次休息 (决定自动打卡的期望次数 2+2×n; 0=不休息)
+app.post('/api/customer/kiosk-breaks', requireCustomer, (req, res) => {
+  const pid = req.customerPartnerId;
+  const breaks = parseInt((req.body || {}).breaks);
+  if (!(breaks >= 0 && breaks <= 4)) return res.status(400).json({ error: '休息次数范围 0~4' });
+  const siteId = parseInt((req.body || {}).site_id);
+  const mine = _customerSites(pid).find(s => s.id === siteId);
+  if (!mine) return res.status(403).json({ error: '无权设置该仓库' });
+  db.prepare('UPDATE job_sites SET kiosk_breaks_per_day=? WHERE id=?').run(breaks, siteId);
+  res.json({ ok: 1, breaks });
 });
 // 客户门户打卡操作: 仓库方把「当前时间」记为 上班/下班/休息开始/休息结束。
 // 以某条本公司仓库的记录为锚点定位员工+仓库, 复用打卡台的 _recordSitePunch 逻辑
@@ -27984,6 +28004,16 @@ app.post('/api/admin/job-sites/:id/kiosk-mode', requireAdmin, blockManager, (req
   res.json({ ok: 1, mode });
 });
 
+// 每天几次休息 (决定自动打卡的期望次数 2+2×n; 0=不休息一天2次卡)
+app.post('/api/admin/job-sites/:id/kiosk-breaks', requireAdmin, blockManager, (req, res) => {
+  const breaks = parseInt((req.body || {}).breaks);
+  if (!(breaks >= 0 && breaks <= 4)) return res.status(400).json({ error: '休息次数范围 0~4' });
+  const s = db.prepare('SELECT id FROM job_sites WHERE id=?').get(req.params.id);
+  if (!s) return res.status(404).json({ error: '未找到该仓库' });
+  db.prepare('UPDATE job_sites SET kiosk_breaks_per_day=? WHERE id=?').run(breaks, s.id);
+  res.json({ ok: 1, breaks });
+});
+
 app.delete('/api/admin/job-sites/:id', requireAdmin, blockManager, (req, res) => {
   db.prepare('DELETE FROM job_sites WHERE id=?').run(req.params.id);
   res.json({ success: true });
@@ -28775,7 +28805,8 @@ app.get('/api/customer/my-workers', requireCustomer, (req, res) => {
       SELECT e.id, e.first_name, e.last_name, e.employee_id AS emp_code, e.position, e.phone, e.email,
         e.address, e.city, e.state, e.zip,
         MAX(t.clock_in) AS last_punch,
-        COUNT(DISTINCT COALESCE(NULLIF(t.work_date,''), DATE(t.clock_in))) AS punch_days
+        COUNT(DISTINCT COALESCE(NULLIF(t.work_date,''), DATE(t.clock_in))) AS punch_days,
+        ROUND(SUM(COALESCE(t.total_hours,0)), 1) AS total_hours
       FROM time_entries t JOIN employees e ON t.employee_id=e.id
       WHERE ${scope.sql} AND DATE(t.clock_in) >= DATE('now','-90 day')
       GROUP BY e.id ORDER BY e.first_name, e.last_name`).all(...scope.params);
@@ -28785,7 +28816,7 @@ app.get('/api/customer/my-workers', requireCustomer, (req, res) => {
         id: r.id, first_name: r.first_name, last_name: r.last_name, emp_code: r.emp_code || '',
         position: r.position || '', phone: r.phone || '', email: r.email || '',
         address: [r.address, r.city, r.state, r.zip].map(x => String(x || '').trim()).filter(Boolean).join(', '),
-        punch_days: r.punch_days, last_punch: r.last_punch, kind: 'punch'
+        punch_days: r.punch_days, total_hours: r.total_hours || 0, last_punch: r.last_punch, kind: 'punch'
       });
     }
   }
