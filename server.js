@@ -26588,7 +26588,7 @@ app.post('/api/admin/partner-photo-access/:id', requireAdmin, requireRole('admin
 // 该客户(partner)名下的启用仓库
 function _customerSites(pid) {
   if (!pid) return [];
-  return db.prepare('SELECT id, name, code, timezone, partner_id, partner_ids, kiosk_punch_mode FROM job_sites WHERE active=1').all()
+  return db.prepare('SELECT id, name, code, address, timezone, partner_id, partner_ids, kiosk_punch_mode FROM job_sites WHERE active=1').all()
     .filter(s => s.partner_id === pid || String(s.partner_ids || '').split(',').filter(Boolean).map(Number).includes(pid));
 }
 // 时间戳兼容两种存储格式: ISO (带 Z/时区) 与 SQLite 'YYYY-MM-DD HH:MM:SS' (UTC)
@@ -28115,6 +28115,11 @@ app.post('/api/customer/login', loginRateLimit, (req, res) => {
 app.get('/api/customer/me', requireCustomer, (req, res) => {
   const c = db.prepare('SELECT id, company_name, contact_name, email, phone, partner_id, active FROM customer_accounts WHERE id=?').get(req.customerId);
   res.json(c);
+});
+
+// 客户门户: 本公司名下的仓库地点列表 (发布用工需求时下拉选择工作地点用)
+app.get('/api/customer/my-sites', requireCustomer, (req, res) => {
+  res.json(_customerSites(req.customerPartnerId).map(s => ({ id: s.id, name: s.name, address: s.address || '' })));
 });
 
 app.post('/api/customer/post-job', requireCustomer, (req, res) => {
