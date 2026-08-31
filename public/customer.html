@@ -605,18 +605,43 @@ function trRenderKioskMode(sites) {
     </div>`;
   }).join('');
 }
+// 站点风格的确认弹窗 (替代原生 confirm): 返回 Promise<boolean>
+function cpConfirm({ icon = '🖥', title, msg, okLabel = '确认', okBg = 'var(--blue)' }) {
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.className = 'modal-overlay show';
+    ov.innerHTML = `<div class="modal-box" style="max-width:330px;padding:1.6rem 1.5rem;text-align:center">
+      <div style="font-size:2rem;margin-bottom:.5rem">${icon}</div>
+      <h2 style="margin-bottom:.5rem">${title}</h2>
+      <p style="white-space:pre-line;margin-bottom:1.25rem;line-height:1.55">${msg}</p>
+      <div style="display:flex;gap:.6rem">
+        <button class="modal-btn modal-btn-secondary" data-act="no" style="margin-bottom:0">取消</button>
+        <button class="modal-btn modal-btn-primary" data-act="ok" style="margin-bottom:0;background:${okBg}">${okLabel}</button>
+      </div></div>`;
+    const done = v => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+    const onKey = e => { if (e.key === 'Escape') done(false); };
+    ov.addEventListener('click', e => { if (e.target === ov) done(false); });
+    ov.querySelector('[data-act="no"]').onclick = () => done(false);
+    ov.querySelector('[data-act="ok"]').onclick = () => done(true);
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(ov);
+    ov.querySelector('[data-act="ok"]').focus();
+  });
+}
 async function trSetKioskMode(siteId, mode, label, isCurrent) {
   if (isCurrent) return;
-  const msg = mode ? `确认把打卡机模式设为「${label}」？\n从现在起该仓库打卡台上的所有打卡都记为「${label}」。`
-    : '确认恢复「自动（上班/下班）」？\n打卡台将恢复自动判断上班/下班。';
-  if (!confirm(msg)) return;
+  const ok = await cpConfirm(mode
+    ? { title: `设为「${label}」？`, msg: '从现在起该仓库打卡台上的所有打卡\n都会记为「' + label + '」。', okLabel: '确认切换', okBg: 'var(--orange)' }
+    : { title: '恢复自动模式？', msg: '打卡台将恢复自动判断上班/下班。', okLabel: '恢复自动', okBg: 'var(--sky)' });
+  if (!ok) return;
   const r = await cApi('/kiosk-mode', { method: 'POST', body: JSON.stringify({ site_id: siteId, mode }) });
   if (!r) return;
   if (r.ok) { showToast(`✅ 打卡机模式：${label}`); loadTimeRecords(); }
   else { showToast(r.error || '设置失败', 'error'); loadTimeRecords(); }
 }
 async function trPunchAction(entryId, action, label, name) {
-  if (!confirm(`确认把当前时间记为「${name} ${label}」？`)) return;
+  const ok = await cpConfirm({ icon: '⏱', title: `${esc(label)}打卡`, msg: `把当前时间记为\n「${esc(name)} ${esc(label)}」？`, okLabel: '确认记录' });
+  if (!ok) return;
   const r = await cApi('/punch-action', { method: 'POST', body: JSON.stringify({ entry_id: entryId, action }) });
   if (!r) return;
   if (r.ok) { showToast(`✅ 已记录：${name} ${label}`); loadTimeRecords(); }

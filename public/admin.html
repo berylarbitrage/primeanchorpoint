@@ -18257,11 +18257,35 @@ function renderTimeKioskMode() {
     </div>`;
   }).join('');
 }
+// 站点风格的确认弹窗 (替代原生 confirm): 返回 Promise<boolean>
+function uiConfirm({ icon = '🖥', title, msg, okLabel = '确认', okBg = 'var(--accent)' }) {
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.className = 'modal-bg show';
+    ov.innerHTML = `<div class="modal" style="max-width:340px;padding:1.6rem 1.5rem;text-align:center">
+      <div style="font-size:2rem;margin-bottom:.5rem">${icon}</div>
+      <h2 style="margin-bottom:.5rem;font-size:1.05rem">${title}</h2>
+      <p style="white-space:pre-line;color:var(--gray-600);font-size:.88rem;line-height:1.55;margin-bottom:1.25rem">${msg}</p>
+      <div style="display:flex;gap:.6rem;justify-content:center">
+        <button class="btn btn-outline" data-act="no" style="flex:1">取消</button>
+        <button class="btn" data-act="ok" style="flex:1;background:${okBg}">${okLabel}</button>
+      </div></div>`;
+    const done = v => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+    const onKey = e => { if (e.key === 'Escape') done(false); };
+    ov.addEventListener('click', e => { if (e.target === ov) done(false); });
+    ov.querySelector('[data-act="no"]').onclick = () => done(false);
+    ov.querySelector('[data-act="ok"]').onclick = () => done(true);
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(ov);
+    ov.querySelector('[data-act="ok"]').focus();
+  });
+}
 async function timeSetKioskMode(siteId, mode, label, isCurrent) {
   if (isCurrent) return;
-  const msg = mode ? `确认把打卡机模式设为「${label}」？\n从现在起该仓库打卡台上的所有打卡都记为「${label}」。`
-    : '确认恢复「自动（上班/下班）」？\n打卡台将恢复自动判断上班/下班。';
-  if (!confirm(msg)) return;
+  const ok = await uiConfirm(mode
+    ? { title: `设为「${label}」？`, msg: '从现在起该仓库打卡台上的所有打卡\n都会记为「' + label + '」。', okLabel: '确认切换', okBg: 'var(--accent)' }
+    : { title: '恢复自动模式？', msg: '打卡台将恢复自动判断上班/下班。', okLabel: '恢复自动', okBg: 'var(--green)' });
+  if (!ok) return;
   const r = await api(`/admin/job-sites/${siteId}/kiosk-mode`, { method: 'POST', body: JSON.stringify({ mode }) });
   if (!r || r.error || !r.ok) { if (r && r.error) showToast(r.error, 'error'); return; }
   showToast(`✅ 打卡机模式：${label}`);
