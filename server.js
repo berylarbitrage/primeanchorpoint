@@ -2715,6 +2715,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS acct_line_pay_notes (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(invoice_id, line_idx)
 )`);
+// 逐行付款备注可关联银行直连交易(txn_ids)与上传凭证截图/PDF(photos)
+try { db.exec("ALTER TABLE acct_line_pay_notes ADD COLUMN txn_ids TEXT DEFAULT '[]'"); } catch (e) {}
+try { db.exec("ALTER TABLE acct_line_pay_notes ADD COLUMN photos TEXT DEFAULT '[]'"); } catch (e) {}
 // 会计付款批注: 每张发票/每笔赔偿事故记录「付了没有/哪个银行付的/付了多少」(一目标一条, upsert)
 db.exec(`CREATE TABLE IF NOT EXISTS acct_pay_notes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36083,27 +36086,65 @@ app.get('/api/acct/invoices/:id', requireAdmin, requireAcctView, (req, res) => {
     try { row.items = JSON.parse(row.items_json || '[]'); } catch { row.items = []; }
     try { row.profile = JSON.parse(row.profile_json || '{}'); } catch { row.profile = {}; }
     delete row.items_json; delete row.profile_json;
-    // 逐行付款备注: {line_idx: note}
+    // 逐行付款备注: {line_idx: note}; 关联交易补上概要信息, 照片转可访问 URL
     row.line_pay_notes = {};
-    db.prepare('SELECT * FROM acct_line_pay_notes WHERE invoice_id=?').all(row.id).forEach(n => { row.line_pay_notes[n.line_idx] = n; });
+    db.prepare('SELECT * FROM acct_line_pay_notes WHERE invoice_id=?').all(row.id).forEach(n => { row.line_pay_notes[n.line_idx] = _lineNoteOut(n); });
     res.json(row);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 发票逐行付款备注 upsert: 这一条付了没有 / 怎么付的
+// 逐行付款备注输出: txn_ids 解析并附交易概要, photos 转 /uploads URL
+function _lineNoteOut(n) {
+  let ids = []; try { ids = JSON.parse(n.txn_ids || '[]'); } catch (e) { ids = []; }
+  if (!Array.isArray(ids)) ids = [];
+  n.txn_ids = ids;
+  n.txns = ids.length ? db.prepare(`SELECT txn_id, date, name, merchant, amount, account_id FROM plaid_transactions
+    WHERE txn_id IN (${ids.map(() => '?').join(',')})`).all(...ids) : [];
+  let ph = []; try { ph = JSON.parse(n.photos || '[]'); } catch (e) { ph = []; }
+  n.photos_urls = (Array.isArray(ph) ? ph : []).filter(Boolean).map(k => `/uploads/${path.basename(String(k))}`);
+  delete n.photos;
+  return n;
+}
+// 发票逐行付款备注 upsert: 这一条付了没有 / 怎么付的 / 关联哪些银行交易
 app.post('/api/acct/invoices/:id/line-pay-note', requireAdmin, requireAcctWrite, (req, res) => {
   const inv = db.prepare('SELECT id FROM invoices WHERE id=?').get(parseInt(req.params.id));
   if (!inv) return res.status(404).json({ error: '发票不存在' });
-  const { line_idx, paid_status, pay_method, note, line_label } = req.body || {};
+  const { line_idx, paid_status, pay_method, note, line_label, txn_ids } = req.body || {};
   const idx = parseInt(line_idx);
   if (isNaN(idx) || idx < 0 || idx > 500) return res.status(400).json({ error: '无效行号' });
   const st = ['', 'unpaid', 'partial', 'paid'].includes(String(paid_status || '')) ? String(paid_status || '') : '';
-  db.prepare(`INSERT INTO acct_line_pay_notes (invoice_id, line_idx, line_label, paid_status, pay_method, note, created_by, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+  const ids = (Array.isArray(txn_ids) ? txn_ids : []).map(t => String(t).slice(0, 100)).filter(Boolean).slice(0, 20);
+  db.prepare(`INSERT INTO acct_line_pay_notes (invoice_id, line_idx, line_label, paid_status, pay_method, note, txn_ids, created_by, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(invoice_id, line_idx) DO UPDATE SET line_label=excluded.line_label, paid_status=excluded.paid_status,
-      pay_method=excluded.pay_method, note=excluded.note, created_by=excluded.created_by, updated_at=CURRENT_TIMESTAMP`)
-    .run(inv.id, idx, String(line_label || '').slice(0, 120), st, String(pay_method || '').slice(0, 120), String(note || '').slice(0, 500), req.userName || '');
-  res.json({ success: true, note: db.prepare('SELECT * FROM acct_line_pay_notes WHERE invoice_id=? AND line_idx=?').get(inv.id, idx) });
+      pay_method=excluded.pay_method, note=excluded.note, txn_ids=excluded.txn_ids, created_by=excluded.created_by, updated_at=CURRENT_TIMESTAMP`)
+    .run(inv.id, idx, String(line_label || '').slice(0, 120), st, String(pay_method || '').slice(0, 120), String(note || '').slice(0, 500), JSON.stringify(ids), req.userName || '');
+  res.json({ success: true, note: _lineNoteOut(db.prepare('SELECT * FROM acct_line_pay_notes WHERE invoice_id=? AND line_idx=?').get(inv.id, idx)) });
+});
+
+// 逐行付款备注: 上传凭证截图/PDF (追加)
+app.post('/api/acct/line-pay-notes/:id/photos', requireAdmin, requireAcctWrite, containerSubmitPhotoUpload.array('photos', 12), (req, res) => {
+  const n = db.prepare('SELECT * FROM acct_line_pay_notes WHERE id=?').get(parseInt(req.params.id));
+  if (!n) return res.status(404).json({ error: 'not found' });
+  let ph = []; try { ph = JSON.parse(n.photos || '[]'); } catch (e) { ph = []; }
+  if (!Array.isArray(ph)) ph = [];
+  (req.files || []).forEach(f => { const k = f.key || f.path; if (k) ph.push(k); });
+  ph = ph.filter(Boolean).slice(0, 24);
+  db.prepare('UPDATE acct_line_pay_notes SET photos=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(JSON.stringify(ph), n.id);
+  res.json({ success: true, photos_urls: ph.map(k => `/uploads/${path.basename(String(k))}`) });
+});
+// 逐行付款备注: 删除一张凭证
+app.delete('/api/acct/line-pay-notes/:id/photos', requireAdmin, requireAcctWrite, (req, res) => {
+  const n = db.prepare('SELECT * FROM acct_line_pay_notes WHERE id=?').get(parseInt(req.params.id));
+  if (!n) return res.status(404).json({ error: 'not found' });
+  const target = path.basename(String((req.body && req.body.photo) || req.query.photo || ''));
+  if (!target) return res.status(400).json({ error: 'missing photo' });
+  let ph = []; try { ph = JSON.parse(n.photos || '[]'); } catch (e) { ph = []; }
+  const kept = (Array.isArray(ph) ? ph : []).filter(k => path.basename(String(k)) !== target);
+  const removed = (Array.isArray(ph) ? ph : []).find(k => path.basename(String(k)) === target);
+  db.prepare('UPDATE acct_line_pay_notes SET photos=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(JSON.stringify(kept), n.id);
+  if (removed) storage.deleteObject(storage.keyFrom(removed, 'uploads')).catch(() => {});
+  res.json({ success: true, photos_urls: kept.map(k => `/uploads/${path.basename(String(k))}`) });
 });
 
 // Read-only bank statement list.
