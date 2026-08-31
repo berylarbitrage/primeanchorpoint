@@ -16007,7 +16007,8 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
         .run(subId, token);
     } catch (_) {}
 
-    // 发放 8 位打卡密码：提交成功页面显示，并短信发到刚验证过的手机号
+    // 发放 8 位打卡密码：提交成功页面显示，并发到刚验证过的手机号 ——
+    // 第一次登记也直接发打卡二维码彩信 (同「忘记密码」找回), 发不出图降级为带链接短信
     let timeclockCode = '';
     try {
       timeclockCode = _genTimeclockCode();
@@ -16015,8 +16016,8 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
     } catch (e) { console.error('[apply] timeclock code gen failed:', e.message); }
     res.json({ success: true, id: subId, timeclock_code: timeclockCode });
     if (timeclockCode) {
-      sendSMS(phone, `[Prime Anchor Point LLC] Your clock-in password: ${timeclockCode}. Enter it at the time clock to punch in/out. Keep it private.`)
-        .catch(e => console.error('[apply] timeclock code SMS failed:', e.message));
+      _sendClockCodeQrSms(req, phone, timeclockCode)
+        .catch(e => console.error('[apply] clock code QR SMS failed:', e.message));
     }
     // 后台把刚上传的证件文件就地加密 (不阻塞响应)
     setImmediate(async () => {
@@ -27517,6 +27518,25 @@ function _kioskSmsLog(phone, mms, r) {
         String((r && (r.errorCode || r.code)) || ''), String((r && (r.errorMessage || r.error)) || '').slice(0, 300));
   } catch (e) {}
 }
+// 打卡密码+二维码彩信 (新员工登记成功、补发共用): 彩信发图优先, 发不出/被拒降级为带链接
+// 短信; 全程后台执行不阻塞响应, 每次尝试记入 kiosk_sms_log (后台「测试短信」弹窗可查)
+async function _sendClockCodeQrSms(req, toPhone, code) {
+  const qrPngUrl = _mmsMediaBase(req) + '/my-qr.png?c=' + code;
+  const mmsBody = `Prime Anchor Point: Your clock-in password is ${code}. Show the attached QR code or enter this password at the time clock. Keep it private.`;
+  const linkBody = `Prime Anchor Point: Your clock-in password is ${code}. QR code: ${_applyQrBase(req) + '/my-qr?c=' + code} Show the QR or enter the password at the time clock. Keep it private.`;
+  try {
+    let r = await sendSMSWithDetail(toPhone, mmsBody, qrPngUrl);
+    if (r.ok) r = await _twWaitFinal(r);
+    _kioskSmsLog(toPhone, 1, r);
+    if (!r.ok || r.status === 'failed' || r.status === 'undelivered') {
+      if (r.errorCode || r.code || r.error) console.error('[ClockCodeQr] MMS 未送达:', r.errorCode || r.code || '', r.errorMessage || r.error || '');
+      r = await sendSMSWithDetail(toPhone, linkBody);
+      if (r.ok) r = await _twWaitFinal(r);
+      _kioskSmsLog(toPhone, 0, r);
+    }
+  } catch (e) { console.error('[ClockCodeQr] error:', e.message); }
+}
+
 // 轮询到终态: sendSMSWithDetail 3 秒后可能仍是 sent/queued, 再等两轮共约 11 秒抓住迟到的拒投
 async function _twWaitFinal(r) {
   if (!r || !r.ok || !r.sid || !twilioClient) return r;
