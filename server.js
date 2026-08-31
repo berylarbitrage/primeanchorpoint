@@ -2702,6 +2702,20 @@ db.exec(`CREATE TABLE IF NOT EXISTS acct_annotations (
 )`);
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_acct_ann_target ON acct_annotations(target_type, target_id)`); } catch (e) {}
 
+// 会计付款批注: 每张发票/每笔赔偿事故记录「付了没有/哪个银行付的/付了多少」(一目标一条, upsert)
+db.exec(`CREATE TABLE IF NOT EXISTS acct_pay_notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  target_type TEXT NOT NULL,
+  target_id INTEGER NOT NULL,
+  paid_status TEXT DEFAULT '',
+  bank TEXT DEFAULT '',
+  amount REAL,
+  note TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(target_type, target_id)
+)`);
+
 // Reconciliation marks: which company_worker_payments rows have been "annotated" (note copied
 // onto an external statement) — once marked they drop out of the 对账备注 list.
 db.exec(`CREATE TABLE IF NOT EXISTS payment_recon_marks (
@@ -35989,12 +36003,39 @@ app.post('/api/acct/register', loginRateLimit, (req, res) => {
   res.json({ success: true, awaiting_approval: true });
 });
 
+// 付款批注读取: {target_id: note} 映射
+function _acctPayNotesFor(type) {
+  const map = {};
+  db.prepare('SELECT * FROM acct_pay_notes WHERE target_type=?').all(type).forEach(n => { map[n.target_id] = n; });
+  return map;
+}
+// 会计付款批注 upsert: 付了没有 / 哪个银行付的 / 付了多少 / 备注
+app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
+  const { target_type, target_id, paid_status, bank, amount, note } = req.body || {};
+  if (!['invoice', 'claim'].includes(target_type)) return res.status(400).json({ error: '无效对象类型' });
+  const tid = parseInt(target_id);
+  if (!tid) return res.status(400).json({ error: '无效对象' });
+  const exists = target_type === 'invoice'
+    ? db.prepare('SELECT id FROM invoices WHERE id=?').get(tid)
+    : db.prepare('SELECT id FROM warehouse_claims WHERE id=?').get(tid);
+  if (!exists) return res.status(404).json({ error: '对象不存在' });
+  const st = ['', 'unpaid', 'partial', 'paid'].includes(String(paid_status || '')) ? String(paid_status || '') : '';
+  const amt = (amount === '' || amount == null) ? null : (Number(amount) || 0);
+  db.prepare(`INSERT INTO acct_pay_notes (target_type, target_id, paid_status, bank, amount, note, created_by, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(target_type, target_id) DO UPDATE SET paid_status=excluded.paid_status, bank=excluded.bank,
+      amount=excluded.amount, note=excluded.note, created_by=excluded.created_by, updated_at=CURRENT_TIMESTAMP`)
+    .run(target_type, tid, st, String(bank || '').slice(0, 120), amt, String(note || '').slice(0, 500), req.userName || '');
+  res.json({ success: true, pay_note: db.prepare('SELECT * FROM acct_pay_notes WHERE target_type=? AND target_id=?').get(target_type, tid) });
+});
+
 // Read-only invoice list (no payment receipts / internal cost fields).
 app.get('/api/acct/invoices', requireAdmin, requireAcctView, (req, res) => {
   try {
     const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, subtotal, markup_rate, status, payment_status, created_at
       FROM invoices ORDER BY invoice_date DESC, id DESC`).all();
-    for (const r of rows) r.annotation_count = _acctAnnCount.get('invoice', r.id).n;
+    const payNotes = _acctPayNotesFor('invoice');
+    for (const r of rows) { r.annotation_count = _acctAnnCount.get('invoice', r.id).n; r.pay_note = payNotes[r.id] || null; }
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -36021,7 +36062,8 @@ app.get('/api/acct/warehouse-claims', requireAdmin, requireAcctView, (req, res) 
     LEFT JOIN bank_statement_txns t ON c.stmt_txn_id = t.id
     LEFT JOIN bank_statements s ON t.statement_id = s.id
     ORDER BY c.incident_date DESC, c.created_at DESC`).all();
-  for (const r of rows) r.attachments = _claimAtts(r);
+  const payNotes = _acctPayNotesFor('claim');
+  for (const r of rows) { r.attachments = _claimAtts(r); r.pay_note = payNotes[r.id] || null; }
   res.json(rows);
 });
 
