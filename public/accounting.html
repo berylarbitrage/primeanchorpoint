@@ -64,6 +64,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
   <div style="display:flex;border-bottom:1px solid var(--g200);margin-bottom:.8rem;background:#fff;border-radius:10px 10px 0 0;padding:0 .4rem">
     <button class="tab on" id="tabInv" onclick="showTab('inv')">📄 发票 Invoices</button>
     <button class="tab" id="tabStmt" onclick="showTab('stmt')">🏦 银行流水 Bank Statements</button>
+    <button class="tab" id="tabClaims" onclick="showTab('claims')">⚠️ 赔偿事故 Claims</button>
     <button class="tab" id="tabBank" onclick="showTab('bank')" style="display:none">🔗 银行直连 Bank Feed <span id="bankUnrevBadge" style="display:none;background:#dc2626;color:#fff;border-radius:10px;font-size:.68rem;padding:1px 7px;vertical-align:middle"></span></button>
   </div>
 
@@ -96,6 +97,19 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <table><thead><tr>
         <th>银行</th><th>账户主体</th><th>经手</th><th>账期</th><th>文件</th><th style="text-align:right">收入</th><th style="text-align:right">支出</th><th>批注</th><th></th>
       </tr></thead><tbody id="stmtBody"><tr><td colspan="9" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+    </div>
+  </div>
+
+  <!-- ⚠️ 仓库赔偿事故 (只读) -->
+  <div id="paneClaims" style="display:none">
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
+      <input type="text" id="claimSearch" placeholder="搜仓库 / 描述…" oninput="renderClaimList()" style="width:220px">
+      <span id="claimStats" style="font-size:.8rem;color:var(--g500)"></span>
+    </div>
+    <div class="card" style="overflow-x:auto">
+      <table><thead><tr>
+        <th>仓库</th><th>事故日期</th><th style="text-align:right">赔偿金额</th><th>事故描述</th><th>状态</th><th>发票文件</th><th>银行付款</th>
+      </tr></thead><tbody id="claimBody"><tr><td colspan="7" style="color:var(--g400)">加载中…</td></tr></tbody></table>
     </div>
   </div>
 
@@ -244,19 +258,53 @@ function canEditAnn(a) { return USER.role === 'admin' || a.created_by === USER.u
 function showTab(t) {
   document.getElementById('tabInv').classList.toggle('on', t === 'inv');
   document.getElementById('tabStmt').classList.toggle('on', t === 'stmt');
+  document.getElementById('tabClaims').classList.toggle('on', t === 'claims');
   document.getElementById('tabBank').classList.toggle('on', t === 'bank');
   document.getElementById('paneBank').style.display = t === 'bank' ? '' : 'none';
   if (t === 'bank') bankInit();
   document.getElementById('paneInv').style.display = t === 'inv' ? '' : 'none';
   document.getElementById('paneStmt').style.display = t === 'stmt' ? '' : 'none';
+  document.getElementById('paneClaims').style.display = t === 'claims' ? '' : 'none';
+}
+// ── 仓库赔偿事故 (只读) ──
+let _claimList = [];
+const _claimStatusBadge = s => s === 'resolved'
+  ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#dcfce7;color:#166534">已解决</span>'
+  : '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#fef3c7;color:#92400e">处理中</span>';
+function renderClaimList() {
+  const q = (document.getElementById('claimSearch').value || '').trim().toLowerCase();
+  const list = _claimList.filter(c => !q || `${c.warehouse_name || ''} ${c.warehouse_code || ''} ${c.description || ''}`.toLowerCase().includes(q));
+  const total = list.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+  document.getElementById('claimStats').textContent = `${list.length} 起 · 赔偿总额 $${total.toFixed(2)}`;
+  document.getElementById('claimBody').innerHTML = list.length ? list.map(c => {
+    const atts = Array.isArray(c.attachments) ? c.attachments : [];
+    const files = atts.length
+      ? atts.map((a, i) => `<a href="${esc(a.path)}" target="_blank" title="${esc(a.name || '')}" style="color:var(--blue,#0f4c6b);text-decoration:underline;margin:0 3px;white-space:nowrap">${atts.length > 1 ? '文件' + (i + 1) : '查看'}</a>`).join('')
+      : '<span style="color:var(--g400)">—</span>';
+    const bank = c.stmt_txn_id
+      ? `<span style="display:inline-block;background:#e0f2fe;color:#075985;border-radius:6px;padding:2px 8px;font-size:.74rem;font-weight:600;white-space:nowrap" title="${esc(c.stmt_name || '')}">🏦 ${esc(c.txn_date || '')} · $${Math.abs(Number(c.txn_amount) || 0).toFixed(2)}</span>`
+      : '<span style="color:var(--g400)">—</span>';
+    return `<tr>
+      <td style="font-weight:600">${esc(c.warehouse_name || c.warehouse_code || '—')}</td>
+      <td style="white-space:nowrap">${esc(c.incident_date || '—')}</td>
+      <td style="text-align:right;font-weight:700;color:#dc2626;white-space:nowrap">${c.amount != null ? '$' + Number(c.amount).toFixed(2) : '—'}</td>
+      <td style="max-width:320px">${esc(c.description || '')}</td>
+      <td>${_claimStatusBadge(c.status)}</td>
+      <td>${files}</td>
+      <td>${bank}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="7" style="color:var(--g400);padding:1rem">暂无赔偿事故记录。</td></tr>';
 }
 async function loadAll() {
-  const [inv, stmt] = await Promise.all([
+  const [inv, stmt, claims] = await Promise.all([
     api('/api/acct/invoices').catch(() => []),
     api('/api/acct/statements').catch(() => []),
+    api('/api/acct/warehouse-claims').catch(() => []),
   ]);
   _invList = Array.isArray(inv) ? inv : [];
   _stmtList = Array.isArray(stmt) ? stmt : [];
+  _claimList = Array.isArray(claims) ? claims : [];
+  renderClaimList();
   renderInvList();
   renderStmtList();
 }

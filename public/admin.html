@@ -4947,14 +4947,15 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   <div class="field"><label>显示名称</label><input id="accDisplayName" placeholder="可选"></div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
     <div class="field"><label>邮箱</label><input id="accEmail" type="email" placeholder="工作邮箱（可选）"></div>
-    <div class="field"><label>电话</label><input id="accPhone" type="tel" placeholder="联系电话（可选）"></div>
+    <div class="field"><label>电话</label><input id="accPhone" type="tel" placeholder="联系电话（可选）">
+      <div id="accPhoneHint" style="display:none;font-size:.74rem;color:#92400e;margin-top:.25rem">会计登录时短信验证码可以发到这个手机号</div></div>
   </div>
   <div class="field"><label>角色 *</label>
     <select id="accRole" onchange="onAccRoleChange()">
       <option value="admin">Admin — 管理员（完全权限）</option>
       <option value="staff" selected>Staff — 员工（删除须审批）</option>
       <option value="manager">Manager — 经理（仅管理指定公司工时）</option>
-      <option value="accounting">Accounting — 会计（只读发票/银行流水，可圈选批注，登录 /accounting）</option>
+      <option value="accounting">Accounting — 会计（只读：发票/银行流水/赔偿事故＋银行对账，登录 /accounting 或 /banking，其他页面无权限）</option>
     </select>
   </div>
   <div class="field" id="accPartnerField" style="display:none">
@@ -19923,9 +19924,12 @@ async function loadAccounts() {
 }
 
 function onAccRoleChange() {
-  const isManager = document.getElementById('accRole').value === 'manager';
+  const role = document.getElementById('accRole').value;
+  const isManager = role === 'manager';
   document.getElementById('accPartnerField').style.display = isManager ? '' : 'none';
   document.getElementById('accJobField').style.display = isManager ? '' : 'none';
+  const hint = document.getElementById('accPhoneHint');
+  if (hint) hint.style.display = role === 'accounting' ? '' : 'none';
 }
 
 async function openAccountModal(data) {
