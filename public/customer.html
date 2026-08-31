@@ -783,9 +783,19 @@ async function tsOpen() {
   ov.id = 'tsModal';
   ov.innerHTML = `<div class="modal-box" style="max-width:440px;padding:1.4rem 1.5rem">
     <h2 style="margin-bottom:.8rem">🖨 打印纸质打卡表</h2>
-    <div style="margin-bottom:.8rem">
-      <label style="font-size:.8rem;color:var(--gray-500)">日期（印在表头，可留空手写）</label>
-      <input type="date" id="tsDate" value="${today}" style="width:100%;padding:.42rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:8px;font-family:inherit">
+    <div style="display:flex;gap:.7rem;margin-bottom:.55rem">
+      <div style="flex:1"><label style="font-size:.8rem;color:var(--gray-500)">打印范围</label>
+        <select id="tsRange" onchange="tsRangeSw()" style="width:100%;padding:.45rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:8px;font-family:inherit">
+          <option value="day">一天（1 页）</option>
+          <option value="week">自然周 周一~周日（7 页）</option>
+          <option value="days">连续几天（一天一页）</option>
+          <option value="nodate">日期留白（1 页，手写日期）</option>
+        </select></div>
+      <div style="flex:1" id="tsDateWrap"><label style="font-size:.8rem;color:var(--gray-500)" id="tsDateLbl">日期</label>
+        <input type="date" id="tsDate" value="${today}" style="width:100%;padding:.42rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:8px;font-family:inherit"></div>
+    </div>
+    <div id="tsDaysWrap" style="display:none;margin-bottom:.55rem">
+      <label style="font-size:.8rem;color:var(--gray-500)">打印天数 <input type="number" id="tsDays" value="3" min="1" max="14" style="width:64px;padding:.3rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:6px"> 天（从上面日期起，一天一页）</label>
     </div>
     <div style="display:flex;gap:1.2rem;margin-bottom:.6rem;font-size:.9rem">
       <label style="cursor:pointer"><input type="radio" name="tsMode" value="named" checked onchange="tsModeSw()"> 勾选员工姓名</label>
@@ -809,6 +819,12 @@ async function tsOpen() {
   ov.addEventListener('click', ev => { if (ev.target === ov) ov.remove(); });
   document.body.appendChild(ov);
 }
+function tsRangeSw() {
+  const r = document.getElementById('tsRange').value;
+  document.getElementById('tsDateWrap').style.display = r === 'nodate' ? 'none' : '';
+  document.getElementById('tsDaysWrap').style.display = r === 'days' ? '' : 'none';
+  document.getElementById('tsDateLbl').textContent = r === 'week' ? '日期（该周内任意一天）' : r === 'days' ? '起始日期' : '日期';
+}
 function tsModeSw() {
   const named = document.querySelector('input[name="tsMode"]:checked').value === 'named';
   document.getElementById('tsNamedBox').style.display = named ? '' : 'none';
@@ -816,7 +832,22 @@ function tsModeSw() {
 }
 function tsPrint() {
   const named = document.querySelector('input[name="tsMode"]:checked').value === 'named';
-  const date = document.getElementById('tsDate').value;
+  // 打印范围 → 日期列表 (null = 日期留白)
+  const range = document.getElementById('tsRange').value;
+  const dateVal = document.getElementById('tsDate').value;
+  let dates = [];
+  if (range === 'nodate') dates = [null];
+  else if (!dateVal) { showToast('请选择日期', 'error'); return; }
+  else if (range === 'day') dates = [dateVal];
+  else if (range === 'week') {
+    const d0 = new Date(dateVal + 'T12:00:00Z');
+    const mon = new Date(d0.getTime() - ((d0.getUTCDay() + 6) % 7) * 86400000);
+    for (let i = 0; i < 7; i++) dates.push(new Date(mon.getTime() + i * 86400000).toISOString().slice(0, 10));
+  } else {
+    const nD = Math.min(14, Math.max(1, parseInt(document.getElementById('tsDays').value) || 1));
+    const d0 = new Date(dateVal + 'T12:00:00Z');
+    for (let i = 0; i < nD; i++) dates.push(new Date(d0.getTime() + i * 86400000).toISOString().slice(0, 10));
+  }
   let rows;
   if (named) {
     rows = [...document.querySelectorAll('.ts-emp:checked')].map(c => ({ name: c.dataset.name, code: c.dataset.code }));
@@ -830,12 +861,7 @@ function tsPrint() {
   // 默认整页铺满: 不足一页的补空白行到满页
   const PAGE_ROWS = 30;
   while (rows.length < PAGE_ROWS) rows.push({ name: '', code: '' });
-  // 日期显示: 2026/08/31 周一 (中间加空格)
-  let dateDisp = '';
-  if (date) {
-    const dd = new Date(date + 'T12:00:00Z');
-    dateDisp = dd.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' }) + ' ' + dd.toLocaleDateString('en-US', { weekday: 'short' });
-  }
+  const fmtD = dv => { if (!dv) return ''; const dd = new Date(dv + 'T12:00:00Z'); return dd.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' }) + ' ' + dd.toLocaleDateString('en-US', { weekday: 'short' }); };
   const withId = named; // 空白表不要工号列
   const w = window.open('', '_blank');
   if (!w) { showToast('浏览器拦截了打印窗口，请允许弹出窗口', 'error'); return; }
@@ -850,6 +876,18 @@ function tsPrint() {
     { w: '11%', h: 'Out / Salida' },
     { w: '16%', h: 'Signature / Firma' }
   ];
+  const tableHtml = `<table>
+      <colgroup>${cols.map(c => `<col style="width:${c.w}">`).join('')}</colgroup>
+      <thead><tr>${cols.map(c => `<th>${c.h}</th>`).join('')}</tr></thead>
+      <tbody>
+      ${rows.map((r, i) => `<tr><td>${i + 1}</td><td class="nm">${esc(r.name) || '&nbsp;'}</td>${withId ? `<td>${esc(String(r.code || '').replace(/^[^0-9]*/, ''))}</td>` : ''}<td></td><td></td><td></td><td></td><td></td></tr>`).join('')}
+      </tbody>
+    </table>`;
+  const pages = dates.map(dv => `<div class="sheet">
+    <h1>Employee Time Sheet · Hoja de Asistencia</h1>
+    <div class="meta"><span></span><span><b>Date / Fecha:</b> ${fmtD(dv) || '____________________'}</span></div>
+    ${tableHtml}
+  </div>`).join('');
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>打卡表 Time Sheet</title><style>
     *{box-sizing:border-box}
     body{font-family:Arial,'Microsoft YaHei',sans-serif;margin:24px;color:#111}
@@ -861,18 +899,11 @@ function tsPrint() {
     th{background:#f2f3f5;font-weight:700;font-size:10.8px}
     td.nm{text-align:left;padding-left:8px;font-size:12px}
     tbody td{color:#333}
-    .foot{display:flex;justify-content:space-between;margin-top:22px;font-size:12.5px}
+    .sheet{page-break-after:always}
+    .sheet:last-child{page-break-after:auto}
     @media print{@page{margin:11mm}}
   </style></head><body>
-    <h1>Employee Time Sheet · Hoja de Asistencia</h1>
-    <div class="meta"><span></span><span><b>Date / Fecha:</b> ${dateDisp || '____________________'}</span></div>
-    <table>
-      <colgroup>${cols.map(c => `<col style="width:${c.w}">`).join('')}</colgroup>
-      <thead><tr>${cols.map(c => `<th>${c.h}</th>`).join('')}</tr></thead>
-      <tbody>
-      ${rows.map((r, i) => `<tr><td>${i + 1}</td><td class="nm">${esc(r.name) || '&nbsp;'}</td>${withId ? `<td>${esc(String(r.code || '').replace(/^[^0-9]*/, ''))}</td>` : ''}<td></td><td></td><td></td><td></td><td></td></tr>`).join('')}
-      </tbody>
-    </table>
+    ${pages}
     <script>setTimeout(function(){window.print()},300)<\/script>
   </body></html>`);
   w.document.close();
