@@ -795,6 +795,8 @@ try { db.exec(`ALTER TABLE time_entries ADD COLUMN work_date TEXT DEFAULT ''`); 
 // 仓库自动打卡班型: 每天几次休息 (0=不休息一天2次卡, 1=4次卡, 2=6次卡...),
 // 自动归类后打卡次数 != 2+2*休息次数 → ⚠ 待复核
 try { db.exec(`ALTER TABLE job_sites ADD COLUMN kiosk_breaks_per_day INTEGER DEFAULT 1`); } catch(e) {}
+// 客户账号分权限: JSON {punch,relabel,position,kiosk,docs} 0/1; 空 = 全部允许(老账号)
+try { db.exec(`ALTER TABLE customer_accounts ADD COLUMN perms TEXT DEFAULT ''`); } catch(e) {}
 // 打卡时间编辑历史: 每次改动(后台/仓库方/系统)记谁在什么时候把什么从A改到B
 db.exec(`CREATE TABLE IF NOT EXISTS time_entry_edits (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -14873,7 +14875,17 @@ app.post('/api/admin/worker-accounts/:id/resend-verify', requireAdmin, requireRo
 
 // ─── Customer Accounts (admin manages) ───
 app.get('/api/admin/customer-accounts', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
-  res.json(db.prepare('SELECT id, company_name, contact_name, contact_first_name, contact_last_name, email, phone, active, partner_id, ein, staffing_needs, approval_status, created_at FROM customer_accounts ORDER BY id DESC').all());
+  res.json(db.prepare('SELECT id, company_name, contact_name, contact_first_name, contact_last_name, email, phone, active, partner_id, ein, staffing_needs, approval_status, created_at, perms FROM customer_accounts ORDER BY id DESC').all());
+});
+
+// 客户账号权限勾选 (admin): {punch, relabel, position, kiosk, docs} → 存 perms JSON
+app.put('/api/admin/customer-accounts/:id/perms', requireAdmin, requireRole('admin'), (req, res) => {
+  const p = (req.body || {}).perms || {};
+  const clean = {};
+  for (const k of CUST_PERM_KEYS) clean[k] = p[k] ? 1 : 0;
+  const r = db.prepare('UPDATE customer_accounts SET perms=? WHERE id=?').run(JSON.stringify(clean), req.params.id);
+  if (!r.changes) return res.status(404).json({ error: '账号不存在' });
+  res.json({ ok: 1, perms: clean });
 });
 
 app.post('/api/admin/customer-accounts', requireAdmin, requireRole('admin'), (req, res) => {
@@ -26897,6 +26909,22 @@ app.post('/api/admin/partner-photo-access/:id', requireAdmin, requireRole('admin
 });
 
 // 该客户(partner)名下的启用仓库
+// 客户账号权限: punch=一键打卡 relabel=改打卡含义 position=改职位 kiosk=打卡机设置 docs=看工人证件
+const CUST_PERM_KEYS = ['punch', 'relabel', 'position', 'kiosk', 'docs'];
+function _custPerm(req, key) {
+  try {
+    const row = db.prepare('SELECT perms FROM customer_accounts WHERE id=?').get(req.customerId);
+    const s = row ? String(row.perms || '').trim() : '';
+    if (!s) return true; // 未配置 = 全部允许
+    const p = JSON.parse(s);
+    return !!p[key];
+  } catch (_) { return true; }
+}
+function _custNeed(req, res, key) {
+  if (_custPerm(req, key)) return true;
+  res.status(403).json({ error: '该账号没有此操作权限（受限/只读账号），请联系管理员开通' });
+  return false;
+}
 function _customerSites(pid) {
   if (!pid) return [];
   return db.prepare('SELECT id, name, code, address, timezone, partner_id, partner_ids, kiosk_punch_mode, kiosk_breaks_per_day FROM job_sites WHERE active=1').all()
@@ -26986,6 +27014,7 @@ app.get('/api/customer/time-records', requireCustomer, (req, res) => {
 });
 // 客户门户: 设置本公司仓库的打卡机模式 (''=自动, in/out/break_start/break_end=强制分类)
 app.post('/api/customer/kiosk-mode', requireCustomer, (req, res) => {
+  if (!_custNeed(req, res, 'kiosk')) return;
   const pid = req.customerPartnerId;
   const mode = String((req.body || {}).mode || '');
   if (!['', 'in', 'out', 'break_start', 'break_end'].includes(mode)) return res.status(400).json({ error: '无效模式' });
@@ -26997,6 +27026,7 @@ app.post('/api/customer/kiosk-mode', requireCustomer, (req, res) => {
 });
 // 仓库方设置每天几次休息 (决定自动打卡的期望次数 2+2×n; 0=不休息)
 app.post('/api/customer/kiosk-breaks', requireCustomer, (req, res) => {
+  if (!_custNeed(req, res, 'kiosk')) return;
   const pid = req.customerPartnerId;
   const breaks = parseInt((req.body || {}).breaks);
   if (!(breaks >= 0 && breaks <= 4)) return res.status(400).json({ error: '休息次数范围 0~4' });
@@ -27004,11 +27034,14 @@ app.post('/api/customer/kiosk-breaks', requireCustomer, (req, res) => {
   const mine = _customerSites(pid).find(s => s.id === siteId);
   if (!mine) return res.status(403).json({ error: '无权设置该仓库' });
   db.prepare('UPDATE job_sites SET kiosk_breaks_per_day=? WHERE id=?').run(breaks, siteId);
+  // 不休息班型下, 强制休息模式没有意义 → 自动弹回「自动」
+  if (breaks === 0) db.prepare("UPDATE job_sites SET kiosk_punch_mode='' WHERE id=? AND kiosk_punch_mode IN ('break_start','break_end')").run(siteId);
   res.json({ ok: 1, breaks });
 });
 // 客户门户打卡操作: 仓库方把「当前时间」记为 上班/下班/休息开始/休息结束。
 // 以某条本公司仓库的记录为锚点定位员工+仓库, 复用打卡台的 _recordSitePunch 逻辑
 app.post('/api/customer/punch-action', requireCustomer, (req, res) => {
+  if (!_custNeed(req, res, 'punch')) return;
   const pid = req.customerPartnerId;
   const action = String((req.body || {}).action || '');
   if (!['in', 'out', 'break_start', 'break_end'].includes(action)) return res.status(400).json({ error: '无效操作' });
@@ -27117,6 +27150,7 @@ function _entryPunches(entry) {
 // POST /api/customer/time-entries/:id/relabel — 仓库方只能改每个打卡时间点的「含义」
 // (上班/休息开始/休息结束/下班/作废)。时间本身不可改 —— 改时间只有公司有权限的人在后台操作。
 app.post('/api/customer/time-entries/:id/relabel', requireCustomer, (req, res) => {
+  if (!_custNeed(req, res, 'relabel')) return;
   const a = _customerEntryAuth(req, res);
   if (!a) return;
   const { entry, site } = a;
@@ -28011,6 +28045,7 @@ app.post('/api/admin/job-sites/:id/kiosk-breaks', requireAdmin, blockManager, (r
   const s = db.prepare('SELECT id FROM job_sites WHERE id=?').get(req.params.id);
   if (!s) return res.status(404).json({ error: '未找到该仓库' });
   db.prepare('UPDATE job_sites SET kiosk_breaks_per_day=? WHERE id=?').run(breaks, s.id);
+  if (breaks === 0) db.prepare("UPDATE job_sites SET kiosk_punch_mode='' WHERE id=? AND kiosk_punch_mode IN ('break_start','break_end')").run(s.id);
   res.json({ ok: 1, breaks });
 });
 
@@ -28771,7 +28806,9 @@ app.post('/api/customer/login-resend', loginRateLimit, (req, res) => {
 
 app.get('/api/customer/me', requireCustomer, (req, res) => {
   const c = db.prepare('SELECT id, company_name, contact_name, email, phone, partner_id, active FROM customer_accounts WHERE id=?').get(req.customerId);
-  res.json(c);
+  const perms = {};
+  for (const k of CUST_PERM_KEYS) perms[k] = _custPerm(req, k);
+  res.json({ ...c, perms });
 });
 
 // 客户门户: 本公司名下的仓库地点列表 (发布用工需求时下拉选择工作地点用)
@@ -28884,6 +28921,7 @@ function _custCollectWorkerDocs(e) {
 }
 app.get('/api/customer/worker-docs/:eid', requireCustomer, (req, res) => {
   try {
+    if (!_custNeed(req, res, 'docs')) return;
     const e = _custWorkerAuth(req, res);
     if (!e) return;
     const docs = _custCollectWorkerDocs(e);
@@ -28896,6 +28934,7 @@ app.get('/api/customer/worker-docs/:eid', requireCustomer, (req, res) => {
 });
 app.get('/api/customer/worker-docs/:eid/file/:docId', requireCustomer, async (req, res) => {
   try {
+    if (!_custNeed(req, res, 'docs')) return;
     const e = _custWorkerAuth(req, res);
     if (!e) return;
     // 重新匹配一遍再取, 保证请求的证件确实属于该工人 (防越权翻别人证件)
@@ -28928,6 +28967,7 @@ app.get('/api/customer/worker-docs/:eid/file/:docId', requireCustomer, async (re
 });
 // 仓库方给工人填写/修改职位 (显示在工人列表和后台员工档案)
 app.post('/api/customer/worker-position/:eid', requireCustomer, (req, res) => {
+  if (!_custNeed(req, res, 'position')) return;
   const e = _custWorkerAuth(req, res);
   if (!e) return;
   const pos = String((req.body || {}).position || '').trim().slice(0, 60);

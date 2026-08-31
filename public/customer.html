@@ -586,6 +586,7 @@ async function showApp() {
   try { document.cookie = 'pa_customer=' + C_TOKEN + '; path=/; max-age=86400; SameSite=Lax'; } catch (_) {}
   const me = await cApi('/me');
   if (!me) return;
+  window.C_PERMS = me.perms || null; // 账号权限 (null=全部允许)
   document.getElementById('customerNameDisplay').textContent = me.company_name;
   document.getElementById('customerNameDisplayMobile').textContent = me.company_name;
   loadMySiteOptions();
@@ -659,11 +660,20 @@ function trRenderKioskMode(sites) {
   if (!sites || !sites.length) { box.innerHTML = ''; return; }
   box.innerHTML = sites.map(s => {
     const cur = s.kiosk_punch_mode || '';
+    const brkN = s.kiosk_breaks_per_day == null ? 1 : s.kiosk_breaks_per_day;
+    // 不休息班型: 模式选项里不出现休息开始/结束
+    const modes = TR_MODES.filter(([v]) => brkN > 0 || (v !== 'break_start' && v !== 'break_end'));
+    if (!cCan('kiosk')) {
+      const curL = (TR_MODES.find(([v]) => v === cur) || TR_MODES[0])[1];
+      return `<div style="padding:.55rem .8rem;background:var(--gray-100);border:1px solid var(--gray-200);border-radius:10px;margin-bottom:.4rem;font-size:.85rem">
+        🖥 <b>${esc(s.name)}</b> 打卡机模式：<b>${curL}</b> · 班型：一天 ${brkN === 0 ? '不休息（2 次卡）' : brkN + ' 次休息（' + (2 + 2 * brkN) + ' 次卡）'}
+        <span style="color:var(--gray-400);font-size:.78rem">（只读账号，无修改权限）</span></div>`;
+    }
     return `
     <div style="padding:.55rem .8rem;background:${cur ? '#FFF7ED' : 'var(--gray-100)'};border:1px solid ${cur ? '#fed7aa' : 'var(--gray-200)'};border-radius:10px;margin-bottom:.4rem;font-size:.85rem">
       <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
         <span style="margin-right:.2rem">🖥 <b>${esc(s.name)}</b> 打卡机模式：</span>
-        ${TR_MODES.map(([v, l]) => {
+        ${modes.map(([v, l]) => {
           const on = cur === v, onBg = v ? 'var(--orange)' : 'var(--sky)';
           return `<button type="button" onclick="trSetKioskMode(${s.id}, '${v}', '${l}', ${on ? 1 : 0})"
             style="padding:.34rem .7rem;border-radius:8px;font-size:.82rem;cursor:${on ? 'default' : 'pointer'};border:1px solid ${on ? onBg : 'var(--gray-200)'};background:${on ? onBg : '#fff'};color:${on ? '#fff' : 'var(--gray-500)'};font-weight:${on ? '700' : '400'};white-space:nowrap">${on ? '✓ ' : ''}${l}</button>`;
@@ -954,6 +964,9 @@ function wkGoRecords(id, name) {
   trAll();
 }
 function trClearEmpFilter() { _trEmpFilter = null; loadTimeRecords(); }
+// 账号权限: 未加载/未配置时默认允许
+function cCan(k) { return !window.C_PERMS || !!window.C_PERMS[k]; }
+let _trSiteBrk = {};
 async function loadTimeRecords() {
   const tb = document.getElementById('trTable');
   tb.innerHTML = '<tr><td colspan="10" style="color:var(--gray-400)">加载中…</td></tr>';
@@ -972,7 +985,7 @@ async function loadTimeRecords() {
   }
   _trSiteTz = {}; const siteName = {};
   window._trSites = d.sites || []; // 打印打卡表的仓库下拉用
-  (d.sites || []).forEach(s => { _trSiteTz[s.id] = s.timezone; siteName[s.id] = s.name + (s.code ? ` (${s.code})` : ''); });
+  (d.sites || []).forEach(s => { _trSiteTz[s.id] = s.timezone; _trSiteBrk[s.id] = s.kiosk_breaks_per_day == null ? 1 : s.kiosk_breaks_per_day; siteName[s.id] = s.name + (s.code ? ` (${s.code})` : ''); });
   // 只看某个工人 (从工人列表「打卡记录」跳过来)
   if (_trEmpFilter) d = { ...d, entries: (d.entries || []).filter(e => e.emp_db_id === _trEmpFilter.id) };
   trRenderKioskMode(d.sites || []);
@@ -1022,10 +1035,12 @@ async function loadTimeRecords() {
       `<button class="tr-act" style="border-color:${color};color:${color}" onclick="trPunchAction(${e.entry_id},'${act}','${label}','${esc(e.name)}')">${label}</button>`;
     let actTd = '<td>—</td>';
     if (e.entry_id && e.site_id) {
-      const extra = `<button class="tr-act" style="border-color:#4A6CF7;color:#4A6CF7" onclick="trEditOpen(${e.entry_id})" title="时间不可改，只能改每个打卡时间点的含义（上班/休息/下班/作废）">✎ 改含义</button>` +
+      const noBreaks = _trSiteBrk[e.site_id] === 0; // 不休息班型: 不出现休息按钮
+      const extra = (cCan('relabel') ? `<button class="tr-act" style="border-color:#4A6CF7;color:#4A6CF7" onclick="trEditOpen(${e.entry_id})" title="时间不可改，只能改每个打卡时间点的含义（上班/休息/下班/作废）">✎ 改含义</button>` : '') +
         `<button class="tr-act" style="border-color:#CBD2DA;color:#667085" onclick="trHistOpen(${e.entry_id})" title="谁在什么时候改过什么">历史${e.edit_count ? '·' + e.edit_count : ''}</button>`;
-      if (isOpen && e.on_break) actTd = `<td>${actBtn('结束休息', 'break_end', '#2D9D78')}${actBtn('下班', 'out', '#E63946')}${extra}</td>`;
-      else if (isOpen) actTd = `<td>${actBtn('开始休息', 'break_start', '#F5A623')}${actBtn('下班', 'out', '#E63946')}${extra}</td>`;
+      if (!cCan('punch')) actTd = `<td>${extra || '—'}</td>`;
+      else if (isOpen && e.on_break) actTd = `<td>${actBtn('结束休息', 'break_end', '#2D9D78')}${actBtn('下班', 'out', '#E63946')}${extra}</td>`;
+      else if (isOpen) actTd = `<td>${noBreaks ? '' : actBtn('开始休息', 'break_start', '#F5A623')}${actBtn('下班', 'out', '#E63946')}${extra}</td>`;
       else actTd = `<td>${actBtn('上班', 'in', '#2D9D78')}${extra}</td>`;
     }
     return dayHead + `<tr>
@@ -1258,12 +1273,12 @@ async function loadWorkers() {
   document.getElementById('workersTable').innerHTML = workers.length ? workers.map(w=>`<tr>
     <td style="font-weight:600;white-space:nowrap">${esc(w.first_name||'')} ${esc(w.last_name||'')}</td>
     <td style="white-space:nowrap">${esc(w.emp_code||'')||'—'}</td>
-    <td>${w.id ? `<a href="javascript:void(0)" onclick="wkPosEdit(${w.id}, '${esc(w.position||'').replace(/'/g,"&#39;")}')" title="点击填写/修改职位" style="text-decoration:none">${esc(w.position||'') || '<span style="color:var(--gray-400)">✎ 填写</span>'}</a>` : (esc(w.position||'')||'—')}</td>
+    <td>${w.id && cCan('position') ? `<a href="javascript:void(0)" onclick="wkPosEdit(${w.id}, '${esc(w.position||'').replace(/'/g,"&#39;")}')" title="点击填写/修改职位" style="text-decoration:none">${esc(w.position||'') || '<span style="color:var(--gray-400)">✎ 填写</span>'}</a>` : (esc(w.position||'')||'—')}</td>
     <td style="white-space:nowrap">${esc(w.phone||'')||'—'}</td>
     <td>${esc(w.email||'')||'—'}</td>
     <td style="font-size:.82rem;color:var(--gray-500)">${esc(w.address||'')||'—'}</td>
     <td style="white-space:nowrap">${w.punch_days ? `${w.punch_days} 天 · <b>${(w.total_hours || 0).toFixed(1)}h</b>` : (w.assign_status ? '派工·' + esc(w.assign_status) : '—')}</td>
-    <td style="white-space:nowrap">${w.id ? `<button class="tr-act" style="border-color:var(--blue);color:var(--blue)" onclick="wkCardOpen(${w.id})">🪪 工卡</button><button class="tr-act" style="border-color:#2D9D78;color:#2D9D78" onclick="wkGoRecords(${w.id}, '${esc((w.first_name||'')+' '+(w.last_name||'')).replace(/'/g,"&#39;")}')" title="查看该工人的全部打卡记录和总工时">📋 打卡记录</button>` : '—'}</td>
+    <td style="white-space:nowrap">${w.id ? `${cCan('docs') ? `<button class="tr-act" style="border-color:var(--blue);color:var(--blue)" onclick="wkCardOpen(${w.id})">🪪 工卡</button>` : ''}<button class="tr-act" style="border-color:#2D9D78;color:#2D9D78" onclick="wkGoRecords(${w.id}, '${esc((w.first_name||'')+' '+(w.last_name||'')).replace(/'/g,"&#39;")}')" title="查看该工人的全部打卡记录和总工时">📋 打卡记录</button>` : '—'}</td>
   </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无派遣工人信息</td></tr>';
 }
 

@@ -18326,7 +18326,7 @@ function renderTimeKioskMode() {
     <div style="padding:.55rem .8rem;background:${cur ? '#FFF7ED' : 'var(--white)'};border:1px solid ${cur ? '#fed7aa' : 'var(--gray-200)'};border-radius:10px;margin-bottom:.5rem;font-size:.85rem">
       <div style="margin-bottom:.45rem">🖥 <b>${esc(s.name)}</b>${s.code?` <span style="color:var(--gray-400)">(${esc(s.code)})</span>`:''}</div>
       <div style="display:flex;gap:.4rem;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px">
-        ${TIME_KIOSK_MODES.map(([v, l]) => {
+        ${TIME_KIOSK_MODES.filter(([v]) => (s.kiosk_breaks_per_day == null ? 1 : s.kiosk_breaks_per_day) > 0 || (v !== 'break_start' && v !== 'break_end')).map(([v, l]) => {
           const on = cur === v, onBg = v ? 'var(--accent)' : 'var(--green)';
           return `<button type="button" onclick="timeSetKioskMode(${s.id}, '${v}', '${l}', ${on ? 1 : 0})"
             style="flex-shrink:0;padding:.34rem .7rem;border-radius:8px;font-size:.82rem;cursor:${on ? 'default' : 'pointer'};border:1px solid ${on ? onBg : 'var(--gray-200)'};background:${on ? onBg : 'var(--white)'};color:${on ? '#fff' : 'var(--gray-600)'};font-weight:${on ? '700' : '400'};white-space:nowrap">${on ? '✓ ' : ''}${l}</button>`;
@@ -27685,11 +27685,51 @@ async function loadCustomerAccounts() {
         ${c.approval_status==='approved'?(c.active?`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="suspendCustomerAccount(${c.id},false)">暂停</button>`:`<button class="btn btn-sm btn-green" onclick="suspendCustomerAccount(${c.id},true)">恢复</button>`):''}
         ${c.approval_status!=='pending'?`<button class="btn btn-sm btn-blue" onclick="openResetPwdModal('customer',${c.id},'${esc(c.company_name)}')">改密码</button>`:''}
         <button class="btn btn-sm" onclick="custDetailOpen(${c.id})" title="注册时填写的全部信息">详情</button>
+        <button class="btn btn-sm" style="background:#eef4ff;color:#3b5bdb;border:1px solid #c7d7fe" onclick="custPermsOpen(${c.id})" title="这个账号能做什么（不勾=只读）">权限</button>
         <button class="btn btn-sm" onclick="editCustomerAccount(${c.id})">编辑</button>
         <button class="btn btn-sm btn-red" onclick="deleteCustomerAccount(${c.id},'${esc(c.company_name)}')">删除</button>
       </div>
     </td>
   </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无客户账户</td></tr>';
+}
+
+// 🔑 客户账号权限勾选: 不勾的项该账号只能看不能改
+const CUST_PERM_DEFS = [
+  ['punch', '一键打卡（上班/下班/休息按钮）'],
+  ['relabel', '改打卡含义（上班/休息/下班/作废）'],
+  ['position', '修改员工职位'],
+  ['kiosk', '打卡机模式 / 班型设置'],
+  ['docs', '查看工人证件（工卡 EAD/SSN）']
+];
+function custPermsOpen(id) {
+  const c = (window._custAccRows || {})[id];
+  if (!c) return;
+  let cur = null;
+  try { cur = c.perms ? JSON.parse(c.perms) : null; } catch (_) {}
+  const on = k => cur == null ? true : !!cur[k]; // 未配置 = 全部允许
+  const ov = document.createElement('div');
+  ov.className = 'modal-bg show';
+  ov.innerHTML = `<div class="modal" style="max-width:430px;padding:1.4rem 1.6rem">
+    <h2 style="margin-bottom:.3rem;font-size:1.02rem">🔑 账号权限 · ${esc(c.company_name)}</h2>
+    <p style="font-size:.8rem;color:var(--gray-400);margin-bottom:.8rem">${esc(c.email)} · 勾选该账号能做的操作，全不勾 = 只读账号（只能看，不能改）</p>
+    ${CUST_PERM_DEFS.map(([k, l]) => `<label style="display:flex;align-items:center;gap:.55rem;padding:.42rem .2rem;cursor:pointer;border-bottom:1px solid var(--gray-100)">
+      <input type="checkbox" class="cperm" value="${k}"${on(k) ? ' checked' : ''}><span>${l}</span></label>`).join('')}
+    <div style="display:flex;gap:.6rem;justify-content:flex-end;margin-top:1rem">
+      <button class="btn btn-outline" onclick="this.closest('.modal-bg').remove()">取消</button>
+      <button class="btn" onclick="custPermsSave(${id}, this)">保存</button>
+    </div></div>`;
+  ov.addEventListener('click', ev => { if (ev.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+}
+async function custPermsSave(id, btn) {
+  const ov = btn.closest('.modal-bg');
+  const perms = {};
+  ov.querySelectorAll('.cperm').forEach(c => perms[c.value] = c.checked ? 1 : 0);
+  const r = await api(`/admin/customer-accounts/${id}/perms`, { method: 'PUT', body: JSON.stringify({ perms }) });
+  if (!r || r.error) { showToast((r && r.error) || '保存失败', 'error'); return; }
+  ov.remove();
+  showToast('✅ 权限已保存');
+  loadCustomerAccounts();
 }
 
 // 📋 企业注册时填写的全部信息
