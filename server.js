@@ -28683,9 +28683,60 @@ app.post('/api/customer/login', loginRateLimit, (req, res) => {
   const c = (cAny && cAny.active && verifyPassword(password, cAny.salt, cAny.password_hash)) ? cAny : null;
   if (!c)
     return res.status(401).json({ error: '邮箱/电话或密码错误 / Invalid email/phone or password' });
+  // 防信息泄露: 客户门户每次登录都必须短信验证码二次验证 (门户能看到工人电话/地址/工卡)
+  _custMfaGC();
+  const mfaDigits = String(c.phone || '').replace(/\D/g, '');
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const mfaToken = crypto.randomBytes(24).toString('hex');
+  let via = '', hint = '';
+  if (mfaDigits.length >= 10) {
+    via = 'sms'; hint = '尾号 ' + mfaDigits.slice(-4);
+    sendSMSWithDetail(c.phone, `[Prime Anchor Point LLC] Customer portal login code: ${code} (valid 10 min). Do not share.`)
+      .then(r2 => { if (!r2 || !r2.ok) console.error('[CustMFA] SMS 发送失败:', c.id, (r2 && (r2.error || r2.code)) || ''); })
+      .catch(e2 => console.error('[CustMFA] SMS error:', e2.message));
+  } else if (c.email) {
+    // 账号没登记手机号时兜底走邮箱, 避免锁死老账号
+    via = 'email'; hint = String(c.email).replace(/^(..).*(@.*)$/, '$1***$2');
+    sendEmail(c.email, 'Prime Anchor 客户门户登录验证码', `您的登录验证码: ${code}（10 分钟内有效）。如非本人操作请忽略。`).catch(e2 => console.error('[CustMFA] email error:', e2.message));
+  } else {
+    return res.status(403).json({ error: '账号未登记手机号，无法接收登录验证码，请联系 Prime Anchor 添加手机号' });
+  }
+  _custMfa.set(mfaToken, { customerId: c.id, code, expires: Date.now() + 10 * 60 * 1000, attempts: 0, lastSent: Date.now(), via, hint, phone: c.phone || '', email: c.email || '' });
+  console.log(`[CustMFA] login code for account ${c.id} (${via}): ${code}`);
+  res.json({ mfa_required: true, mfa_token: mfaToken, via, hint });
+});
+
+// 客户门户登录二次验证: 验证码 → 正式会话
+const _custMfa = new Map();
+function _custMfaGC() { const now = Date.now(); for (const [k, v] of _custMfa) if (v.expires < now) _custMfa.delete(k); }
+function _custFinishLogin(res, customerId) {
+  const c = db.prepare('SELECT * FROM customer_accounts WHERE id=?').get(customerId);
+  if (!c || !c.active) return res.status(401).json({ error: '账号不可用' });
   const token = crypto.randomBytes(32).toString('hex');
   db.prepare('INSERT INTO customer_sessions (token, customer_id, partner_id, created_at) VALUES (?,?,?,?)').run(token, c.id, c.partner_id, Date.now());
   res.json({ token, company_name: c.company_name });
+}
+app.post('/api/customer/login-verify', loginRateLimit, (req, res) => {
+  const m = _custMfa.get(String((req.body || {}).mfa_token || ''));
+  if (!m || m.expires < Date.now()) return res.status(401).json({ error: '验证码已过期，请重新登录' });
+  m.attempts++;
+  if (m.attempts > 6) { _custMfa.delete(String(req.body.mfa_token)); return res.status(429).json({ error: '尝试次数过多，请重新登录' }); }
+  if (String((req.body || {}).code || '').trim() !== m.code) return res.status(401).json({ error: '验证码错误' });
+  _custMfa.delete(String(req.body.mfa_token));
+  _custFinishLogin(res, m.customerId);
+});
+app.post('/api/customer/login-resend', loginRateLimit, (req, res) => {
+  const m = _custMfa.get(String((req.body || {}).mfa_token || ''));
+  if (!m || m.expires < Date.now()) return res.status(401).json({ error: '会话已过期，请重新登录' });
+  if (Date.now() - m.lastSent < 45 * 1000) return res.status(429).json({ error: '发送太频繁，请稍等再试' });
+  m.lastSent = Date.now();
+  if (m.via === 'sms') {
+    sendSMSWithDetail(m.phone, `[Prime Anchor Point LLC] Customer portal login code: ${m.code} (valid 10 min). Do not share.`)
+      .catch(e2 => console.error('[CustMFA] resend error:', e2.message));
+  } else {
+    sendEmail(m.email, 'Prime Anchor 客户门户登录验证码', `您的登录验证码: ${m.code}（10 分钟内有效）。`).catch(() => {});
+  }
+  res.json({ ok: 1 });
 });
 
 app.get('/api/customer/me', requireCustomer, (req, res) => {
