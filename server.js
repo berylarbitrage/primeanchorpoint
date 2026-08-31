@@ -28811,24 +28811,97 @@ app.get('/api/customer/my-workers', requireCustomer, (req, res) => {
   res.json(out);
 });
 
-// 工卡: 姓名+员工号+职位+打卡二维码 (扫码即在打卡台打卡)。只能看近90天在本公司仓库打过卡的工人。
-app.get('/api/customer/worker-card/:eid', requireCustomer, async (req, res) => {
+// 「工卡」= 入职填表时上传的证件 (EAD/SSN卡/驾照等), 仓库方可查看。
+// 授权: 只能看近90天在本公司仓库打过卡的工人。
+const CUST_DOC_LABEL = {
+  passport: '护照 Passport', drivers_license: '驾照 Driver License', state_id: '州ID State ID',
+  green_card: '绿卡 Green Card', ead_card: 'EAD 工卡', visa: '签证 Visa', ssn_card: 'SSN 卡',
+  itin_letter: 'ITIN 信函', other: '其他证件', ssn_front: 'SSN 卡·正面', ssn_back: 'SSN 卡·反面',
+  ead_front: 'EAD 工卡·正面', ead_back: 'EAD 工卡·反面', i9: 'I-9'
+};
+function _custWorkerAuth(req, res) {
+  const pid = req.customerPartnerId;
+  const eid = parseInt(req.params.eid);
+  if (!pid || !eid) { res.status(403).json({ error: '无权限' }); return null; }
+  const ids = _customerSites(pid).map(s => s.id);
+  if (!ids.length) { res.status(403).json({ error: '无权限' }); return null; }
+  const scope = _customerEntryScope(pid, ids);
+  const ok = db.prepare(`SELECT 1 FROM time_entries t WHERE ${scope.sql} AND t.employee_id=? AND DATE(t.clock_in) >= DATE('now','-90 day') LIMIT 1`).get(...scope.params, eid);
+  if (!ok) { res.status(403).json({ error: '只能查看在贵公司仓库打过卡的工人' }); return null; }
+  const e = db.prepare('SELECT * FROM employees WHERE id=?').get(eid);
+  if (!e) { res.status(404).json({ error: '未找到该工人' }); return null; }
+  return e;
+}
+// 收集一个工人的全部证件: 四栏位匹配器 (SSN/EAD 最优来源) + 申请表里其余类型
+// (ead_card/ssn_card/驾照/护照等) 全部补进来
+function _custCollectWorkerDocs(e) {
+  const picked = _makeEmpDocMatcher()(e);
+  const have = new Set(picked.map(d => String(d.id)));
+  const p10 = String(e.phone || '').replace(/\D/g, '').slice(-10);
+  const em = String(e.email || '').trim().toLowerCase();
+  let subIds = [];
   try {
-    const pid = req.customerPartnerId;
-    const eid = parseInt(req.params.eid);
-    if (!pid || !eid) return res.status(403).json({ error: '无权限' });
-    const ids = _customerSites(pid).map(s => s.id);
-    if (!ids.length) return res.status(403).json({ error: '无权限' });
-    const scope = _customerEntryScope(pid, ids);
-    const ok = db.prepare(`SELECT 1 FROM time_entries t WHERE ${scope.sql} AND t.employee_id=? AND DATE(t.clock_in) >= DATE('now','-90 day') LIMIT 1`).get(...scope.params, eid);
-    if (!ok) return res.status(403).json({ error: '只能查看在贵公司仓库打过卡的工人工卡' });
-    const e = db.prepare('SELECT id, first_name, last_name, employee_id, position, timeclock_code FROM employees WHERE id=?').get(eid);
-    if (!e) return res.status(404).json({ error: '未找到该工人' });
-    let code = e.timeclock_code;
-    if (!code) { code = _genTimeclockCode(); db.prepare('UPDATE employees SET timeclock_code=? WHERE id=?').run(code, e.id); }
-    const qr = await QRCode.toDataURL(KIOSK_QR_PREFIX + code, { width: 320, margin: 1 });
-    res.json({ name: [e.first_name, e.last_name].filter(Boolean).join(' ') || '—', emp_code: e.employee_id || '', position: e.position || '', qr_data_url: qr });
+    subIds = db.prepare("SELECT id FROM applicant_submissions WHERE employee_id=? OR (?<>'' AND phone10(phone)=?) OR (?<>'' AND LOWER(TRIM(email))=?)")
+      .all(e.id, p10, p10, em, em).map(r => r.id);
+  } catch (_) {}
+  if (subIds.length) {
+    const rows = db.prepare(`SELECT id, doc_type, file_path, file_name FROM applicant_docs
+      WHERE submission_id IN (${subIds.map(() => '?').join(',')}) AND doc_type NOT IN ('ssn_front','ssn_back','ead_front','ead_back') ORDER BY id DESC`).all(...subIds);
+    for (const r of rows) if (!have.has(String(r.id))) picked.push(r);
+  }
+  return picked;
+}
+app.get('/api/customer/worker-docs/:eid', requireCustomer, (req, res) => {
+  try {
+    const e = _custWorkerAuth(req, res);
+    if (!e) return;
+    const docs = _custCollectWorkerDocs(e);
+    res.json({
+      name: [e.first_name, e.last_name].filter(Boolean).join(' ') || '—',
+      emp_code: e.employee_id || '', position: e.position || '',
+      docs: docs.map(d => ({ id: String(d.id), doc_type: d.doc_type || 'other', label: CUST_DOC_LABEL[d.doc_type] || (d.doc_type || '证件'), file_name: d.file_name || '' }))
+    });
   } catch (e2) { res.status(500).json({ error: e2.message }); }
+});
+app.get('/api/customer/worker-docs/:eid/file/:docId', requireCustomer, async (req, res) => {
+  try {
+    const e = _custWorkerAuth(req, res);
+    if (!e) return;
+    // 重新匹配一遍再取, 保证请求的证件确实属于该工人 (防越权翻别人证件)
+    const d = _custCollectWorkerDocs(e).find(x => String(x.id) === String(req.params.docId));
+    if (!d) return res.status(404).json({ error: '证件不存在或不属于该工人' });
+    let key = String(d.file_path || '');
+    if (!(await storage.exists(key))) key = storage.keyForPath(d.file_path);
+    if (!(await storage.exists(key))) return res.status(404).json({ error: '文件不存在' });
+    // iPhone HEIC 浏览器不能显示 → 转 JPEG (缓存为 <key>.conv.jpg)
+    const extH = path.extname(key).toLowerCase();
+    if (extH === '.heic' || extH === '.heif') {
+      try {
+        const convKey = key + '.conv.jpg';
+        if (!(await storage.exists(convKey))) {
+          const heicConvert = require('heic-convert');
+          const buf0 = decryptFileBuf(await storage.getBuffer(key));
+          const out = await heicConvert({ buffer: buf0, format: 'JPEG', quality: 0.9 });
+          await storage.putObject(convKey, encryptFileBuf(Buffer.from(out)), { contentType: 'application/octet-stream' });
+        }
+        key = convKey;
+      } catch (e3) { console.error('[CustDoc HEIC]', e3.message); }
+    }
+    const buf = decryptFileBuf(await storage.getBuffer(key));
+    const ext = /\.conv\.jpg$/.test(key) ? '.jpg' : path.extname(key).toLowerCase();
+    const mimeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp', '.pdf': 'application/pdf' };
+    res.setHeader('Content-Type', _sniffImageMime(buf) || mimeMap[ext] || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(buf);
+  } catch (e2) { res.status(500).json({ error: e2.message }); }
+});
+// 仓库方给工人填写/修改职位 (显示在工人列表和后台员工档案)
+app.post('/api/customer/worker-position/:eid', requireCustomer, (req, res) => {
+  const e = _custWorkerAuth(req, res);
+  if (!e) return;
+  const pos = String((req.body || {}).position || '').trim().slice(0, 60);
+  db.prepare('UPDATE employees SET position=? WHERE id=?').run(pos, e.id);
+  res.json({ ok: 1, position: pos });
 });
 
 // ─── Customer Forgot / Reset Password ───

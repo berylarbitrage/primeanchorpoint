@@ -1213,7 +1213,7 @@ async function loadWorkers() {
   document.getElementById('workersTable').innerHTML = workers.length ? workers.map(w=>`<tr>
     <td style="font-weight:600;white-space:nowrap">${esc(w.first_name||'')} ${esc(w.last_name||'')}</td>
     <td style="white-space:nowrap">${esc(w.emp_code||'')||'—'}</td>
-    <td>${esc(w.position||'')||'—'}</td>
+    <td>${w.id ? `<a href="javascript:void(0)" onclick="wkPosEdit(${w.id}, '${esc(w.position||'').replace(/'/g,"&#39;")}')" title="点击填写/修改职位" style="text-decoration:none">${esc(w.position||'') || '<span style="color:var(--gray-400)">✎ 填写</span>'}</a>` : (esc(w.position||'')||'—')}</td>
     <td style="white-space:nowrap">${esc(w.phone||'')||'—'}</td>
     <td>${esc(w.email||'')||'—'}</td>
     <td style="font-size:.82rem;color:var(--gray-500)">${esc(w.address||'')||'—'}</td>
@@ -1222,40 +1222,62 @@ async function loadWorkers() {
   </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无派遣工人信息</td></tr>';
 }
 
-// 🪪 工卡: 姓名+员工号+职位+打卡二维码, 可直接打印 (工人拿卡在打卡台扫码打卡)
+// 🪪 工卡 = 入职时上传的证件 (EAD/SSN卡/驾照等), 点开逐张查看
 async function wkCardOpen(eid) {
-  const d = await cApi(`/worker-card/${eid}`);
+  const d = await cApi(`/worker-docs/${eid}`);
   if (!d || d.error) { showToast((d && d.error) || '加载失败', 'error'); return; }
-  const card = `<div id="wkCardBox" style="width:280px;margin:0 auto;border:2px solid #0F2B5B;border-radius:14px;overflow:hidden;text-align:center;background:#fff">
-      <div style="background:#0F2B5B;color:#fff;padding:.55rem;font-weight:800;letter-spacing:.05em">PRIME ANCHOR POINT</div>
-      <div style="padding:.9rem .8rem .3rem;font-size:1.25rem;font-weight:800">${esc(d.name)}</div>
-      <div style="color:#555;font-size:.85rem">${esc(d.emp_code)}${d.position ? ' · ' + esc(d.position) : ''}</div>
-      <img src="${d.qr_data_url}" alt="QR" style="width:190px;margin:.5rem 0 .2rem">
-      <div style="font-size:.72rem;color:#888;padding-bottom:.7rem">打卡台扫码打卡 · Scan at time clock</div>
-    </div>`;
   const ov = document.createElement('div');
   ov.className = 'modal-overlay show';
-  ov.innerHTML = `<div class="modal-box" style="max-width:360px;padding:1.3rem 1.4rem">
-    <h2 style="margin-bottom:.8rem">🪪 员工工卡</h2>
-    ${card}
-    <p style="font-size:.75rem;color:#B87400;margin-top:.6rem;text-align:center">二维码等同该员工的打卡密码，请勿外传</p>
-    <div style="display:flex;gap:.6rem;margin-top:.9rem">
-      <button class="modal-btn modal-btn-secondary" style="margin-bottom:0" onclick="this.closest('.modal-overlay').remove()">关闭</button>
-      <button class="modal-btn modal-btn-primary" style="margin-bottom:0" onclick="wkCardPrint()">🖨 打印工卡</button>
-    </div></div>`;
+  const tabs = (d.docs || []).map((doc, i) => `<button class="wkd-tab" data-id="${esc(doc.id)}" style="padding:.35rem .7rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:8px;background:#fff;cursor:pointer;font-size:.82rem;font-family:inherit${i === 0 ? ';border-color:var(--blue);color:var(--blue);font-weight:700' : ''}">${esc(doc.label)}</button>`).join('');
+  ov.innerHTML = `<div class="modal-box" style="max-width:560px;padding:1.3rem 1.4rem">
+    <h2 style="margin-bottom:.2rem">🪪 工卡证件 · ${esc(d.name)}</h2>
+    <p style="color:var(--gray-400);font-size:.82rem;margin-bottom:.7rem">${esc(d.emp_code)}${d.position ? ' · ' + esc(d.position) : ''} · 入职填表时上传的证件</p>
+    ${(d.docs || []).length ? `
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.7rem">${tabs}</div>
+      <div id="wkdView" style="min-height:220px;max-height:56vh;overflow:auto;border:1.5px solid var(--gray-100,#eef1f4);border-radius:10px;display:flex;align-items:center;justify-content:center;background:#fafbfc">
+        <span style="color:var(--gray-400)">加载中…</span></div>`
+      : '<p style="color:var(--gray-400);padding:1.2rem 0;text-align:center">该工人入职时没有上传证件</p>'}
+    <button class="modal-btn modal-btn-secondary" style="margin-top:.9rem;margin-bottom:0" onclick="this.closest('.modal-overlay').remove()">关闭</button></div>`;
   ov.addEventListener('click', ev => { if (ev.target === ov) ov.remove(); });
   document.body.appendChild(ov);
+  const show = async (docId, btn) => {
+    ov.querySelectorAll('.wkd-tab').forEach(b => { b.style.borderColor = 'var(--gray-200,#e2e5ea)'; b.style.color = ''; b.style.fontWeight = ''; });
+    if (btn) { btn.style.borderColor = 'var(--blue)'; btn.style.color = 'var(--blue)'; btn.style.fontWeight = '700'; }
+    const view = ov.querySelector('#wkdView');
+    view.innerHTML = '<span style="color:var(--gray-400)">加载中…</span>';
+    try {
+      const r = await fetch(`/api/customer/worker-docs/${eid}/file/${encodeURIComponent(docId)}`, { headers: { Authorization: 'Bearer ' + C_TOKEN } });
+      if (!r.ok) { const e2 = await r.json().catch(() => ({})); view.innerHTML = `<span style="color:#E63946">${esc(e2.error || '加载失败')}</span>`; return; }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      if ((blob.type || '').includes('pdf')) view.innerHTML = `<iframe src="${url}" style="width:100%;height:52vh;border:none"></iframe>`;
+      else view.innerHTML = `<img src="${url}" style="max-width:100%;max-height:52vh;border-radius:8px">`;
+    } catch (_) { view.innerHTML = '<span style="color:#E63946">加载失败</span>'; }
+  };
+  ov.querySelectorAll('.wkd-tab').forEach(b => b.onclick = () => show(b.dataset.id, b));
+  if ((d.docs || []).length) show(d.docs[0].id, ov.querySelector('.wkd-tab'));
 }
-function wkCardPrint() {
-  const box = document.getElementById('wkCardBox');
-  if (!box) return;
-  const w = window.open('', '_blank');
-  if (!w) { showToast('浏览器拦截了打印窗口，请允许弹出窗口', 'error'); return; }
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>工卡</title><style>
-    body{font-family:Arial,'Microsoft YaHei',sans-serif;display:flex;justify-content:center;padding-top:30px}
-    @media print{@page{margin:10mm}}
-  </style></head><body>${box.outerHTML}<script>setTimeout(function(){window.print()},300)<\/script></body></html>`);
-  w.document.close();
+// ✎ 仓库方直接给工人填写职位
+function wkPosEdit(eid, cur) {
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay show';
+  ov.innerHTML = `<div class="modal-box" style="max-width:330px;padding:1.3rem 1.4rem">
+    <h2 style="margin-bottom:.7rem">✎ 填写职位</h2>
+    <input id="wkPosInp" type="text" maxlength="60" value="${esc(cur || '')}" placeholder="例如 Forklift / Picker / Loader" style="width:100%;padding:.5rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:8px;font-family:inherit" onkeydown="if(event.key==='Enter')this.closest('.modal-box').querySelector('[data-act=ok]').click()">
+    <div style="display:flex;gap:.6rem;margin-top:1rem">
+      <button class="modal-btn modal-btn-secondary" style="margin-bottom:0" onclick="this.closest('.modal-overlay').remove()">取消</button>
+      <button class="modal-btn modal-btn-primary" data-act="ok" style="margin-bottom:0">保存</button>
+    </div></div>`;
+  ov.addEventListener('click', ev => { if (ev.target === ov) ov.remove(); });
+  ov.querySelector('[data-act="ok"]').onclick = async () => {
+    const r = await cApi(`/worker-position/${eid}`, { method: 'POST', body: JSON.stringify({ position: ov.querySelector('#wkPosInp').value }) });
+    if (!r || r.error) { showToast((r && r.error) || '保存失败', 'error'); return; }
+    ov.remove();
+    showToast('✅ 职位已保存');
+    loadWorkers();
+  };
+  document.body.appendChild(ov);
+  ov.querySelector('#wkPosInp').focus();
 }
 
 async function loadProfile() {
