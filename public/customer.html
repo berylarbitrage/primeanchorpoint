@@ -584,26 +584,35 @@ function _trPT(s) {
 }
 function _trFmtD(d, tz) { return d ? d.toLocaleDateString('zh-CN', { timeZone: tz, month: '2-digit', day: '2-digit' }) : '—'; }
 function _trFmtT(d, tz) { return d ? d.toLocaleTimeString('en-GB', { timeZone: tz, hour12: false, hour: '2-digit', minute: '2-digit' }) : '—'; }
-// ── 打卡机模式: 设置后该仓库打卡台上的所有打卡都按选定分类记录 ──
-const TR_MODES = [['', '自动（上班/下班）'], ['in', '全部记为：上班开始'], ['out', '全部记为：上班结束（下班）'], ['break_start', '全部记为：休息开始'], ['break_end', '全部记为：休息结束']];
+// ── 打卡机模式: 一排按钮, 点选后该仓库打卡台从现在起的所有打卡都按选定分类记录 ──
+const TR_MODES = [['', '自动（上班/下班）'], ['in', '上班开始'], ['out', '上班结束（下班）'], ['break_start', '休息开始'], ['break_end', '休息结束']];
 function trRenderKioskMode(sites) {
   const box = document.getElementById('trKioskMode');
   if (!sites || !sites.length) { box.innerHTML = ''; return; }
-  box.innerHTML = sites.map(s => `
-    <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;padding:.55rem .8rem;background:${s.kiosk_punch_mode ? '#FFF7ED' : 'var(--gray-100)'};border:1px solid ${s.kiosk_punch_mode ? '#fed7aa' : 'var(--gray-200)'};border-radius:10px;margin-bottom:.4rem;font-size:.85rem">
-      <span>🖥 <b>${esc(s.name)}</b> 打卡机模式：</span>
-      <select onchange="trSetKioskMode(${s.id}, this)" style="padding:.35rem .5rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.84rem">
-        ${TR_MODES.map(([v, l]) => `<option value="${v}"${(s.kiosk_punch_mode || '') === v ? ' selected' : ''}>${l}</option>`).join('')}
-      </select>
-      ${s.kiosk_punch_mode ? '<span style="color:#b45309;font-size:.78rem">⚠ 非自动模式：打卡机上的每次打卡都按此分类记录，用完记得切回自动</span>' : ''}
-    </div>`).join('');
+  box.innerHTML = sites.map(s => {
+    const cur = s.kiosk_punch_mode || '';
+    return `
+    <div style="padding:.55rem .8rem;background:${cur ? '#FFF7ED' : 'var(--gray-100)'};border:1px solid ${cur ? '#fed7aa' : 'var(--gray-200)'};border-radius:10px;margin-bottom:.4rem;font-size:.85rem">
+      <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
+        <span style="margin-right:.2rem">🖥 <b>${esc(s.name)}</b> 打卡机模式：</span>
+        ${TR_MODES.map(([v, l]) => {
+          const on = cur === v, onBg = v ? 'var(--orange)' : 'var(--sky)';
+          return `<button type="button" onclick="trSetKioskMode(${s.id}, '${v}', '${l}', ${on ? 1 : 0})"
+            style="padding:.34rem .7rem;border-radius:8px;font-size:.82rem;cursor:${on ? 'default' : 'pointer'};border:1px solid ${on ? onBg : 'var(--gray-200)'};background:${on ? onBg : '#fff'};color:${on ? '#fff' : 'var(--gray-500)'};font-weight:${on ? '700' : '400'};white-space:nowrap">${on ? '✓ ' : ''}${l}</button>`;
+        }).join('')}
+      </div>
+      ${cur ? '<div style="color:#b45309;font-size:.78rem;margin-top:.35rem">⚠ 非自动模式：打卡机上的每次打卡都按此分类记录，用完记得点回「自动」</div>' : ''}
+    </div>`;
+  }).join('');
 }
-async function trSetKioskMode(siteId, sel) {
-  const label = sel.options[sel.selectedIndex].text;
-  if (!confirm(`确认把打卡机模式设为「${label}」？\n从现在起该仓库打卡台上的所有打卡都按此记录。`)) { loadTimeRecords(); return; }
-  const r = await cApi('/kiosk-mode', { method: 'POST', body: JSON.stringify({ site_id: siteId, mode: sel.value }) });
+async function trSetKioskMode(siteId, mode, label, isCurrent) {
+  if (isCurrent) return;
+  const msg = mode ? `确认把打卡机模式设为「${label}」？\n从现在起该仓库打卡台上的所有打卡都记为「${label}」。`
+    : '确认恢复「自动（上班/下班）」？\n打卡台将恢复自动判断上班/下班。';
+  if (!confirm(msg)) return;
+  const r = await cApi('/kiosk-mode', { method: 'POST', body: JSON.stringify({ site_id: siteId, mode }) });
   if (!r) return;
-  if (r.ok) { showToast('✅ 打卡机模式已更新'); loadTimeRecords(); }
+  if (r.ok) { showToast(`✅ 打卡机模式：${label}`); loadTimeRecords(); }
   else { showToast(r.error || '设置失败', 'error'); loadTimeRecords(); }
 }
 async function trPunchAction(entryId, action, label, name) {
