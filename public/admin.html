@@ -10774,7 +10774,7 @@ function switchClientInqTab(tab) {
 
 // ── 企业门户需求: 客户在 /customer 提交的用工需求单 ──
 const PORTAL_POST_STATUS = { pending: '待处理', in_progress: '处理中', completed: '已完成', cancelled: '已取消' };
-const CP_DETAIL_LABELS = { shift: '班次', env: '环境', lift: '搬运', exp: '经验', onboarding: '入职要求', gear: '装备', hours_week: '每周工时', pay_budget: '时薪预算' };
+const CP_DETAIL_LABELS = { shift: '班次', skills: '必备技能', pay_budget: '薪资', env: '环境', lift: '搬运', exp: '经验', onboarding: '入职要求', gear: '装备', hours_week: '每周工时' };
 async function loadPortalPosts() {
   const box = document.getElementById('portalPostList');
   box.innerHTML = '<span style="color:var(--gray-400)">加载中…</span>';

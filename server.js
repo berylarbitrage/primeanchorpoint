@@ -24744,6 +24744,10 @@ app.put('/api/admin/referral-config', requireAdmin, requireRole('admin'), (req, 
 app.get('/api/admin/skill-options', requireAdmin, (req, res) => {
   res.json(db.prepare('SELECT * FROM skill_options ORDER BY sort_order, id').all());
 });
+// 公开只读: 客户门户发布用工需求的「必备技能」选项 (与后台同一份技能库)
+app.get('/api/skill-options', (req, res) => {
+  res.json(db.prepare('SELECT name_zh, name_en FROM skill_options ORDER BY sort_order, id').all());
+});
 app.post('/api/admin/skill-options', requireAdmin, requireRole('admin'), (req, res) => {
   const { name_zh, name_en } = req.body;
   if (!name_zh || !name_zh.trim()) return res.status(400).json({ error: '技能名称不能为空' });
