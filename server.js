@@ -2417,6 +2417,8 @@ intProviders.forEach(p => {
 
 // Migrate: add site_id to jobs for geofencing
 try { db.exec("ALTER TABLE jobs ADD COLUMN site_id INTEGER DEFAULT NULL"); } catch {}
+// 职位「更多细节」: 工作环境/搬运重量/经验/入职要求/装备/交通/每周工时/开始日期/备注 (JSON)
+try { db.exec("ALTER TABLE jobs ADD COLUMN details_json TEXT DEFAULT '{}'"); } catch {}
 // Migrate: add site_id to time_entries
 try { db.exec("ALTER TABLE time_entries ADD COLUMN site_id INTEGER DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN geo_verified INTEGER DEFAULT 0"); } catch {}
@@ -9037,6 +9039,7 @@ app.get('/api/jobs', (req, res) => {
     schedule_start: j.schedule_start || '',
     schedule_end: j.schedule_end || '',
     work_days: j.work_days || '', work_start: j.work_start || '', work_end: j.work_end || '',
+    details_json: j.details_json || '{}',
     job_id: j.job_id || ''
   })));
 });
@@ -14970,8 +14973,8 @@ app.post('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
      work_auth, benefits, schedule, company_id, company_name, employment_type,
      work_days, work_start, work_end, work_schedule, schedule_days, schedule_start, schedule_end,
      job_status, active, close_reason, close_note, headcount,
-     langs, title_zh, title_es, desc_zh, desc_es)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+     langs, title_zh, title_es, desc_zh, desc_es, details_json)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   const r = stmt.run(
     d.partner_id||null, d.title, d.type||'', d.category||'', d.location||'', d.pay||'', d.pay_period||'', d.lang||'en', d.lang_name||'English',
     d.description||'', d.urgent?1:0, d.work_auth||'', d.benefits||'', d.schedule||'',
@@ -14979,7 +14982,7 @@ app.post('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
     d.work_days||'', d.work_start||'', d.work_end||'', d.work_schedule||'{}',
     d.schedule_days||'[]', d.schedule_start||'', d.schedule_end||'',
     jobStatus, jobStatus==='open'?1:0, d.close_reason||'', d.close_note||'', d.headcount||1,
-    d.langs||'en', d.title_zh||'', d.title_es||'', d.desc_zh||'', d.desc_es||''
+    d.langs||'en', d.title_zh||'', d.title_es||'', d.desc_zh||'', d.desc_es||'', d.details_json||'{}'
   );
   const jobId = generateJobId(d.location || '');
   db.prepare('UPDATE jobs SET job_id=? WHERE id=?').run(jobId, r.lastInsertRowid);
@@ -14996,7 +14999,7 @@ app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 
     company_id=?, company_name=?, employment_type=?, work_days=?, work_start=?, work_end=?, work_schedule=?,
     schedule_days=?, schedule_start=?, schedule_end=?,
     job_status=?, close_reason=?, close_note=?, headcount=?,
-    langs=?, title_zh=?, title_es=?, desc_zh=?, desc_es=? WHERE id=?`)
+    langs=?, title_zh=?, title_es=?, desc_zh=?, desc_es=?, details_json=? WHERE id=?`)
     .run(
       d.partner_id||null, d.title, d.type||'', d.category||'', d.location||'', d.pay||'', d.pay_period||'', d.lang||'en', d.lang_name||'English',
       d.description||'', d.urgent?1:0, jobStatus==='open'?1:0,
@@ -15005,7 +15008,7 @@ app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 
       d.work_days||'', d.work_start||'', d.work_end||'', d.work_schedule||'{}',
       d.schedule_days||'[]', d.schedule_start||'', d.schedule_end||'',
       jobStatus, d.close_reason||'', d.close_note||'', d.headcount||1,
-      d.langs||'en', d.title_zh||'', d.title_es||'', d.desc_zh||'', d.desc_es||'',
+      d.langs||'en', d.title_zh||'', d.title_es||'', d.desc_zh||'', d.desc_es||'', d.details_json||'{}',
       req.params.id
     );
   // Determine action type
@@ -24180,7 +24183,7 @@ app.get('/api/worker/jobs', requireWorker, (req, res) => {
     SELECT j.id, j.title, j.type, j.location, j.pay, j.pay_period,
            j.work_auth, j.benefits, j.work_days, j.work_start, j.work_end,
            j.employment_type, j.description, j.urgent, j.lang, j.langs,
-           j.title_zh, j.title_es, j.desc_zh, j.desc_es,
+           j.title_zh, j.title_es, j.desc_zh, j.desc_es, j.details_json,
            COALESCE(NULLIF(j.company_name,''), p.name, '') AS company_name
     FROM jobs j LEFT JOIN partners p ON j.partner_id = p.id
     WHERE j.active=1`;

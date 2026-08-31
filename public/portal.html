@@ -2889,6 +2889,20 @@ function filterJobs() {
   }));
 }
 
+// 职位「更多细节」(details_json) 渲染 + 三语翻译 (与官网 index.html 同一套值)
+const _jdValMap={en:{'常温仓':'Ambient warehouse','冷藏库':'Cooler','冷冻库':'Freezer','流水线':'Production line','户外':'Outdoor','站立工作为主':'Mostly standing','轻体力（无重物）':'Light duty (no heavy lifting)','25 磅以内':'Lift up to 25 lb','50 磅以内':'Lift up to 50 lb','70 磅以上':'Lift 70+ lb','无需经验（提供培训）':'No experience needed (training provided)','需相关经验':'Experience required','需持证（如叉车证）':'Certification required (e.g. forklift)','背景调查':'Background check','药检':'Drug test','体检':'Physical exam','E-Verify':'E-Verify','自备钢头鞋':'Steel-toe shoes (bring your own)','提供劳保用品':'PPE provided','需高可视背心':'Hi-vis vest required','冷库服装提供':'Freezer gear provided','公交可达':'Bus accessible','建议自驾':'Car recommended','可协助拼车':'Carpool assistance'},es:{'常温仓':'Almacén ambiente','冷藏库':'Cámara fría','冷冻库':'Congelador','流水线':'Línea de producción','户外':'Al aire libre','站立工作为主':'Mayormente de pie','轻体力（无重物）':'Trabajo ligero (sin cargas pesadas)','25 磅以内':'Cargar hasta 25 lb','50 磅以内':'Cargar hasta 50 lb','70 磅以上':'Cargar 70+ lb','无需经验（提供培训）':'Sin experiencia (con capacitación)','需相关经验':'Se requiere experiencia','需持证（如叉车证）':'Se requiere certificación (montacargas)','背景调查':'Verificación de antecedentes','药检':'Prueba de drogas','体检':'Examen físico','E-Verify':'E-Verify','自备钢头鞋':'Botas punta de acero (propias)','提供劳保用品':'EPP proporcionado','需高可视背心':'Chaleco reflectante requerido','冷库服装提供':'Ropa de congelador proporcionada','公交可达':'Accesible en autobús','建议自驾':'Se recomienda auto propio','可协助拼车':'Ayuda para compartir auto'}};
+const _jdRowLabel={env:{zh:'🏭 环境',en:'🏭 Environment',es:'🏭 Ambiente'},lift:{zh:'💪 体力',en:'💪 Lifting',es:'💪 Carga'},exp:{zh:'🎓 经验',en:'🎓 Experience',es:'🎓 Experiencia'},onboarding:{zh:'📝 入职要求',en:'📝 Onboarding',es:'📝 Requisitos'},gear:{zh:'🦺 装备',en:'🦺 Gear',es:'🦺 Equipo'},transport:{zh:'🚌 交通',en:'🚌 Transport',es:'🚌 Transporte'},hours_week:{zh:'⏱ 每周工时',en:'⏱ Hours/week',es:'⏱ Horas/semana'},start_date:{zh:'📅 预计开始',en:'📅 Start date',es:'📅 Fecha de inicio'},notes:{zh:'ℹ️ 备注',en:'ℹ️ Notes',es:'ℹ️ Notas'}};
+function _jdHtml(j, lang) {
+  let det = {}; try { det = JSON.parse(j.details_json || '{}') || {}; } catch (_) {}
+  const tv = csv => { if (!csv) return ''; const parts = csv.split(',').map(s => s.trim()).filter(Boolean); if (lang === 'zh') return parts.join('、'); const m = _jdValMap[lang] || _jdValMap.en; return parts.map(s => m[s] || s).join(', '); };
+  const L = k => (_jdRowLabel[k] && (_jdRowLabel[k][lang] || _jdRowLabel[k].en)) || k;
+  const rows = [];
+  ['env','lift','exp','onboarding','gear','transport'].forEach(k => { const v = tv(det[k]); if (v) rows.push(`${L(k)}: ${esc(v)}`); });
+  if (det.hours_week) rows.push(`${L('hours_week')}: ${esc(det.hours_week)}`);
+  if (det.start_date) rows.push(`${L('start_date')}: ${esc(det.start_date)}`);
+  if (det.notes) rows.push(`${L('notes')}: ${esc(det.notes)}`);
+  return rows.length ? `<div class="job-meta" style="margin-top:.35rem;padding:.45rem .6rem;background:var(--gray-50,#f8fafc);border-radius:8px;line-height:1.7">${rows.join('<br>')}</div>` : '';
+}
 function renderJobs(jobs) {
   const authLabel = a => ({any: _t('authLabelAny'), gc: _t('authLabelGC'), citizen: _t('authLabelCitizen')})[a] || '';
   const payPeriods = { hourly: _t('payPeriodHourly'), daily: _t('payPeriodDaily'), weekly: _t('payPeriodWeekly'), biweekly: _t('payPeriodBiweekly'), semimonthly: _t('payPeriodSemimonthly'), monthly: _t('payPeriodMonthly') };
@@ -2911,6 +2925,7 @@ function renderJobs(jobs) {
         ${j.work_days||j.work_start?`<div class="job-meta" style="margin-top:.25rem">⏰ ${esc(j._workDaysT||j.work_days||'')} ${j.work_start?j.work_start+'–'+(j.work_end||'?'):''}</div>`:''}
         ${benefits?`<div class="job-meta" style="margin-top:.25rem">🎁 ${esc(benefits)}</div>`:''}
         ${authLabel(j.work_auth)?`<div class="job-meta" style="margin-top:.2rem">🪪 ${authLabel(j.work_auth)}</div>`:''}
+        ${_jdHtml(j, _portalLang)}
         ${(j._descT||j.description)?`<div style="margin-top:.5rem;font-size:.82rem;color:var(--gray-700);line-height:1.5">${esc(j._descT||j.description).slice(0,160)}${(j._descT||j.description).length>160?'…':''}</div>`:''}
       </div>
       <div style="flex-shrink:0">
