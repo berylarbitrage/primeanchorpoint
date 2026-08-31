@@ -20612,6 +20612,8 @@ app.get('/api/admin/time-entries', requireAdmin, (req, res) => {
     WHERE 1=1`;
   const p = [];
   if (employee_id) { q += ' AND t.employee_id=?'; p.push(employee_id); }
+  const siteIdF = parseInt(req.query.site_id);
+  if (siteIdF) { q += ' AND COALESCE(t.site_id, j2.site_id)=?'; p.push(siteIdF); }
   if (date_from)   { q += ' AND DATE(t.clock_in)>=?'; p.push(date_from); }
   if (date_to)     { q += ' AND DATE(t.clock_in)<=?'; p.push(date_to); }
   if (status)      { q += ' AND t.status=?'; p.push(status); }
@@ -20677,6 +20679,8 @@ app.get('/api/admin/time-entries/export', (req, res, next) => {
     FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id WHERE t.status='closed'`;
   const p = [];
   if (employee_id) { q += ' AND t.employee_id=?'; p.push(employee_id); }
+  const siteIdX = parseInt(req.query.site_id);
+  if (siteIdX) { q += ' AND COALESCE(t.site_id, (SELECT site_id FROM jobs WHERE id=t.job_id))=?'; p.push(siteIdX); }
   if (date_from)   { q += ' AND DATE(t.clock_in)>=?'; p.push(date_from); }
   if (date_to)     { q += ' AND DATE(t.clock_in)<=?'; p.push(date_to); }
   q += ' ORDER BY t.clock_in DESC';
