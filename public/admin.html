@@ -27656,6 +27656,8 @@ async function loadWorkerHistory(id) {
 async function loadCustomerAccounts() {
   const rows = await api('/admin/customer-accounts');
   if (!Array.isArray(rows)) return;
+  window._custAccRows = {};
+  rows.forEach(c => window._custAccRows[c.id] = c);
   // Only count verified (active=1) pending accounts for the banner
   const pending = rows.filter(c => c.approval_status === 'pending' && c.active);
   const banner = document.getElementById('pendingEntBanner');
@@ -27682,11 +27684,45 @@ async function loadCustomerAccounts() {
         ${c.approval_status==='pending'&&c.active?`<button class="btn btn-sm btn-green" onclick="openEntApprovalModal(${c.id})">审核</button>`:''}
         ${c.approval_status==='approved'?(c.active?`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="suspendCustomerAccount(${c.id},false)">暂停</button>`:`<button class="btn btn-sm btn-green" onclick="suspendCustomerAccount(${c.id},true)">恢复</button>`):''}
         ${c.approval_status!=='pending'?`<button class="btn btn-sm btn-blue" onclick="openResetPwdModal('customer',${c.id},'${esc(c.company_name)}')">改密码</button>`:''}
+        <button class="btn btn-sm" onclick="custDetailOpen(${c.id})" title="注册时填写的全部信息">详情</button>
         <button class="btn btn-sm" onclick="editCustomerAccount(${c.id})">编辑</button>
         <button class="btn btn-sm btn-red" onclick="deleteCustomerAccount(${c.id},'${esc(c.company_name)}')">删除</button>
       </div>
     </td>
   </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无客户账户</td></tr>';
+}
+
+// 📋 企业注册时填写的全部信息
+function custDetailOpen(id) {
+  const c = (window._custAccRows || {})[id];
+  if (!c) return;
+  // staffing_needs 格式: "工种需求: A, B, C\n其他说明..." → 拆成工种 chips + 说明
+  let posList = [], needNote = String(c.staffing_needs || '').trim();
+  const m = needNote.match(/^工种需求[:：]\s*([^\n]+)\n?([\s\S]*)$/);
+  if (m) { posList = m[1].split(/[,，、]\s*/).filter(Boolean); needNote = (m[2] || '').trim(); }
+  const statusTxt = c.approval_status === 'pending' && !c.active ? '📧 待验证（手机/邮箱验证未完成）'
+    : c.approval_status === 'pending' ? '⏳ 待审核' : c.approval_status === 'rejected' ? '❌ 已拒绝'
+    : (c.active ? '✅ 已通过' : '⛔ 已暂停');
+  const row = (k, v) => `<div style="display:flex;gap:.8rem;padding:.4rem 0;border-bottom:1px solid var(--gray-100)"><div style="width:110px;color:var(--gray-400);flex-shrink:0">${k}</div><div style="flex:1;word-break:break-word">${v || '—'}</div></div>`;
+  const ov = document.createElement('div');
+  ov.className = 'modal-bg show';
+  ov.innerHTML = `<div class="modal" style="max-width:520px;padding:1.4rem 1.6rem">
+    <h2 style="margin-bottom:.8rem;font-size:1.05rem">📋 企业注册信息 · ${esc(c.company_name)}</h2>
+    <div style="font-size:.88rem;max-height:60vh;overflow-y:auto">
+      ${row('注册人', esc([c.contact_first_name, c.contact_last_name].filter(Boolean).join(' ') || c.contact_name || ''))}
+      ${row('企业名称', esc(c.company_name))}
+      ${row('EIN', esc(c.ein || ''))}
+      ${row('联系电话', esc(c.phone || ''))}
+      ${row('登录邮箱', esc(c.email || ''))}
+      ${row('工种需求', posList.length ? posList.map(p => `<span style="display:inline-block;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:999px;padding:.1rem .6rem;margin:.12rem .2rem .12rem 0;font-size:.8rem">${esc(p)}</span>`).join('') : '')}
+      ${row('其他需求说明', esc(needNote))}
+      ${row('审核状态', statusTxt)}
+      ${row('关联合作公司', c.partner_id ? '#' + c.partner_id : '未关联')}
+      ${row('注册时间', esc(String(c.created_at || '').slice(0, 16)))}
+    </div>
+    <div style="text-align:right;margin-top:1rem"><button class="btn btn-outline" onclick="this.closest('.modal-bg').remove()">关闭</button></div></div>`;
+  ov.addEventListener('click', ev => { if (ev.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
 }
 
 async function approveEnterprise(id) {

@@ -14873,7 +14873,7 @@ app.post('/api/admin/worker-accounts/:id/resend-verify', requireAdmin, requireRo
 
 // ─── Customer Accounts (admin manages) ───
 app.get('/api/admin/customer-accounts', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
-  res.json(db.prepare('SELECT id, company_name, contact_name, email, phone, active, partner_id, ein, staffing_needs, approval_status, created_at FROM customer_accounts ORDER BY id DESC').all());
+  res.json(db.prepare('SELECT id, company_name, contact_name, contact_first_name, contact_last_name, email, phone, active, partner_id, ein, staffing_needs, approval_status, created_at FROM customer_accounts ORDER BY id DESC').all());
 });
 
 app.post('/api/admin/customer-accounts', requireAdmin, requireRole('admin'), (req, res) => {
