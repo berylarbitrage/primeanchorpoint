@@ -2432,6 +2432,11 @@ try { db.exec("ALTER TABLE manager_time_entries ADD COLUMN needs_review INTEGER 
 try { db.exec("ALTER TABLE job_sites ADD COLUMN timezone TEXT DEFAULT 'America/Chicago'"); } catch {}
 try { db.exec("ALTER TABLE job_sites ADD COLUMN code TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE job_sites ADD COLUMN partner_ids TEXT DEFAULT ''"); } catch {}
+// 仓库联系人: 每个仓库可存多个联系人 [{name,phone,email,role}]
+try { db.exec("ALTER TABLE job_sites ADD COLUMN contacts TEXT DEFAULT '[]'"); } catch {}
+// 打卡机模式: ''=自动(上班/下班), 或强制 in/out/break_start/break_end —— 设置后该仓库
+// 打卡台上的所有打卡都按此分类记录, 避免错分类 (午休时段设为休息开始等)
+try { db.exec("ALTER TABLE job_sites ADD COLUMN kiosk_punch_mode TEXT DEFAULT ''"); } catch {}
 // 仓库方(客户企业账号)登录客户门户可看本公司仓库的打卡时间+姓名; 照片默认不可见,
 // 由管理员按公司开启此开关后才在客户门户显示
 try { db.exec("ALTER TABLE partners ADD COLUMN show_punch_photos INTEGER DEFAULT 0"); } catch {}
@@ -26583,7 +26588,7 @@ app.post('/api/admin/partner-photo-access/:id', requireAdmin, requireRole('admin
 // 该客户(partner)名下的启用仓库
 function _customerSites(pid) {
   if (!pid) return [];
-  return db.prepare('SELECT id, name, code, timezone, partner_id, partner_ids FROM job_sites WHERE active=1').all()
+  return db.prepare('SELECT id, name, code, timezone, partner_id, partner_ids, kiosk_punch_mode FROM job_sites WHERE active=1').all()
     .filter(s => s.partner_id === pid || String(s.partner_ids || '').split(',').filter(Boolean).map(Number).includes(pid));
 }
 // 时间戳兼容两种存储格式: ISO (带 Z/时区) 与 SQLite 'YYYY-MM-DD HH:MM:SS' (UTC)
@@ -26649,10 +26654,21 @@ app.get('/api/customer/time-records', requireCustomer, (req, res) => {
   });
   res.json({
     photos_enabled: photosEnabled, from, to,
-    sites: sites.map(s => ({ id: s.id, name: s.name, code: s.code || '', timezone: s.timezone || 'America/Chicago' })),
+    sites: sites.map(s => ({ id: s.id, name: s.name, code: s.code || '', timezone: s.timezone || 'America/Chicago', kiosk_punch_mode: s.kiosk_punch_mode || '' })),
     entries,
     no_binding: !sites.length && !entries.length
   });
+});
+// 客户门户: 设置本公司仓库的打卡机模式 (''=自动, in/out/break_start/break_end=强制分类)
+app.post('/api/customer/kiosk-mode', requireCustomer, (req, res) => {
+  const pid = req.customerPartnerId;
+  const mode = String((req.body || {}).mode || '');
+  if (!['', 'in', 'out', 'break_start', 'break_end'].includes(mode)) return res.status(400).json({ error: '无效模式' });
+  const siteId = parseInt((req.body || {}).site_id);
+  const mine = _customerSites(pid).find(s => s.id === siteId);
+  if (!mine) return res.status(403).json({ error: '无权设置该仓库' });
+  db.prepare('UPDATE job_sites SET kiosk_punch_mode=? WHERE id=?').run(mode, siteId);
+  res.json({ ok: 1, mode });
 });
 // 客户门户打卡操作: 仓库方把「当前时间」记为 上班/下班/休息开始/休息结束。
 // 以某条本公司仓库的记录为锚点定位员工+仓库, 复用打卡台的 _recordSitePunch 逻辑
@@ -26825,11 +26841,14 @@ app.post('/api/kiosk/punch', async (req, res) => {
   }
   const siteTimezone = site.timezone || 'America/Chicago';
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  // 打卡机模式: 仓库设置了固定分类时, 覆盖打卡台自动判断的类型
+  const modeRow = db.prepare('SELECT kiosk_punch_mode FROM job_sites WHERE id=?').get(site.id);
+  const forcedMode = (modeRow && ['in', 'out', 'break_start', 'break_end'].includes(modeRow.kiosk_punch_mode)) ? modeRow.kiosk_punch_mode : '';
   const { action, entryId, clockTime } = _recordSitePunch({
     empDbId: emp.id, site, siteTimezone, now,
     latitude: site.latitude, longitude: site.longitude,
     photoFilename,
-    requestedPunchType: String((req.body || {}).punch_type || '')
+    requestedPunchType: forcedMode || String((req.body || {}).punch_type || '')
   });
   // 标记来源为该仓库的打卡台（共享设备，不做同设备代打卡判定）
   if (entryId) {
@@ -27363,8 +27382,9 @@ app.post('/api/admin/job-sites', requireAdmin, blockManager, async (req, res) =>
   const pids = partner_ids || (partner_id ? String(partner_id) : '');
   // partner_id 与 partner_ids 保持同步（经理限权同时看这两个字段）
   const firstPid = parseInt(String(pids).split(',')[0]) || partner_id || null;
-  const r = db.prepare('INSERT INTO job_sites (name, code, address, latitude, longitude, radius_meters, partner_id, partner_ids, timezone) VALUES (?,?,?,?,?,?,?,?,?)')
-    .run(name, code || '', address || '', latitude, longitude, radius_meters || 200, firstPid, pids, tz);
+  const contacts = String(req.body.contacts || '[]').slice(0, 8000);
+  const r = db.prepare('INSERT INTO job_sites (name, code, address, latitude, longitude, radius_meters, partner_id, partner_ids, timezone, contacts) VALUES (?,?,?,?,?,?,?,?,?,?)')
+    .run(name, code || '', address || '', latitude, longitude, radius_meters || 200, firstPid, pids, tz, contacts);
   res.json({ success: true, id: r.lastInsertRowid, timezone: tz });
 });
 
@@ -27376,8 +27396,10 @@ app.put('/api/admin/job-sites/:id', requireAdmin, blockManager, async (req, res)
   }
   let tz = timezone || null;
   if (!tz && latitude && longitude) tz = await lookupTimezone(latitude, longitude);
-  db.prepare('UPDATE job_sites SET name=COALESCE(?,name), code=COALESCE(?,code), address=COALESCE(?,address), latitude=COALESCE(?,latitude), longitude=COALESCE(?,longitude), radius_meters=COALESCE(?,radius_meters), active=COALESCE(?,active), partner_ids=COALESCE(?,partner_ids), timezone=COALESCE(?,timezone) WHERE id=?')
-    .run(name, code, address, latitude, longitude, radius_meters, active, partner_ids, tz, req.params.id);
+  const kioskMode = ['', 'in', 'out', 'break_start', 'break_end'].includes(req.body.kiosk_punch_mode) ? req.body.kiosk_punch_mode : null;
+  db.prepare('UPDATE job_sites SET name=COALESCE(?,name), code=COALESCE(?,code), address=COALESCE(?,address), latitude=COALESCE(?,latitude), longitude=COALESCE(?,longitude), radius_meters=COALESCE(?,radius_meters), active=COALESCE(?,active), partner_ids=COALESCE(?,partner_ids), timezone=COALESCE(?,timezone), contacts=COALESCE(?,contacts), kiosk_punch_mode=COALESCE(?,kiosk_punch_mode) WHERE id=?')
+    .run(name, code, address, latitude, longitude, radius_meters, active, partner_ids, tz,
+      req.body.contacts != null ? String(req.body.contacts).slice(0, 8000) : null, kioskMode, req.params.id);
   // partner_id 跟随最终的 partner_ids 第一项，避免留下过期值误导经理限权
   if (partner_ids != null) {
     const firstPid = parseInt(String(partner_ids).split(',')[0]) || null;
