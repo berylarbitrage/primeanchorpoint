@@ -28710,20 +28710,74 @@ app.get('/api/customer/my-posts', requireCustomer, (req, res) => {
   res.json(db.prepare('SELECT * FROM customer_job_posts WHERE customer_account_id=? ORDER BY created_at DESC').all(req.customerId));
 });
 
+// 派遣工人列表 = 近90天在贵公司仓库打过卡的所有工人(完整信息: 员工号/职位/电话/邮箱/地址)
+// + 正式派工记录里没打过卡的工人(老逻辑兜底)
 app.get('/api/customer/my-workers', requireCustomer, (req, res) => {
-  if (!req.customerPartnerId) return res.json([]);
-  const rows = db.prepare(`
-    SELECT a.id as assign_id, a.status as assign_status, a.assigned_at,
-      e.first_name, e.last_name, e.position, e.phone,
-      j.title as job_title, j.location
+  const pid = req.customerPartnerId;
+  if (!pid) return res.json([]);
+  const out = [];
+  const seen = new Set();
+  const ids = _customerSites(pid).map(s => s.id);
+  if (ids.length) {
+    const scope = _customerEntryScope(pid, ids);
+    const punch = db.prepare(`
+      SELECT e.id, e.first_name, e.last_name, e.employee_id AS emp_code, e.position, e.phone, e.email,
+        e.address, e.city, e.state, e.zip,
+        MAX(t.clock_in) AS last_punch,
+        COUNT(DISTINCT COALESCE(NULLIF(t.work_date,''), DATE(t.clock_in))) AS punch_days
+      FROM time_entries t JOIN employees e ON t.employee_id=e.id
+      WHERE ${scope.sql} AND DATE(t.clock_in) >= DATE('now','-90 day')
+      GROUP BY e.id ORDER BY e.first_name, e.last_name`).all(...scope.params);
+    for (const r of punch) {
+      seen.add(r.id);
+      out.push({
+        id: r.id, first_name: r.first_name, last_name: r.last_name, emp_code: r.emp_code || '',
+        position: r.position || '', phone: r.phone || '', email: r.email || '',
+        address: [r.address, r.city, r.state, r.zip].map(x => String(x || '').trim()).filter(Boolean).join(', '),
+        punch_days: r.punch_days, last_punch: r.last_punch, kind: 'punch'
+      });
+    }
+  }
+  const asg = db.prepare(`
+    SELECT a.status as assign_status, e.id AS eid, e.first_name, e.last_name, e.employee_id AS emp_code,
+      e.position, e.phone, e.email, e.address, e.city, e.state, e.zip, j.title as job_title, j.location
     FROM assignments a
     LEFT JOIN inquiries i ON a.inquiry_id=i.id
     LEFT JOIN jobs j ON a.job_id=j.id
     LEFT JOIN employees e ON e.id=(SELECT id FROM employees WHERE phone=i.phone LIMIT 1)
     WHERE j.partner_id=?
-    ORDER BY a.assigned_at DESC
-  `).all(req.customerPartnerId);
-  res.json(rows);
+    ORDER BY a.assigned_at DESC`).all(pid);
+  for (const a of asg) {
+    if (a.eid && seen.has(a.eid)) continue;
+    if (a.eid) seen.add(a.eid);
+    out.push({
+      id: a.eid || null, first_name: a.first_name || '', last_name: a.last_name || '', emp_code: a.emp_code || '',
+      position: a.position || a.job_title || '', phone: a.phone || '', email: a.email || '',
+      address: [a.address, a.city, a.state, a.zip].map(x => String(x || '').trim()).filter(Boolean).join(', ') || (a.location || ''),
+      punch_days: 0, last_punch: null, kind: 'assign', assign_status: a.assign_status || ''
+    });
+  }
+  res.json(out);
+});
+
+// 工卡: 姓名+员工号+职位+打卡二维码 (扫码即在打卡台打卡)。只能看近90天在本公司仓库打过卡的工人。
+app.get('/api/customer/worker-card/:eid', requireCustomer, async (req, res) => {
+  try {
+    const pid = req.customerPartnerId;
+    const eid = parseInt(req.params.eid);
+    if (!pid || !eid) return res.status(403).json({ error: '无权限' });
+    const ids = _customerSites(pid).map(s => s.id);
+    if (!ids.length) return res.status(403).json({ error: '无权限' });
+    const scope = _customerEntryScope(pid, ids);
+    const ok = db.prepare(`SELECT 1 FROM time_entries t WHERE ${scope.sql} AND t.employee_id=? AND DATE(t.clock_in) >= DATE('now','-90 day') LIMIT 1`).get(...scope.params, eid);
+    if (!ok) return res.status(403).json({ error: '只能查看在贵公司仓库打过卡的工人工卡' });
+    const e = db.prepare('SELECT id, first_name, last_name, employee_id, position, timeclock_code FROM employees WHERE id=?').get(eid);
+    if (!e) return res.status(404).json({ error: '未找到该工人' });
+    let code = e.timeclock_code;
+    if (!code) { code = _genTimeclockCode(); db.prepare('UPDATE employees SET timeclock_code=? WHERE id=?').run(code, e.id); }
+    const qr = await QRCode.toDataURL(KIOSK_QR_PREFIX + code, { width: 320, margin: 1 });
+    res.json({ name: [e.first_name, e.last_name].filter(Boolean).join(' ') || '—', emp_code: e.employee_id || '', position: e.position || '', qr_data_url: qr });
+  } catch (e2) { res.status(500).json({ error: e2.message }); }
 });
 
 // ─── Customer Forgot / Reset Password ───
