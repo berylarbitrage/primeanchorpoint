@@ -18320,7 +18320,7 @@ function renderTimeKioskMode() {
   if (!box) return;
   const sites = _timeSites.filter(s => s.active);
   if (!sites.length) { box.innerHTML = '<p style="color:var(--gray-400)">暂无启用的仓库</p>'; return; }
-  box.innerHTML = '<div style="font-size:.78rem;color:var(--gray-500);line-height:1.55;margin-bottom:.6rem;padding:.5rem .7rem;background:var(--gray-50);border-radius:8px">「自动」＝不分上下班，只记录当天每次打卡时间：恰好 4 次自动分为 上班→休息开始→休息结束→下班；不足 4 次（或奇数次）按最早=上班、最晚=下班、中间=休息推算，并标记「⚠ 打卡待复核」。<b>严格按天（仓库当地时区）</b>：当天的打卡只算当天；前一天没打完的记录隔天自动封单并标待复核，第二天从第一卡重新开始算新的一天。</div>' + sites.map(s => {
+  box.innerHTML = '<div style="font-size:.78rem;color:var(--gray-500);line-height:1.55;margin-bottom:.6rem;padding:.5rem .7rem;background:var(--gray-50);border-radius:8px">「自动」＝不分上下班，只记录当天每次打卡时间，按最早=上班、最晚=下班、中间成对=休息自动归类；打卡次数与该仓库设置的班型（一天几次休息 → 2+2×n 次卡）不符时标「⚠ 打卡待复核」。<b>严格按天（仓库当地时区）</b>：当天的打卡只算当天；前一天没打完的记录隔天自动封单并标待复核，第二天从第一卡重新开始算新的一天。</div>' + sites.map(s => {
     const cur = s.kiosk_punch_mode || '';
     return `
     <div style="padding:.55rem .8rem;background:${cur ? '#FFF7ED' : 'var(--white)'};border:1px solid ${cur ? '#fed7aa' : 'var(--gray-200)'};border-radius:10px;margin-bottom:.5rem;font-size:.85rem">
@@ -18333,8 +18333,21 @@ function renderTimeKioskMode() {
         }).join('')}
       </div>
       ${cur ? '<div style="color:#b45309;font-size:.78rem;margin-top:.35rem">⚠ 非自动模式：打卡机上的每次打卡都按此分类记录，用完记得点回「自动」</div>' : ''}
+      <div style="display:flex;align-items:center;gap:.4rem;margin-top:.45rem;font-size:.8rem;color:var(--gray-500)">
+        班型：一天
+        <select onchange="timeSetKioskBreaks(${s.id}, this.value)" style="padding:.22rem .4rem;border:1px solid var(--gray-200);border-radius:7px;font-family:inherit">
+          ${[0, 1, 2, 3].map(n => `<option value="${n}"${(s.kiosk_breaks_per_day == null ? 1 : s.kiosk_breaks_per_day) === n ? ' selected' : ''}>${n === 0 ? '不休息（2 次卡）' : n + ' 次休息（' + (2 + 2 * n) + ' 次卡）'}</option>`).join('')}
+        </select>
+        <span style="color:var(--gray-400)">次数不符 → ⚠ 待复核</span>
+      </div>
     </div>`;
   }).join('');
+}
+async function timeSetKioskBreaks(siteId, breaks) {
+  const r = await api(`/admin/job-sites/${siteId}/kiosk-breaks`, { method: 'POST', body: JSON.stringify({ breaks: parseInt(breaks) }) });
+  if (!r || r.error || !r.ok) { showToast((r && r.error) || '设置失败', 'error'); return; }
+  showToast(`✅ 班型：一天 ${breaks == 0 ? '不休息（2 次卡）' : breaks + ' 次休息（' + (2 + 2 * parseInt(breaks)) + ' 次卡）'}`);
+  try { const sites = await api('/admin/job-sites'); _timeSites = Array.isArray(sites) ? sites : _timeSites; } catch {}
 }
 // 站点风格的确认弹窗 (替代原生 confirm): 返回 Promise<boolean>
 function uiConfirm({ icon = '🖥', title, msg, okLabel = '确认', okBg = 'var(--accent)' }) {
