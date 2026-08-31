@@ -589,6 +589,7 @@ async function showApp() {
   try { document.cookie = 'pa_customer=' + C_TOKEN + '; path=/; max-age=86400; SameSite=Lax'; } catch (_) {}
   const me = await cApi('/me');
   if (!me) return;
+  window.C_PERMS = me.perms || null; // 账号权限 (null=全部允许)
   document.getElementById('customerNameDisplay').textContent = me.company_name;
   document.getElementById('customerNameDisplayMobile').textContent = me.company_name;
   loadMySiteOptions();
@@ -662,11 +663,20 @@ function trRenderKioskMode(sites) {
   if (!sites || !sites.length) { box.innerHTML = ''; return; }
   box.innerHTML = sites.map(s => {
     const cur = s.kiosk_punch_mode || '';
+    const brkN = s.kiosk_breaks_per_day == null ? 1 : s.kiosk_breaks_per_day;
+    // 不休息班型: 模式选项里不出现休息开始/结束
+    const modes = TR_MODES.filter(([v]) => brkN > 0 || (v !== 'break_start' && v !== 'break_end'));
+    if (!cCan('kiosk')) {
+      const curL = (TR_MODES.find(([v]) => v === cur) || TR_MODES[0])[1];
+      return `<div style="padding:.55rem .8rem;background:var(--gray-100);border:1px solid var(--gray-200);border-radius:10px;margin-bottom:.4rem;font-size:.85rem">
+        🖥 <b>${esc(s.name)}</b> 打卡机模式：<b>${curL}</b> · 班型：一天 ${brkN === 0 ? '不休息（2 次卡）' : brkN + ' 次休息（' + (2 + 2 * brkN) + ' 次卡）'}
+        <span style="color:var(--gray-400);font-size:.78rem">（只读账号，无修改权限）</span></div>`;
+    }
     return `
     <div style="padding:.55rem .8rem;background:${cur ? '#FFF7ED' : 'var(--gray-100)'};border:1px solid ${cur ? '#fed7aa' : 'var(--gray-200)'};border-radius:10px;margin-bottom:.4rem;font-size:.85rem">
       <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
         <span style="margin-right:.2rem">🖥 <b>${esc(s.name)}</b> 打卡机模式：</span>
-        ${TR_MODES.map(([v, l]) => {
+        ${modes.map(([v, l]) => {
           const on = cur === v, onBg = v ? 'var(--orange)' : 'var(--sky)';
           return `<button type="button" onclick="trSetKioskMode(${s.id}, '${v}', '${l}', ${on ? 1 : 0})"
             style="padding:.34rem .7rem;border-radius:8px;font-size:.82rem;cursor:${on ? 'default' : 'pointer'};border:1px solid ${on ? onBg : 'var(--gray-200)'};background:${on ? onBg : '#fff'};color:${on ? '#fff' : 'var(--gray-500)'};font-weight:${on ? '700' : '400'};white-space:nowrap">${on ? '✓ ' : ''}${l}</button>`;
@@ -687,6 +697,8 @@ async function trSetKioskBreaks(siteId, breaks, sel) {
   const r = await cApi('/kiosk-breaks', { method: 'POST', body: JSON.stringify({ site_id: siteId, breaks: parseInt(breaks) }) });
   if (!r || r.error) { showToast((r && r.error) || '设置失败', 'error'); loadTimeRecords(); return; }
   showToast(`✅ 已设置：一天 ${breaks == 0 ? '不休息（2 次卡）' : breaks + ' 次休息（' + (2 + 2 * parseInt(breaks)) + ' 次卡）'}`);
+  // 立即重渲染: 模式按钮跟着班型联动 (有休息 → 出现休息开始/结束; 不休息 → 隐藏)
+  loadTimeRecords();
 }
 // 站点风格的确认弹窗 (替代原生 confirm): 返回 Promise<boolean>
 function cpConfirm({ icon = '🖥', title, msg, okLabel = '确认', okBg = 'var(--blue)' }) {
@@ -844,6 +856,53 @@ function tsPrint() {
   if (m) m.remove();
 }
 
+// ⏱ 改打卡具体时间: 仅有「edit_time」权限的账号可见。三条铁规则: 当天之内 / 下班≥上班 / 休息夹中间
+function trTimeOpen(id) {
+  const e = (window._trEntries || {})[id];
+  if (!e) return;
+  const tz = _trSiteTz[e.site_id] || 'America/Chicago';
+  const hm = v => { const d2 = _trPT(v); return d2 ? d2.toLocaleTimeString('en-GB', { timeZone: tz, hour12: false, hour: '2-digit', minute: '2-digit' }) : ''; };
+  let breaks = []; try { breaks = JSON.parse(e.break_records || '[]'); } catch (_) {}
+  const wd = e.work_date || (_trPT(e.clock_in) ? _trPT(e.clock_in).toLocaleDateString('en-CA', { timeZone: tz }) : '');
+  const inp = 'style="width:100%;padding:.45rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:8px;font-family:inherit"';
+  const brRow = (s2, en) => `<div class="trt-br" style="display:flex;gap:.5rem;align-items:center;margin-top:.45rem">
+      <input type="time" class="trt-bs" value="${s2}" ${inp}><span style="color:var(--gray-400)">~</span>
+      <input type="time" class="trt-be" value="${en}" ${inp}>
+      <button type="button" onclick="this.parentElement.remove()" style="border:none;background:none;color:#E63946;cursor:pointer;font-size:1.05rem">✕</button></div>`;
+  window._trtBrRow = brRow('', '');
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay show';
+  ov.innerHTML = `<div class="modal-box" style="max-width:430px;padding:1.4rem 1.5rem;text-align:left">
+    <h2 style="margin-bottom:.2rem">⏱ 修改打卡时间</h2>
+    <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:1rem">${esc(e.name)} · ${wd}（仓库当地时间，只能改这一天之内，改动会记入编辑历史）</p>
+    <div style="display:flex;gap:.7rem">
+      <div style="flex:1"><label style="font-size:.8rem;color:var(--gray-500)">上班</label><input type="time" id="trtCi" value="${hm(e.clock_in)}" ${inp}></div>
+      <div style="flex:1"><label style="font-size:.8rem;color:var(--gray-500)">下班（留空=还在班）</label><input type="time" id="trtCo" value="${hm(e.clock_out)}" ${inp}></div>
+    </div>
+    <div style="margin-top:.9rem"><label style="font-size:.8rem;color:var(--gray-500)">休息（必须在上下班之间）</label>
+      <div id="trtBrs">${breaks.map(b => brRow(hm(b.start), hm(b.end))).join('')}</div>
+      <button type="button" onclick="document.getElementById('trtBrs').insertAdjacentHTML('beforeend', window._trtBrRow)" style="margin-top:.45rem;border:1.5px dashed var(--gray-200,#e2e5ea);background:none;border-radius:8px;padding:.35rem .8rem;cursor:pointer;color:var(--gray-500);font-size:.82rem">+ 加一段休息</button>
+    </div>
+    <div id="trtErr" style="color:#E63946;font-size:.82rem;margin-top:.6rem"></div>
+    <div style="display:flex;gap:.6rem;margin-top:1.1rem">
+      <button class="modal-btn modal-btn-secondary" data-act="no" style="margin-bottom:0">取消</button>
+      <button class="modal-btn modal-btn-primary" data-act="ok" style="margin-bottom:0">保存</button>
+    </div></div>`;
+  ov.addEventListener('click', ev => { if (ev.target === ov) ov.remove(); });
+  ov.querySelector('[data-act="no"]').onclick = () => ov.remove();
+  ov.querySelector('[data-act="ok"]').onclick = async () => {
+    const ci = ov.querySelector('#trtCi').value, co = ov.querySelector('#trtCo').value;
+    const brs = [...ov.querySelectorAll('.trt-br')].map(r2 => ({ start: r2.querySelector('.trt-bs').value, end: r2.querySelector('.trt-be').value })).filter(b2 => b2.start || b2.end);
+    const r = await cApi(`/time-entries/${id}/edit-time`, { method: 'POST', body: JSON.stringify({ clock_in: ci, clock_out: co, breaks: brs }) });
+    if (!r) return;
+    if (r.error) { ov.querySelector('#trtErr').textContent = r.error; return; }
+    ov.remove();
+    showToast(r.unchanged ? '没有改动' : '✅ 时间已修改，改动已记入编辑历史');
+    loadTimeRecords();
+  };
+  document.body.appendChild(ov);
+}
+
 // ✎ 改打卡含义: 时间由打卡机记录、这里不可改(改时间只有公司有权限的人在后台操作),
 // 仓库方只能改每个时间点算什么: 上班 / 休息开始 / 休息结束 / 下班 / 作废(误打)
 const TR_ROLE_L = { in: '上班', break_start: '休息开始', break_end: '休息结束', out: '下班', ignore: '作废（误打）' };
@@ -949,14 +1008,56 @@ function trAll() {
   document.getElementById('trTo').value = '';
   loadTimeRecords();
 }
-// 从工人列表跳到该工人的全部打卡记录 (只看TA + 全部时间范围, 汇总条即是TA的总工时)
+// 工人列表「打卡记录」: 先弹窗看该工人全部记录, 弹窗顶部有按钮再跳到打卡记录页
 let _trEmpFilter = null;
-function wkGoRecords(id, name) {
+async function wkGoRecords(id, name) {
+  const d = await cApi('/time-records?all=1');
+  if (!d || d.error) { showToast((d && d.error) || '加载失败', 'error'); return; }
+  const tzMap = {};
+  (d.sites || []).forEach(s => tzMap[s.id] = s.timezone || 'America/Chicago');
+  const list = (d.entries || []).filter(e => e.emp_db_id === id);
+  const totalH = list.reduce((s2, e) => s2 + (e.total_hours || 0), 0);
+  const rows = list.map(e => {
+    const tz = tzMap[e.site_id] || 'America/Chicago';
+    const ci = _trPT(e.clock_in), co = _trPT(e.clock_out);
+    const isOpen = e.status === 'open';
+    return `<tr>
+      <td style="white-space:nowrap">${_trFmtD(ci || co, tz)}</td>
+      <td>${_trFmtT(ci, tz)}</td>
+      <td>${isOpen ? '<span style="color:#B87400;font-weight:700">在班</span>' : _trFmtT(co, tz)}</td>
+      <td style="color:var(--gray-400)">${e.break_minutes ? e.break_minutes + 'min' : '—'}</td>
+      <td style="white-space:nowrap">${e.total_hours ? e.total_hours.toFixed(2) + 'h' : (isOpen ? '—' : '0h')}</td>
+      <td style="white-space:nowrap">${e.punch_review ? '<span style="color:#E63946">⚠ 待复核</span>' : (isOpen ? '<span style="color:#B87400">● 上班中</span>' : '<span style="color:#2D9D78">● 完成</span>')}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" style="color:var(--gray-400);text-align:center;padding:1rem">没有打卡记录</td></tr>';
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay show';
+  ov.innerHTML = `<div class="modal-box" style="max-width:640px;padding:1.3rem 1.5rem;text-align:left">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:.8rem;margin-bottom:.25rem;flex-wrap:wrap">
+      <h2 style="margin:0">📋 打卡记录 · ${esc(name)}</h2>
+      <button class="tr-act" style="border-color:var(--blue);color:var(--blue);flex-shrink:0" onclick="this.closest('.modal-overlay').remove();wkGoRecordsPage(${id}, '${esc(name).replace(/'/g, "&#39;")}')">↗ 跳转到打卡记录页</button>
+    </div>
+    <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:.7rem">班次 <b>${list.length}</b> · 总工时 <b>${totalH.toFixed(1)}h</b>（全部时间）</p>
+    <div style="max-height:56vh;overflow-y:auto;border:1px solid var(--gray-100,#eef1f4);border-radius:10px">
+      <table style="width:100%;margin:0">
+        <thead><tr><th>日期</th><th>上班</th><th>下班</th><th>休息</th><th>合计</th><th>状态</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <button class="modal-btn modal-btn-secondary" style="margin-top:1rem;margin-bottom:0" onclick="this.closest('.modal-overlay').remove()">关闭</button></div>`;
+  ov.addEventListener('click', ev => { if (ev.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+}
+// 弹窗顶部「跳转」: 切到打卡记录页只看该工人 (全部时间范围)
+function wkGoRecordsPage(id, name) {
   _trEmpFilter = { id, name };
   showTab('timerec');
   trAll();
 }
 function trClearEmpFilter() { _trEmpFilter = null; loadTimeRecords(); }
+// 账号权限: 未加载/未配置时默认允许
+function cCan(k) { return !window.C_PERMS || !!window.C_PERMS[k]; }
+let _trSiteBrk = {};
 // 员工姓名筛选下拉: 近90天打卡员工名单(与打印打卡表共用一份缓存) + 当前结果里出现的员工
 async function trEnsureEmps() {
   if (_tsEmps) return;
@@ -1000,7 +1101,7 @@ async function loadTimeRecords() {
   }
   _trSiteTz = {}; const siteName = {};
   window._trSites = d.sites || []; // 打印打卡表的仓库下拉用
-  (d.sites || []).forEach(s => { _trSiteTz[s.id] = s.timezone; siteName[s.id] = s.name + (s.code ? ` (${s.code})` : ''); });
+  (d.sites || []).forEach(s => { _trSiteTz[s.id] = s.timezone; _trSiteBrk[s.id] = s.kiosk_breaks_per_day == null ? 1 : s.kiosk_breaks_per_day; siteName[s.id] = s.name + (s.code ? ` (${s.code})` : ''); });
   await empsP; trRenderEmpOpts(d.entries);
   // 只看某个工人 (从工人列表「打卡记录」跳过来, 或工具栏员工下拉选中)
   if (_trEmpFilter) d = { ...d, entries: (d.entries || []).filter(e => e.emp_db_id === _trEmpFilter.id) };
@@ -1051,10 +1152,13 @@ async function loadTimeRecords() {
       `<button class="tr-act" style="border-color:${color};color:${color}" onclick="trPunchAction(${e.entry_id},'${act}','${label}','${esc(e.name)}')">${label}</button>`;
     let actTd = '<td>—</td>';
     if (e.entry_id && e.site_id) {
-      const extra = `<button class="tr-act" style="border-color:#4A6CF7;color:#4A6CF7" onclick="trEditOpen(${e.entry_id})" title="时间不可改，只能改每个打卡时间点的含义（上班/休息/下班/作废）">✎ 改含义</button>` +
+      const noBreaks = _trSiteBrk[e.site_id] === 0; // 不休息班型: 不出现休息按钮
+      const extra = (cCan('edit_time') ? `<button class="tr-act" style="border-color:#7C3AED;color:#7C3AED" onclick="trTimeOpen(${e.entry_id})" title="直接修改上班/下班/休息的具体时间（需管理员开通的权限）">⏱ 改时间</button>` : '') +
+        (cCan('relabel') ? `<button class="tr-act" style="border-color:#4A6CF7;color:#4A6CF7" onclick="trEditOpen(${e.entry_id})" title="时间不可改，只能改每个打卡时间点的含义（上班/休息/下班/作废）">✎ 改含义</button>` : '') +
         `<button class="tr-act" style="border-color:#CBD2DA;color:#667085" onclick="trHistOpen(${e.entry_id})" title="谁在什么时候改过什么">历史${e.edit_count ? '·' + e.edit_count : ''}</button>`;
-      if (isOpen && e.on_break) actTd = `<td>${actBtn('结束休息', 'break_end', '#2D9D78')}${actBtn('下班', 'out', '#E63946')}${extra}</td>`;
-      else if (isOpen) actTd = `<td>${actBtn('开始休息', 'break_start', '#F5A623')}${actBtn('下班', 'out', '#E63946')}${extra}</td>`;
+      if (!cCan('punch')) actTd = `<td>${extra || '—'}</td>`;
+      else if (isOpen && e.on_break) actTd = `<td>${actBtn('结束休息', 'break_end', '#2D9D78')}${actBtn('下班', 'out', '#E63946')}${extra}</td>`;
+      else if (isOpen) actTd = `<td>${noBreaks ? '' : actBtn('开始休息', 'break_start', '#F5A623')}${actBtn('下班', 'out', '#E63946')}${extra}</td>`;
       else actTd = `<td>${actBtn('上班', 'in', '#2D9D78')}${extra}</td>`;
     }
     return dayHead + `<tr>
@@ -1288,12 +1392,12 @@ async function loadWorkers() {
   document.getElementById('workersTable').innerHTML = workers.length ? workers.map(w=>`<tr>
     <td style="font-weight:600;white-space:nowrap">${esc(w.first_name||'')} ${esc(w.last_name||'')}</td>
     <td style="white-space:nowrap">${esc(w.emp_code||'')||'—'}</td>
-    <td style="white-space:nowrap">${w.id ? `<a href="javascript:void(0)" onclick="wkPosEdit(${w.id}, '${esc(w.position||'').replace(/'/g,"&#39;")}')" title="点击填写/修改职位" style="text-decoration:none">${esc(w.position||'') || '<span style="color:var(--gray-400)">✎ 填写</span>'}</a>` : (esc(w.position||'')||'—')}</td>
+    <td style="white-space:nowrap">${w.id && cCan('position') ? `<a href="javascript:void(0)" onclick="wkPosEdit(${w.id}, '${esc(w.position||'').replace(/'/g,"&#39;")}')" title="点击填写/修改职位" style="text-decoration:none">${esc(w.position||'') || '<span style="color:var(--gray-400)">✎ 填写</span>'}</a>` : (esc(w.position||'')||'—')}</td>
     <td style="white-space:nowrap">${esc(w.phone||'')||'—'}</td>
     <td>${esc(w.email||'')||'—'}</td>
     <td style="font-size:.82rem;color:var(--gray-500);white-space:nowrap">${esc(w.address||'')||'—'}</td>
     <td style="white-space:nowrap">${w.punch_days ? `${w.punch_days} 天 · <b>${(w.total_hours || 0).toFixed(1)}h</b>` : (w.assign_status ? '派工·' + esc(w.assign_status) : '—')}</td>
-    <td style="white-space:nowrap">${w.id ? `<button class="tr-act" style="border-color:var(--blue);color:var(--blue)" onclick="wkCardOpen(${w.id})">🪪 工卡</button><button class="tr-act" style="border-color:#2D9D78;color:#2D9D78" onclick="wkGoRecords(${w.id}, '${esc((w.first_name||'')+' '+(w.last_name||'')).replace(/'/g,"&#39;")}')" title="查看该工人的全部打卡记录和总工时">📋 打卡记录</button>` : '—'}</td>
+    <td style="white-space:nowrap">${w.id ? `${cCan('docs') ? `<button class="tr-act" style="border-color:var(--blue);color:var(--blue)" onclick="wkCardOpen(${w.id})">🪪 工卡</button>` : ''}<button class="tr-act" style="border-color:#2D9D78;color:#2D9D78" onclick="wkGoRecords(${w.id}, '${esc((w.first_name||'')+' '+(w.last_name||'')).replace(/'/g,"&#39;")}')" title="查看该工人的全部打卡记录和总工时">📋 打卡记录</button>` : '—'}</td>
   </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无派遣工人信息</td></tr>';
 }
 
