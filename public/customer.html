@@ -101,6 +101,8 @@ tr:last-child td{border-bottom:none}
 .cp-chips{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.35rem}
 .cp-chip{padding:4px 12px;border-radius:20px;border:1px solid var(--gray-200,#e2e5ea);background:#fff;color:var(--gray-600,#5F6B7A);font-size:.8rem;cursor:pointer;font-family:inherit;transition:all .15s}
 .cp-chip.active{background:var(--blue,#0F2B5B);color:#fff;border-color:var(--blue,#0F2B5B)}
+.tr-act{padding:4px 10px;border:1.5px solid;border-radius:8px;background:#fff;font-size:.78rem;font-weight:600;cursor:pointer;font-family:inherit;margin-right:4px;white-space:nowrap}
+.tr-act:hover{opacity:.75}
 .s-pending{background:#fef3c7;color:#92400e}
 .s-in_progress{background:#dbeafe;color:#1d4ed8}
 .s-completed{background:#d1fae5;color:#065f46}
@@ -548,6 +550,13 @@ function _trPT(s) {
 }
 function _trFmtD(d, tz) { return d ? d.toLocaleDateString('zh-CN', { timeZone: tz, month: '2-digit', day: '2-digit' }) : '—'; }
 function _trFmtT(d, tz) { return d ? d.toLocaleTimeString('en-GB', { timeZone: tz, hour12: false, hour: '2-digit', minute: '2-digit' }) : '—'; }
+async function trPunchAction(entryId, action, label, name) {
+  if (!confirm(`确认把当前时间记为「${name} ${label}」？`)) return;
+  const r = await cApi('/punch-action', { method: 'POST', body: JSON.stringify({ entry_id: entryId, action }) });
+  if (!r) return;
+  if (r.ok) { showToast(`✅ 已记录：${name} ${label}`); loadTimeRecords(); }
+  else showToast(r.error || '操作失败', 'error');
+}
 function trQuick(days) {
   const now = new Date();
   document.getElementById('trTo').value = now.toISOString().slice(0, 10);
@@ -556,13 +565,13 @@ function trQuick(days) {
 }
 async function loadTimeRecords() {
   const tb = document.getElementById('trTable');
-  tb.innerHTML = '<tr><td colspan="9" style="color:var(--gray-400)">加载中…</td></tr>';
+  tb.innerHTML = '<tr><td colspan="10" style="color:var(--gray-400)">加载中…</td></tr>';
   const q = new URLSearchParams();
   const f = document.getElementById('trFrom').value, t = document.getElementById('trTo').value;
   if (f) q.set('from', f); if (t) q.set('to', t);
   const d = await cApi('/time-records?' + q.toString());
   if (!d) return;
-  if (d.error) { tb.innerHTML = `<tr><td colspan="9" style="color:#E63946">${esc(d.error)}</td></tr>`; return; }
+  if (d.error) { tb.innerHTML = `<tr><td colspan="10" style="color:#E63946">${esc(d.error)}</td></tr>`; return; }
   if (!document.getElementById('trFrom').value) document.getElementById('trFrom').value = d.from;
   if (!document.getElementById('trTo').value) document.getElementById('trTo').value = d.to;
   _trSiteTz = {}; const siteName = {};
@@ -571,7 +580,7 @@ async function loadTimeRecords() {
   document.getElementById('trHead').innerHTML =
     '<th>员工</th>' + (multiSite ? '<th>仓库</th>' : '') +
     '<th>日期</th><th>上班</th><th>下班</th><th>休息</th><th>合计</th><th>状态</th>' +
-    (d.photos_enabled ? '<th>照片</th>' : '');
+    (d.photos_enabled ? '<th>照片</th>' : '') + '<th>操作</th>';
   let totalH = 0, onDuty = 0;
   const rows = (d.entries || []).map(e => {
     const tz = _trSiteTz[e.site_id] || 'America/Chicago';
@@ -582,6 +591,15 @@ async function loadTimeRecords() {
     const photoTd = d.photos_enabled
       ? `<td>${(e.photos || []).slice(0, 3).map(u => `<img src="${esc(u)}" style="width:34px;height:34px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200,#e2e5ea);cursor:pointer;vertical-align:middle;margin-right:3px" onclick="window.open('${esc(u)}','_blank')">`).join('') || '<span style="color:var(--gray-400)">—</span>'}</td>`
       : '';
+    // 操作: 把「当前时间」记为 上班/下班/休息开始/休息结束 (只对本公司仓库的平板打卡记录)
+    const actBtn = (label, act, color) =>
+      `<button class="tr-act" style="border-color:${color};color:${color}" onclick="trPunchAction(${e.entry_id},'${act}','${label}','${esc(e.name)}')">${label}</button>`;
+    let actTd = '<td>—</td>';
+    if (e.entry_id && e.site_id) {
+      if (isOpen && e.on_break) actTd = `<td>${actBtn('结束休息', 'break_end', '#2D9D78')}${actBtn('下班', 'out', '#E63946')}</td>`;
+      else if (isOpen) actTd = `<td>${actBtn('开始休息', 'break_start', '#F5A623')}${actBtn('下班', 'out', '#E63946')}</td>`;
+      else actTd = `<td>${actBtn('上班', 'in', '#2D9D78')}</td>`;
+    }
     return `<tr>
       <td style="font-weight:600">${esc(e.name)}</td>
       ${multiSite ? `<td style="color:var(--gray-500)">${esc(siteName[e.site_id] || '—')}</td>` : ''}
@@ -590,11 +608,12 @@ async function loadTimeRecords() {
       <td>${isOpen ? '<span style="color:#B87400;font-weight:700">在班</span>' : _trFmtT(co, tz)}</td>
       <td style="color:var(--gray-400)">${e.break_minutes ? e.break_minutes + ' min' : (e.break_count ? e.break_count + ' 次' : '—')}</td>
       <td>${e.total_hours ? e.total_hours.toFixed(2) + 'h' : (isOpen ? '—' : '0h')}</td>
-      <td>${isOpen ? '<span style="color:#B87400">● 上班中</span>' : '<span style="color:#2D9D78">● 完成</span>'}</td>
+      <td>${isOpen ? (e.on_break ? '<span style="color:#F5A623">● 休息中</span>' : '<span style="color:#B87400">● 上班中</span>') : '<span style="color:#2D9D78">● 完成</span>'}</td>
       ${photoTd}
+      ${actTd}
     </tr>`;
   });
-  tb.innerHTML = rows.join('') || `<tr><td colspan="9" style="color:var(--gray-400);text-align:center;padding:1.4rem">${
+  tb.innerHTML = rows.join('') || `<tr><td colspan="10" style="color:var(--gray-400);text-align:center;padding:1.4rem">${
     d.no_binding ? '贵公司还没有关联的仓库或打卡记录，请联系 Prime Anchor Workforce 完成绑定' : '该时段没有打卡记录（可试试「近30天」）'}</td></tr>`;
   document.getElementById('trSummary').innerHTML =
     `<span>班次 <b>${(d.entries || []).length}</b></span><span>总工时 <b>${totalH.toFixed(1)}h</b></span><span>当前在班 <b>${onDuty}</b></span>` +

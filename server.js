@@ -26618,7 +26618,7 @@ app.get('/api/customer/time-records', requireCustomer, (req, res) => {
   const photosEnabled = !!((db.prepare('SELECT show_punch_photos FROM partners WHERE id=?').get(pid) || {}).show_punch_photos);
   const ids = sites.map(s => s.id);
   const scope = _customerEntryScope(pid, ids);
-  const rows = db.prepare(`SELECT t.site_id, t.clock_in, t.clock_out, t.break_records, t.total_hours, t.status,
+  const rows = db.prepare(`SELECT t.id AS entry_id, t.site_id, t.clock_in, t.clock_out, t.break_records, t.total_hours, t.status, t.on_break,
       t.clock_in_photo_path, t.punch_photo_path, e.first_name, e.last_name
     FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id
     WHERE ${scope.sql} AND DATE(t.clock_in)>=? AND DATE(t.clock_in)<=?
@@ -26637,7 +26637,7 @@ app.get('/api/customer/time-records', requireCustomer, (req, res) => {
     } catch (_) {}
     if (r.punch_photo_path) photoFiles.push(r.punch_photo_path);
     const o = {
-      site_id: r.site_id,
+      entry_id: r.entry_id, site_id: r.site_id, on_break: !!r.on_break,
       name: [r.first_name, r.last_name].filter(Boolean).join(' ') || '—',
       clock_in: r.clock_in, clock_out: r.clock_out,
       break_minutes: Math.round(breakMin), break_count: breakN,
@@ -26654,6 +26654,62 @@ app.get('/api/customer/time-records', requireCustomer, (req, res) => {
     no_binding: !sites.length && !entries.length
   });
 });
+// 客户门户打卡操作: 仓库方把「当前时间」记为 上班/下班/休息开始/休息结束。
+// 以某条本公司仓库的记录为锚点定位员工+仓库, 复用打卡台的 _recordSitePunch 逻辑
+app.post('/api/customer/punch-action', requireCustomer, (req, res) => {
+  const pid = req.customerPartnerId;
+  const action = String((req.body || {}).action || '');
+  if (!['in', 'out', 'break_start', 'break_end'].includes(action)) return res.status(400).json({ error: '无效操作' });
+  const entry = db.prepare('SELECT id, employee_id, site_id, status, on_break, clock_in, break_records FROM time_entries WHERE id=?')
+    .get(parseInt((req.body || {}).entry_id));
+  if (!entry || !entry.site_id || !entry.employee_id) return res.status(404).json({ error: '未找到该记录' });
+  const site = db.prepare('SELECT * FROM job_sites WHERE id=? AND active=1').get(entry.site_id);
+  if (!site) return res.status(404).json({ error: '未找到该仓库' });
+  const sitePids = String(site.partner_ids || '').split(',').filter(Boolean).map(Number);
+  if (site.partner_id) sitePids.push(site.partner_id);
+  if (!pid || !sitePids.includes(pid)) return res.status(403).json({ error: '无权操作该仓库的记录' });
+  // 状态校验, 防误点
+  if (action !== 'in' && entry.status !== 'open') return res.status(400).json({ error: '该记录已完成，只能对进行中的记录操作' });
+  if (action === 'break_start' && entry.on_break) return res.status(400).json({ error: '该员工已在休息中' });
+  if (action === 'break_end' && !entry.on_break) return res.status(400).json({ error: '该员工不在休息中' });
+  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  const pOpen = s => new Date(String(s).replace(' ', 'T') + (/[zZ]$/.test(String(s)) ? '' : 'Z'));
+  const closeEntry = row => {
+    const totalHours = Math.round(((Date.now() - pOpen(row.clock_in)) / 3600000) * 100) / 100;
+    db.prepare("UPDATE time_entries SET clock_out=?, total_hours=?, regular_hours=?, overtime_hours=?, status='closed', on_break=0 WHERE id=?")
+      .run(now, totalHours, Math.min(totalHours, 8), Math.max(0, totalHours - 8), row.id);
+  };
+  let targetId = entry.id;
+  if (action === 'in') {
+    // 该员工在该仓库若还有进行中的班先关掉, 再开新班 (与打卡台一致, 但不做日期查找避免跨日漏配)
+    const open = db.prepare("SELECT id, clock_in FROM time_entries WHERE employee_id=? AND site_id=? AND status='open'").get(entry.employee_id, entry.site_id);
+    if (open) closeEntry(open);
+    const r2 = db.prepare(
+      "INSERT INTO time_entries (employee_id, clock_in, status, site_id, geo_verified, punch_type, break_records, on_break, site_timezone) VALUES(?,?,'open',?,1,'in','[]',0,?)"
+    ).run(entry.employee_id, now, entry.site_id, site.timezone || 'America/Chicago');
+    targetId = r2.lastInsertRowid;
+  } else if (action === 'break_start') {
+    let breaks = []; try { breaks = JSON.parse(entry.break_records || '[]'); } catch {}
+    breaks.push({ start: now });
+    db.prepare('UPDATE time_entries SET on_break=1, break_records=? WHERE id=?').run(JSON.stringify(breaks), entry.id);
+  } else if (action === 'break_end') {
+    let breaks = []; try { breaks = JSON.parse(entry.break_records || '[]'); } catch {}
+    const lastOpen = [...breaks].reverse().find(b => !b.end);
+    if (lastOpen) lastOpen.end = now; else breaks.push({ start: now, end: now });
+    const breakMin = breaks.reduce((s, b) => (b.start && b.end) ? s + Math.max(0, (pOpen(b.end) - pOpen(b.start)) / 60000) : s, 0);
+    db.prepare('UPDATE time_entries SET on_break=0, break_records=?, break_minutes=? WHERE id=?')
+      .run(JSON.stringify(breaks), Math.round(breakMin), entry.id);
+  } else { // out
+    closeEntry(entry);
+  }
+  // 标记该条记录含仓库方操作, 后台备注可见
+  const cur = db.prepare('SELECT notes FROM time_entries WHERE id=?').get(targetId);
+  if (cur && !String(cur.notes || '').includes('仓库方操作')) {
+    db.prepare("UPDATE time_entries SET notes=TRIM(COALESCE(notes,'')||' [含仓库方操作]') WHERE id=?").run(targetId);
+  }
+  res.json({ ok: 1, action });
+});
+
 // 客户门户打卡照片: 仅当该公司照片开关开启, 且该文件确属本公司仓库的打卡记录
 app.get('/api/customer/punch-photo/:filename', requireCustomer, async (req, res) => {
   const pid = req.customerPartnerId;
