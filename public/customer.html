@@ -344,6 +344,7 @@ async function customerLogin() {
 function customerLogout() {
   C_TOKEN = '';
   localStorage.removeItem('pa_customer_token');
+  try { document.cookie = 'pa_customer=; path=/; max-age=0'; } catch (_) {}
   document.getElementById('loginWrap').style.display = '';
   document.getElementById('app').style.display = 'none';
 }
@@ -437,6 +438,8 @@ async function showApp() {
   document.getElementById('loginWrap').style.display = 'none';
   // CSS 里 #app{display:none}, 置 '' 会退回样式表仍然隐藏 —— 必须显式 block
   document.getElementById('app').style.display = 'block';
+  // <img> 加载打卡照片带不上 Authorization 头, 写 cookie 让 requireCustomer 走 cookie 通道
+  try { document.cookie = 'pa_customer=' + C_TOKEN + '; path=/; max-age=86400; SameSite=Lax'; } catch (_) {}
   const me = await cApi('/me');
   if (!me) return;
   document.getElementById('customerNameDisplay').textContent = me.company_name;
