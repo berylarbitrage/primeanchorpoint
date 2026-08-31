@@ -728,9 +728,10 @@ async function tsOpen() {
   }
   const sites = window._trSites || [];
   const today = new Date().toISOString().slice(0, 10);
-  const empRows = _tsEmps.map(e2 => `<label style="display:flex;align-items:center;gap:.5rem;padding:.3rem .2rem;cursor:pointer;border-bottom:1px solid var(--gray-100,#f0f2f5)">
-      <input type="checkbox" class="ts-emp" value="${e2.id}" data-name="${esc(e2.name)}" data-code="${esc(e2.emp_code)}" checked>
-      <span style="flex:1">${esc(e2.name)}</span><span style="color:var(--gray-400);font-size:.8rem">${esc(e2.emp_code)}</span>
+  const empRows = _tsEmps.map(e2 => `<label style="display:flex;align-items:center;gap:.55rem;padding:.32rem .2rem;cursor:pointer;border-bottom:1px solid var(--gray-100,#f0f2f5);text-align:left">
+      <input type="checkbox" class="ts-emp" value="${e2.id}" data-name="${esc(e2.name)}" data-code="${esc(e2.emp_code)}" checked style="flex-shrink:0">
+      <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left">${esc(e2.name)}</span>
+      <span style="color:var(--gray-400);font-size:.78rem;white-space:nowrap">${esc(e2.emp_code)}</span>
     </label>`).join('') || '<p style="color:var(--gray-400);font-size:.85rem">近 90 天没有打卡员工记录，可打印空白表</p>';
   const ov = document.createElement('div');
   ov.className = 'modal-overlay show';
@@ -787,31 +788,52 @@ function tsPrint() {
     const n = Math.min(60, Math.max(1, parseInt(document.getElementById('tsRows').value) || 20));
     rows = Array.from({ length: n }, () => ({ name: '', code: '' }));
   }
-  const dateDisp = date ? new Date(date + 'T12:00:00Z').toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' }) : '';
+  // 日期显示: 2026/08/31 周一 (中间加空格)
+  let dateDisp = '';
+  if (date) {
+    const dd = new Date(date + 'T12:00:00Z');
+    dateDisp = dd.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }) + ' ' + dd.toLocaleDateString('zh-CN', { weekday: 'short' });
+  }
+  const withId = named; // 空白表不要工号列
   const w = window.open('', '_blank');
   if (!w) { showToast('浏览器拦截了打印窗口，请允许弹出窗口', 'error'); return; }
+  // 表头一律一行 (中英同行不叠字), 列宽固定, 干净的单线表格
+  const cols = [
+    { w: '5%', h: '#' },
+    { w: withId ? '20%' : '24%', h: '姓名 Name' },
+    ...(withId ? [{ w: '11%', h: '工号 ID' }] : []),
+    { w: '11%', h: '上班 In' },
+    { w: '13%', h: '休息开始 Break' },
+    { w: '13%', h: '休息结束 Back' },
+    { w: '11%', h: '下班 Out' },
+    { w: '16%', h: '签名 Signature' }
+  ];
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>打卡表 Time Sheet</title><style>
-    body{font-family:Arial,'Microsoft YaHei',sans-serif;margin:26px;color:#111}
-    h1{font-size:20px;text-align:center;margin:0 0 3px;letter-spacing:.06em}
-    .sub{text-align:center;font-size:11px;color:#666;margin-bottom:14px}
-    .meta{display:flex;justify-content:space-between;font-size:13px;margin-bottom:10px}
-    table{width:100%;border-collapse:collapse}
-    th,td{border:1px solid #333;padding:6px 5px;font-size:12px;text-align:center;height:27px}
-    th{background:#efefef;font-size:11.5px;line-height:1.25}
-    td.nm{text-align:left;padding-left:8px;width:150px}
-    .foot{display:flex;justify-content:space-between;margin-top:24px;font-size:13px}
-    @media print{@page{margin:12mm}}
+    *{box-sizing:border-box}
+    body{font-family:Arial,'Microsoft YaHei',sans-serif;margin:24px;color:#111}
+    h1{font-size:19px;text-align:center;margin:0 0 2px;letter-spacing:.05em}
+    .sub{text-align:center;font-size:10.5px;color:#888;margin-bottom:14px;letter-spacing:.12em}
+    .meta{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:8px}
+    .meta b{font-weight:700}
+    table{width:100%;border-collapse:collapse;table-layout:fixed;border:1.6px solid #222}
+    th,td{border:1px solid #555;height:30px;font-size:11px;text-align:center;white-space:nowrap;overflow:hidden;padding:4px 3px}
+    th{background:#f2f3f5;font-weight:700;font-size:10.8px}
+    td.nm{text-align:left;padding-left:8px;font-size:12px}
+    tbody td{color:#333}
+    .foot{display:flex;justify-content:space-between;margin-top:22px;font-size:12.5px}
+    @media print{@page{margin:11mm}}
   </style></head><body>
     <h1>员工打卡表 · Employee Time Sheet</h1>
-    <div class="sub">Prime Anchor Point</div>
-    <div class="meta"><span>仓库 Warehouse: ${site ? esc(site) : '____________________'}</span><span>日期 Date: ${dateDisp || '____________________'}</span></div>
-    <table><thead><tr>
-      <th style="width:26px">#</th><th>姓名<br>Name</th><th style="width:66px">工号<br>ID</th>
-      <th>上班<br>Clock In</th><th>休息开始<br>Break Start</th><th>休息结束<br>Break End</th><th>下班<br>Clock Out</th><th style="width:110px">签名<br>Signature</th>
-    </tr></thead><tbody>
-      ${rows.map((r, i) => `<tr><td>${i + 1}</td><td class="nm">${esc(r.name) || '&nbsp;'}</td><td>${esc(r.code)}</td><td></td><td></td><td></td><td></td><td></td></tr>`).join('')}
-    </tbody></table>
-    <div class="foot"><span>主管签字 Supervisor: ____________________</span><span>日期 Date: ______________</span></div>
+    <div class="sub">PRIME ANCHOR POINT</div>
+    <div class="meta"><span><b>仓库 Warehouse:</b> ${site ? esc(site) : '____________________'}</span><span><b>日期 Date:</b> ${dateDisp || '____________________'}</span></div>
+    <table>
+      <colgroup>${cols.map(c => `<col style="width:${c.w}">`).join('')}</colgroup>
+      <thead><tr>${cols.map(c => `<th>${c.h}</th>`).join('')}</tr></thead>
+      <tbody>
+      ${rows.map((r, i) => `<tr><td>${i + 1}</td><td class="nm">${esc(r.name) || '&nbsp;'}</td>${withId ? `<td>${esc(r.code)}</td>` : ''}<td></td><td></td><td></td><td></td><td></td></tr>`).join('')}
+      </tbody>
+    </table>
+    <div class="foot"><span><b>主管签字 Supervisor:</b> ____________________</span><span><b>日期 Date:</b> ______________</span></div>
     <script>setTimeout(function(){window.print()},300)<\/script>
   </body></html>`);
   w.document.close();
