@@ -990,6 +990,8 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       style="padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid var(--sky);margin-bottom:-2px;color:var(--sky)">待处理</button>
     <button id="cliInqTabHistory" onclick="switchClientInqTab('history')"
       style="padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)">历史问卷</button>
+    <button id="cliInqTabPortal" onclick="switchClientInqTab('portal')"
+      style="padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)">🏢 企业门户需求 <span id="portalPostBadge" style="display:none;background:var(--red);color:#fff;border-radius:999px;padding:0 7px;font-size:.72rem;margin-left:2px"></span></button>
   </div>
   <div id="cliInqPanePending">
     <div class="search-bar">
@@ -1003,6 +1005,10 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       </select>
     </div>
     <div class="card"><table><thead><tr><th>日期</th><th>编号</th><th>公司/姓名</th><th>职位需求</th><th>需求人数</th><th>地点</th><th>电话</th><th>操作</th></tr></thead><tbody id="cliInqTable"></tbody></table></div>
+  </div>
+  <div id="cliInqPanePortal" style="display:none">
+    <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:.8rem">企业客户在客户门户（/customer）「发布用工需求」提交的需求单</p>
+    <div id="portalPostList"></div>
   </div>
   <div id="cliInqPaneHistory" style="display:none">
     <div class="search-bar">
@@ -7233,66 +7239,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <div style="font-size:.75rem;color:var(--gray-400);margin-top:.3rem">按住 Ctrl（Mac：Command）可多选 · <a onclick="showTab('skill-settings')" style="cursor:pointer;color:var(--primary)">管理技能选项</a></div>
   </div>
 
-  <div class="form-section" style="margin:.4rem 0 0;padding:1rem;border:1px solid var(--gray-200);border-radius:8px;background:#fafbfc">
-    <h4 style="margin-bottom:.7rem">📋 更多细节（选填，求职者会在职位详情里看到）</h4>
-    <div class="field"><label>工作环境（多选）</label>
-      <div id="jEnvWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.3rem">
-        <button type="button" class="benefit-btn" data-val="常温仓" onclick="this.classList.toggle('active')">常温仓</button>
-        <button type="button" class="benefit-btn" data-val="冷藏库" onclick="this.classList.toggle('active')">冷藏库 (Cooler)</button>
-        <button type="button" class="benefit-btn" data-val="冷冻库" onclick="this.classList.toggle('active')">冷冻库 (Freezer)</button>
-        <button type="button" class="benefit-btn" data-val="流水线" onclick="this.classList.toggle('active')">流水线</button>
-        <button type="button" class="benefit-btn" data-val="户外" onclick="this.classList.toggle('active')">户外</button>
-        <button type="button" class="benefit-btn" data-val="站立工作为主" onclick="this.classList.toggle('active')">站立工作为主</button>
-      </div>
-    </div>
-    <div class="field"><label>搬运重量要求（单选）</label>
-      <div id="jLiftWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.3rem">
-        <button type="button" class="benefit-btn" data-val="轻体力（无重物）" onclick="jChipSingle(this)">轻体力（无重物）</button>
-        <button type="button" class="benefit-btn" data-val="25 磅以内" onclick="jChipSingle(this)">25 磅以内</button>
-        <button type="button" class="benefit-btn" data-val="50 磅以内" onclick="jChipSingle(this)">50 磅以内</button>
-        <button type="button" class="benefit-btn" data-val="70 磅以上" onclick="jChipSingle(this)">70 磅以上</button>
-      </div>
-    </div>
-    <div class="field"><label>经验要求（单选）</label>
-      <div id="jExpWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.3rem">
-        <button type="button" class="benefit-btn" data-val="无需经验（提供培训）" onclick="jChipSingle(this)">无需经验（提供培训）</button>
-        <button type="button" class="benefit-btn" data-val="需相关经验" onclick="jChipSingle(this)">需相关经验</button>
-        <button type="button" class="benefit-btn" data-val="需持证（如叉车证）" onclick="jChipSingle(this)">需持证（如叉车证）</button>
-      </div>
-    </div>
-    <div class="field"><label>入职要求（多选）</label>
-      <div id="jOnbWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.3rem">
-        <button type="button" class="benefit-btn" data-val="背景调查" onclick="this.classList.toggle('active')">背景调查</button>
-        <button type="button" class="benefit-btn" data-val="药检" onclick="this.classList.toggle('active')">药检</button>
-        <button type="button" class="benefit-btn" data-val="体检" onclick="this.classList.toggle('active')">体检</button>
-        <button type="button" class="benefit-btn" data-val="E-Verify" onclick="this.classList.toggle('active')">E-Verify</button>
-      </div>
-    </div>
-    <div class="field"><label>装备/着装要求（多选）</label>
-      <div id="jGearWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.3rem">
-        <button type="button" class="benefit-btn" data-val="自备钢头鞋" onclick="this.classList.toggle('active')">自备钢头鞋</button>
-        <button type="button" class="benefit-btn" data-val="提供劳保用品" onclick="this.classList.toggle('active')">提供劳保用品</button>
-        <button type="button" class="benefit-btn" data-val="需高可视背心" onclick="this.classList.toggle('active')">需高可视背心</button>
-        <button type="button" class="benefit-btn" data-val="冷库服装提供" onclick="this.classList.toggle('active')">冷库服装提供</button>
-      </div>
-    </div>
-    <div class="field"><label>交通（多选）</label>
-      <div id="jTransWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.3rem">
-        <button type="button" class="benefit-btn" data-val="公交可达" onclick="this.classList.toggle('active')">公交可达</button>
-        <button type="button" class="benefit-btn" data-val="建议自驾" onclick="this.classList.toggle('active')">建议自驾</button>
-        <button type="button" class="benefit-btn" data-val="可协助拼车" onclick="this.classList.toggle('active')">可协助拼车</button>
-      </div>
-    </div>
-    <div class="field-row">
-      <div class="field"><label>每周预计工时</label><input id="jHoursWeek" placeholder="例：40–50 小时"></div>
-      <div class="field"><label>预计开始日期</label><input type="date" id="jStartDate"></div>
-    </div>
-    <div class="field" style="margin-bottom:0"><label>其他说明（试用期、着装细节等）</label>
-      <textarea id="jDetailNotes" rows="2" placeholder="例：两周试用期；不允许穿短裤拖鞋；入职当天带两份证件…" style="width:100%;padding:.45rem .65rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;resize:vertical;box-sizing:border-box"></textarea>
-    </div>
-  </div>
-
-  <div class="field-row" style="margin-top:.75rem">
+  <div class="field-row">
     <div class="field"><label>招聘人数</label><input type="number" id="jHeadcount" min="1" value="1" placeholder="1"></div>
     <div class="field" style="display:flex;align-items:flex-end;padding-bottom:.2rem"><label style="display:inline-flex;align-items:center;gap:.4rem;text-transform:none;font-size:.9rem"><input type="checkbox" id="jUrgent"> 急聘（紧急招聘）</label></div>
   </div>
@@ -9911,7 +9858,7 @@ async function openJobModal(job) {
   document.querySelectorAll('#jBenefitsWrap .benefit-btn').forEach(btn => {
     btn.classList.toggle('active', activeBenefits.includes(btn.dataset.val));
   });
-  fillJobDetails(job);
+  _jobDetailsKeep = (job && job.details_json) || '{}';
 
   // Required skills – load options dynamically from server
   const activeSkills = job && job.required_skills ? job.required_skills.split(',').map(s=>s.trim()).filter(Boolean) : [];
@@ -10547,34 +10494,8 @@ async function deleteDescEntry(idx) {
 }
 // ─────────────────────────────────────────────────────────────────
 
-// 「更多细节」单选组: 点击互斥 (再点一次取消)
-function jChipSingle(btn) {
-  const on = btn.classList.contains('active');
-  btn.parentElement.querySelectorAll('.benefit-btn').forEach(b => b.classList.remove('active'));
-  if (!on) btn.classList.add('active');
-}
-const J_DETAIL_WRAPS = { env: 'jEnvWrap', lift: 'jLiftWrap', exp: 'jExpWrap', onboarding: 'jOnbWrap', gear: 'jGearWrap', transport: 'jTransWrap' };
-function collectJobDetails() {
-  const d = {};
-  for (const [k, wid] of Object.entries(J_DETAIL_WRAPS)) {
-    d[k] = [...document.querySelectorAll(`#${wid} .benefit-btn.active`)].map(b => b.dataset.val).join(',');
-  }
-  d.hours_week = document.getElementById('jHoursWeek').value.trim();
-  d.start_date = document.getElementById('jStartDate').value;
-  d.notes = document.getElementById('jDetailNotes').value.trim();
-  return d;
-}
-function fillJobDetails(job) {
-  let det = {};
-  try { det = JSON.parse((job && job.details_json) || '{}') || {}; } catch (_) {}
-  for (const [k, wid] of Object.entries(J_DETAIL_WRAPS)) {
-    const vals = String(det[k] || '').split(',').map(s => s.trim()).filter(Boolean);
-    document.querySelectorAll(`#${wid} .benefit-btn`).forEach(b => b.classList.toggle('active', vals.includes(b.dataset.val)));
-  }
-  document.getElementById('jHoursWeek').value = det.hours_week || '';
-  document.getElementById('jStartDate').value = det.start_date || '';
-  document.getElementById('jDetailNotes').value = det.notes || '';
-}
+// 职位表单不再有「更多细节」区; 编辑时原样保留已存的 details_json, 不清空
+let _jobDetailsKeep = '{}';
 async function saveJob() {
   const id = document.getElementById('jobId').value;
   const langNames = { en: 'English', zh: '中文', es: 'Español' };
@@ -10637,7 +10558,7 @@ async function saveJob() {
     description: getLangDescValue('En'),
     urgent: document.getElementById('jUrgent').checked,
     headcount: parseInt(document.getElementById('jHeadcount').value) || 1,
-    details_json: JSON.stringify(collectJobDetails()),
+    details_json: _jobDetailsKeep,
     job_status: 'open',
     active: true
   };
@@ -10840,11 +10761,57 @@ function switchClientInqTab(tab) {
   currentClientInqTab = tab;
   document.getElementById('cliInqPanePending').style.display = tab === 'pending' ? '' : 'none';
   document.getElementById('cliInqPaneHistory').style.display = tab === 'history'  ? '' : 'none';
-  const btnP = document.getElementById('cliInqTabPending'), btnH = document.getElementById('cliInqTabHistory');
-  btnP.style.borderBottomColor = tab === 'pending' ? 'var(--sky)' : 'transparent'; btnP.style.color = tab === 'pending' ? 'var(--sky)' : 'var(--gray-500)';
-  btnH.style.borderBottomColor = tab === 'history'  ? 'var(--sky)' : 'transparent'; btnH.style.color = tab === 'history'  ? 'var(--sky)' : 'var(--gray-500)';
+  document.getElementById('cliInqPanePortal').style.display = tab === 'portal' ? '' : 'none';
+  [['cliInqTabPending','pending'],['cliInqTabHistory','history'],['cliInqTabPortal','portal']].forEach(([id, t]) => {
+    const b = document.getElementById(id);
+    b.style.borderBottomColor = tab === t ? 'var(--sky)' : 'transparent';
+    b.style.color = tab === t ? 'var(--sky)' : 'var(--gray-500)';
+  });
   if (tab === 'history' && !allClientInqHistory.length) loadClientInquiryHistory();
   else if (tab === 'history') filterClientInquiryHistory();
+  else if (tab === 'portal') loadPortalPosts();
+}
+
+// ── 企业门户需求: 客户在 /customer 提交的用工需求单 ──
+const PORTAL_POST_STATUS = { pending: '待处理', in_progress: '处理中', completed: '已完成', cancelled: '已取消' };
+const CP_DETAIL_LABELS = { shift: '班次', env: '环境', lift: '搬运', exp: '经验', onboarding: '入职要求', gear: '装备', hours_week: '每周工时', pay_budget: '时薪预算' };
+async function loadPortalPosts() {
+  const box = document.getElementById('portalPostList');
+  box.innerHTML = '<span style="color:var(--gray-400)">加载中…</span>';
+  const posts = await api('/admin/customer-job-posts');
+  if (!Array.isArray(posts)) { box.innerHTML = `<span style="color:var(--red)">${posts.error || '加载失败'}</span>`; return; }
+  const pending = posts.filter(p => p.status === 'pending').length;
+  const badge = document.getElementById('portalPostBadge');
+  badge.style.display = pending ? '' : 'none'; badge.textContent = pending || '';
+  if (!posts.length) { box.innerHTML = '<div class="card" style="color:var(--gray-400)">暂无企业门户需求</div>'; return; }
+  box.innerHTML = posts.map(p => {
+    let det = {}; try { det = JSON.parse(p.details_json || '{}') || {}; } catch {}
+    const detRows = Object.entries(CP_DETAIL_LABELS)
+      .map(([k, lbl]) => det[k] ? `<span style="margin-right:1rem">${lbl}: <b>${esc(det[k])}</b></span>` : '').join('');
+    return `<div class="card" style="margin-bottom:.8rem">
+      <div style="display:flex;align-items:center;gap:.7rem;flex-wrap:wrap">
+        <b style="font-size:1.02rem">${esc(p.title)}</b>
+        <span style="color:var(--gray-500);font-size:.85rem">${esc(p.customer_company || '')}</span>
+        <span style="color:var(--gray-400);font-size:.8rem">${(p.created_at || '').slice(0, 16).replace('T', ' ')}</span>
+        <select onchange="setPortalPostStatus(${p.id}, this.value)" style="margin-left:auto;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.82rem">
+          ${Object.entries(PORTAL_POST_STATUS).map(([v, l]) => `<option value="${v}"${p.status === v ? ' selected' : ''}>${l}</option>`).join('')}
+        </select>
+      </div>
+      <div style="font-size:.86rem;color:var(--gray-600);margin-top:.45rem">
+        ${p.headcount ? `人数 <b>${p.headcount}</b> · ` : ''}${p.work_type ? `${esc(p.work_type)} · ` : ''}${p.location ? `📍 ${esc(p.location)} · ` : ''}${p.start_date ? `期望开始 ${esc(p.start_date)}` : ''}
+      </div>
+      ${detRows ? `<div style="font-size:.83rem;color:var(--gray-600);margin-top:.4rem;padding:.45rem .6rem;background:var(--gray-50,#f8fafc);border-radius:8px">${detRows}</div>` : ''}
+      ${p.requirements ? `<div style="font-size:.84rem;margin-top:.4rem">📄 ${esc(p.requirements)}</div>` : ''}
+      ${p.notes ? `<div style="font-size:.84rem;color:var(--gray-500);margin-top:.25rem">💬 ${esc(p.notes)}</div>` : ''}
+      <div style="font-size:.78rem;color:var(--gray-400);margin-top:.35rem">联系人：${esc(p.contact_name || '—')} · ${esc(p.customer_email || '')}</div>
+    </div>`;
+  }).join('');
+}
+async function setPortalPostStatus(id, status) {
+  const d = await api(`/admin/customer-job-posts/${id}`, { method: 'PUT', body: JSON.stringify({ status }) });
+  if (d.error) return showToast(d.error, 'error');
+  showToast('状态已更新');
+  loadPortalPosts();
 }
 
 async function loadClientInquiries() {
@@ -18885,19 +18852,41 @@ async function openSvModal() {
 async function loadSvLinks() {
   const box = document.getElementById('svList');
   box.innerHTML = '加载中…';
-  const d = await api('/admin/partner-photo-access');
-  if (d.error) { box.innerHTML = `<span style="color:var(--red)">${d.error}</span>`; return; }
-  if (!d.length) { box.innerHTML = '<span style="color:var(--gray-400)">还没有启用中的合作公司</span>'; return; }
-  box.innerHTML = d.map(p => `
-    <div style="display:flex;align-items:center;gap:.6rem;padding:.6rem .2rem;border-bottom:1px solid var(--gray-100);flex-wrap:wrap">
-      <div style="flex:1;min-width:180px">
-        <b>${p.name}</b>
-        <span style="color:var(--gray-400);font-size:.78rem;margin-left:.4rem">${p.site_count} 个仓库 · ${p.account_count} 个企业账号</span>
-        <span style="margin-left:.5rem;font-size:.74rem;padding:2px 8px;border-radius:999px;${p.photos_enabled ? 'background:#E8F5E9;color:#15803d' : 'background:var(--gray-100);color:var(--gray-400)'}">${p.photos_enabled ? '照片可见' : '照片不可见'}</span>
+  const resp = await api('/admin/partner-photo-access');
+  if (resp.error) { box.innerHTML = `<span style="color:var(--red)">${resp.error}</span>`; return; }
+  const d = resp.partners || [];
+  let extra = '';
+  if ((resp.orphan_accounts || []).length) {
+    extra += `<div style="margin-top:.8rem;padding:.6rem .8rem;background:#FFF7ED;border:1px solid #fed7aa;border-radius:10px;font-size:.8rem;color:#9a3412">
+      <b>⚠ 未关联公司档案的企业账号</b>（登录门户看不到任何打卡记录）：<br>
+      ${resp.orphan_accounts.map(c => `${esc(c.company_name)} &lt;${esc(c.email)}&gt;`).join('、')}<br>
+      <span style="color:#b45309">修复：🔐 账户管理 → 客户账户 → 编辑该账号 → 「关联合作公司档案」选对应公司（没有档案就先在客户管理里新建）</span>
+    </div>`;
+  }
+  if ((resp.orphan_sites || []).length) {
+    extra += `<div style="margin-top:.6rem;padding:.6rem .8rem;background:#FFF7ED;border:1px solid #fed7aa;border-radius:10px;font-size:.8rem;color:#9a3412">
+      <b>⚠ 未绑定公司的仓库</b>（这些仓库的平板打卡在任何门户都看不到）：${resp.orphan_sites.map(esc).join('、')}<br>
+      <span style="color:#b45309">修复：🏭 仓库管理 → 编辑仓库 → 「关联公司」选对应公司</span>
+    </div>`;
+  }
+  if (!d.length) { box.innerHTML = '<span style="color:var(--gray-400)">还没有启用中的合作公司</span>' + extra; return; }
+  box.innerHTML = extra + d.map(p => `
+    <div style="padding:.6rem .2rem;border-bottom:1px solid var(--gray-100)">
+      <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+        <div style="flex:1;min-width:180px">
+          <b>${p.name}</b>
+          <span style="color:var(--gray-400);font-size:.78rem;margin-left:.4rem">${p.site_count} 个仓库 · ${p.account_count} 个企业账号</span>
+          <span style="margin-left:.5rem;font-size:.74rem;padding:2px 8px;border-radius:999px;${p.photos_enabled ? 'background:#E8F5E9;color:#15803d' : 'background:var(--gray-100);color:var(--gray-400)'}">${p.photos_enabled ? '照片可见' : '照片不可见'}</span>
+        </div>
+        ${p.photos_enabled
+          ? `<button class="btn btn-outline btn-sm" style="color:var(--red);border-color:#fecaca" onclick="svToggle(${p.id}, false)">关闭照片</button>`
+          : `<button class="btn btn-green btn-sm" onclick="svToggle(${p.id}, true)">开启照片</button>`}
       </div>
-      ${p.photos_enabled
-        ? `<button class="btn btn-outline btn-sm" style="color:var(--red);border-color:#fecaca" onclick="svToggle(${p.id}, false)">关闭照片</button>`
-        : `<button class="btn btn-green btn-sm" onclick="svToggle(${p.id}, true)">开启照片</button>`}
+      <div style="font-size:.76rem;margin-top:.25rem;${p.site_count ? 'color:var(--gray-500)' : 'color:#b45309'}">
+        ${p.site_count
+          ? '🏭 ' + p.site_names.map(n => esc(n)).join('、')
+          : '⚠ 未绑定任何仓库 —— 该公司账号在客户门户看不到平板打卡记录（去 🏭 仓库管理 → 编辑仓库 → 关联公司）'}
+      </div>
     </div>`).join('');
 }
 async function svToggle(id, on) {
