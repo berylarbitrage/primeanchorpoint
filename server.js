@@ -26999,12 +26999,31 @@ app.get('/api/customer/time-records', requireCustomer, (req, res) => {
     } catch (_) {}
     to = new Date().toISOString().slice(0, 10);
   }
-  const rows = db.prepare(`SELECT t.id AS entry_id, t.employee_id AS emp_db_id, t.site_id, t.clock_in, t.clock_out, t.break_records, t.total_hours, t.status, t.on_break,
+  // 日期过滤按「仓库当地时区的日期」(与前端按天分组同一口径), 不能直接用 DATE(clock_in):
+  // clock_in 存 UTC, 当地晚上7点后的打卡 UTC 日期已跳到「明天」, 按 UTC 过滤会让
+  // 「今天」冒出昨天的晚班、当天晚班反而消失, 快捷日期按钮看起来就像没有用。
+  // SQL 先按 UTC 日期放宽 ±1 天取数, 再逐条按当地日期精确过滤 (全部模式不设日期界限)。
+  let rows = db.prepare(`SELECT t.id AS entry_id, t.employee_id AS emp_db_id, t.site_id, t.clock_in, t.clock_out, t.break_records, t.total_hours, t.status, t.on_break,
       t.clock_in_photo_path, t.punch_photo_path, t.work_date, t.punch_review, t.raw_punches, e.first_name, e.last_name,
       (SELECT COUNT(*) FROM time_entry_edits x WHERE x.entry_id=t.id) AS edit_count
     FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id
-    WHERE ${scope.sql}${empSql} AND DATE(t.clock_in)>=? AND DATE(t.clock_in)<=?
-    ORDER BY t.clock_in DESC LIMIT 2000`).all(...scope.params, ...empParams, from, to);
+    WHERE ${scope.sql}${empSql}${wantAll ? '' : " AND DATE(t.clock_in)>=DATE(?, '-1 day') AND DATE(t.clock_in)<=DATE(?, '+1 day')"}
+    ORDER BY t.clock_in DESC LIMIT 2000`).all(...scope.params, ...empParams, ...(wantAll ? [] : [from, to]));
+  if (!wantAll) {
+    const tzOf = {}; sites.forEach(s => { tzOf[s.id] = s.timezone || 'America/Chicago'; });
+    const fmtCache = {};
+    const localDay = (ts, tz) => {
+      if (!ts) return '';
+      const d2 = new Date(/[zZ]$|[+\-]\d{2}:?\d{2}$/.test(String(ts)) ? ts : String(ts).replace(' ', 'T') + 'Z');
+      if (isNaN(d2)) return '';
+      const fmt = fmtCache[tz] || (fmtCache[tz] = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }));
+      return fmt.format(d2);
+    };
+    rows = rows.filter(r => {
+      const day = localDay(r.clock_in || r.clock_out, tzOf[r.site_id] || 'America/Chicago');
+      return day >= from && day <= to;
+    });
+  }
   const entries = rows.map(r => {
     let breakMin = 0, breakN = 0;
     const photoFiles = [];

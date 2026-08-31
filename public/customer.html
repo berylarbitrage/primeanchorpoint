@@ -1034,11 +1034,16 @@ async function trPunchAction(entryId, action, label, name) {
   else showToast(r.error || '操作失败', 'error');
 }
 let _trAll = false; // 「全部」模式: 不带日期范围, 后端从最早一条查起
+// 快捷日期按仓库当地时区算 (不能用 toISOString 的 UTC 日期: 当地晚上7点后 UTC 已是
+// 「明天」, 点「今天」会填成明天的日期, 看起来按钮就像没有用)
+let _trTz = 'America/Chicago'; // 首次加载后取第一个仓库的时区
+function _trLocalToday() { return new Date().toLocaleDateString('en-CA', { timeZone: _trTz }); }
+function _trShiftDay(ymd, days) { const d = new Date(ymd + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); }
 function trQuick(days) {
   _trAll = false;
-  const now = new Date();
-  document.getElementById('trTo').value = now.toISOString().slice(0, 10);
-  document.getElementById('trFrom').value = new Date(now - days * 86400000).toISOString().slice(0, 10);
+  const today = _trLocalToday();
+  document.getElementById('trTo').value = today;
+  document.getElementById('trFrom').value = _trShiftDay(today, -days);
   loadTimeRecords();
 }
 function trPreset(from, to) {
@@ -1047,15 +1052,15 @@ function trPreset(from, to) {
   document.getElementById('trTo').value = to;
   loadTimeRecords();
 }
-function trWeek() { // 自然周: 周一 ~ 周日
-  const n = new Date();
-  const mon = new Date(n.getTime() - ((n.getUTCDay() + 6) % 7) * 86400000);
-  trPreset(mon.toISOString().slice(0, 10), new Date(mon.getTime() + 6 * 86400000).toISOString().slice(0, 10));
+function trWeek() { // 自然周: 周一 ~ 周日 (仓库当地)
+  const today = _trLocalToday();
+  const mon = _trShiftDay(today, -((new Date(today + 'T12:00:00Z').getUTCDay() + 6) % 7));
+  trPreset(mon, _trShiftDay(mon, 6));
 }
-function trMonth() { // 自然月: 1号 ~ 月末
-  const n = new Date();
-  trPreset(new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), 1)).toISOString().slice(0, 10),
-    new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth() + 1, 0)).toISOString().slice(0, 10));
+function trMonth() { // 自然月: 1号 ~ 月末 (仓库当地)
+  const first = _trLocalToday().slice(0, 8) + '01';
+  const d = new Date(first + 'T12:00:00Z'); d.setUTCMonth(d.getUTCMonth() + 1); d.setUTCDate(0);
+  trPreset(first, d.toISOString().slice(0, 10));
 }
 function trAll() {
   _trAll = true;
@@ -1157,6 +1162,7 @@ async function loadTimeRecords() {
   _trSiteTz = {}; const siteName = {};
   window._trSites = d.sites || []; // 打印打卡表的仓库下拉用
   (d.sites || []).forEach(s => { _trSiteTz[s.id] = s.timezone; _trSiteBrk[s.id] = s.kiosk_breaks_per_day == null ? 1 : s.kiosk_breaks_per_day; siteName[s.id] = s.name + (s.code ? ` (${s.code})` : ''); });
+  if ((d.sites || [])[0] && d.sites[0].timezone) _trTz = d.sites[0].timezone; // 快捷日期按钮用仓库时区
   await empsP; trRenderEmpOpts(d.entries);
   // 只看某个工人 (从工人列表「打卡记录」跳过来, 或工具栏员工下拉选中)
   if (_trEmpFilter) d = { ...d, entries: (d.entries || []).filter(e => e.emp_db_id === _trEmpFilter.id) };
