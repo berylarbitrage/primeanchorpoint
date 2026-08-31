@@ -635,12 +635,82 @@ async function trSetKioskMode(siteId, mode, label, isCurrent) {
   if (isCurrent) return;
   const ok = await cpConfirm(mode
     ? { title: `设为「${label}」？`, msg: '从现在起该仓库打卡台上的所有打卡\n都会记为「' + label + '」。', okLabel: '确认切换', okBg: 'var(--orange)' }
-    : { title: '恢复自动模式？', msg: '打卡台将恢复自动判断上班/下班。', okLabel: '恢复自动', okBg: 'var(--sky)' });
+    : { title: '恢复自动模式？', msg: '打卡台将只记录每次打卡时间，\n按当天打卡次数自动归类上下班和休息。', okLabel: '恢复自动', okBg: 'var(--sky)' });
   if (!ok) return;
   const r = await cApi('/kiosk-mode', { method: 'POST', body: JSON.stringify({ site_id: siteId, mode }) });
   if (!r) return;
   if (r.ok) { showToast(`✅ 打卡机模式：${label}`); loadTimeRecords(); }
   else { showToast(r.error || '设置失败', 'error'); loadTimeRecords(); }
+}
+// ✎ 直接修改一条记录的打卡时间 (仓库时区, 只能在该记录自己的工作日内)
+function trEditOpen(id) {
+  const e = (window._trEntries || {})[id];
+  if (!e) return;
+  const tz = _trSiteTz[e.site_id] || 'America/Chicago';
+  const hm = v => { const d2 = _trPT(v); return d2 ? d2.toLocaleTimeString('en-GB', { timeZone: tz, hour12: false, hour: '2-digit', minute: '2-digit' }) : ''; };
+  let breaks = []; try { breaks = JSON.parse(e.break_records || '[]'); } catch (_) {}
+  const wd = e.work_date || (_trPT(e.clock_in) ? _trPT(e.clock_in).toLocaleDateString('en-CA', { timeZone: tz }) : '');
+  const inp = 'style="width:100%;padding:.45rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:8px;font-family:inherit"';
+  const brRow = (s, en) => `<div class="tre-br" style="display:flex;gap:.5rem;align-items:center;margin-top:.45rem">
+      <input type="time" class="tre-bs" value="${s}" ${inp}><span style="color:var(--gray-400)">~</span>
+      <input type="time" class="tre-be" value="${en}" ${inp}>
+      <button type="button" onclick="this.parentElement.remove()" style="border:none;background:none;color:#E63946;cursor:pointer;font-size:1.05rem">✕</button></div>`;
+  window._treBrRow = brRow('', '');
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay show';
+  ov.innerHTML = `<div class="modal-box" style="max-width:430px;padding:1.4rem 1.5rem">
+    <h2 style="margin-bottom:.2rem">✎ 修改打卡时间</h2>
+    <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:1rem">${esc(e.name)} · ${wd}（仓库当地时间，只能改这一天之内）</p>
+    <div style="display:flex;gap:.7rem">
+      <div style="flex:1"><label style="font-size:.8rem;color:var(--gray-500)">上班</label><input type="time" id="treCi" value="${hm(e.clock_in)}" ${inp}></div>
+      <div style="flex:1"><label style="font-size:.8rem;color:var(--gray-500)">下班（留空=还在班）</label><input type="time" id="treCo" value="${hm(e.clock_out)}" ${inp}></div>
+    </div>
+    <div style="margin-top:.9rem"><label style="font-size:.8rem;color:var(--gray-500)">休息（必须在上下班之间）</label>
+      <div id="treBrs">${breaks.map(b => brRow(hm(b.start), hm(b.end))).join('')}</div>
+      <button type="button" onclick="document.getElementById('treBrs').insertAdjacentHTML('beforeend', window._treBrRow)" style="margin-top:.45rem;border:1.5px dashed var(--gray-200,#e2e5ea);background:none;border-radius:8px;padding:.35rem .8rem;cursor:pointer;color:var(--gray-500);font-size:.82rem">+ 加一段休息</button>
+    </div>
+    <div id="treErr" style="color:#E63946;font-size:.82rem;margin-top:.6rem"></div>
+    <div style="display:flex;gap:.6rem;margin-top:1.1rem">
+      <button class="modal-btn modal-btn-secondary" data-act="no" style="margin-bottom:0">取消</button>
+      <button class="modal-btn modal-btn-primary" data-act="ok" style="margin-bottom:0">保存</button>
+    </div></div>`;
+  ov.addEventListener('click', ev => { if (ev.target === ov) ov.remove(); });
+  ov.querySelector('[data-act="no"]').onclick = () => ov.remove();
+  ov.querySelector('[data-act="ok"]').onclick = async () => {
+    const ci = ov.querySelector('#treCi').value, co = ov.querySelector('#treCo').value;
+    const brs = [...ov.querySelectorAll('.tre-br')].map(r2 => ({ start: r2.querySelector('.tre-bs').value, end: r2.querySelector('.tre-be').value })).filter(b => b.start || b.end);
+    const r = await cApi(`/time-entries/${id}/edit`, { method: 'POST', body: JSON.stringify({ clock_in: ci, clock_out: co, breaks: brs }) });
+    if (!r) return;
+    if (r.error) { ov.querySelector('#treErr').textContent = r.error; return; }
+    ov.remove();
+    showToast(r.unchanged ? '没有改动' : '✅ 已保存，改动已记入编辑历史');
+    loadTimeRecords();
+  };
+  document.body.appendChild(ov);
+}
+// 🕘 编辑历史: 谁在什么时候把什么从A改到B
+async function trHistOpen(id) {
+  const e = (window._trEntries || {})[id] || {};
+  const tz = _trSiteTz[e.site_id] || 'America/Chicago';
+  const rows = await cApi(`/time-entries/${id}/edits`);
+  if (!rows || rows.error) { showToast((rows && rows.error) || '加载失败', 'error'); return; }
+  const typeLabel = { admin: '后台', customer: '仓库方', system: '系统' };
+  const items = rows.map(r => {
+    let ch = []; try { ch = JSON.parse(r.changes || '[]'); } catch (_) {}
+    const when = r.created_at ? new Date(String(r.created_at).replace(' ', 'T') + 'Z').toLocaleString('zh-CN', { timeZone: tz, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+    return `<div style="padding:.55rem 0;border-bottom:1px solid var(--gray-100,#eef1f4)">
+      <div style="font-size:.78rem;color:var(--gray-400)">${when} · ${typeLabel[r.editor_type] || esc(r.editor_type || '')}${r.editor_name ? ' · ' + esc(r.editor_name) : ''}</div>
+      ${ch.map(c => `<div style="font-size:.86rem;margin-top:.15rem"><b>${esc(c.f || '')}</b>：${esc(String(c.old == null ? '' : c.old))} → <b>${esc(String(c.new == null ? '' : c.new))}</b></div>`).join('')}
+    </div>`;
+  }).join('') || '<p style="color:var(--gray-400)">这条记录还没有编辑记录</p>';
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay show';
+  ov.innerHTML = `<div class="modal-box" style="max-width:470px;padding:1.3rem 1.5rem">
+    <h2 style="margin-bottom:.7rem">🕘 编辑历史${e.name ? ' · ' + esc(e.name) : ''}</h2>
+    <div style="max-height:55vh;overflow-y:auto">${items}</div>
+    <button class="modal-btn modal-btn-secondary" style="margin-top:1rem;margin-bottom:0" onclick="this.closest('.modal-overlay').remove()">关闭</button></div>`;
+  ov.addEventListener('click', ev => { if (ev.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
 }
 async function trPunchAction(entryId, action, label, name) {
   const ok = await cpConfirm({ icon: '⏱', title: `${esc(label)}打卡`, msg: `把当前时间记为\n「${esc(name)} ${esc(label)}」？`, okLabel: '确认记录' });
@@ -712,7 +782,9 @@ async function loadTimeRecords() {
     return dt ? dt.toLocaleDateString('en-CA', { timeZone: _trSiteTz[e.site_id] || 'America/Chicago' }) : '?';
   };
   const dayGroups = {};
+  window._trEntries = {};
   (d.entries || []).forEach(e => {
+    window._trEntries[e.entry_id] = e;
     const k = trDayOf(e);
     (dayGroups[k] = dayGroups[k] || { n: 0, h: 0 });
     dayGroups[k].n++; dayGroups[k].h += e.total_hours || 0;
@@ -744,9 +816,11 @@ async function loadTimeRecords() {
       `<button class="tr-act" style="border-color:${color};color:${color}" onclick="trPunchAction(${e.entry_id},'${act}','${label}','${esc(e.name)}')">${label}</button>`;
     let actTd = '<td>—</td>';
     if (e.entry_id && e.site_id) {
-      if (isOpen && e.on_break) actTd = `<td>${actBtn('结束休息', 'break_end', '#2D9D78')}${actBtn('下班', 'out', '#E63946')}</td>`;
-      else if (isOpen) actTd = `<td>${actBtn('开始休息', 'break_start', '#F5A623')}${actBtn('下班', 'out', '#E63946')}</td>`;
-      else actTd = `<td>${actBtn('上班', 'in', '#2D9D78')}</td>`;
+      const extra = `<button class="tr-act" style="border-color:#4A6CF7;color:#4A6CF7" onclick="trEditOpen(${e.entry_id})" title="直接修改这条记录的上班/下班/休息时间">✎ 改时间</button>` +
+        `<button class="tr-act" style="border-color:#CBD2DA;color:#667085" onclick="trHistOpen(${e.entry_id})" title="谁在什么时候改过什么">历史${e.edit_count ? '·' + e.edit_count : ''}</button>`;
+      if (isOpen && e.on_break) actTd = `<td>${actBtn('结束休息', 'break_end', '#2D9D78')}${actBtn('下班', 'out', '#E63946')}${extra}</td>`;
+      else if (isOpen) actTd = `<td>${actBtn('开始休息', 'break_start', '#F5A623')}${actBtn('下班', 'out', '#E63946')}${extra}</td>`;
+      else actTd = `<td>${actBtn('上班', 'in', '#2D9D78')}${extra}</td>`;
     }
     return dayHead + `<tr>
       <td style="font-weight:600">${esc(e.name)}</td>
