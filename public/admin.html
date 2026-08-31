@@ -18442,6 +18442,7 @@ function renderTimeEntries(list) {
       ${t.punch_review ? `<button class="btn btn-sm btn-success" onclick="markPunchReviewed(${t.id})" title="核对无误，去掉待复核标记">✓ 已复核</button> ` : ''}
       ${t.manager_confirmed && t.needs_review ? `<button class="btn btn-sm btn-success" onclick="confirmTimeEntry(${t.id})">✓ 确认</button> ` : ''}
       <button class="btn btn-sm" onclick='openTimeModal(${JSON.stringify(t).replace(/'/g,"&#39;")})'>编辑</button>
+      <button class="btn btn-sm" onclick="timeHistOpen(${t.id})" title="这条记录的编辑历史（后台/仓库方/系统）">历史</button>
       <button class="btn btn-sm btn-red" onclick="deleteTimeEntry(${t.id})">删除</button>
     </td>
   </tr>`;
@@ -18701,6 +18702,31 @@ async function confirmTimeEntry(id) {
 async function markPunchReviewed(id) {
   const r = await api(`/admin/time-entries/${id}/punch-reviewed`, { method:'POST', body:'{}' });
   if (r) { showToast('已复核', 'success'); loadTimeEntries(); }
+}
+
+// 🕘 打卡记录编辑历史 (后台/仓库方/系统 全部改动)
+async function timeHistOpen(id) {
+  const rows = await api(`/admin/time-entries/${id}/edits`);
+  if (!rows || rows.error) { showToast((rows && rows.error) || '加载失败', 'error'); return; }
+  const t = (window._punchEntries || {})[id] || {};
+  const tz = t.display_timezone || 'America/Chicago';
+  const typeLabel = { admin: '后台', customer: '仓库方', system: '系统' };
+  const items = rows.map(r => {
+    let ch = []; try { ch = JSON.parse(r.changes || '[]'); } catch (_) {}
+    const when = r.created_at ? new Date(String(r.created_at).replace(' ', 'T') + 'Z').toLocaleString('zh-CN', { timeZone: tz, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+    return `<div style="padding:.55rem 0;border-bottom:1px solid var(--gray-100)">
+      <div style="font-size:.76rem;color:var(--gray-400)">${when} · ${typeLabel[r.editor_type] || esc(r.editor_type || '')}${r.editor_name ? ' · ' + esc(r.editor_name) : ''}</div>
+      ${ch.map(c => `<div style="font-size:.85rem;margin-top:.15rem"><b>${esc(c.f || '')}</b>：${esc(String(c.old == null ? '' : c.old))} → <b>${esc(String(c.new == null ? '' : c.new))}</b></div>`).join('')}
+    </div>`;
+  }).join('') || '<p style="color:var(--gray-400)">这条记录还没有编辑记录</p>';
+  const ov = document.createElement('div');
+  ov.className = 'modal-bg show';
+  ov.innerHTML = `<div class="modal" style="max-width:480px;padding:1.3rem 1.5rem">
+    <h2 style="margin-bottom:.7rem;font-size:1.02rem">🕘 编辑历史${t.first_name ? ' · ' + esc(t.first_name + ' ' + (t.last_name || '')) : ''}</h2>
+    <div style="max-height:55vh;overflow-y:auto">${items}</div>
+    <div style="text-align:right;margin-top:1rem"><button class="btn btn-outline" onclick="this.closest('.modal-bg').remove()">关闭</button></div></div>`;
+  ov.addEventListener('click', ev => { if (ev.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
 }
 
 async function deleteTimeEntry(id) {
