@@ -1440,6 +1440,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <button class="btn btn-outline" onclick="exportTimeCSV()">导出 CSV</button>
       <button class="btn btn-accent" onclick="showTimeReport()">工时汇总报表</button>
       <button class="btn btn-outline" onclick="openInvoiceModal()" style="background:#f0fdf4;color:#16a34a;border-color:#86efac">🧾 生成发票</button>
+      <button class="btn btn-outline" id="kioskModeBtn" data-perm="admin,staff" onclick="openKioskModeModal()">🖥 打卡机模式</button>
       <button class="btn btn-outline" onclick="openSvModal()">🏭 仓库方权限</button>
       <button class="btn btn-green" onclick="openTsModal()">+ 手动录入</button>
     </div>
@@ -1459,7 +1460,6 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <option value="pending_review">待审核</option>
     </select>
   </div>
-  <div id="timeKioskMode"></div>
   <div class="hours-bar" id="timeSummary" style="display:none">
     <div class="hours-item"><h4 id="sumShifts">0</h4><p>班次总数</p></div>
     <div class="hours-item"><h4 id="sumTotal">0h</h4><p>总工时</p></div>
@@ -8096,6 +8096,12 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:.9rem">仓库方用企业账号登录客户门户（/customer）后，自动能看到<b>本公司仓库</b>的打卡时间和员工姓名。这里控制的是<b>打卡照片</b>是否对他们可见——默认不可见，按公司单独开启，可随时关闭。</p>
   <div id="svList" style="max-height:55vh;overflow:auto">加载中…</div>
   <div style="text-align:right;margin-top:1rem"><button class="btn btn-outline" onclick="document.getElementById('svModal').classList.remove('show')">关闭</button></div>
+</div></div>
+<div class="modal-bg" id="kioskModeModal"><div class="modal" style="max-width:760px">
+  <h2 style="margin-bottom:.35rem">🖥 打卡机模式</h2>
+  <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:.9rem">点选后该仓库打卡台<b>从现在起</b>的所有打卡都按选定分类记录，平板无需刷新；用完记得点回「自动」。</p>
+  <div id="kioskModeModalBody" style="max-height:60vh;overflow-y:auto">加载中…</div>
+  <div style="text-align:right;margin-top:1rem"><button class="btn btn-outline" onclick="document.getElementById('kioskModeModal').classList.remove('show')">关闭</button></div>
 </div></div>
 <div class="modal-bg" id="tsModal"><div class="modal modal-xl" id="tsPrintArea">
   <div class="ts-header no-print">
@@ -18231,16 +18237,33 @@ async function populateTimeEmpFilter() {
     jobs.filter(j=>j.active).map(j=>`<option value="${j.id}">${esc(j.title)} — ${esc(j.location)}</option>`).join('');
 }
 
-// ── 打卡机模式: 一排按钮, 点选后该仓库打卡台从现在起的所有打卡都按选定分类记录 (与客户门户同款) ──
+// ── 打卡机模式弹窗: 顶部按钮打开, 集中管理各仓库; 点选后该仓库打卡台从现在起的所有打卡都按选定分类记录 ──
 let _timeSites = [];
 const TIME_KIOSK_MODES = [['', '自动（上班/下班）'], ['in', '上班开始'], ['out', '上班结束（下班）'], ['break_start', '休息开始'], ['break_end', '休息结束']];
+function _updateKioskBtn() {
+  const btn = document.getElementById('kioskModeBtn');
+  if (!btn) return;
+  const forced = _timeSites.filter(s => s.active && s.kiosk_punch_mode);
+  if (forced.length) {
+    btn.innerHTML = `🖥 打卡机模式 <span style="background:var(--accent);color:#fff;border-radius:10px;padding:1px 7px;font-size:.72rem">${forced.length} 非自动</span>`;
+    btn.style.borderColor = '#fed7aa'; btn.style.background = '#FFF7ED';
+  } else {
+    btn.innerHTML = '🖥 打卡机模式';
+    btn.style.borderColor = ''; btn.style.background = '';
+  }
+}
+async function openKioskModeModal() {
+  document.getElementById('kioskModeModal').classList.add('show');
+  try { const sites = await api('/admin/job-sites'); _timeSites = Array.isArray(sites) ? sites : _timeSites; } catch {}
+  renderTimeKioskMode();
+}
 function renderTimeKioskMode() {
-  const box = document.getElementById('timeKioskMode');
+  if (USER_ROLE === 'manager') return;  // 经理无仓库写权限, 按钮也已隐藏
+  _updateKioskBtn();
+  const box = document.getElementById('kioskModeModalBody');
   if (!box) return;
-  if (USER_ROLE === 'manager') { box.innerHTML = ''; return; }  // 经理无仓库写权限
-  const filterVal = document.getElementById('timeSiteFilter').value;
-  let sites = _timeSites.filter(s => s.active);
-  if (filterVal) sites = sites.filter(s => String(s.id) === filterVal);
+  const sites = _timeSites.filter(s => s.active);
+  if (!sites.length) { box.innerHTML = '<p style="color:var(--gray-400)">暂无启用的仓库</p>'; return; }
   box.innerHTML = sites.map(s => {
     const cur = s.kiosk_punch_mode || '';
     return `
@@ -18296,7 +18319,6 @@ async function timeSetKioskMode(siteId, mode, label, isCurrent) {
 async function loadTimeEntries() {
   const emp  = document.getElementById('timeEmpFilter').value;
   const site = document.getElementById('timeSiteFilter').value;
-  renderTimeKioskMode();
   const from = document.getElementById('timeFrom').value;
   const to   = document.getElementById('timeTo').value;
   const st   = document.getElementById('timeStatusFilter').value;
