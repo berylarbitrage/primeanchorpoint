@@ -98,8 +98,8 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     </div>
     <div class="card" style="overflow-x:auto">
       <table><thead><tr>
-        <th>发票号</th><th>日期</th><th>公司</th><th>账期</th><th style="text-align:right">金额</th><th>付款状态</th><th>批注</th><th></th>
-      </tr></thead><tbody id="invBody"><tr><td colspan="8" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+        <th>发票号</th><th>日期</th><th>公司</th><th>账期</th><th style="text-align:right">金额</th><th>付款状态</th><th>付款批注（会计）</th><th>批注</th><th></th>
+      </tr></thead><tbody id="invBody"><tr><td colspan="9" style="color:var(--g400)">加载中…</td></tr></tbody></table>
     </div>
   </div>
 
@@ -127,8 +127,34 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     </div>
     <div class="card" style="overflow-x:auto">
       <table><thead><tr>
-        <th>仓库</th><th>事故日期</th><th style="text-align:right">赔偿金额</th><th>事故描述</th><th>状态</th><th>发票文件</th><th>银行付款</th>
-      </tr></thead><tbody id="claimBody"><tr><td colspan="7" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+        <th>仓库</th><th>事故日期</th><th style="text-align:right">赔偿金额</th><th>事故描述</th><th>状态</th><th>发票文件</th><th>银行付款</th><th>付款批注（会计）</th>
+      </tr></thead><tbody id="claimBody"><tr><td colspan="8" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+    </div>
+  </div>
+
+  <!-- 💰 付款批注弹窗 -->
+  <div id="payNoteModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:90;align-items:center;justify-content:center;padding:16px">
+    <div class="card" style="max-width:380px;width:100%;padding:1.2rem 1.2rem 1rem">
+      <div style="font-weight:800;margin-bottom:.2rem">💰 付款批注</div>
+      <div id="pnTitle" style="font-size:.8rem;color:var(--g500);margin-bottom:.7rem"></div>
+      <label style="font-size:.76rem;color:var(--g500)">付了没有</label>
+      <select id="pnStatus" style="width:100%;margin:.15rem 0 .55rem">
+        <option value="">— 未记录 —</option>
+        <option value="paid">✅ 已付清</option>
+        <option value="partial">🟡 部分已付</option>
+        <option value="unpaid">❌ 未付</option>
+      </select>
+      <label style="font-size:.76rem;color:var(--g500)">哪个银行付的</label>
+      <input type="text" id="pnBank" list="pnBankList" placeholder="例：Chase BUS COMPLETE CHK ··0165" style="width:100%;margin:.15rem 0 .55rem">
+      <datalist id="pnBankList"></datalist>
+      <label style="font-size:.76rem;color:var(--g500)">付了多少（$）</label>
+      <input type="number" step="0.01" id="pnAmount" placeholder="例：1770.65" style="width:100%;margin:.15rem 0 .55rem">
+      <label style="font-size:.76rem;color:var(--g500)">备注</label>
+      <input type="text" id="pnNote" placeholder="可选，例：8/30 Zelle 付的" style="width:100%;margin:.15rem 0 .8rem">
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="closePayNote()">取消</button>
+        <button class="btn btn-blue" onclick="savePayNote()">保存</button>
+      </div>
     </div>
   </div>
 
@@ -310,6 +336,65 @@ function showTab(t) {
   document.getElementById('paneStmt').style.display = t === 'stmt' ? '' : 'none';
   document.getElementById('paneClaims').style.display = t === 'claims' ? '' : 'none';
 }
+// ── 付款批注: 每张发票/每笔赔偿记录「付了没有/哪个银行付的/付了多少」 ──
+let _payTarget = null, _payBanksFilled = false;
+const PAY_ST = { paid: ['✅ 已付', '#dcfce7', '#166534'], partial: ['🟡 部分', '#fef3c7', '#92400e'], unpaid: ['❌ 未付', '#fee2e2', '#991b1b'] };
+function payNoteCell(type, id, pn) {
+  const edit = canAnnotate() ? ` <a style="cursor:pointer;font-size:.74rem;color:#0f4c6b;text-decoration:underline;white-space:nowrap" onclick="openPayNote('${type}', ${id})">${pn && (pn.paid_status || pn.bank || pn.amount != null || pn.note) ? '编辑' : '＋记录'}</a>` : '';
+  if (!pn || (!pn.paid_status && !pn.bank && pn.amount == null && !pn.note)) return `<span style="color:var(--g400)">—</span>${edit}`;
+  const st = PAY_ST[pn.paid_status];
+  const badge = st ? `<span style="background:${st[1]};color:${st[2]};border-radius:8px;padding:1px 7px;font-size:.72rem;font-weight:700;white-space:nowrap">${st[0]}</span> ` : '';
+  const parts = [];
+  if (pn.bank) parts.push(esc(pn.bank));
+  if (pn.amount != null) parts.push('<b>' + money(pn.amount) + '</b>');
+  return `${badge}<span style="font-size:.76rem">${parts.join(' · ')}</span>${pn.note ? `<div style="font-size:.7rem;color:var(--g400);max-width:200px">${esc(pn.note)}</div>` : ''}${edit}`;
+}
+function openPayNote(type, id) {
+  const list = type === 'invoice' ? _invList : _claimList;
+  const item = list.find(x => x.id === id);
+  if (!item) return;
+  _payTarget = { type, id };
+  document.getElementById('pnTitle').textContent = type === 'invoice'
+    ? `发票 ${item.invoice_number || ''} · ${item.company_name || ''} · ${money(item.subtotal)}`
+    : `赔偿事故 · ${item.warehouse_name || item.warehouse_code || ''} · ${item.amount != null ? money(item.amount) : ''}`;
+  const pn = item.pay_note || {};
+  document.getElementById('pnStatus').value = pn.paid_status || '';
+  document.getElementById('pnBank').value = pn.bank || '';
+  document.getElementById('pnAmount').value = pn.amount != null ? pn.amount : '';
+  document.getElementById('pnNote').value = pn.note || '';
+  fillPayBankOptions();
+  document.getElementById('payNoteModal').style.display = 'flex';
+}
+async function fillPayBankOptions() {
+  if (_payBanksFilled) return;
+  try {
+    if (!_plaidAccts) _plaidAccts = await bapi('/api/plaid/accounts');
+    document.getElementById('pnBankList').innerHTML = ((_plaidAccts && _plaidAccts.accounts) || []).map(a =>
+      `<option value="${esc([a.institution, a.name].filter(Boolean).join(' ') + (a.mask ? ' ··' + a.mask : ''))}">`).join('');
+    _payBanksFilled = true;
+  } catch (e) {}
+}
+function closePayNote() { document.getElementById('payNoteModal').style.display = 'none'; }
+async function savePayNote() {
+  if (!_payTarget) return;
+  const body = {
+    target_type: _payTarget.type, target_id: _payTarget.id,
+    paid_status: document.getElementById('pnStatus').value,
+    bank: document.getElementById('pnBank').value.trim(),
+    amount: document.getElementById('pnAmount').value.trim(),
+    note: document.getElementById('pnNote').value.trim()
+  };
+  try {
+    const r = await bapi('/api/acct/pay-note', { method: 'POST', body: JSON.stringify(body) });
+    const list = _payTarget.type === 'invoice' ? _invList : _claimList;
+    const item = list.find(x => x.id === _payTarget.id);
+    if (item) item.pay_note = r.pay_note;
+    closePayNote();
+    toast('✅ 付款批注已保存');
+    if (_payTarget.type === 'invoice') renderInvList(); else renderClaimList();
+  } catch (e) { toast(e.message || '保存失败', true); }
+}
+
 // ── 仓库赔偿事故 (只读) ──
 let _claimList = [];
 const _claimStatusBadge = s => s === 'resolved'
@@ -336,8 +421,9 @@ function renderClaimList() {
       <td>${_claimStatusBadge(c.status)}</td>
       <td>${files}</td>
       <td>${bank}</td>
+      <td>${payNoteCell('claim', c.id, c.pay_note)}</td>
     </tr>`;
-  }).join('') : '<tr><td colspan="7" style="color:var(--g400);padding:1rem">暂无赔偿事故记录。</td></tr>';
+  }).join('') : '<tr><td colspan="8" style="color:var(--g400);padding:1rem">暂无赔偿事故记录。</td></tr>';
 }
 async function loadAll() {
   const [inv, stmt, claims] = await Promise.all([
@@ -372,9 +458,10 @@ function renderInvList() {
     <td style="white-space:nowrap;font-size:.78rem;color:var(--g500)">${esc(r.period_start || '?')} ~ ${esc(r.period_end || '?')}</td>
     <td style="text-align:right;font-weight:700">${money(r.subtotal)}</td>
     <td>${payBadge(r.payment_status)}</td>
+    <td>${payNoteCell('invoice', r.id, r.pay_note)}</td>
     <td>${annBadge(r.annotation_count)}</td>
     <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openInvoice(${r.id})">查看 / 批注</button></td>
-  </tr>`).join('') : '<tr><td colspan="8" style="color:var(--g400);padding:1rem">没有符合条件的发票。</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="9" style="color:var(--g400);padding:1rem">没有符合条件的发票。</td></tr>';
 }
 function renderStmtList() {
   const q = (document.getElementById('stmtSearch').value || '').toLowerCase();
