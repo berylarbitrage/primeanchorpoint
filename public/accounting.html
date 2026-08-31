@@ -158,6 +158,23 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     </div>
   </div>
 
+  <!-- 🧾 银行直连交易标注弹窗 (与 /banking 同一套标注数据, 会计保存后进主管审核) -->
+  <div id="plaidAnnModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:90;align-items:center;justify-content:center;padding:16px">
+    <div class="card" style="max-width:400px;width:100%;padding:1.2rem 1.2rem 1rem">
+      <div style="font-weight:800;margin-bottom:.2rem">🧾 交易备注</div>
+      <div id="paTitle" style="font-size:.8rem;color:var(--g500);margin-bottom:.7rem"></div>
+      <label style="font-size:.76rem;color:var(--g500)">备注说明</label>
+      <textarea id="paNote" rows="3" placeholder="例：付给 XX 的 8 月人工费" style="width:100%;margin:.15rem 0 .55rem;box-sizing:border-box"></textarea>
+      <label style="font-size:.76rem;color:var(--g500)">收款方 / 付款方（可选）</label>
+      <input type="text" id="paPayee" placeholder="例：Jorge Serrano" style="width:100%;margin:.15rem 0 .8rem">
+      <div id="paHint" style="font-size:.74rem;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.4rem .6rem;margin-bottom:.7rem">保存后将进入<b>主管审核</b>（待审核）；更完整的标注（用途/发票关联/传照片）在 <a href="/banking" target="_blank" style="color:#0f4c6b">/banking</a> 页操作，两边是同一份数据。</div>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="closePlaidAnn()">取消</button>
+        <button class="btn btn-blue" onclick="savePlaidAnn()">保存</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 🔗 银行直连 Bank Feed (Plaid 自动同步) -->
   <div id="paneBank" style="display:none">
     <!-- 未配置密钥 (仅 admin) -->
@@ -196,6 +213,11 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <div id="bankAcctCards" style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.8rem"></div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
         <select id="bankFltAcct" onchange="bankLoadTxns()"><option value="">全部账户</option></select>
+        <select id="bankFltView" style="display:none" onchange="try{localStorage.setItem('acctBankView',this.value)}catch(e){};bankLoadTxns()">
+          <option value="flat">按笔显示</option>
+          <option value="week">按周显示</option>
+          <option value="month">按月显示</option>
+        </select>
         <select id="bankFltRev" onchange="bankLoadTxns()">
           <option value="">全部交易</option>
           <option value="0" selected>只看未审核</option>
@@ -880,6 +902,9 @@ let _bankMode = 'acct', _plaidAccts = null;
 function renderPlaidAccounts() {
   ['btnTellerConnect', 'btnBankConnect', 'btnBankCfg', 'btnBankSync'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
   document.getElementById('bankFltRev').style.display = 'none';
+  const vSel = document.getElementById('bankFltView');
+  vSel.style.display = '';
+  try { const v = localStorage.getItem('acctBankView'); if (v) vSel.value = v; } catch (e) {}
   document.getElementById('bankSyncMsg').innerHTML = '数据来自「<a href="/banking" target="_blank" style="color:#0f4c6b;text-decoration:underline">银行对账 /banking</a>」页连接的银行（只读）· 分类/标注请到该页操作';
   const accs = (_plaidAccts && _plaidAccts.accounts) || [];
   document.getElementById('bankAcctCards').innerHTML = accs.map(a => {
@@ -1084,7 +1109,22 @@ async function bankLoadTxns() {
     </tr>`;
   }).join('') || '<tr><td colspan="8" style="color:var(--g400)">没有符合条件的交易（先点「立即同步」）</td></tr>';
 }
-// /banking(Plaid) 数据源的交易列表 (只读)
+// /banking(Plaid) 数据源的交易列表: 按笔/按周/按月分组, 备注走同一套标注(会计保存即待审核)
+let _plaidTxns = [], _plaidAnns = {};
+function _plaidWeek(dateStr) {
+  const d = new Date(String(dateStr || '') + 'T00:00:00');
+  if (isNaN(d)) return { key: String(dateStr || ''), label: String(dateStr || '') };
+  const fmt = x => x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
+  const mon = new Date(d); mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+  return { key: fmt(mon), label: fmt(mon) + ' ~ ' + fmt(sun) };
+}
+function plaidToggleGrp(headRow, key) {
+  const hidden = headRow._collapsed = !headRow._collapsed;
+  headRow.parentElement.querySelectorAll('tr[data-grp="' + key + '"]').forEach(r => { r.style.display = hidden ? 'none' : ''; });
+  const a = headRow.querySelector('.grp-arrow');
+  if (a) a.textContent = hidden ? '▶' : '▼';
+}
 async function plaidLoadTxns() {
   const q = new URLSearchParams();
   const acct = document.getElementById('bankFltAcct').value; if (acct) q.set('account_id', acct);
@@ -1092,28 +1132,97 @@ async function plaidLoadTxns() {
   const f = document.getElementById('bankFltFrom').value; if (f) q.set('start', f);
   const t = document.getElementById('bankFltTo').value; if (t) q.set('end', t);
   q.set('limit', '500');
-  let d;
-  try { d = await bapi('/api/plaid/transactions?' + q.toString()); }
-  catch (e) { document.getElementById('bankTxnBody').innerHTML = '<tr><td colspan="8" style="color:#dc2626">' + esc(e.message || '加载失败') + '</td></tr>'; return; }
-  const rows = d.transactions || [];
+  let d, annRes;
+  try {
+    [d, annRes] = await Promise.all([
+      bapi('/api/plaid/transactions?' + q.toString()),
+      bapi('/api/plaid/annotations').catch(() => ({ annotations: {} })),
+    ]);
+  } catch (e) { document.getElementById('bankTxnBody').innerHTML = '<tr><td colspan="8" style="color:#dc2626">' + esc(e.message || '加载失败') + '</td></tr>'; return; }
+  _plaidTxns = d.transactions || [];
+  _plaidAnns = (annRes && annRes.annotations) || {};
   const accById = {};
   ((_plaidAccts && _plaidAccts.accounts) || []).forEach(a => { accById[a.account_id] = a; });
-  document.getElementById('bankTxnStats').textContent = `共 ${d.total || rows.length} 笔${rows.length < (d.total || 0) ? `（显示最近 ${rows.length} 笔）` : ''}`;
-  document.getElementById('bankTxnBody').innerHTML = rows.map(x => {
+  document.getElementById('bankTxnStats').textContent = `共 ${d.total || _plaidTxns.length} 笔${_plaidTxns.length < (d.total || 0) ? `（显示最近 ${_plaidTxns.length} 笔）` : ''}`;
+
+  const rowHtml = (x, grpKey) => {
     const a = accById[x.account_id] || {};
     const isOut = (x.amount || 0) > 0;
     const amt = `<span style="font-weight:800;color:${isOut ? '#dc2626' : '#15803d'}">${isOut ? '−' : '+'}${money(Math.abs(x.amount || 0))}</span>`;
-    return `<tr>
+    const ann = _plaidAnns[x.txn_id];
+    const hasContent = ann && (ann.note || ann.payee || ann.purpose || ann.invoice_number);
+    const annStatus = !hasContent ? '<span style="color:var(--g300)">—</span>'
+      : ann.ann_status === 'pending' ? '<span style="background:#fef3c7;color:#92400e;border-radius:8px;padding:1px 7px;font-size:.7rem;font-weight:700;white-space:nowrap">🟡 待审核</span>'
+      : '<span style="color:#15803d;font-size:.78rem">✅</span>';
+    const editLink = canAnnotate() ? ` <a style="cursor:pointer;font-size:.72rem;color:#0f4c6b;text-decoration:underline;white-space:nowrap" onclick="openPlaidAnn('${esc(x.txn_id)}')">${hasContent ? '编辑' : '＋备注'}</a>` : '';
+    const annCell = (hasContent
+      ? `<span style="font-size:.76rem">${esc(ann.note || ann.payee || ann.purpose || '')}</span>${ann.ann_by ? `<div style="font-size:.68rem;color:var(--g400)">${esc(ann.ann_by)}</div>` : ''}`
+      : '<span style="color:var(--g300)">—</span>') + editLink;
+    return `<tr${grpKey ? ` data-grp="${esc(grpKey)}"` : ''}>
       <td style="white-space:nowrap">${esc(x.date || '')}</td>
-      <td style="font-size:.78rem">${esc(a.institution || '')}<br>${esc(a.name || '')} ··${esc(a.mask || '')}</td>
+      <td style="white-space:nowrap;font-size:.8rem" title="${esc((a.institution || '') + ' ' + (a.name || ''))}">${esc(a.institution || '')} ··${esc(a.mask || '')}</td>
       <td>${esc(x.merchant || x.name || '')}${x.merchant && x.name && x.merchant !== x.name ? '<br><span style="font-size:.72rem;color:var(--g400)">' + esc(x.name) + '</span>' : ''}</td>
       <td style="font-size:.76rem;color:var(--g500)">${esc(x.category || '')}</td>
       <td style="text-align:right">${amt}</td>
       <td>${x.pending ? '<span style="color:#b45309;font-size:.74rem">待入账</span>' : ''}</td>
-      <td style="color:var(--g300)">—</td>
-      <td style="color:var(--g300);font-size:.74rem">到 /banking 标注</td>
+      <td>${annStatus}</td>
+      <td style="max-width:200px">${annCell}</td>
     </tr>`;
-  }).join('') || '<tr><td colspan="8" style="color:var(--g400)">没有符合条件的交易。</td></tr>';
+  };
+
+  const view = document.getElementById('bankFltView').value || 'flat';
+  let body;
+  if (view === 'flat') {
+    body = _plaidTxns.map(x => rowHtml(x)).join('');
+  } else {
+    const groups = [], byKey = {};
+    for (const x of _plaidTxns) {
+      const g = view === 'week' ? _plaidWeek(x.date) : { key: String(x.date || '').slice(0, 7), label: String(x.date || '').slice(0, 7) };
+      if (!byKey[g.key]) { byKey[g.key] = { ...g, txns: [], inSum: 0, outSum: 0 }; groups.push(byKey[g.key]); }
+      byKey[g.key].txns.push(x);
+      if ((x.amount || 0) < 0) byKey[g.key].inSum += -x.amount; else byKey[g.key].outSum += (x.amount || 0);
+    }
+    body = groups.map(g => {
+      const net = g.inSum - g.outSum;
+      return `<tr style="cursor:pointer;background:#fffbeb" onclick="plaidToggleGrp(this,'${esc(g.key)}')">
+        <td colspan="8" style="padding:.5rem .6rem"><span class="grp-arrow">▼</span> <b>📅 ${esc(g.label)}</b>
+          <span style="color:var(--g400);font-size:.76rem">${g.txns.length} 笔</span>
+          <span style="background:#fff;border:1px solid var(--g200);border-radius:8px;padding:1px 8px;font-size:.74rem;color:#047857;margin-left:.3rem">收入 +${money(g.inSum)}</span>
+          <span style="background:#fff;border:1px solid var(--g200);border-radius:8px;padding:1px 8px;font-size:.74rem;color:#57534e">支出 −${money(g.outSum)}</span>
+          <span style="background:#fff;border:1px solid var(--g200);border-radius:8px;padding:1px 8px;font-size:.74rem;color:${net >= 0 ? '#047857' : '#c5221f'};font-weight:700">净额 ${net >= 0 ? '+' : '−'}${money(Math.abs(net))}</span>
+        </td></tr>` + g.txns.map(x => rowHtml(x, g.key)).join('');
+    }).join('');
+  }
+  document.getElementById('bankTxnBody').innerHTML = body || '<tr><td colspan="8" style="color:var(--g400)">没有符合条件的交易。</td></tr>';
+}
+// ── 银行直连交易备注 (与 /banking 同一套标注; 会计/客服保存后 ann_status=pending 待主管审核) ──
+let _paTxnId = null;
+async function openPlaidAnn(txnId) {
+  const x = _plaidTxns.find(t => t.txn_id === txnId);
+  if (!x) return;
+  _paTxnId = txnId;
+  const isOut = (x.amount || 0) > 0;
+  document.getElementById('paTitle').textContent = `${x.date || ''} · ${x.merchant || x.name || ''} · ${isOut ? '−' : '+'}${money(Math.abs(x.amount || 0))}`;
+  const ann = _plaidAnns[txnId] || {};
+  document.getElementById('paNote').value = ann.note || '';
+  document.getElementById('paPayee').value = ann.payee || '';
+  document.getElementById('paHint').style.display = USER.role === 'admin' ? 'none' : '';
+  document.getElementById('plaidAnnModal').style.display = 'flex';
+}
+function closePlaidAnn() { document.getElementById('plaidAnnModal').style.display = 'none'; }
+async function savePlaidAnn() {
+  if (!_paTxnId) return;
+  try {
+    let ann = _plaidAnns[_paTxnId];
+    if (!ann || !ann.id) ann = await bapi('/api/plaid/annotations', { method: 'POST', body: JSON.stringify({ txn_id: _paTxnId }) });
+    await bapi(`/api/plaid/annotations/${ann.id}`, { method: 'PUT', body: JSON.stringify({
+      note: document.getElementById('paNote').value.trim(),
+      payee: document.getElementById('paPayee').value.trim(),
+    }) });
+    closePlaidAnn();
+    toast(USER.role === 'admin' ? '✅ 备注已保存' : '✅ 备注已保存，等待主管审核');
+    plaidLoadTxns();
+  } catch (e) { toast(e.message || '保存失败', true); }
 }
 function _bankTxnById(id) { return _bankTxns.find(x => x.id === id); }
 async function bankReview(id, checked) {
