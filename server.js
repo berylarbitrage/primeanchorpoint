@@ -792,9 +792,6 @@ try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_review INTEGER DEFAULT 
 // 工作日 = 仓库当地时区的日期。clock_in 存 UTC, 晚上打卡 UTC 日期会跳到「明天」,
 // 不能用它分天 —— 按天归组必须以本列为准 (老记录为空, 查询时兼容回退)
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN work_date TEXT DEFAULT ''`); } catch(e) {}
-// 仓库自动打卡班型: 每天几次休息 (0=不休息一天2次卡, 1=4次卡, 2=6次卡...),
-// 自动归类后打卡次数 != 2+2*休息次数 → ⚠ 待复核
-try { db.exec(`ALTER TABLE job_sites ADD COLUMN kiosk_breaks_per_day INTEGER DEFAULT 1`); } catch(e) {}
 // 打卡时间编辑历史: 每次改动(后台/仓库方/系统)记谁在什么时候把什么从A改到B
 db.exec(`CREATE TABLE IF NOT EXISTS time_entry_edits (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2460,6 +2457,10 @@ try { db.exec("ALTER TABLE job_sites ADD COLUMN contacts TEXT DEFAULT '[]'"); } 
 // 打卡机模式: ''=自动(上班/下班), 或强制 in/out/break_start/break_end —— 设置后该仓库
 // 打卡台上的所有打卡都按此分类记录, 避免错分类 (午休时段设为休息开始等)
 try { db.exec("ALTER TABLE job_sites ADD COLUMN kiosk_punch_mode TEXT DEFAULT ''"); } catch {}
+// 仓库自动打卡班型: 每天几次休息 (0=不休息一天2次卡, 1=4次卡, 2=6次卡...),
+// 自动归类后打卡次数 != 2+2*休息次数 → ⚠ 待复核
+// (必须放在 CREATE TABLE job_sites 之后: 放前面全新数据库建库时表还不存在, ALTER 会被静默吞掉)
+try { db.exec(`ALTER TABLE job_sites ADD COLUMN kiosk_breaks_per_day INTEGER DEFAULT 1`); } catch(e) {}
 // 仓库方(客户企业账号)登录客户门户可看本公司仓库的打卡时间+姓名; 照片默认不可见,
 // 由管理员按公司开启此开关后才在客户门户显示
 try { db.exec("ALTER TABLE partners ADD COLUMN show_punch_photos INTEGER DEFAULT 0"); } catch {}
@@ -26935,10 +26936,14 @@ app.get('/api/customer/time-records', requireCustomer, (req, res) => {
   const photosEnabled = !!((db.prepare('SELECT show_punch_photos FROM partners WHERE id=?').get(pid) || {}).show_punch_photos);
   const ids = sites.map(s => s.id);
   const scope = _customerEntryScope(pid, ids);
+  // 只看某个员工 (emp=员工id): 服务端过滤, 记录多时不会被 LIMIT 2000 截断漏掉该员工的早期记录
+  const empId = parseInt(req.query.emp) || 0;
+  const empSql = empId ? ' AND t.employee_id=?' : '';
+  const empParams = empId ? [empId] : [];
   if (wantAll) {
     // 全部数据: from 取该公司范围内最早一条记录的日期 (行数仍受 LIMIT 2000 保护)
     try {
-      const mn = db.prepare(`SELECT MIN(DATE(t.clock_in)) AS m FROM time_entries t WHERE ${scope.sql}`).get(...scope.params);
+      const mn = db.prepare(`SELECT MIN(DATE(t.clock_in)) AS m FROM time_entries t WHERE ${scope.sql}${empSql}`).get(...scope.params, ...empParams);
       if (mn && mn.m) from = mn.m;
     } catch (_) {}
     to = new Date().toISOString().slice(0, 10);
@@ -26947,8 +26952,8 @@ app.get('/api/customer/time-records', requireCustomer, (req, res) => {
       t.clock_in_photo_path, t.punch_photo_path, t.work_date, t.punch_review, t.raw_punches, e.first_name, e.last_name,
       (SELECT COUNT(*) FROM time_entry_edits x WHERE x.entry_id=t.id) AS edit_count
     FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id
-    WHERE ${scope.sql} AND DATE(t.clock_in)>=? AND DATE(t.clock_in)<=?
-    ORDER BY t.clock_in DESC LIMIT 2000`).all(...scope.params, from, to);
+    WHERE ${scope.sql}${empSql} AND DATE(t.clock_in)>=? AND DATE(t.clock_in)<=?
+    ORDER BY t.clock_in DESC LIMIT 2000`).all(...scope.params, ...empParams, from, to);
   const entries = rows.map(r => {
     let breakMin = 0, breakN = 0;
     const photoFiles = [];

@@ -358,6 +358,9 @@ tr:last-child td{border-bottom:none}
         <h2>打卡记录 Time Records</h2>
         <p style="font-size:.85rem;color:var(--gray-400);margin-bottom:1rem">贵公司仓库的员工打卡记录（只读）</p>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:1rem">
+          <select id="trEmp" onchange="trEmpChange(this.value)" title="按员工姓名筛选打卡记录" style="padding:.45rem .55rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:8px;font-family:inherit;max-width:190px">
+            <option value="">👤 全部员工</option>
+          </select>
           <input type="date" id="trFrom" style="padding:.45rem .55rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:8px;font-family:inherit">
           <span style="color:var(--gray-400);font-size:.85rem">至</span>
           <input type="date" id="trTo" style="padding:.45rem .55rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:8px;font-family:inherit">
@@ -954,6 +957,29 @@ function wkGoRecords(id, name) {
   trAll();
 }
 function trClearEmpFilter() { _trEmpFilter = null; loadTimeRecords(); }
+// 员工姓名筛选下拉: 近90天打卡员工名单(与打印打卡表共用一份缓存) + 当前结果里出现的员工
+async function trEnsureEmps() {
+  if (_tsEmps) return;
+  try { const r = await cApi('/punch-employees'); if (Array.isArray(r)) _tsEmps = r; } catch (_) {}
+}
+function trRenderEmpOpts(entries) {
+  const sel = document.getElementById('trEmp');
+  if (!sel) return;
+  const byId = new Map();
+  (_tsEmps || []).forEach(e => { if (e.id) byId.set(e.id, e.name); });
+  (entries || []).forEach(e => { if (e.emp_db_id && !byId.has(e.emp_db_id)) byId.set(e.emp_db_id, e.name); });
+  if (_trEmpFilter && !byId.has(_trEmpFilter.id)) byId.set(_trEmpFilter.id, _trEmpFilter.name);
+  const opts = [...byId.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+  sel.innerHTML = '<option value="">👤 全部员工</option>' +
+    opts.map(([id, name]) => `<option value="${id}">${esc(name)}</option>`).join('');
+  sel.value = _trEmpFilter ? String(_trEmpFilter.id) : '';
+}
+function trEmpChange(v) {
+  const id = parseInt(v);
+  const sel = document.getElementById('trEmp');
+  _trEmpFilter = id ? { id, name: sel.options[sel.selectedIndex].textContent } : null;
+  loadTimeRecords();
+}
 async function loadTimeRecords() {
   const tb = document.getElementById('trTable');
   tb.innerHTML = '<tr><td colspan="10" style="color:var(--gray-400)">加载中…</td></tr>';
@@ -962,6 +988,8 @@ async function loadTimeRecords() {
   if (f || t) _trAll = false; // 手动挑了日期就退出「全部」模式
   if (f) q.set('from', f); if (t) q.set('to', t);
   if (_trAll) q.set('all', '1');
+  if (_trEmpFilter) q.set('emp', _trEmpFilter.id); // 按员工筛选: 服务端过滤, 不受 2000 行截断影响
+  const empsP = trEnsureEmps();
   let d = await cApi('/time-records?' + q.toString());
   if (!d) return;
   if (d.error) { tb.innerHTML = `<tr><td colspan="10" style="color:#E63946">${esc(d.error)}</td></tr>`; return; }
@@ -973,7 +1001,8 @@ async function loadTimeRecords() {
   _trSiteTz = {}; const siteName = {};
   window._trSites = d.sites || []; // 打印打卡表的仓库下拉用
   (d.sites || []).forEach(s => { _trSiteTz[s.id] = s.timezone; siteName[s.id] = s.name + (s.code ? ` (${s.code})` : ''); });
-  // 只看某个工人 (从工人列表「打卡记录」跳过来)
+  await empsP; trRenderEmpOpts(d.entries);
+  // 只看某个工人 (从工人列表「打卡记录」跳过来, 或工具栏员工下拉选中)
   if (_trEmpFilter) d = { ...d, entries: (d.entries || []).filter(e => e.emp_db_id === _trEmpFilter.id) };
   trRenderKioskMode(d.sites || []);
   const multiSite = (d.sites || []).length > 1;
@@ -1042,7 +1071,8 @@ async function loadTimeRecords() {
     </tr>`;
   });
   tb.innerHTML = rows.join('') || `<tr><td colspan="10" style="color:var(--gray-400);text-align:center;padding:1.4rem">${
-    d.no_binding ? '贵公司还没有关联的仓库或打卡记录，请联系 Prime Anchor Workforce 完成绑定' : '该时段没有打卡记录（可试试「近30天」或「全部」）'}</td></tr>`;
+    d.no_binding ? '贵公司还没有关联的仓库或打卡记录，请联系 Prime Anchor Workforce 完成绑定'
+      : (_trEmpFilter ? `该时段没有 ${esc(_trEmpFilter.name)} 的打卡记录（可试试「近30天」或「全部」）` : '该时段没有打卡记录（可试试「近30天」或「全部」）')}</td></tr>`;
   document.getElementById('trSummary').innerHTML =
     (_trEmpFilter ? `<span style="background:#EEF4FF;border:1px solid #C7D7FE;border-radius:999px;padding:.15rem .7rem">👤 只看 <b>${esc(_trEmpFilter.name)}</b> <a href="javascript:void(0)" onclick="trClearEmpFilter()" style="text-decoration:none;color:#E63946;font-weight:700">✕</a></span>` : '') +
     `<span>班次 <b>${(d.entries || []).length}</b></span><span>总工时 <b>${totalH.toFixed(1)}h</b></span><span>当前在班 <b>${onDuty}</b></span>` +
