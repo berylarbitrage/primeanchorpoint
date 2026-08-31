@@ -246,16 +246,6 @@ tr:last-child td{border-bottom:none}
               <button type="button" class="cp-chip" data-val="弹性" onclick="this.classList.toggle('active')">弹性</button>
             </div>
           </div>
-          <div class="field"><label>工作环境（多选）</label>
-            <div id="cpEnvWrap" class="cp-chips">
-              <button type="button" class="cp-chip" data-val="常温仓" onclick="this.classList.toggle('active')">常温仓</button>
-              <button type="button" class="cp-chip" data-val="冷藏库" onclick="this.classList.toggle('active')">冷藏库</button>
-              <button type="button" class="cp-chip" data-val="冷冻库" onclick="this.classList.toggle('active')">冷冻库</button>
-              <button type="button" class="cp-chip" data-val="流水线" onclick="this.classList.toggle('active')">流水线</button>
-              <button type="button" class="cp-chip" data-val="户外" onclick="this.classList.toggle('active')">户外</button>
-              <button type="button" class="cp-chip" data-val="站立工作为主" onclick="this.classList.toggle('active')">站立工作为主</button>
-            </div>
-          </div>
           <div class="field"><label>搬运重量（单选）</label>
             <div id="cpLiftWrap" class="cp-chips">
               <button type="button" class="cp-chip" data-val="轻体力（无重物）" onclick="cpChipSingle(this)">轻体力（无重物）</button>
@@ -600,7 +590,7 @@ function cpChipSingle(btn) {
   btn.parentElement.querySelectorAll('.cp-chip').forEach(b => b.classList.remove('active'));
   if (!on) btn.classList.add('active');
 }
-const CP_WRAPS = { shift: 'cpShiftWrap', env: 'cpEnvWrap', lift: 'cpLiftWrap', exp: 'cpExpWrap', onboarding: 'cpOnbWrap', gear: 'cpGearWrap' };
+const CP_WRAPS = { shift: 'cpShiftWrap', lift: 'cpLiftWrap', exp: 'cpExpWrap', onboarding: 'cpOnbWrap', gear: 'cpGearWrap' };
 function collectPostDetails() {
   const d = {};
   for (const [k, wid] of Object.entries(CP_WRAPS)) {
