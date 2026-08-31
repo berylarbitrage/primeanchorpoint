@@ -26926,7 +26926,7 @@ app.get('/api/customer/time-records', requireCustomer, (req, res) => {
     to = new Date().toISOString().slice(0, 10);
   }
   const rows = db.prepare(`SELECT t.id AS entry_id, t.site_id, t.clock_in, t.clock_out, t.break_records, t.total_hours, t.status, t.on_break,
-      t.clock_in_photo_path, t.punch_photo_path, t.work_date, t.punch_review, e.first_name, e.last_name,
+      t.clock_in_photo_path, t.punch_photo_path, t.work_date, t.punch_review, t.raw_punches, e.first_name, e.last_name,
       (SELECT COUNT(*) FROM time_entry_edits x WHERE x.entry_id=t.id) AS edit_count
     FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id
     WHERE ${scope.sql} AND DATE(t.clock_in)>=? AND DATE(t.clock_in)<=?
@@ -26951,7 +26951,9 @@ app.get('/api/customer/time-records', requireCustomer, (req, res) => {
       break_minutes: Math.round(breakMin), break_count: breakN,
       total_hours: r.total_hours, status: r.status,
       break_records: r.break_records || '[]', work_date: r.work_date || '',
-      punch_review: r.punch_review || 0, edit_count: r.edit_count || 0
+      punch_review: r.punch_review || 0, edit_count: r.edit_count || 0,
+      // 原始打卡时间点 + 当前含义: 仓库方只能改含义不能改时间
+      punches: _entryPunches(r).map(p => ({ t: p.t, role: p.role }))
     };
     // 照片仅在管理员为该公司开启开关后返回 (且不含视频等其他媒体信息)
     if (photosEnabled) o.photos = photoFiles.map(f => '/api/customer/punch-photo/' + encodeURIComponent(path.basename(String(f))));
@@ -27064,61 +27066,81 @@ function _customerEntryAuth(req, res) {
   return { entry, site };
 }
 
-// POST /api/customer/time-entries/:id/edit — 仓库方直接改上班/下班/休息时间 (仓库时区 HH:MM)
-// 规则强制: 全部限定在该记录自己的工作日内; 下班≥上班; 休息必须在上下班之间。每次改动记入编辑历史。
-app.post('/api/customer/time-entries/:id/edit', requireCustomer, (req, res) => {
+// 一条记录的原始打卡时间点 + 当前含义 (in/break_start/break_end/out/ignore)
+function _entryPunches(entry) {
+  const roles = {}, photos = {};
+  let brs = [];
+  try { brs = JSON.parse(entry.break_records || '[]'); } catch (_) {}
+  if (entry.clock_in) { roles[entry.clock_in] = 'in'; if (entry.clock_in_photo_path) photos[entry.clock_in] = entry.clock_in_photo_path; }
+  for (const b of (Array.isArray(brs) ? brs : [])) {
+    if (b && b.start) { roles[b.start] = 'break_start'; if (b.photo_path) photos[b.start] = b.photo_path; }
+    if (b && b.end) { roles[b.end] = 'break_end'; if (b.end_photo_path) photos[b.end] = b.end_photo_path; }
+  }
+  if (entry.clock_out && entry.clock_out !== entry.clock_in) { roles[entry.clock_out] = 'out'; if (entry.punch_photo_path) photos[entry.clock_out] = entry.punch_photo_path; }
+  let raw = [];
+  try { raw = JSON.parse(entry.raw_punches || '[]'); } catch (_) {}
+  if (!Array.isArray(raw)) raw = [];
+  if (!raw.length) raw = Object.keys(roles).sort().map(t => ({ t }));
+  raw.sort((a, b2) => String(a.t).localeCompare(String(b2.t)));
+  return raw.map(p => ({ t: p.t, p: p.p || photos[p.t] || null, role: p.ig ? 'ignore' : (roles[p.t] || 'ignore') }));
+}
+
+// POST /api/customer/time-entries/:id/relabel — 仓库方只能改每个打卡时间点的「含义」
+// (上班/休息开始/休息结束/下班/作废)。时间本身不可改 —— 改时间只有公司有权限的人在后台操作。
+app.post('/api/customer/time-entries/:id/relabel', requireCustomer, (req, res) => {
   const a = _customerEntryAuth(req, res);
   if (!a) return;
   const { entry, site } = a;
   const tz = site.timezone || 'America/Chicago';
-  const wd = entry.work_date || _utcToTzDate(entry.clock_in, tz);
-  if (!wd) return res.status(400).json({ error: '该记录缺少工作日信息' });
-  const b = req.body || {};
-  const reHM = /^([01]\d|2[0-3]):[0-5]\d$/;
-  const ciHM = String(b.clock_in || '').trim();
-  const coHM = String(b.clock_out || '').trim();
-  if (!reHM.test(ciHM)) return res.status(400).json({ error: '上班时间格式不对 (HH:MM)' });
-  if (coHM && !reHM.test(coHM)) return res.status(400).json({ error: '下班时间格式不对 (HH:MM)' });
-  const brIn = Array.isArray(b.breaks) ? b.breaks : [];
-  if (brIn.length > 6) return res.status(400).json({ error: '休息段太多' });
-  const ciU = _tzToUtc(wd, ciHM, tz);
-  const coU = coHM ? _tzToUtc(wd, coHM, tz) : null;
-  if (coU && coU < ciU) return res.status(400).json({ error: '下班时间不能早于上班时间' });
+  const cur = _entryPunches(entry);
+  const inRoles = Array.isArray((req.body || {}).punches) ? req.body.punches : [];
+  if (inRoles.length !== cur.length) return res.status(400).json({ error: '打卡点数量不符，请刷新后重试' });
+  const VALID = ['in', 'break_start', 'break_end', 'out', 'ignore'];
+  const next = cur.map((p, i) => {
+    const q = inRoles[i] || {};
+    if (String(q.t || '') !== String(p.t)) return null;
+    const role = String(q.role || '');
+    return VALID.includes(role) ? { t: p.t, p: p.p, role } : null;
+  });
+  if (next.some(x => !x)) return res.status(400).json({ error: '打卡点不匹配或含义无效，请刷新后重试' });
+  // 含义组合校验 (时间顺序天然固定): 恰好一个「上班」且是最早的有效卡;
+  // 「下班」最多一个且是最晚的有效卡; 中间只能是成对交替的休息开始/结束
+  const act = next.filter(p => p.role !== 'ignore');
+  if (!act.length) return res.status(400).json({ error: '至少要保留一个有效打卡（上班）' });
+  if (act.filter(p => p.role === 'in').length !== 1) return res.status(400).json({ error: '必须有且只有一个「上班」' });
+  if (act[0].role !== 'in') return res.status(400).json({ error: '最早的有效打卡必须是「上班」' });
+  const outs = act.filter(p => p.role === 'out');
+  if (outs.length > 1) return res.status(400).json({ error: '「下班」最多只能有一个' });
+  if (outs.length && act[act.length - 1].role !== 'out') return res.status(400).json({ error: '「下班」必须是最晚的有效打卡' });
+  let openBr = null;
   const breaks = [];
-  for (const s2 of brIn) {
-    const bs = String((s2 || {}).start || '').trim(), be = String((s2 || {}).end || '').trim();
-    if (!bs && !be) continue;
-    if (!reHM.test(bs) || !reHM.test(be)) return res.status(400).json({ error: '休息时间格式不对 (HH:MM)' });
-    const bsU = _tzToUtc(wd, bs, tz), beU = _tzToUtc(wd, be, tz);
-    if (beU < bsU) return res.status(400).json({ error: '休息结束不能早于休息开始' });
-    if (bsU < ciU || (coU && beU > coU)) return res.status(400).json({ error: '休息时间必须在上下班时间之间' });
-    breaks.push({ start: bsU, end: beU });
+  for (const p of act.slice(1, outs.length ? act.length - 1 : undefined)) {
+    if (p.role === 'break_start') {
+      if (openBr) return res.status(400).json({ error: '连续两个「休息开始」，中间缺「休息结束」' });
+      openBr = { start: p.t }; if (p.p) openBr.photo_path = p.p;
+    } else if (p.role === 'break_end') {
+      if (!openBr) return res.status(400).json({ error: '「休息结束」前面缺「休息开始」' });
+      openBr.end = p.t; if (p.p) openBr.end_photo_path = p.p;
+      breaks.push(openBr); openBr = null;
+    } else return res.status(400).json({ error: '上下班之间只能是休息开始/结束' });
   }
-  breaks.sort((x, y) => x.start.localeCompare(y.start));
-  // 保留原休息记录里的照片 (按顺序对回去)
-  try {
-    const oldBr = JSON.parse(entry.break_records || '[]');
-    breaks.forEach((nb, i) => {
-      if (oldBr[i]) { if (oldBr[i].photo_path) nb.photo_path = oldBr[i].photo_path; if (oldBr[i].end_photo_path) nb.end_photo_path = oldBr[i].end_photo_path; }
-    });
-  } catch (_) {}
-  const breakMin = Math.round(breaks.reduce((s2, x) => s2 + (new Date(x.end.replace(' ', 'T') + 'Z') - new Date(x.start.replace(' ', 'T') + 'Z')) / 60000, 0));
-  const totalHours = coU ? Math.round(((new Date(coU.replace(' ', 'T') + 'Z') - new Date(ciU.replace(' ', 'T') + 'Z')) / 3600000) * 100) / 100 : null;
-  // 编辑历史: 只记真正变了的字段 (显示为仓库时区 HH:MM)
+  if (openBr) breaks.push(openBr); // 未结束的休息保留为进行中
+  const first = act[0], last = outs.length ? act[act.length - 1] : null;
+  const totalHours = last ? Math.round(((new Date(last.t.replace(' ', 'T') + 'Z') - new Date(first.t.replace(' ', 'T') + 'Z')) / 3600000) * 100) / 100 : null;
+  const breakMin = Math.round(breaks.reduce((s2, b) => b.end ? s2 + Math.max(0, (new Date(b.end.replace(' ', 'T') + 'Z') - new Date(b.start.replace(' ', 'T') + 'Z')) / 60000) : s2, 0));
+  const L = { in: '上班', break_start: '休息开始', break_end: '休息结束', out: '下班', ignore: '作废' };
   const changes = [];
-  const oldCi = _utcToTzHM(entry.clock_in, tz), oldCo = _utcToTzHM(entry.clock_out, tz);
-  if (oldCi !== ciHM) changes.push({ f: '上班', old: oldCi || '—', new: ciHM });
-  if ((oldCo || '') !== coHM) changes.push({ f: '下班', old: oldCo || '在班', new: coHM || '在班' });
-  let oldBrS = [];
-  try { oldBrS = JSON.parse(entry.break_records || '[]').map(x => `${_utcToTzHM(x.start, tz)}~${_utcToTzHM(x.end, tz) || '?'}`); } catch (_) {}
-  const newBrS = breaks.map(x => `${_utcToTzHM(x.start, tz)}~${_utcToTzHM(x.end, tz)}`);
-  if (oldBrS.join(',') !== newBrS.join(',')) changes.push({ f: '休息', old: oldBrS.join('、') || '无', new: newBrS.join('、') || '无' });
+  next.forEach((p, i) => { if (p.role !== cur[i].role) changes.push({ f: _utcToTzHM(p.t, tz) + ' 那一卡', old: L[cur[i].role], new: L[p.role] }); });
   if (!changes.length) return res.json({ ok: 1, unchanged: 1 });
-  db.prepare(`UPDATE time_entries SET clock_in=?, clock_out=?, status=?, on_break=0, break_records=?, break_minutes=?,
-      total_hours=?, regular_hours=?, overtime_hours=?, work_date=?,
+  const rawOut = next.map(p => { const o2 = { t: p.t }; if (p.p) o2.p = p.p; if (p.role === 'ignore') o2.ig = 1; return o2; });
+  db.prepare(`UPDATE time_entries SET clock_in=?, clock_in_photo_path=?, clock_out=?, punch_photo_path=?, status=?, on_break=?,
+      break_records=?, break_minutes=?, total_hours=?, regular_hours=?, overtime_hours=?, raw_punches=?,
       notes=CASE WHEN COALESCE(notes,'') LIKE '%仓库方%' THEN notes ELSE TRIM(COALESCE(notes,'')||' [含仓库方操作]') END WHERE id=?`)
-    .run(ciU, coU, coU ? 'closed' : 'open', JSON.stringify(breaks), breakMin,
-      totalHours, totalHours == null ? null : Math.min(totalHours, 8), totalHours == null ? null : Math.max(0, totalHours - 8), wd, entry.id);
+    .run(first.t, first.p || null, last ? last.t : null, last ? (last.p || null) : null,
+      last ? 'closed' : 'open', (!last && openBr) ? 1 : 0,
+      JSON.stringify(breaks), breakMin, totalHours,
+      totalHours == null ? null : Math.min(totalHours, 8), totalHours == null ? null : Math.max(0, totalHours - 8),
+      JSON.stringify(rawOut), entry.id);
   const cAcct2 = db.prepare('SELECT company_name, contact_name FROM customer_accounts WHERE id=?').get(req.customerId) || {};
   _logEntryEdit(entry.id, 'customer', [cAcct2.company_name, cAcct2.contact_name].filter(Boolean).join('·') || ('客户#' + req.customerId), changes);
   res.json({ ok: 1 });
