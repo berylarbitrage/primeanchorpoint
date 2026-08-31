@@ -430,6 +430,14 @@ function showToast(msg, type='success') {
 
 function esc(s) { const d = document.createElement('div'); d.textContent = String(s||''); return d.innerHTML; }
 
+// 电话统一显示格式 (与后台同款): 8592855149 / +16268232361 → +1 (859) 285-5149
+function fmtPhone(p) {
+  if (!p) return '—';
+  const d = String(p).replace(/\D/g, '').slice(-10);
+  if (d.length === 10) return `+1 (${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
+  return esc(p); // 不足10位按原样显示
+}
+
 async function cApi(path, opts={}) {
   const r = await fetch('/api/customer' + path, {
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + C_TOKEN },
@@ -1409,7 +1417,7 @@ async function loadWorkers() {
     <td style="font-weight:600;white-space:nowrap">${esc(w.first_name||'')} ${esc(w.last_name||'')}</td>
     <td style="white-space:nowrap">${esc(w.emp_code||'')||'—'}</td>
     <td style="white-space:nowrap">${w.id && cCan('position') ? `<a href="javascript:void(0)" onclick="wkPosEdit(${w.id}, '${esc(w.position||'').replace(/'/g,"&#39;")}')" title="点击填写/修改职位" style="text-decoration:none">${esc(w.position||'') || '<span style="color:var(--gray-400)">✎ 填写</span>'}</a>` : (esc(w.position||'')||'—')}</td>
-    <td style="white-space:nowrap">${esc(w.phone||'')||'—'}</td>
+    <td style="white-space:nowrap">${fmtPhone(w.phone)}</td>
     <td>${esc(w.email||'')||'—'}</td>
     <td style="font-size:.82rem;color:var(--gray-500);white-space:nowrap">${esc(w.address||'')||'—'}</td>
     <td style="white-space:nowrap">${w.punch_days ? `${w.punch_days} 天 · <b>${(w.total_hours || 0).toFixed(1)}h</b>` : (w.assign_status ? '派工·' + esc(w.assign_status) : '—')}</td>
@@ -1659,7 +1667,7 @@ async function loadProfile() {
       <div><span style="color:var(--gray-400)">公司名称</span><br><strong>${esc(me.company_name)}</strong></div>
       <div><span style="color:var(--gray-400)">联系人</span><br>${esc(me.contact_name||'—')}</div>
       <div><span style="color:var(--gray-400)">联系邮箱</span><br>${esc(me.email)}</div>
-      <div><span style="color:var(--gray-400)">电话</span><br>${esc(me.phone||'—')}</div>
+      <div><span style="color:var(--gray-400)">电话</span><br>${fmtPhone(me.phone)}</div>
     </div>
     <p style="margin-top:1.25rem;font-size:.82rem;color:var(--gray-400)">如需修改公司信息，请联系 Prime Anchor Workforce 客服</p>
     <div id="companyAccts" style="margin-top:1.4rem"></div>`;
@@ -1680,7 +1688,7 @@ async function loadCompanyAccounts() {
       <thead><tr><th>账号</th><th>电话</th><th>状态</th><th>权限</th><th>仓库范围</th></tr></thead>
       <tbody>${rows.map(r => `<tr${r.is_me ? ' style="background:#F5F9FF"' : ''}>
         <td><div style="font-weight:600;white-space:nowrap">${esc(r.name || '—')}${r.is_me ? ' <span style="color:var(--blue);font-size:.75rem">(当前账号)</span>' : ''}</div><div style="font-size:.8rem;color:var(--gray-400)">${esc(r.email)}</div></td>
-        <td style="white-space:nowrap">${esc(r.phone || '—')}</td>
+        <td style="white-space:nowrap">${fmtPhone(r.phone)}</td>
         <td style="white-space:nowrap">${r.status === '正常' ? '<span style="color:#2D9D78">● 正常</span>' : `<span style="color:#B87400">● ${esc(r.status)}</span>`}</td>
         <td style="min-width:260px">${Object.values(r.perms).some(Boolean) ? Object.entries(C_PERM_LABELS).map(([k, l]) => chip(l, !!r.perms[k])).join('') : '<span style="color:var(--gray-400)">👁 只读账号（只能看）</span>'}</td>
         <td style="font-size:.82rem">${r.sites ? esc(r.sites.join('、')) : '全部仓库'}</td>
