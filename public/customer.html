@@ -1574,7 +1574,7 @@ function _invDocHTML(inv) {
       <thead><tr><th style="${th}">#</th><th style="${th}">Type</th><th style="${th}">Container / Week</th><th style="${thR}">Qty</th><th style="${thR}">Unit Price</th><th style="${thR}">Amount</th></tr></thead>
       <tbody>${cont.map((c, i) => `<tr>
         <td style="${td}">${i + 1}</td>
-        <td style="${td}">${c.line_type === 'load' ? '装柜 Load' : '卸柜 Unload'}</td>
+        <td style="${td}">${c.line_type === 'load' ? 'Load' : 'Unload'}</td>
         <td style="${td}">${esc(c.container_no || '')}${c.week ? ` <span style="color:#94a3b8;font-size:.72rem">${esc(c.week)}</span>` : ''}</td>
         <td style="${tdR}">${Number(c.qty) || 0}</td>
         <td style="${tdR}">${_invMoney(c.unit_price)}</td>
