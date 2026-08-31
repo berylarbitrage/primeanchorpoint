@@ -3,12 +3,15 @@
 // ─── Gusto 合同工付款模板 (Contractor Pay CSV) 生成 ─────────────────────────────
 // 输入: ① Gusto 后台导出的空白 contractor pay 模板 CSV（合同工名册: 姓名 / 打码
 // SSN / 时薪）② 发票生成器里的员工行（姓名 / 时薪 / 正常与加班工时 / 应付工资）。
-// 输出: 同一张模板, 只把 hours 列填上（时薪缺失的名册行改填 fixed_amount）,
+// 输出: 同一张模板, 只填 hours / bonus（时薪缺失的名册行改填 fixed_amount）,
 // 其余单元格逐字保留, Gusto 才能按行对上自家合同工。
 //
-// 工时的口径: Gusto 按 时薪 × hours 付款, 没有 1.5× 加班的概念, 所以
-//   hours = 应付工资(含加班折算) ÷ 名册时薪, 向上取整到 0.01 小时（宁多不少）。
-// 时薪一致且无加班时 hours 就是实际工时; 有加班时相当于 正常工时 + 1.5×加班工时。
+// Gusto 按 时薪 × hours 付款, 没有 1.5× 加班的概念。两种折算口径 (opts.mode):
+//   'bonus' (默认): hours = 实际工时, 加班溢价和时薪差额放 bonus 列。
+//     付款记录里的工时就是真实工时, 总额和工资表一分不差。名册时薪高于工资表
+//     实际单价 (bonus 会变负数, Gusto 不收) 的行自动退回 'hours' 口径。
+//   'hours': 全折进工时, hours = 应付工资 ÷ 名册时薪, 向上取整到 0.01 小时
+//     （宁多不少）。时薪一致时相当于 正常工时 + 1.5×加班工时。
 //
 // 姓名匹配: 工资表的 "Jose Guerrero" 要对上名册的 last_name=Guerrero,
 // first_name=Jose。按分词集合做四档匹配（完全一致 → 包含 → 共享长词 → 近似拼写),
@@ -117,7 +120,7 @@ function parseRoster(csvText) {
   const cols = {
     last: col('last_name'), first: col('first_name'), business: col('business_name'),
     ssn: col('ssn/ein'), rate: col('hourly_rate'), hours: col('hours'),
-    fixed: col('fixed_amount'), note: col('note'),
+    fixed: col('fixed_amount'), bonus: col('bonus'), note: col('note'),
   };
   const entries = rows.slice(1).map((cells, i) => {
     const last = String(cells[cols.last] || '').trim();
@@ -146,6 +149,7 @@ function parseRoster(csvText) {
 // 返回 { csv, matches, unmatched, ambiguous, warnings, matchedCount, totalPay, untouched }
 function buildGustoCsv(templateCsv, employees, opts) {
   opts = opts || {};
+  const mode = opts.mode === 'hours' ? 'hours' : 'bonus';
   const roster = parseRoster(templateCsv);
   const warnings = [];
   const byRosterIdx = new Map();   // roster idx → { entry, sources: [{name, owed, rate, fuzzy}] }
@@ -172,6 +176,7 @@ function buildGustoCsv(templateCsv, employees, opts) {
     byRosterIdx.get(entry.idx).sources.push({
       name, owed,
       rate: Number(emp.rate) || null,
+      actualHours: r2((Number(emp.regHours) || 0) + (Number(emp.otHours) || 0)),
       fuzzy: best === 50,
     });
   }
@@ -186,11 +191,28 @@ function buildGustoCsv(templateCsv, employees, opts) {
     const m = byRosterIdx.get(entry.idx);
     if (m) {
       const owed = r2(m.sources.reduce((s, x) => s + x.owed, 0));
-      let hours = null, fixed = null, amount;
+      let hours = null, bonus = null, fixed = null, amount;
       if (entry.rate) {
-        hours = ceil2(owed / entry.rate);
-        amount = r2(hours * entry.rate);
-        cells[roster.cols.hours] = hours.toFixed(2);
+        // bonus 口径: hours = 实际工时, 差额（加班溢价 + 时薪差）放 bonus。
+        // 用不了就退回 hours 口径: 缺实际工时、模板没有 bonus 列、或 bonus 会是负数。
+        const actual = r2(m.sources.reduce((s, x) => s + (x.actualHours || 0), 0));
+        if (mode === 'bonus' && actual > 0 && roster.cols.bonus >= 0) {
+          const base = r2(actual * entry.rate);
+          const b = r2(owed - base);
+          if (b >= 0) {
+            hours = actual;
+            amount = r2(base + b);
+            cells[roster.cols.hours] = hours.toFixed(2);
+            if (b > 0) { bonus = b; cells[roster.cols.bonus] = b.toFixed(2); }
+          } else {
+            warnings.push(`「${entry.label}」按实际工时 ${actual.toFixed(2)}h × 名册时薪 $${entry.rate} 已超过应付 $${owed.toFixed(2)}（名册时薪偏高），这行改按金额折算工时。`);
+          }
+        }
+        if (hours == null) {
+          hours = ceil2(owed / entry.rate);
+          amount = r2(hours * entry.rate);
+          cells[roster.cols.hours] = hours.toFixed(2);
+        }
       } else {
         fixed = owed;
         amount = owed;
@@ -200,7 +222,7 @@ function buildGustoCsv(templateCsv, employees, opts) {
       totalPay = r2(totalPay + amount);
       matches.push({
         label: entry.label, ssn: entry.ssn, rate: entry.rate,
-        hours, fixed, amount, diff: r2(amount - owed),
+        hours, bonus, fixed, amount, diff: r2(amount - owed),
         sources: m.sources,
         merged: m.sources.length > 1,
       });
@@ -228,6 +250,7 @@ function buildGustoCsv(templateCsv, employees, opts) {
   return {
     csv: stringifyCsv(outRows),
     filename,
+    mode,
     matches, unmatched, ambiguous, warnings,
     matchedCount: matches.length,
     untouched: roster.entries.length - matches.length,

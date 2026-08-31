@@ -3026,7 +3026,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
         <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:var(--sky);border-color:var(--sky)" onclick="invpToggleEmpImport()">📥 从系统导入员工</button>
         <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#7c3aed;border-color:#ddd6fe" onclick="invpOpenCompanyHistoryPicker()" title="从这家客户公司的付款历史里勾选老员工，带入他们最近一次的 付/收 时薪">📋 从本公司历史选</button>
         <span style="color:var(--gray-300);font-size:.85rem">|</span>
-        <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#b45309;border-color:#fcd34d;background:#fffbeb" onclick="invpGustoCsv()" title="按 Gusto 合同工名册生成本周付款 CSV（hours = 应付工资 ÷ Gusto 时薪，含 1.5× 加班折算），可直接上传 Gusto 批量付款">💸 Gusto 付款 CSV</button>
+        <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#b45309;border-color:#fcd34d;background:#fffbeb" onclick="invpGustoCsv()" title="按 Gusto 合同工名册生成本周付款 CSV（默认：hours 填实际工时，加班溢价放 bonus，金额与工资表一分不差；可切换为全折进 hours），可直接上传 Gusto 批量付款">💸 Gusto 付款 CSV</button>
         <input type="file" id="invpGustoRosterFile" accept=".csv" style="display:none" onchange="invpGustoUploadRoster(this)">
       </div>
       </div>
@@ -3125,10 +3125,19 @@ tr:hover td.invp-frz{background:var(--sky-light)}
         <div id="gustoTplInfo" style="font-size:.76rem;color:var(--gray-400);margin-top:.15rem"></div>
       </div>
     </div>
-    <div id="gustoCsvBody" style="max-height:55vh;overflow-y:auto;margin:.75rem 0"></div>
-    <div style="font-size:.74rem;color:var(--gray-400);line-height:1.55;border-top:1px solid var(--gray-100);padding-top:.5rem">
-      hours = 应付工资 ÷ Gusto 名册时薪（加班按 1.5× 折进金额），向上取整到 0.01 小时——宁可多几分钱，不让工人少拿。名册里没排班的行保持空白，Gusto 上传时会跳过。
+    <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin:.6rem 0 .2rem;padding:.45rem .7rem;background:#f8fafc;border:1px solid var(--gray-100);border-radius:8px;font-size:.8rem">
+      <span style="font-weight:700;color:var(--gray-600)">折算口径：</span>
+      <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer">
+        <input type="radio" name="gustoMode" value="bonus" onchange="invpGustoModeChanged(this.value)">
+        <span>实际工时 + 差额放 bonus <span style="color:#047857;font-weight:600">（推荐：工时真实、金额一分不差）</span></span>
+      </label>
+      <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer">
+        <input type="radio" name="gustoMode" value="hours" onchange="invpGustoModeChanged(this.value)">
+        <span>全部折进 hours（工时 = 金额 ÷ 时薪）</span>
+      </label>
     </div>
+    <div id="gustoCsvBody" style="max-height:55vh;overflow-y:auto;margin:.5rem 0 .75rem"></div>
+    <div id="gustoModeNote" style="font-size:.74rem;color:var(--gray-400);line-height:1.55;border-top:1px solid var(--gray-100);padding-top:.5rem"></div>
     <div class="modal-actions" style="display:flex;justify-content:space-between;gap:.5rem;margin-top:.9rem">
       <button class="btn btn-outline" style="font-size:.8rem;color:var(--gray-500)" onclick="document.getElementById('invpGustoRosterFile').click()" title="重新上传 Gusto 后台导出的空白 contractor payment 模板（人员或时薪变了的时候）">🔄 更新名册</button>
       <div style="display:flex;gap:.5rem">
@@ -38355,6 +38364,7 @@ async function invpGustoCsv(auto) {
       employees,
       period_start: document.getElementById('invPageStart').value,
       period_end: document.getElementById('invPageEnd').value,
+      mode: _invpGustoMode(),
     }),
   }).catch(e => ({ error: e.message }));
   if (res && res.no_template) {
@@ -38379,14 +38389,20 @@ async function invpGustoCsv(auto) {
 function renderGustoCsvModal(res) {
   const info = document.getElementById('gustoTplInfo');
   if (info) info.textContent = `名册：${res.template_name || '—'}${res.template_uploaded_at ? '（上传于 ' + String(res.template_uploaded_at).slice(0, 10) + '）' : ''} · 匹配 ${res.matchedCount} 行 · 付款合计 $${(res.totalPay || 0).toFixed(2)}`;
+  document.querySelectorAll('input[name="gustoMode"]').forEach(r => { r.checked = (r.value === (res.mode || 'bonus')); });
+  const note = document.getElementById('gustoModeNote');
+  if (note) note.textContent = (res.mode === 'hours')
+    ? 'hours = 应付工资 ÷ Gusto 名册时薪（加班按 1.5× 折进金额），向上取整到 0.01 小时——宁可多几分钱，不让工人少拿。名册里没排班的行保持空白，Gusto 上传时会跳过。'
+    : 'hours = 实际打卡工时，加班溢价（0.5×）和时薪差额放进 bonus 列，付款总额与工资表一分不差。名册里没排班的行保持空白，Gusto 上传时会跳过。';
   const rows = (res.matches || []).map(m => {
     const src = (m.sources || []).map(s => `${esc(s.name)} <span style="color:var(--gray-400)">$${(+s.owed).toFixed(2)}</span>`).join('<br>');
     const diff = m.diff ? ` <span style="color:#b45309;font-size:.72rem" title="向上取整到 0.01 小时产生的差额">（${m.diff > 0 ? '+' : ''}${m.diff.toFixed(2)}）</span>` : '';
     const mergeTag = m.merged ? ` <span style="font-size:.68rem;background:#fef3c7;color:#92400e;border-radius:4px;padding:0 5px;font-weight:600">合并 ${m.sources.length} 行</span>` : '';
+    const bonusTag = m.bonus ? `<div style="font-size:.72rem;color:#047857;font-weight:600">+ $${(+m.bonus).toFixed(2)} bonus</div>` : '';
     return `<tr style="border-bottom:1px solid var(--gray-100)${m.merged ? ';background:#fffbeb' : ''}">
       <td style="padding:.4rem .5rem"><span style="font-weight:600">${esc(m.label)}</span>${mergeTag}<div style="font-size:.7rem;color:var(--gray-400)">${esc(m.ssn || '')}</div></td>
       <td style="padding:.4rem .5rem;text-align:right;white-space:nowrap">${m.rate != null ? '$' + m.rate : '—'}</td>
-      <td style="padding:.4rem .5rem;text-align:right;font-weight:700;white-space:nowrap">${m.hours != null ? m.hours.toFixed(2) + ' h' : (m.fixed != null ? '固定金额' : '—')}</td>
+      <td style="padding:.4rem .5rem;text-align:right;font-weight:700;white-space:nowrap">${m.hours != null ? m.hours.toFixed(2) + ' h' + bonusTag : (m.fixed != null ? '固定金额' : '—')}</td>
       <td style="padding:.4rem .5rem;text-align:right;white-space:nowrap">$${(+m.amount).toFixed(2)}${diff}</td>
       <td style="padding:.4rem .5rem;font-size:.78rem;line-height:1.5">${src}</td>
     </tr>`;
@@ -38408,7 +38424,7 @@ function renderGustoCsvModal(res) {
       <thead><tr style="border-bottom:2px solid var(--gray-200);color:var(--gray-500);font-size:.74rem">
         <th style="padding:.3rem .5rem;text-align:left">Gusto 名册（付给谁）</th>
         <th style="padding:.3rem .5rem;text-align:right">时薪</th>
-        <th style="padding:.3rem .5rem;text-align:right">填入 hours</th>
+        <th style="padding:.3rem .5rem;text-align:right">填入 hours / bonus</th>
         <th style="padding:.3rem .5rem;text-align:right">付款金额</th>
         <th style="padding:.3rem .5rem;text-align:left">来源（工资表行 · 应付）</th>
       </tr></thead>
@@ -38416,6 +38432,15 @@ function renderGustoCsvModal(res) {
     </table>
     ${res.untouched ? `<div style="margin-top:.45rem;font-size:.74rem;color:var(--gray-400)">名册其余 ${res.untouched} 行本周没有工时，保持空白。</div>` : ''}
     ${unmatchedBlock}${warnBlock}`;
+}
+
+// 折算口径（bonus = 实际工时+差额放bonus；hours = 全折进工时），记住上次的选择
+function _invpGustoMode() {
+  try { return localStorage.getItem('invpGustoMode') === 'hours' ? 'hours' : 'bonus'; } catch (_) { return 'bonus'; }
+}
+async function invpGustoModeChanged(v) {
+  try { localStorage.setItem('invpGustoMode', v === 'hours' ? 'hours' : 'bonus'); } catch (_) {}
+  await invpGustoCsv(); // 按新口径重新生成并刷新预览
 }
 
 function invpGustoDownload() {

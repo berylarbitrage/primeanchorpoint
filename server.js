@@ -21787,6 +21787,7 @@ app.post('/api/admin/gusto-pay-csv', requireAdmin, (req, res) => {
     const out = buildGustoCsv(tpl.csv, employees, {
       period_start: req.body.period_start || '',
       period_end: req.body.period_end || '',
+      mode: req.body.mode === 'hours' ? 'hours' : 'bonus',
     });
     res.json({ ok: true, template_name: tpl.name || '', template_uploaded_at: tpl.uploaded_at || '', ...out });
   } catch (e) {
