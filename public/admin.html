@@ -1459,6 +1459,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <option value="pending_review">待审核</option>
     </select>
   </div>
+  <div id="timeKioskMode"></div>
   <div class="hours-bar" id="timeSummary" style="display:none">
     <div class="hours-item"><h4 id="sumShifts">0</h4><p>班次总数</p></div>
     <div class="hours-item"><h4 id="sumTotal">0h</h4><p>总工时</p></div>
@@ -18205,14 +18206,16 @@ async function populateTimeEmpFilter() {
   const sel = document.getElementById('timeEmpFilter');
   sel.innerHTML = '<option value="">全部员工</option>' +
     emps.filter(e=>e.status==='active').map(e=>`<option value="${e.id}">${esc(e.first_name)} ${esc(e.last_name)} (${esc(e.employee_id)})</option>`).join('');
-  // 仓库筛选下拉
+  // 仓库筛选下拉 + 打卡机模式按钮
   try {
     const sites = await api('/admin/job-sites');
+    _timeSites = Array.isArray(sites) ? sites : [];
     const sSel = document.getElementById('timeSiteFilter');
     const cur = sSel.value;
     sSel.innerHTML = '<option value="">全部仓库</option>' +
-      (sites||[]).filter(s=>s.active).map(s=>`<option value="${s.id}">${esc(s.name)}${s.code?` (${esc(s.code)})`:''}</option>`).join('');
+      _timeSites.filter(s=>s.active).map(s=>`<option value="${s.id}">${esc(s.name)}${s.code?` (${esc(s.code)})`:''}</option>`).join('');
     sSel.value = cur;
+    renderTimeKioskMode();
   } catch {}
   // Also populate report emp select
   const rptSel = document.getElementById('rptEmp');
@@ -18228,9 +18231,48 @@ async function populateTimeEmpFilter() {
     jobs.filter(j=>j.active).map(j=>`<option value="${j.id}">${esc(j.title)} — ${esc(j.location)}</option>`).join('');
 }
 
+// ── 打卡机模式: 一排按钮, 点选后该仓库打卡台从现在起的所有打卡都按选定分类记录 (与客户门户同款) ──
+let _timeSites = [];
+const TIME_KIOSK_MODES = [['', '自动（上班/下班）'], ['in', '上班开始'], ['out', '上班结束（下班）'], ['break_start', '休息开始'], ['break_end', '休息结束']];
+function renderTimeKioskMode() {
+  const box = document.getElementById('timeKioskMode');
+  if (!box) return;
+  if (USER_ROLE === 'manager') { box.innerHTML = ''; return; }  // 经理无仓库写权限
+  const filterVal = document.getElementById('timeSiteFilter').value;
+  let sites = _timeSites.filter(s => s.active);
+  if (filterVal) sites = sites.filter(s => String(s.id) === filterVal);
+  box.innerHTML = sites.map(s => {
+    const cur = s.kiosk_punch_mode || '';
+    return `
+    <div style="padding:.55rem .8rem;background:${cur ? '#FFF7ED' : 'var(--white)'};border:1px solid ${cur ? '#fed7aa' : 'var(--gray-200)'};border-radius:10px;margin-bottom:.5rem;font-size:.85rem">
+      <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
+        <span style="margin-right:.2rem">🖥 <b>${esc(s.name)}</b>${s.code?` <span style="color:var(--gray-400)">(${esc(s.code)})</span>`:''} 打卡机模式：</span>
+        ${TIME_KIOSK_MODES.map(([v, l]) => {
+          const on = cur === v, onBg = v ? 'var(--accent)' : 'var(--green)';
+          return `<button type="button" onclick="timeSetKioskMode(${s.id}, '${v}', '${l}', ${on ? 1 : 0})"
+            style="padding:.34rem .7rem;border-radius:8px;font-size:.82rem;cursor:${on ? 'default' : 'pointer'};border:1px solid ${on ? onBg : 'var(--gray-200)'};background:${on ? onBg : 'var(--white)'};color:${on ? '#fff' : 'var(--gray-600)'};font-weight:${on ? '700' : '400'};white-space:nowrap">${on ? '✓ ' : ''}${l}</button>`;
+        }).join('')}
+      </div>
+      ${cur ? '<div style="color:#b45309;font-size:.78rem;margin-top:.35rem">⚠ 非自动模式：打卡机上的每次打卡都按此分类记录，用完记得点回「自动」</div>' : ''}
+    </div>`;
+  }).join('');
+}
+async function timeSetKioskMode(siteId, mode, label, isCurrent) {
+  if (isCurrent) return;
+  const msg = mode ? `确认把打卡机模式设为「${label}」？\n从现在起该仓库打卡台上的所有打卡都记为「${label}」。`
+    : '确认恢复「自动（上班/下班）」？\n打卡台将恢复自动判断上班/下班。';
+  if (!confirm(msg)) return;
+  const r = await api(`/admin/job-sites/${siteId}/kiosk-mode`, { method: 'POST', body: JSON.stringify({ mode }) });
+  if (!r || r.error || !r.ok) { if (r && r.error) showToast(r.error, 'error'); return; }
+  showToast(`✅ 打卡机模式：${label}`);
+  try { const sites = await api('/admin/job-sites'); _timeSites = Array.isArray(sites) ? sites : _timeSites; } catch {}
+  renderTimeKioskMode();
+}
+
 async function loadTimeEntries() {
   const emp  = document.getElementById('timeEmpFilter').value;
   const site = document.getElementById('timeSiteFilter').value;
+  renderTimeKioskMode();
   const from = document.getElementById('timeFrom').value;
   const to   = document.getElementById('timeTo').value;
   const st   = document.getElementById('timeStatusFilter').value;

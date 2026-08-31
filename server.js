@@ -27412,6 +27412,16 @@ app.put('/api/admin/job-sites/:id', requireAdmin, blockManager, async (req, res)
   res.json({ success: true });
 });
 
+// 快捷设置仓库打卡机模式 (工时打卡记录页的按钮; ''=自动, in/out/break_start/break_end=强制分类)
+app.post('/api/admin/job-sites/:id/kiosk-mode', requireAdmin, blockManager, (req, res) => {
+  const mode = String((req.body || {}).mode || '');
+  if (!['', 'in', 'out', 'break_start', 'break_end'].includes(mode)) return res.status(400).json({ error: '无效模式' });
+  const s = db.prepare('SELECT id FROM job_sites WHERE id=?').get(req.params.id);
+  if (!s) return res.status(404).json({ error: '未找到该仓库' });
+  db.prepare('UPDATE job_sites SET kiosk_punch_mode=? WHERE id=?').run(mode, s.id);
+  res.json({ ok: 1, mode });
+});
+
 app.delete('/api/admin/job-sites/:id', requireAdmin, blockManager, (req, res) => {
   db.prepare('DELETE FROM job_sites WHERE id=?').run(req.params.id);
   res.json({ success: true });
