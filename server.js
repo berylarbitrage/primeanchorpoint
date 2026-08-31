@@ -32132,6 +32132,17 @@ app.get('/api/plaid/accounts', requireAdmin, requireRole('admin', 'cs', 'account
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// 标注面板的下拉选项 (公司/仓库/推荐人名单; admin/客服/会计都能读, 只给名字不含其他信息)
+app.get('/api/plaid/ann-options', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
+  try {
+    res.json({
+      companies: db.prepare('SELECT name FROM partners WHERE active=1 ORDER BY name').all().map(r => r.name).filter(Boolean),
+      warehouses: db.prepare('SELECT name FROM job_sites WHERE active=1 ORDER BY name').all().map(r => r.name).filter(Boolean),
+      referrers: db.prepare('SELECT name FROM referrers ORDER BY name').all().map(r => r.name).filter(Boolean),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // 给账户设置「公司名」显示标签 (区分同名账户; 仅管理员)
 app.post('/api/plaid/accounts/:account_id/label', requireAdmin, requireRole('admin'), (req, res) => {
   const acc = db.prepare('SELECT id FROM plaid_accounts WHERE account_id=?').get(req.params.account_id);
