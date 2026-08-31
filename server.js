@@ -13729,14 +13729,26 @@ app.post('/api/admin/test-sms', requireAdmin, requireRole('admin'), async (req, 
       else fromCaps = { not_found: true };
     }
   } catch (e) { fromCaps = { error: e.message }; }
+  // 服务器自查: 用 Twilio 将要抓取的同一个 URL 试拉一次图 —— 11200 时先分清是链接不通还是号码问题
+  const mediaUrl = _mmsMediaBase(req) + '/mms-test.png';
+  let mediaCheck = null;
+  try {
+    const t0 = Date.now();
+    const ac = new AbortController();
+    const tm = setTimeout(() => ac.abort(), 8000);
+    const fr = await fetch(mediaUrl, { signal: ac.signal, redirect: 'follow' });
+    clearTimeout(tm);
+    const buf = await fr.arrayBuffer();
+    mediaCheck = { ok: fr.ok && buf.byteLength > 100, status: fr.status, content_type: fr.headers.get('content-type') || '', bytes: buf.byteLength, ms: Date.now() - t0 };
+  } catch (e) { mediaCheck = { ok: false, error: String(e && (e.cause && e.cause.message || e.message) || e).slice(0, 160) }; }
   let mmsResult = null;
   try {
-    let r = await sendSMSWithDetail(to, '[Prime Anchor Point LLC] MMS test: you should see a QR image attached.', _applyQrBase(req) + '/mms-test.png');
+    let r = await sendSMSWithDetail(to, '[Prime Anchor Point LLC] MMS test: you should see a QR image attached.', mediaUrl);
     if (r && r.ok) r = await _twWaitFinal(r);
     mmsResult = r;
   } catch (e) { mmsResult = { ok: false, error: e.message }; }
 
-  res.json({ configured, accountInfo, method, result, from_caps: fromCaps, mms: mmsResult });
+  res.json({ configured, accountInfo, method, result, from_caps: fromCaps, mms: mmsResult, media_url: mediaUrl, media_check: mediaCheck });
 });
 
 // Admin: test email configuration
@@ -15566,6 +15578,20 @@ function _applyQrBase(req) {
   // 未配置时固定用主域名 primeanchorpoint —— 不跟随管理员当前访问的域名,
   // 避免从 workforce 域名打开后台时生成的二维码带 workforce 域名
   return String(process.env.PUBLIC_QR_BASE_URL || 'https://primeanchorpoint.com').replace(/\/+$/, '');
+}
+
+// 彩信附图专用基址: Twilio 的服务器要能直接抓到这个 URL 才能发出图片。
+// 自定义域名可能被前置 CDN/防火墙当机器人拦截 (错误 11200), 所以优先:
+// ① app_settings.mms_media_base_url 手动指定 → ② Railway 原生域名(直连无拦截) → ③ 同二维码基址
+function _mmsMediaBase(req) {
+  try {
+    const r = db.prepare("SELECT value FROM app_settings WHERE key='mms_media_base_url'").get();
+    const v = r && r.value ? r.value.trim().replace(/\/+$/, '') : '';
+    if (v && /^https?:\/\//i.test(v)) return v;
+  } catch (_) {}
+  const rw = String(process.env.RAILWAY_PUBLIC_DOMAIN || '').trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  if (rw) return 'https://' + rw;
+  return _applyQrBase(req);
 }
 
 // Look up a partner by their public applicant-form token. null if not found.
@@ -27136,7 +27162,7 @@ app.post('/api/kiosk/forgot', async (req, res) => {
     // 纯英文 GSM-7 文案 (中文/全角字符会转 UCS-2 编码, 更易被美国运营商垃圾过滤且分段翻倍);
     // 二维码作为彩信图片直接发, 正文不带链接; 彩信失败/被拒再降级为带链接短信。
     // 发出后轮询真实送达状态 —— messages.create 成功只代表 Twilio 接单, 运营商仍可能拒投。
-    const qrPngUrl = _applyQrBase(req) + '/my-qr.png?c=' + code;
+    const qrPngUrl = _mmsMediaBase(req) + '/my-qr.png?c=' + code;
     const mmsBody = `Prime Anchor Point: Your clock-in password is ${code}. Show the attached QR code or enter this password at the time clock. Keep it private.`;
     const linkBody = `Prime Anchor Point: Your clock-in password is ${code}. QR code: ${_applyQrBase(req) + '/my-qr?c=' + code} Show the QR or enter the password at the time clock. Keep it private.`;
     let delivery = 'failed', usedMms = false;

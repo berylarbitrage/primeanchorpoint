@@ -531,7 +531,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   <div style="margin-top:.9rem">
     <div style="font-size:.82rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem">📨 最近打卡找回短信（真实送达状态）</div>
     <div id="kioskSmsLog" style="max-height:200px;overflow:auto;font-size:.74rem;font-family:monospace;background:var(--gray-100);border-radius:8px;padding:.5rem .6rem">加载中…</div>
-    <div style="font-size:.7rem;color:var(--gray-400);margin-top:.25rem">delivered=确认送达 · sent=已发出未确认 · undelivered/failed=运营商拒投（30007=垃圾过滤 30032=免费号未验证 30006=固话）</div>
+    <div style="font-size:.7rem;color:var(--gray-400);margin-top:.25rem">delivered=确认送达 · sent=已发出未确认 · undelivered/failed=拒投（11200=Twilio抓不到附图链接 30007=垃圾过滤 30032=免费号未验证 30006=固话）</div>
   </div>
   <div class="modal-actions">
     <button class="btn" onclick="document.getElementById('smsTestModal').classList.remove('show')">关闭</button>
@@ -8951,15 +8951,27 @@ async function runSmsTest() {
     if (caps) {
       out += `发送号码 MMS 能力: ${caps.error ? '❓ 查询失败 ' + caps.error : caps.not_found ? '❓ 未在账号中找到该号码' : caps.mms ? '✅ 支持' : '❌ 不支持 —— 需在 Twilio 换一个带 MMS 的号码'}\n`;
     }
+    if (d.media_url) out += `附图链接: ${d.media_url}\n`;
+    const mc = d.media_check;
+    if (mc) {
+      out += `服务器自查该链接: ${mc.ok ? `✅ 可访问（${mc.status} ${mc.content_type || ''} ${mc.bytes || 0}B ${mc.ms || 0}ms）` : `❌ 拉取失败（${mc.error || (mc.status + ' ' + (mc.content_type || ''))}）—— Twilio 也拿不到图，彩信必然失败`}\n`;
+    }
     const m = d.mms;
     if (m) {
       if (m.ok) {
-        out += `测试彩信状态: ${m.status}${m.errorCode ? '（错误码 ' + m.errorCode + '）' : ''}\n`;
+        out += `测试彩信状态: ${m.status}${m.errorCode ? `（错误码 ${m.errorCode}）` : ''}\n`;
         if (m.status === 'delivered') out += '✅ 彩信已送达！请看手机是否收到二维码图片。打卡找回将正常发图。';
         else if (m.status === 'undelivered' || m.status === 'failed') {
-          out += `❌ 彩信被运营商拒投（错误码 ${m.errorCode || '未知'}）\n`;
-          out += '常见：30032=免费号(Toll-Free)未完成 Verification；30007=垃圾过滤(需 A2P 10DLC 注册)。\n';
-          out += 'Twilio 后台完成对应备案后，打卡找回会自动改回发图片。';
+          if (String(m.errorCode) === '11200') {
+            out += '❌ 错误 11200 = Twilio 的服务器抓取不到上面的附图链接（不是号码问题）。\n';
+            out += mc && mc.ok
+              ? '服务器自己能访问但 Twilio 不行 → 域名前面的 CDN/防火墙把机器人抓取拦了。已改用直连域名重试，请重新点一次测试；仍不行则需在 CDN 放行或设置 mms_media_base_url。'
+              : '链接本身不通 → 检查域名解析/证书，或设置 mms_media_base_url 指向可公开访问的域名。';
+          } else {
+            out += `❌ 彩信被运营商拒投（错误码 ${m.errorCode || '未知'}）\n`;
+            out += '常见：30032=免费号(Toll-Free)未完成 Verification；30007=垃圾过滤(需 A2P 10DLC 注册)。\n';
+            out += 'Twilio 后台完成对应备案后，打卡找回会自动改回发图片。';
+          }
         } else out += '⏳ 已发出待确认，1–2 分钟内看手机是否收到图片。';
       } else {
         out += `❌ 彩信发送失败: ${m.code ? m.code + ' ' : ''}${m.error || ''}\n`;
