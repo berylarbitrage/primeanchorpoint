@@ -956,9 +956,48 @@ function trAll() {
   document.getElementById('trTo').value = '';
   loadTimeRecords();
 }
-// 从工人列表跳到该工人的全部打卡记录 (只看TA + 全部时间范围, 汇总条即是TA的总工时)
+// 工人列表「打卡记录」: 先弹窗看该工人全部记录, 弹窗顶部有按钮再跳到打卡记录页
 let _trEmpFilter = null;
-function wkGoRecords(id, name) {
+async function wkGoRecords(id, name) {
+  const d = await cApi('/time-records?all=1');
+  if (!d || d.error) { showToast((d && d.error) || '加载失败', 'error'); return; }
+  const tzMap = {};
+  (d.sites || []).forEach(s => tzMap[s.id] = s.timezone || 'America/Chicago');
+  const list = (d.entries || []).filter(e => e.emp_db_id === id);
+  const totalH = list.reduce((s2, e) => s2 + (e.total_hours || 0), 0);
+  const rows = list.map(e => {
+    const tz = tzMap[e.site_id] || 'America/Chicago';
+    const ci = _trPT(e.clock_in), co = _trPT(e.clock_out);
+    const isOpen = e.status === 'open';
+    return `<tr>
+      <td style="white-space:nowrap">${_trFmtD(ci || co, tz)}</td>
+      <td>${_trFmtT(ci, tz)}</td>
+      <td>${isOpen ? '<span style="color:#B87400;font-weight:700">在班</span>' : _trFmtT(co, tz)}</td>
+      <td style="color:var(--gray-400)">${e.break_minutes ? e.break_minutes + 'min' : '—'}</td>
+      <td style="white-space:nowrap">${e.total_hours ? e.total_hours.toFixed(2) + 'h' : (isOpen ? '—' : '0h')}</td>
+      <td style="white-space:nowrap">${e.punch_review ? '<span style="color:#E63946">⚠ 待复核</span>' : (isOpen ? '<span style="color:#B87400">● 上班中</span>' : '<span style="color:#2D9D78">● 完成</span>')}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" style="color:var(--gray-400);text-align:center;padding:1rem">没有打卡记录</td></tr>';
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay show';
+  ov.innerHTML = `<div class="modal-box" style="max-width:640px;padding:1.3rem 1.5rem;text-align:left">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:.8rem;margin-bottom:.25rem;flex-wrap:wrap">
+      <h2 style="margin:0">📋 打卡记录 · ${esc(name)}</h2>
+      <button class="tr-act" style="border-color:var(--blue);color:var(--blue);flex-shrink:0" onclick="this.closest('.modal-overlay').remove();wkGoRecordsPage(${id}, '${esc(name).replace(/'/g, "&#39;")}')">↗ 跳转到打卡记录页</button>
+    </div>
+    <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:.7rem">班次 <b>${list.length}</b> · 总工时 <b>${totalH.toFixed(1)}h</b>（全部时间）</p>
+    <div style="max-height:56vh;overflow-y:auto;border:1px solid var(--gray-100,#eef1f4);border-radius:10px">
+      <table style="width:100%;margin:0">
+        <thead><tr><th>日期</th><th>上班</th><th>下班</th><th>休息</th><th>合计</th><th>状态</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <button class="modal-btn modal-btn-secondary" style="margin-top:1rem;margin-bottom:0" onclick="this.closest('.modal-overlay').remove()">关闭</button></div>`;
+  ov.addEventListener('click', ev => { if (ev.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+}
+// 弹窗顶部「跳转」: 切到打卡记录页只看该工人 (全部时间范围)
+function wkGoRecordsPage(id, name) {
   _trEmpFilter = { id, name };
   showTab('timerec');
   trAll();
