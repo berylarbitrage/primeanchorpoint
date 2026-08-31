@@ -27087,10 +27087,10 @@ app.get('/my-qr', async (req, res) => {
   res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Time Clock QR</title></head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;text-align:center;padding:2rem 1rem;background:#f7f8fa;color:#1a2433">
 <h2 style="margin:0 0 .2rem">${nm}</h2>
-<p style="color:#5f6b7a;margin:.3rem 0 1rem">Time Clock QR Code · 打卡二维码</p>
+<p style="color:#5f6b7a;margin:.3rem 0 1rem">Time Clock QR Code</p>
 <img src="${qr}" alt="QR" style="width:min(320px,80vw);border-radius:12px;background:#fff;padding:12px;box-shadow:0 4px 20px rgba(0,0,0,.08)">
 <p style="font-size:1.4rem;font-weight:800;letter-spacing:.15em;margin:1rem 0 .4rem">${code}</p>
-<p style="color:#5f6b7a;font-size:.85rem;max-width:420px;margin:0 auto;line-height:1.6">Show this QR code or enter the password above at the time clock.<br>打卡时扫此二维码，或输入上面的 8 位密码。<br>请截图保存，不要转发他人 Keep it private.</p>
+<p style="color:#5f6b7a;font-size:.85rem;max-width:420px;margin:0 auto;line-height:1.6">Show this QR code or enter the password above at the time clock.<br>Take a screenshot to save it. Keep it private &mdash; do not share.</p>
 </body></html>`);
 });
 
