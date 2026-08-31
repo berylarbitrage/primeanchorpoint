@@ -214,9 +214,11 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
             <select id="lpTxnAcct" onchange="lpTxnLoad()" style="max-width:180px;font-size:.78rem"><option value="">全部账户</option></select>
             <input type="text" id="lpTxnQ" placeholder="搜商户 / 描述…" oninput="clearTimeout(window._lpQT);window._lpQT=setTimeout(lpTxnLoad,350)" style="flex:1;min-width:110px;font-size:.78rem">
           </div>
-          <div style="display:flex;gap:.35rem;margin-bottom:.4rem">
-            <input type="date" id="lpTxnFrom" onchange="lpTxnLoad()" style="flex:1;font-size:.76rem">
-            <input type="date" id="lpTxnTo" onchange="lpTxnLoad()" style="flex:1;font-size:.76rem">
+          <div style="display:flex;gap:.35rem;margin-bottom:.4rem;flex-wrap:wrap;align-items:center">
+            <input type="date" id="lpTxnFrom" onchange="lpTxnLoad()" style="flex:1;min-width:110px;font-size:.76rem">
+            <input type="date" id="lpTxnTo" onchange="lpTxnLoad()" style="flex:1;min-width:110px;font-size:.76rem">
+            <input type="number" step="0.01" id="lpTxnAmt" placeholder="按金额找" oninput="clearTimeout(window._lpAT);window._lpAT=setTimeout(lpTxnLoad,350)" style="width:92px;font-size:.76rem">
+            <button type="button" id="lpTxnAmtBtn" onclick="lpTxnAmtQuick()" class="btn btn-sm btn-outline" style="font-size:.72rem;white-space:nowrap;padding:4px 8px">🔎 找本行金额</button>
           </div>
           <div id="lpTxnList" style="max-height:290px;overflow:auto;border:1px solid var(--g200);border-radius:8px;padding:.3rem .45rem;font-size:.78rem;background:#fafafa">加载中…</div>
           <div id="lpTxnSum" style="font-size:.76rem;color:var(--g500);margin-top:.35rem"></div>
@@ -708,6 +710,8 @@ async function openLinePay(i) {
   _lpFiles = [];
   document.getElementById('lpFile').value = '';
   document.getElementById('lpFileMsg').textContent = '';
+  document.getElementById('lpTxnAmt').value = '';
+  document.getElementById('lpTxnAmtBtn').textContent = `🔎 找 ${money(_lpLineAmt(i))}`;
   document.getElementById('lpTitle').textContent = `${_invDoc.invoice_number || ''} · 第 ${i + 1} 行 · ${_lpLabel(i)} · ${money(_lpLineAmt(i))}`;
   document.getElementById('lpStatus').value = n.paid_status || '';
   document.getElementById('lpMethod').value = n.pay_method || '';
@@ -732,6 +736,12 @@ function _lpAcctShort(accountId) {
   const a = ((_plaidAccts && _plaidAccts.accounts) || []).find(x => x.account_id === accountId) || {};
   return `${a.institution || ''}${a.company_label ? ' · ' + a.company_label : ''} ··${a.mask || ''}`;
 }
+function lpTxnAmtQuick() {
+  const el = document.getElementById('lpTxnAmt');
+  const amt = _lpLineAmt(_lpIdx);
+  el.value = amt ? amt.toFixed(2) : '';
+  lpTxnLoad();
+}
 async function lpTxnLoad() {
   const box = document.getElementById('lpTxnList');
   const q = new URLSearchParams();
@@ -739,23 +749,39 @@ async function lpTxnLoad() {
   const kw = document.getElementById('lpTxnQ').value.trim(); if (kw) q.set('q', kw);
   const f = document.getElementById('lpTxnFrom').value; if (f) q.set('start', f);
   const t = document.getElementById('lpTxnTo').value; if (t) q.set('end', t);
+  const amtV = parseFloat(document.getElementById('lpTxnAmt').value);
+  if (!isNaN(amtV) && amtV > 0) q.set('amount', String(amtV));
   q.set('limit', '300');
-  let rows = [];
-  try { rows = (await bapi('/api/plaid/transactions?' + q.toString())).transactions || []; }
-  catch (e) { box.innerHTML = `<span style="color:#dc2626">${esc(e.message || '加载失败')}</span>`; return; }
-  rows.forEach(t2 => { _lpTxnInfo[t2.txn_id] = t2; });
-  // 已选中但不在当前筛选结果里的置顶保留, 免得取消不了
-  const shownIds = new Set(rows.map(r => r.txn_id));
-  const pinned = [..._lpSel].filter(id => !shownIds.has(id)).map(id => _lpTxnInfo[id]).filter(Boolean);
-  const all = [...pinned, ...rows];
+  const lineAmt = _lpLineAmt(_lpIdx);
+  let rows = [], matched = [];
+  try {
+    const reqs = [bapi('/api/plaid/transactions?' + q.toString())];
+    // 没手动按金额筛时, 顺带全库找和本行金额一致的交易, 置顶高亮
+    if ((isNaN(amtV) || amtV <= 0) && lineAmt > 0) reqs.push(bapi('/api/plaid/transactions?amount=' + lineAmt + '&limit=50').catch(() => ({ transactions: [] })));
+    const [r1, r2] = await Promise.all(reqs);
+    rows = r1.transactions || [];
+    matched = (r2 && r2.transactions) || [];
+  } catch (e) { box.innerHTML = `<span style="color:#dc2626">${esc(e.message || '加载失败')}</span>`; return; }
+  [...rows, ...matched].forEach(t2 => { _lpTxnInfo[t2.txn_id] = t2; });
+  const matchIds = new Set(matched.map(m => m.txn_id));
+  const isMatch = t2 => matchIds.has(t2.txn_id) || (lineAmt > 0 && Math.abs(Math.abs(t2.amount || 0) - lineAmt) < 0.005);
+  // 顺序: 已选但不在结果里的 → 金额匹配的 → 其余
+  const seen = new Set();
+  const pick = arr => arr.filter(t2 => t2 && !seen.has(t2.txn_id) && (seen.add(t2.txn_id), true));
+  const pinnedSel = pick([..._lpSel].filter(id => !rows.some(r => r.txn_id === id) && !matchIds.has(id)).map(id => _lpTxnInfo[id]));
+  const matchRows = pick([...matched, ...rows.filter(isMatch)]);
+  const restRows = pick(rows);
+  const all = [...pinnedSel, ...matchRows, ...restRows];
   box.innerHTML = all.length ? all.map(t2 => {
     const isOut = (t2.amount || 0) > 0;
     const on = _lpSel.has(t2.txn_id);
-    return `<label style="display:flex;align-items:center;gap:.4rem;padding:.22rem .2rem;border-bottom:1px solid #eef2f7;cursor:pointer;${on ? 'background:#eff6ff' : ''}">
+    const hit = isMatch(t2);
+    return `<label style="display:flex;align-items:center;gap:.4rem;padding:.22rem .2rem;border-bottom:1px solid #eef2f7;cursor:pointer;${on ? 'background:#eff6ff' : hit ? 'background:#ecfdf5' : ''}">
       <input type="checkbox" data-txn="${esc(t2.txn_id)}" ${on ? 'checked' : ''} onchange="lpTxnToggle(this)">
       <span style="white-space:nowrap;color:var(--g500)">${esc(t2.date || '')}</span>
       <span style="white-space:nowrap;color:var(--g400);font-size:.72rem">${esc(_lpAcctShort(t2.account_id))}</span>
-      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc((t2.merchant || t2.name || '').slice(0, 44))}</span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc((t2.merchant || t2.name || '').slice(0, 40))}</span>
+      ${hit ? '<span style="background:#dcfce7;color:#166534;border-radius:6px;padding:0 5px;font-size:.66rem;font-weight:700;white-space:nowrap">金额吻合</span>' : ''}
       <b style="white-space:nowrap;color:${isOut ? '#dc2626' : '#15803d'}">${isOut ? '−' : '+'}${money(Math.abs(t2.amount || 0))}</b>
     </label>`;
   }).join('') : '<span style="color:var(--g400)">没有符合条件的交易</span>';
