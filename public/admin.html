@@ -18348,6 +18348,7 @@ async function timeSetKioskBreaks(siteId, breaks) {
   if (!r || r.error || !r.ok) { showToast((r && r.error) || '设置失败', 'error'); return; }
   showToast(`✅ 班型：一天 ${breaks == 0 ? '不休息（2 次卡）' : breaks + ' 次休息（' + (2 + 2 * parseInt(breaks)) + ' 次卡）'}`);
   try { const sites = await api('/admin/job-sites'); _timeSites = Array.isArray(sites) ? sites : _timeSites; } catch {}
+  renderTimeKioskMode(); // 模式按钮跟着班型联动
 }
 // 站点风格的确认弹窗 (替代原生 confirm): 返回 Promise<boolean>
 function uiConfirm({ icon = '🖥', title, msg, okLabel = '确认', okBg = 'var(--accent)' }) {
@@ -27702,19 +27703,43 @@ const CUST_PERM_DEFS = [
   ['docs', '查看工人证件（工卡 EAD/SSN）'],
   ['edit_time', '⏱ 修改打卡具体时间（敏感，默认关闭）']
 ];
-function custPermsOpen(id) {
+async function custPermsOpen(id) {
   const c = (window._custAccRows || {})[id];
   if (!c) return;
   let cur = null;
   try { cur = c.perms ? JSON.parse(c.perms) : null; } catch (_) {}
   const on = k => cur == null ? (k !== 'edit_time') : !!cur[k]; // 未配置 = 除改时间外全部允许
+  // 仓库范围: 该客户合作公司名下的所有仓库
+  let mySites = [];
+  if (c.partner_id) {
+    try {
+      const all = await api('/admin/job-sites');
+      mySites = (Array.isArray(all) ? all : []).filter(s => s.active && (s.partner_id === c.partner_id || String(s.partner_ids || '').split(',').filter(Boolean).map(Number).includes(c.partner_id)));
+    } catch (_) {}
+  }
+  const curSites = (cur && Array.isArray(cur.sites) && cur.sites.length) ? cur.sites.map(Number) : null; // null = 全部
+  const siteSection = mySites.length > 1 ? `
+    <div style="margin-top:.8rem;padding-top:.6rem;border-top:2px solid var(--gray-100)">
+      <div style="font-weight:700;font-size:.88rem;margin-bottom:.3rem">🏭 仓库范围</div>
+      <label style="display:flex;align-items:center;gap:.55rem;padding:.3rem .2rem;cursor:pointer">
+        <input type="radio" name="cpermScope" value="all"${curSites ? '' : ' checked'} onchange="document.getElementById('cpermSites').style.display='none'"><span>全部仓库</span></label>
+      <label style="display:flex;align-items:center;gap:.55rem;padding:.3rem .2rem;cursor:pointer">
+        <input type="radio" name="cpermScope" value="some"${curSites ? ' checked' : ''} onchange="document.getElementById('cpermSites').style.display=''"><span>只管指定仓库</span></label>
+      <div id="cpermSites" style="margin-left:1.6rem;${curSites ? '' : 'display:none'}">
+        ${mySites.map(s => `<label style="display:flex;align-items:center;gap:.5rem;padding:.22rem 0;cursor:pointer;font-size:.86rem">
+          <input type="checkbox" class="cperm-site" value="${s.id}"${!curSites || curSites.includes(s.id) ? ' checked' : ''}><span>${esc(s.name)}${s.code ? ' (' + esc(s.code) + ')' : ''}</span></label>`).join('')}
+      </div>
+    </div>` : '';
   const ov = document.createElement('div');
   ov.className = 'modal-bg show';
-  ov.innerHTML = `<div class="modal" style="max-width:430px;padding:1.4rem 1.6rem">
+  ov.innerHTML = `<div class="modal" style="max-width:440px;padding:1.4rem 1.6rem">
     <h2 style="margin-bottom:.3rem;font-size:1.02rem">🔑 账号权限 · ${esc(c.company_name)}</h2>
     <p style="font-size:.8rem;color:var(--gray-400);margin-bottom:.8rem">${esc(c.email)} · 勾选该账号能做的操作，全不勾 = 只读账号（只能看，不能改）</p>
+    <div style="max-height:56vh;overflow-y:auto">
     ${CUST_PERM_DEFS.map(([k, l]) => `<label style="display:flex;align-items:center;gap:.55rem;padding:.42rem .2rem;cursor:pointer;border-bottom:1px solid var(--gray-100)">
       <input type="checkbox" class="cperm" value="${k}"${on(k) ? ' checked' : ''}><span>${l}</span></label>`).join('')}
+    ${siteSection}
+    </div>
     <div style="display:flex;gap:.6rem;justify-content:flex-end;margin-top:1rem">
       <button class="btn btn-outline" onclick="this.closest('.modal-bg').remove()">取消</button>
       <button class="btn" onclick="custPermsSave(${id}, this)">保存</button>
@@ -27726,6 +27751,13 @@ async function custPermsSave(id, btn) {
   const ov = btn.closest('.modal-bg');
   const perms = {};
   ov.querySelectorAll('.cperm').forEach(c => perms[c.value] = c.checked ? 1 : 0);
+  // 仓库范围: 「只管指定仓库」时收集勾选的仓库 id
+  const scopeSel = ov.querySelector('input[name="cpermScope"]:checked');
+  if (scopeSel && scopeSel.value === 'some') {
+    const ids = [...ov.querySelectorAll('.cperm-site:checked')].map(c => parseInt(c.value));
+    if (!ids.length) { showToast('「只管指定仓库」至少要勾一个仓库', 'error'); return; }
+    perms.sites = ids;
+  }
   const r = await api(`/admin/customer-accounts/${id}/perms`, { method: 'PUT', body: JSON.stringify({ perms }) });
   if (!r || r.error) { showToast((r && r.error) || '保存失败', 'error'); return; }
   ov.remove();

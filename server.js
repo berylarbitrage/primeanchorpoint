@@ -14883,6 +14883,8 @@ app.put('/api/admin/customer-accounts/:id/perms', requireAdmin, requireRole('adm
   const p = (req.body || {}).perms || {};
   const clean = {};
   for (const k of CUST_PERM_KEYS) clean[k] = p[k] ? 1 : 0;
+  // 仓库范围: sites=[id...] 只管这些仓库; 不传/空 = 全部仓库
+  if (Array.isArray(p.sites) && p.sites.length) clean.sites = p.sites.map(Number).filter(Boolean).slice(0, 50);
   const r = db.prepare('UPDATE customer_accounts SET perms=? WHERE id=?').run(JSON.stringify(clean), req.params.id);
   if (!r.changes) return res.status(404).json({ error: '账号不存在' });
   res.json({ ok: 1, perms: clean });
@@ -26926,6 +26928,19 @@ function _custNeed(req, res, key) {
   res.status(403).json({ error: '该账号没有此操作权限（受限/只读账号），请联系管理员开通' });
   return false;
 }
+// 账号可管的仓库范围: perms.sites=[siteId...] 只管这些仓库; 空/未设 = 本公司全部仓库
+function _custAllowedSiteIds(req) {
+  let all = _customerSites(req.customerPartnerId);
+  try {
+    const row = db.prepare('SELECT perms FROM customer_accounts WHERE id=?').get(req.customerId);
+    const p = row && String(row.perms || '').trim() ? JSON.parse(row.perms) : null;
+    if (p && Array.isArray(p.sites) && p.sites.length) {
+      const set = new Set(p.sites.map(Number));
+      all = all.filter(s2 => set.has(s2.id));
+    }
+  } catch (_) {}
+  return all;
+}
 function _customerSites(pid) {
   if (!pid) return [];
   return db.prepare('SELECT id, name, code, address, timezone, partner_id, partner_ids, kiosk_punch_mode, kiosk_breaks_per_day FROM job_sites WHERE active=1').all()
@@ -26960,7 +26975,7 @@ app.get('/api/customer/time-records', requireCustomer, (req, res) => {
   if (from > to) { const x = from; from = to; to = x; }
   if (!wantAll && (new Date(to) - new Date(from)) > 190 * 86400000) from = new Date(new Date(to) - 190 * 86400000).toISOString().slice(0, 10);
   if (!pid) return res.json({ photos_enabled: false, sites: [], entries: [], from, to, no_binding: true });
-  const sites = _customerSites(pid);
+  const sites = _custAllowedSiteIds(req);
   const photosEnabled = !!((db.prepare('SELECT show_punch_photos FROM partners WHERE id=?').get(pid) || {}).show_punch_photos);
   const ids = sites.map(s => s.id);
   const scope = _customerEntryScope(pid, ids);
@@ -27020,7 +27035,7 @@ app.post('/api/customer/kiosk-mode', requireCustomer, (req, res) => {
   const mode = String((req.body || {}).mode || '');
   if (!['', 'in', 'out', 'break_start', 'break_end'].includes(mode)) return res.status(400).json({ error: '无效模式' });
   const siteId = parseInt((req.body || {}).site_id);
-  const mine = _customerSites(pid).find(s => s.id === siteId);
+  const mine = _custAllowedSiteIds(req).find(s => s.id === siteId);
   if (!mine) return res.status(403).json({ error: '无权设置该仓库' });
   db.prepare('UPDATE job_sites SET kiosk_punch_mode=? WHERE id=?').run(mode, siteId);
   res.json({ ok: 1, mode });
@@ -27032,7 +27047,7 @@ app.post('/api/customer/kiosk-breaks', requireCustomer, (req, res) => {
   const breaks = parseInt((req.body || {}).breaks);
   if (!(breaks >= 0 && breaks <= 4)) return res.status(400).json({ error: '休息次数范围 0~4' });
   const siteId = parseInt((req.body || {}).site_id);
-  const mine = _customerSites(pid).find(s => s.id === siteId);
+  const mine = _custAllowedSiteIds(req).find(s => s.id === siteId);
   if (!mine) return res.status(403).json({ error: '无权设置该仓库' });
   db.prepare('UPDATE job_sites SET kiosk_breaks_per_day=? WHERE id=?').run(breaks, siteId);
   // 不休息班型下, 强制休息模式没有意义 → 自动弹回「自动」
@@ -27054,6 +27069,7 @@ app.post('/api/customer/punch-action', requireCustomer, (req, res) => {
   const sitePids = String(site.partner_ids || '').split(',').filter(Boolean).map(Number);
   if (site.partner_id) sitePids.push(site.partner_id);
   if (!pid || !sitePids.includes(pid)) return res.status(403).json({ error: '无权操作该仓库的记录' });
+  if (!_custAllowedSiteIds(req).some(s2 => s2.id === entry.site_id)) return res.status(403).json({ error: '该账号没有此仓库的权限' });
   // 状态校验, 防误点
   if (action !== 'in' && entry.status !== 'open') return res.status(400).json({ error: '该记录已完成，只能对进行中的记录操作' });
   if (action === 'break_start' && entry.on_break) return res.status(400).json({ error: '该员工已在休息中' });
@@ -27126,6 +27142,7 @@ function _customerEntryAuth(req, res) {
   const sitePids = String(site.partner_ids || '').split(',').filter(Boolean).map(Number);
   if (site.partner_id) sitePids.push(site.partner_id);
   if (!pid || !sitePids.includes(pid)) { res.status(403).json({ error: '无权操作该仓库的记录' }); return null; }
+  if (!_custAllowedSiteIds(req).some(s2 => s2.id === entry.site_id)) { res.status(403).json({ error: '该账号没有此仓库的权限' }); return null; }
   return { entry, site };
 }
 
@@ -27284,7 +27301,7 @@ app.get('/api/customer/time-entries/:id/edits', requireCustomer, (req, res) => {
 app.get('/api/customer/punch-employees', requireCustomer, (req, res) => {
   const pid = req.customerPartnerId;
   if (!pid) return res.json([]);
-  const ids = _customerSites(pid).map(s => s.id);
+  const ids = _custAllowedSiteIds(req).map(s => s.id);
   if (!ids.length) return res.json([]);
   const scope = _customerEntryScope(pid, ids);
   const rows = db.prepare(`SELECT DISTINCT e.id, e.first_name, e.last_name, e.employee_id AS emp_code
@@ -28876,7 +28893,7 @@ app.get('/api/customer/me', requireCustomer, (req, res) => {
 
 // 客户门户: 本公司名下的仓库地点列表 (发布用工需求时下拉选择工作地点用)
 app.get('/api/customer/my-sites', requireCustomer, (req, res) => {
-  res.json(_customerSites(req.customerPartnerId).map(s => ({ id: s.id, name: s.name, address: s.address || '' })));
+  res.json(_custAllowedSiteIds(req).map(s => ({ id: s.id, name: s.name, address: s.address || '' })));
 });
 
 app.post('/api/customer/post-job', requireCustomer, (req, res) => {
@@ -28954,7 +28971,7 @@ function _custWorkerAuth(req, res) {
   const pid = req.customerPartnerId;
   const eid = parseInt(req.params.eid);
   if (!pid || !eid) { res.status(403).json({ error: '无权限' }); return null; }
-  const ids = _customerSites(pid).map(s => s.id);
+  const ids = _custAllowedSiteIds(req).map(s => s.id);
   if (!ids.length) { res.status(403).json({ error: '无权限' }); return null; }
   const scope = _customerEntryScope(pid, ids);
   const ok = db.prepare(`SELECT 1 FROM time_entries t WHERE ${scope.sql} AND t.employee_id=? AND DATE(t.clock_in) >= DATE('now','-90 day') LIMIT 1`).get(...scope.params, eid);

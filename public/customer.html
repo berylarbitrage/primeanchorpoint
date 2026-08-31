@@ -694,6 +694,8 @@ async function trSetKioskBreaks(siteId, breaks, sel) {
   const r = await cApi('/kiosk-breaks', { method: 'POST', body: JSON.stringify({ site_id: siteId, breaks: parseInt(breaks) }) });
   if (!r || r.error) { showToast((r && r.error) || '设置失败', 'error'); loadTimeRecords(); return; }
   showToast(`✅ 已设置：一天 ${breaks == 0 ? '不休息（2 次卡）' : breaks + ' 次休息（' + (2 + 2 * parseInt(breaks)) + ' 次卡）'}`);
+  // 立即重渲染: 模式按钮跟着班型联动 (有休息 → 出现休息开始/结束; 不休息 → 隐藏)
+  loadTimeRecords();
 }
 // 站点风格的确认弹窗 (替代原生 confirm): 返回 Promise<boolean>
 function cpConfirm({ icon = '🖥', title, msg, okLabel = '确认', okBg = 'var(--blue)' }) {
