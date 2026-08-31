@@ -238,8 +238,10 @@ const KL = {
     pwHint: '输入您的 8 位打卡密码', clear: '清空', cancel: '取消',
     errReq: '网络错误，请重试', checking: '验证中…',
     stOff: '今天还未打上班卡', stOn: t => '上班中 · 上班时间 ' + t, stBrk: '休息中',
+    stAuto: n => '今日已打卡 ' + n + ' 次', stAutoNone: '今日还未打卡',
     btnPunch: '打卡', btnIn: '上班打卡', btnOut: '下班打卡', btnBs: '休息开始', btnBe: '休息结束',
-    resTitle: { in: '上班打卡成功', out: '下班打卡成功', break_start: '休息开始', break_end: '休息结束' },
+    resTitle: { in: '上班打卡成功', out: '下班打卡成功', break_start: '休息开始', break_end: '休息结束', auto: '打卡成功' },
+    resAutoN: n => '（今日第 ' + n + ' 次）',
     resNote: '页面将自动返回', actCount: s => s + ' 秒后自动返回',
     camHint: '打卡时会自动拍照留档', resPhoto: '📷 已拍照留档',
     lblScan: '扫码打卡', lblForgot: '忘记密码',
@@ -254,8 +256,10 @@ const KL = {
     pwHint: 'Enter your 8-digit clock-in password', clear: 'Clear', cancel: 'Cancel',
     errReq: 'Network error, please retry', checking: 'Checking…',
     stOff: 'Not clocked in yet today', stOn: t => 'Clocked in at ' + t, stBrk: 'On break',
+    stAuto: n => n + (n > 1 ? ' punches' : ' punch') + ' today', stAutoNone: 'No punches yet today',
     btnPunch: 'Punch', btnIn: 'Clock In', btnOut: 'Clock Out', btnBs: 'Break Start', btnBe: 'Break End',
-    resTitle: { in: 'Clocked In', out: 'Clocked Out', break_start: 'Break Started', break_end: 'Break Ended' },
+    resTitle: { in: 'Clocked In', out: 'Clocked Out', break_start: 'Break Started', break_end: 'Break Ended', auto: 'Punch Recorded' },
+    resAutoN: n => ' (#' + n + ' today)',
     resNote: 'Returning automatically', actCount: s => 'Auto return in ' + s + 's',
     camHint: 'A photo is taken when you punch', resPhoto: '📷 Photo saved',
     lblScan: 'Scan QR', lblForgot: 'Forgot password',
@@ -270,8 +274,10 @@ const KL = {
     pwHint: 'Ingrese su contraseña de 8 dígitos', clear: 'Borrar', cancel: 'Cancelar',
     errReq: 'Error de red, intente de nuevo', checking: 'Verificando…',
     stOff: 'Aún no ha marcado entrada hoy', stOn: t => 'Entrada marcada a las ' + t, stBrk: 'En descanso',
+    stAuto: n => n + (n > 1 ? ' marcaciones hoy' : ' marcación hoy'), stAutoNone: 'Sin marcaciones hoy',
     btnPunch: 'Marcar', btnIn: 'Entrada', btnOut: 'Salida', btnBs: 'Inicio Descanso', btnBe: 'Fin Descanso',
-    resTitle: { in: 'Entrada Registrada', out: 'Salida Registrada', break_start: 'Descanso Iniciado', break_end: 'Descanso Terminado' },
+    resTitle: { in: 'Entrada Registrada', out: 'Salida Registrada', break_start: 'Descanso Iniciado', break_end: 'Descanso Terminado', auto: 'Registro Exitoso' },
+    resAutoN: n => ' (N.º ' + n + ' de hoy)',
     resNote: 'Regresando automáticamente', actCount: s => 'Regresa en ' + s + 's',
     camHint: 'Se toma una foto al marcar', resPhoto: '📷 Foto guardada',
     lblScan: 'Escanear QR', lblForgot: 'Olvidé mi contraseña',
@@ -692,7 +698,12 @@ function buildActScreen(d) {
   const t = KL[_kl];
   $('whoName').textContent = '👋 ' + d.name;
   let st;
-  if (!d.clocked_in) st = `<span class="offd">● ${t.stOff}</span>`;
+  if (d.punch_mode === 'auto' || !d.punch_mode) {
+    // 自动模式: 不显示上班/下班状态, 只显示今日已打卡次数
+    st = d.today_punches > 0
+      ? `<span class="on">● ${t.stAuto(d.today_punches)}</span>`
+      : `<span class="offd">● ${t.stAutoNone}</span>`;
+  } else if (!d.clocked_in) st = `<span class="offd">● ${t.stOff}</span>`;
   else if (d.on_break) st = `<span class="brk">● ${t.stBrk}</span>`;
   else st = `<span class="on">● ${t.stOn(d.clock_in_time || '')}</span>`;
   $('whoStatus').innerHTML = st;
@@ -752,9 +763,11 @@ function buildCountRestart() {
 // ── Result screen ──
 function showResult(d) {
   const t = KL[_kl];
-  const icons = { in: '✅', out: '👋', break_start: '⏸', break_end: '▶▶' };
+  const icons = { in: '✅', out: '👋', break_start: '⏸', break_end: '▶▶', auto: '✅' };
   $('resIc').textContent = icons[d.action] || '✓';
-  $('resTitle').textContent = t.resTitle[d.action] || d.action;
+  $('resTitle').textContent = d.action === 'auto'
+    ? t.resTitle.auto + (d.punch_count ? t.resAutoN(d.punch_count) : '')
+    : (t.resTitle[d.action] || d.action);
   $('resName').textContent = d.name;
   $('resTime').textContent = d.clock_time || '';
   $('resNote').textContent = t.resNote;
