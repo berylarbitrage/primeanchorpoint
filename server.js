@@ -31994,6 +31994,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS plaid_accounts (
 )`);
 // 账户显示用的「公司名」标签 (Plaid 不带账户主体, 管理员手填一次, 用于区分同名账户)
 try { db.exec("ALTER TABLE plaid_accounts ADD COLUMN company_label TEXT DEFAULT ''"); } catch (e) {}
+// 一次性预填三个账户的公司名 (老板指定: ··0165=Workforce, ··9072=Point, ··7814=Surplus Lane); 只填空标签, 之后可在 /banking 随时改
+try {
+  if (!db.prepare("SELECT value FROM app_settings WHERE key='plaid_acct_labels_seeded'").get()) {
+    const seedLbl = db.prepare("UPDATE plaid_accounts SET company_label=? WHERE mask=? AND (company_label IS NULL OR company_label='')");
+    seedLbl.run('Prime Anchor Workforce Inc', '0165');
+    seedLbl.run('Prime Anchor Point LLC', '9072');
+    seedLbl.run('Surplus Lane Inc', '7814');
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('plaid_acct_labels_seeded','1')").run();
+  }
+} catch (e) {}
 db.exec(`CREATE TABLE IF NOT EXISTS plaid_transactions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   txn_id TEXT UNIQUE NOT NULL,
