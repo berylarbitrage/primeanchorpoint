@@ -355,6 +355,7 @@ tr:last-child td{border-bottom:none}
           <button class="btn btn-outline" style="padding:.45rem .9rem" onclick="trQuick(29)">近30天</button>
           <button class="btn btn-outline" style="padding:.45rem .9rem" onclick="trAll()" title="全部打卡数据">全部</button>
           <button class="btn btn-outline" style="padding:.45rem .9rem" onclick="loadTimeRecords()">↻ 刷新</button>
+          <button class="btn btn-outline" style="padding:.45rem .9rem;color:var(--blue);border-color:var(--blue)" onclick="tsOpen()" title="打印纸质打卡表：空白表或勾选员工姓名">🖨 打印打卡表</button>
         </div>
         <div id="trKioskMode" style="margin-bottom:.8rem"></div>
         <div id="trSummary" style="display:flex;gap:1.4rem;flex-wrap:wrap;font-size:.9rem;color:var(--gray-500);margin-bottom:.8rem"></div>
@@ -642,6 +643,106 @@ async function trSetKioskMode(siteId, mode, label, isCurrent) {
   if (r.ok) { showToast(`✅ 打卡机模式：${label}`); loadTimeRecords(); }
   else { showToast(r.error || '设置失败', 'error'); loadTimeRecords(); }
 }
+// 🖨 打印纸质打卡表: 空白表(自定行数) 或 勾选打卡员工(姓名+工号预填), 生成打印页
+let _tsEmps = null;
+async function tsOpen() {
+  if (!_tsEmps) {
+    _tsEmps = await cApi('/punch-employees');
+    if (!Array.isArray(_tsEmps)) _tsEmps = [];
+  }
+  const sites = window._trSites || [];
+  const today = new Date().toISOString().slice(0, 10);
+  const empRows = _tsEmps.map(e2 => `<label style="display:flex;align-items:center;gap:.5rem;padding:.3rem .2rem;cursor:pointer;border-bottom:1px solid var(--gray-100,#f0f2f5)">
+      <input type="checkbox" class="ts-emp" value="${e2.id}" data-name="${esc(e2.name)}" data-code="${esc(e2.emp_code)}" checked>
+      <span style="flex:1">${esc(e2.name)}</span><span style="color:var(--gray-400);font-size:.8rem">${esc(e2.emp_code)}</span>
+    </label>`).join('') || '<p style="color:var(--gray-400);font-size:.85rem">近 90 天没有打卡员工记录，可打印空白表</p>';
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay show';
+  ov.id = 'tsModal';
+  ov.innerHTML = `<div class="modal-box" style="max-width:440px;padding:1.4rem 1.5rem">
+    <h2 style="margin-bottom:.8rem">🖨 打印纸质打卡表</h2>
+    <div style="display:flex;gap:.7rem;margin-bottom:.8rem">
+      <div style="flex:1"><label style="font-size:.8rem;color:var(--gray-500)">日期（印在表头，可留空手写）</label>
+        <input type="date" id="tsDate" value="${today}" style="width:100%;padding:.42rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:8px;font-family:inherit"></div>
+      <div style="flex:1"><label style="font-size:.8rem;color:var(--gray-500)">仓库</label>
+        <select id="tsSite" style="width:100%;padding:.45rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:8px;font-family:inherit">
+          ${sites.map(s => `<option value="${esc(s.name + (s.code ? ` (${s.code})` : ''))}">${esc(s.name)}</option>`).join('')}
+          <option value="">留空手写</option>
+        </select></div>
+    </div>
+    <div style="display:flex;gap:1.2rem;margin-bottom:.6rem;font-size:.9rem">
+      <label style="cursor:pointer"><input type="radio" name="tsMode" value="named" checked onchange="tsModeSw()"> 勾选员工姓名</label>
+      <label style="cursor:pointer"><input type="radio" name="tsMode" value="blank" onchange="tsModeSw()"> 空白表</label>
+    </div>
+    <div id="tsNamedBox">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.25rem">
+        <span style="font-size:.8rem;color:var(--gray-500)">打卡员工（近90天）· 勾选要印在表上的</span>
+        <span style="font-size:.8rem"><a href="javascript:void(0)" onclick="document.querySelectorAll('.ts-emp').forEach(c=>c.checked=true)">全选</a> · <a href="javascript:void(0)" onclick="document.querySelectorAll('.ts-emp').forEach(c=>c.checked=false)">全不选</a></span>
+      </div>
+      <div style="max-height:220px;overflow-y:auto;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:8px;padding:.2rem .6rem">${empRows}</div>
+      <label style="font-size:.8rem;color:var(--gray-500);display:block;margin-top:.5rem">名单后再补空白行 <input type="number" id="tsExtra" value="3" min="0" max="40" style="width:60px;padding:.25rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:6px"> 行（给临时工手写）</label>
+    </div>
+    <div id="tsBlankBox" style="display:none">
+      <label style="font-size:.85rem;color:var(--gray-500)">空白行数 <input type="number" id="tsRows" value="20" min="1" max="60" style="width:70px;padding:.3rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:6px"></label>
+    </div>
+    <div style="display:flex;gap:.6rem;margin-top:1.1rem">
+      <button class="modal-btn modal-btn-secondary" style="margin-bottom:0" onclick="document.getElementById('tsModal').remove()">取消</button>
+      <button class="modal-btn modal-btn-primary" style="margin-bottom:0" onclick="tsPrint()">🖨 生成并打印</button>
+    </div></div>`;
+  ov.addEventListener('click', ev => { if (ev.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+}
+function tsModeSw() {
+  const named = document.querySelector('input[name="tsMode"]:checked').value === 'named';
+  document.getElementById('tsNamedBox').style.display = named ? '' : 'none';
+  document.getElementById('tsBlankBox').style.display = named ? 'none' : '';
+}
+function tsPrint() {
+  const named = document.querySelector('input[name="tsMode"]:checked').value === 'named';
+  const date = document.getElementById('tsDate').value;
+  const site = document.getElementById('tsSite').value;
+  let rows;
+  if (named) {
+    rows = [...document.querySelectorAll('.ts-emp:checked')].map(c => ({ name: c.dataset.name, code: c.dataset.code }));
+    const extra = Math.min(40, Math.max(0, parseInt(document.getElementById('tsExtra').value) || 0));
+    for (let i = 0; i < extra; i++) rows.push({ name: '', code: '' });
+    if (!rows.length) { showToast('请至少勾选一个员工或加空白行', 'error'); return; }
+  } else {
+    const n = Math.min(60, Math.max(1, parseInt(document.getElementById('tsRows').value) || 20));
+    rows = Array.from({ length: n }, () => ({ name: '', code: '' }));
+  }
+  const dateDisp = date ? new Date(date + 'T12:00:00Z').toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' }) : '';
+  const w = window.open('', '_blank');
+  if (!w) { showToast('浏览器拦截了打印窗口，请允许弹出窗口', 'error'); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>打卡表 Time Sheet</title><style>
+    body{font-family:Arial,'Microsoft YaHei',sans-serif;margin:26px;color:#111}
+    h1{font-size:20px;text-align:center;margin:0 0 3px;letter-spacing:.06em}
+    .sub{text-align:center;font-size:11px;color:#666;margin-bottom:14px}
+    .meta{display:flex;justify-content:space-between;font-size:13px;margin-bottom:10px}
+    table{width:100%;border-collapse:collapse}
+    th,td{border:1px solid #333;padding:6px 5px;font-size:12px;text-align:center;height:27px}
+    th{background:#efefef;font-size:11.5px;line-height:1.25}
+    td.nm{text-align:left;padding-left:8px;width:150px}
+    .foot{display:flex;justify-content:space-between;margin-top:24px;font-size:13px}
+    @media print{@page{margin:12mm}}
+  </style></head><body>
+    <h1>员工打卡表 · Employee Time Sheet</h1>
+    <div class="sub">Prime Anchor Point</div>
+    <div class="meta"><span>仓库 Warehouse: ${site ? esc(site) : '____________________'}</span><span>日期 Date: ${dateDisp || '____________________'}</span></div>
+    <table><thead><tr>
+      <th style="width:26px">#</th><th>姓名<br>Name</th><th style="width:66px">工号<br>ID</th>
+      <th>上班<br>Clock In</th><th>休息开始<br>Break Start</th><th>休息结束<br>Break End</th><th>下班<br>Clock Out</th><th style="width:110px">签名<br>Signature</th>
+    </tr></thead><tbody>
+      ${rows.map((r, i) => `<tr><td>${i + 1}</td><td class="nm">${esc(r.name) || '&nbsp;'}</td><td>${esc(r.code)}</td><td></td><td></td><td></td><td></td><td></td></tr>`).join('')}
+    </tbody></table>
+    <div class="foot"><span>主管签字 Supervisor: ____________________</span><span>日期 Date: ______________</span></div>
+    <script>setTimeout(function(){window.print()},300)<\/script>
+  </body></html>`);
+  w.document.close();
+  const m = document.getElementById('tsModal');
+  if (m) m.remove();
+}
+
 // ✎ 改打卡含义: 时间由打卡机记录、这里不可改(改时间只有公司有权限的人在后台操作),
 // 仓库方只能改每个时间点算什么: 上班 / 休息开始 / 休息结束 / 下班 / 作废(误打)
 const TR_ROLE_L = { in: '上班', break_start: '休息开始', break_end: '休息结束', out: '下班', ignore: '作废（误打）' };
@@ -764,6 +865,7 @@ async function loadTimeRecords() {
     if (!document.getElementById('trTo').value) document.getElementById('trTo').value = d.to;
   }
   _trSiteTz = {}; const siteName = {};
+  window._trSites = d.sites || []; // 打印打卡表的仓库下拉用
   (d.sites || []).forEach(s => { _trSiteTz[s.id] = s.timezone; siteName[s.id] = s.name + (s.code ? ` (${s.code})` : ''); });
   trRenderKioskMode(d.sites || []);
   const multiSite = (d.sites || []).length > 1;
