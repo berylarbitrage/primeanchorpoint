@@ -174,9 +174,12 @@ tr:last-child td{border-bottom:none}
 <div id="app">
   <!-- Left sidebar -->
   <div class="sidebar" id="sidebar">
-    <div class="sidebar-top">
-      <h2>Prime Anchor Workforce</h2>
-      <div class="sub">客户门户</div>
+    <div class="sidebar-top" style="display:flex;align-items:center;gap:.7rem">
+      <img src="/logo.svg" alt="Prime Anchor Workforce" style="width:42px;height:42px;background:#fff;border-radius:10px;padding:5px;flex-shrink:0">
+      <div>
+        <h2>Prime Anchor Workforce</h2>
+        <div class="sub">客户门户</div>
+      </div>
     </div>
     <nav class="sidebar-nav">
       <a class="active" data-tab="post" onclick="showTab('post')">发布用工需求</a>
@@ -199,6 +202,7 @@ tr:last-child td{border-bottom:none}
       <button class="hamburger" onclick="toggleSidebar()" aria-label="菜单">
         <span></span><span></span><span></span>
       </button>
+      <img src="/logo.svg" alt="" style="width:26px;height:26px;background:#fff;border-radius:6px;padding:3px;flex-shrink:0">
       <span id="mobilPageTitle" style="font-weight:700;font-size:.9rem;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">发布用工需求</span>
       <div class="mobile-topbar-right">
         <span id="customerNameDisplayMobile" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px"></span>
@@ -524,7 +528,8 @@ async function loadTimeRecords() {
       ${photoTd}
     </tr>`;
   });
-  tb.innerHTML = rows.join('') || '<tr><td colspan="9" style="color:var(--gray-400);text-align:center;padding:1.4rem">该时段没有打卡记录</td></tr>';
+  tb.innerHTML = rows.join('') || `<tr><td colspan="9" style="color:var(--gray-400);text-align:center;padding:1.4rem">${
+    d.no_binding ? '贵公司还没有关联的仓库或打卡记录，请联系 Prime Anchor Workforce 完成绑定' : '该时段没有打卡记录（可试试「近30天」）'}</td></tr>`;
   document.getElementById('trSummary').innerHTML =
     `<span>班次 <b>${(d.entries || []).length}</b></span><span>总工时 <b>${totalH.toFixed(1)}h</b></span><span>当前在班 <b>${onDuty}</b></span>` +
     (d.photos_enabled ? '' : '');

@@ -26565,12 +26565,18 @@ function _pTs(s) {
   const d = new Date(/[zZ]$|[+\-]\d{2}:?\d{2}$/.test(str) ? str : str.replace(' ', 'T') + 'Z');
   return isNaN(d) ? null : d;
 }
-// 客户门户: 本公司仓库的打卡记录 (员工姓名+时间; photos 字段仅当照片开关开启时返回)
+// 该客户可见的打卡记录范围 (与经理限权同一套口径): 仓库匹配 / 岗位所属公司匹配 /
+// 记录上的公司名匹配 —— 手机 GPS 打卡的老记录没有 site_id, 只靠后两条才能覆盖
+function _customerEntryScope(pid, ids) {
+  const conds = [], p = [];
+  if (ids.length) { conds.push(`t.site_id IN (${ids.map(() => '?').join(',')})`); p.push(...ids); }
+  conds.push('t.job_id IN (SELECT id FROM jobs WHERE partner_id=?)'); p.push(pid);
+  conds.push("(t.company_name IS NOT NULL AND t.company_name!='' AND t.company_name=(SELECT name FROM partners WHERE id=?))"); p.push(pid);
+  return { sql: '(' + conds.join(' OR ') + ')', params: p };
+}
+// 客户门户: 本公司的打卡记录 (员工姓名+时间; photos 字段仅当照片开关开启时返回)
 app.get('/api/customer/time-records', requireCustomer, (req, res) => {
   const pid = req.customerPartnerId;
-  const sites = _customerSites(pid);
-  if (!sites.length) return res.json({ photos_enabled: false, sites: [], entries: [], from: '', to: '' });
-  const photosEnabled = !!((db.prepare('SELECT show_punch_photos FROM partners WHERE id=?').get(pid) || {}).show_punch_photos);
   // 日期范围: 默认最近 7 天, 最长 190 天 (超出时保留靠近 to 的一段)
   const reD = /^\d{4}-\d{2}-\d{2}$/;
   let from = reD.test(String(req.query.from || '')) ? req.query.from : '';
@@ -26579,12 +26585,16 @@ app.get('/api/customer/time-records', requireCustomer, (req, res) => {
   if (!from) from = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
   if (from > to) { const x = from; from = to; to = x; }
   if ((new Date(to) - new Date(from)) > 190 * 86400000) from = new Date(new Date(to) - 190 * 86400000).toISOString().slice(0, 10);
+  if (!pid) return res.json({ photos_enabled: false, sites: [], entries: [], from, to, no_binding: true });
+  const sites = _customerSites(pid);
+  const photosEnabled = !!((db.prepare('SELECT show_punch_photos FROM partners WHERE id=?').get(pid) || {}).show_punch_photos);
   const ids = sites.map(s => s.id);
+  const scope = _customerEntryScope(pid, ids);
   const rows = db.prepare(`SELECT t.site_id, t.clock_in, t.clock_out, t.break_records, t.total_hours, t.status,
       t.clock_in_photo_path, t.punch_photo_path, e.first_name, e.last_name
     FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id
-    WHERE t.site_id IN (${ids.map(() => '?').join(',')}) AND DATE(t.clock_in)>=? AND DATE(t.clock_in)<=?
-    ORDER BY t.clock_in DESC LIMIT 2000`).all(...ids, from, to);
+    WHERE ${scope.sql} AND DATE(t.clock_in)>=? AND DATE(t.clock_in)<=?
+    ORDER BY t.clock_in DESC LIMIT 2000`).all(...scope.params, from, to);
   const entries = rows.map(r => {
     let breakMin = 0, breakN = 0;
     const photoFiles = [];
@@ -26612,7 +26622,8 @@ app.get('/api/customer/time-records', requireCustomer, (req, res) => {
   res.json({
     photos_enabled: photosEnabled, from, to,
     sites: sites.map(s => ({ id: s.id, name: s.name, code: s.code || '', timezone: s.timezone || 'America/Chicago' })),
-    entries
+    entries,
+    no_binding: !sites.length && !entries.length
   });
 });
 // 客户门户打卡照片: 仅当该公司照片开关开启, 且该文件确属本公司仓库的打卡记录
@@ -26621,12 +26632,13 @@ app.get('/api/customer/punch-photo/:filename', requireCustomer, async (req, res)
   const allowed = !!((db.prepare('SELECT show_punch_photos FROM partners WHERE id=?').get(pid) || {}).show_punch_photos);
   if (!allowed) return res.status(403).json({ error: '未开启照片查看权限' });
   const safeName = path.basename(req.params.filename);
+  if (!pid) return res.status(404).send('Not found');
   const ids = _customerSites(pid).map(s => s.id);
-  if (!ids.length) return res.status(404).send('Not found');
-  const owner = db.prepare(`SELECT id FROM time_entries
-    WHERE site_id IN (${ids.map(() => '?').join(',')})
-      AND (clock_in_photo_path=? OR punch_photo_path=? OR break_records LIKE ?)
-    LIMIT 1`).get(...ids, safeName, safeName, '%' + safeName + '%');
+  const scope = _customerEntryScope(pid, ids);
+  const owner = db.prepare(`SELECT t.id FROM time_entries t
+    WHERE ${scope.sql}
+      AND (t.clock_in_photo_path=? OR t.punch_photo_path=? OR t.break_records LIKE ?)
+    LIMIT 1`).get(...scope.params, safeName, safeName, '%' + safeName + '%');
   if (!owner) return res.status(404).send('Not found');
   let key = `punch_photos/${safeName}`;
   if (!(await storage.exists(key))) key = `checkin_photos/${safeName}`;
