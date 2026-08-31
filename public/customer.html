@@ -204,6 +204,7 @@ tr:last-child td{border-bottom:none}
       <a data-tab="posts" onclick="showTab('posts')">我的需求记录</a>
       <a data-tab="workers" onclick="showTab('workers')">派遣工人列表</a>
       <a data-tab="timerec" onclick="showTab('timerec')">打卡记录</a>
+      <a data-tab="invoices" id="navInvoices" onclick="showTab('invoices')" style="display:none">历史账单 Invoices</a>
       <a data-tab="profile" onclick="showTab('profile')">我的信息</a>
     </nav>
     <div class="sidebar-bottom">
@@ -381,6 +382,21 @@ tr:last-child td{border-bottom:none}
         <table style="min-width:640px">
           <thead><tr id="trHead"></tr></thead>
           <tbody id="trTable"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Invoices (仅有 invoice 权限的账号可见) -->
+    <div id="tabInvoices" style="display:none">
+      <div class="card">
+        <h2>历史账单 Invoices</h2>
+        <p style="font-size:.85rem;color:var(--gray-400);margin-bottom:1rem">Prime Anchor Workforce 开给贵公司的历史发票（只读）</p>
+        <div id="invSummary" style="display:flex;gap:1.4rem;flex-wrap:wrap;font-size:.9rem;color:var(--gray-500);margin-bottom:.8rem"></div>
+        <div style="overflow-x:auto">
+        <table style="min-width:640px">
+          <thead><tr><th>Invoice No.</th><th>开票日期</th><th>账期</th><th style="text-align:right">金额</th><th>付款状态</th><th>操作</th></tr></thead>
+          <tbody id="invTable"></tbody>
         </table>
         </div>
       </div>
@@ -592,6 +608,9 @@ async function showApp() {
   const me = await cApi('/me');
   if (!me) return;
   window.C_PERMS = me.perms || null; // 账号权限 (null=全部允许)
+  // 历史账单入口: 敏感权限, 仅显式勾选了 invoice 的账号可见 (接口侧同样校验)
+  const navInv = document.getElementById('navInvoices');
+  if (navInv) navInv.style.display = (window.C_PERMS && window.C_PERMS.invoice) ? '' : 'none';
   document.getElementById('customerNameDisplay').textContent = me.company_name;
   document.getElementById('customerNameDisplayMobile').textContent = me.company_name;
   loadMySiteOptions();
@@ -635,16 +654,17 @@ function closeSidebar() {
   document.getElementById('sidebarOverlay').classList.remove('show');
 }
 function showTab(tab) {
-  ['post','posts','workers','timerec','profile'].forEach(t => {
+  ['post','posts','workers','timerec','invoices','profile'].forEach(t => {
     document.getElementById(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).style.display = t===tab?'':'none';
   });
   document.querySelectorAll('.sidebar-nav a[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  const _cLabels={post:'发布用工需求',posts:'我的需求记录',workers:'派遣工人列表',timerec:'打卡记录',profile:'我的信息'};
+  const _cLabels={post:'发布用工需求',posts:'我的需求记录',workers:'派遣工人列表',timerec:'打卡记录',invoices:'历史账单',profile:'我的信息'};
   const _tEl=document.getElementById('mobilPageTitle');if(_tEl)_tEl.textContent=_cLabels[tab]||'';
   closeSidebar();
   if (tab === 'posts') loadPosts();
   else if (tab === 'workers') loadWorkers();
   else if (tab === 'timerec') loadTimeRecords();
+  else if (tab === 'invoices') loadInvoices();
   else if (tab === 'profile') loadProfile();
 }
 
@@ -1469,6 +1489,168 @@ async function wkPosEdit(eid, cur) {
   sel.focus();
 }
 
+// ── 历史账单 Invoices: 仅显式勾选了 invoice 权限的账号可见 (接口同样校验), 只读 ──
+const _invMoney = n => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const _invNiceD = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+function _invPayBadge(r) {
+  if (r.payment_status === 'paid') return `<span style="color:#2D9D78;font-weight:600;white-space:nowrap">✅ 已付款</span>${r.paid_at ? `<div style="font-size:.75rem;color:var(--gray-400)">${esc(r.paid_at)}</div>` : ''}`;
+  if (r.payment_status === 'partial') return '<span style="color:#B87400;font-weight:600;white-space:nowrap">🟡 部分付款</span>';
+  return '<span style="color:#B87400;font-weight:600;white-space:nowrap">未付款</span>';
+}
+async function loadInvoices() {
+  const tb = document.getElementById('invTable');
+  tb.innerHTML = '<tr><td colspan="6" style="color:var(--gray-400)">加载中…</td></tr>';
+  const rows = await cApi('/invoices');
+  if (!rows) return;
+  if (rows.error) { document.getElementById('invSummary').innerHTML = ''; tb.innerHTML = `<tr><td colspan="6" style="color:#E63946;text-align:center;padding:1.4rem">${esc(rows.error)}</td></tr>`; return; }
+  let total = 0, unpaid = 0;
+  tb.innerHTML = rows.map(r => {
+    total += r.subtotal; if (r.payment_status !== 'paid') unpaid += r.subtotal;
+    return `<tr>
+      <td style="font-weight:600;white-space:nowrap">${esc(r.invoice_number)}</td>
+      <td style="white-space:nowrap">${esc(r.invoice_date || '—')}</td>
+      <td style="white-space:nowrap">${esc(r.period_start || '?')} ~ ${esc(r.period_end || '?')}</td>
+      <td style="text-align:right;font-weight:700;white-space:nowrap">${_invMoney(r.subtotal)}</td>
+      <td>${_invPayBadge(r)}</td>
+      <td style="white-space:nowrap"><button class="tr-act" style="border-color:var(--blue);color:var(--blue)" onclick="invOpen(${r.id})">📄 查看</button></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" style="color:var(--gray-400);text-align:center;padding:1.4rem">暂无发票记录</td></tr>';
+  document.getElementById('invSummary').innerHTML =
+    `<span>共 <b>${rows.length}</b> 张</span><span>总额 <b>${_invMoney(total)}</b></span>` +
+    (unpaid > 0.005 ? `<span style="color:#B87400">未付 <b>${_invMoney(unpaid)}</b></span>` : '');
+}
+// 发票纸渲染: 与正式发票同版式的账单侧内容 (抬头/BILL TO/行明细/合计/收款信息)
+function _invDocHTML(inv) {
+  const p = inv.profile || {};
+  const period = `${_invNiceD(inv.period_start)} — ${_invNiceD(inv.period_end)}`;
+  const th = 'padding:6px 8px;border-bottom:2px solid #29AAE1;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:#0f4c6b;text-align:left;white-space:nowrap';
+  const thR = th + ';text-align:right';
+  const td = 'padding:5px 8px;border-bottom:1px solid #e2e8f0;font-size:.8rem';
+  const tdR = td + ';text-align:right;white-space:nowrap';
+  let lineTable, lineSum = 0;
+  const cont = Array.isArray(p.container_items) ? p.container_items : [];
+  if (p.invoice_mode === 'container' && cont.length) {
+    lineSum = cont.reduce((s, c) => s + (Number(c.total) || 0), 0);
+    lineTable = `<table style="width:100%;border-collapse:collapse;margin-bottom:.6rem">
+      <thead><tr><th style="${th}">#</th><th style="${th}">Type</th><th style="${th}">Container / Week</th><th style="${thR}">Qty</th><th style="${thR}">Unit Price</th><th style="${thR}">Amount</th></tr></thead>
+      <tbody>${cont.map((c, i) => `<tr>
+        <td style="${td}">${i + 1}</td>
+        <td style="${td}">${c.line_type === 'load' ? '装柜 Load' : '卸柜 Unload'}</td>
+        <td style="${td}">${esc(c.container_no || '')}${c.week ? ` <span style="color:#94a3b8;font-size:.72rem">${esc(c.week)}</span>` : ''}</td>
+        <td style="${tdR}">${Number(c.qty) || 0}</td>
+        <td style="${tdR}">${_invMoney(c.unit_price)}</td>
+        <td style="${tdR};font-weight:700">${_invMoney(c.total)}</td>
+      </tr>`).join('')}</tbody></table>`;
+  } else {
+    // 与正式发票纸同口径: 行金额 = 工时×费率 (行内自洽), 与总额的差异由下方 Markup 换算行说明
+    const items = Array.isArray(inv.items) ? inv.items : [];
+    const hasOt = items.some(it => (Number(it.otHours) || 0) > 0);
+    lineSum = items.reduce((s, it) => s + (Number(it.total) || 0), 0);
+    lineTable = `<table style="width:100%;border-collapse:collapse;margin-bottom:.6rem">
+      <thead><tr><th style="${th}">#</th><th style="${th}">Worker</th><th style="${thR}">Reg Hrs</th>${hasOt ? `<th style="${thR}">OT Hrs</th>` : ''}<th style="${thR}">Rate</th>${hasOt ? `<th style="${thR}">OT Rate</th>` : ''}<th style="${thR}">Amount</th></tr></thead>
+      <tbody>${items.map((it, i) => `<tr>
+        <td style="${td}">${i + 1}</td>
+        <td style="${td}">${esc(it.name || '')}</td>
+        <td style="${tdR}">${(Number(it.regHours) || 0).toFixed(2)}</td>
+        ${hasOt ? `<td style="${tdR}">${(Number(it.otHours) || 0).toFixed(2)}</td>` : ''}
+        <td style="${tdR}">${_invMoney(it.rate)}</td>
+        ${hasOt ? `<td style="${tdR}">${_invMoney(it.otRate)}</td>` : ''}
+        <td style="${tdR};font-weight:700">${_invMoney(it.total)}</td>
+      </tr>`).join('')}</tbody></table>`;
+  }
+  // 行金额合计 ≠ 发票总额 (总额含 Markup) 时列出换算说明; Markup 数字只有在乘得上时才标
+  const diff = Math.abs((Number(inv.subtotal) || 0) - lineSum) > 0.02;
+  const mkFits = inv.markup_rate > 0 && Math.abs(lineSum * inv.markup_rate - (Number(inv.subtotal) || 0)) <= 0.02;
+  const mkLine = diff
+    ? `<tr><td colspan="2" style="padding:0 0 .35rem 0;text-align:right;font-size:.78rem;color:#64748b;white-space:nowrap">${p.invoice_mode === 'container' ? 'Subtotal' : 'Wage Subtotal'} ${_invMoney(lineSum)}${mkFits ? ` &nbsp;×&nbsp; Markup ${Number(inv.markup_rate).toFixed(2)}` : ''} &nbsp;${mkFits ? '=' : '→'}&nbsp; <strong style="color:#1e293b">${_invMoney(inv.subtotal)}</strong></td></tr>`
+    : '';
+  const bk = (k, v) => v ? `<span style="white-space:nowrap"><span style="color:#64748b">${k}:</span>&nbsp;<strong>${esc(v)}</strong></span>` : '';
+  const bankBits = [
+    bk('Payable To', p.bank_account_name), bk('Bank', p.bank_name), bk('Account No', p.bank_account_no),
+    bk('ACH / Electronic', p.bank_paper_routing), bk('Wire Routing', p.bank_wire_routing),
+    (p.bank_routing_no && !(p.bank_wire_routing || p.bank_paper_routing)) ? bk('Routing No', p.bank_routing_no) : '',
+    bk('SWIFT / BIC', p.bank_swift_code),
+  ].filter(Boolean);
+  const paidStamp = inv.payment_status === 'paid'
+    ? `<div style="display:inline-block;border:2.5px solid #2D9D78;color:#2D9D78;border-radius:6px;padding:.15rem .8rem;font-weight:900;letter-spacing:3px;transform:rotate(-6deg);margin-top:.4rem">PAID${inv.paid_at ? ` · ${esc(inv.paid_at)}` : ''}</div>`
+    : '';
+  return `<div style="padding:0.5in;font-family:'Helvetica Neue',Arial,sans-serif;color:#1e293b">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:.85rem;flex:1;min-width:240px">
+        <img src="/logo.svg" style="height:64px;width:auto;flex-shrink:0" alt="Logo">
+        <div style="line-height:1.55;font-size:.82rem">
+          ${p.sender_name ? `<div style="font-size:1.05rem;font-weight:800;color:#29AAE1">${esc(p.sender_name)}</div>` : ''}
+          ${p.sender_address ? `<div>${esc(p.sender_address)}</div>` : ''}
+          ${p.sender_phone ? `<div>Phone: ${esc(p.sender_phone)}</div>` : ''}
+          ${p.sender_email ? `<div>Email: ${esc(p.sender_email)}</div>` : ''}
+        </div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:1.9rem;font-weight:900;letter-spacing:4px;color:#29AAE1;line-height:1;margin-bottom:.5rem">INVOICE</div>
+        <table style="border-collapse:collapse;margin-left:auto;font-size:.78rem;border:1px solid #cbd5e1;background:#f8fafc">
+          <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:4px 10px;color:#64748b;background:#e8f5fb;font-weight:600;font-size:.7rem;text-transform:uppercase">Invoice No.</td><td style="padding:4px 10px;font-weight:700;text-align:right">${esc(inv.invoice_number || '—')}</td></tr>
+          <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:4px 10px;color:#64748b;background:#e8f5fb;font-weight:600;font-size:.7rem;text-transform:uppercase">Invoice Date</td><td style="padding:4px 10px;font-weight:600;text-align:right">${_invNiceD(inv.invoice_date)}</td></tr>
+          <tr><td style="padding:4px 10px;color:#64748b;background:#e8f5fb;font-weight:600;font-size:.7rem;text-transform:uppercase">Service Period</td><td style="padding:4px 10px;font-weight:600;text-align:right">${period}</td></tr>
+        </table>
+        ${paidStamp}
+      </div>
+    </div>
+    <div style="border-top:2.5px solid #29AAE1;margin-bottom:.8rem"></div>
+    <table style="border-collapse:collapse;margin-bottom:.7rem;font-size:.85rem;line-height:1.55">
+      <tr><td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;white-space:nowrap;vertical-align:top">BILL TO:</td><td style="padding:2px 0;font-weight:700;color:#29AAE1;font-size:.95rem">${esc(inv.company_name || '')}</td></tr>
+      ${inv.bill_to_addr ? `<tr><td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;white-space:nowrap;vertical-align:top">ADDRESS:</td><td style="padding:2px 0">${esc(inv.bill_to_addr)}</td></tr>` : ''}
+      <tr><td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;white-space:nowrap;vertical-align:top">SERVICE PERIOD:</td><td style="padding:2px 0;font-weight:600">${period}</td></tr>
+    </table>
+    ${lineTable}
+    <div style="display:flex;justify-content:flex-end;margin-bottom:.85rem">
+      <table style="border-collapse:collapse;font-size:.86rem;min-width:280px">
+        ${mkLine}
+        <tr>
+          <td style="padding:7px 16px 7px 0;border-top:2px solid #29AAE1;border-bottom:2px solid #29AAE1;color:#29AAE1;font-weight:700;text-align:right;font-size:.9rem;letter-spacing:.05em;white-space:nowrap;text-transform:uppercase">Total Due</td>
+          <td style="padding:7px 0;border-top:2px solid #29AAE1;border-bottom:2px solid #29AAE1;color:#29AAE1;font-weight:800;text-align:right;font-size:1.2rem;white-space:nowrap">${_invMoney(inv.subtotal)}</td>
+        </tr>
+      </table>
+    </div>
+    ${bankBits.length ? `<div style="margin-bottom:.7rem;padding:.6rem .9rem;border:1px solid #cbd5e1;border-radius:4px;background:#f8fafc;font-size:.8rem">
+      <div style="font-weight:700;text-transform:uppercase;font-size:.72rem;letter-spacing:.08em;color:#29AAE1;border-bottom:1px solid #e2e8f0;padding-bottom:.3rem;margin-bottom:.4rem">Payment Information</div>
+      <div style="display:flex;gap:1.4rem;flex-wrap:wrap;line-height:1.7">${bankBits.join('')}</div>
+    </div>` : ''}
+    ${(p.contact_phone || p.contact_email) ? `<div style="font-size:.78rem;color:#475569;margin-bottom:.4rem">For questions regarding this invoice, please contact: <strong>${[p.contact_name, p.contact_phone, p.contact_email].filter(Boolean).map(s => esc(s)).join('&nbsp; | &nbsp;')}</strong></div>` : ''}
+    <div style="border-top:1px solid #e2e8f0;padding-top:.6rem;margin-top:.3rem;text-align:center;font-size:.78rem;color:#29AAE1;font-weight:700;letter-spacing:.06em">THANK YOU FOR YOUR BUSINESS!</div>
+  </div>`;
+}
+async function invOpen(id) {
+  const inv = await cApi(`/invoices/${id}`);
+  if (!inv || inv.error) { showToast((inv && inv.error) || '加载失败', 'error'); return; }
+  const doc = _invDocHTML(inv);
+  window._invLastDoc = doc; window._invLastNo = inv.invoice_number || 'Invoice';
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay show';
+  ov.innerHTML = `<div class="modal-box" style="max-width:900px;width:96%;padding:1rem 1.1rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;margin-bottom:.6rem;flex-wrap:wrap">
+      <h2 style="margin:0">📄 ${esc(inv.invoice_number || '')}</h2>
+      <div style="display:flex;gap:.5rem">
+        <button class="tr-act" style="border-color:#047857;color:#047857" onclick="invPrint()">🖨 打印 / 存 PDF</button>
+        <button class="tr-act" onclick="this.closest('.modal-overlay').remove()">✕ 关闭</button>
+      </div>
+    </div>
+    <div style="max-height:76vh;overflow:auto;border:1px solid var(--gray-200,#e2e5ea);border-radius:8px;background:#f1f5f9;padding:.8rem">
+      <div style="background:#fff;max-width:816px;margin:0 auto;box-shadow:0 1px 6px rgba(0,0,0,.15)">${doc}</div>
+    </div></div>`;
+  ov.addEventListener('click', ev => { if (ev.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+}
+function invPrint() {
+  if (!window._invLastDoc) return;
+  const w = window.open('', '_blank');
+  w.document.write(`<!DOCTYPE html><html><head><title>${esc(window._invLastNo || 'Invoice')}</title>
+    <style>@page{size:letter;margin:0.5in}html,body{margin:0;padding:0}body{font-family:'Helvetica Neue',Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}tr,img{page-break-inside:avoid}</style>
+    </head><body>${window._invLastDoc.replace(/padding:0\.5in/, 'padding:0')}</body></html>`);
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 300);
+}
+
 async function loadProfile() {
   const me = await cApi('/me');
   if (!me) return;
@@ -1484,7 +1666,7 @@ async function loadProfile() {
   loadCompanyAccounts();
 }
 // 本公司的账号与各自权限 (只读展示; 加/改权限找 Prime Anchor 管理员)
-const C_PERM_LABELS = { punch: '一键打卡', relabel: '改打卡含义', position: '改职位', kiosk: '打卡机设置', docs: '看工人证件', edit_time: '⏱ 改打卡时间' };
+const C_PERM_LABELS = { punch: '一键打卡', relabel: '改打卡含义', position: '改职位', kiosk: '打卡机设置', docs: '看工人证件', edit_time: '⏱ 改打卡时间', invoice: '💰 看历史发票' };
 async function loadCompanyAccounts() {
   const rows = await cApi('/company-accounts');
   const box = document.getElementById('companyAccts');
