@@ -350,6 +350,7 @@ tr:last-child td{border-bottom:none}
           <button class="btn btn-outline" style="padding:.45rem .9rem" onclick="trQuick(29)">近30天</button>
           <button class="btn btn-outline" style="padding:.45rem .9rem" onclick="loadTimeRecords()">↻ 刷新</button>
         </div>
+        <div id="trKioskMode" style="margin-bottom:.8rem"></div>
         <div id="trSummary" style="display:flex;gap:1.4rem;flex-wrap:wrap;font-size:.9rem;color:var(--gray-500);margin-bottom:.8rem"></div>
         <div style="overflow-x:auto">
         <table style="min-width:640px">
@@ -550,6 +551,28 @@ function _trPT(s) {
 }
 function _trFmtD(d, tz) { return d ? d.toLocaleDateString('zh-CN', { timeZone: tz, month: '2-digit', day: '2-digit' }) : '—'; }
 function _trFmtT(d, tz) { return d ? d.toLocaleTimeString('en-GB', { timeZone: tz, hour12: false, hour: '2-digit', minute: '2-digit' }) : '—'; }
+// ── 打卡机模式: 设置后该仓库打卡台上的所有打卡都按选定分类记录 ──
+const TR_MODES = [['', '自动（上班/下班）'], ['in', '全部记为：上班开始'], ['out', '全部记为：上班结束（下班）'], ['break_start', '全部记为：休息开始'], ['break_end', '全部记为：休息结束']];
+function trRenderKioskMode(sites) {
+  const box = document.getElementById('trKioskMode');
+  if (!sites || !sites.length) { box.innerHTML = ''; return; }
+  box.innerHTML = sites.map(s => `
+    <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;padding:.55rem .8rem;background:${s.kiosk_punch_mode ? '#FFF7ED' : 'var(--gray-100)'};border:1px solid ${s.kiosk_punch_mode ? '#fed7aa' : 'var(--gray-200)'};border-radius:10px;margin-bottom:.4rem;font-size:.85rem">
+      <span>🖥 <b>${esc(s.name)}</b> 打卡机模式：</span>
+      <select onchange="trSetKioskMode(${s.id}, this)" style="padding:.35rem .5rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.84rem">
+        ${TR_MODES.map(([v, l]) => `<option value="${v}"${(s.kiosk_punch_mode || '') === v ? ' selected' : ''}>${l}</option>`).join('')}
+      </select>
+      ${s.kiosk_punch_mode ? '<span style="color:#b45309;font-size:.78rem">⚠ 非自动模式：打卡机上的每次打卡都按此分类记录，用完记得切回自动</span>' : ''}
+    </div>`).join('');
+}
+async function trSetKioskMode(siteId, sel) {
+  const label = sel.options[sel.selectedIndex].text;
+  if (!confirm(`确认把打卡机模式设为「${label}」？\n从现在起该仓库打卡台上的所有打卡都按此记录。`)) { loadTimeRecords(); return; }
+  const r = await cApi('/kiosk-mode', { method: 'POST', body: JSON.stringify({ site_id: siteId, mode: sel.value }) });
+  if (!r) return;
+  if (r.ok) { showToast('✅ 打卡机模式已更新'); loadTimeRecords(); }
+  else { showToast(r.error || '设置失败', 'error'); loadTimeRecords(); }
+}
 async function trPunchAction(entryId, action, label, name) {
   if (!confirm(`确认把当前时间记为「${name} ${label}」？`)) return;
   const r = await cApi('/punch-action', { method: 'POST', body: JSON.stringify({ entry_id: entryId, action }) });
@@ -576,6 +599,7 @@ async function loadTimeRecords() {
   if (!document.getElementById('trTo').value) document.getElementById('trTo').value = d.to;
   _trSiteTz = {}; const siteName = {};
   (d.sites || []).forEach(s => { _trSiteTz[s.id] = s.timezone; siteName[s.id] = s.name + (s.code ? ` (${s.code})` : ''); });
+  trRenderKioskMode(d.sites || []);
   const multiSite = (d.sites || []).length > 1;
   document.getElementById('trHead').innerHTML =
     '<th>员工</th>' + (multiSite ? '<th>仓库</th>' : '') +

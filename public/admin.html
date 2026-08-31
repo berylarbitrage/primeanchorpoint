@@ -3801,7 +3801,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   <div class="card">
     <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1rem">工人打卡时系统用 Haversine 公式计算是否在指定半径内</p>
     <table><thead><tr>
-      <th>代码</th><th>名称</th><th>关联公司</th><th>地址</th><th>坐标</th><th>半径</th><th>时区</th><th>状态</th><th>操作</th>
+      <th>代码</th><th>名称</th><th>关联公司</th><th>联系人</th><th>地址</th><th>坐标</th><th>半径</th><th>时区</th><th>状态</th><th>操作</th>
     </tr></thead>
     <tbody id="jobSitesTable"></tbody></table>
   </div>
@@ -4809,6 +4809,21 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   </div>
   <div id="siteMapWrap" style="display:none;margin-bottom:1rem">
     <div id="siteMapPreview" style="height:220px;border-radius:10px;border:1px solid var(--gray-200);overflow:hidden"></div>
+  </div>
+  <div class="field">
+    <label style="font-weight:700">联系人 <span style="font-weight:400;color:var(--gray-400);font-size:.82rem">（可添加多个）</span></label>
+    <div id="siteContactsWrap"></div>
+    <button type="button" class="btn btn-sm btn-outline" style="margin-top:.35rem" onclick="addSiteContact()">＋ 添加联系人</button>
+  </div>
+  <div class="field">
+    <label style="font-weight:700">打卡机模式 <span style="font-weight:400;color:var(--gray-400);font-size:.82rem">（设置后该仓库打卡台的所有打卡都按此分类记录）</span></label>
+    <select id="siteKioskMode" style="width:100%;padding:8px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem">
+      <option value="">自动（上班/下班）</option>
+      <option value="in">全部记为：上班开始</option>
+      <option value="out">全部记为：上班结束（下班）</option>
+      <option value="break_start">全部记为：休息开始</option>
+      <option value="break_end">全部记为：休息结束</option>
+    </select>
   </div>
   <label style="display:flex;align-items:center;gap:.5rem;margin-bottom:1rem;cursor:pointer;font-size:.88rem"><input type="checkbox" id="siteActive" checked style="width:16px;height:16px"> 仓库启用</label>
   <div class="modal-actions">
@@ -28810,6 +28825,7 @@ async function loadJobSites() {
     <td style="font-family:monospace;font-size:.8rem;white-space:nowrap">${esc(s.code||'—')}</td>
     <td><strong>${esc(s.name)}</strong></td>
     <td style="font-size:.82rem">${(s.partner_names||[]).length ? s.partner_names.map(n=>'<span style="display:inline-block;background:#eff6ff;color:#1d4ed8;padding:1px 6px;border-radius:4px;font-size:.75rem;margin:1px">'+esc(n)+'</span>').join(' ') : '<span style="color:var(--gray-300)">—</span>'}</td>
+    <td style="font-size:.78rem">${(() => { let cs=[]; try{cs=JSON.parse(s.contacts||'[]')||[]}catch{}; return cs.length ? cs.map(c=>`<div style="white-space:nowrap">${esc(c.name||'')}${c.role?` <span style="color:var(--gray-400)">(${esc(c.role)})</span>`:''}${c.phone?` <span style="color:var(--gray-500)">${esc(c.phone)}</span>`:''}</div>`).join('') : '<span style="color:var(--gray-300)">—</span>'; })()}</td>
     <td style="font-size:.82rem">${esc(s.address||'—')}</td>
     <td style="font-size:.8rem"><a href="https://maps.google.com/?q=${s.latitude},${s.longitude}" target="_blank">${(+s.latitude).toFixed(4)}, ${(+s.longitude).toFixed(4)}</a></td>
     <td>${s.radius_meters}m</td>
@@ -28822,7 +28838,7 @@ async function loadJobSites() {
       <button class="btn btn-sm" onclick="editJobSite(${s.id})">编辑</button>
       <button class="btn btn-sm btn-red" onclick="deleteJobSite(${s.id})">删除</button>
     </td>
-  </tr>`).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:2rem">暂无仓库，请添加</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--gray-400);padding:2rem">暂无仓库，请添加</td></tr>';
 }
 
 // 仓库打卡台链接：复制到剪贴板并新窗口打开（放到仓库平板的浏览器里全屏使用）
@@ -29088,7 +29104,31 @@ async function printAllSiteQRs() {
   setTimeout(() => { w.print(); }, 400);
 }
 
+// ── 仓库联系人 (多个): [{name,phone,email,role}] ──
+function addSiteContact(c) {
+  c = c || {};
+  const row = document.createElement('div');
+  row.className = 'siteContactRow';
+  row.style.cssText = 'display:flex;gap:.4rem;margin-top:.35rem;align-items:center;flex-wrap:wrap';
+  row.innerHTML = `
+    <input class="scName" placeholder="姓名" value="${esc(c.name||'')}" style="flex:1;min-width:90px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+    <input class="scRole" placeholder="职务(选填)" value="${esc(c.role||'')}" style="width:100px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+    <input class="scPhone" placeholder="电话" value="${esc(c.phone||'')}" style="width:130px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+    <input class="scEmail" placeholder="邮箱(选填)" value="${esc(c.email||'')}" style="flex:1;min-width:140px;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+    <button type="button" onclick="this.closest('.siteContactRow').remove()" style="border:1px solid #fecaca;background:#fff;color:#ef4444;border-radius:6px;padding:5px 9px;font-size:.8rem;cursor:pointer">删</button>`;
+  document.getElementById('siteContactsWrap').appendChild(row);
+}
+function collectSiteContacts() {
+  return [...document.querySelectorAll('#siteContactsWrap .siteContactRow')].map(r => ({
+    name: r.querySelector('.scName').value.trim(),
+    role: r.querySelector('.scRole').value.trim(),
+    phone: r.querySelector('.scPhone').value.trim(),
+    email: r.querySelector('.scEmail').value.trim()
+  })).filter(c => c.name || c.phone || c.email);
+}
 async function openJobSiteModal() {
+  document.getElementById('siteContactsWrap').innerHTML = '';
+  document.getElementById('siteKioskMode').value = '';
   document.getElementById('siteId').value = '';
   document.getElementById('siteCode').value = '';
   document.getElementById('siteName').value = '';
@@ -29118,6 +29158,10 @@ async function editJobSite(id) {
   document.getElementById('siteRadius').value = s.radius_meters;
   document.getElementById('siteTz').value = s.timezone || 'America/Los_Angeles';
   document.getElementById('siteActive').checked = !!s.active;
+  document.getElementById('siteContactsWrap').innerHTML = '';
+  let scs = []; try { scs = JSON.parse(s.contacts || '[]') || []; } catch {}
+  scs.forEach(c => addSiteContact(c));
+  document.getElementById('siteKioskMode').value = s.kiosk_punch_mode || '';
   document.getElementById('jobSiteModalTitle').textContent = '编辑仓库';
   clearAddrStatus('siteAddrStatus');
   await _loadSitePartners();
@@ -29141,7 +29185,9 @@ async function saveJobSite() {
     radius_meters: parseInt(document.getElementById('siteRadius').value) || 150,
     timezone: document.getElementById('siteTz').value,
     active: document.getElementById('siteActive').checked ? 1 : 0,
-    partner_ids: partnerIds
+    partner_ids: partnerIds,
+    contacts: JSON.stringify(collectSiteContacts()),
+    kiosk_punch_mode: document.getElementById('siteKioskMode').value
   };
   if (!data.name || isNaN(data.latitude) || isNaN(data.longitude)) return showToast('请填写仓库名称和坐标', 'error');
   if (data.address) {
