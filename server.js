@@ -31976,6 +31976,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS plaid_accounts (
   currency TEXT DEFAULT 'USD',
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
+// 账户显示用的「公司名」标签 (Plaid 不带账户主体, 管理员手填一次, 用于区分同名账户)
+try { db.exec("ALTER TABLE plaid_accounts ADD COLUMN company_label TEXT DEFAULT ''"); } catch (e) {}
 db.exec(`CREATE TABLE IF NOT EXISTS plaid_transactions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   txn_id TEXT UNIQUE NOT NULL,
@@ -32128,6 +32130,14 @@ app.get('/api/plaid/accounts', requireAdmin, requireRole('admin', 'cs', 'account
       .map(a => ({ ...a, institution: (items.find(i => i.item_id === a.item_id) || {}).institution || '' }));
     res.json({ items, accounts });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 给账户设置「公司名」显示标签 (区分同名账户; 仅管理员)
+app.post('/api/plaid/accounts/:account_id/label', requireAdmin, requireRole('admin'), (req, res) => {
+  const acc = db.prepare('SELECT id FROM plaid_accounts WHERE account_id=?').get(req.params.account_id);
+  if (!acc) return res.status(404).json({ error: '账户不存在' });
+  db.prepare('UPDATE plaid_accounts SET company_label=? WHERE id=?').run(String((req.body || {}).company_label || '').slice(0, 80), acc.id);
+  res.json({ success: true });
 });
 
 function plaidTxnQuery(req) {

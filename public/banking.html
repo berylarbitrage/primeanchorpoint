@@ -246,18 +246,34 @@ async function loadAccounts() {
   (r.items || []).forEach(i => { itemRowId[i.item_id] = i.id; });
   const sel = document.getElementById('fAcct');
   const cur = sel.value;
+  // 下拉与各处显示统一为「银行 · 公司名(或账户名) ··尾号」, 三个信息一起区分账户
   sel.innerHTML = '<option value="">全部账户</option>'
-    + ACCTS.map(a => '<option value="' + esc(a.account_id) + '">' + esc(a.name) + (a.mask ? ' ····' + a.mask : '') + '</option>').join('');
+    + ACCTS.map(a => '<option value="' + esc(a.account_id) + '">' + esc(acctDisplay(a)) + '</option>').join('');
   sel.value = cur;
   document.getElementById('accounts').innerHTML = ACCTS.map(a =>
     '<div class="acct"><div class="bank">🏦 ' + esc(a.institution || a.type)
     + (ROLE === 'admin' && itemRowId[a.item_id] ? ' <a href="javascript:void(0)" onclick="unlinkItem(' + itemRowId[a.item_id] + ',\'' + esc(a.institution || a.name).replace(/'/g, '') + '\')" style="color:var(--red);float:right;text-decoration:none">✕ 解绑</a>' : '')
     + '</div>'
+    + (ROLE === 'admin'
+      ? '<input value="' + esc(a.company_label || '').replace(/"/g, '&quot;') + '" data-acct="' + esc(a.account_id) + '" placeholder="公司名（填写以区分账户）" onchange="setAcctLabel(this.dataset.acct, this.value)" style="width:100%;box-sizing:border-box;border:1px dashed var(--gray-200,#e2e8f0);border-radius:6px;padding:3px 6px;font-size:.8rem;font-weight:700;color:#0f4c6b;margin:.2rem 0">'
+      : (a.company_label ? '<div style="font-weight:700;color:#0f4c6b;font-size:.85rem;margin:.2rem 0">' + esc(a.company_label) + '</div>' : ''))
     + '<div class="nm">' + esc(a.name) + (a.mask ? ' <span class="sub">····' + a.mask + '</span>' : '') + '</div>'
     + '<div class="bal">' + money(a.balance_current, a.currency) + '</div>'
     + '<div class="sub">' + (a.balance_available != null ? '可用 ' + money(a.balance_available, a.currency) + ' · ' : '')
     + esc(a.subtype || '') + '</div></div>').join('')
     || '<div class="empty">还没连接银行账户 — 点右上角「➕ 连接银行」</div>';
+}
+// 「银行 · 公司名(或账户名) ··尾号」
+function acctDisplay(a) {
+  if (!a) return '';
+  return (a.institution ? a.institution + ' · ' : '') + (a.company_label || a.name || '账户') + (a.mask ? ' ··' + a.mask : '');
+}
+async function setAcctLabel(accountId, v) {
+  try {
+    await api('/plaid/accounts/' + encodeURIComponent(accountId) + '/label', { method: 'POST', body: JSON.stringify({ company_label: String(v || '').trim() }) });
+    await loadAccounts();
+    loadTxns();
+  } catch (e) { alert(e.message); }
 }
 
 // 账户卡片默认收起, 点按钮才展开（余额不常看, 也避免旁人一眼看到）
@@ -319,7 +335,7 @@ async function loadTxns() {
   let rows = r.transactions || [];
   // 「待审核」筛选: 只看有待审核标注的交易（在当前筛选结果里过滤）
   if (_pendingOnly) rows = rows.filter(t => ANN[t.txn_id] && ANN[t.txn_id].ann_status === 'pending');
-  const accName = id => { const a = ACCTS.find(x => x.account_id === id); return a ? a.name + (a.mask ? ' ····' + a.mask : '') : ''; };
+  const accName = id => acctDisplay(ACCTS.find(x => x.account_id === id));
   document.getElementById('sumLine').textContent =
     '共 ' + (r.total || 0) + ' 笔' + (rows.length < (r.total || 0) ? '（显示最近 ' + rows.length + ' 笔）' : '')
     + ' · 净额 ' + money(-(r.sum || 0));
