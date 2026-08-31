@@ -18852,10 +18852,25 @@ async function openSvModal() {
 async function loadSvLinks() {
   const box = document.getElementById('svList');
   box.innerHTML = '加载中…';
-  const d = await api('/admin/partner-photo-access');
-  if (d.error) { box.innerHTML = `<span style="color:var(--red)">${d.error}</span>`; return; }
-  if (!d.length) { box.innerHTML = '<span style="color:var(--gray-400)">还没有启用中的合作公司</span>'; return; }
-  box.innerHTML = d.map(p => `
+  const resp = await api('/admin/partner-photo-access');
+  if (resp.error) { box.innerHTML = `<span style="color:var(--red)">${resp.error}</span>`; return; }
+  const d = resp.partners || [];
+  let extra = '';
+  if ((resp.orphan_accounts || []).length) {
+    extra += `<div style="margin-top:.8rem;padding:.6rem .8rem;background:#FFF7ED;border:1px solid #fed7aa;border-radius:10px;font-size:.8rem;color:#9a3412">
+      <b>⚠ 未关联公司档案的企业账号</b>（登录门户看不到任何打卡记录）：<br>
+      ${resp.orphan_accounts.map(c => `${esc(c.company_name)} &lt;${esc(c.email)}&gt;`).join('、')}<br>
+      <span style="color:#b45309">修复：🔐 账户管理 → 客户账户 → 编辑该账号 → 「关联合作公司档案」选对应公司（没有档案就先在客户管理里新建）</span>
+    </div>`;
+  }
+  if ((resp.orphan_sites || []).length) {
+    extra += `<div style="margin-top:.6rem;padding:.6rem .8rem;background:#FFF7ED;border:1px solid #fed7aa;border-radius:10px;font-size:.8rem;color:#9a3412">
+      <b>⚠ 未绑定公司的仓库</b>（这些仓库的平板打卡在任何门户都看不到）：${resp.orphan_sites.map(esc).join('、')}<br>
+      <span style="color:#b45309">修复：🏭 仓库管理 → 编辑仓库 → 「关联公司」选对应公司</span>
+    </div>`;
+  }
+  if (!d.length) { box.innerHTML = '<span style="color:var(--gray-400)">还没有启用中的合作公司</span>' + extra; return; }
+  box.innerHTML = extra + d.map(p => `
     <div style="padding:.6rem .2rem;border-bottom:1px solid var(--gray-100)">
       <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
         <div style="flex:1;min-width:180px">

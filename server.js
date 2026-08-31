@@ -26546,12 +26546,25 @@ app.get('/api/admin/partner-photo-access', requireAdmin, requireRole('admin'), (
       (SELECT COUNT(*) FROM customer_accounts c WHERE c.partner_id=p.id AND c.active=1) AS account_count
     FROM partners p WHERE p.active=1 ORDER BY p.name`).all();
   const sites = db.prepare('SELECT id, name, code, partner_id, partner_ids FROM job_sites WHERE active=1').all();
-  res.json(rows.map(r => {
-    const mine = sites.filter(s => s.partner_id === r.id || String(s.partner_ids || '').split(',').filter(Boolean).map(Number).includes(r.id));
-    return { id: r.id, name: r.name, photos_enabled: !!r.show_punch_photos,
-      account_count: r.account_count, site_count: mine.length,
-      site_names: mine.map(s => s.name + (s.code ? ` (${s.code})` : '')) };
-  }));
+  // 未关联公司档案的企业账号: 它们登录门户永远看不到任何打卡记录, 单独列出提醒
+  const orphanAccounts = db.prepare(`SELECT c.id, c.company_name, c.email FROM customer_accounts c
+    WHERE c.active=1 AND (c.partner_id IS NULL OR NOT EXISTS (SELECT 1 FROM partners p2 WHERE p2.id=c.partner_id AND p2.active=1))`).all();
+  // 未绑定任何公司的启用仓库: 它们的平板打卡在任何门户都看不到
+  const orphanSites = sites.filter(s => {
+    const pids = String(s.partner_ids || '').split(',').filter(Boolean).map(Number);
+    if (s.partner_id) pids.push(s.partner_id);
+    return !pids.some(pid => rows.some(r => r.id === pid));
+  });
+  res.json({
+    partners: rows.map(r => {
+      const mine = sites.filter(s => s.partner_id === r.id || String(s.partner_ids || '').split(',').filter(Boolean).map(Number).includes(r.id));
+      return { id: r.id, name: r.name, photos_enabled: !!r.show_punch_photos,
+        account_count: r.account_count, site_count: mine.length,
+        site_names: mine.map(s => s.name + (s.code ? ` (${s.code})` : '')) };
+    }),
+    orphan_accounts: orphanAccounts.map(c => ({ id: c.id, company_name: c.company_name, email: c.email })),
+    orphan_sites: orphanSites.map(s => s.name + (s.code ? ` (${s.code})` : ''))
+  });
 });
 app.post('/api/admin/partner-photo-access/:id', requireAdmin, requireRole('admin'), (req, res) => {
   const p = db.prepare('SELECT id FROM partners WHERE id=?').get(req.params.id);
