@@ -842,7 +842,7 @@ function tsPrint() {
       <colgroup>${cols.map(c => `<col style="width:${c.w}">`).join('')}</colgroup>
       <thead><tr>${cols.map(c => `<th>${c.h}</th>`).join('')}</tr></thead>
       <tbody>
-      ${rows.map((r, i) => `<tr><td>${i + 1}</td><td class="nm">${esc(r.name) || '&nbsp;'}</td>${withId ? `<td>${esc(r.code)}</td>` : ''}<td></td><td></td><td></td><td></td><td></td></tr>`).join('')}
+      ${rows.map((r, i) => `<tr><td>${i + 1}</td><td class="nm">${esc(r.name) || '&nbsp;'}</td>${withId ? `<td>${esc(String(r.code || '').replace(/^[^0-9]*/, ''))}</td>` : ''}<td></td><td></td><td></td><td></td><td></td></tr>`).join('')}
       </tbody>
     </table>
     <script>setTimeout(function(){window.print()},300)<\/script>
