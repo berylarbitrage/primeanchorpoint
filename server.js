@@ -789,6 +789,9 @@ try { db.exec(`ALTER TABLE time_entries ADD COLUMN suspect_note TEXT DEFAULT ''`
 // 打卡台「自动」模式: 当天原始打卡时间点序列 [{t,p}] + 次数异常待复核标记
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN raw_punches TEXT DEFAULT '[]'`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_review INTEGER DEFAULT 0`); } catch(e) {}
+// 工作日 = 仓库当地时区的日期。clock_in 存 UTC, 晚上打卡 UTC 日期会跳到「明天」,
+// 不能用它分天 —— 按天归组必须以本列为准 (老记录为空, 查询时兼容回退)
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN work_date TEXT DEFAULT ''`); } catch(e) {}
 // Compensation / liability incidents logged per warehouse (what happened, how
 // much we paid, how it was resolved, and a receipt/invoice scan).
 try { db.exec(`CREATE TABLE IF NOT EXISTS warehouse_claims (
@@ -26547,15 +26550,17 @@ function _recordSitePunch({ empDbId, site, siteTimezone, now, latitude, longitud
 }
 
 // ─── 打卡台「自动」模式落库 ───
-// 不区分上下班：以「员工 + 仓库 + 当天」为一条记录，把每次打卡时间都记进 raw_punches，
-// 每打一次按当天总次数重新归类：恰好 4 次 → 上班 / 休息开始 / 休息结束 / 下班；
+// 不区分上下班：以「员工 + 仓库 + 当天(仓库时区 work_date)」为一条记录，把每次打卡时间
+// 都记进 raw_punches，每打一次按当天总次数重新归类：恰好 4 次 → 上班 / 休息开始 / 休息结束 / 下班；
 // 其余 → 最早 = 上班，最晚 = 下班，中间按顺序两两配成休息；
 // 不足 4 次（当天已收班的情况下）或奇数次 → punch_review=1 等后台复核。
+// 严格按天：只找当天(仓库时区)的记录，前一天没打完的绝不续上 —— 第二天第一卡重开一条
+// (隔天的残留 open 记录由 _autoPunchDayEnd 定时封掉标复核)。
 function _recordAutoPunch({ empDbId, site, siteTimezone, now, latitude, longitude, photoFilename }) {
   const todayInTz = new Date().toLocaleDateString('en-CA', { timeZone: siteTimezone });
   const entry = db.prepare(
-    "SELECT id, clock_in, clock_out, break_records, raw_punches, clock_in_photo_path, punch_photo_path FROM time_entries WHERE employee_id=? AND site_id=? AND date(clock_in)=? ORDER BY id DESC LIMIT 1"
-  ).get(empDbId, site.id, todayInTz);
+    "SELECT id, clock_in, clock_out, break_records, raw_punches, clock_in_photo_path, punch_photo_path FROM time_entries WHERE employee_id=? AND site_id=? AND (work_date=? OR (COALESCE(work_date,'')='' AND date(clock_in)=?)) ORDER BY id DESC LIMIT 1"
+  ).get(empDbId, site.id, todayInTz, todayInTz);
 
   // 当天原始打卡序列; 老记录/手机打卡先把已有分类时间摊回序列再续
   let raw = [];
@@ -26581,8 +26586,8 @@ function _recordAutoPunch({ empDbId, site, siteTimezone, now, latitude, longitud
   if (entry) entryId = entry.id;
   else {
     const r = db.prepare(
-      "INSERT INTO time_entries (employee_id, clock_in, status, latitude, longitude, site_id, geo_verified, punch_type, break_records, on_break, site_timezone) VALUES(?,?,'open',?,?,?,1,'auto','[]',0,?)"
-    ).run(empDbId, now, latitude, longitude, site.id, siteTimezone);
+      "INSERT INTO time_entries (employee_id, clock_in, status, latitude, longitude, site_id, geo_verified, punch_type, break_records, on_break, site_timezone, work_date) VALUES(?,?,'open',?,?,?,1,'auto','[]',0,?,?)"
+    ).run(empDbId, now, latitude, longitude, site.id, siteTimezone, todayInTz);
     entryId = r.lastInsertRowid;
   }
 
@@ -26592,8 +26597,8 @@ function _recordAutoPunch({ empDbId, site, siteTimezone, now, latitude, longitud
   if (n === 1) {
     // 当天第一次: 只算上班, 保持 open 等后续打卡
     db.prepare(
-      "UPDATE time_entries SET clock_in=?, clock_in_photo_path=?, clock_out=NULL, total_hours=NULL, regular_hours=NULL, overtime_hours=NULL, status='open', break_records='[]', on_break=0, punch_photo_path=NULL, raw_punches=?, punch_review=0, punch_type='auto' WHERE id=?"
-    ).run(first.t, first.p, rawJson, entryId);
+      "UPDATE time_entries SET clock_in=?, clock_in_photo_path=?, clock_out=NULL, total_hours=NULL, regular_hours=NULL, overtime_hours=NULL, status='open', break_records='[]', on_break=0, punch_photo_path=NULL, raw_punches=?, punch_review=0, punch_type='auto', work_date=? WHERE id=?"
+    ).run(first.t, first.p, rawJson, todayInTz, entryId);
   } else {
     const mids = raw.slice(1, n - 1);
     const breaks = [];
@@ -26607,11 +26612,33 @@ function _recordAutoPunch({ empDbId, site, siteTimezone, now, latitude, longitud
     const totalHours = Math.round((ms / 3600000) * 100) / 100;
     needsReview = (n < 4 || n % 2 === 1) ? 1 : 0;
     db.prepare(
-      "UPDATE time_entries SET clock_in=?, clock_in_photo_path=?, clock_out=?, punch_photo_path=?, total_hours=?, regular_hours=?, overtime_hours=?, status='closed', break_records=?, on_break=0, raw_punches=?, punch_review=?, punch_type='auto' WHERE id=?"
-    ).run(first.t, first.p, last.t, last.p, totalHours, Math.min(totalHours, 8), Math.max(0, totalHours - 8), JSON.stringify(breaks), rawJson, needsReview, entryId);
+      "UPDATE time_entries SET clock_in=?, clock_in_photo_path=?, clock_out=?, punch_photo_path=?, total_hours=?, regular_hours=?, overtime_hours=?, status='closed', break_records=?, on_break=0, raw_punches=?, punch_review=?, punch_type='auto', work_date=? WHERE id=?"
+    ).run(first.t, first.p, last.t, last.p, totalHours, Math.min(totalHours, 8), Math.max(0, totalHours - 8), JSON.stringify(breaks), rawJson, needsReview, todayInTz, entryId);
   }
   return { action: 'auto', entryId, clockTime: now, punchCount: n, needsReview };
 }
+
+// 自动模式隔天收尾: 前一天(仓库时区)没打完留下的 open 记录, 绝不让第二天续上 ——
+// 封成 下班=上班、0 工时、⚠ 待复核, 后台人工补时间。每 30 分钟扫一次。
+function _autoPunchDayEnd() {
+  try {
+    const rows = db.prepare(
+      "SELECT t.id, t.clock_in, t.work_date, COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS tz FROM time_entries t LEFT JOIN job_sites js ON t.site_id=js.id WHERE t.status='open' AND t.punch_type='auto'"
+    ).all();
+    for (const r of rows) {
+      try {
+        const today = new Date().toLocaleDateString('en-CA', { timeZone: r.tz || 'America/Chicago' });
+        const wd = r.work_date || (r.clock_in ? String(r.clock_in).slice(0, 10) : '');
+        if (wd && wd < today) {
+          db.prepare("UPDATE time_entries SET clock_out=clock_in, total_hours=0, regular_hours=0, overtime_hours=0, status='closed', on_break=0, punch_review=1 WHERE id=?").run(r.id);
+          console.log('[AutoPunch] 隔天封单待复核 entry', r.id, 'work_date', wd);
+        }
+      } catch (e) { console.error('[AutoPunch] day-end row', r.id, e.message); }
+    }
+  } catch (e) { console.error('[AutoPunch] day-end sweep:', e.message); }
+}
+setInterval(_autoPunchDayEnd, 30 * 60 * 1000);
+setTimeout(_autoPunchDayEnd, 15 * 1000); // 启动后先扫一遍
 
 // POST /api/checkin/punch
 app.post('/api/checkin/punch', async (req, res) => {
@@ -27000,7 +27027,7 @@ app.post('/api/kiosk/status', (req, res) => {
   const forcedMode = (modeRow && ['in', 'out', 'break_start', 'break_end'].includes(modeRow.kiosk_punch_mode)) ? modeRow.kiosk_punch_mode : '';
   let todayPunches = 0;
   try {
-    const er = db.prepare("SELECT clock_in, clock_out, break_records, raw_punches FROM time_entries WHERE employee_id=? AND site_id=? AND date(clock_in)=? ORDER BY id DESC LIMIT 1").get(emp.id, site.id, todayInTz);
+    const er = db.prepare("SELECT clock_in, clock_out, break_records, raw_punches FROM time_entries WHERE employee_id=? AND site_id=? AND (work_date=? OR (COALESCE(work_date,'')='' AND date(clock_in)=?)) ORDER BY id DESC LIMIT 1").get(emp.id, site.id, todayInTz, todayInTz);
     if (er) {
       let rp = [];
       try { rp = JSON.parse(er.raw_punches || '[]'); } catch {}
