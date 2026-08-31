@@ -287,13 +287,14 @@ tr:last-child td{border-bottom:none}
         </div>
         <div class="field"><label>班次（可多选）</label>
           <div id="cpShiftWrap" class="cp-chips">
-            <button type="button" class="cp-chip" data-val="早班" onclick="this.classList.toggle('active')">早班（Morning）</button>
-            <button type="button" class="cp-chip" data-val="中班" onclick="this.classList.toggle('active')">中班（Day）</button>
-            <button type="button" class="cp-chip" data-val="晚班" onclick="this.classList.toggle('active')">晚班（Evening）</button>
-            <button type="button" class="cp-chip" data-val="夜班" onclick="this.classList.toggle('active')">夜班（Night）</button>
-            <button type="button" class="cp-chip" data-val="弹性" onclick="this.classList.toggle('active')">弹性（Flexible）</button>
+            <button type="button" class="cp-chip" data-val="早班" onclick="this.classList.toggle('active');cpUpdateShiftSections()">早班（Morning）</button>
+            <button type="button" class="cp-chip" data-val="中班" onclick="this.classList.toggle('active');cpUpdateShiftSections()">中班（Day）</button>
+            <button type="button" class="cp-chip" data-val="晚班" onclick="this.classList.toggle('active');cpUpdateShiftSections()">晚班（Evening）</button>
+            <button type="button" class="cp-chip" data-val="夜班" onclick="this.classList.toggle('active');cpUpdateShiftSections()">夜班（Night）</button>
+            <button type="button" class="cp-chip" data-val="弹性" onclick="this.classList.toggle('active');cpUpdateShiftSections()">弹性（Flexible）</button>
           </div>
         </div>
+        <div id="cpShiftSchedWrap"></div>
         <div class="field"><label>必备技能（多选）</label>
           <div id="cpSkillsWrap" class="cp-chips"><span style="color:var(--gray-400);font-size:.82rem">加载中…</span></div>
         </div>
@@ -628,15 +629,103 @@ function pPayValue() {
   const v = document.getElementById('pPayFixed').value.trim();
   return v ? v + unit : '';
 }
+// ── 班次工作日/时间表 (与后台职位表单同款): 选中班次后出现该班次的 Mon–Sun 时间表 ──
+const CP_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+function cpShiftTableHTML(shift) {
+  const rows = CP_DAYS.map((day, i) => `<tr data-day="${day}" style="${i < CP_DAYS.length - 1 ? 'border-bottom:1px solid #f3f4f6' : ''}">
+      <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="cpDayCheck" onchange="cpDayToggle(this)"></td>
+      <td style="padding:.3rem .5rem;font-weight:600">${day}</td>
+      <td style="padding:.3rem .4rem"><input type="time" step="60" class="cpDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;margin-bottom:0;background:var(--gray-50)"></td>
+      <td style="padding:.3rem .4rem"><input type="time" step="60" class="cpDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;margin-bottom:0;background:var(--gray-50)"></td>
+      <td style="padding:.3rem .4rem;white-space:nowrap">
+        <button type="button" class="cpCopyDay" disabled onclick="cpCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer">复制</button>
+        <button type="button" class="cpAddBreak" disabled onclick="cpAddBreak(this)" title="添加休息时间" style="font-size:.73rem;padding:3px 7px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;margin-left:3px">+</button>
+      </td>
+    </tr>`).join('');
+  return `<div class="cpShiftSection" data-shift="${shift}" style="border:1px solid #e0e7ff;border-radius:8px;padding:1rem;margin-bottom:.9rem;background:#fff">
+    <div style="font-weight:700;color:var(--sky);margin-bottom:.5rem">⏰ ${shift}</div>
+    <div style="font-size:.78rem;color:var(--gray-400);margin-bottom:.35rem">工作日 / 工作时间（选填）</div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.82rem;min-width:430px">
+      <thead><tr style="color:var(--gray-400);font-weight:600;font-size:.74rem;border-bottom:1px solid var(--gray-200)">
+        <th style="padding:.25rem .4rem;width:30px"></th><th style="padding:.25rem .5rem;text-align:left">工作日</th>
+        <th style="padding:.25rem .5rem;text-align:left">上班时间</th><th style="padding:.25rem .5rem;text-align:left">下班时间</th>
+        <th style="padding:.25rem .4rem;width:64px"></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+  </div>`;
+}
+function cpUpdateShiftSections() {
+  const wrap = document.getElementById('cpShiftSchedWrap');
+  const checked = [...document.querySelectorAll('#cpShiftWrap .cp-chip.active')].map(b => b.dataset.val);
+  wrap.querySelectorAll('.cpShiftSection').forEach(sec => { if (!checked.includes(sec.dataset.shift)) sec.remove(); });
+  checked.forEach(shift => {
+    if (!wrap.querySelector(`.cpShiftSection[data-shift="${shift}"]`)) wrap.insertAdjacentHTML('beforeend', cpShiftTableHTML(shift));
+  });
+}
+function cpDayToggle(cb) {
+  const row = cb.closest('tr');
+  ['cpDayStart', 'cpDayEnd', 'cpCopyDay', 'cpAddBreak'].forEach(cls => {
+    const el = row.querySelector('.' + cls);
+    el.disabled = !cb.checked;
+    if (el.tagName === 'INPUT') { el.style.background = cb.checked ? '#fff' : 'var(--gray-50)'; if (!cb.checked) el.value = ''; }
+    else { el.style.color = cb.checked ? 'var(--sky)' : 'var(--gray-400)'; el.style.borderColor = cb.checked ? 'var(--sky)' : 'var(--gray-200)'; }
+  });
+  if (!cb.checked) row.closest('tbody').querySelectorAll(`.cpBreakRow[data-parent-day="${row.dataset.day}"]`).forEach(br => br.remove());
+}
+function cpCopyDay(btn) {
+  const row = btn.closest('tr');
+  const start = row.querySelector('.cpDayStart').value, end = row.querySelector('.cpDayEnd').value;
+  if (!start || !end) return showToast('请先填写完整的上下班时间再复制', 'error');
+  btn.closest('table').querySelectorAll('tbody tr[data-day]').forEach(r => {
+    if (r === row || !r.querySelector('.cpDayCheck').checked) return;
+    r.querySelector('.cpDayStart').value = start;
+    r.querySelector('.cpDayEnd').value = end;
+  });
+}
+function cpAddBreak(btn) {
+  const row = btn.closest('tr');
+  const day = row.dataset.day;
+  const br = document.createElement('tr');
+  br.className = 'cpBreakRow';
+  br.dataset.parentDay = day;
+  br.innerHTML = `<td></td><td style="padding:.2rem .5rem;font-size:.75rem;color:var(--gray-400)">↳ 休息</td>
+    <td style="padding:.2rem .4rem"><input type="time" step="60" class="cpBreakStart" style="border:1px solid var(--gray-200);border-radius:6px;padding:3px 6px;font-size:.78rem;width:110px;margin-bottom:0"></td>
+    <td style="padding:.2rem .4rem"><input type="time" step="60" class="cpBreakEnd" style="border:1px solid var(--gray-200);border-radius:6px;padding:3px 6px;font-size:.78rem;width:110px;margin-bottom:0"></td>
+    <td style="padding:.2rem .4rem"><button type="button" onclick="this.closest('tr').remove()" style="font-size:.73rem;padding:3px 8px;border:1px solid #fecaca;border-radius:6px;background:#fff;color:#ef4444;cursor:pointer">删</button></td>`;
+  let ins = row;
+  row.closest('tbody').querySelectorAll(`.cpBreakRow[data-parent-day="${day}"]`).forEach(b => ins = b);
+  ins.insertAdjacentElement('afterend', br);
+}
+function cpCollectSchedule() {
+  const out = {};
+  document.querySelectorAll('#cpShiftSchedWrap .cpShiftSection').forEach(sec => {
+    const sched = {};
+    sec.querySelectorAll('tbody tr[data-day]').forEach(row => {
+      if (!row.querySelector('.cpDayCheck').checked) return;
+      const day = row.dataset.day;
+      const start = row.querySelector('.cpDayStart').value, end = row.querySelector('.cpDayEnd').value;
+      if (!start && !end) return;
+      sched[day] = { start, end };
+      const breaks = [...row.closest('tbody').querySelectorAll(`.cpBreakRow[data-parent-day="${day}"]`)]
+        .map(br => ({ start: br.querySelector('.cpBreakStart').value, end: br.querySelector('.cpBreakEnd').value }))
+        .filter(b => b.start || b.end);
+      if (breaks.length) sched[day].breaks = breaks;
+    });
+    if (Object.keys(sched).length) out[sec.dataset.shift] = sched;
+  });
+  return out;
+}
 function collectPostDetails() {
   return {
     shift: [...document.querySelectorAll('#cpShiftWrap .cp-chip.active')].map(b => b.dataset.val).join(','),
+    schedule: cpCollectSchedule(),
     skills: [...document.querySelectorAll('#cpSkillsWrap .cp-chip.active')].map(b => b.dataset.val).join(','),
     pay_budget: pPayValue()
   };
 }
 function clearPostDetails() {
   document.querySelectorAll('.cp-chip.active').forEach(b => b.classList.remove('active'));
+  document.getElementById('cpShiftSchedWrap').innerHTML = '';
   ['pPayFixed', 'pPayLow', 'pPayHigh'].forEach(id => document.getElementById(id).value = '');
 }
 function pTitleValue() {

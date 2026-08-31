@@ -10787,7 +10787,13 @@ async function loadPortalPosts() {
   box.innerHTML = posts.map(p => {
     let det = {}; try { det = JSON.parse(p.details_json || '{}') || {}; } catch {}
     const detRows = Object.entries(CP_DETAIL_LABELS)
-      .map(([k, lbl]) => det[k] ? `<span style="margin-right:1rem">${lbl}: <b>${esc(det[k])}</b></span>` : '').join('');
+      .map(([k, lbl]) => (det[k] && typeof det[k] === 'string') ? `<span style="margin-right:1rem">${lbl}: <b>${esc(det[k])}</b></span>` : '').join('');
+    // 班次时间表: { 早班: { Mon: {start,end,breaks?}, ... }, ... }
+    const schedRows = (det.schedule && typeof det.schedule === 'object') ? Object.entries(det.schedule).map(([shift, days]) => {
+      const parts = Object.entries(days || {}).map(([d, v]) =>
+        `${d} ${v.start || '?'}–${v.end || '?'}${(v.breaks || []).length ? `（休 ${v.breaks.map(b => (b.start || '') + '-' + (b.end || '')).join('、')}）` : ''}`).join('，');
+      return parts ? `<div style="margin-top:.2rem">⏰ <b>${esc(shift)}</b>：${esc(parts)}</div>` : '';
+    }).join('') : '';
     return `<div class="card" style="margin-bottom:.8rem">
       <div style="display:flex;align-items:center;gap:.7rem;flex-wrap:wrap">
         <b style="font-size:1.02rem">${esc(p.title)}</b>
@@ -10800,7 +10806,7 @@ async function loadPortalPosts() {
       <div style="font-size:.86rem;color:var(--gray-600);margin-top:.45rem">
         ${p.headcount ? `人数 <b>${p.headcount}</b> · ` : ''}${p.work_type ? `${esc(p.work_type)} · ` : ''}${p.location ? `📍 ${esc(p.location)} · ` : ''}${p.start_date ? `期望开始 ${esc(p.start_date)}` : ''}
       </div>
-      ${detRows ? `<div style="font-size:.83rem;color:var(--gray-600);margin-top:.4rem;padding:.45rem .6rem;background:var(--gray-50,#f8fafc);border-radius:8px">${detRows}</div>` : ''}
+      ${(detRows || schedRows) ? `<div style="font-size:.83rem;color:var(--gray-600);margin-top:.4rem;padding:.45rem .6rem;background:var(--gray-50,#f8fafc);border-radius:8px">${detRows}${schedRows}</div>` : ''}
       ${p.requirements ? `<div style="font-size:.84rem;margin-top:.4rem">📄 ${esc(p.requirements)}</div>` : ''}
       ${p.notes ? `<div style="font-size:.84rem;color:var(--gray-500);margin-top:.25rem">💬 ${esc(p.notes)}</div>` : ''}
       <div style="font-size:.78rem;color:var(--gray-400);margin-top:.35rem">联系人：${esc(p.contact_name || '—')} · ${esc(p.customer_email || '')}</div>
