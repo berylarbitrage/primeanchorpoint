@@ -7239,66 +7239,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <div style="font-size:.75rem;color:var(--gray-400);margin-top:.3rem">按住 Ctrl（Mac：Command）可多选 · <a onclick="showTab('skill-settings')" style="cursor:pointer;color:var(--primary)">管理技能选项</a></div>
   </div>
 
-  <div class="form-section" style="margin:.4rem 0 0;padding:1rem;border:1px solid var(--gray-200);border-radius:8px;background:#fafbfc">
-    <h4 style="margin-bottom:.7rem">📋 更多细节（选填，求职者会在职位详情里看到）</h4>
-    <div class="field"><label>工作环境（多选）</label>
-      <div id="jEnvWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.3rem">
-        <button type="button" class="benefit-btn" data-val="常温仓" onclick="this.classList.toggle('active')">常温仓</button>
-        <button type="button" class="benefit-btn" data-val="冷藏库" onclick="this.classList.toggle('active')">冷藏库 (Cooler)</button>
-        <button type="button" class="benefit-btn" data-val="冷冻库" onclick="this.classList.toggle('active')">冷冻库 (Freezer)</button>
-        <button type="button" class="benefit-btn" data-val="流水线" onclick="this.classList.toggle('active')">流水线</button>
-        <button type="button" class="benefit-btn" data-val="户外" onclick="this.classList.toggle('active')">户外</button>
-        <button type="button" class="benefit-btn" data-val="站立工作为主" onclick="this.classList.toggle('active')">站立工作为主</button>
-      </div>
-    </div>
-    <div class="field"><label>搬运重量要求（单选）</label>
-      <div id="jLiftWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.3rem">
-        <button type="button" class="benefit-btn" data-val="轻体力（无重物）" onclick="jChipSingle(this)">轻体力（无重物）</button>
-        <button type="button" class="benefit-btn" data-val="25 磅以内" onclick="jChipSingle(this)">25 磅以内</button>
-        <button type="button" class="benefit-btn" data-val="50 磅以内" onclick="jChipSingle(this)">50 磅以内</button>
-        <button type="button" class="benefit-btn" data-val="70 磅以上" onclick="jChipSingle(this)">70 磅以上</button>
-      </div>
-    </div>
-    <div class="field"><label>经验要求（单选）</label>
-      <div id="jExpWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.3rem">
-        <button type="button" class="benefit-btn" data-val="无需经验（提供培训）" onclick="jChipSingle(this)">无需经验（提供培训）</button>
-        <button type="button" class="benefit-btn" data-val="需相关经验" onclick="jChipSingle(this)">需相关经验</button>
-        <button type="button" class="benefit-btn" data-val="需持证（如叉车证）" onclick="jChipSingle(this)">需持证（如叉车证）</button>
-      </div>
-    </div>
-    <div class="field"><label>入职要求（多选）</label>
-      <div id="jOnbWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.3rem">
-        <button type="button" class="benefit-btn" data-val="背景调查" onclick="this.classList.toggle('active')">背景调查</button>
-        <button type="button" class="benefit-btn" data-val="药检" onclick="this.classList.toggle('active')">药检</button>
-        <button type="button" class="benefit-btn" data-val="体检" onclick="this.classList.toggle('active')">体检</button>
-        <button type="button" class="benefit-btn" data-val="E-Verify" onclick="this.classList.toggle('active')">E-Verify</button>
-      </div>
-    </div>
-    <div class="field"><label>装备/着装要求（多选）</label>
-      <div id="jGearWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.3rem">
-        <button type="button" class="benefit-btn" data-val="自备钢头鞋" onclick="this.classList.toggle('active')">自备钢头鞋</button>
-        <button type="button" class="benefit-btn" data-val="提供劳保用品" onclick="this.classList.toggle('active')">提供劳保用品</button>
-        <button type="button" class="benefit-btn" data-val="需高可视背心" onclick="this.classList.toggle('active')">需高可视背心</button>
-        <button type="button" class="benefit-btn" data-val="冷库服装提供" onclick="this.classList.toggle('active')">冷库服装提供</button>
-      </div>
-    </div>
-    <div class="field"><label>交通（多选）</label>
-      <div id="jTransWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.3rem">
-        <button type="button" class="benefit-btn" data-val="公交可达" onclick="this.classList.toggle('active')">公交可达</button>
-        <button type="button" class="benefit-btn" data-val="建议自驾" onclick="this.classList.toggle('active')">建议自驾</button>
-        <button type="button" class="benefit-btn" data-val="可协助拼车" onclick="this.classList.toggle('active')">可协助拼车</button>
-      </div>
-    </div>
-    <div class="field-row">
-      <div class="field"><label>每周预计工时</label><input id="jHoursWeek" placeholder="例：40–50 小时"></div>
-      <div class="field"><label>预计开始日期</label><input type="date" id="jStartDate"></div>
-    </div>
-    <div class="field" style="margin-bottom:0"><label>其他说明（试用期、着装细节等）</label>
-      <textarea id="jDetailNotes" rows="2" placeholder="例：两周试用期；不允许穿短裤拖鞋；入职当天带两份证件…" style="width:100%;padding:.45rem .65rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;resize:vertical;box-sizing:border-box"></textarea>
-    </div>
-  </div>
-
-  <div class="field-row" style="margin-top:.75rem">
+  <div class="field-row">
     <div class="field"><label>招聘人数</label><input type="number" id="jHeadcount" min="1" value="1" placeholder="1"></div>
     <div class="field" style="display:flex;align-items:flex-end;padding-bottom:.2rem"><label style="display:inline-flex;align-items:center;gap:.4rem;text-transform:none;font-size:.9rem"><input type="checkbox" id="jUrgent"> 急聘（紧急招聘）</label></div>
   </div>
@@ -9917,7 +9858,7 @@ async function openJobModal(job) {
   document.querySelectorAll('#jBenefitsWrap .benefit-btn').forEach(btn => {
     btn.classList.toggle('active', activeBenefits.includes(btn.dataset.val));
   });
-  fillJobDetails(job);
+  _jobDetailsKeep = (job && job.details_json) || '{}';
 
   // Required skills – load options dynamically from server
   const activeSkills = job && job.required_skills ? job.required_skills.split(',').map(s=>s.trim()).filter(Boolean) : [];
@@ -10553,34 +10494,8 @@ async function deleteDescEntry(idx) {
 }
 // ─────────────────────────────────────────────────────────────────
 
-// 「更多细节」单选组: 点击互斥 (再点一次取消)
-function jChipSingle(btn) {
-  const on = btn.classList.contains('active');
-  btn.parentElement.querySelectorAll('.benefit-btn').forEach(b => b.classList.remove('active'));
-  if (!on) btn.classList.add('active');
-}
-const J_DETAIL_WRAPS = { env: 'jEnvWrap', lift: 'jLiftWrap', exp: 'jExpWrap', onboarding: 'jOnbWrap', gear: 'jGearWrap', transport: 'jTransWrap' };
-function collectJobDetails() {
-  const d = {};
-  for (const [k, wid] of Object.entries(J_DETAIL_WRAPS)) {
-    d[k] = [...document.querySelectorAll(`#${wid} .benefit-btn.active`)].map(b => b.dataset.val).join(',');
-  }
-  d.hours_week = document.getElementById('jHoursWeek').value.trim();
-  d.start_date = document.getElementById('jStartDate').value;
-  d.notes = document.getElementById('jDetailNotes').value.trim();
-  return d;
-}
-function fillJobDetails(job) {
-  let det = {};
-  try { det = JSON.parse((job && job.details_json) || '{}') || {}; } catch (_) {}
-  for (const [k, wid] of Object.entries(J_DETAIL_WRAPS)) {
-    const vals = String(det[k] || '').split(',').map(s => s.trim()).filter(Boolean);
-    document.querySelectorAll(`#${wid} .benefit-btn`).forEach(b => b.classList.toggle('active', vals.includes(b.dataset.val)));
-  }
-  document.getElementById('jHoursWeek').value = det.hours_week || '';
-  document.getElementById('jStartDate').value = det.start_date || '';
-  document.getElementById('jDetailNotes').value = det.notes || '';
-}
+// 职位表单不再有「更多细节」区; 编辑时原样保留已存的 details_json, 不清空
+let _jobDetailsKeep = '{}';
 async function saveJob() {
   const id = document.getElementById('jobId').value;
   const langNames = { en: 'English', zh: '中文', es: 'Español' };
@@ -10643,7 +10558,7 @@ async function saveJob() {
     description: getLangDescValue('En'),
     urgent: document.getElementById('jUrgent').checked,
     headcount: parseInt(document.getElementById('jHeadcount').value) || 1,
-    details_json: JSON.stringify(collectJobDetails()),
+    details_json: _jobDetailsKeep,
     job_status: 'open',
     active: true
   };
