@@ -8,8 +8,11 @@
 //
 // Gusto 按 时薪 × hours 付款, 没有 1.5× 加班的概念。两种折算口径 (opts.mode):
 //   'bonus' (默认): hours = 实际工时, 加班溢价和时薪差额放 bonus 列。
-//     付款记录里的工时就是真实工时, 总额和工资表一分不差。名册时薪高于工资表
-//     实际单价 (bonus 会变负数, Gusto 不收) 的行自动退回 'hours' 口径。
+//     付款记录里的工时就是真实工时, 总额和工资表一分不差。多行合并付给同一
+//     名册行时 (两个 Tecaxco), hours 只填「本人」那行的实际工时——名册时薪
+//     相同的优先当本人, 其次匹配分高的——其他人的钱全额进 bonus, 免得一个人
+//     的付款记录冒出一周不可能的工时。名册时薪高于工资表实际单价 (bonus 会
+//     变负数, Gusto 不收) 的行自动退回 'hours' 口径。
 //   'hours': 全折进工时, hours = 应付工资 ÷ 名册时薪, 向上取整到 0.01 小时
 //     （宁多不少）。时薪一致时相当于 正常工时 + 1.5×加班工时。
 //
@@ -178,6 +181,7 @@ function buildGustoCsv(templateCsv, employees, opts) {
       rate: Number(emp.rate) || null,
       actualHours: r2((Number(emp.regHours) || 0) + (Number(emp.otHours) || 0)),
       fuzzy: best === 50,
+      score: best,
     });
   }
 
@@ -194,8 +198,18 @@ function buildGustoCsv(templateCsv, employees, opts) {
       let hours = null, bonus = null, fixed = null, amount;
       if (entry.rate) {
         // bonus 口径: hours = 实际工时, 差额（加班溢价 + 时薪差）放 bonus。
-        // 用不了就退回 hours 口径: 缺实际工时、模板没有 bonus 列、或 bonus 会是负数。
-        const actual = r2(m.sources.reduce((s, x) => s + (x.actualHours || 0), 0));
+        // 合并行只按「本人」的实际工时填 hours（名册时薪相同优先, 其次匹配分高），
+        // 其他人的钱全额进 bonus。用不了就退回 hours 口径: 缺实际工时、模板没有
+        // bonus 列、或 bonus 会是负数。
+        let primary = null;
+        if (mode === 'bonus' && m.sources.length > 1) {
+          const rateMatch = m.sources.filter(s => s.rate && Math.abs(s.rate - entry.rate) <= 0.005);
+          const pool = rateMatch.length ? rateMatch : m.sources;
+          primary = pool.reduce((bst, s) => (!bst || (s.score || 0) > (bst.score || 0) ? s : bst), null);
+        }
+        const actual = primary
+          ? r2(primary.actualHours || 0)
+          : r2(m.sources.reduce((s, x) => s + (x.actualHours || 0), 0));
         if (mode === 'bonus' && actual > 0 && roster.cols.bonus >= 0) {
           const base = r2(actual * entry.rate);
           const b = r2(owed - base);
@@ -204,6 +218,7 @@ function buildGustoCsv(templateCsv, employees, opts) {
             amount = r2(base + b);
             cells[roster.cols.hours] = hours.toFixed(2);
             if (b > 0) { bonus = b; cells[roster.cols.bonus] = b.toFixed(2); }
+            if (primary) primary.primary = true;
           } else {
             warnings.push(`「${entry.label}」按实际工时 ${actual.toFixed(2)}h × 名册时薪 $${entry.rate} 已超过应付 $${owed.toFixed(2)}（名册时薪偏高），这行改按金额折算工时。`);
           }
@@ -230,12 +245,18 @@ function buildGustoCsv(templateCsv, employees, opts) {
         warnings.push(`「${entry.label}」名册里没有时薪，模板又没有 fixed_amount 列，$${owed.toFixed(2)} 没法填，请在 Gusto 手动支付。`);
       }
       if (m.sources.length > 1) {
-        warnings.push(`${m.sources.map(s => `${s.name} $${s.owed.toFixed(2)}`).join(' + ')} 已合并付给「${entry.label}」，共 $${owed.toFixed(2)}。`);
+        const prim = m.sources.find(s => s.primary);
+        const disp = (prim && bonus != null)
+          ? `：hours 按 ${prim.name} 本人实际工时 ${(prim.actualHours || 0).toFixed(2)}h，其余 $${bonus.toFixed(2)}（${m.sources.filter(s => !s.primary).map(s => s.name).join('、')} 全额 + 加班溢价）计入 bonus`
+          : '';
+        warnings.push(`${m.sources.map(s => `${s.name} $${s.owed.toFixed(2)}`).join(' + ')} 已合并付给「${entry.label}」，共 $${owed.toFixed(2)}${disp}。`);
       }
       for (const s of m.sources) {
         if (s.fuzzy) warnings.push(`「${s.name}」按近似拼写对到了名册的「${entry.label}」，请核对是否同一人。`);
         if (s.rate && entry.rate && Math.abs(s.rate - entry.rate) > 0.005) {
-          warnings.push(`「${s.name}」工资表时薪 $${s.rate} ≠ Gusto 名册时薪 $${entry.rate}（${entry.label}），已按应付金额折算工时。`);
+          // 合并行里整笔进 bonus 的那位，合并警告里已讲清去向，不再重复
+          if (m.sources.length > 1 && !s.primary && bonus != null) continue;
+          warnings.push(`「${s.name}」工资表时薪 $${s.rate} ≠ Gusto 名册时薪 $${entry.rate}（${entry.label}），${bonus != null ? '差额已计入 bonus' : '已按应付金额折算工时'}。`);
         }
       }
     }

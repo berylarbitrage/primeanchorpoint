@@ -38393,9 +38393,13 @@ function renderGustoCsvModal(res) {
   const note = document.getElementById('gustoModeNote');
   if (note) note.textContent = (res.mode === 'hours')
     ? 'hours = 应付工资 ÷ Gusto 名册时薪（加班按 1.5× 折进金额），向上取整到 0.01 小时——宁可多几分钱，不让工人少拿。名册里没排班的行保持空白，Gusto 上传时会跳过。'
-    : 'hours = 实际打卡工时，加班溢价（0.5×）和时薪差额放进 bonus 列，付款总额与工资表一分不差。名册里没排班的行保持空白，Gusto 上传时会跳过。';
+    : 'hours = 实际打卡工时，加班溢价（0.5×）和时薪差额放进 bonus 列，付款总额与工资表一分不差。多人合并付给同一人的行，hours 只填本人的实际工时，另外那位的钱全额进 bonus。名册里没排班的行保持空白，Gusto 上传时会跳过。';
   const rows = (res.matches || []).map(m => {
-    const src = (m.sources || []).map(s => `${esc(s.name)} <span style="color:var(--gray-400)">$${(+s.owed).toFixed(2)}</span>`).join('<br>');
+    const split = m.merged && (m.sources || []).some(s => s.primary);
+    const srcTag = s => !split ? '' : (s.primary
+      ? ' <span style="font-size:.66rem;background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:0 4px;font-weight:600">hours 本人</span>'
+      : ' <span style="font-size:.66rem;background:#d1fae5;color:#047857;border-radius:4px;padding:0 4px;font-weight:600">→ bonus</span>');
+    const src = (m.sources || []).map(s => `${esc(s.name)} <span style="color:var(--gray-400)">$${(+s.owed).toFixed(2)}</span>${srcTag(s)}`).join('<br>');
     const diff = m.diff ? ` <span style="color:#b45309;font-size:.72rem" title="向上取整到 0.01 小时产生的差额">（${m.diff > 0 ? '+' : ''}${m.diff.toFixed(2)}）</span>` : '';
     const mergeTag = m.merged ? ` <span style="font-size:.68rem;background:#fef3c7;color:#92400e;border-radius:4px;padding:0 5px;font-weight:600">合并 ${m.sources.length} 行</span>` : '';
     const bonusTag = m.bonus ? `<div style="font-size:.72rem;color:#047857;font-weight:600">+ $${(+m.bonus).toFixed(2)} bonus</div>` : '';
