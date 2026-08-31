@@ -2419,6 +2419,8 @@ intProviders.forEach(p => {
 try { db.exec("ALTER TABLE jobs ADD COLUMN site_id INTEGER DEFAULT NULL"); } catch {}
 // 职位「更多细节」: 工作环境/搬运重量/经验/入职要求/装备/交通/每周工时/开始日期/备注 (JSON)
 try { db.exec("ALTER TABLE jobs ADD COLUMN details_json TEXT DEFAULT '{}'"); } catch {}
+// 客户门户「发布用工需求」同样的细节点选 (班次/环境/搬运/经验/入职/装备/工时/时薪预算)
+try { db.exec("ALTER TABLE customer_job_posts ADD COLUMN details_json TEXT DEFAULT '{}'"); } catch {}
 // Migrate: add site_id to time_entries
 try { db.exec("ALTER TABLE time_entries ADD COLUMN site_id INTEGER DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN geo_verified INTEGER DEFAULT 0"); } catch {}
@@ -26541,11 +26543,15 @@ app.get('/api/kiosk/version', (req, res) => res.json({ v: _kioskPageVer }));
 // 管理端: 列出各公司照片开关状态 (仅 admin 角色可操作)
 app.get('/api/admin/partner-photo-access', requireAdmin, requireRole('admin'), (req, res) => {
   const rows = db.prepare(`SELECT p.id, p.name, p.show_punch_photos,
-      (SELECT COUNT(*) FROM customer_accounts c WHERE c.partner_id=p.id AND c.active=1) AS account_count,
-      (SELECT COUNT(*) FROM job_sites js WHERE js.active=1 AND (js.partner_id=p.id OR (','||js.partner_ids||',') LIKE ('%,'||p.id||',%'))) AS site_count
+      (SELECT COUNT(*) FROM customer_accounts c WHERE c.partner_id=p.id AND c.active=1) AS account_count
     FROM partners p WHERE p.active=1 ORDER BY p.name`).all();
-  res.json(rows.map(r => ({ id: r.id, name: r.name, photos_enabled: !!r.show_punch_photos,
-    account_count: r.account_count, site_count: r.site_count })));
+  const sites = db.prepare('SELECT id, name, code, partner_id, partner_ids FROM job_sites WHERE active=1').all();
+  res.json(rows.map(r => {
+    const mine = sites.filter(s => s.partner_id === r.id || String(s.partner_ids || '').split(',').filter(Boolean).map(Number).includes(r.id));
+    return { id: r.id, name: r.name, photos_enabled: !!r.show_punch_photos,
+      account_count: r.account_count, site_count: mine.length,
+      site_names: mine.map(s => s.name + (s.code ? ` (${s.code})` : '')) };
+  }));
 });
 app.post('/api/admin/partner-photo-access/:id', requireAdmin, requireRole('admin'), (req, res) => {
   const p = db.prepare('SELECT id FROM partners WHERE id=?').get(req.params.id);
@@ -28017,8 +28023,8 @@ app.get('/api/customer/me', requireCustomer, (req, res) => {
 app.post('/api/customer/post-job', requireCustomer, (req, res) => {
   const { title, location, headcount, start_date, work_type, requirements, notes } = req.body;
   if (!title) return res.status(400).json({ error: 'Job title required' });
-  const r = db.prepare('INSERT INTO customer_job_posts (customer_account_id, title, location, headcount, start_date, work_type, requirements, notes) VALUES (?,?,?,?,?,?,?,?)')
-    .run(req.customerId, title, location||'', headcount||1, start_date||'', work_type||'', requirements||'', notes||'');
+  const r = db.prepare('INSERT INTO customer_job_posts (customer_account_id, title, location, headcount, start_date, work_type, requirements, notes, details_json) VALUES (?,?,?,?,?,?,?,?,?)')
+    .run(req.customerId, title, location||'', headcount||1, start_date||'', work_type||'', requirements||'', notes||'', String(req.body.details_json||'{}').slice(0, 4000));
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
