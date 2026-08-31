@@ -1463,7 +1463,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <div class="hours-item"><h4 id="sumOT" style="color:var(--accent)">0h</h4><p>加班工时</p></div>
   </div>
   <div class="card" style="overflow-x:auto;padding:0">
-    <table style="min-width:900px"><thead><tr><th style="padding:10px 12px">员工</th><th style="padding:10px 12px">上班打卡</th><th style="padding:10px 12px">下班打卡</th><th style="padding:10px 12px">休息</th><th style="padding:10px 12px">合计</th><th style="padding:10px 12px">正常</th><th style="padding:10px 12px">加班</th><th style="padding:10px 12px">状态</th><th style="padding:10px 12px">照片</th><th style="padding:10px 12px">备注</th><th style="padding:10px 12px">操作</th></tr></thead>
+    <table style="min-width:900px"><thead><tr><th style="padding:10px 12px">员工</th><th style="padding:10px 12px">仓库/公司</th><th style="padding:10px 12px">上班打卡</th><th style="padding:10px 12px">下班打卡</th><th style="padding:10px 12px">休息</th><th style="padding:10px 12px">合计</th><th style="padding:10px 12px">正常</th><th style="padding:10px 12px">加班</th><th style="padding:10px 12px">状态</th><th style="padding:10px 12px">照片</th><th style="padding:10px 12px">备注</th><th style="padding:10px 12px">操作</th></tr></thead>
     <tbody id="timeTable"></tbody></table>
   </div>
 </div>
@@ -18228,6 +18228,9 @@ function renderTimeEntries(list) {
     const photoCell = punchMediaBadge(t);
     return `<tr>
     <td><strong>${esc(t.first_name||'')} ${esc(t.last_name||'')}</strong><br><span class="emp-meta">${esc(t.emp_code||'')}</span></td>
+    <td>${t.site_id
+      ? `${esc(t.site_name||'')}${t.site_code?` <span class="emp-meta">(${esc(t.site_code)})</span>`:''}<br><span class="emp-meta" style="${t.site_partner_name?'':'color:#b45309'}">${t.site_partner_name?'🏢 '+esc(t.site_partner_name):'⚠ 仓库未绑定公司'}</span>`
+      : `<span class="emp-meta">${esc(t.site_name||t.company_name||'—')}</span>`}</td>
     <td>${fmtDT(t.clock_in, t.display_timezone)}</td>
     <td>${t.clock_out?fmtDT(t.clock_out, t.display_timezone):'<span style="color:var(--accent)">进行中</span>'}</td>
     <td>${renderBreaks(t)}</td>
@@ -18244,7 +18247,7 @@ function renderTimeEntries(list) {
       <button class="btn btn-sm btn-red" onclick="deleteTimeEntry(${t.id})">删除</button>
     </td>
   </tr>`;
-  }).join('') : '<tr><td colspan="11" class="empty">暂无工时记录</td></tr>';
+  }).join('') : '<tr><td colspan="12" class="empty">暂无工时记录</td></tr>';
 }
 
 function _punchIsVideoName(name) { return /\.(mp4|mov|webm|avi|m4v|quicktime)$/i.test(name || ''); }

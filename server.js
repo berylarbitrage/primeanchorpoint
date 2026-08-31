@@ -20591,10 +20591,12 @@ app.get('/api/admin/time-entries', requireAdmin, (req, res) => {
     COALESCE(jst.longitude, asn.work_lng, js.longitude) as site_lng,
     COALESCE(jst.radius_meters, asn.work_radius, js.radius_meters) as site_radius,
     COALESCE(jst.name, asn.work_address, js.name) as site_name,
-    COALESCE(jst.address, asn.work_address, js.address) as site_address
+    COALESCE(jst.address, asn.work_address, js.address) as site_address,
+    jst.code as site_code, sp.name as site_partner_name
     FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id
     LEFT JOIN jobs j2 ON t.job_id=j2.id LEFT JOIN job_sites js ON j2.site_id=js.id
     LEFT JOIN job_sites jst ON t.site_id=jst.id
+    LEFT JOIN partners sp ON sp.id=jst.partner_id
     LEFT JOIN assignments asn ON asn.id = (
       SELECT a2.id FROM assignments a2
       WHERE a2.inquiry_id = e.inquiry_id
