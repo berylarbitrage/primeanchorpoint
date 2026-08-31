@@ -18268,12 +18268,12 @@ function renderTimeKioskMode() {
     const cur = s.kiosk_punch_mode || '';
     return `
     <div style="padding:.55rem .8rem;background:${cur ? '#FFF7ED' : 'var(--white)'};border:1px solid ${cur ? '#fed7aa' : 'var(--gray-200)'};border-radius:10px;margin-bottom:.5rem;font-size:.85rem">
-      <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
-        <span style="margin-right:.2rem">🖥 <b>${esc(s.name)}</b>${s.code?` <span style="color:var(--gray-400)">(${esc(s.code)})</span>`:''} 打卡机模式：</span>
+      <div style="margin-bottom:.45rem">🖥 <b>${esc(s.name)}</b>${s.code?` <span style="color:var(--gray-400)">(${esc(s.code)})</span>`:''}</div>
+      <div style="display:flex;gap:.4rem;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px">
         ${TIME_KIOSK_MODES.map(([v, l]) => {
           const on = cur === v, onBg = v ? 'var(--accent)' : 'var(--green)';
           return `<button type="button" onclick="timeSetKioskMode(${s.id}, '${v}', '${l}', ${on ? 1 : 0})"
-            style="padding:.34rem .7rem;border-radius:8px;font-size:.82rem;cursor:${on ? 'default' : 'pointer'};border:1px solid ${on ? onBg : 'var(--gray-200)'};background:${on ? onBg : 'var(--white)'};color:${on ? '#fff' : 'var(--gray-600)'};font-weight:${on ? '700' : '400'};white-space:nowrap">${on ? '✓ ' : ''}${l}</button>`;
+            style="flex-shrink:0;padding:.34rem .7rem;border-radius:8px;font-size:.82rem;cursor:${on ? 'default' : 'pointer'};border:1px solid ${on ? onBg : 'var(--gray-200)'};background:${on ? onBg : 'var(--white)'};color:${on ? '#fff' : 'var(--gray-600)'};font-weight:${on ? '700' : '400'};white-space:nowrap">${on ? '✓ ' : ''}${l}</button>`;
         }).join('')}
       </div>
       ${cur ? '<div style="color:#b45309;font-size:.78rem;margin-top:.35rem">⚠ 非自动模式：打卡机上的每次打卡都按此分类记录，用完记得点回「自动」</div>' : ''}
