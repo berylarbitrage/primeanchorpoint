@@ -9157,8 +9157,14 @@ function _mfaStart(user) {
   const token = crypto.randomBytes(24).toString('hex');
   db.prepare('INSERT INTO mfa_pending (token, user_id, expires) VALUES (?,?,?)').run(token, user.id, Date.now() + 10 * 60 * 1000);
   const stored = String(user.mfa_phone || '').replace(/\D/g, '').slice(-10);
-  const hint = (stored && MFA_ALLOWED_PHONES.includes(stored)) ? ('••• ' + stored.slice(-4)) : '';
+  const hint = (stored && _mfaPhoneAllowed(user, stored)) ? ('••• ' + stored.slice(-4)) : '';
   return { mfa_token: token, phone_hint: hint };
+}
+// 白名单之外, 账号资料里管理员登记的手机号(admin_users.phone)也允许收验证码 —— 会计等外部账号用自己手机验证
+function _mfaPhoneAllowed(user, digits) {
+  if (MFA_ALLOWED_PHONES.includes(digits)) return true;
+  const own = String((user && user.phone) || '').replace(/\D/g, '').slice(-10);
+  return own.length === 10 && own === digits;
 }
 
 // 发送登录验证码 (手机号必须在白名单内; 不填手机号则用该账号上次用过的)
@@ -9171,7 +9177,7 @@ app.post('/api/admin/mfa/send', loginRateLimit, async (req, res) => {
   let digits = String(phone || '').replace(/\D/g, '').slice(-10);
   if (!digits) digits = String(user.mfa_phone || '').replace(/\D/g, '').slice(-10);
   if (digits.length !== 10) return res.status(400).json({ error: '请输入接收验证码的手机号' });
-  if (!MFA_ALLOWED_PHONES.includes(digits)) return res.status(403).json({ error: '该手机号不在允许登录的名单内' });
+  if (!_mfaPhoneAllowed(user, digits)) return res.status(403).json({ error: '该手机号不在允许登录的名单内' });
   if (p.send_count >= 5) return res.status(429).json({ error: '发送次数过多, 请稍后重新登录' });
   if (Date.now() - p.sent_at < 60 * 1000) return res.status(429).json({ error: '发送太频繁, 请 1 分钟后再试' });
   const code = String(crypto.randomInt(100000, 1000000));
@@ -9558,12 +9564,15 @@ app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res
   if (role && !['admin', 'staff', 'manager', 'accounting'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
+  const effRole = role || user.role;
   if (password) {
     const pwErr = validatePassword(password);
     if (pwErr) return res.status(400).json({ error: pwErr });
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = hashPassword(password, salt);
-    db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=0 WHERE id=?').run(hash, salt, req.params.id);
+    // 会计角色: 管理员设的密码直接生效 (不走自激活重置)
+    if (effRole === 'accounting') db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=1 WHERE id=?').run(hash, salt, req.params.id);
+    else db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=0 WHERE id=?').run(hash, salt, req.params.id);
   }
   // active field is intentionally excluded — only the user themselves can activate via self-verification
   db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, assigned_partner_ids=?, assigned_employee_ids=?, assigned_job_ids=?, email=?, phone=?, sms_notify_phone=?, sms_notify_enabled=? WHERE id=?')
@@ -35963,6 +35972,18 @@ app.get('/api/acct/invoices/:id', requireAdmin, requireAcctView, (req, res) => {
 });
 
 // Read-only bank statement list.
+// Read-only warehouse claims (仓库赔偿事故) for the accounting page.
+app.get('/api/acct/warehouse-claims', requireAdmin, requireAcctView, (req, res) => {
+  const rows = db.prepare(`SELECT c.*, t.txn_date AS txn_date, t.amount AS txn_amount, t.payee AS txn_payee,
+      s.file_name AS stmt_name
+    FROM warehouse_claims c
+    LEFT JOIN bank_statement_txns t ON c.stmt_txn_id = t.id
+    LEFT JOIN bank_statements s ON t.statement_id = s.id
+    ORDER BY c.incident_date DESC, c.created_at DESC`).all();
+  for (const r of rows) r.attachments = _claimAtts(r);
+  res.json(rows);
+});
+
 app.get('/api/acct/statements', requireAdmin, requireAcctView, (req, res) => {
   try {
     const rows = db.prepare(`SELECT id, source, bank, account_name, operator, period, period_start, period_end, file_name, txn_count, total_in, total_out, created_at
