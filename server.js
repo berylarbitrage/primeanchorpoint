@@ -13700,29 +13700,40 @@ app.post('/api/admin/test-sms', requireAdmin, requireRole('admin'), async (req, 
   };
   const accountInfo = await getTwilioAccountType();
 
-  // Prefer Twilio Verify API for test
+  // 短信测试: 优先 Twilio Verify API
+  let method = 'sms', result = null;
   if (twilioClient && TWILIO_VERIFY_SID) {
+    method = 'verify';
     const formatted = formatPhoneE164(to);
     try {
       const v = await twilioClient.verify.v2.services(TWILIO_VERIFY_SID)
         .verifications.create({ to: formatted, channel: 'sms' });
-      return res.json({
-        configured, accountInfo,
-        method: 'verify',
-        result: { ok: true, status: v.status, sid: v.sid, to: formatted, channel: v.channel }
-      });
+      result = { ok: true, status: v.status, sid: v.sid, to: formatted, channel: v.channel };
     } catch (e) {
-      return res.json({
-        configured, accountInfo,
-        method: 'verify',
-        result: { ok: false, error: e.message, code: e.code, to: formatted }
-      });
+      result = { ok: false, error: e.message, code: e.code, to: formatted };
     }
+  } else {
+    result = await sendSMSWithDetail(to, '[Prime Anchor Point LLC] SMS Test: Twilio is working!');
   }
 
-  // Fallback to regular SMS
-  const result = await sendSMSWithDetail(to, '[Prime Anchor Point LLC] 测试短信 / SMS Test: Twilio is working!');
-  res.json({ configured, result, accountInfo, method: 'sms' });
+  // 彩信 (MMS) 诊断: 号码能力 + 实发一条带二维码图的测试彩信并查终态
+  // —— 打卡找回「收到链接不是图片」十有八九是这里能看出的号码/账号问题
+  let fromCaps = null;
+  try {
+    if (twilioClient && TWILIO_FROM) {
+      const nums = await twilioClient.incomingPhoneNumbers.list({ phoneNumber: formatPhoneE164(TWILIO_FROM), limit: 5 });
+      if (nums && nums[0] && nums[0].capabilities) fromCaps = { mms: !!nums[0].capabilities.mms, sms: !!nums[0].capabilities.sms };
+      else fromCaps = { not_found: true };
+    }
+  } catch (e) { fromCaps = { error: e.message }; }
+  let mmsResult = null;
+  try {
+    let r = await sendSMSWithDetail(to, '[Prime Anchor Point LLC] MMS test: you should see a QR image attached.', _applyQrBase(req) + '/mms-test.png');
+    if (r && r.ok) r = await _twWaitFinal(r);
+    mmsResult = r;
+  } catch (e) { mmsResult = { ok: false, error: e.message }; }
+
+  res.json({ configured, accountInfo, method, result, from_caps: fromCaps, mms: mmsResult });
 });
 
 // Admin: test email configuration
@@ -27056,6 +27067,16 @@ app.get('/api/kiosk/register-qr', async (req, res) => {
     const qr = await QRCode.toDataURL(url, { width: 360, margin: 1 });
     res.json({ url, qr_data_url: qr });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// MMS 诊断用测试图 (公开, 固定内容二维码; 后台「测试短信」发测试彩信的附件)
+app.get('/mms-test.png', async (req, res) => {
+  try {
+    const buf = await QRCode.toBuffer('PAW-MMS-TEST', { width: 300, margin: 2 });
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.send(buf);
+  } catch (e) { res.status(500).send('QR error'); }
 });
 
 // 员工个人打卡二维码 PNG (彩信附图用)

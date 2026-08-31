@@ -8945,6 +8945,26 @@ async function runSmsTest() {
         }
       }
     }
+    out += '\n\n── 彩信 (MMS) 诊断 ── 打卡二维码要以图片送达取决于这里\n';
+    const caps = d.from_caps;
+    if (caps) {
+      out += `发送号码 MMS 能力: ${caps.error ? '❓ 查询失败 ' + caps.error : caps.not_found ? '❓ 未在账号中找到该号码' : caps.mms ? '✅ 支持' : '❌ 不支持 —— 需在 Twilio 换一个带 MMS 的号码'}\n`;
+    }
+    const m = d.mms;
+    if (m) {
+      if (m.ok) {
+        out += `测试彩信状态: ${m.status}${m.errorCode ? '（错误码 ' + m.errorCode + '）' : ''}\n`;
+        if (m.status === 'delivered') out += '✅ 彩信已送达！请看手机是否收到二维码图片。打卡找回将正常发图。';
+        else if (m.status === 'undelivered' || m.status === 'failed') {
+          out += `❌ 彩信被运营商拒投（错误码 ${m.errorCode || '未知'}）\n`;
+          out += '常见：30032=免费号(Toll-Free)未完成 Verification；30007=垃圾过滤(需 A2P 10DLC 注册)。\n';
+          out += 'Twilio 后台完成对应备案后，打卡找回会自动改回发图片。';
+        } else out += '⏳ 已发出待确认，1–2 分钟内看手机是否收到图片。';
+      } else {
+        out += `❌ 彩信发送失败: ${m.code ? m.code + ' ' : ''}${m.error || ''}\n`;
+        out += '常见：21606=发送号码不支持 MMS（换带 MMS 的号码）。';
+      }
+    }
     const isOk = d.result && d.result.ok && (d.result.status === 'delivered' || (d.method === 'verify' && d.result.status === 'pending'));
     const isWarn = d.result && d.result.ok && !isOk;
     resultEl.style.background = isOk ? '#f0fff4' : isWarn ? '#fffbeb' : '#fff5f5';
