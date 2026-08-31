@@ -19908,19 +19908,37 @@ async function loadAccounts() {
   const roleBadge = r => r==='admin'?'badge-blue':r==='manager'?'badge-yellow':'';
   const roleLabel = { admin:'Admin 管理员', staff:'Staff 员工', manager:'Manager 经理', accounting:'Accounting 会计' };
   const partnerName = ids => (ids||'').split(',').filter(Boolean).map(id=>{const p=partners.find(p=>p.id==id);return p?p.name:'#'+id;}).join(', ') || '—';
+  window._accPwMap = {};
+  rows.forEach(a => { if (a.role === 'accounting' && a.password_plain) window._accPwMap[a.id] = a.password_plain; });
   document.getElementById('accountsTable').innerHTML = rows.map(a => `<tr>
-    <td><strong>${esc(a.username)}</strong></td>
+    <td><strong>${esc(a.username)}</strong>${window._accPwMap[a.id] ? `
+      <div style="font-size:.75rem;color:var(--gray-500);margin-top:2px;white-space:nowrap">密码: <span id="accPw${a.id}" data-shown="0" style="font-family:monospace">••••••</span>
+        <a style="cursor:pointer" onclick="toggleAccPw(${a.id})" title="显示/隐藏密码">👁</a></div>` : ''}</td>
     <td>${esc(a.display_name||'')}</td>
     <td><span class="badge ${roleBadge(a.role)}">${roleLabel[a.role]||a.role}</span></td>
     <td style="font-size:.8rem;color:var(--gray-500)">${a.role==='manager'?esc(partnerName(a.assigned_partner_ids)):'—'}</td>
-    <td>${a.active?'<span style="color:var(--green)">已激活</span>':'<span style="color:var(--gray-400)">待激活</span>'}</td>
+    <td>${a.approval_status==='pending'?'<span class="badge badge-orange">待批准</span>':a.active?'<span style="color:var(--green)">已激活</span>':'<span style="color:var(--gray-400)">待激活</span>'}</td>
     <td style="font-size:.78rem">${a.sms_notify_phone&&a.sms_notify_enabled?'<span style="color:var(--green)" title="'+esc(a.sms_notify_phone)+'">📱 ON</span>':a.sms_notify_phone?'<span style="color:var(--gray-400)" title="'+esc(a.sms_notify_phone)+'">📱 OFF</span>':'<span style="color:var(--gray-300)">—</span>'}</td>
     <td>${(a.created_at||'').slice(0,10)}</td>
     <td style="white-space:nowrap">
+      ${a.approval_status==='pending'?`<button class="btn btn-sm btn-green" onclick="approveAccount(${a.id},'${esc(a.display_name||a.username)}')">✓ 批准</button> `:''}
       <button class="btn btn-sm" onclick="editAccount(${a.id})">编辑</button>
       ${a.id!==1?`<button class="btn btn-sm btn-red" onclick="deleteAccount(${a.id},'${esc(a.display_name||a.username)}')">删除</button>`:''}
     </td>
   </tr>`).join('');
+}
+function toggleAccPw(id) {
+  const el = document.getElementById('accPw' + id);
+  if (!el) return;
+  const shown = el.dataset.shown === '1';
+  el.textContent = shown ? '••••••' : (window._accPwMap[id] || '');
+  el.dataset.shown = shown ? '0' : '1';
+}
+async function approveAccount(id, name) {
+  if (!confirm(`批准「${name}」的会计账号？批准后对方即可登录会计对账页。`)) return;
+  const r = await api(`/admin/accounts/${id}/approve`, { method: 'POST' });
+  if (r && r.success) { showToast('✅ 已批准'); loadAccounts(); }
+  else showToast((r && r.error) || '操作失败', 'error');
 }
 
 function onAccRoleChange() {

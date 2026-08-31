@@ -879,6 +879,10 @@ try { db.exec(`ALTER TABLE assignments ADD COLUMN contract_filename TEXT DEFAULT
 try { db.exec("ALTER TABLE admin_users ADD COLUMN created_at TEXT DEFAULT ''"); } catch {};
 try { db.exec("ALTER TABLE admin_users ADD COLUMN email TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE admin_users ADD COLUMN phone TEXT DEFAULT ''"); } catch {}
+// 会计(accounting)角色专用: 老板明确要求能随时查看会计账号的登录密码, 故仅该角色留存明文(仅 admin 角色接口可见); 其他角色永远为空
+try { db.exec("ALTER TABLE admin_users ADD COLUMN password_plain TEXT DEFAULT ''"); } catch {}
+// 会计自助注册的审批状态: 自注册=pending(不能登录), 管理员批准后=approved; 既有账号默认 approved
+try { db.exec("ALTER TABLE admin_users ADD COLUMN approval_status TEXT DEFAULT 'approved'"); } catch {}
 
 // Migrate partners table (add new columns if missing)
 const partnerMigrations = ['contacts','addresses','social_media','links'];
@@ -9235,6 +9239,9 @@ app.post('/api/admin/login', loginRateLimit, (req, res) => {
     auditLog('login_failed', { ip: req.ip, connection: req.connection, headers: req.headers }, { details: { username, reason: 'wrong_password' } });
     return res.status(401).json({ error: '密码不对 / Wrong password' });
   }
+  // 自助注册的账号需管理员批准后才能登录
+  if (user.approval_status === 'pending')
+    return res.status(403).json({ error: '账号正在等待管理员批准 / Your account is pending admin approval' });
   // Password correct but account not yet self-verified — prompt user to set own password
   if (!user.active) return res.json({ needs_activation: true, username });
   // 🔐 密码正确 → 还需短信验证码 (30 天内验证过的可信设备除外)
@@ -9260,6 +9267,8 @@ app.post('/api/auth/activate', (req, res) => {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(new_password, salt);
   db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=1 WHERE id=?').run(hash, salt, user.id);
+  // 会计角色: 自设密码同样留存管理员可见
+  if (user.role === 'accounting') db.prepare('UPDATE admin_users SET password_plain=? WHERE id=?').run(new_password, user.id);
   const updatedUser = db.prepare('SELECT * FROM admin_users WHERE id=?').get(user.id);
   // 🔐 激活完成后同样要过短信验证
   if (_mfaEnabled() && !_mfaHasTrust(req, updatedUser.id)) {
@@ -9538,7 +9547,17 @@ app.post('/api/manager/self-punch/:id/confirm', requireAdmin, requireRole('admin
 
 // ─── Account Management (admin only) ───
 app.get('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
-  res.json(db.prepare('SELECT id, username, role, display_name, email, phone, active, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, sms_notify_phone, sms_notify_enabled, created_at FROM admin_users ORDER BY id').all());
+  // password_plain 仅会计(accounting)角色有值, 且本接口本就仅限 admin 角色访问
+  res.json(db.prepare('SELECT id, username, role, display_name, email, phone, active, approval_status, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, sms_notify_phone, sms_notify_enabled, created_at, password_plain FROM admin_users ORDER BY id').all());
+});
+
+// 批准会计自助注册的账号
+app.post('/api/admin/accounts/:id/approve', requireAdmin, requireRole('admin'), (req, res) => {
+  const u = db.prepare('SELECT id, username, role, approval_status FROM admin_users WHERE id=?').get(req.params.id);
+  if (!u) return res.status(404).json({ error: 'User not found' });
+  db.prepare("UPDATE admin_users SET approval_status='approved' WHERE id=?").run(u.id);
+  auditLog('account_approve', req, { targetType: 'admin_user', targetId: u.id, details: { username: u.username, role: u.role } });
+  res.json({ success: true });
 });
 
 app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
@@ -9553,8 +9572,8 @@ app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) =
   if (existing && !existing.active) db.prepare('DELETE FROM admin_users WHERE id = ?').run(existing.id);
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
-  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)')
-    .run(username, hash, salt, role, display_name || '', assigned_partner_ids || '', assigned_employee_ids || '', assigned_job_ids || '', email || '', phone || '');
+  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, active, password_plain) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)')
+    .run(username, hash, salt, role, display_name || '', assigned_partner_ids || '', assigned_employee_ids || '', assigned_job_ids || '', email || '', phone || '', role === 'accounting' ? password : '');
   auditLog('account_create', req, { targetType: 'admin_user', targetId: result.lastInsertRowid, details: { username, role } });
   res.json({ success: true, id: result.lastInsertRowid });
 });
@@ -9570,10 +9589,12 @@ app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res
     if (pwErr) return res.status(400).json({ error: pwErr });
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = hashPassword(password, salt);
-    // 会计角色: 管理员设的密码直接生效 (不走自激活重置)
-    if (effRole === 'accounting') db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=1 WHERE id=?').run(hash, salt, req.params.id);
+    // 会计角色: 管理员设的密码直接生效 (不走自激活重置), 并按老板要求留存可见
+    if (effRole === 'accounting') db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=1, password_plain=? WHERE id=?').run(hash, salt, password, req.params.id);
     else db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=0 WHERE id=?').run(hash, salt, req.params.id);
   }
+  // 角色从会计改走时清掉留存密码
+  if (effRole !== 'accounting' && user.password_plain) db.prepare("UPDATE admin_users SET password_plain='' WHERE id=?").run(req.params.id);
   // active field is intentionally excluded — only the user themselves can activate via self-verification
   db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, assigned_partner_ids=?, assigned_employee_ids=?, assigned_job_ids=?, email=?, phone=?, sms_notify_phone=?, sms_notify_enabled=? WHERE id=?')
     .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, assigned_partner_ids !== undefined ? assigned_partner_ids : (user.assigned_partner_ids || ''), assigned_employee_ids !== undefined ? assigned_employee_ids : (user.assigned_employee_ids || ''), assigned_job_ids !== undefined ? assigned_job_ids : (user.assigned_job_ids || ''), email !== undefined ? email : (user.email || ''), phone !== undefined ? phone : (user.phone || ''), sms_notify_phone !== undefined ? sms_notify_phone : (user.sms_notify_phone || ''), sms_notify_enabled !== undefined ? (sms_notify_enabled ? 1 : 0) : (user.sms_notify_enabled ?? 1), req.params.id);
@@ -35947,6 +35968,26 @@ app.get('/accounting', (req, res) => {
 });
 
 const _acctAnnCount = db.prepare(`SELECT COUNT(*) AS n FROM acct_annotations WHERE target_type=? AND target_id=?`);
+
+// 会计自助注册 (登录页「注册」入口): 建 accounting 角色账号, 待管理员在账户管理批准后方可登录
+app.post('/api/acct/register', loginRateLimit, (req, res) => {
+  const { username, password, display_name, phone } = req.body || {};
+  const uname = String(username || '').trim();
+  if (!uname || !password) return res.status(400).json({ error: '请填写用户名和密码' });
+  if (uname.length < 3 || uname.length > 40) return res.status(400).json({ error: '用户名需 3–40 个字符' });
+  const pwErr = validatePassword(password);
+  if (pwErr) return res.status(400).json({ error: pwErr });
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (digits.length < 10) return res.status(400).json({ error: '请填写接收登录验证码的手机号' });
+  if (db.prepare('SELECT id FROM admin_users WHERE username=?').get(uname)) return res.status(400).json({ error: '用户名已存在 / Username already exists' });
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword(password, salt);
+  const r = db.prepare(`INSERT INTO admin_users (username, password_hash, salt, role, display_name, phone, active, approval_status, password_plain)
+    VALUES (?, ?, ?, 'accounting', ?, ?, 1, 'pending', ?)`)
+    .run(uname, hash, salt, String(display_name || '').slice(0, 80), String(phone || '').slice(0, 30), password);
+  auditLog('acct_register', { ip: req.ip, connection: req.connection, headers: req.headers }, { targetType: 'admin_user', targetId: r.lastInsertRowid, details: { username: uname } });
+  res.json({ success: true, awaiting_approval: true });
+});
 
 // Read-only invoice list (no payment receipts / internal cost fields).
 app.get('/api/acct/invoices', requireAdmin, requireAcctView, (req, res) => {

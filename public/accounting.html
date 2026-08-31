@@ -38,9 +38,28 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <div style="font-size:.82rem;color:var(--g500);margin-bottom:12px">查看发票与银行流水（只读），圈选并备注</div>
     <div id="loginForm">
       <input type="text" id="loginUser" placeholder="用户名或邮箱" style="width:100%;margin-bottom:.5rem" autocomplete="username">
-      <input type="password" id="loginPw" placeholder="密码" style="width:100%" autocomplete="current-password" onkeydown="if(event.key==='Enter')acctLogin()">
+      <div style="position:relative">
+        <input type="password" id="loginPw" placeholder="密码" style="width:100%;padding-right:2.4rem;box-sizing:border-box" autocomplete="current-password" onkeydown="if(event.key==='Enter')acctLogin()">
+        <button type="button" onclick="pwToggle('loginPw', this)" title="显示/隐藏密码" style="position:absolute;right:.45rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--g400);font-size:1rem;padding:.15rem">👁</button>
+      </div>
       <div id="gateErr" style="color:var(--red);font-size:.8rem;min-height:1.1em;margin-top:.4rem"></div>
       <button class="btn btn-blue" style="width:100%;justify-content:center;margin-top:.4rem" onclick="acctLogin()">登录</button>
+      <div style="font-size:.8rem;color:var(--g500);margin-top:.7rem">没有账号？<a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="showRegForm(true)">注册 / Register</a></div>
+    </div>
+    <div id="regForm" style="display:none;text-align:left">
+      <div style="font-size:.82rem;color:#075985;background:#e0f2fe;border:1px solid #bae6fd;border-radius:8px;padding:.5rem;margin-bottom:.6rem">注册后需<b>管理员批准</b>才能登录；登录时验证码会发到下面填写的手机号。</div>
+      <input type="text" id="regName" placeholder="姓名 / 显示名称" style="width:100%;margin-bottom:.5rem">
+      <input type="text" id="regUser" placeholder="登录用户名" style="width:100%;margin-bottom:.5rem" autocomplete="username">
+      <input type="tel" id="regPhone" placeholder="手机号（接收登录验证码）" style="width:100%;margin-bottom:.5rem">
+      <div style="position:relative;margin-bottom:.5rem">
+        <input type="password" id="regPw" placeholder="密码（至少8位，含字母和数字）" style="width:100%;padding-right:2.4rem;box-sizing:border-box" autocomplete="new-password">
+        <button type="button" onclick="pwToggle('regPw', this)" title="显示/隐藏密码" style="position:absolute;right:.45rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--g400);font-size:1rem;padding:.15rem">👁</button>
+      </div>
+      <input type="password" id="regPw2" placeholder="确认密码" style="width:100%" autocomplete="new-password" onkeydown="if(event.key==='Enter')acctRegister()">
+      <div id="regErr" style="color:var(--red);font-size:.8rem;min-height:1.1em;margin-top:.4rem"></div>
+      <div id="regOk" style="display:none;color:#166534;background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:.5rem;font-size:.82rem;margin-top:.4rem">✅ 注册已提交！请联系管理员批准，批准后即可登录。</div>
+      <button class="btn btn-blue" id="regBtn" style="width:100%;justify-content:center;margin-top:.4rem" onclick="acctRegister()">提交注册</button>
+      <div style="font-size:.8rem;color:var(--g500);margin-top:.7rem;text-align:center">已有账号？<a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="showRegForm(false)">返回登录</a></div>
     </div>
     <div id="activateForm" style="display:none">
       <div style="font-size:.82rem;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:.5rem;margin-bottom:.5rem">首次登录（或密码被重置后）需要设置自己的新密码</div>
@@ -197,7 +216,32 @@ async function api(path, opts = {}) {
   return j;
 }
 
-// ── 登录 / 退出 ──
+// ── 登录 / 注册 / 退出 ──
+function pwToggle(id, btn) {
+  const el = document.getElementById(id);
+  el.type = el.type === 'password' ? 'text' : 'password';
+  btn.textContent = el.type === 'password' ? '👁' : '🙈';
+}
+function showRegForm(show) {
+  document.getElementById('loginForm').style.display = show ? 'none' : '';
+  document.getElementById('regForm').style.display = show ? '' : 'none';
+  document.getElementById('regErr').textContent = '';
+}
+async function acctRegister() {
+  const err = document.getElementById('regErr');
+  err.textContent = '';
+  const display_name = document.getElementById('regName').value.trim();
+  const username = document.getElementById('regUser').value.trim();
+  const phone = document.getElementById('regPhone').value.trim();
+  const pw = document.getElementById('regPw').value, pw2 = document.getElementById('regPw2').value;
+  if (!display_name || !username || !phone || !pw) { err.textContent = '请填写完整信息'; return; }
+  if (pw !== pw2) { err.textContent = '两次输入的密码不一致'; return; }
+  const r = await fetch('/api/acct/register', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password: pw, display_name, phone }) }).then(x => x.json()).catch(() => ({}));
+  if (!r.success) { err.textContent = r.error || '注册失败'; return; }
+  document.getElementById('regOk').style.display = '';
+  document.getElementById('regBtn').style.display = 'none';
+}
 async function acctLogin() {
   const username = document.getElementById('loginUser').value.trim();
   const password = document.getElementById('loginPw').value;
