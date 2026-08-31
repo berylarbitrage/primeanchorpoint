@@ -2702,6 +2702,19 @@ db.exec(`CREATE TABLE IF NOT EXISTS acct_annotations (
 )`);
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_acct_ann_target ON acct_annotations(target_type, target_id)`); } catch (e) {}
 
+// 发票逐行付款备注: 发票里每一条(每个工人/每个柜)单独记「付了没有/怎么付的」
+db.exec(`CREATE TABLE IF NOT EXISTS acct_line_pay_notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_id INTEGER NOT NULL,
+  line_idx INTEGER NOT NULL,
+  line_label TEXT DEFAULT '',
+  paid_status TEXT DEFAULT '',
+  pay_method TEXT DEFAULT '',
+  note TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(invoice_id, line_idx)
+)`);
 // 会计付款批注: 每张发票/每笔赔偿事故记录「付了没有/哪个银行付的/付了多少」(一目标一条, upsert)
 db.exec(`CREATE TABLE IF NOT EXISTS acct_pay_notes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36070,8 +36083,27 @@ app.get('/api/acct/invoices/:id', requireAdmin, requireAcctView, (req, res) => {
     try { row.items = JSON.parse(row.items_json || '[]'); } catch { row.items = []; }
     try { row.profile = JSON.parse(row.profile_json || '{}'); } catch { row.profile = {}; }
     delete row.items_json; delete row.profile_json;
+    // 逐行付款备注: {line_idx: note}
+    row.line_pay_notes = {};
+    db.prepare('SELECT * FROM acct_line_pay_notes WHERE invoice_id=?').all(row.id).forEach(n => { row.line_pay_notes[n.line_idx] = n; });
     res.json(row);
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 发票逐行付款备注 upsert: 这一条付了没有 / 怎么付的
+app.post('/api/acct/invoices/:id/line-pay-note', requireAdmin, requireAcctWrite, (req, res) => {
+  const inv = db.prepare('SELECT id FROM invoices WHERE id=?').get(parseInt(req.params.id));
+  if (!inv) return res.status(404).json({ error: '发票不存在' });
+  const { line_idx, paid_status, pay_method, note, line_label } = req.body || {};
+  const idx = parseInt(line_idx);
+  if (isNaN(idx) || idx < 0 || idx > 500) return res.status(400).json({ error: '无效行号' });
+  const st = ['', 'unpaid', 'partial', 'paid'].includes(String(paid_status || '')) ? String(paid_status || '') : '';
+  db.prepare(`INSERT INTO acct_line_pay_notes (invoice_id, line_idx, line_label, paid_status, pay_method, note, created_by, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(invoice_id, line_idx) DO UPDATE SET line_label=excluded.line_label, paid_status=excluded.paid_status,
+      pay_method=excluded.pay_method, note=excluded.note, created_by=excluded.created_by, updated_at=CURRENT_TIMESTAMP`)
+    .run(inv.id, idx, String(line_label || '').slice(0, 120), st, String(pay_method || '').slice(0, 120), String(note || '').slice(0, 500), req.userName || '');
+  res.json({ success: true, note: db.prepare('SELECT * FROM acct_line_pay_notes WHERE invoice_id=? AND line_idx=?').get(inv.id, idx) });
 });
 
 // Read-only bank statement list.
