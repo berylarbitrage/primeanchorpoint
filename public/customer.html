@@ -257,7 +257,10 @@ tr:last-child td{border-bottom:none}
           </select>
         </div>
         <div class="field-row">
-          <div class="field"><label>工作地点</label><input id="pLocation" placeholder="例：Chicago, IL 60601"></div>
+          <div class="field"><label>工作地点</label>
+            <select id="pLocationSel" onchange="pLocationSelChange()" style="display:none"></select>
+            <input id="pLocation" placeholder="例：Chicago, IL 60601">
+          </div>
           <div class="field"><label>需要人数</label><input type="number" id="pHeadcount" min="1" value="1"></div>
         </div>
         <div class="field"><label>期望开始日期</label><input type="date" id="pStartDate"></div>
@@ -517,6 +520,36 @@ async function showApp() {
   if (!me) return;
   document.getElementById('customerNameDisplay').textContent = me.company_name;
   document.getElementById('customerNameDisplayMobile').textContent = me.company_name;
+  loadMySiteOptions();
+}
+
+// ── 工作地点: 下拉选择本公司名下仓库; 公司未绑仓库时保持手填输入 ──
+async function loadMySiteOptions() {
+  const sites = await cApi('/my-sites');
+  if (!Array.isArray(sites) || !sites.length) return;
+  const sel = document.getElementById('pLocationSel'), inp = document.getElementById('pLocation');
+  sel.innerHTML = '<option value="">-- 请选择工作地点 --</option>' +
+    sites.map(s => { const v = s.address ? `${s.name} — ${s.address}` : s.name; return `<option value="${esc(v)}">${esc(v)}</option>`; }).join('') +
+    '<option value="__other__">其他地址 / Other（自定义）…</option>';
+  sel.style.display = '';
+  inp.style.display = 'none';
+  inp.style.marginTop = '.4rem';
+}
+function pLocationSelChange() {
+  const sel = document.getElementById('pLocationSel'), inp = document.getElementById('pLocation');
+  if (sel.style.display === 'none') return;
+  inp.style.display = sel.value === '__other__' ? '' : 'none';
+  if (sel.value === '__other__') inp.focus();
+}
+function pLocationValue() {
+  const sel = document.getElementById('pLocationSel'), inp = document.getElementById('pLocation');
+  if (sel.style.display === 'none' || sel.value === '__other__') return inp.value.trim();
+  return sel.value;
+}
+function pLocationReset() {
+  const sel = document.getElementById('pLocationSel');
+  document.getElementById('pLocation').value = '';
+  if (sel.style.display !== 'none') { sel.value = ''; pLocationSelChange(); }
 }
 
 function toggleSidebar() {
@@ -779,7 +812,7 @@ function pTitleValue() {
 async function submitPost() {
   const d = {
     title: pTitleValue(),
-    location: document.getElementById('pLocation').value.trim(),
+    location: pLocationValue(),
     headcount: parseInt(document.getElementById('pHeadcount').value) || 1,
     start_date: document.getElementById('pStartDate').value,
     work_type: document.getElementById('pWorkType').value,
@@ -795,7 +828,7 @@ async function submitPost() {
     document.getElementById('pCategory').value = '';
     document.getElementById('pCategoryCustom').value = '';
     document.getElementById('pCategoryCustom').style.display = 'none';
-    document.getElementById('pLocation').value = '';
+    pLocationReset();
     document.getElementById('pHeadcount').value = '1';
     document.getElementById('pStartDate').value = '';
     document.getElementById('pWorkType').value = '';
@@ -817,7 +850,11 @@ function randomFillPost() {
   const r = pool[Math.floor(Math.random() * pool.length)];
   const catSel = document.getElementById('pCategory');
   catSel.selectedIndex = 1 + Math.floor(Math.random() * (catSel.options.length - 2));
-  document.getElementById('pLocation').value = r.location;
+  const locSel = document.getElementById('pLocationSel');
+  if (locSel.style.display !== 'none' && locSel.options.length > 2) {
+    locSel.selectedIndex = 1 + Math.floor(Math.random() * (locSel.options.length - 2));
+    pLocationSelChange();
+  } else document.getElementById('pLocation').value = r.location;
   document.getElementById('pHeadcount').value = r.headcount;
   document.getElementById('pWorkType').value = r.work_type;
   document.getElementById('pRequirements').value = r.requirements;
