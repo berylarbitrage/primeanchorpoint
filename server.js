@@ -21737,6 +21737,63 @@ app.post('/api/admin/invoices/parse-excel', requireAdmin, invoiceXlsxUpload.sing
   }
 });
 
+// ─── Gusto 合同工付款模板 (Contractor Pay CSV) ───
+// 名册 = Gusto 后台导出的空白 contractor payment 模板（姓名/打码SSN/时薪），上传
+// 一次存进 app_settings；之后每张工时发票都能按名册生成填好 hours 的付款 CSV。
+const { buildGustoCsv, parseRoster } = require('./gusto-pay');
+const gustoRosterUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, /\.csv$/i.test(file.originalname || '') || /csv|text\/plain/i.test(file.mimetype || '')),
+});
+function _gustoRoster() {
+  const row = db.prepare("SELECT value FROM app_settings WHERE key='gusto_pay_template'").get();
+  if (!row || !row.value) return null;
+  try { return JSON.parse(row.value); } catch (_) { return null; }
+}
+
+// 名册状态（不回传 CSV 内容本身，SSN 尾号只在生成预览里出现）
+app.get('/api/admin/gusto-pay-template', requireAdmin, (req, res) => {
+  const tpl = _gustoRoster();
+  if (!tpl) return res.json({ has: false });
+  let contractors = 0;
+  try { contractors = parseRoster(tpl.csv).entries.length; } catch (_) {}
+  res.json({ has: true, name: tpl.name || '', uploaded_at: tpl.uploaded_at || '', by: tpl.by || '', contractors });
+});
+
+// 上传/更新名册 CSV（先解析校验，不是 Gusto 模板直接报错，不覆盖旧名册）
+app.post('/api/admin/gusto-pay-template', requireAdmin, gustoRosterUpload.single('file'), (req, res) => {
+  if (!req.file || !req.file.buffer) return res.status(400).json({ error: '请上传 Gusto contractor payment 模板 .csv 文件' });
+  const csv = req.file.buffer.toString('utf8');
+  let entries;
+  try { entries = parseRoster(csv).entries; } catch (e) {
+    return res.status(400).json({ error: e.message || 'CSV 解析失败' });
+  }
+  const tpl = { name: req.file.originalname || 'gusto_template.csv', csv, uploaded_at: new Date().toISOString(), by: req.userName || '' };
+  db.prepare('INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)')
+    .run('gusto_pay_template', JSON.stringify(tpl));
+  auditLog('gusto_template_upload', req, { targetType: 'gusto_pay_template', targetId: tpl.name, details: { contractors: entries.length } });
+  res.json({ success: true, contractors: entries.length, name: tpl.name });
+});
+
+// 按发票生成器的员工行生成付款 CSV。返回 JSON（csv 文本 + 逐行匹配明细 + 警告），
+// 前端弹预览再触发下载。employees: [{name, total, rate, regHours, otHours}]
+app.post('/api/admin/gusto-pay-csv', requireAdmin, (req, res) => {
+  const tpl = _gustoRoster();
+  if (!tpl) return res.status(404).json({ error: '还没有上传 Gusto 合同工名册（contractor payment 模板 CSV）', no_template: true });
+  const employees = Array.isArray(req.body && req.body.employees) ? req.body.employees : [];
+  if (!employees.length) return res.status(400).json({ error: '没有员工行，请先填写工时明细' });
+  try {
+    const out = buildGustoCsv(tpl.csv, employees, {
+      period_start: req.body.period_start || '',
+      period_end: req.body.period_end || '',
+    });
+    res.json({ ok: true, template_name: tpl.name || '', template_uploaded_at: tpl.uploaded_at || '', ...out });
+  } catch (e) {
+    res.status(400).json({ error: 'Gusto 模板生成失败：' + (e && e.message ? e.message : String(e)) });
+  }
+});
+
 // Get single invoice (with full details)
 app.get('/api/admin/invoices/:id', requireAdmin, (req, res) => {
   const row = db.prepare(`SELECT * FROM invoices WHERE id=?`).get(req.params.id);
