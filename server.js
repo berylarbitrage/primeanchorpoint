@@ -28896,6 +28896,30 @@ app.get('/api/customer/my-sites', requireCustomer, (req, res) => {
   res.json(_custAllowedSiteIds(req).map(s => ({ id: s.id, name: s.name, address: s.address || '' })));
 });
 
+// 本公司全部账号及各自权限 (「我的信息」页显示, 同公司互相可见, 只读)
+app.get('/api/customer/company-accounts', requireCustomer, (req, res) => {
+  const pid = req.customerPartnerId;
+  const rows = pid
+    ? db.prepare('SELECT id, contact_name, contact_first_name, contact_last_name, email, phone, active, approval_status, perms FROM customer_accounts WHERE partner_id=? ORDER BY id').all(pid)
+    : db.prepare('SELECT id, contact_name, contact_first_name, contact_last_name, email, phone, active, approval_status, perms FROM customer_accounts WHERE id=?').all(req.customerId);
+  const siteName = {};
+  for (const s of _customerSites(pid)) siteName[s.id] = s.name;
+  res.json(rows.map(r => {
+    let p = null;
+    try { p = String(r.perms || '').trim() ? JSON.parse(r.perms) : null; } catch (_) {}
+    const perms = {};
+    for (const k of CUST_PERM_KEYS) perms[k] = p == null ? (k !== 'edit_time') : !!p[k];
+    const sites = (p && Array.isArray(p.sites) && p.sites.length) ? p.sites.map(id => siteName[id] || ('#' + id)) : null; // null = 全部仓库
+    return {
+      id: r.id, is_me: r.id === req.customerId,
+      name: [r.contact_first_name, r.contact_last_name].filter(Boolean).join(' ') || r.contact_name || '',
+      email: r.email, phone: r.phone || '',
+      status: r.approval_status === 'pending' ? (r.active ? '待审核' : '待验证') : (r.approval_status === 'rejected' ? '已拒绝' : (r.active ? '正常' : '已暂停')),
+      perms, sites
+    };
+  }));
+});
+
 app.post('/api/customer/post-job', requireCustomer, (req, res) => {
   const { title, location, headcount, start_date, work_type, requirements, notes } = req.body;
   if (!title) return res.status(400).json({ error: 'Job title required' });
