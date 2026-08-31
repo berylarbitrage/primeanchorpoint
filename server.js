@@ -32170,12 +32170,15 @@ app.post('/api/plaid/accounts/:account_id/label', requireAdmin, requireRole('adm
 function plaidTxnQuery(req) {
   let where = '1=1';
   const params = [];
-  const { start, end, account_id, q, category } = req.query || {};
+  const { start, end, account_id, q, category, amount } = req.query || {};
   if (start) { where += ' AND date >= ?'; params.push(String(start)); }
   if (end) { where += ' AND date <= ?'; params.push(String(end)); }
   if (account_id) { where += ' AND account_id = ?'; params.push(String(account_id)); }
   if (category) { where += ' AND category = ?'; params.push(String(category)); }
   if (q) { where += ' AND (name LIKE ? OR merchant LIKE ? OR category LIKE ?)'; const like = '%' + q + '%'; params.push(like, like, like); }
+  // 按金额找 (不分收支方向, 全库匹配): 发票逐行付款备注的「找金额匹配的交易」用
+  const amt = Math.abs(parseFloat(amount));
+  if (!isNaN(amt) && amt > 0) { where += ' AND ABS(ABS(amount) - ?) < 0.005'; params.push(amt); }
   return { where, params };
 }
 
