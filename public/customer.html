@@ -218,68 +218,84 @@ tr:last-child td{border-bottom:none}
     <div id="tabPost">
       <div class="card">
         <h2>发布新用工需求</h2>
-        <div class="field-row">
-          <div class="field"><label>职位 / 工种 *</label><input id="pTitle" placeholder="例：仓库分拣员、叉车司机"></div>
-          <div class="field"><label>工作地点</label><input id="pLocation" placeholder="例：Chicago, IL 60601"></div>
+        <div class="field"><label>工种类别 JOB CATEGORY *</label>
+          <select id="pCategory" onchange="document.getElementById('pCategoryCustom').style.display = this.value === '__other__' ? '' : 'none'">
+            <option value="">-- 请选择 --</option>
+            <option value="仓库分拣员 / Warehouse Sorter">仓库分拣员 / Warehouse Sorter</option>
+            <option value="贴标员 / Labeler">贴标员 / Labeler</option>
+            <option value="打包员 / Packer">打包员 / Packer</option>
+            <option value="叉车操作员 / Forklift Operator">叉车操作员 / Forklift Operator</option>
+            <option value="CDL卡车司机 / CDL Truck Driver">CDL卡车司机 / CDL Truck Driver</option>
+            <option value="送货司机 / Delivery Driver">送货司机 / Delivery Driver</option>
+            <option value="班组长 / Shift Supervisor">班组长 / Shift Supervisor</option>
+            <option value="现场主管 / Site Manager">现场主管 / Site Manager</option>
+            <option value="质检员 / Quality Inspector">质检员 / Quality Inspector</option>
+            <option value="机器操作员 / Machine Operator">机器操作员 / Machine Operator</option>
+            <option value="装配线工人 / Assembly Line">装配线工人 / Assembly Line</option>
+            <option value="物料搬运工 / Material Handler">物料搬运工 / Material Handler</option>
+            <option value="库存文员 / Inventory Clerk">库存文员 / Inventory Clerk</option>
+            <option value="普工 / General Labor">普工 / General Labor</option>
+            <option value="清洁工 / Janitorial">清洁工 / Janitorial</option>
+            <option value="食品加工 / Food Processing">食品加工 / Food Processing</option>
+            <option value="仓库领班 / Warehouse Lead">仓库领班 / Warehouse Lead</option>
+            <option value="装卸工 / Loading / Unloading">装卸工 / Loading / Unloading</option>
+            <option value="拣货员 / Order Picker">拣货员 / Order Picker</option>
+            <option value="焊接工 / Welder">焊接工 / Welder</option>
+            <option value="__other__">其他 / Other（自定义）…</option>
+          </select>
+          <input type="text" id="pCategoryCustom" placeholder="请输入自定义工种 / Enter custom job category" style="display:none;margin-top:.4rem">
         </div>
-        <div class="field-row">
-          <div class="field"><label>需要人数</label><input type="number" id="pHeadcount" min="1" value="1"></div>
-          <div class="field"><label>期望开始日期</label><input type="date" id="pStartDate"></div>
-        </div>
-        <div class="field"><label>工作类型</label>
+        <div class="field"><label>职位类型</label>
           <select id="pWorkType">
-            <option value="">— 请选择 —</option>
+            <option value="">-- 请选择 --</option>
             <option value="全职">全职 / Full-Time</option>
             <option value="兼职">兼职 / Part-Time</option>
             <option value="临时工">临时工 / Temporary</option>
             <option value="临时转正">临时转正 / Temp-to-Hire</option>
           </select>
         </div>
-        <div style="border:1px solid var(--gray-200,#e2e5ea);border-radius:10px;padding:1rem;background:#fafbfc;margin-bottom:1rem">
-          <div style="font-weight:700;font-size:.88rem;margin-bottom:.7rem">📋 用工细节（选填，点选即可）</div>
-          <div class="field"><label>班次（多选）</label>
-            <div id="cpShiftWrap" class="cp-chips">
-              <button type="button" class="cp-chip" data-val="早班" onclick="this.classList.toggle('active')">早班</button>
-              <button type="button" class="cp-chip" data-val="中班" onclick="this.classList.toggle('active')">中班</button>
-              <button type="button" class="cp-chip" data-val="晚班" onclick="this.classList.toggle('active')">晚班</button>
-              <button type="button" class="cp-chip" data-val="夜班" onclick="this.classList.toggle('active')">夜班</button>
-              <button type="button" class="cp-chip" data-val="弹性" onclick="this.classList.toggle('active')">弹性</button>
+        <div class="field-row">
+          <div class="field"><label>工作地点</label><input id="pLocation" placeholder="例：Chicago, IL 60601"></div>
+          <div class="field"><label>需要人数</label><input type="number" id="pHeadcount" min="1" value="1"></div>
+        </div>
+        <div class="field"><label>期望开始日期</label><input type="date" id="pStartDate"></div>
+        <div class="field"><label>薪资</label>
+          <div style="display:flex;gap:.75rem;margin-bottom:.4rem">
+            <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer;font-weight:normal;font-size:.88rem">
+              <input type="radio" name="pPayType" id="pPayTypeFixed" value="fixed" onchange="pUpdatePayInputs()" checked> 固定 (Fixed)
+            </label>
+            <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer;font-weight:normal;font-size:.88rem">
+              <input type="radio" name="pPayType" id="pPayTypeRange" value="range" onchange="pUpdatePayInputs()"> 范围 (Range)
+            </label>
+          </div>
+          <div style="display:flex;align-items:center;gap:.4rem">
+            <div id="pPayFixedWrap" style="flex:1;min-width:0">
+              <input id="pPayFixed" placeholder="例：20" style="width:100%;box-sizing:border-box;margin-bottom:0">
             </div>
-          </div>
-          <div class="field"><label>搬运重量（单选）</label>
-            <div id="cpLiftWrap" class="cp-chips">
-              <button type="button" class="cp-chip" data-val="轻体力（无重物）" onclick="cpChipSingle(this)">轻体力（无重物）</button>
-              <button type="button" class="cp-chip" data-val="25 磅以内" onclick="cpChipSingle(this)">25 磅以内</button>
-              <button type="button" class="cp-chip" data-val="50 磅以内" onclick="cpChipSingle(this)">50 磅以内</button>
-              <button type="button" class="cp-chip" data-val="70 磅以上" onclick="cpChipSingle(this)">70 磅以上</button>
+            <div id="pPayRangeWrap" style="display:none;flex:1;gap:.4rem;align-items:center;min-width:0">
+              <input id="pPayLow" placeholder="最低" style="flex:1;min-width:0;margin-bottom:0">
+              <span style="color:#6b7280;white-space:nowrap">—</span>
+              <input id="pPayHigh" placeholder="最高" style="flex:1;min-width:0;margin-bottom:0">
             </div>
+            <select id="pPayUnit" style="width:100px;flex-shrink:0">
+              <option value="/hr">/ hr</option>
+              <option value="/day">/ day</option>
+              <option value="/week">/ week</option>
+              <option value="/month">/ month</option>
+            </select>
           </div>
-          <div class="field"><label>经验要求（单选）</label>
-            <div id="cpExpWrap" class="cp-chips">
-              <button type="button" class="cp-chip" data-val="无需经验" onclick="cpChipSingle(this)">无需经验</button>
-              <button type="button" class="cp-chip" data-val="需相关经验" onclick="cpChipSingle(this)">需相关经验</button>
-              <button type="button" class="cp-chip" data-val="需持证（如叉车证）" onclick="cpChipSingle(this)">需持证（如叉车证）</button>
-            </div>
+        </div>
+        <div class="field"><label>班次（可多选）</label>
+          <div id="cpShiftWrap" class="cp-chips">
+            <button type="button" class="cp-chip" data-val="早班" onclick="this.classList.toggle('active')">早班（Morning）</button>
+            <button type="button" class="cp-chip" data-val="中班" onclick="this.classList.toggle('active')">中班（Day）</button>
+            <button type="button" class="cp-chip" data-val="晚班" onclick="this.classList.toggle('active')">晚班（Evening）</button>
+            <button type="button" class="cp-chip" data-val="夜班" onclick="this.classList.toggle('active')">夜班（Night）</button>
+            <button type="button" class="cp-chip" data-val="弹性" onclick="this.classList.toggle('active')">弹性（Flexible）</button>
           </div>
-          <div class="field"><label>入职要求（多选）</label>
-            <div id="cpOnbWrap" class="cp-chips">
-              <button type="button" class="cp-chip" data-val="背景调查" onclick="this.classList.toggle('active')">背景调查</button>
-              <button type="button" class="cp-chip" data-val="药检" onclick="this.classList.toggle('active')">药检</button>
-              <button type="button" class="cp-chip" data-val="体检" onclick="this.classList.toggle('active')">体检</button>
-              <button type="button" class="cp-chip" data-val="E-Verify" onclick="this.classList.toggle('active')">E-Verify</button>
-            </div>
-          </div>
-          <div class="field"><label>装备/着装（多选）</label>
-            <div id="cpGearWrap" class="cp-chips">
-              <button type="button" class="cp-chip" data-val="需自备钢头鞋" onclick="this.classList.toggle('active')">需自备钢头鞋</button>
-              <button type="button" class="cp-chip" data-val="我方提供劳保用品" onclick="this.classList.toggle('active')">我方提供劳保用品</button>
-              <button type="button" class="cp-chip" data-val="需高可视背心" onclick="this.classList.toggle('active')">需高可视背心</button>
-            </div>
-          </div>
-          <div class="field-row">
-            <div class="field"><label>每周预计工时</label><input id="cpHoursWeek" placeholder="例：40–50 小时"></div>
-            <div class="field"><label>时薪预算</label><input id="cpPayBudget" placeholder="例：$18–20/hr"></div>
-          </div>
+        </div>
+        <div class="field"><label>必备技能（多选）</label>
+          <div id="cpSkillsWrap" class="cp-chips"><span style="color:var(--gray-400);font-size:.82rem">加载中…</span></div>
         </div>
         <div class="field"><label>技能要求 / 岗位描述</label>
           <textarea id="pRequirements" placeholder="请描述工作职责、技能要求、身体要求等..."></textarea>
@@ -584,30 +600,53 @@ async function loadTimeRecords() {
     (d.photos_enabled ? '' : '');
 }
 
-// 用工细节点选组 (单选互斥, 再点取消)
-function cpChipSingle(btn) {
-  const on = btn.classList.contains('active');
-  btn.parentElement.querySelectorAll('.cp-chip').forEach(b => b.classList.remove('active'));
-  if (!on) btn.classList.add('active');
+// 必备技能: 与后台同一份技能库 (公开只读接口)
+async function loadSkillChips() {
+  const wrap = document.getElementById('cpSkillsWrap');
+  try {
+    const r = await fetch('/api/skill-options');
+    const list = await r.json();
+    wrap.innerHTML = (Array.isArray(list) ? list : []).map(s => {
+      const label = s.name_zh + (s.name_en ? ' / ' + s.name_en : '');
+      return `<button type="button" class="cp-chip" data-val="${esc(label)}" onclick="this.classList.toggle('active')">${esc(label)}</button>`;
+    }).join('') || '<span style="color:var(--gray-400);font-size:.82rem">暂无技能选项</span>';
+  } catch (_) { wrap.innerHTML = ''; }
 }
-const CP_WRAPS = { shift: 'cpShiftWrap', lift: 'cpLiftWrap', exp: 'cpExpWrap', onboarding: 'cpOnbWrap', gear: 'cpGearWrap' };
-function collectPostDetails() {
-  const d = {};
-  for (const [k, wid] of Object.entries(CP_WRAPS)) {
-    d[k] = [...document.querySelectorAll(`#${wid} .cp-chip.active`)].map(b => b.dataset.val).join(',');
+loadSkillChips();
+function pUpdatePayInputs() {
+  const isRange = document.getElementById('pPayTypeRange').checked;
+  document.getElementById('pPayFixedWrap').style.display = isRange ? 'none' : '';
+  document.getElementById('pPayRangeWrap').style.display = isRange ? 'flex' : 'none';
+}
+function pPayValue() {
+  const unit = document.getElementById('pPayUnit').value;
+  if (document.getElementById('pPayTypeRange').checked) {
+    const lo = document.getElementById('pPayLow').value.trim(), hi = document.getElementById('pPayHigh').value.trim();
+    const num = lo && hi ? `${lo}-${hi}` : (lo || hi);
+    return num ? num + unit : '';
   }
-  d.hours_week = document.getElementById('cpHoursWeek').value.trim();
-  d.pay_budget = document.getElementById('cpPayBudget').value.trim();
-  return d;
+  const v = document.getElementById('pPayFixed').value.trim();
+  return v ? v + unit : '';
+}
+function collectPostDetails() {
+  return {
+    shift: [...document.querySelectorAll('#cpShiftWrap .cp-chip.active')].map(b => b.dataset.val).join(','),
+    skills: [...document.querySelectorAll('#cpSkillsWrap .cp-chip.active')].map(b => b.dataset.val).join(','),
+    pay_budget: pPayValue()
+  };
 }
 function clearPostDetails() {
   document.querySelectorAll('.cp-chip.active').forEach(b => b.classList.remove('active'));
-  document.getElementById('cpHoursWeek').value = '';
-  document.getElementById('cpPayBudget').value = '';
+  ['pPayFixed', 'pPayLow', 'pPayHigh'].forEach(id => document.getElementById(id).value = '');
+}
+function pTitleValue() {
+  const cat = document.getElementById('pCategory').value;
+  if (cat === '__other__') return document.getElementById('pCategoryCustom').value.trim();
+  return cat;
 }
 async function submitPost() {
   const d = {
-    title: document.getElementById('pTitle').value.trim(),
+    title: pTitleValue(),
     location: document.getElementById('pLocation').value.trim(),
     headcount: parseInt(document.getElementById('pHeadcount').value) || 1,
     start_date: document.getElementById('pStartDate').value,
@@ -616,12 +655,14 @@ async function submitPost() {
     notes: document.getElementById('pNotes').value.trim(),
     details_json: JSON.stringify(collectPostDetails())
   };
-  if (!d.title) return alert('请填写职位/工种');
+  if (!d.title) return alert('请选择工种类别');
   const r = await cApi('/post-job', { method:'POST', body:JSON.stringify(d) });
   if (!r) return;
   if (r.success) {
     showToast('✅ 需求已提交，HR将尽快与您联系');
-    document.getElementById('pTitle').value = '';
+    document.getElementById('pCategory').value = '';
+    document.getElementById('pCategoryCustom').value = '';
+    document.getElementById('pCategoryCustom').style.display = 'none';
     document.getElementById('pLocation').value = '';
     document.getElementById('pHeadcount').value = '1';
     document.getElementById('pStartDate').value = '';
@@ -642,12 +683,14 @@ function randomFillPost() {
     { title:'Trabajador de Almacén', location:'Melrose Park, IL', headcount:6, work_type:'临时工', requirements:'Clasificar y empacar productos. No se requiere experiencia, se ofrece capacitación.', notes:'Pago semanal, transporte disponible desde Cicero' },
   ];
   const r = pool[Math.floor(Math.random() * pool.length)];
-  document.getElementById('pTitle').value = r.title;
+  const catSel = document.getElementById('pCategory');
+  catSel.selectedIndex = 1 + Math.floor(Math.random() * (catSel.options.length - 2));
   document.getElementById('pLocation').value = r.location;
   document.getElementById('pHeadcount').value = r.headcount;
   document.getElementById('pWorkType').value = r.work_type;
   document.getElementById('pRequirements').value = r.requirements;
   document.getElementById('pNotes').value = r.notes;
+  document.getElementById('pPayFixed').value = String(16 + Math.floor(Math.random() * 8));
   const d = new Date(); d.setDate(d.getDate() + Math.floor(Math.random()*14)+3);
   document.getElementById('pStartDate').value = d.toISOString().slice(0,10);
 }
