@@ -764,6 +764,20 @@ async function bankInit(force) {
     _bankStatus = await bapi('/api/acct/bank/status');
   } catch (e) { toast('银行模块加载失败: ' + (e.message || ''), true); return; }
   const isAdmin = !!_bankStatus.is_admin;
+  // 本页自有的银行直连没连任何账户时, 回退显示「银行对账 /banking」页已连接的银行 (只读同一数据源)
+  if (!(_bankStatus.accounts || []).length) {
+    try {
+      const p = await bapi('/api/plaid/accounts');
+      if (p && (p.accounts || []).length) {
+        _bankMode = 'plaid'; _plaidAccts = p;
+        document.getElementById('bankCfgCard').style.display = 'none';
+        document.getElementById('bankMain').style.display = '';
+        renderPlaidAccounts();
+        bankLoadTxns();
+        return;
+      }
+    } catch (e) {}
+  }
   document.getElementById('bankCfgCard').style.display = (!_bankStatus.configured && isAdmin) ? '' : 'none';
   document.getElementById('bankMain').style.display = _bankStatus.configured ? '' : 'none';
   if (!_bankStatus.configured && !isAdmin) toast('银行直连还没配置，请联系管理员', true);
@@ -773,6 +787,26 @@ async function bankInit(force) {
   document.getElementById('btnBankCfg').style.display = isAdmin ? '' : 'none';
   renderBankAccounts();
   bankLoadTxns();
+}
+// /banking(Plaid) 数据源的只读展示: 账户卡片 + 提示条; 隐藏本页的同步/连接/审核控件
+let _bankMode = 'acct', _plaidAccts = null;
+function renderPlaidAccounts() {
+  ['btnTellerConnect', 'btnBankConnect', 'btnBankCfg', 'btnBankSync'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+  document.getElementById('bankFltRev').style.display = 'none';
+  document.getElementById('bankSyncMsg').innerHTML = '数据来自「<a href="/banking" target="_blank" style="color:#0f4c6b;text-decoration:underline">银行对账 /banking</a>」页连接的银行（只读）· 分类/标注请到该页操作';
+  const accs = (_plaidAccts && _plaidAccts.accounts) || [];
+  document.getElementById('bankAcctCards').innerHTML = accs.map(a => {
+    const bal = a.balance_current == null ? '—' : money(a.balance_current);
+    const avail = a.balance_available == null ? '' : `<div style="font-size:.7rem;color:var(--g400)">可用 ${money(a.balance_available)}</div>`;
+    return `<div style="background:#fff;border:1px solid var(--g200);border-radius:10px;padding:.7rem .9rem;min-width:210px">
+      <div style="font-size:.78rem;color:var(--g500)">${esc(a.institution || '银行')} ··${esc(a.mask || '')} <span style="font-size:.62rem;background:#f1f5f9;border-radius:4px;padding:0 4px">plaid</span></div>
+      <div style="font-weight:800;font-size:.95rem;margin:.15rem 0">${esc(a.name || '账户')}</div>
+      <div style="font-size:1.05rem;font-weight:800;color:#0f4c6b">${bal}</div>${avail}
+    </div>`;
+  }).join('');
+  const sel = document.getElementById('bankFltAcct');
+  sel.innerHTML = '<option value="">全部账户</option>' + accs.map(a =>
+    `<option value="${esc(a.account_id)}">${esc(a.institution || '')} ${esc(a.name || '')} ··${esc(a.mask || '')}</option>`).join('');
 }
 function renderBankAccounts() {
   const st = _bankStatus || { items: [], accounts: [] };
@@ -935,6 +969,7 @@ async function bankUnlink(itemRowId) {
 }
 let _bankTxns = [];
 async function bankLoadTxns() {
+  if (_bankMode === 'plaid') return plaidLoadTxns();
   const q = new URLSearchParams();
   const acct = document.getElementById('bankFltAcct').value; if (acct) q.set('account_id', acct);
   const rev = document.getElementById('bankFltRev').value; if (rev !== '') q.set('reviewed', rev);
@@ -961,6 +996,37 @@ async function bankLoadTxns() {
       <td><input type="text" value="${esc(x.review_note || '')}" placeholder="备注…" style="width:130px;font-size:.78rem;padding:4px 6px" onchange="bankReviewNote(${x.id}, this.value)"></td>
     </tr>`;
   }).join('') || '<tr><td colspan="8" style="color:var(--g400)">没有符合条件的交易（先点「立即同步」）</td></tr>';
+}
+// /banking(Plaid) 数据源的交易列表 (只读)
+async function plaidLoadTxns() {
+  const q = new URLSearchParams();
+  const acct = document.getElementById('bankFltAcct').value; if (acct) q.set('account_id', acct);
+  const kw = document.getElementById('bankFltQ').value.trim(); if (kw) q.set('q', kw);
+  const f = document.getElementById('bankFltFrom').value; if (f) q.set('start', f);
+  const t = document.getElementById('bankFltTo').value; if (t) q.set('end', t);
+  q.set('limit', '500');
+  let d;
+  try { d = await bapi('/api/plaid/transactions?' + q.toString()); }
+  catch (e) { document.getElementById('bankTxnBody').innerHTML = '<tr><td colspan="8" style="color:#dc2626">' + esc(e.message || '加载失败') + '</td></tr>'; return; }
+  const rows = d.transactions || [];
+  const accById = {};
+  ((_plaidAccts && _plaidAccts.accounts) || []).forEach(a => { accById[a.account_id] = a; });
+  document.getElementById('bankTxnStats').textContent = `共 ${d.total || rows.length} 笔${rows.length < (d.total || 0) ? `（显示最近 ${rows.length} 笔）` : ''}`;
+  document.getElementById('bankTxnBody').innerHTML = rows.map(x => {
+    const a = accById[x.account_id] || {};
+    const isOut = (x.amount || 0) > 0;
+    const amt = `<span style="font-weight:800;color:${isOut ? '#dc2626' : '#15803d'}">${isOut ? '−' : '+'}${money(Math.abs(x.amount || 0))}</span>`;
+    return `<tr>
+      <td style="white-space:nowrap">${esc(x.date || '')}</td>
+      <td style="font-size:.78rem">${esc(a.institution || '')}<br>${esc(a.name || '')} ··${esc(a.mask || '')}</td>
+      <td>${esc(x.merchant || x.name || '')}${x.merchant && x.name && x.merchant !== x.name ? '<br><span style="font-size:.72rem;color:var(--g400)">' + esc(x.name) + '</span>' : ''}</td>
+      <td style="font-size:.76rem;color:var(--g500)">${esc(x.category || '')}</td>
+      <td style="text-align:right">${amt}</td>
+      <td>${x.pending ? '<span style="color:#b45309;font-size:.74rem">待入账</span>' : ''}</td>
+      <td style="color:var(--g300)">—</td>
+      <td style="color:var(--g300);font-size:.74rem">到 /banking 标注</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="8" style="color:var(--g400)">没有符合条件的交易。</td></tr>';
 }
 function _bankTxnById(id) { return _bankTxns.find(x => x.id === id); }
 async function bankReview(id, checked) {
