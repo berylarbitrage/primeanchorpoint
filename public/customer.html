@@ -750,14 +750,9 @@ async function tsOpen() {
   ov.id = 'tsModal';
   ov.innerHTML = `<div class="modal-box" style="max-width:440px;padding:1.4rem 1.5rem">
     <h2 style="margin-bottom:.8rem">🖨 打印纸质打卡表</h2>
-    <div style="display:flex;gap:.7rem;margin-bottom:.8rem">
-      <div style="flex:1"><label style="font-size:.8rem;color:var(--gray-500)">日期（印在表头，可留空手写）</label>
-        <input type="date" id="tsDate" value="${today}" style="width:100%;padding:.42rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:8px;font-family:inherit"></div>
-      <div style="flex:1"><label style="font-size:.8rem;color:var(--gray-500)">仓库</label>
-        <select id="tsSite" style="width:100%;padding:.45rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:8px;font-family:inherit">
-          ${sites.map(s => `<option value="${esc(s.name + (s.code ? ` (${s.code})` : ''))}">${esc(s.name)}</option>`).join('')}
-          <option value="">留空手写</option>
-        </select></div>
+    <div style="margin-bottom:.8rem">
+      <label style="font-size:.8rem;color:var(--gray-500)">日期（印在表头，可留空手写）</label>
+      <input type="date" id="tsDate" value="${today}" style="width:100%;padding:.42rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:8px;font-family:inherit">
     </div>
     <div style="display:flex;gap:1.2rem;margin-bottom:.6rem;font-size:.9rem">
       <label style="cursor:pointer"><input type="radio" name="tsMode" value="named" checked onchange="tsModeSw()"> 勾选员工姓名</label>
@@ -772,7 +767,7 @@ async function tsOpen() {
       <label style="font-size:.8rem;color:var(--gray-500);display:block;margin-top:.5rem">名单后再补空白行 <input type="number" id="tsExtra" value="3" min="0" max="40" style="width:60px;padding:.25rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:6px"> 行（给临时工手写）</label>
     </div>
     <div id="tsBlankBox" style="display:none">
-      <label style="font-size:.85rem;color:var(--gray-500)">空白行数 <input type="number" id="tsRows" value="20" min="1" max="60" style="width:70px;padding:.3rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:6px"></label>
+      <label style="font-size:.85rem;color:var(--gray-500)">空白行数 <input type="number" id="tsRows" value="27" min="1" max="60" style="width:70px;padding:.3rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:6px"></label>
     </div>
     <div style="display:flex;gap:.6rem;margin-top:1.1rem">
       <button class="modal-btn modal-btn-secondary" style="margin-bottom:0" onclick="document.getElementById('tsModal').remove()">取消</button>
@@ -789,7 +784,6 @@ function tsModeSw() {
 function tsPrint() {
   const named = document.querySelector('input[name="tsMode"]:checked').value === 'named';
   const date = document.getElementById('tsDate').value;
-  const site = document.getElementById('tsSite').value;
   let rows;
   if (named) {
     rows = [...document.querySelectorAll('.ts-emp:checked')].map(c => ({ name: c.dataset.name, code: c.dataset.code }));
@@ -797,14 +791,17 @@ function tsPrint() {
     for (let i = 0; i < extra; i++) rows.push({ name: '', code: '' });
     if (!rows.length) { showToast('请至少勾选一个员工或加空白行', 'error'); return; }
   } else {
-    const n = Math.min(60, Math.max(1, parseInt(document.getElementById('tsRows').value) || 20));
+    const n = Math.min(60, Math.max(1, parseInt(document.getElementById('tsRows').value) || 27));
     rows = Array.from({ length: n }, () => ({ name: '', code: '' }));
   }
+  // 默认整页铺满: 不足一页的补空白行到满页
+  const PAGE_ROWS = 27;
+  while (rows.length < PAGE_ROWS) rows.push({ name: '', code: '' });
   // 日期显示: 2026/08/31 周一 (中间加空格)
   let dateDisp = '';
   if (date) {
     const dd = new Date(date + 'T12:00:00Z');
-    dateDisp = dd.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }) + ' ' + dd.toLocaleDateString('zh-CN', { weekday: 'short' });
+    dateDisp = dd.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' }) + ' ' + dd.toLocaleDateString('en-US', { weekday: 'short' });
   }
   const withId = named; // 空白表不要工号列
   const w = window.open('', '_blank');
@@ -812,32 +809,30 @@ function tsPrint() {
   // 表头一律一行 (中英同行不叠字), 列宽固定, 干净的单线表格
   const cols = [
     { w: '5%', h: '#' },
-    { w: withId ? '20%' : '24%', h: '姓名 Name' },
-    ...(withId ? [{ w: '11%', h: '工号 ID' }] : []),
-    { w: '11%', h: '上班 In' },
-    { w: '13%', h: '休息开始 Break' },
-    { w: '13%', h: '休息结束 Back' },
-    { w: '11%', h: '下班 Out' },
-    { w: '16%', h: '签名 Signature' }
+    { w: withId ? '20%' : '24%', h: 'Name / Nombre' },
+    ...(withId ? [{ w: '11%', h: 'ID' }] : []),
+    { w: '11%', h: 'In / Entrada' },
+    { w: '13%', h: 'Break / Inicio Desc.' },
+    { w: '13%', h: 'Back / Fin Desc.' },
+    { w: '11%', h: 'Out / Salida' },
+    { w: '16%', h: 'Signature / Firma' }
   ];
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>打卡表 Time Sheet</title><style>
     *{box-sizing:border-box}
     body{font-family:Arial,'Microsoft YaHei',sans-serif;margin:24px;color:#111}
-    h1{font-size:19px;text-align:center;margin:0 0 2px;letter-spacing:.05em}
-    .sub{text-align:center;font-size:10.5px;color:#888;margin-bottom:14px;letter-spacing:.12em}
+    h1{font-size:19px;text-align:center;margin:0 0 12px;letter-spacing:.05em}
     .meta{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:8px}
     .meta b{font-weight:700}
     table{width:100%;border-collapse:collapse;table-layout:fixed;border:1.6px solid #222}
-    th,td{border:1px solid #555;height:30px;font-size:11px;text-align:center;white-space:nowrap;overflow:hidden;padding:4px 3px}
+    th,td{border:1px solid #555;height:29px;font-size:11px;text-align:center;white-space:nowrap;overflow:hidden;padding:3px 3px}
     th{background:#f2f3f5;font-weight:700;font-size:10.8px}
     td.nm{text-align:left;padding-left:8px;font-size:12px}
     tbody td{color:#333}
     .foot{display:flex;justify-content:space-between;margin-top:22px;font-size:12.5px}
     @media print{@page{margin:11mm}}
   </style></head><body>
-    <h1>员工打卡表 · Employee Time Sheet</h1>
-    <div class="sub">PRIME ANCHOR POINT</div>
-    <div class="meta"><span><b>仓库 Warehouse:</b> ${site ? esc(site) : '____________________'}</span><span><b>日期 Date:</b> ${dateDisp || '____________________'}</span></div>
+    <h1>Employee Time Sheet · Hoja de Asistencia</h1>
+    <div class="meta"><span></span><span><b>Date / Fecha:</b> ${dateDisp || '____________________'}</span></div>
     <table>
       <colgroup>${cols.map(c => `<col style="width:${c.w}">`).join('')}</colgroup>
       <thead><tr>${cols.map(c => `<th>${c.h}</th>`).join('')}</tr></thead>
@@ -845,7 +840,6 @@ function tsPrint() {
       ${rows.map((r, i) => `<tr><td>${i + 1}</td><td class="nm">${esc(r.name) || '&nbsp;'}</td>${withId ? `<td>${esc(r.code)}</td>` : ''}<td></td><td></td><td></td><td></td><td></td></tr>`).join('')}
       </tbody>
     </table>
-    <div class="foot"><span><b>主管签字 Supervisor:</b> ____________________</span><span><b>日期 Date:</b> ______________</span></div>
     <script>setTimeout(function(){window.print()},300)<\/script>
   </body></html>`);
   w.document.close();
