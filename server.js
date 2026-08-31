@@ -792,8 +792,6 @@ try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_review INTEGER DEFAULT 
 // 工作日 = 仓库当地时区的日期。clock_in 存 UTC, 晚上打卡 UTC 日期会跳到「明天」,
 // 不能用它分天 —— 按天归组必须以本列为准 (老记录为空, 查询时兼容回退)
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN work_date TEXT DEFAULT ''`); } catch(e) {}
-// 客户账号分权限: JSON {punch,relabel,position,kiosk,docs} 0/1; 空 = 全部允许(老账号)
-try { db.exec(`ALTER TABLE customer_accounts ADD COLUMN perms TEXT DEFAULT ''`); } catch(e) {}
 // 打卡时间编辑历史: 每次改动(后台/仓库方/系统)记谁在什么时候把什么从A改到B
 db.exec(`CREATE TABLE IF NOT EXISTS time_entry_edits (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1200,36 +1198,6 @@ try { db.exec(`ALTER TABLE employees ADD COLUMN social_media TEXT DEFAULT '{}'`)
 // 8 位数字打卡密码（见 applicant_submissions.timeclock_code）
 try { db.exec(`ALTER TABLE employees ADD COLUMN timeclock_code TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_emp_tc_code ON employees(timeclock_code) WHERE timeclock_code != ''`); } catch(e) {}
-try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_status TEXT DEFAULT 'unpaid'`); } catch(e) {}
-try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_receipt_path TEXT DEFAULT NULL`); } catch(e) {}
-try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_receipt_paths TEXT DEFAULT NULL`); } catch(e) {}
-try { db.exec(`ALTER TABLE invoices ADD COLUMN paid_at TEXT DEFAULT NULL`); } catch(e) {}
-// Payment-receipt details captured when an invoice is marked paid.
-try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_bank TEXT DEFAULT NULL`); } catch(e) {}
-try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_entity TEXT DEFAULT NULL`); } catch(e) {}
-try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_handler TEXT DEFAULT NULL`); } catch(e) {}
-try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_amount REAL DEFAULT NULL`); } catch(e) {}
-try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_date TEXT DEFAULT NULL`); } catch(e) {}
-// Subcontractor-payment (money paid OUT to the subcontractor) — mirrors the
-// client-payment columns above, tracked independently per invoice.
-try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_status TEXT DEFAULT 'unpaid'`); } catch(e) {}
-try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_receipt_path TEXT DEFAULT NULL`); } catch(e) {}
-try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_receipt_paths TEXT DEFAULT NULL`); } catch(e) {}
-try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_paid_at TEXT DEFAULT NULL`); } catch(e) {}
-try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_entity TEXT DEFAULT NULL`); } catch(e) {}
-try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_bank TEXT DEFAULT NULL`); } catch(e) {}
-try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_handler TEXT DEFAULT NULL`); } catch(e) {}
-try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_amount REAL DEFAULT NULL`); } catch(e) {}
-try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_date TEXT DEFAULT NULL`); } catch(e) {}
-// Manual 工资↔分包回执 correspondence groups (JSON): [{ w:[itemIndex...], t:[txnId...] }].
-try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_match_groups TEXT DEFAULT '[]'`); } catch(e) {}
-try { db.exec(`ALTER TABLE invoices ADD COLUMN markup_rate REAL DEFAULT 0`); } catch(e) {}
-// 兼容：invoices 有两处同名建表定义（2470 行的旧版没有这些列）。全新数据库会按旧版
-// 建表，导致发票管理接口 SELECT items_json/status 直接报错。生产库已有这些列，此处为 no-op。
-try { db.exec(`ALTER TABLE invoices ADD COLUMN for_label TEXT`); } catch(e) {}
-try { db.exec(`ALTER TABLE invoices ADD COLUMN items_json TEXT`); } catch(e) {}
-try { db.exec(`ALTER TABLE invoices ADD COLUMN profile_json TEXT`); } catch(e) {}
-try { db.exec(`ALTER TABLE invoices ADD COLUMN status TEXT DEFAULT 'draft'`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN inquiry_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`UPDATE employees SET employee_id = REPLACE(employee_id, 'STAFF-', 'WRK-') WHERE employee_id LIKE 'STAFF-%'`); } catch(e) {}
 // Migration: fix employee_id date part to match hire_date (UTC timezone offset bug)
@@ -1628,6 +1596,9 @@ try { db.exec("ALTER TABLE customer_accounts ADD COLUMN approval_status TEXT DEF
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN contact_first_name TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN contact_last_name TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN rejection_reason TEXT DEFAULT ''"); } catch {}
+// 客户账号分权限: JSON {punch,relabel,position,kiosk,docs,edit_time,invoice} 0/1; 空 = 除敏感权限外全部允许(老账号)
+// (必须放在 CREATE TABLE customer_accounts 之后: 放前面全新数据库建库时表还不存在, ALTER 会被静默吞掉)
+try { db.exec(`ALTER TABLE customer_accounts ADD COLUMN perms TEXT DEFAULT ''`); } catch(e) {}
 db.exec(`CREATE TABLE IF NOT EXISTS enterprise_verification_codes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   customer_account_id INTEGER NOT NULL REFERENCES customer_accounts(id),
@@ -2554,6 +2525,38 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoices (
   profile TEXT DEFAULT '{}',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
+// invoices 的增量列迁移。必须放在上面的 CREATE TABLE 之后: 放前面的话, 全新数据库
+// 建库时表还不存在, 所有 ALTER 都被 catch 静默吞掉, 发票相关接口会一路报 no such column。
+try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_status TEXT DEFAULT 'unpaid'`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_receipt_path TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_receipt_paths TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN paid_at TEXT DEFAULT NULL`); } catch(e) {}
+// Payment-receipt details captured when an invoice is marked paid.
+try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_bank TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_entity TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_handler TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_amount REAL DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_date TEXT DEFAULT NULL`); } catch(e) {}
+// Subcontractor-payment (money paid OUT to the subcontractor) — mirrors the
+// client-payment columns above, tracked independently per invoice.
+try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_status TEXT DEFAULT 'unpaid'`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_receipt_path TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_receipt_paths TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_paid_at TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_entity TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_bank TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_handler TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_amount REAL DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_payment_date TEXT DEFAULT NULL`); } catch(e) {}
+// Manual 工资↔分包回执 correspondence groups (JSON): [{ w:[itemIndex...], t:[txnId...] }].
+try { db.exec(`ALTER TABLE invoices ADD COLUMN sub_match_groups TEXT DEFAULT '[]'`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN markup_rate REAL DEFAULT 0`); } catch(e) {}
+// 兼容：invoices 有两处同名建表定义（本文件后部还有一处旧版，没有这些列）。按本处建表后
+// 补齐新列，发票管理接口 SELECT items_json/status 才不会报错。生产库已有这些列，此处为 no-op。
+try { db.exec(`ALTER TABLE invoices ADD COLUMN for_label TEXT`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN items_json TEXT`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN profile_json TEXT`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN status TEXT DEFAULT 'draft'`); } catch(e) {}
 
 // ─── Company Worker Payments (monthly cash/transfer payouts to workers per company) ───
 db.exec(`CREATE TABLE IF NOT EXISTS company_worker_payments (
@@ -26913,16 +26916,19 @@ app.post('/api/admin/partner-photo-access/:id', requireAdmin, requireRole('admin
 
 // 该客户(partner)名下的启用仓库
 // 客户账号权限: punch=一键打卡 relabel=改打卡含义 position=改职位 kiosk=打卡机设置
-// docs=看工人证件 edit_time=改打卡具体时间(敏感, 默认关, 必须显式勾选)
-const CUST_PERM_KEYS = ['punch', 'relabel', 'position', 'kiosk', 'docs', 'edit_time'];
+// docs=看工人证件 edit_time=改打卡具体时间 invoice=看公司历史发票
+// (edit_time/invoice 属敏感权限: 默认关, 必须管理员显式勾选)
+const CUST_PERM_KEYS = ['punch', 'relabel', 'position', 'kiosk', 'docs', 'edit_time', 'invoice'];
+const CUST_PERM_DEFAULT_OFF = new Set(['edit_time', 'invoice']);
+function _custPermDefault(key) { return !CUST_PERM_DEFAULT_OFF.has(key); }
 function _custPerm(req, key) {
   try {
     const row = db.prepare('SELECT perms FROM customer_accounts WHERE id=?').get(req.customerId);
     const s = row ? String(row.perms || '').trim() : '';
-    if (!s) return key !== 'edit_time'; // 未配置 = 除改时间外全部允许
+    if (!s) return _custPermDefault(key); // 未配置 = 除敏感权限外全部允许
     const p = JSON.parse(s);
     return !!p[key];
-  } catch (_) { return key !== 'edit_time'; }
+  } catch (_) { return _custPermDefault(key); }
 }
 function _custNeed(req, res, key) {
   if (_custPerm(req, key)) return true;
@@ -28913,7 +28919,7 @@ app.get('/api/customer/company-accounts', requireCustomer, (req, res) => {
     let p = null;
     try { p = String(r.perms || '').trim() ? JSON.parse(r.perms) : null; } catch (_) {}
     const perms = {};
-    for (const k of CUST_PERM_KEYS) perms[k] = p == null ? (k !== 'edit_time') : !!p[k];
+    for (const k of CUST_PERM_KEYS) perms[k] = p == null ? _custPermDefault(k) : !!p[k];
     const sites = (p && Array.isArray(p.sites) && p.sites.length) ? p.sites.map(id => siteName[id] || ('#' + id)) : null; // null = 全部仓库
     return {
       id: r.id, is_me: r.id === req.customerId,
@@ -28923,6 +28929,73 @@ app.get('/api/customer/company-accounts', requireCustomer, (req, res) => {
       perms, sites
     };
   }));
+});
+
+// ─── 客户门户: 公司历史发票 (仅勾了 invoice 权限的账号可见; 敏感权限默认关) ───
+// 只返回开给本公司的正式发票(排除草稿), 字段限于发票纸上本来就印给客户的账单侧内容;
+// 分包成本(sub_price)/内部付款备注/工资成本分析等内部数据一律不出。
+function _custInvoiceNameKey(pid) {
+  const partner = pid ? db.prepare('SELECT name FROM partners WHERE id=?').get(pid) : null;
+  return partner && partner.name ? _companyNameKey(partner.name) : '';
+}
+app.get('/api/customer/invoices', requireCustomer, (req, res) => {
+  if (!_custNeed(req, res, 'invoice')) return;
+  const key = _custInvoiceNameKey(req.customerPartnerId);
+  if (!key) return res.json([]);
+  const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, payment_status, paid_at, payment_date, created_at
+    FROM invoices WHERE status!='draft'
+    ORDER BY COALESCE(NULLIF(invoice_date,''), DATE(created_at)) DESC, id DESC`).all();
+  res.json(rows.filter(r => _companyNameKey(r.company_name) === key).map(r => ({
+    id: r.id, invoice_number: r.invoice_number, invoice_date: r.invoice_date || '',
+    period_start: r.period_start || '', period_end: r.period_end || '',
+    subtotal: Number(r.subtotal) || 0,
+    payment_status: r.payment_status === 'paid' ? 'paid' : (r.payment_status === 'partial' ? 'partial' : 'unpaid'),
+    paid_at: (r.paid_at || r.payment_date || '').slice(0, 10),
+  })));
+});
+app.get('/api/customer/invoices/:id', requireCustomer, (req, res) => {
+  if (!_custNeed(req, res, 'invoice')) return;
+  const key = _custInvoiceNameKey(req.customerPartnerId);
+  const row = key ? db.prepare(`SELECT id, invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, markup_rate, status, payment_status, paid_at, payment_date, items_json, profile_json
+    FROM invoices WHERE id=?`).get(parseInt(req.params.id)) : null;
+  if (!row || row.status === 'draft' || _companyNameKey(row.company_name) !== key) return res.status(404).json({ error: '未找到该发票' });
+  let items = [], profile = {};
+  try { items = JSON.parse(row.items_json || '[]'); } catch (_) {}
+  try { profile = JSON.parse(row.profile_json || '{}'); } catch (_) {}
+  if (!Array.isArray(items)) items = [];
+  // 行明细白名单: 姓名/工时/费率/金额 (发票纸上有的); note/subcontractor 等内部字段不出
+  const outItems = items.map(it => ({
+    name: String(it.name || ''),
+    regHours: Number(it.regHours != null ? it.regHours : it.hours) || 0,
+    otHours: Number(it.otHours) || 0,
+    rate: Number(it.rate) || 0,
+    otRate: Number(it.otRate) || 0,
+    total: Number(it.total) || 0,
+    billed: it.billed != null ? Math.round((Number(it.billed) || 0) * 100) / 100 : null,
+  }));
+  // profile 白名单: 抬头/联系人/收款银行 + container 行的账单侧 (qty × unit_price; 分包价不出)
+  const P = {};
+  for (const k of ['invoice_mode', 'sender_name', 'sender_address', 'sender_phone', 'sender_email',
+    'contact_name', 'contact_phone', 'contact_email', 'bank_name', 'bank_account_name', 'bank_account_no',
+    'bank_routing_no', 'bank_wire_routing', 'bank_paper_routing', 'bank_swift_code']) {
+    if (profile[k] != null && profile[k] !== '') P[k] = String(profile[k]);
+  }
+  if (Array.isArray(profile.container_items)) {
+    P.container_items = profile.container_items.map(c => ({
+      line_type: String(c.line_type || ''), container_no: String(c.container_no || ''), week: String(c.week || ''),
+      qty: Number(c.qty) || 0, unit_price: Number(c.unit_price) || 0,
+      total: Number(c.total != null ? c.total : (Number(c.qty) || 0) * (Number(c.unit_price) || 0)) || 0,
+    }));
+  }
+  res.json({
+    id: row.id, invoice_number: row.invoice_number, invoice_date: row.invoice_date || '',
+    company_name: row.company_name || '', bill_to_addr: row.bill_to_addr || '',
+    period_start: row.period_start || '', period_end: row.period_end || '', for_label: row.for_label || '',
+    subtotal: Number(row.subtotal) || 0, markup_rate: Number(row.markup_rate) || 0,
+    payment_status: row.payment_status === 'paid' ? 'paid' : (row.payment_status === 'partial' ? 'partial' : 'unpaid'),
+    paid_at: (row.paid_at || row.payment_date || '').slice(0, 10),
+    items: outItems, profile: P,
+  });
 });
 
 app.post('/api/customer/post-job', requireCustomer, (req, res) => {
