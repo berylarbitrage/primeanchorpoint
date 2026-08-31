@@ -167,12 +167,13 @@ function markOtpVerifiedByMaster(formToken, type, target) {
 }
 
 // Returns detailed Twilio status for diagnostics (used by admin test endpoint)
-async function sendSMSWithDetail(to, body) {
+async function sendSMSWithDetail(to, body, mediaUrl) {
   if (!twilioClient) return { ok: false, error: 'TWILIO_ACCOUNT_SID 或 TWILIO_AUTH_TOKEN 未配置' };
   if (!TWILIO_FROM && !twilioMsgSvcSid()) return { ok: false, error: 'TWILIO_PHONE_NUMBER 或 TWILIO_MESSAGING_SERVICE_SID 未配置' };
   const formatted = formatPhoneE164(to);
   try {
     const opts = { body, to: formatted };
+    if (mediaUrl) opts.mediaUrl = Array.isArray(mediaUrl) ? mediaUrl : [mediaUrl];
     const _msvc2 = twilioMsgSvcSid();
     if (_msvc2) {
       opts.messagingServiceSid = _msvc2;
@@ -26943,7 +26944,8 @@ app.post('/api/kiosk/punch', async (req, res) => {
 const KIOSK_QR_PREFIX = 'PAWTC:';
 
 // POST /api/kiosk/forgot { site_id, phone } → 手机号在系统里: 返回姓名并把
-// 密码 + 二维码链接用英文短信发到该手机号; 不在: found:false (前端显示注册二维码)。
+// 密码 + 二维码(彩信附图, 中英双语)发到该手机号, 降级为带链接短信; 响应带真实送达状态
+// (delivery: delivered/sent/failed)。不在系统里: found:false (前端显示注册二维码)。
 app.post('/api/kiosk/forgot', async (req, res) => {
   try {
     const b = req.body || {};
@@ -26983,19 +26985,30 @@ app.post('/api/kiosk/forgot', async (req, res) => {
     }
     const name = emp ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim() : String((sub && sub.name) || '').trim();
     const toPhone = (emp && emp.phone) || (sub && sub.phone) || digits;
-    // 二维码作为彩信图片直接发过去; 彩信发不出去 (国际号码等) 再降级为带链接的普通短信
+    // 中英双语、二维码作为彩信图片直接发 (不带链接, 减少运营商垃圾过滤);
+    // 发出后查真实送达状态 —— messages.create 成功只代表 Twilio 接单, 运营商仍可能拒投,
+    // 之前只看接单结果导致「显示已发送但实际没收到」。彩信失败/被拒再降级为带链接短信。
     const qrPngUrl = _applyQrBase(req) + '/my-qr.png?c=' + code;
-    let smsSent = false;
+    const mmsBody = `【Prime Anchor Workforce】打卡密码 Clock-in password: ${code}\n打卡时出示彩信中的二维码，或输入密码。请勿转发。\nShow the attached QR code or enter this password at the time clock. Keep it private.`;
+    const linkBody = `【Prime Anchor Workforce】打卡密码 Clock-in password: ${code}\n二维码 QR: ${_applyQrBase(req) + '/my-qr?c=' + code}\n打卡时出示二维码或输入密码，请勿转发 Keep it private.`;
+    let delivery = 'failed', usedMms = false;
     try {
-      smsSent = !!(await sendSMS(toPhone,
-        `[Prime Anchor Workforce] Your clock-in password: ${code}\nShow the attached QR code or enter the password at the time clock. Keep it private.`,
-        qrPngUrl));
-      if (!smsSent) {
-        smsSent = !!(await sendSMS(toPhone,
-          `[Prime Anchor Workforce] Your clock-in password: ${code}\nYour time-clock QR code: ${_applyQrBase(req) + '/my-qr?c=' + code}\nEnter the password or show the QR at the time clock. Keep it private.`));
+      let r = await sendSMSWithDetail(toPhone, mmsBody, qrPngUrl);
+      usedMms = !!r.ok;
+      if (!r.ok || r.status === 'failed' || r.status === 'undelivered') {
+        if (r.errorCode || r.code || r.error) console.error('[Kiosk] forgot MMS 未送达:', r.errorCode || r.code || '', r.errorMessage || r.error || '');
+        usedMms = false;
+        r = await sendSMSWithDetail(toPhone, linkBody);
+      }
+      if (r.ok) {
+        delivery = r.status === 'delivered' ? 'delivered'
+          : (r.status === 'failed' || r.status === 'undelivered') ? 'failed' : 'sent';
+        if (delivery === 'failed') console.error('[Kiosk] forgot SMS 运营商拒投:', r.errorCode || '', r.errorMessage || '');
+      } else {
+        console.error('[Kiosk] forgot SMS 发送失败:', r.code || '', r.error || '');
       }
     } catch (e) { console.error('[Kiosk] forgot SMS error:', e.message); }
-    res.json({ found: true, name, phone_last4: String(toPhone).replace(/\D/g, '').slice(-4), sms_sent: smsSent });
+    res.json({ found: true, name, phone_last4: String(toPhone).replace(/\D/g, '').slice(-4), sms_sent: delivery !== 'failed', delivery, mms: usedMms });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
