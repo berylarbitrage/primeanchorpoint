@@ -18316,7 +18316,7 @@ function renderTimeKioskMode() {
   if (!box) return;
   const sites = _timeSites.filter(s => s.active);
   if (!sites.length) { box.innerHTML = '<p style="color:var(--gray-400)">暂无启用的仓库</p>'; return; }
-  box.innerHTML = '<div style="font-size:.78rem;color:var(--gray-500);line-height:1.55;margin-bottom:.6rem;padding:.5rem .7rem;background:var(--gray-50);border-radius:8px">「自动」＝不分上下班，只记录当天每次打卡时间：恰好 4 次自动分为 上班→休息开始→休息结束→下班；不足 4 次（或奇数次）按最早=上班、最晚=下班、中间=休息推算，并标记「⚠ 打卡待复核」。</div>' + sites.map(s => {
+  box.innerHTML = '<div style="font-size:.78rem;color:var(--gray-500);line-height:1.55;margin-bottom:.6rem;padding:.5rem .7rem;background:var(--gray-50);border-radius:8px">「自动」＝不分上下班，只记录当天每次打卡时间：恰好 4 次自动分为 上班→休息开始→休息结束→下班；不足 4 次（或奇数次）按最早=上班、最晚=下班、中间=休息推算，并标记「⚠ 打卡待复核」。<b>严格按天（仓库当地时区）</b>：当天的打卡只算当天；前一天没打完的记录隔天自动封单并标待复核，第二天从第一卡重新开始算新的一天。</div>' + sites.map(s => {
     const cur = s.kiosk_punch_mode || '';
     return `
     <div style="padding:.55rem .8rem;background:${cur ? '#FFF7ED' : 'var(--white)'};border:1px solid ${cur ? '#fed7aa' : 'var(--gray-200)'};border-radius:10px;margin-bottom:.5rem;font-size:.85rem">
