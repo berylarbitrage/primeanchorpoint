@@ -8958,7 +8958,7 @@ async function runSmsTest() {
     if (d.media_url) out += `附图链接: ${d.media_url}\n`;
     const mc = d.media_check;
     if (mc) {
-      out += `服务器自查该链接: ${mc.ok ? `✅ 可访问（${mc.status} ${mc.content_type || ''} ${mc.bytes || 0}B ${mc.ms || 0}ms）` : `❌ 拉取失败（${mc.error || (mc.status + ' ' + (mc.content_type || ''))}）—— Twilio 也拿不到图，彩信必然失败`}\n`;
+      out += `服务器自查该链接: ${mc.ok ? `✅ 可访问（${mc.status} ${mc.content_type || ''} ${mc.bytes || 0}B ${mc.ms || 0}ms）` : `❌ 拉取失败（${mc.error || (mc.status + ' ' + (mc.content_type || ''))}${mc.redirect_to ? `，跳到了 ${mc.redirect_to}` : ''}）—— Twilio 也拿不到图，彩信必然失败`}\n`;
     }
     const m = d.mms;
     if (m) {
