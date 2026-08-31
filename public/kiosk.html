@@ -146,6 +146,7 @@ body.brite #fpNum{color:rgba(15,43,91,.9)!important}
     <div class="altrow" style="display:flex;gap:.7rem;max-width:400px;margin:.85rem auto 0">
       <button class="alt-btn" onclick="scanStart()">📷 <span id="lblScan">扫码打卡</span></button>
       <button class="alt-btn" onclick="forgotStart()">❓ <span id="lblForgot">忘记密码</span></button>
+      <button class="alt-btn" onclick="newUserStart()">🆕 <span id="lblNewUser">新员工注册</span></button>
     </div>
   </div>
 
@@ -244,7 +245,8 @@ const KL = {
     resAutoN: n => '（今日第 ' + n + ' 次）',
     resNote: '页面将自动返回', actCount: s => s + ' 秒后自动返回',
     camHint: '打卡时会自动拍照留档', resPhoto: '📷 已拍照留档',
-    lblScan: '扫码打卡', lblForgot: '忘记密码',
+    lblScan: '扫码打卡', lblForgot: '忘记密码', lblNewUser: '新员工注册',
+    regTitle: '🆕 新员工注册',
     scanHint: '将您的打卡二维码对准摄像头', scanBadQr: '不是有效的打卡二维码', scanNoCam: '无法打开摄像头',
     fpHint: '输入手机号（美国 10 位；其他国家含国家代码）', fpGo: '发送',
     fpSent: l4 => '打卡密码和二维码已发送到尾号 ' + l4 + ' 的手机，请查收',
@@ -262,7 +264,8 @@ const KL = {
     resAutoN: n => ' (#' + n + ' today)',
     resNote: 'Returning automatically', actCount: s => 'Auto return in ' + s + 's',
     camHint: 'A photo is taken when you punch', resPhoto: '📷 Photo saved',
-    lblScan: 'Scan QR', lblForgot: 'Forgot password',
+    lblScan: 'Scan QR', lblForgot: 'Forgot password', lblNewUser: 'New Employee',
+    regTitle: '🆕 New Employee Sign-Up',
     scanHint: 'Hold your QR code up to the camera', scanBadQr: 'Not a valid time-clock QR code', scanNoCam: 'Cannot open camera',
     fpHint: 'Enter your phone number (US: 10 digits; intl: include country code)', fpGo: 'Send',
     fpSent: l4 => 'Your password and QR code were sent to the phone ending in ' + l4,
@@ -280,7 +283,8 @@ const KL = {
     resAutoN: n => ' (N.º ' + n + ' de hoy)',
     resNote: 'Regresando automáticamente', actCount: s => 'Regresa en ' + s + 's',
     camHint: 'Se toma una foto al marcar', resPhoto: '📷 Foto guardada',
-    lblScan: 'Escanear QR', lblForgot: 'Olvidé mi contraseña',
+    lblScan: 'Escanear QR', lblForgot: 'Olvidé mi contraseña', lblNewUser: 'Nuevo Empleado',
+    regTitle: '🆕 Registro de Nuevo Empleado',
     scanHint: 'Acerque su código QR a la cámara', scanBadQr: 'Código QR no válido', scanNoCam: 'No se puede abrir la cámara',
     fpHint: 'Ingrese su teléfono (EE.UU.: 10 dígitos; internacional: con código de país)', fpGo: 'Enviar',
     fpSent: l4 => 'Su contraseña y código QR fueron enviados al teléfono que termina en ' + l4,
@@ -338,7 +342,7 @@ function setKLang(l) {
   $('keyClear').textContent = t.clear;
   $('btnCancel').textContent = t.cancel;
   $('lblPunch').textContent = t.btnPunch;
-  $('lblScan').textContent = t.lblScan; $('lblForgot').textContent = t.lblForgot;
+  $('lblScan').textContent = t.lblScan; $('lblForgot').textContent = t.lblForgot; $('lblNewUser').textContent = t.lblNewUser;
   $('scanHint').textContent = t.scanHint; $('btnScanCancel').textContent = t.cancel;
   $('fpHint').textContent = t.fpHint; $('fpKeyClear').textContent = t.clear; $('btnFpCancel').textContent = t.cancel; $('btnFpGo').textContent = t.fpGo;
 }
@@ -488,9 +492,10 @@ function fpPollDelivery(track) {
     } catch (_) {}
   }, 2500);
 }
-async function showFResRegister() {
+// 注册二维码卡片: 「忘记密码→手机号未登记」和首屏「新员工注册」按钮共用
+async function showRegisterQr(title) {
   const t = KL[_kl];
-  $('fresCard').innerHTML = `<div class="res-title">${t.fpNotFound}</div>
+  $('fresCard').innerHTML = `<div class="res-title">${title}</div>
     <div class="res-time" style="margin:.6rem 0">${t.fpRegHint}</div>
     <div id="regQrBox" style="margin:.4rem 0">…</div>
     <button class="act-cancel" onclick="resetToPw()">${t.fpOk}</button>`;
@@ -502,6 +507,8 @@ async function showFResRegister() {
     if (d.qr_data_url) $('regQrBox').innerHTML = `<img src="${d.qr_data_url}" alt="QR" style="width:210px;border-radius:12px">`;
   } catch (_) { $('regQrBox').textContent = '⚠'; }
 }
+function showFResRegister() { return showRegisterQr(KL[_kl].fpNotFound); }
+function newUserStart() { return showRegisterQr(KL[_kl].regTitle); }
 
 // ── 前置摄像头：页面打开即常驻（装机时授权一次），打卡瞬间抓一帧随打卡上传 ──
 let _camStream = null, _camStarting = null, _imageCapture = null;
