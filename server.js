@@ -15589,9 +15589,15 @@ function _mmsMediaBase(req) {
     const v = r && r.value ? r.value.trim().replace(/\/+$/, '') : '';
     if (v && /^https?:\/\//i.test(v)) return v;
   } catch (_) {}
+  // 托管平台原生直连域名: 生产在 Render (RENDER_EXTERNAL_URL, 形如 https://xx.onrender.com)
+  const rend = String(process.env.RENDER_EXTERNAL_URL
+    || (process.env.RENDER_EXTERNAL_HOSTNAME ? 'https://' + process.env.RENDER_EXTERNAL_HOSTNAME : '')).trim().replace(/\/+$/, '');
+  if (/^https?:\/\//i.test(rend)) return rend;
   const rw = String(process.env.RAILWAY_PUBLIC_DOMAIN || '').trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
   if (rw) return 'https://' + rw;
-  return _applyQrBase(req);
+  // 兜底: DNS 实测 www.primeanchorpoint.com CNAME → primeanchorpoint.onrender.com,
+  // 自定义主域名对 Twilio 抓图不通 (11200), onrender 直连域名跳过这一层
+  return 'https://primeanchorpoint.onrender.com';
 }
 
 // Look up a partner by their public applicant-form token. null if not found.
