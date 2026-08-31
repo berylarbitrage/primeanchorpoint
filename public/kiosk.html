@@ -393,6 +393,7 @@ function handleScanCode(text) {
   const m = /^(?:PAWTC:)?(\d{8})$/.exec(String(text || '').trim());
   if (!m) return false;
   scanStop();
+  camSnap(0); setTimeout(() => camSnap(1), 400); // 扫码路径没有输密码过程, 连拍两张
   _pw = m[1]; renderDots();
   showScr('scrPw');
   checkPw();
@@ -521,10 +522,14 @@ async function camShot() {
   const c = await camGrabCanvas();
   return c ? c.toDataURL('image/jpeg', 0.7) : null;
 }
-// 三连拍: 打卡时把滚动缓存里最近 3 帧 (约跨 3 秒) 横向拼成一张, 方便辨认是谁
-let _recentShots = [];
+// 三连拍: 输密码第 1 位拍一张、第 8 位拍一张、提交时再拍一张, 横向拼成一张图。
+// 三张分布在整个打卡过程 (输入约需几秒), 画面互不相同方便辨认; 照片只在提交时一起上传
+let _punchShots = [];
+function camSnap(i) {
+  camGrabCanvas().then(c => { if (c) _punchShots[i] = c; }).catch(() => {});
+}
 function camComposite() {
-  const shots = _recentShots.slice(-3);
+  const shots = _punchShots.filter(Boolean).slice(-3);
   if (!shots.length) return null;
   if (shots.length === 1) return shots[0].toDataURL('image/jpeg', 0.7);
   const fw = 440;
@@ -552,7 +557,8 @@ async function camShotWait(maxMs) {
 // 1) 开始打卡 (按第一个数字/进扫码屏) 就把整页切成亮白「补光模式」, 预拍缓存里的帧都是被照亮的
 // 2) 提交打卡瞬间若画面仍偏暗, 全屏白光 ~0.6s 内闪拍 3 帧替换缓存, 保证照片能辨认
 function _envDark() {
-  const last = _recentShots[_recentShots.length - 1];
+  const shots = _punchShots.filter(Boolean);
+  const last = shots[shots.length - 1];
   return !last || last.lum < 50;
 }
 function briteSet(on) {
@@ -570,7 +576,7 @@ async function camFlashShots() {
     await new Promise(r2 => setTimeout(r2, 260)); // 等屏幕点亮 + 摄像头曝光适应
     for (let i = 0; i < 3; i++) {
       const c = await camGrabCanvas();
-      if (c) { _recentShots.push(c); if (_recentShots.length > 3) _recentShots.shift(); }
+      if (c) { _punchShots.push(c); _punchShots = _punchShots.filter(Boolean).slice(-3); }
       if (i < 2) await new Promise(r2 => setTimeout(r2, 170));
     }
   } finally { clearTimeout(wd); ov.style.display = 'none'; }
@@ -609,6 +615,7 @@ function resetToPw() {
   clearInterval(_actTimer); clearTimeout(_resTimer);
   scanStop();
   _pw = ''; _pwLocked = false; _fp = ''; _fpBusy = false;
+  _punchShots = []; // 上一个人的画面不留给下一次打卡
   renderDots(); $('pwErr').textContent = '';
   briteSet(false);
   showScr('scrPw');
@@ -622,10 +629,10 @@ function renderDots() {
 renderDots();
 function kp(d) {
   if (_pwLocked || _pw.length >= 8) return;
-  if (!_pw) briteAuto(); // 开始输密码就检查光线, 暗则立即切补光模式照亮人脸
+  if (!_pw) { briteAuto(); camSnap(0); } // 第 1 位: 检查光线(暗则切补光) + 拍第一张
   $('pwErr').textContent = '';
   _pw += d; renderDots();
-  if (_pw.length === 8) checkPw();
+  if (_pw.length === 8) { camSnap(1); checkPw(); } // 第 8 位: 拍第二张
 }
 function kpBack() { if (_pwLocked) return; _pw = _pw.slice(0, -1); renderDots(); $('pwErr').textContent = ''; }
 function kpClear() { if (_pwLocked) return; _pw = ''; renderDots(); $('pwErr').textContent = ''; }
@@ -708,9 +715,14 @@ async function doPunchNow() {
   const btn = $('btnPunch');
   btn.style.opacity = '.6';
   try {
-    // 光线仍不足 (缓存帧偏暗/缓存空) → 全屏白光闪拍 3 帧替换缓存, 保证暗环境照片可辨认
+    // 光线仍不足 (已拍帧偏暗/没拍到) → 全屏白光闪拍补帧, 保证暗环境照片可辨认
     if (_envDark()) { await camStart(); await camFlashShots(); }
-    // 最近 3 帧拼成三连拍零等待; 极少数缓存还空时短暂等一下 (最多 1.2s), 保证记录带照片
+    // 提交时拍第三张 (与输密码时的两张拼成跨越整个打卡过程的三连拍)
+    try {
+      const c3 = await camGrabCanvas();
+      if (c3) { _punchShots = _punchShots.filter(Boolean).slice(-2); _punchShots.push(c3); }
+    } catch (_) {}
+    // 拼三连拍; 一张都没有时短暂等一下 (最多 1.2s), 保证记录带照片
     const photo = camComposite() || await camShotWait(1200);
     const r = await _fetchT('/api/kiosk/punch', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -768,12 +780,7 @@ async function _verCheck() {
 _verCheck();
 setInterval(_verCheck, 5 * 60 * 1000);
 camStart(); // 页面打开即申请摄像头: 装机时授权一次, 之后打卡抓拍/扫码即刻可用
-// 全程每秒滚动预拍并保留最近 3 帧: 任何时刻点打卡, 立即拼出三连拍 (专用打卡平板, 开销可忽略)
-setInterval(async () => {
-  if (document.hidden || _punching) return;
-  const c = await camGrabCanvas();
-  if (c) { _recentShots.push(c); if (_recentShots.length > 3) _recentShots.shift(); }
-}, 1000);
+// (拍照改为事件驱动: 输密码第 1/8 位 + 提交时各拍一张, 不再每秒滚动预拍)
 
 // ── 电池管理: 每 2 分钟上报电量, 服务器按阈值控制智能插座充/停 ──
 (async function batteryLoop() {
