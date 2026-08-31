@@ -26823,19 +26823,28 @@ function _customerEntryScope(pid, ids) {
 // 客户门户: 本公司的打卡记录 (员工姓名+时间; photos 字段仅当照片开关开启时返回)
 app.get('/api/customer/time-records', requireCustomer, (req, res) => {
   const pid = req.customerPartnerId;
-  // 日期范围: 默认最近 7 天, 最长 190 天 (超出时保留靠近 to 的一段)
+  // 日期范围: 默认最近 7 天, 最长 190 天 (超出时保留靠近 to 的一段); all=1 时不限
+  const wantAll = String(req.query.all || '') === '1';
   const reD = /^\d{4}-\d{2}-\d{2}$/;
   let from = reD.test(String(req.query.from || '')) ? req.query.from : '';
   let to = reD.test(String(req.query.to || '')) ? req.query.to : '';
   if (!to) to = new Date().toISOString().slice(0, 10);
   if (!from) from = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
   if (from > to) { const x = from; from = to; to = x; }
-  if ((new Date(to) - new Date(from)) > 190 * 86400000) from = new Date(new Date(to) - 190 * 86400000).toISOString().slice(0, 10);
+  if (!wantAll && (new Date(to) - new Date(from)) > 190 * 86400000) from = new Date(new Date(to) - 190 * 86400000).toISOString().slice(0, 10);
   if (!pid) return res.json({ photos_enabled: false, sites: [], entries: [], from, to, no_binding: true });
   const sites = _customerSites(pid);
   const photosEnabled = !!((db.prepare('SELECT show_punch_photos FROM partners WHERE id=?').get(pid) || {}).show_punch_photos);
   const ids = sites.map(s => s.id);
   const scope = _customerEntryScope(pid, ids);
+  if (wantAll) {
+    // 全部数据: from 取该公司范围内最早一条记录的日期 (行数仍受 LIMIT 2000 保护)
+    try {
+      const mn = db.prepare(`SELECT MIN(DATE(t.clock_in)) AS m FROM time_entries t WHERE ${scope.sql}`).get(...scope.params);
+      if (mn && mn.m) from = mn.m;
+    } catch (_) {}
+    to = new Date().toISOString().slice(0, 10);
+  }
   const rows = db.prepare(`SELECT t.id AS entry_id, t.site_id, t.clock_in, t.clock_out, t.break_records, t.total_hours, t.status, t.on_break,
       t.clock_in_photo_path, t.punch_photo_path, e.first_name, e.last_name
     FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id
