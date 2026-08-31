@@ -184,6 +184,30 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     </div>
   </div>
 
+  <!-- 💵 发票逐行付款备注弹窗 -->
+  <div id="lpModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:1600;align-items:center;justify-content:center;padding:16px">
+    <div class="card" style="max-width:380px;width:100%;padding:1.2rem 1.2rem 1rem">
+      <div style="font-weight:800;margin-bottom:.2rem">💵 这一条的付款备注</div>
+      <div id="lpTitle" style="font-size:.8rem;color:var(--g500);margin-bottom:.7rem"></div>
+      <label style="font-size:.76rem;color:var(--g500)">这笔钱付了没有</label>
+      <select id="lpStatus" style="width:100%;margin:.15rem 0 .55rem">
+        <option value="">— 未记录 —</option>
+        <option value="paid">✅ 已付</option>
+        <option value="partial">🟡 部分已付</option>
+        <option value="unpaid">❌ 未付</option>
+      </select>
+      <label style="font-size:.76rem;color:var(--g500)">怎么付的（银行/方式）</label>
+      <input type="text" id="lpMethod" list="lpMethodList" placeholder="例：Zelle / Chase ··0165 / 支票" style="width:100%;margin:.15rem 0 .55rem">
+      <datalist id="lpMethodList"></datalist>
+      <label style="font-size:.76rem;color:var(--g500)">备注</label>
+      <input type="text" id="lpNote" placeholder="可选，例：8/30 付的，还差 $100" style="width:100%;margin:.15rem 0 .8rem">
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="closeLinePay()">取消</button>
+        <button class="btn btn-blue" onclick="saveLinePay()">保存</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 🧾 银行直连交易标注抽屉 (bank-ann.js 共用面板, 与 /banking 一模一样; 会计改动待主管审核) -->
   <div id="annBackdrop" onclick="annClose()"></div>
   <div id="annDrawer">
@@ -598,6 +622,7 @@ async function openInvoice(id) {
     const inv = await api('/api/acct/invoices/' + id);
     if (inv.error) throw new Error(inv.error);
     document.getElementById('vwTitle').textContent = `📄 ${inv.invoice_number} · ${inv.company_name || ''}`;
+    _invDoc = inv;
     cont.innerHTML = '';
     const page = document.createElement('div');
     page.className = 'vw-page';
@@ -615,6 +640,65 @@ async function openInvoice(id) {
     cont.innerHTML = '<div style="color:#dc2626;padding:2rem">打开失败：' + esc(e.message || e) + '</div>';
   }
 }
+// ── 发票逐行付款备注: 每一条记「付了没有 / 怎么付的」(内部批注, 不属于发票原件) ──
+let _invDoc = null;
+const _LP_ST = { paid: ['✅ 已付', '#dcfce7', '#166534'], partial: ['🟡 部分', '#fef3c7', '#92400e'], unpaid: ['❌ 未付', '#fee2e2', '#991b1b'] };
+function _lpChip(i) {
+  const n = (_invDoc && _invDoc.line_pay_notes && _invDoc.line_pay_notes[i]) || null;
+  const has = n && (n.paid_status || n.pay_method || n.note);
+  if (!has) return canAnnotate() ? `<button class="ann-add" onclick="openLinePay(${i})">＋ 付款备注</button>` : '<span style="color:#cbd5e1">—</span>';
+  const st = _LP_ST[n.paid_status];
+  const badge = st ? `<span style="background:${st[1]};color:${st[2]};border-radius:8px;padding:1px 7px;font-size:.7rem;font-weight:700;white-space:nowrap">${st[0]}</span>` : '';
+  const parts = [n.pay_method, n.note].filter(Boolean).map(esc).join(' · ');
+  const inner = `${badge}${parts ? ` <span style="font-size:.72rem;color:#475569">${parts}</span>` : ''}`;
+  return canAnnotate()
+    ? `<a style="cursor:pointer;text-decoration:none" title="点击编辑" onclick="openLinePay(${i})">${inner}</a>`
+    : inner;
+}
+function _lpLabel(i) {
+  if (!_invDoc) return '';
+  const p = _invDoc.profile || {};
+  if (p.invoice_mode === 'container' && Array.isArray(p.container_items)) { const c = p.container_items[i] || {}; return c.container_no || ('#' + (i + 1)); }
+  const it = (Array.isArray(_invDoc.items) ? _invDoc.items : [])[i] || {};
+  return it.name || ('#' + (i + 1));
+}
+async function openLinePay(i) {
+  if (!_invDoc) return;
+  _lpIdx = i;
+  const n = (_invDoc.line_pay_notes && _invDoc.line_pay_notes[i]) || {};
+  document.getElementById('lpTitle').textContent = `${_invDoc.invoice_number || ''} · 第 ${i + 1} 行 · ${_lpLabel(i)}`;
+  document.getElementById('lpStatus').value = n.paid_status || '';
+  document.getElementById('lpMethod').value = n.pay_method || '';
+  document.getElementById('lpNote').value = n.note || '';
+  try {
+    if (!_plaidAccts) _plaidAccts = await bapi('/api/plaid/accounts');
+    const banks = ((_plaidAccts && _plaidAccts.accounts) || []).map(a => [a.institution, a.company_label || a.name].filter(Boolean).join(' ') + (a.mask ? ' ··' + a.mask : ''));
+    const methods = ['Zelle', '支票 Check', '电汇 Wire', 'ACH', '现金 Cash', '信用卡 Credit Card'];
+    document.getElementById('lpMethodList').innerHTML = [...banks, ...methods].map(v => `<option value="${esc(v)}">`).join('');
+  } catch (e) {}
+  document.getElementById('lpModal').style.display = 'flex';
+}
+function closeLinePay() { document.getElementById('lpModal').style.display = 'none'; }
+async function saveLinePay() {
+  if (!_invDoc || _lpIdx == null) return;
+  try {
+    const r = await bapi(`/api/acct/invoices/${_invDoc.id}/line-pay-note`, { method: 'POST', body: JSON.stringify({
+      line_idx: _lpIdx,
+      line_label: _lpLabel(_lpIdx),
+      paid_status: document.getElementById('lpStatus').value,
+      pay_method: document.getElementById('lpMethod').value.trim(),
+      note: document.getElementById('lpNote').value.trim(),
+    }) });
+    if (!_invDoc.line_pay_notes) _invDoc.line_pay_notes = {};
+    _invDoc.line_pay_notes[_lpIdx] = r.note;
+    const cell = document.getElementById('lpCell' + _lpIdx);
+    if (cell) cell.innerHTML = _lpChip(_lpIdx);
+    closeLinePay();
+    toast('✅ 付款备注已保存');
+  } catch (e) { toast(e.message || '保存失败', true); }
+}
+let _lpIdx = null;
+
 // 只读发票纸：logo + 抬头 + BILL TO + 明细（工时 / 装卸柜两种模式）+ 合计 + 收款信息
 function renderInvoiceDoc(inv) {
   const profile = inv.profile || {};
@@ -630,7 +714,7 @@ function renderInvoiceDoc(inv) {
   const contItems = Array.isArray(profile.container_items) ? profile.container_items : [];
   if (profile.invoice_mode === 'container' && contItems.length) {
     lineTable = `<table style="width:100%;border-collapse:collapse;margin-bottom:.6rem">
-      <thead><tr><th style="${th}">#</th><th style="${th}">Type</th><th style="${th}">Container / Week</th><th style="${thR}">Qty</th><th style="${thR}">Unit Price</th><th style="${thR}">Amount</th></tr></thead>
+      <thead><tr><th style="${th}">#</th><th style="${th}">Type</th><th style="${th}">Container / Week</th><th style="${thR}">Qty</th><th style="${thR}">Unit Price</th><th style="${thR}">Amount</th><th style="${th};color:#94a3b8">付款备注<span style="font-size:.6rem">(内部)</span></th></tr></thead>
       <tbody>${contItems.map((c, i) => `<tr>
         <td style="${td}">${i + 1}</td>
         <td style="${td}">${c.line_type === 'load' ? '装柜 Load' : '卸柜 Unload'}</td>
@@ -638,11 +722,12 @@ function renderInvoiceDoc(inv) {
         <td style="${tdR}">${Number(c.qty) || 0}</td>
         <td style="${tdR}">${money(c.unit_price)}</td>
         <td style="${tdR};font-weight:700">${money(c.total != null ? c.total : (Number(c.qty) || 0) * (Number(c.unit_price) || 0))}</td>
+        <td style="${td}" id="lpCell${i}">${_lpChip(i)}</td>
       </tr>`).join('')}</tbody></table>`;
   } else {
     const hasOt = items.some(it => Number(it.otHours) > 0);
     lineTable = `<table style="width:100%;border-collapse:collapse;margin-bottom:.6rem">
-      <thead><tr><th style="${th}">#</th><th style="${th}">Worker</th><th style="${thR}">Reg Hrs</th>${hasOt ? `<th style="${thR}">OT Hrs</th>` : ''}<th style="${thR}">Rate</th>${hasOt ? `<th style="${thR}">OT Rate</th>` : ''}<th style="${thR}">Amount</th></tr></thead>
+      <thead><tr><th style="${th}">#</th><th style="${th}">Worker</th><th style="${thR}">Reg Hrs</th>${hasOt ? `<th style="${thR}">OT Hrs</th>` : ''}<th style="${thR}">Rate</th>${hasOt ? `<th style="${thR}">OT Rate</th>` : ''}<th style="${thR}">Amount</th><th style="${th};color:#94a3b8">付款备注<span style="font-size:.6rem">(内部)</span></th></tr></thead>
       <tbody>${items.map((it, i) => {
         const amt = it.billed != null ? it.billed : it.total;
         return `<tr>
@@ -653,6 +738,7 @@ function renderInvoiceDoc(inv) {
           <td style="${tdR}">${money(it.rate)}</td>
           ${hasOt ? `<td style="${tdR}">${money(it.otRate)}</td>` : ''}
           <td style="${tdR};font-weight:700">${money(amt)}</td>
+          <td style="${td}" id="lpCell${i}">${_lpChip(i)}</td>
         </tr>`;
       }).join('')}</tbody></table>`;
   }
