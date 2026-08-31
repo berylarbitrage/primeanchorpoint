@@ -349,8 +349,11 @@ tr:last-child td{border-bottom:none}
           <span style="color:var(--gray-400);font-size:.85rem">至</span>
           <input type="date" id="trTo" style="padding:.45rem .55rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:8px;font-family:inherit">
           <button class="btn btn-outline" style="padding:.45rem .9rem" onclick="trQuick(0)">今天</button>
+          <button class="btn btn-outline" style="padding:.45rem .9rem" onclick="trWeek()" title="自然周（周一至周日）">本周</button>
+          <button class="btn btn-outline" style="padding:.45rem .9rem" onclick="trMonth()" title="自然月（1号至月末）">本月</button>
           <button class="btn btn-outline" style="padding:.45rem .9rem" onclick="trQuick(6)">近7天</button>
           <button class="btn btn-outline" style="padding:.45rem .9rem" onclick="trQuick(29)">近30天</button>
+          <button class="btn btn-outline" style="padding:.45rem .9rem" onclick="trAll()" title="全部打卡数据">全部</button>
           <button class="btn btn-outline" style="padding:.45rem .9rem" onclick="loadTimeRecords()">↻ 刷新</button>
         </div>
         <div id="trKioskMode" style="margin-bottom:.8rem"></div>
@@ -647,10 +650,34 @@ async function trPunchAction(entryId, action, label, name) {
   if (r.ok) { showToast(`✅ 已记录：${name} ${label}`); loadTimeRecords(); }
   else showToast(r.error || '操作失败', 'error');
 }
+let _trAll = false; // 「全部」模式: 不带日期范围, 后端从最早一条查起
 function trQuick(days) {
+  _trAll = false;
   const now = new Date();
   document.getElementById('trTo').value = now.toISOString().slice(0, 10);
   document.getElementById('trFrom').value = new Date(now - days * 86400000).toISOString().slice(0, 10);
+  loadTimeRecords();
+}
+function trPreset(from, to) {
+  _trAll = false;
+  document.getElementById('trFrom').value = from;
+  document.getElementById('trTo').value = to;
+  loadTimeRecords();
+}
+function trWeek() { // 自然周: 周一 ~ 周日
+  const n = new Date();
+  const mon = new Date(n.getTime() - ((n.getUTCDay() + 6) % 7) * 86400000);
+  trPreset(mon.toISOString().slice(0, 10), new Date(mon.getTime() + 6 * 86400000).toISOString().slice(0, 10));
+}
+function trMonth() { // 自然月: 1号 ~ 月末
+  const n = new Date();
+  trPreset(new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), 1)).toISOString().slice(0, 10),
+    new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth() + 1, 0)).toISOString().slice(0, 10));
+}
+function trAll() {
+  _trAll = true;
+  document.getElementById('trFrom').value = '';
+  document.getElementById('trTo').value = '';
   loadTimeRecords();
 }
 async function loadTimeRecords() {
@@ -658,12 +685,17 @@ async function loadTimeRecords() {
   tb.innerHTML = '<tr><td colspan="10" style="color:var(--gray-400)">加载中…</td></tr>';
   const q = new URLSearchParams();
   const f = document.getElementById('trFrom').value, t = document.getElementById('trTo').value;
+  if (f || t) _trAll = false; // 手动挑了日期就退出「全部」模式
   if (f) q.set('from', f); if (t) q.set('to', t);
+  if (_trAll) q.set('all', '1');
   const d = await cApi('/time-records?' + q.toString());
   if (!d) return;
   if (d.error) { tb.innerHTML = `<tr><td colspan="10" style="color:#E63946">${esc(d.error)}</td></tr>`; return; }
-  if (!document.getElementById('trFrom').value) document.getElementById('trFrom').value = d.from;
-  if (!document.getElementById('trTo').value) document.getElementById('trTo').value = d.to;
+  // 「全部」模式日期框留空, 免得下次刷新按具体日期(>190天会被截断)查
+  if (!_trAll) {
+    if (!document.getElementById('trFrom').value) document.getElementById('trFrom').value = d.from;
+    if (!document.getElementById('trTo').value) document.getElementById('trTo').value = d.to;
+  }
   _trSiteTz = {}; const siteName = {};
   (d.sites || []).forEach(s => { _trSiteTz[s.id] = s.timezone; siteName[s.id] = s.name + (s.code ? ` (${s.code})` : ''); });
   trRenderKioskMode(d.sites || []);
@@ -705,7 +737,7 @@ async function loadTimeRecords() {
     </tr>`;
   });
   tb.innerHTML = rows.join('') || `<tr><td colspan="10" style="color:var(--gray-400);text-align:center;padding:1.4rem">${
-    d.no_binding ? '贵公司还没有关联的仓库或打卡记录，请联系 Prime Anchor Workforce 完成绑定' : '该时段没有打卡记录（可试试「近30天」）'}</td></tr>`;
+    d.no_binding ? '贵公司还没有关联的仓库或打卡记录，请联系 Prime Anchor Workforce 完成绑定' : '该时段没有打卡记录（可试试「近30天」或「全部」）'}</td></tr>`;
   document.getElementById('trSummary').innerHTML =
     `<span>班次 <b>${(d.entries || []).length}</b></span><span>总工时 <b>${totalH.toFixed(1)}h</b></span><span>当前在班 <b>${onDuty}</b></span>` +
     (d.photos_enabled ? '' : '');

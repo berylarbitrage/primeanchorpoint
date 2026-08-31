@@ -1465,6 +1465,10 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <option value="pending_review">待审核</option>
       <option value="punch_review">⚠ 打卡待复核</option>
     </select>
+    <button class="btn btn-sm btn-outline" onclick="timePreset('today')">今天</button>
+    <button class="btn btn-sm btn-outline" onclick="timePreset('week')" title="自然周（周一至周日）">本周</button>
+    <button class="btn btn-sm btn-outline" onclick="timePreset('month')" title="自然月（1号至月末）">本月</button>
+    <button class="btn btn-sm btn-outline" onclick="timePreset('all')" title="清空日期，显示全部数据">全部</button>
   </div>
   <div class="hours-bar" id="timeSummary" style="display:none">
     <div class="hours-item"><h4 id="sumShifts">0</h4><p>班次总数</p></div>
@@ -18368,6 +18372,20 @@ async function timeSetKioskMode(siteId, mode, label, isCurrent) {
   renderTimeKioskMode();
 }
 
+// 日期快捷范围: 今天 / 自然周(一~日) / 自然月 / 全部(清空日期)
+function timePreset(k) {
+  const F = document.getElementById('timeFrom'), T = document.getElementById('timeTo');
+  const n = new Date(), iso = d => d.toISOString().slice(0, 10);
+  if (k === 'today') { F.value = iso(n); T.value = iso(n); }
+  else if (k === 'week') {
+    const mon = new Date(n.getTime() - ((n.getUTCDay() + 6) % 7) * 86400000);
+    F.value = iso(mon); T.value = iso(new Date(mon.getTime() + 6 * 86400000));
+  } else if (k === 'month') {
+    F.value = iso(new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), 1)));
+    T.value = iso(new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth() + 1, 0)));
+  } else { F.value = ''; T.value = ''; }
+  loadTimeEntries();
+}
 async function loadTimeEntries() {
   const emp  = document.getElementById('timeEmpFilter').value;
   const site = document.getElementById('timeSiteFilter').value;
