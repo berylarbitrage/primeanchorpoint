@@ -27162,6 +27162,21 @@ app.get('/api/customer/time-entries/:id/edits', requireCustomer, (req, res) => {
   res.json(db.prepare('SELECT editor_type, editor_name, changes, created_at FROM time_entry_edits WHERE entry_id=? ORDER BY id DESC LIMIT 100').all(a.entry.id));
 });
 
+// GET /api/customer/punch-employees — 本公司仓库的打卡员工名单 (近90天打过卡的),
+// 打印纸质打卡表时勾选姓名用。只给 姓名+工号, 不含电话/密码等敏感信息。
+app.get('/api/customer/punch-employees', requireCustomer, (req, res) => {
+  const pid = req.customerPartnerId;
+  if (!pid) return res.json([]);
+  const ids = _customerSites(pid).map(s => s.id);
+  if (!ids.length) return res.json([]);
+  const scope = _customerEntryScope(pid, ids);
+  const rows = db.prepare(`SELECT DISTINCT e.id, e.first_name, e.last_name, e.employee_id AS emp_code
+    FROM time_entries t JOIN employees e ON t.employee_id=e.id
+    WHERE ${scope.sql} AND DATE(t.clock_in) >= DATE('now','-90 day')
+    ORDER BY e.first_name, e.last_name`).all(...scope.params);
+  res.json(rows.map(r => ({ id: r.id, name: [r.first_name, r.last_name].filter(Boolean).join(' ') || '—', emp_code: r.emp_code || '' })));
+});
+
 // 客户门户打卡照片: 仅当该公司照片开关开启, 且该文件确属本公司仓库的打卡记录
 app.get('/api/customer/punch-photo/:filename', requireCustomer, async (req, res) => {
   const pid = req.customerPartnerId;
