@@ -27190,10 +27190,18 @@ app.post('/api/kiosk/forgot', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 打卡台「手机号未登记」时显示的注册二维码 (指向入职申请页)
+// 打卡台「手机号未登记」时显示的注册二维码 (指向入职申请页)。
+// apply.html 没有 token 会直接报「请通过专属二维码访问此页面」不出表单,
+// 所以必须带上通用申请 token (同后台「通用申请二维码」, 提交归入通用收件箱)。
 app.get('/api/kiosk/register-qr', async (req, res) => {
   try {
-    const url = _applyQrBase(req) + '/apply';
+    const row = db.prepare("SELECT value FROM app_settings WHERE key='generic_applicant_form_token'").get();
+    let token = (row && row.value) || '';
+    if (!token) {
+      token = crypto.randomBytes(20).toString('hex');
+      db.prepare("INSERT INTO app_settings (key, value) VALUES ('generic_applicant_form_token', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(token);
+    }
+    const url = `${_applyQrBase(req)}/apply/${token}`;
     const qr = await QRCode.toDataURL(url, { width: 360, margin: 1 });
     res.json({ url, qr_data_url: qr });
   } catch (e) { res.status(500).json({ error: e.message }); }
