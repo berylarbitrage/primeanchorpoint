@@ -1439,7 +1439,32 @@ async function loadProfile() {
       <div><span style="color:var(--gray-400)">联系邮箱</span><br>${esc(me.email)}</div>
       <div><span style="color:var(--gray-400)">电话</span><br>${esc(me.phone||'—')}</div>
     </div>
-    <p style="margin-top:1.25rem;font-size:.82rem;color:var(--gray-400)">如需修改公司信息，请联系 Prime Anchor Workforce 客服</p>`;
+    <p style="margin-top:1.25rem;font-size:.82rem;color:var(--gray-400)">如需修改公司信息，请联系 Prime Anchor Workforce 客服</p>
+    <div id="companyAccts" style="margin-top:1.4rem"></div>`;
+  loadCompanyAccounts();
+}
+// 本公司的账号与各自权限 (只读展示; 加/改权限找 Prime Anchor 管理员)
+const C_PERM_LABELS = { punch: '一键打卡', relabel: '改打卡含义', position: '改职位', kiosk: '打卡机设置', docs: '看工人证件', edit_time: '⏱ 改打卡时间' };
+async function loadCompanyAccounts() {
+  const rows = await cApi('/company-accounts');
+  const box = document.getElementById('companyAccts');
+  if (!box || !Array.isArray(rows)) return;
+  const chip = (txt, on2) => `<span style="display:inline-block;border-radius:999px;padding:.08rem .55rem;margin:.1rem .18rem .1rem 0;font-size:.75rem;border:1px solid ${on2 ? '#BBE3C8' : 'var(--gray-200,#e2e5ea)'};background:${on2 ? '#F0FBF3' : '#fafbfc'};color:${on2 ? '#1F7A40' : 'var(--gray-400,#98A2B3)'}">${on2 ? '✓ ' : '✗ '}${txt}</span>`;
+  box.innerHTML = `
+    <h2 style="font-size:1rem;margin-bottom:.2rem">👥 本公司的账号与权限</h2>
+    <p style="font-size:.8rem;color:var(--gray-400);margin-bottom:.6rem">共 ${rows.length} 个账号 · 权限由 Prime Anchor 管理员分配，如需调整请联系客服</p>
+    <div style="overflow-x:auto">
+    <table style="min-width:760px">
+      <thead><tr><th>账号</th><th>电话</th><th>状态</th><th>权限</th><th>仓库范围</th></tr></thead>
+      <tbody>${rows.map(r => `<tr${r.is_me ? ' style="background:#F5F9FF"' : ''}>
+        <td><div style="font-weight:600;white-space:nowrap">${esc(r.name || '—')}${r.is_me ? ' <span style="color:var(--blue);font-size:.75rem">(当前账号)</span>' : ''}</div><div style="font-size:.8rem;color:var(--gray-400)">${esc(r.email)}</div></td>
+        <td style="white-space:nowrap">${esc(r.phone || '—')}</td>
+        <td style="white-space:nowrap">${r.status === '正常' ? '<span style="color:#2D9D78">● 正常</span>' : `<span style="color:#B87400">● ${esc(r.status)}</span>`}</td>
+        <td style="min-width:260px">${Object.values(r.perms).some(Boolean) ? Object.entries(C_PERM_LABELS).map(([k, l]) => chip(l, !!r.perms[k])).join('') : '<span style="color:var(--gray-400)">👁 只读账号（只能看）</span>'}</td>
+        <td style="font-size:.82rem">${r.sites ? esc(r.sites.join('、')) : '全部仓库'}</td>
+      </tr>`).join('')}</tbody>
+    </table>
+    </div>`;
 }
 
 if (C_TOKEN) showApp().catch(() => customerLogout());
