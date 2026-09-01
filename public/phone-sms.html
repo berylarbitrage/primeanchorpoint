@@ -1491,12 +1491,12 @@ const RATE_GROUPS = [
   { name: '🗣 语言', opts: [[1, '✓ 流利'], [2, '◐ 会一点'], [0, '✗ 不会']],
     qs: [['lang_en', '英语？'], ['lang_es', '西班牙语？'], ['lang_zh', '中文？']] },
   { name: '👥 管理', opts: [[1, '✓ 可以'], [2, '◐ 可能可以'], [0, '✗ 不行']],
-    qs: [['can_lead', '可以做领班吗？'], ['can_recruit', '有能力帮忙找人吗？']] },
+    qs: [['can_lead', '可以做领班吗？'], ['can_recruit', '有能力帮忙找人吗？'], ['can_tax', '可以报税吗？']] },
 ];
 let RATE_DRAFT = {};
 // 打分联动的标签: 打 1(熟练/可以)自动补上; 管理项打 0(不行)自动摘掉
-const RATE_TAGS = { forklift: '叉车工', cherry_picker: '高位叉车', container_unload: '卸柜工', can_lead: '能做领班', can_recruit: '能招人' };
-const CAP_ICONS = { '能做工头': '👷', '能做领班': '👷', '能招人': '📣' };
+const RATE_TAGS = { forklift: '叉车工', cherry_picker: '高位叉车', container_unload: '卸柜工', can_lead: '能做领班', can_recruit: '能招人', can_tax: '能报税' };
+const CAP_ICONS = { '能做工头': '👷', '能做领班': '👷', '能招人': '📣', '能报税': '🧾' };
 // 所在州: 常用的排前面, 存两字母码; 保存时同步成 📍 州标签进左边筛选栏
 const STATE_COMMON = [['IL', 'IL 伊利诺伊'], ['TX', 'TX 德克萨斯'], ['NY', 'NY 纽约'], ['TN', 'TN 田纳西'], ['GA', 'GA 佐治亚'], ['VA', 'VA 弗吉尼亚'], ['NJ', 'NJ 新泽西'], ['OH', 'OH 俄亥俄'], ['CA', 'CA 加州'], ['FL', 'FL 佛罗里达']];
 const STATE_OTHER = ['AL', 'AK', 'AZ', 'AR', 'CO', 'CT', 'DE', 'HI', 'IA', 'ID', 'IN', 'KS', 'KY', 'LA', 'MA', 'MD', 'ME', 'MI', 'MN', 'MO', 'MS', 'MT', 'NC', 'ND', 'NE', 'NH', 'NM', 'NV', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'UT', 'VT', 'WA', 'WI', 'WV', 'WY'];
@@ -1547,7 +1547,7 @@ function editTags() {
     // 打分联动标签: 打 1 自动补上; 管理项打 0 摘掉 (技能打 0/2 不动手工标签)
     for (const [k, tag] of Object.entries(RATE_TAGS)) {
       if (RATE_DRAFT[k] === 1 && !TAG_DRAFT.includes(tag)) TAG_DRAFT.push(tag);
-      if (RATE_DRAFT[k] === 0 && (k === 'can_lead' || k === 'can_recruit')) TAG_DRAFT = TAG_DRAFT.filter(t => t !== tag);
+      if (RATE_DRAFT[k] === 0 && (k === 'can_lead' || k === 'can_recruit' || k === 'can_tax')) TAG_DRAFT = TAG_DRAFT.filter(t => t !== tag);
     }
     // 所在州: 存字段, 同步成 📍 州标签 (换州时摘掉旧的)
     const usState = document.getElementById('tagState').value;

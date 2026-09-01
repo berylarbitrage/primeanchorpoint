@@ -33923,7 +33923,7 @@ app.post('/api/device-sms/peer', requireAdmin, requireRole('admin', 'cs'), (req,
     // 三档打分 (与 /interview-result 同 key: forklift/cherry_picker/container_unload/
     // lang_en/lang_es/lang_zh/can_lead/can_recruit, 值 1=熟练 2=会一点 0=不会), 整对象覆盖
     if (body.ratings !== undefined) {
-      const KEYS = ['forklift', 'cherry_picker', 'container_unload', 'lang_en', 'lang_es', 'lang_zh', 'can_lead', 'can_recruit'];
+      const KEYS = ['forklift', 'cherry_picker', 'container_unload', 'lang_en', 'lang_es', 'lang_zh', 'can_lead', 'can_recruit', 'can_tax'];
       const src = (body.ratings && typeof body.ratings === 'object') ? body.ratings : {};
       const clean = {};
       for (const k of KEYS) { const v = src[k]; if (v === 0 || v === 1 || v === 2) clean[k] = v; }
