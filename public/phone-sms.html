@@ -787,6 +787,7 @@ function renderDetail(convos) {
     + '<button class="action-btn" onclick="toggleStatus()">'
     + (convo.status === 'closed' ? '重新打开' : '✓ 关闭会话') + '</button>'
     + '<button class="action-btn" onclick="showRecruitQ()" title="选工种，生成标准翻译的招工提问">💼 招工问题</button>'
+    + '<button class="action-btn" onclick="showRecruitJob()" title="从 recruit 页在招职位里选一个，带出地址和工资（工资可改），填进短信">📍 招工职位</button>'
     + '<button class="action-btn" onclick="sendApplyForm()" title="把招工申请表链接（和二维码同一个表）发给对方填写">📋 发申请表</button>'
     + '<button class="action-btn" onclick="openInterviewModal()" title="就地弹窗登记面试，不开新页">🗓 登记面试</button>'
     + '<button class="action-btn" onclick="startNew()">✎ 新短信</button>'
@@ -1091,6 +1092,83 @@ function insertRecruitQ() {
     note.className = 'reply-hint';
     note.textContent = built.tx ? '已填入 — 点 ▶ 会先显示标准翻译，确认后发出。' : '已填入 — 点 ▶ 直接发出中文。';
   }
+  draft.focus();
+}
+
+/* ── 📍 招工职位：和 recruit 页在招职位联动。选一个职位 → 带出地址和工资
+      （工资可改）→ 拼成招工短信填进发送框。发送时按对方语言翻译（和平时一样），
+      地址/工资会原样保留。 ── */
+let _rjJobs = [], _rjSelId = null;
+function _rjFirstShiftPay(j) {
+  try { const a = JSON.parse(j.shifts || '[]'); const s = (Array.isArray(a) ? a : []).find(x => x && x.worker_pay); return s ? s.worker_pay : ''; }
+  catch (_) { return ''; }
+}
+async function showRecruitJob() {
+  let data = null;
+  try { data = await api('/admin/recruit-jobs'); } catch (_) { return; }
+  _rjJobs = ((data && data.jobs) || []).filter(j => j.status === 'open');
+  _rjSelId = null;
+  if (!_rjJobs.length) {
+    openModal('<h2>📍 招工职位</h2><div class="hint">现在没有在招的职位。请先去 recruit 页面添加职位（含地址和工资）。</div>'
+      + '<div class="row"><button class="action-btn primary" onclick="closeModal()">好</button></div>');
+    return;
+  }
+  const opts = _rjJobs.map(j => '<option value="' + j.id + '">'
+    + esc(j.position || '(未填工种)') + (j.warehouse ? ' · ' + esc(j.warehouse) : '')
+    + (j.worker_pay ? ' · ' + esc(j.worker_pay) : '') + '</option>').join('');
+  const inp = 'width:100%;box-sizing:border-box;padding:.4rem .5rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem';
+  openModal('<h2>📍 招工职位</h2>'
+    + '<div class="hint">选一个在招职位，自动带出地址和工资（工资可改）。发送时按对方语言翻译。</div>'
+    + '<select id="rjSelect" onchange="rjPick(this.value)" style="' + inp + ';margin-bottom:6px">'
+    + '<option value="">— 选择职位 —</option>' + opts + '</select>'
+    + '<div id="rjFields" style="display:none">'
+    + '<div class="hint" style="margin-top:8px">地址</div>'
+    + '<input id="rjAddr" type="text" oninput="rjPreview()" style="' + inp + '">'
+    + '<div class="hint" style="margin-top:8px">工资（可改）</div>'
+    + '<input id="rjPay" type="text" placeholder="例：$18/h" oninput="rjPreview()" style="' + inp + '">'
+    + '<div class="hint" style="margin-top:8px">预览（发送框里还能再改，点 ▶ 会按对方语言翻译）</div>'
+    + '<div id="rjPreview" style="border:1px solid var(--gray-200);border-radius:12px;padding:10px 12px;font-size:.82rem;background:#f9fafb;min-height:52px;line-height:1.6;white-space:pre-wrap"></div>'
+    + '</div>'
+    + '<div class="row"><button class="action-btn primary" onclick="insertRecruitJob()">填入发送框</button>'
+    + '<button class="action-btn" onclick="closeModal()">取消</button></div>');
+}
+function rjPick(id) {
+  _rjSelId = id;
+  const j = _rjJobs.find(x => String(x.id) === String(id));
+  const fields = document.getElementById('rjFields');
+  if (!j) { fields.style.display = 'none'; return; }
+  fields.style.display = '';
+  document.getElementById('rjAddr').value = j.address || '';
+  document.getElementById('rjPay').value = j.worker_pay || _rjFirstShiftPay(j) || '';
+  rjPreview();
+}
+function _rjText() {
+  const j = _rjJobs.find(x => String(x.id) === String(_rjSelId));
+  if (!j) return '';
+  const addr = (document.getElementById('rjAddr') || {}).value || '';
+  const pay = (document.getElementById('rjPay') || {}).value || '';
+  const lines = ['📢 招工：' + (j.position || '') + (j.warehouse ? '（' + j.warehouse + '）' : '')];
+  if (addr.trim()) lines.push('📍 地址：' + addr.trim());
+  if (pay.trim()) lines.push('💰 工资：' + pay.trim());
+  lines.push('有兴趣请回复我。');
+  return lines.join('\n');
+}
+function rjPreview() {
+  const p = document.getElementById('rjPreview');
+  if (p) p.textContent = _rjText();
+}
+function insertRecruitJob() {
+  const text = _rjText();
+  if (!text || !_rjSelId) return;
+  closeModal();
+  const draft = document.getElementById('draft');
+  if (!draft) return;
+  draft.value = text;
+  clearPreview();
+  NO_TRANSLATE_TEXT = '';    // 按选的语言机器翻译（地址、$工资 会原样保留）
+  PRESET_TX = null; PRESET_FOR = '';
+  const note = document.getElementById('sendNote');
+  if (note) { note.className = 'reply-hint'; note.textContent = '已填入 — 点 ▶ 按对方语言翻译后确认发送（工资可在发送框再改）。'; }
   draft.focus();
 }
 
