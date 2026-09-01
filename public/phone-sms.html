@@ -405,10 +405,10 @@ let _pollTimer = null;
 function scheduleNextLoad() {
   clearTimeout(_pollTimer);
   const hasPending = Array.isArray(OUTBOX) && OUTBOX.length > 0;
-  _pollTimer = setTimeout(() => load(true), hasPending ? 4000 : 20000);
+  _pollTimer = setTimeout(() => load(true, true), hasPending ? 4000 : 20000);
 }
 
-async function load(silent) {
+async function load(silent, fromPoll) {
   try {
     const q = document.getElementById('q').value.trim();
     let url = '/device-sms/messages?limit=' + LIMIT;
@@ -441,10 +441,43 @@ async function load(silent) {
     document.getElementById('deviceInfo').textContent = DEVICES.length
       ? DEVICES.map(d => (d.name || '电脑') + (d.last_push_at ? ' · ' + timeAgo(d.last_push_at) + '同步' : ' · 还没推过')).join('　')
       : '还没连电脑 — 点 ⚙';
+    // 后台自动刷新会重画整个面板(含输入框)。正在写的草稿/收件号码/翻译预览/图片
+    // 不能被冲掉——重画前存一下，画完原样恢复。只对「自动轮询」这么做；发送、切换
+    // 会话等主动触发的 load 照旧重建(那正是清空输入框的方式)。
+    const snap = fromPoll ? _composerSnap() : null;
     render();
+    if (snap) _composerRestore(snap);
     handleDeepLink();
   } catch (e) { if (!silent) console.error(e); }
   finally { scheduleNextLoad(); }
+}
+// 存/恢复输入区的可见状态(草稿+光标+焦点、收件号码、翻译语言、翻译预览、图片附件)，
+// 让后台刷新不打断正在写的内容。
+function _composerSnap() {
+  const g = id => document.getElementById(id);
+  const d = g('draft'), t = g('toInput'), lang = g('langSel'), pv = g('previewBox'), ic = g('imgChip');
+  const act = document.activeElement;
+  return {
+    draft: d ? d.value : null, sel: d ? [d.selectionStart, d.selectionEnd] : null, dFoc: !!d && act === d,
+    to: t ? t.value : null, tFoc: !!t && act === t,
+    lang: lang ? lang.value : null,
+    pv: pv ? { html: pv.innerHTML, disp: pv.style.display } : null,
+    ic: ic ? { html: ic.innerHTML, disp: ic.style.display } : null,
+  };
+}
+function _composerRestore(s) {
+  if (!s) return;
+  const g = id => document.getElementById(id);
+  const d = g('draft');
+  if (d && s.draft != null) { d.value = s.draft; if (s.dFoc) { d.focus(); try { d.setSelectionRange(s.sel[0], s.sel[1]); } catch (_) {} } }
+  const t = g('toInput');
+  if (t && s.to != null) { t.value = s.to; if (s.tFoc) t.focus(); }
+  const lang = g('langSel');
+  if (lang && s.lang != null && [...lang.options].some(o => o.value === s.lang)) lang.value = s.lang;
+  const pv = g('previewBox');
+  if (pv && s.pv) { pv.innerHTML = s.pv.html; pv.style.display = s.pv.disp; }
+  const ic = g('imgChip');
+  if (ic && s.ic) { ic.innerHTML = s.ic.html; ic.style.display = s.ic.disp; }
 }
 
 /** 所有会话用过的标签，做成一排可点的筛选。 */
