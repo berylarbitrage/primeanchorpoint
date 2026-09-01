@@ -240,7 +240,7 @@ button,input,select,textarea{font-family:inherit}
       <div style="flex:1;min-width:0"><span class="sub" id="deviceInfo"></span></div>
       <button class="icon-btn" onclick="startNew()" title="给新号码发短信">✎</button>
       <button class="icon-btn" onclick="load()" title="刷新">↻</button>
-      <button class="icon-btn" onclick="openSetup()" title="连接电脑 / 清空数据">⚙</button>
+      <button class="icon-btn" id="setupBtn" onclick="openSetup()" title="连接电脑 / 清空数据">⚙</button>
     </div>
     <div class="filters">
       <input type="search" id="q" placeholder="搜原文 / 译文 / 号码…" oninput="debounced()">
@@ -264,6 +264,7 @@ button,input,select,textarea{font-family:inherit}
 <script src="/qrcode.js"></script>
 <script>
 let TOKEN = localStorage.getItem('pa_phone_sms_token') || '';
+let ROLE = '';  // 'admin' | 'cs'（客服可看可回，设备令牌管理和清空仅管理员）
 let MESSAGES = [], OUTBOX = [], NOTES = {}, DEVICES = [];
 let PEER = null, RISK = false, QUEUED_ONLY = false, COMPOSING = false;
 let STARRED_ONLY = false, UNREAD_ONLY = false, SHOW_CLOSED = false, TAG_FILTER = '';
@@ -345,7 +346,8 @@ async function login() {
     body: JSON.stringify({ username, password })
   }).then(x => x.json()).catch(() => ({}));
   if (!r.success) { err.textContent = r.error || '登录失败'; return; }
-  if (r.role !== 'admin') { err.textContent = '这一页只有管理员能看（私人短信）。'; return; }
+  if (!['admin', 'cs'].includes(r.role)) { err.textContent = '这一页只有管理员和客服能看（私人短信）。'; return; }
+  ROLE = r.role;
   TOKEN = r.token;
   localStorage.setItem('pa_phone_sms_token', TOKEN);
   start();
@@ -354,6 +356,8 @@ async function login() {
 function start() {
   document.getElementById('gate').style.display = 'none';
   document.getElementById('app').style.display = '';
+  // 设备令牌 / 清空数据只有管理员能动, 客服藏掉 ⚙
+  if (ROLE !== 'admin') { const b = document.getElementById('setupBtn'); if (b) b.style.display = 'none'; }
   load();
   setInterval(() => load(true), 20000);
 }
@@ -1475,8 +1479,8 @@ async function revoke(id) {
 
 if (TOKEN) {
   api('/admin/me').then(r => {
-    if (r && r.username && r.role === 'admin') start();
-    else showGate(r && r.username ? '这一页只有管理员能看。' : '');
+    if (r && r.username && ['admin', 'cs'].includes(r.role)) { ROLE = r.role; start(); }
+    else showGate(r && r.username ? '这一页只有管理员和客服能看。' : '');
   }).catch(() => {});
 } else {
   showGate();

@@ -8965,12 +8965,12 @@ function requireAdmin(req, res, next) {
   req.userRole = session.role;
   req.userName = session.username;
   req.userId = session.userId;
-  // 客服(cs)专用账号: 只允许 SMS Inbox + 会计对账页(只读+批注) + 银行对账页
-  // (/api/plaid/ 下只读+标注, 各端点再按 requireRole 细分), 其余管理后台一律 403
+  // 客服(cs)专用账号: 只允许 SMS Inbox + 会计对账页(只读+批注) + 银行对账页 + 手机短信(/phone-sms)
+  // (/api/plaid/ 与 /api/device-sms/ 下各端点再按 requireRole 细分), 其余管理后台一律 403
   if (session.role === 'cs') {
     const p = req.originalUrl.split('?')[0];
-    const csAllowed = p.startsWith('/api/sms/') || p.startsWith('/api/acct/') || p.startsWith('/api/admin/recruit-') || p.startsWith('/api/plaid/') || p === '/api/admin/me' || p === '/api/admin/logout';
-    if (!csAllowed) return res.status(403).json({ error: '客服账号仅限使用 SMS Inbox (/sms-inbox)、会计对账 (/accounting)、银行对账 (/banking) 和每日招工 (/recruit)' });
+    const csAllowed = p.startsWith('/api/sms/') || p.startsWith('/api/acct/') || p.startsWith('/api/admin/recruit-') || p.startsWith('/api/plaid/') || p.startsWith('/api/device-sms/') || p === '/api/admin/me' || p === '/api/admin/logout';
+    if (!csAllowed) return res.status(403).json({ error: '客服账号仅限使用 SMS Inbox (/sms-inbox)、会计对账 (/accounting)、银行对账 (/banking)、手机短信 (/phone-sms) 和每日招工 (/recruit)' });
   }
   // 会计(accounting)专用账号: 只读发票与银行流水 + 圈选批注 + 银行对账页
   // (/api/plaid/ 下只读+标注, 标注需管理员审核), 其余管理后台一律 403
@@ -32685,7 +32685,7 @@ const deviceSmsMediaDir = path.join(uploadsDir, 'device-sms');
 if (!fs.existsSync(deviceSmsMediaDir)) fs.mkdirSync(deviceSmsMediaDir, { recursive: true });
 const DEVICE_SMS_IMG_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp' };
 
-app.post('/api/device-sms/media', requireAdmin, requireRole('admin'), (req, res) => {
+app.post('/api/device-sms/media', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
   try {
     const { type, data } = req.body || {};
     const ext = DEVICE_SMS_IMG_TYPES[String(type)];
@@ -32723,7 +32723,7 @@ function deviceSmsOnboardLookup(tail) {
 }
 
 // POST /api/device-sms/apply-link — 给这个人造一条专属的一次性申请链接
-app.post('/api/device-sms/apply-link', requireAdmin, requireRole('admin'), (req, res) => {
+app.post('/api/device-sms/apply-link', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
   try {
     const peer = String((req.body || {}).peer || '').slice(0, 40);
     const token = crypto.randomBytes(20).toString('hex');
@@ -32733,7 +32733,7 @@ app.post('/api/device-sms/apply-link', requireAdmin, requireRole('admin'), (req,
 });
 
 // GET /api/device-sms/onboarding — peer=单个号码，或 peers=逗号分隔一批（列表页头像角标用）
-app.get('/api/device-sms/onboarding', requireAdmin, requireRole('admin'), (req, res) => {
+app.get('/api/device-sms/onboarding', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
   try {
     const peersParam = String(req.query.peers || '');
     if (peersParam) {
@@ -33738,7 +33738,7 @@ async function deviceSmsTranslateRows(ids) {
 // 网站这边有自己的 ANTHROPIC_API_KEY(别处已经在用), 所以不用绕到电脑上等一圈:
 // 点发送 → 立刻出译文 → 确认无误再排队, 排的就是那段译文。
 const DEVICE_SMS_TRANSLATE_MODEL = process.env.SMS_TRANSLATE_MODEL || 'claude-haiku-4-5-20251001';
-app.post('/api/device-sms/translate', requireAdmin, requireRole('admin'), async (req, res) => {
+app.post('/api/device-sms/translate', requireAdmin, requireRole('admin', 'cs'), async (req, res) => {
   try {
     const text = String((req.body || {}).text || '').trim();
     const to = String((req.body || {}).to || 'English').trim() || 'English';
@@ -33790,7 +33790,7 @@ app.post('/api/device-sms/translate', requireAdmin, requireRole('admin'), async 
 
 // POST /api/device-sms/send — 网页上写一条短信, 排队等电脑发
 // 这里只入队。真正发出去要靠那台连着手机的电脑 (见下面两个接口)。
-app.post('/api/device-sms/send', requireAdmin, requireRole('admin'), (req, res) => {
+app.post('/api/device-sms/send', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
   try {
     const body = String((req.body || {}).body || '').trim();
     const to = String((req.body || {}).to || '').trim();
@@ -33838,7 +33838,7 @@ app.post('/api/device-sms/outbox/:id/result', deviceSmsAuth, (req, res) => {
 });
 
 // DELETE /api/device-sms/outbox/:id — 撤掉一条还没发出去的
-app.delete('/api/device-sms/outbox/:id', requireAdmin, requireRole('admin'), (req, res) => {
+app.delete('/api/device-sms/outbox/:id', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
   try {
     const info = db.prepare(`DELETE FROM device_sms_outbox WHERE id=? AND status IN ('pending','failed')`).run(req.params.id);
     res.json({ success: true, deleted: info.changes });
@@ -33852,7 +33852,7 @@ function deviceSmsNotesHandler(req, res) {
       auto_translate, read_at, updated_at FROM device_sms_peer_notes`).all() });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
-app.get('/api/device-sms/notes', requireAdmin, requireRole('admin'), deviceSmsNotesHandler);
+app.get('/api/device-sms/notes', requireAdmin, requireRole('admin', 'cs'), deviceSmsNotesHandler);
 app.get('/api/device-sms/device-notes', deviceSmsAuth, deviceSmsNotesHandler);
 
 function deviceSmsSaveNotes(req, res) {
@@ -33876,10 +33876,10 @@ function deviceSmsSaveNotes(req, res) {
     res.json({ success: true, saved });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
-app.post('/api/device-sms/notes', requireAdmin, requireRole('admin'), deviceSmsSaveNotes);
+app.post('/api/device-sms/notes', requireAdmin, requireRole('admin', 'cs'), deviceSmsSaveNotes);
 
 // POST /api/device-sms/peer — 改一个会话的某几项 (只改传上来的字段)
-app.post('/api/device-sms/peer', requireAdmin, requireRole('admin'), (req, res) => {
+app.post('/api/device-sms/peer', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
   try {
     const body = req.body || {};
     const peer = String(body.peer || '').trim().slice(0, 40);
@@ -33931,7 +33931,7 @@ app.post('/api/device-sms/peer', requireAdmin, requireRole('admin'), (req, res) 
 });
 
 // POST /api/device-sms/messages/:id/star — 星标一条消息 (可带一句备注)
-app.post('/api/device-sms/messages/:id/star', requireAdmin, requireRole('admin'), (req, res) => {
+app.post('/api/device-sms/messages/:id/star', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
   try {
     const on = (req.body || {}).starred ? 1 : 0;
     const note = String((req.body || {}).note || '').slice(0, 300);
@@ -33942,7 +33942,7 @@ app.post('/api/device-sms/messages/:id/star', requireAdmin, requireRole('admin')
 
 // POST /api/device-sms/retranslate — 让电脑重新翻译某个会话 (或指定几条)
 // 网站自己翻不了 —— API key 在那台电脑上, 这里只是打个标记。
-app.post('/api/device-sms/retranslate', requireAdmin, requireRole('admin'), (req, res) => {
+app.post('/api/device-sms/retranslate', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
   try {
     const body = req.body || {};
     const peer = String(body.peer || '').trim();
@@ -33975,8 +33975,8 @@ app.get('/api/device-sms/retranslate', deviceSmsAuth, (req, res) => {
 });
 app.post('/api/device-sms/device-notes', deviceSmsAuth, deviceSmsSaveNotes);
 
-// GET /api/device-sms/messages — 网页端读取 (个人手机短信, 只有 admin 能看)
-app.get('/api/device-sms/messages', requireAdmin, requireRole('admin'), (req, res) => {
+// GET /api/device-sms/messages — 网页端读取 (个人手机短信, admin 和客服能看; 设备令牌/清空仍仅 admin)
+app.get('/api/device-sms/messages', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
   try {
     const limit = Math.min(1000, Math.max(1, parseInt(req.query.limit) || 500));
     const offset = Math.max(0, parseInt(req.query.offset) || 0);
