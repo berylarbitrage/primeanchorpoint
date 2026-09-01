@@ -32657,6 +32657,8 @@ try { db.exec(`ALTER TABLE device_sms_peer_notes ADD COLUMN auto_translate INTEG
 try { db.exec(`ALTER TABLE device_sms_peer_notes ADD COLUMN read_at TEXT DEFAULT NULL`); } catch(e) {}
 // 三档打分 (与 /interview-result 同一套 key 与 0/1/2 语义) JSON: {forklift:1, lang_en:2, can_lead:0, ...}
 try { db.exec(`ALTER TABLE device_sms_peer_notes ADD COLUMN ratings TEXT DEFAULT '{}'`); } catch(e) {}
+// 所在州 (两字母码, 如 IL/TX)
+try { db.exec(`ALTER TABLE device_sms_peer_notes ADD COLUMN us_state TEXT DEFAULT ''`); } catch(e) {}
 
 // 星标 / 重新翻译标记挂在消息上
 try { db.exec(`ALTER TABLE device_sms_messages ADD COLUMN starred INTEGER DEFAULT 0`); } catch(e) {}
@@ -33851,7 +33853,7 @@ app.delete('/api/device-sms/outbox/:id', requireAdmin, requireRole('admin', 'cs'
 function deviceSmsNotesHandler(req, res) {
   try {
     res.json({ notes: db.prepare(`SELECT peer, alias, note, tags, status, contact_lang, agent_lang,
-      auto_translate, read_at, updated_at, spoken_langs, ratings FROM device_sms_peer_notes`).all() });
+      auto_translate, read_at, updated_at, spoken_langs, ratings, us_state FROM device_sms_peer_notes`).all() });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 app.get('/api/device-sms/notes', requireAdmin, requireRole('admin', 'cs'), deviceSmsNotesHandler);
@@ -33918,6 +33920,11 @@ app.post('/api/device-sms/peer', requireAdmin, requireRole('admin', 'cs'), (req,
       const clean = {};
       for (const k of KEYS) { const v = src[k]; if (v === 0 || v === 1 || v === 2) clean[k] = v; }
       put('ratings', JSON.stringify(clean));
+    }
+    // 所在州 (两字母码, 空串=清除)
+    if (body.us_state !== undefined) {
+      const st = String(body.us_state || '').trim().toUpperCase();
+      put('us_state', /^[A-Z]{2}$/.test(st) ? st : '');
     }
     // read: true = 现在读到这儿了; false = 标为未读
     if (body.read !== undefined) put('read_at', body.read ? new Date().toISOString() : null);
@@ -34021,7 +34028,7 @@ app.get('/api/device-sms/messages', requireAdmin, requireRole('admin', 'cs'), (r
     const outbox = db.prepare(`SELECT id, to_address, peer, body, status, note, created_at FROM device_sms_outbox
       WHERE status IN ('pending','failed') ORDER BY id ASC LIMIT 100`).all();
     const notes = db.prepare(`SELECT peer, alias, note, tags, status, contact_lang, agent_lang,
-      auto_translate, read_at, spoken_langs, ratings FROM device_sms_peer_notes`).all();
+      auto_translate, read_at, spoken_langs, ratings, us_state FROM device_sms_peer_notes`).all();
     res.json({ messages: rows.reverse(), devices, outbox, notes, total, offset, limit });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
