@@ -1288,6 +1288,9 @@ function removeTag(tag) {
 /* 标签编辑：常用工种一点即加（和 SMS Inbox 同一组），已有的点 × 删，自定义回车添加。 */
 // 「面试」标签是活的：打上它，面试登记页会自动生成一条（姓名/工种/备注跟着迁移）
 const COMMON_TAGS = ['面试', '普工', '拣货', '叉车工', '高位叉车', '卸柜工', '打包', '分拣', '装卸'];
+// 能力标记 (能不能做工头 / 能不能帮着招人), 与工种分开一行, 打上后同样进左边筛选栏
+const CAP_TAGS = ['能做工头', '能招人'];
+const CAP_ICONS = { '能做工头': '👷', '能招人': '📣' };
 const SPOKEN_LABELS = { zh: '中文', en: '英语', es: '西语' };
 let TAG_DRAFT = [];
 
@@ -1308,7 +1311,9 @@ function editTags() {
     + '<div><div class="hint" style="margin-bottom:5px">已有标签（点 × 去掉）</div>'
     + '<div class="filter-row" id="tagNow"></div></div>'
     + '<div><div class="hint" style="margin-bottom:5px">常用（做过的工种，点一下加上）</div>'
-    + '<div class="filter-row" id="tagQuick"></div>'
+    + '<div class="filter-row" id="tagQuick"></div></div>'
+    + '<div><div class="hint" style="margin-bottom:5px">能力（能不能做工头 / 帮着招人）</div>'
+    + '<div class="filter-row" id="tagQuickCap"></div>'
     + '<input id="tagInput" placeholder="自定义标签，回车添加（如: GOFO上过班 / 靠谱 / 有车）" style="margin-top:8px;width:100%;box-sizing:border-box">'
     + '<div class="hint" style="margin-top:4px">标签会出现在左边的筛选栏里，点一下就只看带这个标签的会话。</div></div>'
     + '<div><div class="hint" style="margin-bottom:5px">备注（要求 / 上班情况等）</div>'
@@ -1352,12 +1357,16 @@ function renderTagDraft() {
   const quick = document.getElementById('tagQuick');
   if (!now || !quick) return;
   now.innerHTML = TAG_DRAFT.length
-    ? TAG_DRAFT.map((t, i) => '<span class="tag">🏷 ' + esc(t)
+    ? TAG_DRAFT.map((t, i) => '<span class="tag">' + (CAP_ICONS[t] || '🏷') + ' ' + esc(t)
         + '<button title="去掉" onclick="tagDraftRemove(' + i + ')">×</button></span>').join('')
     : '<span class="hint" style="margin:0">暂无标签</span>';
   quick.innerHTML = COMMON_TAGS.filter(t => !TAG_DRAFT.includes(t))
     .map(t => '<button type="button" class="chip" onclick="tagDraftAdd(\'' + t + '\')">+ ' + t + '</button>').join('')
     || '<span class="hint" style="margin:0">常用的都加上了</span>';
+  const quickCap = document.getElementById('tagQuickCap');
+  if (quickCap) quickCap.innerHTML = CAP_TAGS.filter(t => !TAG_DRAFT.includes(t))
+    .map(t => '<button type="button" class="chip" onclick="tagDraftAdd(\'' + t + '\')">+ ' + (CAP_ICONS[t] || '') + ' ' + t + '</button>').join('')
+    || '<span class="hint" style="margin:0">都标上了</span>';
 }
 
 async function toggleStar(id, on) {
