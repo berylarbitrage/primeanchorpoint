@@ -409,6 +409,14 @@ function syncChips() {
 // 自适应轮询：有「待发送 / 发失败」的消息时每 4 秒刷新，好尽快看到手机发出后状态变「已发送」；
 // 平时没有待发送的就 20 秒刷一次省流量。每次 load() 结束后按当前 OUTBOX 情况重排下一次。
 let _pollTimer = null;
+let _imeComposing = false; // 中文/日文等输入法正在组字（拼音还没上屏）时为 true
+// 用户正在输入框里打字时(尤其输入法组字中)——后台刷新不能重建输入框，否则打断输入。
+function _composerBusy() {
+  if (_imeComposing) return true;
+  const d = document.getElementById('draft');
+  const t = document.getElementById('toInput');
+  return (!!d && document.activeElement === d) || (!!t && document.activeElement === t);
+}
 function scheduleNextLoad() {
   clearTimeout(_pollTimer);
   const hasPending = Array.isArray(OUTBOX) && OUTBOX.length > 0;
@@ -448,13 +456,19 @@ async function load(silent, fromPoll) {
     document.getElementById('deviceInfo').textContent = DEVICES.length
       ? DEVICES.map(d => (d.name || '电脑') + (d.last_push_at ? ' · ' + timeAgo(d.last_push_at) + '同步' : ' · 还没推过')).join('　')
       : '还没连电脑 — 点 ⚙';
-    // 后台自动刷新会重画整个面板(含输入框)。正在写的草稿/收件号码/翻译预览/图片
-    // 不能被冲掉——重画前存一下，画完原样恢复。只对「自动轮询」这么做；发送、切换
-    // 会话等主动触发的 load 照旧重建(那正是清空输入框的方式)。
-    const snap = fromPoll ? _composerSnap() : null;
-    render();
-    if (snap) _composerRestore(snap);
-    handleDeepLink();
+    // 后台自动刷新会重画整个面板(含输入框)。用户正在输入框里打字时(尤其中文输入法
+    // 拼音还没上屏)绝不能重建输入框——会把正在打的字打断。这一拍先跳过重画，等下次
+    // (用户没在打字时)再刷；发送、切换会话等主动 load 照旧重建。
+    if (fromPoll && _composerBusy()) {
+      // 只更新左侧会话列表(不碰输入框所在的详情面板)，右侧等用户停手再刷
+      renderThreads(conversations());
+    } else {
+      // 有草稿但没聚焦时(打了字点到别处)，重画会清空——存一下再原样恢复
+      const snap = fromPoll ? _composerSnap() : null;
+      render();
+      if (snap) _composerRestore(snap);
+      handleDeepLink();
+    }
   } catch (e) { if (!silent) console.error(e); }
   finally { scheduleNextLoad(); }
 }
@@ -829,7 +843,7 @@ function replyBar(composing) {
     + LANGUAGES.map(l => '<option value="' + l + '"' + (l === chosen ? ' selected' : '') + '>译成 ' + l + '</option>').join('')
     + '<option value=""' + (chosen ? '' : ' selected') + '>不翻译，直接发原文</option>'
     + '</select>'
-    + '<textarea id="draft" rows="1" placeholder="写短信…（写中文即可）" oninput="clearPreview()"></textarea>'
+    + '<textarea id="draft" rows="1" placeholder="写短信…（写中文即可）" oninput="clearPreview()" oncompositionstart="_imeComposing=true" oncompositionend="_imeComposing=false"></textarea>'
     + '<button class="composer-btn" onclick="toggleTpl()" title="预制信息（和 SMS Inbox 共用一份）">⚡</button>'
     + '<button class="composer-btn" onclick="pickImage()" title="发图片：对方收到图片链接，点开即看">📷</button>'
     + '<button class="composer-btn" onclick="sendViaWhatsApp()" title="用 WhatsApp 发给这个人：打开 WhatsApp（消息已填好），按回车发。用的是你手机绑定的 WhatsApp 号，不走短信、不群发" style="color:#25d366;font-weight:700">WA</button>'
