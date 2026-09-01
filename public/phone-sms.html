@@ -363,8 +363,7 @@ function start() {
   document.getElementById('app').style.display = '';
   // 设备令牌 / 清空数据只有管理员能动, 客服藏掉 ⚙
   if (ROLE !== 'admin') { const b = document.getElementById('setupBtn'); if (b) b.style.display = 'none'; }
-  load();
-  setInterval(() => load(true), 20000);
+  load(); // load() 之后会按「有没有待发送」自动排下一次刷新（见 scheduleNextLoad）
 }
 
 function debounced() { clearTimeout(searchTimer); searchTimer = setTimeout(() => load(), 400); }
@@ -393,6 +392,15 @@ function syncChips() {
   document.getElementById('closedChip').classList.toggle('on', SHOW_CLOSED);
   document.getElementById('unreadChip').classList.toggle('on', UNREAD_ONLY);
   document.getElementById('queuedChip').classList.toggle('on', QUEUED_ONLY);
+}
+
+// 自适应轮询：有「待发送 / 发失败」的消息时每 4 秒刷新，好尽快看到手机发出后状态变「已发送」；
+// 平时没有待发送的就 20 秒刷一次省流量。每次 load() 结束后按当前 OUTBOX 情况重排下一次。
+let _pollTimer = null;
+function scheduleNextLoad() {
+  clearTimeout(_pollTimer);
+  const hasPending = Array.isArray(OUTBOX) && OUTBOX.length > 0;
+  _pollTimer = setTimeout(() => load(true), hasPending ? 4000 : 20000);
 }
 
 async function load(silent) {
@@ -428,6 +436,7 @@ async function load(silent) {
     render();
     handleDeepLink();
   } catch (e) { if (!silent) console.error(e); }
+  finally { scheduleNextLoad(); }
 }
 
 /** 所有会话用过的标签，做成一排可点的筛选。 */
@@ -491,12 +500,23 @@ function dedupeMessages(list) {
 
 /* 已收到的 + 排队待发的合成一条时间线。 */
 function allItems() {
-  const queued = OUTBOX.map(o => ({
+  const real = dedupeMessages(MESSAGES);
+  // 手机已经把发出去的短信推回来了(同人、同内容、发出方向、时间不早于排队)，但 outbox
+  // 那条还没被标成「已发送」时，会同时显示「真实已发」+「待发送」两条——把多余的占位去掉，
+  // 免得对方都收到了页面还一直显示「待发送」。
+  const sentOut = real.filter(m => m.direction === 'out');
+  const queued = OUTBOX.filter(o => {
+    const qpeer = o.peer || o.to_address;
+    const qbody = String(o.body || '').trim();
+    const qtime = new Date(sqlTime(o.created_at)).getTime();
+    return !sentOut.some(m => m.peer === qpeer && String(m.body || '').trim() === qbody
+      && new Date(sqlTime(m.sent_at)).getTime() >= qtime - 60000);
+  }).map(o => ({
     id: 'q' + o.id, outbox_id: o.id, queued: true, status: o.status, note: o.note,
     peer: o.peer || o.to_address, address: o.to_address, direction: 'out', kind: 'sms',
     body: o.body, translated_body: '', sent_at: sqlTime(o.created_at)
   }));
-  return dedupeMessages(MESSAGES).concat(queued);
+  return real.concat(queued);
 }
 
 function conversations() {
