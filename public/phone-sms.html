@@ -1131,6 +1131,9 @@ async function showRecruitJob() {
     + '</div>'
     + '<div class="row"><button class="action-btn primary" onclick="insertRecruitJob()">填入发送框</button>'
     + '<button class="action-btn" onclick="closeModal()">取消</button></div>');
+  // 打开就预选第一个在招职位, 地址/工资/预览直接带出来, 不用再点一次
+  document.getElementById('rjSelect').value = String(_rjJobs[0].id);
+  rjPick(_rjJobs[0].id);
 }
 function rjPick(id) {
   _rjSelId = id;
@@ -1142,14 +1145,33 @@ function rjPick(id) {
   document.getElementById('rjPay').value = j.worker_pay || _rjFirstShiftPay(j) || '';
   rjPreview();
 }
+// 职位 → 预设英文工种名。不直接用职位原始标题（那里常混着中文和「× 越多越好」数量后缀），
+// 按关键词识别成固定话术；认不出的去掉中文/数量后缀留英文，再不行统称 Warehouse Worker。
+function _rjTitleEn(j) {
+  const raw = String(j.position || '');
+  const t = raw.toLowerCase();
+  if (/高位|cherry|reach/.test(t)) return 'Cherry Picker Operator';
+  if (/叉车|forklift/.test(t)) return 'Forklift Operator';
+  if (/拣货|picker/.test(t)) return 'Order Picker';
+  if (/卸柜|unload|container/.test(t)) return 'Container Unloader';
+  if (/打包|pack/.test(t)) return 'Packer';
+  if (/分拣|sort/.test(t)) return 'Sorter';
+  if (/装卸|load/.test(t)) return 'Loader';
+  if (/清洁|clean/.test(t)) return 'Cleaner';
+  if (/普工|general/.test(t)) return 'General Labor';
+  const latin = raw.replace(/[×xX]\s*[^,;，；]*$/, '').replace(/[一-鿿]/g, '').replace(/\s+/g, ' ').trim();
+  return latin || 'Warehouse Worker';
+}
 function _rjText() {
   const j = _rjJobs.find(x => String(x.id) === String(_rjSelId));
   if (!j) return '';
   const addr = (document.getElementById('rjAddr') || {}).value || '';
-  const pay = (document.getElementById('rjPay') || {}).value || '';
-  const lines = ['📢 Hiring: ' + (j.position || '') + (j.warehouse ? ' (' + j.warehouse + ')' : '')];
+  const pay = ((document.getElementById('rjPay') || {}).value || '').trim();
+  // 纯数字的工资自动写成 $N/h
+  const payTxt = /^\d+(\.\d+)?$/.test(pay) ? '$' + pay + '/h' : pay;
+  const lines = ['📢 Hiring: ' + _rjTitleEn(j) + (j.warehouse ? ' (' + j.warehouse + ')' : '')];
   if (addr.trim()) lines.push('📍 Address: ' + addr.trim());
-  if (pay.trim()) lines.push('💰 Pay: ' + pay.trim());
+  if (payTxt) lines.push('💰 Pay: ' + payTxt);
   lines.push('Are you interested? Please reply.');
   return lines.join('\n');
 }
