@@ -1160,7 +1160,7 @@ function _rjTitleEn(j) {
   if (/叉车|forklift/.test(t)) return 'Forklift Operator';
   if (/拣货|picker/.test(t)) return 'Order Picker';
   if (/卸柜|unload|container/.test(t)) return 'Container Unloader';
-  if (/移动箱|搬箱|搬运|material/.test(t)) return 'Material Handler';
+  if (/移动箱|搬箱|搬运|material/.test(t)) return 'General Labor';
   if (/pallet|托盘/.test(t)) return 'Pallet Jack Operator';
   if (/打包|pack/.test(t)) return 'Packer';
   if (/分拣|sort/.test(t)) return 'Sorter';
@@ -1168,7 +1168,7 @@ function _rjTitleEn(j) {
   if (/清洁|clean/.test(t)) return 'Cleaner';
   if (/普工|general/.test(t)) return 'General Labor';
   const latin = raw.replace(/[×xX]\s*[^,;，；]*$/, '').replace(/[一-鿿]/g, '').replace(/\s+/g, ' ').trim();
-  return latin || 'Warehouse Worker';
+  return latin || 'General Labor';
 }
 function _rjText() {
   const j = _rjJobs.find(x => String(x.id) === String(_rjSelId));
