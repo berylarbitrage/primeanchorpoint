@@ -163,6 +163,14 @@ label{display:block;font-size:.74rem;font-weight:700;color:var(--gray-500);margi
               <option value="白班">⏰ 白班</option><option value="周末班">⏰ 周末班</option>
               <option value="临时">⏰ 临时</option>
             </select>
+            <span style="color:var(--gray-400)">＋</span>
+            <select id="sfName2" style="width:auto;padding:9px 10px" title="连班：两个班拼在一起上，时间填两个班合起来的起止">
+              <option value="">（不连班）</option>
+              <option value="早班">早班</option><option value="中班">中班</option>
+              <option value="晚班">晚班</option><option value="夜班">夜班</option>
+              <option value="白班">白班</option><option value="周末班">周末班</option>
+              <option value="临时">临时</option>
+            </select>
             <input type="time" id="sfStart" style="width:auto;padding:8px 9px">
             <span style="color:var(--gray-400)">–</span>
             <input type="time" id="sfEnd" style="width:auto;padding:8px 9px">
@@ -425,15 +433,18 @@ function onIvChange() {
 }
 function addShiftRow() {
   const name = document.getElementById('sfName').value;
+  const name2 = document.getElementById('sfName2').value;
   const st = document.getElementById('sfStart').value;
   const en = document.getElementById('sfEnd').value;
-  let shift = name;
+  // 连班: 两个班拼成「早班+中班」, 时间就是两个班合起来的起止
+  let shift = name + (name2 && name2 !== name ? '+' + name2 : '');
   if (st && en) shift += ' ' + st + '–' + en;
   else if (st) shift += ' ' + st + ' 开始';
   const wp = document.getElementById('sfWorkerPay').value.trim();
   const fc = document.getElementById('sfForemanCap').value.trim();
   if (_shiftRows.some(r => r.shift === shift)) { toast('这个班次已经加过了'); return; }
   _shiftRows.push({ shift, worker_pay: wp, foreman_cap: fc, lang: _sfLangValue() });
+  document.getElementById('sfName2').value = '';
   document.getElementById('sfStart').value = '';
   document.getElementById('sfEnd').value = '';
   document.getElementById('sfWorkerPay').value = '';
@@ -448,7 +459,10 @@ function editShiftRow(i) {
   if (!r) return;
   const m = String(r.shift || '').match(/^(\S+)(?:\s+(\d{2}:\d{2})[–-](\d{2}:\d{2}))?(?:\s+(\d{2}:\d{2})\s*开始)?/);
   const nameSel = document.getElementById('sfName');
-  if (m && [...nameSel.options].some(o => o.value === m[1])) nameSel.value = m[1];
+  const name2Sel = document.getElementById('sfName2');
+  const names = (m ? m[1] : '').split('+');
+  if ([...nameSel.options].some(o => o.value === names[0])) nameSel.value = names[0];
+  name2Sel.value = [...name2Sel.options].some(o => o.value === (names[1] || '')) ? (names[1] || '') : '';
   document.getElementById('sfStart').value = (m && (m[2] || m[4])) || '';
   document.getElementById('sfEnd').value = (m && m[3]) || '';
   document.getElementById('sfWorkerPay').value = r.worker_pay || '';
@@ -885,6 +899,11 @@ async function saveJob() {
     if (!position) { toast('请填写工种'); return; }
     const language_req = _langValue();
     if (!language_req) { toast('请选择语言要求（不限也要选）'); return; }
+    // 上面班次编辑区填了时间/工资但忘点「+ 加班次」的, 保存时自动补进列表, 不再悄悄丢掉
+    if (document.getElementById('sfStart').value || document.getElementById('sfEnd').value
+        || document.getElementById('sfWorkerPay').value.trim() || document.getElementById('sfForemanCap').value.trim()) {
+      addShiftRow();
+    }
     const payload = {
       warehouse,
       position: position + (headcount ? ' × ' + headcount + (/^\d+$/.test(headcount) ? '人' : '') : ''),
