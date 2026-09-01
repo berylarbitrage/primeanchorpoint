@@ -210,7 +210,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
 
   <!-- 💵 发票逐行付款备注弹窗: 状态/方式/备注 + 关联银行直连交易 + 上传凭证 -->
   <div id="lpModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:1600;align-items:center;justify-content:center;padding:16px">
-    <div class="card" style="max-width:820px;width:100%;padding:1.2rem 1.2rem 1rem;max-height:92vh;overflow:auto">
+    <div class="card" style="max-width:1200px;width:100%;padding:1.2rem 1.2rem 1rem;max-height:94vh;overflow:auto">
       <div style="font-weight:800;margin-bottom:.2rem">💵 这一条的付款备注</div>
       <div id="lpTitle" style="font-size:.8rem;color:var(--g500);margin-bottom:.7rem"></div>
       <div style="display:flex;gap:1.1rem;flex-wrap:wrap">
@@ -232,7 +232,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
           <input type="file" id="lpFile" multiple accept="image/*,.pdf" onchange="lpFilesChanged(this)" style="font-size:.78rem;width:100%">
           <div id="lpFileMsg" style="font-size:.72rem;color:var(--g400);margin-top:.2rem"></div>
         </div>
-        <div style="flex:1.25;min-width:300px">
+        <div style="flex:1.8;min-width:340px">
           <div style="font-size:.8rem;font-weight:700;color:#0f4c6b;margin-bottom:.35rem">🏦 关联银行记录（可多选，作为付款凭证）</div>
           <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-bottom:.4rem">
             <select id="lpTxnAcct" onchange="lpTxnLoad()" style="max-width:180px;font-size:.78rem"><option value="">全部账户</option></select>
@@ -244,7 +244,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
             <input type="number" step="0.01" id="lpTxnAmt" placeholder="按金额找" oninput="clearTimeout(window._lpAT);window._lpAT=setTimeout(lpTxnLoad,350)" style="width:92px;font-size:.76rem">
             <button type="button" id="lpTxnAmtBtn" onclick="lpTxnAmtQuick()" class="btn btn-sm btn-outline" style="font-size:.72rem;white-space:nowrap;padding:4px 8px">🔎 找本行金额</button>
           </div>
-          <div id="lpTxnList" style="max-height:290px;overflow:auto;border:1px solid var(--g200);border-radius:8px;padding:.3rem .45rem;font-size:.78rem;background:#fafafa">加载中…</div>
+          <div id="lpTxnList" style="max-height:56vh;min-height:280px;overflow:auto;border:1px solid var(--g200);border-radius:8px;padding:.3rem .45rem;font-size:.8rem;background:#fafafa">加载中…</div>
           <div id="lpTxnSum" style="font-size:.76rem;color:var(--g500);margin-top:.35rem"></div>
         </div>
       </div>
@@ -753,7 +753,7 @@ async function openInvoice(id) {
   }
 }
 // ── 发票逐行付款备注: 每一条记「付了没有 / 怎么付的」+ 关联银行交易 + 上传凭证 ──
-let _invDoc = null, _lpIdx = null, _lpSel = new Set(), _lpTxnInfo = {}, _lpFiles = [], _lpNoteId = null;
+let _invDoc = null, _lpIdx = null, _lpSel = new Set(), _lpTxnInfo = {}, _lpFiles = [], _lpNoteId = null, _lpAnnLoaded = false;
 const _LP_ST = { paid: ['✅ 已付', '#dcfce7', '#166534'], partial: ['🟡 部分', '#fef3c7', '#92400e'], unpaid: ['❌ 未付', '#fee2e2', '#991b1b'] };
 function _lpChip(i) {
   const n = (_invDoc && _invDoc.line_pay_notes && _invDoc.line_pay_notes[i]) || null;
@@ -847,6 +847,8 @@ async function lpTxnLoad() {
     const reqs = [bapi('/api/plaid/transactions?' + q.toString())];
     // 没手动按金额筛时, 顺带全库找和本行金额一致的交易, 置顶高亮
     if ((isNaN(amtV) || amtV <= 0) && lineAmt > 0) reqs.push(bapi('/api/plaid/transactions?amount=' + lineAmt + '&limit=50').catch(() => ({ transactions: [] })));
+    // 首次打开顺带拉标注 (bank-ann.js 的 ANN), 每行能显示自己做过的标注
+    if (!_lpAnnLoaded) { _lpAnnLoaded = true; reqs.push(annLoadAll().catch(() => {})); }
     const [r1, r2] = await Promise.all(reqs);
     rows = r1.transactions || [];
     matched = (r2 && r2.transactions) || [];
@@ -865,13 +867,25 @@ async function lpTxnLoad() {
     const isOut = (t2.amount || 0) > 0;
     const on = _lpSel.has(t2.txn_id);
     const hit = isMatch(t2);
-    return `<label style="display:flex;align-items:center;gap:.4rem;padding:.22rem .2rem;border-bottom:1px solid #eef2f7;cursor:pointer;${on ? 'background:#eff6ff' : hit ? 'background:#ecfdf5' : ''}">
-      <input type="checkbox" data-txn="${esc(t2.txn_id)}" ${on ? 'checked' : ''} onchange="lpTxnToggle(this)">
-      <span style="white-space:nowrap;color:var(--g500)">${esc(t2.date || '')}</span>
-      <span style="white-space:nowrap;color:var(--g400);font-size:.72rem">${esc(_lpAcctShort(t2.account_id))}</span>
-      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc((t2.merchant || t2.name || '').slice(0, 40))}</span>
-      ${hit ? '<span style="background:#dcfce7;color:#166534;border-radius:6px;padding:0 5px;font-size:.66rem;font-weight:700;white-space:nowrap">金额吻合</span>' : ''}
-      <b style="white-space:nowrap;color:${isOut ? '#dc2626' : '#15803d'}">${isOut ? '−' : '+'}${money(Math.abs(t2.amount || 0))}</b>
+    // 两行显示: 第一行 日期/账户/金额, 第二行 完整银行描述; 有自己的标注(ANN)再加一行
+    const merchant = t2.merchant || t2.name || '';
+    const fullDesc = (t2.name && t2.name !== merchant) ? t2.name : '';
+    const ab = (typeof ANN !== 'undefined' && ANN[t2.txn_id]) || null;
+    const annTxt = ab ? [_bsPayeeDisplay(ab.payee), ab.note].filter(Boolean).join(' · ') : '';
+    const annHtml = ab
+      ? `<div style="margin:2px 0 0 1.45rem"><span style="display:inline-block;max-width:100%;font-size:.72rem;color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:1px 7px">🏷 ${esc(annTxt || '（标注待填）')}${ab.ann_status === 'pending' ? ' ⏳待审核' : ab.ann_status === 'approved' ? ' ✓已审核' : ''}</span></div>`
+      : '';
+    return `<label style="display:block;padding:.3rem .25rem;border-bottom:1px solid #eef2f7;cursor:pointer;${on ? 'background:#eff6ff' : hit ? 'background:#ecfdf5' : ''}">
+      <div style="display:flex;align-items:center;gap:.45rem">
+        <input type="checkbox" data-txn="${esc(t2.txn_id)}" ${on ? 'checked' : ''} onchange="lpTxnToggle(this)">
+        <span style="white-space:nowrap;color:var(--g500)">${esc(t2.date || '')}</span>
+        <span style="white-space:nowrap;color:var(--g400);font-size:.74rem">${esc(_lpAcctShort(t2.account_id))}</span>
+        ${hit ? '<span style="background:#dcfce7;color:#166534;border-radius:6px;padding:0 5px;font-size:.68rem;font-weight:700;white-space:nowrap">金额吻合</span>' : ''}
+        <b style="margin-left:auto;white-space:nowrap;color:${isOut ? '#dc2626' : '#15803d'}">${isOut ? '−' : '+'}${money(Math.abs(t2.amount || 0))}</b>
+      </div>
+      <div style="margin:1px 0 0 1.45rem;word-break:break-word">${esc(merchant)}</div>
+      ${fullDesc ? `<div style="margin:0 0 0 1.45rem;font-size:.72rem;color:var(--g400);word-break:break-word">${esc(fullDesc)}</div>` : ''}
+      ${annHtml}
     </label>`;
   }).join('') : '<span style="color:var(--g400)">没有符合条件的交易</span>';
   lpTxnSumRefresh();
