@@ -199,7 +199,7 @@ button,input,select,textarea{font-family:inherit}
   box-shadow:0 10px 40px rgba(0,0,0,.2);max-height:90vh;overflow-y:auto}
 .modal h2{font-size:.95rem;color:var(--sky)}
 .modal label{font-size:.75rem;color:var(--gray-600);font-weight:600}
-.modal input,.modal textarea{border:1px solid var(--gray-200);border-radius:var(--radius);padding:9px 12px;
+.modal input,.modal select,.modal textarea{border:1px solid var(--gray-200);border-radius:var(--radius);padding:9px 12px;
   font-size:.9rem;outline:none;width:100%;font-family:inherit}
 .modal textarea{min-height:80px;resize:vertical}
 .modal input:focus,.modal textarea:focus{border-color:var(--sky)}
@@ -433,6 +433,7 @@ async function load(silent) {
         auto_translate: n.auto_translate === undefined ? 1 : n.auto_translate,
         read_at: n.read_at || null,
         spoken_langs: n.spoken_langs || '[]',
+        us_state: n.us_state || '',
         ratings: (() => { try { const o = JSON.parse(n.ratings || '{}'); return (o && typeof o === 'object') ? o : {}; } catch (_) { return {}; } })()
       };
     }
@@ -555,6 +556,7 @@ function conversations() {
       note: noted.note || '', tags: noted.tags || [], status: noted.status || 'open',
       spoken: (() => { try { return JSON.parse(noted.spoken_langs || '[]'); } catch (_) { return []; } })(),
       ratings: noted.ratings || {},
+      usState: noted.us_state || '',
       contactLang: noted.contact_lang || '', agentLang: noted.agent_lang || '',
       autoTranslate: noted.auto_translate === undefined ? 1 : noted.auto_translate,
       unread: unreadCount(list, noted.read_at),
@@ -747,7 +749,7 @@ function renderDetail(convos) {
     + (((convo.tags || []).length || (convo.spoken || []).length)
         ? '<div class="tag-bar">'
           + (convo.spoken || []).map(l => { const v = (convo.ratings || {})[{ zh: 'lang_zh', en: 'lang_en', es: 'lang_es' }[l]]; return '<span class="tag">🗣 ' + (SPOKEN_LABELS[l] || esc(l)) + (v === 1 ? '·流利' : v === 2 ? '·会一点' : '') + '</span>'; }).join('')
-          + convo.tags.map(t => '<span class="tag">🏷 ' + esc(t)
+          + convo.tags.map(t => '<span class="tag">' + tagIcon(t) + ' ' + esc(t)
             + '<button title="去掉这个标签" onclick="removeTag(\'' + esc(t) + '\')">×</button></span>').join('')
           + '<button class="tag-add" onclick="editTags()">+ 标签</button></div>'
         : '')
@@ -1329,6 +1331,16 @@ let RATE_DRAFT = {};
 // 打分联动的标签: 打 1(熟练/可以)自动补上; 管理项打 0(不行)自动摘掉
 const RATE_TAGS = { forklift: '叉车工', cherry_picker: '高位叉车', container_unload: '卸柜工', can_lead: '能做领班', can_recruit: '能招人' };
 const CAP_ICONS = { '能做工头': '👷', '能做领班': '👷', '能招人': '📣' };
+// 所在州: 常用的排前面, 存两字母码; 保存时同步成 📍 州标签进左边筛选栏
+const STATE_COMMON = [['IL', 'IL 伊利诺伊'], ['TX', 'TX 德克萨斯'], ['NY', 'NY 纽约'], ['TN', 'TN 田纳西'], ['GA', 'GA 佐治亚'], ['VA', 'VA 弗吉尼亚'], ['NJ', 'NJ 新泽西'], ['OH', 'OH 俄亥俄'], ['CA', 'CA 加州'], ['FL', 'FL 佛罗里达']];
+const STATE_OTHER = ['AL', 'AK', 'AZ', 'AR', 'CO', 'CT', 'DE', 'HI', 'IA', 'ID', 'IN', 'KS', 'KY', 'LA', 'MA', 'MD', 'ME', 'MI', 'MN', 'MO', 'MS', 'MT', 'NC', 'ND', 'NE', 'NH', 'NM', 'NV', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'UT', 'VT', 'WA', 'WI', 'WV', 'WY'];
+const STATE_CODES = new Set([...STATE_COMMON.map(x => x[0]), ...STATE_OTHER]);
+function tagIcon(t) { return CAP_ICONS[t] || (STATE_CODES.has(t) ? '📍' : '🏷'); }
+function stateOptions(cur) {
+  const opt = (code, label) => '<option value="' + code + '"' + (cur === code ? ' selected' : '') + '>' + label + '</option>';
+  return '<option value="">— 未记录 —</option>' + STATE_COMMON.map(x => opt(x[0], x[1])).join('')
+    + '<optgroup label="其他州">' + STATE_OTHER.map(c => opt(c, c)).join('') + '</optgroup>';
+}
 const SPOKEN_LABELS = { zh: '中文', en: '英语', es: '西语' };
 let TAG_DRAFT = [];
 
@@ -1339,6 +1351,8 @@ function editTags() {
   RATE_DRAFT = { ...(convo.ratings || {}) };
   openModal('<h2>标签 · ' + esc(convo.title) + '</h2>'
     + '<div id="rateRows"></div>'
+    + '<div><div class="hint" style="margin-bottom:5px">📍 所在州</div>'
+    + '<select id="tagState" style="width:100%">' + stateOptions(convo.usState || '') + '</select></div>'
     + '<div><div class="hint" style="margin-bottom:5px">已有标签（点 × 去掉）</div>'
     + '<div class="filter-row" id="tagNow"></div></div>'
     + '<div><div class="hint" style="margin-bottom:5px">常用（做过的工种，点一下加上）</div>'
@@ -1369,6 +1383,10 @@ function editTags() {
       if (RATE_DRAFT[k] === 1 && !TAG_DRAFT.includes(tag)) TAG_DRAFT.push(tag);
       if (RATE_DRAFT[k] === 0 && (k === 'can_lead' || k === 'can_recruit')) TAG_DRAFT = TAG_DRAFT.filter(t => t !== tag);
     }
+    // 所在州: 存字段, 同步成 📍 州标签 (换州时摘掉旧的)
+    const usState = document.getElementById('tagState').value;
+    TAG_DRAFT = TAG_DRAFT.filter(t => !STATE_CODES.has(t) || t === usState);
+    if (usState && !TAG_DRAFT.includes(usState)) TAG_DRAFT.push(usState);
     // 语言打分联动「会的语言」: 1/2 算会, 0 移除, 没打分的保持原样
     let spokenLangs = (convo.spoken || []).slice();
     for (const [k, code] of [['lang_zh', 'zh'], ['lang_en', 'en'], ['lang_es', 'es']]) {
@@ -1378,7 +1396,7 @@ function editTags() {
     }
     const note = document.getElementById('tagNote').value.trim();
     closeModal();
-    await savePeer({ tags: TAG_DRAFT.slice(), spoken_langs: spokenLangs, note, ratings: { ...RATE_DRAFT } });
+    await savePeer({ tags: TAG_DRAFT.slice(), spoken_langs: spokenLangs, note, ratings: { ...RATE_DRAFT }, us_state: usState });
   };
 }
 
@@ -1418,7 +1436,7 @@ function renderTagDraft() {
   const quick = document.getElementById('tagQuick');
   if (!now || !quick) return;
   now.innerHTML = TAG_DRAFT.length
-    ? TAG_DRAFT.map((t, i) => '<span class="tag">' + (CAP_ICONS[t] || '🏷') + ' ' + esc(t)
+    ? TAG_DRAFT.map((t, i) => '<span class="tag">' + tagIcon(t) + ' ' + esc(t)
         + '<button title="去掉" onclick="tagDraftRemove(' + i + ')">×</button></span>').join('')
     : '<span class="hint" style="margin:0">暂无标签</span>';
   quick.innerHTML = COMMON_TAGS.filter(t => !TAG_DRAFT.includes(t))
