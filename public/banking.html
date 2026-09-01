@@ -305,6 +305,7 @@ function txnQuery() {
   if (s) p.set('start', s); if (e) p.set('end', e);
   if (a) p.set('account_id', a); if (q) p.set('q', q);
   if (c) p.set('category', c);
+  p.set('limit', '5000');  // 全部账户一起看时不截断 (服务端上限同为 5000)
   return p.toString();
 }
 
