@@ -1147,7 +1147,7 @@ function rjPick(id) {
   const fields = document.getElementById('rjFields');
   if (!j) { fields.style.display = 'none'; return; }
   fields.style.display = '';
-  document.getElementById('rjAddr').value = j.address || '';
+  document.getElementById('rjAddr').value = String(j.address || '').replace(/^\s*job site address:\s*/i, '');
   document.getElementById('rjPay').value = j.worker_pay || _rjFirstShiftPay(j) || '';
   rjPreview();
 }
@@ -1160,6 +1160,8 @@ function _rjTitleEn(j) {
   if (/叉车|forklift/.test(t)) return 'Forklift Operator';
   if (/拣货|picker/.test(t)) return 'Order Picker';
   if (/卸柜|unload|container/.test(t)) return 'Container Unloader';
+  if (/移动箱|搬箱|搬运|material/.test(t)) return 'Material Handler';
+  if (/pallet|托盘/.test(t)) return 'Pallet Jack Operator';
   if (/打包|pack/.test(t)) return 'Packer';
   if (/分拣|sort/.test(t)) return 'Sorter';
   if (/装卸|load/.test(t)) return 'Loader';
@@ -1175,7 +1177,7 @@ function _rjText() {
   const pay = ((document.getElementById('rjPay') || {}).value || '').trim();
   // 纯数字的工资自动写成 $N/h
   const payTxt = /^\d+(\.\d+)?$/.test(pay) ? '$' + pay + '/h' : pay;
-  const lines = ['📢 Hiring: ' + _rjTitleEn(j) + (j.warehouse ? ' (' + j.warehouse + ')' : '')];
+  const lines = ['📢 Hiring: ' + _rjTitleEn(j)];   // 不带公司名
   if (addr.trim()) lines.push('📍 Address: ' + addr.trim());
   if (payTxt) lines.push('💰 Pay: ' + payTxt);
   lines.push('Are you interested? Please reply.');
