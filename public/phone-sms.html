@@ -1023,10 +1023,15 @@ const RECRUIT_QTYPES = [
     es: () => `¿Habla usted inglés?` },
 ];
 
-/** 这个会话选的发送语言 → en / es / zh（其他语言让机器翻译兜底）。 */
+/** 这个会话选的发送语言 → en / es / zh（其他语言让机器翻译兜底）。
+    新短信还没有会话，就按发送框上「译成」下拉当前选的语言。 */
 function rqLang() {
   const convo = COMPOSING ? null : conversations().find(c => c.peer === PEER);
-  const lang = (convo && convo.contactLang) || DEFAULT_SEND_LANG;
+  let lang = (convo && convo.contactLang) || DEFAULT_SEND_LANG;
+  if (COMPOSING) {
+    const sel = document.getElementById('langSel');
+    lang = (sel && sel.value) || DEFAULT_SEND_LANG;
+  }
   if (lang === 'English') return 'en';
   if (lang === 'Español') return 'es';
   if (lang === '简体中文' || lang === '繁體中文') return 'zh';
