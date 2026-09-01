@@ -714,8 +714,14 @@ function renderDetail(convos) {
 
   if (COMPOSING) {
     el.innerHTML = contactBar('新短信', '填一个号码', true)
+      // 新短信也能直接用招工话术和在招职位 (都只是往发送框里填内容, 不依赖会话)
+      + '<div class="action-bar">'
+      + '<button class="action-btn" onclick="showRecruitQ()" title="选工种，生成标准翻译的招工提问">💼 招工问题</button>'
+      + '<button class="action-btn" onclick="showRecruitJob()" title="从 recruit 页在招职位里选一个，带出地址和工资（工资可改），填进短信">📍 招工职位</button>'
+      + '</div>'
       + '<div class="empty"><img src="logo.svg" alt=""><div class="big">写给一个新号码</div>'
-      + '<div class="small">上面填号码，下面写内容。<br>发出去的是你手机号本人发的。</div></div>'
+      + '<div class="small">上面填号码，下面写内容。<br>发出去的是你手机号本人发的。<br>'
+      + '「⚡」是预制信息，「💼 招工问题」「📍 招工职位」在上面。</div></div>'
       + replyBar(true);
     wireReply();
     document.getElementById('toInput').focus();
