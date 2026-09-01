@@ -205,11 +205,16 @@ button,input,select,textarea{font-family:inherit}
 .modal input:focus,.modal textarea:focus{border-color:var(--sky)}
 .modal .row{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
 .modal .hint{font-size:.75rem;color:var(--gray-600);line-height:1.6}
-/* 标签弹窗的语言选块: 一行三个等宽, 文字不折行, 勾上高亮 */
-.lang-pill{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;font-size:.82rem;font-weight:600;
-  border:1.5px solid var(--gray-200);border-radius:10px;padding:8px 6px;white-space:nowrap;user-select:none}
-.lang-pill.on{border-color:var(--sky);background:var(--sky-light);color:var(--blue)}
-.lang-pill input{accent-color:var(--sky)}
+/* 标签弹窗的三档打分 (照 /interview-result 同款配色): 熟练=绿 会一点=橙 不会=红 */
+.modal.wide{width:min(560px,100%)}
+.rate-group{font-size:.75rem;font-weight:800;color:var(--gray-600);background:var(--gray-100);border-radius:8px;padding:.35rem .6rem;margin:.35rem 0 .1rem}
+.q-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:5px 0;border-bottom:1px solid var(--gray-100)}
+.q-label{font-size:.82rem;font-weight:600}
+.seg{display:flex;gap:6px;flex-shrink:0}
+.seg button{padding:.32rem .6rem;border:1.5px solid var(--gray-200);background:#fff;border-radius:8px;font-size:.78rem;font-weight:700;cursor:pointer;font-family:inherit;color:var(--gray-600);white-space:nowrap}
+.seg button.yes.on{background:#E8F5E9;border-color:var(--green);color:var(--green)}
+.seg button.mid.on{background:#FFF4E0;border-color:#F5A623;color:#b45309}
+.seg button.no.on{background:#FFEAEA;border-color:var(--red);color:var(--red)}
 .modal code{background:var(--off-white);border:1px solid #fde68a;border-radius:6px;padding:2px 8px;
   font-size:.8rem;user-select:all;word-break:break-all;display:inline-block;margin-top:3px}
 
@@ -418,7 +423,9 @@ async function load(silent) {
         alias: n.alias || '', note: n.note || '', tags: Array.isArray(tags) ? tags : [],
         status: n.status || 'open', contact_lang: n.contact_lang || '', agent_lang: n.agent_lang || '',
         auto_translate: n.auto_translate === undefined ? 1 : n.auto_translate,
-        read_at: n.read_at || null
+        read_at: n.read_at || null,
+        spoken_langs: n.spoken_langs || '[]',
+        ratings: (() => { try { const o = JSON.parse(n.ratings || '{}'); return (o && typeof o === 'object') ? o : {}; } catch (_) { return {}; } })()
       };
     }
     renderTagRow();
@@ -527,6 +534,7 @@ function conversations() {
       peer, list, last, maxRisk, queued, address,
       note: noted.note || '', tags: noted.tags || [], status: noted.status || 'open',
       spoken: (() => { try { return JSON.parse(noted.spoken_langs || '[]'); } catch (_) { return []; } })(),
+      ratings: noted.ratings || {},
       contactLang: noted.contact_lang || '', agentLang: noted.agent_lang || '',
       autoTranslate: noted.auto_translate === undefined ? 1 : noted.auto_translate,
       unread: unreadCount(list, noted.read_at),
@@ -718,7 +726,7 @@ function renderDetail(convos) {
     + '</div>'
     + (((convo.tags || []).length || (convo.spoken || []).length)
         ? '<div class="tag-bar">'
-          + (convo.spoken || []).map(l => '<span class="tag">🗣 ' + (SPOKEN_LABELS[l] || esc(l)) + '</span>').join('')
+          + (convo.spoken || []).map(l => { const v = (convo.ratings || {})[{ zh: 'lang_zh', en: 'lang_en', es: 'lang_es' }[l]]; return '<span class="tag">🗣 ' + (SPOKEN_LABELS[l] || esc(l)) + (v === 1 ? '·流利' : v === 2 ? '·会一点' : '') + '</span>'; }).join('')
           + convo.tags.map(t => '<span class="tag">🏷 ' + esc(t)
             + '<button title="去掉这个标签" onclick="removeTag(\'' + esc(t) + '\')">×</button></span>').join('')
           + '<button class="tag-add" onclick="editTags()">+ 标签</button></div>'
@@ -1288,9 +1296,19 @@ function removeTag(tag) {
 /* 标签编辑：常用工种一点即加（和 SMS Inbox 同一组），已有的点 × 删，自定义回车添加。 */
 // 「面试」标签是活的：打上它，面试登记页会自动生成一条（姓名/工种/备注跟着迁移）
 const COMMON_TAGS = ['面试', '普工', '拣货', '叉车工', '高位叉车', '卸柜工', '打包', '分拣', '装卸'];
-// 能力标记 (能不能做工头 / 能不能帮着招人), 与工种分开一行, 打上后同样进左边筛选栏
-const CAP_TAGS = ['能做工头', '能招人'];
-const CAP_ICONS = { '能做工头': '👷', '能招人': '📣' };
+// 三档打分, 与 /interview-result 完全同一套 key 和 0/1/2 语义 (1=熟练/流利/可以 2=会一点/可能可以 0=不会/不行)
+const RATE_GROUPS = [
+  { name: '🔧 技能', opts: [[1, '✓ 熟练'], [2, '◐ 会一点'], [0, '✗ 不会']],
+    qs: [['forklift', '开普通叉车？'], ['cherry_picker', '开高位叉车？'], ['container_unload', '卸柜？']] },
+  { name: '🗣 语言', opts: [[1, '✓ 流利'], [2, '◐ 会一点'], [0, '✗ 不会']],
+    qs: [['lang_en', '英语？'], ['lang_es', '西班牙语？'], ['lang_zh', '中文？']] },
+  { name: '👥 管理', opts: [[1, '✓ 可以'], [2, '◐ 可能可以'], [0, '✗ 不行']],
+    qs: [['can_lead', '可以做领班吗？'], ['can_recruit', '有能力帮忙找人吗？']] },
+];
+let RATE_DRAFT = {};
+// 打分联动的标签: 打 1(熟练/可以)自动补上; 管理项打 0(不行)自动摘掉
+const RATE_TAGS = { forklift: '叉车工', cherry_picker: '高位叉车', container_unload: '卸柜工', can_lead: '能做领班', can_recruit: '能招人' };
+const CAP_ICONS = { '能做工头': '👷', '能做领班': '👷', '能招人': '📣' };
 const SPOKEN_LABELS = { zh: '中文', en: '英语', es: '西语' };
 let TAG_DRAFT = [];
 
@@ -1298,30 +1316,22 @@ function editTags() {
   const convo = conversations().find(c => c.peer === PEER);
   if (!convo) return;
   TAG_DRAFT = (convo.tags || []).slice();
-  const spoken = convo.spoken || [];
-  const langBox = (code, label) =>
-    '<label class="lang-pill' + (spoken.includes(code) ? ' on' : '') + '">'
-    + '<input type="checkbox" id="spk_' + code + '"' + (spoken.includes(code) ? ' checked' : '')
-    + ' onchange="this.parentElement.classList.toggle(\'on\', this.checked)">'
-    + label + '</label>';
+  RATE_DRAFT = { ...(convo.ratings || {}) };
   openModal('<h2>标签 · ' + esc(convo.title) + '</h2>'
-    + '<div><div class="hint" style="margin-bottom:5px">会什么语言（可多选）</div>'
-    + '<div style="display:flex;gap:8px">'
-    + langBox('zh', '🇨🇳 中文') + langBox('en', '🇺🇸 英语') + langBox('es', '🇲🇽 西语') + '</div></div>'
+    + '<div id="rateRows"></div>'
     + '<div><div class="hint" style="margin-bottom:5px">已有标签（点 × 去掉）</div>'
     + '<div class="filter-row" id="tagNow"></div></div>'
     + '<div><div class="hint" style="margin-bottom:5px">常用（做过的工种，点一下加上）</div>'
-    + '<div class="filter-row" id="tagQuick"></div></div>'
-    + '<div><div class="hint" style="margin-bottom:5px">能力（能不能做工头 / 帮着招人）</div>'
-    + '<div class="filter-row" id="tagQuickCap"></div>'
+    + '<div class="filter-row" id="tagQuick"></div>'
     + '<input id="tagInput" placeholder="自定义标签，回车添加（如: GOFO上过班 / 靠谱 / 有车）" style="margin-top:8px;width:100%;box-sizing:border-box">'
-    + '<div class="hint" style="margin-top:4px">标签会出现在左边的筛选栏里，点一下就只看带这个标签的会话。</div></div>'
+    + '<div class="hint" style="margin-top:4px">标签会出现在左边的筛选栏里，点一下就只看带这个标签的会话。打分打了「熟练 / 可以」会自动补上对应标签。</div></div>'
     + '<div><div class="hint" style="margin-bottom:5px">备注（要求 / 上班情况等）</div>'
     + '<textarea id="tagNote" rows="3" style="width:100%;box-sizing:border-box;border:1px solid var(--gray-200);border-radius:12px;'
     + 'padding:8px 12px;font-size:.82rem;font-family:inherit;resize:vertical">' + esc(convo.note || '') + '</textarea></div>'
     + '<div class="row"><button class="action-btn" onclick="closeModal()">取消</button>'
-    + '<button class="action-btn primary" id="tagSave">保存</button></div>');
+    + '<button class="action-btn primary" id="tagSave">保存</button></div>', 'wide');
 
+  renderRateRows();
   renderTagDraft();
   const input = document.getElementById('tagInput');
   input.addEventListener('keydown', (e) => {
@@ -1334,12 +1344,43 @@ function editTags() {
     // 输入框里打了字还没按回车的也算上
     document.getElementById('tagInput').value.split(/[,，]/).map(t => t.trim()).filter(Boolean)
       .forEach(t => { if (!TAG_DRAFT.includes(t)) TAG_DRAFT.push(t); });
-    const tags = TAG_DRAFT.slice();
-    const spokenLangs = ['zh', 'en', 'es'].filter(c => document.getElementById('spk_' + c).checked);
+    // 打分联动标签: 打 1 自动补上; 管理项打 0 摘掉 (技能打 0/2 不动手工标签)
+    for (const [k, tag] of Object.entries(RATE_TAGS)) {
+      if (RATE_DRAFT[k] === 1 && !TAG_DRAFT.includes(tag)) TAG_DRAFT.push(tag);
+      if (RATE_DRAFT[k] === 0 && (k === 'can_lead' || k === 'can_recruit')) TAG_DRAFT = TAG_DRAFT.filter(t => t !== tag);
+    }
+    // 语言打分联动「会的语言」: 1/2 算会, 0 移除, 没打分的保持原样
+    let spokenLangs = (convo.spoken || []).slice();
+    for (const [k, code] of [['lang_zh', 'zh'], ['lang_en', 'en'], ['lang_es', 'es']]) {
+      const v = RATE_DRAFT[k];
+      if ((v === 1 || v === 2) && !spokenLangs.includes(code)) spokenLangs.push(code);
+      if (v === 0) spokenLangs = spokenLangs.filter(x => x !== code);
+    }
     const note = document.getElementById('tagNote').value.trim();
     closeModal();
-    await savePeer({ tags, spoken_langs: spokenLangs, note });
+    await savePeer({ tags: TAG_DRAFT.slice(), spoken_langs: spokenLangs, note, ratings: { ...RATE_DRAFT } });
   };
+}
+
+// 三档打分行 (照 /interview-result 同款)
+function renderRateRows() {
+  const host = document.getElementById('rateRows');
+  if (!host) return;
+  const cls = { 1: 'yes', 2: 'mid', 0: 'no' };
+  host.innerHTML = RATE_GROUPS.map(g =>
+    '<div class="rate-group">' + g.name + '</div>'
+    + g.qs.map(([k, label]) => {
+      const v = RATE_DRAFT[k];
+      return '<div class="q-row"><span class="q-label">' + label + '</span><span class="seg">'
+        + g.opts.map(([val, lb]) => '<button type="button" class="' + cls[val] + (v === val ? ' on' : '')
+          + '" onclick="rateSet(\'' + k + '\',' + val + ')">' + lb + '</button>').join('')
+        + '</span></div>';
+    }).join('')
+  ).join('');
+}
+function rateSet(k, v) {
+  if (RATE_DRAFT[k] === v) delete RATE_DRAFT[k]; else RATE_DRAFT[k] = v;   // 再点一次取消
+  renderRateRows();
 }
 
 function tagDraftAdd(tag) {
@@ -1363,10 +1404,6 @@ function renderTagDraft() {
   quick.innerHTML = COMMON_TAGS.filter(t => !TAG_DRAFT.includes(t))
     .map(t => '<button type="button" class="chip" onclick="tagDraftAdd(\'' + t + '\')">+ ' + t + '</button>').join('')
     || '<span class="hint" style="margin:0">常用的都加上了</span>';
-  const quickCap = document.getElementById('tagQuickCap');
-  if (quickCap) quickCap.innerHTML = CAP_TAGS.filter(t => !TAG_DRAFT.includes(t))
-    .map(t => '<button type="button" class="chip" onclick="tagDraftAdd(\'' + t + '\')">+ ' + (CAP_ICONS[t] || '') + ' ' + t + '</button>').join('')
-    || '<span class="hint" style="margin:0">都标上了</span>';
 }
 
 async function toggleStar(id, on) {
@@ -1389,9 +1426,9 @@ async function retranslate() {
 /* ── 弹窗 ── */
 function closeModal() { document.getElementById('modalHost').innerHTML = ''; }
 
-function openModal(html) {
+function openModal(html, cls) {
   document.getElementById('modalHost').innerHTML =
-    '<div class="modal-back" onclick="if(event.target===this)closeModal()"><div class="modal">' + html + '</div></div>';
+    '<div class="modal-back" onclick="if(event.target===this)closeModal()"><div class="modal' + (cls ? ' ' + cls : '') + '">' + html + '</div></div>';
 }
 
 function confirmBox(text) {
