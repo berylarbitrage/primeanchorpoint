@@ -734,9 +734,7 @@ function renderDetail(convos) {
     + (convo.status === 'closed' ? '重新打开' : '✓ 关闭会话') + '</button>'
     + '<button class="action-btn" onclick="showRecruitQ()" title="选工种，生成标准翻译的招工提问">💼 招工问题</button>'
     + '<button class="action-btn" onclick="sendApplyForm()" title="把招工申请表链接（和二维码同一个表）发给对方填写">📋 发申请表</button>'
-    + '<a class="action-btn" style="text-decoration:none" target="_blank" '
-    + 'href="/interviews#new=' + esc(convo.peer) + '&name=' + encodeURIComponent(convo.title || '') + '" '
-    + 'title="带着号码和名字去面试登记页登记">🗓 登记面试</a>'
+    + '<button class="action-btn" onclick="openInterviewModal()" title="就地弹窗登记面试，不开新页">🗓 登记面试</button>'
     + '<button class="action-btn" onclick="startNew()">✎ 新短信</button>'
     + '<div style="flex:1"></div>'
     + (convo.unread ? '<span class="badge" style="background:#2563eb;color:#fff">' + convo.unread + ' 条新</span>' : '')
@@ -1356,6 +1354,72 @@ function removeTag(tag) {
 }
 
 /* 标签编辑：常用工种一点即加（和 SMS Inbox 同一组），已有的点 × 删，自定义回车添加。 */
+// 页内小提示条 (页面此前没有任何 toast)
+function pToast(msg, bad) {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:3000;'
+    + 'background:' + (bad ? '#dc2626' : '#2D9D78') + ';color:#fff;padding:.5rem 1rem;border-radius:10px;'
+    + 'font-size:.85rem;box-shadow:0 6px 20px rgba(0,0,0,.25)';
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3200);
+}
+
+// ── 🗓 登记面试弹窗: 不开新页, 就地登记到面试登记 (同「面试」标签那条通道, 已有未办结登记自动并入) ──
+const IV_POSITIONS = ['普工', '普通叉车', '高位叉车', '卸柜工', '装卸工', '拣货员', '打包员', '分拣员'];
+let IV_POS = new Set();
+function openInterviewModal() {
+  const convo = conversations().find(c => c.peer === PEER);
+  if (!convo) return;
+  IV_POS = new Set();
+  const isPhoneTitle = /^[()\d\s+-]*$/.test(convo.title || '');
+  openModal('<h2>🗓 登记面试 · ' + esc(fmtPhone(convo.address) || convo.peer) + '</h2>'
+    + '<div><div class="hint" style="margin-bottom:5px">姓名</div>'
+    + '<input id="ivName" value="' + esc(isPhoneTitle ? '' : (convo.title || '')) + '" placeholder="对方姓名" style="width:100%;box-sizing:border-box"></div>'
+    + '<div><div class="hint" style="margin-bottom:5px">工种（点选，可多个）</div>'
+    + '<div class="filter-row" id="ivPosRow"></div>'
+    + '<input id="ivPosExtra" placeholder="其他工种（可选）" style="margin-top:8px;width:100%;box-sizing:border-box"></div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap"><div style="flex:1;min-width:150px"><div class="hint" style="margin-bottom:5px">面试时间</div>'
+    + '<input type="datetime-local" id="ivAt" style="width:100%;box-sizing:border-box"></div>'
+    + '<div style="flex:1.2;min-width:170px"><div class="hint" style="margin-bottom:5px">面试地点</div>'
+    + '<input id="ivPlace" placeholder="默认 701（会自动发到场指南）" style="width:100%;box-sizing:border-box"></div></div>'
+    + '<div><div class="hint" style="margin-bottom:5px">备注</div>'
+    + '<input id="ivNote" placeholder="可选" style="width:100%;box-sizing:border-box"></div>'
+    + '<div class="row"><button class="action-btn" onclick="closeModal()">取消</button>'
+    + '<button class="action-btn primary" id="ivSave">登记</button></div>', 'wide');
+  renderIvPos();
+  document.getElementById('ivSave').onclick = saveInterview;
+}
+function renderIvPos() {
+  document.getElementById('ivPosRow').innerHTML = IV_POSITIONS.map(pos =>
+    '<button type="button" class="chip' + (IV_POS.has(pos) ? ' on' : '') + '" onclick="ivTogglePos(\'' + pos + '\')">'
+    + (IV_POS.has(pos) ? '✓ ' : '+ ') + pos + '</button>').join('');
+}
+function ivTogglePos(pos) { if (IV_POS.has(pos)) IV_POS.delete(pos); else IV_POS.add(pos); renderIvPos(); }
+async function saveInterview() {
+  const btn = document.getElementById('ivSave');
+  btn.disabled = true; btn.textContent = '登记中…';
+  try {
+    const position = [...IV_POS, document.getElementById('ivPosExtra').value.trim()].filter(Boolean).join(' / ');
+    const r = await api('/device-sms/interview', { method: 'POST', body: JSON.stringify({
+      phone: PEER,
+      name: document.getElementById('ivName').value.trim(),
+      position,
+      s701_at: document.getElementById('ivAt').value || '',
+      s701_place: document.getElementById('ivPlace').value.trim(),
+      note: document.getElementById('ivNote').value.trim(),
+    }) });
+    if (r.error) throw new Error(r.error);
+    closeModal();
+    pToast((r.updated ? '✅ 已并入这个号码原有的未办结登记' : '✅ 已登记面试')
+      + (r.guide_queued ? '，到场指南已排进发送队列' : ''));
+    load(true);
+  } catch (e) {
+    pToast(e.message || '登记失败', true);
+    btn.disabled = false; btn.textContent = '登记';
+  }
+}
+
 // 「面试」标签是活的：打上它，面试登记页会自动生成一条（姓名/工种/备注跟着迁移）
 const COMMON_TAGS = ['面试', '普工', '拣货', '叉车工', '高位叉车', '卸柜工', '打包', '分拣', '装卸'];
 // 三档打分, 与 /interview-result 完全同一套 key 和 0/1/2 语义 (1=熟练/流利/可以 2=会一点/可能可以 0=不会/不行)
