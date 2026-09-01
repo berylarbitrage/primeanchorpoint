@@ -1105,6 +1105,22 @@ function insertRecruitQ() {
       （工资可改）→ 拼成招工短信填进发送框。发送时按对方语言翻译（和平时一样），
       地址/工资会原样保留。 ── */
 let _rjJobs = [], _rjSelId = null;
+// 班次时间转英文: 「晚班 09:00–23:00」→「Evening 09:00–23:00」, 连班「早班+中班」→「Morning+Mid」, 多条用 / 连接
+const RJ_SHIFT_EN = { '早班': 'Morning', '中班': 'Mid', '晚班': 'Evening', '夜班': 'Night', '白班': 'Day', '周末班': 'Weekend', '临时': 'Temp' };
+function _rjShiftEn(j) {
+  let arr = [];
+  try { const a = JSON.parse(j.shifts || '[]'); if (Array.isArray(a)) arr = a; } catch (_) {}
+  const parts = [];
+  for (const s of arr) {
+    const raw = String((s && s.shift) || '').trim();
+    if (!raw) continue;
+    const m = raw.match(/^(\S+?)(?:\s+(.*))?$/);
+    const names = (m ? m[1] : raw).split('+').map(n => RJ_SHIFT_EN[n] || n).join('+');
+    const time = ((m && m[2]) ? m[2].trim() : '').replace(/\s*开始$/, ' start');
+    parts.push((names + ' ' + time).trim());
+  }
+  return parts.join(' / ');
+}
 function _rjFirstShiftPay(j) {
   try { const a = JSON.parse(j.shifts || '[]'); const s = (Array.isArray(a) ? a : []).find(x => x && x.worker_pay); return s ? s.worker_pay : ''; }
   catch (_) { return ''; }
@@ -1130,6 +1146,8 @@ async function showRecruitJob() {
     + '<div id="rjFields" style="display:none">'
     + '<div class="hint" style="margin-top:8px">地址</div>'
     + '<input id="rjAddr" type="text" oninput="rjPreview()" style="' + inp + '">'
+    + '<div class="hint" style="margin-top:8px">时间（可改）</div>'
+    + '<input id="rjTime" type="text" placeholder="例：Evening 09:00–23:00" oninput="rjPreview()" style="' + inp + '">'
     + '<div class="hint" style="margin-top:8px">工资（可改）</div>'
     + '<input id="rjPay" type="text" placeholder="例：$18/h" oninput="rjPreview()" style="' + inp + '">'
     + '<div class="hint" style="margin-top:8px">预览（英文；填入后发送框里还能再改）</div>'
@@ -1148,6 +1166,7 @@ function rjPick(id) {
   if (!j) { fields.style.display = 'none'; return; }
   fields.style.display = '';
   document.getElementById('rjAddr').value = String(j.address || '').replace(/^\s*job site address:\s*/i, '');
+  document.getElementById('rjTime').value = _rjShiftEn(j);
   document.getElementById('rjPay').value = j.worker_pay || _rjFirstShiftPay(j) || '';
   rjPreview();
 }
@@ -1177,8 +1196,10 @@ function _rjText() {
   const pay = ((document.getElementById('rjPay') || {}).value || '').trim();
   // 纯数字的工资自动写成 $N/h
   const payTxt = /^\d+(\.\d+)?$/.test(pay) ? '$' + pay + '/h' : pay;
+  const timeTxt = ((document.getElementById('rjTime') || {}).value || '').trim();
   const lines = ['📢 Hiring: ' + _rjTitleEn(j)];   // 不带公司名
   if (addr.trim()) lines.push('📍 Address: ' + addr.trim());
+  if (timeTxt) lines.push('🕐 Time: ' + timeTxt);
   if (payTxt) lines.push('💰 Pay: ' + payTxt);
   lines.push('Are you interested? Please reply.');
   return lines.join('\n');
