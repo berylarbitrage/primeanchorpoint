@@ -33274,7 +33274,8 @@ app.get('/api/plaid/accounts', requireAdmin, requireRole('admin', 'cs', 'account
 app.get('/api/plaid/ann-options', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
   try {
     res.json({
-      companies: db.prepare('SELECT name FROM partners WHERE active=1 ORDER BY name').all().map(r => r.name).filter(Boolean),
+      // 合作公司名单: 除已作废外全部 (含待签约/已停止), 与合作公司管理页一致
+      companies: db.prepare('SELECT name FROM partners WHERE COALESCE(abolished,0)=0 ORDER BY name').all().map(r => r.name).filter(Boolean),
       warehouses: db.prepare('SELECT name FROM job_sites WHERE active=1 ORDER BY name').all().map(r => r.name).filter(Boolean),
       referrers: db.prepare('SELECT name FROM referrers ORDER BY name').all().map(r => r.name).filter(Boolean),
     });

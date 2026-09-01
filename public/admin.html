@@ -46780,6 +46780,7 @@ async function bsViewerDownload() {
 // ── Box annotations: draw a rectangle on the PDF, fill details in the right panel ──
 let _bsBoxList = [];   // current statement's boxes, kept in sync with the panel + overlays
 let _bsCompanies = []; // cached company names (partners + extras) for the payee dropdown
+let _bsPartnerCompanies = []; // 未作废的合作公司 (员工小面板「选择公司」专用, 不含 extras)
 // Extra vendor companies that aren't partner records but should appear in the picker.
 const BS_EXTRA_COMPANIES = ['Dando Chemicals US LLC', 'BOOKFREIGHT INC', 'Nova Express', '以梦为马 Yimengweima'];
 const BS_PAYEE_BANKFEE = '银行费用';
@@ -46899,12 +46900,15 @@ function _bsWantsInvoice(box) {
 const BS_PAYEE_PEOPLE = ['Niki Zhao', 'Tiexiong Zhou', 'Beryl Zhang', 'Yizhao Cai'];
 async function bsEnsureCompanies() {
   if (_bsCompanies.length) return;
-  let names = [];
+  let names = [], partnerNames = [];
   try {
     const list = await api('/admin/partners');
     const ps = Array.isArray(list) ? list : (list && list.partners) || [];
     names = ps.map(p => p.name).filter(Boolean);
+    partnerNames = ps.filter(p => !p.abolished).map(p => p.name).filter(Boolean);
   } catch (_) { names = []; }
+  // 员工小面板的「选择公司」只列未作废的合作公司, 不含下面补的额外收付款公司
+  _bsPartnerCompanies = partnerNames.sort((a, b) => a.localeCompare(b));
   BS_EXTRA_COMPANIES.forEach(n => { if (n && !names.includes(n)) names.push(n); });
   _bsCompanies = names.sort((a, b) => a.localeCompare(b));
 }
@@ -47501,7 +47505,7 @@ function bsCheckUpdate(id) {
 // Company <select> options (used inside the 员工 sub-picker).
 function _bsCompanyOptions(current) {
   const parts = ['<option value="">— 选择公司 —</option>'];
-  const names = _bsCompanies.slice();
+  const names = (_bsPartnerCompanies.length ? _bsPartnerCompanies : _bsCompanies).slice();
   if (current && !names.includes(current)) names.push(current);
   names.forEach(n => parts.push(`<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`));
   return parts.join('');
