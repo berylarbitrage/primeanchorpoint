@@ -131,6 +131,7 @@ const QUESTIONS = [
   { key: 'lang_zh',          group: '🗣 语言', label: '中文？' },
   { key: 'can_lead',         group: '👥 管理', label: '可以做领班吗？' },
   { key: 'can_recruit',      group: '👥 管理', label: '有能力帮忙找人吗？' },
+  { key: 'can_tax',          group: '👥 管理', label: '可以报税吗？' },
 ];
 let _answers = {};          // key → 1 / 2 / 0 / undefined
 let _phone = '';
@@ -311,7 +312,7 @@ async function doSave() {
 const FLAGS = [
   ['forklift', '叉车'], ['cherry_picker', '高位叉车'], ['container_unload', '卸柜'],
   ['lang_en', '英语'], ['lang_es', '西语'], ['lang_zh', '中文'],
-  ['can_lead', '领班'], ['can_recruit', '能找人'],
+  ['can_lead', '领班'], ['can_recruit', '能找人'], ['can_tax', '能报税'],
 ];
 async function loadRecent() {
   try {

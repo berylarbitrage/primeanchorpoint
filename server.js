@@ -26268,6 +26268,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS interview_results (
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_ivres_phone ON interview_results(phone)'); } catch (e) {}
 try { db.exec('ALTER TABLE interview_results ADD COLUMN can_lead INTEGER DEFAULT NULL'); } catch (e) {}
 try { db.exec('ALTER TABLE interview_results ADD COLUMN can_recruit INTEGER DEFAULT NULL'); } catch (e) {}
+try { db.exec('ALTER TABLE interview_results ADD COLUMN can_tax INTEGER DEFAULT NULL'); } catch (e) {}
 
 function _interviewFindPerson(digits10) {
   const emp = db.prepare(`SELECT id, first_name, last_name, position, state, status FROM employees WHERE phone10(phone)=? ORDER BY (status='active') DESC, id DESC LIMIT 1`).get(digits10);
@@ -26356,13 +26357,13 @@ app.post('/api/interview-result', requireAdmin, (req, res) => {
     const vals = {
       forklift: flag(b.forklift), cherry_picker: flag(b.cherry_picker), container_unload: flag(b.container_unload),
       lang_en: flag(b.lang_en), lang_es: flag(b.lang_es), lang_zh: flag(b.lang_zh),
-      can_lead: flag(b.can_lead), can_recruit: flag(b.can_recruit)
+      can_lead: flag(b.can_lead), can_recruit: flag(b.can_recruit), can_tax: flag(b.can_tax)
     };
     const note = String(b.note || '').slice(0, 2000);
-    const r = db.prepare(`INSERT INTO interview_results (phone, employee_id, applicant_id, person_name, forklift, cherry_picker, container_unload, lang_en, lang_es, lang_zh, can_lead, can_recruit, note, created_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    const r = db.prepare(`INSERT INTO interview_results (phone, employee_id, applicant_id, person_name, forklift, cherry_picker, container_unload, lang_en, lang_es, lang_zh, can_lead, can_recruit, can_tax, note, created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(digits10, person.type === 'employee' ? person.id : null, person.type === 'applicant' ? person.id : null, person.name,
-        vals.forklift, vals.cherry_picker, vals.container_unload, vals.lang_en, vals.lang_es, vals.lang_zh, vals.can_lead, vals.can_recruit, note, req.userName || '');
+        vals.forklift, vals.cherry_picker, vals.container_unload, vals.lang_en, vals.lang_es, vals.lang_zh, vals.can_lead, vals.can_recruit, vals.can_tax, note, req.userName || '');
     // 同步 SMS 联系人: 「熟练/流利(=1)」的语言进 spoken_langs、技能进工种标签;
     // 「会一点(=2)」不动联系人标记(细节看面试记录); 「不会(=0)」把语言移除
     try {
@@ -26377,6 +26378,9 @@ app.post('/api/interview-result', requireAdmin, (req, res) => {
         let tags = []; try { tags = JSON.parse(c.tags || '[]'); } catch (_) {}
         const addT = (t, v) => { if (v === 1 && !tags.includes(t)) tags.push(t); };
         addT('叉车工', vals.forklift); addT('高位叉车', vals.cherry_picker); addT('卸柜工', vals.container_unload);
+        // 报税能力: 打「可以」补标签, 打「不行」摘掉 (与 /phone-sms 标签弹窗同一联动)
+        addT('能报税', vals.can_tax);
+        if (vals.can_tax === 0) tags = tags.filter(t => t !== '能报税');
         // 领班/找人能力 → 联系人上的 领班/工头 标记 (明确回答才动, 未答不动)
         const isLead = vals.can_lead === null ? (c.is_lead ? 1 : 0) : vals.can_lead;
         const isForeman = vals.can_recruit === null ? (c.is_foreman ? 1 : 0) : vals.can_recruit;
