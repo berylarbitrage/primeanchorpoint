@@ -181,7 +181,10 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
           <input type="text" id="pnNote" placeholder="可选，例：8/30 Zelle 付的" style="width:100%;margin:.15rem 0 .55rem">
           <label style="font-size:.76rem;color:var(--g500)">收款凭证截图 / PDF（可多张，最大 25MB）</label>
           <div id="pnPhotos" style="display:flex;gap:.4rem;flex-wrap:wrap;margin:.3rem 0"></div>
-          <input type="file" id="pnFile" multiple accept="image/*,.pdf" onchange="pnFilesChanged(this)" style="font-size:.78rem;width:100%">
+          <div id="pnDrop" ondragover="acctDZ(event,true,'pnDrop')" ondragenter="acctDZ(event,true,'pnDrop')" ondragleave="acctDZ(event,false,'pnDrop')" ondrop="pnFileDrop(event)" style="border:1.5px dashed var(--g200);border-radius:8px;padding:.5rem;background:#fafafa;transition:background .12s,border-color .12s">
+            <input type="file" id="pnFile" multiple accept="image/*,.pdf" onchange="pnFilesChanged(this)" style="font-size:.78rem;width:100%">
+            <div style="font-size:.72rem;color:var(--g400);margin-top:.25rem">把截图 / PDF 直接拖到这里，或点上面选择（可多张）</div>
+          </div>
           <div id="pnFileMsg" style="font-size:.72rem;color:var(--g400);margin-top:.2rem"></div>
         </div>
         <div style="flex:1.25;min-width:300px">
@@ -228,7 +231,10 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
           <input type="text" id="lpNote" placeholder="可选，例：8/30 付的，还差 $100" style="width:100%;margin:.15rem 0 .55rem">
           <label style="font-size:.76rem;color:var(--g500)">凭证截图 / PDF（可多张，最大 25MB）</label>
           <div id="lpPhotos" style="display:flex;gap:.4rem;flex-wrap:wrap;margin:.3rem 0"></div>
-          <input type="file" id="lpFile" multiple accept="image/*,.pdf" onchange="lpFilesChanged(this)" style="font-size:.78rem;width:100%">
+          <div id="lpDrop" ondragover="acctDZ(event,true,'lpDrop')" ondragenter="acctDZ(event,true,'lpDrop')" ondragleave="acctDZ(event,false,'lpDrop')" ondrop="lpFileDrop(event)" style="border:1.5px dashed var(--g200);border-radius:8px;padding:.5rem;background:#fafafa;transition:background .12s,border-color .12s">
+            <input type="file" id="lpFile" multiple accept="image/*,.pdf" onchange="lpFilesChanged(this)" style="font-size:.78rem;width:100%">
+            <div style="font-size:.72rem;color:var(--g400);margin-top:.25rem">把截图 / PDF 直接拖到这里，或点上面选择（可多张）</div>
+          </div>
           <div id="lpFileMsg" style="font-size:.72rem;color:var(--g400);margin-top:.2rem"></div>
         </div>
         <div style="flex:1.25;min-width:300px">
@@ -583,9 +589,26 @@ function pnTxnSumRefresh() {
     ? `已选 <b>${_pnSel.size}</b> 笔 · 合计 <b>${money(sum)}</b>　应收 ${money(_payTargetAmt)} ${ok ? '<span style="color:#15803d">✓ 金额吻合</span>' : `<span style="color:#b45309">差 ${money(Math.abs(sum - _payTargetAmt))}</span>`}`
     : '未选择银行记录';
 }
+// 拖拽上传高亮（凭证截图/PDF 的 drop 区，lp/pn 共用）
+function acctDZ(e, on, id) {
+  e.preventDefault(); e.stopPropagation();
+  const b = document.getElementById(id);
+  if (b) { b.style.background = on ? '#eef6ff' : '#fafafa'; b.style.borderColor = on ? '#3b82f6' : 'var(--g200)'; }
+}
+function _acctSetFiles(msgId, files) {
+  const arr = [...(files || [])].filter(Boolean);
+  document.getElementById(msgId).textContent = arr.length ? `已选 ${arr.length} 个文件，保存时上传` : '';
+  return arr;
+}
 function pnFilesChanged(inp) {
-  _pnFiles = [...(inp.files || [])];
-  document.getElementById('pnFileMsg').textContent = _pnFiles.length ? `已选 ${_pnFiles.length} 个文件，保存时上传` : '';
+  _pnFiles = _acctSetFiles('pnFileMsg', inp.files);
+}
+function pnFileDrop(e) {
+  acctDZ(e, false, 'pnDrop');
+  const fs = [...(e.dataTransfer && e.dataTransfer.files || [])];
+  if (!fs.length) return;
+  try { const dt = new DataTransfer(); fs.forEach(f => dt.items.add(f)); document.getElementById('pnFile').files = dt.files; } catch (_) {}
+  _pnFiles = _acctSetFiles('pnFileMsg', fs);
 }
 function pnRenderPhotos(urls) {
   document.getElementById('pnPhotos').innerHTML = (urls || []).map(u => {
@@ -946,8 +969,14 @@ function lpTxnSumRefresh() {
     : '未选择银行记录';
 }
 function lpFilesChanged(inp) {
-  _lpFiles = [...(inp.files || [])];
-  document.getElementById('lpFileMsg').textContent = _lpFiles.length ? `已选 ${_lpFiles.length} 个文件，保存时上传` : '';
+  _lpFiles = _acctSetFiles('lpFileMsg', inp.files);
+}
+function lpFileDrop(e) {
+  acctDZ(e, false, 'lpDrop');
+  const fs = [...(e.dataTransfer && e.dataTransfer.files || [])];
+  if (!fs.length) return;
+  try { const dt = new DataTransfer(); fs.forEach(f => dt.items.add(f)); document.getElementById('lpFile').files = dt.files; } catch (_) {}
+  _lpFiles = _acctSetFiles('lpFileMsg', fs);
 }
 function lpRenderPhotos(urls) {
   document.getElementById('lpPhotos').innerHTML = (urls || []).map(u => {
