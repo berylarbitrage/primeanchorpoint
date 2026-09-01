@@ -27720,6 +27720,7 @@ async function loadCustomerAccounts() {
       <div style="display:flex;gap:.25rem;flex-wrap:wrap;align-items:center">
         ${c.approval_status==='pending'&&c.active?`<button class="btn btn-sm btn-green" onclick="openEntApprovalModal(${c.id})">审核</button>`:''}
         ${c.approval_status==='approved'?(c.active?`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="suspendCustomerAccount(${c.id},false)">暂停</button>`:`<button class="btn btn-sm btn-green" onclick="suspendCustomerAccount(${c.id},true)">恢复</button>`):''}
+        ${c.approval_status==='approved'&&c.active?`<button class="btn btn-sm" style="background:#f3e8ff;color:#7c3aed;border:1px solid #d8b4fe" onclick="custImpersonate(${c.id})" title="以全部权限进入该公司的客户门户（需短信验证，验证码发到你后台账号的手机）">🕵️ 进入门户</button>`:''}
         ${c.approval_status!=='pending'?`<button class="btn btn-sm btn-blue" onclick="openResetPwdModal('customer',${c.id},'${esc(c.company_name)}')">改密码</button>`:''}
         <button class="btn btn-sm" onclick="custDetailOpen(${c.id})" title="注册时填写的全部信息">详情</button>
         <button class="btn btn-sm" style="background:#eef4ff;color:#3b5bdb;border:1px solid #c7d7fe" onclick="custPermsOpen(${c.id})" title="这个账号能做什么（不勾=只读）">权限</button>
@@ -27728,6 +27729,26 @@ async function loadCustomerAccounts() {
       </div>
     </td>
   </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无客户账户</td></tr>';
+}
+
+// 🕵️ 以该公司身份进入客户门户（支持/冒充登录）：后台已是短信登录，这里再加一道
+// 短信步进验证（验证码发到你后台账号登记的手机），通过后在新标签页以「全部权限」
+// 进入该公司门户。服务器端会把这次会话标记为冒充并留审计，门户顶部显示醒目横幅。
+async function custImpersonate(id) {
+  const name = (window._custAccRows && window._custAccRows[id] ? window._custAccRows[id].company_name : '') || '该公司';
+  const send = await api(`/admin/customer-accounts/${id}/impersonate/send`, { method: 'POST' });
+  if (!send || send.error) { showToast((send && send.error) || '验证码发送失败', 'error'); return; }
+  const tip = send.sms_sent
+    ? `验证码已发送到你的手机 ${send.phone_hint || ''}。`
+    : `短信可能未送达（${send.phone_hint || ''}），如你已配置主验证码可直接使用。`;
+  const code = prompt(`🕵️ 以全部权限进入「${name}」的客户门户\n\n${tip}\n请输入 6 位验证码：`);
+  if (code == null) return;
+  const v = await api(`/admin/customer-accounts/${id}/impersonate/verify`, {
+    method: 'POST', body: JSON.stringify({ imp_token: send.imp_token, code: String(code).trim() })
+  });
+  if (!v || v.error || !v.token) { showToast((v && v.error) || '验证失败', 'error'); return; }
+  window.open('/customer.html#imp=' + v.token, '_blank');
+  showToast(`已在新标签页以全部权限进入「${v.company_name || name}」门户`, 'success');
 }
 
 // 🔑 客户账号权限勾选: 不勾的项该账号只能看不能改

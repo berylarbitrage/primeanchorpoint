@@ -416,6 +416,12 @@ tr:last-child td{border-bottom:none}
 
 <script>
 let C_TOKEN = localStorage.getItem('pa_customer_token') || '';
+// 后台「以该公司身份进入门户」：管理员验证后带 #imp=<token> 打开本页，直接以该
+// 会话进入（会话在服务器端已标记为冒充、拥有全部权限）。用完清掉地址栏的 hash。
+try {
+  const _im = (location.hash || '').match(/(?:^#|&)imp=([a-f0-9]+)/i);
+  if (_im) { C_TOKEN = _im[1]; localStorage.setItem('pa_customer_token', C_TOKEN); history.replaceState(null, '', location.pathname); }
+} catch (_) {}
 let _forgotLogin = '';
 
 function showToast(msg, type='success') {
@@ -616,6 +622,15 @@ async function showApp() {
   const me = await cApi('/me');
   if (!me) return;
   window.C_PERMS = me.perms || null; // 账号权限 (null=全部允许)
+  // 管理员冒充进入时顶部显示醒目横幅，避免误以为在自己账号里操作
+  try {
+    let ib = document.getElementById('impBanner');
+    if (me.impersonation) {
+      if (!ib) { ib = document.createElement('div'); ib.id = 'impBanner'; document.body.appendChild(ib); }
+      ib.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#7c3aed;color:#fff;text-align:center;padding:6px 12px;font-size:.82rem;font-weight:700;box-shadow:0 1px 6px rgba(0,0,0,.2)';
+      ib.textContent = '🕵️ 管理员冒充模式 · 正以全部权限查看「' + (me.company_name || '') + '」的客户门户';
+    } else if (ib) { ib.remove(); }
+  } catch (_) {}
   // 历史账单入口: 敏感权限, 仅显式勾选了 invoice 的账号可见 (接口侧同样校验)
   const navInv = document.getElementById('navInvoices');
   if (navInv) navInv.style.display = (window.C_PERMS && window.C_PERMS.invoice) ? '' : 'none';

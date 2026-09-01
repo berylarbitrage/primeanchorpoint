@@ -9060,6 +9060,13 @@ function requireWorker(req, res, next) {
   next();
 }
 
+// 管理员「以该公司身份进入门户」的冒充会话标记：admin 后台按钮触发、短信步进
+// 验证后签发。带此标记的会话拥有该公司门户的全部权限、不受账号原本权限/仓库
+// 范围限制（见 _custPerm / _custAllowedSiteIds）。impersonated_by 记录是哪个后台
+// 账号进入的，便于审计。
+try { db.exec("ALTER TABLE customer_sessions ADD COLUMN is_impersonation INTEGER DEFAULT 0"); } catch (e) {}
+try { db.exec("ALTER TABLE customer_sessions ADD COLUMN impersonated_by TEXT DEFAULT ''"); } catch (e) {}
+
 function requireCustomer(req, res, next) {
   let token = null;
   const auth = req.headers.authorization;
@@ -9082,6 +9089,7 @@ function requireCustomer(req, res, next) {
   }
   req.customerId = s.customer_id;
   req.customerPartnerId = c.partner_id;
+  req.custImpersonation = !!s.is_impersonation;
   next();
 }
 
@@ -14892,6 +14900,52 @@ app.put('/api/admin/customer-accounts/:id/perms', requireAdmin, requireRole('adm
   const r = db.prepare('UPDATE customer_accounts SET perms=? WHERE id=?').run(JSON.stringify(clean), req.params.id);
   if (!r.changes) return res.status(404).json({ error: '账号不存在' });
   res.json({ ok: 1, perms: clean });
+});
+
+// ─── 管理员「以该公司身份进入客户门户」(支持/冒充登录) ───
+// 后台登录本身已过短信二次验证；进入客户门户(能看到工人电话/地址/工卡等敏感
+// 信息)再加一道短信步进验证，验证码发到当前管理员账号登记的手机。通过后签发
+// 一个带 is_impersonation 标记、拥有该公司门户全部权限的客户会话，进入哪家公司
+// 都留审计。仅 owner 级(admin 角色)可用。
+const _custImp = new Map(); // imp_token → { adminId, accountId, code, expires, attempts, phone }
+function _custImpGC() { const now = Date.now(); for (const [k, v] of _custImp) if (v.expires < now) _custImp.delete(k); }
+
+app.post('/api/admin/customer-accounts/:id/impersonate/send', requireAdmin, requireRole('admin'), async (req, res) => {
+  _custImpGC();
+  const acct = db.prepare('SELECT id, company_name, active FROM customer_accounts WHERE id=?').get(req.params.id);
+  if (!acct) return res.status(404).json({ error: '客户账号不存在' });
+  if (!acct.active) return res.status(400).json({ error: '该客户账号已停用，无法进入' });
+  const admin = db.prepare('SELECT id, username, mfa_phone, phone FROM admin_users WHERE id=?').get(req.userId);
+  const digits = String((admin && (admin.mfa_phone || admin.phone)) || '').replace(/\D/g, '').slice(-10);
+  if (digits.length !== 10) return res.status(400).json({ error: '你的后台账号没有登记手机号，收不到验证码。请先用登录后台时用过的手机登录一次，或在账号资料里登记手机号。' });
+  const code = String(crypto.randomInt(100000, 1000000));
+  const ok = await sendSMS(digits, `【Prime Anchor】进入客户门户验证码: ${code}\n10 分钟内有效。你正在以全部权限进入「${acct.company_name}」的客户门户。不是本人操作请勿泄露。`);
+  // 短信发失败时，若配了主验证码(MASTER_VERIFY_CODE)仍放行，避免 Twilio 抖动把 owner 锁在外面
+  if (!ok && !MASTER_VERIFY_CODE) return res.status(500).json({ error: '短信发送失败，请稍后重试' });
+  const imp_token = crypto.randomBytes(24).toString('hex');
+  _custImp.set(imp_token, { adminId: req.userId, accountId: acct.id, code, expires: Date.now() + 10 * 60 * 1000, attempts: 0, phone: digits });
+  auditLog('cust_impersonate_send', req, { targetType: 'customer_account', targetId: acct.id, details: { company: acct.company_name, phone_last4: digits.slice(-4), sms_sent: !!ok } });
+  res.json({ ok: 1, imp_token, phone_hint: '••• ' + digits.slice(-4), sms_sent: !!ok });
+});
+
+app.post('/api/admin/customer-accounts/:id/impersonate/verify', requireAdmin, requireRole('admin'), (req, res) => {
+  _custImpGC();
+  const { imp_token, code } = req.body || {};
+  const p = _custImp.get(String(imp_token || ''));
+  if (!p || p.expires < Date.now()) return res.status(400).json({ error: '验证会话已过期，请重新发送验证码' });
+  if (p.adminId !== req.userId || String(p.accountId) !== String(req.params.id)) return res.status(403).json({ error: '验证会话不匹配，请重新发送' });
+  p.attempts++;
+  if (p.attempts > 6) { _custImp.delete(String(imp_token)); return res.status(429).json({ error: '尝试次数过多，请重新发送验证码' }); }
+  const codeOk = String(code || '').trim() === p.code || isMasterVerifyCode(code);
+  if (!codeOk) return res.status(401).json({ error: '验证码错误' });
+  _custImp.delete(String(imp_token));
+  const acct = db.prepare('SELECT id, company_name, partner_id, active FROM customer_accounts WHERE id=?').get(req.params.id);
+  if (!acct || !acct.active) return res.status(400).json({ error: '客户账号不可用（可能已被停用）' });
+  const token = crypto.randomBytes(32).toString('hex');
+  db.prepare('INSERT INTO customer_sessions (token, customer_id, partner_id, created_at, is_impersonation, impersonated_by) VALUES (?,?,?,?,?,?)')
+    .run(token, acct.id, acct.partner_id, Date.now(), 1, req.userName || ('admin#' + req.userId));
+  auditLog('cust_impersonate_enter', req, { targetType: 'customer_account', targetId: acct.id, details: { company: acct.company_name } });
+  res.json({ ok: 1, token, company_name: acct.company_name });
 });
 
 app.post('/api/admin/customer-accounts', requireAdmin, requireRole('admin'), (req, res) => {
@@ -26981,6 +27035,8 @@ const CUST_PERM_KEYS = ['punch', 'relabel', 'position', 'kiosk', 'docs', 'edit_t
 const CUST_PERM_DEFAULT_OFF = new Set(['edit_time', 'invoice']);
 function _custPermDefault(key) { return !CUST_PERM_DEFAULT_OFF.has(key); }
 function _custPerm(req, key) {
+  // 管理员冒充会话：全部权限放行，不看该账号原本勾选
+  if (req && req.custImpersonation) return true;
   try {
     const row = db.prepare('SELECT perms FROM customer_accounts WHERE id=?').get(req.customerId);
     const s = row ? String(row.perms || '').trim() : '';
@@ -26997,6 +27053,8 @@ function _custNeed(req, res, key) {
 // 账号可管的仓库范围: perms.sites=[siteId...] 只管这些仓库; 空/未设 = 本公司全部仓库
 function _custAllowedSiteIds(req) {
   let all = _customerSites(req.customerPartnerId);
+  // 冒充会话不受账号的仓库范围限制，返回本公司全部仓库
+  if (req && req.custImpersonation) return all;
   try {
     const row = db.prepare('SELECT perms FROM customer_accounts WHERE id=?').get(req.customerId);
     const p = row && String(row.perms || '').trim() ? JSON.parse(row.perms) : null;
@@ -28996,7 +29054,7 @@ app.get('/api/customer/me', requireCustomer, (req, res) => {
   const c = db.prepare('SELECT id, company_name, contact_name, email, phone, partner_id, active FROM customer_accounts WHERE id=?').get(req.customerId);
   const perms = {};
   for (const k of CUST_PERM_KEYS) perms[k] = _custPerm(req, k);
-  res.json({ ...c, perms });
+  res.json({ ...c, perms, impersonation: !!req.custImpersonation });
 });
 
 // 客户门户: 本公司名下的仓库地点列表 (发布用工需求时下拉选择工作地点用)
