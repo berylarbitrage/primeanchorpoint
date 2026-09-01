@@ -337,7 +337,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       </div>
       <div id="bankAcctCards" style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.8rem"></div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
-        <select id="bankFltAcct" onchange="bankLoadTxns()"><option value="">全部账户</option></select>
+        <select id="bankFltAcct" onchange="bankAcctChanged()"><option value="">全部账户</option></select>
         <select id="bankFltView" style="display:none" onchange="try{localStorage.setItem('acctBankView',this.value)}catch(e){};bankLoadTxns()">
           <option value="flat">按笔显示</option>
           <option value="week">按周显示</option>
@@ -1459,21 +1459,44 @@ function renderPlaidAccounts() {
   const latest = accs.map(a => String(a.updated_at || '')).sort().pop() || '';
   if (latest) { const d = new Date(latest.replace(' ', 'T') + 'Z'); if (!isNaN(d)) fresh = ' · 数据更新于 ' + d.toLocaleString('zh-CN', { hour12: false }); }
   document.getElementById('bankSyncMsg').innerHTML = '数据来自「<a href="/banking" target="_blank" style="color:#0f4c6b;text-decoration:underline">银行对账 /banking</a>」页连接的银行（只读）· 分类/标注请到该页操作' + fresh;
+  // 一次只看一个银行: 不提供「全部账户」混合视图, 默认上次看的(记在 localStorage), 点卡片或下拉切换
+  const selId = _bankSelAcct(accs);
   document.getElementById('bankAcctCards').innerHTML = accs.map(a => {
     const bal = a.balance_current == null ? '—' : money(a.balance_current);
     const avail = a.balance_available == null ? '' : `<div style="font-size:.7rem;color:var(--g400)">可用 ${money(a.balance_available)}</div>`;
-    return `<div style="background:#fff;border:1px solid var(--g200);border-radius:10px;padding:.7rem .9rem;min-width:210px">
-      <div style="font-size:.78rem;color:var(--g500)">${esc(a.institution || '银行')} ··${esc(a.mask || '')} <span style="font-size:.62rem;background:#f1f5f9;border-radius:4px;padding:0 4px">plaid</span></div>
+    const onSel = a.account_id === selId;
+    return `<div onclick="bankPickAcct('${esc(a.account_id)}')" title="点击查看这个银行的交易" style="cursor:pointer;background:${onSel ? '#eff6ff' : '#fff'};border:2px solid ${onSel ? '#0f4c6b' : 'var(--g200)'};border-radius:10px;padding:.7rem .9rem;min-width:210px">
+      <div style="font-size:.78rem;color:var(--g500)">${esc(a.institution || '银行')} ··${esc(a.mask || '')} <span style="font-size:.62rem;background:#f1f5f9;border-radius:4px;padding:0 4px">plaid</span>${onSel ? ' <span style="font-size:.62rem;background:#0f4c6b;color:#fff;border-radius:4px;padding:0 5px">正在查看</span>' : ''}</div>
       ${a.company_label ? `<div style="font-weight:700;color:#0f4c6b;font-size:.82rem;margin-top:.15rem">${esc(a.company_label)}</div>` : ''}
       <div style="font-weight:800;font-size:.95rem;margin:.15rem 0">${esc(a.name || '账户')}</div>
       <div style="font-size:1.05rem;font-weight:800;color:#0f4c6b">${bal}</div>${avail}
     </div>`;
   }).join('');
   const sel = document.getElementById('bankFltAcct');
-  const cur = sel.value;
-  sel.innerHTML = '<option value="">全部账户</option>' + accs.map(a =>
+  sel.innerHTML = accs.map(a =>
     `<option value="${esc(a.account_id)}">${esc(a.institution || '')} · ${esc(a.company_label || a.name || '')} ··${esc(a.mask || '')}</option>`).join('');
-  sel.value = cur;
+  sel.value = selId;
+}
+// 当前选中的账户: 下拉值 → localStorage 记住的 → 第一个账户
+function _bankSelAcct(accs) {
+  const sel = document.getElementById('bankFltAcct');
+  let v = sel.value;
+  if (!accs.some(a => a.account_id === v)) v = '';
+  if (!v) { try { const s = localStorage.getItem('acctBankAcct'); if (accs.some(a => a.account_id === s)) v = s; } catch (e) {} }
+  if (!v && accs.length) v = accs[0].account_id;
+  return v;
+}
+function bankPickAcct(id) {
+  try { localStorage.setItem('acctBankAcct', id); } catch (e) {}
+  document.getElementById('bankFltAcct').value = id;
+  renderPlaidAccounts();  // 刷新卡片高亮 (选中值不变)
+  bankLoadTxns();
+}
+// 账户下拉变化: plaid 模式同时记住选择并高亮对应卡片
+function bankAcctChanged() {
+  const v = document.getElementById('bankFltAcct').value;
+  if (_bankMode === 'plaid' && v) { bankPickAcct(v); return; }
+  bankLoadTxns();
 }
 function renderBankAccounts() {
   const st = _bankStatus || { items: [], accounts: [] };
