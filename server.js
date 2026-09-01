@@ -2762,6 +2762,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS acct_pay_notes (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(target_type, target_id)
 )`);
+// 付款批注同样可关联银行直连交易(txn_ids)与上传凭证截图/PDF(photos)，作为收款凭证
+try { db.exec("ALTER TABLE acct_pay_notes ADD COLUMN txn_ids TEXT DEFAULT '[]'"); } catch (e) {}
+try { db.exec("ALTER TABLE acct_pay_notes ADD COLUMN photos TEXT DEFAULT '[]'"); } catch (e) {}
 
 // Reconciliation marks: which company_worker_payments rows have been "annotated" (note copied
 // onto an external statement) — once marked they drop out of the 对账备注 list.
@@ -9066,6 +9069,13 @@ function requireWorker(req, res, next) {
   next();
 }
 
+// 管理员「以该公司身份进入门户」的冒充会话标记：admin 后台按钮触发、短信步进
+// 验证后签发。带此标记的会话拥有该公司门户的全部权限、不受账号原本权限/仓库
+// 范围限制（见 _custPerm / _custAllowedSiteIds）。impersonated_by 记录是哪个后台
+// 账号进入的，便于审计。
+try { db.exec("ALTER TABLE customer_sessions ADD COLUMN is_impersonation INTEGER DEFAULT 0"); } catch (e) {}
+try { db.exec("ALTER TABLE customer_sessions ADD COLUMN impersonated_by TEXT DEFAULT ''"); } catch (e) {}
+
 function requireCustomer(req, res, next) {
   let token = null;
   const auth = req.headers.authorization;
@@ -9088,6 +9098,7 @@ function requireCustomer(req, res, next) {
   }
   req.customerId = s.customer_id;
   req.customerPartnerId = c.partner_id;
+  req.custImpersonation = !!s.is_impersonation;
   next();
 }
 
@@ -14898,6 +14909,52 @@ app.put('/api/admin/customer-accounts/:id/perms', requireAdmin, requireRole('adm
   const r = db.prepare('UPDATE customer_accounts SET perms=? WHERE id=?').run(JSON.stringify(clean), req.params.id);
   if (!r.changes) return res.status(404).json({ error: '账号不存在' });
   res.json({ ok: 1, perms: clean });
+});
+
+// ─── 管理员「以该公司身份进入客户门户」(支持/冒充登录) ───
+// 后台登录本身已过短信二次验证；进入客户门户(能看到工人电话/地址/工卡等敏感
+// 信息)再加一道短信步进验证，验证码发到当前管理员账号登记的手机。通过后签发
+// 一个带 is_impersonation 标记、拥有该公司门户全部权限的客户会话，进入哪家公司
+// 都留审计。仅 owner 级(admin 角色)可用。
+const _custImp = new Map(); // imp_token → { adminId, accountId, code, expires, attempts, phone }
+function _custImpGC() { const now = Date.now(); for (const [k, v] of _custImp) if (v.expires < now) _custImp.delete(k); }
+
+app.post('/api/admin/customer-accounts/:id/impersonate/send', requireAdmin, requireRole('admin'), async (req, res) => {
+  _custImpGC();
+  const acct = db.prepare('SELECT id, company_name, active FROM customer_accounts WHERE id=?').get(req.params.id);
+  if (!acct) return res.status(404).json({ error: '客户账号不存在' });
+  if (!acct.active) return res.status(400).json({ error: '该客户账号已停用，无法进入' });
+  const admin = db.prepare('SELECT id, username, mfa_phone, phone FROM admin_users WHERE id=?').get(req.userId);
+  const digits = String((admin && (admin.mfa_phone || admin.phone)) || '').replace(/\D/g, '').slice(-10);
+  if (digits.length !== 10) return res.status(400).json({ error: '你的后台账号没有登记手机号，收不到验证码。请先用登录后台时用过的手机登录一次，或在账号资料里登记手机号。' });
+  const code = String(crypto.randomInt(100000, 1000000));
+  const ok = await sendSMS(digits, `【Prime Anchor】进入客户门户验证码: ${code}\n10 分钟内有效。你正在以全部权限进入「${acct.company_name}」的客户门户。不是本人操作请勿泄露。`);
+  // 短信发失败时，若配了主验证码(MASTER_VERIFY_CODE)仍放行，避免 Twilio 抖动把 owner 锁在外面
+  if (!ok && !MASTER_VERIFY_CODE) return res.status(500).json({ error: '短信发送失败，请稍后重试' });
+  const imp_token = crypto.randomBytes(24).toString('hex');
+  _custImp.set(imp_token, { adminId: req.userId, accountId: acct.id, code, expires: Date.now() + 10 * 60 * 1000, attempts: 0, phone: digits });
+  auditLog('cust_impersonate_send', req, { targetType: 'customer_account', targetId: acct.id, details: { company: acct.company_name, phone_last4: digits.slice(-4), sms_sent: !!ok } });
+  res.json({ ok: 1, imp_token, phone_hint: '••• ' + digits.slice(-4), sms_sent: !!ok });
+});
+
+app.post('/api/admin/customer-accounts/:id/impersonate/verify', requireAdmin, requireRole('admin'), (req, res) => {
+  _custImpGC();
+  const { imp_token, code } = req.body || {};
+  const p = _custImp.get(String(imp_token || ''));
+  if (!p || p.expires < Date.now()) return res.status(400).json({ error: '验证会话已过期，请重新发送验证码' });
+  if (p.adminId !== req.userId || String(p.accountId) !== String(req.params.id)) return res.status(403).json({ error: '验证会话不匹配，请重新发送' });
+  p.attempts++;
+  if (p.attempts > 6) { _custImp.delete(String(imp_token)); return res.status(429).json({ error: '尝试次数过多，请重新发送验证码' }); }
+  const codeOk = String(code || '').trim() === p.code || isMasterVerifyCode(code);
+  if (!codeOk) return res.status(401).json({ error: '验证码错误' });
+  _custImp.delete(String(imp_token));
+  const acct = db.prepare('SELECT id, company_name, partner_id, active FROM customer_accounts WHERE id=?').get(req.params.id);
+  if (!acct || !acct.active) return res.status(400).json({ error: '客户账号不可用（可能已被停用）' });
+  const token = crypto.randomBytes(32).toString('hex');
+  db.prepare('INSERT INTO customer_sessions (token, customer_id, partner_id, created_at, is_impersonation, impersonated_by) VALUES (?,?,?,?,?,?)')
+    .run(token, acct.id, acct.partner_id, Date.now(), 1, req.userName || ('admin#' + req.userId));
+  auditLog('cust_impersonate_enter', req, { targetType: 'customer_account', targetId: acct.id, details: { company: acct.company_name } });
+  res.json({ ok: 1, token, company_name: acct.company_name });
 });
 
 app.post('/api/admin/customer-accounts', requireAdmin, requireRole('admin'), (req, res) => {
@@ -21743,6 +21800,64 @@ app.post('/api/admin/invoices/parse-excel', requireAdmin, invoiceXlsxUpload.sing
   }
 });
 
+// ─── Gusto 合同工付款模板 (Contractor Pay CSV) ───
+// 名册 = Gusto 后台导出的空白 contractor payment 模板（姓名/打码SSN/时薪），上传
+// 一次存进 app_settings；之后每张工时发票都能按名册生成填好 hours 的付款 CSV。
+const { buildGustoCsv, parseRoster } = require('./gusto-pay');
+const gustoRosterUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, /\.csv$/i.test(file.originalname || '') || /csv|text\/plain/i.test(file.mimetype || '')),
+});
+function _gustoRoster() {
+  const row = db.prepare("SELECT value FROM app_settings WHERE key='gusto_pay_template'").get();
+  if (!row || !row.value) return null;
+  try { return JSON.parse(row.value); } catch (_) { return null; }
+}
+
+// 名册状态（不回传 CSV 内容本身，SSN 尾号只在生成预览里出现）
+app.get('/api/admin/gusto-pay-template', requireAdmin, (req, res) => {
+  const tpl = _gustoRoster();
+  if (!tpl) return res.json({ has: false });
+  let contractors = 0;
+  try { contractors = parseRoster(tpl.csv).entries.length; } catch (_) {}
+  res.json({ has: true, name: tpl.name || '', uploaded_at: tpl.uploaded_at || '', by: tpl.by || '', contractors });
+});
+
+// 上传/更新名册 CSV（先解析校验，不是 Gusto 模板直接报错，不覆盖旧名册）
+app.post('/api/admin/gusto-pay-template', requireAdmin, gustoRosterUpload.single('file'), (req, res) => {
+  if (!req.file || !req.file.buffer) return res.status(400).json({ error: '请上传 Gusto contractor payment 模板 .csv 文件' });
+  const csv = req.file.buffer.toString('utf8');
+  let entries;
+  try { entries = parseRoster(csv).entries; } catch (e) {
+    return res.status(400).json({ error: e.message || 'CSV 解析失败' });
+  }
+  const tpl = { name: req.file.originalname || 'gusto_template.csv', csv, uploaded_at: new Date().toISOString(), by: req.userName || '' };
+  db.prepare('INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)')
+    .run('gusto_pay_template', JSON.stringify(tpl));
+  auditLog('gusto_template_upload', req, { targetType: 'gusto_pay_template', targetId: tpl.name, details: { contractors: entries.length } });
+  res.json({ success: true, contractors: entries.length, name: tpl.name });
+});
+
+// 按发票生成器的员工行生成付款 CSV。返回 JSON（csv 文本 + 逐行匹配明细 + 警告），
+// 前端弹预览再触发下载。employees: [{name, total, rate, regHours, otHours}]
+app.post('/api/admin/gusto-pay-csv', requireAdmin, (req, res) => {
+  const tpl = _gustoRoster();
+  if (!tpl) return res.status(404).json({ error: '还没有上传 Gusto 合同工名册（contractor payment 模板 CSV）', no_template: true });
+  const employees = Array.isArray(req.body && req.body.employees) ? req.body.employees : [];
+  if (!employees.length) return res.status(400).json({ error: '没有员工行，请先填写工时明细' });
+  try {
+    const out = buildGustoCsv(tpl.csv, employees, {
+      period_start: req.body.period_start || '',
+      period_end: req.body.period_end || '',
+      mode: req.body.mode === 'hours' ? 'hours' : 'bonus',
+    });
+    res.json({ ok: true, template_name: tpl.name || '', template_uploaded_at: tpl.uploaded_at || '', ...out });
+  } catch (e) {
+    res.status(400).json({ error: 'Gusto 模板生成失败：' + (e && e.message ? e.message : String(e)) });
+  }
+});
+
 // Get single invoice (with full details)
 app.get('/api/admin/invoices/:id', requireAdmin, (req, res) => {
   const row = db.prepare(`SELECT * FROM invoices WHERE id=?`).get(req.params.id);
@@ -26929,6 +27044,8 @@ const CUST_PERM_KEYS = ['punch', 'relabel', 'position', 'kiosk', 'docs', 'edit_t
 const CUST_PERM_DEFAULT_OFF = new Set(['edit_time', 'invoice']);
 function _custPermDefault(key) { return !CUST_PERM_DEFAULT_OFF.has(key); }
 function _custPerm(req, key) {
+  // 管理员冒充会话：全部权限放行，不看该账号原本勾选
+  if (req && req.custImpersonation) return true;
   try {
     const row = db.prepare('SELECT perms FROM customer_accounts WHERE id=?').get(req.customerId);
     const s = row ? String(row.perms || '').trim() : '';
@@ -26945,6 +27062,8 @@ function _custNeed(req, res, key) {
 // 账号可管的仓库范围: perms.sites=[siteId...] 只管这些仓库; 空/未设 = 本公司全部仓库
 function _custAllowedSiteIds(req) {
   let all = _customerSites(req.customerPartnerId);
+  // 冒充会话不受账号的仓库范围限制，返回本公司全部仓库
+  if (req && req.custImpersonation) return all;
   try {
     const row = db.prepare('SELECT perms FROM customer_accounts WHERE id=?').get(req.customerId);
     const p = row && String(row.perms || '').trim() ? JSON.parse(row.perms) : null;
@@ -28944,7 +29063,7 @@ app.get('/api/customer/me', requireCustomer, (req, res) => {
   const c = db.prepare('SELECT id, company_name, contact_name, email, phone, partner_id, active FROM customer_accounts WHERE id=?').get(req.customerId);
   const perms = {};
   for (const k of CUST_PERM_KEYS) perms[k] = _custPerm(req, k);
-  res.json({ ...c, perms });
+  res.json({ ...c, perms, impersonation: !!req.custImpersonation });
 });
 
 // 客户门户: 本公司名下的仓库地点列表 (发布用工需求时下拉选择工作地点用)
@@ -37046,15 +37165,28 @@ app.post('/api/acct/register', loginRateLimit, (req, res) => {
   res.json({ success: true, awaiting_approval: true });
 });
 
-// 付款批注读取: {target_id: note} 映射
+// 付款批注输出: txn_ids 解析并附银行交易概要, photos 转 /uploads URL (同 _lineNoteOut)
+function _acctPayNoteOut(n) {
+  if (!n) return n;
+  let ids = []; try { ids = JSON.parse(n.txn_ids || '[]'); } catch (e) { ids = []; }
+  if (!Array.isArray(ids)) ids = [];
+  n.txn_ids = ids;
+  n.txns = ids.length ? db.prepare(`SELECT txn_id, date, name, merchant, amount, account_id FROM plaid_transactions
+    WHERE txn_id IN (${ids.map(() => '?').join(',')})`).all(...ids) : [];
+  let ph = []; try { ph = JSON.parse(n.photos || '[]'); } catch (e) { ph = []; }
+  n.photos_urls = (Array.isArray(ph) ? ph : []).filter(Boolean).map(k => `/uploads/${path.basename(String(k))}`);
+  delete n.photos;
+  return n;
+}
+// 付款批注读取: {target_id: note} 映射 (含关联交易与凭证)
 function _acctPayNotesFor(type) {
   const map = {};
-  db.prepare('SELECT * FROM acct_pay_notes WHERE target_type=?').all(type).forEach(n => { map[n.target_id] = n; });
+  db.prepare('SELECT * FROM acct_pay_notes WHERE target_type=?').all(type).forEach(n => { map[n.target_id] = _acctPayNoteOut(n); });
   return map;
 }
-// 会计付款批注 upsert: 付了没有 / 哪个银行付的 / 付了多少 / 备注
+// 会计付款批注 upsert: 付了没有 / 哪个银行付的 / 付了多少 / 备注 / 关联银行交易(收款凭证)
 app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
-  const { target_type, target_id, paid_status, bank, amount, note } = req.body || {};
+  const { target_type, target_id, paid_status, bank, amount, note, txn_ids } = req.body || {};
   if (!['invoice', 'claim'].includes(target_type)) return res.status(400).json({ error: '无效对象类型' });
   const tid = parseInt(target_id);
   if (!tid) return res.status(400).json({ error: '无效对象' });
@@ -37064,12 +37196,39 @@ app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
   if (!exists) return res.status(404).json({ error: '对象不存在' });
   const st = ['', 'unpaid', 'partial', 'paid'].includes(String(paid_status || '')) ? String(paid_status || '') : '';
   const amt = (amount === '' || amount == null) ? null : (Number(amount) || 0);
-  db.prepare(`INSERT INTO acct_pay_notes (target_type, target_id, paid_status, bank, amount, note, created_by, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+  const ids = (Array.isArray(txn_ids) ? txn_ids : []).map(t => String(t).slice(0, 100)).filter(Boolean).slice(0, 20);
+  // 更新时保留已上传的 photos（本接口不改 photos，凭证由 /photos 子接口维护）
+  db.prepare(`INSERT INTO acct_pay_notes (target_type, target_id, paid_status, bank, amount, note, txn_ids, created_by, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(target_type, target_id) DO UPDATE SET paid_status=excluded.paid_status, bank=excluded.bank,
-      amount=excluded.amount, note=excluded.note, created_by=excluded.created_by, updated_at=CURRENT_TIMESTAMP`)
-    .run(target_type, tid, st, String(bank || '').slice(0, 120), amt, String(note || '').slice(0, 500), req.userName || '');
-  res.json({ success: true, pay_note: db.prepare('SELECT * FROM acct_pay_notes WHERE target_type=? AND target_id=?').get(target_type, tid) });
+      amount=excluded.amount, note=excluded.note, txn_ids=excluded.txn_ids, created_by=excluded.created_by, updated_at=CURRENT_TIMESTAMP`)
+    .run(target_type, tid, st, String(bank || '').slice(0, 120), amt, String(note || '').slice(0, 500), JSON.stringify(ids), req.userName || '');
+  res.json({ success: true, pay_note: _acctPayNoteOut(db.prepare('SELECT * FROM acct_pay_notes WHERE target_type=? AND target_id=?').get(target_type, tid)) });
+});
+
+// 付款批注: 上传收款凭证截图/PDF (追加) — 同 line-pay-notes 的 photos 接口
+app.post('/api/acct/pay-notes/:id/photos', requireAdmin, requireAcctWrite, containerSubmitPhotoUpload.array('photos', 12), (req, res) => {
+  const n = db.prepare('SELECT * FROM acct_pay_notes WHERE id=?').get(parseInt(req.params.id));
+  if (!n) return res.status(404).json({ error: 'not found' });
+  let ph = []; try { ph = JSON.parse(n.photos || '[]'); } catch (e) { ph = []; }
+  if (!Array.isArray(ph)) ph = [];
+  (req.files || []).forEach(f => { const k = f.key || f.path; if (k) ph.push(k); });
+  ph = ph.filter(Boolean).slice(0, 24);
+  db.prepare('UPDATE acct_pay_notes SET photos=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(JSON.stringify(ph), n.id);
+  res.json({ success: true, photos_urls: ph.map(k => `/uploads/${path.basename(String(k))}`) });
+});
+// 付款批注: 删除一张收款凭证
+app.delete('/api/acct/pay-notes/:id/photos', requireAdmin, requireAcctWrite, (req, res) => {
+  const n = db.prepare('SELECT * FROM acct_pay_notes WHERE id=?').get(parseInt(req.params.id));
+  if (!n) return res.status(404).json({ error: 'not found' });
+  const target = path.basename(String((req.body && req.body.photo) || req.query.photo || ''));
+  if (!target) return res.status(400).json({ error: 'missing photo' });
+  let ph = []; try { ph = JSON.parse(n.photos || '[]'); } catch (e) { ph = []; }
+  const kept = (Array.isArray(ph) ? ph : []).filter(k => path.basename(String(k)) !== target);
+  const removed = (Array.isArray(ph) ? ph : []).find(k => path.basename(String(k)) === target);
+  db.prepare('UPDATE acct_pay_notes SET photos=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(JSON.stringify(kept), n.id);
+  if (removed) storage.deleteObject(storage.keyFrom(removed, 'uploads')).catch(() => {});
+  res.json({ success: true, photos_urls: kept.map(k => `/uploads/${path.basename(String(k))}`) });
 });
 
 // Read-only invoice list (no payment receipts / internal cost fields).
