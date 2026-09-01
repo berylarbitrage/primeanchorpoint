@@ -542,7 +542,7 @@ function conversations() {
     for (const m of list) {
       if (Number(m.risk_score) > maxRisk) maxRisk = Number(m.risk_score);
       if (m.contact) name = m.contact;
-      if (m.queued) queued++;
+      if (m.queued && m.status !== 'sent') queued++;   // 已发出等同步的不算「待发送」
     }
     const noted = NOTES[peer] || {};
     // 号码用最近一条真实短信上的，排队中的那些没有权威号码
@@ -683,6 +683,12 @@ function renderDetail(convos) {
     const divider = day && day !== lastDay ? '<div class="date-divider">' + esc(day) + '</div>' : '';
     lastDay = day;
 
+    if (m.queued && m.status === 'sent') {
+      // 电脑已发出、手机还没把真实短信同步回来的空档期: 按正常已发气泡显示, 不再凭空消失
+      return divider + '<div class="msg-row out">'
+        + '<div class="msg-bubble">' + bodyHtml(m.body) + '</div>'
+        + '<div class="msg-meta"><span>已发出 · 等手机同步回来</span></div></div>';
+    }
     if (m.queued) {
       return divider + '<div class="msg-row out queued">'
         + '<div class="msg-bubble">' + bodyHtml(m.body) + '</div>'

@@ -34024,9 +34024,13 @@ app.get('/api/device-sms/messages', requireAdmin, requireRole('admin', 'cs'), (r
     const total = db.prepare(`SELECT COUNT(*) AS n FROM device_sms_messages m
       LEFT JOIN device_sms_peer_notes n ON n.peer = m.peer WHERE ${where}`).get(...params).n;
     const devices = db.prepare('SELECT id, name, serial, last_push_at, message_count FROM device_sms_devices WHERE active=1').all();
-    // 还没发出去的 / 发失败的也一起给, 页面上排在对话末尾显示状态
+    // 还没发出去的 / 发失败的也一起给, 页面上排在对话末尾显示状态。
+    // 刚发出去(sent)的也带上: 电脑发完到手机把真实短信推回来之间有几分钟空档,
+    // 不带的话消息会先消失一阵, 像没发出去一样; 前端等真实消息到了自动去重隐藏。
     const outbox = db.prepare(`SELECT id, to_address, peer, body, status, note, created_at FROM device_sms_outbox
-      WHERE status IN ('pending','failed') ORDER BY id ASC LIMIT 100`).all();
+      WHERE status IN ('pending','failed')
+         OR (status='sent' AND done_at >= datetime('now','-2 days'))
+      ORDER BY id ASC LIMIT 100`).all();
     const notes = db.prepare(`SELECT peer, alias, note, tags, status, contact_lang, agent_lang,
       auto_translate, read_at, spoken_langs, ratings, us_state FROM device_sms_peer_notes`).all();
     res.json({ messages: rows.reverse(), devices, outbox, notes, total, offset, limit });
