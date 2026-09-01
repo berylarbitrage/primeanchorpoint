@@ -2756,6 +2756,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS acct_pay_notes (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(target_type, target_id)
 )`);
+// 付款批注同样可关联银行直连交易(txn_ids)与上传凭证截图/PDF(photos)，作为收款凭证
+try { db.exec("ALTER TABLE acct_pay_notes ADD COLUMN txn_ids TEXT DEFAULT '[]'"); } catch (e) {}
+try { db.exec("ALTER TABLE acct_pay_notes ADD COLUMN photos TEXT DEFAULT '[]'"); } catch (e) {}
 
 // Reconciliation marks: which company_worker_payments rows have been "annotated" (note copied
 // onto an external statement) — once marked they drop out of the 对账备注 list.
@@ -37141,15 +37144,28 @@ app.post('/api/acct/register', loginRateLimit, (req, res) => {
   res.json({ success: true, awaiting_approval: true });
 });
 
-// 付款批注读取: {target_id: note} 映射
+// 付款批注输出: txn_ids 解析并附银行交易概要, photos 转 /uploads URL (同 _lineNoteOut)
+function _acctPayNoteOut(n) {
+  if (!n) return n;
+  let ids = []; try { ids = JSON.parse(n.txn_ids || '[]'); } catch (e) { ids = []; }
+  if (!Array.isArray(ids)) ids = [];
+  n.txn_ids = ids;
+  n.txns = ids.length ? db.prepare(`SELECT txn_id, date, name, merchant, amount, account_id FROM plaid_transactions
+    WHERE txn_id IN (${ids.map(() => '?').join(',')})`).all(...ids) : [];
+  let ph = []; try { ph = JSON.parse(n.photos || '[]'); } catch (e) { ph = []; }
+  n.photos_urls = (Array.isArray(ph) ? ph : []).filter(Boolean).map(k => `/uploads/${path.basename(String(k))}`);
+  delete n.photos;
+  return n;
+}
+// 付款批注读取: {target_id: note} 映射 (含关联交易与凭证)
 function _acctPayNotesFor(type) {
   const map = {};
-  db.prepare('SELECT * FROM acct_pay_notes WHERE target_type=?').all(type).forEach(n => { map[n.target_id] = n; });
+  db.prepare('SELECT * FROM acct_pay_notes WHERE target_type=?').all(type).forEach(n => { map[n.target_id] = _acctPayNoteOut(n); });
   return map;
 }
-// 会计付款批注 upsert: 付了没有 / 哪个银行付的 / 付了多少 / 备注
+// 会计付款批注 upsert: 付了没有 / 哪个银行付的 / 付了多少 / 备注 / 关联银行交易(收款凭证)
 app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
-  const { target_type, target_id, paid_status, bank, amount, note } = req.body || {};
+  const { target_type, target_id, paid_status, bank, amount, note, txn_ids } = req.body || {};
   if (!['invoice', 'claim'].includes(target_type)) return res.status(400).json({ error: '无效对象类型' });
   const tid = parseInt(target_id);
   if (!tid) return res.status(400).json({ error: '无效对象' });
@@ -37159,12 +37175,39 @@ app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
   if (!exists) return res.status(404).json({ error: '对象不存在' });
   const st = ['', 'unpaid', 'partial', 'paid'].includes(String(paid_status || '')) ? String(paid_status || '') : '';
   const amt = (amount === '' || amount == null) ? null : (Number(amount) || 0);
-  db.prepare(`INSERT INTO acct_pay_notes (target_type, target_id, paid_status, bank, amount, note, created_by, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+  const ids = (Array.isArray(txn_ids) ? txn_ids : []).map(t => String(t).slice(0, 100)).filter(Boolean).slice(0, 20);
+  // 更新时保留已上传的 photos（本接口不改 photos，凭证由 /photos 子接口维护）
+  db.prepare(`INSERT INTO acct_pay_notes (target_type, target_id, paid_status, bank, amount, note, txn_ids, created_by, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(target_type, target_id) DO UPDATE SET paid_status=excluded.paid_status, bank=excluded.bank,
-      amount=excluded.amount, note=excluded.note, created_by=excluded.created_by, updated_at=CURRENT_TIMESTAMP`)
-    .run(target_type, tid, st, String(bank || '').slice(0, 120), amt, String(note || '').slice(0, 500), req.userName || '');
-  res.json({ success: true, pay_note: db.prepare('SELECT * FROM acct_pay_notes WHERE target_type=? AND target_id=?').get(target_type, tid) });
+      amount=excluded.amount, note=excluded.note, txn_ids=excluded.txn_ids, created_by=excluded.created_by, updated_at=CURRENT_TIMESTAMP`)
+    .run(target_type, tid, st, String(bank || '').slice(0, 120), amt, String(note || '').slice(0, 500), JSON.stringify(ids), req.userName || '');
+  res.json({ success: true, pay_note: _acctPayNoteOut(db.prepare('SELECT * FROM acct_pay_notes WHERE target_type=? AND target_id=?').get(target_type, tid)) });
+});
+
+// 付款批注: 上传收款凭证截图/PDF (追加) — 同 line-pay-notes 的 photos 接口
+app.post('/api/acct/pay-notes/:id/photos', requireAdmin, requireAcctWrite, containerSubmitPhotoUpload.array('photos', 12), (req, res) => {
+  const n = db.prepare('SELECT * FROM acct_pay_notes WHERE id=?').get(parseInt(req.params.id));
+  if (!n) return res.status(404).json({ error: 'not found' });
+  let ph = []; try { ph = JSON.parse(n.photos || '[]'); } catch (e) { ph = []; }
+  if (!Array.isArray(ph)) ph = [];
+  (req.files || []).forEach(f => { const k = f.key || f.path; if (k) ph.push(k); });
+  ph = ph.filter(Boolean).slice(0, 24);
+  db.prepare('UPDATE acct_pay_notes SET photos=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(JSON.stringify(ph), n.id);
+  res.json({ success: true, photos_urls: ph.map(k => `/uploads/${path.basename(String(k))}`) });
+});
+// 付款批注: 删除一张收款凭证
+app.delete('/api/acct/pay-notes/:id/photos', requireAdmin, requireAcctWrite, (req, res) => {
+  const n = db.prepare('SELECT * FROM acct_pay_notes WHERE id=?').get(parseInt(req.params.id));
+  if (!n) return res.status(404).json({ error: 'not found' });
+  const target = path.basename(String((req.body && req.body.photo) || req.query.photo || ''));
+  if (!target) return res.status(400).json({ error: 'missing photo' });
+  let ph = []; try { ph = JSON.parse(n.photos || '[]'); } catch (e) { ph = []; }
+  const kept = (Array.isArray(ph) ? ph : []).filter(k => path.basename(String(k)) !== target);
+  const removed = (Array.isArray(ph) ? ph : []).find(k => path.basename(String(k)) === target);
+  db.prepare('UPDATE acct_pay_notes SET photos=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(JSON.stringify(kept), n.id);
+  if (removed) storage.deleteObject(storage.keyFrom(removed, 'uploads')).catch(() => {});
+  res.json({ success: true, photos_urls: kept.map(k => `/uploads/${path.basename(String(k))}`) });
 });
 
 // Read-only invoice list (no payment receipts / internal cost fields).
