@@ -205,6 +205,11 @@ button,input,select,textarea{font-family:inherit}
 .modal input:focus,.modal textarea:focus{border-color:var(--sky)}
 .modal .row{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
 .modal .hint{font-size:.75rem;color:var(--gray-600);line-height:1.6}
+/* 标签弹窗的语言选块: 一行三个等宽, 文字不折行, 勾上高亮 */
+.lang-pill{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;font-size:.82rem;font-weight:600;
+  border:1.5px solid var(--gray-200);border-radius:10px;padding:8px 6px;white-space:nowrap;user-select:none}
+.lang-pill.on{border-color:var(--sky);background:var(--sky-light);color:var(--blue)}
+.lang-pill input{accent-color:var(--sky)}
 .modal code{background:var(--off-white);border:1px solid #fde68a;border-radius:6px;padding:2px 8px;
   font-size:.8rem;user-select:all;word-break:break-all;display:inline-block;margin-top:3px}
 
@@ -1292,23 +1297,23 @@ function editTags() {
   TAG_DRAFT = (convo.tags || []).slice();
   const spoken = convo.spoken || [];
   const langBox = (code, label) =>
-    '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.82rem;'
-    + 'border:1px solid var(--gray-200);border-radius:8px;padding:6px 12px">'
-    + '<input type="checkbox" id="spk_' + code + '"' + (spoken.includes(code) ? ' checked' : '') + '>'
+    '<label class="lang-pill' + (spoken.includes(code) ? ' on' : '') + '">'
+    + '<input type="checkbox" id="spk_' + code + '"' + (spoken.includes(code) ? ' checked' : '')
+    + ' onchange="this.parentElement.classList.toggle(\'on\', this.checked)">'
     + label + '</label>';
   openModal('<h2>标签 · ' + esc(convo.title) + '</h2>'
-    + '<div class="hint">会什么语言（可多选）</div>'
-    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px">'
-    + langBox('zh', '🇨🇳 中文') + langBox('en', '🇺🇸 English 英语') + langBox('es', '🇲🇽 Español 西语') + '</div>'
-    + '<div class="hint">已有标签（点 × 去掉）</div>'
-    + '<div class="filter-row" id="tagNow"></div>'
-    + '<div class="hint">常用（做过的工种，点一下加上）</div>'
+    + '<div><div class="hint" style="margin-bottom:5px">会什么语言（可多选）</div>'
+    + '<div style="display:flex;gap:8px">'
+    + langBox('zh', '🇨🇳 中文') + langBox('en', '🇺🇸 英语') + langBox('es', '🇲🇽 西语') + '</div></div>'
+    + '<div><div class="hint" style="margin-bottom:5px">已有标签（点 × 去掉）</div>'
+    + '<div class="filter-row" id="tagNow"></div></div>'
+    + '<div><div class="hint" style="margin-bottom:5px">常用（做过的工种，点一下加上）</div>'
     + '<div class="filter-row" id="tagQuick"></div>'
-    + '<input id="tagInput" placeholder="自定义标签，回车添加（如: GOFO上过班 / 靠谱 / 有车）">'
-    + '<div class="hint">标签会出现在左边的筛选栏里，点一下就只看带这个标签的会话。</div>'
-    + '<div class="hint">备注（要求 / 上班情况等）</div>'
-    + '<textarea id="tagNote" rows="3" style="width:100%;border:1px solid var(--gray-200);border-radius:12px;'
-    + 'padding:8px 12px;font-size:.82rem;font-family:inherit;resize:vertical">' + esc(convo.note || '') + '</textarea>'
+    + '<input id="tagInput" placeholder="自定义标签，回车添加（如: GOFO上过班 / 靠谱 / 有车）" style="margin-top:8px;width:100%;box-sizing:border-box">'
+    + '<div class="hint" style="margin-top:4px">标签会出现在左边的筛选栏里，点一下就只看带这个标签的会话。</div></div>'
+    + '<div><div class="hint" style="margin-bottom:5px">备注（要求 / 上班情况等）</div>'
+    + '<textarea id="tagNote" rows="3" style="width:100%;box-sizing:border-box;border:1px solid var(--gray-200);border-radius:12px;'
+    + 'padding:8px 12px;font-size:.82rem;font-family:inherit;resize:vertical">' + esc(convo.note || '') + '</textarea></div>'
     + '<div class="row"><button class="action-btn" onclick="closeModal()">取消</button>'
     + '<button class="action-btn primary" id="tagSave">保存</button></div>');
 
