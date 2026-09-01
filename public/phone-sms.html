@@ -1266,8 +1266,10 @@ async function sendViaWhatsApp() {
       }
     } catch (_) { /* 翻译失败就发原文 */ }
   }
-  window.open('https://wa.me/' + num + (text ? '?text=' + encodeURIComponent(text) : ''), '_blank');
-  setNote('已打开 WhatsApp（消息已填好，按回车发）。发出来的是你手机绑定的 WhatsApp 号。');
+  // 直接落到电脑上的 WhatsApp Web 对话里（不跳 wa.me 中转页），消息已填好，按回车即发。
+  // WhatsApp Web 绑定的是美国手机那个 WhatsApp 号，客服在中国的电脑上发也走这个号。
+  window.open('https://web.whatsapp.com/send?phone=' + num + (text ? '&text=' + encodeURIComponent(text) : ''), '_blank');
+  setNote('已在电脑的 WhatsApp Web 打开这个人的对话（消息已填好），按回车发出即可。');
 }
 
 /** 真正排进待发队列。 */
