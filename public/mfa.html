@@ -221,6 +221,7 @@ async function verify() {
     try {
       localStorage.setItem('adminToken', d.token);
       localStorage.setItem('acct_token', d.token);
+      localStorage.setItem('pa_phone_sms_token', d.token);
       sessionStorage.setItem('adminToken', d.token);
       sessionStorage.setItem('ci_rec_token', d.token);
     } catch (_) {}

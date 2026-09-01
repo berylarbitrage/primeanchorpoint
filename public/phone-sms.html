@@ -355,6 +355,13 @@ async function login() {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password })
   }).then(x => x.json()).catch(() => ({}));
+  // 首次登录待激活 / 短信验证码 (MFA) 两个分支之前没处理, 客服账号会卡在「登录失败」
+  if (r.needs_activation) { err.textContent = '账号还没激活：请先在 SMS Inbox (/sms-inbox) 用临时密码登录并设置新密码，再回来。'; return; }
+  if (r.mfa_required) {
+    location.href = '/mfa?token=' + encodeURIComponent(r.mfa_token) + '&next=' + encodeURIComponent('/phone-sms')
+      + (r.phone_hint ? '&hint=' + encodeURIComponent(r.phone_hint) : '');
+    return;
+  }
   if (!r.success) { err.textContent = r.error || '登录失败'; return; }
   if (!['admin', 'cs'].includes(r.role)) { err.textContent = '这一页只有管理员和客服能看（私人短信）。'; return; }
   ROLE = r.role;
