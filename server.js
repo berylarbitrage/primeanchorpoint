@@ -32951,6 +32951,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS plaid_items (
   sync_cursor TEXT DEFAULT '',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
+// 打开页面自动同步的节流时间戳 (老库补列)
+try { db.exec("ALTER TABLE plaid_items ADD COLUMN last_sync_at TEXT DEFAULT ''"); } catch (e) {}
 db.exec(`CREATE TABLE IF NOT EXISTS plaid_accounts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   item_id TEXT NOT NULL,
@@ -33093,7 +33095,7 @@ async function plaidSyncItem(item) {
     cursor = r.next_cursor;
     if (!r.has_more) break;
   }
-  db.prepare('UPDATE plaid_items SET sync_cursor=? WHERE id=?').run(cursor || '', item.id);
+  db.prepare("UPDATE plaid_items SET sync_cursor=?, last_sync_at=datetime('now') WHERE id=?").run(cursor || '', item.id);
   // 余额单独刷一次（sync 的 accounts 字段不一定带全）
   try {
     const acc = await plaidPost('/accounts/get', { access_token: token });
@@ -33123,10 +33125,23 @@ app.post('/api/plaid/sync', requireAdmin, requireRole('admin'), async (req, res)
 
 app.get('/api/plaid/accounts', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
   try {
-    const items = db.prepare('SELECT id, item_id, institution, created_at FROM plaid_items').all();
+    const items = db.prepare('SELECT id, item_id, institution, created_at, last_sync_at FROM plaid_items').all();
     const accounts = db.prepare('SELECT * FROM plaid_accounts ORDER BY name').all()
       .map(a => ({ ...a, institution: (items.find(i => i.item_id === a.item_id) || {}).institution || '' }));
     res.json({ items, accounts });
+    // 打开 /banking 或 /accounting 银行直连页时后台自动拉一次交易+余额, 10 分钟内
+    // 同步过的跳过 (与 /api/acct/bank/status 的 open-sync 同款节流, 不阻塞响应)。
+    // 否则待入账(pending)状态和余额只有 webhook 或管理员手动同步才会更新。
+    if (plaidReady()) setImmediate(() => {
+      try {
+        const claim = db.prepare(`UPDATE plaid_items SET last_sync_at=datetime('now')
+          WHERE id=? AND COALESCE(last_sync_at,'') < datetime('now', '-10 minutes')`);
+        for (const item of db.prepare('SELECT * FROM plaid_items').all()) {
+          if (!claim.run(item.id).changes) continue; // 刚同步过, 或另一请求已认领
+          plaidSyncItem(item).catch(e => console.error('[Plaid] open-sync', item.id, e.message));
+        }
+      } catch (e) { console.error('[Plaid] open-sync:', e.message); }
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

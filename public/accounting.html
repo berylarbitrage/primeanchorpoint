@@ -1176,13 +1176,19 @@ async function bankInit(force) {
 // /banking(Plaid) 数据源的只读展示: 账户卡片 + 提示条; 隐藏本页的同步/连接/审核控件
 let _bankMode = 'acct', _plaidAccts = null;
 function renderPlaidAccounts() {
-  ['btnTellerConnect', 'btnBankConnect', 'btnBankCfg', 'btnBankSync'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+  ['btnTellerConnect', 'btnBankConnect', 'btnBankCfg'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+  // 同步走 /api/plaid/sync (接口仅 admin); 非 admin 打开页面时服务器也会自动同步(10 分钟节流)
+  document.getElementById('btnBankSync').style.display = (_bankStatus && _bankStatus.is_admin) ? '' : 'none';
   document.getElementById('bankFltRev').style.display = 'none';
   const vSel = document.getElementById('bankFltView');
   vSel.style.display = '';
   try { const v = localStorage.getItem('acctBankView'); if (v) vSel.value = v; } catch (e) {}
-  document.getElementById('bankSyncMsg').innerHTML = '数据来自「<a href="/banking" target="_blank" style="color:#0f4c6b;text-decoration:underline">银行对账 /banking</a>」页连接的银行（只读）· 分类/标注请到该页操作';
   const accs = (_plaidAccts && _plaidAccts.accounts) || [];
+  // 数据新鲜度: 余额卡的 updated_at 是每次同步刷新的 SQLite UTC 时间, 转本地显示
+  let fresh = '';
+  const latest = accs.map(a => String(a.updated_at || '')).sort().pop() || '';
+  if (latest) { const d = new Date(latest.replace(' ', 'T') + 'Z'); if (!isNaN(d)) fresh = ' · 数据更新于 ' + d.toLocaleString('zh-CN', { hour12: false }); }
+  document.getElementById('bankSyncMsg').innerHTML = '数据来自「<a href="/banking" target="_blank" style="color:#0f4c6b;text-decoration:underline">银行对账 /banking</a>」页连接的银行（只读）· 分类/标注请到该页操作' + fresh;
   document.getElementById('bankAcctCards').innerHTML = accs.map(a => {
     const bal = a.balance_current == null ? '—' : money(a.balance_current);
     const avail = a.balance_available == null ? '' : `<div style="font-size:.7rem;color:var(--g400)">可用 ${money(a.balance_available)}</div>`;
@@ -1194,8 +1200,10 @@ function renderPlaidAccounts() {
     </div>`;
   }).join('');
   const sel = document.getElementById('bankFltAcct');
+  const cur = sel.value;
   sel.innerHTML = '<option value="">全部账户</option>' + accs.map(a =>
     `<option value="${esc(a.account_id)}">${esc(a.institution || '')} · ${esc(a.company_label || a.name || '')} ··${esc(a.mask || '')}</option>`).join('');
+  sel.value = cur;
 }
 function renderBankAccounts() {
   const st = _bankStatus || { items: [], accounts: [] };
@@ -1343,6 +1351,19 @@ async function bankSync() {
   const btn = document.getElementById('btnBankSync');
   const msg = document.getElementById('bankSyncMsg');
   btn.disabled = true; msg.textContent = '同步中…';
+  // /banking(Plaid) 数据源: 同步走 /api/plaid/sync, 顺带刷新余额卡和交易列表
+  if (_bankMode === 'plaid') {
+    try {
+      const r = await bapi('/api/plaid/sync', { method: 'POST', body: '{}' });
+      try { _plaidAccts = await bapi('/api/plaid/accounts'); } catch (e2) {}
+      renderPlaidAccounts();
+      const errs = (r.errors || []).length ? `，${r.errors.length} 个连接失败（去 /banking 查看）` : '';
+      msg.innerHTML += ` · ✅ 刚同步: 新增/更新 ${r.added || 0} 笔${errs}`;
+      bankLoadTxns();
+    } catch (e) { msg.textContent = '❌ ' + (e.message || '同步失败'); }
+    btn.disabled = false;
+    return;
+  }
   try {
     const r = await bapi('/api/acct/bank/sync', { method: 'POST', body: '{}' });
     const tot = (r.results || []).reduce((sacc, x) => sacc + (x.added || 0) + (x.modified || 0), 0);
@@ -1380,7 +1401,7 @@ async function bankLoadTxns() {
       <td>${esc(x.merchant || x.name || '')}${x.merchant && x.name && x.merchant !== x.name ? '<br><span style=\"font-size:.72rem;color:var(--g400)\">' + esc(x.name) + '</span>' : ''}</td>
       <td style="font-size:.76rem;color:var(--g500)">${esc(x.category || '')}</td>
       <td style="text-align:right">${amt}</td>
-      <td>${x.pending ? '<span style=\"color:#b45309;font-size:.74rem\">待入账</span>' : ''}</td>
+      <td>${x.pending ? '<span style=\"color:#b45309;font-size:.74rem\" title=\"银行已授权、还未正式入账 (pending)；入账后同步会自动更新\">待入账</span>' : ''}</td>
       <td style="white-space:nowrap"><label style="cursor:pointer"><input type="checkbox" ${x.reviewed ? 'checked' : ''} onchange="bankReview(${x.id}, this.checked)"> ${x.reviewed ? '<span style=\"font-size:.72rem;color:#15803d\">' + esc(x.reviewed_by || '') + '</span>' : ''}</label></td>
       <td><input type="text" value="${esc(x.review_note || '')}" placeholder="备注…" style="width:130px;font-size:.78rem;padding:4px 6px" onchange="bankReviewNote(${x.id}, this.value)"></td>
     </tr>`;
@@ -1438,7 +1459,7 @@ async function plaidLoadTxns() {
       <td>${esc(x.merchant || x.name || '')}${x.merchant && x.name && x.merchant !== x.name ? '<br><span style="font-size:.72rem;color:var(--g400)">' + esc(x.name) + '</span>' : ''}</td>
       <td style="font-size:.76rem;color:var(--g500)">${esc(x.category || '')}</td>
       <td style="text-align:right">${amt}</td>
-      <td>${x.pending ? '<span style="color:#b45309;font-size:.74rem">待入账</span>' : ''}</td>
+      <td>${x.pending ? '<span style="color:#b45309;font-size:.74rem" title="银行已授权、还未正式入账 (pending)；入账后同步会自动更新">待入账</span>' : ''}</td>
       <td class="ann-cell" data-txn="${esc(x.txn_id)}">${annChipHtml(x.txn_id)}</td>
     </tr>`;
   };
