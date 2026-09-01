@@ -1131,6 +1131,9 @@ async function showRecruitJob() {
     + '</div>'
     + '<div class="row"><button class="action-btn primary" onclick="insertRecruitJob()">填入发送框</button>'
     + '<button class="action-btn" onclick="closeModal()">取消</button></div>');
+  // 打开就预选第一个在招职位, 地址/工资/预览直接带出来, 不用再点一次
+  document.getElementById('rjSelect').value = String(_rjJobs[0].id);
+  rjPick(_rjJobs[0].id);
 }
 function rjPick(id) {
   _rjSelId = id;
