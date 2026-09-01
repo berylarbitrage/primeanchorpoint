@@ -33317,7 +33317,8 @@ app.get('/api/plaid/txn-categories', requireAdmin, requireRole('admin', 'cs', 'a
 app.get('/api/plaid/transactions', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
   try {
     const { where, params } = plaidTxnQuery(req);
-    const limit = Math.min(parseInt(req.query.limit) || 300, 2000);
+    // 上限 5000: 让「全部账户」能一次显示全部交易, 不用一个银行一个银行切着看
+    const limit = Math.min(parseInt(req.query.limit) || 300, 5000);
     const rows = db.prepare(`SELECT * FROM plaid_transactions WHERE ${where} ORDER BY date DESC, id DESC LIMIT ?`).all(...params, limit);
     const total = db.prepare(`SELECT COUNT(*) n, COALESCE(SUM(amount),0) s FROM plaid_transactions WHERE ${where}`).get(...params);
     res.json({ transactions: rows, total: total.n, sum: total.s });

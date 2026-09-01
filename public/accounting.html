@@ -1699,7 +1699,7 @@ async function plaidLoadTxns() {
   const kw = document.getElementById('bankFltQ').value.trim(); if (kw) q.set('q', kw);
   const f = document.getElementById('bankFltFrom').value; if (f) q.set('start', f);
   const t = document.getElementById('bankFltTo').value; if (t) q.set('end', t);
-  q.set('limit', '500');
+  q.set('limit', '5000');  // 全部账户一起看时不截断 (服务端上限同为 5000)
   let d;
   try {
     [d] = await Promise.all([
