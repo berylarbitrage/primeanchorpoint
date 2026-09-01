@@ -11,7 +11,7 @@ let _TXNS = [];
 let _annOpenId = null;            // 当前抽屉里打开的标注 id
 const ANN = {};                   // plaid_txn_id → box
 let _bsBoxList = [];              // 已加载的标注（与 ANN 同一批对象）
-let _bsCompanies = [], _bsWarehouses = [], _bsReferrers = [];
+let _bsCompanies = [], _bsPartnerCompanies = [], _bsWarehouses = [], _bsReferrers = [];
 let _bsEdRange = { start: '', end: '' }; // 银行直连交易无账单周期限制
 
 const BS_EXTRA_COMPANIES = ['Dando Chemicals US LLC', 'BOOKFREIGHT INC', 'Nova Express', '以梦为马 Yimengweima'];
@@ -176,6 +176,8 @@ async function _bsEnsureOptions() {
     _bsReferrers = srt(r.referrers);
     _bsWarehouses = srt(r.warehouses);
     const names = (Array.isArray(r.companies) ? r.companies.filter(Boolean) : []);
+    // 员工小面板的「选择公司」只列合作公司, 不含下面补的额外收付款公司
+    _bsPartnerCompanies = names.slice().sort((a, b) => a.localeCompare(b));
     BS_EXTRA_COMPANIES.forEach(n => { if (n && !names.includes(n)) names.push(n); });
     _bsCompanies = names.sort((a, b) => a.localeCompare(b));
     _bsOptsLoaded = true;
@@ -367,7 +369,7 @@ function bsCheckUpdate(id) {
 }
 function _bsCompanyOptions(current) {
   const parts = ['<option value="">— 选择公司 —</option>'];
-  const names = _bsCompanies.slice();
+  const names = (_bsPartnerCompanies.length ? _bsPartnerCompanies : _bsCompanies).slice();
   if (current && !names.includes(current)) names.push(current);
   names.forEach(n => parts.push(`<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`));
   return parts.join('');
