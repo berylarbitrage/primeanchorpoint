@@ -820,6 +820,12 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS warehouse_claims (
 try { db.exec(`ALTER TABLE warehouse_claims ADD COLUMN attachments TEXT DEFAULT '[]'`); } catch(e) {}
 // 赔偿事故可关联一笔银行账单标注（支出），和创始人取款的 stmt_txn_id 同一套做法。
 try { db.exec(`ALTER TABLE warehouse_claims ADD COLUMN stmt_txn_id INTEGER DEFAULT NULL`); } catch(e) {}
+// 会计在 /accounting 也能新增事故, 但要管理员审核通过才计入: pending → approved / rejected。
+// 存量行和管理后台新建的走列默认值 approved。
+try { db.exec(`ALTER TABLE warehouse_claims ADD COLUMN approval_status TEXT DEFAULT 'approved'`); } catch(e) {}
+try { db.exec(`ALTER TABLE warehouse_claims ADD COLUMN created_by TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE warehouse_claims ADD COLUMN approved_by TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE warehouse_claims ADD COLUMN approval_note TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL"); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) {}
@@ -22622,7 +22628,7 @@ app.get('/api/admin/warehouse-claims', requireAdmin, (req, res) => {
     FROM warehouse_claims c
     LEFT JOIN bank_statement_txns t ON c.stmt_txn_id = t.id
     LEFT JOIN bank_statements s ON t.statement_id = s.id
-    ORDER BY c.incident_date DESC, c.created_at DESC`).all();
+    ORDER BY CASE WHEN c.approval_status='pending' THEN 0 ELSE 1 END, c.incident_date DESC, c.created_at DESC`).all();
   for (const r of rows) r.attachments = _claimAtts(r);
   res.json(rows);
 });
@@ -32951,6 +32957,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS plaid_items (
   sync_cursor TEXT DEFAULT '',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
+// 打开页面自动同步的节流时间戳 (老库补列)
+try { db.exec("ALTER TABLE plaid_items ADD COLUMN last_sync_at TEXT DEFAULT ''"); } catch (e) {}
 db.exec(`CREATE TABLE IF NOT EXISTS plaid_accounts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   item_id TEXT NOT NULL,
@@ -33093,7 +33101,7 @@ async function plaidSyncItem(item) {
     cursor = r.next_cursor;
     if (!r.has_more) break;
   }
-  db.prepare('UPDATE plaid_items SET sync_cursor=? WHERE id=?').run(cursor || '', item.id);
+  db.prepare("UPDATE plaid_items SET sync_cursor=?, last_sync_at=datetime('now') WHERE id=?").run(cursor || '', item.id);
   // 余额单独刷一次（sync 的 accounts 字段不一定带全）
   try {
     const acc = await plaidPost('/accounts/get', { access_token: token });
@@ -33123,10 +33131,23 @@ app.post('/api/plaid/sync', requireAdmin, requireRole('admin'), async (req, res)
 
 app.get('/api/plaid/accounts', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
   try {
-    const items = db.prepare('SELECT id, item_id, institution, created_at FROM plaid_items').all();
+    const items = db.prepare('SELECT id, item_id, institution, created_at, last_sync_at FROM plaid_items').all();
     const accounts = db.prepare('SELECT * FROM plaid_accounts ORDER BY name').all()
       .map(a => ({ ...a, institution: (items.find(i => i.item_id === a.item_id) || {}).institution || '' }));
     res.json({ items, accounts });
+    // 打开 /banking 或 /accounting 银行直连页时后台自动拉一次交易+余额, 10 分钟内
+    // 同步过的跳过 (与 /api/acct/bank/status 的 open-sync 同款节流, 不阻塞响应)。
+    // 否则待入账(pending)状态和余额只有 webhook 或管理员手动同步才会更新。
+    if (plaidReady()) setImmediate(() => {
+      try {
+        const claim = db.prepare(`UPDATE plaid_items SET last_sync_at=datetime('now')
+          WHERE id=? AND COALESCE(last_sync_at,'') < datetime('now', '-10 minutes')`);
+        for (const item of db.prepare('SELECT * FROM plaid_items').all()) {
+          if (!claim.run(item.id).changes) continue; // 刚同步过, 或另一请求已认领
+          plaidSyncItem(item).catch(e => console.error('[Plaid] open-sync', item.id, e.message));
+        }
+      } catch (e) { console.error('[Plaid] open-sync:', e.message); }
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -37140,10 +37161,45 @@ app.get('/api/acct/warehouse-claims', requireAdmin, requireAcctView, (req, res) 
     FROM warehouse_claims c
     LEFT JOIN bank_statement_txns t ON c.stmt_txn_id = t.id
     LEFT JOIN bank_statements s ON t.statement_id = s.id
-    ORDER BY c.incident_date DESC, c.created_at DESC`).all();
+    ORDER BY CASE WHEN c.approval_status='pending' THEN 0 ELSE 1 END, c.incident_date DESC, c.created_at DESC`).all();
   const payNotes = _acctPayNotesFor('claim');
   for (const r of rows) { r.attachments = _claimAtts(r); r.pay_note = payNotes[r.id] || null; }
   res.json(rows);
+});
+
+// 会计新增赔偿事故: 入库为 approval_status='pending', 管理员审核通过才计入
+// (admin 从这里提交则直接 approved)。只收基本字段, 状态/解决方式/银行关联由管理员维护。
+app.post('/api/acct/warehouse-claims', requireAdmin, requireRole('accounting', 'admin'), claimUpload.array('invoice', 20), (req, res) => {
+  const b = req.body || {};
+  const warehouseName = String(b.warehouse_name || '').trim().slice(0, 200);
+  const desc = String(b.description || '').trim().slice(0, 2000);
+  if (!warehouseName) return res.status(400).json({ error: '请填写仓库 / 客户' });
+  if (!desc) return res.status(400).json({ error: '请填写事故描述' });
+  const amtNum = Number(b.amount);
+  const files = Array.isArray(req.files) ? req.files : [];
+  const atts = files.map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
+  const isAdmin = req.userRole === 'admin';
+  const r = db.prepare(`INSERT INTO warehouse_claims
+    (warehouse_code, warehouse_name, incident_date, amount, description, status, invoice_path, attachments, approval_status, created_by, approved_by)
+    VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)`)
+    .run(String(b.warehouse_code || '').trim().slice(0, 60), warehouseName, String(b.incident_date || '').trim().slice(0, 20),
+      (b.amount != null && b.amount !== '' && !isNaN(amtNum)) ? amtNum : null, desc,
+      atts.length ? atts[0].path : null, JSON.stringify(atts),
+      isAdmin ? 'approved' : 'pending', req.userName || '', isAdmin ? (req.userName || '') : '');
+  res.json({ success: true, id: r.lastInsertRowid, approval_status: isAdmin ? 'approved' : 'pending' });
+});
+
+// 管理员审核会计提交的事故: approve 计入 / reject 拒绝(可带原因, 显示给提交人)
+app.post('/api/acct/warehouse-claims/:id/approval', requireAdmin, requireRole('admin'), (req, res) => {
+  const cur = db.prepare('SELECT * FROM warehouse_claims WHERE id=?').get(req.params.id);
+  if (!cur) return res.status(404).json({ error: '记录不存在' });
+  if (cur.approval_status !== 'pending') return res.status(400).json({ error: '该记录不在待审核状态' });
+  const action = String((req.body || {}).action || '');
+  if (!['approve', 'reject'].includes(action)) return res.status(400).json({ error: '无效操作' });
+  db.prepare(`UPDATE warehouse_claims SET approval_status=?, approved_by=?, approval_note=?, updated_at=datetime('now') WHERE id=?`)
+    .run(action === 'approve' ? 'approved' : 'rejected', req.userName || '',
+      String((req.body || {}).note || '').trim().slice(0, 300), cur.id);
+  res.json({ success: true });
 });
 
 app.get('/api/acct/statements', requireAdmin, requireAcctView, (req, res) => {

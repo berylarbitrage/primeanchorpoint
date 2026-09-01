@@ -345,7 +345,7 @@ async function loadTxns() {
   _TXNS = rows;
   // Plaid 的正数是支出、负数是入账；显示按会计习惯反过来
   const rowHtml = (t, grp) =>
-    '<tr' + (grp ? ' data-grp="' + esc(grp) + '"' : '') + '><td style="white-space:nowrap">' + esc(t.date) + (t.pending ? ' <span class="hint">待清算</span>' : '') + '</td>'
+    '<tr' + (grp ? ' data-grp="' + esc(grp) + '"' : '') + '><td style="white-space:nowrap">' + esc(t.date) + (t.pending ? ' <span class="hint" title="银行已授权、还未正式入账 (pending)；入账后同步会自动更新">待清算</span>' : '') + '</td>'
     + '<td>' + esc(accName(t.account_id)) + '</td>'
     + '<td>' + esc(t.merchant || t.name) + '</td>'
     + '<td style="white-space:nowrap" title="' + esc(t.category || '') + '">' + catBadge(t.category) + '</td>'
