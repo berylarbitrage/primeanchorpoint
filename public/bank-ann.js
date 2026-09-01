@@ -21,6 +21,7 @@ const BS_PAYEE_CC = '还 Prime Anchor Point 信用卡';
 const BS_PAYEE_PAP = 'Prime Anchor Point 转账';
 const BS_PAYEE_PAW = 'Prime Anchor Workforce 转账';
 const BS_PAYEE_BINTIQUE = 'Bintique 货款';
+const BS_PAYEE_DREAMHORSE = '退回以梦为马的 eBay 货款';
 const BS_PAYEE_CASH = '取现金';
 const BS_PAYEE_CASH_DEP = '存现金';
 const BS_PAYEE_LAWSUIT = '诉讼费';
@@ -159,7 +160,7 @@ function _bsPayeeKind(box) {
   if (_bsIsReferral(p)) return 'referral';
   if (_bsIsWageBonus(p)) return 'wagebonus';
   if (BS_PAYEE_PEOPLE.includes(p)) return 'personal';
-  if (p && p !== BS_PAYEE_CLAIM && p !== BS_PAYEE_CC && p !== BS_PAYEE_CASH && p !== BS_PAYEE_CASH_DEP && p !== BS_PAYEE_LAWSUIT && p !== BS_PAYEE_LAWYER && p !== BS_PAYEE_NA && p !== BS_PAYEE_PAP && p !== BS_PAYEE_PAW && p !== BS_PAYEE_BINTIQUE && p !== BS_PAYEE_RETURNED) return 'company';
+  if (p && p !== BS_PAYEE_CLAIM && p !== BS_PAYEE_CC && p !== BS_PAYEE_CASH && p !== BS_PAYEE_CASH_DEP && p !== BS_PAYEE_LAWSUIT && p !== BS_PAYEE_LAWYER && p !== BS_PAYEE_NA && p !== BS_PAYEE_PAP && p !== BS_PAYEE_PAW && p !== BS_PAYEE_BINTIQUE && p !== BS_PAYEE_DREAMHORSE && p !== BS_PAYEE_RETURNED) return 'company';
   return 'none';
 }
 function _bsWantsInvoice(box) {
@@ -203,6 +204,7 @@ function _bsPayeeOptionDefs(direction) {
     // 存过这两个值的旧标注会显示在「其他」分组里
     { v: BS_PAYEE_INTERNAL, t: '🏦 公司内部银行转账（选公司）', d: 'both' },
     { v: BS_PAYEE_BINTIQUE, t: '📦 Bintique 货款', d: 'both' },
+    { v: BS_PAYEE_DREAMHORSE, t: '↩️ 退回以梦为马的 eBay 货款', d: 'both' },
     { v: BS_PAYEE_CASH, t: '💵 取现金', d: 'out' },
     { v: BS_PAYEE_CASH_DEP, t: '💰 存现金', d: 'in' },
     { v: BS_PAYEE_LAWSUIT, t: '⚖️ 诉讼费', d: 'out' },
