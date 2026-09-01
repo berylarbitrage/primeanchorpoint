@@ -778,6 +778,7 @@ function replyBar(composing) {
     + '<textarea id="draft" rows="1" placeholder="写短信…（写中文即可）" oninput="clearPreview()"></textarea>'
     + '<button class="composer-btn" onclick="toggleTpl()" title="预制信息（和 SMS Inbox 共用一份）">⚡</button>'
     + '<button class="composer-btn" onclick="pickImage()" title="发图片：对方收到图片链接，点开即看">📷</button>'
+    + '<button class="composer-btn" onclick="sendViaWhatsApp()" title="用 WhatsApp 发给这个人：打开 WhatsApp（消息已填好），按回车发。用的是你手机绑定的 WhatsApp 号，不走短信、不群发" style="color:#25d366;font-weight:700">WA</button>'
     + '<button class="send-btn" id="sendBtn" onclick="queueSend()" title="翻译并发送（Ctrl+Enter）">&#9654;</button>'
     + '<input type="file" id="imgInput" accept="image/*" style="display:none" onchange="imageChosen(this)">'
     + '<div class="img-chip" id="imgChip" style="display:none"></div>'
@@ -1220,6 +1221,37 @@ async function queueSend() {
   } finally {
     btn.disabled = false;
   }
+}
+
+// 号码转成 WhatsApp 需要的国际格式(纯数字)。美国 10 位号自动补 +1；已带国码的原样用。
+function _waDigits(raw) {
+  let d = String(raw || '').replace(/[^0-9]/g, '');
+  if (d.length === 10) d = '1' + d;
+  return d;
+}
+// 用 WhatsApp 发给当前这个人：打开电脑上的 WhatsApp Web/桌面版（用的就是你手机绑定的
+// WhatsApp 号），对方对话已打开、消息已填好，你按回车发出即可。一次一条、你本人手发，
+// 不群发、不自动点发送。选了语言的话和发短信一样先把中文译过去再填。
+async function sendViaWhatsApp() {
+  const note = document.getElementById('sendNote');
+  const setNote = (t, err) => { if (note) { note.textContent = t; note.className = 'reply-hint' + (err ? ' err' : ''); } };
+  const toEl = document.getElementById('toInput');
+  const num = _waDigits(COMPOSING ? (toEl ? toEl.value : '') : PEER);
+  if (!num) { setNote('先填一个号码。'); return; }
+  let text = ((document.getElementById('draft') || {}).value || '').trim();
+  const translateTo = (document.getElementById('langSel') || {}).value || '';
+  if (text && translateTo && !(NO_TRANSLATE_TEXT && text === NO_TRANSLATE_TEXT)) {
+    setNote('翻译中…');
+    try {
+      if (PRESET_TX && text === PRESET_FOR) text = PRESET_TX;                 // 招工模板用标准翻译
+      else {
+        const r = await api('/device-sms/translate', { method: 'POST', body: JSON.stringify({ text, to: translateTo }) });
+        if (r && r.success && r.text) text = r.text;
+      }
+    } catch (_) { /* 翻译失败就发原文 */ }
+  }
+  window.open('https://wa.me/' + num + (text ? '?text=' + encodeURIComponent(text) : ''), '_blank');
+  setNote('已打开 WhatsApp（消息已填好，按回车发）。发出来的是你手机绑定的 WhatsApp 号。');
 }
 
 /** 真正排进待发队列。 */
