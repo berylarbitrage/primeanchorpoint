@@ -32848,7 +32848,7 @@ function interviewPosFromTags(tags) {
 function interviewFromInbox(info) {
   try {
     const digits = String(info.phone || '').replace(/\D/g, '');
-    if (digits.length < 7) return;
+    if (digits.length < 7) return null;
     const tail = digits.slice(-10);
     const at = String(info.s701_at || '').slice(0, 30);
     const place = String(info.s701_place || '').slice(0, 300);
@@ -32876,16 +32876,19 @@ function interviewFromInbox(info) {
         .run(at, at, place, place,
           String(info.position || '').trim().slice(0, 120), String(info.position || '').trim().slice(0, 120),
           whName, whName, whAddr, whAddr, linkedJobs, linkedJobs, open.id);
-      return;
+      return { id: open.id, updated: true };
     }
     const note = String(info.note || '').trim().slice(0, 500);
-    db.prepare(`INSERT INTO interview_registry (name, phone, position, s701_at, s701_place, wh_partner_name, wh_address, linked_jobs, notes, source, created_by)
+    const autoNote = info.auto_note !== undefined ? String(info.auto_note).slice(0, 120)
+      : ('⚡ 收件箱标记「面试」自动登记' + (at ? '' : '，去补时间和地点'));
+    const ins = db.prepare(`INSERT INTO interview_registry (name, phone, position, s701_at, s701_place, wh_partner_name, wh_address, linked_jobs, notes, source, created_by)
       VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
       String(info.name || '').trim().slice(0, 120), tail,
       position, at, place, whName, whAddr, linkedJobs,
-      (note ? note + '\n' : '') + '⚡ 收件箱标记「面试」自动登记' + (at ? '' : '，去补时间和地点'),
+      (note ? note + '\n' : '') + autoNote,
       String(info.source || '').slice(0, 60),
       String(info.by || '').slice(0, 80));
+    return { id: ins.lastInsertRowid, updated: false };
   } catch (e) { console.error('[面试登记] 自动迁移失败:', e.message); }
 }
 
@@ -33945,6 +33948,36 @@ app.post('/api/device-sms/peer', requireAdmin, requireRole('admin', 'cs'), (req,
       }
     }
     res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/device-sms/interview — 手机短信页「登记面试」弹窗 (admin/客服)。
+// 走 interviewFromInbox: 该号码已有未办结登记则补充字段, 否则新建;
+// 地点空或 701 开头时自动把到场指南排进短信队列 (设置了指南才发)。
+app.post('/api/device-sms/interview', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
+  try {
+    const b = req.body || {};
+    const digits = String(b.phone || '').replace(/\D/g, '');
+    if (digits.length < 10) return res.status(400).json({ error: '号码不全，登记不了' });
+    const r = interviewFromInbox({
+      phone: digits, name: String(b.name || ''), position: String(b.position || ''),
+      s701_at: String(b.s701_at || ''), s701_place: String(b.s701_place || ''),
+      note: String(b.note || ''), auto_note: '🗓 手机短信页登记',
+      source: '手机短信', by: req.userName || ''
+    });
+    if (!r || !r.id) return res.status(500).json({ error: '登记失败' });
+    let guideQueued = false;
+    const place = String(b.s701_place || '').trim();
+    if (!place || place.startsWith('701')) {
+      const guide = db.prepare("SELECT value FROM app_settings WHERE key='interview_701_guide'").get();
+      if (guide && guide.value) {
+        const ten = digits.slice(-10);
+        db.prepare(`INSERT INTO device_sms_outbox (to_address, peer, body, translate_to, created_by) VALUES (?,?,?,?,?)`)
+          .run('+1' + ten, ten, guide.value, '', req.userName || '');
+        guideQueued = true;
+      }
+    }
+    res.json({ success: true, id: r.id, updated: !!r.updated, guide_queued: guideQueued });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
