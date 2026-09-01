@@ -32893,53 +32893,58 @@ function interviewFromInbox(info) {
 }
 
 // 列表 + 公司地址（仓库复试选地址用）+ 701 默认地址，一次给全
+// 面试地点候选（地址全汇总）：公司档案 + 面试预设地点 + 打卡仓库 + 打卡工地，
+// 同一个地址出现在几个系统里只留最先出现的那份（公司档案优先）。
+// /api/interview-registry 和 /phone-sms 登记面试弹窗共用。
+function interviewPlaceGroups() {
+  const seenAddr = new Set();
+  const addrKey = a => String(a).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const groups = [];
+  const addGroup = (id, name, rawAddrs) => {
+    const list = [];
+    for (const raw of rawAddrs) {
+      const s = String(raw || '').trim();
+      if (!s || seenAddr.has(addrKey(s))) continue;
+      seenAddr.add(addrKey(s));
+      list.push(s);
+    }
+    if (list.length) groups.push({ id, name, addresses: list });
+  };
+  for (const p of db.prepare(`SELECT id, name, address, addresses FROM partners
+      WHERE COALESCE(active,1)=1 ORDER BY name`).all()) {
+    const raws = [];
+    try {
+      const parsed = JSON.parse(p.addresses || '[]');
+      if (Array.isArray(parsed)) for (const a of parsed) raws.push(typeof a === 'string' ? a : (a && a.address));
+    } catch (_) {}
+    raws.push(p.address);
+    addGroup(p.id, p.name, raws);
+  }
+  try {
+    for (const l of db.prepare(`SELECT name, address FROM interview_locations
+        WHERE COALESCE(active,1)=1 AND COALESCE(address,'')!='' ORDER BY name`).all()) {
+      addGroup(null, l.name, [l.address]);
+    }
+  } catch (_) {}
+  try {
+    for (const w of db.prepare(`SELECT warehouse_name, address FROM warehouses
+        WHERE COALESCE(is_active,1)=1 AND COALESCE(address,'')!='' ORDER BY warehouse_name`).all()) {
+      addGroup(null, w.warehouse_name, [w.address]);
+    }
+  } catch (_) {}
+  try {
+    for (const s of db.prepare(`SELECT name, address, partner_id FROM job_sites
+        WHERE COALESCE(active,1)=1 AND COALESCE(address,'')!='' ORDER BY name`).all()) {
+      addGroup(s.partner_id || null, s.name, [s.address]);
+    }
+  } catch (_) {}
+  return groups;
+}
+
 app.get('/api/interview-registry', requireAdmin, (req, res) => {
   try {
     const rows = db.prepare('SELECT * FROM interview_registry ORDER BY id DESC LIMIT 1000').all();
-    // 地址来源全汇总：公司档案 + 面试预设地点 + 打卡仓库 + 打卡工地，
-    // 同一个地址出现在几个系统里只留最先出现的那份（公司档案优先）。
-    const seenAddr = new Set();
-    const addrKey = a => String(a).toLowerCase().replace(/[^a-z0-9]/g, '');
-    const groups = [];
-    const addGroup = (id, name, rawAddrs) => {
-      const list = [];
-      for (const raw of rawAddrs) {
-        const s = String(raw || '').trim();
-        if (!s || seenAddr.has(addrKey(s))) continue;
-        seenAddr.add(addrKey(s));
-        list.push(s);
-      }
-      if (list.length) groups.push({ id, name, addresses: list });
-    };
-    for (const p of db.prepare(`SELECT id, name, address, addresses FROM partners
-        WHERE COALESCE(active,1)=1 ORDER BY name`).all()) {
-      const raws = [];
-      try {
-        const parsed = JSON.parse(p.addresses || '[]');
-        if (Array.isArray(parsed)) for (const a of parsed) raws.push(typeof a === 'string' ? a : (a && a.address));
-      } catch (_) {}
-      raws.push(p.address);
-      addGroup(p.id, p.name, raws);
-    }
-    try {
-      for (const l of db.prepare(`SELECT name, address FROM interview_locations
-          WHERE COALESCE(active,1)=1 AND COALESCE(address,'')!='' ORDER BY name`).all()) {
-        addGroup(null, l.name, [l.address]);
-      }
-    } catch (_) {}
-    try {
-      for (const w of db.prepare(`SELECT warehouse_name, address FROM warehouses
-          WHERE COALESCE(is_active,1)=1 AND COALESCE(address,'')!='' ORDER BY warehouse_name`).all()) {
-        addGroup(null, w.warehouse_name, [w.address]);
-      }
-    } catch (_) {}
-    try {
-      for (const s of db.prepare(`SELECT name, address, partner_id FROM job_sites
-          WHERE COALESCE(active,1)=1 AND COALESCE(address,'')!='' ORDER BY name`).all()) {
-        addGroup(s.partner_id || null, s.name, [s.address]);
-      }
-    } catch (_) {}
-    const partners = groups;
+    const partners = interviewPlaceGroups();
     const s = db.prepare("SELECT value FROM app_settings WHERE key='interview_701_address'").get();
     const g = db.prepare("SELECT value FROM app_settings WHERE key='interview_701_guide'").get();
     // 招工板上在招的活：面试登记可以直接关联（仓库+工种+班次）
@@ -33948,6 +33953,14 @@ app.post('/api/device-sms/peer', requireAdmin, requireRole('admin', 'cs'), (req,
       }
     }
     res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/device-sms/interview-options — 登记面试弹窗的地点候选: 701 默认地址 + 全部现有仓库
+app.get('/api/device-sms/interview-options', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
+  try {
+    const s = db.prepare("SELECT value FROM app_settings WHERE key='interview_701_address'").get();
+    res.json({ s701_address: (s && s.value) || '701 Central Ave, University Park, IL 60484', places: interviewPlaceGroups() });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

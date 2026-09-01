@@ -1374,11 +1374,19 @@ function pToast(msg, bad) {
 
 // ── 🗓 登记面试弹窗: 不开新页, 就地登记到面试登记 (同「面试」标签那条通道, 已有未办结登记自动并入) ──
 const IV_POSITIONS = ['普工', '普通叉车', '高位叉车', '卸柜工', '装卸工', '拣货员', '打包员', '分拣员'];
-let IV_POS = new Set();
-function openInterviewModal() {
+let IV_POS = new Set(), _ivOpts = null;
+async function openInterviewModal() {
   const convo = conversations().find(c => c.peer === PEER);
   if (!convo) return;
   IV_POS = new Set();
+  // 地点候选 (701 默认 + 全部现有仓库), 拉一次缓存
+  if (!_ivOpts) { try { _ivOpts = await api('/device-sms/interview-options'); } catch (e) { _ivOpts = { s701_address: '', places: [] }; } }
+  const placeSel = '<select id="ivPlace" style="width:100%;box-sizing:border-box">'
+    + '<option value="" selected>📍 701（默认）— ' + esc(_ivOpts.s701_address || '') + '</option>'
+    + (_ivOpts.places || []).map(g => '<optgroup label="' + esc(g.name) + '">'
+        + (g.addresses || []).map(a => { const v = g.name + ' — ' + a; return '<option value="' + esc(v) + '">🏭 ' + esc(v) + '</option>'; }).join('')
+      + '</optgroup>').join('')
+    + '</select>';
   const isPhoneTitle = /^[()\d\s+-]*$/.test(convo.title || '');
   openModal('<h2>🗓 登记面试 · ' + esc(fmtPhone(convo.address) || convo.peer) + '</h2>'
     + '<div><div class="hint" style="margin-bottom:5px">姓名</div>'
@@ -1388,8 +1396,8 @@ function openInterviewModal() {
     + '<input id="ivPosExtra" placeholder="其他工种（可选）" style="margin-top:8px;width:100%;box-sizing:border-box"></div>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap"><div style="flex:1;min-width:150px"><div class="hint" style="margin-bottom:5px">面试时间</div>'
     + '<input type="datetime-local" id="ivAt" style="width:100%;box-sizing:border-box"></div>'
-    + '<div style="flex:1.2;min-width:170px"><div class="hint" style="margin-bottom:5px">面试地点</div>'
-    + '<input id="ivPlace" placeholder="默认 701（会自动发到场指南）" style="width:100%;box-sizing:border-box"></div></div>'
+    + '<div style="flex:1.2;min-width:200px"><div class="hint" style="margin-bottom:5px">面试地点（选 701 会自动发到场指南）</div>'
+    + placeSel + '</div></div>'
     + '<div><div class="hint" style="margin-bottom:5px">备注</div>'
     + '<input id="ivNote" placeholder="可选" style="width:100%;box-sizing:border-box"></div>'
     + '<div class="row"><button class="action-btn" onclick="closeModal()">取消</button>'
