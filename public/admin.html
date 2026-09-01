@@ -36029,19 +36029,26 @@ function renderWhClaims() {
     wrap.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">暂无赔偿事故记录，点击「+ 新建事故」添加。</div>';
     return;
   }
-  const total = _whClaims.reduce((s, c) => s + (c.amount || 0), 0);
-  const open = _whClaims.filter(c => c.status !== 'resolved').length;
+  // 只统计审核通过的 (会计在 /accounting 提交的待审核/被拒记录不计入)
+  const okClaims = _whClaims.filter(c => (c.approval_status || 'approved') === 'approved');
+  const pendN = _whClaims.filter(c => c.approval_status === 'pending').length;
+  const total = okClaims.reduce((s, c) => s + (c.amount || 0), 0);
+  const open = okClaims.filter(c => c.status !== 'resolved').length;
   const money = n => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const summary = `
     <div style="display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1rem">
       <div style="flex:1 1 150px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:.55rem .85rem">
         <div style="font-size:.72rem;color:var(--gray-500)">事故总数</div>
-        <div style="font-size:1.15rem;font-weight:700">${_whClaims.length}<span style="font-size:.72rem;color:var(--gray-500);font-weight:400"> · 处理中 ${open}</span></div>
+        <div style="font-size:1.15rem;font-weight:700">${okClaims.length}<span style="font-size:.72rem;color:var(--gray-500);font-weight:400"> · 处理中 ${open}</span></div>
       </div>
       <div style="flex:1 1 150px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:.55rem .85rem">
         <div style="font-size:.72rem;color:var(--gray-500)">赔偿总额</div>
         <div style="font-size:1.15rem;font-weight:700;color:#dc2626">${money(total)}</div>
       </div>
+      ${pendN ? `<div style="flex:1 1 150px;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:.55rem .85rem">
+        <div style="font-size:.72rem;color:#c2410c">待审核（会计提交）</div>
+        <div style="font-size:1.15rem;font-weight:700;color:#c2410c">⏳ ${pendN}</div>
+      </div>` : ''}
     </div>`;
   const rows = _whClaims.map(c => {
     const _atts = Array.isArray(c.attachments) ? c.attachments : [];
@@ -36052,15 +36059,24 @@ function renderWhClaims() {
       ? `<span style="display:inline-block;background:#e0f2fe;color:#075985;border-radius:6px;padding:2px 8px;font-size:.74rem;font-weight:600;white-space:nowrap" title="${esc(c.stmt_name || '')}">🏦 ${esc(c.txn_date || '')} · $${Math.abs(Number(c.txn_amount) || 0).toFixed(2)}${c.txn_payee ? ' · ' + esc(String(c.txn_payee).slice(0, 20)) : ''}</span>`
       : '<span style="color:var(--gray-400)">—</span>';
     const desc = (c.description || '').length > 60 ? esc(c.description.slice(0, 60)) + '…' : esc(c.description || '');
-    return `<tr style="border-top:1px solid var(--gray-100)">
+    const ap = c.approval_status || 'approved';
+    const submitter = (ap !== 'approved' && c.created_by) ? `<div style="font-size:.68rem;color:var(--gray-400);margin-top:2px">${esc(c.created_by)} 提交</div>` : '';
+    const statusCell = ap === 'pending'
+      ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#fff7ed;color:#c2410c;border:1px solid #fed7aa">⏳ 待审核</span>' + submitter
+      : ap === 'rejected'
+        ? `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#f3f4f6;color:#6b7280" title="${esc(c.approval_note || '')}">✖ 已拒绝</span>` + submitter
+        : _whClaimStatusBadge(c.status);
+    return `<tr style="border-top:1px solid var(--gray-100)${ap === 'rejected' ? ';opacity:.55' : ''}">
       <td style="padding:8px 10px;font-weight:600">${esc(c.warehouse_name || c.warehouse_code || '—')}</td>
       <td style="padding:8px 10px;color:var(--gray-500);white-space:nowrap">${esc(c.incident_date || '—')}</td>
       <td style="padding:8px 10px;text-align:right;font-weight:700;white-space:nowrap;color:#dc2626">${c.amount != null ? '$' + Number(c.amount).toFixed(2) : '—'}</td>
       <td style="padding:8px 10px;color:var(--gray-600);max-width:280px">${desc || '<span style="color:var(--gray-400)">—</span>'}</td>
-      <td style="padding:8px 10px;text-align:center">${_whClaimStatusBadge(c.status)}</td>
+      <td style="padding:8px 10px;text-align:center">${statusCell}</td>
       <td style="padding:8px 10px;text-align:center">${invoiceLink}</td>
       <td style="padding:8px 10px;text-align:center">${bankCell}</td>
       <td style="padding:8px 10px;text-align:center;white-space:nowrap">
+        ${ap === 'pending' && USER_ROLE === 'admin' ? `<button class="btn btn-sm btn-green" onclick="whClaimApproval(${c.id},'approve')">✅ 通过</button>
+        <button class="btn btn-sm btn-outline" style="color:#c2410c;border-color:#c2410c" onclick="whClaimApproval(${c.id},'reject')">✖ 拒绝</button>` : ''}
         <button class="btn btn-sm btn-outline" onclick="openWhClaimModal(${c.id})">查看/编辑</button>
         <button class="btn btn-sm btn-outline" style="color:var(--red);border-color:var(--red)" onclick="deleteWhClaim(${c.id})">删除</button>
       </td>
@@ -36246,6 +36262,17 @@ async function saveWhClaim() {
   } finally {
     btn.disabled = false; btn.textContent = orig;
   }
+}
+
+// 审核会计在 /accounting 提交的事故: 通过后才计入统计, 拒绝可带原因(显示给提交人)
+async function whClaimApproval(id, action) {
+  let note = '';
+  if (action === 'reject') { note = prompt('拒绝原因（可选，会显示给提交的会计）：'); if (note === null) return; }
+  try {
+    const r = await api('/acct/warehouse-claims/' + id + '/approval', { method: 'POST', body: JSON.stringify({ action, note }) });
+    if (r && r.error) throw new Error(r.error);
+    loadWarehouseClaims();
+  } catch (e) { alert('操作失败：' + (e.message || '')); }
 }
 
 async function deleteWhClaim(id) {

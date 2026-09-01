@@ -820,6 +820,12 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS warehouse_claims (
 try { db.exec(`ALTER TABLE warehouse_claims ADD COLUMN attachments TEXT DEFAULT '[]'`); } catch(e) {}
 // 赔偿事故可关联一笔银行账单标注（支出），和创始人取款的 stmt_txn_id 同一套做法。
 try { db.exec(`ALTER TABLE warehouse_claims ADD COLUMN stmt_txn_id INTEGER DEFAULT NULL`); } catch(e) {}
+// 会计在 /accounting 也能新增事故, 但要管理员审核通过才计入: pending → approved / rejected。
+// 存量行和管理后台新建的走列默认值 approved。
+try { db.exec(`ALTER TABLE warehouse_claims ADD COLUMN approval_status TEXT DEFAULT 'approved'`); } catch(e) {}
+try { db.exec(`ALTER TABLE warehouse_claims ADD COLUMN created_by TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE warehouse_claims ADD COLUMN approved_by TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE warehouse_claims ADD COLUMN approval_note TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL"); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) {}
@@ -22622,7 +22628,7 @@ app.get('/api/admin/warehouse-claims', requireAdmin, (req, res) => {
     FROM warehouse_claims c
     LEFT JOIN bank_statement_txns t ON c.stmt_txn_id = t.id
     LEFT JOIN bank_statements s ON t.statement_id = s.id
-    ORDER BY c.incident_date DESC, c.created_at DESC`).all();
+    ORDER BY CASE WHEN c.approval_status='pending' THEN 0 ELSE 1 END, c.incident_date DESC, c.created_at DESC`).all();
   for (const r of rows) r.attachments = _claimAtts(r);
   res.json(rows);
 });
@@ -37155,10 +37161,45 @@ app.get('/api/acct/warehouse-claims', requireAdmin, requireAcctView, (req, res) 
     FROM warehouse_claims c
     LEFT JOIN bank_statement_txns t ON c.stmt_txn_id = t.id
     LEFT JOIN bank_statements s ON t.statement_id = s.id
-    ORDER BY c.incident_date DESC, c.created_at DESC`).all();
+    ORDER BY CASE WHEN c.approval_status='pending' THEN 0 ELSE 1 END, c.incident_date DESC, c.created_at DESC`).all();
   const payNotes = _acctPayNotesFor('claim');
   for (const r of rows) { r.attachments = _claimAtts(r); r.pay_note = payNotes[r.id] || null; }
   res.json(rows);
+});
+
+// 会计新增赔偿事故: 入库为 approval_status='pending', 管理员审核通过才计入
+// (admin 从这里提交则直接 approved)。只收基本字段, 状态/解决方式/银行关联由管理员维护。
+app.post('/api/acct/warehouse-claims', requireAdmin, requireRole('accounting', 'admin'), claimUpload.array('invoice', 20), (req, res) => {
+  const b = req.body || {};
+  const warehouseName = String(b.warehouse_name || '').trim().slice(0, 200);
+  const desc = String(b.description || '').trim().slice(0, 2000);
+  if (!warehouseName) return res.status(400).json({ error: '请填写仓库 / 客户' });
+  if (!desc) return res.status(400).json({ error: '请填写事故描述' });
+  const amtNum = Number(b.amount);
+  const files = Array.isArray(req.files) ? req.files : [];
+  const atts = files.map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
+  const isAdmin = req.userRole === 'admin';
+  const r = db.prepare(`INSERT INTO warehouse_claims
+    (warehouse_code, warehouse_name, incident_date, amount, description, status, invoice_path, attachments, approval_status, created_by, approved_by)
+    VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)`)
+    .run(String(b.warehouse_code || '').trim().slice(0, 60), warehouseName, String(b.incident_date || '').trim().slice(0, 20),
+      (b.amount != null && b.amount !== '' && !isNaN(amtNum)) ? amtNum : null, desc,
+      atts.length ? atts[0].path : null, JSON.stringify(atts),
+      isAdmin ? 'approved' : 'pending', req.userName || '', isAdmin ? (req.userName || '') : '');
+  res.json({ success: true, id: r.lastInsertRowid, approval_status: isAdmin ? 'approved' : 'pending' });
+});
+
+// 管理员审核会计提交的事故: approve 计入 / reject 拒绝(可带原因, 显示给提交人)
+app.post('/api/acct/warehouse-claims/:id/approval', requireAdmin, requireRole('admin'), (req, res) => {
+  const cur = db.prepare('SELECT * FROM warehouse_claims WHERE id=?').get(req.params.id);
+  if (!cur) return res.status(404).json({ error: '记录不存在' });
+  if (cur.approval_status !== 'pending') return res.status(400).json({ error: '该记录不在待审核状态' });
+  const action = String((req.body || {}).action || '');
+  if (!['approve', 'reject'].includes(action)) return res.status(400).json({ error: '无效操作' });
+  db.prepare(`UPDATE warehouse_claims SET approval_status=?, approved_by=?, approval_note=?, updated_at=datetime('now') WHERE id=?`)
+    .run(action === 'approve' ? 'approved' : 'rejected', req.userName || '',
+      String((req.body || {}).note || '').trim().slice(0, 300), cur.id);
+  res.json({ success: true });
 });
 
 app.get('/api/acct/statements', requireAdmin, requireAcctView, (req, res) => {
