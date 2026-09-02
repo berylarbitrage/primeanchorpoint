@@ -43095,9 +43095,55 @@ function renderMergeDup() {
       ${row('HR 文件', (e.doc_count || 0) + ' 份')}
       ${row('注册时间', e.created_at ? new Date(e.created_at).toLocaleDateString('zh-CN') : '')}
       ${e.notes ? `<div style="font-size:.7rem;color:var(--gray-400);margin-top:.35rem;max-height:56px;overflow:auto;white-space:pre-wrap;border-top:1px dashed var(--gray-100);padding-top:.3rem">${esc(String(e.notes).slice(0, 400))}</div>` : ''}
-      <div style="margin-top:.45rem"><a onclick="event.stopPropagation();closeMergeDup();_inboxViewEmp(${e.id})" style="cursor:pointer;color:#1d4ed8;font-size:.74rem;text-decoration:underline">查看完整档案（含证件照）↗</a></div>
+      <div style="font-size:.7rem;color:var(--gray-400);margin-top:.35rem;border-top:1px dashed var(--gray-100);padding-top:.3rem">证件（点开可审阅/裁剪）</div>
+      <div id="mergeDocs_${e.id}" style="display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.25rem;min-height:34px"><span style="font-size:.72rem;color:var(--gray-300)">加载中…</span></div>
+      <div style="margin-top:.45rem"><a onclick="event.stopPropagation();closeMergeDup();_inboxViewEmp(${e.id})" style="cursor:pointer;color:#1d4ed8;font-size:.74rem;text-decoration:underline">查看完整档案 ↗</a></div>
     </div>`;
   }).join('');
+  [a, b].forEach(e => _mergeLoadDocs(e.id));
+}
+// 对比卡里的证件缩略图: 优先显示该档案关联申请上传的证件, 点开进同一个审阅器
+// （审阅器浮在弹窗上层）; 结果缓存, 点选保留切换重渲染时不重新请求
+function _mergeRenderDocs(empId, docs) {
+  const box = document.getElementById('mergeDocs_' + empId);
+  if (!box) return;
+  const linked = docs.filter(d => d.linked);
+  const show = linked.length ? linked : docs;
+  if (!show.length) { box.innerHTML = '<span style="font-size:.72rem;color:var(--gray-300)">无证件</span>'; return; }
+  const docLabel = { ssn_front: 'SSN 正', ssn_back: 'SSN 反', ead_front: 'EAD 正', ead_back: 'EAD 反' };
+  box.innerHTML = show.map(d => {
+    const url = `/api/admin/applicant-submissions/${d.submission_id}/docs/${d.id}/download`;
+    const label = docLabel[d.doc_type] || d.doc_type || '证件';
+    if (/\.pdf$/i.test(d.file_name || '')) {
+      return `<a href="${url}" target="_blank" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;gap:.2rem;padding:.3rem .5rem;background:#eef2ff;color:#3730a3;border-radius:8px;font-size:.7rem;font-weight:600;text-decoration:none">📄 ${esc(label)}</a>`;
+    }
+    const vs = d.verify_status || '';
+    const vBadge = vs === 'real' ? '<span style="position:absolute;top:1px;right:1px;background:#059669;color:#fff;font-size:.54rem;font-weight:700;border-radius:4px;padding:0 3px">真✓</span>'
+      : vs === 'fake' ? '<span style="position:absolute;top:1px;right:1px;background:#dc2626;color:#fff;font-size:.54rem;font-weight:700;border-radius:4px;padding:0 3px">假✗</span>'
+      : vs === 'pending' ? '<span style="position:absolute;top:1px;right:1px;background:#d97706;color:#fff;font-size:.54rem;font-weight:700;border-radius:4px;padding:0 3px">待定?</span>' : '';
+    const vBorder = vs === 'fake' ? '#fca5a5' : vs === 'real' ? '#6ee7b7' : vs === 'pending' ? '#fcd34d' : 'var(--gray-200)';
+    const jsLabel = esc(String(label).replace(/'/g, "\\'"));
+    return `<a href="javascript:void(0)" onclick="event.stopPropagation();openApplicantDocViewer('${url}','${jsLabel}')" title="${esc(label)}（点击打开审阅器：旋转/裁剪/识别/标真假）" style="text-decoration:none">
+        <span style="display:block;position:relative">
+          <img src="${url}" loading="lazy" style="width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid ${vBorder};background:#000;display:block">
+          ${vBadge}
+          <span style="position:absolute;left:0;right:0;bottom:0;background:rgba(15,23,42,.62);color:#fff;font-size:.56rem;font-weight:600;text-align:center;border-radius:0 0 6px 6px;padding:1px 0">${esc(label)}</span>
+        </span>
+      </a>`;
+  }).join('');
+}
+function _mergeLoadDocs(empId) {
+  if (!_mergeDupPair) return;
+  const cache = _mergeDupPair.docsCache || (_mergeDupPair.docsCache = {});
+  if (cache[empId]) { _mergeRenderDocs(empId, cache[empId]); return; }
+  api(`/admin/employees/${empId}/applicant-docs`).then(docs => {
+    if (!Array.isArray(docs)) docs = [];
+    cache[empId] = docs;
+    _mergeRenderDocs(empId, docs);
+  }).catch(() => {
+    const box = document.getElementById('mergeDocs_' + empId);
+    if (box) box.innerHTML = '<span style="font-size:.72rem;color:#b91c1c">证件加载失败</span>';
+  });
 }
 function pickMergeKeep(id) { if (_mergeDupPair) { _mergeDupPair.keepId = id; renderMergeDup(); } }
 function closeMergeDup() { document.getElementById('mergeDupModal').classList.remove('show'); _mergeDupPair = null; }
