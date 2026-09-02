@@ -42878,8 +42878,8 @@ function renderApplicantInbox() {
     // 待入职徽章可以点：打开与「新建员工」同一个编辑表单（预填该员工档案 + 这份申请的证件参考条）
     const _canEditEmp = (USER_ROLE === 'admin' || USER_ROLE === 'staff') && !!_matchedEmp;
     const _createdTitle = _autoCreated
-      ? ` title="工人来打卡时系统自动建的档案（待入职）。${_canEditEmp ? '点击打开档案编辑（和新建员工同一个表单）' : '请点 👤 打开档案'}核对证件、更正姓名并补齐资料，确认无误后改为在职，这张卡片才会归入历史"`
-      : (_canEditEmp ? ' title="点击打开该员工档案编辑（和新建员工同一个表单），补齐资料后改为在职"' : '');
+      ? ` title="工人来打卡时系统自动建的档案（待入职）。${_canEditEmp ? '点击打开档案编辑（和新建员工同一个表单）核对证件、更正姓名并补齐资料 — 状态已预设为在职，保存即转正、卡片归入历史' : '请点 👤 打开档案核对证件、更正姓名并补齐资料，确认无误后改为在职，这张卡片才会归入历史'}"`
+      : (_canEditEmp ? ' title="点击打开该员工档案编辑（和新建员工同一个表单）— 状态已预设为在职，核对保存即转正"' : '');
     // Show WHICH employee this card is tied to (explicitly linked, or matched by
     // phone/email) so it's obvious where to find them in 员工管理 — and obvious when
     // the "match" is actually a different person who just shares a phone/email.
@@ -42952,12 +42952,18 @@ function _inboxViewEmp(empId) {
   if (typeof viewEmployee === 'function') viewEmployee(empId);
 }
 // 待入职徽章点击: 打开与「新建员工」同一个员工编辑表单（预填已建的档案），并把这份
-// 申请上传的证件挂成参考条 — 和 createEmployeeFromApplicant 同一套界面，只是走编辑模式，
-// 方便核对证件、补齐资料后直接把状态改为在职。
+// 申请上传的证件挂成参考条 — 和 createEmployeeFromApplicant 同一套界面，只是走编辑模式。
+// 从这里点进来 = 后台正在做入职审核，所以状态预设为「在职」：核对资料后点保存即转正、
+// 卡片归入历史，不用再手动改状态；还没审核完可以把状态改回「待入职」再保存。
 function inboxEditEmp(empId, subId) {
   closeApplicantInbox();
   openEmpModal(empId);
   renderApplicantDocPanel(subId);
+  const st = document.getElementById('eStatus');
+  if (st && st.value === 'onboarding') {
+    st.value = 'active';
+    if (typeof showToast === 'function') showToast('状态已预设为「在职」— 核对无误直接保存即转正、卡片归入历史；还没审完可把状态改回「待入职」再保存', 'success', 6000);
+  }
 }
 // ── Inline name correction on an inbox card (both tabs). Saves through the same
 // PATCH endpoint the 电话查重 page uses; the server audit-logs old → new. Note it
