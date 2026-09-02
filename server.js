@@ -26455,6 +26455,25 @@ try {
   }
 } catch (e) { console.error('[AddrFix] 地址清洗失败:', e.message); }
 
+// 清洗 v2: 员工档案 街道行(address) 与 公寓框(street2) 的跨字段重复 —— v1 只清了单字段,
+// 漏掉了 "…Coventry Pl F" + street2 "F" 这类组合（验证时会发出重复的 F）。
+try {
+  const _adKey2 = 'mig_collapse_addr_dup_tokens_v2_street2';
+  if (!db.prepare('SELECT value FROM app_settings WHERE key=?').get(_adKey2)) {
+    let fixed = 0;
+    for (const row of db.prepare(`SELECT id, address, street2 FROM employees WHERE COALESCE(address,'') != '' AND COALESCE(street2,'') != ''`).all()) {
+      const a1 = _collapseRepeatAddrTokens(row.address || '');
+      let a2 = _collapseRepeatAddrTokens(row.street2 || '');
+      if (a2 && (a1.toLowerCase() === a2.toLowerCase() || a1.toLowerCase().endsWith(' ' + a2.toLowerCase()))) a2 = '';
+      if (a1 !== (row.address || '') || a2 !== (row.street2 || '')) {
+        db.prepare('UPDATE employees SET address=?, street2=? WHERE id=?').run(a1, a2, row.id); fixed++;
+      }
+    }
+    db.prepare(`INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(_adKey2, new Date().toISOString());
+    if (fixed) console.log(`[AddrFix] 员工地址+公寓框跨字段清洗: 修复 ${fixed} 条`);
+  }
+} catch (e) { console.error('[AddrFix] 地址清洗 v2 失败:', e.message); }
+
 // ════════ 🎤 面试结果登记 (/interview-result) ════════
 // 面试官搜手机号 → 已有员工/申请人则登记六项技能语言 + 备注;
 // 系统没有此人 → 显示通用入职申请二维码, 让对方先扫码填个人信息。
@@ -30911,8 +30930,14 @@ app.post('/api/validate-address', async (req, res) => {
   const { street, street2, city, state, zip, regionCode, countryName } = req.body || {};
   if (!street) return res.status(400).json({ error: 'street is required' });
 
-  const addressLines = [street];
-  if (street2) addressLines.push(street2);
+  // 发给 Google 前先把输入去重: 街道行内的连续重复词组折叠, 且街道行末尾已含公寓号时
+  // 不再单发第二行 —— 否则残留的重复数据（如 "…Pl F" + "F"）会让 Google 回显出 "F, F"。
+  const streetClean = _collapseRepeatAddrTokens(String(street).trim());
+  let street2Clean = _collapseRepeatAddrTokens(String(street2 || '').trim());
+  if (street2Clean && (streetClean.toLowerCase() === street2Clean.toLowerCase()
+    || streetClean.toLowerCase().endsWith(' ' + street2Clean.toLowerCase()))) street2Clean = '';
+  const addressLines = [streetClean];
+  if (street2Clean) addressLines.push(street2Clean);
 
   // Resolve region code from ISO code or country name
   const COUNTRY_TO_ISO = {
