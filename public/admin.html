@@ -8339,10 +8339,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   </div>
   <p id="mergeDupDesc" style="font-size:.82rem;color:var(--gray-500);margin:.2rem 0 .8rem"></p>
   <div id="mergeDupCols" style="display:grid;grid-template-columns:1fr 1fr;gap:.7rem"></div>
-  <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem">
-    <button class="btn btn-outline" onclick="closeMergeDup()">取消</button>
-    <button class="btn btn-red" id="mergeDupBtn" onclick="execMergeDup()">确认合并 / Merge</button>
-  </div>
+  <div id="mergeDupFooter" style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem;flex-wrap:wrap"></div>
 </div></div>
 
 <div class="modal-bg" id="inputPromptModal" style="z-index:9999"><div class="modal" style="max-width:420px">
@@ -17196,39 +17193,16 @@ function _execDupKeep() {
   showToast(`✅ 已保留现有档案${p && p.existingEmpName ? '「' + esc(p.existingEmpName) + '」' : ''}，这次登记已标注舍弃、新信息未保存`);
 }
 
-// 冲突里的「合并员工档案」: 打开左右对比挑选弹窗 —— 本次填写的新信息 vs 现有档案
-// 逐条挑（每一行点选用哪边的值），确认后预填进现有档案的编辑表单人工核对再保存。
-// 列表缓存里找不到现有档案行时退回旧行为：直接打开编辑表单。
+// 冲突条里的「合并员工档案」: 复用撞号冲突的对比挑选弹窗（openDupConflictPicker）。
 function _execDupMerge() {
   const p = _pendingDupSave;
   _pendingDupSave = null;
   document.getElementById('dupActionBar').style.display = 'none';
-  const empId = p && (p.existingEmpId || (currentEmpForDetail && currentEmpForDetail.id));
   closeEmpDetailModal();
-  if (!empId || !p) return;
-  const b = (allEmployees || []).find(e => e.id === empId);
-  if (!b) {
-    setTimeout(() => { if (p.convertFromWorkerId) _pendingWorkerLink = { workerId: p.convertFromWorkerId, empId }; openEmpModal(empId); }, 100);
-    return;
-  }
-  const d = p.data || {};
-  const digits = (d.ssn && d.ssn !== '__KEEP__') ? String(d.ssn).replace(/\D/g, '') : '';
-  const a = {
-    id: 0, __pending: true,
-    first_name: d.first_name || '', middle_name: d.middle_name || '', last_name: d.last_name || '',
-    phone: d.phone || '', email: d.email || '',
-    address: d.address || '', street2: d.street2 || '', city: d.city || '', state: d.state || '', zip: d.zip || '',
-    dob: d.dob || '', hire_date: d.hire_date || '',
-    ssn_digits: digits.length === 9 ? digits : '', ssn_last4: digits.length === 9 ? digits.slice(-4) : '',
-    timeclock_code: '', notes: '',
-  };
-  _mergeDupPair = { mode: 'conflict', a, b, keepId: b.id, pendingWorker: p.convertFromWorkerId || null };
-  _mergeDefaultPicks();
-  document.getElementById('mergeDupTitle').textContent = '🧩 逐条挑选要保留的信息';
-  document.getElementById('mergeDupDesc').innerHTML = '左边是<strong>本次填写的新信息</strong>，右边是<strong>现有档案</strong>。两边不同的行<strong>点一下</strong>就选用那一边的值（绿行 = 采用）。确认后会把选择预填进现有档案的编辑表单，核对无误再点「保存员工」。';
-  document.getElementById('mergeDupBtn').textContent = '应用所选 / Apply';
-  renderMergeDup();
-  document.getElementById('mergeDupModal').classList.add('show');
+  if (!p) return;
+  if (!p.existingEmpId && currentEmpForDetail) p.existingEmpId = currentEmpForDetail.id;
+  if (!p.existingEmpId) return;
+  openDupConflictPicker(p);
 }
 
 function _makeExtraContactRow(type, placeholder, value) {
@@ -17396,14 +17370,13 @@ async function saveEmployee() {
     const empName = `${emp.first_name} ${emp.last_name}（员工号：${emp.employee_id}）`;
     showConfirmModal(
       `${fieldLabel}重复 / Duplicate ${r.field === 'phone' ? 'Phone' : 'Email'}`,
-      `该${fieldLabel}已登记在员工「${empName}」名下，不允许重复。请查看已有档案后修改再保存。`,
-      '查看员工档案 / View Employee',
+      `该${fieldLabel}已登记在员工「${empName}」名下，不允许重复。点「对比处理」左右对照两份信息，逐条挑选或选择替换 / 保留 / 编辑。`,
+      '对比处理 / Compare',
       'btn',
       async () => {
         const p = { data, empId: id || null, field: r.field, fieldLabel, existingEmpId: emp.id, existingEmpName: empName, convertFromWorkerId: _convertFromWorkerId || null };
         clearModalState('empModal'); closeEmpModal();
-        await viewEmployee(emp.id);
-        _showDupActionBar(p);
+        openDupConflictPicker(p); // 直接弹左右对比挑选（缓存缺档案时其内部兜底走 详情+冲突条）
       },
       'amber',
       '关闭 / Close'
@@ -43104,7 +43077,50 @@ function inboxMergeDup(linkedId, otherId) {
   _mergeDefaultPicks();
   document.getElementById('mergeDupTitle').textContent = '🧹 合并成一个员工号';
   document.getElementById('mergeDupDesc').innerHTML = '点卡片选<strong>保留哪份档案</strong>（绿框 = 保留），两边不同的信息行可<strong>逐条点选</strong>用哪边的值（绿行 = 采用）。另一份的工时 / 打卡记录 / 文件 / 申请关联全部转移，没选中的电话 / 邮箱进备用联系方式，然后删除重复员工号。此操作不可撤销。';
-  document.getElementById('mergeDupBtn').textContent = '确认合并 / Merge';
+  _renderMergeFooter();
+  renderMergeDup();
+  document.getElementById('mergeDupModal').classList.add('show');
+}
+// 弹窗底部按钮按模式渲染: merge = 取消/确认合并; conflict = 取消 + 保留/替换/编辑 快捷键 + 应用所选
+function _renderMergeFooter() {
+  const f = document.getElementById('mergeDupFooter');
+  if (!f || !_mergeDupPair) return;
+  if (_mergeDupPair.mode === 'merge') {
+    f.innerHTML = `<button class="btn btn-outline" onclick="closeMergeDup()">取消</button>
+      <button class="btn btn-red" id="mergeDupBtn" onclick="execMergeDup()">确认合并 / Merge</button>`;
+  } else {
+    f.innerHTML = `<button class="btn btn-outline" onclick="closeMergeDup()">取消</button>
+      <button class="btn btn-outline" onclick="_dupPickKeep()" style="color:#047857;border-color:#a7f3d0" title="现有档案原样不动，丢弃这次填写的新信息（写舍弃标注）">保留现有信息 / Keep</button>
+      <button class="btn" onclick="_dupPickReplace()" style="background:#d97706;border-color:#d97706;color:#fff" title="新信息整体生效；重复的联系方式从对方档案转移并标注保留">替换成新信息 / Replace</button>
+      <button class="btn btn-outline" onclick="_dupPickEdit()" title="直接打开现有档案的编辑表单">编辑此员工 / Edit</button>
+      <button class="btn btn-red" id="mergeDupBtn" onclick="execMergeDup()">应用所选 / Apply</button>`;
+  }
+}
+function _dupPickKeep() { closeMergeDup(); _execDupKeep(); }
+function _dupPickReplace() { closeMergeDup(); _execDupReplace(); }
+function _dupPickEdit() { closeMergeDup(); _execDupEdit(); }
+// 撞号冲突入口: 直接打开左右对比挑选弹窗（逐条挑 + 替换/保留/编辑 快捷按钮），
+// 不再先进员工详情看黄条; 列表缓存找不到现有档案时兜底走旧的 详情+冲突条 流程。
+function openDupConflictPicker(p) {
+  _pendingDupSave = p;
+  const b = (allEmployees || []).find(e => e.id === p.existingEmpId);
+  if (!b) { viewEmployee(p.existingEmpId).then(() => _showDupActionBar(p)).catch(() => {}); return; }
+  const d = p.data || {};
+  const digits = (d.ssn && d.ssn !== '__KEEP__') ? String(d.ssn).replace(/\D/g, '') : '';
+  const a = {
+    id: 0, __pending: true,
+    first_name: d.first_name || '', middle_name: d.middle_name || '', last_name: d.last_name || '',
+    phone: d.phone || '', email: d.email || '',
+    address: d.address || '', street2: d.street2 || '', city: d.city || '', state: d.state || '', zip: d.zip || '',
+    dob: d.dob || '', hire_date: d.hire_date || '',
+    ssn_digits: digits.length === 9 ? digits : '', ssn_last4: digits.length === 9 ? digits.slice(-4) : '',
+    timeclock_code: '', notes: '',
+  };
+  _mergeDupPair = { mode: 'conflict', a, b, keepId: b.id, pendingWorker: p.convertFromWorkerId || null };
+  _mergeDefaultPicks();
+  document.getElementById('mergeDupTitle').textContent = `🧩 ${p.fieldLabel || '信息'}重复 — 对比处理`;
+  document.getElementById('mergeDupDesc').innerHTML = `正在保存的${esc(p.fieldLabel || '信息')}已登记在员工「${esc(p.existingEmpName || '')}」名下。左边是<strong>本次填写的新信息</strong>，右边是<strong>现有档案</strong>：两边不同的行<strong>点一下</strong>选用那边的值（绿行 = 采用），点「应用所选」把选择预填进现有档案的编辑表单核对后保存；或直接用下方快捷按钮。`;
+  _renderMergeFooter();
   renderMergeDup();
   document.getElementById('mergeDupModal').classList.add('show');
 }
