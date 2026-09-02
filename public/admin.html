@@ -43028,14 +43028,23 @@ async function inboxMergeDup(linkedId, otherId) {
   else if (b.status === 'active' && a.status !== 'active') { keep = b; absorb = a; }
   else { keep = a.id < b.id ? a : b; absorb = a.id < b.id ? b : a; }
   const nm = e => `${titleCase([e.first_name, e.last_name].filter(Boolean).join(' '))} · ${e.employee_id}`;
-  if (!confirm(`确认把两份档案合并成一个员工号？\n\n✅ 保留：${nm(keep)}（${EMP_STATUS_LABEL[keep.status] || keep.status}）\n🗑 删除：${nm(absorb)}\n\n工时 / 打卡记录 / 文件 / 申请关联全部转移到保留档案，联系方式与打卡密码一并并入，合并标注写进备注。此操作不可撤销。`)) return;
-  try {
-    const r = await api('/admin/employees/merge-dup', { method: 'POST', body: JSON.stringify({ keep_id: keep.id, absorb_id: absorb.id }) });
-    if (!r || r.error || !r.success) throw new Error((r && r.error) || '合并失败');
-    showToast(`✅ 已合并：保留 ${nm(keep)}，重复员工号 ${absorb.employee_id} 已删除`);
-    await loadEmployees();
-    openApplicantInbox(_inboxPartnerId, _inboxPartnerName); // 卡片按合并后的档案重新渲染
-  } catch (e) { showToast('合并失败：' + (e.message || e), 'error'); }
+  showConfirmModal(
+    '合并成一个员工号',
+    `保留 ${nm(keep)}（${EMP_STATUS_LABEL[keep.status] || keep.status}），删除重复的 ${nm(absorb)}。工时 / 打卡记录 / 文件 / 申请关联全部转移到保留档案，联系方式与打卡密码一并并入，合并标注写进备注。此操作不可撤销。`,
+    '确认合并 / Merge',
+    'btn-red',
+    async () => {
+      try {
+        const r = await api('/admin/employees/merge-dup', { method: 'POST', body: JSON.stringify({ keep_id: keep.id, absorb_id: absorb.id }) });
+        if (!r || r.error || !r.success) throw new Error((r && r.error) || '合并失败');
+        showToast(`✅ 已合并：保留 ${nm(keep)}，重复员工号 ${absorb.employee_id} 已删除`);
+        await loadEmployees();
+        openApplicantInbox(_inboxPartnerId, _inboxPartnerName); // 卡片按合并后的档案重新渲染
+      } catch (e) { showToast('合并失败：' + (e.message || e), 'error'); }
+    },
+    'amber',
+    '取消'
+  );
 }
 // 待入职徽章点击: 打开与「新建员工」同一个员工编辑表单（预填已建的档案），并把这份
 // 申请上传的证件挂成参考条 — 和 createEmployeeFromApplicant 同一套界面，只是走编辑模式。
