@@ -1059,6 +1059,8 @@ try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN apply_state TEXT DEF
 // inbox is driven by this linked employee reaching 在职 (after starting 待入职) —
 // NOT by any matching employee being active, which would archive legacy records.
 try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN employee_id INTEGER`); } catch(e) {}
+// 后台处理标注（如「已舍弃这次登记, 系统已有同一人, 保留原档案」）, 显示在收件箱卡片上。
+try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN review_note TEXT DEFAULT ''`); } catch(e) {}
 // 8 位数字打卡密码：新员工扫码提交入职表后发放（屏幕显示 + 短信），可在员工打卡机
 // (/timeclock) 和仓库签到 (/checkin) 代替短信验证码使用。建档时继承到 employees.timeclock_code。
 try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN timeclock_code TEXT DEFAULT ''`); } catch(e) {}
@@ -16444,6 +16446,26 @@ const APPLICANT_EDITABLE = {
 
 // ADMIN: 更正申请人资料, 和/或把这条申请关联到由它建立的员工档案
 // (关联后收件箱只在那个员工真正入职时才归档这条申请)。
+// 冲突处理选了「保留现有信息」(舍弃这次登记) 时的留痕: 系统里已有同一人，
+// 把「已舍弃、保留原档案」标注写到 ①这次登记建的员工档案备注 ②对应收件箱卡片(review_note)。
+app.post('/api/admin/applicant-submissions/mark-dup-kept', requireAdmin, blockManager, (req, res) => {
+  try {
+    const empId = parseInt((req.body || {}).employee_id), keptId = parseInt((req.body || {}).kept_employee_id);
+    if (!empId || !keptId || empId === keptId) return res.status(400).json({ error: '无效参数' });
+    const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(empId);
+    const kept = db.prepare('SELECT * FROM employees WHERE id=?').get(keptId);
+    if (!emp || !kept) return res.status(404).json({ error: '员工不存在' });
+    const stamp = new Date().toISOString().slice(0, 10);
+    const keptLabel = `${kept.first_name} ${kept.last_name} · ${kept.employee_id}`;
+    const note = `📌 ${stamp} 重复登记已舍弃：系统已有同一人「${keptLabel}」，保留原档案（本档案仅作记录）`;
+    db.prepare(`UPDATE employees SET notes=CASE WHEN COALESCE(notes,'')='' THEN ? ELSE notes || char(10) || ? END WHERE id=?`)
+      .run(note, note, emp.id);
+    const r = db.prepare(`UPDATE applicant_submissions SET review_note=? WHERE employee_id=?`)
+      .run(`🚫 ${stamp} 已舍弃这次登记：系统已有同一人「${keptLabel}」，保留原档案`, emp.id);
+    res.json({ success: true, submissions_marked: r.changes });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.patch('/api/admin/applicant-submissions/:id', requireAdmin, blockManager, (req, res) => {
   try {
     const b = req.body || {};
