@@ -17099,7 +17099,7 @@ async function _forceSaveEmployee(p) {
   );
   if (r.success || r.id) {
     await loadEmployees();
-    showToast(`✅ 员工「${p.data.first_name} ${p.data.last_name}」信息已保存，${p.fieldLabel}已转移`);
+    showToast(`✅ 员工「${p.data.first_name} ${p.data.last_name}」信息已保存，${p.fieldLabel}已转移；原信息已标注保留在原员工档案的备注里`);
   } else {
     showToast(`❌ ${r.error || '保存失败'}`, 'error');
   }

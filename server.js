@@ -20551,6 +20551,21 @@ app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {
   res.json({ ...safeEmp(emp), ssn_full, ssn_status, documents: docs, background_checks: bgChecks, recent_time: recentTime, job_history: jobHistory, voucher_history: voucherHistory, current_jobs: currentJobs });
 });
 
+// 「替换成新信息 / Replace」(force 保存) 的联系方式转移留痕: 主字段跟新的走（从原员工
+// 的 phone/email 清掉），但旧值以标注写进原员工的备注，原有信息保留备查、不丢。
+// field 只会传 'phone'/'email' 字面量, 不接受外部输入。
+function _forceStripContact(field, label, value, keepId, newOwnerLabel) {
+  const v = String(value || '').trim();
+  if (!v) return;
+  const stamp = new Date().toISOString().slice(0, 10);
+  const rows = db.prepare(`SELECT id FROM employees WHERE ${field}=? AND id!=?`).all(v, keepId);
+  for (const b of rows) {
+    const note = `📌 ${stamp} 原${label} ${v} 已替换转移至「${newOwnerLabel}」（原信息保留备查）`;
+    db.prepare(`UPDATE employees SET ${field}='', notes=CASE WHEN COALESCE(notes,'')='' THEN ? ELSE notes || char(10) || ? END WHERE id=?`)
+      .run(note, note, b.id);
+  }
+}
+
 app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
   if (!d.first_name || !d.last_name) return res.status(400).json({ error: '请填写姓名' });
@@ -20593,8 +20608,9 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
       JSON.stringify(d.social_media||{}));
     const newId = r.lastInsertRowid;
     if (d.force) {
-      if (d.phone && d.phone.trim()) db.prepare('UPDATE employees SET phone=? WHERE phone=? AND id!=?').run('', d.phone.trim(), newId);
-      if (d.email && d.email.trim()) db.prepare('UPDATE employees SET email=? WHERE email=? AND id!=?').run('', d.email.trim(), newId);
+      const ownerLabel = `${d.first_name} ${d.last_name} · ${empId}`;
+      _forceStripContact('phone', '手机号', d.phone, newId, ownerLabel);
+      _forceStripContact('email', '邮箱', d.email, newId, ownerLabel);
     }
     res.json({ success: true, id: newId, employee_id: empId });
   } catch(e) {
@@ -20615,6 +20631,11 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
           parseFloat(d.pay_rate)||0,d.pay_type||'hourly',d.status||'active',
           pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,d.notes||'',
           JSON.stringify(d.social_media||{}));
+        if (d.force) {
+          const ownerLabel = `${d.first_name} ${d.last_name} · ${retryId}`;
+          _forceStripContact('phone', '手机号', d.phone, r2.lastInsertRowid, ownerLabel);
+          _forceStripContact('email', '邮箱', d.email, r2.lastInsertRowid, ownerLabel);
+        }
         return res.json({ success: true, id: r2.lastInsertRowid, employee_id: retryId });
       } catch (e2) {
         if (e2.message.includes('UNIQUE')) return res.status(400).json({ error: '员工编号冲突, 请重试' });
@@ -20680,8 +20701,20 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
     JSON.stringify(d.social_media || JSON.parse(emp.social_media || '{}')),
     req.params.id);
   if (d.force) {
-    if (d.phone && d.phone.trim()) db.prepare('UPDATE employees SET phone=? WHERE phone=? AND id!=?').run('', d.phone.trim(), req.params.id);
-    if (d.email && d.email.trim()) db.prepare('UPDATE employees SET email=? WHERE email=? AND id!=?').run('', d.email.trim(), req.params.id);
+    const ownerLabel = `${d.first_name} ${d.last_name} · ${finalEmpId}`;
+    _forceStripContact('phone', '手机号', d.phone, req.params.id, ownerLabel);
+    _forceStripContact('email', '邮箱', d.email, req.params.id, ownerLabel);
+    // 被编辑员工自己被替换掉的旧手机号/邮箱同样留痕（上面的 UPDATE 已把 notes 设成表单值, 故在其后追加）
+    const stamp = new Date().toISOString().slice(0, 10);
+    const selfNotes = [];
+    if (emp.phone && emp.phone.trim() && String(d.phone || '').trim() !== emp.phone.trim())
+      selfNotes.push(`📌 ${stamp} 替换成新信息：原手机号 ${emp.phone.trim()}（原信息保留备查）`);
+    if (emp.email && emp.email.trim() && String(d.email || '').trim().toLowerCase() !== emp.email.trim().toLowerCase())
+      selfNotes.push(`📌 ${stamp} 替换成新信息：原邮箱 ${emp.email.trim()}（原信息保留备查）`);
+    if (selfNotes.length) {
+      const add = selfNotes.join('\n');
+      db.prepare(`UPDATE employees SET notes=CASE WHEN COALESCE(notes,'')='' THEN ? ELSE notes || char(10) || ? END WHERE id=?`).run(add, add, req.params.id);
+    }
   }
   // Sync new contact info to linked worker_account so onboarding modals (W-9, Zelle, etc.) use the latest values
   try {
