@@ -42667,11 +42667,17 @@ async function regenerateApplyQr() {
 // → button hidden but card stays in 待处理; the LINKED employee reaches 在职 →
 // card moves to the History tab. We fetch submissions + docs once and re-render
 // locally when switching tabs.
+// Cards in BOTH tabs stay editable — moving to History only marks 已入职, it is
+// not an archive lock: ✎ fixes the applicant's name in place, and clicking a doc
+// thumbnail opens the full reviewer (rotate / crop / verify), the same server
+// APIs the 电话查重 page uses.
 let _inboxPartnerId = null, _inboxPartnerName = '', _inboxSubmissions = [], _inboxTab = 'active';
+let _inboxNameEditId = null;   // submission id whose name is being edited inline
 async function openApplicantInbox(partnerId, partnerName) {
   _inboxPartnerId = partnerId;
   _inboxPartnerName = partnerName || '';
   _inboxTab = 'active';
+  _inboxNameEditId = null;
   document.getElementById('applyInboxPartner').textContent = partnerName ? '· ' + partnerName : '';
   document.getElementById('applyInboxCount').textContent = '';
   document.getElementById('applyInboxCountActive').textContent = '';
@@ -42709,6 +42715,7 @@ function _applyInboxTabStyles() {
 function switchApplicantInboxTab(tab) {
   if (tab !== 'active' && tab !== 'history') return;
   _inboxTab = tab;
+  _inboxNameEditId = null;
   _applyInboxTabStyles();
   renderApplicantInbox();
 }
@@ -42772,7 +42779,9 @@ function renderApplicantInbox() {
   body.innerHTML = shown.map(s => {
     const docs = Array.isArray(s._docs) ? s._docs : [];
     const docThumbs = docs.map(d => {
-      const url = dl(s.id, d.id);
+      // `_bust` is set after a crop is saved/cleared in the reviewer so a
+      // re-render doesn't fall back to the browser-cached old thumbnail.
+      const url = dl(s.id, d.id) + (d._bust ? `?t=${d._bust}` : '');
       const label = docLabel[d.doc_type] || d.doc_type;
       const isPdf = /\.pdf$/i.test(d.file_name || '');
       if (isPdf) {
@@ -42783,7 +42792,8 @@ function renderApplicantInbox() {
         : vs === 'fake' ? '<span style="position:absolute;top:1px;right:1px;background:#dc2626;color:#fff;font-size:.58rem;font-weight:700;border-radius:5px;padding:0 4px">假✗</span>'
         : vs === 'pending' ? '<span style="position:absolute;top:1px;right:1px;background:#d97706;color:#fff;font-size:.58rem;font-weight:700;border-radius:5px;padding:0 4px">待定?</span>' : '';
       const vBorder = vs === 'fake' ? '#fca5a5' : vs === 'real' ? '#6ee7b7' : vs === 'pending' ? '#fcd34d' : 'var(--gray-200)';
-      return `<a href="${url}" target="_blank" title="${label}（点击查看大图）" style="text-decoration:none">
+      const jsLabel = esc(String(label).replace(/'/g, "\\'"));
+      return `<a href="javascript:void(0)" onclick="openApplicantDocViewer('${url}','${jsLabel}')" title="${esc(label)}（点击审阅：旋转 / 裁剪 / 识别 / 标真假，原件永远保留）" style="text-decoration:none">
           <span style="display:block;position:relative">
             <img src="${url}" loading="lazy" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid ${vBorder};background:#000;display:block">
             ${vBadge}
@@ -42827,12 +42837,26 @@ function renderApplicantInbox() {
         : ((USER_ROLE === 'admin' || USER_ROLE === 'staff')
           ? `<button class="btn btn-sm" style="padding:.2rem .55rem;font-size:.72rem;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0" onclick="createEmployeeFromApplicant(${s.id})">➕ 创建员工</button>`
           : '');
+    // Name is editable in place in BOTH tabs — 已入职 only means the employee档案
+    // is live, the application record itself can still be corrected (audited).
+    const _canEditName = USER_ROLE === 'admin' || USER_ROLE === 'staff';
+    const nameHtml = (_inboxNameEditId === s.id && _canEditName)
+      ? `<span style="display:inline-flex;align-items:center;gap:.35rem;flex-wrap:wrap">
+          <input id="inboxNameInput${s.id}" value="${esc(s.name || '').replace(/"/g, '&quot;')}" maxlength="120" placeholder="工人法定全名"
+            style="padding:.28rem .55rem;border:1.5px solid var(--sky,#29AAE1);border-radius:6px;font-size:.92rem;font-weight:600;width:230px;max-width:60vw"
+            onkeydown="if(event.key==='Enter'){saveInboxApplicantName(${s.id});}else if(event.key==='Escape'){cancelInboxApplicantName();}">
+          <button id="inboxNameSave${s.id}" class="btn btn-sm" style="padding:.22rem .7rem;font-size:.74rem;background:#1A3F7A;color:#fff;border:none" onclick="saveInboxApplicantName(${s.id})">保存</button>
+          <button class="btn btn-sm" style="padding:.22rem .7rem;font-size:.74rem;background:#fff;color:var(--gray-500);border:1px solid var(--gray-300)" onclick="cancelInboxApplicantName()">取消</button>
+        </span>`
+      : `<span style="font-weight:700;font-size:1rem;color:var(--ink,#0f172a)">${esc(s.name || '—')}</span>${_canEditName
+          ? `<button onclick="editInboxApplicantName(${s.id})" title="更正姓名（待处理 / 历史都可以改；改动会记入审计日志）" style="padding:1px 7px;font-size:.72rem;border:1px solid var(--gray-300);background:#fff;color:var(--gray-500);border-radius:6px;cursor:pointer;line-height:1.4">✎</button>`
+          : ''}`;
     return `<div style="border:1px solid var(--gray-200);border-radius:12px;padding:.85rem 1rem;margin-bottom:.7rem;background:${stage === 'history' ? '#fafafa' : '#fff'};box-shadow:0 1px 2px rgba(15,23,42,.04)">
       <div style="display:flex;align-items:flex-start;gap:.7rem">
         <div style="flex:0 0 auto;width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#4A90D9,#1A3F7A);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.05rem">${initial}</div>
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap">
-            <span style="font-weight:700;font-size:1rem;color:var(--ink,#0f172a)">${esc(s.name || '—')}</span>
+            ${nameHtml}
             ${s.position ? `<span style="font-size:.8rem;color:#1A3F7A;background:#eff6ff;border-radius:6px;padding:1px 8px">${esc(s.position)}</span>` : ''}
             ${s.apply_state ? `<span title="申请地点 / Applied location" style="font-size:.78rem;font-weight:600;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:1px 8px">📍 ${esc(s.apply_state)}</span>` : ''}
           </div>
@@ -42860,6 +42884,54 @@ function closeApplicantInbox() { document.getElementById('applyInboxModal').clas
 function _inboxViewEmp(empId) {
   closeApplicantInbox();
   if (typeof viewEmployee === 'function') viewEmployee(empId);
+}
+// ── Inline name correction on an inbox card (both tabs). Saves through the same
+// PATCH endpoint the 电话查重 page uses; the server audit-logs old → new. Note it
+// fixes the application record only — a linked employee档案 keeps its own name
+// (editable in 员工管理 via the 👤 chip).
+function editInboxApplicantName(id) {
+  _inboxNameEditId = id;
+  renderApplicantInbox();
+  const el = document.getElementById('inboxNameInput' + id);
+  if (el) { el.focus(); el.select(); }
+}
+function cancelInboxApplicantName() {
+  _inboxNameEditId = null;
+  renderApplicantInbox();
+}
+async function saveInboxApplicantName(id) {
+  const el = document.getElementById('inboxNameInput' + id);
+  const s = (_inboxSubmissions || []).find(x => x.id === id);
+  if (!el || !s) return;
+  const name = el.value.trim();
+  if (!name) { showToast('姓名不能为空', 'error'); el.focus(); return; }
+  if (name === String(s.name || '').trim()) { cancelInboxApplicantName(); return; }
+  const btn = document.getElementById('inboxNameSave' + id);
+  el.disabled = true;
+  if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
+  try {
+    const r = await api(`/admin/applicant-submissions/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) });
+    if (!r || r.error || !r.success) throw new Error((r && r.error) || '保存失败');
+    s.name = r.name || name;
+    _inboxNameEditId = null;
+    renderApplicantInbox();
+    showToast('✅ 姓名已更正（原名已记入审计日志）');
+  } catch (e) {
+    el.disabled = false;
+    if (btn) { btn.disabled = false; btn.textContent = '保存'; }
+    showToast('保存失败：' + (e.message || e), 'error');
+  }
+}
+// Reviewer actions (verify / crop) land on docs cached in `_inboxSubmissions`;
+// patch the cache and repaint so card badges & thumbnails update immediately.
+function _inboxSyncDocPatch(subId, docIds, patch) {
+  const s = (_inboxSubmissions || []).find(x => String(x.id) === String(subId));
+  if (!s || !Array.isArray(s._docs)) return;
+  const ids = (docIds || []).map(String);
+  let hit = false;
+  s._docs.forEach(d => { if (ids.includes(String(d.id))) { Object.assign(d, patch); hit = true; } });
+  const modal = document.getElementById('applyInboxModal');
+  if (hit && modal && modal.classList.contains('show')) renderApplicantInbox();
 }
 async function deleteApplicant(id) {
   const name = _inboxPartnerName ? `【${_inboxPartnerName}】` : '';
@@ -43409,6 +43481,7 @@ async function setApplicantDocVerify(st) {
     if (r && r.error) throw new Error(r.error);
     _adVwVerify = next;
     _adVwRenderVerify();
+    _inboxSyncDocPatch(_adVwDocRef.subId, (r && r.updated_ids) || [_adVwDocRef.docId], { verify_status: next });
     showToast(next === 'real' ? '✅ 整组已标记为真' : next === 'fake' ? '❌ 整组已标记为假' : next === 'pending' ? '❓ 整组标为待确定' : '已取消标记');
     if (window._empApplDocsSubId && typeof renderApplicantDocPanel === 'function') renderApplicantDocPanel(window._empApplDocsSubId);
     // 连续裁剪流程: 裁剪后等结论 → 给了结论自动跳下一张; 组内状态同步
@@ -43473,6 +43546,7 @@ async function saveApplicantDocCrop() {
     const sv = document.getElementById('adVwSaveCropBtn'); if (sv) sv.style.display = 'none';
     const cl = document.getElementById('adVwClearCropBtn'); if (cl) cl.style.display = '';
     _adVwBustThumbs();
+    _inboxSyncDocPatch(_adVwDocRef.subId, [_adVwDocRef.docId], { has_cropped: 1, _bust: Date.now() });
     return true;
   } catch (e) { showToast('保存失败: ' + (e.message || e), 'error', 6000); return false; }
 }
@@ -43485,6 +43559,7 @@ async function clearApplicantDocCrop() {
     const cl = document.getElementById('adVwClearCropBtn'); if (cl) cl.style.display = 'none';
     restoreApplicantDocCrop();
     _adVwBustThumbs();
+    _inboxSyncDocPatch(_adVwDocRef.subId, [_adVwDocRef.docId], { has_cropped: 0, _bust: Date.now() });
   } catch (e) { showToast('操作失败: ' + (e.message || e), 'error'); }
 }
 // 保存/取消裁剪版后, 刷新页面上所有该文件的缩略图 (加时间戳绕过缓存)
