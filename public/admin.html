@@ -8102,6 +8102,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <button class="btn btn-sm" onclick="_execDupReplace()" style="background:#d97706;border-color:#d97706;color:#fff">替换成新信息 / Replace</button>
       <button class="btn btn-sm btn-outline" onclick="_execDupMerge()" style="color:#1d4ed8;border-color:#93c5fd">合并员工档案 / Merge</button>
       <button class="btn btn-sm btn-outline" onclick="_execDupEdit()">编辑此员工 / Edit</button>
+      <button class="btn btn-sm btn-outline" onclick="_execDupKeep()" style="color:#047857;border-color:#a7f3d0" title="现有员工档案原样不动，丢弃这次填的新信息">保留现有信息 / Keep</button>
     </div>
   </div>
   <div id="empDetailContent"></div>
@@ -17149,6 +17150,15 @@ function _execDupEdit() {
     if (p && p.convertFromWorkerId) _pendingWorkerLink = { workerId: p.convertFromWorkerId, empId };
     openEmpModal(empId);
   }, 100);
+}
+
+// 保留现有信息: 与「替换/合并」相反 — 现有员工档案原样不动, 这次填的新信息直接丢弃。
+function _execDupKeep() {
+  const p = _pendingDupSave;
+  _pendingDupSave = null;
+  document.getElementById('dupActionBar').style.display = 'none';
+  closeEmpDetailModal();
+  showToast(`✅ 已保留现有档案${p && p.existingEmpName ? '「' + esc(p.existingEmpName) + '」' : ''}，这次填的新信息未保存`);
 }
 
 function _execDupMerge() {
