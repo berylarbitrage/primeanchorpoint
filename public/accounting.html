@@ -111,7 +111,6 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <button class="tab" id="tabStmt" onclick="showTab('stmt')">🏦 银行流水 Bank Statements</button>
     <button class="tab" id="tabClaims" onclick="showTab('claims')">⚠️ 赔偿事故 Claims</button>
     <button class="tab" id="tabBank" onclick="showTab('bank')" style="display:none">🔗 银行直连 Bank Feed <span id="bankUnrevBadge" style="display:none;background:#dc2626;color:#fff;border-radius:10px;font-size:.68rem;padding:1px 7px;vertical-align:middle"></span></button>
-    <button class="tab" id="tabSum" onclick="showTab('sum')" style="display:none">📊 汇总 Summary</button>
   </div>
 
   <div id="paneInv">
@@ -363,33 +362,6 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       </div>
     </div>
   </div>
-
-  <!-- 📊 汇总 Summary: 银行直连交易按「标注」分类汇总 -->
-  <div id="paneSum" style="display:none">
-    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
-      <select id="sumFltAcct" onchange="sumRender()"><option value="">全部账户</option></select>
-      <select id="sumFltPreset" onchange="sumPreset(this.value)">
-        <option value="">自定日期</option>
-        <option value="all" selected>全部时间</option>
-        <option value="tm">本月</option>
-        <option value="lm">上月</option>
-        <option value="30">最近 30 天</option>
-        <option value="y">今年</option>
-      </select>
-      <input type="date" id="sumFltFrom" onchange="document.getElementById('sumFltPreset').value='';sumLoad()">
-      <span style="color:var(--g400)">→</span>
-      <input type="date" id="sumFltTo" onchange="document.getElementById('sumFltPreset').value='';sumLoad()">
-      <button class="btn btn-sm btn-outline" onclick="sumLoad()">🔄 刷新</button>
-      <span id="sumStats" style="font-size:.8rem;color:var(--g500)"></span>
-    </div>
-    <div id="sumChips" style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.8rem"></div>
-    <div class="card" style="overflow-x:auto">
-      <table><thead><tr>
-        <th style="width:24px"></th><th>分类</th><th style="text-align:right">笔数</th><th style="text-align:right">收入</th><th style="text-align:right">支出</th><th style="text-align:right">净额</th><th style="text-align:right">支出占比</th>
-      </tr></thead><tbody id="sumBody"><tr><td colspan="7" style="color:var(--g400)">加载中…</td></tr></tbody></table>
-    </div>
-    <p style="font-size:.74rem;color:var(--g400);margin-top:.5rem">按「银行直连」页交易的<strong>标注分类</strong>汇总（数据同一份）；点分类行可展开明细（员工 / 对方 / 子分类）。「❓ 未标注」的交易请先到「银行直连」页补标注；「🚫 无关」不计入上方收支合计。</p>
-  </div>
 </div>
 
 <script src="bank-ann.js?v=1"></script>
@@ -491,9 +463,8 @@ function enterMain() {
   document.getElementById('gate').style.display = 'none';
   document.getElementById('main').style.display = '';
   document.getElementById('whoami').textContent = `${USER.display_name || USER.username}（${USER.role === 'accounting' ? '会计' : USER.role === 'cs' ? '客服' : USER.role === 'admin' ? '管理员' : USER.role}）`;
-  // 银行直连 + 汇总: 仅 admin / 会计可见
+  // 银行直连: 仅 admin / 会计可见
   document.getElementById('tabBank').style.display = ['admin', 'accounting'].includes(USER.role) ? '' : 'none';
-  document.getElementById('tabSum').style.display = ['admin', 'accounting'].includes(USER.role) ? '' : 'none';
   // 新增赔偿事故: 会计可提交(待管理员审核), admin 直接生效
   document.getElementById('btnClaimAdd').style.display = ['admin', 'accounting'].includes(USER.role) ? '' : 'none';
   loadAll();
@@ -515,11 +486,8 @@ function showTab(t) {
   document.getElementById('tabStmt').classList.toggle('on', t === 'stmt');
   document.getElementById('tabClaims').classList.toggle('on', t === 'claims');
   document.getElementById('tabBank').classList.toggle('on', t === 'bank');
-  document.getElementById('tabSum').classList.toggle('on', t === 'sum');
   document.getElementById('paneBank').style.display = t === 'bank' ? '' : 'none';
   if (t === 'bank') bankInit();
-  document.getElementById('paneSum').style.display = t === 'sum' ? '' : 'none';
-  if (t === 'sum') sumInit();
   document.getElementById('paneInv').style.display = t === 'inv' ? '' : 'none';
   document.getElementById('paneStmt').style.display = t === 'stmt' ? '' : 'none';
   document.getElementById('paneClaims').style.display = t === 'claims' ? '' : 'none';
@@ -1829,172 +1797,6 @@ async function bankReviewNote(id, note) {
     await bapi('/api/acct/bank/transactions/' + id + '/review', { method: 'POST', body: JSON.stringify({ reviewed: x ? x.reviewed : 0, note }) });
     if (x) x.review_note = note;
   } catch (e) { toast(e.message || '保存失败', true); }
-}
-
-// ── 📊 汇总: 银行直连交易按「标注」分类汇总 (数据与银行直连页同源: /api/plaid/* + 标注 ANN) ──
-let _sumTxns = [];
-function _sumFmtDate(x) { return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); }
-function sumPreset(v) {
-  const f = document.getElementById('sumFltFrom'), t = document.getElementById('sumFltTo');
-  const now = new Date();
-  if (v === 'all') { f.value = ''; t.value = ''; }
-  else if (v === 'tm') { f.value = _sumFmtDate(new Date(now.getFullYear(), now.getMonth(), 1)); t.value = ''; }
-  else if (v === 'lm') { f.value = _sumFmtDate(new Date(now.getFullYear(), now.getMonth() - 1, 1)); t.value = _sumFmtDate(new Date(now.getFullYear(), now.getMonth(), 0)); }
-  else if (v === '30') { const d = new Date(now); d.setDate(d.getDate() - 30); f.value = _sumFmtDate(d); t.value = ''; }
-  else if (v === 'y') { f.value = now.getFullYear() + '-01-01'; t.value = ''; }
-  else return; // 自定日期: 保留手填的范围
-  sumLoad();
-}
-async function sumInit() {
-  try {
-    if (!_plaidAccts) _plaidAccts = await bapi('/api/plaid/accounts');
-    const accs = (_plaidAccts && _plaidAccts.accounts) || [];
-    const sel = document.getElementById('sumFltAcct');
-    if (sel.options.length <= 1) {
-      sel.innerHTML = '<option value="">全部账户</option>' + accs.map(a =>
-        `<option value="${esc(a.account_id)}">${esc(a.institution || '')} · ${esc(a.company_label || a.name || '')} ··${esc(a.mask || '')}</option>`).join('');
-    }
-  } catch (e) {}
-  sumLoad(); // 每次进 tab 都重新拉: 标注可能刚在「银行直连」页改过
-}
-async function sumLoad() {
-  const q = new URLSearchParams();
-  const f = document.getElementById('sumFltFrom').value; if (f) q.set('start', f);
-  const t = document.getElementById('sumFltTo').value; if (t) q.set('end', t);
-  q.set('limit', '5000');
-  try {
-    const [d] = await Promise.all([bapi('/api/plaid/transactions?' + q.toString()), annLoadAll()]);
-    _sumTxns = d.transactions || [];
-  } catch (e) {
-    document.getElementById('sumBody').innerHTML = '<tr><td colspan="7" style="color:#dc2626">' + esc(e.message || '加载失败') + '</td></tr>';
-    return;
-  }
-  sumRender();
-}
-// 每笔交易归到哪个汇总分类: 前缀型标注归大类(员工工资/木板钱…), 固定分类各自一行, 公司往来按公司分行
-function _sumCatOf(t) {
-  const b = ANN[t.txn_id];
-  if (!b || !b.payee) return { key: '__none__', label: '❓ 未标注' };
-  const p = String(b.payee);
-  if (p === BS_PAYEE_NA) return { key: '__na__', label: '🚫 无关' };
-  if (_bsIsEmp(p)) return { key: 'k:emp', label: '👷 员工工资' };
-  if (_bsIsPallet(p)) return { key: 'k:pallet', label: '🪵 木板钱' };
-  if (_bsIsCheck(p)) return p.indexOf(BS_CHECK_DEP_PREFIX) === 0 ? { key: 'k:ckdep', label: '📥 存支票' } : { key: 'k:ckwd', label: '📤 取支票' };
-  if (_bsIsTruck(p)) return { key: 'k:truck', label: '🚚 卡车费' };
-  if (_bsIsInternal(p) || p === BS_PAYEE_PAP || p === BS_PAYEE_PAW) return { key: 'k:internal', label: '🔁 内部转账' };
-  if (_bsIsInsur(p)) return { key: 'k:insur', label: '🛡️ 保险费' };
-  if (_bsIsUnload(p)) return { key: 'k:unload', label: '📦 卸柜账单' };
-  if (_bsIsRent(p)) return { key: 'k:rent', label: '🏠 房租' };
-  if (_bsIsFx(p)) return { key: 'k:fx', label: '💱 换汇' };
-  if (_bsIsWhdep(p)) return { key: 'k:whdep', label: '🏭 仓库押金' };
-  if (_bsIsReferral(p)) return { key: 'k:referral', label: '🤝 推荐费' };
-  if (_bsIsWageBonus(p)) return { key: 'k:wagebonus', label: '🎁 发工资奖励' };
-  const fixed = {
-    [BS_PAYEE_BANKFEE]: '🏦 银行费用', [BS_PAYEE_OFFICE]: '🧾 办公费用', [BS_PAYEE_COMPFEE]: '🏛️ 公司相关费用',
-    [BS_PAYEE_MEAL]: '🍽️ 餐饮支出', [BS_PAYEE_ACCT]: '🧮 会计费用',
-    [BS_PAYEE_LAWSUIT]: '⚖️ 诉讼费', [BS_PAYEE_LAWYER]: '👨‍⚖️ 律师费用',
-    [BS_PAYEE_CLAIM]: '📋 Claim', [BS_PAYEE_CC]: '💳 还 Prime Anchor Point 信用卡',
-    [BS_PAYEE_BINTIQUE]: '📦 Bintique 货款', [BS_PAYEE_DREAMHORSE]: '↩️ 退回以梦为马的 eBay 货款',
-    [BS_PAYEE_CASH]: '💵 取现金', [BS_PAYEE_CASH_DEP]: '💰 存现金',
-    [BS_PAYEE_RETURNED]: '↩️ 退回款 Returned Payment',
-  };
-  if (fixed[p]) return { key: 'f:' + p, label: fixed[p] };
-  if (BS_PAYEE_PEOPLE.includes(p)) return { key: 'k:personal', label: '🧍 个人（拿回家）' };
-  return { key: 'co:' + p, label: '🏢 ' + p };
-}
-// 分类行展开后的明细维度: 员工姓名 / 对方 / 子分类(purpose) / 未标注按商户
-function _sumSubOf(t) {
-  const b = ANN[t.txn_id];
-  if (!b || !b.payee) return t.merchant || t.name || '（无商户名）';
-  const p = String(b.payee);
-  if (p === BS_PAYEE_PAP) return 'Prime Anchor Point';
-  if (p === BS_PAYEE_PAW) return 'Prime Anchor Workforce';
-  const kind = _bsPayeeKind(b);
-  if (kind === 'employee') { const e = _bsEmpParse(p); return [e.co, e.name].filter(Boolean).join(' · ') || '（未填姓名）'; }
-  if (kind === 'pallet') return _bsPalletParse(p) || '（未选对方）';
-  if (kind === 'check') { const ns = _bsCheckParse(p).names; return ns.length ? ns.join('、') : '（未选对方）'; }
-  if (kind === 'truck') return _bsTruckParse(p) || '（未选公司）';
-  if (kind === 'internal') return _bsInternalParse(p) || '（未选公司）';
-  if (kind === 'insur') return _bsInsurParse(p) || '（未选保险公司）';
-  if (kind === 'unload') return _bsUnloadParse(p) || '（未选公司）';
-  if (kind === 'rent') return _bsRentParse(p) || '（未选房东）';
-  if (kind === 'fx') return _bsFxParse(p) || '（未选对方）';
-  if (kind === 'whdep') return _bsWhdepParse(p) || '（未选仓库）';
-  if (kind === 'referral') return _bsReferralParse(p) || '（未填推荐人）';
-  if (kind === 'wagebonus') return _bsWageBonusParse(p) || '（未填姓名）';
-  if (kind === 'bankfee' || kind === 'office' || kind === 'compfee' || kind === 'meal' || kind === 'acct') return String(b.purpose || '').trim() || '（未填分类）';
-  if (kind === 'personal') return p + (String(b.purpose || '').trim() ? ' · ' + String(b.purpose).trim() : '');
-  if (kind === 'company') return String(b.purpose || '').trim() || (t.merchant || t.name || '—');
-  return String(b.note || '').trim() || (t.merchant || t.name || '—');
-}
-function sumToggle(row, idx) {
-  const open = row._open = !row._open;
-  row.parentElement.querySelectorAll('tr[data-sum="' + idx + '"]').forEach(r => { r.style.display = open ? '' : 'none'; });
-  const a = row.querySelector('.grp-arrow'); if (a) a.textContent = open ? '▼' : '▶';
-}
-function sumRender() {
-  const acct = document.getElementById('sumFltAcct').value;
-  const list = acct ? _sumTxns.filter(t => t.account_id === acct) : _sumTxns;
-  const cats = [], byKey = {};
-  let inAll = 0, outAll = 0, noneCnt = 0, naCnt = 0;
-  for (const t of list) {
-    const isOut = (t.amount || 0) > 0;
-    const amt = Math.abs(t.amount || 0);
-    const c = _sumCatOf(t);
-    if (c.key === '__none__') noneCnt++;
-    if (c.key === '__na__') naCnt++;
-    else { if (isOut) outAll += amt; else inAll += amt; }
-    let g = byKey[c.key];
-    if (!g) { g = byKey[c.key] = { key: c.key, label: c.label, n: 0, inSum: 0, outSum: 0, subs: {}, subList: [] }; cats.push(g); }
-    g.n++; if (isOut) g.outSum += amt; else g.inSum += amt;
-    const sl = _sumSubOf(t);
-    let s = g.subs[sl];
-    if (!s) { s = g.subs[sl] = { label: sl, n: 0, inSum: 0, outSum: 0 }; g.subList.push(s); }
-    s.n++; if (isOut) s.outSum += amt; else s.inSum += amt;
-  }
-  // 排序: 未标注置顶(要先补), 无关沉底, 中间按金额大小
-  cats.sort((a, b) => {
-    const w = k => k === '__none__' ? -1 : k === '__na__' ? 1 : 0;
-    return (w(a.key) - w(b.key)) || ((b.inSum + b.outSum) - (a.inSum + a.outSum));
-  });
-  const netAll = inAll - outAll;
-  document.getElementById('sumChips').innerHTML =
-    `<span class="chip">收入<b style="color:#047857">+${money(inAll)}</b></span>
-     <span class="chip">支出<b style="color:#dc2626">−${money(outAll)}</b></span>
-     <span class="chip">净额<b style="color:${netAll >= 0 ? '#047857' : '#dc2626'}">${netAll >= 0 ? '+' : '−'}${money(Math.abs(netAll))}</b></span>
-     <span class="chip">共 ${list.length} 笔${naCnt ? ` · 🚫 无关 ${naCnt} 笔（未计入）` : ''}${noneCnt ? ` · <span style="color:#b91c1c;font-weight:700">❓ 未标注 ${noneCnt} 笔</span>` : ''}</span>`;
-  const SUB_MAX = 50;
-  document.getElementById('sumBody').innerHTML = cats.map((g, i) => {
-    const net = g.inSum - g.outSum;
-    const na = g.key === '__na__';
-    const pct = (!na && outAll > 0 && g.outSum > 0) ? (g.outSum / outAll * 100) : 0;
-    const subsSorted = g.subList.slice().sort((a, b) => (b.inSum + b.outSum) - (a.inSum + a.outSum));
-    const shown = subsSorted.slice(0, SUB_MAX);
-    const rest = subsSorted.slice(SUB_MAX);
-    if (rest.length) {
-      const r = { label: `…其余 ${rest.length} 项`, n: 0, inSum: 0, outSum: 0 };
-      rest.forEach(x => { r.n += x.n; r.inSum += x.inSum; r.outSum += x.outSum; });
-      shown.push(r);
-    }
-    const subRows = shown.map(s => `<tr data-sum="${i}" style="display:none;background:#f8fafc">
-      <td></td>
-      <td style="font-size:.8rem;color:var(--g600);padding-left:1.2rem">↳ ${esc(s.label)}</td>
-      <td style="text-align:right;font-size:.78rem;color:var(--g400)">${s.n}</td>
-      <td style="text-align:right;font-size:.8rem;color:#047857">${s.inSum ? '+' + money(s.inSum) : ''}</td>
-      <td style="text-align:right;font-size:.8rem;color:#dc2626">${s.outSum ? '−' + money(s.outSum) : ''}</td>
-      <td style="text-align:right;font-size:.8rem;color:var(--g500)">${(s.inSum - s.outSum) >= 0 ? '+' : '−'}${money(Math.abs(s.inSum - s.outSum))}</td>
-      <td></td>
-    </tr>`).join('');
-    return `<tr style="cursor:pointer${na ? ';opacity:.55' : ''}" onclick="sumToggle(this,${i})" title="点击展开明细">
-      <td style="color:var(--g400)"><span class="grp-arrow">▶</span></td>
-      <td style="font-weight:700">${esc(g.label)}${g.key === '__none__' ? ' <span class="badge ann-badge">去「银行直连」补标注</span>' : ''}</td>
-      <td style="text-align:right;color:var(--g500)">${g.n}</td>
-      <td style="text-align:right;color:#047857;font-weight:600">${g.inSum ? '+' + money(g.inSum) : '<span style="color:var(--g300);font-weight:400">—</span>'}</td>
-      <td style="text-align:right;color:#dc2626;font-weight:600">${g.outSum ? '−' + money(g.outSum) : '<span style="color:var(--g300);font-weight:400">—</span>'}</td>
-      <td style="text-align:right;font-weight:800;color:${net >= 0 ? '#047857' : '#dc2626'}">${net >= 0 ? '+' : '−'}${money(Math.abs(net))}</td>
-      <td style="text-align:right;color:var(--g400);font-size:.76rem">${pct ? pct.toFixed(1) + '%' : ''}</td>
-    </tr>` + subRows;
-  }).join('') || '<tr><td colspan="7" style="color:var(--g400)">这个日期范围内没有交易。</td></tr>';
 }
 
 // ── init：本地有 token 就直接进 ──
