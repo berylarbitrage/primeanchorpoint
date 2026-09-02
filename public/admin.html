@@ -16679,6 +16679,20 @@ function openEmpModal(id) {
     document.getElementById('eSocialWechat').value    = sm.wechat||'';
     document.getElementById('eSocialFacebook').value  = sm.facebook||'';
     document.getElementById('eSocialInstagram').value = sm.instagram||'';
+    // 列表缓存可能滞后或缺字段（打卡自动建档、别的标签页刚建档等）→ 拉全量档案，
+    // 把打开时仍为空的 电话/邮箱/地址/出生日期 等补上；只填空的，不覆盖已显示或正在输入的值
+    api(`/admin/employees/${id}`).then(full => {
+      if (!full || full.error) return;
+      const fill = (elId, v) => { const el = document.getElementById(elId); if (el && !el.value && v) el.value = v; };
+      fill('ePhone', full.phone); fill('eEmail', full.email);
+      fill('eAddr', full.address); fill('eStreet2', full.street2);
+      fill('eCity', full.city); fill('eZip', full.zip);
+      fill('eHire', full.hire_date);
+      fill('eEmgName', full.emergency_name); fill('eEmgPhone', full.emergency_phone); fill('eEmgRel', full.emergency_relation);
+      const stSel = document.getElementById('eState');
+      if (stSel && !stSel.value && full.state) fillStateSelect(stSel, full.state);
+      if (full.dob && typeof getDobValue === 'function' && !getDobValue()) setDobValue(full.dob);
+    }).catch(() => {});
   } else {
     setDobValue('');
     ['eFirst','eMiddle','eLast','ePhone','eEmail','eAddr','eStreet2','eCity','eZip',
@@ -42969,6 +42983,16 @@ function inboxEditEmp(empId, subId) {
   closeApplicantInbox();
   openEmpModal(empId);
   renderApplicantDocPanel(subId);
+  // 档案里空着的联系方式直接用这份申请填的信息补上（卡片上就能看到的电话/邮箱/地址）
+  const s = (_inboxSubmissions || []).find(x => x.id === subId);
+  if (s) {
+    const fill = (elId, v) => { const el = document.getElementById(elId); if (el && !el.value && v) el.value = v; };
+    fill('ePhone', s.phone); fill('eEmail', s.email);
+    fill('eAddr', s.address1); fill('eStreet2', s.address2);
+    fill('eCity', s.city); fill('eZip', s.zip);
+    const stSel = document.getElementById('eState');
+    if (stSel && !stSel.value && s.state) fillStateSelect(stSel, s.state);
+  }
   const st = document.getElementById('eStatus');
   if (st && st.value === 'onboarding') {
     st.value = 'active';
