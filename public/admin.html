@@ -42850,12 +42850,17 @@ function _inboxOtherMatches(s, excludeId) {
 //   'new'     — no employee档案 yet → show "创建员工" button (待处理)
 //   'created' — employee exists but onboarding not finished → button hidden, stays 待处理
 //   'history' — the LINKED employee reached 在职(已入职) → moves to History tab
-// History is driven only by the linked employee transitioning 待入职 → 在职. A
-// plain phone/email match (e.g. a legacy employee already 在职, with no link) just
-// hides the "创建员工" button — it never auto-archives the card.
+// 例外：关联档案还是待入职、但系统里已有同一人的其他「在职」档案（重复登记, 如打卡
+// 自动建档撞上已入职老档案）→ 这张卡不再显示待入职、不用再走入职, 直接按已入职归历史。
+// A plain phone/email match with no link just hides the "创建员工" button —
+// it never auto-archives the card.
 function applicantStage(s) {
   const linked = linkedEmployeeForApplicant(s);
-  if (linked) return linked.status === 'active' ? 'history' : 'created';
+  if (linked) {
+    if (linked.status === 'active') return 'history';
+    if (_inboxOtherMatches(s, linked.id).some(e => e.status === 'active')) return 'history';
+    return 'created';
+  }
   return matchEmployeeForApplicant(s) ? 'created' : 'new';
 }
 function renderApplicantInbox() {
@@ -42949,7 +42954,7 @@ function renderApplicantInbox() {
       : '';
     const _pillStyle = 'padding:.2rem .55rem;font-size:.72rem;background:#fffbeb;color:#b45309;border:1px solid #fde68a;border-radius:6px;font-weight:600';
     const mkEmp = stage === 'history'
-      ? '<span style="padding:.2rem .55rem;font-size:.72rem;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:6px;font-weight:600">✓ 已入职</span>'
+      ? `<span${_linkedEmp && _linkedEmp.status !== 'active' ? ' title="系统里已有同一人的在职档案（见红色标注），此登记无需再入职"' : ''} style="padding:.2rem .55rem;font-size:.72rem;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:6px;font-weight:600">✓ 已入职</span>`
       : stage === 'created'
         ? (_canEditEmp
           ? `<button${_createdTitle} onclick="inboxEditEmp(${_matchedEmp.id},${s.id})" style="${_pillStyle};cursor:pointer">${_createdLabel}</button>`
