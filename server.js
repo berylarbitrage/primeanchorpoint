@@ -16297,6 +16297,30 @@ app.get('/api/admin/applicant-submissions/:id/docs/:docId/download', requireAdmi
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ADMIN: 员工档案「证件」区 — 该员工名下申请上传的证件。提交时挂上的 employee_id
+// 优先；没有显式关联的按 电话/邮箱 兜底匹配（同收件箱 matchEmployeeForApplicant 的规则）。
+// 每张带 submission_id, 前端走上面同一套 docs/download/审阅接口。
+app.get('/api/admin/employees/:id/applicant-docs', requireAdmin, blockManager, (req, res) => {
+  try {
+    const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(parseInt(req.params.id));
+    if (!emp) return res.status(404).json({ error: 'Not found' });
+    const normPhone = p => { const d = String(p || '').replace(/\D/g, ''); return d.length > 10 ? d.slice(-10) : d; };
+    const parseArr = v => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
+    const phones = new Set([emp.phone, ...parseArr(emp.extra_phones)].map(normPhone).filter(Boolean));
+    const emails = new Set([emp.email, ...parseArr(emp.extra_emails)].map(x => String(x || '').trim().toLowerCase()).filter(Boolean));
+    const subs = db.prepare('SELECT * FROM applicant_submissions ORDER BY created_at DESC LIMIT 1000').all().filter(s =>
+      s.employee_id === emp.id
+      || (normPhone(s.phone) && phones.has(normPhone(s.phone)))
+      || (String(s.email || '').trim() && emails.has(String(s.email).trim().toLowerCase())));
+    const out = [];
+    for (const s of subs) {
+      db.prepare(`SELECT id, doc_type, file_name, uploaded_at, verify_status FROM applicant_docs WHERE submission_id=?`).all(s.id)
+        .forEach(d => out.push({ ...d, submission_id: s.id, applicant_name: s.name || '', linked: s.employee_id === emp.id ? 1 : 0, submitted_at: s.created_at }));
+    }
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // AI 识读结果落库: 请求带 sub_id/doc_id (申请证件) 时保存, 之后打开图直接显示不用重识
 function _aiReadPersist(body, result) {
   try {

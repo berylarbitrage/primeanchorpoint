@@ -17487,6 +17487,11 @@ async function viewEmployee(id) {
       ${cols([['姓名',emp.emergency_name],['电话',emp.emergency_phone],['关系',emp.emergency_relation]])}
     </div>`;
 
+  // 证件（申请上传）: 工人扫码申请时传的 SSN/EAD 照片, 异步加载后填进占位 div
+  html += `<div class="form-section"><h4>证件（申请上传）</h4>
+    <div id="empApplDocsView"><p class="empty" style="padding:1rem">加载中…</p></div>
+  </div>`;
+
   // Current / recent job assignments
   const jobs = emp.current_jobs || [];
   if (jobs.length) {
@@ -17722,11 +17727,60 @@ async function viewEmployee(id) {
     if (qrDiv && window.QRCode) new QRCode(qrDiv, { text: location.origin + '/mgr-punch?emp=' + emp.employee_id, width: 110, height: 110, colorDark: '#92400e', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
   }).catch(() => {});
   loadEmpRatings(emp.id);
+  loadEmpApplicantDocs(emp.id);
 }
 function closeEmpDetailModal() {
   _pendingDupSave = null;
   document.getElementById('dupActionBar').style.display = 'none';
   document.getElementById('empDetailModal').classList.remove('show');
+}
+
+// ── 员工档案「证件」区: 该员工名下申请上传的 SSN/EAD 证件照 ──
+// 点缩略图打开与收件箱同一个审阅器（旋转/裁剪/识别/标真假）；标注/裁剪后缩略图自动刷新。
+async function loadEmpApplicantDocs(empId) {
+  const box = document.getElementById('empApplDocsView');
+  if (!box) return;
+  let docs = [];
+  try { docs = await api(`/admin/employees/${empId}/applicant-docs`); }
+  catch (e) { box.innerHTML = `<p class="empty" style="padding:1rem">证件加载失败：${esc(e.message || e)}</p>`; return; }
+  if (!Array.isArray(docs) || !docs.length) {
+    box.innerHTML = '<p class="empty" style="padding:1rem">暂无证件（工人扫码申请时上传的证件会显示在这里）</p>';
+    return;
+  }
+  const docLabel = { ssn_front: 'SSN 正', ssn_back: 'SSN 反', ead_front: 'EAD 正', ead_back: 'EAD 反' };
+  // 按申请分组: 一般只有一份; 多份或按电话/邮箱兜底匹配到的, 加一行来源说明
+  const groups = [], bySub = {};
+  docs.forEach(d => {
+    let g = bySub[d.submission_id];
+    if (!g) { g = bySub[d.submission_id] = { sid: d.submission_id, name: d.applicant_name || '', at: d.submitted_at || '', linked: !!d.linked, docs: [] }; groups.push(g); }
+    g.docs.push(d);
+  });
+  box.innerHTML = groups.map(g => {
+    const thumbs = g.docs.map(d => {
+      const url = `/api/admin/applicant-submissions/${g.sid}/docs/${d.id}/download`;
+      const label = docLabel[d.doc_type] || d.doc_type || '证件';
+      if (/\.pdf$/i.test(d.file_name || '')) {
+        return `<a href="${url}" target="_blank" style="display:inline-flex;align-items:center;gap:.25rem;padding:.35rem .6rem;background:#eef2ff;color:#3730a3;border-radius:8px;font-size:.74rem;font-weight:600;text-decoration:none">📄 ${esc(label)}</a>`;
+      }
+      const vs = d.verify_status || '';
+      const vBadge = vs === 'real' ? '<span style="position:absolute;top:1px;right:1px;background:#059669;color:#fff;font-size:.58rem;font-weight:700;border-radius:5px;padding:0 4px">真✓</span>'
+        : vs === 'fake' ? '<span style="position:absolute;top:1px;right:1px;background:#dc2626;color:#fff;font-size:.58rem;font-weight:700;border-radius:5px;padding:0 4px">假✗</span>'
+        : vs === 'pending' ? '<span style="position:absolute;top:1px;right:1px;background:#d97706;color:#fff;font-size:.58rem;font-weight:700;border-radius:5px;padding:0 4px">待定?</span>' : '';
+      const vBorder = vs === 'fake' ? '#fca5a5' : vs === 'real' ? '#6ee7b7' : vs === 'pending' ? '#fcd34d' : 'var(--gray-200)';
+      const jsLabel = esc(String(label).replace(/'/g, "\\'"));
+      return `<a href="javascript:void(0)" onclick="openApplicantDocViewer('${url}','${jsLabel}')" title="${esc(label)}（点击审阅：旋转 / 裁剪 / 识别 / 标真假，原件永远保留）" style="text-decoration:none">
+          <span style="display:block;position:relative">
+            <img src="${url}" loading="lazy" style="width:88px;height:88px;object-fit:cover;border-radius:8px;border:1px solid ${vBorder};background:#000;display:block">
+            ${vBadge}
+            <span style="position:absolute;left:0;right:0;bottom:0;background:rgba(15,23,42,.62);color:#fff;font-size:.64rem;font-weight:600;text-align:center;border-radius:0 0 8px 8px;padding:1px 0">${esc(label)}</span>
+          </span>
+        </a>`;
+    }).join('');
+    const cap = (groups.length > 1 || !g.linked)
+      ? `<div style="font-size:.72rem;color:var(--gray-400);margin:.15rem 0 .3rem">来自申请：${esc(g.name || '—')}${g.at ? ' · ' + new Date(g.at + 'Z').toLocaleDateString('zh-CN') : ''}${g.linked ? '' : ' · <span style="color:#b45309">按电话/邮箱匹配，注意可能是共用号码的他人</span>'}</div>`
+      : '';
+    return `<div style="margin-bottom:.5rem">${cap}<div style="display:flex;gap:.45rem;flex-wrap:wrap">${thumbs}</div></div>`;
+  }).join('');
 }
 
 // ─── Employee Ratings ───
