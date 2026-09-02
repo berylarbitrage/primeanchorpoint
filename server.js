@@ -23780,14 +23780,15 @@ app.get('/api/admin/background-checks/:id/file', (req, res, next) => {
 // ─── TIME CLOCK EMPLOYEE SELF-SERVICE ───
 
 // 8 位打卡密码 → 员工档案。优先员工表；还没建档的申请人（扫码填表后直接来打卡）自动建档。
+// 待入职 (onboarding) 一样放行 —— 自动建档/后台刚建的档案还没转在职，工时不能丢。
 function _empByTimeclockCode(code) {
-  const emp = db.prepare("SELECT * FROM employees WHERE timeclock_code=? AND status='active'").get(code);
+  const emp = db.prepare("SELECT * FROM employees WHERE timeclock_code=? AND status IN ('active','onboarding')").get(code);
   if (emp) return emp;
   const sub = db.prepare('SELECT * FROM applicant_submissions WHERE timeclock_code=?').get(code);
   if (!sub) return null;
   if (sub.employee_id) {
     const linked = db.prepare('SELECT * FROM employees WHERE id=?').get(sub.employee_id);
-    if (linked) return linked.status === 'active' ? linked : null;  // 已离职 → 不放行
+    if (linked) return (linked.status === 'active' || linked.status === 'onboarding') ? linked : null;  // 停职/已离职 → 不放行
   }
   try {
     const created = _employeeFromApplicant(sub);
@@ -23822,7 +23823,7 @@ app.get('/api/timeclock/status/:empCode', (req, res) => {
     if (!emp) { _tcCodeFail(ipKey); return res.status(404).json({ error: '打卡密码错误或员工已离职' }); }
     _tcCodeOk(ipKey);
   } else {
-    emp = db.prepare("SELECT id,first_name,last_name,employee_id,position FROM employees WHERE employee_id=? AND status='active'").get(rawCode.toUpperCase());
+    emp = db.prepare("SELECT id,first_name,last_name,employee_id,position FROM employees WHERE employee_id=? AND status IN ('active','onboarding')").get(rawCode.toUpperCase());
   }
   if (!emp) return res.status(404).json({ error: '未找到员工或员工已离职' });
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(emp.id);
@@ -23887,7 +23888,7 @@ app.post('/api/timeclock/punch', (req, res) => {
     if (!emp || String(pin).trim() !== rawId) { _tcCodeFail(ipKey); return res.status(401).json({ error: '打卡密码错误或员工已离职' }); }
     _tcCodeOk(ipKey);
   } else {
-    emp = db.prepare("SELECT * FROM employees WHERE employee_id=? AND status='active'").get(rawId.toUpperCase());
+    emp = db.prepare("SELECT * FROM employees WHERE employee_id=? AND status IN ('active','onboarding')").get(rawId.toUpperCase());
     if (!emp) return res.status(401).json({ error: '未找到员工或员工已离职' });
     if (!emp.pin_hash) return res.status(401).json({ error: 'PIN 未设置，请联系管理员' });
     if (!verifyPin(pin, emp.pin_salt, emp.pin_hash)) return res.status(401).json({ error: 'PIN 错误' });
@@ -26186,7 +26187,7 @@ function _applyUrlForSite(siteId, req) {
 
 // 打卡兜底：手机号不在员工/工人账号里，但已经提交过入职申请（手机已 OTP 验证）。
 // 该手机号只要已有任何员工档案或工人账号（含已离职/停用的），一律不走申请通道——
-// 在职的正常通道本来就能匹配到；离职/停用的不允许借申请自动建档复活。
+// 在职/待入职的正常通道本来就能匹配到；离职/停用的不允许借申请自动建档复活。
 function _checkinApplicantByPhone(digits10) {
   const empByPhone = db.prepare('SELECT id FROM employees WHERE phone10(phone)=?').get(digits10);
   if (empByPhone) return null;
@@ -26196,10 +26197,10 @@ function _checkinApplicantByPhone(digits10) {
     'SELECT * FROM applicant_submissions WHERE phone10(phone)=? AND phone_verified=1 ORDER BY id DESC LIMIT 1'
   ).get(digits10);
   if (!sub) return null;
-  // 申请已关联到员工档案（可能换过手机号）→ 按档案状态放行
+  // 申请已关联到员工档案（可能换过手机号）→ 按档案状态放行（待入职照常打卡）
   if (sub.employee_id) {
     const emp = db.prepare('SELECT id, status FROM employees WHERE id=?').get(sub.employee_id);
-    if (emp && emp.status !== 'active') return null;
+    if (emp && emp.status !== 'active' && emp.status !== 'onboarding') return null;
   }
   return sub;
 }
@@ -26217,6 +26218,9 @@ function _utcEntryDate(v) {
 
 // 从入职申请自动创建员工档案（工人填完表后直接回来打卡，不用等后台手动建档）。
 // 返回 employees 行；档案备注里标明来源，方便后台事后补审。
+// 档案建为「待入职」(onboarding)，打卡各通道照常放行 —— 只有后台核对证件、更正
+// 姓名、补齐资料后手动转「在职」，招工收件箱的卡片才会标 已入职 归到历史；
+// 自动建档绝不能替后台做这个决定。
 function _employeeFromApplicant(sub) {
   if (sub.employee_id) {
     const existing = db.prepare('SELECT id, first_name, last_name, employee_id FROM employees WHERE id=?').get(sub.employee_id);
@@ -26228,7 +26232,7 @@ function _employeeFromApplicant(sub) {
   const today = new Date().toISOString().slice(0, 10);
   const insert = empId => db.prepare(`INSERT INTO employees
       (employee_id, first_name, last_name, email, phone, address, city, state, zip, hire_date, position, status, notes, timeclock_code)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,'active',?,?)`)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,'onboarding',?,?)`)
     .run(empId, firstName, lastName, sub.email || '', sub.phone || '',
       [sub.address1, sub.address2].filter(Boolean).join(' '), sub.city || '', sub.state || '', sub.zip || '',
       today, sub.position || '', `打卡自动建档 · 来自入职申请 #${sub.id}${sub.partner_name ? ' (' + sub.partner_name + ')' : ''}`,
@@ -26245,6 +26249,22 @@ function _employeeFromApplicant(sub) {
   console.log(`[Checkin] Auto-created employee #${newId} from applicant submission #${sub.id} (${sub.name})`);
   return db.prepare('SELECT id, first_name, last_name, employee_id FROM employees WHERE id=?').get(newId);
 }
+
+// 一次性回填：早前「打卡自动建档」把档案直接置成了在职，招工收件箱的卡片因此被
+// 自动标 已入职 归到历史（后台根本还没审）。统一改回待入职，卡片回到待处理，由
+// 后台核对证件后自己转在职。app_settings 记号保证只跑一次 —— 之后后台手动转的
+// 在职不会在重启时被翻回来。
+try {
+  const _acMigKey = 'mig_autocreated_emp_back_to_onboarding';
+  if (!db.prepare('SELECT value FROM app_settings WHERE key=?').get(_acMigKey)) {
+    const _acMig = db.prepare(
+      `UPDATE employees SET status='onboarding' WHERE status='active' AND notes LIKE '%打卡自动建档%'`
+    ).run();
+    db.prepare(`INSERT INTO app_settings (key, value) VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(_acMigKey, new Date().toISOString());
+    if (_acMig.changes) console.log(`[Checkin] 打卡自动建档回填: ${_acMig.changes} 个档案由在职改回待入职（收件箱卡片回到待处理）`);
+  }
+} catch (e) { console.error('[Checkin] 打卡自动建档回填失败:', e.message); }
 
 // ════════ 🎤 面试结果登记 (/interview-result) ════════
 // 面试官搜手机号 → 已有员工/申请人则登记六项技能语言 + 备注;
@@ -26434,7 +26454,7 @@ app.post('/api/checkin/send-code', async (req, res) => {
     emp = db.prepare("SELECT id, first_name, last_name, employee_id, phone FROM employees WHERE id=?").get(worker.employee_id);
   }
   if (!worker && !emp) {
-    emp = db.prepare("SELECT id, first_name, last_name, employee_id, phone FROM employees WHERE phone10(phone)=? AND status='active'").get(digits10);
+    emp = db.prepare("SELECT id, first_name, last_name, employee_id, phone FROM employees WHERE phone10(phone)=? AND status IN ('active','onboarding')").get(digits10);
   }
 
   // 员工/工人账号里没有 → 看是否已提交入职申请（填过表就放行，验证时自动建档）
@@ -26499,7 +26519,7 @@ app.post('/api/checkin/verify', (req, res) => {
       }
     }
   } else {
-    const emp = db.prepare("SELECT id, first_name, last_name, employee_id, phone FROM employees WHERE phone10(phone)=? AND status='active'").get(digits10);
+    const emp = db.prepare("SELECT id, first_name, last_name, employee_id, phone FROM employees WHERE phone10(phone)=? AND status IN ('active','onboarding')").get(digits10);
     if (emp) {
       empName = `${emp.first_name} ${emp.last_name}`.trim();
       empId = emp.employee_id || '';
@@ -26588,7 +26608,7 @@ app.post('/api/checkin/verify-password', (req, res) => {
   ).get(digits10);
   let emp = null;
   if (worker && worker.employee_id) emp = db.prepare('SELECT * FROM employees WHERE id=?').get(worker.employee_id);
-  if (!worker && !emp) emp = db.prepare("SELECT * FROM employees WHERE phone10(phone)=? AND status='active'").get(digits10);
+  if (!worker && !emp) emp = db.prepare("SELECT * FROM employees WHERE phone10(phone)=? AND status IN ('active','onboarding')").get(digits10);
 
   if (emp) {
     expected = emp.timeclock_code || '';
@@ -30820,7 +30840,7 @@ app.get('/mgr-punch', (req, res) => {
 
 // GET /api/admin/manager-punch-status/:empCode — current punch state for a given employee
 app.get('/api/admin/manager-punch-status/:empCode', requireAdmin, (req, res) => {
-  const emp = db.prepare("SELECT id, first_name, last_name, employee_id FROM employees WHERE employee_id=? AND status='active'").get(req.params.empCode);
+  const emp = db.prepare("SELECT id, first_name, last_name, employee_id FROM employees WHERE employee_id=? AND status IN ('active','onboarding')").get(req.params.empCode);
   if (!emp) return res.status(404).json({ error: '找不到该员工 / Employee not found' });
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(emp.id);
   const activeJobs = db.prepare(`
@@ -30843,7 +30863,7 @@ app.post('/api/admin/manager-punch', requireAdmin, (req, res) => {
   if (!emp_code) return res.status(400).json({ error: 'emp_code required' });
   if (!punch_type || !['in','break_start','break_end','out'].includes(punch_type))
     return res.status(400).json({ error: '请选择打卡类型' });
-  const emp = db.prepare("SELECT id, first_name, last_name, employee_id FROM employees WHERE employee_id=? AND status='active'").get(emp_code);
+  const emp = db.prepare("SELECT id, first_name, last_name, employee_id FROM employees WHERE employee_id=? AND status IN ('active','onboarding')").get(emp_code);
   if (!emp) return res.status(404).json({ error: '找不到该员工 / Employee not found' });
   // Allow manager to specify a custom punch time (must be a valid ISO string within last 24h)
   let now = new Date().toISOString();
