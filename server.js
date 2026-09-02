@@ -20786,10 +20786,11 @@ app.post('/api/admin/employees/merge-dup', requireAdmin, requireRole('admin'), (
       if (absCode && keepCode && absCode !== keepCode) lines.push(`📌 被并档案原打卡密码 ${absCode} 已停用（本档案打卡密码 ${keepCode} 继续使用）`);
       if (norm(absorb.notes)) lines.push(`—— 以下为被并档案「${absorb.employee_id}」的原备注 ——`, norm(absorb.notes));
       const add = lines.join('\n');
+      // 4) 先删除重复档案再更新 keep —— timeclock_code 是 UNIQUE 列, 要继承必须先让
+      // absorb 的行释放这个码, 否则 UNIQUE constraint failed (absorb 数据已读进内存, 不受影响)
+      db.prepare('DELETE FROM employees WHERE id=?').run(absorbId);
       db.prepare(`UPDATE employees SET extra_phones=?, extra_emails=?, timeclock_code=?, notes=CASE WHEN COALESCE(notes,'')='' THEN ? ELSE notes || char(10) || ? END WHERE id=?`)
         .run(JSON.stringify(phones), JSON.stringify(emails), newCode, add, add, keepId);
-      // 4) 删除重复档案 → 只剩一个员工号
-      db.prepare('DELETE FROM employees WHERE id=?').run(absorbId);
     })();
     console.log(`[merge-dup] ${absorb.employee_id} → ${keep.employee_id} by ${req.userName || 'admin'}; moved: ${touched.join(', ') || 'none'}`);
     res.json({ success: true, kept: keep.employee_id, removed: absorb.employee_id, moved: touched });
