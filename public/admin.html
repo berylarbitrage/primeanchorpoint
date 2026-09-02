@@ -42759,6 +42759,34 @@ function applicantStage(s) {
   if (linked) return linked.status === 'active' ? 'history' : 'created';
   return matchEmployeeForApplicant(s) ? 'created' : 'new';
 }
+// 一份申请的证件缩略图（卡片和「✎ 改资料」表单共用同一段）。缩略图点开是证件审阅器；
+// `_bust` 是审阅器里裁剪保存/撤销后设置的，防止重画时又显示浏览器缓存的旧图。
+function _inboxDocThumbs(s) {
+  const dl = (did) => `/api/admin/applicant-submissions/${s.id}/docs/${did}/download`;
+  const docLabel = { ssn_front: 'SSN 正', ssn_back: 'SSN 反', ead_front: 'EAD 正', ead_back: 'EAD 反' };
+  const docs = Array.isArray(s._docs) ? s._docs : [];
+  return docs.map(d => {
+    const url = dl(d.id) + (d._bust ? `?t=${d._bust}` : '');
+    const label = docLabel[d.doc_type] || d.doc_type;
+    const isPdf = /\.pdf$/i.test(d.file_name || '');
+    if (isPdf) {
+      return `<a href="${url}" target="_blank" style="display:inline-flex;align-items:center;gap:.25rem;padding:.35rem .6rem;background:#eef2ff;color:#3730a3;border-radius:8px;font-size:.74rem;font-weight:600;text-decoration:none">📄 ${label}</a>`;
+    }
+    const vs = d.verify_status || '';
+    const vBadge = vs === 'real' ? '<span style="position:absolute;top:1px;right:1px;background:#059669;color:#fff;font-size:.58rem;font-weight:700;border-radius:5px;padding:0 4px">真✓</span>'
+      : vs === 'fake' ? '<span style="position:absolute;top:1px;right:1px;background:#dc2626;color:#fff;font-size:.58rem;font-weight:700;border-radius:5px;padding:0 4px">假✗</span>'
+      : vs === 'pending' ? '<span style="position:absolute;top:1px;right:1px;background:#d97706;color:#fff;font-size:.58rem;font-weight:700;border-radius:5px;padding:0 4px">待定?</span>' : '';
+    const vBorder = vs === 'fake' ? '#fca5a5' : vs === 'real' ? '#6ee7b7' : vs === 'pending' ? '#fcd34d' : 'var(--gray-200)';
+    const jsLabel = esc(String(label).replace(/'/g, "\\'"));
+    return `<a href="javascript:void(0)" onclick="openApplicantDocViewer('${url}','${jsLabel}')" title="${esc(label)}（点击审阅：旋转 / 裁剪 / 识别 / 标真假，原件永远保留）" style="text-decoration:none">
+        <span style="display:block;position:relative">
+          <img src="${url}" loading="lazy" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid ${vBorder};background:#000;display:block">
+          ${vBadge}
+          <span style="position:absolute;left:0;right:0;bottom:0;background:rgba(15,23,42,.62);color:#fff;font-size:.64rem;font-weight:600;text-align:center;border-radius:0 0 8px 8px;padding:1px 0">${label}</span>
+        </span>
+      </a>`;
+  }).join('') || '<span style="color:var(--gray-300);font-size:.8rem">无证件</span>';
+}
 function renderApplicantInbox() {
   const body = document.getElementById('applyInboxBody');
   const all = _inboxSubmissions || [];
@@ -42774,33 +42802,8 @@ function renderApplicantInbox() {
     body.innerHTML = `<div style="padding:2.5rem 1rem;color:var(--gray-400);text-align:center">${_inboxTab === 'history' ? '🗂️ 暂无历史' : '📭 暂无申请'}</div>`;
     return;
   }
-  const dl = (sid, did) => `/api/admin/applicant-submissions/${sid}/docs/${did}/download`;
-  const docLabel = { ssn_front: 'SSN 正', ssn_back: 'SSN 反', ead_front: 'EAD 正', ead_back: 'EAD 反' };
   body.innerHTML = shown.map(s => {
-    const docs = Array.isArray(s._docs) ? s._docs : [];
-    const docThumbs = docs.map(d => {
-      // `_bust` is set after a crop is saved/cleared in the reviewer so a
-      // re-render doesn't fall back to the browser-cached old thumbnail.
-      const url = dl(s.id, d.id) + (d._bust ? `?t=${d._bust}` : '');
-      const label = docLabel[d.doc_type] || d.doc_type;
-      const isPdf = /\.pdf$/i.test(d.file_name || '');
-      if (isPdf) {
-        return `<a href="${url}" target="_blank" style="display:inline-flex;align-items:center;gap:.25rem;padding:.35rem .6rem;background:#eef2ff;color:#3730a3;border-radius:8px;font-size:.74rem;font-weight:600;text-decoration:none">📄 ${label}</a>`;
-      }
-      const vs = d.verify_status || '';
-      const vBadge = vs === 'real' ? '<span style="position:absolute;top:1px;right:1px;background:#059669;color:#fff;font-size:.58rem;font-weight:700;border-radius:5px;padding:0 4px">真✓</span>'
-        : vs === 'fake' ? '<span style="position:absolute;top:1px;right:1px;background:#dc2626;color:#fff;font-size:.58rem;font-weight:700;border-radius:5px;padding:0 4px">假✗</span>'
-        : vs === 'pending' ? '<span style="position:absolute;top:1px;right:1px;background:#d97706;color:#fff;font-size:.58rem;font-weight:700;border-radius:5px;padding:0 4px">待定?</span>' : '';
-      const vBorder = vs === 'fake' ? '#fca5a5' : vs === 'real' ? '#6ee7b7' : vs === 'pending' ? '#fcd34d' : 'var(--gray-200)';
-      const jsLabel = esc(String(label).replace(/'/g, "\\'"));
-      return `<a href="javascript:void(0)" onclick="openApplicantDocViewer('${url}','${jsLabel}')" title="${esc(label)}（点击审阅：旋转 / 裁剪 / 识别 / 标真假，原件永远保留）" style="text-decoration:none">
-          <span style="display:block;position:relative">
-            <img src="${url}" loading="lazy" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid ${vBorder};background:#000;display:block">
-            ${vBadge}
-            <span style="position:absolute;left:0;right:0;bottom:0;background:rgba(15,23,42,.62);color:#fff;font-size:.64rem;font-weight:600;text-align:center;border-radius:0 0 8px 8px;padding:1px 0">${label}</span>
-          </span>
-        </a>`;
-    }).join('') || '<span style="color:var(--gray-300);font-size:.8rem">无证件</span>';
+    const docThumbs = _inboxDocThumbs(s);
     const when = s.created_at ? new Date(s.created_at + 'Z').toLocaleString('zh-CN', { hour12: false }) : '';
     const initial = esc((s.name || '?').trim().charAt(0).toUpperCase() || '?');
     const addrLine = [
@@ -42814,6 +42817,10 @@ function renderApplicantInbox() {
     const del = USER_ROLE === 'admin'
       ? `<button class="btn btn-sm" style="padding:.2rem .55rem;font-size:.72rem;background:#fff;color:#b91c1c;border:1px solid #fecaca" onclick="deleteApplicant(${s.id})">删除</button>`
       : '';
+    // 待处理、已入职（历史）的都能改资料——已入职后发现电话/地址填错也能就地更正
+    const editBtn = (USER_ROLE === 'admin' || USER_ROLE === 'staff')
+      ? `<button class="btn btn-sm" style="padding:.2rem .55rem;font-size:.72rem;background:#fff;color:#1d4ed8;border:1px solid #bfdbfe" onclick="editInboxApplicant(${s.id})" title="核对证件后直接更正这个人的申请资料（姓名 / 电话 / 邮箱 / 职位 / 地址 / SSN）">✎ 改资料</button>`
+      : '';
     const _linkedEmp = linkedEmployeeForApplicant(s);
     const _matchedEmp = _linkedEmp || matchEmployeeForApplicant(s);
     // 工人打卡时系统自动建的档案（待入职）→ 标出来源, 提醒后台照常审核后再转在职
@@ -42822,7 +42829,12 @@ function renderApplicantInbox() {
       ? (_autoCreated ? '🤖 打卡自动建档 · 待入职' : '✓ 已创建 · 待入职')
       : '✓ 已创建员工';
     const _createdTitle = _autoCreated
-      ? ' title="工人来打卡时系统自动建的档案（待入职）。请点 👤 打开档案核对证件、更正姓名并补齐资料，确认无误后改为在职，这张卡片才会归入历史"'
+      ? ' title="工人来打卡时系统自动建的档案（待入职）。点下面「🔍 审核 · 转在职」打开档案（带申请证件对照）核对更正，把状态改成在职保存，这张卡片就会归入历史"'
+      : '';
+    // 已建档但还在待入职（打卡自动建档 / 手工创建的都算）→ 卡片上直接给审核入口：
+    // 和「创建员工」同一个弹窗 + 同一块申请证件对照面板，状态改成在职保存即归历史
+    const reviewBtn = (_linkedEmp && _linkedEmp.status !== 'active' && (USER_ROLE === 'admin' || USER_ROLE === 'staff'))
+      ? `<button class="btn btn-sm" style="padding:.2rem .55rem;font-size:.72rem;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-weight:700" onclick="reviewLinkedEmployee(${s.id},${_linkedEmp.id})" title="打开这份员工档案审核（旁边带申请证件对照，和创建员工时一样）：核对证件、补齐资料，把「状态」改成「在职」保存，这张卡片就归入历史">🔍 审核 · 转在职</button>`
       : '';
     // Show WHICH employee this card is tied to (explicitly linked, or matched by
     // phone/email) so it's obvious where to find them in 员工管理 — and obvious when
@@ -42858,7 +42870,7 @@ function renderApplicantInbox() {
       : `<span style="font-weight:700;font-size:1rem;color:var(--ink,#0f172a)">${esc(s.name || '—')}</span>${_canEditName
           ? `<button onclick="editInboxApplicantName(${s.id})" title="更正姓名（待处理 / 历史都可以改；改动会记入审计日志）" style="padding:1px 7px;font-size:.72rem;border:1px solid var(--gray-300);background:#fff;color:var(--gray-500);border-radius:6px;cursor:pointer;line-height:1.4">✎</button>`
           : ''}`;
-    return `<div style="border:1px solid var(--gray-200);border-radius:12px;padding:.85rem 1rem;margin-bottom:.7rem;background:${stage === 'history' ? '#fafafa' : '#fff'};box-shadow:0 1px 2px rgba(15,23,42,.04)">
+    return `<div id="applyCard${s.id}" style="border:1px solid var(--gray-200);border-radius:12px;padding:.85rem 1rem;margin-bottom:.7rem;background:${stage === 'history' ? '#fafafa' : '#fff'};box-shadow:0 1px 2px rgba(15,23,42,.04)">
       <div style="display:flex;align-items:flex-start;gap:.7rem">
         <div style="flex:0 0 auto;width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#4A90D9,#1A3F7A);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.05rem">${initial}</div>
         <div style="flex:1;min-width:0">
@@ -42878,7 +42890,9 @@ function renderApplicantInbox() {
           <span style="font-size:.72rem;color:var(--gray-400);white-space:nowrap">🕒 ${esc(when)}</span>
           ${mkEmp}
           ${_empChip}
+          ${reviewBtn}
           ${_createAnyway}
+          ${editBtn}
           ${del}
         </div>
       </div>
@@ -42958,6 +42972,164 @@ async function deleteApplicant(id) {
     renderApplicantInbox();
   } catch (e) {
     adminAlert('删除失败：' + (e.message || e), '错误');
+  }
+}
+
+// ── 🔍 审核 · 转在职：已建档但还在待入职的（打卡自动建档 / 手工创建的都算），
+// 从卡片直接打开那份员工档案——和「创建员工」同一个弹窗、同一块申请证件对照面板。
+// 核对证件、补齐资料后把「状态」改成「在职」保存，这张卡片就归入历史。
+function reviewLinkedEmployee(subId, empId) {
+  closeApplicantInbox();
+  openEmpModal(empId);
+  renderApplicantDocPanel(subId);
+  showToast('核对证件、补齐资料后，把「状态」改成「在职」保存 → 收件箱这张卡片就归入历史', 'success', 6000);
+}
+
+// ── ✎ 改资料：收件箱卡片原地变成编辑表单，待处理和已入职（历史）的都能改。
+// 和「电话查重」页同一个 PATCH 接口：每处改动记审计日志；改了电话/邮箱会自动摘掉
+// 「已验证」标记（当初 OTP 验证的是旧值）；SSN 加密存储，已建档时直接写进员工档案。
+const _INBOX_EDIT_FIELDS = [
+  ['name', '姓名 *', '工人法定全名'], ['phone', '电话 *', '(555) 000-0000'], ['email', '邮箱', 'email@example.com'],
+  ['position', '职位', 'Picking / Packing …'], ['address1', '街道地址', 'e.g. 123 Main St'], ['address2', '单元 / 楼层（选填）', 'e.g. Apt 2B'],
+  ['city', '城市', 'Chicago'], ['state', '州', ''], ['zip', '邮编', '60601']
+];
+const _INBOX_FIELD_CN = { name: '姓名', phone: '电话', email: '邮箱', position: '职位', address1: '街道地址',
+  address2: '单元/楼层', city: '城市', state: '州', zip: '邮编', ssn: 'SSN',
+  address_verified: '地址验证标记', phone_verified: '电话验证标记', email_verified: '邮箱验证标记' };
+// 「🔍 验证地址」通过后置真；地址字段再被改动就失效，保存时随表单写入
+const _inboxAddrOk = {};
+function editInboxApplicant(id) {
+  const s = (_inboxSubmissions || []).find(x => x.id === id);
+  const el = document.getElementById('applyCard' + id);
+  if (!s || !el) return;
+  _inboxAddrOk[id] = !!s.address_verified;
+  const lbl = 'display:flex;flex-direction:column;gap:2px;font-size:.7rem;font-weight:700;color:var(--gray-600)';
+  const box = 'padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem;font-family:inherit;width:100%;box-sizing:border-box';
+  const inp = (k) => {
+    const [, label, ph] = _INBOX_EDIT_FIELDS.find(f => f[0] === k);
+    const touch = ['address1', 'address2', 'city', 'zip'].includes(k) ? ` oninput="_inboxAddrTouched(${id})"` : '';
+    if (k === 'state') {
+      const stVal = normalizeStateCode(s.state);
+      const known = _US_STATES_EARLY.includes(stVal);
+      return `<label style="${lbl}">${label}<select id="aie_${id}_state" style="${box}" onchange="_inboxAddrTouched(${id})">
+        <option value="">-- 州 --</option>
+        ${stVal && !known ? `<option value="${esc(stVal)}" selected>${esc(stVal)}（原值）</option>` : ''}
+        ${_US_STATES_EARLY.map(x => `<option value="${x}"${stVal === x ? ' selected' : ''}>${x}</option>`).join('')}
+      </select></label>`;
+    }
+    return `<label style="${lbl}">${label}<input id="aie_${id}_${k}" style="${box}" value="${esc(s[k] || '')}" placeholder="${esc(ph || '')}" autocomplete="off"${touch}></label>`;
+  };
+  el.innerHTML = `
+    <div style="font-size:.85rem;font-weight:700;color:#1A3F7A">✎ 更正申请人资料 — ${esc(s.name || '')}
+      <span style="font-weight:400;color:var(--gray-400)">每一处改动都会记入审计日志</span></div>
+    ${s.employee_id ? `<div style="margin-top:.45rem;background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:8px;padding:.4rem .7rem;font-size:.72rem;line-height:1.5">这条申请已关联员工档案：这里改的是<b>申请单上的资料</b>，员工档案要在「员工管理」里改（卡片上点 👤 跳过去）。SSN 例外——保存时直接写进员工档案。</div>` : ''}
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:.5rem .7rem;margin-top:.6rem">
+      ${inp('name')}${inp('phone')}${inp('email')}${inp('position')}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:.5rem .7rem;margin-top:.5rem">
+      ${inp('address1')}${inp('address2')}${inp('city')}${inp('state')}${inp('zip')}
+    </div>
+    <div style="display:flex;gap:.6rem;margin-top:.5rem;align-items:center;flex-wrap:wrap">
+      <button type="button" id="aieVerBtn${id}" class="btn btn-sm" style="background:#eff6ff;color:#1d4ed8;border:1px solid #93c5fd;font-size:.74rem" onclick="_inboxVerifyAddr(${id})">🔍 验证地址</button>
+      <span id="aieAddrStatus${id}" style="font-size:.74rem;font-weight:700;color:${s.address_verified ? '#059669' : 'var(--gray-400)'}">${s.address_verified ? '✓ 已验证' : '未验证'}</span>
+      <span style="font-size:.7rem;color:var(--gray-400)">改了电话 / 邮箱，对应的「已验证」标记会自动摘掉（当初验证的是旧值）</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.5rem .7rem;margin-top:.6rem">
+      <label style="${lbl}">SSN（9 位数字 · 加密存储只显示末四位 · 不改请留空）
+        <input id="aie_${id}_ssn" style="${box}" inputmode="numeric" autocomplete="off" placeholder="${s.ssn_last4 ? '已存 ****' + esc(s.ssn_last4) + ' · 留空不改' : 'XXX-XX-XXXX 或 XXXXXXXXX'}"></label>
+      ${s.timeclock_code ? `<label style="${lbl}">🔑 打卡密码（此处不可改）
+        <div style="padding:.4rem .6rem;border:1.5px dashed #6ee7b7;background:#ecfdf5;border-radius:8px;font-size:1rem;font-weight:800;letter-spacing:.15em;color:#047857;font-family:ui-monospace,monospace">${esc(s.timeclock_code)}</div></label>` : ''}
+    </div>
+    <div style="display:flex;gap:.5rem;margin-top:.7rem;align-items:center">
+      <button id="aieSave${id}" class="btn btn-sm" style="background:#1A3F7A;color:#fff;border:none;font-weight:700" onclick="saveInboxApplicant(${id})">保存</button>
+      <button class="btn btn-sm btn-outline" onclick="renderApplicantInbox()">取消</button>
+      <span style="font-size:.7rem;color:var(--gray-400)">👇 证件缩略图点开可对照着改（小窗可拖动，不挡表单）</span>
+    </div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.7rem;padding-top:.7rem;border-top:1px dashed var(--gray-200)">${_inboxDocThumbs(s)}</div>`;
+  const first = document.getElementById('aie_' + id + '_name');
+  if (first) { first.focus(); first.select(); }
+}
+// 地址字段被改过 → 之前的验证结果作废
+function _inboxAddrTouched(id) {
+  if (!_inboxAddrOk[id]) return;
+  _inboxAddrOk[id] = false;
+  const st = document.getElementById('aieAddrStatus' + id);
+  if (st) { st.textContent = '地址改过了，请重新验证'; st.style.color = '#b45309'; }
+}
+// 和「新增员工」同一套验证：Google 标准化 → 回填 → 打勾
+async function _inboxVerifyAddr(id) {
+  const g = k => document.getElementById('aie_' + id + '_' + k);
+  if (!g('address1')) return;
+  const street = g('address1').value.trim(), street2 = g('address2').value.trim();
+  const city = g('city').value.trim(), state = g('state').value, zip = g('zip').value.trim();
+  const st = document.getElementById('aieAddrStatus' + id);
+  if (!street && !city && !zip) { showToast('先填地址再验证', 'error'); return; }
+  if (typeof validateAddress !== 'function') { if (st) { st.textContent = '⚠ 验证组件没加载出来，刷新页面重试'; st.style.color = '#b45309'; } return; }
+  const btn = document.getElementById('aieVerBtn' + id);
+  if (btn) btn.disabled = true;
+  if (st) { st.textContent = '验证中…'; st.style.color = 'var(--gray-400)'; }
+  try {
+    const result = await validateAddress({ street, street2, city, state, zip });
+    if (result.skipped) { if (st) { st.textContent = '⚠ 验证服务未配置'; st.style.color = '#94a3b8'; } return; }
+    if (result.standardized) {
+      const sd = result.standardized;
+      g('address1').value = sd.street || '';
+      g('address2').value = sd.street2 || '';
+      g('city').value = sd.city || '';
+      g('state').value = String(sd.state || '').toUpperCase();
+      g('zip').value = sd.zip || '';
+    }
+    _inboxAddrOk[id] = result.verified === true;
+    if (st) {
+      st.textContent = _inboxAddrOk[id] ? '✓ 已验证' : '✗ 无法验证';
+      st.style.color = _inboxAddrOk[id] ? '#059669' : '#dc2626';
+    }
+  } catch (e) {
+    _inboxAddrOk[id] = false;
+    if (st) { st.textContent = '✗ 验证失败: ' + (e.message || e); st.style.color = '#dc2626'; }
+  } finally { if (btn) btn.disabled = false; }
+}
+async function saveInboxApplicant(id) {
+  const s = (_inboxSubmissions || []).find(x => x.id === id);
+  if (!s) return;
+  const g = k => document.getElementById('aie_' + id + '_' + k);
+  const body = { address_verified: _inboxAddrOk[id] ? 1 : 0 };
+  // 只提交真正改过的字段——免得把打开表单之后别人改过的值又静默改回去
+  _INBOX_EDIT_FIELDS.forEach(f => {
+    const el = g(f[0]);
+    if (!el) return;
+    const orig = f[0] === 'state' ? normalizeStateCode(s.state) : String(s[f[0]] == null ? '' : s[f[0]]);
+    if (String(el.value) !== orig) body[f[0]] = el.value;
+  });
+  if (g('name') && !g('name').value.trim()) { showToast('姓名不能为空', 'error'); g('name').focus(); return; }
+  if (g('phone') && g('phone').value.replace(/\D/g, '').length < 10) { showToast('电话至少要有 10 位数字', 'error'); g('phone').focus(); return; }
+  const ssnEl = g('ssn');
+  if (ssnEl && ssnEl.value.trim()) {
+    const d9 = ssnEl.value.replace(/\D/g, '');
+    if (d9.length !== 9) { showToast('SSN 需要 9 位数字（可带横线）', 'error'); ssnEl.focus(); return; }
+    body.ssn = d9;
+  }
+  const btn = document.getElementById('aieSave' + id);
+  if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
+  try {
+    const r = await api(`/admin/applicant-submissions/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+    if (!r || !r.success) throw new Error((r && r.error) || '保存失败');
+    if (r.record) {
+      _INBOX_EDIT_FIELDS.forEach(f => { if (r.record[f[0]] !== undefined) s[f[0]] = r.record[f[0]]; });
+      if (r.record.address_verified !== undefined) s.address_verified = r.record.address_verified ? 1 : 0;
+      if (r.record.ssn_last4 !== undefined) s.ssn_last4 = r.record.ssn_last4;
+      if (r.record.timeclock_code !== undefined) s.timeclock_code = r.record.timeclock_code;
+    }
+    const changed = r.changed || [];
+    // 服务器改了号码/邮箱会一并摘掉「已验证」标记，本地数据跟着摘，卡片立刻显示对
+    if (changed.includes('phone')) s.phone_verified = 0;
+    if (changed.includes('email')) s.email_verified = 0;
+    renderApplicantInbox();
+    const ch = changed.map(k => _INBOX_FIELD_CN[k] || k);
+    showToast(ch.length ? '已保存：' + ch.join('、') : '没有改动', 'success', 4000);
+  } catch (e) {
+    showToast('保存失败：' + (e.message || e), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '保存'; }
   }
 }
 
