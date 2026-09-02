@@ -627,7 +627,9 @@ async function verifyAddressFields() {
     if (j && j.valid) {
       const s = j.standardized || {};
       if (s.street) document.getElementById('fAddr1').value = s.street;
-      if (s.street2 !== undefined) document.getElementById('fAddr2').value = s.street2 || addr2;
+      // Google 常把公寓号并进第一行返回（street2 为空）——此时必须清空公寓框，
+      // 否则下次验证会把 Apt 再拼一次，地址越验越长（Apt1 Apt1 Apt1…）
+      if (s.street2 !== undefined) document.getElementById('fAddr2').value = s.street2 || '';
       if (s.city) document.getElementById('fCity').value = s.city;
       if (s.state) document.getElementById('fState').value = s.state;
       if (s.zip) document.getElementById('fZip').value = s.zip + (s.zip4 ? '-' + s.zip4 : '');

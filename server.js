@@ -16045,8 +16045,9 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
     const position = String(d.position || '').trim().slice(0, 120);
     const phone = _normApplyPhone(d.phone);
     const email = String(d.email || '').trim().toLowerCase();
-    const address1 = String(d.address1 || '').trim().slice(0, 200);
-    const address2 = String(d.address2 || '').trim().slice(0, 200);
+    const address1 = _collapseRepeatAddrTokens(String(d.address1 || '').trim().slice(0, 200));
+    let address2 = _collapseRepeatAddrTokens(String(d.address2 || '').trim().slice(0, 200));
+    if (address2 && address1.toLowerCase().endsWith(' ' + address2.toLowerCase())) address2 = ''; // 街道行已含公寓号
     const city = String(d.city || '').trim().slice(0, 100);
     const state = String(d.state || '').trim().slice(0, 60);
     const zip = String(d.zip || '').trim().slice(0, 20);
@@ -16146,8 +16147,9 @@ app.post('/api/public/foreman-register', applicantDocUpload.fields([
     const warehouse = String(d.warehouse || '').trim().slice(0, 160);
     const phone = _normApplyPhone(d.phone);
     const email = String(d.email || '').trim().toLowerCase();
-    const address1 = String(d.address1 || '').trim().slice(0, 200);
-    const address2 = String(d.address2 || '').trim().slice(0, 200);
+    const address1 = _collapseRepeatAddrTokens(String(d.address1 || '').trim().slice(0, 200));
+    let address2 = _collapseRepeatAddrTokens(String(d.address2 || '').trim().slice(0, 200));
+    if (address2 && address1.toLowerCase().endsWith(' ' + address2.toLowerCase())) address2 = ''; // 街道行已含公寓号
     const city = String(d.city || '').trim().slice(0, 100);
     const state = String(d.state || '').trim().slice(0, 60);
     const zip = String(d.zip || '').trim().slice(0, 20);
@@ -26398,7 +26400,7 @@ function _employeeFromApplicant(sub) {
       (employee_id, first_name, last_name, email, phone, address, city, state, zip, hire_date, position, status, notes, timeclock_code)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,'onboarding',?,?)`)
     .run(empId, firstName, lastName, sub.email || '', sub.phone || '',
-      [sub.address1, sub.address2].filter(Boolean).join(' '), sub.city || '', sub.state || '', sub.zip || '',
+      _joinAddrLines(sub.address1, sub.address2), sub.city || '', sub.state || '', sub.zip || '',
       today, sub.position || '', `打卡自动建档 · 来自入职申请 #${sub.id}${sub.partner_name ? ' (' + sub.partner_name + ')' : ''}`,
       sub.timeclock_code || '');
   let r;
@@ -26429,6 +26431,29 @@ try {
     if (_acMig.changes) console.log(`[Checkin] 打卡自动建档回填: ${_acMig.changes} 个档案由在职改回待入职（收件箱卡片回到待处理）`);
   }
 } catch (e) { console.error('[Checkin] 打卡自动建档回填失败:', e.message); }
+
+// 一次性清洗: 地址验证回填累加造成的 "Apt1 Apt1 Apt1" 式重复 — 员工地址与申请地址
+// 折叠连续重复词组、街道行末尾重复的公寓号清掉。app_settings 记号保证只跑一次。
+try {
+  const _adKey = 'mig_collapse_addr_dup_tokens_v1';
+  if (!db.prepare('SELECT value FROM app_settings WHERE key=?').get(_adKey)) {
+    let fixed = 0;
+    for (const row of db.prepare(`SELECT id, address FROM employees WHERE COALESCE(address,'') != ''`).all()) {
+      const v = _collapseRepeatAddrTokens(row.address);
+      if (v !== row.address) { db.prepare('UPDATE employees SET address=? WHERE id=?').run(v, row.id); fixed++; }
+    }
+    for (const row of db.prepare(`SELECT id, address1, address2 FROM applicant_submissions WHERE COALESCE(address1,'') != '' OR COALESCE(address2,'') != ''`).all()) {
+      const a1 = _collapseRepeatAddrTokens(row.address1 || '');
+      let a2 = _collapseRepeatAddrTokens(row.address2 || '');
+      if (a2 && a1.toLowerCase().endsWith(' ' + a2.toLowerCase())) a2 = '';
+      if (a1 !== (row.address1 || '') || a2 !== (row.address2 || '')) {
+        db.prepare('UPDATE applicant_submissions SET address1=?, address2=? WHERE id=?').run(a1, a2, row.id); fixed++;
+      }
+    }
+    db.prepare(`INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(_adKey, new Date().toISOString());
+    if (fixed) console.log(`[AddrFix] 地址重复词组清洗: 修复 ${fixed} 条`);
+  }
+} catch (e) { console.error('[AddrFix] 地址清洗失败:', e.message); }
 
 // ════════ 🎤 面试结果登记 (/interview-result) ════════
 // 面试官搜手机号 → 已有员工/申请人则登记六项技能语言 + 备注;
@@ -30848,6 +30873,36 @@ app.get('/api/geocode', async (req, res) => {
 });
 
 // ─── Google Address Validation ───
+// 地址去重助手: 折叠连续重复的词组（"Ave Apt1 Apt1 Apt1"→"Ave Apt1"; "Apt 1 Apt 1"→"Apt 1"）。
+// 曾有 bug: Google 验证把公寓号并进第一行返回、前端又把原公寓号塞回公寓框, 每验证一次
+// 地址就多一个 Apt —— 这里在 申请入库/打卡建档/验证返回 三处兜底 (函数声明, 全文件可用)。
+function _collapseRepeatAddrTokens(s) {
+  if (!s) return s;
+  let toks = String(s).trim().split(/\s+/);
+  for (let size = 3; size >= 1; size--) {
+    const out = [];
+    for (let i = 0; i < toks.length;) {
+      const grp = toks.slice(i, i + size);
+      out.push(...grp);
+      let j = i + size;
+      while (j + size <= toks.length && grp.join(' ').toLowerCase() === toks.slice(j, j + size).join(' ').toLowerCase()) j += size;
+      i = j;
+    }
+    toks = out;
+  }
+  return toks.join(' ');
+}
+// 拼 街道行+公寓号: 各自去重后, 街道行末尾已含公寓号的不再重复拼接
+function _joinAddrLines(a1, a2) {
+  const s1 = _collapseRepeatAddrTokens(String(a1 || '').trim());
+  const s2 = _collapseRepeatAddrTokens(String(a2 || '').trim());
+  if (!s2) return s1;
+  if (!s1) return s2;
+  const l1 = s1.toLowerCase(), l2 = s2.toLowerCase();
+  if (l1 === l2 || l1.endsWith(' ' + l2)) return s1;
+  return _collapseRepeatAddrTokens(s1 + ' ' + s2);
+}
+
 app.post('/api/validate-address', async (req, res) => {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
@@ -30945,7 +31000,7 @@ app.post('/api/validate-address', async (req, res) => {
       valid: true,
       dpv_match_code: dpv,
       standardized: {
-        street:  addrLines[0] || street,
+        street:  _collapseRepeatAddrTokens(addrLines[0] || street),
         street2: addrLines[1] || '',
         city:    postalAddress.locality || city || '',
         state:   postalAddress.administrativeArea || state || '',
