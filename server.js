@@ -20790,24 +20790,61 @@ app.post('/api/admin/employees/merge-dup', requireAdmin, requireRole('admin'), (
           if (r.changes) touched.push(`${t.name}.${c.name}:${r.changes}`);
         }
       }
-      // 2) 联系方式并进 keep: 主字段不动, 不同的进 extra_phones/extra_emails; 打卡码 keep 没有才继承
-      const phones = parseArr(keep.extra_phones);
-      if (norm(absorb.phone) && norm(absorb.phone) !== norm(keep.phone) && !phones.map(norm).includes(norm(absorb.phone))) phones.push(norm(absorb.phone));
-      const emails = parseArr(keep.extra_emails);
-      const ae = norm(absorb.email).toLowerCase();
-      if (ae && ae !== norm(keep.email).toLowerCase() && !emails.map(x => norm(x).toLowerCase()).includes(ae)) emails.push(norm(absorb.email));
+      // 2) 逐条挑选(overrides): 前端可指定每一条信息用哪份的值, 未指定的沿用 keep 的原值。
+      // 白名单字段; absorb 的数据已读进内存, 与后面的删除顺序无关。
+      const ov = (req.body || {}).overrides && typeof req.body.overrides === 'object' ? req.body.overrides : {};
+      const pickStr = (key, cur, max) => ov[key] !== undefined ? String(ov[key] || '').trim().slice(0, max || 200) : (cur || '');
+      const fin = {
+        first_name: pickStr('first_name', keep.first_name, 100),
+        middle_name: pickStr('middle_name', keep.middle_name, 100),
+        last_name: pickStr('last_name', keep.last_name, 100),
+        phone: pickStr('phone', keep.phone, 40),
+        email: pickStr('email', keep.email, 120),
+        address: pickStr('address', keep.address, 200),
+        street2: pickStr('street2', keep.street2, 200),
+        city: pickStr('city', keep.city, 100),
+        state: pickStr('state', keep.state, 60),
+        zip: pickStr('zip', keep.zip, 20),
+        dob: pickStr('dob', keep.dob, 20),
+        hire_date: pickStr('hire_date', keep.hire_date, 20),
+      };
+      // SSN: 选了被并档案的就整套拷贝（密文+iv+last4）
+      const useAbsSsn = ov.ssn_source === 'absorb';
+      const ssnE = useAbsSsn ? absorb.ssn_encrypted : keep.ssn_encrypted;
+      const ssnI = useAbsSsn ? absorb.ssn_iv : keep.ssn_iv;
+      const ssnL = useAbsSsn ? absorb.ssn_last4 : keep.ssn_last4;
+      // 打卡码: 指定了用指定的; 未指定沿用 keep 的, keep 没有才继承 absorb 的
       const keepCode = norm(keep.timeclock_code), absCode = norm(absorb.timeclock_code);
-      const newCode = (!keepCode && absCode) ? absCode : keep.timeclock_code || '';
-      // 3) 合并标注 + 被并档案的原备注一起写进 keep 备注, 不丢信息
+      const newCode = ov.timeclock_code !== undefined ? String(ov.timeclock_code || '').trim().slice(0, 20)
+        : ((!keepCode && absCode) ? absCode : keep.timeclock_code || '');
+      // 3) 两份的电话/邮箱除最终主值外全部进备用联系方式（去重）, 一个都不丢
+      const phones = [];
+      parseArr(keep.extra_phones).concat(parseArr(absorb.extra_phones), [keep.phone, absorb.phone])
+        .map(norm).filter(Boolean).forEach(p2 => { if (p2 !== norm(fin.phone) && !phones.includes(p2)) phones.push(p2); });
+      const emails = [];
+      parseArr(keep.extra_emails).concat(parseArr(absorb.extra_emails), [keep.email, absorb.email])
+        .map(norm).filter(Boolean).forEach(m2 => {
+          if (m2.toLowerCase() !== norm(fin.email).toLowerCase() && !emails.map(x => x.toLowerCase()).includes(m2.toLowerCase())) emails.push(m2);
+        });
+      // 4) 合并标注 + 被并档案的原备注一起写进 keep 备注, 不丢信息
       const lines = [`📌 ${stamp} 合并重复档案：「${absorb.first_name} ${absorb.last_name} · ${absorb.employee_id}」已并入本档案（工时/打卡/文件等记录已全部转移，重复员工号已删除）`];
-      if (absCode && keepCode && absCode !== keepCode) lines.push(`📌 被并档案原打卡密码 ${absCode} 已停用（本档案打卡密码 ${keepCode} 继续使用）`);
+      if (absCode && newCode && absCode !== newCode) lines.push(`📌 被并档案原打卡密码 ${absCode} 已停用（现用打卡密码 ${newCode}）`);
+      if (keepCode && newCode && keepCode !== newCode) lines.push(`📌 本档案原打卡密码 ${keepCode} 已替换为 ${newCode}`);
       if (norm(absorb.notes)) lines.push(`—— 以下为被并档案「${absorb.employee_id}」的原备注 ——`, norm(absorb.notes));
       const add = lines.join('\n');
-      // 4) 先删除重复档案再更新 keep —— timeclock_code 是 UNIQUE 列, 要继承必须先让
+      // 5) 先删除重复档案再更新 keep —— timeclock_code 是 UNIQUE 列, 要继承必须先让
       // absorb 的行释放这个码, 否则 UNIQUE constraint failed (absorb 数据已读进内存, 不受影响)
       db.prepare('DELETE FROM employees WHERE id=?').run(absorbId);
-      db.prepare(`UPDATE employees SET extra_phones=?, extra_emails=?, timeclock_code=?, notes=CASE WHEN COALESCE(notes,'')='' THEN ? ELSE notes || char(10) || ? END WHERE id=?`)
-        .run(JSON.stringify(phones), JSON.stringify(emails), newCode, add, add, keepId);
+      db.prepare(`UPDATE employees SET first_name=?, middle_name=?, last_name=?, phone=?, email=?,
+          address=?, street2=?, city=?, state=?, zip=?, dob=?, hire_date=?, timeclock_code=?,
+          ssn_encrypted=?, ssn_iv=?, ssn_last4=?, extra_phones=?, extra_emails=?,
+          notes=CASE WHEN COALESCE(notes,'')='' THEN ? ELSE notes || char(10) || ? END WHERE id=?`)
+        .run(fin.first_name, fin.middle_name, fin.last_name, fin.phone, fin.email,
+          fin.address, fin.street2, fin.city, fin.state, fin.zip, fin.dob, fin.hire_date, newCode,
+          ssnE || '', ssnI || '', ssnL || '', JSON.stringify(phones), JSON.stringify(emails),
+          add, add, keepId);
+      // 挂在 keep 名下的工人账户同步最终联系方式（与员工 PUT 的行为一致）
+      try { db.prepare('UPDATE worker_accounts SET email=?, phone=? WHERE employee_id=?').run(fin.email || '', fin.phone || '', keepId); } catch (_) {}
     })();
     console.log(`[merge-dup] ${absorb.employee_id} → ${keep.employee_id} by ${req.userName || 'admin'}; moved: ${touched.join(', ') || 'none'}`);
     res.json({ success: true, kept: keep.employee_id, removed: absorb.employee_id, moved: touched });
