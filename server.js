@@ -20683,6 +20683,13 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
       if (dup) return res.json({ duplicate: true, field: 'email', existing: dup });
     }
   }
+  // 转在职必须先过证件审核: 该员工关联申请上传的证件须全部标「真」才放行
+  // （没有关联申请或没传证件的不拦；审核在招工申请收件箱点证件缩略图完成）
+  if (d.status === 'active' && emp.status !== 'active') {
+    const bad = db.prepare(`SELECT COUNT(*) AS n FROM applicant_docs WHERE submission_id IN
+      (SELECT id FROM applicant_submissions WHERE employee_id=?) AND COALESCE(verify_status,'') != 'real'`).get(req.params.id);
+    if (bad && bad.n > 0) return res.status(400).json({ error: `不能转在职：该员工申请上传的证件还有 ${bad.n} 张未审核标「真」。请到招工申请收件箱点开证件缩略图逐张审核（标真 / 假），全部标真后再转在职。` });
+  }
   let ssn_encrypted = emp.ssn_encrypted, ssn_iv = emp.ssn_iv, ssn_last4 = emp.ssn_last4;
   if (d.ssn && d.ssn !== '__KEEP__') {
     const digits = d.ssn.replace(/\D/g, '');
