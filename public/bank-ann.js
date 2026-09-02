@@ -68,6 +68,8 @@ const BS_PAYEE_MEAL = '餐饮支出';
 const BS_MEAL_TYPES = ['员工餐 Staff Meal', '加班餐 Overtime Meal', '招待客户 Client Meal', '差旅餐 Travel Meal', '饮用水/零食 Snacks & Water', '其他 Other'];
 const BS_PAYEE_ACCT = '会计费用';
 const BS_ACCT_TYPES = ['记账 Bookkeeping', '报税 Tax Filing', '工资单 Payroll', '审计 Audit', '咨询 Consulting', '其他 Other'];
+const BS_PAYEE_GUSTO = 'Gusto 费用';
+const BS_GUSTO_TYPES = ['服务费 Service Fee', '代缴工资税 Payroll Tax', '工资发放 Net Pay', '其他 Other'];
 const BS_PERSONAL_CATS = ['换汇 FX', '自己工资 Own Salary', '公司转账 Company Transfer'];
 const BS_PAYEE_PEOPLE = ['Niki Zhao', 'Tiexiong Zhou', 'Beryl Zhang', 'Yizhao Cai'];
 const BS_PAYEE_EMP = '__emp__';
@@ -138,7 +140,7 @@ function _bsNoteSatisfied(box) {
   if (kind === 'whdep' && _bsWhdepParse(box.payee)) return true;
   if (kind === 'referral' && _bsReferralParse(box.payee)) return true;
   if (kind === 'wagebonus' && _bsWageBonusParse(box.payee)) return true;
-  if ((kind === 'bankfee' || kind === 'office' || kind === 'compfee' || kind === 'meal' || kind === 'acct' || kind === 'personal') && String(box.purpose || '').trim()) return true;
+  if ((kind === 'bankfee' || kind === 'office' || kind === 'compfee' || kind === 'meal' || kind === 'acct' || kind === 'gusto' || kind === 'personal') && String(box.purpose || '').trim()) return true;
   if (kind === 'employee' && String(box.invoice_number || '').trim()
     && String(box.period_start || '').trim() && String(box.period_end || '').trim()) return true;
   if (kind === 'company' && box.direction === 'in'
@@ -153,6 +155,7 @@ function _bsPayeeKind(box) {
   if (p === BS_PAYEE_COMPFEE) return 'compfee';
   if (p === BS_PAYEE_MEAL) return 'meal';
   if (p === BS_PAYEE_ACCT) return 'acct';
+  if (p === BS_PAYEE_GUSTO) return 'gusto';
   if (_bsIsEmp(p)) return 'employee';
   if (_bsIsPallet(p)) return 'pallet';
   if (_bsIsCheck(p)) return 'check';
@@ -206,6 +209,7 @@ function _bsPayeeOptionDefs(direction) {
     { v: BS_PAYEE_COMPFEE, t: '🏛️ 公司相关费用（税务/成立费，选分类）', d: 'out' },
     { v: BS_PAYEE_MEAL, t: '🍽️ 餐饮支出（选分类）', d: 'out' },
     { v: BS_PAYEE_ACCT, t: '🧮 会计费用（选分类）', d: 'out' },
+    { v: BS_PAYEE_GUSTO, t: '💼 Gusto 费用（选分类）', d: 'out' },
     { v: BS_PAYEE_LAWSUIT, t: '⚖️ 诉讼费', d: 'out' },
     { v: BS_PAYEE_LAWYER, t: '👨‍⚖️ 律师费用', d: 'out' },
     { v: BS_PAYEE_CLAIM, t: '📋 Claim', d: 'both' },
@@ -478,9 +482,11 @@ function bsUpdateBoxSections(id) {
   const cfw = item.querySelector('.bs-compfee-wrap');
   const mlw = item.querySelector('.bs-meal-wrap');
   const acw = item.querySelector('.bs-acct-wrap');
+  const guw = item.querySelector('.bs-gusto-wrap');
   if (cfw) cfw.style.display = kind === 'compfee' ? '' : 'none';
   if (mlw) mlw.style.display = kind === 'meal' ? '' : 'none';
   if (acw) acw.style.display = kind === 'acct' ? '' : 'none';
+  if (guw) guw.style.display = kind === 'gusto' ? '' : 'none';
   if (plw) plw.style.display = kind === 'pallet' ? '' : 'none';
   if (ckw) ckw.style.display = kind === 'check' ? '' : 'none';
   if (tkw) tkw.style.display = kind === 'truck' ? '' : 'none';
@@ -896,6 +902,10 @@ function _bsRenderBoxPanel() {
         <div style="font-size:.72rem;color:#047857;margin-bottom:.3rem">会计费用分类</div>
         <input type="text" class="bs-bx-acct" list="bsAcctList" placeholder="如：记账 Bookkeeping / 报税 Tax Filing" value="${esc(box.payee === BS_PAYEE_ACCT ? (box.purpose || '') : '')}" onchange="bsUpdateBoxField(${box.id},'purpose',this.value)" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
       </div>
+      <div class="bs-gusto-wrap" style="display:${box.payee === BS_PAYEE_GUSTO ? '' : 'none'};background:#fdf2f8;border:1px dashed #fbcfe8;border-radius:6px;padding:.45rem .5rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#be185d;margin-bottom:.3rem">Gusto 费用分类</div>
+        <input type="text" class="bs-bx-gusto" list="bsGustoList" placeholder="如：服务费 Service Fee / 代缴工资税 Payroll Tax" value="${esc(box.payee === BS_PAYEE_GUSTO ? (box.purpose || '') : '')}" onchange="bsUpdateBoxField(${box.id},'purpose',this.value)" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+      </div>
       <div class="bs-personal-wrap" style="display:${_bsPayeeKind(box) === 'personal' ? '' : 'none'};background:#eff6ff;border:1px dashed #bfdbfe;border-radius:6px;padding:.45rem .5rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:#1d4ed8;margin-bottom:.3rem">类别（拿回家）</div>
         <input type="text" class="bs-bx-cat" list="bsPersonalCatList" placeholder="换汇 / 自己工资 / 公司转账" value="${esc(_bsPayeeKind(box) === 'personal' ? (box.purpose || '') : '')}" onchange="bsUpdateBoxField(${box.id},'purpose',this.value)" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
@@ -935,6 +945,7 @@ function _bsRenderBoxPanel() {
     + '<datalist id="bsCompFeeList">' + BS_COMPFEE_TYPES.map(f => `<option value="${esc(f)}"></option>`).join('') + '</datalist>'
     + '<datalist id="bsMealList">' + BS_MEAL_TYPES.map(f => `<option value="${esc(f)}"></option>`).join('') + '</datalist>'
     + '<datalist id="bsAcctList">' + BS_ACCT_TYPES.map(f => `<option value="${esc(f)}"></option>`).join('') + '</datalist>'
+    + '<datalist id="bsGustoList">' + BS_GUSTO_TYPES.map(f => `<option value="${esc(f)}"></option>`).join('') + '</datalist>'
     + '<datalist id="bsPersonalCatList">' + BS_PERSONAL_CATS.map(c => `<option value="${esc(c)}"></option>`).join('') + '</datalist>'
     + '<datalist id="bsReferrerList">' + (_bsReferrers || []).map(n => `<option value="${esc(n)}"></option>`).join('') + '</datalist>';
   bsValidateBoxDates(box.id);
