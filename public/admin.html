@@ -42948,6 +42948,10 @@ function renderApplicantInbox() {
     const _dupWarn = _others.length
       ? `<button onclick="_inboxViewEmp(${_others[0].id})" title="系统里已有同一人的其他员工档案（电话/邮箱相同），点击查看" style="padding:.2rem .55rem;font-size:.72rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap">⚠️ 系统已有同一人 · ${esc(titleCase([_others[0].first_name, _others[0].last_name].filter(Boolean).join(' ')) || '员工')}${_others[0].employee_id ? ' · ' + esc(_others[0].employee_id) : ''}${_others.length > 1 ? ` 等 ${_others.length} 份` : ''} ↗</button>`
       : '';
+    // 同一个人不该有两个员工号 → admin 可一键合并: 保留在职那份, 删掉重复员工号
+    const _mergeBtn = (_linkedEmp && _others.length && USER_ROLE === 'admin')
+      ? `<button onclick="inboxMergeDup(${_linkedEmp.id},${_others[0].id})" title="把两份档案合并成一个员工号：保留在职那份，工时/打卡/文件全部转移，重复员工号删除（不可撤销）" style="padding:.2rem .55rem;font-size:.72rem;background:#fff;color:#7c3aed;border:1px dashed #c4b5fd;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap">🧹 合并成一个员工号</button>`
+      : '';
     // 后台处理决定（如「已舍弃这次登记, 保留原档案」）→ 显示在卡片上
     const _reviewNote = String(s.review_note || '').trim()
       ? `<div style="max-width:300px;font-size:.7rem;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:.25rem .5rem;text-align:right;word-break:break-word">${esc(s.review_note)}</div>`
@@ -42997,6 +43001,7 @@ function renderApplicantInbox() {
           ${mkEmp}
           ${_empChip}
           ${_dupWarn}
+          ${_mergeBtn}
           ${_reviewNote}
           ${_createAnyway}
           ${del}
@@ -43011,6 +43016,26 @@ function closeApplicantInbox() { document.getElementById('applyInboxModal').clas
 function _inboxViewEmp(empId) {
   closeApplicantInbox();
   if (typeof viewEmployee === 'function') viewEmployee(empId);
+}
+// 同一个人两个员工号 → 合并成一个: 保留在职那份（都在职/都不在职则保留更早建的），
+// 工时/打卡/文件等所有记录转移到保留档案, 重复员工号删除（服务端事务, 不可撤销）。
+async function inboxMergeDup(linkedId, otherId) {
+  const a = (allEmployees || []).find(e => e.id === linkedId);
+  const b = (allEmployees || []).find(e => e.id === otherId);
+  if (!a || !b) { showToast('找不到员工档案，请刷新后再试', 'error'); return; }
+  let keep, absorb;
+  if (a.status === 'active' && b.status !== 'active') { keep = a; absorb = b; }
+  else if (b.status === 'active' && a.status !== 'active') { keep = b; absorb = a; }
+  else { keep = a.id < b.id ? a : b; absorb = a.id < b.id ? b : a; }
+  const nm = e => `${titleCase([e.first_name, e.last_name].filter(Boolean).join(' '))} · ${e.employee_id}`;
+  if (!confirm(`确认把两份档案合并成一个员工号？\n\n✅ 保留：${nm(keep)}（${EMP_STATUS_LABEL[keep.status] || keep.status}）\n🗑 删除：${nm(absorb)}\n\n工时 / 打卡记录 / 文件 / 申请关联全部转移到保留档案，联系方式与打卡密码一并并入，合并标注写进备注。此操作不可撤销。`)) return;
+  try {
+    const r = await api('/admin/employees/merge-dup', { method: 'POST', body: JSON.stringify({ keep_id: keep.id, absorb_id: absorb.id }) });
+    if (!r || r.error || !r.success) throw new Error((r && r.error) || '合并失败');
+    showToast(`✅ 已合并：保留 ${nm(keep)}，重复员工号 ${absorb.employee_id} 已删除`);
+    await loadEmployees();
+    openApplicantInbox(_inboxPartnerId, _inboxPartnerName); // 卡片按合并后的档案重新渲染
+  } catch (e) { showToast('合并失败：' + (e.message || e), 'error'); }
 }
 // 待入职徽章点击: 打开与「新建员工」同一个员工编辑表单（预填已建的档案），并把这份
 // 申请上传的证件挂成参考条 — 和 createEmployeeFromApplicant 同一套界面，只是走编辑模式。

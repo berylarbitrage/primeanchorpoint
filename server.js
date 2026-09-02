@@ -20745,6 +20745,57 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
   res.json({ success: true });
 });
 
+// 合并重复员工档案（同一个人两个员工号）: 保留 keep, 把 absorb 在所有表里的引用
+// （工时/打卡/文件/申请等）改挂到 keep, 联系方式与打卡码并进 keep, 备注写合并标注,
+// 最后删除 absorb —— 系统里只剩一个员工号。仅 admin, 不可撤销, 整个操作在事务里。
+app.post('/api/admin/employees/merge-dup', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const keepId = parseInt((req.body || {}).keep_id), absorbId = parseInt((req.body || {}).absorb_id);
+    if (!keepId || !absorbId || keepId === absorbId) return res.status(400).json({ error: '无效参数' });
+    const keep = db.prepare('SELECT * FROM employees WHERE id=?').get(keepId);
+    const absorb = db.prepare('SELECT * FROM employees WHERE id=?').get(absorbId);
+    if (!keep || !absorb) return res.status(404).json({ error: '员工不存在' });
+    const stamp = new Date().toISOString().slice(0, 10);
+    const parseArr = v => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
+    const norm = s => String(s || '').trim();
+    const touched = [];
+    db.transaction(() => {
+      // 1) 运行时枚举所有含 *employee_id 列的表, 把 absorb 的引用全部改挂到 keep（不会漏表）
+      const tables = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != 'employees'`).all();
+      for (const t of tables) {
+        const qn = '"' + t.name.replace(/"/g, '""') + '"';
+        let cols = [];
+        try { cols = db.prepare(`PRAGMA table_info(${qn})`).all(); } catch (_) { continue; }
+        for (const c of cols) {
+          if (!/employee_id$/.test(c.name)) continue;
+          const qc = '"' + c.name.replace(/"/g, '""') + '"';
+          const r = db.prepare(`UPDATE ${qn} SET ${qc}=? WHERE ${qc}=?`).run(keepId, absorbId);
+          if (r.changes) touched.push(`${t.name}.${c.name}:${r.changes}`);
+        }
+      }
+      // 2) 联系方式并进 keep: 主字段不动, 不同的进 extra_phones/extra_emails; 打卡码 keep 没有才继承
+      const phones = parseArr(keep.extra_phones);
+      if (norm(absorb.phone) && norm(absorb.phone) !== norm(keep.phone) && !phones.map(norm).includes(norm(absorb.phone))) phones.push(norm(absorb.phone));
+      const emails = parseArr(keep.extra_emails);
+      const ae = norm(absorb.email).toLowerCase();
+      if (ae && ae !== norm(keep.email).toLowerCase() && !emails.map(x => norm(x).toLowerCase()).includes(ae)) emails.push(norm(absorb.email));
+      const keepCode = norm(keep.timeclock_code), absCode = norm(absorb.timeclock_code);
+      const newCode = (!keepCode && absCode) ? absCode : keep.timeclock_code || '';
+      // 3) 合并标注 + 被并档案的原备注一起写进 keep 备注, 不丢信息
+      const lines = [`📌 ${stamp} 合并重复档案：「${absorb.first_name} ${absorb.last_name} · ${absorb.employee_id}」已并入本档案（工时/打卡/文件等记录已全部转移，重复员工号已删除）`];
+      if (absCode && keepCode && absCode !== keepCode) lines.push(`📌 被并档案原打卡密码 ${absCode} 已停用（本档案打卡密码 ${keepCode} 继续使用）`);
+      if (norm(absorb.notes)) lines.push(`—— 以下为被并档案「${absorb.employee_id}」的原备注 ——`, norm(absorb.notes));
+      const add = lines.join('\n');
+      db.prepare(`UPDATE employees SET extra_phones=?, extra_emails=?, timeclock_code=?, notes=CASE WHEN COALESCE(notes,'')='' THEN ? ELSE notes || char(10) || ? END WHERE id=?`)
+        .run(JSON.stringify(phones), JSON.stringify(emails), newCode, add, add, keepId);
+      // 4) 删除重复档案 → 只剩一个员工号
+      db.prepare('DELETE FROM employees WHERE id=?').run(absorbId);
+    })();
+    console.log(`[merge-dup] ${absorb.employee_id} → ${keep.employee_id} by ${req.userName || 'admin'}; moved: ${touched.join(', ') || 'none'}`);
+    res.json({ success: true, kept: keep.employee_id, removed: absorb.employee_id, moved: touched });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Update employee contact info (phone/email + extras)
 app.put('/api/admin/employees/:id/contacts', requireAdmin, (req, res) => {
   const emp = db.prepare('SELECT id FROM employees WHERE id=?').get(req.params.id);
