@@ -8334,10 +8334,10 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 <!-- 🧹 合并重复员工号: 两份档案左右对比, 点选保留哪份后再确认 -->
 <div class="modal-bg" id="mergeDupModal" style="z-index:9998"><div class="modal" style="max-width:780px">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
-    <h2 style="margin:0;font-size:1.05rem">🧹 合并成一个员工号</h2>
+    <h2 id="mergeDupTitle" style="margin:0;font-size:1.05rem">🧹 合并成一个员工号</h2>
     <button class="btn btn-sm btn-outline" onclick="closeMergeDup()">✕ 关闭</button>
   </div>
-  <p style="font-size:.82rem;color:var(--gray-500);margin:.2rem 0 .8rem">对比两份档案后<strong>点选要保留的一份</strong>（绿色 = 保留）。另一份的工时 / 打卡记录 / 文件 / 申请关联会全部转移到保留档案，联系方式与打卡密码一并并入，合并标注写进备注，然后删除重复员工号。此操作不可撤销。</p>
+  <p id="mergeDupDesc" style="font-size:.82rem;color:var(--gray-500);margin:.2rem 0 .8rem"></p>
   <div id="mergeDupCols" style="display:grid;grid-template-columns:1fr 1fr;gap:.7rem"></div>
   <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem">
     <button class="btn btn-outline" onclick="closeMergeDup()">取消</button>
@@ -17196,36 +17196,39 @@ function _execDupKeep() {
   showToast(`✅ 已保留现有档案${p && p.existingEmpName ? '「' + esc(p.existingEmpName) + '」' : ''}，这次登记已标注舍弃、新信息未保存`);
 }
 
+// 冲突里的「合并员工档案」: 打开左右对比挑选弹窗 —— 本次填写的新信息 vs 现有档案
+// 逐条挑（每一行点选用哪边的值），确认后预填进现有档案的编辑表单人工核对再保存。
+// 列表缓存里找不到现有档案行时退回旧行为：直接打开编辑表单。
 function _execDupMerge() {
   const p = _pendingDupSave;
   _pendingDupSave = null;
   document.getElementById('dupActionBar').style.display = 'none';
-  const empId = p.existingEmpId || (currentEmpForDetail && currentEmpForDetail.id);
+  const empId = p && (p.existingEmpId || (currentEmpForDetail && currentEmpForDetail.id));
   closeEmpDetailModal();
   if (!empId || !p) return;
-  setTimeout(() => {
-    if (p.convertFromWorkerId) _pendingWorkerLink = { workerId: p.convertFromWorkerId, empId };
-    openEmpModal(empId);
-    const sm = p.data.social_media || {};
-    const toMerge = [
-      ['ePhone', p.field !== 'phone' ? p.data.phone : null],
-      ['eEmail', p.field !== 'email' ? p.data.email : null],
-      ['eMiddle', p.data.middle_name],
-      ['eAddr', p.data.address], ['eStreet2', p.data.street2],
-      ['eCity', p.data.city], ['eState', p.data.state], ['eZip', p.data.zip],
-      ['eHire', p.data.hire_date],
-      ['eEmgName', p.data.emergency_name], ['eEmgPhone', p.data.emergency_phone],
-      ['eEmgRel', p.data.emergency_relation], ['eNotes', p.data.notes],
-      ['eSocialWhatsapp', sm.whatsapp], ['eSocialWechat', sm.wechat],
-      ['eSocialFacebook', sm.facebook], ['eSocialInstagram', sm.instagram],
-    ];
-    for (const [elId, val] of toMerge) {
-      if (!val) continue;
-      const el = document.getElementById(elId);
-      if (el && !el.value) el.value = val;
-    }
-    _autoStateFromZip();
-  }, 100);
+  const b = (allEmployees || []).find(e => e.id === empId);
+  if (!b) {
+    setTimeout(() => { if (p.convertFromWorkerId) _pendingWorkerLink = { workerId: p.convertFromWorkerId, empId }; openEmpModal(empId); }, 100);
+    return;
+  }
+  const d = p.data || {};
+  const digits = (d.ssn && d.ssn !== '__KEEP__') ? String(d.ssn).replace(/\D/g, '') : '';
+  const a = {
+    id: 0, __pending: true,
+    first_name: d.first_name || '', middle_name: d.middle_name || '', last_name: d.last_name || '',
+    phone: d.phone || '', email: d.email || '',
+    address: d.address || '', street2: d.street2 || '', city: d.city || '', state: d.state || '', zip: d.zip || '',
+    dob: d.dob || '', hire_date: d.hire_date || '',
+    ssn_digits: digits.length === 9 ? digits : '', ssn_last4: digits.length === 9 ? digits.slice(-4) : '',
+    timeclock_code: '', notes: '',
+  };
+  _mergeDupPair = { mode: 'conflict', a, b, keepId: b.id, pendingWorker: p.convertFromWorkerId || null };
+  _mergeDefaultPicks();
+  document.getElementById('mergeDupTitle').textContent = '🧩 逐条挑选要保留的信息';
+  document.getElementById('mergeDupDesc').innerHTML = '左边是<strong>本次填写的新信息</strong>，右边是<strong>现有档案</strong>。两边不同的行<strong>点一下</strong>就选用那一边的值（绿行 = 采用）。确认后会把选择预填进现有档案的编辑表单，核对无误再点「保存员工」。';
+  document.getElementById('mergeDupBtn').textContent = '应用所选 / Apply';
+  renderMergeDup();
+  document.getElementById('mergeDupModal').classList.add('show');
 }
 
 function _makeExtraContactRow(type, placeholder, value) {
@@ -43055,7 +43058,39 @@ function _inboxViewEmp(empId) {
 }
 // 同一个人两个员工号 → 合并成一个: 保留在职那份（都在职/都不在职则保留更早建的），
 // 工时/打卡/文件等所有记录转移到保留档案, 重复员工号删除（服务端事务, 不可撤销）。
-let _mergeDupPair = null; // { a, b, keepId }
+// ── 🧩 档案对比 & 逐条挑选（合并 / 冲突两用）──
+// merge 模式: 同一个人两个员工号 —— 点选保留哪份 + 差异行逐条挑值, 确认后服务端合并并删重复号;
+// conflict 模式: 保存撞号冲突里的「合并员工档案」—— 本次填写的新信息 vs 现有档案逐条挑,
+// 确认后把选择预填进现有档案的编辑表单, 人工核对后保存（走正常校验与查重）。
+let _mergeDupPair = null; // { mode:'merge'|'conflict', a, b, keepId, picks:{field:'a'|'b'}, docsCache, pendingWorker }
+const MERGE_PICK_FIELDS = [
+  { key: 'name', label: '姓名', get: e => titleCase([e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ')) },
+  { key: 'phone', label: '电话', get: e => e.phone || '' },
+  { key: 'email', label: '邮箱', get: e => e.email || '' },
+  { key: 'addr', label: '地址', get: e => [e.address, e.street2, e.city, e.state, e.zip].filter(Boolean).join(', ') },
+  { key: 'dob', label: '出生日期', get: e => e.dob || '' },
+  { key: 'ssn', label: 'SSN', get: e => e.ssn_last4 ? '•••••' + e.ssn_last4 : '' },
+  { key: 'timeclock_code', label: '打卡密码', get: e => e.timeclock_code || '', noConflict: true },
+  { key: 'hire_date', label: '入职日期', get: e => e.hire_date || '' },
+];
+function _mergeKeepSide() { return _mergeDupPair.mode === 'conflict' ? 'b' : (_mergeDupPair.keepId === _mergeDupPair.a.id ? 'a' : 'b'); }
+// 该行两边值不同才可点选; conflict 模式下打卡密码不在表单里, 不给挑
+function _mergePickable(f) {
+  const P = _mergeDupPair;
+  if (P.mode === 'conflict' && f.noConflict) return false;
+  const va = String(f.get(P.a) || '').trim(), vb = String(f.get(P.b) || '').trim();
+  return !!(va || vb) && va.toLowerCase() !== vb.toLowerCase();
+}
+// 默认选择: 保留侧的值优先, 保留侧为空而另一边有值时自动取另一边
+function _mergeDefaultPicks() {
+  const P = _mergeDupPair;
+  const keepSide = _mergeKeepSide(), other = keepSide === 'a' ? 'b' : 'a';
+  P.picks = {};
+  for (const f of MERGE_PICK_FIELDS) {
+    const kv = String(f.get(P[keepSide]) || '').trim();
+    P.picks[f.key] = (!kv && String(f.get(P[other]) || '').trim()) ? other : keepSide;
+  }
+}
 function inboxMergeDup(linkedId, otherId) {
   const a = (allEmployees || []).find(e => e.id === linkedId);
   const b = (allEmployees || []).find(e => e.id === otherId);
@@ -43065,42 +43100,59 @@ function inboxMergeDup(linkedId, otherId) {
   if (a.status === 'active' && b.status !== 'active') keepId = a.id;
   else if (b.status === 'active' && a.status !== 'active') keepId = b.id;
   else keepId = a.id < b.id ? a.id : b.id;
-  _mergeDupPair = { a, b, keepId };
+  _mergeDupPair = { mode: 'merge', a, b, keepId };
+  _mergeDefaultPicks();
+  document.getElementById('mergeDupTitle').textContent = '🧹 合并成一个员工号';
+  document.getElementById('mergeDupDesc').innerHTML = '点卡片选<strong>保留哪份档案</strong>（绿框 = 保留），两边不同的信息行可<strong>逐条点选</strong>用哪边的值（绿行 = 采用）。另一份的工时 / 打卡记录 / 文件 / 申请关联全部转移，没选中的电话 / 邮箱进备用联系方式，然后删除重复员工号。此操作不可撤销。';
+  document.getElementById('mergeDupBtn').textContent = '确认合并 / Merge';
   renderMergeDup();
   document.getElementById('mergeDupModal').classList.add('show');
 }
-// 两份档案左右对比: 状态/联系方式/生日/SSN/打卡码/工时数/文件数/备注 一目了然, 点卡片选保留
 function renderMergeDup() {
   if (!_mergeDupPair) return;
-  const { a, b, keepId } = _mergeDupPair;
-  document.getElementById('mergeDupCols').innerHTML = [a, b].map(e => {
-    const keep = e.id === keepId;
+  const P = _mergeDupPair;
+  const keepSide = _mergeKeepSide();
+  document.getElementById('mergeDupCols').innerHTML = ['a', 'b'].map(side => {
+    const e = P[side];
+    const keep = side === keepSide;
     const nm = titleCase([e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '));
-    const row = (k, v) => `<div style="display:flex;justify-content:space-between;gap:.5rem;font-size:.78rem;padding:.18rem 0;border-bottom:1px dashed var(--gray-100)"><span style="color:var(--gray-400);white-space:nowrap">${k}</span><span style="text-align:right;word-break:break-all">${v || '—'}</span></div>`;
-    return `<div onclick="pickMergeKeep(${e.id})" title="点击选择保留这份档案" style="cursor:pointer;border:2px solid ${keep ? '#059669' : 'var(--gray-200)'};border-radius:10px;padding:.7rem .8rem;background:${keep ? '#ecfdf5' : '#fff'}">
+    const row = (k, v) => `<div style="display:flex;justify-content:space-between;gap:.5rem;font-size:.78rem;padding:.18rem .25rem;border-bottom:1px dashed var(--gray-100)"><span style="color:var(--gray-400);white-space:nowrap">${k}</span><span style="text-align:right;word-break:break-all">${v || '—'}</span></div>`;
+    const pickRows = MERGE_PICK_FIELDS.map(f => {
+      const v = esc(String(f.get(e) || ''));
+      if (!_mergePickable(f)) return row(f.label, v);
+      const chosen = P.picks[f.key] === side;
+      return `<div onclick="event.stopPropagation();pickMergeField('${f.key}','${side}')" title="点击选用这一边的「${f.label}」" style="display:flex;justify-content:space-between;gap:.5rem;font-size:.78rem;padding:.18rem .25rem;border-bottom:1px dashed var(--gray-100);cursor:pointer;border-radius:5px;${chosen ? 'background:#dcfce7' : 'opacity:.68'}">
+        <span style="white-space:nowrap;font-weight:700;color:${chosen ? '#047857' : 'var(--gray-400)'}">${chosen ? '✓ ' : '○ '}${f.label}</span>
+        <span style="text-align:right;word-break:break-all;${chosen ? 'font-weight:700' : ''}">${v || '—'}</span>
+      </div>`;
+    }).join('');
+    const headLabel = P.mode === 'conflict'
+      ? (side === 'a' ? '<span style="font-size:.72rem;font-weight:800;white-space:nowrap;color:#b45309">📝 本次填写的新信息</span>' : '<span style="font-size:.72rem;font-weight:800;white-space:nowrap;color:#047857">🗂 现有档案（将被更新）</span>')
+      : `<span style="font-size:.72rem;font-weight:800;white-space:nowrap;color:${keep ? '#047857' : '#b91c1c'}">${keep ? '✅ 保留这份' : '🗑 将被删除'}</span>`;
+    const cardClick = P.mode === 'merge' ? ` onclick="pickMergeKeep(${e.id})" title="点击选择保留这份档案"` : '';
+    return `<div${cardClick} style="${P.mode === 'merge' ? 'cursor:pointer;' : ''}border:2px solid ${keep ? '#059669' : 'var(--gray-200)'};border-radius:10px;padding:.7rem .8rem;background:${keep ? '#ecfdf5' : '#fff'}">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-bottom:.4rem">
         <b style="font-size:.9rem">${esc(nm || '—')}</b>
-        <span style="font-size:.72rem;font-weight:800;white-space:nowrap;color:${keep ? '#047857' : '#b91c1c'}">${keep ? '✅ 保留这份' : '🗑 将被删除'}</span>
+        ${headLabel}
       </div>
-      ${row('员工号', esc(e.employee_id || ''))}
-      ${row('状态', EMP_STATUS_LABEL[e.status] || esc(e.status || ''))}
-      ${row('电话', esc(e.phone || ''))}
-      ${row('邮箱', esc(e.email || ''))}
-      ${row('地址', esc([e.address, e.city, e.state, e.zip].filter(Boolean).join(', ')))}
-      ${row('出生日期', esc(e.dob || ''))}
-      ${row('SSN', e.ssn_last4 ? '•••••' + esc(e.ssn_last4) : '')}
-      ${row('打卡密码', esc(e.timeclock_code || ''))}
-      ${row('入职日期', esc(e.hire_date || ''))}
-      ${row('工时记录', (e.time_count || 0) + ' 条')}
-      ${row('HR 文件', (e.doc_count || 0) + ' 份')}
-      ${row('注册时间', e.created_at ? new Date(e.created_at).toLocaleDateString('zh-CN') : '')}
+      ${e.id ? row('员工号', esc(e.employee_id || '')) : ''}
+      ${e.id ? row('状态', EMP_STATUS_LABEL[e.status] || esc(e.status || '')) : ''}
+      ${pickRows}
+      ${e.id ? row('工时记录', (e.time_count || 0) + ' 条') : ''}
+      ${e.id ? row('HR 文件', (e.doc_count || 0) + ' 份') : ''}
+      ${e.id ? row('注册时间', e.created_at ? new Date(e.created_at).toLocaleDateString('zh-CN') : '') : ''}
       ${e.notes ? `<div style="font-size:.7rem;color:var(--gray-400);margin-top:.35rem;max-height:56px;overflow:auto;white-space:pre-wrap;border-top:1px dashed var(--gray-100);padding-top:.3rem">${esc(String(e.notes).slice(0, 400))}</div>` : ''}
-      <div style="font-size:.7rem;color:var(--gray-400);margin-top:.35rem;border-top:1px dashed var(--gray-100);padding-top:.3rem">证件（点开可审阅/裁剪）</div>
+      ${e.id ? `<div style="font-size:.7rem;color:var(--gray-400);margin-top:.35rem;border-top:1px dashed var(--gray-100);padding-top:.3rem">证件（点开可审阅/裁剪）</div>
       <div id="mergeDocs_${e.id}" style="display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.25rem;min-height:34px"><span style="font-size:.72rem;color:var(--gray-300)">加载中…</span></div>
-      <div style="margin-top:.45rem"><a onclick="event.stopPropagation();closeMergeDup();_inboxViewEmp(${e.id})" style="cursor:pointer;color:#1d4ed8;font-size:.74rem;text-decoration:underline">查看完整档案 ↗</a></div>
+      <div style="margin-top:.45rem"><a onclick="event.stopPropagation();closeMergeDup();_inboxViewEmp(${e.id})" style="cursor:pointer;color:#1d4ed8;font-size:.74rem;text-decoration:underline">查看完整档案 ↗</a></div>` : ''}
     </div>`;
   }).join('');
-  [a, b].forEach(e => _mergeLoadDocs(e.id));
+  [P.a, P.b].forEach(e => { if (e.id) _mergeLoadDocs(e.id); });
+}
+function pickMergeField(key, side) {
+  if (!_mergeDupPair) return;
+  _mergeDupPair.picks[key] = side;
+  renderMergeDup();
 }
 // 对比卡里的证件缩略图: 优先显示该档案关联申请上传的证件, 点开进同一个审阅器
 // （审阅器浮在弹窗上层）; 结果缓存, 点选保留切换重渲染时不重新请求
@@ -43145,18 +43197,33 @@ function _mergeLoadDocs(empId) {
     if (box) box.innerHTML = '<span style="font-size:.72rem;color:#b91c1c">证件加载失败</span>';
   });
 }
-function pickMergeKeep(id) { if (_mergeDupPair) { _mergeDupPair.keepId = id; renderMergeDup(); } }
+function pickMergeKeep(id) {
+  if (!_mergeDupPair || _mergeDupPair.mode !== 'merge') return;
+  _mergeDupPair.keepId = id;
+  _mergeDefaultPicks(); // 换保留对象后重置逐条选择（保留侧优先, 空值取另一边）
+  renderMergeDup();
+}
 function closeMergeDup() { document.getElementById('mergeDupModal').classList.remove('show'); _mergeDupPair = null; }
 async function execMergeDup() {
   if (!_mergeDupPair) return;
-  const { a, b, keepId } = _mergeDupPair;
-  const keep = a.id === keepId ? a : b;
-  const absorb = a.id === keepId ? b : a;
+  const P = _mergeDupPair;
+  if (P.mode === 'conflict') return _applyConflictPicks();
+  const keepSide = _mergeKeepSide(), otherSide = keepSide === 'a' ? 'b' : 'a';
+  const keep = P[keepSide], absorb = P[otherSide];
+  // 逐条挑选转成 overrides: 只发选了「另一边」的字段, 其余服务端沿用保留档案原值
+  const ov = {};
+  for (const f of MERGE_PICK_FIELDS) {
+    if (!_mergePickable(f) || P.picks[f.key] !== otherSide) continue;
+    if (f.key === 'name') { ov.first_name = absorb.first_name || ''; ov.middle_name = absorb.middle_name || ''; ov.last_name = absorb.last_name || ''; }
+    else if (f.key === 'addr') { ov.address = absorb.address || ''; ov.street2 = absorb.street2 || ''; ov.city = absorb.city || ''; ov.state = absorb.state || ''; ov.zip = absorb.zip || ''; }
+    else if (f.key === 'ssn') ov.ssn_source = 'absorb';
+    else ov[f.key] = absorb[f.key] || '';
+  }
   const nm = e => `${titleCase([e.first_name, e.last_name].filter(Boolean).join(' '))} · ${e.employee_id}`;
   const btn = document.getElementById('mergeDupBtn');
   btn.disabled = true; btn.textContent = '合并中…';
   try {
-    const r = await api('/admin/employees/merge-dup', { method: 'POST', body: JSON.stringify({ keep_id: keep.id, absorb_id: absorb.id }) });
+    const r = await api('/admin/employees/merge-dup', { method: 'POST', body: JSON.stringify({ keep_id: keep.id, absorb_id: absorb.id, overrides: ov }) });
     if (!r || r.error || !r.success) throw new Error((r && r.error) || '合并失败');
     closeMergeDup();
     showToast(`✅ 已合并：保留 ${nm(keep)}，重复员工号 ${absorb.employee_id} 已删除`);
@@ -43164,6 +43231,28 @@ async function execMergeDup() {
     openApplicantInbox(_inboxPartnerId, _inboxPartnerName); // 卡片按合并后的档案重新渲染
   } catch (e) { showToast('合并失败：' + (e.message || e), 'error'); }
   btn.disabled = false; btn.textContent = '确认合并 / Merge';
+}
+// conflict 模式确认: 把选了「新信息」的字段预填进现有档案的编辑表单, 人工核对后保存
+function _applyConflictPicks() {
+  const P = _mergeDupPair;
+  const a = P.a, bId = P.b.id, picks = P.picks, pendingWorker = P.pendingWorker;
+  closeMergeDup();
+  setTimeout(() => {
+    if (pendingWorker) _pendingWorkerLink = { workerId: pendingWorker, empId: bId };
+    openEmpModal(bId);
+    const set = (id2, v) => { const el = document.getElementById(id2); if (el) el.value = v || ''; };
+    if (picks.name === 'a') { set('eFirst', a.first_name); set('eMiddle', a.middle_name); set('eLast', a.last_name); }
+    if (picks.phone === 'a') set('ePhone', a.phone);
+    if (picks.email === 'a') set('eEmail', a.email);
+    if (picks.addr === 'a') { set('eAddr', a.address); set('eStreet2', a.street2); set('eCity', a.city); set('eZip', a.zip); fillStateSelect(document.getElementById('eState'), a.state || ''); }
+    if (picks.dob === 'a' && a.dob) setDobValue(a.dob);
+    if (picks.hire_date === 'a') set('eHire', a.hire_date);
+    if (picks.ssn === 'a' && a.ssn_digits && a.ssn_digits.length === 9) {
+      const el = document.getElementById('eSSN');
+      if (el) { el.value = a.ssn_digits; delete el.dataset.ssnMasked; delete el.dataset.ssnFull; delete el.dataset.ssnStatus; }
+    }
+    showToast('已按你的选择预填到编辑表单 — 核对无误后点「保存员工」', 'success', 5500);
+  }, 100);
 }
 // 待入职徽章点击: 打开与「新建员工」同一个员工编辑表单（预填已建的档案），并把这份
 // 申请上传的证件挂成参考条 — 和 createEmployeeFromApplicant 同一套界面，只是走编辑模式。
