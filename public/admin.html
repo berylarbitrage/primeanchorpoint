@@ -43115,6 +43115,9 @@ function openDupConflictPicker(p) {
     dob: d.dob || '', hire_date: d.hire_date || '',
     ssn_digits: digits.length === 9 ? digits : '', ssn_last4: digits.length === 9 ? digits.slice(-4) : '',
     timeclock_code: '', notes: '',
+    // 新信息卡的证件来源: 表单里挂着的申请证件条优先, 其次是正在编辑的那份档案
+    docsSubId: window._empApplDocsSubId || 0,
+    docsEmpId: p.empId || 0,
   };
   _mergeDupPair = { mode: 'conflict', a, b, keepId: b.id, pendingWorker: p.convertFromWorkerId || null };
   _mergeDefaultPicks();
@@ -43158,12 +43161,12 @@ function renderMergeDup() {
       ${e.id ? row('HR 文件', (e.doc_count || 0) + ' 份') : ''}
       ${e.id ? row('注册时间', e.created_at ? new Date(e.created_at).toLocaleDateString('zh-CN') : '') : ''}
       ${e.notes ? `<div style="font-size:.7rem;color:var(--gray-400);margin-top:.35rem;max-height:56px;overflow:auto;white-space:pre-wrap;border-top:1px dashed var(--gray-100);padding-top:.3rem">${esc(String(e.notes).slice(0, 400))}</div>` : ''}
-      ${e.id ? `<div style="font-size:.7rem;color:var(--gray-400);margin-top:.35rem;border-top:1px dashed var(--gray-100);padding-top:.3rem">证件（点开可审阅/裁剪）</div>
-      <div id="mergeDocs_${e.id}" style="display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.25rem;min-height:34px"><span style="font-size:.72rem;color:var(--gray-300)">加载中…</span></div>
-      <div style="margin-top:.45rem"><a onclick="event.stopPropagation();closeMergeDup();_inboxViewEmp(${e.id})" style="cursor:pointer;color:#1d4ed8;font-size:.74rem;text-decoration:underline">查看完整档案 ↗</a></div>` : ''}
+      ${(e.id || e.docsSubId || e.docsEmpId) ? `<div style="font-size:.7rem;color:var(--gray-400);margin-top:.35rem;border-top:1px dashed var(--gray-100);padding-top:.3rem">证件（点开可审阅/裁剪）</div>
+      <div id="${e.id ? 'mergeDocs_' + e.id : 'mergeDocs_pending'}" style="display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.25rem;min-height:34px"><span style="font-size:.72rem;color:var(--gray-300)">加载中…</span></div>` : ''}
+      ${e.id ? `<div style="margin-top:.45rem"><a onclick="event.stopPropagation();closeMergeDup();_inboxViewEmp(${e.id})" style="cursor:pointer;color:#1d4ed8;font-size:.74rem;text-decoration:underline">查看完整档案 ↗</a></div>` : ''}
     </div>`;
   }).join('');
-  [P.a, P.b].forEach(e => { if (e.id) _mergeLoadDocs(e.id); });
+  [P.a, P.b].forEach(e => { if (e.id) _mergeLoadDocs(e.id); else if (e.docsSubId || e.docsEmpId) _mergeLoadPendingDocs(e); });
 }
 function pickMergeField(key, side) {
   if (!_mergeDupPair) return;
@@ -43174,7 +43177,22 @@ function pickMergeField(key, side) {
 // （审阅器浮在弹窗上层）; 结果缓存, 点选保留切换重渲染时不重新请求
 function _mergeRenderDocs(empId, docs) {
   const box = document.getElementById('mergeDocs_' + empId);
-  if (!box) return;
+  if (box) _mergeRenderDocsInto(box, docs);
+}
+// 左侧「本次填写的新信息」卡的证件: 新信息来自哪份申请/哪份档案, 就取那里的证件图
+function _mergeLoadPendingDocs(a) {
+  const box = document.getElementById('mergeDocs_pending');
+  if (!box || !_mergeDupPair) return;
+  const cache = _mergeDupPair.docsCache || (_mergeDupPair.docsCache = {});
+  const key = a.docsSubId ? 'sub:' + a.docsSubId : 'emp:' + a.docsEmpId;
+  if (cache[key]) { _mergeRenderDocsInto(box, cache[key]); return; }
+  const pr = a.docsSubId
+    ? api(`/admin/applicant-submissions/${a.docsSubId}/docs`).then(list => (Array.isArray(list) ? list : []).map(d => ({ ...d, submission_id: a.docsSubId })))
+    : api(`/admin/employees/${a.docsEmpId}/applicant-docs`).then(list => Array.isArray(list) ? list : []);
+  pr.then(docs => { cache[key] = docs; _mergeRenderDocsInto(box, docs); })
+    .catch(() => { box.innerHTML = '<span style="font-size:.72rem;color:#b91c1c">证件加载失败</span>'; });
+}
+function _mergeRenderDocsInto(box, docs) {
   const linked = docs.filter(d => d.linked);
   const show = linked.length ? linked : docs;
   if (!show.length) { box.innerHTML = '<span style="font-size:.72rem;color:var(--gray-300)">无证件</span>'; return; }
@@ -43267,7 +43285,25 @@ function _applyConflictPicks() {
       const el = document.getElementById('eSSN');
       if (el) { el.value = a.ssn_digits; delete el.dataset.ssnMasked; delete el.dataset.ssnFull; delete el.dataset.ssnStatus; }
     }
-    showToast('已按你的选择预填到编辑表单 — 核对无误后点「保存员工」', 'success', 5500);
+    // 电话/邮箱两边都保留: 没被选为主号的那一边自动放进「+添加」的备用联系方式（去重）
+    const parseArr2 = v => { try { const x = JSON.parse(v || '[]'); return Array.isArray(x) ? x : []; } catch (_) { return []; } };
+    const bRow = P.b || {};
+    let sparedNote = [];
+    {
+      const mainP = String((picks.phone === 'a' ? a.phone : bRow.phone) || '').trim();
+      const spareP = String((picks.phone === 'a' ? bRow.phone : a.phone) || '').trim();
+      const eps = parseArr2(bRow.extra_phones).map(x => String(x).trim()).filter(Boolean);
+      if (spareP && spareP !== mainP && !eps.includes(spareP)) { eps.push(spareP); sparedNote.push('电话'); }
+      _populateExtraContacts('extraPhonesContainer', eps, 'tel', '(555) 000-0000');
+    }
+    {
+      const mainM = String((picks.email === 'a' ? a.email : bRow.email) || '').trim().toLowerCase();
+      const spareM = String((picks.email === 'a' ? bRow.email : a.email) || '').trim();
+      const ems = parseArr2(bRow.extra_emails).map(x => String(x).trim()).filter(Boolean);
+      if (spareM && spareM.toLowerCase() !== mainM && !ems.map(x => x.toLowerCase()).includes(spareM.toLowerCase())) { ems.push(spareM); sparedNote.push('邮箱'); }
+      _populateExtraContacts('extraEmailsContainer', ems, 'email', 'email@example.com');
+    }
+    showToast(`已按你的选择预填到编辑表单${sparedNote.length ? `；另一边的${sparedNote.join('和')}已放进备用联系方式（两个都保留）` : ''} — 核对无误后点「保存员工」`, 'success', 6500);
   }, 100);
 }
 // 待入职徽章点击: 打开与「新建员工」同一个员工编辑表单（预填已建的档案），并把这份
