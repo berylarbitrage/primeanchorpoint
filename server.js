@@ -826,6 +826,24 @@ try { db.exec(`ALTER TABLE warehouse_claims ADD COLUMN approval_status TEXT DEFA
 try { db.exec(`ALTER TABLE warehouse_claims ADD COLUMN created_by TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE warehouse_claims ADD COLUMN approved_by TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE warehouse_claims ADD COLUMN approval_note TEXT DEFAULT ''`); } catch(e) {}
+// 费用记录 (保险费/律师费): 会计对账页和赔偿事故同一套玩法 — 可新增/传发票文件/挂付款批注,
+// 会计提交待管理员审核 (pending → approved/rejected), admin 直接生效。fee_type: insurance | legal。
+try { db.exec(`CREATE TABLE IF NOT EXISTS fee_records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fee_type TEXT DEFAULT '',
+  party_name TEXT DEFAULT '',
+  fee_date TEXT DEFAULT '',
+  amount REAL DEFAULT NULL,
+  description TEXT DEFAULT '',
+  status TEXT DEFAULT 'open',
+  attachments TEXT DEFAULT '[]',
+  approval_status TEXT DEFAULT 'approved',
+  created_by TEXT DEFAULT '',
+  approved_by TEXT DEFAULT '',
+  approval_note TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL"); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) {}
@@ -37261,12 +37279,14 @@ function _acctPayNotesFor(type) {
 // 会计付款批注 upsert: 付了没有 / 哪个银行付的 / 付了多少 / 备注 / 关联银行交易(收款凭证)
 app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
   const { target_type, target_id, paid_status, bank, amount, note, txn_ids } = req.body || {};
-  if (!['invoice', 'claim'].includes(target_type)) return res.status(400).json({ error: '无效对象类型' });
+  if (!['invoice', 'claim', 'fee'].includes(target_type)) return res.status(400).json({ error: '无效对象类型' });
   const tid = parseInt(target_id);
   if (!tid) return res.status(400).json({ error: '无效对象' });
   const exists = target_type === 'invoice'
     ? db.prepare('SELECT id FROM invoices WHERE id=?').get(tid)
-    : db.prepare('SELECT id FROM warehouse_claims WHERE id=?').get(tid);
+    : target_type === 'fee'
+      ? db.prepare('SELECT id FROM fee_records WHERE id=?').get(tid)
+      : db.prepare('SELECT id FROM warehouse_claims WHERE id=?').get(tid);
   if (!exists) return res.status(404).json({ error: '对象不存在' });
   const st = ['', 'unpaid', 'partial', 'paid'].includes(String(paid_status || '')) ? String(paid_status || '') : '';
   const amt = (amount === '' || amount == null) ? null : (Number(amount) || 0);
@@ -37432,6 +37452,70 @@ app.post('/api/acct/warehouse-claims/:id/approval', requireAdmin, requireRole('a
   db.prepare(`UPDATE warehouse_claims SET approval_status=?, approved_by=?, approval_note=?, updated_at=datetime('now') WHERE id=?`)
     .run(action === 'approve' ? 'approved' : 'rejected', req.userName || '',
       String((req.body || {}).note || '').trim().slice(0, 300), cur.id);
+  res.json({ success: true });
+});
+
+// ─── 费用记录 (保险费 insurance / 律师费 legal) — 和赔偿事故同一套玩法 ───
+const FEE_RECORD_TYPES = ['insurance', 'legal'];
+app.get('/api/acct/fee-records', requireAdmin, requireAcctView, (req, res) => {
+  const rows = db.prepare(`SELECT * FROM fee_records
+    ORDER BY CASE WHEN approval_status='pending' THEN 0 ELSE 1 END, fee_date DESC, created_at DESC`).all();
+  const payNotes = _acctPayNotesFor('fee');
+  for (const r of rows) { r.attachments = _claimAtts(r); r.pay_note = payNotes[r.id] || null; }
+  res.json(rows);
+});
+
+// 新增费用记录: 会计提交入库为 pending 待管理员审核, admin 提交直接 approved (发票文件复用 claimUpload)
+app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin'), claimUpload.array('invoice', 20), (req, res) => {
+  const b = req.body || {};
+  const feeType = String(b.fee_type || '').trim();
+  if (!FEE_RECORD_TYPES.includes(feeType)) return res.status(400).json({ error: '无效费用类型' });
+  const party = String(b.party_name || '').trim().slice(0, 200);
+  if (!party) return res.status(400).json({ error: feeType === 'insurance' ? '请填写保险公司' : '请填写律师 / 律所' });
+  const amtNum = Number(b.amount);
+  const files = Array.isArray(req.files) ? req.files : [];
+  const atts = files.map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
+  const isAdmin = req.userRole === 'admin';
+  const r = db.prepare(`INSERT INTO fee_records
+    (fee_type, party_name, fee_date, amount, description, status, attachments, approval_status, created_by, approved_by)
+    VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`)
+    .run(feeType, party, String(b.fee_date || '').trim().slice(0, 20),
+      (b.amount != null && b.amount !== '' && !isNaN(amtNum)) ? amtNum : null,
+      String(b.description || '').trim().slice(0, 2000),
+      JSON.stringify(atts), isAdmin ? 'approved' : 'pending', req.userName || '', isAdmin ? (req.userName || '') : '');
+  res.json({ success: true, id: r.lastInsertRowid, approval_status: isAdmin ? 'approved' : 'pending' });
+});
+
+// 管理员审核会计提交的费用记录 (同赔偿事故)
+app.post('/api/acct/fee-records/:id/approval', requireAdmin, requireRole('admin'), (req, res) => {
+  const cur = db.prepare('SELECT * FROM fee_records WHERE id=?').get(req.params.id);
+  if (!cur) return res.status(404).json({ error: '记录不存在' });
+  if (cur.approval_status !== 'pending') return res.status(400).json({ error: '该记录不在待审核状态' });
+  const action = String((req.body || {}).action || '');
+  if (!['approve', 'reject'].includes(action)) return res.status(400).json({ error: '无效操作' });
+  db.prepare(`UPDATE fee_records SET approval_status=?, approved_by=?, approval_note=?, updated_at=datetime('now') WHERE id=?`)
+    .run(action === 'approve' ? 'approved' : 'rejected', req.userName || '',
+      String((req.body || {}).note || '').trim().slice(0, 300), cur.id);
+  res.json({ success: true });
+});
+
+// 管理员切换费用记录状态: 处理中(open) ↔ 已完成(resolved)
+app.post('/api/acct/fee-records/:id/status', requireAdmin, requireRole('admin'), (req, res) => {
+  const cur = db.prepare('SELECT * FROM fee_records WHERE id=?').get(req.params.id);
+  if (!cur) return res.status(404).json({ error: '记录不存在' });
+  const st = String((req.body || {}).status || '');
+  if (!['open', 'resolved'].includes(st)) return res.status(400).json({ error: '无效状态' });
+  db.prepare(`UPDATE fee_records SET status=?, updated_at=datetime('now') WHERE id=?`).run(st, cur.id);
+  res.json({ success: true, status: st });
+});
+
+// 管理员删除费用记录 (附件与付款批注一并清掉)
+app.delete('/api/acct/fee-records/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const cur = db.prepare('SELECT * FROM fee_records WHERE id=?').get(req.params.id);
+  if (!cur) return res.status(404).json({ error: '记录不存在' });
+  _claimAtts(cur).forEach(a => _claimDeleteFile(a.path));
+  db.prepare('DELETE FROM fee_records WHERE id=?').run(cur.id);
+  db.prepare(`DELETE FROM acct_pay_notes WHERE target_type='fee' AND target_id=?`).run(cur.id);
   res.json({ success: true });
 });
 
