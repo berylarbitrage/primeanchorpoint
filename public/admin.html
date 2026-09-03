@@ -17514,6 +17514,13 @@ async function viewEmployee(id) {
     <div id="empApplDocsView"><p class="empty" style="padding:1rem">加载中…</p></div>
   </div>`;
 
+  // 历次申请/问卷: 这个人从最开始提交过的所有扫码申请表格（关联本档案的 + 电话/邮箱
+  // 匹配的）; 处理重复登记时舍弃/未采用的也在列（带标注置灰）—— 系统里只留一份最终
+  // 档案, 但历史问卷信息永远可查
+  html += `<div class="form-section"><h4>历次申请 / 问卷</h4>
+    <div id="empRelatedSubsView"><p class="empty" style="padding:1rem">加载中…</p></div>
+  </div>`;
+
   // Current / recent job assignments
   const jobs = emp.current_jobs || [];
   if (jobs.length) {
@@ -17750,6 +17757,7 @@ async function viewEmployee(id) {
   }).catch(() => {});
   loadEmpRatings(emp.id);
   loadEmpApplicantDocs(emp.id);
+  loadEmpRelatedSubs(emp.id);
 }
 function closeEmpDetailModal() {
   _pendingDupSave = null;
@@ -17804,6 +17812,43 @@ async function loadEmpApplicantDocs(empId) {
     // 有处理标注的那组（舍弃 / 合并时未采用）置灰显示, 标注写在组标题里 — 原件保留可点开
     const noteLine = g.note ? `<div style="font-size:.72rem;font-weight:600;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:.2rem .5rem;margin:.15rem 0 .3rem;display:inline-block">${esc(g.note)}</div>` : '';
     return `<div style="margin-bottom:.5rem${g.note ? ';opacity:.45' : ''}">${noteLine}${cap}<div style="display:flex;gap:.45rem;flex-wrap:wrap">${thumbs}</div></div>`;
+  }).join('');
+}
+
+// ── 员工档案「历次申请/问卷」区: 这个人从最开始提交过的所有扫码申请表格 ──
+// 明确关联本档案的 + 电话/邮箱相同的（含备用联系方式）都列出来; 处理重复登记时
+// 舍弃/未采用的也在列（带黄色标注、置灰）—— 信息始终可查, 但系统里只有一份最终档案。
+async function loadEmpRelatedSubs(empId) {
+  const box = document.getElementById('empRelatedSubsView');
+  if (!box) return;
+  let subs = [];
+  try { subs = await api(`/admin/employees/${empId}/related-submissions`); }
+  catch (e) { box.innerHTML = `<p class="empty" style="padding:1rem">申请记录加载失败：${esc(e.message || e)}</p>`; return; }
+  if (!Array.isArray(subs) || !subs.length) {
+    box.innerHTML = '<p class="empty" style="padding:1rem">暂无申请记录（工人扫码提交的问卷会显示在这里）</p>';
+    return;
+  }
+  const vb = ok => ok ? '<span style="color:#15803d;font-weight:700;font-size:.68rem">✓已验证</span>' : '';
+  box.innerHTML = subs.map(s => {
+    const when = s.created_at ? new Date(s.created_at + 'Z').toLocaleString('zh-CN', { hour12: false }) : '—';
+    const addr = [[s.address1, s.address2].filter(Boolean).join(', '), [s.city, s.state].filter(Boolean).join(', '), s.zip].filter(Boolean).join(' · ');
+    const note = String(s.review_note || '').trim();
+    const tag = s.linked
+      ? '<span style="padding:0 6px;font-size:.66rem;font-weight:700;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:999px">本档案关联</span>'
+      : '<span title="按电话/邮箱匹配到的申请，注意可能是共用号码的他人" style="padding:0 6px;font-size:.66rem;font-weight:700;background:#fffbeb;color:#b45309;border:1px solid #fde68a;border-radius:999px;cursor:help">电话/邮箱匹配</span>';
+    return `<div style="border:1px solid var(--gray-200);border-radius:10px;padding:.55rem .8rem;margin-bottom:.5rem;background:#fff${note ? ';opacity:.55' : ''}">
+      <div style="display:flex;justify-content:space-between;gap:.6rem;flex-wrap:wrap;align-items:center">
+        <div style="font-weight:700;font-size:.85rem">${esc(s.name || '—')}${s.position ? ` <span style="font-weight:600;font-size:.74rem;color:#1A3F7A;background:#eff6ff;border-radius:6px;padding:0 7px">${esc(s.position)}</span>` : ''} ${tag}</div>
+        <div style="font-size:.72rem;color:var(--gray-400)">🕒 ${esc(when)} · 申请 #${s.id}${s.doc_count ? ` · 证件 ${s.doc_count} 张` : ' · 无证件'}</div>
+      </div>
+      <div style="margin-top:.25rem;font-size:.76rem;color:var(--gray-600);display:flex;gap:.9rem;flex-wrap:wrap">
+        <span>📞 ${esc(s.phone || '—')} ${vb(s.phone_verified)}</span>
+        <span style="word-break:break-all">✉️ ${esc(s.email || '—')} ${vb(s.email_verified)}</span>
+        ${addr ? `<span style="word-break:break-word">📍 ${esc(addr)} ${vb(s.address_verified)}</span>` : ''}
+        ${s.timeclock_code ? `<span>🔑 打卡密码 <b style="font-family:ui-monospace,monospace">${esc(s.timeclock_code)}</b></span>` : ''}
+      </div>
+      ${note ? `<div style="margin-top:.3rem;font-size:.72rem;font-weight:600;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:.2rem .5rem;display:inline-block">${esc(note)}</div>` : ''}
+    </div>`;
   }).join('');
 }
 
