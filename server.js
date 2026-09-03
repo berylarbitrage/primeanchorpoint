@@ -19636,7 +19636,7 @@ function _makeEmpDocMatcher() {
     }
     // Tier 2: questionnaire (applicant) docs fill whatever is still empty.
     if (uniq.length) {
-      const rows = db.prepare(`SELECT id, submission_id, doc_type, file_path, file_name FROM applicant_docs
+      const rows = db.prepare(`SELECT id, submission_id, doc_type, file_path, cropped_path, file_name FROM applicant_docs
         WHERE submission_id IN (${uniq.map(() => '?').join(',')}) AND doc_type IN ('ssn_front','ssn_back','ead_front','ead_back')`).all(...uniq);
       const prio = new Map(uniq.map((id, i) => [id, i]));
       rows.sort((a, b) => (prio.get(a.submission_id) ?? 1e9) - (prio.get(b.submission_id) ?? 1e9));
@@ -29771,7 +29771,7 @@ function _custCollectWorkerDocs(e) {
       .all(e.id, p10, p10, em, em).map(r => r.id);
   } catch (_) {}
   if (subIds.length) {
-    const rows = db.prepare(`SELECT id, doc_type, file_path, file_name FROM applicant_docs
+    const rows = db.prepare(`SELECT id, doc_type, file_path, cropped_path, file_name FROM applicant_docs
       WHERE submission_id IN (${subIds.map(() => '?').join(',')}) AND doc_type NOT IN ('ssn_front','ssn_back','ead_front','ead_back') ORDER BY id DESC`).all(...subIds);
     for (const r of rows) if (!have.has(String(r.id))) picked.push(r);
   }
@@ -29798,9 +29798,13 @@ app.get('/api/customer/worker-docs/:eid/file/:docId', requireCustomer, async (re
     // 重新匹配一遍再取, 保证请求的证件确实属于该工人 (防越权翻别人证件)
     const d = _custCollectWorkerDocs(e).find(x => String(x.id) === String(req.params.docId));
     if (!d) return res.status(404).json({ error: '证件不存在或不属于该工人' });
-    let key = String(d.file_path || '');
-    if (!(await storage.exists(key))) key = storage.keyForPath(d.file_path);
-    if (!(await storage.exists(key))) return res.status(404).json({ error: '文件不存在' });
+    // 仓库方只看裁剪后的证件图（管理员核对时存的版本）; 没裁剪过的才退回原始照片
+    const cands = [];
+    if (d.cropped_path) cands.push(String(d.cropped_path), storage.keyForPath(d.cropped_path));
+    cands.push(String(d.file_path || ''), storage.keyForPath(d.file_path));
+    let key = '';
+    for (const c of cands) { if (c && await storage.exists(c)) { key = c; break; } }
+    if (!key) return res.status(404).json({ error: '文件不存在' });
     // iPhone HEIC 浏览器不能显示 → 转 JPEG (缓存为 <key>.conv.jpg)
     const extH = path.extname(key).toLowerCase();
     if (extH === '.heic' || extH === '.heif') {
