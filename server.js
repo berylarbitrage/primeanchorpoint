@@ -20889,7 +20889,7 @@ app.post('/api/admin/employees/merge-dup', requireAdmin, requireRole('admin'), (
         if (m2.toLowerCase() !== norm(fin.email).toLowerCase() && !emails.map(x => x.toLowerCase()).includes(m2.toLowerCase())) emails.push(m2);
       });
       // 4) 合并标注 + 被并档案的原备注一起写进 keep 备注, 不丢信息
-      const lines = [`📌 ${stamp} 合并重复档案：「${absorb.first_name} ${absorb.last_name} · ${absorb.employee_id}」已并入本档案（工时/打卡/文件等记录已全部转移，重复员工号已删除）`];
+      const lines = [`📌 ${stamp} 合并重复档案：「${absorb.first_name} ${absorb.last_name} · ${absorb.employee_id}」已并入本档案（问卷/工时/打卡/文件等记录全部保留并转移到本档案，重复员工号已注销）`];
       if (absCode && newCode && absCode !== newCode) lines.push(`📌 被并档案原打卡密码 ${absCode} 已停用（现用打卡密码 ${newCode}）`);
       if (keepCode && newCode && keepCode !== newCode) lines.push(`📌 本档案原打卡密码 ${keepCode} 已替换为 ${newCode}`);
       lines.push(...droppedNotes);

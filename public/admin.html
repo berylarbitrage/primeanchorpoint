@@ -43007,7 +43007,7 @@ function renderApplicantInbox() {
       : '';
     // 同一个人不该有两个员工号 → admin 可一键合并: 保留在职那份, 删掉重复员工号
     const _mergeBtn = (_linkedEmp && _others.length && USER_ROLE === 'admin')
-      ? `<button onclick="inboxMergeDup(${_linkedEmp.id},${_others[0].id})" title="把两份档案合并成一个员工号：保留在职那份，工时/打卡/文件全部转移，重复员工号删除（不可撤销）" style="padding:.2rem .55rem;font-size:.72rem;background:#fff;color:#7c3aed;border:1px dashed #c4b5fd;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap">🧹 合并成一个员工号</button>`
+      ? `<button onclick="inboxMergeDup(${_linkedEmp.id},${_others[0].id})" title="把两份档案合并成一个员工号：保留在职那份，问卷/工时/打卡/文件全部保留并转移，只注销重复的员工号（不可撤销）" style="padding:.2rem .55rem;font-size:.72rem;background:#fff;color:#7c3aed;border:1px dashed #c4b5fd;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap">🧹 合并成一个员工号</button>`
       : '';
     // 入职审核清单没完成 → 红字提醒; 完成前卡片不进历史、员工也转不了在职
     const _revEmp = (_linkedEmp && _linkedEmp.status === 'active') ? _linkedEmp
@@ -43087,7 +43087,7 @@ function _inboxViewEmp(empId) {
   if (typeof viewEmployee === 'function') viewEmployee(empId);
 }
 // 同一个人两个员工号 → 合并成一个: 保留在职那份（都在职/都不在职则保留更早建的），
-// 工时/打卡/文件等所有记录转移到保留档案, 重复员工号删除（服务端事务, 不可撤销）。
+// 问卷/工时/打卡/文件等所有记录保留并转移到保留档案, 重复员工号注销（服务端事务, 不可撤销）。
 // ── 🧩 档案对比 & 逐条挑选（合并 / 冲突两用）──
 // merge 模式: 同一个人两个员工号 —— 点选保留哪份 + 差异行逐条挑值, 确认后服务端合并并删重复号;
 // conflict 模式: 保存撞号冲突里的「合并员工档案」—— 本次填写的新信息 vs 现有档案逐条挑,
@@ -43133,7 +43133,7 @@ function inboxMergeDup(linkedId, otherId) {
   _mergeDupPair = { mode: 'merge', a, b, keepId, keepBothPhone: true, keepBothEmail: true, docsChoice: 'both' };
   _mergeDefaultPicks();
   document.getElementById('mergeDupTitle').textContent = '🧹 合并成一个员工号';
-  document.getElementById('mergeDupDesc').innerHTML = '点卡片选<strong>保留哪份档案</strong>（绿框 = 保留），两边不同的信息行可<strong>逐条点选</strong>用哪边的值（绿行 = 采用），每一行左右一一对应。另一份的工时 / 打卡记录 / 文件 / 申请关联全部转移，然后删除重复员工号。电话 / 邮箱要不要两个都存、证件照片用哪一组，点证件行或在下方选。此操作不可撤销。';
+  document.getElementById('mergeDupDesc').innerHTML = '点卡片选<strong>保留哪份档案</strong>（绿框 = 保留），两边不同的信息行可<strong>逐条点选</strong>用哪边的值（绿行 = 采用），每一行左右一一对应。<strong>不删除任何问卷或记录</strong>：另一份的问卷 / 工时 / 打卡记录 / 文件全部保留并转移关联到保留档案，只注销那个重复的员工号。电话 / 邮箱要不要两个都存、证件照片用哪一组，点证件行或在下方选。此操作不可撤销。';
   _renderMergeFooter();
   _renderMergeOpts();
   renderMergeDup();
@@ -43251,7 +43251,7 @@ function openDupConflictPicker(p) {
   document.getElementById('mergeDupTitle').textContent = `🧩 ${p.fieldLabel || '信息'}重复 — 对比处理`;
   document.getElementById('mergeDupDesc').innerHTML = `正在保存的${esc(p.fieldLabel || '信息')}已登记在员工「${esc(p.existingEmpName || '')}」名下。左边是<strong>本次填写的新信息</strong>，右边是<strong>现有档案</strong>，每一行左右一一对应：两边不同的行<strong>点一下</strong>选用那边的值（绿行 = 采用），证件行同样可以点选用哪一组；点「应用所选」<strong>按点选的组合直接保存进现有档案</strong>（重复的联系方式会自动从另一份档案转移标注，不会再弹重复提示）；或直接用下方快捷按钮。`
     + (p.empId && p.empId !== b.id && (allEmployees || []).some(e => e.id === p.empId)
-      ? `<br>⚠️ 检测到<strong>同一人已有两个员工号</strong>：点「应用所选」会按点选组合<strong>合并成一个员工号</strong> —— 保留一个（在职优先，否则先建的那份），另一号删除，工时/打卡/文件/申请全部转移（不可撤销）；社安号、出生日期、证件都齐时状态自动转为在职。` : '');
+      ? `<br>⚠️ 检测到<strong>同一人已有两个员工号</strong>：点「应用所选」会按点选组合<strong>合并成一个员工号</strong> —— 保留一个（在职优先，否则先建的那份），另一号注销；不删除任何问卷或记录，问卷/工时/打卡/文件全部保留并转移到保留档案（不可撤销）；社安号、出生日期、证件都齐时状态自动转为在职。` : '');
   _renderMergeFooter();
   _renderMergeOpts();
   renderMergeDup();
@@ -43291,7 +43291,7 @@ function renderMergeDup() {
     const nm = titleCase([e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '));
     const headLabel = P.mode === 'conflict'
       ? (side === 'a' ? '<span style="font-size:.72rem;font-weight:800;white-space:nowrap;color:#b45309">📝 本次填写的新信息</span>' : '<span style="font-size:.72rem;font-weight:800;white-space:nowrap;color:#047857">🗂 现有档案（将被更新）</span>')
-      : `<span style="font-size:.72rem;font-weight:800;white-space:nowrap;color:${keep ? '#047857' : '#b91c1c'}">${keep ? '✅ 保留这份' : '🗑 将被删除'}</span>`;
+      : `<span${keep ? '' : ' title="不删除任何问卷或记录：这一份的问卷/工时/打卡/文件全部保留并转移关联到保留档案，只注销这个重复的员工号"'} style="font-size:.72rem;font-weight:800;white-space:nowrap;color:${keep ? '#047857' : '#b45309'};${keep ? '' : 'cursor:help'}">${keep ? '✅ 保留这份' : '🔀 并入保留档案 · 员工号注销'}</span>`;
     return `<div style="flex:1;display:flex;justify-content:space-between;align-items:center;gap:.5rem;padding-bottom:.4rem">
         <b style="font-size:.9rem">${esc(nm || '—')}</b>
         ${headLabel}
@@ -43454,7 +43454,7 @@ async function execMergeDup() {
     }) });
     if (!r || r.error || !r.success) throw new Error((r && r.error) || '合并失败');
     closeMergeDup();
-    showToast(`✅ 已合并：保留 ${nm(keep)}，重复员工号 ${absorb.employee_id} 已删除`);
+    showToast(`✅ 已合并：保留 ${nm(keep)}，重复员工号 ${absorb.employee_id} 已注销（问卷/记录全部保留并转移到保留档案）`);
     await loadEmployees();
     openApplicantInbox(_inboxPartnerId, _inboxPartnerName); // 卡片按合并后的档案重新渲染
   } catch (e) { showToast('合并失败：' + (e.message || e), 'error'); }
@@ -43512,8 +43512,8 @@ async function _applyConflictPicks() {
     if (keepBothEmail && spareM && spareM.toLowerCase() !== String(body.email).trim().toLowerCase() && !ems.map(x => x.toLowerCase()).includes(spareM.toLowerCase())) { ems.push(spareM); sparedNote.push('邮箱'); }
     body.extra_emails = ems;
   }
-  // ── 同一人已有两个员工号（编辑现有档案时撞号）→ 真合并: 保留一个员工号、另一号删除,
-  // 工时/打卡/文件/申请全部转移到保留号 —— 信息综合后系统里只剩一份档案、一个员工号。
+  // ── 同一人已有两个员工号（编辑现有档案时撞号）→ 真合并: 保留一个员工号、另一号注销,
+  // 问卷/工时/打卡/文件全部保留并转移到保留号 —— 信息综合后系统里只剩一份档案、一个员工号。
   const editedEmp = editedEmpId && editedEmpId !== b.id ? (allEmployees || []).find(e => e.id === editedEmpId) : null;
   if (editedEmp) return _applyConflictMerge(editedEmp, body, { pendingWorker, keepBothPhone, keepBothEmail, docsChoice, picks });
   const btn = document.getElementById('mergeDupBtn');
@@ -43551,7 +43551,7 @@ async function _applyConflictPicks() {
     'success', 9000);
 }
 // 同一人两个员工号的「应用所选」: 按弹窗点选的值走服务端合并事务 —— 保留号更新为所选值,
-// 另一号的工时/打卡/文件/申请全部转移后删除。保留规则与收件箱合并一致: 在职优先, 否则先建的。
+// 另一号的问卷/工时/打卡/文件全部保留并转移后注销。保留规则与收件箱合并一致: 在职优先, 否则先建的。
 async function _applyConflictMerge(editedEmp, chosen, o) {
   const P = _mergeDupPair;
   if (!P) return;
@@ -43600,7 +43600,7 @@ async function _applyConflictMerge(editedEmp, chosen, o) {
   await loadEmployees();
   const statusNote = await _tryPromoteActive(keep.id);
   const nmK = `${titleCase([chosen.first_name, chosen.last_name].filter(Boolean).join(' '))} · ${keep.employee_id}`;
-  showToast(`✅ 同一人的两个员工号已合并：保留「${esc(nmK)}」，重复员工号 ${esc(absorb.employee_id)} 已删除，工时/打卡记录/文件/申请已全部转移到保留号`
+  showToast(`✅ 同一人的两个员工号已合并：保留「${esc(nmK)}」，重复员工号 ${esc(absorb.employee_id)} 已注销，问卷/工时/打卡记录/文件已全部保留并转移到保留号`
     + (dc !== 'both' ? '；未采用的那组证件已在申请记录标注备查' : '') + statusNote, 'success', 10000);
 }
 // 信息综合完成后的自动转正: 档案还是待入职、社安号和出生日期都齐时尝试转在职 ——
