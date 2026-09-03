@@ -16319,7 +16319,7 @@ app.get('/api/admin/employees/:id/applicant-docs', requireAdmin, blockManager, (
     const out = [];
     for (const s of subs) {
       db.prepare(`SELECT id, doc_type, file_name, uploaded_at, verify_status FROM applicant_docs WHERE submission_id=?`).all(s.id)
-        .forEach(d => out.push({ ...d, submission_id: s.id, applicant_name: s.name || '', linked: s.employee_id === emp.id ? 1 : 0, submitted_at: s.created_at }));
+        .forEach(d => out.push({ ...d, submission_id: s.id, applicant_name: s.name || '', linked: s.employee_id === emp.id ? 1 : 0, submitted_at: s.created_at, review_note: s.review_note || '' }));
     }
     res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -20772,6 +20772,13 @@ app.post('/api/admin/employees/merge-dup', requireAdmin, requireRole('admin'), (
     const keep = db.prepare('SELECT * FROM employees WHERE id=?').get(keepId);
     const absorb = db.prepare('SELECT * FROM employees WHERE id=?').get(absorbId);
     if (!keep || !absorb) return res.status(404).json({ error: '员工不存在' });
+    // 可选项: 两个电话/邮箱是否都保留（默认保留, 不保留的写进备注留档）;
+    // 证件用哪一组（keep/absorb/both, 未采用的一组只标注不删除）
+    const keepBothPhone = (req.body || {}).keep_both_phone !== false;
+    const keepBothEmail = (req.body || {}).keep_both_email !== false;
+    const docsChoice = ['keep', 'absorb', 'both'].includes((req.body || {}).docs_choice) ? req.body.docs_choice : 'both';
+    const keepSubs = db.prepare('SELECT id FROM applicant_submissions WHERE employee_id=?').all(keepId).map(r => r.id);
+    const absorbSubs = db.prepare('SELECT id FROM applicant_submissions WHERE employee_id=?').all(absorbId).map(r => r.id);
     const stamp = new Date().toISOString().slice(0, 10);
     const parseArr = v => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
     const norm = s => String(s || '').trim();
@@ -20817,19 +20824,26 @@ app.post('/api/admin/employees/merge-dup', requireAdmin, requireRole('admin'), (
       const keepCode = norm(keep.timeclock_code), absCode = norm(absorb.timeclock_code);
       const newCode = ov.timeclock_code !== undefined ? String(ov.timeclock_code || '').trim().slice(0, 20)
         : ((!keepCode && absCode) ? absCode : keep.timeclock_code || '');
-      // 3) 两份的电话/邮箱除最终主值外全部进备用联系方式（去重）, 一个都不丢
+      // 3) 电话/邮箱: 已有的备用联系方式两边合并; 被换下来的主号 默认也存为备用,
+      // 用户不勾「都保留」时不存, 但写进备注留档（不丢信息）
+      const droppedNotes = [];
       const phones = [];
-      parseArr(keep.extra_phones).concat(parseArr(absorb.extra_phones), [keep.phone, absorb.phone])
-        .map(norm).filter(Boolean).forEach(p2 => { if (p2 !== norm(fin.phone) && !phones.includes(p2)) phones.push(p2); });
+      const phoneSrcs = parseArr(keep.extra_phones).concat(parseArr(absorb.extra_phones));
+      if (keepBothPhone) phoneSrcs.push(keep.phone, absorb.phone);
+      else [keep.phone, absorb.phone].map(norm).filter(Boolean).forEach(p2 => { if (p2 !== norm(fin.phone)) droppedNotes.push(`📌 未保留的电话 ${p2}（合并时选择不存为备用，此处留档）`); });
+      phoneSrcs.map(norm).filter(Boolean).forEach(p2 => { if (p2 !== norm(fin.phone) && !phones.includes(p2)) phones.push(p2); });
       const emails = [];
-      parseArr(keep.extra_emails).concat(parseArr(absorb.extra_emails), [keep.email, absorb.email])
-        .map(norm).filter(Boolean).forEach(m2 => {
-          if (m2.toLowerCase() !== norm(fin.email).toLowerCase() && !emails.map(x => x.toLowerCase()).includes(m2.toLowerCase())) emails.push(m2);
-        });
+      const emailSrcs = parseArr(keep.extra_emails).concat(parseArr(absorb.extra_emails));
+      if (keepBothEmail) emailSrcs.push(keep.email, absorb.email);
+      else [keep.email, absorb.email].map(norm).filter(Boolean).forEach(m2 => { if (m2.toLowerCase() !== norm(fin.email).toLowerCase()) droppedNotes.push(`📌 未保留的邮箱 ${m2}（合并时选择不存为备用，此处留档）`); });
+      emailSrcs.map(norm).filter(Boolean).forEach(m2 => {
+        if (m2.toLowerCase() !== norm(fin.email).toLowerCase() && !emails.map(x => x.toLowerCase()).includes(m2.toLowerCase())) emails.push(m2);
+      });
       // 4) 合并标注 + 被并档案的原备注一起写进 keep 备注, 不丢信息
       const lines = [`📌 ${stamp} 合并重复档案：「${absorb.first_name} ${absorb.last_name} · ${absorb.employee_id}」已并入本档案（工时/打卡/文件等记录已全部转移，重复员工号已删除）`];
       if (absCode && newCode && absCode !== newCode) lines.push(`📌 被并档案原打卡密码 ${absCode} 已停用（现用打卡密码 ${newCode}）`);
       if (keepCode && newCode && keepCode !== newCode) lines.push(`📌 本档案原打卡密码 ${keepCode} 已替换为 ${newCode}`);
+      lines.push(...droppedNotes);
       if (norm(absorb.notes)) lines.push(`—— 以下为被并档案「${absorb.employee_id}」的原备注 ——`, norm(absorb.notes));
       const add = lines.join('\n');
       // 5) 先删除重复档案再更新 keep —— timeclock_code 是 UNIQUE 列, 要继承必须先让
@@ -20845,6 +20859,12 @@ app.post('/api/admin/employees/merge-dup', requireAdmin, requireRole('admin'), (
           add, add, keepId);
       // 挂在 keep 名下的工人账户同步最终联系方式（与员工 PUT 的行为一致）
       try { db.prepare('UPDATE worker_accounts SET email=?, phone=? WHERE employee_id=?').run(fin.email || '', fin.phone || '', keepId); } catch (_) {}
+      // 证件选了某一组: 另一组的申请标注「未采用」（照片不删除, 卡片和档案里灰显备查）
+      if (docsChoice !== 'both') {
+        const unchosen = docsChoice === 'keep' ? absorbSubs : keepSubs;
+        const note2 = `🚫 ${stamp} 合并时未采用这组证件（选用了另一组），记录保留备查`;
+        for (const sid of unchosen) db.prepare('UPDATE applicant_submissions SET review_note=? WHERE id=?').run(note2, sid);
+      }
     })();
     console.log(`[merge-dup] ${absorb.employee_id} → ${keep.employee_id} by ${req.userName || 'admin'}; moved: ${touched.join(', ') || 'none'}`);
     res.json({ success: true, kept: keep.employee_id, removed: absorb.employee_id, moved: touched });
