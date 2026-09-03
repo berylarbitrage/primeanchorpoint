@@ -16041,7 +16041,7 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
     const p = _partnerByApplyToken(token);
     if (!p) return res.status(403).json({ error: '链接无效 / Invalid link' });
     const d = req.body || {};
-    const name = String(d.name || '').trim().slice(0, 120);
+    const name = _titleCaseName(String(d.name || '').slice(0, 120));   // 姓名统一首字母大写
     const position = String(d.position || '').trim().slice(0, 120);
     const phone = _normApplyPhone(d.phone);
     const email = String(d.email || '').trim().toLowerCase();
@@ -16142,7 +16142,7 @@ app.post('/api/public/foreman-register', applicantDocUpload.fields([
   try {
     const FT = '__foreman_reg__';
     const d = req.body || {};
-    const name = String(d.name || '').trim().slice(0, 120);
+    const name = _titleCaseName(String(d.name || '').slice(0, 120));   // 姓名统一首字母大写
     const warehouse = String(d.warehouse || '').trim().slice(0, 160);
     const phone = _normApplyPhone(d.phone);
     const email = String(d.email || '').trim().toLowerCase();
@@ -16461,7 +16461,7 @@ app.post('/api/admin/applicant-submissions/:id/docs/:docId/verify', requireAdmin
 // 工人扫码时自己填的资料常有错(名字拼错、地址漏门牌、电话打错一位)。管理员核对证件后
 // 可以直接更正这几项; 每一项的改动都写进审计日志, 原值留痕。
 const APPLICANT_EDITABLE = {
-  name:     { label: '姓名', max: 120, required: true },
+  name:     { label: '姓名', max: 120, required: true, norm: v => _titleCaseName(v) },
   phone:    { label: '电话', max: 20, required: true, norm: v => _normApplyPhone(v),
               check: v => v.replace(/\D/g, '').length >= 10 || '电话至少要有 10 位数字' },
   email:    { label: '邮箱', max: 160, norm: v => String(v || '').trim().toLowerCase(),
@@ -16811,7 +16811,7 @@ app.post('/api/worker-docs/submit', workerDocUpload.fields([
     const token = String(req.query.t || req.body.t || '');
     if (!_validWorkerDocToken(token)) return res.status(403).json({ error: '链接无效 / Invalid link' });
     const d = req.body || {};
-    const name = String(d.name || '').trim().slice(0, 120);
+    const name = _titleCaseName(String(d.name || '').slice(0, 120));   // 姓名统一首字母大写
     const phone = _normApplyPhone(d.phone);
     if (!phone) return res.status(400).json({ error: '请填写手机号 / Phone is required' });
     const verified = !!db.prepare(`SELECT id FROM applicant_otp WHERE form_token=? AND type='phone' AND target=? AND verified=1 ORDER BY id DESC LIMIT 1`).get(token, phone);
@@ -20668,7 +20668,7 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
        emergency_name,emergency_phone,emergency_relation,hire_date,position,department,
        pay_rate,pay_type,status,pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,notes,social_media)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
-      empId,d.first_name,d.middle_name||'',d.last_name,d.email||'',d.phone||'',
+      empId,_titleCaseName(d.first_name),_titleCaseName(d.middle_name),_titleCaseName(d.last_name),d.email||'',d.phone||'',
       JSON.stringify(empExtraPhones),JSON.stringify(empExtraEmails),
       empAddr,empStreet2,
       d.city||'',d.state||'',d.zip||'',d.dob||'',
@@ -20792,7 +20792,7 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
     pay_rate=?,pay_type=?,status=?,pin_hash=?,pin_salt=?,ssn_encrypted=?,ssn_iv=?,ssn_last4=?,notes=?,
     extra_phones=?,extra_emails=?,social_media=?
     WHERE id=?`).run(
-    finalEmpId,d.first_name,d.middle_name||emp.middle_name||'',d.last_name,d.email||'',d.phone||'',empAddr,empStreet2,
+    finalEmpId,_titleCaseName(d.first_name),_titleCaseName(d.middle_name||emp.middle_name),_titleCaseName(d.last_name),d.email||'',d.phone||'',empAddr,empStreet2,
     d.city||'',d.state||'',d.zip||'',d.dob||'',
     d.emergency_name||'',d.emergency_phone||'',d.emergency_relation||'',
     d.hire_date||'',d.position||'',d.department||'',
@@ -20871,9 +20871,9 @@ app.post('/api/admin/employees/merge-dup', requireAdmin, requireRole('admin'), (
       // 地址与其他保存路径一致地过一遍去重清洗（行内重复片段 + 街道行/公寓框跨字段）
       const [finAddr, finStreet2] = _dedupeAddrFields(pickStr('address', keep.address, 200), pickStr('street2', keep.street2, 200));
       const fin = {
-        first_name: pickStr('first_name', keep.first_name, 100),
-        middle_name: pickStr('middle_name', keep.middle_name, 100),
-        last_name: pickStr('last_name', keep.last_name, 100),
+        first_name: _titleCaseName(pickStr('first_name', keep.first_name, 100)),
+        middle_name: _titleCaseName(pickStr('middle_name', keep.middle_name, 100)),
+        last_name: _titleCaseName(pickStr('last_name', keep.last_name, 100)),
         phone: pickStr('phone', keep.phone, 40),
         email: pickStr('email', keep.email, 120),
         address: finAddr,
@@ -26578,7 +26578,7 @@ function _employeeFromApplicant(sub) {
     console.log(`[Checkin] Linked applicant submission #${sub.id} (${sub.name}) to existing employee #${match.id} (${match.employee_id}) — no duplicate record created`);
     return db.prepare('SELECT id, first_name, last_name, employee_id FROM employees WHERE id=?').get(match.id);
   }
-  const nameParts = String(sub.name || '').trim().split(/\s+/);
+  const nameParts = _titleCaseName(sub.name).split(' ');   // 姓名统一首字母大写
   const firstName = nameParts[0] || '';
   const lastName = nameParts.slice(1).join(' ');
   const today = new Date().toISOString().slice(0, 10);
@@ -26724,6 +26724,27 @@ try {
     if (fixed) console.log(`[ContactFix] 联系方式清理 v1: 修复 ${fixed} 个档案`);
   }
 } catch (e) { console.error('[ContactFix] 联系方式清理失败:', e.message); }
+
+// 姓名规范化清扫: 存量姓名统一每个词首字母大写（员工 first/middle/last + 申请 name）,
+// 全大写/全小写的历史数据一次洗平。app_settings 记号保证只跑一次。
+try {
+  const _tcKey = 'mig_titlecase_names_v1';
+  if (!db.prepare('SELECT value FROM app_settings WHERE key=?').get(_tcKey)) {
+    let fixed = 0;
+    for (const e of db.prepare('SELECT id, first_name, middle_name, last_name FROM employees').all()) {
+      const f = _titleCaseName(e.first_name), m = _titleCaseName(e.middle_name), l = _titleCaseName(e.last_name);
+      if (f !== (e.first_name || '') || m !== (e.middle_name || '') || l !== (e.last_name || '')) {
+        db.prepare('UPDATE employees SET first_name=?, middle_name=?, last_name=? WHERE id=?').run(f, m, l, e.id); fixed++;
+      }
+    }
+    for (const s of db.prepare('SELECT id, name FROM applicant_submissions').all()) {
+      const n = _titleCaseName(s.name);
+      if (n !== (s.name || '')) { db.prepare('UPDATE applicant_submissions SET name=? WHERE id=?').run(n, s.id); fixed++; }
+    }
+    db.prepare(`INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(_tcKey, new Date().toISOString());
+    if (fixed) console.log(`[NameFix] 姓名首字母大写规范化: ${fixed} 条`);
+  }
+} catch (e) { console.error('[NameFix] 姓名规范化失败:', e.message); }
 
 // ════════ 🎤 面试结果登记 (/interview-result) ════════
 // 面试官搜手机号 → 已有员工/申请人则登记六项技能语言 + 备注;
@@ -31211,6 +31232,13 @@ function _joinAddrLines(a1, a2) {
   return [s1, s2].filter(Boolean).join(' ');
 }
 // ── 联系方式清洗助手（函数声明, 启动清扫也会调用）──
+// 姓名规范化: 不管输入是全大写还是全小写, 存库统一每个词首字母大写
+//（支持重音字母, 连字符/撇号/点后的字母也大写: "GARCÍA-LÓPEZ" → "García-López"）
+function _titleCaseName(s) {
+  const t = String(s || '').trim().replace(/\s+/g, ' ');
+  if (!t) return '';
+  return t.toLowerCase().replace(/(^|[\s\-'’.])(\p{L})/gu, (m, p, c) => p + c.toUpperCase());
+}
 // 电话按后 10 位比对: "6308493524" 与 "+16308493524" 是同一个号, 不重复保留
 function _p10(v) { const d = String(v || '').replace(/\D/g, ''); return d.length > 10 ? d.slice(-10) : d; }
 // 邮箱/电话是否 OTP 验证过: 在任一入职申请上以「已验证」状态出现过
