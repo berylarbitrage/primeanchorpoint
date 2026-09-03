@@ -20660,6 +20660,8 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
   if (d.pin) { pin_salt = crypto.randomBytes(16).toString('hex'); pin_hash = hashPin(d.pin, pin_salt); }
   // 地址进库前清洗: 行内重复片段折叠 + 街道行/公寓框跨字段去重
   const [empAddr, empStreet2] = _dedupeAddrFields(d.address, d.street2);
+  // 备用联系方式去重（电话按后10位, 邮箱不分大小写）
+  const [empExtraPhones, empExtraEmails] = _dedupeContactArrays(d.phone || '', d.email || '', d.extra_phones || [], d.extra_emails || []);
   try {
     const r = db.prepare(`INSERT INTO employees
       (employee_id,first_name,middle_name,last_name,email,phone,extra_phones,extra_emails,address,street2,city,state,zip,dob,
@@ -20667,7 +20669,7 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
        pay_rate,pay_type,status,pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,notes,social_media)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       empId,d.first_name,d.middle_name||'',d.last_name,d.email||'',d.phone||'',
-      JSON.stringify(d.extra_phones||[]),JSON.stringify(d.extra_emails||[]),
+      JSON.stringify(empExtraPhones),JSON.stringify(empExtraEmails),
       empAddr,empStreet2,
       d.city||'',d.state||'',d.zip||'',d.dob||'',
       d.emergency_name||'',d.emergency_phone||'',d.emergency_relation||'',
@@ -20770,6 +20772,20 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
   }
   // 地址进库前清洗: 行内重复片段折叠 + 街道行/公寓框跨字段去重
   const [empAddr, empStreet2] = _dedupeAddrFields(d.address, d.street2);
+  // 备用联系方式清洗: 与主号相同(电话按后10位, "+1" 前缀差异不算两个号)或彼此重复的丢弃;
+  // 冲突/替换流程(dedupe_verified_emails)下未验证过的备用邮箱不存, 移入备注留档 —— 邮箱只保留验证过的
+  const _parseArrC = v => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
+  let [extraPhones, extraEmails] = _dedupeContactArrays(d.phone || '', d.email || '',
+    d.extra_phones || _parseArrC(emp.extra_phones), d.extra_emails || _parseArrC(emp.extra_emails));
+  const contactNotes = [];
+  if (d.dedupe_verified_emails) {
+    const stampC = new Date().toISOString().slice(0, 10);
+    extraEmails = extraEmails.filter(m => {
+      if (_contactVerified('email', m)) return true;
+      contactNotes.push(`📌 ${stampC} 未验证邮箱 ${m} 未存为备用（邮箱只保留验证过的，此处留档）`);
+      return false;
+    });
+  }
   db.prepare(`UPDATE employees SET
     employee_id=?,first_name=?,middle_name=?,last_name=?,email=?,phone=?,address=?,street2=?,city=?,state=?,zip=?,dob=?,
     emergency_name=?,emergency_phone=?,emergency_relation=?,hire_date=?,position=?,department=?,
@@ -20782,10 +20798,14 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
     d.hire_date||'',d.position||'',d.department||'',
     parseFloat(d.pay_rate)||0,d.pay_type||'hourly',d.status||'active',
     pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,d.notes||'',
-    JSON.stringify(d.extra_phones || JSON.parse(emp.extra_phones || '[]')),
-    JSON.stringify(d.extra_emails || JSON.parse(emp.extra_emails || '[]')),
+    JSON.stringify(extraPhones),
+    JSON.stringify(extraEmails),
     JSON.stringify(d.social_media || JSON.parse(emp.social_media || '{}')),
     req.params.id);
+  if (contactNotes.length) {
+    const addC = contactNotes.join('\n');
+    db.prepare(`UPDATE employees SET notes=CASE WHEN COALESCE(notes,'')='' THEN ? ELSE notes || char(10) || ? END WHERE id=?`).run(addC, addC, req.params.id);
+  }
   if (d.force) {
     const ownerLabel = `${d.first_name} ${d.last_name} · ${finalEmpId}`;
     _forceStripContact('phone', '手机号', d.phone, req.params.id, ownerLabel);
@@ -20879,14 +20899,19 @@ app.post('/api/admin/employees/merge-dup', requireAdmin, requireRole('admin'), (
       const phones = [];
       const phoneSrcs = parseArr(keep.extra_phones).concat(parseArr(absorb.extra_phones));
       if (keepBothPhone) phoneSrcs.push(keep.phone, absorb.phone);
-      else [keep.phone, absorb.phone].map(norm).filter(Boolean).forEach(p2 => { if (p2 !== norm(fin.phone)) droppedNotes.push(`📌 未保留的电话 ${p2}（合并时选择不存为备用，此处留档）`); });
-      phoneSrcs.map(norm).filter(Boolean).forEach(p2 => { if (p2 !== norm(fin.phone) && !phones.includes(p2)) phones.push(p2); });
+      else [keep.phone, absorb.phone].map(norm).filter(Boolean).forEach(p2 => { if (_p10(p2) !== _p10(fin.phone)) droppedNotes.push(`📌 未保留的电话 ${p2}（合并时选择不存为备用，此处留档）`); });
+      // 电话按后 10 位去重: "+1" 前缀差异不算两个号
+      phoneSrcs.map(norm).filter(Boolean).forEach(p2 => { if (_p10(p2) !== _p10(fin.phone) && !phones.some(x => _p10(x) === _p10(p2))) phones.push(p2); });
       const emails = [];
       const emailSrcs = parseArr(keep.extra_emails).concat(parseArr(absorb.extra_emails));
       if (keepBothEmail) emailSrcs.push(keep.email, absorb.email);
       else [keep.email, absorb.email].map(norm).filter(Boolean).forEach(m2 => { if (m2.toLowerCase() !== norm(fin.email).toLowerCase()) droppedNotes.push(`📌 未保留的邮箱 ${m2}（合并时选择不存为备用，此处留档）`); });
+      // 邮箱只保留验证过的: 未通过 OTP 验证的不存为备用, 写进备注留档
       emailSrcs.map(norm).filter(Boolean).forEach(m2 => {
-        if (m2.toLowerCase() !== norm(fin.email).toLowerCase() && !emails.map(x => x.toLowerCase()).includes(m2.toLowerCase())) emails.push(m2);
+        if (m2.toLowerCase() === norm(fin.email).toLowerCase()) return;
+        if (emails.some(x => x.toLowerCase() === m2.toLowerCase())) return;
+        if (!_contactVerified('email', m2)) { droppedNotes.push(`📌 未验证邮箱 ${m2} 未存为备用（邮箱只保留验证过的，此处留档）`); return; }
+        emails.push(m2);
       });
       // 4) 合并标注 + 被并档案的原备注一起写进 keep 备注, 不丢信息
       const lines = [`📌 ${stamp} 合并重复档案：「${absorb.first_name} ${absorb.last_name} · ${absorb.employee_id}」已并入本档案（问卷/工时/打卡/文件等记录全部保留并转移到本档案，重复员工号已注销）`];
@@ -26532,8 +26557,12 @@ function _employeeFromApplicant(sub) {
     if (subEmail) {
       if (!String(match.email || '').trim()) { sets.push('email=?'); vals.push(subEmail); }
       else if (String(match.email).trim().toLowerCase() !== subEmail.toLowerCase()) {
-        const ems = parseArr(match.extra_emails).map(x => String(x).trim()).filter(Boolean);
-        if (!ems.some(x => x.toLowerCase() === subEmail.toLowerCase())) { ems.push(subEmail); sets.push('extra_emails=?'); vals.push(JSON.stringify(ems)); noted.push(`新邮箱 ${subEmail} 已存为备用`); }
+        // 邮箱只保留验证过的: 这份申请上 OTP 验证过才存为备用, 否则只记备注
+        if (!sub.email_verified) { noted.push(`新邮箱 ${subEmail} 未通过验证，仅记备注不存为备用`); }
+        else {
+          const ems = parseArr(match.extra_emails).map(x => String(x).trim()).filter(Boolean);
+          if (!ems.some(x => x.toLowerCase() === subEmail.toLowerCase())) { ems.push(subEmail); sets.push('extra_emails=?'); vals.push(JSON.stringify(ems)); noted.push(`新邮箱 ${subEmail} 已存为备用`); }
+        }
       }
     }
     if (!String(match.address || '').trim() && String(sub.address1 || '').trim()) { sets.push('address=?'); vals.push(_joinAddrLines(sub.address1, sub.address2)); }
@@ -26656,6 +26685,45 @@ try {
     if (fixedEmp || fixedSub) console.log(`[AddrFix] 地址清洗 v3（逗号重复段+跨字段前缀）: 员工档案 ${fixedEmp} 条、申请记录 ${fixedSub} 条`);
   }
 } catch (e) { console.error('[AddrFix] 地址清洗 v3 失败:', e.message); }
+
+// 联系方式清理 v1: ①备用电话与主号后 10 位相同（"+1" 前缀差异不算两个号）或彼此重复
+// 的移除; 备用邮箱大小写重复的移除。②邮箱只保留验证过的: 主邮箱未验证而备用里有 OTP
+// 验证过的 → 换验证过的当主邮箱; 档案里已有验证过的邮箱时, 未验证的其余备用邮箱移除。
+// 全部变动写进档案备注留档, 不丢信息。app_settings 记号保证只跑一次。
+try {
+  const _ckKey = 'mig_dedupe_contacts_v1';
+  if (!db.prepare('SELECT value FROM app_settings WHERE key=?').get(_ckKey)) {
+    const stamp = new Date().toISOString().slice(0, 10);
+    const parseArrK = v => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
+    let fixed = 0;
+    for (const e of db.prepare('SELECT id, phone, email, extra_phones, extra_emails FROM employees').all()) {
+      const origP = parseArrK(e.extra_phones), origM = parseArrK(e.extra_emails);
+      const drops = [];
+      let [eps, ems] = _dedupeContactArrays(e.phone, e.email, origP, origM);
+      let mainEmail = String(e.email || '').trim();
+      const origMain = mainEmail;
+      if (mainEmail && !_contactVerified('email', mainEmail)) {
+        const vi = ems.findIndex(m => _contactVerified('email', m));
+        if (vi >= 0) { const nv = ems.splice(vi, 1)[0]; drops.push(`未验证邮箱 ${mainEmail} 已移除，改用验证过的 ${nv} 为主邮箱`); mainEmail = nv; }
+      }
+      if (mainEmail && _contactVerified('email', mainEmail)) {
+        ems = ems.filter(m => { if (_contactVerified('email', m)) return true; drops.push(`未验证邮箱 ${m} 已移除`); return false; });
+      }
+      const changed = mainEmail !== origMain
+        || JSON.stringify(eps) !== JSON.stringify(origP.map(x => String(x).trim()).filter(Boolean))
+        || JSON.stringify(ems) !== JSON.stringify(origM.map(x => String(x).trim()).filter(Boolean));
+      if (!changed) continue;
+      const note = drops.length ? `📌 ${stamp} 联系方式清理：${drops.join('；')}（邮箱只保留验证过的，留档备查）` : '';
+      db.prepare(`UPDATE employees SET email=?, extra_phones=?, extra_emails=?,
+          notes=CASE WHEN ?='' THEN notes WHEN COALESCE(notes,'')='' THEN ? ELSE notes || char(10) || ? END WHERE id=?`)
+        .run(mainEmail, JSON.stringify(eps), JSON.stringify(ems), note, note, note, e.id);
+      if (mainEmail !== origMain) { try { db.prepare('UPDATE worker_accounts SET email=? WHERE employee_id=?').run(mainEmail, e.id); } catch (_) {} }
+      fixed++;
+    }
+    db.prepare(`INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(_ckKey, new Date().toISOString());
+    if (fixed) console.log(`[ContactFix] 联系方式清理 v1: 修复 ${fixed} 个档案`);
+  }
+} catch (e) { console.error('[ContactFix] 联系方式清理失败:', e.message); }
 
 // ════════ 🎤 面试结果登记 (/interview-result) ════════
 // 面试官搜手机号 → 已有员工/申请人则登记六项技能语言 + 备注;
@@ -31141,6 +31209,38 @@ function _dedupeAddrFields(a1, a2) {
 function _joinAddrLines(a1, a2) {
   const [s1, s2] = _dedupeAddrFields(a1, a2);
   return [s1, s2].filter(Boolean).join(' ');
+}
+// ── 联系方式清洗助手（函数声明, 启动清扫也会调用）──
+// 电话按后 10 位比对: "6308493524" 与 "+16308493524" 是同一个号, 不重复保留
+function _p10(v) { const d = String(v || '').replace(/\D/g, ''); return d.length > 10 ? d.slice(-10) : d; }
+// 邮箱/电话是否 OTP 验证过: 在任一入职申请上以「已验证」状态出现过
+function _contactVerified(type, value) {
+  try {
+    if (!String(value || '').trim()) return false;
+    if (type === 'email') {
+      return !!db.prepare('SELECT id FROM applicant_submissions WHERE lower(trim(email))=lower(trim(?)) AND email_verified=1 LIMIT 1').get(String(value).trim());
+    }
+    const p = _p10(value);
+    if (!p) return false;
+    return !!db.prepare('SELECT id FROM applicant_submissions WHERE phone10(phone)=? AND phone_verified=1 LIMIT 1').get(p);
+  } catch (_) { return false; }
+}
+// 备用联系方式去重: 与主号相同(电话后10位/邮箱不分大小写)或彼此重复的丢弃, 返回 [电话数组, 邮箱数组]
+function _dedupeContactArrays(mainPhone, mainEmail, phones, emails) {
+  const outP = [];
+  (Array.isArray(phones) ? phones : []).map(x => String(x).trim()).filter(Boolean).forEach(p => {
+    if (_p10(p) && _p10(p) === _p10(mainPhone)) return;
+    if (outP.some(x => _p10(x) === _p10(p))) return;
+    outP.push(p);
+  });
+  const mm = String(mainEmail || '').trim().toLowerCase();
+  const outM = [];
+  (Array.isArray(emails) ? emails : []).map(x => String(x).trim()).filter(Boolean).forEach(m => {
+    if (m.toLowerCase() === mm) return;
+    if (outM.some(x => x.toLowerCase() === m.toLowerCase())) return;
+    outM.push(m);
+  });
+  return [outP, outM];
 }
 
 app.post('/api/validate-address', async (req, res) => {
