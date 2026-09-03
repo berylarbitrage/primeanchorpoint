@@ -16045,9 +16045,8 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
     const position = String(d.position || '').trim().slice(0, 120);
     const phone = _normApplyPhone(d.phone);
     const email = String(d.email || '').trim().toLowerCase();
-    const address1 = _collapseRepeatAddrTokens(String(d.address1 || '').trim().slice(0, 200));
-    let address2 = _collapseRepeatAddrTokens(String(d.address2 || '').trim().slice(0, 200));
-    if (address2 && address1.toLowerCase().endsWith(' ' + address2.toLowerCase())) address2 = ''; // 街道行已含公寓号
+    const [address1, address2] = _dedupeAddrFields(   // 行内重复折叠 + 街道行/公寓框跨字段去重
+      String(d.address1 || '').trim().slice(0, 200), String(d.address2 || '').trim().slice(0, 200));
     const city = String(d.city || '').trim().slice(0, 100);
     const state = String(d.state || '').trim().slice(0, 60);
     const zip = String(d.zip || '').trim().slice(0, 20);
@@ -16147,9 +16146,8 @@ app.post('/api/public/foreman-register', applicantDocUpload.fields([
     const warehouse = String(d.warehouse || '').trim().slice(0, 160);
     const phone = _normApplyPhone(d.phone);
     const email = String(d.email || '').trim().toLowerCase();
-    const address1 = _collapseRepeatAddrTokens(String(d.address1 || '').trim().slice(0, 200));
-    let address2 = _collapseRepeatAddrTokens(String(d.address2 || '').trim().slice(0, 200));
-    if (address2 && address1.toLowerCase().endsWith(' ' + address2.toLowerCase())) address2 = ''; // 街道行已含公寓号
+    const [address1, address2] = _dedupeAddrFields(   // 行内重复折叠 + 街道行/公寓框跨字段去重
+      String(d.address1 || '').trim().slice(0, 200), String(d.address2 || '').trim().slice(0, 200));
     const city = String(d.city || '').trim().slice(0, 100);
     const state = String(d.state || '').trim().slice(0, 60);
     const zip = String(d.zip || '').trim().slice(0, 20);
@@ -20615,6 +20613,8 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
   }
   let pin_hash = '', pin_salt = '';
   if (d.pin) { pin_salt = crypto.randomBytes(16).toString('hex'); pin_hash = hashPin(d.pin, pin_salt); }
+  // 地址进库前清洗: 行内重复片段折叠 + 街道行/公寓框跨字段去重
+  const [empAddr, empStreet2] = _dedupeAddrFields(d.address, d.street2);
   try {
     const r = db.prepare(`INSERT INTO employees
       (employee_id,first_name,middle_name,last_name,email,phone,extra_phones,extra_emails,address,street2,city,state,zip,dob,
@@ -20623,7 +20623,7 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       empId,d.first_name,d.middle_name||'',d.last_name,d.email||'',d.phone||'',
       JSON.stringify(d.extra_phones||[]),JSON.stringify(d.extra_emails||[]),
-      d.address||'',d.street2||'',
+      empAddr,empStreet2,
       d.city||'',d.state||'',d.zip||'',d.dob||'',
       d.emergency_name||'',d.emergency_phone||'',d.emergency_relation||'',
       d.hire_date||'',d.position||'',d.department||'',
@@ -20723,13 +20723,15 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
       finalEmpId = parts[1] + newDateStr + parts[3];
     }
   }
+  // 地址进库前清洗: 行内重复片段折叠 + 街道行/公寓框跨字段去重
+  const [empAddr, empStreet2] = _dedupeAddrFields(d.address, d.street2);
   db.prepare(`UPDATE employees SET
     employee_id=?,first_name=?,middle_name=?,last_name=?,email=?,phone=?,address=?,street2=?,city=?,state=?,zip=?,dob=?,
     emergency_name=?,emergency_phone=?,emergency_relation=?,hire_date=?,position=?,department=?,
     pay_rate=?,pay_type=?,status=?,pin_hash=?,pin_salt=?,ssn_encrypted=?,ssn_iv=?,ssn_last4=?,notes=?,
     extra_phones=?,extra_emails=?,social_media=?
     WHERE id=?`).run(
-    finalEmpId,d.first_name,d.middle_name||emp.middle_name||'',d.last_name,d.email||'',d.phone||'',d.address||'',d.street2||'',
+    finalEmpId,d.first_name,d.middle_name||emp.middle_name||'',d.last_name,d.email||'',d.phone||'',empAddr,empStreet2,
     d.city||'',d.state||'',d.zip||'',d.dob||'',
     d.emergency_name||'',d.emergency_phone||'',d.emergency_relation||'',
     d.hire_date||'',d.position||'',d.department||'',
@@ -26531,6 +26533,32 @@ try {
   }
 } catch (e) { console.error('[AddrFix] 地址清洗 v2 失败:', e.message); }
 
+// 清洗 v3: v1/v2 的折叠只认「完全相同的连续词组」, 漏掉两类实际出现的形态 ——
+// ① 逗号粘连的重复段("Chicago 1262 coventry PLAPTF, 1262 Coventry PLAPTF" — 第二段是
+//    第一段的词尾, 且 "PLAPTF," 粘着逗号对不上); ② 公寓框以街道行开头的跨字段重复
+//    (街道框 "Chicago" + 公寓框 "Chicago 1262 …")。用升级后的 _dedupeAddrFields 对
+// 员工档案与申请记录整体回扫一遍。app_settings 记号保证只跑一次。
+try {
+  const _adKey3 = 'mig_collapse_addr_dup_tokens_v3_comma_crossfield';
+  if (!db.prepare('SELECT value FROM app_settings WHERE key=?').get(_adKey3)) {
+    let fixedEmp = 0, fixedSub = 0;
+    for (const row of db.prepare(`SELECT id, address, street2 FROM employees WHERE COALESCE(address,'') != '' OR COALESCE(street2,'') != ''`).all()) {
+      const [a1, a2] = _dedupeAddrFields(row.address, row.street2);
+      if (a1 !== (row.address || '') || a2 !== (row.street2 || '')) {
+        db.prepare('UPDATE employees SET address=?, street2=? WHERE id=?').run(a1, a2, row.id); fixedEmp++;
+      }
+    }
+    for (const row of db.prepare(`SELECT id, address1, address2 FROM applicant_submissions WHERE COALESCE(address1,'') != '' OR COALESCE(address2,'') != ''`).all()) {
+      const [a1, a2] = _dedupeAddrFields(row.address1, row.address2);
+      if (a1 !== (row.address1 || '') || a2 !== (row.address2 || '')) {
+        db.prepare('UPDATE applicant_submissions SET address1=?, address2=? WHERE id=?').run(a1, a2, row.id); fixedSub++;
+      }
+    }
+    db.prepare(`INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(_adKey3, new Date().toISOString());
+    if (fixedEmp || fixedSub) console.log(`[AddrFix] 地址清洗 v3（逗号重复段+跨字段前缀）: 员工档案 ${fixedEmp} 条、申请记录 ${fixedSub} 条`);
+  }
+} catch (e) { console.error('[AddrFix] 地址清洗 v3 失败:', e.message); }
+
 // ════════ 🎤 面试结果登记 (/interview-result) ════════
 // 面试官搜手机号 → 已有员工/申请人则登记六项技能语言 + 备注;
 // 系统没有此人 → 显示通用入职申请二维码, 让对方先扫码填个人信息。
@@ -30949,34 +30977,72 @@ app.get('/api/geocode', async (req, res) => {
 });
 
 // ─── Google Address Validation ───
-// 地址去重助手: 折叠连续重复的词组（"Ave Apt1 Apt1 Apt1"→"Ave Apt1"; "Apt 1 Apt 1"→"Apt 1"）。
+// 地址去重助手 (全部用函数声明, 全文件可用 —— 启动时的一次性清洗也会调用)。
 // 曾有 bug: Google 验证把公寓号并进第一行返回、前端又把原公寓号塞回公寓框, 每验证一次
-// 地址就多一个 Apt —— 这里在 申请入库/打卡建档/验证返回 三处兜底 (函数声明, 全文件可用)。
+// 地址就多一个 Apt —— 清洗在 申请入库/打卡建档/员工保存/验证 兜底。
+// 词归一: 去掉词首尾标点、统一小写 —— "PLAPTF," 与 "plaptf" 视为同一个词
+function _normAddrTok(t) { return String(t).toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, ''); }
+function _normAddrLine(s) { return String(s || '').split(/\s+/).map(_normAddrTok).filter(Boolean).join(' '); }
+// 折叠一行里的重复:
+// ① 逗号分段去重 —— 与已留段(归一后)相同或互为词首/词尾子串的段, 只留信息多的那个
+//    ("Chicago 1262 coventry PLAPTF, 1262 Coventry PLAPTF" → "Chicago 1262 coventry PLAPTF");
+// ② 连续重复词组折叠(1-4 词), 忽略大小写与词边界标点 ("Apt 1 Apt 1 Apt 1"→"Apt 1"; "Apt1, Apt1"→"Apt1")。
 function _collapseRepeatAddrTokens(s) {
   if (!s) return s;
-  let toks = String(s).trim().split(/\s+/);
-  for (let size = 3; size >= 1; size--) {
+  const segs = String(s).split(',').map(x => x.trim()).filter(Boolean);
+  const kept = [];
+  for (const seg of segs) {
+    const n = _normAddrLine(seg);
+    if (!n) continue;
+    const idx = kept.findIndex(k => {
+      const kn = _normAddrLine(k);
+      return kn === n || kn.endsWith(' ' + n) || kn.startsWith(n + ' ') || n.endsWith(' ' + kn) || n.startsWith(kn + ' ');
+    });
+    if (idx === -1) kept.push(seg);
+    else if (n.length > _normAddrLine(kept[idx]).length) kept[idx] = seg; // 新段信息更多 → 换成新段
+  }
+  let toks = kept.join(', ').split(/\s+/).filter(Boolean);
+  for (let size = 4; size >= 1; size--) {
     const out = [];
     for (let i = 0; i < toks.length;) {
       const grp = toks.slice(i, i + size);
       out.push(...grp);
+      const grpN = grp.map(_normAddrTok).join(' ');
       let j = i + size;
-      while (j + size <= toks.length && grp.join(' ').toLowerCase() === toks.slice(j, j + size).join(' ').toLowerCase()) j += size;
+      while (grpN && j + size <= toks.length && grpN === toks.slice(j, j + size).map(_normAddrTok).join(' ')) j += size;
       i = j;
     }
     toks = out;
   }
   return toks.join(' ');
 }
-// 拼 街道行+公寓号: 各自去重后, 街道行末尾已含公寓号的不再重复拼接
+// 跨字段去重: 街道行(a1)与公寓框(a2)互相重复时消掉重复部分, 返回 [街道行, 公寓框]。
+// 公寓框整个已含在街道行里(相同/词尾/词首) → 清空; 公寓框以街道行开头(如街道框只填了
+// 城市名、公寓框里又整段重来一遍) → 去掉重复前缀只留多出来的部分。按词边界比较, 忽略大小写/标点。
+function _dedupeAddrFields(a1, a2) {
+  a1 = _collapseRepeatAddrTokens(String(a1 || '').trim()) || '';
+  a2 = _collapseRepeatAddrTokens(String(a2 || '').trim()) || '';
+  if (!a1 || !a2) return [a1, a2];
+  const n1 = _normAddrLine(a1), n2 = _normAddrLine(a2);
+  if (!n1 || !n2) return [a1, a2];
+  if (n1 === n2 || n1.endsWith(' ' + n2) || n1.startsWith(n2 + ' ')) return [a1, ''];
+  if (n2.startsWith(n1 + ' ')) {
+    const raw = a2.split(/\s+/).filter(Boolean);
+    const want = n1.split(' ');
+    let i = 0, w = 0;
+    while (i < raw.length && w < want.length) {
+      const t = _normAddrTok(raw[i]);
+      if (t) { if (t !== want[w]) break; w++; }
+      i++;
+    }
+    if (w === want.length) return [a1, raw.slice(i).join(' ').replace(/^[\s,]+/, '')];
+  }
+  return [a1, a2];
+}
+// 拼 街道行+公寓号: 跨字段去重后拼接, 街道行已含公寓号时不再重复拼
 function _joinAddrLines(a1, a2) {
-  const s1 = _collapseRepeatAddrTokens(String(a1 || '').trim());
-  const s2 = _collapseRepeatAddrTokens(String(a2 || '').trim());
-  if (!s2) return s1;
-  if (!s1) return s2;
-  const l1 = s1.toLowerCase(), l2 = s2.toLowerCase();
-  if (l1 === l2 || l1.endsWith(' ' + l2)) return s1;
-  return _collapseRepeatAddrTokens(s1 + ' ' + s2);
+  const [s1, s2] = _dedupeAddrFields(a1, a2);
+  return [s1, s2].filter(Boolean).join(' ');
 }
 
 app.post('/api/validate-address', async (req, res) => {
@@ -30987,13 +31053,10 @@ app.post('/api/validate-address', async (req, res) => {
   const { street, street2, city, state, zip, regionCode, countryName } = req.body || {};
   if (!street) return res.status(400).json({ error: 'street is required' });
 
-  // 发给 Google 前先把输入去重: 街道行内的连续重复词组折叠, 且街道行末尾已含公寓号时
-  // 不再单发第二行 —— 否则残留的重复数据（如 "…Pl F" + "F"）会让 Google 回显出 "F, F"。
-  const streetClean = _collapseRepeatAddrTokens(String(street).trim());
-  let street2Clean = _collapseRepeatAddrTokens(String(street2 || '').trim());
-  if (street2Clean && (streetClean.toLowerCase() === street2Clean.toLowerCase()
-    || streetClean.toLowerCase().endsWith(' ' + street2Clean.toLowerCase()))) street2Clean = '';
-  const addressLines = [streetClean];
+  // 发给 Google 前先把输入去重: 行内重复片段折叠 + 街道行/公寓框跨字段去重 ——
+  // 否则残留的重复数据（如 "…Pl F" + "F"）会让 Google 回显出 "F, F"。
+  const [streetClean, street2Clean] = _dedupeAddrFields(street, street2);
+  const addressLines = [streetClean || String(street).trim()];
   if (street2Clean) addressLines.push(street2Clean);
 
   // Resolve region code from ISO code or country name
@@ -31078,12 +31141,14 @@ app.post('/api/validate-address', async (req, res) => {
     const fullZip = postalAddress.postalCode || zip || '';
     const zipParts = fullZip.replace('-', '').match(/^(\d{5})(\d{4})?$/);
 
+    // Google 回显的行同样去重后再返回 —— 未识别的输入会被原样回显, 别把重复片段带回表单
+    const [stdStreet, stdStreet2] = _dedupeAddrFields(addrLines[0] || street, addrLines[1] || '');
     return res.json({
       valid: true,
       dpv_match_code: dpv,
       standardized: {
-        street:  _collapseRepeatAddrTokens(addrLines[0] || street),
-        street2: addrLines[1] || '',
+        street:  stdStreet,
+        street2: stdStreet2,
         city:    postalAddress.locality || city || '',
         state:   postalAddress.administrativeArea || state || '',
         zip:     zipParts ? zipParts[1] : fullZip.substring(0, 5),
