@@ -8339,6 +8339,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   </div>
   <p id="mergeDupDesc" style="font-size:.82rem;color:var(--gray-500);margin:.2rem 0 .8rem"></p>
   <div id="mergeDupCols" style="display:grid;grid-template-columns:1fr 1fr;column-gap:.7rem"></div>
+  <div id="mergeDupFinal" style="margin-top:.7rem"></div>
   <div id="mergeDupOpts" style="margin-top:.7rem"></div>
   <div id="mergeDupFooter" style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem;flex-wrap:wrap"></div>
 </div></div>
@@ -43376,16 +43377,79 @@ function renderMergeDup() {
       if (e.docsEmpId) _mergeLoadSubsCount({ id: e.docsEmpId }, side);
     }
   });
+  _renderMergeFinal();
 }
-// 「关联问卷」行: 该档案名下的申请数量（含电话/邮箱匹配的）; 结果缓存, 点选重渲染不重复请求
+// 「关联问卷」行: 该档案名下的申请（含电话/邮箱匹配的）; 缓存申请 id 列表, 点选重渲染不重复请求
 function _mergeLoadSubsCount(e, side) {
   if (!_mergeDupPair) return;
   const cache = _mergeDupPair.subsCache || (_mergeDupPair.subsCache = {});
-  const put = n => { const x = document.getElementById('mergeSubsCount_' + side); if (x) x.textContent = (n == null ? '—' : n + ' 份'); };
+  const put = arr => { const x = document.getElementById('mergeSubsCount_' + side); if (x) x.textContent = (arr == null ? '—' : arr.length + ' 份'); };
   if (cache[e.id] !== undefined) { put(cache[e.id]); return; }
   api(`/admin/employees/${e.id}/related-submissions`)
-    .then(list => { cache[e.id] = Array.isArray(list) ? list.length : null; put(cache[e.id]); })
-    .catch(() => { cache[e.id] = null; put(null); });
+    .then(list => { cache[e.id] = Array.isArray(list) ? list.map(s => s.id) : []; put(cache[e.id]); _updateFinalSubsCount(); })
+    .catch(() => { cache[e.id] = null; put(null); _updateFinalSubsCount(); });
+}
+// 「最终档案」预览里的问卷总数: 两边的申请 id 取并集（同一份问卷两边都匹配到只算一次）
+function _updateFinalSubsCount() {
+  const el = document.getElementById('finSubsCount');
+  if (!el || !_mergeDupPair) return;
+  const P = _mergeDupPair, cache = P.subsCache || {};
+  const idsOf = e => e.id ? cache[e.id] : (e.docsEmpId ? cache[e.docsEmpId] : (e.docsSubId ? [e.docsSubId] : []));
+  const la = idsOf(P.a), lb = idsOf(P.b);
+  if (la === undefined || lb === undefined) { el.textContent = '…'; return; }
+  el.textContent = new Set([...(la || []), ...(lb || [])]).size + ' 份';
+}
+// 🗂 最终档案预览: 合并/应用后系统里只剩的这一份 —— 按上面打勾的选择实时组成。
+// 两张对比卡是「来源」(各自的问卷/档案), 真正保存下来的档案只有这一份。
+function _renderMergeFinal() {
+  const box = document.getElementById('mergeDupFinal');
+  if (!box) return;
+  const P = _mergeDupPair;
+  if (!P) { box.innerHTML = ''; return; }
+  const keepSide = _mergeKeepSide(), other = keepSide === 'a' ? 'b' : 'a';
+  const K = P[keepSide], O = P[other];
+  const picks = P.picks || {};
+  const val = key => { const f = MERGE_PICK_FIELDS.find(x => x.key === key); if (!f) return ''; return String(f.get(P[picks[key] || keepSide]) || '').trim(); };
+  const parseArrX = v => Array.isArray(v) ? v : (() => { try { const x = JSON.parse(v || '[]'); return Array.isArray(x) ? x : []; } catch (_) { return []; } })();
+  const n10 = v => String(v || '').replace(/\D/g, '').slice(-10);
+  const mainP = val('phone'), mainM = val('email');
+  const eps = [];
+  parseArrX(K.extra_phones).concat(parseArrX(O.extra_phones), P.keepBothPhone !== false ? [K.phone, O.phone] : [])
+    .map(x => String(x || '').trim()).filter(Boolean)
+    .forEach(x => { if (n10(x) !== n10(mainP) && !eps.some(y => n10(y) === n10(x))) eps.push(x); });
+  const ems = [];
+  parseArrX(K.extra_emails).concat(parseArrX(O.extra_emails), P.keepBothEmail !== false ? [K.email, O.email] : [])
+    .map(x => String(x || '').trim()).filter(Boolean)
+    .forEach(x => { if (x.toLowerCase() !== String(mainM).toLowerCase() && !ems.some(y => y.toLowerCase() === x.toLowerCase())) ems.push(x); });
+  const time = (K.time_count || 0) + (O.time_count || 0);
+  const docsLine = (P.docsChoice === 'a' || P.docsChoice === 'b')
+    ? `只用${P.docsChoice === 'a' ? '左' : '右'}边这组（另一组标注「未采用」备查，不删除）`
+    : '两组都保留';
+  const tc = val('timeclock_code') || String(K.timeclock_code || O.timeclock_code || '').trim();
+  const item = (k, v) => `<div style="display:flex;gap:.5rem;font-size:.78rem;padding:.14rem 0"><span style="color:var(--gray-400);white-space:nowrap;min-width:68px">${k}</span><span style="word-break:break-all;font-weight:600">${v || '—'}</span></div>`;
+  box.innerHTML = `<div style="border:2px solid #0ea5e9;background:#f0f9ff;border-radius:10px;padding:.6rem .9rem">
+    <div style="font-size:.78rem;font-weight:800;color:#0369a1;margin-bottom:.3rem">🗂 最终档案（只有这一份）— 按上面打勾的选择实时组成，确认后即为保留档案的内容</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;column-gap:1.2rem">
+      <div>
+        ${item('员工号', esc(K.employee_id || '（沿用现有档案）') + (O.employee_id ? ` <span style="color:#b45309;font-weight:600">· ${esc(O.employee_id)} 注销</span>` : ''))}
+        ${item('姓名', esc(val('name')))}
+        ${item('电话主号', esc(mainP))}
+        ${item('备用电话', eps.map(esc).join('、'))}
+        ${item('邮箱主号', esc(mainM))}
+        ${item('备用邮箱', ems.map(esc).join('、'))}
+      </div>
+      <div>
+        ${item('地址', esc(val('addr')))}
+        ${item('出生日期', esc(val('dob')))}
+        ${item('SSN', esc(val('ssn')))}
+        ${item('打卡密码', esc(tc))}
+        ${item('入职日期', esc(val('hire_date')))}
+        ${item('工时/问卷', `${time} 条工时 · <span id="finSubsCount">…</span>问卷，全部归入此档案`)}
+        ${item('证件', docsLine)}
+      </div>
+    </div>
+  </div>`;
+  _updateFinalSubsCount();
 }
 // 证件行点选: 与下方「证件照片用哪一组」的选项联动
 function pickMergeDocs(side) {
@@ -43539,13 +43603,15 @@ async function _applyConflictPicks() {
   const sparedNote = [];
   {
     const spareP = String((pv('phone') ? b.phone : a.phone) || '').trim();
-    const eps = parseArr2(b.extra_phones).map(x => String(x).trim()).filter(Boolean);
+    const eps = parseArr2(b.extra_phones).concat(Array.isArray(a.extra_phones) ? a.extra_phones : [])
+      .map(x => String(x).trim()).filter(Boolean).filter((x, i, arr2) => arr2.indexOf(x) === i);
     if (keepBothPhone && spareP && spareP !== String(body.phone).trim() && !eps.includes(spareP)) { eps.push(spareP); sparedNote.push('电话'); }
     body.extra_phones = eps;
   }
   {
     const spareM = String((pv('email') ? b.email : a.email) || '').trim();
-    const ems = parseArr2(b.extra_emails).map(x => String(x).trim()).filter(Boolean);
+    const ems = parseArr2(b.extra_emails).concat(Array.isArray(a.extra_emails) ? a.extra_emails : [])
+      .map(x => String(x).trim()).filter(Boolean).filter((x, i, arr2) => arr2.map(y => y.toLowerCase()).indexOf(x.toLowerCase()) === i);
     if (keepBothEmail && spareM && spareM.toLowerCase() !== String(body.email).trim().toLowerCase() && !ems.map(x => x.toLowerCase()).includes(spareM.toLowerCase())) { ems.push(spareM); sparedNote.push('邮箱'); }
     body.extra_emails = ems;
   }
