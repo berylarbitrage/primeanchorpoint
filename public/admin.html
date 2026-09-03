@@ -43099,7 +43099,7 @@ function _renderMergeFooter() {
       <button class="btn btn-outline" onclick="_dupPickKeep()" style="color:#047857;border-color:#a7f3d0" title="现有档案原样不动，丢弃这次填写的新信息（写舍弃标注）">保留现有信息 / Keep</button>
       <button class="btn" onclick="_dupPickReplace()" style="background:#d97706;border-color:#d97706;color:#fff" title="新信息整体生效；重复的联系方式从对方档案转移并标注保留">替换成新信息 / Replace</button>
       <button class="btn btn-outline" onclick="_dupPickEdit()" title="直接打开现有档案的编辑表单">编辑此员工 / Edit</button>
-      <button class="btn btn-red" id="mergeDupBtn" onclick="execMergeDup()">应用所选 / Apply</button>`;
+      <button class="btn btn-red" id="mergeDupBtn" onclick="execMergeDup()" title="按点选的组合直接保存进现有档案并关闭">应用所选 / Apply</button>`;
   }
 }
 // 可选项区: ①两边电话/邮箱都有且不同时, 勾选要不要两个都存（默认都存, 没选为主号的
@@ -43116,7 +43116,7 @@ function _renderMergeOpts() {
   const ma = String(P.a.email || '').trim(), mb = String(P.b.email || '').trim();
   const twoPhones = !!(pa && pb && normP(pa) !== normP(pb));
   const twoEmails = !!(ma && mb && normM(ma) !== normM(mb));
-  const dropHint = P.mode === 'merge' ? '取消勾选 = 只留选中的主号，另一个写进档案备注留档、不存为备用联系方式。' : '取消勾选 = 只把选中的主号带进表单，另一个不放进备用联系方式。';
+  const dropHint = P.mode === 'merge' ? '取消勾选 = 只留选中的主号，另一个写进档案备注留档、不存为备用联系方式。' : '取消勾选 = 只保存选中的主号，另一个不存为备用联系方式。';
   const cb = (id2, field, checked, label) => `<label for="${id2}" style="display:flex;align-items:center;gap:.45rem;font-size:.8rem;cursor:pointer;padding:.12rem 0">
       <input type="checkbox" id="${id2}" ${checked ? 'checked' : ''} onchange="if(_mergeDupPair){_mergeDupPair.${field}=this.checked;renderMergeDup()}" style="width:16px;height:16px;accent-color:#059669;flex:0 0 auto">
       <span>${label}</span></label>`;
@@ -43136,7 +43136,7 @@ function _renderMergeOpts() {
     const optA = P.mode === 'conflict' ? '只用新信息的证件（左）' : '只用左边这组';
     const optB = P.mode === 'conflict' ? '只用现有档案的证件（右）' : '只用右边这组';
     const docsHint = P.mode === 'conflict'
-      ? '也可以直接点上方卡片里的证件行选。选「两组都保留」或「新信息」时，「应用所选」会把新信息的证件挂进编辑表单一起审阅核对；选「只用现有档案」则不挂，新信息的证件仍留在原申请记录里可查。'
+      ? '也可以直接点上方卡片里的证件行选。选了某一组时，「应用所选」会把另一组在申请记录上标注「未采用」备查（照片不删除）；两组都保留则都不标注。'
       : '也可以直接点上方卡片里的证件行选。未采用的那组不会删除，只在申请记录上标注「未采用」备查；员工档案的证件区会置灰显示。';
     html += `<div style="border:1px solid var(--gray-200);border-radius:10px;padding:.55rem .8rem;background:#f8fafc;${(twoPhones || twoEmails) ? 'margin-top:.45rem' : ''}">
       <div style="font-size:.74rem;font-weight:800;color:var(--gray-500);margin-bottom:.25rem">🪪 证件照片用哪一组</div>
@@ -43172,7 +43172,7 @@ function openDupConflictPicker(p) {
   _mergeDupPair = { mode: 'conflict', a, b, keepId: b.id, pendingWorker: p.convertFromWorkerId || null, keepBothPhone: true, keepBothEmail: true, docsChoice: 'both' };
   _mergeDefaultPicks();
   document.getElementById('mergeDupTitle').textContent = `🧩 ${p.fieldLabel || '信息'}重复 — 对比处理`;
-  document.getElementById('mergeDupDesc').innerHTML = `正在保存的${esc(p.fieldLabel || '信息')}已登记在员工「${esc(p.existingEmpName || '')}」名下。左边是<strong>本次填写的新信息</strong>，右边是<strong>现有档案</strong>，每一行左右一一对应：两边不同的行<strong>点一下</strong>选用那边的值（绿行 = 采用），证件行同样可以点选用哪一组；点「应用所选」把选择预填进现有档案的编辑表单核对后保存；或直接用下方快捷按钮。`;
+  document.getElementById('mergeDupDesc').innerHTML = `正在保存的${esc(p.fieldLabel || '信息')}已登记在员工「${esc(p.existingEmpName || '')}」名下。左边是<strong>本次填写的新信息</strong>，右边是<strong>现有档案</strong>，每一行左右一一对应：两边不同的行<strong>点一下</strong>选用那边的值（绿行 = 采用），证件行同样可以点选用哪一组；点「应用所选」<strong>按点选的组合直接保存进现有档案</strong>（重复的联系方式会自动从另一份档案转移标注，不会再弹重复提示）；或直接用下方快捷按钮。`;
   _renderMergeFooter();
   _renderMergeOpts();
   renderMergeDup();
@@ -43380,9 +43380,94 @@ async function execMergeDup() {
   } catch (e) { showToast('合并失败：' + (e.message || e), 'error'); }
   btn.disabled = false; btn.textContent = '确认合并 / Merge';
 }
-// conflict 模式确认: 把选了「新信息」的字段预填进现有档案的编辑表单, 人工核对后保存
-function _applyConflictPicks() {
+// conflict 模式确认: 按点选的组合直接保存进现有档案并关闭（不再进编辑表单核对）。
+// force 保存跳过查重, 服务端把另一份档案上的重复联系方式转移标注（_forceStripContact），
+// 所以不会再被对方档案拦下弹一轮「重新选」。保存失败时兜底回旧流程（预填编辑表单人工处理）。
+async function _applyConflictPicks() {
   const P = _mergeDupPair;
+  if (!P) return;
+  const a = P.a, b = P.b, picks = P.picks, pendingWorker = P.pendingWorker;
+  const keepBothPhone = P.keepBothPhone !== false, keepBothEmail = P.keepBothEmail !== false;
+  const docsChoice = P.docsChoice || 'both';
+  const docsCache = P.docsCache || {};
+  const editedEmpId = _pendingDupSave && _pendingDupSave.empId ? _pendingDupSave.empId : 0;
+  // 证件「未采用」标注用的申请号: 每侧取卡片上实际显示的那组证件所属的申请（去重）
+  const subIdsOf = list => { list = list || []; const linked = list.filter(d => d.linked); const shown = linked.length ? linked : list; return [...new Set(shown.map(d => d.submission_id).filter(Boolean))]; };
+  const aSubIds = a.docsSubId ? [a.docsSubId] : subIdsOf(docsCache['emp:' + a.docsEmpId]);
+  const bSubIds = subIdsOf(docsCache[b.id]);
+  const pv = k => picks[k] === 'a';
+  const parseArr2 = v => { try { const x = JSON.parse(v || '[]'); return Array.isArray(x) ? x : []; } catch (_) { return []; } };
+  const body = {
+    first_name: pv('name') ? a.first_name : b.first_name,
+    middle_name: (pv('name') ? a.middle_name : b.middle_name) || '',
+    last_name: pv('name') ? a.last_name : b.last_name,
+    phone: (pv('phone') ? a.phone : b.phone) || '',
+    email: (pv('email') ? a.email : b.email) || '',
+    address: (pv('addr') ? a.address : b.address) || '',
+    street2: (pv('addr') ? a.street2 : b.street2) || '',
+    city: (pv('addr') ? a.city : b.city) || '',
+    state: (pv('addr') ? a.state : b.state) || '',
+    zip: (pv('addr') ? a.zip : b.zip) || '',
+    dob: (pv('dob') ? a.dob : b.dob) || '',
+    hire_date: (pv('hire_date') ? a.hire_date : b.hire_date) || '',
+    status: b.status || 'active',
+    emergency_name: b.emergency_name || '', emergency_phone: b.emergency_phone || '', emergency_relation: b.emergency_relation || '',
+    position: b.position || '', department: b.department || '',
+    pay_rate: b.pay_rate || 0, pay_type: b.pay_type || 'hourly',
+    notes: b.notes || '',
+    force: true,
+  };
+  if (picks.ssn === 'a' && a.ssn_digits && a.ssn_digits.length === 9) body.ssn = a.ssn_digits; // 不发 ssn = 现有档案的保持不变
+  // 电话/邮箱两边都保留（默认勾上）: 没被选为主号的那一边存进备用联系方式（去重）
+  const sparedNote = [];
+  {
+    const spareP = String((pv('phone') ? b.phone : a.phone) || '').trim();
+    const eps = parseArr2(b.extra_phones).map(x => String(x).trim()).filter(Boolean);
+    if (keepBothPhone && spareP && spareP !== String(body.phone).trim() && !eps.includes(spareP)) { eps.push(spareP); sparedNote.push('电话'); }
+    body.extra_phones = eps;
+  }
+  {
+    const spareM = String((pv('email') ? b.email : a.email) || '').trim();
+    const ems = parseArr2(b.extra_emails).map(x => String(x).trim()).filter(Boolean);
+    if (keepBothEmail && spareM && spareM.toLowerCase() !== String(body.email).trim().toLowerCase() && !ems.map(x => x.toLowerCase()).includes(spareM.toLowerCase())) { ems.push(spareM); sparedNote.push('邮箱'); }
+    body.extra_emails = ems;
+  }
+  const btn = document.getElementById('mergeDupBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
+  try {
+    const r = await api(`/admin/employees/${b.id}`, { method: 'PUT', body: JSON.stringify(body) });
+    if (!r || r.error || !(r.success || r.id)) throw new Error((r && r.error) || '保存失败');
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '应用所选 / Apply'; }
+    showToast('保存失败：' + (e.message || e) + ' — 已转入编辑表单，请人工核对后保存', 'error', 7000);
+    _applyConflictPicksToForm();
+    return;
+  }
+  _pendingDupSave = null;
+  closeMergeDup();
+  // 工人账户绑定（扫码入职转员工的场景）
+  if (pendingWorker) {
+    try {
+      await api(`/admin/worker-accounts/${pendingWorker}`, { method: 'PUT', body: JSON.stringify({ employee_id: b.id }) });
+      if (typeof loadWorkerAccounts === 'function') await loadWorkerAccounts();
+    } catch (_) {}
+  }
+  // 证件选了某一组: 另一组在申请记录上标注「未采用」备查（照片不删, 与合并时的行为一致）
+  const unchosen = docsChoice === 'a' ? bSubIds.filter(x => !aSubIds.includes(x))
+    : docsChoice === 'b' ? aSubIds.filter(x => !bSubIds.includes(x)) : [];
+  if (unchosen.length) api('/admin/applicant-submissions/mark-docs-unchosen', { method: 'POST', body: JSON.stringify({ submission_ids: unchosen }) }).catch(() => {});
+  await loadEmployees();
+  const nm = `${titleCase([body.first_name, body.last_name].filter(Boolean).join(' '))} · ${b.employee_id}`;
+  showToast(`✅ 已按所选保存到现有档案「${esc(nm)}」`
+    + (sparedNote.length ? `；另一边的${sparedNote.join('和')}已存为备用联系方式` : '')
+    + (unchosen.length ? '；未采用的那组证件已在申请记录标注备查' : '')
+    + (editedEmpId && editedEmpId !== b.id ? '；原来编辑的那份档案未改动（重复的联系方式已转移标注），若确是同一人可在收件箱合并员工号' : ''),
+    'success', 9000);
+}
+// 旧流程（保存失败时的兜底）: 把选择预填进现有档案的编辑表单, 人工核对后保存
+function _applyConflictPicksToForm() {
+  const P = _mergeDupPair;
+  if (!P) return;
   const a = P.a, bId = P.b.id, picks = P.picks, pendingWorker = P.pendingWorker;
   const keepBothPhone = P.keepBothPhone !== false, keepBothEmail = P.keepBothEmail !== false;
   const docsChoice = P.docsChoice || 'both';

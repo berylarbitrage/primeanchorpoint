@@ -16466,6 +16466,21 @@ app.post('/api/admin/applicant-submissions/mark-dup-kept', requireAdmin, blockMa
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// 撞号冲突「应用所选」时证件选了某一组: 另一组的申请标注「未采用」（照片不删除,
+// 卡片和档案里灰显备查）—— 与 merge-dup 的 docs_choice 行为一致。
+app.post('/api/admin/applicant-submissions/mark-docs-unchosen', requireAdmin, blockManager, (req, res) => {
+  try {
+    const ids = Array.isArray((req.body || {}).submission_ids)
+      ? (req.body || {}).submission_ids.map(x => parseInt(x)).filter(Boolean).slice(0, 50) : [];
+    if (!ids.length) return res.status(400).json({ error: '无效参数' });
+    const stamp = new Date().toISOString().slice(0, 10);
+    const note = `🚫 ${stamp} 处理重复登记时未采用这组证件（选用了另一组），记录保留备查`;
+    let marked = 0;
+    for (const id of ids) marked += db.prepare('UPDATE applicant_submissions SET review_note=? WHERE id=?').run(note, id).changes;
+    res.json({ success: true, marked });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.patch('/api/admin/applicant-submissions/:id', requireAdmin, blockManager, (req, res) => {
   try {
     const b = req.body || {};
