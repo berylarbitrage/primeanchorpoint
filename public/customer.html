@@ -1466,14 +1466,14 @@ async function loadWorkers() {
   const workers = await cApi('/my-workers');
   if (!workers) return;
   document.getElementById('workersTable').innerHTML = workers.length ? workers.map(w=>`<tr>
-    <td style="font-weight:600;white-space:nowrap">${esc(w.first_name||'')} ${esc(w.last_name||'')}</td>
+    <td style="font-weight:600;white-space:nowrap">${esc([w.first_name, w.middle_name, w.last_name].filter(Boolean).join(' '))}</td>
     <td style="white-space:nowrap">${esc(w.emp_code||'')||'—'}</td>
     <td style="white-space:nowrap">${w.id && cCan('position') ? `<a href="javascript:void(0)" onclick="wkPosEdit(${w.id}, '${esc(w.position||'').replace(/'/g,"&#39;")}')" title="点击填写/修改职位" style="text-decoration:none">${esc(w.position||'') || '<span style="color:var(--gray-400)">✎ 填写</span>'}</a>` : (esc(w.position||'')||'—')}</td>
     <td style="white-space:nowrap">${fmtPhone(w.phone)}</td>
     <td>${esc(w.email||'')||'—'}</td>
     <td style="font-size:.82rem;color:var(--gray-500);white-space:nowrap">${esc(w.address||'')||'—'}</td>
     <td style="white-space:nowrap">${w.punch_days ? `${w.punch_days} 天 · <b>${(w.total_hours || 0).toFixed(1)}h</b>` : (w.assign_status ? '派工·' + esc(w.assign_status) : '—')}</td>
-    <td style="white-space:nowrap">${w.id ? `${cCan('docs') ? `<button class="tr-act" style="border-color:var(--blue);color:var(--blue)" onclick="wkCardOpen(${w.id})">🪪 工卡</button>` : ''}<button class="tr-act" style="border-color:#2D9D78;color:#2D9D78" onclick="wkGoRecords(${w.id}, '${esc((w.first_name||'')+' '+(w.last_name||'')).replace(/'/g,"&#39;")}')" title="查看该工人的全部打卡记录和总工时">📋 打卡记录</button>` : '—'}</td>
+    <td style="white-space:nowrap">${w.id ? `${cCan('docs') ? `<button class="tr-act" style="border-color:var(--blue);color:var(--blue)" onclick="wkCardOpen(${w.id})">🪪 工卡</button>` : ''}<button class="tr-act" style="border-color:#2D9D78;color:#2D9D78" onclick="wkGoRecords(${w.id}, '${esc([w.first_name, w.middle_name, w.last_name].filter(Boolean).join(' ')).replace(/'/g,"&#39;")}')" title="查看该工人的全部打卡记录和总工时">📋 打卡记录</button>` : '—'}</td>
   </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无派遣工人信息</td></tr>';
 }
 
