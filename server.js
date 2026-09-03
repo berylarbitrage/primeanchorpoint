@@ -1220,6 +1220,7 @@ try { db.exec(`ALTER TABLE employees ADD COLUMN extra_phones TEXT DEFAULT '[]'`)
 try { db.exec(`ALTER TABLE employees ADD COLUMN extra_emails TEXT DEFAULT '[]'`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN street2 TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN middle_name TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE employees ADD COLUMN customer_hidden INTEGER DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN social_media TEXT DEFAULT '{}'`); } catch(e) {}
 // 8 位数字打卡密码（见 applicant_submissions.timeclock_code）
 try { db.exec(`ALTER TABLE employees ADD COLUMN timeclock_code TEXT DEFAULT ''`); } catch(e) {}
@@ -20679,6 +20680,7 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
       pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,d.notes||'',
       JSON.stringify(d.social_media||{}));
     const newId = r.lastInsertRowid;
+    if (d.customer_hidden !== undefined) db.prepare('UPDATE employees SET customer_hidden=? WHERE id=?').run(d.customer_hidden ? 1 : 0, newId);
     if (d.force) {
       const ownerLabel = `${[d.first_name, d.middle_name, d.last_name].filter(Boolean).join(' ')} · ${empId}`;
       _forceStripContact('phone', '手机号', d.phone, newId, ownerLabel);
@@ -20708,6 +20710,7 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
           _forceStripContact('phone', '手机号', d.phone, r2.lastInsertRowid, ownerLabel);
           _forceStripContact('email', '邮箱', d.email, r2.lastInsertRowid, ownerLabel);
         }
+        if (d.customer_hidden !== undefined) db.prepare('UPDATE employees SET customer_hidden=? WHERE id=?').run(d.customer_hidden ? 1 : 0, r2.lastInsertRowid);
         return res.json({ success: true, id: r2.lastInsertRowid, employee_id: retryId });
       } catch (e2) {
         if (e2.message.includes('UNIQUE')) return res.status(400).json({ error: '员工编号冲突, 请重试' });
@@ -20823,6 +20826,7 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
       db.prepare(`UPDATE employees SET notes=CASE WHEN COALESCE(notes,'')='' THEN ? ELSE notes || char(10) || ? END WHERE id=?`).run(add, add, req.params.id);
     }
   }
+  if (d.customer_hidden !== undefined) db.prepare('UPDATE employees SET customer_hidden=? WHERE id=?').run(d.customer_hidden ? 1 : 0, req.params.id);
   // Sync new contact info to linked worker_account so onboarding modals (W-9, Zelle, etc.) use the latest values
   try {
     db.prepare('UPDATE worker_accounts SET email=?, phone=? WHERE employee_id=?').run(d.email || '', d.phone || '', req.params.id);
@@ -27637,7 +27641,7 @@ app.get('/api/customer/time-records', requireCustomer, (req, res) => {
       t.clock_in_photo_path, t.punch_photo_path, t.work_date, t.punch_review, t.raw_punches, e.first_name, e.middle_name, e.last_name,
       (SELECT COUNT(*) FROM time_entry_edits x WHERE x.entry_id=t.id) AS edit_count
     FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id
-    WHERE ${scope.sql}${empSql}${wantAll ? '' : " AND DATE(t.clock_in)>=DATE(?, '-1 day') AND DATE(t.clock_in)<=DATE(?, '+1 day')"}
+    WHERE ${scope.sql}${empSql} AND (e.id IS NULL OR COALESCE(e.customer_hidden,0)=0)${wantAll ? '' : " AND DATE(t.clock_in)>=DATE(?, '-1 day') AND DATE(t.clock_in)<=DATE(?, '+1 day')"}
     ORDER BY t.clock_in DESC LIMIT 2000`).all(...scope.params, ...empParams, ...(wantAll ? [] : [from, to]));
   if (!wantAll) {
     const tzOf = {}; sites.forEach(s => { tzOf[s.id] = s.timezone || 'America/Chicago'; });
@@ -27967,7 +27971,7 @@ app.get('/api/customer/punch-employees', requireCustomer, (req, res) => {
   const scope = _customerEntryScope(pid, ids);
   const rows = db.prepare(`SELECT DISTINCT e.id, e.first_name, e.middle_name, e.last_name, e.employee_id AS emp_code
     FROM time_entries t JOIN employees e ON t.employee_id=e.id
-    WHERE ${scope.sql} AND DATE(t.clock_in) >= DATE('now','-90 day')
+    WHERE ${scope.sql} AND COALESCE(e.customer_hidden,0)=0 AND DATE(t.clock_in) >= DATE('now','-90 day')
     ORDER BY e.first_name, e.middle_name, e.last_name`).all(...scope.params);
   res.json(rows.map(r => ({ id: r.id, name: [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ') || '—', emp_code: r.emp_code || '' })));
 });
@@ -27983,6 +27987,7 @@ app.get('/api/customer/punch-photo/:filename', requireCustomer, async (req, res)
   const scope = _customerEntryScope(pid, ids);
   const owner = db.prepare(`SELECT t.id FROM time_entries t
     WHERE ${scope.sql}
+      AND NOT EXISTS (SELECT 1 FROM employees pe WHERE pe.id=t.employee_id AND COALESCE(pe.customer_hidden,0)=1)
       AND (t.clock_in_photo_path=? OR t.punch_photo_path=? OR t.break_records LIKE ?)
     LIMIT 1`).get(...scope.params, safeName, safeName, '%' + safeName + '%');
   if (!owner) return res.status(404).send('Not found');
@@ -29696,7 +29701,7 @@ app.get('/api/customer/my-workers', requireCustomer, (req, res) => {
         COUNT(DISTINCT COALESCE(NULLIF(t.work_date,''), DATE(t.clock_in))) AS punch_days,
         ROUND(SUM(COALESCE(t.total_hours,0)), 1) AS total_hours
       FROM time_entries t JOIN employees e ON t.employee_id=e.id
-      WHERE ${scope.sql} AND DATE(t.clock_in) >= DATE('now','-90 day')
+      WHERE ${scope.sql} AND COALESCE(e.customer_hidden,0)=0 AND DATE(t.clock_in) >= DATE('now','-90 day')
       GROUP BY e.id ORDER BY e.first_name, e.middle_name, e.last_name`).all(...scope.params);
     for (const r of punch) {
       seen.add(r.id);
@@ -29715,7 +29720,7 @@ app.get('/api/customer/my-workers', requireCustomer, (req, res) => {
     LEFT JOIN inquiries i ON a.inquiry_id=i.id
     LEFT JOIN jobs j ON a.job_id=j.id
     LEFT JOIN employees e ON e.id=(SELECT id FROM employees WHERE phone=i.phone LIMIT 1)
-    WHERE j.partner_id=?
+    WHERE j.partner_id=? AND (e.id IS NULL OR COALESCE(e.customer_hidden,0)=0)
     ORDER BY a.assigned_at DESC`).all(pid);
   for (const a of asg) {
     if (a.eid && seen.has(a.eid)) continue;
@@ -29749,6 +29754,8 @@ function _custWorkerAuth(req, res) {
   if (!ok) { res.status(403).json({ error: '只能查看在贵公司仓库打过卡的工人' }); return null; }
   const e = db.prepare('SELECT * FROM employees WHERE id=?').get(eid);
   if (!e) { res.status(404).json({ error: '未找到该工人' }); return null; }
+  // 内部/测试档案对客户隐藏 — 返回和越权同样的提示, 不暴露档案存在
+  if (e.customer_hidden) { res.status(403).json({ error: '只能查看在贵公司仓库打过卡的工人' }); return null; }
   return e;
 }
 // 收集一个工人的全部证件: 四栏位匹配器 (SSN/EAD 最优来源) + 申请表里其余类型
