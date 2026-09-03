@@ -8338,7 +8338,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <button class="btn btn-sm btn-outline" onclick="closeMergeDup()">✕ 关闭</button>
   </div>
   <p id="mergeDupDesc" style="font-size:.82rem;color:var(--gray-500);margin:.2rem 0 .8rem"></p>
-  <div id="mergeDupCols" style="display:grid;grid-template-columns:1fr 1fr;gap:.7rem"></div>
+  <div id="mergeDupCols" style="display:grid;grid-template-columns:1fr 1fr;column-gap:.7rem"></div>
   <div id="mergeDupOpts" style="margin-top:.7rem"></div>
   <div id="mergeDupFooter" style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem;flex-wrap:wrap"></div>
 </div></div>
@@ -43081,7 +43081,7 @@ function inboxMergeDup(linkedId, otherId) {
   _mergeDupPair = { mode: 'merge', a, b, keepId, keepBothPhone: true, keepBothEmail: true, docsChoice: 'both' };
   _mergeDefaultPicks();
   document.getElementById('mergeDupTitle').textContent = '🧹 合并成一个员工号';
-  document.getElementById('mergeDupDesc').innerHTML = '点卡片选<strong>保留哪份档案</strong>（绿框 = 保留），两边不同的信息行可<strong>逐条点选</strong>用哪边的值（绿行 = 采用）。另一份的工时 / 打卡记录 / 文件 / 申请关联全部转移，然后删除重复员工号。电话 / 邮箱要不要两个都存、证件照片用哪一组，在下方勾选。此操作不可撤销。';
+  document.getElementById('mergeDupDesc').innerHTML = '点卡片选<strong>保留哪份档案</strong>（绿框 = 保留），两边不同的信息行可<strong>逐条点选</strong>用哪边的值（绿行 = 采用），每一行左右一一对应。另一份的工时 / 打卡记录 / 文件 / 申请关联全部转移，然后删除重复员工号。电话 / 邮箱要不要两个都存、证件照片用哪一组，点证件行或在下方选。此操作不可撤销。';
   _renderMergeFooter();
   _renderMergeOpts();
   renderMergeDup();
@@ -43118,7 +43118,7 @@ function _renderMergeOpts() {
   const twoEmails = !!(ma && mb && normM(ma) !== normM(mb));
   const dropHint = P.mode === 'merge' ? '取消勾选 = 只留选中的主号，另一个写进档案备注留档、不存为备用联系方式。' : '取消勾选 = 只把选中的主号带进表单，另一个不放进备用联系方式。';
   const cb = (id2, field, checked, label) => `<label for="${id2}" style="display:flex;align-items:center;gap:.45rem;font-size:.8rem;cursor:pointer;padding:.12rem 0">
-      <input type="checkbox" id="${id2}" ${checked ? 'checked' : ''} onchange="if(_mergeDupPair)_mergeDupPair.${field}=this.checked" style="width:16px;height:16px;accent-color:#059669;flex:0 0 auto">
+      <input type="checkbox" id="${id2}" ${checked ? 'checked' : ''} onchange="if(_mergeDupPair){_mergeDupPair.${field}=this.checked;renderMergeDup()}" style="width:16px;height:16px;accent-color:#059669;flex:0 0 auto">
       <span>${label}</span></label>`;
   let html = '';
   if (twoPhones || twoEmails) {
@@ -43129,14 +43129,19 @@ function _renderMergeOpts() {
       <div style="font-size:.7rem;color:var(--gray-400);margin-top:.2rem">${dropHint}</div>
     </div>`;
   }
-  if (P.mode === 'merge') {
+  if (_mergeDocsPickable()) {
     const rd = (val, label) => `<label style="display:inline-flex;align-items:center;gap:.35rem;font-size:.8rem;cursor:pointer">
-        <input type="radio" name="mergeDocsChoice" value="${val}" ${(P.docsChoice || 'both') === val ? 'checked' : ''} onchange="if(_mergeDupPair)_mergeDupPair.docsChoice=this.value" style="width:15px;height:15px;accent-color:#059669;flex:0 0 auto">
+        <input type="radio" name="mergeDocsChoice" value="${val}" ${(P.docsChoice || 'both') === val ? 'checked' : ''} onchange="if(_mergeDupPair){_mergeDupPair.docsChoice=this.value;renderMergeDup()}" style="width:15px;height:15px;accent-color:#059669;flex:0 0 auto">
         <span>${label}</span></label>`;
+    const optA = P.mode === 'conflict' ? '只用新信息的证件（左）' : '只用左边这组';
+    const optB = P.mode === 'conflict' ? '只用现有档案的证件（右）' : '只用右边这组';
+    const docsHint = P.mode === 'conflict'
+      ? '也可以直接点上方卡片里的证件行选。选「两组都保留」或「新信息」时，「应用所选」会把新信息的证件挂进编辑表单一起审阅核对；选「只用现有档案」则不挂，新信息的证件仍留在原申请记录里可查。'
+      : '也可以直接点上方卡片里的证件行选。未采用的那组不会删除，只在申请记录上标注「未采用」备查；员工档案的证件区会置灰显示。';
     html += `<div style="border:1px solid var(--gray-200);border-radius:10px;padding:.55rem .8rem;background:#f8fafc;${(twoPhones || twoEmails) ? 'margin-top:.45rem' : ''}">
       <div style="font-size:.74rem;font-weight:800;color:var(--gray-500);margin-bottom:.25rem">🪪 证件照片用哪一组</div>
-      <div style="display:flex;gap:1.1rem;flex-wrap:wrap">${rd('both', '两组都保留')}${rd('a', '只用左边这组')}${rd('b', '只用右边这组')}</div>
-      <div style="font-size:.7rem;color:var(--gray-400);margin-top:.25rem">未采用的那组不会删除，只在申请记录上标注「未采用」备查；员工档案的证件区会置灰显示。</div>
+      <div style="display:flex;gap:1.1rem;flex-wrap:wrap">${rd('both', '两组都保留')}${rd('a', optA)}${rd('b', optB)}</div>
+      <div style="font-size:.7rem;color:var(--gray-400);margin-top:.25rem">${docsHint}</div>
     </div>`;
   }
   box.innerHTML = html;
@@ -43164,55 +43169,112 @@ function openDupConflictPicker(p) {
     docsSubId: window._empApplDocsSubId || 0,
     docsEmpId: p.empId || 0,
   };
-  _mergeDupPair = { mode: 'conflict', a, b, keepId: b.id, pendingWorker: p.convertFromWorkerId || null, keepBothPhone: true, keepBothEmail: true };
+  _mergeDupPair = { mode: 'conflict', a, b, keepId: b.id, pendingWorker: p.convertFromWorkerId || null, keepBothPhone: true, keepBothEmail: true, docsChoice: 'both' };
   _mergeDefaultPicks();
   document.getElementById('mergeDupTitle').textContent = `🧩 ${p.fieldLabel || '信息'}重复 — 对比处理`;
-  document.getElementById('mergeDupDesc').innerHTML = `正在保存的${esc(p.fieldLabel || '信息')}已登记在员工「${esc(p.existingEmpName || '')}」名下。左边是<strong>本次填写的新信息</strong>，右边是<strong>现有档案</strong>：两边不同的行<strong>点一下</strong>选用那边的值（绿行 = 采用），点「应用所选」把选择预填进现有档案的编辑表单核对后保存；或直接用下方快捷按钮。`;
+  document.getElementById('mergeDupDesc').innerHTML = `正在保存的${esc(p.fieldLabel || '信息')}已登记在员工「${esc(p.existingEmpName || '')}」名下。左边是<strong>本次填写的新信息</strong>，右边是<strong>现有档案</strong>，每一行左右一一对应：两边不同的行<strong>点一下</strong>选用那边的值（绿行 = 采用），证件行同样可以点选用哪一组；点「应用所选」把选择预填进现有档案的编辑表单核对后保存；或直接用下方快捷按钮。`;
   _renderMergeFooter();
   _renderMergeOpts();
   renderMergeDup();
   document.getElementById('mergeDupModal').classList.add('show');
 }
+// 证件组可不可以挑: 两边都有证件来源; conflict 模式还要求新信息带申请证件（应用时挂表单要用 subId）
+function _mergeDocsPickable() {
+  const P = _mergeDupPair;
+  if (!P) return false;
+  const src = e => !!(e.id || e.docsSubId || e.docsEmpId);
+  return src(P.a) && src(P.b) && (P.mode === 'merge' || !!P.a.docsSubId);
+}
+// 两张卡不再各自独立排版, 而是同一个 grid 里每行左右两个格子落在同一条 grid 行上:
+// 行高自动取两边较高者, 只在一边有的信息另一边补「—」占位 → 每一行左右严格一一对齐。
 function renderMergeDup() {
   if (!_mergeDupPair) return;
   const P = _mergeDupPair;
   const keepSide = _mergeKeepSide();
-  document.getElementById('mergeDupCols').innerHTML = ['a', 'b'].map(side => {
+  const has = { a: !!P.a.id, b: !!P.b.id };
+  const anyId = has.a || has.b;
+  const docsSrc = { a: !!(P.a.id || P.a.docsSubId || P.a.docsEmpId), b: !!(P.b.id || P.b.docsSubId || P.b.docsEmpId) };
+  const docsPickable = _mergeDocsPickable();
+  const row = (k, v) => `<div style="flex:1;display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;font-size:.78rem;padding:.18rem .25rem;border-bottom:1px dashed var(--gray-100)"><span style="color:var(--gray-400);white-space:nowrap">${k}</span><span style="text-align:right;word-break:break-all">${v || '—'}</span></div>`;
+  // 勾了「两个都存」时, 电话/邮箱行没被选为主号的那一边直接标出去向, 一眼看出两个都会保存
+  const contactBadge = f => {
+    if (f.key !== 'phone' && f.key !== 'email') return '';
+    const on = f.key === 'phone' ? P.keepBothPhone !== false : P.keepBothEmail !== false;
+    return `<span style="font-size:.58rem;font-weight:700;border-radius:4px;padding:0 4px;white-space:nowrap;flex:0 0 auto;${on ? 'color:#047857;background:#d1fae5' : 'color:#6b7280;background:#f3f4f6'}">${on ? '存为备用' : '不存备用'}</span>`;
+  };
+  const rows = [];
+  // 表头行
+  rows.push(side => {
     const e = P[side];
     const keep = side === keepSide;
     const nm = titleCase([e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '));
-    const row = (k, v) => `<div style="display:flex;justify-content:space-between;gap:.5rem;font-size:.78rem;padding:.18rem .25rem;border-bottom:1px dashed var(--gray-100)"><span style="color:var(--gray-400);white-space:nowrap">${k}</span><span style="text-align:right;word-break:break-all">${v || '—'}</span></div>`;
-    const pickRows = MERGE_PICK_FIELDS.map(f => {
-      const v = esc(String(f.get(e) || ''));
-      if (!_mergePickable(f)) return row(f.label, v);
-      const chosen = P.picks[f.key] === side;
-      return `<div onclick="event.stopPropagation();pickMergeField('${f.key}','${side}')" title="点击选用这一边的「${f.label}」" style="display:flex;justify-content:space-between;gap:.5rem;font-size:.78rem;padding:.18rem .25rem;border-bottom:1px dashed var(--gray-100);cursor:pointer;border-radius:5px;${chosen ? 'background:#dcfce7' : 'opacity:.68'}">
-        <span style="white-space:nowrap;font-weight:700;color:${chosen ? '#047857' : 'var(--gray-400)'}">${chosen ? '✓ ' : '○ '}${f.label}</span>
-        <span style="text-align:right;word-break:break-all;${chosen ? 'font-weight:700' : ''}">${v || '—'}</span>
-      </div>`;
-    }).join('');
     const headLabel = P.mode === 'conflict'
       ? (side === 'a' ? '<span style="font-size:.72rem;font-weight:800;white-space:nowrap;color:#b45309">📝 本次填写的新信息</span>' : '<span style="font-size:.72rem;font-weight:800;white-space:nowrap;color:#047857">🗂 现有档案（将被更新）</span>')
       : `<span style="font-size:.72rem;font-weight:800;white-space:nowrap;color:${keep ? '#047857' : '#b91c1c'}">${keep ? '✅ 保留这份' : '🗑 将被删除'}</span>`;
-    const cardClick = P.mode === 'merge' ? ` onclick="pickMergeKeep(${e.id})" title="点击选择保留这份档案"` : '';
-    return `<div${cardClick} style="${P.mode === 'merge' ? 'cursor:pointer;' : ''}border:2px solid ${keep ? '#059669' : 'var(--gray-200)'};border-radius:10px;padding:.7rem .8rem;background:${keep ? '#ecfdf5' : '#fff'}">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-bottom:.4rem">
+    return `<div style="flex:1;display:flex;justify-content:space-between;align-items:center;gap:.5rem;padding-bottom:.4rem">
         <b style="font-size:.9rem">${esc(nm || '—')}</b>
         ${headLabel}
-      </div>
-      ${e.id ? row('员工号', esc(e.employee_id || '')) : ''}
-      ${e.id ? row('状态', EMP_STATUS_LABEL[e.status] || esc(e.status || '')) : ''}
-      ${pickRows}
-      ${e.id ? row('工时记录', (e.time_count || 0) + ' 条') : ''}
-      ${e.id ? row('HR 文件', (e.doc_count || 0) + ' 份') : ''}
-      ${e.id ? row('注册时间', e.created_at ? new Date(e.created_at).toLocaleDateString('zh-CN') : '') : ''}
-      ${e.notes ? `<div style="font-size:.7rem;color:var(--gray-400);margin-top:.35rem;max-height:56px;overflow:auto;white-space:pre-wrap;border-top:1px dashed var(--gray-100);padding-top:.3rem">${esc(String(e.notes).slice(0, 400))}</div>` : ''}
-      ${(e.id || e.docsSubId || e.docsEmpId) ? `<div style="font-size:.7rem;color:var(--gray-400);margin-top:.35rem;border-top:1px dashed var(--gray-100);padding-top:.3rem">证件（点开可审阅/裁剪）</div>
-      <div id="${e.id ? 'mergeDocs_' + e.id : 'mergeDocs_pending'}" style="display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.25rem;min-height:34px"><span style="font-size:.72rem;color:var(--gray-300)">加载中…</span></div>` : ''}
-      ${e.id ? `<div style="margin-top:.45rem"><a onclick="event.stopPropagation();closeMergeDup();_inboxViewEmp(${e.id})" style="cursor:pointer;color:#1d4ed8;font-size:.74rem;text-decoration:underline">查看完整档案 ↗</a></div>` : ''}
+      </div>`;
+  });
+  if (anyId) {
+    rows.push(side => row('员工号', has[side] ? esc(P[side].employee_id || '') : ''));
+    rows.push(side => row('状态', has[side] ? (EMP_STATUS_LABEL[P[side].status] || esc(P[side].status || '')) : ''));
+  }
+  for (const f of MERGE_PICK_FIELDS) rows.push(side => {
+    const e = P[side];
+    const v = esc(String(f.get(e) || ''));
+    if (!_mergePickable(f)) return row(f.label, v);
+    const chosen = P.picks[f.key] === side;
+    return `<div onclick="event.stopPropagation();pickMergeField('${f.key}','${side}')" title="点击选用这一边的「${f.label}」" style="flex:1;display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;font-size:.78rem;padding:.18rem .25rem;border-bottom:1px dashed var(--gray-100);cursor:pointer;border-radius:5px;${chosen ? 'background:#dcfce7' : 'opacity:.68'}">
+        <span style="white-space:nowrap;font-weight:700;color:${chosen ? '#047857' : 'var(--gray-400)'};display:inline-flex;align-items:center;gap:.3rem">${chosen ? '✓ ' : '○ '}${f.label}${chosen ? '' : contactBadge(f)}</span>
+        <span style="text-align:right;word-break:break-all;${chosen ? 'font-weight:700' : ''}">${v || '—'}</span>
+      </div>`;
+  });
+  if (anyId) {
+    rows.push(side => row('工时记录', has[side] ? (P[side].time_count || 0) + ' 条' : ''));
+    rows.push(side => row('HR 文件', has[side] ? (P[side].doc_count || 0) + ' 份' : ''));
+    rows.push(side => row('注册时间', has[side] && P[side].created_at ? new Date(P[side].created_at).toLocaleDateString('zh-CN') : ''));
+  }
+  if (P.a.notes || P.b.notes) rows.push(side => {
+    const e = P[side];
+    return `<div style="flex:1;font-size:.7rem;color:var(--gray-400);padding:.3rem .25rem;border-bottom:1px dashed var(--gray-100)">${e.notes ? `<div style="max-height:56px;overflow:auto;white-space:pre-wrap">${esc(String(e.notes).slice(0, 400))}</div>` : '—'}</div>`;
+  });
+  // 证件行: 也和其他行一样可以点选用哪一组（点一边 = 只用那组, 再点同一边 = 恢复两组都保留）
+  if (docsSrc.a || docsSrc.b) rows.push(side => {
+    const e = P[side];
+    if (!docsSrc[side]) return `<div style="flex:1;font-size:.7rem;color:var(--gray-300);padding:.3rem .25rem">证件 —</div>`;
+    const boxId = e.id ? 'mergeDocs_' + e.id : 'mergeDocs_pending';
+    const chosen = P.docsChoice === side;
+    const both = !P.docsChoice || P.docsChoice === 'both';
+    const pick = docsPickable ? ` onclick="event.stopPropagation();pickMergeDocs('${side}')" title="点击只用这一边的证件组（再点一次 = 两组都保留）"` : '';
+    const label = !docsPickable ? '证件（点开可审阅/裁剪）'
+      : chosen ? '✓ 证件 — 用这一组（点开可审阅/裁剪）'
+      : both ? '✓ 证件（两组都保留 · 点选只用一组）'
+      : '○ 证件 — 不采用（点选换用这组）';
+    return `<div${pick} style="flex:1;padding:.3rem .25rem;border-radius:5px;${docsPickable ? 'cursor:pointer;' : ''}${chosen ? 'background:#dcfce7;' : (docsPickable && !both ? 'opacity:.68;' : '')}">
+      <div style="font-size:.7rem;font-weight:${chosen ? '800' : '400'};color:${chosen ? '#047857' : 'var(--gray-400)'}">${label}</div>
+      <div id="${boxId}" style="display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.25rem;min-height:34px"><span style="font-size:.72rem;color:var(--gray-300)">加载中…</span></div>
     </div>`;
-  }).join('');
+  });
+  if (anyId) rows.push(side => has[side]
+    ? `<div style="flex:1;padding:.35rem .25rem .1rem"><a onclick="event.stopPropagation();closeMergeDup();_inboxViewEmp(${P[side].id})" style="cursor:pointer;color:#1d4ed8;font-size:.74rem;text-decoration:underline">查看完整档案 ↗</a></div>`
+    : '<div style="flex:1"></div>');
+  document.getElementById('mergeDupCols').innerHTML = rows.map((mk, i) => ['a', 'b'].map(side => {
+    const keep = side === keepSide;
+    const bc = keep ? '#059669' : 'var(--gray-200)';
+    const bg = keep ? '#ecfdf5' : '#fff';
+    const first = i === 0, last = i === rows.length - 1;
+    const cardClick = P.mode === 'merge' ? ` onclick="pickMergeKeep(${P[side].id})" title="点击选择保留这份档案"` : '';
+    return `<div${cardClick} style="display:flex;flex-direction:column;${P.mode === 'merge' ? 'cursor:pointer;' : ''}border-left:2px solid ${bc};border-right:2px solid ${bc};background:${bg};padding:0 .8rem;${first ? `border-top:2px solid ${bc};border-radius:10px 10px 0 0;padding-top:.7rem;` : ''}${last ? `border-bottom:2px solid ${bc};border-radius:0 0 10px 10px;padding-bottom:.7rem;` : ''}">${mk(side)}</div>`;
+  }).join('')).join('');
   [P.a, P.b].forEach(e => { if (e.id) _mergeLoadDocs(e.id); else if (e.docsSubId || e.docsEmpId) _mergeLoadPendingDocs(e); });
+}
+// 证件行点选: 与下方「证件照片用哪一组」的选项联动
+function pickMergeDocs(side) {
+  if (!_mergeDupPair) return;
+  _mergeDupPair.docsChoice = _mergeDupPair.docsChoice === side ? 'both' : side;
+  renderMergeDup();
+  _renderMergeOpts();
 }
 function pickMergeField(key, side) {
   if (!_mergeDupPair) return;
@@ -43322,6 +43384,7 @@ function _applyConflictPicks() {
   const P = _mergeDupPair;
   const a = P.a, bId = P.b.id, picks = P.picks, pendingWorker = P.pendingWorker;
   const keepBothPhone = P.keepBothPhone !== false, keepBothEmail = P.keepBothEmail !== false;
+  const docsChoice = P.docsChoice || 'both', docsSubId = a.docsSubId || 0;
   closeMergeDup();
   setTimeout(() => {
     if (pendingWorker) _pendingWorkerLink = { workerId: pendingWorker, empId: bId };
@@ -43356,7 +43419,12 @@ function _applyConflictPicks() {
       if (keepBothEmail && spareM && spareM.toLowerCase() !== mainM && !ems.map(x => x.toLowerCase()).includes(spareM.toLowerCase())) { ems.push(spareM); sparedNote.push('邮箱'); }
       _populateExtraContacts('extraEmailsContainer', ems, 'email', 'email@example.com');
     }
-    showToast(`已按你的选择预填到编辑表单${sparedNote.length ? `；另一边的${sparedNote.join('和')}已放进备用联系方式（两个都保留）` : ''} — 核对无误后点「保存员工」`, 'success', 6500);
+    // 证件按弹窗里的选择带过来: 「两组都保留」或「只用新信息」时把新信息的证件挂进编辑表单
+    // 一起审阅核对（保存前照常提醒标真伪）; 「只用现有档案」则不挂, 新信息证件留在原申请可查
+    const hangDocs = docsSubId && docsChoice !== 'b' && typeof renderApplicantDocPanel === 'function';
+    if (hangDocs) renderApplicantDocPanel(docsSubId);
+    const docsNote = hangDocs ? `；新信息的证件已挂进表单${docsChoice === 'a' ? '（选了只用这组）' : '（两组都保留）'}` : '';
+    showToast(`已按你的选择预填到编辑表单${sparedNote.length ? `；另一边的${sparedNote.join('和')}已放进备用联系方式（两个都保留）` : ''}${docsNote} — 核对无误后点「保存员工」`, 'success', 6500);
   }, 100);
 }
 // 待入职徽章点击: 打开与「新建员工」同一个员工编辑表单（预填已建的档案），并把这份
