@@ -345,10 +345,10 @@ tr:last-child td{border-bottom:none}
     <div id="tabWorkers" style="display:none">
       <div class="card">
         <h2>派遣工人列表</h2>
-        <p style="font-size:.85rem;color:var(--gray-400);margin-bottom:1rem">近 90 天在贵公司仓库打卡的全部工人信息（含正式派工记录）</p>
+        <p style="font-size:.85rem;color:var(--gray-400);margin-bottom:1rem">近 90 天在贵公司仓库打卡的全部工人信息（含正式派工记录）<span id="workersCount" style="font-weight:700;color:var(--gray-500)"></span></p>
         <div style="overflow-x:auto">
         <table style="min-width:880px">
-          <thead><tr><th>姓名</th><th>员工号</th><th>职位</th><th>电话</th><th>邮箱</th><th>地址</th><th>近90天 打卡·工时</th><th>操作</th></tr></thead>
+          <thead><tr><th style="width:2.4rem">#</th><th>姓名</th><th>员工号</th><th>职位</th><th>电话</th><th>邮箱</th><th>地址</th><th>近90天 打卡·工时</th><th>操作</th></tr></thead>
           <tbody id="workersTable"></tbody>
         </table>
         </div>
@@ -1158,7 +1158,7 @@ function trEmpChange(v) {
 }
 async function loadTimeRecords() {
   const tb = document.getElementById('trTable');
-  tb.innerHTML = '<tr><td colspan="10" style="color:var(--gray-400)">加载中…</td></tr>';
+  tb.innerHTML = '<tr><td colspan="11" style="color:var(--gray-400)">加载中…</td></tr>';
   const q = new URLSearchParams();
   const f = document.getElementById('trFrom').value, t = document.getElementById('trTo').value;
   if (f || t) _trAll = false; // 手动挑了日期就退出「全部」模式
@@ -1168,7 +1168,7 @@ async function loadTimeRecords() {
   const empsP = trEnsureEmps();
   let d = await cApi('/time-records?' + q.toString());
   if (!d) return;
-  if (d.error) { tb.innerHTML = `<tr><td colspan="10" style="color:#E63946">${esc(d.error)}</td></tr>`; return; }
+  if (d.error) { tb.innerHTML = `<tr><td colspan="11" style="color:#E63946">${esc(d.error)}</td></tr>`; return; }
   // 「全部」模式日期框留空, 免得下次刷新按具体日期(>190天会被截断)查
   if (!_trAll) {
     if (!document.getElementById('trFrom').value) document.getElementById('trFrom').value = d.from;
@@ -1184,7 +1184,7 @@ async function loadTimeRecords() {
   trRenderKioskMode(d.sites || []);
   const multiSite = (d.sites || []).length > 1;
   document.getElementById('trHead').innerHTML =
-    '<th>员工</th>' + (multiSite ? '<th>仓库</th>' : '') +
+    '<th style="width:2.4rem">#</th><th>员工</th>' + (multiSite ? '<th>仓库</th>' : '') +
     '<th>日期</th><th>上班</th><th>下班</th><th>休息</th><th>合计</th><th>状态</th>' +
     (d.photos_enabled ? '<th>照片</th>' : '') + '<th>操作</th>';
   let totalH = 0, onDuty = 0;
@@ -1194,15 +1194,17 @@ async function loadTimeRecords() {
     return dt ? dt.toLocaleDateString('en-CA', { timeZone: _trSiteTz[e.site_id] || 'America/Chicago' }) : '?';
   };
   const dayGroups = {};
+  const allPeople = new Set();
   window._trEntries = {};
   (d.entries || []).forEach(e => {
     window._trEntries[e.entry_id] = e;
     const k = trDayOf(e);
-    (dayGroups[k] = dayGroups[k] || { n: 0, h: 0 });
+    (dayGroups[k] = dayGroups[k] || { n: 0, h: 0, p: new Set() });
     dayGroups[k].n++; dayGroups[k].h += e.total_hours || 0;
+    dayGroups[k].p.add(e.emp_db_id || e.name); allPeople.add(e.emp_db_id || e.name);
   });
-  const nCols = 8 + (multiSite ? 1 : 0) + (d.photos_enabled ? 1 : 0);
-  let curDay = null;
+  const nCols = 9 + (multiSite ? 1 : 0) + (d.photos_enabled ? 1 : 0);
+  let curDay = null, dayIdx = 0;
   const rows = (d.entries || []).map(e => {
     const tz = _trSiteTz[e.site_id] || 'America/Chicago';
     const ci = _trPT(e.clock_in), co = _trPT(e.clock_out);
@@ -1212,10 +1214,10 @@ async function loadTimeRecords() {
     let dayHead = '';
     const dk = trDayOf(e);
     if (dk !== curDay) {
-      curDay = dk;
-      const g = dayGroups[dk] || { n: 0, h: 0 };
+      curDay = dk; dayIdx = 0;
+      const g = dayGroups[dk] || { n: 0, h: 0, p: new Set() };
       const lbl = new Date(dk + 'T12:00:00Z').toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', weekday: 'short' });
-      dayHead = `<tr><td colspan="${nCols}" style="background:var(--gray-50,#f5f7fa);border-top:2px solid var(--gray-200,#e2e5ea);font-weight:700;padding:.45rem .8rem;font-size:.85rem">📅 ${lbl}<span style="color:var(--gray-400);font-weight:400;margin-left:.7rem">班次 ${g.n} · 工时 ${g.h.toFixed(1)}h</span></td></tr>`;
+      dayHead = `<tr><td colspan="${nCols}" style="background:var(--gray-50,#f5f7fa);border-top:2px solid var(--gray-200,#e2e5ea);font-weight:700;padding:.45rem .8rem;font-size:.85rem">📅 ${lbl}<span style="color:var(--gray-400);font-weight:400;margin-left:.7rem">班次 ${g.n} · 人数 ${g.p.size} · 工时 ${g.h.toFixed(1)}h</span></td></tr>`;
     }
     // 下班日期与上班不同天的老记录: 明确标出, 提醒管理员核对 (新规则下不会再产生)
     const crossDay = (ci && co && co.toLocaleDateString('en-CA', { timeZone: tz }) !== ci.toLocaleDateString('en-CA', { timeZone: tz }))
@@ -1238,6 +1240,7 @@ async function loadTimeRecords() {
       else actTd = `<td style="white-space:nowrap">${actBtn('上班', 'in', '#2D9D78')}${extra}</td>`;
     }
     return dayHead + `<tr>
+      <td style="color:var(--gray-400);font-size:.78rem">${++dayIdx}</td>
       <td style="font-weight:600;white-space:nowrap">${esc(e.name)}</td>
       ${multiSite ? `<td style="color:var(--gray-500)">${esc(siteName[e.site_id] || '—')}</td>` : ''}
       <td>${_trFmtD(ci || co, tz)}</td>
@@ -1250,12 +1253,12 @@ async function loadTimeRecords() {
       ${actTd}
     </tr>`;
   });
-  tb.innerHTML = rows.join('') || `<tr><td colspan="10" style="color:var(--gray-400);text-align:center;padding:1.4rem">${
+  tb.innerHTML = rows.join('') || `<tr><td colspan="11" style="color:var(--gray-400);text-align:center;padding:1.4rem">${
     d.no_binding ? '贵公司还没有关联的仓库或打卡记录，请联系 Prime Anchor Workforce 完成绑定'
       : (_trEmpFilter ? `该时段没有 ${esc(_trEmpFilter.name)} 的打卡记录（可试试「近30天」或「全部」）` : '该时段没有打卡记录（可试试「近30天」或「全部」）')}</td></tr>`;
   document.getElementById('trSummary').innerHTML =
     (_trEmpFilter ? `<span style="background:#EEF4FF;border:1px solid #C7D7FE;border-radius:999px;padding:.15rem .7rem">👤 只看 <b>${esc(_trEmpFilter.name)}</b> <a href="javascript:void(0)" onclick="trClearEmpFilter()" style="text-decoration:none;color:#E63946;font-weight:700">✕</a></span>` : '') +
-    `<span>班次 <b>${(d.entries || []).length}</b></span><span>总工时 <b>${totalH.toFixed(1)}h</b></span><span>当前在班 <b>${onDuty}</b></span>` +
+    `<span>班次 <b>${(d.entries || []).length}</b></span><span>人数 <b>${allPeople.size}</b></span><span>总工时 <b>${totalH.toFixed(1)}h</b></span><span>当前在班 <b>${onDuty}</b></span>` +
     (d.photos_enabled ? '' : '');
 }
 
@@ -1465,7 +1468,10 @@ async function loadPosts() {
 async function loadWorkers() {
   const workers = await cApi('/my-workers');
   if (!workers) return;
-  document.getElementById('workersTable').innerHTML = workers.length ? workers.map(w=>`<tr>
+  const wcEl = document.getElementById('workersCount');
+  if (wcEl) wcEl.textContent = workers.length ? ` · 共 ${workers.length} 人` : '';
+  document.getElementById('workersTable').innerHTML = workers.length ? workers.map((w,i)=>`<tr>
+    <td style="color:var(--gray-400);font-size:.8rem">${i+1}</td>
     <td style="font-weight:600;white-space:nowrap">${esc([w.first_name, w.middle_name, w.last_name].filter(Boolean).join(' '))}</td>
     <td style="white-space:nowrap">${esc(w.emp_code||'')||'—'}</td>
     <td style="white-space:nowrap">${w.id && cCan('position') ? `<a href="javascript:void(0)" onclick="wkPosEdit(${w.id}, '${esc(w.position||'').replace(/'/g,"&#39;")}')" title="点击填写/修改职位" style="text-decoration:none">${esc(w.position||'') || '<span style="color:var(--gray-400)">✎ 填写</span>'}</a>` : (esc(w.position||'')||'—')}</td>
@@ -1474,7 +1480,7 @@ async function loadWorkers() {
     <td style="font-size:.82rem;color:var(--gray-500);white-space:nowrap">${esc(w.address||'')||'—'}</td>
     <td style="white-space:nowrap">${w.punch_days ? `${w.punch_days} 天 · <b>${(w.total_hours || 0).toFixed(1)}h</b>` : (w.assign_status ? '派工·' + esc(w.assign_status) : '—')}</td>
     <td style="white-space:nowrap">${w.id ? `${cCan('docs') ? `<button class="tr-act" style="border-color:var(--blue);color:var(--blue)" onclick="wkCardOpen(${w.id})">🪪 工卡</button>` : ''}<button class="tr-act" style="border-color:#2D9D78;color:#2D9D78" onclick="wkGoRecords(${w.id}, '${esc([w.first_name, w.middle_name, w.last_name].filter(Boolean).join(' ')).replace(/'/g,"&#39;")}')" title="查看该工人的全部打卡记录和总工时">📋 打卡记录</button>` : '—'}</td>
-  </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无派遣工人信息</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="9" class="empty">暂无派遣工人信息</td></tr>';
 }
 
 // 🪪 工卡 = 入职时上传的证件 (EAD/SSN卡/驾照等), 点开逐张查看
