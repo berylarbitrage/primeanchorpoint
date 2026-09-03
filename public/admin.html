@@ -2454,7 +2454,8 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     </div>
   </div>
   <div style="display:flex;gap:.4rem;border-bottom:1px solid var(--gray-200);margin-bottom:.5rem">
-    <button id="applyInboxTabActive" class="btn btn-sm" style="background:#eff6ff;color:#1A3F7A;border:1px solid #bfdbfe;border-bottom:none;border-radius:8px 8px 0 0;font-weight:700" onclick="switchApplicantInboxTab('active')">📥 待处理 <span id="applyInboxCountActive" style="font-weight:600;color:var(--gray-500)"></span></button>
+    <button id="applyInboxTabNew" class="btn btn-sm" style="background:#eff6ff;color:#1A3F7A;border:1px solid #bfdbfe;border-bottom:none;border-radius:8px 8px 0 0;font-weight:700" onclick="switchApplicantInboxTab('new')" title="还没有员工档案的申请 — 需要点「创建员工」处理">🆕 未建档 <span id="applyInboxCountNew" style="font-weight:600;color:var(--gray-500)"></span></button>
+    <button id="applyInboxTabActive" class="btn btn-sm" style="background:#fff;color:var(--gray-500);border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;font-weight:600" onclick="switchApplicantInboxTab('active')" title="已有员工档案、入职流程还没走完的申请">⏳ 已建档 · 待入职 <span id="applyInboxCountActive" style="font-weight:600;color:var(--gray-500)"></span></button>
     <button id="applyInboxTabHistory" class="btn btn-sm" style="background:#fff;color:var(--gray-500);border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;font-weight:600" onclick="switchApplicantInboxTab('history')">🗂️ 历史 <span id="applyInboxCountHistory" style="font-weight:600;color:var(--gray-400)"></span></button>
   </div>
   <div id="applyInboxCount" style="font-size:.8rem;color:var(--gray-400);margin-bottom:.7rem"></div>
@@ -42804,6 +42805,7 @@ async function openApplicantInbox(partnerId, partnerName) {
   _inboxNameEditId = null;
   document.getElementById('applyInboxPartner').textContent = partnerName ? '· ' + partnerName : '';
   document.getElementById('applyInboxCount').textContent = '';
+  { const cn = document.getElementById('applyInboxCountNew'); if (cn) cn.textContent = ''; }
   document.getElementById('applyInboxCountActive').textContent = '';
   document.getElementById('applyInboxCountHistory').textContent = '';
   document.getElementById('applyInboxBody').innerHTML = '<div style="padding:1.2rem;color:var(--gray-400);text-align:center">加载中…</div>';
@@ -42822,22 +42824,27 @@ async function openApplicantInbox(partnerId, partnerName) {
       catch (_) { s._docs = []; }
     }));
     _inboxSubmissions = list;
+    // 打开时默认落在「未建档」页签（有待建档的申请时）—— 真正需要动手的排最前
+    _inboxTab = list.some(s => applicantStage(s) === 'new') ? 'new' : 'active';
+    _applyInboxTabStyles();
     renderApplicantInbox();
   } catch (e) {
     document.getElementById('applyInboxBody').innerHTML = `<div style="padding:1.2rem;color:#b91c1c;text-align:center">加载失败：${esc(e.message || e)}</div>`;
   }
 }
 function _applyInboxTabStyles() {
+  const n = document.getElementById('applyInboxTabNew');
   const a = document.getElementById('applyInboxTabActive');
   const h = document.getElementById('applyInboxTabHistory');
   if (!a || !h) return;
   const on = 'background:#eff6ff;color:#1A3F7A;border:1px solid #bfdbfe;border-bottom:none;border-radius:8px 8px 0 0;font-weight:700';
   const off = 'background:#fff;color:var(--gray-500);border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;font-weight:600';
+  if (n) n.style.cssText = _inboxTab === 'new' ? on : off;
   a.style.cssText = _inboxTab === 'active' ? on : off;
   h.style.cssText = _inboxTab === 'history' ? on : off;
 }
 function switchApplicantInboxTab(tab) {
-  if (tab !== 'active' && tab !== 'history') return;
+  if (tab !== 'new' && tab !== 'active' && tab !== 'history') return;
   _inboxTab = tab;
   _inboxNameEditId = null;
   _applyInboxTabStyles();
@@ -42924,16 +42931,22 @@ function applicantStage(s) {
 function renderApplicantInbox() {
   const body = document.getElementById('applyInboxBody');
   const all = _inboxSubmissions || [];
-  const active = all.filter(s => applicantStage(s) !== 'history');
-  const history = all.filter(s => applicantStage(s) === 'history');
-  document.getElementById('applyInboxCountActive').textContent = active.length ? `(${active.length})` : '';
+  // 三个页签互斥: 未建档（还没有员工档案, 需要点「创建员工」）/ 已建档·待入职 / 历史
+  const stageOf = {};
+  all.forEach(s => { stageOf[s.id] = applicantStage(s); });
+  const fresh = all.filter(s => stageOf[s.id] === 'new');
+  const created = all.filter(s => stageOf[s.id] === 'created');
+  const history = all.filter(s => stageOf[s.id] === 'history');
+  const cn = document.getElementById('applyInboxCountNew');
+  if (cn) cn.textContent = fresh.length ? `(${fresh.length})` : '';
+  document.getElementById('applyInboxCountActive').textContent = created.length ? `(${created.length})` : '';
   document.getElementById('applyInboxCountHistory').textContent = history.length ? `(${history.length})` : '';
-  const shown = _inboxTab === 'history' ? history : active;
+  const shown = _inboxTab === 'history' ? history : _inboxTab === 'new' ? fresh : created;
   document.getElementById('applyInboxCount').textContent = shown.length
-    ? `共 ${shown.length} 份${_inboxTab === 'history' ? '（已入职 / 已处理）' : ''}`
+    ? `共 ${shown.length} 份${_inboxTab === 'history' ? '（已入职 / 已处理）' : _inboxTab === 'new' ? '（还没有员工档案，点「创建员工」处理）' : '（已建档，入职完成后自动归历史）'}`
     : '';
   if (!shown.length) {
-    body.innerHTML = `<div style="padding:2.5rem 1rem;color:var(--gray-400);text-align:center">${_inboxTab === 'history' ? '🗂️ 暂无历史' : '📭 暂无申请'}</div>`;
+    body.innerHTML = `<div style="padding:2.5rem 1rem;color:var(--gray-400);text-align:center">${_inboxTab === 'history' ? '🗂️ 暂无历史' : _inboxTab === 'new' ? '✅ 没有未建档的申请' : '📭 暂无已建档待入职的申请'}</div>`;
     return;
   }
   const dl = (sid, did) => `/api/admin/applicant-submissions/${sid}/docs/${did}/download`;
