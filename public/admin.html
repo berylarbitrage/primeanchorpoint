@@ -43172,7 +43172,9 @@ function openDupConflictPicker(p) {
   _mergeDupPair = { mode: 'conflict', a, b, keepId: b.id, pendingWorker: p.convertFromWorkerId || null, keepBothPhone: true, keepBothEmail: true, docsChoice: 'both' };
   _mergeDefaultPicks();
   document.getElementById('mergeDupTitle').textContent = `🧩 ${p.fieldLabel || '信息'}重复 — 对比处理`;
-  document.getElementById('mergeDupDesc').innerHTML = `正在保存的${esc(p.fieldLabel || '信息')}已登记在员工「${esc(p.existingEmpName || '')}」名下。左边是<strong>本次填写的新信息</strong>，右边是<strong>现有档案</strong>，每一行左右一一对应：两边不同的行<strong>点一下</strong>选用那边的值（绿行 = 采用），证件行同样可以点选用哪一组；点「应用所选」<strong>按点选的组合直接保存进现有档案</strong>（重复的联系方式会自动从另一份档案转移标注，不会再弹重复提示）；或直接用下方快捷按钮。`;
+  document.getElementById('mergeDupDesc').innerHTML = `正在保存的${esc(p.fieldLabel || '信息')}已登记在员工「${esc(p.existingEmpName || '')}」名下。左边是<strong>本次填写的新信息</strong>，右边是<strong>现有档案</strong>，每一行左右一一对应：两边不同的行<strong>点一下</strong>选用那边的值（绿行 = 采用），证件行同样可以点选用哪一组；点「应用所选」<strong>按点选的组合直接保存进现有档案</strong>（重复的联系方式会自动从另一份档案转移标注，不会再弹重复提示）；或直接用下方快捷按钮。`
+    + (p.empId && p.empId !== b.id && (allEmployees || []).some(e => e.id === p.empId)
+      ? `<br>⚠️ 检测到<strong>同一人已有两个员工号</strong>：点「应用所选」会按点选组合<strong>合并成一个员工号</strong> —— 保留一个（在职优先，否则先建的那份），另一号删除，工时/打卡/文件/申请全部转移（不可撤销）；社安号、出生日期、证件都齐时状态自动转为在职。` : '');
   _renderMergeFooter();
   _renderMergeOpts();
   renderMergeDup();
@@ -43432,6 +43434,10 @@ async function _applyConflictPicks() {
     if (keepBothEmail && spareM && spareM.toLowerCase() !== String(body.email).trim().toLowerCase() && !ems.map(x => x.toLowerCase()).includes(spareM.toLowerCase())) { ems.push(spareM); sparedNote.push('邮箱'); }
     body.extra_emails = ems;
   }
+  // ── 同一人已有两个员工号（编辑现有档案时撞号）→ 真合并: 保留一个员工号、另一号删除,
+  // 工时/打卡/文件/申请全部转移到保留号 —— 信息综合后系统里只剩一份档案、一个员工号。
+  const editedEmp = editedEmpId && editedEmpId !== b.id ? (allEmployees || []).find(e => e.id === editedEmpId) : null;
+  if (editedEmp) return _applyConflictMerge(editedEmp, body, { pendingWorker, keepBothPhone, keepBothEmail, docsChoice, picks });
   const btn = document.getElementById('mergeDupBtn');
   if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
   try {
@@ -43457,12 +43463,89 @@ async function _applyConflictPicks() {
     : docsChoice === 'b' ? aSubIds.filter(x => !bSubIds.includes(x)) : [];
   if (unchosen.length) api('/admin/applicant-submissions/mark-docs-unchosen', { method: 'POST', body: JSON.stringify({ submission_ids: unchosen }) }).catch(() => {});
   await loadEmployees();
+  const statusNote = await _tryPromoteActive(b.id);
   const nm = `${titleCase([body.first_name, body.last_name].filter(Boolean).join(' '))} · ${b.employee_id}`;
   showToast(`✅ 已按所选保存到现有档案「${esc(nm)}」`
     + (sparedNote.length ? `；另一边的${sparedNote.join('和')}已存为备用联系方式` : '')
     + (unchosen.length ? '；未采用的那组证件已在申请记录标注备查' : '')
-    + (editedEmpId && editedEmpId !== b.id ? '；原来编辑的那份档案未改动（重复的联系方式已转移标注），若确是同一人可在收件箱合并员工号' : ''),
+    + (editedEmpId && editedEmpId !== b.id ? '；原来编辑的那份档案未改动（重复的联系方式已转移标注），若确是同一人可在收件箱合并员工号' : '')
+    + statusNote,
     'success', 9000);
+}
+// 同一人两个员工号的「应用所选」: 按弹窗点选的值走服务端合并事务 —— 保留号更新为所选值,
+// 另一号的工时/打卡/文件/申请全部转移后删除。保留规则与收件箱合并一致: 在职优先, 否则先建的。
+async function _applyConflictMerge(editedEmp, chosen, o) {
+  const P = _mergeDupPair;
+  if (!P) return;
+  const b = P.b;
+  let keep = b, absorb = editedEmp;
+  if (editedEmp.status === 'active' && b.status !== 'active') { keep = editedEmp; absorb = b; }
+  else if (!(b.status === 'active' && editedEmp.status !== 'active') && editedEmp.id < b.id) { keep = editedEmp; absorb = b; }
+  const ov = {
+    first_name: chosen.first_name, middle_name: chosen.middle_name, last_name: chosen.last_name,
+    phone: chosen.phone, email: chosen.email,
+    address: chosen.address, street2: chosen.street2, city: chosen.city, state: chosen.state, zip: chosen.zip,
+    dob: chosen.dob, hire_date: chosen.hire_date,
+  };
+  // SSN 映射到合并语义: 行真正可点选(两边显示的值不同)时按点选 —— 选中的那侧是被并
+  // 档案就整套拷贝被并档案的; 行不可选(表单里是掩码/两边都空, 库里可能仍存着)时不按
+  // pick 走, 谁的档案里有 SSN 就保谁的, 避免把已存的 SSN 覆盖成空。
+  const ssnField = MERGE_PICK_FIELDS.find(x => x.key === 'ssn');
+  if (ssnField && _mergePickable(ssnField)) {
+    if ((o.picks.ssn === 'a' ? editedEmp.id : b.id) === absorb.id) ov.ssn_source = 'absorb';
+  } else if (!String(keep.ssn_last4 || '').trim() && String(absorb.ssn_last4 || '').trim()) {
+    ov.ssn_source = 'absorb';
+  }
+  // 证件组选择: 左(a)=编辑中的那份, 右(b)=现有档案 → 换算成 保留侧/被并侧
+  const dc = o.docsChoice === 'both' ? 'both' : ((o.docsChoice === 'a') === (keep.id === editedEmp.id) ? 'keep' : 'absorb');
+  const btn = document.getElementById('mergeDupBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '合并保存中…'; }
+  try {
+    const r = await api('/admin/employees/merge-dup', { method: 'POST', body: JSON.stringify({
+      keep_id: keep.id, absorb_id: absorb.id, overrides: ov,
+      keep_both_phone: o.keepBothPhone, keep_both_email: o.keepBothEmail, docs_choice: dc,
+    }) });
+    if (!r || r.error || !r.success) throw new Error((r && r.error) || '合并失败');
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '应用所选 / Apply'; }
+    showToast('合并失败：' + (e.message || e), 'error', 7000);
+    return;
+  }
+  _pendingDupSave = null;
+  closeMergeDup();
+  if (o.pendingWorker) {
+    try {
+      await api(`/admin/worker-accounts/${o.pendingWorker}`, { method: 'PUT', body: JSON.stringify({ employee_id: keep.id }) });
+      if (typeof loadWorkerAccounts === 'function') await loadWorkerAccounts();
+    } catch (_) {}
+  }
+  await loadEmployees();
+  const statusNote = await _tryPromoteActive(keep.id);
+  const nmK = `${titleCase([chosen.first_name, chosen.last_name].filter(Boolean).join(' '))} · ${keep.employee_id}`;
+  showToast(`✅ 同一人的两个员工号已合并：保留「${esc(nmK)}」，重复员工号 ${esc(absorb.employee_id)} 已删除，工时/打卡记录/文件/申请已全部转移到保留号`
+    + (dc !== 'both' ? '；未采用的那组证件已在申请记录标注备查' : '') + statusNote, 'success', 10000);
+}
+// 信息综合完成后的自动转正: 档案还是待入职、社安号和出生日期都齐时尝试转在职 ——
+// 服务端照常把关(关联证件必须全部裁剪过), 不满足就保持待入职并把还差什么说出来。
+async function _tryPromoteActive(empId) {
+  const e = (allEmployees || []).find(x => x.id === empId);
+  if (!e || e.status !== 'onboarding') return '';
+  if (!String(e.dob || '').trim() || !String(e.ssn_last4 || '').trim()) return '；社安号/出生日期还不全，状态保持待入职';
+  const body = {
+    first_name: e.first_name, middle_name: e.middle_name || '', last_name: e.last_name,
+    phone: e.phone || '', email: e.email || '',
+    address: e.address || '', street2: e.street2 || '', city: e.city || '', state: e.state || '', zip: e.zip || '',
+    dob: e.dob || '', hire_date: e.hire_date || '', status: 'active',
+    emergency_name: e.emergency_name || '', emergency_phone: e.emergency_phone || '', emergency_relation: e.emergency_relation || '',
+    position: e.position || '', department: e.department || '',
+    pay_rate: e.pay_rate || 0, pay_type: e.pay_type || 'hourly',
+    notes: e.notes || '', force: true,
+  };
+  try {
+    const r = await api(`/admin/employees/${e.id}`, { method: 'PUT', body: JSON.stringify(body) });
+    if (r && (r.success || r.id)) { await loadEmployees(); return '；入职资料齐全，状态已自动转为在职'; }
+    return '；' + ((r && r.error) || '转在职未成功，状态保持待入职');
+  } catch (err) { return '；转在职未成功（' + (err.message || err) + '），状态保持待入职'; }
 }
 // 旧流程（保存失败时的兜底）: 把选择预填进现有档案的编辑表单, 人工核对后保存
 function _applyConflictPicksToForm() {

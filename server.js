@@ -20818,14 +20818,16 @@ app.post('/api/admin/employees/merge-dup', requireAdmin, requireRole('admin'), (
       // 白名单字段; absorb 的数据已读进内存, 与后面的删除顺序无关。
       const ov = (req.body || {}).overrides && typeof req.body.overrides === 'object' ? req.body.overrides : {};
       const pickStr = (key, cur, max) => ov[key] !== undefined ? String(ov[key] || '').trim().slice(0, max || 200) : (cur || '');
+      // 地址与其他保存路径一致地过一遍去重清洗（行内重复片段 + 街道行/公寓框跨字段）
+      const [finAddr, finStreet2] = _dedupeAddrFields(pickStr('address', keep.address, 200), pickStr('street2', keep.street2, 200));
       const fin = {
         first_name: pickStr('first_name', keep.first_name, 100),
         middle_name: pickStr('middle_name', keep.middle_name, 100),
         last_name: pickStr('last_name', keep.last_name, 100),
         phone: pickStr('phone', keep.phone, 40),
         email: pickStr('email', keep.email, 120),
-        address: pickStr('address', keep.address, 200),
-        street2: pickStr('street2', keep.street2, 200),
+        address: finAddr,
+        street2: finStreet2,
         city: pickStr('city', keep.city, 100),
         state: pickStr('state', keep.state, 60),
         zip: pickStr('zip', keep.zip, 20),
