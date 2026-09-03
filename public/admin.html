@@ -43133,7 +43133,7 @@ function inboxMergeDup(linkedId, otherId) {
   _mergeDupPair = { mode: 'merge', a, b, keepId, keepBothPhone: true, keepBothEmail: true, docsChoice: 'both' };
   _mergeDefaultPicks();
   document.getElementById('mergeDupTitle').textContent = '🧹 合并成一个员工号';
-  document.getElementById('mergeDupDesc').innerHTML = '点卡片选<strong>保留哪份档案</strong>（绿框 = 保留），两边不同的信息行可<strong>逐条点选</strong>用哪边的值（绿行 = 采用），每一行左右一一对应。<strong>不删除任何问卷或记录</strong>：另一份的问卷 / 工时 / 打卡记录 / 文件全部保留并转移关联到保留档案，只注销那个重复的员工号。电话 / 邮箱要不要两个都存、证件照片用哪一组，点证件行或在下方选。此操作不可撤销。';
+  document.getElementById('mergeDupDesc').innerHTML = '点卡片选<strong>保留哪份档案</strong>（绿框 = 保留），两边不同的信息行可<strong>逐条点选</strong>用哪边的值（绿行 = 采用），每一行左右一一对应。<strong>不删除任何问卷或记录</strong>：另一份的问卷 / 工时 / 打卡记录 / 文件全部保留并转移关联到保留档案，只注销那个重复的员工号。电话 / 邮箱可存多个 —— 行里点选的只是主号，两边的号码和邮箱（含备用联系方式）默认全部保留；证件照片用哪一组，点证件行或在下方选。此操作不可撤销。';
   _renderMergeFooter();
   _renderMergeOpts();
   renderMergeDup();
@@ -43241,6 +43241,7 @@ function openDupConflictPicker(p) {
     address: d.address || '', street2: d.street2 || '', city: d.city || '', state: d.state || '', zip: d.zip || '',
     dob: d.dob || '', hire_date: d.hire_date || '',
     ssn_digits: digits.length === 9 ? digits : '', ssn_last4: digits.length === 9 ? digits.slice(-4) : '',
+    extra_phones: Array.isArray(d.extra_phones) ? d.extra_phones : [], extra_emails: Array.isArray(d.extra_emails) ? d.extra_emails : [],
     timeclock_code: '', notes: '',
     // 新信息卡的证件来源: 表单里挂着的申请证件条优先, 其次是正在编辑的那份档案
     docsSubId: window._empApplDocsSubId || 0,
@@ -43301,20 +43302,40 @@ function renderMergeDup() {
     rows.push(side => row('员工号', has[side] ? esc(P[side].employee_id || '') : ''));
     rows.push(side => row('状态', has[side] ? (EMP_STATUS_LABEL[P[side].status] || esc(P[side].status || '')) : ''));
   }
-  for (const f of MERGE_PICK_FIELDS) rows.push(side => {
-    const e = P[side];
-    const v = esc(String(f.get(e) || ''));
-    if (!_mergePickable(f)) return row(f.label, v);
-    const chosen = P.picks[f.key] === side;
-    return `<div onclick="event.stopPropagation();pickMergeField('${f.key}','${side}')" title="点击选用这一边的「${f.label}」" style="flex:1;display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;font-size:.78rem;padding:.18rem .25rem;border-bottom:1px dashed var(--gray-100);cursor:pointer;border-radius:5px;${chosen ? 'background:#dcfce7' : 'opacity:.68'}">
+  // 备用联系方式行: 档案可以存多个电话/邮箱 —— 电话/邮箱行点选的只是主号,
+  // 两边的号码（含备用）默认全部保留进最终档案, 这里把备用的也摆出来对比
+  const parseArrX = v => Array.isArray(v) ? v : (() => { try { const x = JSON.parse(v || '[]'); return Array.isArray(x) ? x : []; } catch (_) { return []; } })();
+  const extrasRow = (label, key) => side => {
+    const list = parseArrX(P[side][key]).map(x => String(x).trim()).filter(Boolean);
+    return row(label, list.map(esc).join('、'));
+  };
+  for (const f of MERGE_PICK_FIELDS) {
+    rows.push(side => {
+      const e = P[side];
+      const v = esc(String(f.get(e) || ''));
+      if (!_mergePickable(f)) return row(f.label, v);
+      const chosen = P.picks[f.key] === side;
+      const title = (f.key === 'phone' || f.key === 'email')
+        ? `点击把这一边选为主号 —— 两边的${f.label}（含备用）默认全部保留，没选为主号的进备用联系方式`
+        : `点击选用这一边的「${f.label}」`;
+      return `<div onclick="event.stopPropagation();pickMergeField('${f.key}','${side}')" title="${title}" style="flex:1;display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;font-size:.78rem;padding:.18rem .25rem;border-bottom:1px dashed var(--gray-100);cursor:pointer;border-radius:5px;${chosen ? 'background:#dcfce7' : 'opacity:.68'}">
         <span style="white-space:nowrap;font-weight:700;color:${chosen ? '#047857' : 'var(--gray-400)'};display:inline-flex;align-items:center;gap:.3rem">${chosen ? '✓ ' : '○ '}${f.label}${chosen ? '' : contactBadge(f, v)}</span>
         <span style="text-align:right;word-break:break-all;${chosen ? 'font-weight:700' : ''}">${v || '—'}</span>
       </div>`;
-  });
+    });
+    if (f.key === 'email') {
+      rows.push(extrasRow('备用电话', 'extra_phones'));
+      rows.push(extrasRow('备用邮箱', 'extra_emails'));
+    }
+  }
   if (anyId) {
-    rows.push(side => row('工时记录', has[side] ? (P[side].time_count || 0) + ' 条' : ''));
-    rows.push(side => row('HR 文件', has[side] ? (P[side].doc_count || 0) + ' 份' : ''));
+    // 工时/文件不用选 —— 合并时全部自动转移到保留号, 一条不丢
+    const movingSuffix = side => (P.mode === 'merge' && side !== keepSide) ? ' → 全部转移到保留号' : '';
+    rows.push(side => row('工时记录', has[side] ? (P[side].time_count || 0) + ' 条' + ((P[side].time_count || 0) > 0 ? movingSuffix(side) : '') : ''));
+    rows.push(side => row('HR 文件', has[side] ? (P[side].doc_count || 0) + ' 份' + ((P[side].doc_count || 0) > 0 ? movingSuffix(side) : '') : ''));
     rows.push(side => row('注册时间', has[side] && P[side].created_at ? new Date(P[side].created_at).toLocaleDateString('zh-CN') : ''));
+    // 每张卡都是「档案 + 挂在它名下的问卷」: 数量异步加载; 合并后全部归到保留号
+    rows.push(side => row('关联问卷', (has[side] || P[side].docsEmpId) ? `<span id="mergeSubsCount_${side}">…</span>` : (P[side].docsSubId ? '1 份' : '')));
   }
   if (P.a.notes || P.b.notes) rows.push(side => {
     const e = P[side];
@@ -43348,7 +43369,23 @@ function renderMergeDup() {
     const cardClick = P.mode === 'merge' ? ` onclick="pickMergeKeep(${P[side].id})" title="点击选择保留这份档案"` : '';
     return `<div${cardClick} style="display:flex;flex-direction:column;${P.mode === 'merge' ? 'cursor:pointer;' : ''}border-left:2px solid ${bc};border-right:2px solid ${bc};background:${bg};padding:0 .8rem;${first ? `border-top:2px solid ${bc};border-radius:10px 10px 0 0;padding-top:.7rem;` : ''}${last ? `border-bottom:2px solid ${bc};border-radius:0 0 10px 10px;padding-bottom:.7rem;` : ''}">${mk(side)}</div>`;
   }).join('')).join('');
-  [P.a, P.b].forEach(e => { if (e.id) _mergeLoadDocs(e.id); else if (e.docsSubId || e.docsEmpId) _mergeLoadPendingDocs(e); });
+  [['a', P.a], ['b', P.b]].forEach(([side, e]) => {
+    if (e.id) { _mergeLoadDocs(e.id); _mergeLoadSubsCount(e, side); }
+    else if (e.docsSubId || e.docsEmpId) {
+      _mergeLoadPendingDocs(e);
+      if (e.docsEmpId) _mergeLoadSubsCount({ id: e.docsEmpId }, side);
+    }
+  });
+}
+// 「关联问卷」行: 该档案名下的申请数量（含电话/邮箱匹配的）; 结果缓存, 点选重渲染不重复请求
+function _mergeLoadSubsCount(e, side) {
+  if (!_mergeDupPair) return;
+  const cache = _mergeDupPair.subsCache || (_mergeDupPair.subsCache = {});
+  const put = n => { const x = document.getElementById('mergeSubsCount_' + side); if (x) x.textContent = (n == null ? '—' : n + ' 份'); };
+  if (cache[e.id] !== undefined) { put(cache[e.id]); return; }
+  api(`/admin/employees/${e.id}/related-submissions`)
+    .then(list => { cache[e.id] = Array.isArray(list) ? list.length : null; put(cache[e.id]); })
+    .catch(() => { cache[e.id] = null; put(null); });
 }
 // 证件行点选: 与下方「证件照片用哪一组」的选项联动
 function pickMergeDocs(side) {
