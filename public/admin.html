@@ -43178,12 +43178,13 @@ function openDupConflictPicker(p) {
   renderMergeDup();
   document.getElementById('mergeDupModal').classList.add('show');
 }
-// 证件组可不可以挑: 两边都有证件来源; conflict 模式还要求新信息带申请证件（应用时挂表单要用 subId）
+// 证件组可不可以挑: 两边都有证件来源就行。conflict 模式左卡没挂申请条(docsSubId=0,
+// 如编辑现有档案时撞号)时, 应用所选挂表单用的申请 id 从已加载的证件缓存里解析。
 function _mergeDocsPickable() {
   const P = _mergeDupPair;
   if (!P) return false;
   const src = e => !!(e.id || e.docsSubId || e.docsEmpId);
-  return src(P.a) && src(P.b) && (P.mode === 'merge' || !!P.a.docsSubId);
+  return src(P.a) && src(P.b);
 }
 // 两张卡不再各自独立排版, 而是同一个 grid 里每行左右两个格子落在同一条 grid 行上:
 // 行高自动取两边较高者, 只在一边有的信息另一边补「—」占位 → 每一行左右严格一一对齐。
@@ -43384,7 +43385,16 @@ function _applyConflictPicks() {
   const P = _mergeDupPair;
   const a = P.a, bId = P.b.id, picks = P.picks, pendingWorker = P.pendingWorker;
   const keepBothPhone = P.keepBothPhone !== false, keepBothEmail = P.keepBothEmail !== false;
-  const docsChoice = P.docsChoice || 'both', docsSubId = a.docsSubId || 0;
+  const docsChoice = P.docsChoice || 'both';
+  // 挂表单用的申请 id: 表单上挂着的申请条优先; 没有(编辑现有档案撞号)则从左卡已加载的
+  // 证件里解析 —— 每张证件都带 submission_id, 与卡片显示一致地优先取已关联(linked)那份申请
+  let docsSubId = a.docsSubId || 0;
+  if (!docsSubId && a.docsEmpId && P.docsCache && P.docsCache['emp:' + a.docsEmpId]) {
+    const cached = P.docsCache['emp:' + a.docsEmpId];
+    const linked = cached.filter(d => d.linked);
+    const first = (linked.length ? linked : cached)[0];
+    if (first) docsSubId = first.submission_id || 0;
+  }
   closeMergeDup();
   setTimeout(() => {
     if (pendingWorker) _pendingWorkerLink = { workerId: pendingWorker, empId: bId };
