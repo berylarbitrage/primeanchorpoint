@@ -42856,13 +42856,16 @@ function _inboxReviewMissing(s, emp) {
 //   'new'     — no employee档案 yet → show "创建员工" button (待处理)
 //   'created' — employee exists but onboarding not finished → button hidden, stays 待处理
 //   'history' — the LINKED employee reached 在职(已入职) → moves to History tab
-// 例外：关联档案还是待入职、但系统里已有同一人的其他「在职」档案（重复登记, 如打卡
+// 例外①：关联档案还是待入职、但系统里已有同一人的其他「在职」档案（重复登记, 如打卡
 // 自动建档撞上已入职老档案）→ 这张卡不再显示待入职、不用再走入职, 按已入职归历史。
+// 例外②：登记上已有处理标注（已舍弃 / 处理重复时未采用这组证件）= 后台已处理完 →
+// 直接归历史备查, 不再留在待处理占位（入职由采用的那张登记推进, 与这张无关）。
 // 硬性前提：入职审核清单（证件全部裁剪 + 生日 + 社安号）完成——没完成的即使员工已
 // 在职, 卡片也留在待处理并标红字提醒。
 // A plain phone/email match with no link just hides the "创建员工" button —
 // it never auto-archives the card.
 function applicantStage(s) {
+  if (String(s.review_note || '').trim()) return 'history';
   const linked = linkedEmployeeForApplicant(s);
   if (linked) {
     if (linked.status === 'active') return _inboxReviewMissing(s, linked).length ? 'created' : 'history';
@@ -42881,7 +42884,7 @@ function renderApplicantInbox() {
   document.getElementById('applyInboxCountHistory').textContent = history.length ? `(${history.length})` : '';
   const shown = _inboxTab === 'history' ? history : active;
   document.getElementById('applyInboxCount').textContent = shown.length
-    ? `共 ${shown.length} 份${_inboxTab === 'history' ? '（已入职）' : ''}`
+    ? `共 ${shown.length} 份${_inboxTab === 'history' ? '（已入职 / 已处理）' : ''}`
     : '';
   if (!shown.length) {
     body.innerHTML = `<div style="padding:2.5rem 1rem;color:var(--gray-400);text-align:center">${_inboxTab === 'history' ? '🗂️ 暂无历史' : '📭 暂无申请'}</div>`;
@@ -42973,8 +42976,12 @@ function renderApplicantInbox() {
       ? `<div style="max-width:300px;font-size:.7rem;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:.25rem .5rem;text-align:right;word-break:break-word">${esc(s.review_note)}</div>`
       : '';
     const _pillStyle = 'padding:.2rem .55rem;font-size:.72rem;background:#fffbeb;color:#b45309;border:1px solid #fde68a;border-radius:6px;font-weight:600';
+    // 历史卡片的状态胶囊: 关联/同一人档案确实在职 → 已入职; 否则是靠处理标注归档的 → 已处理
+    const _histActive = (_linkedEmp && _linkedEmp.status === 'active') || _others.some(e => e.status === 'active');
     const mkEmp = stage === 'history'
-      ? `<span${_linkedEmp && _linkedEmp.status !== 'active' ? ' title="系统里已有同一人的在职档案（见红色标注），此登记无需再入职"' : ''} style="padding:.2rem .55rem;font-size:.72rem;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:6px;font-weight:600">✓ 已入职</span>`
+      ? (_histActive
+        ? `<span${_linkedEmp && _linkedEmp.status !== 'active' ? ' title="系统里已有同一人的在职档案（见红色标注），此登记无需再入职"' : ''} style="padding:.2rem .55rem;font-size:.72rem;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:6px;font-weight:600">✓ 已入职</span>`
+        : `<span title="这次登记已处理完（舍弃 / 未采用，见黄色标注），归档备查" style="padding:.2rem .55rem;font-size:.72rem;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:6px;font-weight:600;cursor:help">🗂 已处理</span>`)
       : stage === 'created'
         ? (_canEditEmp
           ? `<button${_createdTitle} onclick="inboxEditEmp(${_matchedEmp.id},${s.id})" style="${_pillStyle};cursor:pointer">${_createdLabel}</button>`
