@@ -9488,7 +9488,7 @@ app.get('/api/manager/workers', requireAdmin, (req, res) => {
   const eids = managerEmployeeIds(req);
   if (req.userRole === 'manager' && !pids.length && !jids.length && !eids.length) return res.json([]);
   let q = `
-    SELECT DISTINCT e.id, e.first_name, e.last_name, e.employee_id as emp_code,
+    SELECT DISTINCT e.id, e.first_name, e.middle_name, e.last_name, e.employee_id as emp_code,
            e.email, e.phone, e.position, e.status
     FROM employees e`;
   const params = [];
@@ -10157,7 +10157,7 @@ app.get('/api/admin/managers/:id/workers', requireAdmin, requireRole('admin', 's
 
   const ids = [...allEmpIds];
   const rows = db.prepare(`
-    SELECT id, first_name, last_name, employee_id as emp_code,
+    SELECT id, first_name, middle_name, last_name, employee_id as emp_code,
            email, phone, position, status
     FROM employees
     WHERE id IN (${ids.map(() => '?').join(',')})
@@ -10174,7 +10174,7 @@ app.get('/api/admin/managers/:id/punch', requireAdmin, requireRole('admin', 'sta
   if (!pids.length) return res.json([]);
   const { date_from, date_to } = req.query;
   let q = `SELECT t.id, t.clock_in, t.clock_out, t.total_hours, t.status, t.company_name,
-             e.first_name, e.last_name, e.employee_id as emp_code,
+             e.first_name, e.middle_name, e.last_name, e.employee_id as emp_code,
              p.name AS partner_name,
              COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
            FROM time_entries t
@@ -10352,7 +10352,7 @@ app.get('/foremen', (req, res) => res.sendFile(path.join(__dirname, 'public', 'f
 // ─── Worker Accounts (admin manages) ───
 app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
   const workers = db.prepare(`
-    SELECT w.*, e.first_name, e.last_name, e.employee_id as emp_code,
+    SELECT w.*, e.first_name, e.middle_name, e.last_name, e.employee_id as emp_code,
       e.pay_rate, e.pay_type, e.position, e.department,
       e.email as emp_email, e.phone as emp_phone,
       COALESCE(w.linked_inquiry_id,
@@ -10487,7 +10487,7 @@ app.post('/api/admin/employees/:id/ensure-worker-account', requireAdmin, (req, r
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(crypto.randomBytes(8).toString('hex'), salt);
   const r = db.prepare('INSERT INTO worker_accounts (username, password_hash, salt, employee_id, active, name, phone, email) VALUES (?,?,?,?,0,?,?,?)')
-    .run(username, hash, salt, empId, `${emp.first_name} ${emp.last_name}`.trim(), emp.phone || '', emp.email || '');
+    .run(username, hash, salt, empId, `${[emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' ')}`.trim(), emp.phone || '', emp.email || '');
   const changedBy = req.session && req.session.username ? req.session.username : 'admin';
   db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)').run(r.lastInsertRowid, changedBy, 'account_created', '', username, '从员工管理自动创建（待激活）');
   res.json({ success: true, worker_account_id: r.lastInsertRowid });
@@ -10588,7 +10588,7 @@ try { db.exec("ALTER TABLE worker_accounts ADD COLUMN identity_reverify_dates TE
 
 app.get('/api/admin/worker-accounts/:id/basic', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
   const w = db.prepare(`SELECT w.id, w.name, w.phone, w.email, w.payment_method, w.payment_details,
-    e.email as emp_email, e.phone as emp_phone, e.first_name, e.last_name
+    e.email as emp_email, e.phone as emp_phone, e.first_name, e.middle_name, e.last_name
     FROM worker_accounts w LEFT JOIN employees e ON w.employee_id=e.id WHERE w.id=?`).get(req.params.id);
   if (!w) return res.status(404).json({ error: 'Not found' });
   res.json(w);
@@ -11312,7 +11312,7 @@ app.get('/api/admin/worker-accounts/:id/contract-preview', requireAdmin, (req, r
   if (!w) return res.status(404).json({ error: 'Worker not found' });
   const onb = db.prepare("SELECT contract_content, ds_envelope_id, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
   const empType = w.employment_type || 'w2';
-  const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
+  const workerName = w.name || [w.first_name, w.middle_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
   const companyName = getCompanySignerName();
   const dateStr = new Date().toISOString().slice(0, 10);
   // If already has saved content, use that; otherwise generate default
@@ -11368,7 +11368,7 @@ app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (re
     const companyEmail = getCompanySignerEmail();
     const companyName = getCompanySignerName();
     if (!companyEmail) return res.status(503).json({ error: '请在 .env 设置 COMPANY_SIGNER_EMAIL' });
-    const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
+    const workerName = w.name || [w.first_name, w.middle_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
     const workerEmail = req.body.worker_email || w.email || '';
     if (!workerEmail) return res.status(400).json({ error: '工人邮箱为空，请先补充邮箱' });
     // Use provided content or generate default — only matters when no DocuSeal template is configured
@@ -12660,7 +12660,7 @@ app.post('/api/admin/worker-accounts/:id/verify-tin-taxbandits', requireAdmin, a
     cfg.sandbox = sandbox;
 
     // Get TIN + name with priority: employee SSN → SSN card → W-9 → tax_residency
-    const profileName = [w.first_name, w.last_name].filter(Boolean).join(' ').trim();
+    const profileName = [w.first_name, w.middle_name, w.last_name].filter(Boolean).join(' ').trim();
     let tin = '', tinName = profileName || w.name || w.username || '';
     let tinType = 'INDIVIDUAL';
 
@@ -12926,7 +12926,7 @@ app.post('/api/admin/worker-accounts/:id/id-docs', requireAdmin, docUpload.singl
 app.get('/api/admin/worker-accounts/:id/w9-preview', requireAdmin, (req, res) => {
   const templateId = getDsealConfigTemplateId('w9') || process.env.DOCUSEAL_W9_TEMPLATE_ID || '';
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
-  const workerName = w ? (w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '') : '';
+  const workerName = w ? (w.name || [w.first_name, w.middle_name, w.last_name].filter(Boolean).join(' ') || w.username || '') : '';
   if (templateId) {
     const baseHost = dsealPublicHost();
     const page = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:20px;background:#f9fafb;font-family:Arial,sans-serif}</style></head><body>
@@ -12952,7 +12952,7 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
     const workerId = parseInt(req.params.id);
     const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
     if (!w) return res.status(404).json({ error: 'Worker not found' });
-    const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
+    const workerName = w.name || [w.first_name, w.middle_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
     const workerEmail = req.body.worker_email || w.email || '';
     const workerPhone = w.phone || '';
 
@@ -13052,7 +13052,7 @@ app.post('/api/admin/worker-accounts/:id/send-payment-auth', requireAdmin, async
     const workerId = parseInt(req.params.id);
     const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
     if (!w) return res.status(404).json({ error: 'Worker not found' });
-    const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
+    const workerName = w.name || [w.first_name, w.middle_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
     const workerEmail = req.body.worker_email || w.email || '';
     const workerPhone = req.body.worker_phone || w.phone || '';
     const lang = req.body.lang || 'zh'; // 'zh', 'en', or 'es'
@@ -15037,7 +15037,7 @@ app.get('/api/admin/job-applications', requireAdmin, blockManager, (req, res) =>
       j.type as job_type, j.employment_type as job_employment_type,
       j.work_days, j.work_start, j.work_end, j.benefits as job_benefits,
       w.username, w.phone as worker_phone, w.email as worker_email,
-      e.first_name, e.last_name
+      e.first_name, e.middle_name, e.last_name
     FROM job_applications a
     LEFT JOIN jobs j ON a.job_id=j.id
     LEFT JOIN worker_accounts w ON a.worker_account_id=w.id
@@ -15058,7 +15058,7 @@ app.put('/api/admin/job-applications/:id', requireAdmin, blockManager, async (re
     try {
       const app2 = db.prepare(`
         SELECT a.*, w.phone as worker_phone, w.email as worker_email,
-               e.first_name, e.last_name, j.title as job_title
+               e.first_name, e.middle_name, e.last_name, j.title as job_title
         FROM job_applications a
         LEFT JOIN worker_accounts w ON a.worker_account_id=w.id
         LEFT JOIN employees e ON w.employee_id=e.id
@@ -15066,7 +15066,7 @@ app.put('/api/admin/job-applications/:id', requireAdmin, blockManager, async (re
         WHERE a.id=?
       `).get(req.params.id);
       if (app2) {
-        const workerName = app2.first_name ? `${app2.first_name} ${app2.last_name||''}`.trim() : app2.username || '';
+        const workerName = app2.first_name ? `${[app2.first_name, app2.middle_name, app2.last_name].filter(Boolean).join(' ')}`.trim() : app2.username || '';
         const times = Array.isArray(interview_times) && interview_times.length ? interview_times : (interview_datetime ? [interview_datetime] : []);
         const fmtDt = dt => new Date(dt).toLocaleString('zh-CN', { timeZone: 'America/New_York', year:'numeric', month:'long', day:'numeric', weekday:'long', hour:'2-digit', minute:'2-digit' });
         const dtLines = times.map((t, i) => (times.length > 1 ? `时间选项${i+1}：` : '时间：') + fmtDt(t)).join('\n');
@@ -15346,7 +15346,7 @@ function enrichReferrer(r) {
   const bonuses = db.prepare('SELECT position_key, bonus_amount, min_hours FROM referrer_position_bonus WHERE referrer_id=?').all(r.id);
   const refs = db.prepare(`
     SELECT rr.*,
-      COALESCE(e.first_name || ' ' || e.last_name, wa.name, rr.referee_name) AS referee_display_name,
+      COALESCE(TRIM(REPLACE(e.first_name || ' ' || COALESCE(e.middle_name,'') || ' ' || e.last_name, '  ', ' ')), wa.name, rr.referee_name) AS referee_display_name,
       e.employee_id AS referee_employee_code,
       wa.worker_code AS referee_worker_code,
       COALESCE((SELECT SUM(t.total_hours) FROM time_entries t
@@ -15382,7 +15382,7 @@ function enrichReferrer(r) {
 app.get('/api/admin/referrers', requireAdmin, (req, res) => {
   const rows = db.prepare(`
     SELECT r.*,
-      COALESCE(e.first_name || ' ' || e.last_name, '') AS linked_employee_name,
+      COALESCE(TRIM(REPLACE(e.first_name || ' ' || COALESCE(e.middle_name,'') || ' ' || e.last_name, '  ', ' ')), '') AS linked_employee_name,
       e.employee_id AS linked_employee_code,
       wa.name AS linked_worker_name,
       wa.worker_code AS linked_worker_code
@@ -15419,7 +15419,7 @@ app.get('/api/admin/referrers', requireAdmin, (req, res) => {
 app.get('/api/admin/referrers/:id', requireAdmin, (req, res) => {
   const r = db.prepare(`
     SELECT r.*,
-      COALESCE(e.first_name || ' ' || e.last_name, '') AS linked_employee_name,
+      COALESCE(TRIM(REPLACE(e.first_name || ' ' || COALESCE(e.middle_name,'') || ' ' || e.last_name, '  ', ' ')), '') AS linked_employee_name,
       e.employee_id AS linked_employee_code,
       wa.name AS linked_worker_name,
       wa.worker_code AS linked_worker_code
@@ -15534,7 +15534,7 @@ app.delete('/api/admin/referrer-referrals/:id', requireAdmin, (req, res) => {
 
 // Helper: list employees + worker_accounts for picking referee/linked person
 app.get('/api/admin/referrer-people-options', requireAdmin, (req, res) => {
-  const employees = db.prepare(`SELECT id, employee_id AS code, first_name, last_name, phone, email FROM employees WHERE status='active' ORDER BY first_name, last_name`).all();
+  const employees = db.prepare(`SELECT id, employee_id AS code, first_name, middle_name, last_name, phone, email FROM employees WHERE status='active' ORDER BY first_name, last_name`).all();
   const workers = db.prepare(`SELECT id, worker_code AS code, name, phone, email, employee_id FROM worker_accounts WHERE active=1 ORDER BY name`).all();
   res.json({ employees, workers });
 });
@@ -16118,7 +16118,7 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
       if (digits.length >= 7) {
         const dupSubs = db.prepare('SELECT id, name, partner_name, phone, created_at FROM applicant_submissions WHERE id != ?').all(subId)
           .filter(x => norm(x.phone) === digits).slice(0, 10);
-        const dupEmps = db.prepare('SELECT id, employee_id, first_name, last_name, phone FROM employees').all()
+        const dupEmps = db.prepare('SELECT id, employee_id, first_name, middle_name, last_name, phone FROM employees').all()
           .filter(x => norm(x.phone) === digits).slice(0, 10);
         if (dupSubs.length || dupEmps.length) dup = { dupSubs, dupEmps };
       }
@@ -16217,7 +16217,7 @@ async function notifyNewApplication({ subId, partner, name, position, phone, ema
   if (hasDup) {
     const parts = [
       ...(dup.dupSubs || []).map(x => `申请 #${x.id} ${x.name}（${x.partner_name || ''}，${String(x.created_at || '').slice(0, 10)}）· ${x.phone}`),
-      ...(dup.dupEmps || []).map(x => `员工 ${[x.first_name, x.last_name].filter(Boolean).join(' ')}${x.employee_id ? '（' + x.employee_id + '）' : ''} · ${x.phone}`),
+      ...(dup.dupEmps || []).map(x => `员工 ${[x.first_name, x.middle_name, x.last_name].filter(Boolean).join(' ')}${x.employee_id ? '（' + x.employee_id + '）' : ''} · ${x.phone}`),
     ];
     rows.splice(4, 0, ['⚠️ 电话重复 / Duplicate Phone', parts.join('；')]);
   }
@@ -16486,7 +16486,7 @@ app.post('/api/admin/applicant-submissions/mark-dup-kept', requireAdmin, blockMa
     const kept = db.prepare('SELECT * FROM employees WHERE id=?').get(keptId);
     if (!emp || !kept) return res.status(404).json({ error: '员工不存在' });
     const stamp = new Date().toISOString().slice(0, 10);
-    const keptLabel = `${kept.first_name} ${kept.last_name} · ${kept.employee_id}`;
+    const keptLabel = `${[kept.first_name, kept.middle_name, kept.last_name].filter(Boolean).join(' ')} · ${kept.employee_id}`;
     const note = `📌 ${stamp} 重复登记已舍弃：系统已有同一人「${keptLabel}」，保留原档案（本档案仅作记录）`;
     db.prepare(`UPDATE employees SET notes=CASE WHEN COALESCE(notes,'')='' THEN ? ELSE notes || char(10) || ? END WHERE id=?`)
       .run(note, note, emp.id);
@@ -18096,7 +18096,7 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
       CASE WHEN COALESCE(cropped_path,'')!='' THEN 1 ELSE 0 END AS has_cropped
       FROM applicant_docs WHERE submission_id=?`);
     applications.forEach(a => { try { a.docs = docsFor.all(a.id); } catch (_) { a.docs = []; } });
-    const employees = db.prepare(`SELECT id, employee_id, first_name, last_name, phone, email, position, department, status, hire_date, timeclock_code, ssn_last4
+    const employees = db.prepare(`SELECT id, employee_id, first_name, middle_name, last_name, phone, email, position, department, status, hire_date, timeclock_code, ssn_last4
       FROM employees`).all().filter(x => match(x.phone)).slice(0, 50);
     // 档案上还没有打卡码的, 借用其关联申请单上自动生成的那个 (打卡验证时也是这么找的)
     const subCodeStmt = db.prepare(`SELECT timeclock_code FROM applicant_submissions WHERE employee_id=? AND timeclock_code!='' ORDER BY id DESC LIMIT 1`);
@@ -19143,7 +19143,7 @@ app.post('/api/admin/employees/:id/send-registration-link', requireAdmin, async 
     const proto = req.protocol;
     const inviteUrl = `${proto}://${host}/register?invite=${token}`;
 
-    const name = `${emp.first_name||''} ${emp.last_name||''}`.trim();
+    const name = `${[emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' ')}`.trim();
     let smsSent = false, emailSent = false;
     const errs = [];
 
@@ -19185,11 +19185,12 @@ app.get('/api/register/invite-info', (req, res) => {
   if (!token) return res.status(400).json({ error: 'Missing token' });
   const inv = db.prepare("SELECT * FROM employee_registration_invites WHERE token=? AND used=0 AND expires_at > datetime('now')").get(token);
   if (!inv) return res.status(404).json({ error: 'Invalid or expired invite link' });
-  const emp = db.prepare('SELECT id, first_name, last_name, email, phone FROM employees WHERE id=?').get(inv.employee_id);
+  const emp = db.prepare('SELECT id, first_name, middle_name, last_name, email, phone FROM employees WHERE id=?').get(inv.employee_id);
   if (!emp) return res.status(404).json({ error: 'Employee not found' });
   res.json({
     valid: true,
     first_name: emp.first_name || '',
+    middle_name: emp.middle_name || '',
     last_name: emp.last_name || '',
     email: emp.email || '',
     phone: emp.phone ? emp.phone.replace(/\D/g,'').slice(-10) : '',
@@ -19205,7 +19206,7 @@ app.delete('/api/admin/employee-doc-requests/:id', requireAdmin, (req, res) => {
 // Public: validate token
 app.get('/api/emp-docs/:token', (req, res) => {
   const row = db.prepare(`
-    SELECT r.*, e.first_name, e.last_name, e.employee_id AS emp_code
+    SELECT r.*, e.first_name, e.middle_name, e.last_name, e.employee_id AS emp_code
     FROM employee_doc_requests r JOIN employees e ON r.employee_id = e.id
     WHERE r.token=?`).get(req.params.token);
   if (!row) return res.status(404).json({ error: '链接无效或已过期' });
@@ -19214,7 +19215,7 @@ app.get('/api/emp-docs/:token', (req, res) => {
   }
   res.json({
     status: row.status,
-    name: `${row.first_name} ${row.last_name}`,
+    name: `${[row.first_name, row.middle_name, row.last_name].filter(Boolean).join(' ')}`,
     emp_code: row.emp_code,
     requested_docs: JSON.parse(row.requested_docs || '["gov_id","ssn","work_card"]'),
     admin_note: row.admin_note,
@@ -20416,16 +20417,16 @@ function _allReferencedDocKeys() {
       add(r.file_path, `${r.name || '?'} · 问卷${EMPDOC_LABEL[r.doc_type] || r.doc_type}`);
   } catch (e) {}
   try {
-    for (const r of db.prepare(`SELECT d.file_path, d.doc_label, d.doc_type, e.first_name, e.last_name FROM employee_documents d LEFT JOIN employees e ON d.employee_id=e.id WHERE d.file_path IS NOT NULL AND d.file_path!=''`).iterate())
-      add(r.file_path, `${[r.first_name, r.last_name].filter(Boolean).join(' ') || '?'} · 员工档案${r.doc_label || r.doc_type || ''}`);
+    for (const r of db.prepare(`SELECT d.file_path, d.doc_label, d.doc_type, e.first_name, e.middle_name, e.last_name FROM employee_documents d LEFT JOIN employees e ON d.employee_id=e.id WHERE d.file_path IS NOT NULL AND d.file_path!=''`).iterate())
+      add(r.file_path, `${[r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ') || '?'} · 员工档案${r.doc_label || r.doc_type || ''}`);
   } catch (e) {}
   try {
-    for (const r of db.prepare(`SELECT d.file_path, d.doc_type, e.first_name, e.last_name FROM worker_compliance_docs d LEFT JOIN worker_accounts w ON d.worker_account_id=w.id LEFT JOIN employees e ON w.employee_id=e.id WHERE d.file_path IS NOT NULL AND d.file_path!=''`).iterate())
-      add(r.file_path, `${[r.first_name, r.last_name].filter(Boolean).join(' ') || '?'} · 入职${r.doc_type || ''}`);
+    for (const r of db.prepare(`SELECT d.file_path, d.doc_type, e.first_name, e.middle_name, e.last_name FROM worker_compliance_docs d LEFT JOIN worker_accounts w ON d.worker_account_id=w.id LEFT JOIN employees e ON w.employee_id=e.id WHERE d.file_path IS NOT NULL AND d.file_path!=''`).iterate())
+      add(r.file_path, `${[r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ') || '?'} · 入职${r.doc_type || ''}`);
   } catch (e) {}
   try {
-    for (const r of db.prepare(`SELECT d.file_path, d.doc_label, e.first_name, e.last_name FROM work_permit_docs d LEFT JOIN worker_accounts w ON d.worker_account_id=w.id LEFT JOIN employees e ON w.employee_id=e.id WHERE d.file_path IS NOT NULL AND d.file_path!=''`).iterate())
-      add(r.file_path, `${[r.first_name, r.last_name].filter(Boolean).join(' ') || '?'} · 工卡${r.doc_label || ''}`);
+    for (const r of db.prepare(`SELECT d.file_path, d.doc_label, e.first_name, e.middle_name, e.last_name FROM work_permit_docs d LEFT JOIN worker_accounts w ON d.worker_account_id=w.id LEFT JOIN employees e ON w.employee_id=e.id WHERE d.file_path IS NOT NULL AND d.file_path!=''`).iterate())
+      add(r.file_path, `${[r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ') || '?'} · 工卡${r.doc_label || ''}`);
   } catch (e) {}
   return map;
 }
@@ -20515,7 +20516,7 @@ app.post('/api/admin/doc-attach', requireAdmin, async (req, res) => {
     const b = req.body || {};
     const key = storage.normalizeKey(b.key || '');
     if (!/^(employee_docs|uploads)\//.test(key)) return res.status(403).json({ error: 'not allowed' });
-    const emp = db.prepare('SELECT id, first_name, last_name FROM employees WHERE id=?').get(parseInt(b.employee_id, 10));
+    const emp = db.prepare('SELECT id, first_name, middle_name, last_name FROM employees WHERE id=?').get(parseInt(b.employee_id, 10));
     if (!emp) return res.status(404).json({ error: '员工不存在' });
     if (!(await storage.exists(key))) return res.status(404).json({ error: 'File not found' });
     // With a valid slot the row is PINNED: 证件审阅/导出 will use it for that slot
@@ -20638,11 +20639,11 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
   if (!d.first_name || !d.last_name) return res.status(400).json({ error: '请填写姓名' });
   if (!d.force) {
     if (d.phone && d.phone.trim()) {
-      const dup = db.prepare('SELECT id,first_name,last_name,employee_id FROM employees WHERE phone=?').get(d.phone.trim());
+      const dup = db.prepare('SELECT id,first_name,middle_name,last_name,employee_id FROM employees WHERE phone=?').get(d.phone.trim());
       if (dup) return res.json({ duplicate: true, field: 'phone', existing: dup });
     }
     if (d.email && d.email.trim()) {
-      const dup = db.prepare('SELECT id,first_name,last_name,employee_id FROM employees WHERE email=?').get(d.email.trim());
+      const dup = db.prepare('SELECT id,first_name,middle_name,last_name,employee_id FROM employees WHERE email=?').get(d.email.trim());
       if (dup) return res.json({ duplicate: true, field: 'email', existing: dup });
     }
   }
@@ -20679,7 +20680,7 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
       JSON.stringify(d.social_media||{}));
     const newId = r.lastInsertRowid;
     if (d.force) {
-      const ownerLabel = `${d.first_name} ${d.last_name} · ${empId}`;
+      const ownerLabel = `${[d.first_name, d.middle_name, d.last_name].filter(Boolean).join(' ')} · ${empId}`;
       _forceStripContact('phone', '手机号', d.phone, newId, ownerLabel);
       _forceStripContact('email', '邮箱', d.email, newId, ownerLabel);
     }
@@ -20703,7 +20704,7 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
           pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,d.notes||'',
           JSON.stringify(d.social_media||{}));
         if (d.force) {
-          const ownerLabel = `${d.first_name} ${d.last_name} · ${retryId}`;
+          const ownerLabel = `${[d.first_name, d.middle_name, d.last_name].filter(Boolean).join(' ')} · ${retryId}`;
           _forceStripContact('phone', '手机号', d.phone, r2.lastInsertRowid, ownerLabel);
           _forceStripContact('email', '邮箱', d.email, r2.lastInsertRowid, ownerLabel);
         }
@@ -20724,11 +20725,11 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
   if (!emp) return res.status(404).json({ error: 'Not found' });
   if (!d.force) {
     if (d.phone && d.phone.trim()) {
-      const dup = db.prepare('SELECT id,first_name,last_name,employee_id FROM employees WHERE phone=? AND id!=?').get(d.phone.trim(), req.params.id);
+      const dup = db.prepare('SELECT id,first_name,middle_name,last_name,employee_id FROM employees WHERE phone=? AND id!=?').get(d.phone.trim(), req.params.id);
       if (dup) return res.json({ duplicate: true, field: 'phone', existing: dup });
     }
     if (d.email && d.email.trim()) {
-      const dup = db.prepare('SELECT id,first_name,last_name,employee_id FROM employees WHERE email=? AND id!=?').get(d.email.trim(), req.params.id);
+      const dup = db.prepare('SELECT id,first_name,middle_name,last_name,employee_id FROM employees WHERE email=? AND id!=?').get(d.email.trim(), req.params.id);
       if (dup) return res.json({ duplicate: true, field: 'email', existing: dup });
     }
   }
@@ -20807,7 +20808,7 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
     db.prepare(`UPDATE employees SET notes=CASE WHEN COALESCE(notes,'')='' THEN ? ELSE notes || char(10) || ? END WHERE id=?`).run(addC, addC, req.params.id);
   }
   if (d.force) {
-    const ownerLabel = `${d.first_name} ${d.last_name} · ${finalEmpId}`;
+    const ownerLabel = `${[d.first_name, d.middle_name, d.last_name].filter(Boolean).join(' ')} · ${finalEmpId}`;
     _forceStripContact('phone', '手机号', d.phone, req.params.id, ownerLabel);
     _forceStripContact('email', '邮箱', d.email, req.params.id, ownerLabel);
     // 被编辑员工自己被替换掉的旧手机号/邮箱同样留痕（上面的 UPDATE 已把 notes 设成表单值, 故在其后追加）
@@ -20914,7 +20915,7 @@ app.post('/api/admin/employees/merge-dup', requireAdmin, requireRole('admin'), (
         emails.push(m2);
       });
       // 4) 合并标注 + 被并档案的原备注一起写进 keep 备注, 不丢信息
-      const lines = [`📌 ${stamp} 合并重复档案：「${absorb.first_name} ${absorb.last_name} · ${absorb.employee_id}」已并入本档案（问卷/工时/打卡/文件等记录全部保留并转移到本档案，重复员工号已注销）`];
+      const lines = [`📌 ${stamp} 合并重复档案：「${[absorb.first_name, absorb.middle_name, absorb.last_name].filter(Boolean).join(' ')} · ${absorb.employee_id}」已并入本档案（问卷/工时/打卡/文件等记录全部保留并转移到本档案，重复员工号已注销）`];
       if (absCode && newCode && absCode !== newCode) lines.push(`📌 被并档案原打卡密码 ${absCode} 已停用（现用打卡密码 ${newCode}）`);
       if (keepCode && newCode && keepCode !== newCode) lines.push(`📌 本档案原打卡密码 ${keepCode} 已替换为 ${newCode}`);
       lines.push(...droppedNotes);
@@ -21100,7 +21101,7 @@ app.get('/api/admin/documents/:id/file', (req, res, next) => {
 
 app.get('/api/admin/time-entries', requireAdmin, (req, res) => {
   const { employee_id, date_from, date_to, status, needs_review } = req.query;
-  let q = `SELECT t.*, e.first_name, e.last_name, e.employee_id as emp_code,
+  let q = `SELECT t.*, e.first_name, e.middle_name, e.last_name, e.employee_id as emp_code,
     COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone,
     COALESCE(jst.latitude, asn.work_lat, js.latitude) as site_lat,
     COALESCE(jst.longitude, asn.work_lng, js.longitude) as site_lng,
@@ -21158,7 +21159,7 @@ app.get('/api/admin/time-entries', requireAdmin, (req, res) => {
 // Report: weekly/period summary per employee
 app.get('/api/admin/time-entries/report', requireAdmin, (req, res) => {
   const { date_from, date_to, employee_id } = req.query;
-  let q = `SELECT e.id as emp_id, e.employee_id as emp_code, e.first_name, e.last_name,
+  let q = `SELECT e.id as emp_id, e.employee_id as emp_code, e.first_name, e.middle_name, e.last_name,
     e.pay_rate, e.pay_type,
     COUNT(t.id) as shift_count,
     COALESCE(SUM(t.total_hours),0) as total_hours,
@@ -21186,7 +21187,7 @@ app.get('/api/admin/time-entries/export', (req, res, next) => {
   return requireAdmin(req, res, next);
 }, (req, res) => {
   const { employee_id, date_from, date_to } = req.query;
-  let q = `SELECT t.*, e.first_name, e.last_name, e.employee_id as emp_code, e.pay_rate
+  let q = `SELECT t.*, e.first_name, e.middle_name, e.last_name, e.employee_id as emp_code, e.pay_rate
     FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id WHERE t.status='closed'`;
   const p = [];
   if (employee_id) { q += ' AND t.employee_id=?'; p.push(employee_id); }
@@ -21201,7 +21202,7 @@ app.get('/api/admin/time-entries/export', (req, res, next) => {
   rows.forEach(r => {
     const reg = Math.round((r.regular_hours||0)*(r.pay_rate||0)*100)/100;
     const ot  = Math.round((r.overtime_hours||0)*(r.pay_rate||0)*1.5*100)/100;
-    csv += [r.emp_code,`${r.first_name} ${r.last_name}`,
+    csv += [r.emp_code,`${[r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')}`,
       r.clock_in?r.clock_in.slice(0,10):'',r.clock_in||'',r.clock_out||'',
       r.break_minutes,r.total_hours,r.regular_hours,r.overtime_hours,reg,ot,r.notes
     ].map(v=>`"${String(v||'').replace(/"/g,'""')}"`).join(',') + '\n';
@@ -21446,7 +21447,7 @@ app.get('/api/admin/timesheet-sheets', requireAdmin, (req, res) => {
   if (stage === 'dividend')        where = `WHERE ts.status = 'dividend_pending'`;
   if (stage === 'history')         where = `WHERE ts.status = 'completed'`;
   const rows = db.prepare(`
-    SELECT ts.*, e.first_name, e.last_name, e.employee_id as emp_code, e.email, e.phone
+    SELECT ts.*, e.first_name, e.middle_name, e.last_name, e.employee_id as emp_code, e.email, e.phone
     FROM timesheet_sheets ts LEFT JOIN employees e ON ts.employee_id=e.id
     ${where} ORDER BY ts.created_at DESC LIMIT 300`).all();
   res.json(rows);
@@ -23917,7 +23918,7 @@ app.get('/api/admin/invoice/employees', requireAdmin, (req, res) => {
   if (period_end)   { conds.push("date(te.clock_in) <= ?"); params.push(period_end); }
 
   const rows = db.prepare(`
-    SELECT e.id as employee_id, e.first_name, e.last_name, e.employee_id as emp_code, e.position,
+    SELECT e.id as employee_id, e.first_name, e.middle_name, e.last_name, e.employee_id as emp_code, e.position,
       ROUND(SUM(COALESCE(te.regular_hours,0)),2) as regular_hours,
       ROUND(SUM(COALESCE(te.overtime_hours,0)),2) as overtime_hours,
       ROUND(SUM(COALESCE(te.total_hours,0)),2) as total_hours,
@@ -23944,7 +23945,7 @@ app.post('/api/admin/invoice/generate', requireAdmin, (req, res) => {
   if (ids) { conds.push(`te.employee_id IN (${ids.map(() => '?').join(',')})`); params.push(...ids); }
 
   const rows = db.prepare(`
-    SELECT e.id as employee_id, e.first_name, e.last_name, e.employee_id as emp_code, e.position,
+    SELECT e.id as employee_id, e.first_name, e.middle_name, e.last_name, e.employee_id as emp_code, e.position,
       ROUND(SUM(COALESCE(te.regular_hours,0)),2) as regular_hours,
       ROUND(SUM(COALESCE(te.overtime_hours,0)),2) as overtime_hours,
       ROUND(SUM(COALESCE(te.total_hours,0)),2) as total_hours,
@@ -23964,7 +23965,7 @@ app.post('/api/admin/invoice/generate', requireAdmin, (req, res) => {
     const regAmt  = Math.round((r.regular_hours  || 0) * rate * 100) / 100;
     const otAmt   = Math.round((r.overtime_hours || 0) * rate * 1.5 * 100) / 100;
     return {
-      employee_id: r.employee_id, name: `${r.first_name} ${r.last_name}`,
+      employee_id: r.employee_id, name: `${[r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')}`,
       emp_code: r.emp_code, position: r.position || '',
       regular_hours: r.regular_hours || 0, overtime_hours: r.overtime_hours || 0,
       total_hours: r.total_hours || 0, rate,
@@ -23988,7 +23989,7 @@ app.post('/api/admin/invoice/generate', requireAdmin, (req, res) => {
 // Get sheet data (no auth — token is the secret)
 app.get('/api/ts/:token', (req, res) => {
   const sheet = db.prepare(`
-    SELECT ts.*, e.first_name, e.last_name, e.employee_id as emp_code, e.email, e.phone, e.dob
+    SELECT ts.*, e.first_name, e.middle_name, e.last_name, e.employee_id as emp_code, e.email, e.phone, e.dob
     FROM timesheet_sheets ts LEFT JOIN employees e ON ts.employee_id=e.id
     WHERE ts.confirm_token=?`).get(req.params.token);
   if (!sheet) return res.status(404).json({ error: 'Not found' });
@@ -24019,7 +24020,7 @@ app.post('/api/ts/:token/respond', (req, res) => {
 
 app.get('/api/admin/background-checks', requireAdmin, blockManager, (req, res) => {
   const { employee_id, status } = req.query;
-  let q = `SELECT b.*, e.first_name, e.last_name, e.employee_id as emp_code
+  let q = `SELECT b.*, e.first_name, e.middle_name, e.last_name, e.employee_id as emp_code
     FROM background_checks b LEFT JOIN employees e ON b.employee_id=e.id WHERE 1=1`;
   const p = [];
   if (employee_id) { q += ' AND b.employee_id=?'; p.push(employee_id); }
@@ -24120,7 +24121,7 @@ app.get('/api/timeclock/status/:empCode', (req, res) => {
     if (!emp) { _tcCodeFail(ipKey); return res.status(404).json({ error: '打卡密码错误或员工已离职' }); }
     _tcCodeOk(ipKey);
   } else {
-    emp = db.prepare("SELECT id,first_name,last_name,employee_id,position FROM employees WHERE employee_id=? AND status IN ('active','onboarding')").get(rawCode.toUpperCase());
+    emp = db.prepare("SELECT id,first_name,middle_name,last_name,employee_id,position FROM employees WHERE employee_id=? AND status IN ('active','onboarding')").get(rawCode.toUpperCase());
   }
   if (!emp) return res.status(404).json({ error: '未找到员工或员工已离职' });
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(emp.id);
@@ -24160,7 +24161,7 @@ app.get('/api/timeclock/status/:empCode', (req, res) => {
   `).all(emp.id);
   const allSites = [...sites, ...sites2].filter((s,i,arr) => arr.findIndex(x=>x.id===s.id)===i);
   res.json({
-    employee: { id: emp.id, name: `${emp.first_name} ${emp.last_name}`, employee_id: emp.employee_id, position: emp.position||'' },
+    employee: { id: emp.id, name: `${[emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' ')}`, employee_id: emp.employee_id, position: emp.position||'' },
     clocked_in: !!open,
     on_break: open ? !!(open.on_break) : false,
     open_entry: open || null,
@@ -24368,25 +24369,25 @@ app.get('/api/admin/scheduling/employees', requireAdmin, (req, res) => {
   const { job_id } = req.query;
   if (!job_id) return res.json([]);
   // 1) Employees linked via employee_jobs
-  let rows = db.prepare(`SELECT DISTINCT e.id, e.first_name, e.last_name, e.phone, e.employee_id as emp_code
+  let rows = db.prepare(`SELECT DISTINCT e.id, e.first_name, e.middle_name, e.last_name, e.phone, e.employee_id as emp_code
     FROM employee_jobs ej JOIN employees e ON e.id=ej.employee_id
     WHERE ej.job_id=? AND e.status='active'
-    ORDER BY e.first_name, e.last_name`).all(job_id);
+    ORDER BY e.first_name, e.middle_name, e.last_name`).all(job_id);
   if (rows.length) return res.json(rows);
   // 2) Fallback: employees with time_entries for this job
-  rows = db.prepare(`SELECT DISTINCT e.id, e.first_name, e.last_name, e.phone, e.employee_id as emp_code
+  rows = db.prepare(`SELECT DISTINCT e.id, e.first_name, e.middle_name, e.last_name, e.phone, e.employee_id as emp_code
     FROM time_entries te JOIN employees e ON e.id=te.employee_id
     WHERE te.job_id=? AND e.status='active'
-    ORDER BY e.first_name, e.last_name`).all(job_id);
+    ORDER BY e.first_name, e.middle_name, e.last_name`).all(job_id);
   if (rows.length) return res.json(rows);
   // 3) Fallback: all active employees for the partner owning this job
   const job = db.prepare('SELECT partner_id FROM jobs WHERE id=?').get(job_id);
   if (job && job.partner_id) {
-    rows = db.prepare(`SELECT DISTINCT e.id, e.first_name, e.last_name, e.phone, e.employee_id as emp_code
+    rows = db.prepare(`SELECT DISTINCT e.id, e.first_name, e.middle_name, e.last_name, e.phone, e.employee_id as emp_code
       FROM employee_jobs ej JOIN employees e ON e.id=ej.employee_id
       JOIN jobs j ON j.id=ej.job_id
       WHERE j.partner_id=? AND e.status='active'
-      ORDER BY e.first_name, e.last_name`).all(job.partner_id);
+      ORDER BY e.first_name, e.middle_name, e.last_name`).all(job.partner_id);
   }
   res.json(rows);
 });
@@ -24433,7 +24434,7 @@ app.post('/api/admin/scheduling/notify', requireAdmin, async (req, res) => {
     dates.push(dd.toISOString().slice(0, 10));
   }
   // Get all employees scheduled to work this week
-  const rows = db.prepare(`SELECT DISTINCT ss.employee_id, e.phone, e.first_name, e.last_name
+  const rows = db.prepare(`SELECT DISTINCT ss.employee_id, e.phone, e.first_name, e.middle_name, e.last_name
     FROM shift_schedules ss JOIN employees e ON e.id=ss.employee_id
     WHERE ss.job_id=? AND ss.date IN (${dates.map(() => '?').join(',')}) AND ss.status='work' AND e.phone!=''`)
     .all(job_id, ...dates);
@@ -24465,7 +24466,7 @@ app.get('/api/admin/scheduling/history', requireAdmin, (req, res) => {
   let where = 'ss.date >= ?';
   const params = [cutoffStr];
   if (job_id) { where += ' AND ss.job_id=?'; params.push(job_id); }
-  const rows = db.prepare(`SELECT ss.*, e.first_name, e.last_name, e.employee_id as emp_code,
+  const rows = db.prepare(`SELECT ss.*, e.first_name, e.middle_name, e.last_name, e.employee_id as emp_code,
     j.title as job_title, p.name as partner_name
     FROM shift_schedules ss
     JOIN employees e ON e.id=ss.employee_id
@@ -24518,7 +24519,7 @@ app.post('/api/worker/login', loginRateLimit, (req, res) => {
 
 app.get('/api/worker/me', requireWorker, (req, res) => {
   const w = db.prepare('SELECT id, username, name, phone, email, dob, work_status, employee_id, active, employment_type, enable_timeclock, enable_invoice, created_at FROM worker_accounts WHERE id=?').get(req.workerId);
-  const emp = req.workerEmployeeId ? db.prepare('SELECT id, first_name, last_name, employee_id, position, department, pay_rate, pay_type, status, address, street2, city, state, zip, emergency_name, emergency_phone, emergency_relation FROM employees WHERE id=?').get(req.workerEmployeeId) : null;
+  const emp = req.workerEmployeeId ? db.prepare('SELECT id, first_name, middle_name, last_name, employee_id, position, department, pay_rate, pay_type, status, address, street2, city, state, zip, emergency_name, emergency_phone, emergency_relation FROM employees WHERE id=?').get(req.workerEmployeeId) : null;
   const docs = db.prepare("SELECT doc_type, status, created_at FROM worker_compliance_docs WHERE worker_account_id=?").all(req.workerId);
   res.json({ account: w, employee: emp, compliance_docs: docs });
 });
@@ -25310,7 +25311,7 @@ app.get('/api/worker/referrals', requireWorker, (req, res) => {
 
   // All workers referred by me
   const referred = db.prepare(`
-    SELECT w.id, w.first_name, w.last_name, w.name, w.created_at,
+    SELECT w.id, w.first_name, w.middle_name, w.last_name, w.name, w.created_at,
            COALESCE(SUM(t.total_hours), 0) AS total_hours
     FROM worker_accounts w
     LEFT JOIN employees e ON w.employee_id = e.id
@@ -25602,9 +25603,9 @@ app.get('/api/worker/payments', requireWorker, (req, res) => {
 
 // Pre-fill endpoint: returns contractor info + active job data so the form only needs 3-5 fields
 app.get('/api/worker/invoice-prefill', requireWorker, (req, res) => {
-  const w = db.prepare('SELECT id, name, first_name, last_name, username, employment_type, entity_type FROM worker_accounts WHERE id=?').get(req.workerId);
+  const w = db.prepare('SELECT id, name, first_name, middle_name, last_name, username, employment_type, entity_type FROM worker_accounts WHERE id=?').get(req.workerId);
   if (!w) return res.status(404).json({ error: 'Worker not found' });
-  const contractorName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
+  const contractorName = w.name || [w.first_name, w.middle_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
 
   // Get active jobs with pay rates
   let activeJobs = [];
@@ -26377,7 +26378,7 @@ app.post('/api/worker/compliance/w9', requireWorker, async (req, res) => {
     let signUrl = '';
     if (dsealEnabled()) {
       const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.workerId);
-      const workerName = req.body.name || w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
+      const workerName = req.body.name || w.name || [w.first_name, w.middle_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
       const workerEmail = w.email || '';
       const address = req.body.address || '';
       const cityStateZip = [req.body.city, req.body.state, req.body.zip].filter(Boolean).join(', ');
@@ -26537,7 +26538,7 @@ function _matchEmployeeForSub(sub) {
 // 两个都保留）, 打卡密码/SSN 档案没有才继承。打开档案的「历次申请/问卷」区能看到全部问卷。
 function _employeeFromApplicant(sub) {
   if (sub.employee_id) {
-    const existing = db.prepare('SELECT id, first_name, last_name, employee_id FROM employees WHERE id=?').get(sub.employee_id);
+    const existing = db.prepare('SELECT id, first_name, middle_name, last_name, employee_id FROM employees WHERE id=?').get(sub.employee_id);
     if (existing) return existing;
   }
   const match = _matchEmployeeForSub(sub);
@@ -26576,7 +26577,7 @@ function _employeeFromApplicant(sub) {
     db.prepare('UPDATE applicant_submissions SET employee_id=? WHERE id=?').run(match.id, sub.id);
     _inheritTimeclockCode(sub.id, match.id);   // 打卡密码/SSN: 档案没有才继承申请上的
     console.log(`[Checkin] Linked applicant submission #${sub.id} (${sub.name}) to existing employee #${match.id} (${match.employee_id}) — no duplicate record created`);
-    return db.prepare('SELECT id, first_name, last_name, employee_id FROM employees WHERE id=?').get(match.id);
+    return db.prepare('SELECT id, first_name, middle_name, last_name, employee_id FROM employees WHERE id=?').get(match.id);
   }
   const nameParts = _titleCaseName(sub.name).split(' ');   // 姓名统一首字母大写
   const firstName = nameParts[0] || '';
@@ -26599,7 +26600,7 @@ function _employeeFromApplicant(sub) {
   db.prepare('UPDATE applicant_submissions SET employee_id=? WHERE id=?').run(newId, sub.id);
   _inheritTimeclockCode(sub.id, newId);   // 申请单上先录的 SSN 一并带到新档案
   console.log(`[Checkin] Auto-created employee #${newId} from applicant submission #${sub.id} (${sub.name})`);
-  return db.prepare('SELECT id, first_name, last_name, employee_id FROM employees WHERE id=?').get(newId);
+  return db.prepare('SELECT id, first_name, middle_name, last_name, employee_id FROM employees WHERE id=?').get(newId);
 }
 
 // 一次性回填：早前「打卡自动建档」把档案直接置成了在职，招工收件箱的卡片因此被
@@ -26771,8 +26772,8 @@ try { db.exec('ALTER TABLE interview_results ADD COLUMN can_recruit INTEGER DEFA
 try { db.exec('ALTER TABLE interview_results ADD COLUMN can_tax INTEGER DEFAULT NULL'); } catch (e) {}
 
 function _interviewFindPerson(digits10) {
-  const emp = db.prepare(`SELECT id, first_name, last_name, position, state, status FROM employees WHERE phone10(phone)=? ORDER BY (status='active') DESC, id DESC LIMIT 1`).get(digits10);
-  if (emp) return { type: 'employee', id: emp.id, name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim(), position: emp.position || '', state: emp.state || '', status: emp.status || '' };
+  const emp = db.prepare(`SELECT id, first_name, middle_name, last_name, position, state, status FROM employees WHERE phone10(phone)=? ORDER BY (status='active') DESC, id DESC LIMIT 1`).get(digits10);
+  if (emp) return { type: 'employee', id: emp.id, name: `${[emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' ')}`.trim(), position: emp.position || '', state: emp.state || '', status: emp.status || '' };
   const sub = db.prepare(`SELECT id, name, position, state, apply_state FROM applicant_submissions WHERE phone10(phone)=? ORDER BY id DESC LIMIT 1`).get(digits10);
   if (sub) return { type: 'applicant', id: sub.id, name: sub.name || '', position: sub.position || '', state: (sub.apply_state || sub.state || ''), status: '' };
   return null;
@@ -26931,10 +26932,10 @@ app.post('/api/checkin/send-code', async (req, res) => {
 
   let emp = null;
   if (worker && worker.employee_id) {
-    emp = db.prepare("SELECT id, first_name, last_name, employee_id, phone FROM employees WHERE id=?").get(worker.employee_id);
+    emp = db.prepare("SELECT id, first_name, middle_name, last_name, employee_id, phone FROM employees WHERE id=?").get(worker.employee_id);
   }
   if (!worker && !emp) {
-    emp = db.prepare("SELECT id, first_name, last_name, employee_id, phone FROM employees WHERE phone10(phone)=? AND status IN ('active','onboarding')").get(digits10);
+    emp = db.prepare("SELECT id, first_name, middle_name, last_name, employee_id, phone FROM employees WHERE phone10(phone)=? AND status IN ('active','onboarding')").get(digits10);
   }
 
   // 员工/工人账号里没有 → 看是否已提交入职申请（填过表就放行，验证时自动建档）
@@ -26991,17 +26992,17 @@ app.post('/api/checkin/verify', (req, res) => {
     empId = worker.worker_code || '';
     empDbId = worker.employee_id || null;
     if (worker.employee_id) {
-      const emp = db.prepare("SELECT id, first_name, last_name, employee_id FROM employees WHERE id=?").get(worker.employee_id);
+      const emp = db.prepare("SELECT id, first_name, middle_name, last_name, employee_id FROM employees WHERE id=?").get(worker.employee_id);
       if (emp) {
-        if (!empName) empName = `${emp.first_name} ${emp.last_name}`.trim();
+        if (!empName) empName = `${[emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' ')}`.trim();
         if (!empId) empId = emp.employee_id || '';
         empDbId = emp.id;
       }
     }
   } else {
-    const emp = db.prepare("SELECT id, first_name, last_name, employee_id, phone FROM employees WHERE phone10(phone)=? AND status IN ('active','onboarding')").get(digits10);
+    const emp = db.prepare("SELECT id, first_name, middle_name, last_name, employee_id, phone FROM employees WHERE phone10(phone)=? AND status IN ('active','onboarding')").get(digits10);
     if (emp) {
-      empName = `${emp.first_name} ${emp.last_name}`.trim();
+      empName = `${[emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' ')}`.trim();
       empId = emp.employee_id || '';
       empDbId = emp.id;
     } else {
@@ -27010,7 +27011,7 @@ app.post('/api/checkin/verify', (req, res) => {
       if (sub) {
         try {
           const created = _employeeFromApplicant(sub);
-          empName = `${created.first_name} ${created.last_name}`.trim();
+          empName = `${[created.first_name, created.middle_name, created.last_name].filter(Boolean).join(' ')}`.trim();
           empId = created.employee_id || '';
           empDbId = created.id;
         } catch (e) {
@@ -27100,7 +27101,7 @@ app.post('/api/checkin/verify-password', (req, res) => {
         _inheritTimeclockCode2Emp(emp.id, expected);
       }
     }
-    empName = `${emp.first_name} ${emp.last_name}`.trim();
+    empName = `${[emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' ')}`.trim();
     empId = emp.employee_id || '';
     empDbId = emp.id;
     if (worker) {
@@ -27118,7 +27119,7 @@ app.post('/api/checkin/verify-password', (req, res) => {
     if (expected && expected === pw) {
       try {
         const created = _employeeFromApplicant(sub);
-        empName = `${created.first_name} ${created.last_name}`.trim();
+        empName = `${[created.first_name, created.middle_name, created.last_name].filter(Boolean).join(' ')}`.trim();
         empId = created.employee_id || '';
         empDbId = created.id;
       } catch (e) {
@@ -27443,7 +27444,7 @@ app.post('/api/checkin/punch', async (req, res) => {
   const deviceId = String(device_id || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 64);
   let suspectNote = '';
   if (deviceId) {
-    const others = db.prepare(`SELECT DISTINCT COALESCE(NULLIF(TRIM(e.first_name || ' ' || e.last_name), ''), '#' || t.employee_id) AS nm
+    const others = db.prepare(`SELECT DISTINCT COALESCE(NULLIF(TRIM(TRIM(REPLACE(e.first_name || ' ' || COALESCE(e.middle_name,'') || ' ' || e.last_name, '  ', ' '))), ''), '#' || t.employee_id) AS nm
       FROM time_entries t LEFT JOIN employees e ON t.employee_id = e.id
       WHERE t.checkin_device_id = ? AND t.employee_id != ? AND DATE(t.clock_in) >= DATE('now', '-1 day')`)
       .all(deviceId, empDbId);
@@ -27633,7 +27634,7 @@ app.get('/api/customer/time-records', requireCustomer, (req, res) => {
   // 「今天」冒出昨天的晚班、当天晚班反而消失, 快捷日期按钮看起来就像没有用。
   // SQL 先按 UTC 日期放宽 ±1 天取数, 再逐条按当地日期精确过滤 (全部模式不设日期界限)。
   let rows = db.prepare(`SELECT t.id AS entry_id, t.employee_id AS emp_db_id, t.site_id, t.clock_in, t.clock_out, t.break_records, t.total_hours, t.status, t.on_break,
-      t.clock_in_photo_path, t.punch_photo_path, t.work_date, t.punch_review, t.raw_punches, e.first_name, e.last_name,
+      t.clock_in_photo_path, t.punch_photo_path, t.work_date, t.punch_review, t.raw_punches, e.first_name, e.middle_name, e.last_name,
       (SELECT COUNT(*) FROM time_entry_edits x WHERE x.entry_id=t.id) AS edit_count
     FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id
     WHERE ${scope.sql}${empSql}${wantAll ? '' : " AND DATE(t.clock_in)>=DATE(?, '-1 day') AND DATE(t.clock_in)<=DATE(?, '+1 day')"}
@@ -27668,7 +27669,7 @@ app.get('/api/customer/time-records', requireCustomer, (req, res) => {
     if (r.punch_photo_path) photoFiles.push(r.punch_photo_path);
     const o = {
       entry_id: r.entry_id, emp_db_id: r.emp_db_id, site_id: r.site_id, on_break: !!r.on_break,
-      name: [r.first_name, r.last_name].filter(Boolean).join(' ') || '—',
+      name: [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ') || '—',
       clock_in: r.clock_in, clock_out: r.clock_out,
       break_minutes: Math.round(breakMin), break_count: breakN,
       total_hours: r.total_hours, status: r.status,
@@ -27964,11 +27965,11 @@ app.get('/api/customer/punch-employees', requireCustomer, (req, res) => {
   const ids = _custAllowedSiteIds(req).map(s => s.id);
   if (!ids.length) return res.json([]);
   const scope = _customerEntryScope(pid, ids);
-  const rows = db.prepare(`SELECT DISTINCT e.id, e.first_name, e.last_name, e.employee_id AS emp_code
+  const rows = db.prepare(`SELECT DISTINCT e.id, e.first_name, e.middle_name, e.last_name, e.employee_id AS emp_code
     FROM time_entries t JOIN employees e ON t.employee_id=e.id
     WHERE ${scope.sql} AND DATE(t.clock_in) >= DATE('now','-90 day')
-    ORDER BY e.first_name, e.last_name`).all(...scope.params);
-  res.json(rows.map(r => ({ id: r.id, name: [r.first_name, r.last_name].filter(Boolean).join(' ') || '—', emp_code: r.emp_code || '' })));
+    ORDER BY e.first_name, e.middle_name, e.last_name`).all(...scope.params);
+  res.json(rows.map(r => ({ id: r.id, name: [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ') || '—', emp_code: r.emp_code || '' })));
 });
 
 // 客户门户打卡照片: 仅当该公司照片开关开启, 且该文件确属本公司仓库的打卡记录
@@ -28074,7 +28075,7 @@ app.post('/api/kiosk/status', (req, res) => {
   } catch (_) {}
   res.json({
     success: true,
-    name: `${emp.first_name} ${emp.last_name}`.trim(),
+    name: `${[emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' ')}`.trim(),
     employee_id: emp.employee_id,
     clocked_in: !!openEnt,
     on_break: openEnt ? !!openEnt.on_break : false,
@@ -28135,7 +28136,7 @@ app.post('/api/kiosk/punch', async (req, res) => {
   res.json({
     success: true,
     action,
-    name: `${emp.first_name} ${emp.last_name}`.trim(),
+    name: `${[emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' ')}`.trim(),
     employee_id: emp.employee_id,
     clock_time: displayTime,
     photo_saved: !!photoFilename,
@@ -28241,7 +28242,7 @@ app.post('/api/kiosk/forgot', async (req, res) => {
       if (emp) db.prepare('UPDATE employees SET timeclock_code=? WHERE id=?').run(code, emp.id);
       else db.prepare('UPDATE applicant_submissions SET timeclock_code=? WHERE id=?').run(code, sub.id);
     }
-    const name = emp ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim() : String((sub && sub.name) || '').trim();
+    const name = emp ? `${[emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' ')}`.trim() : String((sub && sub.name) || '').trim();
     const toPhone = (emp && emp.phone) || (sub && sub.phone) || digits;
     // 纯英文 GSM-7 文案 (中文/全角字符会转 UCS-2 编码, 更易被美国运营商垃圾过滤且分段翻倍);
     // 二维码作为彩信图片直接发, 正文不带链接; 彩信失败/被拒再降级为带链接短信。
@@ -28348,7 +28349,7 @@ app.get('/my-qr', async (req, res) => {
   if (!emp) { _tcCodeFail(ipKey); return res.status(404).send('Not found'); }
   _tcCodeOk(ipKey);
   const qr = await QRCode.toDataURL(KIOSK_QR_PREFIX + code, { width: 480, margin: 1 });
-  const nm = `${emp.first_name || ''} ${emp.last_name || ''}`.trim().replace(/[<>&]/g, '');
+  const nm = `${[emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' ')}`.trim().replace(/[<>&]/g, '');
   res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Time Clock QR</title></head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;text-align:center;padding:2rem 1rem;background:#f7f8fa;color:#1a2433">
 <h2 style="margin:0 0 .2rem">${nm}</h2>
@@ -28442,7 +28443,7 @@ app.get('/api/admin/checkin-daily', requireAdmin, (req, res) => {
       t.total_hours, t.overtime_hours, t.status, t.on_break, t.break_records, t.geo_verified,
       t.suspect_proxy, t.suspect_note,
       COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS tz,
-      e.first_name, e.last_name, e.employee_id AS emp_code, e.phone,
+      e.first_name, e.middle_name, e.last_name, e.employee_id AS emp_code, e.phone,
       js.id AS site_id, js.name AS site_name, js.code AS site_code, js.partner_id, js.partner_ids
     FROM time_entries t
     LEFT JOIN employees e ON t.employee_id = e.id
@@ -28475,7 +28476,7 @@ app.get('/api/admin/checkin-daily', requireAdmin, (req, res) => {
       try { breaks = JSON.parse(r.break_records || '[]'); } catch (_) {}
       return {
         id: r.id,
-        name: `${r.first_name || ''} ${r.last_name || ''}`.trim() || '(未知)',
+        name: `${[r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')}`.trim() || '(未知)',
         emp_code: r.emp_code || '',
         phone: r.phone || '',
         site_name: r.site_name || '',
@@ -28978,7 +28979,7 @@ app.get('/api/admin/checkins', requireAdmin, (req, res) => {
   let sql = `SELECT t.id, t.employee_id AS emp_db_id, t.clock_in, t.clock_out, t.latitude, t.longitude,
       t.geo_verified, t.clock_in_photo_path, t.punch_photo_path, t.status, t.suspect_proxy, t.suspect_note,
       COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS tz,
-      e.first_name, e.last_name, e.employee_id AS emp_code, e.phone,
+      e.first_name, e.middle_name, e.last_name, e.employee_id AS emp_code, e.phone,
       js.name AS site_name, js.code AS site_code, js.latitude AS site_lat, js.longitude AS site_lng,
       js.partner_id, js.partner_ids
     FROM time_entries t
@@ -29034,7 +29035,7 @@ app.get('/api/admin/checkins', requireAdmin, (req, res) => {
         id: r.id,
         checkin_time: localDT(r.clock_in, r.tz),
         clock_out_time: localDT(r.clock_out, r.tz),
-        employee_name: `${r.first_name || ''} ${r.last_name || ''}`.trim() || '(未知)',
+        employee_name: `${[r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')}`.trim() || '(未知)',
         employee_no: r.emp_code || '',
         phone: r.phone || '',
         warehouse_name: r.site_name || '',
@@ -29689,18 +29690,18 @@ app.get('/api/customer/my-workers', requireCustomer, (req, res) => {
   if (ids.length) {
     const scope = _customerEntryScope(pid, ids);
     const punch = db.prepare(`
-      SELECT e.id, e.first_name, e.last_name, e.employee_id AS emp_code, e.position, e.phone, e.email,
+      SELECT e.id, e.first_name, e.middle_name, e.last_name, e.employee_id AS emp_code, e.position, e.phone, e.email,
         e.address, e.city, e.state, e.zip,
         MAX(t.clock_in) AS last_punch,
         COUNT(DISTINCT COALESCE(NULLIF(t.work_date,''), DATE(t.clock_in))) AS punch_days,
         ROUND(SUM(COALESCE(t.total_hours,0)), 1) AS total_hours
       FROM time_entries t JOIN employees e ON t.employee_id=e.id
       WHERE ${scope.sql} AND DATE(t.clock_in) >= DATE('now','-90 day')
-      GROUP BY e.id ORDER BY e.first_name, e.last_name`).all(...scope.params);
+      GROUP BY e.id ORDER BY e.first_name, e.middle_name, e.last_name`).all(...scope.params);
     for (const r of punch) {
       seen.add(r.id);
       out.push({
-        id: r.id, first_name: r.first_name, last_name: r.last_name, emp_code: r.emp_code || '',
+        id: r.id, first_name: r.first_name, middle_name: r.middle_name, last_name: r.last_name, emp_code: r.emp_code || '',
         position: r.position || '', phone: r.phone || '', email: r.email || '',
         address: [r.address, r.city, r.state, r.zip].map(x => String(x || '').trim()).filter(Boolean).join(', '),
         punch_days: r.punch_days, total_hours: r.total_hours || 0, last_punch: r.last_punch, kind: 'punch'
@@ -29708,7 +29709,7 @@ app.get('/api/customer/my-workers', requireCustomer, (req, res) => {
     }
   }
   const asg = db.prepare(`
-    SELECT a.status as assign_status, e.id AS eid, e.first_name, e.last_name, e.employee_id AS emp_code,
+    SELECT a.status as assign_status, e.id AS eid, e.first_name, e.middle_name, e.last_name, e.employee_id AS emp_code,
       e.position, e.phone, e.email, e.address, e.city, e.state, e.zip, j.title as job_title, j.location
     FROM assignments a
     LEFT JOIN inquiries i ON a.inquiry_id=i.id
@@ -29720,7 +29721,7 @@ app.get('/api/customer/my-workers', requireCustomer, (req, res) => {
     if (a.eid && seen.has(a.eid)) continue;
     if (a.eid) seen.add(a.eid);
     out.push({
-      id: a.eid || null, first_name: a.first_name || '', last_name: a.last_name || '', emp_code: a.emp_code || '',
+      id: a.eid || null, first_name: a.first_name || '', middle_name: a.middle_name || '', last_name: a.last_name || '', emp_code: a.emp_code || '',
       position: a.position || a.job_title || '', phone: a.phone || '', email: a.email || '',
       address: [a.address, a.city, a.state, a.zip].map(x => String(x || '').trim()).filter(Boolean).join(', ') || (a.location || ''),
       punch_days: 0, last_punch: null, kind: 'assign', assign_status: a.assign_status || ''
@@ -29776,7 +29777,7 @@ app.get('/api/customer/worker-docs/:eid', requireCustomer, (req, res) => {
     if (!e) return;
     const docs = _custCollectWorkerDocs(e);
     res.json({
-      name: [e.first_name, e.last_name].filter(Boolean).join(' ') || '—',
+      name: [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ') || '—',
       emp_code: e.employee_id || '', position: e.position || '',
       docs: docs.map(d => ({ id: String(d.id), doc_type: d.doc_type || 'other', label: CUST_DOC_LABEL[d.doc_type] || (d.doc_type || '证件'), file_name: d.file_name || '' }))
     });
@@ -31432,7 +31433,7 @@ app.get('/mgr-punch', (req, res) => {
 
 // GET /api/admin/manager-punch-status/:empCode — current punch state for a given employee
 app.get('/api/admin/manager-punch-status/:empCode', requireAdmin, (req, res) => {
-  const emp = db.prepare("SELECT id, first_name, last_name, employee_id FROM employees WHERE employee_id=? AND status IN ('active','onboarding')").get(req.params.empCode);
+  const emp = db.prepare("SELECT id, first_name, middle_name, last_name, employee_id FROM employees WHERE employee_id=? AND status IN ('active','onboarding')").get(req.params.empCode);
   if (!emp) return res.status(404).json({ error: '找不到该员工 / Employee not found' });
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(emp.id);
   const activeJobs = db.prepare(`
@@ -31455,7 +31456,7 @@ app.post('/api/admin/manager-punch', requireAdmin, (req, res) => {
   if (!emp_code) return res.status(400).json({ error: 'emp_code required' });
   if (!punch_type || !['in','break_start','break_end','out'].includes(punch_type))
     return res.status(400).json({ error: '请选择打卡类型' });
-  const emp = db.prepare("SELECT id, first_name, last_name, employee_id FROM employees WHERE employee_id=? AND status IN ('active','onboarding')").get(emp_code);
+  const emp = db.prepare("SELECT id, first_name, middle_name, last_name, employee_id FROM employees WHERE employee_id=? AND status IN ('active','onboarding')").get(emp_code);
   if (!emp) return res.status(404).json({ error: '找不到该员工 / Employee not found' });
   // Allow manager to specify a custom punch time (must be a valid ISO string within last 24h)
   let now = new Date().toISOString();
@@ -31828,12 +31829,13 @@ app.get('/api/admin/form-portal/people', requireAdmin, (req, res) => {
   const q = String(req.query.q || '').trim();
   if (!q) return res.json({ people: [] });
   const like = `%${q.replace(/[%_]/g, ' ')}%`;
-  const rows = db.prepare(`SELECT id, first_name, last_name, email, phone, status FROM employees
+  const rows = db.prepare(`SELECT id, first_name, middle_name, last_name, email, phone, status FROM employees
     WHERE first_name || ' ' || last_name LIKE ? OR last_name || ' ' || first_name LIKE ? OR email LIKE ?
-    ORDER BY CASE WHEN status='active' THEN 0 ELSE 1 END, last_name, first_name LIMIT 10`).all(like, like, like);
+      OR REPLACE(first_name || ' ' || COALESCE(middle_name,'') || ' ' || last_name, '  ', ' ') LIKE ?
+    ORDER BY CASE WHEN status='active' THEN 0 ELSE 1 END, last_name, first_name LIMIT 10`).all(like, like, like, like);
   res.json({ people: rows.map(r => ({
     id: r.id,
-    name: `${r.first_name || ''} ${r.last_name || ''}`.trim(),
+    name: `${[r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')}`.trim(),
     email: r.email || '',
     phone: r.phone || '',
     status: r.status || '',
@@ -32750,11 +32752,11 @@ function _smsAutoLinkEmployee(contact) {
     const digits10 = String(contact.phone_e164 || '').replace(/\D/g, '').slice(-10);
     if (digits10.length !== 10) return contact;
     if (!contact.employee_id) {
-      const emp = db.prepare(`SELECT id, first_name, last_name FROM employees WHERE phone10(phone)=? ORDER BY (status='active') DESC, id DESC LIMIT 1`).get(digits10);
+      const emp = db.prepare(`SELECT id, first_name, middle_name, last_name FROM employees WHERE phone10(phone)=? ORDER BY (status='active') DESC, id DESC LIMIT 1`).get(digits10);
       if (emp) {
         db.prepare(`UPDATE sms_contacts SET employee_id=?, updated_at=datetime('now') WHERE id=? AND employee_id IS NULL`).run(emp.id, contact.id);
         contact.employee_id = emp.id;
-        const empName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim();
+        const empName = `${[emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' ')}`.trim();
         if (!contact.name && empName) {
           db.prepare(`UPDATE sms_contacts SET name=? WHERE id=? AND COALESCE(name,'')=''`).run(empName, contact.id);
           contact.name = empName;
@@ -35778,7 +35780,7 @@ app.put('/api/sms/contacts/:id/link-employee', requireAdmin, requireRole('admin'
     const contact = db.prepare('SELECT * FROM sms_contacts WHERE id=?').get(req.params.id);
     if (!contact) return res.status(404).json({ error: 'Contact not found' });
     if (employee_id) {
-      const emp = db.prepare('SELECT id, first_name, last_name FROM employees WHERE id=?').get(employee_id);
+      const emp = db.prepare('SELECT id, first_name, middle_name, last_name FROM employees WHERE id=?').get(employee_id);
       if (!emp) return res.status(404).json({ error: 'Employee not found' });
       db.prepare('UPDATE sms_contacts SET employee_id=?, updated_at=datetime(\'now\') WHERE id=?').run(employee_id, contact.id);
       // 名字跟员工档案走: 名字为空时自动带出; 客服(非 admin)关联时也直接同步(客服不能手改名字)
@@ -35998,14 +36000,14 @@ app.get('/api/sms/partners/:id/employees', requireAdmin, requireRole('admin'), (
     const partnerId = parseInt(req.params.id);
     // Find employees who have worked on jobs for this partner (through time entries)
     const employees = db.prepare(`
-      SELECT DISTINCT e.id, e.first_name, e.last_name, e.phone, e.email, e.position, e.status
+      SELECT DISTINCT e.id, e.first_name, e.middle_name, e.last_name, e.phone, e.email, e.position, e.status
       FROM employees e
       WHERE e.status='active' AND e.phone != '' AND e.id IN (
         SELECT DISTINCT te.employee_id FROM time_entries te
         JOIN jobs j ON j.id = te.job_id
         WHERE j.partner_id = ?
       )
-      ORDER BY e.first_name, e.last_name
+      ORDER BY e.first_name, e.middle_name, e.last_name
     `).all(partnerId);
     res.json({ employees });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -36475,10 +36477,10 @@ app.get('/api/sms/people-search', requireAdmin, requireSmsAccess, (req, res) => 
     const digitsLike = digits ? `%${digits}%` : '%%%NOMATCH%%%';
     // admin 设为隐藏的员工, 客服搜不到
     const hideFilter = req.userRole !== 'admin' ? ` AND NOT EXISTS (SELECT 1 FROM sms_contacts sc WHERE sc.employee_id = employees.id AND sc.cs_hidden = 1)` : '';
-    const emps = db.prepare(`SELECT id, first_name, last_name, phone, position, status, state FROM employees
-      WHERE phone != '' AND (? = '' OR first_name LIKE ? OR last_name LIKE ? OR (first_name || ' ' || last_name) LIKE ? OR phone LIKE ? OR position LIKE ?
+    const emps = db.prepare(`SELECT id, first_name, middle_name, last_name, phone, position, status, state FROM employees
+      WHERE phone != '' AND (? = '' OR first_name LIKE ? OR last_name LIKE ? OR (first_name || ' ' || last_name) LIKE ? OR REPLACE(first_name || ' ' || COALESCE(middle_name,'') || ' ' || last_name, '  ', ' ') LIKE ? OR phone LIKE ? OR position LIKE ?
         OR replace(replace(replace(replace(replace(phone,'(',''),')',''),'-',''),' ',''),'+','') LIKE ?)${hideFilter}
-      ORDER BY (status='active') DESC, first_name, last_name LIMIT 500`).all(q, like, like, like, like, like, digitsLike);
+      ORDER BY (status='active') DESC, first_name, last_name LIMIT 500`).all(q, like, like, like, like, like, like, digitsLike);
     const _mask = req.userRole !== 'admin';
     // 申请人(还没建档)只有 admin 能看到; 客服只能看到已建档的员工 (建档后任意状态都可见)
     const apps = _mask ? [] : db.prepare(`SELECT id, name, phone, position, partner_name, state, apply_state FROM applicant_submissions
@@ -36486,7 +36488,7 @@ app.get('/api/sms/people-search', requireAdmin, requireSmsAccess, (req, res) => 
       ORDER BY id DESC LIMIT 200`).all(q, like, like, like, like);
     const people = [
       // 员工=已入职 → 客服可见尾号
-      ...emps.map(e => ({ type: 'employee', ref_id: e.id, name: (e.first_name + ' ' + (e.last_name || '')).trim(), phone: _mask ? smsMaskPhone(e.phone) : e.phone,
+      ...emps.map(e => ({ type: 'employee', ref_id: e.id, name: [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '), phone: _mask ? smsMaskPhone(e.phone) : e.phone,
         state: (e.state || '').toUpperCase(),
         extra: [e.position, e.status === 'active' ? '在职' : e.status].filter(Boolean).join(' · ') })),
       ...apps.map(a => ({ type: 'applicant', ref_id: a.id, name: a.name, phone: a.phone,
@@ -38675,7 +38677,7 @@ app.get('/api/admin/partners/:id/payment-workers', requireAdmin, blockManager, (
     const partnerId = parseInt(req.params.id);
     if (!partnerId) return res.json([]);
     const rows = db.prepare(`
-      SELECT DISTINCT e.id, e.first_name, e.last_name, e.phone, e.email, e.position
+      SELECT DISTINCT e.id, e.first_name, e.middle_name, e.last_name, e.phone, e.email, e.position
       FROM employees e
       WHERE e.status = 'active' AND (
         e.id IN (SELECT te.employee_id FROM time_entries te
@@ -38683,12 +38685,12 @@ app.get('/api/admin/partners/:id/payment-workers', requireAdmin, blockManager, (
         OR e.id IN (SELECT a.employee_id FROM assignments a
                     JOIN jobs j2 ON j2.id = a.job_id WHERE j2.partner_id = ?)
       )
-      ORDER BY e.first_name, e.last_name
+      ORDER BY e.first_name, e.middle_name, e.last_name
     `).all(partnerId, partnerId);
     res.json(rows.map(r => ({
       id: r.id,
-      name: `${r.first_name || ''} ${r.last_name || ''}`.trim(),
-      first_name: r.first_name, last_name: r.last_name,
+      name: `${[r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')}`.trim(),
+      first_name: r.first_name, middle_name: r.middle_name, last_name: r.last_name,
       phone: r.phone, email: r.email, position: r.position
     })));
   } catch (e) { res.status(500).json({ error: e.message }); }

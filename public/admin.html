@@ -9477,7 +9477,7 @@ function filterJobApps() {
   const sf = document.getElementById('jobAppStatusFilter')?.value || '';
   let list = _allJobApps;
   if (q) list = list.filter(a =>
-    (a.first_name||''+a.last_name||''+a.username||'').toLowerCase().includes(q) ||
+    ((a.first_name||'')+' '+(a.middle_name||'')+' '+(a.last_name||'')+' '+(a.username||'')).toLowerCase().includes(q) ||
     (a.job_title||'').toLowerCase().includes(q)
   );
   if (sf) list = list.filter(a => a.status === sf);
@@ -9488,7 +9488,7 @@ function renderJobApps(list) {
   const statusLabel = { pending:'待审核', interview_scheduled:'已安排面试', approved:'已通过', rejected:'未通过', assigned:'已派工' };
   const statusCls   = { pending:'badge-pending', interview_scheduled:'badge-info', approved:'badge-approved', rejected:'badge-rejected', assigned:'badge-approved' };
   document.getElementById('jobAppsTable').innerHTML = list.length ? list.map(a => {
-    const name = titleCase(a.first_name ? `${a.first_name} ${a.last_name||''}`.trim() : (a.username || '—'));
+    const name = titleCase(a.first_name ? `${[a.first_name, a.middle_name, a.last_name].filter(Boolean).join(' ')}`.trim() : (a.username || '—'));
     const ivInfo = a.status === 'interview_scheduled' && a.interview_datetime
       ? `<br><small style="color:#2563eb">📅 ${new Date(a.interview_datetime).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'})}</small>` : '';
     return `<tr>
@@ -9537,7 +9537,7 @@ function showJobAppDetail(id) {
       </div>
       <div style="background:#f0fdf4;border-radius:10px;padding:1rem;display:grid;gap:.4rem;font-size:.88rem">
         <div style="font-weight:700;color:var(--gray-700);margin-bottom:.2rem">申请人信息</div>
-        <div><span style="color:var(--gray-400)">姓名：</span>${esc(titleCase(a.first_name ? `${a.first_name} ${a.last_name||''}`.trim() : a.username||'—'))}</div>
+        <div><span style="color:var(--gray-400)">姓名：</span>${esc(titleCase(a.first_name ? `${[a.first_name, a.middle_name, a.last_name].filter(Boolean).join(' ')}`.trim() : a.username||'—'))}</div>
         ${a.worker_phone ? `<div><span style="color:var(--gray-400)">电话：</span>${esc(a.worker_phone)}</div>` : ''}
         ${a.worker_email ? `<div><span style="color:var(--gray-400)">邮箱：</span>${esc(a.worker_email)}</div>` : ''}
         ${a.interview_availability ? `<div><span style="color:var(--gray-400)">可面试时间：</span>${esc(a.interview_availability)}</div>` : ''}
@@ -9560,7 +9560,7 @@ function showJobAppDetail(id) {
 
 async function scheduleInterview(id) {
   const a = _allJobApps.find(x => x.id === id);
-  const name = a ? (a.first_name ? `${a.first_name} ${a.last_name||''}`.trim() : a.username||'') : '';
+  const name = a ? (a.first_name ? `${[a.first_name, a.middle_name, a.last_name].filter(Boolean).join(' ')}`.trim() : a.username||'') : '';
   const locs = await api('/admin/interview-locations').catch(() => []) || [];
   let existingTimes = [];
   if (a?.interview_times_json) { try { existingTimes = JSON.parse(a.interview_times_json); } catch(e) {} }
@@ -12794,7 +12794,7 @@ async function lcPopulateContactDatalist() {
     catch { window._invpSysEmps = []; }
   }
   dl.innerHTML = (window._invpSysEmps || []).map(e => {
-    const fullName = `${e.first_name || ''} ${e.last_name || ''}`.trim();
+    const fullName = `${[e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ')}`.trim();
     return fullName ? `<option value="${esc(fullName)}">` : '';
   }).join('');
 }
@@ -15984,8 +15984,8 @@ function renderEmployees(list) {
       <button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;font-size:.72rem;margin:1px" onclick='openRatingModal(${e.id},"${esc(empFullName)}")'>⭐ 评分</button>
       <button class="btn btn-sm" style="background:#dcfce7;color:#166534;border:1px solid #86efac;font-size:.72rem;margin:1px" onclick='sendEmpDocLink(${e.id},"${esc(empFullName)}")'>📎 发送材料链接</button>
       <button class="btn btn-sm" style="background:#f5f3ff;color:#7c3aed;border:1px solid #c4b5fd;font-size:.72rem;margin:1px" onclick='openSendRegLinkModal(${e.id},"${esc(empFullName)}")'>📱 发送注册链接</button>
-      ${e.status!=='terminated' && USER_ROLE==='admin' ? `<button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin:1px" onclick='terminateEmployee(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>🚪 办理离职</button>` : ''}
-      ${USER_ROLE==='admin' ? `<button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin:1px" onclick='deleteEmployee(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>🗑️ 删除</button>` : ''}
+      ${e.status!=='terminated' && USER_ROLE==='admin' ? `<button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin:1px" onclick='terminateEmployee(${e.id},"${esc([e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '))}")'>🚪 办理离职</button>` : ''}
+      ${USER_ROLE==='admin' ? `<button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem;margin:1px" onclick='deleteEmployee(${e.id},"${esc([e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '))}")'>🗑️ 删除</button>` : ''}
     </td>
   </tr>`}).join('') : '<tr><td colspan="8" class="empty">暂无员工记录，点击 "+ 新增员工" 添加</td></tr>';
   _empSelChange();
@@ -17114,7 +17114,7 @@ async function _forceSaveEmployee(p) {
   );
   if (r.success || r.id) {
     await loadEmployees();
-    showToast(`✅ 员工「${p.data.first_name} ${p.data.last_name}」信息已保存，${p.fieldLabel}已转移；原信息已标注保留在原员工档案的备注里`);
+    showToast(`✅ 员工「${[p.data.first_name, p.data.middle_name, p.data.last_name].filter(Boolean).join(' ')}」信息已保存，${p.fieldLabel}已转移；原信息已标注保留在原员工档案的备注里`);
   } else {
     showToast(`❌ ${r.error || '保存失败'}`, 'error');
   }
@@ -17123,7 +17123,7 @@ async function _forceSaveEmployee(p) {
 
 function _showDupActionBar(p) {
   _pendingDupSave = p;
-  const nameA = `${esc(p.data.first_name)} ${esc(p.data.last_name)}`.trim();
+  const nameA = `${esc([p.data.first_name, p.data.middle_name, p.data.last_name].filter(Boolean).join(' '))}`.trim();
   document.getElementById('dupActionMsg').innerHTML =
     `<strong>⚠️ 冲突提示</strong>：「${nameA}」正在保存的${esc(p.fieldLabel)}与此员工重复。` +
     `请查看下方完整档案后，选择如何处理：`;
@@ -17348,7 +17348,7 @@ async function saveEmployee() {
           body: JSON.stringify({ employee_id: r2.id })
         });
         await loadWorkerAccounts();
-        showToast(`✅ 员工「${data.first_name} ${data.last_name}」创建成功（员工号：${r2.employee_id}），工人账户已自动绑定`);
+        showToast(`✅ 员工「${[data.first_name, data.middle_name, data.last_name].filter(Boolean).join(' ')}」创建成功（员工号：${r2.employee_id}），工人账户已自动绑定`);
         if (document.getElementById('onboardingModal').classList.contains('show')) refreshOnboardingModal();
       // If editing/merging an existing employee with a pending worker link, link now
       } else if (workerLink) {
@@ -17358,12 +17358,12 @@ async function saveEmployee() {
           body: JSON.stringify({ employee_id: parseInt(id) })
         });
         await loadWorkerAccounts();
-        showToast(`✅ 员工「${data.first_name} ${data.last_name}」信息已更新，工人账户已绑定`);
+        showToast(`✅ 员工「${[data.first_name, data.middle_name, data.last_name].filter(Boolean).join(' ')}」信息已更新，工人账户已绑定`);
         if (document.getElementById('onboardingModal').classList.contains('show')) refreshOnboardingModal();
       } else {
         showToast(id
-          ? `✅ 员工「${data.first_name} ${data.last_name}」(${data.employee_id || id}) 信息已更新`
-          : `✅ 员工「${data.first_name} ${data.last_name}」创建成功，员工号：${r2.employee_id}`);
+          ? `✅ 员工「${[data.first_name, data.middle_name, data.last_name].filter(Boolean).join(' ')}」(${data.employee_id || id}) 信息已更新`
+          : `✅ 员工「${[data.first_name, data.middle_name, data.last_name].filter(Boolean).join(' ')}」创建成功，员工号：${r2.employee_id}`);
       }
     } else alert(r2.error || '保存失败');
   }
@@ -17371,7 +17371,7 @@ async function saveEmployee() {
   if (r && r.duplicate) {
     const fieldLabel = r.field === 'phone' ? '手机号' : '邮箱';
     const emp = r.existing;
-    const empName = `${emp.first_name} ${emp.last_name}（员工号：${emp.employee_id}）`;
+    const empName = `${[emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' ')}（员工号：${emp.employee_id}）`;
     showConfirmModal(
       `${fieldLabel}重复 / Duplicate ${r.field === 'phone' ? 'Phone' : 'Email'}`,
       `该${fieldLabel}已登记在员工「${empName}」名下，不允许重复。点「对比处理」左右对照两份信息，逐条挑选或选择替换 / 保留 / 编辑。`,
@@ -17596,7 +17596,7 @@ async function viewEmployee(id) {
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
       <h4 style="margin:0">材料收集链接 (${docReqs.length} 条)</h4>
       <button class="btn btn-sm" style="background:#F0FDF4;color:#166534;border:1px solid #BBF7D0"
-        onclick='sendEmpDocLink(${id},"${esc(emp.first_name)} ${esc(emp.last_name)}")'>+ 发送新链接</button>
+        onclick='sendEmpDocLink(${id},"${esc([emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' '))}")'>+ 发送新链接</button>
     </div>
     ${docReqs.length ? docReqs.map(r => {
       const link = location.origin + '/emp-docs.html?token=' + r.token;
@@ -17634,7 +17634,7 @@ async function viewEmployee(id) {
   html += `<div class="form-section">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
       <h4 style="margin:0">职位记录 (${jobRecords.length} 条)</h4>
-      <button class="btn btn-sm btn-green" onclick='openAssignJobModal(${id},"${esc(emp.first_name)} ${esc(emp.last_name)}")'>+ 添加记录</button>
+      <button class="btn btn-sm btn-green" onclick='openAssignJobModal(${id},"${esc([emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' '))}")'>+ 添加记录</button>
     </div>
     ${jobRecords.length ? jobRecords.map(r => {
       const profit = (r.client_total_billed||0) - (r.emp_total_pay||0);
@@ -17646,7 +17646,7 @@ async function viewEmployee(id) {
             ${r.company_name ? `<span style="color:var(--gray-500);margin-left:.5rem;font-size:.85rem">${esc(r.company_name)}</span>` : ''}
             ${avg ? `<span style="margin-left:.6rem;background:var(--sky-light);color:var(--sky);border-radius:20px;padding:1px 8px;font-size:.78rem;font-weight:700">综合 ${avg}/5</span>` : ''}
           </div>
-          <button class="btn btn-sm btn-outline" onclick='openAssignJobModal(${id},"${esc(emp.first_name)} ${esc(emp.last_name)}");setTimeout(()=>prefillJobRecord(${JSON.stringify(r).replace(/'/g,"&#39;")}),300)' style="font-size:.78rem">编辑</button>
+          <button class="btn btn-sm btn-outline" onclick='openAssignJobModal(${id},"${esc([emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' '))}");setTimeout(()=>prefillJobRecord(${JSON.stringify(r).replace(/'/g,"&#39;")}),300)' style="font-size:.78rem">编辑</button>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.3rem .75rem;font-size:.82rem">
           <div><span style="color:var(--gray-400)">时间：</span>${fmtDate(r.start_date)||'—'} ~ ${fmtDate(r.end_date)||'—'}</div>
@@ -17721,7 +17721,7 @@ async function viewEmployee(id) {
   html += `<div class="form-section">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
       <h4 style="margin:0">职位能力评分 (${ratings.length} 条)</h4>
-      <button class="btn btn-sm" style="background:var(--sky-light);color:var(--blue);border:1px solid var(--sky)" onclick='openRatingModal(${id},"${esc(emp.first_name)} ${esc(emp.last_name)}")'>+ 新增评分</button>
+      <button class="btn btn-sm" style="background:var(--sky-light);color:var(--blue);border:1px solid var(--sky)" onclick='openRatingModal(${id},"${esc([emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' '))}")'>+ 新增评分</button>
     </div>
     ${ratings.length ? ratings.map(r=>`
     <div class="rating-card">
@@ -17744,7 +17744,7 @@ async function viewEmployee(id) {
       </div>
       ${r.notes?`<div style="font-size:.8rem;color:var(--gray-600);margin-top:.5rem;font-style:italic">"${esc(r.notes)}"</div>`:''}
       <div style="margin-top:.6rem;display:flex;gap:.5rem">
-        <button class="btn btn-sm" onclick='editRating(${JSON.stringify(r).replace(/'/g,"&#39;")},${id},"${esc(emp.first_name)} ${esc(emp.last_name)}")'>编辑</button>
+        <button class="btn btn-sm" onclick='editRating(${JSON.stringify(r).replace(/'/g,"&#39;")},${id},"${esc([emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' '))}")'>编辑</button>
         <button class="btn btn-sm btn-red" onclick="deleteRating(${r.id},${id})">删除</button>
       </div>
     </div>`).join('') : '<p class="empty" style="padding:1rem">暂无评分记录，点击「+ 新增评分」开始评分</p>'}
@@ -17996,7 +17996,7 @@ function sendEmpDocLink(empId, empName) {
   _empDocOrigEmails = [...emails];
 
   document.getElementById('empDocLinkEmpId').value = empId;
-  document.getElementById('empDocLinkTarget').textContent = empName || ((empObj && empObj.first_name + ' ' + empObj.last_name) || '');
+  document.getElementById('empDocLinkTarget').textContent = empName || ((empObj && [empObj.first_name, empObj.middle_name, empObj.last_name].filter(Boolean).join(' ')) || '');
   document.getElementById('empDocLinkResult').style.display = 'none';
   document.getElementById('empDocAdminNote').value = '';
   document.getElementById('docReqGovId').checked = true;
@@ -18429,7 +18429,7 @@ async function populateTimeEmpFilter() {
   const emps = await api('/admin/employees');
   const sel = document.getElementById('timeEmpFilter');
   sel.innerHTML = '<option value="">全部员工</option>' +
-    emps.filter(e=>e.status==='active').map(e=>`<option value="${e.id}">${esc(e.first_name)} ${esc(e.last_name)} (${esc(e.employee_id)})</option>`).join('');
+    emps.filter(e=>e.status==='active').map(e=>`<option value="${e.id}">${esc([e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '))} (${esc(e.employee_id)})</option>`).join('');
   // 仓库筛选下拉 + 打卡机模式按钮
   try {
     const sites = await api('/admin/job-sites');
@@ -18444,11 +18444,11 @@ async function populateTimeEmpFilter() {
   // Also populate report emp select
   const rptSel = document.getElementById('rptEmp');
   rptSel.innerHTML = '<option value="">全部员工</option>' +
-    emps.map(e=>`<option value="${e.id}">${esc(e.first_name)} ${esc(e.last_name)}</option>`).join('');
+    emps.map(e=>`<option value="${e.id}">${esc([e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '))}</option>`).join('');
   // Populate time entry modal emp select
   const tSel = document.getElementById('tEmp');
   tSel.innerHTML = '<option value="">-- 请选择员工 --</option>' +
-    emps.filter(e=>e.status==='active').map(e=>`<option value="${e.id}">${esc(e.first_name)} ${esc(e.last_name)} (${esc(e.employee_id)})</option>`).join('');
+    emps.filter(e=>e.status==='active').map(e=>`<option value="${e.id}">${esc([e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '))} (${esc(e.employee_id)})</option>`).join('');
   // Populate jobs in time modal
   const jobs = await api('/admin/jobs');
   document.getElementById('tJob').innerHTML = '<option value="">无</option>' +
@@ -18600,7 +18600,7 @@ function renderTimeEntries(list) {
   document.getElementById('timeTable').innerHTML = list.length ? list.map(t=>{
     const photoCell = punchMediaBadge(t);
     return `<tr>
-    <td><strong>${esc(t.first_name||'')} ${esc(t.last_name||'')}</strong><br><span class="emp-meta">${esc(t.emp_code||'')}</span></td>
+    <td><strong>${esc([t.first_name, t.middle_name, t.last_name].filter(Boolean).join(' '))}</strong><br><span class="emp-meta">${esc(t.emp_code||'')}</span></td>
     <td>${t.site_id
       ? `${esc(t.site_name||'')}${t.site_code?` <span class="emp-meta">(${esc(t.site_code)})</span>`:''}<br><span class="emp-meta" style="${t.site_partner_name?'':'color:#b45309'}">${t.site_partner_name?'🏢 '+esc(t.site_partner_name):'⚠ 仓库未绑定公司'}</span>`
       : `<span class="emp-meta">${esc(t.site_name||t.company_name||'—')}</span>`}</td>
@@ -18898,7 +18898,7 @@ async function timeHistOpen(id) {
   const ov = document.createElement('div');
   ov.className = 'modal-bg show';
   ov.innerHTML = `<div class="modal" style="max-width:480px;padding:1.3rem 1.5rem">
-    <h2 style="margin-bottom:.7rem;font-size:1.02rem">🕘 编辑历史${t.first_name ? ' · ' + esc(t.first_name + ' ' + (t.last_name || '')) : ''}</h2>
+    <h2 style="margin-bottom:.7rem;font-size:1.02rem">🕘 编辑历史${t.first_name ? ' · ' + esc([t.first_name, t.middle_name, t.last_name].filter(Boolean).join(' ')) : ''}</h2>
     <div style="max-height:55vh;overflow-y:auto">${items}</div>
     <div style="text-align:right;margin-top:1rem"><button class="btn btn-outline" onclick="this.closest('.modal-bg').remove()">关闭</button></div></div>`;
   ov.addEventListener('click', ev => { if (ev.target === ov) ov.remove(); });
@@ -18929,12 +18929,12 @@ function filterTsEmp() {
   const drop = document.getElementById('tsEmpDrop');
   const selectedIds = new Set(tsSelectedEmps.map(e => e.id));
   const matches = tsAllEmps.filter(e => e.status === 'active' && !selectedIds.has(e.id) &&
-    (`${e.first_name} ${e.last_name}`.toLowerCase().includes(q) ||
+    (`${[e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ')}`.toLowerCase().includes(q) ||
      (e.employee_id||'').toLowerCase().includes(q)));
   if (!matches.length || !q) { drop.style.display = 'none'; return; }
   drop.innerHTML = matches.slice(0,8).map(e =>
-    `<div class="eo" onmousedown="addTsEmp(${e.id},'${esc(e.first_name)} ${esc(e.last_name)}','${esc(e.employee_id||'')}','${esc(e.email||'')}','${esc(e.phone||'')}')">
-      ${esc(e.first_name)} ${esc(e.last_name)}
+    `<div class="eo" onmousedown="addTsEmp(${e.id},'${esc([e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '))}','${esc(e.employee_id||'')}','${esc(e.email||'')}','${esc(e.phone||'')}')">
+      ${esc([e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '))}
       <small>${esc(e.employee_id||'')} ${e.department ? '· '+esc(e.department) : ''}</small>
     </div>`).join('');
   drop.style.display = 'block';
@@ -19246,7 +19246,7 @@ async function generateReport() {
       <th>员工</th><th>班次</th><th>正常工时</th><th>加班工时</th><th>合计工时</th><th>正常薪酬</th><th>加班薪酬</th><th>应付合计</th>
     </tr></thead><tbody>
     ${rows.map(r=>`<tr>
-      <td><strong>${esc(r.first_name)} ${esc(r.last_name)}</strong><br><span class="emp-meta">${esc(r.emp_code)}</span></td>
+      <td><strong>${esc([r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' '))}</strong><br><span class="emp-meta">${esc(r.emp_code)}</span></td>
       <td>${r.shift_count}</td>
       <td>${(r.regular_hours||0).toFixed(1)}h</td>
       <td>${(r.overtime_hours||0)>0?`<span class="ot-text">${(r.overtime_hours||0).toFixed(1)}h</span>`:'—'}</td>
@@ -19352,7 +19352,7 @@ async function loadTsVerify() {
   if (!rows.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">暂无待审核工时单</td></tr>'; }
   else {
     tbody.innerHTML = rows.map(r => {
-      const name = `${r.last_name||''}${r.first_name||''} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
+      const name = `${[r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
       const empStatus = r.status === 'confirmed' ? '<span class="badge badge-green">员工已确认</span>'
                       : '<span class="badge badge-red">员工有异议</span>';
       const noteCell = `<span style="font-size:.78rem;color:var(--gray-400)">${esc(r.employee_note||'—')}</span>`;
@@ -19375,7 +19375,7 @@ async function loadTsVerify() {
   if (!pendingRows.length) { pendingTbody.innerHTML = '<tr><td colspan="5" class="empty">暂无待确认工时单</td></tr>'; }
   else {
     pendingTbody.innerHTML = pendingRows.map(r => {
-      const name = `${r.last_name||''}${r.first_name||''} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
+      const name = `${[r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
       return `<tr>
         <td>${name}</td>
         <td>${esc(r.company_name||'—')}</td>
@@ -19400,7 +19400,7 @@ async function loadTsPayment() {
   const tbody = document.getElementById('tsPaymentTable');
   if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无待付款工时单</td></tr>'; return; }
   tbody.innerHTML = rows.map(r => {
-    const name = `${r.last_name||''}${r.first_name||''} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
+    const name = `${[r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
     const clientBtn = r.client_paid
       ? `<span class="badge badge-green">已付 ${fmtDt(r.client_paid_at)}</span>`
       : `<button class="btn btn-sm btn-accent" onclick="markClientPaid(${r.id})">标记客户已付款</button>`;
@@ -19441,7 +19441,7 @@ async function loadTsDividend() {
   const votesMap = {};
   await Promise.all(rows.map(async r => { votesMap[r.id] = await api(`/admin/timesheet-sheets/${r.id}/votes`); }));
   tbody.innerHTML = rows.map(r => {
-    const name = `${r.last_name||''}${r.first_name||''} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
+    const name = `${[r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
     const vi = votesMap[r.id] || { votes: [], staff_count: 0 };
     const approves = vi.votes.filter(v => v.vote_type === 'approve');
     const dists = vi.votes.filter(v => v.vote_type === 'distributed');
@@ -19596,7 +19596,7 @@ async function loadSysDividend() {
   const votesMap = {};
   await Promise.all(rows.map(async r => { votesMap[r.id] = await api(`/admin/timesheet-sheets/${r.id}/votes`); }));
   tbody.innerHTML = rows.map(r => {
-    const name = `${r.last_name||''}${r.first_name||''} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
+    const name = `${[r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
     const vi = votesMap[r.id] || { votes: [], staff_count: 0 };
     const approves = vi.votes.filter(v => v.vote_type === 'approve');
     const dists = vi.votes.filter(v => v.vote_type === 'distributed');
@@ -19652,7 +19652,7 @@ async function loadSysDividendHistory() {
   const rows = await api('/admin/timesheet-sheets?stage=history');
   if (!Array.isArray(rows) || !rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无已分红记录</td></tr>'; return; }
   tbody.innerHTML = rows.map(r => {
-    const name = `${r.last_name||''}${r.first_name||''} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
+    const name = `${[r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
     const srcBadge = r.source === 'voucher' ? ' <span style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:1px 6px;border-radius:4px;font-size:.68rem;font-weight:600">付款凭证</span>' : '';
     const amtCol = r.source === 'voucher' && r.total_amount ? `$${Number(r.total_amount).toFixed(2)}` : '';
     return `<tr${r.source==='voucher'?' style="background:#fffbeb"':''}>
@@ -19673,7 +19673,7 @@ async function loadTsHistory() {
   const tbody = document.getElementById('tsHistoryTable');
   if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无历史记录</td></tr>'; return; }
   tbody.innerHTML = rows.map(r => {
-    const name = `${r.last_name||''}${r.first_name||''} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
+    const name = `${[r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
     const srcBadge = r.source === 'voucher' ? ' <span style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:1px 6px;border-radius:4px;font-size:.68rem;font-weight:600">付款凭证</span>' : '';
     const amtCol = r.source === 'voucher' && r.total_amount ? `$${Number(r.total_amount).toFixed(2)}` : '';
     return `<tr${r.source==='voucher'?' style="background:#fffbeb"':''}>
@@ -19698,7 +19698,7 @@ async function populateDocEmpFilter() {
   const sel  = document.getElementById('docEmpFilter');
   const sel2 = document.getElementById('docEmpSel');
   const opts = '<option value="">-- 请选择员工 --</option>' +
-    emps.map(e=>`<option value="${e.id}">${esc(e.first_name)} ${esc(e.last_name)} (${esc(e.employee_id||'')})</option>`).join('');
+    emps.map(e=>`<option value="${e.id}">${esc([e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '))} (${esc(e.employee_id||'')})</option>`).join('');
   sel.innerHTML  = opts;
   sel2.innerHTML = opts;
 }
@@ -19823,7 +19823,7 @@ async function loadDocuments() {
   let docs = await api(`/admin/employees/${empId}/documents`);
   if (type) docs = docs.filter(d=>d.doc_type===type);
   const empObj = (allEmployees || []).find(e=>e.id===parseInt(empId));
-  const empName = empObj ? `${empObj.first_name} ${empObj.last_name}` : '';
+  const empName = empObj ? `${[empObj.first_name, empObj.middle_name, empObj.last_name].filter(Boolean).join(' ')}` : '';
   document.getElementById('docTable').innerHTML = docs.length ? docs.map(d=>`<tr>
     <td>${esc(empName)}</td>
     <td><span class="badge badge-doc">${DOC_TYPE_LABEL[d.doc_type]||d.doc_type}</span></td>
@@ -19895,10 +19895,10 @@ const BG_RESULT_LABEL = { clear:'通过', flagged:'有问题', '':'待定' };
 async function populateBgEmpFilter() {
   const emps = await api('/admin/employees');
   const make = (prefix) => '<option value="">全部员工</option>' +
-    emps.map(e=>`<option value="${e.id}">${esc(e.first_name)} ${esc(e.last_name)} (${esc(e.employee_id||'')})</option>`).join('');
+    emps.map(e=>`<option value="${e.id}">${esc([e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '))} (${esc(e.employee_id||'')})</option>`).join('');
   document.getElementById('bgEmpFilter').innerHTML = make('全部');
   document.getElementById('bgEmpSel').innerHTML    = '<option value="">-- 请选择 --</option>' +
-    emps.map(e=>`<option value="${e.id}">${esc(e.first_name)} ${esc(e.last_name)} (${esc(e.employee_id||'')})</option>`).join('');
+    emps.map(e=>`<option value="${e.id}">${esc([e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '))} (${esc(e.employee_id||'')})</option>`).join('');
 }
 
 async function loadBgChecks() {
@@ -19916,7 +19916,7 @@ async function loadBgChecks() {
 
 function renderBgChecks(list) {
   document.getElementById('bgTable').innerHTML = list.length ? list.map(b=>`<tr>
-    <td><strong>${esc(b.first_name||'')} ${esc(b.last_name||'')}</strong><br><span class="emp-meta">${esc(b.emp_code||'')}</span></td>
+    <td><strong>${esc([b.first_name, b.middle_name, b.last_name].filter(Boolean).join(' '))}</strong><br><span class="emp-meta">${esc(b.emp_code||'')}</span></td>
     <td>${BG_TYPE_LABEL[b.check_type]||b.check_type}</td>
     <td>${b.ordered_date||'—'}</td>
     <td>${b.completed_date||'—'}</td>
@@ -20446,7 +20446,7 @@ async function loadWorkerAccounts() {
     extraBtns += `<button class="btn btn-sm wa-abtn-del" onclick="deleteWorkerAccount(${w.id},'${esc(w.name||w.username)}')">🗑️ 删除</button>`;
     return `<tr>
     <td style="font-family:monospace;font-size:.78rem;white-space:nowrap;color:var(--sky)">${w.worker_code ? esc(w.worker_code) : '<span style="color:var(--gray-300)">—</span>'}</td>
-    <td><span class="wa-name">${esc(titleCase(w.name||w.username))}</span><div class="wa-sub">${w.first_name ? esc(titleCase(w.first_name+' '+w.last_name)) : '未绑定员工'}</div>${w.emp_code ? `<div style="font-size:.72rem;color:var(--sky);font-family:monospace;white-space:nowrap">${esc(w.emp_code)}</div>` : ''}</td>
+    <td><span class="wa-name">${esc(titleCase(w.name||w.username))}</span><div class="wa-sub">${w.first_name ? esc(titleCase([w.first_name, w.middle_name, w.last_name].filter(Boolean).join(' '))) : '未绑定员工'}</div>${w.emp_code ? `<div style="font-size:.72rem;color:var(--sky);font-family:monospace;white-space:nowrap">${esc(w.emp_code)}</div>` : ''}</td>
     <td style="font-size:.8rem;white-space:nowrap">${fmtPhone(w.phone)}</td>
     <td style="font-size:.78rem">${esc(w.email||'—')}</td>
     <td style="font-size:.78rem;white-space:nowrap">${(()=>{
@@ -22662,7 +22662,7 @@ function _trGetSourceData() {
   const hasAnyData = parsedFirst || parsedLast || w.city || w.state;
   if (!hasAnyData) return null;
   return {
-    first_name: parsedFirst, middle_name: '', last_name: parsedLast,
+    first_name: parsedFirst, middle_name: w.middle_name || '', last_name: parsedLast,
     address: '', street2: '', city: w.city || '', state: w.state || '', zip: '',
     ssn_last4: null, ssn_full: null
   };
@@ -25536,7 +25536,7 @@ async function openPaymentAuthModal() {
 
 function _updatePayAuthFlowPreview() {
   const w = _onboardingWorkerData;
-  const workerName = (w && w.name) || (w && [w.first_name, w.last_name].filter(Boolean).join(' ')) || '工人';
+  const workerName = (w && w.name) || (w && [w.first_name, w.middle_name, w.last_name].filter(Boolean).join(' ')) || '工人';
   const workerEmail = (document.getElementById('payAuthEmail').value || '').trim();
   const workerPhone = (document.getElementById('payAuthPhone').value || '').trim();
   const workerParts = [workerName];
@@ -29993,7 +29993,7 @@ function schedRenderGrid() {
   _schedEmployees.forEach(emp => {
     const pos = _schedPositions[emp.id] || '';
     rows += `<tr>`;
-    rows += `<td style="position:sticky;left:0;background:#fff;z-index:1;font-weight:600;white-space:nowrap">${emp.first_name} ${emp.last_name}<br><span style="font-size:.7rem;color:var(--gray-400)">${emp.emp_code || ''}</span></td>`;
+    rows += `<td style="position:sticky;left:0;background:#fff;z-index:1;font-weight:600;white-space:nowrap">${[emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' ')}<br><span style="font-size:.7rem;color:var(--gray-400)">${emp.emp_code || ''}</span></td>`;
     rows += `<td><input type="text" value="${pos.replace(/"/g,'&quot;')}" placeholder="位置..."
       onchange="_schedPositions[${emp.id}]=this.value"
       style="width:100%;padding:3px 6px;border:1px solid #d1d5db;border-radius:5px;font-size:.78rem;box-sizing:border-box"></td>`;
@@ -30304,7 +30304,7 @@ function _buildRefrPeopleSelectHTML(selectedKey) {
     html += '<optgroup label="员工 Employees">';
     html += _referrerPeopleOptions.employees.map(e => {
       const key = `emp:${e.id}`;
-      const name = `${e.first_name||''} ${e.last_name||''}`.trim();
+      const name = `${[e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ')}`.trim();
       return `<option value="${key}" ${key===selectedKey?'selected':''}>${esc(name)} (${esc(e.code||'')})</option>`;
     }).join('');
     html += '</optgroup>';
@@ -32364,7 +32364,7 @@ async function loadMgrWorkers() {
 function filterMgrWorkers() {
   const q = document.getElementById('mgrWorkerSearch').value.trim().toLowerCase();
   const filtered = q ? _mgrWorkers.filter(w =>
-    (w.first_name + ' ' + w.last_name).toLowerCase().includes(q) ||
+    (w.first_name + ' ' + (w.middle_name ? w.middle_name + ' ' : '') + w.last_name).toLowerCase().includes(q) ||
     (w.phone || '').toLowerCase().includes(q) ||
     (w.email || '').toLowerCase().includes(q)
   ) : _mgrWorkers;
@@ -32378,7 +32378,7 @@ function renderMgrWorkers(workers) {
     return;
   }
   tbody.innerHTML = workers.map(w => {
-    const name = [w.first_name, w.last_name].filter(Boolean).join(' ') || '—';
+    const name = [w.first_name, w.middle_name, w.last_name].filter(Boolean).join(' ') || '—';
     const empCode = w.emp_code || '';
     const status = w.status === 'active' ? '<span class="badge badge-cooperated">在职</span>' : `<span class="badge">${esc(w.status||'—')}</span>`;
     return `<tr>
@@ -32546,7 +32546,7 @@ async function loadAdminMgrPunch() {
     const rows = await api(url);
     if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400)">暂无打卡记录</td></tr>'; return; }
     tbody.innerHTML = rows.map(r => {
-      const name = [r.first_name, r.last_name].filter(Boolean).join(' ') || '—';
+      const name = [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ') || '—';
       const tzOpts = r.display_timezone ? {timeZone: r.display_timezone, month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZoneName:'short'} : {timeZone:localTz(),month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZoneName:'short'};
       const cin  = r.clock_in  ? new Date(r.clock_in).toLocaleString('zh-CN', tzOpts) : '—';
       const cout = r.clock_out ? new Date(r.clock_out).toLocaleString('zh-CN', tzOpts) : '—';
@@ -32650,7 +32650,7 @@ async function loadAdminMgrStaff() {
     const workers = await api(`/admin/managers/${mgrId}/workers`);
     if (!workers.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400)">暂无下属员工</td></tr>'; return; }
     tbody.innerHTML = workers.map(w => {
-      const name = [w.first_name, w.last_name].filter(Boolean).join(' ') || '—';
+      const name = [w.first_name, w.middle_name, w.last_name].filter(Boolean).join(' ') || '—';
       const nameEsc = esc(name);
       const statusBadge = w.status === 'active' ? '<span class="badge badge-cooperated">在职</span>' : `<span class="badge">${esc(w.status||'—')}</span>`;
       return `<tr>
@@ -32809,7 +32809,7 @@ function _renderMgrAssignEmps() {
 
   const rowStyle = 'display:flex;align-items:center;gap:.6rem;padding:.45rem .25rem;border-bottom:1px solid var(--gray-100);cursor:pointer';
   const html = relevant.map(e => {
-    const name = [e.first_name, e.last_name].filter(Boolean).join(' ') || '—';
+    const name = [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ') || '—';
     const jobsLabel = (e.current_jobs || [])
       .filter(j => selectedJobIds.has(j.job_id))
       .map(j => esc(j.job_title || '未知职位')).join(' · ');
@@ -39573,12 +39573,12 @@ function invpStaffEmpSearch(inp, idx) {
   const emps = window._invpSysEmps || [];
   const q = inp.value.trim().toLowerCase();
   const matches = (q
-    ? emps.filter(e => (`${e.first_name || ''} ${e.last_name || ''}`).toLowerCase().includes(q) || (e.last_name || '').toLowerCase().includes(q))
+    ? emps.filter(e => (`${[e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ')}`).toLowerCase().includes(q) || (e.last_name || '').toLowerCase().includes(q))
     : emps).slice(0, 12);
   if (!matches.length) { sugg.style.display = 'none'; return; }
   sugg.style.display = 'block';
   sugg.innerHTML = matches.map(e => {
-    const fullName = `${e.first_name || ''} ${e.last_name || ''}`.trim();
+    const fullName = `${[e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ')}`.trim();
     const code = e.employee_id || '';
     const arg = idx === 'referrer' ? "'referrer'" : idx;
     return `<div style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--gray-100);font-size:.85rem"
@@ -40646,14 +40646,14 @@ async function onInvpEmpImportSearch(val) {
   }
   const q = val.trim().toLowerCase();
   const matches = q
-    ? window._invpSysEmps.filter(e => (`${e.first_name} ${e.last_name}`).toLowerCase().includes(q) || (e.last_name||'').toLowerCase().includes(q))
+    ? window._invpSysEmps.filter(e => (`${[e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ')}`).toLowerCase().includes(q) || (e.last_name||'').toLowerCase().includes(q))
     : window._invpSysEmps.slice(0, 15);
   if (!matches.length) { sugg.style.display = 'none'; return; }
   sugg.style.display = 'block';
   // Already-added employee names
   const addedNames = new Set((window._invpManualEmps||[]).map(e => e.name.trim().toLowerCase()));
   sugg.innerHTML = matches.map(e => {
-    const fullName = `${e.first_name||''} ${e.last_name||''}`.trim();
+    const fullName = `${[e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ')}`.trim();
     const code = e.employee_id || '';
     const already = addedNames.has(fullName.toLowerCase());
     return `<div style="padding:7px 12px;cursor:${already?'default':'pointer'};border-bottom:1px solid var(--gray-100);font-size:.88rem;opacity:${already?'.5':'1'}"
@@ -40839,7 +40839,7 @@ async function onInvpLinkSearch(val) {
   const q = (val||'').trim().toLowerCase();
   const matches = q
     ? pool.filter(e =>
-        (`${e.first_name||''} ${e.last_name||''}`).toLowerCase().includes(q) ||
+        (`${[e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ')}`).toLowerCase().includes(q) ||
         (e.last_name||'').toLowerCase().includes(q) ||
         String(e.employee_id||'').toLowerCase().includes(q))
     : pool.slice(0, 50);
@@ -40851,7 +40851,7 @@ async function onInvpLinkSearch(val) {
     return;
   }
   sugg.innerHTML = matches.map(e => {
-    const fullName = `${e.first_name||''} ${e.last_name||''}`.trim();
+    const fullName = `${[e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ')}`.trim();
     const code = e.employee_id || '';
     return `<div style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--gray-100);font-size:.9rem;display:flex;justify-content:space-between;align-items:center"
       onmousedown="invpDoLink(${e.id}, '${fullName.replace(/'/g,"\\'")}', '${String(code).replace(/'/g,"\\'")}')"
@@ -41542,7 +41542,7 @@ async function loadInvoiceEmployees() {
         ${_invoiceEmployees.map(e => `
           <tr>
             <td style="padding:5px 8px"><input type="checkbox" class="inv-emp-chk" value="${e.employee_id}" checked></td>
-            <td style="padding:5px 8px">${esc(e.name||e.first_name+' '+e.last_name)} <span style="font-size:.75rem;color:var(--gray-400)">${esc(e.emp_code||'')}</span></td>
+            <td style="padding:5px 8px">${esc(e.name||[e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '))} <span style="font-size:.75rem;color:var(--gray-400)">${esc(e.emp_code||'')}</span></td>
             <td style="padding:5px 8px;text-align:right">${(e.regular_hours||0).toFixed(2)}</td>
             <td style="padding:5px 8px;text-align:right">${(e.overtime_hours||0).toFixed(2)}</td>
             <td style="padding:5px 8px;text-align:right"><strong>${(e.total_hours||0).toFixed(2)}</strong></td>
@@ -43558,7 +43558,7 @@ async function execMergeDup() {
     else if (f.key === 'ssn') ov.ssn_source = 'absorb';
     else ov[f.key] = absorb[f.key] || '';
   }
-  const nm = e => `${titleCase([e.first_name, e.last_name].filter(Boolean).join(' '))} · ${e.employee_id}`;
+  const nm = e => `${titleCase([e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '))} · ${e.employee_id}`;
   const btn = document.getElementById('mergeDupBtn');
   btn.disabled = true; btn.textContent = '合并中…';
   try {
@@ -43667,7 +43667,7 @@ async function _applyConflictPicks() {
   if (unchosen.length) api('/admin/applicant-submissions/mark-docs-unchosen', { method: 'POST', body: JSON.stringify({ submission_ids: unchosen }) }).catch(() => {});
   await loadEmployees();
   const statusNote = await _tryPromoteActive(b.id);
-  const nm = `${titleCase([body.first_name, body.last_name].filter(Boolean).join(' '))} · ${b.employee_id}`;
+  const nm = `${titleCase([body.first_name, body.middle_name, body.last_name].filter(Boolean).join(' '))} · ${b.employee_id}`;
   showToast(`✅ 已按所选保存到现有档案「${esc(nm)}」`
     + (sparedNote.length ? `；另一边的${sparedNote.join('和')}已存为备用联系方式` : '')
     + (unchosen.length ? '；未采用的那组证件已在申请记录标注备查' : '')
@@ -43724,7 +43724,7 @@ async function _applyConflictMerge(editedEmp, chosen, o) {
   }
   await loadEmployees();
   const statusNote = await _tryPromoteActive(keep.id);
-  const nmK = `${titleCase([chosen.first_name, chosen.last_name].filter(Boolean).join(' '))} · ${keep.employee_id}`;
+  const nmK = `${titleCase([chosen.first_name, chosen.middle_name, chosen.last_name].filter(Boolean).join(' '))} · ${keep.employee_id}`;
   showToast(`✅ 同一人的两个员工号已合并：保留「${esc(nmK)}」，重复员工号 ${esc(absorb.employee_id)} 已注销，问卷/工时/打卡记录/文件已全部保留并转移到保留号`
     + (dc !== 'both' ? '；未采用的那组证件已在申请记录标注备查' : '') + statusNote, 'success', 10000);
 }
