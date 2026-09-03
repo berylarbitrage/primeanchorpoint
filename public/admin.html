@@ -8046,6 +8046,10 @@ tr:hover td.invp-frz{background:var(--sky-light)}
         <option value="active">在职</option><option value="onboarding">待入职</option><option value="inactive">停职</option><option value="terminated">已离职</option>
       </select></div>
     </div>
+    <label style="display:flex;align-items:center;gap:.4rem;margin-top:.55rem;font-size:.82rem;color:var(--gray-600);cursor:pointer">
+      <input type="checkbox" id="eCustHidden" style="width:15px;height:15px;accent-color:#b45309">
+      🙈 对客户门户隐藏（内部 / 测试档案：客户的工人列表、打卡记录、打卡机名单都不显示，仅后台可见）
+    </label>
     <div style="margin-top:.75rem">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem">
         <label style="font-size:.75rem;font-weight:600;color:var(--gray-600);text-transform:uppercase;letter-spacing:.5px">就业记录 / Job Records</label>
@@ -15961,7 +15965,7 @@ function renderEmployees(list) {
       ${workerCodeHtml}
     </td>
     <td class="emp-td-name" style="cursor:pointer" onclick='viewEmployee(${e.id})'>
-      <div class="emp-name">${esc(empFullName)}</div>
+      <div class="emp-name">${esc(empFullName)}${e.customer_hidden ? ' <span title="对客户门户隐藏（内部/测试档案）" style="font-size:.68rem;background:#fef3c7;color:#b45309;border:1px solid #fcd34d;border-radius:999px;padding:.05rem .4rem;white-space:nowrap;vertical-align:1px">🙈 对客户隐藏</span>' : ''}</div>
       <div class="emp-contact">${contactHtml||'<span style="color:var(--gray-300)">无联系方式</span>'}</div>
     </td>
     <td class="emp-td-job">
@@ -16641,6 +16645,7 @@ function openEmpModal(id) {
     _autoStateFromZip();
     document.getElementById('eHire').value     = e.hire_date||'';
     document.getElementById('eStatus').value   = e.status||'active';
+    document.getElementById('eCustHidden').checked = !!e.customer_hidden;
     document.getElementById('addJobRecordBtn').style.display = '';
     loadEditEmpJobRecords(id);
     document.getElementById('eEmgName').value  = e.emergency_name||'';
@@ -16718,6 +16723,7 @@ function openEmpModal(id) {
     document.getElementById('eHire').value = new Date().toLocaleDateString('en-CA');
     fillStateSelect(document.getElementById('eState'), '');
     document.getElementById('eStatus').value  = 'active';
+    document.getElementById('eCustHidden').checked = false;
     document.getElementById('addJobRecordBtn').style.display = 'none';
     document.getElementById('editEmpJobList').innerHTML = '<span style="color:var(--gray-400);font-size:.8rem">（新增员工后可在此添加就业记录）</span>';
     document.getElementById('extraPhonesContainer').innerHTML = '';
@@ -17275,6 +17281,7 @@ async function saveEmployee() {
     zip: document.getElementById('eZip').value.trim(),
     hire_date: document.getElementById('eHire').value,
     status: document.getElementById('eStatus').value,
+    customer_hidden: document.getElementById('eCustHidden').checked ? 1 : 0,
     emergency_name: document.getElementById('eEmgName').value.trim(),
     emergency_phone: document.getElementById('eEmgPhone').value.trim(),
     emergency_relation: document.getElementById('eEmgRel').value.trim(),
