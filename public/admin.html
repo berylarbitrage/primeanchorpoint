@@ -43222,6 +43222,7 @@ function _dupPickReplace() {
       });
       d.extra_emails = ems;
     }
+    d.dedupe_verified_emails = true;   // 邮箱只保留验证过的: 未验证的备用邮箱服务端移入备注
   }
   closeMergeDup();
   _execDupReplace();
@@ -43428,7 +43429,7 @@ function _renderMergeFinal() {
   const tc = val('timeclock_code') || String(K.timeclock_code || O.timeclock_code || '').trim();
   const item = (k, v) => `<div style="display:flex;gap:.5rem;font-size:.78rem;padding:.14rem 0"><span style="color:var(--gray-400);white-space:nowrap;min-width:68px">${k}</span><span style="word-break:break-all;font-weight:600">${v || '—'}</span></div>`;
   box.innerHTML = `<div style="border:2px solid #0ea5e9;background:#f0f9ff;border-radius:10px;padding:.6rem .9rem">
-    <div style="font-size:.78rem;font-weight:800;color:#0369a1;margin-bottom:.3rem">🗂 最终档案（只有这一份）— 按上面打勾的选择实时组成，确认后即为保留档案的内容</div>
+    <div style="font-size:.78rem;font-weight:800;color:#0369a1;margin-bottom:.3rem">🗂 最终档案（只有这一份）— 按上面打勾的选择实时组成，确认后即为保留档案的内容<span style="font-weight:600;color:#0284c7">（同号码不同写法只留一个；未验证过的邮箱不存为备用，移入备注留档）</span></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;column-gap:1.2rem">
       <div>
         ${item('员工号', esc(K.employee_id || '（沿用现有档案）') + (O.employee_id ? ` <span style="color:#b45309;font-weight:600">· ${esc(O.employee_id)} 注销</span>` : ''))}
@@ -43601,20 +43602,27 @@ async function _applyConflictPicks() {
   if (picks.ssn === 'a' && a.ssn_digits && a.ssn_digits.length === 9) body.ssn = a.ssn_digits; // 不发 ssn = 现有档案的保持不变
   // 电话/邮箱两边都保留（默认勾上）: 没被选为主号的那一边存进备用联系方式（去重）
   const sparedNote = [];
+  // 电话按后 10 位去重（"+1" 前缀差异不算两个号）; 未验证的备用邮箱由服务端过滤留备注
+  const n10c = v => String(v || '').replace(/\D/g, '').slice(-10);
   {
     const spareP = String((pv('phone') ? b.phone : a.phone) || '').trim();
-    const eps = parseArr2(b.extra_phones).concat(Array.isArray(a.extra_phones) ? a.extra_phones : [])
-      .map(x => String(x).trim()).filter(Boolean).filter((x, i, arr2) => arr2.indexOf(x) === i);
-    if (keepBothPhone && spareP && spareP !== String(body.phone).trim() && !eps.includes(spareP)) { eps.push(spareP); sparedNote.push('电话'); }
+    const eps = [];
+    parseArr2(b.extra_phones).concat(Array.isArray(a.extra_phones) ? a.extra_phones : [])
+      .map(x => String(x).trim()).filter(Boolean)
+      .forEach(x => { if (n10c(x) !== n10c(body.phone) && !eps.some(y => n10c(y) === n10c(x))) eps.push(x); });
+    if (keepBothPhone && spareP && n10c(spareP) !== n10c(body.phone) && !eps.some(y => n10c(y) === n10c(spareP))) { eps.push(spareP); sparedNote.push('电话'); }
     body.extra_phones = eps;
   }
   {
     const spareM = String((pv('email') ? b.email : a.email) || '').trim();
     const ems = parseArr2(b.extra_emails).concat(Array.isArray(a.extra_emails) ? a.extra_emails : [])
-      .map(x => String(x).trim()).filter(Boolean).filter((x, i, arr2) => arr2.map(y => y.toLowerCase()).indexOf(x.toLowerCase()) === i);
+      .map(x => String(x).trim()).filter(Boolean)
+      .filter(x => x.toLowerCase() !== String(body.email).trim().toLowerCase())
+      .filter((x, i, arr2) => arr2.map(y => y.toLowerCase()).indexOf(x.toLowerCase()) === i);
     if (keepBothEmail && spareM && spareM.toLowerCase() !== String(body.email).trim().toLowerCase() && !ems.map(x => x.toLowerCase()).includes(spareM.toLowerCase())) { ems.push(spareM); sparedNote.push('邮箱'); }
     body.extra_emails = ems;
   }
+  body.dedupe_verified_emails = true;   // 邮箱只保留验证过的: 未验证的备用邮箱服务端移入备注
   // ── 同一人已有两个员工号（编辑现有档案时撞号）→ 真合并: 保留一个员工号、另一号注销,
   // 问卷/工时/打卡/文件全部保留并转移到保留号 —— 信息综合后系统里只剩一份档案、一个员工号。
   const editedEmp = editedEmpId && editedEmpId !== b.id ? (allEmployees || []).find(e => e.id === editedEmpId) : null;
