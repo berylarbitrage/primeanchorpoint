@@ -16323,6 +16323,36 @@ app.get('/api/admin/employees/:id/applicant-docs', requireAdmin, blockManager, (
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// 员工档案「历次申请/问卷」: 这个人从最开始提交过的所有扫码申请 —— 明确关联这份档案
+// 的 + 电话/邮箱相同的（含备用联系方式, 与上面证件接口同一套匹配规则）。处理重复登记
+// 时舍弃/未采用的也返回（带 review_note 标注, 前端置灰展示）—— 一个人系统里只留一份
+// 最终档案, 但历史问卷信息永远可查。
+app.get('/api/admin/employees/:id/related-submissions', requireAdmin, blockManager, (req, res) => {
+  try {
+    const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(parseInt(req.params.id));
+    if (!emp) return res.status(404).json({ error: 'Not found' });
+    const normPhone = p => { const d = String(p || '').replace(/\D/g, ''); return d.length > 10 ? d.slice(-10) : d; };
+    const parseArr = v => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
+    const phones = new Set([emp.phone, ...parseArr(emp.extra_phones)].map(normPhone).filter(Boolean));
+    const emails = new Set([emp.email, ...parseArr(emp.extra_emails)].map(x => String(x || '').trim().toLowerCase()).filter(Boolean));
+    const subs = db.prepare('SELECT * FROM applicant_submissions ORDER BY created_at DESC LIMIT 1000').all().filter(s =>
+      s.employee_id === emp.id
+      || (normPhone(s.phone) && phones.has(normPhone(s.phone)))
+      || (String(s.email || '').trim() && emails.has(String(s.email).trim().toLowerCase())));
+    const cnt = db.prepare('SELECT COUNT(*) AS n FROM applicant_docs WHERE submission_id=?');
+    res.json(subs.map(s => ({
+      id: s.id, name: s.name || '', position: s.position || '',
+      phone: s.phone || '', email: s.email || '',
+      address1: s.address1 || '', address2: s.address2 || '', city: s.city || '', state: s.state || '', zip: s.zip || '',
+      phone_verified: s.phone_verified ? 1 : 0, email_verified: s.email_verified ? 1 : 0, address_verified: s.address_verified ? 1 : 0,
+      timeclock_code: s.timeclock_code || '',
+      created_at: s.created_at, review_note: s.review_note || '',
+      linked: s.employee_id === emp.id ? 1 : 0,
+      doc_count: cnt.get(s.id).n,
+    })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // AI 识读结果落库: 请求带 sub_id/doc_id (申请证件) 时保存, 之后打开图直接显示不用重识
 function _aiReadPersist(body, result) {
   try {
