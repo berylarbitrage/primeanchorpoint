@@ -1232,20 +1232,20 @@ async function loadTimeRecords() {
       const extra = (cCan('edit_time') ? `<button class="tr-act" style="border-color:#7C3AED;color:#7C3AED" onclick="trTimeOpen(${e.entry_id})" title="直接修改上班/下班/休息的具体时间（需管理员开通的权限）">⏱ 改时间</button>` : '') +
         (cCan('relabel') ? `<button class="tr-act" style="border-color:#4A6CF7;color:#4A6CF7" onclick="trEditOpen(${e.entry_id})" title="时间不可改，只能改每个打卡时间点的含义（上班/休息/下班/作废）">✎ 改含义</button>` : '') +
         `<button class="tr-act" style="border-color:#CBD2DA;color:#667085" onclick="trHistOpen(${e.entry_id})" title="谁在什么时候改过什么">历史${e.edit_count ? '·' + e.edit_count : ''}</button>`;
-      if (!cCan('punch')) actTd = `<td>${extra || '—'}</td>`;
-      else if (isOpen && e.on_break) actTd = `<td>${actBtn('结束休息', 'break_end', '#2D9D78')}${actBtn('下班', 'out', '#E63946')}${extra}</td>`;
-      else if (isOpen) actTd = `<td>${noBreaks ? '' : actBtn('开始休息', 'break_start', '#F5A623')}${actBtn('下班', 'out', '#E63946')}${extra}</td>`;
-      else actTd = `<td>${actBtn('上班', 'in', '#2D9D78')}${extra}</td>`;
+      if (!cCan('punch')) actTd = `<td style="white-space:nowrap">${extra || '—'}</td>`;
+      else if (isOpen && e.on_break) actTd = `<td style="white-space:nowrap">${actBtn('结束休息', 'break_end', '#2D9D78')}${actBtn('下班', 'out', '#E63946')}${extra}</td>`;
+      else if (isOpen) actTd = `<td style="white-space:nowrap">${noBreaks ? '' : actBtn('开始休息', 'break_start', '#F5A623')}${actBtn('下班', 'out', '#E63946')}${extra}</td>`;
+      else actTd = `<td style="white-space:nowrap">${actBtn('上班', 'in', '#2D9D78')}${extra}</td>`;
     }
     return dayHead + `<tr>
-      <td style="font-weight:600">${esc(e.name)}</td>
+      <td style="font-weight:600;white-space:nowrap">${esc(e.name)}</td>
       ${multiSite ? `<td style="color:var(--gray-500)">${esc(siteName[e.site_id] || '—')}</td>` : ''}
       <td>${_trFmtD(ci || co, tz)}</td>
       <td>${_trFmtT(ci, tz)}</td>
       <td>${isOpen ? '<span style="color:#B87400;font-weight:700">在班</span>' : _trFmtT(co, tz) + crossDay}</td>
       <td style="color:var(--gray-400)">${e.break_minutes ? e.break_minutes + ' min' : (e.break_count ? e.break_count + ' 次' : '—')}</td>
       <td>${e.total_hours ? e.total_hours.toFixed(2) + 'h' : (isOpen ? '—' : '0h')}</td>
-      <td>${isOpen ? (e.on_break ? '<span style="color:#F5A623">● 休息中</span>' : '<span style="color:#B87400">● 上班中</span>') : '<span style="color:#2D9D78">● 完成</span>'}</td>
+      <td style="white-space:nowrap">${isOpen ? (e.on_break ? '<span style="color:#F5A623">● 休息中</span>' : '<span style="color:#B87400">● 上班中</span>') : '<span style="color:#2D9D78">● 完成</span>'}</td>
       ${photoTd}
       ${actTd}
     </tr>`;
