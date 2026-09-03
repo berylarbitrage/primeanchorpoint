@@ -43199,7 +43199,32 @@ function _renderMergeOpts() {
   box.innerHTML = html;
 }
 function _dupPickKeep() { closeMergeDup(); _execDupKeep(); }
-function _dupPickReplace() { closeMergeDup(); _execDupReplace(); }
+// 替换成新信息也遵守「两个都存」勾选: 被换下来的号码（现有档案的、以及正在编辑那份
+// 档案原来的）存进新信息的备用联系方式, 不再只写备注留档 —— 两个电话/邮箱都保留。
+function _dupPickReplace() {
+  const P = _mergeDupPair, p = _pendingDupSave;
+  if (P && p && p.data) {
+    const d = p.data;
+    const n10 = v => String(v || '').replace(/\D/g, '').slice(-10);
+    const target = p.empId ? (allEmployees || []).find(e => e.id === p.empId) : null;
+    if (P.keepBothPhone !== false) {
+      const eps = (Array.isArray(d.extra_phones) ? d.extra_phones : []).map(x => String(x).trim()).filter(Boolean);
+      [P.b && P.b.phone, target && target.phone].map(v => String(v || '').trim()).filter(Boolean).forEach(v => {
+        if (n10(v) !== n10(d.phone) && !eps.some(x => n10(x) === n10(v))) eps.push(v);
+      });
+      d.extra_phones = eps;
+    }
+    if (P.keepBothEmail !== false) {
+      const ems = (Array.isArray(d.extra_emails) ? d.extra_emails : []).map(x => String(x).trim()).filter(Boolean);
+      [P.b && P.b.email, target && target.email].map(v => String(v || '').trim()).filter(Boolean).forEach(v => {
+        if (v.toLowerCase() !== String(d.email || '').trim().toLowerCase() && !ems.some(x => x.toLowerCase() === v.toLowerCase())) ems.push(v);
+      });
+      d.extra_emails = ems;
+    }
+  }
+  closeMergeDup();
+  _execDupReplace();
+}
 function _dupPickEdit() { closeMergeDup(); _execDupEdit(); }
 // 撞号冲突入口: 直接打开左右对比挑选弹窗（逐条挑 + 替换/保留/编辑 快捷按钮），
 // 不再先进员工详情看黄条; 列表缓存找不到现有档案时兜底走旧的 详情+冲突条 流程。
@@ -43252,8 +43277,9 @@ function renderMergeDup() {
   const docsPickable = _mergeDocsPickable();
   const row = (k, v) => `<div style="flex:1;display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;font-size:.78rem;padding:.18rem .25rem;border-bottom:1px dashed var(--gray-100)"><span style="color:var(--gray-400);white-space:nowrap">${k}</span><span style="text-align:right;word-break:break-all">${v || '—'}</span></div>`;
   // 勾了「两个都存」时, 电话/邮箱行没被选为主号的那一边直接标出去向, 一眼看出两个都会保存
-  const contactBadge = f => {
-    if (f.key !== 'phone' && f.key !== 'email') return '';
+  //（这一边是空值就没有可存的, 不显示徽章）
+  const contactBadge = (f, v) => {
+    if ((f.key !== 'phone' && f.key !== 'email') || !String(v || '').trim()) return '';
     const on = f.key === 'phone' ? P.keepBothPhone !== false : P.keepBothEmail !== false;
     return `<span style="font-size:.58rem;font-weight:700;border-radius:4px;padding:0 4px;white-space:nowrap;flex:0 0 auto;${on ? 'color:#047857;background:#d1fae5' : 'color:#6b7280;background:#f3f4f6'}">${on ? '存为备用' : '不存备用'}</span>`;
   };
@@ -43281,7 +43307,7 @@ function renderMergeDup() {
     if (!_mergePickable(f)) return row(f.label, v);
     const chosen = P.picks[f.key] === side;
     return `<div onclick="event.stopPropagation();pickMergeField('${f.key}','${side}')" title="点击选用这一边的「${f.label}」" style="flex:1;display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;font-size:.78rem;padding:.18rem .25rem;border-bottom:1px dashed var(--gray-100);cursor:pointer;border-radius:5px;${chosen ? 'background:#dcfce7' : 'opacity:.68'}">
-        <span style="white-space:nowrap;font-weight:700;color:${chosen ? '#047857' : 'var(--gray-400)'};display:inline-flex;align-items:center;gap:.3rem">${chosen ? '✓ ' : '○ '}${f.label}${chosen ? '' : contactBadge(f)}</span>
+        <span style="white-space:nowrap;font-weight:700;color:${chosen ? '#047857' : 'var(--gray-400)'};display:inline-flex;align-items:center;gap:.3rem">${chosen ? '✓ ' : '○ '}${f.label}${chosen ? '' : contactBadge(f, v)}</span>
         <span style="text-align:right;word-break:break-all;${chosen ? 'font-weight:700' : ''}">${v || '—'}</span>
       </div>`;
   });

@@ -26488,15 +26488,66 @@ function _utcEntryDate(v) {
   return isNaN(d.getTime()) ? null : d;
 }
 
+// 同一人不再新建第二个员工号: 按申请的 电话/邮箱（含档案的备用联系方式）找已有档案。
+// 只匹配 在职/待入职 —— 离职/停职档案不自动关联（不借打卡复活）。在职的优先。
+function _matchEmployeeForSub(sub) {
+  const p10 = String(sub.phone || '').replace(/\D/g, '').slice(-10);
+  const em = String(sub.email || '').trim().toLowerCase();
+  if (!p10 && !em) return null;
+  const parseArr = v => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
+  const n10 = v => String(v || '').replace(/\D/g, '').slice(-10);
+  const cands = db.prepare(`SELECT * FROM employees WHERE status IN ('active','onboarding')`).all().filter(e =>
+    (p10 && (n10(e.phone) === p10 || parseArr(e.extra_phones).some(x => n10(x) === p10)))
+    || (em && (String(e.email || '').trim().toLowerCase() === em || parseArr(e.extra_emails).some(x => String(x || '').trim().toLowerCase() === em))));
+  if (!cands.length) return null;
+  return cands.find(e => e.status === 'active') || cands[0];
+}
 // 从入职申请自动创建员工档案（工人填完表后直接回来打卡，不用等后台手动建档）。
 // 返回 employees 行；档案备注里标明来源，方便后台事后补审。
 // 档案建为「待入职」(onboarding)，打卡各通道照常放行 —— 只有后台核对证件、更正
 // 姓名、补齐资料后手动转「在职」，招工收件箱的卡片才会标 已入职 归到历史；
 // 自动建档绝不能替后台做这个决定。
+// 一份问卷生成一份档案；同一人再交问卷不再新建员工号 —— 电话或邮箱能对上已有档案
+// （在职/待入职）时, 把这份问卷关联上去、空缺信息补进去（电话/邮箱不同的存为备用,
+// 两个都保留）, 打卡密码/SSN 档案没有才继承。打开档案的「历次申请/问卷」区能看到全部问卷。
 function _employeeFromApplicant(sub) {
   if (sub.employee_id) {
     const existing = db.prepare('SELECT id, first_name, last_name, employee_id FROM employees WHERE id=?').get(sub.employee_id);
     if (existing) return existing;
+  }
+  const match = _matchEmployeeForSub(sub);
+  if (match) {
+    const stamp = new Date().toISOString().slice(0, 10);
+    const parseArr = v => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
+    const n10 = v => String(v || '').replace(/\D/g, '').slice(-10);
+    const sets = [], vals = [], noted = [];
+    const subPhone = String(sub.phone || '').trim(), subEmail = String(sub.email || '').trim();
+    if (subPhone) {
+      if (!String(match.phone || '').trim()) { sets.push('phone=?'); vals.push(subPhone); }
+      else if (n10(match.phone) !== n10(subPhone)) {
+        const eps = parseArr(match.extra_phones).map(x => String(x).trim()).filter(Boolean);
+        if (!eps.some(x => n10(x) === n10(subPhone))) { eps.push(subPhone); sets.push('extra_phones=?'); vals.push(JSON.stringify(eps)); noted.push(`新电话 ${subPhone} 已存为备用`); }
+      }
+    }
+    if (subEmail) {
+      if (!String(match.email || '').trim()) { sets.push('email=?'); vals.push(subEmail); }
+      else if (String(match.email).trim().toLowerCase() !== subEmail.toLowerCase()) {
+        const ems = parseArr(match.extra_emails).map(x => String(x).trim()).filter(Boolean);
+        if (!ems.some(x => x.toLowerCase() === subEmail.toLowerCase())) { ems.push(subEmail); sets.push('extra_emails=?'); vals.push(JSON.stringify(ems)); noted.push(`新邮箱 ${subEmail} 已存为备用`); }
+      }
+    }
+    if (!String(match.address || '').trim() && String(sub.address1 || '').trim()) { sets.push('address=?'); vals.push(_joinAddrLines(sub.address1, sub.address2)); }
+    if (!String(match.city || '').trim() && String(sub.city || '').trim()) { sets.push('city=?'); vals.push(sub.city); }
+    if (!String(match.state || '').trim() && String(sub.state || '').trim()) { sets.push('state=?'); vals.push(sub.state); }
+    if (!String(match.zip || '').trim() && String(sub.zip || '').trim()) { sets.push('zip=?'); vals.push(sub.zip); }
+    if (!String(match.position || '').trim() && String(sub.position || '').trim()) { sets.push('position=?'); vals.push(sub.position); }
+    const note = `📌 ${stamp} 工人打卡：入职申请 #${sub.id} 已关联到本档案（同一人不再新建员工号${noted.length ? '；' + noted.join('、') : ''}）`;
+    sets.push(`notes=CASE WHEN COALESCE(notes,'')='' THEN ? ELSE notes || char(10) || ? END`); vals.push(note, note);
+    db.prepare(`UPDATE employees SET ${sets.join(', ')} WHERE id=?`).run(...vals, match.id);
+    db.prepare('UPDATE applicant_submissions SET employee_id=? WHERE id=?').run(match.id, sub.id);
+    _inheritTimeclockCode(sub.id, match.id);   // 打卡密码/SSN: 档案没有才继承申请上的
+    console.log(`[Checkin] Linked applicant submission #${sub.id} (${sub.name}) to existing employee #${match.id} (${match.employee_id}) — no duplicate record created`);
+    return db.prepare('SELECT id, first_name, last_name, employee_id FROM employees WHERE id=?').get(match.id);
   }
   const nameParts = String(sub.name || '').trim().split(/\s+/);
   const firstName = nameParts[0] || '';
