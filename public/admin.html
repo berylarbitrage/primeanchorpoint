@@ -16624,6 +16624,7 @@ function openEmpModal(id) {
   document.getElementById('empModalTitle').textContent = id ? '编辑员工' : '新增员工';
   document.getElementById('empId').value = id || '';
   { const _ad = document.getElementById('empApplicantDocs'); if (_ad) { _ad.style.display = 'none'; _ad.innerHTML = ''; } window._empApplDocsSubId = null; if (typeof closeApplicantDocViewer === 'function') closeApplicantDocViewer(); }
+  if (id) _hangEmpDocsPanel(id);   // 编辑已有员工: 自动把关联申请的证件挂出来（可点开审阅/裁剪）
   if (id) {
     const e = allEmployees.find(x=>x.id===id) || {};
     document.getElementById('eFirst').value    = e.first_name||'';
@@ -43944,10 +43945,11 @@ async function createEmployeeFromApplicant(id) {
 
 // Fetch an applicant's uploaded docs and show them as a reference strip in the
 // employee modal (so the name can be verified against the real SSN/EAD).
-async function renderApplicantDocPanel(subId) {
+async function renderApplicantDocPanel(subId, opts) {
   const rerender = window._empApplDocsSubId === subId;   // 二次渲染(标记后刷新)不再自动弹批量裁剪
   window._empApplDocsSubId = subId;
   if (!rerender) window._empApplDocBatchAuto = false;
+  const noAutoCrop = !!(opts && opts.noAutoCrop);   // 普通编辑打开时只展示证件, 不自动弹连续裁剪
   const panel = document.getElementById('empApplicantDocs');
   if (!panel) return;
   panel.style.display = '';
@@ -43982,10 +43984,24 @@ async function renderApplicantDocPanel(subId) {
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-start">${thumbs}</div>`;
   // 一打开就先处理图片: 有未裁剪过的图时, 自动进入连续裁剪流程 (每次打开只自动弹一次)
   const uncropped = imgDocs.filter(d => !d.has_cropped);
-  if (uncropped.length && !window._empApplDocBatchAuto) {
+  if (uncropped.length && !window._empApplDocBatchAuto && !noAutoCrop) {
     window._empApplDocBatchAuto = true;
     setTimeout(() => startApplicantDocBatchCrop(batchItems), 400);
   }
+}
+// 编辑员工一打开就把该员工关联申请的证件挂出来（点缩略图开审阅器可旋转/裁剪/标真伪，
+// 「连续裁剪」按钮手动可用）: 优先明确关联的申请, 没有则取电话/邮箱匹配到的最新一份。
+// 不自动弹连续裁剪 —— 只想改个电话时不被打断; 从收件箱进入的审核流程照旧自动弹。
+async function _hangEmpDocsPanel(empId) {
+  try {
+    const docs = await api(`/admin/employees/${empId}/applicant-docs`);
+    if (!Array.isArray(docs) || !docs.length) return;
+    if (String(document.getElementById('empId').value) !== String(empId)) return; // 加载期间切换了表单就不挂
+    if (window._empApplDocsSubId) return;   // 已有流程挂上了申请条（如收件箱审核）就不覆盖
+    const linked = docs.find(d => d.linked);
+    const subId = (linked || docs[0]).submission_id;
+    if (subId) renderApplicantDocPanel(subId, { noAutoCrop: true });
+  } catch (_) {}
 }
 
 // Floating, draggable image viewer for applicant docs. Deliberately has NO
