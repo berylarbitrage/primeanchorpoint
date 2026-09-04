@@ -468,9 +468,10 @@ function showFResFound(d) {
     ${d.sms_sent ? `<div class="res-time" style="margin-top:.6rem">${t.fpSent(d.phone_last4 || '')}</div>` : ''}
     <div id="fpDlv" class="res-time" style="margin-top:.3rem;font-size:.85rem;opacity:.8">${d.track ? t.fpChecking : ''}</div>
     ${d.sms_sent ? '' : `<div class="pw-err" style="margin-top:.6rem">${t.fpSmsFail}</div>`}
-    ${_fpMode === 'newuser' ? `<div class="res-time" style="margin-top:.7rem;font-size:.82rem;opacity:.85">${t.nuUpdHint}</div>
-      <button onclick="showRegisterQr(KL[_kl].regTitle)" style="width:100%;margin-top:.5rem;border:none;border-radius:12px;background:#1A3F7A;color:#fff;font-size:1rem;font-weight:800;padding:.85rem;cursor:pointer;font-family:inherit">${t.nuUpdate}</button>` : ''}
-    <button class="act-cancel" onclick="resetToPw()">${t.fpOk}</button>`;
+    ${_fpMode === 'newuser'
+      ? `<button onclick="resetToPw()" style="width:100%;margin-top:.9rem;border:none;border-radius:14px;background:var(--green);color:#fff;font-size:1.15rem;font-weight:800;padding:1rem;cursor:pointer;font-family:inherit">${t.fpOk}</button>
+         <button onclick="showRegisterQr(KL[_kl].regTitle)" style="display:block;margin:.85rem auto 0;background:none;border:none;color:#5a6b8c;font-size:.82rem;text-decoration:underline;cursor:pointer;font-family:inherit">${t.nuUpdate}</button>`
+      : `<button class="act-cancel" onclick="resetToPw()">${t.fpOk}</button>`}`;
   showScr('scrFRes');
   clearTimeout(_resTimer); _resTimer = setTimeout(resetToPw, 60000);
   if (d.track) fpPollDelivery(d.track);
