@@ -32,15 +32,31 @@
 
 ## 配置步骤
 
-1. **装插座**：Shelly 插座接充电器，充电器一直插着平板；插座加入 Shelly App 并联网。
+### 方式一：插座直连（推荐 — 不需要 Shelly 账号 / App / 蓝牙配对）
+
+利用 Shelly Gen2+ 固件自带的 **Outbound WebSocket**：插座主动连到本系统，命令直发。
+
+1. **装插座联网**：插座接充电器、充电器插着平板；让插座连上仓库 WiFi
+   （用 Shelly App、Apple Home/Matter、或连它的 `ShellyXXX-...` 热点后在 `http://192.168.33.1` 配，任何一种都行）。
+2. **填 Device ID**：`/kiosk-power` 页对应仓库的「插座配置」→ Device ID 填插座 **MAC 小写**
+   （就是它热点名最后一段，如 `acebe6f59148`）→ 保存。
+3. **让插座连上来**：浏览器打开插座自己的设置网页（`http://插座IP` 或 `http://shelly…-….local`）→
+   **Settings → Outbound WebSocket** → 勾 **Enable**，Server 填 `/kiosk-power` 页显示的
+   `wss://…/shelly-ws?t=…` 地址（带令牌，页面上有复制按钮），TLS 选「Disable certificate validation」→ Save。
+4. 几秒后 `/kiosk-power` 出现「🔗 插座直连在线」→ 点「🔍 查插座状态」「🔌 通电 / ⏹ 断电」测试。
+
+### 方式二：Shelly Cloud（可选备用；两者都配时直连优先、断线自动退回云端）
+
+1. 插座加入 Shelly App 账号并联网。
 2. **拿云端凭据**：浏览器打开 [control.shelly.cloud](https://control.shelly.cloud) →
    右上角 **Settings → Authorization cloud key** → 复制 **Auth Key** 和 **Server 地址**
    （形如 `shelly-73-eu.shelly.cloud`）；**Device ID** 在 Shelly App 的设备设置里。
-3. **填配置**：管理后台 → 工时打卡 → 「🔋 打卡机电源」（即 `/kiosk-power`）→
-   对应仓库的「插座配置」里填 Device ID / Auth Key / Server，保存。
-   点「🔍 查插座状态」确认在线，再点「🔌 通电 / ⏹ 断电」测试插座真的会动。
-4. **平板端**：打卡平板用 **安卓 Chrome** 打开打卡页（电量上报依赖浏览器 Battery API，iPad 不支持）。
-   打开打卡页选好仓库即自动开始上报，页面左下角会显示 `🔋85%⚡` 便于现场确认。
+3. **填配置**：`/kiosk-power` → 对应仓库填 Device ID / Auth Key / Server，保存并测试。
+
+### 平板端（两种方式都一样）
+
+打卡平板用 **安卓 Chrome** 打开打卡页（电量上报依赖浏览器 Battery API，iPad 不支持）。
+打开打卡页选好仓库即自动开始上报，页面左下角会显示 `🔋85%⚡` 便于现场确认。
 
 只有一个仓库时，也可以不用页面配置，直接用环境变量全局配置：
 
