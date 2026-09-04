@@ -156,6 +156,7 @@ body.brite #fpNum{color:rgba(15,43,91,.9)!important}
       <div class="pw-hint" id="scanHint">将您的打卡二维码对准摄像头</div>
       <video id="scanVid" autoplay playsinline muted style="width:min(92vw,420px);height:min(52vh,320px);object-fit:cover;border-radius:18px;background:#0b1f42"></video>
       <div class="pw-err" id="scanErr" style="margin-top:.5rem"></div>
+      <button class="alt-btn" id="btnScanFlip" onclick="flipScanCam()" style="max-width:420px;margin:.4rem auto 0">🔄 <span id="lblScanFlip">切换前/后摄像头</span></button>
       <button class="act-cancel" style="max-width:420px" id="btnScanCancel" onclick="scanStop(true)">取消</button>
     </div>
   </div>
@@ -247,7 +248,7 @@ const KL = {
     camHint: '打卡时会自动拍照留档', resPhoto: '📷 已拍照留档',
     lblScan: '扫码打卡', lblForgot: '忘记密码', lblNewUser: '新员工注册',
     regTitle: '🆕 新员工注册',
-    scanHint: '将您的打卡二维码对准摄像头', scanBadQr: '不是有效的打卡二维码', scanNoCam: '无法打开摄像头',
+    scanHint: '将您的打卡二维码对准摄像头', scanBadQr: '不是有效的打卡二维码', scanNoCam: '无法打开摄像头', scanFlip: '切换前/后摄像头',
     fpHint: '输入手机号（美国 10 位；其他国家含国家代码）', fpGo: '发送',
     fpSent: l4 => '打卡密码和二维码已发送到尾号 ' + l4 + ' 的手机，请查收',
     fpChecking: '⏳ 正在确认送达…', fpDelivered: '✓ 已确认送达', fpSlow: '如 1–2 分钟内未收到，请检查垃圾短信，或换一台手机再试',
@@ -268,7 +269,7 @@ const KL = {
     camHint: 'A photo is taken when you punch', resPhoto: '📷 Photo saved',
     lblScan: 'Scan QR', lblForgot: 'Forgot password', lblNewUser: 'New Employee',
     regTitle: '🆕 New Employee Sign-Up',
-    scanHint: 'Hold your QR code up to the camera', scanBadQr: 'Not a valid time-clock QR code', scanNoCam: 'Cannot open camera',
+    scanHint: 'Hold your QR code up to the camera', scanBadQr: 'Not a valid time-clock QR code', scanNoCam: 'Cannot open camera', scanFlip: 'Switch front/back camera',
     fpHint: 'Enter your phone number (US: 10 digits; intl: include country code)', fpGo: 'Send',
     fpSent: l4 => 'Your password and QR code were sent to the phone ending in ' + l4,
     fpChecking: '⏳ Confirming delivery…', fpDelivered: '✓ Delivered', fpSlow: 'If nothing arrives within 1–2 minutes, check spam or try again later.',
@@ -289,7 +290,7 @@ const KL = {
     camHint: 'Se toma una foto al marcar', resPhoto: '📷 Foto guardada',
     lblScan: 'Escanear QR', lblForgot: 'Olvidé mi contraseña', lblNewUser: 'Nuevo Empleado',
     regTitle: '🆕 Registro de Nuevo Empleado',
-    scanHint: 'Acerque su código QR a la cámara', scanBadQr: 'Código QR no válido', scanNoCam: 'No se puede abrir la cámara',
+    scanHint: 'Acerque su código QR a la cámara', scanBadQr: 'Código QR no válido', scanNoCam: 'No se puede abrir la cámara', scanFlip: 'Cambiar cámara frontal/trasera',
     fpHint: 'Ingrese su teléfono (EE.UU.: 10 dígitos; internacional: con código de país)', fpGo: 'Enviar',
     fpSent: l4 => 'Su contraseña y código QR fueron enviados al teléfono que termina en ' + l4,
     fpChecking: '⏳ Confirmando entrega…', fpDelivered: '✓ Entregado', fpSlow: 'Si no llega en 1–2 minutos, revise el spam o intente más tarde.',
@@ -349,7 +350,7 @@ function setKLang(l) {
   $('btnCancel').textContent = t.cancel;
   $('lblPunch').textContent = t.btnPunch;
   $('lblScan').textContent = t.lblScan; $('lblForgot').textContent = t.lblForgot; $('lblNewUser').textContent = t.lblNewUser;
-  $('scanHint').textContent = t.scanHint; $('btnScanCancel').textContent = t.cancel;
+  $('scanHint').textContent = t.scanHint; $('btnScanCancel').textContent = t.cancel; $('lblScanFlip').textContent = t.scanFlip;
   $('fpHint').textContent = _fpMode === 'newuser' ? t.nuHint : t.fpHint; $('fpKeyClear').textContent = t.clear; $('btnFpCancel').textContent = t.cancel; $('btnFpGo').textContent = _fpMode === 'newuser' ? t.nuGo : t.fpGo;
 }
 
@@ -524,16 +525,24 @@ function showFResRegister() { return showRegisterQr(KL[_kl].fpNotFound); }
 // 新员工注册: 先输手机号查现有档案 (查到→发密码+二维码并可更新资料; 查不到→注册)
 function newUserStart() { briteAuto(); _fpMode = 'newuser'; _fp = ''; _fpBusy = false; renderFpNum(); $('fpErr').textContent = ''; const t = KL[_kl]; $('fpHint').textContent = t.nuHint; $('btnFpGo').textContent = t.nuGo; showScr('scrForgot'); }
 
-// ── 前置摄像头：页面打开即常驻（装机时授权一次），打卡瞬间抓一帧随打卡上传 ──
-let _camStream = null, _camStarting = null, _imageCapture = null;
-function camStart() {
-  if (_camStream) return Promise.resolve();
+// ── 摄像头：页面打开即常驻（装机时授权一次），打卡瞬间抓一帧随打卡上传 ──
+// 默认前置('user')；扫码屏可切到后置('environment')，选择记 localStorage 跨重启保留。
+// 平板通常前后不能同时开，切换=停旧流开新流；扫码抓拍共用这一路流。
+let _camStream = null, _camStarting = null, _imageCapture = null, _camFacing = 'user';
+try { const cf = localStorage.getItem('kiosk_cam'); if (cf === 'user' || cf === 'environment') _camFacing = cf; } catch (_) {}
+function camStart(facing) {
+  const want = (facing === 'user' || facing === 'environment') ? facing : _camFacing;
+  if (_camStream && _camFacing === want) return Promise.resolve();
   if (_camStarting) return _camStarting;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return Promise.resolve();
+  // 切换朝向前先停掉旧流（平板一般不允许前后同时打开）
+  if (_camStream) { try { _camStream.getTracks().forEach(t => t.stop()); } catch (_) {} _camStream = null; _imageCapture = null; }
+  _camFacing = want;
   _camStarting = navigator.mediaDevices.getUserMedia({
-    video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false })
+    video: { facingMode: { ideal: want }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false })
     .then(s => {
       _camStream = s;
+      try { localStorage.setItem('kiosk_cam', want); } catch (_) {}
       const tr = s.getVideoTracks()[0];
       if (tr) tr.addEventListener('ended', () => { _camStream = null; _imageCapture = null; });
       // ImageCapture 直接从摄像头轨道抓帧, 不依赖隐藏 video 元素的渲染 (安卓黑帧问题)
@@ -543,6 +552,21 @@ function camStart() {
     .catch(() => { _camStream = null; })
     .finally(() => { _camStarting = null; });
   return _camStarting;
+}
+// 扫码屏「切换前/后摄像头」：翻转共用流并重新指给扫码画面，扫码循环不中断
+let _camFlipping = false;
+async function flipScanCam() {
+  if (_camFlipping) return;
+  _camFlipping = true;
+  const btn = $('btnScanFlip'); if (btn) btn.disabled = true;
+  $('scanErr').textContent = '';
+  try {
+    await camStart(_camFacing === 'user' ? 'environment' : 'user');
+    if (_camStream) $('scanVid').srcObject = _camStream;
+    else $('scanErr').textContent = KL[_kl].scanNoCam;
+  } catch (_) {}
+  if (btn) btn.disabled = false;
+  _camFlipping = false;
 }
 // 画到 canvas 并标记是否为暗帧。暗帧不丢弃 (夜间/暗环境的真实画面亮度也很低,
 // 丢了会导致整条记录没照片) —— 只用于「优先选亮帧」的偏好, 拍不到亮的就用暗的。
