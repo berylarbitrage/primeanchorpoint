@@ -42,8 +42,10 @@
    （就是它热点名最后一段，如 `acebe6f59148`）→ 保存。
 3. **让插座连上来**：浏览器打开插座自己的设置网页（`http://插座IP` 或 `http://shelly…-….local`）→
    **Settings → Outbound WebSocket** → 勾 **Enable**，Server 填 `/kiosk-power` 页显示的
-   `wss://…/shelly-ws?t=…` 地址（带令牌，页面上有复制按钮），TLS 选「Disable certificate validation」→ Save。
-4. 几秒后 `/kiosk-power` 出现「🔗 插座直连在线」→ 点「🔍 查插座状态」「🔌 通电 / ⏹ 断电」测试。
+   `wss://…:443/shelly-ws/<令牌>` 地址（令牌在路径里，页面上有复制按钮），TLS 选「Disable certificate validation」→ Save →
+   **重启插座**（Settings → Device → Reboot 或拔电重插；此配置重启后才生效）。
+4. 约 20 秒后 `/kiosk-power` 出现「🔗 插座直连在线」→ 点「🔍 查插座状态」「🔌 通电 / ⏹ 断电」测试。
+   连不上时页面「方式一」区会显示 **🩺 诊断**：服务器有没有收到插座的连接尝试、令牌对不对。
 
 ### 方式二：Shelly Cloud（可选备用；两者都配时直连优先、断线自动退回云端）
 

@@ -207,7 +207,11 @@ function card(k, d, openSet){
           <code style="display:block;background:#fff;border:1px solid #bae6fd;border-radius:6px;padding:.35rem .5rem;margin:.3rem 0;word-break:break-all;user-select:all">${esc(d.ws_url || '')}</code>
           <a href="javascript:void(0)" onclick="navigator.clipboard.writeText('${esc(d.ws_url || '')}').then(()=>toast('✅ 已复制'))">📋 复制地址</a>
           · TLS/SSL 选「Disable certificate validation」→ Save<br>
-          ③ 几秒后本页刷新出现「🔗 插座直连在线」即成功。<b>方式二 · Shelly 云（可选备用）：</b>再填下面 Auth Key / Server。
+          ③ <b>保存后重启插座</b>（Settings → Device → Reboot，或直接拔电重插）—— 这项配置<b>重启后才生效</b><br>
+          ④ 约 20 秒后刷新本页，出现「🔗 插座直连在线」即成功。<b>方式二 · Shelly 云（可选备用）：</b>再填下面 Auth Key / Server。
+          ${!cfg.ws_online && cfg.has_device ? `<div style="margin-top:.45rem;padding-top:.45rem;border-top:1px dashed #bae6fd"><b>🩺 诊断 — 服务器收到的直连尝试：</b>${(d.ws_attempts || []).length
+            ? (d.ws_attempts || []).slice(0, 4).map(a => `${new Date(a.ts).toLocaleTimeString('zh-CN', { hour12: false })} ${a.ok ? '✅ 令牌正确（应已在线，稍等刷新）' : '❌ 令牌不符（重新复制上面地址原样粘贴）'}`).join('<br>')
+            : '<b>一次都没有</b> —— 插座根本没连出来：检查 Enable 勾了没、地址粘完整没，然后<b>重启插座</b>再看'}</div>` : ''}
         </div>
         <label><b>Shelly Device ID</b><input name="device_id" value="${esc(cfg.device_id)}" placeholder="${d.env_configured ? '留空 = 用全局 env' : '插座 MAC 小写, 如 acebe6f59148'}"></label>
         <label><b>Auth Key（云端·可选）</b><input name="auth_key" type="password" value="${cfg.has_auth_key ? '__keep__' : ''}" placeholder="${cfg.has_auth_key ? '已保存 (改动才需重填)' : '用直连可不填'}"></label>

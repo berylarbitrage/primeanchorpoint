@@ -28434,6 +28434,7 @@ try {
 } catch (e) { console.error('[KioskPlug] ws token init error:', e.message); }
 const _wsPlugs = new Map();   // 规范化设备ID → WebSocket (当前在线的直连插座)
 const _wsPending = new Map(); // rpc 请求 id → {resolve, reject, timer}
+const _wsAttempts = [];       // 最近的连接尝试 (诊断用: 插座到底连没连出来/令牌对不对)
 let _wsReqId = 0;
 // "shellyplugusg4-acebe6f59148" 和纯 MAC "acebe6f59148" 两种写法都能匹配上
 function _wsIdKeys(v) {
@@ -28470,8 +28471,12 @@ function _plugAttachWs(httpServer) {
   httpServer.on('upgrade', (req, socket, head) => {
     let u;
     try { u = new URL(req.url, 'http://x'); } catch { socket.destroy(); return; }
-    if (u.pathname !== '/shelly-ws') { socket.destroy(); return; }
-    if (!_plugWsToken || u.searchParams.get('t') !== _plugWsToken) { socket.destroy(); return; }
+    if (!u.pathname.startsWith('/shelly-ws')) { socket.destroy(); return; }
+    // 令牌放路径 (/shelly-ws/<令牌>, 首选 — 有的固件会丢 ?query) 或放 query (?t=, 兼容旧填法)
+    const tokOk = !!_plugWsToken && (u.pathname === '/shelly-ws/' + _plugWsToken || u.searchParams.get('t') === _plugWsToken);
+    _wsAttempts.push({ ts: Date.now(), ip: String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(), ok: tokOk });
+    if (_wsAttempts.length > 20) _wsAttempts.splice(0, _wsAttempts.length - 20);
+    if (!tokOk) { console.log('[KioskPlug] 直连尝试被拒 (令牌不符):', u.pathname.slice(0, 40)); socket.destroy(); return; }
     wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req));
   });
   wss.on('connection', ws => {
@@ -28724,10 +28729,13 @@ app.get('/api/admin/kiosk-battery', requireAdmin, (req, res) => {
     });
     const sites = db.prepare('SELECT id, name FROM job_sites WHERE active=1 ORDER BY name').all();
     const wsProto = (req.secure || req.get('x-forwarded-proto') === 'https') ? 'wss' : 'ws';
+    const host = req.get('host') || '';
+    const wsHost = host.includes(':') ? host : host + (wsProto === 'wss' ? ':443' : ':80'); // Shelly 固件的 host:port/path 格式, 端口写明最稳
     res.json({
       env_configured: !!(process.env.SHELLY_AUTH_KEY && process.env.SHELLY_DEVICE_ID && process.env.SHELLY_SERVER),
       defaults: { on_below: KIOSK_CHARGE_ON_BELOW, off_above: KIOSK_CHARGE_OFF_ABOVE, stale_min: KIOSK_STALE_MIN },
-      ws_url: `${wsProto}://${req.get('host')}/shelly-ws?t=${_plugWsToken}`,
+      ws_url: `${wsProto}://${wsHost}/shelly-ws/${_plugWsToken}`,
+      ws_attempts: _wsAttempts.slice(-8).reverse().map(a => ({ ts: a.ts, ip: a.ip, ok: a.ok })),
       kiosks, sites,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
