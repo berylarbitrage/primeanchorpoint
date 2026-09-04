@@ -248,7 +248,7 @@ const KL = {
     camHint: '打卡时会自动拍照留档', resPhoto: '📷 已拍照留档',
     lblScan: '扫码打卡', lblForgot: '忘记密码', lblNewUser: '新员工注册',
     regTitle: '🆕 新员工注册',
-    scanHint: '将您的打卡二维码对准摄像头', scanBadQr: '不是有效的打卡二维码', scanNoCam: '无法打开摄像头', scanFlip: '切换前/后摄像头', scanFlipFail: '切换摄像头失败，已保持当前摄像头，请再点一次重试',
+    scanHint: '将您的打卡二维码对准摄像头', scanBadQr: '不是有效的打卡二维码', scanNoCam: '无法打开摄像头', scanFlip: '切换前/后摄像头', scanFlipFail: '无法切换摄像头，继续用当前摄像头扫码即可',
     fpHint: '输入手机号（美国 10 位；其他国家含国家代码）', fpGo: '发送',
     fpSent: l4 => '打卡密码和二维码已发送到尾号 ' + l4 + ' 的手机，请查收',
     fpChecking: '⏳ 正在确认送达…', fpDelivered: '✓ 已确认送达', fpSlow: '如 1–2 分钟内未收到，请检查垃圾短信，或换一台手机再试',
@@ -269,7 +269,7 @@ const KL = {
     camHint: 'A photo is taken when you punch', resPhoto: '📷 Photo saved',
     lblScan: 'Scan QR', lblForgot: 'Forgot password', lblNewUser: 'New Employee',
     regTitle: '🆕 New Employee Sign-Up',
-    scanHint: 'Hold your QR code up to the camera', scanBadQr: 'Not a valid time-clock QR code', scanNoCam: 'Cannot open camera', scanFlip: 'Switch front/back camera', scanFlipFail: 'Could not switch camera; kept the current one — tap again to retry',
+    scanHint: 'Hold your QR code up to the camera', scanBadQr: 'Not a valid time-clock QR code', scanNoCam: 'Cannot open camera', scanFlip: 'Switch front/back camera', scanFlipFail: 'Could not switch camera — just keep scanning with the current one',
     fpHint: 'Enter your phone number (US: 10 digits; intl: include country code)', fpGo: 'Send',
     fpSent: l4 => 'Your password and QR code were sent to the phone ending in ' + l4,
     fpChecking: '⏳ Confirming delivery…', fpDelivered: '✓ Delivered', fpSlow: 'If nothing arrives within 1–2 minutes, check spam or try again later.',
@@ -290,7 +290,7 @@ const KL = {
     camHint: 'Se toma una foto al marcar', resPhoto: '📷 Foto guardada',
     lblScan: 'Escanear QR', lblForgot: 'Olvidé mi contraseña', lblNewUser: 'Nuevo Empleado',
     regTitle: '🆕 Registro de Nuevo Empleado',
-    scanHint: 'Acerque su código QR a la cámara', scanBadQr: 'Código QR no válido', scanNoCam: 'No se puede abrir la cámara', scanFlip: 'Cambiar cámara frontal/trasera', scanFlipFail: 'No se pudo cambiar la cámara; se mantuvo la actual — toque otra vez para reintentar',
+    scanHint: 'Acerque su código QR a la cámara', scanBadQr: 'Código QR no válido', scanNoCam: 'No se puede abrir la cámara', scanFlip: 'Cambiar cámara frontal/trasera', scanFlipFail: 'No se pudo cambiar la cámara — siga escaneando con la actual',
     fpHint: 'Ingrese su teléfono (EE.UU.: 10 dígitos; internacional: con código de país)', fpGo: 'Enviar',
     fpSent: l4 => 'Su contraseña y código QR fueron enviados al teléfono que termina en ' + l4,
     fpChecking: '⏳ Confirmando entrega…', fpDelivered: '✓ Entregado', fpSlow: 'Si no llega en 1–2 minutos, revise el spam o intente más tarde.',
@@ -530,7 +530,9 @@ function newUserStart() { briteAuto(); _fpMode = 'newuser'; _fp = ''; _fpBusy = 
 // 默认前置('user')；扫码屏可切到后置('environment')，选择记 localStorage 跨重启保留。
 // 平板通常前后不能同时开，切换=停旧流开新流；扫码抓拍共用这一路流。
 let _camStream = null, _camStarting = null, _imageCapture = null, _camFacing = 'user';
-try { const cf = localStorage.getItem('kiosk_cam'); if (cf === 'user' || cf === 'environment') _camFacing = cf; } catch (_) {}
+// 常驻/默认摄像头永远前置（打卡抓拍要前置，且前置最可靠）；后置只在扫码时按翻转临时尝试，
+// 不再持久化选择——否则一旦存成后置、而该平板后置打不开，开机就崩。顺手清掉旧的持久化值。
+try { localStorage.removeItem('kiosk_cam'); } catch (_) {}
 const _sleep = ms => new Promise(r => setTimeout(r, ms));
 function _camApply(s, facing) {
   _camStream = s; _camFacing = facing;
@@ -540,26 +542,23 @@ function _camApply(s, facing) {
   try { _imageCapture = ('ImageCapture' in window && tr) ? new ImageCapture(tr) : null; } catch (_) { _imageCapture = null; }
   $('camVid').srcObject = s;
 }
-// 目标朝向的候选约束: 先按设备直接锁定(deviceId, 比 facingMode 可靠), 再退回 facingMode。
-async function _camConstraints(facing) {
-  const list = [{ facingMode: { ideal: facing } }];
-  try {
-    const cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
-    if (cams.length >= 2) {
-      const lab = d => (d.label || '').toLowerCase();
-      const back = /back|rear|environment|world|后/, front = /front|user|face|self|前/;
-      let pick = facing === 'environment' ? cams.find(d => back.test(lab(d))) : cams.find(d => front.test(lab(d)));
-      if (!pick) pick = facing === 'environment' ? cams[cams.length - 1] : cams[0]; // 无标签兜底: 后置常排末位
-      if (pick && pick.deviceId) list.unshift({ deviceId: { exact: pick.deviceId } }); // deviceId 优先
-    }
-  } catch (_) {}
-  return list;
-}
-// 打开目标朝向: 平板前后摄像头释放慢, 按候选约束多次退避重试, 覆盖 NotReadableError 竞态
-async function _camAcquire(facing) {
-  const cands = await _camConstraints(facing);
-  for (const wait of [300, 500, 900, 1300]) {
-    await _sleep(wait);
+// 打开某朝向的摄像头, 返回 stream 或 null。
+// 前置用最朴素可靠的 facingMode:'user'（打卡抓拍/默认全靠它，绝不能出岔）。
+// 后置才做 deviceId 直锁 + facingMode 兜底。退避重试覆盖平板前后释放慢的竞态。
+async function _camGet(facing) {
+  const cands = [{ facingMode: facing === 'environment' ? { ideal: 'environment' } : 'user' }];
+  if (facing === 'environment') {
+    try {
+      const cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+      if (cams.length >= 2) {
+        const lab = d => (d.label || '').toLowerCase();
+        const back = cams.find(d => /back|rear|environment|world|后/.test(lab(d))) || cams[cams.length - 1];
+        if (back && back.deviceId) cands.unshift({ deviceId: { exact: back.deviceId } });
+      }
+    } catch (_) {}
+  }
+  for (const wait of [0, 500, 1000]) {
+    if (wait) await _sleep(wait);
     for (const v of cands) {
       try { return await navigator.mediaDevices.getUserMedia({ video: { ...v, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false }); }
       catch (_) {}
@@ -572,14 +571,17 @@ function camStart(facing) {
   if (_camStream && _camFacing === want) return Promise.resolve();
   if (_camStarting) return _camStarting;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return Promise.resolve();
-  const prevFacing = _camStream ? _camFacing : null;
+  const hadStream = !!_camStream, prevFacing = _camFacing;
   _camStarting = (async () => {
-    // 平板一般不允许前后同时打开: 先停旧流再开新流 (否则安卓常报 NotReadableError)
-    if (_camStream) { try { _camStream.getTracks().forEach(t => t.stop()); } catch (_) {} _camStream = null; _imageCapture = null; }
-    let s = await _camAcquire(want);
-    if (s) { _camApply(s, want); try { localStorage.setItem('kiosk_cam', want); } catch (_) {} return; }
-    // 目标始终打不开: 恢复原来能用的摄像头, 不让打卡机没相机
-    if (prevFacing) { s = await _camAcquire(prevFacing); if (s) { _camApply(s, prevFacing); return; } }
+    // 平板一般不允许前后同时打开: 先停旧流, 等硬件释放, 再开新流 (否则安卓常报 NotReadableError)
+    if (_camStream) { try { _camStream.getTracks().forEach(t => t.stop()); } catch (_) {} _camStream = null; _imageCapture = null; await _sleep(300); }
+    let s = await _camGet(want);
+    if (s) { _camApply(s, want); return; }
+    // 目标打不开: 无条件回到能用的摄像头(优先原朝向, 再退前置), 保证打卡机始终有相机、扫码不停
+    const fb = hadStream ? prevFacing : 'user';
+    s = await _camGet(fb);
+    if (s) { _camApply(s, fb); return; }
+    if (fb !== 'user') { s = await _camGet('user'); if (s) { _camApply(s, 'user'); return; } }
     _camStream = null;
   })().finally(() => { _camStarting = null; });
   return _camStarting;
