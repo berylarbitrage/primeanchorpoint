@@ -206,6 +206,7 @@ function card(k, d, openSet){
           ② 浏览器打开插座自己的设置网页（http://插座IP 或 …local）→ <b>Settings → Outbound WebSocket</b> → 勾 Enable，Server 填：<br>
           <code style="display:block;background:#fff;border:1px solid #bae6fd;border-radius:6px;padding:.35rem .5rem;margin:.3rem 0;word-break:break-all;user-select:all">${esc(d.ws_url || '')}</code>
           <a href="javascript:void(0)" onclick="navigator.clipboard.writeText('${esc(d.ws_url || '')}').then(()=>toast('✅ 已复制'))">📋 复制地址</a>
+          · <a href="javascript:void(0)" onclick="wsSelfTest()" title="用你的浏览器连一次这个地址，验证服务器这头通不通">🧪 测试通道</a>
           · TLS/SSL 选「Disable certificate validation」→ Save<br>
           ③ <b>保存后重启插座</b>（Settings → Device → Reboot，或直接拔电重插）—— 这项配置<b>重启后才生效</b><br>
           ④ 约 20 秒后刷新本页，出现「🔗 插座直连在线」即成功。<b>方式二 · Shelly 云（可选备用）：</b>再填下面 Auth Key / Server。
@@ -274,6 +275,20 @@ async function saveCfg(ev, sid){
 function addSite(){
   const sid = parseInt($('addSel').value);
   if (sid) { _extraSites.add(sid); render(true); const el = $('card-' + sid); if (el) { el.querySelector('details').open = true; el.scrollIntoView({ behavior: 'smooth' }); } }
+}
+
+// 🧪 用浏览器连一次直连地址: 通 = 服务器/域名/证书都没问题, 剩下的只能是插座没连出来
+function wsSelfTest(){
+  if (!_data || !_data.ws_url) return toast('未取得直连地址，先刷新页面');
+  const url = _data.ws_url.replace(/^(wss:\/\/[^/:]+):443\//, '$1/'); // 浏览器侧不需要显式 :443
+  toast('🧪 测试中…');
+  let done = false;
+  try {
+    const w = new WebSocket(url);
+    const t = setTimeout(() => { if (done) return; done = true; try { w.close(); } catch(e){} toast('❌ 通道超时 — 服务器侧不通，把这个结果发给 Claude'); }, 8000);
+    w.onopen = () => { if (done) return; done = true; clearTimeout(t); toast('✅ 直连通道正常（服务器侧 OK）→ 问题在插座没把连接发出来'); setTimeout(() => { try { w.close(); } catch(e){} }, 400); };
+    w.onerror = () => { if (done) return; done = true; clearTimeout(t); toast('❌ 通道不通 — 服务器/域名侧问题，把这个结果发给 Claude'); };
+  } catch (e) { toast('❌ ' + e.message); }
 }
 
 load();
