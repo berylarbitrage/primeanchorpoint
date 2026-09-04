@@ -253,6 +253,8 @@ const KL = {
     fpChecking: '⏳ 正在确认送达…', fpDelivered: '✓ 已确认送达', fpSlow: '如 1–2 分钟内未收到，请检查垃圾短信，或换一台手机再试',
     fpSmsFail: '短信未能送达（该号码可能无法接收短信/彩信），请联系管理员', fpNotFound: '手机号未登记',
     fpRegHint: '用您的手机扫描下方二维码，填写入职申请注册账号，提交后会收到打卡密码', fpOk: '好的',
+    nuHint: '输入手机号，先查一下系统里是否已有您的账号', nuGo: '查询',
+    nuUpdHint: '如需修改姓名 / 证件等资料，可继续填写申请表更新', nuUpdate: '📝 继续更新我的资料',
   },
   en: {
     pwHint: 'Enter your 8-digit clock-in password', clear: 'Clear', cancel: 'Cancel',
@@ -272,6 +274,8 @@ const KL = {
     fpChecking: '⏳ Confirming delivery…', fpDelivered: '✓ Delivered', fpSlow: 'If nothing arrives within 1–2 minutes, check spam or try again later.',
     fpSmsFail: 'Message could not be delivered (this number may not receive SMS/MMS). Please contact a manager.', fpNotFound: 'Phone number not found',
     fpRegHint: 'Scan the QR code below with your phone to register. You will receive your clock-in password after submitting.', fpOk: 'OK',
+    nuHint: "Enter your phone number — we'll check if you already have an account", nuGo: 'Look up',
+    nuUpdHint: 'To update your name / documents, you can fill out the form again', nuUpdate: '📝 Update my info',
   },
   es: {
     pwHint: 'Ingrese su contraseña de 8 dígitos', clear: 'Borrar', cancel: 'Cancelar',
@@ -291,6 +295,8 @@ const KL = {
     fpChecking: '⏳ Confirmando entrega…', fpDelivered: '✓ Entregado', fpSlow: 'Si no llega en 1–2 minutos, revise el spam o intente más tarde.',
     fpSmsFail: 'No se pudo entregar el mensaje (este número quizás no recibe SMS/MMS). Contacte a un gerente.', fpNotFound: 'Teléfono no registrado',
     fpRegHint: 'Escanee el código QR con su teléfono para registrarse. Recibirá su contraseña después de enviar la solicitud.', fpOk: 'OK',
+    nuHint: 'Ingrese su teléfono — verificaremos si ya tiene una cuenta', nuGo: 'Buscar',
+    nuUpdHint: 'Para actualizar su nombre / documentos, puede llenar el formulario otra vez', nuUpdate: '📝 Actualizar mis datos',
   },
 };
 // 服务器返回的错误信息是中文，非中文界面时映射成对应语言
@@ -344,7 +350,7 @@ function setKLang(l) {
   $('lblPunch').textContent = t.btnPunch;
   $('lblScan').textContent = t.lblScan; $('lblForgot').textContent = t.lblForgot; $('lblNewUser').textContent = t.lblNewUser;
   $('scanHint').textContent = t.scanHint; $('btnScanCancel').textContent = t.cancel;
-  $('fpHint').textContent = t.fpHint; $('fpKeyClear').textContent = t.clear; $('btnFpCancel').textContent = t.cancel; $('btnFpGo').textContent = t.fpGo;
+  $('fpHint').textContent = _fpMode === 'newuser' ? t.nuHint : t.fpHint; $('fpKeyClear').textContent = t.clear; $('btnFpCancel').textContent = t.cancel; $('btnFpGo').textContent = _fpMode === 'newuser' ? t.nuGo : t.fpGo;
 }
 
 // ── 扫码打卡: 员工把自己的打卡二维码对准摄像头, 内容等同 8 位密码 ──
@@ -419,9 +425,11 @@ function scanStop(backToPw) {
   if (backToPw) resetToPw();
 }
 
-// ── 忘记密码: 输手机号 → 短信发密码+二维码; 未登记 → 显示注册二维码 ──
-let _fp = '', _fpBusy = false;
-function forgotStart() { briteAuto(); _fp = ''; _fpBusy = false; renderFpNum(); $('fpErr').textContent = ''; showScr('scrForgot'); }
+// ── 忘记密码 / 新员工注册: 都先输手机号查现有档案 ──
+// forgot: 查到发密码+二维码, 查不到显示注册二维码
+// newuser: 查到照样发密码+二维码 + 提供「继续更新资料」按钮, 查不到直接进注册二维码
+let _fp = '', _fpBusy = false, _fpMode = 'forgot';
+function forgotStart() { briteAuto(); _fpMode = 'forgot'; _fp = ''; _fpBusy = false; renderFpNum(); $('fpErr').textContent = ''; const t = KL[_kl]; $('fpHint').textContent = t.fpHint; $('btnFpGo').textContent = t.fpGo; showScr('scrForgot'); }
 function renderFpNum() {
   const el = $('fpNum');
   el.textContent = _fp || '···';
@@ -443,7 +451,10 @@ async function fpSubmit() {
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || KL[_kl].errReq);
     _fpBusy = false; $('fpErr').textContent = '';
-    if (d.found) showFResFound(d); else showFResRegister();
+    // 查到 → 结果卡(newuser 模式多一个「更新资料」按钮); 查不到 → 注册二维码
+    if (d.found) showFResFound(d);
+    else if (_fpMode === 'newuser') showRegisterQr(KL[_kl].regTitle);
+    else showFResRegister();
   } catch (e) {
     _fpBusy = false; _fp = ''; renderFpNum();
     $('fpErr').textContent = xerr(e.message);
@@ -456,6 +467,8 @@ function showFResFound(d) {
     ${d.sms_sent ? `<div class="res-time" style="margin-top:.6rem">${t.fpSent(d.phone_last4 || '')}</div>` : ''}
     <div id="fpDlv" class="res-time" style="margin-top:.3rem;font-size:.85rem;opacity:.8">${d.track ? t.fpChecking : ''}</div>
     ${d.sms_sent ? '' : `<div class="pw-err" style="margin-top:.6rem">${t.fpSmsFail}</div>`}
+    ${_fpMode === 'newuser' ? `<div class="res-time" style="margin-top:.7rem;font-size:.82rem;opacity:.85">${t.nuUpdHint}</div>
+      <button onclick="showRegisterQr(KL[_kl].regTitle)" style="width:100%;margin-top:.5rem;border:none;border-radius:12px;background:#1A3F7A;color:#fff;font-size:1rem;font-weight:800;padding:.85rem;cursor:pointer;font-family:inherit">${t.nuUpdate}</button>` : ''}
     <button class="act-cancel" onclick="resetToPw()">${t.fpOk}</button>`;
   showScr('scrFRes');
   clearTimeout(_resTimer); _resTimer = setTimeout(resetToPw, 60000);
@@ -508,7 +521,8 @@ async function showRegisterQr(title) {
   } catch (_) { $('regQrBox').textContent = '⚠'; }
 }
 function showFResRegister() { return showRegisterQr(KL[_kl].fpNotFound); }
-function newUserStart() { return showRegisterQr(KL[_kl].regTitle); }
+// 新员工注册: 先输手机号查现有档案 (查到→发密码+二维码并可更新资料; 查不到→注册)
+function newUserStart() { briteAuto(); _fpMode = 'newuser'; _fp = ''; _fpBusy = false; renderFpNum(); $('fpErr').textContent = ''; const t = KL[_kl]; $('fpHint').textContent = t.nuHint; $('btnFpGo').textContent = t.nuGo; showScr('scrForgot'); }
 
 // ── 前置摄像头：页面打开即常驻（装机时授权一次），打卡瞬间抓一帧随打卡上传 ──
 let _camStream = null, _camStarting = null, _imageCapture = null;
