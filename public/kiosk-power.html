@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="robots" content="noindex, nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>打卡机电源管理 · Prime Anchor Point</title>
+<link rel="icon" href="/logo.svg">
+<style>
+:root{--blue:#1A3F7A;--sky:#29AAE1;--green:#059669;--red:#dc2626;--amber:#d97706;--gray-50:#f8fafc;--gray-100:#f1f5f9;--gray-200:#e2e8f0;--gray-400:#94a3b8;--gray-500:#64748b;--gray-600:#475569;--gray-800:#1e293b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif;background:#eef2f7;color:var(--gray-800);min-height:100vh}
+.wrap{max-width:860px;margin:0 auto;padding:1.2rem 1rem 3rem}
+.head{display:flex;align-items:center;gap:.8rem;padding:1rem 0 .6rem}
+.head img{height:52px}
+.head h1{font-size:1.15rem;color:var(--blue)}
+.head p{font-size:.8rem;color:var(--gray-500);margin-top:.15rem}
+.head .sp{flex:1}
+.head a{font-size:.8rem;color:var(--sky);text-decoration:none}
+.intro{font-size:.8rem;color:var(--gray-500);line-height:1.7;background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:.7rem .9rem;margin-bottom:1rem}
+.intro b{color:var(--gray-600)}
+.login-tip{display:none;text-align:center;padding:1rem;font-size:.9rem;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;margin-bottom:1rem}
+.login-tip a{color:var(--blue);font-weight:700}
+.card{background:#fff;border-radius:12px;padding:1rem 1.1rem;box-shadow:0 2px 10px rgba(15,23,42,.06);margin-bottom:1rem}
+.card h2{font-size:1rem;color:var(--blue);display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+.chip{font-size:.7rem;font-weight:600;padding:.12rem .55rem;border-radius:99px;border:1px solid var(--gray-200);background:var(--gray-50);color:var(--gray-500)}
+.chip.on{background:#ecfdf5;color:#065f46;border-color:#6ee7b7}
+.chip.off{background:var(--gray-100);color:var(--gray-600)}
+.chip.warn{background:#fffbeb;color:#b45309;border-color:#fde68a}
+.chip.err{background:#fef2f2;color:#b91c1c;border-color:#fca5a5}
+.batrow{display:flex;align-items:center;gap:.8rem;margin:.7rem 0 .3rem}
+.batbar{flex:1;height:18px;background:var(--gray-100);border-radius:99px;overflow:hidden;position:relative}
+.batbar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#34d399,#059669);transition:width .4s}
+.batbar i.low{background:linear-gradient(90deg,#fbbf24,#d97706)}
+.batbar i.crit{background:linear-gradient(90deg,#f87171,#dc2626)}
+.batpct{font-size:1.25rem;font-weight:800;color:var(--blue);min-width:4.2rem;text-align:right}
+.meta{font-size:.78rem;color:var(--gray-500);margin-top:.2rem;line-height:1.6}
+.meta b{color:var(--gray-700, #334155);font-weight:600}
+.actions{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.7rem}
+.actions button{padding:.45rem .9rem;border-radius:8px;border:1px solid var(--gray-200);background:var(--gray-50);color:var(--gray-600);font-size:.8rem;font-weight:600;cursor:pointer}
+.actions button:hover{background:var(--gray-100)}
+.actions button:disabled{opacity:.5;cursor:default}
+.actions .primary{background:var(--blue);border-color:var(--blue);color:#fff}
+.actions .primary:hover{background:#16305d}
+.actrs{font-size:.78rem;margin-top:.45rem;min-height:1em}
+.actrs.ok{color:var(--green)}
+.actrs.err{color:var(--red)}
+details{margin-top:.8rem;border-top:1px dashed var(--gray-200);padding-top:.6rem}
+details summary{cursor:pointer;font-size:.82rem;font-weight:700;color:var(--gray-600);user-select:none}
+.cfgform{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.6rem .8rem;margin-top:.7rem}
+.cfgform label{font-size:.72rem;color:var(--gray-500);display:block}
+.cfgform label b{display:block;color:var(--gray-600);margin-bottom:.2rem;font-size:.75rem}
+.cfgform input,.cfgform select{width:100%;padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem;outline:none;background:#fff}
+.cfgform input:focus,.cfgform select:focus{border-color:var(--sky)}
+.cfgnote{grid-column:1/-1;font-size:.72rem;color:var(--gray-400);line-height:1.6}
+.days{margin-top:.6rem}
+.dayrow{display:flex;align-items:center;gap:.6rem;font-size:.76rem;color:var(--gray-600);margin-top:.25rem}
+.dayrow .d{min-width:4.6rem;color:var(--gray-500)}
+.dayrow .bar{flex:1;height:12px;background:var(--gray-100);border-radius:99px;overflow:hidden}
+.dayrow .bar i{display:block;height:100%;background:var(--sky);border-radius:99px}
+.dayrow .v{min-width:9.5rem;text-align:right;font-variant-numeric:tabular-nums}
+.evs{list-style:none;margin-top:.55rem;font-size:.75rem;color:var(--gray-600)}
+.evs li{padding:.28rem 0;border-bottom:1px dashed var(--gray-100);display:flex;gap:.6rem;flex-wrap:wrap}
+.evs .t{color:var(--gray-400);min-width:8.5rem;font-variant-numeric:tabular-nums}
+.evs .e{font-weight:700;min-width:7em}
+.evs .e.on{color:var(--green)} .evs .e.off{color:var(--gray-500)}
+.evs .e.warn{color:var(--amber)} .evs .e.err{color:var(--red)}
+.addrow{display:flex;gap:.6rem;align-items:center;margin:1.2rem 0}
+.addrow select{flex:1;max-width:320px;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem}
+.addrow button{padding:.5rem 1rem;border-radius:8px;border:none;background:var(--sky);color:#fff;font-weight:700;font-size:.85rem;cursor:pointer}
+.empty{text-align:center;color:var(--gray-400);font-size:.85rem;padding:2rem 0}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--gray-800);color:#fff;font-size:.85rem;padding:.6rem 1.1rem;border-radius:99px;opacity:0;pointer-events:none;transition:opacity .3s;z-index:50}
+.toast.show{opacity:.95}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <img src="/logo.svg" alt="logo">
+    <div>
+      <h1>🔋 打卡机电源管理</h1>
+      <p>Kiosk 平板电量监控 &amp; Shelly 智能插座自动充电</p>
+    </div>
+    <div class="sp"></div>
+    <a href="/admin">← 返回管理后台</a>
+  </div>
+
+  <div class="login-tip" id="loginTip">请先在 <a href="/admin" target="_blank">管理后台</a> 登录，然后刷新本页。</div>
+
+  <div class="intro" id="intro" style="display:none">
+    充电策略：电量 ≤ <b id="iOn">70</b>% 自动通电充、≥ <b id="iOff">80</b>% 自动断电停，平板长期保持在健康区间，避免整天满电插着伤电池；
+    每周校准日凌晨 0–9 点满充一次校准电量计；平板超过 <b id="iStale">12</b> 分钟没上报（死机/断网/没电）时<b>无条件通电兜底</b>，保证打卡机不停摆。
+    充电时长完全由实际耗电决定，不需要人工定时。
+  </div>
+
+  <div id="list"><div class="empty">加载中…</div></div>
+
+  <div class="addrow" id="addRow" style="display:none">
+    <select id="addSel"></select>
+    <button onclick="addSite()">＋ 为该仓库配置插座</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const DOW = ['周日','周一','周二','周三','周四','周五','周六'];
+const EV = {
+  on:['自动通电','on'], off:['自动断电','off'], 'stale-on':['失联兜底通电','warn'],
+  'resend-on':['确认重发通电','warn'], 'adopt-on':['接管现场手动开启','warn'],
+  'manual-on':['手动通电','on'], 'manual-off':['手动断电','off'],
+  fault:['⚠️ 故障','err'], error:['命令失败','err'], config:['配置更新','off'],
+};
+let _data = null, _extraSites = new Set(); // 手动展开配置卡片的无数据仓库
+
+function esc(s){ return String(s == null ? '' : s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
+function utcFmt(ts){ if(!ts) return ''; const d = new Date(String(ts).replace(' ','T') + (String(ts).endsWith('Z')?'':'Z')); return isNaN(d) ? ts : d.toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}); }
+function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2600); }
+
+async function load(keepOpen){
+  let d;
+  try {
+    const r = await fetch('/api/admin/kiosk-battery', { credentials: 'same-origin' });
+    if (r.status === 401) { $('loginTip').style.display = 'block'; $('list').innerHTML = ''; return; }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    d = await r.json();
+  } catch (e) { $('list').innerHTML = '<div class="empty">加载失败: ' + esc(e.message) + '</div>'; return; }
+  $('loginTip').style.display = 'none';
+  _data = d;
+  $('iOn').textContent = d.defaults.on_below; $('iOff').textContent = d.defaults.off_above; $('iStale').textContent = d.defaults.stale_min;
+  $('intro').style.display = 'block';
+  render(keepOpen);
+}
+
+function render(keepOpen){
+  const d = _data;
+  const openSet = new Set(); // 保持已展开的 details 状态, 自动刷新不打断编辑
+  if (keepOpen) document.querySelectorAll('#list details[open]').forEach(el => openSet.add(el.dataset.k));
+  const shown = new Set(d.kiosks.map(k => k.site_id));
+  const cards = d.kiosks.slice();
+  for (const sid of _extraSites) {
+    if (shown.has(sid)) continue;
+    const s = d.sites.find(x => x.id === sid);
+    if (s) cards.push({ site_id: s.id, site_name: s.name, level: null, charging: null, plug_state: '', updated_at: null, stale_min: null,
+      plug_configured: false, cfg: { mode:'auto', on_below:d.defaults.on_below, off_above:d.defaults.off_above, full_charge_dow:0, device_id:'', server:'', has_auth_key:false, uses_env:false }, days: [], events: [] });
+  }
+  $('list').innerHTML = cards.length ? cards.map(k => card(k, d, openSet)).join('') : '<div class="empty">还没有任何打卡平板上报过电量。<br>在平板 Chrome 打开打卡页并选好仓库后，这里会自动出现。</div>';
+  // 配置下拉: 未展示的仓库
+  const rest = d.sites.filter(s => !shown.has(s.id) && !_extraSites.has(s.id));
+  $('addRow').style.display = rest.length ? 'flex' : 'none';
+  $('addSel').innerHTML = rest.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+}
+
+function card(k, d, openSet){
+  const lv = k.level, cfg = k.cfg;
+  const stale = k.stale_min != null && k.stale_min > d.defaults.stale_min;
+  const lvCls = lv == null ? '' : lv <= 20 ? 'crit' : lv <= cfg.on_below ? 'low' : '';
+  // 状态徽章
+  let chips = '';
+  if (k.charging) chips += '<span class="chip on">⚡ 充电中</span>';
+  else if (lv != null) chips += '<span class="chip off">未充电</span>';
+  if (k.plug_state === 'on') chips += '<span class="chip on">插座:通电</span>';
+  else if (k.plug_state === 'off') chips += '<span class="chip off">插座:断电</span>';
+  if (!k.plug_configured) chips += '<span class="chip warn">未配置插座 — 只记录电量</span>';
+  else if (cfg.uses_env) chips += '<span class="chip">用全局 env 配置</span>';
+  if (cfg.mode === 'on') chips += '<span class="chip warn">强制通电模式</span>';
+  if (cfg.mode === 'off') chips += '<span class="chip err">强制断电模式</span>';
+  if (stale) chips += `<span class="chip err">⚠️ ${k.stale_min >= 99999 ? '' : k.stale_min + ' 分钟'}未上报${k.plug_configured && cfg.mode !== 'off' ? (k.plug_state === 'on' ? ' — 已兜底通电' : ' — 将自动兜底通电') : ''}</span>`;
+  else if (k.plug_state === 'on' && k.charging === 0 && lv != null) chips += '<span class="chip warn">⚠️ 已通电但未在充电，检查充电线</span>';
+
+  const batHtml = lv == null
+    ? '<div class="meta">平板还没上报过电量 — 需在平板 Chrome 打开打卡页（安卓支持电量上报）</div>'
+    : `<div class="batrow"><div class="batbar"><i class="${lvCls}" style="width:${lv}%"></i></div><div class="batpct">${lv}%${k.charging ? '⚡' : ''}</div></div>
+       <div class="meta">最近上报: <b>${k.stale_min <= 1 ? '刚刚' : k.stale_min + ' 分钟前'}</b> · 充电区间 <b>${cfg.on_below}–${cfg.off_above}%</b> · 满充校准: <b>${cfg.full_charge_dow < 0 ? '关闭' : '每' + DOW[cfg.full_charge_dow] + '凌晨'}</b></div>`;
+
+  const maxMin = Math.max(240, ...k.days.map(x => x.charge_min || 0));
+  const daysHtml = k.days.length ? `<div class="days">${k.days.map(x => `
+    <div class="dayrow"><span class="d">${esc(x.day.slice(5))}</span>
+      <span class="bar"><i style="width:${Math.min(100, (x.charge_min || 0) / maxMin * 100)}%"></i></span>
+      <span class="v">${x.charge_min || 0} 分钟 · ${x.min_level}–${x.max_level}%</span></div>`).join('')}</div>`
+    : '<div class="meta" style="margin-top:.5rem">暂无充电统计</div>';
+
+  const evsHtml = k.events.length ? `<ul class="evs">${k.events.map(e => {
+    const m = EV[e.event] || [e.event, 'off'];
+    return `<li><span class="t">${utcFmt(e.ts)}</span><span class="e ${m[1]}">${m[0]}</span><span>${e.level != null ? e.level + '%' : ''} ${esc(e.note)}</span></li>`;
+  }).join('')}</ul>` : '<div class="meta" style="margin-top:.5rem">暂无事件</div>';
+
+  const sid = k.site_id;
+  const dowOpts = [-1,0,1,2,3,4,5,6].map(v => `<option value="${v}" ${cfg.full_charge_dow === v ? 'selected' : ''}>${v < 0 ? '关闭' : '每' + DOW[v]}</option>`).join('');
+  return `<div class="card" id="card-${sid}">
+    <h2>🏭 ${esc(k.site_name || ('仓库 #' + sid))} ${chips}</h2>
+    ${batHtml}
+    <div class="actions">
+      <button onclick="plugAct(${sid},'status',this)">🔍 查插座状态</button>
+      <button onclick="plugAct(${sid},'on',this)">🔌 通电</button>
+      <button onclick="plugAct(${sid},'off',this)">⏹ 断电</button>
+    </div>
+    <div class="actrs" id="actrs-${sid}"></div>
+    <details data-k="cfg-${sid}" ${openSet.has('cfg-' + sid) ? 'open' : ''}><summary>⚙️ 插座配置</summary>
+      <form class="cfgform" onsubmit="return saveCfg(event,${sid})">
+        <label><b>Shelly Device ID</b><input name="device_id" value="${esc(cfg.device_id)}" placeholder="${d.env_configured ? '留空 = 用全局 env' : 'Shelly App → 设备设置 → Device ID'}"></label>
+        <label><b>Auth Key</b><input name="auth_key" type="password" value="${cfg.has_auth_key ? '__keep__' : ''}" placeholder="${cfg.has_auth_key ? '已保存 (改动才需重填)' : d.env_configured ? '留空 = 用全局 env' : 'control.shelly.cloud → Settings → Auth key'}"></label>
+        <label><b>Cloud Server</b><input name="server" value="${esc(cfg.server)}" placeholder="${d.env_configured ? '留空 = 用全局 env' : '如 shelly-73-eu.shelly.cloud'}"></label>
+        <label><b>模式</b><select name="mode">
+          <option value="auto" ${cfg.mode === 'auto' ? 'selected' : ''}>自动（按电量充/停）</option>
+          <option value="on" ${cfg.mode === 'on' ? 'selected' : ''}>强制一直通电</option>
+          <option value="off" ${cfg.mode === 'off' ? 'selected' : ''}>强制一直断电（维修用）</option>
+        </select></label>
+        <label><b>开充下限 %</b><input name="on_below" type="number" min="20" max="90" value="${cfg.on_below}" placeholder="${d.defaults.on_below}"></label>
+        <label><b>停充上限 %</b><input name="off_above" type="number" min="40" max="100" value="${cfg.off_above}" placeholder="${d.defaults.off_above}"></label>
+        <label><b>每周满充校准日</b><select name="full_charge_dow">${dowOpts}</select></label>
+        <div class="cfgnote">Auth Key / Server 在 <b>control.shelly.cloud → 右上角 Settings → Authorization cloud key</b> 获取；Device ID 在 Shelly App 设备设置里。保存后 2 分钟内生效。</div>
+        <div class="actions" style="grid-column:1/-1;margin-top:0"><button class="primary" type="submit">💾 保存配置</button></div>
+      </form>
+    </details>
+    <details data-k="ev-${sid}" ${openSet.has('ev-' + sid) ? 'open' : ''}><summary>📜 最近事件 &amp; 近 7 天充电时长</summary>
+      ${daysHtml}${evsHtml}
+    </details>
+  </div>`;
+}
+
+async function plugAct(sid, action, btn){
+  const out = $('actrs-' + sid);
+  btn.disabled = true; out.className = 'actrs'; out.textContent = '…';
+  try {
+    const r = await fetch('/api/admin/kiosk-plug-toggle', { method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ site_id: sid, action }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
+    if (action === 'status') {
+      const s = d.status || {};
+      out.className = 'actrs ok';
+      out.textContent = s.online === false ? '⚠️ 插座离线（检查插座 WiFi）'
+        : `插座在线 · 输出: ${s.output ? '通电' : '断电'}${s.power != null ? ' · 实时功率 ' + s.power + ' W' : ''}`;
+    } else {
+      out.className = 'actrs ok';
+      out.textContent = (action === 'on' ? '✅ 已通电' : '✅ 已断电') + '（自动模式下几分钟内会按电量恢复接管）';
+      setTimeout(() => load(true), 4000);
+    }
+  } catch (e) { out.className = 'actrs err'; out.textContent = '❌ ' + e.message; }
+  btn.disabled = false;
+}
+
+async function saveCfg(ev, sid){
+  ev.preventDefault();
+  const f = ev.target, body = { site_id: sid };
+  for (const el of f.elements) if (el.name) body[el.name] = el.value.trim();
+  try {
+    const r = await fetch('/api/admin/kiosk-plug', { method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
+    toast('✅ 配置已保存');
+    load(true);
+  } catch (e) { toast('❌ ' + e.message); }
+  return false;
+}
+
+function addSite(){
+  const sid = parseInt($('addSel').value);
+  if (sid) { _extraSites.add(sid); render(true); const el = $('card-' + sid); if (el) { el.querySelector('details').open = true; el.scrollIntoView({ behavior: 'smooth' }); } }
+}
+
+load();
+setInterval(() => { // 自动刷新; 正在填配置表单时跳过, 不打断输入
+  if (document.activeElement && document.activeElement.closest && document.activeElement.closest('.cfgform')) return;
+  load(true);
+}, 60000);
+</script>
+</body>
+</html>

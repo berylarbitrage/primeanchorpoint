@@ -28365,11 +28365,12 @@ app.get('/my-qr', async (req, res) => {
 </body></html>`);
 });
 
-// ── 打卡平板电池管理: 打卡页每 2 分钟上报电量, 服务器按滞回阈值控制智能插座 ──
-// 长期插电的平板不宜一直满电: 低于 KIOSK_CHARGE_ON_BELOW(默认70)% 通电充,
-// 高于 KIOSK_CHARGE_OFF_ABOVE(默认80)% 断电停, 电池大部分时间保持在 70-80%。
-// 插座驱动: Shelly Cloud (env: SHELLY_AUTH_KEY / SHELLY_DEVICE_ID / SHELLY_SERVER)。
-// 未配置插座时只记录电量, 便于后台查看。
+// ── 🔋 打卡平板电池管理: 打卡页每 2 分钟上报电量, 服务器按滞回阈值控制 Shelly 智能插座 ──
+// 长期插电的平板不宜一直满电(电池鼓包/寿命衰减): 电量 ≤下限(默认70%) 通电充, ≥上限(默认80%) 断电,
+// 全天保持在 70-80% 区间, 充多久完全由实际耗电决定; 每周一天凌晨满充到 100% 校准电量计(可关)。
+// 兜底: 平板超过 KIOSK_STALE_MIN(默认12) 分钟没上报(死机/断网/没电) → 无条件通电, 宁可充满不能让打卡机停摆。
+// 插座驱动: Shelly Cloud v1 API。全局默认取 env (SHELLY_AUTH_KEY / SHELLY_DEVICE_ID / SHELLY_SERVER),
+// 每仓库可在 /kiosk-power 页单独配置(多仓库多插座时必须按仓库配)。未配置插座时只记录电量。
 db.exec(`CREATE TABLE IF NOT EXISTS kiosk_battery (
   site_id INTEGER PRIMARY KEY,
   level INTEGER DEFAULT 0,
@@ -28377,22 +28378,120 @@ db.exec(`CREATE TABLE IF NOT EXISTS kiosk_battery (
   plug_state TEXT DEFAULT '',
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
+try { db.exec('ALTER TABLE kiosk_battery ADD COLUMN plug_cmd_at DATETIME'); } catch (e) {}
+db.exec(`CREATE TABLE IF NOT EXISTS kiosk_plugs (
+  site_id INTEGER PRIMARY KEY,
+  device_id TEXT DEFAULT '',
+  auth_key TEXT DEFAULT '',
+  server TEXT DEFAULT '',
+  mode TEXT DEFAULT 'auto',
+  on_below INTEGER,
+  off_above INTEGER,
+  full_charge_dow INTEGER DEFAULT 0,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS kiosk_charge_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  site_id INTEGER,
+  ts DATETIME DEFAULT CURRENT_TIMESTAMP,
+  event TEXT,
+  level INTEGER,
+  note TEXT DEFAULT ''
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_kiosk_charge_log_site ON kiosk_charge_log(site_id, id)');
+db.exec(`CREATE TABLE IF NOT EXISTS kiosk_charge_stats (
+  site_id INTEGER,
+  day TEXT,
+  charge_min REAL DEFAULT 0,
+  reports INTEGER DEFAULT 0,
+  min_level INTEGER,
+  max_level INTEGER,
+  PRIMARY KEY (site_id, day)
+)`);
 const KIOSK_CHARGE_ON_BELOW = parseInt(process.env.KIOSK_CHARGE_ON_BELOW || '70');
 const KIOSK_CHARGE_OFF_ABOVE = parseInt(process.env.KIOSK_CHARGE_OFF_ABOVE || '80');
-function _plugConfigured() { return !!(process.env.SHELLY_AUTH_KEY && process.env.SHELLY_DEVICE_ID && process.env.SHELLY_SERVER); }
-async function _plugSet(turnOn) {
-  const server = String(process.env.SHELLY_SERVER || '');
-  const base = /^https?:\/\//i.test(server) ? server : 'https://' + server;
-  const body = new URLSearchParams({
-    auth_key: process.env.SHELLY_AUTH_KEY, id: process.env.SHELLY_DEVICE_ID,
-    channel: '0', turn: turnOn ? 'on' : 'off',
-  });
-  const r = await fetch(base.replace(/\/+$/, '') + '/device/relay/control', {
+const KIOSK_STALE_MIN = parseInt(process.env.KIOSK_STALE_MIN || '12');
+
+// 某仓库的插座配置: kiosk_plugs 行优先, 空字段回落到全局 env
+function _plugCfg(siteId) {
+  const row = db.prepare('SELECT * FROM kiosk_plugs WHERE site_id=?').get(siteId) || {};
+  const device_id = String(row.device_id || process.env.SHELLY_DEVICE_ID || '').trim();
+  const auth_key = String(row.auth_key || process.env.SHELLY_AUTH_KEY || '').trim();
+  const server = String(row.server || process.env.SHELLY_SERVER || '').trim();
+  return {
+    configured: !!(device_id && auth_key && server), device_id, auth_key, server,
+    mode: ['auto', 'on', 'off'].includes(row.mode) ? row.mode : 'auto',
+    on_below: row.on_below == null ? KIOSK_CHARGE_ON_BELOW : row.on_below,
+    off_above: row.off_above == null ? KIOSK_CHARGE_OFF_ABOVE : row.off_above,
+    full_charge_dow: row.full_charge_dow == null ? 0 : row.full_charge_dow,
+  };
+}
+// Shelly Cloud v1 API 调用 (开关控制与状态查询共用)
+async function _plugCall(cfg, apiPath, extra) {
+  const base = (/^https?:\/\//i.test(cfg.server) ? cfg.server : 'https://' + cfg.server).replace(/\/+$/, '');
+  const body = new URLSearchParams({ auth_key: cfg.auth_key, id: cfg.device_id, ...extra });
+  const r = await fetch(base + apiPath, {
     method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString(),
   });
-  if (!r.ok) throw new Error('plug HTTP ' + r.status);
-  return true;
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || d.isok === false) throw new Error('Shelly HTTP ' + r.status + ' ' + JSON.stringify(d.errors || '').slice(0, 160));
+  return d;
 }
+function _plugSet(cfg, turnOn) { return _plugCall(cfg, '/device/relay/control', { channel: '0', turn: turnOn ? 'on' : 'off' }); }
+async function _plugStatus(cfg) { // Gen1(relays/meters) 与 Gen2+("switch:0") 字段都兼容
+  const d = await _plugCall(cfg, '/device/status', {});
+  const s = (d.data && d.data.device_status) || {};
+  const sw = s['switch:0'];
+  return {
+    online: !!(d.data && d.data.online),
+    output: sw ? !!sw.output : !!(s.relays && s.relays[0] && s.relays[0].ison),
+    power: sw ? (sw.apower != null ? sw.apower : null) : (s.meters && s.meters[0] && s.meters[0].power != null ? s.meters[0].power : null),
+  };
+}
+function _chargeLog(siteId, event, level, note) {
+  try { db.prepare('INSERT INTO kiosk_charge_log (site_id, event, level, note) VALUES (?,?,?,?)').run(siteId, event, level == null ? null : level, note || ''); } catch (e) {}
+}
+// 发通/断电命令并记录; 成功后把「最后命令状态/时间」落到 kiosk_battery
+async function _plugCommand(siteId, turnOn, event, level, note) {
+  const cfg = _plugCfg(siteId);
+  if (!cfg.configured) return false;
+  try {
+    await _plugSet(cfg, turnOn);
+    db.prepare(`INSERT INTO kiosk_battery (site_id, plug_state, plug_cmd_at) VALUES (?,?,CURRENT_TIMESTAMP)
+      ON CONFLICT(site_id) DO UPDATE SET plug_state=excluded.plug_state, plug_cmd_at=CURRENT_TIMESTAMP`)
+      .run(siteId, turnOn ? 'on' : 'off');
+    _chargeLog(siteId, event || (turnOn ? 'on' : 'off'), level, note);
+    console.log(`[KioskPlug] site ${siteId} → ${turnOn ? 'ON' : 'OFF'} (${event}${note ? ': ' + note : ''})`);
+    return true;
+  } catch (e) {
+    _chargeLog(siteId, 'error', level, ((turnOn ? '通电' : '断电') + '命令失败: ' + e.message).slice(0, 160));
+    console.error(`[KioskPlug] site ${siteId} command failed:`, e.message);
+    return false;
+  }
+}
+// 仓库当地 日期/星期几(0=周日)/小时
+function _siteLocalNow(siteId) {
+  const tz = ((db.prepare('SELECT timezone FROM job_sites WHERE id=?').get(siteId) || {}).timezone) || 'America/Chicago';
+  const now = new Date();
+  return {
+    tz,
+    day: now.toLocaleDateString('en-CA', { timeZone: tz }),
+    dow: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(now.toLocaleDateString('en-US', { timeZone: tz, weekday: 'short' })),
+    hour: parseInt(now.toLocaleString('en-US', { timeZone: tz, hour: 'numeric', hourCycle: 'h23' })),
+  };
+}
+// 自动模式决策: ≤下限 → on, ≥上限 → off, 区间内 null=维持现状(滞回防频繁开关);
+// 满充校准日(仓库当地)凌晨 0-9 点持续通电充到 100%, 9 点起恢复正常区间自然停充。
+function _plugDecide(cfg, level, loc) {
+  if (cfg.mode === 'on') return 'on';
+  if (cfg.mode === 'off') return 'off';
+  if (cfg.full_charge_dow >= 0 && loc.dow === cfg.full_charge_dow && loc.hour < 9) return 'on';
+  if (level <= cfg.on_below) return 'on';
+  if (level >= cfg.off_above) return 'off';
+  return null;
+}
+const _plugNoCharge = new Map(); // site_id → 「已通电但没在充」连续观察次数 (进程内)
+
 // 打卡页上报电量 (无登录态; 只接受有效仓库, 数据无敏感性)
 app.post('/api/kiosk/battery', async (req, res) => {
   try {
@@ -28401,37 +28500,170 @@ app.post('/api/kiosk/battery', async (req, res) => {
     const level = Math.max(0, Math.min(100, parseInt(b.level)));
     if (!siteId || !Number.isFinite(level)) return res.status(400).json({ error: 'bad params' });
     if (!db.prepare('SELECT id FROM job_sites WHERE id=? AND active=1').get(siteId)) return res.status(404).json({ error: 'site not found' });
-    const prev = db.prepare('SELECT plug_state FROM kiosk_battery WHERE site_id=?').get(siteId);
-    let plugState = (prev && prev.plug_state) || '';
-    if (_plugConfigured()) {
-      // 滞回: 低于下限开充电, 高于上限停; 区间内维持原状, 避免频繁开关
-      let want = null;
-      if (level <= KIOSK_CHARGE_ON_BELOW) want = 'on';
-      else if (level >= KIOSK_CHARGE_OFF_ABOVE) want = 'off';
+    const charging = b.charging ? 1 : 0;
+    const prev = db.prepare('SELECT plug_state, plug_cmd_at, updated_at FROM kiosk_battery WHERE site_id=?').get(siteId) || {};
+    const loc = _siteLocalNow(siteId);
+
+    // 每日充电时长统计: 上次上报→现在这段时间在充电就累计 (单段最多计 5 分钟, 断报后不虚增)
+    const prevAt = prev.updated_at ? _utcEntryDate(prev.updated_at) : null;
+    const elapsedMin = prevAt ? Math.max(0, Math.min(5, (Date.now() - prevAt.getTime()) / 60000)) : 0;
+    db.prepare(`INSERT INTO kiosk_charge_stats (site_id, day, charge_min, reports, min_level, max_level) VALUES (?,?,?,1,?,?)
+      ON CONFLICT(site_id, day) DO UPDATE SET charge_min=charge_min+excluded.charge_min, reports=reports+1,
+        min_level=MIN(min_level, excluded.min_level), max_level=MAX(max_level, excluded.max_level)`)
+      .run(siteId, loc.day, charging ? elapsedMin : 0, level, level);
+    db.prepare(`INSERT INTO kiosk_battery (site_id, level, charging, updated_at) VALUES (?,?,?,CURRENT_TIMESTAMP)
+      ON CONFLICT(site_id) DO UPDATE SET level=excluded.level, charging=excluded.charging, updated_at=CURRENT_TIMESTAMP`)
+      .run(siteId, level, charging);
+
+    const cfg = _plugCfg(siteId);
+    let plugState = prev.plug_state || '';
+    if (cfg.configured) {
+      if (charging) _plugNoCharge.delete(siteId);
+      if (!plugState) { // 首次/未知: 以平板是否在充电推定插座现状, 不必先盲发一次命令
+        plugState = charging ? 'on' : 'off';
+        db.prepare('UPDATE kiosk_battery SET plug_state=? WHERE site_id=?').run(plugState, siteId);
+      }
+      const want = _plugDecide(cfg, level, loc);
+      const cmdAgeMin = prev.plug_cmd_at ? (Date.now() - _utcEntryDate(prev.plug_cmd_at).getTime()) / 60000 : 999;
       if (want && want !== plugState) {
-        try {
-          await _plugSet(want === 'on');
-          plugState = want;
-          console.log(`[KioskBattery] site ${siteId} level ${level}% → plug ${want}`);
-        } catch (e) { console.error('[KioskBattery] plug control failed:', e.message); }
+        if (await _plugCommand(siteId, want === 'on', want, level)) plugState = want;
+      } else if (plugState === 'on' && !charging && cmdAgeMin > 5) {
+        // 记录为已通电但平板没在充: 云端丢命令/插座重启/充电线松脱 → 重发几次, 无效则标故障待人工
+        const n = (_plugNoCharge.get(siteId) || 0) + 1;
+        _plugNoCharge.set(siteId, n);
+        if (n <= 3 || n % 15 === 0) await _plugCommand(siteId, true, 'resend-on', level, `已通电但未在充电, 第${n}次确认重发`);
+        if (n === 4) _chargeLog(siteId, 'fault', level, '多次通电仍未充电: 请检查充电器/充电线/插座是否插好');
+      } else if (plugState === 'off' && charging && cmdAgeMin > 5) {
+        if (cfg.mode === 'off') { // 强制断电模式下被现场打开 → 重新断电
+          await _plugCommand(siteId, false, 'off', level, '强制断电模式, 检测到被打开后重新断电');
+        } else { // 有人从 Shelly App/物理按钮打开 → 尊重现场采纳现状, 电量到上限自然会停
+          plugState = 'on';
+          db.prepare('UPDATE kiosk_battery SET plug_state=? WHERE site_id=?').run('on', siteId);
+          _chargeLog(siteId, 'adopt-on', level, '检测到插座被现场手动打开, 按实际状态接管');
+        }
       }
     }
-    db.prepare(`INSERT INTO kiosk_battery (site_id, level, charging, plug_state, updated_at)
-        VALUES (?,?,?,?,CURRENT_TIMESTAMP)
-      ON CONFLICT(site_id) DO UPDATE SET level=excluded.level, charging=excluded.charging,
-        plug_state=excluded.plug_state, updated_at=CURRENT_TIMESTAMP`)
-      .run(siteId, level, b.charging ? 1 : 0, plugState);
     res.json({ success: true, plug_state: plugState || null });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-// 后台查看各打卡平板的电量/插座状态
+
+// 兜底巡检(每 5 分钟): 平板失联 → 无条件通电 (打卡机可用性优先; 强制断电模式除外)。
+// 失联期间已是通电状态的每小时重发一次防云端丢命令。每天顺带清理过期日志。
+let _plugPurgedDay = '';
+async function _plugWatchdog() {
+  try {
+    const rows = db.prepare(`SELECT kb.site_id, kb.level, kb.plug_state, kb.plug_cmd_at, kb.updated_at
+      FROM kiosk_battery kb JOIN job_sites js ON js.id = kb.site_id AND js.active=1`).all();
+    for (const r of rows) {
+      const cfg = _plugCfg(r.site_id);
+      if (!cfg.configured || cfg.mode === 'off') continue;
+      const at = _utcEntryDate(r.updated_at);
+      const staleMin = at ? (Date.now() - at.getTime()) / 60000 : 99999;
+      const cmdAt = r.plug_cmd_at ? _utcEntryDate(r.plug_cmd_at) : null;
+      const cmdAgeMin = cmdAt ? (Date.now() - cmdAt.getTime()) / 60000 : 99999;
+      if (staleMin > KIOSK_STALE_MIN && (r.plug_state !== 'on' || cmdAgeMin > 60)) {
+        await _plugCommand(r.site_id, true, 'stale-on', r.level, `平板 ${Math.round(Math.min(staleMin, 99999))} 分钟未上报电量, 兜底通电`);
+      }
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    if (_plugPurgedDay !== today) {
+      _plugPurgedDay = today;
+      db.prepare(`DELETE FROM kiosk_charge_log WHERE ts < datetime('now', '-60 days')`).run();
+      db.prepare(`DELETE FROM kiosk_charge_stats WHERE day < date('now', '-400 days')`).run();
+    }
+  } catch (e) { console.error('[KioskPlug] watchdog error:', e.message); }
+}
+setInterval(_plugWatchdog, 5 * 60 * 1000);
+
+// 后台: 各打卡平板电量/插座状态/配置 + 近 7 天每日充电时长 + 最近事件
 app.get('/api/admin/kiosk-battery', requireAdmin, (req, res) => {
   try {
-    const rows = db.prepare(`SELECT kb.site_id, js.name AS site_name, kb.level, kb.charging, kb.plug_state, kb.updated_at
+    const rows = db.prepare(`SELECT kb.site_id, js.name AS site_name, js.timezone, kb.level, kb.charging,
+        kb.plug_state, kb.plug_cmd_at, kb.updated_at
       FROM kiosk_battery kb LEFT JOIN job_sites js ON js.id = kb.site_id ORDER BY kb.site_id`).all();
-    res.json({ plug_configured: _plugConfigured(), on_below: KIOSK_CHARGE_ON_BELOW, off_above: KIOSK_CHARGE_OFF_ABOVE, kiosks: rows });
+    const cfgRows = new Map(db.prepare('SELECT * FROM kiosk_plugs').all().map(r => [r.site_id, r]));
+    const seen = new Set(rows.map(r => r.site_id));
+    for (const sid of cfgRows.keys()) { // 配了插座但平板还没上报过的仓库也列出来, 便于装机排查
+      if (seen.has(sid)) continue;
+      const js = db.prepare('SELECT name, timezone FROM job_sites WHERE id=?').get(sid) || {};
+      rows.push({ site_id: sid, site_name: js.name || ('#' + sid), timezone: js.timezone, level: null, charging: null, plug_state: '', plug_cmd_at: null, updated_at: null });
+    }
+    const dayStmt = db.prepare('SELECT day, ROUND(charge_min) AS charge_min, min_level, max_level FROM kiosk_charge_stats WHERE site_id=? ORDER BY day DESC LIMIT 7');
+    const evStmt = db.prepare('SELECT ts, event, level, note FROM kiosk_charge_log WHERE site_id=? ORDER BY id DESC LIMIT 12');
+    const kiosks = rows.map(r => {
+      const cfg = _plugCfg(r.site_id);
+      const raw = cfgRows.get(r.site_id) || {};
+      const at = r.updated_at ? _utcEntryDate(r.updated_at) : null;
+      return {
+        ...r,
+        stale_min: at ? Math.round((Date.now() - at.getTime()) / 60000) : null,
+        plug_configured: cfg.configured,
+        cfg: {
+          mode: cfg.mode, on_below: cfg.on_below, off_above: cfg.off_above, full_charge_dow: cfg.full_charge_dow,
+          device_id: raw.device_id || '', server: raw.server || '', has_auth_key: !!raw.auth_key,
+          uses_env: !String(raw.device_id || '').trim() && !!process.env.SHELLY_DEVICE_ID,
+        },
+        days: dayStmt.all(r.site_id),
+        events: evStmt.all(r.site_id),
+      };
+    });
+    const sites = db.prepare('SELECT id, name FROM job_sites WHERE active=1 ORDER BY name').all();
+    res.json({
+      env_configured: !!(process.env.SHELLY_AUTH_KEY && process.env.SHELLY_DEVICE_ID && process.env.SHELLY_SERVER),
+      defaults: { on_below: KIOSK_CHARGE_ON_BELOW, off_above: KIOSK_CHARGE_OFF_ABOVE, stale_min: KIOSK_STALE_MIN },
+      kiosks, sites,
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// 后台: 保存某仓库的插座配置 (device_id/auth_key/server 留空 = 用全局 env; auth_key 传 __keep__ 表示不改)
+app.post('/api/admin/kiosk-plug', requireAdmin, (req, res) => {
+  try {
+    const b = req.body || {};
+    const siteId = parseInt(b.site_id);
+    if (!siteId || !db.prepare('SELECT id FROM job_sites WHERE id=?').get(siteId)) return res.status(400).json({ error: '仓库无效' });
+    const mode = ['auto', 'on', 'off'].includes(b.mode) ? b.mode : 'auto';
+    const onBelow = b.on_below == null || b.on_below === '' ? null : parseInt(b.on_below);
+    const offAbove = b.off_above == null || b.off_above === '' ? null : parseInt(b.off_above);
+    if (onBelow != null && (!Number.isFinite(onBelow) || onBelow < 20 || onBelow > 90)) return res.status(400).json({ error: '开充下限需在 20-90 之间' });
+    if (offAbove != null && (!Number.isFinite(offAbove) || offAbove < 40 || offAbove > 100)) return res.status(400).json({ error: '停充上限需在 40-100 之间' });
+    const effOn = onBelow == null ? KIOSK_CHARGE_ON_BELOW : onBelow;
+    const effOff = offAbove == null ? KIOSK_CHARGE_OFF_ABOVE : offAbove;
+    if (effOn >= effOff) return res.status(400).json({ error: `开充下限(${effOn}%) 必须低于停充上限(${effOff}%)` });
+    const dow = b.full_charge_dow == null || b.full_charge_dow === '' ? 0 : parseInt(b.full_charge_dow);
+    if (!Number.isFinite(dow) || dow < -1 || dow > 6) return res.status(400).json({ error: '满充校准日需为 -1(关闭) 或 0(周日)-6(周六)' });
+    const prevKey = (db.prepare('SELECT auth_key FROM kiosk_plugs WHERE site_id=?').get(siteId) || {}).auth_key || '';
+    const authKey = b.auth_key === '__keep__' ? prevKey : String(b.auth_key || '').trim();
+    db.prepare(`INSERT INTO kiosk_plugs (site_id, device_id, auth_key, server, mode, on_below, off_above, full_charge_dow, updated_at)
+        VALUES (?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+      ON CONFLICT(site_id) DO UPDATE SET device_id=excluded.device_id, auth_key=excluded.auth_key, server=excluded.server,
+        mode=excluded.mode, on_below=excluded.on_below, off_above=excluded.off_above, full_charge_dow=excluded.full_charge_dow, updated_at=CURRENT_TIMESTAMP`)
+      .run(siteId, String(b.device_id || '').trim(), authKey, String(b.server || '').trim(), mode, onBelow, offAbove, dow);
+    _plugNoCharge.delete(siteId);
+    _chargeLog(siteId, 'config', null, `配置更新: 模式=${mode} 区间=${effOn}-${effOff}% 满充日=${dow}`);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 后台: 手动通/断电一次或查询插座实际状态 (测试配置用; 自动模式下几分钟内会按电量恢复)
+app.post('/api/admin/kiosk-plug-toggle', requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const siteId = parseInt(b.site_id);
+    if (!siteId) return res.status(400).json({ error: '仓库无效' });
+    const cfg = _plugCfg(siteId);
+    if (!cfg.configured) return res.status(400).json({ error: '该仓库未配置插座 (device_id / auth_key / server)' });
+    if (b.action === 'status') return res.json({ success: true, status: await _plugStatus(cfg) });
+    if (!['on', 'off'].includes(b.action)) return res.status(400).json({ error: 'action 需为 on/off/status' });
+    if (!await _plugCommand(siteId, b.action === 'on', 'manual-' + b.action, null, '后台手动操作')) {
+      return res.status(502).json({ error: '插座命令发送失败, 请检查配置与设备在线状态' });
+    }
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 打卡平板电源管理页 (登录管理后台后的 pa_token cookie 即可访问)
+app.get('/kiosk-power', (req, res) => res.sendFile(path.join(__dirname, 'public', 'kiosk-power.html')));
 
 // ─── 打卡记录查看页（需管理/经理账号登录） ───
 app.get('/checkin-records', (req, res) => {
