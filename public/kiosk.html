@@ -216,7 +216,7 @@ body.brite #fpNum{color:rgba(15,43,91,.9)!important}
 <!-- 视频元素留在屏幕内 2px 大小（近乎不可见）: 完全移出屏幕/opacity:0 时安卓 Chrome 会停止渲染帧, 抓到全黑 -->
 <video id="camVid" autoplay playsinline muted style="position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:.01;pointer-events:none"></video>
 <div id="flashOv"></div>
-<div class="foot"><span id="verTag" title="页面版本"></span></div>
+<div class="foot"><span id="batTag" title="平板电量" style="margin-right:.6em"></span><span id="verTag" title="页面版本"></span></div>
 
 <script>
 // 客户端报错上报 (独立 script 块: 主脚本哪怕整体解析失败也能上报) —— 平板上出问题
@@ -839,17 +839,22 @@ camStart(); // 页面打开即申请摄像头: 装机时授权一次, 之后打�
 // (拍照改为事件驱动: 输密码第 1/8 位 + 提交时各拍一张, 不再每秒滚动预拍)
 
 // ── 电池管理: 每 2 分钟上报电量, 服务器按阈值控制智能插座充/停 ──
+// chargingchange 立即上报: 插座通/断电后服务器几秒内就能确认命令生效
 (async function batteryLoop() {
   if (!navigator.getBattery || !_siteId) return;
   try {
     const b = await navigator.getBattery();
-    const report = () => fetch('/api/kiosk/battery', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ site_id: _siteId, level: Math.round(b.level * 100), charging: b.charging })
-    }).catch(() => {});
+    const report = () => {
+      $('batTag').textContent = '🔋' + Math.round(b.level * 100) + '%' + (b.charging ? '⚡' : '');
+      fetch('/api/kiosk/battery', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ site_id: _siteId, level: Math.round(b.level * 100), charging: b.charging })
+      }).catch(() => {});
+    };
     report();
     setInterval(report, 120000);
     b.addEventListener('levelchange', report);
+    b.addEventListener('chargingchange', report);
   } catch (_) {}
 })();
 </script>
