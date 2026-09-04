@@ -161,8 +161,10 @@ function card(k, d, openSet){
   else if (lv != null) chips += '<span class="chip off">未充电</span>';
   if (k.plug_state === 'on') chips += '<span class="chip on">插座:通电</span>';
   else if (k.plug_state === 'off') chips += '<span class="chip off">插座:断电</span>';
-  if (!k.plug_configured) chips += '<span class="chip warn">未配置插座 — 只记录电量</span>';
-  else if (cfg.uses_env) chips += '<span class="chip">用全局 env 配置</span>';
+  if (cfg.ws_online) chips += '<span class="chip on">🔗 插座直连在线</span>';
+  else if (k.plug_configured) chips += `<span class="chip">☁️ 走 Shelly 云端${cfg.uses_env ? ' (env 全局配置)' : ''}</span>`;
+  else if (cfg.has_device) chips += '<span class="chip err">⚠️ 插座未连接 — 等它连上直连地址，或补云端配置</span>';
+  else chips += '<span class="chip warn">未配置插座 — 只记录电量</span>';
   if (cfg.mode === 'on') chips += '<span class="chip warn">强制通电模式</span>';
   if (cfg.mode === 'off') chips += '<span class="chip err">强制断电模式</span>';
   if (stale) chips += `<span class="chip err">⚠️ ${k.stale_min >= 99999 ? '' : k.stale_min + ' 分钟'}未上报${k.plug_configured && cfg.mode !== 'off' ? (k.plug_state === 'on' ? ' — 已兜底通电' : ' — 将自动兜底通电') : ''}</span>`;
@@ -198,9 +200,18 @@ function card(k, d, openSet){
     <div class="actrs" id="actrs-${sid}"></div>
     <details data-k="cfg-${sid}" ${openSet.has('cfg-' + sid) ? 'open' : ''}><summary>⚙️ 插座配置</summary>
       <form class="cfgform" onsubmit="return saveCfg(event,${sid})">
-        <label><b>Shelly Device ID</b><input name="device_id" value="${esc(cfg.device_id)}" placeholder="${d.env_configured ? '留空 = 用全局 env' : 'Shelly App → 设备设置 → Device ID'}"></label>
-        <label><b>Auth Key</b><input name="auth_key" type="password" value="${cfg.has_auth_key ? '__keep__' : ''}" placeholder="${cfg.has_auth_key ? '已保存 (改动才需重填)' : d.env_configured ? '留空 = 用全局 env' : 'control.shelly.cloud → Settings → Auth key'}"></label>
-        <label><b>Cloud Server</b><input name="server" value="${esc(cfg.server)}" placeholder="${d.env_configured ? '留空 = 用全局 env' : '如 shelly-73-eu.shelly.cloud'}"></label>
+        <div class="cfgnote" style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:.6rem .7rem;color:#0c4a6e">
+          <b>方式一 · 插座直连（推荐，不需要 Shelly 账号/App/蓝牙）：</b><br>
+          ① 下面 <b>Device ID</b> 填插座 MAC 小写（热点名最后一段，如 <code>acebe6f59148</code>）→ 保存<br>
+          ② 浏览器打开插座自己的设置网页（http://插座IP 或 …local）→ <b>Settings → Outbound WebSocket</b> → 勾 Enable，Server 填：<br>
+          <code style="display:block;background:#fff;border:1px solid #bae6fd;border-radius:6px;padding:.35rem .5rem;margin:.3rem 0;word-break:break-all;user-select:all">${esc(d.ws_url || '')}</code>
+          <a href="javascript:void(0)" onclick="navigator.clipboard.writeText('${esc(d.ws_url || '')}').then(()=>toast('✅ 已复制'))">📋 复制地址</a>
+          · TLS/SSL 选「Disable certificate validation」→ Save<br>
+          ③ 几秒后本页刷新出现「🔗 插座直连在线」即成功。<b>方式二 · Shelly 云（可选备用）：</b>再填下面 Auth Key / Server。
+        </div>
+        <label><b>Shelly Device ID</b><input name="device_id" value="${esc(cfg.device_id)}" placeholder="${d.env_configured ? '留空 = 用全局 env' : '插座 MAC 小写, 如 acebe6f59148'}"></label>
+        <label><b>Auth Key（云端·可选）</b><input name="auth_key" type="password" value="${cfg.has_auth_key ? '__keep__' : ''}" placeholder="${cfg.has_auth_key ? '已保存 (改动才需重填)' : '用直连可不填'}"></label>
+        <label><b>Cloud Server（云端·可选）</b><input name="server" value="${esc(cfg.server)}" placeholder="${d.env_configured ? '留空 = 用全局 env' : '用直连可不填'}"></label>
         <label><b>模式</b><select name="mode">
           <option value="auto" ${cfg.mode === 'auto' ? 'selected' : ''}>自动（按电量充/停）</option>
           <option value="on" ${cfg.mode === 'on' ? 'selected' : ''}>强制一直通电</option>
@@ -209,7 +220,7 @@ function card(k, d, openSet){
         <label><b>开充下限 %</b><input name="on_below" type="number" min="20" max="90" value="${cfg.on_below}" placeholder="${d.defaults.on_below}"></label>
         <label><b>停充上限 %</b><input name="off_above" type="number" min="40" max="100" value="${cfg.off_above}" placeholder="${d.defaults.off_above}"></label>
         <label><b>每周满充校准日</b><select name="full_charge_dow">${dowOpts}</select></label>
-        <div class="cfgnote">Auth Key / Server 在 <b>control.shelly.cloud → 右上角 Settings → Authorization cloud key</b> 获取；Device ID 在 Shelly App 设备设置里。保存后 2 分钟内生效。</div>
+        <div class="cfgnote">云端方式的 Auth Key / Server 在 <b>control.shelly.cloud → 右上角 Settings → Authorization cloud key</b> 获取。配置保存后 2 分钟内生效；直连在插座连上地址后即刻生效，两者都配时直连优先、断线自动退回云端。</div>
         <div class="actions" style="grid-column:1/-1;margin-top:0"><button class="primary" type="submit">💾 保存配置</button></div>
       </form>
     </details>
@@ -231,7 +242,7 @@ async function plugAct(sid, action, btn){
       const s = d.status || {};
       out.className = 'actrs ok';
       out.textContent = s.online === false ? '⚠️ 插座离线（检查插座 WiFi）'
-        : `插座在线 · 输出: ${s.output ? '通电' : '断电'}${s.power != null ? ' · 实时功率 ' + s.power + ' W' : ''}`;
+        : `插座在线${s.via === 'ws' ? '（直连）' : s.via === 'cloud' ? '（云端）' : ''} · 输出: ${s.output ? '通电' : '断电'}${s.power != null ? ' · 实时功率 ' + s.power + ' W' : ''}`;
     } else {
       out.className = 'actrs ok';
       out.textContent = (action === 'on' ? '✅ 已通电' : '✅ 已断电') + '（自动模式下几分钟内会按电量恢复接管）';

@@ -28412,14 +28412,116 @@ const KIOSK_CHARGE_ON_BELOW = parseInt(process.env.KIOSK_CHARGE_ON_BELOW || '70'
 const KIOSK_CHARGE_OFF_ABOVE = parseInt(process.env.KIOSK_CHARGE_OFF_ABOVE || '80');
 const KIOSK_STALE_MIN = parseInt(process.env.KIOSK_STALE_MIN || '12');
 
-// 某仓库的插座配置: kiosk_plugs 行优先, 空字段回落到全局 env
+// ── 插座直连 (Shelly Gen2+ Outbound WebSocket): 免 Shelly 账号/App/蓝牙配对 ──
+// 在插座自己的设置网页 (Settings → Outbound WebSocket) 填上
+//   wss://<本站域名>/shelly-ws?t=<令牌>
+// 插座就会主动连到本服务器, 命令走 JSON-RPC 直发, 断线由插座固件自动重连。
+// 令牌首次启动自动生成存 app_settings, 在 /kiosk-power 页展示。
+// 有直连时优先直连, 没有再走 Shelly Cloud (两者都配则直连断线时自动退回云端)。
+let _plugWsToken = '';
+try {
+  db.exec(`CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT '',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+  const tokRow = db.prepare("SELECT value FROM app_settings WHERE key='shelly_ws_token'").get();
+  if (tokRow && tokRow.value) _plugWsToken = tokRow.value;
+  else {
+    _plugWsToken = crypto.randomBytes(12).toString('hex');
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('shelly_ws_token', ?)").run(_plugWsToken);
+  }
+} catch (e) { console.error('[KioskPlug] ws token init error:', e.message); }
+const _wsPlugs = new Map();   // 规范化设备ID → WebSocket (当前在线的直连插座)
+const _wsPending = new Map(); // rpc 请求 id → {resolve, reject, timer}
+let _wsReqId = 0;
+// "shellyplugusg4-acebe6f59148" 和纯 MAC "acebe6f59148" 两种写法都能匹配上
+function _wsIdKeys(v) {
+  const id = String(v || '').trim().toLowerCase();
+  const keys = id ? [id] : [];
+  const i = id.lastIndexOf('-');
+  if (i > 0) keys.push(id.slice(i + 1));
+  return keys;
+}
+function _wsPlugSock(deviceId) {
+  for (const k of _wsIdKeys(deviceId)) {
+    const s = _wsPlugs.get(k);
+    if (s && s.readyState === 1) return s;
+  }
+  return null;
+}
+function _wsCall(deviceId, method, params) {
+  return new Promise((resolve, reject) => {
+    const sock = _wsPlugSock(deviceId);
+    if (!sock) return reject(new Error('插座直连不在线'));
+    const id = ++_wsReqId;
+    const timer = setTimeout(() => { _wsPending.delete(id); reject(new Error('插座直连响应超时')); }, 8000);
+    _wsPending.set(id, { resolve, reject, timer });
+    try { sock.send(JSON.stringify({ id, src: 'primeanchor-server', method, params: params || {} })); }
+    catch (e) { clearTimeout(timer); _wsPending.delete(id); reject(e); }
+  });
+}
+// 文件末尾 app.listen 之后挂载: 处理 /shelly-ws 的 WebSocket upgrade
+function _plugAttachWs(httpServer) {
+  let WebSocketServer;
+  try { ({ WebSocketServer } = require('ws')); }
+  catch (e) { console.error('[KioskPlug] ws 模块缺失, 插座直连不可用:', e.message); return; }
+  const wss = new WebSocketServer({ noServer: true });
+  httpServer.on('upgrade', (req, socket, head) => {
+    let u;
+    try { u = new URL(req.url, 'http://x'); } catch { socket.destroy(); return; }
+    if (u.pathname !== '/shelly-ws') { socket.destroy(); return; }
+    if (!_plugWsToken || u.searchParams.get('t') !== _plugWsToken) { socket.destroy(); return; }
+    wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req));
+  });
+  wss.on('connection', ws => {
+    ws._alive = true;
+    ws.on('pong', () => { ws._alive = true; });
+    ws.on('error', () => {});
+    ws.on('message', raw => {
+      let m;
+      try { m = JSON.parse(raw); } catch { return; }
+      if (m.src) { // 任何带 src 的帧都可确认这条连接属于哪个插座
+        if (!ws._plugKeys) { ws._plugKeys = new Set(); console.log('[KioskPlug] 插座直连上线:', m.src); }
+        for (const k of _wsIdKeys(m.src)) { _wsPlugs.set(k, ws); ws._plugKeys.add(k); }
+      }
+      if (m.id != null && _wsPending.has(m.id) && (m.result !== undefined || m.error !== undefined)) {
+        const p = _wsPending.get(m.id);
+        _wsPending.delete(m.id);
+        clearTimeout(p.timer);
+        if (m.error) p.reject(new Error('插座返回错误: ' + JSON.stringify(m.error).slice(0, 120)));
+        else p.resolve(m.result);
+      }
+    });
+    ws.on('close', () => {
+      for (const k of (ws._plugKeys || [])) if (_wsPlugs.get(k) === ws) _wsPlugs.delete(k);
+      if (ws._plugKeys && ws._plugKeys.size) console.log('[KioskPlug] 插座直连断开:', [...ws._plugKeys][0]);
+    });
+    // 主动问一次设备信息拿 src 注册 (部分固件连上后不会立刻自己发通知)
+    try { ws.send(JSON.stringify({ id: ++_wsReqId, src: 'primeanchor-server', method: 'Shelly.GetDeviceInfo' })); } catch (e) {}
+  });
+  setInterval(() => {
+    wss.clients.forEach(ws => {
+      if (!ws._alive) return ws.terminate();
+      ws._alive = false;
+      try { ws.ping(); } catch (e) {}
+    });
+  }, 30000);
+  console.log('[KioskPlug] 插座直连 WebSocket 已就绪 (/shelly-ws)');
+}
+
+// 某仓库的插座配置: kiosk_plugs 行优先, 空字段回落到全局 env。
+// configured = 有设备号且至少一条可用通道 (直连在线 或 云端凭据齐全)
 function _plugCfg(siteId) {
   const row = db.prepare('SELECT * FROM kiosk_plugs WHERE site_id=?').get(siteId) || {};
   const device_id = String(row.device_id || process.env.SHELLY_DEVICE_ID || '').trim();
   const auth_key = String(row.auth_key || process.env.SHELLY_AUTH_KEY || '').trim();
   const server = String(row.server || process.env.SHELLY_SERVER || '').trim();
+  const cloud_ok = !!(device_id && auth_key && server);
+  const ws_online = !!(device_id && _wsPlugSock(device_id));
   return {
-    configured: !!(device_id && auth_key && server), device_id, auth_key, server,
+    configured: !!device_id && (cloud_ok || ws_online),
+    has_device: !!device_id, cloud_ok, ws_online, device_id, auth_key, server,
     mode: ['auto', 'on', 'off'].includes(row.mode) ? row.mode : 'auto',
     on_below: row.on_below == null ? KIOSK_CHARGE_ON_BELOW : row.on_below,
     off_above: row.off_above == null ? KIOSK_CHARGE_OFF_ABOVE : row.off_above,
@@ -28437,13 +28539,25 @@ async function _plugCall(cfg, apiPath, extra) {
   if (!r.ok || d.isok === false) throw new Error('Shelly HTTP ' + r.status + ' ' + JSON.stringify(d.errors || '').slice(0, 160));
   return d;
 }
-function _plugSet(cfg, turnOn) { return _plugCall(cfg, '/device/relay/control', { channel: '0', turn: turnOn ? 'on' : 'off' }); }
-async function _plugStatus(cfg) { // Gen1(relays/meters) 与 Gen2+("switch:0") 字段都兼容
-  const d = await _plugCall(cfg, '/device/status', {});
+// 开/关: 直连优先, 直连不在线再走云端
+function _plugSet(cfg, turnOn) {
+  if (_wsPlugSock(cfg.device_id)) return _wsCall(cfg.device_id, 'Switch.Set', { id: 0, on: !!turnOn });
+  if (!cfg.cloud_ok) return Promise.reject(new Error('插座直连不在线, 且未配置 Shelly 云端'));
+  return _plugCall(cfg, '/device/relay/control', { channel: '0', turn: turnOn ? 'on' : 'off' });
+}
+async function _plugStatus(cfg) {
+  if (_wsPlugSock(cfg.device_id)) { // 直连: 直接问插座
+    const s = await _wsCall(cfg.device_id, 'Shelly.GetStatus');
+    const sw = (s && s['switch:0']) || {};
+    return { online: true, via: 'ws', output: !!sw.output, power: sw.apower != null ? sw.apower : null };
+  }
+  if (!cfg.cloud_ok) throw new Error('插座直连不在线, 且未配置 Shelly 云端');
+  const d = await _plugCall(cfg, '/device/status', {}); // 云端: Gen1(relays/meters) 与 Gen2+("switch:0") 字段都兼容
   const s = (d.data && d.data.device_status) || {};
   const sw = s['switch:0'];
   return {
     online: !!(d.data && d.data.online),
+    via: 'cloud',
     output: sw ? !!sw.output : !!(s.relays && s.relays[0] && s.relays[0].ison),
     power: sw ? (sw.apower != null ? sw.apower : null) : (s.meters && s.meters[0] && s.meters[0].power != null ? s.meters[0].power : null),
   };
@@ -28602,15 +28716,18 @@ app.get('/api/admin/kiosk-battery', requireAdmin, (req, res) => {
           mode: cfg.mode, on_below: cfg.on_below, off_above: cfg.off_above, full_charge_dow: cfg.full_charge_dow,
           device_id: raw.device_id || '', server: raw.server || '', has_auth_key: !!raw.auth_key,
           uses_env: !String(raw.device_id || '').trim() && !!process.env.SHELLY_DEVICE_ID,
+          has_device: cfg.has_device, ws_online: cfg.ws_online, cloud_ok: cfg.cloud_ok,
         },
         days: dayStmt.all(r.site_id),
         events: evStmt.all(r.site_id),
       };
     });
     const sites = db.prepare('SELECT id, name FROM job_sites WHERE active=1 ORDER BY name').all();
+    const wsProto = (req.secure || req.get('x-forwarded-proto') === 'https') ? 'wss' : 'ws';
     res.json({
       env_configured: !!(process.env.SHELLY_AUTH_KEY && process.env.SHELLY_DEVICE_ID && process.env.SHELLY_SERVER),
       defaults: { on_below: KIOSK_CHARGE_ON_BELOW, off_above: KIOSK_CHARGE_OFF_ABOVE, stale_min: KIOSK_STALE_MIN },
+      ws_url: `${wsProto}://${req.get('host')}/shelly-ws?t=${_plugWsToken}`,
       kiosks, sites,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -28652,7 +28769,9 @@ app.post('/api/admin/kiosk-plug-toggle', requireAdmin, async (req, res) => {
     const siteId = parseInt(b.site_id);
     if (!siteId) return res.status(400).json({ error: '仓库无效' });
     const cfg = _plugCfg(siteId);
-    if (!cfg.configured) return res.status(400).json({ error: '该仓库未配置插座 (device_id / auth_key / server)' });
+    if (!cfg.configured) {
+      return res.status(400).json({ error: cfg.has_device ? '插座未连接: 直连不在线, 云端也未配置 (等插座连上 wss 地址, 或补 Auth Key/Server)' : '该仓库未配置插座 (先填 Device ID)' });
+    }
     if (b.action === 'status') return res.json({ success: true, status: await _plugStatus(cfg) });
     if (!['on', 'off'].includes(b.action)) return res.status(400).json({ error: 'action 需为 on/off/status' });
     if (!await _plugCommand(siteId, b.action === 'on', 'manual-' + b.action, null, '后台手动操作')) {
@@ -39473,7 +39592,7 @@ app.get('/api/admin/company-payments/export.csv', requireAdmin, blockManager, (r
 // END COMMUNICATIONS INBOX
 // ============================================================
 
-app.listen(PORT, () => {
+const _appHttpServer = app.listen(PORT, () => {
   // Initial checkpoint on startup to flush any pending WAL data
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
   console.log(`Prime Anchor Workforce running on port ${PORT}`);
@@ -39506,3 +39625,5 @@ app.listen(PORT, () => {
   setInterval(smsAutoReremind, SMS_REREMIND_INTERVAL);
   console.log('[startup] SMS auto-rereminder started (every 5 min)');
 });
+// 打卡机智能插座直连通道 (Shelly Outbound WebSocket → /shelly-ws)
+_plugAttachWs(_appHttpServer);
