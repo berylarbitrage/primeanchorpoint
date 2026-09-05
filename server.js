@@ -9260,7 +9260,11 @@ db.exec(`CREATE TABLE IF NOT EXISTS mfa_trusted_devices (
   created_at TEXT DEFAULT (datetime('now'))
 )`);
 
+// ⏸️ 临时开关 (2026-09): 短信登录验证暂时停用 —— 国际客户的 Twilio Geo Permissions
+// 还没开通, 先别把人挡在门外; 要恢复验证把下面改回 false 即可。
+const MFA_TEMP_OFF = true;
 function _mfaEnabled() {
+  if (MFA_TEMP_OFF) return false;
   if (process.env.MFA_DISABLE === '1') return false;
   // Twilio 完全没配置(本地开发)时跳过, 避免把所有人锁在门外; 生产环境必然配置了 Twilio
   if (!twilioClient || (!TWILIO_FROM && !twilioMsgSvcSid())) { console.warn('[MFA] Twilio 未配置, 本次登录跳过短信验证'); return false; }
