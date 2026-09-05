@@ -9260,11 +9260,12 @@ db.exec(`CREATE TABLE IF NOT EXISTS mfa_trusted_devices (
   created_at TEXT DEFAULT (datetime('now'))
 )`);
 
-// ⏸️ 临时开关 (2026-09): 短信登录验证暂时停用 —— 国际客户的 Twilio Geo Permissions
-// 还没开通, 先别把人挡在门外; 要恢复验证把下面改回 false 即可。
-const MFA_TEMP_OFF = true;
-function _mfaEnabled() {
-  if (MFA_TEMP_OFF) return false;
+// ⏸️ 临时豁免 (2026-09): 会计(accounting)角色账号暂免短信二步验证 —— 国际会计的
+// Twilio Geo Permissions 还没开通收不到码; 其他角色(admin/staff/cs 等)照常验证。
+// 要给会计恢复验证, 把 'accounting' 从下面数组删掉即可。
+const MFA_EXEMPT_ROLES = ['accounting'];
+function _mfaEnabled(user) {
+  if (user && MFA_EXEMPT_ROLES.includes(String(user.role || ''))) return false;
   if (process.env.MFA_DISABLE === '1') return false;
   // Twilio 完全没配置(本地开发)时跳过, 避免把所有人锁在门外; 生产环境必然配置了 Twilio
   if (!twilioClient || (!TWILIO_FROM && !twilioMsgSvcSid())) { console.warn('[MFA] Twilio 未配置, 本次登录跳过短信验证'); return false; }
@@ -9377,8 +9378,8 @@ app.post('/api/admin/login', loginRateLimit, (req, res) => {
     return res.status(403).json({ error: '账号正在等待管理员批准 / Your account is pending admin approval' });
   // Password correct but account not yet self-verified — prompt user to set own password
   if (!user.active) return res.json({ needs_activation: true, username });
-  // 🔐 密码正确 → 还需短信验证码 (30 天内验证过的可信设备除外)
-  if (_mfaEnabled() && !_mfaHasTrust(req, user.id)) {
+  // 🔐 密码正确 → 还需短信验证码 (30 天内验证过的可信设备、豁免角色除外)
+  if (_mfaEnabled(user) && !_mfaHasTrust(req, user.id)) {
     auditLog('login_mfa_challenge', { userId: user.id, userName: user.username, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { role: user.role } });
     return res.json(Object.assign({ mfa_required: true }, _mfaStart(user)));
   }
@@ -9403,8 +9404,8 @@ app.post('/api/auth/activate', (req, res) => {
   // 会计角色: 自设密码同样留存管理员可见
   if (user.role === 'accounting') db.prepare('UPDATE admin_users SET password_plain=? WHERE id=?').run(new_password, user.id);
   const updatedUser = db.prepare('SELECT * FROM admin_users WHERE id=?').get(user.id);
-  // 🔐 激活完成后同样要过短信验证
-  if (_mfaEnabled() && !_mfaHasTrust(req, updatedUser.id)) {
+  // 🔐 激活完成后同样要过短信验证 (豁免角色除外)
+  if (_mfaEnabled(updatedUser) && !_mfaHasTrust(req, updatedUser.id)) {
     return res.json(Object.assign({ success: true, mfa_required: true }, _mfaStart(updatedUser)));
   }
   const token = createSession(updatedUser, req);
