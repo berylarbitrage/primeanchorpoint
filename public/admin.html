@@ -5024,6 +5024,12 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     </div>
     <div style="font-size:.72rem;color:var(--gray-400);margin-top:.4rem">填写后，当有客户发短信到公司号码时，该 agent 会收到 SMS 提醒通知</div>
   </div>
+  <div class="field" style="margin-top:.6rem">
+    <label style="display:flex;align-items:center;gap:.45rem;cursor:pointer;font-size:.85rem;color:var(--gray-600)">
+      <input type="checkbox" id="accMfaExempt"> 🔓 登录免短信验证（只需账号密码）
+    </label>
+    <div style="font-size:.72rem;color:#92400e;margin-top:.25rem">勾选后此账号在任何设备登录都不再要求短信验证码，请只给信任的账号开启</div>
+  </div>
   <div id="accHint" class="field" style="background:var(--gray-100);border-radius:6px;padding:.6rem .75rem;font-size:.83rem;color:var(--gray-500)">
     新建账户默认未激活，用户首次登录时需自行设置密码完成激活
   </div>
@@ -20211,7 +20217,7 @@ async function loadAccounts() {
     <td>${esc(a.display_name||'')}</td>
     <td><span class="badge ${roleBadge(a.role)}">${roleLabel[a.role]||a.role}</span></td>
     <td style="font-size:.8rem;color:var(--gray-500)">${a.role==='manager'?esc(partnerName(a.assigned_partner_ids)):'—'}</td>
-    <td>${a.approval_status==='pending'?'<span class="badge badge-orange">待批准</span>':a.active?'<span style="color:var(--green)">已激活</span>':'<span style="color:var(--gray-400)">待激活</span>'}</td>
+    <td>${a.approval_status==='pending'?'<span class="badge badge-orange">待批准</span>':a.active?'<span style="color:var(--green)">已激活</span>':'<span style="color:var(--gray-400)">待激活</span>'}${a.mfa_exempt?' <span class="badge badge-orange" title="登录免短信验证，只需账号密码">🔓 免短信</span>':''}</td>
     <td style="font-size:.78rem">${a.sms_notify_phone&&a.sms_notify_enabled?'<span style="color:var(--green)" title="'+esc(a.sms_notify_phone)+'">📱 ON</span>':a.sms_notify_phone?'<span style="color:var(--gray-400)" title="'+esc(a.sms_notify_phone)+'">📱 OFF</span>':'<span style="color:var(--gray-300)">—</span>'}</td>
     <td>${(a.created_at||'').slice(0,10)}</td>
     <td style="white-space:nowrap">
@@ -20254,6 +20260,7 @@ async function openAccountModal(data) {
   document.getElementById('accRole').value = data ? (data.role||'staff') : 'staff';
   document.getElementById('accSmsNotifyPhone').value = data ? (data.sms_notify_phone||'') : '';
   document.getElementById('accSmsNotifyEnabled').checked = data ? (data.sms_notify_enabled !== 0) : true;
+  document.getElementById('accMfaExempt').checked = data ? !!data.mfa_exempt : false;
   document.getElementById('accountModalTitle').textContent = data ? '编辑内部账户' : '新建内部账户';
   document.getElementById('accPassHint').textContent = data ? '(留空则不修改；修改密码将重置激活状态)' : '*';
   document.getElementById('accHint').textContent = data
@@ -20302,7 +20309,8 @@ async function saveAccount() {
     assigned_partner_ids: selectedPartners,
     assigned_job_ids: selectedJobs,
     sms_notify_phone: document.getElementById('accSmsNotifyPhone').value.trim(),
-    sms_notify_enabled: document.getElementById('accSmsNotifyEnabled').checked ? 1 : 0
+    sms_notify_enabled: document.getElementById('accSmsNotifyEnabled').checked ? 1 : 0,
+    mfa_exempt: document.getElementById('accMfaExempt').checked ? 1 : 0
   };
   if (!d.username) return alert('请输入用户名');
   if (!id && !d.password) return alert('请输入密码');

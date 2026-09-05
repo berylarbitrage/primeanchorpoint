@@ -9231,6 +9231,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS mfa_pending (
 const _mfaGet = t => db.prepare('SELECT * FROM mfa_pending WHERE token=?').get(String(t || ''));
 const _mfaDel = t => db.prepare('DELETE FROM mfa_pending WHERE token=?').run(String(t || ''));
 try { db.exec("ALTER TABLE admin_users ADD COLUMN mfa_phone TEXT DEFAULT ''"); } catch (e) {}
+// 按账号豁免短信验证 (管理员在账号编辑里勾选「登录免短信验证」)
+try { db.exec("ALTER TABLE admin_users ADD COLUMN mfa_exempt INTEGER DEFAULT 0"); } catch (e) {}
 db.exec(`CREATE TABLE IF NOT EXISTS mfa_trusted_devices (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
@@ -9340,13 +9342,13 @@ app.post('/api/admin/login', loginRateLimit, (req, res) => {
     return res.status(403).json({ error: '账号正在等待管理员批准 / Your account is pending admin approval' });
   // Password correct but account not yet self-verified — prompt user to set own password
   if (!user.active) return res.json({ needs_activation: true, username });
-  // 🔐 密码正确 → 还需短信验证码 (30 天内验证过的可信设备除外)
-  if (_mfaEnabled() && !_mfaHasTrust(req, user.id)) {
+  // 🔐 密码正确 → 还需短信验证码 (30 天内验证过的可信设备、勾了「免短信验证」的账号除外)
+  if (_mfaEnabled() && !user.mfa_exempt && !_mfaHasTrust(req, user.id)) {
     auditLog('login_mfa_challenge', { userId: user.id, userName: user.username, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { role: user.role } });
     return res.json(Object.assign({ mfa_required: true }, _mfaStart(user)));
   }
   const token = createSession(user, req);
-  auditLog('login', { userId: user.id, userName: user.username, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { role: user.role } });
+  auditLog('login', { userId: user.id, userName: user.username, ip: req.ip, connection: req.connection, headers: req.headers }, { details: user.mfa_exempt ? { role: user.role, mfa_exempt: true } : { role: user.role } });
   res.cookie('pa_token', token, { httpOnly: true, sameSite: 'Strict', secure: req.protocol === 'https' });
   res.json({ success: true, token, user_id: user.id, role: user.role || 'staff', username: user.username, display_name: user.display_name || '' });
 });
@@ -9366,8 +9368,8 @@ app.post('/api/auth/activate', (req, res) => {
   // 会计角色: 自设密码同样留存管理员可见
   if (user.role === 'accounting') db.prepare('UPDATE admin_users SET password_plain=? WHERE id=?').run(new_password, user.id);
   const updatedUser = db.prepare('SELECT * FROM admin_users WHERE id=?').get(user.id);
-  // 🔐 激活完成后同样要过短信验证
-  if (_mfaEnabled() && !_mfaHasTrust(req, updatedUser.id)) {
+  // 🔐 激活完成后同样要过短信验证 (免短信验证的账号除外)
+  if (_mfaEnabled() && !updatedUser.mfa_exempt && !_mfaHasTrust(req, updatedUser.id)) {
     return res.json(Object.assign({ success: true, mfa_required: true }, _mfaStart(updatedUser)));
   }
   const token = createSession(updatedUser, req);
@@ -9644,7 +9646,7 @@ app.post('/api/manager/self-punch/:id/confirm', requireAdmin, requireRole('admin
 // ─── Account Management (admin only) ───
 app.get('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
   // password_plain 仅会计(accounting)角色有值, 且本接口本就仅限 admin 角色访问
-  res.json(db.prepare('SELECT id, username, role, display_name, email, phone, active, approval_status, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, sms_notify_phone, sms_notify_enabled, created_at, password_plain FROM admin_users ORDER BY id').all());
+  res.json(db.prepare('SELECT id, username, role, display_name, email, phone, active, approval_status, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, sms_notify_phone, sms_notify_enabled, mfa_exempt, created_at, password_plain FROM admin_users ORDER BY id').all());
 });
 
 // 批准会计自助注册的账号
@@ -9657,7 +9659,7 @@ app.post('/api/admin/accounts/:id/approve', requireAdmin, requireRole('admin'), 
 });
 
 app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
-  const { username, password, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone } = req.body;
+  const { username, password, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, mfa_exempt } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   const pwErr = validatePassword(password);
   if (pwErr) return res.status(400).json({ error: pwErr });
@@ -9668,14 +9670,14 @@ app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) =
   if (existing && !existing.active) db.prepare('DELETE FROM admin_users WHERE id = ?').run(existing.id);
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
-  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, active, password_plain) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)')
-    .run(username, hash, salt, role, display_name || '', assigned_partner_ids || '', assigned_employee_ids || '', assigned_job_ids || '', email || '', phone || '', role === 'accounting' ? password : '');
-  auditLog('account_create', req, { targetType: 'admin_user', targetId: result.lastInsertRowid, details: { username, role } });
+  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, active, password_plain, mfa_exempt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)')
+    .run(username, hash, salt, role, display_name || '', assigned_partner_ids || '', assigned_employee_ids || '', assigned_job_ids || '', email || '', phone || '', role === 'accounting' ? password : '', mfa_exempt ? 1 : 0);
+  auditLog('account_create', req, { targetType: 'admin_user', targetId: result.lastInsertRowid, details: mfa_exempt ? { username, role, mfa_exempt: true } : { username, role } });
   res.json({ success: true, id: result.lastInsertRowid });
 });
 
 app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { username, password, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, sms_notify_phone, sms_notify_enabled } = req.body;
+  const { username, password, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, sms_notify_phone, sms_notify_enabled, mfa_exempt } = req.body;
   if (role && !['admin', 'staff', 'manager', 'accounting'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
@@ -9692,10 +9694,12 @@ app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res
   // 角色从会计改走时清掉留存密码
   if (effRole !== 'accounting' && user.password_plain) db.prepare("UPDATE admin_users SET password_plain='' WHERE id=?").run(req.params.id);
   // active field is intentionally excluded — only the user themselves can activate via self-verification
-  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, assigned_partner_ids=?, assigned_employee_ids=?, assigned_job_ids=?, email=?, phone=?, sms_notify_phone=?, sms_notify_enabled=? WHERE id=?')
-    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, assigned_partner_ids !== undefined ? assigned_partner_ids : (user.assigned_partner_ids || ''), assigned_employee_ids !== undefined ? assigned_employee_ids : (user.assigned_employee_ids || ''), assigned_job_ids !== undefined ? assigned_job_ids : (user.assigned_job_ids || ''), email !== undefined ? email : (user.email || ''), phone !== undefined ? phone : (user.phone || ''), sms_notify_phone !== undefined ? sms_notify_phone : (user.sms_notify_phone || ''), sms_notify_enabled !== undefined ? (sms_notify_enabled ? 1 : 0) : (user.sms_notify_enabled ?? 1), req.params.id);
+  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, assigned_partner_ids=?, assigned_employee_ids=?, assigned_job_ids=?, email=?, phone=?, sms_notify_phone=?, sms_notify_enabled=?, mfa_exempt=? WHERE id=?')
+    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, assigned_partner_ids !== undefined ? assigned_partner_ids : (user.assigned_partner_ids || ''), assigned_employee_ids !== undefined ? assigned_employee_ids : (user.assigned_employee_ids || ''), assigned_job_ids !== undefined ? assigned_job_ids : (user.assigned_job_ids || ''), email !== undefined ? email : (user.email || ''), phone !== undefined ? phone : (user.phone || ''), sms_notify_phone !== undefined ? sms_notify_phone : (user.sms_notify_phone || ''), sms_notify_enabled !== undefined ? (sms_notify_enabled ? 1 : 0) : (user.sms_notify_enabled ?? 1), mfa_exempt !== undefined ? (mfa_exempt ? 1 : 0) : (user.mfa_exempt ?? 0), req.params.id);
   const changes = {};
   if (role && role !== user.role) changes.role = { from: user.role, to: role };
+  // 免短信验证是安全开关, 谁改的、从啥改成啥要留审计痕迹
+  if (mfa_exempt !== undefined && (mfa_exempt ? 1 : 0) !== (user.mfa_exempt ? 1 : 0)) changes.mfa_exempt = { from: !!user.mfa_exempt, to: !!mfa_exempt };
   if (password) changes.password_reset = true;
   if (username && username !== user.username) changes.username = { from: user.username, to: username };
   auditLog('account_update', req, { targetType: 'admin_user', targetId: req.params.id, details: changes });
