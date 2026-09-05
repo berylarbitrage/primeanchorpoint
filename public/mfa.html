@@ -46,9 +46,10 @@ a.back{display:inline-block;margin-top:1rem;font-size:.8rem;color:var(--gray-400
 
   <label id="phoneLabel">接收验证码的手机号</label>
   <div class="row">
-    <input type="tel" id="phoneInput" placeholder="(xxx) xxx-xxxx" maxlength="14" inputmode="tel">
+    <input type="tel" id="phoneInput" placeholder="(xxx) xxx-xxxx / +86…" maxlength="16" inputmode="tel">
     <button class="btn btn-send" id="btnSend" onclick="sendCode()">发送验证码</button>
   </div>
+  <div class="hint" id="intlHint"></div>
   <div class="hint" id="phoneHint" style="display:none"></div>
 
   <label id="codeLabel">短信验证码</label>
@@ -76,6 +77,7 @@ const L = {
     pageTitle: '🔐 登录短信验证',
     pageSub: '账号密码已通过，还需验证公司备案手机',
     phoneLabel: '接收验证码的手机号',
+    intlHint: '美国号码直接输 10 位；其他国家/地区请带国家区号，如 +86 138 0013 8000',
     codeLabel: '短信验证码',
     codePh: '6 位数字',
     trustLabel: '此设备 30 天内免短信验证',
@@ -98,6 +100,7 @@ const L = {
     pageTitle: '🔐 SMS Sign-in Verification',
     pageSub: 'Password accepted — please verify the phone number on file',
     phoneLabel: 'Phone number to receive the code',
+    intlHint: 'US numbers: just 10 digits. Other countries: include the country code, e.g. +86 138 0013 8000',
     codeLabel: 'SMS verification code',
     codePh: '6 digits',
     trustLabel: 'Skip SMS verification on this device for 30 days',
@@ -143,7 +146,7 @@ function setLang(lang) {
   document.documentElement.lang = _lang === 'zh' ? 'zh' : 'en';
   $('langZh').classList.toggle('active', _lang === 'zh');
   $('langEn').classList.toggle('active', _lang === 'en');
-  ['pageTitle', 'pageSub', 'phoneLabel', 'codeLabel', 'trustLabel', 'backLink']
+  ['pageTitle', 'pageSub', 'phoneLabel', 'intlHint', 'codeLabel', 'trustLabel', 'backLink']
     .forEach(id => { $(id).textContent = t(id); });
   $('codeInput').placeholder = t('codePh');
   if (!_counting && !$('btnSend').disabled) $('btnSend').textContent = t(_sent ? 'btnResend' : 'btnSend');
@@ -156,6 +159,11 @@ if (HINT) showHint('hintLast', HINT);
 setLang(_lang);
 if (!MFA_TOKEN) showErr('errNoToken');
 $('phoneInput').addEventListener('input', function () {
+  // 以 + 开头 = 国际号码(含国家区号)：只留数字，最多 15 位，不套美国格式
+  if (this.value.trim().startsWith('+')) {
+    this.value = '+' + this.value.replace(/\D/g, '').slice(0, 15);
+    return;
+  }
   let d = this.value.replace(/\D/g, '').slice(0, 10);
   if (d.length > 6) d = '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6);
   else if (d.length > 3) d = '(' + d.slice(0, 3) + ') ' + d.slice(3);
@@ -183,8 +191,10 @@ function countdown(sec) {
 
 async function sendCode() {
   showErr(null);
-  const phone = $('phoneInput').value.replace(/\D/g, '');
-  if (!phone && !HINT) { showErr('errNoPhone'); return; }
+  const rawPhone = $('phoneInput').value.trim();
+  // 保留开头的 +，让服务器识别国际号码
+  const phone = (rawPhone.startsWith('+') ? '+' : '') + rawPhone.replace(/\D/g, '');
+  if (!rawPhone.replace(/\D/g, '') && !HINT) { showErr('errNoPhone'); return; }
   const btn = $('btnSend');
   btn.disabled = true; btn.textContent = t('btnSending');
   try {

@@ -9212,10 +9212,31 @@ app.post('/api/quote', (req, res) => {
 // Admin login
 // ─── 🔐 登录短信两步验证 (MFA): 账号密码 + 白名单手机短信验证码 ───
 // 验证码只允许发到公司备案的手机号 (可用 MFA_ALLOWED_PHONES 环境变量覆盖,
-// 逗号分隔); 紧急情况可设 MFA_DISABLE=1 临时关闭两步验证。
+// 逗号分隔, 支持带国家区号的国际号码如 +8613800138000); 紧急情况可设
+// MFA_DISABLE=1 临时关闭两步验证。
+
+// 手机号规范化(支持国际号码)。返回 { e164:'+完整号码', key:'不带+的完整数字', us:是否美国号 } 或 null。
+// - 10 位数字 → 美国号 (+1); 1 开头 11 位 → 美国号 (习惯输入, 兼容历史存量数据)
+// - 带 + (或 00 拨号前缀) → 数字已含国家区号, 按国际号码处理 (E.164 上限 15 位)
+// - 12–15 位纯数字 → 视为已带国家区号 (直接输 86138… 的习惯)
+function _mfaNormPhone(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return null;
+  let digits = s.replace(/\D/g, '');
+  let intl = s.startsWith('+');
+  if (!intl && digits.startsWith('00') && digits.length > 11) { digits = digits.slice(2); intl = true; }
+  if (!intl) {
+    if (digits.length === 10) digits = '1' + digits;
+    else if (digits.length === 11 && digits.startsWith('1')) { /* 已含 1 前缀的美国号 */ }
+    else if (digits.length >= 12 && digits.length <= 15) intl = true;
+    else return null;
+  }
+  if (digits.length < 8 || digits.length > 15) return null;
+  return { e164: '+' + digits, key: digits, us: digits.length === 11 && digits.startsWith('1') };
+}
 const MFA_ALLOWED_PHONES = String(process.env.MFA_ALLOWED_PHONES ||
   '3128437890,2246527010,8726642397,3143270319,7088502703,7088502629,2245915888')
-  .split(',').map(x => x.replace(/\D/g, '').slice(-10)).filter(x => x.length === 10);
+  .split(',').map(x => { const n = _mfaNormPhone(x); return n ? n.key : ''; }).filter(Boolean);
 // 待验证状态存 DB —— 服务器每次部署都会重启, 存内存会把正在验证的人踢回登录页
 db.exec(`CREATE TABLE IF NOT EXISTS mfa_pending (
   token TEXT PRIMARY KEY,
@@ -9256,15 +9277,17 @@ function _mfaStart(user) {
   try { db.prepare('DELETE FROM mfa_pending WHERE expires < ?').run(Date.now()); } catch (_) {}
   const token = crypto.randomBytes(24).toString('hex');
   db.prepare('INSERT INTO mfa_pending (token, user_id, expires) VALUES (?,?,?)').run(token, user.id, Date.now() + 10 * 60 * 1000);
-  const stored = String(user.mfa_phone || '').replace(/\D/g, '').slice(-10);
-  const hint = (stored && _mfaPhoneAllowed(user, stored)) ? ('••• ' + stored.slice(-4)) : '';
+  const stored = _mfaNormPhone(user.mfa_phone);
+  const hint = (stored && _mfaPhoneAllowed(user, stored)) ? ('••• ' + stored.key.slice(-4)) : '';
   return { mfa_token: token, phone_hint: hint };
 }
 // 白名单之外, 账号资料里管理员登记的手机号(admin_users.phone)也允许收验证码 —— 会计等外部账号用自己手机验证
-function _mfaPhoneAllowed(user, digits) {
-  if (MFA_ALLOWED_PHONES.includes(digits)) return true;
-  const own = String((user && user.phone) || '').replace(/\D/g, '').slice(-10);
-  return own.length === 10 && own === digits;
+// norm 是 _mfaNormPhone 的返回值; 国际号码按完整数字(含国家区号)比对
+function _mfaPhoneAllowed(user, norm) {
+  if (!norm) return false;
+  if (MFA_ALLOWED_PHONES.includes(norm.key)) return true;
+  const own = _mfaNormPhone(user && user.phone);
+  return !!(own && own.key === norm.key);
 }
 
 // 发送登录验证码 (手机号必须在白名单内; 不填手机号则用该账号上次用过的)
@@ -9274,23 +9297,30 @@ app.post('/api/admin/mfa/send', loginRateLimit, async (req, res) => {
   if (!p || p.expires < Date.now()) return res.status(400).json({ error: '登录会话已过期, 请重新输入账号密码' });
   const user = db.prepare('SELECT * FROM admin_users WHERE id=?').get(p.user_id);
   if (!user) return res.status(400).json({ error: '账号不存在' });
-  let digits = String(phone || '').replace(/\D/g, '').slice(-10);
-  if (!digits) digits = String(user.mfa_phone || '').replace(/\D/g, '').slice(-10);
-  if (digits.length !== 10) return res.status(400).json({ error: '请输入接收验证码的手机号' });
-  if (!_mfaPhoneAllowed(user, digits)) return res.status(403).json({ error: '该手机号不在允许登录的名单内' });
+  const norm = String(phone || '').trim() ? _mfaNormPhone(phone) : _mfaNormPhone(user.mfa_phone);
+  if (!norm) return res.status(400).json({ error: '请输入有效的手机号：美国号码直接输 10 位；其他国家/地区请带国家区号，如 +86 138…' });
+  if (!_mfaPhoneAllowed(user, norm)) return res.status(403).json({ error: '该手机号不在允许登录的名单内' });
   if (p.send_count >= 5) return res.status(429).json({ error: '发送次数过多, 请稍后重新登录' });
   if (Date.now() - p.sent_at < 60 * 1000) return res.status(429).json({ error: '发送太频繁, 请 1 分钟后再试' });
-  const code = String(crypto.randomInt(100000, 1000000));
-  const ok = await sendSMS(digits, `【Prime Anchor】后台登录验证码: ${code}\n10 分钟内有效。不是本人操作请勿把验证码告诉任何人。`);
+  // 非美国号码优先走 Twilio Verify (国际验证码专用通道, 送达率高); 失败或未配置则降级普通短信
+  let code = null, ok = false;
+  if (!norm.us && twilioClient && TWILIO_VERIFY_SID) {
+    ok = await sendVerifyCode(norm.e164);
+    if (ok) code = '__twilio_verify__';
+  }
+  if (!ok) {
+    code = String(crypto.randomInt(100000, 1000000));
+    ok = await sendSMS(norm.e164, `【Prime Anchor】后台登录验证码: ${code}\n10 分钟内有效。不是本人操作请勿把验证码告诉任何人。`);
+  }
   if (!ok) return res.status(500).json({ error: '短信发送失败, 请稍后重试' });
   db.prepare('UPDATE mfa_pending SET code=?, phone=?, code_expires=?, sent_at=?, send_count=send_count+1 WHERE token=?')
-    .run(code, digits, Date.now() + 10 * 60 * 1000, Date.now(), String(mfa_token));
-  auditLog('login_mfa_sent', { userId: user.id, userName: user.username, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { phone_last4: digits.slice(-4) } });
-  res.json({ success: true, phone_hint: '••• ' + digits.slice(-4) });
+    .run(code, norm.e164, Date.now() + 10 * 60 * 1000, Date.now(), String(mfa_token));
+  auditLog('login_mfa_sent', { userId: user.id, userName: user.username, ip: req.ip, connection: req.connection, headers: req.headers }, { details: { phone_last4: norm.key.slice(-4) } });
+  res.json({ success: true, phone_hint: '••• ' + norm.key.slice(-4) });
 });
 
 // 校验验证码, 通过后正式建会话; trust=1 时 30 天内此设备免验证码
-app.post('/api/admin/mfa/verify', loginRateLimit, (req, res) => {
+app.post('/api/admin/mfa/verify', loginRateLimit, async (req, res) => {
   const { mfa_token, code, trust } = req.body || {};
   const key = String(mfa_token || '');
   const p = _mfaGet(key);
@@ -9298,7 +9328,10 @@ app.post('/api/admin/mfa/verify', loginRateLimit, (req, res) => {
   if (!p.code || p.code_expires < Date.now()) return res.status(400).json({ error: '验证码已过期, 请重新发送' });
   db.prepare('UPDATE mfa_pending SET attempts=attempts+1 WHERE token=?').run(key);
   if (p.attempts + 1 > 5) { _mfaDel(key); return res.status(429).json({ error: '尝试次数过多, 请重新登录' }); }
-  if (String(code || '').trim() !== p.code) return res.status(401).json({ error: '验证码错误' });
+  // 国际号码走 Twilio Verify 发码时, 本地不存码, 由 Twilio 校验
+  const entered = String(code || '').trim();
+  const codeOk = p.code === '__twilio_verify__' ? await checkVerifyCode(p.phone, entered) : entered === p.code;
+  if (!codeOk) return res.status(401).json({ error: '验证码错误' });
   const user = db.prepare('SELECT * FROM admin_users WHERE id=?').get(p.user_id);
   _mfaDel(key);
   if (!user || !user.active) return res.status(400).json({ error: '账号不可用' });
@@ -14946,16 +14979,16 @@ app.post('/api/admin/customer-accounts/:id/impersonate/send', requireAdmin, requ
   if (!acct) return res.status(404).json({ error: '客户账号不存在' });
   if (!acct.active) return res.status(400).json({ error: '该客户账号已停用，无法进入' });
   const admin = db.prepare('SELECT id, username, mfa_phone, phone FROM admin_users WHERE id=?').get(req.userId);
-  const digits = String((admin && (admin.mfa_phone || admin.phone)) || '').replace(/\D/g, '').slice(-10);
-  if (digits.length !== 10) return res.status(400).json({ error: '你的后台账号没有登记手机号，收不到验证码。请先用登录后台时用过的手机登录一次，或在账号资料里登记手机号。' });
+  const norm = _mfaNormPhone((admin && (admin.mfa_phone || admin.phone)) || '');
+  if (!norm) return res.status(400).json({ error: '你的后台账号没有登记手机号，收不到验证码。请先用登录后台时用过的手机登录一次，或在账号资料里登记手机号。' });
   const code = String(crypto.randomInt(100000, 1000000));
-  const ok = await sendSMS(digits, `【Prime Anchor】进入客户门户验证码: ${code}\n10 分钟内有效。你正在以全部权限进入「${acct.company_name}」的客户门户。不是本人操作请勿泄露。`);
+  const ok = await sendSMS(norm.e164, `【Prime Anchor】进入客户门户验证码: ${code}\n10 分钟内有效。你正在以全部权限进入「${acct.company_name}」的客户门户。不是本人操作请勿泄露。`);
   // 短信发失败时，若配了主验证码(MASTER_VERIFY_CODE)仍放行，避免 Twilio 抖动把 owner 锁在外面
   if (!ok && !MASTER_VERIFY_CODE) return res.status(500).json({ error: '短信发送失败，请稍后重试' });
   const imp_token = crypto.randomBytes(24).toString('hex');
-  _custImp.set(imp_token, { adminId: req.userId, accountId: acct.id, code, expires: Date.now() + 10 * 60 * 1000, attempts: 0, phone: digits });
-  auditLog('cust_impersonate_send', req, { targetType: 'customer_account', targetId: acct.id, details: { company: acct.company_name, phone_last4: digits.slice(-4), sms_sent: !!ok } });
-  res.json({ ok: 1, imp_token, phone_hint: '••• ' + digits.slice(-4), sms_sent: !!ok });
+  _custImp.set(imp_token, { adminId: req.userId, accountId: acct.id, code, expires: Date.now() + 10 * 60 * 1000, attempts: 0, phone: norm.key });
+  auditLog('cust_impersonate_send', req, { targetType: 'customer_account', targetId: acct.id, details: { company: acct.company_name, phone_last4: norm.key.slice(-4), sms_sent: !!ok } });
+  res.json({ ok: 1, imp_token, phone_hint: '••• ' + norm.key.slice(-4), sms_sent: !!ok });
 });
 
 app.post('/api/admin/customer-accounts/:id/impersonate/verify', requireAdmin, requireRole('admin'), (req, res) => {
@@ -38211,8 +38244,7 @@ app.post('/api/acct/register', loginRateLimit, (req, res) => {
   if (uname.length < 3 || uname.length > 40) return res.status(400).json({ error: '用户名需 3–40 个字符' });
   const pwErr = validatePassword(password);
   if (pwErr) return res.status(400).json({ error: pwErr });
-  const digits = String(phone || '').replace(/\D/g, '');
-  if (digits.length < 10) return res.status(400).json({ error: '请填写接收登录验证码的手机号' });
+  if (!_mfaNormPhone(phone)) return res.status(400).json({ error: '请填写有效的接收登录验证码手机号：美国号码直接输 10 位；其他国家/地区请带国家区号，如 +86 138…' });
   if (db.prepare('SELECT id FROM admin_users WHERE username=?').get(uname)) return res.status(400).json({ error: '用户名已存在 / Username already exists' });
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
