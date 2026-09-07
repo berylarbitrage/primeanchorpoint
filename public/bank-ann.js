@@ -929,7 +929,7 @@ function _bsRenderBoxPanel() {
         <div style="display:flex;flex-wrap:wrap;gap:.3rem">${(box.photos_urls || []).map(u => `<div style="position:relative;width:46px;height:46px">${_bsPhotoThumbInner(u, 46)}<button onclick="bsBoxDeletePhoto(${box.id},'${esc(u)}')" title="删除照片" style="position:absolute;top:-6px;right:-6px;background:rgba(15,23,42,.85);color:#fff;border:none;border-radius:999px;width:17px;height:17px;font-size:10px;line-height:17px;cursor:pointer;padding:0">×</button></div>`).join('')}</div>
       </div>
     </div>`
-    + '<datalist id="bsPurposeList"><option value="劳务工资"></option></datalist>'
+    + '<datalist id="bsPurposeList"><option value="劳务工资"></option><option value="卸柜工资"></option></datalist>'
     + '<datalist id="bsFeeList">' + BS_FEE_TYPES.map(f => `<option value="${esc(f)}"></option>`).join('') + '</datalist>'
     + '<datalist id="bsOfficeList">' + BS_OFFICE_TYPES.map(f => `<option value="${esc(f)}"></option>`).join('') + '</datalist>'
     + '<datalist id="bsCompFeeList">' + BS_COMPFEE_TYPES.map(f => `<option value="${esc(f)}"></option>`).join('') + '</datalist>'
