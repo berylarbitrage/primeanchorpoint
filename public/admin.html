@@ -5030,6 +5030,12 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     </label>
     <div style="font-size:.72rem;color:#92400e;margin-top:.25rem">勾选后此账号在任何设备登录都不再要求短信验证码，请只给信任的账号开启</div>
   </div>
+  <div class="field" style="margin-top:.6rem">
+    <label style="display:flex;align-items:center;gap:.45rem;cursor:pointer;font-size:.85rem;color:var(--gray-600)">
+      <input type="checkbox" id="accAnnReviewer"> 🏦 可审核银行交易标注
+    </label>
+    <div style="font-size:.72rem;color:var(--gray-400);margin-top:.25rem">勾选后此账号在 /banking、/accounting 能「审核通过」会计/客服提交的交易标注，自己做的标注也不用再等审核（对客服/会计角色生效；admin 本来就有此权限）</div>
+  </div>
   <div id="accHint" class="field" style="background:var(--gray-100);border-radius:6px;padding:.6rem .75rem;font-size:.83rem;color:var(--gray-500)">
     新建账户默认未激活，用户首次登录时需自行设置密码完成激活
   </div>
@@ -20261,6 +20267,7 @@ async function openAccountModal(data) {
   document.getElementById('accSmsNotifyPhone').value = data ? (data.sms_notify_phone||'') : '';
   document.getElementById('accSmsNotifyEnabled').checked = data ? (data.sms_notify_enabled !== 0) : true;
   document.getElementById('accMfaExempt').checked = data ? !!data.mfa_exempt : false;
+  document.getElementById('accAnnReviewer').checked = data ? !!data.bank_ann_reviewer : false;
   document.getElementById('accountModalTitle').textContent = data ? '编辑内部账户' : '新建内部账户';
   document.getElementById('accPassHint').textContent = data ? '(留空则不修改；修改密码将重置激活状态)' : '*';
   document.getElementById('accHint').textContent = data
@@ -20310,7 +20317,8 @@ async function saveAccount() {
     assigned_job_ids: selectedJobs,
     sms_notify_phone: document.getElementById('accSmsNotifyPhone').value.trim(),
     sms_notify_enabled: document.getElementById('accSmsNotifyEnabled').checked ? 1 : 0,
-    mfa_exempt: document.getElementById('accMfaExempt').checked ? 1 : 0
+    mfa_exempt: document.getElementById('accMfaExempt').checked ? 1 : 0,
+    bank_ann_reviewer: document.getElementById('accAnnReviewer').checked ? 1 : 0
   };
   if (!d.username) return alert('请输入用户名');
   if (!id && !d.password) return alert('请输入密码');
