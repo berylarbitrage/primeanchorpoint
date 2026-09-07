@@ -59,9 +59,9 @@ const BS_PAYEE_REFERRAL = '__referral__';
 const BS_REFERRAL_PREFIX = '推荐费:';
 const BS_PAYEE_WAGEBONUS = '__wagebonus__';
 const BS_WAGEBONUS_PREFIX = '发工资奖励:';
-const BS_FEE_TYPES = ['服务费 Service Fee', '支票费 Check Fee', '电汇费 Wire Fee', '账户维护费 Maintenance Fee', '账户验证费 Account Verify', '透支费 Overdraft Fee', '退票费 NSF/Returned Item', 'ATM 费 ATM Fee', '停付费 Stop Payment', '现金处理费 Cash Handling', '外币兑换费 FX Fee', '纸质对账单费 Paper Statement'];
+const BS_FEE_TYPES = ['服务费 Service Fee', '支票费 Check Fee', '电汇费 Wire Fee', 'ACH 转账费 ACH Fee', '账户维护费 Maintenance Fee', '账户验证费 Account Verify', '透支费 Overdraft Fee', '退票费 NSF/Returned Item', 'ATM 费 ATM Fee', '停付费 Stop Payment', '现金处理费 Cash Handling', '外币兑换费 FX Fee', '纸质对账单费 Paper Statement'];
 const BS_PAYEE_OFFICE = '办公费用';
-const BS_OFFICE_TYPES = ['Claude (Anthropic)', 'ChatGPT (OpenAI)', '软件订阅 Software', '办公用品 Supplies', '网络/电话 Internet & Phone', '域名/服务器 Domain & Hosting', '邮寄快递 Postage', '打印耗材 Printing', '会员/年费 Membership', '差旅 Travel', '其他 Other'];
+const BS_OFFICE_TYPES = ['Claude (Anthropic)', 'ChatGPT (OpenAI)', 'Gusto 工资系统', '软件订阅 Software', '办公用品 Supplies', '网络/电话 Internet & Phone', '域名/服务器 Domain & Hosting', '邮寄快递 Postage', '打印耗材 Printing', '会员/年费 Membership', '差旅 Travel', '其他 Other'];
 const BS_PAYEE_COMPFEE = '公司相关费用';
 const BS_COMPFEE_TYPES = ['税务 Tax', '成立费 Incorporation', '注册代理 Registered Agent', '年报/年审 Annual Report', '执照/许可 License & Permit', '政府罚款 Penalty', '律师费 Legal', '会计/报税 Accounting', '公司保险 Insurance', '其他 Other'];
 const BS_PAYEE_MEAL = '餐饮支出';
@@ -929,7 +929,7 @@ function _bsRenderBoxPanel() {
         <div style="display:flex;flex-wrap:wrap;gap:.3rem">${(box.photos_urls || []).map(u => `<div style="position:relative;width:46px;height:46px">${_bsPhotoThumbInner(u, 46)}<button onclick="bsBoxDeletePhoto(${box.id},'${esc(u)}')" title="删除照片" style="position:absolute;top:-6px;right:-6px;background:rgba(15,23,42,.85);color:#fff;border:none;border-radius:999px;width:17px;height:17px;font-size:10px;line-height:17px;cursor:pointer;padding:0">×</button></div>`).join('')}</div>
       </div>
     </div>`
-    + '<datalist id="bsPurposeList"><option value="劳务工资"></option></datalist>'
+    + '<datalist id="bsPurposeList"><option value="劳务工资"></option><option value="卸柜工资"></option></datalist>'
     + '<datalist id="bsFeeList">' + BS_FEE_TYPES.map(f => `<option value="${esc(f)}"></option>`).join('') + '</datalist>'
     + '<datalist id="bsOfficeList">' + BS_OFFICE_TYPES.map(f => `<option value="${esc(f)}"></option>`).join('') + '</datalist>'
     + '<datalist id="bsCompFeeList">' + BS_COMPFEE_TYPES.map(f => `<option value="${esc(f)}"></option>`).join('') + '</datalist>'
