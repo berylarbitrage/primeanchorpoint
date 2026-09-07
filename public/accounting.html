@@ -1314,9 +1314,10 @@ function renderInvoiceDoc(inv) {
   const td = 'padding:5px 8px;border-bottom:1px solid #e2e8f0;font-size:.8rem';
   const tdR = td + ';text-align:right;white-space:nowrap';
 
-  let lineTable;
+  let lineTable, baseSum = 0;
   const contItems = Array.isArray(profile.container_items) ? profile.container_items : [];
   if (profile.invoice_mode === 'container' && contItems.length) {
+    baseSum = Math.round(contItems.reduce((s, c) => s + (Number(c.total != null ? c.total : (Number(c.qty) || 0) * (Number(c.unit_price) || 0)) || 0), 0) * 100) / 100;
     lineTable = `<table style="width:100%;border-collapse:collapse;margin-bottom:.6rem">
       <thead><tr><th style="${th}">#</th><th style="${th}">Type</th><th style="${th}">Container / Week</th><th style="${thR}">Qty</th><th style="${thR}">Unit Price</th><th style="${thR}">Amount</th><th style="${th};color:#94a3b8">付款备注<span style="font-size:.6rem">(内部)</span></th></tr></thead>
       <tbody>${contItems.map((c, i) => `<tr>
@@ -1330,21 +1331,56 @@ function renderInvoiceDoc(inv) {
       </tr>`).join('')}</tbody></table>`;
   } else {
     const hasOt = items.some(it => Number(it.otHours) > 0);
+    // 行金额显示「原始金额」(工时×时薪, markup 前)——和后台 Invoice 预览一致;
+    // markup 之后的账单额在 Total Due 上方单独列示。付款备注对银行流水时仍按账单额(billed)找。
+    const rawAmt = it => it.total != null ? (Number(it.total) || 0)
+      : (Number(it.regHours != null ? it.regHours : it.hours) || 0) * (Number(it.rate) || 0) + (Number(it.otHours) || 0) * (Number(it.otRate) || 0);
+    const totReg = items.reduce((s, it) => s + (Number(it.regHours != null ? it.regHours : it.hours) || 0), 0);
+    const totOt = items.reduce((s, it) => s + (Number(it.otHours) || 0), 0);
+    baseSum = Math.round(items.reduce((s, it) => s + rawAmt(it), 0) * 100) / 100;
     lineTable = `<table style="width:100%;border-collapse:collapse;margin-bottom:.6rem">
       <thead><tr><th style="${th}">#</th><th style="${th}">Worker</th><th style="${thR}">Reg Hrs</th>${hasOt ? `<th style="${thR}">OT Hrs</th>` : ''}<th style="${thR}">Rate</th>${hasOt ? `<th style="${thR}">OT Rate</th>` : ''}<th style="${thR}">Amount</th><th style="${th};color:#94a3b8">付款备注<span style="font-size:.6rem">(内部)</span></th></tr></thead>
-      <tbody>${items.map((it, i) => {
-        const amt = it.billed != null ? it.billed : it.total;
-        return `<tr>
+      <tbody>${items.map((it, i) => `<tr>
           <td style="${td}">${i + 1}</td>
           <td style="${td}">${esc(it.name || '')}</td>
           <td style="${tdR}">${(Number(it.regHours != null ? it.regHours : it.hours) || 0).toFixed(2)}</td>
           ${hasOt ? `<td style="${tdR}">${(Number(it.otHours) || 0).toFixed(2)}</td>` : ''}
           <td style="${tdR}">${money(it.rate)}</td>
           ${hasOt ? `<td style="${tdR}">${money(it.otRate)}</td>` : ''}
-          <td style="${tdR};font-weight:700">${money(amt)}</td>
+          <td style="${tdR};font-weight:700">${money(rawAmt(it))}</td>
           <td style="${td}" id="lpCell${i}">${_lpChip(i)}</td>
-        </tr>`;
-      }).join('')}</tbody></table>`;
+        </tr>`).join('')}
+        <tr style="background:#e8f5fb;font-weight:700;color:#1e293b">
+          <td colspan="2" style="${tdR};text-transform:uppercase;letter-spacing:.04em;border-top:2px solid #29AAE1;border-bottom:none">Total</td>
+          <td style="${tdR};border-top:2px solid #29AAE1;border-bottom:none">${totReg.toFixed(2)}h</td>
+          ${hasOt ? `<td style="${tdR};border-top:2px solid #29AAE1;border-bottom:none">${totOt > 0 ? totOt.toFixed(2) + 'h' : '—'}</td>` : ''}
+          <td colspan="${hasOt ? 2 : 1}" style="${td};border-top:2px solid #29AAE1;border-bottom:none"></td>
+          <td style="${tdR};font-weight:700;border-top:2px solid #29AAE1;border-bottom:none">${money(baseSum)}</td>
+          <td style="${td};border-top:2px solid #29AAE1;border-bottom:none"></td>
+        </tr></tbody></table>`;
+  }
+
+  // 原始合计 ≠ 账单总额(有 markup)时, 在 Total Due 上方列出计算式——原始金额和
+  // markup 后金额分开展示, 和后台 Invoice 预览一模一样。
+  let mkSummary = '';
+  const billedTotal = Number(inv.subtotal) || 0;
+  if (baseSum > 0 && Math.abs(billedTotal - baseSum) > 0.005) {
+    if (profile.invoice_mode === 'container' && contItems.length) {
+      const mk = Number(inv.markup_rate) > 0 ? Number(inv.markup_rate) : billedTotal / baseSum;
+      mkSummary = `Subtotal ${money(baseSum)} &nbsp;×&nbsp; Markup ${mk.toFixed(2)} &nbsp;=&nbsp; <strong style="color:#1e293b">${money(billedTotal)}</strong>`;
+    } else {
+      const effMks = items.map(it => Number(it.markup) > 0 ? Number(it.markup) : (Number(inv.markup_rate) || 1));
+      const uniq = [...new Set(effMks.map(v => Math.round(v * 10000) / 10000))];
+      const mkText = uniq.length === 1 ? `Markup ${uniq[0].toFixed(2)}` : 'Markup per worker';
+      const otFee = Number(profile.ot_fee_rate) || 0;
+      const otBase = items.reduce((s, it) => s + (it.otAmt != null ? (Number(it.otAmt) || 0) : (Number(it.otHours) || 0) * (Number(it.otRate) || 0)), 0);
+      if (otFee > 0 && otBase > 0.005) {
+        const regBase = Math.round((baseSum - otBase) * 100) / 100;
+        mkSummary = `Reg ${money(regBase)} × ${mkText} &nbsp;+&nbsp; OT ${money(otBase)} × ${otFee.toFixed(2)} &nbsp;=&nbsp; <strong style="color:#1e293b">${money(billedTotal)}</strong>`;
+      } else {
+        mkSummary = `Wage Subtotal ${money(baseSum)} &nbsp;×&nbsp; ${mkText} &nbsp;=&nbsp; <strong style="color:#1e293b">${money(billedTotal)}</strong>`;
+      }
+    }
   }
 
   const bankLines = [
@@ -1384,7 +1420,9 @@ function renderInvoiceDoc(inv) {
     </table>
     ${lineTable}
     <div style="display:flex;justify-content:flex-end;margin:.6rem 0 .9rem">
-      <table style="border-collapse:collapse;font-size:.86rem;min-width:260px"><tr>
+      <table style="border-collapse:collapse;font-size:.86rem;min-width:260px">
+      ${mkSummary ? `<tr><td colspan="2" style="padding:0 0 .35rem 0;text-align:right;font-size:.76rem;color:#64748b;white-space:nowrap">${mkSummary}</td></tr>` : ''}
+      <tr>
         <td style="padding:7px 16px 7px 0;border-top:2px solid #29AAE1;border-bottom:2px solid #29AAE1;color:#29AAE1;font-weight:700;text-align:right;text-transform:uppercase;white-space:nowrap">Total Due</td>
         <td style="padding:7px 0;border-top:2px solid #29AAE1;border-bottom:2px solid #29AAE1;color:#29AAE1;font-weight:800;text-align:right;font-size:1.15rem;white-space:nowrap">${money(inv.subtotal)}</td>
       </tr></table>
