@@ -13,6 +13,18 @@ const ANN = {};                   // plaid_txn_id → box
 let _bsBoxList = [];              // 已加载的标注（与 ANN 同一批对象）
 let _bsCompanies = [], _bsPartnerCompanies = [], _bsWarehouses = [], _bsReferrers = [];
 let _bsEdRange = { start: '', end: '' }; // 银行直连交易无账单周期限制
+// 审核权: admin 角色, 或账号编辑里勾了「可审核银行交易标注」(bank_ann_reviewer=1) 的账号
+// (老板日常用的非 admin 号也能核对会计/客服的标注)。第一次用到时查 /api/admin/me。
+let _annReviewFlag = null;   // null = 还没查过
+function annCanReview() { return (typeof ROLE !== 'undefined' && ROLE === 'admin') || _annReviewFlag === true; }
+async function _annEnsureReviewFlag() {
+  if (_annReviewFlag != null) return;
+  if (typeof ROLE !== 'undefined' && ROLE === 'admin') { _annReviewFlag = true; return; }
+  try {
+    const me = await annApi('/admin/me');
+    _annReviewFlag = !!(me && (me.role === 'admin' || me.bank_ann_reviewer));
+  } catch (e) { _annReviewFlag = false; }
+}
 
 const BS_EXTRA_COMPANIES = ['Dando Chemicals US LLC', 'BOOKFREIGHT INC', 'Nova Express', '以梦为马 Yimengweima'];
 const BS_PAYEE_BANKFEE = '银行费用';
@@ -566,6 +578,7 @@ async function bsUpdateBoxField(id, field, value) {
     const s = document.getElementById('bsEdStatus'); if (s) { s.textContent = '已保存 ✓'; setTimeout(() => { if (s.textContent === '已保存 ✓') s.textContent = ''; }, 1200); }
   } catch (e) { showToast('保存失败：' + (e.message || e), 'error'); }
   bsRefreshNoteState(id);
+  if (field === 'payee' || field === 'purpose') _bsAnnCheckSchedule(id);
   if (field === 'direction') {
     const isIn = value === 'in';
     const color = isIn ? '#059669' : '#dc2626';
@@ -640,7 +653,83 @@ function _bsInvItemsHtml(box) {
     </div>`).join('');
   return rows
     + `<div class="bs-inv-sum" style="font-size:.72rem;margin-bottom:.25rem">${_bsInvSumLineHtml(box, items)}</div>`
-    + `<button type="button" onclick="bsInvItemAdd(${box.id})" style="font-size:.74rem;padding:.2rem .6rem;border:1px dashed #059669;background:#f0fdf4;color:#047857;border-radius:6px;cursor:pointer;font-weight:600">＋ 再加一张发票（各自账期/金额）</button>`;
+    + `<button type="button" onclick="bsInvItemAdd(${box.id})" style="font-size:.74rem;padding:.2rem .6rem;border:1px dashed #059669;background:#f0fdf4;color:#047857;border-radius:6px;cursor:pointer;font-weight:600">＋ 再加一张发票（各自账期/金额）</button>`
+    + `<div class="bs-ann-check" style="font-size:.72rem;line-height:1.55;margin-top:.35rem"></div>`;
+}
+// ── 🤖 发票自动核对: 填的发票号/账期/金额自动和系统里的 invoice 比对 ──
+// 只对「收入·付给公司」(核对公司/账期/金额/用途) 与「员工工资」(只核对发票存在与账期)
+// 的标注做; 卸柜费/木板钱等对方开来的发票不在本系统, 不核对以免误报。
+// 发票号前缀: INV-L-* = Labor 工时发票, INV-C-* = Container 卸柜发票。
+let _bsInvCheckCache = {};   // 发票号(大写) → 服务器返回信息
+let _bsAnnCheckTimer = null;
+function _bsAnnCheckSchedule(boxId) {
+  clearTimeout(_bsAnnCheckTimer);
+  _bsAnnCheckTimer = setTimeout(() => { _bsAnnCheckRun(boxId).catch(() => {}); }, 350);
+}
+function _bsAnnCheckMode(box) {
+  const k = _bsPayeeKind(box);
+  if (k === 'company' && box.direction === 'in') return 'full';
+  if (k === 'employee') return 'exist';
+  return null;
+}
+async function _bsAnnCheckRun(boxId) {
+  const box = _bsBoxList.find(b => b.id === boxId);
+  if (!box || box.id !== _annOpenId) return;
+  const el = document.querySelector('.bs-ann-check');
+  if (!el) return;
+  const mode = _bsAnnCheckMode(box);
+  const items = _bsInvItems(box).filter(it => String(it.inv || '').trim());
+  if (!mode || !items.length) { el.innerHTML = ''; return; }
+  const need = [...new Set(items.map(it => it.inv.trim().toUpperCase()))].filter(n => !(n in _bsInvCheckCache));
+  if (need.length) {
+    try {
+      const r = await annApi('/plaid/invoice-check?nums=' + encodeURIComponent(need.join(',')));
+      Object.assign(_bsInvCheckCache, (r && r.invoices) || {});
+    } catch (e) { el.innerHTML = '<span style="color:#94a3b8">🤖 自动核对暂不可用</span>'; return; }
+  }
+  if (box.id !== _annOpenId) return;
+  el.innerHTML = _bsAnnCheckHtml(box, items, mode);
+}
+function _bsAnnCheckHtml(box, items, mode) {
+  const many = items.length > 1;
+  const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const lines = items.map(it => {
+    const num = it.inv.trim().toUpperCase();
+    const info = _bsInvCheckCache[num];
+    if (!info) return '';
+    if (!info.found) return `<div style="color:#dc2626">⚠️ ${esc(num)}：系统里没有这张发票（检查号码有没有打错）</div>`;
+    const probs = [], oks = [];
+    // 账期: 两边都填了才比
+    if (it.ps && it.pe && info.period_start && info.period_end) {
+      if (it.ps === info.period_start && it.pe === info.period_end) oks.push('账期');
+      else probs.push(`账期不符（发票是 ${esc(info.period_start)} ~ ${esc(info.period_end)}）`);
+    }
+    if (mode === 'full') {
+      // 金额: 多张发票用各张填的金额; 单张没填时用这笔交易金额
+      const amt = parseFloat(it.amt) || (!many ? Math.abs(Number(box.amount) || 0) : 0);
+      if (amt && info.subtotal) {
+        if (Math.abs(amt - info.subtotal) < 0.01) oks.push('金额');
+        else probs.push(`金额差 ${money(Math.abs(amt - info.subtotal))}（发票 ${money(info.subtotal)}，填了 ${money(amt)}）`);
+      }
+      // 公司: 标注选的公司要和发票抬头一致 (去空格/大小写比较)
+      if (box.payee && info.company_name) {
+        const a = norm(box.payee), b = norm(info.company_name);
+        if (a === b || a.includes(b) || b.includes(a)) oks.push('公司');
+        else probs.push(`公司不符（发票开给 ${esc(info.company_name)}）`);
+      }
+      // 用途 vs 前缀: L=Labor 劳务/工时, C=Container 卸柜
+      const m = num.match(/^INV-([LC])-/);
+      const purpose = String(box.purpose || '');
+      if (m && purpose) {
+        if (m[1] === 'L' && purpose.indexOf('卸柜') >= 0) probs.push('L 开头是 Labor 工时发票，用途却填了卸柜工资');
+        if (m[1] === 'C' && purpose.indexOf('劳务') >= 0) probs.push('C 开头是 Container 卸柜发票，用途却填了劳务工资');
+      }
+    }
+    if (probs.length) return `<div style="color:#dc2626">⚠️ ${esc(num)}：${probs.join('；')}</div>`;
+    return `<div style="color:#059669">✅ ${esc(num)}：与系统发票一致${oks.length ? '（' + oks.join('/') + '）' : ''}</div>`;
+  }).filter(Boolean);
+  if (!lines.length) return '';
+  return `<div style="color:#64748b">🤖 与系统发票自动核对：</div>` + lines.join('');
 }
 const _bsInvSaveTimers = {};
 async function _bsInvItemsSave(box, items) {
@@ -660,6 +749,7 @@ async function _bsInvItemsSave(box, items) {
     } catch (e) { showToast('保存失败：' + (e.message || e), 'error'); }
     bsRefreshNoteState(box.id);
     annRefreshChip(box);
+    _bsAnnCheckSchedule(box.id);
   }, 250);
 }
 function bsInvItemField(boxId, idx, key, val) {
@@ -789,8 +879,8 @@ async function annApprove(id) {
 // 状态条: 待审核/已审核 提示 (客服每次保存后刷新)
 function annStatusLineHtml(box) {
   if (box.ann_status === 'pending') {
-    return '<div class="ann-status pending" id="annStatusLine">⏳ ' + esc(box.ann_by || '客服') + ' 提交的标注，待管理员审核'
-      + (ROLE === 'admin' ? ' <button onclick="annApprove(' + box.id + ')" style="margin-left:6px;border:none;background:#16a34a;color:#fff;border-radius:6px;padding:3px 12px;font-size:.74rem;cursor:pointer;font-weight:700">✅ 审核通过</button>' : '')
+    return '<div class="ann-status pending" id="annStatusLine">⏳ ' + esc(box.ann_by || '客服') + ' 提交的标注，待审核'
+      + (annCanReview() ? ' <button onclick="annApprove(' + box.id + ')" style="margin-left:6px;border:none;background:#16a34a;color:#fff;border-radius:6px;padding:3px 12px;font-size:.74rem;cursor:pointer;font-weight:700">✅ 审核通过</button>' : '')
       + '</div>';
   }
   if (box.ann_status === 'approved') return '<div class="ann-status approved" id="annStatusLine">✅ 已审核' + (box.ann_by ? '（' + esc(box.ann_by) + ' 标注）' : '') + '</div>';
@@ -938,6 +1028,7 @@ function _bsRenderBoxPanel() {
     + '<datalist id="bsPersonalCatList">' + BS_PERSONAL_CATS.map(c => `<option value="${esc(c)}"></option>`).join('') + '</datalist>'
     + '<datalist id="bsReferrerList">' + (_bsReferrers || []).map(n => `<option value="${esc(n)}"></option>`).join('') + '</datalist>';
   bsValidateBoxDates(box.id);
+  _bsAnnCheckSchedule(box.id);
 }
 
 // ── 行内徽章 + 抽屉开关 ──
@@ -983,6 +1074,7 @@ function annStore(box) {
 }
 async function annLoadAll() {
   try {
+    _annEnsureReviewFlag();
     const r = await annApi('/plaid/annotations');
     Object.values(r.annotations || {}).forEach(annStore);
     updatePendBtn();
@@ -990,7 +1082,7 @@ async function annLoadAll() {
 }
 async function annOpen(txnId) {
   try {
-    await Promise.all([bsEnsureCompanies(), bsEnsureWarehouses(), bsEnsureReferrers()]);
+    await Promise.all([bsEnsureCompanies(), bsEnsureWarehouses(), bsEnsureReferrers(), _annEnsureReviewFlag()]);
     const box = annStore(await annApi('/plaid/annotations', { method: 'POST', body: JSON.stringify({ txn_id: txnId }) }));
     _annOpenId = box.id;
     const t = _TXNS.find(x => x.txn_id === txnId);

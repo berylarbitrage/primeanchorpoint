@@ -9233,6 +9233,8 @@ const _mfaDel = t => db.prepare('DELETE FROM mfa_pending WHERE token=?').run(Str
 try { db.exec("ALTER TABLE admin_users ADD COLUMN mfa_phone TEXT DEFAULT ''"); } catch (e) {}
 // 按账号豁免短信验证 (管理员在账号编辑里勾选「登录免短信验证」)
 try { db.exec("ALTER TABLE admin_users ADD COLUMN mfa_exempt INTEGER DEFAULT 0"); } catch (e) {}
+// 银行标注审核员: 非 admin 账号 (如老板的 cs/会计号) 也可核对银行交易标注, 自己的改动不再置待审核
+try { db.exec("ALTER TABLE admin_users ADD COLUMN bank_ann_reviewer INTEGER DEFAULT 0"); } catch (e) {}
 db.exec(`CREATE TABLE IF NOT EXISTS mfa_trusted_devices (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
@@ -9387,7 +9389,7 @@ app.post('/api/admin/logout', requireAdmin, (req, res) => {
 
 // Get current user info
 app.get('/api/admin/me', requireAdmin, (req, res) => {
-  const user = db.prepare('SELECT id, username, role, display_name FROM admin_users WHERE id = ?').get(req.userId);
+  const user = db.prepare('SELECT id, username, role, display_name, bank_ann_reviewer FROM admin_users WHERE id = ?').get(req.userId);
   if (!user) return res.status(404).json({ error: 'User not found' });
   res.json(user);
 });
@@ -9646,7 +9648,7 @@ app.post('/api/manager/self-punch/:id/confirm', requireAdmin, requireRole('admin
 // ─── Account Management (admin only) ───
 app.get('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
   // password_plain 仅会计(accounting)角色有值, 且本接口本就仅限 admin 角色访问
-  res.json(db.prepare('SELECT id, username, role, display_name, email, phone, active, approval_status, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, sms_notify_phone, sms_notify_enabled, mfa_exempt, created_at, password_plain FROM admin_users ORDER BY id').all());
+  res.json(db.prepare('SELECT id, username, role, display_name, email, phone, active, approval_status, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, sms_notify_phone, sms_notify_enabled, mfa_exempt, bank_ann_reviewer, created_at, password_plain FROM admin_users ORDER BY id').all());
 });
 
 // 批准会计自助注册的账号
@@ -9659,7 +9661,7 @@ app.post('/api/admin/accounts/:id/approve', requireAdmin, requireRole('admin'), 
 });
 
 app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
-  const { username, password, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, mfa_exempt } = req.body;
+  const { username, password, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, mfa_exempt, bank_ann_reviewer } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   const pwErr = validatePassword(password);
   if (pwErr) return res.status(400).json({ error: pwErr });
@@ -9670,14 +9672,14 @@ app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) =
   if (existing && !existing.active) db.prepare('DELETE FROM admin_users WHERE id = ?').run(existing.id);
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
-  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, active, password_plain, mfa_exempt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)')
-    .run(username, hash, salt, role, display_name || '', assigned_partner_ids || '', assigned_employee_ids || '', assigned_job_ids || '', email || '', phone || '', role === 'accounting' ? password : '', mfa_exempt ? 1 : 0);
+  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, active, password_plain, mfa_exempt, bank_ann_reviewer) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)')
+    .run(username, hash, salt, role, display_name || '', assigned_partner_ids || '', assigned_employee_ids || '', assigned_job_ids || '', email || '', phone || '', role === 'accounting' ? password : '', mfa_exempt ? 1 : 0, bank_ann_reviewer ? 1 : 0);
   auditLog('account_create', req, { targetType: 'admin_user', targetId: result.lastInsertRowid, details: mfa_exempt ? { username, role, mfa_exempt: true } : { username, role } });
   res.json({ success: true, id: result.lastInsertRowid });
 });
 
 app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { username, password, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, sms_notify_phone, sms_notify_enabled, mfa_exempt } = req.body;
+  const { username, password, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, sms_notify_phone, sms_notify_enabled, mfa_exempt, bank_ann_reviewer } = req.body;
   if (role && !['admin', 'staff', 'manager', 'accounting'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
@@ -9694,12 +9696,14 @@ app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res
   // 角色从会计改走时清掉留存密码
   if (effRole !== 'accounting' && user.password_plain) db.prepare("UPDATE admin_users SET password_plain='' WHERE id=?").run(req.params.id);
   // active field is intentionally excluded — only the user themselves can activate via self-verification
-  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, assigned_partner_ids=?, assigned_employee_ids=?, assigned_job_ids=?, email=?, phone=?, sms_notify_phone=?, sms_notify_enabled=?, mfa_exempt=? WHERE id=?')
-    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, assigned_partner_ids !== undefined ? assigned_partner_ids : (user.assigned_partner_ids || ''), assigned_employee_ids !== undefined ? assigned_employee_ids : (user.assigned_employee_ids || ''), assigned_job_ids !== undefined ? assigned_job_ids : (user.assigned_job_ids || ''), email !== undefined ? email : (user.email || ''), phone !== undefined ? phone : (user.phone || ''), sms_notify_phone !== undefined ? sms_notify_phone : (user.sms_notify_phone || ''), sms_notify_enabled !== undefined ? (sms_notify_enabled ? 1 : 0) : (user.sms_notify_enabled ?? 1), mfa_exempt !== undefined ? (mfa_exempt ? 1 : 0) : (user.mfa_exempt ?? 0), req.params.id);
+  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, assigned_partner_ids=?, assigned_employee_ids=?, assigned_job_ids=?, email=?, phone=?, sms_notify_phone=?, sms_notify_enabled=?, mfa_exempt=?, bank_ann_reviewer=? WHERE id=?')
+    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, assigned_partner_ids !== undefined ? assigned_partner_ids : (user.assigned_partner_ids || ''), assigned_employee_ids !== undefined ? assigned_employee_ids : (user.assigned_employee_ids || ''), assigned_job_ids !== undefined ? assigned_job_ids : (user.assigned_job_ids || ''), email !== undefined ? email : (user.email || ''), phone !== undefined ? phone : (user.phone || ''), sms_notify_phone !== undefined ? sms_notify_phone : (user.sms_notify_phone || ''), sms_notify_enabled !== undefined ? (sms_notify_enabled ? 1 : 0) : (user.sms_notify_enabled ?? 1), mfa_exempt !== undefined ? (mfa_exempt ? 1 : 0) : (user.mfa_exempt ?? 0), bank_ann_reviewer !== undefined ? (bank_ann_reviewer ? 1 : 0) : (user.bank_ann_reviewer ?? 0), req.params.id);
   const changes = {};
   if (role && role !== user.role) changes.role = { from: user.role, to: role };
   // 免短信验证是安全开关, 谁改的、从啥改成啥要留审计痕迹
   if (mfa_exempt !== undefined && (mfa_exempt ? 1 : 0) !== (user.mfa_exempt ? 1 : 0)) changes.mfa_exempt = { from: !!user.mfa_exempt, to: !!mfa_exempt };
+  // 银行标注审核权同样留痕
+  if (bank_ann_reviewer !== undefined && (bank_ann_reviewer ? 1 : 0) !== (user.bank_ann_reviewer ? 1 : 0)) changes.bank_ann_reviewer = { from: !!user.bank_ann_reviewer, to: !!bank_ann_reviewer };
   if (password) changes.password_reset = true;
   if (username && username !== user.username) changes.username = { from: user.username, to: username };
   auditLog('account_update', req, { targetType: 'admin_user', targetId: req.params.id, details: changes });
@@ -34372,6 +34376,15 @@ function plaidAnnWithPhotos(row) {
   row.photos_urls = (Array.isArray(keys) ? keys : []).filter(Boolean).map(k => `/uploads/${path.basename(k)}`);
   return row;
 }
+// 银行标注审核权: admin, 或账号编辑里勾了「可审核银行交易标注」(bank_ann_reviewer)
+// 的 cs/会计账号 (老板日常用非 admin 号也能核对); 有审核权的人自己的改动不置待审核。
+function annCanReview(req) {
+  if (req.userRole === 'admin') return true;
+  try {
+    const u = db.prepare('SELECT bank_ann_reviewer FROM admin_users WHERE id=?').get(req.userId);
+    return !!(u && u.bank_ann_reviewer);
+  } catch (e) { return false; }
+}
 // 所有 Plaid 交易的标注, 按 plaid_txn_id 键成 map (银行对账页给每行画徽章用)
 app.get('/api/plaid/annotations', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
   try {
@@ -34395,7 +34408,7 @@ app.post('/api/plaid/annotations', requireAdmin, requireRole('admin', 'cs', 'acc
       db.prepare(`INSERT INTO bank_statement_txns (statement_id, kind, plaid_txn_id, txn_date, amount, direction, description, ann_status, ann_by)
         VALUES (?,'box',?,?,?,?,?,?,?)`).run(sid, txnId, txn.date || '', Math.abs(txn.amount || 0),
           (txn.amount || 0) > 0 ? 'out' : 'in', txn.merchant || txn.name || '',
-          req.userRole !== 'admin' ? 'pending' : '', req.userName || '');
+          annCanReview(req) ? '' : 'pending', req.userName || '');
       row = db.prepare(`SELECT * FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id=?`).get(txnId);
     }
     res.json(plaidAnnWithPhotos(row));
@@ -34421,7 +34434,7 @@ app.put('/api/plaid/annotations/:id', requireAdmin, requireRole('admin', 'cs', '
         })));
       } catch (e2) { invItemsVal = row.inv_items; }
     }
-    const isCs = req.userRole !== 'admin'; // 客服/会计的改动都需审核
+    const isCs = !annCanReview(req); // 无审核权的客服/会计改动需审核; admin 和勾了审核权的账号直接生效
     const annStatus = isCs ? 'pending' : row.ann_status;
     const annBy = isCs ? (req.userName || '') : row.ann_by;
     db.prepare(`UPDATE bank_statement_txns SET
@@ -34441,14 +34454,35 @@ app.put('/api/plaid/annotations/:id', requireAdmin, requireRole('admin', 'cs', '
     res.json({ success: true, ann_status: annStatus, ann_by: annBy });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-// 管理员审核通过客服的标注
-app.post('/api/plaid/annotations/:id/approve', requireAdmin, requireRole('admin'), (req, res) => {
+// 审核通过标注: admin 或有「银行标注审核权」的账号
+app.post('/api/plaid/annotations/:id/approve', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
   try {
+    if (!annCanReview(req)) return res.status(403).json({ error: '此账号没有标注审核权限' });
     const id = parseInt(req.params.id);
     const r = db.prepare(`UPDATE bank_statement_txns SET ann_status='approved', updated_at=CURRENT_TIMESTAMP
       WHERE id=? AND kind='box' AND plaid_txn_id<>''`).run(id);
     if (!r.changes) return res.status(404).json({ error: 'not found' });
+    auditLog('bank_ann_approve', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers }, { targetType: 'bank_statement_txn', targetId: id });
     res.json({ success: true, ann_status: 'approved' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 🤖 标注发票自动核对: 按发票号批量取系统里发票的关键信息 (存在/公司/账期/金额/收款状态),
+// 前端在标注抽屉里逐项比对显示 ✓/⚠ —— 审核人不用再手动翻发票核对。
+app.get('/api/plaid/invoice-check', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
+  try {
+    const nums = String(req.query.nums || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 30);
+    const out = {};
+    const q = db.prepare('SELECT invoice_number, company_name, period_start, period_end, subtotal, payment_status FROM invoices WHERE TRIM(invoice_number)=? COLLATE NOCASE');
+    for (const n of nums) {
+      const rows = q.all(n);
+      out[n] = rows.length ? {
+        found: true, matches: rows.length, invoice_number: rows[0].invoice_number,
+        company_name: rows[0].company_name || '', period_start: rows[0].period_start || '',
+        period_end: rows[0].period_end || '', subtotal: Number(rows[0].subtotal) || 0,
+        payment_status: rows[0].payment_status || '',
+      } : { found: false };
+    }
+    res.json({ invoices: out });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // 删除一条交易标注 (仅管理员; 客服只能改, 不能删)
@@ -34473,7 +34507,7 @@ app.post('/api/plaid/annotations/:id/photos', requireAdmin, requireRole('admin',
     if (!Array.isArray(keys)) keys = [];
     (req.files || []).forEach(f => { const k = f.key || f.path; if (k) keys.push(k); });
     keys = keys.slice(0, 24);
-    const isCs = req.userRole !== 'admin'; // 客服/会计的改动都需审核
+    const isCs = !annCanReview(req); // 无审核权的客服/会计改动需审核
     db.prepare(`UPDATE bank_statement_txns SET photos=?, ann_status=CASE WHEN ? THEN 'pending' ELSE ann_status END,
         ann_by=CASE WHEN ? THEN ? ELSE ann_by END, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
       .run(JSON.stringify(keys), isCs ? 1 : 0, isCs ? 1 : 0, req.userName || '', id);
@@ -34491,7 +34525,7 @@ app.delete('/api/plaid/annotations/:id/photos', requireAdmin, requireRole('admin
     let keys = []; try { keys = JSON.parse(row.photos || '[]'); } catch (e2) { keys = []; }
     const kept = (Array.isArray(keys) ? keys : []).filter(k => path.basename(k) !== target);
     const removed = (Array.isArray(keys) ? keys : []).find(k => path.basename(k) === target);
-    const isCs = req.userRole !== 'admin'; // 客服/会计的改动都需审核
+    const isCs = !annCanReview(req); // 无审核权的客服/会计改动需审核
     db.prepare(`UPDATE bank_statement_txns SET photos=?, ann_status=CASE WHEN ? THEN 'pending' ELSE ann_status END,
         ann_by=CASE WHEN ? THEN ? ELSE ann_by END, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
       .run(JSON.stringify(kept), isCs ? 1 : 0, isCs ? 1 : 0, req.userName || '', id);
