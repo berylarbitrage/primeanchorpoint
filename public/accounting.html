@@ -388,6 +388,25 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
           <option value="0" selected>只看未审核</option>
           <option value="1">只看已审核</option>
         </select>
+        <select id="bankFltDir" onchange="bankLoadTxns()" title="按收入 / 支出筛选">
+          <option value="">收支：全部</option>
+          <option value="in">＋ 只看收入</option>
+          <option value="out">− 只看支出</option>
+        </select>
+        <select id="bankFltCat" onchange="bankLoadTxns()" title="按银行分类筛选"><option value="">分类：全部</option></select>
+        <select id="bankFltType" onchange="bankLoadTxns()" title="按交易类型关键词筛选">
+          <option value="">类型：全部</option>
+          <option value="zelle">Zelle</option>
+          <option value="gusto">Gusto 工资</option>
+          <option value="wire">Wire 电汇</option>
+          <option value="ach">ACH 转账</option>
+          <option value="check">Check 支票</option>
+          <option value="deposit">存款 Deposit</option>
+          <option value="fee">银行费用 Fee</option>
+          <option value="interest">利息 Interest</option>
+          <option value="atm">ATM / 现金</option>
+        </select>
+        <select id="bankFltInternal" onchange="bankLoadTxns()" title="三家自家公司账户之间的往来" style="display:none"><option value="">内部往来：全部</option></select>
         <input type="text" id="bankFltQ" placeholder="搜商户 / 描述 / 备注…" oninput="clearTimeout(window._bq);window._bq=setTimeout(bankLoadTxns,300)" style="width:200px">
         <input type="date" id="bankFltFrom" onchange="bankLoadTxns()">
         <span style="color:var(--g400)">→</span>
@@ -1885,6 +1904,83 @@ async function bankUnlink(itemRowId) {
   catch (e) { toast(e.message || '解绑失败', true); }
 }
 let _bankTxns = [];
+// ── 银行直连本地筛选: 收支方向 / 银行分类 / 类型(Zelle·Gusto·Wire…) / 内部往来 ──
+// 类型按 商户+描述 文本匹配; \bcheck\b 不会命中 "checking"。
+const _BANK_TYPE_PATTERNS = {
+  zelle: /zelle/i,
+  gusto: /gusto/i,
+  wire: /\bwire\b/i,
+  ach: /\bach\b|orig co name|sec:ccd|sec:ppd|sec:web/i,
+  check: /\bcheck\b|\bcheque\b/i,
+  deposit: /\bdeposit\b/i,
+  fee: /\bfees?\b|service charge|monthly service|overdraft/i,
+  interest: /\binterest\b/i,
+  atm: /\batm\b|\bcash\b/i,
+};
+function _bankTxnText(x) { return ((x.name || '') + ' ' + (x.merchant || '')).toLowerCase(); }
+// 带公司名标签的自家账户 (plaid 模式的三家公司账户)
+function _bankCompanyAccounts() {
+  const accs = _bankMode === 'plaid' ? ((_plaidAccts && _plaidAccts.accounts) || []) : ((_bankStatus && _bankStatus.accounts) || []);
+  return accs.filter(a => a.company_label);
+}
+const _bankNormCo = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+// 这笔交易的「内部对手方」: 描述里出现了另一家自家公司的名字(去空格比较, SURPLUSLANE
+// 也能对上 Surplus Lane) 或另一个自家账户的尾号 → 返回那家公司名; 否则 null。
+// 只认「别家」自家公司——ACH 描述里带自己公司名(收款方)不算内部转账。
+function _bankInternalParty(x) {
+  const accs = _bankCompanyAccounts();
+  if (!accs.length) return null;
+  const own = (accs.find(a => a.account_id === x.account_id) || {}).company_label || '';
+  const txt = _bankTxnText(x);
+  const ntxt = _bankNormCo(txt);
+  for (const a of accs) {
+    if (!a.company_label || a.company_label === own) continue;
+    if (ntxt.includes(_bankNormCo(a.company_label))) return a.company_label;
+    if (a.mask && new RegExp('(^|\\D)' + a.mask + '(\\D|$)').test(txt)) return a.company_label;
+  }
+  return null;
+}
+function _bankApplyLocalFilters(list) {
+  const val = id => (document.getElementById(id) || {}).value || '';
+  const dir = val('bankFltDir'), cat = val('bankFltCat'), typ = val('bankFltType'), internal = val('bankFltInternal');
+  // Plaid 金额: 正数=支出, 负数=收入
+  if (dir) list = list.filter(x => dir === 'out' ? (x.amount || 0) > 0 : (x.amount || 0) < 0);
+  if (cat) list = list.filter(x => String(x.category || '') === cat);
+  if (typ && _BANK_TYPE_PATTERNS[typ]) list = list.filter(x => _BANK_TYPE_PATTERNS[typ].test(_bankTxnText(x)));
+  if (internal === '__any') list = list.filter(x => !!_bankInternalParty(x));
+  else if (internal) {
+    const accs = _bankCompanyAccounts();
+    list = list.filter(x => {
+      const own = (accs.find(a => a.account_id === x.account_id) || {}).company_label || '';
+      const party = _bankInternalParty(x);
+      return party === internal || (own === internal && !!party);
+    });
+  }
+  return list;
+}
+// 分类下拉: 从当前账户已加载的交易里收集分类 + 各自笔数, 保留当前选择
+function _bankFillCatOptions(txns) {
+  const sel = document.getElementById('bankFltCat');
+  if (!sel) return;
+  const cur = sel.value;
+  const counts = {};
+  txns.forEach(x => { const c = String(x.category || '').trim(); if (c) counts[c] = (counts[c] || 0) + 1; });
+  const cats = Object.keys(counts).sort();
+  sel.innerHTML = '<option value="">分类：全部</option>' + cats.map(c => `<option value="${esc(c)}">${esc(c)} (${counts[c]})</option>`).join('');
+  if (cats.includes(cur)) sel.value = cur;
+}
+// 内部往来下拉: 🔁 公司之间 + 每家公司一项; 没有公司标签的数据源不显示
+function _bankFillInternalOptions() {
+  const sel = document.getElementById('bankFltInternal');
+  if (!sel) return;
+  const cos = [...new Set(_bankCompanyAccounts().map(a => a.company_label))];
+  const cur = sel.value;
+  sel.style.display = cos.length ? '' : 'none';
+  sel.innerHTML = '<option value="">内部往来：全部</option><option value="__any">🔁 内部转账（公司之间）</option>'
+    + cos.map(c => `<option value="${esc(c)}">涉及 ${esc(c)}</option>`).join('');
+  if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+}
+
 async function bankLoadTxns() {
   if (_bankMode === 'plaid') return plaidLoadTxns();
   const q = new URLSearchParams();
@@ -1897,8 +1993,11 @@ async function bankLoadTxns() {
     const d = await bapi('/api/acct/bank/transactions?' + q.toString());
     _bankTxns = d.transactions || [];
   } catch (e) { document.getElementById('bankTxnBody').innerHTML = '<tr><td colspan="8" style="color:#dc2626">' + esc(e.message || '加载失败') + '</td></tr>'; return; }
-  document.getElementById('bankTxnStats').textContent = `${_bankTxns.length} 笔`;
-  document.getElementById('bankTxnBody').innerHTML = _bankTxns.map(x => {
+  _bankFillCatOptions(_bankTxns);
+  _bankFillInternalOptions();
+  const shown = _bankApplyLocalFilters(_bankTxns);
+  document.getElementById('bankTxnStats').textContent = `${_bankTxns.length} 笔` + (shown.length !== _bankTxns.length ? ` · 筛选后 ${shown.length} 笔` : '');
+  document.getElementById('bankTxnBody').innerHTML = shown.map(x => {
     // Plaid 金额: 正数=支出, 负数=入账
     const isOut = (x.amount || 0) > 0;
     const amt = `<span style="font-weight:800;color:${isOut ? '#dc2626' : '#15803d'}">${isOut ? '−' : '+'}${money(Math.abs(x.amount || 0))}</span>`;
@@ -1949,9 +2048,13 @@ async function plaidLoadTxns() {
   // 「待审核」筛选 (与 /banking 同款): 只看有待审核标注的交易
   let list = _plaidTxns;
   if (_pendingOnly) list = list.filter(t => ANN[t.txn_id] && ANN[t.txn_id].ann_status === 'pending');
+  // 本地筛选: 收支 / 分类 / 类型 / 内部往来
+  _bankFillCatOptions(_plaidTxns);
+  _bankFillInternalOptions();
+  list = _bankApplyLocalFilters(list);
   const accById = {};
   ((_plaidAccts && _plaidAccts.accounts) || []).forEach(a => { accById[a.account_id] = a; });
-  document.getElementById('bankTxnStats').textContent = `共 ${d.total || _plaidTxns.length} 笔${_plaidTxns.length < (d.total || 0) ? `（显示最近 ${_plaidTxns.length} 笔）` : ''}`;
+  document.getElementById('bankTxnStats').textContent = `共 ${d.total || _plaidTxns.length} 笔${_plaidTxns.length < (d.total || 0) ? `（显示最近 ${_plaidTxns.length} 笔）` : ''}${list.length !== _plaidTxns.length ? ` · 筛选后 ${list.length} 笔` : ''}`;
   // plaid 模式表头: 审核/备注两列合并为与 /banking 相同的「标注」列
   const headRow = document.getElementById('bankTxnHeadRow');
   if (headRow) headRow.innerHTML = '<th>日期</th><th>银行 / 账户</th><th>商户 / 描述</th><th>分类</th><th style="text-align:right">金额</th><th>状态</th><th>标注</th>';
