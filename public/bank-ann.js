@@ -72,6 +72,32 @@ const BS_REFERRAL_PREFIX = '推荐费:';
 const BS_PAYEE_WAGEBONUS = '__wagebonus__';
 const BS_WAGEBONUS_PREFIX = '发工资奖励:';
 const BS_FEE_TYPES = ['服务费 Service Fee', '支票费 Check Fee', '电汇费 Wire Fee', 'ACH 转账费 ACH Fee', '账户维护费 Maintenance Fee', '账户验证费 Account Verify', '透支费 Overdraft Fee', '退票费 NSF/Returned Item', 'ATM 费 ATM Fee', '停付费 Stop Payment', '现金处理费 Cash Handling', '外币兑换费 FX Fee', '纸质对账单费 Paper Statement'];
+// 公司收入的「用途」下拉: 可以是卸柜也可以是劳务工资 (下拉直选, 不再用输入建议——
+// 输入框里已有文字时 datalist 只显示匹配项, 会让人以为没有别的选项)
+const BS_PURPOSE_TYPES = ['劳务工资', '卸柜工资'];
+function _bsPurposeOptions(cur) {
+  const c = String(cur || '');
+  const opts = ['<option value="">用途（选一个）</option>']
+    .concat(BS_PURPOSE_TYPES.map(p => `<option value="${esc(p)}"${p === c ? ' selected' : ''}>${esc(p)}</option>`));
+  if (c && !BS_PURPOSE_TYPES.includes(c)) opts.push(`<option value="${esc(c)}" selected>${esc(c)}</option>`);
+  opts.push('<option value="__other__">其他（手动填写）…</option>');
+  return opts.join('');
+}
+function bsPurposeSelChange(boxId, sel) {
+  if (sel.value !== '__other__') { bsUpdateBoxField(boxId, 'purpose', sel.value); return; }
+  const box = (_bsBoxList || []).find(b => b.id === boxId);
+  const cur = (box && box.purpose) || '';
+  const v = prompt('填写用途：', cur);
+  if (v == null || !v.trim()) { sel.value = cur; return; }
+  const val = v.trim();
+  if (![...sel.options].some(o => o.value === val)) {
+    const opt = document.createElement('option');
+    opt.value = val; opt.textContent = val;
+    sel.insertBefore(opt, sel.querySelector('option[value="__other__"]'));
+  }
+  sel.value = val;
+  bsUpdateBoxField(boxId, 'purpose', val);
+}
 const BS_PAYEE_OFFICE = '办公费用';
 const BS_OFFICE_TYPES = ['Claude (Anthropic)', 'ChatGPT (OpenAI)', 'Gusto 工资系统', '软件订阅 Software', '办公用品 Supplies', '网络/电话 Internet & Phone', '域名/服务器 Domain & Hosting', '邮寄快递 Postage', '打印耗材 Printing', '会员/年费 Membership', '差旅 Travel', '其他 Other'];
 const BS_PAYEE_COMPFEE = '公司相关费用';
@@ -1000,7 +1026,7 @@ function _bsRenderBoxPanel() {
           </select>
         </div>
         <div class="bs-purpose-row" style="display:${(isIn && _bsPayeeKind(box) === 'company') ? '' : 'none'}">
-          <input type="text" class="bs-bx-purpose" list="bsPurposeList" placeholder="用途（如：劳务工资）" value="${esc(box.purpose || '')}" onchange="bsUpdateBoxField(${box.id},'purpose',this.value)" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.3rem">
+          <select class="bs-bx-purpose" onchange="bsPurposeSelChange(${box.id},this)" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.3rem;background:#fff">${_bsPurposeOptions(box.purpose)}</select>
         </div>
         ${_bsInvItemsHtml(box)}
       </div>
@@ -1019,7 +1045,6 @@ function _bsRenderBoxPanel() {
         <div style="display:flex;flex-wrap:wrap;gap:.3rem">${(box.photos_urls || []).map(u => `<div style="position:relative;width:46px;height:46px">${_bsPhotoThumbInner(u, 46)}<button onclick="bsBoxDeletePhoto(${box.id},'${esc(u)}')" title="删除照片" style="position:absolute;top:-6px;right:-6px;background:rgba(15,23,42,.85);color:#fff;border:none;border-radius:999px;width:17px;height:17px;font-size:10px;line-height:17px;cursor:pointer;padding:0">×</button></div>`).join('')}</div>
       </div>
     </div>`
-    + '<datalist id="bsPurposeList"><option value="劳务工资"></option><option value="卸柜工资"></option></datalist>'
     + '<datalist id="bsFeeList">' + BS_FEE_TYPES.map(f => `<option value="${esc(f)}"></option>`).join('') + '</datalist>'
     + '<datalist id="bsOfficeList">' + BS_OFFICE_TYPES.map(f => `<option value="${esc(f)}"></option>`).join('') + '</datalist>'
     + '<datalist id="bsCompFeeList">' + BS_COMPFEE_TYPES.map(f => `<option value="${esc(f)}"></option>`).join('') + '</datalist>'
