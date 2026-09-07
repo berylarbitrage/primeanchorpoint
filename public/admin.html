@@ -38900,7 +38900,7 @@ function openInvpCsubInbox() {
   const pid = window._invpSelectedPartnerId;
   if (!pid) return showToast('请先选择客户公司', 'error');
   document.getElementById('invpCsubInboxSub').innerHTML =
-    `公司：<strong>${esc(document.getElementById('invPageBillName').value || '')}</strong> · 点击「→ 导入」会把该条加入当前发票的 container 表`;
+    `公司：<strong>${esc(document.getElementById('invPageBillName').value || '')}</strong> · 点击「→ 导入」会把该条加入当前发票的 container 表 · 单价以<b>客户确认价</b>优先（没有才用扫码报价）`;
   document.getElementById('invpCsubInboxModal').classList.add('show');
   loadInvpCsubInbox();
 }
@@ -38927,7 +38927,7 @@ async function loadInvpCsubInbox() {
           <th style="padding:6px 8px">Container #</th>
           <th style="padding:6px 8px">周期 / 日期</th>
           <th style="padding:6px 8px;text-align:center">数量</th>
-          <th style="padding:6px 8px;text-align:right">单价</th>
+          <th style="padding:6px 8px;text-align:right">价格</th>
           <th style="padding:6px 8px">参与人</th>
           <th style="padding:6px 8px">提交者</th>
           <th style="padding:6px 8px">时间</th>
@@ -38938,6 +38938,19 @@ async function loadInvpCsubInbox() {
   } catch (e) {
     body.innerHTML = `<div style="padding:1rem;color:#b91c1c">加载失败：${esc(e.message || e)}</div>`;
   }
+}
+
+// 收件箱价格列：扫码报价 + 客户确认价（存 0 视为未填）；两价都有且不同时标黄——导入用客户价
+function _invpCsubPriceCell(r) {
+  const up = (r.unit_price != null && isFinite(Number(r.unit_price)) && Number(r.unit_price) !== 0) ? Number(r.unit_price) : null;
+  const cp = (r.customer_price != null && isFinite(Number(r.customer_price)) && Number(r.customer_price) !== 0) ? Number(r.customer_price) : null;
+  if (up == null && cp == null) return '<span style="color:var(--gray-300)">—</span>';
+  const bits = [];
+  if (up != null) bits.push(`<span style="white-space:nowrap">报价 $${up.toFixed(2)}</span>`);
+  if (cp != null) bits.push(`<span style="white-space:nowrap;color:#0E7BB8;font-weight:600">客户 $${cp.toFixed(2)}</span>`);
+  let html = bits.join('<br>');
+  if (up != null && cp != null && Math.abs(up - cp) > 0.009) html += '<br><span style="white-space:nowrap;color:#b45309;font-size:.7rem">⚠️ 两价不同，导入用客户价</span>';
+  return html;
 }
 
 function _invpCsubRow(r) {
@@ -38962,7 +38975,7 @@ function _invpCsubRow(r) {
       ${(!r.service_period && !r.work_date && !r.work_site) ? '<span style="color:var(--gray-300)">—</span>' : ''}
     </td>
     <td style="padding:6px 8px;text-align:center">${r.qty || 1}</td>
-    <td style="padding:6px 8px;text-align:right">${r.unit_price ? '$' + Number(r.unit_price).toFixed(2) : '<span style="color:var(--gray-300)">—</span>'}</td>
+    <td style="padding:6px 8px;text-align:right;font-size:.8rem;line-height:1.4">${_invpCsubPriceCell(r)}</td>
     <td style="padding:6px 8px">${partsHtml}</td>
     <td style="padding:6px 8px;font-size:.82rem">${submitter || '<span style="color:var(--gray-300)">—</span>'}</td>
     <td style="padding:6px 8px;font-size:.74rem;color:var(--gray-500);white-space:nowrap">${esc(when)}</td>
@@ -39042,13 +39055,17 @@ async function invpImportCsub(submissionId) {
     const staffList = parts.slice(0, 5).map((name, i) => ({ id: 'csub-' + submissionId + '-' + i, name: String(name || '').trim() }));
     const noteSuffix = rec.notes ? `（提交备注：${rec.notes}）` : '';
     const submitterNote = rec.submitter_name ? `[扫码 ${rec.submitter_name}${rec.submitter_phone ? ' '+rec.submitter_phone : ''}]${noteSuffix}` : (noteSuffix || '');
+    // 账单价取客户确认价（顾客链接/审核里填的）优先，没有再用扫码时的报价；存 0 视为未填。
+    // 只用扫码报价的话，工头现场随手填的价会直接进发票，跟客户实际确认的对不上。
+    const _pOr = v => (v != null && isFinite(Number(v)) && Number(v) !== 0) ? Number(v) : null;
+    const billPrice = _pOr(rec.customer_price) != null ? _pOr(rec.customer_price) : _pOr(rec.unit_price);
     window._invpContainerItems.push({
       uid: _invpContainerUidSeq++,
       container_no: (rec.container_no || '').toUpperCase(),
       week: _invpFmtPeriodForContainer(),
       staffing: _invpDefaultStaffing(),
       qty: String(rec.qty || 1),
-      unit_price: rec.unit_price ? String(rec.unit_price) : '',
+      unit_price: billPrice != null ? String(billPrice) : '',
       sub_price: '',
       highlighted: false,
       staff_list: staffList,
@@ -44844,9 +44861,13 @@ function _csubInvCell(r) {
   if (m.unit_price != null && isFinite(m.unit_price)) prices.push(`<span style="color:#0E7BB8">单价 $${Number(m.unit_price).toFixed(2)}</span>`);
   if (m.sub_price != null && isFinite(m.sub_price)) prices.push(`<span style="color:#9a3412">分包 $${Number(m.sub_price).toFixed(2)}</span>`);
   const more = matches.length > 1 ? ` <span style="color:var(--gray-400);font-size:.7rem" title="该柜号出现在 ${matches.length} 张发票中">+${matches.length - 1} 张</span>` : '';
+  // 客户确认价与发票上开出去的单价不一致 → 标红提醒（发票金额可能开错了）
+  const _cp = (r.customer_price != null && isFinite(Number(r.customer_price)) && Number(r.customer_price) !== 0) ? Number(r.customer_price) : null;
+  const priceMismatch = _cp != null && m.unit_price != null && isFinite(m.unit_price) && Math.abs(Number(m.unit_price) - _cp) > 0.009;
   return `<div style="font-size:.78rem;white-space:nowrap">
     <a href="#" onclick="event.preventDefault();_invpOpenMatchedInvoice(${m.invoice_id})" style="font-weight:600;color:#0E7BB8;text-decoration:underline">#${esc(m.invoice_number || m.invoice_id)}</a>${more}
     ${prices.length ? '<div>' + prices.join(' · ') + '</div>' : '<div style="color:var(--gray-400)">发票内无价格</div>'}
+    ${priceMismatch ? `<div style="color:#b91c1c;font-weight:700">⚠️ 发票单价 ≠ 客户价 $${_cp.toFixed(2)}</div>` : ''}
     ${m.referrer ? `<div style="color:#6d28d9">Refer人: ${esc(m.referrer)}</div>` : ''}
   </div>`;
 }
