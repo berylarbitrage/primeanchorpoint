@@ -38632,7 +38632,9 @@ async function _palletAutoMatch(rows) {
       }
     }
     if (cands) {
-      cands.forEach(inv => usedIds.add(inv.id));
+      // 只有确定无歧义时才把账单并入流水行 (发票号对上, 或唯一的金额匹配);
+      // 多个候选说明分不清付的是哪张, 这些账单仍单独成行, 不能被吞掉数不齐。
+      if (how === 'number' || cands.length === 1) cands.forEach(inv => usedIds.add(inv.id));
       r.auto_match = { match: how, candidates: cands.map(mkCand) };
     }
   }
@@ -38655,12 +38657,13 @@ async function _palletAutoMatch(rows) {
     });
   }
   rows.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  return invoices.length; // Bintique 账单总数, 给前端统计「共 N 张」用
 }
 app.get('/api/acct/pallet-bills', requireAdmin, requireAcctView, async (req, res) => {
   try {
     const out = _acctTxnBillRows('木板钱:', false, 'pallet');
-    await _palletAutoMatch(out);
-    res.json({ count: out.length, rows: out });
+    const billsTotal = (await _palletAutoMatch(out)) || 0;
+    res.json({ count: out.length, rows: out, bills_total: billsTotal });
   }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
