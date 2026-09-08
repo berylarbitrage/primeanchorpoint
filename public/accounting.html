@@ -1088,15 +1088,14 @@ function _palletTypePill(r) {
     ? '<span style="font-size:.68rem;background:#fffbeb;border:1px solid #fbbf24;color:#92400e;border-radius:4px;padding:1px 6px;white-space:nowrap">销售发票</span>'
     : '<span style="font-size:.68rem;background:#f5f3ff;border:1px solid #c4b5fd;color:#5b21b6;border-radius:4px;padding:1px 6px;white-space:nowrap">采购发票</span>';
 }
-// Bintique 那边自己的状态与收付记录 (仅供参考; 本系统付款状态只认会计批注)
+// Bintique 那边的收付记录, 只作参考信息 —— 不显示对方的「已付款」状态:
+// 这里所有账单一律从未收款开始, 收没收款只认本系统会计的付款批注,
+// 由会计逐张核对处理 (和发票页「不显示历史已收款」同一规矩)。
 function _palletBintiqueCell(r) {
   const b = r.bintique || {};
-  const st = b.status === 'paid' ? '<span style="color:#15803d;font-weight:700">已付款</span>'
-    : b.status === 'pending_audit' ? '<span style="color:#b45309;font-weight:700">待审计</span>'
-    : `<span style="color:var(--g500)">${r.direction === 'in' ? '未收款' : '未付款'}</span>`;
-  const link = b.doc_url ? ` <a href="${esc(b.doc_url)}" target="_blank" rel="noopener" title="新窗口打开账单" style="text-decoration:none">↗</a>` : '';
-  const pay = b.payment_date ? `<div style="font-size:.72rem;color:var(--g500)">${esc(b.payment_date)} · 实付 ${money(b.payment_amount)}${b.paid_by ? ' · ' + esc(b.paid_by) : ''}</div>` : '';
-  return `<div>${st}${link}</div>${pay}`;
+  const link = b.doc_url ? ` <a href="${esc(b.doc_url)}" target="_blank" rel="noopener" title="新窗口打开 Bintique 账单" style="text-decoration:none">↗</a>` : '';
+  if (b.payment_date) return `<div style="font-size:.74rem;color:var(--g500)">参考：${esc(b.payment_date)} · 实付 ${money(b.payment_amount)}${b.paid_by ? ' · ' + esc(b.paid_by) : ''}${link}</div>`;
+  return `<span style="color:var(--g300)">—</span>${link}`;
 }
 // 木板账单的付款状态: 与发票同口径, 只认会计的付款批注; 销售显示已收款/未收款, 采购显示已付款/未付款
 function _palletPayBadge(r) {
