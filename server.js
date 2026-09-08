@@ -38652,7 +38652,7 @@ app.post('/api/acct/pallet-bills/:id/photos', requireAdmin, requireAcctWrite, co
 });
 
 // 新增费用记录: 会计提交入库为 pending 待管理员审核, admin 提交直接 approved (发票文件复用 claimUpload)
-app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin', 'cs'), claimUpload.array('invoice', 20), (req, res) => {
+app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin', 'cs'), claimUpload.array('invoice', 50), (req, res) => {
   const b = req.body || {};
   const feeType = String(b.fee_type || '').trim();
   if (!FEE_RECORD_TYPES.includes(feeType)) return res.status(400).json({ error: '无效费用类型' });
