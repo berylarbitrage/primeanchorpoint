@@ -1072,17 +1072,27 @@ async function loadPalletList(force) {
 function _palletInvItems(r) {
   return (r.inv_items || []).filter(it => it && (String(it.inv || '').trim() || it.ps || it.pe));
 }
+// 发票号列: 会计填的 → 已关联 Bintique 账单号 → 自动匹配账单号 (🔎, 点开核对),
+// 全部可点击打开「查看明细」看账单。
 function _palletInvCell(r) {
+  const link = (txt, guess) => `<a onclick="openPalletDetail(${r.id})" title="${guess ? '自动匹配的账单号，点开核对明细' : '点开查看明细'}" style="cursor:pointer;font-weight:600;white-space:nowrap;color:#0f4c6b;text-decoration:underline">${guess ? '🔎 ' : ''}${esc(txt)}</a>`;
   const items = _palletInvItems(r);
-  if (items.length) return items.map(it => `<div style="white-space:nowrap;font-weight:600">${esc(it.inv || '—')}</div>`).join('');
-  return r.invoice_number ? `<span style="font-weight:600;white-space:nowrap">${esc(r.invoice_number)}</span>` : '<span style="color:var(--g300)">—</span>';
+  if (items.length) return items.map(it => `<div>${link(it.inv || '—')}</div>`).join('');
+  if (r.invoice_number) return link(r.invoice_number);
+  const refs = (r.links || []).filter(l => l && l.ref);
+  if (refs.length) return refs.map(l => `<div>${link(l.ref)}</div>`).join('');
+  const cands = _palletAutoCands(r);
+  if (cands.length) return cands.map(c => `<div>${link(c.invoice_number || '账单', true)}</div>`).join('');
+  return '<span style="color:var(--g300)">—</span>';
 }
 function _palletPeriodCell(r) {
   const items = _palletInvItems(r);
   if (items.length) return items.map(it => `<div style="white-space:nowrap;font-size:.76rem;color:var(--g500)">${esc(it.ps || '?')} ~ ${esc(it.pe || '?')}</div>`).join('');
-  return (r.period_start || r.period_end)
-    ? `<span style="font-size:.76rem;color:var(--g500);white-space:nowrap">${esc(r.period_start || '?')} ~ ${esc(r.period_end || '?')}</span>`
-    : '<span style="color:var(--g300)">—</span>';
+  if (r.period_start || r.period_end) return `<span style="font-size:.76rem;color:var(--g500);white-space:nowrap">${esc(r.period_start || '?')} ~ ${esc(r.period_end || '?')}</span>`;
+  // 账期没填时用自动匹配账单的账期补上 (🔎 标记, 与发票号列同源)
+  const withP = _palletAutoCands(r).filter(c => c.period_from || c.period_to);
+  if (withP.length) return withP.map(c => `<div style="white-space:nowrap;font-size:.76rem;color:var(--g500)" title="自动匹配账单的账期">🔎 ${esc(c.period_from || '?')} ~ ${esc(c.period_to || '?')}</div>`).join('');
+  return '<span style="color:var(--g300)">—</span>';
 }
 // 木板行的付款状态: 与发票同口径, 只认会计的付款批注; 收入行显示已收款/未收款, 支出行显示已付款/未付款
 function _palletPayBadge(r) {
@@ -1277,9 +1287,10 @@ function _palletAutoCands(r) {
 }
 function _palletAutoBadge(r) {
   if (!_palletAutoCands(r).length) return '';
-  return r.auto_match.match === 'number'
+  const m = r.auto_match.match;
+  return m === 'number'
     ? '<span style="font-size:.62rem;background:#fffbeb;border:1px solid #fbbf24;color:#92400e;border-radius:4px;padding:0 4px;white-space:nowrap">自动匹配·按发票号</span>'
-    : '<span style="font-size:.62rem;background:#f8fafc;border:1px dashed #94a3b8;color:#64748b;border-radius:4px;padding:0 4px;white-space:nowrap">疑似·按金额+客户</span>';
+    : `<span style="font-size:.62rem;background:#f8fafc;border:1px dashed #94a3b8;color:#64748b;border-radius:4px;padding:0 4px;white-space:nowrap">疑似·${m === 'customer' ? '按客户+日期' : '按金额+客户'}</span>`;
 }
 function renderPalletList() {
   const q = (document.getElementById('palletSearch').value || '').toLowerCase();

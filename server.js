@@ -38587,7 +38587,7 @@ async function _palletAutoMatch(rows) {
     for (const w of want) {
       const m = results[String(w.r.id)];
       const res2 = m && Array.isArray(m.candidates) && m.candidates.length
-        ? { match: m.match === 'number' ? 'number' : 'amount', candidates: m.candidates.slice(0, 3) }
+        ? { match: ['number', 'amount', 'customer'].includes(m.match) ? m.match : 'amount', candidates: m.candidates.slice(0, 3) }
         : null;
       _palletMatchCache.set(w.fp, { at: now, res: res2 });
       if (res2) w.r.auto_match = res2;
