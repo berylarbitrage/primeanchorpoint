@@ -724,6 +724,8 @@ function _bsAnnCheckHtml(box, items, mode) {
     const info = _bsInvCheckCache[num];
     if (!info) return '';
     if (!info.found) return `<div style="color:#dc2626">⚠️ ${esc(num)}：系统里没有这张发票（检查号码有没有打错）</div>`;
+    // 发票号可点击 → 弹窗看这张发票的明细
+    const numHtml = info.id ? `<a href="#" onclick="event.preventDefault();annShowInvoice(${info.id})" title="点击查看这张发票的明细" style="color:inherit;font-weight:700;text-decoration:underline">${esc(num)}</a>` : esc(num);
     const probs = [], oks = [];
     // 账期: 两边都填了才比
     if (it.ps && it.pe && info.period_start && info.period_end) {
@@ -751,11 +753,72 @@ function _bsAnnCheckHtml(box, items, mode) {
         if (m[1] === 'C' && purpose.indexOf('劳务') >= 0) probs.push('C 开头是 Container 卸柜发票，用途却填了劳务工资');
       }
     }
-    if (probs.length) return `<div style="color:#dc2626">⚠️ ${esc(num)}：${probs.join('；')}</div>`;
-    return `<div style="color:#059669">✅ ${esc(num)}：与系统发票一致${oks.length ? '（' + oks.join('/') + '）' : ''}</div>`;
+    if (probs.length) return `<div style="color:#dc2626">⚠️ ${numHtml}：${probs.join('；')}</div>`;
+    return `<div style="color:#059669">✅ ${numHtml}：与系统发票一致${oks.length ? '（' + oks.join('/') + '）' : ''}</div>`;
   }).filter(Boolean);
   if (!lines.length) return '';
-  return `<div style="color:#64748b">🤖 与系统发票自动核对：</div>` + lines.join('');
+  return `<div style="color:#64748b">🤖 与系统发票自动核对：<span style="font-size:.68rem;color:#94a3b8">点发票号看明细</span></div>` + lines.join('');
+}
+// ── 点自动核对里的发票号 → 弹窗看发票明细 (两个宿主页通用, 数据走 /api/acct/invoices/:id) ──
+async function annShowInvoice(id) {
+  let m = document.getElementById('annInvModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'annInvModal';
+    m.style.cssText = 'display:none;position:fixed;inset:0;z-index:10070;background:rgba(15,23,42,.55);align-items:center;justify-content:center;padding:1rem';
+    m.onclick = e => { if (e.target === m) m.style.display = 'none'; };
+    document.body.appendChild(m);
+  }
+  m.innerHTML = '<div style="background:#fff;border-radius:10px;padding:1rem;color:#64748b">加载中…</div>';
+  m.style.display = 'flex';
+  let inv;
+  try { inv = await annApi('/acct/invoices/' + id); }
+  catch (e) { m.innerHTML = `<div style="background:#fff;border-radius:10px;padding:1rem;color:#dc2626" onclick="event.stopPropagation()">加载失败：${esc(e.message || e)}</div>`; return; }
+  m.innerHTML = _annInvModalHtml(inv);
+}
+function _annInvModalHtml(inv) {
+  const items = Array.isArray(inv.items) ? inv.items : [];
+  const profile = inv.profile || {};
+  const conts = Array.isArray(profile.container_items) ? profile.container_items : [];
+  const isCont = profile.invoice_mode === 'container' && conts.length;
+  const th = 'padding:4px 8px;border-bottom:2px solid #29AAE1;font-size:.7rem;color:#0f4c6b;text-align:left;white-space:nowrap';
+  const thR = th + ';text-align:right';
+  const td = 'padding:4px 8px;border-bottom:1px solid #e2e8f0;font-size:.78rem';
+  const tdR = td + ';text-align:right;white-space:nowrap';
+  let table, rawSum = 0;
+  if (isCont) {
+    const cTot = c => Number(c.total != null ? c.total : (Number(c.qty) || 0) * (Number(c.unit_price) || 0)) || 0;
+    rawSum = conts.reduce((s, c) => s + cTot(c), 0);
+    table = `<table style="width:100%;border-collapse:collapse"><thead><tr><th style="${th}">#</th><th style="${th}">类型</th><th style="${th}">Container</th><th style="${thR}">数量</th><th style="${thR}">单价</th><th style="${thR}">金额</th></tr></thead><tbody>`
+      + conts.map((c, i) => `<tr><td style="${td}">${i + 1}</td><td style="${td}">${c.line_type === 'load' ? '装柜' : '卸柜'}</td><td style="${td};font-family:monospace;font-weight:600">${esc(c.container_no || '')}</td><td style="${tdR}">${Number(c.qty) || 0}</td><td style="${tdR}">$${(Number(c.unit_price) || 0).toFixed(2)}</td><td style="${tdR};font-weight:700">$${cTot(c).toFixed(2)}</td></tr>`).join('')
+      + '</tbody></table>';
+  } else {
+    const hasOt = items.some(it => Number(it.otHours) > 0);
+    const raw = it => it.total != null ? (Number(it.total) || 0)
+      : (Number(it.regHours != null ? it.regHours : it.hours) || 0) * (Number(it.rate) || 0) + (Number(it.otHours) || 0) * (Number(it.otRate) || 0);
+    rawSum = items.reduce((s, it) => s + raw(it), 0);
+    table = `<table style="width:100%;border-collapse:collapse"><thead><tr><th style="${th}">#</th><th style="${th}">Worker</th><th style="${thR}">Reg</th>${hasOt ? `<th style="${thR}">OT</th>` : ''}<th style="${thR}">Rate</th>${hasOt ? `<th style="${thR}">OT Rate</th>` : ''}<th style="${thR}">金额</th></tr></thead><tbody>`
+      + items.map((it, i) => `<tr><td style="${td}">${i + 1}</td><td style="${td}">${esc(it.name || '')}</td><td style="${tdR}">${(Number(it.regHours != null ? it.regHours : it.hours) || 0).toFixed(2)}</td>${hasOt ? `<td style="${tdR}">${(Number(it.otHours) || 0).toFixed(2)}</td>` : ''}<td style="${tdR}">$${(Number(it.rate) || 0).toFixed(2)}</td>${hasOt ? `<td style="${tdR}">$${(Number(it.otRate) || 0).toFixed(2)}</td>` : ''}<td style="${tdR};font-weight:700">$${raw(it).toFixed(2)}</td></tr>`).join('')
+      + '</tbody></table>';
+  }
+  rawSum = Math.round(rawSum * 100) / 100;
+  const total = Number(inv.subtotal) || 0;
+  const fmtD = d => d ? String(d).slice(0, 10) : '—';
+  return `<div style="background:#fff;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,.35);width:min(92vw,720px);max-height:90vh;overflow:auto;padding:1rem 1.1rem;color:#1e293b" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;margin-bottom:.5rem">
+      <div style="font-weight:800;font-size:.95rem;color:#0f4c6b">🧾 ${esc(inv.invoice_number || '')}</div>
+      <button onclick="document.getElementById('annInvModal').style.display='none'" style="border:1px solid #e2e8f0;background:#fff;border-radius:8px;padding:.2rem .7rem;cursor:pointer;font-size:.8rem">✕ 关闭</button>
+    </div>
+    <div style="font-size:.8rem;line-height:1.7;margin-bottom:.5rem">
+      <div><span style="color:#64748b">公司：</span><b style="color:#0E7BB8">${esc(inv.company_name || '')}</b></div>
+      <div><span style="color:#64748b">开票日期：</span>${fmtD(inv.invoice_date)}　<span style="color:#64748b">账期：</span>${fmtD(inv.period_start)} ~ ${fmtD(inv.period_end)}</div>
+    </div>
+    ${table}
+    <div style="text-align:right;margin-top:.55rem">
+      ${(Math.abs(total - rawSum) > 0.005 && rawSum) ? `<div style="color:#64748b;font-size:.75rem">原始合计 $${rawSum.toFixed(2)}${Number(inv.markup_rate) > 1 ? ` × Markup ${Number(inv.markup_rate).toFixed(2)}` : ''}</div>` : ''}
+      <div style="color:#29AAE1;font-weight:800;font-size:1rem">Total Due $${total.toFixed(2)}</div>
+    </div>
+  </div>`;
 }
 const _bsInvSaveTimers = {};
 async function _bsInvItemsSave(box, items) {
