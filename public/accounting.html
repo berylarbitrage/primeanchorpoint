@@ -361,7 +361,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <th>日期</th><th>银行 / 账户</th><th>木板客户 / 供应商</th><th>发票号</th><th>账期</th><th style="text-align:right">金额</th><th>付款状态</th><th>付款批注（会计）</th><th>Bintique 账单</th><th>备注</th><th></th>
       </tr></thead><tbody id="palletBody"><tr><td colspan="11" style="color:var(--g400)">加载中…</td></tr></tbody></table>
     </div>
-    <p style="font-size:.75rem;color:var(--g400);margin-top:.5rem">数据来源：银行交易标注里的「木板钱」记录 + pallet.bintique.com 关联过来的账单链接；在 pallet.bintique.com 上把账单 link 到银行交易后，这里自动出现，点账单号直达对方账单页。</p>
+    <p style="font-size:.75rem;color:var(--g400);margin-top:.5rem">数据来源：银行交易标注里的「木板钱」记录 + pallet.bintique.com 关联过来的账单；对方 link 账单时会自动把 PDF 账单抓取存档，「查看明细」里直接内嵌显示，无需手动上传。</p>
   </div>
 
   <!-- 🔗 银行直连 Bank Feed (Plaid 自动同步) -->
@@ -1104,7 +1104,7 @@ function openPalletDetail(id) {
     ${row('Bintique 账单', links)}
     ${row('凭证照片', photos || '<span style="color:var(--g400)">无</span>')}
     ${pdfs.length ? `<div style="margin-top:.7rem">
-      <div style="font-weight:700;color:#0f4c6b;font-size:.84rem;margin-bottom:.3rem">📄 PDF 账单${pdfs.length > 1 ? `（${pdfs.length} 份，点下方文件名切换）` : ''}</div>
+      <div style="font-weight:700;color:#0f4c6b;font-size:.84rem;margin-bottom:.3rem">📄 PDF 账单（Bintique 自动同步${pdfs.length > 1 ? `，共 ${pdfs.length} 份，点下方文件名切换` : ''}）</div>
       <iframe id="palletPdfFrame" src="${esc(pdfs[0])}" style="width:100%;height:62vh;border:1px solid var(--g200);border-radius:8px;background:#fff"></iframe>
       ${pdfs.length > 1 ? `<div style="font-size:.74rem;margin-top:.25rem">${pdfs.map((u, i) => `<a href="${esc(u)}" onclick="var f=document.getElementById('palletPdfFrame');if(f){f.src=this.href;return false}" style="color:#0f4c6b;text-decoration:underline;margin-right:.6rem">账单 PDF ${i + 1}</a>`).join('')}</div>` : ''}
     </div>` : ''}
@@ -1114,7 +1114,7 @@ function openPalletDetail(id) {
       <div style="font-size:.72rem;color:var(--g400);margin-top:.25rem">显示不出来？<a href="${esc(firstUrl)}" target="_blank" rel="noopener" style="color:#92400e;text-decoration:underline">在新窗口打开账单</a>（可能需要先登录 pallet.bintique.com）</div>
     </div>` : ''}
     ${canAnnotate() ? `<div style="margin-top:.7rem;display:flex;justify-content:flex-end;gap:.5rem;align-items:center">
-      <label class="btn btn-sm" style="cursor:pointer">📄 ＋上传账单 PDF / 照片<input type="file" accept="application/pdf,image/*" multiple style="display:none" onchange="palletUploadBill(${r.id}, this.files)"></label>
+      <label class="btn btn-sm" style="cursor:pointer" title="PDF 账单由 Bintique 自动同步过来；这里只是手动补传的兜底入口">📄 手动补传 PDF / 照片<input type="file" accept="application/pdf,image/*" multiple style="display:none" onchange="palletUploadBill(${r.id}, this.files)"></label>
       <button class="btn btn-sm btn-blue" onclick="document.getElementById('palletDetailModal').style.display='none';openPayNote('pallet', ${r.id})">💵 付款批注</button>
     </div>` : ''}
   </div>`;

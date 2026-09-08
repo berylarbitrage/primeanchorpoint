@@ -38095,15 +38095,20 @@ app.get('/api/ext/bank-txns', requireExtKey, (req, res) => {
     res.json({ count: txns.length, txns });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-// Attach a link (external payment reference) to one transaction.
-app.post('/api/ext/bank-txns/:id/link', requireExtKey, (req, res) => {
+// Attach a link (external payment reference) to one transaction. 可带 pdf_url:
+// 服务器自动从 pallet 站点抓取这张账单的 PDF 存档 (仅限 PALLET_ORIGIN 同源地址,
+// 20MB 上限), 存进这笔交易标注的附件 —— 会计页「查看明细」即自动内嵌显示,
+// 不需要任何人手动上传; 同一账单重复 link 时旧 PDF 自动替换。
+app.post('/api/ext/bank-txns/:id/link', requireExtKey, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const row = db.prepare("SELECT id, links, payee, category FROM bank_statement_txns WHERE id=? AND kind='box'").get(id);
+    const row = db.prepare("SELECT id, links, photos, payee, category FROM bank_statement_txns WHERE id=? AND kind='box'").get(id);
     if (!row) return res.status(404).json({ error: 'not found' });
     const b = req.body || {};
     let links = []; try { links = JSON.parse(row.links || '[]'); } catch { links = []; }
     if (!Array.isArray(links)) links = [];
+    let photos = []; try { photos = JSON.parse(row.photos || '[]'); } catch { photos = []; }
+    if (!Array.isArray(photos)) photos = [];
     const link = {
       system: String(b.system || 'pallet.bintique.com').slice(0, 60),
       ref: String(b.ref || '').slice(0, 120),
@@ -38112,10 +38117,45 @@ app.post('/api/ext/bank-txns/:id/link', requireExtKey, (req, res) => {
       at: new Date().toISOString(),
     };
     if (!link.ref && !link.url && !link.label) return res.status(400).json({ error: 'link needs ref, url or label' });
-    if (link.ref) links = links.filter(l => !(l.system === link.system && l.ref === link.ref)); // upsert by (system,ref)
+    if (link.ref) {
+      // upsert by (system,ref): 重复 link 同一账单时替换, 顺带清掉之前抓的 PDF
+      const olds = links.filter(l => l && l.system === link.system && l.ref === link.ref);
+      links = links.filter(l => !(l && l.system === link.system && l.ref === link.ref));
+      for (const o of olds) {
+        if (o.pdf_file) {
+          photos = photos.filter(k => path.basename(k) !== o.pdf_file);
+          storage.deleteObject(storage.keyFrom(o.pdf_file, 'uploads')).catch(() => {});
+        }
+      }
+    }
+    // 自动抓账单 PDF (可选 pdf_url): 只认 PALLET_ORIGIN 同源, 跟随跳转后仍须同源
+    let pdfSaved = false, pdfError = '';
+    if (b.pdf_url) {
+      try {
+        const allowed = new URL(PALLET_ORIGIN).origin;
+        const pu = new URL(String(b.pdf_url));
+        if (pu.origin !== allowed) throw new Error('pdf_url 必须在 ' + allowed + ' 域内');
+        const ctrl = new AbortController();
+        const tm = setTimeout(() => ctrl.abort(), 20000);
+        const resp = await fetch(pu.href, { signal: ctrl.signal, redirect: 'follow' });
+        clearTimeout(tm);
+        if (!resp.ok) throw new Error('下载失败 HTTP ' + resp.status);
+        if (new URL(resp.url).origin !== allowed) throw new Error('pdf_url 跳转出了允许的域');
+        const buf = Buffer.from(await resp.arrayBuffer());
+        if (buf.length > 20 * 1024 * 1024) throw new Error('PDF 超过 20MB');
+        const looksPdf = buf.slice(0, 5).toString('latin1').startsWith('%PDF') || String(resp.headers.get('content-type') || '').includes('pdf');
+        if (!looksPdf) throw new Error('返回内容不是 PDF');
+        const fname = `palletbill-${id}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}.pdf`;
+        await storage.putObject(storage.normalizeKey('uploads/' + fname), buf, { contentType: 'application/pdf' });
+        photos.push('uploads/' + fname);
+        photos = photos.slice(-24);
+        link.pdf_file = fname;
+        pdfSaved = true;
+      } catch (e2) { pdfError = e2.message || String(e2); }
+    }
     links.push(link);
-    db.prepare("UPDATE bank_statement_txns SET links=?, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(JSON.stringify(links), id);
-    res.json({ success: true, id, links });
+    db.prepare("UPDATE bank_statement_txns SET links=?, photos=?, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(JSON.stringify(links), JSON.stringify(photos), id);
+    res.json(Object.assign({ success: true, id, links, pdf_saved: pdfSaved }, pdfError ? { pdf_error: pdfError } : {}));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // Remove a link (?ref= to remove one; omit to clear all).
