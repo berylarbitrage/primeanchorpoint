@@ -38509,6 +38509,25 @@ app.get('/api/acct/pallet-bills', requireAdmin, requireAcctView, (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// 木板行上传账单 PDF / 照片: 存进该银行交易标注的 photos (与标注抽屉「加照片」同一存储,
+// 查看明细弹窗直接内嵌显示); 无审核权的会计/客服上传同样把标注置为待审核。
+app.post('/api/acct/pallet-bills/:id/photos', requireAdmin, requireAcctWrite, containerSubmitPhotoUpload.array('photos', 12), (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const row = db.prepare("SELECT photos FROM bank_statement_txns WHERE id=? AND kind='box'").get(id);
+    if (!row) return res.status(404).json({ error: 'not found' });
+    let keys = []; try { keys = JSON.parse(row.photos || '[]'); } catch (e) { keys = []; }
+    if (!Array.isArray(keys)) keys = [];
+    (req.files || []).forEach(f => { const k = f.key || f.path; if (k) keys.push(k); });
+    keys = keys.slice(0, 24);
+    const isCs = !annCanReview(req);
+    db.prepare(`UPDATE bank_statement_txns SET photos=?, ann_status=CASE WHEN ? THEN 'pending' ELSE ann_status END,
+        ann_by=CASE WHEN ? THEN ? ELSE ann_by END, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(JSON.stringify(keys), isCs ? 1 : 0, isCs ? 1 : 0, req.userName || '', id);
+    res.json({ success: true, photos_urls: keys.map(k => `/uploads/${path.basename(k)}`) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // 新增费用记录: 会计提交入库为 pending 待管理员审核, admin 提交直接 approved (发票文件复用 claimUpload)
 app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin'), claimUpload.array('invoice', 20), (req, res) => {
   const b = req.body || {};
