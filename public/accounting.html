@@ -114,6 +114,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <button class="tab" id="tabFeeLaw" onclick="showTab('feelaw')">⚖️ 律师费 Legal</button>
     <button class="tab" id="tabFeeCo" onclick="showTab('feeco')">🏢 公司支出 Expenses</button>
     <button class="tab" id="tabPallet" onclick="showTab('pallet')">🪵 木板账单 Pallet</button>
+    <button class="tab" id="tabTruck" onclick="showTab('truck')">🚚 卡车费用 Truck</button>
     <button class="tab" id="tabBank" onclick="showTab('bank')" style="display:none">🔗 银行直连 Bank Feed <span id="bankUnrevBadge" style="display:none;background:#dc2626;color:#fff;border-radius:10px;font-size:.68rem;padding:1px 7px;vertical-align:middle"></span></button>
   </div>
 
@@ -364,6 +365,27 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <p style="font-size:.75rem;color:var(--g400);margin-top:.5rem">数据来源：银行交易标注里的「木板钱」记录 + pallet.bintique.com 关联过来的账单；对方 link 账单时会自动把 PDF 账单抓取存档，「查看明细」里直接内嵌显示，无需手动上传。</p>
   </div>
 
+  <!-- 🚚 卡车费用 (Bintique 卡车订单联动)：卡车费交易 + pallet.bintique.com link 过来的卡车订单 -->
+  <div id="paneTruck" style="display:none">
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
+      <input type="text" id="truckSearch" placeholder="搜卡车公司 / 订单号 / 备注…" oninput="renderTruckList()" style="width:220px">
+      <select id="truckFilter" onchange="renderTruckList()">
+        <option value="">全部</option>
+        <option value="linked">🚚 已关联 Bintique 卡车单</option>
+        <option value="unlinked">未关联</option>
+        <option value="in">＋ 只看收入</option>
+        <option value="out">− 只看支出</option>
+      </select>
+      <span id="truckStats" style="font-size:.8rem;color:var(--g500)"></span>
+    </div>
+    <div class="card" style="overflow-x:auto">
+      <table><thead><tr>
+        <th>日期</th><th>银行 / 账户</th><th>卡车公司</th><th style="text-align:right">金额</th><th>付款状态</th><th>付款批注（会计）</th><th>Bintique 卡车单</th><th>备注</th><th></th>
+      </tr></thead><tbody id="truckBody"><tr><td colspan="9" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+    </div>
+    <p style="font-size:.75rem;color:var(--g400);margin-top:.5rem">数据来源：银行交易标注里的「卡车费」记录 + pallet.bintique.com 关联过来的卡车订单；在对方系统把卡车订单 link 到银行交易后，这里自动出现。</p>
+  </div>
+
   <!-- 🔗 银行直连 Bank Feed (Plaid 自动同步) -->
   <div id="paneBank" style="display:none">
     <!-- 未配置密钥 (仅 admin) -->
@@ -575,6 +597,9 @@ function showTab(t) {
   document.getElementById('tabPallet').classList.toggle('on', t === 'pallet');
   document.getElementById('panePallet').style.display = t === 'pallet' ? '' : 'none';
   if (t === 'pallet') loadPalletList();
+  document.getElementById('tabTruck').classList.toggle('on', t === 'truck');
+  document.getElementById('paneTruck').style.display = t === 'truck' ? '' : 'none';
+  if (t === 'truck') loadTruckList();
   document.getElementById('tabBank').classList.toggle('on', t === 'bank');
   document.getElementById('paneBank').style.display = t === 'bank' ? '' : 'none';
   if (t === 'bank') bankInit();
@@ -635,7 +660,7 @@ function _bankPickRowHtml(t2, on, hit, acctShort, toggleFn) {
   </label>`;
 }
 async function openPayNote(type, id) {
-  const list = type === 'invoice' ? _invList : type === 'fee' ? _feeList : type === 'pallet' ? _palletRows : _claimList;
+  const list = type === 'invoice' ? _invList : type === 'fee' ? _feeList : type === 'pallet' ? _palletRows : type === 'truck' ? _truckRows : _claimList;
   const item = list.find(x => x.id === id);
   if (!item) return;
   _payTarget = { type, id };
@@ -646,7 +671,9 @@ async function openPayNote(type, id) {
       ? `${(FEE_CFG[item.fee_type] || FEE_CFG.insurance).title} · ${item.party_name || ''} · ${item.amount != null ? money(item.amount) : ''}`
       : type === 'pallet'
         ? `🪵 木板账单 · ${item.customer || ''} · ${item.amount != null ? money(item.amount) : ''}`
-        : `赔偿事故 · ${item.warehouse_name || item.warehouse_code || ''} · ${item.amount != null ? money(item.amount) : ''}`;
+        : type === 'truck'
+          ? `🚚 卡车费用 · ${item.customer || ''} · ${item.amount != null ? money(item.amount) : ''}`
+          : `赔偿事故 · ${item.warehouse_name || item.warehouse_code || ''} · ${item.amount != null ? money(item.amount) : ''}`;
   const pn = item.pay_note || {};
   _pnNoteId = pn.id || null;
   _pnSel = new Set(pn.txn_ids || []);
@@ -769,7 +796,7 @@ async function pnDelPhoto(u) {
   try {
     const r = await bapi(`/api/acct/pay-notes/${_pnNoteId}/photos?photo=${encodeURIComponent(u.split('/').pop())}`, { method: 'DELETE' });
     pnRenderPhotos(r.photos_urls || []);
-    const list = !_payTarget ? null : _payTarget.type === 'invoice' ? _invList : _payTarget.type === 'fee' ? _feeList : _payTarget.type === 'pallet' ? _palletRows : _claimList;
+    const list = !_payTarget ? null : _payTarget.type === 'invoice' ? _invList : _payTarget.type === 'fee' ? _feeList : _payTarget.type === 'pallet' ? _palletRows : _payTarget.type === 'truck' ? _truckRows : _claimList;
     const item = list && _payTarget ? list.find(x => x.id === _payTarget.id) : null;
     if (item && item.pay_note) item.pay_note.photos_urls = r.photos_urls || [];
   } catch (e) { toast(e.message || '删除失败', true); }
@@ -796,12 +823,12 @@ async function savePayNote() {
       if (up.error) throw new Error(up.error);
       pn.photos_urls = up.photos_urls || [];
     }
-    const list = _payTarget.type === 'invoice' ? _invList : _payTarget.type === 'fee' ? _feeList : _payTarget.type === 'pallet' ? _palletRows : _claimList;
+    const list = _payTarget.type === 'invoice' ? _invList : _payTarget.type === 'fee' ? _feeList : _payTarget.type === 'pallet' ? _palletRows : _payTarget.type === 'truck' ? _truckRows : _claimList;
     const item = list.find(x => x.id === _payTarget.id);
     if (item) item.pay_note = pn;
     closePayNote();
     toast('✅ 付款批注已保存');
-    if (_payTarget.type === 'invoice') renderInvList(); else if (_payTarget.type === 'fee') renderFeeList(); else if (_payTarget.type === 'pallet') renderPalletList(); else renderClaimList();
+    if (_payTarget.type === 'invoice') renderInvList(); else if (_payTarget.type === 'fee') renderFeeList(); else if (_payTarget.type === 'pallet') renderPalletList(); else if (_payTarget.type === 'truck') renderTruckList(); else renderClaimList();
   } catch (e) { toast(e.message || '保存失败', true); }
   finally { btn.disabled = false; }
 }
@@ -1132,6 +1159,107 @@ async function palletUploadBill(id, files) {
     if (r) r.photos_urls = res.photos_urls || [];
     toast('✅ 账单已上传');
     openPalletDetail(id);
+  } catch (e) { toast(e.message || '上传失败', true); }
+}
+
+// ── 🚚 卡车费用 (Bintique 卡车订单联动)：与木板账单同款 ──
+let _truckRows = [], _truckLoaded = false;
+async function loadTruckList(force) {
+  if (_truckLoaded && !force) { renderTruckList(); return; }
+  try {
+    const r = await api('/api/acct/truck-bills');
+    if (r && r.error) throw new Error(r.error);
+    _truckRows = (r && r.rows) || [];
+    _truckLoaded = true;
+  } catch (e) {
+    document.getElementById('truckBody').innerHTML = `<tr><td colspan="9" style="color:#dc2626">${esc(e.message || '加载失败')}</td></tr>`;
+    return;
+  }
+  renderTruckList();
+}
+function renderTruckList() {
+  const q = (document.getElementById('truckSearch').value || '').toLowerCase();
+  const flt = document.getElementById('truckFilter').value;
+  let rows = _truckRows;
+  if (flt === 'linked') rows = rows.filter(r => r.links.length);
+  else if (flt === 'unlinked') rows = rows.filter(r => !r.links.length);
+  else if (flt === 'in' || flt === 'out') rows = rows.filter(r => r.direction === flt);
+  if (q) rows = rows.filter(r => [r.customer, r.note, r.bank, r.account].concat(r.links.map(l => (l.label || '') + ' ' + (l.ref || ''))).join(' ').toLowerCase().includes(q));
+  const inSum = rows.filter(r => r.direction === 'in').reduce((s, r) => s + r.amount, 0);
+  const outSum = rows.filter(r => r.direction === 'out').reduce((s, r) => s + r.amount, 0);
+  const linkedN = _truckRows.filter(r => r.links.length).length;
+  document.getElementById('truckStats').textContent = `共 ${rows.length} 笔 · 收入 +${money(inSum)} · 支出 −${money(outSum)} · 已关联卡车单 ${linkedN} / ${_truckRows.length}`;
+  document.getElementById('truckBody').innerHTML = rows.length ? rows.map(r => `<tr>
+    <td style="white-space:nowrap">${esc(r.date)}</td>
+    <td style="font-size:.78rem">${esc([r.bank, r.account].filter(Boolean).join(' · ')) || '<span style="color:var(--g300)">—</span>'}${r.plaid ? ' <span style="font-size:.62rem;background:#f1f5f9;border-radius:4px;padding:0 4px">直连</span>' : ''}</td>
+    <td>${esc(r.customer) || '<span style="color:var(--g300)">—</span>'}</td>
+    <td style="text-align:right;font-weight:700;color:${r.direction === 'in' ? '#047857' : '#b91c1c'};white-space:nowrap">${r.direction === 'in' ? '+' : '−'}${money(r.amount)}</td>
+    <td>${_palletPayBadge(r)}</td>
+    <td>${payNoteCell('truck', r.id, r.pay_note, true)}</td>
+    <td style="font-size:.78rem;line-height:1.6">${r.links.length ? r.links.map(l => l.url
+        ? `<div>🚚 <a href="${esc(l.url)}" target="_blank" rel="noopener" style="color:#475569;text-decoration:underline;font-weight:600">${esc(l.label || l.ref || '卡车单')}</a></div>`
+        : `<div>🚚 ${esc(l.label || l.ref || '卡车单')}</div>`).join('')
+      : '<span style="color:var(--g400)">未关联</span>'}</td>
+    <td style="font-size:.76rem;color:var(--g500);max-width:220px">${esc(r.note || '')}</td>
+    <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openTruckDetail(${r.id})">查看明细</button></td>
+  </tr>`).join('') : '<tr><td colspan="9" style="color:var(--g400);padding:1rem">没有卡车费用记录。</td></tr>';
+}
+// 🚚 卡车费用明细弹窗: 交易信息 + Bintique 卡车单链接 + 凭证/PDF 单据 + 补传
+function openTruckDetail(id) {
+  const r = _truckRows.find(x => x.id === id);
+  if (!r) return;
+  let m = document.getElementById('truckDetailModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'truckDetailModal';
+    m.style.cssText = 'display:none;position:fixed;inset:0;z-index:2000;background:rgba(15,23,42,.55);align-items:center;justify-content:center;padding:1rem';
+    m.onclick = e => { if (e.target === m) m.style.display = 'none'; };
+    document.body.appendChild(m);
+  }
+  const row = (k, v) => `<div style="display:flex;gap:.6rem;font-size:.84rem;line-height:1.8"><span style="flex:0 0 92px;color:var(--g500)">${k}</span><div style="flex:1;min-width:0">${v}</div></div>`;
+  const pdfs = (r.photos_urls || []).filter(u => /\.pdf(\?|$)/i.test(u));
+  const photos = (r.photos_urls || []).map(u => /\.pdf(\?|$)/i.test(u)
+    ? `<span onclick="showFileLightbox('${esc(u)}')" style="display:inline-flex;align-items:center;justify-content:center;width:60px;height:60px;border:1px solid var(--g200);border-radius:6px;background:#fff;cursor:pointer;font-size:1.3rem">📄</span>`
+    : `<img src="${esc(u)}" onclick="showImgLightbox('${esc(u)}')" style="width:60px;height:60px;object-fit:cover;border-radius:6px;border:1px solid var(--g200);cursor:zoom-in">`).join(' ');
+  const links = (r.links || []).map(l => l.url
+    ? `<div>🚚 <a href="${esc(l.url)}" target="_blank" rel="noopener" style="color:#475569;text-decoration:underline;font-weight:600">${esc(l.label || l.ref || '卡车单')}</a> ↗</div>`
+    : `<div>🚚 ${esc(l.label || l.ref || '卡车单')}</div>`).join('') || '<span style="color:var(--g400)">未关联 Bintique 卡车单</span>';
+  m.innerHTML = `<div style="background:#fff;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,.35);width:min(94vw,${pdfs.length ? '940px' : '560px'});max-height:92vh;overflow:auto;padding:1rem 1.1rem" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;margin-bottom:.55rem">
+      <div style="font-weight:800;font-size:.95rem;color:#475569">🚚 卡车费用明细</div>
+      <button onclick="document.getElementById('truckDetailModal').style.display='none'" style="border:1px solid var(--g200);background:#fff;border-radius:8px;padding:.2rem .7rem;cursor:pointer;font-size:.8rem">✕ 关闭</button>
+    </div>
+    ${row('日期', esc(r.date))}
+    ${row('银行 / 账户', esc([r.bank, r.account].filter(Boolean).join(' · ')) + (r.plaid ? ' <span style="font-size:.66rem;background:#f1f5f9;border-radius:4px;padding:0 4px">直连</span>' : ''))}
+    ${row('卡车公司', esc(r.customer) || '—')}
+    ${row('金额', `<b style="color:${r.direction === 'in' ? '#047857' : '#b91c1c'}">${r.direction === 'in' ? '+' : '−'}${money(r.amount)}</b>（${r.direction === 'in' ? '收入' : '支出'}）`)}
+    ${row('付款状态', _palletPayBadge(r))}
+    ${r.note ? row('备注', esc(r.note)) : ''}
+    ${row('Bintique 卡车单', links)}
+    ${row('凭证照片', photos || '<span style="color:var(--g400)">无</span>')}
+    ${pdfs.length ? `<div style="margin-top:.7rem">
+      <div style="font-weight:700;color:#0f4c6b;font-size:.84rem;margin-bottom:.3rem">📄 PDF 单据${pdfs.length > 1 ? `（${pdfs.length} 份，点下方文件名切换）` : ''}</div>
+      <iframe id="truckPdfFrame" src="${esc(pdfs[0])}" style="width:100%;height:62vh;border:1px solid var(--g200);border-radius:8px;background:#fff"></iframe>
+      ${pdfs.length > 1 ? `<div style="font-size:.74rem;margin-top:.25rem">${pdfs.map((u, i) => `<a href="${esc(u)}" onclick="var f=document.getElementById('truckPdfFrame');if(f){f.src=this.href;return false}" style="color:#0f4c6b;text-decoration:underline;margin-right:.6rem">单据 PDF ${i + 1}</a>`).join('')}</div>` : ''}
+    </div>` : ''}
+    ${canAnnotate() ? `<div style="margin-top:.7rem;display:flex;justify-content:flex-end;gap:.5rem;align-items:center">
+      <label class="btn btn-sm" style="cursor:pointer">📄 补传单据 PDF / 照片<input type="file" accept="application/pdf,image/*" multiple style="display:none" onchange="truckUploadBill(${r.id}, this.files)"></label>
+      <button class="btn btn-sm btn-blue" onclick="document.getElementById('truckDetailModal').style.display='none';openPayNote('truck', ${r.id})">💵 付款批注</button>
+    </div>` : ''}
+  </div>`;
+  m.style.display = 'flex';
+}
+async function truckUploadBill(id, files) {
+  if (!files || !files.length) return;
+  const fd = new FormData();
+  [...files].forEach(f => fd.append('photos', f));
+  try {
+    const res = await fetch('/api/acct/pallet-bills/' + id + '/photos', { method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd }).then(x => x.json());
+    if (res.error) throw new Error(res.error);
+    const r = _truckRows.find(x => x.id === id);
+    if (r) r.photos_urls = res.photos_urls || [];
+    toast('✅ 已上传');
+    openTruckDetail(id);
   } catch (e) { toast(e.message || '上传失败', true); }
 }
 function renderPalletList() {

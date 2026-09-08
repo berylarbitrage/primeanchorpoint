@@ -38326,14 +38326,14 @@ function _acctPayNotesFor(type) {
 // 会计付款批注 upsert: 付了没有 / 哪个银行付的 / 付了多少 / 备注 / 关联银行交易(收款凭证)
 app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
   const { target_type, target_id, paid_status, bank, amount, note, txn_ids } = req.body || {};
-  if (!['invoice', 'claim', 'fee', 'pallet'].includes(target_type)) return res.status(400).json({ error: '无效对象类型' });
+  if (!['invoice', 'claim', 'fee', 'pallet', 'truck'].includes(target_type)) return res.status(400).json({ error: '无效对象类型' });
   const tid = parseInt(target_id);
   if (!tid) return res.status(400).json({ error: '无效对象' });
   const exists = target_type === 'invoice'
     ? db.prepare('SELECT id FROM invoices WHERE id=?').get(tid)
     : target_type === 'fee'
       ? db.prepare('SELECT id FROM fee_records WHERE id=?').get(tid)
-      : target_type === 'pallet'
+      : (target_type === 'pallet' || target_type === 'truck')
         ? db.prepare("SELECT id FROM bank_statement_txns WHERE id=? AND kind='box'").get(tid)
         : db.prepare('SELECT id FROM warehouse_claims WHERE id=?').get(tid);
   if (!exists) return res.status(404).json({ error: '对象不存在' });
@@ -38514,39 +38514,51 @@ app.get('/api/acct/fee-records', requireAdmin, requireAcctView, (req, res) => {
   res.json(rows);
 });
 
-// 🪵 木板账单页签: 所有「木板钱」交易标注 + pallet.bintique.com link 过来的账单,
-// 汇总成一个列表 (账单数据在对方系统, 对方把账单 link 到我们的银行交易后这里就能看到)。
+// 🪵/🚚 银行交易类账单汇总 (木板 / 卡车共用): 「木板钱:」/「卡车费:」交易标注
+// + pallet.bintique.com link 过来的账单或卡车订单。卡车订单的关联按标签
+// 「卡车订单…」或 #truck- 深链识别, 两个页签互不混入。
+function _extIsTruckLink(l) {
+  return /^卡车订单/.test(String((l && l.label) || '')) || String((l && l.url) || '').indexOf('#truck-') >= 0;
+}
+function _acctTxnBillRows(payeePrefix, wantTruck, payNoteType) {
+  const rows = db.prepare(`SELECT t.id, t.txn_date, t.amount, t.direction, t.payee, t.note, t.links, t.plaid_txn_id, t.photos,
+      t.invoice_number, t.period_start, t.period_end, t.inv_items,
+      s.bank, s.account_name
+    FROM bank_statement_txns t LEFT JOIN bank_statements s ON t.statement_id = s.id
+    WHERE t.kind='box' AND (t.payee LIKE ? OR (t.links IS NOT NULL AND t.links<>'' AND t.links<>'[]'))
+    ORDER BY t.txn_date DESC, t.id DESC`).all(payeePrefix + '%');
+  const payNotes = _acctPayNotesFor(payNoteType);
+  const out = [];
+  for (const r of rows) {
+    let links = []; try { links = JSON.parse(r.links || '[]'); } catch (e) { links = []; }
+    if (!Array.isArray(links)) links = [];
+    const sysLinks = links.filter(l => l && (String(l.system || '').toLowerCase().includes('pallet') || String(l.system || '').toLowerCase().includes('bintique')));
+    const myLinks = sysLinks.filter(l => _extIsTruckLink(l) === wantTruck);
+    const isMine = String(r.payee || '').indexOf(payeePrefix) === 0;
+    if (!isMine && !myLinks.length) continue;   // 别的类别/别的系统的关联, 不属于本页签
+    let ph = []; try { ph = JSON.parse(r.photos || '[]'); } catch (e) { ph = []; }
+    let invItems = []; try { invItems = JSON.parse(r.inv_items || '[]'); } catch (e) { invItems = []; }
+    out.push({
+      id: r.id, date: r.txn_date || '', amount: Number(r.amount) || 0, direction: r.direction === 'in' ? 'in' : 'out',
+      customer: isMine ? String(r.payee).slice(payeePrefix.length) : '',
+      note: r.note || '', bank: r.bank || '', account: r.account_name || '',
+      invoice_number: r.invoice_number || '', period_start: r.period_start || '', period_end: r.period_end || '',
+      inv_items: Array.isArray(invItems) ? invItems : [],
+      plaid: !!r.plaid_txn_id, links: myLinks,
+      photos_urls: (Array.isArray(ph) ? ph : []).filter(Boolean).map(k => `/uploads/${path.basename(k)}`),
+      pay_note: payNotes[r.id] || null,
+    });
+  }
+  return out;
+}
 app.get('/api/acct/pallet-bills', requireAdmin, requireAcctView, (req, res) => {
-  try {
-    const rows = db.prepare(`SELECT t.id, t.txn_date, t.amount, t.direction, t.payee, t.note, t.links, t.plaid_txn_id, t.photos,
-        t.invoice_number, t.period_start, t.period_end, t.inv_items,
-        s.bank, s.account_name
-      FROM bank_statement_txns t LEFT JOIN bank_statements s ON t.statement_id = s.id
-      WHERE t.kind='box' AND (t.payee LIKE '木板钱:%' OR (t.links IS NOT NULL AND t.links<>'' AND t.links<>'[]'))
-      ORDER BY t.txn_date DESC, t.id DESC`).all();
-    const payNotes = _acctPayNotesFor('pallet');
-    const out = [];
-    for (const r of rows) {
-      let links = []; try { links = JSON.parse(r.links || '[]'); } catch (e) { links = []; }
-      if (!Array.isArray(links)) links = [];
-      const palletLinks = links.filter(l => l && (String(l.system || '').toLowerCase().includes('pallet') || String(l.system || '').toLowerCase().includes('bintique')));
-      const isPallet = String(r.payee || '').indexOf('木板钱:') === 0;
-      if (!isPallet && !palletLinks.length) continue;   // 其他系统的关联, 不属于木板账单
-      let ph = []; try { ph = JSON.parse(r.photos || '[]'); } catch (e) { ph = []; }
-      let invItems = []; try { invItems = JSON.parse(r.inv_items || '[]'); } catch (e) { invItems = []; }
-      out.push({
-        id: r.id, date: r.txn_date || '', amount: Number(r.amount) || 0, direction: r.direction === 'in' ? 'in' : 'out',
-        customer: isPallet ? String(r.payee).slice('木板钱:'.length) : '',
-        note: r.note || '', bank: r.bank || '', account: r.account_name || '',
-        invoice_number: r.invoice_number || '', period_start: r.period_start || '', period_end: r.period_end || '',
-        inv_items: Array.isArray(invItems) ? invItems : [],
-        plaid: !!r.plaid_txn_id, links: palletLinks,
-        photos_urls: (Array.isArray(ph) ? ph : []).filter(Boolean).map(k => `/uploads/${path.basename(k)}`),
-        pay_note: payNotes[r.id] || null,
-      });
-    }
-    res.json({ count: out.length, rows: out });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  try { const out = _acctTxnBillRows('木板钱:', false, 'pallet'); res.json({ count: out.length, rows: out }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 🚚 卡车费用页签: 「卡车费:」交易标注 + Bintique 卡车订单关联, 与木板账单同款
+app.get('/api/acct/truck-bills', requireAdmin, requireAcctView, (req, res) => {
+  try { const out = _acctTxnBillRows('卡车费:', true, 'truck'); res.json({ count: out.length, rows: out }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // 木板行上传账单 PDF / 照片: 存进该银行交易标注的 photos (与标注抽屉「加照片」同一存储,
