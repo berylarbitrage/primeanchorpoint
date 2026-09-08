@@ -38326,7 +38326,7 @@ function _acctPayNotesFor(type) {
 // 会计付款批注 upsert: 付了没有 / 哪个银行付的 / 付了多少 / 备注 / 关联银行交易(收款凭证)
 app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
   const { target_type, target_id, paid_status, bank, amount, note, txn_ids } = req.body || {};
-  if (!['invoice', 'claim', 'fee', 'pallet', 'palletbill', 'truck'].includes(target_type)) return res.status(400).json({ error: '无效对象类型' });
+  if (!['invoice', 'claim', 'fee', 'pallet', 'palletbill', 'truck', 'truckorder'].includes(target_type)) return res.status(400).json({ error: '无效对象类型' });
   const tid = parseInt(target_id);
   if (!tid) return res.status(400).json({ error: '无效对象' });
   const exists = target_type === 'invoice'
@@ -38335,8 +38335,8 @@ app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
       ? db.prepare('SELECT id FROM fee_records WHERE id=?').get(tid)
       : (target_type === 'pallet' || target_type === 'truck')
         ? db.prepare("SELECT id FROM bank_statement_txns WHERE id=? AND kind='box'").get(tid)
-        : target_type === 'palletbill'
-          ? { id: tid } // Bintique 账单在对方系统, 本地不校验存在性
+        : (target_type === 'palletbill' || target_type === 'truckorder')
+          ? { id: tid } // Bintique 账单/卡车订单在对方系统, 本地不校验存在性
           : db.prepare('SELECT id FROM warehouse_claims WHERE id=?').get(tid);
   if (!exists) return res.status(404).json({ error: '对象不存在' });
   const st = ['', 'unpaid', 'partial', 'paid'].includes(String(paid_status || '')) ? String(paid_status || '') : '';
@@ -38519,98 +38519,43 @@ app.get('/api/acct/fee-records', requireAdmin, requireAcctView, (req, res) => {
 // 🪵/🚚 银行交易类账单汇总 (木板 / 卡车共用): 「木板钱:」/「卡车费:」交易标注
 // + pallet.bintique.com link 过来的账单或卡车订单。卡车订单的关联按标签
 // 「卡车订单…」或 #truck- 深链识别, 两个页签互不混入。
-function _extIsTruckLink(l) {
-  return /^卡车订单/.test(String((l && l.label) || '')) || String((l && l.url) || '').indexOf('#truck-') >= 0;
-}
-function _acctTxnBillRows(payeePrefix, wantTruck, payNoteType) {
-  const rows = db.prepare(`SELECT t.id, t.txn_date, t.amount, t.direction, t.payee, t.note, t.links, t.plaid_txn_id, t.photos,
-      t.invoice_number, t.period_start, t.period_end, t.inv_items,
-      s.bank, s.account_name
-    FROM bank_statement_txns t LEFT JOIN bank_statements s ON t.statement_id = s.id
-    WHERE t.kind='box' AND (t.payee LIKE ? OR (t.links IS NOT NULL AND t.links<>'' AND t.links<>'[]'))
-    ORDER BY t.txn_date DESC, t.id DESC`).all(payeePrefix + '%');
-  const payNotes = _acctPayNotesFor(payNoteType);
-  const out = [];
-  for (const r of rows) {
-    let links = []; try { links = JSON.parse(r.links || '[]'); } catch (e) { links = []; }
-    if (!Array.isArray(links)) links = [];
-    const sysLinks = links.filter(l => l && (String(l.system || '').toLowerCase().includes('pallet') || String(l.system || '').toLowerCase().includes('bintique')));
-    const myLinks = sysLinks.filter(l => _extIsTruckLink(l) === wantTruck);
-    const isMine = String(r.payee || '').indexOf(payeePrefix) === 0;
-    if (!isMine && !myLinks.length) continue;   // 别的类别/别的系统的关联, 不属于本页签
-    let ph = []; try { ph = JSON.parse(r.photos || '[]'); } catch (e) { ph = []; }
-    let invItems = []; try { invItems = JSON.parse(r.inv_items || '[]'); } catch (e) { invItems = []; }
-    out.push({
-      id: r.id, date: r.txn_date || '', amount: Number(r.amount) || 0, direction: r.direction === 'in' ? 'in' : 'out',
-      customer: isMine ? String(r.payee).slice(payeePrefix.length) : '',
-      note: r.note || '', bank: r.bank || '', account: r.account_name || '',
-      invoice_number: r.invoice_number || '', period_start: r.period_start || '', period_end: r.period_end || '',
-      inv_items: Array.isArray(invItems) ? invItems : [],
-      plaid: !!r.plaid_txn_id, links: myLinks,
-      photos_urls: (Array.isArray(ph) ? ph : []).filter(Boolean).map(k => `/uploads/${path.basename(k)}`),
-      pay_note: payNotes[r.id] || null,
-    });
-  }
-  return out;
-}
-// Bintique 全量账单 (10 分钟缓存): 供 ①未关联流水的自动匹配 ②木板账单页
-// 显示全部账单——没有银行流水的账单也单独成行, 页面不再缺账单。
-let _palletInvCache = { at: 0, invoices: null };
-async function _palletFetchInvoices() {
+// 🚚 卡车费用页签: Bintique 全量卡车订单 (一行一单, 不从银行流水抓) +
+// 客服手动添加的卡车费用 (fee_records fee_type='truck')。付款状态只认
+// 会计付款批注 (卡车订单 target_type='truckorder', 手动记录用 fee 的)。
+let _truckOrdCache = { at: 0, orders: null };
+async function _truckFetchOrders() {
   if (!process.env.PALLET_API_KEY) return null;
   const now = Date.now();
-  if (_palletInvCache.invoices && now - _palletInvCache.at < 10 * 60 * 1000) return _palletInvCache.invoices;
+  if (_truckOrdCache.orders && now - _truckOrdCache.at < 10 * 60 * 1000) return _truckOrdCache.orders;
   try {
     const ctrl = new AbortController();
     const tm = setTimeout(() => ctrl.abort(), 6000);
-    const resp = await fetch(PALLET_ORIGIN.replace(/\/+$/, '') + '/api/ext/invoices', {
+    const resp = await fetch(PALLET_ORIGIN.replace(/\/+$/, '') + '/api/ext/truck-orders', {
       signal: ctrl.signal, headers: { 'x-api-key': process.env.PALLET_API_KEY },
     });
     clearTimeout(tm);
     if (resp.ok) {
       const data = await resp.json();
-      if (Array.isArray(data && data.invoices)) _palletInvCache = { at: now, invoices: data.invoices };
+      if (Array.isArray(data && data.orders)) _truckOrdCache = { at: now, orders: data.orders };
     }
   } catch (e) { /* pallet 不可达: 沿用旧缓存 / 静默降级 */ }
-  return _palletInvCache.invoices;
+  return _truckOrdCache.orders;
 }
-// 🪵 木板账单页签: 只显示 Bintique 全量账单 (销售+采购), 一行一张发票,
-// 不再混入银行流水行 (老板要求纯账单台账)。付款状态走会计的付款批注
-// (target_type='palletbill', 按 Bintique 发票 id), 批注里照样能关联银行流水;
-// Bintique 那边自己的状态/收付记录作参考列返回。
-app.get('/api/acct/pallet-bills', requireAdmin, requireAcctView, async (req, res) => {
+app.get('/api/acct/truck-bills', requireAdmin, requireAcctView, async (req, res) => {
   try {
-    const invoices = (await _palletFetchInvoices()) || [];
-    const payNotes = _acctPayNotesFor('palletbill');
-    const rows = invoices.map(inv => ({
-      id: inv.id,
-      date: inv.invoice_date || inv.period_to || inv.period_from || '',
-      customer: inv.entity_name || '',
-      invoice_number: inv.invoice_number || '',
-      period_start: inv.period_from || '', period_end: inv.period_to || '',
-      amount: Number(inv.total_amount) || 0,
-      direction: inv.invoice_type === 'purchase' ? 'out' : 'in',
-      bintique: {
-        invoice_type: inv.invoice_type === 'purchase' ? 'purchase' : 'sales',
-        status: inv.status || '',
-        payment_amount: Number(inv.payment_amount) || 0,
-        payment_date: inv.payment_date || '',
-        paid_by: inv.paid_by_company || '',
-        doc_url: inv.doc_url || '', pdf_url: inv.pdf_url || '',
-      },
-      pay_note: payNotes[inv.id] || null,
-    }));
-    rows.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || b.id - a.id);
-    res.json({ count: rows.length, rows, configured: !!process.env.PALLET_API_KEY });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-// 🚚 卡车费用页签: 「卡车费:」交易标注 + Bintique 卡车订单关联, 与木板账单同款
-app.get('/api/acct/truck-bills', requireAdmin, requireAcctView, (req, res) => {
-  try {
-    const out = _acctTxnBillRows('卡车费:', true, 'truck');
-    // 客服手动添加的卡车费用 (fee_records fee_type='truck') 一并显示;
-    // 付款批注沿用 fee 记录的 (target_type='fee'), 前端按 fee_id 存取。
+    const orders = (await _truckFetchOrders()) || [];
+    const ordNotes = _acctPayNotesFor('truckorder');
     const feeNotes = _acctPayNotesFor('fee');
+    const out = orders.map(o => ({
+      id: 'ord-' + o.id, order: true, order_id: o.id,
+      rental_code: o.rental_code || '',
+      date: o.date || '', date_end: o.date_end || '',
+      customer: o.truck_company || '', amount: Number(o.amount) || 0,
+      direction: 'out', note: o.notes || '', cargo: o.cargo || '',
+      url: o.url || '',
+      bintique: { status: o.status || '', payment_date: o.payment_date || '', payment_method: o.payment_method || '' },
+      pay_note: ordNotes[o.id] || null,
+    }));
     const manual = db.prepare("SELECT * FROM fee_records WHERE fee_type='truck' ORDER BY fee_date DESC, id DESC").all();
     for (const f of manual) {
       let atts = []; try { atts = JSON.parse(f.attachments || '[]'); } catch (e) { atts = []; }
@@ -38618,18 +38563,15 @@ app.get('/api/acct/truck-bills', requireAdmin, requireAcctView, (req, res) => {
         id: 'fee-' + f.id, manual: true, fee_id: f.id,
         date: f.fee_date || String(f.created_at || '').slice(0, 10),
         amount: Number(f.amount) || 0, direction: 'out',
-        customer: f.party_name || '', note: f.description || '',
-        bank: '', account: '', invoice_number: '', period_start: '', period_end: '',
-        inv_items: [], plaid: false, links: [],
+        customer: f.party_name || '', note: f.description || '', cargo: '',
         photos_urls: (Array.isArray(atts) ? atts : []).map(a => (a && a.path) || '').filter(Boolean),
         pay_note: feeNotes[f.id] || null,
         approval_status: f.approval_status || 'approved', created_by: f.created_by || '',
       });
     }
     out.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-    res.json({ count: out.length, rows: out });
-  }
-  catch (e) { res.status(500).json({ error: e.message }); }
+    res.json({ count: out.length, rows: out, configured: !!process.env.PALLET_API_KEY });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // 木板行上传账单 PDF / 照片: 存进该银行交易标注的 photos (与标注抽屉「加照片」同一存储,
