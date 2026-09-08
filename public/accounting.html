@@ -108,7 +108,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
 
   <div style="display:flex;border-bottom:1px solid var(--g200);margin-bottom:.8rem;background:#fff;border-radius:10px 10px 0 0;padding:0 .4rem">
     <button class="tab on" id="tabInv" onclick="showTab('inv')">📄 发票 Invoices</button>
-    <button class="tab" id="tabStmt" onclick="showTab('stmt')">🏦 银行流水 Bank Statements</button>
+    <button class="tab" id="tabStmt" onclick="showTab('stmt')" style="display:none">🏦 银行流水 Bank Statements</button>
     <button class="tab" id="tabClaims" onclick="showTab('claims')">⚠️ 赔偿事故 Claims</button>
     <button class="tab" id="tabFeeIns" onclick="showTab('feeins')">🛡️ 保险费 Insurance</button>
     <button class="tab" id="tabFeeLaw" onclick="showTab('feelaw')">⚖️ 律师费 Legal</button>
@@ -1108,13 +1108,21 @@ function openPalletDetail(id) {
   const photos = (r.photos_urls || []).map(u => /\.pdf(\?|$)/i.test(u)
     ? `<span onclick="showFileLightbox('${esc(u)}')" style="display:inline-flex;align-items:center;justify-content:center;width:60px;height:60px;border:1px solid var(--g200);border-radius:6px;background:#fff;cursor:pointer;font-size:1.3rem">📄</span>`
     : `<img src="${esc(u)}" onclick="showImgLightbox('${esc(u)}')" style="width:60px;height:60px;object-fit:cover;border-radius:6px;border:1px solid var(--g200);cursor:zoom-in">`).join(' ');
-  const billUrls = (r.links || []).filter(l => l && l.url);
+  const autoCands = _palletAutoCands(r);
+  const isAuto = !r.links.length && autoCands.length > 0;
+  const billUrls = (r.links || []).filter(l => l && l.url).concat(autoCands.map(c => ({ url: c.doc_url, label: c.invoice_number })));
   const firstUrl = billUrls.length ? billUrls[0].url : '';
-  const pdfs = (r.photos_urls || []).filter(u => /\.pdf(\?|$)/i.test(u));
+  let pdfs = (r.photos_urls || []).filter(u => /\.pdf(\?|$)/i.test(u));
+  const pdfAuto = !pdfs.length && autoCands.some(c => c.pdf_url);
+  if (pdfAuto) pdfs = autoCands.map(c => c.pdf_url).filter(Boolean);
   // 点账单名 → 在下方内嵌预览里切换; ↗ 在新窗口打开
-  const links = (r.links || []).map(l => l.url
-    ? `<div>🪵 <a href="${esc(l.url)}" onclick="var f=document.getElementById('palletBillFrame');if(f){f.src=this.href;return false}" title="在下方预览这张账单" style="color:#92400e;text-decoration:underline;font-weight:600">${esc(l.label || l.ref || '账单')}</a> <a href="${esc(l.url)}" target="_blank" rel="noopener" title="新窗口打开" style="text-decoration:none">↗</a></div>`
-    : `<div>🪵 ${esc(l.label || l.ref || '账单')}</div>`).join('') || '<span style="color:var(--g400)">未关联 Bintique 账单（对方把账单 link 到这笔交易后，这里就能直接看账单明细）</span>';
+  const _billLink = (url, label, icon) => `<div>${icon} <a href="${esc(url)}" onclick="var f=document.getElementById('palletBillFrame');if(f){f.src=this.href;return false}" title="在下方预览这张账单" style="color:#92400e;text-decoration:underline;font-weight:600">${esc(label)}</a> <a href="${esc(url)}" target="_blank" rel="noopener" title="新窗口打开" style="text-decoration:none">↗</a></div>`;
+  const links = r.links.length
+    ? r.links.map(l => l.url ? _billLink(l.url, l.label || l.ref || '账单', '🪵') : `<div>🪵 ${esc(l.label || l.ref || '账单')}</div>`).join('')
+    : isAuto
+      ? autoCands.map(c => _billLink(c.doc_url, `${c.invoice_number || '账单'}${c.entity_name ? ' · ' + c.entity_name : ''}`, '🔎')).join('')
+        + `<div style="margin-top:2px">${_palletAutoBadge(r)}${r.auto_match.match === 'amount' ? ' <span style="font-size:.7rem;color:#b45309">按金额+客户猜的，仅供参考，请核对发票号</span>' : ''}</div>`
+      : '<span style="color:var(--g400)">未关联 Bintique 账单（在标注里填上发票号可自动匹配；或对方把账单 link 到这笔交易）</span>';
   m.innerHTML = `<div style="background:#fff;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,.35);width:min(94vw,${(firstUrl || pdfs.length) ? '940px' : '560px'});max-height:92vh;overflow:auto;padding:1rem 1.1rem" onclick="event.stopPropagation()">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;margin-bottom:.55rem">
       <div style="font-weight:800;font-size:.95rem;color:#92400e">🪵 木板账单明细</div>
@@ -1131,12 +1139,12 @@ function openPalletDetail(id) {
     ${row('Bintique 账单', links)}
     ${row('凭证照片', photos || '<span style="color:var(--g400)">无</span>')}
     ${pdfs.length ? `<div style="margin-top:.7rem">
-      <div style="font-weight:700;color:#0f4c6b;font-size:.84rem;margin-bottom:.3rem">📄 PDF 账单（Bintique 自动同步${pdfs.length > 1 ? `，共 ${pdfs.length} 份，点下方文件名切换` : ''}）</div>
+      <div style="font-weight:700;color:#0f4c6b;font-size:.84rem;margin-bottom:.3rem">📄 PDF 账单（${pdfAuto ? '自动匹配，来自 pallet.bintique.com' : 'Bintique 自动同步'}${pdfs.length > 1 ? `，共 ${pdfs.length} 份，点下方文件名切换` : ''}）</div>
       <iframe id="palletPdfFrame" src="${esc(pdfs[0])}" style="width:100%;height:62vh;border:1px solid var(--g200);border-radius:8px;background:#fff"></iframe>
       ${pdfs.length > 1 ? `<div style="font-size:.74rem;margin-top:.25rem">${pdfs.map((u, i) => `<a href="${esc(u)}" onclick="var f=document.getElementById('palletPdfFrame');if(f){f.src=this.href;return false}" style="color:#0f4c6b;text-decoration:underline;margin-right:.6rem">账单 PDF ${i + 1}</a>`).join('')}</div>` : ''}
     </div>` : ''}
     ${firstUrl ? `<div style="margin-top:.7rem">
-      <div style="font-weight:700;color:#92400e;font-size:.84rem;margin-bottom:.3rem">🪵 账单明细（来自 pallet.bintique.com${billUrls.length > 1 ? '，点上方账单名切换' : ''}）</div>
+      <div style="font-weight:700;color:#92400e;font-size:.84rem;margin-bottom:.3rem">🪵 账单明细（${isAuto ? '自动匹配，' : ''}来自 pallet.bintique.com${billUrls.length > 1 ? '，点上方账单名切换' : ''}）</div>
       <iframe id="palletBillFrame" src="${esc(firstUrl)}" style="width:100%;height:62vh;border:1px solid var(--g200);border-radius:8px;background:#fff"></iframe>
       <div style="font-size:.72rem;color:var(--g400);margin-top:.25rem">显示不出来？<a href="${esc(firstUrl)}" target="_blank" rel="noopener" style="color:#92400e;text-decoration:underline">在新窗口打开账单</a>（可能需要先登录 pallet.bintique.com）</div>
     </div>` : ''}
@@ -1262,6 +1270,17 @@ async function truckUploadBill(id, files) {
     openTruckDetail(id);
   } catch (e) { toast(e.message || '上传失败', true); }
 }
+// 未关联行的自动匹配 (服务器拿 发票号/金额+客户+日期 去 Bintique 查回来的):
+// match='number' 是按发票号精确对上的, 'amount' 是按金额+客户猜的 (标「疑似」)。
+function _palletAutoCands(r) {
+  return (!r.links.length && r.auto_match && Array.isArray(r.auto_match.candidates)) ? r.auto_match.candidates : [];
+}
+function _palletAutoBadge(r) {
+  if (!_palletAutoCands(r).length) return '';
+  return r.auto_match.match === 'number'
+    ? '<span style="font-size:.62rem;background:#fffbeb;border:1px solid #fbbf24;color:#92400e;border-radius:4px;padding:0 4px;white-space:nowrap">自动匹配·按发票号</span>'
+    : '<span style="font-size:.62rem;background:#f8fafc;border:1px dashed #94a3b8;color:#64748b;border-radius:4px;padding:0 4px;white-space:nowrap">疑似·按金额+客户</span>';
+}
 function renderPalletList() {
   const q = (document.getElementById('palletSearch').value || '').toLowerCase();
   const flt = document.getElementById('palletFilter').value;
@@ -1269,11 +1288,12 @@ function renderPalletList() {
   if (flt === 'linked') rows = rows.filter(r => r.links.length);
   else if (flt === 'unlinked') rows = rows.filter(r => !r.links.length);
   else if (flt === 'in' || flt === 'out') rows = rows.filter(r => r.direction === flt);
-  if (q) rows = rows.filter(r => [r.customer, r.note, r.bank, r.account, r.invoice_number].concat(r.links.map(l => (l.label || '') + ' ' + (l.ref || ''))).concat(_palletInvItems(r).map(it => it.inv || '')).join(' ').toLowerCase().includes(q));
+  if (q) rows = rows.filter(r => [r.customer, r.note, r.bank, r.account, r.invoice_number].concat(r.links.map(l => (l.label || '') + ' ' + (l.ref || ''))).concat(_palletAutoCands(r).map(c => c.invoice_number || '')).concat(_palletInvItems(r).map(it => it.inv || '')).join(' ').toLowerCase().includes(q));
   const inSum = rows.filter(r => r.direction === 'in').reduce((s, r) => s + r.amount, 0);
   const outSum = rows.filter(r => r.direction === 'out').reduce((s, r) => s + r.amount, 0);
   const linkedN = _palletRows.filter(r => r.links.length).length;
-  document.getElementById('palletStats').textContent = `共 ${rows.length} 笔 · 收入 +${money(inSum)} · 支出 −${money(outSum)} · 已关联账单 ${linkedN} / ${_palletRows.length}`;
+  const autoN = _palletRows.filter(r => _palletAutoCands(r).length).length;
+  document.getElementById('palletStats').textContent = `共 ${rows.length} 笔 · 收入 +${money(inSum)} · 支出 −${money(outSum)} · 已关联账单 ${linkedN} / ${_palletRows.length}${autoN ? `（另 ${autoN} 笔自动匹配）` : ''}`;
   document.getElementById('palletBody').innerHTML = rows.length ? rows.map(r => `<tr>
     <td style="white-space:nowrap">${esc(r.date)}</td>
     <td style="font-size:.78rem">${esc([r.bank, r.account].filter(Boolean).join(' · ')) || '<span style="color:var(--g300)">—</span>'}${r.plaid ? ' <span style="font-size:.62rem;background:#f1f5f9;border-radius:4px;padding:0 4px">直连</span>' : ''}</td>
@@ -1286,6 +1306,7 @@ function renderPalletList() {
     <td style="font-size:.78rem;line-height:1.6">${r.links.length ? r.links.map(l => l.url
         ? `<div>🪵 <a href="${esc(l.url)}" target="_blank" rel="noopener" style="color:#92400e;text-decoration:underline;font-weight:600">${esc(l.label || l.ref || '账单')}</a></div>`
         : `<div>🪵 ${esc(l.label || l.ref || '账单')}</div>`).join('')
+      : _palletAutoCands(r).length ? _palletAutoCands(r).map(c => `<div>🔎 <a href="${esc(c.doc_url)}" target="_blank" rel="noopener" style="color:#92400e;text-decoration:underline;font-weight:600">${esc(c.invoice_number || '账单')}</a></div>`).join('') + `<div>${_palletAutoBadge(r)}</div>`
       : '<span style="color:var(--g400)">未关联</span>'}</td>
     <td style="font-size:.76rem;color:var(--g500);max-width:220px">${esc(r.note || '')}</td>
     <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openPalletDetail(${r.id})">查看明细</button></td>

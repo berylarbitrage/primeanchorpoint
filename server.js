@@ -38551,8 +38551,55 @@ function _acctTxnBillRows(payeePrefix, wantTruck, payNoteType) {
   }
   return out;
 }
-app.get('/api/acct/pallet-bills', requireAdmin, requireAcctView, (req, res) => {
-  try { const out = _acctTxnBillRows('木板钱:', false, 'pallet'); res.json({ count: out.length, rows: out }); }
+// 未关联行的自动匹配: 不用在 Bintique 手动关联也能看到账单 —— 把每行的
+// 发票号 / 金额 / 客户 / 日期发给 pallet.bintique.com 查询 (共享密钥),
+// 发票号能对上的按精确匹配 (auto_match.match='number'), 没有发票号的按
+// 金额+客户+日期 猜测 ('amount', 最多 3 个候选, 前端标「疑似」)。
+// 结果缓存 10 分钟; pallet 不可达时静默降级, 列表照常显示。
+const _palletMatchCache = new Map(); // fingerprint -> { at, res }
+async function _palletAutoMatch(rows) {
+  if (!process.env.PALLET_API_KEY) return;
+  const now = Date.now();
+  if (_palletMatchCache.size > 3000) _palletMatchCache.clear();
+  const want = [];
+  for (const r of rows) {
+    if (r.links.length) continue;
+    const num = String(r.invoice_number || '').trim();
+    const cust = String(r.customer || '').trim();
+    if (!num && !cust) continue;
+    const fp = `${num.toLowerCase()}|${(Number(r.amount) || 0).toFixed(2)}|${cust.toLowerCase()}|${r.date}`;
+    const hit = _palletMatchCache.get(fp);
+    if (hit && now - hit.at < 10 * 60 * 1000) { if (hit.res) r.auto_match = hit.res; }
+    else want.push({ r, fp });
+  }
+  if (!want.length) return;
+  try {
+    const ctrl = new AbortController();
+    const tm = setTimeout(() => ctrl.abort(), 6000);
+    const resp = await fetch(PALLET_ORIGIN.replace(/\/+$/, '') + '/api/ext/invoice-match', {
+      method: 'POST', signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.PALLET_API_KEY },
+      body: JSON.stringify({ queries: want.map(w => ({ key: String(w.r.id), invoice_number: w.r.invoice_number || '', amount: Number(w.r.amount) || 0, customer: w.r.customer || '', date: w.r.date || '' })) }),
+    });
+    clearTimeout(tm);
+    if (!resp.ok) return;
+    const results = ((await resp.json()) || {}).results || {};
+    for (const w of want) {
+      const m = results[String(w.r.id)];
+      const res2 = m && Array.isArray(m.candidates) && m.candidates.length
+        ? { match: m.match === 'number' ? 'number' : 'amount', candidates: m.candidates.slice(0, 3) }
+        : null;
+      _palletMatchCache.set(w.fp, { at: now, res: res2 });
+      if (res2) w.r.auto_match = res2;
+    }
+  } catch (e) { /* pallet 不可达: 静默降级 */ }
+}
+app.get('/api/acct/pallet-bills', requireAdmin, requireAcctView, async (req, res) => {
+  try {
+    const out = _acctTxnBillRows('木板钱:', false, 'pallet');
+    await _palletAutoMatch(out);
+    res.json({ count: out.length, rows: out });
+  }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 // 🚚 卡车费用页签: 「卡车费:」交易标注 + Bintique 卡车订单关联, 与木板账单同款
