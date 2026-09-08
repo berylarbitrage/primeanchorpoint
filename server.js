@@ -38507,7 +38507,7 @@ app.post('/api/acct/warehouse-claims/:id/approval', requireAdmin, requireRole('a
 });
 
 // ─── 费用记录 (保险费 insurance / 律师费 legal) — 和赔偿事故同一套玩法 ───
-const FEE_RECORD_TYPES = ['insurance', 'legal', 'company'];
+const FEE_RECORD_TYPES = ['insurance', 'legal', 'company', 'truck'];
 app.get('/api/acct/fee-records', requireAdmin, requireAcctView, (req, res) => {
   const rows = db.prepare(`SELECT * FROM fee_records
     ORDER BY CASE WHEN approval_status='pending' THEN 0 ELSE 1 END, fee_date DESC, created_at DESC`).all();
@@ -38606,7 +38606,29 @@ app.get('/api/acct/pallet-bills', requireAdmin, requireAcctView, async (req, res
 });
 // 🚚 卡车费用页签: 「卡车费:」交易标注 + Bintique 卡车订单关联, 与木板账单同款
 app.get('/api/acct/truck-bills', requireAdmin, requireAcctView, (req, res) => {
-  try { const out = _acctTxnBillRows('卡车费:', true, 'truck'); res.json({ count: out.length, rows: out }); }
+  try {
+    const out = _acctTxnBillRows('卡车费:', true, 'truck');
+    // 客服手动添加的卡车费用 (fee_records fee_type='truck') 一并显示;
+    // 付款批注沿用 fee 记录的 (target_type='fee'), 前端按 fee_id 存取。
+    const feeNotes = _acctPayNotesFor('fee');
+    const manual = db.prepare("SELECT * FROM fee_records WHERE fee_type='truck' ORDER BY fee_date DESC, id DESC").all();
+    for (const f of manual) {
+      let atts = []; try { atts = JSON.parse(f.attachments || '[]'); } catch (e) { atts = []; }
+      out.push({
+        id: 'fee-' + f.id, manual: true, fee_id: f.id,
+        date: f.fee_date || String(f.created_at || '').slice(0, 10),
+        amount: Number(f.amount) || 0, direction: 'out',
+        customer: f.party_name || '', note: f.description || '',
+        bank: '', account: '', invoice_number: '', period_start: '', period_end: '',
+        inv_items: [], plaid: false, links: [],
+        photos_urls: (Array.isArray(atts) ? atts : []).map(a => (a && a.path) || '').filter(Boolean),
+        pay_note: feeNotes[f.id] || null,
+        approval_status: f.approval_status || 'approved', created_by: f.created_by || '',
+      });
+    }
+    out.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    res.json({ count: out.length, rows: out });
+  }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -38630,12 +38652,14 @@ app.post('/api/acct/pallet-bills/:id/photos', requireAdmin, requireAcctWrite, co
 });
 
 // 新增费用记录: 会计提交入库为 pending 待管理员审核, admin 提交直接 approved (发票文件复用 claimUpload)
-app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin'), claimUpload.array('invoice', 20), (req, res) => {
+app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin', 'cs'), claimUpload.array('invoice', 20), (req, res) => {
   const b = req.body || {};
   const feeType = String(b.fee_type || '').trim();
   if (!FEE_RECORD_TYPES.includes(feeType)) return res.status(400).json({ error: '无效费用类型' });
+  // 客服只能添加卡车费用 (卡车页签「客服可以自己加」); 其他费用类型仍限 会计/admin
+  if (req.userRole === 'cs' && feeType !== 'truck') return res.status(403).json({ error: '客服只能添加卡车费用' });
   const party = String(b.party_name || '').trim().slice(0, 200);
-  if (!party) return res.status(400).json({ error: feeType === 'insurance' ? '请填写保险公司' : (feeType === 'legal' ? '请填写律师 / 律所' : '请填写收款方 / 供应商') });
+  if (!party) return res.status(400).json({ error: feeType === 'insurance' ? '请填写保险公司' : feeType === 'legal' ? '请填写律师 / 律所' : feeType === 'truck' ? '请填写卡车公司' : '请填写收款方 / 供应商' });
   const amtNum = Number(b.amount);
   const files = Array.isArray(req.files) ? req.files : [];
   const atts = files.map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
