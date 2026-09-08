@@ -38551,48 +38551,110 @@ function _acctTxnBillRows(payeePrefix, wantTruck, payNoteType) {
   }
   return out;
 }
-// 未关联行的自动匹配: 不用在 Bintique 手动关联也能看到账单 —— 把每行的
-// 发票号 / 金额 / 客户 / 日期发给 pallet.bintique.com 查询 (共享密钥),
-// 发票号能对上的按精确匹配 (auto_match.match='number'), 没有发票号的按
-// 金额+客户+日期 猜测 ('amount', 最多 3 个候选, 前端标「疑似」)。
-// 结果缓存 10 分钟; pallet 不可达时静默降级, 列表照常显示。
-const _palletMatchCache = new Map(); // fingerprint -> { at, res }
-async function _palletAutoMatch(rows) {
-  if (!process.env.PALLET_API_KEY) return;
+// Bintique 全量账单 (10 分钟缓存): 供 ①未关联流水的自动匹配 ②木板账单页
+// 显示全部账单——没有银行流水的账单也单独成行, 页面不再缺账单。
+let _palletInvCache = { at: 0, invoices: null };
+async function _palletFetchInvoices() {
+  if (!process.env.PALLET_API_KEY) return null;
   const now = Date.now();
-  if (_palletMatchCache.size > 3000) _palletMatchCache.clear();
-  const want = [];
-  for (const r of rows) {
-    if (r.links.length) continue;
-    const num = String(r.invoice_number || '').trim();
-    const cust = String(r.customer || '').trim();
-    if (!num && !cust) continue;
-    const fp = `${num.toLowerCase()}|${(Number(r.amount) || 0).toFixed(2)}|${cust.toLowerCase()}|${r.date}|${r.direction}`;
-    const hit = _palletMatchCache.get(fp);
-    if (hit && now - hit.at < 10 * 60 * 1000) { if (hit.res) r.auto_match = hit.res; }
-    else want.push({ r, fp });
-  }
-  if (!want.length) return;
+  if (_palletInvCache.invoices && now - _palletInvCache.at < 10 * 60 * 1000) return _palletInvCache.invoices;
   try {
     const ctrl = new AbortController();
     const tm = setTimeout(() => ctrl.abort(), 6000);
-    const resp = await fetch(PALLET_ORIGIN.replace(/\/+$/, '') + '/api/ext/invoice-match', {
-      method: 'POST', signal: ctrl.signal,
-      headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.PALLET_API_KEY },
-      body: JSON.stringify({ queries: want.map(w => ({ key: String(w.r.id), invoice_number: w.r.invoice_number || '', amount: Number(w.r.amount) || 0, customer: w.r.customer || '', date: w.r.date || '', direction: w.r.direction })) }),
+    const resp = await fetch(PALLET_ORIGIN.replace(/\/+$/, '') + '/api/ext/invoices', {
+      signal: ctrl.signal, headers: { 'x-api-key': process.env.PALLET_API_KEY },
     });
     clearTimeout(tm);
-    if (!resp.ok) return;
-    const results = ((await resp.json()) || {}).results || {};
-    for (const w of want) {
-      const m = results[String(w.r.id)];
-      const res2 = m && Array.isArray(m.candidates) && m.candidates.length && (m.match === 'number' || m.match === 'amount')
-        ? { match: m.match, candidates: m.candidates.slice(0, 3) }
-        : null;
-      _palletMatchCache.set(w.fp, { at: now, res: res2 });
-      if (res2) w.r.auto_match = res2;
+    if (resp.ok) {
+      const data = await resp.json();
+      if (Array.isArray(data && data.invoices)) _palletInvCache = { at: now, invoices: data.invoices };
     }
-  } catch (e) { /* pallet 不可达: 静默降级 */ }
+  } catch (e) { /* pallet 不可达: 沿用旧缓存 / 静默降级 */ }
+  return _palletInvCache.invoices;
+}
+// 号码归一化: 去掉所有非字母数字再比较, BINV-20260301 与 BINV--20260301 同号
+const _palletNormNum = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+const _palletNormName = s => String(s || '').toLowerCase().replace(/[^a-z0-9一-鿿]+/g, '');
+async function _palletAutoMatch(rows) {
+  const invoices = await _palletFetchInvoices();
+  if (!invoices || !invoices.length) return;
+  const byNum = new Map();
+  for (const inv of invoices) {
+    const k = _palletNormNum(inv.invoice_number);
+    if (!k) continue;
+    if (!byNum.has(k)) byNum.set(k, []);
+    byNum.get(k).push(inv);
+  }
+  const mkCand = inv => ({
+    id: inv.id, invoice_number: inv.invoice_number, invoice_type: inv.invoice_type, entity_name: inv.entity_name,
+    total_amount: inv.total_amount, period_from: inv.period_from, period_to: inv.period_to,
+    doc_url: inv.doc_url || '', pdf_url: inv.pdf_url || '',
+  });
+  const usedIds = new Set();
+  for (const r of rows) {
+    const wantType = r.direction === 'in' ? 'sales' : 'purchase';
+    // 已关联的流水: 按 ref 归一化找到对应账单, 标记为已出现 (不再单独成行)
+    if (r.links.length) {
+      for (const l of r.links) (byNum.get(_palletNormNum(l && l.ref)) || []).forEach(inv => usedIds.add(inv.id));
+      continue;
+    }
+    let cands = null, how = '';
+    // ① 发票号归一化精确匹配 (收支方向决定销售/采购, 同号两张时按方向挑)
+    const numK = _palletNormNum(r.invoice_number);
+    if (numK && byNum.has(numK)) {
+      const g = byNum.get(numK);
+      cands = [g.find(i => i.invoice_type === wantType) || g[0]];
+      how = 'number';
+    }
+    // ② 金额分毫不差 + 客户对得上 + 方向一致 (号没写、或写的号对不上时兜底)
+    if (!cands) {
+      const cust = _palletNormName(r.customer);
+      const amt = Number(r.amount) || 0;
+      if (cust && amt > 0) {
+        const t = Date.parse(r.date || '');
+        const seen = new Set();
+        const hit = invoices.filter(inv => {
+          if (inv.invoice_type !== wantType) return false;
+          if (Math.abs((Number(inv.total_amount) || 0) - amt) > 0.005) return false;
+          const en = _palletNormName(inv.entity_name);
+          if (!en || !(en.includes(cust) || cust.includes(en))) return false;
+          if (!isNaN(t)) {
+            const f = Date.parse(inv.period_from || inv.invoice_date || '');
+            const to = Date.parse(inv.period_to || '');
+            if (!isNaN(f) && (t < f - 45 * 86400000 || (!isNaN(to) && t > to + 365 * 86400000))) return false;
+          }
+          const k = _palletNormNum(inv.invoice_number) || ('id' + inv.id);
+          if (seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        });
+        if (hit.length) { cands = hit.slice(0, 3); how = 'amount'; }
+      }
+    }
+    if (cands) {
+      cands.forEach(inv => usedIds.add(inv.id));
+      r.auto_match = { match: how, candidates: cands.map(mkCand) };
+    }
+  }
+  // ③ 没出现在任何银行流水上的账单也单独成行: 页面显示全部 Bintique 账单
+  for (const inv of invoices) {
+    if (usedIds.has(inv.id)) continue;
+    rows.push({
+      id: 'bill-' + inv.id, is_bill: true,
+      date: inv.invoice_date || inv.period_to || inv.period_from || '',
+      amount: Number(inv.total_amount) || 0,
+      direction: inv.invoice_type === 'purchase' ? 'out' : 'in',
+      customer: inv.entity_name || '', note: '', bank: '', account: '',
+      invoice_number: inv.invoice_number || '', period_start: inv.period_from || '', period_end: inv.period_to || '',
+      inv_items: [], plaid: false, links: [], photos_urls: [], pay_note: null,
+      bintique: {
+        invoice_type: inv.invoice_type, status: inv.status || '',
+        payment_amount: Number(inv.payment_amount) || 0, payment_date: inv.payment_date || '',
+        paid_by: inv.paid_by_company || '', doc_url: inv.doc_url || '', pdf_url: inv.pdf_url || '',
+      },
+    });
+  }
+  rows.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
 }
 app.get('/api/acct/pallet-bills', requireAdmin, requireAcctView, async (req, res) => {
   try {
