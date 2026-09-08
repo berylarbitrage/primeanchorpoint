@@ -38326,7 +38326,7 @@ function _acctPayNotesFor(type) {
 // 会计付款批注 upsert: 付了没有 / 哪个银行付的 / 付了多少 / 备注 / 关联银行交易(收款凭证)
 app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
   const { target_type, target_id, paid_status, bank, amount, note, txn_ids } = req.body || {};
-  if (!['invoice', 'claim', 'fee', 'pallet', 'truck'].includes(target_type)) return res.status(400).json({ error: '无效对象类型' });
+  if (!['invoice', 'claim', 'fee', 'pallet', 'palletbill', 'truck'].includes(target_type)) return res.status(400).json({ error: '无效对象类型' });
   const tid = parseInt(target_id);
   if (!tid) return res.status(400).json({ error: '无效对象' });
   const exists = target_type === 'invoice'
@@ -38335,7 +38335,9 @@ app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
       ? db.prepare('SELECT id FROM fee_records WHERE id=?').get(tid)
       : (target_type === 'pallet' || target_type === 'truck')
         ? db.prepare("SELECT id FROM bank_statement_txns WHERE id=? AND kind='box'").get(tid)
-        : db.prepare('SELECT id FROM warehouse_claims WHERE id=?').get(tid);
+        : target_type === 'palletbill'
+          ? { id: tid } // Bintique 账单在对方系统, 本地不校验存在性
+          : db.prepare('SELECT id FROM warehouse_claims WHERE id=?').get(tid);
   if (!exists) return res.status(404).json({ error: '对象不存在' });
   const st = ['', 'unpaid', 'partial', 'paid'].includes(String(paid_status || '')) ? String(paid_status || '') : '';
   const amt = (amount === '' || amount == null) ? null : (Number(amount) || 0);
@@ -38572,100 +38574,35 @@ async function _palletFetchInvoices() {
   } catch (e) { /* pallet 不可达: 沿用旧缓存 / 静默降级 */ }
   return _palletInvCache.invoices;
 }
-// 号码归一化: 去掉所有非字母数字再比较, BINV-20260301 与 BINV--20260301 同号
-const _palletNormNum = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
-const _palletNormName = s => String(s || '').toLowerCase().replace(/[^a-z0-9一-鿿]+/g, '');
-async function _palletAutoMatch(rows) {
-  const invoices = await _palletFetchInvoices();
-  if (!invoices || !invoices.length) return;
-  const byNum = new Map();
-  for (const inv of invoices) {
-    const k = _palletNormNum(inv.invoice_number);
-    if (!k) continue;
-    if (!byNum.has(k)) byNum.set(k, []);
-    byNum.get(k).push(inv);
-  }
-  const mkCand = inv => ({
-    id: inv.id, invoice_number: inv.invoice_number, invoice_type: inv.invoice_type, entity_name: inv.entity_name,
-    total_amount: inv.total_amount, period_from: inv.period_from, period_to: inv.period_to,
-    doc_url: inv.doc_url || '', pdf_url: inv.pdf_url || '',
-  });
-  const usedIds = new Set();
-  for (const r of rows) {
-    const wantType = r.direction === 'in' ? 'sales' : 'purchase';
-    // 已关联的流水: 按 ref 归一化找到对应账单, 标记为已出现 (不再单独成行)
-    if (r.links.length) {
-      for (const l of r.links) (byNum.get(_palletNormNum(l && l.ref)) || []).forEach(inv => usedIds.add(inv.id));
-      continue;
-    }
-    let cands = null, how = '';
-    // ① 发票号归一化精确匹配 (收支方向决定销售/采购, 同号两张时按方向挑)
-    const numK = _palletNormNum(r.invoice_number);
-    if (numK && byNum.has(numK)) {
-      const g = byNum.get(numK);
-      cands = [g.find(i => i.invoice_type === wantType) || g[0]];
-      how = 'number';
-    }
-    // ② 金额分毫不差 + 客户对得上 + 方向一致 (号没写、或写的号对不上时兜底)
-    if (!cands) {
-      const cust = _palletNormName(r.customer);
-      const amt = Number(r.amount) || 0;
-      if (cust && amt > 0) {
-        const t = Date.parse(r.date || '');
-        const seen = new Set();
-        const hit = invoices.filter(inv => {
-          if (inv.invoice_type !== wantType) return false;
-          if (Math.abs((Number(inv.total_amount) || 0) - amt) > 0.005) return false;
-          const en = _palletNormName(inv.entity_name);
-          if (!en || !(en.includes(cust) || cust.includes(en))) return false;
-          if (!isNaN(t)) {
-            const f = Date.parse(inv.period_from || inv.invoice_date || '');
-            const to = Date.parse(inv.period_to || '');
-            if (!isNaN(f) && (t < f - 45 * 86400000 || (!isNaN(to) && t > to + 365 * 86400000))) return false;
-          }
-          const k = _palletNormNum(inv.invoice_number) || ('id' + inv.id);
-          if (seen.has(k)) return false;
-          seen.add(k);
-          return true;
-        });
-        if (hit.length) { cands = hit.slice(0, 3); how = 'amount'; }
-      }
-    }
-    if (cands) {
-      // 只有确定无歧义时才把账单并入流水行 (发票号对上, 或唯一的金额匹配);
-      // 多个候选说明分不清付的是哪张, 这些账单仍单独成行, 不能被吞掉数不齐。
-      if (how === 'number' || cands.length === 1) cands.forEach(inv => usedIds.add(inv.id));
-      r.auto_match = { match: how, candidates: cands.map(mkCand) };
-    }
-  }
-  // ③ 没出现在任何银行流水上的账单也单独成行: 页面显示全部 Bintique 账单
-  for (const inv of invoices) {
-    if (usedIds.has(inv.id)) continue;
-    rows.push({
-      id: 'bill-' + inv.id, is_bill: true,
-      date: inv.invoice_date || inv.period_to || inv.period_from || '',
-      amount: Number(inv.total_amount) || 0,
-      direction: inv.invoice_type === 'purchase' ? 'out' : 'in',
-      customer: inv.entity_name || '', note: '', bank: '', account: '',
-      invoice_number: inv.invoice_number || '', period_start: inv.period_from || '', period_end: inv.period_to || '',
-      inv_items: [], plaid: false, links: [], photos_urls: [], pay_note: null,
-      bintique: {
-        invoice_type: inv.invoice_type, status: inv.status || '',
-        payment_amount: Number(inv.payment_amount) || 0, payment_date: inv.payment_date || '',
-        paid_by: inv.paid_by_company || '', doc_url: inv.doc_url || '', pdf_url: inv.pdf_url || '',
-      },
-    });
-  }
-  rows.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-  return invoices.length; // Bintique 账单总数, 给前端统计「共 N 张」用
-}
+// 🪵 木板账单页签: 只显示 Bintique 全量账单 (销售+采购), 一行一张发票,
+// 不再混入银行流水行 (老板要求纯账单台账)。付款状态走会计的付款批注
+// (target_type='palletbill', 按 Bintique 发票 id), 批注里照样能关联银行流水;
+// Bintique 那边自己的状态/收付记录作参考列返回。
 app.get('/api/acct/pallet-bills', requireAdmin, requireAcctView, async (req, res) => {
   try {
-    const out = _acctTxnBillRows('木板钱:', false, 'pallet');
-    const billsTotal = (await _palletAutoMatch(out)) || 0;
-    res.json({ count: out.length, rows: out, bills_total: billsTotal });
-  }
-  catch (e) { res.status(500).json({ error: e.message }); }
+    const invoices = (await _palletFetchInvoices()) || [];
+    const payNotes = _acctPayNotesFor('palletbill');
+    const rows = invoices.map(inv => ({
+      id: inv.id,
+      date: inv.invoice_date || inv.period_to || inv.period_from || '',
+      customer: inv.entity_name || '',
+      invoice_number: inv.invoice_number || '',
+      period_start: inv.period_from || '', period_end: inv.period_to || '',
+      amount: Number(inv.total_amount) || 0,
+      direction: inv.invoice_type === 'purchase' ? 'out' : 'in',
+      bintique: {
+        invoice_type: inv.invoice_type === 'purchase' ? 'purchase' : 'sales',
+        status: inv.status || '',
+        payment_amount: Number(inv.payment_amount) || 0,
+        payment_date: inv.payment_date || '',
+        paid_by: inv.paid_by_company || '',
+        doc_url: inv.doc_url || '', pdf_url: inv.pdf_url || '',
+      },
+      pay_note: payNotes[inv.id] || null,
+    }));
+    rows.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || b.id - a.id);
+    res.json({ count: rows.length, rows, configured: !!process.env.PALLET_API_KEY });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // 🚚 卡车费用页签: 「卡车费:」交易标注 + Bintique 卡车订单关联, 与木板账单同款
 app.get('/api/acct/truck-bills', requireAdmin, requireAcctView, (req, res) => {
