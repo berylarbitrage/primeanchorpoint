@@ -113,6 +113,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <button class="tab" id="tabFeeIns" onclick="showTab('feeins')">🛡️ 保险费 Insurance</button>
     <button class="tab" id="tabFeeLaw" onclick="showTab('feelaw')">⚖️ 律师费 Legal</button>
     <button class="tab" id="tabFeeCo" onclick="showTab('feeco')">🏢 公司支出 Expenses</button>
+    <button class="tab" id="tabPallet" onclick="showTab('pallet')">🪵 木板账单 Pallet</button>
     <button class="tab" id="tabBank" onclick="showTab('bank')" style="display:none">🔗 银行直连 Bank Feed <span id="bankUnrevBadge" style="display:none;background:#dc2626;color:#fff;border-radius:10px;font-size:.68rem;padding:1px 7px;vertical-align:middle"></span></button>
   </div>
 
@@ -342,6 +343,27 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
   <div id="annToast"></div>
   <div id="annLightbox" onclick="this.style.display='none';this.innerHTML=''"></div>
 
+  <!-- 🪵 木板账单 (Bintique)：木板钱交易 + pallet.bintique.com link 过来的账单 -->
+  <div id="panePallet" style="display:none">
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
+      <input type="text" id="palletSearch" placeholder="搜客户 / 账单号 / 备注…" oninput="renderPalletList()" style="width:220px">
+      <select id="palletFilter" onchange="renderPalletList()">
+        <option value="">全部</option>
+        <option value="linked">🪵 已关联 Bintique 账单</option>
+        <option value="unlinked">未关联</option>
+        <option value="in">＋ 只看收入</option>
+        <option value="out">− 只看支出</option>
+      </select>
+      <span id="palletStats" style="font-size:.8rem;color:var(--g500)"></span>
+    </div>
+    <div class="card" style="overflow-x:auto">
+      <table><thead><tr>
+        <th>日期</th><th>银行 / 账户</th><th>木板客户 / 供应商</th><th style="text-align:right">金额</th><th>Bintique 账单</th><th>备注</th>
+      </tr></thead><tbody id="palletBody"><tr><td colspan="6" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+    </div>
+    <p style="font-size:.75rem;color:var(--g400);margin-top:.5rem">数据来源：银行交易标注里的「木板钱」记录 + pallet.bintique.com 关联过来的账单链接；在 pallet.bintique.com 上把账单 link 到银行交易后，这里自动出现，点账单号直达对方账单页。</p>
+  </div>
+
   <!-- 🔗 银行直连 Bank Feed (Plaid 自动同步) -->
   <div id="paneBank" style="display:none">
     <!-- 未配置密钥 (仅 admin) -->
@@ -550,6 +572,9 @@ function showTab(t) {
   document.getElementById('tabFeeIns').classList.toggle('on', t === 'feeins');
   document.getElementById('tabFeeLaw').classList.toggle('on', t === 'feelaw');
   document.getElementById('tabFeeCo').classList.toggle('on', t === 'feeco');
+  document.getElementById('tabPallet').classList.toggle('on', t === 'pallet');
+  document.getElementById('panePallet').style.display = t === 'pallet' ? '' : 'none';
+  if (t === 'pallet') loadPalletList();
   document.getElementById('tabBank').classList.toggle('on', t === 'bank');
   document.getElementById('paneBank').style.display = t === 'bank' ? '' : 'none';
   if (t === 'bank') bankInit();
@@ -997,6 +1022,46 @@ async function feeDelete(id) {
     toast('已删除');
     loadAll();
   } catch (e) { toast(e.message || '删除失败', true); }
+}
+
+// ── 🪵 木板账单 (Bintique)：木板钱交易 + pallet.bintique.com link 过来的账单 ──
+let _palletRows = [], _palletLoaded = false;
+async function loadPalletList(force) {
+  if (_palletLoaded && !force) { renderPalletList(); return; }
+  try {
+    const r = await api('/api/acct/pallet-bills');
+    if (r && r.error) throw new Error(r.error);
+    _palletRows = (r && r.rows) || [];
+    _palletLoaded = true;
+  } catch (e) {
+    document.getElementById('palletBody').innerHTML = `<tr><td colspan="6" style="color:#dc2626">${esc(e.message || '加载失败')}</td></tr>`;
+    return;
+  }
+  renderPalletList();
+}
+function renderPalletList() {
+  const q = (document.getElementById('palletSearch').value || '').toLowerCase();
+  const flt = document.getElementById('palletFilter').value;
+  let rows = _palletRows;
+  if (flt === 'linked') rows = rows.filter(r => r.links.length);
+  else if (flt === 'unlinked') rows = rows.filter(r => !r.links.length);
+  else if (flt === 'in' || flt === 'out') rows = rows.filter(r => r.direction === flt);
+  if (q) rows = rows.filter(r => [r.customer, r.note, r.bank, r.account].concat(r.links.map(l => (l.label || '') + ' ' + (l.ref || ''))).join(' ').toLowerCase().includes(q));
+  const inSum = rows.filter(r => r.direction === 'in').reduce((s, r) => s + r.amount, 0);
+  const outSum = rows.filter(r => r.direction === 'out').reduce((s, r) => s + r.amount, 0);
+  const linkedN = _palletRows.filter(r => r.links.length).length;
+  document.getElementById('palletStats').textContent = `共 ${rows.length} 笔 · 收入 +${money(inSum)} · 支出 −${money(outSum)} · 已关联账单 ${linkedN} / ${_palletRows.length}`;
+  document.getElementById('palletBody').innerHTML = rows.length ? rows.map(r => `<tr>
+    <td style="white-space:nowrap">${esc(r.date)}</td>
+    <td style="font-size:.78rem">${esc([r.bank, r.account].filter(Boolean).join(' · ')) || '<span style="color:var(--g300)">—</span>'}${r.plaid ? ' <span style="font-size:.62rem;background:#f1f5f9;border-radius:4px;padding:0 4px">直连</span>' : ''}</td>
+    <td>${esc(r.customer) || '<span style="color:var(--g300)">—</span>'}</td>
+    <td style="text-align:right;font-weight:700;color:${r.direction === 'in' ? '#047857' : '#b91c1c'};white-space:nowrap">${r.direction === 'in' ? '+' : '−'}${money(r.amount)}</td>
+    <td style="font-size:.78rem;line-height:1.6">${r.links.length ? r.links.map(l => l.url
+        ? `<div>🪵 <a href="${esc(l.url)}" target="_blank" rel="noopener" style="color:#92400e;text-decoration:underline;font-weight:600">${esc(l.label || l.ref || '账单')}</a></div>`
+        : `<div>🪵 ${esc(l.label || l.ref || '账单')}</div>`).join('')
+      : '<span style="color:var(--g400)">未关联</span>'}</td>
+    <td style="font-size:.76rem;color:var(--g500);max-width:220px">${esc(r.note || '')}</td>
+  </tr>`).join('') : '<tr><td colspan="6" style="color:var(--g400);padding:1rem">没有木板账单记录。</td></tr>';
 }
 
 async function loadAll() {
