@@ -34472,11 +34472,11 @@ app.get('/api/plaid/invoice-check', requireAdmin, requireRole('admin', 'cs', 'ac
   try {
     const nums = String(req.query.nums || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 30);
     const out = {};
-    const q = db.prepare('SELECT invoice_number, company_name, period_start, period_end, subtotal, payment_status FROM invoices WHERE TRIM(invoice_number)=? COLLATE NOCASE');
+    const q = db.prepare('SELECT id, invoice_number, company_name, period_start, period_end, subtotal, payment_status FROM invoices WHERE TRIM(invoice_number)=? COLLATE NOCASE');
     for (const n of nums) {
       const rows = q.all(n);
       out[n] = rows.length ? {
-        found: true, matches: rows.length, invoice_number: rows[0].invoice_number,
+        found: true, matches: rows.length, id: rows[0].id, invoice_number: rows[0].invoice_number,
         company_name: rows[0].company_name || '', period_start: rows[0].period_start || '',
         period_end: rows[0].period_end || '', subtotal: Number(rows[0].subtotal) || 0,
         payment_status: rows[0].payment_status || '',
