@@ -38286,14 +38286,16 @@ function _acctPayNotesFor(type) {
 // 会计付款批注 upsert: 付了没有 / 哪个银行付的 / 付了多少 / 备注 / 关联银行交易(收款凭证)
 app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
   const { target_type, target_id, paid_status, bank, amount, note, txn_ids } = req.body || {};
-  if (!['invoice', 'claim', 'fee'].includes(target_type)) return res.status(400).json({ error: '无效对象类型' });
+  if (!['invoice', 'claim', 'fee', 'pallet'].includes(target_type)) return res.status(400).json({ error: '无效对象类型' });
   const tid = parseInt(target_id);
   if (!tid) return res.status(400).json({ error: '无效对象' });
   const exists = target_type === 'invoice'
     ? db.prepare('SELECT id FROM invoices WHERE id=?').get(tid)
     : target_type === 'fee'
       ? db.prepare('SELECT id FROM fee_records WHERE id=?').get(tid)
-      : db.prepare('SELECT id FROM warehouse_claims WHERE id=?').get(tid);
+      : target_type === 'pallet'
+        ? db.prepare("SELECT id FROM bank_statement_txns WHERE id=? AND kind='box'").get(tid)
+        : db.prepare('SELECT id FROM warehouse_claims WHERE id=?').get(tid);
   if (!exists) return res.status(404).json({ error: '对象不存在' });
   const st = ['', 'unpaid', 'partial', 'paid'].includes(String(paid_status || '')) ? String(paid_status || '') : '';
   const amt = (amount === '' || amount == null) ? null : (Number(amount) || 0);
@@ -38476,11 +38478,12 @@ app.get('/api/acct/fee-records', requireAdmin, requireAcctView, (req, res) => {
 // 汇总成一个列表 (账单数据在对方系统, 对方把账单 link 到我们的银行交易后这里就能看到)。
 app.get('/api/acct/pallet-bills', requireAdmin, requireAcctView, (req, res) => {
   try {
-    const rows = db.prepare(`SELECT t.id, t.txn_date, t.amount, t.direction, t.payee, t.note, t.links, t.plaid_txn_id,
+    const rows = db.prepare(`SELECT t.id, t.txn_date, t.amount, t.direction, t.payee, t.note, t.links, t.plaid_txn_id, t.photos,
         s.bank, s.account_name
       FROM bank_statement_txns t LEFT JOIN bank_statements s ON t.statement_id = s.id
       WHERE t.kind='box' AND (t.payee LIKE '木板钱:%' OR (t.links IS NOT NULL AND t.links<>'' AND t.links<>'[]'))
       ORDER BY t.txn_date DESC, t.id DESC`).all();
+    const payNotes = _acctPayNotesFor('pallet');
     const out = [];
     for (const r of rows) {
       let links = []; try { links = JSON.parse(r.links || '[]'); } catch (e) { links = []; }
@@ -38488,11 +38491,14 @@ app.get('/api/acct/pallet-bills', requireAdmin, requireAcctView, (req, res) => {
       const palletLinks = links.filter(l => l && (String(l.system || '').toLowerCase().includes('pallet') || String(l.system || '').toLowerCase().includes('bintique')));
       const isPallet = String(r.payee || '').indexOf('木板钱:') === 0;
       if (!isPallet && !palletLinks.length) continue;   // 其他系统的关联, 不属于木板账单
+      let ph = []; try { ph = JSON.parse(r.photos || '[]'); } catch (e) { ph = []; }
       out.push({
         id: r.id, date: r.txn_date || '', amount: Number(r.amount) || 0, direction: r.direction === 'in' ? 'in' : 'out',
         customer: isPallet ? String(r.payee).slice('木板钱:'.length) : '',
         note: r.note || '', bank: r.bank || '', account: r.account_name || '',
         plaid: !!r.plaid_txn_id, links: palletLinks,
+        photos_urls: (Array.isArray(ph) ? ph : []).filter(Boolean).map(k => `/uploads/${path.basename(k)}`),
+        pay_note: payNotes[r.id] || null,
       });
     }
     res.json({ count: out.length, rows: out });
