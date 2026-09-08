@@ -1262,7 +1262,23 @@ async function truckUploadBill(id, files) {
   } catch (e) { toast(e.message || '上传失败', true); }
 }
 // ＋ 添加卡车费用 (客服/会计/admin 手动录入, 存 fee_records fee_type='truck';
-// 非 admin 提交的进「待审核」, 老板在查看明细里通过/驳回)
+// 非 admin 提交的进「待审核」, 老板在查看明细里通过/驳回)。
+// 卡车公司下拉选现有公司 (或「＋新公司」手动输); 凭证支持拖拽, 张数不限。
+let _tfaFiles = [];
+function _tfaRenderFiles() {
+  const el = document.getElementById('tfaFileList');
+  el.innerHTML = _tfaFiles.length
+    ? _tfaFiles.map((f, i) => `<span style="display:inline-flex;align-items:center;gap:4px;border:1px solid var(--g200);border-radius:6px;padding:2px 8px;margin:2px 4px 2px 0;font-size:.74rem;background:#f8fafc">${(/pdf/i.test(f.type) || /\.pdf$/i.test(f.name)) ? '📄' : '🖼️'} ${esc(f.name)} <a onclick="_tfaFiles.splice(${i},1);_tfaRenderFiles()" title="移除" style="cursor:pointer;color:#dc2626;font-weight:700">✕</a></span>`).join('')
+      + `<span style="font-size:.72rem;color:var(--g400);margin-left:4px">共 ${_tfaFiles.length} 个</span>`
+    : '<span style="font-size:.74rem;color:var(--g400)">还没选文件</span>';
+}
+function _tfaAddFiles(files) {
+  for (const f of files) {
+    if (!(/pdf|image/i.test(f.type || '') || /\.(pdf|jpe?g|png|webp|heic)$/i.test(f.name || ''))) { toast(`跳过 ${f.name}（只收 PDF / 图片）`, true); continue; }
+    _tfaFiles.push(f);
+  }
+  _tfaRenderFiles();
+}
 function openTruckAdd() {
   let m = document.getElementById('truckAddModal');
   if (!m) {
@@ -1270,7 +1286,7 @@ function openTruckAdd() {
     m.id = 'truckAddModal';
     m.style.cssText = 'display:none;position:fixed;inset:0;z-index:2000;background:rgba(15,23,42,.55);align-items:center;justify-content:center;padding:1rem';
     m.onclick = e => { if (e.target === m) m.style.display = 'none'; };
-    m.innerHTML = `<div style="background:#fff;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,.35);width:min(94vw,420px);padding:1rem 1.1rem" onclick="event.stopPropagation()">
+    m.innerHTML = `<div style="background:#fff;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,.35);width:min(94vw,440px);max-height:92vh;overflow:auto;padding:1rem 1.1rem" onclick="event.stopPropagation()">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
         <div style="font-weight:800;font-size:.95rem;color:#475569">🚚 添加卡车费用</div>
         <button onclick="document.getElementById('truckAddModal').style.display='none'" style="border:1px solid var(--g200);background:#fff;border-radius:8px;padding:.2rem .7rem;cursor:pointer;font-size:.8rem">✕</button>
@@ -1278,32 +1294,51 @@ function openTruckAdd() {
       <label style="font-size:.78rem;color:var(--g500)">日期</label>
       <input type="date" id="tfaDate" style="width:100%;margin-bottom:.5rem">
       <label style="font-size:.78rem;color:var(--g500)">卡车公司</label>
-      <input type="text" id="tfaParty" placeholder="如 Dando Chemicals US LLC" style="width:100%;margin-bottom:.5rem">
+      <select id="tfaPartySel" style="width:100%;margin-bottom:.4rem" onchange="document.getElementById('tfaPartyNew').style.display = this.value === '__new__' ? '' : 'none'"></select>
+      <input type="text" id="tfaPartyNew" placeholder="输入新卡车公司名" style="width:100%;margin-bottom:.5rem;display:none">
       <label style="font-size:.78rem;color:var(--g500)">金额（支出，$）</label>
       <input type="number" step="0.01" id="tfaAmount" placeholder="0.00" style="width:100%;margin-bottom:.5rem">
       <label style="font-size:.78rem;color:var(--g500)">备注</label>
       <input type="text" id="tfaNote" placeholder="选填：运的什么 / 单号等" style="width:100%;margin-bottom:.5rem">
-      <label style="font-size:.78rem;color:var(--g500)">发票 / 凭证（可多张，选填）</label>
-      <input type="file" id="tfaFiles" accept="application/pdf,image/*" multiple style="width:100%;margin-bottom:.7rem">
+      <label style="font-size:.78rem;color:var(--g500)">发票 / 凭证（选填）</label>
+      <div id="tfaDrop" style="border:2px dashed var(--g200);border-radius:10px;background:#f8fafc;padding:1rem;text-align:center;font-size:.8rem;color:var(--g500);cursor:pointer;margin-bottom:.4rem">📎 把发票 / 凭证<b>拖到这里</b>，或点击选择<br><span style="font-size:.72rem;color:var(--g400)">可多张、不限数量（PDF / 图片）</span></div>
+      <input type="file" id="tfaFiles" accept="application/pdf,image/*" multiple style="display:none">
+      <div id="tfaFileList" style="margin-bottom:.7rem;line-height:1.9"></div>
       <div style="display:flex;justify-content:flex-end;gap:.5rem;align-items:center">
         <span id="tfaMsg" style="font-size:.78rem;color:var(--g500)"></span>
         <button class="btn btn-blue" id="tfaSaveBtn" onclick="submitTruckAdd()">保存</button>
       </div>
     </div>`;
     document.body.appendChild(m);
+    const drop = document.getElementById('tfaDrop');
+    drop.onclick = () => document.getElementById('tfaFiles').click();
+    drop.ondragover = e => { e.preventDefault(); drop.style.background = '#eff6ff'; drop.style.borderColor = '#3b82f6'; };
+    drop.ondragleave = () => { drop.style.background = '#f8fafc'; drop.style.borderColor = 'var(--g200)'; };
+    drop.ondrop = e => { e.preventDefault(); drop.style.background = '#f8fafc'; drop.style.borderColor = 'var(--g200)'; _tfaAddFiles(e.dataTransfer.files); };
+    document.getElementById('tfaFiles').onchange = function () { _tfaAddFiles(this.files); this.value = ''; };
   }
+  // 卡车公司下拉: 从现有记录里取公司名 (流水标注 + 手动记录 + 卡车单)
+  const names = [...new Set(_truckRows.map(r => String(r.customer || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const sel = document.getElementById('tfaPartySel');
+  sel.innerHTML = '<option value="">— 选择卡车公司 —</option>'
+    + names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('')
+    + '<option value="__new__">＋ 其他 / 新卡车公司</option>';
+  const partyNew = document.getElementById('tfaPartyNew');
+  partyNew.value = '';
+  if (!names.length) { sel.value = '__new__'; partyNew.style.display = ''; } else { sel.value = ''; partyNew.style.display = 'none'; }
   document.getElementById('tfaDate').value = new Date().toISOString().slice(0, 10);
-  document.getElementById('tfaParty').value = '';
   document.getElementById('tfaAmount').value = '';
   document.getElementById('tfaNote').value = '';
-  document.getElementById('tfaFiles').value = '';
   document.getElementById('tfaMsg').textContent = '';
+  _tfaFiles = [];
+  _tfaRenderFiles();
   m.style.display = 'flex';
 }
 async function submitTruckAdd() {
-  const party = document.getElementById('tfaParty').value.trim();
+  const selV = document.getElementById('tfaPartySel').value;
+  const party = selV === '__new__' ? document.getElementById('tfaPartyNew').value.trim() : selV;
   const amount = document.getElementById('tfaAmount').value;
-  if (!party) { document.getElementById('tfaMsg').textContent = '请填卡车公司'; return; }
+  if (!party) { document.getElementById('tfaMsg').textContent = '请选择或填写卡车公司'; return; }
   if (!amount || !(Number(amount) > 0)) { document.getElementById('tfaMsg').textContent = '请填金额'; return; }
   const btn = document.getElementById('tfaSaveBtn');
   btn.disabled = true;
@@ -1314,7 +1349,7 @@ async function submitTruckAdd() {
     fd.append('fee_date', document.getElementById('tfaDate').value || '');
     fd.append('amount', amount);
     fd.append('description', document.getElementById('tfaNote').value.trim());
-    [...document.getElementById('tfaFiles').files].forEach(f => fd.append('invoice', f));
+    _tfaFiles.forEach(f => fd.append('invoice', f));
     const res = await fetch('/api/acct/fee-records', { method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd }).then(x => x.json());
     if (res.error) throw new Error(res.error);
     document.getElementById('truckAddModal').style.display = 'none';
