@@ -1055,13 +1055,14 @@ async function feeDelete(id) {
 }
 
 // ── 🪵 木板账单 (Bintique)：木板钱交易 + pallet.bintique.com link 过来的账单 ──
-let _palletRows = [], _palletLoaded = false;
+let _palletRows = [], _palletLoaded = false, _palletBillsTotal = 0;
 async function loadPalletList(force) {
   if (_palletLoaded && !force) { renderPalletList(); return; }
   try {
     const r = await api('/api/acct/pallet-bills');
     if (r && r.error) throw new Error(r.error);
     _palletRows = (r && r.rows) || [];
+    _palletBillsTotal = (r && r.bills_total) || 0;
     _palletLoaded = true;
   } catch (e) {
     document.getElementById('palletBody').innerHTML = `<tr><td colspan="11" style="color:#dc2626">${esc(e.message || '加载失败')}</td></tr>`;
@@ -1318,7 +1319,7 @@ function renderPalletList() {
   const outSum = shownTxns.filter(r => r.direction === 'out').reduce((s, r) => s + r.amount, 0);
   const linkedN = txns.filter(r => r.links.length).length;
   const autoN = txns.filter(r => _palletAutoCands(r).length).length;
-  document.getElementById('palletStats').textContent = `流水 ${txns.length} 笔 · 收入 +${money(inSum)} · 支出 −${money(outSum)} · 已关联 ${linkedN}${autoN ? ` + 自动匹配 ${autoN}` : ''}${bills.length ? ` · 无流水账单 ${bills.length} 张` : ''}`;
+  document.getElementById('palletStats').textContent = `流水 ${txns.length} 笔 · 收入 +${money(inSum)} · 支出 −${money(outSum)} · 已关联 ${linkedN}${autoN ? ` + 自动匹配 ${autoN}` : ''}${_palletBillsTotal ? ` ｜ Bintique 账单共 ${_palletBillsTotal} 张：并入流水 ${Math.max(0, _palletBillsTotal - bills.length)} · 无流水 ${bills.length}` : (bills.length ? ` · 无流水账单 ${bills.length} 张` : '')}`;
   document.getElementById('palletBody').innerHTML = rows.length ? rows.map(r => `<tr${r.is_bill ? ' style="background:#fffdf3"' : ''}>
     <td style="white-space:nowrap">${esc(r.date)}</td>
     <td style="font-size:.78rem">${r.is_bill ? '<span style="color:#b45309">📄 Bintique 账单 · 未见流水</span>' : (esc([r.bank, r.account].filter(Boolean).join(' · ')) || '<span style="color:var(--g300)">—</span>') + (r.plaid ? ' <span style="font-size:.62rem;background:#f1f5f9;border-radius:4px;padding:0 4px">直连</span>' : '')}</td>
