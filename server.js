@@ -38472,6 +38472,33 @@ app.get('/api/acct/fee-records', requireAdmin, requireAcctView, (req, res) => {
   res.json(rows);
 });
 
+// 🪵 木板账单页签: 所有「木板钱」交易标注 + pallet.bintique.com link 过来的账单,
+// 汇总成一个列表 (账单数据在对方系统, 对方把账单 link 到我们的银行交易后这里就能看到)。
+app.get('/api/acct/pallet-bills', requireAdmin, requireAcctView, (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT t.id, t.txn_date, t.amount, t.direction, t.payee, t.note, t.links, t.plaid_txn_id,
+        s.bank, s.account_name
+      FROM bank_statement_txns t LEFT JOIN bank_statements s ON t.statement_id = s.id
+      WHERE t.kind='box' AND (t.payee LIKE '木板钱:%' OR (t.links IS NOT NULL AND t.links<>'' AND t.links<>'[]'))
+      ORDER BY t.txn_date DESC, t.id DESC`).all();
+    const out = [];
+    for (const r of rows) {
+      let links = []; try { links = JSON.parse(r.links || '[]'); } catch (e) { links = []; }
+      if (!Array.isArray(links)) links = [];
+      const palletLinks = links.filter(l => l && (String(l.system || '').toLowerCase().includes('pallet') || String(l.system || '').toLowerCase().includes('bintique')));
+      const isPallet = String(r.payee || '').indexOf('木板钱:') === 0;
+      if (!isPallet && !palletLinks.length) continue;   // 其他系统的关联, 不属于木板账单
+      out.push({
+        id: r.id, date: r.txn_date || '', amount: Number(r.amount) || 0, direction: r.direction === 'in' ? 'in' : 'out',
+        customer: isPallet ? String(r.payee).slice('木板钱:'.length) : '',
+        note: r.note || '', bank: r.bank || '', account: r.account_name || '',
+        plaid: !!r.plaid_txn_id, links: palletLinks,
+      });
+    }
+    res.json({ count: out.length, rows: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // 新增费用记录: 会计提交入库为 pending 待管理员审核, admin 提交直接 approved (发票文件复用 claimUpload)
 app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin'), claimUpload.array('invoice', 20), (req, res) => {
   const b = req.body || {};
