@@ -1002,6 +1002,7 @@ function _bsRenderBoxPanel() {
         </select>
         <input type="date" class="bs-bx-date" value="${esc(box.txn_date || '')}" onchange="bsUpdateBoxField(${box.id},'txn_date',this.value);bsValidateBoxDates(${box.id})" style="flex:1;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
       </div>
+      ${_bsLinksHtml(box)}
       <div class="bs-date-err" style="color:#dc2626;font-size:.72rem;margin:-.1rem 0 .3rem;min-height:0"></div>
       <select class="bs-bx-payee" onchange="bsPayeeSelChange(${box.id},this)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;background:#fff">${_bsPayeeOptions(_bsIsEmp(box.payee) ? BS_PAYEE_EMP : (_bsIsPallet(box.payee) ? BS_PAYEE_PALLET : (_bsIsCheck(box.payee) ? (_bsCheckParse(box.payee).type === 'wd' ? BS_PAYEE_CHECK_WD : BS_PAYEE_CHECK_DEP) : (_bsIsTruck(box.payee) ? BS_PAYEE_TRUCK : (_bsIsInternal(box.payee) ? BS_PAYEE_INTERNAL : (_bsIsUnload(box.payee) ? BS_PAYEE_UNLOAD : (_bsIsRent(box.payee) ? BS_PAYEE_RENT : (_bsIsInsur(box.payee) ? BS_PAYEE_INSUR : (_bsIsFx(box.payee) ? BS_PAYEE_FX : (_bsIsWhdep(box.payee) ? BS_PAYEE_WHDEP : (_bsIsReferral(box.payee) ? BS_PAYEE_REFERRAL : (_bsIsWageBonus(box.payee) ? BS_PAYEE_WAGEBONUS : (box.payee || '')))))))))))), box.direction)}</select>
       <div class="bs-emp-wrap" style="display:${_bsIsEmp(box.payee) ? '' : 'none'};background:#f8fafc;border:1px dashed var(--gray-200);border-radius:6px;padding:.4rem;margin-bottom:.35rem">
@@ -1124,10 +1125,11 @@ function annChipHtml(txnId) {
   const b = ANN[txnId];
   if (!b) return '<button class="ann-add" data-txn="' + esc(txnId) + '" onclick="annOpen(this.dataset.txn)">＋ 标注</button>';
   const warn = _bsNoteSatisfied(b) ? '' : ' <span style="color:#dc2626">⚠</span>';
+  const linkMark = _bsBoxLinks(b).length ? ' 🪵' : '';   // 有 Bintique 木板账单等外部关联
   const label = _bsPayeeDisplay(b.payee) || (b.direction === 'in' ? '收入' : '支出') + '（待填）';
   const st = b.ann_status === 'pending' ? ' pending' : (b.ann_status === 'approved' ? ' approved' : '');
   const suffix = b.ann_status === 'pending' ? ' ⏳待审核' : (b.ann_status === 'approved' ? ' ✓' : '');
-  return '<button class="ann-chip' + st + '" data-txn="' + esc(txnId) + '" onclick="annOpen(this.dataset.txn)" title="' + esc(label + suffix) + '">' + esc(label) + suffix + warn + '</button>';
+  return '<button class="ann-chip' + st + '" data-txn="' + esc(txnId) + '" onclick="annOpen(this.dataset.txn)" title="' + esc(label + suffix + (linkMark ? ' · 有木板账单关联' : '')) + '">' + esc(label) + suffix + linkMark + warn + '</button>';
 }
 function annRefreshChip(box) {
   if (!box || !box.plaid_txn_id) return;
@@ -1153,8 +1155,30 @@ function togglePending() {
   updatePendBtn();
   loadTxns();
 }
+// 🪵 pallet.bintique.com 等外部系统 link 到这笔交易上的账单引用 (links 字段):
+// 显示在标注抽屉里, 有 url 的可以点开直达对方的账单页。
+function _bsBoxLinks(box) {
+  let links = box && box.links;
+  if (typeof links === 'string') { try { links = JSON.parse(links || '[]'); } catch (e) { links = []; } }
+  return Array.isArray(links) ? links.filter(Boolean) : [];
+}
+function _bsLinksHtml(box) {
+  const links = _bsBoxLinks(box);
+  if (!links.length) return '';
+  const rows = links.map(l => {
+    const isPallet = String(l.system || '').toLowerCase().indexOf('pallet') >= 0 || String(l.system || '').toLowerCase().indexOf('bintique') >= 0;
+    const icon = isPallet ? '🪵' : '🔗';
+    const label = [l.label || l.ref || '账单', (!isPallet && l.system) ? l.system : ''].filter(Boolean).join(' · ');
+    return l.url
+      ? `<div>${icon} <a href="${esc(l.url)}" target="_blank" rel="noopener" style="color:#92400e;text-decoration:underline;font-weight:600">${esc(label)}</a></div>`
+      : `<div>${icon} ${esc(label)}</div>`;
+  }).join('');
+  return `<div style="background:#fefce8;border:1px dashed #fde68a;border-radius:6px;padding:.35rem .5rem;margin-bottom:.35rem;font-size:.76rem;line-height:1.6">
+    <div style="color:#92400e;font-weight:700">🪵 Bintique 木板账单 / 外部关联</div>${rows}</div>`;
+}
 function annStore(box) {
   if (typeof box.inv_items === 'string') { try { box.inv_items = JSON.parse(box.inv_items || '[]'); } catch (e) { box.inv_items = []; } }
+  if (typeof box.links === 'string') { try { box.links = JSON.parse(box.links || '[]'); } catch (e) { box.links = []; } }
   const i = _bsBoxList.findIndex(b => b.id === box.id);
   if (i >= 0) _bsBoxList[i] = box; else _bsBoxList.push(box);
   if (box.plaid_txn_id) ANN[box.plaid_txn_id] = box;
