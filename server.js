@@ -38567,7 +38567,7 @@ async function _palletAutoMatch(rows) {
     const num = String(r.invoice_number || '').trim();
     const cust = String(r.customer || '').trim();
     if (!num && !cust) continue;
-    const fp = `${num.toLowerCase()}|${(Number(r.amount) || 0).toFixed(2)}|${cust.toLowerCase()}|${r.date}`;
+    const fp = `${num.toLowerCase()}|${(Number(r.amount) || 0).toFixed(2)}|${cust.toLowerCase()}|${r.date}|${r.direction}`;
     const hit = _palletMatchCache.get(fp);
     if (hit && now - hit.at < 10 * 60 * 1000) { if (hit.res) r.auto_match = hit.res; }
     else want.push({ r, fp });
@@ -38579,15 +38579,15 @@ async function _palletAutoMatch(rows) {
     const resp = await fetch(PALLET_ORIGIN.replace(/\/+$/, '') + '/api/ext/invoice-match', {
       method: 'POST', signal: ctrl.signal,
       headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.PALLET_API_KEY },
-      body: JSON.stringify({ queries: want.map(w => ({ key: String(w.r.id), invoice_number: w.r.invoice_number || '', amount: Number(w.r.amount) || 0, customer: w.r.customer || '', date: w.r.date || '' })) }),
+      body: JSON.stringify({ queries: want.map(w => ({ key: String(w.r.id), invoice_number: w.r.invoice_number || '', amount: Number(w.r.amount) || 0, customer: w.r.customer || '', date: w.r.date || '', direction: w.r.direction })) }),
     });
     clearTimeout(tm);
     if (!resp.ok) return;
     const results = ((await resp.json()) || {}).results || {};
     for (const w of want) {
       const m = results[String(w.r.id)];
-      const res2 = m && Array.isArray(m.candidates) && m.candidates.length
-        ? { match: ['number', 'amount', 'customer'].includes(m.match) ? m.match : 'amount', candidates: m.candidates.slice(0, 3) }
+      const res2 = m && Array.isArray(m.candidates) && m.candidates.length && (m.match === 'number' || m.match === 'amount')
+        ? { match: m.match, candidates: m.candidates.slice(0, 3) }
         : null;
       _palletMatchCache.set(w.fp, { at: now, res: res2 });
       if (res2) w.r.auto_match = res2;
