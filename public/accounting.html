@@ -1065,10 +1065,13 @@ function openPalletDetail(id) {
   const photos = (r.photos_urls || []).map(u => /\.pdf(\?|$)/i.test(u)
     ? `<span onclick="showFileLightbox('${esc(u)}')" style="display:inline-flex;align-items:center;justify-content:center;width:60px;height:60px;border:1px solid var(--g200);border-radius:6px;background:#fff;cursor:pointer;font-size:1.3rem">📄</span>`
     : `<img src="${esc(u)}" onclick="showImgLightbox('${esc(u)}')" style="width:60px;height:60px;object-fit:cover;border-radius:6px;border:1px solid var(--g200);cursor:zoom-in">`).join(' ');
+  const billUrls = (r.links || []).filter(l => l && l.url);
+  const firstUrl = billUrls.length ? billUrls[0].url : '';
+  // 点账单名 → 在下方内嵌预览里切换; ↗ 在新窗口打开
   const links = (r.links || []).map(l => l.url
-    ? `<div>🪵 <a href="${esc(l.url)}" target="_blank" rel="noopener" style="color:#92400e;text-decoration:underline;font-weight:600">${esc(l.label || l.ref || '账单')}</a></div>`
-    : `<div>🪵 ${esc(l.label || l.ref || '账单')}</div>`).join('') || '<span style="color:var(--g400)">未关联 Bintique 账单</span>';
-  m.innerHTML = `<div style="background:#fff;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,.35);width:min(92vw,560px);max-height:90vh;overflow:auto;padding:1rem 1.1rem" onclick="event.stopPropagation()">
+    ? `<div>🪵 <a href="${esc(l.url)}" onclick="var f=document.getElementById('palletBillFrame');if(f){f.src=this.href;return false}" title="在下方预览这张账单" style="color:#92400e;text-decoration:underline;font-weight:600">${esc(l.label || l.ref || '账单')}</a> <a href="${esc(l.url)}" target="_blank" rel="noopener" title="新窗口打开" style="text-decoration:none">↗</a></div>`
+    : `<div>🪵 ${esc(l.label || l.ref || '账单')}</div>`).join('') || '<span style="color:var(--g400)">未关联 Bintique 账单（对方把账单 link 到这笔交易后，这里就能直接看账单明细）</span>';
+  m.innerHTML = `<div style="background:#fff;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,.35);width:min(94vw,${firstUrl ? '940px' : '560px'});max-height:92vh;overflow:auto;padding:1rem 1.1rem" onclick="event.stopPropagation()">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;margin-bottom:.55rem">
       <div style="font-weight:800;font-size:.95rem;color:#92400e">🪵 木板账单明细</div>
       <button onclick="document.getElementById('palletDetailModal').style.display='none'" style="border:1px solid var(--g200);background:#fff;border-radius:8px;padding:.2rem .7rem;cursor:pointer;font-size:.8rem">✕ 关闭</button>
@@ -1081,6 +1084,11 @@ function openPalletDetail(id) {
     ${r.note ? row('备注', esc(r.note)) : ''}
     ${row('Bintique 账单', links)}
     ${row('凭证照片', photos || '<span style="color:var(--g400)">无</span>')}
+    ${firstUrl ? `<div style="margin-top:.7rem">
+      <div style="font-weight:700;color:#92400e;font-size:.84rem;margin-bottom:.3rem">🪵 账单明细（来自 pallet.bintique.com${billUrls.length > 1 ? '，点上方账单名切换' : ''}）</div>
+      <iframe id="palletBillFrame" src="${esc(firstUrl)}" style="width:100%;height:62vh;border:1px solid var(--g200);border-radius:8px;background:#fff"></iframe>
+      <div style="font-size:.72rem;color:var(--g400);margin-top:.25rem">显示不出来？<a href="${esc(firstUrl)}" target="_blank" rel="noopener" style="color:#92400e;text-decoration:underline">在新窗口打开账单</a>（可能需要先登录 pallet.bintique.com）</div>
+    </div>` : ''}
     ${canAnnotate() ? `<div style="margin-top:.7rem;text-align:right"><button class="btn btn-sm btn-blue" onclick="document.getElementById('palletDetailModal').style.display='none';openPayNote('pallet', ${r.id})">💵 付款批注</button></div>` : ''}
   </div>`;
   m.style.display = 'flex';
