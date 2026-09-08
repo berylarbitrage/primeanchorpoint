@@ -120,6 +120,8 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <input type="text" id="invSearch" placeholder="搜发票号 / 公司…" oninput="renderInvList()" style="width:220px">
       <select id="invAnnFilter" onchange="renderInvList()">
         <option value="">全部</option>
+        <option value="todo">⏳ 待会计记录</option>
+        <option value="acctdone">✅ 会计已记「已付」</option>
         <option value="with">只看有批注的</option>
       </select>
       <span id="invStats" style="font-size:.8rem;color:var(--g500)"></span>
@@ -562,9 +564,13 @@ const PAY_ST = { paid: ['✅ 已付', '#dcfce7', '#166534'], partial: ['🟡 部
 function _pnHasContent(pn) {
   return !!(pn && (pn.paid_status || pn.bank || pn.amount != null || pn.note || (pn.txn_ids || []).length || (pn.photos_urls || []).length));
 }
-function payNoteCell(type, id, pn) {
+function payNoteCell(type, id, pn, showTodo) {
   const edit = canAnnotate() ? ` <a style="cursor:pointer;font-size:.74rem;color:#0f4c6b;text-decoration:underline;white-space:nowrap" onclick="openPayNote('${type}', ${id})">${_pnHasContent(pn) ? '编辑' : '＋记录'}</a>` : '';
-  if (!_pnHasContent(pn)) return `<span style="color:var(--g400)">—</span>${edit}`;
+  if (!_pnHasContent(pn)) {
+    // 发票列表: 还没在会计系统记过款 → 明确标成待办; 赔偿/保险等列表保持原样的 —
+    if (showTodo) return `<span style="background:#fffbeb;color:#b45309;border:1px solid #fcd34d;border-radius:8px;padding:1px 7px;font-size:.72rem;font-weight:700;white-space:nowrap">⏳ 待记录</span>${edit}`;
+    return `<span style="color:var(--g400)">—</span>${edit}`;
+  }
   const st = PAY_ST[pn.paid_status];
   const badge = st ? `<span style="background:${st[1]};color:${st[2]};border-radius:8px;padding:1px 7px;font-size:.72rem;font-weight:700;white-space:nowrap">${st[0]}</span> ` : '';
   const parts = [];
@@ -1012,21 +1018,31 @@ function payBadge(s) {
   return `<span class="badge" style="color:${color};background:${bg};border:1px solid ${border}">${label}</span>`;
 }
 function annBadge(n) { return n > 0 ? `<span class="badge ann-badge">✏️ ${n}</span>` : '<span class="no-ann">—</span>'; }
+// 会计系统口径的付款状态: 只看会计记的付款批注, 不看老的 payment_status「已收款」标记
+// (系统里全部发票都从「未收款」全新开始, 会计记了已付/部分才变)
+function _acctPayStatus(r) {
+  const s = r.pay_note && r.pay_note.paid_status;
+  return (s === 'paid' || s === 'partial') ? s : 'unpaid';
+}
 function renderInvList() {
   const q = (document.getElementById('invSearch').value || '').toLowerCase();
-  const onlyAnn = document.getElementById('invAnnFilter').value === 'with';
+  const flt = document.getElementById('invAnnFilter').value;
+  const isTodo = r => !_pnHasContent(r.pay_note);
   let rows = _invList;
   if (q) rows = rows.filter(r => (r.invoice_number || '').toLowerCase().includes(q) || (r.company_name || '').toLowerCase().includes(q));
-  if (onlyAnn) rows = rows.filter(r => r.annotation_count > 0);
-  document.getElementById('invStats').textContent = `共 ${rows.length} 张 · 合计 ${money(rows.reduce((s, r) => s + (Number(r.subtotal) || 0), 0))}`;
+  if (flt === 'with') rows = rows.filter(r => r.annotation_count > 0);
+  else if (flt === 'todo') rows = rows.filter(isTodo);
+  else if (flt === 'acctdone') rows = rows.filter(r => r.pay_note && r.pay_note.paid_status === 'paid');
+  const todoN = _invList.filter(isTodo).length;
+  document.getElementById('invStats').textContent = `共 ${rows.length} 张 · 合计 ${money(rows.reduce((s, r) => s + (Number(r.subtotal) || 0), 0))}${todoN ? ` · ⏳ 待会计记录 ${todoN} 张` : ''}`;
   document.getElementById('invBody').innerHTML = rows.length ? rows.map(r => `<tr>
     <td style="font-weight:700;white-space:nowrap">${esc(r.invoice_number)}</td>
     <td style="white-space:nowrap">${esc(r.invoice_date || '—')}</td>
     <td>${esc(r.company_name || '')}</td>
     <td style="white-space:nowrap;font-size:.78rem;color:var(--g500)">${esc(r.period_start || '?')} ~ ${esc(r.period_end || '?')}</td>
     <td style="text-align:right;font-weight:700">${money(r.subtotal)}</td>
-    <td>${payBadge(r.payment_status)}</td>
-    <td>${payNoteCell('invoice', r.id, r.pay_note)}</td>
+    <td>${payBadge(_acctPayStatus(r))}</td>
+    <td>${payNoteCell('invoice', r.id, r.pay_note, true)}</td>
     <td>${annBadge(r.annotation_count)}</td>
     <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openInvoice(${r.id})">查看 / 批注</button></td>
   </tr>`).join('') : '<tr><td colspan="9" style="color:var(--g400);padding:1rem">没有符合条件的发票。</td></tr>';
