@@ -34374,6 +34374,9 @@ function plaidAnnWithPhotos(row) {
   let keys = [];
   try { keys = JSON.parse(row.photos || '[]'); } catch (e) { keys = []; }
   row.photos_urls = (Array.isArray(keys) ? keys : []).filter(Boolean).map(k => `/uploads/${path.basename(k)}`);
+  // 外部系统 (pallet.bintique.com 等) link 过来的账单引用 → 数组给前端展示
+  try { row.links = JSON.parse(row.links || '[]'); } catch (e) { row.links = []; }
+  if (!Array.isArray(row.links)) row.links = [];
   return row;
 }
 // 银行标注审核权: admin, 或账号编辑里勾了「可审核银行交易标注」(bank_ann_reviewer)
@@ -34388,7 +34391,7 @@ function annCanReview(req) {
 // 所有 Plaid 交易的标注, 按 plaid_txn_id 键成 map (银行对账页给每行画徽章用)
 app.get('/api/plaid/annotations', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
   try {
-    const rows = db.prepare(`SELECT id, statement_id, plaid_txn_id, txn_date, amount, note, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, inv_items, category, ann_status, ann_by
+    const rows = db.prepare(`SELECT id, statement_id, plaid_txn_id, txn_date, amount, note, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, inv_items, category, ann_status, ann_by, links
       FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id<>''`).all();
     const map = {};
     for (const r of rows) map[r.plaid_txn_id] = plaidAnnWithPhotos(r);
@@ -38460,7 +38463,7 @@ app.post('/api/acct/warehouse-claims/:id/approval', requireAdmin, requireRole('a
 });
 
 // ─── 费用记录 (保险费 insurance / 律师费 legal) — 和赔偿事故同一套玩法 ───
-const FEE_RECORD_TYPES = ['insurance', 'legal'];
+const FEE_RECORD_TYPES = ['insurance', 'legal', 'company'];
 app.get('/api/acct/fee-records', requireAdmin, requireAcctView, (req, res) => {
   const rows = db.prepare(`SELECT * FROM fee_records
     ORDER BY CASE WHEN approval_status='pending' THEN 0 ELSE 1 END, fee_date DESC, created_at DESC`).all();
@@ -38475,7 +38478,7 @@ app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin
   const feeType = String(b.fee_type || '').trim();
   if (!FEE_RECORD_TYPES.includes(feeType)) return res.status(400).json({ error: '无效费用类型' });
   const party = String(b.party_name || '').trim().slice(0, 200);
-  if (!party) return res.status(400).json({ error: feeType === 'insurance' ? '请填写保险公司' : '请填写律师 / 律所' });
+  if (!party) return res.status(400).json({ error: feeType === 'insurance' ? '请填写保险公司' : (feeType === 'legal' ? '请填写律师 / 律所' : '请填写收款方 / 供应商') });
   const amtNum = Number(b.amount);
   const files = Array.isArray(req.files) ? req.files : [];
   const atts = files.map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
