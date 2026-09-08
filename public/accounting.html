@@ -358,8 +358,8 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     </div>
     <div class="card" style="overflow-x:auto">
       <table><thead><tr>
-        <th>日期</th><th>银行 / 账户</th><th>木板客户 / 供应商</th><th style="text-align:right">金额</th><th>付款状态</th><th>付款批注（会计）</th><th>Bintique 账单</th><th>备注</th><th></th>
-      </tr></thead><tbody id="palletBody"><tr><td colspan="9" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+        <th>日期</th><th>银行 / 账户</th><th>木板客户 / 供应商</th><th>发票号</th><th>账期</th><th style="text-align:right">金额</th><th>付款状态</th><th>付款批注（会计）</th><th>Bintique 账单</th><th>备注</th><th></th>
+      </tr></thead><tbody id="palletBody"><tr><td colspan="11" style="color:var(--g400)">加载中…</td></tr></tbody></table>
     </div>
     <p style="font-size:.75rem;color:var(--g400);margin-top:.5rem">数据来源：银行交易标注里的「木板钱」记录 + pallet.bintique.com 关联过来的账单链接；在 pallet.bintique.com 上把账单 link 到银行交易后，这里自动出现，点账单号直达对方账单页。</p>
   </div>
@@ -1036,10 +1036,26 @@ async function loadPalletList(force) {
     _palletRows = (r && r.rows) || [];
     _palletLoaded = true;
   } catch (e) {
-    document.getElementById('palletBody').innerHTML = `<tr><td colspan="9" style="color:#dc2626">${esc(e.message || '加载失败')}</td></tr>`;
+    document.getElementById('palletBody').innerHTML = `<tr><td colspan="11" style="color:#dc2626">${esc(e.message || '加载失败')}</td></tr>`;
     return;
   }
   renderPalletList();
+}
+// 木板行的发票号/账期: 标注里挂了多张发票 (inv_items) 时逐张列出, 否则用单发票字段
+function _palletInvItems(r) {
+  return (r.inv_items || []).filter(it => it && (String(it.inv || '').trim() || it.ps || it.pe));
+}
+function _palletInvCell(r) {
+  const items = _palletInvItems(r);
+  if (items.length) return items.map(it => `<div style="white-space:nowrap;font-weight:600">${esc(it.inv || '—')}</div>`).join('');
+  return r.invoice_number ? `<span style="font-weight:600;white-space:nowrap">${esc(r.invoice_number)}</span>` : '<span style="color:var(--g300)">—</span>';
+}
+function _palletPeriodCell(r) {
+  const items = _palletInvItems(r);
+  if (items.length) return items.map(it => `<div style="white-space:nowrap;font-size:.76rem;color:var(--g500)">${esc(it.ps || '?')} ~ ${esc(it.pe || '?')}</div>`).join('');
+  return (r.period_start || r.period_end)
+    ? `<span style="font-size:.76rem;color:var(--g500);white-space:nowrap">${esc(r.period_start || '?')} ~ ${esc(r.period_end || '?')}</span>`
+    : '<span style="color:var(--g300)">—</span>';
 }
 // 木板行的付款状态: 与发票同口径, 只认会计的付款批注; 收入行显示已收款/未收款, 支出行显示已付款/未付款
 function _palletPayBadge(r) {
@@ -1079,6 +1095,8 @@ function openPalletDetail(id) {
     ${row('日期', esc(r.date))}
     ${row('银行 / 账户', esc([r.bank, r.account].filter(Boolean).join(' · ')) + (r.plaid ? ' <span style="font-size:.66rem;background:#f1f5f9;border-radius:4px;padding:0 4px">直连</span>' : ''))}
     ${row('客户 / 供应商', esc(r.customer) || '—')}
+    ${row('发票号', _palletInvCell(r))}
+    ${row('账期', _palletPeriodCell(r))}
     ${row('金额', `<b style="color:${r.direction === 'in' ? '#047857' : '#b91c1c'}">${r.direction === 'in' ? '+' : '−'}${money(r.amount)}</b>（${r.direction === 'in' ? '收入' : '支出'}）`)}
     ${row('付款状态', _palletPayBadge(r))}
     ${r.note ? row('备注', esc(r.note)) : ''}
@@ -1100,7 +1118,7 @@ function renderPalletList() {
   if (flt === 'linked') rows = rows.filter(r => r.links.length);
   else if (flt === 'unlinked') rows = rows.filter(r => !r.links.length);
   else if (flt === 'in' || flt === 'out') rows = rows.filter(r => r.direction === flt);
-  if (q) rows = rows.filter(r => [r.customer, r.note, r.bank, r.account].concat(r.links.map(l => (l.label || '') + ' ' + (l.ref || ''))).join(' ').toLowerCase().includes(q));
+  if (q) rows = rows.filter(r => [r.customer, r.note, r.bank, r.account, r.invoice_number].concat(r.links.map(l => (l.label || '') + ' ' + (l.ref || ''))).concat(_palletInvItems(r).map(it => it.inv || '')).join(' ').toLowerCase().includes(q));
   const inSum = rows.filter(r => r.direction === 'in').reduce((s, r) => s + r.amount, 0);
   const outSum = rows.filter(r => r.direction === 'out').reduce((s, r) => s + r.amount, 0);
   const linkedN = _palletRows.filter(r => r.links.length).length;
@@ -1109,6 +1127,8 @@ function renderPalletList() {
     <td style="white-space:nowrap">${esc(r.date)}</td>
     <td style="font-size:.78rem">${esc([r.bank, r.account].filter(Boolean).join(' · ')) || '<span style="color:var(--g300)">—</span>'}${r.plaid ? ' <span style="font-size:.62rem;background:#f1f5f9;border-radius:4px;padding:0 4px">直连</span>' : ''}</td>
     <td>${esc(r.customer) || '<span style="color:var(--g300)">—</span>'}</td>
+    <td>${_palletInvCell(r)}</td>
+    <td>${_palletPeriodCell(r)}</td>
     <td style="text-align:right;font-weight:700;color:${r.direction === 'in' ? '#047857' : '#b91c1c'};white-space:nowrap">${r.direction === 'in' ? '+' : '−'}${money(r.amount)}</td>
     <td>${_palletPayBadge(r)}</td>
     <td>${payNoteCell('pallet', r.id, r.pay_note, true)}</td>
@@ -1118,7 +1138,7 @@ function renderPalletList() {
       : '<span style="color:var(--g400)">未关联</span>'}</td>
     <td style="font-size:.76rem;color:var(--g500);max-width:220px">${esc(r.note || '')}</td>
     <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openPalletDetail(${r.id})">查看明细</button></td>
-  </tr>`).join('') : '<tr><td colspan="9" style="color:var(--g400);padding:1rem">没有木板账单记录。</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="11" style="color:var(--g400);padding:1rem">没有木板账单记录。</td></tr>';
 }
 
 async function loadAll() {

@@ -38479,6 +38479,7 @@ app.get('/api/acct/fee-records', requireAdmin, requireAcctView, (req, res) => {
 app.get('/api/acct/pallet-bills', requireAdmin, requireAcctView, (req, res) => {
   try {
     const rows = db.prepare(`SELECT t.id, t.txn_date, t.amount, t.direction, t.payee, t.note, t.links, t.plaid_txn_id, t.photos,
+        t.invoice_number, t.period_start, t.period_end, t.inv_items,
         s.bank, s.account_name
       FROM bank_statement_txns t LEFT JOIN bank_statements s ON t.statement_id = s.id
       WHERE t.kind='box' AND (t.payee LIKE '木板钱:%' OR (t.links IS NOT NULL AND t.links<>'' AND t.links<>'[]'))
@@ -38492,10 +38493,13 @@ app.get('/api/acct/pallet-bills', requireAdmin, requireAcctView, (req, res) => {
       const isPallet = String(r.payee || '').indexOf('木板钱:') === 0;
       if (!isPallet && !palletLinks.length) continue;   // 其他系统的关联, 不属于木板账单
       let ph = []; try { ph = JSON.parse(r.photos || '[]'); } catch (e) { ph = []; }
+      let invItems = []; try { invItems = JSON.parse(r.inv_items || '[]'); } catch (e) { invItems = []; }
       out.push({
         id: r.id, date: r.txn_date || '', amount: Number(r.amount) || 0, direction: r.direction === 'in' ? 'in' : 'out',
         customer: isPallet ? String(r.payee).slice('木板钱:'.length) : '',
         note: r.note || '', bank: r.bank || '', account: r.account_name || '',
+        invoice_number: r.invoice_number || '', period_start: r.period_start || '', period_end: r.period_end || '',
+        inv_items: Array.isArray(invItems) ? invItems : [],
         plaid: !!r.plaid_txn_id, links: palletLinks,
         photos_urls: (Array.isArray(ph) ? ph : []).filter(Boolean).map(k => `/uploads/${path.basename(k)}`),
         pay_note: payNotes[r.id] || null,
