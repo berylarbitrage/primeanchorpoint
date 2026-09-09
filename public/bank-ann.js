@@ -746,7 +746,7 @@ function _bsAnnCheckHtml(box, items, mode) {
       if (box.payee && info.company_name) {
         const a = norm(box.payee), b = norm(info.company_name);
         if (a === b || a.includes(b) || b.includes(a)) oks.push('公司');
-        else probs.push(`公司不符（发票开给 ${esc(info.company_name)}）`);
+        else probs.push(`公司不符（发票开给 ${esc(info.company_name)}，请在备注里说明原因，否则无法审核通过）`);
       }
       // 用途 vs 前缀: L=Labor 劳务/工时, C=Container 卸柜
       const m = num.match(/^INV-([LC])-/);
@@ -975,12 +975,18 @@ async function annDeleteBox(id) {
   if (box.plaid_txn_id) { delete ANN[box.plaid_txn_id]; annRefreshChip(box); }
   annClose();
 }
-// 管理员审核通过客服的标注 (银行到账与发票合计有差且没写备注解释的, 不给通过)
+// 管理员审核通过客服的标注 (银行到账与发票合计有差、或发票抬头和标注选的公司
+// 不符, 且没写备注解释的, 不给通过)
 async function annApprove(id) {
   const box = _bsBoxList.find(b => b.id === id); if (!box) return;
   const d = _bsAmtDiff(box);
   if (d && Math.abs(d.diff) >= 0.01 && !String(box.note || '').trim()) {
     showToast('银行到账 ' + money(d.bank) + ' 与发票合计 ' + money(d.sum) + ' 差 ' + money(Math.abs(d.diff)) + '：必须在「原因/备注」里说明差额原因（可附照片）才能审核通过', 'error');
+    return;
+  }
+  const comp = _bsCompanyProbs(box);
+  if (comp.length && !String(box.note || '').trim()) {
+    showToast('发票 ' + comp[0].num + ' 开给「' + comp[0].company + '」，和标注选的公司不符：必须在「原因/备注」里说明原因（比如两家实为同一公司）才能审核通过', 'error');
     return;
   }
   try {
@@ -1165,15 +1171,32 @@ function _bsAmtDiff(box) {
   }
   return { bank, sum, diff: bank - sum };
 }
-// 全列表批量金额核对: 把没填金额的发票号一次查回系统金额, 然后刷新行内徽章 ——
-// 差额红字不用点开抽屉, 列表上直接看到。
-async function annAmountScanAll() {
+// ── 公司不符 (行内徽章与审核闸门共用) ──
+// 标注选的公司和发票抬头对不上的 [{num, company}]; 发票信息还没查到的不算。
+// 比较口径与抽屉里的自动核对一致 (去空格/标点/大小写, 相等或互相包含算一致)。
+function _bsCompanyProbs(box) {
+  if (_bsAnnCheckMode(box) !== 'full' || !box.payee) return [];
+  const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const out = [];
+  for (const it of _bsInvItems(box)) {
+    const num = String(it.inv || '').trim().toUpperCase();
+    if (!num) continue;
+    const info = _bsInvCheckCache[num];
+    if (!info || !info.found || !info.company_name) continue;
+    const a = norm(box.payee), b = norm(info.company_name);
+    if (!(a === b || a.includes(b) || b.includes(a))) out.push({ num, company: info.company_name });
+  }
+  return out;
+}
+// 全列表批量核对: 把发票号一次查回系统发票信息 (金额/公司), 然后刷新行内徽章 ——
+// 金额差和公司不符的红字不用点开抽屉, 列表上直接看到。
+async function annCheckScanAll() {
   const need = new Set();
   for (const b of _bsBoxList) {
     if (_bsAnnCheckMode(b) !== 'full') continue;
     for (const it of _bsInvItems(b)) {
       const n = String(it.inv || '').trim().toUpperCase();
-      if (n && !(n in _bsInvCheckCache) && !(parseFloat(it.amt) > 0)) need.add(n);
+      if (n && !(n in _bsInvCheckCache)) need.add(n);
     }
   }
   const nums = [...need];
@@ -1194,11 +1217,15 @@ function annChipHtml(txnId) {
   const amtWarn = d && Math.abs(d.diff) >= 0.01
     ? ' <span style="color:#dc2626;font-weight:800" title="银行到账 ' + money(d.bank) + ' ≠ 发票合计 ' + money(d.sum) + '，需在备注里解释">⚠️差' + money(Math.abs(d.diff)) + '</span>'
     : '';
+  const comp = _bsCompanyProbs(b);
+  const compWarn = comp.length
+    ? ' <span style="color:#dc2626;font-weight:800" title="' + esc(comp.map(c => c.num + ' 发票开给 ' + c.company).join('；') + '，和标注选的公司不符，需在备注里说明原因') + '">⚠️公司不符</span>'
+    : '';
   const linkMark = _bsBoxLinks(b).length ? ' 🪵' : '';   // 有 Bintique 木板账单等外部关联
   const label = _bsPayeeDisplay(b.payee) || (b.direction === 'in' ? '收入' : '支出') + '（待填）';
   const st = b.ann_status === 'pending' ? ' pending' : (b.ann_status === 'approved' ? ' approved' : '');
   const suffix = b.ann_status === 'pending' ? ' ⏳待审核' : (b.ann_status === 'approved' ? ' ✓' : '');
-  return '<button class="ann-chip' + st + '" data-txn="' + esc(txnId) + '" onclick="annOpen(this.dataset.txn)" title="' + esc(label + suffix + (linkMark ? ' · 有木板账单关联' : '')) + '">' + esc(label) + suffix + linkMark + warn + amtWarn + '</button>';
+  return '<button class="ann-chip' + st + '" data-txn="' + esc(txnId) + '" onclick="annOpen(this.dataset.txn)" title="' + esc(label + suffix + (linkMark ? ' · 有木板账单关联' : '')) + '">' + esc(label) + suffix + linkMark + warn + amtWarn + compWarn + '</button>';
 }
 function annRefreshChip(box) {
   if (!box || !box.plaid_txn_id) return;
@@ -1259,7 +1286,7 @@ async function annLoadAll() {
     const r = await annApi('/plaid/annotations');
     Object.values(r.annotations || {}).forEach(annStore);
     updatePendBtn();
-    annAmountScanAll().catch(() => {}); // 列表徽章上的金额差红字
+    annCheckScanAll().catch(() => {}); // 列表徽章上的金额差/公司不符红字
   } catch (e) { console.error(e); }
 }
 async function annOpen(txnId) {
