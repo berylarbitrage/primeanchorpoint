@@ -3,7 +3,8 @@
 // ─── Gusto 合同工付款模板 (Contractor Pay CSV) 生成 ─────────────────────────────
 // 输入: ① Gusto 后台导出的空白 contractor pay 模板 CSV（合同工名册: 姓名 / 打码
 // SSN / 时薪）② 发票生成器里的员工行（姓名 / 时薪 / 正常与加班工时 / 应付工资）。
-// 输出: 同一张模板, 只填 hours / bonus（时薪缺失的名册行改填 fixed_amount）,
+// 输出: 同一张模板, 只填 hours / bonus（时薪缺失的名册行改填 flat_amount，
+// 旧版模板列名 fixed_amount 也认）,
 // 其余单元格逐字保留, Gusto 才能按行对上自家合同工。
 //
 // Gusto 按 时薪 × hours 付款, 没有 1.5× 加班的概念。两种折算口径 (opts.mode):
@@ -20,6 +21,16 @@
 // first_name=Jose。按分词集合做四档匹配（完全一致 → 包含 → 共享长词 → 近似拼写),
 // 同一档命中多行算歧义, 宁可不填也不能付错人。多行工资对到同一名册行（同姓家人
 // 或同一人两种时薪）自动合并成一笔, 在 sources 里列明细。
+// 低档位（只共享姓氏 / 近似拼写）额外要求名字对得上: 工资表写了名字但和名册行
+// 的名字完全无关（Eloy Herrera ≠ Alejandra Abundis Herrera）就进 needConfirm,
+// 不自动付——同姓大概率不是同一个人。
+//
+// 收款人对照表 (opts.aliases): [{from, to}]。工资表姓名 ↔ 名册收款人对不上号的
+// 在这里人工指定——花名/错拼（Luis Cartz → Luis Cortez）、几个人的钱并付给一个
+// 收款人（Jesus Arroyo → Youseli Briceno）、或者付给公司行（→ FINOVAOPERATIONS）。
+// to 写「现金」/「跳过」表示这行不走 Gusto, 生成时跳过并单独列出。对照表按分词
+// 集合精确对 from（大小写/重音/词序不敏感）, 命中后按 to 的名字去匹配名册,
+// 明细里保留工资表原名。
 
 // ── CSV 基础 ──
 function parseCsv(text) {
@@ -123,7 +134,9 @@ function parseRoster(csvText) {
   const cols = {
     last: col('last_name'), first: col('first_name'), business: col('business_name'),
     ssn: col('ssn/ein'), rate: col('hourly_rate'), hours: col('hours'),
-    fixed: col('fixed_amount'), bonus: col('bonus'), note: col('note'),
+    // Gusto 新版模板把整额列叫 flat_amount, 旧版叫 fixed_amount, 两个名字都认
+    fixed: col('flat_amount') >= 0 ? col('flat_amount') : col('fixed_amount'),
+    bonus: col('bonus'), note: col('note'),
   };
   const entries = rows.slice(1).map((cells, i) => {
     const last = String(cells[cols.last] || '').trim();
@@ -149,39 +162,72 @@ function parseRoster(csvText) {
 
 // ── 生成 ──
 // employees: [{ name, total, rate, regHours, otHours }]（发票生成器的行, total = 应付工资）
-// 返回 { csv, matches, unmatched, ambiguous, warnings, matchedCount, totalPay, untouched }
+// opts.aliases: 收款人对照表 [{from, to}]（见文件头注释）
+// 返回 { csv, matches, unmatched, ambiguous, skipped, needConfirm, warnings, matchedCount, totalPay, untouched }
+const ALIAS_SKIP_WORDS = new Set(['现金', '发现金', 'cash', '跳过', 'skip', '忽略']);
 function buildGustoCsv(templateCsv, employees, opts) {
   opts = opts || {};
   const mode = opts.mode === 'hours' ? 'hours' : 'bonus';
   const roster = parseRoster(templateCsv);
   const warnings = [];
   const byRosterIdx = new Map();   // roster idx → { entry, sources: [{name, owed, rate, fuzzy}] }
-  const unmatched = [], ambiguous = [];
+  const unmatched = [], ambiguous = [], skipped = [], needConfirm = [];
+
+  // 收款人对照表: 分词集合 key → { skip, reason } | { toName, toTokens }
+  const aliasMap = new Map();
+  for (const a of opts.aliases || []) {
+    const from = String((a && a.from) || '').trim();
+    const to = String((a && a.to) || '').trim();
+    if (!from || !to) continue;
+    const key = joined(nameTokens(from));
+    if (!key) continue;
+    aliasMap.set(key, ALIAS_SKIP_WORDS.has(to.toLowerCase())
+      ? { skip: true, reason: to }
+      : { toName: to, toTokens: nameTokens(to) });
+  }
+  // 相同或近似拼写（一个字母之差）
+  const near = (a, b) => a === b || (a.length >= 4 && b.length >= 4 && editDist1(a, b));
 
   for (const emp of employees || []) {
     const name = String(emp.name || '').trim();
     const owed = r2(Number(emp.total) || 0);
     if (!name || owed <= 0) continue;
-    const empT = nameTokens(name);
+    const selfT = nameTokens(name);
+    const alias = aliasMap.get(joined(selfT));
+    if (alias && alias.skip) { skipped.push({ name, owed, reason: alias.reason }); continue; }
+    const empT = alias ? alias.toTokens : selfT;
     let best = 0, hits = [];
     for (const entry of roster.entries) {
       const sc = matchScore(empT, entry, roster.tokenCount);
       if (sc > best) { best = sc; hits = [entry]; }
       else if (sc === best && sc > 0) hits.push(entry);
     }
-    if (!best) { unmatched.push({ name, owed }); continue; }
+    if (!best) { unmatched.push({ name, owed, aliasTo: alias ? alias.toName : undefined }); continue; }
     if (hits.length > 1) {
       ambiguous.push({ name, owed, candidates: hits.map(h => h.label) });
       continue;
     }
     const entry = hits[0];
+    // 低档位命中（只共享姓氏 / 姓氏近似拼写）: 工资表还写了别的名字、却和名册行的
+    // 名字毫无相似之处 → 同姓大概率不是同一个人, 进 needConfirm 不自动付。
+    // 只写一个词的（"Tecsxco"）没有名字可比, 保持原行为。
+    if (!alias && best <= 60) {
+      const firstT = [...entry.tokens].filter(t => !entry.lastTokens.has(t));
+      const extras = [...empT].filter(a => ![...entry.lastTokens].some(b => near(a, b)));
+      const evidence = !extras.length || extras.some(a => firstT.some(b => near(a, b)));
+      if (!evidence) { needConfirm.push({ name, owed, candidate: entry.label }); continue; }
+    }
     if (!byRosterIdx.has(entry.idx)) byRosterIdx.set(entry.idx, { entry, sources: [] });
     byRosterIdx.get(entry.idx).sources.push({
       name, owed,
       rate: Number(emp.rate) || null,
       actualHours: r2((Number(emp.regHours) || 0) + (Number(emp.otHours) || 0)),
-      fuzzy: best === 50,
+      fuzzy: best === 50 && !alias,
       score: best,
+      // 本人度: 工资表原名和这行名册的相似分。合并付款挑「hours 本人」时,
+      // 对照表并进来的人（原名和名册无关, selfScore 0）不该抢本人位。
+      selfScore: alias ? matchScore(selfT, entry, roster.tokenCount) : best,
+      aliasTo: alias ? alias.toName : undefined,
     });
   }
 
@@ -205,7 +251,12 @@ function buildGustoCsv(templateCsv, employees, opts) {
         if (mode === 'bonus' && m.sources.length > 1) {
           const rateMatch = m.sources.filter(s => s.rate && Math.abs(s.rate - entry.rate) <= 0.005);
           const pool = rateMatch.length ? rateMatch : m.sources;
-          primary = pool.reduce((bst, s) => (!bst || (s.score || 0) > (bst.score || 0) ? s : bst), null);
+          // 本人 = 工资表原名最像这行名册的（selfScore 高者）; 对照表并进来的钱全额进 bonus
+          primary = pool.reduce((bst, s) => {
+            if (!bst) return s;
+            const sk = [s.selfScore || 0, s.score || 0], bk = [bst.selfScore || 0, bst.score || 0];
+            return (sk[0] > bk[0] || (sk[0] === bk[0] && sk[1] > bk[1])) ? s : bst;
+          }, null);
         }
         const actual = primary
           ? r2(primary.actualHours || 0)
@@ -242,7 +293,7 @@ function buildGustoCsv(templateCsv, employees, opts) {
         merged: m.sources.length > 1,
       });
       if (!entry.rate && roster.cols.fixed < 0) {
-        warnings.push(`「${entry.label}」名册里没有时薪，模板又没有 fixed_amount 列，$${owed.toFixed(2)} 没法填，请在 Gusto 手动支付。`);
+        warnings.push(`「${entry.label}」名册里没有时薪，模板又没有 flat_amount/fixed_amount 列，$${owed.toFixed(2)} 没法填，请在 Gusto 手动支付。`);
       }
       if (m.sources.length > 1) {
         const prim = m.sources.find(s => s.primary);
@@ -263,8 +314,11 @@ function buildGustoCsv(templateCsv, employees, opts) {
     outRows.push(cells);
   }
 
-  for (const u of unmatched) warnings.push(`「${u.name}」（应付 $${u.owed.toFixed(2)}）在 Gusto 名册里找不到，请在 Gusto 添加后重新生成，或手动支付。`);
+  for (const u of unmatched) warnings.push(u.aliasTo
+    ? `「${u.name}」按收款人对照表应付给「${u.aliasTo}」，但 Gusto 名册里没有这一行（应付 $${u.owed.toFixed(2)}），请在 Gusto 添加后重新导出名册，或手动支付。`
+    : `「${u.name}」（应付 $${u.owed.toFixed(2)}）在 Gusto 名册里找不到，请在 Gusto 添加后重新生成，或手动支付。`);
   for (const a of ambiguous) warnings.push(`「${a.name}」（应付 $${a.owed.toFixed(2)}）在名册里有多个可能匹配（${a.candidates.join('、')}），没敢自动填，请手动处理。`);
+  for (const nc of needConfirm) warnings.push(`「${nc.name}」（应付 $${nc.owed.toFixed(2)}）只有姓氏和名册的「${nc.candidate}」对得上、名字对不上——同姓可能不是同一个人，没敢自动填。是同一个人的话请在收款人对照表里指定。`);
 
   const ps = String(opts.period_start || '').trim(), pe = String(opts.period_end || '').trim();
   const filename = 'gusto_contractor_pay' + (ps && pe ? `_${ps}_${pe}` : '') + '.csv';
@@ -272,7 +326,7 @@ function buildGustoCsv(templateCsv, employees, opts) {
     csv: stringifyCsv(outRows),
     filename,
     mode,
-    matches, unmatched, ambiguous, warnings,
+    matches, unmatched, ambiguous, skipped, needConfirm, warnings,
     matchedCount: matches.length,
     untouched: roster.entries.length - matches.length,
     totalPay,

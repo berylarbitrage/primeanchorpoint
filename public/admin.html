@@ -3140,8 +3140,19 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     </div>
     <div id="gustoCsvBody" style="max-height:55vh;overflow-y:auto;margin:.5rem 0 .75rem"></div>
     <div id="gustoModeNote" style="font-size:.74rem;color:var(--gray-400);line-height:1.55;border-top:1px solid var(--gray-100);padding-top:.5rem"></div>
+    <div id="gustoAliasPanel" style="display:none;margin:.55rem 0 .2rem;padding:.55rem .7rem;background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px">
+      <div style="font-size:.76rem;color:#6d28d9;line-height:1.55;margin-bottom:.35rem"><b>收款人对照表</b> —— 每行一条：<code>工资表姓名 → Gusto 名册收款人</code>。花名/错拼（Luis Cartz → Luis Cortez）、几个人的钱并付给同一个收款人（会自动合并成一笔）、付给公司行的都写在这里；写 <code>→ 现金</code> 表示不走 Gusto，生成时跳过。</div>
+      <textarea id="gustoAliasText" rows="9" spellcheck="false" style="width:100%;font-size:.78rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;border:1px solid #e9d5ff;border-radius:6px;padding:.4rem .55rem;line-height:1.55;resize:vertical"></textarea>
+      <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:.45rem">
+        <button class="btn btn-outline" style="font-size:.78rem;color:var(--gray-500)" onclick="document.getElementById('gustoAliasPanel').style.display='none'">收起</button>
+        <button class="btn btn-green" style="font-size:.78rem" onclick="invpGustoAliasSave()">💾 保存并重新生成</button>
+      </div>
+    </div>
     <div class="modal-actions" style="display:flex;justify-content:space-between;gap:.5rem;margin-top:.9rem">
-      <button class="btn btn-outline" style="font-size:.8rem;color:var(--gray-500)" onclick="document.getElementById('invpGustoRosterFile').click()" title="重新上传 Gusto 后台导出的空白 contractor payment 模板（人员或时薪变了的时候）">🔄 更新名册</button>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn btn-outline" style="font-size:.8rem;color:var(--gray-500)" onclick="document.getElementById('invpGustoRosterFile').click()" title="重新上传 Gusto 后台导出的空白 contractor payment 模板（人员或时薪变了的时候）">🔄 更新名册</button>
+        <button class="btn btn-outline" style="font-size:.8rem;color:#6d28d9" onclick="invpGustoAliasToggle()" title="工资表姓名和 Gusto 名册对不上、几个人的钱并付给一个收款人、或发现金不走 Gusto 的，在这里配置">📇 收款人对照表</button>
+      </div>
       <div style="display:flex;gap:.5rem">
         <button class="btn btn-outline" style="font-size:.85rem;color:var(--gray-500)" onclick="document.getElementById('gustoCsvModal').classList.remove('show')">关闭</button>
         <button class="btn btn-green" style="font-size:.85rem" onclick="invpGustoDownload()">⬇️ 下载 CSV</button>
@@ -38597,7 +38608,8 @@ function renderGustoCsvModal(res) {
     const srcTag = s => !split ? '' : (s.primary
       ? ' <span style="font-size:.66rem;background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:0 4px;font-weight:600">hours 本人</span>'
       : ' <span style="font-size:.66rem;background:#d1fae5;color:#047857;border-radius:4px;padding:0 4px;font-weight:600">→ bonus</span>');
-    const src = (m.sources || []).map(s => `${esc(s.name)} <span style="color:var(--gray-400)">$${(+s.owed).toFixed(2)}</span>${srcTag(s)}`).join('<br>');
+    const aliasTag = s => s.aliasTo ? ' <span style="font-size:.66rem;background:#ede9fe;color:#6d28d9;border-radius:4px;padding:0 4px;font-weight:600" title="按收款人对照表付到这一行">对照表</span>' : '';
+    const src = (m.sources || []).map(s => `${esc(s.name)} <span style="color:var(--gray-400)">$${(+s.owed).toFixed(2)}</span>${aliasTag(s)}${srcTag(s)}`).join('<br>');
     const diff = m.diff ? ` <span style="color:#b45309;font-size:.72rem" title="向上取整到 0.01 小时产生的差额">（${m.diff > 0 ? '+' : ''}${m.diff.toFixed(2)}）</span>` : '';
     const mergeTag = m.merged ? ` <span style="font-size:.68rem;background:#fef3c7;color:#92400e;border-radius:4px;padding:0 5px;font-weight:600">合并 ${m.sources.length} 行</span>` : '';
     const bonusTag = m.bonus ? `<div style="font-size:.72rem;color:#047857;font-weight:600">+ $${(+m.bonus).toFixed(2)} bonus</div>` : '';
@@ -38609,12 +38621,18 @@ function renderGustoCsvModal(res) {
       <td style="padding:.4rem .5rem;font-size:.78rem;line-height:1.5">${src}</td>
     </tr>`;
   }).join('');
-  const unmatchedBlock = (res.unmatched || []).length || (res.ambiguous || []).length ? `
+  const probLines = [
+    ...(res.unmatched || []).map(u => `· ${esc(u.name)} $${(+u.owed).toFixed(2)} —— ${u.aliasTo ? `按对照表应付给「${esc(u.aliasTo)}」，但名册里没有这一行（先在 Gusto 添加，再重新导出上传名册）` : '名册里找不到'}`),
+    ...(res.ambiguous || []).map(a => `· ${esc(a.name)} $${(+a.owed).toFixed(2)} —— 有多个可能匹配（${esc((a.candidates || []).join('、'))}）`),
+    ...(res.needConfirm || []).map(n => `· ${esc(n.name)} $${(+n.owed).toFixed(2)} —— 只有姓氏和「${esc(n.candidate)}」对得上、名字对不上，同姓可能不是同一个人；确认是同一人就在收款人对照表里指定`),
+  ];
+  const unmatchedBlock = probLines.length ? `
     <div style="margin-top:.6rem;padding:.5rem .7rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:.8rem;color:#b91c1c;line-height:1.6">
-      ❗ 以下员工<b>没有</b>写进 CSV，请在 Gusto 手动处理：<br>
-      ${(res.unmatched || []).map(u => `· ${esc(u.name)} $${(+u.owed).toFixed(2)} —— 名册里找不到`).join('<br>')}
-      ${(res.unmatched || []).length && (res.ambiguous || []).length ? '<br>' : ''}
-      ${(res.ambiguous || []).map(a => `· ${esc(a.name)} $${(+a.owed).toFixed(2)} —— 有多个可能匹配（${esc((a.candidates || []).join('、'))}）`).join('<br>')}
+      ❗ 以下员工<b>没有</b>写进 CSV，请在 Gusto 手动处理或在收款人对照表里指定：<br>${probLines.join('<br>')}
+    </div>` : '';
+  const skippedBlock = (res.skipped || []).length ? `
+    <div style="margin-top:.6rem;padding:.5rem .7rem;background:#f8fafc;border:1px solid var(--gray-100);border-radius:8px;font-size:.78rem;color:var(--gray-500);line-height:1.6">
+      按收款人对照表跳过（不走 Gusto）：${res.skipped.map(s => `${esc(s.name)} $${(+s.owed).toFixed(2)}（${esc(s.reason || '')}）`).join('、')}
     </div>` : '';
   const warnBlock = (res.warnings || []).length ? `
     <div style="margin-top:.6rem;padding:.5rem .7rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:.78rem;color:#92400e;line-height:1.6">
@@ -38633,7 +38651,33 @@ function renderGustoCsvModal(res) {
       <tbody>${rows}</tbody>
     </table>
     ${res.untouched ? `<div style="margin-top:.45rem;font-size:.74rem;color:var(--gray-400)">名册其余 ${res.untouched} 行本周没有工时，保持空白。</div>` : ''}
-    ${unmatchedBlock}${warnBlock}`;
+    ${unmatchedBlock}${skippedBlock}${warnBlock}`;
+}
+
+// ── 收款人对照表（工资表姓名 → Gusto 名册收款人；「现金」= 不走 Gusto）──
+async function invpGustoAliasToggle() {
+  const panel = document.getElementById('gustoAliasPanel');
+  if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+  const res = await api('/admin/gusto-pay-aliases').catch(() => null);
+  document.getElementById('gustoAliasText').value =
+    ((res && res.aliases) || []).map(a => `${a.from} → ${a.to}`).join('\n');
+  panel.style.display = 'block';
+}
+async function invpGustoAliasSave() {
+  const aliases = document.getElementById('gustoAliasText').value.split('\n')
+    .map(l => l.trim())
+    .filter(l => l && !l.startsWith('#'))
+    .map(l => {
+      const parts = l.split(/\s*(?:→|->|=>|＝|=)\s*/);
+      return { from: (parts[0] || '').trim(), to: parts.slice(1).join(' ').trim() };
+    })
+    .filter(a => a.from && a.to);
+  const res = await api('/admin/gusto-pay-aliases', { method: 'POST', body: JSON.stringify({ aliases }) })
+    .catch(e => ({ error: e.message }));
+  if (!res || !res.success) { showToast('收款人对照表保存失败：' + ((res && res.error) || '未知错误'), 'error', 7000); return; }
+  document.getElementById('gustoAliasPanel').style.display = 'none';
+  showToast(`✓ 收款人对照表已保存（${res.count} 条），已按新对照表重新生成`, 'success', 4000);
+  await invpGustoCsv();
 }
 
 // 折算口径（bonus = 实际工时+差额放bonus；hours = 全折进工时），记住上次的选择
