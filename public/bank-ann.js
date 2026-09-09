@@ -972,9 +972,14 @@ async function annDeleteBox(id) {
   if (box.plaid_txn_id) { delete ANN[box.plaid_txn_id]; annRefreshChip(box); }
   annClose();
 }
-// 管理员审核通过客服的标注
+// 管理员审核通过客服的标注 (银行到账与发票合计有差且没写备注解释的, 不给通过)
 async function annApprove(id) {
   const box = _bsBoxList.find(b => b.id === id); if (!box) return;
+  const d = _bsAmtDiff(box);
+  if (d && Math.abs(d.diff) >= 0.01 && !String(box.note || '').trim()) {
+    showToast('银行到账 ' + money(d.bank) + ' 与发票合计 ' + money(d.sum) + ' 差 ' + money(Math.abs(d.diff)) + '：必须在「原因/备注」里说明差额原因（可附照片）才能审核通过', 'error');
+    return;
+  }
   try {
     await annApi(`/plaid/annotations/${id}/approve`, { method: 'POST', body: '{}' });
     box.ann_status = 'approved';
@@ -1139,16 +1144,58 @@ function _bsRenderBoxPanel() {
   _bsAnnCheckSchedule(box.id);
 }
 
+// ── 银行到账 vs 发票合计 (行内徽章与审核闸门共用) ──
+// 返回 {bank, sum, diff}; 金额取不齐 (发票没查到又没填金额) 时返回 null。
+// 各张填的金额优先, 没填的用系统发票金额 (_bsInvCheckCache 里查到的)。
+function _bsAmtDiff(box) {
+  if (_bsAnnCheckMode(box) !== 'full') return null;
+  const items = _bsInvItems(box).filter(it => String(it.inv || '').trim());
+  if (!items.length) return null;
+  const bank = Math.abs(Number(box.amount) || 0);
+  if (!(bank > 0)) return null;
+  let sum = 0;
+  for (const it of items) {
+    const info = _bsInvCheckCache[String(it.inv).trim().toUpperCase()];
+    const a = parseFloat(it.amt) || (info && info.found && Number(info.subtotal)) || 0;
+    if (!(a > 0)) return null;
+    sum += a;
+  }
+  return { bank, sum, diff: bank - sum };
+}
+// 全列表批量金额核对: 把没填金额的发票号一次查回系统金额, 然后刷新行内徽章 ——
+// 差额红字不用点开抽屉, 列表上直接看到。
+async function annAmountScanAll() {
+  const need = new Set();
+  for (const b of _bsBoxList) {
+    if (_bsAnnCheckMode(b) !== 'full') continue;
+    for (const it of _bsInvItems(b)) {
+      const n = String(it.inv || '').trim().toUpperCase();
+      if (n && !(n in _bsInvCheckCache) && !(parseFloat(it.amt) > 0)) need.add(n);
+    }
+  }
+  const nums = [...need];
+  for (let i = 0; i < nums.length; i += 25) {
+    try {
+      const r = await annApi('/plaid/invoice-check?nums=' + encodeURIComponent(nums.slice(i, i + 25).join(',')));
+      Object.assign(_bsInvCheckCache, (r && r.invoices) || {});
+    } catch (e) { break; }
+  }
+  _bsBoxList.forEach(b => { if (_bsAnnCheckMode(b) === 'full') annRefreshChip(b); });
+}
 // ── 行内徽章 + 抽屉开关 ──
 function annChipHtml(txnId) {
   const b = ANN[txnId];
   if (!b) return '<button class="ann-add" data-txn="' + esc(txnId) + '" onclick="annOpen(this.dataset.txn)">＋ 标注</button>';
   const warn = _bsNoteSatisfied(b) ? '' : ' <span style="color:#dc2626">⚠</span>';
+  const d = _bsAmtDiff(b);
+  const amtWarn = d && Math.abs(d.diff) >= 0.01
+    ? ' <span style="color:#dc2626;font-weight:800" title="银行到账 ' + money(d.bank) + ' ≠ 发票合计 ' + money(d.sum) + '，需在备注里解释">⚠️差' + money(Math.abs(d.diff)) + '</span>'
+    : '';
   const linkMark = _bsBoxLinks(b).length ? ' 🪵' : '';   // 有 Bintique 木板账单等外部关联
   const label = _bsPayeeDisplay(b.payee) || (b.direction === 'in' ? '收入' : '支出') + '（待填）';
   const st = b.ann_status === 'pending' ? ' pending' : (b.ann_status === 'approved' ? ' approved' : '');
   const suffix = b.ann_status === 'pending' ? ' ⏳待审核' : (b.ann_status === 'approved' ? ' ✓' : '');
-  return '<button class="ann-chip' + st + '" data-txn="' + esc(txnId) + '" onclick="annOpen(this.dataset.txn)" title="' + esc(label + suffix + (linkMark ? ' · 有木板账单关联' : '')) + '">' + esc(label) + suffix + linkMark + warn + '</button>';
+  return '<button class="ann-chip' + st + '" data-txn="' + esc(txnId) + '" onclick="annOpen(this.dataset.txn)" title="' + esc(label + suffix + (linkMark ? ' · 有木板账单关联' : '')) + '">' + esc(label) + suffix + linkMark + warn + amtWarn + '</button>';
 }
 function annRefreshChip(box) {
   if (!box || !box.plaid_txn_id) return;
@@ -1209,6 +1256,7 @@ async function annLoadAll() {
     const r = await annApi('/plaid/annotations');
     Object.values(r.annotations || {}).forEach(annStore);
     updatePendBtn();
+    annAmountScanAll().catch(() => {}); // 列表徽章上的金额差红字
   } catch (e) { console.error(e); }
 }
 async function annOpen(txnId) {
