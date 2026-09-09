@@ -695,6 +695,7 @@ function _bsAnnCheckSchedule(boxId) {
 function _bsAnnCheckMode(box) {
   const k = _bsPayeeKind(box);
   if (k === 'company' && box.direction === 'in') return 'full';
+  if (k === 'pallet') return 'full'; // 木板钱: 发票号去 Bintique 账单里核对 (号码/账期/金额/公司)
   if (k === 'employee') return 'exist';
   return null;
 }
@@ -723,9 +724,11 @@ function _bsAnnCheckHtml(box, items, mode) {
     const num = it.inv.trim().toUpperCase();
     const info = _bsInvCheckCache[num];
     if (!info) return '';
-    if (!info.found) return `<div style="color:#dc2626">⚠️ ${esc(num)}：系统里没有这张发票（检查号码有没有打错）</div>`;
-    // 发票号可点击 → 弹窗看这张发票的明细
-    const numHtml = info.id ? `<a href="#" onclick="event.preventDefault();annShowInvoice(${info.id})" title="点击查看这张发票的明细" style="color:inherit;font-weight:700;text-decoration:underline">${esc(num)}</a>` : esc(num);
+    if (!info.found) return `<div style="color:#dc2626">⚠️ ${esc(num)}：本系统和 Bintique 里都没有这张发票（检查号码有没有打错）</div>`;
+    // 发票号可点击 → 本系统发票弹窗看明细; Bintique 账单开新窗口看账单页
+    const numHtml = info.source === 'bintique'
+      ? (info.doc_url ? `<a href="${esc(info.doc_url)}" target="_blank" rel="noopener" title="在新窗口打开这张 Bintique 账单" style="color:inherit;font-weight:700;text-decoration:underline">${esc(num)}</a>` : esc(num))
+      : info.id ? `<a href="#" onclick="event.preventDefault();annShowInvoice(${info.id})" title="点击查看这张发票的明细" style="color:inherit;font-weight:700;text-decoration:underline">${esc(num)}</a>` : esc(num);
     const probs = [], oks = [];
     // 账期: 两边都填了才比
     if (it.ps && it.pe && info.period_start && info.period_end) {

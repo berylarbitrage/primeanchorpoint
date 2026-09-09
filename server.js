@@ -34458,31 +34458,43 @@ app.put('/api/plaid/annotations/:id', requireAdmin, requireRole('admin', 'cs', '
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // 审核通过标注: admin 或有「银行标注审核权」的账号
-app.post('/api/plaid/annotations/:id/approve', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
+app.post('/api/plaid/annotations/:id/approve', requireAdmin, requireRole('admin', 'cs', 'accounting'), async (req, res) => {
   try {
     if (!annCanReview(req)) return res.status(403).json({ error: '此账号没有标注审核权限' });
     const id = parseInt(req.params.id);
-    const box = db.prepare(`SELECT amount, direction, note, inv_items, invoice_number FROM bank_statement_txns WHERE id=? AND kind='box' AND plaid_txn_id<>''`).get(id);
+    const box = db.prepare(`SELECT amount, direction, note, payee, inv_items, invoice_number FROM bank_statement_txns WHERE id=? AND kind='box' AND plaid_txn_id<>''`).get(id);
     if (!box) return res.status(404).json({ error: 'not found' });
-    // 银行到账 vs 发票合计有差额的收入标注: 必须填了「原因/备注」(可附照片)
-    // 说明差额原因才能通过审核 —— 没解释不给过。
-    if (box.direction === 'in') {
+    // 银行到账 vs 发票合计有差额的标注 (收入, 以及木板钱两个方向): 必须填了
+    // 「原因/备注」(可附照片) 说明差额原因才能通过审核 —— 没解释不给过。
+    // 发票号本系统找不到时去 Bintique 账单里找 (木板钱的 BINV/BPINV)。
+    if (box.direction === 'in' || String(box.payee || '').indexOf('木板钱') === 0) {
       let items = []; try { items = JSON.parse(box.inv_items || '[]'); } catch (e2) { items = []; }
       if (!Array.isArray(items)) items = [];
       items = items.filter(it => it && String(it.inv || '').trim());
       if (!items.length && String(box.invoice_number || '').trim()) items = [{ inv: box.invoice_number, amt: '' }];
       if (items.length) {
         const q = db.prepare('SELECT subtotal FROM invoices WHERE TRIM(invoice_number)=? COLLATE NOCASE');
+        const normN = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+        let binvMap = null;
         let sum = 0, complete = true;
         for (const it of items) {
-          const inv = q.get(String(it.inv).trim());
-          const a = parseFloat(it.amt) || (inv ? Number(inv.subtotal) : 0) || 0;
+          const numStr = String(it.inv).trim();
+          const inv = q.get(numStr);
+          let a = parseFloat(it.amt) || (inv ? Number(inv.subtotal) : 0) || 0;
+          if (!(a > 0)) {
+            if (binvMap === null) {
+              const list = (await _palletFetchInvoices()) || [];
+              binvMap = new Map();
+              for (const bi of list) { const k = normN(bi.invoice_number); if (k && !binvMap.has(k)) binvMap.set(k, Number(bi.total_amount) || 0); }
+            }
+            a = binvMap.get(normN(numStr)) || 0;
+          }
           if (!(a > 0)) { complete = false; break; }
           sum += a;
         }
         const bank = Math.abs(Number(box.amount) || 0);
         if (complete && sum > 0 && bank > 0 && Math.abs(bank - sum) >= 0.01 && !String(box.note || '').trim()) {
-          return res.status(400).json({ error: `银行到账 $${bank.toFixed(2)} 与发票合计 $${sum.toFixed(2)} 有差额（${bank > sum ? '多收' : '少收'} $${Math.abs(bank - sum).toFixed(2)}）：必须在「原因/备注」里说明差额原因（可附照片）才能审核通过` });
+          return res.status(400).json({ error: `银行到账 $${bank.toFixed(2)} 与发票合计 $${sum.toFixed(2)} 有差额（${bank > sum ? '多' : '少'} $${Math.abs(bank - sum).toFixed(2)}）：必须在「原因/备注」里说明差额原因（可附照片）才能审核通过` });
         }
       }
     }
@@ -34495,19 +34507,39 @@ app.post('/api/plaid/annotations/:id/approve', requireAdmin, requireRole('admin'
 });
 // 🤖 标注发票自动核对: 按发票号批量取系统里发票的关键信息 (存在/公司/账期/金额/收款状态),
 // 前端在标注抽屉里逐项比对显示 ✓/⚠ —— 审核人不用再手动翻发票核对。
-app.get('/api/plaid/invoice-check', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
+app.get('/api/plaid/invoice-check', requireAdmin, requireRole('admin', 'cs', 'accounting'), async (req, res) => {
   try {
     const nums = String(req.query.nums || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 30);
     const out = {};
     const q = db.prepare('SELECT id, invoice_number, company_name, period_start, period_end, subtotal, payment_status FROM invoices WHERE TRIM(invoice_number)=? COLLATE NOCASE');
+    const misses = [];
     for (const n of nums) {
       const rows = q.all(n);
-      out[n] = rows.length ? {
-        found: true, matches: rows.length, id: rows[0].id, invoice_number: rows[0].invoice_number,
-        company_name: rows[0].company_name || '', period_start: rows[0].period_start || '',
-        period_end: rows[0].period_end || '', subtotal: Number(rows[0].subtotal) || 0,
-        payment_status: rows[0].payment_status || '',
-      } : { found: false };
+      if (rows.length) {
+        out[n] = {
+          found: true, matches: rows.length, id: rows[0].id, invoice_number: rows[0].invoice_number,
+          company_name: rows[0].company_name || '', period_start: rows[0].period_start || '',
+          period_end: rows[0].period_end || '', subtotal: Number(rows[0].subtotal) || 0,
+          payment_status: rows[0].payment_status || '',
+        };
+      } else misses.push(n);
+    }
+    // 本系统没有的号 (BINV/BPINV 等) 去 Bintique 账单里找 —— 木板钱标注
+    // 的发票号也能自动核对 号码/账期/金额/公司 (号码去横杠标点比较)。
+    if (misses.length) {
+      const binv = (await _palletFetchInvoices()) || [];
+      const normN = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+      const byNum = new Map();
+      for (const inv of binv) { const k = normN(inv.invoice_number); if (k && !byNum.has(k)) byNum.set(k, inv); }
+      for (const n of misses) {
+        const inv = byNum.get(normN(n));
+        out[n] = inv ? {
+          found: true, source: 'bintique', invoice_number: inv.invoice_number,
+          company_name: inv.entity_name || '', period_start: inv.period_from || '',
+          period_end: inv.period_to || '', subtotal: Number(inv.total_amount) || 0,
+          doc_url: inv.doc_url || '',
+        } : { found: false };
+      }
     }
     res.json({ invoices: out });
   } catch (e) { res.status(500).json({ error: e.message }); }
