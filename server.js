@@ -38519,6 +38519,56 @@ app.get('/api/acct/fee-records', requireAdmin, requireAcctView, (req, res) => {
 // 🪵/🚚 银行交易类账单汇总 (木板 / 卡车共用): 「木板钱:」/「卡车费:」交易标注
 // + pallet.bintique.com link 过来的账单或卡车订单。卡车订单的关联按标签
 // 「卡车订单…」或 #truck- 深链识别, 两个页签互不混入。
+// Bintique 全量账单 (10 分钟缓存): 木板账单页签的全量数据源。
+let _palletInvCache = { at: 0, invoices: null };
+async function _palletFetchInvoices() {
+  if (!process.env.PALLET_API_KEY) return null;
+  const now = Date.now();
+  if (_palletInvCache.invoices && now - _palletInvCache.at < 10 * 60 * 1000) return _palletInvCache.invoices;
+  try {
+    const ctrl = new AbortController();
+    const tm = setTimeout(() => ctrl.abort(), 6000);
+    const resp = await fetch(PALLET_ORIGIN.replace(/\/+$/, '') + '/api/ext/invoices', {
+      signal: ctrl.signal, headers: { 'x-api-key': process.env.PALLET_API_KEY },
+    });
+    clearTimeout(tm);
+    if (resp.ok) {
+      const data = await resp.json();
+      if (Array.isArray(data && data.invoices)) _palletInvCache = { at: now, invoices: data.invoices };
+    }
+  } catch (e) { /* pallet 不可达: 沿用旧缓存 / 静默降级 */ }
+  return _palletInvCache.invoices;
+}
+// 🪵 木板账单页签: 只显示 Bintique 全量账单 (销售+采购), 一行一张发票,
+// 不再混入银行流水行。付款状态走会计的付款批注 (target_type='palletbill',
+// 按 Bintique 发票 id), 批注里照样能关联银行流水; Bintique 那边自己的
+// 状态/收付记录作参考列返回。
+app.get('/api/acct/pallet-bills', requireAdmin, requireAcctView, async (req, res) => {
+  try {
+    const invoices = (await _palletFetchInvoices()) || [];
+    const payNotes = _acctPayNotesFor('palletbill');
+    const rows = invoices.map(inv => ({
+      id: inv.id,
+      date: inv.invoice_date || inv.period_to || inv.period_from || '',
+      customer: inv.entity_name || '',
+      invoice_number: inv.invoice_number || '',
+      period_start: inv.period_from || '', period_end: inv.period_to || '',
+      amount: Number(inv.total_amount) || 0,
+      direction: inv.invoice_type === 'purchase' ? 'out' : 'in',
+      bintique: {
+        invoice_type: inv.invoice_type === 'purchase' ? 'purchase' : 'sales',
+        status: inv.status || '',
+        payment_amount: Number(inv.payment_amount) || 0,
+        payment_date: inv.payment_date || '',
+        paid_by: inv.paid_by_company || '',
+        doc_url: inv.doc_url || '', pdf_url: inv.pdf_url || '',
+      },
+      pay_note: payNotes[inv.id] || null,
+    }));
+    rows.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || b.id - a.id);
+    res.json({ count: rows.length, rows, configured: !!process.env.PALLET_API_KEY });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 // 🚚 卡车费用页签: Bintique 全量卡车订单 (一行一单, 不从银行流水抓) +
 // 客服手动添加的卡车费用 (fee_records fee_type='truck')。付款状态只认
 // 会计付款批注 (卡车订单 target_type='truckorder', 手动记录用 fee 的)。
