@@ -34517,28 +34517,43 @@ app.post('/api/plaid/annotations/:id/approve', requireAdmin, requireRole('admin'
       items = items.filter(it => it && String(it.inv || '').trim());
       if (!items.length && String(box.invoice_number || '').trim()) items = [{ inv: box.invoice_number, amt: '' }];
       if (items.length) {
-        const q = db.prepare('SELECT subtotal FROM invoices WHERE TRIM(invoice_number)=? COLLATE NOCASE');
+        const q = db.prepare('SELECT subtotal, company_name FROM invoices WHERE TRIM(invoice_number)=? COLLATE NOCASE');
         const normN = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+        const normC = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
         let binvMap = null;
-        let sum = 0, complete = true;
+        let sum = 0, complete = true, compMiss = null;
         for (const it of items) {
           const numStr = String(it.inv).trim();
           const inv = q.get(numStr);
           let a = parseFloat(it.amt) || (inv ? Number(inv.subtotal) : 0) || 0;
-          if (!(a > 0)) {
+          let company = inv ? String(inv.company_name || '') : '';
+          if (!inv) {
             if (binvMap === null) {
               const list = (await _palletFetchInvoices()) || [];
               binvMap = new Map();
-              for (const bi of list) { const k = normN(bi.invoice_number); if (k && !binvMap.has(k)) binvMap.set(k, Number(bi.total_amount) || 0); }
+              for (const bi of list) { const k = normN(bi.invoice_number); if (k && !binvMap.has(k)) binvMap.set(k, bi); }
             }
-            a = binvMap.get(normN(numStr)) || 0;
+            const bi = binvMap.get(normN(numStr));
+            if (bi) {
+              if (!(a > 0)) a = Number(bi.total_amount) || 0;
+              company = String(bi.entity_name || '');
+            }
           }
-          if (!(a > 0)) { complete = false; break; }
-          sum += a;
+          // 公司: 发票抬头要和标注选的公司一致 (口径与前端自动核对相同)
+          if (!compMiss && box.payee && company) {
+            const ca = normC(box.payee), cb = normC(company);
+            if (!(ca === cb || ca.includes(cb) || cb.includes(ca))) compMiss = { num: numStr, company };
+          }
+          if (!(a > 0)) complete = false;
+          else sum += a;
         }
         const bank = Math.abs(Number(box.amount) || 0);
         if (complete && sum > 0 && bank > 0 && Math.abs(bank - sum) >= 0.01 && !String(box.note || '').trim()) {
           return res.status(400).json({ error: `银行到账 $${bank.toFixed(2)} 与发票合计 $${sum.toFixed(2)} 有差额（${bank > sum ? '多' : '少'} $${Math.abs(bank - sum).toFixed(2)}）：必须在「原因/备注」里说明差额原因（可附照片）才能审核通过` });
+        }
+        // 发票抬头和标注选的公司不符的, 同样必须写备注解释 (比如两家实为同一公司)
+        if (compMiss && !String(box.note || '').trim()) {
+          return res.status(400).json({ error: `发票 ${compMiss.num} 开给「${compMiss.company}」，和标注选的公司不符：必须在「原因/备注」里说明原因（比如两家实为同一公司）才能审核通过` });
         }
       }
     }
