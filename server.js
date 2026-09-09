@@ -34462,6 +34462,30 @@ app.post('/api/plaid/annotations/:id/approve', requireAdmin, requireRole('admin'
   try {
     if (!annCanReview(req)) return res.status(403).json({ error: '此账号没有标注审核权限' });
     const id = parseInt(req.params.id);
+    const box = db.prepare(`SELECT amount, direction, note, inv_items, invoice_number FROM bank_statement_txns WHERE id=? AND kind='box' AND plaid_txn_id<>''`).get(id);
+    if (!box) return res.status(404).json({ error: 'not found' });
+    // 银行到账 vs 发票合计有差额的收入标注: 必须填了「原因/备注」(可附照片)
+    // 说明差额原因才能通过审核 —— 没解释不给过。
+    if (box.direction === 'in') {
+      let items = []; try { items = JSON.parse(box.inv_items || '[]'); } catch (e2) { items = []; }
+      if (!Array.isArray(items)) items = [];
+      items = items.filter(it => it && String(it.inv || '').trim());
+      if (!items.length && String(box.invoice_number || '').trim()) items = [{ inv: box.invoice_number, amt: '' }];
+      if (items.length) {
+        const q = db.prepare('SELECT subtotal FROM invoices WHERE TRIM(invoice_number)=? COLLATE NOCASE');
+        let sum = 0, complete = true;
+        for (const it of items) {
+          const inv = q.get(String(it.inv).trim());
+          const a = parseFloat(it.amt) || (inv ? Number(inv.subtotal) : 0) || 0;
+          if (!(a > 0)) { complete = false; break; }
+          sum += a;
+        }
+        const bank = Math.abs(Number(box.amount) || 0);
+        if (complete && sum > 0 && bank > 0 && Math.abs(bank - sum) >= 0.01 && !String(box.note || '').trim()) {
+          return res.status(400).json({ error: `银行到账 $${bank.toFixed(2)} 与发票合计 $${sum.toFixed(2)} 有差额（${bank > sum ? '多收' : '少收'} $${Math.abs(bank - sum).toFixed(2)}）：必须在「原因/备注」里说明差额原因（可附照片）才能审核通过` });
+        }
+      }
+    }
     const r = db.prepare(`UPDATE bank_statement_txns SET ann_status='approved', updated_at=CURRENT_TIMESTAMP
       WHERE id=? AND kind='box' AND plaid_txn_id<>''`).run(id);
     if (!r.changes) return res.status(404).json({ error: 'not found' });
