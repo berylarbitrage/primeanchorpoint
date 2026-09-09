@@ -757,7 +757,26 @@ function _bsAnnCheckHtml(box, items, mode) {
     return `<div style="color:#059669">✅ ${numHtml}：与系统发票一致${oks.length ? '（' + oks.join('/') + '）' : ''}</div>`;
   }).filter(Boolean);
   if (!lines.length) return '';
-  return `<div style="color:#64748b">🤖 与系统发票自动核对：<span style="font-size:.68rem;color:#94a3b8">点发票号看明细</span></div>` + lines.join('');
+  // 银行到账 vs 发票合计: 发票本身对得上不代表钱到齐了 —— 银行实际金额
+  // 和发票合计(多张发票加总)有差就显眼提示, 分毫不差才给绿勾。
+  let bankLine = '';
+  if (mode === 'full') {
+    const bank = Math.abs(Number(box.amount) || 0);
+    let sum = 0, complete = bank > 0;
+    for (const it of items) {
+      const info = _bsInvCheckCache[String(it.inv || '').trim().toUpperCase()];
+      const a = parseFloat(it.amt) || (info && info.found && Number(info.subtotal)) || 0;
+      if (!(a > 0)) { complete = false; break; }
+      sum += a;
+    }
+    if (complete && sum > 0) {
+      const diff = bank - sum;
+      bankLine = Math.abs(diff) < 0.01
+        ? `<div style="color:#059669">✅ 银行到账 ${money(bank)} 与发票合计一致</div>`
+        : `<div style="color:#dc2626;font-weight:700;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:2px 8px;margin-top:2px">⚠️ 银行到账 ${money(bank)} ≠ 发票合计 ${money(sum)}（${diff > 0 ? '多收' : '少收'} ${money(Math.abs(diff))}）</div>`;
+    }
+  }
+  return `<div style="color:#64748b">🤖 与系统发票自动核对：<span style="font-size:.68rem;color:#94a3b8">点发票号看明细</span></div>` + lines.join('') + bankLine;
 }
 // ── 点自动核对里的发票号 → 弹窗看发票明细 (两个宿主页通用, 数据走 /api/acct/invoices/:id) ──
 async function annShowInvoice(id) {
