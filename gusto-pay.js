@@ -3,7 +3,8 @@
 // ─── Gusto 合同工付款模板 (Contractor Pay CSV) 生成 ─────────────────────────────
 // 输入: ① Gusto 后台导出的空白 contractor pay 模板 CSV（合同工名册: 姓名 / 打码
 // SSN / 时薪）② 发票生成器里的员工行（姓名 / 时薪 / 正常与加班工时 / 应付工资）。
-// 输出: 同一张模板, 只填 hours / bonus（时薪缺失的名册行改填 fixed_amount）,
+// 输出: 同一张模板, 只填 hours / bonus（时薪缺失的名册行改填 flat_amount，
+// 旧版模板列名 fixed_amount 也认）,
 // 其余单元格逐字保留, Gusto 才能按行对上自家合同工。
 //
 // Gusto 按 时薪 × hours 付款, 没有 1.5× 加班的概念。两种折算口径 (opts.mode):
@@ -123,7 +124,9 @@ function parseRoster(csvText) {
   const cols = {
     last: col('last_name'), first: col('first_name'), business: col('business_name'),
     ssn: col('ssn/ein'), rate: col('hourly_rate'), hours: col('hours'),
-    fixed: col('fixed_amount'), bonus: col('bonus'), note: col('note'),
+    // Gusto 新版模板把整额列叫 flat_amount, 旧版叫 fixed_amount, 两个名字都认
+    fixed: col('flat_amount') >= 0 ? col('flat_amount') : col('fixed_amount'),
+    bonus: col('bonus'), note: col('note'),
   };
   const entries = rows.slice(1).map((cells, i) => {
     const last = String(cells[cols.last] || '').trim();
@@ -242,7 +245,7 @@ function buildGustoCsv(templateCsv, employees, opts) {
         merged: m.sources.length > 1,
       });
       if (!entry.rate && roster.cols.fixed < 0) {
-        warnings.push(`「${entry.label}」名册里没有时薪，模板又没有 fixed_amount 列，$${owed.toFixed(2)} 没法填，请在 Gusto 手动支付。`);
+        warnings.push(`「${entry.label}」名册里没有时薪，模板又没有 flat_amount/fixed_amount 列，$${owed.toFixed(2)} 没法填，请在 Gusto 手动支付。`);
       }
       if (m.sources.length > 1) {
         const prim = m.sources.find(s => s.primary);
