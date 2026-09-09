@@ -22125,6 +22125,49 @@ function _gustoRoster() {
   try { return JSON.parse(row.value); } catch (_) { return null; }
 }
 
+// 收款人对照表：工资表姓名 → Gusto 名册收款人。花名/错拼、几个人的钱并付给同
+// 一个收款人、付给公司行的都在这里指定；to 写「现金」表示不走 Gusto，生成时跳
+// 过。存 app_settings，生成预览里可编辑；没存过时用既有班组的默认对应关系。
+const GUSTO_ALIAS_DEFAULTS = [
+  { from: 'Ally', to: '现金' },
+  { from: 'Joseph Li', to: '现金' },
+  { from: 'Antonio', to: 'Antonio Dircio Martinez' },
+  { from: 'Brayan Espinoza', to: 'FINOVAOPERATIONS' },
+  { from: 'Enrique C', to: 'Enrique Camacho Morales' },
+  { from: 'Francys Raquena', to: 'Requena Requena' },
+  { from: 'Jesus Arroyo', to: 'Youseli Briceno' },
+  { from: 'Yoselin Briceño', to: 'Youseli Briceno' },
+  { from: 'Pedro', to: 'Pedro Rodriguez' },
+  { from: 'Luis Cartz', to: 'Luis Cortez' },
+  { from: 'Daniel B', to: 'Daniel Joshue Granados Bastidas' },
+  { from: 'Rattia Jose G', to: 'Jose Gabriel Rattia' },
+  { from: 'Marvin Bor', to: 'Jose Gabriel Rattia' },
+  { from: 'Cleiber Rodriguez', to: 'Jose Gabriel Rattia' },
+];
+function _gustoAliases() {
+  const row = db.prepare("SELECT value FROM app_settings WHERE key='gusto_pay_aliases'").get();
+  if (row && row.value) {
+    try { const v = JSON.parse(row.value); if (Array.isArray(v)) return v; } catch (_) {}
+  }
+  return GUSTO_ALIAS_DEFAULTS;
+}
+
+app.get('/api/admin/gusto-pay-aliases', requireAdmin, (req, res) => {
+  res.json({ aliases: _gustoAliases() });
+});
+
+app.post('/api/admin/gusto-pay-aliases', requireAdmin, (req, res) => {
+  let list = (req.body && req.body.aliases) || [];
+  if (!Array.isArray(list)) return res.status(400).json({ error: 'aliases 需要是数组' });
+  list = list.slice(0, 500)
+    .map(a => ({ from: String((a && a.from) || '').trim().slice(0, 120), to: String((a && a.to) || '').trim().slice(0, 120) }))
+    .filter(a => a.from && a.to);
+  db.prepare('INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)')
+    .run('gusto_pay_aliases', JSON.stringify(list));
+  auditLog('gusto_alias_save', req, { targetType: 'gusto_pay_aliases', targetId: 'gusto_pay_aliases', details: { count: list.length } });
+  res.json({ success: true, count: list.length });
+});
+
 // 名册状态（不回传 CSV 内容本身，SSN 尾号只在生成预览里出现）
 app.get('/api/admin/gusto-pay-template', requireAdmin, (req, res) => {
   const tpl = _gustoRoster();
@@ -22161,6 +22204,7 @@ app.post('/api/admin/gusto-pay-csv', requireAdmin, (req, res) => {
       period_start: req.body.period_start || '',
       period_end: req.body.period_end || '',
       mode: req.body.mode === 'hours' ? 'hours' : 'bonus',
+      aliases: _gustoAliases(),
     });
     res.json({ ok: true, template_name: tpl.name || '', template_uploaded_at: tpl.uploaded_at || '', ...out });
   } catch (e) {
