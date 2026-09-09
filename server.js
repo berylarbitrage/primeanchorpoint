@@ -22134,6 +22134,8 @@ const GUSTO_ALIAS_DEFAULTS = [
   { from: 'Antonio', to: 'Antonio Dircio Martinez' },
   { from: 'Brayan Espinoza', to: 'FINOVAOPERATIONS' },
   { from: 'Enrique C', to: 'Enrique Camacho Morales' },
+  { from: 'Maria Elena', to: 'Estefany Alexandra Contreras Pirela' },
+  { from: 'Victor Pena', to: 'Victor M Peña Alvarez' },
   { from: 'Francys Raquena', to: 'Requena Requena' },
   { from: 'Jesus Arroyo', to: 'Youseli Briceno' },
   { from: 'Yoselin Briceño', to: 'Youseli Briceno' },
