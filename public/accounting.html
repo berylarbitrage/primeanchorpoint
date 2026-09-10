@@ -2112,7 +2112,7 @@ function renderPlaidAccounts() {
     const avail = a.balance_available == null ? '' : `<div style="font-size:.7rem;color:var(--g400)">可用 ${money(a.balance_available)}</div>`;
     const onSel = a.account_id === selId;
     return `<div onclick="bankPickAcct('${esc(a.account_id)}')" title="点击查看这个银行的交易" style="cursor:pointer;background:${onSel ? '#eff6ff' : '#fff'};border:2px solid ${onSel ? '#0f4c6b' : 'var(--g200)'};border-radius:10px;padding:.7rem .9rem;min-width:210px">
-      <div style="font-size:.78rem;color:var(--g500)">${esc(a.institution || '银行')} ··${esc(a.mask || '')} <span style="font-size:.62rem;background:#f1f5f9;border-radius:4px;padding:0 4px">plaid</span>${onSel ? ' <span style="font-size:.62rem;background:#0f4c6b;color:#fff;border-radius:4px;padding:0 5px">正在查看</span>' : ''}</div>
+      <div style="font-size:.78rem;color:var(--g500)">${esc(a.institution || '银行')} ··${esc(a.mask || '')} <span style="font-size:.62rem;background:#f1f5f9;border-radius:4px;padding:0 4px">plaid</span>${onSel ? ' <span style="font-size:.62rem;background:#0f4c6b;color:#fff;border-radius:4px;padding:0 5px">正在查看</span>' : ''}${_bankStatus && _bankStatus.is_admin && a.item_id ? ` <a href="javascript:void(0)" onclick="event.stopPropagation();bankRelinkPlaid('${esc(a.item_id)}','${esc((a.institution || a.name || '银行') + (a.mask ? ' ··' + a.mask : '')).replace(/'/g, '')}')" title="重新授权并把历史抓取范围提到两年（Plaid 默认只带 90 天），补拉更早的交易" style="color:#0369a1;text-decoration:none;font-size:.68rem;float:right">⟳ 补拉历史</a>` : ''}</div>
       ${a.company_label ? `<div style="font-weight:700;color:#0f4c6b;font-size:.82rem;margin-top:.15rem">${esc(a.company_label)}</div>` : ''}
       <div style="font-weight:800;font-size:.95rem;margin:.15rem 0">${esc(a.name || '账户')}</div>
       <div style="font-size:1.05rem;font-weight:800;color:#0f4c6b">${bal}</div>${avail}
@@ -2259,6 +2259,33 @@ function _plaidOpenLink(linkToken, receivedRedirectUri) {
     onExit: () => { localStorage.removeItem('plaid_link_token_acct'); }
   });
   handler.open();
+}
+// /banking(Plaid) 数据源的「⟳ 补拉历史」: Plaid Link update 模式重新授权,
+// 把历史抓取范围提到两年 (Plaid 默认只带连接时往前 90 天), 补拉完经 webhook
+// 自动入库。Item 和交易 ID 都不变, 已做的标注不受影响。localStorage 用与
+// /banking 页同一组 key —— OAuth 银行整页跳去授权后回到 /banking, 由那边
+// 的 plaidOauthResume 恢复并完成。
+async function bankRelinkPlaid(itemId, name) {
+  if (!confirm('重新授权「' + name + '」以补拉历史交易（最多两年）？\n会打开银行授权窗口；部分银行会整页跳去银行页面授权，完成后回到 /banking 页。')) return;
+  try {
+    await _loadPlaidScript();
+    const d = await bapi('/api/plaid/link-token', { method: 'POST', body: JSON.stringify({ item_id: itemId }) });
+    localStorage.setItem('plaid_link_token', d.link_token);
+    localStorage.setItem('plaid_link_update', '1');
+    const handler = window.Plaid.create({
+      token: d.link_token,
+      onSuccess: async () => {
+        // update 模式不换 token、不用 exchange; 先同步一次, 历史补拉完成后
+        // Plaid 会再发 TRANSACTIONS webhook 自动入库
+        localStorage.removeItem('plaid_link_token');
+        localStorage.removeItem('plaid_link_update');
+        toast('✅ 已重新授权，Plaid 正在后台补拉历史交易（最多两年），几分钟后点「立即同步」即可看到更早的数据');
+        bankSync().catch(() => {});
+      },
+      onExit: () => { localStorage.removeItem('plaid_link_token'); localStorage.removeItem('plaid_link_update'); },
+    });
+    handler.open();
+  } catch (e) { toast(e.message || '发起重新授权失败', true); }
 }
 async function bankConnect() {
   const btn = document.getElementById('btnBankConnect');
