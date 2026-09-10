@@ -34217,18 +34217,34 @@ function plaidWebhookUrl() {
   return (BASE_URL || 'https://primeanchorpoint.com').replace(/\/+$/, '') + '/api/webhooks/plaid';
 }
 
+// 建链 (body 为空) 或重新授权已连的银行 (body 带 item_id, update 模式)。
+// transactions.days_requested 不设的话 Plaid 默认只抓连接时往前 90 天的交易,
+// 这里提到上限 730 天; 已连的银行走 update 模式重新授权后 Plaid 会补拉历史,
+// 补拉完通过 TRANSACTIONS webhook 自动同步入库。
 app.post('/api/plaid/link-token', requireAdmin, requireRole('admin'), async (req, res) => {
   try {
     if (!plaidReady()) return res.status(400).json({ error: '还没配置 Plaid 密钥（PLAID_CLIENT_ID / PLAID_SECRET 环境变量）' });
-    const r = await plaidPost('/link/token/create', {
+    const itemId = String((req.body || {}).item_id || '');
+    const payload = {
       user: { client_user_id: 'primeanchor-admin-' + (req.userId || 0) },
       client_name: 'Prime Anchor Workforce',
-      products: ['transactions'],
       country_codes: ['US'],
       language: 'en',
       redirect_uri: PLAID_OAUTH_BASE + '/banking',
       webhook: plaidWebhookUrl(),
-    });
+      transactions: { days_requested: 730 },
+    };
+    if (itemId) {
+      // update 模式: 带原 access_token、不带 products
+      const item = db.prepare('SELECT * FROM plaid_items WHERE item_id=?').get(itemId);
+      if (!item) return res.status(404).json({ error: '找不到这个银行连接' });
+      const tok = csDecPw(item.access_token_enc);
+      if (!tok) return res.status(500).json({ error: 'access_token 解密失败' });
+      payload.access_token = tok;
+    } else {
+      payload.products = ['transactions'];
+    }
+    const r = await plaidPost('/link/token/create', payload);
     res.json({ link_token: r.link_token });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -39164,7 +39180,8 @@ app.post('/api/acct/bank/link-token', requireAdmin, requireBankAdmin, async (req
       country_codes: ['US'],
       language: 'en',
       redirect_uri: PLAID_OAUTH_BASE + '/accounting',
-      webhook: plaidWebhookUrl()
+      webhook: plaidWebhookUrl(),
+      transactions: { days_requested: 730 }, // 默认只抓 90 天, 提到上限两年
     });
     res.json({ link_token: d.link_token });
   } catch (e) { res.status(500).json({ error: e.message }); }

@@ -255,7 +255,8 @@ async function loadAccounts() {
   sel.value = cur;
   document.getElementById('accounts').innerHTML = ACCTS.map(a =>
     '<div class="acct"><div class="bank">🏦 ' + esc(a.institution || a.type)
-    + (ROLE === 'admin' && itemRowId[a.item_id] ? ' <a href="javascript:void(0)" onclick="unlinkItem(' + itemRowId[a.item_id] + ',\'' + esc(a.institution || a.name).replace(/'/g, '') + '\')" style="color:var(--red);float:right;text-decoration:none">✕ 解绑</a>' : '')
+    + (ROLE === 'admin' && itemRowId[a.item_id] ? ' <a href="javascript:void(0)" onclick="unlinkItem(' + itemRowId[a.item_id] + ',\'' + esc(a.institution || a.name).replace(/'/g, '') + '\')" style="color:var(--red);float:right;text-decoration:none">✕ 解绑</a>'
+      + ' <a href="javascript:void(0)" onclick="relinkItem(\'' + esc(a.item_id) + '\',\'' + esc(a.institution || a.name).replace(/'/g, '') + '\')" title="重新授权并把历史抓取范围提到两年，Plaid 会在后台补拉更早的交易" style="color:#0369a1;float:right;text-decoration:none;margin-right:.6rem">⟳ 补拉历史</a>' : '')
     + '</div>'
     + (ROLE === 'admin'
       ? '<input value="' + esc(a.company_label || '').replace(/"/g, '&quot;') + '" data-acct="' + esc(a.account_id) + '" placeholder="公司名（填写以区分账户）" onchange="setAcctLabel(this.dataset.acct, this.value)" style="width:100%;box-sizing:border-box;border:1px dashed var(--gray-200,#e2e8f0);border-radius:6px;padding:3px 6px;font-size:.8rem;font-weight:700;color:#0f4c6b;margin:.2rem 0">'
@@ -407,13 +408,19 @@ function openPlaidLink(linkToken, receivedRedirectUri) {
     token: linkToken,
     receivedRedirectUri: receivedRedirectUri || null,
     onSuccess: async (publicToken, metadata) => {
+      // update 模式 (补拉历史/重新授权) 不需要换 token, Item 还是原来那个
+      const isUpdate = localStorage.getItem('plaid_link_update') === '1';
       localStorage.removeItem('plaid_link_token');
-      await api('/plaid/exchange', { method: 'POST', body: JSON.stringify({
-        public_token: publicToken,
-        institution: (metadata && metadata.institution && metadata.institution.name) || '' }) });
+      localStorage.removeItem('plaid_link_update');
+      if (!isUpdate) {
+        await api('/plaid/exchange', { method: 'POST', body: JSON.stringify({
+          public_token: publicToken,
+          institution: (metadata && metadata.institution && metadata.institution.name) || '' }) });
+      }
       await syncNow();
+      if (isUpdate) alert('已重新授权 ✓\nPlaid 会在后台补拉历史交易（最多两年），完成后通过 webhook 自动入库，几分钟后刷新页面即可看到更早的数据。');
     },
-    onExit: () => { localStorage.removeItem('plaid_link_token'); },
+    onExit: () => { localStorage.removeItem('plaid_link_token'); localStorage.removeItem('plaid_link_update'); },
   });
   handler.open();
 }
@@ -424,6 +431,20 @@ async function connectBank() {
     // OAuth 银行会整页跳去银行授权, 授权完带 oauth_state_id 跳回本页;
     // 先存下 link_token, 跳回后用它 + receivedRedirectUri 恢复 Link
     localStorage.setItem('plaid_link_token', r.link_token);
+    localStorage.removeItem('plaid_link_update');
+    openPlaidLink(r.link_token);
+  } catch (e) { alert(e.message); }
+}
+
+// 重新授权已连的银行 (Plaid update 模式), 把历史抓取范围提到两年, 授权后
+// Plaid 后台补拉老交易再经 webhook 入库。不要用「解绑重连」来补历史 ——
+// 重连是新 Item, 交易 ID 全换, 已做的标注对不上还会出重复行。
+async function relinkItem(itemId, name) {
+  if (!confirm('重新授权「' + name + '」以补拉历史交易（最多两年）？\n会打开银行授权窗口，授权完成后 Plaid 在后台补拉，稍后自动入库。')) return;
+  try {
+    const r = await api('/plaid/link-token', { method: 'POST', body: JSON.stringify({ item_id: itemId }) });
+    localStorage.setItem('plaid_link_token', r.link_token);
+    localStorage.setItem('plaid_link_update', '1');
     openPlaidLink(r.link_token);
   } catch (e) { alert(e.message); }
 }
