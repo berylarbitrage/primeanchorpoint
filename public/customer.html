@@ -375,6 +375,7 @@ tr:last-child td{border-bottom:none}
           <button class="btn btn-outline" style="padding:.45rem .9rem" onclick="trAll()" title="全部打卡数据">全部</button>
           <button class="btn btn-outline" style="padding:.45rem .9rem" onclick="loadTimeRecords()">↻ 刷新</button>
           <button class="btn btn-outline" style="padding:.45rem .9rem;color:var(--blue);border-color:var(--blue)" onclick="tsOpen()" title="打印纸质打卡表：空白表或勾选员工姓名">🖨 打印打卡表</button>
+          <button class="btn btn-outline" style="padding:.45rem .9rem;color:#7C3AED;border-color:#7C3AED" onclick="trStatsOpen()" title="按员工汇总当前筛选范围的工时（按天或按周）">📊 工时统计</button>
         </div>
         <div id="trKioskMode" style="margin-bottom:.8rem"></div>
         <div id="trSummary" style="display:flex;gap:1.4rem;flex-wrap:wrap;font-size:.9rem;color:var(--gray-500);margin-bottom:.8rem"></div>
@@ -1181,6 +1182,7 @@ async function loadTimeRecords() {
   await empsP; trRenderEmpOpts(d.entries);
   // 只看某个工人 (从工人列表「打卡记录」跳过来, 或工具栏员工下拉选中)
   if (_trEmpFilter) d = { ...d, entries: (d.entries || []).filter(e => e.emp_db_id === _trEmpFilter.id) };
+  window._trLastEntries = d.entries || []; // 📊 工时统计用当前筛选后的这批数据
   trRenderKioskMode(d.sites || []);
   const multiSite = (d.sites || []).length > 1;
   document.getElementById('trHead').innerHTML =
@@ -1262,6 +1264,81 @@ async function loadTimeRecords() {
     (d.photos_enabled ? '' : '');
 }
 
+// ── 📊 工时统计: 员工 × 天/周 汇总表 (统计当前筛选范围内已加载的记录) ──
+let _tsvMode = 'day';
+function _trDayKey(e) {
+  const dt = _trPT(e.clock_in) || _trPT(e.clock_out);
+  return dt ? dt.toLocaleDateString('en-CA', { timeZone: _trSiteTz[e.site_id] || 'America/Chicago' }) : '?';
+}
+function _trWeekKey(dayKey) { // 周一为一周起点, 返回周一日期
+  const dt = new Date(dayKey + 'T12:00:00Z');
+  if (isNaN(dt)) return dayKey;
+  const mon = new Date(dt);
+  mon.setUTCDate(dt.getUTCDate() - ((dt.getUTCDay() + 6) % 7));
+  return mon.toISOString().slice(0, 10);
+}
+function _trColLabel(k, mode) {
+  if (k === '?') return '?';
+  const d1 = new Date(k + 'T12:00:00Z');
+  const fmt = d => d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+  if (mode === 'day') return d1.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', weekday: 'short' });
+  const d2 = new Date(d1); d2.setUTCDate(d1.getUTCDate() + 6);
+  return fmt(d1) + '~' + fmt(d2);
+}
+function trStatsOpen(mode) {
+  if (mode) _tsvMode = mode;
+  const entries = window._trLastEntries || [];
+  let m = document.getElementById('trStatsModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'trStatsModal';
+    m.style.cssText = 'display:none;position:fixed;inset:0;z-index:3000;background:rgba(15,23,42,.55);align-items:center;justify-content:center;padding:1rem';
+    m.onclick = e => { if (e.target === m) m.style.display = 'none'; };
+    document.body.appendChild(m);
+  }
+  // 汇总: 员工 → 列(天/周) → 工时; 在班未结束的班次没有工时, 不计入
+  const cols = new Set(), emps = new Map();
+  for (const e of entries) {
+    const dk = _trDayKey(e);
+    if (dk === '?') continue;
+    const ck = _tsvMode === 'week' ? _trWeekKey(dk) : dk;
+    cols.add(ck);
+    const id = e.emp_db_id || e.name;
+    if (!emps.has(id)) emps.set(id, { name: e.name || '—', cells: {}, total: 0 });
+    const rec = emps.get(id);
+    const h = e.total_hours || 0;
+    rec.cells[ck] = (rec.cells[ck] || 0) + h;
+    rec.total += h;
+  }
+  const colKeys = [...cols].sort();
+  const rows = [...emps.values()].sort((a, b) => b.total - a.total);
+  const colTotals = {}; let grand = 0;
+  rows.forEach(r => colKeys.forEach(k => { colTotals[k] = (colTotals[k] || 0) + (r.cells[k] || 0); }));
+  rows.forEach(r => { grand += r.total; });
+  const th = 'padding:.4rem .6rem;border-bottom:2px solid var(--gray-200,#e2e5ea);font-size:.78rem;white-space:nowrap;text-align:right;color:var(--gray-500)';
+  const td = 'padding:.35rem .6rem;border-bottom:1px solid var(--gray-100,#eef1f4);font-size:.82rem;text-align:right;white-space:nowrap';
+  const cell = (h, wk) => h
+    ? `<span style="${wk && h > 40 ? 'color:#B87400;font-weight:700' : ''}" ${wk && h > 40 ? 'title="本周超过 40 小时"' : ''}>${h.toFixed(1)}</span>`
+    : '<span style="color:var(--gray-300,#cfd6dd)">—</span>';
+  const wk = _tsvMode === 'week';
+  const tabBtn = (v, label) => `<button onclick="trStatsOpen('${v}')" style="border:1px solid ${_tsvMode === v ? 'var(--blue,#4A6CF7)' : 'var(--gray-200,#e2e5ea)'};background:${_tsvMode === v ? '#EEF4FF' : '#fff'};color:${_tsvMode === v ? 'var(--blue,#4A6CF7)' : 'var(--gray-500)'};border-radius:8px;padding:.3rem .9rem;font-size:.82rem;cursor:pointer;font-weight:700">${label}</button>`;
+  m.innerHTML = `<div style="background:#fff;border-radius:14px;box-shadow:0 12px 48px rgba(0,0,0,.35);width:min(96vw,${Math.min(1100, 320 + colKeys.length * 90)}px);max-height:92vh;overflow:auto;padding:1.1rem 1.2rem" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;margin-bottom:.6rem;flex-wrap:wrap">
+      <div style="font-weight:800;font-size:1rem">📊 工时统计<span style="font-weight:400;color:var(--gray-400);font-size:.78rem;margin-left:.6rem">按当前筛选的日期/员工范围；在班未结束的班次不计入</span></div>
+      <div style="display:flex;gap:.4rem;align-items:center">${tabBtn('day', '按天')}${tabBtn('week', '按周')}
+        <button onclick="document.getElementById('trStatsModal').style.display='none'" style="border:1px solid var(--gray-200,#e2e5ea);background:#fff;border-radius:8px;padding:.3rem .8rem;cursor:pointer;font-size:.82rem">✕ 关闭</button></div>
+    </div>
+    ${rows.length ? `<div style="overflow-x:auto"><table style="border-collapse:collapse;min-width:100%">
+      <thead><tr><th style="${th};text-align:left">员工</th>${colKeys.map(k => `<th style="${th}">${esc(_trColLabel(k, _tsvMode))}</th>`).join('')}<th style="${th};background:#F7F9FC">合计</th></tr></thead>
+      <tbody>
+        ${rows.map(r => `<tr><td style="${td};text-align:left;font-weight:600">${esc(r.name)}</td>${colKeys.map(k => `<td style="${td}">${cell(r.cells[k] || 0, wk)}</td>`).join('')}<td style="${td};font-weight:800;background:#F7F9FC">${r.total.toFixed(1)}</td></tr>`).join('')}
+        <tr><td style="${td};text-align:left;font-weight:800;border-top:2px solid var(--gray-200,#e2e5ea)">合计（${rows.length} 人）</td>${colKeys.map(k => `<td style="${td};font-weight:800;border-top:2px solid var(--gray-200,#e2e5ea)">${(colTotals[k] || 0).toFixed(1)}</td>`).join('')}<td style="${td};font-weight:900;background:#F7F9FC;border-top:2px solid var(--gray-200,#e2e5ea)">${grand.toFixed(1)}</td></tr>
+      </tbody></table></div>
+    <div style="font-size:.72rem;color:var(--gray-400);margin-top:.5rem">单位：小时。${wk ? '每周从周一起算；单周超过 40 小时的用橙色标出。' : ''}想看别的时间段，先在页面上换日期范围再打开统计。</div>`
+    : '<div style="color:var(--gray-400);padding:1.2rem 0">当前筛选范围内没有可统计的打卡记录。</div>'}
+  </div>`;
+  m.style.display = 'flex';
+}
 // 必备技能: 与后台同一份技能库 (公开只读接口)
 async function loadSkillChips() {
   const wrap = document.getElementById('cpSkillsWrap');
