@@ -9214,7 +9214,7 @@ app.post('/api/quote', (req, res) => {
 // 验证码只允许发到公司备案的手机号 (可用 MFA_ALLOWED_PHONES 环境变量覆盖,
 // 逗号分隔); 紧急情况可设 MFA_DISABLE=1 临时关闭两步验证。
 const MFA_ALLOWED_PHONES = String(process.env.MFA_ALLOWED_PHONES ||
-  '3128437890,2246527010,8726642397,3143270319,7088502703,7088502629,2245915888')
+  '3128437890,2246527010,8726642397,3143270319,7088502703,7088502629,2245915888,7372744674')
   .split(',').map(x => x.replace(/\D/g, '').slice(-10)).filter(x => x.length === 10);
 // 待验证状态存 DB —— 服务器每次部署都会重启, 存内存会把正在验证的人踢回登录页
 db.exec(`CREATE TABLE IF NOT EXISTS mfa_pending (
