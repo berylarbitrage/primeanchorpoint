@@ -34598,20 +34598,25 @@ app.post('/api/plaid/annotations/:id/approve', requireAdmin, requireRole('admin'
         let sum = 0, complete = true, compMiss = null, sameCompNote = null;
         for (const it of items) {
           const numStr = String(it.inv).trim();
-          const inv = q.get(numStr);
-          let a = parseFloat(it.amt) || (inv ? Number(inv.subtotal) : 0) || 0;
-          let company = inv ? String(inv.company_name || '') : '';
+          // BINV/BPINV 是 Bintique 的号段: 先认 Bintique 现行账单, 本系统同号
+          // 的手工旧档案只在 Bintique 没有这个号时兜底 (与 invoice-check 同规则)
+          const bNum = /^bp?inv/i.test(numStr);
+          let inv = bNum ? null : q.get(numStr);
+          let bi = null;
           if (!inv) {
             if (binvMap === null) {
               const list = (await _palletFetchInvoices()) || [];
               binvMap = new Map();
-              for (const bi of list) { const k = normN(bi.invoice_number); if (k && _palletPickNewer(bi, binvMap.get(k))) binvMap.set(k, bi); }
+              for (const x of list) { const k = normN(x.invoice_number); if (k && _palletPickNewer(x, binvMap.get(k))) binvMap.set(k, x); }
             }
-            const bi = binvMap.get(normN(numStr));
-            if (bi) {
-              if (!(a > 0)) a = Number(bi.total_amount) || 0;
-              company = String(bi.entity_name || '');
-            }
+            bi = binvMap.get(normN(numStr)) || null;
+            if (!bi && bNum) inv = q.get(numStr) || null;
+          }
+          let a = parseFloat(it.amt) || (inv ? Number(inv.subtotal) : 0) || 0;
+          let company = inv ? String(inv.company_name || '') : '';
+          if (bi) {
+            if (!(a > 0)) a = Number(bi.total_amount) || 0;
+            company = String(bi.entity_name || '');
           }
           // 公司: 发票抬头要和标注选的公司一致 (口径与前端自动核对相同);
           // 同名公司组 (Wecharmer=Nexware) 按同一家算, 不拦, 记下自动备注文案
@@ -34654,33 +34659,42 @@ app.get('/api/plaid/invoice-check', requireAdmin, requireRole('admin', 'cs', 'ac
     const nums = String(req.query.nums || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 30);
     const out = {};
     const q = db.prepare('SELECT id, invoice_number, company_name, period_start, period_end, subtotal, payment_status FROM invoices WHERE TRIM(invoice_number)=? COLLATE NOCASE');
-    const misses = [];
+    const sysHit = rows => ({
+      found: true, matches: rows.length, id: rows[0].id, invoice_number: rows[0].invoice_number,
+      company_name: rows[0].company_name || '', period_start: rows[0].period_start || '',
+      period_end: rows[0].period_end || '', subtotal: Number(rows[0].subtotal) || 0,
+      payment_status: rows[0].payment_status || '',
+    });
+    // BINV/BPINV 是 Bintique 的号段: 先认 Bintique 现行账单 (合并发票会改版,
+    // 本系统里同号的手工旧档案不许挡在前面拿旧金额报错), Bintique 没有这个号
+    // 时才回头查本系统; 其他号先查本系统, 没有再去 Bintique。
+    const binFirst = [], misses = [];
     for (const n of nums) {
+      if (/^bp?inv/i.test(n)) { binFirst.push(n); continue; }
       const rows = q.all(n);
-      if (rows.length) {
-        out[n] = {
-          found: true, matches: rows.length, id: rows[0].id, invoice_number: rows[0].invoice_number,
-          company_name: rows[0].company_name || '', period_start: rows[0].period_start || '',
-          period_end: rows[0].period_end || '', subtotal: Number(rows[0].subtotal) || 0,
-          payment_status: rows[0].payment_status || '',
-        };
-      } else misses.push(n);
+      if (rows.length) out[n] = sysHit(rows);
+      else misses.push(n);
     }
-    // 本系统没有的号 (BINV/BPINV 等) 去 Bintique 账单里找 —— 木板钱标注
-    // 的发票号也能自动核对 号码/账期/金额/公司 (号码去横杠标点比较)。
-    if (misses.length) {
+    if (binFirst.length || misses.length) {
       const binv = (await _palletFetchInvoices()) || [];
       const normN = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
       const byNum = new Map();
       for (const inv of binv) { const k = normN(inv.invoice_number); if (k && _palletPickNewer(inv, byNum.get(k))) byNum.set(k, inv); }
+      const binHit = inv => ({
+        found: true, source: 'bintique', invoice_number: inv.invoice_number,
+        company_name: inv.entity_name || '', period_start: inv.period_from || '',
+        period_end: inv.period_to || '', subtotal: Number(inv.total_amount) || 0,
+        doc_url: inv.doc_url || '',
+      });
+      for (const n of binFirst) {
+        const inv = byNum.get(normN(n));
+        if (inv) { out[n] = binHit(inv); continue; }
+        const rows = q.all(n);
+        out[n] = rows.length ? sysHit(rows) : { found: false };
+      }
       for (const n of misses) {
         const inv = byNum.get(normN(n));
-        out[n] = inv ? {
-          found: true, source: 'bintique', invoice_number: inv.invoice_number,
-          company_name: inv.entity_name || '', period_start: inv.period_from || '',
-          period_end: inv.period_to || '', subtotal: Number(inv.total_amount) || 0,
-          doc_url: inv.doc_url || '',
-        } : { found: false };
+        out[n] = inv ? binHit(inv) : { found: false };
       }
     }
     res.json({ invoices: out });
