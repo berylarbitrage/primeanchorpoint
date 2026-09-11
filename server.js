@@ -34524,7 +34524,7 @@ app.put('/api/plaid/annotations/:id', requireAdmin, requireRole('admin', 'cs', '
 // 审核不拦, 备注空着就自动写上说明。与前端 bank-ann.js 的 BS_SAME_COMPANY_GROUPS
 // 保持一致。
 const SAME_COMPANY_GROUPS = [
-  { names: ['nexware', 'wecharmer'], note: 'Wecharmer和Nexware是一个公司' },
+  { names: ['nexware', 'wecharmer', 'maynmarch'], note: 'Wecharmer、Nexware、Maynmarch是一个公司' },
 ];
 function _sameCompanyNote(a, b) {
   const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');

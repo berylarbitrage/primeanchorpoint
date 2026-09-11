@@ -722,7 +722,7 @@ async function _bsAnnCheckRun(boxId) {
 // 命中时公司核对按同一家算 (不报「公司不符」、不拦审核), 备注空着就自动写上
 // 说明 —— 客户用两个名字开票/收款的情况 (Wecharmer 收款、发票抬头 Nexware)。
 const BS_SAME_COMPANY_GROUPS = [
-  { names: ['nexware', 'wecharmer'], note: 'Wecharmer和Nexware是一个公司' },
+  { names: ['nexware', 'wecharmer', 'maynmarch'], note: 'Wecharmer、Nexware、Maynmarch是一个公司' },
 ];
 function _bsSameCompany(a, b) {
   const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
