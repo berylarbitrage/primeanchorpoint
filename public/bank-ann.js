@@ -583,6 +583,24 @@ function bsNoteInput(id, el) {
   if (box) box.note = el.value;
   bsRefreshNoteState(id);
 }
+// 备注框占位提示: 不满足免填条件时直接说缺什么, 别让人猜「为什么要我备注」——
+// 公司收入等类型把 用途/发票号/账期 填齐备注就是选填, 缺哪个点名哪个。
+function _bsNoteHint(box) {
+  if (_bsNoteSatisfied(box)) return '原因 / 备注（选填）';
+  const kind = _bsPayeeKind(box);
+  const missing = [];
+  if (kind === 'company' && box.direction === 'in') {
+    if (!String(box.purpose || '').trim()) missing.push('用途');
+    if (!String(box.invoice_number || '').trim()) missing.push('发票号');
+    if (!String(box.period_start || '').trim() || !String(box.period_end || '').trim()) missing.push('账期');
+  } else if (kind === 'pallet' || kind === 'unload' || kind === 'employee') {
+    if (!String(box.invoice_number || '').trim()) missing.push(kind === 'pallet' ? '账单号' : '发票号');
+    if (!String(box.period_start || '').trim() || !String(box.period_end || '').trim()) missing.push('账期');
+  } else if (kind === 'bankfee' || kind === 'office' || kind === 'compfee' || kind === 'meal' || kind === 'acct' || kind === 'personal') {
+    if (!String(box.purpose || '').trim()) missing.push('用途');
+  }
+  return missing.length ? `原因 / 备注（需补上——或把「${missing.join('、')}」填上即可免填）` : '原因 / 备注（需补上）';
+}
 function bsRefreshNoteState(id) {
   const box = _bsBoxList.find(b => b.id === id);
   const item = document.querySelector(`.bs-box-item[data-id="${id}"]`);
@@ -592,7 +610,7 @@ function bsRefreshNoteState(id) {
   const ok = _bsNoteSatisfied(box);
   el.style.borderColor = ok ? 'var(--gray-200)' : '#dc2626';
   el.style.background = ok ? '' : '#fff5f5';
-  el.placeholder = ok ? '原因 / 备注（选填）' : '原因 / 备注（需补上）';
+  el.placeholder = _bsNoteHint(box);
 }
 async function bsUpdateBoxField(id, field, value) {
   const box = _bsBoxList.find(b => b.id === id);
@@ -1168,7 +1186,7 @@ function _bsRenderBoxPanel() {
         <input type="number" class="bs-bx-amt" value="${box.amount || 0}" readonly title="金额来自银行同步的交易，不可修改" style="flex:1;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:var(--gray-100);color:var(--gray-600);cursor:not-allowed">
         <span class="hint" style="flex:0 0 auto">银行同步，不可改</span>
       </div>
-      <input type="text" class="bs-bx-note" placeholder="原因 / 备注${_bsNoteSatisfied(box) ? '（选填）' : '（需补上）'}" value="${esc(box.note || '')}" onchange="bsUpdateBoxField(${box.id},'note',this.value)" oninput="bsNoteInput(${box.id},this)" style="width:100%;box-sizing:border-box;padding:.32rem .4rem;border:1px solid ${_bsNoteSatisfied(box) ? 'var(--gray-200)' : '#dc2626'};border-radius:6px;font-size:.82rem;margin-bottom:.4rem;${_bsNoteSatisfied(box) ? '' : 'background:#fff5f5'}">
+      <input type="text" class="bs-bx-note" placeholder="${esc(_bsNoteHint(box))}" value="${esc(box.note || '')}" onchange="bsUpdateBoxField(${box.id},'note',this.value)" oninput="bsNoteInput(${box.id},this)" style="width:100%;box-sizing:border-box;padding:.32rem .4rem;border:1px solid ${_bsNoteSatisfied(box) ? 'var(--gray-200)' : '#dc2626'};border-radius:6px;font-size:.82rem;margin-bottom:.4rem;${_bsNoteSatisfied(box) ? '' : 'background:#fff5f5'}">
       <div class="bs-bx-photozone" ondragover="bsPhotoDragOver(event,this)" ondragleave="bsPhotoDragLeave(event,this)" ondrop="bsPhotoDrop(event,${box.id},this)" style="border:1px dashed var(--gray-300);border-radius:6px;padding:.4rem .5rem;transition:background .15s,border-color .15s">
         <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem;flex-wrap:wrap">
           <span style="font-size:.75rem;color:var(--gray-500)">📷 照片${(box.photos_urls && box.photos_urls.length) ? ' (' + box.photos_urls.length + ')' : ''}</span>
