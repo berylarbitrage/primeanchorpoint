@@ -583,10 +583,9 @@ function bsNoteInput(id, el) {
   if (box) box.note = el.value;
   bsRefreshNoteState(id);
 }
-// 备注框占位提示: 不满足免填条件时直接说缺什么, 别让人猜「为什么要我备注」——
-// 公司收入等类型把 用途/发票号/账期 填齐备注就是选填, 缺哪个点名哪个。
-function _bsNoteHint(box) {
-  if (_bsNoteSatisfied(box)) return '原因 / 备注（选填）';
+// 免填备注还差哪些字段 (备注框提示和列表徽章共用): 公司收入等类型把
+// 用途/发票号/账期 填齐备注就是选填, 缺哪个点名哪个; 没有免填路径的返回 []。
+function _bsNoteMissing(box) {
   const kind = _bsPayeeKind(box);
   const missing = [];
   if (kind === 'company' && box.direction === 'in') {
@@ -599,6 +598,12 @@ function _bsNoteHint(box) {
   } else if (kind === 'bankfee' || kind === 'office' || kind === 'compfee' || kind === 'meal' || kind === 'acct' || kind === 'personal') {
     if (!String(box.purpose || '').trim()) missing.push('用途');
   }
+  return missing;
+}
+// 备注框占位提示: 不满足免填条件时直接说缺什么, 别让人猜「为什么要我备注」
+function _bsNoteHint(box) {
+  if (_bsNoteSatisfied(box)) return '原因 / 备注（选填）';
+  const missing = _bsNoteMissing(box);
   return missing.length ? `原因 / 备注（需补上——或把「${missing.join('、')}」填上即可免填）` : '原因 / 备注（需补上）';
 }
 function bsRefreshNoteState(id) {
@@ -1268,7 +1273,14 @@ async function annCheckScanAll() {
 function annChipHtml(txnId) {
   const b = ANN[txnId];
   if (!b) return '<button class="ann-add" data-txn="' + esc(txnId) + '" onclick="annOpen(this.dataset.txn)">＋ 标注</button>';
-  const warn = _bsNoteSatisfied(b) ? '' : ' <span style="color:#dc2626">⚠</span>';
+  // 信息不全: 直接写明缺什么 (缺用途/发票号/账期…), 不只画个三角让人猜
+  let warn = '';
+  if (!_bsNoteSatisfied(b)) {
+    const miss = _bsNoteMissing(b);
+    warn = miss.length
+      ? ' <span style="color:#dc2626" title="还缺：' + esc(miss.join('、')) + '（在标注里补上即可，不用写备注）">⚠缺' + esc(miss.join('、')) + '</span>'
+      : ' <span style="color:#dc2626" title="需要在「原因/备注」里写说明，或补全标注信息">⚠缺备注</span>';
+  }
   const d = _bsAmtDiff(b);
   const amtWarn = d && Math.abs(d.diff) >= 0.01
     ? ' <span style="color:#dc2626;font-weight:800" title="银行到账 ' + money(d.bank) + ' ≠ 发票合计 ' + money(d.sum) + '，需在备注里解释">⚠️差' + money(Math.abs(d.diff)) + '</span>'
