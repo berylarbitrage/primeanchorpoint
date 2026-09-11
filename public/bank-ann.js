@@ -1364,6 +1364,12 @@ async function annOpen(txnId) {
       : ((box.txn_date || '') + ' · $' + (box.amount || 0));
     document.getElementById('annDrawer').classList.add('open');
     document.getElementById('annBackdrop').classList.add('open');
+    // 打开抽屉时清掉这条发票号的核对缓存重查 —— Bintique 的合并账单会改版
+    // (加减订单后金额变), 页面开久了别拿旧金额报「金额差」
+    for (const it of _bsInvItems(box)) {
+      const n = String(it.inv || '').trim().toUpperCase();
+      if (n) delete _bsInvCheckCache[n];
+    }
     _bsRenderBoxPanel();
     annRefreshChip(box);
   } catch (e) { showToast(e.message || '打开标注失败', 'error'); }

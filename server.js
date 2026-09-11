@@ -34605,7 +34605,7 @@ app.post('/api/plaid/annotations/:id/approve', requireAdmin, requireRole('admin'
             if (binvMap === null) {
               const list = (await _palletFetchInvoices()) || [];
               binvMap = new Map();
-              for (const bi of list) { const k = normN(bi.invoice_number); if (k && !binvMap.has(k)) binvMap.set(k, bi); }
+              for (const bi of list) { const k = normN(bi.invoice_number); if (k && _palletPickNewer(bi, binvMap.get(k))) binvMap.set(k, bi); }
             }
             const bi = binvMap.get(normN(numStr));
             if (bi) {
@@ -34672,7 +34672,7 @@ app.get('/api/plaid/invoice-check', requireAdmin, requireRole('admin', 'cs', 'ac
       const binv = (await _palletFetchInvoices()) || [];
       const normN = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
       const byNum = new Map();
-      for (const inv of binv) { const k = normN(inv.invoice_number); if (k && !byNum.has(k)) byNum.set(k, inv); }
+      for (const inv of binv) { const k = normN(inv.invoice_number); if (k && _palletPickNewer(inv, byNum.get(k))) byNum.set(k, inv); }
       for (const n of misses) {
         const inv = byNum.get(normN(n));
         out[n] = inv ? {
@@ -38719,6 +38719,14 @@ app.get('/api/acct/fee-records', requireAdmin, requireAcctView, (req, res) => {
 // 「卡车订单…」或 #truck- 深链识别, 两个页签互不混入。
 // Bintique 全量账单 (10 分钟缓存): 木板账单页签的全量数据源。
 let _palletInvCache = { at: 0, invoices: null };
+// Bintique 列表里同一个发票号可能有多行 (合并发票加减订单后改版重开):
+// 按号取数时认最新一版 —— 发票日期新的赢, 同日期比 id 大的。
+function _palletPickNewer(a, b) {
+  if (!b) return true;
+  const da = String(a.invoice_date || ''), db2 = String(b.invoice_date || '');
+  if (da !== db2) return da > db2;
+  return Number(a.id || 0) > Number(b.id || 0);
+}
 async function _palletFetchInvoices() {
   if (!process.env.PALLET_API_KEY) return null;
   const now = Date.now();
