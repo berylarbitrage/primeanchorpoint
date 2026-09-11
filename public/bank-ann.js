@@ -716,6 +716,40 @@ async function _bsAnnCheckRun(boxId) {
   }
   if (box.id !== _annOpenId) return;
   el.innerHTML = _bsAnnCheckHtml(box, items, mode);
+  _bsAutoSameCompanyNote(box, items);
+}
+// ── 同一家公司的两个名字 (发票抬头 vs 标注收款公司) ──
+// 命中时公司核对按同一家算 (不报「公司不符」、不拦审核), 备注空着就自动写上
+// 说明 —— 客户用两个名字开票/收款的情况 (Wecharmer 收款、发票抬头 Nexware)。
+const BS_SAME_COMPANY_GROUPS = [
+  { names: ['nexware', 'wecharmer'], note: 'Wecharmer和Nexware是一个公司' },
+];
+function _bsSameCompany(a, b) {
+  const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const na = norm(a), nb = norm(b);
+  if (!na || !nb) return null;
+  for (const g of BS_SAME_COMPANY_GROUPS) {
+    const ia = g.names.find(n => na.indexOf(n) >= 0);
+    const ib = g.names.find(n => nb.indexOf(n) >= 0);
+    if (ia && ib && ia !== ib) return g;
+  }
+  return null;
+}
+// 命中同名公司组且备注还空着 → 自动把说明写进备注 (审核要看备注解释)
+function _bsAutoSameCompanyNote(box, items) {
+  if (!box || !box.payee || String(box.note || '').trim()) return;
+  for (const it of items || []) {
+    const info = _bsInvCheckCache[String(it.inv || '').trim().toUpperCase()];
+    if (!info || !info.found || !info.company_name) continue;
+    const g = _bsSameCompany(box.payee, info.company_name);
+    if (g) {
+      const el = document.querySelector(`.bs-box-item[data-id="${box.id}"] .bs-bx-note`);
+      if (el && !el.value.trim()) el.value = g.note;
+      bsUpdateBoxField(box.id, 'note', g.note);
+      showToast('已自动备注：' + g.note, 'success', 4000);
+      return;
+    }
+  }
 }
 function _bsAnnCheckHtml(box, items, mode) {
   const many = items.length > 1;
@@ -742,10 +776,12 @@ function _bsAnnCheckHtml(box, items, mode) {
         if (Math.abs(amt - info.subtotal) < 0.01) oks.push('金额');
         else probs.push(`金额差 ${money(Math.abs(amt - info.subtotal))}（发票 ${money(info.subtotal)}，填了 ${money(amt)}）`);
       }
-      // 公司: 标注选的公司要和发票抬头一致 (去空格/大小写比较)
+      // 公司: 标注选的公司要和发票抬头一致 (去空格/大小写比较); 同名公司组
+      // (Wecharmer=Nexware) 按同一家算
       if (box.payee && info.company_name) {
         const a = norm(box.payee), b = norm(info.company_name);
         if (a === b || a.includes(b) || b.includes(a)) oks.push('公司');
+        else if (_bsSameCompany(box.payee, info.company_name)) oks.push('公司（同一家的两个名字）');
         else probs.push(`公司不符（发票开给 ${esc(info.company_name)}，请在备注里说明原因，否则无法审核通过）`);
       }
       // 用途 vs 前缀: L=Labor 劳务/工时, C=Container 卸柜
@@ -1184,7 +1220,9 @@ function _bsCompanyProbs(box) {
     const info = _bsInvCheckCache[num];
     if (!info || !info.found || !info.company_name) continue;
     const a = norm(box.payee), b = norm(info.company_name);
-    if (!(a === b || a.includes(b) || b.includes(a))) out.push({ num, company: info.company_name });
+    if (!(a === b || a.includes(b) || b.includes(a)) && !_bsSameCompany(box.payee, info.company_name)) {
+      out.push({ num, company: info.company_name });
+    }
   }
   return out;
 }

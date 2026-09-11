@@ -34520,6 +34520,24 @@ app.put('/api/plaid/annotations/:id', requireAdmin, requireRole('admin', 'cs', '
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // 审核通过标注: admin 或有「银行标注审核权」的账号
+// 同一家公司的两个名字 (发票抬头 vs 标注收款公司): 命中时公司核对按同一家算,
+// 审核不拦, 备注空着就自动写上说明。与前端 bank-ann.js 的 BS_SAME_COMPANY_GROUPS
+// 保持一致。
+const SAME_COMPANY_GROUPS = [
+  { names: ['nexware', 'wecharmer'], note: 'Wecharmer和Nexware是一个公司' },
+];
+function _sameCompanyNote(a, b) {
+  const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const na = norm(a), nb = norm(b);
+  if (!na || !nb) return null;
+  for (const g of SAME_COMPANY_GROUPS) {
+    const ia = g.names.find(n => na.indexOf(n) >= 0);
+    const ib = g.names.find(n => nb.indexOf(n) >= 0);
+    if (ia && ib && ia !== ib) return g.note;
+  }
+  return null;
+}
+
 app.post('/api/plaid/annotations/:id/approve', requireAdmin, requireRole('admin', 'cs', 'accounting'), async (req, res) => {
   try {
     if (!annCanReview(req)) return res.status(403).json({ error: '此账号没有标注审核权限' });
@@ -34539,7 +34557,7 @@ app.post('/api/plaid/annotations/:id/approve', requireAdmin, requireRole('admin'
         const normN = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
         const normC = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
         let binvMap = null;
-        let sum = 0, complete = true, compMiss = null;
+        let sum = 0, complete = true, compMiss = null, sameCompNote = null;
         for (const it of items) {
           const numStr = String(it.inv).trim();
           const inv = q.get(numStr);
@@ -34557,10 +34575,15 @@ app.post('/api/plaid/annotations/:id/approve', requireAdmin, requireRole('admin'
               company = String(bi.entity_name || '');
             }
           }
-          // 公司: 发票抬头要和标注选的公司一致 (口径与前端自动核对相同)
+          // 公司: 发票抬头要和标注选的公司一致 (口径与前端自动核对相同);
+          // 同名公司组 (Wecharmer=Nexware) 按同一家算, 不拦, 记下自动备注文案
           if (!compMiss && box.payee && company) {
             const ca = normC(box.payee), cb = normC(company);
-            if (!(ca === cb || ca.includes(cb) || cb.includes(ca))) compMiss = { num: numStr, company };
+            if (!(ca === cb || ca.includes(cb) || cb.includes(ca))) {
+              const sn = _sameCompanyNote(box.payee, company);
+              if (sn) sameCompNote = sameCompNote || sn;
+              else compMiss = { num: numStr, company };
+            }
           }
           if (!(a > 0)) complete = false;
           else sum += a;
@@ -34572,6 +34595,10 @@ app.post('/api/plaid/annotations/:id/approve', requireAdmin, requireRole('admin'
         // 发票抬头和标注选的公司不符的, 同样必须写备注解释 (比如两家实为同一公司)
         if (compMiss && !String(box.note || '').trim()) {
           return res.status(400).json({ error: `发票 ${compMiss.num} 开给「${compMiss.company}」，和标注选的公司不符：必须在「原因/备注」里说明原因（比如两家实为同一公司）才能审核通过` });
+        }
+        // 同名公司组命中且备注还空着 → 审核通过时自动把说明写进备注
+        if (!compMiss && sameCompNote && !String(box.note || '').trim()) {
+          db.prepare('UPDATE bank_statement_txns SET note=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(sameCompNote, id);
         }
       }
     }
