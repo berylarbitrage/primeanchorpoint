@@ -34285,12 +34285,23 @@ async function plaidSyncItem(item) {
         t.pending ? 1 : 0);
       added++;
     }
+    // 待入账 → 已入账: Plaid 会换一个新 txn_id (removed 旧号 + added 新号, 新行
+    // 的 pending_transaction_id 指回旧号)。把挂在旧号上的标注搬到新号, 不然在
+    // 待入账时做的标注 (审核过的也一样) 入账后就失联了。
+    for (const t of r.added || []) {
+      if (t.pending_transaction_id) {
+        db.prepare(`UPDATE bank_statement_txns SET plaid_txn_id=? WHERE kind='box' AND plaid_txn_id=?`)
+          .run(t.transaction_id, t.pending_transaction_id);
+      }
+    }
     for (const t of r.removed || []) { delTxn.run(t.transaction_id); removed++; }
     if (r.accounts) plaidUpsertAccounts(item.item_id, r.accounts);
     cursor = r.next_cursor;
     if (!r.has_more) break;
   }
   db.prepare("UPDATE plaid_items SET sync_cursor=?, last_sync_at=datetime('now') WHERE id=?").run(cursor || '', item.id);
+  // 修复前失联的老标注 (待入账时标的、入账换号没跟上): 每次同步后补挂
+  try { _plaidBoxOrphanFix(); } catch (e) { console.error('[Plaid] orphan fix:', e.message); }
   // 余额单独刷一次（sync 的 accounts 字段不一定带全）
   try {
     const acc = await plaidPost('/accounts/get', { access_token: token });
@@ -34461,6 +34472,33 @@ app.get('/api/plaid/annotations', requireAdmin, requireRole('admin', 'cs', 'acco
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // 找到或创建某笔 Plaid 交易的标注 (日期/金额/方向按交易预填, Plaid 正数=支出)
+// 失联标注补挂: 修复 pending→posted 换号搬运之前, 在「待入账」交易上做的标注
+// 入账后就找不到自己的交易了 (旧 txn_id 已被 removed 删掉)。按 金额一致(绝对值)
+// + 收支方向一致 + 日期差 ≤5 天 + 唯一候选 + 候选行还没有别的标注 挂回已入账
+// 的同笔交易; 对不上的留着下次同步再试, 宁可不挂也不挂错。
+function _plaidBoxOrphanFix() {
+  const orphans = db.prepare(`SELECT b.id, b.amount, b.txn_date, b.direction FROM bank_statement_txns b
+      WHERE b.kind='box' AND b.plaid_txn_id<>''
+        AND NOT EXISTS (SELECT 1 FROM plaid_transactions t WHERE t.txn_id=b.plaid_txn_id)`).all();
+  let fixed = 0;
+  for (const o of orphans) {
+    const amt = Math.abs(Number(o.amount) || 0);
+    if (!(amt > 0) || !o.txn_date || (o.direction !== 'in' && o.direction !== 'out')) continue;
+    const cands = db.prepare(`SELECT t.txn_id FROM plaid_transactions t
+        WHERE t.pending=0 AND ABS(ABS(t.amount)-?)<0.005
+          AND ((?='in' AND t.amount<0) OR (?='out' AND t.amount>0))
+          AND ABS(julianday(t.date)-julianday(?))<=5
+          AND NOT EXISTS (SELECT 1 FROM bank_statement_txns b2 WHERE b2.kind='box' AND b2.plaid_txn_id=t.txn_id)`)
+      .all(amt, o.direction, o.direction, o.txn_date);
+    if (cands.length === 1) {
+      db.prepare('UPDATE bank_statement_txns SET plaid_txn_id=? WHERE id=?').run(cands[0].txn_id, o.id);
+      fixed++;
+    }
+  }
+  if (fixed) console.log(`[Plaid] 已补挂 ${fixed} 条失联标注 (待入账换号)`);
+  return fixed;
+}
+
 app.post('/api/plaid/annotations', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
   try {
     const txnId = String((req.body && req.body.txn_id) || '');
@@ -34567,7 +34605,7 @@ app.post('/api/plaid/annotations/:id/approve', requireAdmin, requireRole('admin'
             if (binvMap === null) {
               const list = (await _palletFetchInvoices()) || [];
               binvMap = new Map();
-              for (const bi of list) { const k = normN(bi.invoice_number); if (k && !binvMap.has(k)) binvMap.set(k, bi); }
+              for (const bi of list) { const k = normN(bi.invoice_number); if (k && _palletPickNewer(bi, binvMap.get(k))) binvMap.set(k, bi); }
             }
             const bi = binvMap.get(normN(numStr));
             if (bi) {
@@ -34634,7 +34672,7 @@ app.get('/api/plaid/invoice-check', requireAdmin, requireRole('admin', 'cs', 'ac
       const binv = (await _palletFetchInvoices()) || [];
       const normN = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
       const byNum = new Map();
-      for (const inv of binv) { const k = normN(inv.invoice_number); if (k && !byNum.has(k)) byNum.set(k, inv); }
+      for (const inv of binv) { const k = normN(inv.invoice_number); if (k && _palletPickNewer(inv, byNum.get(k))) byNum.set(k, inv); }
       for (const n of misses) {
         const inv = byNum.get(normN(n));
         out[n] = inv ? {
@@ -38681,6 +38719,14 @@ app.get('/api/acct/fee-records', requireAdmin, requireAcctView, (req, res) => {
 // 「卡车订单…」或 #truck- 深链识别, 两个页签互不混入。
 // Bintique 全量账单 (10 分钟缓存): 木板账单页签的全量数据源。
 let _palletInvCache = { at: 0, invoices: null };
+// Bintique 列表里同一个发票号可能有多行 (合并发票加减订单后改版重开):
+// 按号取数时认最新一版 —— 发票日期新的赢, 同日期比 id 大的。
+function _palletPickNewer(a, b) {
+  if (!b) return true;
+  const da = String(a.invoice_date || ''), db2 = String(b.invoice_date || '');
+  if (da !== db2) return da > db2;
+  return Number(a.id || 0) > Number(b.id || 0);
+}
 async function _palletFetchInvoices() {
   if (!process.env.PALLET_API_KEY) return null;
   const now = Date.now();
