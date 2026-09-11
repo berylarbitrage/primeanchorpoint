@@ -1399,12 +1399,11 @@ function trStatsOpen(mode) {
 function trStatsPrint() {
   const entries = _tsvFilteredEntries();
   if (!entries.length) { alert('当前筛选范围没有可打印的数据'); return; }
-  const company = ((document.getElementById('customerNameDisplay') || {}).textContent || '').trim();
   const byDay = {};
   entries.forEach(e => { const dk = _trDayKey(e); (byDay[dk] = byDay[dk] || []).push(e); });
   const dayKeys = Object.keys(byDay).sort();
   const fmtDay = k => new Date(k + 'T12:00:00Z').toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' });
-  const css = `@page{size:letter;margin:11mm}body{font-family:Arial,'Microsoft YaHei',sans-serif;color:#111;margin:0}h2{font-size:15px;margin:0 0 2px}.sub{font-size:10px;color:#555;margin-bottom:7px}table{border-collapse:collapse;width:100%;margin-bottom:6px}th,td{border:1px solid #999;padding:3px 6px;font-size:10.5px;text-align:left}th{background:#f0f2f5}td.r,th.r{text-align:right}.sec{page-break-after:always;padding-top:2px}.sec:last-child{page-break-after:auto}.tot{font-weight:bold;background:#f7f8fa}`;
+  const css = `@page{size:letter landscape;margin:11mm}body{font-family:Arial,'Microsoft YaHei',sans-serif;color:#111;margin:0}h2{font-size:15px;margin:0 0 2px}.sub{font-size:10px;color:#555;margin-bottom:7px}table{border-collapse:collapse;width:100%;margin-bottom:6px}th,td{border:1px solid #999;padding:3px 6px;font-size:11px;text-align:left}th{background:#f0f2f5}td.r,th.r{text-align:right}.sec{page-break-after:always;padding-top:2px}.sec:last-child{page-break-after:auto}.tot{font-weight:bold;background:#f7f8fa}tr{page-break-inside:avoid}`;
   let secs = '';
   if (_tsvMode === 'day') {
     secs = dayKeys.map(dk => {
@@ -1416,7 +1415,7 @@ function trStatsPrint() {
         tot += e.total_hours || 0;
         return `<tr><td>${i + 1}</td><td>${esc(e.name || '')}</td><td>${_trFmtT(ci, tz)}</td><td>${open ? '在班' : _trFmtT(co, tz)}</td><td>${e.break_minutes ? e.break_minutes + ' min' : (e.break_count ? e.break_count + ' 次' : '—')}</td><td class="r">${e.total_hours ? e.total_hours.toFixed(2) : (open ? '—' : '0')}</td></tr>`;
       }).join('');
-      return `<div class="sec"><h2>${esc(company)} 打卡工时表 · ${fmtDay(dk)}</h2><div class="sub">共 ${list.length} 班${_tsvEmp ? ' · 已筛选单个员工' : ''} · 打印于 ${new Date().toLocaleString('zh-CN')}</div>
+      return `<div class="sec"><h2>打卡工时表 · ${fmtDay(dk)}</h2><div class="sub">共 ${list.length} 班${_tsvEmp ? ' · 已筛选单个员工' : ''} · 打印于 ${new Date().toLocaleString('zh-CN')}</div>
         <table><thead><tr><th style="width:22px">#</th><th>员工</th><th>上班</th><th>下班</th><th>休息</th><th class="r">工时 (h)</th></tr></thead>
         <tbody>${trs}<tr class="tot"><td colspan="5">当日合计</td><td class="r">${tot.toFixed(2)}</td></tr></tbody></table></div>`;
     }).join('');
@@ -1440,7 +1439,7 @@ function trStatsPrint() {
       const rws = [...emps2.values()].sort((a, b) => b.total - a.total);
       const colTot = {}; let grand = 0;
       rws.forEach(r => { days.forEach(d => { colTot[d] = (colTot[d] || 0) + (r.cells[d] || 0); }); grand += r.total; });
-      return `<div class="sec"><h2>${esc(company)} 每周工时表 · ${esc(_trColLabel(wk2, 'week'))}</h2><div class="sub">共 ${rws.length} 人 · 每天工时逐列列出 · 打印于 ${new Date().toLocaleString('zh-CN')}</div>
+      return `<div class="sec"><h2>每周工时表 · ${esc(_trColLabel(wk2, 'week'))}</h2><div class="sub">共 ${rws.length} 人 · 每天工时逐列列出 · 打印于 ${new Date().toLocaleString('zh-CN')}</div>
         <table><thead><tr><th>员工</th>${days.map((d, i) => `<th class="r">周${wd[i]}<br>${d.slice(5).replace('-', '/')}</th>`).join('')}<th class="r">周合计</th></tr></thead>
         <tbody>${rws.map(r => `<tr><td>${esc(r.name)}</td>${days.map(d => `<td class="r">${r.cells[d] ? r.cells[d].toFixed(1) : '—'}</td>`).join('')}<td class="r"${r.total > 40 ? ' style="font-weight:bold"' : ''}>${r.total.toFixed(1)}${r.total > 40 ? ' *' : ''}</td></tr>`).join('')}
         <tr class="tot"><td>合计</td>${days.map(d => `<td class="r">${(colTot[d] || 0).toFixed(1)}</td>`).join('')}<td class="r">${grand.toFixed(1)}</td></tr></tbody></table>
