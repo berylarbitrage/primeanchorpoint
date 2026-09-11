@@ -29994,8 +29994,11 @@ app.get('/api/customer/my-sites', requireCustomer, (req, res) => {
   res.json(_custAllowedSiteIds(req).map(s => ({ id: s.id, name: s.name, address: s.address || '' })));
 });
 
-// 本公司全部账号及各自权限 (「我的信息」页显示, 同公司互相可见, 只读)
+// 本公司全部账号及各自权限 (「我的信息」页显示, 只读)。
+// 只有 Prime Anchor 内部账号 (管理员冒充进入) 能看到这份清单;
+// 客户公司自己的账号返回空, 页面上整块不显示。
 app.get('/api/customer/company-accounts', requireCustomer, (req, res) => {
+  if (!req.custImpersonation) return res.json([]);
   const pid = req.customerPartnerId;
   const rows = pid
     ? db.prepare('SELECT id, contact_name, contact_first_name, contact_last_name, email, phone, active, approval_status, perms FROM customer_accounts WHERE partner_id=? ORDER BY id').all(pid)
