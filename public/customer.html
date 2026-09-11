@@ -376,6 +376,7 @@ tr:last-child td{border-bottom:none}
           <button class="btn btn-outline" style="padding:.45rem .9rem" onclick="loadTimeRecords()">↻ 刷新</button>
           <button class="btn btn-outline" style="padding:.45rem .9rem;color:var(--blue);border-color:var(--blue)" onclick="tsOpen()" title="打印纸质打卡表：空白表或勾选员工姓名">🖨 打印打卡表</button>
           <button class="btn btn-outline" style="padding:.45rem .9rem;color:#7C3AED;border-color:#7C3AED" onclick="trStatsOpen()" title="按员工汇总当前筛选范围的工时（按天或按周）">📊 工时统计</button>
+          <button class="btn btn-outline" style="padding:.45rem .9rem;color:#B87400;border-color:#B87400" onclick="unloadRecOpen()" title="打印每日卸柜记录空白表（英/西双语，可选带或不带公司 Logo）">📦 卸柜记录表</button>
         </div>
         <div id="trKioskMode" style="margin-bottom:.8rem"></div>
         <div id="trSummary" style="display:flex;gap:1.4rem;flex-wrap:wrap;font-size:.9rem;color:var(--gray-500);margin-bottom:.8rem"></div>
@@ -1450,6 +1451,54 @@ function trStatsPrint() {
   if (!w) { alert('浏览器拦截了打印窗口，请允许弹窗后重试'); return; }
   w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>工时表 ' + esc(_tsvFrom) + '~' + esc(_tsvTo) + '</title><style>' + css + '</style></head><body>' + secs + '<scr' + 'ipt>window.onload=function(){window.print()}</scr' + 'ipt></body></html>');
   w.document.close();
+}
+// ── 📦 每日卸柜记录空白表 (英/西双语, Letter 一页 36 行; 可选带/不带公司 Logo) ──
+function unloadRecOpen() {
+  let m = document.getElementById('unloadRecModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'unloadRecModal';
+    m.style.cssText = 'display:none;position:fixed;inset:0;z-index:3000;background:rgba(15,23,42,.55);align-items:center;justify-content:center;padding:1rem';
+    m.onclick = e => { if (e.target === m) m.style.display = 'none'; };
+    m.innerHTML = `<div style="background:#fff;border-radius:14px;box-shadow:0 12px 48px rgba(0,0,0,.35);width:min(94vw,360px);padding:1.1rem 1.2rem" onclick="event.stopPropagation()">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.7rem">
+        <div style="font-weight:800;font-size:.95rem">📦 打印卸柜记录表</div>
+        <button onclick="document.getElementById('unloadRecModal').style.display='none'" style="border:1px solid var(--gray-200,#e2e5ea);background:#fff;border-radius:8px;padding:.2rem .7rem;cursor:pointer;font-size:.8rem">✕</button>
+      </div>
+      <p style="font-size:.8rem;color:var(--gray-400);margin-bottom:.8rem">Container Unloading Record（英/西双语空白表，Letter 一页 36 行，客户名自动填好）</p>
+      <div style="display:flex;flex-direction:column;gap:.5rem">
+        <button class="btn btn-outline" style="padding:.55rem;color:var(--blue);border-color:var(--blue);font-weight:700" onclick="unloadRecPrint(true)">🖨 打印（带公司 Logo）</button>
+        <button class="btn btn-outline" style="padding:.55rem;font-weight:700" onclick="unloadRecPrint(false)">🖨 打印（不带 Logo）</button>
+      </div>
+    </div>`;
+    document.body.appendChild(m);
+  }
+  m.style.display = 'flex';
+}
+function unloadRecPrint(withLogo) {
+  const company = ((document.getElementById('customerNameDisplay') || {}).textContent || '').trim();
+  const rows = Array.from({ length: 36 }, (_, i) => `<tr><td class="c">${i + 1}</td><td></td><td></td><td></td><td></td></tr>`).join('');
+  const logo = withLogo ? `<img src="${location.origin}/logo.svg" style="width:46px;height:46px;margin-right:10px;flex:0 0 auto">` : '';
+  const css = `@page{size:letter;margin:9mm 10mm}body{font-family:Arial,'Microsoft YaHei',sans-serif;color:#111;margin:0}
+    .hd{display:flex;align-items:center;margin-bottom:4px}
+    h2{font-size:14.5px;margin:0;line-height:1.25}h2 .es{font-weight:600;color:#333}
+    .meta{display:flex;justify-content:space-between;font-size:11px;margin:5px 0 5px;gap:12px}
+    table{border-collapse:collapse;width:100%;table-layout:fixed}
+    th,td{border:1px solid #444;font-size:10px;padding:1px 4px;overflow:hidden}
+    th{background:#f0f2f5;text-align:center;line-height:1.15;padding:2px 3px}
+    td{height:5.6mm}td.c{text-align:center;color:#333}`;
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Container Unloading Record</title><style>${css}</style></head><body>
+    <div class="hd">${logo}<h2>Prime Anchor Point Container Unloading Record<br><span class="es">Registro de Descarga de Contenedores (Daily / Diario)</span></h2></div>
+    <div class="meta"><span>Week / Semana: ____________ ~ ____________</span><span>Customer / Cliente: <b>${esc(company) || '____________'}</b></span></div>
+    <table><colgroup><col style="width:7%"><col style="width:14%"><col style="width:27%"><col style="width:20%"><col style="width:32%"></colgroup>
+      <thead><tr><th>No.<br>Nº</th><th>Date<br>Fecha</th><th>Container No.<br>Nº Contenedor</th><th>Signature<br>Firma</th><th>Remarks / Issues<br>Observaciones</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    <scr` + `ipt>window.onload=function(){setTimeout(function(){window.print()},150)}</scr` + `ipt></body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { alert('浏览器拦截了打印窗口，请允许弹窗后重试'); return; }
+  w.document.write(html);
+  w.document.close();
+  document.getElementById('unloadRecModal').style.display = 'none';
 }
 // 必备技能: 与后台同一份技能库 (公开只读接口)
 async function loadSkillChips() {
