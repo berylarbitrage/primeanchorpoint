@@ -1488,7 +1488,7 @@ function unloadRecPrint(withLogo) {
     th{background:#f0f2f5;text-align:center;line-height:1.15;padding:2px 3px}
     td{height:5.6mm}td.c{text-align:center;color:#333}`;
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Container Unloading Record</title><style>${css}</style></head><body>
-    <div class="hd">${logo}<h2>Prime Anchor Point Container Unloading Record<br><span class="es">Registro de Descarga de Contenedores (Daily / Diario)</span></h2></div>
+    <div class="hd">${logo}<h2>${withLogo ? 'Prime Anchor Point ' : ''}Container Unloading Record<br><span class="es">Registro de Descarga de Contenedores (Daily / Diario)</span></h2></div>
     <div class="meta"><span>Week / Semana: ____________ ~ ____________</span><span>Customer / Cliente: <b>${esc(company) || '____________'}</b></span></div>
     <table><colgroup><col style="width:7%"><col style="width:14%"><col style="width:27%"><col style="width:20%"><col style="width:32%"></colgroup>
       <thead><tr><th>No.<br>Nº</th><th>Date<br>Fecha</th><th>Container No.<br>Nº Contenedor</th><th>Signature<br>Firma</th><th>Remarks / Issues<br>Observaciones</th></tr></thead>
