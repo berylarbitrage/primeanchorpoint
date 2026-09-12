@@ -27205,8 +27205,10 @@ function _inheritTimeclockCode2Emp(employeeId, code) {
 // 依据该员工当天在该仓库的 open entry 决定实际动作，写入/更新 time_entries。
 // 返回 { action, entryId, clockTime }。
 function _recordSitePunch({ empDbId, site, siteTimezone, now, latitude, longitude, photoFilename, requestedPunchType }) {
-  // Get today's date in site timezone
-  const todayInTz = new Date().toLocaleDateString('en-CA', { timeZone: siteTimezone }); // YYYY-MM-DD
+  // 「当天」和工时都按打卡时刻 now 算, 不按服务器收到请求的时刻 ——
+  // 打卡台离线排队补传的记录 now 是按下打卡的那一刻, 可能比收到时早几分钟
+  const nowMs = new Date(now.replace(' ', 'T') + 'Z').getTime();
+  const todayInTz = new Date(nowMs).toLocaleDateString('en-CA', { timeZone: siteTimezone }); // YYYY-MM-DD
 
   const openEntry = db.prepare(
     "SELECT id, clock_in, on_break, break_records FROM time_entries WHERE employee_id=? AND status='open' AND site_id=? AND date(clock_in)=?"
@@ -27222,7 +27224,7 @@ function _recordSitePunch({ empDbId, site, siteTimezone, now, latitude, longitud
     // Clock in — create new entry (close any stale open entry first if present)
     if (openEntry) {
       const clockIn = new Date(openEntry.clock_in.replace(' ', 'T') + 'Z');
-      const diffMs = Date.now() - clockIn;
+      const diffMs = nowMs - clockIn;
       const totalHours = Math.round((diffMs / 3600000) * 100) / 100;
       db.prepare("UPDATE time_entries SET clock_out=?, total_hours=?, regular_hours=?, overtime_hours=?, status='closed' WHERE id=?")
         .run(now, totalHours, Math.min(totalHours, 8), Math.max(0, totalHours - 8), openEntry.id);
@@ -27275,7 +27277,7 @@ function _recordSitePunch({ empDbId, site, siteTimezone, now, latitude, longitud
     // 'out' — clock out
     if (openEntry) {
       const clockIn = new Date(openEntry.clock_in.replace(' ', 'T') + 'Z');
-      const diffMs = Date.now() - clockIn;
+      const diffMs = nowMs - clockIn;
       const totalHours = Math.round((diffMs / 3600000) * 100) / 100;
       const regularHours = Math.min(totalHours, 8);
       const overtimeHours = Math.max(0, totalHours - 8);
@@ -27301,7 +27303,8 @@ function _recordSitePunch({ empDbId, site, siteTimezone, now, latitude, longitud
 // 严格按天：只找当天(仓库时区)的记录，前一天没打完的绝不续上 —— 第二天第一卡重开一条
 // (隔天的残留 open 记录由 _autoPunchDayEnd 定时封掉标复核)。
 function _recordAutoPunch({ empDbId, site, siteTimezone, now, latitude, longitude, photoFilename }) {
-  const todayInTz = new Date().toLocaleDateString('en-CA', { timeZone: siteTimezone });
+  // 「当天」按打卡时刻 now 算 (离线补传的打卡按按下打卡那一刻归天), 不按服务器收到的时刻
+  const todayInTz = new Date(now.replace(' ', 'T') + 'Z').toLocaleDateString('en-CA', { timeZone: siteTimezone });
   const entry = db.prepare(
     "SELECT id, clock_in, clock_out, break_records, raw_punches, clock_in_photo_path, punch_photo_path FROM time_entries WHERE employee_id=? AND site_id=? AND (work_date=? OR (COALESCE(work_date,'')='' AND date(clock_in)=?)) ORDER BY id DESC LIMIT 1"
   ).get(empDbId, site.id, todayInTz, todayInTz);
@@ -28165,7 +28168,14 @@ app.post('/api/kiosk/punch', async (req, res) => {
     } catch (e) { console.error('[Kiosk] Photo save error:', e.message); photoFilename = null; }
   }
   const siteTimezone = site.timezone || 'America/Chicago';
-  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  // 离线补传: 系统部署/断网期间打卡台把打卡先存在平板上, 恢复后带 client_ts(按下打卡的毫秒时刻)补传,
+  // 按那一刻入账。只认过去 6 小时内的时间; 平板时钟偏快的最多收口到当前时刻, 不接受未来时间。
+  let punchAt = Date.now();
+  const cts = Number((req.body || {}).client_ts);
+  if (Number.isFinite(cts) && cts >= Date.now() - 6 * 3600 * 1000 && cts <= Date.now() + 2 * 60 * 1000) {
+    punchAt = Math.min(cts, Date.now());
+  }
+  const now = new Date(punchAt).toISOString().replace('T', ' ').slice(0, 19);
   // 打卡机模式: 仓库设置了固定分类时按固定分类落库;
   // 「自动」模式不再猜上下班, 把当天每次打卡都记录进同一条记录按次数归类 (_recordAutoPunch)
   const modeRow = db.prepare('SELECT kiosk_punch_mode FROM job_sites WHERE id=?').get(site.id);

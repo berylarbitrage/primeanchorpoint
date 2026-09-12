@@ -217,7 +217,7 @@ body.brite #fpNum{color:rgba(15,43,91,.9)!important}
 <!-- 视频元素留在屏幕内 2px 大小（近乎不可见）: 完全移出屏幕/opacity:0 时安卓 Chrome 会停止渲染帧, 抓到全黑 -->
 <video id="camVid" autoplay playsinline muted style="position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:.01;pointer-events:none"></video>
 <div id="flashOv"></div>
-<div class="foot"><span id="batTag" title="平板电量" style="margin-right:.6em"></span><span id="verTag" title="页面版本"></span></div>
+<div class="foot"><span id="oqTag" title="离线打卡待上传 / punches waiting to upload" style="margin-right:.6em;color:#F5A623;font-weight:700"></span><span id="batTag" title="平板电量" style="margin-right:.6em"></span><span id="verTag" title="页面版本"></span></div>
 
 <script>
 // 客户端报错上报 (独立 script 块: 主脚本哪怕整体解析失败也能上报) —— 平板上出问题
@@ -246,6 +246,8 @@ const KL = {
     resAutoN: n => '（今日第 ' + n + ' 次）',
     resNote: '页面将自动返回', actCount: s => s + ' 秒后自动返回',
     camHint: '打卡时会自动拍照留档', resPhoto: '📷 已拍照留档',
+    offTitle: '📴 系统更新中', offHint: '现在打卡照常有效：记录先存在平板上，系统恢复后自动上传',
+    offSaved: '已记录 · 恢复后自动上传', offPend: n => '⏳ 待上传 ' + n,
     lblScan: '扫码打卡', lblForgot: '忘记密码', lblNewUser: '新员工注册',
     regTitle: '🆕 新员工注册',
     scanHint: '将您的打卡二维码对准摄像头', scanBadQr: '不是有效的打卡二维码', scanNoCam: '无法打开摄像头', scanFlip: '切换前/后摄像头', scanFlipFail: '无法切换摄像头，继续用当前摄像头扫码即可',
@@ -267,6 +269,8 @@ const KL = {
     resAutoN: n => ' (#' + n + ' today)',
     resNote: 'Returning automatically', actCount: s => 'Auto return in ' + s + 's',
     camHint: 'A photo is taken when you punch', resPhoto: '📷 Photo saved',
+    offTitle: '📴 System updating', offHint: 'You can still punch — it is saved on this tablet and uploads automatically when back online',
+    offSaved: 'Saved — uploads when back online', offPend: n => '⏳ ' + n + ' to upload',
     lblScan: 'Scan QR', lblForgot: 'Forgot password', lblNewUser: 'New Employee',
     regTitle: '🆕 New Employee Sign-Up',
     scanHint: 'Hold your QR code up to the camera', scanBadQr: 'Not a valid time-clock QR code', scanNoCam: 'Cannot open camera', scanFlip: 'Switch front/back camera', scanFlipFail: 'Could not switch camera — just keep scanning with the current one',
@@ -288,6 +292,8 @@ const KL = {
     resAutoN: n => ' (N.º ' + n + ' de hoy)',
     resNote: 'Regresando automáticamente', actCount: s => 'Regresa en ' + s + 's',
     camHint: 'Se toma una foto al marcar', resPhoto: '📷 Foto guardada',
+    offTitle: '📴 Sistema actualizándose', offHint: 'Puede marcar igual — se guarda en la tableta y se sube automáticamente al reconectar',
+    offSaved: 'Guardado — se subirá al reconectar', offPend: n => '⏳ ' + n + ' por subir',
     lblScan: 'Escanear QR', lblForgot: 'Olvidé mi contraseña', lblNewUser: 'Nuevo Empleado',
     regTitle: '🆕 Registro de Nuevo Empleado',
     scanHint: 'Acerque su código QR a la cámara', scanBadQr: 'Código QR no válido', scanNoCam: 'No se puede abrir la cámara', scanFlip: 'Cambiar cámara frontal/trasera', scanFlipFail: 'No se pudo cambiar la cámara — siga escaneando con la actual',
@@ -352,6 +358,7 @@ function setKLang(l) {
   $('lblScan').textContent = t.lblScan; $('lblForgot').textContent = t.lblForgot; $('lblNewUser').textContent = t.lblNewUser;
   $('scanHint').textContent = t.scanHint; $('btnScanCancel').textContent = t.cancel; $('lblScanFlip').textContent = t.scanFlip;
   $('fpHint').textContent = _fpMode === 'newuser' ? t.nuHint : t.fpHint; $('fpKeyClear').textContent = t.clear; $('btnFpCancel').textContent = t.cancel; $('btnFpGo').textContent = _fpMode === 'newuser' ? t.nuGo : t.fpGo;
+  try { _oqBadge(); } catch (_) {} // 待上传角标换语言
 }
 
 // ── 扫码打卡: 员工把自己的打卡二维码对准摄像头, 内容等同 8 位密码 ──
@@ -715,15 +722,22 @@ function xerr(msg) {
   setTimeout(tick, 1000);
 })();
 
-// Site name
+// Site name (记住上次的仓库名: 服务器更新中拿不到时照常显示, 页面不至于顶着 ⚠)
 (async function () {
   if (!_siteId) { $('siteName').textContent = '⚠ missing ?site='; return; }
+  let cachedName = '';
+  try { cachedName = localStorage.getItem('kiosk_site_name_' + _siteId) || ''; } catch (_) {}
+  if (cachedName) { $('siteName').textContent = cachedName; document.title = cachedName + ' — 打卡台 Time Clock'; }
   try {
     const r = await fetch('/api/checkin/site-info?site=' + encodeURIComponent(_siteId));
     const d = await r.json();
-    $('siteName').textContent = d && d.name ? d.name + (d.code ? ' (' + d.code + ')' : '') : '⚠';
-    if (d && d.name) document.title = d.name + ' — 打卡台 Time Clock';
-  } catch (_) { $('siteName').textContent = '⚠'; }
+    const label = d && d.name ? d.name + (d.code ? ' (' + d.code + ')' : '') : '';
+    $('siteName').textContent = label || '⚠';
+    if (label) {
+      document.title = label + ' — 打卡台 Time Clock';
+      try { localStorage.setItem('kiosk_site_name_' + _siteId, label); } catch (_) {}
+    }
+  } catch (_) { if (!cachedName) $('siteName').textContent = '⚠'; }
 })();
 
 // ── Screen switching ──
@@ -734,7 +748,7 @@ function showScr(id) {
 function resetToPw() {
   clearInterval(_actTimer); clearTimeout(_resTimer); clearInterval(_fpPollTimer);
   scanStop();
-  _pw = ''; _pwLocked = false; _fp = ''; _fpBusy = false;
+  _pw = ''; _pwLocked = false; _fp = ''; _fpBusy = false; _punchOffline = false;
   _punchShots = []; // 上一个人的画面不留给下一次打卡
   renderDots(); $('pwErr').textContent = '';
   briteSet(false);
@@ -787,11 +801,22 @@ async function checkPw() {
     if (_pwLocked) { _pwLocked = false; _pw = ''; renderDots(); $('pwErr').textContent = KL[_kl].errReq; }
   }, 15000);
   try {
-    const r = await _fetchT('/api/kiosk/status', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ site_id: _siteId, password: _pw })
-    }, 10000);
-    const d = await r.json();
+    let r = null;
+    try {
+      r = await _fetchT('/api/kiosk/status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ site_id: _siteId, password: _pw })
+      }, 10000);
+    } catch (_) {}
+    // 服务器部署中/断网 (连不上、超时、5xx、返回的不是 JSON) → 转离线打卡:
+    // 密码此刻没法核验, 打卡先存平板, 恢复后自动补传 (密码错的那条服务器会拒收并留日志)
+    const d = r && r.status < 500 ? await r.json().catch(() => null) : null;
+    if (!d) {
+      _pwLocked = false;
+      $('pwErr').textContent = '';
+      buildOfflineActScreen();
+      return;
+    }
     if (!r.ok) throw new Error(d.error || KL[_kl].errReq);
     _pwLocked = false;
     $('pwErr').textContent = '';
@@ -805,6 +830,7 @@ async function checkPw() {
 
 // ── Action screen ──
 function buildActScreen(d) {
+  _punchOffline = false;
   const t = KL[_kl];
   $('whoName').textContent = '👋 ' + d.name;
   let st;
@@ -832,13 +858,33 @@ function buildActScreen(d) {
   }, 1000);
 }
 
-let _punching = false, _punchType = 'in';
+// 离线打卡界面: 服务器部署中/断网时照样让员工打卡, 记录先存平板稍后自动补传。
+// 密码此刻没法核验 → 不显示姓名, 只显示离线说明
+function buildOfflineActScreen() {
+  _punchOffline = true;
+  const t = KL[_kl];
+  $('whoName').textContent = t.offTitle;
+  $('whoStatus').innerHTML = `<span class="brk">● ${t.offHint}</span>`;
+  showScr('scrAct');
+  camStart();
+  clearInterval(_actTimer);
+  _actLeft = 30;
+  $('actCount').textContent = t.actCount(_actLeft);
+  _actTimer = setInterval(() => {
+    _actLeft--;
+    if (_actLeft <= 0) return resetToPw();
+    $('actCount').textContent = t.actCount(_actLeft);
+  }, 1000);
+}
+
+let _punching = false, _punchType = 'in', _punchOffline = false;
 async function doPunchNow() {
   if (_punching) return;
   _punching = true;
   clearInterval(_actTimer);
   const btn = $('btnPunch');
   btn.style.opacity = '.6';
+  const pressTs = Date.now(); // 按下打卡的时刻: 离线排队补传按这一刻入账 (拍照要花一两秒)
   try {
     // 光线仍不足 (已拍帧偏暗/没拍到) → 全屏白光闪拍补帧, 保证暗环境照片可辨认
     if (_envDark()) { await camStart(); await camFlashShots(); }
@@ -849,11 +895,17 @@ async function doPunchNow() {
     } catch (_) {}
     // 拼三连拍; 一张都没有时短暂等一下 (最多 1.2s), 保证记录带照片
     const photo = camComposite() || await camShotWait(1200);
-    const r = await _fetchT('/api/kiosk/punch', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ site_id: _siteId, password: _pw, punch_type: _punchType, photo_data: photo })
-    }, 20000);
-    const d = await r.json();
+    if (_punchOffline) { _oqQueuePunch(pressTs, photo); return; }
+    let r = null;
+    try {
+      r = await _fetchT('/api/kiosk/punch', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ site_id: _siteId, password: _pw, punch_type: _punchType, photo_data: photo })
+      }, 20000);
+    } catch (_) {}
+    // 提交瞬间正赶上服务器部署/断网 → 转离线排队, 这次打卡不丢
+    const d = r && r.status < 500 ? await r.json().catch(() => null) : null;
+    if (!d) { _oqQueuePunch(pressTs, photo); return; }
     if (!r.ok) throw new Error(d.error || KL[_kl].errReq);
     showResult(d);
   } catch (e) {
@@ -886,6 +938,78 @@ function showResult(d) {
   clearTimeout(_resTimer);
   _resTimer = setTimeout(resetToPw, 5000);
 }
+
+// ── 离线打卡队列: 系统部署/断网期间打卡先存平板 (localStorage), 恢复后按原时刻自动补传 ──
+function _oqAll() { try { return JSON.parse(localStorage.getItem('kioskPunchQueue') || '[]') || []; } catch (_) { return []; } }
+function _oqSave(q) {
+  try { localStorage.setItem('kioskPunchQueue', JSON.stringify(q)); return true; } catch (_) {}
+  // 存不下 (localStorage 配额): 丢掉照片再存, 打卡时间本身绝不能丢
+  try {
+    q.forEach(it => { delete it.photo; });
+    localStorage.setItem('kioskPunchQueue', JSON.stringify(q)); return true;
+  } catch (_) { return false; }
+}
+function _oqPush(it) {
+  const q = _oqAll();
+  q.push(it);
+  for (let i = 0; i < q.length - 20; i++) delete q[i].photo; // 照片只留最近 20 条, 防撑爆存储
+  _oqSave(q);
+  _oqBadge();
+}
+function _oqBadge() {
+  const n = _oqAll().length;
+  $('oqTag').textContent = n ? KL[_kl].offPend(n) : '';
+}
+function _oqQueuePunch(ts, photo) {
+  const it = { site_id: _siteId, password: _pw, ts };
+  if (photo) it.photo = photo;
+  _oqPush(it);
+  showOfflineResult(ts);
+}
+function showOfflineResult(ts) {
+  const t = KL[_kl];
+  $('resIc').textContent = '📴';
+  $('resTitle').textContent = t.offSaved;
+  $('resName').textContent = '';
+  $('resTime').textContent = new Date(ts).toLocaleString(_kl === 'zh' ? 'zh-CN' : _kl === 'es' ? 'es-MX' : 'en-US', { hour12: false });
+  $('resNote').textContent = t.resNote;
+  showScr('scrRes');
+  _pw = '';
+  clearTimeout(_resTimer);
+  _resTimer = setTimeout(resetToPw, 5000);
+}
+// 补传: 每 15 秒从队头往后传, 传不动 (服务器还没恢复) 就下轮再试。
+// 4xx (密码错/员工已停用) 重试也不会成功 → 丢弃该条并报到服务器日志; 429 限流除外, 稍后再试
+let _oqFlushing = false;
+async function _oqFlush() {
+  if (_oqFlushing || !_oqAll().length) return;
+  _oqFlushing = true;
+  try {
+    while (true) {
+      const q = _oqAll();
+      if (!q.length) break;
+      const it = q[0];
+      let r = null;
+      try {
+        r = await _fetchT('/api/kiosk/punch', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ site_id: it.site_id, password: it.password, punch_type: 'auto', photo_data: it.photo || null, client_ts: it.ts }) }, 20000);
+      } catch (_) {}
+      if (!r || r.status >= 500 || r.status === 429) break; // 服务器还没恢复/限流: 下轮再试
+      if (!r.ok) {
+        try { fetch('/api/kiosk/client-error', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ site: _siteId, msg: 'offline-punch-drop status=' + r.status + ' ts=' + new Date(it.ts).toISOString(), src: 'kiosk-queue', ua: String(navigator.userAgent || '').slice(0, 120) }) }).catch(() => {}); } catch (_) {}
+      }
+      const q2 = _oqAll(); q2.shift(); _oqSave(q2); _oqBadge();
+    }
+  } finally { _oqFlushing = false; _oqBadge(); }
+}
+setInterval(_oqFlush, 15000);
+window.addEventListener('online', () => setTimeout(_oqFlush, 1500));
+// 离线壳: Service Worker 缓存打卡页本体, 系统部署/重启期间页面照样打得开
+if ('serviceWorker' in navigator) {
+  try { navigator.serviceWorker.register('/kiosk-sw.js', { scope: '/kiosk' }).catch(() => {}); } catch (_) {}
+}
+_oqFlush();
 
 setKLang(_kl);
 // ── 自动更新: 平板上页面常开不刷新, 部署新版后永远跑旧代码 → 定时对比服务器版本, 空闲时自动刷新 ──
