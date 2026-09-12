@@ -34620,7 +34620,10 @@ app.post('/api/plaid/annotations/:id/approve', requireAdmin, requireRole('admin'
             if (binvMap === null) {
               const list = (await _palletFetchInvoices()) || [];
               binvMap = new Map();
-              for (const x of list) { const k = normN(x.invoice_number); if (k && _palletPickNewer(x, binvMap.get(k))) binvMap.set(k, x); }
+              for (const x of list) {
+                const k = normN(x.invoice_number); if (k && _palletPickNewer(x, binvMap.get(k))) binvMap.set(k, x);
+                const kb = normN(_palletBaseNumber(x.invoice_number)); if (kb && kb !== k && _palletPickNewer(x, binvMap.get(kb))) binvMap.set(kb, x);
+              }
             }
             bi = binvMap.get(normN(numStr)) || null;
             if (!bi && bNum) inv = q.get(numStr) || null;
@@ -34692,7 +34695,10 @@ app.get('/api/plaid/invoice-check', requireAdmin, requireRole('admin', 'cs', 'ac
       const binv = (await _palletFetchInvoices()) || [];
       const normN = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
       const byNum = new Map();
-      for (const inv of binv) { const k = normN(inv.invoice_number); if (k && _palletPickNewer(inv, byNum.get(k))) byNum.set(k, inv); }
+      for (const inv of binv) {
+        const k = normN(inv.invoice_number); if (k && _palletPickNewer(inv, byNum.get(k))) byNum.set(k, inv);
+        const kb = normN(_palletBaseNumber(inv.invoice_number)); if (kb && kb !== k && _palletPickNewer(inv, byNum.get(kb))) byNum.set(kb, inv);
+      }
       const binHit = inv => ({
         found: true, source: 'bintique', invoice_number: inv.invoice_number,
         company_name: inv.entity_name || '', period_start: inv.period_from || '',
@@ -38753,6 +38759,13 @@ function _palletPickNewer(a, b) {
   const da = String(a.invoice_date || ''), db2 = String(b.invoice_date || '');
   if (da !== db2) return da > db2;
   return Number(a.id || 0) > Number(b.id || 0);
+}
+// Bintique 编号带版本号后 (BP?INV-<名段>-<8位日期>-01/-02…), 旧标注里手填的
+// 无版本号裸基号也要能对上: 建号码索引时每张票再按去掉版本号的基号登记一份
+// (同样认最新一版), 裸基号查询即命中该基号下的现行版。
+function _palletBaseNumber(num) {
+  const m = /^(BP?INV-[A-Za-z0-9]*-\d{8})-\d+$/i.exec(String(num || '').trim());
+  return m ? m[1] : '';
 }
 async function _palletFetchInvoices() {
   if (!process.env.PALLET_API_KEY) return null;
