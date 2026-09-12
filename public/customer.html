@@ -377,6 +377,7 @@ tr:last-child td{border-bottom:none}
           <button class="btn btn-outline" style="padding:.45rem .9rem;color:var(--blue);border-color:var(--blue)" onclick="tsOpen()" title="打印纸质打卡表：空白表或勾选员工姓名">🖨 打印打卡表</button>
           <button class="btn btn-outline" style="padding:.45rem .9rem;color:#7C3AED;border-color:#7C3AED" onclick="trStatsOpen()" title="按员工汇总当前筛选范围的工时（按天或按周）">📊 工时统计</button>
           <button class="btn btn-outline" style="padding:.45rem .9rem;color:#B87400;border-color:#B87400" onclick="unloadRecOpen()" title="打印每日卸柜记录空白表（英/西双语，可选带或不带公司 Logo）">📦 卸柜记录表</button>
+          <button class="btn btn-outline" id="trAddBtn" style="padding:.45rem .9rem;color:#2D9D78;border-color:#2D9D78;display:none" onclick="trAddOpen()" title="员工当天完全忘了打卡（表里没有他那一行）时，手动补一条打卡记录">➕ 添加打卡</button>
         </div>
         <div id="trKioskMode" style="margin-bottom:.8rem"></div>
         <div id="trSummary" style="display:flex;gap:1.4rem;flex-wrap:wrap;font-size:.9rem;color:var(--gray-500);margin-bottom:.8rem"></div>
@@ -1041,6 +1042,67 @@ async function trHistOpen(id) {
   ov.addEventListener('click', ev => { if (ev.target === ov) ov.remove(); });
   document.body.appendChild(ov);
 }
+// ➕ 手动补一条打卡记录: 员工当天完全忘了打卡、表里没有他那一行时用。
+// 与「改时间」同一权限; 同一员工同一仓库同一天已有记录会被服务器拒绝 (在原记录上改时间即可)。
+// 员工下拉 = 近90天打过卡的 + 派遣工人列表 (覆盖还没打过第一次卡的新工人)
+let _trAddWk = null;
+async function trAddOpen() {
+  await trEnsureEmps();
+  if (_trAddWk === null) {
+    try { const w = await cApi('/my-workers'); _trAddWk = Array.isArray(w) ? w : []; } catch (_) { _trAddWk = []; }
+  }
+  const byId = new Map();
+  (_tsEmps || []).forEach(e => { if (e.id) byId.set(e.id, e.name); });
+  (_trAddWk || []).forEach(w => { if (w.id && !byId.has(w.id)) byId.set(w.id, [w.first_name, w.middle_name, w.last_name].filter(Boolean).join(' ') || '—'); });
+  const emps = [...byId.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+  if (!emps.length) { showToast('没有可选员工', 'error'); return; }
+  const sites = window._trSites || [];
+  if (!sites.length) { showToast('没有可用仓库', 'error'); return; }
+  const inp = 'style="width:100%;padding:.45rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:8px;font-family:inherit"';
+  const today = _trLocalToday();
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay show';
+  ov.innerHTML = `<div class="modal-box" style="max-width:430px;padding:1.4rem 1.5rem;text-align:left">
+    <h2 style="margin-bottom:.2rem">➕ 添加打卡记录</h2>
+    <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:1rem">员工当天忘了打卡时手动补一条（仓库当地时间，会记入编辑历史）</p>
+    <label style="font-size:.8rem;color:var(--gray-500)">员工</label>
+    <select id="traEmp" ${inp}>${emps.map(([id, name]) => `<option value="${id}">${esc(name)}</option>`).join('')}</select>
+    <div style="display:${sites.length > 1 ? 'block' : 'none'};margin-top:.7rem">
+      <label style="font-size:.8rem;color:var(--gray-500)">仓库</label>
+      <select id="traSite" ${inp}>${sites.map(s => `<option value="${s.id}">${esc(s.name + (s.code ? ' (' + s.code + ')' : ''))}</option>`).join('')}</select>
+    </div>
+    <div style="margin-top:.7rem"><label style="font-size:.8rem;color:var(--gray-500)">日期</label>
+      <input type="date" id="traDate" value="${today}" max="${today}" ${inp}></div>
+    <div style="display:flex;gap:.7rem;margin-top:.7rem">
+      <div style="flex:1"><label style="font-size:.8rem;color:var(--gray-500)">上班</label><input type="time" id="traCi" ${inp}></div>
+      <div style="flex:1"><label style="font-size:.8rem;color:var(--gray-500)">下班（留空=还在班，仅限今天）</label><input type="time" id="traCo" ${inp}></div>
+    </div>
+    <p style="color:var(--gray-400);font-size:.78rem;margin-top:.6rem">需要加休息时间的话，保存后在那一行点「⏱ 改时间」补充。</p>
+    <div id="traErr" style="color:#E63946;font-size:.82rem;margin-top:.4rem"></div>
+    <div style="display:flex;gap:.6rem;margin-top:1.1rem">
+      <button class="modal-btn modal-btn-secondary" data-act="no" style="margin-bottom:0">取消</button>
+      <button class="modal-btn modal-btn-primary" data-act="ok" style="margin-bottom:0">添加</button>
+    </div></div>`;
+  ov.addEventListener('click', ev => { if (ev.target === ov) ov.remove(); });
+  ov.querySelector('[data-act="no"]').onclick = () => ov.remove();
+  ov.querySelector('[data-act="ok"]').onclick = async () => {
+    const err = ov.querySelector('#traErr');
+    const ci = ov.querySelector('#traCi').value, co = ov.querySelector('#traCo').value;
+    if (!ci) { err.textContent = '请填上班时间'; return; }
+    const r = await cApi('/time-entries/create', { method: 'POST', body: JSON.stringify({
+      employee_id: parseInt(ov.querySelector('#traEmp').value),
+      site_id: parseInt(ov.querySelector('#traSite').value),
+      date: ov.querySelector('#traDate').value,
+      clock_in: ci, clock_out: co
+    }) });
+    if (!r) return;
+    if (r.error) { err.textContent = r.error; return; }
+    ov.remove();
+    showToast('✅ 已添加打卡记录');
+    loadTimeRecords();
+  };
+  document.body.appendChild(ov);
+}
 async function trPunchAction(entryId, action, label, name) {
   const ok = await cpConfirm({ icon: '⏱', title: `${esc(label)}打卡`, msg: `把当前时间记为\n「${esc(name)} ${esc(label)}」？`, okLabel: '确认记录' });
   if (!ok) return;
@@ -1186,6 +1248,9 @@ async function loadTimeRecords() {
   window._trLastEntries = d.entries || []; // 📊 工时统计用当前筛选后的这批数据
   _tsvFrom = ''; _tsvTo = ''; _tsvDetail = null; // 数据换了范围, 统计弹窗筛选重置
   trRenderKioskMode(d.sites || []);
+  // ➕ 添加打卡: 与「改时间」同一权限 (edit_time), 有可用仓库才显示
+  const addBtn = document.getElementById('trAddBtn');
+  if (addBtn) addBtn.style.display = (cCan('edit_time') && (d.sites || []).length) ? '' : 'none';
   const multiSite = (d.sites || []).length > 1;
   document.getElementById('trHead').innerHTML =
     '<th style="width:2.4rem">#</th><th>员工</th>' + (multiSite ? '<th>仓库</th>' : '') +

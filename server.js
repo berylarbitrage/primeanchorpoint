@@ -27949,6 +27949,57 @@ app.post('/api/customer/time-entries/:id/edit-time', requireCustomer, (req, res)
   res.json({ ok: 1 });
 });
 
+// POST /api/customer/time-entries/create — 有「改打卡具体时间」权限的账号手动补一条打卡记录
+// (员工当天完全忘了打卡、表里没有他那一行的情况)。同一员工同一仓库同一天已有记录时
+// 不允许再加一条 —— 请在那条记录上用「改时间」。往天的记录必须填下班时间 (否则隔天
+// 收尾任务会把它按 0 工时封单)。
+app.post('/api/customer/time-entries/create', requireCustomer, (req, res) => {
+  if (!_custNeed(req, res, 'edit_time')) return;
+  const pid = req.customerPartnerId;
+  const b = req.body || {};
+  const siteId = parseInt(b.site_id);
+  if (!_custAllowedSiteIds(req).some(s2 => s2.id === siteId)) return res.status(403).json({ error: '无权在该仓库添加记录' });
+  const site = db.prepare('SELECT * FROM job_sites WHERE id=? AND active=1').get(siteId);
+  if (!site) return res.status(404).json({ error: '未找到该仓库' });
+  const sitePids = String(site.partner_ids || '').split(',').filter(Boolean).map(Number);
+  if (site.partner_id) sitePids.push(site.partner_id);
+  if (!pid || !sitePids.includes(pid)) return res.status(403).json({ error: '无权在该仓库添加记录' });
+  const emp = db.prepare("SELECT id, first_name, middle_name, last_name FROM employees WHERE id=? AND status IN ('active','onboarding') AND COALESCE(customer_hidden,0)=0")
+    .get(parseInt(b.employee_id));
+  if (!emp) return res.status(404).json({ error: '未找到该员工（或已离职）' });
+  const tz = site.timezone || 'America/Chicago';
+  const todayTz = new Date().toLocaleDateString('en-CA', { timeZone: tz });
+  const wd = String(b.date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(wd)) return res.status(400).json({ error: '日期格式不对 (YYYY-MM-DD)' });
+  if (wd > todayTz) return res.status(400).json({ error: '不能给未来的日期添加打卡' });
+  if (wd < new Date(Date.now() - 190 * 86400000).toISOString().slice(0, 10)) return res.status(400).json({ error: '只能补最近 190 天内的打卡' });
+  const reHM = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const ciHM = String(b.clock_in || '').trim();
+  const coHM = String(b.clock_out || '').trim();
+  if (!reHM.test(ciHM)) return res.status(400).json({ error: '上班时间格式不对 (HH:MM)' });
+  if (coHM && !reHM.test(coHM)) return res.status(400).json({ error: '下班时间格式不对 (HH:MM)' });
+  if (!coHM && wd < todayTz) return res.status(400).json({ error: '往天的记录必须填下班时间' });
+  const ciU = _tzToUtc(wd, ciHM, tz);
+  const coU = coHM ? _tzToUtc(wd, coHM, tz) : null;
+  if (coU && coU < ciU) return res.status(400).json({ error: '下班时间不能早于上班时间' });
+  const dup = db.prepare("SELECT id FROM time_entries WHERE employee_id=? AND site_id=? AND (work_date=? OR (COALESCE(work_date,'')='' AND date(clock_in)=?)) LIMIT 1")
+    .get(emp.id, site.id, wd, wd);
+  if (dup) return res.status(400).json({ error: '该员工当天在此仓库已有打卡记录，请在那条记录上用「⏱ 改时间」修改' });
+  const totalHours = coU ? Math.round(((new Date(coU.replace(' ', 'T') + 'Z') - new Date(ciU.replace(' ', 'T') + 'Z')) / 3600000) * 100) / 100 : null;
+  const rawOut = [{ t: ciU }];
+  if (coU) rawOut.push({ t: coU });
+  const r2 = db.prepare(`INSERT INTO time_entries (employee_id, clock_in, clock_out, status, site_id, geo_verified, punch_type,
+      break_records, on_break, break_minutes, total_hours, regular_hours, overtime_hours, site_timezone, work_date, raw_punches, punch_review, notes)
+    VALUES (?,?,?,?,?,1,'in','[]',0,0,?,?,?,?,?,?,0,'[仓库方手动新增]')`)
+    .run(emp.id, ciU, coU, coU ? 'closed' : 'open', site.id,
+      totalHours, totalHours == null ? null : Math.min(totalHours, 8), totalHours == null ? null : Math.max(0, totalHours - 8),
+      tz, wd, JSON.stringify(rawOut));
+  const cA = db.prepare('SELECT company_name, contact_name FROM customer_accounts WHERE id=?').get(req.customerId) || {};
+  _logEntryEdit(r2.lastInsertRowid, 'customer', [cA.company_name, cA.contact_name].filter(Boolean).join('·') || ('客户#' + req.customerId),
+    [{ f: '手动新增打卡', old: '—', new: `${wd} ${ciHM}~${coHM || '在班'}` }]);
+  res.json({ ok: 1, entry_id: r2.lastInsertRowid });
+});
+
 // POST /api/customer/time-entries/:id/relabel — 仓库方只能改每个打卡时间点的「含义」
 // (上班/休息开始/休息结束/下班/作废)。时间本身不可改 —— 改时间只有公司有权限的人在后台操作。
 app.post('/api/customer/time-entries/:id/relabel', requireCustomer, (req, res) => {
