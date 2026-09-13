@@ -9120,6 +9120,7 @@ function requireCustomer(req, res, next) {
   req.customerId = s.customer_id;
   req.customerPartnerId = c.partner_id;
   req.custImpersonation = !!s.is_impersonation;
+  req.custImpersonatedBy = s.impersonated_by || '';
   next();
 }
 
@@ -21236,6 +21237,10 @@ app.post('/api/admin/time-entries', requireAdmin, blockManager, (req, res) => {
     d.employee_id, d.clock_in, d.clock_out||null, parseInt(d.break_minutes)||0,
     hrs.total, hrs.regular, hrs.overtime, d.job_id||null, d.notes||'',
     d.clock_out ? 'closed' : 'open');
+  // 编辑历史: 后台手动新增也记一条, 和客户门户「手动补加打卡」同一待遇
+  const _n = v => String(v || '').replace('T', ' ').slice(0, 16);
+  _logEntryEdit(r.lastInsertRowid, 'admin', req.userName || 'admin',
+    [{ f: '手动新增打卡', old: '—', new: `${_n(d.clock_in)}~${d.clock_out ? _n(d.clock_out) : '在班'}` }]);
   res.json({ success: true, id: r.lastInsertRowid, ...hrs });
 });
 
@@ -21330,12 +21335,14 @@ app.put('/api/admin/time-entries/:id', requireAdmin, blockManager, staffGuard('u
     d.clock_in, d.clock_out||null, parseInt(d.break_minutes)||0,
     hrs.total, hrs.regular, hrs.overtime,
     d.job_id||null, d.notes||'', d.clock_out ? 'closed' : 'open', req.params.id);
-  // 编辑历史: 记录后台实际改动的字段
+  // 编辑历史: 记录后台实际改动的字段 (时间值按仓库当地时间记, 客户门户看历史才对得上表里的时间)
   if (prev) {
+    const tz = _entryTz(req.params.id);
     const norm = v => String(v || '').replace('T', ' ').slice(0, 16);
+    const fmt = v => _editLogDT(v, tz);
     const changes = [];
-    if (norm(prev.clock_in) !== norm(d.clock_in)) changes.push({ f: '上班', old: norm(prev.clock_in) || '—', new: norm(d.clock_in) || '—' });
-    if (norm(prev.clock_out) !== norm(d.clock_out)) changes.push({ f: '下班', old: norm(prev.clock_out) || '在班', new: norm(d.clock_out) || '在班' });
+    if (norm(prev.clock_in) !== norm(d.clock_in)) changes.push({ f: '上班', old: fmt(prev.clock_in) || '—', new: fmt(d.clock_in) || '—' });
+    if (norm(prev.clock_out) !== norm(d.clock_out)) changes.push({ f: '下班', old: fmt(prev.clock_out) || '在班', new: fmt(d.clock_out) || '在班' });
     if ((parseInt(prev.break_minutes) || 0) !== (parseInt(d.break_minutes) || 0)) changes.push({ f: '休息分钟', old: String(parseInt(prev.break_minutes) || 0), new: String(parseInt(d.break_minutes) || 0) });
     if (String(prev.notes || '') !== String(d.notes || '')) changes.push({ f: '备注', old: String(prev.notes || '').slice(0, 60) || '—', new: String(d.notes || '').slice(0, 60) || '—' });
     _logEntryEdit(parseInt(req.params.id), 'admin', req.userName || 'admin', changes);
@@ -21371,6 +21378,7 @@ app.put('/api/manager/time-entries/:id', requireAdmin, (req, res) => {
   }
   const hrs = calcHours(d.clock_in, d.clock_out, breakMins);
   const status = d.clock_out ? 'closed' : 'open';
+  const prev = db.prepare('SELECT clock_in, clock_out, break_records, notes FROM time_entries WHERE id=?').get(req.params.id);
   db.prepare(`UPDATE time_entries SET
     clock_in=?,clock_out=?,break_minutes=?,break_records=?,
     total_hours=?,regular_hours=?,overtime_hours=?,
@@ -21378,6 +21386,20 @@ app.put('/api/manager/time-entries/:id', requireAdmin, (req, res) => {
     d.clock_in||null, d.clock_out||null, breakMins, breakRecords,
     hrs.total, hrs.regular, hrs.overtime,
     d.notes||'', status, req.params.id);
+  // 编辑历史: 经理/后台在这里改的时间同样要出现在客户门户的「历史」里
+  if (prev) {
+    const tz = _entryTz(req.params.id);
+    const norm = v => String(v || '').replace('T', ' ').slice(0, 16);
+    const fmt = v => _editLogDT(v, tz);
+    const brS = s => { try { return JSON.parse(s || '[]').filter(b => b && (b.start || b.end)).map(b => `${b.start ? _editLogDT(b.start, tz) : '?'}~${b.end ? _editLogDT(b.end, tz) : '?'}`).join('、'); } catch (_) { return ''; } };
+    const changes = [];
+    if (norm(prev.clock_in) !== norm(d.clock_in)) changes.push({ f: '上班', old: fmt(prev.clock_in) || '—', new: fmt(d.clock_in) || '—' });
+    if (norm(prev.clock_out) !== norm(d.clock_out)) changes.push({ f: '下班', old: fmt(prev.clock_out) || '在班', new: fmt(d.clock_out) || '在班' });
+    const oldBr = brS(prev.break_records), newBr = brS(breakRecords);
+    if (oldBr !== newBr) changes.push({ f: '休息', old: oldBr || '无', new: newBr || '无' });
+    if (String(prev.notes || '') !== String(d.notes || '')) changes.push({ f: '备注', old: String(prev.notes || '').slice(0, 60) || '—', new: String(d.notes || '').slice(0, 60) || '—' });
+    _logEntryEdit(parseInt(req.params.id), 'admin', req.userName || 'manager', changes);
+  }
   res.json({ success: true, ...hrs, break_minutes: breakMins, status });
 });
 
@@ -21389,12 +21411,23 @@ app.patch('/api/manager/time-entries/:id/correct-time', requireAdmin, (req, res)
   if (!['clock_in', 'clock_out'].includes(field)) return res.status(400).json({ error: 'Invalid field' });
   const t = new Date(new_time);
   if (isNaN(t.getTime())) return res.status(400).json({ error: 'Invalid time' });
+  const prev = db.prepare('SELECT clock_in, clock_out FROM time_entries WHERE id=?').get(req.params.id);
   db.prepare(`UPDATE time_entries SET ${field}=? WHERE id=?`).run(t.toISOString(), req.params.id);
   const entry = db.prepare('SELECT * FROM time_entries WHERE id=?').get(req.params.id);
   if (entry && entry.clock_in && entry.clock_out) {
     const hrs = calcHours(entry.clock_in, entry.clock_out, entry.break_minutes || 0);
     db.prepare('UPDATE time_entries SET total_hours=?,regular_hours=?,overtime_hours=? WHERE id=?')
       .run(hrs.total, hrs.regular, hrs.overtime, req.params.id);
+  }
+  // 编辑历史: 记下改了哪个时间点 (值按仓库当地时间)
+  if (prev) {
+    const tz = _entryTz(req.params.id);
+    const norm = v => String(v || '').replace('T', ' ').slice(0, 16);
+    const oldV = prev[field];
+    if (norm(oldV) !== norm(t.toISOString())) {
+      _logEntryEdit(parseInt(req.params.id), 'admin', req.userName || 'manager',
+        [{ f: field === 'clock_in' ? '上班' : '下班', old: _editLogDT(oldV, tz) || (field === 'clock_out' ? '在班' : '—'), new: _editLogDT(t.toISOString(), tz) }]);
+    }
   }
   res.json({ success: true });
 });
@@ -21423,14 +21456,36 @@ app.post('/api/manager/time-entries/batch', requireAdmin, (req, res) => {
     const reg = Math.max(0, parseFloat(regular_hours) || 0);
     const ot = Math.max(0, parseFloat(overtime_hours) || 0);
     const stmt = db.prepare("UPDATE time_entries SET regular_hours=?,overtime_hours=?,total_hours=? WHERE id=?");
-    db.transaction(() => { for (const id of ids) stmt.run(reg, ot, reg + ot, id); })();
+    const sel = db.prepare('SELECT regular_hours, overtime_hours FROM time_entries WHERE id=?');
+    db.transaction(() => { for (const id of ids) {
+      const pv = sel.get(id);
+      stmt.run(reg, ot, reg + ot, id);
+      // 编辑历史: 批量改工时也逐条记, 客户门户「历史」里能看到
+      if (pv) {
+        const changes = [];
+        if ((pv.regular_hours == null ? null : +pv.regular_hours) !== reg) changes.push({ f: '正常工时', old: pv.regular_hours == null ? '—' : pv.regular_hours + 'h', new: reg + 'h' });
+        if ((pv.overtime_hours == null ? null : +pv.overtime_hours) !== ot) changes.push({ f: '加班工时', old: pv.overtime_hours == null ? '—' : pv.overtime_hours + 'h', new: ot + 'h' });
+        _logEntryEdit(id, 'admin', req.userName || 'manager', changes);
+      }
+    } })();
   } else if (action === 'adjust_time') {
     const ciDelta = parseInt(clock_in_delta_minutes) || 0;
     const coDelta = parseInt(clock_out_delta_minutes) || 0;
+    const sel = db.prepare('SELECT clock_in, clock_out FROM time_entries WHERE id=?');
     db.transaction(() => {
       for (const id of ids) {
+        const pv = sel.get(id);
         if (ciDelta) db.prepare("UPDATE time_entries SET clock_in=datetime(clock_in,?||' minutes') WHERE id=?").run(String(ciDelta), id);
         if (coDelta) db.prepare("UPDATE time_entries SET clock_out=datetime(clock_out,?||' minutes') WHERE clock_out IS NOT NULL AND id=?").run(String(coDelta), id);
+        // 编辑历史: 批量平移时间也逐条记录改动前后 (仓库当地时间)
+        if (pv && (ciDelta || coDelta)) {
+          const nw = sel.get(id);
+          const tz = _entryTz(id);
+          const changes = [];
+          if (ciDelta && pv.clock_in && nw.clock_in !== pv.clock_in) changes.push({ f: '上班', old: _editLogDT(pv.clock_in, tz), new: _editLogDT(nw.clock_in, tz) });
+          if (coDelta && pv.clock_out && nw.clock_out !== pv.clock_out) changes.push({ f: '下班', old: _editLogDT(pv.clock_out, tz), new: _editLogDT(nw.clock_out, tz) });
+          _logEntryEdit(id, 'admin', req.userName || 'manager', changes);
+        }
       }
     })();
   }
@@ -27379,6 +27434,31 @@ function _logEntryEdit(entryId, editorType, editorName, changes) {
       .run(entryId, String(editorType || ''), String(editorName || '').slice(0, 120), JSON.stringify(changes));
   } catch (e) { console.error('[EntryEdit] log:', e.message); }
 }
+// 该条记录的显示时区: 有仓库的按仓库时区; 没有仓库(后台手工单)返回 null → 编辑历史记原始值
+function _entryTz(entryId) {
+  try {
+    const r = db.prepare('SELECT COALESCE(t.site_timezone, js.timezone) AS tz, t.site_id FROM time_entries t LEFT JOIN job_sites js ON t.site_id=js.id WHERE t.id=?')
+      .get(parseInt(entryId));
+    if (!r) return null;
+    return r.tz || (r.site_id ? 'America/Chicago' : null);
+  } catch (_) { return null; }
+}
+// 编辑历史里的时间值: 按仓库当地时间显示, 和客户门户/后台列表同一口径 (存储是 UTC)。
+// 没有时区(老手工单存的是录入原文)时原样记, 不做换算。
+function _editLogDT(v, tz) {
+  if (!v) return '';
+  const raw = String(v).replace('T', ' ').slice(0, 16);
+  if (!tz) return raw;
+  const d = _utcToTzDate(v, tz), t = _utcToTzHM(v, tz);
+  return d && t ? `${d} ${t}` : raw;
+}
+// 客户门户操作的落库身份: 管理员「进入门户」的冒充会话记成后台+管理员名,
+// 客户页「编辑历史」才能看出是管理员改的; 普通客户会话记成 仓库方+公司·联系人
+function _custEditor(req) {
+  if (req.custImpersonation) return { type: 'admin', name: req.custImpersonatedBy || '管理员' };
+  const cA = db.prepare('SELECT company_name, contact_name FROM customer_accounts WHERE id=?').get(req.customerId) || {};
+  return { type: 'customer', name: [cA.company_name, cA.contact_name].filter(Boolean).join('·') || ('客户#' + req.customerId) };
+}
 // 仓库时区的 HH:MM + 工作日 → UTC 'YYYY-MM-DD HH:MM:SS'
 function _tzToUtc(dateStr, hm, tz) {
   const guess = new Date(`${dateStr}T${hm}:00Z`);
@@ -27801,8 +27881,8 @@ app.post('/api/customer/punch-action', requireCustomer, (req, res) => {
   const dayOfRow = row => row.work_date || String(row.clock_in || '').slice(0, 10);
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
   const pOpen = s => new Date(String(s).replace(' ', 'T') + (/[zZ]$/.test(String(s)) ? '' : 'Z'));
-  const cAcct = db.prepare('SELECT company_name, contact_name FROM customer_accounts WHERE id=?').get(req.customerId) || {};
-  const custName = [cAcct.company_name, cAcct.contact_name].filter(Boolean).join('·') || ('客户#' + req.customerId);
+  // 管理员「进入门户」的操作按后台身份落历史, 客户页才能看出是管理员改的
+  const editor = _custEditor(req);
   // 隔天封单: 前一天没收班的记录, 绝不能拿「现在」当它的下班/休息时间 (会出现下班早于上班的跨天怪单)
   const staleClose = row => {
     db.prepare(
@@ -27828,12 +27908,12 @@ app.post('/api/customer/punch-action', requireCustomer, (req, res) => {
       "INSERT INTO time_entries (employee_id, clock_in, status, site_id, geo_verified, punch_type, break_records, on_break, site_timezone, work_date) VALUES(?,?,'open',?,1,'in','[]',0,?,?)"
     ).run(entry.employee_id, now, entry.site_id, siteTz, todayTz);
     targetId = r2.lastInsertRowid;
-    _logEntryEdit(targetId, 'customer', custName, [{ f: '上班', old: '', new: _utcToTzHM(now, siteTz) }]);
+    _logEntryEdit(targetId, editor.type, editor.name, [{ f: '上班', old: '', new: _utcToTzHM(now, siteTz) }]);
   } else if (action === 'break_start') {
     let breaks = []; try { breaks = JSON.parse(entry.break_records || '[]'); } catch {}
     breaks.push({ start: now });
     db.prepare('UPDATE time_entries SET on_break=1, break_records=? WHERE id=?').run(JSON.stringify(breaks), entry.id);
-    _logEntryEdit(entry.id, 'customer', custName, [{ f: '休息开始', old: '', new: _utcToTzHM(now, siteTz) }]);
+    _logEntryEdit(entry.id, editor.type, editor.name, [{ f: '休息开始', old: '', new: _utcToTzHM(now, siteTz) }]);
   } else if (action === 'break_end') {
     let breaks = []; try { breaks = JSON.parse(entry.break_records || '[]'); } catch {}
     const lastOpen = [...breaks].reverse().find(b => !b.end);
@@ -27841,10 +27921,10 @@ app.post('/api/customer/punch-action', requireCustomer, (req, res) => {
     const breakMin = breaks.reduce((s, b) => (b.start && b.end) ? s + Math.max(0, (pOpen(b.end) - pOpen(b.start)) / 60000) : s, 0);
     db.prepare('UPDATE time_entries SET on_break=0, break_records=?, break_minutes=? WHERE id=?')
       .run(JSON.stringify(breaks), Math.round(breakMin), entry.id);
-    _logEntryEdit(entry.id, 'customer', custName, [{ f: '休息结束', old: '', new: _utcToTzHM(now, siteTz) }]);
+    _logEntryEdit(entry.id, editor.type, editor.name, [{ f: '休息结束', old: '', new: _utcToTzHM(now, siteTz) }]);
   } else { // out
     closeEntry(entry);
-    _logEntryEdit(entry.id, 'customer', custName, [{ f: '下班', old: '', new: _utcToTzHM(now, siteTz) }]);
+    _logEntryEdit(entry.id, editor.type, editor.name, [{ f: '下班', old: '', new: _utcToTzHM(now, siteTz) }]);
   }
   // 标记该条记录含仓库方操作, 后台备注可见
   const cur = db.prepare('SELECT notes FROM time_entries WHERE id=?').get(targetId);
@@ -27944,8 +28024,8 @@ app.post('/api/customer/time-entries/:id/edit-time', requireCustomer, (req, res)
     .run(ciU, coU, coU ? 'closed' : 'open', JSON.stringify(breaks), breakMin,
       totalHours, totalHours == null ? null : Math.min(totalHours, 8), totalHours == null ? null : Math.max(0, totalHours - 8), wd,
       JSON.stringify(rawOut), entry.id);
-  const cA = db.prepare('SELECT company_name, contact_name FROM customer_accounts WHERE id=?').get(req.customerId) || {};
-  _logEntryEdit(entry.id, 'customer', [cA.company_name, cA.contact_name].filter(Boolean).join('·') || ('客户#' + req.customerId), changes);
+  const editor = _custEditor(req);
+  _logEntryEdit(entry.id, editor.type, editor.name, changes);
   res.json({ ok: 1 });
 });
 
@@ -27994,8 +28074,8 @@ app.post('/api/customer/time-entries/create', requireCustomer, (req, res) => {
     .run(emp.id, ciU, coU, coU ? 'closed' : 'open', site.id,
       totalHours, totalHours == null ? null : Math.min(totalHours, 8), totalHours == null ? null : Math.max(0, totalHours - 8),
       tz, wd, JSON.stringify(rawOut));
-  const cA = db.prepare('SELECT company_name, contact_name FROM customer_accounts WHERE id=?').get(req.customerId) || {};
-  _logEntryEdit(r2.lastInsertRowid, 'customer', [cA.company_name, cA.contact_name].filter(Boolean).join('·') || ('客户#' + req.customerId),
+  const editor = _custEditor(req);
+  _logEntryEdit(r2.lastInsertRowid, editor.type, editor.name,
     [{ f: '手动新增打卡', old: '—', new: `${wd} ${ciHM}~${coHM || '在班'}` }]);
   res.json({ ok: 1, entry_id: r2.lastInsertRowid });
 });
@@ -28057,8 +28137,8 @@ app.post('/api/customer/time-entries/:id/relabel', requireCustomer, (req, res) =
       JSON.stringify(breaks), breakMin, totalHours,
       totalHours == null ? null : Math.min(totalHours, 8), totalHours == null ? null : Math.max(0, totalHours - 8),
       JSON.stringify(rawOut), entry.id);
-  const cAcct2 = db.prepare('SELECT company_name, contact_name FROM customer_accounts WHERE id=?').get(req.customerId) || {};
-  _logEntryEdit(entry.id, 'customer', [cAcct2.company_name, cAcct2.contact_name].filter(Boolean).join('·') || ('客户#' + req.customerId), changes);
+  const editor = _custEditor(req);
+  _logEntryEdit(entry.id, editor.type, editor.name, changes);
   res.json({ ok: 1 });
 });
 
