@@ -27881,7 +27881,7 @@ async function loadCustomerAccounts() {
       <div style="display:flex;gap:.25rem;flex-wrap:wrap;align-items:center">
         ${c.approval_status==='pending'&&c.active?`<button class="btn btn-sm btn-green" onclick="openEntApprovalModal(${c.id})">审核</button>`:''}
         ${c.approval_status==='approved'?(c.active?`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="suspendCustomerAccount(${c.id},false)">暂停</button>`:`<button class="btn btn-sm btn-green" onclick="suspendCustomerAccount(${c.id},true)">恢复</button>`):''}
-        ${c.approval_status==='approved'&&c.active?`<button class="btn btn-sm" style="background:#f3e8ff;color:#7c3aed;border:1px solid #d8b4fe" onclick="custImpersonate(${c.id})" title="以全部权限进入该公司的客户门户（需短信验证，验证码可选发到任一 owner 级管理员登记过的手机）">🕵️ 进入门户</button>`:''}
+        ${c.approval_status==='approved'&&c.active?`<button class="btn btn-sm" style="background:#f3e8ff;color:#7c3aed;border:1px solid #d8b4fe" onclick="custImpersonate(${c.id})" title="以全部权限进入该公司的客户门户（需短信验证，验证码可选发到任一 owner 级管理员登记过的手机或公司备案的手机）">🕵️ 进入门户</button>`:''}
         ${c.approval_status!=='pending'?`<button class="btn btn-sm btn-blue" onclick="openResetPwdModal('customer',${c.id},'${esc(c.company_name)}')">改密码</button>`:''}
         <button class="btn btn-sm" onclick="custDetailOpen(${c.id})" title="注册时填写的全部信息">详情</button>
         <button class="btn btn-sm" style="background:#eef4ff;color:#3b5bdb;border:1px solid #c7d7fe" onclick="custPermsOpen(${c.id})" title="这个账号能做什么（不勾=只读）">权限</button>
@@ -27935,7 +27935,7 @@ function custImpPickPhone(company, phones) {
     ov.addEventListener('click', e => { if (e.target === ov) done(null); });
     ov.innerHTML = `<div style="background:#fff;border-radius:14px;box-shadow:0 12px 48px rgba(0,0,0,.3);max-width:430px;width:100%;padding:1.3rem 1.4rem">
       <div style="font-weight:800;font-size:1.02rem;margin-bottom:.3rem">🕵️ 进入「${esc(company)}」的客户门户</div>
-      <div style="font-size:.85rem;color:#667085;margin-bottom:.8rem">选择接收验证码的手机号（owner 级管理员账号登记过的手机都可选）：</div>
+      <div style="font-size:.85rem;color:#667085;margin-bottom:.8rem">选择接收验证码的手机号（owner 级管理员登记过的手机和公司备案的手机都可选）：</div>
       <div style="display:flex;flex-direction:column;gap:.4rem;margin-bottom:1rem;max-height:40vh;overflow-y:auto">${phones.map((p, i) => `
         <label style="display:flex;align-items:center;gap:.55rem;border:1px solid #e2e5ea;border-radius:10px;padding:.55rem .7rem;cursor:pointer">
           <input type="radio" name="impPhonePick" value="${i}"${p.self || (i === 0 && !phones.some(x => x.self)) ? ' checked' : ''}>
