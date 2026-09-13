@@ -1372,9 +1372,12 @@ function trStatsCell(r, c) { _tsvDetail = { r, c }; trStatsOpen(); }
 function trStatsOpen(mode) {
   if (mode) { _tsvMode = mode; _tsvDetail = null; }
   const all = window._trLastEntries || [];
-  if (!_tsvFrom || !_tsvTo) { // 默认日期范围: 已加载数据的最早~最晚
+  if (!_tsvFrom || !_tsvTo) { // 默认日期范围: 已加载数据对齐自然周 (最早天所在周的周一 ~ 最晚天所在周的周日)
     const ks = all.map(_trDayKey).filter(k => k !== '?').sort();
-    if (ks.length) { if (!_tsvFrom) _tsvFrom = ks[0]; if (!_tsvTo) _tsvTo = ks[ks.length - 1]; }
+    if (ks.length) {
+      if (!_tsvFrom) _tsvFrom = _trWeekKey(ks[0]);
+      if (!_tsvTo) _tsvTo = _trShiftDay(_trWeekKey(ks[ks.length - 1]), 6);
+    }
   }
   const entries = _tsvFilteredEntries();
   let m = document.getElementById('trStatsModal');
@@ -1401,6 +1404,11 @@ function trStatsOpen(mode) {
     rec.cells[ck] = (rec.cells[ck] || 0) + h;
     rec.total += h;
     rec.shifts.push(e);
+  }
+  // 所选范围内每天/每周都成列 (没数据的显示 —), 让自然周完整呈现周一~周日; 范围超过约三个月时只列有数据的
+  if (_tsvFrom && _tsvTo && _tsvFrom <= _tsvTo && _tsvTo <= _trShiftDay(_tsvFrom, 92)) {
+    if (_tsvMode === 'week') { for (let k = _trWeekKey(_tsvFrom); k <= _tsvTo; k = _trShiftDay(k, 7)) cols.add(k); }
+    else { for (let k = _tsvFrom; k <= _tsvTo; k = _trShiftDay(k, 1)) cols.add(k); }
   }
   const colKeys = [...cols].sort();
   const rows = [...emps.values()].sort((a, b) => b.total - a.total);
