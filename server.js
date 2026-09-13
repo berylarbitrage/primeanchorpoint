@@ -14942,27 +14942,51 @@ app.put('/api/admin/customer-accounts/:id/perms', requireAdmin, requireRole('adm
 
 // ─── 管理员「以该公司身份进入客户门户」(支持/冒充登录) ───
 // 后台登录本身已过短信二次验证；进入客户门户(能看到工人电话/地址/工卡等敏感
-// 信息)再加一道短信步进验证，验证码发到当前管理员账号登记的手机。通过后签发
+// 信息)再加一道短信步进验证，验证码发到管理员选择的收码手机(任一 owner 级
+// 在用账号登记过的手机，默认当前账号自己的)。通过后签发
 // 一个带 is_impersonation 标记、拥有该公司门户全部权限的客户会话，进入哪家公司
 // 都留审计。仅 owner 级(admin 角色)可用。
 const _custImp = new Map(); // imp_token → { adminId, accountId, code, expires, attempts, phone }
 function _custImpGC() { const now = Date.now(); for (const [k, v] of _custImp) if (v.expires < now) _custImp.delete(k); }
+
+// 「进入门户」可选的收码手机: 所有 owner 级(admin 角色)在用账号登记过的手机,
+// 只返回打码后 4 位、同号去重, 当前登录账号排最前
+app.get('/api/admin/impersonate/phones', requireAdmin, requireRole('admin'), (req, res) => {
+  const rows = db.prepare("SELECT id, username, display_name, mfa_phone, phone FROM admin_users WHERE active=1 AND role='admin'").all();
+  const selfId = Number(req.userId);
+  rows.sort((a, b) => (Number(b.id) === selfId) - (Number(a.id) === selfId) || String(a.username).localeCompare(String(b.username)));
+  const seen = new Set(), phones = [];
+  for (const a of rows) {
+    const digits = String(a.mfa_phone || a.phone || '').replace(/\D/g, '').slice(-10);
+    if (digits.length !== 10 || seen.has(digits)) continue;
+    seen.add(digits);
+    phones.push({ id: a.id, name: a.display_name || a.username, hint: '••• ' + digits.slice(-4), self: Number(a.id) === selfId ? 1 : 0 });
+  }
+  res.json({ phones });
+});
 
 app.post('/api/admin/customer-accounts/:id/impersonate/send', requireAdmin, requireRole('admin'), async (req, res) => {
   _custImpGC();
   const acct = db.prepare('SELECT id, company_name, active FROM customer_accounts WHERE id=?').get(req.params.id);
   if (!acct) return res.status(404).json({ error: '客户账号不存在' });
   if (!acct.active) return res.status(400).json({ error: '该客户账号已停用，无法进入' });
-  const admin = db.prepare('SELECT id, username, mfa_phone, phone FROM admin_users WHERE id=?').get(req.userId);
-  const digits = String((admin && (admin.mfa_phone || admin.phone)) || '').replace(/\D/g, '').slice(-10);
-  if (digits.length !== 10) return res.status(400).json({ error: '你的后台账号没有登记手机号，收不到验证码。请先用登录后台时用过的手机登录一次，或在账号资料里登记手机号。' });
+  // 收码手机可选: 默认发到当前管理员自己登记的手机, 也可选其他 owner 级在用账号
+  // 登记过的手机 (老板换了账号/手机的情况)。验证码仍只绑定当前登录会话。
+  const toId = parseInt((req.body || {}).to_admin_id, 10) || Number(req.userId);
+  const admin = db.prepare('SELECT id, username, role, active, mfa_phone, phone FROM admin_users WHERE id=?').get(toId);
+  if (!admin || (toId !== Number(req.userId) && !(admin.active && admin.role === 'admin')))
+    return res.status(400).json({ error: '所选手机对应的管理员账号不可用，请重新选择' });
+  const digits = String((admin.mfa_phone || admin.phone) || '').replace(/\D/g, '').slice(-10);
+  if (digits.length !== 10) return res.status(400).json({ error: toId === Number(req.userId)
+    ? '你的后台账号没有登记手机号，收不到验证码。请先用登录后台时用过的手机登录一次，或在账号资料里登记手机号。'
+    : '该管理员账号没有登记手机号，请换一个收码手机。' });
   const code = String(crypto.randomInt(100000, 1000000));
   const ok = await sendSMS(digits, `【Prime Anchor】进入客户门户验证码: ${code}\n10 分钟内有效。你正在以全部权限进入「${acct.company_name}」的客户门户。不是本人操作请勿泄露。`);
   // 短信发失败时，若配了主验证码(MASTER_VERIFY_CODE)仍放行，避免 Twilio 抖动把 owner 锁在外面
   if (!ok && !MASTER_VERIFY_CODE) return res.status(500).json({ error: '短信发送失败，请稍后重试' });
   const imp_token = crypto.randomBytes(24).toString('hex');
   _custImp.set(imp_token, { adminId: req.userId, accountId: acct.id, code, expires: Date.now() + 10 * 60 * 1000, attempts: 0, phone: digits });
-  auditLog('cust_impersonate_send', req, { targetType: 'customer_account', targetId: acct.id, details: { company: acct.company_name, phone_last4: digits.slice(-4), sms_sent: !!ok } });
+  auditLog('cust_impersonate_send', req, { targetType: 'customer_account', targetId: acct.id, details: { company: acct.company_name, phone_last4: digits.slice(-4), sms_sent: !!ok, ...(toId !== Number(req.userId) ? { code_to_admin: admin.username } : {}) } });
   res.json({ ok: 1, imp_token, phone_hint: '••• ' + digits.slice(-4), sms_sent: !!ok });
 });
 

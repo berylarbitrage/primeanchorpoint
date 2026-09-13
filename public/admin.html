@@ -27881,7 +27881,7 @@ async function loadCustomerAccounts() {
       <div style="display:flex;gap:.25rem;flex-wrap:wrap;align-items:center">
         ${c.approval_status==='pending'&&c.active?`<button class="btn btn-sm btn-green" onclick="openEntApprovalModal(${c.id})">审核</button>`:''}
         ${c.approval_status==='approved'?(c.active?`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="suspendCustomerAccount(${c.id},false)">暂停</button>`:`<button class="btn btn-sm btn-green" onclick="suspendCustomerAccount(${c.id},true)">恢复</button>`):''}
-        ${c.approval_status==='approved'&&c.active?`<button class="btn btn-sm" style="background:#f3e8ff;color:#7c3aed;border:1px solid #d8b4fe" onclick="custImpersonate(${c.id})" title="以全部权限进入该公司的客户门户（需短信验证，验证码发到你后台账号的手机）">🕵️ 进入门户</button>`:''}
+        ${c.approval_status==='approved'&&c.active?`<button class="btn btn-sm" style="background:#f3e8ff;color:#7c3aed;border:1px solid #d8b4fe" onclick="custImpersonate(${c.id})" title="以全部权限进入该公司的客户门户（需短信验证，验证码可选发到任一 owner 级管理员登记过的手机）">🕵️ 进入门户</button>`:''}
         ${c.approval_status!=='pending'?`<button class="btn btn-sm btn-blue" onclick="openResetPwdModal('customer',${c.id},'${esc(c.company_name)}')">改密码</button>`:''}
         <button class="btn btn-sm" onclick="custDetailOpen(${c.id})" title="注册时填写的全部信息">详情</button>
         <button class="btn btn-sm" style="background:#eef4ff;color:#3b5bdb;border:1px solid #c7d7fe" onclick="custPermsOpen(${c.id})" title="这个账号能做什么（不勾=只读）">权限</button>
@@ -27893,14 +27893,27 @@ async function loadCustomerAccounts() {
 }
 
 // 🕵️ 以该公司身份进入客户门户（支持/冒充登录）：后台已是短信登录，这里再加一道
-// 短信步进验证（验证码发到你后台账号登记的手机），通过后在新标签页以「全部权限」
-// 进入该公司门户。服务器端会把这次会话标记为冒充并留审计，门户顶部显示醒目横幅。
+// 短信步进验证，通过后在新标签页以「全部权限」进入该公司门户。收验证码的手机可以
+// 选：所有 owner 级管理员账号登记过的手机都能选（默认自己的）。服务器端会把这次
+// 会话标记为冒充并留审计，门户顶部显示醒目横幅。
 async function custImpersonate(id) {
   const name = (window._custAccRows && window._custAccRows[id] ? window._custAccRows[id].company_name : '') || '该公司';
-  const send = await api(`/admin/customer-accounts/${id}/impersonate/send`, { method: 'POST' });
+  let picked = null; // 选中的收码手机 {id, name, hint}; 只有一个可选时不弹选择框
+  const ph = await api('/admin/impersonate/phones');
+  const phones = (ph && ph.phones) || [];
+  if (phones.length > 1) {
+    picked = await custImpPickPhone(name, phones);
+    if (!picked) return; // 取消
+  } else if (phones.length === 1 && !phones[0].self) {
+    picked = phones[0]; // 自己没登记手机但有别的 owner 号可用: 直接发到那一个
+  }
+  const send = await api(`/admin/customer-accounts/${id}/impersonate/send`, {
+    method: 'POST', body: JSON.stringify(picked ? { to_admin_id: picked.id } : {})
+  });
   if (!send || send.error) { showToast((send && send.error) || '验证码发送失败', 'error'); return; }
+  const dest = picked && !picked.self ? `手机 ${send.phone_hint || picked.hint}（${picked.name}）` : `你的手机 ${send.phone_hint || ''}`;
   const tip = send.sms_sent
-    ? `验证码已发送到你的手机 ${send.phone_hint || ''}，以全部权限进入，请输入 6 位验证码。`
+    ? `验证码已发送到${dest}，以全部权限进入，请输入 6 位验证码。`
     : `短信可能未送达（${send.phone_hint || ''}），如你已配置主验证码可直接输入。`;
   const code = await showInputPrompt(`🕵️ 进入「${name}」的客户门户`, tip, '6 位验证码', '进入门户', 'btn-blue', 'amber');
   if (!code) return;
@@ -27910,6 +27923,36 @@ async function custImpersonate(id) {
   if (!v || v.error || !v.token) { showToast((v && v.error) || '验证失败', 'error'); return; }
   window.open('/customer.html#imp=' + v.token, '_blank');
   showToast(`已在新标签页以全部权限进入「${v.company_name || name}」门户`, 'success');
+}
+
+// 进入门户前选收验证码的手机: 列出所有 owner 级管理员账号登记过的手机(打码后4位),
+// 当前登录账号默认选中。返回选中的 {id, name, hint, self}, 取消返回 null。
+function custImpPickPhone(company, phones) {
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;padding:1rem';
+    const done = v => { ov.remove(); resolve(v); };
+    ov.addEventListener('click', e => { if (e.target === ov) done(null); });
+    ov.innerHTML = `<div style="background:#fff;border-radius:14px;box-shadow:0 12px 48px rgba(0,0,0,.3);max-width:430px;width:100%;padding:1.3rem 1.4rem">
+      <div style="font-weight:800;font-size:1.02rem;margin-bottom:.3rem">🕵️ 进入「${esc(company)}」的客户门户</div>
+      <div style="font-size:.85rem;color:#667085;margin-bottom:.8rem">选择接收验证码的手机号（owner 级管理员账号登记过的手机都可选）：</div>
+      <div style="display:flex;flex-direction:column;gap:.4rem;margin-bottom:1rem;max-height:40vh;overflow-y:auto">${phones.map((p, i) => `
+        <label style="display:flex;align-items:center;gap:.55rem;border:1px solid #e2e5ea;border-radius:10px;padding:.55rem .7rem;cursor:pointer">
+          <input type="radio" name="impPhonePick" value="${i}"${p.self || (i === 0 && !phones.some(x => x.self)) ? ' checked' : ''}>
+          <span style="font-weight:700;white-space:nowrap">${esc(p.hint)}</span>
+          <span style="color:#98a2b3;font-size:.82rem;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}${p.self ? '（当前登录）' : ''}</span>
+        </label>`).join('')}</div>
+      <div style="display:flex;justify-content:flex-end;gap:.5rem">
+        <button class="btn btn-outline" data-act="cancel">取消</button>
+        <button class="btn" data-act="send">发送验证码</button>
+      </div></div>`;
+    ov.querySelector('[data-act=cancel]').onclick = () => done(null);
+    ov.querySelector('[data-act=send]').onclick = () => {
+      const r = ov.querySelector('input[name=impPhonePick]:checked');
+      done(r ? phones[parseInt(r.value)] : null);
+    };
+    document.body.appendChild(ov);
+  });
 }
 
 // 🔑 客户账号权限勾选: 不勾的项该账号只能看不能改
