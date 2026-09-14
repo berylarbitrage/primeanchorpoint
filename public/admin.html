@@ -27963,9 +27963,10 @@ const CUST_PERM_DEFS = [
   ['kiosk', '打卡机模式 / 班型设置'],
   ['docs', '查看工人证件（工卡 EAD/SSN）'],
   ['edit_time', '⏱ 修改打卡具体时间（敏感，默认关闭）'],
-  ['invoice', '💰 查看公司历史发票 Invoice（敏感，默认关闭）']
+  ['invoice', '💰 查看公司历史发票 Invoice（敏感，默认关闭）'],
+  ['add_worker', '➕ 从员工库添加派遣工人（敏感，默认关闭）']
 ];
-const CUST_PERM_DEFAULT_OFF = ['edit_time', 'invoice']; // 敏感权限: 未配置时默认关
+const CUST_PERM_DEFAULT_OFF = ['edit_time', 'invoice', 'add_worker']; // 敏感权限: 未配置时默认关
 async function custPermsOpen(id) {
   const c = (window._custAccRows || {})[id];
   if (!c) return;

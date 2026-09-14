@@ -1628,9 +1628,18 @@ try { db.exec("ALTER TABLE customer_accounts ADD COLUMN approval_status TEXT DEF
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN contact_first_name TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN contact_last_name TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN rejection_reason TEXT DEFAULT ''"); } catch {}
-// 客户账号分权限: JSON {punch,relabel,position,kiosk,docs,edit_time,invoice} 0/1; 空 = 除敏感权限外全部允许(老账号)
+// 客户账号分权限: JSON {punch,relabel,position,kiosk,docs,edit_time,invoice,add_worker} 0/1; 空 = 除敏感权限外全部允许(老账号)
 // (必须放在 CREATE TABLE customer_accounts 之后: 放前面全新数据库建库时表还不存在, ALTER 会被静默吞掉)
 try { db.exec(`ALTER TABLE customer_accounts ADD COLUMN perms TEXT DEFAULT ''`); } catch(e) {}
+// 客户门户「从员工库添加派遣工人」: 手动把员工库里的人挂到某客户的派遣工人列表 (还没打过卡也能出现)
+try { db.exec(`CREATE TABLE IF NOT EXISTS partner_workers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  partner_id INTEGER NOT NULL,
+  employee_id INTEGER NOT NULL,
+  added_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(partner_id, employee_id)
+)`); } catch(e) {}
 db.exec(`CREATE TABLE IF NOT EXISTS enterprise_verification_codes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   customer_account_id INTEGER NOT NULL REFERENCES customer_accounts(id),
@@ -27738,10 +27747,10 @@ app.post('/api/admin/partner-photo-access/:id', requireAdmin, requireRole('admin
 
 // 该客户(partner)名下的启用仓库
 // 客户账号权限: punch=一键打卡 relabel=改打卡含义 position=改职位 kiosk=打卡机设置
-// docs=看工人证件 edit_time=改打卡具体时间 invoice=看公司历史发票
-// (edit_time/invoice 属敏感权限: 默认关, 必须管理员显式勾选)
-const CUST_PERM_KEYS = ['punch', 'relabel', 'position', 'kiosk', 'docs', 'edit_time', 'invoice'];
-const CUST_PERM_DEFAULT_OFF = new Set(['edit_time', 'invoice']);
+// docs=看工人证件 edit_time=改打卡具体时间 invoice=看公司历史发票 add_worker=从员工库添加派遣工人
+// (edit_time/invoice/add_worker 属敏感权限: 默认关, 必须管理员显式勾选; 管理员冒充进入不受限)
+const CUST_PERM_KEYS = ['punch', 'relabel', 'position', 'kiosk', 'docs', 'edit_time', 'invoice', 'add_worker'];
+const CUST_PERM_DEFAULT_OFF = new Set(['edit_time', 'invoice', 'add_worker']);
 function _custPermDefault(key) { return !CUST_PERM_DEFAULT_OFF.has(key); }
 function _custPerm(req, key) {
   // 管理员冒充会话：全部权限放行，不看该账号原本勾选
@@ -30343,7 +30352,66 @@ app.get('/api/customer/my-workers', requireCustomer, (req, res) => {
       punch_days: 0, last_punch: null, kind: 'assign', assign_status: a.assign_status || ''
     });
   }
+  // 手动从员工库添加的 (partner_workers): 已因打卡/派工出现过的人不重复列
+  const manual = db.prepare(`
+    SELECT pw.added_by, e.id, e.first_name, e.middle_name, e.last_name, e.employee_id AS emp_code,
+      e.position, e.phone, e.email, e.address, e.city, e.state, e.zip
+    FROM partner_workers pw JOIN employees e ON pw.employee_id=e.id
+    WHERE pw.partner_id=? AND COALESCE(e.customer_hidden,0)=0
+    ORDER BY e.first_name, e.middle_name, e.last_name`).all(pid);
+  for (const m of manual) {
+    if (seen.has(m.id)) continue;
+    seen.add(m.id);
+    out.push({
+      id: m.id, first_name: m.first_name, middle_name: m.middle_name, last_name: m.last_name, emp_code: m.emp_code || '',
+      position: m.position || '', phone: m.phone || '', email: m.email || '',
+      address: [m.address, m.city, m.state, m.zip].map(x => String(x || '').trim()).filter(Boolean).join(', '),
+      punch_days: 0, total_hours: 0, last_punch: null, kind: 'manual', added_by: m.added_by || ''
+    });
+  }
   res.json(out);
+});
+
+// 从员工库搜人 (手动添加派遣工人用): add_worker 敏感权限; 按姓名/员工号/电话搜在职员工, 最多 20 条
+app.get('/api/customer/employee-search', requireCustomer, (req, res) => {
+  if (!_custNeed(req, res, 'add_worker')) return;
+  const pid = req.customerPartnerId;
+  const q = String(req.query.q || '').trim();
+  if (!pid || !q) return res.json([]);
+  const like = '%' + q.replace(/[%_]/g, '') + '%';
+  const rows = db.prepare(`
+    SELECT id, first_name, middle_name, last_name, employee_id AS emp_code, position, phone
+    FROM employees
+    WHERE COALESCE(customer_hidden,0)=0 AND COALESCE(status,'active')='active' AND (
+      (COALESCE(first_name,'')||' '||COALESCE(middle_name,'')||' '||COALESCE(last_name,'')) LIKE ? COLLATE NOCASE
+      OR employee_id LIKE ? OR phone LIKE ?)
+    ORDER BY first_name, middle_name, last_name LIMIT 20`).all(like, like, like);
+  const inList = new Set(db.prepare('SELECT employee_id FROM partner_workers WHERE partner_id=?').all(pid).map(r => r.employee_id));
+  res.json(rows.map(r => ({ ...r, already: inList.has(r.id) })));
+});
+// 把员工库里的人挂到本公司派遣工人列表
+app.post('/api/customer/my-workers', requireCustomer, (req, res) => {
+  if (!_custNeed(req, res, 'add_worker')) return;
+  const pid = req.customerPartnerId;
+  if (!pid) return res.status(400).json({ error: '账号未绑定合作公司' });
+  const eid = parseInt((req.body || {}).employee_id);
+  if (!eid) return res.status(400).json({ error: '缺少员工' });
+  const e = db.prepare(`SELECT id FROM employees WHERE id=? AND COALESCE(customer_hidden,0)=0 AND COALESCE(status,'active')='active'`).get(eid);
+  if (!e) return res.status(404).json({ error: '员工不存在或已离职' });
+  let by = '管理员';
+  if (!req.custImpersonation) {
+    const acc = db.prepare('SELECT contact_name, email FROM customer_accounts WHERE id=?').get(req.customerId);
+    by = (acc && (acc.contact_name || acc.email)) || '';
+  }
+  db.prepare('INSERT OR IGNORE INTO partner_workers (partner_id, employee_id, added_by) VALUES (?,?,?)').run(pid, eid, by);
+  res.json({ ok: 1 });
+});
+// 从列表移除手动添加的工人 (只删 partner_workers 关联, 不动打卡/派工数据)
+app.delete('/api/customer/my-workers/:eid', requireCustomer, (req, res) => {
+  if (!_custNeed(req, res, 'add_worker')) return;
+  const r = db.prepare('DELETE FROM partner_workers WHERE partner_id=? AND employee_id=?')
+    .run(req.customerPartnerId, parseInt(req.params.eid) || 0);
+  res.json({ ok: 1, removed: r.changes });
 });
 
 // 「工卡」= 入职填表时上传的证件 (EAD/SSN卡/驾照等), 仓库方可查看。
