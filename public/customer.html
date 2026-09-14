@@ -1372,11 +1372,15 @@ function trStatsCell(r, c) { _tsvDetail = { r, c }; trStatsOpen(); }
 function trStatsOpen(mode) {
   if (mode) { _tsvMode = mode; _tsvDetail = null; }
   const all = window._trLastEntries || [];
-  if (!_tsvFrom || !_tsvTo) { // 默认日期范围: 已加载数据对齐自然周 (最早天所在周的周一 ~ 最晚天所在周的周日)
+  if (!_tsvFrom || !_tsvTo) { // 默认日期范围: 最近的一个自然周 —— 上一个完整周 (周一~周日);
+    // 页面已加载的数据不含那一周时, 退到数据里最新一天所在的自然周 (范围只能在已加载数据内)
     const ks = all.map(_trDayKey).filter(k => k !== '?').sort();
     if (ks.length) {
-      if (!_tsvFrom) _tsvFrom = _trWeekKey(ks[0]);
-      if (!_tsvTo) _tsvTo = _trShiftDay(_trWeekKey(ks[ks.length - 1]), 6);
+      const curMon = _trWeekKey(_trLocalToday());
+      const prevMon = _trShiftDay(curMon, -7), prevSun = _trShiftDay(curMon, -1);
+      const mon = ks.some(k => k >= prevMon && k <= prevSun) ? prevMon : _trWeekKey(ks[ks.length - 1]);
+      if (!_tsvFrom) _tsvFrom = mon;
+      if (!_tsvTo) _tsvTo = _trShiftDay(mon, 6);
     }
   }
   const entries = _tsvFilteredEntries();
