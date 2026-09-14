@@ -1246,7 +1246,8 @@ function openTruckDetail(id) {
       : row('订单号', r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener" style="color:#0f4c6b;text-decoration:underline;font-weight:700">${esc(r.rental_code || '卡车单')}</a> ↗` : esc(r.rental_code || '—'))}
     ${row('卡车公司', esc(r.customer) || '—')}
     ${r.cargo ? row('装货类型', esc(r.cargo)) : ''}
-    ${row('金额', `<b style="color:#b91c1c">${money(r.amount)}</b>`)}
+    ${r.manual && r.discount_value > 0 ? row('折扣', esc(r.discount_type === '$' ? '$' + r.discount_value : r.discount_value + '%')) : ''}
+    ${row('金额', `<b style="color:#b91c1c">${money(r.amount)}</b>${r.manual && r.discount_value > 0 ? ' <span style="font-size:.72rem;color:var(--g400)">（折后总金额）</span>' : ''}`)}
     ${row('付款状态', _palletPayBadge(r) + ' <span style="font-size:.72rem;color:var(--g400)">（按本系统会计批注）</span>')}
     ${r.note ? row('备注', esc(r.note)) : ''}
     ${r.manual ? '' : row('Bintique 参考', _truckBintiqueCell(r))}
@@ -1285,27 +1286,43 @@ function openTruckAdd() {
     m.id = 'truckAddModal';
     m.style.cssText = 'display:none;position:fixed;inset:0;z-index:2000;background:rgba(15,23,42,.55);align-items:center;justify-content:center;padding:1rem';
     m.onclick = e => { if (e.target === m) m.style.display = 'none'; };
-    m.innerHTML = `<div style="background:#fff;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,.35);width:min(94vw,440px);max-height:92vh;overflow:auto;padding:1rem 1.1rem" onclick="event.stopPropagation()">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
-        <div style="font-weight:800;font-size:.95rem;color:#475569">🚚 添加卡车费用</div>
+    // 表单照 pallet.bintique.com 租车单 (Truck Rental) 的思路: 起止日期 + 折扣 + 总金额 + 装货类型 + 付款收据
+    const LB = 'display:block;font-size:.68rem;font-weight:700;letter-spacing:.5px;color:var(--g500);margin-bottom:.25rem';
+    const REQ = '<span style="color:#dc2626">*</span>';
+    m.innerHTML = `<div style="background:#fff;border-radius:14px;box-shadow:0 12px 48px rgba(0,0,0,.35);width:min(94vw,520px);max-height:92vh;overflow:auto;padding:1.1rem 1.25rem" onclick="event.stopPropagation()">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem">
+        <div style="font-weight:800;font-size:1rem;color:#1f2937">🚚 租车费用 / Truck Rental</div>
         <button onclick="document.getElementById('truckAddModal').style.display='none'" style="border:1px solid var(--g200);background:#fff;border-radius:8px;padding:.2rem .7rem;cursor:pointer;font-size:.8rem">✕</button>
       </div>
-      <label style="font-size:.78rem;color:var(--g500)">日期</label>
-      <input type="date" id="tfaDate" style="width:100%;margin-bottom:.5rem">
-      <label style="font-size:.78rem;color:var(--g500)">卡车公司</label>
+      <label style="${LB}">SELECT TRUCK COMPANY 请选择卡车公司 ${REQ}</label>
       <select id="tfaPartySel" style="width:100%;margin-bottom:.4rem" onchange="document.getElementById('tfaPartyNew').style.display = this.value === '__new__' ? '' : 'none'"></select>
-      <input type="text" id="tfaPartyNew" placeholder="输入新卡车公司名" style="width:100%;margin-bottom:.5rem;display:none">
-      <label style="font-size:.78rem;color:var(--g500)">金额（支出，$）</label>
-      <input type="number" step="0.01" id="tfaAmount" placeholder="0.00" style="width:100%;margin-bottom:.5rem">
-      <label style="font-size:.78rem;color:var(--g500)">备注</label>
-      <input type="text" id="tfaNote" placeholder="选填：运的什么 / 单号等" style="width:100%;margin-bottom:.5rem">
-      <label style="font-size:.78rem;color:var(--g500)">发票 / 凭证（选填）</label>
-      <div id="tfaDrop" style="border:2px dashed var(--g200);border-radius:10px;background:#f8fafc;padding:1rem;text-align:center;font-size:.8rem;color:var(--g500);cursor:pointer;margin-bottom:.4rem">📎 把发票 / 凭证<b>拖到这里</b>，或点击选择<br><span style="font-size:.72rem;color:var(--g400)">可多张、不限数量（PDF / 图片）</span></div>
+      <input type="text" id="tfaPartyNew" placeholder="输入新卡车公司名" style="width:100%;margin-bottom:.55rem;display:none">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.55rem">
+        <div><label style="${LB}">START DATE 开始日期 ${REQ}</label><input type="date" id="tfaDate" style="width:100%"></div>
+        <div><label style="${LB}">END DATE 结束日期</label><input type="date" id="tfaDateEnd" style="width:100%" title="单日/单程可不填"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.55rem">
+        <div><label style="${LB}">DISCOUNT 折扣</label>
+          <div style="display:flex;gap:.3rem"><input type="number" step="0.01" min="0" id="tfaDisc" value="0" style="flex:1;min-width:0"><select id="tfaDiscType" style="width:62px"><option value="%">%</option><option value="$">$</option></select></div>
+        </div>
+        <div><label style="${LB}">TOTAL AMOUNT 总金额 ($) ${REQ}</label><input type="number" step="0.01" id="tfaAmount" placeholder="0.00" style="width:100%"></div>
+      </div>
+      <label style="${LB}">NOTES 备注</label>
+      <textarea id="tfaNote" rows="3" placeholder="Any notes…" style="width:100%;margin-bottom:.55rem;resize:vertical"></textarea>
+      <label style="${LB}">装货类型 CARGO TYPE</label>
+      <div style="display:flex;gap:1.1rem;flex-wrap:wrap;margin-bottom:.6rem;font-size:.84rem">
+        <label style="display:inline-flex;align-items:center;gap:.3rem;cursor:pointer"><input type="checkbox" class="tfaCargo" value="Pallet"> Pallet</label>
+        <label style="display:inline-flex;align-items:center;gap:.3rem;cursor:pointer"><input type="checkbox" class="tfaCargo" value="装货"> 装货</label>
+        <label style="display:inline-flex;align-items:center;gap:.3rem;cursor:pointer"><input type="checkbox" class="tfaCargo" value="Others"> Others</label>
+      </div>
+      <label style="${LB}">PAYMENT RECEIPT 付款收据</label>
+      <div id="tfaDrop" style="border:1px dashed var(--g300);border-radius:10px;background:#f8fafc;padding:.7rem 1rem;text-align:center;font-size:.82rem;color:var(--g600);cursor:pointer;margin-bottom:.4rem">📎 <b>Attach receipt 上传收据</b> <span style="color:var(--g400)">（可多张）</span><br><span style="font-size:.72rem;color:var(--g400)">拖到这里或点击选择 · PDF / 图片、不限数量</span></div>
       <input type="file" id="tfaFiles" accept="application/pdf,image/*" multiple style="display:none">
       <div id="tfaFileList" style="margin-bottom:.7rem;line-height:1.9"></div>
       <div style="display:flex;justify-content:flex-end;gap:.5rem;align-items:center">
-        <span id="tfaMsg" style="font-size:.78rem;color:var(--g500)"></span>
-        <button class="btn btn-blue" id="tfaSaveBtn" onclick="submitTruckAdd()">保存</button>
+        <span id="tfaMsg" style="font-size:.78rem;color:#dc2626;margin-right:auto"></span>
+        <button class="btn btn-outline" onclick="document.getElementById('truckAddModal').style.display='none'">Cancel 取消</button>
+        <button class="btn btn-blue" id="tfaSaveBtn" onclick="submitTruckAdd()">Save 保存</button>
       </div>
     </div>`;
     document.body.appendChild(m);
@@ -1326,6 +1343,10 @@ function openTruckAdd() {
   partyNew.value = '';
   if (!names.length) { sel.value = '__new__'; partyNew.style.display = ''; } else { sel.value = ''; partyNew.style.display = 'none'; }
   document.getElementById('tfaDate').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('tfaDateEnd').value = '';
+  document.getElementById('tfaDisc').value = '0';
+  document.getElementById('tfaDiscType').value = '%';
+  document.querySelectorAll('.tfaCargo').forEach(c => { c.checked = false; });
   document.getElementById('tfaAmount').value = '';
   document.getElementById('tfaNote').value = '';
   document.getElementById('tfaMsg').textContent = '';
@@ -1337,17 +1358,25 @@ async function submitTruckAdd() {
   const selV = document.getElementById('tfaPartySel').value;
   const party = selV === '__new__' ? document.getElementById('tfaPartyNew').value.trim() : selV;
   const amount = document.getElementById('tfaAmount').value;
+  const dStart = document.getElementById('tfaDate').value;
+  const dEnd = document.getElementById('tfaDateEnd').value;
   if (!party) { document.getElementById('tfaMsg').textContent = '请选择或填写卡车公司'; return; }
-  if (!amount || !(Number(amount) > 0)) { document.getElementById('tfaMsg').textContent = '请填金额'; return; }
+  if (!dStart) { document.getElementById('tfaMsg').textContent = '请选开始日期'; return; }
+  if (dEnd && dEnd < dStart) { document.getElementById('tfaMsg').textContent = '结束日期不能早于开始日期'; return; }
+  if (!amount || !(Number(amount) > 0)) { document.getElementById('tfaMsg').textContent = '请填总金额'; return; }
   const btn = document.getElementById('tfaSaveBtn');
   btn.disabled = true;
   try {
     const fd = new FormData();
     fd.append('fee_type', 'truck');
     fd.append('party_name', party);
-    fd.append('fee_date', document.getElementById('tfaDate').value || '');
+    fd.append('fee_date', dStart);
+    fd.append('fee_date_end', dEnd || '');
     fd.append('amount', amount);
     fd.append('description', document.getElementById('tfaNote').value.trim());
+    fd.append('cargo', [...document.querySelectorAll('.tfaCargo:checked')].map(c => c.value).join(', '));
+    const disc = Number(document.getElementById('tfaDisc').value);
+    if (disc > 0) { fd.append('discount_value', String(disc)); fd.append('discount_type', document.getElementById('tfaDiscType').value); }
     _tfaFiles.forEach(f => fd.append('invoice', f));
     const res = await fetch('/api/acct/fee-records', { method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd }).then(x => x.json());
     if (res.error) throw new Error(res.error);
