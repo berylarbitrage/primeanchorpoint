@@ -844,6 +844,11 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS fee_records (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`); } catch(e) {}
+// 卡车租车单字段 (照 Bintique 租车单思路: 起止日期 + 折扣 + 装货类型)
+try { db.exec("ALTER TABLE fee_records ADD COLUMN fee_date_end TEXT DEFAULT ''"); } catch(e) {}
+try { db.exec("ALTER TABLE fee_records ADD COLUMN cargo TEXT DEFAULT ''"); } catch(e) {}
+try { db.exec("ALTER TABLE fee_records ADD COLUMN discount_value REAL DEFAULT NULL"); } catch(e) {}
+try { db.exec("ALTER TABLE fee_records ADD COLUMN discount_type TEXT DEFAULT '%'"); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL"); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) {}
@@ -39038,8 +39043,11 @@ app.get('/api/acct/truck-bills', requireAdmin, requireAcctView, async (req, res)
       out.push({
         id: 'fee-' + f.id, manual: true, fee_id: f.id,
         date: f.fee_date || String(f.created_at || '').slice(0, 10),
+        date_end: f.fee_date_end || '',
         amount: Number(f.amount) || 0, direction: 'out',
-        customer: f.party_name || '', note: f.description || '', cargo: '',
+        customer: f.party_name || '', note: f.description || '', cargo: f.cargo || '',
+        discount_value: f.discount_value != null ? Number(f.discount_value) : null,
+        discount_type: f.discount_type || '%',
         photos_urls: (Array.isArray(atts) ? atts : []).map(a => (a && a.path) || '').filter(Boolean),
         pay_note: feeNotes[f.id] || null,
         approval_status: f.approval_status || 'approved', created_by: f.created_by || '',
@@ -39082,12 +39090,18 @@ app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin
   const files = Array.isArray(req.files) ? req.files : [];
   const atts = files.map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
   const isAdmin = req.userRole === 'admin';
+  // 租车单扩展字段 (卡车费用用, 照 Bintique 租车单): 结束日期 / 装货类型 / 折扣
+  const discNum = Number(b.discount_value);
   const r = db.prepare(`INSERT INTO fee_records
-    (fee_type, party_name, fee_date, amount, description, status, attachments, approval_status, created_by, approved_by)
-    VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`)
+    (fee_type, party_name, fee_date, fee_date_end, amount, description, cargo, discount_value, discount_type, status, attachments, approval_status, created_by, approved_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`)
     .run(feeType, party, String(b.fee_date || '').trim().slice(0, 20),
+      String(b.fee_date_end || '').trim().slice(0, 20),
       (b.amount != null && b.amount !== '' && !isNaN(amtNum)) ? amtNum : null,
       String(b.description || '').trim().slice(0, 2000),
+      String(b.cargo || '').trim().slice(0, 200),
+      (b.discount_value != null && b.discount_value !== '' && !isNaN(discNum)) ? discNum : null,
+      ['%', '$'].includes(String(b.discount_type || '')) ? String(b.discount_type) : '%',
       JSON.stringify(atts), isAdmin ? 'approved' : 'pending', req.userName || '', isAdmin ? (req.userName || '') : '');
   res.json({ success: true, id: r.lastInsertRowid, approval_status: isAdmin ? 'approved' : 'pending' });
 });

@@ -25,6 +25,13 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
 .tab{border:none;background:none;padding:.55rem 1rem;font-size:.9rem;font-weight:700;color:var(--g500);cursor:pointer;border-bottom:3px solid transparent}
 .tab.on{color:#0f4c6b;border-bottom-color:var(--blue)}
 .badge{display:inline-block;border-radius:999px;padding:.08rem .55rem;font-size:.72rem;font-weight:700}
+
+/* ── 银行直连表: 列表在卡片内滚动, 表头 + 合计行吸顶不动 ── */
+#bankTblWrap{max-height:calc(100vh - 120px);overflow:auto;padding:0 14px 12px;overscroll-behavior:contain}
+#bankTblWrap table{border-collapse:separate;border-spacing:0}
+#bankTblWrap thead th{position:sticky;top:0;z-index:4;background:#fff;padding-top:.7rem;border-bottom:none;box-shadow:inset 0 -2px 0 var(--g200)}
+#bankSumRow td{position:sticky;z-index:3;background:#f0f9ff;border-top:none;border-bottom:1px solid #bae6fd;padding:.42rem .55rem;white-space:nowrap}
+#bankTblWrap tbody tr:first-child td{border-top:none}
 .ann-badge{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}
 .no-ann{color:var(--g300)}
 
@@ -460,10 +467,13 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <input type="date" id="bankFltTo" onchange="bankLoadTxns()">
         <span id="bankTxnStats" style="font-size:.8rem;color:var(--g500)"></span>
       </div>
-      <div class="card" style="overflow-x:auto">
+      <div class="card" id="bankTblWrap">
         <table><thead><tr id="bankTxnHeadRow">
+          <th style="width:26px"><input type="checkbox" id="bankSelAllCb" onchange="_bankSelAll(this.checked)" title="全选 / 全不选当前列表" style="cursor:pointer"></th>
           <th>日期</th><th>银行 / 账户</th><th>商户 / 描述</th><th>分类</th><th style="text-align:right">金额</th><th>状态</th><th>审核</th><th>备注</th>
-        </tr></thead><tbody id="bankTxnBody"><tr><td colspan="8" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+        </tr>
+        <tr id="bankSumRow" style="display:none"><td id="bankSumCell" colspan="9"></td></tr>
+        </thead><tbody id="bankTxnBody"><tr><td colspan="9" style="color:var(--g400)">加载中…</td></tr></tbody></table>
       </div>
     </div>
   </div>
@@ -1237,7 +1247,8 @@ function openTruckDetail(id) {
       : row('订单号', r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener" style="color:#0f4c6b;text-decoration:underline;font-weight:700">${esc(r.rental_code || '卡车单')}</a> ↗` : esc(r.rental_code || '—'))}
     ${row('卡车公司', esc(r.customer) || '—')}
     ${r.cargo ? row('装货类型', esc(r.cargo)) : ''}
-    ${row('金额', `<b style="color:#b91c1c">${money(r.amount)}</b>`)}
+    ${r.manual && r.discount_value > 0 ? row('折扣', esc(r.discount_type === '$' ? '$' + r.discount_value : r.discount_value + '%')) : ''}
+    ${row('金额', `<b style="color:#b91c1c">${money(r.amount)}</b>${r.manual && r.discount_value > 0 ? ' <span style="font-size:.72rem;color:var(--g400)">（折后总金额）</span>' : ''}`)}
     ${row('付款状态', _palletPayBadge(r) + ' <span style="font-size:.72rem;color:var(--g400)">（按本系统会计批注）</span>')}
     ${r.note ? row('备注', esc(r.note)) : ''}
     ${r.manual ? '' : row('Bintique 参考', _truckBintiqueCell(r))}
@@ -1276,27 +1287,43 @@ function openTruckAdd() {
     m.id = 'truckAddModal';
     m.style.cssText = 'display:none;position:fixed;inset:0;z-index:2000;background:rgba(15,23,42,.55);align-items:center;justify-content:center;padding:1rem';
     m.onclick = e => { if (e.target === m) m.style.display = 'none'; };
-    m.innerHTML = `<div style="background:#fff;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,.35);width:min(94vw,440px);max-height:92vh;overflow:auto;padding:1rem 1.1rem" onclick="event.stopPropagation()">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
-        <div style="font-weight:800;font-size:.95rem;color:#475569">🚚 添加卡车费用</div>
+    // 表单照 pallet.bintique.com 租车单 (Truck Rental) 的思路: 起止日期 + 折扣 + 总金额 + 装货类型 + 付款收据
+    const LB = 'display:block;font-size:.68rem;font-weight:700;letter-spacing:.5px;color:var(--g500);margin-bottom:.25rem';
+    const REQ = '<span style="color:#dc2626">*</span>';
+    m.innerHTML = `<div style="background:#fff;border-radius:14px;box-shadow:0 12px 48px rgba(0,0,0,.35);width:min(94vw,520px);max-height:92vh;overflow:auto;padding:1.1rem 1.25rem" onclick="event.stopPropagation()">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem">
+        <div style="font-weight:800;font-size:1rem;color:#1f2937">🚚 租车费用 / Truck Rental</div>
         <button onclick="document.getElementById('truckAddModal').style.display='none'" style="border:1px solid var(--g200);background:#fff;border-radius:8px;padding:.2rem .7rem;cursor:pointer;font-size:.8rem">✕</button>
       </div>
-      <label style="font-size:.78rem;color:var(--g500)">日期</label>
-      <input type="date" id="tfaDate" style="width:100%;margin-bottom:.5rem">
-      <label style="font-size:.78rem;color:var(--g500)">卡车公司</label>
+      <label style="${LB}">SELECT TRUCK COMPANY 请选择卡车公司 ${REQ}</label>
       <select id="tfaPartySel" style="width:100%;margin-bottom:.4rem" onchange="document.getElementById('tfaPartyNew').style.display = this.value === '__new__' ? '' : 'none'"></select>
-      <input type="text" id="tfaPartyNew" placeholder="输入新卡车公司名" style="width:100%;margin-bottom:.5rem;display:none">
-      <label style="font-size:.78rem;color:var(--g500)">金额（支出，$）</label>
-      <input type="number" step="0.01" id="tfaAmount" placeholder="0.00" style="width:100%;margin-bottom:.5rem">
-      <label style="font-size:.78rem;color:var(--g500)">备注</label>
-      <input type="text" id="tfaNote" placeholder="选填：运的什么 / 单号等" style="width:100%;margin-bottom:.5rem">
-      <label style="font-size:.78rem;color:var(--g500)">发票 / 凭证（选填）</label>
-      <div id="tfaDrop" style="border:2px dashed var(--g200);border-radius:10px;background:#f8fafc;padding:1rem;text-align:center;font-size:.8rem;color:var(--g500);cursor:pointer;margin-bottom:.4rem">📎 把发票 / 凭证<b>拖到这里</b>，或点击选择<br><span style="font-size:.72rem;color:var(--g400)">可多张、不限数量（PDF / 图片）</span></div>
+      <input type="text" id="tfaPartyNew" placeholder="输入新卡车公司名" style="width:100%;margin-bottom:.55rem;display:none">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.55rem">
+        <div><label style="${LB}">START DATE 开始日期 ${REQ}</label><input type="date" id="tfaDate" style="width:100%"></div>
+        <div><label style="${LB}">END DATE 结束日期</label><input type="date" id="tfaDateEnd" style="width:100%" title="单日/单程可不填"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.55rem">
+        <div><label style="${LB}">DISCOUNT 折扣</label>
+          <div style="display:flex;gap:.3rem"><input type="number" step="0.01" min="0" id="tfaDisc" value="0" style="flex:1;min-width:0"><select id="tfaDiscType" style="width:62px"><option value="%">%</option><option value="$">$</option></select></div>
+        </div>
+        <div><label style="${LB}">TOTAL AMOUNT 总金额 ($) ${REQ}</label><input type="number" step="0.01" id="tfaAmount" placeholder="0.00" style="width:100%"></div>
+      </div>
+      <label style="${LB}">NOTES 备注</label>
+      <textarea id="tfaNote" rows="3" placeholder="Any notes…" style="width:100%;margin-bottom:.55rem;resize:vertical"></textarea>
+      <label style="${LB}">装货类型 CARGO TYPE</label>
+      <div style="display:flex;gap:1.1rem;flex-wrap:wrap;margin-bottom:.6rem;font-size:.84rem">
+        <label style="display:inline-flex;align-items:center;gap:.3rem;cursor:pointer"><input type="checkbox" class="tfaCargo" value="Pallet"> Pallet</label>
+        <label style="display:inline-flex;align-items:center;gap:.3rem;cursor:pointer"><input type="checkbox" class="tfaCargo" value="装货"> 装货</label>
+        <label style="display:inline-flex;align-items:center;gap:.3rem;cursor:pointer"><input type="checkbox" class="tfaCargo" value="Others"> Others</label>
+      </div>
+      <label style="${LB}">PAYMENT RECEIPT 付款收据</label>
+      <div id="tfaDrop" style="border:1px dashed var(--g300);border-radius:10px;background:#f8fafc;padding:.7rem 1rem;text-align:center;font-size:.82rem;color:var(--g600);cursor:pointer;margin-bottom:.4rem">📎 <b>Attach receipt 上传收据</b> <span style="color:var(--g400)">（可多张）</span><br><span style="font-size:.72rem;color:var(--g400)">拖到这里或点击选择 · PDF / 图片、不限数量</span></div>
       <input type="file" id="tfaFiles" accept="application/pdf,image/*" multiple style="display:none">
       <div id="tfaFileList" style="margin-bottom:.7rem;line-height:1.9"></div>
       <div style="display:flex;justify-content:flex-end;gap:.5rem;align-items:center">
-        <span id="tfaMsg" style="font-size:.78rem;color:var(--g500)"></span>
-        <button class="btn btn-blue" id="tfaSaveBtn" onclick="submitTruckAdd()">保存</button>
+        <span id="tfaMsg" style="font-size:.78rem;color:#dc2626;margin-right:auto"></span>
+        <button class="btn btn-outline" onclick="document.getElementById('truckAddModal').style.display='none'">Cancel 取消</button>
+        <button class="btn btn-blue" id="tfaSaveBtn" onclick="submitTruckAdd()">Save 保存</button>
       </div>
     </div>`;
     document.body.appendChild(m);
@@ -1317,6 +1344,10 @@ function openTruckAdd() {
   partyNew.value = '';
   if (!names.length) { sel.value = '__new__'; partyNew.style.display = ''; } else { sel.value = ''; partyNew.style.display = 'none'; }
   document.getElementById('tfaDate').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('tfaDateEnd').value = '';
+  document.getElementById('tfaDisc').value = '0';
+  document.getElementById('tfaDiscType').value = '%';
+  document.querySelectorAll('.tfaCargo').forEach(c => { c.checked = false; });
   document.getElementById('tfaAmount').value = '';
   document.getElementById('tfaNote').value = '';
   document.getElementById('tfaMsg').textContent = '';
@@ -1328,17 +1359,25 @@ async function submitTruckAdd() {
   const selV = document.getElementById('tfaPartySel').value;
   const party = selV === '__new__' ? document.getElementById('tfaPartyNew').value.trim() : selV;
   const amount = document.getElementById('tfaAmount').value;
+  const dStart = document.getElementById('tfaDate').value;
+  const dEnd = document.getElementById('tfaDateEnd').value;
   if (!party) { document.getElementById('tfaMsg').textContent = '请选择或填写卡车公司'; return; }
-  if (!amount || !(Number(amount) > 0)) { document.getElementById('tfaMsg').textContent = '请填金额'; return; }
+  if (!dStart) { document.getElementById('tfaMsg').textContent = '请选开始日期'; return; }
+  if (dEnd && dEnd < dStart) { document.getElementById('tfaMsg').textContent = '结束日期不能早于开始日期'; return; }
+  if (!amount || !(Number(amount) > 0)) { document.getElementById('tfaMsg').textContent = '请填总金额'; return; }
   const btn = document.getElementById('tfaSaveBtn');
   btn.disabled = true;
   try {
     const fd = new FormData();
     fd.append('fee_type', 'truck');
     fd.append('party_name', party);
-    fd.append('fee_date', document.getElementById('tfaDate').value || '');
+    fd.append('fee_date', dStart);
+    fd.append('fee_date_end', dEnd || '');
     fd.append('amount', amount);
     fd.append('description', document.getElementById('tfaNote').value.trim());
+    fd.append('cargo', [...document.querySelectorAll('.tfaCargo:checked')].map(c => c.value).join(', '));
+    const disc = Number(document.getElementById('tfaDisc').value);
+    if (disc > 0) { fd.append('discount_value', String(disc)); fd.append('discount_type', document.getElementById('tfaDiscType').value); }
     _tfaFiles.forEach(f => fd.append('invoice', f));
     const res = await fetch('/api/acct/fee-records', { method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd }).then(x => x.json());
     if (res.error) throw new Error(res.error);
@@ -2398,6 +2437,57 @@ function _bankApplyLocalFilters(list) {
   }
   return list;
 }
+// 部分勾选看金额: 每行前面有勾选框, 勾几笔就在合计行后面单独算这几笔的小计;
+// 表头框全选当前筛选结果, 分组行的框整周/整月一起勾
+let _bankSel = new Set(), _bankLastShown = [];
+function _bankRowKey(x) { return String(x.txn_id || ('acct-' + x.id)); }
+function _bankSelToggle(key, checked) { if (checked) _bankSel.add(key); else _bankSel.delete(key); _bankRenderSum(_bankLastShown); }
+function _bankSelAll(checked) {
+  _bankLastShown.forEach(x => { const k = _bankRowKey(x); if (checked) _bankSel.add(k); else _bankSel.delete(k); });
+  document.querySelectorAll('.bankSelCb').forEach(c => { c.checked = checked; });
+  _bankRenderSum(_bankLastShown);
+}
+function _bankSelGrp(grpKey, checked) {
+  document.querySelectorAll('tr[data-grp="' + grpKey + '"] .bankSelCb').forEach(c => {
+    c.checked = checked;
+    if (checked) _bankSel.add(c.dataset.key); else _bankSel.delete(c.dataset.key);
+  });
+  _bankRenderSum(_bankLastShown);
+}
+function _bankSelClear() {
+  _bankSel.clear();
+  document.querySelectorAll('.bankSelCb').forEach(c => { c.checked = false; });
+  _bankRenderSum(_bankLastShown);
+}
+// 合计行: 汇总当前筛选出来的交易, 吸附在列表表头下面, 滚到哪里都看得见
+function _bankRenderSum(list) {
+  _bankLastShown = list || [];
+  const row = document.getElementById('bankSumRow'), cell = document.getElementById('bankSumCell');
+  if (!row || !cell) return;
+  const allCb = document.getElementById('bankSelAllCb');
+  if (!list || !list.length) { row.style.display = 'none'; if (allCb) allCb.checked = false; return; }
+  const sums = arr => {
+    let inSum = 0, outSum = 0;
+    arr.forEach(x => { const a = Number(x.amount) || 0; if (a < 0) inSum += -a; else outSum += a; });
+    return { inSum, outSum, net: inSum - outSum };
+  };
+  const chip = (label, val, color, bg, bd) => `<span style="background:${bg || '#fff'};border:1px solid ${bd || '#bae6fd'};border-radius:8px;padding:2px 9px;font-size:.76rem;color:${color};font-weight:700">${label} ${val}</span>`;
+  const trio = (s, bg, bd) => chip('收入', '+' + money(s.inSum), '#047857', bg, bd) + ' '
+    + chip('支出', '−' + money(s.outSum), '#57534e', bg, bd) + ' '
+    + chip('净额', (s.net >= 0 ? '+' : '−') + money(Math.abs(s.net)), s.net >= 0 ? '#047857' : '#c5221f', bg, bd);
+  const sel = list.filter(x => _bankSel.has(_bankRowKey(x)));
+  cell.innerHTML = `<b style="font-size:.8rem;color:#0f4c6b">Σ 合计</b> <span style="color:var(--g500);font-size:.76rem">${list.length} 笔</span> ` + trio(sums(list))
+    + (sel.length ? `<span style="display:inline-block;margin-left:.6rem;padding-left:.7rem;border-left:2px solid #93c5fd"><b style="font-size:.8rem;color:#1d4ed8">☑ 勾选</b> <span style="color:var(--g500);font-size:.76rem">${sel.length} 笔</span> ${trio(sums(sel), '#eff6ff', '#93c5fd')} <a onclick="_bankSelClear()" style="cursor:pointer;color:#dc2626;font-size:.74rem;text-decoration:underline">✕ 清除</a></span>` : '');
+  row.style.display = '';
+  if (allCb) allCb.checked = sel.length === list.length;
+  // 分组行的组勾选框: 组内全部选中才打勾
+  document.querySelectorAll('.bankGrpCb').forEach(c => {
+    const boxes = document.querySelectorAll('tr[data-grp="' + c.dataset.grpKey + '"] .bankSelCb');
+    c.checked = boxes.length > 0 && [...boxes].every(b => b.checked);
+  });
+  const th0 = document.querySelector('#bankTblWrap thead th');
+  cell.style.top = (th0 ? th0.getBoundingClientRect().height : 33) + 'px';  // 吸附在列头正下方
+}
 // 分类下拉: 从当前账户已加载的交易里收集分类 + 各自笔数, 保留当前选择
 function _bankFillCatOptions(txns) {
   const sel = document.getElementById('bankFltCat');
@@ -2432,7 +2522,7 @@ async function bankLoadTxns() {
   try {
     const d = await bapi('/api/acct/bank/transactions?' + q.toString());
     _bankTxns = d.transactions || [];
-  } catch (e) { document.getElementById('bankTxnBody').innerHTML = '<tr><td colspan="8" style="color:#dc2626">' + esc(e.message || '加载失败') + '</td></tr>'; return; }
+  } catch (e) { document.getElementById('bankTxnBody').innerHTML = '<tr><td colspan="9" style="color:#dc2626">' + esc(e.message || '加载失败') + '</td></tr>'; _bankRenderSum([]); return; }
   _bankFillCatOptions(_bankTxns);
   _bankFillInternalOptions();
   const shown = _bankApplyLocalFilters(_bankTxns);
@@ -2441,7 +2531,9 @@ async function bankLoadTxns() {
     // Plaid 金额: 正数=支出, 负数=入账
     const isOut = (x.amount || 0) > 0;
     const amt = `<span style="font-weight:800;color:${isOut ? '#dc2626' : '#15803d'}">${isOut ? '−' : '+'}${money(Math.abs(x.amount || 0))}</span>`;
+    const key = _bankRowKey(x);
     return `<tr>
+      <td><input type="checkbox" class="bankSelCb" data-key="${esc(key)}" ${_bankSel.has(key) ? 'checked' : ''} onchange="_bankSelToggle(this.dataset.key, this.checked)" title="勾选算小计" style="cursor:pointer"></td>
       <td style="white-space:nowrap">${esc(x.date || '')}</td>
       <td style="font-size:.78rem">${esc(x.institution_name || '')}<br>${esc(x.account_name || '')} ··${esc(x.account_mask || '')}</td>
       <td>${esc(x.merchant || x.name || '')}${x.merchant && x.name && x.merchant !== x.name ? '<br><span style=\"font-size:.72rem;color:var(--g400)\">' + esc(x.name) + '</span>' : ''}</td>
@@ -2451,7 +2543,8 @@ async function bankLoadTxns() {
       <td style="white-space:nowrap"><label style="cursor:pointer"><input type="checkbox" ${x.reviewed ? 'checked' : ''} onchange="bankReview(${x.id}, this.checked)"> ${x.reviewed ? '<span style=\"font-size:.72rem;color:#15803d\">' + esc(x.reviewed_by || '') + '</span>' : ''}</label></td>
       <td><input type="text" value="${esc(x.review_note || '')}" placeholder="备注…" style="width:130px;font-size:.78rem;padding:4px 6px" onchange="bankReviewNote(${x.id}, this.value)"></td>
     </tr>`;
-  }).join('') || '<tr><td colspan="8" style="color:var(--g400)">没有符合条件的交易（先点「立即同步」）</td></tr>';
+  }).join('') || '<tr><td colspan="9" style="color:var(--g400)">没有符合条件的交易（先点「立即同步」）</td></tr>';
+  _bankRenderSum(shown);
 }
 // /banking(Plaid) 数据源的交易列表: 按笔/按周/按月分组, 备注走同一套标注(会计保存即待审核)
 let _plaidTxns = [];
@@ -2482,7 +2575,7 @@ async function plaidLoadTxns() {
       bapi('/api/plaid/transactions?' + q.toString()),
       annLoadAll(),
     ]);
-  } catch (e) { document.getElementById('bankTxnBody').innerHTML = '<tr><td colspan="7" style="color:#dc2626">' + esc(e.message || '加载失败') + '</td></tr>'; return; }
+  } catch (e) { document.getElementById('bankTxnBody').innerHTML = '<tr><td colspan="8" style="color:#dc2626">' + esc(e.message || '加载失败') + '</td></tr>'; _bankRenderSum([]); return; }
   _plaidTxns = d.transactions || [];
   _TXNS = _plaidTxns;  // bank-ann.js 抽屉打开时按 txn_id 找交易信息用
   // 「待审核」筛选 (与 /banking 同款): 只看有待审核标注的交易
@@ -2497,13 +2590,15 @@ async function plaidLoadTxns() {
   document.getElementById('bankTxnStats').textContent = `共 ${d.total || _plaidTxns.length} 笔${_plaidTxns.length < (d.total || 0) ? `（显示最近 ${_plaidTxns.length} 笔）` : ''}${list.length !== _plaidTxns.length ? ` · 筛选后 ${list.length} 笔` : ''}`;
   // plaid 模式表头: 审核/备注两列合并为与 /banking 相同的「标注」列
   const headRow = document.getElementById('bankTxnHeadRow');
-  if (headRow) headRow.innerHTML = '<th>日期</th><th>银行 / 账户</th><th>商户 / 描述</th><th>分类</th><th style="text-align:right">金额</th><th>状态</th><th>标注</th>';
+  if (headRow) headRow.innerHTML = '<th style="width:26px"><input type="checkbox" id="bankSelAllCb" onchange="_bankSelAll(this.checked)" title="全选 / 全不选当前列表" style="cursor:pointer"></th><th>日期</th><th>银行 / 账户</th><th>商户 / 描述</th><th>分类</th><th style="text-align:right">金额</th><th>状态</th><th>标注</th>';
 
   const rowHtml = (x, grpKey) => {
     const a = accById[x.account_id] || {};
     const isOut = (x.amount || 0) > 0;
     const amt = `<span style="font-weight:800;color:${isOut ? '#dc2626' : '#15803d'}">${isOut ? '−' : '+'}${money(Math.abs(x.amount || 0))}</span>`;
+    const key = _bankRowKey(x);
     return `<tr${grpKey ? ` data-grp="${esc(grpKey)}"` : ''}>
+      <td><input type="checkbox" class="bankSelCb" data-key="${esc(key)}" ${_bankSel.has(key) ? 'checked' : ''} onchange="_bankSelToggle(this.dataset.key, this.checked)" title="勾选算小计" style="cursor:pointer"></td>
       <td style="white-space:nowrap">${esc(x.date || '')}</td>
       <td style="white-space:nowrap;font-size:.8rem" title="${esc((a.institution || '') + ' ' + (a.name || ''))}">${esc(a.institution || '')}${a.company_label ? ' · ' + esc(a.company_label) : ''} ··${esc(a.mask || '')}</td>
       <td>${esc(x.merchant || x.name || '')}${x.merchant && x.name && x.merchant !== x.name ? '<br><span style="font-size:.72rem;color:var(--g400)">' + esc(x.name) + '</span>' : ''}</td>
@@ -2528,8 +2623,9 @@ async function plaidLoadTxns() {
     }
     body = groups.map(g => {
       const net = g.inSum - g.outSum;
+      const grpAllSel = g.txns.length > 0 && g.txns.every(x => _bankSel.has(_bankRowKey(x)));
       return `<tr style="cursor:pointer;background:#fffbeb" onclick="plaidToggleGrp(this,'${esc(g.key)}')">
-        <td colspan="7" style="padding:.5rem .6rem"><span class="grp-arrow">▼</span> <b>📅 ${esc(g.label)}</b>
+        <td colspan="8" style="padding:.5rem .6rem"><input type="checkbox" class="bankGrpCb" data-grp-key="${esc(g.key)}" ${grpAllSel ? 'checked' : ''} onclick="event.stopPropagation()" onchange="_bankSelGrp(this.dataset.grpKey, this.checked)" title="整组一起勾选算小计" style="cursor:pointer;vertical-align:middle;margin-right:.3rem"><span class="grp-arrow">▼</span> <b>📅 ${esc(g.label)}</b>
           <span style="color:var(--g400);font-size:.76rem">${g.txns.length} 笔</span>
           <span style="background:#fff;border:1px solid var(--g200);border-radius:8px;padding:1px 8px;font-size:.74rem;color:#047857;margin-left:.3rem">收入 +${money(g.inSum)}</span>
           <span style="background:#fff;border:1px solid var(--g200);border-radius:8px;padding:1px 8px;font-size:.74rem;color:#57534e">支出 −${money(g.outSum)}</span>
@@ -2537,7 +2633,8 @@ async function plaidLoadTxns() {
         </td></tr>` + g.txns.map(x => rowHtml(x, g.key)).join('');
     }).join('');
   }
-  document.getElementById('bankTxnBody').innerHTML = body || '<tr><td colspan="7" style="color:var(--g400)">没有符合条件的交易。</td></tr>';
+  document.getElementById('bankTxnBody').innerHTML = body || '<tr><td colspan="8" style="color:var(--g400)">没有符合条件的交易。</td></tr>';
+  _bankRenderSum(list);
 }
 function _bankTxnById(id) { return _bankTxns.find(x => x.id === id); }
 async function bankReview(id, checked) {
