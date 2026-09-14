@@ -345,7 +345,8 @@ tr:last-child td{border-bottom:none}
     <div id="tabWorkers" style="display:none">
       <div class="card">
         <h2>派遣工人列表</h2>
-        <p style="font-size:.85rem;color:var(--gray-400);margin-bottom:1rem">近 90 天在贵公司仓库打卡的全部工人信息（含正式派工记录）<span id="workersCount" style="font-weight:700;color:var(--gray-500)"></span></p>
+        <p style="font-size:.85rem;color:var(--gray-400);margin-bottom:1rem">近 90 天在贵公司仓库打卡的全部工人信息（含正式派工记录）<span id="workersCount" style="font-weight:700;color:var(--gray-500)"></span>
+          <button id="wkAddBtn" onclick="wkAddOpen()" style="display:none;margin-left:.7rem;border:1.5px solid var(--blue,#4A6CF7);background:#fff;color:var(--blue,#4A6CF7);border-radius:8px;padding:.3rem .8rem;font-size:.82rem;font-weight:700;cursor:pointer;font-family:inherit" title="从员工库里搜人，挂到贵公司的派遣工人列表（还没打过卡也能加）">➕ 从员工库加人</button></p>
         <div style="overflow-x:auto">
         <table style="min-width:880px">
           <thead><tr><th style="width:2.4rem">#</th><th>姓名</th><th>员工号</th><th>职位</th><th>电话</th><th>邮箱</th><th>地址</th><th>近90天 打卡·工时</th><th>操作</th></tr></thead>
@@ -1781,6 +1782,8 @@ async function loadPosts() {
 }
 
 async function loadWorkers() {
+  const addBtn = document.getElementById('wkAddBtn');
+  if (addBtn) addBtn.style.display = cCan('add_worker') ? '' : 'none';
   const workers = await cApi('/my-workers');
   if (!workers) return;
   const wcEl = document.getElementById('workersCount');
@@ -1793,9 +1796,62 @@ async function loadWorkers() {
     <td style="white-space:nowrap">${fmtPhone(w.phone)}</td>
     <td>${esc(w.email||'')||'—'}</td>
     <td style="font-size:.82rem;color:var(--gray-500);white-space:nowrap">${esc(w.address||'')||'—'}</td>
-    <td style="white-space:nowrap">${w.punch_days ? `${w.punch_days} 天 · <b>${(w.total_hours || 0).toFixed(1)}h</b>` : (w.assign_status ? '派工·' + esc(w.assign_status) : '—')}</td>
-    <td style="white-space:nowrap">${w.id ? `${cCan('docs') ? `<button class="tr-act" style="border-color:var(--blue);color:var(--blue)" onclick="wkCardOpen(${w.id})">🪪 工卡</button>` : ''}<button class="tr-act" style="border-color:#2D9D78;color:#2D9D78" onclick="wkGoRecords(${w.id}, '${esc([w.first_name, w.middle_name, w.last_name].filter(Boolean).join(' ')).replace(/'/g,"&#39;")}')" title="查看该工人的全部打卡记录和总工时">📋 打卡记录</button>` : '—'}</td>
+    <td style="white-space:nowrap">${w.punch_days ? `${w.punch_days} 天 · <b>${(w.total_hours || 0).toFixed(1)}h</b>`
+      : w.kind === 'manual' ? `<span title="从员工库手动添加${w.added_by ? ' · ' + esc(w.added_by) : ''}" style="background:#EEF4FF;border:1px solid #C7D6FE;color:#3B5BDB;border-radius:6px;padding:1px 7px;font-size:.74rem;font-weight:700">✍️ 手动添加</span>`
+      : (w.assign_status ? '派工·' + esc(w.assign_status) : '—')}</td>
+    <td style="white-space:nowrap">${w.id ? `${cCan('docs') ? `<button class="tr-act" style="border-color:var(--blue);color:var(--blue)" onclick="wkCardOpen(${w.id})">🪪 工卡</button>` : ''}<button class="tr-act" style="border-color:#2D9D78;color:#2D9D78" onclick="wkGoRecords(${w.id}, '${esc([w.first_name, w.middle_name, w.last_name].filter(Boolean).join(' ')).replace(/'/g,"&#39;")}')" title="查看该工人的全部打卡记录和总工时">📋 打卡记录</button>${w.kind === 'manual' && cCan('add_worker') ? `<button class="tr-act" style="border-color:#E63946;color:#E63946" onclick="wkManualRemove(${w.id})" title="从列表移除（不影响打卡数据）">✕ 移除</button>` : ''}` : '—'}</td>
   </tr>`).join('') : '<tr><td colspan="9" class="empty">暂无派遣工人信息</td></tr>';
+}
+// ➕ 从员工库加人: 搜姓名/员工号/电话 → 挂到本公司派遣工人列表 (add_worker 权限, 管理员冒充可用)
+let _wkAddT = null;
+function wkAddOpen() {
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay show';
+  ov.innerHTML = `<div class="modal-box" style="max-width:540px;padding:1.2rem 1.3rem">
+    <h2 style="margin-bottom:.2rem">➕ 从员工库添加派遣工人</h2>
+    <p style="color:var(--gray-400);font-size:.82rem;margin-bottom:.6rem">搜员工库里的<b>姓名 / 员工号 / 电话</b>，把人挂到贵公司的派遣工人列表；还没打过第一次卡的新工人也能加，加完就能在「添加打卡」里选到。</p>
+    <input type="text" id="wkAddQ" placeholder="输入姓名 / 员工号 / 电话搜索…" style="width:100%;padding:.5rem .7rem;border:1.5px solid var(--gray-200,#e2e5ea);border-radius:8px;font-size:.9rem;box-sizing:border-box">
+    <div id="wkAddList" style="margin-top:.5rem;max-height:46vh;overflow:auto"></div>
+    <button class="modal-btn modal-btn-secondary" style="margin-top:.9rem;margin-bottom:0" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+  </div>`;
+  ov.addEventListener('click', ev => { if (ev.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+  const inp = ov.querySelector('#wkAddQ'), list = ov.querySelector('#wkAddList');
+  inp.focus();
+  inp.oninput = () => {
+    clearTimeout(_wkAddT);
+    _wkAddT = setTimeout(async () => {
+      const q = inp.value.trim();
+      if (!q) { list.innerHTML = ''; return; }
+      list.innerHTML = '<div style="color:var(--gray-400);font-size:.84rem;padding:.4rem">搜索中…</div>';
+      const r = await cApi('/employee-search?q=' + encodeURIComponent(q));
+      if (q !== inp.value.trim()) return; // 输入又变了, 丢弃过期结果
+      if (!Array.isArray(r)) { list.innerHTML = `<div style="color:#E63946;font-size:.84rem;padding:.4rem">${esc((r && r.error) || '搜索失败')}</div>`; return; }
+      list.innerHTML = r.length ? r.map(e => `<div style="display:flex;align-items:center;gap:.6rem;padding:.45rem .3rem;border-bottom:1px solid var(--gray-100,#eef1f4)">
+        <div style="flex:1;min-width:0"><b>${esc([e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ') || '—')}</b>
+          <span style="color:var(--gray-400);font-size:.78rem;margin-left:.4rem">${esc(e.emp_code || '')}${e.position ? ' · ' + esc(e.position) : ''}${e.phone ? ' · ' + fmtPhone(e.phone) : ''}</span></div>
+        ${e.already ? '<span style="color:#2D9D78;font-size:.8rem;white-space:nowrap">✓ 已在列表</span>'
+          : `<button class="tr-act" style="border-color:var(--blue);color:var(--blue)" onclick="wkManualAdd(${e.id}, this)">＋ 添加</button>`}
+      </div>`).join('') : '<div style="color:var(--gray-400);font-size:.84rem;padding:.4rem">员工库里没有匹配的在职员工</div>';
+    }, 300);
+  };
+}
+async function wkManualAdd(eid, btn) {
+  btn.disabled = true;
+  const r = await cApi('/my-workers', { method: 'POST', body: JSON.stringify({ employee_id: eid }) });
+  if (!r || r.error) { showToast((r && r.error) || '添加失败', 'error'); btn.disabled = false; return; }
+  btn.outerHTML = '<span style="color:#2D9D78;font-size:.8rem;white-space:nowrap">✓ 已添加</span>';
+  showToast('✅ 已添加到派遣工人列表');
+  _trAddWk = null; // 「添加打卡」的员工下拉缓存作废, 下次打开能选到新人
+  loadWorkers();
+}
+async function wkManualRemove(eid) {
+  if (!confirm('把这名手动添加的工人从列表移除？（不影响打卡数据）')) return;
+  const r = await cApi('/my-workers/' + eid, { method: 'DELETE' });
+  if (!r || r.error) { showToast((r && r.error) || '移除失败', 'error'); return; }
+  showToast('已移除');
+  _trAddWk = null;
+  loadWorkers();
 }
 
 // 🪪 工卡 = 入职时上传的证件 (EAD/SSN卡/驾照等), 点开逐张查看
