@@ -469,10 +469,11 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       </div>
       <div class="card" id="bankTblWrap">
         <table><thead><tr id="bankTxnHeadRow">
+          <th style="width:26px"><input type="checkbox" id="bankSelAllCb" onchange="_bankSelAll(this.checked)" title="全选 / 全不选当前列表" style="cursor:pointer"></th>
           <th>日期</th><th>银行 / 账户</th><th>商户 / 描述</th><th>分类</th><th style="text-align:right">金额</th><th>状态</th><th>审核</th><th>备注</th>
         </tr>
-        <tr id="bankSumRow" style="display:none"><td id="bankSumCell" colspan="8"></td></tr>
-        </thead><tbody id="bankTxnBody"><tr><td colspan="8" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+        <tr id="bankSumRow" style="display:none"><td id="bankSumCell" colspan="9"></td></tr>
+        </thead><tbody id="bankTxnBody"><tr><td colspan="9" style="color:var(--g400)">加载中…</td></tr></tbody></table>
       </div>
     </div>
   </div>
@@ -2436,20 +2437,54 @@ function _bankApplyLocalFilters(list) {
   }
   return list;
 }
+// 部分勾选看金额: 每行前面有勾选框, 勾几笔就在合计行后面单独算这几笔的小计;
+// 表头框全选当前筛选结果, 分组行的框整周/整月一起勾
+let _bankSel = new Set(), _bankLastShown = [];
+function _bankRowKey(x) { return String(x.txn_id || ('acct-' + x.id)); }
+function _bankSelToggle(key, checked) { if (checked) _bankSel.add(key); else _bankSel.delete(key); _bankRenderSum(_bankLastShown); }
+function _bankSelAll(checked) {
+  _bankLastShown.forEach(x => { const k = _bankRowKey(x); if (checked) _bankSel.add(k); else _bankSel.delete(k); });
+  document.querySelectorAll('.bankSelCb').forEach(c => { c.checked = checked; });
+  _bankRenderSum(_bankLastShown);
+}
+function _bankSelGrp(grpKey, checked) {
+  document.querySelectorAll('tr[data-grp="' + grpKey + '"] .bankSelCb').forEach(c => {
+    c.checked = checked;
+    if (checked) _bankSel.add(c.dataset.key); else _bankSel.delete(c.dataset.key);
+  });
+  _bankRenderSum(_bankLastShown);
+}
+function _bankSelClear() {
+  _bankSel.clear();
+  document.querySelectorAll('.bankSelCb').forEach(c => { c.checked = false; });
+  _bankRenderSum(_bankLastShown);
+}
 // 合计行: 汇总当前筛选出来的交易, 吸附在列表表头下面, 滚到哪里都看得见
 function _bankRenderSum(list) {
+  _bankLastShown = list || [];
   const row = document.getElementById('bankSumRow'), cell = document.getElementById('bankSumCell');
   if (!row || !cell) return;
-  if (!list || !list.length) { row.style.display = 'none'; return; }
-  let inSum = 0, outSum = 0;
-  list.forEach(x => { const a = Number(x.amount) || 0; if (a < 0) inSum += -a; else outSum += a; });
-  const net = inSum - outSum;
-  const chip = (label, val, color) => `<span style="background:#fff;border:1px solid #bae6fd;border-radius:8px;padding:2px 9px;font-size:.76rem;color:${color};font-weight:700">${label} ${val}</span>`;
-  cell.innerHTML = `<b style="font-size:.8rem;color:#0f4c6b">Σ 合计</b> <span style="color:var(--g500);font-size:.76rem">${list.length} 笔</span> `
-    + chip('收入', '+' + money(inSum), '#047857') + ' '
-    + chip('支出', '−' + money(outSum), '#57534e') + ' '
-    + chip('净额', (net >= 0 ? '+' : '−') + money(Math.abs(net)), net >= 0 ? '#047857' : '#c5221f');
+  const allCb = document.getElementById('bankSelAllCb');
+  if (!list || !list.length) { row.style.display = 'none'; if (allCb) allCb.checked = false; return; }
+  const sums = arr => {
+    let inSum = 0, outSum = 0;
+    arr.forEach(x => { const a = Number(x.amount) || 0; if (a < 0) inSum += -a; else outSum += a; });
+    return { inSum, outSum, net: inSum - outSum };
+  };
+  const chip = (label, val, color, bg, bd) => `<span style="background:${bg || '#fff'};border:1px solid ${bd || '#bae6fd'};border-radius:8px;padding:2px 9px;font-size:.76rem;color:${color};font-weight:700">${label} ${val}</span>`;
+  const trio = (s, bg, bd) => chip('收入', '+' + money(s.inSum), '#047857', bg, bd) + ' '
+    + chip('支出', '−' + money(s.outSum), '#57534e', bg, bd) + ' '
+    + chip('净额', (s.net >= 0 ? '+' : '−') + money(Math.abs(s.net)), s.net >= 0 ? '#047857' : '#c5221f', bg, bd);
+  const sel = list.filter(x => _bankSel.has(_bankRowKey(x)));
+  cell.innerHTML = `<b style="font-size:.8rem;color:#0f4c6b">Σ 合计</b> <span style="color:var(--g500);font-size:.76rem">${list.length} 笔</span> ` + trio(sums(list))
+    + (sel.length ? `<span style="display:inline-block;margin-left:.6rem;padding-left:.7rem;border-left:2px solid #93c5fd"><b style="font-size:.8rem;color:#1d4ed8">☑ 勾选</b> <span style="color:var(--g500);font-size:.76rem">${sel.length} 笔</span> ${trio(sums(sel), '#eff6ff', '#93c5fd')} <a onclick="_bankSelClear()" style="cursor:pointer;color:#dc2626;font-size:.74rem;text-decoration:underline">✕ 清除</a></span>` : '');
   row.style.display = '';
+  if (allCb) allCb.checked = sel.length === list.length;
+  // 分组行的组勾选框: 组内全部选中才打勾
+  document.querySelectorAll('.bankGrpCb').forEach(c => {
+    const boxes = document.querySelectorAll('tr[data-grp="' + c.dataset.grpKey + '"] .bankSelCb');
+    c.checked = boxes.length > 0 && [...boxes].every(b => b.checked);
+  });
   const th0 = document.querySelector('#bankTblWrap thead th');
   cell.style.top = (th0 ? th0.getBoundingClientRect().height : 33) + 'px';  // 吸附在列头正下方
 }
@@ -2487,17 +2522,18 @@ async function bankLoadTxns() {
   try {
     const d = await bapi('/api/acct/bank/transactions?' + q.toString());
     _bankTxns = d.transactions || [];
-  } catch (e) { document.getElementById('bankTxnBody').innerHTML = '<tr><td colspan="8" style="color:#dc2626">' + esc(e.message || '加载失败') + '</td></tr>'; _bankRenderSum([]); return; }
+  } catch (e) { document.getElementById('bankTxnBody').innerHTML = '<tr><td colspan="9" style="color:#dc2626">' + esc(e.message || '加载失败') + '</td></tr>'; _bankRenderSum([]); return; }
   _bankFillCatOptions(_bankTxns);
   _bankFillInternalOptions();
   const shown = _bankApplyLocalFilters(_bankTxns);
   document.getElementById('bankTxnStats').textContent = `${_bankTxns.length} 笔` + (shown.length !== _bankTxns.length ? ` · 筛选后 ${shown.length} 笔` : '');
-  _bankRenderSum(shown);
   document.getElementById('bankTxnBody').innerHTML = shown.map(x => {
     // Plaid 金额: 正数=支出, 负数=入账
     const isOut = (x.amount || 0) > 0;
     const amt = `<span style="font-weight:800;color:${isOut ? '#dc2626' : '#15803d'}">${isOut ? '−' : '+'}${money(Math.abs(x.amount || 0))}</span>`;
+    const key = _bankRowKey(x);
     return `<tr>
+      <td><input type="checkbox" class="bankSelCb" data-key="${esc(key)}" ${_bankSel.has(key) ? 'checked' : ''} onchange="_bankSelToggle(this.dataset.key, this.checked)" title="勾选算小计" style="cursor:pointer"></td>
       <td style="white-space:nowrap">${esc(x.date || '')}</td>
       <td style="font-size:.78rem">${esc(x.institution_name || '')}<br>${esc(x.account_name || '')} ··${esc(x.account_mask || '')}</td>
       <td>${esc(x.merchant || x.name || '')}${x.merchant && x.name && x.merchant !== x.name ? '<br><span style=\"font-size:.72rem;color:var(--g400)\">' + esc(x.name) + '</span>' : ''}</td>
@@ -2507,7 +2543,8 @@ async function bankLoadTxns() {
       <td style="white-space:nowrap"><label style="cursor:pointer"><input type="checkbox" ${x.reviewed ? 'checked' : ''} onchange="bankReview(${x.id}, this.checked)"> ${x.reviewed ? '<span style=\"font-size:.72rem;color:#15803d\">' + esc(x.reviewed_by || '') + '</span>' : ''}</label></td>
       <td><input type="text" value="${esc(x.review_note || '')}" placeholder="备注…" style="width:130px;font-size:.78rem;padding:4px 6px" onchange="bankReviewNote(${x.id}, this.value)"></td>
     </tr>`;
-  }).join('') || '<tr><td colspan="8" style="color:var(--g400)">没有符合条件的交易（先点「立即同步」）</td></tr>';
+  }).join('') || '<tr><td colspan="9" style="color:var(--g400)">没有符合条件的交易（先点「立即同步」）</td></tr>';
+  _bankRenderSum(shown);
 }
 // /banking(Plaid) 数据源的交易列表: 按笔/按周/按月分组, 备注走同一套标注(会计保存即待审核)
 let _plaidTxns = [];
@@ -2538,7 +2575,7 @@ async function plaidLoadTxns() {
       bapi('/api/plaid/transactions?' + q.toString()),
       annLoadAll(),
     ]);
-  } catch (e) { document.getElementById('bankTxnBody').innerHTML = '<tr><td colspan="7" style="color:#dc2626">' + esc(e.message || '加载失败') + '</td></tr>'; _bankRenderSum([]); return; }
+  } catch (e) { document.getElementById('bankTxnBody').innerHTML = '<tr><td colspan="8" style="color:#dc2626">' + esc(e.message || '加载失败') + '</td></tr>'; _bankRenderSum([]); return; }
   _plaidTxns = d.transactions || [];
   _TXNS = _plaidTxns;  // bank-ann.js 抽屉打开时按 txn_id 找交易信息用
   // 「待审核」筛选 (与 /banking 同款): 只看有待审核标注的交易
@@ -2553,13 +2590,15 @@ async function plaidLoadTxns() {
   document.getElementById('bankTxnStats').textContent = `共 ${d.total || _plaidTxns.length} 笔${_plaidTxns.length < (d.total || 0) ? `（显示最近 ${_plaidTxns.length} 笔）` : ''}${list.length !== _plaidTxns.length ? ` · 筛选后 ${list.length} 笔` : ''}`;
   // plaid 模式表头: 审核/备注两列合并为与 /banking 相同的「标注」列
   const headRow = document.getElementById('bankTxnHeadRow');
-  if (headRow) headRow.innerHTML = '<th>日期</th><th>银行 / 账户</th><th>商户 / 描述</th><th>分类</th><th style="text-align:right">金额</th><th>状态</th><th>标注</th>';
+  if (headRow) headRow.innerHTML = '<th style="width:26px"><input type="checkbox" id="bankSelAllCb" onchange="_bankSelAll(this.checked)" title="全选 / 全不选当前列表" style="cursor:pointer"></th><th>日期</th><th>银行 / 账户</th><th>商户 / 描述</th><th>分类</th><th style="text-align:right">金额</th><th>状态</th><th>标注</th>';
 
   const rowHtml = (x, grpKey) => {
     const a = accById[x.account_id] || {};
     const isOut = (x.amount || 0) > 0;
     const amt = `<span style="font-weight:800;color:${isOut ? '#dc2626' : '#15803d'}">${isOut ? '−' : '+'}${money(Math.abs(x.amount || 0))}</span>`;
+    const key = _bankRowKey(x);
     return `<tr${grpKey ? ` data-grp="${esc(grpKey)}"` : ''}>
+      <td><input type="checkbox" class="bankSelCb" data-key="${esc(key)}" ${_bankSel.has(key) ? 'checked' : ''} onchange="_bankSelToggle(this.dataset.key, this.checked)" title="勾选算小计" style="cursor:pointer"></td>
       <td style="white-space:nowrap">${esc(x.date || '')}</td>
       <td style="white-space:nowrap;font-size:.8rem" title="${esc((a.institution || '') + ' ' + (a.name || ''))}">${esc(a.institution || '')}${a.company_label ? ' · ' + esc(a.company_label) : ''} ··${esc(a.mask || '')}</td>
       <td>${esc(x.merchant || x.name || '')}${x.merchant && x.name && x.merchant !== x.name ? '<br><span style="font-size:.72rem;color:var(--g400)">' + esc(x.name) + '</span>' : ''}</td>
@@ -2584,8 +2623,9 @@ async function plaidLoadTxns() {
     }
     body = groups.map(g => {
       const net = g.inSum - g.outSum;
+      const grpAllSel = g.txns.length > 0 && g.txns.every(x => _bankSel.has(_bankRowKey(x)));
       return `<tr style="cursor:pointer;background:#fffbeb" onclick="plaidToggleGrp(this,'${esc(g.key)}')">
-        <td colspan="7" style="padding:.5rem .6rem"><span class="grp-arrow">▼</span> <b>📅 ${esc(g.label)}</b>
+        <td colspan="8" style="padding:.5rem .6rem"><input type="checkbox" class="bankGrpCb" data-grp-key="${esc(g.key)}" ${grpAllSel ? 'checked' : ''} onclick="event.stopPropagation()" onchange="_bankSelGrp(this.dataset.grpKey, this.checked)" title="整组一起勾选算小计" style="cursor:pointer;vertical-align:middle;margin-right:.3rem"><span class="grp-arrow">▼</span> <b>📅 ${esc(g.label)}</b>
           <span style="color:var(--g400);font-size:.76rem">${g.txns.length} 笔</span>
           <span style="background:#fff;border:1px solid var(--g200);border-radius:8px;padding:1px 8px;font-size:.74rem;color:#047857;margin-left:.3rem">收入 +${money(g.inSum)}</span>
           <span style="background:#fff;border:1px solid var(--g200);border-radius:8px;padding:1px 8px;font-size:.74rem;color:#57534e">支出 −${money(g.outSum)}</span>
@@ -2593,7 +2633,7 @@ async function plaidLoadTxns() {
         </td></tr>` + g.txns.map(x => rowHtml(x, g.key)).join('');
     }).join('');
   }
-  document.getElementById('bankTxnBody').innerHTML = body || '<tr><td colspan="7" style="color:var(--g400)">没有符合条件的交易。</td></tr>';
+  document.getElementById('bankTxnBody').innerHTML = body || '<tr><td colspan="8" style="color:var(--g400)">没有符合条件的交易。</td></tr>';
   _bankRenderSum(list);
 }
 function _bankTxnById(id) { return _bankTxns.find(x => x.id === id); }
