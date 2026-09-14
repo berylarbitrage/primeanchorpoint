@@ -25,6 +25,13 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
 .tab{border:none;background:none;padding:.55rem 1rem;font-size:.9rem;font-weight:700;color:var(--g500);cursor:pointer;border-bottom:3px solid transparent}
 .tab.on{color:#0f4c6b;border-bottom-color:var(--blue)}
 .badge{display:inline-block;border-radius:999px;padding:.08rem .55rem;font-size:.72rem;font-weight:700}
+
+/* ── 银行直连表: 列表在卡片内滚动, 表头 + 合计行吸顶不动 ── */
+#bankTblWrap{max-height:calc(100vh - 120px);overflow:auto;padding:0 14px 12px;overscroll-behavior:contain}
+#bankTblWrap table{border-collapse:separate;border-spacing:0}
+#bankTblWrap thead th{position:sticky;top:0;z-index:4;background:#fff;padding-top:.7rem;border-bottom:none;box-shadow:inset 0 -2px 0 var(--g200)}
+#bankSumRow td{position:sticky;z-index:3;background:#f0f9ff;border-top:none;border-bottom:1px solid #bae6fd;padding:.42rem .55rem;white-space:nowrap}
+#bankTblWrap tbody tr:first-child td{border-top:none}
 .ann-badge{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}
 .no-ann{color:var(--g300)}
 
@@ -460,10 +467,12 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <input type="date" id="bankFltTo" onchange="bankLoadTxns()">
         <span id="bankTxnStats" style="font-size:.8rem;color:var(--g500)"></span>
       </div>
-      <div class="card" style="overflow-x:auto">
+      <div class="card" id="bankTblWrap">
         <table><thead><tr id="bankTxnHeadRow">
           <th>日期</th><th>银行 / 账户</th><th>商户 / 描述</th><th>分类</th><th style="text-align:right">金额</th><th>状态</th><th>审核</th><th>备注</th>
-        </tr></thead><tbody id="bankTxnBody"><tr><td colspan="8" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+        </tr>
+        <tr id="bankSumRow" style="display:none"><td id="bankSumCell" colspan="8"></td></tr>
+        </thead><tbody id="bankTxnBody"><tr><td colspan="8" style="color:var(--g400)">加载中…</td></tr></tbody></table>
       </div>
     </div>
   </div>
@@ -2398,6 +2407,23 @@ function _bankApplyLocalFilters(list) {
   }
   return list;
 }
+// 合计行: 汇总当前筛选出来的交易, 吸附在列表表头下面, 滚到哪里都看得见
+function _bankRenderSum(list) {
+  const row = document.getElementById('bankSumRow'), cell = document.getElementById('bankSumCell');
+  if (!row || !cell) return;
+  if (!list || !list.length) { row.style.display = 'none'; return; }
+  let inSum = 0, outSum = 0;
+  list.forEach(x => { const a = Number(x.amount) || 0; if (a < 0) inSum += -a; else outSum += a; });
+  const net = inSum - outSum;
+  const chip = (label, val, color) => `<span style="background:#fff;border:1px solid #bae6fd;border-radius:8px;padding:2px 9px;font-size:.76rem;color:${color};font-weight:700">${label} ${val}</span>`;
+  cell.innerHTML = `<b style="font-size:.8rem;color:#0f4c6b">Σ 合计</b> <span style="color:var(--g500);font-size:.76rem">${list.length} 笔</span> `
+    + chip('收入', '+' + money(inSum), '#047857') + ' '
+    + chip('支出', '−' + money(outSum), '#57534e') + ' '
+    + chip('净额', (net >= 0 ? '+' : '−') + money(Math.abs(net)), net >= 0 ? '#047857' : '#c5221f');
+  row.style.display = '';
+  const th0 = document.querySelector('#bankTblWrap thead th');
+  cell.style.top = (th0 ? th0.getBoundingClientRect().height : 33) + 'px';  // 吸附在列头正下方
+}
 // 分类下拉: 从当前账户已加载的交易里收集分类 + 各自笔数, 保留当前选择
 function _bankFillCatOptions(txns) {
   const sel = document.getElementById('bankFltCat');
@@ -2432,11 +2458,12 @@ async function bankLoadTxns() {
   try {
     const d = await bapi('/api/acct/bank/transactions?' + q.toString());
     _bankTxns = d.transactions || [];
-  } catch (e) { document.getElementById('bankTxnBody').innerHTML = '<tr><td colspan="8" style="color:#dc2626">' + esc(e.message || '加载失败') + '</td></tr>'; return; }
+  } catch (e) { document.getElementById('bankTxnBody').innerHTML = '<tr><td colspan="8" style="color:#dc2626">' + esc(e.message || '加载失败') + '</td></tr>'; _bankRenderSum([]); return; }
   _bankFillCatOptions(_bankTxns);
   _bankFillInternalOptions();
   const shown = _bankApplyLocalFilters(_bankTxns);
   document.getElementById('bankTxnStats').textContent = `${_bankTxns.length} 笔` + (shown.length !== _bankTxns.length ? ` · 筛选后 ${shown.length} 笔` : '');
+  _bankRenderSum(shown);
   document.getElementById('bankTxnBody').innerHTML = shown.map(x => {
     // Plaid 金额: 正数=支出, 负数=入账
     const isOut = (x.amount || 0) > 0;
@@ -2482,7 +2509,7 @@ async function plaidLoadTxns() {
       bapi('/api/plaid/transactions?' + q.toString()),
       annLoadAll(),
     ]);
-  } catch (e) { document.getElementById('bankTxnBody').innerHTML = '<tr><td colspan="7" style="color:#dc2626">' + esc(e.message || '加载失败') + '</td></tr>'; return; }
+  } catch (e) { document.getElementById('bankTxnBody').innerHTML = '<tr><td colspan="7" style="color:#dc2626">' + esc(e.message || '加载失败') + '</td></tr>'; _bankRenderSum([]); return; }
   _plaidTxns = d.transactions || [];
   _TXNS = _plaidTxns;  // bank-ann.js 抽屉打开时按 txn_id 找交易信息用
   // 「待审核」筛选 (与 /banking 同款): 只看有待审核标注的交易
@@ -2538,6 +2565,7 @@ async function plaidLoadTxns() {
     }).join('');
   }
   document.getElementById('bankTxnBody').innerHTML = body || '<tr><td colspan="7" style="color:var(--g400)">没有符合条件的交易。</td></tr>';
+  _bankRenderSum(list);
 }
 function _bankTxnById(id) { return _bankTxns.find(x => x.id === id); }
 async function bankReview(id, checked) {
