@@ -22269,6 +22269,9 @@ const GUSTO_ALIAS_DEFAULTS = [
   { from: 'Gerardo Tecsxco', to: 'Tecaxco, Bugui Boy' },
   { from: 'Juan Tecaxco', to: 'Tecaxco, Bugui Boy' },
   { from: 'Juan Tecsxco', to: 'Tecaxco, Bugui Boy' },
+  // Eloy 是 Eloiso 的短称: 工资表的 Eloy Herrera 确认就是名册的 Eloiso Cornelio
+  // Herrera Cano 本人（同姓的 Alejandra Abundis Herrera 是另一个人, 不相干）。
+  { from: 'Eloy Herrera', to: 'Eloiso Cornelio Herrera Cano' },
 ];
 function _gustoAliases() {
   const row = db.prepare("SELECT value FROM app_settings WHERE key='gusto_pay_aliases'").get();
@@ -22278,11 +22281,12 @@ function _gustoAliases() {
   return GUSTO_ALIAS_DEFAULTS;
 }
 
-// 一次性补充：界面里保存过对照表的话上面的默认表就不再被读, Tecaxco 的指定要
-// 落进已保存的表才生效。只补表里还没有的姓名, 用户自己写过/删过的条目不碰。
-try {
-  const _tcDone = db.prepare("SELECT value FROM app_settings WHERE key='gusto_alias_tecaxco_backfilled'").get();
-  if (!_tcDone) {
+// 一次性补条目：界面里保存过对照表的话上面的默认表就不再被读, 新加的默认条目
+// 要补进已保存的表才生效。每个 markerKey 只跑一次; 只补表里还没有的姓名, 用户
+// 自己写过/删过的条目不碰; 没保存过表就只落标记（默认表本身已含新条目）。
+function _gustoAliasBackfill(markerKey, entries) {
+  try {
+    if (db.prepare('SELECT value FROM app_settings WHERE key=?').get(markerKey)) return;
     const row = db.prepare("SELECT value FROM app_settings WHERE key='gusto_pay_aliases'").get();
     if (row && row.value) {
       let saved = null;
@@ -22292,17 +22296,19 @@ try {
         const nameKey = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
           .replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length > 1).sort().join('');
         const have = new Set(saved.map(a => nameKey(a && a.from)));
-        const add = GUSTO_ALIAS_DEFAULTS.filter(a => a.to === 'Tecaxco, Bugui Boy' && !have.has(nameKey(a.from)));
+        const add = entries.filter(a => !have.has(nameKey(a.from)));
         if (add.length) {
           db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('gusto_pay_aliases', ?, CURRENT_TIMESTAMP)")
             .run(JSON.stringify(saved.concat(add)));
-          console.log(`[migration] Gusto 对照表补 Tecaxco → Bugui Boy 指定 ${add.length} 条`);
+          console.log(`[migration] Gusto 对照表补条目 ${add.length} 条 (${markerKey})`);
         }
       }
     }
-    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('gusto_alias_tecaxco_backfilled','1')").run();
-  }
-} catch (e) { console.log('[migration] gusto tecaxco alias error:', e.message); }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, '1')").run(markerKey);
+  } catch (e) { console.log(`[migration] gusto alias backfill (${markerKey}) error:`, e.message); }
+}
+_gustoAliasBackfill('gusto_alias_tecaxco_backfilled', GUSTO_ALIAS_DEFAULTS.filter(a => a.to === 'Tecaxco, Bugui Boy'));
+_gustoAliasBackfill('gusto_alias_eloy_backfilled', GUSTO_ALIAS_DEFAULTS.filter(a => a.to === 'Eloiso Cornelio Herrera Cano'));
 
 app.get('/api/admin/gusto-pay-aliases', requireAdmin, (req, res) => {
   res.json({ aliases: _gustoAliases() });
