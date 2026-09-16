@@ -22273,6 +22273,15 @@ const GUSTO_ALIAS_DEFAULTS = [
   // Herrera Cano 本人（同姓的 Alejandra Abundis Herrera 是另一个人, 不相干）。
   { from: 'Eloy Herrera', to: 'Eloiso Cornelio Herrera Cano' },
 ];
+
+// 发工资时薪覆盖: 发票对客户照计费时薪开票（这三人 $18）, 发工资按这里的时薪
+// 算, 应付按时薪差回扣（见 gusto-pay.js opts.payRates）。2026-09 确认: Rattia
+// 班组三人（都并付给 Jose Gabriel Rattia）计费 $18、发工资 $16。
+const GUSTO_PAY_RATE_OVERRIDES = [
+  { name: 'Cleiber Rodriguez', rate: 16 },
+  { name: 'Marvin Bor', rate: 16 },
+  { name: 'Rattia Jose G', rate: 16 },
+];
 function _gustoAliases() {
   const row = db.prepare("SELECT value FROM app_settings WHERE key='gusto_pay_aliases'").get();
   if (row && row.value) {
@@ -22363,6 +22372,7 @@ app.post('/api/admin/gusto-pay-csv', requireAdmin, (req, res) => {
       period_end: req.body.period_end || '',
       mode: req.body.mode === 'hours' ? 'hours' : 'bonus',
       aliases: _gustoAliases(),
+      payRates: GUSTO_PAY_RATE_OVERRIDES,
     });
     res.json({ ok: true, template_name: tpl.name || '', template_uploaded_at: tpl.uploaded_at || '', ...out });
   } catch (e) {
