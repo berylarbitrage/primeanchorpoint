@@ -22263,6 +22263,12 @@ const GUSTO_ALIAS_DEFAULTS = [
   { from: 'Rattia Jose G', to: 'Jose Gabriel Rattia' },
   { from: 'Marvin Bor', to: 'Jose Gabriel Rattia' },
   { from: 'Cleiber Rodriguez', to: 'Jose Gabriel Rattia' },
+  // 工资表上姓 Tecaxco 的（Gerardo / Juan）名字虽对不上名册, 但确认过钱都付给
+  // 「Tecaxco, Bugui Boy」这一行, 自动合并成一笔; Tecsxco 是工资表出现过的错拼, 一并认。
+  { from: 'Gerardo Tecaxco', to: 'Tecaxco, Bugui Boy' },
+  { from: 'Gerardo Tecsxco', to: 'Tecaxco, Bugui Boy' },
+  { from: 'Juan Tecaxco', to: 'Tecaxco, Bugui Boy' },
+  { from: 'Juan Tecsxco', to: 'Tecaxco, Bugui Boy' },
 ];
 function _gustoAliases() {
   const row = db.prepare("SELECT value FROM app_settings WHERE key='gusto_pay_aliases'").get();
@@ -22271,6 +22277,32 @@ function _gustoAliases() {
   }
   return GUSTO_ALIAS_DEFAULTS;
 }
+
+// 一次性补充：界面里保存过对照表的话上面的默认表就不再被读, Tecaxco 的指定要
+// 落进已保存的表才生效。只补表里还没有的姓名, 用户自己写过/删过的条目不碰。
+try {
+  const _tcDone = db.prepare("SELECT value FROM app_settings WHERE key='gusto_alias_tecaxco_backfilled'").get();
+  if (!_tcDone) {
+    const row = db.prepare("SELECT value FROM app_settings WHERE key='gusto_pay_aliases'").get();
+    if (row && row.value) {
+      let saved = null;
+      try { const v = JSON.parse(row.value); if (Array.isArray(v)) saved = v; } catch (_) {}
+      if (saved) {
+        // 和 gusto-pay.js 对照表同一套姓名归一化: 小写、去重音、只留字母数字词、排序拼接
+        const nameKey = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+          .replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length > 1).sort().join('');
+        const have = new Set(saved.map(a => nameKey(a && a.from)));
+        const add = GUSTO_ALIAS_DEFAULTS.filter(a => a.to === 'Tecaxco, Bugui Boy' && !have.has(nameKey(a.from)));
+        if (add.length) {
+          db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('gusto_pay_aliases', ?, CURRENT_TIMESTAMP)")
+            .run(JSON.stringify(saved.concat(add)));
+          console.log(`[migration] Gusto 对照表补 Tecaxco → Bugui Boy 指定 ${add.length} 条`);
+        }
+      }
+    }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('gusto_alias_tecaxco_backfilled','1')").run();
+  }
+} catch (e) { console.log('[migration] gusto tecaxco alias error:', e.message); }
 
 app.get('/api/admin/gusto-pay-aliases', requireAdmin, (req, res) => {
   res.json({ aliases: _gustoAliases() });
