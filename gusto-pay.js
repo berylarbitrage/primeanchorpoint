@@ -30,7 +30,8 @@
 // 收款人（Jesus Arroyo → Youseli Briceno）、或者付给公司行（→ FINOVAOPERATIONS）。
 // to 写「现金」/「跳过」表示这行不走 Gusto, 生成时跳过并单独列出。对照表按分词
 // 集合精确对 from（大小写/重音/词序不敏感）, 命中后按 to 的名字去匹配名册,
-// 明细里保留工资表原名。
+// 明细里保留工资表原名。to 只按 完全一致/包含 对名册行, 同姓/近似拼写不作数,
+// 对不上按「名册里没有这一行」报, 不猜。
 
 // ── CSV 基础 ──
 function parseCsv(text) {
@@ -202,6 +203,11 @@ function buildGustoCsv(templateCsv, employees, opts) {
       if (sc > best) { best = sc; hits = [entry]; }
       else if (sc === best && sc > 0) hits.push(entry);
     }
+    // 对照表的 to 是人工指定的准确收款人, 只认完全一致/包含 (≥80) 的名册行;
+    // 同姓/近似拼写档不作数——名册里还没有这个人时, 按姓氏猜会把钱付给同姓的
+    // 另一个人, 比对不上更危险。宁可报「名册里没有这一行」, 让人去 Gusto 加行
+    // 或改对照表拼写。
+    if (alias && best && best < 80) { best = 0; hits = []; }
     if (!best) { unmatched.push({ name, owed, aliasTo: alias ? alias.toName : undefined }); continue; }
     if (hits.length > 1) {
       ambiguous.push({ name, owed, candidates: hits.map(h => h.label) });
