@@ -164,6 +164,10 @@ function parseRoster(csvText) {
 // ── 生成 ──
 // employees: [{ name, total, rate, regHours, otHours }]（发票生成器的行, total = 应付工资）
 // opts.aliases: 收款人对照表 [{from, to}]（见文件头注释）
+// opts.payRates: 发工资时薪覆盖 [{name, rate}]。发票对客户照计费时薪开票不动,
+//   这些人发工资按 rate 算: 应付 = 发票应付 − (计费时薪 − rate) × (正常 + 1.5×加班)
+//   工时——按时薪差回扣, 发票里另加的补差金额原样保留。按工资表姓名分词精确对,
+//   现金/跳过行同样生效。
 // 返回 { csv, matches, unmatched, ambiguous, skipped, needConfirm, warnings, matchedCount, totalPay, untouched }
 const ALIAS_SKIP_WORDS = new Set(['现金', '发现金', 'cash', '跳过', 'skip', '忽略']);
 function buildGustoCsv(templateCsv, employees, opts) {
@@ -186,14 +190,36 @@ function buildGustoCsv(templateCsv, employees, opts) {
       ? { skip: true, reason: to }
       : { toName: to, toTokens: nameTokens(to) });
   }
+  // 发工资时薪覆盖: 分词集合 key → 时薪
+  const payRateMap = new Map();
+  for (const p of opts.payRates || []) {
+    const nm = String((p && p.name) || '').trim();
+    const rt = parseFloat(p && p.rate);
+    if (!nm || !Number.isFinite(rt) || rt <= 0) continue;
+    const key = joined(nameTokens(nm));
+    if (key) payRateMap.set(key, rt);
+  }
   // 相同或近似拼写（一个字母之差）
   const near = (a, b) => a === b || (a.length >= 4 && b.length >= 4 && editDist1(a, b));
 
   for (const emp of employees || []) {
     const name = String(emp.name || '').trim();
-    const owed = r2(Number(emp.total) || 0);
+    let owed = r2(Number(emp.total) || 0);
+    let empRate = Number(emp.rate) || null;
     if (!name || owed <= 0) continue;
     const selfT = nameTokens(name);
+    const payRate = payRateMap.get(joined(selfT));
+    if (payRate && empRate && Math.abs(empRate - payRate) > 0.005) {
+      const hrs = (Number(emp.regHours) || 0) + 1.5 * (Number(emp.otHours) || 0);
+      const adj = r2(owed - (empRate - payRate) * hrs);
+      if (hrs > 0 && adj > 0) {
+        warnings.push(`「${name}」发工资时薪按 $${payRate}（发票计费 $${empRate}）：应付 $${owed.toFixed(2)} → $${adj.toFixed(2)}，发票金额不变。`);
+        owed = adj;
+        empRate = payRate;
+      } else {
+        warnings.push(`「${name}」配置了发工资时薪 $${payRate}，但${hrs > 0 ? '按时薪差回扣后金额不为正' : '这行没有工时明细'}，仍按原应付 $${owed.toFixed(2)} 处理，请人工核对。`);
+      }
+    }
     const alias = aliasMap.get(joined(selfT));
     if (alias && alias.skip) { skipped.push({ name, owed, reason: alias.reason }); continue; }
     const empT = alias ? alias.toTokens : selfT;
@@ -226,7 +252,7 @@ function buildGustoCsv(templateCsv, employees, opts) {
     if (!byRosterIdx.has(entry.idx)) byRosterIdx.set(entry.idx, { entry, sources: [] });
     byRosterIdx.get(entry.idx).sources.push({
       name, owed,
-      rate: Number(emp.rate) || null,
+      rate: empRate,
       actualHours: r2((Number(emp.regHours) || 0) + (Number(emp.otHours) || 0)),
       fuzzy: best === 50 && !alias,
       score: best,
