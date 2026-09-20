@@ -21898,6 +21898,43 @@ try {
   }
 } catch (e) { console.log('[migration] wecharmer rename error:', e.message); }
 
+// 一次性：给 Wecharmer 新开一个客户门户账号 weiqiang@wecharmer.com（电话 6268232361）。
+// 挂到现有 wecharmer 账号同一家合作公司下、权限照抄，两个账号看到的是同一家公司的数据。
+// 约定初始密码 Wecharmer2026$（同实名管理员种子的做法），登录后可用「忘记密码」自行修改。
+try {
+  const _wqDone = db.prepare("SELECT value FROM app_settings WHERE key='seed_wecharmer_weiqiang_account_v1'").get();
+  if (!_wqDone) {
+    const _wqEmail = 'weiqiang@wecharmer.com';
+    if (db.prepare('SELECT id FROM customer_accounts WHERE LOWER(email)=?').get(_wqEmail)) {
+      // 邮箱已被注册(比如已在后台手动建过): 不动现有账号, 直接标记完成
+      db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('seed_wecharmer_weiqiang_account_v1','1')").run();
+    } else {
+      // 参照现有 wecharmer 门户账号拿 公司名/合作公司/权限
+      const _wqSrc = db.prepare("SELECT company_name, partner_id, perms FROM customer_accounts WHERE LOWER(email)='wecharmer@primeanchorworkforce.com'").get()
+        || db.prepare("SELECT company_name, partner_id, perms FROM customer_accounts WHERE company_name LIKE '%wecharmer%' AND active=1 ORDER BY id LIMIT 1").get();
+      let _wqPartnerId = _wqSrc ? _wqSrc.partner_id : null;
+      if (_wqPartnerId == null) {
+        // 兜底: 直接按合作公司名找 (公司发票侧已改名 Nexware, 两个名字都试)
+        const _wqP = db.prepare("SELECT id FROM partners WHERE name LIKE '%wecharmer%' OR name LIKE '%nexware%' ORDER BY id LIMIT 1").get();
+        if (_wqP) _wqPartnerId = _wqP.id;
+      }
+      if (_wqPartnerId == null) {
+        // 找不到 wecharmer 的现有账号/合作公司 (比如全新库): 不建孤儿账号, 下次启动再试
+        console.log('[migration] wecharmer 新账号: 未找到 wecharmer 现有账号或合作公司, 本次跳过');
+      } else {
+        const _wqSalt = crypto.randomBytes(16).toString('hex');
+        const _wqR = db.prepare(`INSERT INTO customer_accounts
+          (company_name, contact_name, contact_first_name, email, phone, password_hash, salt, active, approval_status, partner_id, perms)
+          VALUES (?,?,?,?,?,?,?,1,'approved',?,?)`)
+          .run((_wqSrc && _wqSrc.company_name) || 'wecharmer', 'Weiqiang', 'Weiqiang', _wqEmail, '6268232361',
+            hashPassword('Wecharmer2026$', _wqSalt), _wqSalt, _wqPartnerId, (_wqSrc && _wqSrc.perms) || '');
+        db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('seed_wecharmer_weiqiang_account_v1','1')").run();
+        console.log(`[migration] wecharmer 新客户账号已创建: ${_wqEmail} (id ${_wqR.lastInsertRowid}, partner ${_wqPartnerId})`);
+      }
+    }
+  }
+} catch (e) { console.log('[migration] wecharmer 新账号 error:', e.message); }
+
 // 手动修正的参考值：按付款记录算这张发票账期的 工资/开票 合计，✎ 弹窗预填。
 app.get('/api/admin/invoices/:id/wage-suggest', requireAdmin, (req, res) => {
   try {
