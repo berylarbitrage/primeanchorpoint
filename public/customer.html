@@ -579,7 +579,7 @@ async function sendResetCode() {
     if (!r.ok) return showForgotMsg(d.error || '发送失败', 'error');
     document.getElementById('forgotStep1').style.display = 'none';
     document.getElementById('forgotStep2').style.display = '';
-    showForgotMsg('验证码已发送 / Code sent', 'success');
+    showForgotMsg(d.message || '验证码已发送 / Code sent', 'success');
     const btn = document.getElementById('resendBtn');
     btn.disabled = true;
     let sec = 60;

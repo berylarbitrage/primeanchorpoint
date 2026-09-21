@@ -6013,6 +6013,13 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   <div class="field"><label>关联合作公司档案（可选）</label>
     <select id="cAccPartner"><option value="">— 不关联 —</option></select>
   </div>
+  <div class="field"><label>登录验证 <span style="font-size:.78rem;color:var(--gray-400);font-weight:400">（登录时的二次验证码）</span></label>
+    <select id="cAccLoginMfa">
+      <option value="">手机短信验证码（默认；没手机号时发邮箱）</option>
+      <option value="email">邮箱验证码</option>
+      <option value="none">免验证码（只用密码登录；忘记密码可走邮箱重置）</option>
+    </select>
+  </div>
   <div class="field"><label>状态</label>
     <select id="cAccActive"><option value="1">启用</option><option value="0">禁用</option></select>
   </div>
@@ -28082,6 +28089,7 @@ async function openCustomerAccountModal(data) {
   document.getElementById('cAccEmail').value = data ? data.email : '';
   document.getElementById('cAccPhone').value = data ? (data.phone||'') : '';
   document.getElementById('cAccPassword').value = '';
+  document.getElementById('cAccLoginMfa').value = data ? (data.login_mfa || '') : '';
   document.getElementById('cAccActive').value = data ? String(data.active) : '1';
   document.getElementById('customerAccModalTitle').textContent = data ? '编辑客户账户' : '新建客户账户';
   document.getElementById('cAccPassHint').textContent = data ? '(留空则不修改)' : '*';
@@ -28107,6 +28115,7 @@ async function saveCustomerAccount() {
     phone: document.getElementById('cAccPhone').value,
     password: document.getElementById('cAccPassword').value,
     partner_id: document.getElementById('cAccPartner').value || null,
+    login_mfa: document.getElementById('cAccLoginMfa').value,
     active: parseInt(document.getElementById('cAccActive').value)
   };
   if (!d.company_name || !d.email) return alert('请填写公司名和邮箱');

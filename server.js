@@ -1628,6 +1628,8 @@ try { db.exec("ALTER TABLE customer_accounts ADD COLUMN approval_status TEXT DEF
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN contact_first_name TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN contact_last_name TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN rejection_reason TEXT DEFAULT ''"); } catch {}
+// 登录验证方式: '' = 默认(发手机短信, 没手机号退邮箱) / 'email' = 验证码走邮箱 / 'none' = 免验证码只密码登录
+try { db.exec("ALTER TABLE customer_accounts ADD COLUMN login_mfa TEXT DEFAULT ''"); } catch {}
 // 客户账号分权限: JSON {punch,relabel,position,kiosk,docs,edit_time,invoice,add_worker} 0/1; 空 = 除敏感权限外全部允许(老账号)
 // (必须放在 CREATE TABLE customer_accounts 之后: 放前面全新数据库建库时表还不存在, ALTER 会被静默吞掉)
 try { db.exec(`ALTER TABLE customer_accounts ADD COLUMN perms TEXT DEFAULT ''`); } catch(e) {}
@@ -14940,7 +14942,7 @@ app.post('/api/admin/worker-accounts/:id/resend-verify', requireAdmin, requireRo
 
 // ─── Customer Accounts (admin manages) ───
 app.get('/api/admin/customer-accounts', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
-  res.json(db.prepare('SELECT id, company_name, contact_name, contact_first_name, contact_last_name, email, phone, active, partner_id, ein, staffing_needs, approval_status, created_at, perms FROM customer_accounts ORDER BY id DESC').all());
+  res.json(db.prepare('SELECT id, company_name, contact_name, contact_first_name, contact_last_name, email, phone, active, partner_id, ein, staffing_needs, approval_status, created_at, perms, login_mfa FROM customer_accounts ORDER BY id DESC').all());
 });
 
 // 客户账号权限勾选 (admin): {punch, relabel, position, kiosk, docs} → 存 perms JSON
@@ -15050,8 +15052,10 @@ app.post('/api/admin/customer-accounts/:id/impersonate/verify', requireAdmin, re
   res.json({ ok: 1, token, company_name: acct.company_name });
 });
 
+// login_mfa 登录验证方式只认三个值: '' 默认短信 / 'email' 邮箱验证码 / 'none' 免验证码
+const _custLoginMfaClean = v => (v === 'email' || v === 'none') ? v : '';
 app.post('/api/admin/customer-accounts', requireAdmin, requireRole('admin'), (req, res) => {
-  const { company_name, contact_name, email, phone, password, partner_id } = req.body;
+  const { company_name, contact_name, email, phone, password, partner_id, login_mfa } = req.body;
   if (!email || !password || !company_name) return res.status(400).json({ error: 'Email, company and password required' });
   const pwErr = validatePassword(password);
   if (pwErr) return res.status(400).json({ error: pwErr });
@@ -15059,21 +15063,21 @@ app.post('/api/admin/customer-accounts', requireAdmin, requireRole('admin'), (re
     return res.status(400).json({ error: 'Email already registered' });
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
-  const r = db.prepare('INSERT INTO customer_accounts (company_name, contact_name, email, phone, password_hash, salt, partner_id) VALUES (?,?,?,?,?,?,?)')
-    .run(company_name, contact_name || '', email, phone || '', hash, salt, partner_id || null);
+  const r = db.prepare('INSERT INTO customer_accounts (company_name, contact_name, email, phone, password_hash, salt, partner_id, login_mfa) VALUES (?,?,?,?,?,?,?,?)')
+    .run(company_name, contact_name || '', email, phone || '', hash, salt, partner_id || null, _custLoginMfaClean(login_mfa));
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
 app.put('/api/admin/customer-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { company_name, contact_name, email, phone, password, partner_id, active } = req.body;
+  const { company_name, contact_name, email, phone, password, partner_id, active, login_mfa } = req.body;
   const c = db.prepare('SELECT * FROM customer_accounts WHERE id=?').get(req.params.id);
   if (!c) return res.status(404).json({ error: 'Not found' });
   if (password) {
     const salt = crypto.randomBytes(16).toString('hex');
     db.prepare('UPDATE customer_accounts SET password_hash=?, salt=? WHERE id=?').run(hashPassword(password, salt), salt, req.params.id);
   }
-  db.prepare('UPDATE customer_accounts SET company_name=?, contact_name=?, email=?, phone=?, partner_id=?, active=? WHERE id=?')
-    .run(company_name||c.company_name, contact_name||c.contact_name, email||c.email, phone||c.phone, partner_id!==undefined?partner_id:c.partner_id, active!==undefined?active:c.active, req.params.id);
+  db.prepare('UPDATE customer_accounts SET company_name=?, contact_name=?, email=?, phone=?, partner_id=?, active=?, login_mfa=? WHERE id=?')
+    .run(company_name||c.company_name, contact_name||c.contact_name, email||c.email, phone||c.phone, partner_id!==undefined?partner_id:c.partner_id, active!==undefined?active:c.active, login_mfa!==undefined?_custLoginMfaClean(login_mfa):(c.login_mfa||''), req.params.id);
   res.json({ success: true });
 });
 
@@ -21934,6 +21938,16 @@ try {
     }
   }
 } catch (e) { console.log('[migration] wecharmer 新账号 error:', e.message); }
+
+// 一次性：weiqiang@wecharmer.com 登录免验证码（手机收不到短信码）。密码丢了走
+// 登录页「忘记密码」，验证码发邮箱自行重置。之后可在后台「账户管理→编辑」改回。
+try {
+  if (!db.prepare("SELECT value FROM app_settings WHERE key='wecharmer_weiqiang_login_mfa_none_v1'").get()) {
+    const _wqMfa = db.prepare("UPDATE customer_accounts SET login_mfa='none' WHERE LOWER(email)='weiqiang@wecharmer.com'").run();
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('wecharmer_weiqiang_login_mfa_none_v1','1')").run();
+    if (_wqMfa.changes) console.log('[migration] weiqiang@wecharmer.com 登录已设为免验证码');
+  }
+} catch (e) { console.log('[migration] weiqiang 免验证码 error:', e.message); }
 
 // 手动修正的参考值：按付款记录算这张发票账期的 工资/开票 合计，✎ 弹窗预填。
 app.get('/api/admin/invoices/:id/wage-suggest', requireAdmin, (req, res) => {
@@ -30215,13 +30229,19 @@ app.post('/api/customer/login', loginRateLimit, (req, res) => {
   const c = (cAny && cAny.active && verifyPassword(password, cAny.salt, cAny.password_hash)) ? cAny : null;
   if (!c)
     return res.status(401).json({ error: '邮箱/电话或密码错误 / Invalid email/phone or password' });
-  // 防信息泄露: 客户门户每次登录都必须短信验证码二次验证 (门户能看到工人电话/地址/工卡)
+  // 防信息泄露: 客户门户默认每次登录都要验证码二次验证 (门户能看到工人电话/地址/工卡)。
+  // 按账号的 login_mfa 设置分流: 'none' = 免验证码只密码登录 (如 weiqiang@wecharmer.com,
+  // 手机收不到码; 密码丢了走「忘记密码」邮箱重置); 'email' = 验证码强制走邮箱; 默认发手机短信。
+  if (c.login_mfa === 'none') return _custFinishLogin(res, c.id);
   _custMfaGC();
   const mfaDigits = String(c.phone || '').replace(/\D/g, '');
   const code = String(Math.floor(100000 + Math.random() * 900000));
   const mfaToken = crypto.randomBytes(24).toString('hex');
   let via = '', hint = '';
-  if (mfaDigits.length >= 10) {
+  if (c.login_mfa === 'email' && c.email) {
+    via = 'email'; hint = String(c.email).replace(/^(..).*(@.*)$/, '$1***$2');
+    sendEmail(c.email, 'Prime Anchor 客户门户登录验证码', `您的登录验证码: ${code}（10 分钟内有效）。如非本人操作请忽略。`).catch(e2 => console.error('[CustMFA] email error:', e2.message));
+  } else if (mfaDigits.length >= 10) {
     via = 'sms'; hint = '尾号 ' + mfaDigits.slice(-4);
     sendSMSWithDetail(c.phone, `[Prime Anchor Point LLC] Customer portal login code: ${code} (valid 10 min). Do not share.`)
       .then(r2 => { if (!r2 || !r2.ok) console.error('[CustMFA] SMS 发送失败:', c.id, (r2 && (r2.error || r2.code)) || ''); })
@@ -30602,15 +30622,31 @@ app.post('/api/customer/worker-position/:eid', requireCustomer, (req, res) => {
 });
 
 // ─── Customer Forgot / Reset Password ───
+// 验证码优先发邮箱（登录账号就是邮箱），没登记邮箱才发手机短信。
 app.post('/api/customer/forgot-password', (req, res) => {
   const { login } = req.body;
   if (!login) return res.status(400).json({ error: '请输入邮箱或电话' });
-  const c = db.prepare('SELECT id, email, phone FROM customer_accounts WHERE email=? OR phone=?').get(login, login);
+  const digits10 = String(login).replace(/\D/g, '').slice(-10);
+  const c = db.prepare(
+    'SELECT id, email, phone FROM customer_accounts WHERE email=? OR (? != \'\' AND phone10(phone)=?)'
+  ).get(login, digits10, digits10);
   if (!c) return res.status(404).json({ error: '未找到该账号 / Account not found' });
   const code = String(Math.floor(100000 + Math.random() * 900000));
+  let sentTo = '';
+  if (c.email) {
+    sentTo = '邮箱 ' + String(c.email).replace(/^(..).*(@.*)$/, '$1***$2');
+    sendEmail(c.email, 'Prime Anchor 客户门户密码重置验证码', `您正在重置客户门户登录密码，验证码: ${code}（10 分钟内有效）。如非本人操作请忽略此邮件。`)
+      .catch(e2 => console.error('[CustReset] email error:', e2.message));
+  } else if (String(c.phone || '').replace(/\D/g, '').length >= 10) {
+    sentTo = '手机尾号 ' + String(c.phone).replace(/\D/g, '').slice(-4);
+    sendSMSWithDetail(c.phone, `[Prime Anchor Point LLC] Password reset code: ${code} (valid 10 min). Do not share.`)
+      .catch(e2 => console.error('[CustReset] SMS error:', e2.message));
+  } else {
+    return res.status(400).json({ error: '账号未登记邮箱/手机号，无法接收验证码，请联系 Prime Anchor' });
+  }
   resetCodes.set('customer:' + login, { code, expires: Date.now() + 10 * 60 * 1000, accountId: c.id });
   console.log(`[Reset Code] Customer account ${login}: ${code}`);
-  res.json({ success: true, message: '验证码已发送 / Code sent' });
+  res.json({ success: true, message: `验证码已发送到${sentTo} / Code sent` });
 });
 
 app.post('/api/customer/reset-password', (req, res) => {
