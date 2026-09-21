@@ -117,6 +117,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <button class="tab on" id="tabInv" onclick="showTab('inv')">📄 发票 Invoices</button>
     <button class="tab" id="tabStmt" onclick="showTab('stmt')" style="display:none">🏦 银行流水 Bank Statements</button>
     <button class="tab" id="tabClaims" onclick="showTab('claims')">⚠️ 赔偿事故 Claims</button>
+    <button class="tab" id="tabRef" onclick="showTab('ref')">🤝 介绍费 Referral <span id="refPendBadge" style="display:none;background:#d97706;color:#fff;border-radius:10px;font-size:.68rem;padding:1px 7px;vertical-align:middle"></span></button>
     <button class="tab" id="tabFeeIns" onclick="showTab('feeins')">🛡️ 保险费 Insurance</button>
     <button class="tab" id="tabFeeLaw" onclick="showTab('feelaw')">⚖️ 律师费 Legal</button>
     <button class="tab" id="tabFeeCo" onclick="showTab('feeco')">🏢 公司支出 Expenses</button>
@@ -170,6 +171,90 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <table><thead><tr>
         <th>仓库</th><th>事故日期</th><th style="text-align:right">赔偿金额</th><th>事故描述</th><th>状态</th><th>发票文件</th><th>银行付款</th><th>付款批注（会计）</th>
       </tr></thead><tbody id="claimBody"><tr><td colspan="8" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+    </div>
+  </div>
+
+  <!-- 🤝 介绍费 Referral: 工头介绍工人 → 录入面试/上工信息 → 会计关联发票 → 管理员核查决定是否支付 → 会计记付款并关联银行记录 -->
+  <div id="paneRef" style="display:none">
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
+      <input type="text" id="refSearch" placeholder="搜工头 / 工人 / 电话 / 仓库…" oninput="renderRefList()" style="width:230px">
+      <select id="refFilter" onchange="renderRefList()">
+        <option value="">全部</option>
+        <option value="pending">⏳ 待管理员核查</option>
+        <option value="approved">✅ 同意支付 · 待付款</option>
+        <option value="paid">💰 已付款</option>
+        <option value="rejected">✖ 拒绝支付</option>
+      </select>
+      <button class="btn btn-blue" id="btnRefAdd" onclick="openRefAdd()" style="display:none">＋ 新增介绍</button>
+      <span id="refStats" style="font-size:.8rem;color:var(--g500)"></span>
+    </div>
+    <div class="card" style="overflow-x:auto">
+      <table><thead><tr>
+        <th>工头（介绍人）</th><th>被介绍工人</th><th>工作仓库 / 地址</th><th>面试时间</th><th>上工 / 已工作</th><th style="text-align:right">介绍费</th><th>关联发票（会计）</th><th>管理员核查</th><th>付款批注（会计）</th><th></th>
+      </tr></thead><tbody id="refBody"><tr><td colspan="10" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+    </div>
+    <p style="font-size:.75rem;color:var(--g400);margin-top:.5rem">流程：客服 / 会计录入介绍信息（工头和工人的姓名电话、仓库、面试时间、做了多久）→ 会计「关联发票」佐证工人确实在给客户干活 → 管理员核查整条信息、决定是否支付 → 同意支付后会计在「付款批注」里记实付金额并关联银行记录。</p>
+  </div>
+
+  <!-- ➕ 新增 / 编辑介绍费弹窗 -->
+  <div id="refAddModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:92;align-items:center;justify-content:center;padding:16px">
+    <div class="card" style="max-width:560px;width:100%;padding:1.2rem 1.2rem 1rem;max-height:92vh;overflow:auto">
+      <div id="refAddTitle" style="font-weight:800;margin-bottom:.2rem">🤝 新增介绍</div>
+      <div id="refAddHint" style="font-size:.76rem;color:var(--g500);margin-bottom:.7rem"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.2rem .6rem">
+        <div><label style="font-size:.76rem;color:var(--g500)">工头姓名 <span style="color:#dc2626">*</span></label>
+          <input type="text" id="raForemanName" placeholder="介绍人 / 工头" style="width:100%;margin:.15rem 0 .55rem"></div>
+        <div><label style="font-size:.76rem;color:var(--g500)">工头电话</label>
+          <input type="tel" id="raForemanPhone" placeholder="例：312-555-0123" style="width:100%;margin:.15rem 0 .55rem"></div>
+        <div><label style="font-size:.76rem;color:var(--g500)">被介绍人姓名 <span style="color:#dc2626">*</span></label>
+          <input type="text" id="raWorkerName" placeholder="来上班的工人" style="width:100%;margin:.15rem 0 .55rem"></div>
+        <div><label style="font-size:.76rem;color:var(--g500)">被介绍人电话</label>
+          <input type="tel" id="raWorkerPhone" placeholder="例：773-555-0123" style="width:100%;margin:.15rem 0 .55rem"></div>
+      </div>
+      <label style="font-size:.76rem;color:var(--g500)">工作仓库</label>
+      <input type="text" id="raWh" list="raWhList" placeholder="例：Wecharmer" style="width:100%;margin:.15rem 0 .55rem">
+      <datalist id="raWhList"></datalist>
+      <label style="font-size:.76rem;color:var(--g500)">仓库地址</label>
+      <input type="text" id="raWhAddr" placeholder="例：1000 Bilter Rd, Aurora, IL" style="width:100%;margin:.15rem 0 .55rem">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.2rem .6rem">
+        <div><label style="font-size:.76rem;color:var(--g500)">面试时间</label>
+          <input type="datetime-local" id="raInterview" style="width:100%;margin:.15rem 0 .55rem"></div>
+        <div><label style="font-size:.76rem;color:var(--g500)">介绍费金额（$）</label>
+          <input type="number" step="0.01" min="0" id="raAmount" placeholder="例：100.00" style="width:100%;margin:.15rem 0 .55rem"></div>
+        <div><label style="font-size:.76rem;color:var(--g500)">开始上工日期</label>
+          <input type="date" id="raWorkStart" onchange="raDurHint()" style="width:100%;margin:.15rem 0 .55rem"></div>
+        <div><label style="font-size:.76rem;color:var(--g500)">离职日期（仍在职不填）</label>
+          <input type="date" id="raWorkEnd" onchange="raDurHint()" style="width:100%;margin:.15rem 0 .55rem"></div>
+      </div>
+      <div id="raDurMsg" style="font-size:.74rem;color:#0f4c6b;margin-bottom:.4rem"></div>
+      <label style="font-size:.76rem;color:var(--g500)">工作时长备注（可选）</label>
+      <input type="text" id="raDuration" placeholder="例：已做满 30 天，符合介绍费条件" style="width:100%;margin:.15rem 0 .55rem">
+      <label style="font-size:.76rem;color:var(--g500)">备注（可选）</label>
+      <textarea id="raDesc" rows="2" placeholder="其他要说明的情况…" style="width:100%;margin:.15rem 0 .55rem;font-family:inherit;resize:vertical"></textarea>
+      <label style="font-size:.76rem;color:var(--g500)">凭证文件（可多选，PDF 或图片）</label>
+      <input type="file" id="raFiles" multiple accept=".pdf,.jpg,.jpeg,.png,.gif,.webp" style="width:100%;margin:.15rem 0 .4rem">
+      <div id="raOldFiles" style="margin-bottom:.6rem;line-height:1.9"></div>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="closeRefAdd()">取消</button>
+        <button class="btn btn-blue" id="raSubmitBtn" onclick="submitRefAdd()">提交</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🧾 介绍费关联发票弹窗 (会计): 勾选能证明被介绍人在干活的发票, 供管理员核查 -->
+  <div id="refInvModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:92;align-items:center;justify-content:center;padding:16px">
+    <div class="card" style="max-width:640px;width:100%;padding:1.2rem 1.2rem 1rem;max-height:92vh;overflow:auto;display:flex;flex-direction:column">
+      <div style="font-weight:800;margin-bottom:.2rem">🧾 关联发票</div>
+      <div id="riTitle" style="font-size:.8rem;color:var(--g500);margin-bottom:.7rem"></div>
+      <input type="text" id="riSearch" placeholder="搜发票号 / 公司…" oninput="riRenderList()" style="width:100%;margin-bottom:.45rem">
+      <div id="riList" style="max-height:44vh;min-height:200px;overflow:auto;border:1px solid var(--g200);border-radius:8px;padding:.3rem .45rem;font-size:.82rem;background:#fafafa;margin-bottom:.55rem">加载中…</div>
+      <label style="font-size:.76rem;color:var(--g500)">说明（可选，例：INV-1023 第 3 行是这个工人的工时）</label>
+      <input type="text" id="riNote" placeholder="" style="width:100%;margin:.15rem 0 .4rem">
+      <div id="riSum" style="font-size:.76rem;color:var(--g500);margin-bottom:.5rem"></div>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="document.getElementById('refInvModal').style.display='none'">取消</button>
+        <button class="btn btn-blue" id="riSaveBtn" onclick="saveRefInv()">保存</button>
+      </div>
     </div>
   </div>
 
@@ -583,6 +668,8 @@ function enterMain() {
   // 新增赔偿事故 / 费用记录: 会计可提交(待管理员审核), admin 直接生效
   document.getElementById('btnClaimAdd').style.display = ['admin', 'accounting'].includes(USER.role) ? '' : 'none';
   document.getElementById('btnFeeAdd').style.display = ['admin', 'accounting'].includes(USER.role) ? '' : 'none';
+  // 新增介绍费: 客服/会计/管理员都能录入 (一律进「待核查」由管理员定夺)
+  document.getElementById('btnRefAdd').style.display = ['admin', 'accounting', 'cs'].includes(USER.role) ? '' : 'none';
   loadAll();
   bankOauthResume();
 }
@@ -619,6 +706,8 @@ function showTab(t) {
   document.getElementById('paneInv').style.display = t === 'inv' ? '' : 'none';
   document.getElementById('paneStmt').style.display = t === 'stmt' ? '' : 'none';
   document.getElementById('paneClaims').style.display = t === 'claims' ? '' : 'none';
+  document.getElementById('tabRef').classList.toggle('on', t === 'ref');
+  document.getElementById('paneRef').style.display = t === 'ref' ? '' : 'none';
 }
 // ── 付款批注: 每张发票/每笔赔偿记录「付了没有/哪个银行付的/付了多少」 ──
 let _payTarget = null, _payBanksFilled = false;
@@ -670,7 +759,7 @@ function _bankPickRowHtml(t2, on, hit, acctShort, toggleFn) {
   </label>`;
 }
 async function openPayNote(type, id) {
-  const list = type === 'invoice' ? _invList : type === 'fee' ? _feeList : (type === 'pallet' || type === 'palletbill') ? _palletRows : (type === 'truck' || type === 'truckfee' || type === 'truckorder') ? _truckRows : _claimList;
+  const list = type === 'invoice' ? _invList : type === 'fee' ? _feeList : type === 'referral' ? _refList : (type === 'pallet' || type === 'palletbill') ? _palletRows : (type === 'truck' || type === 'truckfee' || type === 'truckorder') ? _truckRows : _claimList;
   const item = type === 'truckfee' ? list.find(x => x.fee_id === id) : type === 'truckorder' ? list.find(x => x.order_id === id) : list.find(x => x.id === id);
   if (!item) return;
   _payTarget = { type, id };
@@ -679,11 +768,13 @@ async function openPayNote(type, id) {
     ? `发票 ${item.invoice_number || ''} · ${item.company_name || ''} · ${money(item.subtotal)}`
     : type === 'fee'
       ? `${(FEE_CFG[item.fee_type] || FEE_CFG.insurance).title} · ${item.party_name || ''} · ${item.amount != null ? money(item.amount) : ''}`
-      : (type === 'pallet' || type === 'palletbill')
-        ? `🪵 木板账单 ${item.invoice_number || ''} · ${item.customer || ''} · ${item.amount != null ? money(item.amount) : ''}`
-        : (type === 'truck' || type === 'truckfee' || type === 'truckorder')
-          ? `🚚 卡车费用 ${item.rental_code || ''} · ${item.customer || ''} · ${item.amount != null ? money(item.amount) : ''}`
-          : `赔偿事故 · ${item.warehouse_name || item.warehouse_code || ''} · ${item.amount != null ? money(item.amount) : ''}`;
+      : type === 'referral'
+        ? `🤝 介绍费 · 工头 ${item.foreman_name || ''} 介绍 ${item.worker_name || ''} · ${item.amount != null ? money(item.amount) : ''}`
+        : (type === 'pallet' || type === 'palletbill')
+          ? `🪵 木板账单 ${item.invoice_number || ''} · ${item.customer || ''} · ${item.amount != null ? money(item.amount) : ''}`
+          : (type === 'truck' || type === 'truckfee' || type === 'truckorder')
+            ? `🚚 卡车费用 ${item.rental_code || ''} · ${item.customer || ''} · ${item.amount != null ? money(item.amount) : ''}`
+            : `赔偿事故 · ${item.warehouse_name || item.warehouse_code || ''} · ${item.amount != null ? money(item.amount) : ''}`;
   const pn = item.pay_note || {};
   _pnNoteId = pn.id || null;
   _pnSel = new Set(pn.txn_ids || []);
@@ -806,7 +897,7 @@ async function pnDelPhoto(u) {
   try {
     const r = await bapi(`/api/acct/pay-notes/${_pnNoteId}/photos?photo=${encodeURIComponent(u.split('/').pop())}`, { method: 'DELETE' });
     pnRenderPhotos(r.photos_urls || []);
-    const list = !_payTarget ? null : _payTarget.type === 'invoice' ? _invList : _payTarget.type === 'fee' ? _feeList : (_payTarget.type === 'pallet' || _payTarget.type === 'palletbill') ? _palletRows : (_payTarget.type === 'truck' || _payTarget.type === 'truckfee' || _payTarget.type === 'truckorder') ? _truckRows : _claimList;
+    const list = !_payTarget ? null : _payTarget.type === 'invoice' ? _invList : _payTarget.type === 'fee' ? _feeList : _payTarget.type === 'referral' ? _refList : (_payTarget.type === 'pallet' || _payTarget.type === 'palletbill') ? _palletRows : (_payTarget.type === 'truck' || _payTarget.type === 'truckfee' || _payTarget.type === 'truckorder') ? _truckRows : _claimList;
     const item = list && _payTarget ? (_payTarget.type === 'truckfee' ? list.find(x => x.fee_id === _payTarget.id) : _payTarget.type === 'truckorder' ? list.find(x => x.order_id === _payTarget.id) : list.find(x => x.id === _payTarget.id)) : null;
     if (item && item.pay_note) item.pay_note.photos_urls = r.photos_urls || [];
   } catch (e) { toast(e.message || '删除失败', true); }
@@ -833,12 +924,12 @@ async function savePayNote() {
       if (up.error) throw new Error(up.error);
       pn.photos_urls = up.photos_urls || [];
     }
-    const list = _payTarget.type === 'invoice' ? _invList : _payTarget.type === 'fee' ? _feeList : (_payTarget.type === 'pallet' || _payTarget.type === 'palletbill') ? _palletRows : (_payTarget.type === 'truck' || _payTarget.type === 'truckfee' || _payTarget.type === 'truckorder') ? _truckRows : _claimList;
+    const list = _payTarget.type === 'invoice' ? _invList : _payTarget.type === 'fee' ? _feeList : _payTarget.type === 'referral' ? _refList : (_payTarget.type === 'pallet' || _payTarget.type === 'palletbill') ? _palletRows : (_payTarget.type === 'truck' || _payTarget.type === 'truckfee' || _payTarget.type === 'truckorder') ? _truckRows : _claimList;
     const item = _payTarget.type === 'truckfee' ? list.find(x => x.fee_id === _payTarget.id) : _payTarget.type === 'truckorder' ? list.find(x => x.order_id === _payTarget.id) : list.find(x => x.id === _payTarget.id);
     if (item) item.pay_note = pn;
     closePayNote();
     toast('✅ 付款批注已保存');
-    if (_payTarget.type === 'invoice') renderInvList(); else if (_payTarget.type === 'fee') renderFeeList(); else if (_payTarget.type === 'pallet' || _payTarget.type === 'palletbill') renderPalletList(); else if (_payTarget.type === 'truck' || _payTarget.type === 'truckfee' || _payTarget.type === 'truckorder') renderTruckList(); else renderClaimList();
+    if (_payTarget.type === 'invoice') renderInvList(); else if (_payTarget.type === 'fee') renderFeeList(); else if (_payTarget.type === 'referral') renderRefList(); else if (_payTarget.type === 'pallet' || _payTarget.type === 'palletbill') renderPalletList(); else if (_payTarget.type === 'truck' || _payTarget.type === 'truckfee' || _payTarget.type === 'truckorder') renderTruckList(); else renderClaimList();
   } catch (e) { toast(e.message || '保存失败', true); }
   finally { btn.disabled = false; }
 }
@@ -935,6 +1026,271 @@ async function claimApprove(id, action) {
     toast(action === 'approve' ? '✅ 已通过，已计入赔偿记录' : '已拒绝');
     loadAll();
   } catch (e) { toast(e.message || '操作失败', true); }
+}
+
+// ── 🤝 介绍费 Referral: 录入 → 会计关联发票 → 管理员核查决定支付 → 会计记付款关联银行记录 ──
+let _refList = [], _refEditId = null, _raRemove = new Set(), _raWhFilled = false;
+// 综合状态: 待核查 / 同意支付(待付款) / 已付款(按会计付款批注) / 拒绝支付
+function _refOverall(r) {
+  if (r.review_status === 'rejected') return 'rejected';
+  if (r.review_status === 'approved') return (r.pay_note && r.pay_note.paid_status === 'paid') ? 'paid' : 'approved';
+  return 'pending';
+}
+// 已工作时长: 从上工日期到离职日期(在职算到今天)
+function _refDuration(r) {
+  if (!r.work_start_date) return '';
+  const start = new Date(r.work_start_date + 'T00:00:00');
+  const end = r.work_end_date ? new Date(r.work_end_date + 'T00:00:00') : new Date();
+  if (isNaN(start) || isNaN(end) || end < start) return '';
+  const days = Math.round((end - start) / 86400000);
+  return days >= 30 ? `${Math.floor(days / 30)} 个月${days % 30 ? ' ' + days % 30 + ' 天' : ''}` : `${days} 天`;
+}
+function _refPersonCell(name, phone) {
+  return `<div style="font-weight:600;white-space:nowrap">${esc(name || '—')}</div>`
+    + (phone ? `<a href="tel:${esc(phone)}" style="font-size:.76rem;color:#0f4c6b;text-decoration:none;white-space:nowrap">📞 ${esc(phone)}</a>` : '');
+}
+function renderRefList() {
+  const q = (document.getElementById('refSearch').value || '').trim().toLowerCase();
+  const flt = document.getElementById('refFilter').value;
+  let list = _refList;
+  if (q) list = list.filter(r => [r.foreman_name, r.foreman_phone, r.worker_name, r.worker_phone, r.warehouse_name, r.warehouse_address, r.description].join(' ').toLowerCase().includes(q));
+  if (flt) list = list.filter(r => _refOverall(r) === flt);
+  const pendN = _refList.filter(r => r.review_status === 'pending').length;
+  const waitN = _refList.filter(r => _refOverall(r) === 'approved').length;
+  const paidN = _refList.filter(r => _refOverall(r) === 'paid').length;
+  const total = _refList.filter(r => r.review_status !== 'rejected').reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  document.getElementById('refStats').textContent = `共 ${_refList.length} 条 · ⏳ 待核查 ${pendN} · ✅ 待付款 ${waitN} · 💰 已付款 ${paidN} · 介绍费合计 ${money(total)}（不含拒绝）`;
+  const badge = document.getElementById('refPendBadge');
+  badge.style.display = pendN && USER.role === 'admin' ? '' : 'none';
+  badge.textContent = pendN;
+  document.getElementById('refBody').innerHTML = list.length ? list.map(r => {
+    const dur = _refDuration(r);
+    const workCell = r.work_start_date
+      ? `<div style="white-space:nowrap">${esc(r.work_start_date)}${r.work_end_date ? ' ~ ' + esc(r.work_end_date) : ' 起'}${r.work_end_date ? '' : ' <span style="font-size:.68rem;background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;border-radius:4px;padding:0 4px">在职</span>'}</div>`
+        + (dur ? `<div style="font-size:.76rem;color:var(--g500)">已工作 ${esc(dur)}</div>` : '')
+        + (r.work_duration ? `<div style="font-size:.7rem;color:var(--g400);max-width:160px">${esc(r.work_duration)}</div>` : '')
+      : (r.work_duration ? `<div style="font-size:.76rem;color:var(--g500)">${esc(r.work_duration)}</div>` : '<span style="color:var(--g400)">—</span>');
+    const atts = Array.isArray(r.attachments) ? r.attachments : [];
+    const attHtml = atts.length ? `<div style="margin-top:2px">${atts.map((a, i) => `<a href="${esc(a.path)}" target="_blank" title="${esc(a.name || '')}" style="color:#0f4c6b;text-decoration:underline;font-size:.72rem;margin-right:5px;white-space:nowrap">📎${atts.length > 1 ? i + 1 : ''}</a>`).join('')}</div>` : '';
+    // 关联发票 (会计): 每张可点开看, 加「关联」编辑入口
+    const invChips = (r.invoices || []).map(v =>
+      `<a onclick="openInvoice(${v.id})" title="${esc(v.company_name || '')} · ${money(v.subtotal)}" style="display:inline-block;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;border-radius:6px;padding:1px 7px;font-size:.72rem;font-weight:600;margin:1px 3px 1px 0;white-space:nowrap">📄 ${esc(v.invoice_number)}</a>`).join('');
+    const invEdit = ['accounting', 'admin'].includes(USER.role)
+      ? ` <a style="cursor:pointer;font-size:.74rem;color:#0f4c6b;text-decoration:underline;white-space:nowrap" onclick="openRefInv(${r.id})">${(r.invoice_ids || []).length ? '编辑' : '＋关联'}</a>` : '';
+    const invCell = (invChips || '<span style="color:var(--g400)">—</span>') + invEdit
+      + (r.invoice_note ? `<div style="font-size:.7rem;color:var(--g400);max-width:180px">${esc(r.invoice_note)}</div>` : '');
+    // 管理员核查列: 待核查时 admin 直接在这操作; 核查过显示定论 + 撤销重审
+    const reviewNote = r.review_note ? `<div style="font-size:.68rem;color:var(--g400);max-width:170px;margin-top:2px">${esc(r.review_note)}</div>` : '';
+    const reviewer = r.reviewed_by ? `<div style="font-size:.68rem;color:var(--g400);margin-top:2px">${esc(r.reviewed_by)} 核查</div>` : '';
+    const submitter = r.created_by ? `<div style="font-size:.68rem;color:var(--g400);margin-top:2px">${esc(r.created_by)} 提交</div>` : '';
+    const reviewCell = r.review_status === 'pending'
+      ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#fff7ed;color:#c2410c;border:1px solid #fed7aa">⏳ 待核查</span>' + submitter
+        + (USER.role === 'admin' ? `<div style="margin-top:4px;white-space:nowrap"><a style="cursor:pointer;color:#15803d;font-size:.74rem;text-decoration:underline" onclick="refReview(${r.id},'approve')">✅ 同意支付</a><a style="cursor:pointer;color:#dc2626;font-size:.74rem;text-decoration:underline;margin-left:8px" onclick="refReview(${r.id},'reject')">✖ 拒绝</a></div>` : '')
+      : r.review_status === 'approved'
+        ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#dcfce7;color:#166534">✅ 同意支付</span>' + reviewer + reviewNote
+          + (USER.role === 'admin' ? `<div style="margin-top:2px"><a style="cursor:pointer;color:var(--g400);font-size:.7rem;text-decoration:underline" onclick="refReview(${r.id},'reset')">撤销重审</a></div>` : '')
+        : '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca">✖ 拒绝支付</span>' + reviewer + reviewNote
+          + (USER.role === 'admin' ? `<div style="margin-top:2px"><a style="cursor:pointer;color:var(--g400);font-size:.7rem;text-decoration:underline" onclick="refReview(${r.id},'reset')">撤销重审</a></div>` : '');
+    // 付款批注: 只有管理员核查同意支付后才能记 (服务端同样拦)
+    const payCell = r.review_status === 'approved'
+      ? payNoteCell('referral', r.id, r.pay_note, true)
+      : r.review_status === 'rejected'
+        ? '<span style="color:var(--g400)">—</span>'
+        : '<span style="font-size:.72rem;color:var(--g400)">核查通过后可记录</span>';
+    const canEdit = (USER.role === 'admin') || (['accounting', 'cs'].includes(USER.role) && r.review_status === 'pending');
+    const ops = `${canEdit ? `<a style="cursor:pointer;color:#0f4c6b;font-size:.78rem;text-decoration:underline" onclick="openRefAdd(${r.id})">编辑</a>` : ''}`
+      + `${USER.role === 'admin' ? ` <a style="cursor:pointer;color:#b91c1c;font-size:.78rem;margin-left:6px" title="删除这条介绍记录" onclick="refDelete(${r.id})">🗑</a>` : ''}`;
+    return `<tr${r.review_status === 'rejected' ? ' style="opacity:.55"' : ''}>
+      <td>${_refPersonCell(r.foreman_name, r.foreman_phone)}</td>
+      <td>${_refPersonCell(r.worker_name, r.worker_phone)}${attHtml}</td>
+      <td style="max-width:220px"><div style="font-weight:600">${esc(r.warehouse_name || '—')}</div>${r.warehouse_address ? `<div style="font-size:.74rem;color:var(--g500)">${esc(r.warehouse_address)}</div>` : ''}</td>
+      <td style="white-space:nowrap;font-size:.8rem">${esc((r.interview_at || '').replace('T', ' ') || '—')}</td>
+      <td style="font-size:.8rem">${workCell}</td>
+      <td style="text-align:right;font-weight:700;color:#0f4c6b;white-space:nowrap">${r.amount != null ? money(r.amount) : '—'}</td>
+      <td style="max-width:200px">${invCell}</td>
+      <td>${reviewCell}</td>
+      <td>${payCell}</td>
+      <td style="white-space:nowrap">${ops}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="10" style="color:var(--g400);padding:1rem">暂无介绍费记录，点「＋ 新增介绍」添加。</td></tr>';
+}
+// ➕ 新增 / 编辑介绍 (编辑只限待核查的记录; 管理员随时可改)
+async function openRefAdd(id) {
+  _refEditId = id || null;
+  _raRemove = new Set();
+  const r = id ? _refList.find(x => x.id === id) : null;
+  document.getElementById('refAddTitle').textContent = r ? '🤝 编辑介绍' : '🤝 新增介绍';
+  document.getElementById('refAddHint').textContent = r
+    ? '改完保存即可；管理员核查过的记录只有管理员能改。'
+    : '填写工头和被介绍工人的信息；提交后由会计关联发票、管理员核查决定是否支付。';
+  document.getElementById('raForemanName').value = r ? r.foreman_name || '' : '';
+  document.getElementById('raForemanPhone').value = r ? r.foreman_phone || '' : '';
+  document.getElementById('raWorkerName').value = r ? r.worker_name || '' : '';
+  document.getElementById('raWorkerPhone').value = r ? r.worker_phone || '' : '';
+  document.getElementById('raWh').value = r ? r.warehouse_name || '' : '';
+  document.getElementById('raWhAddr').value = r ? r.warehouse_address || '' : '';
+  document.getElementById('raInterview').value = r ? r.interview_at || '' : '';
+  document.getElementById('raAmount').value = r && r.amount != null ? r.amount : '';
+  document.getElementById('raWorkStart').value = r ? r.work_start_date || '' : '';
+  document.getElementById('raWorkEnd').value = r ? r.work_end_date || '' : '';
+  document.getElementById('raDuration').value = r ? r.work_duration || '' : '';
+  document.getElementById('raDesc').value = r ? r.description || '' : '';
+  document.getElementById('raFiles').value = '';
+  raDurHint();
+  raRenderOldFiles();
+  document.getElementById('refAddModal').style.display = 'flex';
+  if (!_raWhFilled) {
+    _raWhFilled = true;
+    try {
+      const o = await api('/api/plaid/ann-options');
+      const names = [...new Set([...(o.companies || []), ...(o.warehouses || [])])];
+      document.getElementById('raWhList').innerHTML = names.map(n => `<option value="${esc(n)}"></option>`).join('');
+    } catch (e) {}
+  }
+}
+function closeRefAdd() { document.getElementById('refAddModal').style.display = 'none'; }
+// 上工/离职日期变化时自动算已工作时长提示
+function raDurHint() {
+  const el = document.getElementById('raDurMsg');
+  el.textContent = '';
+  const s = document.getElementById('raWorkStart').value;
+  if (!s) return;
+  const e = document.getElementById('raWorkEnd').value;
+  const dur = _refDuration({ work_start_date: s, work_end_date: e });
+  if (dur) el.textContent = `⏱ ${e ? '共工作' : '已工作'} ${dur}${e ? '' : '（仍在职，按今天算）'}`;
+}
+// 编辑时显示已有凭证, 可勾掉删除
+function raRenderOldFiles() {
+  const box = document.getElementById('raOldFiles');
+  const r = _refEditId ? _refList.find(x => x.id === _refEditId) : null;
+  const atts = (r && Array.isArray(r.attachments)) ? r.attachments : [];
+  box.innerHTML = atts.length
+    ? '<span style="font-size:.72rem;color:var(--g400)">已有凭证：</span>' + atts.map(a => _raRemove.has(a.path)
+      ? `<span style="display:inline-flex;align-items:center;gap:4px;border:1px dashed #fecaca;border-radius:6px;padding:2px 8px;margin:2px 4px 2px 0;font-size:.74rem;color:#b91c1c;text-decoration:line-through">${esc(a.name || '文件')} <a onclick="raToggleRemove('${esc(a.path)}')" style="cursor:pointer;color:#0f4c6b;text-decoration:none;font-weight:700">↩</a></span>`
+      : `<span style="display:inline-flex;align-items:center;gap:4px;border:1px solid var(--g200);border-radius:6px;padding:2px 8px;margin:2px 4px 2px 0;font-size:.74rem;background:#f8fafc"><a href="${esc(a.path)}" target="_blank" style="color:#0f4c6b;text-decoration:underline">${esc(a.name || '文件')}</a> <a onclick="raToggleRemove('${esc(a.path)}')" title="删除" style="cursor:pointer;color:#dc2626;font-weight:700">✕</a></span>`).join('')
+    : '';
+}
+function raToggleRemove(p) {
+  if (_raRemove.has(p)) _raRemove.delete(p); else _raRemove.add(p);
+  raRenderOldFiles();
+}
+async function submitRefAdd() {
+  const fName = document.getElementById('raForemanName').value.trim();
+  const wName = document.getElementById('raWorkerName').value.trim();
+  if (!fName) return toast('请填写工头姓名', true);
+  if (!wName) return toast('请填写被介绍人姓名', true);
+  const ws = document.getElementById('raWorkStart').value, we = document.getElementById('raWorkEnd').value;
+  if (ws && we && we < ws) return toast('离职日期不能早于上工日期', true);
+  const btn = document.getElementById('raSubmitBtn');
+  btn.disabled = true; btn.textContent = '提交中…';
+  try {
+    const fd = new FormData();
+    fd.append('foreman_name', fName);
+    fd.append('foreman_phone', document.getElementById('raForemanPhone').value.trim());
+    fd.append('worker_name', wName);
+    fd.append('worker_phone', document.getElementById('raWorkerPhone').value.trim());
+    fd.append('warehouse_name', document.getElementById('raWh').value.trim());
+    fd.append('warehouse_address', document.getElementById('raWhAddr').value.trim());
+    fd.append('interview_at', document.getElementById('raInterview').value || '');
+    fd.append('work_start_date', ws || '');
+    fd.append('work_end_date', we || '');
+    fd.append('work_duration', document.getElementById('raDuration').value.trim());
+    fd.append('amount', document.getElementById('raAmount').value || '');
+    fd.append('description', document.getElementById('raDesc').value.trim());
+    if (_refEditId && _raRemove.size) fd.append('remove_attachments', JSON.stringify([..._raRemove]));
+    [...document.getElementById('raFiles').files].forEach(f => fd.append('invoice', f));
+    const r = await fetch(_refEditId ? '/api/acct/referrals/' + _refEditId : '/api/acct/referrals',
+      { method: _refEditId ? 'PUT' : 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd }).then(x => x.json());
+    if (r.error) throw new Error(r.error);
+    closeRefAdd();
+    toast(_refEditId ? '✅ 已保存' : '✅ 已提交，等待管理员核查');
+    loadRefList();
+  } catch (e) { toast(e.message || '提交失败', true); }
+  btn.disabled = false; btn.textContent = '提交';
+}
+// 🧾 会计关联发票: 勾选能证明被介绍人在干活的发票
+let _riRefId = null, _riSel = new Set();
+function openRefInv(id) {
+  const r = _refList.find(x => x.id === id);
+  if (!r) return;
+  _riRefId = id;
+  _riSel = new Set(r.invoice_ids || []);
+  document.getElementById('riTitle').textContent = `工头 ${r.foreman_name || ''} 介绍 ${r.worker_name || ''}${r.warehouse_name ? ' · ' + r.warehouse_name : ''} — 勾选能证明这个工人在干活的发票`;
+  document.getElementById('riSearch').value = '';
+  document.getElementById('riNote').value = r.invoice_note || '';
+  document.getElementById('refInvModal').style.display = 'flex';
+  riRenderList();
+}
+function riRenderList() {
+  const q = (document.getElementById('riSearch').value || '').trim().toLowerCase();
+  let rows = _invList;
+  if (q) rows = rows.filter(v => (v.invoice_number || '').toLowerCase().includes(q) || (v.company_name || '').toLowerCase().includes(q));
+  // 已勾选的置顶, 其余按日期新旧, 最多显示 200 张
+  const sel = rows.filter(v => _riSel.has(v.id)), rest = rows.filter(v => !_riSel.has(v.id)).slice(0, 200);
+  document.getElementById('riList').innerHTML = (sel.length + rest.length)
+    ? [...sel, ...rest].map(v => `<label style="display:flex;align-items:center;gap:.45rem;padding:.3rem .25rem;border-bottom:1px solid #eef2f7;cursor:pointer;${_riSel.has(v.id) ? 'background:#eff6ff' : ''}">
+        <input type="checkbox" data-inv="${v.id}" ${_riSel.has(v.id) ? 'checked' : ''} onchange="riToggle(this)">
+        <b style="white-space:nowrap">${esc(v.invoice_number)}</b>
+        <span style="white-space:nowrap;color:var(--g500);font-size:.76rem">${esc(v.invoice_date || '')}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.company_name || '')}</span>
+        <b style="white-space:nowrap">${money(v.subtotal)}</b>
+      </label>`).join('')
+    : '<span style="color:var(--g400)">没有符合条件的发票</span>';
+  riSumRefresh();
+}
+function riToggle(cb) {
+  const id = parseInt(cb.dataset.inv);
+  if (cb.checked) _riSel.add(id); else _riSel.delete(id);
+  cb.closest('label').style.background = cb.checked ? '#eff6ff' : '';
+  riSumRefresh();
+}
+function riSumRefresh() {
+  document.getElementById('riSum').textContent = _riSel.size ? `已选 ${_riSel.size} 张发票` : '未选择发票';
+}
+async function saveRefInv() {
+  if (!_riRefId) return;
+  const btn = document.getElementById('riSaveBtn');
+  btn.disabled = true;
+  try {
+    const r = await api('/api/acct/referrals/' + _riRefId + '/invoices', { method: 'POST',
+      body: JSON.stringify({ invoice_ids: [..._riSel], invoice_note: document.getElementById('riNote').value.trim() }) });
+    if (r && r.error) throw new Error(r.error);
+    document.getElementById('refInvModal').style.display = 'none';
+    toast('✅ 已保存关联发票');
+    loadRefList();
+  } catch (e) { toast(e.message || '保存失败', true); }
+  btn.disabled = false;
+}
+// 管理员核查: 同意支付 / 拒绝支付 (可带原因) / 撤销重审
+async function refReview(id, action) {
+  let note = '';
+  if (action === 'reject') { note = prompt('拒绝支付的原因（可选，会显示给提交人）：'); if (note === null) return; }
+  else if (action === 'approve') { note = prompt('核查备注（可选，例：已核对发票和面试记录）：'); if (note === null) return; }
+  else if (action === 'reset' && !confirm('撤销核查结论、退回待核查？')) return;
+  try {
+    const r = await api('/api/acct/referrals/' + id + '/review', { method: 'POST', body: JSON.stringify({ action, note }) });
+    if (r && r.error) throw new Error(r.error);
+    toast(action === 'approve' ? '✅ 已同意支付，会计可以付款并记录了' : action === 'reject' ? '已拒绝支付' : '已退回待核查');
+    loadRefList();
+  } catch (e) { toast(e.message || '操作失败', true); }
+}
+async function refDelete(id) {
+  if (!confirm('删除这条介绍记录？凭证和付款批注会一并删除。')) return;
+  try {
+    const r = await api('/api/acct/referrals/' + id, { method: 'DELETE' });
+    if (r && r.error) throw new Error(r.error);
+    toast('已删除');
+    loadRefList();
+  } catch (e) { toast(e.message || '删除失败', true); }
+}
+async function loadRefList() {
+  try {
+    const rows = await api('/api/acct/referrals');
+    _refList = Array.isArray(rows) ? rows : [];
+    renderRefList();
+  } catch (e) {
+    document.getElementById('refBody').innerHTML = `<tr><td colspan="10" style="color:#dc2626">${esc(e.message || '加载失败')}</td></tr>`;
+  }
 }
 
 // ── 🛡️/⚖️ 费用记录 (保险费/律师费): 和赔偿事故同一套 — 新增/审核/文件/付款批注 ──
@@ -1433,18 +1789,21 @@ function renderPalletList() {
   </tr>`).join('') : '<tr><td colspan="10" style="color:var(--g400);padding:1rem">没有账单。</td></tr>';
 }
 async function loadAll() {
-  const [inv, stmt, claims, fees] = await Promise.all([
+  const [inv, stmt, claims, fees, refs] = await Promise.all([
     api('/api/acct/invoices').catch(() => []),
     api('/api/acct/statements').catch(() => []),
     api('/api/acct/warehouse-claims').catch(() => []),
     api('/api/acct/fee-records').catch(() => []),
+    api('/api/acct/referrals').catch(() => []),
   ]);
   _invList = Array.isArray(inv) ? inv : [];
   _stmtList = Array.isArray(stmt) ? stmt : [];
   _claimList = Array.isArray(claims) ? claims : [];
   _feeList = Array.isArray(fees) ? fees : [];
+  _refList = Array.isArray(refs) ? refs : [];
   renderClaimList();
   renderFeeList();
+  renderRefList();
   renderInvList();
   renderStmtList();
 }

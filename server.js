@@ -849,6 +849,36 @@ try { db.exec("ALTER TABLE fee_records ADD COLUMN fee_date_end TEXT DEFAULT ''")
 try { db.exec("ALTER TABLE fee_records ADD COLUMN cargo TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN discount_value REAL DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN discount_type TEXT DEFAULT '%'"); } catch(e) {}
+// 介绍费 referral: 工头介绍工人来上班 — 记录工头(姓名/电话)、被介绍人(姓名/电话)、
+// 工作仓库/地址、面试时间、上工时间和做了多久。会计关联发票佐证 (invoice_ids),
+// 管理员核查整条信息决定是否支付 (review_status: pending → approved/rejected),
+// 同意支付后会计用付款批注记实付并关联银行记录 (acct_pay_notes target_type='referral')。
+try { db.exec(`CREATE TABLE IF NOT EXISTS referrals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  foreman_name TEXT DEFAULT '',
+  foreman_phone TEXT DEFAULT '',
+  worker_name TEXT DEFAULT '',
+  worker_phone TEXT DEFAULT '',
+  warehouse_name TEXT DEFAULT '',
+  warehouse_address TEXT DEFAULT '',
+  interview_at TEXT DEFAULT '',
+  work_start_date TEXT DEFAULT '',
+  work_end_date TEXT DEFAULT '',
+  work_duration TEXT DEFAULT '',
+  amount REAL DEFAULT NULL,
+  description TEXT DEFAULT '',
+  attachments TEXT DEFAULT '[]',
+  invoice_ids TEXT DEFAULT '[]',
+  invoice_note TEXT DEFAULT '',
+  invoice_linked_by TEXT DEFAULT '',
+  review_status TEXT DEFAULT 'pending',
+  reviewed_by TEXT DEFAULT '',
+  review_note TEXT DEFAULT '',
+  reviewed_at DATETIME DEFAULT NULL,
+  created_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL"); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) {}
@@ -38895,19 +38925,23 @@ function _acctPayNotesFor(type) {
 // 会计付款批注 upsert: 付了没有 / 哪个银行付的 / 付了多少 / 备注 / 关联银行交易(收款凭证)
 app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
   const { target_type, target_id, paid_status, bank, amount, note, txn_ids } = req.body || {};
-  if (!['invoice', 'claim', 'fee', 'pallet', 'palletbill', 'truck', 'truckorder'].includes(target_type)) return res.status(400).json({ error: '无效对象类型' });
+  if (!['invoice', 'claim', 'fee', 'pallet', 'palletbill', 'truck', 'truckorder', 'referral'].includes(target_type)) return res.status(400).json({ error: '无效对象类型' });
   const tid = parseInt(target_id);
   if (!tid) return res.status(400).json({ error: '无效对象' });
   const exists = target_type === 'invoice'
     ? db.prepare('SELECT id FROM invoices WHERE id=?').get(tid)
     : target_type === 'fee'
       ? db.prepare('SELECT id FROM fee_records WHERE id=?').get(tid)
-      : (target_type === 'pallet' || target_type === 'truck')
-        ? db.prepare("SELECT id FROM bank_statement_txns WHERE id=? AND kind='box'").get(tid)
-        : (target_type === 'palletbill' || target_type === 'truckorder')
-          ? { id: tid } // Bintique 账单/卡车订单在对方系统, 本地不校验存在性
-          : db.prepare('SELECT id FROM warehouse_claims WHERE id=?').get(tid);
+      : target_type === 'referral'
+        ? db.prepare('SELECT id, review_status FROM referrals WHERE id=?').get(tid)
+        : (target_type === 'pallet' || target_type === 'truck')
+          ? db.prepare("SELECT id FROM bank_statement_txns WHERE id=? AND kind='box'").get(tid)
+          : (target_type === 'palletbill' || target_type === 'truckorder')
+            ? { id: tid } // Bintique 账单/卡车订单在对方系统, 本地不校验存在性
+            : db.prepare('SELECT id FROM warehouse_claims WHERE id=?').get(tid);
   if (!exists) return res.status(404).json({ error: '对象不存在' });
+  // 介绍费必须管理员核查同意支付后, 会计才能记付款 / 关联银行记录
+  if (target_type === 'referral' && exists.review_status !== 'approved') return res.status(400).json({ error: '该介绍费还未通过管理员核查同意支付，暂不能记录付款' });
   const st = ['', 'unpaid', 'partial', 'paid'].includes(String(paid_status || '')) ? String(paid_status || '') : '';
   const amt = (amount === '' || amount == null) ? null : (Number(amount) || 0);
   const ids = (Array.isArray(txn_ids) ? txn_ids : []).map(t => String(t).slice(0, 100)).filter(Boolean).slice(0, 20);
@@ -39289,6 +39323,124 @@ app.delete('/api/acct/fee-records/:id', requireAdmin, requireRole('admin'), (req
   _claimAtts(cur).forEach(a => _claimDeleteFile(a.path));
   db.prepare('DELETE FROM fee_records WHERE id=?').run(cur.id);
   db.prepare(`DELETE FROM acct_pay_notes WHERE target_type='fee' AND target_id=?`).run(cur.id);
+  res.json({ success: true });
+});
+
+// ─── 🤝 介绍费 (referral): 工头介绍工人, 核查后付介绍费 ───
+// 流程: 客服/会计录入介绍信息 → 会计关联发票佐证 (被介绍人确实在给客户干活) →
+// 管理员核查整条信息、决定是否支付 → 同意后会计付款并在付款批注里关联银行记录。
+function _referralOut(r, invMap, payNotes) {
+  r.attachments = _claimAtts(r);
+  let ids = []; try { ids = JSON.parse(r.invoice_ids || '[]'); } catch (e) { ids = []; }
+  r.invoice_ids = (Array.isArray(ids) ? ids : []).map(i => parseInt(i)).filter(Boolean);
+  r.invoices = r.invoice_ids.map(id => invMap[id]).filter(Boolean);
+  r.pay_note = payNotes[r.id] || null;
+  return r;
+}
+app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT * FROM referrals
+      ORDER BY CASE WHEN review_status='pending' THEN 0 ELSE 1 END, created_at DESC, id DESC`).all();
+    const allIds = new Set();
+    rows.forEach(r => { try { (JSON.parse(r.invoice_ids || '[]') || []).forEach(i => { const n = parseInt(i); if (n) allIds.add(n); }); } catch (e) {} });
+    const invMap = {};
+    if (allIds.size) db.prepare(`SELECT id, invoice_number, invoice_date, company_name, subtotal FROM invoices
+      WHERE id IN (${[...allIds].map(() => '?').join(',')})`).all(...allIds).forEach(v => { invMap[v.id] = v; });
+    const payNotes = _acctPayNotesFor('referral');
+    res.json(rows.map(r => _referralOut(r, invMap, payNotes)));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 介绍费基本字段收取 (新增/编辑共用): 工头/工人的姓名电话、仓库和地址、面试时间、上工起止和时长
+const REFERRAL_FIELDS = [
+  ['foreman_name', 120], ['foreman_phone', 40], ['worker_name', 120], ['worker_phone', 40],
+  ['warehouse_name', 200], ['warehouse_address', 300], ['interview_at', 40],
+  ['work_start_date', 20], ['work_end_date', 20], ['work_duration', 120], ['description', 2000],
+];
+function _referralBody(b) {
+  const out = {};
+  for (const [k, max] of REFERRAL_FIELDS) out[k] = String(b[k] || '').trim().slice(0, max);
+  const amtNum = Number(b.amount);
+  out.amount = (b.amount != null && b.amount !== '' && !isNaN(amtNum)) ? amtNum : null;
+  return out;
+}
+// 新增介绍: 客服/会计/管理员都可录入, 一律进「待核查」等管理员定夺
+app.post('/api/acct/referrals', requireAdmin, requireRole('accounting', 'admin', 'cs'), claimUpload.array('invoice', 20), (req, res) => {
+  const f = _referralBody(req.body || {});
+  if (!f.foreman_name) return res.status(400).json({ error: '请填写工头姓名' });
+  if (!f.worker_name) return res.status(400).json({ error: '请填写被介绍人姓名' });
+  const files = Array.isArray(req.files) ? req.files : [];
+  const atts = files.map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
+  const r = db.prepare(`INSERT INTO referrals
+    (foreman_name, foreman_phone, worker_name, worker_phone, warehouse_name, warehouse_address,
+     interview_at, work_start_date, work_end_date, work_duration, amount, description, attachments, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.warehouse_name, f.warehouse_address,
+      f.interview_at, f.work_start_date, f.work_end_date, f.work_duration, f.amount, f.description,
+      JSON.stringify(atts), req.userName || '');
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+
+// 编辑介绍信息 (可追加/删除凭证文件): 管理员随时可改;
+// 会计/客服只能改还在「待核查」的 — 核查过的以管理员定论为准。
+app.put('/api/acct/referrals/:id', requireAdmin, requireRole('accounting', 'admin', 'cs'), claimUpload.array('invoice', 20), (req, res) => {
+  const cur = db.prepare('SELECT * FROM referrals WHERE id=?').get(parseInt(req.params.id));
+  if (!cur) return res.status(404).json({ error: '记录不存在' });
+  if (req.userRole !== 'admin' && cur.review_status !== 'pending') return res.status(403).json({ error: '该记录管理员已核查，如需修改请联系管理员' });
+  const f = _referralBody(req.body || {});
+  if (!f.foreman_name) return res.status(400).json({ error: '请填写工头姓名' });
+  if (!f.worker_name) return res.status(400).json({ error: '请填写被介绍人姓名' });
+  let atts = _claimAtts(cur);
+  let rmList = []; try { rmList = JSON.parse((req.body || {}).remove_attachments || '[]'); } catch (e) { rmList = []; }
+  if (Array.isArray(rmList) && rmList.length) {
+    const rm = new Set(rmList.map(String));
+    atts.filter(a => rm.has(a.path)).forEach(a => _claimDeleteFile(a.path));
+    atts = atts.filter(a => !rm.has(a.path));
+  }
+  (Array.isArray(req.files) ? req.files : []).forEach(fl => atts.push({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
+  db.prepare(`UPDATE referrals SET foreman_name=?, foreman_phone=?, worker_name=?, worker_phone=?,
+      warehouse_name=?, warehouse_address=?, interview_at=?, work_start_date=?, work_end_date=?,
+      work_duration=?, amount=?, description=?, attachments=?, updated_at=datetime('now') WHERE id=?`)
+    .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.warehouse_name, f.warehouse_address,
+      f.interview_at, f.work_start_date, f.work_end_date, f.work_duration, f.amount, f.description,
+      JSON.stringify(atts), cur.id);
+  res.json({ success: true });
+});
+
+// 会计关联发票: 挂上能证明被介绍人确实在干活的发票 (发票 id 列表 + 说明), 供管理员核查
+app.post('/api/acct/referrals/:id/invoices', requireAdmin, requireRole('accounting', 'admin'), (req, res) => {
+  const cur = db.prepare('SELECT id FROM referrals WHERE id=?').get(parseInt(req.params.id));
+  if (!cur) return res.status(404).json({ error: '记录不存在' });
+  const b = req.body || {};
+  const ids = [...new Set((Array.isArray(b.invoice_ids) ? b.invoice_ids : []).map(i => parseInt(i)).filter(i => i > 0))].slice(0, 50);
+  const ok = ids.length ? db.prepare(`SELECT id FROM invoices WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids).map(v => v.id) : [];
+  db.prepare(`UPDATE referrals SET invoice_ids=?, invoice_note=?, invoice_linked_by=?, updated_at=datetime('now') WHERE id=?`)
+    .run(JSON.stringify(ok), String(b.invoice_note || '').trim().slice(0, 500), req.userName || '', cur.id);
+  res.json({ success: true, invoice_ids: ok });
+});
+
+// 管理员核查: 核实整条信息后决定是否支付 (approve 同意支付 / reject 拒绝支付 / reset 撤销重审)
+app.post('/api/acct/referrals/:id/review', requireAdmin, requireRole('admin'), (req, res) => {
+  const cur = db.prepare('SELECT * FROM referrals WHERE id=?').get(parseInt(req.params.id));
+  if (!cur) return res.status(404).json({ error: '记录不存在' });
+  const action = String((req.body || {}).action || '');
+  if (!['approve', 'reject', 'reset'].includes(action)) return res.status(400).json({ error: '无效操作' });
+  const st = action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'pending';
+  const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  db.prepare(`UPDATE referrals SET review_status=?, reviewed_by=?, review_note=?, reviewed_at=?, updated_at=datetime('now') WHERE id=?`)
+    .run(st, action === 'reset' ? '' : (req.userName || ''),
+      action === 'reset' ? '' : String((req.body || {}).note || '').trim().slice(0, 300),
+      action === 'reset' ? null : now, cur.id);
+  res.json({ success: true, review_status: st });
+});
+
+// 管理员删除介绍费记录 (附件与付款批注一并清掉)
+app.delete('/api/acct/referrals/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const cur = db.prepare('SELECT * FROM referrals WHERE id=?').get(parseInt(req.params.id));
+  if (!cur) return res.status(404).json({ error: '记录不存在' });
+  _claimAtts(cur).forEach(a => _claimDeleteFile(a.path));
+  db.prepare('DELETE FROM referrals WHERE id=?').run(cur.id);
+  db.prepare(`DELETE FROM acct_pay_notes WHERE target_type='referral' AND target_id=?`).run(cur.id);
   res.json({ success: true });
 });
 
