@@ -38481,6 +38481,7 @@ async function invpProcessExcelFile(file) {
     if (data.periodStart) msg += `，周期 ${data.periodStart} ~ ${data.periodEnd}`;
     if (data.markupMultiplier) msg += `，Markup ×${data.markupMultiplier}`;
     if (_invpOtFeeCompanyApplies()) msg += `，加班服务费 ×${_invpOtFeeForHeadcount((data.employees || []).length).toFixed(2)}（Elogistek 合同：按人数档位，加班不吃 Markup）`;
+    else if (Number(data.impliedOtFee) > 0) msg += `，加班服务费 ×${Number(data.impliedOtFee).toFixed(2)}（按 Excel 的 Invoiced Salary 反推：加班不吃 Markup，账单与工资表一致）`;
     showToast(msg + '。请核对后保存。', 'success', 5000);
     (data.warnings || []).forEach(w => showToast('⚠️ ' + w, 'warning', 7000));
   } catch (e) {
@@ -38508,7 +38509,11 @@ function invpApplyExcelData(data) {
   // 1–30人 ×1.10 / 31–70人 ×1.05 / 71人以上 ×1.00）。其他公司加班和
   // 正常工时一样按 Markup 加价 → OT 系数留空。
   const otFeeEl = document.getElementById('invPageOtFeeRate');
-  if (otFeeEl) otFeeEl.value = _invpOtFeeCompanyApplies() ? String(_invpOtFeeForHeadcount((data.employees || []).length)) : '';
+  // Elogistek 按合同人数档位；其他客户若 Excel 的「Invoiced Salary」反推出加班
+  // 服务费系数（加班不吃 Markup，如 SPR 的 ×1.10），也自动填上，账单才对得上工资表。
+  if (otFeeEl) otFeeEl.value = _invpOtFeeCompanyApplies()
+    ? String(_invpOtFeeForHeadcount((data.employees || []).length))
+    : (Number(data.impliedOtFee) > 0 ? String(data.impliedOtFee) : '');
 
   const dates = _invpGetDates();
   const dflt = Number(data.markupMultiplier) || 0;

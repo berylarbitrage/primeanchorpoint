@@ -219,13 +219,43 @@ function readAnyWorkbook(buf) {
 }
 
 // Weekly exports embed the service period in the file name as MMDDMMDDYYYY
-// (e.g. "…071307192026…" = 07/13/2026 – 07/19/2026). Best-effort only.
+// (e.g. "…071307192026…" = 07/13/2026 – 07/19/2026)，有的导出在段之间加了
+// 分隔符（如 "0907-09132026_…" = 09/07 – 09/13/2026），一并认。Best-effort only.
 function _periodFromFilename(name) {
-  const m = String(name || '').match(/(?:^|\D)(\d{2})(\d{2})(\d{2})(\d{2})(\d{4})(?:\D|$)/);
+  const m = String(name || '').match(/(?:^|\D)(\d{2})(\d{2})[-_.\s]?(\d{2})(\d{2})[-_.\s]?(\d{4})(?:\D|$)/);
   if (!m) return null;
   const [, m1, d1, m2, d2, y] = m;
   if (+m1 < 1 || +m1 > 12 || +m2 < 1 || +m2 > 12 || +d1 < 1 || +d1 > 31 || +d2 < 1 || +d2 > 31) return null;
   return { start: toISO(m1, d1, y), end: toISO(m2, d2, y) };
+}
+
+// SPR 式导出没有 Pay Period 列，但汇总页（invoice-sum）有 Year + Week（ISO 周号，
+// 周一~周日）。文件名也解析不出周期时，按周号折算出服务周期。
+function _isoWeekPeriod(year, week) {
+  if (!(year >= 2000 && year <= 2100 && week >= 1 && week <= 53)) return null;
+  const jan4 = new Date(Date.UTC(year, 0, 4)); // Jan 4 is always inside ISO week 1
+  const monday = new Date(jan4);
+  monday.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() || 7) - 1) + (week - 1) * 7);
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+  const iso = d => d.toISOString().slice(0, 10);
+  return { start: iso(monday), end: iso(sunday) };
+}
+function _periodFromYearWeek(sheets) {
+  for (const sh of sheets || []) {
+    const rows = sh.rows || [];
+    for (let i = 0; i < Math.min(rows.length, 10); i++) {
+      const hdr = (rows[i] || []).map(norm);
+      const yc = hdr.indexOf('year'), wc = hdr.indexOf('week');
+      if (yc < 0 || wc < 0) continue;
+      for (let j = i + 1; j < rows.length; j++) {
+        const r = rows[j] || [];
+        const p = _isoWeekPeriod(parseInt(r[yc], 10), parseInt(r[wc], 10));
+        if (p) return p;
+      }
+    }
+  }
+  return null;
 }
 
 // Normalize a header cell for fuzzy matching.
@@ -400,6 +430,42 @@ function buildFromPayroll({ rows, headerIdx, headers, find, cellNum, cellStr, wa
   }
   const markupMultiplier = Math.round((1 + topMarkup) * 10000) / 10000;
 
+  // 对账：表里带「Invoiced Salary / After Markup」时，验证默认算法（加班也吃
+  // Markup）能不能得出同样的金额。对不上就反推加班服务费系数 F（正常工资 ×
+  // (1+Markup) + 加班工资 × F = Invoiced Salary）——SPR/Elogistek 这类合同加班
+  // 不吃 Markup、改乘 ×1.10 服务费。各行系数一致就带给前端自动填「加班服务费 ×」，
+  // 反推不出一致的系数则只报金额不一致的警告，请人工核对。
+  let impliedOtFee = null;
+  {
+    const withAfter = employees.filter(e => Number.isFinite(e.afterMarkup) && e.afterMarkup > 0);
+    const sumAfter = withAfter.reduce((s, e) => s + e.afterMarkup, 0);
+    if (withAfter.length && sumAfter > 0) {
+      const effOtRate = e => (e.otRate != null && e.otRate > 0) ? e.otRate : (e.regRate || 0) * 1.5;
+      const sumDefault = withAfter.reduce((s, e) =>
+        s + ((e.regHours || 0) * (e.regRate || 0) + (e.otHours || 0) * effOtRate(e)) * (1 + (e.markupRate || 0)), 0);
+      if (Math.abs(sumDefault - sumAfter) > Math.max(1, sumAfter * 0.005)) {
+        let fee = null, consistent = true;
+        for (const e of withAfter) {
+          const regBilled = (e.regHours || 0) * (e.regRate || 0) * (1 + (e.markupRate || 0));
+          const otPay = (e.otHours || 0) * effOtRate(e);
+          if (otPay > 0.005) {
+            const f = (e.afterMarkup - regBilled) / otPay;
+            if (!(f > 0.5 && f < 3) || (fee != null && Math.abs(f - fee) > 0.01)) { consistent = false; break; }
+            if (fee == null) fee = f;
+          } else if (Math.abs(e.afterMarkup - regBilled) > Math.max(0.05, e.afterMarkup * 0.002)) {
+            consistent = false; break;
+          }
+        }
+        if (consistent && fee != null) {
+          const f2 = Math.round(fee * 100) / 100;
+          impliedOtFee = Math.abs(fee - f2) < 0.005 ? f2 : Math.round(fee * 10000) / 10000;
+        } else {
+          warnings.push(`Excel 的「Invoiced Salary」合计 $${sumAfter.toFixed(2)}，与按默认算法（加班也吃 Markup）算出的 $${sumDefault.toFixed(2)} 不一致——请核对 Markup 与「加班服务费 ×」的设置，以 Excel 金额为准调整。`);
+        }
+      }
+    }
+  }
+
   if (!periodStart) warnings.push('未能从「Pay Period」列解析出服务周期日期，请手动填写开始/结束日期。');
   if (offPeriodRows.length)
     warnings.push(`${offPeriodRows.length} 行的 Pay Period 与整表主账期不同（补差价/跨周期行）：${offPeriodRows.join('、')}。金额已按 Excel 原样导入，请核对。`);
@@ -407,7 +473,7 @@ function buildFromPayroll({ rows, headerIdx, headers, find, cellNum, cellStr, wa
     warnings.push('表格含「Reimbursement」报销金额，发票生成器暂不支持报销项，已忽略；如需请手动添加一行。');
   if (otHourCols.length > 1) warnings.push('加班分「1.5×」「2.0×」多列，已合并为「加班工时」，默认按 1.5× 计' + (sawDoubleOt ? '；本表含 2.0× 加班，请把相关员工加班时薪手动改为双倍。' : '。'));
 
-  return { ok: true, format: 'payroll', warehouse, period, periodStart, periodEnd, defaultMarkupRate: topMarkup, markupMultiplier, employees, warnings };
+  return { ok: true, format: 'payroll', warehouse, period, periodStart, periodEnd, defaultMarkupRate: topMarkup, markupMultiplier, impliedOtFee, employees, warnings };
 }
 
 // Raw time-clock attendance report (one row per person per day) → per-person totals.
@@ -620,9 +686,10 @@ module.exports = function parseInvoiceWorkbook(buf, filename) {
   }
   if (!data) data = buildInvoiceData(readAnyWorkbook(buf));
   // If the sheet carried no service period, fall back to the one embedded in the
-  // file name (weekly exports do this) and drop the "no period" warning.
-  if (data && data.ok && !data.periodStart && filename) {
-    const p = _periodFromFilename(filename);
+  // file name (weekly exports do this), else to a Year+Week (ISO 周号) summary
+  // sheet (SPR 导出的 invoice-sum 页), and drop the "no period" warning.
+  if (data && data.ok && !data.periodStart) {
+    const p = (filename ? _periodFromFilename(filename) : null) || _periodFromYearWeek(sheets);
     if (p) {
       data.periodStart = p.start; data.periodEnd = p.end;
       if (!data.period) data.period = p.start + ' ~ ' + p.end;
