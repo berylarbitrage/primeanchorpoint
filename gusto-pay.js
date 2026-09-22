@@ -457,10 +457,26 @@ function buildGustoRecon(contractors, invoices, payments, opts) {
   }
 
   for (const p of payments || []) {
-    const key = String(p.contractor_uuid || '') || `name:${p.contractor_name || ''}`;
+    // 名册行定位: 先按 contractor_uuid（API 同步的行都有）; 对不上再按姓名的
+    // 完全一致/包含档匹配——导入的付款报告行没有 uuid, 但姓名就是 Gusto 名册的
+    // 写法。低档位(同姓/近似拼写)不作数, 歧义不归行, 宁可单列成 extra。
+    let entry = null;
+    if (p.contractor_uuid) entry = entries.find(e => e.uuid && e.uuid === p.contractor_uuid) || null;
+    if (!entry && p.contractor_name) {
+      const t = nameTokens(p.contractor_name);
+      let best = 0, hits = [];
+      for (const e of entries) {
+        const sc = matchScore(t, e, tokenCount);
+        if (sc > best) { best = sc; hits = [e]; }
+        else if (sc === best && sc > 0) hits.push(e);
+      }
+      if (best >= 80 && hits.length === 1) entry = hits[0];
+    }
     // Gusto 付了钱但当期工资表里没有应付的人 → 也成行（extra），对账不能只看工资表这一半
-    const known = entries.find(e => e.uuid && e.uuid === p.contractor_uuid);
-    const row = rowFor(key, (known && known.label) || String(p.contractor_name || '') || key);
+    const key = entry
+      ? (entry.uuid || `name:${entry.label}`)
+      : (String(p.contractor_uuid || '') || `name:${String(p.contractor_name || '').trim()}`);
+    const row = rowFor(key, entry ? entry.label : (String(p.contractor_name || '').trim() || key));
     row.paid = r2(row.paid + (Number(p.wage_total) || 0));
     row.payments.push(p);
   }

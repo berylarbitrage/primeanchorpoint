@@ -201,6 +201,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
 
   <!-- 💸 Gusto 工资: API 实时同步的实发工资流水 + 与发票工资表按人对账（不上传文件） -->
   <div id="paneGusto" style="display:none">
+    <input type="file" id="gustoReportFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="gustoImportFile(this)">
     <div class="card" id="gustoStatusCard" style="margin-bottom:.7rem">加载中…</div>
     <div class="card" style="margin-bottom:.7rem">
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.55rem">
@@ -2172,6 +2173,15 @@ function renderGustoStatus() {
         <span style="font-size:.78rem;color:var(--g500)">连接后自动实时拉取 Gusto 实际发放的合同工工资，不用上传任何文件</span>
       </div>
       ${s.connect_error ? `<div style="color:#dc2626;font-size:.78rem;margin-top:.3rem">${esc(s.connect_error)}</div>` : ''}
+      ${s.can_import ? `
+      <div style="margin-top:.55rem;padding:.55rem .7rem;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px">
+        <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+          <b style="font-size:.85rem;color:#b45309">📥 过渡方案：导入 Gusto 付款报告</b>
+          <button class="btn btn-sm btn-outline" style="color:#b45309;border-color:#fcd34d" onclick="document.getElementById('gustoReportFile').click()">选择文件导入（CSV / Excel）</button>
+          ${s.last_import ? `<span style="font-size:.74rem;color:var(--g500)">上次：${esc(String(s.last_import.at || '').slice(5, 16).replace('T', ' '))} ${esc(s.last_import.file || '')} · ${s.last_import.rows} 笔</span> <a style="cursor:pointer;font-size:.74rem;color:#dc2626;text-decoration:underline" onclick="gustoImportUndo()">撤销上次导入</a>` : ''}
+        </div>
+        <div style="font-size:.74rem;color:var(--g500);line-height:1.7;margin-top:.3rem">Gusto 后台 → <b>Reports</b> → 合同工付款报告（contractor payments），选好日期范围导出 CSV / Excel 后传到这里。每周发完工资顺手导一次即可。API 过审连接后这个入口自动消失；API 覆盖到的时间段会自动改用官方数据，不会重复计数。</div>
+      </div>` : ''}
       ${s.is_admin ? `
       <div style="font-size:.78rem;color:var(--g500);line-height:1.8;margin-top:.45rem">
         ① 在 <a href="https://dev.gusto.com" target="_blank" style="color:#0f4c6b">dev.gusto.com</a> 创建应用（先用 demo 沙箱联调，应用过审后切正式）；
@@ -2197,7 +2207,7 @@ function renderGustoStatus() {
       <b>🟢 已连接 Gusto</b>
       <span style="font-size:.82rem">${esc(s.company_name || '')}</span>
       ${s.environment === 'demo' ? '<span style="background:#fef3c7;color:#92400e;border-radius:8px;padding:1px 7px;font-size:.72rem;font-weight:700">demo 沙箱</span>' : ''}
-      <span style="font-size:.78rem;color:var(--g500)">名册 ${s.counts.contractors} 人 · 付款 ${s.counts.payments} 笔 · 上次同步 ${esc(lastTxt)}${s.syncing ? ' · <b style="color:#b45309">同步中…</b>' : ''}</span>
+      <span style="font-size:.78rem;color:var(--g500)">名册 ${s.counts.contractors} 人 · 付款 ${s.counts.payments} 笔${s.counts.imported ? `（含手动导入 ${s.counts.imported} 笔）` : ''} · 上次同步 ${esc(lastTxt)}${s.syncing ? ' · <b style="color:#b45309">同步中…</b>' : ''}</span>
       <span style="font-size:.74rem;color:var(--g400)">每 ${s.auto_sync_minutes} 分钟自动同步，打开本页也会自动保鲜</span>
       <span style="margin-left:auto;display:flex;gap:.4rem">
         ${s.can_sync ? '<button class="btn btn-sm btn-outline" id="gustoSyncBtn" onclick="gustoSyncNowBtn()">🔄 立即同步</button>' : ''}
@@ -2298,6 +2308,8 @@ async function gustoLoadRecon() {
     }).join('');
   }
   const ex = [];
+  if (r.roster_source === 'template') ex.push('<div style="color:var(--g500)">ℹ️ 收款人名册来源：已上传的 Gusto 付款模板 CSV（API 连接后自动改用 API 实时名册）</div>');
+  if (r.roster_source === 'none') ex.push('<div style="color:#b45309">⚠️ 还没有收款人名册（既没连 Gusto API，也没上传过付款模板 CSV），工资行没法归到收款人头上——先在发票生成器上传一次 Gusto 付款模板，或连接 API。</div>');
   if ((r.cash || []).length) ex.push(`<div>💵 <b>现金发放（对照表指定不走 Gusto）：</b>${r.cash.map(c => `${esc(c.name)} ${money(c.owed)}（${esc(c.invoice_number || '')}）`).join('、')}</div>`);
   if ((r.problems || []).length) ex.push(`<div style="color:#b45309">❗ <b>对不上 Gusto 名册的工资行（请在 Gusto 加人或改收款人对照表）：</b>${r.problems.map(p => `${esc(p.name)} ${money(p.owed)}（${esc(p.invoice_number || '')}${p.kind === 'ambiguous' ? ' · 多个候选' : p.kind === 'needConfirm' ? ' · 同姓待确认' : ''}）`).join('、')}</div>`);
   if ((r.warnings || []).length) ex.push(`<details style="color:var(--g500)"><summary style="cursor:pointer">折算说明 ${r.warnings.length} 条</summary>${r.warnings.map(w => `<div>· ${esc(w)}</div>`).join('')}</details>`);
@@ -2338,8 +2350,45 @@ function renderGustoPayList() {
     <td style="text-align:right">${p.bonus ? money(p.bonus) : '—'}</td>
     <td style="text-align:right">${p.reimbursement ? money(p.reimbursement) : '—'}</td>
     <td style="text-align:right"><b>${money(p.wage_total)}</b></td>
-    <td>${p.status === 'Funded' ? '<span style="color:#166534">✅ Funded</span>' : esc(p.status || '—')}</td>
+    <td>${p.status === 'Funded' ? '<span style="color:#166534">✅ Funded</span>' : esc(p.status || '—')}${p.source === 'import' ? ' <span title="来自手动导入的付款报告" style="font-size:.68rem;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:0 4px">导入</span>' : ''}</td>
   </tr>`).join('') : '<tr><td colspan="9" style="color:var(--g400)">这个时间段没有 Gusto 付款记录</td></tr>';
+}
+// ── 过渡期: 手动导入 Gusto 付款报告（CSV/Excel; API 连接后入口自动隐藏） ──
+async function gustoImportFile(input) {
+  const f = input.files && input.files[0];
+  input.value = '';
+  if (!f) return;
+  const fd = new FormData();
+  fd.append('file', f);
+  toast('正在导入 ' + f.name + ' …');
+  let r;
+  try {
+    const resp = await fetch('/api/acct/gusto/import', { method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd });
+    if (resp.status === 401) { acctLogout(true); return; }
+    r = await resp.json().catch(() => ({}));
+    if (!resp.ok && !r.error) r.error = 'HTTP ' + resp.status;
+  } catch (e) { r = { error: e.message }; }
+  if (r && r.ok) {
+    toast(`✅ 导入成功：${r.rows} 笔（新增 ${r.inserted}、更新 ${r.updated}），${r.window[0]} ~ ${r.window[1]}，合计 ${money(r.total)}`);
+    if ((r.warnings || []).length) toast(r.warnings[0] + (r.warnings.length > 1 ? `（还有 ${r.warnings.length - 1} 条类似）` : ''), true);
+    await gustoLoadStatus();
+    gustoLoadRecon();
+    gustoLoadPayments();
+  } else {
+    toast((r && r.error) || '导入失败', true);
+  }
+}
+async function gustoImportUndo() {
+  if (!confirm('撤销最近一次导入？那次导入写入的付款记录会被删除。')) return;
+  const r = await api('/api/acct/gusto/import-undo', { method: 'POST' }).catch(e => ({ error: e.message }));
+  if (r && r.ok) {
+    toast(`已撤销，删除 ${r.removed} 笔`);
+    await gustoLoadStatus();
+    gustoLoadRecon();
+    gustoLoadPayments();
+  } else {
+    toast((r && r.error) || '撤销失败', true);
+  }
 }
 // OAuth 连接后从 Gusto 跳回来: /accounting?gusto=connected|error:...
 function gustoOauthResume() {

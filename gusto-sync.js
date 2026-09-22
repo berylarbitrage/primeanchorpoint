@@ -14,6 +14,9 @@
 // 续期必须串行、拿到新 token 后第一时间落库(server.js 里有锁), 否则并发续期会把
 // 唯一有效的 refresh token 用废, 只能让用户重新授权。
 
+const crypto = require('crypto');
+const { parseCsv } = require('./gusto-pay');
+
 const HOSTS = { production: 'https://api.gusto.com', demo: 'https://api.gusto-demo.com' };
 // GUSTO_API_BASE 环境变量可整体指到别处（本地 mock 联调用）, 生产不用设
 function apiHost(environment) {
@@ -199,8 +202,120 @@ function chunkRanges(startDate, endDate, days) {
   return out;
 }
 
+// ─── Gusto 付款报告导入（API production 过审前的过渡） ────────────────────────
+// Gusto 后台 Reports 导出的合同工付款报告(CSV, Excel 先由调用方转成 CSV)。
+// 表头按含义模糊识别, Gusto 改列名/换报告种类也大概率能认; 认不出直接报错并
+// 附上实际表头, 让用户把格式发过来适配。产出与 API 同步同构的付款行,
+// uuid = 'csv:' + hash(姓名|日期|金额|方式 + 同文件内出现序号):
+// 同一份/重叠的报告重复导入幂等更新, 同一天同金额的两笔真付款也不会互相吞。
+
+function _hdrKey(h) {
+  return String(h || '').toLowerCase().replace(/\(.*?\)/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+function _findCol(headers, candidates) {
+  for (const c of candidates) { const i = headers.indexOf(c); if (i >= 0) return i; }
+  return -1;
+}
+// 日期 → YYYY-MM-DD; 认 2026-09-15 / 9/15/2026 / 09-15-2026 / 9/15/26
+function _normDate(v) {
+  const s = String(v || '').trim();
+  if (!s) return '';
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if (m) {
+    let y = parseInt(m[3], 10);
+    if (m[3].length <= 2) y += y < 50 ? 2000 : 1900;
+    return `${y}-${String(m[1]).padStart(2, '0')}-${String(m[2]).padStart(2, '0')}`;
+  }
+  return '';
+}
+// 金额: "$1,234.56" / "(50.00)"=负 / 空 → null
+function _reportMoney(v) {
+  if (v == null) return null;
+  let s = String(v).trim();
+  if (!s) return null;
+  const neg = /^\(.*\)$/.test(s);
+  s = s.replace(/[()$,\s]/g, '');
+  if (!s || s === '-') return null;
+  const n = parseFloat(s);
+  if (!Number.isFinite(n)) return null;
+  return neg ? -Math.abs(n) : n;
+}
+
+function parsePaymentReportCsv(csvText) {
+  const rows = parseCsv(csvText);
+  if (rows.length < 2) throw new Error('报告是空的（没有数据行）');
+  const headers = rows[0].map(_hdrKey);
+  const col = {
+    name: _findCol(headers, ['contractor', 'contractor name', 'name', 'payee', 'recipient', 'worker', 'employee', 'employee name']),
+    first: _findCol(headers, ['first name', 'contractor first name']),
+    last: _findCol(headers, ['last name', 'contractor last name']),
+    business: _findCol(headers, ['business name']),
+    date: _findCol(headers, ['payment date', 'check date', 'pay date', 'date', 'debit date', 'payday']),
+    method: _findCol(headers, ['payment method', 'method']),
+    status: _findCol(headers, ['status', 'payment status']),
+    hours: _findCol(headers, ['hours', 'total hours']),
+    wage: _findCol(headers, ['wages', 'wage', 'wage amount', 'regular wages']),
+    bonus: _findCol(headers, ['bonus', 'bonuses']),
+    reimb: _findCol(headers, ['reimbursement', 'reimbursements', 'expense reimbursement', 'expense reimbursements']),
+    total: _findCol(headers, ['total', 'total amount', 'payment total', 'total payment', 'amount', 'wage total', 'total pay', 'total wages']),
+  };
+  const hasName = col.name >= 0 || col.last >= 0 || col.first >= 0 || col.business >= 0;
+  const hasAmount = col.total >= 0 || col.wage >= 0 || col.bonus >= 0 || col.reimb >= 0;
+  if (!hasName || !hasAmount) {
+    throw new Error(`认不出这份报告的表头（需要收款人姓名列和金额列）。实际表头：${rows[0].map(h => String(h).trim()).filter(Boolean).join(' | ')}`);
+  }
+  const seen = new Map();
+  const out = [], warnings = [];
+  for (let i = 1; i < rows.length; i++) {
+    const cells = rows[i];
+    const get = c => (c >= 0 ? String(cells[c] == null ? '' : cells[c]).trim() : '');
+    let name = get(col.name);
+    if (!name) {
+      const business = get(col.business);
+      name = business || `${get(col.last)}, ${get(col.first)}`.replace(/^, |, $/g, '');
+    }
+    name = name.replace(/\s+/g, ' ').trim();
+    if (!name || /^(grand )?totals?$/i.test(name)) continue;   // 汇总行不是付款
+    const wage = _reportMoney(get(col.wage));
+    const bonus = _reportMoney(get(col.bonus));
+    const reimb = _reportMoney(get(col.reimb));
+    let total = _reportMoney(get(col.total));
+    if (total == null) total = Math.round(((wage || 0) + (bonus || 0) + (reimb || 0)) * 100) / 100;
+    if (!total) continue;                                       // 没金额的行(分组标题等)跳过; 负数=冲正, 保留
+    const date = _normDate(get(col.date));
+    if (!date) {
+      warnings.push(`第 ${i + 1} 行「${name}」付款日期认不出来（原文：${get(col.date) || '空'}），这行没导入。`);
+      continue;
+    }
+    const method = get(col.method);
+    const dupKey = [name.toLowerCase(), date, total.toFixed(2), method.toLowerCase()].join('|');
+    const nth = seen.get(dupKey) || 0;
+    seen.set(dupKey, nth + 1);
+    out.push({
+      uuid: 'csv:' + crypto.createHash('sha1').update(dupKey + '#' + nth).digest('hex'),
+      contractor_uuid: '',
+      contractor_name: name,
+      date,
+      payment_method: method,
+      wage_type: '',
+      status: get(col.status),
+      hours: _reportMoney(get(col.hours)),
+      hourly_rate: null,
+      wage: wage == null ? 0 : wage,
+      bonus: bonus == null ? 0 : bonus,
+      reimbursement: reimb == null ? 0 : reimb,
+      wage_total: total,
+      raw: Object.fromEntries(rows[0].map((h, c) => [String(h).trim(), String(cells[c] == null ? '' : cells[c])]).filter(([k]) => k)),
+    });
+  }
+  if (!out.length) throw new Error('报告里没有一行可导入的付款（都没有金额或日期）。' + (warnings[0] || ''));
+  return { payments: out, warnings };
+}
+
 module.exports = {
   apiHost, authorizeUrl, exchangeCode, refreshTokens, apiGet,
   tokenInfo, companyInfo, listContractors, listContractorPayments,
-  contractorDisplayName, normalizePayment, chunkRanges,
+  contractorDisplayName, normalizePayment, chunkRanges, parsePaymentReportCsv,
 };
