@@ -39456,7 +39456,9 @@ function _referralBody(b) {
 function _referralJob(b, cur) {
   const id = parseInt(b.job_id);
   if (!id || id <= 0) return { job_id: null, job_title: '' };
-  const j = db.prepare(`SELECT job_id AS code, title, COALESCE(title_zh,'') AS title_zh, COALESCE(company_name,'') AS company_name FROM jobs WHERE id=?`).get(id);
+  const j = db.prepare(`SELECT j.job_id AS code, j.title, COALESCE(j.title_zh,'') AS title_zh,
+      COALESCE(NULLIF(j.company_name,''), p.name, '') AS company_name
+    FROM jobs j LEFT JOIN partners p ON j.partner_id = p.id WHERE j.id=?`).get(id);
   if (j) {
     const t = [j.code, j.title, j.title_zh].filter(Boolean).join(' ') + (j.company_name ? ' — ' + j.company_name : '');
     return { job_id: id, job_title: t.slice(0, 300) };
@@ -39578,10 +39580,11 @@ app.get('/api/acct/referral-options', requireAdmin, requireAcctView, (req, res) 
     // post 的招聘岗位 (在招的): 登记介绍时可关联, 选了自动带工资/地址
     let jobs = [];
     try {
-      jobs = db.prepare(`SELECT id, COALESCE(job_id,'') AS code, title, COALESCE(title_zh,'') AS title_zh,
-          COALESCE(company_name,'') AS company_name, COALESCE(location,'') AS location,
-          COALESCE(pay,'') AS pay, COALESCE(pay_period,'') AS pay_period
-        FROM jobs WHERE active=1 AND COALESCE(job_status,'open')='open' ORDER BY created_at DESC`).all();
+      jobs = db.prepare(`SELECT j.id, COALESCE(j.job_id,'') AS code, j.title, COALESCE(j.title_zh,'') AS title_zh,
+          COALESCE(NULLIF(j.company_name,''), p.name, '') AS company_name, COALESCE(j.location,'') AS location,
+          COALESCE(j.pay,'') AS pay, COALESCE(j.pay_period,'') AS pay_period
+        FROM jobs j LEFT JOIN partners p ON j.partner_id = p.id
+        WHERE j.active=1 AND COALESCE(j.job_status,'open')='open' ORDER BY j.created_at DESC`).all();
     } catch (e) {}
     res.json({ foremen, warehouses: whsOut, jobs });
   } catch (e) { res.status(500).json({ error: e.message }); }

@@ -217,7 +217,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
           <input type="tel" id="raWorkerPhone" placeholder="输入号码自动查系统" oninput="raPhoneLookup('raWorkerPhone','raWorkerHits','worker')" style="width:100%;margin:.15rem 0 .55rem"></div>
       </div>
       <div id="raWorkerHits" style="margin:-0.3rem 0 .3rem;line-height:1.9"></div>
-      <label style="font-size:.76rem;color:var(--g500)">关联岗位 <span style="font-size:.7rem;color:var(--g400)">（post 的招聘岗位，选了自动带工资）</span></label>
+      <label style="font-size:.76rem;color:var(--g500)">关联岗位 <span style="font-size:.7rem;color:var(--g400)">（post 的招聘岗位，选了自动带出工资和仓库）</span></label>
       <select id="raJobSel" onchange="raJobChanged()" style="width:100%;margin:.15rem 0 .55rem"><option value="">— 不关联岗位 —</option></select>
       <label style="font-size:.76rem;color:var(--g500)">工作仓库</label>
       <select id="raWhSel" onchange="raWhChanged()" style="width:100%;margin:.15rem 0 .55rem"><option value="">加载中…</option></select>
@@ -1243,6 +1243,7 @@ let _refOpts = null;
 async function openRefAdd(id) {
   _refEditId = id || null;
   _raRemove = new Set();
+  _raWageAuto = '';
   const r = id ? _refList.find(x => x.id === id) : null;
   document.getElementById('refAddTitle').textContent = r ? '🤝 编辑介绍' : '🤝 新增介绍';
   document.getElementById('refAddHint').textContent = r
@@ -1512,15 +1513,39 @@ function raPickPhoneHit(boxId, i, kind) {
   document.getElementById('raWorkerPhone').value = m.phone || '';
   document.getElementById(boxId).innerHTML = '';
 }
-// 选岗位自动带出工资/地址 (只填空着的, 手填过的不动)
+// 选岗位 → 仓库跟着对应上: 岗位的公司/地址能对上仓库名单的直接选中,
+// 对不上的自动切「新仓库」并把公司名/地址填好; 之后仍可手动改。
+// 工资空着的、或上次是岗位带出来的, 换岗位时一并更新 (手填过的不动)。
+let _raWageAuto = '';
 function raJobChanged() {
   const id = parseInt(document.getElementById('raJobSel').value);
   const j = ((_refOpts && _refOpts.jobs) || []).find(x => x.id === id);
   if (!j) return;
   const wageEl = document.getElementById('raWage');
-  if (!wageEl.value.trim() && j.pay) wageEl.value = j.pay + (j.pay_period ? '/' + j.pay_period : '');
+  const pay = j.pay ? j.pay + (j.pay_period ? '/' + j.pay_period : '') : '';
+  if (pay && (!wageEl.value.trim() || wageEl.value.trim() === _raWageAuto)) wageEl.value = pay;
+  if (pay) _raWageAuto = pay;
+  // 找对应仓库: 名称+地址 → 地址 → 名称 依次对
+  const whs = (_refOpts && _refOpts.warehouses) || [];
+  const nm = String(j.company_name || '').trim().toLowerCase();
+  const ad = String(j.location || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const wNm = w => String(w.name).trim().toLowerCase();
+  const wAd = w => String(w.address || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  let wi = (nm && ad) ? whs.findIndex(w => wNm(w) === nm && wAd(w) === ad) : -1;
+  if (wi < 0 && ad) wi = whs.findIndex(w => wAd(w) === ad);
+  if (wi < 0 && nm) wi = whs.findIndex(w => wNm(w) === nm);
+  const wSel = document.getElementById('raWhSel');
   const addrEl = document.getElementById('raWhAddr');
-  if (!addrEl.value.trim() && j.location) addrEl.value = j.location;
+  if (wi >= 0) {
+    wSel.value = String(wi);
+    raWhChanged(); // 带出仓库存的地址
+    if (ad && wAd(whs[wi]) !== ad) addrEl.value = j.location; // 岗位上写的地址不同时, 以岗位为准
+  } else if (nm || ad) {
+    wSel.value = '__new__';
+    raWhChanged();
+    if (nm) document.getElementById('raWh').value = j.company_name;
+    if (j.location) addrEl.value = j.location;
+  }
 }
 // keepAddr=true 用于打开弹窗回填时: 不覆盖记录里已存的地址
 function raWhChanged(keepAddr) {
