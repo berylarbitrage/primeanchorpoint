@@ -881,6 +881,8 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS referrals (
 )`); } catch(e) {}
 // 面试去没去: HR 约了面试他未必去 — '' 未标记 | attended 去了 | no_show 没去
 try { db.exec(`ALTER TABLE referrals ADD COLUMN interview_status TEXT DEFAULT ''`); } catch(e) {}
+// 标了「去了」可以再记实际到场时间 (可能和约的时间不一样)
+try { db.exec(`ALTER TABLE referrals ADD COLUMN interview_attended_at TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL"); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) {}
@@ -39385,7 +39387,19 @@ app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
     if (allIds.size) db.prepare(`SELECT id, invoice_number, invoice_date, company_name, subtotal, period_start, period_end FROM invoices
       WHERE id IN (${[...allIds].map(() => '?').join(',')})`).all(...allIds).forEach(v => { invMap[v.id] = v; });
     const payNotes = _acctPayNotesFor('referral');
-    res.json(rows.map(r => _referralOut(r, invMap, payNotes)));
+    // 工头所在州: 按电话对上工头名单 (没电话按姓名), 列表里工头名字下显示
+    const normP = p => String(p || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+    const fmStByPhone = {}, fmStByName = {};
+    try {
+      db.prepare(`SELECT name, phone, state FROM foremen WHERE active=1 AND COALESCE(state,'')!=''`).all().forEach(f => {
+        const pd = normP(f.phone);
+        if (pd) fmStByPhone[pd] = f.state;
+        fmStByName[String(f.name).trim().toLowerCase()] = f.state;
+      });
+    } catch (e) {}
+    const out = rows.map(r => _referralOut(r, invMap, payNotes));
+    out.forEach(r => { r.foreman_state = fmStByPhone[normP(r.foreman_phone)] || fmStByName[String(r.foreman_name).trim().toLowerCase()] || ''; });
+    res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -39476,11 +39490,11 @@ app.post('/api/acct/referrals/:id/review', requireAdmin, requireRole('admin'), (
 app.get('/api/acct/referral-options', requireAdmin, requireAcctView, (req, res) => {
   try {
     const norm = p => String(p || '').replace(/\D/g, '');
-    const foremen = db.prepare(`SELECT id, name, phone FROM foremen WHERE active=1 ORDER BY name COLLATE NOCASE`).all();
+    const foremen = db.prepare(`SELECT id, name, phone, COALESCE(state,'') AS state, COALESCE(city,'') AS city FROM foremen WHERE active=1 ORDER BY name COLLATE NOCASE`).all();
     const seenF = new Set(foremen.map(f => `${String(f.name).trim().toLowerCase()}|${norm(f.phone)}`));
     db.prepare(`SELECT DISTINCT foreman_name AS name, foreman_phone AS phone FROM referrals WHERE foreman_name!=''`).all().forEach(f => {
       const k = `${String(f.name).trim().toLowerCase()}|${norm(f.phone)}`;
-      if (!seenF.has(k)) { seenF.add(k); foremen.push({ id: null, name: f.name, phone: f.phone }); }
+      if (!seenF.has(k)) { seenF.add(k); foremen.push({ id: null, name: f.name, phone: f.phone, state: '', city: '' }); }
     });
     // 仓库: 一个客户可以有好几个仓库 — partners.addresses JSON 逐条展开,
     // 同名不同地址各是一行, 去重按 名称+地址
@@ -39543,29 +39557,71 @@ app.get('/api/acct/referral-phone-lookup', requireAdmin, requireRole('accounting
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 新工头登记 (介绍表单「＋ 新工头」): 存进 foremen 名单, 下次直接下拉选;
-// 同名同电话的返回已有记录, 不重复建。
+// 工头数据库: 介绍费页「👷 工头名单」— 专门的地方查看/添加工头, 登记介绍时直接搜索选人。
+// 列表带所在州/城市和被介绍次数 (按电话对上, 没电话按姓名对)。
+app.get('/api/acct/referral-foremen', requireAdmin, requireAcctView, (req, res) => {
+  try {
+    const norm = p => String(p || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+    const rows = db.prepare(`SELECT id, name, phone, COALESCE(state,'') AS state, COALESCE(city,'') AS city,
+        COALESCE(warehouse,'') AS warehouse, created_at
+      FROM foremen WHERE active=1 ORDER BY name COLLATE NOCASE`).all();
+    const refs = db.prepare(`SELECT foreman_name, foreman_phone FROM referrals`).all();
+    for (const f of rows) {
+      const pd = norm(f.phone), nm = String(f.name).trim().toLowerCase();
+      f.referral_count = refs.filter(r => (pd && norm(r.foreman_phone) === pd)
+        || (!norm(r.foreman_phone) && String(r.foreman_name).trim().toLowerCase() === nm)).length;
+    }
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 新工头登记: 存进 foremen 名单 (含州/城市), 下次直接搜索选;
+// 同名同电话的返回已有记录不重复建, 顺带把空着的州/城市补上。
 app.post('/api/acct/referral-foremen', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
-  const name = String((req.body || {}).name || '').trim().slice(0, 120);
-  const phone = String((req.body || {}).phone || '').trim().slice(0, 40);
+  const b = req.body || {};
+  const name = String(b.name || '').trim().slice(0, 120);
+  const phone = String(b.phone || '').trim().slice(0, 40);
+  const state = String(b.state || '').trim().toUpperCase().slice(0, 30);
+  const city = String(b.city || '').trim().slice(0, 60);
   if (!name) return res.status(400).json({ error: '请填写工头姓名' });
   const norm = p => String(p || '').replace(/\D/g, '');
-  const dup = db.prepare(`SELECT id, name, phone FROM foremen WHERE active=1`).all()
+  const dup = db.prepare(`SELECT id, name, phone, COALESCE(state,'') AS state, COALESCE(city,'') AS city FROM foremen WHERE active=1`).all()
     .find(f => String(f.name).trim().toLowerCase() === name.toLowerCase() && norm(f.phone) === norm(phone));
-  if (dup) return res.json({ success: true, id: dup.id, existed: true });
-  const r = db.prepare(`INSERT INTO foremen (name, phone, active) VALUES (?, ?, 1)`).run(name, phone);
+  if (dup) {
+    if ((state && !dup.state) || (city && !dup.city)) {
+      db.prepare(`UPDATE foremen SET state=CASE WHEN COALESCE(state,'')='' THEN ? ELSE state END,
+        city=CASE WHEN COALESCE(city,'')='' THEN ? ELSE city END WHERE id=?`).run(state, city, dup.id);
+    }
+    return res.json({ success: true, id: dup.id, existed: true });
+  }
+  const r = db.prepare(`INSERT INTO foremen (name, phone, state, city, active) VALUES (?, ?, ?, ?, 1)`).run(name, phone, state, city);
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
-// 标记面试去没去: 约了面试未必去, 列表里一键标; 权限同编辑 (核查过的只有管理员能改)
+// 编辑工头信息 (姓名/电话/州/城市) — 会计/客服/管理员都可维护工头数据库
+app.put('/api/acct/referral-foremen/:id', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+  const cur = db.prepare('SELECT id FROM foremen WHERE id=? AND active=1').get(parseInt(req.params.id));
+  if (!cur) return res.status(404).json({ error: '工头不存在' });
+  const b = req.body || {};
+  const name = String(b.name || '').trim().slice(0, 120);
+  if (!name) return res.status(400).json({ error: '请填写工头姓名' });
+  db.prepare(`UPDATE foremen SET name=?, phone=?, state=?, city=? WHERE id=?`)
+    .run(name, String(b.phone || '').trim().slice(0, 40),
+      String(b.state || '').trim().toUpperCase().slice(0, 30), String(b.city || '').trim().slice(0, 60), cur.id);
+  res.json({ success: true });
+});
+
+// 标记面试去没去: 约了面试未必去, 列表里一键标; 权限同编辑 (核查过的只有管理员能改)。
+// 标「去了」可带 attended_at 记实际到场时间, 之后还能再改; 改成没去/清除时到场时间一并清掉。
 app.post('/api/acct/referrals/:id/interview-status', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
   const cur = db.prepare('SELECT * FROM referrals WHERE id=?').get(parseInt(req.params.id));
   if (!cur) return res.status(404).json({ error: '记录不存在' });
   if (req.userRole !== 'admin' && cur.review_status !== 'pending') return res.status(403).json({ error: '该记录管理员已核查，如需修改请联系管理员' });
   const st = String((req.body || {}).status || '');
   if (!['', 'attended', 'no_show'].includes(st)) return res.status(400).json({ error: '无效状态' });
-  db.prepare(`UPDATE referrals SET interview_status=?, updated_at=datetime('now') WHERE id=?`).run(st, cur.id);
-  res.json({ success: true, interview_status: st });
+  const attendedAt = st === 'attended' ? String((req.body || {}).attended_at || '').trim().slice(0, 40) : '';
+  db.prepare(`UPDATE referrals SET interview_status=?, interview_attended_at=?, updated_at=datetime('now') WHERE id=?`).run(st, attendedAt, cur.id);
+  res.json({ success: true, interview_status: st, interview_attended_at: attendedAt });
 });
 
 // 管理员删除介绍费记录 (附件与付款批注一并清掉)
