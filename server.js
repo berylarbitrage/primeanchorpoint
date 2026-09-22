@@ -35330,6 +35330,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS zelle_txn_overrides (
   updated_by TEXT DEFAULT '',
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
+// 单笔备注: 每一笔 Zelle 都能写备注 (和 移除/改归属 同一张表, 互不影响)
+try { db.exec(`ALTER TABLE zelle_txn_overrides ADD COLUMN note TEXT DEFAULT ''`); } catch (e) {}
 
 // ── 💸 Zelle 转账统计: 银行直连交易里的 Zelle 按收款人汇总, 每人所有时间点+金额 ──
 // 描述形如 Chase「Zelle payment to CESAR JPM99cwzudxl」/「Zelle payment from JOHN 123456」,
@@ -35375,6 +35377,7 @@ app.get('/api/plaid/zelle-stats', requireAdmin, requireRole('admin', 'cs', 'acco
       const amt = Number(r.amount) || 0;
       const txn = { txn_id: r.txn_id, date: r.date, amount: amt, account: accs[r.account_id] || r.account_id, desc: r.name || r.merchant || '', pending: !!r.pending };
       const ov = ovs[r.txn_id];
+      if (ov && ov.note) txn.note = ov.note; // 单笔备注 (移除的也带着)
       // 手工改判: 移除的不进统计 (单独一栏可恢复); 改标注的按新名字归组
       if (ov && ov.action === 'exclude') { removed.push({ ...txn, name: z.name }); continue; }
       let nm = z.name;
@@ -35432,9 +35435,20 @@ app.post('/api/plaid/zelle-overrides', requireAdmin, requireRole('admin', 'cs', 
     const txnId = String(b.txn_id || '').trim();
     const action = String(b.action || '');
     if (!txnId) return res.status(400).json({ error: '缺少交易' });
-    if (!['exclude', 'rename', 'clear'].includes(action)) return res.status(400).json({ error: '无效操作' });
+    if (!['exclude', 'rename', 'clear', 'note'].includes(action)) return res.status(400).json({ error: '无效操作' });
+    // 单笔备注: 只动 note, 不影响 移除/改归属 状态; 存空串即清掉备注
+    if (action === 'note') {
+      db.prepare(`INSERT INTO zelle_txn_overrides (txn_id, action, new_name, note, updated_by, updated_at)
+          VALUES (?, '', '', ?, ?, datetime('now'))
+          ON CONFLICT(txn_id) DO UPDATE SET note=excluded.note, updated_by=excluded.updated_by, updated_at=datetime('now')`)
+        .run(txnId, String(b.note || '').trim().slice(0, 500), req.userName || '');
+      db.prepare(`DELETE FROM zelle_txn_overrides WHERE txn_id=? AND action='' AND COALESCE(note,'')=''`).run(txnId);
+      return res.json({ ok: 1 });
+    }
     if (action === 'clear') {
-      db.prepare('DELETE FROM zelle_txn_overrides WHERE txn_id=?').run(txnId);
+      // 恢复自动归属: 只清改判, 单笔备注留着; 整行都空了才删
+      db.prepare(`UPDATE zelle_txn_overrides SET action='', new_name='', updated_by=?, updated_at=datetime('now') WHERE txn_id=?`).run(req.userName || '', txnId);
+      db.prepare(`DELETE FROM zelle_txn_overrides WHERE txn_id=? AND action='' AND COALESCE(note,'')=''`).run(txnId);
       return res.json({ ok: 1 });
     }
     const newName = action === 'rename' ? String(b.new_name || '').trim().slice(0, 120) : '';

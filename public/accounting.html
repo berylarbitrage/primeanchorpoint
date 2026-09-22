@@ -184,6 +184,19 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
   </div>
   <datalist id="zNames"></datalist>
 
+  <!-- ✎ Zelle 单笔备注弹窗: 每一笔都能写备注 -->
+  <div id="ztModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:96;align-items:center;justify-content:center;padding:16px">
+    <div class="card" style="max-width:420px;width:100%;padding:1.1rem 1.2rem 1rem">
+      <div style="font-weight:800;margin-bottom:.2rem">📝 备注这一笔</div>
+      <div id="ztDesc" style="font-size:.76rem;color:var(--g500);margin-bottom:.6rem;word-break:break-all"></div>
+      <textarea id="ztNote" rows="3" placeholder="这笔钱是干什么的…（清空保存即删除备注）" style="width:100%;margin:.15rem 0 .6rem;font-family:inherit;resize:vertical"></textarea>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="document.getElementById('ztModal').style.display='none'">取消</button>
+        <button class="btn btn-blue" id="ztSaveBtn" onclick="ztSaveNow()">保存</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ✎ Zelle 收款人备注弹窗: Zelle号 + 关联系统里的员工/劳务公司/客户公司 + 备注 -->
   <div id="zcModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:96;align-items:center;justify-content:center;padding:16px">
     <div class="card" style="max-width:460px;width:100%;padding:1.1rem 1.2rem 1rem">
@@ -3544,7 +3557,7 @@ function _zFiltered() {
   const out = [];
   for (const p of (_zData && _zData.people) || []) {
     const c = p.contact || {};
-    if (q && ![p.name, c.zelle_handle, c.link_label, c.note].join(' ').toLowerCase().includes(q)) continue;
+    if (q && ![p.name, c.zelle_handle, c.link_label, c.note, ...p.txns.map(t => t.note || '')].join(' ').toLowerCase().includes(q)) continue;
     const txns = p.txns.filter(t => !dir || (dir === 'out' ? t.amount >= 0 : t.amount < 0));
     if (!txns.length) continue;
     const r = { name: p.name, key: p.key || p.name.toLowerCase(), contact: p.contact || null, txns, out_total: 0, out_count: 0, in_total: 0, in_count: 0, first_date: '', last_date: '' };
@@ -3597,16 +3610,47 @@ function zRender() {
 function _zTxnRow(t, mode) {
   const cell = 'padding:.35rem .55rem;border-bottom:1px solid var(--g100)';
   const id = String(t.txn_id).replace(/'/g, "\\'");
+  const noteBtn = `<a onclick="zNoteOpen('${id}',event)" style="cursor:pointer;color:#b45309;font-size:.76rem;text-decoration:underline;white-space:nowrap">📝 备注</a>`;
   const ops = mode === 'removed'
-    ? `<span style="color:var(--g400);font-size:.72rem">原归属：${esc(t.name || '—')}</span> <a onclick="zOverride('${id}','clear',event)" style="cursor:pointer;color:#0ea5e9;font-size:.76rem;text-decoration:underline;white-space:nowrap">↩ 恢复</a>`
-    : `${t.ov === 'rename' ? `<span title="原自动归属：${esc(t.ov_orig || '')}" style="font-size:.68rem;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;border-radius:4px;padding:0 4px;white-space:nowrap">已改归属</span> <a onclick="zOverride('${id}','clear',event)" style="cursor:pointer;color:#0ea5e9;font-size:.74rem;text-decoration:underline;white-space:nowrap">↩ 恢复自动</a> ` : ''}<a onclick="zRenameOpen('${id}',event)" style="cursor:pointer;color:#0f4c6b;font-size:.76rem;text-decoration:underline;white-space:nowrap">✎ 改归属</a> <a onclick="zOverride('${id}','exclude',event)" style="cursor:pointer;color:#dc2626;font-size:.76rem;text-decoration:underline;white-space:nowrap">✕ 移除</a>`;
+    ? `<span style="color:var(--g400);font-size:.72rem">原归属：${esc(t.name || '—')}</span> ${noteBtn} <a onclick="zOverride('${id}','clear',event)" style="cursor:pointer;color:#0ea5e9;font-size:.76rem;text-decoration:underline;white-space:nowrap">↩ 恢复</a>`
+    : `${t.ov === 'rename' ? `<span title="原自动归属：${esc(t.ov_orig || '')}" style="font-size:.68rem;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;border-radius:4px;padding:0 4px;white-space:nowrap">已改归属</span> <a onclick="zOverride('${id}','clear',event)" style="cursor:pointer;color:#0ea5e9;font-size:.74rem;text-decoration:underline;white-space:nowrap">↩ 恢复自动</a> ` : ''}${noteBtn} <a onclick="zRenameOpen('${id}',event)" style="cursor:pointer;color:#0f4c6b;font-size:.76rem;text-decoration:underline;white-space:nowrap">✎ 改归属</a> <a onclick="zOverride('${id}','exclude',event)" style="cursor:pointer;color:#dc2626;font-size:.76rem;text-decoration:underline;white-space:nowrap">✕ 移除</a>`;
   return `<tr>
     <td style="white-space:nowrap;${cell}">${esc(t.date || '—')}${t.pending ? ' <span style="color:var(--g400);font-size:.7rem">(处理中)</span>' : ''}</td>
     <td style="text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;width:110px;${cell}"><span style="color:${t.amount >= 0 ? '#dc2626' : '#15803d'};font-weight:700">${t.amount >= 0 ? '−' : '+'}${money(Math.abs(t.amount))}</span></td>
     <td style="white-space:nowrap;${cell}">${esc(t.account)}</td>
-    <td style="color:var(--g400);font-size:.76rem;word-break:break-all;${cell}">${esc(t.desc)}</td>
+    <td style="color:var(--g400);font-size:.76rem;word-break:break-all;${cell}">${esc(t.desc)}${t.note ? `<div style="color:#b45309;font-size:.76rem;margin-top:2px">📝 ${esc(t.note)}</div>` : ''}</td>
     <td style="white-space:nowrap;text-align:right;${cell}">${ops}</td>
   </tr>`;
+}
+// 📝 单笔备注: 每一笔都能写 (清空保存即删除)
+let _ztTxn = null;
+function _zFindTxn(txnId) {
+  for (const p of (_zData && _zData.people) || []) { const t = p.txns.find(x => x.txn_id === txnId); if (t) return t; }
+  return ((_zData && _zData.removed) || []).find(x => x.txn_id === txnId) || null;
+}
+function zNoteOpen(txnId, ev) {
+  if (ev) ev.stopPropagation();
+  _ztTxn = txnId;
+  const t = _zFindTxn(txnId);
+  document.getElementById('ztDesc').textContent = t ? `${t.date} · ${t.amount >= 0 ? '−' : '+'}${money(Math.abs(t.amount))} · ${t.desc}` : '';
+  document.getElementById('ztNote').value = (t && t.note) || '';
+  document.getElementById('ztModal').style.display = 'flex';
+  setTimeout(() => document.getElementById('ztNote').focus(), 0);
+}
+async function ztSaveNow() {
+  const btn = document.getElementById('ztSaveBtn');
+  btn.disabled = true;
+  try {
+    const note = document.getElementById('ztNote').value.trim();
+    const r = await api('/api/plaid/zelle-overrides', { method: 'POST', body: JSON.stringify({ txn_id: _ztTxn, action: 'note', note }) });
+    if (r && r.error) throw new Error(r.error);
+    const t = _zFindTxn(_ztTxn);
+    if (t) { if (note) t.note = note; else delete t.note; }
+    document.getElementById('ztModal').style.display = 'none';
+    zRender();
+    toast(note ? '✅ 已备注' : '已清除备注');
+  } catch (e) { toast(e.message || '保存失败', true); }
+  btn.disabled = false;
 }
 // 明细分组: 按自然周 (周一~周日) / 按银行账户, 组头带小计
 function _zWeekRange(dateStr) {
@@ -3694,11 +3738,11 @@ function zToggleAll() {
 function zExportCsv() {
   const list = _zFiltered();
   const escCsv = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-  const lines = ['收款人,Zelle号,关联,备注,日期,方向,金额,账户,原始描述'];
+  const lines = ['收款人,Zelle号,关联,收款人备注,日期,方向,金额,账户,单笔备注,原始描述'];
   for (const p of list) for (const t of p.txns) {
     const c = p.contact || {};
     const link = c.link_type && c.link_label ? (ZC_TYPE[c.link_type] || '').replace(/^\S+\s/, '') + '·' + c.link_label : '';
-    lines.push([p.name, c.zelle_handle || '', link, c.note || '', t.date, t.amount >= 0 ? '转出' : '转入', (-t.amount).toFixed(2), t.account, t.desc].map(escCsv).join(','));
+    lines.push([p.name, c.zelle_handle || '', link, c.note || '', t.date, t.amount >= 0 ? '转出' : '转入', (-t.amount).toFixed(2), t.account, t.note || '', t.desc].map(escCsv).join(','));
   }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
