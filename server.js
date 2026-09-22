@@ -24815,6 +24815,8 @@ app.post('/api/timeclock/punch', (req, res) => {
     WHERE ej.employee_id = ? AND ej.status = 'active' AND js.latitude IS NOT NULL AND js.longitude IS NOT NULL
   `).all(emp.id);
 
+  // GPS 打卡命中的仓库: 盖到新建记录的 site_id 上, 客户门户才能把记录归到这家公司
+  let punchSiteId = null;
   if (empSites.length > 0) {
     // Employee has configured job sites — location verification is mandatory
     if (!latitude || !longitude) {
@@ -24824,7 +24826,7 @@ app.post('/api/timeclock/punch', (req, res) => {
     let closestDist = Infinity, closestSite = null;
     for (const site of empSites) {
       const dist = haversineDistance(latitude, longitude, site.latitude, site.longitude);
-      if (dist <= site.radius_meters) { insideAny = true; break; }
+      if (dist <= site.radius_meters) { insideAny = true; punchSiteId = site.id; break; }
       if (dist < closestDist) { closestDist = dist; closestSite = site; }
     }
     if (!insideAny) {
@@ -24852,7 +24854,7 @@ app.post('/api/timeclock/punch', (req, res) => {
         .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
       return res.json({ action: 'out', clock_in: open.clock_in, clock_out: now, total_hours: hrs.total, regular_hours: hrs.regular, overtime_hours: hrs.overtime });
     } else {
-      const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,break_records,on_break) VALUES(?,?,'open','[]',0)").run(emp.id, now);
+      const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,break_records,on_break,site_id) VALUES(?,?,'open','[]',0,?)").run(emp.id, now, punchSiteId);
       return res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid });
     }
   }
@@ -24866,7 +24868,7 @@ app.post('/api/timeclock/punch', (req, res) => {
         .run(`漏打下班卡（${missedDate}），由新上班打卡触发`, open.id);
       warning = `提示：${missedDate} 忘记打下班卡，该记录已标记给管理员审核`;
     }
-    const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,break_records,on_break,punch_type) VALUES(?,?,'open','[]',0,'in')").run(emp.id, now);
+    const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,break_records,on_break,punch_type,site_id) VALUES(?,?,'open','[]',0,'in',?)").run(emp.id, now, punchSiteId);
     return res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid, warning });
   }
 
@@ -24874,7 +24876,7 @@ app.post('/api/timeclock/punch', (req, res) => {
   if (ptype === 'out') {
     if (!open) {
       warning = '提示：未找到对应上班记录，可能漏打上班卡，已记录下班时间，标记管理员审核';
-      const r = db.prepare("INSERT INTO time_entries (employee_id,clock_out,status,total_hours,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,?,'closed',0,'[]',0,'out_only',1,'漏打上班卡，仅有下班记录')").run(emp.id, now);
+      const r = db.prepare("INSERT INTO time_entries (employee_id,clock_out,status,total_hours,break_records,on_break,punch_type,needs_review,review_reason,site_id) VALUES(?,?,'closed',0,'[]',0,'out_only',1,'漏打上班卡，仅有下班记录',?)").run(emp.id, now, punchSiteId);
       return res.json({ action: 'out', clock_in: null, clock_out: now, total_hours: 0, warning, entry_id: r.lastInsertRowid });
     }
     if (open.on_break) warning = '提示：您处于暂停中，已自动结束暂停并打下班卡';
@@ -24888,7 +24890,7 @@ app.post('/api/timeclock/punch', (req, res) => {
   if (ptype === 'break_start') {
     if (!open) {
       warning = '提示：未找到上班记录，可能漏打上班卡，已记录休息开始，标记管理员审核';
-      const r = db.prepare("INSERT INTO time_entries (employee_id,status,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,'open',?,1,'break_start_only',1,'漏打上班卡，由break_start触发')").run(emp.id, JSON.stringify([{start:now,end:null}]));
+      const r = db.prepare("INSERT INTO time_entries (employee_id,status,break_records,on_break,punch_type,needs_review,review_reason,site_id) VALUES(?,'open',?,1,'break_start_only',1,'漏打上班卡，由break_start触发',?)").run(emp.id, JSON.stringify([{start:now,end:null}]), punchSiteId);
       return res.json({ action: 'break_start', warning, entry_id: r.lastInsertRowid });
     }
     const breaks = JSON.parse(open.break_records||'[]');
@@ -24907,7 +24909,7 @@ app.post('/api/timeclock/punch', (req, res) => {
   if (ptype === 'break_end') {
     if (!open) {
       warning = '提示：未找到上班记录，可能漏打上班卡及休息开始，已记录休息结束，标记管理员审核';
-      const r = db.prepare("INSERT INTO time_entries (employee_id,status,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,'open',?,0,'break_end_only',1,'漏打上班卡及休息开始，仅有休息结束记录')").run(emp.id, JSON.stringify([{start:null,end:now}]));
+      const r = db.prepare("INSERT INTO time_entries (employee_id,status,break_records,on_break,punch_type,needs_review,review_reason,site_id) VALUES(?,'open',?,0,'break_end_only',1,'漏打上班卡及休息开始，仅有休息结束记录',?)").run(emp.id, JSON.stringify([{start:null,end:now}]), punchSiteId);
       return res.json({ action: 'break_end', break_minutes: 0, warning, entry_id: r.lastInsertRowid });
     }
     const breaks = JSON.parse(open.break_records||'[]');
@@ -28213,23 +28215,49 @@ function _custNeedInternal(req, res) {
 }
 // 账号可管的仓库范围: perms.sites=[siteId...] 只管这些仓库; 空/未设 = 本公司全部仓库
 function _custAllowedSiteIds(req) {
-  let all = _customerSites(req.customerPartnerId);
-  // 冒充会话不受账号的仓库范围限制，返回本公司全部仓库
-  if (req && req.custImpersonation) return all;
+  const all = _customerSites(req.customerPartnerId);
+  const set = _custSitePerms(req);
+  return set ? all.filter(s2 => set.has(s2.id)) : all;
+}
+// 账号级仓库范围限制 (perms.sites 白名单): 有限制返回 id 集合;
+// 冒充会话与没设限制的账号返回 null (不受限)
+function _custSitePerms(req) {
+  if (!req || req.custImpersonation) return null;
   try {
     const row = db.prepare('SELECT perms FROM customer_accounts WHERE id=?').get(req.customerId);
     const p = row && String(row.perms || '').trim() ? JSON.parse(row.perms) : null;
-    if (p && Array.isArray(p.sites) && p.sites.length) {
-      const set = new Set(p.sites.map(Number));
-      all = all.filter(s2 => set.has(s2.id));
-    }
+    if (p && Array.isArray(p.sites) && p.sites.length) return new Set(p.sites.map(Number));
   } catch (_) {}
-  return all;
+  return null;
+}
+// 同一家公司的多个名字 (Wecharmer=Nexware=Maynmarch, 和银行核对的 SAME_COMPANY_GROUPS
+// 是同一份名单): 客户门户按同一家算 — 挂在另一个名字 partner 下的仓库/岗位/记录照样算这家的
+function _custGroupTokens(pid) {
+  try {
+    const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const mine = norm((db.prepare('SELECT name FROM partners WHERE id=?').get(pid) || {}).name);
+    if (!mine) return [];
+    const g = SAME_COMPANY_GROUPS.find(x => x.names.some(n => mine.indexOf(n) >= 0));
+    return g ? g.names : [];
+  } catch (_) { return []; }
+}
+function _custPartnerIds(pid) {
+  const out = [pid];
+  const tokens = _custGroupTokens(pid);
+  if (!tokens.length) return out;
+  try {
+    const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    db.prepare('SELECT id, name FROM partners').all().forEach(p2 => {
+      if (p2.id !== pid && tokens.some(n => norm(p2.name).indexOf(n) >= 0)) out.push(p2.id);
+    });
+  } catch (_) {}
+  return out;
 }
 function _customerSites(pid) {
   if (!pid) return [];
+  const pids = _custPartnerIds(pid);
   return db.prepare('SELECT id, name, code, address, timezone, partner_id, partner_ids, kiosk_punch_mode, kiosk_breaks_per_day FROM job_sites WHERE active=1').all()
-    .filter(s => s.partner_id === pid || String(s.partner_ids || '').split(',').filter(Boolean).map(Number).includes(pid));
+    .filter(s => pids.includes(s.partner_id) || String(s.partner_ids || '').split(',').filter(Boolean).map(Number).some(x => pids.includes(x)));
 }
 // 时间戳兼容两种存储格式: ISO (带 Z/时区) 与 SQLite 'YYYY-MM-DD HH:MM:SS' (UTC)
 function _pTs(s) {
@@ -28239,13 +28267,37 @@ function _pTs(s) {
   return isNaN(d) ? null : d;
 }
 // 该客户可见的打卡记录范围 (与经理限权同一套口径): 仓库匹配 / 岗位所属公司匹配 /
-// 记录上的公司名匹配 —— 手机 GPS 打卡的老记录没有 site_id, 只靠后两条才能覆盖
-function _customerEntryScope(pid, ids) {
+// 记录上的公司名匹配 —— 手机 GPS 打卡的老记录没有 site_id, 只靠后两条才能覆盖。
+// 同一家公司的多个名字按同一家算; 公司名大小写/空格宽松比较, 岗位没挂 partner 的
+// 按岗位上的公司名兜底; 已停用的老仓库历史照样能看 (设了仓库范围限制的账号不放宽)。
+function _customerEntryScope(pid, ids, req) {
+  const pids = _custPartnerIds(pid);
+  const qs = a => a.map(() => '?').join(',');
   const conds = [], p = [];
-  if (ids.length) { conds.push(`t.site_id IN (${ids.map(() => '?').join(',')})`); p.push(...ids); }
-  conds.push('t.job_id IN (SELECT id FROM jobs WHERE partner_id=?)'); p.push(pid);
-  conds.push("(t.company_name IS NOT NULL AND t.company_name!='' AND t.company_name=(SELECT name FROM partners WHERE id=?))"); p.push(pid);
+  const sids = [...ids];
+  if (!_custSitePerms(req)) {
+    try {
+      db.prepare('SELECT id, partner_id, partner_ids FROM job_sites WHERE active=0').all().forEach(s => {
+        const mine = pids.includes(s.partner_id) || String(s.partner_ids || '').split(',').filter(Boolean).map(Number).some(x => pids.includes(x));
+        if (mine && !sids.includes(s.id)) sids.push(s.id);
+      });
+    } catch (_) {}
+  }
+  if (sids.length) { conds.push(`t.site_id IN (${qs(sids)})`); p.push(...sids); }
+  const jn = _custNameCond('company_name', pid, pids);
+  conds.push(`t.job_id IN (SELECT id FROM jobs WHERE partner_id IN (${qs(pids)}) OR ${jn.sql})`);
+  p.push(...pids, ...jn.params);
+  const en = _custNameCond('t.company_name', pid, pids);
+  conds.push(`(t.company_name IS NOT NULL AND t.company_name!='' AND ${en.sql})`);
+  p.push(...en.params);
   return { sql: '(' + conds.join(' OR ') + ')', params: p };
+}
+// 公司名宽松匹配: 去空格/大小写后等于名下任一 partner 名, 或含同名组关键词 (nexware 等)
+function _custNameCond(col, pid, pids) {
+  const cs = [`LOWER(REPLACE(${col}, ' ', '')) IN (SELECT LOWER(REPLACE(name, ' ', '')) FROM partners WHERE id IN (${pids.map(() => '?').join(',')}))`];
+  const ps = [...pids];
+  for (const n of _custGroupTokens(pid)) { cs.push(`LOWER(${col}) LIKE ?`); ps.push('%' + n + '%'); }
+  return { sql: '(' + cs.join(' OR ') + ')', params: ps };
 }
 // 客户门户: 本公司的打卡记录 (员工姓名+时间; photos 字段仅当照片开关开启时返回)
 app.get('/api/customer/time-records', requireCustomer, (req, res) => {
@@ -28263,7 +28315,7 @@ app.get('/api/customer/time-records', requireCustomer, (req, res) => {
   const sites = _custAllowedSiteIds(req);
   const photosEnabled = !!((db.prepare('SELECT show_punch_photos FROM partners WHERE id=?').get(pid) || {}).show_punch_photos);
   const ids = sites.map(s => s.id);
-  const scope = _customerEntryScope(pid, ids);
+  const scope = _customerEntryScope(pid, ids, req);
   // 只看某个员工 (emp=员工id): 服务端过滤, 记录多时不会被 LIMIT 2000 截断漏掉该员工的早期记录
   const empId = parseInt(req.query.emp) || 0;
   const empSql = empId ? ' AND t.employee_id=?' : '';
@@ -28683,7 +28735,7 @@ app.get('/api/customer/punch-employees', requireCustomer, (req, res) => {
   if (!pid) return res.json([]);
   const ids = _custAllowedSiteIds(req).map(s => s.id);
   if (!ids.length) return res.json([]);
-  const scope = _customerEntryScope(pid, ids);
+  const scope = _customerEntryScope(pid, ids, req);
   const rows = db.prepare(`SELECT DISTINCT e.id, e.first_name, e.middle_name, e.last_name, e.employee_id AS emp_code
     FROM time_entries t JOIN employees e ON t.employee_id=e.id
     WHERE ${scope.sql} AND COALESCE(e.customer_hidden,0)=0 AND DATE(t.clock_in) >= DATE('now','-90 day')
@@ -28699,7 +28751,7 @@ app.get('/api/customer/punch-photo/:filename', requireCustomer, async (req, res)
   const safeName = path.basename(req.params.filename);
   if (!pid) return res.status(404).send('Not found');
   const ids = _customerSites(pid).map(s => s.id);
-  const scope = _customerEntryScope(pid, ids);
+  const scope = _customerEntryScope(pid, ids, req);
   const owner = db.prepare(`SELECT t.id FROM time_entries t
     WHERE ${scope.sql}
       AND NOT EXISTS (SELECT 1 FROM employees pe WHERE pe.id=t.employee_id AND COALESCE(pe.customer_hidden,0)=1)
@@ -30783,7 +30835,7 @@ app.get('/api/customer/my-workers', requireCustomer, (req, res) => {
   const seen = new Set();
   const ids = _customerSites(pid).map(s => s.id);
   if (ids.length) {
-    const scope = _customerEntryScope(pid, ids);
+    const scope = _customerEntryScope(pid, ids, req);
     const punch = db.prepare(`
       SELECT e.id, e.first_name, e.middle_name, e.last_name, e.employee_id AS emp_code, e.position, e.phone, e.email,
         e.address, e.city, e.state, e.zip,
@@ -30898,7 +30950,7 @@ function _custWorkerAuth(req, res) {
   if (!pid || !eid) { res.status(403).json({ error: '无权限' }); return null; }
   const ids = _custAllowedSiteIds(req).map(s => s.id);
   if (!ids.length) { res.status(403).json({ error: '无权限' }); return null; }
-  const scope = _customerEntryScope(pid, ids);
+  const scope = _customerEntryScope(pid, ids, req);
   const ok = db.prepare(`SELECT 1 FROM time_entries t WHERE ${scope.sql} AND t.employee_id=? AND DATE(t.clock_in) >= DATE('now','-90 day') LIMIT 1`).get(...scope.params, eid);
   if (!ok) { res.status(403).json({ error: '只能查看在贵公司仓库打过卡的工人' }); return null; }
   const e = db.prepare('SELECT * FROM employees WHERE id=?').get(eid);
