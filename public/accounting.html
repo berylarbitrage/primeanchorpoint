@@ -2561,8 +2561,9 @@ function renderGustoPayList() {
     const isAdmin = USER.role === 'admin';
     if (p.bank_txn_id) {
       const pending = p.bank_link_status === 'pending';
-      const bankTag = t ? [t.bank, t.mask ? '··' + t.mask : ''].filter(Boolean).join(' ') : '';
-      const label = t ? `${t.date.slice(5)} ${money(Math.abs(t.amount))}${bankTag ? ' ' + bankTag : ''}` : '已关联';
+      // 徽章显示主体名(没有就银行名), 不放尾号——尾号只在悬停详情里
+      const entity = t ? String(t.company_label || '').trim() || String(t.bank || '').trim() : '';
+      const label = t ? `${t.date.slice(5)} ${money(Math.abs(t.amount))}${entity ? ' · ' + entity : ''}` : '已关联';
       const tip = [
         t ? `${t.date} · ${money(Math.abs(t.amount))}` : p.bank_txn_id,
         t ? [t.bank, t.company_label, t.mask ? '··' + t.mask : ''].filter(Boolean).join(' · ') : '',
@@ -2658,8 +2659,9 @@ function renderGustoBankList() {
         </span>
         <span style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;font-size:.78rem;margin-top:3px">
           <span style="background:#eef2ff;color:#3730a3;border:1px solid #e0e7ff;border-radius:6px;padding:1px 8px;font-weight:700;white-space:nowrap">🏦 ${esc(String(t.bank || '').trim() || '未知银行')}</span>
-          ${t.company_label ? `<span style="color:var(--g500);white-space:nowrap">${esc(t.company_label)}</span>` : ''}
-          <span style="color:var(--g500);white-space:nowrap">${esc(t.account_name || '')}${t.mask ? ' ··' + esc(t.mask) : ''}</span>
+          ${String(t.company_label || '').trim()
+            ? `<b style="color:#334155;white-space:nowrap;font-size:.82rem" title="${esc((t.account_name || '') + (t.mask ? ' ··' + t.mask : ''))}">${esc(t.company_label)}</b>`
+            : `<span style="color:var(--g500);white-space:nowrap" title="账户主体名还没设置，可在「银行直连」页签给账户填公司名">${esc(t.account_name || '')}${t.mask ? ' ··' + esc(t.mask) : ''}</span>`}
         </span>
         <span style="display:block;font-size:.73rem;color:var(--g400);margin-top:3px;line-height:1.55;word-break:break-all;white-space:normal">${esc(t.name || t.merchant || '')}</span>
       </span>
