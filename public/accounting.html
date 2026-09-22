@@ -118,6 +118,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <button class="tab" id="tabStmt" onclick="showTab('stmt')" style="display:none">🏦 银行流水 Bank Statements</button>
     <button class="tab" id="tabClaims" onclick="showTab('claims')">⚠️ 赔偿事故 Claims</button>
     <button class="tab" id="tabRef" onclick="showTab('ref')">🤝 介绍费 Referral <span id="refPendBadge" style="display:none;background:#d97706;color:#fff;border-radius:10px;font-size:.68rem;padding:1px 7px;vertical-align:middle"></span></button>
+    <button class="tab" id="tabGusto" onclick="showTab('gusto')">💸 Gusto 工资</button>
     <button class="tab" id="tabFeeIns" onclick="showTab('feeins')">🛡️ 保险费 Insurance</button>
     <button class="tab" id="tabFeeLaw" onclick="showTab('feelaw')">⚖️ 律师费 Legal</button>
     <button class="tab" id="tabFeeCo" onclick="showTab('feeco')">🏢 公司支出 Expenses</button>
@@ -198,6 +199,68 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <p style="font-size:.75rem;color:var(--g400);margin-top:.5rem">流程：客服 / 会计录入介绍信息（工头和工人的姓名电话、仓库、面试时间、做了多久）→ 会计「关联发票」佐证工人确实在给客户干活 → 管理员核查整条信息、决定是否支付 → 同意支付后会计在「付款批注」里记实付金额并关联银行记录。</p>
   </div>
 
+  <!-- 💸 Gusto 工资: API 实时同步的实发工资流水 + 与发票工资表按人对账（不上传文件） -->
+  <div id="paneGusto" style="display:none">
+    <input type="file" id="gustoReportFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="gustoImportFile(this)">
+    <div class="card" id="gustoStatusCard" style="margin-bottom:.7rem">加载中…</div>
+    <div class="card" style="margin-bottom:.7rem">
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.55rem">
+        <b style="font-size:.92rem">按人对账</b>
+        <select id="gustoRange" onchange="gustoRangeChanged()">
+          <option value="lastweek">上周</option>
+          <option value="thisweek">本周</option>
+          <option value="2w" selected>近两周</option>
+          <option value="thismonth">本月</option>
+          <option value="lastmonth">上月</option>
+          <option value="90d">近 90 天</option>
+          <option value="custom">自定义…</option>
+        </select>
+        <input type="date" id="gustoStart" onchange="gustoCustomRange()" style="display:none">
+        <input type="date" id="gustoEnd" onchange="gustoCustomRange()" style="display:none">
+        <span id="gustoReconStats" style="font-size:.78rem;color:var(--g500)"></span>
+      </div>
+      <div style="overflow-x:auto">
+        <table><thead><tr>
+          <th>收款人（Gusto 名册）</th><th style="text-align:right">工资表应付</th><th style="text-align:right">Gusto 实付</th><th style="text-align:right">差额</th><th>状态</th><th>明细</th>
+        </tr></thead><tbody id="gustoReconBody"><tr><td colspan="6" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+      </div>
+      <div id="gustoReconExtras" style="font-size:.78rem;line-height:1.7;margin-top:.55rem"></div>
+      <p style="font-size:.74rem;color:var(--g400);margin-top:.5rem">应付 = 周期结束日落在所选范围内的正式工时发票的工资行（按收款人对照表 / 发工资时薪覆盖折算，与生成 Gusto 付款 CSV 同一套口径）；实付 = 付款日期落在范围内及其后 14 天的 Gusto 付款（周五结账下周发钱，留了缓冲）。</p>
+    </div>
+    <div class="card">
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.55rem">
+        <b style="font-size:.92rem">Gusto 付款流水</b>
+        <span style="font-size:.72rem;color:var(--g400)">全部记录 · 按付款日期的自然周（周一~周日）分组，不受上面对账周期影响</span>
+        <input type="text" id="gustoPaySearch" placeholder="搜姓名 / 方式 / 状态…" oninput="renderGustoPayList()" style="width:200px">
+        <span id="gustoPayStats" style="font-size:.78rem;color:var(--g500)"></span>
+      </div>
+      <div style="overflow-x:auto">
+        <table><thead><tr>
+          <th>付款日期</th><th>收款人</th><th>方式</th><th style="text-align:right">工时</th><th style="text-align:right">工资</th><th style="text-align:right">Bonus</th><th style="text-align:right">报销</th><th style="text-align:right">合计</th><th>状态</th><th>银行转账</th>
+        </tr></thead><tbody id="gustoPayBody"><tr><td colspan="10" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- 🏦 付款关联银行转账弹窗: 候选只有银行历史里的 Gusto 交易 -->
+    <div id="gustoBankModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:95;align-items:center;justify-content:center;padding:16px">
+      <div class="card" style="max-width:660px;width:100%;padding:1.1rem 1.2rem 1rem;max-height:88vh;display:flex;flex-direction:column">
+        <div style="font-weight:800;margin-bottom:.15rem">🏦 关联银行转账</div>
+        <div id="gustoBankPayInfo" style="font-size:.78rem;color:var(--g500);margin-bottom:.5rem"></div>
+        <input type="text" id="gustoBankSearch" placeholder="搜日期 / 描述 / 金额 / 账户…" oninput="renderGustoBankList()" style="width:100%;margin-bottom:.45rem">
+        <div id="gustoBankList" style="flex:1;overflow:auto;border:1px solid var(--g200);border-radius:8px;min-height:120px;max-height:46vh"></div>
+        <div style="font-size:.72rem;color:var(--g400);margin:.4rem 0">只显示银行历史里描述带 Gusto 的交易——工资付款只能挂 Gusto 的扣款，其他转账不能关联。</div>
+        <label id="gustoBankSameDayWrap" style="display:flex;align-items:center;gap:.4rem;font-size:.78rem;margin-bottom:.55rem">
+          <input type="checkbox" id="gustoBankSameDay" checked> 同一天其他未关联的付款也一起挂到这笔转账（Gusto 整批扣款，一笔转账对应当天所有付款）
+        </label>
+        <div style="display:flex;gap:.5rem;justify-content:flex-end">
+          <button class="btn btn-outline" id="gustoBankUnlinkBtn" style="display:none;color:#dc2626;margin-right:auto" onclick="gustoBankUnlink()">解除关联</button>
+          <button class="btn btn-outline" onclick="document.getElementById('gustoBankModal').style.display='none'">取消</button>
+          <button class="btn btn-blue" onclick="submitGustoBankLink()">✅ 关联</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ➕ 新增 / 编辑介绍费弹窗 -->
   <div id="refAddModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:92;align-items:center;justify-content:center;padding:16px">
     <div class="card" style="max-width:560px;width:100%;padding:1.2rem 1.2rem 1rem;max-height:92vh;overflow:auto">
@@ -217,7 +280,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
           <input type="tel" id="raWorkerPhone" placeholder="输入号码自动查系统" oninput="raPhoneLookup('raWorkerPhone','raWorkerHits','worker')" style="width:100%;margin:.15rem 0 .55rem"></div>
       </div>
       <div id="raWorkerHits" style="margin:-0.3rem 0 .3rem;line-height:1.9"></div>
-      <label style="font-size:.76rem;color:var(--g500)">关联岗位 <span style="font-size:.7rem;color:var(--g400)">（post 的招聘岗位，选了自动带出工资和仓库）</span></label>
+      <label style="font-size:.76rem;color:var(--g500)">关联岗位 <span style="font-size:.7rem;color:var(--g400)">（post 的招聘岗位，选了自动带出仓库；工资不带出，必须手动填）</span></label>
       <select id="raJobSel" onchange="raJobChanged()" style="width:100%;margin:.15rem 0 .55rem"><option value="">— 不关联岗位 —</option></select>
       <label style="font-size:.76rem;color:var(--g500)">工作仓库</label>
       <select id="raWhSel" onchange="raWhChanged()" style="width:100%;margin:.15rem 0 .55rem"><option value="">加载中…</option></select>
@@ -227,8 +290,8 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <div style="display:grid;grid-template-columns:1.2fr .9fr .9fr;gap:.2rem .6rem">
         <div><label style="font-size:.76rem;color:var(--g500)">面试时间（HR 约的）</label>
           <input type="datetime-local" id="raInterview" style="width:100%;margin:.15rem 0 .55rem"></div>
-        <div><label style="font-size:.76rem;color:var(--g500)">工资（工人的）</label>
-          <input type="text" id="raWage" placeholder="例：$18/小时" style="width:100%;margin:.15rem 0 .55rem"></div>
+        <div><label style="font-size:.76rem;color:var(--g500)">工资（工人的）<span style="color:#dc2626">*</span> <span style="font-size:.7rem;color:var(--g400)">手动填实际谈定的</span></label>
+          <input type="text" id="raWage" placeholder="必填，例：$18/小时" style="width:100%;margin:.15rem 0 .55rem"></div>
         <div><label style="font-size:.76rem;color:var(--g500)">介绍费金额（$）</label>
           <input type="number" step="0.01" min="0" id="raAmount" placeholder="例：100.00" style="width:100%;margin:.15rem 0 .55rem"></div>
       </div>
@@ -723,6 +786,7 @@ function enterMain() {
   document.getElementById('btnRefAdd').style.display = ['admin', 'accounting', 'cs'].includes(USER.role) ? '' : 'none';
   loadAll();
   bankOauthResume();
+  gustoOauthResume();
 }
 function acctLogout(silent) {
   if (TOKEN && !silent) fetch('/api/admin/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN } }).catch(() => {});
@@ -759,6 +823,9 @@ function showTab(t) {
   document.getElementById('paneClaims').style.display = t === 'claims' ? '' : 'none';
   document.getElementById('tabRef').classList.toggle('on', t === 'ref');
   document.getElementById('paneRef').style.display = t === 'ref' ? '' : 'none';
+  document.getElementById('tabGusto').classList.toggle('on', t === 'gusto');
+  document.getElementById('paneGusto').style.display = t === 'gusto' ? '' : 'none';
+  if (t === 'gusto') gustoInit();
 }
 // ── 付款批注: 每张发票/每笔赔偿记录「付了没有/哪个银行付的/付了多少」 ──
 let _payTarget = null, _payBanksFilled = false;
@@ -1243,7 +1310,6 @@ let _refOpts = null;
 async function openRefAdd(id) {
   _refEditId = id || null;
   _raRemove = new Set();
-  _raWageAuto = '';
   const r = id ? _refList.find(x => x.id === id) : null;
   document.getElementById('refAddTitle').textContent = r ? '🤝 编辑介绍' : '🤝 新增介绍';
   document.getElementById('refAddHint').textContent = r
@@ -1515,16 +1581,12 @@ function raPickPhoneHit(boxId, i, kind) {
 }
 // 选岗位 → 仓库跟着对应上: 岗位的公司/地址能对上仓库名单的直接选中,
 // 对不上的自动切「新仓库」并把公司名/地址填好; 之后仍可手动改。
-// 工资空着的、或上次是岗位带出来的, 换岗位时一并更新 (手填过的不动)。
-let _raWageAuto = '';
+// 工资不从岗位带出——岗位上写的是招聘区间 (如 18-23/weekly), 不是这个工人
+// 实际谈定的数, 必须手动填。
 function raJobChanged() {
   const id = parseInt(document.getElementById('raJobSel').value);
   const j = ((_refOpts && _refOpts.jobs) || []).find(x => x.id === id);
   if (!j) return;
-  const wageEl = document.getElementById('raWage');
-  const pay = j.pay ? j.pay + (j.pay_period ? '/' + j.pay_period : '') : '';
-  if (pay && (!wageEl.value.trim() || wageEl.value.trim() === _raWageAuto)) wageEl.value = pay;
-  if (pay) _raWageAuto = pay;
   // 找对应仓库: 名称+地址 → 地址 → 名称 依次对
   const whs = (_refOpts && _refOpts.warehouses) || [];
   const nm = String(j.company_name || '').trim().toLowerCase();
@@ -1580,6 +1642,9 @@ async function submitRefAdd() {
   const fName = _raForeman.name, fPhone = _raForeman.phone || '';
   const wName = document.getElementById('raWorkerName').value.trim();
   if (!wName) return toast('请填写被介绍人姓名', true);
+  // 工资必须手动填: 岗位上的是招聘区间, 不是这个工人实际谈定的数
+  const wWage = document.getElementById('raWage').value.trim();
+  if (!wWage) return toast('请手动填写工人的工资（岗位上写的是区间，要填实际谈定的，如 $18/小时）', true);
   const whSelV = document.getElementById('raWhSel').value;
   const whName = whSelV === '__new__'
     ? document.getElementById('raWh').value.trim()
@@ -2266,6 +2331,369 @@ function renderPalletList() {
     <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openPalletDetail(${r.id})">查看明细</button></td>
   </tr>`).join('') : '<tr><td colspan="10" style="color:var(--g400);padding:1rem">没有账单。</td></tr>';
 }
+// ═══════════ 💸 Gusto 工资: API 实时同步 + 按人对账 ═══════════
+// 数据链路: 管理员连接 Gusto(OAuth) → 服务器定时/打开本页时自动拉取实发付款 →
+// 这里只读展示。凭据和 token 全在服务器, 前端只拿状态和数据。
+let _gustoStatus = null, _gustoPayRows = [], _gustoInited = false, _gustoPoll = null;
+const GUSTO_ST = {
+  unpaid: ['❌ 未付', '#fee2e2', '#991b1b'],
+  short:  ['🟡 少付', '#fef3c7', '#92400e'],
+  over:   ['🔷 多付', '#dbeafe', '#1e40af'],
+  extra:  ['➕ 工资表没有', '#ede9fe', '#5b21b6'],
+  ok:     ['✅ 对平', '#dcfce7', '#166534'],
+};
+async function gustoInit(force) {
+  if (_gustoInited && !force) return;
+  _gustoInited = true;
+  await gustoLoadStatus();
+  gustoRangeChanged();
+  gustoLoadPayments();
+}
+async function gustoLoadStatus() {
+  const card = document.getElementById('gustoStatusCard');
+  let s;
+  try { s = await api('/api/acct/gusto/status'); } catch (e) { card.innerHTML = `<span style="color:#dc2626">加载失败：${esc(e.message)}</span>`; return; }
+  if (!s || s.error) { card.innerHTML = `<span style="color:#dc2626">${esc((s && s.error) || '加载失败')}</span>`; return; }
+  _gustoStatus = s;
+  renderGustoStatus();
+  // 服务器正在同步 → 20 秒后自动刷新状态和数据
+  if (s.syncing && !_gustoPoll) {
+    _gustoPoll = setTimeout(async () => { _gustoPoll = null; await gustoLoadStatus(); gustoLoadRecon(); gustoLoadPayments(); }, 20000);
+  }
+}
+function renderGustoStatus() {
+  const s = _gustoStatus, card = document.getElementById('gustoStatusCard');
+  if (!s) return;
+  if (!s.connected) {
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+        <b>🔌 还没有连接 Gusto</b>
+        <span style="font-size:.78rem;color:var(--g500)">连接后自动实时拉取 Gusto 实际发放的合同工工资，不用上传任何文件</span>
+      </div>
+      ${s.connect_error ? `<div style="color:#dc2626;font-size:.78rem;margin-top:.3rem">${esc(s.connect_error)}</div>` : ''}
+      ${s.can_import ? `
+      <div style="margin-top:.55rem;padding:.55rem .7rem;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px">
+        <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+          <b style="font-size:.85rem;color:#b45309">📥 过渡方案：导入 Gusto 付款报告</b>
+          <button class="btn btn-sm btn-outline" style="color:#b45309;border-color:#fcd34d" onclick="document.getElementById('gustoReportFile').click()">选择文件导入（CSV / Excel）</button>
+          ${s.last_import ? `<span style="font-size:.74rem;color:var(--g500)">上次：${esc(String(s.last_import.at || '').slice(5, 16).replace('T', ' '))} ${esc(s.last_import.file || '')} · ${s.last_import.rows} 笔</span> <a style="cursor:pointer;font-size:.74rem;color:#dc2626;text-decoration:underline" onclick="gustoImportUndo()">撤销上次导入</a>` : ''}
+        </div>
+        <div style="font-size:.74rem;color:var(--g500);line-height:1.7;margin-top:.3rem">Gusto 后台 → <b>Reports</b> 导出后传到这里，两种都认：<b>Contractor payments</b> 合同工付款报告（参与按人对账），以及 <b>Year to date</b> 等 W-2 员工工资报表（只进流水展示）。文件开头带公司抬头没关系，会自动找表头。每周发完工资顺手导一次即可。API 过审连接后这个入口自动消失；API 覆盖到的时间段会自动改用官方数据，不会重复计数。</div>
+      </div>` : ''}
+      ${s.is_admin ? `
+      <div style="font-size:.78rem;color:var(--g500);line-height:1.8;margin-top:.45rem">
+        ① 在 <a href="https://dev.gusto.com" target="_blank" style="color:#0f4c6b">dev.gusto.com</a> 创建应用（先用 demo 沙箱联调，应用过审后切正式）；
+        ② 应用的 Redirect URI 填 <code style="background:#f1f5f9;padding:1px 5px;border-radius:4px">${esc(s.redirect_uri)}</code>；
+        ③ 把 Client ID / Secret 填在下面保存，再点「连接 Gusto」完成授权。
+      </div>
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;margin-top:.5rem">
+        <input type="text" id="gustoCid" placeholder="Client ID${s.has_credentials ? '（已保存，留空不改）' : ''}" style="width:225px">
+        <input type="password" id="gustoCsec" placeholder="Client Secret${s.has_credentials ? '（已保存，留空不改）' : ''}" style="width:225px">
+        <select id="gustoEnv">
+          <option value="production"${s.environment !== 'demo' ? ' selected' : ''}>正式 production</option>
+          <option value="demo"${s.environment === 'demo' ? ' selected' : ''}>沙箱 demo</option>
+        </select>
+        <button class="btn btn-sm btn-outline" onclick="gustoSaveCreds()">💾 保存</button>
+        <button class="btn btn-sm btn-blue" onclick="gustoConnect()"${s.has_credentials ? '' : ' disabled title="先保存 Client ID / Secret"'}>🔗 连接 Gusto</button>
+      </div>` : '<div style="font-size:.78rem;color:var(--g500);margin-top:.3rem">请联系管理员在此页完成连接。</div>'}`;
+    return;
+  }
+  const last = s.last_sync_at ? new Date(s.last_sync_at) : null;
+  const lastTxt = last ? `${last.getMonth() + 1}/${last.getDate()} ${String(last.getHours()).padStart(2, '0')}:${String(last.getMinutes()).padStart(2, '0')}` : '还没同步过';
+  card.innerHTML = `
+    <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+      <b>🟢 已连接 Gusto</b>
+      <span style="font-size:.82rem">${esc(s.company_name || '')}</span>
+      ${s.environment === 'demo' ? '<span style="background:#fef3c7;color:#92400e;border-radius:8px;padding:1px 7px;font-size:.72rem;font-weight:700">demo 沙箱</span>' : ''}
+      <span style="font-size:.78rem;color:var(--g500)">名册 ${s.counts.contractors} 人 · 付款 ${s.counts.payments} 笔${s.counts.imported ? `（含手动导入 ${s.counts.imported} 笔）` : ''} · 上次同步 ${esc(lastTxt)}${s.syncing ? ' · <b style="color:#b45309">同步中…</b>' : ''}</span>
+      <span style="font-size:.74rem;color:var(--g400)">每 ${s.auto_sync_minutes} 分钟自动同步，打开本页也会自动保鲜</span>
+      <span style="margin-left:auto;display:flex;gap:.4rem">
+        ${s.can_sync ? '<button class="btn btn-sm btn-outline" id="gustoSyncBtn" onclick="gustoSyncNowBtn()">🔄 立即同步</button>' : ''}
+        ${s.is_admin ? '<button class="btn btn-sm btn-outline" style="color:#dc2626" onclick="gustoDisconnect()">断开</button>' : ''}
+      </span>
+    </div>
+    ${s.last_sync_error ? `<div style="color:#dc2626;font-size:.76rem;margin-top:.3rem">上次同步出错（${esc(String(s.last_sync_error.at || '').slice(5, 16).replace('T', ' '))}）：${esc(s.last_sync_error.message)}</div>` : ''}`;
+}
+async function gustoSaveCreds() {
+  const cid = document.getElementById('gustoCid').value.trim();
+  const sec = document.getElementById('gustoCsec').value.trim();
+  const env = document.getElementById('gustoEnv').value;
+  const r = await api('/api/admin/gusto/credentials', { method: 'POST',
+    body: JSON.stringify({ client_id: cid || undefined, client_secret: sec || undefined, environment: env }) }).catch(e => ({ error: e.message }));
+  if (r && r.success) { toast('✅ 已保存'); gustoLoadStatus(); }
+  else toast((r && r.error) || '保存失败', true);
+}
+function gustoConnect() { location.href = '/api/admin/gusto/connect'; }
+async function gustoDisconnect() {
+  if (!confirm('断开 Gusto 连接？已同步的付款记录会保留，重新连接后继续更新。')) return;
+  const r = await api('/api/admin/gusto/disconnect', { method: 'POST' }).catch(e => ({ error: e.message }));
+  if (r && r.success) { toast('已断开'); gustoLoadStatus(); }
+  else toast((r && r.error) || '操作失败', true);
+}
+async function gustoSyncNowBtn() {
+  const btn = document.getElementById('gustoSyncBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 同步中…'; }
+  const r = await api('/api/acct/gusto/sync', { method: 'POST', body: JSON.stringify({}) }).catch(e => ({ error: e.message }));
+  if (btn) { btn.disabled = false; btn.textContent = '🔄 立即同步'; }
+  if (r && r.ok) toast(`✅ 同步完成：名册 ${r.contractors} 人，付款 ${r.payments} 笔（新增 ${r.inserted}）`);
+  else if (r && r.busy) toast('同步正在进行中，稍等片刻再刷新', true);
+  else toast((r && r.error) || '同步失败', true);
+  await gustoLoadStatus();
+  gustoLoadRecon();
+  gustoLoadPayments();
+}
+// ── 周期选择（周一为一周起点; 全部按 UTC 日期算, 只取 YYYY-MM-DD） ──
+function _gd(x) { return x.toISOString().slice(0, 10); }
+function gustoRangeDates() {
+  const v = document.getElementById('gustoRange').value;
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  const monday = new Date(today.getTime() - ((today.getUTCDay() + 6) % 7) * 86400000);
+  if (v === 'thisweek') return [_gd(monday), _gd(new Date(monday.getTime() + 6 * 86400000))];
+  if (v === 'lastweek') return [_gd(new Date(monday.getTime() - 7 * 86400000)), _gd(new Date(monday.getTime() - 86400000))];
+  if (v === '2w') return [_gd(new Date(monday.getTime() - 7 * 86400000)), _gd(new Date(monday.getTime() + 6 * 86400000))];
+  if (v === 'thismonth') return [_gd(new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1))), _gd(new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 0)))];
+  if (v === 'lastmonth') return [_gd(new Date(Date.UTC(now.getFullYear(), now.getMonth() - 1, 1))), _gd(new Date(Date.UTC(now.getFullYear(), now.getMonth(), 0)))];
+  if (v === '90d') return [_gd(new Date(today.getTime() - 89 * 86400000)), _gd(today)];
+  return [document.getElementById('gustoStart').value, document.getElementById('gustoEnd').value];
+}
+function gustoRangeChanged() {
+  const custom = document.getElementById('gustoRange').value === 'custom';
+  document.getElementById('gustoStart').style.display = custom ? '' : 'none';
+  document.getElementById('gustoEnd').style.display = custom ? '' : 'none';
+  if (custom) {
+    // 首次切自定义: 预填近两周, 免得两个空框不知道填什么
+    if (!document.getElementById('gustoStart').value || !document.getElementById('gustoEnd').value) {
+      const now = new Date();
+      const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+      const monday = new Date(today.getTime() - ((today.getUTCDay() + 6) % 7) * 86400000);
+      document.getElementById('gustoStart').value = _gd(new Date(monday.getTime() - 7 * 86400000));
+      document.getElementById('gustoEnd').value = _gd(new Date(monday.getTime() + 6 * 86400000));
+    }
+    return gustoCustomRange();
+  }
+  gustoLoadRecon();
+}
+function gustoCustomRange() {
+  if (document.getElementById('gustoStart').value && document.getElementById('gustoEnd').value) gustoLoadRecon();
+}
+async function gustoLoadRecon() {
+  const [s, e] = gustoRangeDates();
+  if (!s || !e) return;
+  const body = document.getElementById('gustoReconBody');
+  body.innerHTML = '<tr><td colspan="6" style="color:var(--g400)">加载中…</td></tr>';
+  const r = await api(`/api/acct/gusto/recon?start=${s}&end=${e}`).catch(err => ({ error: err.message }));
+  if (!r || r.error) { body.innerHTML = `<tr><td colspan="6" style="color:#dc2626">${esc((r && r.error) || '加载失败')}</td></tr>`; return; }
+  window._gustoRecon = r;
+  document.getElementById('gustoReconStats').textContent =
+    `${s} ~ ${e} · 发票 ${r.invoice_count} 张 · 应付 ${money(r.totals.expected)} · 实付 ${money(r.totals.paid)} · 差 ${money(r.totals.diff)}`;
+  if (!r.rows.length) {
+    body.innerHTML = '<tr><td colspan="6" style="color:var(--g400)">这个周期没有工资行，也没有 Gusto 付款</td></tr>';
+  } else {
+    body.innerHTML = r.rows.map((row, i) => {
+      const st = GUSTO_ST[row.status] || GUSTO_ST.ok;
+      const diffColor = Math.abs(row.diff) <= 0.01 ? 'var(--g400)' : (row.diff < 0 ? '#b45309' : '#1e40af');
+      return `<tr>
+        <td><b>${esc(row.payee)}</b>${row.fuzzy ? ' <span title="有工资行按近似拼写匹配，请核对是否同一人">≈</span>' : ''}</td>
+        <td style="text-align:right">${row.expected ? money(row.expected) : '<span style="color:var(--g400)">—</span>'}</td>
+        <td style="text-align:right">${row.paid ? money(row.paid) : '<span style="color:var(--g400)">—</span>'}</td>
+        <td style="text-align:right;color:${diffColor}">${row.diff ? money(row.diff) : '—'}</td>
+        <td><span style="background:${st[1]};color:${st[2]};border-radius:8px;padding:1px 7px;font-size:.72rem;font-weight:700;white-space:nowrap">${st[0]}</span></td>
+        <td><a style="cursor:pointer;font-size:.76rem;color:#0f4c6b;text-decoration:underline" onclick="gustoToggleDetail(${i})">明细</a></td>
+      </tr>
+      <tr id="gustoDet${i}" style="display:none"><td colspan="6" style="background:#f8fafc;font-size:.76rem;line-height:1.8">${gustoDetailHtml(row)}</td></tr>`;
+    }).join('');
+  }
+  const ex = [];
+  if (r.roster_source === 'template') ex.push('<div style="color:var(--g500)">ℹ️ 收款人名册来源：已上传的 Gusto 付款模板 CSV（API 连接后自动改用 API 实时名册）</div>');
+  if (r.roster_source === 'none') ex.push('<div style="color:#b45309">⚠️ 还没有收款人名册（既没连 Gusto API，也没上传过付款模板 CSV），工资行没法归到收款人头上——先在发票生成器上传一次 Gusto 付款模板，或连接 API。</div>');
+  if ((r.cash || []).length) ex.push(`<div>💵 <b>现金发放（对照表指定不走 Gusto）：</b>${r.cash.map(c => `${esc(c.name)} ${money(c.owed)}（${esc(c.invoice_number || '')}）`).join('、')}</div>`);
+  if ((r.problems || []).length) ex.push(`<div style="color:#b45309">❗ <b>对不上 Gusto 名册的工资行（请在 Gusto 加人或改收款人对照表）：</b>${r.problems.map(p => `${esc(p.name)} ${money(p.owed)}（${esc(p.invoice_number || '')}${p.kind === 'ambiguous' ? ' · 多个候选' : p.kind === 'needConfirm' ? ' · 同姓待确认' : ''}）`).join('、')}</div>`);
+  if ((r.warnings || []).length) ex.push(`<details style="color:var(--g500)"><summary style="cursor:pointer">折算说明 ${r.warnings.length} 条</summary>${r.warnings.map(w => `<div>· ${esc(w)}</div>`).join('')}</details>`);
+  document.getElementById('gustoReconExtras').innerHTML = ex.join('');
+}
+function gustoDetailHtml(row) {
+  const parts = [];
+  if ((row.expectedBy || []).length) parts.push(`<div><b>应付来源：</b>${row.expectedBy.map(b =>
+    `${esc(b.invoice_number)}（${esc(String(b.period_start || '').slice(5))}~${esc(String(b.period_end || '').slice(5))}）${esc(b.name)}${b.aliasTo ? '→' + esc(b.aliasTo) : ''} ${money(b.owed)}`).join('；')}</div>`);
+  if ((row.payments || []).length) parts.push(`<div><b>Gusto 付款：</b>${row.payments.map(p =>
+    `${esc(p.date)} ${esc(p.payment_method || '')} ${money(p.wage_total)}${p.status && p.status !== 'Funded' ? '（' + esc(p.status) + '）' : ''}`).join('；')}</div>`);
+  return parts.join('') || '—';
+}
+function gustoToggleDetail(i) {
+  const el = document.getElementById('gustoDet' + i);
+  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+// 流水不跟对账周期联动: 显示全部已同步/导入的付款, 按付款日期的自然周分组
+async function gustoLoadPayments() {
+  const r = await api('/api/acct/gusto/payments').catch(err => ({ error: err.message }));
+  _gustoPayRows = (r && r.rows) || [];
+  _gustoBankTxns = (r && r.bank_txns) || {};
+  renderGustoPayList();
+}
+// 付款日期所在的自然周（周一 ~ 周日）
+function _gustoWeekOf(dateStr) {
+  const d = new Date(String(dateStr || '') + 'T00:00:00Z');
+  if (isNaN(d)) return ['', ''];
+  const monday = new Date(d.getTime() - ((d.getUTCDay() + 6) % 7) * 86400000);
+  return [_gd(monday), _gd(new Date(monday.getTime() + 6 * 86400000))];
+}
+function renderGustoPayList() {
+  const q = (document.getElementById('gustoPaySearch').value || '').trim().toLowerCase();
+  const rows = _gustoPayRows.filter(r => !q || (r.contractor_name || '').toLowerCase().includes(q)
+    || (r.payment_method || '').toLowerCase().includes(q) || (r.status || '').toLowerCase().includes(q));
+  const w2Sum = rows.filter(r => r.wage_type === 'W2').reduce((s2, x) => s2 + (+x.wage_total || 0), 0);
+  document.getElementById('gustoPayStats').textContent =
+    `${rows.length} 笔 · 合计 ${money(rows.reduce((s2, x) => s2 + (+x.wage_total || 0), 0))}${w2Sum ? `（其中 W-2 员工工资 ${money(w2Sum)}）` : ''} · 按自然周分组`;
+  // 按自然周分组; 服务器按日期倒序给行, 依出现顺序建组 = 最近的周在最上面
+  const groups = new Map();
+  for (const p of rows) {
+    const [ws, we] = _gustoWeekOf(p.date);
+    if (!groups.has(ws)) groups.set(ws, { ws, we, rows: [], sum: 0 });
+    const g = groups.get(ws);
+    g.rows.push(p);
+    g.sum += (+p.wage_total || 0);
+  }
+  // 银行转账列: 已挂的画徽章(悬停看明细), 没挂的给「🔗 关联」入口 (staff 只读)
+  const bankCell = p => {
+    const t = p.bank_txn_id ? _gustoBankTxns[p.bank_txn_id] : null;
+    const canEdit = canAnnotate();
+    if (p.bank_txn_id) {
+      const label = t ? `${t.date} ${money(Math.abs(t.amount))}` : '已关联';
+      const tip = t ? `${t.date} · ${t.name || ''} · ${money(Math.abs(t.amount))}${(t.company_label || t.mask) ? ' · ' + (t.company_label || '') + (t.mask ? ' ··' + t.mask : '') : ''}` : p.bank_txn_id;
+      return `<span title="${esc(tip)}" style="font-size:.72rem;color:#166534;background:#dcfce7;border:1px solid #bbf7d0;border-radius:6px;padding:1px 6px;white-space:nowrap">🏦 ${esc(label)}</span>${canEdit ? ` <a style="cursor:pointer;font-size:.72rem;color:#0f4c6b;text-decoration:underline" onclick="openGustoBankLink('${esc(p.uuid)}')">改</a>` : ''}`;
+    }
+    return canEdit
+      ? `<a style="cursor:pointer;font-size:.76rem;color:#0f4c6b;text-decoration:underline;white-space:nowrap" onclick="openGustoBankLink('${esc(p.uuid)}')">🔗 关联</a>`
+      : '<span style="color:var(--g400)">—</span>';
+  };
+  const rowHtml = p => `<tr>
+    <td style="white-space:nowrap">${esc(p.date)}</td>
+    <td><b>${esc(p.contractor_name || p.contractor_uuid)}</b>${p.wage_type === 'W2' ? ' <span title="W-2 员工工资，不参与合同工对账" style="font-size:.68rem;color:#1e40af;background:#dbeafe;border:1px solid #bfdbfe;border-radius:6px;padding:0 4px">W-2</span>' : ''}</td>
+    <td>${esc(p.payment_method || '—')}</td>
+    <td style="text-align:right">${p.hours != null ? (+p.hours).toFixed(2) : '—'}</td>
+    <td style="text-align:right">${p.wage ? money(p.wage) : '—'}</td>
+    <td style="text-align:right">${p.bonus ? money(p.bonus) : '—'}</td>
+    <td style="text-align:right">${p.reimbursement ? money(p.reimbursement) : '—'}</td>
+    <td style="text-align:right"><b>${money(p.wage_total)}</b></td>
+    <td>${p.status === 'Funded' ? '<span style="color:#166534">✅ Funded</span>' : esc(p.status || '—')}${p.source === 'import' ? ' <span title="来自手动导入的付款报告" style="font-size:.68rem;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:0 4px">导入</span>' : ''}</td>
+    <td>${bankCell(p)}</td>
+  </tr>`;
+  document.getElementById('gustoPayBody').innerHTML = groups.size
+    ? [...groups.values()].map(g => `<tr style="background:#f1f5f9">
+        <td colspan="10" style="font-weight:700;font-size:.8rem;padding:.4rem .5rem">📅 ${esc(g.ws)} ~ ${esc(g.we)}
+          <span style="color:var(--g500);font-weight:400">· ${g.rows.length} 笔 · 小计</span> ${money(g.sum)}</td>
+      </tr>` + g.rows.map(rowHtml).join('')).join('')
+    : '<tr><td colspan="10" style="color:var(--g400)">还没有 Gusto 付款记录</td></tr>';
+}
+// ── 🏦 付款 ↔ 银行转账关联: 候选只有银行历史里的 Gusto 交易, 其他转账不能挂 ──
+let _gustoBankTxns = {}, _gustoBankRows = null, _gustoBankTarget = null, _gustoBankSel = '';
+async function openGustoBankLink(uuid) {
+  const p = _gustoPayRows.find(x => x.uuid === uuid);
+  if (!p) return;
+  _gustoBankTarget = p;
+  _gustoBankSel = p.bank_txn_id || '';
+  document.getElementById('gustoBankPayInfo').textContent =
+    `${p.date} · ${p.contractor_name}${p.wage_type === 'W2' ? '（W-2）' : ''} · ${money(p.wage_total)}${p.payment_method ? ' · ' + p.payment_method : ''}`;
+  document.getElementById('gustoBankSameDayWrap').style.display = p.wage_type === 'W2' ? 'none' : 'flex';
+  document.getElementById('gustoBankSameDay').checked = p.wage_type !== 'W2';
+  document.getElementById('gustoBankUnlinkBtn').style.display = p.bank_txn_id ? '' : 'none';
+  document.getElementById('gustoBankSearch').value = '';
+  document.getElementById('gustoBankModal').style.display = 'flex';
+  document.getElementById('gustoBankList').innerHTML = '<div style="padding:.8rem;color:var(--g400);font-size:.8rem">加载中…</div>';
+  const r = await api('/api/acct/gusto/bank-txns').catch(e => ({ error: e.message }));
+  if (!r || r.error) {
+    document.getElementById('gustoBankList').innerHTML = `<div style="padding:.8rem;color:#dc2626;font-size:.8rem">${esc((r && r.error) || '加载失败')}</div>`;
+    return;
+  }
+  _gustoBankRows = r.rows || [];
+  renderGustoBankList();
+}
+function renderGustoBankList() {
+  if (!_gustoBankRows) return;
+  const q = (document.getElementById('gustoBankSearch').value || '').trim().toLowerCase();
+  const rows = _gustoBankRows.filter(t => !q || [t.name, t.merchant, t.date, String(t.amount), t.company_label, t.account_name, t.mask].join(' ').toLowerCase().includes(q));
+  document.getElementById('gustoBankList').innerHTML = rows.length ? rows.map(t => `
+    <label style="display:flex;align-items:center;gap:.5rem;padding:.4rem .55rem;border-bottom:1px solid #eef2f7;cursor:pointer;${_gustoBankSel === t.txn_id ? 'background:#eff6ff' : ''}">
+      <input type="radio" name="gustoBankTxn" value="${esc(t.txn_id)}" ${_gustoBankSel === t.txn_id ? 'checked' : ''} onchange="_gustoBankSel=this.value;renderGustoBankList()">
+      <span style="white-space:nowrap">${esc(t.date)}</span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.name || t.merchant || '')}">${esc(t.name || t.merchant || '')}${t.pending ? ' <i style="color:#b45309">(pending)</i>' : ''}</span>
+      <span style="white-space:nowrap;color:var(--g500);font-size:.72rem">${esc(t.company_label || t.account_name || '')}${t.mask ? ' ··' + esc(t.mask) : ''}</span>
+      <b style="white-space:nowrap">${money(Math.abs(t.amount))}</b>
+      ${t.linked ? `<span style="white-space:nowrap;font-size:.7rem;color:#166534;background:#dcfce7;border-radius:6px;padding:0 5px" title="这笔转账已经挂了 ${t.linked.n} 笔付款">已挂 ${t.linked.n} 笔 ${money(t.linked.sum)}</span>` : ''}
+    </label>`).join('')
+    : '<div style="padding:.8rem;color:var(--g400);font-size:.8rem">银行历史里没找到 Gusto 交易——先在「银行直连」页签连上银行、同步到有 Gusto 扣款的流水</div>';
+}
+async function submitGustoBankLink() {
+  if (!_gustoBankTarget) return;
+  if (!_gustoBankSel) return toast('请先选择一笔 Gusto 银行转账', true);
+  const body = { txn_id: _gustoBankSel, apply_same_day: document.getElementById('gustoBankSameDay').checked && _gustoBankTarget.wage_type !== 'W2' };
+  const r = await api(`/api/acct/gusto/payments/${encodeURIComponent(_gustoBankTarget.uuid)}/bank-link`, { method: 'POST', body: JSON.stringify(body) }).catch(e => ({ error: e.message }));
+  if (r && r.ok) {
+    toast(`✅ 已把 ${r.linked} 笔付款挂到这笔转账${r.same_day_extra ? `（含同日其他 ${r.same_day_extra} 笔）` : ''}`);
+    document.getElementById('gustoBankModal').style.display = 'none';
+    gustoLoadPayments();
+  } else toast((r && r.error) || '关联失败', true);
+}
+async function gustoBankUnlink() {
+  if (!_gustoBankTarget) return;
+  const r = await api(`/api/acct/gusto/payments/${encodeURIComponent(_gustoBankTarget.uuid)}/bank-link`, { method: 'POST', body: JSON.stringify({ txn_id: '' }) }).catch(e => ({ error: e.message }));
+  if (r && r.ok) {
+    toast('已解除关联');
+    document.getElementById('gustoBankModal').style.display = 'none';
+    gustoLoadPayments();
+  } else toast((r && r.error) || '操作失败', true);
+}
+// ── 过渡期: 手动导入 Gusto 付款报告（CSV/Excel; API 连接后入口自动隐藏） ──
+async function gustoImportFile(input) {
+  const f = input.files && input.files[0];
+  input.value = '';
+  if (!f) return;
+  const fd = new FormData();
+  fd.append('file', f);
+  toast('正在导入 ' + f.name + ' …');
+  let r;
+  try {
+    const resp = await fetch('/api/acct/gusto/import', { method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd });
+    if (resp.status === 401) { acctLogout(true); return; }
+    r = await resp.json().catch(() => ({}));
+    if (!resp.ok && !r.error) r.error = 'HTTP ' + resp.status;
+  } catch (e) { r = { error: e.message }; }
+  if (r && r.ok) {
+    toast(`✅ 导入成功${r.kind === 'w2' ? '（W-2 员工工资，只进流水不参与合同工对账）' : ''}：${r.rows} 笔（新增 ${r.inserted}、更新 ${r.updated}），${r.window[0]} ~ ${r.window[1]}，合计 ${money(r.total)}`);
+    if ((r.warnings || []).length) toast(r.warnings[0] + (r.warnings.length > 1 ? `（还有 ${r.warnings.length - 1} 条类似）` : ''), true);
+    await gustoLoadStatus();
+    gustoLoadRecon();
+    gustoLoadPayments();
+  } else {
+    toast((r && r.error) || '导入失败', true);
+  }
+}
+async function gustoImportUndo() {
+  if (!confirm('撤销最近一次导入？那次导入写入的付款记录会被删除。')) return;
+  const r = await api('/api/acct/gusto/import-undo', { method: 'POST' }).catch(e => ({ error: e.message }));
+  if (r && r.ok) {
+    toast(`已撤销，删除 ${r.removed} 笔`);
+    await gustoLoadStatus();
+    gustoLoadRecon();
+    gustoLoadPayments();
+  } else {
+    toast((r && r.error) || '撤销失败', true);
+  }
+}
+// OAuth 连接后从 Gusto 跳回来: /accounting?gusto=connected|error:...
+function gustoOauthResume() {
+  const g = new URLSearchParams(location.search).get('gusto');
+  if (!g) return;
+  history.replaceState(null, '', location.pathname);
+  showTab('gusto');
+  if (g === 'connected') toast('✅ Gusto 已连接，正在同步数据…');
+  else if (g === 'missing_credentials') toast('请先填写并保存 Gusto Client ID / Secret', true);
+  else if (g === 'state_mismatch') toast('授权校验失败（链接过期或 state 不匹配），请重新点「连接 Gusto」', true);
+  else if (g.startsWith('denied:')) toast('Gusto 授权被拒绝：' + g.slice(7), true);
+  else if (g.startsWith('error:')) toast('Gusto 连接失败：' + g.slice(6), true);
+}
+
 async function loadAll() {
   const [inv, stmt, claims, fees, refs] = await Promise.all([
     api('/api/acct/invoices').catch(() => []),

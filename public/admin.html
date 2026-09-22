@@ -29916,7 +29916,8 @@ async function saveWorkerPortalMode() {
 const INT_LABELS = {
   workbright:   { name: 'WorkBright',   desc: 'I-9 / Onboarding 平台', icon: '📋' },
   checkr:       { name: 'Checkr',       desc: '背景调查 Background Check', icon: '🔍' },
-  gusto:        { name: 'Gusto',        desc: 'Payroll / 税务 / W-2 / 1099', icon: '💰' },
+  gusto:        { name: 'Gusto',        desc: 'Payroll · 实发工资 API 同步（连接与对账在 /accounting「Gusto 工资」页签；config 存着授权 token，别在这里手改）', icon: '💰',
+    configHint: '{\n  "environment": "production"\n}' },
   twilio:       { name: 'Twilio',       desc: '短信通知 + Verify', icon: '📱' },
   docuseal:     { name: 'DocuSeal',     desc: '电子签名模板 (API Key + config.url)', icon: '📄' },
   taxbandits:   { name: 'TaxBandits',   desc: 'TIN 税号核对 / 1099 & W-2 报税', icon: '🔢',

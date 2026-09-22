@@ -170,10 +170,13 @@ function parseRoster(csvText) {
 //   现金/跳过行同样生效。
 // 返回 { csv, matches, unmatched, ambiguous, skipped, needConfirm, warnings, matchedCount, totalPay, untouched }
 const ALIAS_SKIP_WORDS = new Set(['现金', '发现金', 'cash', '跳过', 'skip', '忽略']);
-function buildGustoCsv(templateCsv, employees, opts) {
+
+// ── 员工 → 名册匹配核心 ──
+// entries/tokenCount 可以来自 parseRoster（CSV 模板）也可以来自 contractorEntries
+// （Gusto API 拉的合同工名册）。CSV 生成和实付对账共用这一套匹配、对照表和发工资
+// 时薪覆盖逻辑, 两边对人的口径才一致。
+function matchEmployees(entries, tokenCount, employees, opts) {
   opts = opts || {};
-  const mode = opts.mode === 'hours' ? 'hours' : 'bonus';
-  const roster = parseRoster(templateCsv);
   const warnings = [];
   const byRosterIdx = new Map();   // roster idx → { entry, sources: [{name, owed, rate, fuzzy}] }
   const unmatched = [], ambiguous = [], skipped = [], needConfirm = [];
@@ -224,8 +227,8 @@ function buildGustoCsv(templateCsv, employees, opts) {
     if (alias && alias.skip) { skipped.push({ name, owed, reason: alias.reason }); continue; }
     const empT = alias ? alias.toTokens : selfT;
     let best = 0, hits = [];
-    for (const entry of roster.entries) {
-      const sc = matchScore(empT, entry, roster.tokenCount);
+    for (const entry of entries) {
+      const sc = matchScore(empT, entry, tokenCount);
       if (sc > best) { best = sc; hits = [entry]; }
       else if (sc === best && sc > 0) hits.push(entry);
     }
@@ -258,10 +261,19 @@ function buildGustoCsv(templateCsv, employees, opts) {
       score: best,
       // 本人度: 工资表原名和这行名册的相似分。合并付款挑「hours 本人」时,
       // 对照表并进来的人（原名和名册无关, selfScore 0）不该抢本人位。
-      selfScore: alias ? matchScore(selfT, entry, roster.tokenCount) : best,
+      selfScore: alias ? matchScore(selfT, entry, tokenCount) : best,
       aliasTo: alias ? alias.toName : undefined,
     });
   }
+  return { byRosterIdx, unmatched, ambiguous, skipped, needConfirm, warnings };
+}
+
+function buildGustoCsv(templateCsv, employees, opts) {
+  opts = opts || {};
+  const mode = opts.mode === 'hours' ? 'hours' : 'bonus';
+  const roster = parseRoster(templateCsv);
+  const { byRosterIdx, unmatched, ambiguous, skipped, needConfirm, warnings } =
+    matchEmployees(roster.entries, roster.tokenCount, employees, opts);
 
   // 填 hours / fixed_amount, 其余单元格原样保留
   const outRows = [roster.headerRow];
@@ -365,4 +377,130 @@ function buildGustoCsv(templateCsv, employees, opts) {
   };
 }
 
-module.exports = { buildGustoCsv, parseRoster, parseCsv, stringifyCsv };
+// ── Gusto API 名册 → 匹配用 entries ──
+// contractors: Gusto API /v1/companies/{id}/contractors 拉回的合同工
+// （first_name/last_name 或 business_name、hourly_rate、uuid）。产出与 parseRoster
+// 相同形状的 {entries, tokenCount}, 供 matchEmployees 使用。
+function contractorEntries(contractors) {
+  const entries = (contractors || []).map((c, i) => {
+    const first = String(c.first_name || '').trim();
+    const last = String(c.last_name || '').trim();
+    const business = String(c.business_name || '').trim();
+    const rate = parseFloat(c.hourly_rate);
+    return {
+      idx: i,
+      uuid: String(c.uuid || ''),
+      cells: [],
+      label: business || `${last}, ${first}`.replace(/^, |, $/g, ''),
+      ssn: '',
+      rate: Number.isFinite(rate) && rate > 0 ? rate : null,
+      tokens: business ? nameTokens(business) : nameTokens(first, last),
+      lastTokens: business ? nameTokens(business) : nameTokens(last),
+      isBusiness: !!business && !last && !first,
+    };
+  }).filter(e => e.tokens.size);
+  const tokenCount = new Map();
+  for (const e of entries) for (const t of e.tokens) tokenCount.set(t, (tokenCount.get(t) || 0) + 1);
+  return { entries, tokenCount };
+}
+
+// ── 实付对账: 工资表应付 vs Gusto 实付 ──
+// contractors: API 合同工名册; invoices: [{id, invoice_number, company_name,
+// period_start, period_end, employees:[{name,total,rate,regHours,otHours}]}];
+// payments: gusto_payments 行（contractor_uuid/date/wage_total/...）;
+// opts: {aliases, payRates} 与 buildGustoCsv 同一套。
+// 按收款人汇总: expected = 各发票工资行经对照表/时薪覆盖折算后的应付,
+// paid = Gusto 实付合计。row.status:
+//   ok=对平(±1分) / unpaid=一分没付 / short=少付 / over=多付 / extra=工资表没有这人却付了钱
+// 对不上名册/歧义/同姓存疑的工资行进 problems（钱该付但没法挂到收款人头上）,
+// 对照表标现金的进 cash（本来就不走 Gusto）。
+function buildGustoRecon(contractors, invoices, payments, opts) {
+  opts = opts || {};
+  const { entries, tokenCount } = contractorEntries(contractors);
+  const byKey = new Map();   // contractor uuid（或姓名兜底键）→ 对账行
+  const rowFor = (key, label) => {
+    let row = byKey.get(key);
+    if (!row) {
+      row = { key, payee: label, expected: 0, paid: 0, diff: 0, status: '', fuzzy: false, expectedBy: [], payments: [] };
+      byKey.set(key, row);
+    }
+    return row;
+  };
+  const problems = [], cash = [], warnings = [];
+
+  for (const inv of invoices || []) {
+    const invRef = {
+      invoice_id: inv.id,
+      invoice_number: String(inv.invoice_number || ''),
+      company: String(inv.company_name || ''),
+      period_start: String(inv.period_start || ''),
+      period_end: String(inv.period_end || ''),
+    };
+    const m = matchEmployees(entries, tokenCount, inv.employees || [], opts);
+    for (const g of m.byRosterIdx.values()) {
+      const row = rowFor(g.entry.uuid || `name:${g.entry.label}`, g.entry.label);
+      for (const s of g.sources) {
+        row.expected = r2(row.expected + s.owed);
+        if (s.fuzzy) row.fuzzy = true;
+        row.expectedBy.push({ ...invRef, name: s.name, owed: s.owed, aliasTo: s.aliasTo || null, fuzzy: !!s.fuzzy });
+      }
+    }
+    for (const u of m.unmatched) problems.push({ kind: 'unmatched', name: u.name, owed: u.owed, aliasTo: u.aliasTo || null, ...invRef });
+    for (const a of m.ambiguous) problems.push({ kind: 'ambiguous', name: a.name, owed: a.owed, candidates: a.candidates, ...invRef });
+    for (const nc of m.needConfirm) problems.push({ kind: 'needConfirm', name: nc.name, owed: nc.owed, candidate: nc.candidate, ...invRef });
+    for (const s of m.skipped) cash.push({ name: s.name, owed: s.owed, reason: s.reason, ...invRef });
+    // 匹配过程的说明（发工资时薪折算、合并付款等）——加发票前缀去重后给 UI 展示
+    for (const w of m.warnings) {
+      const tagged = (invRef.invoice_number ? `[${invRef.invoice_number}] ` : '') + w;
+      if (!warnings.includes(tagged)) warnings.push(tagged);
+    }
+  }
+
+  for (const p of payments || []) {
+    // 名册行定位: 先按 contractor_uuid（API 同步的行都有）; 对不上再按姓名的
+    // 完全一致/包含档匹配——导入的付款报告行没有 uuid, 但姓名就是 Gusto 名册的
+    // 写法。低档位(同姓/近似拼写)不作数, 歧义不归行, 宁可单列成 extra。
+    let entry = null;
+    if (p.contractor_uuid) entry = entries.find(e => e.uuid && e.uuid === p.contractor_uuid) || null;
+    if (!entry && p.contractor_name) {
+      const t = nameTokens(p.contractor_name);
+      let best = 0, hits = [];
+      for (const e of entries) {
+        const sc = matchScore(t, e, tokenCount);
+        if (sc > best) { best = sc; hits = [e]; }
+        else if (sc === best && sc > 0) hits.push(e);
+      }
+      if (best >= 80 && hits.length === 1) entry = hits[0];
+    }
+    // Gusto 付了钱但当期工资表里没有应付的人 → 也成行（extra），对账不能只看工资表这一半
+    const key = entry
+      ? (entry.uuid || `name:${entry.label}`)
+      : (String(p.contractor_uuid || '') || `name:${String(p.contractor_name || '').trim()}`);
+    const row = rowFor(key, entry ? entry.label : (String(p.contractor_name || '').trim() || key));
+    row.paid = r2(row.paid + (Number(p.wage_total) || 0));
+    row.payments.push(p);
+  }
+
+  const rows = [...byKey.values()];
+  for (const row of rows) {
+    row.diff = r2(row.paid - row.expected);
+    row.status = row.expected <= 0 ? 'extra'
+      : row.paid <= 0 ? 'unpaid'
+      : Math.abs(row.diff) <= 0.01 ? 'ok'
+      : row.diff < 0 ? 'short' : 'over';
+    row.payments.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+  }
+  const sev = { unpaid: 0, short: 1, over: 2, extra: 3, ok: 4 };
+  rows.sort((a, b) => (sev[a.status] - sev[b.status]) || (Math.max(b.expected, b.paid) - Math.max(a.expected, a.paid)));
+
+  const totals = {
+    expected: r2(rows.reduce((s, x) => s + x.expected, 0)),
+    paid: r2(rows.reduce((s, x) => s + x.paid, 0)),
+    cash: r2(cash.reduce((s, x) => s + x.owed, 0)),
+    problems: r2(problems.reduce((s, x) => s + x.owed, 0)),
+  };
+  totals.diff = r2(totals.paid - totals.expected);
+  return { rows, cash, problems, warnings, totals };
+}
+
+module.exports = { buildGustoCsv, buildGustoRecon, contractorEntries, matchEmployees, parseRoster, parseCsv, stringifyCsv };
