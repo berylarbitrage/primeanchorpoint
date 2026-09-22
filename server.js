@@ -22661,8 +22661,9 @@ async function _gustoSyncPass(reason, opts) {
         if (!seen.has(l.uuid)) { db.prepare('DELETE FROM gusto_payments WHERE uuid=?').run(l.uuid); removed++; }
       }
       // API 覆盖到的窗口里, 过渡期手动导入的行被官方数据整体替换, 免得双份计数;
-      // 窗口之外(更早的历史)的导入行保留
-      replacedImports = db.prepare("DELETE FROM gusto_payments WHERE source='import' AND date>=? AND date<=?").run(startDate, endDate).changes;
+      // 窗口之外(更早的历史)的导入行保留。W-2 员工工资行不碰——contractor_payments
+      // API 里根本没有它们, 删了就真没了
+      replacedImports = db.prepare("DELETE FROM gusto_payments WHERE source='import' AND COALESCE(wage_type,'')!='W2' AND date>=? AND date<=?").run(startDate, endDate).changes;
     })();
     const result = { ok: true, reason: reason || '', contractors: contractors.length, payments: fetched.length,
       inserted, updated, removed, replaced_imports: replacedImports, window: [startDate, endDate], ms: Date.now() - started };
@@ -40095,7 +40096,7 @@ app.post('/api/acct/gusto/import', requireAdmin, requireRole('admin'), gustoRepo
       rows: parsed.payments.length, inserted, updated, window: [minD, maxD], total, uuids }));
   auditLog('gusto_report_import', req, { targetType: 'gusto_payments', targetId: req.file.originalname || 'report',
     details: { rows: parsed.payments.length, inserted, updated, window: [minD, maxD], total } });
-  res.json({ ok: true, rows: parsed.payments.length, inserted, updated, window: [minD, maxD], total, warnings: parsed.warnings });
+  res.json({ ok: true, kind: parsed.kind || 'contractor', rows: parsed.payments.length, inserted, updated, window: [minD, maxD], total, warnings: parsed.warnings });
 });
 
 // 撤销最近一次导入（删的只是那次导入写进来的行; 传错文件用）
@@ -40188,9 +40189,10 @@ app.get('/api/acct/gusto/recon', requireAdmin, requireAcctView, (req, res) => {
         } catch (e) { /* 模板解析不了就当没有名册 */ }
       }
     }
+    // W-2 员工工资不参与合同工对账（发票工资表里没有内勤员工）
     const payments = db.prepare(`SELECT uuid, contractor_uuid, contractor_name, date, payment_method, status,
         hours, wage, bonus, reimbursement, wage_total, source
-      FROM gusto_payments WHERE date>=? AND date<=?`).all(start, payEnd);
+      FROM gusto_payments WHERE COALESCE(wage_type,'')!='W2' AND date>=? AND date<=?`).all(start, payEnd);
     const recon = buildGustoRecon(contractors, invoices, payments, { aliases: _gustoAliases(), payRates: GUSTO_PAY_RATE_OVERRIDES });
     res.json({ ok: true, start, end, pay_end: payEnd, pay_pad_days: pad, invoice_count: invoices.length, roster_source: rosterSource, ...recon });
   } catch (e) { res.status(500).json({ error: e.message }); }

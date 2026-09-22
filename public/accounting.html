@@ -2359,7 +2359,7 @@ function renderGustoStatus() {
           <button class="btn btn-sm btn-outline" style="color:#b45309;border-color:#fcd34d" onclick="document.getElementById('gustoReportFile').click()">选择文件导入（CSV / Excel）</button>
           ${s.last_import ? `<span style="font-size:.74rem;color:var(--g500)">上次：${esc(String(s.last_import.at || '').slice(5, 16).replace('T', ' '))} ${esc(s.last_import.file || '')} · ${s.last_import.rows} 笔</span> <a style="cursor:pointer;font-size:.74rem;color:#dc2626;text-decoration:underline" onclick="gustoImportUndo()">撤销上次导入</a>` : ''}
         </div>
-        <div style="font-size:.74rem;color:var(--g500);line-height:1.7;margin-top:.3rem">Gusto 后台 → <b>Reports</b> → 合同工付款报告（contractor payments），选好日期范围导出 CSV / Excel 后传到这里。每周发完工资顺手导一次即可。API 过审连接后这个入口自动消失；API 覆盖到的时间段会自动改用官方数据，不会重复计数。</div>
+        <div style="font-size:.74rem;color:var(--g500);line-height:1.7;margin-top:.3rem">Gusto 后台 → <b>Reports</b> 导出后传到这里，两种都认：<b>Contractor payments</b> 合同工付款报告（参与按人对账），以及 <b>Year to date</b> 等 W-2 员工工资报表（只进流水展示）。文件开头带公司抬头没关系，会自动找表头。每周发完工资顺手导一次即可。API 过审连接后这个入口自动消失；API 覆盖到的时间段会自动改用官方数据，不会重复计数。</div>
       </div>` : ''}
       ${s.is_admin ? `
       <div style="font-size:.78rem;color:var(--g500);line-height:1.8;margin-top:.45rem">
@@ -2519,10 +2519,12 @@ function renderGustoPayList() {
   const q = (document.getElementById('gustoPaySearch').value || '').trim().toLowerCase();
   const rows = _gustoPayRows.filter(r => !q || (r.contractor_name || '').toLowerCase().includes(q)
     || (r.payment_method || '').toLowerCase().includes(q) || (r.status || '').toLowerCase().includes(q));
-  document.getElementById('gustoPayStats').textContent = `${rows.length} 笔 · 合计 ${money(rows.reduce((s2, x) => s2 + (+x.wage_total || 0), 0))}`;
+  const w2Sum = rows.filter(r => r.wage_type === 'W2').reduce((s2, x) => s2 + (+x.wage_total || 0), 0);
+  document.getElementById('gustoPayStats').textContent =
+    `${rows.length} 笔 · 合计 ${money(rows.reduce((s2, x) => s2 + (+x.wage_total || 0), 0))}${w2Sum ? `（其中 W-2 员工工资 ${money(w2Sum)}）` : ''}`;
   document.getElementById('gustoPayBody').innerHTML = rows.length ? rows.map(p => `<tr>
     <td style="white-space:nowrap">${esc(p.date)}</td>
-    <td><b>${esc(p.contractor_name || p.contractor_uuid)}</b></td>
+    <td><b>${esc(p.contractor_name || p.contractor_uuid)}</b>${p.wage_type === 'W2' ? ' <span title="W-2 员工工资，不参与合同工对账" style="font-size:.68rem;color:#1e40af;background:#dbeafe;border:1px solid #bfdbfe;border-radius:6px;padding:0 4px">W-2</span>' : ''}</td>
     <td>${esc(p.payment_method || '—')}</td>
     <td style="text-align:right">${p.hours != null ? (+p.hours).toFixed(2) : '—'}</td>
     <td style="text-align:right">${p.wage ? money(p.wage) : '—'}</td>
@@ -2548,7 +2550,7 @@ async function gustoImportFile(input) {
     if (!resp.ok && !r.error) r.error = 'HTTP ' + resp.status;
   } catch (e) { r = { error: e.message }; }
   if (r && r.ok) {
-    toast(`✅ 导入成功：${r.rows} 笔（新增 ${r.inserted}、更新 ${r.updated}），${r.window[0]} ~ ${r.window[1]}，合计 ${money(r.total)}`);
+    toast(`✅ 导入成功${r.kind === 'w2' ? '（W-2 员工工资，只进流水不参与合同工对账）' : ''}：${r.rows} 笔（新增 ${r.inserted}、更新 ${r.updated}），${r.window[0]} ~ ${r.window[1]}，合计 ${money(r.total)}`);
     if ((r.warnings || []).length) toast(r.warnings[0] + (r.warnings.length > 1 ? `（还有 ${r.warnings.length - 1} 条类似）` : ''), true);
     await gustoLoadStatus();
     gustoLoadRecon();
