@@ -39389,18 +39389,18 @@ app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 介绍费基本字段收取 (新增/编辑共用): 工头/工人的姓名电话、仓库和地址、面试时间、上工起止和时长
+// 介绍费基本字段收取 (新增/编辑共用): 工头/工人的姓名电话、仓库和地址、面试时间。
+// 面试去没去不在表单里收 — 登记后在列表专门一列标记 (interview-status 接口);
+// 上工时长也不手填 — 会计关联发票, 按发票账期算。
 const REFERRAL_FIELDS = [
   ['foreman_name', 120], ['foreman_phone', 40], ['worker_name', 120], ['worker_phone', 40],
-  ['warehouse_name', 200], ['warehouse_address', 300], ['interview_at', 40],
-  ['work_start_date', 20], ['work_end_date', 20], ['work_duration', 120], ['description', 2000],
+  ['warehouse_name', 200], ['warehouse_address', 300], ['interview_at', 40], ['description', 2000],
 ];
 function _referralBody(b) {
   const out = {};
   for (const [k, max] of REFERRAL_FIELDS) out[k] = String(b[k] || '').trim().slice(0, max);
   const amtNum = Number(b.amount);
   out.amount = (b.amount != null && b.amount !== '' && !isNaN(amtNum)) ? amtNum : null;
-  out.interview_status = ['', 'attended', 'no_show'].includes(String(b.interview_status || '')) ? String(b.interview_status || '') : '';
   return out;
 }
 // 新增介绍: 客服/会计/管理员都可录入, 一律进「待核查」等管理员定夺
@@ -39412,11 +39412,10 @@ app.post('/api/acct/referrals', requireAdmin, requireRole('accounting', 'admin',
   const atts = files.map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
   const r = db.prepare(`INSERT INTO referrals
     (foreman_name, foreman_phone, worker_name, worker_phone, warehouse_name, warehouse_address,
-     interview_at, interview_status, work_start_date, work_end_date, work_duration, amount, description, attachments, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+     interview_at, amount, description, attachments, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.warehouse_name, f.warehouse_address,
-      f.interview_at, f.interview_status, f.work_start_date, f.work_end_date, f.work_duration, f.amount, f.description,
-      JSON.stringify(atts), req.userName || '');
+      f.interview_at, f.amount, f.description, JSON.stringify(atts), req.userName || '');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
@@ -39437,12 +39436,11 @@ app.put('/api/acct/referrals/:id', requireAdmin, requireRole('accounting', 'admi
     atts = atts.filter(a => !rm.has(a.path));
   }
   (Array.isArray(req.files) ? req.files : []).forEach(fl => atts.push({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
+  // interview_status 不在这里改 (列表标记走 interview-status 接口), 免得编辑把已标的冲掉
   db.prepare(`UPDATE referrals SET foreman_name=?, foreman_phone=?, worker_name=?, worker_phone=?,
-      warehouse_name=?, warehouse_address=?, interview_at=?, interview_status=?, work_start_date=?, work_end_date=?,
-      work_duration=?, amount=?, description=?, attachments=?, updated_at=datetime('now') WHERE id=?`)
+      warehouse_name=?, warehouse_address=?, interview_at=?, amount=?, description=?, attachments=?, updated_at=datetime('now') WHERE id=?`)
     .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.warehouse_name, f.warehouse_address,
-      f.interview_at, f.interview_status, f.work_start_date, f.work_end_date, f.work_duration, f.amount, f.description,
-      JSON.stringify(atts), cur.id);
+      f.interview_at, f.amount, f.description, JSON.stringify(atts), cur.id);
   res.json({ success: true });
 });
 
