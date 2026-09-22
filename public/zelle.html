@@ -18,7 +18,7 @@ body { margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFa
 .btn-blue { background:var(--blue); border-color:var(--blue); color:#fff; font-weight:700; }
 .card { background:#fff; border:1px solid var(--g200); border-radius:12px; padding:.8rem .9rem; }
 .filters { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin:.7rem 0; }
-input, select { padding:.4rem .5rem; border:1px solid var(--g300); border-radius:8px; font-family:inherit; font-size:.85rem; background:#fff; }
+input, select, textarea { padding:.4rem .5rem; border:1px solid var(--g300); border-radius:8px; font-family:inherit; font-size:.85rem; background:#fff; }
 .chips { display:flex; gap:.45rem; flex-wrap:wrap; align-items:center; margin:.2rem 0 .7rem; font-size:.82rem; }
 .chip { background:#fff; border:1px solid var(--g200); border-radius:999px; padding:.2rem .7rem; }
 table { width:100%; border-collapse:collapse; }
@@ -59,7 +59,7 @@ tr.person:hover { background:#f8fafc; }
     <button class="btn" onclick="quick(90)">近90天</button>
     <button class="btn" onclick="quick('year')">今年</button>
     <button class="btn" onclick="quick('')">全部</button>
-    <input type="text" id="fQ" placeholder="搜姓名…" oninput="render()" style="width:160px">
+    <input type="text" id="fQ" placeholder="搜姓名 / Zelle号 / 备注…" oninput="render()" style="width:180px">
     <span style="flex:1"></span>
     <button class="btn" onclick="toggleAll()" id="btnAll">展开全部</button>
     <button class="btn" onclick="exportCsv()">⬇ 导出明细 CSV</button>
@@ -78,8 +78,30 @@ tr.person:hover { background:#f8fafc; }
     </table>
   </div>
   <p style="font-size:.75rem;color:var(--g400);margin-top:.55rem">
-    转出 = 我方账户付出去（银行流水里的负数）；转入 = 对方 Zelle 打进来。人名从银行描述里自动提取（如「Zelle payment to CESAR JPM99…」取 CESAR），同名自动合并；描述里没带名字的归到「(未识别)」。
+    转出 = 我方账户付出去（银行流水里的负数）；转入 = 对方 Zelle 打进来。人名从银行描述里自动提取（如「Zelle payment to CESAR JPM99…」取 CESAR），同名自动合并；描述里没带名字的归到「(未识别)」。点「✎ 备注」补 Zelle 号、备注、关联系统里的员工或公司。
   </p>
+</div>
+
+<!-- ✎ 收款人备注弹窗: Zelle号 + 关联系统里的员工/劳务公司/客户公司 + 备注 -->
+<div id="zcModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:50;align-items:center;justify-content:center;padding:16px">
+  <div class="card" style="max-width:460px;width:100%;padding:1.1rem 1.2rem 1rem">
+    <div style="font-weight:800;margin-bottom:.2rem">✎ 收款人备注 · <span id="zcName"></span></div>
+    <div style="font-size:.75rem;color:var(--g400);margin-bottom:.6rem">补上 Zelle 号（手机/邮箱）、备注这是谁，可关联到系统里的员工 / 劳务公司 / 客户公司。</div>
+    <label style="font-size:.76rem;color:var(--g500)">Zelle 号（手机 / 邮箱）</label>
+    <input id="zcHandle" type="text" placeholder="例：626-823-2361 或 name@mail.com" style="width:100%;margin:.15rem 0 .55rem">
+    <label style="font-size:.76rem;color:var(--g500)">关联到系统里的员工 / 公司</label>
+    <div id="zcPicked" style="display:none;margin:.15rem 0 .55rem"></div>
+    <div id="zcSearchBox" style="position:relative;margin:.15rem 0 .55rem">
+      <input id="zcSearch" type="text" placeholder="搜员工姓名 / 电话 / 公司名…" oninput="zcSearch()" onfocus="zcSearch()" autocomplete="off" style="width:100%">
+      <div id="zcList" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--g200);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);max-height:220px;overflow:auto;z-index:6"></div>
+    </div>
+    <label style="font-size:.76rem;color:var(--g500)">备注</label>
+    <textarea id="zcNote" rows="2" placeholder="这是谁、付的什么钱…" style="width:100%;margin:.15rem 0 .6rem;resize:vertical"></textarea>
+    <div style="display:flex;gap:.5rem;justify-content:flex-end">
+      <button class="btn" onclick="zcClose()">取消</button>
+      <button class="btn btn-blue" id="zcSaveBtn" onclick="zcSaveNow()">保存</button>
+    </div>
+  </div>
 </div>
 <script>
 let TOKEN = localStorage.getItem('acct_token') || localStorage.getItem('adminToken') || '';
@@ -87,8 +109,8 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&a
 const money = n => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 let _data = null, _openKeys = new Set(), _allOpen = false;
 
-async function api(path) {
-  const r = await fetch(path, { headers: { 'Authorization': 'Bearer ' + TOKEN } });
+async function api(path, opts) {
+  const r = await fetch(path, Object.assign({ headers: Object.assign({ 'Authorization': 'Bearer ' + TOKEN }, opts && opts.body ? { 'Content-Type': 'application/json' } : {}) }, opts || {}));
   if (r.status === 401 || r.status === 403) { alert('请先在会计对账页登录'); location.href = '/accounting'; throw new Error('unauthorized'); }
   return r.json();
 }
@@ -123,10 +145,11 @@ function _filtered() {
   const q = document.getElementById('fQ').value.trim().toLowerCase();
   const out = [];
   for (const p of (_data && _data.people) || []) {
-    if (q && !p.name.toLowerCase().includes(q)) continue;
+    const c = p.contact || {};
+    if (q && ![p.name, c.zelle_handle, c.link_label, c.note].join(' ').toLowerCase().includes(q)) continue;
     const txns = p.txns.filter(t => !dir || (dir === 'out' ? t.amount >= 0 : t.amount < 0));
     if (!txns.length) continue;
-    const r = { name: p.name, key: p.name.toLowerCase(), txns, out_total: 0, out_count: 0, in_total: 0, in_count: 0, first_date: '', last_date: '' };
+    const r = { name: p.name, key: p.key || p.name.toLowerCase(), contact: p.contact || null, txns, out_total: 0, out_count: 0, in_total: 0, in_count: 0, first_date: '', last_date: '' };
     for (const t of txns) {
       if (t.amount >= 0) { r.out_total += t.amount; r.out_count++; } else { r.in_total += -t.amount; r.in_count++; }
       if (t.date && (!r.first_date || t.date < r.first_date)) r.first_date = t.date;
@@ -154,9 +177,16 @@ function render() {
         <td style="white-space:nowrap">${esc(t.account)}</td>
         <td class="muted" style="font-size:.76rem;word-break:break-all">${esc(t.desc)}</td>
       </tr>`).join('');
+    const c = p.contact || {};
+    const cInfo = [
+      c.link_type && c.link_label ? `<div style="font-size:.76rem;color:#0f4c6b;font-weight:400">${ZC_TYPE[c.link_type] || '🔗'} · ${esc(c.link_label)}</div>` : '',
+      c.zelle_handle ? `<div style="font-size:.76rem;color:var(--g500);font-weight:400">📱 ${esc(c.zelle_handle)}</div>` : '',
+      c.note ? `<div style="font-size:.74rem;color:#b45309;font-weight:400">📝 ${esc(c.note)}</div>` : '',
+    ].join('');
     return `<tr class="person${open ? ' open' : ''}" onclick="toggleRow('${esc(p.key).replace(/'/g, "\\'")}')">
       <td><span class="caret">▶</span></td>
-      <td style="font-weight:700">${esc(p.name)} <span class="muted" style="font-weight:400;font-size:.76rem">· ${p.txns.length} 笔</span></td>
+      <td style="font-weight:700">${esc(p.name)} <span class="muted" style="font-weight:400;font-size:.76rem">· ${p.txns.length} 笔</span>
+        <a onclick="event.stopPropagation();editContact('${esc(p.key).replace(/'/g, "\\'")}')" style="cursor:pointer;color:#0ea5e9;font-size:.76rem;font-weight:400;text-decoration:underline;margin-left:.35rem">✎ 备注</a>${cInfo}</td>
       <td class="num">${p.out_count || '<span class="muted">—</span>'}</td>
       <td class="num">${p.out_count ? `<span class="out">−${money(p.out_total)}</span>` : '<span class="muted">—</span>'}</td>
       <td class="num">${p.in_count || '<span class="muted">—</span>'}</td>
@@ -177,12 +207,99 @@ function toggleAll() {
   document.getElementById('btnAll').textContent = _allOpen ? '收起全部' : '展开全部';
   render();
 }
+// ── ✎ 收款人备注: Zelle号 / 关联员工·公司 / 备注 ──
+const ZC_TYPE = { employee: '👤 员工', labor_company: '🏭 劳务公司', partner: '🏢 客户公司' };
+let _editKey = null, _editPicked = null, _zcHits = [], _zcT = null;
+function editContact(key) {
+  const p = ((_data && _data.people) || []).find(x => (x.key || x.name.toLowerCase()) === key);
+  if (!p) return;
+  _editKey = key;
+  const c = p.contact || {};
+  _editPicked = c.link_type && c.link_label ? { type: c.link_type, id: c.link_id, label: c.link_label, handle: '' } : null;
+  document.getElementById('zcName').textContent = p.name;
+  document.getElementById('zcHandle').value = c.zelle_handle || '';
+  document.getElementById('zcNote').value = c.note || '';
+  document.getElementById('zcSearch').value = '';
+  document.getElementById('zcList').style.display = 'none';
+  zcRenderPicked();
+  document.getElementById('zcModal').style.display = 'flex';
+  // 没关联过的: 直接拿 Zelle 姓名先搜一轮系统, 大概率一点就选上
+  if (!_editPicked && p.name && p.name !== '(未识别)') {
+    document.getElementById('zcSearch').value = p.name;
+    zcSearch();
+  }
+}
+function zcRenderPicked() {
+  const box = document.getElementById('zcPicked'), sBox = document.getElementById('zcSearchBox');
+  if (_editPicked) {
+    box.style.display = '';
+    sBox.style.display = 'none';
+    box.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;border:1px solid #a7f3d0;background:#ecfdf5;color:#065f46;border-radius:8px;padding:4px 10px;font-size:.84rem;font-weight:600">${ZC_TYPE[_editPicked.type] || '🔗'} · ${esc(_editPicked.label)}
+      <a onclick="zcClearPick()" title="重新选" style="cursor:pointer;color:#dc2626;font-weight:700">✕</a></span>`;
+  } else { box.style.display = 'none'; sBox.style.display = ''; }
+}
+function zcClearPick() { _editPicked = null; zcRenderPicked(); setTimeout(() => document.getElementById('zcSearch').focus(), 0); }
+function zcSearch() {
+  clearTimeout(_zcT);
+  const q = document.getElementById('zcSearch').value.trim();
+  const list = document.getElementById('zcList');
+  if (q.length < 2) { list.style.display = 'none'; return; }
+  _zcT = setTimeout(async () => {
+    let r;
+    try { r = await api('/api/plaid/zelle-link-search?q=' + encodeURIComponent(q)); } catch (e) { return; }
+    if (document.getElementById('zcSearch').value.trim() !== q) return;
+    _zcHits = (r && r.matches) || [];
+    list.innerHTML = _zcHits.length ? _zcHits.map((m, i) =>
+      `<a onclick="zcPick(${i})" style="display:block;padding:.4rem .6rem;border-bottom:1px solid #f1f5f9;cursor:pointer;font-size:.84rem;color:#1f2937;text-decoration:none">${ZC_TYPE[m.type] || '🔗'} · <b>${esc(m.label)}</b>${m.sub ? ` <span class="muted" style="font-size:.76rem">${esc(m.sub)}</span>` : ''}</a>`).join('')
+      : '<div class="muted" style="padding:.45rem .6rem;font-size:.8rem">系统里没搜到，可以只填备注</div>';
+    list.style.display = '';
+  }, 300);
+}
+function zcPick(i) {
+  const m = _zcHits[i];
+  if (!m) return;
+  _editPicked = m;
+  const h = document.getElementById('zcHandle');
+  if (!h.value.trim() && m.handle) h.value = m.handle; // 带出对方存过的电话/Zelle号
+  document.getElementById('zcList').style.display = 'none';
+  zcRenderPicked();
+}
+function zcClose() { document.getElementById('zcModal').style.display = 'none'; _editKey = null; }
+async function zcSaveNow() {
+  if (!_editKey) return;
+  const p = ((_data && _data.people) || []).find(x => (x.key || x.name.toLowerCase()) === _editKey);
+  const btn = document.getElementById('zcSaveBtn');
+  btn.disabled = true;
+  try {
+    const body = {
+      name_key: _editKey,
+      display_name: p ? p.name : '',
+      zelle_handle: document.getElementById('zcHandle').value.trim(),
+      note: document.getElementById('zcNote').value.trim(),
+      link_type: _editPicked ? _editPicked.type : '',
+      link_id: _editPicked ? _editPicked.id : null,
+      link_label: _editPicked ? _editPicked.label : '',
+    };
+    const r = await api('/api/plaid/zelle-contacts', { method: 'POST', body: JSON.stringify(body) });
+    if (r && r.error) throw new Error(r.error);
+    if (p) p.contact = { zelle_handle: body.zelle_handle, note: body.note, link_type: body.link_type, link_id: body.link_id, link_label: body.link_label };
+    zcClose();
+    render();
+  } catch (e) { alert(e.message || '保存失败'); }
+  btn.disabled = false;
+}
+document.addEventListener('click', e => {
+  const list = document.getElementById('zcList');
+  if (list && !e.target.closest('#zcSearchBox')) list.style.display = 'none';
+});
 function exportCsv() {
   const list = _filtered();
   const escCsv = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-  const lines = ['收款人,日期,方向,金额,账户,原始描述'];
+  const lines = ['收款人,Zelle号,关联,备注,日期,方向,金额,账户,原始描述'];
   for (const p of list) for (const t of p.txns) {
-    lines.push([p.name, t.date, t.amount >= 0 ? '转出' : '转入', (-t.amount).toFixed(2), t.account, t.desc].map(escCsv).join(','));
+    const c = p.contact || {};
+    const link = c.link_type && c.link_label ? (ZC_TYPE[c.link_type] || '') .replace(/^\S+\s/, '') + '·' + c.link_label : '';
+    lines.push([p.name, c.zelle_handle || '', link, c.note || '', t.date, t.amount >= 0 ? '转出' : '转入', (-t.amount).toFixed(2), t.account, t.desc].map(escCsv).join(','));
   }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
