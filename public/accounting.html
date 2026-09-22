@@ -184,6 +184,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <option value="approved">✅ 同意支付 · 待付款</option>
         <option value="paid">💰 已付款</option>
         <option value="rejected">✖ 拒绝支付</option>
+        <option value="noshow">❌ 没去面试</option>
       </select>
       <button class="btn btn-blue" id="btnRefAdd" onclick="openRefAdd()" style="display:none">＋ 新增介绍</button>
       <span id="refStats" style="font-size:.8rem;color:var(--g500)"></span>
@@ -201,34 +202,49 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <div class="card" style="max-width:560px;width:100%;padding:1.2rem 1.2rem 1rem;max-height:92vh;overflow:auto">
       <div id="refAddTitle" style="font-weight:800;margin-bottom:.2rem">🤝 新增介绍</div>
       <div id="refAddHint" style="font-size:.76rem;color:var(--g500);margin-bottom:.7rem"></div>
+      <label style="font-size:.76rem;color:var(--g500)">工头（介绍人）<span style="color:#dc2626">*</span></label>
+      <select id="raForemanSel" onchange="raForemanChanged()" style="width:100%;margin:.15rem 0 .55rem"><option value="">加载中…</option></select>
+      <div id="raForemanNewWrap" style="display:none;border:1px dashed var(--g300);border-radius:8px;padding:.5rem .6rem;margin-bottom:.55rem;background:#f8fafc">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.2rem .6rem">
+          <div><label style="font-size:.74rem;color:var(--g500)">新工头姓名 <span style="color:#dc2626">*</span></label>
+            <input type="text" id="raForemanName" placeholder="介绍人 / 工头" style="width:100%;margin-top:.15rem"></div>
+          <div><label style="font-size:.74rem;color:var(--g500)">新工头电话</label>
+            <input type="tel" id="raForemanPhone" placeholder="例：312-555-0123" style="width:100%;margin-top:.15rem"></div>
+        </div>
+        <div style="font-size:.7rem;color:var(--g400);margin-top:.3rem">保存后会登记进工头名单，下次直接下拉选。</div>
+      </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.2rem .6rem">
-        <div><label style="font-size:.76rem;color:var(--g500)">工头姓名 <span style="color:#dc2626">*</span></label>
-          <input type="text" id="raForemanName" placeholder="介绍人 / 工头" style="width:100%;margin:.15rem 0 .55rem"></div>
-        <div><label style="font-size:.76rem;color:var(--g500)">工头电话</label>
-          <input type="tel" id="raForemanPhone" placeholder="例：312-555-0123" style="width:100%;margin:.15rem 0 .55rem"></div>
         <div><label style="font-size:.76rem;color:var(--g500)">被介绍人姓名 <span style="color:#dc2626">*</span></label>
           <input type="text" id="raWorkerName" placeholder="来上班的工人" style="width:100%;margin:.15rem 0 .55rem"></div>
         <div><label style="font-size:.76rem;color:var(--g500)">被介绍人电话</label>
           <input type="tel" id="raWorkerPhone" placeholder="例：773-555-0123" style="width:100%;margin:.15rem 0 .55rem"></div>
       </div>
       <label style="font-size:.76rem;color:var(--g500)">工作仓库</label>
-      <input type="text" id="raWh" list="raWhList" placeholder="例：Wecharmer" style="width:100%;margin:.15rem 0 .55rem">
-      <datalist id="raWhList"></datalist>
-      <label style="font-size:.76rem;color:var(--g500)">仓库地址</label>
+      <select id="raWhSel" onchange="raWhChanged()" style="width:100%;margin:.15rem 0 .55rem"><option value="">加载中…</option></select>
+      <input type="text" id="raWh" placeholder="输入新仓库名" style="display:none;width:100%;margin:0 0 .55rem">
+      <label style="font-size:.76rem;color:var(--g500)">仓库地址 <span style="font-size:.7rem;color:var(--g400)">（选仓库自动带出，可改）</span></label>
       <input type="text" id="raWhAddr" placeholder="例：1000 Bilter Rd, Aurora, IL" style="width:100%;margin:.15rem 0 .55rem">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.2rem .6rem">
-        <div><label style="font-size:.76rem;color:var(--g500)">面试时间</label>
+        <div><label style="font-size:.76rem;color:var(--g500)">面试时间（HR 约的）</label>
           <input type="datetime-local" id="raInterview" style="width:100%;margin:.15rem 0 .55rem"></div>
-        <div><label style="font-size:.76rem;color:var(--g500)">介绍费金额（$）</label>
-          <input type="number" step="0.01" min="0" id="raAmount" placeholder="例：100.00" style="width:100%;margin:.15rem 0 .55rem"></div>
+        <div><label style="font-size:.76rem;color:var(--g500)">面试去没去</label>
+          <select id="raInterviewSt" style="width:100%;margin:.15rem 0 .55rem">
+            <option value="">— 还不知道 / 待标记 —</option>
+            <option value="attended">✅ 去了</option>
+            <option value="no_show">❌ 没去</option>
+          </select></div>
         <div><label style="font-size:.76rem;color:var(--g500)">开始上工日期</label>
           <input type="date" id="raWorkStart" onchange="raDurHint()" style="width:100%;margin:.15rem 0 .55rem"></div>
         <div><label style="font-size:.76rem;color:var(--g500)">离职日期（仍在职不填）</label>
           <input type="date" id="raWorkEnd" onchange="raDurHint()" style="width:100%;margin:.15rem 0 .55rem"></div>
       </div>
       <div id="raDurMsg" style="font-size:.74rem;color:#0f4c6b;margin-bottom:.4rem"></div>
-      <label style="font-size:.76rem;color:var(--g500)">工作时长备注（可选）</label>
-      <input type="text" id="raDuration" placeholder="例：已做满 30 天，符合介绍费条件" style="width:100%;margin:.15rem 0 .55rem">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.2rem .6rem">
+        <div><label style="font-size:.76rem;color:var(--g500)">介绍费金额（$）</label>
+          <input type="number" step="0.01" min="0" id="raAmount" placeholder="例：100.00" style="width:100%;margin:.15rem 0 .55rem"></div>
+        <div><label style="font-size:.76rem;color:var(--g500)">工作时长备注（可选）</label>
+          <input type="text" id="raDuration" placeholder="实际做多久以关联发票为准" style="width:100%;margin:.15rem 0 .55rem"></div>
+      </div>
       <label style="font-size:.76rem;color:var(--g500)">备注（可选）</label>
       <textarea id="raDesc" rows="2" placeholder="其他要说明的情况…" style="width:100%;margin:.15rem 0 .55rem;font-family:inherit;resize:vertical"></textarea>
       <label style="font-size:.76rem;color:var(--g500)">凭证文件（可多选，PDF 或图片）</label>
@@ -1029,7 +1045,7 @@ async function claimApprove(id, action) {
 }
 
 // ── 🤝 介绍费 Referral: 录入 → 会计关联发票 → 管理员核查决定支付 → 会计记付款关联银行记录 ──
-let _refList = [], _refEditId = null, _raRemove = new Set(), _raWhFilled = false;
+let _refList = [], _refEditId = null, _raRemove = new Set();
 // 综合状态: 待核查 / 同意支付(待付款) / 已付款(按会计付款批注) / 拒绝支付
 function _refOverall(r) {
   if (r.review_status === 'rejected') return 'rejected';
@@ -1049,12 +1065,58 @@ function _refPersonCell(name, phone) {
   return `<div style="font-weight:600;white-space:nowrap">${esc(name || '—')}</div>`
     + (phone ? `<a href="tel:${esc(phone)}" style="font-size:.76rem;color:#0f4c6b;text-decoration:none;white-space:nowrap">📞 ${esc(phone)}</a>` : '');
 }
+// 记录还能不能改 (编辑/标面试): 核查过的只有管理员能动
+function _refCanEdit(r) {
+  return USER.role === 'admin' || (['accounting', 'cs'].includes(USER.role) && r.review_status === 'pending');
+}
+// 面试列: HR 约的时间 + 去没去 (约了未必去, 列表里一键标)
+function _refInterviewCell(r) {
+  const dt = (r.interview_at || '').replace('T', ' ');
+  const chip = r.interview_status === 'attended'
+    ? '<span style="display:inline-block;background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;border-radius:6px;padding:1px 7px;font-size:.7rem;font-weight:700;white-space:nowrap">✅ 面试到场</span>'
+    : r.interview_status === 'no_show'
+      ? '<span style="display:inline-block;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:6px;padding:1px 7px;font-size:.7rem;font-weight:700;white-space:nowrap">❌ 没去面试</span>'
+      : (dt ? '<span style="display:inline-block;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;border-radius:6px;padding:1px 7px;font-size:.7rem;white-space:nowrap">⏳ 去没去待标记</span>' : '');
+  const L = (st, label) => `<a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="refMarkInterview(${r.id},'${st}')">${label}</a>`;
+  const links = _refCanEdit(r) && dt
+    ? `<div style="margin-top:2px;white-space:nowrap;font-size:.7rem;color:var(--g400)">${
+        r.interview_status === 'attended' ? `${L('no_show', '改为没去')} · ${L('', '清除')}`
+        : r.interview_status === 'no_show' ? `${L('attended', '改为去了')} · ${L('', '清除')}`
+        : `标记：${L('attended', '去了')} · ${L('no_show', '没去')}`}</div>`
+    : '';
+  return `${dt ? `<div style="white-space:nowrap">${esc(dt)}</div>` : '<span style="color:var(--g400)">—</span>'}${chip ? `<div style="margin-top:2px">${chip}</div>` : ''}${links}`;
+}
+// 按关联发票算工作区间: 做了多久看发票才知道 — 取所有关联发票账期的最早起~最晚止
+function _refInvPeriod(r) {
+  const invs = r.invoices || [];
+  const starts = invs.map(v => v.period_start).filter(Boolean).sort();
+  const ends = invs.map(v => v.period_end).filter(Boolean).sort();
+  if (!starts.length && !ends.length) return null;
+  const start = starts[0] || '', end = ends[ends.length - 1] || '';
+  let days = null;
+  if (start && end) {
+    const d = Math.round((new Date(end + 'T00:00:00') - new Date(start + 'T00:00:00')) / 86400000) + 1;
+    if (d > 0) days = d;
+  }
+  return { start, end, days };
+}
+async function refMarkInterview(id, st) {
+  try {
+    const r = await api(`/api/acct/referrals/${id}/interview-status`, { method: 'POST', body: JSON.stringify({ status: st }) });
+    if (r && r.error) throw new Error(r.error);
+    const x = _refList.find(v => v.id === id);
+    if (x) x.interview_status = st;
+    renderRefList();
+    toast(st === 'attended' ? '✅ 已标记：面试去了' : st === 'no_show' ? '已标记：没去面试' : '已清除标记');
+  } catch (e) { toast(e.message || '操作失败', true); }
+}
 function renderRefList() {
   const q = (document.getElementById('refSearch').value || '').trim().toLowerCase();
   const flt = document.getElementById('refFilter').value;
   let list = _refList;
   if (q) list = list.filter(r => [r.foreman_name, r.foreman_phone, r.worker_name, r.worker_phone, r.warehouse_name, r.warehouse_address, r.description].join(' ').toLowerCase().includes(q));
-  if (flt) list = list.filter(r => _refOverall(r) === flt);
+  if (flt === 'noshow') list = list.filter(r => r.interview_status === 'no_show');
+  else if (flt) list = list.filter(r => _refOverall(r) === flt);
   const pendN = _refList.filter(r => r.review_status === 'pending').length;
   const waitN = _refList.filter(r => _refOverall(r) === 'approved').length;
   const paidN = _refList.filter(r => _refOverall(r) === 'paid').length;
@@ -1065,11 +1127,14 @@ function renderRefList() {
   badge.textContent = pendN;
   document.getElementById('refBody').innerHTML = list.length ? list.map(r => {
     const dur = _refDuration(r);
-    const workCell = r.work_start_date
+    const ip = _refInvPeriod(r);
+    const workCell = (r.work_start_date
       ? `<div style="white-space:nowrap">${esc(r.work_start_date)}${r.work_end_date ? ' ~ ' + esc(r.work_end_date) : ' 起'}${r.work_end_date ? '' : ' <span style="font-size:.68rem;background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;border-radius:4px;padding:0 4px">在职</span>'}</div>`
         + (dur ? `<div style="font-size:.76rem;color:var(--g500)">已工作 ${esc(dur)}</div>` : '')
         + (r.work_duration ? `<div style="font-size:.7rem;color:var(--g400);max-width:160px">${esc(r.work_duration)}</div>` : '')
-      : (r.work_duration ? `<div style="font-size:.76rem;color:var(--g500)">${esc(r.work_duration)}</div>` : '<span style="color:var(--g400)">—</span>');
+      : (r.work_duration ? `<div style="font-size:.76rem;color:var(--g500)">${esc(r.work_duration)}</div>` : (ip ? '' : '<span style="color:var(--g400)">—</span>')))
+      // 做了多久以发票为准: 关联发票账期的最早起~最晚止
+      + (ip ? `<div style="font-size:.72rem;color:#0f4c6b;white-space:nowrap;margin-top:2px" title="按关联发票账期算">🧾 按发票 ${esc(ip.start || '?')} ~ ${esc(ip.end || '?')}${ip.days ? ` · ${ip.days} 天` : ''}</div>` : '');
     const atts = Array.isArray(r.attachments) ? r.attachments : [];
     const attHtml = atts.length ? `<div style="margin-top:2px">${atts.map((a, i) => `<a href="${esc(a.path)}" target="_blank" title="${esc(a.name || '')}" style="color:#0f4c6b;text-decoration:underline;font-size:.72rem;margin-right:5px;white-space:nowrap">📎${atts.length > 1 ? i + 1 : ''}</a>`).join('')}</div>` : '';
     // 关联发票 (会计): 每张可点开看, 加「关联」编辑入口
@@ -1097,14 +1162,14 @@ function renderRefList() {
       : r.review_status === 'rejected'
         ? '<span style="color:var(--g400)">—</span>'
         : '<span style="font-size:.72rem;color:var(--g400)">核查通过后可记录</span>';
-    const canEdit = (USER.role === 'admin') || (['accounting', 'cs'].includes(USER.role) && r.review_status === 'pending');
+    const canEdit = _refCanEdit(r);
     const ops = `${canEdit ? `<a style="cursor:pointer;color:#0f4c6b;font-size:.78rem;text-decoration:underline" onclick="openRefAdd(${r.id})">编辑</a>` : ''}`
       + `${USER.role === 'admin' ? ` <a style="cursor:pointer;color:#b91c1c;font-size:.78rem;margin-left:6px" title="删除这条介绍记录" onclick="refDelete(${r.id})">🗑</a>` : ''}`;
     return `<tr${r.review_status === 'rejected' ? ' style="opacity:.55"' : ''}>
       <td>${_refPersonCell(r.foreman_name, r.foreman_phone)}</td>
       <td>${_refPersonCell(r.worker_name, r.worker_phone)}${attHtml}</td>
       <td style="max-width:220px"><div style="font-weight:600">${esc(r.warehouse_name || '—')}</div>${r.warehouse_address ? `<div style="font-size:.74rem;color:var(--g500)">${esc(r.warehouse_address)}</div>` : ''}</td>
-      <td style="white-space:nowrap;font-size:.8rem">${esc((r.interview_at || '').replace('T', ' ') || '—')}</td>
+      <td style="font-size:.8rem">${_refInterviewCell(r)}</td>
       <td style="font-size:.8rem">${workCell}</td>
       <td style="text-align:right;font-weight:700;color:#0f4c6b;white-space:nowrap">${r.amount != null ? money(r.amount) : '—'}</td>
       <td style="max-width:200px">${invCell}</td>
@@ -1115,6 +1180,8 @@ function renderRefList() {
   }).join('') : '<tr><td colspan="10" style="color:var(--g400);padding:1rem">暂无介绍费记录，点「＋ 新增介绍」添加。</td></tr>';
 }
 // ➕ 新增 / 编辑介绍 (编辑只限待核查的记录; 管理员随时可改)
+// 工头从名单下拉选 (foremen 表, 「＋新工头」登记进名单); 仓库下拉选、地址自动带出可改。
+let _refOpts = null;
 async function openRefAdd(id) {
   _refEditId = id || null;
   _raRemove = new Set();
@@ -1122,14 +1189,15 @@ async function openRefAdd(id) {
   document.getElementById('refAddTitle').textContent = r ? '🤝 编辑介绍' : '🤝 新增介绍';
   document.getElementById('refAddHint').textContent = r
     ? '改完保存即可；管理员核查过的记录只有管理员能改。'
-    : '填写工头和被介绍工人的信息；提交后由会计关联发票、管理员核查决定是否支付。';
-  document.getElementById('raForemanName').value = r ? r.foreman_name || '' : '';
-  document.getElementById('raForemanPhone').value = r ? r.foreman_phone || '' : '';
+    : '选工头、填被介绍工人的信息；提交后由会计关联发票、管理员核查决定是否支付。';
+  document.getElementById('raForemanName').value = '';
+  document.getElementById('raForemanPhone').value = '';
   document.getElementById('raWorkerName').value = r ? r.worker_name || '' : '';
   document.getElementById('raWorkerPhone').value = r ? r.worker_phone || '' : '';
-  document.getElementById('raWh').value = r ? r.warehouse_name || '' : '';
   document.getElementById('raWhAddr').value = r ? r.warehouse_address || '' : '';
+  document.getElementById('raWh').value = '';
   document.getElementById('raInterview').value = r ? r.interview_at || '' : '';
+  document.getElementById('raInterviewSt').value = r ? r.interview_status || '' : '';
   document.getElementById('raAmount').value = r && r.amount != null ? r.amount : '';
   document.getElementById('raWorkStart').value = r ? r.work_start_date || '' : '';
   document.getElementById('raWorkEnd').value = r ? r.work_end_date || '' : '';
@@ -1139,13 +1207,48 @@ async function openRefAdd(id) {
   raDurHint();
   raRenderOldFiles();
   document.getElementById('refAddModal').style.display = 'flex';
-  if (!_raWhFilled) {
-    _raWhFilled = true;
-    try {
-      const o = await api('/api/plaid/ann-options');
-      const names = [...new Set([...(o.companies || []), ...(o.warehouses || [])])];
-      document.getElementById('raWhList').innerHTML = names.map(n => `<option value="${esc(n)}"></option>`).join('');
-    } catch (e) {}
+  // 每次打开都取一次最新名单 (工头/仓库可能刚加过)
+  try { _refOpts = await api('/api/acct/referral-options'); } catch (e) { _refOpts = _refOpts || { foremen: [], warehouses: [] }; }
+  raFillSelects(r);
+}
+const _phDigits = p => String(p || '').replace(/\D/g, '');
+function raFillSelects(r) {
+  const fm = (_refOpts && _refOpts.foremen) || [];
+  const whs = (_refOpts && _refOpts.warehouses) || [];
+  const fSel = document.getElementById('raForemanSel');
+  fSel.innerHTML = '<option value="">— 选择工头 —</option>'
+    + fm.map((f, i) => `<option value="${i}">${esc(f.name)}${f.phone ? ' · ' + esc(f.phone) : ''}</option>`).join('')
+    + '<option value="__new__">＋ 新工头（登记进名单）</option>';
+  const wSel = document.getElementById('raWhSel');
+  wSel.innerHTML = '<option value="">— 选择仓库 —</option>'
+    + whs.map((w, i) => `<option value="${i}">${esc(w.name)}${w.address ? '　—　' + esc(w.address) : ''}</option>`).join('')
+    + '<option value="__new__">＋ 其他 / 新仓库</option>';
+  // 编辑时按 姓名+电话 / 仓库名 回填选中项; 对不上就落到手输
+  if (r && r.foreman_name) {
+    const fi = fm.findIndex(f => String(f.name).trim().toLowerCase() === String(r.foreman_name).trim().toLowerCase() && _phDigits(f.phone) === _phDigits(r.foreman_phone));
+    if (fi >= 0) fSel.value = String(fi);
+    else { fSel.value = '__new__'; document.getElementById('raForemanName').value = r.foreman_name || ''; document.getElementById('raForemanPhone').value = r.foreman_phone || ''; }
+  } else fSel.value = '';
+  raForemanChanged();
+  if (r && r.warehouse_name) {
+    const wi = whs.findIndex(w => String(w.name).trim().toLowerCase() === String(r.warehouse_name).trim().toLowerCase());
+    if (wi >= 0) wSel.value = String(wi);
+    else { wSel.value = '__new__'; document.getElementById('raWh').value = r.warehouse_name || ''; }
+  } else wSel.value = '';
+  raWhChanged(true);
+}
+function raForemanChanged() {
+  document.getElementById('raForemanNewWrap').style.display = document.getElementById('raForemanSel').value === '__new__' ? '' : 'none';
+}
+// keepAddr=true 用于打开弹窗回填时: 不覆盖记录里已存的地址
+function raWhChanged(keepAddr) {
+  const v = document.getElementById('raWhSel').value;
+  const manual = v === '__new__';
+  document.getElementById('raWh').style.display = manual ? '' : 'none';
+  if (keepAddr === true) return;
+  if (!manual && v !== '') {
+    const w = ((_refOpts && _refOpts.warehouses) || [])[parseInt(v)];
+    if (w && w.address) document.getElementById('raWhAddr').value = w.address;
   }
 }
 function closeRefAdd() { document.getElementById('refAddModal').style.display = 'none'; }
@@ -1175,22 +1278,42 @@ function raToggleRemove(p) {
   raRenderOldFiles();
 }
 async function submitRefAdd() {
-  const fName = document.getElementById('raForemanName').value.trim();
+  // 工头: 下拉选的取名单里的姓名电话; 「＋新工头」先登记进名单再提交
+  const fSelV = document.getElementById('raForemanSel').value;
+  const isNewForeman = fSelV === '__new__';
+  let fName, fPhone;
+  if (isNewForeman) {
+    fName = document.getElementById('raForemanName').value.trim();
+    fPhone = document.getElementById('raForemanPhone').value.trim();
+  } else {
+    const f = ((_refOpts && _refOpts.foremen) || [])[parseInt(fSelV)];
+    fName = f ? f.name : '';
+    fPhone = f ? (f.phone || '') : '';
+  }
+  if (!fName) return toast(isNewForeman ? '请填写新工头姓名' : '请选择工头', true);
   const wName = document.getElementById('raWorkerName').value.trim();
-  if (!fName) return toast('请填写工头姓名', true);
   if (!wName) return toast('请填写被介绍人姓名', true);
+  const whSelV = document.getElementById('raWhSel').value;
+  const whName = whSelV === '__new__'
+    ? document.getElementById('raWh').value.trim()
+    : (((_refOpts && _refOpts.warehouses) || [])[parseInt(whSelV)] || {}).name || '';
   const ws = document.getElementById('raWorkStart').value, we = document.getElementById('raWorkEnd').value;
   if (ws && we && we < ws) return toast('离职日期不能早于上工日期', true);
   const btn = document.getElementById('raSubmitBtn');
   btn.disabled = true; btn.textContent = '提交中…';
   try {
+    if (isNewForeman) {
+      // 登记失败不挡提交 (介绍记录自己存了姓名电话), 只是名单里没有
+      try { await api('/api/acct/referral-foremen', { method: 'POST', body: JSON.stringify({ name: fName, phone: fPhone }) }); } catch (e) {}
+    }
     const fd = new FormData();
     fd.append('foreman_name', fName);
-    fd.append('foreman_phone', document.getElementById('raForemanPhone').value.trim());
+    fd.append('foreman_phone', fPhone);
     fd.append('worker_name', wName);
     fd.append('worker_phone', document.getElementById('raWorkerPhone').value.trim());
-    fd.append('warehouse_name', document.getElementById('raWh').value.trim());
+    fd.append('warehouse_name', whName);
     fd.append('warehouse_address', document.getElementById('raWhAddr').value.trim());
+    fd.append('interview_status', document.getElementById('raInterviewSt').value);
     fd.append('interview_at', document.getElementById('raInterview').value || '');
     fd.append('work_start_date', ws || '');
     fd.append('work_end_date', we || '');
@@ -1231,8 +1354,8 @@ function riRenderList() {
     ? [...sel, ...rest].map(v => `<label style="display:flex;align-items:center;gap:.45rem;padding:.3rem .25rem;border-bottom:1px solid #eef2f7;cursor:pointer;${_riSel.has(v.id) ? 'background:#eff6ff' : ''}">
         <input type="checkbox" data-inv="${v.id}" ${_riSel.has(v.id) ? 'checked' : ''} onchange="riToggle(this)">
         <b style="white-space:nowrap">${esc(v.invoice_number)}</b>
-        <span style="white-space:nowrap;color:var(--g500);font-size:.76rem">${esc(v.invoice_date || '')}</span>
         <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.company_name || '')}</span>
+        <span style="white-space:nowrap;color:var(--g500);font-size:.74rem" title="发票账期，用来算工人做了多久">${(v.period_start || v.period_end) ? `账期 ${esc(v.period_start || '?')} ~ ${esc(v.period_end || '?')}` : esc(v.invoice_date || '')}</span>
         <b style="white-space:nowrap">${money(v.subtotal)}</b>
       </label>`).join('')
     : '<span style="color:var(--g400)">没有符合条件的发票</span>';
@@ -1245,7 +1368,11 @@ function riToggle(cb) {
   riSumRefresh();
 }
 function riSumRefresh() {
-  document.getElementById('riSum').textContent = _riSel.size ? `已选 ${_riSel.size} 张发票` : '未选择发票';
+  const sel = _invList.filter(v => _riSel.has(v.id));
+  const ip = _refInvPeriod({ invoices: sel });
+  document.getElementById('riSum').textContent = _riSel.size
+    ? `已选 ${_riSel.size} 张发票${ip ? ` · 按发票算工作区间 ${ip.start || '?'} ~ ${ip.end || '?'}${ip.days ? `（${ip.days} 天）` : ''}` : ''}`
+    : '未选择发票';
 }
 async function saveRefInv() {
   if (!_riRefId) return;

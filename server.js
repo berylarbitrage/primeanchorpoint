@@ -879,6 +879,8 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS referrals (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`); } catch(e) {}
+// 面试去没去: HR 约了面试他未必去 — '' 未标记 | attended 去了 | no_show 没去
+try { db.exec(`ALTER TABLE referrals ADD COLUMN interview_status TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL"); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) {}
@@ -39380,7 +39382,7 @@ app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
     const allIds = new Set();
     rows.forEach(r => { try { (JSON.parse(r.invoice_ids || '[]') || []).forEach(i => { const n = parseInt(i); if (n) allIds.add(n); }); } catch (e) {} });
     const invMap = {};
-    if (allIds.size) db.prepare(`SELECT id, invoice_number, invoice_date, company_name, subtotal FROM invoices
+    if (allIds.size) db.prepare(`SELECT id, invoice_number, invoice_date, company_name, subtotal, period_start, period_end FROM invoices
       WHERE id IN (${[...allIds].map(() => '?').join(',')})`).all(...allIds).forEach(v => { invMap[v.id] = v; });
     const payNotes = _acctPayNotesFor('referral');
     res.json(rows.map(r => _referralOut(r, invMap, payNotes)));
@@ -39398,6 +39400,7 @@ function _referralBody(b) {
   for (const [k, max] of REFERRAL_FIELDS) out[k] = String(b[k] || '').trim().slice(0, max);
   const amtNum = Number(b.amount);
   out.amount = (b.amount != null && b.amount !== '' && !isNaN(amtNum)) ? amtNum : null;
+  out.interview_status = ['', 'attended', 'no_show'].includes(String(b.interview_status || '')) ? String(b.interview_status || '') : '';
   return out;
 }
 // 新增介绍: 客服/会计/管理员都可录入, 一律进「待核查」等管理员定夺
@@ -39409,10 +39412,10 @@ app.post('/api/acct/referrals', requireAdmin, requireRole('accounting', 'admin',
   const atts = files.map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
   const r = db.prepare(`INSERT INTO referrals
     (foreman_name, foreman_phone, worker_name, worker_phone, warehouse_name, warehouse_address,
-     interview_at, work_start_date, work_end_date, work_duration, amount, description, attachments, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+     interview_at, interview_status, work_start_date, work_end_date, work_duration, amount, description, attachments, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.warehouse_name, f.warehouse_address,
-      f.interview_at, f.work_start_date, f.work_end_date, f.work_duration, f.amount, f.description,
+      f.interview_at, f.interview_status, f.work_start_date, f.work_end_date, f.work_duration, f.amount, f.description,
       JSON.stringify(atts), req.userName || '');
   res.json({ success: true, id: r.lastInsertRowid });
 });
@@ -39435,10 +39438,10 @@ app.put('/api/acct/referrals/:id', requireAdmin, requireRole('accounting', 'admi
   }
   (Array.isArray(req.files) ? req.files : []).forEach(fl => atts.push({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
   db.prepare(`UPDATE referrals SET foreman_name=?, foreman_phone=?, worker_name=?, worker_phone=?,
-      warehouse_name=?, warehouse_address=?, interview_at=?, work_start_date=?, work_end_date=?,
+      warehouse_name=?, warehouse_address=?, interview_at=?, interview_status=?, work_start_date=?, work_end_date=?,
       work_duration=?, amount=?, description=?, attachments=?, updated_at=datetime('now') WHERE id=?`)
     .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.warehouse_name, f.warehouse_address,
-      f.interview_at, f.work_start_date, f.work_end_date, f.work_duration, f.amount, f.description,
+      f.interview_at, f.interview_status, f.work_start_date, f.work_end_date, f.work_duration, f.amount, f.description,
       JSON.stringify(atts), cur.id);
   res.json({ success: true });
 });
@@ -39468,6 +39471,60 @@ app.post('/api/acct/referrals/:id/review', requireAdmin, requireRole('admin'), (
       action === 'reset' ? '' : String((req.body || {}).note || '').trim().slice(0, 300),
       action === 'reset' ? null : now, cur.id);
   res.json({ success: true, review_status: st });
+});
+
+// 介绍费下拉选项: 工头名单 (foremen 表 + 历史介绍记录里手输的) 和
+// 仓库名单带地址 (warehouses/partners 表 + 历史介绍记录), 选仓库自动带出地址
+app.get('/api/acct/referral-options', requireAdmin, requireAcctView, (req, res) => {
+  try {
+    const norm = p => String(p || '').replace(/\D/g, '');
+    const foremen = db.prepare(`SELECT id, name, phone FROM foremen WHERE active=1 ORDER BY name COLLATE NOCASE`).all();
+    const seenF = new Set(foremen.map(f => `${String(f.name).trim().toLowerCase()}|${norm(f.phone)}`));
+    db.prepare(`SELECT DISTINCT foreman_name AS name, foreman_phone AS phone FROM referrals WHERE foreman_name!=''`).all().forEach(f => {
+      const k = `${String(f.name).trim().toLowerCase()}|${norm(f.phone)}`;
+      if (!seenF.has(k)) { seenF.add(k); foremen.push({ id: null, name: f.name, phone: f.phone }); }
+    });
+    const whs = [], seenW = new Map();
+    const addW = (name, address) => {
+      const k = String(name || '').trim().toLowerCase();
+      if (!k) return;
+      const hit = seenW.get(k);
+      if (hit) { if (!hit.address && address) hit.address = String(address).trim(); return; }
+      const w = { name: String(name).trim(), address: String(address || '').trim() };
+      seenW.set(k, w);
+      whs.push(w);
+    };
+    try { db.prepare(`SELECT warehouse_name, address FROM warehouses WHERE is_active=1`).all().forEach(w => addW(w.warehouse_name, w.address)); } catch (e) {}
+    try { db.prepare(`SELECT name, address FROM partners WHERE active=1`).all().forEach(p => addW(p.name, p.address)); } catch (e) {}
+    db.prepare(`SELECT DISTINCT warehouse_name, warehouse_address FROM referrals WHERE warehouse_name!=''`).all().forEach(r => addW(r.warehouse_name, r.warehouse_address));
+    whs.sort((a, b) => a.name.localeCompare(b.name));
+    res.json({ foremen, warehouses: whs });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 新工头登记 (介绍表单「＋ 新工头」): 存进 foremen 名单, 下次直接下拉选;
+// 同名同电话的返回已有记录, 不重复建。
+app.post('/api/acct/referral-foremen', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+  const name = String((req.body || {}).name || '').trim().slice(0, 120);
+  const phone = String((req.body || {}).phone || '').trim().slice(0, 40);
+  if (!name) return res.status(400).json({ error: '请填写工头姓名' });
+  const norm = p => String(p || '').replace(/\D/g, '');
+  const dup = db.prepare(`SELECT id, name, phone FROM foremen WHERE active=1`).all()
+    .find(f => String(f.name).trim().toLowerCase() === name.toLowerCase() && norm(f.phone) === norm(phone));
+  if (dup) return res.json({ success: true, id: dup.id, existed: true });
+  const r = db.prepare(`INSERT INTO foremen (name, phone, active) VALUES (?, ?, 1)`).run(name, phone);
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+
+// 标记面试去没去: 约了面试未必去, 列表里一键标; 权限同编辑 (核查过的只有管理员能改)
+app.post('/api/acct/referrals/:id/interview-status', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+  const cur = db.prepare('SELECT * FROM referrals WHERE id=?').get(parseInt(req.params.id));
+  if (!cur) return res.status(404).json({ error: '记录不存在' });
+  if (req.userRole !== 'admin' && cur.review_status !== 'pending') return res.status(403).json({ error: '该记录管理员已核查，如需修改请联系管理员' });
+  const st = String((req.body || {}).status || '');
+  if (!['', 'attended', 'no_show'].includes(st)) return res.status(400).json({ error: '无效状态' });
+  db.prepare(`UPDATE referrals SET interview_status=?, updated_at=datetime('now') WHERE id=?`).run(st, cur.id);
+  res.json({ success: true, interview_status: st });
 });
 
 // 管理员删除介绍费记录 (附件与付款批注一并清掉)
