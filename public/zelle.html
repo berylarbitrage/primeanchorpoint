@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Zelle 转账统计 · Prime Anchor</title>
+<style>
+:root { --g100:#f1f5f9; --g200:#e2e8f0; --g300:#cbd5e1; --g400:#94a3b8; --g500:#64748b; --ink:#1f2937; --blue:#0ea5e9; --navy:#0f4c6b; }
+* { box-sizing:border-box; }
+body { margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif; background:#f6f8fa; color:var(--ink); font-size:14px; }
+.wrap { max-width:1180px; margin:0 auto; padding:1.1rem 16px 3rem; }
+.top { display:flex; align-items:center; gap:.7rem; flex-wrap:wrap; margin-bottom:.35rem; }
+.top h1 { font-size:1.15rem; margin:0; color:var(--navy); }
+.top .sub { font-size:.78rem; color:var(--g400); }
+.btn { display:inline-block; border:1px solid var(--g300); background:#fff; border-radius:8px; padding:.42rem .8rem; font-size:.85rem; cursor:pointer; color:var(--ink); text-decoration:none; font-family:inherit; }
+.btn:hover { border-color:var(--g400); }
+.btn-blue { background:var(--blue); border-color:var(--blue); color:#fff; font-weight:700; }
+.card { background:#fff; border:1px solid var(--g200); border-radius:12px; padding:.8rem .9rem; }
+.filters { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin:.7rem 0; }
+input, select { padding:.4rem .5rem; border:1px solid var(--g300); border-radius:8px; font-family:inherit; font-size:.85rem; background:#fff; }
+.chips { display:flex; gap:.45rem; flex-wrap:wrap; align-items:center; margin:.2rem 0 .7rem; font-size:.82rem; }
+.chip { background:#fff; border:1px solid var(--g200); border-radius:999px; padding:.2rem .7rem; }
+table { width:100%; border-collapse:collapse; }
+th { text-align:left; font-size:.76rem; color:var(--g500); font-weight:600; padding:.45rem .55rem; border-bottom:1.5px solid var(--g200); white-space:nowrap; }
+td { padding:.5rem .55rem; border-bottom:1px solid var(--g100); vertical-align:top; }
+tr.person { cursor:pointer; }
+tr.person:hover { background:#f8fafc; }
+.num { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.out { color:#dc2626; font-weight:700; }
+.in { color:#15803d; font-weight:700; }
+.muted { color:var(--g400); }
+.detail td { background:#fafcff; padding:0 .55rem .6rem; }
+.dtable { width:100%; border:1px solid var(--g200); border-radius:8px; overflow:hidden; margin-top:.1rem; }
+.dtable td { background:#fff; border-bottom:1px solid var(--g100); padding:.35rem .55rem; font-size:.82rem; }
+.caret { display:inline-block; transition:transform .12s; color:var(--g400); }
+.open .caret { transform:rotate(90deg); }
+@media (max-width:720px){ .hide-sm { display:none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>💸 Zelle 转账统计</h1>
+    <span class="sub">数据来自「银行直连」交易 · 按收款人汇总，点一行看该人所有转账时间点</span>
+    <span style="flex:1"></span>
+    <a class="btn" href="/accounting">← 返回会计对账</a>
+  </div>
+  <div class="filters">
+    <select id="fAcc" onchange="load()"><option value="">全部账户</option></select>
+    <select id="fDir" onchange="render()">
+      <option value="">转出 + 转入</option>
+      <option value="out">只看转出（付出去的）</option>
+      <option value="in">只看转入（收进来的）</option>
+    </select>
+    <input type="date" id="fFrom" onchange="load()"> <span class="muted">→</span>
+    <input type="date" id="fTo" onchange="load()">
+    <button class="btn" onclick="quick(30)">近30天</button>
+    <button class="btn" onclick="quick(90)">近90天</button>
+    <button class="btn" onclick="quick('year')">今年</button>
+    <button class="btn" onclick="quick('')">全部</button>
+    <input type="text" id="fQ" placeholder="搜姓名…" oninput="render()" style="width:160px">
+    <span style="flex:1"></span>
+    <button class="btn" onclick="toggleAll()" id="btnAll">展开全部</button>
+    <button class="btn" onclick="exportCsv()">⬇ 导出明细 CSV</button>
+    <button class="btn btn-blue" onclick="load()">↻ 刷新</button>
+  </div>
+  <div class="chips" id="sumChips"><span class="muted">加载中…</span></div>
+  <div class="card" style="padding:0;overflow-x:auto">
+    <table>
+      <thead><tr>
+        <th style="width:26px"></th><th>收款人 / 对方</th>
+        <th class="num">转出笔数</th><th class="num">转出合计</th>
+        <th class="num">转入笔数</th><th class="num">转入合计</th>
+        <th class="hide-sm">首次</th><th class="hide-sm">最近一笔</th>
+      </tr></thead>
+      <tbody id="body"><tr><td colspan="8" class="muted" style="padding:1rem">加载中…</td></tr></tbody>
+    </table>
+  </div>
+  <p style="font-size:.75rem;color:var(--g400);margin-top:.55rem">
+    转出 = 我方账户付出去（银行流水里的负数）；转入 = 对方 Zelle 打进来。人名从银行描述里自动提取（如「Zelle payment to CESAR JPM99…」取 CESAR），同名自动合并；描述里没带名字的归到「(未识别)」。
+  </p>
+</div>
+<script>
+let TOKEN = localStorage.getItem('acct_token') || localStorage.getItem('adminToken') || '';
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const money = n => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+let _data = null, _openKeys = new Set(), _allOpen = false;
+
+async function api(path) {
+  const r = await fetch(path, { headers: { 'Authorization': 'Bearer ' + TOKEN } });
+  if (r.status === 401 || r.status === 403) { alert('请先在会计对账页登录'); location.href = '/accounting'; throw new Error('unauthorized'); }
+  return r.json();
+}
+function quick(v) {
+  const to = new Date(), f = document.getElementById('fFrom'), t = document.getElementById('fTo');
+  if (v === '') { f.value = ''; t.value = ''; }
+  else if (v === 'year') { f.value = to.getFullYear() + '-01-01'; t.value = to.toISOString().slice(0, 10); }
+  else { f.value = new Date(Date.now() - v * 86400000).toISOString().slice(0, 10); t.value = to.toISOString().slice(0, 10); }
+  load();
+}
+async function load() {
+  const q = new URLSearchParams();
+  const from = document.getElementById('fFrom').value, to = document.getElementById('fTo').value;
+  const acc = document.getElementById('fAcc').value;
+  if (from) q.set('start', from);
+  if (to) q.set('end', to);
+  if (acc) q.set('account_id', acc);
+  document.getElementById('sumChips').innerHTML = '<span class="muted">加载中…</span>';
+  try { _data = await api('/api/plaid/zelle-stats?' + q.toString()); } catch (e) { return; }
+  if (_data && _data.error) { document.getElementById('sumChips').innerHTML = '<span class="out">' + esc(_data.error) + '</span>'; return; }
+  // 账户下拉只在首次填充 (切换时保留选项)
+  const sel = document.getElementById('fAcc');
+  if (sel.options.length <= 1 && _data.accounts) {
+    _data.accounts.forEach(a => { const o = document.createElement('option'); o.value = a.account_id; o.textContent = a.label; sel.appendChild(o); });
+    if (acc) sel.value = acc;
+  }
+  render();
+}
+// 按 方向/搜索 过滤后重算每人合计: 服务器给全量, 这两个筛选在页面上即时生效
+function _filtered() {
+  const dir = document.getElementById('fDir').value;
+  const q = document.getElementById('fQ').value.trim().toLowerCase();
+  const out = [];
+  for (const p of (_data && _data.people) || []) {
+    if (q && !p.name.toLowerCase().includes(q)) continue;
+    const txns = p.txns.filter(t => !dir || (dir === 'out' ? t.amount >= 0 : t.amount < 0));
+    if (!txns.length) continue;
+    const r = { name: p.name, key: p.name.toLowerCase(), txns, out_total: 0, out_count: 0, in_total: 0, in_count: 0, first_date: '', last_date: '' };
+    for (const t of txns) {
+      if (t.amount >= 0) { r.out_total += t.amount; r.out_count++; } else { r.in_total += -t.amount; r.in_count++; }
+      if (t.date && (!r.first_date || t.date < r.first_date)) r.first_date = t.date;
+      if (t.date && (!r.last_date || t.date > r.last_date)) r.last_date = t.date;
+    }
+    out.push(r);
+  }
+  out.sort((a, b) => (b.out_total + b.in_total) - (a.out_total + a.in_total));
+  return out;
+}
+function render() {
+  if (!_data) return;
+  const list = _filtered();
+  const sums = list.reduce((s, p) => ({ ot: s.ot + p.out_total, oc: s.oc + p.out_count, it: s.it + p.in_total, ic: s.ic + p.in_count }), { ot: 0, oc: 0, it: 0, ic: 0 });
+  document.getElementById('sumChips').innerHTML =
+    `<span class="chip">共 <b>${list.length}</b> 人</span>`
+    + `<span class="chip">转出 <b>${sums.oc}</b> 笔 <span class="out">−${money(sums.ot)}</span></span>`
+    + `<span class="chip">转入 <b>${sums.ic}</b> 笔 <span class="in">+${money(sums.it)}</span></span>`
+    + `<span class="chip">净额 <b>${sums.it - sums.ot >= 0 ? '+' : '−'}${money(Math.abs(sums.it - sums.ot))}</b></span>`;
+  document.getElementById('body').innerHTML = list.length ? list.map(p => {
+    const open = _openKeys.has(p.key);
+    const rows = p.txns.map(t => `<tr>
+        <td style="white-space:nowrap">${esc(t.date || '—')}${t.pending ? ' <span class="muted" style="font-size:.7rem">(处理中)</span>' : ''}</td>
+        <td class="num" style="width:110px"><span class="${t.amount >= 0 ? 'out' : 'in'}">${t.amount >= 0 ? '−' : '+'}${money(Math.abs(t.amount))}</span></td>
+        <td style="white-space:nowrap">${esc(t.account)}</td>
+        <td class="muted" style="font-size:.76rem;word-break:break-all">${esc(t.desc)}</td>
+      </tr>`).join('');
+    return `<tr class="person${open ? ' open' : ''}" onclick="toggleRow('${esc(p.key).replace(/'/g, "\\'")}')">
+      <td><span class="caret">▶</span></td>
+      <td style="font-weight:700">${esc(p.name)} <span class="muted" style="font-weight:400;font-size:.76rem">· ${p.txns.length} 笔</span></td>
+      <td class="num">${p.out_count || '<span class="muted">—</span>'}</td>
+      <td class="num">${p.out_count ? `<span class="out">−${money(p.out_total)}</span>` : '<span class="muted">—</span>'}</td>
+      <td class="num">${p.in_count || '<span class="muted">—</span>'}</td>
+      <td class="num">${p.in_count ? `<span class="in">+${money(p.in_total)}</span>` : '<span class="muted">—</span>'}</td>
+      <td class="hide-sm muted" style="white-space:nowrap">${esc(p.first_date || '—')}</td>
+      <td class="hide-sm" style="white-space:nowrap">${esc(p.last_date || '—')}</td>
+    </tr>
+    ${open ? `<tr class="detail"><td></td><td colspan="7"><div class="dtable"><table>${rows}</table></div></td></tr>` : ''}`;
+  }).join('') : '<tr><td colspan="8" class="muted" style="padding:1rem">这个范围里没有 Zelle 转账</td></tr>';
+}
+function toggleRow(key) {
+  if (_openKeys.has(key)) _openKeys.delete(key); else _openKeys.add(key);
+  render();
+}
+function toggleAll() {
+  _allOpen = !_allOpen;
+  _openKeys = _allOpen ? new Set(_filtered().map(p => p.key)) : new Set();
+  document.getElementById('btnAll').textContent = _allOpen ? '收起全部' : '展开全部';
+  render();
+}
+function exportCsv() {
+  const list = _filtered();
+  const escCsv = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const lines = ['收款人,日期,方向,金额,账户,原始描述'];
+  for (const p of list) for (const t of p.txns) {
+    lines.push([p.name, t.date, t.amount >= 0 ? '转出' : '转入', (-t.amount).toFixed(2), t.account, t.desc].map(escCsv).join(','));
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
+  a.download = 'zelle-stats.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+if (!TOKEN) { alert('请先在会计对账页登录'); location.href = '/accounting'; }
+else load();
+</script>
+</body>
+</html>
