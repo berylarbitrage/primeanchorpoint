@@ -40496,7 +40496,17 @@ app.get('/api/acct/gusto/payments', requireAdmin, requireAcctView, (req, res) =>
 // ── 付款 ↔ 银行转账关联 ──
 // 候选池只有一种: 银行历史(Plaid 流水)里描述/商户带 gusto 的交易。其他转账
 // 一律不能挂——列表接口不给, link 接口也再验一遍。
-const _GUSTO_TXN_WHERE = "(LOWER(COALESCE(t.name,'')) LIKE '%gusto%' OR LOWER(COALESCE(t.merchant,'')) LIKE '%gusto%')";
+// 候选范围: ① Gusto 扣款 (描述带 gusto — Direct Deposit 的逐笔等额 ACH)
+// ② 支票兑付 (Check Payment 由 Gusto 打印支票, 银行流水是「CHECK # 1234」, 描述里
+//    没有 gusto): 以 check 开头的支出, 排除借记卡消费 checkcard / check card / checking
+const _GUSTO_TXN_WHERE = `(
+  LOWER(COALESCE(t.name,'')) LIKE '%gusto%' OR LOWER(COALESCE(t.merchant,'')) LIKE '%gusto%'
+  OR (t.amount > 0
+    AND (LOWER(COALESCE(t.name,'')) LIKE 'check%' OR LOWER(COALESCE(t.merchant,'')) LIKE 'check%')
+    AND LOWER(COALESCE(t.name,'')) NOT LIKE '%checkcard%'
+    AND LOWER(COALESCE(t.name,'')) NOT LIKE '%check card%'
+    AND LOWER(COALESCE(t.name,'')) NOT LIKE 'checking%')
+)`;
 // 候选列表: Gusto 交易 + 银行机构/公司标签/账户尾号 + 占用情况(已挂哪笔付款)
 const _GUSTO_TXN_SELECT = `SELECT t.txn_id, t.date, t.name, t.merchant, t.amount, t.pending,
     COALESCE(a.company_label,'') AS company_label, COALESCE(a.name,'') AS account_name, COALESCE(a.mask,'') AS mask,
@@ -40549,7 +40559,7 @@ app.post('/api/acct/gusto/payments/:uuid/bank-link', requireAdmin, requireAcctWr
       return res.json({ ok: true, unlinked: 1 });
     }
     const t = db.prepare(`${_GUSTO_TXN_SELECT} WHERE t.txn_id=? AND ${_GUSTO_TXN_WHERE}`).get(txnId);
-    if (!t) return res.status(400).json({ error: '只能关联银行历史里的 Gusto 交易，其他转账不能挂' });
+    if (!t) return res.status(400).json({ error: '只能关联银行历史里的 Gusto 扣款或支票兑付（CHECK #…）交易，其他转账不能挂' });
     if (Math.abs(Math.abs(Number(t.amount)) - Math.abs(Number(p.wage_total))) > 0.005) {
       return res.status(400).json({ error: `金额不一致不能关联：付款 $${Number(p.wage_total).toFixed(2)}，转账 $${Math.abs(Number(t.amount)).toFixed(2)}` });
     }
@@ -40588,8 +40598,10 @@ app.post('/api/acct/gusto/payments/:uuid/bank-link-review', requireAdmin, requir
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ⚡ 自动关联: 金额一致 + 日期在付款日 ±7 天内的 Gusto 交易自动配对（一笔转账只配
-// 一笔付款; 同金额多笔按日期就近配, 配不上的留着手动）。会计跑的同样进「待审核」。
+// ⚡ 自动关联: 金额一致的候选交易自动配对（一笔转账只配一笔付款; 同金额多笔按日期
+// 就近配, 配不上的留着手动）。日期窗口按交易类型: Gusto ACH 扣款和付款日基本同步,
+// ±7 天; 支票兑付看工人什么时候去银行, 滞后常见 — 付款日前 2 天 ~ 后 45 天。
+// 会计跑的同样进「待审核」。
 app.post('/api/acct/gusto/bank-auto-match', requireAdmin, requireAcctWrite, (req, res) => {
   try {
     const isAdmin = req.userRole === 'admin';
@@ -40611,8 +40623,11 @@ app.post('/api/acct/gusto/bank-auto-match', requireAdmin, requireAcctWrite, (req
         for (const t of txns) {
           if (used.has(t.txn_id)) continue;
           if (Math.abs(Math.abs(Number(t.amount)) - Math.abs(Number(p.wage_total))) > 0.005) continue;
-          const gap = Math.abs((Date.parse(t.date + 'T00:00:00Z') || 0) - pd);
-          if (gap <= 7 * dayMs && gap < bestGap) { best = t; bestGap = gap; }
+          const diff = (Date.parse(t.date + 'T00:00:00Z') || 0) - pd;
+          const isGusto = /gusto/i.test((t.name || '') + ' ' + (t.merchant || ''));
+          const inWindow = isGusto ? Math.abs(diff) <= 7 * dayMs : (diff >= -2 * dayMs && diff <= 45 * dayMs);
+          const gap = Math.abs(diff);
+          if (inWindow && gap < bestGap) { best = t; bestGap = gap; }
         }
         if (!best) continue;
         used.add(best.txn_id);

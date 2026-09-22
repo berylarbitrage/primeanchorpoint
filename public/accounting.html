@@ -325,14 +325,14 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       </div>
     </div>
 
-    <!-- 🏦 付款关联银行转账弹窗: 候选只有银行历史里的 Gusto 交易 -->
+    <!-- 🏦 付款关联银行转账弹窗: 候选 = 银行历史里的 Gusto 扣款 + 支票兑付 (CHECK #…) -->
     <div id="gustoBankModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:95;align-items:center;justify-content:center;padding:16px">
       <div class="card" style="max-width:min(1000px,96vw);width:100%;padding:1.1rem 1.3rem 1rem;max-height:92vh;display:flex;flex-direction:column">
         <div style="font-weight:800;margin-bottom:.15rem">🏦 关联银行转账</div>
         <div id="gustoBankPayInfo" style="font-size:.78rem;color:var(--g500);margin-bottom:.5rem"></div>
         <input type="text" id="gustoBankSearch" placeholder="搜日期 / 描述 / 金额 / 银行 / 账户…" oninput="renderGustoBankList()" style="width:100%;margin-bottom:.45rem">
         <div id="gustoBankList" style="flex:1;overflow:auto;border:1px solid var(--g200);border-radius:8px;min-height:140px;max-height:60vh"></div>
-        <div style="font-size:.72rem;color:var(--g400);margin:.4rem 0">只显示银行历史里的 Gusto 交易；<b>只有金额和这笔付款一致的才能选</b>（银行里 Gusto 逐笔等额扣款），金额不同或已挂过别的付款的置灰。</div>
+        <div style="font-size:.72rem;color:var(--g400);margin:.4rem 0">只显示银行历史里的 Gusto 扣款和支票兑付（CHECK #…，Check Payment 的钱走支票）；<b>只有金额和这笔付款一致的才能选</b>（逐笔等额），金额不同或已挂过别的付款的置灰。</div>
         <div style="display:flex;gap:.5rem;justify-content:flex-end">
           <button class="btn btn-outline" id="gustoBankUnlinkBtn" style="display:none;color:#dc2626;margin-right:auto" onclick="gustoBankUnlink()">解除关联</button>
           <button class="btn btn-outline" onclick="document.getElementById('gustoBankModal').style.display='none'">取消</button>
@@ -2693,7 +2693,7 @@ function renderGustoPayList() {
       </tr>` + g.rows.map(rowHtml).join('')).join('')
     : '<tr><td colspan="10" style="color:var(--g400)">还没有 Gusto 付款记录</td></tr>';
 }
-// ── 🏦 付款 ↔ 银行转账关联: 候选只有银行历史里的 Gusto 交易, 其他转账不能挂 ──
+// ── 🏦 付款 ↔ 银行转账关联: 候选 = 银行历史里的 Gusto 扣款 + 支票兑付 (CHECK #…) ──
 let _gustoBankTxns = {}, _gustoBankRows = null, _gustoBankTarget = null, _gustoBankSel = '';
 async function openGustoBankLink(uuid) {
   const p = _gustoPayRows.find(x => x.uuid === uuid);
@@ -2755,7 +2755,7 @@ function renderGustoBankList() {
       </span>
     </label>`;
   }).join('')
-    : '<div style="padding:.8rem;color:var(--g400);font-size:.8rem">银行历史里没找到 Gusto 交易——先在「银行直连」页签连上银行、同步到有 Gusto 扣款的流水</div>';
+    : '<div style="padding:.8rem;color:var(--g400);font-size:.8rem">银行历史里没找到 Gusto 扣款或支票兑付交易——先在「银行直连」页签连上银行、同步到有相应流水；Check Payment 要等工人把支票兑了才会出现在银行里</div>';
 }
 async function submitGustoBankLink() {
   if (!_gustoBankTarget) return;
@@ -2776,9 +2776,9 @@ async function gustoBankReview(uuid, action) {
   if (r && r.ok) { toast(action === 'approve' ? '✅ 已通过' : '已驳回并解除'); gustoLoadPayments(); }
   else toast((r && r.error) || '操作失败', true);
 }
-// ⚡ 自动配对: 金额一致 + 日期 ±7 天
+// ⚡ 自动配对: 金额一致; Gusto 扣款 ±7 天, 支票兑付 付款日前2天~后45天 (兑现有滞后)
 async function gustoBankAutoMatch() {
-  if (!confirm('自动把未关联的付款和金额一致、日期相近（±7天）的 Gusto 银行转账配对？配不上的留着手动。')) return;
+  if (!confirm('自动把未关联的付款和金额一致、日期相近的银行交易配对？\nGusto 扣款按 ±7 天、支票兑付按付款日后 45 天内找。配不上的留着手动。')) return;
   const r = await api('/api/acct/gusto/bank-auto-match', { method: 'POST', body: JSON.stringify({}) }).catch(e => ({ error: e.message }));
   if (r && r.ok) {
     toast(`⚡ 自动关联 ${r.linked} 笔${r.status === 'pending' ? '（待管理员审核）' : ''}，还剩 ${r.remaining} 笔没配上`);
