@@ -28336,6 +28336,27 @@ app.post('/api/customer/time-entries/:id/relabel', requireCustomer, (req, res) =
   res.json({ ok: 1 });
 });
 
+// POST /api/customer/time-entries/:id/delete — 有「改打卡具体时间」权限的账号删除整条
+// 打卡记录（重复行/完全打错的记录用；单个误打的卡请用「改含义」标作废）。删除不可
+// 恢复；删除前把这条记录的上下班/休息完整快照写进编辑历史表，数据库留底备查。
+app.post('/api/customer/time-entries/:id/delete', requireCustomer, (req, res) => {
+  if (!_custNeed(req, res, 'edit_time')) return;
+  const a = _customerEntryAuth(req, res);
+  if (!a) return;
+  const { entry, site } = a;
+  const tz = site.timezone || 'America/Chicago';
+  const wd = entry.work_date || _utcToTzDate(entry.clock_in, tz);
+  let brS = [];
+  try { brS = JSON.parse(entry.break_records || '[]').map(x => `${_utcToTzHM(x.start, tz)}~${_utcToTzHM(x.end, tz) || '?'}`); } catch (_) {}
+  const snap = `${wd} ${_utcToTzHM(entry.clock_in, tz) || '—'}~${entry.clock_out ? _utcToTzHM(entry.clock_out, tz) : '在班'}`
+    + (brS.length ? `，休息 ${brS.join('、')}` : '')
+    + (entry.total_hours != null ? `，合计 ${entry.total_hours}h` : '');
+  const editor = _custEditor(req);
+  _logEntryEdit(entry.id, editor.type, editor.name, [{ f: '删除打卡记录', old: snap, new: '整条已删除' }]);
+  db.prepare('DELETE FROM time_entries WHERE id=?').run(entry.id);
+  res.json({ ok: 1 });
+});
+
 // GET /api/customer/time-entries/:id/edits — 该条记录的编辑历史
 app.get('/api/customer/time-entries/:id/edits', requireCustomer, (req, res) => {
   const a = _customerEntryAuth(req, res);
