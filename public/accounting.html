@@ -260,7 +260,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
           <input type="tel" id="raWorkerPhone" placeholder="输入号码自动查系统" oninput="raPhoneLookup('raWorkerPhone','raWorkerHits','worker')" style="width:100%;margin:.15rem 0 .55rem"></div>
       </div>
       <div id="raWorkerHits" style="margin:-0.3rem 0 .3rem;line-height:1.9"></div>
-      <label style="font-size:.76rem;color:var(--g500)">关联岗位 <span style="font-size:.7rem;color:var(--g400)">（post 的招聘岗位，选了自动带出工资和仓库）</span></label>
+      <label style="font-size:.76rem;color:var(--g500)">关联岗位 <span style="font-size:.7rem;color:var(--g400)">（post 的招聘岗位，选了自动带出仓库；工资不带出，必须手动填）</span></label>
       <select id="raJobSel" onchange="raJobChanged()" style="width:100%;margin:.15rem 0 .55rem"><option value="">— 不关联岗位 —</option></select>
       <label style="font-size:.76rem;color:var(--g500)">工作仓库</label>
       <select id="raWhSel" onchange="raWhChanged()" style="width:100%;margin:.15rem 0 .55rem"><option value="">加载中…</option></select>
@@ -270,8 +270,8 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <div style="display:grid;grid-template-columns:1.2fr .9fr .9fr;gap:.2rem .6rem">
         <div><label style="font-size:.76rem;color:var(--g500)">面试时间（HR 约的）</label>
           <input type="datetime-local" id="raInterview" style="width:100%;margin:.15rem 0 .55rem"></div>
-        <div><label style="font-size:.76rem;color:var(--g500)">工资（工人的）</label>
-          <input type="text" id="raWage" placeholder="例：$18/小时" style="width:100%;margin:.15rem 0 .55rem"></div>
+        <div><label style="font-size:.76rem;color:var(--g500)">工资（工人的）<span style="color:#dc2626">*</span> <span style="font-size:.7rem;color:var(--g400)">手动填实际谈定的</span></label>
+          <input type="text" id="raWage" placeholder="必填，例：$18/小时" style="width:100%;margin:.15rem 0 .55rem"></div>
         <div><label style="font-size:.76rem;color:var(--g500)">介绍费金额（$）</label>
           <input type="number" step="0.01" min="0" id="raAmount" placeholder="例：100.00" style="width:100%;margin:.15rem 0 .55rem"></div>
       </div>
@@ -1290,7 +1290,6 @@ let _refOpts = null;
 async function openRefAdd(id) {
   _refEditId = id || null;
   _raRemove = new Set();
-  _raWageAuto = '';
   const r = id ? _refList.find(x => x.id === id) : null;
   document.getElementById('refAddTitle').textContent = r ? '🤝 编辑介绍' : '🤝 新增介绍';
   document.getElementById('refAddHint').textContent = r
@@ -1562,16 +1561,12 @@ function raPickPhoneHit(boxId, i, kind) {
 }
 // 选岗位 → 仓库跟着对应上: 岗位的公司/地址能对上仓库名单的直接选中,
 // 对不上的自动切「新仓库」并把公司名/地址填好; 之后仍可手动改。
-// 工资空着的、或上次是岗位带出来的, 换岗位时一并更新 (手填过的不动)。
-let _raWageAuto = '';
+// 工资不从岗位带出——岗位上写的是招聘区间 (如 18-23/weekly), 不是这个工人
+// 实际谈定的数, 必须手动填。
 function raJobChanged() {
   const id = parseInt(document.getElementById('raJobSel').value);
   const j = ((_refOpts && _refOpts.jobs) || []).find(x => x.id === id);
   if (!j) return;
-  const wageEl = document.getElementById('raWage');
-  const pay = j.pay ? j.pay + (j.pay_period ? '/' + j.pay_period : '') : '';
-  if (pay && (!wageEl.value.trim() || wageEl.value.trim() === _raWageAuto)) wageEl.value = pay;
-  if (pay) _raWageAuto = pay;
   // 找对应仓库: 名称+地址 → 地址 → 名称 依次对
   const whs = (_refOpts && _refOpts.warehouses) || [];
   const nm = String(j.company_name || '').trim().toLowerCase();
@@ -1627,6 +1622,9 @@ async function submitRefAdd() {
   const fName = _raForeman.name, fPhone = _raForeman.phone || '';
   const wName = document.getElementById('raWorkerName').value.trim();
   if (!wName) return toast('请填写被介绍人姓名', true);
+  // 工资必须手动填: 岗位上的是招聘区间, 不是这个工人实际谈定的数
+  const wWage = document.getElementById('raWage').value.trim();
+  if (!wWage) return toast('请手动填写工人的工资（岗位上写的是区间，要填实际谈定的，如 $18/小时）', true);
   const whSelV = document.getElementById('raWhSel').value;
   const whName = whSelV === '__new__'
     ? document.getElementById('raWh').value.trim()

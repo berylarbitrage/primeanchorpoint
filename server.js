@@ -39759,6 +39759,8 @@ app.post('/api/acct/referrals', requireAdmin, requireRole('accounting', 'admin',
   const f = _referralBody(req.body || {});
   if (!f.foreman_name) return res.status(400).json({ error: '请填写工头姓名' });
   if (!f.worker_name) return res.status(400).json({ error: '请填写被介绍人姓名' });
+  // 工资必须手动填写: 岗位上的是招聘区间, 不代表这个工人实际谈定的数
+  if (!f.worker_wage) return res.status(400).json({ error: '请手动填写工人的工资（岗位上写的是区间，要填实际谈定的）' });
   const files = Array.isArray(req.files) ? req.files : [];
   const atts = files.map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
   const jb = _referralJob(req.body || {});
@@ -39780,6 +39782,8 @@ app.put('/api/acct/referrals/:id', requireAdmin, requireRole('accounting', 'admi
   const f = _referralBody(req.body || {});
   if (!f.foreman_name) return res.status(400).json({ error: '请填写工头姓名' });
   if (!f.worker_name) return res.status(400).json({ error: '请填写被介绍人姓名' });
+  // 与新增一致: 工资必须手动填写（老记录没填的, 编辑保存时也要求补上）
+  if (!f.worker_wage) return res.status(400).json({ error: '请手动填写工人的工资（岗位上写的是区间，要填实际谈定的）' });
   let atts = _claimAtts(cur);
   let rmList = []; try { rmList = JSON.parse((req.body || {}).remove_attachments || '[]'); } catch (e) { rmList = []; }
   if (Array.isArray(rmList) && rmList.length) {
