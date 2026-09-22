@@ -39389,18 +39389,18 @@ app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 介绍费基本字段收取 (新增/编辑共用): 工头/工人的姓名电话、仓库和地址、面试时间、上工起止和时长
+// 介绍费基本字段收取 (新增/编辑共用): 工头/工人的姓名电话、仓库和地址、面试时间。
+// 面试去没去不在表单里收 — 登记后在列表专门一列标记 (interview-status 接口);
+// 上工时长也不手填 — 会计关联发票, 按发票账期算。
 const REFERRAL_FIELDS = [
   ['foreman_name', 120], ['foreman_phone', 40], ['worker_name', 120], ['worker_phone', 40],
-  ['warehouse_name', 200], ['warehouse_address', 300], ['interview_at', 40],
-  ['work_start_date', 20], ['work_end_date', 20], ['work_duration', 120], ['description', 2000],
+  ['warehouse_name', 200], ['warehouse_address', 300], ['interview_at', 40], ['description', 2000],
 ];
 function _referralBody(b) {
   const out = {};
   for (const [k, max] of REFERRAL_FIELDS) out[k] = String(b[k] || '').trim().slice(0, max);
   const amtNum = Number(b.amount);
   out.amount = (b.amount != null && b.amount !== '' && !isNaN(amtNum)) ? amtNum : null;
-  out.interview_status = ['', 'attended', 'no_show'].includes(String(b.interview_status || '')) ? String(b.interview_status || '') : '';
   return out;
 }
 // 新增介绍: 客服/会计/管理员都可录入, 一律进「待核查」等管理员定夺
@@ -39412,11 +39412,10 @@ app.post('/api/acct/referrals', requireAdmin, requireRole('accounting', 'admin',
   const atts = files.map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
   const r = db.prepare(`INSERT INTO referrals
     (foreman_name, foreman_phone, worker_name, worker_phone, warehouse_name, warehouse_address,
-     interview_at, interview_status, work_start_date, work_end_date, work_duration, amount, description, attachments, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+     interview_at, amount, description, attachments, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.warehouse_name, f.warehouse_address,
-      f.interview_at, f.interview_status, f.work_start_date, f.work_end_date, f.work_duration, f.amount, f.description,
-      JSON.stringify(atts), req.userName || '');
+      f.interview_at, f.amount, f.description, JSON.stringify(atts), req.userName || '');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
@@ -39437,12 +39436,11 @@ app.put('/api/acct/referrals/:id', requireAdmin, requireRole('accounting', 'admi
     atts = atts.filter(a => !rm.has(a.path));
   }
   (Array.isArray(req.files) ? req.files : []).forEach(fl => atts.push({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
+  // interview_status 不在这里改 (列表标记走 interview-status 接口), 免得编辑把已标的冲掉
   db.prepare(`UPDATE referrals SET foreman_name=?, foreman_phone=?, worker_name=?, worker_phone=?,
-      warehouse_name=?, warehouse_address=?, interview_at=?, interview_status=?, work_start_date=?, work_end_date=?,
-      work_duration=?, amount=?, description=?, attachments=?, updated_at=datetime('now') WHERE id=?`)
+      warehouse_name=?, warehouse_address=?, interview_at=?, amount=?, description=?, attachments=?, updated_at=datetime('now') WHERE id=?`)
     .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.warehouse_name, f.warehouse_address,
-      f.interview_at, f.interview_status, f.work_start_date, f.work_end_date, f.work_duration, f.amount, f.description,
-      JSON.stringify(atts), cur.id);
+      f.interview_at, f.amount, f.description, JSON.stringify(atts), cur.id);
   res.json({ success: true });
 });
 
@@ -39484,21 +39482,64 @@ app.get('/api/acct/referral-options', requireAdmin, requireAcctView, (req, res) 
       const k = `${String(f.name).trim().toLowerCase()}|${norm(f.phone)}`;
       if (!seenF.has(k)) { seenF.add(k); foremen.push({ id: null, name: f.name, phone: f.phone }); }
     });
-    const whs = [], seenW = new Map();
+    // 仓库: 一个客户可以有好几个仓库 — partners.addresses JSON 逐条展开,
+    // 同名不同地址各是一行, 去重按 名称+地址
+    const whs = [], seenW = new Set();
     const addW = (name, address) => {
-      const k = String(name || '').trim().toLowerCase();
-      if (!k) return;
-      const hit = seenW.get(k);
-      if (hit) { if (!hit.address && address) hit.address = String(address).trim(); return; }
-      const w = { name: String(name).trim(), address: String(address || '').trim() };
-      seenW.set(k, w);
-      whs.push(w);
+      name = String(name || '').trim();
+      address = String(address || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+      if (!name) return;
+      const k = name.toLowerCase() + '|' + address.toLowerCase();
+      if (seenW.has(k)) return;
+      seenW.add(k);
+      whs.push({ name, address });
     };
     try { db.prepare(`SELECT warehouse_name, address FROM warehouses WHERE is_active=1`).all().forEach(w => addW(w.warehouse_name, w.address)); } catch (e) {}
-    try { db.prepare(`SELECT name, address FROM partners WHERE active=1`).all().forEach(p => addW(p.name, p.address)); } catch (e) {}
+    try {
+      db.prepare(`SELECT name, address, addresses FROM partners WHERE active=1`).all().forEach(p => {
+        let got = false;
+        try {
+          const arr = JSON.parse(p.addresses || '[]');
+          if (Array.isArray(arr)) for (const a of arr) {
+            const addr = typeof a === 'string' ? a : String((a && a.address) || '');
+            if (addr.trim()) { addW(p.name, addr); got = true; }
+          }
+        } catch (e) {}
+        if (!got) addW(p.name, p.address);
+      });
+    } catch (e) {}
     db.prepare(`SELECT DISTINCT warehouse_name, warehouse_address FROM referrals WHERE warehouse_name!=''`).all().forEach(r => addW(r.warehouse_name, r.warehouse_address));
-    whs.sort((a, b) => a.name.localeCompare(b.name));
-    res.json({ foremen, warehouses: whs });
+    // 同名下已有带地址的行, 无地址的裸行就不显示了
+    const whsOut = whs.filter(w => w.address || !whs.some(x => x !== w && x.address && x.name.toLowerCase() === w.name.toLowerCase()));
+    whsOut.sort((a, b) => a.name.localeCompare(b.name) || a.address.localeCompare(b.address));
+    res.json({ foremen, warehouses: whsOut });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 手机号自动联想: 填工头/工人电话时查系统里已有的人, 直接 link 起来。
+// 覆盖 工头名单 foremen / 员工档案 employees / 招工申请 applicant_submissions,
+// 只回姓名+电话 (不带证件等敏感明细); 4 位以上就按包含匹配联想。
+app.get('/api/acct/referral-phone-lookup', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+  try {
+    const norm = v => String(v || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+    const digits = norm(req.query.phone);
+    if (digits.length < 4) return res.json({ matches: [] });
+    const hit = v => { const n = norm(v); return !!n && n.includes(digits); };
+    const out = [], seen = new Set();
+    const add = (source, name, phone, foremanId) => {
+      name = String(name || '').trim();
+      phone = String(phone || '').trim();
+      if (!name && !phone) return;
+      const k = name.toLowerCase() + '|' + norm(phone);
+      if (seen.has(k)) return;
+      seen.add(k);
+      out.push({ source, name, phone, foreman_id: foremanId || null });
+    };
+    db.prepare(`SELECT id, name, phone FROM foremen WHERE active=1`).all().filter(f => hit(f.phone)).forEach(f => add('工头名单', f.name, f.phone, f.id));
+    db.prepare(`SELECT first_name, middle_name, last_name, phone FROM employees`).all().filter(e => hit(e.phone))
+      .forEach(e => add('员工档案', [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '), e.phone));
+    db.prepare(`SELECT name, phone FROM applicant_submissions`).all().filter(a => hit(a.phone)).forEach(a => add('招工申请', a.name, a.phone));
+    res.json({ matches: out.slice(0, 8) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
