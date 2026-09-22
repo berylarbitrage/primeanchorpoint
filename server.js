@@ -39491,10 +39491,8 @@ const requireAcctWrite = requireRole('accounting', 'cs', 'admin');
 app.get('/accounting', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'accounting.html'));
 });
-// 💸 Zelle 转账统计页 (会计/管理员/客服): 银行直连里的 Zelle 按收款人汇总
-app.get('/zelle', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'zelle.html'));
-});
+// 💸 /zelle 老书签兼容: Zelle 统计已并进会计对账页的「💸 Zelle」页签
+app.get('/zelle', (req, res) => res.redirect('/accounting'));
 
 const _acctAnnCount = db.prepare(`SELECT COUNT(*) AS n FROM acct_annotations WHERE target_type=? AND target_id=?`);
 
