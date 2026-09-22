@@ -2145,7 +2145,7 @@ async function loadCompanyAccounts() {
         <td style="white-space:nowrap">${fmtPhone(r.phone)}</td>
         <td style="white-space:nowrap">${r.status === '正常' ? '<span style="color:#2D9D78">● 正常</span>' : `<span style="color:#B87400">● ${esc(r.status)}</span>`}</td>
         <td style="min-width:260px">${Object.values(r.perms).some(Boolean) ? Object.entries(C_PERM_LABELS).map(([k, l]) => chip(l, !!r.perms[k])).join('') : '<span style="color:var(--gray-400)">👁 只读账号（只能看）</span>'}</td>
-        <td style="font-size:.82rem">${r.sites ? esc(r.sites.join('、')) : '全部仓库'}</td>
+        <td style="font-size:.82rem">${r.sites ? esc(r.sites.join('、')) : '全部仓库'}${r.records_from ? `<div style="font-size:.75rem;color:#B87400;white-space:nowrap">📅 只看 ${esc(r.records_from)} 起的打卡</div>` : ''}</td>
       </tr>`).join('')}</tbody>
     </table>
     </div>`;
