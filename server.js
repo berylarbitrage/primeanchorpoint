@@ -22321,7 +22321,7 @@ app.post('/api/admin/invoices/parse-excel', requireAdmin, invoiceXlsxUpload.sing
 // ─── Gusto 合同工付款模板 (Contractor Pay CSV) ───
 // 名册 = Gusto 后台导出的空白 contractor payment 模板（姓名/打码SSN/时薪），上传
 // 一次存进 app_settings；之后每张工时发票都能按名册生成填好 hours 的付款 CSV。
-const { buildGustoCsv, parseRoster } = require('./gusto-pay');
+const { buildGustoCsv, buildGustoRecon, parseRoster } = require('./gusto-pay');
 const gustoRosterUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 1024 * 1024 },
@@ -22468,6 +22468,293 @@ app.post('/api/admin/gusto-pay-csv', requireAdmin, (req, res) => {
   } catch (e) {
     res.status(400).json({ error: 'Gusto 模板生成失败：' + (e && e.message ? e.message : String(e)) });
   }
+});
+
+// ═══════════ Gusto API 实时同步（合同工实发工资） ═══════════
+// 不上传 CSV——直接连 Gusto API 把实际发放的合同工工资拉进本地表, 在 /accounting
+// 「Gusto 工资」页签实时展示并与发票工资表按人对账。流程: 管理员在 dev.gusto.com
+// 建应用拿 Client ID/Secret(存 integration_settings provider='gusto' 的
+// api_key/api_secret) → 点「连接 Gusto」走 OAuth → 之后每 auto_sync_minutes 分钟、
+// 打开页签超过 10 分钟没同步过、或手动「立即同步」时拉取名册和付款记录。
+// token/公司/同步状态都在 gusto 行的 config JSON 里; access/refresh token 绝不
+// 下发给前端。Gusto 的 refresh token 一次性, 续期在 _gustoAccessToken 里串行化。
+const gustoApi = require('./gusto-sync');
+
+db.exec(`CREATE TABLE IF NOT EXISTS gusto_contractors (
+  uuid TEXT PRIMARY KEY,
+  name TEXT DEFAULT '',
+  first_name TEXT DEFAULT '',
+  last_name TEXT DEFAULT '',
+  business_name TEXT DEFAULT '',
+  type TEXT DEFAULT '',
+  wage_type TEXT DEFAULT '',
+  hourly_rate REAL DEFAULT NULL,
+  is_active INTEGER DEFAULT 1,
+  raw_json TEXT DEFAULT '{}',
+  updated_at TEXT
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS gusto_payments (
+  uuid TEXT PRIMARY KEY,
+  contractor_uuid TEXT DEFAULT '',
+  contractor_name TEXT DEFAULT '',
+  date TEXT DEFAULT '',
+  payment_method TEXT DEFAULT '',
+  wage_type TEXT DEFAULT '',
+  status TEXT DEFAULT '',
+  hours REAL DEFAULT NULL,
+  hourly_rate REAL DEFAULT NULL,
+  wage REAL DEFAULT 0,
+  bonus REAL DEFAULT 0,
+  reimbursement REAL DEFAULT 0,
+  wage_total REAL DEFAULT 0,
+  source TEXT DEFAULT 'api',
+  raw_json TEXT DEFAULT '{}',
+  synced_at TEXT
+)`);
+// source: 'api'=Gusto API 同步 / 'import'=付款报告手动导入（API 过审前的过渡）。
+// API 同步覆盖到的日期窗口内, import 行会被官方数据替换删除, 不会双份计数。
+try { db.exec(`ALTER TABLE gusto_payments ADD COLUMN source TEXT DEFAULT 'api'`); } catch (e) {}
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_gusto_payments_date ON gusto_payments(date)`); } catch (e) {}
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_gusto_payments_contractor ON gusto_payments(contractor_uuid)`); } catch (e) {}
+
+function _gustoIntRow() { return db.prepare("SELECT * FROM integration_settings WHERE provider='gusto'").get() || {}; }
+function _gustoApiCfg() {
+  const row = _gustoIntRow();
+  let cfg = {}; try { cfg = JSON.parse(row.config || '{}'); } catch (e) { cfg = {}; }
+  return {
+    clientId: String(row.api_key || '').trim(),
+    clientSecret: String(row.api_secret || '').trim(),
+    environment: cfg.environment === 'demo' ? 'demo' : 'production',
+    cfg,
+  };
+}
+// config JSON 局部更新; patch 里值为 null 的键直接删掉
+function _gustoSaveCfg(patch) {
+  const row = _gustoIntRow();
+  let cfg = {}; try { cfg = JSON.parse(row.config || '{}'); } catch (e) { cfg = {}; }
+  for (const [k, v] of Object.entries(patch || {})) { if (v === null) delete cfg[k]; else cfg[k] = v; }
+  db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='gusto'").run(JSON.stringify(cfg));
+  return cfg;
+}
+function _gustoRedirectUri(req) {
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const base = (process.env.BASE_URL || '').replace(/\/$/, '') || `${proto}://${req.get('host')}`;
+  return base + '/gusto/oauth/callback';
+}
+
+// 拿可用的 access token; 快过期就续期。续期必须串行——Gusto 的 refresh token 是
+// 一次性的, 并发续两次第二次必失败且把新 token 也弄丢, 只能重新授权。
+let _gustoRefreshing = null;
+async function _gustoAccessToken() {
+  const first = _gustoApiCfg();
+  if (!first.cfg.access_token || !first.cfg.refresh_token) {
+    const e = new Error('Gusto 还没有连接，请在会计对账「Gusto 工资」页签完成连接');
+    e.code = 'not_connected';
+    throw e;
+  }
+  if (Date.now() < Number(first.cfg.token_expires_at || 0)) {
+    return { token: first.cfg.access_token, environment: first.environment, company: String(first.cfg.company_uuid || '') };
+  }
+  if (!_gustoRefreshing) {
+    _gustoRefreshing = (async () => {
+      const cur = _gustoApiCfg();   // 锁内重读, 别拿别的请求刚用掉的旧 refresh token
+      if (Date.now() < Number(cur.cfg.token_expires_at || 0)) return cur.cfg.access_token;
+      try {
+        const tk = await gustoApi.refreshTokens({
+          environment: cur.environment, clientId: cur.clientId, clientSecret: cur.clientSecret,
+          redirectUri: cur.cfg.redirect_uri || '', refreshToken: cur.cfg.refresh_token,
+        });
+        _gustoSaveCfg({ access_token: tk.access_token, refresh_token: tk.refresh_token, token_expires_at: tk.expires_at, connect_error: null });
+        return tk.access_token;
+      } catch (e) {
+        if (e && (e.gusto_error === 'invalid_grant' || e.status === 401)) {
+          _gustoSaveCfg({ access_token: null, refresh_token: null, token_expires_at: null,
+            connect_error: 'Gusto 授权已失效（' + String(e.message || '').slice(0, 160) + '），请重新连接' });
+        }
+        throw e;
+      }
+    })().finally(() => { _gustoRefreshing = null; });
+  }
+  const token = await _gustoRefreshing;
+  const after = _gustoApiCfg();
+  return { token, environment: after.environment, company: String(after.cfg.company_uuid || '') };
+}
+
+// 同步一轮: 名册 upsert + 付款窗口内 upsert; 窗口内本地有、Gusto 没有的付款视为已
+// 在 Gusto 取消, 删掉本地行。常规窗口 = 过去 45 天 ~ 未来 7 天(已排期的也拉);
+// 首次连接(或手动勾回填)从 backfill_days(默认 365)天前拉起, 按 90 天分块。
+let _gustoSyncRunning = false;
+async function gustoSyncNow(reason, opts) {
+  if (_gustoSyncRunning) return { ok: false, busy: true, error: '同步正在进行中' };
+  _gustoSyncRunning = true;
+  try {
+    try {
+      return await _gustoSyncPass(reason, opts);
+    } catch (e) {
+      // 401 而本地还以为 token 没过期 = 用户重新授权过, 旧 access token 被提前吊销
+      // → 把过期时间清零强制续期, 重试一次
+      if (!(e && e.status === 401)) throw e;
+      _gustoSaveCfg({ token_expires_at: 0 });
+      return await _gustoSyncPass(reason, opts);
+    }
+  } catch (e) {
+    const msg = (e && e.message) ? e.message : String(e);
+    if (!(e && e.code === 'not_connected')) {
+      _gustoSaveCfg({ last_sync_error: { at: new Date().toISOString(), message: msg.slice(0, 300) } });
+      console.log('[gusto] 同步失败:', msg);
+    }
+    return { ok: false, error: msg, not_connected: !!(e && e.code === 'not_connected') };
+  } finally {
+    _gustoSyncRunning = false;
+  }
+}
+async function _gustoSyncPass(reason, opts) {
+  const started = Date.now();
+  {
+    const { token, environment, company } = await _gustoAccessToken();
+    if (!company) throw new Error('连接信息里缺少公司 UUID，请断开后重新连接 Gusto');
+    const contractors = await gustoApi.listContractors(environment, token, company);
+    const nowIso = new Date().toISOString();
+    const nameByUuid = new Map();
+    const upC = db.prepare(`INSERT INTO gusto_contractors (uuid, name, first_name, last_name, business_name, type, wage_type, hourly_rate, is_active, raw_json, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(uuid) DO UPDATE SET name=excluded.name, first_name=excluded.first_name, last_name=excluded.last_name,
+        business_name=excluded.business_name, type=excluded.type, wage_type=excluded.wage_type, hourly_rate=excluded.hourly_rate,
+        is_active=excluded.is_active, raw_json=excluded.raw_json, updated_at=excluded.updated_at`);
+    db.transaction(() => {
+      for (const c of contractors) {
+        const nm = gustoApi.contractorDisplayName(c);
+        nameByUuid.set(c.uuid, nm);
+        upC.run(c.uuid, nm, c.first_name, c.last_name, c.business_name, c.type, c.wage_type, c.hourly_rate, c.is_active, JSON.stringify(c.raw || {}), nowIso);
+      }
+    })();
+
+    const cfg0 = _gustoApiCfg().cfg;
+    const backfillDays = Math.min(1095, Math.max(30, Number(cfg0.backfill_days) || 365));
+    const doBackfill = !!(opts && opts.backfill) || !cfg0.initial_backfill_done;
+    const endDate = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    const startDate = new Date(Date.now() - (doBackfill ? backfillDays : 45) * 86400000).toISOString().slice(0, 10);
+    let fetched = [];
+    for (const [s, e] of gustoApi.chunkRanges(startDate, endDate, 90)) {
+      fetched = fetched.concat(await gustoApi.listContractorPayments(environment, token, company, s, e));
+    }
+    const oldName = db.prepare('SELECT name FROM gusto_contractors WHERE uuid=?');
+    const hasP = db.prepare('SELECT uuid FROM gusto_payments WHERE uuid=?');
+    const upP = db.prepare(`INSERT INTO gusto_payments (uuid, contractor_uuid, contractor_name, date, payment_method, wage_type, status, hours, hourly_rate, wage, bonus, reimbursement, wage_total, source, raw_json, synced_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'api', ?, ?)
+      ON CONFLICT(uuid) DO UPDATE SET contractor_uuid=excluded.contractor_uuid, contractor_name=excluded.contractor_name,
+        date=excluded.date, payment_method=excluded.payment_method, wage_type=excluded.wage_type, status=excluded.status,
+        hours=excluded.hours, hourly_rate=excluded.hourly_rate, wage=excluded.wage, bonus=excluded.bonus,
+        reimbursement=excluded.reimbursement, wage_total=excluded.wage_total, source='api', raw_json=excluded.raw_json, synced_at=excluded.synced_at`);
+    let inserted = 0, updated = 0, removed = 0, replacedImports = 0;
+    db.transaction(() => {
+      const seen = new Set();
+      for (const p of fetched) {
+        seen.add(p.uuid);
+        const nm = nameByUuid.get(p.contractor_uuid) || ((oldName.get(p.contractor_uuid) || {}).name) || '';
+        if (hasP.get(p.uuid)) updated++; else inserted++;
+        upP.run(p.uuid, p.contractor_uuid, nm, p.date, p.payment_method, p.wage_type, p.status,
+          p.hours, p.hourly_rate, p.wage, p.bonus, p.reimbursement, p.wage_total, JSON.stringify(p.raw || {}), nowIso);
+      }
+      // 窗口内本地有、API 没有的行 = 已在 Gusto 取消 → 删（只删 API 行）
+      for (const l of db.prepare("SELECT uuid FROM gusto_payments WHERE source='api' AND date>=? AND date<=?").all(startDate, endDate)) {
+        if (!seen.has(l.uuid)) { db.prepare('DELETE FROM gusto_payments WHERE uuid=?').run(l.uuid); removed++; }
+      }
+      // API 覆盖到的窗口里, 过渡期手动导入的行被官方数据整体替换, 免得双份计数;
+      // 窗口之外(更早的历史)的导入行保留
+      replacedImports = db.prepare("DELETE FROM gusto_payments WHERE source='import' AND date>=? AND date<=?").run(startDate, endDate).changes;
+    })();
+    const result = { ok: true, reason: reason || '', contractors: contractors.length, payments: fetched.length,
+      inserted, updated, removed, replaced_imports: replacedImports, window: [startDate, endDate], ms: Date.now() - started };
+    _gustoSaveCfg({ last_sync_at: nowIso, last_sync_result: result, last_sync_error: null, connect_error: null, initial_backfill_done: true });
+    console.log(`[gusto] 同步完成(${reason}): 名册 ${contractors.length} 人, 付款 ${fetched.length} 笔 (+${inserted} ~${updated} -${removed}), ${result.ms}ms`);
+    return result;
+  }
+}
+
+// 到点自动同步: 每 5 分钟看一眼, 距上次同步超过 auto_sync_minutes(默认 15)就拉一轮。
+setInterval(() => {
+  try {
+    const { cfg } = _gustoApiCfg();
+    if (!cfg.access_token || !cfg.refresh_token) return;
+    const every = Math.max(5, Number(cfg.auto_sync_minutes) || 15);
+    const last = Date.parse(cfg.last_sync_at || '') || 0;
+    if (Date.now() - last >= every * 60 * 1000) gustoSyncNow('auto').catch(() => {});
+  } catch (e) { /* 下一轮再试 */ }
+}, 5 * 60 * 1000);
+
+// 开始 OAuth 授权（浏览器直接导航过来, 凭 pa_token cookie 过 requireAdmin）。
+// 出错走 302 带参数回 /accounting, 页面负责弹提示——JSON 错误在浏览器导航下没人看。
+app.get('/api/admin/gusto/connect', requireAdmin, requireRole('admin'), (req, res) => {
+  const { clientId, clientSecret, environment } = _gustoApiCfg();
+  if (!clientId || !clientSecret) return res.redirect('/accounting?gusto=missing_credentials');
+  const state = crypto.randomBytes(24).toString('hex');
+  const redirectUri = _gustoRedirectUri(req);
+  db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('gusto_oauth_state', ?, CURRENT_TIMESTAMP)")
+    .run(JSON.stringify({ state, at: Date.now(), by: req.userName || '', redirect_uri: redirectUri }));
+  auditLog('gusto_connect_start', req, { targetType: 'integration', targetId: 'gusto', details: { environment, redirect_uri: redirectUri } });
+  res.redirect(gustoApi.authorizeUrl({ environment, clientId, redirectUri, state }));
+});
+
+// OAuth 回调（公开路由, 靠一次性 state 防伪）: code 换 token → token_info 拿公司 →
+// 存 config → 立刻踢一轮同步（首轮自动回填历史）→ 回 /accounting。
+app.get('/gusto/oauth/callback', async (req, res) => {
+  const back = q => res.redirect('/accounting?gusto=' + q);
+  try {
+    const stRow = db.prepare("SELECT value FROM app_settings WHERE key='gusto_oauth_state'").get();
+    db.prepare("DELETE FROM app_settings WHERE key='gusto_oauth_state'").run();
+    let st = {}; try { st = JSON.parse((stRow && stRow.value) || '{}'); } catch (e) {}
+    if (req.query.error) return back(encodeURIComponent('denied:' + String(req.query.error).slice(0, 80)));
+    if (!req.query.code || !st.state || String(req.query.state || '') !== st.state || Date.now() - (st.at || 0) > 15 * 60 * 1000) {
+      return back('state_mismatch');
+    }
+    const { clientId, clientSecret, environment } = _gustoApiCfg();
+    const tk = await gustoApi.exchangeCode({ environment, clientId, clientSecret, redirectUri: st.redirect_uri, code: String(req.query.code) });
+    let companyUuid = '', companyName = '';
+    try {
+      const ti = await gustoApi.tokenInfo(environment, tk.access_token);
+      companyUuid = ti.company_uuid;
+    } catch (e) { console.log('[gusto] token_info 失败:', e.message); }
+    if (companyUuid) {
+      try { companyName = (await gustoApi.companyInfo(environment, tk.access_token, companyUuid)).name; } catch (e) {}
+    }
+    _gustoSaveCfg({
+      access_token: tk.access_token, refresh_token: tk.refresh_token, token_expires_at: tk.expires_at,
+      company_uuid: companyUuid, company_name: companyName, environment,
+      redirect_uri: st.redirect_uri, connected_at: new Date().toISOString(), connected_by: st.by || '',
+      connect_error: null, last_sync_error: null, initial_backfill_done: false,
+    });
+    db.prepare("UPDATE integration_settings SET enabled=1, updated_at=CURRENT_TIMESTAMP WHERE provider='gusto'").run();
+    auditLog('gusto_connected', req, { targetType: 'integration', targetId: 'gusto', details: { company: companyName || companyUuid, by: st.by || '' } });
+    gustoSyncNow('connect').catch(() => {});
+    return back('connected');
+  } catch (e) {
+    console.log('[gusto] oauth 回调失败:', e && e.message);
+    return back(encodeURIComponent('error:' + String((e && e.message) || '').slice(0, 140)));
+  }
+});
+
+// 保存 Gusto 应用凭据（从 /accounting「Gusto 工资」页签来）。只改传了的字段,
+// 不动 config 里的 token——生成模板的通用集成设置弹窗会整个替换 config, 别用那个改。
+app.post('/api/admin/gusto/credentials', requireAdmin, requireRole('admin'), (req, res) => {
+  const b = req.body || {};
+  const sets = [], args = [];
+  if (b.client_id) { sets.push('api_key=?'); args.push(String(b.client_id).trim().slice(0, 200)); }
+  if (b.client_secret) { sets.push('api_secret=?'); args.push(String(b.client_secret).trim().slice(0, 200)); }
+  if (sets.length) {
+    db.prepare(`UPDATE integration_settings SET ${sets.join(', ')}, updated_at=CURRENT_TIMESTAMP WHERE provider='gusto'`).run(...args);
+  }
+  if (b.environment === 'demo' || b.environment === 'production') _gustoSaveCfg({ environment: b.environment });
+  auditLog('gusto_credentials_save', req, { targetType: 'integration', targetId: 'gusto',
+    details: { environment: b.environment || '', client_id_set: !!b.client_id, secret_set: !!b.client_secret } });
+  res.json({ success: true });
+});
+
+// 断开连接: 清 token, 已同步的名册和付款记录保留（历史对账还要用）
+app.post('/api/admin/gusto/disconnect', requireAdmin, requireRole('admin'), (req, res) => {
+  _gustoSaveCfg({ access_token: null, refresh_token: null, token_expires_at: null, connect_error: null });
+  auditLog('gusto_disconnect', req, { targetType: 'integration', targetId: 'gusto', details: {} });
+  res.json({ success: true });
 });
 
 // Get single invoice (with full details)
@@ -39692,6 +39979,221 @@ app.delete('/api/acct/referrals/:id', requireAdmin, requireRole('admin'), (req, 
   db.prepare('DELETE FROM referrals WHERE id=?').run(cur.id);
   db.prepare(`DELETE FROM acct_pay_notes WHERE target_type='referral' AND target_id=?`).run(cur.id);
   res.json({ success: true });
+});
+
+// ─── 💸 Gusto 工资页签: 连接状态 / 实付流水 / 与发票工资表按人对账 ───
+// 数据来自 Gusto API 定时同步进来的 gusto_contractors / gusto_payments（见
+// 「Gusto API 实时同步」段）。这里全是只读查询, token 等敏感信息不下发。
+app.get('/api/acct/gusto/status', requireAdmin, requireAcctView, (req, res) => {
+  try {
+    const { clientId, clientSecret, environment, cfg } = _gustoApiCfg();
+    const connected = !!(cfg.access_token && cfg.refresh_token);
+    // 打开页签顺手保鲜: 连接着且超过 10 分钟没同步 → 后台踢一轮, 不等结果
+    let kicked = false;
+    if (connected && !_gustoSyncRunning) {
+      const last = Date.parse(cfg.last_sync_at || '') || 0;
+      if (Date.now() - last > 10 * 60 * 1000) { kicked = true; gustoSyncNow('view').catch(() => {}); }
+    }
+    res.json({
+      connected,
+      environment,
+      has_credentials: !!(clientId && clientSecret),
+      company_name: cfg.company_name || '',
+      connected_at: cfg.connected_at || '',
+      connected_by: cfg.connected_by || '',
+      last_sync_at: cfg.last_sync_at || '',
+      last_sync_result: cfg.last_sync_result || null,
+      last_sync_error: cfg.last_sync_error || null,
+      connect_error: cfg.connect_error || null,
+      auto_sync_minutes: Math.max(5, Number(cfg.auto_sync_minutes) || 15),
+      syncing: _gustoSyncRunning || kicked,
+      redirect_uri: _gustoRedirectUri(req),
+      is_admin: req.userRole === 'admin',
+      can_sync: ['admin', 'accounting'].includes(req.userRole),
+      can_import: !connected && req.userRole === 'admin',
+      last_import: (() => {
+        try {
+          const r = db.prepare("SELECT value FROM app_settings WHERE key='gusto_last_import'").get();
+          if (!r) return null;
+          const info = JSON.parse(r.value);
+          delete info.uuids;   // 前端不需要几百个 id
+          return info;
+        } catch (e) { return null; }
+      })(),
+      counts: {
+        contractors: db.prepare('SELECT COUNT(*) AS n FROM gusto_contractors').get().n,
+        payments: db.prepare('SELECT COUNT(*) AS n FROM gusto_payments').get().n,
+        imported: db.prepare("SELECT COUNT(*) AS n FROM gusto_payments WHERE source='import'").get().n,
+      },
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 手动「立即同步」（admin / 会计）。body.backfill=true 时按 backfill_days 重拉历史。
+app.post('/api/acct/gusto/sync', requireAdmin, requireRole('admin', 'accounting'), async (req, res) => {
+  const out = await gustoSyncNow('manual', { backfill: !!(req.body && req.body.backfill) });
+  if (out.busy) return res.json(out);
+  if (!out.ok) return res.status(out.not_connected ? 400 : 502).json(out);
+  auditLog('gusto_sync', req, { targetType: 'integration', targetId: 'gusto', details: { payments: out.payments, window: out.window } });
+  res.json(out);
+});
+
+// ── 付款报告导入（API production 过审前的过渡; 连上 API 后此入口自动关闭） ──
+// Gusto 后台 Reports 导出的合同工付款报告, CSV 或 Excel。导入行 source='import',
+// 与 API 同步的数据同表同对账口径; API 同步覆盖到的窗口会自动替换掉导入行。
+// 上传/撤销仅限内部 admin——导入直接改动对账数据, 会计只读不经手。
+const gustoReportUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null,
+    /\.(csv|xlsx|xls)$/i.test(file.originalname || '') || /csv|text\/plain|spreadsheet|excel/i.test(file.mimetype || '')),
+});
+app.post('/api/acct/gusto/import', requireAdmin, requireRole('admin'), gustoReportUpload.single('file'), (req, res) => {
+  if (!req.file || !req.file.buffer) return res.status(400).json({ error: '请上传 Gusto 付款报告（CSV 或 Excel）' });
+  const { cfg } = _gustoApiCfg();
+  if (cfg.access_token && cfg.refresh_token) {
+    return res.status(400).json({ error: '已连接 Gusto API，付款数据自动同步，无需再导入报告（更早的历史可在同步时加大回填天数）' });
+  }
+  let csv;
+  try {
+    if (/\.xlsx?$/i.test(req.file.originalname || '') || req.file.buffer.slice(0, 2).toString() === 'PK') {
+      const XLSX = require('xlsx');
+      const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      if (!ws) return res.status(400).json({ error: 'Excel 文件里没有工作表' });
+      csv = XLSX.utils.sheet_to_csv(ws);
+    } else {
+      csv = req.file.buffer.toString('utf8');
+    }
+  } catch (e) { return res.status(400).json({ error: '文件读不出来：' + e.message }); }
+  let parsed;
+  try { parsed = gustoApi.parsePaymentReportCsv(csv); }
+  catch (e) { return res.status(400).json({ error: e.message }); }
+  const nowIso = new Date().toISOString();
+  const hasP = db.prepare('SELECT uuid FROM gusto_payments WHERE uuid=?');
+  const upP = db.prepare(`INSERT INTO gusto_payments (uuid, contractor_uuid, contractor_name, date, payment_method, wage_type, status, hours, hourly_rate, wage, bonus, reimbursement, wage_total, source, raw_json, synced_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'import', ?, ?)
+    ON CONFLICT(uuid) DO UPDATE SET contractor_name=excluded.contractor_name, date=excluded.date,
+      payment_method=excluded.payment_method, status=excluded.status, hours=excluded.hours,
+      wage=excluded.wage, bonus=excluded.bonus, reimbursement=excluded.reimbursement,
+      wage_total=excluded.wage_total, raw_json=excluded.raw_json, synced_at=excluded.synced_at`);
+  let inserted = 0, updated = 0, minD = '', maxD = '';
+  const uuids = [];
+  db.transaction(() => {
+    for (const p of parsed.payments) {
+      uuids.push(p.uuid);
+      if (hasP.get(p.uuid)) updated++; else inserted++;
+      upP.run(p.uuid, '', p.contractor_name, p.date, p.payment_method, p.wage_type, p.status,
+        p.hours, p.hourly_rate, p.wage, p.bonus, p.reimbursement, p.wage_total, JSON.stringify(p.raw || {}), nowIso);
+      if (!minD || p.date < minD) minD = p.date;
+      if (!maxD || p.date > maxD) maxD = p.date;
+    }
+  })();
+  const total = Math.round(parsed.payments.reduce((s, p) => s + p.wage_total, 0) * 100) / 100;
+  db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('gusto_last_import', ?, CURRENT_TIMESTAMP)")
+    .run(JSON.stringify({ at: nowIso, by: req.userName || '', file: req.file.originalname || '',
+      rows: parsed.payments.length, inserted, updated, window: [minD, maxD], total, uuids }));
+  auditLog('gusto_report_import', req, { targetType: 'gusto_payments', targetId: req.file.originalname || 'report',
+    details: { rows: parsed.payments.length, inserted, updated, window: [minD, maxD], total } });
+  res.json({ ok: true, rows: parsed.payments.length, inserted, updated, window: [minD, maxD], total, warnings: parsed.warnings });
+});
+
+// 撤销最近一次导入（删的只是那次导入写进来的行; 传错文件用）
+app.post('/api/acct/gusto/import-undo', requireAdmin, requireRole('admin'), (req, res) => {
+  const row = db.prepare("SELECT value FROM app_settings WHERE key='gusto_last_import'").get();
+  let info = null;
+  try { info = row && JSON.parse(row.value); } catch (e) {}
+  if (!info || !Array.isArray(info.uuids) || !info.uuids.length) return res.status(400).json({ error: '没有可撤销的导入记录' });
+  let removed = 0;
+  db.transaction(() => {
+    const del = db.prepare("DELETE FROM gusto_payments WHERE uuid=? AND source='import'");
+    for (const u of info.uuids) removed += del.run(String(u)).changes;
+    db.prepare("DELETE FROM app_settings WHERE key='gusto_last_import'").run();
+  })();
+  auditLog('gusto_report_import_undo', req, { targetType: 'gusto_payments', targetId: info.file || '', details: { removed } });
+  res.json({ ok: true, removed });
+});
+
+// 实付流水（按付款日期倒序; start/end 过滤付款日期, q 搜姓名/方式/状态）
+app.get('/api/acct/gusto/payments', requireAdmin, requireAcctView, (req, res) => {
+  try {
+    const start = String(req.query.start || '').slice(0, 10);
+    const end = String(req.query.end || '').slice(0, 10);
+    const q = String(req.query.q || '').trim().toLowerCase();
+    const ranged = /^\d{4}-\d{2}-\d{2}$/.test(start) && /^\d{4}-\d{2}-\d{2}$/.test(end);
+    let rows = db.prepare(`SELECT uuid, contractor_uuid, contractor_name, date, payment_method, wage_type, status,
+        hours, hourly_rate, wage, bonus, reimbursement, wage_total, source, synced_at
+      FROM gusto_payments ${ranged ? 'WHERE date>=? AND date<=?' : ''}
+      ORDER BY date DESC, contractor_name LIMIT 2000`).all(...(ranged ? [start, end] : []));
+    if (q) {
+      rows = rows.filter(r => (r.contractor_name || '').toLowerCase().includes(q)
+        || (r.payment_method || '').toLowerCase().includes(q)
+        || (r.status || '').toLowerCase().includes(q));
+    }
+    const total = Math.round(rows.reduce((s, r) => s + (Number(r.wage_total) || 0), 0) * 100) / 100;
+    res.json({ rows, count: rows.length, total });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 对账: 工资周期 [start, end] 内周期结束的正式工时发票 → 应付; 付款日期落在
+// [start, end + pay_pad_days] 的 Gusto 实付 → 实付。pad 默认 14 天——周五结束的
+// 周期一般下周才发钱, 不加缓冲整周都会误报「未付」。
+app.get('/api/acct/gusto/recon', requireAdmin, requireAcctView, (req, res) => {
+  try {
+    const start = String(req.query.start || '').slice(0, 10);
+    const end = String(req.query.end || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || start > end) {
+      return res.status(400).json({ error: '请提供工资周期日期范围 start / end (YYYY-MM-DD)' });
+    }
+    const pad = Math.min(60, Math.max(0, parseInt(req.query.pay_pad_days, 10) || 14));
+    const payEnd = new Date(Date.parse(end + 'T00:00:00Z') + pad * 86400000).toISOString().slice(0, 10);
+    const invRows = db.prepare(`SELECT id, invoice_number, company_name, period_start, period_end, items_json, profile_json
+      FROM invoices WHERE COALESCE(status,'')!='draft' AND period_end>=? AND period_end<=?
+      ORDER BY period_end, id`).all(start, end);
+    const invoices = [];
+    for (const r of invRows) {
+      let items = [], profile = {};
+      try { items = JSON.parse(r.items_json || '[]'); } catch (e) {}
+      try { profile = JSON.parse(r.profile_json || '{}'); } catch (e) {}
+      if (profile.invoice_mode === 'container') continue;   // 整柜分包计费没有按人工资行
+      const employees = (Array.isArray(items) ? items : []).map(it => ({
+        name: String(it.name || ''),
+        total: Number(it.total) || 0,
+        rate: Number(it.rate) || null,
+        regHours: Number(it.regHours != null ? it.regHours : it.hours) || 0,
+        otHours: Number(it.otHours) || 0,
+      })).filter(e2 => e2.name && e2.total > 0);
+      if (employees.length) {
+        invoices.push({ id: r.id, invoice_number: r.invoice_number, company_name: r.company_name,
+          period_start: r.period_start, period_end: r.period_end, employees });
+      }
+    }
+    let contractors = db.prepare('SELECT uuid, first_name, last_name, business_name, hourly_rate FROM gusto_contractors').all();
+    let rosterSource = contractors.length ? 'api' : 'none';
+    if (!contractors.length) {
+      // API 还没连上（过渡期只有导入的报告）→ 用生成付款 CSV 的模板名册兜底,
+      // 导入行按姓名照样归到收款人头上, 对账口径不变
+      const tpl = _gustoRoster();
+      if (tpl) {
+        try {
+          const pr = parseRoster(tpl.csv);
+          contractors = pr.entries.map(e => ({
+            uuid: '',
+            first_name: pr.cols.first >= 0 ? String(e.cells[pr.cols.first] || '') : '',
+            last_name: pr.cols.last >= 0 ? String(e.cells[pr.cols.last] || '') : '',
+            business_name: pr.cols.business >= 0 ? String(e.cells[pr.cols.business] || '') : '',
+            hourly_rate: e.rate,
+          }));
+          rosterSource = 'template';
+        } catch (e) { /* 模板解析不了就当没有名册 */ }
+      }
+    }
+    const payments = db.prepare(`SELECT uuid, contractor_uuid, contractor_name, date, payment_method, status,
+        hours, wage, bonus, reimbursement, wage_total, source
+      FROM gusto_payments WHERE date>=? AND date<=?`).all(start, payEnd);
+    const recon = buildGustoRecon(contractors, invoices, payments, { aliases: _gustoAliases(), payRates: GUSTO_PAY_RATE_OVERRIDES });
+    res.json({ ok: true, start, end, pay_end: payEnd, pay_pad_days: pad, invoice_count: invoices.length, roster_source: rosterSource, ...recon });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/acct/statements', requireAdmin, requireAcctView, (req, res) => {
