@@ -35549,7 +35549,14 @@ app.get('/api/plaid/annotations', requireAdmin, requireRole('admin', 'cs', 'acco
       FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id<>''`).all();
     const map = {};
     for (const r of rows) map[r.plaid_txn_id] = plaidAnnWithPhotos(r);
-    res.json({ annotations: map });
+    // 💸 Gusto 工资关联: 在「Gusto 工资」页签挂过账的银行转账, 详情面板要展示
+    // 挂的是谁哪天多少钱、审核状态（只读; 改动去会计对账页）
+    const gusto_links = {};
+    db.prepare(`SELECT bank_txn_id, contractor_name, date, wage_total, payment_method,
+        COALESCE(wage_type,'') AS wage_type, COALESCE(bank_link_status,'') AS link_status, COALESCE(bank_link_by,'') AS link_by
+      FROM gusto_payments WHERE bank_txn_id!='' ORDER BY date`).all()
+      .forEach(g => { (gusto_links[g.bank_txn_id] = gusto_links[g.bank_txn_id] || []).push(g); });
+    res.json({ annotations: map, gusto_links });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // 找到或创建某笔 Plaid 交易的标注 (日期/金额/方向按交易预填, Plaid 正数=支出)
