@@ -39484,21 +39484,64 @@ app.get('/api/acct/referral-options', requireAdmin, requireAcctView, (req, res) 
       const k = `${String(f.name).trim().toLowerCase()}|${norm(f.phone)}`;
       if (!seenF.has(k)) { seenF.add(k); foremen.push({ id: null, name: f.name, phone: f.phone }); }
     });
-    const whs = [], seenW = new Map();
+    // 仓库: 一个客户可以有好几个仓库 — partners.addresses JSON 逐条展开,
+    // 同名不同地址各是一行, 去重按 名称+地址
+    const whs = [], seenW = new Set();
     const addW = (name, address) => {
-      const k = String(name || '').trim().toLowerCase();
-      if (!k) return;
-      const hit = seenW.get(k);
-      if (hit) { if (!hit.address && address) hit.address = String(address).trim(); return; }
-      const w = { name: String(name).trim(), address: String(address || '').trim() };
-      seenW.set(k, w);
-      whs.push(w);
+      name = String(name || '').trim();
+      address = String(address || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+      if (!name) return;
+      const k = name.toLowerCase() + '|' + address.toLowerCase();
+      if (seenW.has(k)) return;
+      seenW.add(k);
+      whs.push({ name, address });
     };
     try { db.prepare(`SELECT warehouse_name, address FROM warehouses WHERE is_active=1`).all().forEach(w => addW(w.warehouse_name, w.address)); } catch (e) {}
-    try { db.prepare(`SELECT name, address FROM partners WHERE active=1`).all().forEach(p => addW(p.name, p.address)); } catch (e) {}
+    try {
+      db.prepare(`SELECT name, address, addresses FROM partners WHERE active=1`).all().forEach(p => {
+        let got = false;
+        try {
+          const arr = JSON.parse(p.addresses || '[]');
+          if (Array.isArray(arr)) for (const a of arr) {
+            const addr = typeof a === 'string' ? a : String((a && a.address) || '');
+            if (addr.trim()) { addW(p.name, addr); got = true; }
+          }
+        } catch (e) {}
+        if (!got) addW(p.name, p.address);
+      });
+    } catch (e) {}
     db.prepare(`SELECT DISTINCT warehouse_name, warehouse_address FROM referrals WHERE warehouse_name!=''`).all().forEach(r => addW(r.warehouse_name, r.warehouse_address));
-    whs.sort((a, b) => a.name.localeCompare(b.name));
-    res.json({ foremen, warehouses: whs });
+    // 同名下已有带地址的行, 无地址的裸行就不显示了
+    const whsOut = whs.filter(w => w.address || !whs.some(x => x !== w && x.address && x.name.toLowerCase() === w.name.toLowerCase()));
+    whsOut.sort((a, b) => a.name.localeCompare(b.name) || a.address.localeCompare(b.address));
+    res.json({ foremen, warehouses: whsOut });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 手机号自动联想: 填工头/工人电话时查系统里已有的人, 直接 link 起来。
+// 覆盖 工头名单 foremen / 员工档案 employees / 招工申请 applicant_submissions,
+// 只回姓名+电话 (不带证件等敏感明细); 4 位以上就按包含匹配联想。
+app.get('/api/acct/referral-phone-lookup', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+  try {
+    const norm = v => String(v || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+    const digits = norm(req.query.phone);
+    if (digits.length < 4) return res.json({ matches: [] });
+    const hit = v => { const n = norm(v); return !!n && n.includes(digits); };
+    const out = [], seen = new Set();
+    const add = (source, name, phone, foremanId) => {
+      name = String(name || '').trim();
+      phone = String(phone || '').trim();
+      if (!name && !phone) return;
+      const k = name.toLowerCase() + '|' + norm(phone);
+      if (seen.has(k)) return;
+      seen.add(k);
+      out.push({ source, name, phone, foreman_id: foremanId || null });
+    };
+    db.prepare(`SELECT id, name, phone FROM foremen WHERE active=1`).all().filter(f => hit(f.phone)).forEach(f => add('工头名单', f.name, f.phone, f.id));
+    db.prepare(`SELECT first_name, middle_name, last_name, phone FROM employees`).all().filter(e => hit(e.phone))
+      .forEach(e => add('员工档案', [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '), e.phone));
+    db.prepare(`SELECT name, phone FROM applicant_submissions`).all().filter(a => hit(a.phone)).forEach(a => add('招工申请', a.name, a.phone));
+    res.json({ matches: out.slice(0, 8) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

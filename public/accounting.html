@@ -209,16 +209,18 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
           <div><label style="font-size:.74rem;color:var(--g500)">新工头姓名 <span style="color:#dc2626">*</span></label>
             <input type="text" id="raForemanName" placeholder="介绍人 / 工头" style="width:100%;margin-top:.15rem"></div>
           <div><label style="font-size:.74rem;color:var(--g500)">新工头电话</label>
-            <input type="tel" id="raForemanPhone" placeholder="例：312-555-0123" style="width:100%;margin-top:.15rem"></div>
+            <input type="tel" id="raForemanPhone" placeholder="输入号码自动查系统" oninput="raPhoneLookup('raForemanPhone','raForemanHits','foreman')" style="width:100%;margin-top:.15rem"></div>
         </div>
+        <div id="raForemanHits" style="margin-top:.3rem;line-height:1.9"></div>
         <div style="font-size:.7rem;color:var(--g400);margin-top:.3rem">保存后会登记进工头名单，下次直接下拉选。</div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.2rem .6rem">
         <div><label style="font-size:.76rem;color:var(--g500)">被介绍人姓名 <span style="color:#dc2626">*</span></label>
           <input type="text" id="raWorkerName" placeholder="来上班的工人" style="width:100%;margin:.15rem 0 .55rem"></div>
         <div><label style="font-size:.76rem;color:var(--g500)">被介绍人电话</label>
-          <input type="tel" id="raWorkerPhone" placeholder="例：773-555-0123" style="width:100%;margin:.15rem 0 .55rem"></div>
+          <input type="tel" id="raWorkerPhone" placeholder="输入号码自动查系统" oninput="raPhoneLookup('raWorkerPhone','raWorkerHits','worker')" style="width:100%;margin:.15rem 0 .55rem"></div>
       </div>
+      <div id="raWorkerHits" style="margin:-0.3rem 0 .3rem;line-height:1.9"></div>
       <label style="font-size:.76rem;color:var(--g500)">工作仓库</label>
       <select id="raWhSel" onchange="raWhChanged()" style="width:100%;margin:.15rem 0 .55rem"><option value="">加载中…</option></select>
       <input type="text" id="raWh" placeholder="输入新仓库名" style="display:none;width:100%;margin:0 0 .55rem">
@@ -1204,6 +1206,9 @@ async function openRefAdd(id) {
   document.getElementById('raDuration').value = r ? r.work_duration || '' : '';
   document.getElementById('raDesc').value = r ? r.description || '' : '';
   document.getElementById('raFiles').value = '';
+  document.getElementById('raForemanHits').innerHTML = '';
+  document.getElementById('raWorkerHits').innerHTML = '';
+  _raHits = {};
   raDurHint();
   raRenderOldFiles();
   document.getElementById('refAddModal').style.display = 'flex';
@@ -1231,7 +1236,11 @@ function raFillSelects(r) {
   } else fSel.value = '';
   raForemanChanged();
   if (r && r.warehouse_name) {
-    const wi = whs.findIndex(w => String(w.name).trim().toLowerCase() === String(r.warehouse_name).trim().toLowerCase());
+    // 同名客户可能有好几个仓库: 先按 名称+地址 找, 找不到再按名称
+    const nm = String(r.warehouse_name).trim().toLowerCase();
+    const ad = String(r.warehouse_address || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    let wi = whs.findIndex(w => String(w.name).trim().toLowerCase() === nm && String(w.address || '').replace(/\s+/g, ' ').trim().toLowerCase() === ad);
+    if (wi < 0) wi = whs.findIndex(w => String(w.name).trim().toLowerCase() === nm);
     if (wi >= 0) wSel.value = String(wi);
     else { wSel.value = '__new__'; document.getElementById('raWh').value = r.warehouse_name || ''; }
   } else wSel.value = '';
@@ -1239,6 +1248,48 @@ function raFillSelects(r) {
 }
 function raForemanChanged() {
   document.getElementById('raForemanNewWrap').style.display = document.getElementById('raForemanSel').value === '__new__' ? '' : 'none';
+}
+// 手机号联想: 输入工头/工人电话时自动查系统 (工头名单/员工档案/招工申请), 点一下带入
+let _raLkT = {}, _raHits = {};
+function raPhoneLookup(inputId, boxId, kind) {
+  clearTimeout(_raLkT[inputId]);
+  const box = document.getElementById(boxId);
+  const digits = document.getElementById(inputId).value.replace(/\D/g, '');
+  if (digits.length < 4) { box.innerHTML = ''; return; }
+  _raLkT[inputId] = setTimeout(async () => {
+    let r;
+    try { r = await api('/api/acct/referral-phone-lookup?phone=' + encodeURIComponent(digits)); } catch (e) { return; }
+    if (document.getElementById(inputId).value.replace(/\D/g, '') !== digits) return; // 号码又改了, 结果作废
+    const ms = (r && r.matches) || [];
+    _raHits[boxId] = ms;
+    box.innerHTML = ms.length
+      ? '<span style="font-size:.7rem;color:var(--g400)">系统里找到：</span>' + ms.map((m, i) =>
+          `<a onclick="raPickPhoneHit('${boxId}', ${i}, '${kind}')" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:999px;padding:2px 10px;font-size:.72rem;font-weight:600;margin:2px 4px 2px 0;white-space:nowrap">${esc(m.name || '—')} · ${esc(m.phone || '')}<span style="color:#93b8f0;font-weight:400">${esc(m.source)}</span></a>`).join('')
+      : '';
+  }, 350);
+}
+function raPickPhoneHit(boxId, i, kind) {
+  const m = (_raHits[boxId] || [])[i];
+  if (!m) return;
+  if (kind === 'foreman') {
+    // 工头名单里已有的 → 直接切到下拉选中, 不再重复建
+    if (m.foreman_id != null) {
+      const fi = ((_refOpts && _refOpts.foremen) || []).findIndex(f => f.id === m.foreman_id);
+      if (fi >= 0) {
+        document.getElementById('raForemanSel').value = String(fi);
+        raForemanChanged();
+        document.getElementById(boxId).innerHTML = '';
+        toast('✅ 已选中工头名单里的 ' + (m.name || ''));
+        return;
+      }
+    }
+    document.getElementById('raForemanName').value = m.name || '';
+    document.getElementById('raForemanPhone').value = m.phone || '';
+  } else {
+    document.getElementById('raWorkerName').value = m.name || '';
+    document.getElementById('raWorkerPhone').value = m.phone || '';
+  }
+  document.getElementById(boxId).innerHTML = '';
 }
 // keepAddr=true 用于打开弹窗回填时: 不覆盖记录里已存的地址
 function raWhChanged(keepAddr) {
