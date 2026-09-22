@@ -1265,6 +1265,10 @@ try { db.exec(`ALTER TABLE employees ADD COLUMN extra_emails TEXT DEFAULT '[]'`)
 try { db.exec(`ALTER TABLE employees ADD COLUMN street2 TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN middle_name TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN customer_hidden INTEGER DEFAULT 0`); } catch(e) {}
+// 测试号: 管理员把某个工人标记成测试用账号——客户门户的派遣工人列表照常显示,
+// 但职位处带「🧪 测试号」标记, 客户一眼知道这不是正式工人（与 customer_hidden
+// 的区别: 隐藏是完全不给客户看, 测试号是给客户看但标明是测试）。
+try { db.exec(`ALTER TABLE employees ADD COLUMN is_test INTEGER DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN social_media TEXT DEFAULT '{}'`); } catch(e) {}
 // 8 位数字打卡密码（见 applicant_submissions.timeclock_code）
 try { db.exec(`ALTER TABLE employees ADD COLUMN timeclock_code TEXT DEFAULT ''`); } catch(e) {}
@@ -20802,6 +20806,7 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
       JSON.stringify(d.social_media||{}));
     const newId = r.lastInsertRowid;
     if (d.customer_hidden !== undefined) db.prepare('UPDATE employees SET customer_hidden=? WHERE id=?').run(d.customer_hidden ? 1 : 0, newId);
+    if (d.is_test !== undefined) db.prepare('UPDATE employees SET is_test=? WHERE id=?').run(d.is_test ? 1 : 0, newId);
     if (d.force) {
       const ownerLabel = `${[d.first_name, d.middle_name, d.last_name].filter(Boolean).join(' ')} · ${empId}`;
       _forceStripContact('phone', '手机号', d.phone, newId, ownerLabel);
@@ -20832,6 +20837,7 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
           _forceStripContact('email', '邮箱', d.email, r2.lastInsertRowid, ownerLabel);
         }
         if (d.customer_hidden !== undefined) db.prepare('UPDATE employees SET customer_hidden=? WHERE id=?').run(d.customer_hidden ? 1 : 0, r2.lastInsertRowid);
+        if (d.is_test !== undefined) db.prepare('UPDATE employees SET is_test=? WHERE id=?').run(d.is_test ? 1 : 0, r2.lastInsertRowid);
         return res.json({ success: true, id: r2.lastInsertRowid, employee_id: retryId });
       } catch (e2) {
         if (e2.message.includes('UNIQUE')) return res.status(400).json({ error: '员工编号冲突, 请重试' });
@@ -20948,6 +20954,7 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
     }
   }
   if (d.customer_hidden !== undefined) db.prepare('UPDATE employees SET customer_hidden=? WHERE id=?').run(d.customer_hidden ? 1 : 0, req.params.id);
+  if (d.is_test !== undefined) db.prepare('UPDATE employees SET is_test=? WHERE id=?').run(d.is_test ? 1 : 0, req.params.id);
   // Sync new contact info to linked worker_account so onboarding modals (W-9, Zelle, etc.) use the latest values
   try {
     db.prepare('UPDATE worker_accounts SET email=?, phone=? WHERE employee_id=?').run(d.email || '', d.phone || '', req.params.id);
@@ -30891,7 +30898,7 @@ app.get('/api/customer/my-workers', requireCustomer, (req, res) => {
     const scope = _customerEntryScope(pid, ids, req);
     const punch = db.prepare(`
       SELECT e.id, e.first_name, e.middle_name, e.last_name, e.employee_id AS emp_code, e.position, e.phone, e.email,
-        e.address, e.city, e.state, e.zip,
+        e.address, e.city, e.state, e.zip, COALESCE(e.is_test,0) AS is_test,
         MAX(t.clock_in) AS last_punch,
         COUNT(DISTINCT COALESCE(NULLIF(t.work_date,''), DATE(t.clock_in))) AS punch_days,
         ROUND(SUM(COALESCE(t.total_hours,0)), 1) AS total_hours
@@ -30902,7 +30909,7 @@ app.get('/api/customer/my-workers', requireCustomer, (req, res) => {
       seen.add(r.id);
       out.push({
         id: r.id, first_name: r.first_name, middle_name: r.middle_name, last_name: r.last_name, emp_code: r.emp_code || '',
-        position: r.position || '', phone: r.phone || '', email: r.email || '',
+        position: r.position || '', phone: r.phone || '', email: r.email || '', is_test: r.is_test ? 1 : 0,
         address: [r.address, r.city, r.state, r.zip].map(x => String(x || '').trim()).filter(Boolean).join(', '),
         punch_days: r.punch_days, total_hours: r.total_hours || 0, last_punch: r.last_punch, kind: 'punch'
       });
@@ -30910,7 +30917,7 @@ app.get('/api/customer/my-workers', requireCustomer, (req, res) => {
   }
   const asg = db.prepare(`
     SELECT a.status as assign_status, e.id AS eid, e.first_name, e.middle_name, e.last_name, e.employee_id AS emp_code,
-      e.position, e.phone, e.email, e.address, e.city, e.state, e.zip, j.title as job_title, j.location
+      e.position, e.phone, e.email, e.address, e.city, e.state, e.zip, COALESCE(e.is_test,0) AS is_test, j.title as job_title, j.location
     FROM assignments a
     LEFT JOIN inquiries i ON a.inquiry_id=i.id
     LEFT JOIN jobs j ON a.job_id=j.id
@@ -30922,7 +30929,7 @@ app.get('/api/customer/my-workers', requireCustomer, (req, res) => {
     if (a.eid) seen.add(a.eid);
     out.push({
       id: a.eid || null, first_name: a.first_name || '', middle_name: a.middle_name || '', last_name: a.last_name || '', emp_code: a.emp_code || '',
-      position: a.position || a.job_title || '', phone: a.phone || '', email: a.email || '',
+      position: a.position || a.job_title || '', phone: a.phone || '', email: a.email || '', is_test: a.is_test ? 1 : 0,
       address: [a.address, a.city, a.state, a.zip].map(x => String(x || '').trim()).filter(Boolean).join(', ') || (a.location || ''),
       punch_days: 0, last_punch: null, kind: 'assign', assign_status: a.assign_status || ''
     });
@@ -30930,7 +30937,7 @@ app.get('/api/customer/my-workers', requireCustomer, (req, res) => {
   // 手动从员工库添加的 (partner_workers): 已因打卡/派工出现过的人不重复列
   const manual = db.prepare(`
     SELECT pw.added_by, e.id, e.first_name, e.middle_name, e.last_name, e.employee_id AS emp_code,
-      e.position, e.phone, e.email, e.address, e.city, e.state, e.zip
+      e.position, e.phone, e.email, e.address, e.city, e.state, e.zip, COALESCE(e.is_test,0) AS is_test
     FROM partner_workers pw JOIN employees e ON pw.employee_id=e.id
     WHERE pw.partner_id=? AND COALESCE(e.customer_hidden,0)=0
     ORDER BY e.first_name, e.middle_name, e.last_name`).all(pid);
@@ -30939,7 +30946,7 @@ app.get('/api/customer/my-workers', requireCustomer, (req, res) => {
     seen.add(m.id);
     out.push({
       id: m.id, first_name: m.first_name, middle_name: m.middle_name, last_name: m.last_name, emp_code: m.emp_code || '',
-      position: m.position || '', phone: m.phone || '', email: m.email || '',
+      position: m.position || '', phone: m.phone || '', email: m.email || '', is_test: m.is_test ? 1 : 0,
       address: [m.address, m.city, m.state, m.zip].map(x => String(x || '').trim()).filter(Boolean).join(', '),
       punch_days: 0, total_hours: 0, last_punch: null, kind: 'manual', added_by: m.added_by || ''
     });
