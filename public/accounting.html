@@ -187,12 +187,13 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <option value="noshow">❌ 没去面试</option>
       </select>
       <button class="btn btn-blue" id="btnRefAdd" onclick="openRefAdd()" style="display:none">＋ 新增介绍</button>
+      <button class="btn btn-outline" onclick="openFmList()">👷 工头名单</button>
       <span id="refStats" style="font-size:.8rem;color:var(--g500)"></span>
     </div>
     <div class="card" style="overflow-x:auto">
       <table><thead><tr>
-        <th>工头（介绍人）</th><th>被介绍工人</th><th>工作仓库 / 地址</th><th>面试时间</th><th>面试去没去</th><th>已工作（按发票）</th><th style="text-align:right">介绍费</th><th>关联发票（会计）</th><th>管理员核查</th><th>付款批注（会计）</th><th></th>
-      </tr></thead><tbody id="refBody"><tr><td colspan="11" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+        <th>工头（介绍人）</th><th>被介绍工人</th><th>工作仓库 / 地址</th><th>面试时间</th><th>面试去没去</th><th>已工作（按发票）</th><th style="text-align:right">介绍费</th><th>关联发票（会计）</th><th>管理员核查</th><th>付款状态</th><th>付款批注（会计）</th><th></th>
+      </tr></thead><tbody id="refBody"><tr><td colspan="12" style="color:var(--g400)">加载中…</td></tr></tbody></table>
     </div>
     <p style="font-size:.75rem;color:var(--g400);margin-top:.5rem">流程：客服 / 会计录入介绍信息（工头和工人的姓名电话、仓库、面试时间、做了多久）→ 会计「关联发票」佐证工人确实在给客户干活 → 管理员核查整条信息、决定是否支付 → 同意支付后会计在「付款批注」里记实付金额并关联银行记录。</p>
   </div>
@@ -202,17 +203,12 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <div class="card" style="max-width:560px;width:100%;padding:1.2rem 1.2rem 1rem;max-height:92vh;overflow:auto">
       <div id="refAddTitle" style="font-weight:800;margin-bottom:.2rem">🤝 新增介绍</div>
       <div id="refAddHint" style="font-size:.76rem;color:var(--g500);margin-bottom:.7rem"></div>
-      <label style="font-size:.76rem;color:var(--g500)">工头（介绍人）<span style="color:#dc2626">*</span></label>
-      <select id="raForemanSel" onchange="raForemanChanged()" style="width:100%;margin:.15rem 0 .55rem"><option value="">加载中…</option></select>
-      <div id="raForemanNewWrap" style="display:none;border:1px dashed var(--g300);border-radius:8px;padding:.5rem .6rem;margin-bottom:.55rem;background:#f8fafc">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.2rem .6rem">
-          <div><label style="font-size:.74rem;color:var(--g500)">新工头姓名 <span style="color:#dc2626">*</span></label>
-            <input type="text" id="raForemanName" placeholder="介绍人 / 工头" style="width:100%;margin-top:.15rem"></div>
-          <div><label style="font-size:.74rem;color:var(--g500)">新工头电话</label>
-            <input type="tel" id="raForemanPhone" placeholder="输入号码自动查系统" oninput="raPhoneLookup('raForemanPhone','raForemanHits','foreman')" style="width:100%;margin-top:.15rem"></div>
-        </div>
-        <div id="raForemanHits" style="margin-top:.3rem;line-height:1.9"></div>
-        <div style="font-size:.7rem;color:var(--g400);margin-top:.3rem">保存后会登记进工头名单，下次直接下拉选。</div>
+      <label style="font-size:.76rem;color:var(--g500)">工头（介绍人）<span style="color:#dc2626">*</span>
+        <a style="cursor:pointer;font-size:.72rem;color:#0f4c6b;text-decoration:underline;margin-left:.4rem" onclick="openFmList()">👷 工头名单</a></label>
+      <div id="raForemanPicked" style="display:none;margin:.15rem 0 .55rem"></div>
+      <div id="raForemanBox" style="position:relative;margin:.15rem 0 .55rem">
+        <input type="text" id="raForemanSearch" placeholder="搜工头姓名 / 电话，从名单里选…" oninput="raFmSearch()" onfocus="raFmSearch()" autocomplete="off" style="width:100%">
+        <div id="raForemanList" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--g200);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);max-height:230px;overflow:auto;z-index:6"></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.2rem .6rem">
         <div><label style="font-size:.76rem;color:var(--g500)">被介绍人姓名 <span style="color:#dc2626">*</span></label>
@@ -261,6 +257,51 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       </div>
     </div>
   </div>
+
+  <!-- 👷 工头名单弹窗: 专门的工头数据库 — 查看/搜索/添加/编辑 (含所在州), 登记介绍时从这里选人 -->
+  <div id="fmModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:94;align-items:center;justify-content:center;padding:16px">
+    <div class="card" style="max-width:780px;width:100%;padding:1.1rem 1.2rem 1rem;max-height:92vh;overflow:auto;display:flex;flex-direction:column">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;margin-bottom:.55rem">
+        <div style="font-weight:800">👷 工头名单 Foremen</div>
+        <button class="btn btn-sm btn-outline" onclick="document.getElementById('fmModal').style.display='none'">✕ 关闭</button>
+      </div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.55rem">
+        <input type="text" id="fmSearch" placeholder="搜姓名 / 电话 / 州…" oninput="renderFmList()" style="flex:1;min-width:180px">
+        <button class="btn btn-sm btn-blue" id="fmAddBtn" onclick="fmFormShow(null)" style="display:none">＋ 添加工头</button>
+        <span id="fmStats" style="font-size:.76rem;color:var(--g500)"></span>
+      </div>
+      <div id="fmFormWrap" style="display:none;border:1px dashed var(--g300);border-radius:8px;padding:.6rem .7rem;margin-bottom:.55rem;background:#f8fafc">
+        <div id="fmFormTitle" style="font-size:.8rem;font-weight:700;margin-bottom:.4rem">＋ 添加工头</div>
+        <div style="display:grid;grid-template-columns:1.2fr 1fr .6fr 1fr;gap:.5rem">
+          <div><label style="font-size:.72rem;color:var(--g500)">姓名 <span style="color:#dc2626">*</span></label>
+            <input type="text" id="fmName" style="width:100%;margin-top:.15rem"></div>
+          <div><label style="font-size:.72rem;color:var(--g500)">电话</label>
+            <input type="tel" id="fmPhone" placeholder="例：312-555-0123" style="width:100%;margin-top:.15rem"></div>
+          <div><label style="font-size:.72rem;color:var(--g500)">州</label>
+            <input type="text" id="fmState" list="usStates" placeholder="IL" maxlength="20" style="width:100%;margin-top:.15rem;text-transform:uppercase"></div>
+          <div><label style="font-size:.72rem;color:var(--g500)">城市</label>
+            <input type="text" id="fmCity" placeholder="例：Aurora" style="width:100%;margin-top:.15rem"></div>
+        </div>
+        <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:.5rem">
+          <button class="btn btn-sm btn-outline" onclick="fmFormHide()">取消</button>
+          <button class="btn btn-sm btn-blue" id="fmSaveBtn" onclick="fmSave()">保存</button>
+        </div>
+      </div>
+      <div style="flex:1;overflow:auto;border:1px solid var(--g100);border-radius:8px">
+        <table><thead><tr>
+          <th>姓名</th><th>电话</th><th>州</th><th>城市</th><th style="text-align:right">介绍次数</th><th></th>
+        </tr></thead><tbody id="fmBody"><tr><td colspan="6" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+      </div>
+      <p style="font-size:.72rem;color:var(--g400);margin:.5rem 0 0">这里是工头数据库：登记介绍时在表单里直接搜索选人，不用重复填；州 / 城市随时可补录。</p>
+    </div>
+  </div>
+  <datalist id="usStates">
+    <option value="IL"><option value="TX"><option value="CA"><option value="NY"><option value="NJ"><option value="GA">
+    <option value="FL"><option value="PA"><option value="OH"><option value="IN"><option value="WI"><option value="MI">
+    <option value="TN"><option value="NC"><option value="SC"><option value="AZ"><option value="WA"><option value="OR">
+    <option value="CO"><option value="NV"><option value="MO"><option value="MN"><option value="IA"><option value="KS">
+    <option value="KY"><option value="VA"><option value="MD"><option value="MA"><option value="CT"><option value="UT">
+  </datalist>
 
   <!-- 🛡️/⚖️ 费用记录 (保险费/律师费): 和赔偿事故同一套 — 可新增、传发票文件、挂付款批注 -->
   <div id="paneFee" style="display:none">
@@ -1049,9 +1090,10 @@ function _refDuration(r) {
   const days = Math.round((end - start) / 86400000);
   return days >= 30 ? `${Math.floor(days / 30)} 个月${days % 30 ? ' ' + days % 30 + ' 天' : ''}` : `${days} 天`;
 }
-function _refPersonCell(name, phone) {
+function _refPersonCell(name, phone, state) {
   return `<div style="font-weight:600;white-space:nowrap">${esc(name || '—')}</div>`
-    + (phone ? `<a href="tel:${esc(phone)}" style="font-size:.76rem;color:#0f4c6b;text-decoration:none;white-space:nowrap">📞 ${esc(phone)}</a>` : '');
+    + (phone ? `<a href="tel:${esc(phone)}" style="font-size:.76rem;color:#0f4c6b;text-decoration:none;white-space:nowrap">📞 ${esc(phone)}</a>` : '')
+    + (state ? `<div style="font-size:.7rem;color:#1d4ed8;white-space:nowrap">📍 ${esc(state)}</div>` : '');
 }
 // 记录还能不能改 (编辑/标面试): 核查过的只有管理员能动
 function _refCanEdit(r) {
@@ -1065,14 +1107,25 @@ function _refInterviewMarkCell(r) {
       ? '<span style="display:inline-block;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:6px;padding:1px 7px;font-size:.72rem;font-weight:700;white-space:nowrap">❌ 没去</span>'
       : '<span style="display:inline-block;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;border-radius:6px;padding:1px 7px;font-size:.72rem;white-space:nowrap">⏳ 待标记</span>';
   if (!r.interview_at && !r.interview_status) return '<span style="color:var(--g400)">—</span>';
+  // 标了去了的显示实际到场时间, 可以随时更新
+  const attendedAt = r.interview_status === 'attended' && r.interview_attended_at
+    ? `<div style="font-size:.72rem;color:#047857;white-space:nowrap;margin-top:2px">到场 ${esc(r.interview_attended_at)}</div>` : '';
   const L = (st, label) => `<a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="refMarkInterview(${r.id},'${st}')">${label}</a>`;
   const links = _refCanEdit(r)
     ? `<div style="margin-top:3px;white-space:nowrap;font-size:.7rem;color:var(--g400)">${
-        r.interview_status === 'attended' ? `${L('no_show', '改为没去')} · ${L('', '清除')}`
+        r.interview_status === 'attended' ? `${L('attended', '改时间')} · ${L('no_show', '改为没去')} · ${L('', '清除')}`
         : r.interview_status === 'no_show' ? `${L('attended', '改为去了')} · ${L('', '清除')}`
         : `${L('attended', '✅ 去了')} · ${L('no_show', '❌ 没去')}`}</div>`
     : '';
-  return chip + links;
+  return chip + attendedAt + links;
+}
+// 付款状态专门一列: 只认会计付款批注 (已付/部分/未付); 没核查完的先显示流程位
+function _refPayBadge(r) {
+  if (r.review_status === 'pending') return '<span style="font-size:.74rem;color:var(--g400);white-space:nowrap">待核查</span>';
+  if (r.review_status === 'rejected') return '<span class="badge" style="color:#6b7280;background:#f3f4f6;border:1px solid #e5e7eb">不支付</span>';
+  const s = r.pay_note && r.pay_note.paid_status;
+  const L = { paid: ['已付款', '#047857', '#ecfdf5', '#a7f3d0'], partial: ['部分付款', '#b45309', '#fffbeb', '#fcd34d'], unpaid: ['未付款', '#b91c1c', '#fef2f2', '#fecaca'] }[(s === 'paid' || s === 'partial') ? s : 'unpaid'];
+  return `<span class="badge" style="color:${L[1]};background:${L[2]};border:1px solid ${L[3]}">${L[0]}</span>`;
 }
 // 按关联发票算工作区间: 做了多久看发票才知道 — 取所有关联发票账期的最早起~最晚止
 function _refInvPeriod(r) {
@@ -1089,13 +1142,21 @@ function _refInvPeriod(r) {
   return { start, end, days };
 }
 async function refMarkInterview(id, st) {
+  const x = _refList.find(v => v.id === id);
+  let attendedAt = '';
+  if (st === 'attended' && x) {
+    // 标「去了」顺带记实际到场时间 (默认按约的时间, 可改); 之后点「改时间」还能更新
+    const def = x.interview_attended_at || (x.interview_at || '').replace('T', ' ');
+    const v = prompt('实际到场时间（可改，例：2026-09-28 10:30）：', def);
+    if (v === null) return;
+    attendedAt = v.trim();
+  }
   try {
-    const r = await api(`/api/acct/referrals/${id}/interview-status`, { method: 'POST', body: JSON.stringify({ status: st }) });
+    const r = await api(`/api/acct/referrals/${id}/interview-status`, { method: 'POST', body: JSON.stringify({ status: st, attended_at: attendedAt }) });
     if (r && r.error) throw new Error(r.error);
-    const x = _refList.find(v => v.id === id);
-    if (x) x.interview_status = st;
+    if (x) { x.interview_status = st; x.interview_attended_at = r.interview_attended_at || ''; }
     renderRefList();
-    toast(st === 'attended' ? '✅ 已标记：面试去了' : st === 'no_show' ? '已标记：没去面试' : '已清除标记');
+    toast(st === 'attended' ? '✅ 已标记：面试去了' + (attendedAt ? '（' + attendedAt + '）' : '') : st === 'no_show' ? '已标记：没去面试' : '已清除标记');
   } catch (e) { toast(e.message || '操作失败', true); }
 }
 function renderRefList() {
@@ -1154,7 +1215,7 @@ function renderRefList() {
     const ops = `${canEdit ? `<a style="cursor:pointer;color:#0f4c6b;font-size:.78rem;text-decoration:underline" onclick="openRefAdd(${r.id})">编辑</a>` : ''}`
       + `${USER.role === 'admin' ? ` <a style="cursor:pointer;color:#b91c1c;font-size:.78rem;margin-left:6px" title="删除这条介绍记录" onclick="refDelete(${r.id})">🗑</a>` : ''}`;
     return `<tr${r.review_status === 'rejected' ? ' style="opacity:.55"' : ''}>
-      <td>${_refPersonCell(r.foreman_name, r.foreman_phone)}</td>
+      <td>${_refPersonCell(r.foreman_name, r.foreman_phone, r.foreman_state)}</td>
       <td>${_refPersonCell(r.worker_name, r.worker_phone)}${attHtml}</td>
       <td style="max-width:220px"><div style="font-weight:600">${esc(r.warehouse_name || '—')}</div>${r.warehouse_address ? `<div style="font-size:.74rem;color:var(--g500)">${esc(r.warehouse_address)}</div>` : ''}</td>
       <td style="white-space:nowrap;font-size:.8rem">${esc((r.interview_at || '').replace('T', ' ') || '') || '<span style="color:var(--g400)">—</span>'}</td>
@@ -1163,10 +1224,11 @@ function renderRefList() {
       <td style="text-align:right;font-weight:700;color:#0f4c6b;white-space:nowrap">${r.amount != null ? money(r.amount) : '—'}</td>
       <td style="max-width:200px">${invCell}</td>
       <td>${reviewCell}</td>
+      <td>${_refPayBadge(r)}</td>
       <td>${payCell}</td>
       <td style="white-space:nowrap">${ops}</td>
     </tr>`;
-  }).join('') : '<tr><td colspan="11" style="color:var(--g400);padding:1rem">暂无介绍费记录，点「＋ 新增介绍」添加。</td></tr>';
+  }).join('') : '<tr><td colspan="12" style="color:var(--g400);padding:1rem">暂无介绍费记录，点「＋ 新增介绍」添加。</td></tr>';
 }
 // ➕ 新增 / 编辑介绍 (编辑只限待核查的记录; 管理员随时可改)
 // 工头从名单下拉选 (foremen 表, 「＋新工头」登记进名单); 仓库下拉选、地址自动带出可改。
@@ -1178,9 +1240,11 @@ async function openRefAdd(id) {
   document.getElementById('refAddTitle').textContent = r ? '🤝 编辑介绍' : '🤝 新增介绍';
   document.getElementById('refAddHint').textContent = r
     ? '改完保存即可；管理员核查过的记录只有管理员能改。'
-    : '选工头、填被介绍工人的信息；提交后由会计关联发票、管理员核查决定是否支付。';
-  document.getElementById('raForemanName').value = '';
-  document.getElementById('raForemanPhone').value = '';
+    : '搜索选工头、填被介绍工人的信息；提交后由会计关联发票、管理员核查决定是否支付。';
+  _raForeman = null;
+  document.getElementById('raForemanSearch').value = '';
+  document.getElementById('raForemanList').style.display = 'none';
+  raFmRenderPicked();
   document.getElementById('raWorkerName').value = r ? r.worker_name || '' : '';
   document.getElementById('raWorkerPhone').value = r ? r.worker_phone || '' : '';
   document.getElementById('raWhAddr').value = r ? r.warehouse_address || '' : '';
@@ -1189,7 +1253,6 @@ async function openRefAdd(id) {
   document.getElementById('raAmount').value = r && r.amount != null ? r.amount : '';
   document.getElementById('raDesc').value = r ? r.description || '' : '';
   document.getElementById('raFiles').value = '';
-  document.getElementById('raForemanHits').innerHTML = '';
   document.getElementById('raWorkerHits').innerHTML = '';
   _raHits = {};
   raRenderOldFiles();
@@ -1202,21 +1265,16 @@ const _phDigits = p => String(p || '').replace(/\D/g, '');
 function raFillSelects(r) {
   const fm = (_refOpts && _refOpts.foremen) || [];
   const whs = (_refOpts && _refOpts.warehouses) || [];
-  const fSel = document.getElementById('raForemanSel');
-  fSel.innerHTML = '<option value="">— 选择工头 —</option>'
-    + fm.map((f, i) => `<option value="${i}">${esc(f.name)}${f.phone ? ' · ' + esc(f.phone) : ''}</option>`).join('')
-    + '<option value="__new__">＋ 新工头（登记进名单）</option>';
   const wSel = document.getElementById('raWhSel');
   wSel.innerHTML = '<option value="">— 选择仓库 —</option>'
     + whs.map((w, i) => `<option value="${i}">${esc(w.name)}${w.address ? '　—　' + esc(w.address) : ''}</option>`).join('')
     + '<option value="__new__">＋ 其他 / 新仓库</option>';
-  // 编辑时按 姓名+电话 / 仓库名 回填选中项; 对不上就落到手输
+  // 编辑时按 姓名+电话 回填选中的工头; 名单里没有的 (老手输记录) 也照样带出显示
   if (r && r.foreman_name) {
     const fi = fm.findIndex(f => String(f.name).trim().toLowerCase() === String(r.foreman_name).trim().toLowerCase() && _phDigits(f.phone) === _phDigits(r.foreman_phone));
-    if (fi >= 0) fSel.value = String(fi);
-    else { fSel.value = '__new__'; document.getElementById('raForemanName').value = r.foreman_name || ''; document.getElementById('raForemanPhone').value = r.foreman_phone || ''; }
-  } else fSel.value = '';
-  raForemanChanged();
+    _raForeman = fi >= 0 ? fm[fi] : { id: null, name: r.foreman_name || '', phone: r.foreman_phone || '', state: r.foreman_state || '' };
+  } else _raForeman = null;
+  raFmRenderPicked();
   if (r && r.warehouse_name) {
     // 同名客户可能有好几个仓库: 先按 名称+地址 找, 找不到再按名称
     const nm = String(r.warehouse_name).trim().toLowerCase();
@@ -1228,8 +1286,135 @@ function raFillSelects(r) {
   } else wSel.value = '';
   raWhChanged(true);
 }
-function raForemanChanged() {
-  document.getElementById('raForemanNewWrap').style.display = document.getElementById('raForemanSel').value === '__new__' ? '' : 'none';
+// ── 工头搜索式选人: 在工头数据库里按姓名/电话搜, 点一下选中 (带所在州) ──
+let _raForeman = null, _raFmHits = [];
+function _fmLabel(f) {
+  return `${esc(f.name)}${f.phone ? ' · ' + esc(f.phone) : ''}${f.state ? ` <span style="color:#0f4c6b">📍${esc(f.state)}${f.city ? ' ' + esc(f.city) : ''}</span>` : ''}`;
+}
+function raFmRenderPicked() {
+  const box = document.getElementById('raForemanPicked');
+  const sBox = document.getElementById('raForemanBox');
+  if (_raForeman) {
+    box.style.display = '';
+    sBox.style.display = 'none';
+    box.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;border:1px solid #a7f3d0;background:#ecfdf5;color:#065f46;border-radius:8px;padding:4px 10px;font-size:.84rem;font-weight:600">👷 ${_fmLabel(_raForeman)}${_raForeman.id == null ? ' <span style="font-size:.68rem;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:4px;padding:0 4px;font-weight:400">名单外</span>' : ''}
+      <a onclick="raFmClear()" title="重新选" style="cursor:pointer;color:#dc2626;font-weight:700">✕</a></span>`;
+  } else {
+    box.style.display = 'none';
+    sBox.style.display = '';
+  }
+}
+function raFmClear() {
+  _raForeman = null;
+  raFmRenderPicked();
+  const inp = document.getElementById('raForemanSearch');
+  inp.value = '';
+  setTimeout(() => inp.focus(), 0);
+}
+function raFmSearch() {
+  const list = document.getElementById('raForemanList');
+  const q = document.getElementById('raForemanSearch').value.trim().toLowerCase();
+  const qd = _phDigits(q);
+  const fm = (_refOpts && _refOpts.foremen) || [];
+  _raFmHits = fm.map((f, i) => ({ f, i }))
+    .filter(x => !q || String(x.f.name).toLowerCase().includes(q) || (qd && _phDigits(x.f.phone).includes(qd)) || String(x.f.state || '').toLowerCase() === q)
+    .slice(0, 30);
+  list.innerHTML = _raFmHits.map((x, j) =>
+    `<a onclick="raFmPick(${j})" style="display:block;padding:.4rem .6rem;border-bottom:1px solid #f1f5f9;cursor:pointer;font-size:.84rem;color:#1f2937;text-decoration:none">${_fmLabel(x.f)}${x.f.id == null ? ' <span style="font-size:.66rem;color:var(--g400)">（历史记录）</span>' : ''}</a>`).join('')
+    + `<a onclick="document.getElementById('raForemanList').style.display='none';openFmList(true, document.getElementById('raForemanSearch').value.trim())" style="display:block;padding:.45rem .6rem;cursor:pointer;font-size:.8rem;color:#0f4c6b;text-decoration:none;background:#f8fafc">＋ 名单里没有？添加新工头…</a>`;
+  list.style.display = '';
+}
+function raFmPick(j) {
+  const x = _raFmHits[j];
+  if (!x) return;
+  _raForeman = x.f;
+  document.getElementById('raForemanList').style.display = 'none';
+  raFmRenderPicked();
+}
+// 点弹窗其他地方时收起搜索结果
+document.addEventListener('click', e => {
+  const list = document.getElementById('raForemanList');
+  if (list && !e.target.closest('#raForemanBox')) list.style.display = 'none';
+});
+// ── 👷 工头名单: 专门的工头数据库 (查看/搜索/添加/编辑, 含所在州) ──
+let _fmList = [], _fmEditId = null, _fmFromPicker = false;
+async function openFmList(fromPicker, prefillName) {
+  _fmFromPicker = !!fromPicker;
+  document.getElementById('fmModal').style.display = 'flex';
+  document.getElementById('fmSearch').value = '';
+  document.getElementById('fmAddBtn').style.display = canAnnotate() ? '' : 'none';
+  fmFormHide();
+  await fmLoad();
+  if (fromPicker && canAnnotate()) fmFormShow(null, prefillName || '');
+}
+async function fmLoad() {
+  try {
+    const rows = await api('/api/acct/referral-foremen');
+    if (rows && rows.error) throw new Error(rows.error);
+    _fmList = Array.isArray(rows) ? rows : [];
+    renderFmList();
+  } catch (e) {
+    document.getElementById('fmBody').innerHTML = `<tr><td colspan="6" style="color:#dc2626">${esc(e.message || '加载失败')}</td></tr>`;
+  }
+}
+function renderFmList() {
+  const q = (document.getElementById('fmSearch').value || '').trim().toLowerCase();
+  const qd = _phDigits(q);
+  const list = _fmList.filter(f => !q || String(f.name).toLowerCase().includes(q)
+    || (qd && _phDigits(f.phone).includes(qd)) || String(f.state || '').toLowerCase().includes(q) || String(f.city || '').toLowerCase().includes(q));
+  document.getElementById('fmStats').textContent = `共 ${_fmList.length} 位工头`;
+  document.getElementById('fmBody').innerHTML = list.length ? list.map(f => `<tr>
+    <td style="font-weight:600">${esc(f.name)}</td>
+    <td style="white-space:nowrap">${f.phone ? `<a href="tel:${esc(f.phone)}" style="color:#0f4c6b;text-decoration:none">📞 ${esc(f.phone)}</a>` : '<span style="color:var(--g300)">—</span>'}</td>
+    <td style="white-space:nowrap">${f.state ? `<span style="background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;border-radius:6px;padding:1px 7px;font-size:.74rem;font-weight:700">📍 ${esc(f.state)}</span>` : '<span style="color:var(--g300)">—</span>'}</td>
+    <td>${esc(f.city || '') || '<span style="color:var(--g300)">—</span>'}</td>
+    <td style="text-align:right">${f.referral_count ? `<b>${f.referral_count}</b>` : '<span style="color:var(--g300)">0</span>'}</td>
+    <td style="white-space:nowrap">${canAnnotate() ? `<a style="cursor:pointer;color:#0f4c6b;font-size:.78rem;text-decoration:underline" onclick='fmFormShow(${JSON.stringify(JSON.stringify(f))})'>编辑</a>` : ''}</td>
+  </tr>`).join('') : '<tr><td colspan="6" style="color:var(--g400);padding:1rem">没有符合的工头，点「＋ 添加工头」登记。</td></tr>';
+}
+function fmFormShow(fJson, prefillName) {
+  let f = null;
+  if (fJson) { try { f = JSON.parse(fJson); } catch (e) { f = null; } }
+  _fmEditId = f ? f.id : null;
+  document.getElementById('fmFormTitle').textContent = f ? `✏️ 编辑工头：${f.name}` : '＋ 添加工头';
+  document.getElementById('fmName').value = f ? f.name || '' : (prefillName || '');
+  document.getElementById('fmPhone').value = f ? f.phone || '' : '';
+  document.getElementById('fmState').value = f ? f.state || '' : '';
+  document.getElementById('fmCity').value = f ? f.city || '' : '';
+  document.getElementById('fmFormWrap').style.display = '';
+  setTimeout(() => document.getElementById(f || !prefillName ? 'fmName' : 'fmPhone').focus(), 0);
+}
+function fmFormHide() { document.getElementById('fmFormWrap').style.display = 'none'; _fmEditId = null; }
+async function fmSave() {
+  const name = document.getElementById('fmName').value.trim();
+  if (!name) return toast('请填写工头姓名', true);
+  const body = JSON.stringify({
+    name,
+    phone: document.getElementById('fmPhone').value.trim(),
+    state: document.getElementById('fmState').value.trim().toUpperCase(),
+    city: document.getElementById('fmCity').value.trim(),
+  });
+  const btn = document.getElementById('fmSaveBtn');
+  btn.disabled = true;
+  try {
+    const r = await api(_fmEditId ? '/api/acct/referral-foremen/' + _fmEditId : '/api/acct/referral-foremen',
+      { method: _fmEditId ? 'PUT' : 'POST', body });
+    if (r && r.error) throw new Error(r.error);
+    toast(_fmEditId ? '✅ 已保存' : (r.existed ? '名单里已有这位工头' : '✅ 已添加进工头名单'));
+    const savedId = _fmEditId || r.id;
+    fmFormHide();
+    await fmLoad();
+    // 介绍表单开着 → 刷新它的名单; 从表单跳过来加的新工头 → 直接选中并回到表单
+    try { _refOpts = await api('/api/acct/referral-options'); } catch (e) {}
+    if (_fmFromPicker) {
+      const f = ((_refOpts && _refOpts.foremen) || []).find(x => x.id === savedId);
+      if (f) { _raForeman = f; raFmRenderPicked(); }
+      document.getElementById('fmModal').style.display = 'none';
+      _fmFromPicker = false;
+    }
+    loadRefList(); // 工头州可能变了, 列表跟着刷
+  } catch (e) { toast(e.message || '保存失败', true); }
+  btn.disabled = false;
 }
 // 手机号联想: 输入工头/工人电话时自动查系统 (工头名单/员工档案/招工申请), 点一下带入
 let _raLkT = {}, _raHits = {};
@@ -1253,24 +1438,8 @@ function raPhoneLookup(inputId, boxId, kind) {
 function raPickPhoneHit(boxId, i, kind) {
   const m = (_raHits[boxId] || [])[i];
   if (!m) return;
-  if (kind === 'foreman') {
-    // 工头名单里已有的 → 直接切到下拉选中, 不再重复建
-    if (m.foreman_id != null) {
-      const fi = ((_refOpts && _refOpts.foremen) || []).findIndex(f => f.id === m.foreman_id);
-      if (fi >= 0) {
-        document.getElementById('raForemanSel').value = String(fi);
-        raForemanChanged();
-        document.getElementById(boxId).innerHTML = '';
-        toast('✅ 已选中工头名单里的 ' + (m.name || ''));
-        return;
-      }
-    }
-    document.getElementById('raForemanName').value = m.name || '';
-    document.getElementById('raForemanPhone').value = m.phone || '';
-  } else {
-    document.getElementById('raWorkerName').value = m.name || '';
-    document.getElementById('raWorkerPhone').value = m.phone || '';
-  }
+  document.getElementById('raWorkerName').value = m.name || '';
+  document.getElementById('raWorkerPhone').value = m.phone || '';
   document.getElementById(boxId).innerHTML = '';
 }
 // keepAddr=true 用于打开弹窗回填时: 不覆盖记录里已存的地址
@@ -1301,19 +1470,9 @@ function raToggleRemove(p) {
   raRenderOldFiles();
 }
 async function submitRefAdd() {
-  // 工头: 下拉选的取名单里的姓名电话; 「＋新工头」先登记进名单再提交
-  const fSelV = document.getElementById('raForemanSel').value;
-  const isNewForeman = fSelV === '__new__';
-  let fName, fPhone;
-  if (isNewForeman) {
-    fName = document.getElementById('raForemanName').value.trim();
-    fPhone = document.getElementById('raForemanPhone').value.trim();
-  } else {
-    const f = ((_refOpts && _refOpts.foremen) || [])[parseInt(fSelV)];
-    fName = f ? f.name : '';
-    fPhone = f ? (f.phone || '') : '';
-  }
-  if (!fName) return toast(isNewForeman ? '请填写新工头姓名' : '请选择工头', true);
+  // 工头: 从工头名单里搜索选中的那个 (名单里没有 → 先在工头名单里添加)
+  if (!_raForeman || !_raForeman.name) return toast('请先搜索选择工头；名单里没有就点「＋ 添加新工头」', true);
+  const fName = _raForeman.name, fPhone = _raForeman.phone || '';
   const wName = document.getElementById('raWorkerName').value.trim();
   if (!wName) return toast('请填写被介绍人姓名', true);
   const whSelV = document.getElementById('raWhSel').value;
@@ -1323,10 +1482,6 @@ async function submitRefAdd() {
   const btn = document.getElementById('raSubmitBtn');
   btn.disabled = true; btn.textContent = '提交中…';
   try {
-    if (isNewForeman) {
-      // 登记失败不挡提交 (介绍记录自己存了姓名电话), 只是名单里没有
-      try { await api('/api/acct/referral-foremen', { method: 'POST', body: JSON.stringify({ name: fName, phone: fPhone }) }); } catch (e) {}
-    }
     const fd = new FormData();
     fd.append('foreman_name', fName);
     fd.append('foreman_phone', fPhone);
@@ -1433,7 +1588,7 @@ async function loadRefList() {
     _refList = Array.isArray(rows) ? rows : [];
     renderRefList();
   } catch (e) {
-    document.getElementById('refBody').innerHTML = `<tr><td colspan="11" style="color:#dc2626">${esc(e.message || '加载失败')}</td></tr>`;
+    document.getElementById('refBody').innerHTML = `<tr><td colspan="12" style="color:#dc2626">${esc(e.message || '加载失败')}</td></tr>`;
   }
 }
 
