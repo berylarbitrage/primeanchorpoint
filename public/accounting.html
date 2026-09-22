@@ -132,6 +132,10 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
   <div id="paneZelle" style="display:none">
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
       <select id="zAcc" onchange="zLoad()"><option value="">全部账户</option></select>
+      <select id="zView" onchange="zRender()" title="按收款人汇总，或平铺看这个时间段的全部转账">
+        <option value="people">按收款人汇总</option>
+        <option value="txns">全部转账明细</option>
+      </select>
       <select id="zDir" onchange="zRender()">
         <option value="">转出 + 转入</option>
         <option value="out">只看转出（付出去的）</option>
@@ -157,7 +161,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <div id="zSum" style="display:flex;gap:.45rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem;font-size:.82rem"></div>
     <div class="card" style="padding:0;overflow-x:auto">
       <table>
-        <thead><tr>
+        <thead id="zHead"><tr>
           <th style="width:26px"></th><th>收款人 / 对方</th>
           <th style="text-align:right">转出笔数</th><th style="text-align:right">转出合计</th>
           <th style="text-align:right">转入笔数</th><th style="text-align:right">转入合计</th>
@@ -183,19 +187,6 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     </div>
   </div>
   <datalist id="zNames"></datalist>
-
-  <!-- ✎ Zelle 单笔备注弹窗: 每一笔都能写备注 -->
-  <div id="ztModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:96;align-items:center;justify-content:center;padding:16px">
-    <div class="card" style="max-width:420px;width:100%;padding:1.1rem 1.2rem 1rem">
-      <div style="font-weight:800;margin-bottom:.2rem">📝 备注这一笔</div>
-      <div id="ztDesc" style="font-size:.76rem;color:var(--g500);margin-bottom:.6rem;word-break:break-all"></div>
-      <textarea id="ztNote" rows="3" placeholder="这笔钱是干什么的…（清空保存即删除备注）" style="width:100%;margin:.15rem 0 .6rem;font-family:inherit;resize:vertical"></textarea>
-      <div style="display:flex;gap:.5rem;justify-content:flex-end">
-        <button class="btn btn-outline" onclick="document.getElementById('ztModal').style.display='none'">取消</button>
-        <button class="btn btn-blue" id="ztSaveBtn" onclick="ztSaveNow()">保存</button>
-      </div>
-    </div>
-  </div>
 
   <!-- ✎ Zelle 收款人备注弹窗: Zelle号 + 关联系统里的员工/劳务公司/客户公司 + 备注 -->
   <div id="zcModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:96;align-items:center;justify-content:center;padding:16px">
@@ -3557,7 +3548,7 @@ function _zFiltered() {
   const out = [];
   for (const p of (_zData && _zData.people) || []) {
     const c = p.contact || {};
-    if (q && ![p.name, c.zelle_handle, c.link_label, c.note, ...p.txns.map(t => t.note || '')].join(' ').toLowerCase().includes(q)) continue;
+    if (q && ![p.name, c.zelle_handle, c.link_label, c.note, ...p.txns.map(t => (t.ann_note || '') + ' ' + (t.ann_payee || '') + ' ' + (t.desc || ''))].join(' ').toLowerCase().includes(q)) continue;
     const txns = p.txns.filter(t => !dir || (dir === 'out' ? t.amount >= 0 : t.amount < 0));
     if (!txns.length) continue;
     const r = { name: p.name, key: p.key || p.name.toLowerCase(), contact: p.contact || null, txns, out_total: 0, out_count: 0, in_total: 0, in_count: 0, first_date: '', last_date: '' };
@@ -3581,6 +3572,19 @@ function zRender() {
     + chip(`转出 <b>${sums.oc}</b> 笔 <span style="color:#dc2626;font-weight:700">−${money(sums.ot)}</span>`)
     + chip(`转入 <b>${sums.ic}</b> 笔 <span style="color:#15803d;font-weight:700">+${money(sums.it)}</span>`)
     + chip(`净额 <b>${sums.it - sums.ot >= 0 ? '+' : '−'}${money(Math.abs(sums.it - sums.ot))}</b>`);
+  const view = document.getElementById('zView').value;
+  document.getElementById('zBtnAll').style.display = view === 'txns' ? 'none' : '';
+  document.getElementById('zHead').innerHTML = view === 'txns'
+    ? '<tr><th>日期</th><th>收款人 / 对方</th><th style="text-align:right">金额</th><th>账户</th><th>银行描述 / 标注</th><th></th></tr>'
+    : `<tr><th style="width:26px"></th><th>收款人 / 对方</th>
+        <th style="text-align:right">转出笔数</th><th style="text-align:right">转出合计</th>
+        <th style="text-align:right">转入笔数</th><th style="text-align:right">转入合计</th>
+        <th>首次</th><th>最近一笔</th></tr>`;
+  // 全部转账明细: 时间段内所有 Zelle 平铺一张清单 (筛选/分组/单笔操作照常)
+  if (view === 'txns') {
+    document.getElementById('zBody').innerHTML = _zFlatBody(list) + _zRemovedSection(6);
+    return;
+  }
   const num = 'text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums';
   document.getElementById('zBody').innerHTML = list.length ? list.map(p => {
     const open = _zOpenKeys.has(p.key);
@@ -3604,53 +3608,78 @@ function zRender() {
     </tr>
     ${open ? `<tr><td></td><td colspan="7" style="background:#fafcff;padding:0 .55rem .6rem"><div style="border:1px solid var(--g200);border-radius:8px;overflow:hidden;margin-top:.1rem;background:#fff"><table style="width:100%;border-collapse:collapse">${rows}</table></div></td></tr>` : ''}`;
   }).join('') : '<tr><td colspan="8" style="color:var(--g400);padding:1rem">这个范围里没有 Zelle 转账</td></tr>';
-  document.getElementById('zBody').innerHTML = document.getElementById('zBody').innerHTML + _zRemovedSection();
+  document.getElementById('zBody').innerHTML = document.getElementById('zBody').innerHTML + _zRemovedSection(8);
+}
+// 全部转账明细视图: 平铺所有笔, 按 zGrp 分组小计; 点收款人名跳回汇总视图并展开那个人
+function _zFlatBody(list) {
+  const flat = [];
+  for (const p of list) for (const t of p.txns) flat.push(Object.assign({ person: p.name, personKey: p.key }, t));
+  flat.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  if (!flat.length) return '<tr><td colspan="6" style="color:var(--g400);padding:1rem">这个范围里没有 Zelle 转账</td></tr>';
+  const grp = document.getElementById('zGrp').value;
+  if (!grp) return flat.map(t => _zFlatRow(t)).join('');
+  const m = new Map();
+  for (const t of flat) {
+    let k, label;
+    if (grp === 'bank') { k = t.account; label = '🏦 ' + t.account; }
+    else { const [a, b] = _zWeekRange(t.date); k = a; label = '📅 ' + a + ' ~ ' + b; }
+    if (!m.has(k)) m.set(k, { label, txns: [] });
+    m.get(k).txns.push(t);
+  }
+  return [...m.values()].map(g => {
+    const s = g.txns.reduce((x, t) => { if (t.amount >= 0) { x.o += t.amount; x.oc++; } else { x.i += -t.amount; x.ic++; } return x; }, { o: 0, oc: 0, i: 0, ic: 0 });
+    return `<tr><td colspan="6" style="background:#f1f5f9;font-size:.78rem;font-weight:700;padding:.35rem .55rem;border-bottom:1px solid var(--g200)">${esc(g.label)} <span style="font-weight:400;color:var(--g500)">· ${g.txns.length} 笔${s.oc ? ` · 转出 <span style="color:#dc2626">−${money(s.o)}</span>` : ''}${s.ic ? ` · 转入 <span style="color:#15803d">+${money(s.i)}</span>` : ''}</span></td></tr>`
+      + g.txns.map(t => _zFlatRow(t)).join('');
+  }).join('');
+}
+function _zFlatRow(t) {
+  const cell = 'padding:.45rem .55rem;border-bottom:1px solid var(--g100)';
+  return `<tr>
+    <td style="white-space:nowrap;${cell}">${esc(t.date || '—')}${t.pending ? ' <span style="color:var(--g400);font-size:.7rem">(处理中)</span>' : ''}</td>
+    <td style="${cell}"><a onclick="zViewPerson('${esc(t.personKey).replace(/'/g, "\\'")}')" title="跳到这个人的汇总" style="cursor:pointer;color:#0f4c6b;font-weight:700;text-decoration:underline">${esc(t.person)}</a></td>
+    <td style="text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;${cell}"><span style="color:${t.amount >= 0 ? '#dc2626' : '#15803d'};font-weight:700">${t.amount >= 0 ? '−' : '+'}${money(Math.abs(t.amount))}</span></td>
+    <td style="white-space:nowrap;${cell}">${esc(t.account)}</td>
+    <td style="color:var(--g400);font-size:.76rem;word-break:break-all;${cell}">${esc(t.desc)}${(t.ann_payee || t.ann_note) ? `<div style="color:#b45309;margin-top:2px">📝 ${t.ann_payee ? '付给 ' + esc(t.ann_payee) : ''}${t.ann_payee && t.ann_note ? ' · ' : ''}${esc(t.ann_note || '')}</div>` : ''}</td>
+    <td style="white-space:nowrap;text-align:right;${cell}">${_zTxnOps(t)}</td>
+  </tr>`;
+}
+function zViewPerson(key) {
+  document.getElementById('zView').value = 'people';
+  _zOpenKeys.add(key);
+  zRender();
 }
 // 明细行: 单笔可 移除/改归属; 已改归属的标出来、可恢复自动
-function _zTxnRow(t, mode) {
-  const cell = 'padding:.35rem .55rem;border-bottom:1px solid var(--g100)';
+function _zTxnOps(t, mode) {
   const id = String(t.txn_id).replace(/'/g, "\\'");
-  const noteBtn = `<a onclick="zNoteOpen('${id}',event)" style="cursor:pointer;color:#b45309;font-size:.76rem;text-decoration:underline;white-space:nowrap">📝 备注</a>`;
-  const ops = mode === 'removed'
+  const noteBtn = `<a onclick="zAnnOpen('${id}',event)" title="打开这笔交易的银行标注（付给谁/原因备注/照片），和银行直连页同一条" style="cursor:pointer;color:#b45309;font-size:.76rem;text-decoration:underline;white-space:nowrap">📝 标注</a>`;
+  return mode === 'removed'
     ? `<span style="color:var(--g400);font-size:.72rem">原归属：${esc(t.name || '—')}</span> ${noteBtn} <a onclick="zOverride('${id}','clear',event)" style="cursor:pointer;color:#0ea5e9;font-size:.76rem;text-decoration:underline;white-space:nowrap">↩ 恢复</a>`
     : `${t.ov === 'rename' ? `<span title="原自动归属：${esc(t.ov_orig || '')}" style="font-size:.68rem;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;border-radius:4px;padding:0 4px;white-space:nowrap">已改归属</span> <a onclick="zOverride('${id}','clear',event)" style="cursor:pointer;color:#0ea5e9;font-size:.74rem;text-decoration:underline;white-space:nowrap">↩ 恢复自动</a> ` : ''}${noteBtn} <a onclick="zRenameOpen('${id}',event)" style="cursor:pointer;color:#0f4c6b;font-size:.76rem;text-decoration:underline;white-space:nowrap">✎ 改归属</a> <a onclick="zOverride('${id}','exclude',event)" style="cursor:pointer;color:#dc2626;font-size:.76rem;text-decoration:underline;white-space:nowrap">✕ 移除</a>`;
+}
+function _zTxnRow(t, mode) {
+  const cell = 'padding:.35rem .55rem;border-bottom:1px solid var(--g100)';
+  const ops = _zTxnOps(t, mode);
   return `<tr>
     <td style="white-space:nowrap;${cell}">${esc(t.date || '—')}${t.pending ? ' <span style="color:var(--g400);font-size:.7rem">(处理中)</span>' : ''}</td>
     <td style="text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;width:110px;${cell}"><span style="color:${t.amount >= 0 ? '#dc2626' : '#15803d'};font-weight:700">${t.amount >= 0 ? '−' : '+'}${money(Math.abs(t.amount))}</span></td>
     <td style="white-space:nowrap;${cell}">${esc(t.account)}</td>
-    <td style="color:var(--g400);font-size:.76rem;word-break:break-all;${cell}">${esc(t.desc)}${t.note ? `<div style="color:#b45309;font-size:.76rem;margin-top:2px">📝 ${esc(t.note)}</div>` : ''}</td>
+    <td style="color:var(--g400);font-size:.76rem;word-break:break-all;${cell}">${esc(t.desc)}${(t.ann_payee || t.ann_note) ? `<div style="color:#b45309;font-size:.76rem;margin-top:2px">📝 ${t.ann_payee ? '付给 ' + esc(t.ann_payee) : ''}${t.ann_payee && t.ann_note ? ' · ' : ''}${esc(t.ann_note || '')}</div>` : ''}</td>
     <td style="white-space:nowrap;text-align:right;${cell}">${ops}</td>
   </tr>`;
 }
-// 📝 单笔备注: 每一笔都能写 (清空保存即删除)
-let _ztTxn = null;
-function _zFindTxn(txnId) {
-  for (const p of (_zData && _zData.people) || []) { const t = p.txns.find(x => x.txn_id === txnId); if (t) return t; }
-  return ((_zData && _zData.removed) || []).find(x => x.txn_id === txnId) || null;
-}
-function zNoteOpen(txnId, ev) {
+// 📝 单笔标注 = 银行直连的「交易标注」同一条数据: 直接打开共用的标注抽屉
+// (付给谁/原因备注/照片都在里面), 关掉抽屉后 Zelle 列表自动刷新显示最新内容
+function zAnnOpen(txnId, ev) {
   if (ev) ev.stopPropagation();
-  _ztTxn = txnId;
-  const t = _zFindTxn(txnId);
-  document.getElementById('ztDesc').textContent = t ? `${t.date} · ${t.amount >= 0 ? '−' : '+'}${money(Math.abs(t.amount))} · ${t.desc}` : '';
-  document.getElementById('ztNote').value = (t && t.note) || '';
-  document.getElementById('ztModal').style.display = 'flex';
-  setTimeout(() => document.getElementById('ztNote').focus(), 0);
+  try { annOpen(txnId); } catch (e) { toast('打开标注失败', true); }
 }
-async function ztSaveNow() {
-  const btn = document.getElementById('ztSaveBtn');
-  btn.disabled = true;
-  try {
-    const note = document.getElementById('ztNote').value.trim();
-    const r = await api('/api/plaid/zelle-overrides', { method: 'POST', body: JSON.stringify({ txn_id: _ztTxn, action: 'note', note }) });
-    if (r && r.error) throw new Error(r.error);
-    const t = _zFindTxn(_ztTxn);
-    if (t) { if (note) t.note = note; else delete t.note; }
-    document.getElementById('ztModal').style.display = 'none';
-    zRender();
-    toast(note ? '✅ 已备注' : '已清除备注');
-  } catch (e) { toast(e.message || '保存失败', true); }
-  btn.disabled = false;
+if (typeof annClose === 'function') {
+  const _annCloseOrig = annClose;
+  annClose = function () {
+    _annCloseOrig();
+    const pane = document.getElementById('paneZelle');
+    if (pane && pane.style.display !== 'none' && _zInited) zLoad();
+  };
 }
 // 明细分组: 按自然周 (周一~周日) / 按银行账户, 组头带小计
 function _zWeekRange(dateStr) {
@@ -3679,15 +3708,15 @@ function _zDetailRows(txns) {
   }).join('');
 }
 // 底部「已移除的转账」: 不计入统计, 点开逐笔可恢复
-function _zRemovedSection() {
+function _zRemovedSection(cols) {
   const rm = (_zData && _zData.removed) || [];
   if (!rm.length) return '';
   const open = _zOpenKeys.has('__removed__');
   return `<tr onclick="zToggleRow('__removed__')" style="cursor:pointer;background:#fafafa">
       <td><span style="color:var(--g400)">${open ? '▼' : '▶'}</span></td>
-      <td colspan="7" style="color:var(--g500)">🚫 已移除的转账 <span style="font-size:.76rem;color:var(--g400)">· ${rm.length} 笔 · 不计入上面的统计，点开可逐笔恢复</span></td>
+      <td colspan="${cols - 1}" style="color:var(--g500)">🚫 已移除的转账 <span style="font-size:.76rem;color:var(--g400)">· ${rm.length} 笔 · 不计入上面的统计，点开可逐笔恢复</span></td>
     </tr>`
-    + (open ? `<tr><td></td><td colspan="7" style="background:#fafcff;padding:0 .55rem .6rem"><div style="border:1px solid var(--g200);border-radius:8px;overflow:hidden;margin-top:.1rem;background:#fff"><table style="width:100%;border-collapse:collapse">${rm.map(t => _zTxnRow(t, 'removed')).join('')}</table></div></td></tr>` : '');
+    + (open ? `<tr><td></td><td colspan="${cols - 1}" style="background:#fafcff;padding:0 .55rem .6rem"><div style="border:1px solid var(--g200);border-radius:8px;overflow:hidden;margin-top:.1rem;background:#fff"><table style="width:100%;border-collapse:collapse">${rm.map(t => _zTxnRow(t, 'removed')).join('')}</table></div></td></tr>` : '');
 }
 // 单笔改判: 移除 / 恢复 (清掉改判记录即回到自动归属)
 async function zOverride(txnId, action, ev) {
@@ -3738,11 +3767,11 @@ function zToggleAll() {
 function zExportCsv() {
   const list = _zFiltered();
   const escCsv = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-  const lines = ['收款人,Zelle号,关联,收款人备注,日期,方向,金额,账户,单笔备注,原始描述'];
+  const lines = ['收款人,Zelle号,关联,收款人备注,日期,方向,金额,账户,标注付给,标注备注,原始描述'];
   for (const p of list) for (const t of p.txns) {
     const c = p.contact || {};
     const link = c.link_type && c.link_label ? (ZC_TYPE[c.link_type] || '').replace(/^\S+\s/, '') + '·' + c.link_label : '';
-    lines.push([p.name, c.zelle_handle || '', link, c.note || '', t.date, t.amount >= 0 ? '转出' : '转入', (-t.amount).toFixed(2), t.account, t.note || '', t.desc].map(escCsv).join(','));
+    lines.push([p.name, c.zelle_handle || '', link, c.note || '', t.date, t.amount >= 0 ? '转出' : '转入', (-t.amount).toFixed(2), t.account, t.ann_payee || '', t.ann_note || '', t.desc].map(escCsv).join(','));
   }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
