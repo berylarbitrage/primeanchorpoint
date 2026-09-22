@@ -1076,6 +1076,16 @@ function annStatusLineRefresh(box) {
 }
 
 // ── 抽屉里渲染当前打开的标注（表单结构与 admin.html 的 box 卡片一致）──
+// 💸 Gusto 工资关联: 这笔银行转账在会计对账「Gusto 工资」页签被挂到哪笔工资付款
+// （谁 / 工资日 / 金额 / 方式 / 审核状态）。只读展示, 挂账与审核都在那边操作。
+let GUSTO_LINKS = {};
+function _bsGustoLinkHtml(txnId) {
+  const list = txnId ? GUSTO_LINKS[txnId] : null;
+  if (!list || !list.length) return '';
+  const rows = list.map(g => `<div>👷 <b>${esc(g.contractor_name || '')}</b>${g.wage_type === 'W2' ? ' <span style="font-size:.68rem;color:#1e40af;background:#dbeafe;border-radius:5px;padding:0 4px">W-2</span>' : ''} · 工资日 ${esc(g.date || '')} · <b>${money(g.wage_total)}</b>${g.payment_method ? ' · ' + esc(g.payment_method) : ''} ${g.link_status === 'pending' ? '<span style="color:#b45309;font-weight:700">（关联待审核）</span>' : '<span style="color:#166534">（关联已审核）</span>'}${g.link_by ? `<span style="color:var(--gray-400)"> · ${esc(g.link_by)} 挂账</span>` : ''}</div>`).join('');
+  return `<div style="background:#f5f3ff;border:1px dashed #ddd6fe;border-radius:6px;padding:.35rem .5rem;margin-bottom:.35rem;font-size:.76rem;line-height:1.7">
+    <div style="color:#5b21b6;font-weight:700">💸 Gusto 工资关联 <span style="font-weight:400;color:var(--gray-400)">（在会计对账「Gusto 工资」页签维护）</span></div>${rows}</div>`;
+}
 function _bsRenderBoxPanel() {
   const panel = document.getElementById('annBody');
   if (!panel) return;
@@ -1084,6 +1094,7 @@ function _bsRenderBoxPanel() {
   const isIn = box.direction === 'in';
   const color = isIn ? '#059669' : '#dc2626';
   panel.innerHTML = annStatusLineHtml(box)
+    + _bsGustoLinkHtml(box.plaid_txn_id)
     + `<div class="bs-box-item" data-id="${box.id}" style="border:1px solid var(--gray-200);border-left:3px solid ${color};border-radius:8px;padding:.5rem .55rem;margin-bottom:.5rem">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.35rem">
         <span style="font-weight:700;font-size:.82rem;color:${color}">🧾 标注（付给公司 / 金额 / 收支）</span>
@@ -1355,6 +1366,7 @@ async function annLoadAll() {
     _annEnsureReviewFlag();
     const r = await annApi('/plaid/annotations');
     Object.values(r.annotations || {}).forEach(annStore);
+    GUSTO_LINKS = r.gusto_links || {};
     updatePendBtn();
     annCheckScanAll().catch(() => {}); // 列表徽章上的金额差/公司不符红字
   } catch (e) { console.error(e); }
