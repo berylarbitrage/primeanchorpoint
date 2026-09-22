@@ -39979,7 +39979,7 @@ app.get('/api/acct/gusto/status', requireAdmin, requireAcctView, (req, res) => {
       redirect_uri: _gustoRedirectUri(req),
       is_admin: req.userRole === 'admin',
       can_sync: ['admin', 'accounting'].includes(req.userRole),
-      can_import: !connected && ['admin', 'accounting'].includes(req.userRole),
+      can_import: !connected && req.userRole === 'admin',
       last_import: (() => {
         try {
           const r = db.prepare("SELECT value FROM app_settings WHERE key='gusto_last_import'").get();
@@ -40010,13 +40010,14 @@ app.post('/api/acct/gusto/sync', requireAdmin, requireRole('admin', 'accounting'
 // ── 付款报告导入（API production 过审前的过渡; 连上 API 后此入口自动关闭） ──
 // Gusto 后台 Reports 导出的合同工付款报告, CSV 或 Excel。导入行 source='import',
 // 与 API 同步的数据同表同对账口径; API 同步覆盖到的窗口会自动替换掉导入行。
+// 上传/撤销仅限内部 admin——导入直接改动对账数据, 会计只读不经手。
 const gustoReportUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 8 * 1024 * 1024 },
   fileFilter: (req, file, cb) => cb(null,
     /\.(csv|xlsx|xls)$/i.test(file.originalname || '') || /csv|text\/plain|spreadsheet|excel/i.test(file.mimetype || '')),
 });
-app.post('/api/acct/gusto/import', requireAdmin, requireRole('admin', 'accounting'), gustoReportUpload.single('file'), (req, res) => {
+app.post('/api/acct/gusto/import', requireAdmin, requireRole('admin'), gustoReportUpload.single('file'), (req, res) => {
   if (!req.file || !req.file.buffer) return res.status(400).json({ error: '请上传 Gusto 付款报告（CSV 或 Excel）' });
   const { cfg } = _gustoApiCfg();
   if (cfg.access_token && cfg.refresh_token) {
@@ -40067,7 +40068,7 @@ app.post('/api/acct/gusto/import', requireAdmin, requireRole('admin', 'accountin
 });
 
 // 撤销最近一次导入（删的只是那次导入写进来的行; 传错文件用）
-app.post('/api/acct/gusto/import-undo', requireAdmin, requireRole('admin', 'accounting'), (req, res) => {
+app.post('/api/acct/gusto/import-undo', requireAdmin, requireRole('admin'), (req, res) => {
   const row = db.prepare("SELECT value FROM app_settings WHERE key='gusto_last_import'").get();
   let info = null;
   try { info = row && JSON.parse(row.value); } catch (e) {}
