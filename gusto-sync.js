@@ -308,12 +308,15 @@ function parsePaymentReportCsv(csvText) {
     // 汇总行不是付款: "Totals" / "Grand total" / Contractor Payments Report 末尾的
     // Last Name="Report", First Name="Total"（拼出来是 "Report, Total"）
     if (!name || /^(grand )?totals?$/i.test(name) || /^report[,，]?\s*total$/i.test(name)) continue;
-    const wage = _reportMoney(get(col.wage));
+    let wage = _reportMoney(get(col.wage));
     const bonus = _reportMoney(get(col.bonus));
     const reimb = _reportMoney(get(col.reimb));
     let total = _reportMoney(get(col.total));
     if (total == null) total = Math.round(((wage || 0) + (bonus || 0) + (reimb || 0)) * 100) / 100;
     if (!total) continue;                                       // 没金额的行(分组标题等)跳过; 负数=冲正, 保留
+    // 报告没给工资列（Contractor Payments Report 只有 Total/Bonus/Reimb）→ 反推:
+    // 工资(时薪部分) = 合计 − Bonus − 报销
+    if (wage == null) wage = r2(total - (bonus || 0) - (reimb || 0));
     const date = _normDate(get(col.date));
     if (!date) {
       warnings.push(`第 ${i + 1} 行「${name}」付款日期认不出来（原文：${get(col.date) || '空'}），这行没导入。`);
