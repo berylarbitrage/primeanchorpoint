@@ -243,10 +243,36 @@ function _reportMoney(v) {
   return neg ? -Math.abs(n) : n;
 }
 
+const _NAME_KEYS = ['contractor', 'contractor name', 'name', 'payee', 'recipient', 'worker', 'employee', 'employee name', 'first name', 'last name', 'business name'];
+const _DATE_KEYS = ['payment date', 'check date', 'pay date', 'date', 'debit date', 'payday', 'payroll pay date'];
+const _AMT_KEYS = ['total', 'total amount', 'usd amount', 'payment total', 'total payment', 'amount', 'wage total', 'total pay', 'total wages',
+  'wages', 'wage', 'wage amount', 'gross earnings', 'net pay'];
+
+// Gusto 导出的报告前面带好几行「报告抬头」（公司名/地址/日期范围/生成时间），
+// 真正的表头不在第一行——在前 30 行里找 同时命中姓名列和(日期或金额)列 的那行。
+function _findHeaderRow(rows) {
+  for (let r = 0; r < Math.min(rows.length, 30); r++) {
+    const keys = rows[r].map(_hdrKey);
+    const hasName = _NAME_KEYS.some(k => keys.includes(k));
+    const hasDate = _DATE_KEYS.some(k => keys.includes(k));
+    const hasAmt = _AMT_KEYS.some(k => keys.includes(k));
+    if (hasName && (hasDate || hasAmt)) return r;
+  }
+  return -1;
+}
+
 function parsePaymentReportCsv(csvText) {
   const rows = parseCsv(csvText);
   if (rows.length < 2) throw new Error('报告是空的（没有数据行）');
-  const headers = rows[0].map(_hdrKey);
+  const hdrIdx = _findHeaderRow(rows);
+  if (hdrIdx < 0) {
+    throw new Error(`认不出这份报告的表头（需要收款人姓名列和金额列）。文件开头：${rows[0].map(h => String(h).trim()).filter(Boolean).join(' | ')}`);
+  }
+  const headers = rows[hdrIdx].map(_hdrKey);
+  // W-2 员工工资报表（Year to date 等）: 有 Gross earnings + Net pay 的走员工分支
+  if (headers.includes('gross earnings') && headers.includes('net pay')) {
+    return _parseW2Report(rows, hdrIdx, headers);
+  }
   const col = {
     name: _findCol(headers, ['contractor', 'contractor name', 'name', 'payee', 'recipient', 'worker', 'employee', 'employee name']),
     first: _findCol(headers, ['first name', 'contractor first name']),
@@ -255,20 +281,22 @@ function parsePaymentReportCsv(csvText) {
     date: _findCol(headers, ['payment date', 'check date', 'pay date', 'date', 'debit date', 'payday']),
     method: _findCol(headers, ['payment method', 'method']),
     status: _findCol(headers, ['status', 'payment status']),
+    wageType: _findCol(headers, ['wage type']),
     hours: _findCol(headers, ['hours', 'total hours']),
     wage: _findCol(headers, ['wages', 'wage', 'wage amount', 'regular wages']),
     bonus: _findCol(headers, ['bonus', 'bonuses']),
     reimb: _findCol(headers, ['reimbursement', 'reimbursements', 'expense reimbursement', 'expense reimbursements']),
-    total: _findCol(headers, ['total', 'total amount', 'payment total', 'total payment', 'amount', 'wage total', 'total pay', 'total wages']),
+    // Contractor Payments Report 的合计列叫 Total Amount / USD amount
+    total: _findCol(headers, ['total', 'total amount', 'usd amount', 'payment total', 'total payment', 'amount', 'wage total', 'total pay', 'total wages']),
   };
   const hasName = col.name >= 0 || col.last >= 0 || col.first >= 0 || col.business >= 0;
   const hasAmount = col.total >= 0 || col.wage >= 0 || col.bonus >= 0 || col.reimb >= 0;
   if (!hasName || !hasAmount) {
-    throw new Error(`认不出这份报告的表头（需要收款人姓名列和金额列）。实际表头：${rows[0].map(h => String(h).trim()).filter(Boolean).join(' | ')}`);
+    throw new Error(`认不出这份报告的表头（需要收款人姓名列和金额列）。实际表头：${rows[hdrIdx].map(h => String(h).trim()).filter(Boolean).join(' | ')}`);
   }
   const seen = new Map();
   const out = [], warnings = [];
-  for (let i = 1; i < rows.length; i++) {
+  for (let i = hdrIdx + 1; i < rows.length; i++) {
     const cells = rows[i];
     const get = c => (c >= 0 ? String(cells[c] == null ? '' : cells[c]).trim() : '');
     let name = get(col.name);
@@ -277,7 +305,9 @@ function parsePaymentReportCsv(csvText) {
       name = business || `${get(col.last)}, ${get(col.first)}`.replace(/^, |, $/g, '');
     }
     name = name.replace(/\s+/g, ' ').trim();
-    if (!name || /^(grand )?totals?$/i.test(name)) continue;   // 汇总行不是付款
+    // 汇总行不是付款: "Totals" / "Grand total" / Contractor Payments Report 末尾的
+    // Last Name="Report", First Name="Total"（拼出来是 "Report, Total"）
+    if (!name || /^(grand )?totals?$/i.test(name) || /^report[,，]?\s*total$/i.test(name)) continue;
     const wage = _reportMoney(get(col.wage));
     const bonus = _reportMoney(get(col.bonus));
     const reimb = _reportMoney(get(col.reimb));
@@ -299,7 +329,7 @@ function parsePaymentReportCsv(csvText) {
       contractor_name: name,
       date,
       payment_method: method,
-      wage_type: '',
+      wage_type: get(col.wageType),
       status: get(col.status),
       hours: _reportMoney(get(col.hours)),
       hourly_rate: null,
@@ -311,7 +341,63 @@ function parsePaymentReportCsv(csvText) {
     });
   }
   if (!out.length) throw new Error('报告里没有一行可导入的付款（都没有金额或日期）。' + (warnings[0] || ''));
-  return { payments: out, warnings };
+  return { payments: out, warnings, kind: 'contractor' };
+}
+
+// W-2 员工工资报表（如 Year to date: Payroll / Employee / Payroll pay date /
+// Gross earnings / 雇主雇员税 / Net pay）。导入成 wage_type='W2' 的行:
+// 只进流水展示, 不参与合同工对账, API 同步替换导入行时也不碰它们。
+// 金额口径: wage_total = Gross earnings（工资本身）; Net/税都留在 raw 里备查。
+function _parseW2Report(rows, hdrIdx, headers) {
+  const col = {
+    payroll: _findCol(headers, ['payroll']),
+    name: _findCol(headers, ['employee', 'employee name', 'name']),
+    date: _findCol(headers, ['payroll pay date', 'pay date', 'check date', 'payment date', 'date']),
+    gross: _findCol(headers, ['gross earnings', 'gross pay']),
+    net: _findCol(headers, ['net pay']),
+  };
+  if (col.name < 0 || col.date < 0) {
+    throw new Error(`这份 W-2 工资报表缺少员工姓名或发薪日期列。实际表头：${rows[hdrIdx].map(h => String(h).trim()).filter(Boolean).join(' | ')}`);
+  }
+  const seen = new Map();
+  const out = [], warnings = [];
+  for (let i = hdrIdx + 1; i < rows.length; i++) {
+    const cells = rows[i];
+    const get = c => (c >= 0 ? String(cells[c] == null ? '' : cells[c]).trim() : '');
+    const name = get(col.name).replace(/\s+/g, ' ').trim();
+    if (!name || /totals?$/i.test(name)) continue;   // 各期 totals / Grand totals 行的员工列为空
+    const payrollLabel = get(col.payroll);
+    const gross = _reportMoney(get(col.gross));
+    const net = _reportMoney(get(col.net));
+    const total = gross != null ? gross : net;
+    if (!total) continue;
+    const date = _normDate(get(col.date));
+    if (!date) {
+      warnings.push(`第 ${i + 1} 行「${name}」发薪日期认不出来（原文：${get(col.date) || '空'}），这行没导入。`);
+      continue;
+    }
+    const dupKey = ['w2', name.toLowerCase(), date, total.toFixed(2), payrollLabel.toLowerCase()].join('|');
+    const nth = seen.get(dupKey) || 0;
+    seen.set(dupKey, nth + 1);
+    out.push({
+      uuid: 'csv:' + crypto.createHash('sha1').update(dupKey + '#' + nth).digest('hex'),
+      contractor_uuid: '',
+      contractor_name: name,
+      date,
+      payment_method: '',
+      wage_type: 'W2',
+      status: '',
+      hours: null,
+      hourly_rate: null,
+      wage: total,
+      bonus: 0,
+      reimbursement: 0,
+      wage_total: total,
+      raw: Object.fromEntries(rows[hdrIdx].map((h, c) => [String(h).trim(), String(cells[c] == null ? '' : cells[c])]).filter(([k]) => k)),
+    });
+  }
+  if (!out.length) throw new Error('这份 W-2 工资报表里没有一行可导入的记录。' + (warnings[0] || ''));
+  return { payments: out, warnings, kind: 'w2' };
 }
 
 module.exports = {
