@@ -35321,6 +35321,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS zelle_contacts (
   updated_by TEXT DEFAULT '',
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
+// 💸 单笔 Zelle 的手工改判: exclude=从统计里移除 | rename=重新标注给另一个收款人
+// (自动按描述归属有认错的时候, 一笔一笔可纠正; 删掉记录即恢复自动归属)
+db.exec(`CREATE TABLE IF NOT EXISTS zelle_txn_overrides (
+  txn_id TEXT PRIMARY KEY,
+  action TEXT DEFAULT '',
+  new_name TEXT DEFAULT '',
+  updated_by TEXT DEFAULT '',
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
 
 // ── 💸 Zelle 转账统计: 银行直连交易里的 Zelle 按收款人汇总, 每人所有时间点+金额 ──
 // 描述形如 Chase「Zelle payment to CESAR JPM99cwzudxl」/「Zelle payment from JOHN 123456」,
@@ -35357,27 +35366,36 @@ app.get('/api/plaid/zelle-stats', requireAdmin, requireRole('admin', 'cs', 'acco
     });
     const contacts = {};
     try { db.prepare('SELECT * FROM zelle_contacts').all().forEach(c => { contacts[c.name_key] = c; }); } catch (e) {}
-    const people = new Map();
+    const ovs = {};
+    try { db.prepare('SELECT * FROM zelle_txn_overrides').all().forEach(o => { ovs[o.txn_id] = o; }); } catch (e) {}
+    const people = new Map(), removed = [];
     for (const r of rows) {
       const z = _zelleParse(r.name || r.merchant);
       if (!z) continue;
-      const key = z.name.toLowerCase();
+      const amt = Number(r.amount) || 0;
+      const txn = { txn_id: r.txn_id, date: r.date, amount: amt, account: accs[r.account_id] || r.account_id, desc: r.name || r.merchant || '', pending: !!r.pending };
+      const ov = ovs[r.txn_id];
+      // 手工改判: 移除的不进统计 (单独一栏可恢复); 改标注的按新名字归组
+      if (ov && ov.action === 'exclude') { removed.push({ ...txn, name: z.name }); continue; }
+      let nm = z.name;
+      if (ov && ov.action === 'rename' && ov.new_name) { txn.ov = 'rename'; txn.ov_orig = z.name; nm = ov.new_name; }
+      const key = nm.toLowerCase();
       let p = people.get(key);
       if (!p) {
         const c = contacts[key] || null;
-        p = { key, name: z.name, out_total: 0, out_count: 0, in_total: 0, in_count: 0, first_date: r.date || '', last_date: r.date || '', txns: [],
+        p = { key, name: nm, out_total: 0, out_count: 0, in_total: 0, in_count: 0, first_date: r.date || '', last_date: r.date || '', txns: [],
           contact: c ? { zelle_handle: c.zelle_handle || '', note: c.note || '', link_type: c.link_type || '', link_id: c.link_id, link_label: c.link_label || '' } : null };
         people.set(key, p);
       }
-      const amt = Number(r.amount) || 0;
       if (amt >= 0) { p.out_total += amt; p.out_count++; } else { p.in_total += -amt; p.in_count++; }
       if (r.date && (!p.first_date || r.date < p.first_date)) p.first_date = r.date;
       if (r.date && (!p.last_date || r.date > p.last_date)) p.last_date = r.date;
-      p.txns.push({ txn_id: r.txn_id, date: r.date, amount: amt, account: accs[r.account_id] || r.account_id, desc: r.name || r.merchant || '', pending: !!r.pending });
+      p.txns.push(txn);
     }
     const out = [...people.values()].sort((a, b) => (b.out_total + b.in_total) - (a.out_total + a.in_total));
     res.json({
       people: out,
+      removed,
       accounts: accList,
       totals: {
         people: out.length,
@@ -35404,6 +35422,28 @@ app.post('/api/plaid/zelle-contacts', requireAdmin, requireRole('admin', 'cs', '
       .run(key, String(b.display_name || '').trim().slice(0, 120), String(b.zelle_handle || '').trim().slice(0, 120),
         String(b.note || '').trim().slice(0, 500), linkType, linkType ? (parseInt(b.link_id) || null) : null,
         linkType ? String(b.link_label || '').trim().slice(0, 160) : '', req.userName || '');
+    res.json({ ok: 1 });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 单笔改判: exclude 移除 / rename 重新标注给别的收款人 / clear 恢复自动归属
+app.post('/api/plaid/zelle-overrides', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
+  try {
+    const b = req.body || {};
+    const txnId = String(b.txn_id || '').trim();
+    const action = String(b.action || '');
+    if (!txnId) return res.status(400).json({ error: '缺少交易' });
+    if (!['exclude', 'rename', 'clear'].includes(action)) return res.status(400).json({ error: '无效操作' });
+    if (action === 'clear') {
+      db.prepare('DELETE FROM zelle_txn_overrides WHERE txn_id=?').run(txnId);
+      return res.json({ ok: 1 });
+    }
+    const newName = action === 'rename' ? String(b.new_name || '').trim().slice(0, 120) : '';
+    if (action === 'rename' && !newName) return res.status(400).json({ error: '请填写新的收款人姓名' });
+    db.prepare(`INSERT INTO zelle_txn_overrides (txn_id, action, new_name, updated_by, updated_at)
+        VALUES (?,?,?,?,datetime('now'))
+        ON CONFLICT(txn_id) DO UPDATE SET action=excluded.action, new_name=excluded.new_name,
+          updated_by=excluded.updated_by, updated_at=datetime('now')`)
+      .run(txnId, action, newName, req.userName || '');
     res.json({ ok: 1 });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
