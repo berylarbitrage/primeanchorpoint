@@ -236,8 +236,27 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       </div>
       <div style="overflow-x:auto">
         <table><thead><tr>
-          <th>付款日期</th><th>收款人</th><th>方式</th><th style="text-align:right">工时</th><th style="text-align:right">工资</th><th style="text-align:right">Bonus</th><th style="text-align:right">报销</th><th style="text-align:right">合计</th><th>状态</th>
-        </tr></thead><tbody id="gustoPayBody"><tr><td colspan="9" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+          <th>付款日期</th><th>收款人</th><th>方式</th><th style="text-align:right">工时</th><th style="text-align:right">工资</th><th style="text-align:right">Bonus</th><th style="text-align:right">报销</th><th style="text-align:right">合计</th><th>状态</th><th>银行转账</th>
+        </tr></thead><tbody id="gustoPayBody"><tr><td colspan="10" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- 🏦 付款关联银行转账弹窗: 候选只有银行历史里的 Gusto 交易 -->
+    <div id="gustoBankModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:95;align-items:center;justify-content:center;padding:16px">
+      <div class="card" style="max-width:660px;width:100%;padding:1.1rem 1.2rem 1rem;max-height:88vh;display:flex;flex-direction:column">
+        <div style="font-weight:800;margin-bottom:.15rem">🏦 关联银行转账</div>
+        <div id="gustoBankPayInfo" style="font-size:.78rem;color:var(--g500);margin-bottom:.5rem"></div>
+        <input type="text" id="gustoBankSearch" placeholder="搜日期 / 描述 / 金额 / 账户…" oninput="renderGustoBankList()" style="width:100%;margin-bottom:.45rem">
+        <div id="gustoBankList" style="flex:1;overflow:auto;border:1px solid var(--g200);border-radius:8px;min-height:120px;max-height:46vh"></div>
+        <div style="font-size:.72rem;color:var(--g400);margin:.4rem 0">只显示银行历史里描述带 Gusto 的交易——工资付款只能挂 Gusto 的扣款，其他转账不能关联。</div>
+        <label id="gustoBankSameDayWrap" style="display:flex;align-items:center;gap:.4rem;font-size:.78rem;margin-bottom:.55rem">
+          <input type="checkbox" id="gustoBankSameDay" checked> 同一天其他未关联的付款也一起挂到这笔转账（Gusto 整批扣款，一笔转账对应当天所有付款）
+        </label>
+        <div style="display:flex;gap:.5rem;justify-content:flex-end">
+          <button class="btn btn-outline" id="gustoBankUnlinkBtn" style="display:none;color:#dc2626;margin-right:auto" onclick="gustoBankUnlink()">解除关联</button>
+          <button class="btn btn-outline" onclick="document.getElementById('gustoBankModal').style.display='none'">取消</button>
+          <button class="btn btn-blue" onclick="submitGustoBankLink()">✅ 关联</button>
+        </div>
       </div>
     </div>
   </div>
@@ -2509,6 +2528,7 @@ function gustoToggleDetail(i) {
 async function gustoLoadPayments() {
   const r = await api('/api/acct/gusto/payments').catch(err => ({ error: err.message }));
   _gustoPayRows = (r && r.rows) || [];
+  _gustoBankTxns = (r && r.bank_txns) || {};
   renderGustoPayList();
 }
 // 付款日期所在的自然周（周一 ~ 周日）
@@ -2534,6 +2554,19 @@ function renderGustoPayList() {
     g.rows.push(p);
     g.sum += (+p.wage_total || 0);
   }
+  // 银行转账列: 已挂的画徽章(悬停看明细), 没挂的给「🔗 关联」入口 (staff 只读)
+  const bankCell = p => {
+    const t = p.bank_txn_id ? _gustoBankTxns[p.bank_txn_id] : null;
+    const canEdit = canAnnotate();
+    if (p.bank_txn_id) {
+      const label = t ? `${t.date} ${money(Math.abs(t.amount))}` : '已关联';
+      const tip = t ? `${t.date} · ${t.name || ''} · ${money(Math.abs(t.amount))}${(t.company_label || t.mask) ? ' · ' + (t.company_label || '') + (t.mask ? ' ··' + t.mask : '') : ''}` : p.bank_txn_id;
+      return `<span title="${esc(tip)}" style="font-size:.72rem;color:#166534;background:#dcfce7;border:1px solid #bbf7d0;border-radius:6px;padding:1px 6px;white-space:nowrap">🏦 ${esc(label)}</span>${canEdit ? ` <a style="cursor:pointer;font-size:.72rem;color:#0f4c6b;text-decoration:underline" onclick="openGustoBankLink('${esc(p.uuid)}')">改</a>` : ''}`;
+    }
+    return canEdit
+      ? `<a style="cursor:pointer;font-size:.76rem;color:#0f4c6b;text-decoration:underline;white-space:nowrap" onclick="openGustoBankLink('${esc(p.uuid)}')">🔗 关联</a>`
+      : '<span style="color:var(--g400)">—</span>';
+  };
   const rowHtml = p => `<tr>
     <td style="white-space:nowrap">${esc(p.date)}</td>
     <td><b>${esc(p.contractor_name || p.contractor_uuid)}</b>${p.wage_type === 'W2' ? ' <span title="W-2 员工工资，不参与合同工对账" style="font-size:.68rem;color:#1e40af;background:#dbeafe;border:1px solid #bfdbfe;border-radius:6px;padding:0 4px">W-2</span>' : ''}</td>
@@ -2544,13 +2577,72 @@ function renderGustoPayList() {
     <td style="text-align:right">${p.reimbursement ? money(p.reimbursement) : '—'}</td>
     <td style="text-align:right"><b>${money(p.wage_total)}</b></td>
     <td>${p.status === 'Funded' ? '<span style="color:#166534">✅ Funded</span>' : esc(p.status || '—')}${p.source === 'import' ? ' <span title="来自手动导入的付款报告" style="font-size:.68rem;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:0 4px">导入</span>' : ''}</td>
+    <td>${bankCell(p)}</td>
   </tr>`;
   document.getElementById('gustoPayBody').innerHTML = groups.size
     ? [...groups.values()].map(g => `<tr style="background:#f1f5f9">
-        <td colspan="9" style="font-weight:700;font-size:.8rem;padding:.4rem .5rem">📅 ${esc(g.ws)} ~ ${esc(g.we)}
+        <td colspan="10" style="font-weight:700;font-size:.8rem;padding:.4rem .5rem">📅 ${esc(g.ws)} ~ ${esc(g.we)}
           <span style="color:var(--g500);font-weight:400">· ${g.rows.length} 笔 · 小计</span> ${money(g.sum)}</td>
       </tr>` + g.rows.map(rowHtml).join('')).join('')
-    : '<tr><td colspan="9" style="color:var(--g400)">还没有 Gusto 付款记录</td></tr>';
+    : '<tr><td colspan="10" style="color:var(--g400)">还没有 Gusto 付款记录</td></tr>';
+}
+// ── 🏦 付款 ↔ 银行转账关联: 候选只有银行历史里的 Gusto 交易, 其他转账不能挂 ──
+let _gustoBankTxns = {}, _gustoBankRows = null, _gustoBankTarget = null, _gustoBankSel = '';
+async function openGustoBankLink(uuid) {
+  const p = _gustoPayRows.find(x => x.uuid === uuid);
+  if (!p) return;
+  _gustoBankTarget = p;
+  _gustoBankSel = p.bank_txn_id || '';
+  document.getElementById('gustoBankPayInfo').textContent =
+    `${p.date} · ${p.contractor_name}${p.wage_type === 'W2' ? '（W-2）' : ''} · ${money(p.wage_total)}${p.payment_method ? ' · ' + p.payment_method : ''}`;
+  document.getElementById('gustoBankSameDayWrap').style.display = p.wage_type === 'W2' ? 'none' : 'flex';
+  document.getElementById('gustoBankSameDay').checked = p.wage_type !== 'W2';
+  document.getElementById('gustoBankUnlinkBtn').style.display = p.bank_txn_id ? '' : 'none';
+  document.getElementById('gustoBankSearch').value = '';
+  document.getElementById('gustoBankModal').style.display = 'flex';
+  document.getElementById('gustoBankList').innerHTML = '<div style="padding:.8rem;color:var(--g400);font-size:.8rem">加载中…</div>';
+  const r = await api('/api/acct/gusto/bank-txns').catch(e => ({ error: e.message }));
+  if (!r || r.error) {
+    document.getElementById('gustoBankList').innerHTML = `<div style="padding:.8rem;color:#dc2626;font-size:.8rem">${esc((r && r.error) || '加载失败')}</div>`;
+    return;
+  }
+  _gustoBankRows = r.rows || [];
+  renderGustoBankList();
+}
+function renderGustoBankList() {
+  if (!_gustoBankRows) return;
+  const q = (document.getElementById('gustoBankSearch').value || '').trim().toLowerCase();
+  const rows = _gustoBankRows.filter(t => !q || [t.name, t.merchant, t.date, String(t.amount), t.company_label, t.account_name, t.mask].join(' ').toLowerCase().includes(q));
+  document.getElementById('gustoBankList').innerHTML = rows.length ? rows.map(t => `
+    <label style="display:flex;align-items:center;gap:.5rem;padding:.4rem .55rem;border-bottom:1px solid #eef2f7;cursor:pointer;${_gustoBankSel === t.txn_id ? 'background:#eff6ff' : ''}">
+      <input type="radio" name="gustoBankTxn" value="${esc(t.txn_id)}" ${_gustoBankSel === t.txn_id ? 'checked' : ''} onchange="_gustoBankSel=this.value;renderGustoBankList()">
+      <span style="white-space:nowrap">${esc(t.date)}</span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.name || t.merchant || '')}">${esc(t.name || t.merchant || '')}${t.pending ? ' <i style="color:#b45309">(pending)</i>' : ''}</span>
+      <span style="white-space:nowrap;color:var(--g500);font-size:.72rem">${esc(t.company_label || t.account_name || '')}${t.mask ? ' ··' + esc(t.mask) : ''}</span>
+      <b style="white-space:nowrap">${money(Math.abs(t.amount))}</b>
+      ${t.linked ? `<span style="white-space:nowrap;font-size:.7rem;color:#166534;background:#dcfce7;border-radius:6px;padding:0 5px" title="这笔转账已经挂了 ${t.linked.n} 笔付款">已挂 ${t.linked.n} 笔 ${money(t.linked.sum)}</span>` : ''}
+    </label>`).join('')
+    : '<div style="padding:.8rem;color:var(--g400);font-size:.8rem">银行历史里没找到 Gusto 交易——先在「银行直连」页签连上银行、同步到有 Gusto 扣款的流水</div>';
+}
+async function submitGustoBankLink() {
+  if (!_gustoBankTarget) return;
+  if (!_gustoBankSel) return toast('请先选择一笔 Gusto 银行转账', true);
+  const body = { txn_id: _gustoBankSel, apply_same_day: document.getElementById('gustoBankSameDay').checked && _gustoBankTarget.wage_type !== 'W2' };
+  const r = await api(`/api/acct/gusto/payments/${encodeURIComponent(_gustoBankTarget.uuid)}/bank-link`, { method: 'POST', body: JSON.stringify(body) }).catch(e => ({ error: e.message }));
+  if (r && r.ok) {
+    toast(`✅ 已把 ${r.linked} 笔付款挂到这笔转账${r.same_day_extra ? `（含同日其他 ${r.same_day_extra} 笔）` : ''}`);
+    document.getElementById('gustoBankModal').style.display = 'none';
+    gustoLoadPayments();
+  } else toast((r && r.error) || '关联失败', true);
+}
+async function gustoBankUnlink() {
+  if (!_gustoBankTarget) return;
+  const r = await api(`/api/acct/gusto/payments/${encodeURIComponent(_gustoBankTarget.uuid)}/bank-link`, { method: 'POST', body: JSON.stringify({ txn_id: '' }) }).catch(e => ({ error: e.message }));
+  if (r && r.ok) {
+    toast('已解除关联');
+    document.getElementById('gustoBankModal').style.display = 'none';
+    gustoLoadPayments();
+  } else toast((r && r.error) || '操作失败', true);
 }
 // ── 过渡期: 手动导入 Gusto 付款报告（CSV/Excel; API 连接后入口自动隐藏） ──
 async function gustoImportFile(input) {
