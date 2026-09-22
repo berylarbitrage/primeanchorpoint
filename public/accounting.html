@@ -125,6 +125,65 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <button class="tab" id="tabPallet" onclick="showTab('pallet')">🪵 木板账单 Pallet</button>
     <button class="tab" id="tabTruck" onclick="showTab('truck')">🚚 卡车费用 Truck</button>
     <button class="tab" id="tabBank" onclick="showTab('bank')" style="display:none">🔗 银行直连 Bank Feed <span id="bankUnrevBadge" style="display:none;background:#dc2626;color:#fff;border-radius:10px;font-size:.68rem;padding:1px 7px;vertical-align:middle"></span></button>
+    <button class="tab" id="tabZelle" onclick="showTab('zelle')" style="display:none">💸 Zelle</button>
+  </div>
+
+  <!-- 💸 Zelle 转账统计: 银行直连交易按收款人汇总, 每人所有时间点+金额, 可备注/关联员工·公司 -->
+  <div id="paneZelle" style="display:none">
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
+      <select id="zAcc" onchange="zLoad()"><option value="">全部账户</option></select>
+      <select id="zDir" onchange="zRender()">
+        <option value="">转出 + 转入</option>
+        <option value="out">只看转出（付出去的）</option>
+        <option value="in">只看转入（收进来的）</option>
+      </select>
+      <input type="date" id="zFrom" onchange="zLoad()"> <span style="color:var(--g400)">→</span>
+      <input type="date" id="zTo" onchange="zLoad()">
+      <button class="btn btn-sm btn-outline" onclick="zQuick(30)">近30天</button>
+      <button class="btn btn-sm btn-outline" onclick="zQuick(90)">近90天</button>
+      <button class="btn btn-sm btn-outline" onclick="zQuick('year')">今年</button>
+      <button class="btn btn-sm btn-outline" onclick="zQuick('')">全部</button>
+      <input type="text" id="zQ" placeholder="搜姓名 / Zelle号 / 备注…" oninput="zRender()" style="width:180px">
+      <span style="flex:1"></span>
+      <button class="btn btn-sm btn-outline" id="zBtnAll" onclick="zToggleAll()">展开全部</button>
+      <button class="btn btn-sm btn-outline" onclick="zExportCsv()">⬇ 导出明细 CSV</button>
+      <button class="btn btn-sm btn-blue" onclick="zLoad()">↻ 刷新</button>
+    </div>
+    <div id="zSum" style="display:flex;gap:.45rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem;font-size:.82rem"></div>
+    <div class="card" style="padding:0;overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th style="width:26px"></th><th>收款人 / 对方</th>
+          <th style="text-align:right">转出笔数</th><th style="text-align:right">转出合计</th>
+          <th style="text-align:right">转入笔数</th><th style="text-align:right">转入合计</th>
+          <th>首次</th><th>最近一笔</th>
+        </tr></thead>
+        <tbody id="zBody"><tr><td colspan="8" style="color:var(--g400);padding:1rem">加载中…</td></tr></tbody>
+      </table>
+    </div>
+    <p style="font-size:.75rem;color:var(--g400);margin-top:.55rem">数据来自「银行直连」交易。转出 = 我方账户付出去；转入 = 对方 Zelle 打进来。人名从银行描述自动提取（如「Zelle payment to CESAR JPM99…」取 CESAR），同名自动合并，描述里没带名字的归到「(未识别)」。点「✎ 备注」补 Zelle 号、备注、关联系统里的员工或公司。</p>
+  </div>
+
+  <!-- ✎ Zelle 收款人备注弹窗: Zelle号 + 关联系统里的员工/劳务公司/客户公司 + 备注 -->
+  <div id="zcModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:96;align-items:center;justify-content:center;padding:16px">
+    <div class="card" style="max-width:460px;width:100%;padding:1.1rem 1.2rem 1rem">
+      <div style="font-weight:800;margin-bottom:.2rem">✎ 收款人备注 · <span id="zcName"></span></div>
+      <div style="font-size:.75rem;color:var(--g400);margin-bottom:.6rem">补上 Zelle 号（手机/邮箱）、备注这是谁，可关联到系统里的员工 / 劳务公司 / 客户公司。</div>
+      <label style="font-size:.76rem;color:var(--g500)">Zelle 号（手机 / 邮箱）</label>
+      <input id="zcHandle" type="text" placeholder="例：626-823-2361 或 name@mail.com" style="width:100%;margin:.15rem 0 .55rem">
+      <label style="font-size:.76rem;color:var(--g500)">关联到系统里的员工 / 公司</label>
+      <div id="zcPicked" style="display:none;margin:.15rem 0 .55rem"></div>
+      <div id="zcSearchBox" style="position:relative;margin:.15rem 0 .55rem">
+        <input id="zcSearch" type="text" placeholder="搜员工姓名 / 电话 / 公司名…" oninput="zcSearch()" onfocus="zcSearch()" autocomplete="off" style="width:100%">
+        <div id="zcList" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--g200);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);max-height:220px;overflow:auto;z-index:6"></div>
+      </div>
+      <label style="font-size:.76rem;color:var(--g500)">备注</label>
+      <textarea id="zcNote" rows="2" placeholder="这是谁、付的什么钱…" style="width:100%;margin:.15rem 0 .6rem;font-family:inherit;resize:vertical"></textarea>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="zcClose()">取消</button>
+        <button class="btn btn-blue" id="zcSaveBtn" onclick="zcSaveNow()">保存</button>
+      </div>
+    </div>
   </div>
 
   <div id="paneInv">
@@ -623,7 +682,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <button class="btn" id="btnBankConnect" onclick="bankConnect()" style="background:#0f4c6b;color:#fff;display:none">➕ 连接银行</button>
         <button class="btn btn-outline" id="btnBankCfg" onclick="document.getElementById('bankCfgCard').style.display='';" style="display:none">⚙️ 配置</button>
         <button class="btn btn-outline" id="btnBankSync" onclick="bankSync()">🔄 立即同步</button>
-        <a class="btn btn-outline" href="/zelle" target="_blank" style="text-decoration:none" title="所有 Zelle 转账按收款人汇总，每个人的全部时间点和金额">💸 Zelle 统计</a>
+        <button class="btn btn-outline" onclick="showTab('zelle')" title="所有 Zelle 转账按收款人汇总，每个人的全部时间点和金额">💸 Zelle 统计</button>
         <span id="bankSyncMsg" style="font-size:.8rem;color:var(--g500)"></span>
       </div>
       <div id="bankAcctCards" style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.8rem"></div>
@@ -778,6 +837,7 @@ function enterMain() {
   document.getElementById('whoami').textContent = `${USER.display_name || USER.username}（${USER.role === 'accounting' ? '会计' : USER.role === 'cs' ? '客服' : USER.role === 'admin' ? '管理员' : USER.role}）`;
   // 银行直连: 仅 admin / 会计可见
   document.getElementById('tabBank').style.display = ['admin', 'accounting'].includes(USER.role) ? '' : 'none';
+  document.getElementById('tabZelle').style.display = ['admin', 'accounting'].includes(USER.role) ? '' : 'none';
   // 新增赔偿事故 / 费用记录: 会计可提交(待管理员审核), admin 直接生效
   document.getElementById('btnClaimAdd').style.display = ['admin', 'accounting'].includes(USER.role) ? '' : 'none';
   document.getElementById('btnFeeAdd').style.display = ['admin', 'accounting'].includes(USER.role) ? '' : 'none';
@@ -814,6 +874,9 @@ function showTab(t) {
   document.getElementById('tabBank').classList.toggle('on', t === 'bank');
   document.getElementById('paneBank').style.display = t === 'bank' ? '' : 'none';
   if (t === 'bank') bankInit();
+  document.getElementById('tabZelle').classList.toggle('on', t === 'zelle');
+  document.getElementById('paneZelle').style.display = t === 'zelle' ? '' : 'none';
+  if (t === 'zelle') zInit();
   const isFee = t === 'feeins' || t === 'feelaw' || t === 'feeco';
   document.getElementById('paneFee').style.display = isFee ? '' : 'none';
   if (isFee) { _feeType = t === 'feeins' ? 'insurance' : (t === 'feelaw' ? 'legal' : 'company'); feeApplyType(); renderFeeList(); }
@@ -3416,6 +3479,210 @@ function renderAnns() {
     </div>`;
   }).join('');
 }
+
+// ── 💸 Zelle 转账统计: 银行直连交易按收款人汇总 + 收款人档案 (Zelle号/备注/关联员工·公司) ──
+let _zData = null, _zOpenKeys = new Set(), _zAllOpen = false, _zInited = false;
+const ZC_TYPE = { employee: '👤 员工', labor_company: '🏭 劳务公司', partner: '🏢 客户公司' };
+function zInit() { if (_zInited) return; _zInited = true; zLoad(); }
+function zQuick(v) {
+  const to = new Date(), f = document.getElementById('zFrom'), t = document.getElementById('zTo');
+  if (v === '') { f.value = ''; t.value = ''; }
+  else if (v === 'year') { f.value = to.getFullYear() + '-01-01'; t.value = to.toISOString().slice(0, 10); }
+  else { f.value = new Date(Date.now() - v * 86400000).toISOString().slice(0, 10); t.value = to.toISOString().slice(0, 10); }
+  zLoad();
+}
+async function zLoad() {
+  const q = new URLSearchParams();
+  const from = document.getElementById('zFrom').value, to = document.getElementById('zTo').value;
+  const acc = document.getElementById('zAcc').value;
+  if (from) q.set('start', from);
+  if (to) q.set('end', to);
+  if (acc) q.set('account_id', acc);
+  document.getElementById('zSum').innerHTML = '<span style="color:var(--g400)">加载中…</span>';
+  try {
+    _zData = await api('/api/plaid/zelle-stats?' + q.toString());
+    if (_zData && _zData.error) throw new Error(_zData.error);
+  } catch (e) {
+    document.getElementById('zSum').innerHTML = `<span style="color:#dc2626">${esc(e.message || '加载失败')}</span>`;
+    return;
+  }
+  const sel = document.getElementById('zAcc');
+  if (sel.options.length <= 1 && _zData.accounts) {
+    _zData.accounts.forEach(a => { const o = document.createElement('option'); o.value = a.account_id; o.textContent = a.label; sel.appendChild(o); });
+    if (acc) sel.value = acc;
+  }
+  zRender();
+}
+// 方向/搜索在页面上即时过滤并重算每人合计 (服务器给全量)
+function _zFiltered() {
+  const dir = document.getElementById('zDir').value;
+  const q = document.getElementById('zQ').value.trim().toLowerCase();
+  const out = [];
+  for (const p of (_zData && _zData.people) || []) {
+    const c = p.contact || {};
+    if (q && ![p.name, c.zelle_handle, c.link_label, c.note].join(' ').toLowerCase().includes(q)) continue;
+    const txns = p.txns.filter(t => !dir || (dir === 'out' ? t.amount >= 0 : t.amount < 0));
+    if (!txns.length) continue;
+    const r = { name: p.name, key: p.key || p.name.toLowerCase(), contact: p.contact || null, txns, out_total: 0, out_count: 0, in_total: 0, in_count: 0, first_date: '', last_date: '' };
+    for (const t of txns) {
+      if (t.amount >= 0) { r.out_total += t.amount; r.out_count++; } else { r.in_total += -t.amount; r.in_count++; }
+      if (t.date && (!r.first_date || t.date < r.first_date)) r.first_date = t.date;
+      if (t.date && (!r.last_date || t.date > r.last_date)) r.last_date = t.date;
+    }
+    out.push(r);
+  }
+  out.sort((a, b) => (b.out_total + b.in_total) - (a.out_total + a.in_total));
+  return out;
+}
+function zRender() {
+  if (!_zData) return;
+  const list = _zFiltered();
+  const sums = list.reduce((s, p) => ({ ot: s.ot + p.out_total, oc: s.oc + p.out_count, it: s.it + p.in_total, ic: s.ic + p.in_count }), { ot: 0, oc: 0, it: 0, ic: 0 });
+  const chip = h => `<span style="background:#fff;border:1px solid var(--g200);border-radius:999px;padding:.2rem .7rem">${h}</span>`;
+  document.getElementById('zSum').innerHTML =
+    chip(`共 <b>${list.length}</b> 人`)
+    + chip(`转出 <b>${sums.oc}</b> 笔 <span style="color:#dc2626;font-weight:700">−${money(sums.ot)}</span>`)
+    + chip(`转入 <b>${sums.ic}</b> 笔 <span style="color:#15803d;font-weight:700">+${money(sums.it)}</span>`)
+    + chip(`净额 <b>${sums.it - sums.ot >= 0 ? '+' : '−'}${money(Math.abs(sums.it - sums.ot))}</b>`);
+  const num = 'text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums';
+  document.getElementById('zBody').innerHTML = list.length ? list.map(p => {
+    const open = _zOpenKeys.has(p.key);
+    const c = p.contact || {};
+    const cInfo = [
+      c.link_type && c.link_label ? `<div style="font-size:.76rem;color:#0f4c6b;font-weight:400">${ZC_TYPE[c.link_type] || '🔗'} · ${esc(c.link_label)}</div>` : '',
+      c.zelle_handle ? `<div style="font-size:.76rem;color:var(--g500);font-weight:400">📱 ${esc(c.zelle_handle)}</div>` : '',
+      c.note ? `<div style="font-size:.74rem;color:#b45309;font-weight:400">📝 ${esc(c.note)}</div>` : '',
+    ].join('');
+    const rows = p.txns.map(t => `<tr>
+        <td style="white-space:nowrap;padding:.35rem .55rem;border-bottom:1px solid var(--g100)">${esc(t.date || '—')}${t.pending ? ' <span style="color:var(--g400);font-size:.7rem">(处理中)</span>' : ''}</td>
+        <td style="${num};width:110px;padding:.35rem .55rem;border-bottom:1px solid var(--g100)"><span style="color:${t.amount >= 0 ? '#dc2626' : '#15803d'};font-weight:700">${t.amount >= 0 ? '−' : '+'}${money(Math.abs(t.amount))}</span></td>
+        <td style="white-space:nowrap;padding:.35rem .55rem;border-bottom:1px solid var(--g100)">${esc(t.account)}</td>
+        <td style="color:var(--g400);font-size:.76rem;word-break:break-all;padding:.35rem .55rem;border-bottom:1px solid var(--g100)">${esc(t.desc)}</td>
+      </tr>`).join('');
+    return `<tr onclick="zToggleRow('${esc(p.key).replace(/'/g, "\\'")}')" style="cursor:pointer">
+      <td><span style="color:var(--g400)">${open ? '▼' : '▶'}</span></td>
+      <td style="font-weight:700">${esc(p.name)} <span style="color:var(--g400);font-weight:400;font-size:.76rem">· ${p.txns.length} 笔</span>
+        <a onclick="event.stopPropagation();zcEdit('${esc(p.key).replace(/'/g, "\\'")}')" style="cursor:pointer;color:#0ea5e9;font-size:.76rem;font-weight:400;text-decoration:underline;margin-left:.35rem">✎ 备注</a>${cInfo}</td>
+      <td style="${num}">${p.out_count || '<span style="color:var(--g300)">—</span>'}</td>
+      <td style="${num}">${p.out_count ? `<span style="color:#dc2626;font-weight:700">−${money(p.out_total)}</span>` : '<span style="color:var(--g300)">—</span>'}</td>
+      <td style="${num}">${p.in_count || '<span style="color:var(--g300)">—</span>'}</td>
+      <td style="${num}">${p.in_count ? `<span style="color:#15803d;font-weight:700">+${money(p.in_total)}</span>` : '<span style="color:var(--g300)">—</span>'}</td>
+      <td style="white-space:nowrap;color:var(--g400)">${esc(p.first_date || '—')}</td>
+      <td style="white-space:nowrap">${esc(p.last_date || '—')}</td>
+    </tr>
+    ${open ? `<tr><td></td><td colspan="7" style="background:#fafcff;padding:0 .55rem .6rem"><div style="border:1px solid var(--g200);border-radius:8px;overflow:hidden;margin-top:.1rem;background:#fff"><table style="width:100%;border-collapse:collapse">${rows}</table></div></td></tr>` : ''}`;
+  }).join('') : '<tr><td colspan="8" style="color:var(--g400);padding:1rem">这个范围里没有 Zelle 转账</td></tr>';
+}
+function zToggleRow(key) {
+  if (_zOpenKeys.has(key)) _zOpenKeys.delete(key); else _zOpenKeys.add(key);
+  zRender();
+}
+function zToggleAll() {
+  _zAllOpen = !_zAllOpen;
+  _zOpenKeys = _zAllOpen ? new Set(_zFiltered().map(p => p.key)) : new Set();
+  document.getElementById('zBtnAll').textContent = _zAllOpen ? '收起全部' : '展开全部';
+  zRender();
+}
+function zExportCsv() {
+  const list = _zFiltered();
+  const escCsv = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const lines = ['收款人,Zelle号,关联,备注,日期,方向,金额,账户,原始描述'];
+  for (const p of list) for (const t of p.txns) {
+    const c = p.contact || {};
+    const link = c.link_type && c.link_label ? (ZC_TYPE[c.link_type] || '').replace(/^\S+\s/, '') + '·' + c.link_label : '';
+    lines.push([p.name, c.zelle_handle || '', link, c.note || '', t.date, t.amount >= 0 ? '转出' : '转入', (-t.amount).toFixed(2), t.account, t.desc].map(escCsv).join(','));
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
+  a.download = 'zelle-stats.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+// ✎ 收款人备注: Zelle号 / 关联员工·公司 / 备注
+let _zcKey = null, _zcPicked = null, _zcHits = [], _zcT = null;
+function zcEdit(key) {
+  const p = ((_zData && _zData.people) || []).find(x => (x.key || x.name.toLowerCase()) === key);
+  if (!p) return;
+  _zcKey = key;
+  const c = p.contact || {};
+  _zcPicked = c.link_type && c.link_label ? { type: c.link_type, id: c.link_id, label: c.link_label, handle: '' } : null;
+  document.getElementById('zcName').textContent = p.name;
+  document.getElementById('zcHandle').value = c.zelle_handle || '';
+  document.getElementById('zcNote').value = c.note || '';
+  document.getElementById('zcSearch').value = '';
+  document.getElementById('zcList').style.display = 'none';
+  zcRenderPicked();
+  document.getElementById('zcModal').style.display = 'flex';
+  // 没关联过的: 直接拿 Zelle 姓名先搜一轮系统, 大概率一点就选上
+  if (!_zcPicked && p.name && p.name !== '(未识别)') {
+    document.getElementById('zcSearch').value = p.name;
+    zcSearch();
+  }
+}
+function zcRenderPicked() {
+  const box = document.getElementById('zcPicked'), sBox = document.getElementById('zcSearchBox');
+  if (_zcPicked) {
+    box.style.display = '';
+    sBox.style.display = 'none';
+    box.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;border:1px solid #a7f3d0;background:#ecfdf5;color:#065f46;border-radius:8px;padding:4px 10px;font-size:.84rem;font-weight:600">${ZC_TYPE[_zcPicked.type] || '🔗'} · ${esc(_zcPicked.label)}
+      <a onclick="zcClearPick()" title="重新选" style="cursor:pointer;color:#dc2626;font-weight:700">✕</a></span>`;
+  } else { box.style.display = 'none'; sBox.style.display = ''; }
+}
+function zcClearPick() { _zcPicked = null; zcRenderPicked(); setTimeout(() => document.getElementById('zcSearch').focus(), 0); }
+function zcSearch() {
+  clearTimeout(_zcT);
+  const q = document.getElementById('zcSearch').value.trim();
+  const list = document.getElementById('zcList');
+  if (q.length < 2) { list.style.display = 'none'; return; }
+  _zcT = setTimeout(async () => {
+    let r;
+    try { r = await api('/api/plaid/zelle-link-search?q=' + encodeURIComponent(q)); } catch (e) { return; }
+    if (document.getElementById('zcSearch').value.trim() !== q) return;
+    _zcHits = (r && r.matches) || [];
+    list.innerHTML = _zcHits.length ? _zcHits.map((m, i) =>
+      `<a onclick="zcPick(${i})" style="display:block;padding:.4rem .6rem;border-bottom:1px solid #f1f5f9;cursor:pointer;font-size:.84rem;color:#1f2937;text-decoration:none">${ZC_TYPE[m.type] || '🔗'} · <b>${esc(m.label)}</b>${m.sub ? ` <span style="color:var(--g400);font-size:.76rem">${esc(m.sub)}</span>` : ''}</a>`).join('')
+      : '<div style="color:var(--g400);padding:.45rem .6rem;font-size:.8rem">系统里没搜到，可以只填备注</div>';
+    list.style.display = '';
+  }, 300);
+}
+function zcPick(i) {
+  const m = _zcHits[i];
+  if (!m) return;
+  _zcPicked = m;
+  const h = document.getElementById('zcHandle');
+  if (!h.value.trim() && m.handle) h.value = m.handle; // 带出对方存过的电话/Zelle号
+  document.getElementById('zcList').style.display = 'none';
+  zcRenderPicked();
+}
+function zcClose() { document.getElementById('zcModal').style.display = 'none'; _zcKey = null; }
+async function zcSaveNow() {
+  if (!_zcKey) return;
+  const p = ((_zData && _zData.people) || []).find(x => (x.key || x.name.toLowerCase()) === _zcKey);
+  const btn = document.getElementById('zcSaveBtn');
+  btn.disabled = true;
+  try {
+    const body = {
+      name_key: _zcKey,
+      display_name: p ? p.name : '',
+      zelle_handle: document.getElementById('zcHandle').value.trim(),
+      note: document.getElementById('zcNote').value.trim(),
+      link_type: _zcPicked ? _zcPicked.type : '',
+      link_id: _zcPicked ? _zcPicked.id : null,
+      link_label: _zcPicked ? _zcPicked.label : '',
+    };
+    const r = await api('/api/plaid/zelle-contacts', { method: 'POST', body: JSON.stringify(body) });
+    if (r && r.error) throw new Error(r.error);
+    if (p) p.contact = { zelle_handle: body.zelle_handle, note: body.note, link_type: body.link_type, link_id: body.link_id, link_label: body.link_label };
+    zcClose();
+    zRender();
+    toast('✅ 已保存');
+  } catch (e) { toast(e.message || '保存失败', true); }
+  btn.disabled = false;
+}
+document.addEventListener('click', e => {
+  const list = document.getElementById('zcList');
+  if (list && !e.target.closest('#zcSearchBox')) list.style.display = 'none';
+});
 
 // ── 🔗 银行直连 Bank Feed ──
 // api() 出错时返回 {error} 不抛异常, 银行模块统一用 bapi 抛出便于 catch
