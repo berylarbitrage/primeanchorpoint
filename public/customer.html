@@ -1019,6 +1019,25 @@ function trEditOpen(id) {
   };
   document.body.appendChild(ov);
 }
+// 🗑 删除整条打卡记录: 重复行/完全打错的记录用。与「改时间」同一权限（edit_time），
+// 不可恢复；服务器删除前会把原上下班/休息快照写进编辑历史表留底。
+async function trDeleteOpen(id) {
+  const e = (window._trEntries || {})[id];
+  if (!e) return;
+  const tz = _trSiteTz[e.site_id] || 'America/Chicago';
+  const hm = v => { const x = _trPT(v); return x ? x.toLocaleTimeString('en-GB', { timeZone: tz, hour12: false, hour: '2-digit', minute: '2-digit' }) : ''; };
+  const d2 = _trPT(e.clock_in) || _trPT(e.clock_out);
+  const wd = e.work_date || (d2 ? d2.toLocaleDateString('en-CA', { timeZone: tz }) : '');
+  const ok = await cpConfirm({ icon: '🗑', title: '删除打卡记录',
+    msg: `确定删除这条打卡记录？\n\n${esc(e.name)} · ${wd}\n上班 ${hm(e.clock_in) || '—'} · 下班 ${e.clock_out ? hm(e.clock_out) : '在班'}${e.total_hours ? ` · 合计 ${e.total_hours.toFixed(2)}h` : ''}\n\n删除后不可恢复（系统会留底备查）。\n只想作废单个误打的卡请用「✎ 改含义」。`,
+    okLabel: '删除', okBg: '#E63946' });
+  if (!ok) return;
+  const r = await cApi(`/time-entries/${id}/delete`, { method: 'POST' });
+  if (!r) return;
+  if (r.error) { showToast(r.error, 'error'); return; }
+  showToast('✅ 已删除该打卡记录');
+  loadTimeRecords();
+}
 // 🕘 编辑历史: 谁在什么时候把什么从A改到B
 async function trHistOpen(id) {
   const e = (window._trEntries || {})[id] || {};
@@ -1303,6 +1322,7 @@ async function loadTimeRecords() {
       const noBreaks = _trSiteBrk[e.site_id] === 0; // 不休息班型: 不出现休息按钮
       const extra = (cCan('edit_time') ? `<button class="tr-act" style="border-color:#7C3AED;color:#7C3AED" onclick="trTimeOpen(${e.entry_id})" title="直接修改上班/下班/休息的具体时间（需管理员开通的权限）">⏱ 改时间</button>` : '') +
         (cCan('relabel') ? `<button class="tr-act" style="border-color:#4A6CF7;color:#4A6CF7" onclick="trEditOpen(${e.entry_id})" title="时间不可改，只能改每个打卡时间点的含义（上班/休息/下班/作废）">✎ 改含义</button>` : '') +
+        (cCan('edit_time') ? `<button class="tr-act" style="border-color:#E63946;color:#E63946" onclick="trDeleteOpen(${e.entry_id})" title="删除整条打卡记录（不可恢复）；只想作废单个误打的卡请用「改含义」">🗑 删除</button>` : '') +
         `<button class="tr-act" style="border-color:#CBD2DA;color:#667085" onclick="trHistOpen(${e.entry_id})" title="谁在什么时候改过什么">历史${e.edit_count ? '·' + e.edit_count : ''}</button>`;
       if (!cCan('punch')) actTd = `<td style="white-space:nowrap">${extra || '—'}</td>`;
       else if (isOpen && e.on_break) actTd = `<td style="white-space:nowrap">${actBtn('结束休息', 'break_end', '#2D9D78')}${actBtn('下班', 'out', '#E63946')}${extra}</td>`;
