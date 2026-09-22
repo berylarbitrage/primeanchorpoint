@@ -35286,6 +35286,133 @@ app.get('/api/plaid/transactions.csv', requireAdmin, requireRole('admin', 'cs', 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// 💸 Zelle 收款人档案: 给每个收款人补 Zelle号(手机/邮箱)/备注, 并可关联系统里的
+// 员工(employee) / 劳务公司(labor_company) / 客户公司(partner) — link_label 存显示名快照
+db.exec(`CREATE TABLE IF NOT EXISTS zelle_contacts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name_key TEXT UNIQUE NOT NULL,
+  display_name TEXT DEFAULT '',
+  zelle_handle TEXT DEFAULT '',
+  note TEXT DEFAULT '',
+  link_type TEXT DEFAULT '',
+  link_id INTEGER DEFAULT NULL,
+  link_label TEXT DEFAULT '',
+  updated_by TEXT DEFAULT '',
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// ── 💸 Zelle 转账统计: 银行直连交易里的 Zelle 按收款人汇总, 每人所有时间点+金额 ──
+// 描述形如 Chase「Zelle payment to CESAR JPM99cwzudxl」/「Zelle payment from JOHN 123456」,
+// BofA「Zelle Transfer Conf# abc123; JOHN」— 提取人名、剥掉尾部参考号; 金额>0 为转出。
+function _zelleParse(desc) {
+  const s = String(desc || '').replace(/\s+/g, ' ').trim();
+  if (!/zelle/i.test(s)) return null;
+  let dir = '', rest = '';
+  let m = s.match(/zelle\s+payment\s+to\s+(.+)$/i);
+  if (m) { dir = 'out'; rest = m[1]; }
+  else if ((m = s.match(/zelle\s+payment\s+from\s+(.+)$/i))) { dir = 'in'; rest = m[1]; }
+  else if ((m = s.match(/zelle\s+transfer\s+conf#?\s*\S+\s*;?\s*(.*)$/i))) { rest = m[1]; }
+  else rest = s.replace(/\bzelle\b|\bpayment\b|\btransfer\b|\bto\b|\bfrom\b/ig, ' ').replace(/\s+/g, ' ').trim();
+  // 尾部参考号 (JPM99cwzudxl / 纯数字确认码): 含数字的长串一律剥掉, 人名里不会有数字
+  const parts = rest.split(' ');
+  while (parts.length > 1) {
+    const last = parts[parts.length - 1];
+    if (/\d/.test(last) && /^[A-Za-z0-9#-]+$/.test(last)) parts.pop();
+    else break;
+  }
+  const name = parts.join(' ').replace(/[;,.]+$/, '').trim();
+  return { dir, name: name || '(未识别)' };
+}
+app.get('/api/plaid/zelle-stats', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
+  try {
+    const { where, params } = plaidTxnQuery(req); // start / end / account_id 复用同一套筛选
+    const rows = db.prepare(`SELECT txn_id, account_id, date, name, merchant, amount, pending FROM plaid_transactions
+      WHERE ${where} AND (name LIKE '%zelle%' OR merchant LIKE '%zelle%') ORDER BY date DESC, id DESC`).all(...params);
+    const accs = {}, accList = [];
+    db.prepare(`SELECT a.account_id, a.name, a.mask, COALESCE(a.company_label,'') AS label, COALESCE(i.institution,'') AS bank
+        FROM plaid_accounts a LEFT JOIN plaid_items i ON a.item_id=i.item_id`).all().forEach(a => {
+      accs[a.account_id] = (a.bank ? a.bank + ' · ' : '') + (a.label || a.name || '') + (a.mask ? ' ··' + a.mask : '');
+      accList.push({ account_id: a.account_id, label: accs[a.account_id] });
+    });
+    const contacts = {};
+    try { db.prepare('SELECT * FROM zelle_contacts').all().forEach(c => { contacts[c.name_key] = c; }); } catch (e) {}
+    const people = new Map();
+    for (const r of rows) {
+      const z = _zelleParse(r.name || r.merchant);
+      if (!z) continue;
+      const key = z.name.toLowerCase();
+      let p = people.get(key);
+      if (!p) {
+        const c = contacts[key] || null;
+        p = { key, name: z.name, out_total: 0, out_count: 0, in_total: 0, in_count: 0, first_date: r.date || '', last_date: r.date || '', txns: [],
+          contact: c ? { zelle_handle: c.zelle_handle || '', note: c.note || '', link_type: c.link_type || '', link_id: c.link_id, link_label: c.link_label || '' } : null };
+        people.set(key, p);
+      }
+      const amt = Number(r.amount) || 0;
+      if (amt >= 0) { p.out_total += amt; p.out_count++; } else { p.in_total += -amt; p.in_count++; }
+      if (r.date && (!p.first_date || r.date < p.first_date)) p.first_date = r.date;
+      if (r.date && (!p.last_date || r.date > p.last_date)) p.last_date = r.date;
+      p.txns.push({ txn_id: r.txn_id, date: r.date, amount: amt, account: accs[r.account_id] || r.account_id, desc: r.name || r.merchant || '', pending: !!r.pending });
+    }
+    const out = [...people.values()].sort((a, b) => (b.out_total + b.in_total) - (a.out_total + a.in_total));
+    res.json({
+      people: out,
+      accounts: accList,
+      totals: {
+        people: out.length,
+        out_total: out.reduce((s, p) => s + p.out_total, 0),
+        out_count: out.reduce((s, p) => s + p.out_count, 0),
+        in_total: out.reduce((s, p) => s + p.in_total, 0),
+        in_count: out.reduce((s, p) => s + p.in_count, 0),
+      },
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 保存收款人档案 (按名字键 upsert): Zelle号/备注/关联对象
+app.post('/api/plaid/zelle-contacts', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
+  try {
+    const b = req.body || {};
+    const key = String(b.name_key || '').trim().toLowerCase().slice(0, 120);
+    if (!key) return res.status(400).json({ error: '缺少收款人' });
+    const linkType = ['employee', 'labor_company', 'partner'].includes(b.link_type) ? b.link_type : '';
+    db.prepare(`INSERT INTO zelle_contacts (name_key, display_name, zelle_handle, note, link_type, link_id, link_label, updated_by, updated_at)
+        VALUES (?,?,?,?,?,?,?,?,datetime('now'))
+        ON CONFLICT(name_key) DO UPDATE SET display_name=excluded.display_name, zelle_handle=excluded.zelle_handle,
+          note=excluded.note, link_type=excluded.link_type, link_id=excluded.link_id, link_label=excluded.link_label,
+          updated_by=excluded.updated_by, updated_at=datetime('now')`)
+      .run(key, String(b.display_name || '').trim().slice(0, 120), String(b.zelle_handle || '').trim().slice(0, 120),
+        String(b.note || '').trim().slice(0, 500), linkType, linkType ? (parseInt(b.link_id) || null) : null,
+        linkType ? String(b.link_label || '').trim().slice(0, 160) : '', req.userName || '');
+    res.json({ ok: 1 });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 关联对象搜索: 员工(姓名/电话) + 劳务公司(名称/收款人/Zelle号/电话) + 客户公司(名称),
+// 备注弹窗里选一个挂上; 只回 姓名/电话/Zelle号 这些页面本来要显示的字段
+app.get('/api/plaid/zelle-link-search', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim().toLowerCase();
+    if (q.length < 2) return res.json({ matches: [] });
+    const digits = q.replace(/\D/g, '');
+    const norm = s => String(s || '').toLowerCase();
+    const dg = s => String(s || '').replace(/\D/g, '');
+    const out = [];
+    db.prepare(`SELECT id, first_name, middle_name, last_name, phone, employee_id FROM employees WHERE status IN ('active','onboarding')`).all().forEach(e => {
+      const nm = [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ');
+      if (norm(nm).includes(q) || (digits.length >= 4 && dg(e.phone).includes(digits)))
+        out.push({ type: 'employee', id: e.id, label: nm + (e.employee_id ? '（' + e.employee_id + '）' : ''), sub: e.phone || '', handle: e.phone || '' });
+    });
+    db.prepare(`SELECT id, name, COALESCE(payee_name,'') AS payee_name, COALESCE(phone,'') AS phone, COALESCE(zelle_handle,'') AS zelle_handle FROM labor_companies WHERE active=1`).all().forEach(c => {
+      if (norm(c.name).includes(q) || norm(c.payee_name).includes(q) || norm(c.zelle_handle).includes(q)
+        || (digits.length >= 4 && (dg(c.phone).includes(digits) || dg(c.zelle_handle).includes(digits))))
+        out.push({ type: 'labor_company', id: c.id, label: c.name, sub: [c.payee_name, c.zelle_handle || c.phone].filter(Boolean).join(' · '), handle: c.zelle_handle || c.phone || '' });
+    });
+    db.prepare(`SELECT id, name FROM partners WHERE active=1`).all().forEach(p2 => {
+      if (norm(p2.name).includes(q)) out.push({ type: 'partner', id: p2.id, label: p2.name, sub: '', handle: '' });
+    });
+    res.json({ matches: out.slice(0, 15) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── 银行直连交易标注：复用银行账单 PDF 的 box 标注体系 ──
 // 每个 Plaid 账户对应一条虚拟账单 (source='plaid:<account_id>'), 该账户交易的标注
 // 挂在它下面; 建好后前端直接用 /api/admin/bank-statements/:id/boxes/* 编辑/传照片/删除,
@@ -39356,6 +39483,10 @@ const requireAcctWrite = requireRole('accounting', 'cs', 'admin');
 
 app.get('/accounting', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'accounting.html'));
+});
+// 💸 Zelle 转账统计页 (会计/管理员/客服): 银行直连里的 Zelle 按收款人汇总
+app.get('/zelle', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'zelle.html'));
 });
 
 const _acctAnnCount = db.prepare(`SELECT COUNT(*) AS n FROM acct_annotations WHERE target_type=? AND target_id=?`);

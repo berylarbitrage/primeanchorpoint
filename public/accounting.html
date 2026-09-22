@@ -623,6 +623,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <button class="btn" id="btnBankConnect" onclick="bankConnect()" style="background:#0f4c6b;color:#fff;display:none">➕ 连接银行</button>
         <button class="btn btn-outline" id="btnBankCfg" onclick="document.getElementById('bankCfgCard').style.display='';" style="display:none">⚙️ 配置</button>
         <button class="btn btn-outline" id="btnBankSync" onclick="bankSync()">🔄 立即同步</button>
+        <a class="btn btn-outline" href="/zelle" target="_blank" style="text-decoration:none" title="所有 Zelle 转账按收款人汇总，每个人的全部时间点和金额">💸 Zelle 统计</a>
         <span id="bankSyncMsg" style="font-size:.8rem;color:var(--g500)"></span>
       </div>
       <div id="bankAcctCards" style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.8rem"></div>
