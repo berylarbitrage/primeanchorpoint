@@ -1815,7 +1815,7 @@ async function loadWorkers() {
     <td style="color:var(--gray-400);font-size:.8rem">${i+1}</td>
     <td style="font-weight:600;white-space:nowrap">${esc([w.first_name, w.middle_name, w.last_name].filter(Boolean).join(' '))}</td>
     <td style="white-space:nowrap">${esc(w.emp_code||'')||'—'}</td>
-    <td style="white-space:nowrap">${w.id && cCan('position') ? `<a href="javascript:void(0)" onclick="wkPosEdit(${w.id}, '${esc(w.position||'').replace(/'/g,"&#39;")}')" title="点击填写/修改职位" style="text-decoration:none">${esc(w.position||'') || '<span style="color:var(--gray-400)">✎ 填写</span>'}</a>` : (esc(w.position||'')||'—')}</td>
+    <td style="white-space:nowrap">${w.is_test ? '<span title="测试用账号，不是正式派遣工人" style="font-size:.7rem;background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe;border-radius:999px;padding:.05rem .45rem;margin-right:.3rem;vertical-align:1px">🧪 测试号</span>' : ''}${w.id && cCan('position') ? `<a href="javascript:void(0)" onclick="wkPosEdit(${w.id}, '${esc(w.position||'').replace(/'/g,"&#39;")}')" title="点击填写/修改职位" style="text-decoration:none">${esc(w.position||'') || '<span style="color:var(--gray-400)">✎ 填写</span>'}</a>` : (esc(w.position||'')||'—')}</td>
     <td style="white-space:nowrap">${fmtPhone(w.phone)}</td>
     <td>${esc(w.email||'')||'—'}</td>
     <td style="font-size:.82rem;color:var(--gray-500);white-space:nowrap">${esc(w.address||'')||'—'}</td>
