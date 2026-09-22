@@ -1672,6 +1672,8 @@ try { db.exec("ALTER TABLE customer_accounts ADD COLUMN login_mfa TEXT DEFAULT '
 // 客户账号分权限: JSON {punch,relabel,position,kiosk,docs,edit_time,invoice,add_worker} 0/1; 空 = 除敏感权限外全部允许(老账号)
 // (必须放在 CREATE TABLE customer_accounts 之后: 放前面全新数据库建库时表还不存在, ALTER 会被静默吞掉)
 try { db.exec(`ALTER TABLE customer_accounts ADD COLUMN perms TEXT DEFAULT ''`); } catch(e) {}
+// 打卡记录起始日: 设了之后该客户账号只能看这天(含)起的打卡, 之前的历史只有内部能看
+try { db.exec(`ALTER TABLE customer_accounts ADD COLUMN records_from TEXT DEFAULT ''`); } catch(e) {}
 // 客户门户「从员工库添加派遣工人」: 手动把员工库里的人挂到某客户的派遣工人列表 (还没打过卡也能出现)
 try { db.exec(`CREATE TABLE IF NOT EXISTS partner_workers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -14981,7 +14983,7 @@ app.post('/api/admin/worker-accounts/:id/resend-verify', requireAdmin, requireRo
 
 // ─── Customer Accounts (admin manages) ───
 app.get('/api/admin/customer-accounts', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
-  res.json(db.prepare('SELECT id, company_name, contact_name, contact_first_name, contact_last_name, email, phone, active, partner_id, ein, staffing_needs, approval_status, created_at, perms, login_mfa FROM customer_accounts ORDER BY id DESC').all());
+  res.json(db.prepare('SELECT id, company_name, contact_name, contact_first_name, contact_last_name, email, phone, active, partner_id, ein, staffing_needs, approval_status, created_at, perms, login_mfa, records_from FROM customer_accounts ORDER BY id DESC').all());
 });
 
 // 客户账号权限勾选 (admin): {punch, relabel, position, kiosk, docs} → 存 perms JSON
@@ -14993,6 +14995,10 @@ app.put('/api/admin/customer-accounts/:id/perms', requireAdmin, requireRole('adm
   if (Array.isArray(p.sites) && p.sites.length) clean.sites = p.sites.map(Number).filter(Boolean).slice(0, 50);
   const r = db.prepare('UPDATE customer_accounts SET perms=? WHERE id=?').run(JSON.stringify(clean), req.params.id);
   if (!r.changes) return res.status(404).json({ error: '账号不存在' });
+  // 记录起始日: 'YYYY-MM-DD' = 该账号只看这天起的打卡; '' = 清除(看全部)。没传就不动。
+  if (typeof p.records_from === 'string' && (p.records_from === '' || /^\d{4}-\d{2}-\d{2}$/.test(p.records_from.trim()))) {
+    db.prepare('UPDATE customer_accounts SET records_from=? WHERE id=?').run(p.records_from.trim(), req.params.id);
+  }
   res.json({ ok: 1, perms: clean });
 });
 
@@ -21988,6 +21994,16 @@ try {
   }
 } catch (e) { console.log('[migration] weiqiang 免验证码 error:', e.message); }
 
+// 一次性：weiqiang@wecharmer.com 只看 2026-09-14（打卡机启用）起的打卡记录，
+// 之前的历史只有内部 admin 能看。之后可用账号权限接口的 records_from 调整/清除。
+try {
+  if (!db.prepare("SELECT value FROM app_settings WHERE key='wecharmer_weiqiang_records_from_v1'").get()) {
+    const _wqRf = db.prepare("UPDATE customer_accounts SET records_from='2026-09-14' WHERE LOWER(email)='weiqiang@wecharmer.com'").run();
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('wecharmer_weiqiang_records_from_v1','1')").run();
+    if (_wqRf.changes) console.log('[migration] weiqiang@wecharmer.com 打卡记录起始日已设为 2026-09-14');
+  }
+} catch (e) { console.log('[migration] weiqiang 记录起始日 error:', e.message); }
+
 // 手动修正的参考值：按付款记录算这张发票账期的 工资/开票 合计，✎ 弹窗预填。
 app.get('/api/admin/invoices/:id/wage-suggest', requireAdmin, (req, res) => {
   try {
@@ -28230,6 +28246,16 @@ function _custSitePerms(req) {
   } catch (_) {}
   return null;
 }
+// 账号级记录起始日 (records_from): 设了之后该客户账号只能看这天(含)起的打卡,
+// 之前的历史只有内部 admin 能看 — 冒充会话(内部「进入门户」)不受限
+function _custRecordsFrom(req) {
+  if (!req || req.custImpersonation) return '';
+  try {
+    const row = db.prepare('SELECT records_from FROM customer_accounts WHERE id=?').get(req.customerId);
+    const v = String((row && row.records_from) || '').trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '';
+  } catch (_) { return ''; }
+}
 // 同一家公司的多个名字 (Wecharmer=Nexware=Maynmarch, 和银行核对的 SAME_COMPANY_GROUPS
 // 是同一份名单): 客户门户按同一家算 — 挂在另一个名字 partner 下的仓库/岗位/记录照样算这家的
 function _custGroupTokens(pid) {
@@ -28290,7 +28316,11 @@ function _customerEntryScope(pid, ids, req) {
   const en = _custNameCond('t.company_name', pid, pids);
   conds.push(`(t.company_name IS NOT NULL AND t.company_name!='' AND ${en.sql})`);
   p.push(...en.params);
-  return { sql: '(' + conds.join(' OR ') + ')', params: p };
+  let sql = '(' + conds.join(' OR ') + ')';
+  // 记录起始日: 设了的账号一律只看这天(含)起的记录 (列表/统计/打印同一套范围)
+  const rf = _custRecordsFrom(req);
+  if (rf) { sql = `(${sql} AND DATE(COALESCE(t.clock_in, t.clock_out)) >= ?)`; p.push(rf); }
+  return { sql, params: p };
 }
 // 公司名宽松匹配: 去空格/大小写后等于名下任一 partner 名, 或含同名组关键词 (nexware 等)
 function _custNameCond(col, pid, pids) {
@@ -28503,6 +28533,9 @@ function _customerEntryAuth(req, res) {
   if (site.partner_id) sitePids.push(site.partner_id);
   if (!pid || !sitePids.includes(pid)) { res.status(403).json({ error: '无权操作该仓库的记录' }); return null; }
   if (!_custAllowedSiteIds(req).some(s2 => s2.id === entry.site_id)) { res.status(403).json({ error: '该账号没有此仓库的权限' }); return null; }
+  // 记录起始日之前的历史: 该账号看不到也不能操作
+  const rf = _custRecordsFrom(req);
+  if (rf && String(entry.clock_in || entry.clock_out || '').slice(0, 10) < rf) { res.status(403).json({ error: '该账号只能查看 ' + rf + ' 起的打卡记录' }); return null; }
   return { entry, site };
 }
 
@@ -30727,8 +30760,8 @@ app.get('/api/customer/company-accounts', requireCustomer, (req, res) => {
   if (!req.custImpersonation) return res.json([]);
   const pid = req.customerPartnerId;
   const rows = pid
-    ? db.prepare('SELECT id, contact_name, contact_first_name, contact_last_name, email, phone, active, approval_status, perms FROM customer_accounts WHERE partner_id=? ORDER BY id').all(pid)
-    : db.prepare('SELECT id, contact_name, contact_first_name, contact_last_name, email, phone, active, approval_status, perms FROM customer_accounts WHERE id=?').all(req.customerId);
+    ? db.prepare('SELECT id, contact_name, contact_first_name, contact_last_name, email, phone, active, approval_status, perms, records_from FROM customer_accounts WHERE partner_id=? ORDER BY id').all(pid)
+    : db.prepare('SELECT id, contact_name, contact_first_name, contact_last_name, email, phone, active, approval_status, perms, records_from FROM customer_accounts WHERE id=?').all(req.customerId);
   const siteName = {};
   for (const s of _customerSites(pid)) siteName[s.id] = s.name;
   res.json(rows.map(r => {
@@ -30742,7 +30775,7 @@ app.get('/api/customer/company-accounts', requireCustomer, (req, res) => {
       name: [r.contact_first_name, r.contact_last_name].filter(Boolean).join(' ') || r.contact_name || '',
       email: r.email, phone: r.phone || '',
       status: r.approval_status === 'pending' ? (r.active ? '待审核' : '待验证') : (r.approval_status === 'rejected' ? '已拒绝' : (r.active ? '正常' : '已暂停')),
-      perms, sites
+      perms, sites, records_from: r.records_from || ''
     };
   }));
 });
