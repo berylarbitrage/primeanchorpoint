@@ -27899,6 +27899,14 @@ function _custNeed(req, res, key) {
   res.status(403).json({ error: '该账号没有此操作权限（受限/只读账号），请联系管理员开通' });
   return false;
 }
+// 打卡记录的修改（改时间/改含义/手动补加/删除）只有 Prime Anchor 内部 admin
+// 「进入门户」的冒充会话能用；客户自己的账号无论勾了什么权限都不行。
+// 仓库现场的 上班/下班/休息 实时打卡按钮（punch 权限）不在此列，日常打卡照常。
+function _custNeedInternal(req, res) {
+  if (req && req.custImpersonation) return true;
+  res.status(403).json({ error: '打卡记录只能由 Prime Anchor 内部管理员修改，如需更正请联系 Prime Anchor' });
+  return false;
+}
 // 账号可管的仓库范围: perms.sites=[siteId...] 只管这些仓库; 空/未设 = 本公司全部仓库
 function _custAllowedSiteIds(req) {
   let all = _customerSites(req.customerPartnerId);
@@ -28165,7 +28173,7 @@ function _entryPunches(entry) {
 // (仓库时区 HH:MM)。三条铁规则强制: 只能在该记录自己的工作日内; 下班≥上班; 休息在上下班之间。
 // 改完 raw_punches 按新时间重建(照片跟角色走), 视为已人工核对 → 清待复核标记。
 app.post('/api/customer/time-entries/:id/edit-time', requireCustomer, (req, res) => {
-  if (!_custNeed(req, res, 'edit_time')) return;
+  if (!_custNeedInternal(req, res)) return;
   const a = _customerEntryAuth(req, res);
   if (!a) return;
   const { entry, site } = a;
@@ -28228,7 +28236,7 @@ app.post('/api/customer/time-entries/:id/edit-time', requireCustomer, (req, res)
 // 不允许再加一条 —— 请在那条记录上用「改时间」。往天的记录必须填下班时间 (否则隔天
 // 收尾任务会把它按 0 工时封单)。
 app.post('/api/customer/time-entries/create', requireCustomer, (req, res) => {
-  if (!_custNeed(req, res, 'edit_time')) return;
+  if (!_custNeedInternal(req, res)) return;
   const pid = req.customerPartnerId;
   const b = req.body || {};
   const siteId = parseInt(b.site_id);
@@ -28277,7 +28285,7 @@ app.post('/api/customer/time-entries/create', requireCustomer, (req, res) => {
 // POST /api/customer/time-entries/:id/relabel — 仓库方只能改每个打卡时间点的「含义」
 // (上班/休息开始/休息结束/下班/作废)。时间本身不可改 —— 改时间只有公司有权限的人在后台操作。
 app.post('/api/customer/time-entries/:id/relabel', requireCustomer, (req, res) => {
-  if (!_custNeed(req, res, 'relabel')) return;
+  if (!_custNeedInternal(req, res)) return;
   const a = _customerEntryAuth(req, res);
   if (!a) return;
   const { entry, site } = a;
@@ -28340,7 +28348,7 @@ app.post('/api/customer/time-entries/:id/relabel', requireCustomer, (req, res) =
 // 打卡记录（重复行/完全打错的记录用；单个误打的卡请用「改含义」标作废）。删除不可
 // 恢复；删除前把这条记录的上下班/休息完整快照写进编辑历史表，数据库留底备查。
 app.post('/api/customer/time-entries/:id/delete', requireCustomer, (req, res) => {
-  if (!_custNeed(req, res, 'edit_time')) return;
+  if (!_custNeedInternal(req, res)) return;
   const a = _customerEntryAuth(req, res);
   if (!a) return;
   const { entry, site } = a;

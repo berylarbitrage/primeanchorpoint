@@ -626,6 +626,7 @@ async function showApp() {
   const me = await cApi('/me');
   if (!me) return;
   window.C_PERMS = me.perms || null; // 账号权限 (null=全部允许)
+  window.C_IMP = !!me.impersonation; // 内部 admin 冒充进入（打卡记录的修改按钮只在此模式显示）
   // 管理员冒充进入时顶部显示醒目横幅，避免误以为在自己账号里操作
   try {
     let ib = document.getElementById('impBanner');
@@ -1019,7 +1020,7 @@ function trEditOpen(id) {
   };
   document.body.appendChild(ov);
 }
-// 🗑 删除整条打卡记录: 重复行/完全打错的记录用。与「改时间」同一权限（edit_time），
+// 🗑 删除整条打卡记录: 重复行/完全打错的记录用。只有内部 admin（进入门户）能用，
 // 不可恢复；服务器删除前会把原上下班/休息快照写进编辑历史表留底。
 async function trDeleteOpen(id) {
   const e = (window._trEntries || {})[id];
@@ -1216,6 +1217,8 @@ function wkGoRecordsPage(id, name) {
 function trClearEmpFilter() { _trEmpFilter = null; loadTimeRecords(); }
 // 账号权限: 未加载/未配置时默认允许
 function cCan(k) { return !window.C_PERMS || !!window.C_PERMS[k]; }
+// 打卡记录的修改（改时间/改含义/补加/删除）只有内部 admin「进入门户」能用（接口侧同样校验）
+function cIsInternal() { return !!window.C_IMP; }
 let _trSiteBrk = {};
 // 员工姓名筛选下拉: 近90天打卡员工名单(与打印打卡表共用一份缓存) + 当前结果里出现的员工
 async function trEnsureEmps() {
@@ -1268,9 +1271,9 @@ async function loadTimeRecords() {
   window._trLastEntries = d.entries || []; // 📊 工时统计用当前筛选后的这批数据
   _tsvFrom = ''; _tsvTo = ''; _tsvDetail = null; // 数据换了范围, 统计弹窗筛选重置
   trRenderKioskMode(d.sites || []);
-  // ➕ 添加打卡: 与「改时间」同一权限 (edit_time), 有可用仓库才显示
+  // ➕ 添加打卡: 只有内部 admin（进入门户）能用, 有可用仓库才显示
   const addBtn = document.getElementById('trAddBtn');
-  if (addBtn) addBtn.style.display = (cCan('edit_time') && (d.sites || []).length) ? '' : 'none';
+  if (addBtn) addBtn.style.display = (cIsInternal() && (d.sites || []).length) ? '' : 'none';
   const multiSite = (d.sites || []).length > 1;
   document.getElementById('trHead').innerHTML =
     '<th style="width:2.4rem">#</th><th>员工</th>' + (multiSite ? '<th>仓库</th>' : '') +
@@ -1320,9 +1323,9 @@ async function loadTimeRecords() {
     let actTd = '<td>—</td>';
     if (e.entry_id && e.site_id) {
       const noBreaks = _trSiteBrk[e.site_id] === 0; // 不休息班型: 不出现休息按钮
-      const extra = (cCan('edit_time') ? `<button class="tr-act" style="border-color:#7C3AED;color:#7C3AED" onclick="trTimeOpen(${e.entry_id})" title="直接修改上班/下班/休息的具体时间（需管理员开通的权限）">⏱ 改时间</button>` : '') +
-        (cCan('relabel') ? `<button class="tr-act" style="border-color:#4A6CF7;color:#4A6CF7" onclick="trEditOpen(${e.entry_id})" title="时间不可改，只能改每个打卡时间点的含义（上班/休息/下班/作废）">✎ 改含义</button>` : '') +
-        (cCan('edit_time') ? `<button class="tr-act" style="border-color:#E63946;color:#E63946" onclick="trDeleteOpen(${e.entry_id})" title="删除整条打卡记录（不可恢复）；只想作废单个误打的卡请用「改含义」">🗑 删除</button>` : '') +
+      const extra = (cIsInternal() ? `<button class="tr-act" style="border-color:#7C3AED;color:#7C3AED" onclick="trTimeOpen(${e.entry_id})" title="直接修改上班/下班/休息的具体时间（仅内部管理员）">⏱ 改时间</button>` : '') +
+        (cIsInternal() ? `<button class="tr-act" style="border-color:#4A6CF7;color:#4A6CF7" onclick="trEditOpen(${e.entry_id})" title="改每个打卡时间点的含义（上班/休息/下班/作废）（仅内部管理员）">✎ 改含义</button>` : '') +
+        (cIsInternal() ? `<button class="tr-act" style="border-color:#E63946;color:#E63946" onclick="trDeleteOpen(${e.entry_id})" title="删除整条打卡记录（不可恢复）；只想作废单个误打的卡请用「改含义」">🗑 删除</button>` : '') +
         `<button class="tr-act" style="border-color:#CBD2DA;color:#667085" onclick="trHistOpen(${e.entry_id})" title="谁在什么时候改过什么">历史${e.edit_count ? '·' + e.edit_count : ''}</button>`;
       if (!cCan('punch')) actTd = `<td style="white-space:nowrap">${extra || '—'}</td>`;
       else if (isOpen && e.on_break) actTd = `<td style="white-space:nowrap">${actBtn('结束休息', 'break_end', '#2D9D78')}${actBtn('下班', 'out', '#E63946')}${extra}</td>`;
