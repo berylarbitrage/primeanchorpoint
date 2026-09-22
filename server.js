@@ -28374,9 +28374,13 @@ app.get('/api/customer/time-records', requireCustomer, (req, res) => {
   // clock_in 存 UTC, 当地晚上7点后的打卡 UTC 日期已跳到「明天」, 按 UTC 过滤会让
   // 「今天」冒出昨天的晚班、当天晚班反而消失, 快捷日期按钮看起来就像没有用。
   // SQL 先按 UTC 日期放宽 ±1 天取数, 再逐条按当地日期精确过滤 (全部模式不设日期界限)。
+  // 历史·N 计数: 客户账号不含后台(admin)的修改 (修改行本身在 edits 接口同样过滤)
+  const editCountSql = req.custImpersonation
+    ? '(SELECT COUNT(*) FROM time_entry_edits x WHERE x.entry_id=t.id)'
+    : "(SELECT COUNT(*) FROM time_entry_edits x WHERE x.entry_id=t.id AND x.editor_type!='admin')";
   let rows = db.prepare(`SELECT t.id AS entry_id, t.employee_id AS emp_db_id, t.site_id, t.clock_in, t.clock_out, t.break_records, t.total_hours, t.status, t.on_break,
       t.clock_in_photo_path, t.punch_photo_path, t.work_date, t.punch_review, t.raw_punches, e.first_name, e.middle_name, e.last_name,
-      (SELECT COUNT(*) FROM time_entry_edits x WHERE x.entry_id=t.id) AS edit_count
+      ${editCountSql} AS edit_count
     FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id
     WHERE ${scope.sql}${empSql} AND (e.id IS NULL OR COALESCE(e.customer_hidden,0)=0)${wantAll ? '' : " AND DATE(t.clock_in)>=DATE(?, '-1 day') AND DATE(t.clock_in)<=DATE(?, '+1 day')"}
     ORDER BY t.clock_in DESC LIMIT 2000`).all(...scope.params, ...empParams, ...(wantAll ? [] : [from, to]));
@@ -28770,7 +28774,11 @@ app.post('/api/customer/time-entries/:id/delete', requireCustomer, (req, res) =>
 app.get('/api/customer/time-entries/:id/edits', requireCustomer, (req, res) => {
   const a = _customerEntryAuth(req, res);
   if (!a) return;
-  res.json(db.prepare('SELECT editor_type, editor_name, changes, created_at FROM time_entry_edits WHERE entry_id=? ORDER BY id DESC LIMIT 100').all(a.entry.id));
+  // 后台(admin)的修改记录不给客户账号看 — 只有内部「进入门户」冒充会话能看到全部
+  const rows = req.custImpersonation
+    ? db.prepare('SELECT editor_type, editor_name, changes, created_at FROM time_entry_edits WHERE entry_id=? ORDER BY id DESC LIMIT 100').all(a.entry.id)
+    : db.prepare("SELECT editor_type, editor_name, changes, created_at FROM time_entry_edits WHERE entry_id=? AND editor_type!='admin' ORDER BY id DESC LIMIT 100").all(a.entry.id);
+  res.json(rows);
 });
 
 // GET /api/customer/punch-employees — 本公司仓库的打卡员工名单 (近90天打过卡的),
