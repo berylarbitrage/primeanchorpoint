@@ -30995,6 +30995,20 @@ app.delete('/api/customer/my-workers/:eid', requireCustomer, (req, res) => {
     .run(req.customerPartnerId, parseInt(req.params.eid) || 0);
   res.json({ ok: 1, removed: r.changes });
 });
+// 冒充模式下在派遣工人列表直接标注/取消「测试号」。测试号是内部分类, 客户账号
+// 只能看到标记、不能改——只有内部 admin 的冒充会话可以在这里操作（后台员工编辑
+// 表单里的勾选同样有效, 这是个就地快捷入口）。
+app.post('/api/customer/my-workers/:eid/test-flag', requireCustomer, (req, res) => {
+  if (!req.custImpersonation) return res.status(403).json({ error: '只有内部管理员（冒充模式）可以标注测试号' });
+  const eid = parseInt(req.params.eid) || 0;
+  const e = db.prepare('SELECT id, first_name, last_name FROM employees WHERE id=?').get(eid);
+  if (!e) return res.status(404).json({ error: '未找到该工人' });
+  const v = (req.body && req.body.is_test) ? 1 : 0;
+  db.prepare('UPDATE employees SET is_test=? WHERE id=?').run(v, eid);
+  auditLog('employee_test_flag', req, { targetType: 'employee', targetId: eid,
+    details: { is_test: v, by_impersonation: req.custImpersonatedBy || '', name: `${e.first_name || ''} ${e.last_name || ''}`.trim() } });
+  res.json({ ok: 1, is_test: v });
+});
 
 // 「工卡」= 入职填表时上传的证件 (EAD/SSN卡/驾照等), 仓库方可查看。
 // 授权: 只能看近90天在本公司仓库打过卡的工人。
