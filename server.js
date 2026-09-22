@@ -883,6 +883,8 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS referrals (
 try { db.exec(`ALTER TABLE referrals ADD COLUMN interview_status TEXT DEFAULT ''`); } catch(e) {}
 // 标了「去了」可以再记实际到场时间 (可能和约的时间不一样)
 try { db.exec(`ALTER TABLE referrals ADD COLUMN interview_attended_at TEXT DEFAULT ''`); } catch(e) {}
+// 被介绍工人的工资 (自由填, 例 $18/小时): 登记介绍时顺带记下, 管理员核查介绍费时心里有数
+try { db.exec(`ALTER TABLE referrals ADD COLUMN worker_wage TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL"); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) {}
@@ -39436,7 +39438,7 @@ app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
 // 面试去没去不在表单里收 — 登记后在列表专门一列标记 (interview-status 接口);
 // 上工时长也不手填 — 会计关联发票, 按发票账期算。
 const REFERRAL_FIELDS = [
-  ['foreman_name', 120], ['foreman_phone', 40], ['worker_name', 120], ['worker_phone', 40],
+  ['foreman_name', 120], ['foreman_phone', 40], ['worker_name', 120], ['worker_phone', 40], ['worker_wage', 60],
   ['warehouse_name', 200], ['warehouse_address', 300], ['interview_at', 40], ['description', 2000],
 ];
 function _referralBody(b) {
@@ -39454,10 +39456,10 @@ app.post('/api/acct/referrals', requireAdmin, requireRole('accounting', 'admin',
   const files = Array.isArray(req.files) ? req.files : [];
   const atts = files.map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
   const r = db.prepare(`INSERT INTO referrals
-    (foreman_name, foreman_phone, worker_name, worker_phone, warehouse_name, warehouse_address,
+    (foreman_name, foreman_phone, worker_name, worker_phone, worker_wage, warehouse_name, warehouse_address,
      interview_at, amount, description, attachments, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.warehouse_name, f.warehouse_address,
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.worker_wage, f.warehouse_name, f.warehouse_address,
       f.interview_at, f.amount, f.description, JSON.stringify(atts), req.userName || '');
   res.json({ success: true, id: r.lastInsertRowid });
 });
@@ -39480,9 +39482,9 @@ app.put('/api/acct/referrals/:id', requireAdmin, requireRole('accounting', 'admi
   }
   (Array.isArray(req.files) ? req.files : []).forEach(fl => atts.push({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
   // interview_status 不在这里改 (列表标记走 interview-status 接口), 免得编辑把已标的冲掉
-  db.prepare(`UPDATE referrals SET foreman_name=?, foreman_phone=?, worker_name=?, worker_phone=?,
+  db.prepare(`UPDATE referrals SET foreman_name=?, foreman_phone=?, worker_name=?, worker_phone=?, worker_wage=?,
       warehouse_name=?, warehouse_address=?, interview_at=?, amount=?, description=?, attachments=?, updated_at=datetime('now') WHERE id=?`)
-    .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.warehouse_name, f.warehouse_address,
+    .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.worker_wage, f.warehouse_name, f.warehouse_address,
       f.interview_at, f.amount, f.description, JSON.stringify(atts), cur.id);
   res.json({ success: true });
 });
