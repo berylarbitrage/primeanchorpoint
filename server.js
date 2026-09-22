@@ -35330,8 +35330,33 @@ db.exec(`CREATE TABLE IF NOT EXISTS zelle_txn_overrides (
   updated_by TEXT DEFAULT '',
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
-// 单笔备注: 每一笔 Zelle 都能写备注 (和 移除/改归属 同一张表, 互不影响)
+// (历史遗留列) 单笔备注曾单独存这里; 现在单笔备注 = 银行交易标注的「原因/备注」,
+// 下面的一次性迁移把已存的并进标注, 之后这列不再写
 try { db.exec(`ALTER TABLE zelle_txn_overrides ADD COLUMN note TEXT DEFAULT ''`); } catch (e) {}
+// 一次性: 把 Zelle 页签的单笔备注并进银行交易标注 (同一个东西, 两处显示一致)
+try {
+  if (!db.prepare("SELECT value FROM app_settings WHERE key='zelle_txn_note_merge_v1'").get()) {
+    const _znRows = db.prepare("SELECT txn_id, note FROM zelle_txn_overrides WHERE COALESCE(note,'')<>''").all();
+    for (const o of _znRows) {
+      const txn = db.prepare('SELECT * FROM plaid_transactions WHERE txn_id=?').get(o.txn_id);
+      if (txn) {
+        const box = db.prepare("SELECT id, note FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id=?").get(o.txn_id);
+        if (!box) {
+          const sid = plaidAnnStatementId(txn.account_id);
+          db.prepare(`INSERT INTO bank_statement_txns (statement_id, kind, plaid_txn_id, txn_date, amount, direction, description, note)
+            VALUES (?,'box',?,?,?,?,?,?)`).run(sid, o.txn_id, txn.date || '', Math.abs(txn.amount || 0),
+              (txn.amount || 0) > 0 ? 'out' : 'in', txn.merchant || txn.name || '', String(o.note).slice(0, 200));
+        } else if (!String(box.note || '').trim()) {
+          db.prepare('UPDATE bank_statement_txns SET note=? WHERE id=?').run(String(o.note).slice(0, 200), box.id);
+        }
+      }
+      db.prepare("UPDATE zelle_txn_overrides SET note='' WHERE txn_id=?").run(o.txn_id);
+      db.prepare("DELETE FROM zelle_txn_overrides WHERE txn_id=? AND action='' AND COALESCE(note,'')=''").run(o.txn_id);
+    }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('zelle_txn_note_merge_v1','1')").run();
+    if (_znRows.length) console.log('[migration] Zelle 单笔备注已并入银行交易标注:', _znRows.length, '条');
+  }
+} catch (e) { console.log('[migration] zelle note merge error:', e.message); }
 
 // ── 💸 Zelle 转账统计: 银行直连交易里的 Zelle 按收款人汇总, 每人所有时间点+金额 ──
 // 描述形如 Chase「Zelle payment to CESAR JPM99cwzudxl」/「Zelle payment from JOHN 123456」,
@@ -35370,14 +35395,21 @@ app.get('/api/plaid/zelle-stats', requireAdmin, requireRole('admin', 'cs', 'acco
     try { db.prepare('SELECT * FROM zelle_contacts').all().forEach(c => { contacts[c.name_key] = c; }); } catch (e) {}
     const ovs = {};
     try { db.prepare('SELECT * FROM zelle_txn_overrides').all().forEach(o => { ovs[o.txn_id] = o; }); } catch (e) {}
+    // 单笔的「付给谁/备注」直接取银行交易标注 (bank_statement_txns box) — 和银行直连页同一条数据
+    const anns = {};
+    try { db.prepare(`SELECT plaid_txn_id, note, payee FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id<>''`).all().forEach(a => { anns[a.plaid_txn_id] = a; }); } catch (e) {}
     const people = new Map(), removed = [];
     for (const r of rows) {
       const z = _zelleParse(r.name || r.merchant);
       if (!z) continue;
       const amt = Number(r.amount) || 0;
       const txn = { txn_id: r.txn_id, date: r.date, amount: amt, account: accs[r.account_id] || r.account_id, desc: r.name || r.merchant || '', pending: !!r.pending };
+      const an = anns[r.txn_id];
+      if (an) {
+        if (an.note) txn.ann_note = an.note;
+        if (an.payee) txn.ann_payee = an.payee;
+      }
       const ov = ovs[r.txn_id];
-      if (ov && ov.note) txn.note = ov.note; // 单笔备注 (移除的也带着)
       // 手工改判: 移除的不进统计 (单独一栏可恢复); 改标注的按新名字归组
       if (ov && ov.action === 'exclude') { removed.push({ ...txn, name: z.name }); continue; }
       let nm = z.name;
@@ -35435,20 +35467,9 @@ app.post('/api/plaid/zelle-overrides', requireAdmin, requireRole('admin', 'cs', 
     const txnId = String(b.txn_id || '').trim();
     const action = String(b.action || '');
     if (!txnId) return res.status(400).json({ error: '缺少交易' });
-    if (!['exclude', 'rename', 'clear', 'note'].includes(action)) return res.status(400).json({ error: '无效操作' });
-    // 单笔备注: 只动 note, 不影响 移除/改归属 状态; 存空串即清掉备注
-    if (action === 'note') {
-      db.prepare(`INSERT INTO zelle_txn_overrides (txn_id, action, new_name, note, updated_by, updated_at)
-          VALUES (?, '', '', ?, ?, datetime('now'))
-          ON CONFLICT(txn_id) DO UPDATE SET note=excluded.note, updated_by=excluded.updated_by, updated_at=datetime('now')`)
-        .run(txnId, String(b.note || '').trim().slice(0, 500), req.userName || '');
-      db.prepare(`DELETE FROM zelle_txn_overrides WHERE txn_id=? AND action='' AND COALESCE(note,'')=''`).run(txnId);
-      return res.json({ ok: 1 });
-    }
+    if (!['exclude', 'rename', 'clear'].includes(action)) return res.status(400).json({ error: '无效操作' });
     if (action === 'clear') {
-      // 恢复自动归属: 只清改判, 单笔备注留着; 整行都空了才删
-      db.prepare(`UPDATE zelle_txn_overrides SET action='', new_name='', updated_by=?, updated_at=datetime('now') WHERE txn_id=?`).run(req.userName || '', txnId);
-      db.prepare(`DELETE FROM zelle_txn_overrides WHERE txn_id=? AND action='' AND COALESCE(note,'')=''`).run(txnId);
+      db.prepare('DELETE FROM zelle_txn_overrides WHERE txn_id=?').run(txnId);
       return res.json({ ok: 1 });
     }
     const newName = action === 'rename' ? String(b.new_name || '').trim().slice(0, 120) : '';
