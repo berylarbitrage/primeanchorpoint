@@ -885,6 +885,9 @@ try { db.exec(`ALTER TABLE referrals ADD COLUMN interview_status TEXT DEFAULT ''
 try { db.exec(`ALTER TABLE referrals ADD COLUMN interview_attended_at TEXT DEFAULT ''`); } catch(e) {}
 // 被介绍工人的工资 (自由填, 例 $18/小时): 登记介绍时顺带记下, 管理员核查介绍费时心里有数
 try { db.exec(`ALTER TABLE referrals ADD COLUMN worker_wage TEXT DEFAULT ''`); } catch(e) {}
+// 关联 post 的招聘岗位: 存 jobs.id + 标题快照 (岗位之后改名/关闭/删掉, 介绍记录照样能看)
+try { db.exec(`ALTER TABLE referrals ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE referrals ADD COLUMN job_title TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL"); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) {}
@@ -39448,6 +39451,19 @@ function _referralBody(b) {
   out.amount = (b.amount != null && b.amount !== '' && !isNaN(amtNum)) ? amtNum : null;
   return out;
 }
+// 关联岗位: 表单传 jobs.id, 存 id + 「编号 标题 中文名 — 公司」快照;
+// 编辑时岗位已被删的, 没换岗位就保留原快照, 换掉/清空按新值走
+function _referralJob(b, cur) {
+  const id = parseInt(b.job_id);
+  if (!id || id <= 0) return { job_id: null, job_title: '' };
+  const j = db.prepare(`SELECT job_id AS code, title, COALESCE(title_zh,'') AS title_zh, COALESCE(company_name,'') AS company_name FROM jobs WHERE id=?`).get(id);
+  if (j) {
+    const t = [j.code, j.title, j.title_zh].filter(Boolean).join(' ') + (j.company_name ? ' — ' + j.company_name : '');
+    return { job_id: id, job_title: t.slice(0, 300) };
+  }
+  if (cur && cur.job_id === id) return { job_id: id, job_title: cur.job_title || '' };
+  return { job_id: null, job_title: '' };
+}
 // 新增介绍: 客服/会计/管理员都可录入, 一律进「待核查」等管理员定夺
 app.post('/api/acct/referrals', requireAdmin, requireRole('accounting', 'admin', 'cs'), claimUpload.array('invoice', 20), (req, res) => {
   const f = _referralBody(req.body || {});
@@ -39455,12 +39471,13 @@ app.post('/api/acct/referrals', requireAdmin, requireRole('accounting', 'admin',
   if (!f.worker_name) return res.status(400).json({ error: '请填写被介绍人姓名' });
   const files = Array.isArray(req.files) ? req.files : [];
   const atts = files.map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
+  const jb = _referralJob(req.body || {});
   const r = db.prepare(`INSERT INTO referrals
     (foreman_name, foreman_phone, worker_name, worker_phone, worker_wage, warehouse_name, warehouse_address,
-     interview_at, amount, description, attachments, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+     interview_at, amount, description, attachments, job_id, job_title, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.worker_wage, f.warehouse_name, f.warehouse_address,
-      f.interview_at, f.amount, f.description, JSON.stringify(atts), req.userName || '');
+      f.interview_at, f.amount, f.description, JSON.stringify(atts), jb.job_id, jb.job_title, req.userName || '');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
@@ -39482,10 +39499,11 @@ app.put('/api/acct/referrals/:id', requireAdmin, requireRole('accounting', 'admi
   }
   (Array.isArray(req.files) ? req.files : []).forEach(fl => atts.push({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
   // interview_status 不在这里改 (列表标记走 interview-status 接口), 免得编辑把已标的冲掉
+  const jb = _referralJob(req.body || {}, cur);
   db.prepare(`UPDATE referrals SET foreman_name=?, foreman_phone=?, worker_name=?, worker_phone=?, worker_wage=?,
-      warehouse_name=?, warehouse_address=?, interview_at=?, amount=?, description=?, attachments=?, updated_at=datetime('now') WHERE id=?`)
+      warehouse_name=?, warehouse_address=?, interview_at=?, amount=?, description=?, attachments=?, job_id=?, job_title=?, updated_at=datetime('now') WHERE id=?`)
     .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.worker_wage, f.warehouse_name, f.warehouse_address,
-      f.interview_at, f.amount, f.description, JSON.stringify(atts), cur.id);
+      f.interview_at, f.amount, f.description, JSON.stringify(atts), jb.job_id, jb.job_title, cur.id);
   res.json({ success: true });
 });
 
@@ -39557,7 +39575,15 @@ app.get('/api/acct/referral-options', requireAdmin, requireAcctView, (req, res) 
     // 同名下已有带地址的行, 无地址的裸行就不显示了
     const whsOut = whs.filter(w => w.address || !whs.some(x => x !== w && x.address && x.name.toLowerCase() === w.name.toLowerCase()));
     whsOut.sort((a, b) => a.name.localeCompare(b.name) || a.address.localeCompare(b.address));
-    res.json({ foremen, warehouses: whsOut });
+    // post 的招聘岗位 (在招的): 登记介绍时可关联, 选了自动带工资/地址
+    let jobs = [];
+    try {
+      jobs = db.prepare(`SELECT id, COALESCE(job_id,'') AS code, title, COALESCE(title_zh,'') AS title_zh,
+          COALESCE(company_name,'') AS company_name, COALESCE(location,'') AS location,
+          COALESCE(pay,'') AS pay, COALESCE(pay_period,'') AS pay_period
+        FROM jobs WHERE active=1 AND COALESCE(job_status,'open')='open' ORDER BY created_at DESC`).all();
+    } catch (e) {}
+    res.json({ foremen, warehouses: whsOut, jobs });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
