@@ -230,6 +230,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <div class="card">
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.55rem">
         <b style="font-size:.92rem">Gusto 付款流水</b>
+        <span style="font-size:.72rem;color:var(--g400)">全部记录 · 按付款日期的自然周（周一~周日）分组，不受上面对账周期影响</span>
         <input type="text" id="gustoPaySearch" placeholder="搜姓名 / 方式 / 状态…" oninput="renderGustoPayList()" style="width:200px">
         <span id="gustoPayStats" style="font-size:.78rem;color:var(--g500)"></span>
       </div>
@@ -2327,6 +2328,7 @@ async function gustoInit(force) {
   _gustoInited = true;
   await gustoLoadStatus();
   gustoRangeChanged();
+  gustoLoadPayments();
 }
 async function gustoLoadStatus() {
   const card = document.getElementById('gustoStatusCard');
@@ -2452,10 +2454,9 @@ function gustoRangeChanged() {
     return gustoCustomRange();
   }
   gustoLoadRecon();
-  gustoLoadPayments();
 }
 function gustoCustomRange() {
-  if (document.getElementById('gustoStart').value && document.getElementById('gustoEnd').value) { gustoLoadRecon(); gustoLoadPayments(); }
+  if (document.getElementById('gustoStart').value && document.getElementById('gustoEnd').value) gustoLoadRecon();
 }
 async function gustoLoadRecon() {
   const [s, e] = gustoRangeDates();
@@ -2504,14 +2505,18 @@ function gustoToggleDetail(i) {
   const el = document.getElementById('gustoDet' + i);
   if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
 }
+// 流水不跟对账周期联动: 显示全部已同步/导入的付款, 按付款日期的自然周分组
 async function gustoLoadPayments() {
-  const [s, e] = gustoRangeDates();
-  if (!s || !e) return;
-  // 流水窗口与对账一致: 周期 + 14 天缓冲
-  const padEnd = _gd(new Date(Date.parse(e + 'T00:00:00Z') + 14 * 86400000));
-  const r = await api(`/api/acct/gusto/payments?start=${s}&end=${padEnd}`).catch(err => ({ error: err.message }));
+  const r = await api('/api/acct/gusto/payments').catch(err => ({ error: err.message }));
   _gustoPayRows = (r && r.rows) || [];
   renderGustoPayList();
+}
+// 付款日期所在的自然周（周一 ~ 周日）
+function _gustoWeekOf(dateStr) {
+  const d = new Date(String(dateStr || '') + 'T00:00:00Z');
+  if (isNaN(d)) return ['', ''];
+  const monday = new Date(d.getTime() - ((d.getUTCDay() + 6) % 7) * 86400000);
+  return [_gd(monday), _gd(new Date(monday.getTime() + 6 * 86400000))];
 }
 function renderGustoPayList() {
   const q = (document.getElementById('gustoPaySearch').value || '').trim().toLowerCase();
@@ -2519,8 +2524,17 @@ function renderGustoPayList() {
     || (r.payment_method || '').toLowerCase().includes(q) || (r.status || '').toLowerCase().includes(q));
   const w2Sum = rows.filter(r => r.wage_type === 'W2').reduce((s2, x) => s2 + (+x.wage_total || 0), 0);
   document.getElementById('gustoPayStats').textContent =
-    `${rows.length} 笔 · 合计 ${money(rows.reduce((s2, x) => s2 + (+x.wage_total || 0), 0))}${w2Sum ? `（其中 W-2 员工工资 ${money(w2Sum)}）` : ''}`;
-  document.getElementById('gustoPayBody').innerHTML = rows.length ? rows.map(p => `<tr>
+    `${rows.length} 笔 · 合计 ${money(rows.reduce((s2, x) => s2 + (+x.wage_total || 0), 0))}${w2Sum ? `（其中 W-2 员工工资 ${money(w2Sum)}）` : ''} · 按自然周分组`;
+  // 按自然周分组; 服务器按日期倒序给行, 依出现顺序建组 = 最近的周在最上面
+  const groups = new Map();
+  for (const p of rows) {
+    const [ws, we] = _gustoWeekOf(p.date);
+    if (!groups.has(ws)) groups.set(ws, { ws, we, rows: [], sum: 0 });
+    const g = groups.get(ws);
+    g.rows.push(p);
+    g.sum += (+p.wage_total || 0);
+  }
+  const rowHtml = p => `<tr>
     <td style="white-space:nowrap">${esc(p.date)}</td>
     <td><b>${esc(p.contractor_name || p.contractor_uuid)}</b>${p.wage_type === 'W2' ? ' <span title="W-2 员工工资，不参与合同工对账" style="font-size:.68rem;color:#1e40af;background:#dbeafe;border:1px solid #bfdbfe;border-radius:6px;padding:0 4px">W-2</span>' : ''}</td>
     <td>${esc(p.payment_method || '—')}</td>
@@ -2530,7 +2544,13 @@ function renderGustoPayList() {
     <td style="text-align:right">${p.reimbursement ? money(p.reimbursement) : '—'}</td>
     <td style="text-align:right"><b>${money(p.wage_total)}</b></td>
     <td>${p.status === 'Funded' ? '<span style="color:#166534">✅ Funded</span>' : esc(p.status || '—')}${p.source === 'import' ? ' <span title="来自手动导入的付款报告" style="font-size:.68rem;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:0 4px">导入</span>' : ''}</td>
-  </tr>`).join('') : '<tr><td colspan="9" style="color:var(--g400)">这个时间段没有 Gusto 付款记录</td></tr>';
+  </tr>`;
+  document.getElementById('gustoPayBody').innerHTML = groups.size
+    ? [...groups.values()].map(g => `<tr style="background:#f1f5f9">
+        <td colspan="9" style="font-weight:700;font-size:.8rem;padding:.4rem .5rem">📅 ${esc(g.ws)} ~ ${esc(g.we)}
+          <span style="color:var(--g500);font-weight:400">· ${g.rows.length} 笔 · 小计</span> ${money(g.sum)}</td>
+      </tr>` + g.rows.map(rowHtml).join('')).join('')
+    : '<tr><td colspan="9" style="color:var(--g400)">还没有 Gusto 付款记录</td></tr>';
 }
 // ── 过渡期: 手动导入 Gusto 付款报告（CSV/Excel; API 连接后入口自动隐藏） ──
 async function gustoImportFile(input) {
