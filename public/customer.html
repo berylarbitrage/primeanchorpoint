@@ -1815,7 +1815,7 @@ async function loadWorkers() {
     <td style="color:var(--gray-400);font-size:.8rem">${i+1}</td>
     <td style="font-weight:600;white-space:nowrap">${esc([w.first_name, w.middle_name, w.last_name].filter(Boolean).join(' '))}</td>
     <td style="white-space:nowrap">${esc(w.emp_code||'')||'—'}</td>
-    <td style="white-space:nowrap">${w.is_test ? '<span title="测试用账号，不是正式派遣工人" style="font-size:.7rem;background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe;border-radius:999px;padding:.05rem .45rem;margin-right:.3rem;vertical-align:1px">🧪 测试号</span>' : ''}${w.id && cCan('position') ? `<a href="javascript:void(0)" onclick="wkPosEdit(${w.id}, '${esc(w.position||'').replace(/'/g,"&#39;")}')" title="点击填写/修改职位" style="text-decoration:none">${esc(w.position||'') || '<span style="color:var(--gray-400)">✎ 填写</span>'}</a>` : (esc(w.position||'')||'—')}</td>
+    <td style="white-space:nowrap">${w.is_test ? '<span title="测试用账号，不是正式派遣工人" style="font-size:.7rem;background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe;border-radius:999px;padding:.05rem .45rem;margin-right:.3rem;vertical-align:1px">🧪 测试号</span>' : ''}${w.id && cCan('position') ? `<a href="javascript:void(0)" onclick="wkPosEdit(${w.id}, '${esc(w.position||'').replace(/'/g,"&#39;")}')" title="点击填写/修改职位" style="text-decoration:none">${esc(w.position||'') || '<span style="color:var(--gray-400)">✎ 填写</span>'}</a>` : (esc(w.position||'')||'—')}${window.C_IMP && w.id ? ` <a href="javascript:void(0)" onclick="wkTestFlag(${w.id}, ${w.is_test ? 0 : 1})" title="内部管理员：在这里直接标注/取消测试号" style="font-size:.72rem;color:#7c3aed;text-decoration:underline;white-space:nowrap;margin-left:.3rem">${w.is_test ? '取消测试' : '设为测试'}</a>` : ''}</td>
     <td style="white-space:nowrap">${fmtPhone(w.phone)}</td>
     <td>${esc(w.email||'')||'—'}</td>
     <td style="font-size:.82rem;color:var(--gray-500);white-space:nowrap">${esc(w.address||'')||'—'}</td>
@@ -1911,6 +1911,14 @@ async function wkCardOpen(eid) {
   };
   ov.querySelectorAll('.wkd-tab').forEach(b => b.onclick = () => show(b.dataset.id, b));
   if ((d.docs || []).length) show(d.docs[0].id, ov.querySelector('.wkd-tab'));
+}
+// 🧪 冒充模式专用: 派遣工人列表里就地标注/取消「测试号」(客户账号看不到这个入口, 服务端也拦)
+async function wkTestFlag(eid, v) {
+  if (!confirm(v ? '把这个工人标注为「测试号」？列表职位处会显示 🧪 标记。' : '取消这个工人的「测试号」标记？')) return;
+  const r = await cApi(`/my-workers/${eid}/test-flag`, { method: 'POST', body: JSON.stringify({ is_test: v }) });
+  if (!r || r.error) { showToast((r && r.error) || '操作失败', 'error'); return; }
+  showToast(v ? '✅ 已标注为测试号' : '✅ 已取消测试号标记');
+  loadWorkers();
 }
 // ✎ 仓库方直接给工人填写职位: 下拉选择 (与后台职位库同一份, /api/positions), 选「其他」可自定义
 let _wkPosOpts = null;
