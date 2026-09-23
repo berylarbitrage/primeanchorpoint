@@ -35397,7 +35397,7 @@ app.get('/api/plaid/zelle-stats', requireAdmin, requireRole('admin', 'cs', 'acco
     try { db.prepare('SELECT * FROM zelle_txn_overrides').all().forEach(o => { ovs[o.txn_id] = o; }); } catch (e) {}
     // 单笔的「付给谁/备注」直接取银行交易标注 (bank_statement_txns box) — 和银行直连页同一条数据
     const anns = {};
-    try { db.prepare(`SELECT plaid_txn_id, note, payee FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id<>''`).all().forEach(a => { anns[a.plaid_txn_id] = a; }); } catch (e) {}
+    try { db.prepare(`SELECT plaid_txn_id, note, payee, ann_status FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id<>''`).all().forEach(a => { anns[a.plaid_txn_id] = a; }); } catch (e) {}
     const people = new Map(), removed = [];
     for (const r of rows) {
       const z = _zelleParse(r.name || r.merchant);
@@ -35408,6 +35408,7 @@ app.get('/api/plaid/zelle-stats', requireAdmin, requireRole('admin', 'cs', 'acco
       if (an) {
         if (an.note) txn.ann_note = an.note;
         if (an.payee) txn.ann_payee = an.payee;
+        if ((an.note || an.payee) && an.ann_status) txn.ann_status = an.ann_status;
       }
       const ov = ovs[r.txn_id];
       // 手工改判: 移除的不进统计 (单独一栏可恢复); 改标注的按新名字归组
