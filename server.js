@@ -35468,6 +35468,7 @@ app.post('/api/plaid/zelle-overrides', requireAdmin, requireRole('admin', 'cs', 
     const action = String(b.action || '');
     if (!txnId) return res.status(400).json({ error: '缺少交易' });
     if (!['exclude', 'rename', 'clear'].includes(action)) return res.status(400).json({ error: '无效操作' });
+    if (action === 'exclude' && req.userRole !== 'admin') return res.status(403).json({ error: '只有管理员可以移除' });
     if (action === 'clear') {
       db.prepare('DELETE FROM zelle_txn_overrides WHERE txn_id=?').run(txnId);
       return res.json({ ok: 1 });
