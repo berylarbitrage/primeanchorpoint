@@ -3648,13 +3648,13 @@ function zViewPerson(key) {
   _zOpenKeys.add(key);
   zRender();
 }
-// 明细行: 单笔可 移除/改归属; 已改归属的标出来、可恢复自动
+// 明细行: 单笔可 移除(仅管理员)/改归属; 已改归属的标出来、可恢复自动
 function _zTxnOps(t, mode) {
   const id = String(t.txn_id).replace(/'/g, "\\'");
   const noteBtn = `<a onclick="zAnnOpen('${id}',event)" title="打开这笔交易的银行标注（付给谁/原因备注/照片），和银行直连页同一条" style="cursor:pointer;color:#b45309;font-size:.76rem;text-decoration:underline;white-space:nowrap">📝 标注</a>`;
   return mode === 'removed'
     ? `<span style="color:var(--g400);font-size:.72rem">原归属：${esc(t.name || '—')}</span> ${noteBtn} <a onclick="zOverride('${id}','clear',event)" style="cursor:pointer;color:#0ea5e9;font-size:.76rem;text-decoration:underline;white-space:nowrap">↩ 恢复</a>`
-    : `${t.ov === 'rename' ? `<span title="原自动归属：${esc(t.ov_orig || '')}" style="font-size:.68rem;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;border-radius:4px;padding:0 4px;white-space:nowrap">已改归属</span> <a onclick="zOverride('${id}','clear',event)" style="cursor:pointer;color:#0ea5e9;font-size:.74rem;text-decoration:underline;white-space:nowrap">↩ 恢复自动</a> ` : ''}${noteBtn} <a onclick="zRenameOpen('${id}',event)" style="cursor:pointer;color:#0f4c6b;font-size:.76rem;text-decoration:underline;white-space:nowrap">✎ 改归属</a> <a onclick="zOverride('${id}','exclude',event)" style="cursor:pointer;color:#dc2626;font-size:.76rem;text-decoration:underline;white-space:nowrap">✕ 移除</a>`;
+    : `${t.ov === 'rename' ? `<span title="原自动归属：${esc(t.ov_orig || '')}" style="font-size:.68rem;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;border-radius:4px;padding:0 4px;white-space:nowrap">已改归属</span> <a onclick="zOverride('${id}','clear',event)" style="cursor:pointer;color:#0ea5e9;font-size:.74rem;text-decoration:underline;white-space:nowrap">↩ 恢复自动</a> ` : ''}${noteBtn} <a onclick="zRenameOpen('${id}',event)" style="cursor:pointer;color:#0f4c6b;font-size:.76rem;text-decoration:underline;white-space:nowrap">✎ 改归属</a>${USER.role === 'admin' ? ` <a onclick="zOverride('${id}','exclude',event)" style="cursor:pointer;color:#dc2626;font-size:.76rem;text-decoration:underline;white-space:nowrap">✕ 移除</a>` : ''}`;
 }
 function _zTxnRow(t, mode) {
   const cell = 'padding:.35rem .55rem;border-bottom:1px solid var(--g100)';
