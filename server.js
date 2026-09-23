@@ -22426,6 +22426,8 @@ const GUSTO_ALIAS_DEFAULTS = [
   { from: 'Jesus Arroyo', to: 'Youseli Briceno' },
   { from: 'Yoselin Briceño', to: 'Youseli Briceno' },
   { from: 'Pedro', to: 'Pedro Rodriguez' },
+  { from: 'Pepe Alvarez Rodriguez', to: 'Pedro Rodriguez' },
+  { from: 'Marialex Bastidas', to: 'Youseli Briceno' },
   { from: 'Luis Cartz', to: 'Luis Cortez' },
   // 2026-09 起 Daniel 不再发 (Gusto 生成时跳过)
   { from: 'Daniel B', to: '跳过' },
@@ -22523,6 +22525,8 @@ function _gustoAliasUpsert(markerKey, entries) {
 }
 // 2026-09-23: Daniel 不再发; Isabella 并给 Jimmerly; Rattia 班组新写法都并给 Jose
 _gustoAliasUpsert('gusto_alias_2026_09_23', GUSTO_ALIAS_DEFAULTS.filter(a => /daniel|isabella|mervin|marvin|cliber|cleiber|rattia/i.test(a.from)));
+// 2026-09-23: Pepe Alvarez Rodriguez → Pedro Rodriguez; Marialex Bastidas → Youseli Briceno
+_gustoAliasUpsert('gusto_alias_2026_09_23b', GUSTO_ALIAS_DEFAULTS.filter(a => /^(pepe alvarez rodriguez|marialex bastidas)$/i.test(a.from)));
 _gustoAliasBackfill('gusto_alias_tecaxco_backfilled', GUSTO_ALIAS_DEFAULTS.filter(a => a.to === 'Tecaxco, Bugui Boy'));
 _gustoAliasBackfill('gusto_alias_eloy_backfilled', GUSTO_ALIAS_DEFAULTS.filter(a => a.to === 'Eloiso Cornelio Herrera Cano'));
 
