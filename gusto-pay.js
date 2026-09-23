@@ -257,6 +257,7 @@ function matchEmployees(entries, tokenCount, employees, opts) {
       name, owed,
       rate: empRate,
       actualHours: r2((Number(emp.regHours) || 0) + (Number(emp.otHours) || 0)),
+      payRate: payRate || null,
       fuzzy: best === 50 && !alias,
       score: best,
       // 本人度: 工资表原名和这行名册的相似分。合并付款挑「hours 本人」时,
@@ -286,14 +287,25 @@ function buildGustoCsv(templateCsv, employees, opts) {
     if (m) {
       const owed = r2(m.sources.reduce((s, x) => s + x.owed, 0));
       let hours = null, bonus = null, fixed = null, amount;
-      if (entry.rate) {
+      // 名册没填时薪、但并进来的各行都配了同一个发工资时薪 (opts.payRates) → 按这个时薪
+      // 填 hourly_rate + hours, 不再退成固定金额 (例: Rattia 班组名册没时薪, 发工资 $16)
+      let rate = entry.rate, rateFromOverride = false;
+      if (!rate) {
+        const rs = m.sources.map(x => x.payRate).filter(Boolean);
+        if (rs.length === m.sources.length && rs.every(x => Math.abs(x - rs[0]) <= 0.005)) { rate = rs[0]; rateFromOverride = true; }
+      }
+      // 合并行「所有人的工时都进 hours」(opts.hoursMerge 里的收款人): 同一班组按同一时薪算,
+      // hours = 全部人的实际工时合计, 只有加班溢价进 bonus
+      const hoursMergeRow = (opts.hoursMerge || []).some(n => joined(nameTokens(n)) === joined(entry.tokens));
+      if (rate) {
+        if (rateFromOverride && roster.cols.rate >= 0) cells[roster.cols.rate] = String(rate);
         // bonus 口径: hours = 实际工时, 差额（加班溢价 + 时薪差）放 bonus。
         // 合并行只按「本人」的实际工时填 hours（名册时薪相同优先, 其次匹配分高），
         // 其他人的钱全额进 bonus。用不了就退回 hours 口径: 缺实际工时、模板没有
         // bonus 列、或 bonus 会是负数。
         let primary = null;
-        if (mode === 'bonus' && m.sources.length > 1) {
-          const rateMatch = m.sources.filter(s => s.rate && Math.abs(s.rate - entry.rate) <= 0.005);
+        if (mode === 'bonus' && m.sources.length > 1 && !hoursMergeRow) {
+          const rateMatch = m.sources.filter(s => s.rate && Math.abs(s.rate - rate) <= 0.005);
           const pool = rateMatch.length ? rateMatch : m.sources;
           // 本人 = 工资表原名最像这行名册的（selfScore 高者）; 对照表并进来的钱全额进 bonus
           primary = pool.reduce((bst, s) => {
@@ -306,7 +318,7 @@ function buildGustoCsv(templateCsv, employees, opts) {
           ? r2(primary.actualHours || 0)
           : r2(m.sources.reduce((s, x) => s + (x.actualHours || 0), 0));
         if (mode === 'bonus' && actual > 0 && roster.cols.bonus >= 0) {
-          const base = r2(actual * entry.rate);
+          const base = r2(actual * rate);
           const b = r2(owed - base);
           if (b >= 0) {
             hours = actual;
@@ -315,12 +327,12 @@ function buildGustoCsv(templateCsv, employees, opts) {
             if (b > 0) { bonus = b; cells[roster.cols.bonus] = b.toFixed(2); }
             if (primary) primary.primary = true;
           } else {
-            warnings.push(`「${entry.label}」按实际工时 ${actual.toFixed(2)}h × 名册时薪 $${entry.rate} 已超过应付 $${owed.toFixed(2)}（名册时薪偏高），这行改按金额折算工时。`);
+            warnings.push(`「${entry.label}」按实际工时 ${actual.toFixed(2)}h × 名册时薪 $${rate} 已超过应付 $${owed.toFixed(2)}（名册时薪偏高），这行改按金额折算工时。`);
           }
         }
         if (hours == null) {
-          hours = ceil2(owed / entry.rate);
-          amount = r2(hours * entry.rate);
+          hours = ceil2(owed / rate);
+          amount = r2(hours * rate);
           cells[roster.cols.hours] = hours.toFixed(2);
         }
       } else {
@@ -331,12 +343,13 @@ function buildGustoCsv(templateCsv, employees, opts) {
       }
       totalPay = r2(totalPay + amount);
       matches.push({
-        label: entry.label, ssn: entry.ssn, rate: entry.rate,
+        label: entry.label, ssn: entry.ssn, rate: rate || entry.rate,
         hours, bonus, fixed, amount, diff: r2(amount - owed),
         sources: m.sources,
         merged: m.sources.length > 1,
       });
-      if (!entry.rate && roster.cols.fixed < 0) {
+      if (rateFromOverride) warnings.push(`「${entry.label}」Gusto 名册里没有时薪，按设定的发工资时薪 $${rate} 填 hourly_rate 和工时${hoursMergeRow && m.sources.length > 1 ? '（' + m.sources.map(x => x.name).join('、') + ' 的工时合计）' : ''}。`);
+      if (!rate && roster.cols.fixed < 0) {
         warnings.push(`「${entry.label}」名册里没有时薪，模板又没有 flat_amount/fixed_amount 列，$${owed.toFixed(2)} 没法填，请在 Gusto 手动支付。`);
       }
       if (m.sources.length > 1) {
