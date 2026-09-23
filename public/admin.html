@@ -17392,13 +17392,18 @@ async function _saveEmployeeInner() {
       // only when THIS linked employee reaches 在职 (it starts 待入职), so a freshly
       // created hire stays in 待处理 until onboarding is actually finished.
       if (applicantToLink) {
+        let prevEmpId = null;
         try {
+          const s0 = (_inboxSubmissions || []).find(x => x.id === applicantToLink);
+          prevEmpId = s0 && s0.employee_id && s0.employee_id !== r2.id ? s0.employee_id : null;
           await api(`/admin/applicant-submissions/${applicantToLink}`, {
             method: 'PATCH', body: JSON.stringify({ employee_id: r2.id })
           });
           const s = (_inboxSubmissions || []).find(x => x.id === applicantToLink);
           if (s) s.employee_id = r2.id;
         } catch (_) {}
+        // 给这个电话单独建档 (原来错挂在别人档案上) → 马上分拣以前记在那边的打卡
+        if (prevEmpId) setTimeout(() => openPunchSort(prevEmpId, r2.id), 400);
       }
       // If this was a "convert worker → new employee" action, link the account
       if (workerLinkNew && r2.id) {
@@ -43222,7 +43227,8 @@ function renderApplicantInbox() {
     // ② 只是邮箱相同、电话不同的其他档案 → 提醒 (按独立档案处理)
     const _emailOthers = _inboxOtherMatches(s, _matchedEmp ? _matchedEmp.id : 0, 'email');
     const _emailWarn = _emailOthers.length
-      ? `<button onclick="_inboxViewEmp(${_emailOthers[0].id})" title="邮箱相同但电话不同 — 按「一个电话一个档案」各自独立；点击查看那份档案" style="padding:.2rem .55rem;font-size:.72rem;background:#fffbeb;color:#b45309;border:1px solid #fde68a;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap">📧 邮箱和「${esc(titleCase([_emailOthers[0].first_name, _emailOthers[0].last_name].filter(Boolean).join(' ')))}${_emailOthers[0].employee_id ? ' · ' + esc(_emailOthers[0].employee_id) : ''}」相同（电话不同）${_emailOthers.length > 1 ? ` 等 ${_emailOthers.length} 份` : ''} ↗</button>`
+      ? (_canFix && _matchedEmp && USER_ROLE === 'admin' ? `<button onclick="openPunchSort(${_emailOthers[0].id},${_matchedEmp.id})" title="以前按邮箱错挂时，这个人的打卡可能记在那份档案上 — 点开按天/按卡挑出来转到本档案" style="padding:.2rem .55rem;font-size:.72rem;background:#fff;color:#7c3aed;border:1px dashed #c4b5fd;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap">🔀 分拣打卡记录</button>` : '')
+        + `<button onclick="_inboxViewEmp(${_emailOthers[0].id})" title="邮箱相同但电话不同 — 按「一个电话一个档案」各自独立；点击查看那份档案" style="padding:.2rem .55rem;font-size:.72rem;background:#fffbeb;color:#b45309;border:1px solid #fde68a;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap">📧 邮箱和「${esc(titleCase([_emailOthers[0].first_name, _emailOthers[0].last_name].filter(Boolean).join(' ')))}${_emailOthers[0].employee_id ? ' · ' + esc(_emailOthers[0].employee_id) : ''}」相同（电话不同）${_emailOthers.length > 1 ? ` 等 ${_emailOthers.length} 份` : ''} ↗</button>`
       : '';
     // ③ 电话相同 = 同一人: 后来的申请信息和档案有差异 → 对比挑选用哪边的 (不自动覆盖)
     let _pickWarn = '';
@@ -43387,6 +43393,99 @@ async function inboxDupOk(subId) {
     renderApplicantInbox();
     showToast('已标记：档案信息不用改');
   } catch (e) { showToast('标记失败：' + esc(e.message || e), 'error'); }
+}
+// ── 🔀 打卡记录分拣: 从 from 档案挑出属于 to 档案的人的打卡 (整天 / 单卡), 转过去 ──
+let _ps = null;   // { from, to, entries, selDays:Set, selPunch:Set('entryId|t') }
+async function openPunchSort(fromId, toId) {
+  const from = (allEmployees || []).find(e => e.id === fromId), to = (allEmployees || []).find(e => e.id === toId);
+  let m = document.getElementById('punchSortModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'punchSortModal'; m.className = 'modal-bg';
+    m.style.zIndex = '9990';
+    m.innerHTML = `<div class="modal" style="max-width:900px;width:100%;max-height:92vh;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:flex-start;gap:.6rem"><div style="flex:1"><h3 style="margin:0;font-size:1.05rem;color:#1A3F7A">🔀 打卡记录分拣</h3>
+        <div id="psDesc" style="font-size:.8rem;color:var(--gray-500);margin-top:.25rem"></div></div>
+        <button class="btn btn-sm btn-outline" onclick="closePunchSort()">✕ 关闭</button></div>
+      <div id="psTools" style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;margin:.6rem 0"></div>
+      <div id="psBody" style="overflow-y:auto;flex:1;border:1px solid var(--gray-200);border-radius:10px"></div>
+      <div style="display:flex;align-items:center;gap:.6rem;margin-top:.7rem"><span id="psSum" style="font-size:.8rem;color:var(--gray-500);flex:1"></span>
+        <button class="btn btn-outline" onclick="closePunchSort()">取消</button>
+        <button class="btn" id="psGo" style="background:#7c3aed;color:#fff;border:none" onclick="doPunchSort()">转到正确档案</button></div></div>`;
+    document.body.appendChild(m);
+  }
+  const nm = e => e ? `${titleCase([e.first_name, e.last_name].filter(Boolean).join(' '))}${e.employee_id ? ' · ' + e.employee_id : ''}` : '';
+  _ps = { from: fromId, to: toId, fromName: nm(from), toName: nm(to), entries: [], selDays: new Set(), selPunch: new Set() };
+  document.getElementById('psDesc').innerHTML = `把属于 <b style="color:#047857">${esc(_ps.toName)}</b> 的打卡，从 <b style="color:#b91c1c">${esc(_ps.fromName)}</b> 的档案里挑出来转过去。<br>`
+    + `以前没记录「是谁打的卡」，请看照片 / 设备判断：勾整天，或展开某天只勾其中几卡（两个人同一天打在一条里时）。`;
+  document.getElementById('psBody').innerHTML = '<div style="padding:1.2rem;color:var(--gray-400);text-align:center">加载中…</div>';
+  m.classList.add('show');
+  try {
+    const rows = await api(`/admin/employees/${fromId}/punch-entries`);
+    if (!Array.isArray(rows)) throw new Error((rows && rows.error) || '加载失败');
+    _ps.entries = rows;
+    _psRender();
+  } catch (e) { document.getElementById('psBody').innerHTML = `<div style="padding:1rem;color:#dc2626">${esc(e.message || e)}</div>`; }
+}
+function closePunchSort() { const m = document.getElementById('punchSortModal'); if (m) m.classList.remove('show'); _ps = null; }
+function _psDevLabel(d) {
+  if (!d) return '';
+  if (d.startsWith('kiosk-site-')) return '打卡台';
+  return '手机 ' + d.slice(0, 6);
+}
+function _psRender() {
+  const P = _ps; if (!P) return;
+  // 设备分组: 手机打卡的设备标识 → 一键勾选这个设备打的所有天
+  const devs = {};
+  P.entries.forEach(e => { const d = e.device || ''; if (d && !d.startsWith('kiosk-site-')) devs[d] = (devs[d] || 0) + 1; });
+  const devColors = ['#2563eb', '#db2777', '#059669', '#d97706', '#7c3aed', '#0891b2'];
+  const devKeys = Object.keys(devs);
+  const colorOf = d => devColors[devKeys.indexOf(d) % devColors.length] || '#64748b';
+  document.getElementById('psTools').innerHTML = `<span style="font-size:.76rem;color:var(--gray-500)">共 ${P.entries.length} 天记录</span>`
+    + (devKeys.length > 1 ? `<span style="font-size:.74rem;color:var(--gray-400);margin-left:.4rem">按手机设备一键勾：</span>` + devKeys.map(d => `<button class="btn btn-sm" onclick="_psPickDev('${esc(d)}')" style="padding:.15rem .55rem;font-size:.72rem;background:#fff;border:1px solid ${colorOf(d)};color:${colorOf(d)}">📱 ${esc(_psDevLabel(d))}（${devs[d]} 天）</button>`).join('') : '')
+    + `<span style="flex:1"></span><a style="cursor:pointer;font-size:.74rem;color:var(--gray-400);text-decoration:underline" onclick="_ps.selDays.clear();_ps.selPunch.clear();_psRender()">全部取消</a>`;
+  const photo = f => f ? `/api/admin/punch-photo/${encodeURIComponent(f)}` : '';
+  document.getElementById('psBody').innerHTML = P.entries.length ? P.entries.map(e => {
+    const dayOn = P.selDays.has(e.id);
+    const dev = e.device || '';
+    const devChip = dev ? `<span style="font-size:.66rem;font-weight:700;color:${dev.startsWith('kiosk-site-') ? '#64748b' : colorOf(dev)};border:1px solid currentColor;border-radius:4px;padding:0 4px">${esc(_psDevLabel(dev))}</span>` : '';
+    const punches = (e.punches || []).map(pn => {
+      const key = e.id + '|' + pn.t;
+      const on = dayOn || P.selPunch.has(key);
+      return `<label style="display:inline-flex;flex-direction:column;align-items:center;gap:2px;padding:4px;border-radius:8px;border:2px solid ${on ? '#7c3aed' : 'transparent'};background:${on ? '#f5f3ff' : '#fff'};cursor:${dayOn ? 'default' : 'pointer'}">
+          ${pn.photo ? `<img src="${photo(pn.photo)}" loading="lazy" onclick="event.preventDefault();window.open(this.src,'_blank')" style="width:64px;height:64px;object-fit:cover;border-radius:6px;background:#0f172a">` : '<span style="width:64px;height:64px;display:flex;align-items:center;justify-content:center;background:#f1f5f9;border-radius:6px;font-size:.66rem;color:var(--gray-400)">无照片</span>'}
+          <span style="font-size:.72rem;font-weight:700">${esc(pn.local || pn.t)}</span>
+          ${pn.by ? `<span style="font-size:.6rem;color:#0f4c6b">${esc(pn.by)}</span>` : ''}
+          ${dayOn ? '' : `<input type="checkbox" ${on ? 'checked' : ''} onchange="_psTogglePunch(${e.id},'${esc(pn.t)}',this.checked)" style="margin:0">`}
+        </label>`;
+    }).join('');
+    const locked = e.sheet_id || e.manager_confirmed;
+    return `<div style="display:flex;gap:.7rem;align-items:flex-start;padding:.55rem .7rem;border-bottom:1px solid var(--gray-100);${dayOn ? 'background:#faf5ff' : ''}">
+        <label style="display:flex;align-items:center;gap:.4rem;min-width:190px;cursor:pointer"><input type="checkbox" ${dayOn ? 'checked' : ''} onchange="_psToggleDay(${e.id},this.checked)">
+          <span><b style="font-size:.84rem">${esc(e.work_date || '')}</b><br><span style="font-size:.72rem;color:var(--gray-500)">${esc(e.site_name || '—')} · ${(e.punches || []).length} 卡${e.total_hours ? ' · ' + e.total_hours + 'h' : ''}</span><br>${devChip}${locked ? ' <span title="已进工时单 / 仓库已确认 — 转移后请核对工时单" style="font-size:.64rem;color:#b45309">⚠ 已确认</span>' : ''}</span></label>
+        <div style="display:flex;gap:.3rem;flex-wrap:wrap">${punches || '<span style="font-size:.74rem;color:var(--gray-400)">没有打卡时间</span>'}</div></div>`;
+  }).join('') : '<div style="padding:1.5rem;color:var(--gray-400);text-align:center">这个档案没有打卡记录</div>';
+  const nP = [...P.selPunch].filter(k => !P.selDays.has(parseInt(k))).length;
+  document.getElementById('psSum').innerHTML = `已选 <b>${P.selDays.size}</b> 整天${nP ? ` + <b>${nP}</b> 单卡` : ''} → 转到 <b style="color:#047857">${esc(P.toName)}</b>`;
+  document.getElementById('psGo').disabled = !(P.selDays.size || nP);
+}
+function _psToggleDay(id, on) { if (on) _ps.selDays.add(id); else _ps.selDays.delete(id); _psRender(); }
+function _psTogglePunch(id, t, on) { const k = id + '|' + t; if (on) _ps.selPunch.add(k); else _ps.selPunch.delete(k); _psRender(); }
+function _psPickDev(d) { _ps.entries.forEach(e => { if (e.device === d) _ps.selDays.add(e.id); }); _psRender(); }
+async function doPunchSort() {
+  const P = _ps; if (!P) return;
+  const punches = [...P.selPunch].map(k => { const i = k.indexOf('|'); return { entry_id: parseInt(k.slice(0, i)), t: k.slice(i + 1) }; }).filter(x => !P.selDays.has(x.entry_id));
+  const ok = await showConfirm(`把 ${P.selDays.size} 整天${punches.length ? ` + ${punches.length} 单卡` : ''} 的打卡\n从「${esc(P.fromName)}」转到「${esc(P.toName)}」？\n\n每条都会记进编辑历史；同一天两边都有卡时会合并并重新归类上下班。`, { confirmLabel: '确认转移', cancelLabel: '再看看' });
+  if (!ok) return;
+  const btn = document.getElementById('psGo'); btn.disabled = true; btn.textContent = '转移中…';
+  try {
+    const r = await api('/admin/time-entries/reassign', { method: 'POST', body: JSON.stringify({ from_employee_id: P.from, to_employee_id: P.to, entry_ids: [...P.selDays], punches }) });
+    if (!r || r.error) throw new Error((r && r.error) || '转移失败');
+    showToast(`✅ 已转移 ${r.moved_days} 整天${r.moved_punches ? ` + ${r.moved_punches} 单卡` : ''} 到「${esc(P.toName)}」`, 'success', 5000);
+    const from = P.from, to = P.to;
+    await openPunchSort(from, to);   // 刷新剩下的
+  } catch (e) { showToast('转移失败：' + esc(e.message || e), 'error', 6000); }
+  finally { const b2 = document.getElementById('psGo'); if (b2) { b2.disabled = false; b2.textContent = '转到正确档案'; } }
 }
 function closeApplicantInbox() { document.getElementById('applyInboxModal').classList.remove('show'); }
 // Jump from an applicant card to the tied employee's档案 in 员工管理.

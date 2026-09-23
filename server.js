@@ -792,6 +792,9 @@ try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_review INTEGER DEFAULT 
 // 工作日 = 仓库当地时区的日期。clock_in 存 UTC, 晚上打卡 UTC 日期会跳到「明天」,
 // 不能用它分天 —— 按天归组必须以本列为准 (老记录为空, 查询时兼容回退)
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN work_date TEXT DEFAULT ''`); } catch(e) {}
+// 每一卡是谁打的: [{t, by, dev}] — by = 'phone:+1…' (手机打卡) / 'code:…1234#sub12' (打卡台密码, 对应哪份申请)。
+// 档案关联错了 (两个人挂在一个档案) 时靠它分清是谁的卡
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_log TEXT DEFAULT '[]'`); } catch(e) {}
 // 打卡时间编辑历史: 每次改动(后台/仓库方/系统)记谁在什么时候把什么从A改到B
 db.exec(`CREATE TABLE IF NOT EXISTS time_entry_edits (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24749,6 +24752,104 @@ app.get('/api/admin/background-checks/:id/file', (req, res, next) => {
   res.download(fp, chk.file_name || chk.file_path);
 });
 
+// ─── 🔀 打卡记录分拣: 两个人被挂在同一个档案上时, 把属于另一个人的打卡转到正确档案 ───
+// 列出某档案的全部打卡记录 (每条 = 某仓库某天), 每一卡带时间 / 照片 / 设备 / 是谁打的 (punch_log, 上线后才有)
+app.get('/api/admin/employees/:id/punch-entries', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  try {
+    const empId = parseInt(req.params.id);
+    const rows = db.prepare(`SELECT t.*, js.name AS site_name, COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS tz
+      FROM time_entries t LEFT JOIN job_sites js ON js.id=t.site_id WHERE t.employee_id=? ORDER BY COALESCE(NULLIF(t.work_date,''), t.clock_in) DESC, t.id DESC LIMIT 500`).all(empId);
+    res.json(rows.map(t => {
+      let log = []; try { log = JSON.parse(t.punch_log || '[]'); } catch (_) {}
+      const punches = _entryRawPunches(t).map(x => {
+        const hit = (Array.isArray(log) ? log : []).find(l => l && l.t === x.t);
+        return { t: x.t, local: _utcToTzHM ? _utcToTzHM(x.t, t.tz) : x.t, photo: x.p || null, by: hit ? hit.by : '', dev: hit ? (hit.dev || '') : '' };
+      });
+      return { id: t.id, work_date: t.work_date || (_utcToTzDate ? _utcToTzDate(t.clock_in || t.clock_out, t.tz) : ''), site_id: t.site_id, site_name: t.site_name || '',
+        tz: t.tz, status: t.status, total_hours: t.total_hours, punch_type: t.punch_type || '', device: t.checkin_device_id || '',
+        sheet_id: t.sheet_id || null, manager_confirmed: t.manager_confirmed ? 1 : 0, punch_review: t.punch_review ? 1 : 0, punches };
+    }));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 转移: entry_ids = 整天转过去; punches = [{entry_id, t}] = 只把某天里选中的几卡转过去 (两人同一天打在一条里)。
+// 目标档案同一仓库同一天已有记录 → 合进去; 两边按剩下的卡数重新归类上班/休息/下班。每条都记编辑历史。
+app.post('/api/admin/time-entries/reassign', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const b = req.body || {};
+    const fromId = parseInt(b.from_employee_id), toId = parseInt(b.to_employee_id);
+    if (!fromId || !toId || fromId === toId) return res.status(400).json({ error: '请选择要转到的档案' });
+    const fromEmp = db.prepare('SELECT id, first_name, last_name, employee_id FROM employees WHERE id=?').get(fromId);
+    const toEmp = db.prepare('SELECT id, first_name, last_name, employee_id FROM employees WHERE id=?').get(toId);
+    if (!fromEmp || !toEmp) return res.status(404).json({ error: '档案不存在' });
+    const label = e => `${[e.first_name, e.last_name].filter(Boolean).join(' ')}${e.employee_id ? ' · ' + e.employee_id : ''}`;
+    const who = req.userName || 'admin';
+    const wholeIds = [...new Set((Array.isArray(b.entry_ids) ? b.entry_ids : []).map(x => parseInt(x)).filter(Boolean))];
+    const partial = {};
+    (Array.isArray(b.punches) ? b.punches : []).forEach(x => { const id = parseInt(x && x.entry_id); if (id && x.t && !wholeIds.includes(id)) (partial[id] = partial[id] || new Set()).add(String(x.t)); });
+    const getEntry = id => db.prepare('SELECT * FROM time_entries WHERE id=? AND employee_id=?').get(id, fromId);
+    const logOf = e => { let l = []; try { l = JSON.parse(e.punch_log || '[]'); } catch (_) {} return Array.isArray(l) ? l : []; };
+    const workDateOf = e => e.work_date || _utcToTzDate(e.clock_in || e.clock_out, e.site_timezone || 'America/Chicago') || '';
+    // 目标档案同仓库同一天的记录 (没有就新建一条空壳)
+    const targetEntry = (src, firstT) => {
+      const wd = workDateOf(src);
+      let t = db.prepare(`SELECT * FROM time_entries WHERE employee_id=? AND COALESCE(site_id,0)=COALESCE(?,0) AND (work_date=? OR (COALESCE(work_date,'')='' AND date(clock_in)=?)) ORDER BY id LIMIT 1`)
+        .get(toId, src.site_id, wd, wd);
+      if (!t) {
+        const r = db.prepare(`INSERT INTO time_entries (employee_id, clock_in, status, site_id, geo_verified, punch_type, break_records, on_break, site_timezone, work_date, company_name, job_id)
+          VALUES (?, ?, 'open', ?, ?, 'auto', '[]', 0, ?, ?, ?, ?)`).run(toId, firstT || src.clock_in || src.clock_out, src.site_id, src.geo_verified || 0, src.site_timezone, wd, src.company_name || '', src.job_id);
+        t = db.prepare('SELECT * FROM time_entries WHERE id=?').get(r.lastInsertRowid);
+        _logEntryEdit(t.id, 'admin', who, [{ f: '记录', old: '', new: `打卡记录分拣：从「${label(fromEmp)}」转入` }]);
+      }
+      return t;
+    };
+    const mergeInto = (tgt, punches, logs) => {
+      const raw = _entryRawPunches(tgt).concat(punches);
+      const seen = new Set(); const uniq = raw.filter(x => { const k = x.t; if (seen.has(k)) return false; seen.add(k); return true; });
+      _rebuildEntryFromRaw(tgt.id, uniq, tgt.site_id, workDateOf(tgt));
+      db.prepare('UPDATE time_entries SET punch_log=? WHERE id=?').run(JSON.stringify(logOf(tgt).concat(logs).slice(-50)), tgt.id);
+    };
+    let movedDays = 0, movedPunches = 0;
+    db.transaction(() => {
+      for (const id of wholeIds) {
+        const e = getEntry(id); if (!e) continue;
+        const wd = workDateOf(e);
+        const clash = db.prepare(`SELECT id FROM time_entries WHERE employee_id=? AND id!=? AND COALESCE(site_id,0)=COALESCE(?,0) AND (work_date=? OR (COALESCE(work_date,'')='' AND date(clock_in)=?))`).get(toId, e.id, e.site_id, wd, wd);
+        if (clash) {   // 目标档案这天在这个仓库已有记录 → 把卡合进去, 原记录删掉
+          const tgt = db.prepare('SELECT * FROM time_entries WHERE id=?').get(clash.id);
+          mergeInto(tgt, _entryRawPunches(e), logOf(e));
+          _logEntryEdit(tgt.id, 'admin', who, [{ f: '员工', old: label(fromEmp), new: label(toEmp) + '（打卡记录分拣：合并当天的卡）' }]);
+          db.prepare('DELETE FROM time_entries WHERE id=?').run(e.id);
+        } else {
+          db.prepare('UPDATE time_entries SET employee_id=? WHERE id=?').run(toId, e.id);
+          _logEntryEdit(e.id, 'admin', who, [{ f: '员工', old: label(fromEmp), new: label(toEmp) + '（打卡记录分拣）' }]);
+        }
+        movedDays++;
+      }
+      for (const [idStr, set] of Object.entries(partial)) {
+        const e = getEntry(parseInt(idStr)); if (!e) continue;
+        const raw = _entryRawPunches(e);
+        const take = raw.filter(x => set.has(String(x.t))), keep = raw.filter(x => !set.has(String(x.t)));
+        if (!take.length) continue;
+        const log = logOf(e);
+        const takeLog = log.filter(l => set.has(String(l.t))), keepLog = log.filter(l => !set.has(String(l.t)));
+        const tgt = targetEntry(e, take[0].t);   // 新建的空壳以第一张转过去的卡开头 (不借原记录的上班时间)
+        mergeInto(tgt, take, takeLog);
+        _logEntryEdit(tgt.id, 'admin', who, [{ f: '打卡', old: '', new: `从「${label(fromEmp)}」转入 ${take.length} 卡（打卡记录分拣）` }]);
+        if (!keep.length) db.prepare('DELETE FROM time_entries WHERE id=?').run(e.id);
+        else {
+          _rebuildEntryFromRaw(e.id, keep, e.site_id, workDateOf(e));
+          db.prepare('UPDATE time_entries SET punch_log=? WHERE id=?').run(JSON.stringify(keepLog), e.id);
+          _logEntryEdit(e.id, 'admin', who, [{ f: '打卡', old: `${raw.length} 卡`, new: `${keep.length} 卡（${take.length} 卡转到「${label(toEmp)}」，打卡记录分拣）` }]);
+        }
+        movedPunches += take.length;
+      }
+    })();
+    auditLog('time_entries_reassign', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers },
+      { targetType: 'employee', targetId: fromId, details: { to: toId, days: movedDays, punches: movedPunches, entry_ids: wholeIds, partial: Object.fromEntries(Object.entries(partial).map(([k, v]) => [k, [...v]])) } });
+    res.json({ success: true, moved_days: movedDays, moved_punches: movedPunches });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── TIME CLOCK EMPLOYEE SELF-SERVICE ───
 
 // 8 位打卡密码 → 员工档案。优先员工表；还没建档的申请人（扫码填表后直接来打卡）自动建档。
@@ -27796,6 +27897,16 @@ function _inheritTimeclockCode2Emp(employeeId, code) {
   } catch (e) { console.error('[timeclock-code] backfill failed:', e.message); }
 }
 
+function _appendPunchLog(entryId, t, by, dev) {
+  try {
+    const row = db.prepare('SELECT punch_log FROM time_entries WHERE id=?').get(entryId);
+    if (!row) return;
+    let log = []; try { log = JSON.parse(row.punch_log || '[]'); } catch (_) {}
+    if (!Array.isArray(log)) log = [];
+    log.push({ t, by: String(by || '').slice(0, 80), ...(dev ? { dev: String(dev).slice(0, 80) } : {}) });
+    db.prepare('UPDATE time_entries SET punch_log=? WHERE id=?').run(JSON.stringify(log.slice(-50)), entryId);
+  } catch (e) { console.error('[PunchLog]', e.message); }
+}
 // ─── 打卡落库核心（/checkin 与 /kiosk 共用）───
 // 依据该员工当天在该仓库的 open entry 决定实际动作，写入/更新 time_entries。
 // 返回 { action, entryId, clockTime }。
@@ -27890,6 +28001,59 @@ function _recordSitePunch({ empDbId, site, siteTimezone, now, latitude, longitud
   return { action, entryId, clockTime };
 }
 
+// 当天原始打卡序列: raw_punches 有就用; 老记录/手机打卡把已分类的时间摊回序列 (按时间排好)
+function _entryRawPunches(entry) {
+  let raw = [];
+  try { raw = JSON.parse(entry.raw_punches || '[]'); } catch {}
+  if (!Array.isArray(raw)) raw = [];
+  if (!raw.length) {
+    if (entry.clock_in) raw.push({ t: entry.clock_in, p: entry.clock_in_photo_path || null });
+    let brs = [];
+    try { brs = JSON.parse(entry.break_records || '[]'); } catch {}
+    for (const b of (Array.isArray(brs) ? brs : [])) {
+      if (b && b.start) raw.push({ t: b.start, p: b.photo_path || null });
+      if (b && b.end) raw.push({ t: b.end, p: b.end_photo_path || null });
+    }
+    if (entry.clock_out) raw.push({ t: entry.clock_out, p: entry.punch_photo_path || null });
+  }
+  return raw.filter(x => x && x.t).sort((x, y) => String(x.t).localeCompare(String(y.t)));
+}
+// 按打卡次数把一条记录重新归类 (上班 / 休息 / 下班 / 待复核), 自动模式和「打卡记录分拣」共用。返回 needsReview
+function _rebuildEntryFromRaw(entryId, raw, siteId, workDate) {
+  raw.sort((x, y) => String(x.t).localeCompare(String(y.t)));
+  const n = raw.length;
+  const first = raw[0], last = raw[n - 1];
+  const rawJson = JSON.stringify(raw);
+  let needsReview = 0;
+  if (n === 1) {
+    // 当天第一次: 只算上班, 保持 open 等后续打卡
+    db.prepare(
+      "UPDATE time_entries SET clock_in=?, clock_in_photo_path=?, clock_out=NULL, total_hours=NULL, regular_hours=NULL, overtime_hours=NULL, status='open', break_records='[]', on_break=0, punch_photo_path=NULL, raw_punches=?, punch_review=0, punch_type='auto', work_date=? WHERE id=?"
+    ).run(first.t, first.p, rawJson, workDate, entryId);
+  } else {
+    const mids = raw.slice(1, n - 1);
+    const breaks = [];
+    for (let i = 0; i < mids.length; i += 2) {
+      const b = { start: mids[i].t };
+      if (mids[i].p) b.photo_path = mids[i].p;
+      if (mids[i + 1]) { b.end = mids[i + 1].t; if (mids[i + 1].p) b.end_photo_path = mids[i + 1].p; }
+      breaks.push(b);
+    }
+    const ms = new Date(last.t.replace(' ', 'T') + 'Z') - new Date(first.t.replace(' ', 'T') + 'Z');
+    const totalHours = Math.round((ms / 3600000) * 100) / 100;
+    // 期望次数按仓库设置: 2 + 2×每天休息次数 (默认 1 次休息 = 4 次卡); 次数不符 → 待复核
+    let breaksCfg = 1;
+    try {
+      const bRow = db.prepare('SELECT kiosk_breaks_per_day FROM job_sites WHERE id=?').get(siteId);
+      if (bRow && bRow.kiosk_breaks_per_day != null) breaksCfg = Math.max(0, Math.min(4, parseInt(bRow.kiosk_breaks_per_day) || 0));
+    } catch (_) {}
+    needsReview = (n === 2 + 2 * breaksCfg) ? 0 : 1;
+    db.prepare(
+      "UPDATE time_entries SET clock_in=?, clock_in_photo_path=?, clock_out=?, punch_photo_path=?, total_hours=?, regular_hours=?, overtime_hours=?, status='closed', break_records=?, on_break=0, raw_punches=?, punch_review=?, punch_type='auto', work_date=? WHERE id=?"
+    ).run(first.t, first.p, last.t, last.p, totalHours, Math.min(totalHours, 8), Math.max(0, totalHours - 8), JSON.stringify(breaks), rawJson, needsReview, workDate, entryId);
+  }
+  return needsReview;
+}
 // ─── 打卡台「自动」模式落库 ───
 // 不区分上下班：以「员工 + 仓库 + 当天(仓库时区 work_date)」为一条记录，把每次打卡时间
 // 都记进 raw_punches，每打一次按当天总次数重新归类：恰好 4 次 → 上班 / 休息开始 / 休息结束 / 下班；
@@ -27905,21 +28069,7 @@ function _recordAutoPunch({ empDbId, site, siteTimezone, now, latitude, longitud
   ).get(empDbId, site.id, todayInTz, todayInTz);
 
   // 当天原始打卡序列; 老记录/手机打卡先把已有分类时间摊回序列再续
-  let raw = [];
-  if (entry) {
-    try { raw = JSON.parse(entry.raw_punches || '[]'); } catch {}
-    if (!Array.isArray(raw)) raw = [];
-    if (!raw.length) {
-      if (entry.clock_in) raw.push({ t: entry.clock_in, p: entry.clock_in_photo_path || null });
-      let brs = [];
-      try { brs = JSON.parse(entry.break_records || '[]'); } catch {}
-      for (const b of (Array.isArray(brs) ? brs : [])) {
-        if (b && b.start) raw.push({ t: b.start, p: b.photo_path || null });
-        if (b && b.end) raw.push({ t: b.end, p: b.end_photo_path || null });
-      }
-      if (entry.clock_out) raw.push({ t: entry.clock_out, p: entry.punch_photo_path || null });
-    }
-  }
+  let raw = entry ? _entryRawPunches(entry) : [];
   raw.push({ t: now, p: photoFilename || null });
   raw.sort((a, b) => String(a.t).localeCompare(String(b.t)));
   const n = raw.length;
@@ -27933,36 +28083,7 @@ function _recordAutoPunch({ empDbId, site, siteTimezone, now, latitude, longitud
     entryId = r.lastInsertRowid;
   }
 
-  const first = raw[0], last = raw[n - 1];
-  const rawJson = JSON.stringify(raw);
-  let needsReview = 0;
-  if (n === 1) {
-    // 当天第一次: 只算上班, 保持 open 等后续打卡
-    db.prepare(
-      "UPDATE time_entries SET clock_in=?, clock_in_photo_path=?, clock_out=NULL, total_hours=NULL, regular_hours=NULL, overtime_hours=NULL, status='open', break_records='[]', on_break=0, punch_photo_path=NULL, raw_punches=?, punch_review=0, punch_type='auto', work_date=? WHERE id=?"
-    ).run(first.t, first.p, rawJson, todayInTz, entryId);
-  } else {
-    const mids = raw.slice(1, n - 1);
-    const breaks = [];
-    for (let i = 0; i < mids.length; i += 2) {
-      const b = { start: mids[i].t };
-      if (mids[i].p) b.photo_path = mids[i].p;
-      if (mids[i + 1]) { b.end = mids[i + 1].t; if (mids[i + 1].p) b.end_photo_path = mids[i + 1].p; }
-      breaks.push(b);
-    }
-    const ms = new Date(last.t.replace(' ', 'T') + 'Z') - new Date(first.t.replace(' ', 'T') + 'Z');
-    const totalHours = Math.round((ms / 3600000) * 100) / 100;
-    // 期望次数按仓库设置: 2 + 2×每天休息次数 (默认 1 次休息 = 4 次卡); 次数不符 → 待复核
-    let breaksCfg = 1;
-    try {
-      const bRow = db.prepare('SELECT kiosk_breaks_per_day FROM job_sites WHERE id=?').get(site.id);
-      if (bRow && bRow.kiosk_breaks_per_day != null) breaksCfg = Math.max(0, Math.min(4, parseInt(bRow.kiosk_breaks_per_day) || 0));
-    } catch (_) {}
-    needsReview = (n === 2 + 2 * breaksCfg) ? 0 : 1;
-    db.prepare(
-      "UPDATE time_entries SET clock_in=?, clock_in_photo_path=?, clock_out=?, punch_photo_path=?, total_hours=?, regular_hours=?, overtime_hours=?, status='closed', break_records=?, on_break=0, raw_punches=?, punch_review=?, punch_type='auto', work_date=? WHERE id=?"
-    ).run(first.t, first.p, last.t, last.p, totalHours, Math.min(totalHours, 8), Math.max(0, totalHours - 8), JSON.stringify(breaks), rawJson, needsReview, todayInTz, entryId);
-  }
+  const needsReview = _rebuildEntryFromRaw(entryId, raw, site.id, todayInTz);
   return { action: 'auto', entryId, clockTime: now, punchCount: n, needsReview };
 }
 
@@ -28142,6 +28263,7 @@ app.post('/api/checkin/punch', async (req, res) => {
   const { action, entryId, clockTime } = _recordSitePunch({
     empDbId, site, siteTimezone, now, latitude, longitude, photoFilename, requestedPunchType
   });
+  if (entryId) _appendPunchLog(entryId, clockTime || now, 'phone:' + (sess.phone || ''), deviceId || '');
   // 把设备标识和疑似标记落到本次涉及的工时记录上（新建和更新的打卡都覆盖）
   if (entryId && (deviceId || suspectNote)) {
     db.prepare(`UPDATE time_entries SET
@@ -28964,6 +29086,12 @@ app.post('/api/kiosk/punch', async (req, res) => {
     ? _recordSitePunch({ ...punchArgs, requestedPunchType: forcedMode })
     : _recordAutoPunch(punchArgs);
   const { action, entryId, clockTime } = pr;
+  if (entryId) {
+    const pw0 = String((req.body || {}).password || '').trim();
+    let subTag = '';
+    try { const sb = db.prepare('SELECT id FROM applicant_submissions WHERE timeclock_code=?').get(pw0); if (sb) subTag = '#sub' + sb.id; } catch (_) {}
+    _appendPunchLog(entryId, clockTime || now, 'code:…' + pw0.slice(-4) + subTag, 'kiosk-site-' + site.id);
+  }
   // 标记来源为该仓库的打卡台（共享设备，不做同设备代打卡判定）
   if (entryId) {
     try {
