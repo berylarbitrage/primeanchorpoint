@@ -17450,7 +17450,7 @@ async function _saveEmployeeInner() {
       '对比处理 / Compare',
       'btn',
       async () => {
-        const p = { data, empId: id || null, field: r.field, fieldLabel, existingEmpId: emp.id, existingEmpName: empName, convertFromWorkerId: _convertFromWorkerId || null };
+        const p = { data, empId: id || null, field: r.field, fieldLabel, existingEmpId: emp.id, existingEmpName: empName, convertFromWorkerId: _convertFromWorkerId || null, convertFromApplicantId: _convertFromApplicantId || null };
         clearModalState('empModal'); closeEmpModal();
         openDupConflictPicker(p); // 直接弹左右对比挑选（缓存缺档案时其内部兜底走 详情+冲突条）
       },
@@ -43547,6 +43547,65 @@ function inboxMergeDup(linkedId, otherId) {
   document.getElementById('mergeDupModal').classList.add('show');
 }
 // 弹窗底部按钮按模式渲染: merge = 取消/确认合并; conflict = 取消 + 保留/替换/编辑 快捷键 + 应用所选
+// ── 分成两份档案: 一个电话一个档案 — 电话不同 (只是邮箱等相同) 的两个人各留各的档案 ──
+function _dupSepPhones(e) {
+  const n10 = v => String(v || '').replace(/\D/g, '').slice(-10);
+  let ex = e.extra_phones; if (typeof ex === 'string') { try { ex = JSON.parse(ex || '[]'); } catch (_) { ex = []; } }
+  return [e.phone].concat(Array.isArray(ex) ? ex : []).map(n10).filter(x => x.length >= 7);
+}
+function _dupSeparateBtn() {
+  const P = _mergeDupPair;
+  if (!P || P.mode !== 'conflict') return '';
+  const aP = _dupSepPhones({ phone: P.a.phone })[0] || '';
+  const same = aP && _dupSepPhones(P.b).includes(aP);
+  const dis = !aP || same;
+  const why = !aP ? '新信息没有电话，不能单独建档' : same ? '两边电话相同 = 同一个人（一个电话一个档案），不能分成两份' : '电话不同 = 两个人：新信息单独保存为自己的档案，现有档案原样不动（两份档案可共用同一个邮箱）';
+  return `<button class="btn" ${dis ? 'disabled' : ''} onclick="_dupPickSeparate()" title="${esc(why)}" style="background:${dis ? '#e5e7eb' : '#7c3aed'};border-color:${dis ? '#e5e7eb' : '#7c3aed'};color:${dis ? '#9ca3af' : '#fff'};${dis ? 'cursor:not-allowed' : ''}">分成两份档案 / Separate</button>`;
+}
+async function _dupPickSeparate() {
+  const P = _mergeDupPair, pend = _pendingDupSave;
+  if (!P || P.mode !== 'conflict' || !pend) return;
+  const a = P.a, b = P.b;
+  const aP = _dupSepPhones({ phone: a.phone })[0] || '';
+  if (!aP || _dupSepPhones(b).includes(aP)) { showToast('两边电话相同 = 同一个人，不能分成两份档案', 'error', 5000); return; }
+  const nm = e => titleCase([e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '));
+  const ok = await showConfirm(`分成两份独立档案？\n\n「${esc(nm(a))}」（${esc(a.phone)}）${pend.empId ? '按新信息保存到它自己的档案' : '单独建一份新档案'}；\n「${esc(nm(b))}」（${esc(b.phone || '')}）${b.employee_id ? '· ' + esc(b.employee_id) : ''} 原样不动。\n\n两份档案可以共用同一个邮箱。`,
+    { confirmLabel: '分成两份档案', cancelLabel: '再看看' });
+  if (!ok) return;
+  const data = { ...(pend.data || {}), allow_email_dup: true };
+  if (!pend.empId && !data.status) data.status = 'onboarding';
+  if (!pend.empId && !data.hire_date) data.hire_date = new Date().toISOString().slice(0, 10);
+  let r;
+  try {
+    r = pend.empId
+      ? await api(`/admin/employees/${pend.empId}`, { method: 'PUT', body: JSON.stringify(data) })
+      : await api('/admin/employees', { method: 'POST', body: JSON.stringify(data) });
+  } catch (e) { r = { error: e.message || String(e) }; }
+  if (r && r.duplicate) { showToast(`电话已登记在「${esc([r.existing.first_name, r.existing.last_name].filter(Boolean).join(' '))}」名下 — 电话相同就是同一个人，不能分开`, 'error', 6000); return; }
+  if (!r || r.error || !(r.success || r.id)) { showToast('保存失败：' + esc((r && r.error) || '未知错误'), 'error', 6000); return; }
+  const newId = pend.empId || r.id;
+  // 来自收件箱申请的新建档: 把申请挂到新档案上; 原来挂在对方档案上的 → 接着分拣以前的打卡
+  const subId = P.inboxSubId || pend.convertFromApplicantId || (!pend.empId ? a.docsSubId : 0) || 0;
+  let prevEmpId = null;
+  if (subId && !pend.empId) {
+    const s0 = (_inboxSubmissions || []).find(x => x.id === subId);
+    if (s0 && s0.employee_id && s0.employee_id !== newId) prevEmpId = s0.employee_id;
+    try {
+      await api(`/admin/applicant-submissions/${subId}`, { method: 'PATCH', body: JSON.stringify({ employee_id: newId, dup_resolved: true }) });
+      if (s0) { s0.employee_id = newId; s0.dup_resolved_at = new Date().toISOString(); }
+    } catch (_) {}
+  }
+  if (pend.convertFromWorkerId && !pend.empId) {
+    try { await api(`/admin/worker-accounts/${pend.convertFromWorkerId}`, { method: 'PUT', body: JSON.stringify({ employee_id: newId }) }); if (typeof loadWorkerAccounts === 'function') await loadWorkerAccounts(); } catch (_) {}
+  }
+  _pendingDupSave = null;
+  closeMergeDup();
+  await loadEmployees();
+  const m = document.getElementById('applyInboxModal');
+  if (m && m.classList.contains('show')) renderApplicantInbox();
+  showToast(`✅ 已分成两份档案：「${esc(nm(a))}」${r.employee_id ? '（' + esc(r.employee_id) + '）' : ''}单独保存，「${esc(nm(b))}」原样不动`, 'success', 6000);
+  if (prevEmpId && USER_ROLE === 'admin') setTimeout(() => openPunchSort(prevEmpId, newId), 400);
+}
 function _renderMergeFooter() {
   const f = document.getElementById('mergeDupFooter');
   if (!f || !_mergeDupPair) return;
@@ -43558,6 +43617,7 @@ function _renderMergeFooter() {
       <button class="btn btn-outline" onclick="_dupPickKeep()" style="color:#047857;border-color:#a7f3d0" title="现有档案原样不动，丢弃这次填写的新信息（写舍弃标注）">保留现有信息 / Keep</button>
       <button class="btn" onclick="_dupPickReplace()" style="background:#d97706;border-color:#d97706;color:#fff" title="新信息整体生效；重复的联系方式从对方档案转移并标注保留">替换成新信息 / Replace</button>
       <button class="btn btn-outline" onclick="_dupPickEdit()" title="直接打开现有档案的编辑表单">编辑此员工 / Edit</button>
+      ${_dupSeparateBtn()}
       <button class="btn btn-red" id="mergeDupBtn" onclick="execMergeDup()" title="按点选的组合直接保存进现有档案并关闭">应用所选 / Apply</button>`;
   }
 }
