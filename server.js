@@ -888,6 +888,16 @@ try { db.exec(`ALTER TABLE referrals ADD COLUMN worker_wage TEXT DEFAULT ''`); }
 // 关联 post 的招聘岗位: 存 jobs.id + 标题快照 (岗位之后改名/关闭/删掉, 介绍记录照样能看)
 try { db.exec(`ALTER TABLE referrals ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE referrals ADD COLUMN job_title TEXT DEFAULT ''`); } catch(e) {}
+// 介绍费按周付: 关联的每张发票 (一周账期) = 一周, 每周单独记介绍费金额和付款批注
+// (acct_pay_notes target_type='referralweek', target_id=这里的 id); fee 为空 = 按介绍记录上的介绍费
+try { db.exec(`CREATE TABLE IF NOT EXISTS referral_weeks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  referral_id INTEGER NOT NULL,
+  invoice_id INTEGER NOT NULL,
+  fee REAL DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(referral_id, invoice_id)
+)`); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL"); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) {}
@@ -39661,7 +39671,7 @@ function _acctPayNotesFor(type) {
 // 会计付款批注 upsert: 付了没有 / 哪个银行付的 / 付了多少 / 备注 / 关联银行交易(收款凭证)
 app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
   const { target_type, target_id, paid_status, bank, amount, note, txn_ids } = req.body || {};
-  if (!['invoice', 'claim', 'fee', 'pallet', 'palletbill', 'truck', 'truckorder', 'referral'].includes(target_type)) return res.status(400).json({ error: '无效对象类型' });
+  if (!['invoice', 'claim', 'fee', 'pallet', 'palletbill', 'truck', 'truckorder', 'referral', 'referralweek'].includes(target_type)) return res.status(400).json({ error: '无效对象类型' });
   const tid = parseInt(target_id);
   if (!tid) return res.status(400).json({ error: '无效对象' });
   const exists = target_type === 'invoice'
@@ -39670,6 +39680,8 @@ app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
       ? db.prepare('SELECT id FROM fee_records WHERE id=?').get(tid)
       : target_type === 'referral'
         ? db.prepare('SELECT id, review_status FROM referrals WHERE id=?').get(tid)
+        : target_type === 'referralweek'
+          ? db.prepare('SELECT w.id, r.review_status FROM referral_weeks w JOIN referrals r ON r.id=w.referral_id WHERE w.id=?').get(tid)
         : (target_type === 'pallet' || target_type === 'truck')
           ? db.prepare("SELECT id FROM bank_statement_txns WHERE id=? AND kind='box'").get(tid)
           : (target_type === 'palletbill' || target_type === 'truckorder')
@@ -39677,7 +39689,7 @@ app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
             : db.prepare('SELECT id FROM warehouse_claims WHERE id=?').get(tid);
   if (!exists) return res.status(404).json({ error: '对象不存在' });
   // 介绍费必须管理员核查同意支付后, 会计才能记付款 / 关联银行记录
-  if (target_type === 'referral' && exists.review_status !== 'approved') return res.status(400).json({ error: '该介绍费还未通过管理员核查同意支付，暂不能记录付款' });
+  if ((target_type === 'referral' || target_type === 'referralweek') && exists.review_status !== 'approved') return res.status(400).json({ error: '该介绍费还未通过管理员核查同意支付，暂不能记录付款' });
   const st = ['', 'unpaid', 'partial', 'paid'].includes(String(paid_status || '')) ? String(paid_status || '') : '';
   const amt = (amount === '' || amount == null) ? null : (Number(amount) || 0);
   const ids = (Array.isArray(txn_ids) ? txn_ids : []).map(t => String(t).slice(0, 100)).filter(Boolean).slice(0, 20);
@@ -40065,13 +40077,30 @@ app.delete('/api/acct/fee-records/:id', requireAdmin, requireRole('admin'), (req
 // ─── 🤝 介绍费 (referral): 工头介绍工人, 核查后付介绍费 ───
 // 流程: 客服/会计录入介绍信息 → 会计关联发票佐证 (被介绍人确实在给客户干活) →
 // 管理员核查整条信息、决定是否支付 → 同意后会计付款并在付款批注里关联银行记录。
-function _referralOut(r, invMap, payNotes) {
+function _referralOut(r, invMap, payNotes, weeksBy, weekNotes) {
   r.attachments = _claimAtts(r);
   let ids = []; try { ids = JSON.parse(r.invoice_ids || '[]'); } catch (e) { ids = []; }
   r.invoice_ids = (Array.isArray(ids) ? ids : []).map(i => parseInt(i)).filter(Boolean);
   r.invoices = r.invoice_ids.map(id => invMap[id]).filter(Boolean);
   r.pay_note = payNotes[r.id] || null;
+  // 每周付款: 按发票账期先后排, fee 空的按介绍记录上的介绍费
+  r.weeks = ((weeksBy && weeksBy[r.id]) || []).filter(w => invMap[w.invoice_id]).map(w => ({
+    id: w.id, invoice_id: w.invoice_id, fee: w.fee,
+    fee_eff: w.fee != null ? w.fee : (r.amount != null ? r.amount : null),
+    invoice: invMap[w.invoice_id], pay_note: (weekNotes && weekNotes[w.id]) || null,
+  })).sort((a, b) => String(a.invoice.period_start || a.invoice.invoice_date || '').localeCompare(String(b.invoice.period_start || b.invoice.invoice_date || '')));
   return r;
+}
+// 关联发票 → 每周付款行 同步: 新关联的补一行, 取消关联的删掉 (连同空的付款批注)
+function _referralSyncWeeks(refId, invIds) {
+  const ins = db.prepare('INSERT OR IGNORE INTO referral_weeks (referral_id, invoice_id) VALUES (?, ?)');
+  invIds.forEach(i => ins.run(refId, i));
+  const keep = new Set(invIds);
+  db.prepare('SELECT id, invoice_id FROM referral_weeks WHERE referral_id=?').all(refId).forEach(w => {
+    if (keep.has(w.invoice_id)) return;
+    db.prepare("DELETE FROM acct_pay_notes WHERE target_type='referralweek' AND target_id=?").run(w.id);
+    db.prepare('DELETE FROM referral_weeks WHERE id=?').run(w.id);
+  });
 }
 app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
   try {
@@ -40083,6 +40112,11 @@ app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
     if (allIds.size) db.prepare(`SELECT id, invoice_number, invoice_date, company_name, subtotal, period_start, period_end FROM invoices
       WHERE id IN (${[...allIds].map(() => '?').join(',')})`).all(...allIds).forEach(v => { invMap[v.id] = v; });
     const payNotes = _acctPayNotesFor('referral');
+    // 老记录 (按周付款上线前关联的发票) 补齐每周行
+    rows.forEach(r => { let ids = []; try { ids = JSON.parse(r.invoice_ids || '[]'); } catch (e) {} ; ids = (Array.isArray(ids) ? ids : []).map(i => parseInt(i)).filter(Boolean); if (ids.length) { const ins = db.prepare('INSERT OR IGNORE INTO referral_weeks (referral_id, invoice_id) VALUES (?, ?)'); ids.forEach(i => ins.run(r.id, i)); } });
+    const weeksBy = {};
+    db.prepare('SELECT * FROM referral_weeks').all().forEach(w => { (weeksBy[w.referral_id] = weeksBy[w.referral_id] || []).push(w); });
+    const weekNotes = _acctPayNotesFor('referralweek');
     // 工头所在州: 按电话对上工头名单 (没电话按姓名), 列表里工头名字下显示
     const normP = p => String(p || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
     const fmStByPhone = {}, fmStByName = {};
@@ -40093,7 +40127,7 @@ app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
         fmStByName[String(f.name).trim().toLowerCase()] = f.state;
       });
     } catch (e) {}
-    const out = rows.map(r => _referralOut(r, invMap, payNotes));
+    const out = rows.map(r => _referralOut(r, invMap, payNotes, weeksBy, weekNotes));
     out.forEach(r => { r.foreman_state = fmStByPhone[normP(r.foreman_phone)] || fmStByName[String(r.foreman_name).trim().toLowerCase()] || ''; });
     res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -40182,9 +40216,26 @@ app.post('/api/acct/referrals/:id/invoices', requireAdmin, requireRole('accounti
   const b = req.body || {};
   const ids = [...new Set((Array.isArray(b.invoice_ids) ? b.invoice_ids : []).map(i => parseInt(i)).filter(i => i > 0))].slice(0, 50);
   const ok = ids.length ? db.prepare(`SELECT id FROM invoices WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids).map(v => v.id) : [];
+  // 已记了付款的那周不能取消关联 (先把那周的付款批注清掉)
+  const keep = new Set(ok);
+  const paidGone = db.prepare(`SELECT w.invoice_id, i.invoice_number FROM referral_weeks w
+      JOIN acct_pay_notes n ON n.target_type='referralweek' AND n.target_id=w.id AND n.paid_status IN ('paid','partial')
+      LEFT JOIN invoices i ON i.id=w.invoice_id WHERE w.referral_id=?`).all(cur.id).filter(w => !keep.has(w.invoice_id));
+  if (paidGone.length) return res.status(400).json({ error: `发票 ${paidGone.map(w => w.invoice_number || w.invoice_id).join(', ')} 那周已记付款，不能取消关联（先改掉那周的付款记录）` });
   db.prepare(`UPDATE referrals SET invoice_ids=?, invoice_note=?, invoice_linked_by=?, updated_at=datetime('now') WHERE id=?`)
     .run(JSON.stringify(ok), String(b.invoice_note || '').trim().slice(0, 500), req.userName || '', cur.id);
+  _referralSyncWeeks(cur.id, ok);
   res.json({ success: true, invoice_ids: ok });
+});
+// 改某一周的介绍费金额 (空 = 按介绍记录上的介绍费)
+app.put('/api/acct/referral-weeks/:id', requireAdmin, requireRole('accounting', 'admin'), (req, res) => {
+  const w = db.prepare('SELECT id FROM referral_weeks WHERE id=?').get(parseInt(req.params.id));
+  if (!w) return res.status(404).json({ error: '记录不存在' });
+  const v = (req.body || {}).fee;
+  const fee = (v === '' || v == null) ? null : Number(v);
+  if (fee != null && (isNaN(fee) || fee < 0)) return res.status(400).json({ error: '金额不对' });
+  db.prepare('UPDATE referral_weeks SET fee=? WHERE id=?').run(fee, w.id);
+  res.json({ success: true, fee });
 });
 
 // 管理员核查: 核实整条信息后决定是否支付 (approve 同意支付 / reject 拒绝支付 / reset 撤销重审)
@@ -40357,6 +40408,8 @@ app.delete('/api/acct/referrals/:id', requireAdmin, requireRole('admin'), (req, 
   _claimAtts(cur).forEach(a => _claimDeleteFile(a.path));
   db.prepare('DELETE FROM referrals WHERE id=?').run(cur.id);
   db.prepare(`DELETE FROM acct_pay_notes WHERE target_type='referral' AND target_id=?`).run(cur.id);
+  db.prepare(`DELETE FROM acct_pay_notes WHERE target_type='referralweek' AND target_id IN (SELECT id FROM referral_weeks WHERE referral_id=?)`).run(cur.id);
+  db.prepare('DELETE FROM referral_weeks WHERE referral_id=?').run(cur.id);
   res.json({ success: true });
 });
 
