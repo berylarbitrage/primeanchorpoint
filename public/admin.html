@@ -17426,7 +17426,15 @@ async function _saveEmployeeInner() {
       }
     } else _empSaveErr(r2.error || '保存失败');
   }
-  const r = await doSave(data);
+  let r = await doSave(data);
+  // 只是邮箱相同 (电话已查过不重复) → 按「一个电话一个档案」可以单独建档
+  if (r && r.duplicate && r.field === 'email') {
+    const ex = r.existing || {};
+    const exName = `${[ex.first_name, ex.middle_name, ex.last_name].filter(Boolean).join(' ')}（员工号：${ex.employee_id || ''}）`;
+    const indep = await showConfirm(`📧 这个邮箱已登记在「${esc(exName)}」名下，但电话不同。\n\n按「一个电话一个档案」，电话不同就是另一个人：可以单独建档（两份档案都用这个邮箱）。\n如果其实是同一个人，点「对比处理」。`,
+      { confirmLabel: '电话不同，单独建档', cancelLabel: '对比处理' });
+    if (indep) r = await doSave({ ...data, allow_email_dup: true });
+  }
   if (r && r.duplicate) {
     const fieldLabel = r.field === 'phone' ? '手机号' : '邮箱';
     const emp = r.existing;
@@ -43032,11 +43040,8 @@ function matchEmployeeForApplicant(s) {
   const aEmail = String(s.email || '').trim().toLowerCase();
   if (!aPhone && !aEmail) return null;
   const parseArr = v => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
+  // 一个电话一个档案: 只按电话对上档案; 只是邮箱相同的是另一个人 (卡片上另行提醒)
   return (allEmployees || []).find(e => {
-    if (aEmail) {
-      if (String(e.email || '').trim().toLowerCase() === aEmail) return true;
-      if (parseArr(e.extra_emails).some(em => String(em || '').trim().toLowerCase() === aEmail)) return true;
-    }
     if (aPhone) {
       if (_normPhoneForMatch(e.phone) === aPhone) return true;
       if (parseArr(e.extra_phones).some(p => _normPhoneForMatch(p) === aPhone)) return true;
@@ -43051,16 +43056,17 @@ function linkedEmployeeForApplicant(s) {
 }
 // 这份申请（除卡片上已展示的那份档案外）在系统里还有没有同一个人的其他员工档案 —
 // 有就要在卡片上标注出来（电话/邮箱相同，含 extra_phones/extra_emails）。
-function _inboxOtherMatches(s, excludeId) {
+// mode: 'phone'(默认, 电话相同 = 同一个人) | 'email'(只是邮箱相同、电话不同 = 另一个人, 只提醒)
+function _inboxOtherMatches(s, excludeId, mode) {
   const aPhone = _normPhoneForMatch(s.phone);
   const aEmail = String(s.email || '').trim().toLowerCase();
   if (!aPhone && !aEmail) return [];
   const parseArr = v => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
+  const phoneHit = e => !!aPhone && (_normPhoneForMatch(e.phone) === aPhone || parseArr(e.extra_phones).some(p2 => _normPhoneForMatch(p2) === aPhone));
   return (allEmployees || []).filter(e => {
     if (excludeId && e.id === excludeId) return false;
-    if (aEmail && (String(e.email || '').trim().toLowerCase() === aEmail || parseArr(e.extra_emails).some(em => String(em || '').trim().toLowerCase() === aEmail))) return true;
-    if (aPhone && (_normPhoneForMatch(e.phone) === aPhone || parseArr(e.extra_phones).some(p2 => _normPhoneForMatch(p2) === aPhone))) return true;
-    return false;
+    if (mode === 'email') return !phoneHit(e) && !!aEmail && (String(e.email || '').trim().toLowerCase() === aEmail || parseArr(e.extra_emails).some(em => String(em || '').trim().toLowerCase() === aEmail));
+    return phoneHit(e);
   });
 }
 // 入职审核清单（标真/假只是备注, 不强制）: ①每张证件裁剪保存过(=人工看过并核对姓名)
@@ -43203,6 +43209,35 @@ function renderApplicantInbox() {
     const _dupWarn = _others.length
       ? `<button onclick="_inboxViewEmp(${_others[0].id})" title="系统里已有同一人的其他员工档案（电话/邮箱相同），点击查看" style="padding:.2rem .55rem;font-size:.72rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap">⚠️ 系统已有同一人 · ${esc(titleCase([_others[0].first_name, _others[0].last_name].filter(Boolean).join(' ')) || '员工')}${_others[0].employee_id ? ' · ' + esc(_others[0].employee_id) : ''}${_others.length > 1 ? ` 等 ${_others.length} 份` : ''} ↗</button>`
       : '';
+    // ── 一个电话一个档案 ──
+    const _canFix = USER_ROLE === 'admin' || USER_ROLE === 'staff';
+    const _aP = _normPhoneForMatch(s.phone);
+    const _pArr = v => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
+    const _empHasPhone = e => !!_aP && (_normPhoneForMatch(e.phone) === _aP || _pArr(e.extra_phones).some(x => _normPhoneForMatch(x) === _aP));
+    // ① 关联到的档案电话不同 (以前按邮箱自动关联的) → 应该给这个电话单独建档
+    const _phoneMismatch = !!(_linkedEmp && _aP && !_empHasPhone(_linkedEmp));
+    const _splitWarn = _phoneMismatch
+      ? `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:.25rem;max-width:320px"><span title="这份申请的电话和关联档案不一样，只是邮箱相同 — 按「一个电话一个档案」应该是另一个人" style="padding:.2rem .55rem;font-size:.72rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:6px;font-weight:700;text-align:right">⚠️ 关联的「${esc(_empName)}」电话不同（只是邮箱相同）</span>${_canFix ? `<button onclick="createEmployeeFromApplicant(${s.id})" style="padding:.2rem .6rem;font-size:.72rem;background:#1A3F7A;color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap">➕ 给这个电话单独建档</button>` : ''}</div>`
+      : '';
+    // ② 只是邮箱相同、电话不同的其他档案 → 提醒 (按独立档案处理)
+    const _emailOthers = _inboxOtherMatches(s, _matchedEmp ? _matchedEmp.id : 0, 'email');
+    const _emailWarn = _emailOthers.length
+      ? `<button onclick="_inboxViewEmp(${_emailOthers[0].id})" title="邮箱相同但电话不同 — 按「一个电话一个档案」各自独立；点击查看那份档案" style="padding:.2rem .55rem;font-size:.72rem;background:#fffbeb;color:#b45309;border:1px solid #fde68a;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap">📧 邮箱和「${esc(titleCase([_emailOthers[0].first_name, _emailOthers[0].last_name].filter(Boolean).join(' ')))}${_emailOthers[0].employee_id ? ' · ' + esc(_emailOthers[0].employee_id) : ''}」相同（电话不同）${_emailOthers.length > 1 ? ` 等 ${_emailOthers.length} 份` : ''} ↗</button>`
+      : '';
+    // ③ 电话相同 = 同一人: 后来的申请信息和档案有差异 → 对比挑选用哪边的 (不自动覆盖)
+    let _pickWarn = '';
+    if (_matchedEmp && !_phoneMismatch && _empHasPhone(_matchedEmp) && !s.dup_resolved_at && !String(s.review_note || '').trim()) {
+      const sameEmpSubs = (_inboxSubmissions || []).filter(x => _normPhoneForMatch(x.phone) === _aP && (x.employee_id === _matchedEmp.id || !x.employee_id));
+      const isFirst = !sameEmpSubs.some(x => x.id < s.id);
+      if (!isFirst) {
+        const low = v => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        const diffs = [];
+        if (low(s.name) && low(s.name) !== low([_matchedEmp.first_name, _matchedEmp.middle_name, _matchedEmp.last_name].filter(Boolean).join(' '))) diffs.push('姓名');
+        if (low(s.email) && low(s.email) !== low(_matchedEmp.email) && !_pArr(_matchedEmp.extra_emails).some(x => low(x) === low(s.email))) diffs.push('邮箱');
+        if (low(s.address1) && (low(s.address1) !== low(_matchedEmp.address) || low(s.zip) !== low(_matchedEmp.zip))) diffs.push('地址');
+        if (diffs.length) _pickWarn = `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:.25rem"><span style="padding:.2rem .55rem;font-size:.72rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:6px;font-weight:700">🧩 电话和档案相同，这次填的${diffs.join('、')}不一样</span>${_canFix ? `<span style="white-space:nowrap"><button onclick="inboxPickDup(${s.id},${_matchedEmp.id})" style="padding:.2rem .6rem;font-size:.72rem;background:#1A3F7A;color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer">🧩 对比挑选信息</button> <a onclick="inboxDupOk(${s.id})" title="档案上的信息就是对的，这次填的不用" style="cursor:pointer;font-size:.7rem;color:var(--gray-400);text-decoration:underline">档案不用改</a></span>` : ''}</div>`;
+      }
+    }
     // 同一个人不该有两个员工号 → admin 可一键合并: 保留在职那份, 删掉重复员工号
     const _mergeBtn = (_linkedEmp && _others.length && USER_ROLE === 'admin')
       ? `<button onclick="inboxMergeDup(${_linkedEmp.id},${_others[0].id})" title="把两份档案合并成一个员工号：保留在职那份，问卷/工时/打卡/文件全部保留并转移，只注销重复的员工号（不可撤销）" style="padding:.2rem .55rem;font-size:.72rem;background:#fff;color:#7c3aed;border:1px dashed #c4b5fd;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap">🧹 合并成一个员工号</button>`
@@ -43268,7 +43303,10 @@ function renderApplicantInbox() {
           ${mkEmp}
           ${_docsWarn}
           ${_empChip}
+          ${_splitWarn}
+          ${_pickWarn}
           ${_dupWarn}
+          ${_emailWarn}
           ${_mergeBtn}
           ${_reviewNote}
           ${_createAnyway}
@@ -43322,6 +43360,33 @@ function inboxBatchCrop(subId) {
     .map(d => ({ url: `/api/admin/applicant-submissions/${s.id}/docs/${d.id}/download`, label: docLabel[d.doc_type] || d.doc_type, docType: d.doc_type || '', verify: d.verify_status || '' }));
   if (!items.length) { if (typeof showToast === 'function') showToast('证件都已裁剪', 'success'); return; }
   startApplicantDocBatchCrop(items);
+}
+// 🧩 电话相同的重复申请: 左边 = 这次申请填的, 右边 = 现有档案, 逐条挑选后保存进这个电话的档案
+function inboxPickDup(subId, empId) {
+  const s = (_inboxSubmissions || []).find(x => x.id === subId);
+  const e = (allEmployees || []).find(x => x.id === empId);
+  if (!s || !e) return;
+  const parts = titleCase(String(s.name || '').trim()).split(/\s+/).filter(Boolean);
+  const prevSub = window._empApplDocsSubId;
+  window._empApplDocsSubId = s.id;   // 左卡显示这次申请的证件
+  openDupConflictPicker({
+    data: { first_name: parts[0] || '', middle_name: '', last_name: parts.slice(1).join(' '), phone: s.phone || '', email: s.email || '',
+      address: s.address1 || '', street2: s.address2 || '', city: s.city || '', state: s.state || '', zip: s.zip || '', hire_date: '' },
+    empId: null, field: 'phone', fieldLabel: '电话', existingEmpId: e.id,
+    existingEmpName: `${titleCase([e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '))}（员工号：${e.employee_id || ''}）`,
+  });
+  window._empApplDocsSubId = prevSub;
+  if (_mergeDupPair) _mergeDupPair.inboxSubId = s.id;
+}
+async function inboxDupOk(subId) {
+  try {
+    const r = await api(`/admin/applicant-submissions/${subId}`, { method: 'PATCH', body: JSON.stringify({ dup_resolved: true }) });
+    if (r && r.error) throw new Error(r.error);
+    const s = (_inboxSubmissions || []).find(x => x.id === subId);
+    if (s) s.dup_resolved_at = new Date().toISOString();
+    renderApplicantInbox();
+    showToast('已标记：档案信息不用改');
+  } catch (e) { showToast('标记失败：' + esc(e.message || e), 'error'); }
 }
 function closeApplicantInbox() { document.getElementById('applyInboxModal').classList.remove('show'); }
 // Jump from an applicant card to the tied employee's档案 in 员工管理.
@@ -43882,6 +43947,12 @@ async function _applyConflictPicks() {
   }
   _pendingDupSave = null;
   closeMergeDup();
+  // 从收件箱「🧩 对比挑选」进来的: 这份申请标成已对比处理, 卡片不再提醒
+  if (P.inboxSubId) {
+    try { await api(`/admin/applicant-submissions/${P.inboxSubId}`, { method: 'PATCH', body: JSON.stringify({ dup_resolved: true }) }); } catch (_) {}
+    const s0 = (_inboxSubmissions || []).find(x => x.id === P.inboxSubId);
+    if (s0) s0.dup_resolved_at = new Date().toISOString();
+  }
   // 工人账户绑定（扫码入职转员工的场景）
   if (pendingWorker) {
     try {

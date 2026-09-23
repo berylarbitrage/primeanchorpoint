@@ -1099,6 +1099,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS applicant_submissions (
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_apl_partner ON applicant_submissions(partner_id, created_at)`); } catch(e) {}
 // Address fields (added later — migrate existing DBs).
 try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN address1 TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN dup_resolved_at TEXT DEFAULT ''`); } catch(e) {}  // 电话相同的重复申请: 后台对比挑选过的时间 (收件箱不再提醒)
 try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN address2 TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN city TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN state TEXT DEFAULT ''`); } catch(e) {}
@@ -16706,6 +16707,12 @@ app.patch('/api/admin/applicant-submissions/:id', requireAdmin, blockManager, (r
       }   // 审计只记末四位, 明文不落日志
     }
 
+    // 电话相同的重复申请「已对比处理」标记 (收件箱 🧩 对比挑选后写入; 传 false 清除)
+    if (b.dup_resolved !== undefined) {
+      const v = b.dup_resolved ? new Date().toISOString().slice(0, 19).replace('T', ' ') : '';
+      sets.push('dup_resolved_at=?'); vals.push(v);
+      changes.dup_resolved_at = { label: '重复申请已对比处理', from: sub.dup_resolved_at || '', to: v };
+    }
     if (sets.length) db.prepare(`UPDATE applicant_submissions SET ${sets.join(', ')} WHERE id=?`).run(...vals, sub.id);
     if (Object.keys(changes).length) {
       const ctx = { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers };
@@ -16717,7 +16724,7 @@ app.patch('/api/admin/applicant-submissions/:id', requireAdmin, blockManager, (r
 
     // ── 关联员工档案 ──
     const anyField = Object.keys(APPLICANT_EDITABLE).some(k => b[k] !== undefined)
-      || b.ssn !== undefined || b.address_verified !== undefined;
+      || b.ssn !== undefined || b.address_verified !== undefined || b.dup_resolved !== undefined;
     if (b.employee_id !== undefined) {
       const empId = b.employee_id ? parseInt(b.employee_id) : null;
       db.prepare('UPDATE applicant_submissions SET employee_id=? WHERE id=?').run(empId, sub.id);
@@ -20770,18 +20777,33 @@ function _forceStripContact(field, label, value, keepId, newOwnerLabel) {
   }
 }
 
+// 查重: 电话按后 10 位比 (「+1」「(312) 960-…」写法不同也算同一个号), 邮箱不分大小写,
+// 主号和备用联系方式 (extra_phones / extra_emails) 都查。
+// 规则: 一个电话一个档案 — 电话相同 = 同一人, 必须拦下对比处理;
+// 只是邮箱相同、电话不同 = 按独立档案处理, 提醒一次, 确认 (allow_email_dup) 后照常保存。
+function _findDupContact(field, value, excludeId) {
+  const v = String(value || '').trim();
+  if (!v) return null;
+  const parseArr = x => { try { const a = JSON.parse(x || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
+  const n10 = x => String(x || '').replace(/\D/g, '').slice(-10);
+  const key = field === 'phone' ? n10(v) : v.toLowerCase();
+  if (field === 'phone' && key.length < 7) return null;
+  const same = x => field === 'phone' ? n10(x) === key : String(x || '').trim().toLowerCase() === key;
+  const hit = db.prepare('SELECT id,first_name,middle_name,last_name,employee_id,phone,email,extra_phones,extra_emails FROM employees').all()
+    .find(e => String(e.id) !== String(excludeId || '') && (field === 'phone'
+      ? (same(e.phone) || parseArr(e.extra_phones).some(same))
+      : (same(e.email) || parseArr(e.extra_emails).some(same))));
+  return hit ? { id: hit.id, first_name: hit.first_name, middle_name: hit.middle_name, last_name: hit.last_name, employee_id: hit.employee_id } : null;
+}
+
 app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
   if (!d.first_name || !d.last_name) return res.status(400).json({ error: '请填写姓名' });
   if (!d.force) {
-    if (d.phone && d.phone.trim()) {
-      const dup = db.prepare('SELECT id,first_name,middle_name,last_name,employee_id FROM employees WHERE phone=?').get(d.phone.trim());
-      if (dup) return res.json({ duplicate: true, field: 'phone', existing: dup });
-    }
-    if (d.email && d.email.trim()) {
-      const dup = db.prepare('SELECT id,first_name,middle_name,last_name,employee_id FROM employees WHERE email=?').get(d.email.trim());
-      if (dup) return res.json({ duplicate: true, field: 'email', existing: dup });
-    }
+    const dupP = _findDupContact('phone', d.phone, 0);
+    if (dupP) return res.json({ duplicate: true, field: 'phone', existing: dupP });
+    const dupE = d.allow_email_dup ? null : _findDupContact('email', d.email, 0);
+    if (dupE) return res.json({ duplicate: true, field: 'email', existing: dupE });
   }
   const empId = (d.employee_id || '').trim() || nextEmployeeId(d.state, d.hire_date);
   let ssn_encrypted = '', ssn_iv = '', ssn_last4 = '';
@@ -20864,14 +20886,10 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
   const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
   if (!emp) return res.status(404).json({ error: 'Not found' });
   if (!d.force) {
-    if (d.phone && d.phone.trim()) {
-      const dup = db.prepare('SELECT id,first_name,middle_name,last_name,employee_id FROM employees WHERE phone=? AND id!=?').get(d.phone.trim(), req.params.id);
-      if (dup) return res.json({ duplicate: true, field: 'phone', existing: dup });
-    }
-    if (d.email && d.email.trim()) {
-      const dup = db.prepare('SELECT id,first_name,middle_name,last_name,employee_id FROM employees WHERE email=? AND id!=?').get(d.email.trim(), req.params.id);
-      if (dup) return res.json({ duplicate: true, field: 'email', existing: dup });
-    }
+    const dupP = _findDupContact('phone', d.phone, req.params.id);
+    if (dupP) return res.json({ duplicate: true, field: 'phone', existing: dupP });
+    const dupE = d.allow_email_dup ? null : _findDupContact('email', d.email, req.params.id);
+    if (dupE) return res.json({ duplicate: true, field: 'email', existing: dupE });
   }
   // 转在职必须先过入职审核（有关联申请证件的才拦）: 每张证件裁剪保存过（=人工看过）、
   // 社安号和出生日期已填。标真/假只是备注, 不强制 —— 核对姓名由人工在同一步完成。
@@ -27172,12 +27190,13 @@ function _utcEntryDate(v) {
   return isNaN(d.getTime()) ? null : d;
 }
 
-// 同一人不再新建第二个员工号: 按申请的 电话/邮箱（含档案的备用联系方式）找已有档案。
+// 同一人不再新建第二个员工号: 按申请的「电话」（含档案的备用电话）找已有档案。
+// 一个电话一个档案 —— 只是邮箱相同、电话不同的按不同的人, 各建独立档案 (收件箱会提醒邮箱相同)。
 // 只匹配 在职/待入职 —— 离职/停职档案不自动关联（不借打卡复活）。在职的优先。
 function _matchEmployeeForSub(sub) {
   const p10 = String(sub.phone || '').replace(/\D/g, '').slice(-10);
-  const em = String(sub.email || '').trim().toLowerCase();
-  if (!p10 && !em) return null;
+  const em = '';   // 邮箱不再作为自动关联依据
+  if (!p10 || p10.length < 7) return null;
   const parseArr = v => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
   const n10 = v => String(v || '').replace(/\D/g, '').slice(-10);
   const cands = db.prepare(`SELECT * FROM employees WHERE status IN ('active','onboarding')`).all().filter(e =>
@@ -27201,34 +27220,10 @@ function _employeeFromApplicant(sub) {
   }
   const match = _matchEmployeeForSub(sub);
   if (match) {
+    // 电话相同 = 同一人: 只关联上 (打卡照常), 档案信息一律不自动改 —— 这份申请和档案有差异的
+    // (姓名/邮箱/地址…), 收件箱卡片上标「🧩 电话相同，对比挑选」, 由后台逐条挑选用哪边的。
     const stamp = new Date().toISOString().slice(0, 10);
-    const parseArr = v => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
-    const n10 = v => String(v || '').replace(/\D/g, '').slice(-10);
-    const sets = [], vals = [], noted = [];
-    const subPhone = String(sub.phone || '').trim(), subEmail = String(sub.email || '').trim();
-    if (subPhone) {
-      if (!String(match.phone || '').trim()) { sets.push('phone=?'); vals.push(subPhone); }
-      else if (n10(match.phone) !== n10(subPhone)) {
-        const eps = parseArr(match.extra_phones).map(x => String(x).trim()).filter(Boolean);
-        if (!eps.some(x => n10(x) === n10(subPhone))) { eps.push(subPhone); sets.push('extra_phones=?'); vals.push(JSON.stringify(eps)); noted.push(`新电话 ${subPhone} 已存为备用`); }
-      }
-    }
-    if (subEmail) {
-      if (!String(match.email || '').trim()) { sets.push('email=?'); vals.push(subEmail); }
-      else if (String(match.email).trim().toLowerCase() !== subEmail.toLowerCase()) {
-        // 邮箱只保留验证过的: 这份申请上 OTP 验证过才存为备用, 否则只记备注
-        if (!sub.email_verified) { noted.push(`新邮箱 ${subEmail} 未通过验证，仅记备注不存为备用`); }
-        else {
-          const ems = parseArr(match.extra_emails).map(x => String(x).trim()).filter(Boolean);
-          if (!ems.some(x => x.toLowerCase() === subEmail.toLowerCase())) { ems.push(subEmail); sets.push('extra_emails=?'); vals.push(JSON.stringify(ems)); noted.push(`新邮箱 ${subEmail} 已存为备用`); }
-        }
-      }
-    }
-    if (!String(match.address || '').trim() && String(sub.address1 || '').trim()) { sets.push('address=?'); vals.push(_joinAddrLines(sub.address1, sub.address2)); }
-    if (!String(match.city || '').trim() && String(sub.city || '').trim()) { sets.push('city=?'); vals.push(sub.city); }
-    if (!String(match.state || '').trim() && String(sub.state || '').trim()) { sets.push('state=?'); vals.push(sub.state); }
-    if (!String(match.zip || '').trim() && String(sub.zip || '').trim()) { sets.push('zip=?'); vals.push(sub.zip); }
-    if (!String(match.position || '').trim() && String(sub.position || '').trim()) { sets.push('position=?'); vals.push(sub.position); }
+    const sets = [], vals = [], noted = ['申请上的信息未自动写入，待后台在收件箱对比挑选'];
     const note = `📌 ${stamp} 工人打卡：入职申请 #${sub.id} 已关联到本档案（同一人不再新建员工号${noted.length ? '；' + noted.join('、') : ''}）`;
     sets.push(`notes=CASE WHEN COALESCE(notes,'')='' THEN ? ELSE notes || char(10) || ? END`); vals.push(note, note);
     db.prepare(`UPDATE employees SET ${sets.join(', ')} WHERE id=?`).run(...vals, match.id);
