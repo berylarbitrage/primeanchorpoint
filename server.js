@@ -35534,6 +35534,50 @@ app.get('/api/plaid/zelle-link-search', requireAdmin, requireRole('admin', 'cs',
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// 📇 Zelle 联系人簿: 不限时间范围, 全部收款人一张表——手机号(Zelle号)/关联档案/
+// 备注就地补齐。数据与 zelle-stats 同源(交易提取 + zelle_contacts), 存过档案但
+// 当前提取不到交易的联系人也列出来, 不丢。
+app.get('/api/plaid/zelle-directory', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT txn_id, date, name, merchant, amount FROM plaid_transactions
+      WHERE (name LIKE '%zelle%' OR merchant LIKE '%zelle%') ORDER BY date DESC`).all();
+    const contacts = {};
+    try { db.prepare('SELECT * FROM zelle_contacts').all().forEach(c => { contacts[c.name_key] = c; }); } catch (e) {}
+    const ovs = {};
+    try { db.prepare('SELECT * FROM zelle_txn_overrides').all().forEach(o => { ovs[o.txn_id] = o; }); } catch (e) {}
+    const people = new Map();
+    for (const r of rows) {
+      const z = _zelleParse(r.name || r.merchant);
+      if (!z) continue;
+      const ov = ovs[r.txn_id];
+      if (ov && ov.action === 'exclude') continue;
+      let nm = z.name;
+      if (ov && ov.action === 'rename' && ov.new_name) nm = ov.new_name;
+      const key = nm.toLowerCase();
+      let p = people.get(key);
+      if (!p) { p = { key, name: nm, out_total: 0, out_count: 0, in_count: 0, first_date: r.date || '', last_date: r.date || '' }; people.set(key, p); }
+      const amt = Number(r.amount) || 0;
+      if (amt >= 0) { p.out_total = Math.round((p.out_total + amt) * 100) / 100; p.out_count++; } else { p.in_count++; }
+      if (r.date && r.date < p.first_date) p.first_date = r.date;
+      if (r.date && r.date > p.last_date) p.last_date = r.date;
+    }
+    for (const [key, c] of Object.entries(contacts)) {
+      if (!people.has(key)) people.set(key, { key, name: c.display_name || key, out_total: 0, out_count: 0, in_count: 0, first_date: '', last_date: '' });
+    }
+    const out = [...people.values()].map(p => {
+      const c = contacts[p.key];
+      return { ...p,
+        zelle_handle: (c && c.zelle_handle) || '', note: (c && c.note) || '',
+        link_type: (c && c.link_type) || '', link_id: c ? c.link_id : null, link_label: (c && c.link_label) || '' };
+    }).sort((a, b) => (b.out_total - a.out_total) || a.name.localeCompare(b.name));
+    res.json({ people: out, totals: {
+      people: out.length,
+      with_handle: out.filter(p => p.zelle_handle).length,
+      linked: out.filter(p => p.link_type).length,
+    } });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── 银行直连交易标注：复用银行账单 PDF 的 box 标注体系 ──
 // 每个 Plaid 账户对应一条虚拟账单 (source='plaid:<account_id>'), 该账户交易的标注
 // 挂在它下面; 建好后前端直接用 /api/admin/bank-statements/:id/boxes/* 编辑/传照片/删除,
