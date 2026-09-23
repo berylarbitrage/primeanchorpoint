@@ -896,7 +896,7 @@ function finishLogin(r) {
   }
   TOKEN = r.token;
   localStorage.setItem('acct_token', TOKEN);
-  USER = { username: r.username || '', role: r.role, display_name: r.display_name || '' };
+  USER = { username: r.username || '', role: r.role, display_name: r.display_name || '', bank_ann_reviewer: !!r.bank_ann_reviewer };
   ROLE = r.role;
   enterMain();
 }
@@ -3726,7 +3726,7 @@ function _zAnnSt(t) {
 function _zAnnBadge(t) {
   const st = _zAnnSt(t);
   if (st === 'blank') return '';
-  const canRev = t.ann_id && typeof annCanReview === 'function' && annCanReview();
+  const canRev = t.ann_id && _zCanReview();
   const chip = (txt, bg, bd, fg) => ` <span style="font-size:.68rem;background:${bg};border:1px solid ${bd};color:${fg};border-radius:4px;padding:0 4px;white-space:nowrap">${txt}</span>`;
   const link = (txt, fn, color) => ` <a onclick="${fn}(${Number(t.ann_id)},event)" style="cursor:pointer;color:${color};font-size:.7rem;font-weight:700;text-decoration:underline;white-space:nowrap">${txt}</a>`;
   if (st === 'approved') return chip('✓ 已审核通过', '#f0fdf4', '#86efac', '#15803d') + (canRev ? link('↩ 撤回审核', 'zAnnUnapprove', '#b45309') : '');
@@ -3774,9 +3774,29 @@ function _zTxnRow(t, mode) {
 }
 // 📝 单笔标注 = 银行直连的「交易标注」同一条数据: 直接打开共用的标注抽屉
 // (付给谁/原因备注/照片都在里面), 关掉抽屉后 Zelle 列表自动刷新显示最新内容
-function zAnnOpen(txnId, ev) {
+// 共用标注面板脚本没加载成功时 (发版中途打开页面/网络抖动), 现场补加载一次再打开
+function _zEnsureBankAnn() {
+  if (typeof annOpen === 'function') return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const sc = document.createElement('script');
+    sc.src = 'bank-ann.js?v=19&r=' + Date.now();
+    sc.onload = () => { try { showConfirm = pageConfirm; } catch (e) {} resolve(); };
+    sc.onerror = () => reject(new Error('标注面板脚本加载失败，请刷新页面 (Ctrl+Shift+R)'));
+    document.head.appendChild(sc);
+  });
+}
+async function zAnnOpen(txnId, ev) {
   if (ev) ev.stopPropagation();
-  try { annOpen(txnId); } catch (e) { toast('打开标注失败', true); }
+  try {
+    await _zEnsureBankAnn();
+    await annOpen(txnId);
+  } catch (e) { toast('打开标注失败：' + (e && e.message ? e.message : e), true); }
+}
+// 审核权: admin, 或账号勾了「可审核银行交易标注」— 不依赖标注面板脚本也能判断
+function _zCanReview() {
+  if (USER && USER.role === 'admin') return true;
+  if (USER && USER.bank_ann_reviewer) return true;
+  return typeof annCanReview === 'function' && annCanReview();
 }
 if (typeof annClose === 'function') {
   const _annCloseOrig = annClose;
@@ -4561,7 +4581,7 @@ async function bankReviewNote(id, note) {
   if (TOKEN) {
     const me = await fetch('/api/admin/me', { headers: { 'Authorization': 'Bearer ' + TOKEN } }).then(x => x.ok ? x.json() : null).catch(() => null);
     if (me && ['accounting', 'cs', 'admin', 'staff'].includes(me.role)) {
-      USER = { username: me.username || '', role: me.role, display_name: me.display_name || '' };
+      USER = { username: me.username || '', role: me.role, display_name: me.display_name || '', bank_ann_reviewer: !!me.bank_ann_reviewer };
       ROLE = me.role;
       enterMain();
       return;
