@@ -141,6 +141,14 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <option value="out">只看转出（付出去的）</option>
         <option value="in">只看转入（收进来的）</option>
       </select>
+      <select id="zAnn" onchange="zRender()" title="按单笔标注的审核状态筛选">
+        <option value="">标注：全部</option>
+        <option value="blank">未标注</option>
+        <option value="todo">已标注 · 还没审核（全部）</option>
+        <option value="pending">⏳ 待审核（客服/会计提交）</option>
+        <option value="unreviewed">○ 未审核（管理员自己标的）</option>
+        <option value="approved">✓ 已审核通过</option>
+      </select>
       <select id="zGrp" onchange="zRender()" title="展开的明细按什么分组小计">
         <option value="week">明细按自然周（周一~周日)</option>
         <option value="bank">明细按银行账户</option>
@@ -784,7 +792,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
   </div>
 </div>
 
-<script src="bank-ann.js?v=17"></script>
+<script src="bank-ann.js?v=18"></script>
 <script>
 let TOKEN = localStorage.getItem('acct_token') || '';
 let USER = { username: '', role: '', display_name: '' };
@@ -3586,7 +3594,9 @@ function _zFiltered() {
   for (const p of (_zData && _zData.people) || []) {
     const c = p.contact || {};
     if (q && ![p.name, c.zelle_handle, c.link_label, c.note, ...p.txns.map(t => (t.ann_note || '') + ' ' + (t.ann_payee || '') + ' ' + (t.desc || ''))].join(' ').toLowerCase().includes(q)) continue;
-    const txns = p.txns.filter(t => !dir || (dir === 'out' ? t.amount >= 0 : t.amount < 0));
+    const annF = document.getElementById('zAnn').value;
+    const txns = p.txns.filter(t => (!dir || (dir === 'out' ? t.amount >= 0 : t.amount < 0))
+      && (!annF || (annF === 'todo' ? ['pending', 'unreviewed'].includes(_zAnnSt(t)) : _zAnnSt(t) === annF)));
     if (!txns.length) continue;
     const r = { name: p.name, key: p.key || p.name.toLowerCase(), contact: p.contact || null, txns, out_total: 0, out_count: 0, in_total: 0, in_count: 0, first_date: '', last_date: '' };
     for (const t of txns) {
@@ -3698,12 +3708,31 @@ function _zDir(t) {
   const from = out ? us : who, to = out ? who : us;
   return `<div style="white-space:nowrap;font-size:.78rem">${tag}${lab('付款方')}${from}${arrow}${lab('收款方')}${to}</div>`;
 }
-// 标注审核状态徽章 (同银行直连页: pending=客服提交待审核, approved=管理员已审核通过)
+// 单笔标注状态: blank=没标注 | pending=客服/会计提交待审核 | unreviewed=管理员自己标的、还没审核 | approved=已审核通过
+function _zAnnSt(t) {
+  if (!(t.ann_note || t.ann_payee)) return 'blank';
+  return t.ann_status === 'pending' || t.ann_status === 'approved' ? t.ann_status : 'unreviewed';
+}
+// 标注审核状态徽章 + 有审核权的人可直接「审核通过 / 撤回审核」
 function _zAnnBadge(t) {
-  if (t.ann_status === 'approved') return ' <span style="font-size:.68rem;background:#f0fdf4;border:1px solid #86efac;color:#15803d;border-radius:4px;padding:0 4px;white-space:nowrap">✓ 已审核通过</span>'
-    + (t.ann_id && typeof annCanReview === 'function' && annCanReview() ? ` <a onclick="zAnnUnapprove(${Number(t.ann_id)},event)" title="退回待审核" style="cursor:pointer;color:#b45309;font-size:.7rem;text-decoration:underline;white-space:nowrap">↩ 撤回审核</a>` : '');
-  if (t.ann_status === 'pending') return ' <span style="font-size:.68rem;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;border-radius:4px;padding:0 4px;white-space:nowrap">⏳ 待审核</span>';
-  return '';
+  const st = _zAnnSt(t);
+  if (st === 'blank') return '';
+  const canRev = t.ann_id && typeof annCanReview === 'function' && annCanReview();
+  const chip = (txt, bg, bd, fg) => ` <span style="font-size:.68rem;background:${bg};border:1px solid ${bd};color:${fg};border-radius:4px;padding:0 4px;white-space:nowrap">${txt}</span>`;
+  const link = (txt, fn, color) => ` <a onclick="${fn}(${Number(t.ann_id)},event)" style="cursor:pointer;color:${color};font-size:.7rem;font-weight:700;text-decoration:underline;white-space:nowrap">${txt}</a>`;
+  if (st === 'approved') return chip('✓ 已审核通过', '#f0fdf4', '#86efac', '#15803d') + (canRev ? link('↩ 撤回审核', 'zAnnUnapprove', '#b45309') : '');
+  const approve = canRev ? link('✓ 审核通过', 'zAnnApprove', '#15803d') : '';
+  if (st === 'pending') return chip('⏳ 待审核', '#fffbeb', '#fcd34d', '#b45309') + approve;
+  return chip('○ 未审核', '#f8fafc', '#cbd5e1', '#64748b') + approve;
+}
+async function zAnnApprove(id, ev) {
+  if (ev) ev.stopPropagation();
+  try {
+    const r = await api(`/api/plaid/annotations/${id}/approve`, { method: 'POST', body: '{}' });
+    if (r && r.error) throw new Error(r.error);
+    toast('✅ 已审核通过');
+    zLoad();
+  } catch (e) { toast(e.message || '审核失败', true); }
 }
 async function zAnnUnapprove(id, ev) {
   if (ev) ev.stopPropagation();
