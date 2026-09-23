@@ -35397,7 +35397,7 @@ app.get('/api/plaid/zelle-stats', requireAdmin, requireRole('admin', 'cs', 'acco
     try { db.prepare('SELECT * FROM zelle_txn_overrides').all().forEach(o => { ovs[o.txn_id] = o; }); } catch (e) {}
     // 单笔的「付给谁/备注」直接取银行交易标注 (bank_statement_txns box) — 和银行直连页同一条数据
     const anns = {};
-    try { db.prepare(`SELECT plaid_txn_id, note, payee, ann_status FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id<>''`).all().forEach(a => { anns[a.plaid_txn_id] = a; }); } catch (e) {}
+    try { db.prepare(`SELECT id, plaid_txn_id, note, payee, ann_status FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id<>''`).all().forEach(a => { anns[a.plaid_txn_id] = a; }); } catch (e) {}
     const people = new Map(), removed = [];
     for (const r of rows) {
       const z = _zelleParse(r.name || r.merchant);
@@ -35409,12 +35409,14 @@ app.get('/api/plaid/zelle-stats', requireAdmin, requireRole('admin', 'cs', 'acco
         if (an.note) txn.ann_note = an.note;
         if (an.payee) txn.ann_payee = an.payee;
         if ((an.note || an.payee) && an.ann_status) txn.ann_status = an.ann_status;
+        txn.ann_id = an.id;
       }
       const ov = ovs[r.txn_id];
       // 手工改判: 移除的不进统计 (单独一栏可恢复); 改标注的按新名字归组
       if (ov && ov.action === 'exclude') { removed.push({ ...txn, name: z.name }); continue; }
       let nm = z.name;
       if (ov && ov.action === 'rename' && ov.new_name) { txn.ov = 'rename'; txn.ov_orig = z.name; nm = ov.new_name; }
+      txn.cp = nm;  // 对方名字 (前端画「谁 → 谁」)
       const key = nm.toLowerCase();
       let p = people.get(key);
       if (!p) {
@@ -35751,6 +35753,18 @@ app.post('/api/plaid/annotations/:id/approve', requireAdmin, requireRole('admin'
     if (!r.changes) return res.status(404).json({ error: 'not found' });
     auditLog('bank_ann_approve', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers }, { targetType: 'bank_statement_txn', targetId: id });
     res.json({ success: true, ann_status: 'approved' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// ↩ 撤回审核: 已审核通过的标注退回「待审核」(审核人点错了/要重新核对); 同审核权限
+app.post('/api/plaid/annotations/:id/unapprove', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
+  try {
+    if (!annCanReview(req)) return res.status(403).json({ error: '此账号没有标注审核权限' });
+    const id = parseInt(req.params.id);
+    const r = db.prepare(`UPDATE bank_statement_txns SET ann_status='pending', updated_at=CURRENT_TIMESTAMP
+      WHERE id=? AND kind='box' AND plaid_txn_id<>'' AND ann_status='approved'`).run(id);
+    if (!r.changes) return res.status(404).json({ error: '这条标注不是已审核状态' });
+    auditLog('bank_ann_unapprove', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers }, { targetType: 'bank_statement_txn', targetId: id });
+    res.json({ success: true, ann_status: 'pending' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // 🤖 标注发票自动核对: 按发票号批量取系统里发票的关键信息 (存在/公司/账期/金额/收款状态),
