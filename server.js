@@ -35484,6 +35484,14 @@ app.post('/api/plaid/zelle-overrides', requireAdmin, requireRole('admin', 'cs', 
     res.json({ ok: 1 });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+// 一次性: 「移除」改成仅管理员 + 反复确认之前误点移除的, 全部恢复 (删掉 exclude 改判)
+try {
+  if (!db.prepare("SELECT value FROM app_settings WHERE key='zelle_exclude_restore_v1'").get()) {
+    const n = db.prepare("DELETE FROM zelle_txn_overrides WHERE action='exclude'").run().changes;
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('zelle_exclude_restore_v1','1')").run();
+    if (n) console.log('[migration] Zelle 已移除的转账全部恢复:', n, '笔');
+  }
+} catch (e) { console.log('[migration] zelle exclude restore error:', e.message); }
 // 关联对象搜索: 员工(姓名/电话) + 劳务公司(名称/收款人/Zelle号/电话) + 客户公司(名称),
 // 备注弹窗里选一个挂上; 只回 姓名/电话/Zelle号 这些页面本来要显示的字段
 app.get('/api/plaid/zelle-link-search', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {

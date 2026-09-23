@@ -3727,6 +3727,17 @@ function _zRemovedSection(cols) {
 // 单笔改判: 移除 / 恢复 (清掉改判记录即回到自动归属)
 async function zOverride(txnId, action, ev) {
   if (ev) ev.stopPropagation();
+  // 移除会让这笔从所有统计里消失, 要反复确认: 两次确认 + 手输「移除」
+  if (action === 'exclude') {
+    let t = null;
+    for (const p of (_zData && _zData.people) || []) { t = (p.txns || []).find(x => x.txn_id === txnId); if (t) break; }
+    const info = t ? `${t.date} · ${t.amount >= 0 ? '−' : '+'}${money(Math.abs(t.amount))}\n${t.desc}` : txnId;
+    if (!confirm(`⚠️ 确定要移除这一笔吗？\n\n${info}\n\n移除后它不再计入任何人的转账统计。`)) return;
+    if (!confirm('再次确认：真的要移除吗？\n一般认错人应该用「改归属」，不是移除。')) return;
+    const typed = prompt('最后一步：请输入「移除」两个字确认');
+    if (typed === null) return;
+    if (typed.trim() !== '移除') { toast('输入不对，已取消移除', true); return; }
+  }
   try {
     const r = await api('/api/plaid/zelle-overrides', { method: 'POST', body: JSON.stringify({ txn_id: txnId, action }) });
     if (r && r.error) throw new Error(r.error);
