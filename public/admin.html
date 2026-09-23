@@ -2456,7 +2456,8 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   </div>
   <div style="display:flex;gap:.4rem;border-bottom:1px solid var(--gray-200);margin-bottom:.5rem">
     <button id="applyInboxTabNew" class="btn btn-sm" style="background:#eff6ff;color:#1A3F7A;border:1px solid #bfdbfe;border-bottom:none;border-radius:8px 8px 0 0;font-weight:700" onclick="switchApplicantInboxTab('new')" title="还没有员工档案的申请 — 需要点「创建员工」处理">🆕 未建档 <span id="applyInboxCountNew" style="font-weight:600;color:var(--gray-500)"></span></button>
-    <button id="applyInboxTabActive" class="btn btn-sm" style="background:#fff;color:var(--gray-500);border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;font-weight:600" onclick="switchApplicantInboxTab('active')" title="已有员工档案、入职流程还没走完的申请">⏳ 已建档 · 待入职 <span id="applyInboxCountActive" style="font-weight:600;color:var(--gray-500)"></span></button>
+    <button id="applyInboxTabActive" class="btn btn-sm" style="background:#fff;color:var(--gray-500);border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;font-weight:600" onclick="switchApplicantInboxTab('active')" title="已有员工档案、入职流程还没走完的申请（审核清单已完成的）">⏳ 已建档 · 待入职 <span id="applyInboxCountActive" style="font-weight:600;color:var(--gray-500)"></span></button>
+    <button id="applyInboxTabReview" class="btn btn-sm" style="background:#fff;color:var(--gray-500);border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;font-weight:600" onclick="switchApplicantInboxTab('review')" title="已建档但入职审核没完成（证件没裁剪 / 生日、社安号没填）— 集中在这里处理">📋 待审核 <span id="applyInboxCountReview" style="font-weight:700;color:#b91c1c"></span></button>
     <button id="applyInboxTabHistory" class="btn btn-sm" style="background:#fff;color:var(--gray-500);border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;font-weight:600" onclick="switchApplicantInboxTab('history')">🗂️ 历史 <span id="applyInboxCountHistory" style="font-weight:600;color:var(--gray-400)"></span></button>
   </div>
   <div id="applyInboxCount" style="font-size:.8rem;color:var(--gray-400);margin-bottom:.7rem"></div>
@@ -42953,6 +42954,8 @@ let _inboxNameEditId = null;   // submission id whose name is being edited inlin
 async function openApplicantInbox(partnerId, partnerName) {
   _inboxPartnerId = partnerId;
   _inboxPartnerName = partnerName || '';
+  // 从「待审核」页签去档案填完回来, 还落在待审核继续处理
+  const _backToReview = _inboxTab === 'review';
   _inboxTab = 'active';
   _inboxNameEditId = null;
   document.getElementById('applyInboxPartner').textContent = partnerName ? '· ' + partnerName : '';
@@ -42960,6 +42963,7 @@ async function openApplicantInbox(partnerId, partnerName) {
   { const cn = document.getElementById('applyInboxCountNew'); if (cn) cn.textContent = ''; }
   document.getElementById('applyInboxCountActive').textContent = '';
   document.getElementById('applyInboxCountHistory').textContent = '';
+  { const cr = document.getElementById('applyInboxCountReview'); if (cr) cr.textContent = ''; }
   document.getElementById('applyInboxBody').innerHTML = '<div style="padding:1.2rem;color:var(--gray-400);text-align:center">加载中…</div>';
   document.getElementById('applyInboxModal').classList.add('show');
   _applyInboxTabStyles();
@@ -42977,7 +42981,7 @@ async function openApplicantInbox(partnerId, partnerName) {
     }));
     _inboxSubmissions = list;
     // 打开时默认落在「未建档」页签（有待建档的申请时）—— 真正需要动手的排最前
-    _inboxTab = list.some(s => applicantStage(s) === 'new') ? 'new' : 'active';
+    _inboxTab = _backToReview ? 'review' : list.some(s => applicantStage(s) === 'new') ? 'new' : 'active';
     _applyInboxTabStyles();
     renderApplicantInbox();
   } catch (e) {
@@ -42992,11 +42996,13 @@ function _applyInboxTabStyles() {
   const on = 'background:#eff6ff;color:#1A3F7A;border:1px solid #bfdbfe;border-bottom:none;border-radius:8px 8px 0 0;font-weight:700';
   const off = 'background:#fff;color:var(--gray-500);border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;font-weight:600';
   if (n) n.style.cssText = _inboxTab === 'new' ? on : off;
+  const rv = document.getElementById('applyInboxTabReview');
+  if (rv) rv.style.cssText = _inboxTab === 'review' ? on.replace('#eff6ff', '#fef2f2').replace('#1A3F7A', '#b91c1c').replace('#bfdbfe', '#fecaca') : off;
   a.style.cssText = _inboxTab === 'active' ? on : off;
   h.style.cssText = _inboxTab === 'history' ? on : off;
 }
 function switchApplicantInboxTab(tab) {
-  if (tab !== 'new' && tab !== 'active' && tab !== 'history') return;
+  if (!['new', 'active', 'review', 'history'].includes(tab)) return;
   _inboxTab = tab;
   _inboxNameEditId = null;
   _applyInboxTabStyles();
@@ -43087,18 +43093,31 @@ function renderApplicantInbox() {
   const stageOf = {};
   all.forEach(s => { stageOf[s.id] = applicantStage(s); });
   const fresh = all.filter(s => stageOf[s.id] === 'new');
-  const created = all.filter(s => stageOf[s.id] === 'created');
+  // 已建档里入职审核清单没完成的单独放「📋 待审核」页签集中处理, 其余留在待入职
+  const _revMissOf = s => {
+    const lk = linkedEmployeeForApplicant(s), mt = lk || matchEmployeeForApplicant(s);
+    const others = _inboxOtherMatches(s, mt ? mt.id : 0);
+    const re = (lk && lk.status === 'active') ? lk : (others.find(e => e.status === 'active') || lk || mt);
+    return _inboxReviewMissing(s, re).length > 0;
+  };
+  const createdAll = all.filter(s => stageOf[s.id] === 'created');
+  const review = createdAll.filter(_revMissOf);
+  const created = createdAll.filter(s => !review.includes(s));
   const history = all.filter(s => stageOf[s.id] === 'history');
+  const crv = document.getElementById('applyInboxCountReview');
+  if (crv) crv.textContent = review.length ? `(${review.length})` : '';
+  // 待审核页签里每张卡片的审核清单默认展开
+  if (_inboxTab === 'review') review.forEach(s => { if (!_inboxRevClosed.has(s.id)) _inboxRevOpen.add(s.id); });
   const cn = document.getElementById('applyInboxCountNew');
   if (cn) cn.textContent = fresh.length ? `(${fresh.length})` : '';
   document.getElementById('applyInboxCountActive').textContent = created.length ? `(${created.length})` : '';
   document.getElementById('applyInboxCountHistory').textContent = history.length ? `(${history.length})` : '';
-  const shown = _inboxTab === 'history' ? history : _inboxTab === 'new' ? fresh : created;
+  const shown = _inboxTab === 'history' ? history : _inboxTab === 'new' ? fresh : _inboxTab === 'review' ? review : created;
   document.getElementById('applyInboxCount').textContent = shown.length
-    ? `共 ${shown.length} 份${_inboxTab === 'history' ? '（已入职 / 已处理）' : _inboxTab === 'new' ? '（还没有员工档案，点「创建员工」处理）' : '（已建档，入职完成后自动归历史）'}`
+    ? `共 ${shown.length} 份${_inboxTab === 'history' ? '（已入职 / 已处理）' : _inboxTab === 'new' ? '（还没有员工档案，点「创建员工」处理）' : _inboxTab === 'review' ? '（入职审核没完成：逐张裁剪证件、填生日和社安号，完成后自动移出）' : '（已建档，入职完成后自动归历史）'}`
     : '';
   if (!shown.length) {
-    body.innerHTML = `<div style="padding:2.5rem 1rem;color:var(--gray-400);text-align:center">${_inboxTab === 'history' ? '🗂️ 暂无历史' : _inboxTab === 'new' ? '✅ 没有未建档的申请' : '📭 暂无已建档待入职的申请'}</div>`;
+    body.innerHTML = `<div style="padding:2.5rem 1rem;color:var(--gray-400);text-align:center">${_inboxTab === 'history' ? '🗂️ 暂无历史' : _inboxTab === 'new' ? '✅ 没有未建档的申请' : _inboxTab === 'review' ? '✅ 没有待审核的申请，全部处理完了' : '📭 暂无已建档待入职的申请'}</div>`;
     return;
   }
   const dl = (sid, did) => `/api/admin/applicant-submissions/${sid}/docs/${did}/download`;
@@ -43249,9 +43268,9 @@ function renderApplicantInbox() {
   }).join('');
 }
 // ── 📋 入职审核清单 (卡片上点「审核未完成」展开): 逐项显示完成没有, 每项直接给处理入口 ──
-const _inboxRevOpen = new Set();
+const _inboxRevOpen = new Set(), _inboxRevClosed = new Set();
 function inboxToggleReview(subId) {
-  if (_inboxRevOpen.has(subId)) _inboxRevOpen.delete(subId); else _inboxRevOpen.add(subId);
+  if (_inboxRevOpen.has(subId)) { _inboxRevOpen.delete(subId); _inboxRevClosed.add(subId); } else { _inboxRevOpen.add(subId); _inboxRevClosed.delete(subId); }
   renderApplicantInbox();
 }
 function _inboxReviewPanel(s, emp, dl, docLabel) {
