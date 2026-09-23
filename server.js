@@ -35397,7 +35397,7 @@ app.get('/api/plaid/zelle-stats', requireAdmin, requireRole('admin', 'cs', 'acco
     try { db.prepare('SELECT * FROM zelle_txn_overrides').all().forEach(o => { ovs[o.txn_id] = o; }); } catch (e) {}
     // 单笔的「付给谁/备注」直接取银行交易标注 (bank_statement_txns box) — 和银行直连页同一条数据
     const anns = {};
-    try { db.prepare(`SELECT id, plaid_txn_id, note, payee, ann_status FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id<>''`).all().forEach(a => { anns[a.plaid_txn_id] = a; }); } catch (e) {}
+    try { db.prepare(`SELECT id, plaid_txn_id, note, payee, ann_status, purpose, category, invoice_number, photos, links, inv_items FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id<>''`).all().forEach(a => { anns[a.plaid_txn_id] = a; }); } catch (e) {}
     const people = new Map(), removed = [];
     for (const r of rows) {
       const z = _zelleParse(r.name || r.merchant);
@@ -35408,7 +35408,10 @@ app.get('/api/plaid/zelle-stats', requireAdmin, requireRole('admin', 'cs', 'acco
       if (an) {
         if (an.note) txn.ann_note = an.note;
         if (an.payee) txn.ann_payee = an.payee;
-        if ((an.note || an.payee) && an.ann_status) txn.ann_status = an.ann_status;
+        // 标注里填了任何东西 (付给/备注/用途/分类/发票号/照片/关联账单) 都算「已标注」, 才能审核
+        const _nonEmpty = v => { const x = String(v || '').trim(); return !!x && x !== '[]'; };
+        const has = [an.note, an.payee, an.purpose, an.category, an.invoice_number, an.photos, an.links, an.inv_items].some(_nonEmpty);
+        if (has) { txn.ann_has = 1; if (an.ann_status) txn.ann_status = an.ann_status; }
         txn.ann_id = an.id;
       }
       const ov = ovs[r.txn_id];
