@@ -187,6 +187,20 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     </div>
   </div>
   <datalist id="zNames"></datalist>
+  <!-- ✕ Zelle 单笔移除弹窗: 仅管理员; 必须手输「移除」按钮才可点 -->
+  <div id="zxModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:96;align-items:center;justify-content:center;padding:16px">
+    <div class="card" style="max-width:420px;width:100%;padding:1.1rem 1.2rem 1rem">
+      <div style="font-weight:800;margin-bottom:.2rem;color:#dc2626">✕ 移除这一笔</div>
+      <div id="zxDesc" style="font-size:.76rem;color:var(--g500);margin-bottom:.6rem;word-break:break-all"></div>
+      <div style="font-size:.76rem;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:.4rem .55rem;margin-bottom:.6rem">移除后这一笔不再计入任何人的转账统计。认错人请用「✎ 改归属」，不要移除。</div>
+      <label style="font-size:.76rem;color:var(--g500)">请输入 <b style="color:#dc2626">移除</b> 两个字确认</label>
+      <input id="zxInput" type="text" autocomplete="off" placeholder="移除" oninput="zxCheck()" style="width:100%;margin:.15rem 0 .6rem">
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="zxClose()">取消</button>
+        <button class="btn" id="zxBtn" disabled onclick="zxConfirm()" style="background:#dc2626;color:#fff;border-color:#dc2626;opacity:.4;cursor:not-allowed">确认移除</button>
+      </div>
+    </div>
+  </div>
 
   <!-- ✎ Zelle 收款人备注弹窗: Zelle号 + 关联系统里的员工/劳务公司/客户公司 + 备注 -->
   <div id="zcModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:96;align-items:center;justify-content:center;padding:16px">
@@ -3727,23 +3741,38 @@ function _zRemovedSection(cols) {
 // 单笔改判: 移除 / 恢复 (清掉改判记录即回到自动归属)
 async function zOverride(txnId, action, ev) {
   if (ev) ev.stopPropagation();
-  // 移除会让这笔从所有统计里消失, 要反复确认: 两次确认 + 手输「移除」
-  if (action === 'exclude') {
-    let t = null;
-    for (const p of (_zData && _zData.people) || []) { t = (p.txns || []).find(x => x.txn_id === txnId); if (t) break; }
-    const info = t ? `${t.date} · ${t.amount >= 0 ? '−' : '+'}${money(Math.abs(t.amount))}\n${t.desc}` : txnId;
-    if (!confirm(`⚠️ 确定要移除这一笔吗？\n\n${info}\n\n移除后它不再计入任何人的转账统计。`)) return;
-    if (!confirm('再次确认：真的要移除吗？\n一般认错人应该用「改归属」，不是移除。')) return;
-    const typed = prompt('最后一步：请输入「移除」两个字确认');
-    if (typed === null) return;
-    if (typed.trim() !== '移除') { toast('输入不对，已取消移除', true); return; }
-  }
+  // 移除: 先弹页内确认框, 手输「移除」后才真正执行 (zxConfirm → zOverride(..., 'exclude-ok'))
+  if (action === 'exclude') { zxOpen(txnId); return; }
+  if (action === 'exclude-ok') action = 'exclude';
   try {
     const r = await api('/api/plaid/zelle-overrides', { method: 'POST', body: JSON.stringify({ txn_id: txnId, action }) });
     if (r && r.error) throw new Error(r.error);
     toast(action === 'exclude' ? '已移除这一笔，可在底部「已移除的转账」里恢复' : '✅ 已恢复自动归属');
     zLoad();
   } catch (e) { toast(e.message || '操作失败', true); }
+}
+let _zxTxn = null;
+function zxOpen(txnId) {
+  _zxTxn = txnId;
+  let t = null;
+  for (const p of (_zData && _zData.people) || []) { t = (p.txns || []).find(x => x.txn_id === txnId); if (t) break; }
+  document.getElementById('zxDesc').textContent = t ? `${t.date} · ${t.amount >= 0 ? '−' : '+'}${money(Math.abs(t.amount))} · ${t.desc}` : '';
+  document.getElementById('zxInput').value = '';
+  zxCheck();
+  document.getElementById('zxModal').style.display = 'flex';
+  setTimeout(() => document.getElementById('zxInput').focus(), 30);
+}
+function zxClose() { document.getElementById('zxModal').style.display = 'none'; _zxTxn = null; }
+function zxCheck() {
+  const ok = document.getElementById('zxInput').value.trim() === '移除';
+  const b = document.getElementById('zxBtn');
+  b.disabled = !ok; b.style.opacity = ok ? '1' : '.4'; b.style.cursor = ok ? 'pointer' : 'not-allowed';
+}
+function zxConfirm() {
+  if (!_zxTxn || document.getElementById('zxInput').value.trim() !== '移除') return;
+  const id = _zxTxn;
+  zxClose();
+  zOverride(id, 'exclude-ok');
 }
 let _zrTxn = null;
 function zRenameOpen(txnId, ev) {
