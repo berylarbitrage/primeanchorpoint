@@ -287,18 +287,15 @@ function buildGustoCsv(templateCsv, employees, opts) {
     if (m) {
       const owed = r2(m.sources.reduce((s, x) => s + x.owed, 0));
       let hours = null, bonus = null, fixed = null, amount;
-      // 名册没填时薪、但并进来的各行都配了同一个发工资时薪 (opts.payRates) → 按这个时薪
-      // 填 hourly_rate + hours, 不再退成固定金额 (例: Rattia 班组名册没时薪, 发工资 $16)
-      let rate = entry.rate, rateFromOverride = false;
-      if (!rate) {
-        const rs = m.sources.map(x => x.payRate).filter(Boolean);
-        if (rs.length === m.sources.length && rs.every(x => Math.abs(x - rs[0]) <= 0.005)) { rate = rs[0]; rateFromOverride = true; }
-      }
+      // 名册没填时薪 = Gusto 里是固定金额付款的合同工: Gusto 不接受给他填 hours
+      // （"Hours cannot be set for contractors without hourly compensation"）, 只能填 flat_amount。
+      // 各行配了发工资时薪 (opts.payRates) 的, 应付已按那个时薪折算好, 照样填进 flat_amount。
+      const rate = entry.rate;
+      const overrideRates = !rate ? m.sources.map(x => x.payRate).filter(Boolean) : [];
       // 合并行「所有人的工时都进 hours」(opts.hoursMerge 里的收款人): 同一班组按同一时薪算,
       // hours = 全部人的实际工时合计, 只有加班溢价进 bonus
       const hoursMergeRow = (opts.hoursMerge || []).some(n => joined(nameTokens(n)) === joined(entry.tokens));
       if (rate) {
-        if (rateFromOverride && roster.cols.rate >= 0) cells[roster.cols.rate] = String(rate);
         // bonus 口径: hours = 实际工时, 差额（加班溢价 + 时薪差）放 bonus。
         // 合并行只按「本人」的实际工时填 hours（名册时薪相同优先, 其次匹配分高），
         // 其他人的钱全额进 bonus。用不了就退回 hours 口径: 缺实际工时、模板没有
@@ -348,7 +345,10 @@ function buildGustoCsv(templateCsv, employees, opts) {
         sources: m.sources,
         merged: m.sources.length > 1,
       });
-      if (rateFromOverride) warnings.push(`「${entry.label}」Gusto 名册里没有时薪，按设定的发工资时薪 $${rate} 填 hourly_rate 和工时${hoursMergeRow && m.sources.length > 1 ? '（' + m.sources.map(x => x.name).join('、') + ' 的工时合计）' : ''}。`);
+      if (!rate && overrideRates.length === m.sources.length && overrideRates.length) {
+        const hrs = r2(m.sources.reduce((t, x) => t + (x.actualHours || 0), 0));
+        warnings.push(`「${entry.label}」在 Gusto 是固定金额付款（名册没有时薪，不能填 hours），按发工资时薪 $${overrideRates[0]} × ${hrs.toFixed(2)}h${m.sources.length > 1 ? '（' + m.sources.map(x => x.name).join('、') + ' 合计）' : ''} = $${owed.toFixed(2)} 填 flat_amount。`);
+      }
       if (!rate && roster.cols.fixed < 0) {
         warnings.push(`「${entry.label}」名册里没有时薪，模板又没有 flat_amount/fixed_amount 列，$${owed.toFixed(2)} 没法填，请在 Gusto 手动支付。`);
       }
