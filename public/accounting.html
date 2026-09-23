@@ -3685,18 +3685,18 @@ function zViewPerson(key) {
   _zOpenKeys.add(key);
   zRender();
 }
-// 方向: 转出 = 我方账户 → 对方; 转入 = 对方 → 我方账户 (彩色标签 + 箭头, 一眼看清谁转给谁)
+// 方向: 转出 = 我方账户 → 对方; 转入 = 对方 → 我方账户
+// 两边都写明「付款方 / 收款方」, 我方账户带「我方」小标签, 一眼看清谁转给谁
 function _zDir(t) {
   const out = t.amount >= 0;
-  const who = esc(t.cp || t.person || t.name || '对方');
-  const acc = esc(t.account || '我方账户');
-  const tag = out
-    ? '<span style="display:inline-block;font-size:.7rem;font-weight:800;color:#fff;background:#dc2626;border-radius:4px;padding:1px 6px;margin-right:6px">转出 ↑</span>'
-    : '<span style="display:inline-block;font-size:.7rem;font-weight:800;color:#fff;background:#16a34a;border-radius:4px;padding:1px 6px;margin-right:6px">转入 ↓</span>';
-  const us = `<span style="color:var(--g500)">${acc}</span>`;
-  const them = `<b style="color:var(--g800,#1e293b)">${who}</b>`;
-  const arrow = `<span style="color:${out ? '#dc2626' : '#16a34a'};font-weight:800;margin:0 5px">→</span>`;
-  return `<div style="white-space:nowrap;font-size:.78rem">${tag}${out ? us + arrow + them : them + arrow + us}</div>`;
+  const color = out ? '#dc2626' : '#16a34a';
+  const who = `<b style="color:#0f172a">${esc(t.cp || t.person || t.name || '对方')}</b>`;
+  const us = `<b style="color:#0f172a">${esc(t.account || '我方账户')}</b> <span style="font-size:.64rem;font-weight:700;color:#0f4c6b;background:#e0f2fe;border:1px solid #bae6fd;border-radius:3px;padding:0 3px">我方</span>`;
+  const lab = txt => `<span style="font-size:.66rem;color:var(--g500);margin-right:3px">${txt}</span>`;
+  const tag = `<span style="display:inline-block;font-size:.7rem;font-weight:800;color:#fff;background:${color};border-radius:4px;padding:1px 6px;margin-right:8px">${out ? '转出 ↑' : '转入 ↓'}</span>`;
+  const arrow = `<span style="color:${color};font-weight:900;font-size:.95rem;margin:0 8px">➜</span>`;
+  const from = out ? us : who, to = out ? who : us;
+  return `<div style="white-space:nowrap;font-size:.78rem">${tag}${lab('付款方')}${from}${arrow}${lab('收款方')}${to}</div>`;
 }
 // 标注审核状态徽章 (同银行直连页: pending=客服提交待审核, approved=管理员已审核通过)
 function _zAnnBadge(t) {
