@@ -15031,7 +15031,7 @@ function _custImpGC() { const now = Date.now(); for (const [k, v] of _custImp) i
 
 // 「进入门户」额外可选的收码手机 (没有后台账号、但公司备案信任的人): '姓名:号码'
 // 逗号分隔, 可用 IMPERSONATE_EXTRA_PHONES 环境变量覆盖。与 owner 账号手机同列可选。
-const IMP_EXTRA_PHONES = String(process.env.IMPERSONATE_EXTRA_PHONES || 'Allen Zhang:8723811191')
+const IMP_EXTRA_PHONES = String(process.env.IMPERSONATE_EXTRA_PHONES || 'Allen Zhang:7372744674')
   .split(',').map(s => {
     const i = s.lastIndexOf(':');
     const digits = (i >= 0 ? s.slice(i + 1) : s).replace(/\D/g, '').slice(-10);
