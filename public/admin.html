@@ -17295,10 +17295,23 @@ async function _checkApplDocVerdicts() {
   });
   const missing = Object.keys(groups).filter(g => !groups[g]);
   if (!missing.length) return true;
-  return confirm('⚠️ 这些证件组还没有真伪结论: ' + missing.join('、')
-    + '\n\n点「取消」回去标注（点开证件图 → 顶部选 ✅真 / ❌假 / ❓待确定）\n点「确定」跳过标注直接保存');
+  // 用页内确认框 (浏览器原生 confirm 被「阻止此页面再弹对话框」后会直接当取消, 保存就像点不动)
+  return await showConfirm('⚠️ 这些证件组还没有真伪结论: ' + missing.join('、')
+    + '\n\n回去标注：点开证件图 → 顶部选 ✅真 / ❌假 / ❓待确定', { confirmLabel: '跳过标注，直接保存', cancelLabel: '回去标注' });
 }
+// 保存被拦下的原因: 页内提示 (不用浏览器 alert —— 被浏览器屏蔽对话框时会什么都不显示)
+function _empSaveErr(msg) { showToast('⚠️ ' + esc(msg), 'error', 7000); }
+// 保存按钮: 点了立刻显示「保存中…」, 出任何错都提示出来, 不会再「点不动」没反应
 async function saveEmployee() {
+  const btn = document.querySelector('#empModal button[onclick="saveEmployee()"]');
+  if (btn && btn.disabled) return;
+  const label = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
+  try { await _saveEmployeeInner(); }
+  catch (e) { console.error('[saveEmployee]', e); _empSaveErr('保存出错：' + (e && e.message ? e.message : e)); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = label || '保存员工'; } }
+}
+async function _saveEmployeeInner() {
   if (!(await _checkApplDocVerdicts())) return;
   const id = document.getElementById('empId').value;
   const extraPhones = _collectExtraContacts('extraPhonesContainer');
@@ -17334,16 +17347,16 @@ async function saveEmployee() {
       instagram: document.getElementById('eSocialInstagram').value.trim(),
     },
   };
-  if (!data.first_name || !data.last_name) return alert('请填写员工姓名');
-  if (!data.phone) return alert('请填写电话（必填）');
-  if (!data.address || !data.city || !data.state) return alert('请填写街道地址、城市和州（必填）');
-  if (!id && !data.dob) return alert('请填写出生日期（用于工时确认页身份验证）');
+  if (!data.first_name || !data.last_name) return _empSaveErr('请填写员工姓名');
+  if (!data.phone) return _empSaveErr('请填写电话（必填）');
+  if (!data.address || !data.city || !data.state) return _empSaveErr('请填写街道地址、城市和州（必填）');
+  if (!id && !data.dob) return _empSaveErr('请填写出生日期（用于工时确认页身份验证）');
   const zipErr = validateZip(data.zip);
-  if (zipErr) return alert(zipErr);
+  if (zipErr) return _empSaveErr(zipErr);
   const ssnField = document.getElementById('eSSN');
   if (ssnField.dataset.ssnMasked !== '1') {
     const ssn = ssnField.value.replace(/\D/g,'');
-    if (ssn && ssn.length !== 9 && ssn.length !== 0) return alert('SSN 须为9位数字');
+    if (ssn && ssn.length !== 9 && ssn.length !== 0) return _empSaveErr('SSN 须为9位数字');
   }
   if (data.address || data.city || data.zip) {
     const addrResult = await validateAddress({ street: data.address, street2: data.street2, city: data.city, state: data.state, zip: data.zip });
@@ -17411,7 +17424,7 @@ async function saveEmployee() {
           ? `✅ 员工「${[data.first_name, data.middle_name, data.last_name].filter(Boolean).join(' ')}」(${data.employee_id || id}) 信息已更新`
           : `✅ 员工「${[data.first_name, data.middle_name, data.last_name].filter(Boolean).join(' ')}」创建成功，员工号：${r2.employee_id}`);
       }
-    } else alert(r2.error || '保存失败');
+    } else _empSaveErr(r2.error || '保存失败');
   }
   const r = await doSave(data);
   if (r && r.duplicate) {
