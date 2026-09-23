@@ -43291,6 +43291,9 @@ function renderApplicantInbox() {
     // Name is editable in place in BOTH tabs — 已入职 only means the employee档案
     // is live, the application record itself can still be corrected (audited).
     const _canEditName = USER_ROLE === 'admin' || USER_ROLE === 'staff';
+    // 标题显示员工档案里更新后的姓名 (档案改过名就跟着变); 和申请上填的不一样时旁边小字注明
+    const _titleEmp = _linkedEmp || _matchedEmp;
+    const _titleName = _titleEmp ? titleCase([_titleEmp.first_name, _titleEmp.middle_name, _titleEmp.last_name].filter(Boolean).join(' ')) : '';
     const nameHtml = (_inboxNameEditId === s.id && _canEditName)
       ? `<span style="display:inline-flex;align-items:center;gap:.35rem;flex-wrap:wrap">
           <input id="inboxNameInput${s.id}" value="${esc(s.name || '').replace(/"/g, '&quot;')}" maxlength="120" placeholder="工人法定全名"
@@ -43299,7 +43302,8 @@ function renderApplicantInbox() {
           <button id="inboxNameSave${s.id}" class="btn btn-sm" style="padding:.22rem .7rem;font-size:.74rem;background:#1A3F7A;color:#fff;border:none" onclick="saveInboxApplicantName(${s.id})">保存</button>
           <button class="btn btn-sm" style="padding:.22rem .7rem;font-size:.74rem;background:#fff;color:var(--gray-500);border:1px solid var(--gray-300)" onclick="cancelInboxApplicantName()">取消</button>
         </span>`
-      : `<span style="font-weight:700;font-size:1rem;color:var(--ink,#0f172a)">${esc(s.name || '—')}</span>${_canEditName
+      : `<span style="font-weight:700;font-size:1rem;color:var(--ink,#0f172a)">${esc(_titleName || s.name || '—')}</span>${_titleName && _titleName.toLowerCase().replace(/\s+/g, ' ') !== String(s.name || '').trim().toLowerCase().replace(/\s+/g, ' ')
+          ? `<span title="工人在申请表上填的姓名；上面显示的是员工档案里更新后的姓名" style="font-size:.72rem;color:var(--gray-400);margin-left:.35rem">申请填的：${esc(s.name || '—')}</span>` : ''}${_canEditName
           ? `<button onclick="editInboxApplicantName(${s.id})" title="更正姓名（待处理 / 历史都可以改；改动会记入审计日志）" style="padding:1px 7px;font-size:.72rem;border:1px solid var(--gray-300);background:#fff;color:var(--gray-500);border-radius:6px;cursor:pointer;line-height:1.4">✎</button>`
           : ''}`;
     return `<div style="border:1px solid var(--gray-200);border-radius:12px;padding:.85rem 1rem;margin-bottom:.7rem;background:${stage === 'history' ? '#fafafa' : '#fff'};box-shadow:0 1px 2px rgba(15,23,42,.04)">
