@@ -1082,6 +1082,12 @@ function annStatusLineHtml(box) {
   if (box.ann_status === 'approved') return '<div class="ann-status approved" id="annStatusLine">✅ 已审核' + (box.ann_by ? '（' + esc(box.ann_by) + ' 标注）' : '')
     + (annCanReview() ? ' <button onclick="annUnapprove(' + box.id + ')" style="margin-left:6px;border:1px solid #fcd34d;background:#fffbeb;color:#b45309;border-radius:6px;padding:3px 12px;font-size:.74rem;cursor:pointer;font-weight:700">↩ 撤回审核</button>' : '')
     + '</div>';
+  // 管理员自己标的 (ann_status 空): 也可以审核通过, 标成已审核
+  if (annCanReview() && (String(box.note || '').trim() || String(box.payee || '').trim())) {
+    return '<div class="ann-status" id="annStatusLine" style="background:#f8fafc;border:1px solid #cbd5e1;color:#475569">○ 未审核' + (box.ann_by ? '（' + esc(box.ann_by) + ' 标注）' : '')
+      + ' <button onclick="annApprove(' + box.id + ')" style="margin-left:6px;border:none;background:#16a34a;color:#fff;border-radius:6px;padding:3px 12px;font-size:.74rem;cursor:pointer;font-weight:700">✅ 审核通过</button>'
+      + '</div>';
+  }
   return '<div id="annStatusLine" style="display:none"></div>';
 }
 function annStatusLineRefresh(box) {
