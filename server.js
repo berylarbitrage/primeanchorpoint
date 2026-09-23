@@ -20799,6 +20799,26 @@ function _findDupContact(field, value, excludeId) {
   return hit ? { id: hit.id, first_name: hit.first_name, middle_name: hit.middle_name, last_name: hit.last_name, employee_id: hit.employee_id } : null;
 }
 
+// 同一个人换了电话/邮箱时电话邮箱查不出来 → 再按「人」查: 名 + 姓相同 (去重音、不分大小写、
+// 忽略中间名: José Gabriel Rattia = Jose Rattia), 或 生日 + SSN 末四位都相同。
+// 只是提醒 —— 前端让后台选「对比处理」或「不是同一人，继续保存」(allow_name_dup)
+function _findDupPerson(d, excludeId, cur) {
+  const norm = v => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z\u4e00-\u9fff ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const lastTok = v => { const t = norm(v).split(' '); return t[t.length - 1] || ''; };
+  const firstTok = v => norm(v).split(' ')[0] || '';
+  const fn = firstTok(d.first_name), ln = lastTok(d.last_name);
+  const dob = String(d.dob || (cur && cur.dob) || '').trim();
+  let last4 = '';
+  const sd = String(d.ssn || '').replace(/\D/g, '');
+  if (sd.length === 9) last4 = sd.slice(-4); else if (cur && cur.ssn_last4) last4 = cur.ssn_last4;
+  const rows = db.prepare("SELECT id,first_name,middle_name,last_name,employee_id,phone,email,dob,ssn_last4,status FROM employees WHERE id!=?").all(parseInt(excludeId) || 0);
+  const hit = rows.find(e => (fn && ln && firstTok(e.first_name) === fn && lastTok(e.last_name) === ln)
+    || (dob && last4 && String(e.dob || '').trim() === dob && String(e.ssn_last4 || '') === last4));
+  if (!hit) return null;
+  const why = (dob && last4 && String(hit.dob || '').trim() === dob && String(hit.ssn_last4 || '') === last4) ? 'dob_ssn' : 'name';
+  return { why, existing: { id: hit.id, first_name: hit.first_name, middle_name: hit.middle_name, last_name: hit.last_name, employee_id: hit.employee_id, phone: hit.phone || '', status: hit.status || '' } };
+}
+
 app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
   if (!d.first_name || !d.last_name) return res.status(400).json({ error: '请填写姓名' });
@@ -20807,6 +20827,8 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
     if (dupP) return res.json({ duplicate: true, field: 'phone', existing: dupP });
     const dupE = d.allow_email_dup ? null : _findDupContact('email', d.email, 0);
     if (dupE) return res.json({ duplicate: true, field: 'email', existing: dupE });
+    const dupN = d.allow_name_dup ? null : _findDupPerson(d, 0, null);
+    if (dupN) return res.json({ duplicate: true, field: 'name', why: dupN.why, existing: dupN.existing });
   }
   const empId = (d.employee_id || '').trim() || nextEmployeeId(d.state, d.hire_date);
   let ssn_encrypted = '', ssn_iv = '', ssn_last4 = '';
@@ -20893,6 +20915,8 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
     if (dupP) return res.json({ duplicate: true, field: 'phone', existing: dupP });
     const dupE = d.allow_email_dup ? null : _findDupContact('email', d.email, req.params.id);
     if (dupE) return res.json({ duplicate: true, field: 'email', existing: dupE });
+    const dupN = d.allow_name_dup ? null : _findDupPerson(d, req.params.id, emp);
+    if (dupN) return res.json({ duplicate: true, field: 'name', why: dupN.why, existing: dupN.existing });
   }
   // 转在职必须先过入职审核（有关联申请证件的才拦）: 每张证件裁剪保存过（=人工看过）、
   // 社安号和出生日期已填。标真/假只是备注, 不强制 —— 核对姓名由人工在同一步完成。

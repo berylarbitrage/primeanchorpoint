@@ -17438,7 +17438,21 @@ async function _saveEmployeeInner() {
     const exName = `${[ex.first_name, ex.middle_name, ex.last_name].filter(Boolean).join(' ')}（员工号：${ex.employee_id || ''}）`;
     const indep = await showConfirm(`📧 这个邮箱已登记在「${esc(exName)}」名下，但电话不同。\n\n按「一个电话一个档案」，电话不同就是另一个人：可以单独建档（两份档案都用这个邮箱）。\n如果其实是同一个人，点「对比处理」。`,
       { confirmLabel: '电话不同，单独建档', cancelLabel: '对比处理' });
-    if (indep) r = await doSave({ ...data, allow_email_dup: true });
+    if (indep) { data.allow_email_dup = true; r = await doSave(data); }
+  }
+  // 系统里已有同名 (或 生日+SSN末四位相同) 的档案, 电话邮箱对不上 (可能换过号) → 先问是不是同一人
+  if (r && r.duplicate && r.field === 'name') {
+    const ex = r.existing || {};
+    const exName = `${[ex.first_name, ex.middle_name, ex.last_name].filter(Boolean).join(' ')}（员工号：${ex.employee_id || ''}${ex.phone ? '，电话 ' + ex.phone : ''}${ex.status === 'active' ? '，在职' : ''}）`;
+    const notSame = await showConfirm(`👤 系统里已有${r.why === 'dob_ssn' ? '生日和 SSN 末四位都相同' : '同名'}的员工「${esc(exName)}」，电话 / 邮箱和这次填的不一样。\n\n是同一个人（换过电话）就点「对比处理」，左右对照挑选保留哪些信息；\n不是同一个人就点「不是同一人，继续保存」。`,
+      { confirmLabel: '不是同一人，继续保存', cancelLabel: '对比处理' });
+    if (notSame) { data.allow_name_dup = true; r = await doSave(data); }
+    else {
+      const p = { data, empId: id || null, field: 'name', fieldLabel: r.why === 'dob_ssn' ? '生日和 SSN' : '姓名', existingEmpId: ex.id, existingEmpName: exName, convertFromWorkerId: _convertFromWorkerId || null, convertFromApplicantId: _convertFromApplicantId || null };
+      clearModalState('empModal'); closeEmpModal();
+      openDupConflictPicker(p);
+      return;
+    }
   }
   if (r && r.duplicate) {
     const fieldLabel = r.field === 'phone' ? '手机号' : '邮箱';
@@ -43572,7 +43586,7 @@ async function _dupPickSeparate() {
   const ok = await showConfirm(`分成两份独立档案？\n\n「${esc(nm(a))}」（${esc(a.phone)}）${pend.empId ? '按新信息保存到它自己的档案' : '单独建一份新档案'}；\n「${esc(nm(b))}」（${esc(b.phone || '')}）${b.employee_id ? '· ' + esc(b.employee_id) : ''} 原样不动。\n\n两份档案可以共用同一个邮箱。`,
     { confirmLabel: '分成两份档案', cancelLabel: '再看看' });
   if (!ok) return;
-  const data = { ...(pend.data || {}), allow_email_dup: true };
+  const data = { ...(pend.data || {}), allow_email_dup: true, allow_name_dup: true };   // 已确认是两个人
   if (!pend.empId && !data.status) data.status = 'onboarding';
   if (!pend.empId && !data.hire_date) data.hire_date = new Date().toISOString().slice(0, 10);
   let r;
