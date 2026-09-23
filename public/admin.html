@@ -43180,8 +43180,9 @@ function renderApplicantInbox() {
       : (_others.find(e => e.status === 'active') || _linkedEmp || _matchedEmp);
     const _revMiss = _inboxReviewMissing(s, _revEmp);
     const _docsWarn = _revMiss.length
-      ? `<span title="入职审核要求：每张证件点缩略图打开审阅器裁剪保存（同时核对姓名），并在员工档案里填好社安号和出生日期。完成前员工转不了在职，卡片也不会归入历史（标真/假只是备注，不强制）" style="padding:.2rem .55rem;font-size:.72rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:6px;font-weight:700;cursor:help;white-space:nowrap">📋 审核未完成：${_revMiss.join(' · ')}</span>`
+      ? `<button onclick="inboxToggleReview(${s.id})" title="点开看审核清单并处理：裁剪证件、填生日/社安号。完成前员工转不了在职，卡片也不会归入历史" style="padding:.2rem .55rem;font-size:.72rem;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:6px;font-weight:700;cursor:pointer;white-space:nowrap">📋 审核未完成：${_revMiss.join(' · ')} ${_inboxRevOpen.has(s.id) ? '▴' : '▾ 点开处理'}</button>`
       : '';
+    const _revPanel = (_revMiss.length && _inboxRevOpen.has(s.id)) ? _inboxReviewPanel(s, _revEmp, dl, docLabel) : '';
     // 后台处理决定（如「已舍弃这次登记, 保留原档案」）→ 显示在卡片上
     const _reviewNote = String(s.review_note || '').trim()
       ? `<div style="max-width:300px;font-size:.7rem;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:.25rem .5rem;text-align:right;word-break:break-word">${esc(s.review_note)}</div>`
@@ -43242,9 +43243,53 @@ function renderApplicantInbox() {
           ${del}
         </div>
       </div>
+      ${_revPanel}
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.7rem;padding-top:.7rem;border-top:1px dashed var(--gray-200)">${docThumbs}</div>
     </div>`;
   }).join('');
+}
+// ── 📋 入职审核清单 (卡片上点「审核未完成」展开): 逐项显示完成没有, 每项直接给处理入口 ──
+const _inboxRevOpen = new Set();
+function inboxToggleReview(subId) {
+  if (_inboxRevOpen.has(subId)) _inboxRevOpen.delete(subId); else _inboxRevOpen.add(subId);
+  renderApplicantInbox();
+}
+function _inboxReviewPanel(s, emp, dl, docLabel) {
+  const docs = (Array.isArray(s._docs) ? s._docs : []).filter(d => !/\.pdf$/i.test(d.file_name || ''));
+  const unc = docs.filter(d => !d.has_cropped);
+  const canEdit = (USER_ROLE === 'admin' || USER_ROLE === 'staff') && emp;
+  const ok = '<span style="color:#047857;font-weight:800">✅</span>', bad = '<span style="color:#dc2626;font-weight:800">❌</span>';
+  const row = (done, title, detail, action) => `<div style="display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;padding:.45rem .1rem;border-top:1px solid #fde2e2">
+      ${done ? ok : bad}<b style="font-size:.8rem;min-width:84px">${title}</b><span style="font-size:.76rem;color:var(--gray-500);flex:1;min-width:160px">${detail}</span>${action || ''}</div>`;
+  const btn = (txt, fn, primary) => `<button class="btn btn-sm" onclick="${fn}" style="padding:.25rem .7rem;font-size:.74rem;white-space:nowrap;${primary ? 'background:#1A3F7A;color:#fff;border:none' : 'background:#fff;color:#1A3F7A;border:1px solid #bfdbfe'}">${txt}</button>`;
+  const uncThumbs = unc.map(d => {
+    const url = dl(s.id, d.id) + (d._bust ? `?t=${d._bust}` : '');
+    const label = docLabel[d.doc_type] || d.doc_type;
+    return `<a href="javascript:void(0)" onclick="openApplicantDocViewer('${url}','${esc(String(label).replace(/'/g, "\\'"))}')" title="点开裁剪 ${esc(label)}" style="position:relative;display:inline-block;text-decoration:none">
+        <img src="${url}" loading="lazy" style="width:52px;height:52px;object-fit:cover;border-radius:6px;border:2px solid #fca5a5;background:#000;display:block">
+        <span style="position:absolute;left:0;right:0;bottom:0;background:rgba(185,28,28,.8);color:#fff;font-size:.58rem;font-weight:700;text-align:center;border-radius:0 0 5px 5px">✂ ${esc(label)}</span></a>`;
+  }).join(' ');
+  const dobOk = !!(emp && String(emp.dob || '').trim()), ssnOk = !!(emp && String(emp.ssn_last4 || '').trim());
+  const openEmp = canEdit ? btn('📝 打开档案填写', `inboxEditEmp(${emp.id},${s.id})`, false) : '';
+  return `<div style="margin-top:.7rem;background:#fff7f7;border:1px solid #fecaca;border-radius:10px;padding:.55rem .75rem">
+    <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.15rem"><b style="color:#b91c1c;font-size:.84rem">📋 入职审核清单</b>
+      <span style="font-size:.72rem;color:var(--gray-400)">全部 ✅ 后员工才能转在职，卡片自动归入历史${emp ? ` · 档案：${esc(titleCase([emp.first_name, emp.last_name].filter(Boolean).join(' ')))}${emp.employee_id ? ' · ' + esc(emp.employee_id) : ''}` : ''}</span>
+      <span style="flex:1"></span><a onclick="inboxToggleReview(${s.id})" style="cursor:pointer;font-size:.72rem;color:var(--gray-400);text-decoration:underline">收起</a></div>
+    ${row(!unc.length, '证件裁剪', unc.length ? `还有 <b style="color:#dc2626">${unc.length}</b> / ${docs.length} 张没裁剪（点缩略图单张裁剪，同时核对姓名）<div style="margin-top:.35rem;display:flex;gap:.35rem;flex-wrap:wrap">${uncThumbs}</div>` : `${docs.length} 张都已裁剪`,
+      unc.length ? btn(`✂️ 连续裁剪 ${unc.length} 张`, `inboxBatchCrop(${s.id})`, true) : '')}
+    ${row(dobOk, '出生日期', dobOk ? '已填' : (emp ? '员工档案里还没填生日' : '还没有员工档案'), dobOk ? '' : openEmp)}
+    ${row(ssnOk, '社安号', ssnOk ? '已填' : (emp ? '员工档案里还没填社安号' : '还没有员工档案'), ssnOk ? '' : openEmp)}
+  </div>`;
+}
+// 只裁剪这张卡上还没裁剪的证件, 不离开收件箱; 每张存完卡片自动刷新
+function inboxBatchCrop(subId) {
+  const s = (_inboxSubmissions || []).find(x => x.id === subId);
+  if (!s) return;
+  const docLabel = { ssn_front: 'SSN 正', ssn_back: 'SSN 反', ead_front: 'EAD 正', ead_back: 'EAD 反' };
+  const items = (Array.isArray(s._docs) ? s._docs : []).filter(d => !d.has_cropped && !/\.pdf$/i.test(d.file_name || ''))
+    .map(d => ({ url: `/api/admin/applicant-submissions/${s.id}/docs/${d.id}/download`, label: docLabel[d.doc_type] || d.doc_type, docType: d.doc_type || '', verify: d.verify_status || '' }));
+  if (!items.length) { if (typeof showToast === 'function') showToast('证件都已裁剪', 'success'); return; }
+  startApplicantDocBatchCrop(items);
 }
 function closeApplicantInbox() { document.getElementById('applyInboxModal').classList.remove('show'); }
 // Jump from an applicant card to the tied employee's档案 in 员工管理.
