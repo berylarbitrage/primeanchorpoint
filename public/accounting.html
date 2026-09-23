@@ -153,6 +153,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <button class="btn btn-sm btn-outline" onclick="zQuick('year')">今年</button>
       <button class="btn btn-sm btn-outline" onclick="zQuick('')">全部</button>
       <input type="text" id="zQ" placeholder="搜姓名 / Zelle号 / 备注…" oninput="zRender()" style="width:180px">
+      <button class="btn btn-sm btn-outline" onclick="zDirOpen()" title="全部 Zelle 收款人一张表：补手机号、关联员工 / 公司档案" style="color:#0f4c6b;font-weight:700">📇 联系人簿</button>
       <span style="flex:1"></span>
       <button class="btn btn-sm btn-outline" id="zBtnAll" onclick="zToggleAll()">展开全部</button>
       <button class="btn btn-sm btn-outline" onclick="zExportCsv()">⬇ 导出明细 CSV</button>
@@ -171,6 +172,29 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       </table>
     </div>
     <p style="font-size:.75rem;color:var(--g400);margin-top:.55rem">数据来自「银行直连」交易。转出 = 我方账户付出去；转入 = 对方 Zelle 打进来。人名从银行描述自动提取（如「Zelle payment to CESAR JPM99…」取 CESAR），同名自动合并，描述里没带名字的归到「(未识别)」。点「✎ 备注」补 Zelle 号、备注、关联系统里的员工或公司。</p>
+  </div>
+
+  <!-- 📇 Zelle 联系人簿: 全部收款人一张表, 手机号 / 关联员工档案就地补齐 -->
+  <div id="zDirModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:96;align-items:center;justify-content:center;padding:14px">
+    <div class="card" style="max-width:min(1100px,97vw);width:100%;padding:1rem 1.2rem .9rem;max-height:94vh;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.45rem">
+        <b style="font-size:1rem">📇 Zelle 联系人簿</b>
+        <span id="zDirStats" style="font-size:.78rem;color:var(--g500)"></span>
+        <span style="margin-left:auto;display:flex;gap:.35rem;flex-wrap:wrap">
+          <button class="btn btn-sm btn-outline zdir-f" onclick="zDirFilter('all',this)" style="background:#eff6ff;border-color:#93c5fd">全部</button>
+          <button class="btn btn-sm btn-outline zdir-f" onclick="zDirFilter('nohandle',this)">缺手机号</button>
+          <button class="btn btn-sm btn-outline zdir-f" onclick="zDirFilter('nolink',this)">未关联</button>
+          <button class="btn btn-outline" style="font-size:.8rem" onclick="zDirClose()">关闭</button>
+        </span>
+      </div>
+      <input type="text" id="zDirQ" placeholder="搜姓名 / 手机号 / 关联 / 备注…" oninput="zDirRender()" style="width:100%;margin-bottom:.45rem">
+      <div style="flex:1;overflow:auto;border:1px solid var(--g200);border-radius:8px">
+        <table style="width:100%"><thead><tr>
+          <th style="text-align:left">收款人（银行名字）</th><th style="text-align:left">📱 手机 / Zelle号</th><th style="text-align:left">关联档案（员工 / 公司）</th><th style="text-align:left">备注</th><th style="text-align:right">转出</th><th>最近一笔</th>
+        </tr></thead><tbody id="zDirBody"></tbody></table>
+      </div>
+      <p style="font-size:.72rem;color:var(--g400);margin-top:.45rem">改完即自动保存。关联员工时手机号为空会自动带入员工档案里的电话。这里的资料和 Zelle 统计里每行的「✎ 备注」是同一份，两边互通。</p>
+    </div>
   </div>
 
   <!-- ✎ Zelle 单笔改归属弹窗: 把这一笔重新标注给另一个收款人 -->
@@ -3864,6 +3888,109 @@ document.addEventListener('click', e => {
   const list = document.getElementById('zcList');
   if (list && !e.target.closest('#zcSearchBox')) list.style.display = 'none';
 });
+
+// ── 📇 Zelle 联系人簿: 全部收款人一张表, 手机号 / 关联员工档案就地补齐 ──
+// 数据 /api/plaid/zelle-directory（不限时间范围）; 保存复用 /api/plaid/zelle-contacts,
+// 与统计列表里每行的「✎ 备注」同一份资料。
+let _zDirPeople = null, _zDirFilterV = 'all', _zDirSearchTimer = null, _zDirMatches = [];
+async function zDirOpen() {
+  document.getElementById('zDirModal').style.display = 'flex';
+  document.getElementById('zDirQ').value = '';
+  document.getElementById('zDirBody').innerHTML = '<tr><td colspan="6" style="color:var(--g400);padding:.8rem">加载中…</td></tr>';
+  try {
+    const r = await api('/api/plaid/zelle-directory');
+    if (r && r.error) throw new Error(r.error);
+    _zDirPeople = (r && r.people) || [];
+  } catch (e) {
+    document.getElementById('zDirBody').innerHTML = `<tr><td colspan="6" style="color:#dc2626;padding:.8rem">${esc(e.message || '加载失败')}</td></tr>`;
+    return;
+  }
+  zDirRender();
+}
+function zDirClose() {
+  document.getElementById('zDirModal').style.display = 'none';
+  zLoad();   // 联系人簿里改过的手机号/关联, 统计列表立刻同步显示
+}
+function zDirFilter(f, btn) {
+  _zDirFilterV = f;
+  document.querySelectorAll('.zdir-f').forEach(b => { b.style.background = b === btn ? '#eff6ff' : ''; b.style.borderColor = b === btn ? '#93c5fd' : ''; });
+  zDirRender();
+}
+function zDirRender() {
+  if (!_zDirPeople) return;
+  const q = (document.getElementById('zDirQ').value || '').trim().toLowerCase();
+  let rows = _zDirPeople;
+  if (_zDirFilterV === 'nohandle') rows = rows.filter(p => !p.zelle_handle);
+  if (_zDirFilterV === 'nolink') rows = rows.filter(p => !p.link_type);
+  if (q) rows = rows.filter(p => [p.name, p.zelle_handle, p.link_label, p.note].join(' ').toLowerCase().includes(q));
+  const withH = _zDirPeople.filter(p => p.zelle_handle).length;
+  const linked = _zDirPeople.filter(p => p.link_type).length;
+  document.getElementById('zDirStats').textContent = `共 ${_zDirPeople.length} 人 · 手机号已填 ${withH} · 已关联 ${linked} · 当前显示 ${rows.length}`;
+  const typeIcon = t => t === 'employee' ? '👷' : t === 'labor_company' ? '🏗' : t === 'partner' ? '🏢' : '';
+  document.getElementById('zDirBody').innerHTML = rows.length ? rows.map(p => `
+    <tr data-k="${encodeURIComponent(p.key)}">
+      <td style="font-weight:700;white-space:nowrap">${esc(p.name)}</td>
+      <td><input type="text" value="${esc(p.zelle_handle || '')}" placeholder="手机 / 邮箱" onchange="zDirField(this,'zelle_handle')" style="width:150px;font-size:.8rem"></td>
+      <td style="min-width:230px">${p.link_type
+        ? `<span style="font-size:.78rem;background:#ecfdf5;color:#166534;border:1px solid #bbf7d0;border-radius:6px;padding:1px 7px;white-space:nowrap">${typeIcon(p.link_type)} ${esc(p.link_label || '')}</span> <a style="cursor:pointer;font-size:.72rem;color:#dc2626;text-decoration:underline" onclick="zDirUnlink(this)" title="解除关联">✕</a>`
+        : `<span style="position:relative;display:block"><input type="text" placeholder="搜员工姓名 / 电话关联…" oninput="zDirSearch(this)" style="width:100%;box-sizing:border-box;font-size:.8rem"><span class="zdir-dd" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--g200);border-radius:8px;box-shadow:0 10px 24px rgba(0,0,0,.14);max-height:190px;overflow:auto;z-index:9"></span></span>`}</td>
+      <td><input type="text" value="${esc(p.note || '')}" placeholder="备注" onchange="zDirField(this,'note')" style="width:150px;font-size:.8rem"></td>
+      <td style="text-align:right;white-space:nowrap">${p.out_count ? `${p.out_count} 笔 · ${money(p.out_total)}` : '<span style="color:var(--g400)">—</span>'}</td>
+      <td style="white-space:nowrap;color:var(--g500);font-size:.78rem">${esc(p.last_date || '—')}</td>
+    </tr>`).join('') : '<tr><td colspan="6" style="color:var(--g400);padding:.8rem">没有符合条件的联系人</td></tr>';
+}
+function _zDirRow(el) {
+  const tr = el.closest('tr');
+  const key = decodeURIComponent(tr.dataset.k || '');
+  return { tr, p: _zDirPeople.find(x => x.key === key) };
+}
+async function _zDirSave(p, tr) {
+  const r = await api('/api/plaid/zelle-contacts', { method: 'POST', body: JSON.stringify({
+    name_key: p.key, display_name: p.name, zelle_handle: p.zelle_handle || '', note: p.note || '',
+    link_type: p.link_type || '', link_id: p.link_id || null, link_label: p.link_label || '',
+  }) }).catch(e => ({ error: e.message }));
+  if (!r || r.error) { toast((r && r.error) || '保存失败', true); return false; }
+  if (tr) { tr.style.transition = 'background .5s'; tr.style.background = '#ecfdf5'; setTimeout(() => { tr.style.background = ''; }, 650); }
+  return true;
+}
+function zDirField(el, field) {
+  const { tr, p } = _zDirRow(el);
+  if (!p) return;
+  p[field] = el.value.trim();
+  _zDirSave(p, tr);
+}
+function zDirSearch(el) {
+  const dd = el.parentElement.querySelector('.zdir-dd');
+  const q = el.value.trim();
+  clearTimeout(_zDirSearchTimer);
+  if (q.length < 2) { dd.style.display = 'none'; return; }
+  _zDirSearchTimer = setTimeout(async () => {
+    let r = null;
+    try { r = await api('/api/plaid/zelle-link-search?q=' + encodeURIComponent(q)); } catch (e) { return; }
+    _zDirMatches = (r && r.matches) || [];
+    dd.innerHTML = _zDirMatches.length
+      ? _zDirMatches.map((m, i) => `<a style="display:block;padding:.32rem .5rem;font-size:.78rem;cursor:pointer;border-bottom:1px solid #f1f5f9" onclick="zDirPick(this, ${i})">${m.type === 'employee' ? '👷' : m.type === 'labor_company' ? '🏗' : '🏢'} <b>${esc(m.label)}</b>${m.sub ? ` <span style="color:var(--g400)">${esc(m.sub)}</span>` : ''}</a>`).join('')
+      : '<span style="display:block;padding:.35rem .5rem;font-size:.76rem;color:var(--g400)">没搜到，试试员工姓名或电话号码</span>';
+    dd.style.display = '';
+  }, 250);
+}
+function zDirPick(el, i) {
+  const m = _zDirMatches[i];
+  if (!m) return;
+  const { tr, p } = _zDirRow(el);
+  if (!p) return;
+  p.link_type = m.type;
+  p.link_id = m.id;
+  p.link_label = m.label;
+  if (!p.zelle_handle && m.handle) p.zelle_handle = m.handle;   // 带入员工档案里的电话
+  _zDirSave(p, tr).then(ok => { if (ok) zDirRender(); });
+}
+function zDirUnlink(el) {
+  const { tr, p } = _zDirRow(el);
+  if (!p) return;
+  p.link_type = ''; p.link_id = null; p.link_label = '';
+  _zDirSave(p, tr).then(ok => { if (ok) zDirRender(); });
+}
 
 // ── 🔗 银行直连 Bank Feed ──
 // api() 出错时返回 {error} 不抛异常, 银行模块统一用 bapi 抛出便于 catch
