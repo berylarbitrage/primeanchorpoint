@@ -1059,6 +1059,19 @@ async function annApprove(id) {
     showToast('已审核通过 ✓');
   } catch (e) { showToast(e.message || '审核失败', 'error'); }
 }
+// ↩ 撤回审核: 已审核通过 → 退回待审核
+async function annUnapprove(id) {
+  const box = _bsBoxList.find(b => b.id === id); if (!box) return;
+  if (!await showConfirm('撤回审核？这条标注会退回「待审核」，需要重新审核通过。')) return;
+  try {
+    const r = await annApi(`/plaid/annotations/${id}/unapprove`, { method: 'POST', body: '{}' });
+    if (r && r.error) throw new Error(r.error);
+    box.ann_status = 'pending';
+    annRefreshChip(box);
+    _bsRenderBoxPanel();
+    showToast('已撤回审核，退回待审核');
+  } catch (e) { showToast(e.message || '撤回失败', 'error'); }
+}
 // 状态条: 待审核/已审核 提示 (客服每次保存后刷新)
 function annStatusLineHtml(box) {
   if (box.ann_status === 'pending') {
@@ -1066,7 +1079,9 @@ function annStatusLineHtml(box) {
       + (annCanReview() ? ' <button onclick="annApprove(' + box.id + ')" style="margin-left:6px;border:none;background:#16a34a;color:#fff;border-radius:6px;padding:3px 12px;font-size:.74rem;cursor:pointer;font-weight:700">✅ 审核通过</button>' : '')
       + '</div>';
   }
-  if (box.ann_status === 'approved') return '<div class="ann-status approved" id="annStatusLine">✅ 已审核' + (box.ann_by ? '（' + esc(box.ann_by) + ' 标注）' : '') + '</div>';
+  if (box.ann_status === 'approved') return '<div class="ann-status approved" id="annStatusLine">✅ 已审核' + (box.ann_by ? '（' + esc(box.ann_by) + ' 标注）' : '')
+    + (annCanReview() ? ' <button onclick="annUnapprove(' + box.id + ')" style="margin-left:6px;border:1px solid #fcd34d;background:#fffbeb;color:#b45309;border-radius:6px;padding:3px 12px;font-size:.74rem;cursor:pointer;font-weight:700">↩ 撤回审核</button>' : '')
+    + '</div>';
   return '<div id="annStatusLine" style="display:none"></div>';
 }
 function annStatusLineRefresh(box) {

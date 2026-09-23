@@ -187,6 +187,16 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     </div>
   </div>
   <datalist id="zNames"></datalist>
+  <!-- 通用页内确认框 (代替浏览器 confirm; bank-ann.js 的 showConfirm 也走这里) -->
+  <div id="pcModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:3500;align-items:center;justify-content:center;padding:16px">
+    <div class="card" style="max-width:400px;width:100%;padding:1.1rem 1.2rem 1rem">
+      <div id="pcMsg" style="font-size:.86rem;line-height:1.55;white-space:pre-line;margin-bottom:.9rem"></div>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button class="btn btn-outline" id="pcNo">取消</button>
+        <button class="btn btn-blue" id="pcYes">确定</button>
+      </div>
+    </div>
+  </div>
   <!-- ✕ Zelle 单笔移除弹窗: 仅管理员; 必须手输「移除」按钮才可点 -->
   <div id="zxModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:96;align-items:center;justify-content:center;padding:16px">
     <div class="card" style="max-width:420px;width:100%;padding:1.1rem 1.2rem 1rem">
@@ -774,7 +784,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
   </div>
 </div>
 
-<script src="bank-ann.js?v=16"></script>
+<script src="bank-ann.js?v=17"></script>
 <script>
 let TOKEN = localStorage.getItem('acct_token') || '';
 let USER = { username: '', role: '', display_name: '' };
@@ -793,6 +803,19 @@ function toast(msg, bad) {
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 2600);
 }
+// 页内确认框: 返回 Promise<boolean>, 覆盖 bank-ann.js 里基于浏览器 confirm 的 showConfirm
+function pageConfirm(msg) {
+  return new Promise(resolve => {
+    const m = document.getElementById('pcModal');
+    document.getElementById('pcMsg').textContent = msg;
+    const done = v => { m.style.display = 'none'; resolve(v); };
+    document.getElementById('pcYes').onclick = () => done(true);
+    document.getElementById('pcNo').onclick = () => done(false);
+    m.onclick = e => { if (e.target === m) done(false); };
+    m.style.display = 'flex';
+  });
+}
+showConfirm = pageConfirm;
 async function api(path, opts = {}) {
   const r = await fetch(path, {
     method: opts.method || 'GET',
@@ -3652,7 +3675,7 @@ function _zFlatRow(t) {
     <td style="white-space:nowrap;${cell}">${esc(t.date || '—')}${t.pending ? ' <span style="color:var(--g400);font-size:.7rem">(处理中)</span>' : ''}</td>
     <td style="${cell}"><a onclick="zViewPerson('${esc(t.personKey).replace(/'/g, "\\'")}')" title="跳到这个人的汇总" style="cursor:pointer;color:#0f4c6b;font-weight:700;text-decoration:underline">${esc(t.person)}</a></td>
     <td style="text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;${cell}"><span style="color:${t.amount >= 0 ? '#dc2626' : '#15803d'};font-weight:700">${t.amount >= 0 ? '−' : '+'}${money(Math.abs(t.amount))}</span></td>
-    <td style="white-space:nowrap;${cell}">${esc(t.account)}</td>
+    <td style="${cell}">${_zDir(t)}</td>
     <td style="color:var(--g400);font-size:.76rem;word-break:break-all;${cell}">${esc(t.desc)}${(t.ann_payee || t.ann_note) ? `<div style="color:#b45309;margin-top:2px">📝 ${t.ann_payee ? '付给 ' + esc(t.ann_payee) : ''}${t.ann_payee && t.ann_note ? ' · ' : ''}${esc(t.ann_note || '')}${_zAnnBadge(t)}</div>` : ''}</td>
     <td style="white-space:nowrap;text-align:right;${cell}">${_zTxnOps(t)}</td>
   </tr>`;
@@ -3662,11 +3685,35 @@ function zViewPerson(key) {
   _zOpenKeys.add(key);
   zRender();
 }
+// 方向: 转出 = 我方账户 → 对方; 转入 = 对方 → 我方账户 (彩色标签 + 箭头, 一眼看清谁转给谁)
+function _zDir(t) {
+  const out = t.amount >= 0;
+  const who = esc(t.cp || t.person || t.name || '对方');
+  const acc = esc(t.account || '我方账户');
+  const tag = out
+    ? '<span style="display:inline-block;font-size:.7rem;font-weight:800;color:#fff;background:#dc2626;border-radius:4px;padding:1px 6px;margin-right:6px">转出 ↑</span>'
+    : '<span style="display:inline-block;font-size:.7rem;font-weight:800;color:#fff;background:#16a34a;border-radius:4px;padding:1px 6px;margin-right:6px">转入 ↓</span>';
+  const us = `<span style="color:var(--g500)">${acc}</span>`;
+  const them = `<b style="color:var(--g800,#1e293b)">${who}</b>`;
+  const arrow = `<span style="color:${out ? '#dc2626' : '#16a34a'};font-weight:800;margin:0 5px">→</span>`;
+  return `<div style="white-space:nowrap;font-size:.78rem">${tag}${out ? us + arrow + them : them + arrow + us}</div>`;
+}
 // 标注审核状态徽章 (同银行直连页: pending=客服提交待审核, approved=管理员已审核通过)
 function _zAnnBadge(t) {
-  if (t.ann_status === 'approved') return ' <span style="font-size:.68rem;background:#f0fdf4;border:1px solid #86efac;color:#15803d;border-radius:4px;padding:0 4px;white-space:nowrap">✓ 已审核通过</span>';
+  if (t.ann_status === 'approved') return ' <span style="font-size:.68rem;background:#f0fdf4;border:1px solid #86efac;color:#15803d;border-radius:4px;padding:0 4px;white-space:nowrap">✓ 已审核通过</span>'
+    + (t.ann_id && typeof annCanReview === 'function' && annCanReview() ? ` <a onclick="zAnnUnapprove(${Number(t.ann_id)},event)" title="退回待审核" style="cursor:pointer;color:#b45309;font-size:.7rem;text-decoration:underline;white-space:nowrap">↩ 撤回审核</a>` : '');
   if (t.ann_status === 'pending') return ' <span style="font-size:.68rem;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;border-radius:4px;padding:0 4px;white-space:nowrap">⏳ 待审核</span>';
   return '';
+}
+async function zAnnUnapprove(id, ev) {
+  if (ev) ev.stopPropagation();
+  if (!await showConfirm('撤回审核？这条标注会退回「待审核」，需要重新审核通过。')) return;
+  try {
+    const r = await api(`/api/plaid/annotations/${id}/unapprove`, { method: 'POST', body: '{}' });
+    if (r && r.error) throw new Error(r.error);
+    toast('已撤回审核，退回待审核');
+    zLoad();
+  } catch (e) { toast(e.message || '撤回失败', true); }
 }
 // 明细行: 单笔可 移除(仅管理员)/改归属; 已改归属的标出来、可恢复自动
 function _zTxnOps(t, mode) {
@@ -3682,7 +3729,7 @@ function _zTxnRow(t, mode) {
   return `<tr>
     <td style="white-space:nowrap;${cell}">${esc(t.date || '—')}${t.pending ? ' <span style="color:var(--g400);font-size:.7rem">(处理中)</span>' : ''}</td>
     <td style="text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;width:110px;${cell}"><span style="color:${t.amount >= 0 ? '#dc2626' : '#15803d'};font-weight:700">${t.amount >= 0 ? '−' : '+'}${money(Math.abs(t.amount))}</span></td>
-    <td style="white-space:nowrap;${cell}">${esc(t.account)}</td>
+    <td style="${cell}">${_zDir(t)}</td>
     <td style="color:var(--g400);font-size:.76rem;word-break:break-all;${cell}">${esc(t.desc)}${(t.ann_payee || t.ann_note) ? `<div style="color:#b45309;font-size:.76rem;margin-top:2px">📝 ${t.ann_payee ? '付给 ' + esc(t.ann_payee) : ''}${t.ann_payee && t.ann_note ? ' · ' : ''}${esc(t.ann_note || '')}${_zAnnBadge(t)}</div>` : ''}</td>
     <td style="white-space:nowrap;text-align:right;${cell}">${ops}</td>
   </tr>`;
