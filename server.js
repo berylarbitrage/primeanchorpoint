@@ -22427,10 +22427,20 @@ const GUSTO_ALIAS_DEFAULTS = [
   { from: 'Yoselin Briceño', to: 'Youseli Briceno' },
   { from: 'Pedro', to: 'Pedro Rodriguez' },
   { from: 'Luis Cartz', to: 'Luis Cortez' },
-  { from: 'Daniel B', to: 'Daniel Joshue Granados Bastidas' },
+  // 2026-09 起 Daniel 不再发 (Gusto 生成时跳过)
+  { from: 'Daniel B', to: '跳过' },
+  { from: 'Daniel Joshue Granados Bastidas', to: '跳过' },
+  // Isabella 的钱并付给 Jimmerly
+  { from: 'Isabella Chirino Ramos', to: 'Jimmerly Anelca Chirino Ramos' },
+  { from: 'Isabella Chirino', to: 'Jimmerly Anelca Chirino Ramos' },
+  // Rattia 班组三人的工时都付给 Jose Gabriel Rattia (工资表不同周写法不一, 都认)
   { from: 'Rattia Jose G', to: 'Jose Gabriel Rattia' },
   { from: 'Marvin Bor', to: 'Jose Gabriel Rattia' },
+  { from: 'Mervin J Bor Rodriguez', to: 'Jose Gabriel Rattia' },
+  { from: 'Mervin Bor Rodriguez', to: 'Jose Gabriel Rattia' },
   { from: 'Cleiber Rodriguez', to: 'Jose Gabriel Rattia' },
+  { from: 'Cliber Alejandro Rodriguez', to: 'Jose Gabriel Rattia' },
+  { from: 'Cliber Rodriguez', to: 'Jose Gabriel Rattia' },
   // 工资表上姓 Tecaxco 的（Gerardo / Juan）名字虽对不上名册, 但确认过钱都付给
   // 「Tecaxco, Bugui Boy」这一行, 自动合并成一笔; Tecsxco 是工资表出现过的错拼, 一并认。
   { from: 'Gerardo Tecaxco', to: 'Tecaxco, Bugui Boy' },
@@ -22447,9 +22457,16 @@ const GUSTO_ALIAS_DEFAULTS = [
 // 班组三人（都并付给 Jose Gabriel Rattia）计费 $18、发工资 $16。
 const GUSTO_PAY_RATE_OVERRIDES = [
   { name: 'Cleiber Rodriguez', rate: 16 },
+  { name: 'Cliber Alejandro Rodriguez', rate: 16 },
+  { name: 'Cliber Rodriguez', rate: 16 },
   { name: 'Marvin Bor', rate: 16 },
+  { name: 'Mervin J Bor Rodriguez', rate: 16 },
+  { name: 'Mervin Bor Rodriguez', rate: 16 },
   { name: 'Rattia Jose G', rate: 16 },
+  { name: 'Jose Gabriel Rattia', rate: 16 },
 ];
+// 合并付款时「所有人的工时都进 hours」的收款人 (同一班组同一时薪; 其余合并行只填本人工时, 别人的钱进 bonus)
+const GUSTO_HOURS_MERGE = ['Jose Gabriel Rattia'];
 function _gustoAliases() {
   const row = db.prepare("SELECT value FROM app_settings WHERE key='gusto_pay_aliases'").get();
   if (row && row.value) {
@@ -22484,6 +22501,28 @@ function _gustoAliasBackfill(markerKey, entries) {
     db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, '1')").run(markerKey);
   } catch (e) { console.log(`[migration] gusto alias backfill (${markerKey}) error:`, e.message); }
 }
+// 一次性改条目: 和 _gustoAliasBackfill 一样, 但表里已有同一个 from 的条目会被替换成新的 to
+function _gustoAliasUpsert(markerKey, entries) {
+  try {
+    if (db.prepare('SELECT value FROM app_settings WHERE key=?').get(markerKey)) return;
+    const row = db.prepare("SELECT value FROM app_settings WHERE key='gusto_pay_aliases'").get();
+    if (row && row.value) {
+      let saved = null;
+      try { const v = JSON.parse(row.value); if (Array.isArray(v)) saved = v; } catch (_) {}
+      if (saved) {
+        const nameKey = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length > 1).sort().join('');
+        const keys = new Set(entries.map(a => nameKey(a.from)));
+        const next = saved.filter(a => !keys.has(nameKey(a && a.from))).concat(entries);
+        db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('gusto_pay_aliases', ?, CURRENT_TIMESTAMP)").run(JSON.stringify(next));
+        console.log(`[migration] Gusto 对照表更新 ${entries.length} 条 (${markerKey})`);
+      }
+    }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, '1')").run(markerKey);
+  } catch (e) { console.log(`[migration] gusto alias upsert (${markerKey}) error:`, e.message); }
+}
+// 2026-09-23: Daniel 不再发; Isabella 并给 Jimmerly; Rattia 班组新写法都并给 Jose
+_gustoAliasUpsert('gusto_alias_2026_09_23', GUSTO_ALIAS_DEFAULTS.filter(a => /daniel|isabella|mervin|marvin|cliber|cleiber|rattia/i.test(a.from)));
 _gustoAliasBackfill('gusto_alias_tecaxco_backfilled', GUSTO_ALIAS_DEFAULTS.filter(a => a.to === 'Tecaxco, Bugui Boy'));
 _gustoAliasBackfill('gusto_alias_eloy_backfilled', GUSTO_ALIAS_DEFAULTS.filter(a => a.to === 'Eloiso Cornelio Herrera Cano'));
 
@@ -22540,7 +22579,7 @@ app.post('/api/admin/gusto-pay-csv', requireAdmin, (req, res) => {
       period_end: req.body.period_end || '',
       mode: req.body.mode === 'hours' ? 'hours' : 'bonus',
       aliases: _gustoAliases(),
-      payRates: GUSTO_PAY_RATE_OVERRIDES,
+      payRates: GUSTO_PAY_RATE_OVERRIDES, hoursMerge: GUSTO_HOURS_MERGE,
     });
     res.json({ ok: true, template_name: tpl.name || '', template_uploaded_at: tpl.uploaded_at || '', ...out });
   } catch (e) {
@@ -40962,7 +41001,7 @@ app.get('/api/acct/gusto/recon', requireAdmin, requireAcctView, (req, res) => {
     const payments = db.prepare(`SELECT uuid, contractor_uuid, contractor_name, date, payment_method, status,
         hours, wage, bonus, reimbursement, wage_total, source
       FROM gusto_payments WHERE COALESCE(wage_type,'')!='W2' AND date>=? AND date<=?`).all(start, payEnd);
-    const recon = buildGustoRecon(contractors, invoices, payments, { aliases: _gustoAliases(), payRates: GUSTO_PAY_RATE_OVERRIDES });
+    const recon = buildGustoRecon(contractors, invoices, payments, { aliases: _gustoAliases(), payRates: GUSTO_PAY_RATE_OVERRIDES, hoursMerge: GUSTO_HOURS_MERGE });
     res.json({ ok: true, start, end, pay_end: payEnd, pay_pad_days: pad, invoice_count: invoices.length, roster_source: rosterSource, ...recon });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
