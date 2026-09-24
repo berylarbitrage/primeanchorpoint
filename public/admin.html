@@ -38534,6 +38534,8 @@ async function invpProcessExcelFile(file) {
     const data = await resp.json().catch(() => null);
     if (!resp.ok || !data || !data.ok) throw new Error((data && data.error) || ('HTTP ' + resp.status));
     invpApplyExcelData(data);
+    // 文件本身认得出是哪家客户的 (如菜鸟 DFW 考勤 → Albatross America Inc): 自动选上客户公司
+    if (data.companyHint) _invpSelectCompanyByName(data.companyHint, data.markupMultiplier);
     setStatus(`✓ 已导入 ${data.employees.length} 名员工`, '#047857');
     let msg = `已从 Excel 导入 ${data.employees.length} 名员工`;
     if (data.periodStart) msg += `，周期 ${data.periodStart} ~ ${data.periodEnd}`;
@@ -38548,6 +38550,21 @@ async function invpProcessExcelFile(file) {
   }
 }
 
+// 按名称选客户公司 (账单发往): 名单里找同名公司 → 走和手动点选一样的流程 (地址/预设);
+// 选完把导入文件带的 Markup 放回去, 免得被客户预设覆盖
+function _invpSelectCompanyByName(name, markup) {
+  const key = String(name || '').trim().toLowerCase();
+  if (!key) return;
+  const cur = String((document.getElementById('invPageBillName') || {}).value || '').trim().toLowerCase();
+  const list = window._invpPartners || [];
+  const p = list.find(x => String(x.name || '').trim().toLowerCase() === key) || list.find(x => String(x.name || '').toLowerCase().includes(key));
+  if (p && cur !== String(p.name || '').trim().toLowerCase()) selectInvPartner(p.id);
+  else if (!p && !cur) { const el = document.getElementById('invPageBillName'); if (el) { el.value = name; _invpApplyCustomerPresets(name); } }
+  if (markup > 0) setTimeout(() => {
+    const mk = document.getElementById('invPageMarkupRate');
+    if (mk) { mk.value = markup; if (typeof renderInvpManualTable === 'function') renderInvpManualTable(); }
+  }, 600);
+}
 // Populate the builder from parsed Excel data. Hours go into per-day cells so the
 // form's normal 40h/week split reproduces the worksheet's reg/OT exactly.
 function invpApplyExcelData(data) {

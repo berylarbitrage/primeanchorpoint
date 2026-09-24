@@ -296,6 +296,8 @@ function parseDuration(v) {
 function buildInvoiceData(rows) {
   const warnings = [];
   if (looksLikeShiftLog(rows)) return buildFromShiftLog(rows, warnings);
+  const cn = looksLikeCainiaoAttendance(rows);
+  if (cn >= 0) return buildFromCainiaoAttendance(rows, cn, warnings);
 
   // Locate the header row — accept either the payroll layout (Employee + rate/pay)
   // or the attendance layout (Person Name + Clock / 工作时长).
@@ -532,6 +534,72 @@ function buildFromAttendance({ rows, headerIdx, find, cellStr, warnings }) {
     ok: true, format: 'attendance', warehouse: '',
     period: (periodStart && periodEnd) ? `${periodStart} ~ ${periodEnd}` : '',
     periodStart, periodEnd, defaultMarkupRate: null, markupMultiplier: null, employees, warnings,
+  };
+}
+
+// ─── 菜鸟 (Cainiao DFW) 月度/周考勤导出「Export Monthly Attendance Data」───
+// 客户 = Albatross America Inc。一人一行: Employee Name(Last, First) / Cycle Start~End /
+// REG / OT1 / OT2 / HOL / 各种假 / Total Hours, 没有时薪。按客户约定自动带出:
+// 时薪 $16, 加班 (OT1/OT2/HOL/公众假期加班) ×1.5 = $24, Markup 22% (×1.22)。
+const CAINIAO_PROFILE = { company: 'Albatross America Inc', rate: 16, otMultiplier: 1.5, markup: 0.22 };
+function looksLikeCainiaoAttendance(rows) {
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    const h = (rows[i] || []).map(norm);
+    if (h.includes('attendance period') && h.includes('employee name') && h.includes('reg') && h.some(x => x.includes('cycle start'))) return i;
+  }
+  return -1;
+}
+// 「áLvarez De LeóN, ESTRELLA LIZETH」→「Estrella Lizeth Álvarez De León」
+function _cainiaoName(raw) {
+  const s = String(raw || '').trim();
+  const tc = w => w.toLowerCase().replace(/(^|[\s\-'])(\S)/g, (m, a, b) => a + b.toUpperCase());
+  const i = s.indexOf(',');
+  const nm = i > 0 ? `${s.slice(i + 1).trim()} ${s.slice(0, i).trim()}` : s;
+  return tc(nm.replace(/\s+/g, ' ')).trim();
+}
+function buildFromCainiaoAttendance(rows, headerIdx, warnings) {
+  const headers = (rows[headerIdx] || []).map(norm);
+  const col = n => headers.indexOf(n);
+  const num = (row, n) => { const c = col(n); if (c < 0) return 0; const v = parseFloat(row[c]); return Number.isFinite(v) ? v : 0; };
+  const str = (row, n) => { const c = col(n); return c < 0 ? '' : String(row[c] == null ? '' : row[c]).trim(); };
+  const P = CAINIAO_PROFILE;
+  const leaveCols = ['annual leave', 'paid sick leave', 'bereavement leave', 'family visiting leave', 'marriage leave', 'garden leave', 'other leave'];
+  const employees = [], starts = [], ends = [];
+  let leaveNote = [];
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i] || [];
+    const raw = str(row, 'employee name');
+    if (!raw) continue;
+    const name = _cainiaoName(raw);
+    const reg = Math.round((num(row, 'reg') + num(row, 'compensated hours')) * 100) / 100;
+    const ot = Math.round((num(row, 'ot1') + num(row, 'ot2') + num(row, 'hol') + num(row, 'overtime on public holiday')) * 100) / 100;
+    const leave = leaveCols.reduce((t, c) => t + num(row, c), 0);
+    if (leave > 0) leaveNote.push(`${name} 带薪假 ${leave}h`);
+    const sm = str(row, 'cycle start date').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    const em = str(row, 'cycle end date').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (sm) starts.push(toISO(sm[1], sm[2], sm[3]));
+    if (em) ends.push(toISO(em[1], em[2], em[3]));
+    const total = Math.round((reg + ot) * 100) / 100;
+    if (total <= 0) continue;
+    const otRate = Math.round(P.rate * P.otMultiplier * 100) / 100;
+    const regPay = Math.round(reg * P.rate * 100) / 100, otPay = Math.round(ot * otRate * 100) / 100;
+    employees.push({
+      name, type: '', regRate: P.rate, otRate, regHours: reg, otHours: ot, totalHours: total,
+      reimbursement: 0, markupRate: P.markup,
+      regPay, otPay, totalPay: Math.round((regPay + otPay) * 100) / 100,
+      afterMarkup: Math.round((regPay + otPay) * (1 + P.markup) * 100) / 100,
+      employeeNo: str(row, 'employee id'),
+    });
+  }
+  if (!employees.length) throw new Error('考勤表里没有工时数据');
+  const periodStart = starts.sort()[0] || '', periodEnd = ends.sort().slice(-1)[0] || '';
+  warnings.push(`菜鸟 DFW 考勤表：按 ${P.company} 约定自动带出时薪 $${P.rate}、加班 (OT1/OT2/HOL) ×${P.otMultiplier} = $${P.rate * P.otMultiplier}、Markup ${Math.round(P.markup * 100)}%。`);
+  if (leaveNote.length) warnings.push('表里有带薪假工时（没有计入发票，如需收费请手动加）：' + leaveNote.join('、'));
+  return {
+    ok: true, format: 'cainiao', warehouse: 'Cainiao DFW', companyHint: P.company,
+    period: periodStart && periodEnd ? `${periodStart} ~ ${periodEnd}` : '',
+    periodStart, periodEnd, defaultMarkupRate: P.markup, markupMultiplier: Math.round((1 + P.markup) * 10000) / 10000,
+    impliedOtFee: 0, employees, warnings,
   };
 }
 
