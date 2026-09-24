@@ -34041,6 +34041,106 @@ async function invpEditWageCost(id, cur, mode) {
   if (r && r.success) { showToast('工资已修正 ✓'); loadInvpList(); }
   else showToast('修正失败：' + ((r && r.error) || ''), 'error');
 }
+// ── ✉️ 每张 Invoice 自动生成一封可复制的邮件 (主题 + 正文, 英文), 收件人取客户公司登记的邮箱 ──
+async function openInvpEmail(id) {
+  let inv;
+  try { inv = await api('/admin/invoices/' + id); } catch (e) { inv = null; }
+  if (!inv || inv.error) { showToast('读取 Invoice 失败', 'error'); return; }
+  if (!window._invpPartners || !window._invpPartners.length) { try { await loadInvpCompanies(); } catch (_) {} }
+  const pf = inv.profile || {};
+  const key = String(inv.company_name || '').trim().toLowerCase();
+  const partner = (window._invpPartners || []).find(p => String(p.name || '').trim().toLowerCase() === key) || null;
+  const us = d => { const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[2]}/${m[3]}/${m[1]}` : String(d || ''); };
+  const money = v => '$' + (Number(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const items = Array.isArray(inv.items) ? inv.items : [];
+  const hrs = items.reduce((t, it) => t + (Number(it.regHours) || 0) + (Number(it.otHours) || 0), 0);
+  const workers = items.filter(it => String(it.name || '').trim()).length;
+  const containerMode = pf.invoice_mode === 'container';
+  // 收件人: 客户公司登记的联系人 (每个地址各有联系人; 优先这张 Invoice 账单地址那一组), 老数据回退到公司级联系人
+  const sj = v => { try { const x = typeof v === 'string' ? JSON.parse(v || '[]') : v; return Array.isArray(x) ? x : []; } catch (_) { return []; } };
+  const addrs = partner ? sj(partner.addresses) : [];
+  const billAddr = String(inv.bill_to_addr || '').toLowerCase();
+  const hitAddr = addrs.find(a => a && a.street && billAddr.includes(String(a.street).toLowerCase()));
+  let contacts = (hitAddr ? sj(hitAddr.contacts) : []);
+  if (!contacts.length) contacts = addrs.flatMap(a => sj(a && a.contacts));
+  if (!contacts.length && partner) contacts = sj(partner.contacts);
+  if (!contacts.length && partner && (partner.contact_person || partner.email)) contacts = [{ first_name: partner.contact_person, email: partner.email }];
+  const withMail = contacts.filter(c => c && String(c.email || '').trim());
+  const firstName = String(((withMail[0] || contacts[0] || {}).first_name) || '').trim().split(/\s+/)[0] || '';
+  const sender = pf.sender_name || 'Prime Anchor Workforce Inc';
+  const period = inv.period_start || inv.period_end ? `${us(inv.period_start)} – ${us(inv.period_end)}` : '';
+  const subject = `Invoice ${inv.invoice_number} – ${inv.company_name || ''}${period ? ' – Service Period ' + period : ''}`;
+  const bankLines = [
+    pf.bank_name ? `Bank: ${pf.bank_name}` : '',
+    pf.bank_account_name ? `Account Name: ${pf.bank_account_name}` : '',
+    pf.bank_account_no ? `Account Number: ${pf.bank_account_no}` : '',
+    (pf.bank_routing_no || pf.bank_paper_routing) ? `Routing Number (ACH): ${pf.bank_routing_no || pf.bank_paper_routing}` : '',
+    pf.bank_wire_routing ? `Wire Routing Number: ${pf.bank_wire_routing}` : '',
+    pf.bank_swift_code ? `SWIFT: ${pf.bank_swift_code}` : '',
+  ].filter(Boolean);
+  const sign = [pf.contact_name || '', sender, [pf.contact_phone || pf.sender_phone || '', pf.contact_email || pf.sender_email || ''].filter(Boolean).join(' | ')].filter(Boolean);
+  const body = [
+    `Hi ${firstName || 'there'},`,
+    '',
+    `Please find attached Invoice ${inv.invoice_number} from ${sender} for ${containerMode ? 'container services' : 'staffing services'} provided to ${inv.company_name || 'your company'}${period ? ` for the service period ${period}` : ''}.`,
+    '',
+    `Invoice Number: ${inv.invoice_number}`,
+    inv.invoice_date ? `Invoice Date: ${us(inv.invoice_date)}` : '',
+    period ? `Service Period: ${period}` : '',
+    (!containerMode && workers) ? `Workers: ${workers}${hrs > 0 ? ` · Total Hours: ${hrs.toFixed(2)}` : ''}` : '',
+    `Amount Due: ${money(inv.subtotal)}`,
+    ...(bankLines.length ? ['', 'Payment Details:', ...bankLines] : []),
+    '',
+    'Please include the invoice number with your payment. Let me know if you have any questions.',
+    '',
+    'Best regards,',
+    ...sign,
+  ].filter((l, i, a) => l !== '' || (a[i - 1] !== '' && i > 0)).join('\n');
+  const to = [...new Set(withMail.map(c => String(c.email).trim()))].join(', ') || (partner && partner.email) || '';
+  _invpEmailData = { to, subject, body };
+  let m = document.getElementById('invpEmailModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'invpEmailModal'; m.className = 'modal-bg'; m.style.zIndex = '9990';
+    m.onclick = e => { if (e.target === m) m.classList.remove('show'); };
+    document.body.appendChild(m);
+  }
+  const fld = 'width:100%;border:1px solid var(--gray-200);border-radius:8px;padding:.5rem .6rem;font-size:.86rem;font-family:inherit';
+  const copyBtn = (k, label) => `<button class="btn btn-sm btn-outline" onclick="invpEmailCopy('${k}')" style="white-space:nowrap">📋 ${label}</button>`;
+  m.innerHTML = `<div class="modal" style="max-width:680px;width:100%;max-height:92vh;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.6rem"><h3 style="margin:0;flex:1;font-size:1.05rem;color:#0369a1">✉️ 发送 Invoice 邮件 · ${esc(inv.invoice_number)}</h3>
+      <button class="btn btn-sm btn-outline" onclick="document.getElementById('invpEmailModal').classList.remove('show')">✕ 关闭</button></div>
+    <div style="overflow-y:auto;flex:1">
+      <label style="font-size:.74rem;color:var(--gray-500);font-weight:600">收件人 To</label>
+      <div style="display:flex;gap:.4rem;margin:.15rem 0 .55rem"><input id="invpEmTo" style="${fld}" value="${esc(to)}" placeholder="客户公司没有登记邮箱，请手动填写" oninput="_invpEmailData.to=this.value">${copyBtn('to', '复制')}</div>
+      <label style="font-size:.74rem;color:var(--gray-500);font-weight:600">主题 Subject</label>
+      <div style="display:flex;gap:.4rem;margin:.15rem 0 .55rem"><input id="invpEmSubject" style="${fld}" value="${esc(subject)}" oninput="_invpEmailData.subject=this.value">${copyBtn('subject', '复制')}</div>
+      <label style="font-size:.74rem;color:var(--gray-500);font-weight:600">正文 Body <span style="font-weight:400;color:var(--gray-400)">（可以直接改）</span></label>
+      <textarea id="invpEmBody" style="${fld};min-height:340px;margin-top:.15rem;line-height:1.5;white-space:pre-wrap" oninput="_invpEmailData.body=this.value">${esc(body)}</textarea>
+      <div style="font-size:.72rem;color:var(--gray-400);margin-top:.3rem">记得附上 Invoice PDF（在「查看/编辑」里下载）。${partner ? '' : '没找到同名的客户公司记录，称呼和收件人需要手动填。'}</div>
+    </div>
+    <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:.7rem;flex-wrap:wrap">
+      ${copyBtn('body', '复制正文')}
+      <button class="btn btn-sm btn-outline" onclick="invpEmailMailto()">📨 用邮箱打开</button>
+      <button class="btn btn-sm btn-blue" onclick="invpEmailCopy('all')">📋 复制主题 + 正文</button>
+    </div></div>`;
+  m.classList.add('show');
+}
+let _invpEmailData = { to: '', subject: '', body: '' };
+async function invpEmailCopy(k) {
+  const D = _invpEmailData;
+  const txt = k === 'to' ? D.to : k === 'subject' ? D.subject : k === 'body' ? D.body : `Subject: ${D.subject}\n\n${D.body}`;
+  try { await navigator.clipboard.writeText(txt); }
+  catch (_) {
+    const ta = document.createElement('textarea'); ta.value = txt; ta.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (__) {} ta.remove();
+  }
+  showToast(k === 'to' ? '已复制收件人' : k === 'subject' ? '已复制主题' : k === 'body' ? '已复制正文' : '已复制主题和正文');
+}
+function invpEmailMailto() {
+  const D = _invpEmailData;
+  window.location.href = `mailto:${encodeURIComponent(D.to || '')}?subject=${encodeURIComponent(D.subject)}&body=${encodeURIComponent(D.body)}`;
+}
 async function loadInvpList() {
   const wrap = document.getElementById('invpListWrap');
   if (!wrap) return;
@@ -34421,6 +34521,7 @@ function renderInvpList() {
           ${containers}
           <div style="display:flex;gap:.5rem;margin-top:.65rem;flex-wrap:wrap">
             <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openInvpForEdit(${r.id})">📝 打开完整发票</button>
+            <button class="btn btn-sm btn-outline" style="color:#0369a1;border-color:#7dd3fc" onclick="event.stopPropagation();openInvpEmail(${r.id})">✉️ 邮件</button>
             ${isPaid
               ? `<button class="btn btn-sm btn-outline" style="color:var(--green);border-color:var(--green)" onclick="event.stopPropagation();openInvpReceiptModal(${r.id}, true)">收款回执</button>`
               : `<button class="btn btn-sm btn-blue" onclick="event.stopPropagation();openInvpReceiptModal(${r.id}, false)">上传回执</button>`}
@@ -34598,6 +34699,7 @@ function renderInvpList() {
           <td style="padding:8px 10px;text-align:center">
             <div style="display:flex;gap:.4rem;justify-content:center;flex-wrap:nowrap">
               <button class="btn btn-sm btn-outline" onclick="openInvpForEdit(${r.id})">查看/编辑</button>
+              <button class="btn btn-sm btn-outline" style="color:#0369a1;border-color:#7dd3fc" title="生成一封发这张 Invoice 的邮件（主题 + 正文），一键复制" onclick="openInvpEmail(${r.id})">✉️ 邮件</button>
               ${paidBtn}
               <button class="btn btn-sm btn-outline" style="color:#7c3aed;border-color:#c4b5fd" onclick="openInvpLinePayModal(${r.id}, '${esc(r.invoice_number)}')" title="按 container / 工人逐条或批量上传付款凭证">📎 分项凭证</button>
               <button class="btn btn-sm btn-outline" onclick="openInvpHistoryModal(${r.id}, '${esc(r.invoice_number)}')">历史</button>
