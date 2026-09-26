@@ -260,6 +260,12 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <input id="zcSearch" type="text" placeholder="搜员工姓名 / 电话 / 公司名…" oninput="zcSearch()" onfocus="zcSearch()" autocomplete="off" style="width:100%">
         <div id="zcList" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--g200);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);max-height:220px;overflow:auto;z-index:6"></div>
       </div>
+      <label style="font-size:.76rem;color:var(--g500)">🔀 合并其他 Zelle 名字（同一个人的其他账号 / 拼写）</label>
+      <div id="zcAliases" style="display:flex;flex-wrap:wrap;gap:.3rem;margin:.15rem 0 .3rem"></div>
+      <div id="zcMergeBox" style="position:relative;margin:0 0 .55rem">
+        <input id="zcMergeQ" type="text" placeholder="搜收款人名字，点一下并进来…" oninput="zcMergeSearch()" onfocus="zcMergeSearch()" autocomplete="off" style="width:100%">
+        <div id="zcMergeList" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--g200);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);max-height:220px;overflow:auto;z-index:6"></div>
+      </div>
       <label style="font-size:.76rem;color:var(--g500)">备注</label>
       <textarea id="zcNote" rows="2" placeholder="这是谁、付的什么钱…" style="width:100%;margin:.15rem 0 .6rem;font-family:inherit;resize:vertical"></textarea>
       <div style="display:flex;gap:.5rem;justify-content:flex-end">
@@ -3683,7 +3689,7 @@ function _zFiltered() {
   const out = [];
   for (const p of (_zData && _zData.people) || []) {
     const c = p.contact || {};
-    if (q && ![p.name, c.zelle_handle, c.link_label, c.note, ...p.txns.map(t => (t.ann_note || '') + ' ' + (t.ann_payee || '') + ' ' + (t.desc || ''))].join(' ').toLowerCase().includes(q)) continue;
+    if (q && ![p.name, ...(p.aliases || []), c.zelle_handle, c.link_label, c.note, ...p.txns.map(t => (t.ann_note || '') + ' ' + (t.ann_payee || '') + ' ' + (t.desc || ''))].join(' ').toLowerCase().includes(q)) continue;
     const annF = document.getElementById('zAnn').value;
     const txns = p.txns.filter(t => (!dir || (dir === 'out' ? t.amount >= 0 : t.amount < 0))
       && (!annF || (annF === 'todo' ? ['pending', 'unreviewed'].includes(_zAnnSt(t)) : _zAnnSt(t) === annF)));
@@ -3739,6 +3745,7 @@ function zRender() {
       c.link_type && c.link_label ? `<div style="font-size:.76rem;color:#0f4c6b;font-weight:400">${ZC_TYPE[c.link_type] || '🔗'} · ${esc(c.link_label)}</div>` : '',
       c.zelle_handle ? `<div style="font-size:.76rem;color:var(--g500);font-weight:400">📱 ${esc(c.zelle_handle)}</div>` : '',
       c.note ? `<div style="font-size:.74rem;color:#b45309;font-weight:400">📝 ${esc(c.note)}</div>` : '',
+      (p.aliases || []).length ? `<div style="font-size:.74rem;color:#6d28d9;font-weight:400">🔀 已合并：${esc(p.aliases.join('、'))}</div>` : '',
     ].join('');
     const rows = _zDetailRows(p.txns);
     return `<tr onclick="zToggleRow('${esc(p.key).replace(/'/g, "\\'")}')" style="cursor:pointer">
@@ -3849,7 +3856,7 @@ function _zTxnOps(t, mode) {
   const noteBtn = `<a onclick="zAnnOpen('${id}',event)" title="打开这笔交易的银行标注（付给谁/原因备注/照片），和银行直连页同一条" style="cursor:pointer;color:#b45309;font-size:.76rem;text-decoration:underline;white-space:nowrap">📝 标注</a>`;
   return mode === 'removed'
     ? `<span style="color:var(--g400);font-size:.72rem">原归属：${esc(t.name || '—')}</span> ${noteBtn} <a onclick="zOverride('${id}','clear',event)" style="cursor:pointer;color:#0ea5e9;font-size:.76rem;text-decoration:underline;white-space:nowrap">↩ 恢复</a>`
-    : `${t.ov === 'rename' ? `<span title="原自动归属：${esc(t.ov_orig || '')}" style="font-size:.68rem;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;border-radius:4px;padding:0 4px;white-space:nowrap">已改归属</span> <a onclick="zOverride('${id}','clear',event)" style="cursor:pointer;color:#0ea5e9;font-size:.74rem;text-decoration:underline;white-space:nowrap">↩ 恢复自动</a> ` : ''}${noteBtn} <a onclick="zRenameOpen('${id}',event)" style="cursor:pointer;color:#0f4c6b;font-size:.76rem;text-decoration:underline;white-space:nowrap">✎ 改归属</a>${USER.role === 'admin' ? ` <a onclick="zOverride('${id}','exclude',event)" style="cursor:pointer;color:#dc2626;font-size:.76rem;text-decoration:underline;white-space:nowrap">✕ 移除</a>` : ''}`;
+    : `${t.alias ? `<span title="合并进来的 Zelle 名字" style="font-size:.68rem;background:#f5f3ff;border:1px solid #c4b5fd;color:#6d28d9;border-radius:4px;padding:0 4px;white-space:nowrap">🔀 ${esc(t.alias)}</span> ` : ''}${t.ov === 'rename' ? `<span title="原自动归属：${esc(t.ov_orig || '')}" style="font-size:.68rem;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;border-radius:4px;padding:0 4px;white-space:nowrap">已改归属</span> <a onclick="zOverride('${id}','clear',event)" style="cursor:pointer;color:#0ea5e9;font-size:.74rem;text-decoration:underline;white-space:nowrap">↩ 恢复自动</a> ` : ''}${noteBtn} <a onclick="zRenameOpen('${id}',event)" style="cursor:pointer;color:#0f4c6b;font-size:.76rem;text-decoration:underline;white-space:nowrap">✎ 改归属</a>${USER.role === 'admin' ? ` <a onclick="zOverride('${id}','exclude',event)" style="cursor:pointer;color:#dc2626;font-size:.76rem;text-decoration:underline;white-space:nowrap">✕ 移除</a>` : ''}`;
 }
 function _zTxnRow(t, mode) {
   const cell = 'padding:.35rem .55rem;border-bottom:1px solid var(--g100)';
@@ -4030,6 +4037,9 @@ function zcEdit(key) {
   _zcPicked = c.link_type && c.link_label ? { type: c.link_type, id: c.link_id, label: c.link_label, handle: '' } : null;
   document.getElementById('zcName').textContent = p.name;
   zcSetHandles(c.zelle_handle);
+  document.getElementById('zcMergeQ').value = '';
+  document.getElementById('zcMergeList').style.display = 'none';
+  zcRenderAliases();
   document.getElementById('zcNote').value = c.note || '';
   document.getElementById('zcSearch').value = '';
   document.getElementById('zcList').style.display = 'none';
@@ -4050,7 +4060,7 @@ function zcGetHandles() {
 }
 function zcSetHandles(v) {
   document.getElementById('zcHandles').innerHTML = '';
-  const list = zcSplitHandles(v);
+  const seen = new Set(), list = zcSplitHandles(v).filter(x => !seen.has(x.toLowerCase()) && seen.add(x.toLowerCase()));
   (list.length ? list : ['']).forEach(h => zcAddHandle(h));
 }
 function zcAddHandle(val, focus) {
@@ -4066,6 +4076,54 @@ function zcAddHandle(val, focus) {
   };
   box.appendChild(row);
   if (focus) inp.focus();
+}
+// 🔀 合并: 别的收款人名字并到当前这个人名下 (立即生效, 不用点保存)
+function _zcPerson() { return ((_zData && _zData.people) || []).find(x => (x.key || x.name.toLowerCase()) === _zcKey); }
+function zcRenderAliases() {
+  const p = _zcPerson(), al = (p && p.aliases) || [];
+  document.getElementById('zcAliases').innerHTML = al.length ? al.map((a, i) =>
+    `<span style="display:inline-flex;align-items:center;gap:5px;border:1px solid #c4b5fd;background:#f5f3ff;color:#6d28d9;border-radius:8px;padding:2px 8px;font-size:.8rem;font-weight:600">${esc(a)}
+      <a onclick="zcUnmerge(${i})" title="拆开，恢复成单独的收款人" style="cursor:pointer;color:#dc2626;font-weight:700">✕</a></span>`).join('')
+    : '<span style="color:var(--g400);font-size:.76rem">还没有合并其他名字</span>';
+}
+function zcMergeSearch() {
+  const q = document.getElementById('zcMergeQ').value.trim().toLowerCase();
+  const list = document.getElementById('zcMergeList');
+  const hits = ((_zData && _zData.people) || []).filter(x => x.key !== _zcKey && x.name !== '(未识别)'
+    && (!q || [x.name, (x.contact || {}).zelle_handle, (x.contact || {}).link_label].join(' ').toLowerCase().includes(q))).slice(0, 30);
+  const typed = q && !hits.some(x => x.name.toLowerCase() === q) && q !== _zcKey;
+  list.innerHTML = hits.map(x =>
+    `<a onclick="zcMerge(decodeURIComponent('${encodeURIComponent(x.name)}'))" style="display:block;padding:.4rem .6rem;border-bottom:1px solid #f1f5f9;cursor:pointer;font-size:.84rem;color:#1f2937;text-decoration:none"><b>${esc(x.name)}</b> <span style="color:var(--g400);font-size:.76rem">${x.txns.length} 笔${(x.aliases || []).length ? ' · 含 ' + esc(x.aliases.join('、')) : ''}</span></a>`).join('')
+    + (typed ? `<a onclick="zcMerge(document.getElementById('zcMergeQ').value.trim())" style="display:block;padding:.4rem .6rem;cursor:pointer;font-size:.8rem;color:#6d28d9;text-decoration:none">＋ 按名字「${esc(document.getElementById('zcMergeQ').value.trim())}」合并（当前时间范围里没出现的）</a>` : '')
+    || '<div style="color:var(--g400);padding:.45rem .6rem;font-size:.8rem">没有别的收款人</div>';
+  list.style.display = '';
+}
+async function _zcAliasPost(body, okMsg) {
+  const key = _zcKey;
+  try {
+    const r = await api('/api/plaid/zelle-aliases', { method: 'POST', body: JSON.stringify(body) });
+    if (r && r.error) throw new Error(r.error);
+    await zLoad();
+    if (_zcKey === key) {
+      zcRenderAliases();
+      // 被合并名字档案里的 Zelle 号服务端已并过来; 和弹窗里还没保存的合在一起
+      zcSetHandles([...zcGetHandles(), ...zcSplitHandles(((_zcPerson() || {}).contact || {}).zelle_handle)].join(', '));
+    }
+    toast(okMsg);
+  } catch (e) { toast(e.message || '操作失败', true); }
+}
+function zcMerge(name) {
+  const p = _zcPerson();
+  if (!name || !p) return;
+  if (!confirm(`把「${name}」的所有 Zelle 转账并到「${p.name}」名下？\n之后统计里算作同一个人（可随时 ✕ 拆开）。`)) return;
+  document.getElementById('zcMergeQ').value = '';
+  document.getElementById('zcMergeList').style.display = 'none';
+  _zcAliasPost({ action: 'merge', alias_name: name, primary_name: p.name }, `✅ 已把「${name}」并入`);
+}
+function zcUnmerge(i) {
+  const p = _zcPerson(), a = p && (p.aliases || [])[i];
+  if (!a || !confirm(`把「${a}」拆开，恢复成单独的收款人？`)) return;
+  _zcAliasPost({ action: 'unmerge', alias_name: a }, `✅ 已拆开「${a}」`);
 }
 function zcRenderPicked() {
   const box = document.getElementById('zcPicked'), sBox = document.getElementById('zcSearchBox');
@@ -4137,6 +4195,8 @@ async function zcSaveNow() {
 document.addEventListener('click', e => {
   const list = document.getElementById('zcList');
   if (list && !e.target.closest('#zcSearchBox')) list.style.display = 'none';
+  const ml = document.getElementById('zcMergeList');
+  if (ml && !e.target.closest('#zcMergeBox')) ml.style.display = 'none';
 });
 
 // ── 📇 Zelle 联系人簿: 全部收款人一张表, 手机号 / 关联员工档案就地补齐 ──
