@@ -168,6 +168,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <button class="btn btn-sm btn-blue" onclick="zLoad()">↻ 刷新</button>
     </div>
     <div id="zSum" style="display:flex;gap:.45rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem;font-size:.82rem"></div>
+    <div id="zReqBar" style="display:none;margin-bottom:.6rem"></div>
     <div class="card" style="padding:0;overflow-x:auto">
       <table>
         <thead id="zHead"><tr>
@@ -229,6 +230,44 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       </div>
     </div>
   </div>
+  <!-- 🔀 Zelle 收款人合并确认: 仅管理员; 两边明细对照 → 勾选已核对 + 手输「合并」→ 最后再确认一次 -->
+  <div id="zmModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:97;align-items:center;justify-content:center;padding:16px">
+    <div class="card" style="max-width:560px;width:100%;padding:1.1rem 1.2rem 1rem;max-height:92vh;overflow:auto">
+      <div style="font-weight:800;margin-bottom:.5rem;color:#6d28d9">🔀 合并收款人 · 请仔细核对</div>
+      <div id="zmCompare" style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.6rem"></div>
+      <div id="zmWarn" style="font-size:.76rem;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:.45rem .6rem;margin-bottom:.6rem;line-height:1.5"></div>
+      <div id="zmReqInfo" style="display:none;font-size:.78rem;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:.4rem .6rem;margin-bottom:.6rem"></div>
+      <label style="display:flex;gap:.4rem;align-items:flex-start;font-size:.8rem;margin-bottom:.5rem;cursor:pointer">
+        <input type="checkbox" id="zmChk" onchange="zmCheck()" style="margin-top:.15rem"> 我已核对两边的转账明细，确定是同一个人
+      </label>
+      <div id="zmReasonBox">
+        <label style="font-size:.76rem;color:var(--g500)">为什么是同一个人（给管理员看，选填）</label>
+        <textarea id="zmReason" rows="2" placeholder="例：同一个手机号 / 员工本人说换了银行账号…" style="width:100%;margin:.15rem 0 .6rem;font-family:inherit;resize:vertical"></textarea>
+      </div>
+      <div id="zmTypeBox">
+        <label style="font-size:.76rem;color:var(--g500)">请输入 <b style="color:#6d28d9">合并</b> 两个字确认</label>
+        <input id="zmInput" type="text" autocomplete="off" placeholder="合并" oninput="zmCheck()" style="width:100%;margin:.15rem 0 .6rem">
+      </div>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button class="btn btn-outline" id="zmRejectBtn" onclick="zqReject(_zm && _zm.reqId, true)" style="display:none;color:#dc2626;border-color:#fecaca;margin-right:auto">驳回</button>
+        <button class="btn btn-outline" onclick="zmClose()">取消</button>
+        <button class="btn" id="zmBtn" disabled onclick="zmConfirm()" style="background:#6d28d9;color:#fff;border-color:#6d28d9;opacity:.4;cursor:not-allowed">下一步</button>
+      </div>
+    </div>
+  </div>
+  <!-- 🔀 合并申请列表: 管理员逐条审核 (审核走上面的对照确认) / 驳回 -->
+  <div id="zqModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:96;align-items:center;justify-content:center;padding:16px">
+    <div class="card" style="max-width:620px;width:100%;padding:1.1rem 1.2rem 1rem;max-height:90vh;overflow:auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem">
+        <div style="font-weight:800;color:#6d28d9">🔀 收款人合并申请</div>
+        <select id="zqStatus" onchange="zqLoadList()" style="font-size:.8rem">
+          <option value="pending">待审批</option><option value="approved">已通过</option><option value="rejected">已驳回</option><option value="all">全部</option>
+        </select>
+      </div>
+      <div id="zqList" style="font-size:.82rem"></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:.7rem"><button class="btn btn-outline" onclick="document.getElementById('zqModal').style.display='none'">关闭</button></div>
+    </div>
+  </div>
   <!-- ✕ Zelle 单笔移除弹窗: 仅管理员; 必须手输「移除」按钮才可点 -->
   <div id="zxModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:96;align-items:center;justify-content:center;padding:16px">
     <div class="card" style="max-width:420px;width:100%;padding:1.1rem 1.2rem 1rem">
@@ -260,9 +299,9 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <input id="zcSearch" type="text" placeholder="搜员工姓名 / 电话 / 公司名…" oninput="zcSearch()" onfocus="zcSearch()" autocomplete="off" style="width:100%">
         <div id="zcList" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--g200);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);max-height:220px;overflow:auto;z-index:6"></div>
       </div>
-      <label style="font-size:.76rem;color:var(--g500)">🔀 合并其他 Zelle 名字（同一个人的其他账号 / 拼写）</label>
-      <div id="zcAliases" style="display:flex;flex-wrap:wrap;gap:.3rem;margin:.15rem 0 .3rem"></div>
-      <div id="zcMergeBox" style="position:relative;margin:0 0 .55rem">
+      <label style="font-size:.76rem;color:var(--g500)">🔀 合并其他 Zelle 名字（同一个人的其他账号 / 拼写）<span id="zcMergeAdminTip" style="color:var(--g400)"> · 提交后由管理员审批</span></label>
+      <div id="zcAliases" style="display:flex;flex-wrap:wrap;gap:.3rem;margin:.15rem 0 .55rem"></div>
+      <div id="zcMergeBox" style="position:relative;margin:-.25rem 0 .55rem">
         <input id="zcMergeQ" type="text" placeholder="搜收款人名字，点一下并进来…" oninput="zcMergeSearch()" onfocus="zcMergeSearch()" autocomplete="off" style="width:100%">
         <div id="zcMergeList" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--g200);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);max-height:220px;overflow:auto;z-index:6"></div>
       </div>
@@ -3668,6 +3707,7 @@ async function zLoad() {
   if (to) q.set('end', to);
   if (acc) q.set('account_id', acc);
   document.getElementById('zSum').innerHTML = '<span style="color:var(--g400)">加载中…</span>';
+  zqLoad();
   try {
     _zData = await api('/api/plaid/zelle-stats?' + q.toString());
     if (_zData && _zData.error) throw new Error(_zData.error);
@@ -4080,11 +4120,16 @@ function zcAddHandle(val, focus) {
 // 🔀 合并: 别的收款人名字并到当前这个人名下 (立即生效, 不用点保存)
 function _zcPerson() { return ((_zData && _zData.people) || []).find(x => (x.key || x.name.toLowerCase()) === _zcKey); }
 function zcRenderAliases() {
-  const p = _zcPerson(), al = (p && p.aliases) || [];
+  const p = _zcPerson(), al = (p && p.aliases) || [], admin = USER.role === 'admin';
+  document.getElementById('zcMergeAdminTip').style.display = admin ? 'none' : '';
   document.getElementById('zcAliases').innerHTML = al.length ? al.map((a, i) =>
     `<span style="display:inline-flex;align-items:center;gap:5px;border:1px solid #c4b5fd;background:#f5f3ff;color:#6d28d9;border-radius:8px;padding:2px 8px;font-size:.8rem;font-weight:600">${esc(a)}
-      <a onclick="zcUnmerge(${i})" title="拆开，恢复成单独的收款人" style="cursor:pointer;color:#dc2626;font-weight:700">✕</a></span>`).join('')
+      ${admin ? `<a onclick="zcUnmerge(${i})" title="拆开，恢复成单独的收款人" style="cursor:pointer;color:#dc2626;font-weight:700">✕</a>` : ''}</span>`).join('')
     : '<span style="color:var(--g400);font-size:.76rem">还没有合并其他名字</span>';
+  // 涉及这个人的待审批申请
+  const pend = p ? _zReqs.filter(q => [q.alias_name, q.primary_name].some(n => n.toLowerCase() === p.name.toLowerCase())) : [];
+  if (pend.length) document.getElementById('zcAliases').innerHTML += pend.map(q =>
+    `<span title="申请人 ${esc(q.requested_by || '')}" style="display:inline-flex;align-items:center;gap:5px;border:1px dashed #fcd34d;background:#fffbeb;color:#b45309;border-radius:8px;padding:2px 8px;font-size:.78rem">⏳ 待审批：${esc(q.alias_name)} → ${esc(q.primary_name)}</span>`).join('');
 }
 function zcMergeSearch() {
   const q = document.getElementById('zcMergeQ').value.trim().toLowerCase();
@@ -4098,10 +4143,10 @@ function zcMergeSearch() {
     || '<div style="color:var(--g400);padding:.45rem .6rem;font-size:.8rem">没有别的收款人</div>';
   list.style.display = '';
 }
-async function _zcAliasPost(body, okMsg) {
+async function _zcAliasPost(url, body, okMsg) {
   const key = _zcKey;
   try {
-    const r = await api('/api/plaid/zelle-aliases', { method: 'POST', body: JSON.stringify(body) });
+    const r = await api(url, { method: 'POST', body: JSON.stringify(body) });
     if (r && r.error) throw new Error(r.error);
     await zLoad();
     if (_zcKey === key) {
@@ -4112,18 +4157,129 @@ async function _zcAliasPost(body, okMsg) {
     toast(okMsg);
   } catch (e) { toast(e.message || '操作失败', true); }
 }
+// 🔀 合并确认弹窗 (三种): direct=管理员直接合并 | request=客服·会计提交申请 | approve=管理员审批申请
+// 管理员: 两边对照 → 勾选已核对 + 手输「合并」→ 最后再确认一次; 提交申请只需勾选已核对
+let _zm = null;
+function _zmCard(title, x, name, color) {
+  const c = (x && x.contact) || {};
+  const tx = (x && x.txns) || [];
+  const recent = tx.slice(0, 5).map(t => `<div style="display:flex;justify-content:space-between;gap:.4rem"><span style="color:var(--g400)">${esc(t.date || '')}</span><span style="color:${t.amount >= 0 ? '#dc2626' : '#15803d'}">${t.amount >= 0 ? '−' : '+'}${money(Math.abs(t.amount))}</span></div>`).join('');
+  return `<div style="border:1px solid ${color};border-radius:8px;padding:.5rem .6rem;font-size:.78rem;line-height:1.55;min-width:0">
+    <div style="color:var(--g400);font-size:.7rem">${title}</div>
+    <div style="font-weight:800;font-size:.9rem;word-break:break-all">${esc(name)}</div>
+    ${x ? `<div>${tx.length} 笔 · 转出 <b style="color:#dc2626">${money(x.out_total || 0)}</b> · 转入 <b style="color:#15803d">${money(x.in_total || 0)}</b></div>
+      <div style="color:var(--g500)">${esc(x.first_date || '—')} ~ ${esc(x.last_date || '—')}</div>
+      ${c.zelle_handle ? `<div>📱 ${esc(c.zelle_handle)}</div>` : ''}
+      ${c.link_label ? `<div style="color:#0f4c6b">${ZC_TYPE[c.link_type] || '🔗'} · ${esc(c.link_label)}</div>` : ''}
+      ${(x.aliases || []).length ? `<div style="color:#6d28d9">🔀 已含：${esc(x.aliases.join('、'))}</div>` : ''}
+      ${recent ? `<div style="margin-top:.3rem;border-top:1px dashed var(--g200);padding-top:.25rem">${recent}${tx.length > 5 ? `<div style="color:var(--g400)">…还有 ${tx.length - 5} 笔</div>` : ''}</div>` : ''}`
+    : '<div style="color:#b45309">当前时间范围里没有这个名字的转账，无法核对明细（可把上面的日期范围放宽再看）</div>'}
+  </div>`;
+}
+function _zPersonByName(n) { return ((_zData && _zData.people) || []).find(y => y.name.toLowerCase() === String(n).toLowerCase()) || null; }
+function zmOpen(mode, alias, primary, req) {
+  const x = _zPersonByName(alias), p = _zPersonByName(primary);
+  _zm = { mode, alias: x ? x.name : alias, primary: p ? p.name : primary, reqId: req ? req.id : null };
+  document.getElementById('zmCompare').innerHTML = _zmCard('被合并（这个名字会消失）', x, _zm.alias, '#fecaca') + _zmCard('合并到（保留）', p, _zm.primary, '#a7f3d0');
+  document.getElementById('zmWarn').innerHTML = `合并后「<b>${esc(_zm.alias)}</b>」${x && (x.aliases || []).length ? '（连同它已含的名字）' : ''}的<b>所有时间</b>的 Zelle 转账都算到「<b>${esc(_zm.primary)}</b>」名下，它存过的 Zelle 号也并过来。<br>认错人会让统计出错，不确定请${mode === 'approve' ? '驳回' : '取消'}。`
+    + (mode === 'request' ? '<br><b>提交后不会马上合并，要管理员审批通过才生效。</b>' : '');
+  const info = document.getElementById('zmReqInfo');
+  info.style.display = req ? '' : 'none';
+  info.innerHTML = req ? `申请人：<b>${esc(req.requested_by || '—')}</b> · ${esc(req.requested_at || '')}${req.reason ? `<br>理由：${esc(req.reason)}` : ''}` : '';
+  document.getElementById('zmReasonBox').style.display = mode === 'request' ? '' : 'none';
+  document.getElementById('zmTypeBox').style.display = mode === 'request' ? 'none' : '';
+  document.getElementById('zmRejectBtn').style.display = mode === 'approve' ? '' : 'none';
+  document.getElementById('zmBtn').textContent = mode === 'request' ? '提交给管理员审批' : '下一步';
+  document.getElementById('zmChk').checked = false;
+  document.getElementById('zmInput').value = '';
+  document.getElementById('zmReason').value = '';
+  zmCheck();
+  document.getElementById('zmModal').style.display = 'flex';
+}
 function zcMerge(name) {
   const p = _zcPerson();
   if (!name || !p) return;
-  if (!confirm(`把「${name}」的所有 Zelle 转账并到「${p.name}」名下？\n之后统计里算作同一个人（可随时 ✕ 拆开）。`)) return;
-  document.getElementById('zcMergeQ').value = '';
   document.getElementById('zcMergeList').style.display = 'none';
-  _zcAliasPost({ action: 'merge', alias_name: name, primary_name: p.name }, `✅ 已把「${name}」并入`);
+  zmOpen(USER.role === 'admin' ? 'direct' : 'request', name, p.name);
 }
-function zcUnmerge(i) {
+function zmClose() { document.getElementById('zmModal').style.display = 'none'; _zm = null; }
+function zmCheck() {
+  const typed = !_zm || _zm.mode === 'request' || document.getElementById('zmInput').value.trim() === '合并';
+  const ok = document.getElementById('zmChk').checked && typed;
+  const b = document.getElementById('zmBtn');
+  b.disabled = !ok; b.style.opacity = ok ? '1' : '.4'; b.style.cursor = ok ? 'pointer' : 'not-allowed';
+}
+async function zmConfirm() {
+  const m = _zm;
+  if (!m || !document.getElementById('zmChk').checked) return;
+  if (m.mode === 'request') {
+    const reason = document.getElementById('zmReason').value.trim();
+    zmClose();
+    document.getElementById('zcMergeQ').value = '';
+    return _zcAliasPost('/api/plaid/zelle-alias-requests', { alias_name: m.alias, primary_name: m.primary, reason }, '✅ 已提交，等管理员审批');
+  }
+  if (document.getElementById('zmInput').value.trim() !== '合并') return;
+  zmClose();
+  if (!(await pageConfirm(`最后确认：\n\n把「${m.alias}」合并到「${m.primary}」？`))) return;
+  document.getElementById('zcMergeQ').value = '';
+  if (m.mode === 'approve') {
+    await _zcAliasPost(`/api/plaid/zelle-alias-requests/${m.reqId}/review`, { action: 'approve', confirm: '合并' }, `✅ 已批准，「${m.alias}」并入「${m.primary}」`);
+    if (document.getElementById('zqModal').style.display === 'flex') zqLoadList();
+  } else {
+    _zcAliasPost('/api/plaid/zelle-aliases', { action: 'merge', alias_name: m.alias, primary_name: m.primary, confirm: '合并' }, `✅ 已把「${m.alias}」并入「${m.primary}」`);
+  }
+}
+async function zcUnmerge(i) {
   const p = _zcPerson(), a = p && (p.aliases || [])[i];
-  if (!a || !confirm(`把「${a}」拆开，恢复成单独的收款人？`)) return;
-  _zcAliasPost({ action: 'unmerge', alias_name: a }, `✅ 已拆开「${a}」`);
+  if (!a || USER.role !== 'admin') return;
+  if (!(await pageConfirm(`把「${a}」从「${p.name}」拆开，恢复成单独的收款人？`))) return;
+  _zcAliasPost('/api/plaid/zelle-aliases', { action: 'unmerge', alias_name: a }, `✅ 已拆开「${a}」`);
+}
+// 待审批的合并申请: 页面顶上一条提示; 管理员点进去逐条审核
+let _zReqs = [];
+async function zqLoad() {
+  try { const r = await api('/api/plaid/zelle-alias-requests'); _zReqs = (r && r.requests) || []; } catch (e) { _zReqs = []; }
+  const bar = document.getElementById('zReqBar');
+  if (!_zReqs.length) { bar.style.display = 'none'; bar.innerHTML = ''; }
+  else {
+    bar.style.display = '';
+    bar.innerHTML = `<div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:.45rem .7rem;font-size:.82rem;color:#5b21b6">
+      🔀 <b>${_zReqs.length}</b> 条收款人合并申请${USER.role === 'admin' ? '等你审批' : '等管理员审批'}
+      <a onclick="zqOpen()" style="cursor:pointer;text-decoration:underline;font-weight:700">${USER.role === 'admin' ? '去审批' : '查看'}</a></div>`;
+  }
+  if (_zcKey && document.getElementById('zcModal').style.display === 'flex') zcRenderAliases();
+}
+function zqOpen() {
+  document.getElementById('zqStatus').value = 'pending';
+  document.getElementById('zqModal').style.display = 'flex';
+  zqLoadList();
+}
+let _zqRows = [];
+async function zqLoadList() {
+  const st = document.getElementById('zqStatus').value, box = document.getElementById('zqList');
+  box.innerHTML = '<div style="color:var(--g400)">加载中…</div>';
+  try { const r = await api('/api/plaid/zelle-alias-requests?status=' + st); _zqRows = (r && r.requests) || []; }
+  catch (e) { box.innerHTML = `<div style="color:#dc2626">${esc(e.message || '加载失败')}</div>`; return; }
+  const ST = { pending: '<span style="color:#b45309">⏳ 待审批</span>', approved: '<span style="color:#15803d">✅ 已通过</span>', rejected: '<span style="color:#dc2626">✕ 已驳回</span>' };
+  box.innerHTML = _zqRows.length ? _zqRows.map((q, i) => `<div style="border:1px solid var(--g200);border-radius:8px;padding:.5rem .65rem;margin-bottom:.45rem">
+      <div style="display:flex;justify-content:space-between;gap:.5rem;flex-wrap:wrap"><div><b>${esc(q.alias_name)}</b> <span style="color:#6d28d9">→ 并入</span> <b>${esc(q.primary_name)}</b></div><div>${ST[q.status] || esc(q.status)}</div></div>
+      <div style="color:var(--g500);font-size:.76rem">申请人 ${esc(q.requested_by || '—')} · ${esc(q.requested_at || '')}${q.reviewed_by ? ` · 审批 ${esc(q.reviewed_by)} ${esc(q.reviewed_at || '')}` : ''}</div>
+      ${q.reason ? `<div style="font-size:.78rem;margin-top:.15rem">理由：${esc(q.reason)}</div>` : ''}
+      ${q.status === 'pending' && USER.role === 'admin' ? `<div style="display:flex;gap:.4rem;justify-content:flex-end;margin-top:.35rem">
+        <button class="btn btn-sm btn-outline" onclick="zqReject(${q.id})" style="color:#dc2626;border-color:#fecaca">驳回</button>
+        <button class="btn btn-sm" onclick="zqReview(${i})" style="background:#6d28d9;color:#fff;border-color:#6d28d9">核对并审批</button></div>` : ''}
+    </div>`).join('') : '<div style="color:var(--g400)">没有记录</div>';
+}
+function zqReview(i) {
+  const q = _zqRows[i];
+  if (q && USER.role === 'admin') zmOpen('approve', q.alias_name, q.primary_name, q);
+}
+async function zqReject(id, fromModal) {
+  if (!id || USER.role !== 'admin') return;
+  if (!(await pageConfirm('驳回这条合并申请？两个名字保持分开。'))) return;
+  if (fromModal) zmClose();
+  await _zcAliasPost(`/api/plaid/zelle-alias-requests/${id}/review`, { action: 'reject' }, '已驳回');
+  if (document.getElementById('zqModal').style.display === 'flex') zqLoadList();
 }
 function zcRenderPicked() {
   const box = document.getElementById('zcPicked'), sBox = document.getElementById('zcSearchBox');

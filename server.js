@@ -35721,44 +35721,104 @@ app.post('/api/plaid/zelle-overrides', requireAdmin, requireRole('admin', 'cs', 
     res.json({ ok: 1 });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-// 收款人合并: merge 把 alias_name 并到 primary_name 名下 / unmerge 拆开
-app.post('/api/plaid/zelle-aliases', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
+// 收款人合并: 仅管理员直接合并 / 拆开; 客服·会计走「合并申请」, 管理员审批通过才生效。
+// 合并必须带 confirm='合并' (前端核对两边明细 + 手输「合并」+ 最后确认)
+db.exec(`CREATE TABLE IF NOT EXISTS zelle_alias_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  alias_name TEXT NOT NULL,
+  primary_name TEXT NOT NULL,
+  reason TEXT DEFAULT '',
+  status TEXT DEFAULT 'pending',
+  requested_by TEXT DEFAULT '',
+  requested_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  reviewed_by TEXT DEFAULT '',
+  reviewed_at DATETIME
+)`);
+// 执行合并; 出错抛 { status, error }
+function _zelleDoMerge(aliasName, primaryName, by) {
+  const alias = String(aliasName || '').trim().slice(0, 120);
+  const aKey = alias.toLowerCase();
+  const primary = String(primaryName || '').trim().slice(0, 120);
+  if (!alias) throw { status: 400, error: '缺少要合并的名字' };
+  if (!primary) throw { status: 400, error: '缺少主收款人' };
+  if (primary.toLowerCase() === aKey) throw { status: 400, error: '不能合并到自己' };
+  const resolve = _zelleAliasMap();
+  if (resolve(primary).toLowerCase() === aKey) throw { status: 400, error: `「${primary}」已经并在「${alias}」名下了，请先拆开` };
+  const target = resolve(primary);
+  db.transaction(() => {
+    db.prepare(`INSERT INTO zelle_aliases (alias_key, alias_name, primary_name, updated_by, updated_at) VALUES (?,?,?,?,datetime('now'))
+        ON CONFLICT(alias_key) DO UPDATE SET alias_name=excluded.alias_name, primary_name=excluded.primary_name,
+          updated_by=excluded.updated_by, updated_at=datetime('now')`).run(aKey, alias, target, by || '');
+    // 原来并到 alias 名下的, 一起改指向主收款人
+    db.prepare('UPDATE zelle_aliases SET primary_name=? WHERE lower(primary_name)=?').run(target, aKey);
+    // 被合并名字档案里的 Zelle 号并进主收款人 (去重), 备注/关联以主收款人为准
+    const ac = db.prepare('SELECT * FROM zelle_contacts WHERE name_key=?').get(aKey);
+    if (ac && String(ac.zelle_handle || '').trim()) {
+      const tKey = target.toLowerCase();
+      const pc = db.prepare('SELECT * FROM zelle_contacts WHERE name_key=?').get(tKey);
+      const seen = new Set(), hs = [];
+      [pc ? pc.zelle_handle : '', ac.zelle_handle].join(',').split(/[,，;；\n]+/).map(x => x.trim()).filter(Boolean)
+        .forEach(h => { if (!seen.has(h.toLowerCase())) { seen.add(h.toLowerCase()); hs.push(h); } });
+      if (pc) db.prepare('UPDATE zelle_contacts SET zelle_handle=? WHERE name_key=?').run(hs.join(', ').slice(0, 500), tKey);
+      else db.prepare(`INSERT INTO zelle_contacts (name_key, display_name, zelle_handle, updated_by, updated_at) VALUES (?,?,?,?,datetime('now'))`)
+        .run(tKey, target, hs.join(', ').slice(0, 500), by || '');
+    }
+  })();
+  return target;
+}
+app.post('/api/plaid/zelle-aliases', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const b = req.body || {};
-    const alias = String(b.alias_name || '').trim().slice(0, 120);
-    const aKey = alias.toLowerCase();
-    if (!alias) return res.status(400).json({ error: '缺少要合并的名字' });
     if (b.action === 'unmerge') {
+      const aKey = String(b.alias_name || '').trim().toLowerCase();
+      if (!aKey) return res.status(400).json({ error: '缺少要拆开的名字' });
       db.prepare('DELETE FROM zelle_aliases WHERE alias_key=?').run(aKey);
       return res.json({ ok: 1 });
     }
-    const primary = String(b.primary_name || '').trim().slice(0, 120);
-    if (!primary) return res.status(400).json({ error: '缺少主收款人' });
-    const resolve = _zelleAliasMap();
-    if (primary.toLowerCase() === aKey) return res.status(400).json({ error: '不能合并到自己' });
-    if (resolve(primary).toLowerCase() === aKey) return res.status(400).json({ error: `「${primary}」已经并在「${alias}」名下了，请先拆开` });
-    const target = resolve(primary);
-    db.transaction(() => {
-      db.prepare(`INSERT INTO zelle_aliases (alias_key, alias_name, primary_name, updated_by, updated_at) VALUES (?,?,?,?,datetime('now'))
-          ON CONFLICT(alias_key) DO UPDATE SET alias_name=excluded.alias_name, primary_name=excluded.primary_name,
-            updated_by=excluded.updated_by, updated_at=datetime('now')`).run(aKey, alias, target, req.userName || '');
-      // 原来并到 alias 名下的, 一起改指向主收款人
-      db.prepare('UPDATE zelle_aliases SET primary_name=? WHERE lower(primary_name)=?').run(target, aKey);
-      // 被合并名字档案里的 Zelle 号并进主收款人 (去重), 备注/关联以主收款人为准
-      const ac = db.prepare('SELECT * FROM zelle_contacts WHERE name_key=?').get(aKey);
-      if (ac && String(ac.zelle_handle || '').trim()) {
-        const tKey = target.toLowerCase();
-        const pc = db.prepare('SELECT * FROM zelle_contacts WHERE name_key=?').get(tKey);
-        const seen = new Set(), hs = [];
-        [pc ? pc.zelle_handle : '', ac.zelle_handle].join(',').split(/[,，;；\n]+/).map(x => x.trim()).filter(Boolean)
-          .forEach(h => { if (!seen.has(h.toLowerCase())) { seen.add(h.toLowerCase()); hs.push(h); } });
-        if (pc) db.prepare('UPDATE zelle_contacts SET zelle_handle=? WHERE name_key=?').run(hs.join(', ').slice(0, 500), tKey);
-        else db.prepare(`INSERT INTO zelle_contacts (name_key, display_name, zelle_handle, updated_by, updated_at) VALUES (?,?,?,?,datetime('now'))`)
-          .run(tKey, target, hs.join(', ').slice(0, 500), req.userName || '');
-      }
-    })();
-    res.json({ ok: 1, primary_name: target });
+    if (b.confirm !== '合并') return res.status(400).json({ error: '合并需要确认' });
+    res.json({ ok: 1, primary_name: _zelleDoMerge(b.alias_name, b.primary_name, req.userName) });
+  } catch (e) { res.status(e.status || 500).json({ error: e.error || e.message }); }
+});
+// 合并申请: 列表 (默认待审批) / 提交 / 审批
+app.get('/api/plaid/zelle-alias-requests', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
+  try {
+    const st = ['pending', 'approved', 'rejected', 'all'].includes(req.query.status) ? req.query.status : 'pending';
+    const rows = st === 'all'
+      ? db.prepare('SELECT * FROM zelle_alias_requests ORDER BY id DESC LIMIT 200').all()
+      : db.prepare('SELECT * FROM zelle_alias_requests WHERE status=? ORDER BY id DESC LIMIT 200').all(st);
+    res.json({ requests: rows });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/plaid/zelle-alias-requests', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
+  try {
+    const b = req.body || {};
+    const alias = String(b.alias_name || '').trim().slice(0, 120), primary = String(b.primary_name || '').trim().slice(0, 120);
+    if (!alias || !primary) return res.status(400).json({ error: '缺少收款人' });
+    if (alias.toLowerCase() === primary.toLowerCase()) return res.status(400).json({ error: '不能合并到自己' });
+    const dup = db.prepare(`SELECT id FROM zelle_alias_requests WHERE status='pending' AND lower(alias_name)=? AND lower(primary_name)=?`)
+      .get(alias.toLowerCase(), primary.toLowerCase());
+    if (dup) return res.status(400).json({ error: '这条合并申请已经提交过了，等管理员审批' });
+    const r = db.prepare(`INSERT INTO zelle_alias_requests (alias_name, primary_name, reason, requested_by) VALUES (?,?,?,?)`)
+      .run(alias, primary, String(b.reason || '').trim().slice(0, 300), req.userName || '');
+    res.json({ ok: 1, id: r.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/plaid/zelle-alias-requests/:id/review', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const b = req.body || {};
+    const r = db.prepare('SELECT * FROM zelle_alias_requests WHERE id=?').get(parseInt(req.params.id) || 0);
+    if (!r) return res.status(404).json({ error: '申请不存在' });
+    if (r.status !== 'pending') return res.status(400).json({ error: '这条申请已经处理过了' });
+    if (b.action === 'reject') {
+      db.prepare(`UPDATE zelle_alias_requests SET status='rejected', reviewed_by=?, reviewed_at=datetime('now') WHERE id=?`).run(req.userName || '', r.id);
+      return res.json({ ok: 1 });
+    }
+    if (b.action !== 'approve') return res.status(400).json({ error: '无效操作' });
+    if (b.confirm !== '合并') return res.status(400).json({ error: '合并需要确认' });
+    const target = _zelleDoMerge(r.alias_name, r.primary_name, req.userName);
+    db.prepare(`UPDATE zelle_alias_requests SET status='approved', reviewed_by=?, reviewed_at=datetime('now') WHERE id=?`).run(req.userName || '', r.id);
+    res.json({ ok: 1, primary_name: target });
+  } catch (e) { res.status(e.status || 500).json({ error: e.error || e.message }); }
 });
 // 一次性: 「移除」改成仅管理员 + 反复确认之前误点移除的, 全部恢复 (删掉 exclude 改判)
 try {
