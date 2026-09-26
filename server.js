@@ -35660,7 +35660,7 @@ app.post('/api/plaid/zelle-contacts', requireAdmin, requireRole('admin', 'cs', '
         ON CONFLICT(name_key) DO UPDATE SET display_name=excluded.display_name, zelle_handle=excluded.zelle_handle,
           note=excluded.note, link_type=excluded.link_type, link_id=excluded.link_id, link_label=excluded.link_label,
           updated_by=excluded.updated_by, updated_at=datetime('now')`)
-      .run(key, String(b.display_name || '').trim().slice(0, 120), String(b.zelle_handle || '').trim().slice(0, 120),
+      .run(key, String(b.display_name || '').trim().slice(0, 120), String(b.zelle_handle || '').split(/[,，;；\n]+/).map(x => x.trim()).filter(Boolean).join(', ').slice(0, 500),
         String(b.note || '').trim().slice(0, 500), linkType, linkType ? (parseInt(b.link_id) || null) : null,
         linkType ? String(b.link_label || '').trim().slice(0, 160) : '', req.userName || '');
     res.json({ ok: 1 });

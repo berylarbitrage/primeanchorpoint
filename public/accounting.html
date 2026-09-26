@@ -249,8 +249,11 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <div class="card" style="max-width:460px;width:100%;padding:1.1rem 1.2rem 1rem">
       <div style="font-weight:800;margin-bottom:.2rem">✎ 收款人备注 · <span id="zcName"></span></div>
       <div style="font-size:.75rem;color:var(--g400);margin-bottom:.6rem">补上 Zelle 号（手机/邮箱）、备注这是谁，可关联到系统里的员工 / 劳务公司 / 客户公司。</div>
-      <label style="font-size:.76rem;color:var(--g500)">Zelle 号（手机 / 邮箱）</label>
-      <input id="zcHandle" type="text" placeholder="例：626-823-2361 或 name@mail.com" style="width:100%;margin:.15rem 0 .55rem">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <label style="font-size:.76rem;color:var(--g500)">Zelle 号（手机 / 邮箱，可填多个）</label>
+        <a onclick="zcAddHandle('', true)" style="cursor:pointer;font-size:.76rem;color:var(--blue,#2563eb);font-weight:600">＋ 添加</a>
+      </div>
+      <div id="zcHandles" style="margin:.15rem 0 .55rem;display:flex;flex-direction:column;gap:.3rem"></div>
       <label style="font-size:.76rem;color:var(--g500)">关联到系统里的员工 / 公司</label>
       <div id="zcPicked" style="display:none;margin:.15rem 0 .55rem"></div>
       <div id="zcSearchBox" style="position:relative;margin:.15rem 0 .55rem">
@@ -4026,7 +4029,7 @@ function zcEdit(key) {
   const c = p.contact || {};
   _zcPicked = c.link_type && c.link_label ? { type: c.link_type, id: c.link_id, label: c.link_label, handle: '' } : null;
   document.getElementById('zcName').textContent = p.name;
-  document.getElementById('zcHandle').value = c.zelle_handle || '';
+  zcSetHandles(c.zelle_handle);
   document.getElementById('zcNote').value = c.note || '';
   document.getElementById('zcSearch').value = '';
   document.getElementById('zcList').style.display = 'none';
@@ -4037,6 +4040,32 @@ function zcEdit(key) {
     document.getElementById('zcSearch').value = p.name;
     zcSearch();
   }
+}
+// 多个 Zelle 号: 存库时用逗号连成一串 (zelle_handle), 弹窗里一行一个
+function zcSplitHandles(v) { return String(v || '').split(/[,，;；\n]+/).map(x => x.trim()).filter(Boolean); }
+function zcGetHandles() {
+  const seen = new Set();
+  return [...document.querySelectorAll('#zcHandles input')].map(i => i.value.trim())
+    .flatMap(zcSplitHandles).filter(x => !seen.has(x.toLowerCase()) && seen.add(x.toLowerCase()));
+}
+function zcSetHandles(v) {
+  document.getElementById('zcHandles').innerHTML = '';
+  const list = zcSplitHandles(v);
+  (list.length ? list : ['']).forEach(h => zcAddHandle(h));
+}
+function zcAddHandle(val, focus) {
+  const box = document.getElementById('zcHandles');
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:.35rem;align-items:center';
+  row.innerHTML = `<input type="text" placeholder="例：626-823-2361 或 name@mail.com" style="flex:1;min-width:0">
+    <a title="删除这个号" style="cursor:pointer;color:#dc2626;font-weight:700;padding:0 .3rem">✕</a>`;
+  const inp = row.querySelector('input');
+  inp.value = val || '';
+  row.querySelector('a').onclick = () => {
+    if (box.children.length > 1) row.remove(); else inp.value = '';
+  };
+  box.appendChild(row);
+  if (focus) inp.focus();
 }
 function zcRenderPicked() {
   const box = document.getElementById('zcPicked'), sBox = document.getElementById('zcSearchBox');
@@ -4068,8 +4097,15 @@ function zcPick(i) {
   const m = _zcHits[i];
   if (!m) return;
   _zcPicked = m;
-  const h = document.getElementById('zcHandle');
-  if (!h.value.trim() && m.handle) h.value = m.handle; // 带出对方存过的电话/Zelle号
+  // 带出对方存过的电话/Zelle号 (已有就不重复加)
+  if (m.handle) {
+    const cur = zcGetHandles();
+    const norm = x => /@/.test(x) ? x.toLowerCase() : x.replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+    if (!cur.some(x => norm(x) === norm(m.handle))) {
+      const empty = [...document.querySelectorAll('#zcHandles input')].find(i => !i.value.trim());
+      if (empty) empty.value = m.handle; else zcAddHandle(m.handle);
+    }
+  }
   document.getElementById('zcList').style.display = 'none';
   zcRenderPicked();
 }
@@ -4083,7 +4119,7 @@ async function zcSaveNow() {
     const body = {
       name_key: _zcKey,
       display_name: p ? p.name : '',
-      zelle_handle: document.getElementById('zcHandle').value.trim(),
+      zelle_handle: zcGetHandles().join(', '),
       note: document.getElementById('zcNote').value.trim(),
       link_type: _zcPicked ? _zcPicked.type : '',
       link_id: _zcPicked ? _zcPicked.id : null,
@@ -4144,7 +4180,7 @@ function zDirRender() {
   document.getElementById('zDirBody').innerHTML = rows.length ? rows.map(p => `
     <tr data-k="${encodeURIComponent(p.key)}">
       <td style="font-weight:700;white-space:nowrap">${esc(p.name)}</td>
-      <td><input type="text" value="${esc(p.zelle_handle || '')}" placeholder="手机 / 邮箱" onchange="zDirField(this,'zelle_handle')" style="width:150px;font-size:.8rem"></td>
+      <td><input type="text" value="${esc(p.zelle_handle || '')}" placeholder="手机 / 邮箱，多个用逗号隔开" title="多个 Zelle 号用逗号隔开" onchange="zDirField(this,'zelle_handle')" style="width:150px;font-size:.8rem"></td>
       <td style="min-width:230px">${p.link_type
         ? `<span style="font-size:.78rem;background:#ecfdf5;color:#166534;border:1px solid #bbf7d0;border-radius:6px;padding:1px 7px;white-space:nowrap">${typeIcon(p.link_type)} ${esc(p.link_label || '')}</span> <a style="cursor:pointer;font-size:.72rem;color:#dc2626;text-decoration:underline" onclick="zDirUnlink(this)" title="解除关联">✕</a>`
         : `<span style="position:relative;display:block"><input type="text" placeholder="搜员工姓名 / 电话关联…" oninput="zDirSearch(this)" style="width:100%;box-sizing:border-box;font-size:.8rem"><span class="zdir-dd" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--g200);border-radius:8px;box-shadow:0 10px 24px rgba(0,0,0,.14);max-height:190px;overflow:auto;z-index:9"></span></span>`}</td>
