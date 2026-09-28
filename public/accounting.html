@@ -2261,20 +2261,26 @@ function raFillSelects(r) {
   wSel.innerHTML = '<option value="">— 选择仓库 —</option>'
     + whs.map((w, i) => `<option value="${i}">${w.name ? esc(w.name) : '（未写名称）'}${w.address ? '　—　' + esc(w.address) : ''}</option>`).join('')
     + '<option value="__new__">＋ 其他 / 新仓库</option>';
-  // 关联岗位下拉: post 的在招岗位; 编辑时岗位已关闭/删除的, 用存的快照补一个选项照样显示
+  // 关联岗位下拉: 📢 每日招工 (有几个班次就几个选项, 可以关联到具体班次) + post 的在招岗位;
+  // 选项值 r:需求id:班次序号 / j:岗位id。编辑时已关闭/删除的, 用存的快照补一个选项照样显示
   const jobs = (_refOpts && _refOpts.jobs) || [];
+  const rec = (_refOpts && _refOpts.recruit) || [];
   const jSel = document.getElementById('raJobSel');
+  const recOpts = rec.map(j => (j.shifts.length ? j.shifts.map((sh, i) => ({ v: `r:${j.id}:${i}`, t: `📢 ${j.warehouse || ''} · ${j.position || ''} · ${sh.shift}${sh.worker_pay || j.worker_pay ? '（' + (sh.worker_pay || j.worker_pay) + '）' : ''}` }))
+    : [{ v: `r:${j.id}:`, t: `📢 ${j.warehouse || ''} · ${j.position || ''}${j.worker_pay ? '（' + j.worker_pay + '）' : ''}` }])).flat();
   jSel.innerHTML = '<option value="">— 请选择岗位 —</option>'
-    + jobs.map(j => `<option value="${j.id}">${esc(_raJobLabel(j))}</option>`).join('');
-  if (r && r.job_id) {
-    jSel.value = String(r.job_id);
-    if (jSel.value !== String(r.job_id)) {
-      const o = document.createElement('option');
-      o.value = String(r.job_id);
-      o.textContent = `${r.job_title || '岗位 #' + r.job_id}（已下架）`;
-      jSel.appendChild(o);
-      jSel.value = String(r.job_id);
-    }
+    + (recOpts.length ? `<optgroup label="📢 每日招工（在招的，按班次选）">${recOpts.map(o => `<option value="${o.v}">${esc(o.t)}</option>`).join('')}</optgroup>` : '')
+    + (jobs.length ? `<optgroup label="📋 招聘岗位（post）">${jobs.map(j => `<option value="j:${j.id}">${esc(_raJobLabel(j))}</option>`).join('')}</optgroup>` : '');
+  const ensure = (v, label) => {
+    jSel.value = v;
+    if (jSel.value !== v) { const o = document.createElement('option'); o.value = v; o.textContent = label; jSel.appendChild(o); jSel.value = v; }
+  };
+  if (r && r.recruit_job_id) {
+    const rj = rec.find(x => x.id === r.recruit_job_id);
+    const idx = rj ? rj.shifts.findIndex(x => x.shift === (r.recruit_shift || '')) : -1;
+    ensure(rj ? `r:${rj.id}:${idx >= 0 ? idx : (rj.shifts.length ? '' : '')}` : `r:${r.recruit_job_id}:~`, `${r.job_title || '每日招工 #' + r.recruit_job_id}（已关闭）`);
+  } else if (r && r.job_id) {
+    ensure(`j:${r.job_id}`, `${r.job_title || '岗位 #' + r.job_id}（已下架）`);
   } else jSel.value = '';
   // 编辑时按 姓名+电话 回填选中的工头; 名单里没有的 (老手输记录) 也照样带出显示
   if (r && r.foreman_name) {
@@ -2513,9 +2519,24 @@ function raPickPhoneHit(boxId, i, kind) {
 // 对不上的自动切「新仓库」并把公司名/地址填好; 之后仍可手动改。
 // 工资不从岗位带出——岗位上写的是招聘区间 (如 18-23/weekly), 不是这个工人
 // 实际谈定的数, 必须手动填。
+// 关联岗位选中的是哪个: {recruit, shift} 每日招工 / {job} post 岗位
+function _raJobPick() {
+  const v = document.getElementById('raJobSel').value || '';
+  if (v.startsWith('r:')) {
+    const [, id, idx] = v.split(':');
+    const rj = ((_refOpts && _refOpts.recruit) || []).find(x => x.id === parseInt(id));
+    const sh = rj && idx !== '' && idx !== '~' ? rj.shifts[parseInt(idx)] : null;
+    const cur = _refEditId ? _refList.find(x => x.id === _refEditId) : null;
+    return { recruit_id: parseInt(id), shift: sh ? sh.shift : (idx === '~' && cur ? cur.recruit_shift || '' : ''), rj };
+  }
+  if (v.startsWith('j:')) return { job_id: parseInt(v.slice(2)) };
+  return {};
+}
 function raJobChanged() {
-  const id = parseInt(document.getElementById('raJobSel').value);
-  const j = ((_refOpts && _refOpts.jobs) || []).find(x => x.id === id);
+  const pk = _raJobPick();
+  // 每日招工: 仓库名 + 地址直接当岗位地点, 走下面同一套对仓库逻辑
+  const j = pk.rj ? { company_name: pk.rj.warehouse, location: pk.rj.address }
+    : ((_refOpts && _refOpts.jobs) || []).find(x => x.id === pk.job_id);
   if (!j) return;
   // 找对应仓库: 名称+地址 → 地址 → 名称 依次对
   const whs = (_refOpts && _refOpts.warehouses) || [];
@@ -2634,7 +2655,10 @@ async function submitRefAdd() {
     fd.append('worker_wage', document.getElementById('raWage').value.trim());
     fd.append('warehouse_name', whName);
     fd.append('warehouse_address', document.getElementById('raWhAddr').value.trim());
-    fd.append('job_id', document.getElementById('raJobSel').value || '');
+    const pk = _raJobPick();
+    fd.append('job_id', pk.job_id || '');
+    fd.append('recruit_job_id', pk.recruit_id || '');
+    fd.append('recruit_shift', pk.shift || '');
     fd.append('interview_at', document.getElementById('raInterview').value || '');
     fd.append('amount', document.getElementById('raAmount').value || '');
     fd.append('description', document.getElementById('raDesc').value.trim());
