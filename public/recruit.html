@@ -155,6 +155,21 @@ label{display:block;font-size:.74rem;font-weight:700;color:var(--gray-500);margi
 
         <div class="fgroup">
           <div class="fgroup-title">⏰ 班次 &amp; 工资</div>
+          <label>一周哪几天上班（可多选；不选 = 没说）</label>
+          <div id="dayChips" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+            <button type="button" class="lang-chip day-chip" data-d="一" onclick="toggleDay(this)" style="width:auto;padding:6px 11px">一</button>
+            <button type="button" class="lang-chip day-chip" data-d="二" onclick="toggleDay(this)" style="width:auto;padding:6px 11px">二</button>
+            <button type="button" class="lang-chip day-chip" data-d="三" onclick="toggleDay(this)" style="width:auto;padding:6px 11px">三</button>
+            <button type="button" class="lang-chip day-chip" data-d="四" onclick="toggleDay(this)" style="width:auto;padding:6px 11px">四</button>
+            <button type="button" class="lang-chip day-chip" data-d="五" onclick="toggleDay(this)" style="width:auto;padding:6px 11px">五</button>
+            <button type="button" class="lang-chip day-chip" data-d="六" onclick="toggleDay(this)" style="width:auto;padding:6px 11px">六</button>
+            <button type="button" class="lang-chip day-chip" data-d="日" onclick="toggleDay(this)" style="width:auto;padding:6px 11px">日</button>
+            <button type="button" onclick="setDays('一二三四五')" style="width:auto;border:none;background:none;color:var(--blue);font-size:.78rem;font-weight:700;cursor:pointer;padding:4px 2px;font-family:inherit">周一至五</button>
+            <button type="button" onclick="setDays('六日')" style="width:auto;border:none;background:none;color:var(--blue);font-size:.78rem;font-weight:700;cursor:pointer;padding:4px 2px;font-family:inherit">周末</button>
+            <button type="button" onclick="setDays('一二三四五六日')" style="width:auto;border:none;background:none;color:var(--blue);font-size:.78rem;font-weight:700;cursor:pointer;padding:4px 2px;font-family:inherit">每天</button>
+            <button type="button" onclick="setDays('')" style="width:auto;border:none;background:none;color:var(--gray-400);font-size:.78rem;cursor:pointer;padding:4px 2px;font-family:inherit">清空</button>
+            <span id="dayLabel" style="font-size:.78rem;color:var(--gray-500)"></span>
+          </div>
           <label>不同班次可以不同价，可加多条；只有一个价就直接填最下面「统一工资」</label>
           <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
             <select id="sfName" style="width:auto;padding:9px 10px">
@@ -401,6 +416,7 @@ function payChips(j) {
   if (j.worker_pay) g += '<span class="pay-chip">👷 工人 ' + esc(j.worker_pay) + '</span>';
   if (j.foreman_cap) g += '<span class="pay-chip cap">🦺 工头上限 ' + esc(j.foreman_cap) + '</span>';
   if (g) h += '<div class="pay-line">' + g + '</div>';
+  if (j.work_days) h += '<div class="pay-line"><span class="pay-chip" style="background:#eef2ff;border-color:#c7d2fe;color:#4338ca">📅 ' + esc(daysLabel(j.work_days)) + '</span></div>';
   const req = [];
   if (j.language_req) req.push('<span class="pay-chip" style="background:#f0f9ff;border-color:#bae6fd;color:#0369a1">🗨️ ' + esc(j.language_req) + '</span>');
   if (j.ead_required) req.push('<span class="pay-chip" style="background:#fff7ed;border-color:#fed7aa;color:#c2410c">🪪 需要真 EAD</span>');
@@ -435,6 +451,23 @@ function _setLangValue(v) {
   const parts = String(v || '').split(',').map(x => x.trim()).filter(Boolean);
   document.querySelectorAll('#langChips .lang-chip').forEach(b => b.classList.toggle('on', parts.includes(b.getAttribute('data-lv'))));
 }
+// ─── 一周上班日: 存成「一二三四五」这样的字串 (周一在前), 显示成「周一至周五」等 ───
+const DAY_ORDER = '一二三四五六日';
+function daysLabel(d) {
+  d = DAY_ORDER.split('').filter(c => String(d || '').includes(c)).join('');
+  if (!d) return '';
+  if (d === DAY_ORDER) return '每天（周一至周日）';
+  if (d === '六日') return '周末（周六、周日）';
+  const i = DAY_ORDER.indexOf(d);
+  if (d.length >= 3 && i >= 0) return '周' + d[0] + '至周' + d[d.length - 1];  // 连续的几天
+  return d.split('').map(c => '周' + c).join('、');
+}
+function _daysValue() { return [...document.querySelectorAll('.day-chip.on')].map(b => b.getAttribute('data-d')).join(''); }
+function setDays(d) {
+  document.querySelectorAll('.day-chip').forEach(b => b.classList.toggle('on', String(d || '').includes(b.getAttribute('data-d'))));
+  document.getElementById('dayLabel').textContent = daysLabel(_daysValue());
+}
+function toggleDay(btn) { btn.classList.toggle('on'); setDays(_daysValue()); }
 function onIvChange() {
   const need = document.querySelector('input[name="fIv"]:checked').value === '1';
   document.getElementById('fIvNotes').style.display = need ? '' : 'none';
@@ -871,6 +904,7 @@ function _fillForm(j, asNew) {
   document.getElementById('fAddress').value = j.address || '';
   document.getElementById('fAddress')._auto = '';
   document.querySelector('input[name="fEad"][value="' + (j.ead_required ? 1 : 0) + '"]').checked = true;
+  setDays(j.work_days || '');
   document.getElementById('formTitle').textContent = asNew ? '📄 复制再发（改改就能发）' : '✏️ 编辑招工需求 #' + j.id;
   document.getElementById('saveBtn').textContent = asNew ? '📢 发布' : '保存修改';
   document.getElementById('cancelEditBtn').style.display = '';
@@ -895,6 +929,7 @@ function cancelEdit() {
   onIvChange();
   _setLangValue('');
   document.querySelector('input[name="fEad"][value="0"]').checked = true;
+  setDays('');
   renderWhOptions('');
   document.getElementById('formTitle').textContent = '➕ 新增招工需求';
   document.getElementById('saveBtn').textContent = '📢 发布';
@@ -925,7 +960,8 @@ async function saveJob() {
       interview_notes: document.getElementById('fIvNotes').value.trim(),
       language_req,
       ead_required: document.querySelector('input[name="fEad"]:checked').value === '1' ? 1 : 0,
-      address: document.getElementById('fAddress').value.trim()
+      address: document.getElementById('fAddress').value.trim(),
+      work_days: _daysValue()
     };
     const editId = document.getElementById('editId').value;
     const r = editId
