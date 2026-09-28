@@ -40978,17 +40978,22 @@ app.post('/api/acct/referrals/:id/start', requireAdmin, requireRole('accounting'
   const wage = String(b.start_wage || '').trim().slice(0, 60);
   if (!wage) return res.status(400).json({ error: '请填写确定的工资' });
   const cycle = String(b.pay_cycle || '');
-  if (!['weekly', 'biweekly', 'semimonthly', 'monthly'].includes(cycle)) return res.status(400).json({ error: '请选择付款周期' });
+  if (!['daily', 'weekly', 'biweekly', 'semimonthly', 'monthly'].includes(cycle)) return res.status(400).json({ error: '请选择付款周期' });
   const payDay = String(b.pay_day || '').trim().slice(0, 40);
   if (!payDay) return res.status(400).json({ error: '请选择具体付款时间' });
-  // 没填码但已关联员工档案 → 用档案里的打卡码
-  const code = _referralCodeNorm(b.timeclock_code) || _referralCodeNorm(_referralProfileCode(cur));
-  if (!code) return res.status(400).json({ error: '请填写工人的打卡 QR 码（扫码，或手输 8 位打卡密码）' });
-  if (!_referralFindWorker(code)) return res.status(400).json({ error: '系统里查不到这个打卡码，请核对（工人登记后短信里收到的 8 位密码 / 二维码）' });
-  const dup = db.prepare(`SELECT id, worker_name FROM referrals WHERE timeclock_code=? AND id!=?`).get(code, cur.id);
-  if (dup) return res.status(400).json({ error: `这个打卡码已经关联在另一条介绍（${dup.worker_name || '#' + dup.id}）上了` });
-  db.prepare(`UPDATE referrals SET work_start_date=?, timeclock_code=?, started_by=?, start_time=?, end_time=?, work_days=?, start_wage=?, pay_cycle=?, pay_day=?, updated_at=datetime('now') WHERE id=?`)
-    .run(date, code, req.userName || '', startTime, endTime, workDays, wage, cycle, payDay, cur.id);
+  // 付款方式: Gusto / Zelle / 现金 / 支票 / 其他 (没传就保留原来的)
+  const method = ['gusto', 'zelle', 'cash', 'check', 'other'].includes(b.pay_method) ? b.pay_method : (cur.pay_method || '');
+  // 打卡码不必填: 传了就用 (要查得到); 没传用已关联员工档案里的; 都没有就先空着 —「上班中」标红提醒去登记二维码
+  let code = _referralCodeNorm(b.timeclock_code);
+  if (code && !_referralFindWorker(code)) return res.status(400).json({ error: '系统里查不到这个打卡码，请核对（工人登记后短信里收到的 8 位密码 / 二维码）' });
+  if (!code) code = _referralCodeNorm(_referralProfileCode(cur)) || _referralCodeNorm(cur.timeclock_code);
+  if (code && !_referralFindWorker(code)) code = '';
+  if (code) {
+    const dup = db.prepare(`SELECT id, worker_name FROM referrals WHERE timeclock_code=? AND id!=?`).get(code, cur.id);
+    if (dup) return res.status(400).json({ error: `这个打卡码已经关联在另一条介绍（${dup.worker_name || '#' + dup.id}）上了` });
+  }
+  db.prepare(`UPDATE referrals SET work_start_date=?, timeclock_code=?, started_by=?, start_time=?, end_time=?, work_days=?, start_wage=?, pay_cycle=?, pay_day=?, pay_method=?, updated_at=datetime('now') WHERE id=?`)
+    .run(date, code, req.userName || '', startTime, endTime, workDays, wage, cycle, payDay, method, cur.id);
   res.json({ success: true });
 });
 

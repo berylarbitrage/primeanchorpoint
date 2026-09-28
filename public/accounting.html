@@ -558,24 +558,16 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.2rem .6rem">
         <div><label style="font-size:.76rem;color:var(--g500)">付款周期 <span style="color:#dc2626">*</span></label>
           <select id="rsCycle" onchange="rsCycleChanged()" style="width:100%;margin:.15rem 0 .6rem">
-            <option value="">— 选择 —</option><option value="weekly">每周</option><option value="biweekly">每两周</option>
+            <option value="">— 选择 —</option><option value="daily">日结</option><option value="weekly">每周</option><option value="biweekly">每两周</option>
             <option value="semimonthly">每半个月</option><option value="monthly">每月</option>
           </select></div>
         <div><label style="font-size:.76rem;color:var(--g500)">具体付款时间 <span style="color:#dc2626">*</span></label>
           <select id="rsPayDay" style="width:100%;margin:.15rem 0 .6rem"><option value="">先选周期</option></select></div>
       </div>
-      <label style="font-size:.76rem;color:var(--g500)">工人的打卡 QR 码 <span style="color:#dc2626">*</span> <span style="font-size:.7rem;color:var(--g400)">扫码、上传截图，或手输 8 位打卡密码</span></label>
-      <div style="display:flex;gap:.35rem;margin:.15rem 0 .3rem">
-        <input type="text" id="rsCode" inputmode="numeric" autocomplete="off" placeholder="8 位数字" oninput="rsCodeInput()" style="flex:1;min-width:0;font-size:1rem;letter-spacing:.08em">
-        <button class="btn btn-sm btn-outline" onclick="rsScan()">📷 扫码</button>
-        <label class="btn btn-sm btn-outline" style="margin:0">🖼 截图<input type="file" accept="image/*" onchange="rsImage(this)" style="display:none"></label>
-      </div>
-      <div id="rsScanBox" style="display:none;margin:.3rem 0;position:relative">
-        <video id="rsVid" playsinline muted style="width:100%;border-radius:8px;background:#000;max-height:260px;object-fit:cover"></video>
-        <button class="btn btn-sm btn-outline" onclick="rsScanStop()" style="position:absolute;top:6px;right:6px">✕ 关闭</button>
-      </div>
-      <div id="rsInfo" style="font-size:.8rem;min-height:1.2rem;margin-bottom:.6rem"></div>
-      <div style="font-size:.72rem;color:var(--g400);margin-bottom:.8rem">打卡码对上员工档案后，按每周打卡工时核对介绍费（这周有没有干活一眼看出）。工人登记后短信里收到的 8 位密码 / 二维码就是它。</div>
+      <label style="font-size:.76rem;color:var(--g500)">付款方式 <span style="color:#dc2626">*</span></label>
+      <select id="rsMethod" style="width:100%;margin:.15rem 0 .8rem">
+        <option value="gusto">Gusto（默认）</option><option value="zelle">Zelle</option><option value="cash">现金</option><option value="check">支票</option><option value="other">其他</option>
+      </select>
       <div style="display:flex;justify-content:flex-end;gap:.5rem">
         <button class="btn btn-outline" onclick="closeRefStart()">取消</button>
         <button class="btn btn-blue" id="rsSubmit" onclick="submitRefStart()">保存</button>
@@ -1888,7 +1880,7 @@ function _refWorkRows(r) {
   const terms = [
     r.start_time && r.end_time ? `🕘 ${esc(r.start_time)}–${esc(r.end_time)}${r.work_days ? ' · ' + esc(_refDaysLabel(r.work_days)) : ''}` : '',
     r.start_wage ? `💵 ${esc(r.start_wage)}` : '',
-    r.pay_cycle ? `🗓 ${esc(_RS_CYCLE[r.pay_cycle] || r.pay_cycle)}付${r.pay_day ? ' · ' + esc(r.pay_day) : ''}` : '',
+    r.pay_cycle ? `🗓 ${esc(_RS_CYCLE[r.pay_cycle] || r.pay_cycle)}${r.pay_cycle === 'daily' ? '' : '付'}${r.pay_day ? ' · ' + esc(r.pay_day) : ''}` : '',
   ].filter(Boolean);
   const termRow = terms.length ? `<div class="ref-row" style="padding-top:0;border-top:0;color:var(--g600)">${terms.map(t => `<span style="background:#f1f5f9;border-radius:6px;padding:1px 8px">${t}</span>`).join('')}</div>` : '';
   // 每周打卡: 从上班那周到今天 (最多到三个月期满) 每周一格, 没打卡的也列出来
@@ -1952,27 +1944,24 @@ function openRefStart(id) {
   _rsId = id;
   document.getElementById('rsWho').textContent = `${r.worker_name || ''}${r.worker_phone ? ' · ' + r.worker_phone : ''}${r.warehouse_name || r.warehouse_address ? ' · ' + (r.warehouse_name || r.warehouse_address) : ''}`;
   document.getElementById('rsDate').value = r.work_start_date || _refYmd(new Date());
-  document.getElementById('rsCode').value = r.timeclock_code || '';
   document.getElementById('rsT1').value = r.start_time || '';
   document.getElementById('rsT2').value = r.end_time || '';
   rsSetDays(r.work_days || '');
   document.getElementById('rsWage').value = r.start_wage || r.worker_wage || '';
   document.getElementById('rsCycle').value = r.pay_cycle || '';
   rsCycleChanged(r.pay_day || '');
-  const pf = r.profile || {};
-  document.getElementById('rsInfo').innerHTML = !r.timeclock_code && pf.linked && pf.has_code
-    ? `<span style="color:#047857">🔗 已关联员工档案 <b>${esc(pf.name || '')}</b>，打卡码可以不填，自动用档案里的</span>` : '';
+  document.getElementById('rsMethod').value = r.pay_method || 'gusto';
   document.getElementById('refStartModal').style.display = 'flex';
-  if (r.timeclock_code) rsLookup();
 }
 function rsSetDays(d) {
   document.querySelectorAll('#rsDays .rs-day').forEach(b => b.classList.toggle('on', String(d || '').includes(b.getAttribute('data-d'))));
 }
-const _RS_CYCLE = { weekly: '每周', biweekly: '每两周', semimonthly: '每半个月', monthly: '每月' };
+const _RS_CYCLE = { daily: '日结', weekly: '每周', biweekly: '每两周', semimonthly: '每半个月', monthly: '每月' };
 // 付款日选项跟着周期变: 每周/每两周选星期几, 每半月选哪两天, 每月选几号
 function rsCycleChanged(cur) {
   const c = document.getElementById('rsCycle').value, sel = document.getElementById('rsPayDay');
-  const opts = c === 'weekly' || c === 'biweekly' ? '一二三四五六日'.split('').map(d => '周' + d)
+  const opts = c === 'daily' ? ['当天下班付', '第二天付']
+    : c === 'weekly' || c === 'biweekly' ? '一二三四五六日'.split('').map(d => '周' + d)
     : c === 'semimonthly' ? ['每月 1 号和 15 号', '每月 15 号和月底']
     : c === 'monthly' ? [...Array.from({ length: 28 }, (_, i) => `${i + 1} 号`), '月底'] : [];
   if (cur && !opts.includes(cur)) opts.push(cur);
@@ -2183,10 +2172,8 @@ function _refPayRow(r) {
 }
 async function submitRefStart() {
   const date = document.getElementById('rsDate').value;
-  const code = _rsDigits(document.getElementById('rsCode').value);
   if (!date) return toast('请填写上班日期', true);
-  const pf = ((_refList.find(x => x.id === _rsId) || {}).profile) || {};
-  if (code.length !== 8 && !(code === '' && pf.linked && pf.has_code)) return toast('请填写工人的打卡 QR 码（扫码，或手输 8 位打卡密码）', true);
+  const method = document.getElementById('rsMethod').value;
   const t1 = document.getElementById('rsT1').value, t2 = document.getElementById('rsT2').value;
   if (!t1 || !t2) return toast('请填写确定的上班时间（几点到几点）', true);
   const wage = document.getElementById('rsWage').value.trim();
@@ -2198,8 +2185,9 @@ async function submitRefStart() {
   const btn = document.getElementById('rsSubmit');
   btn.disabled = true;
   try {
-    const j = await api(`/api/acct/referrals/${_rsId}/start`, { method: 'POST', body: JSON.stringify({ work_start_date: date, timeclock_code: code,
-      start_time: t1, end_time: t2, work_days: days, start_wage: wage, pay_cycle: cycle, pay_day: payDay }) });
+    // 打卡码不在这里填了: 服务端用已关联员工档案里的; 没登记的在「上班中」标红提醒
+    const j = await api(`/api/acct/referrals/${_rsId}/start`, { method: 'POST', body: JSON.stringify({ work_start_date: date,
+      start_time: t1, end_time: t2, work_days: days, start_wage: wage, pay_cycle: cycle, pay_day: payDay, pay_method: method }) });
     if (j && j.error) throw new Error(j.error);
     closeRefStart();
     toast('✅ 已记开始上班，移到「👷 上班中」；请确认付款方式和车补');
