@@ -895,6 +895,8 @@ try { db.exec(`ALTER TABLE referrals ADD COLUMN job_title TEXT DEFAULT ''`); } c
 // 靠打卡码对上员工档案和打卡记录, 按周工时核对介绍费; 上班满 3 个月 referral 期结束
 try { db.exec(`ALTER TABLE referrals ADD COLUMN timeclock_code TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE referrals ADD COLUMN started_by TEXT DEFAULT ''`); } catch(e) {}
+// HR 自己招的 (没有工头介绍): 不用填工头、没有介绍费, 只登记人和岗位
+try { db.exec(`ALTER TABLE referrals ADD COLUMN hr_self INTEGER DEFAULT 0`); } catch(e) {}
 // 介绍费按周付: 关联的每张发票 (一周账期) = 一周, 每周单独记介绍费金额和付款批注
 // (acct_pay_notes target_type='referralweek', target_id=这里的 id); fee 为空 = 按介绍记录上的介绍费
 try { db.exec(`CREATE TABLE IF NOT EXISTS referral_weeks (
@@ -40781,6 +40783,9 @@ function _referralBody(b) {
   for (const [k, max] of REFERRAL_FIELDS) out[k] = String(b[k] || '').trim().slice(0, max);
   const amtNum = Number(b.amount);
   out.amount = (b.amount != null && b.amount !== '' && !isNaN(amtNum)) ? amtNum : null;
+  out.hr_self = (b.hr_self === '1' || b.hr_self === 'true' || b.hr_self === true || b.hr_self === 1) ? 1 : 0;
+  // HR 自招: 没有工头、介绍费为 0
+  if (out.hr_self) { out.foreman_name = ''; out.foreman_phone = ''; out.amount = 0; }
   return out;
 }
 // 关联岗位: 表单传 jobs.id, 存 id + 「编号 标题 中文名 — 公司」快照;
@@ -40801,21 +40806,21 @@ function _referralJob(b, cur) {
 // 新增介绍: 客服/会计/管理员都可录入, 一律进「待核查」等管理员定夺
 app.post('/api/acct/referrals', requireAdmin, requireRole('accounting', 'admin', 'cs'), claimUpload.array('invoice', 20), (req, res) => {
   const f = _referralBody(req.body || {});
-  if (!f.foreman_name) return res.status(400).json({ error: '请填写工头姓名' });
+  if (!f.hr_self && !f.foreman_name) return res.status(400).json({ error: '请填写工头姓名（HR 自己招的请勾选「HR 自己招的」）' });
   if (!f.worker_name) return res.status(400).json({ error: '请填写被介绍人姓名' });
   // 工资必须手动填写: 岗位上的是招聘区间, 不代表这个工人实际谈定的数
   if (!f.worker_wage) return res.status(400).json({ error: '请手动填写工人的工资（岗位上写的是区间，要填实际谈定的）' });
-  if (!(f.amount > 0)) return res.status(400).json({ error: '请填写每周介绍费（金额要大于 0）' });
+  if (!f.hr_self && !(f.amount > 0)) return res.status(400).json({ error: '请填写每周介绍费（金额要大于 0）' });
   const jb = _referralJob(req.body || {});
   if (!jb.job_id) return res.status(400).json({ error: '请选择关联岗位' });
   const files = Array.isArray(req.files) ? req.files : [];
   const atts = files.map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
   const r = db.prepare(`INSERT INTO referrals
     (foreman_name, foreman_phone, worker_name, worker_phone, worker_wage, warehouse_name, warehouse_address,
-     interview_at, amount, description, attachments, job_id, job_title, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+     interview_at, amount, description, attachments, job_id, job_title, created_by, hr_self)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.worker_wage, f.warehouse_name, f.warehouse_address,
-      f.interview_at, f.amount, f.description, JSON.stringify(atts), jb.job_id, jb.job_title, req.userName || '');
+      f.interview_at, f.amount, f.description, JSON.stringify(atts), jb.job_id, jb.job_title, req.userName || '', f.hr_self);
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
@@ -40826,12 +40831,12 @@ app.put('/api/acct/referrals/:id', requireAdmin, requireRole('accounting', 'admi
   if (!cur) return res.status(404).json({ error: '记录不存在' });
   if (req.userRole !== 'admin' && cur.review_status !== 'pending') return res.status(403).json({ error: '该记录管理员已核查，如需修改请联系管理员' });
   const f = _referralBody(req.body || {});
-  if (!f.foreman_name) return res.status(400).json({ error: '请填写工头姓名' });
+  if (!f.hr_self && !f.foreman_name) return res.status(400).json({ error: '请填写工头姓名（HR 自己招的请勾选「HR 自己招的」）' });
   if (!f.worker_name) return res.status(400).json({ error: '请填写被介绍人姓名' });
   // 与新增一致: 工资必须手动填写（老记录没填的, 编辑保存时也要求补上）
   if (!f.worker_wage) return res.status(400).json({ error: '请手动填写工人的工资（岗位上写的是区间，要填实际谈定的）' });
   // 与新增一致: 介绍费必须写、岗位必须关联 (老记录没填的, 编辑保存时也要求补上)
-  if (!(f.amount > 0)) return res.status(400).json({ error: '请填写每周介绍费（金额要大于 0）' });
+  if (!f.hr_self && !(f.amount > 0)) return res.status(400).json({ error: '请填写每周介绍费（金额要大于 0）' });
   const jb = _referralJob(req.body || {}, cur);
   if (!jb.job_id) return res.status(400).json({ error: '请选择关联岗位' });
   let atts = _claimAtts(cur);
@@ -40844,9 +40849,9 @@ app.put('/api/acct/referrals/:id', requireAdmin, requireRole('accounting', 'admi
   (Array.isArray(req.files) ? req.files : []).forEach(fl => atts.push({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
   // interview_status 不在这里改 (列表标记走 interview-status 接口), 免得编辑把已标的冲掉
   db.prepare(`UPDATE referrals SET foreman_name=?, foreman_phone=?, worker_name=?, worker_phone=?, worker_wage=?,
-      warehouse_name=?, warehouse_address=?, interview_at=?, amount=?, description=?, attachments=?, job_id=?, job_title=?, updated_at=datetime('now') WHERE id=?`)
+      warehouse_name=?, warehouse_address=?, interview_at=?, amount=?, description=?, attachments=?, job_id=?, job_title=?, hr_self=?, updated_at=datetime('now') WHERE id=?`)
     .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.worker_wage, f.warehouse_name, f.warehouse_address,
-      f.interview_at, f.amount, f.description, JSON.stringify(atts), jb.job_id, jb.job_title, cur.id);
+      f.interview_at, f.amount, f.description, JSON.stringify(atts), jb.job_id, jb.job_title, f.hr_self, cur.id);
   res.json({ success: true });
 });
 
