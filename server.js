@@ -30198,42 +30198,77 @@ app.post('/api/admin/recruit-jobs/:id/share-text-foreman', requireAdmin, async (
 });
 
 // 分享文案 (发工人群/朋友圈用): 只含对外信息, 不带工头上限等内部内容; en/es 自动翻译
+// 工人版文案 (发群 / 朋友圈): 不写仓库名称; 工种·人数 / 性别 / 地址 / 上班时间 (哪几天 + 班次) / 工资 / 语言 / EAD / 面试 / 大致工作内容。
+// 英文按模板直接拼 (固定词不靠 AI), 只有工种、工作内容、面试要求这些手写的中文交给 AI 翻; 西语整段 AI 翻
+const _RC_SHIFT_EN = { 早班: 'Morning', 中班: 'Mid', 晚班: 'Evening', 夜班: 'Night', 白班: 'Day', 周末班: 'Weekend', 临时: 'Temporary' };
+const _RC_LANG_EN = { 不限: 'Any', 英语: 'English', 西班牙语: 'Spanish', 中文: 'Chinese' };
+const _RC_DAY_EN = { 一: 'Mon', 二: 'Tue', 三: 'Wed', 四: 'Thu', 五: 'Fri', 六: 'Sat', 日: 'Sun' };
+function _recruitDaysEn(v) {
+  const d = _recruitDays(v);
+  if (!d) return '';
+  if (d === _RECRUIT_DAYS) return 'Every day (Mon–Sun)';
+  if (d === '六日') return 'Weekends (Sat & Sun)';
+  if (d.length >= 3 && _RECRUIT_DAYS.includes(d)) return _RC_DAY_EN[d[0]] + '–' + _RC_DAY_EN[d[d.length - 1]];
+  return d.split('').map(c => _RC_DAY_EN[c]).join(', ');
+}
+const _recruitShiftEn = sh => String(sh || '').replace(/早班|中班|晚班|夜班|白班|周末班|临时/g, m => _RC_SHIFT_EN[m]).replace(/\+/g, ' + ').replace(/(Morning|Mid|Evening|Night|Day|Weekend|Temporary)(?![\w ]*\+)/, '$1 shift').replace(/ 开始/, ' start');
+const _recruitLangEn = v => String(v || '').split(/[,，]\s*/).filter(Boolean).map(x => _RC_LANG_EN[x.trim()] || x.trim()).join(', ');
+// 大致工作内容: 最多 4 行 / 160 字
+function _recruitBrief(t) {
+  const lines = String(t || '').split(/\n+/).map(x => x.trim()).filter(Boolean);
+  const out = []; let n = 0;
+  for (const l of lines) { if (out.length >= 4 || n + l.length > 160) break; out.push(l); n += l.length; }
+  if (!out.length && lines.length) out.push(lines[0].slice(0, 160) + '…');
+  else if (out.length < lines.length) out[out.length - 1] += ' …';
+  return out.join('\n');
+}
+async function _recruitWorkerText(job, lang) {
+  let shifts = [];
+  try { shifts = JSON.parse(job.shifts || '[]'); } catch (_) {}
+  const SEP = '──────────────';
+  const g = job.gender_req || '';
+  const brief = _recruitBrief(job.details);
+  if (lang === 'en') {
+    const tr = async v => (v ? (await aiTranslateSms(v, 'zh', 'en')) || v : '');
+    const [pos, det, ivn] = await Promise.all([tr(job.position.replace(/ × (\d+)人$/, ' × $1')), tr(brief), tr(job.interview_notes)]);
+    const secs = [
+      '📢 NOW HIRING!',
+      ['👷 Position: ' + pos,
+        g ? '👤 Gender: ' + (g === '男' ? 'Male' : g === '女' ? 'Female' : 'Any') : '',
+        job.address ? '📍 Location: ' + job.address : ''].filter(Boolean).join('\n'),
+      [job.work_days ? '📅 Days: ' + _recruitDaysEn(job.work_days) : '',
+        ...shifts.map(x => '⏰ ' + _recruitShiftEn(x.shift) + (x.worker_pay ? ' · 💰 ' + x.worker_pay : '') + (x.lang ? ' · 🗨️ ' + _recruitLangEn(x.lang) : '')),
+        job.worker_pay ? '💰 Pay: ' + job.worker_pay : ''].filter(Boolean).join('\n'),
+      [job.language_req ? '🗨️ Language: ' + _recruitLangEn(job.language_req) : '',
+        job.ead_required ? '🪪 Valid EAD (work permit) required' : '',
+        job.interview_required ? '🗣 Interview required' + (ivn ? ': ' + ivn : '') : ''].filter(Boolean).join('\n'),
+      det ? '📋 Job duties:\n' + det : '',
+    ].filter(Boolean);
+    return secs.join('\n' + SEP + '\n');
+  }
+  const secs = [
+    '📢 招工啦！',
+    ['👷 工种：' + job.position,
+      g ? '👤 性别：' + (g === '不限' ? '男女不限' : g) : '',
+      job.address ? '📍 地址：' + job.address : ''].filter(Boolean).join('\n'),
+    [job.work_days ? '📅 上班：' + _recruitDaysLabel(job.work_days) : '',
+      ...shifts.map(x => '⏰ ' + x.shift + (x.worker_pay ? ' · 💰 ' + x.worker_pay : '') + (x.lang ? ' · 🗨️ ' + x.lang : '')),
+      job.worker_pay ? '💰 工资：' + job.worker_pay : ''].filter(Boolean).join('\n'),
+    [job.language_req ? '🗨️ 语言要求：' + job.language_req : '',
+      job.ead_required ? '🪪 需要真实有效的 EAD 工卡' : '',
+      job.interview_required ? '🗣 需要面试' + (job.interview_notes ? '：' + job.interview_notes : '') : ''].filter(Boolean).join('\n'),
+    brief ? '📋 工作内容：\n' + brief : '',
+  ].filter(Boolean);
+  const zh = secs.join('\n' + SEP + '\n');
+  if (lang === 'es') return (await aiTranslateSms(zh, 'zh', 'es')) || zh;
+  return zh;
+}
 app.get('/api/admin/recruit-jobs/:id/share-text', requireAdmin, async (req, res) => {
   try {
     const job = db.prepare('SELECT * FROM recruit_jobs WHERE id=?').get(req.params.id);
     if (!job) return res.status(404).json({ error: 'Not found' });
     const lang = ['en', 'es'].includes(req.query.lang) ? req.query.lang : 'zh';
-    // 班次工资逐条列出 (只给工人价, 不带工头上限)
-    let shiftLines = [];
-    try {
-      shiftLines = JSON.parse(job.shifts || '[]').map(s =>
-        '⏰ ' + s.shift + (s.worker_pay ? ' · 💰 ' + s.worker_pay : '') + (s.lang ? ' · 🗨️ ' + s.lang : ''));
-    } catch (_) {}
-    // 分区排版: 标题 / 地点 / 班次工资 / 要求 / 工作内容, 组间分隔线
-    const SEP = '──────────────';
-    const secs = [
-      '📢 招工啦！',
-      [
-        '🏭 仓库：' + job.warehouse,
-        job.address ? '📍 地址：' + job.address : '',
-        '👷 工种：' + job.position,
-        job.work_days ? '📅 上班：' + _recruitDaysLabel(job.work_days) : ''
-      ].filter(Boolean).join('\n'),
-      (shiftLines.length ? shiftLines : (job.worker_pay ? ['💰 工资：' + job.worker_pay] : [])).join('\n'),
-      [
-        job.language_req ? '🗨️ 语言要求：' + job.language_req : '',
-        job.ead_required ? '🪪 需要真实有效的 EAD 工卡' : '',
-        job.interview_required ? '🗣 需要面试' + (job.interview_notes ? '：' + job.interview_notes : '') : ''
-      ].filter(Boolean).join('\n'),
-      job.details ? '📋 工作内容：\n' + job.details : ''
-    ].filter(Boolean);
-    const zh = secs.join('\n' + SEP + '\n');
-    let text = zh;
-    if (lang !== 'zh') {
-      const t = await aiTranslateSms(zh, 'zh', lang);
-      if (t) text = t;
-    }
-    res.json({ text, lang });
+    res.json({ text: await _recruitWorkerText(job, lang), lang });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
