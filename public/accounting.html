@@ -1601,7 +1601,8 @@ function renderRefList() {
     const atts = Array.isArray(r.attachments) ? r.attachments : [];
     const attHtml = atts.map((a, i) => `<a href="${esc(a.path)}" target="_blank" title="${esc(a.name || '')}" style="color:#0f4c6b;font-size:.72rem;margin-left:6px;white-space:nowrap">📎${atts.length > 1 ? i + 1 : ''}</a>`).join('');
     const canEdit = _refCanEdit(r);
-    const ops = `<a class="btn btn-sm btn-outline" style="padding:.15rem .5rem" title="复制这条介绍信息，粘贴发给经理" onclick="refCopyRow(${r.id})">📋 复制</a>`
+    const ops = `<a class="btn btn-sm btn-outline" style="padding:.15rem .5rem;color:#0f4c6b;border-color:#93c5fd" title="一行: 工人 电话 地址 时间 工资 备注" onclick="refCopyLine(${r.id})">📋 一行</a>`
+      + ` <a class="btn btn-sm btn-outline" style="padding:.15rem .5rem" title="复制这条介绍信息，粘贴发给经理" onclick="refCopyRow(${r.id})">📋 复制</a>`
       + (canEdit ? ` <a class="btn btn-sm btn-outline" style="padding:.15rem .5rem" onclick="openRefAdd(${r.id})">✎ 编辑</a>` : '')
       + (USER.role === 'admin' ? ` <a class="btn btn-sm btn-outline" style="padding:.15rem .45rem;color:#b91c1c" title="删除这条介绍记录" onclick="refDelete(${r.id})">🗑</a>` : '');
     // 管理员核查条
@@ -2365,6 +2366,19 @@ function refCopyRow(id) {
     amount: r.amount != null ? money(r.amount) : '',
     note: r.description || '',
   }));
+}
+// 列表里的 📋 一行: 工人 电话 地址 时间 工资 备注, 例:
+// Gilberto Salamanca  (708)663-2215  2475 Touhy Ave ..., IL 60007   09:00–23:00   $17/h  周末去
+// 备注开头是时间段 (09:00–23:00) 的拆出来放工资前面, 其余备注放最后
+function refCopyLine(id) {
+  const r = _refList.find(x => x.id === id);
+  if (!r) return;
+  const desc = String(r.description || '').replace(/\s+/g, ' ').trim();
+  const m = /^(\d{1,2}(?::\d{2})?\s*(?:am|pm)?\s*[-–~～至到]\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)?)[\s,，、;；]*(.*)$/i.exec(desc);
+  const time = m ? m[1] : '', rest = m ? m[2] : desc;
+  const parts = [r.worker_name, r.worker_phone, r.warehouse_address || r.warehouse_name, time, r.worker_wage, rest]
+    .map(v => String(v || '').trim()).filter(Boolean);
+  _copyText(parts.join('   '));
 }
 // 🧾 会计关联发票: 勾选能证明被介绍人在干活的发票
 let _riRefId = null, _riSel = new Set();
