@@ -61,13 +61,15 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
 #annLightbox iframe{width:92vw;height:92vh;border:none;background:#fff;border-radius:8px}
 /* 发票列表: 列多, 左右 / 上下都能滑; 表头和发票号固定不动, 格子不折行 */
 .inv-scroll{overflow:auto;max-height:78vh;padding:0}
-#invTable{min-width:1750px;border-collapse:separate;border-spacing:0}
-#invTable th,#invTable td{white-space:nowrap;padding:.5rem .6rem}
-#invTable td.inv-note{max-width:260px}
-#invTable thead th{position:sticky;top:0;z-index:3;background:#f8fafc;box-shadow:inset 0 -1px 0 var(--g200)}
+#invTable{min-width:1750px}
+#palletTable{min-width:1900px}
+.acct-wide{border-collapse:separate;border-spacing:0}
+.acct-wide th,.acct-wide td{white-space:nowrap;padding:.5rem .6rem}
+.acct-wide td.inv-note{max-width:260px}
+.acct-wide thead th{position:sticky;top:0;z-index:3;background:#f8fafc;box-shadow:inset 0 -1px 0 var(--g200)}
 #invTable th:first-child,#invTable td:first-child{position:sticky;left:0;z-index:2;background:#fff;box-shadow:inset -1px 0 0 var(--g200)}
 #invTable thead th:first-child{z-index:4;background:#f8fafc}
-#invTable tbody tr:hover td{background:#f8fbff}
+.acct-wide tbody tr:hover td{background:#f8fbff}
 /* 悬浮提示 (data-tip): 鼠标放上立刻出现, 点一下也能开关 (手机可用); 浮在最上层不会被表格裁掉 */
 #tipBox{position:fixed;z-index:5000;max-width:420px;background:#1f2937;color:#fff;font-size:.78rem;line-height:1.5;padding:.45rem .6rem;border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.25);white-space:pre-line;word-break:break-word;pointer-events:none;display:none}
 [data-tip]{cursor:help}
@@ -340,7 +342,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <button class="btn btn-sm btn-outline" onclick="invExportCsv()" title="按当前筛选导出，每张发票一行：收款银行 / 笔数 / 到账合计 / 差额 / 每笔明细 / 备注，方便逐张审核" style="margin-left:auto">⬇ 导出 CSV（逐张审核用）</button>
     </div>
     <div class="card inv-scroll">
-      <table id="invTable" style="font-size:.84rem"><thead><tr>
+      <table id="invTable" class="acct-wide" style="font-size:.84rem"><thead><tr>
         <th>发票号</th><th>日期</th><th>公司</th><th>账期</th><th style="text-align:right">发票金额</th><th>付款状态</th>
         <th>收款银行</th><th style="text-align:right">笔数</th><th style="text-align:right">到账合计</th><th style="text-align:right">差额</th><th>收款明细（每笔）</th><th class="inv-note">付款备注</th><th>记录</th><th>批注</th><th></th>
       </tr></thead><tbody id="invBody"><tr><td colspan="15" style="color:var(--g400)">加载中…</td></tr></tbody></table>
@@ -760,10 +762,12 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       </select>
       <span id="palletStats" style="font-size:.8rem;color:var(--g500)"></span>
     </div>
-    <div class="card" style="overflow-x:auto">
-      <table><thead><tr>
-        <th>日期</th><th>类型</th><th>木板客户 / 供应商</th><th>发票号</th><th>账期</th><th style="text-align:right">金额</th><th>付款状态</th><th>付款批注（会计）</th><th>Bintique 记录</th><th></th>
-      </tr></thead><tbody id="palletBody"><tr><td colspan="10" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+    <div class="card inv-scroll">
+      <table id="palletTable" class="acct-wide" style="font-size:.84rem"><thead><tr>
+        <th>日期</th><th>类型</th><th>木板客户 / 供应商</th><th>发票号</th><th>账期</th><th style="text-align:right">金额</th><th>付款状态</th>
+        <th>银行账户</th><th style="text-align:right">笔数</th><th style="text-align:right">银行合计</th><th style="text-align:right">差额</th><th>银行明细（每笔）</th><th class="inv-note">付款备注</th><th>记录</th>
+        <th>Bintique 付款日</th><th style="text-align:right">Bintique 实付</th><th>Bintique 付款方</th><th></th>
+      </tr></thead><tbody id="palletBody"><tr><td colspan="18" style="color:var(--g400)">加载中…</td></tr></tbody></table>
     </div>
     <p style="font-size:.75rem;color:var(--g400);margin-top:.5rem">这里显示 pallet.bintique.com 的全部销售/采购发票（一行一张）；付款状态只认这边会计的付款批注，批注里可关联银行流水；「Bintique 记录」列是对方系统自己的状态，仅供参考。</p>
   </div>
@@ -2307,6 +2311,15 @@ function _palletTypePill(r) {
 // Bintique 那边的收付记录, 只作参考信息 —— 不显示对方的「已付款」状态:
 // 这里所有账单一律从未收款开始, 收没收款只认本系统会计的付款批注,
 // 由会计逐张核对处理 (和发票页「不显示历史已收款」同一规矩)。
+// Bintique 参考拆成三列: 付款日 / 实付 / 付款方 (+↗ 打开对方账单)
+function _palletBintiqueCols(r) {
+  const b = r.bintique || {}, dash = '<span style="color:var(--g300)">—</span>';
+  const link = b.doc_url ? ` <a href="${esc(b.doc_url)}" target="_blank" rel="noopener" data-tip="新窗口打开 Bintique 账单" style="text-decoration:none">↗</a>` : '';
+  const differs = b.payment_date && b.payment_amount != null && Math.abs(Number(b.payment_amount) - Number(r.amount)) >= 0.01;
+  return `<td style="color:var(--g500)">${b.payment_date ? esc(b.payment_date) : dash}${link}</td>
+    <td style="text-align:right;font-variant-numeric:tabular-nums;${differs ? 'color:#b91c1c;font-weight:700' : 'color:var(--g500)'}"${differs ? ` data-tip="Bintique 记的实付和账单金额差 ${money(Math.abs(Number(b.payment_amount) - Number(r.amount)))}"` : ''}>${b.payment_date ? money(b.payment_amount) : dash}</td>
+    <td style="color:var(--g500)">${b.paid_by ? esc(b.paid_by) : dash}</td>`;
+}
 function _palletBintiqueCell(r) {
   const b = r.bintique || {};
   const link = b.doc_url ? ` <a href="${esc(b.doc_url)}" target="_blank" rel="noopener" title="新窗口打开 Bintique 账单" style="text-decoration:none">↗</a>` : '';
@@ -2633,10 +2646,12 @@ function renderPalletList() {
     <td>${_palletPeriodCell(r)}</td>
     <td style="text-align:right;font-weight:700;color:${r.direction === 'in' ? '#047857' : '#b91c1c'};white-space:nowrap">${money(r.amount)}</td>
     <td>${_palletPayBadge(r)}</td>
-    <td>${payNoteCell('palletbill', r.id, r.pay_note, true)}</td>
-    <td style="font-size:.78rem;line-height:1.5;max-width:260px">${_palletBintiqueCell(r)}</td>
+    ${_invPayCols(r)}
+    <td class="inv-note">${_invPayNoteTag(r)}</td>
+    <td style="white-space:nowrap">${_invRecCell(r, 'palletbill')}</td>
+    ${_palletBintiqueCols(r)}
     <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openPalletDetail(${r.id})">查看明细</button></td>
-  </tr>`).join('') : '<tr><td colspan="10" style="color:var(--g400);padding:1rem">没有账单。</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="18" style="color:var(--g400);padding:1rem">没有账单。</td></tr>';
 }
 // ═══════════ 💸 Gusto 工资: API 实时同步 + 按人对账 ═══════════
 // 数据链路: 管理员连接 Gusto(OAuth) → 服务器定时/打开本页时自动拉取实发付款 →
@@ -3109,7 +3124,7 @@ function _invPayDiff(r) {
   const pn = r.pay_note || {}, t = _invPayNoteText(r);
   if (/少付|少转|少给|少打|短付|差了?\s*\$?\d|欠|underpa|short/i.test(t)) return 'under';
   if (/多付|多转|多给|多打|超付|overpa/i.test(t)) return 'over';
-  const amt = Number(pn.amount), sub = Number(r.subtotal);
+  const amt = Number(pn.amount), sub = _rowDue(r);
   if (pn.amount != null && Number.isFinite(amt) && Number.isFinite(sub) && Math.abs(amt - sub) >= 0.01)
     return amt < sub ? 'under' : 'over';
   return '';
@@ -3117,7 +3132,7 @@ function _invPayDiff(r) {
 function _invPayNoteTag(r) {
   const pn = r.pay_note || {}, t = _invPayNoteText(r), d = _invPayDiff(r);
   if (!t && !d) return '<span style="color:var(--g300)">—</span>';
-  const diffAmt = pn.amount != null && Number.isFinite(Number(pn.amount)) ? Math.abs(Number(pn.amount) - Number(r.subtotal)) : 0;
+  const diffAmt = pn.amount != null && Number.isFinite(Number(pn.amount)) ? Math.abs(Number(pn.amount) - _rowDue(r)) : 0;
   const txt = t ? esc(t) : (d === 'under' ? '少付 ' : '多付 ') + money(diffAmt);
   // 只显示一行 (超长用 … 截断), 鼠标悬浮看完整备注; 几条备注在悬浮里分段
   const full = String(pn.note || '').trim() || (pn.bank_notes || []).join('\n\n') || t;
@@ -3130,6 +3145,8 @@ function _invPayNoteTag(r) {
 // ── 收款拆成几列: 收款银行 / 笔数 / 到账合计 / 差额 / 每笔明细 (列表和导出共用) ──
 // 这笔交易算进核查通过的钱了吗 (服务端 verify.ok 标出的)
 function _invTxnVerified(r, id) { return !!(r.verify && r.verify.ok && r.verify.ok[id]); }
+// 这张单据的应收/应付金额: 发票是 subtotal, 木板账单等是 amount
+function _rowDue(r) { return Number(r.subtotal != null ? r.subtotal : r.amount) || 0; }
 function _invPayInfo(r) {
   const pn = r.pay_note || {}, txns = pn.txns || [];
   const banks = pn.bank ? [pn.bank] : [...new Set(txns.map(t => String(t.acct_label || '').trim()).filter(Boolean))];
@@ -3138,7 +3155,7 @@ function _invPayInfo(r) {
   const v = r.verify;
   // 到账合计 = 核查通过的钱 (一笔关联几张发票的按本张分到的算); 没核查结果时退回旧算法
   const got = v ? (v.got || null) : pn.amount != null && Number.isFinite(Number(pn.amount)) ? Number(pn.amount) : (txns.length ? sum : null);
-  const diff = got == null ? null : Math.round((got - (Number(r.subtotal) || 0)) * 100) / 100;
+  const diff = got == null ? null : Math.round((got - _rowDue(r)) * 100) / 100;
   const detail = [...txns].sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))).map(t => ({
     date: t.date || '', amt: Math.abs(Number(t.amount) || 0), bank: t.acct_label || '', desc: t.merchant || t.name || '',
     share: v && v.shared[t.txn_id] ? v.alloc[t.txn_id] : null, sharedN: v ? v.shared[t.txn_id] || 0 : 0,
@@ -3165,10 +3182,11 @@ function _invPayCols(r) {
     <td style="${num}">${diffHtml}</td>
     <td style="font-size:.78rem">${detail}</td>`;
 }
-// 记录列: 没记过 → ⏳待记录 + ＋记录; 记过 → 编辑
-function _invRecCell(r) {
+// 记录列: 没记过 → ⏳待记录 + ＋记录; 记过 → 编辑 (type: 付款批注对象类型, 发票列表默认 invoice)
+function _invRecCell(r, type) {
+  type = type || 'invoice';
   const has = _pnHasContent(r.pay_note);
-  const edit = canAnnotate() ? ` <a style="cursor:pointer;font-size:.74rem;color:#0f4c6b;text-decoration:underline" onclick="openPayNote('invoice', ${r.id})">${has ? '编辑' : '＋记录'}</a>` : '';
+  const edit = canAnnotate() ? ` <a style="cursor:pointer;font-size:.74rem;color:#0f4c6b;text-decoration:underline" onclick="openPayNote('${type}', ${r.id})">${has ? '编辑' : '＋记录'}</a>` : '';
   return (has ? '' : '<span style="background:#fffbeb;color:#b45309;border:1px solid #fcd34d;border-radius:8px;padding:1px 7px;font-size:.72rem;font-weight:700">⏳ 待记录</span>') + edit;
 }
 // 导出当前筛选的发票 (逐张审核用): 每张一行, 每笔收款明细写在同一格里
