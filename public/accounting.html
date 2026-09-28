@@ -321,14 +321,17 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <option value="">全部</option>
         <option value="todo">⏳ 待会计记录</option>
         <option value="acctdone">✅ 会计已记「已付」</option>
+        <option value="diff">⚠️ 到账和发票金额有差</option>
         <option value="with">只看有批注的</option>
       </select>
       <span id="invStats" style="font-size:.8rem;color:var(--g500)"></span>
+      <button class="btn btn-sm btn-outline" onclick="invExportCsv()" title="按当前筛选导出，每张发票一行：收款银行 / 笔数 / 到账合计 / 差额 / 每笔明细 / 备注，方便逐张审核" style="margin-left:auto">⬇ 导出 CSV（逐张审核用）</button>
     </div>
     <div class="card" style="overflow-x:auto">
-      <table><thead><tr>
-        <th>发票号</th><th>日期</th><th>公司</th><th>账期</th><th style="text-align:right">金额</th><th>付款状态</th><th>付款批注（会计）</th><th>付款备注</th><th>批注</th><th></th>
-      </tr></thead><tbody id="invBody"><tr><td colspan="10" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+      <table style="font-size:.84rem"><thead><tr>
+        <th>发票号</th><th>日期</th><th>公司</th><th>账期</th><th style="text-align:right">发票金额</th><th>付款状态</th>
+        <th>收款银行</th><th style="text-align:right">笔数</th><th style="text-align:right">到账合计</th><th style="text-align:right">差额</th><th>收款明细（每笔）</th><th>付款备注</th><th>记录</th><th>批注</th><th></th>
+      </tr></thead><tbody id="invBody"><tr><td colspan="15" style="color:var(--g400)">加载中…</td></tr></tbody></table>
     </div>
   </div>
 
@@ -3106,15 +3109,72 @@ function _invPayNoteTag(r) {
   if (d === 'over') return `<span style="display:inline-block;background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd;border-radius:6px;padding:1px 8px;font-size:.78rem;font-weight:700">⬆ ${txt}</span>`;
   return `<span style="font-size:.76rem;color:var(--g500)">${txt}</span>`;
 }
-function renderInvList() {
+// ── 收款拆成几列: 收款银行 / 笔数 / 到账合计 / 差额 / 每笔明细 (列表和导出共用) ──
+function _invPayInfo(r) {
+  const pn = r.pay_note || {}, txns = pn.txns || [];
+  const banks = pn.bank ? [pn.bank] : [...new Set(txns.map(t => String(t.acct_label || '').trim()).filter(Boolean))];
+  const n = (pn.txn_ids || []).length;
+  const sum = txns.reduce((x, t) => x + Math.abs(Number(t.amount) || 0), 0);
+  const got = pn.amount != null && Number.isFinite(Number(pn.amount)) ? Number(pn.amount) : (txns.length ? sum : null);
+  const diff = got == null ? null : Math.round((got - (Number(r.subtotal) || 0)) * 100) / 100;
+  const detail = [...txns].sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))).map(t => ({
+    date: t.date || '', amt: Math.abs(Number(t.amount) || 0), bank: t.acct_label || '', desc: t.merchant || t.name || '',
+  }));
+  return { banks, n, got, diff, detail };
+}
+function _invPayCols(r) {
+  const x = _invPayInfo(r), dash = '<span style="color:var(--g300)">—</span>';
+  const num = 'text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums';
+  const diffHtml = x.diff == null ? dash
+    : Math.abs(x.diff) < 0.01 ? '<span style="color:#15803d;font-weight:700">✓ 0</span>'
+    : x.diff < 0 ? `<span style="color:#b91c1c;font-weight:800">−${money(-x.diff)}</span>`
+    : `<span style="color:#1d4ed8;font-weight:800">+${money(x.diff)}</span>`;
+  const detail = x.detail.length ? x.detail.map(d =>
+    `<div title="${esc(d.desc)}" style="white-space:nowrap">${esc(d.date)} · <b>${money(d.amt)}</b>${x.banks.length > 1 && d.bank ? ` · <span style="color:var(--g500)">${esc(d.bank)}</span>` : ''}</div>`).join('') : dash;
+  return `<td style="white-space:nowrap">${x.banks.length ? x.banks.map(esc).join('<br>') : dash}</td>
+    <td style="${num}">${x.n || dash}</td>
+    <td style="${num};font-weight:700">${x.got == null ? dash : money(x.got)}</td>
+    <td style="${num}">${diffHtml}</td>
+    <td style="font-size:.78rem">${detail}</td>`;
+}
+// 记录列: 没记过 → ⏳待记录 + ＋记录; 记过 → 编辑
+function _invRecCell(r) {
+  const has = _pnHasContent(r.pay_note);
+  const edit = canAnnotate() ? ` <a style="cursor:pointer;font-size:.74rem;color:#0f4c6b;text-decoration:underline" onclick="openPayNote('invoice', ${r.id})">${has ? '编辑' : '＋记录'}</a>` : '';
+  return (has ? '' : '<span style="background:#fffbeb;color:#b45309;border:1px solid #fcd34d;border-radius:8px;padding:1px 7px;font-size:.72rem;font-weight:700">⏳ 待记录</span>') + edit;
+}
+// 导出当前筛选的发票 (逐张审核用): 每张一行, 每笔收款明细写在同一格里
+function invExportCsv() {
+  const rows = _invFilteredRows();
+  const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const lines = [['发票号', '发票日期', '公司', '账期开始', '账期结束', '发票金额', '付款状态', '收款银行', '笔数', '到账合计', '差额(到账-发票)', '收款明细(日期 金额 账户 描述)', '付款备注', '批注数'].map(q).join(',')];
+  const ST = { paid: '已收款', partial: '部分收款', unpaid: '未收款' };
+  for (const r of rows) {
+    const x = _invPayInfo(r);
+    lines.push([r.invoice_number, r.invoice_date, r.company_name, r.period_start, r.period_end, (Number(r.subtotal) || 0).toFixed(2),
+      ST[_acctPayStatus(r)] || '', x.banks.join(' / '), x.n || '', x.got == null ? '' : x.got.toFixed(2), x.diff == null ? '' : x.diff.toFixed(2),
+      x.detail.map(d => `${d.date} ${d.amt.toFixed(2)} ${d.bank} ${d.desc}`.trim()).join(' | '), _invPayNoteText(r), r.annotation_count || 0].map(q).join(','));
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
+  a.download = `invoices-payments-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+function _invFilteredRows() {
   const q = (document.getElementById('invSearch').value || '').toLowerCase();
   const flt = document.getElementById('invAnnFilter').value;
-  const isTodo = r => !_pnHasContent(r.pay_note);
   let rows = _invList;
   if (q) rows = rows.filter(r => (r.invoice_number || '').toLowerCase().includes(q) || (r.company_name || '').toLowerCase().includes(q));
   if (flt === 'with') rows = rows.filter(r => r.annotation_count > 0);
-  else if (flt === 'todo') rows = rows.filter(isTodo);
+  else if (flt === 'todo') rows = rows.filter(r => !_pnHasContent(r.pay_note));
   else if (flt === 'acctdone') rows = rows.filter(r => r.pay_note && r.pay_note.paid_status === 'paid');
+  else if (flt === 'diff') rows = rows.filter(r => { const d = _invPayInfo(r).diff; return d != null && Math.abs(d) >= 0.01; });
+  return rows;
+}
+function renderInvList() {
+  const isTodo = r => !_pnHasContent(r.pay_note);
+  const rows = _invFilteredRows();
   const todoN = _invList.filter(isTodo).length;
   document.getElementById('invStats').textContent = `共 ${rows.length} 张 · 合计 ${money(rows.reduce((s, r) => s + (Number(r.subtotal) || 0), 0))}${todoN ? ` · ⏳ 待会计记录 ${todoN} 张` : ''}`;
   document.getElementById('invBody').innerHTML = rows.length ? rows.map(r => `<tr>
@@ -3124,11 +3184,12 @@ function renderInvList() {
     <td style="white-space:nowrap;font-size:.78rem;color:var(--g500)">${esc(r.period_start || '?')} ~ ${esc(r.period_end || '?')}</td>
     <td style="text-align:right;font-weight:700">${money(r.subtotal)}</td>
     <td>${payBadge(_acctPayStatus(r))}</td>
-    <td>${payNoteCell('invoice', r.id, r.pay_note, true, true)}</td>
+    ${_invPayCols(r)}
     <td style="max-width:240px">${_invPayNoteTag(r)}</td>
+    <td style="white-space:nowrap">${_invRecCell(r)}</td>
     <td>${annBadge(r.annotation_count)}</td>
     <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openInvoice(${r.id})">查看 / 批注</button></td>
-  </tr>`).join('') : '<tr><td colspan="10" style="color:var(--g400);padding:1rem">没有符合条件的发票。</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="15" style="color:var(--g400);padding:1rem">没有符合条件的发票。</td></tr>';
 }
 function renderStmtList() {
   const q = (document.getElementById('stmtSearch').value || '').toLowerCase();
