@@ -60,6 +60,13 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
 .rs-day{border:1px solid var(--g300);background:#fff;border-radius:999px;width:28px;height:28px;font-size:.78rem;font-weight:700;color:var(--g600);cursor:pointer;font-family:inherit;padding:0}
 .rs-day.on{background:#0f4c6b;border-color:#0f4c6b;color:#fff}
 
+/* 面试去了 / 没去 按钮 */
+.iv-acts{display:flex;gap:4px;margin-top:5px;flex-wrap:wrap}
+.iv-btn{display:inline-flex;align-items:center;gap:3px;border-radius:7px;padding:3px 10px;font-size:.74rem;font-weight:800;cursor:pointer;white-space:nowrap;font-family:inherit;border:1px solid;background:#fff;line-height:1.3;transition:background .12s,color .12s}
+.iv-btn.go{color:#047857;border-color:#6ee7b7;background:#ecfdf5}.iv-btn.go:hover{background:#10b981;border-color:#10b981;color:#fff}
+.iv-btn.no{color:#b91c1c;border-color:#fca5a5;background:#fff5f5}.iv-btn.no:hover{background:#ef4444;border-color:#ef4444;color:#fff}
+.iv-btn.mini{padding:1px 7px;font-size:.68rem;font-weight:600;color:var(--g500);border-color:var(--g200)}.iv-btn.mini:hover{background:var(--g100);color:var(--g700)}
+
 /* ── 银行直连表: 列表在卡片内滚动, 表头 + 合计行吸顶不动 ── */
 #bankTblWrap{max-height:calc(100vh - 120px);overflow:auto;padding:0 14px 12px;overscroll-behavior:contain}
 #bankTblWrap table{border-collapse:separate;border-spacing:0}
@@ -1556,12 +1563,13 @@ function _refInterviewMarkCell(r) {
   // 标了去了的显示实际到场时间, 可以随时更新
   const attendedAt = r.interview_status === 'attended' && r.interview_attended_at
     ? `<div style="font-size:.72rem;color:#047857;white-space:nowrap;margin-top:2px">到场 ${esc(r.interview_attended_at)}</div>` : '';
-  const L = (st, label) => `<a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="refMarkInterview(${r.id},'${st}')">${label}</a>`;
+  const B = (st, cls, label) => `<button type="button" class="iv-btn ${cls}" onclick="refMarkInterview(${r.id},'${st}')">${label}</button>`;
+  // 没标记: 两个显眼按钮; 标过了: 小按钮改/清
   const links = _refCanEdit(r)
-    ? `<div style="margin-top:3px;white-space:nowrap;font-size:.7rem;color:var(--g400)">${
-        r.interview_status === 'attended' ? `${L('attended', '改时间')} · ${L('no_show', '改为没去')} · ${L('', '清除')}`
-        : r.interview_status === 'no_show' ? `${L('attended', '改为去了')} · ${L('', '清除')}`
-        : `${L('attended', '✅ 去了')} · ${L('no_show', '❌ 没去')}`}</div>`
+    ? `<div class="iv-acts">${
+        r.interview_status === 'attended' ? B('attended', 'mini', '改时间') + B('no_show', 'mini', '改为没去') + B('', 'mini', '清除')
+        : r.interview_status === 'no_show' ? B('attended', 'mini', '改为去了') + B('', 'mini', '清除')
+        : B('attended', 'go', '✓ 去了') + B('no_show', 'no', '✕ 没去')}</div>`
     : '';
   return chip + attendedAt + links;
 }
