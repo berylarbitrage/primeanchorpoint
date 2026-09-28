@@ -26,6 +26,21 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
 .tab.on{color:#0f4c6b;border-bottom-color:var(--blue)}
 .badge{display:inline-block;border-radius:999px;padding:.08rem .55rem;font-size:.72rem;font-weight:700}
 
+/* ── 介绍费卡片: 固定列宽的网格, 多张卡片上下列对齐; 窄屏自动折行 ── */
+.ref-card{padding:0;overflow:hidden;border-left-width:4px}
+.ref-top{display:grid;grid-template-columns:minmax(300px,1.3fr) minmax(210px,1.2fr) 150px 96px minmax(190px,auto);gap:.4rem 1.2rem;align-items:start;padding:.8rem 1rem .7rem}
+.ref-top>div{min-width:0}
+.ref-ppl{display:grid;grid-template-columns:1fr 18px 1fr;gap:.5rem;align-items:start}
+.ref-arrow{align-self:center;color:#cbd5e1;font-size:1rem;font-weight:900;text-align:center;padding-top:.7rem}
+.ref-side{display:flex;flex-direction:column;align-items:flex-end;gap:.4rem}
+.ref-desc{grid-column:1/-1;font-size:.76rem;color:var(--g600);background:#f8fafc;border-radius:6px;padding:.3rem .55rem}
+.ref-foot{border-top:1px solid var(--g100);background:#fbfcfe}
+.ref-row{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;padding:.45rem 1rem;font-size:.78rem}
+.ref-row+.ref-row,.ref-row+.ref-weeks,.ref-weeks+.ref-row{border-top:1px solid var(--g100)}
+.ref-weeks{overflow-x:auto;padding:0 .6rem}
+@media (max-width:1180px){.ref-top{grid-template-columns:1fr 1fr}.ref-side{grid-column:1/-1;flex-direction:row-reverse;justify-content:space-between;align-items:center}}
+@media (max-width:640px){.ref-top{grid-template-columns:1fr}.ref-ppl{grid-template-columns:1fr}.ref-arrow{display:none}}
+
 /* ── 银行直连表: 列表在卡片内滚动, 表头 + 合计行吸顶不动 ── */
 #bankTblWrap{max-height:calc(100vh - 120px);overflow:auto;padding:0 14px 12px;overscroll-behavior:contain}
 #bankTblWrap table{border-collapse:separate;border-spacing:0}
@@ -1523,11 +1538,11 @@ function renderRefList() {
     const who = [r.created_by ? esc(r.created_by) + ' 提交' : '', r.reviewed_by ? esc(r.reviewed_by) + ' 核查' : ''].filter(Boolean).join(' · ');
     const reviewBar = r.review_status === 'pending'
       ? (USER.role === 'admin'
-        ? `<div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:.4rem .6rem;font-size:.78rem;color:#9a3412">⏳ 等你核查：看过面试、发票没问题就同意支付${who ? ` <span style="color:var(--g400)">· ${who}</span>` : ''}<span style="flex:1"></span>
-            <button class="btn btn-sm" style="background:#16a34a;color:#fff;border-color:#16a34a" onclick="refReview(${r.id},'approve')">✅ 同意支付</button>
+        ? `<div class="ref-row" style="background:#fff7ed;color:#9a3412"><b>⏳ 等你核查</b><span>看过面试、发票没问题就同意支付</span>${who ? `<span style="color:var(--g400)">· ${who}</span>` : ''}<span style="flex:1"></span>
+            <button class="btn btn-sm" style="background:#16a34a;color:#fff" onclick="refReview(${r.id},'approve')">✅ 同意支付</button>
             <button class="btn btn-sm btn-outline" style="color:#dc2626;border-color:#fecaca" onclick="refReview(${r.id},'reject')">✖ 拒绝</button></div>`
-        : `<div style="font-size:.74rem;color:var(--g400)">⏳ 等管理员核查${who ? ' · ' + who : ''}</div>`)
-      : `<div style="font-size:.74rem;color:var(--g500)">${r.review_status === 'approved' ? '✅ 同意支付' : '✖ 拒绝支付'}${who ? ' · ' + who : ''}${r.review_note ? ` · <span style="color:var(--g400)">${esc(r.review_note)}</span>` : ''}${USER.role === 'admin' ? ` · <a style="cursor:pointer;color:var(--g400);text-decoration:underline" onclick="refReview(${r.id},'reset')">撤销重审</a>` : ''}</div>`;
+        : `<div class="ref-row" style="color:var(--g400)">⏳ 等管理员核查${who ? ' · ' + who : ''}</div>`)
+      : `<div class="ref-row" style="color:var(--g500)">${r.review_status === 'approved' ? '✅ 同意支付' : '✖ 拒绝支付'}${who ? ' · ' + who : ''}${r.review_note ? ` · <span style="color:var(--g400)">${esc(r.review_note)}</span>` : ''}${USER.role === 'admin' ? ` · <a style="cursor:pointer;color:var(--g400);text-decoration:underline" onclick="refReview(${r.id},'reset')">撤销重审</a>` : ''}</div>`;
     // 每周付款表
     const weeks = r.weeks || [];
     const feeCell = w => canInv && r.review_status !== 'rejected'
@@ -1552,35 +1567,40 @@ function renderRefList() {
             <td style="${td};text-align:right">${feeCell(w)}</td>
             <td style="${td}">${payCell(w)}</td></tr>`;
         }).join('') + `</tbody></table>`
-      : `<div style="font-size:.78rem;color:var(--g400);padding:.55rem .2rem">还没关联发票。${canInv ? '点右上「＋ 关联发票」，每张发票（一周账期）就是一周，按周给工头付钱。' : '会计关联每周发票后，这里按周列出。'}</div>`;
+      : '';
     // 旧记录: 按周付款上线前记在整条介绍上的付款批注, 照样显示
-    const legacy = _pnHasContent(r.pay_note) ? `<div style="font-size:.74rem;color:var(--g500);margin-top:.35rem">整笔付款记录（旧）：${payNoteCell('referral', r.id, r.pay_note, false)}</div>` : '';
+    const legacy = _pnHasContent(r.pay_note) ? `<div style="font-size:.74rem;color:var(--g500)">整笔付款记录（旧）：${payNoteCell('referral', r.id, r.pay_note, false)}</div>` : '';
     const ip = _refInvPeriod(r);
     const sumLine = weeks.length
       ? `<span style="font-size:.78rem;color:var(--g500)">共 <b>${ws.n}</b> 周${ip && ip.start ? ` · ${esc(ip.start)} ~ ${esc(ip.end || '?')}` : ''} · 应付 <b>${money(ws.due)}</b> · 已付 <b style="color:#047857">${money(ws.paid)}</b>${ws.due - ws.paid > 0.005 ? ` · 还差 <b style="color:#dc2626">${money(ws.due - ws.paid)}</b>` : ''}</span>`
       : '';
-    return `<div class="card" style="padding:.85rem 1rem;${r.review_status === 'rejected' ? 'opacity:.6;' : ''}border-left:4px solid ${ov === 'paid' ? '#16a34a' : ov === 'rejected' ? '#cbd5e1' : ov === 'pending' ? '#fb923c' : '#3b82f6'}">
-      <div style="display:flex;gap:1.1rem;flex-wrap:wrap;align-items:flex-start">
-        <div>${lbl('工头 · 介绍人')}${person(r.foreman_name, r.foreman_phone, r.foreman_state ? ` · 📍 ${esc(r.foreman_state)}` : '')}</div>
-        <div style="align-self:center;color:#94a3b8;font-size:1.2rem;font-weight:900">➜</div>
-        <div>${lbl('被介绍工人')}${person(r.worker_name, r.worker_phone, (r.worker_wage ? ` · <span style="color:#047857">💵 ${esc(r.worker_wage)}</span>` : '') + attHtml)}</div>
-        <div style="min-width:180px;max-width:300px">${lbl('工作仓库')}<div style="font-weight:700;font-size:.85rem">${esc(r.warehouse_name || '—')}</div>
-          ${r.warehouse_address ? `<div style="font-size:.74rem;color:var(--g500)">${esc(r.warehouse_address)}</div>` : ''}${r.job_title ? `<div style="font-size:.72rem;color:#7c3aed">📌 ${esc(r.job_title)}</div>` : ''}</div>
-        <div>${lbl('面试')}<div style="font-size:.8rem;white-space:nowrap">${esc((r.interview_at || '').replace('T', ' ')) || '—'}</div><div style="font-size:.78rem">${_refInterviewMarkCell(r)}</div></div>
-        <div>${lbl('介绍费 / 周')}<div style="font-weight:800;color:#0f4c6b;font-size:.95rem">${r.amount != null ? money(r.amount) : '<span style="color:var(--g400);font-weight:400">未定</span>'}</div></div>
-        <div style="margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:.4rem">${statusPill}<div style="white-space:nowrap">${ops}</div></div>
-      </div>
-      <div style="margin-top:.55rem">${reviewBar}</div>
-      <div style="margin-top:.6rem;border:1px solid var(--g200);border-radius:10px;overflow:hidden">
-        <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;background:#f8fafc;padding:.4rem .6rem;border-bottom:1px solid var(--g200)">
-          <b style="font-size:.82rem">🗓 每周付款</b>${sumLine}<span style="flex:1"></span>
-          ${canInv ? `<button class="btn btn-sm btn-outline" onclick="openRefInv(${r.id})">${weeks.length ? '✎ 改关联发票' : '＋ 关联发票'}</button>` : ''}
+    // 仓库: 没写名称的用地址当主行, 不再显示一个孤零零的「—」
+    const whMain = r.warehouse_name || r.warehouse_address || '—';
+    const whSub = r.warehouse_name ? r.warehouse_address : '';
+    const weekHint = weeks.length ? sumLine
+      : `<span style="color:var(--g400)">还没关联发票${canInv ? ' — 每张发票（一周账期）算一周，按周给工头付钱' : '，会计关联后按周列出'}</span>`;
+    return `<div class="card ref-card" style="${r.review_status === 'rejected' ? 'opacity:.6;' : ''}border-left-color:${ov === 'paid' ? '#16a34a' : ov === 'rejected' ? '#cbd5e1' : ov === 'pending' ? '#fb923c' : '#3b82f6'}">
+      <div class="ref-top">
+        <div class="ref-ppl">
+          <div>${lbl('工头 · 介绍人')}${person(r.foreman_name, r.foreman_phone, r.foreman_state ? ` · 📍 ${esc(r.foreman_state)}` : '')}</div>
+          <div class="ref-arrow">➜</div>
+          <div>${lbl('被介绍工人')}${person(r.worker_name, r.worker_phone, (r.worker_wage ? ` · <span style="color:#047857;font-weight:700">💵 ${esc(r.worker_wage)}</span>` : '') + attHtml)}</div>
         </div>
-        <div style="overflow-x:auto;padding:0 .2rem">${weekTable}</div>
-        ${r.invoice_note ? `<div style="font-size:.72rem;color:var(--g500);padding:.35rem .6rem;border-top:1px solid var(--g100)">📝 ${esc(r.invoice_note)}</div>` : ''}
+        <div>${lbl('工作仓库')}<div style="font-weight:700;font-size:.84rem;color:#0f172a;line-height:1.3">${esc(whMain)}</div>
+          ${whSub ? `<div style="font-size:.74rem;color:var(--g500);line-height:1.3">${esc(whSub)}</div>` : ''}${r.job_title ? `<div style="font-size:.72rem;color:#7c3aed;margin-top:2px">📌 ${esc(r.job_title)}</div>` : ''}</div>
+        <div>${lbl('面试')}<div style="font-size:.82rem;font-weight:600;white-space:nowrap;margin-bottom:3px">${esc((r.interview_at || '').replace('T', ' ')) || '—'}</div>${_refInterviewMarkCell(r)}</div>
+        <div>${lbl('介绍费 / 周')}<div style="font-weight:800;color:#0f4c6b;font-size:1rem">${r.amount != null ? money(r.amount) : '<span style="color:var(--g400);font-weight:400;font-size:.85rem">未定</span>'}</div></div>
+        <div class="ref-side">${statusPill}<div style="white-space:nowrap">${ops}</div></div>
+        ${r.description ? `<div class="ref-desc">💬 ${esc(r.description)}</div>` : ''}
       </div>
-      ${legacy}
-      ${r.description ? `<div style="font-size:.74rem;color:var(--g500);margin-top:.4rem">💬 ${esc(r.description)}</div>` : ''}
+      <div class="ref-foot">
+        ${reviewBar}
+        <div class="ref-row"><b style="color:var(--g600)">🗓 每周付款</b>${weekHint}<span style="flex:1"></span>
+          ${canInv ? `<button class="btn btn-sm btn-outline" onclick="openRefInv(${r.id})">${weeks.length ? '✎ 改关联发票' : '＋ 关联发票'}</button>` : ''}</div>
+        ${weeks.length ? `<div class="ref-weeks">${weekTable}</div>` : ''}
+        ${r.invoice_note ? `<div class="ref-row" style="color:var(--g500)">📝 ${esc(r.invoice_note)}</div>` : ''}
+        ${legacy ? `<div class="ref-row">${legacy}</div>` : ''}
+      </div>
     </div>`;
   }).join('') : '<div class="card" style="color:var(--g400)">暂无介绍费记录，点「＋ 新增介绍」添加。</div>';
 }
