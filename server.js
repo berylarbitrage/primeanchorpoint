@@ -40055,6 +40055,57 @@ function _acctInvoiceAnnTxns() {
   } catch (e) {}
   return out;
 }
+// 发票收款核查 (列表的「付款状态」只看这个, 不看手工勾的已付/部分):
+// 只算 ① 关联的银行交易在银行记录里找得到 ② 这笔交易的银行标注已审核通过 (或管理员自己标的)
+// 的钱; 一笔钱关联了几张发票就按发票金额依次分, 不重复算。没核查通过的原因逐条列出。
+// r.verify = {status: paid|partial|unpaid, got, reasons[], alloc{txn: 本张分到}, shared{txn: 几张发票共用}}
+function _acctInvoiceVerify(rows) {
+  const annSt = {};
+  try {
+    db.prepare(`SELECT plaid_txn_id, COALESCE(ann_status,'') AS st FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id<>''`).all()
+      .forEach(b => { annSt[b.plaid_txn_id] = b.st; });
+  } catch (e) {}
+  const ok = id => id in annSt && (annSt[id] === '' || annSt[id] === 'approved');
+  // 每笔交易被哪些发票关联 (按日期+id 排, 早的先分)
+  const users = {};
+  const ordered = [...rows].sort((a, b) => String(a.invoice_date || '').localeCompare(String(b.invoice_date || '')) || a.id - b.id);
+  for (const r of ordered) for (const t of ((r.pay_note && r.pay_note.txns) || [])) (users[t.txn_id] = users[t.txn_id] || []).push(r);
+  const allocOf = {}; // `${txn}|${invoiceId}` → 分到的金额
+  for (const [txn, invs] of Object.entries(users)) {
+    const t = invs[0].pay_note.txns.find(x => x.txn_id === txn);
+    let left = Math.abs(Number(t && t.amount) || 0);
+    invs.forEach((r, i) => {
+      const take = i === invs.length - 1 ? left : Math.min(left, Number(r.subtotal) || 0);
+      allocOf[txn + '|' + r.id] = Math.round(take * 100) / 100;
+      left = Math.max(0, Math.round((left - take) * 100) / 100);
+    });
+  }
+  for (const r of rows) {
+    const pn = r.pay_note;
+    const v = { status: 'unpaid', got: null, reasons: [], alloc: {}, shared: {}, ok: {} };
+    r.verify = v;
+    if (!pn) continue;
+    const ids = pn.txn_ids || [], txns = pn.txns || [];
+    if (!ids.length) { v.reasons.push('没关联银行收款记录'); continue; }
+    const miss = ids.length - txns.length;
+    if (miss > 0) v.reasons.push(`${miss} 笔关联的银行交易找不到`);
+    let got = 0, noAnn = 0, pend = 0;
+    for (const t of txns) {
+      const a = allocOf[t.txn_id + '|' + r.id] || 0;
+      v.alloc[t.txn_id] = a;
+      if ((users[t.txn_id] || []).length > 1) v.shared[t.txn_id] = users[t.txn_id].length;
+      if (ok(t.txn_id)) { got += a; v.ok[t.txn_id] = 1; }
+      else if (t.txn_id in annSt) pend++;
+      else noAnn++;
+    }
+    if (noAnn) v.reasons.push(`${noAnn} 笔银行交易还没做标注`);
+    if (pend) v.reasons.push(`${pend} 笔银行标注还没审核通过`);
+    got = Math.round(got * 100) / 100;
+    v.got = got;
+    const sub = Number(r.subtotal) || 0;
+    v.status = got <= 0 ? 'unpaid' : got + 0.005 >= sub ? 'paid' : 'partial';
+  }
+}
 // 付款批注输出: txn_ids 解析并附银行交易概要, photos 转 /uploads URL (同 _lineNoteOut)
 function _acctPayNoteOut(n) {
   if (!n) return n;
@@ -40168,6 +40219,7 @@ app.get('/api/acct/invoices', requireAdmin, requireAcctView, (req, res) => {
         }
       }
     }
+    _acctInvoiceVerify(rows);
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

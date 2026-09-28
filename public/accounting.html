@@ -3090,6 +3090,8 @@ function annBadge(n) { return n > 0 ? `<span class="badge ann-badge">✏️ ${n}
 // 会计系统口径的付款状态: 只看会计记的付款批注, 不看老的 payment_status「已收款」标记
 // (系统里全部发票都从「未收款」全新开始, 会计记了已付/部分才变)
 function _acctPayStatus(r) {
+  // 发票列表: 服务端核查过的 (银行记录找得到 + 标注审核通过的钱) 为准, 手工勾的已付不算
+  if (r.verify) return r.verify.status;
   const s = r.pay_note && r.pay_note.paid_status;
   return (s === 'paid' || s === 'partial') ? s : 'unpaid';
 }
@@ -3123,15 +3125,21 @@ function _invPayNoteTag(r) {
   return `<span${tip} style="${clip};font-size:.76rem;color:var(--g500)">${txt}</span>`;
 }
 // ── 收款拆成几列: 收款银行 / 笔数 / 到账合计 / 差额 / 每笔明细 (列表和导出共用) ──
+// 这笔交易算进核查通过的钱了吗 (服务端 verify.ok 标出的)
+function _invTxnVerified(r, id) { return !!(r.verify && r.verify.ok && r.verify.ok[id]); }
 function _invPayInfo(r) {
   const pn = r.pay_note || {}, txns = pn.txns || [];
   const banks = pn.bank ? [pn.bank] : [...new Set(txns.map(t => String(t.acct_label || '').trim()).filter(Boolean))];
   const n = (pn.txn_ids || []).length;
   const sum = txns.reduce((x, t) => x + Math.abs(Number(t.amount) || 0), 0);
-  const got = pn.amount != null && Number.isFinite(Number(pn.amount)) ? Number(pn.amount) : (txns.length ? sum : null);
+  const v = r.verify;
+  // 到账合计 = 核查通过的钱 (一笔关联几张发票的按本张分到的算); 没核查结果时退回旧算法
+  const got = v ? (v.got || null) : pn.amount != null && Number.isFinite(Number(pn.amount)) ? Number(pn.amount) : (txns.length ? sum : null);
   const diff = got == null ? null : Math.round((got - (Number(r.subtotal) || 0)) * 100) / 100;
   const detail = [...txns].sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))).map(t => ({
     date: t.date || '', amt: Math.abs(Number(t.amount) || 0), bank: t.acct_label || '', desc: t.merchant || t.name || '',
+    share: v && v.shared[t.txn_id] ? v.alloc[t.txn_id] : null, sharedN: v ? v.shared[t.txn_id] || 0 : 0,
+    unverified: !!(v && !_invTxnVerified(r, t.txn_id)),
   }));
   // 关联了但银行记录里找不到的笔数 (多半是银行把「待入账」换成正式入账, 交易号变了): 审核时要点名
   const missing = Math.max(0, n - txns.length);
@@ -3145,7 +3153,7 @@ function _invPayCols(r) {
     : x.diff < 0 ? `<span style="color:#b91c1c;font-weight:800">−${money(-x.diff)}</span>`
     : `<span style="color:#1d4ed8;font-weight:800">+${money(x.diff)}</span>`;
   const detail = x.detail.length ? x.detail.map(d =>
-    `<div title="${esc(d.desc)}" style="white-space:nowrap">${esc(d.date)} · <b>${money(d.amt)}</b>${x.banks.length > 1 && d.bank ? ` · <span style="color:var(--g500)">${esc(d.bank)}</span>` : ''}</div>`).join('')
+    `<div title="${esc(d.desc)}" style="white-space:nowrap">${esc(d.date)} · <b>${money(d.amt)}</b>${d.share != null ? ` <span style="color:#7c3aed" title="这笔钱同时关联了 ${d.sharedN} 张发票，按发票金额分，本张分到 ${money(d.share)}">（${d.sharedN} 张共用，本张 ${money(d.share)}）</span>` : ''}${x.banks.length > 1 && d.bank ? ` · <span style="color:var(--g500)">${esc(d.bank)}</span>` : ''}${d.unverified ? ' <span style="color:#b45309;font-weight:700" title="这笔银行交易的标注还没审核通过（或还没做标注），不算已收款">⏳未核查</span>' : ''}</div>`).join('')
     + (x.missing ? `<div title="关联的银行交易在银行记录里找不到了（多半是银行把待入账换成正式入账、交易号变了），点「编辑」重新关联" style="color:#b45309;font-weight:700">⚠ ${x.missing} 笔找不到银行记录</div>` : '')
     : x.missing ? `<span title="关联的银行交易在银行记录里找不到了，点「编辑」重新关联" style="color:#b45309;font-weight:700">⚠ ${x.missing} 笔找不到银行记录</span>` : dash;
   return `<td style="white-space:nowrap">${x.banks.length ? x.banks.map(esc).join('<br>') : dash}</td>
@@ -3200,7 +3208,7 @@ function renderInvList() {
     <td>${esc(r.company_name || '')}</td>
     <td style="white-space:nowrap;font-size:.78rem;color:var(--g500)">${esc(r.period_start || '?')} ~ ${esc(r.period_end || '?')}</td>
     <td style="text-align:right;font-weight:700">${money(r.subtotal)}</td>
-    <td>${payBadge(_acctPayStatus(r))}</td>
+    <td style="white-space:nowrap">${payBadge(_acctPayStatus(r))}${r.verify && r.verify.reasons.length ? ` <span title="${esc('没核查通过的：\n' + r.verify.reasons.join('\n')).replace(/"/g, '&quot;')}" style="cursor:help;color:#b45309;font-weight:700">ⓘ</span>` : ''}</td>
     ${_invPayCols(r)}
     <td class="inv-note">${_invPayNoteTag(r)}</td>
     <td style="white-space:nowrap">${_invRecCell(r)}</td>
