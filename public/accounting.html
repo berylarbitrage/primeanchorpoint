@@ -22,7 +22,13 @@ table{width:100%;border-collapse:collapse}
 th{padding:.5rem .55rem;font-size:.76rem;font-weight:700;color:var(--g500);text-align:left;white-space:nowrap;border-bottom:2px solid var(--g200)}
 td{padding:.5rem .55rem;font-size:.84rem;border-top:1px solid var(--g100);vertical-align:middle}
 input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-radius:6px;font-size:.85rem;background:#fff;font-family:inherit}
-.tab{border:none;background:none;padding:.55rem 1rem;font-size:.9rem;font-weight:700;color:var(--g500);cursor:pointer;border-bottom:3px solid transparent}
+.tab{border:none;background:none;padding:.5rem .4rem .45rem;font-size:.9rem;font-weight:700;color:var(--g500);cursor:pointer;border-bottom:3px solid transparent;
+  flex:1 1 0;min-width:92px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;position:relative;white-space:nowrap;line-height:1.25}
+/* 页签: 上行 图标+中文, 下行 英文小字; 等宽不折行, 角标浮在右上角 */
+.tab .t-zh{font-size:.88rem}
+.tab .t-en{font-size:.68rem;font-weight:600;color:var(--g400);letter-spacing:.02em}
+.tab.on .t-en{color:#3b82f6}
+.tab:hover{color:#0f4c6b;background:#f8fafc}
 .tab.on{color:#0f4c6b;border-bottom-color:var(--blue)}
 .badge{display:inline-block;border-radius:999px;padding:.08rem .55rem;font-size:.72rem;font-weight:700}
 
@@ -168,19 +174,19 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
   </div>
   <p id="mainSub" style="color:var(--g500);font-size:.85rem;margin:.35rem 0 .9rem">发票与银行流水<strong>只读</strong>——不能修改任何数据；点「查看 / 批注」打开文件，开启「圈选批注」后在页面上<strong>拖动圈出</strong>要说明的地方并填写备注。</p>
 
-  <div id="tabBar" style="display:flex;border-bottom:1px solid var(--g200);margin-bottom:.8rem;background:#fff;border-radius:10px 10px 0 0;padding:0 .4rem">
-    <button class="tab on" id="tabInv" onclick="showTab('inv')">📄 发票 Invoices</button>
-    <button class="tab" id="tabStmt" onclick="showTab('stmt')" style="display:none">🏦 银行流水 Bank Statements</button>
-    <button class="tab" id="tabClaims" onclick="showTab('claims')">⚠️ 赔偿事故 Claims</button>
-    <button class="tab" id="tabRef" onclick="showTab('ref')">🤝 介绍费 Referral <span id="refPendBadge" style="display:none;background:#d97706;color:#fff;border-radius:10px;font-size:.68rem;padding:1px 7px;vertical-align:middle"></span></button>
-    <button class="tab" id="tabGusto" onclick="showTab('gusto')">💸 Gusto 工资</button>
-    <button class="tab" id="tabFeeIns" onclick="showTab('feeins')">🛡️ 保险费 Insurance</button>
-    <button class="tab" id="tabFeeLaw" onclick="showTab('feelaw')">⚖️ 律师费 Legal</button>
-    <button class="tab" id="tabFeeCo" onclick="showTab('feeco')">🏢 公司支出 Expenses</button>
-    <button class="tab" id="tabPallet" onclick="showTab('pallet')">🪵 木板账单 Pallet</button>
-    <button class="tab" id="tabTruck" onclick="showTab('truck')">🚚 卡车费用 Truck</button>
-    <button class="tab" id="tabBank" onclick="showTab('bank')" style="display:none">🔗 银行直连 Bank Feed <span id="bankUnrevBadge" style="display:none;background:#dc2626;color:#fff;border-radius:10px;font-size:.68rem;padding:1px 7px;vertical-align:middle"></span></button>
-    <button class="tab" id="tabZelle" onclick="showTab('zelle')" style="display:none">💸 Zelle</button>
+  <div id="tabBar" style="display:flex;border-bottom:1px solid var(--g200);margin-bottom:.8rem;background:#fff;border-radius:10px 10px 0 0;padding:0 .4rem;overflow-x:auto">
+    <button class="tab on" id="tabInv" onclick="showTab('inv')"><span class="t-zh">📄 发票</span><span class="t-en">Invoices</span></button>
+    <button class="tab" id="tabStmt" onclick="showTab('stmt')" style="display:none"><span class="t-zh">🏦 银行流水</span><span class="t-en">Statements</span></button>
+    <button class="tab" id="tabClaims" onclick="showTab('claims')"><span class="t-zh">⚠️ 赔偿事故</span><span class="t-en">Claims</span></button>
+    <button class="tab" id="tabRef" onclick="showTab('ref')"><span class="t-zh">🤝 介绍费</span><span class="t-en">Referral</span><span id="refPendBadge" style="display:none;background:#d97706;color:#fff;border-radius:10px;font-size:.68rem;padding:1px 7px;position:absolute;top:3px;right:4px"></span></button>
+    <button class="tab" id="tabGusto" onclick="showTab('gusto')"><span class="t-zh">💸 Gusto 工资</span><span class="t-en">Payroll</span></button>
+    <button class="tab" id="tabFeeIns" onclick="showTab('feeins')"><span class="t-zh">🛡️ 保险费</span><span class="t-en">Insurance</span></button>
+    <button class="tab" id="tabFeeLaw" onclick="showTab('feelaw')"><span class="t-zh">⚖️ 律师费</span><span class="t-en">Legal</span></button>
+    <button class="tab" id="tabFeeCo" onclick="showTab('feeco')"><span class="t-zh">🏢 公司支出</span><span class="t-en">Expenses</span></button>
+    <button class="tab" id="tabPallet" onclick="showTab('pallet')"><span class="t-zh">🪵 木板账单</span><span class="t-en">Pallet</span></button>
+    <button class="tab" id="tabTruck" onclick="showTab('truck')"><span class="t-zh">🚚 卡车费用</span><span class="t-en">Truck</span></button>
+    <button class="tab" id="tabBank" onclick="showTab('bank')" style="display:none"><span class="t-zh">🔗 银行直连</span><span class="t-en">Bank Feed</span><span id="bankUnrevBadge" style="display:none;background:#dc2626;color:#fff;border-radius:10px;font-size:.68rem;padding:1px 7px;position:absolute;top:3px;right:4px"></span></button>
+    <button class="tab" id="tabZelle" onclick="showTab('zelle')" style="display:none"><span class="t-zh">💸 Zelle</span><span class="t-en">Transfers</span></button>
   </div>
 
   <!-- 💸 Zelle 转账统计: 银行直连交易按收款人汇总, 每人所有时间点+金额, 可备注/关联员工·公司 -->
