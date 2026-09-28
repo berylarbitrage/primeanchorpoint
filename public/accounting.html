@@ -2408,8 +2408,10 @@ function _rcFields(r) {
     rows: [
       ['Worker', [r.worker_name, r.worker_phone].filter(Boolean).join('  ·  ')],
       ['Referred by', [r.foreman_name, r.foreman_phone].filter(Boolean).join('  ·  ')],
-      ['Work location', [wh, addr].filter(Boolean).join(' — ')],
-      ['Position', _rcEn(r.job_title)],
+      // 只写地址, 不写公司名; 没地址才退回仓库名
+      ['Work location', addr || wh],
+      // 只写工种: 岗位快照是「编号 标题 中文名 — 公司」, 去掉编号 (JOB-IL-092826-0001) 和「— 公司」
+      ['Position', _rcEn(String(r.job_title || '').split(/\s+—\s+/)[0]).replace(/^[A-Z]{2,}-[A-Z0-9-]+\s*/i, '')],
       ['Interview', ivTxt],
       ['Pay rate', _rcEn(r.worker_wage)],
       ['Referral fee', r.amount != null && Number(r.amount) > 0 ? `${money(r.amount)} per week worked` : ''],
