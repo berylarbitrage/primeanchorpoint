@@ -30042,9 +30042,9 @@ app.get('/api/admin/recruit-warehouses', requireAdmin, (req, res) => {
 
 app.get('/api/admin/recruit-jobs', requireAdmin, (req, res) => {
   try {
+    // 在招的全部 + 已关闭的 (「已关闭」tab 看, 按关闭时间新的在前)
     const jobs = db.prepare(`SELECT * FROM recruit_jobs
-      WHERE status='open' OR datetime(COALESCE(status_at, updated_at)) >= datetime('now', '-30 days')
-      ORDER BY CASE WHEN status='open' THEN 0 ELSE 1 END, id DESC`).all();
+      ORDER BY CASE WHEN status='open' THEN 0 ELSE 1 END, CASE WHEN status='open' THEN id END DESC, datetime(COALESCE(status_at, updated_at)) DESC, id DESC`).all();
     // 面试那边 (介绍) 关联了这个需求的申请人: 姓名电话 / 面试时间和结果 / 上班 / 班次
     const byJob = {};
     try {
