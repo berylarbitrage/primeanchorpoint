@@ -582,6 +582,9 @@ function bsNoteInput(id, el) {
   const box = _bsBoxList.find(b => b.id === id);
   if (box) box.note = el.value;
   bsRefreshNoteState(id);
+  // 自动核对里的「银行到账 ≠ 发票合计」跟着备注变: 写了备注就改成附上备注的灰色说明
+  clearTimeout(bsNoteInput._t);
+  bsNoteInput._t = setTimeout(() => _bsAnnCheckRun(id), 250);
 }
 // 免填备注还差哪些字段 (备注框提示和列表徽章共用): 公司收入等类型把
 // 用途/发票号/账期 填齐备注就是选填, 缺哪个点名哪个; 没有免填路径的返回 []。
@@ -835,8 +838,12 @@ function _bsAnnCheckHtml(box, items, mode) {
     }
     if (complete && sum > 0) {
       const diff = bank - sum;
+      // 有差额但「原因/备注」已经解释过 → 不再红色警告, 灰色列出差额并附上备注
+      const note = String(box.note || '').trim();
       bankLine = Math.abs(diff) < 0.01
         ? `<div style="color:#059669">✅ 银行到账 ${money(bank)} 与发票合计一致</div>`
+        : note
+        ? `<div style="color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:2px 8px;margin-top:2px">📝 银行到账 ${money(bank)}，发票合计 ${money(sum)}（${diff > 0 ? '多收' : '少收'} ${money(Math.abs(diff))}）<div style="color:#0f4c6b;font-weight:600">已备注：${esc(note)}</div></div>`
         : `<div style="color:#dc2626;font-weight:700;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:2px 8px;margin-top:2px">⚠️ 银行到账 ${money(bank)} ≠ 发票合计 ${money(sum)}（${diff > 0 ? '多收' : '少收'} ${money(Math.abs(diff))}）</div>`;
     }
   }
@@ -1317,7 +1324,10 @@ function annChipHtml(txnId) {
       : ' <span style="color:#dc2626" title="需要在「原因/备注」里写说明，或补全标注信息">⚠缺备注</span>';
   }
   const d = _bsAmtDiff(b);
-  const amtWarn = d && Math.abs(d.diff) >= 0.01
+  const hasNote = !!String(b.note || '').trim();
+  const amtWarn = d && Math.abs(d.diff) >= 0.01 && hasNote
+    ? ' <span style="color:#64748b" title="银行到账 ' + money(d.bank) + ' ≠ 发票合计 ' + money(d.sum) + '；已备注：' + esc(String(b.note).trim()).replace(/"/g, '&quot;') + '">📝差' + money(Math.abs(d.diff)) + '（已备注）</span>'
+    : d && Math.abs(d.diff) >= 0.01
     ? ' <span style="color:#dc2626;font-weight:800" title="银行到账 ' + money(d.bank) + ' ≠ 发票合计 ' + money(d.sum) + '，需在备注里解释">⚠️差' + money(Math.abs(d.diff)) + '</span>'
     : '';
   const comp = _bsCompanyProbs(b);
