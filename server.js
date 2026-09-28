@@ -895,6 +895,13 @@ try { db.exec(`ALTER TABLE referrals ADD COLUMN job_title TEXT DEFAULT ''`); } c
 // 靠打卡码对上员工档案和打卡记录, 按周工时核对介绍费; 上班满 3 个月 referral 期结束
 try { db.exec(`ALTER TABLE referrals ADD COLUMN timeclock_code TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE referrals ADD COLUMN started_by TEXT DEFAULT ''`); } catch(e) {}
+// 开始上班时确定的: 上班时间 (起止 + 一周哪几天)、工资、工资付款周期和付款日
+try { db.exec(`ALTER TABLE referrals ADD COLUMN start_time TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE referrals ADD COLUMN end_time TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE referrals ADD COLUMN work_days TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE referrals ADD COLUMN start_wage TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE referrals ADD COLUMN pay_cycle TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE referrals ADD COLUMN pay_day TEXT DEFAULT ''`); } catch(e) {}
 // 关联员工档案: 按工人电话在系统里找 — 员工档案 (profile_emp_id) 或已扫二维码登记、还没建档的 (profile_apl_id)
 try { db.exec(`ALTER TABLE referrals ADD COLUMN profile_emp_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE referrals ADD COLUMN profile_apl_id INTEGER DEFAULT NULL`); } catch(e) {}
@@ -40870,19 +40877,29 @@ app.post('/api/acct/referrals/:id/start', requireAdmin, requireRole('accounting'
   if (req.userRole !== 'admin' && cur.review_status !== 'pending' && cur.work_start_date) return res.status(403).json({ error: '该记录管理员已核查，如需修改请联系管理员' });
   const b = req.body || {};
   if (b.action === 'clear') {
-    db.prepare(`UPDATE referrals SET work_start_date='', timeclock_code='', started_by='', updated_at=datetime('now') WHERE id=?`).run(cur.id);
+    db.prepare(`UPDATE referrals SET work_start_date='', timeclock_code='', started_by='', start_time='', end_time='', work_days='', start_wage='', pay_cycle='', pay_day='', updated_at=datetime('now') WHERE id=?`).run(cur.id);
     return res.json({ success: true });
   }
   const date = String(b.work_start_date || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: '请填写上班日期' });
+  const tm = v => { const t = String(v || '').trim(); return /^\d{2}:\d{2}$/.test(t) ? t : ''; };
+  const startTime = tm(b.start_time), endTime = tm(b.end_time);
+  if (!startTime || !endTime) return res.status(400).json({ error: '请填写确定的上班时间（几点到几点）' });
+  const workDays = '一二三四五六日'.split('').filter(c => String(b.work_days || '').includes(c)).join('');
+  const wage = String(b.start_wage || '').trim().slice(0, 60);
+  if (!wage) return res.status(400).json({ error: '请填写确定的工资' });
+  const cycle = String(b.pay_cycle || '');
+  if (!['weekly', 'biweekly', 'semimonthly', 'monthly'].includes(cycle)) return res.status(400).json({ error: '请选择付款周期' });
+  const payDay = String(b.pay_day || '').trim().slice(0, 40);
+  if (!payDay) return res.status(400).json({ error: '请选择具体付款时间' });
   // 没填码但已关联员工档案 → 用档案里的打卡码
   const code = _referralCodeNorm(b.timeclock_code) || _referralCodeNorm(_referralProfileCode(cur));
   if (!code) return res.status(400).json({ error: '请填写工人的打卡 QR 码（扫码，或手输 8 位打卡密码）' });
   if (!_referralFindWorker(code)) return res.status(400).json({ error: '系统里查不到这个打卡码，请核对（工人登记后短信里收到的 8 位密码 / 二维码）' });
   const dup = db.prepare(`SELECT id, worker_name FROM referrals WHERE timeclock_code=? AND id!=?`).get(code, cur.id);
   if (dup) return res.status(400).json({ error: `这个打卡码已经关联在另一条介绍（${dup.worker_name || '#' + dup.id}）上了` });
-  db.prepare(`UPDATE referrals SET work_start_date=?, timeclock_code=?, started_by=?, updated_at=datetime('now') WHERE id=?`)
-    .run(date, code, req.userName || '', cur.id);
+  db.prepare(`UPDATE referrals SET work_start_date=?, timeclock_code=?, started_by=?, start_time=?, end_time=?, work_days=?, start_wage=?, pay_cycle=?, pay_day=?, updated_at=datetime('now') WHERE id=?`)
+    .run(date, code, req.userName || '', startTime, endTime, workDays, wage, cycle, payDay, cur.id);
   res.json({ success: true });
 });
 

@@ -56,6 +56,10 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
 .ref-prog i{display:block;height:100%;background:#16a34a}
 @media (max-width:640px){.ref-stage{min-width:0;flex:1}}
 
+/* 开始上班弹窗: 一周哪几天 */
+.rs-day{border:1px solid var(--g300);background:#fff;border-radius:999px;width:28px;height:28px;font-size:.78rem;font-weight:700;color:var(--g600);cursor:pointer;font-family:inherit;padding:0}
+.rs-day.on{background:#0f4c6b;border-color:#0f4c6b;color:#fff}
+
 /* ── 银行直连表: 列表在卡片内滚动, 表头 + 合计行吸顶不动 ── */
 #bankTblWrap{max-height:calc(100vh - 120px);overflow:auto;padding:0 14px 12px;overscroll-behavior:contain}
 #bankTblWrap table{border-collapse:separate;border-spacing:0}
@@ -499,8 +503,30 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <div class="card" style="max-width:440px;width:100%;padding:1.2rem 1.2rem 1rem;max-height:92vh;overflow:auto">
       <div style="font-weight:800;margin-bottom:.2rem">👷 开始上班</div>
       <div id="rsWho" style="font-size:.78rem;color:var(--g500);margin-bottom:.7rem"></div>
-      <label style="font-size:.76rem;color:var(--g500)">上班日期 <span style="color:#dc2626">*</span> <span style="font-size:.7rem;color:var(--g400)">从这天起算三个月 referral 期</span></label>
+      <label style="font-size:.76rem;color:var(--g500)">从哪天开始上班 <span style="color:#dc2626">*</span> <span style="font-size:.7rem;color:var(--g400)">从这天起算三个月 referral 期</span></label>
       <input type="date" id="rsDate" style="width:100%;margin:.15rem 0 .6rem">
+      <label style="font-size:.76rem;color:var(--g500)">确定的上班时间 <span style="color:#dc2626">*</span></label>
+      <div style="display:flex;gap:.35rem;align-items:center;margin:.15rem 0 .35rem">
+        <input type="time" id="rsT1" style="flex:1;min-width:0"><span style="color:var(--g400)">–</span><input type="time" id="rsT2" style="flex:1;min-width:0">
+      </div>
+      <div id="rsDays" style="display:flex;gap:.25rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
+        <span style="font-size:.72rem;color:var(--g400)">一周：</span>
+        <button type="button" class="rs-day" data-d="一" onclick="this.classList.toggle('on')">一</button><button type="button" class="rs-day" data-d="二" onclick="this.classList.toggle('on')">二</button><button type="button" class="rs-day" data-d="三" onclick="this.classList.toggle('on')">三</button><button type="button" class="rs-day" data-d="四" onclick="this.classList.toggle('on')">四</button><button type="button" class="rs-day" data-d="五" onclick="this.classList.toggle('on')">五</button><button type="button" class="rs-day" data-d="六" onclick="this.classList.toggle('on')">六</button><button type="button" class="rs-day" data-d="日" onclick="this.classList.toggle('on')">日</button>
+        <a style="cursor:pointer;font-size:.72rem;color:#0f4c6b;margin-left:.2rem" onclick="rsSetDays('一二三四五')">周一至五</a>
+        <a style="cursor:pointer;font-size:.72rem;color:#0f4c6b" onclick="rsSetDays('六日')">周末</a>
+        <a style="cursor:pointer;font-size:.72rem;color:#0f4c6b" onclick="rsSetDays('一二三四五六日')">每天</a>
+      </div>
+      <label style="font-size:.76rem;color:var(--g500)">确定的工资 <span style="color:#dc2626">*</span></label>
+      <input type="text" id="rsWage" placeholder="例：$18/小时" style="width:100%;margin:.15rem 0 .6rem">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.2rem .6rem">
+        <div><label style="font-size:.76rem;color:var(--g500)">付款周期 <span style="color:#dc2626">*</span></label>
+          <select id="rsCycle" onchange="rsCycleChanged()" style="width:100%;margin:.15rem 0 .6rem">
+            <option value="">— 选择 —</option><option value="weekly">每周</option><option value="biweekly">每两周</option>
+            <option value="semimonthly">每半个月</option><option value="monthly">每月</option>
+          </select></div>
+        <div><label style="font-size:.76rem;color:var(--g500)">具体付款时间 <span style="color:#dc2626">*</span></label>
+          <select id="rsPayDay" style="width:100%;margin:.15rem 0 .6rem"><option value="">先选周期</option></select></div>
+      </div>
       <label style="font-size:.76rem;color:var(--g500)">工人的打卡 QR 码 <span style="color:#dc2626">*</span> <span style="font-size:.7rem;color:var(--g400)">扫码、上传截图，或手输 8 位打卡密码</span></label>
       <div style="display:flex;gap:.35rem;margin:.15rem 0 .3rem">
         <input type="text" id="rsCode" inputmode="numeric" autocomplete="off" placeholder="8 位数字" oninput="rsCodeInput()" style="flex:1;min-width:0;font-size:1rem;letter-spacing:.08em">
@@ -1760,6 +1786,13 @@ function _refWorkRows(r) {
     <span class="ref-prog" title="三个月 referral 期"><i style="width:${Math.round(done / total * 100)}%"></i></span>
     <span style="color:${st === 'ended' ? '#047857' : 'var(--g500)'}">${st === 'ended' ? '✅ 已满三个月' : `第 ${Math.floor(done / 7) + 1} 周 · 还剩 ${left} 天`}</span>
     <span style="color:var(--g300)">|</span><span>${who}</span>${c.found && c.employee_id ? `<span style="color:var(--g500)">· 共 <b>${c.total_hours || 0}</b> 小时</span>` : ''}<span style="flex:1"></span><span style="font-size:.74rem">${ops}</span></div>`;
+  // 开始上班时确定的条件: 上班时间 · 工资 · 付款周期/付款日
+  const terms = [
+    r.start_time && r.end_time ? `🕘 ${esc(r.start_time)}–${esc(r.end_time)}${r.work_days ? ' · ' + esc(_refDaysLabel(r.work_days)) : ''}` : '',
+    r.start_wage ? `💵 ${esc(r.start_wage)}` : '',
+    r.pay_cycle ? `🗓 ${esc(_RS_CYCLE[r.pay_cycle] || r.pay_cycle)}付${r.pay_day ? ' · ' + esc(r.pay_day) : ''}` : '',
+  ].filter(Boolean);
+  const termRow = terms.length ? `<div class="ref-row" style="padding-top:0;border-top:0;color:var(--g600)">${terms.map(t => `<span style="background:#f1f5f9;border-radius:6px;padding:1px 8px">${t}</span>`).join('')}</div>` : '';
   // 每周打卡: 从上班那周到今天 (最多到三个月期满) 每周一格, 没打卡的也列出来
   let chips = '';
   if (c.found && c.employee_id) {
@@ -1774,7 +1807,7 @@ function _refWorkRows(r) {
     }
     chips = cells.length ? `<div class="ref-wks">${cells.join('')}</div>` : '';
   }
-  return row + chips;
+  return row + termRow + chips;
 }
 // ── 🔗 员工档案: 按工人电话在系统里找, 找到就 link, 找不到红字提示先扫二维码登记 ──
 function _refProfileChip(r) {
@@ -1822,11 +1855,40 @@ function openRefStart(id) {
   document.getElementById('rsWho').textContent = `${r.worker_name || ''}${r.worker_phone ? ' · ' + r.worker_phone : ''}${r.warehouse_name || r.warehouse_address ? ' · ' + (r.warehouse_name || r.warehouse_address) : ''}`;
   document.getElementById('rsDate').value = r.work_start_date || _refYmd(new Date());
   document.getElementById('rsCode').value = r.timeclock_code || '';
+  document.getElementById('rsT1').value = r.start_time || '';
+  document.getElementById('rsT2').value = r.end_time || '';
+  rsSetDays(r.work_days || '');
+  document.getElementById('rsWage').value = r.start_wage || r.worker_wage || '';
+  document.getElementById('rsCycle').value = r.pay_cycle || '';
+  rsCycleChanged(r.pay_day || '');
   const pf = r.profile || {};
   document.getElementById('rsInfo').innerHTML = !r.timeclock_code && pf.linked && pf.has_code
     ? `<span style="color:#047857">🔗 已关联员工档案 <b>${esc(pf.name || '')}</b>，打卡码可以不填，自动用档案里的</span>` : '';
   document.getElementById('refStartModal').style.display = 'flex';
   if (r.timeclock_code) rsLookup();
+}
+function rsSetDays(d) {
+  document.querySelectorAll('#rsDays .rs-day').forEach(b => b.classList.toggle('on', String(d || '').includes(b.getAttribute('data-d'))));
+}
+const _RS_CYCLE = { weekly: '每周', biweekly: '每两周', semimonthly: '每半个月', monthly: '每月' };
+// 付款日选项跟着周期变: 每周/每两周选星期几, 每半月选哪两天, 每月选几号
+function rsCycleChanged(cur) {
+  const c = document.getElementById('rsCycle').value, sel = document.getElementById('rsPayDay');
+  const opts = c === 'weekly' || c === 'biweekly' ? '一二三四五六日'.split('').map(d => '周' + d)
+    : c === 'semimonthly' ? ['每月 1 号和 15 号', '每月 15 号和月底']
+    : c === 'monthly' ? [...Array.from({ length: 28 }, (_, i) => `${i + 1} 号`), '月底'] : [];
+  if (cur && !opts.includes(cur)) opts.push(cur);
+  sel.innerHTML = (opts.length ? '<option value="">— 选择 —</option>' : '<option value="">先选周期</option>') + opts.map(o => `<option>${esc(o)}</option>`).join('');
+  sel.value = typeof cur === 'string' ? cur : '';
+}
+function _refDaysLabel(d) {
+  const O = '一二三四五六日';
+  d = O.split('').filter(c => String(d || '').includes(c)).join('');
+  if (!d) return '';
+  if (d === O) return '每天';
+  if (d === '六日') return '周末';
+  if (d.length >= 3 && O.includes(d)) return `周${d[0]}至周${d[d.length - 1]}`;
+  return d.split('').map(c => '周' + c).join('、');
 }
 function closeRefStart() {
   rsScanStop();
@@ -1940,10 +2002,19 @@ async function submitRefStart() {
   if (!date) return toast('请填写上班日期', true);
   const pf = ((_refList.find(x => x.id === _rsId) || {}).profile) || {};
   if (code.length !== 8 && !(code === '' && pf.linked && pf.has_code)) return toast('请填写工人的打卡 QR 码（扫码，或手输 8 位打卡密码）', true);
+  const t1 = document.getElementById('rsT1').value, t2 = document.getElementById('rsT2').value;
+  if (!t1 || !t2) return toast('请填写确定的上班时间（几点到几点）', true);
+  const wage = document.getElementById('rsWage').value.trim();
+  if (!wage) return toast('请填写确定的工资', true);
+  const cycle = document.getElementById('rsCycle').value, payDay = document.getElementById('rsPayDay').value;
+  if (!cycle) return toast('请选择付款周期', true);
+  if (!payDay) return toast('请选择具体付款时间', true);
+  const days = [...document.querySelectorAll('#rsDays .rs-day.on')].map(b => b.getAttribute('data-d')).join('');
   const btn = document.getElementById('rsSubmit');
   btn.disabled = true;
   try {
-    const j = await api(`/api/acct/referrals/${_rsId}/start`, { method: 'POST', body: JSON.stringify({ work_start_date: date, timeclock_code: code }) });
+    const j = await api(`/api/acct/referrals/${_rsId}/start`, { method: 'POST', body: JSON.stringify({ work_start_date: date, timeclock_code: code,
+      start_time: t1, end_time: t2, work_days: days, start_wage: wage, pay_cycle: cycle, pay_day: payDay }) });
     if (j && j.error) throw new Error(j.error);
     closeRefStart();
     toast('✅ 已记开始上班，移到「👷 上班中」');
