@@ -29967,6 +29967,9 @@ try { db.exec("ALTER TABLE recruit_jobs ADD COLUMN ead_required INTEGER DEFAULT 
 try { db.exec("ALTER TABLE recruit_jobs ADD COLUMN address TEXT DEFAULT ''"); } catch {}
 // 一周哪几天上班: 「一二三四五」这样的字串 (周一在前), 空 = 没说
 try { db.exec("ALTER TABLE recruit_jobs ADD COLUMN work_days TEXT DEFAULT ''"); } catch {}
+// 性别要求: 不限 / 男 / 女 (内部卡片和工头版显示; 工人版对外分享不带)
+try { db.exec("ALTER TABLE recruit_jobs ADD COLUMN gender_req TEXT DEFAULT ''"); } catch {}
+const _recruitGender = v => ['不限', '男', '女'].includes(String(v || '').trim()) ? String(v).trim() : '';
 const _RECRUIT_DAYS = '一二三四五六日';
 function _recruitDays(v) { return _RECRUIT_DAYS.split('').filter(c => String(v || '').includes(c)).join(''); }
 function _recruitDaysLabel(v) {
@@ -30062,6 +30065,7 @@ function _recruitMissing(j) {
   if (!t(j.warehouse)) return '请选择仓库';
   if (!t(j.address)) return '请填写仓库地址';
   if (!t(j.position)) return '请填写工种';
+  if (!_recruitGender(j.gender_req)) return '请选择性别要求（不限也要选）';
   if (!_recruitDays(j.work_days)) return '请选择一周哪几天上班';
   if (!shifts.length) return '请加至少一个班次（含上班时间）';
   if (!t(j.worker_pay) && !shifts.every(x => x && t(x.worker_pay))) return '请填写给工人的工资（班次里写或填统一工资）';
@@ -30076,17 +30080,17 @@ app.post('/api/admin/recruit-jobs', requireAdmin, (req, res) => {
   try {
     const miss = _recruitMissing(req.body || {});
     if (miss) return res.status(400).json({ error: miss });
-    const { warehouse, position, details, worker_pay, foreman_cap, shifts, interview_required, interview_notes, language_req, ead_required, address, work_days } = req.body || {};
+    const { warehouse, position, details, worker_pay, foreman_cap, shifts, interview_required, interview_notes, language_req, ead_required, address, work_days, gender_req } = req.body || {};
     if (!String(warehouse || '').trim()) return res.status(400).json({ error: '请选择仓库' });
     if (!String(position || '').trim()) return res.status(400).json({ error: '请填写工种' });
     if (!String(language_req || '').trim()) return res.status(400).json({ error: '请选择语言要求' });
-    const info = db.prepare(`INSERT INTO recruit_jobs (warehouse, position, details, worker_pay, foreman_cap, shifts, interview_required, interview_notes, language_req, ead_required, address, work_days, created_by, last_check_date, last_check_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    const info = db.prepare(`INSERT INTO recruit_jobs (warehouse, position, details, worker_pay, foreman_cap, shifts, interview_required, interview_notes, language_req, ead_required, address, work_days, gender_req, created_by, last_check_date, last_check_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       String(warehouse).trim(), String(position).trim(), String(details || '').trim(),
       String(worker_pay || '').trim(), String(foreman_cap || '').trim(),
       _recruitCleanShifts(shifts), interview_required ? 1 : 0, String(interview_notes || '').trim(),
       String(language_req).trim().slice(0, 80), ead_required ? 1 : 0, String(address || '').trim().slice(0, 200),
-      _recruitDays(work_days), req.userName || '', _recruitToday(), req.userName || '');
+      _recruitDays(work_days), _recruitGender(gender_req), req.userName || '', _recruitToday(), req.userName || '');
     res.json({ ok: true, id: info.lastInsertRowid });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -30110,7 +30114,7 @@ app.patch('/api/admin/recruit-jobs/:id', requireAdmin, (req, res) => {
     const merged = { ...job, ...Object.fromEntries(Object.entries(b).filter(([, v]) => v !== undefined)) };
     const miss = _recruitMissing(merged);
     if (miss) return res.status(400).json({ error: miss });
-    db.prepare(`UPDATE recruit_jobs SET warehouse=?, position=?, details=?, worker_pay=?, foreman_cap=?, shifts=?, interview_required=?, interview_notes=?, language_req=?, ead_required=?, address=?, work_days=?, updated_at=datetime('now') WHERE id=?`)
+    db.prepare(`UPDATE recruit_jobs SET warehouse=?, position=?, details=?, worker_pay=?, foreman_cap=?, shifts=?, interview_required=?, interview_notes=?, language_req=?, ead_required=?, address=?, work_days=?, gender_req=?, updated_at=datetime('now') WHERE id=?`)
       .run(
         String(b.warehouse !== undefined ? b.warehouse : job.warehouse).trim(),
         String(b.position !== undefined ? b.position : job.position).trim(),
@@ -30124,6 +30128,7 @@ app.patch('/api/admin/recruit-jobs/:id', requireAdmin, (req, res) => {
         b.ead_required !== undefined ? (b.ead_required ? 1 : 0) : (job.ead_required ? 1 : 0),
         String(b.address !== undefined ? b.address : (job.address || '')).trim().slice(0, 200),
         b.work_days !== undefined ? _recruitDays(b.work_days) : (job.work_days || ''),
+        b.gender_req !== undefined ? _recruitGender(b.gender_req) : (job.gender_req || ''),
         job.id);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -30171,7 +30176,8 @@ app.post('/api/admin/recruit-jobs/:id/share-text-foreman', requireAdmin, async (
         '🏭 仓库：' + job.warehouse,
         job.address ? '📍 地址：' + job.address : '',
         '👷 工种：' + job.position,
-        job.work_days ? '📅 上班：' + _recruitDaysLabel(job.work_days) : ''
+        job.work_days ? '📅 上班：' + _recruitDaysLabel(job.work_days) : '',
+        job.gender_req && job.gender_req !== '不限' ? '👤 性别：' + job.gender_req : ''
       ].filter(Boolean).join('\n'),
       lines.join('\n'),
       [
