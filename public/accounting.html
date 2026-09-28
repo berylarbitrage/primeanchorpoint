@@ -757,8 +757,8 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <option value="">全部</option>
         <option value="sales">销售发票</option>
         <option value="purchase">采购发票</option>
-        <option value="todo">⏳ 未收款 / 未付款（按会计批注）</option>
-        <option value="done">✅ 已收款 / 已付款（按会计批注）</option>
+        <option value="todo">⏳ 未收款 / 未付款（核查口径）</option>
+        <option value="done">✅ 已收款 / 已付款（核查通过）</option>
       </select>
       <span id="palletStats" style="font-size:.8rem;color:var(--g500)"></span>
     </div>
@@ -769,7 +769,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <th>Bintique 付款日</th><th style="text-align:right">Bintique 实付</th><th>Bintique 付款方</th><th></th>
       </tr></thead><tbody id="palletBody"><tr><td colspan="18" style="color:var(--g400)">加载中…</td></tr></tbody></table>
     </div>
-    <p style="font-size:.75rem;color:var(--g400);margin-top:.5rem">这里显示 pallet.bintique.com 的全部销售/采购发票（一行一张）；付款状态只认这边会计的付款批注，批注里可关联银行流水；「Bintique 记录」列是对方系统自己的状态，仅供参考。</p>
+    <p style="font-size:.75rem;color:var(--g400);margin-top:.5rem">这里显示 pallet.bintique.com 的全部销售/采购发票（一行一张）；付款状态和发票一样只认核查通过的钱（关联的银行交易在银行记录里找得到、且银行标注审核通过），ⓘ 悬浮看原因；「Bintique 记录」列是对方系统自己的状态，仅供参考。</p>
   </div>
 
   <!-- 🚚 卡车费用 (Bintique 卡车订单联动)：卡车费交易 + pallet.bintique.com link 过来的卡车订单 -->
@@ -2327,12 +2327,19 @@ function _palletBintiqueCell(r) {
   return `<span style="color:var(--g300)">—</span>${link}`;
 }
 // 木板账单的付款状态: 与发票同口径, 只认会计的付款批注; 销售显示已收款/未收款, 采购显示已付款/未付款
-function _palletPayBadge(r) {
+// 木板账单付款状态: 和发票一样只认核查通过的钱 (r.verify, 服务端算); ⓘ 悬浮看没通过的原因
+function _palletStatus(r) {
+  if (r.verify) return r.verify.status;
   const s = r.pay_note && r.pay_note.paid_status;
-  const st = (s === 'paid' || s === 'partial') ? s : 'unpaid';
-  if (r.direction === 'in') return payBadge(st);
-  const L = { paid: ['已付款', '#047857', '#ecfdf5', '#a7f3d0'], partial: ['部分付款', '#b45309', '#fffbeb', '#fcd34d'], unpaid: ['未付款', '#b91c1c', '#fef2f2', '#fecaca'] }[st];
-  return `<span class="badge" style="color:${L[1]};background:${L[2]};border:1px solid ${L[3]}">${L[0]}</span>`;
+  return (s === 'paid' || s === 'partial') ? s : 'unpaid';
+}
+function _palletPayBadge(r) {
+  const st = _palletStatus(r);
+  const why = r.verify && r.verify.reasons.length
+    ? ` <span data-tip="${esc('没核查通过的：\n' + r.verify.reasons.join('\n')).replace(/"/g, '&quot;')}" style="cursor:help;color:#b45309;font-weight:700">ⓘ</span>` : '';
+  if (r.direction === 'in') return `<span style="white-space:nowrap">${payBadge(st)}${why}</span>`;
+  const L = { paid: ['已付款', '#047857', '#ecfdf5', '#a7f3d0'], partial: ['部分付款', '#b45309', '#fffbeb', '#fcd34d'], unpaid: ['未付款', '#b91c1c', '#fef2f2', '#fecaca'], review: ['待审核', '#6d28d9', '#f5f3ff', '#c4b5fd'] }[st];
+  return `<span style="white-space:nowrap"><span class="badge" style="color:${L[1]};background:${L[2]};border:1px solid ${L[3]}">${L[0]}</span>${why}</span>`;
 }
 // 🪵 木板账单明细弹窗: 账单信息 + 内嵌账单明细 / PDF + 付款批注入口
 function openPalletDetail(id) {
@@ -2631,13 +2638,13 @@ function renderPalletList() {
   let rows = _palletRows;
   if (flt === 'sales') rows = rows.filter(r => r.direction === 'in');
   else if (flt === 'purchase') rows = rows.filter(r => r.direction === 'out');
-  else if (flt === 'todo') rows = rows.filter(r => !(r.pay_note && r.pay_note.paid_status === 'paid'));
-  else if (flt === 'done') rows = rows.filter(r => r.pay_note && r.pay_note.paid_status === 'paid');
+  else if (flt === 'todo') rows = rows.filter(r => _palletStatus(r) !== 'paid');
+  else if (flt === 'done') rows = rows.filter(r => _palletStatus(r) === 'paid');
   if (q) rows = rows.filter(r => [r.customer, r.invoice_number, (r.bintique && r.bintique.paid_by) || ''].join(' ').toLowerCase().includes(q));
   const sales = rows.filter(r => r.direction === 'in'), purch = rows.filter(r => r.direction === 'out');
   const salesSum = sales.reduce((s, r) => s + r.amount, 0), purchSum = purch.reduce((s, r) => s + r.amount, 0);
-  const doneN = _palletRows.filter(r => r.pay_note && r.pay_note.paid_status === 'paid').length;
-  document.getElementById('palletStats').textContent = `账单共 ${_palletRows.length} 张 · 销售 ${sales.length} 张 ${money(salesSum)} · 采购 ${purch.length} 张 ${money(purchSum)} · 会计已记收/付 ${doneN} 张`;
+  const doneN = _palletRows.filter(r => _palletStatus(r) === 'paid').length;
+  document.getElementById('palletStats').textContent = `账单共 ${_palletRows.length} 张 · 销售 ${sales.length} 张 ${money(salesSum)} · 采购 ${purch.length} 张 ${money(purchSum)} · 核查通过已收/付 ${doneN} 张`;
   document.getElementById('palletBody').innerHTML = rows.length ? rows.map(r => `<tr>
     <td style="white-space:nowrap">${esc(r.date)}</td>
     <td>${_palletTypePill(r)}</td>
@@ -3099,7 +3106,7 @@ async function loadAll() {
   renderInvList();
   renderStmtList();
 }
-const PAY_LABEL = { paid: ['已收款', '#047857', '#ecfdf5', '#a7f3d0'], partial: ['部分收款', '#b45309', '#fffbeb', '#fcd34d'], unpaid: ['未收款', '#b91c1c', '#fef2f2', '#fecaca'] };
+const PAY_LABEL = { paid: ['已收款', '#047857', '#ecfdf5', '#a7f3d0'], partial: ['部分收款', '#b45309', '#fffbeb', '#fcd34d'], unpaid: ['未收款', '#b91c1c', '#fef2f2', '#fecaca'], review: ['待审核', '#6d28d9', '#f5f3ff', '#c4b5fd'] };
 function payBadge(s) {
   const [label, color, bg, border] = PAY_LABEL[s || 'unpaid'] || ['—', '#6b7280', '#f9fafb', '#e5e7eb'];
   return `<span class="badge" style="color:${color};background:${bg};border:1px solid ${border}">${label}</span>`;
@@ -3194,7 +3201,7 @@ function invExportCsv() {
   const rows = _invFilteredRows();
   const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
   const lines = [['发票号', '发票日期', '公司', '账期开始', '账期结束', '发票金额', '付款状态', '收款银行', '笔数', '到账合计', '差额(到账-发票)', '收款明细(日期 金额 账户 描述)', '付款备注', '批注数'].map(q).join(',')];
-  const ST = { paid: '已收款', partial: '部分收款', unpaid: '未收款' };
+  const ST = { paid: '已收款', partial: '部分收款', unpaid: '未收款', review: '待审核' };
   for (const r of rows) {
     const x = _invPayInfo(r);
     lines.push([r.invoice_number, r.invoice_date, r.company_name, r.period_start, r.period_end, (Number(r.subtotal) || 0).toFixed(2),
