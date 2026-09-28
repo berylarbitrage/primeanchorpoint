@@ -19621,6 +19621,45 @@ app.get('/api/admin/employees/export', (req, res, next) => {
   res.send(csv);
 });
 
+// 一键导出系统里全部 姓名 + 手机号 (仅管理员): 员工 / 扫码登记 / 工头 / 介绍记录 / 短信·电话联系人 / 合作公司联系人,
+// 按手机号后 10 位去重, 同一号码的来源合并成一格; Excel 直接打开 (UTF-8 BOM)。每次导出记审计日志
+app.get('/api/admin/export-contacts', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const map = new Map();
+    const norm = p => { const d = String(p || '').replace(/\D/g, ''); return d.length === 11 && d[0] === '1' ? d.slice(1) : d.length === 10 ? d : ''; };
+    const add = (name, phone, src, status) => {
+      const k = norm(phone);
+      if (!k) return;
+      name = String(name || '').replace(/\s+/g, ' ').trim();
+      const x = map.get(k) || { name: '', phone: k, src: [], status: '' };
+      if (!x.name && name) x.name = name;
+      if (!x.src.includes(src)) x.src.push(src);
+      if (!x.status && status) x.status = status;
+      map.set(k, x);
+    };
+    const q = (sql, fn) => { try { db.prepare(sql).all().forEach(fn); } catch (e) {} };
+    q(`SELECT first_name, last_name, phone, status FROM employees`, e => add(`${e.first_name || ''} ${e.last_name || ''}`, e.phone, '员工', e.status));
+    q(`SELECT name, phone FROM applicant_submissions`, a => add(a.name, a.phone, '扫码登记'));
+    q(`SELECT name, phone FROM foremen`, f => add(f.name, f.phone, '工头'));
+    q(`SELECT worker_name, worker_phone, foreman_name, foreman_phone FROM referrals`, r => { add(r.worker_name, r.worker_phone, '介绍工人'); add(r.foreman_name, r.foreman_phone, '介绍人/工头'); });
+    q(`SELECT name, phone_e164 FROM sms_contacts`, c => add(c.name, c.phone_e164, '短信联系人'));
+    q(`SELECT display_name, phone_number FROM phone_contacts`, c => add(c.display_name, c.phone_number, '电话联系人'));
+    q(`SELECT name, contact_person, phone, contacts FROM partners WHERE COALESCE(abolished,0)=0`, p => {
+      add(p.contact_person, p.phone, '合作公司·' + (p.name || ''));
+      try { (JSON.parse(p.contacts || '[]') || []).forEach(c => c && add(c.name, c.phone, '合作公司·' + (p.name || ''))); } catch (e) {}
+    });
+    const rows = [...map.values()].sort((a, b) => (!a.name - !b.name) || a.name.localeCompare(b.name));
+    const cell = v => `"${String(v || '').replace(/"/g, '""')}"`;
+    const fmt = d => `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+    const csv = '﻿' + ['姓名', '手机号', '来源', '员工状态'].join(',') + '\r\n'
+      + rows.map(r => [r.name, fmt(r.phone), r.src.join(' / '), r.status].map(cell).join(',')).join('\r\n') + '\r\n';
+    auditLog('export_contacts', req, { details: { count: rows.length } });
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename=contacts-${new Date().toISOString().slice(0, 10)}.csv`);
+    res.send(csv);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Minimal ZIP writer (deflate via built-in zlib; no external dependency) ──
 const _zlib = require('zlib');
 const _crcTable = (() => {

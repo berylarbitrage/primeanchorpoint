@@ -1368,6 +1368,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <h1>员工管理</h1>
     <div class="top-actions">
       <button class="btn btn-outline" onclick="exportEmployeeCSV()">导出 CSV</button>
+      <button class="btn btn-outline" id="btnExportContacts" onclick="exportAllContacts()" style="display:none" title="系统里全部的姓名 + 手机号（员工、扫码登记、工头、介绍记录、短信/电话联系人、合作公司联系人），按手机号去重">📇 导出全部姓名电话</button>
       <button class="btn btn-outline" id="empExportDocsBtn" onclick="exportSelectedEmpDocs()" title="勾选员工后导出其姓名/电话/邮箱与 SSN、EAD 证件（生成 PDF 档案）">📎 导出证件 (0)</button>
       <button class="btn btn-outline" id="empSelClearBtn" onclick="_empSelClear()" style="display:none;color:#b91c1c;border-color:#fca5a5" title="清空已勾选的员工">✕ 取消选择</button>
       <a class="btn btn-outline" href="/timeclock" target="_blank">打卡页面 ↗</a>
@@ -8785,6 +8786,7 @@ async function api(path, opts = {}) {
 
 // ─── Login ───
 function applyRoleUI() {
+  { const b = document.getElementById('btnExportContacts'); if (b) b.style.display = USER_ROLE === 'admin' ? '' : 'none'; }
   // Show/hide sidebar links based on role
   document.querySelectorAll('#sidebar a[data-role]').forEach(a => {
     const roles = a.getAttribute('data-role').split(',');
@@ -18442,6 +18444,22 @@ function editFromDetail() {
   if (!currentEmpForDetail) return;
   closeEmpDetailModal();
   setTimeout(() => openEmpModal(currentEmpForDetail.id), 100);
+}
+// 一键导出系统里全部 姓名 + 手机号 (仅管理员), 带登录令牌下载, 不把令牌放进网址
+async function exportAllContacts() {
+  const btn = document.getElementById('btnExportContacts');
+  btn.disabled = true; const old = btn.textContent; btn.textContent = '导出中…';
+  try {
+    const r = await fetch(API + '/admin/export-contacts', { headers: { 'Authorization': 'Bearer ' + TOKEN } });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || ('HTTP ' + r.status)); }
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'contacts-' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  } catch (e) { alert('导出失败：' + (e.message || e)); }
+  finally { btn.disabled = false; btn.textContent = old; }
 }
 function exportEmployeeCSV() {
   window.open(API + '/admin/employees/export?token=' + TOKEN, '_blank');
