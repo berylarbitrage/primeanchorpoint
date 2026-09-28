@@ -3063,6 +3063,26 @@ function _acctPayStatus(r) {
   const s = r.pay_note && r.pay_note.paid_status;
   return (s === 'paid' || s === 'partial') ? s : 'unpaid';
 }
+// 付款备注: 多付 / 少付 一眼分开 — 少付红底 ⬇, 多付蓝底 ⬆, 其他普通备注灰字
+// 先看备注文字 (多付/多转/少付/少转/短…), 没写明的再用 记录金额 vs 发票金额 判断
+function _invPayDiff(r) {
+  const pn = r.pay_note || {}, t = String(pn.note || '');
+  if (/少付|少转|少给|少打|短付|差了?\s*\$?\d|欠|underpa|short/i.test(t)) return 'under';
+  if (/多付|多转|多给|多打|超付|overpa/i.test(t)) return 'over';
+  const amt = Number(pn.amount), sub = Number(r.subtotal);
+  if (pn.amount != null && Number.isFinite(amt) && Number.isFinite(sub) && Math.abs(amt - sub) >= 0.01)
+    return amt < sub ? 'under' : 'over';
+  return '';
+}
+function _invPayNoteTag(r) {
+  const pn = r.pay_note || {}, t = String(pn.note || '').trim(), d = _invPayDiff(r);
+  if (!t && !d) return '<span style="color:var(--g300)">—</span>';
+  const diffAmt = pn.amount != null && Number.isFinite(Number(pn.amount)) ? Math.abs(Number(pn.amount) - Number(r.subtotal)) : 0;
+  const txt = t ? esc(t) : (d === 'under' ? '少付 ' : '多付 ') + money(diffAmt);
+  if (d === 'under') return `<span style="display:inline-block;background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;border-radius:6px;padding:1px 8px;font-size:.78rem;font-weight:700">⬇ ${txt}</span>`;
+  if (d === 'over') return `<span style="display:inline-block;background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd;border-radius:6px;padding:1px 8px;font-size:.78rem;font-weight:700">⬆ ${txt}</span>`;
+  return `<span style="font-size:.76rem;color:var(--g500)">${txt}</span>`;
+}
 function renderInvList() {
   const q = (document.getElementById('invSearch').value || '').toLowerCase();
   const flt = document.getElementById('invAnnFilter').value;
@@ -3082,7 +3102,7 @@ function renderInvList() {
     <td style="text-align:right;font-weight:700">${money(r.subtotal)}</td>
     <td>${payBadge(_acctPayStatus(r))}</td>
     <td>${payNoteCell('invoice', r.id, r.pay_note, true, true)}</td>
-    <td style="font-size:.76rem;color:#b45309;max-width:220px">${r.pay_note && r.pay_note.note ? esc(r.pay_note.note) : '<span style="color:var(--g300)">—</span>'}</td>
+    <td style="max-width:240px">${_invPayNoteTag(r)}</td>
     <td>${annBadge(r.annotation_count)}</td>
     <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openInvoice(${r.id})">查看 / 批注</button></td>
   </tr>`).join('') : '<tr><td colspan="10" style="color:var(--g400);padding:1rem">没有符合条件的发票。</td></tr>';
