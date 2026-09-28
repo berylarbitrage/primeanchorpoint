@@ -40068,14 +40068,17 @@ function _acctInvoiceVerify(rows) {
   const ok = id => id in annSt && (annSt[id] === '' || annSt[id] === 'approved');
   // 每笔交易被哪些发票关联 (按日期+id 排, 早的先分)
   const users = {};
-  const ordered = [...rows].sort((a, b) => String(a.invoice_date || '').localeCompare(String(b.invoice_date || '')) || a.id - b.id);
+  // 发票用 subtotal / invoice_date, 木板账单等用 amount / date
+  const due = r => Number(r.subtotal != null ? r.subtotal : r.amount) || 0;
+  const dateOf = r => String(r.invoice_date || r.date || '');
+  const ordered = [...rows].sort((a, b) => dateOf(a).localeCompare(dateOf(b)) || a.id - b.id);
   for (const r of ordered) for (const t of ((r.pay_note && r.pay_note.txns) || [])) (users[t.txn_id] = users[t.txn_id] || []).push(r);
   const allocOf = {}; // `${txn}|${invoiceId}` → 分到的金额
   for (const [txn, invs] of Object.entries(users)) {
     const t = invs[0].pay_note.txns.find(x => x.txn_id === txn);
     let left = Math.abs(Number(t && t.amount) || 0);
     invs.forEach((r, i) => {
-      const take = i === invs.length - 1 ? left : Math.min(left, Number(r.subtotal) || 0);
+      const take = i === invs.length - 1 ? left : Math.min(left, due(r));
       allocOf[txn + '|' + r.id] = Math.round(take * 100) / 100;
       left = Math.max(0, Math.round((left - take) * 100) / 100);
     });
@@ -40086,7 +40089,7 @@ function _acctInvoiceVerify(rows) {
     r.verify = v;
     if (!pn) continue;
     const ids = pn.txn_ids || [], txns = pn.txns || [];
-    if (!ids.length) { v.reasons.push('没关联银行收款记录'); continue; }
+    if (!ids.length) { v.reasons.push('没关联银行记录'); continue; }
     const miss = ids.length - txns.length;
     if (miss > 0) v.reasons.push(`${miss} 笔关联的银行交易找不到`);
     let got = 0, noAnn = 0, pend = 0;
@@ -40102,7 +40105,7 @@ function _acctInvoiceVerify(rows) {
     if (pend) v.reasons.push(`${pend} 笔银行标注还没审核通过`);
     got = Math.round(got * 100) / 100;
     v.got = got;
-    const sub = Number(r.subtotal) || 0;
+    const sub = due(r);
     v.status = got <= 0 ? 'unpaid' : got + 0.005 >= sub ? 'paid' : 'partial';
   }
 }
@@ -40418,6 +40421,8 @@ app.get('/api/acct/pallet-bills', requireAdmin, requireAcctView, async (req, res
       pay_note: payNotes[inv.id] || null,
     }));
     rows.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || b.id - a.id);
+    // 付款状态和发票一样走核查口径: 银行记录找得到 + 银行标注审核通过的钱才算
+    _acctInvoiceVerify(rows);
     res.json({ count: rows.length, rows, configured: !!process.env.PALLET_API_KEY });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
