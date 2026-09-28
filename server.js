@@ -29964,42 +29964,43 @@ function _recruitCleanShifts(v) {
 // 招工页的仓库下拉：只给 名字+地址（工作地点 + 合作公司合并去重）。单独出
 // 这个瘦接口是为了让客服(cs)账号也能用招工页，而不必开放含费率/联系人等
 // 敏感信息的 /api/admin/partners 全量接口。
+// 仓库下拉 (招工页 / 介绍费共用): 名称只用合作公司管理里的公司 (除已作废外, 含待签约/已停止),
+// 公司改了名就跟着变 — 不再从旧招工 / 介绍记录 / 仓库表 / 打卡地点名里带出旧名字 (如改名前的 IMG Global)。
+// 地址 = 公司 addresses 逐条 + 挂在该公司下的打卡地点地址; 一个公司几个仓库各一行
+function _partnerWarehouseList() {
+  const out = [], seen = new Set();
+  const aKey = a => String(a || '').toLowerCase().replace(/\b(\d{5})-\d{4}\b/, '$1').replace(/[^a-z0-9]+/g, '');
+  const byPid = {};
+  const add = (pid, name, address) => {
+    name = String(name || '').trim(); address = String(address || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+    if (!name) return;
+    const k = pid + '|' + aKey(address);
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push({ name, address });
+  };
+  const parts = db.prepare(`SELECT id, name, address, addresses FROM partners WHERE COALESCE(abolished,0)=0 AND COALESCE(name,'')!=''`).all();
+  parts.forEach(pt => {
+    byPid[pt.id] = pt.name;
+    let got = false;
+    try {
+      const arr = JSON.parse(pt.addresses || '[]');
+      if (Array.isArray(arr)) arr.forEach(a => { const ad = typeof a === 'string' ? a : String((a && a.address) || ''); if (ad.trim()) { add(pt.id, pt.name, ad); got = true; } });
+    } catch (_) {}
+    if (!got) add(pt.id, pt.name, pt.address);
+  });
+  try {
+    db.prepare(`SELECT partner_id, address FROM job_sites WHERE active=1 AND partner_id IS NOT NULL AND COALESCE(address,'')!=''`).all()
+      .forEach(js => { if (byPid[js.partner_id]) add(js.partner_id, byPid[js.partner_id], js.address); });
+  } catch (_) {}
+  // 同一公司已有带地址的行, 没地址的那条就不显示
+  const list = out.filter(w => w.address || !out.some(x => x !== w && x.address && x.name === w.name));
+  list.sort((x, y) => x.name.localeCompare(y.name) || x.address.localeCompare(y.address));
+  return list;
+}
 app.get('/api/admin/recruit-warehouses', requireAdmin, (req, res) => {
   try {
-    // 一个客户可以有好几个仓库: 按 名称+地址 一行一个 (之前按名称去重, 多仓库的客户只剩第一个地址)。
-    // 来源: 打卡地点 / 仓库表 / 客户公司 (addresses 逐条展开) / 以前发过的招工 / 介绍记录
-    const out = [], seen = new Set(), seenAddr = new Set();
-    const aKey = a => String(a || '').toLowerCase().replace(/\b(\d{5})-\d{4}\b/, '$1').replace(/[^a-z0-9]+/g, '');
-    const add = (name, address, onlyNewAddr) => {
-      name = String(name || '').trim(); address = String(address || '').replace(/\s+/g, ' ').trim().slice(0, 200);
-      if (!name) return;
-      const ak = aKey(address);
-      if (onlyNewAddr && ak && seenAddr.has(ak)) return;
-      const k = name.toLowerCase() + '|' + ak;
-      if (seen.has(k)) return;
-      seen.add(k); if (ak) seenAddr.add(ak);
-      out.push({ name, address });
-    };
-    try {
-      db.prepare("SELECT name, address, addresses FROM partners WHERE active=1").all().forEach(pt => {
-        let got = false;
-        try {
-          const arr = JSON.parse(pt.addresses || '[]');
-          if (Array.isArray(arr)) arr.forEach(a => { const ad = typeof a === 'string' ? a : String((a && a.address) || ''); if (ad.trim()) { add(pt.name, ad); got = true; } });
-        } catch (_) {}
-        if (!got) add(pt.name, pt.address);
-      });
-    } catch (_) {}
-    try { db.prepare("SELECT warehouse_name, address FROM warehouses WHERE is_active=1").all().forEach(w => add(w.warehouse_name, w.address)); } catch (_) {}
-    try {
-      db.prepare("SELECT s.name, s.address, COALESCE(p.name,'') AS partner FROM job_sites s LEFT JOIN partners p ON s.partner_id=p.id WHERE s.active=1").all()
-        .forEach(s => add(s.partner || s.name, s.address, true));
-    } catch (_) {}
-    try { db.prepare("SELECT DISTINCT warehouse, COALESCE(address,'') AS address FROM recruit_jobs WHERE COALESCE(warehouse,'')<>''").all().forEach(r => add(r.warehouse, r.address, true)); } catch (_) {}
-    try { db.prepare("SELECT DISTINCT warehouse_name, warehouse_address FROM referrals WHERE COALESCE(warehouse_name,'')<>''").all().forEach(r => add(r.warehouse_name, r.warehouse_address, true)); } catch (_) {}
-    // 同名下已有带地址的, 没地址的那条就不显示
-    const list = out.filter(w => w.address || !out.some(x => x !== w && x.address && x.name.toLowerCase() === w.name.toLowerCase()));
-    list.sort((a, b) => a.name.localeCompare(b.name) || a.address.localeCompare(b.address));
+    const list = _partnerWarehouseList();
     res.json(list);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -40931,50 +40932,8 @@ app.get('/api/acct/referral-options', requireAdmin, requireAcctView, (req, res) 
       const k = `${String(f.name).trim().toLowerCase()}|${norm(f.phone)}`;
       if (!seenF.has(k)) { seenF.add(k); foremen.push({ id: null, name: f.name, phone: f.phone, state: '', city: '' }); }
     });
-    // 仓库: 一个客户可以有好几个仓库 — partners.addresses JSON 逐条展开,
-    // 同名不同地址各是一行, 去重按 名称+地址。
-    // 只写了地址没写名称的 (介绍记录里「其他/新仓库」名称留空) 也要列出来;
-    // 打卡地点 / 没名称的这类补充来源, 地址已经在名单里的就不重复加
-    const whs = [], seenW = new Set(), seenAddr = new Set();
-    const addrKey = a => String(a || '').toLowerCase().replace(/\b(\d{5})-\d{4}\b/, '$1').replace(/[^a-z0-9]+/g, '');
-    const addW = (name, address, onlyIfNewAddr) => {
-      name = String(name || '').trim();
-      address = String(address || '').replace(/\s+/g, ' ').trim().slice(0, 200);
-      if (!name && !address) return;
-      const ak = addrKey(address);
-      if (onlyIfNewAddr && ak && seenAddr.has(ak)) return;
-      const k = name.toLowerCase() + '|' + address.toLowerCase();
-      if (seenW.has(k)) return;
-      seenW.add(k);
-      if (ak) seenAddr.add(ak);
-      whs.push({ name, address });
-    };
-    try { db.prepare(`SELECT warehouse_name, address FROM warehouses WHERE is_active=1`).all().forEach(w => addW(w.warehouse_name, w.address)); } catch (e) {}
-    // 合作公司: 除已作废外全部 (含待签约/已停止) — 待签约的 active=0, 但工人可能已经在那干活了
-    try {
-      db.prepare(`SELECT name, address, addresses FROM partners WHERE COALESCE(abolished,0)=0`).all().forEach(p => {
-        let got = false;
-        try {
-          const arr = JSON.parse(p.addresses || '[]');
-          if (Array.isArray(arr)) for (const a of arr) {
-            const addr = typeof a === 'string' ? a : String((a && a.address) || '');
-            if (addr.trim()) { addW(p.name, addr); got = true; }
-          }
-        } catch (e) {}
-        if (!got) addW(p.name, p.address);
-      });
-    } catch (e) {}
-    db.prepare(`SELECT DISTINCT warehouse_name, warehouse_address FROM referrals WHERE COALESCE(warehouse_name,'')!='' OR COALESCE(warehouse_address,'')!=''`).all()
-      .forEach(r => addW(r.warehouse_name, r.warehouse_address, !String(r.warehouse_name || '').trim()));
-    // 打卡地点 (job_sites): 挂了客户公司的用公司名, 否则用地点名
-    try {
-      db.prepare(`SELECT s.name, s.address, COALESCE(p.name,'') AS partner FROM job_sites s LEFT JOIN partners p ON s.partner_id=p.id WHERE s.active=1`).all()
-        .forEach(s => addW(s.partner || s.name, s.address, true));
-    } catch (e) {}
-    // 同名下已有带地址的行, 无地址的裸行就不显示了
-    const whsOut = whs.filter(w => w.address || !whs.some(x => x !== w && x.address && x.name.toLowerCase() === w.name.toLowerCase()));
-    // 没名称的排最后
-    whsOut.sort((a, b) => (!a.name - !b.name) || a.name.localeCompare(b.name) || a.address.localeCompare(b.address));
+    // 仓库: 和招工页同一份名单 — 只列合作公司 (改名后用新名字), 不从旧介绍记录里带旧名字
+    const whsOut = _partnerWarehouseList();
     // post 的招聘岗位 (在招的): 登记介绍时可关联, 选了自动带工资/地址
     let jobs = [];
     try {
