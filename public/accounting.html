@@ -348,8 +348,9 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <input type="text" id="invSearch" placeholder="搜发票号 / 公司…" oninput="renderInvList()" style="width:220px">
       <select id="invAnnFilter" onchange="renderInvList()">
         <option value="">全部</option>
-        <option value="todo">⏳ 待会计记录</option>
-        <option value="acctdone">✅ 会计已记「已付」</option>
+        <option value="todo">❌ 未收款（没有银行记录）</option>
+        <option value="review">🟣 待审核</option>
+        <option value="acctdone">✅ 已收款（核查通过）</option>
         <option value="diff">⚠️ 到账和发票金额有差</option>
         <option value="with">只看有批注的</option>
       </select>
@@ -359,8 +360,8 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <div class="card inv-scroll">
       <table id="invTable" class="acct-wide" style="font-size:.84rem"><thead><tr>
         <th>发票号</th><th>日期</th><th>公司</th><th>账期</th><th style="text-align:right">发票金额</th><th>付款状态</th>
-        <th>收款银行</th><th style="text-align:right">笔数</th><th style="text-align:right">到账合计</th><th style="text-align:right">差额</th><th>收款明细（每笔）</th><th class="inv-note">付款备注</th><th>记录</th><th>批注</th><th></th>
-      </tr></thead><tbody id="invBody"><tr><td colspan="15" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+        <th>收款银行</th><th style="text-align:right">笔数</th><th style="text-align:right">到账合计</th><th style="text-align:right">差额</th><th>收款明细（每笔，点开看银行记录）</th><th class="inv-note">付款备注</th><th>批注</th><th></th>
+      </tr></thead><tbody id="invBody"><tr><td colspan="14" style="color:var(--g400)">加载中…</td></tr></tbody></table>
     </div>
   </div>
 
@@ -780,9 +781,9 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <div class="card inv-scroll">
       <table id="palletTable" class="acct-wide" style="font-size:.84rem"><thead><tr>
         <th>日期</th><th>类型</th><th>木板客户 / 供应商</th><th>发票号</th><th>账期</th><th style="text-align:right">金额</th><th>付款状态</th>
-        <th>银行账户</th><th style="text-align:right">笔数</th><th style="text-align:right">银行合计</th><th style="text-align:right">差额</th><th>银行明细（每笔）</th><th class="inv-note">付款备注</th><th>记录</th>
+        <th>银行账户</th><th style="text-align:right">笔数</th><th style="text-align:right">银行合计</th><th style="text-align:right">差额</th><th>银行明细（每笔，点开看银行记录）</th><th class="inv-note">付款备注</th>
         <th>Bintique 付款日</th><th style="text-align:right">Bintique 实付</th><th>Bintique 付款方</th><th></th>
-      </tr></thead><tbody id="palletBody"><tr><td colspan="18" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+      </tr></thead><tbody id="palletBody"><tr><td colspan="17" style="color:var(--g400)">加载中…</td></tr></tbody></table>
     </div>
     <p style="font-size:.75rem;color:var(--g400);margin-top:.5rem">这里显示 pallet.bintique.com 的全部销售/采购发票（一行一张）；付款状态和发票一样只认核查通过的钱（关联的银行交易在银行记录里找得到、且银行标注审核通过），ⓘ 悬浮看原因；「Bintique 记录」列是对方系统自己的状态，仅供参考。</p>
   </div>
@@ -2679,10 +2680,9 @@ function renderPalletList() {
     <td>${_palletPayBadge(r)}</td>
     ${_invPayCols(r)}
     <td class="inv-note">${_invPayNoteTag(r)}</td>
-    <td style="white-space:nowrap">${_invRecCell(r, 'palletbill')}</td>
     ${_palletBintiqueCols(r)}
     <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openPalletDetail(${r.id})">查看明细</button></td>
-  </tr>`).join('') : '<tr><td colspan="18" style="color:var(--g400);padding:1rem">没有账单。</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="17" style="color:var(--g400);padding:1rem">没有账单。</td></tr>';
 }
 // ═══════════ 💸 Gusto 工资: API 实时同步 + 按人对账 ═══════════
 // 数据链路: 管理员连接 Gusto(OAuth) → 服务器定时/打开本页时自动拉取实发付款 →
@@ -3188,7 +3188,7 @@ function _invPayInfo(r) {
   const got = v ? (v.got || null) : pn.amount != null && Number.isFinite(Number(pn.amount)) ? Number(pn.amount) : (txns.length ? sum : null);
   const diff = got == null ? null : Math.round((got - _rowDue(r)) * 100) / 100;
   const detail = [...txns].sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))).map(t => ({
-    date: t.date || '', amt: Math.abs(Number(t.amount) || 0), bank: t.acct_label || '', desc: t.merchant || t.name || '',
+    id: t.txn_id, date: t.date || '', amt: Math.abs(Number(t.amount) || 0), bank: t.acct_label || '', desc: t.merchant || t.name || '',
     share: v && v.shared[t.txn_id] ? v.alloc[t.txn_id] : null, sharedN: v ? v.shared[t.txn_id] || 0 : 0,
     unverified: !!(v && !_invTxnVerified(r, t.txn_id)),
   }));
@@ -3204,7 +3204,7 @@ function _invPayCols(r) {
     : x.diff < 0 ? `<span style="color:#b91c1c;font-weight:800">−${money(-x.diff)}</span>`
     : `<span style="color:#1d4ed8;font-weight:800">+${money(x.diff)}</span>`;
   const detail = x.detail.length ? x.detail.map(d =>
-    `<div data-tip="${esc(d.desc)}" style="white-space:nowrap">${esc(d.date)} · <b>${money(d.amt)}</b>${d.share != null ? ` <span style="color:#7c3aed;cursor:help" data-tip="这笔钱同时关联了 ${d.sharedN} 张发票，按发票金额分，本张分到 ${money(d.share)}">（${d.sharedN} 张共用，本张 ${money(d.share)}）</span>` : ''}${x.banks.length > 1 && d.bank ? ` · <span style="color:var(--g500)">${esc(d.bank)}</span>` : ''}${d.unverified ? ' <span style="color:#b45309;font-weight:700;cursor:help" data-tip="这笔银行交易的标注还没审核通过（或还没做标注），不算已收款">⏳未核查</span>' : ''}</div>`).join('')
+    `<div data-tip="${esc(d.desc)}（点开看这笔银行记录和标注）" onclick="event.stopPropagation();zAnnOpen(decodeURIComponent('${encodeURIComponent(d.id)}'))" style="white-space:nowrap;cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px">${esc(d.date)} · <b>${money(d.amt)}</b>${d.share != null ? ` <span style="color:#7c3aed;cursor:help" data-tip="这笔钱同时关联了 ${d.sharedN} 张发票，按发票金额分，本张分到 ${money(d.share)}">（${d.sharedN} 张共用，本张 ${money(d.share)}）</span>` : ''}${x.banks.length > 1 && d.bank ? ` · <span style="color:var(--g500)">${esc(d.bank)}</span>` : ''}${d.unverified ? ' <span style="color:#b45309;font-weight:700;cursor:help" data-tip="这笔银行交易的标注还没审核通过（或还没做标注），不算已收款">⏳未核查</span>' : ''}</div>`).join('')
     + (x.missing ? `<div data-tip="关联的银行交易在银行记录里找不到了（多半是银行把待入账换成正式入账、交易号变了），点「编辑」重新关联" style="color:#b45309;font-weight:700">⚠ ${x.missing} 笔找不到银行记录</div>` : '')
     : x.missing ? `<span data-tip="关联的银行交易在银行记录里找不到了，点「编辑」重新关联" style="color:#b45309;font-weight:700">⚠ ${x.missing} 笔找不到银行记录</span>` : dash;
   return `<td style="white-space:nowrap">${x.banks.length ? x.banks.map(esc).join('<br>') : dash}</td>
@@ -3212,13 +3212,6 @@ function _invPayCols(r) {
     <td style="${num};font-weight:700">${x.got == null ? dash : money(x.got)}</td>
     <td style="${num}">${diffHtml}</td>
     <td style="font-size:.78rem">${detail}</td>`;
-}
-// 记录列: 没记过 → ⏳待记录 + ＋记录; 记过 → 编辑 (type: 付款批注对象类型, 发票列表默认 invoice)
-function _invRecCell(r, type) {
-  type = type || 'invoice';
-  const has = _pnHasContent(r.pay_note);
-  const edit = canAnnotate() ? ` <a style="cursor:pointer;font-size:.74rem;color:#0f4c6b;text-decoration:underline" onclick="openPayNote('${type}', ${r.id})">${has ? '编辑' : '＋记录'}</a>` : '';
-  return (has ? '' : '<span style="background:#fffbeb;color:#b45309;border:1px solid #fcd34d;border-radius:8px;padding:1px 7px;font-size:.72rem;font-weight:700">⏳ 待记录</span>') + edit;
 }
 // 导出当前筛选的发票 (逐张审核用): 每张一行, 每笔收款明细写在同一格里
 function invExportCsv() {
@@ -3244,16 +3237,17 @@ function _invFilteredRows() {
   let rows = _invList;
   if (q) rows = rows.filter(r => (r.invoice_number || '').toLowerCase().includes(q) || (r.company_name || '').toLowerCase().includes(q));
   if (flt === 'with') rows = rows.filter(r => r.annotation_count > 0);
-  else if (flt === 'todo') rows = rows.filter(r => !_pnHasContent(r.pay_note));
-  else if (flt === 'acctdone') rows = rows.filter(r => r.pay_note && r.pay_note.paid_status === 'paid');
+  else if (flt === 'todo') rows = rows.filter(r => _acctPayStatus(r) === 'unpaid');
+  else if (flt === 'review') rows = rows.filter(r => _acctPayStatus(r) === 'review');
+  else if (flt === 'acctdone') rows = rows.filter(r => _acctPayStatus(r) === 'paid');
   else if (flt === 'diff') rows = rows.filter(r => { const d = _invPayInfo(r).diff; return d != null && Math.abs(d) >= 0.01; });
   return rows;
 }
 function renderInvList() {
-  const isTodo = r => !_pnHasContent(r.pay_note);
   const rows = _invFilteredRows();
-  const todoN = _invList.filter(isTodo).length;
-  document.getElementById('invStats').textContent = `共 ${rows.length} 张 · 合计 ${money(rows.reduce((s, r) => s + (Number(r.subtotal) || 0), 0))}${todoN ? ` · ⏳ 待会计记录 ${todoN} 张` : ''}`;
+  const nOf = st => _invList.filter(r => _acctPayStatus(r) === st).length;
+  const revN = nOf('review'), unN = nOf('unpaid');
+  document.getElementById('invStats').textContent = `共 ${rows.length} 张 · 合计 ${money(rows.reduce((s, r) => s + (Number(r.subtotal) || 0), 0))}${revN ? ` · 🟣 待审核 ${revN} 张` : ''}${unN ? ` · ❌ 未收款 ${unN} 张` : ''}`;
   document.getElementById('invBody').innerHTML = rows.length ? rows.map(r => `<tr>
     <td style="font-weight:700;white-space:nowrap">${esc(r.invoice_number)}</td>
     <td style="white-space:nowrap">${esc(r.invoice_date || '—')}</td>
@@ -3263,10 +3257,9 @@ function renderInvList() {
     <td style="white-space:nowrap">${payBadge(_acctPayStatus(r))}${r.verify && r.verify.reasons.length ? ` <span data-tip="${esc('没核查通过的：\n' + r.verify.reasons.join('\n')).replace(/"/g, '&quot;')}" style="cursor:help;color:#b45309;font-weight:700">ⓘ</span>` : ''}</td>
     ${_invPayCols(r)}
     <td class="inv-note">${_invPayNoteTag(r)}</td>
-    <td style="white-space:nowrap">${_invRecCell(r)}</td>
     <td>${annBadge(r.annotation_count)}</td>
     <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openInvoice(${r.id})">查看 / 批注</button></td>
-  </tr>`).join('') : '<tr><td colspan="15" style="color:var(--g400);padding:1rem">没有符合条件的发票。</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="14" style="color:var(--g400);padding:1rem">没有符合条件的发票。</td></tr>';
 }
 function renderStmtList() {
   const q = (document.getElementById('stmtSearch').value || '').toLowerCase();

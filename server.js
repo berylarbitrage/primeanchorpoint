@@ -40077,6 +40077,22 @@ function _acctRecoverTxns(rows, targetType) {
     }
   }
 }
+// 银行标注直接挂到单据上: 标注里写了发票号 / 关联了这张 Bintique 账单的银行交易 (同方向)
+// 自动算这张单据的收付款, 不用再在单据上手动 link。和以前手动关联的合并; 标注找到了交易时,
+// 手动关联里已经找不到的旧交易号 (待入账换号) 直接丢掉。
+function _acctAttachAnnTxns(rows) {
+  const ann = _acctInvoiceAnnTxns();
+  for (const r of rows) {
+    const dir = r.direction || 'in';
+    const annIds = (ann[String(r.invoice_number || '').trim().toUpperCase()] || []).filter(x => x.dir === dir).map(x => x.id);
+    if (!annIds.length) continue;
+    const pn = r.pay_note;
+    const manual = pn ? pn.txns.map(t => t.txn_id) : [];   // 手动关联里还找得到的
+    const ids = [...new Set([...manual, ...annIds])];
+    const fresh = _acctPayNoteOut({ id: null, auto: 1, paid_status: '', bank: '', amount: null, note: '', txn_ids: JSON.stringify(ids), photos: '[]' });
+    r.pay_note = pn ? Object.assign({}, pn, { txn_ids: fresh.txn_ids, txns: fresh.txns, bank_notes: fresh.bank_notes }) : fresh;
+  }
+}
 // 发票收款核查 (列表的「付款状态」只看这个, 不看手工勾的已付/部分):
 // 只算 ① 关联的银行交易在银行记录里找得到 ② 这笔交易的银行标注已审核通过 (或管理员自己标的)
 // 的钱; 一笔钱关联了几张发票就按发票金额依次分, 不重复算。没核查通过的原因逐条列出。
@@ -40232,6 +40248,7 @@ app.get('/api/acct/invoices', requireAdmin, requireAcctView, (req, res) => {
       r.pay_note = payNotes[r.id] || null;
     }
     _acctRecoverTxns(rows, 'invoice');
+    _acctAttachAnnTxns(rows);
     _acctInvoiceVerify(rows);
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -40433,6 +40450,7 @@ app.get('/api/acct/pallet-bills', requireAdmin, requireAcctView, async (req, res
     rows.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || b.id - a.id);
     // 付款状态和发票一样走核查口径: 银行记录找得到 + 银行标注审核通过的钱才算
     _acctRecoverTxns(rows, 'palletbill');
+    _acctAttachAnnTxns(rows);
     _acctInvoiceVerify(rows);
     res.json({ count: rows.length, rows, configured: !!process.env.PALLET_API_KEY });
   } catch (e) { res.status(500).json({ error: e.message }); }
