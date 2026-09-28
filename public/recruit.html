@@ -186,6 +186,12 @@ i.req{color:#dc2626;font-style:normal;margin-left:1px}
               </datalist>
             </div>
           </div>
+          <label>性别 <i class="req">*</i> <span class="sub">只在内部卡片和工头版显示，工人版分享不带</span></label>
+          <div class="seg" id="segGender">
+            <label><input type="radio" name="fGender" value="不限"><span>不限</span></label>
+            <label><input type="radio" name="fGender" value="男"><span>🚹 男</span></label>
+            <label><input type="radio" name="fGender" value="女"><span>🚺 女</span></label>
+          </div>
         </div>
 
         <div class="fgroup" data-step="3">
@@ -456,6 +462,7 @@ function payChips(j) {
   if (j.worker_pay) g += '<span class="pay-chip">👷 工人 ' + esc(j.worker_pay) + '</span>';
   if (j.foreman_cap) g += '<span class="pay-chip cap">🦺 工头上限 ' + esc(j.foreman_cap) + '</span>';
   if (g) h += '<div class="pay-line">' + g + '</div>';
+  if (j.gender_req && j.gender_req !== '不限') h += '<div class="pay-line"><span class="pay-chip" style="background:#fdf2f8;border-color:#fbcfe8;color:#be185d">' + (j.gender_req === '女' ? '🚺' : '🚹') + ' 限' + esc(j.gender_req) + '</span></div>';
   if (j.work_days) h += '<div class="pay-line"><span class="pay-chip" style="background:#eef2ff;border-color:#c7d2fe;color:#4338ca">📅 ' + esc(daysLabel(j.work_days)) + '</span></div>';
   const req = [];
   if (j.language_req) req.push('<span class="pay-chip" style="background:#f0f9ff;border-color:#bae6fd;color:#0369a1">🗨️ ' + esc(j.language_req) + '</span>');
@@ -525,6 +532,7 @@ function rfCheck() {
   need($('fPosition').value.trim(), '工种', $('fPosition'));
   // 编辑老招工: 人数已经写进工种 (「× 5人」) 的不用再填
   need($('fHeadcount').value.trim() || / × /.test($('fPosition').value), '要几个人', $('fHeadcount'));
+  need(_radio('fGender'), '性别', $('segGender'));
   need(_daysValue(), '一周哪几天上班', $('dayChips'));
   // 编辑区填了还没点「+ 加班次」的也算 (发布时自动加进去)
   const pending = $('sfStart').value && $('sfEnd').value;
@@ -1016,6 +1024,7 @@ function _fillForm(j, asNew) {
   document.getElementById('fAddress').value = j.address || '';
   document.getElementById('fAddress')._auto = '';
   _setRadio('fEad', j.ead_required ? 1 : 0);
+  _setRadio('fGender', j.gender_req || '');
   setDays(j.work_days || '');
   _rfTried = false; rfCheck();
   document.getElementById('formTitle').textContent = asNew ? '📄 复制再发（改改就能发）' : '✏️ 编辑招工需求 #' + j.id;
@@ -1042,6 +1051,7 @@ function cancelEdit() {
   onIvChange();
   _setLangValue('');
   _setRadio('fEad', '');
+  _setRadio('fGender', '');
   setDays('');
   renderWhOptions('');
   _rfTried = false; rfCheck();
@@ -1074,6 +1084,7 @@ async function saveJob() {
       interview_notes: document.getElementById('fIvNotes').value.trim(),
       language_req,
       ead_required: _radio('fEad') === '1' ? 1 : 0,
+      gender_req: _radio('fGender'),
       address: document.getElementById('fAddress').value.trim(),
       work_days: _daysValue()
     };
