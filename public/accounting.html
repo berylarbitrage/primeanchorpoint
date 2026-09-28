@@ -520,6 +520,21 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     </div>
   </div>
 
+  <!-- ✉️ 英文确认: 发给介绍人, 确认已登记、会跟进面试结果、每周定时付介绍费 -->
+  <div id="refConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:93;align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)this.style.display='none'">
+    <div class="card" style="max-width:640px;width:100%;padding:1rem 1.1rem;max-height:94vh;overflow:auto">
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem"><b>✉️ 英文确认 · 发给介绍人</b><span style="flex:1"></span>
+        <button class="btn btn-sm btn-outline" onclick="document.getElementById('refConfirmModal').style.display='none'">✕</button></div>
+      <canvas id="rcCanvas" style="width:100%;border:1px solid var(--g200);border-radius:10px;display:block"></canvas>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin:.7rem 0 .5rem">
+        <button class="btn btn-blue" onclick="rcCopyImg()">🖼 复制图片</button>
+        <button class="btn btn-outline" onclick="rcDownload()">⬇ 下载图片</button>
+        <button class="btn btn-outline" onclick="_copyText(document.getElementById('rcText').value)">📋 复制文字</button>
+      </div>
+      <textarea id="rcText" rows="10" style="width:100%;font-size:.78rem;font-family:inherit;resize:vertical"></textarea>
+    </div>
+  </div>
+
   <div id="refAddModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:92;align-items:center;justify-content:center;padding:16px">
     <div class="card" style="max-width:560px;width:100%;padding:1.2rem 1.2rem 1rem;max-height:92vh;overflow:auto">
       <div id="refAddTitle" style="font-weight:800;margin-bottom:.2rem">🤝 新增介绍</div>
@@ -1601,7 +1616,8 @@ function renderRefList() {
     const atts = Array.isArray(r.attachments) ? r.attachments : [];
     const attHtml = atts.map((a, i) => `<a href="${esc(a.path)}" target="_blank" title="${esc(a.name || '')}" style="color:#0f4c6b;font-size:.72rem;margin-left:6px;white-space:nowrap">📎${atts.length > 1 ? i + 1 : ''}</a>`).join('');
     const canEdit = _refCanEdit(r);
-    const ops = `<a class="btn btn-sm btn-outline" style="padding:.15rem .5rem;color:#0f4c6b;border-color:#93c5fd" title="一行: 工人 电话 地址 时间 工资 备注" onclick="refCopyLine(${r.id})">📋 一行</a>`
+    const ops = (r.hr_self ? '' : `<a class="btn btn-sm btn-outline" style="padding:.15rem .5rem;color:#047857;border-color:#a7f3d0" title="生成英文确认（图片 / 文字）发给介绍人" onclick="openRefConfirm(${r.id})">✉️ 确认 EN</a> `)
+      + `<a class="btn btn-sm btn-outline" style="padding:.15rem .5rem;color:#0f4c6b;border-color:#93c5fd" title="一行: 工人 电话 地址 时间 工资 备注" onclick="refCopyLine(${r.id})">📋 一行</a>`
       + ` <a class="btn btn-sm btn-outline" style="padding:.15rem .5rem" title="复制这条介绍信息，粘贴发给经理" onclick="refCopyRow(${r.id})">📋 复制</a>`
       + (canEdit ? ` <a class="btn btn-sm btn-outline" style="padding:.15rem .5rem" onclick="openRefAdd(${r.id})">✎ 编辑</a>` : '')
       + (USER.role === 'admin' ? ` <a class="btn btn-sm btn-outline" style="padding:.15rem .45rem;color:#b91c1c" title="删除这条介绍记录" onclick="refDelete(${r.id})">🗑</a>` : '');
@@ -2379,6 +2395,132 @@ function refCopyLine(id) {
   const parts = [r.worker_name, r.worker_phone, r.warehouse_address || r.warehouse_name, time, r.worker_wage, rest]
     .map(v => String(v || '').trim()).filter(Boolean);
   _copyText(parts.join('   '));
+}
+// ✉️ 英文确认: 介绍人介绍的人已登记进系统确认, 之后跟进面试结果, 上班后每周定时付介绍费
+let _rcRef = null;
+const _rcEn = v => String(v || '').replace(/[\u2E80-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF\u3000-\u303F]+/g, ' ').replace(/\s*—\s*$/, '').replace(/\s{2,}/g, ' ').trim();
+function _rcFields(r) {
+  const iv = r.interview_at ? new Date(r.interview_at.replace(' ', 'T')) : null;
+  const ivTxt = iv && !isNaN(iv) ? iv.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+  const wh = _rcEn(r.warehouse_name), addr = String(r.warehouse_address || '').trim();
+  return {
+    foreman: _rcEn(r.foreman_name) || r.foreman_name || '',
+    rows: [
+      ['Worker', [r.worker_name, r.worker_phone].filter(Boolean).join('  ·  ')],
+      ['Referred by', [r.foreman_name, r.foreman_phone].filter(Boolean).join('  ·  ')],
+      ['Work location', [wh, addr].filter(Boolean).join(' — ')],
+      ['Position', _rcEn(r.job_title)],
+      ['Interview', ivTxt],
+      ['Pay rate', _rcEn(r.worker_wage)],
+      ['Referral fee', r.amount != null && Number(r.amount) > 0 ? `${money(r.amount)} per week worked` : ''],
+    ].filter(x => x[1]),
+    ref: 'REF-' + String(r.id).padStart(5, '0'),
+    date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    first: String(r.worker_name || 'the worker').trim().split(/\s+/)[0],
+  };
+}
+const _RC_NEXT = f => [
+  'We will follow up on the interview result and keep you updated.',
+  `Once ${f.first} starts working, your referral fee will be paid weekly, on a regular schedule, for each week worked.`,
+];
+function openRefConfirm(id) {
+  const r = _refList.find(x => x.id === id);
+  if (!r) return;
+  _rcRef = r;
+  const f = _rcFields(r);
+  document.getElementById('rcText').value = [
+    '✅ Referral Confirmed — Prime Anchor Point', '',
+    `Hi ${f.foreman || 'there'},`,
+    `Thank you for your referral! This confirms that ${r.worker_name || 'the worker'} has been registered and confirmed in our system as your referral.`, '',
+    ...f.rows.map(([k, v]) => `• ${k}: ${v}`), '',
+    "What's next:",
+    ..._RC_NEXT(f).map((t, i) => `${i + 1}. ${t}`), '',
+    `Reference #: ${f.ref}`,
+    `Confirmed: ${f.date}`, '',
+    'Thank you!',
+    'Prime Anchor Point',
+  ].join('\n');
+  document.getElementById('refConfirmModal').style.display = 'flex';
+  _rcDraw(r, f);
+}
+function _rcDraw(r, f) {
+  const cv = document.getElementById('rcCanvas'), W = 720, sc = 2, P = 36;
+  const font = (w, px) => `${w} ${px}px -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif`;
+  const meas = document.createElement('canvas').getContext('2d');
+  const wrap = (text, maxW, fnt) => {
+    meas.font = fnt;
+    const out = []; let line = '';
+    String(text).split(/\s+/).forEach(w => {
+      const t = line ? line + ' ' + w : w;
+      if (meas.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t;
+    });
+    if (line) out.push(line);
+    return out;
+  };
+  const LW = 150, VW = W - P * 2 - LW - 20;
+  const intro = wrap(`Thank you for your referral! This confirms that ${r.worker_name || 'the worker'} has been registered and confirmed in our system as your referral.`, W - P * 2, font(400, 16));
+  const rows = f.rows.map(([k, v]) => [k, wrap(v, VW, font(600, 15))]);
+  const next = _RC_NEXT(f).map(t => wrap(t, W - P * 2 - 56, font(400, 15)));
+  const H = 118 + 34 + intro.length * 24 + 22 + rows.reduce((t, x) => t + x[1].length * 21 + 16, 0) + 24
+    + 48 + next.reduce((t, x) => t + x.length * 21 + 10, 0) + 24 + 70;
+  cv.width = W * sc; cv.height = H * sc;
+  const c = cv.getContext('2d');
+  c.scale(sc, sc);
+  c.fillStyle = '#ffffff'; c.fillRect(0, 0, W, H);
+  // 顶部色条
+  c.fillStyle = '#0f4c6b'; c.fillRect(0, 0, W, 104);
+  c.fillStyle = '#16a34a'; c.beginPath(); c.arc(P + 22, 52, 22, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = '#fff'; c.lineWidth = 4; c.lineCap = 'round'; c.lineJoin = 'round';
+  c.beginPath(); c.moveTo(P + 12, 53); c.lineTo(P + 19, 60); c.lineTo(P + 32, 45); c.stroke();
+  c.fillStyle = '#fff'; c.font = font(800, 26); c.fillText('Referral Confirmed', P + 58, 50);
+  c.fillStyle = '#bae6fd'; c.font = font(500, 14); c.fillText('Prime Anchor Point LLC', P + 58, 72);
+  let y = 104 + 42;
+  c.fillStyle = '#0f172a'; c.font = font(700, 17); c.fillText(`Hi ${f.foreman || 'there'},`, P, y); y += 30;
+  c.fillStyle = '#334155'; c.font = font(400, 16);
+  intro.forEach(l => { c.fillText(l, P, y); y += 24; });
+  y += 14;
+  // 信息表
+  const top = y - 8;
+  rows.forEach(([k, ls], i) => {
+    const h = ls.length * 21 + 16;
+    if (i % 2 === 0) { c.fillStyle = '#f8fafc'; c.fillRect(P, y - 8, W - P * 2, h); }
+    c.fillStyle = '#64748b'; c.font = font(500, 14); c.fillText(k, P + 14, y + 12);
+    c.fillStyle = '#0f172a'; c.font = font(600, 15);
+    ls.forEach((l, j) => c.fillText(l, P + 14 + LW, y + 12 + j * 21));
+    y += h;
+  });
+  c.strokeStyle = '#e2e8f0'; c.lineWidth = 1; c.strokeRect(P + .5, top + .5, W - P * 2 - 1, y - 8 - top);
+  y += 24;
+  // What's next
+  const nextH = 40 + next.reduce((t, x) => t + x.length * 21 + 10, 0);
+  c.fillStyle = '#ecfdf5'; c.fillRect(P, y - 8, W - P * 2, nextH);
+  c.fillStyle = '#16a34a'; c.fillRect(P, y - 8, 4, nextH);
+  c.fillStyle = '#065f46'; c.font = font(800, 15); c.fillText("WHAT'S NEXT", P + 20, y + 16); y += 40;
+  next.forEach((ls, i) => {
+    c.fillStyle = '#16a34a'; c.beginPath(); c.arc(P + 30, y - 5, 10, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#fff'; c.font = font(800, 12); c.textAlign = 'center'; c.fillText(String(i + 1), P + 30, y - 1); c.textAlign = 'left';
+    c.fillStyle = '#064e3b'; c.font = font(400, 15);
+    ls.forEach((l, j) => c.fillText(l, P + 50, y + j * 21));
+    y += ls.length * 21 + 10;
+  });
+  y += 28;
+  c.fillStyle = '#94a3b8'; c.font = font(500, 13);
+  c.fillText(`Reference # ${f.ref}   ·   Confirmed ${f.date}`, P, y);
+  c.textAlign = 'right'; c.fillStyle = '#0f4c6b'; c.font = font(700, 14); c.fillText('Thank you!', W - P, y); c.textAlign = 'left';
+}
+function _rcName() { return `referral-confirmed-${String((_rcRef && _rcRef.worker_name) || 'worker').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.png`; }
+function rcDownload() {
+  const a = document.createElement('a');
+  a.href = document.getElementById('rcCanvas').toDataURL('image/png');
+  a.download = _rcName();
+  a.click();
+}
+function rcCopyImg() {
+  const cv = document.getElementById('rcCanvas');
+  if (!navigator.clipboard || !window.ClipboardItem) { rcDownload(); return toast('浏览器不支持复制图片，已改为下载'); }
+  cv.toBlob(b => navigator.clipboard.write([new ClipboardItem({ 'image/png': b })])
+    .then(() => toast('✅ 图片已复制，可直接粘贴发送'))
+    .catch(() => { rcDownload(); toast('复制图片失败，已改为下载'); }), 'image/png');
 }
 // 🧾 会计关联发票: 勾选能证明被介绍人在干活的发票
 let _riRefId = null, _riSel = new Set();
