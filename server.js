@@ -40025,6 +40025,14 @@ function _acctPayNoteOut(n) {
   n.txn_ids = ids;
   n.txns = ids.length ? db.prepare(`SELECT txn_id, date, name, merchant, amount, account_id FROM plaid_transactions
     WHERE txn_id IN (${ids.map(() => '?').join(',')})`).all(...ids) : [];
+  // 关联银行交易上标注的「原因/备注」(如「分两笔收款…」): 付款批注自己没写备注时, 列表显示这些
+  n.bank_notes = [];
+  if (ids.length) {
+    try {
+      db.prepare(`SELECT note FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id IN (${ids.map(() => '?').join(',')}) AND COALESCE(note,'')<>'' ORDER BY txn_date, id`)
+        .all(...ids).forEach(r => { const t = String(r.note).trim(); if (t && !n.bank_notes.includes(t)) n.bank_notes.push(t); });
+    } catch (e) {}
+  }
   let ph = []; try { ph = JSON.parse(n.photos || '[]'); } catch (e) { ph = []; }
   n.photos_urls = (Array.isArray(ph) ? ph : []).filter(Boolean).map(k => `/uploads/${path.basename(String(k))}`);
   delete n.photos;

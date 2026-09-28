@@ -3065,8 +3065,13 @@ function _acctPayStatus(r) {
 }
 // 付款备注: 多付 / 少付 一眼分开 — 少付红底 ⬇, 多付蓝底 ⬆, 其他普通备注灰字
 // 先看备注文字 (多付/多转/少付/少转/短…), 没写明的再用 记录金额 vs 发票金额 判断
+// 付款备注文字: 付款批注自己写的优先, 没写就用关联银行交易标注里的备注
+function _invPayNoteText(r) {
+  const pn = r.pay_note || {};
+  return String(pn.note || '').trim() || (pn.bank_notes || []).join('；');
+}
 function _invPayDiff(r) {
-  const pn = r.pay_note || {}, t = String(pn.note || '');
+  const pn = r.pay_note || {}, t = _invPayNoteText(r);
   if (/少付|少转|少给|少打|短付|差了?\s*\$?\d|欠|underpa|short/i.test(t)) return 'under';
   if (/多付|多转|多给|多打|超付|overpa/i.test(t)) return 'over';
   const amt = Number(pn.amount), sub = Number(r.subtotal);
@@ -3075,7 +3080,7 @@ function _invPayDiff(r) {
   return '';
 }
 function _invPayNoteTag(r) {
-  const pn = r.pay_note || {}, t = String(pn.note || '').trim(), d = _invPayDiff(r);
+  const pn = r.pay_note || {}, t = _invPayNoteText(r), d = _invPayDiff(r);
   if (!t && !d) return '<span style="color:var(--g300)">—</span>';
   const diffAmt = pn.amount != null && Number.isFinite(Number(pn.amount)) ? Math.abs(Number(pn.amount) - Number(r.subtotal)) : 0;
   const txt = t ? esc(t) : (d === 'under' ? '少付 ' : '多付 ') + money(diffAmt);
