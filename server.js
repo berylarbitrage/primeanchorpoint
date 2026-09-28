@@ -882,10 +882,12 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS referrals (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`); } catch(e) {}
-// 面试去没去: HR 约了面试他未必去 — '' 未标记 | attended 去了 | no_show 没去
+// 面试去没去: HR 约了面试他未必去 — '' 未标记 | attended 去了 | no_show 没去 | failed 去了但没通过
 try { db.exec(`ALTER TABLE referrals ADD COLUMN interview_status TEXT DEFAULT ''`); } catch(e) {}
 // 标了「去了」可以再记实际到场时间 (可能和约的时间不一样)
 try { db.exec(`ALTER TABLE referrals ADD COLUMN interview_attended_at TEXT DEFAULT ''`); } catch(e) {}
+// 面试去了但没通过 (interview_status='failed'): 记原因 — 常见原因勾选 + 自己补充, 存成一段文字
+try { db.exec(`ALTER TABLE referrals ADD COLUMN interview_fail_reason TEXT DEFAULT ''`); } catch(e) {}
 // 被介绍工人的工资 (自由填, 例 $18/小时): 登记介绍时顺带记下, 管理员核查介绍费时心里有数
 try { db.exec(`ALTER TABLE referrals ADD COLUMN worker_wage TEXT DEFAULT ''`); } catch(e) {}
 // 关联 post 的招聘岗位: 存 jobs.id + 标题快照 (岗位之后改名/关闭/删掉, 介绍记录照样能看)
@@ -30145,7 +30147,7 @@ app.get('/api/admin/recruit-jobs', requireAdmin, (req, res) => {
     // 面试那边 (介绍) 关联了这个需求的申请人: 姓名电话 / 面试时间和结果 / 上班 / 班次
     const byJob = {};
     try {
-      db.prepare(`SELECT id, recruit_job_id, COALESCE(recruit_shift,'') AS recruit_shift, worker_name, worker_phone, interview_at, COALESCE(interview_status,'') AS interview_status,
+      db.prepare(`SELECT id, recruit_job_id, COALESCE(recruit_shift,'') AS recruit_shift, worker_name, worker_phone, interview_at, COALESCE(interview_status,'') AS interview_status, COALESCE(interview_fail_reason,'') AS interview_fail_reason,
           COALESCE(work_start_date,'') AS work_start_date, foreman_name, COALESCE(hr_self,0) AS hr_self, created_at
         FROM referrals WHERE recruit_job_id IS NOT NULL ORDER BY interview_at DESC, id DESC`).all()
         .forEach(r => { (byJob[r.recruit_job_id] = byJob[r.recruit_job_id] || []).push(r); });
@@ -41381,12 +41383,12 @@ app.get('/api/acct/interview-lookup', requireAdmin, requireRole('accounting', 'a
     const push = o => items.push(Object.assign({ source: '', date: '', name: '', phone: '', place: '', result: '', detail: '' }, o));
     const safe = fn => { try { fn(); } catch (e) {} };
     // 介绍记录
-    safe(() => db.prepare(`SELECT id, worker_name, worker_phone, interview_at, interview_status, interview_attended_at, warehouse_name, warehouse_address,
+    safe(() => db.prepare(`SELECT id, worker_name, worker_phone, interview_at, interview_status, interview_attended_at, interview_fail_reason, warehouse_name, warehouse_address,
         job_title, foreman_name, COALESCE(hr_self,0) AS hr_self, work_start_date, worker_wage FROM referrals`).all().forEach(r => {
       if (!hit(r.worker_name, r.worker_phone)) return;
       push({ source: 'referral', ref_id: r.id, date: String(r.interview_at || '').replace('T', ' '), name: r.worker_name, phone: r.worker_phone,
         place: [r.warehouse_name, r.warehouse_address].filter(Boolean).join(' · '),
-        result: r.interview_status === 'attended' ? '去了' : r.interview_status === 'no_show' ? '没去' : '待标记',
+        result: r.interview_status === 'attended' ? '去了' : r.interview_status === 'no_show' ? '没去' : r.interview_status === 'failed' ? '没通过' + (r.interview_fail_reason ? '：' + r.interview_fail_reason : '') : '待标记',
         detail: [r.job_title, r.hr_self ? 'HR 自己招的' : (r.foreman_name ? '工头 ' + r.foreman_name : ''), r.worker_wage ? '工资 ' + r.worker_wage : '',
           r.work_start_date ? r.work_start_date + ' 开始上班' : '', r.interview_attended_at ? '到场 ' + r.interview_attended_at : ''].filter(Boolean).join(' · ') });
     }));
@@ -41510,15 +41512,19 @@ app.put('/api/acct/referral-foremen/:id', requireAdmin, requireRole('accounting'
 
 // 标记面试去没去: 约了面试未必去, 列表里一键标; 权限同编辑 (核查过的只有管理员能改)。
 // 标「去了」可带 attended_at 记实际到场时间, 之后还能再改; 改成没去/清除时到场时间一并清掉。
+// 标「没通过」(failed) 必须带 fail_reason (没通过的原因), 到场时间保留 (人是去了的)。
 app.post('/api/acct/referrals/:id/interview-status', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
   const cur = db.prepare('SELECT * FROM referrals WHERE id=?').get(parseInt(req.params.id));
   if (!cur) return res.status(404).json({ error: '记录不存在' });
   if (req.userRole !== 'admin' && cur.review_status !== 'pending') return res.status(403).json({ error: '该记录管理员已核查，如需修改请联系管理员' });
-  const st = String((req.body || {}).status || '');
-  if (!['', 'attended', 'no_show'].includes(st)) return res.status(400).json({ error: '无效状态' });
-  const attendedAt = st === 'attended' ? String((req.body || {}).attended_at || '').trim().slice(0, 40) : '';
-  db.prepare(`UPDATE referrals SET interview_status=?, interview_attended_at=?, updated_at=datetime('now') WHERE id=?`).run(st, attendedAt, cur.id);
-  res.json({ success: true, interview_status: st, interview_attended_at: attendedAt });
+  const b = req.body || {};
+  const st = String(b.status || '');
+  if (!['', 'attended', 'no_show', 'failed'].includes(st)) return res.status(400).json({ error: '无效状态' });
+  const failReason = st === 'failed' ? String(b.fail_reason || '').trim().slice(0, 500) : '';
+  if (st === 'failed' && !failReason) return res.status(400).json({ error: '请填写没通过的原因' });
+  const attendedAt = st === 'attended' || st === 'failed' ? String(b.attended_at || (st === 'failed' ? cur.interview_attended_at : '') || '').trim().slice(0, 40) : '';
+  db.prepare(`UPDATE referrals SET interview_status=?, interview_attended_at=?, interview_fail_reason=?, updated_at=datetime('now') WHERE id=?`).run(st, attendedAt, failReason, cur.id);
+  res.json({ success: true, interview_status: st, interview_attended_at: attendedAt, interview_fail_reason: failReason });
 });
 
 // 管理员删除介绍费记录 (附件与付款批注一并清掉)

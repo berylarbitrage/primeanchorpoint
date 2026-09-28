@@ -65,12 +65,15 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
 /* 开始上班弹窗: 一周哪几天 */
 .rs-day{border:1px solid var(--g300);background:#fff;border-radius:999px;width:28px;height:28px;font-size:.78rem;font-weight:700;color:var(--g600);cursor:pointer;font-family:inherit;padding:0}
 .rs-day.on{background:#0f4c6b;border-color:#0f4c6b;color:#fff}
+.rf-chip{border:1px solid var(--g300);background:#fff;border-radius:999px;padding:3px 10px;font-size:.74rem;color:var(--g600);cursor:pointer;font-family:inherit;line-height:1.35}
+.rf-chip.on{background:#b91c1c;border-color:#b91c1c;color:#fff}
 
 /* 面试去了 / 没去 按钮 */
 .iv-acts{display:flex;gap:4px;margin-top:5px;flex-wrap:wrap}
 .iv-btn{display:inline-flex;align-items:center;gap:3px;border-radius:7px;padding:3px 10px;font-size:.74rem;font-weight:800;cursor:pointer;white-space:nowrap;font-family:inherit;border:1px solid;background:#fff;line-height:1.3;transition:background .12s,color .12s}
 .iv-btn.go{color:#047857;border-color:#6ee7b7;background:#ecfdf5}.iv-btn.go:hover{background:#10b981;border-color:#10b981;color:#fff}
 .iv-btn.no{color:#b91c1c;border-color:#fca5a5;background:#fff5f5}.iv-btn.no:hover{background:#ef4444;border-color:#ef4444;color:#fff}
+.iv-btn.fail{color:#9a3412;border-color:#fdba74;background:#fff7ed}.iv-btn.fail:hover{background:#ea580c;border-color:#ea580c;color:#fff}
 .iv-btn.mini{padding:1px 7px;font-size:.68rem;font-weight:600;color:var(--g500);border-color:var(--g200)}.iv-btn.mini:hover{background:var(--g100);color:var(--g700)}
 
 /* ── 银行直连表: 列表在卡片内滚动, 表头 + 合计行吸顶不动 ── */
@@ -440,6 +443,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <option value="partpaid">🟡 付了一部分周</option>
         <option value="rejected">✖ 拒绝支付</option>
         <option value="noshow">❌ 没去面试</option>
+        <option value="failed">🙅 面试没通过</option>
       </select>
       <button class="btn btn-blue" id="btnRefAdd" onclick="openRefAdd()" style="display:none">＋ 新增介绍</button>
       <button class="btn btn-outline" onclick="openFmList()">👷 工头名单</button>
@@ -539,6 +543,20 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:.9rem">
         <button class="btn btn-outline" onclick="document.getElementById('refPayModal').style.display='none'">取消</button>
         <button class="btn btn-blue" id="rpSubmit" onclick="submitRefPay()">保存</button>
+      </div>
+    </div>
+  </div>
+  <!-- 面试没通过: 常见原因点选 (可多选) + 自己补充 -->
+  <div id="refFailModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:93;align-items:center;justify-content:center;padding:16px">
+    <div class="card" style="max-width:480px;width:100%;padding:1.2rem 1.2rem 1rem;max-height:92vh;overflow:auto">
+      <div style="font-weight:800;margin-bottom:.2rem">🙅 面试没通过</div>
+      <div id="rfWho" style="font-size:.78rem;color:var(--g500);margin-bottom:.6rem"></div>
+      <div id="rfChips"></div>
+      <label style="font-size:.76rem;color:var(--g500);display:block;margin-top:.5rem">补充说明 <span style="font-size:.7rem;color:var(--g400)">没有合适的选项就直接写</span></label>
+      <textarea id="rfNote" rows="2" style="width:100%;margin:.15rem 0 .6rem" placeholder="例：叉车测试倒车撞到货架"></textarea>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="closeRefFail()">取消</button>
+        <button class="btn" style="background:#b91c1c;color:#fff" onclick="saveRefFail()">保存</button>
       </div>
     </div>
   </div>
@@ -1639,6 +1657,8 @@ function _refInterviewMarkCell(r) {
     ? '<span style="display:inline-block;background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;border-radius:6px;padding:1px 7px;font-size:.72rem;font-weight:700;white-space:nowrap">✅ 去了</span>'
     : r.interview_status === 'no_show'
       ? '<span style="display:inline-block;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:6px;padding:1px 7px;font-size:.72rem;font-weight:700;white-space:nowrap">❌ 没去</span>'
+    : r.interview_status === 'failed'
+      ? '<span style="display:inline-block;background:#fff7ed;border:1px solid #fdba74;color:#9a3412;border-radius:6px;padding:1px 7px;font-size:.72rem;font-weight:700;white-space:nowrap">🙅 没通过</span>'
       : _refIvOverdue(r)
         ? '<span style="display:inline-block;background:#dc2626;border:1px solid #b91c1c;color:#fff;border-radius:6px;padding:1px 7px;font-size:.72rem;font-weight:800;white-space:nowrap">⚠ 面试时间已过，还没标记</span>'
         : '<span style="display:inline-block;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;border-radius:6px;padding:1px 7px;font-size:.72rem;white-space:nowrap">⏳ 待标记</span>';
@@ -1646,15 +1666,18 @@ function _refInterviewMarkCell(r) {
   // 标了去了的显示实际到场时间, 可以随时更新
   const attendedAt = r.interview_status === 'attended' && r.interview_attended_at
     ? `<div style="font-size:.72rem;color:#047857;white-space:nowrap;margin-top:2px">到场 ${esc(r.interview_attended_at)}</div>` : '';
+  const failWhy = r.interview_status === 'failed' && r.interview_fail_reason
+    ? `<div style="font-size:.72rem;color:#9a3412;margin-top:2px;max-width:220px;line-height:1.35">原因：${esc(r.interview_fail_reason)}</div>` : '';
   const B = (st, cls, label) => `<button type="button" class="iv-btn ${cls}" onclick="refMarkInterview(${r.id},'${st}')">${label}</button>`;
   // 没标记: 两个显眼按钮; 标过了: 小按钮改/清
   const links = _refCanEdit(r)
     ? `<div class="iv-acts">${
-        r.interview_status === 'attended' ? B('attended', 'mini', '改时间') + B('no_show', 'mini', '改为没去') + B('', 'mini', '清除')
+        r.interview_status === 'attended' ? B('attended', 'mini', '改时间') + B('failed', 'mini', '没通过') + B('no_show', 'mini', '改为没去') + B('', 'mini', '清除')
         : r.interview_status === 'no_show' ? B('attended', 'mini', '改为去了') + B('', 'mini', '清除')
-        : B('attended', 'go', '✓ 去了') + B('no_show', 'no', '✕ 没去')}</div>`
+        : r.interview_status === 'failed' ? B('failed', 'mini', '改原因') + B('attended', 'mini', '改为通过') + B('', 'mini', '清除')
+        : B('attended', 'go', '✓ 去了') + B('no_show', 'no', '✕ 没去') + B('failed', 'fail', '没通过')}</div>`
     : '';
-  return chip + attendedAt + links;
+  return chip + attendedAt + failWhy + links;
 }
 // 付款状态专门一列: 只认会计付款批注 (已付/部分/未付); 没核查完的先显示流程位
 function _refPayBadge(r) {
@@ -1678,7 +1701,48 @@ function _refInvPeriod(r) {
   }
   return { start, end, days };
 }
+// 面试没通过的常见原因: 分「仓库/公司那边不要」和「工人自己不做」两组, 可多选, 再加补充说明
+const REF_FAIL_REASONS = [
+  ['仓库/公司不要', ['证件不齐（没带 ID / 工卡 / SSN）', '没有合法工作身份', '背景调查没过', '药检没过', '迟到', '英语沟通不行',
+    '没经验 / 经验不够', '叉车 / 设备测试没过', '体力跟不上（搬不动 50 磅）', '没穿安全鞋 / 着装不合要求', '态度不好 / 面试表现差',
+    '以前在这个仓库做过、不能再录用', '岗位已招满 / 取消了']],
+  ['工人自己不做', ['嫌工资低', '班次 / 时间不合适', '太远 / 没车', '嫌活太累', '已经找到别的工作', '联系不上了']],
+];
+let _rfId = null;
+function openRefFail(id) {
+  const x = _refList.find(v => v.id === id);
+  if (!x) return;
+  _rfId = id;
+  const had = x.interview_status === 'failed' ? String(x.interview_fail_reason || '') : '';
+  // 之前存的原因: 认得出的预设项亮起, 剩下的放回补充说明
+  const presets = REF_FAIL_REASONS.flatMap(g => g[1]);
+  const parts = had ? had.split('；').map(t => t.trim()).filter(Boolean) : [];
+  const on = new Set(parts.filter(t => presets.includes(t)));
+  document.getElementById('rfWho').textContent = [x.worker_name, x.warehouse_name || x.warehouse_address].filter(Boolean).join(' · ');
+  document.getElementById('rfChips').innerHTML = REF_FAIL_REASONS.map(([g, arr]) => `<div style="font-size:.72rem;color:var(--g400);margin:.2rem 0">${g}</div>
+    <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.35rem">${arr.map(t => `<button type="button" class="rf-chip${on.has(t) ? ' on' : ''}" data-t="${esc(t)}" onclick="this.classList.toggle('on')">${esc(t)}</button>`).join('')}</div>`).join('');
+  document.getElementById('rfNote').value = parts.filter(t => !on.has(t)).join('；');
+  document.getElementById('refFailModal').style.display = 'flex';
+}
+function closeRefFail() { document.getElementById('refFailModal').style.display = 'none'; _rfId = null; }
+async function saveRefFail() {
+  const picked = [...document.querySelectorAll('#rfChips .rf-chip.on')].map(b => b.getAttribute('data-t'));
+  const note = document.getElementById('rfNote').value.trim();
+  const reason = [...picked, note].filter(Boolean).join('；');
+  if (!reason) return toast('请选一个原因或写补充说明', true);
+  const id = _rfId;
+  const x = _refList.find(v => v.id === id);
+  try {
+    const r = await api(`/api/acct/referrals/${id}/interview-status`, { method: 'POST', body: JSON.stringify({ status: 'failed', fail_reason: reason }) });
+    if (r && r.error) throw new Error(r.error);
+    if (x) { x.interview_status = 'failed'; x.interview_attended_at = r.interview_attended_at || ''; x.interview_fail_reason = r.interview_fail_reason || reason; }
+    closeRefFail();
+    renderRefList();
+    toast('已标记：面试没通过');
+  } catch (e) { toast(e.message || '操作失败', true); }
+}
 async function refMarkInterview(id, st) {
+  if (st === 'failed') return openRefFail(id);
   const x = _refList.find(v => v.id === id);
   let attendedAt = '';
   if (st === 'attended' && x) {
@@ -1691,7 +1755,7 @@ async function refMarkInterview(id, st) {
   try {
     const r = await api(`/api/acct/referrals/${id}/interview-status`, { method: 'POST', body: JSON.stringify({ status: st, attended_at: attendedAt }) });
     if (r && r.error) throw new Error(r.error);
-    if (x) { x.interview_status = st; x.interview_attended_at = r.interview_attended_at || ''; }
+    if (x) { x.interview_status = st; x.interview_attended_at = r.interview_attended_at || ''; x.interview_fail_reason = ''; }
     renderRefList();
     toast(st === 'attended' ? '✅ 已标记：面试去了' + (attendedAt ? '（' + attendedAt + '）' : '') : st === 'no_show' ? '已标记：没去面试' : '已清除标记');
   } catch (e) { toast(e.message || '操作失败', true); }
@@ -1709,6 +1773,7 @@ function renderRefList() {
   if (q) list = list.filter(r => [r.foreman_name, r.foreman_phone, r.worker_name, r.worker_phone, r.worker_wage, r.warehouse_name, r.warehouse_address, r.job_title, r.description, ...(r.invoices || []).map(v => v.invoice_number + ' ' + v.company_name)].join(' ').toLowerCase().includes(q)
     || (qd.length >= 4 && (dg(r.worker_phone).includes(qd) || dg(r.foreman_phone).includes(qd))));
   if (flt === 'noshow') list = list.filter(r => r.interview_status === 'no_show');
+  else if (flt === 'failed') list = list.filter(r => r.interview_status === 'failed');
   else if (flt) list = list.filter(r => _refOverall(r) === flt);
   // 三个阶段分页: 数字按当前搜索/筛选算, 切过去不会扑空
   const stN = { interview: 0, working: 0, ended: 0, noshow: 0 };
@@ -1719,7 +1784,7 @@ function renderRefList() {
   document.getElementById('refStages').innerHTML = stBtn('interview', '📅 面试安排', overN ? `<span style="background:#dc2626;color:#fff;border-radius:4px;padding:0 5px;font-weight:800">⚠ ${overN} 个面试已过没标记</span>` : '约了面试、还没开始上班')
     + stBtn('working', '👷 上班中', payN ? `<span style="background:#dc2626;color:#fff;border-radius:4px;padding:0 5px;font-weight:800">⚠ ${payN} 个付款 / 车补 / 二维码没确认</span>` : '通过面试已上班 · 三个月内')
     + stBtn('ended', '⏹ 已满三个月', 'referral 期结束')
-    + stBtn('noshow', '🚫 没去面试', '约了面试但没去的人');
+    + stBtn('noshow', '🚫 没去 / 没通过', '约了面试没去、或去了没通过的人');
   list = list.filter(r => _refStage(r) === _refStageSel);
   const pendN = _refList.filter(r => r.review_status === 'pending').length;
   const waitN = _refList.filter(r => ['approved', 'partpaid'].includes(_refOverall(r))).length;
@@ -1826,7 +1891,7 @@ function renderRefList() {
         ${legacy ? `<div class="ref-row">${legacy}</div>` : ''}
       </div>
     </div>`;
-  }).join('') : `<div class="card" style="color:var(--g400)">${{ interview: '没有在面试阶段的介绍。点「＋ 新增介绍」添加。', working: '没有正在上班的介绍。面试通过后在「📅 面试安排」里点「👷 开始上班」。', ended: '还没有满三个月的介绍。', noshow: '没有标记「没去」的面试。' }[_refStageSel]}</div>`;
+  }).join('') : `<div class="card" style="color:var(--g400)">${{ interview: '没有在面试阶段的介绍。点「＋ 新增介绍」添加。', working: '没有正在上班的介绍。面试通过后在「📅 面试安排」里点「👷 开始上班」。', ended: '还没有满三个月的介绍。', noshow: '没有标记「没去」或「没通过」的面试。' }[_refStageSel]}</div>`;
 }
 // ── Referral 阶段: 没上班日期 = 面试阶段; 上班日期起三个月内 = 上班中; 满三个月 = 结束 ──
 // 页面开着时每分钟重画一次: 面试时间一过没标记的马上变红
@@ -1851,7 +1916,7 @@ function _refEndDate(r) {
 function _refStage(r) {
   const end = _refEndDate(r);
   // 还没上班、面试标了没去 → 单独「没去面试」页
-  if (!end) return r.interview_status === 'no_show' ? 'noshow' : 'interview';
+  if (!end) return ['no_show', 'failed'].includes(r.interview_status) ? 'noshow' : 'interview';
   const today = new Date(); today.setHours(0, 0, 0, 0);
   return today >= end ? 'ended' : 'working';
 }
@@ -1863,7 +1928,7 @@ function _refWorkRows(r) {
   const st = _refStage(r);
   if (st === 'noshow') return '';
   if (st === 'interview') {
-    if (!_refCanStart(r) || r.interview_status === 'no_show' || r.review_status === 'rejected') return '';
+    if (!_refCanStart(r) || ['no_show', 'failed'].includes(r.interview_status) || r.review_status === 'rejected') return '';
     return `<div class="ref-row" style="background:#f0f9ff;color:#075985"><b>👷 通过面试开始上班了？</b><span style="color:var(--g500)">填上班日期和工人的打卡 QR 码，按打卡工时对上每周付款</span><span style="flex:1"></span>
       <button class="btn btn-sm btn-blue" onclick="openRefStart(${r.id})">👷 开始上班</button></div>`;
   }
@@ -2738,7 +2803,8 @@ function refCopyRow(id) {
   if (!r) return;
   const ivMark = r.interview_status === 'attended'
     ? `（去了${r.interview_attended_at ? '，到场 ' + r.interview_attended_at : ''}）`
-    : r.interview_status === 'no_show' ? '（没去）' : '';
+    : r.interview_status === 'no_show' ? '（没去）'
+    : r.interview_status === 'failed' ? `（没通过${r.interview_fail_reason ? '：' + r.interview_fail_reason : ''}）` : '';
   _copyText(_refInfoText({
     foreman: r.hr_self ? 'HR 自己招的（无工头）' : `${r.foreman_name || ''}${r.foreman_phone ? ' · ' + r.foreman_phone : ''}${r.foreman_state ? `（${r.foreman_state}）` : ''}`,
     worker: [r.worker_name, r.worker_phone].filter(Boolean).join(' · '),

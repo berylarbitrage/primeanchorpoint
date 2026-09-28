@@ -825,10 +825,11 @@ function _applicantsHtml(j) {
   const stOf = a => a.work_start_date ? ['👷 已上班 ' + a.work_start_date, '#1d4ed8', '#dbeafe']
     : a.interview_status === 'attended' ? ['✅ 去了面试', '#047857', '#dcfce7']
     : a.interview_status === 'no_show' ? ['❌ 没去', '#b91c1c', '#fee2e2']
+    : a.interview_status === 'failed' ? ['🙅 没通过' + (a.interview_fail_reason ? '：' + esc(a.interview_fail_reason) : ''), '#9a3412', '#ffedd5']
     : (a.interview_at && new Date(String(a.interview_at).replace(' ', 'T')) < now) ? ['⚠ 面试过了没标记', '#fff', '#dc2626']
     : ['⏳ 待面试', '#b45309', '#fef3c7'];
   const n = k => list.filter(a => k(a)).length;
-  const went = n(a => a.interview_status === 'attended' || a.work_start_date), noShow = n(a => a.interview_status === 'no_show' && !a.work_start_date), working = n(a => a.work_start_date);
+  const went = n(a => a.interview_status === 'attended' || a.interview_status === 'failed' || a.work_start_date), noShow = n(a => a.interview_status === 'no_show' && !a.work_start_date), working = n(a => a.work_start_date);
   const row = a => {
     const st = stOf(a);
     const tel = String(a.worker_phone || '').replace(/[^\d+]/g, '');
