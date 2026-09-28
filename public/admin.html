@@ -9111,6 +9111,13 @@ function logout() {
 
 // 外部页面(如电话登记查询)可用 /admin.html?doc_review=<submission_id> 直接跳进来审阅这份证件
 async function _openDocReviewFromUrl() {
+  // /admin.html?emp=<员工 id>: 直接打开这个员工档案 (会计页介绍费「员工档案」链接)
+  const empQ = parseInt(new URLSearchParams(location.search).get('emp') || '0', 10);
+  if (empQ) {
+    try { await viewEmployee(empQ); } catch (e) { console.error('[emp]', e); }
+    history.replaceState(null, '', location.pathname);
+    return;
+  }
   const sid = parseInt(new URLSearchParams(location.search).get('doc_review') || '0', 10);
   if (!sid) return;
   try {
