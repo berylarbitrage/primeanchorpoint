@@ -908,6 +908,11 @@ try { db.exec(`ALTER TABLE referrals ADD COLUMN profile_apl_id INTEGER DEFAULT N
 try { db.exec(`ALTER TABLE referrals ADD COLUMN profile_linked_by TEXT DEFAULT ''`); } catch(e) {}
 // HR 自己招的 (没有工头介绍): 不用填工头、没有介绍费, 只登记人和岗位
 try { db.exec(`ALTER TABLE referrals ADD COLUMN hr_self INTEGER DEFAULT 0`); } catch(e) {}
+// 上班后要确认的: 车补 (NULL/''=没确认, 'none'=没有, 其他=金额说明) / 付款方式 (gusto|zelle|cash|check|other) /
+// 关联的 Gusto 收款人 (gusto_contractors.uuid; 空 = 按姓名 + 收款人对照表自动对)
+try { db.exec(`ALTER TABLE referrals ADD COLUMN car_allowance TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE referrals ADD COLUMN pay_method TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE referrals ADD COLUMN gusto_uuid TEXT DEFAULT ''`); } catch(e) {}
 // 介绍费按周付: 关联的每张发票 (一周账期) = 一周, 每周单独记介绍费金额和付款批注
 // (acct_pay_notes target_type='referralweek', target_id=这里的 id); fee 为空 = 按介绍记录上的介绍费
 try { db.exec(`CREATE TABLE IF NOT EXISTS referral_weeks (
@@ -40746,10 +40751,70 @@ app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
     out.forEach(r => { r.clock = r.timeclock_code ? _referralClock(r.timeclock_code, r.work_start_date) : null; });
     const pIdx = _referralProfileIndex();
     out.forEach(r => { r.profile = _referralProfile(r, pIdx); });
+    const gIdx = _refGustoIndex();
+    out.forEach(r => { r.gusto = _refGustoLink(r, gIdx); });
     res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── 付款方式 Gusto: 这个工人在不在 Gusto 收款人里 ──
+// 手动选过的 (gusto_uuid) 为准; 没选的按 工人姓名 (和打卡档案姓名) 对 Gusto 收款人姓名,
+// 再过一遍工资表收款人对照表 (花名/并付给别人的)
+const _refNameKey = v => String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z]/g, '');
+function _refGustoIndex() {
+  const byUuid = {}, byName = {};
+  try {
+    db.prepare(`SELECT uuid, name, first_name, last_name, business_name, COALESCE(is_active,1) AS active FROM gusto_contractors`).all().forEach(c => {
+      const nm = (c.business_name || '').trim() || `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.name || '';
+      const x = { uuid: c.uuid, name: nm, active: !!c.active };
+      byUuid[c.uuid] = x;
+      [nm, c.name, `${c.first_name || ''} ${c.last_name || ''}`, `${c.last_name || ''} ${c.first_name || ''}`].forEach(n => { const k = _refNameKey(n); if (k.length >= 4 && !byName[k]) byName[k] = x; });
+    });
+  } catch (e) {}
+  let aliases = [];
+  try { aliases = _gustoAliases(); } catch (e) {}
+  const alias = {};
+  (aliases || []).forEach(a => { if (a && a.from && a.to) alias[_refNameKey(a.from)] = a.to; });
+  return { byUuid, byName, alias, any: Object.keys(byUuid).length > 0 };
+}
+function _refGustoLink(r, idx) {
+  if ((r.pay_method || 'gusto') !== 'gusto') return null;
+  if (r.gusto_uuid) {
+    const c = idx.byUuid[r.gusto_uuid];
+    return c ? { linked: true, manual: true, name: c.name, uuid: c.uuid, active: c.active } : { linked: false, missing: true };
+  }
+  const names = [r.worker_name, r.profile && r.profile.name, r.clock && r.clock.name].filter(Boolean);
+  for (const n of names) {
+    const k = _refNameKey(n);
+    const via = idx.alias[k];
+    if (via && !/^(现金|跳过)$/.test(via)) { const c = idx.byName[_refNameKey(via)]; if (c) return { linked: true, auto: true, via_alias: true, name: c.name, uuid: c.uuid, active: c.active }; }
+    const c = idx.byName[k];
+    if (c) return { linked: true, auto: true, name: c.name, uuid: c.uuid, active: c.active };
+  }
+  return { linked: false, synced: idx.any };
+}
+// 车补 / 付款方式 / Gusto 收款人: 上班中随时可改 (核查状态不影响)
+app.post('/api/acct/referrals/:id/pay-setup', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+  const cur = db.prepare('SELECT id FROM referrals WHERE id=?').get(parseInt(req.params.id));
+  if (!cur) return res.status(404).json({ error: '记录不存在' });
+  const b = req.body || {};
+  const method = ['gusto', 'zelle', 'cash', 'check', 'other'].includes(b.pay_method) ? b.pay_method : '';
+  if (!method) return res.status(400).json({ error: '请选择付款方式' });
+  const car = String(b.car_allowance == null ? '' : b.car_allowance).trim().slice(0, 80);
+  if (!car) return res.status(400).json({ error: '请确认有没有车补' });
+  const uuid = method === 'gusto' ? String(b.gusto_uuid || '').trim().slice(0, 80) : '';
+  db.prepare(`UPDATE referrals SET car_allowance=?, pay_method=?, gusto_uuid=?, updated_at=datetime('now') WHERE id=?`).run(car, method, uuid, cur.id);
+  res.json({ success: true });
+});
+// Gusto 收款人搜索 (付款方式关联用): 只回名字
+app.get('/api/acct/gusto-payees', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+  try {
+    const q = _refNameKey(req.query.q);
+    const idx = _refGustoIndex();
+    const list = Object.values(idx.byUuid).filter(c => !q || _refNameKey(c.name).includes(q)).sort((a, b) => (b.active - a.active) || a.name.localeCompare(b.name)).slice(0, 30);
+    res.json({ payees: list, synced: idx.any });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 // 打卡 QR 码 → 员工: 扫出来是 PAWTC:12345678, 手输就是 8 位数字; 只查不建档 (不像打卡机那样自动建员工)
 function _referralCodeNorm(v) {
   const d = String(v || '').trim().replace(/^PAWTC:/i, '').replace(/\D/g, '');
