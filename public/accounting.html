@@ -1672,7 +1672,7 @@ function renderRefList() {
         <div class="ref-ppl">
           <div>${lbl('工头 · 介绍人')}${r.hr_self ? '<span style="display:inline-block;background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;border-radius:6px;padding:1px 8px;font-size:.8rem;font-weight:700">🙋 HR 自己招的</span>' : person(r.foreman_name, r.foreman_phone, r.foreman_state ? ` · 📍 ${esc(r.foreman_state)}` : '')}</div>
           <div class="ref-arrow">➜</div>
-          <div>${lbl('被介绍工人')}${person(r.worker_name, r.worker_phone, (r.worker_wage ? ` · <span style="color:#047857;font-weight:700">💵 ${esc(r.worker_wage)}</span>` : '') + attHtml)}</div>
+          <div>${lbl('被介绍工人')}${person(r.worker_name, r.worker_phone, (r.worker_wage ? ` · <span style="color:#047857;font-weight:700">💵 ${esc(r.worker_wage)}</span>` : '') + attHtml)}${_refProfileChip(r)}</div>
         </div>
         <div>${lbl('工作仓库')}<div style="font-weight:700;font-size:.84rem;color:#0f172a;line-height:1.3">${esc(whMain)}</div>
           ${whSub ? `<div style="font-size:.74rem;color:var(--g500);line-height:1.3">${esc(whSub)}</div>` : ''}${r.job_title ? `<div style="font-size:.72rem;color:#7c3aed;margin-top:2px">📌 ${esc(r.job_title)}</div>` : ''}</div>
@@ -1756,6 +1756,43 @@ function _refWorkRows(r) {
   }
   return row + chips;
 }
+// ── 🔗 员工档案: 按工人电话在系统里找, 找到就 link, 找不到红字提示先扫二维码登记 ──
+function _refProfileChip(r) {
+  const p = r.profile || {};
+  const can = ['admin', 'accounting', 'cs'].includes(USER.role);
+  const chip = (bg, bd, fg, html) => `<div style="margin-top:4px"><span style="display:inline-flex;align-items:center;gap:.3rem;white-space:nowrap;background:${bg};border:1px solid ${bd};color:${fg};border-radius:6px;padding:1px 7px;font-size:.72rem;font-weight:700">${html}</span></div>`;
+  if (p.linked) {
+    const unlink = can && !p.via_code ? ` <a style="cursor:pointer;color:var(--g400);font-weight:400" title="取消关联" onclick="refProfileUnlink(${r.id})">✕</a>` : '';
+    return p.kind === 'employee'
+      ? chip('#ecfdf5', '#a7f3d0', '#047857', `🔗 <a href="/admin.html?emp=${p.id}" target="_blank" style="color:#047857" title="打开员工档案">员工档案 · ${esc(p.name || '')}</a>${p.has_code ? '' : ' <span style="color:#b45309;font-weight:400">（没有打卡码）</span>'}${unlink}`)
+      : chip('#f0fdf4', '#bbf7d0', '#15803d', `🔗 已扫码登记 · ${esc(p.name || '')} <span style="color:var(--g500);font-weight:400">（未建档）</span>${unlink}`);
+  }
+  if (p.missing) return chip('#fef2f2', '#fecaca', '#b91c1c', `⚠ 关联的档案已被删除${can ? ` <a style="cursor:pointer;text-decoration:underline" onclick="refProfileUnlink(${r.id})">清掉</a>` : ''}`);
+  const m = p.matches || [];
+  if (m.length) {
+    return `<div style="margin-top:4px;display:flex;gap:.3rem;flex-wrap:wrap">` + m.map(x =>
+      can ? `<button class="btn btn-sm btn-outline" style="padding:.1rem .45rem;font-size:.72rem;color:#1d4ed8;border-color:#93c5fd" title="电话对上了系统里的${x.kind === 'employee' ? '员工档案' : '扫码登记'}，点一下关联" onclick="refProfileLink(${r.id},'${x.kind}',${x.id})">🔗 Link ${x.kind === 'employee' ? '员工档案' : '扫码登记'} · ${esc(x.name || '')}</button>`
+        : `<span style="font-size:.72rem;color:#1d4ed8">系统里有：${esc(x.name || '')}</span>`).join('') + `</div>`;
+  }
+  return chip('#fef2f2', '#fecaca', '#b91c1c', r.worker_phone ? '⚠ 系统里没有 · 请先完成二维码登记' : '⚠ 没填电话 · 请先完成二维码登记');
+}
+async function refProfileLink(id, kind, pid) {
+  try {
+    const j = await api(`/api/acct/referrals/${id}/profile`, { method: 'POST', body: JSON.stringify({ kind, id: pid }) });
+    if (j && j.error) throw new Error(j.error);
+    toast('✅ 已关联员工档案');
+    loadRefList();
+  } catch (e) { toast(e.message || '关联失败', true); }
+}
+async function refProfileUnlink(id) {
+  if (!confirm('取消关联这个员工档案？')) return;
+  try {
+    const j = await api(`/api/acct/referrals/${id}/profile`, { method: 'POST', body: JSON.stringify({ action: 'unlink' }) });
+    if (j && j.error) throw new Error(j.error);
+    toast('已取消关联');
+    loadRefList();
+  } catch (e) { toast(e.message || '操作失败', true); }
+}
 // ── 👷 开始上班弹窗 ──
 let _rsId = null, _rsTimer = null, _rsStream = null, _rsScanT = null, _rsJsqr = null;
 function openRefStart(id) {
@@ -1765,7 +1802,9 @@ function openRefStart(id) {
   document.getElementById('rsWho').textContent = `${r.worker_name || ''}${r.worker_phone ? ' · ' + r.worker_phone : ''}${r.warehouse_name || r.warehouse_address ? ' · ' + (r.warehouse_name || r.warehouse_address) : ''}`;
   document.getElementById('rsDate').value = r.work_start_date || _refYmd(new Date());
   document.getElementById('rsCode').value = r.timeclock_code || '';
-  document.getElementById('rsInfo').innerHTML = '';
+  const pf = r.profile || {};
+  document.getElementById('rsInfo').innerHTML = !r.timeclock_code && pf.linked && pf.has_code
+    ? `<span style="color:#047857">🔗 已关联员工档案 <b>${esc(pf.name || '')}</b>，打卡码可以不填，自动用档案里的</span>` : '';
   document.getElementById('refStartModal').style.display = 'flex';
   if (r.timeclock_code) rsLookup();
 }
@@ -1879,7 +1918,8 @@ async function submitRefStart() {
   const date = document.getElementById('rsDate').value;
   const code = _rsDigits(document.getElementById('rsCode').value);
   if (!date) return toast('请填写上班日期', true);
-  if (code.length !== 8) return toast('请填写工人的打卡 QR 码（扫码，或手输 8 位打卡密码）', true);
+  const pf = ((_refList.find(x => x.id === _rsId) || {}).profile) || {};
+  if (code.length !== 8 && !(code === '' && pf.linked && pf.has_code)) return toast('请填写工人的打卡 QR 码（扫码，或手输 8 位打卡密码）', true);
   const btn = document.getElementById('rsSubmit');
   btn.disabled = true;
   try {

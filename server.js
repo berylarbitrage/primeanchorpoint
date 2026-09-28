@@ -895,6 +895,10 @@ try { db.exec(`ALTER TABLE referrals ADD COLUMN job_title TEXT DEFAULT ''`); } c
 // 靠打卡码对上员工档案和打卡记录, 按周工时核对介绍费; 上班满 3 个月 referral 期结束
 try { db.exec(`ALTER TABLE referrals ADD COLUMN timeclock_code TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE referrals ADD COLUMN started_by TEXT DEFAULT ''`); } catch(e) {}
+// 关联员工档案: 按工人电话在系统里找 — 员工档案 (profile_emp_id) 或已扫二维码登记、还没建档的 (profile_apl_id)
+try { db.exec(`ALTER TABLE referrals ADD COLUMN profile_emp_id INTEGER DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE referrals ADD COLUMN profile_apl_id INTEGER DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE referrals ADD COLUMN profile_linked_by TEXT DEFAULT ''`); } catch(e) {}
 // HR 自己招的 (没有工头介绍): 不用填工头、没有介绍费, 只登记人和岗位
 try { db.exec(`ALTER TABLE referrals ADD COLUMN hr_self INTEGER DEFAULT 0`); } catch(e) {}
 // 介绍费按周付: 关联的每张发票 (一周账期) = 一周, 每周单独记介绍费金额和付款批注
@@ -40718,6 +40722,8 @@ app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
     const out = rows.map(r => _referralOut(r, invMap, payNotes, weeksBy, weekNotes));
     out.forEach(r => { r.foreman_state = fmStByPhone[normP(r.foreman_phone)] || fmStByName[String(r.foreman_name).trim().toLowerCase()] || ''; });
     out.forEach(r => { r.clock = r.timeclock_code ? _referralClock(r.timeclock_code, r.work_start_date) : null; });
+    const pIdx = _referralProfileIndex();
+    out.forEach(r => { r.profile = _referralProfile(r, pIdx); });
     res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -40764,6 +40770,77 @@ function _referralClock(code, startDate) {
     return out;
   } catch (e) { return { found: false, error: e.message }; }
 }
+// ── 员工档案关联: 电话后 10 位对上 员工档案 / 扫二维码登记 (有打卡码的) ──
+const _refPh = p => String(p || '').replace(/\D/g, '').slice(-10);
+function _referralProfileIndex() {
+  const byPhone = {}, emps = {}, apls = {};
+  const push = (ph, x) => { const k = _refPh(ph); if (k.length === 10) (byPhone[k] = byPhone[k] || []).push(x); };
+  db.prepare(`SELECT id, first_name, last_name, phone, status, COALESCE(timeclock_code,'') AS code FROM employees`).all().forEach(e => {
+    const x = { kind: 'employee', id: e.id, name: `${e.first_name || ''} ${e.last_name || ''}`.trim(), phone: e.phone || '', status: e.status || '', has_code: !!e.code };
+    emps[e.id] = x; push(e.phone, x);
+  });
+  db.prepare(`SELECT id, name, phone, employee_id, created_at FROM applicant_submissions WHERE COALESCE(timeclock_code,'')!=''`).all().forEach(a => {
+    const x = { kind: 'applicant', id: a.id, name: a.name || '', phone: a.phone || '', employee_id: a.employee_id || null, has_code: true, created_at: a.created_at || '' };
+    apls[a.id] = x;
+    if (!a.employee_id || !emps[a.employee_id]) push(a.phone, x);  // 已建档的只按员工档案列一次
+  });
+  return { byPhone, emps, apls };
+}
+function _referralProfile(r, idx) {
+  if (r.profile_emp_id) {
+    const e = idx.emps[r.profile_emp_id];
+    return e ? { linked: true, ...e } : { linked: false, missing: true, matches: [] };
+  }
+  if (r.profile_apl_id) {
+    const a = idx.apls[r.profile_apl_id];
+    if (a && a.employee_id && idx.emps[a.employee_id]) return { linked: true, ...idx.emps[a.employee_id] };  // 登记后已建档 → 按员工档案显示
+    return a ? { linked: true, ...a } : { linked: false, missing: true, matches: [] };
+  }
+  // 开始上班时填过打卡码的, 打卡码对上的人就是他的档案
+  if (r.clock && r.clock.found) {
+    const e = r.clock.employee_id && idx.emps[r.clock.employee_id];
+    if (e) return { linked: true, via_code: true, ...e };
+    const a = Object.values(idx.apls).find(x => _refPh(x.phone) === _refPh(r.clock.phone) && x.name === r.clock.name);
+    if (a) return { linked: true, via_code: true, ...a };
+  }
+  const k = _refPh(r.worker_phone);
+  const m = (k.length === 10 && idx.byPhone[k]) || [];
+  // 同一电话优先 在职员工 > 其他员工 > 扫码登记
+  const rank = x => x.kind === 'employee' ? (['active', 'onboarding'].includes(x.status) ? 0 : 1) : 2;
+  return { linked: false, matches: m.slice().sort((a, b) => rank(a) - rank(b)).slice(0, 5) };
+}
+// 关联档案用的打卡码 (开始上班时没填码就用它)
+function _referralProfileCode(r) {
+  if (r.profile_emp_id) { const e = db.prepare(`SELECT COALESCE(timeclock_code,'') AS c FROM employees WHERE id=?`).get(r.profile_emp_id); return e ? e.c : ''; }
+  if (r.profile_apl_id) {
+    const a = db.prepare(`SELECT COALESCE(timeclock_code,'') AS c, employee_id FROM applicant_submissions WHERE id=?`).get(r.profile_apl_id);
+    if (!a) return '';
+    if (a.c) return a.c;
+    if (a.employee_id) { const e = db.prepare(`SELECT COALESCE(timeclock_code,'') AS c FROM employees WHERE id=?`).get(a.employee_id); return e ? e.c : ''; }
+  }
+  return '';
+}
+// 关联 / 取消关联员工档案 { kind: employee|applicant, id } 或 { action: 'unlink' }
+app.post('/api/acct/referrals/:id/profile', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+  const cur = db.prepare('SELECT * FROM referrals WHERE id=?').get(parseInt(req.params.id));
+  if (!cur) return res.status(404).json({ error: '记录不存在' });
+  const b = req.body || {};
+  if (b.action === 'unlink') {
+    db.prepare(`UPDATE referrals SET profile_emp_id=NULL, profile_apl_id=NULL, profile_linked_by='', updated_at=datetime('now') WHERE id=?`).run(cur.id);
+    return res.json({ success: true });
+  }
+  const id = parseInt(b.id);
+  if (b.kind === 'employee') {
+    if (!db.prepare('SELECT id FROM employees WHERE id=?').get(id)) return res.status(400).json({ error: '员工档案不存在' });
+    db.prepare(`UPDATE referrals SET profile_emp_id=?, profile_apl_id=NULL, profile_linked_by=?, updated_at=datetime('now') WHERE id=?`).run(id, req.userName || '', cur.id);
+  } else if (b.kind === 'applicant') {
+    const a = db.prepare(`SELECT id, employee_id FROM applicant_submissions WHERE id=? AND COALESCE(timeclock_code,'')!=''`).get(id);
+    if (!a) return res.status(400).json({ error: '扫码登记记录不存在' });
+    db.prepare(`UPDATE referrals SET profile_emp_id=?, profile_apl_id=?, profile_linked_by=?, updated_at=datetime('now') WHERE id=?`)
+      .run(a.employee_id || null, a.employee_id ? null : a.id, req.userName || '', cur.id);
+  } else return res.status(400).json({ error: '参数不对' });
+  res.json({ success: true });
+});
 // 查打卡码对应哪个工人 (开始上班弹窗里填完就显示, 防填错)
 app.get('/api/acct/referral-clock-lookup', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
   const code = _referralCodeNorm(req.query.code);
@@ -40783,7 +40860,8 @@ app.post('/api/acct/referrals/:id/start', requireAdmin, requireRole('accounting'
   }
   const date = String(b.work_start_date || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: '请填写上班日期' });
-  const code = _referralCodeNorm(b.timeclock_code);
+  // 没填码但已关联员工档案 → 用档案里的打卡码
+  const code = _referralCodeNorm(b.timeclock_code) || _referralCodeNorm(_referralProfileCode(cur));
   if (!code) return res.status(400).json({ error: '请填写工人的打卡 QR 码（扫码，或手输 8 位打卡密码）' });
   if (!_referralFindWorker(code)) return res.status(400).json({ error: '系统里查不到这个打卡码，请核对（工人登记后短信里收到的 8 位密码 / 二维码）' });
   const dup = db.prepare(`SELECT id, worker_name FROM referrals WHERE timeclock_code=? AND id!=?`).get(code, cur.id);
