@@ -41,6 +41,21 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
 @media (max-width:1180px){.ref-top{grid-template-columns:1fr 1fr}.ref-side{grid-column:1/-1;flex-direction:row-reverse;justify-content:space-between;align-items:center}}
 @media (max-width:640px){.ref-top{grid-template-columns:1fr}.ref-ppl{grid-template-columns:1fr}.ref-arrow{display:none}}
 
+/* ── Referral 三个阶段: 面试安排 / 上班中 / 已满三个月 ── */
+.ref-stages{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.7rem}
+.ref-stage{border:1px solid var(--g200);background:#fff;border-radius:10px;padding:.5rem 1rem;cursor:pointer;font-weight:800;font-size:.9rem;color:var(--g600);text-align:left;font-family:inherit;min-width:170px}
+.ref-stage small{display:block;font-weight:400;font-size:.7rem;color:var(--g400);margin-top:1px}
+.ref-stage b{display:inline-block;min-width:1.4rem;text-align:center;margin-left:.3rem;background:var(--g100);border-radius:999px;padding:0 .4rem;font-size:.76rem}
+.ref-stage.on{border-color:#0f4c6b;background:#0f4c6b;color:#fff}
+.ref-stage.on small{color:#cbd5e1}.ref-stage.on b{background:rgba(255,255,255,.2)}
+.ref-wks{display:flex;gap:.35rem;flex-wrap:wrap;padding:0 1rem .55rem}
+.ref-wk{border:1px solid var(--g200);border-radius:8px;padding:.2rem .5rem;font-size:.72rem;background:#fff;white-space:nowrap}
+.ref-wk.ok{border-color:#a7f3d0;background:#ecfdf5;color:#047857}
+.ref-wk.none{color:var(--g400)}
+.ref-prog{flex:0 0 120px;height:6px;border-radius:999px;background:var(--g200);overflow:hidden}
+.ref-prog i{display:block;height:100%;background:#16a34a}
+@media (max-width:640px){.ref-stage{min-width:0;flex:1}}
+
 /* ── 银行直连表: 列表在卡片内滚动, 表头 + 合计行吸顶不动 ── */
 #bankTblWrap{max-height:calc(100vh - 120px);overflow:auto;padding:0 14px 12px;overscroll-behavior:contain}
 #bankTblWrap table{border-collapse:separate;border-spacing:0}
@@ -134,15 +149,15 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
 
 <div class="wrap" id="main" style="display:none">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap">
-    <h1>🧾 会计对账 · Accounting Review</h1>
+    <h1 id="mainTitle">🧾 会计对账 · Accounting Review</h1>
     <div style="display:flex;align-items:center;gap:.5rem">
       <span id="whoami" style="font-size:.82rem;color:var(--g500)"></span>
       <button class="btn btn-sm btn-outline" onclick="acctLogout()">退出</button>
     </div>
   </div>
-  <p style="color:var(--g500);font-size:.85rem;margin:.35rem 0 .9rem">发票与银行流水<strong>只读</strong>——不能修改任何数据；点「查看 / 批注」打开文件，开启「圈选批注」后在页面上<strong>拖动圈出</strong>要说明的地方并填写备注。</p>
+  <p id="mainSub" style="color:var(--g500);font-size:.85rem;margin:.35rem 0 .9rem">发票与银行流水<strong>只读</strong>——不能修改任何数据；点「查看 / 批注」打开文件，开启「圈选批注」后在页面上<strong>拖动圈出</strong>要说明的地方并填写备注。</p>
 
-  <div style="display:flex;border-bottom:1px solid var(--g200);margin-bottom:.8rem;background:#fff;border-radius:10px 10px 0 0;padding:0 .4rem">
+  <div id="tabBar" style="display:flex;border-bottom:1px solid var(--g200);margin-bottom:.8rem;background:#fff;border-radius:10px 10px 0 0;padding:0 .4rem">
     <button class="tab on" id="tabInv" onclick="showTab('inv')">📄 发票 Invoices</button>
     <button class="tab" id="tabStmt" onclick="showTab('stmt')" style="display:none">🏦 银行流水 Bank Statements</button>
     <button class="tab" id="tabClaims" onclick="showTab('claims')">⚠️ 赔偿事故 Claims</button>
@@ -397,6 +412,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
 
   <!-- 🤝 介绍费 Referral: 工头介绍工人 → 录入面试/上工信息 → 会计关联发票 → 管理员核查决定是否支付 → 会计记付款并关联银行记录 -->
   <div id="paneRef" style="display:none">
+    <div id="refStages" class="ref-stages"></div>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
       <input type="text" id="refSearch" placeholder="搜工头 / 工人 / 电话 / 仓库…" oninput="renderRefList()" style="width:230px">
       <select id="refFilter" onchange="renderRefList()">
@@ -410,6 +426,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       </select>
       <button class="btn btn-blue" id="btnRefAdd" onclick="openRefAdd()" style="display:none">＋ 新增介绍</button>
       <button class="btn btn-outline" onclick="openFmList()">👷 工头名单</button>
+      <a id="refOwnPage" class="btn btn-outline" href="/referral" target="_blank" title="只看介绍费的独立页面">↗ Referral 页面</a>
       <span id="refStats" style="font-size:.8rem;color:var(--g500)"></span>
     </div>
     <div id="refBody" style="display:flex;flex-direction:column;gap:.75rem"><div class="card" style="color:var(--g400)">加载中…</div></div>
@@ -477,6 +494,32 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
   </div>
 
   <!-- ➕ 新增 / 编辑介绍费弹窗 -->
+  <!-- 👷 通过面试开始上班: 上班日期 + 工人打卡 QR 码 (扫码 / 上传截图 / 手输 8 位) -->
+  <div id="refStartModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:93;align-items:center;justify-content:center;padding:16px">
+    <div class="card" style="max-width:440px;width:100%;padding:1.2rem 1.2rem 1rem;max-height:92vh;overflow:auto">
+      <div style="font-weight:800;margin-bottom:.2rem">👷 开始上班</div>
+      <div id="rsWho" style="font-size:.78rem;color:var(--g500);margin-bottom:.7rem"></div>
+      <label style="font-size:.76rem;color:var(--g500)">上班日期 <span style="color:#dc2626">*</span> <span style="font-size:.7rem;color:var(--g400)">从这天起算三个月 referral 期</span></label>
+      <input type="date" id="rsDate" style="width:100%;margin:.15rem 0 .6rem">
+      <label style="font-size:.76rem;color:var(--g500)">工人的打卡 QR 码 <span style="color:#dc2626">*</span> <span style="font-size:.7rem;color:var(--g400)">扫码、上传截图，或手输 8 位打卡密码</span></label>
+      <div style="display:flex;gap:.35rem;margin:.15rem 0 .3rem">
+        <input type="text" id="rsCode" inputmode="numeric" autocomplete="off" placeholder="8 位数字" oninput="rsCodeInput()" style="flex:1;min-width:0;font-size:1rem;letter-spacing:.08em">
+        <button class="btn btn-sm btn-outline" onclick="rsScan()">📷 扫码</button>
+        <label class="btn btn-sm btn-outline" style="margin:0">🖼 截图<input type="file" accept="image/*" onchange="rsImage(this)" style="display:none"></label>
+      </div>
+      <div id="rsScanBox" style="display:none;margin:.3rem 0;position:relative">
+        <video id="rsVid" playsinline muted style="width:100%;border-radius:8px;background:#000;max-height:260px;object-fit:cover"></video>
+        <button class="btn btn-sm btn-outline" onclick="rsScanStop()" style="position:absolute;top:6px;right:6px">✕ 关闭</button>
+      </div>
+      <div id="rsInfo" style="font-size:.8rem;min-height:1.2rem;margin-bottom:.6rem"></div>
+      <div style="font-size:.72rem;color:var(--g400);margin-bottom:.8rem">打卡码对上员工档案后，按每周打卡工时核对介绍费（这周有没有干活一眼看出）。工人登记后短信里收到的 8 位密码 / 二维码就是它。</div>
+      <div style="display:flex;justify-content:flex-end;gap:.5rem">
+        <button class="btn btn-outline" onclick="closeRefStart()">取消</button>
+        <button class="btn btn-blue" id="rsSubmit" onclick="submitRefStart()">保存</button>
+      </div>
+    </div>
+  </div>
+
   <div id="refAddModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:92;align-items:center;justify-content:center;padding:16px">
     <div class="card" style="max-width:560px;width:100%;padding:1.2rem 1.2rem 1rem;max-height:92vh;overflow:auto">
       <div id="refAddTitle" style="font-weight:800;margin-bottom:.2rem">🤝 新增介绍</div>
@@ -1004,6 +1047,8 @@ function finishLogin(r) {
   ROLE = r.role;
   enterMain();
 }
+const REF_ONLY = /^\/referral\/?$/.test(location.pathname);
+if (REF_ONLY) document.title = 'Referral · Prime Anchor';
 function enterMain() {
   document.getElementById('gate').style.display = 'none';
   document.getElementById('main').style.display = '';
@@ -1016,6 +1061,14 @@ function enterMain() {
   document.getElementById('btnFeeAdd').style.display = ['admin', 'accounting'].includes(USER.role) ? '' : 'none';
   // 新增介绍费: 客服/会计/管理员都能录入 (一律进「待核查」由管理员定夺)
   document.getElementById('btnRefAdd').style.display = ['admin', 'accounting', 'cs'].includes(USER.role) ? '' : 'none';
+  if (REF_ONLY) {
+    // /referral 独立页面: 只留介绍费, 按 面试 / 上班中 / 已满三个月 分页
+    document.getElementById('tabBar').style.display = 'none';
+    document.getElementById('refOwnPage').style.display = 'none';
+    document.getElementById('mainTitle').textContent = '🤝 Referral · 介绍';
+    document.getElementById('mainSub').textContent = '面试安排 → 通过面试开始上班（填工人打卡 QR 码，按打卡工时对上每周付款）→ 上班满三个月 referral 期结束。';
+    showTab('ref');
+  }
   loadAll();
   bankOauthResume();
   gustoOauthResume();
@@ -1508,6 +1561,14 @@ function renderRefList() {
   if (q) list = list.filter(r => [r.foreman_name, r.foreman_phone, r.worker_name, r.worker_phone, r.worker_wage, r.warehouse_name, r.warehouse_address, r.job_title, r.description, ...(r.invoices || []).map(v => v.invoice_number + ' ' + v.company_name)].join(' ').toLowerCase().includes(q));
   if (flt === 'noshow') list = list.filter(r => r.interview_status === 'no_show');
   else if (flt) list = list.filter(r => _refOverall(r) === flt);
+  // 三个阶段分页: 数字按当前搜索/筛选算, 切过去不会扑空
+  const stN = { interview: 0, working: 0, ended: 0 };
+  list.forEach(r => stN[_refStage(r)]++);
+  const stBtn = (k, t, sub) => `<button class="ref-stage${_refStageSel === k ? ' on' : ''}" onclick="refSetStage('${k}')">${t}<b>${stN[k]}</b><small>${sub}</small></button>`;
+  document.getElementById('refStages').innerHTML = stBtn('interview', '📅 面试安排', '约了面试、还没开始上班')
+    + stBtn('working', '👷 上班中', '通过面试已上班 · 三个月内')
+    + stBtn('ended', '⏹ 已满三个月', 'referral 期结束');
+  list = list.filter(r => _refStage(r) === _refStageSel);
   const pendN = _refList.filter(r => r.review_status === 'pending').length;
   const waitN = _refList.filter(r => ['approved', 'partpaid'].includes(_refOverall(r))).length;
   const paidN = _refList.filter(r => _refOverall(r) === 'paid').length;
@@ -1599,6 +1660,7 @@ function renderRefList() {
         ${r.description ? `<div class="ref-desc">💬 ${esc(r.description)}</div>` : ''}
       </div>
       <div class="ref-foot">
+        ${_refWorkRows(r)}
         ${reviewBar}
         <div class="ref-row"><b style="color:var(--g600)">🗓 每周付款</b>${weekHint}<span style="flex:1"></span>
           ${canInv ? `<button class="btn btn-sm btn-outline" onclick="openRefInv(${r.id})">${weeks.length ? '✎ 改关联发票' : '＋ 关联发票'}</button>` : ''}</div>
@@ -1607,7 +1669,214 @@ function renderRefList() {
         ${legacy ? `<div class="ref-row">${legacy}</div>` : ''}
       </div>
     </div>`;
-  }).join('') : '<div class="card" style="color:var(--g400)">暂无介绍费记录，点「＋ 新增介绍」添加。</div>';
+  }).join('') : `<div class="card" style="color:var(--g400)">${{ interview: '没有在面试阶段的介绍。点「＋ 新增介绍」添加。', working: '没有正在上班的介绍。面试通过后在「📅 面试安排」里点「👷 开始上班」。', ended: '还没有满三个月的介绍。' }[_refStageSel]}</div>`;
+}
+// ── Referral 阶段: 没上班日期 = 面试阶段; 上班日期起三个月内 = 上班中; 满三个月 = 结束 ──
+let _refStageSel = (() => { try { return localStorage.getItem('ref_stage') || 'interview'; } catch (e) { return 'interview'; } })();
+function refSetStage(k) {
+  _refStageSel = k;
+  try { localStorage.setItem('ref_stage', k); } catch (e) {}
+  renderRefList();
+}
+const _refYmd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function _refEndDate(r) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(r.work_start_date || '')) return null;
+  const d = new Date(r.work_start_date + 'T00:00:00'), day = d.getDate();
+  d.setMonth(d.getMonth() + 3);
+  if (d.getDate() !== day) d.setDate(0); // 11/30 + 3 个月 → 2/28, 不跳到 3 月
+  return d;
+}
+function _refStage(r) {
+  const end = _refEndDate(r);
+  if (!end) return 'interview';
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return today >= end ? 'ended' : 'working';
+}
+function _refCanStart(r) {
+  return USER.role === 'admin' || (['accounting', 'cs'].includes(USER.role) && (r.review_status === 'pending' || !r.work_start_date));
+}
+// 上班那一栏: 上班日期 + 三个月进度 + 打卡码对上的员工 + 每周打卡工时
+function _refWorkRows(r) {
+  const st = _refStage(r);
+  if (st === 'interview') {
+    if (!_refCanStart(r) || r.interview_status === 'no_show' || r.review_status === 'rejected') return '';
+    return `<div class="ref-row" style="background:#f0f9ff;color:#075985"><b>👷 通过面试开始上班了？</b><span style="color:var(--g500)">填上班日期和工人的打卡 QR 码，按打卡工时对上每周付款</span><span style="flex:1"></span>
+      <button class="btn btn-sm btn-blue" onclick="openRefStart(${r.id})">👷 开始上班</button></div>`;
+  }
+  const start = new Date(r.work_start_date + 'T00:00:00'), end = _refEndDate(r);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const total = Math.max(1, Math.round((end - start) / 86400000));
+  const done = Math.min(total, Math.max(0, Math.round((today - start) / 86400000)));
+  const left = total - done;
+  const c = r.clock || {};
+  const code = r.timeclock_code ? `••••${esc(r.timeclock_code.slice(-4))}` : '';
+  const who = c.found
+    ? `🔗 <b>${esc(c.name || '—')}</b> <span style="color:var(--g400)">打卡码 ${code}</span>${c.employee_id ? '' : ' <span style="color:#b45309">（还没建员工档案，暂无打卡记录）</span>'}`
+    : `<span style="color:#dc2626">⚠ 打卡码 ${code} 在系统里查不到员工</span>`;
+  const ops = _refCanStart(r) ? ` <a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="openRefStart(${r.id})">改</a> · <a style="cursor:pointer;color:var(--g400);text-decoration:underline" onclick="refStartClear(${r.id})">撤回到面试</a>` : '';
+  const row = `<div class="ref-row"><b style="color:var(--g600)">👷 上班</b><span><b>${esc(r.work_start_date)}</b> 起 → ${_refYmd(end)}</span>
+    <span class="ref-prog" title="三个月 referral 期"><i style="width:${Math.round(done / total * 100)}%"></i></span>
+    <span style="color:${st === 'ended' ? '#047857' : 'var(--g500)'}">${st === 'ended' ? '✅ 已满三个月' : `第 ${Math.floor(done / 7) + 1} 周 · 还剩 ${left} 天`}</span>
+    <span style="color:var(--g300)">|</span><span>${who}</span>${c.found && c.employee_id ? `<span style="color:var(--g500)">· 共 <b>${c.total_hours || 0}</b> 小时</span>` : ''}<span style="flex:1"></span><span style="font-size:.74rem">${ops}</span></div>`;
+  // 每周打卡: 从上班那周到今天 (最多到三个月期满) 每周一格, 没打卡的也列出来
+  let chips = '';
+  if (c.found && c.employee_id) {
+    const hrs = {}; (c.weeks || []).forEach(w => { hrs[w.week_start] = w; });
+    const wk = new Date(start); wk.setDate(wk.getDate() - ((wk.getDay() + 6) % 7));
+    const stop = today < end ? today : end;
+    const cells = [];
+    for (let i = 1; wk <= stop && i <= 20; i++, wk.setDate(wk.getDate() + 7)) {
+      const w = hrs[_refYmd(wk)];
+      const lab = `第${i}周 ${wk.getMonth() + 1}/${wk.getDate()}`;
+      cells.push(w && w.hours > 0 ? `<span class="ref-wk ok">${lab} · <b>${w.hours}h</b> · ${w.days}天</span>` : `<span class="ref-wk none">${lab} · 没打卡</span>`);
+    }
+    chips = cells.length ? `<div class="ref-wks">${cells.join('')}</div>` : '';
+  }
+  return row + chips;
+}
+// ── 👷 开始上班弹窗 ──
+let _rsId = null, _rsTimer = null, _rsStream = null, _rsScanT = null, _rsJsqr = null;
+function openRefStart(id) {
+  const r = _refList.find(x => x.id === id);
+  if (!r) return;
+  _rsId = id;
+  document.getElementById('rsWho').textContent = `${r.worker_name || ''}${r.worker_phone ? ' · ' + r.worker_phone : ''}${r.warehouse_name || r.warehouse_address ? ' · ' + (r.warehouse_name || r.warehouse_address) : ''}`;
+  document.getElementById('rsDate').value = r.work_start_date || _refYmd(new Date());
+  document.getElementById('rsCode').value = r.timeclock_code || '';
+  document.getElementById('rsInfo').innerHTML = '';
+  document.getElementById('refStartModal').style.display = 'flex';
+  if (r.timeclock_code) rsLookup();
+}
+function closeRefStart() {
+  rsScanStop();
+  document.getElementById('refStartModal').style.display = 'none';
+}
+const _rsDigits = v => { const m = /^\s*(?:PAWTC:)?\s*(\d{8})\s*$/i.exec(String(v || '')); return m ? m[1] : String(v || '').replace(/^\s*PAWTC:/i, '').replace(/\D/g, ''); };
+function rsCodeInput() {
+  clearTimeout(_rsTimer);
+  _rsTimer = setTimeout(rsLookup, 300);
+}
+async function rsLookup() {
+  const info = document.getElementById('rsInfo');
+  const d = _rsDigits(document.getElementById('rsCode').value);
+  if (d.length !== 8) { info.innerHTML = d ? '<span style="color:var(--g400)">打卡码是 8 位数字</span>' : ''; return; }
+  info.innerHTML = '<span style="color:var(--g400)">查找中…</span>';
+  try {
+    const j = await api('/api/acct/referral-clock-lookup?code=' + d);
+    if (_rsDigits(document.getElementById('rsCode').value) !== d) return;
+    if (!j.found) { info.innerHTML = `<span style="color:#dc2626">⚠ ${esc(j.error || '查不到')}</span>`; return; }
+    const r = _refList.find(x => x.id === _rsId) || {};
+    const norm = v => String(v || '').toLowerCase().replace(/[^a-z]/g, '');
+    const pd = v => String(v || '').replace(/\D/g, '').slice(-10);
+    const same = (pd(j.phone) && pd(j.phone) === pd(r.worker_phone)) || (norm(j.name) && norm(j.name) === norm(r.worker_name));
+    info.innerHTML = `<span style="color:#047857">✅ ${esc(j.name || '—')}${j.phone ? ' · ' + esc(j.phone) : ''}</span>`
+      + (same ? '' : ` <span style="color:#b45309">— 和被介绍人「${esc(r.worker_name || '')}」对不上，请确认是同一个人</span>`);
+  } catch (e) { info.innerHTML = `<span style="color:#dc2626">${esc(e.message || '查找失败')}</span>`; }
+}
+function _rsLoadJsQR() {
+  if (window.jsQR) return Promise.resolve();
+  if (_rsJsqr) return _rsJsqr;
+  _rsJsqr = new Promise((ok, bad) => {
+    const sc = document.createElement('script');
+    sc.src = '/js/jsqr.min.js';
+    sc.onload = ok; sc.onerror = () => { _rsJsqr = null; bad(new Error('QR 组件加载失败')); };
+    document.head.appendChild(sc);
+  });
+  return _rsJsqr;
+}
+function _rsGot(text) {
+  const d = _rsDigits(text);
+  if (d.length !== 8) return false;
+  document.getElementById('rsCode').value = d;
+  rsLookup();
+  return true;
+}
+async function rsScan() {
+  const info = document.getElementById('rsInfo');
+  try {
+    _rsStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+  } catch (e) { info.innerHTML = '<span style="color:#dc2626">打不开摄像头，可以上传截图或手输 8 位密码</span>'; return; }
+  const v = document.getElementById('rsVid');
+  document.getElementById('rsScanBox').style.display = '';
+  v.srcObject = _rsStream; v.play().catch(() => {});
+  let det = null;
+  if ('BarcodeDetector' in window) { try { det = new BarcodeDetector({ formats: ['qr_code'] }); } catch (e) {} }
+  if (!det) { try { await _rsLoadJsQR(); } catch (e) { info.textContent = e.message; return; } }
+  const cvs = document.createElement('canvas');
+  const tick = async () => {
+    if (!_rsStream) return;
+    if (v.videoWidth) {
+      try {
+        let text = '';
+        if (det) { const cs = await det.detect(v); if (cs && cs.length) text = cs[0].rawValue || ''; }
+        else {
+          const w = 480, h = Math.round(v.videoHeight * (w / v.videoWidth)) || 360;
+          cvs.width = w; cvs.height = h;
+          const ctx = cvs.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(v, 0, 0, w, h);
+          const q = window.jsQR(ctx.getImageData(0, 0, w, h).data, w, h);
+          if (q && q.data) text = q.data;
+        }
+        if (text && _rsGot(text)) { rsScanStop(); return; }
+        if (text) info.innerHTML = '<span style="color:#b45309">这不是打卡二维码，请扫工人手机上的打卡 QR 码</span>';
+      } catch (e) {}
+    }
+    _rsScanT = setTimeout(tick, 250);
+  };
+  tick();
+}
+function rsScanStop() {
+  clearTimeout(_rsScanT); _rsScanT = null;
+  if (_rsStream) { _rsStream.getTracks().forEach(t => t.stop()); _rsStream = null; }
+  const box = document.getElementById('rsScanBox');
+  if (box) box.style.display = 'none';
+}
+// 工人发来的二维码截图 / 照片: 本地解码, 不上传
+async function rsImage(inp) {
+  const f = inp.files && inp.files[0];
+  inp.value = '';
+  if (!f) return;
+  const info = document.getElementById('rsInfo');
+  try {
+    await _rsLoadJsQR();
+    const img = new Image();
+    const url = URL.createObjectURL(f);
+    await new Promise((ok, bad) => { img.onload = ok; img.onerror = () => bad(new Error('图片打不开')); img.src = url; });
+    const sc = Math.min(1, 1200 / Math.max(img.width, img.height));
+    const w = Math.round(img.width * sc), h = Math.round(img.height * sc);
+    const cvs = document.createElement('canvas'); cvs.width = w; cvs.height = h;
+    const ctx = cvs.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, w, h);
+    URL.revokeObjectURL(url);
+    const q = window.jsQR(ctx.getImageData(0, 0, w, h).data, w, h);
+    if (!q || !q.data) { info.innerHTML = '<span style="color:#dc2626">图片里没认出二维码，换一张清楚的或手输 8 位密码</span>'; return; }
+    if (!_rsGot(q.data)) info.innerHTML = '<span style="color:#b45309">这不是打卡二维码</span>';
+  } catch (e) { info.innerHTML = `<span style="color:#dc2626">${esc(e.message || '识别失败')}</span>`; }
+}
+async function submitRefStart() {
+  const date = document.getElementById('rsDate').value;
+  const code = _rsDigits(document.getElementById('rsCode').value);
+  if (!date) return toast('请填写上班日期', true);
+  if (code.length !== 8) return toast('请填写工人的打卡 QR 码（扫码，或手输 8 位打卡密码）', true);
+  const btn = document.getElementById('rsSubmit');
+  btn.disabled = true;
+  try {
+    const j = await api(`/api/acct/referrals/${_rsId}/start`, { method: 'POST', body: JSON.stringify({ work_start_date: date, timeclock_code: code }) });
+    if (j && j.error) throw new Error(j.error);
+    closeRefStart();
+    toast('✅ 已记开始上班，移到「👷 上班中」');
+    loadRefList();
+  } catch (e) { toast(e.message || '保存失败', true); }
+  finally { btn.disabled = false; }
+}
+async function refStartClear(id) {
+  if (!confirm('撤回到面试阶段？会清掉上班日期和打卡码。')) return;
+  try {
+    const j = await api(`/api/acct/referrals/${id}/start`, { method: 'POST', body: JSON.stringify({ action: 'clear' }) });
+    if (j && j.error) throw new Error(j.error);
+    toast('已撤回到面试阶段');
+    loadRefList();
+  } catch (e) { toast(e.message || '操作失败', true); }
 }
 async function refWeekFee(id, v) {
   try {

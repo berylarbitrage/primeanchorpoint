@@ -891,6 +891,10 @@ try { db.exec(`ALTER TABLE referrals ADD COLUMN worker_wage TEXT DEFAULT ''`); }
 // 关联 post 的招聘岗位: 存 jobs.id + 标题快照 (岗位之后改名/关闭/删掉, 介绍记录照样能看)
 try { db.exec(`ALTER TABLE referrals ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE referrals ADD COLUMN job_title TEXT DEFAULT ''`); } catch(e) {}
+// 通过面试开始上班: 记上班日期 (work_start_date) + 工人的打卡 QR 码 (8 位打卡密码, employees.timeclock_code),
+// 靠打卡码对上员工档案和打卡记录, 按周工时核对介绍费; 上班满 3 个月 referral 期结束
+try { db.exec(`ALTER TABLE referrals ADD COLUMN timeclock_code TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE referrals ADD COLUMN started_by TEXT DEFAULT ''`); } catch(e) {}
 // 介绍费按周付: 关联的每张发票 (一周账期) = 一周, 每周单独记介绍费金额和付款批注
 // (acct_pay_notes target_type='referralweek', target_id=这里的 id); fee 为空 = 按介绍记录上的介绍费
 try { db.exec(`CREATE TABLE IF NOT EXISTS referral_weeks (
@@ -39991,6 +39995,10 @@ app.delete('/api/admin/bank-statements/:id', requireAdmin, blockManager, (req, r
 const requireAcctView = requireRole('accounting', 'cs', 'admin', 'staff');
 const requireAcctWrite = requireRole('accounting', 'cs', 'admin');
 
+// Referral 独立页面: 同一个会计页, 前端看到 /referral 只显示介绍费 (面试 / 上班中 / 已满三个月)
+app.get('/referral', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'accounting.html'));
+});
 app.get('/accounting', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'accounting.html'));
 });
@@ -40649,8 +40657,80 @@ app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
     } catch (e) {}
     const out = rows.map(r => _referralOut(r, invMap, payNotes, weeksBy, weekNotes));
     out.forEach(r => { r.foreman_state = fmStByPhone[normP(r.foreman_phone)] || fmStByName[String(r.foreman_name).trim().toLowerCase()] || ''; });
+    out.forEach(r => { r.clock = r.timeclock_code ? _referralClock(r.timeclock_code, r.work_start_date) : null; });
     res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 打卡 QR 码 → 员工: 扫出来是 PAWTC:12345678, 手输就是 8 位数字; 只查不建档 (不像打卡机那样自动建员工)
+function _referralCodeNorm(v) {
+  const d = String(v || '').trim().replace(/^PAWTC:/i, '').replace(/\D/g, '');
+  return /^\d{8}$/.test(d) ? d : '';
+}
+function _referralFindWorker(code) {
+  const emp = db.prepare(`SELECT id, first_name, last_name, phone, status FROM employees WHERE timeclock_code=?`).get(code);
+  if (emp) return { employee_id: emp.id, name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim(), phone: emp.phone || '', status: emp.status || '' };
+  const sub = db.prepare(`SELECT id, name, phone, employee_id FROM applicant_submissions WHERE timeclock_code=?`).get(code);
+  if (!sub) return null;
+  if (sub.employee_id) {
+    const e2 = db.prepare(`SELECT id, first_name, last_name, phone, status FROM employees WHERE id=?`).get(sub.employee_id);
+    if (e2) return { employee_id: e2.id, name: `${e2.first_name || ''} ${e2.last_name || ''}`.trim(), phone: e2.phone || '', status: e2.status || '' };
+  }
+  return { employee_id: null, name: sub.name || '', phone: sub.phone || '', status: 'applicant' };
+}
+// 打卡工时按周汇总 (周一开始), 从上班日期算起: 介绍费按周付, 这周有没有干活一眼看出
+function _referralClock(code, startDate) {
+  try {
+    const w = _referralFindWorker(code);
+    if (!w) return { found: false };
+    const out = { found: true, name: w.name, phone: w.phone, status: w.status, employee_id: w.employee_id, weeks: [], total_hours: 0, last_clock_in: '' };
+    if (!w.employee_id) return out;
+    const since = /^\d{4}-\d{2}-\d{2}$/.test(startDate || '') ? startDate : '1970-01-01';
+    const rows = db.prepare(`SELECT clock_in, total_hours FROM time_entries WHERE employee_id=? AND date(clock_in) >= date(?) ORDER BY clock_in`).all(w.employee_id, since);
+    const byWeek = {};
+    for (const t of rows) {
+      const d = new Date(String(t.clock_in).slice(0, 10) + 'T00:00:00Z');
+      if (isNaN(d)) continue;
+      d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+      const k = d.toISOString().slice(0, 10);
+      const x = byWeek[k] || (byWeek[k] = { week_start: k, hours: 0, days: new Set() });
+      x.hours += Number(t.total_hours) || 0;
+      x.days.add(String(t.clock_in).slice(0, 10));
+      out.last_clock_in = String(t.clock_in);
+    }
+    out.weeks = Object.values(byWeek).sort((a, b) => a.week_start.localeCompare(b.week_start))
+      .map(x => ({ week_start: x.week_start, hours: Math.round(x.hours * 100) / 100, days: x.days.size }));
+    out.total_hours = Math.round(out.weeks.reduce((t, x) => t + x.hours, 0) * 100) / 100;
+    return out;
+  } catch (e) { return { found: false, error: e.message }; }
+}
+// 查打卡码对应哪个工人 (开始上班弹窗里填完就显示, 防填错)
+app.get('/api/acct/referral-clock-lookup', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+  const code = _referralCodeNorm(req.query.code);
+  if (!code) return res.json({ found: false, error: '打卡码是 8 位数字' });
+  const w = _referralFindWorker(code);
+  res.json(w ? { found: true, code, name: w.name, phone: w.phone, status: w.status } : { found: false, code, error: '系统里查不到这个打卡码' });
+});
+// 通过面试 → 开始上班: 记上班日期 + 工人打卡 QR 码 (action=clear 撤回到面试阶段)
+app.post('/api/acct/referrals/:id/start', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+  const cur = db.prepare('SELECT * FROM referrals WHERE id=?').get(parseInt(req.params.id));
+  if (!cur) return res.status(404).json({ error: '记录不存在' });
+  if (req.userRole !== 'admin' && cur.review_status !== 'pending' && cur.work_start_date) return res.status(403).json({ error: '该记录管理员已核查，如需修改请联系管理员' });
+  const b = req.body || {};
+  if (b.action === 'clear') {
+    db.prepare(`UPDATE referrals SET work_start_date='', timeclock_code='', started_by='', updated_at=datetime('now') WHERE id=?`).run(cur.id);
+    return res.json({ success: true });
+  }
+  const date = String(b.work_start_date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: '请填写上班日期' });
+  const code = _referralCodeNorm(b.timeclock_code);
+  if (!code) return res.status(400).json({ error: '请填写工人的打卡 QR 码（扫码，或手输 8 位打卡密码）' });
+  if (!_referralFindWorker(code)) return res.status(400).json({ error: '系统里查不到这个打卡码，请核对（工人登记后短信里收到的 8 位密码 / 二维码）' });
+  const dup = db.prepare(`SELECT id, worker_name FROM referrals WHERE timeclock_code=? AND id!=?`).get(code, cur.id);
+  if (dup) return res.status(400).json({ error: `这个打卡码已经关联在另一条介绍（${dup.worker_name || '#' + dup.id}）上了` });
+  db.prepare(`UPDATE referrals SET work_start_date=?, timeclock_code=?, started_by=?, updated_at=datetime('now') WHERE id=?`)
+    .run(date, code, req.userName || '', cur.id);
+  res.json({ success: true });
 });
 
 // 介绍费基本字段收取 (新增/编辑共用): 工头/工人的姓名电话、仓库和地址、面试时间。
