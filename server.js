@@ -40023,8 +40023,19 @@ function _acctPayNoteOut(n) {
   let ids = []; try { ids = JSON.parse(n.txn_ids || '[]'); } catch (e) { ids = []; }
   if (!Array.isArray(ids)) ids = [];
   n.txn_ids = ids;
-  n.txns = ids.length ? db.prepare(`SELECT txn_id, date, name, merchant, amount, account_id FROM plaid_transactions
-    WHERE txn_id IN (${ids.map(() => '?').join(',')})`).all(...ids) : [];
+  // acct_label: 收款银行账户简称 (银行 + 公司标签 + 尾号), 列表直接显示「哪个银行收的」
+  n.txns = ids.length ? db.prepare(`SELECT t.txn_id, t.date, t.name, t.merchant, t.amount, t.account_id,
+      TRIM(COALESCE(i.institution,'') || ' ' || COALESCE(NULLIF(a.company_label,''), '') || CASE WHEN COALESCE(a.mask,'')<>'' THEN ' ··' || a.mask ELSE '' END) AS acct_label
+    FROM plaid_transactions t LEFT JOIN plaid_accounts a ON a.account_id=t.account_id LEFT JOIN plaid_items i ON i.item_id=a.item_id
+    WHERE t.txn_id IN (${ids.map(() => '?').join(',')})`).all(...ids) : [];
+  // 关联银行交易上标注的「原因/备注」(如「分两笔收款…」): 付款批注自己没写备注时, 列表显示这些
+  n.bank_notes = [];
+  if (ids.length) {
+    try {
+      db.prepare(`SELECT note FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id IN (${ids.map(() => '?').join(',')}) AND COALESCE(note,'')<>'' ORDER BY txn_date, id`)
+        .all(...ids).forEach(r => { const t = String(r.note).trim(); if (t && !n.bank_notes.includes(t)) n.bank_notes.push(t); });
+    } catch (e) {}
+  }
   let ph = []; try { ph = JSON.parse(n.photos || '[]'); } catch (e) { ph = []; }
   n.photos_urls = (Array.isArray(ph) ? ph : []).filter(Boolean).map(k => `/uploads/${path.basename(String(k))}`);
   delete n.photos;

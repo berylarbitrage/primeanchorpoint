@@ -1043,10 +1043,15 @@ function payNoteCell(type, id, pn, showTodo, noNote) {
   }
   const st = PAY_ST[pn.paid_status];
   const badge = st ? `<span style="background:${st[1]};color:${st[2]};border-radius:8px;padding:1px 7px;font-size:.72rem;font-weight:700;white-space:nowrap">${st[0]}</span> ` : '';
+  // 一行看清: 哪个银行收的 · 几笔 · 共多少钱 (没手填的从关联银行交易自动取)
   const parts = [];
-  if (pn.bank) parts.push(esc(pn.bank));
-  if (pn.amount != null) parts.push('<b>' + money(pn.amount) + '</b>');
+  const txns = pn.txns || [];
+  const banks = pn.bank ? [pn.bank] : [...new Set(txns.map(t => String(t.acct_label || '').trim()).filter(Boolean))];
+  if (banks.length) parts.push(esc(banks.join(' / ')));
   if ((pn.txn_ids || []).length) parts.push(`🏦 ${pn.txn_ids.length} 笔`);
+  const txnSum = txns.reduce((x, t) => x + Math.abs(Number(t.amount) || 0), 0);
+  const amt = pn.amount != null ? Number(pn.amount) : (txns.length ? txnSum : null);
+  if (amt != null && Number.isFinite(amt)) parts.push('<b>' + money(amt) + '</b>');
   if ((pn.photos_urls || []).length) parts.push(`📷 ${pn.photos_urls.length}`);
   if (noNote) return `<span style="white-space:nowrap">${badge}<span style="font-size:.76rem">${parts.join(' · ')}</span>${edit}</span>`;
   return `${badge}<span style="font-size:.76rem">${parts.join(' · ')}</span>${pn.note ? `<div style="font-size:.7rem;color:var(--g400);max-width:200px">${esc(pn.note)}</div>` : ''}${edit}`;
@@ -3065,8 +3070,13 @@ function _acctPayStatus(r) {
 }
 // 付款备注: 多付 / 少付 一眼分开 — 少付红底 ⬇, 多付蓝底 ⬆, 其他普通备注灰字
 // 先看备注文字 (多付/多转/少付/少转/短…), 没写明的再用 记录金额 vs 发票金额 判断
+// 付款备注文字: 付款批注自己写的优先, 没写就用关联银行交易标注里的备注
+function _invPayNoteText(r) {
+  const pn = r.pay_note || {};
+  return String(pn.note || '').trim() || (pn.bank_notes || []).join('；');
+}
 function _invPayDiff(r) {
-  const pn = r.pay_note || {}, t = String(pn.note || '');
+  const pn = r.pay_note || {}, t = _invPayNoteText(r);
   if (/少付|少转|少给|少打|短付|差了?\s*\$?\d|欠|underpa|short/i.test(t)) return 'under';
   if (/多付|多转|多给|多打|超付|overpa/i.test(t)) return 'over';
   const amt = Number(pn.amount), sub = Number(r.subtotal);
@@ -3075,7 +3085,7 @@ function _invPayDiff(r) {
   return '';
 }
 function _invPayNoteTag(r) {
-  const pn = r.pay_note || {}, t = String(pn.note || '').trim(), d = _invPayDiff(r);
+  const pn = r.pay_note || {}, t = _invPayNoteText(r), d = _invPayDiff(r);
   if (!t && !d) return '<span style="color:var(--g300)">—</span>';
   const diffAmt = pn.amount != null && Number.isFinite(Number(pn.amount)) ? Math.abs(Number(pn.amount) - Number(r.subtotal)) : 0;
   const txt = t ? esc(t) : (d === 'under' ? '少付 ' : '多付 ') + money(diffAmt);
