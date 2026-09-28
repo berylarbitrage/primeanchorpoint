@@ -35371,6 +35371,8 @@ async function plaidSyncItem(item) {
       if (t.pending_transaction_id) {
         db.prepare(`UPDATE bank_statement_txns SET plaid_txn_id=? WHERE kind='box' AND plaid_txn_id=?`)
           .run(t.transaction_id, t.pending_transaction_id);
+        // 会计付款批注 / 发票逐行付款备注里关联的交易号也一起换, 否则入账后显示「找不到银行记录」
+        _acctRelinkTxn(t.pending_transaction_id, t.transaction_id);
       }
     }
     for (const t of r.removed || []) { delTxn.run(t.transaction_id); removed++; }
@@ -40017,6 +40019,42 @@ app.post('/api/acct/register', loginRateLimit, (req, res) => {
   res.json({ success: true, awaiting_approval: true });
 });
 
+// 待入账 → 已入账换了交易号: 付款批注 (acct_pay_notes) 和发票逐行付款备注 (acct_line_pay_notes)
+// 的 txn_ids 里把旧号换成新号
+function _acctRelinkTxn(oldId, newId) {
+  if (!oldId || !newId || oldId === newId) return;
+  for (const tbl of ['acct_pay_notes', 'acct_line_pay_notes']) {
+    try {
+      db.prepare(`SELECT id, txn_ids FROM ${tbl} WHERE txn_ids LIKE ?`).all('%' + JSON.stringify(String(oldId)) + '%').forEach(n => {
+        let ids = []; try { ids = JSON.parse(n.txn_ids || '[]'); } catch (e) { return; }
+        if (!Array.isArray(ids) || !ids.includes(oldId)) return;
+        const next = [...new Set(ids.map(x => x === oldId ? newId : x))];
+        db.prepare(`UPDATE ${tbl} SET txn_ids=? WHERE id=?`).run(JSON.stringify(next), n.id);
+      });
+    } catch (e) {}
+  }
+}
+// 发票号 → 标了这个发票号的银行收款标注交易号 (交易还在银行记录里的)。
+// 付款批注关联的交易号失效时 (以前待入账换号没跟着改), 按发票号从标注找回来。
+function _acctInvoiceAnnTxns() {
+  const out = {};
+  try {
+    db.prepare(`SELECT b.plaid_txn_id, b.invoice_number, b.inv_items FROM bank_statement_txns b
+        JOIN plaid_transactions t ON t.txn_id=b.plaid_txn_id
+      WHERE b.kind='box' AND b.plaid_txn_id<>'' AND b.direction='in'
+        AND (COALESCE(b.invoice_number,'')<>'' OR COALESCE(b.inv_items,'[]') NOT IN ('','[]'))
+      ORDER BY t.date`).all().forEach(b => {
+      let items = []; try { items = JSON.parse(b.inv_items || '[]'); } catch (e) { items = []; }
+      let nums = (Array.isArray(items) ? items : []).map(x => String((x && x.inv) || '').trim().toUpperCase()).filter(Boolean);
+      if (!nums.length) nums = String(b.invoice_number || '').split(/[,，;；\s]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
+      for (const num of nums) {
+        const arr = out[num] || (out[num] = []);
+        if (!arr.includes(b.plaid_txn_id)) arr.push(b.plaid_txn_id);
+      }
+    });
+  } catch (e) {}
+  return out;
+}
 // 付款批注输出: txn_ids 解析并附银行交易概要, photos 转 /uploads URL (同 _lineNoteOut)
 function _acctPayNoteOut(n) {
   if (!n) return n;
@@ -40112,7 +40150,24 @@ app.get('/api/acct/invoices', requireAdmin, requireAcctView, (req, res) => {
     const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, subtotal, markup_rate, status, payment_status, created_at
       FROM invoices ORDER BY invoice_date DESC, id DESC`).all();
     const payNotes = _acctPayNotesFor('invoice');
-    for (const r of rows) { r.annotation_count = _acctAnnCount.get('invoice', r.id).n; r.pay_note = payNotes[r.id] || null; }
+    let annTxns = null;
+    for (const r of rows) {
+      r.annotation_count = _acctAnnCount.get('invoice', r.id).n;
+      const pn = r.pay_note = payNotes[r.id] || null;
+      // 关联的交易号有找不到的: 按发票号从银行收款标注找回 (标注在入账换号时已跟着改过),
+      // 找回的笔数刚好补上缺的就直接改写付款批注, 以后不用再找
+      if (pn && pn.txn_ids.length > pn.txns.length) {
+        annTxns = annTxns || _acctInvoiceAnnTxns();
+        const found = new Set(pn.txns.map(t => t.txn_id));
+        const missing = pn.txn_ids.filter(id => !found.has(id));
+        const cand = (annTxns[String(r.invoice_number || '').trim().toUpperCase()] || []).filter(id => !found.has(id));
+        if (cand.length && cand.length === missing.length) {
+          const next = [...pn.txn_ids.filter(id => found.has(id)), ...cand];
+          try { db.prepare("UPDATE acct_pay_notes SET txn_ids=? WHERE id=?").run(JSON.stringify(next), pn.id); } catch (e) {}
+          r.pay_note = _acctPayNoteOut(db.prepare('SELECT * FROM acct_pay_notes WHERE id=?').get(pn.id));
+        }
+      }
+    }
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
