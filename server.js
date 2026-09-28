@@ -40769,8 +40769,9 @@ app.get('/api/acct/referral-options', requireAdmin, requireAcctView, (req, res) 
       whs.push({ name, address });
     };
     try { db.prepare(`SELECT warehouse_name, address FROM warehouses WHERE is_active=1`).all().forEach(w => addW(w.warehouse_name, w.address)); } catch (e) {}
+    // 合作公司: 除已作废外全部 (含待签约/已停止) — 待签约的 active=0, 但工人可能已经在那干活了
     try {
-      db.prepare(`SELECT name, address, addresses FROM partners WHERE active=1`).all().forEach(p => {
+      db.prepare(`SELECT name, address, addresses FROM partners WHERE COALESCE(abolished,0)=0`).all().forEach(p => {
         let got = false;
         try {
           const arr = JSON.parse(p.addresses || '[]');
