@@ -1367,8 +1367,8 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   <div class="top">
     <h1>员工管理</h1>
     <div class="top-actions">
-      <button class="btn btn-outline" onclick="exportEmployeeCSV()">导出 CSV</button>
-      <button class="btn btn-outline" id="btnExportContacts" onclick="exportAllContacts()" style="display:none" title="系统里全部的姓名 + 手机号（员工、扫码登记、工头、介绍记录、短信/电话联系人、合作公司联系人），按手机号去重">📇 导出全部姓名电话</button>
+      <button class="btn btn-outline" onclick="openExportStates('employees')">导出 CSV</button>
+      <button class="btn btn-outline" id="btnExportContacts" onclick="openExportStates('contacts')" style="display:none" title="系统里全部的姓名 + 手机号（员工、扫码登记、工头、介绍记录、短信/电话联系人、合作公司联系人），按手机号去重">📇 导出全部姓名电话</button>
       <button class="btn btn-outline" id="empExportDocsBtn" onclick="exportSelectedEmpDocs()" title="勾选员工后导出其姓名/电话/邮箱与 SSN、EAD 证件（生成 PDF 档案）">📎 导出证件 (0)</button>
       <button class="btn btn-outline" id="empSelClearBtn" onclick="_empSelClear()" style="display:none;color:#b91c1c;border-color:#fca5a5" title="清空已勾选的员工">✕ 取消选择</button>
       <a class="btn btn-outline" href="/timeclock" target="_blank">打卡页面 ↗</a>
@@ -18445,17 +18445,60 @@ function editFromDetail() {
   closeEmpDetailModal();
   setTimeout(() => openEmpModal(currentEmpForDetail.id), 100);
 }
+// ── 导出前选州: 员工 CSV / 全部姓名电话 共用, 勾选 IL / TX / … (可多选, 含「州不明」) ──
+let _expMode = 'employees', _expCounts = null;
+async function openExportStates(mode) {
+  _expMode = mode;
+  document.getElementById('expStTitle').textContent = mode === 'contacts' ? '📇 导出全部姓名电话' : '📄 导出员工 CSV';
+  document.getElementById('expStHint').textContent = mode === 'contacts'
+    ? '勾选要导出的州（员工按员工号里的工作州，扫码登记按申请的仓库州，介绍工人按仓库地址）'
+    : '勾选要导出的州（按员工号里的工作州，没有就按住址州）';
+  document.getElementById('expStList').innerHTML = '<div style="color:#9ca3af">加载中…</div>';
+  document.getElementById('expStModal').style.display = 'flex';
+  try {
+    const r = await fetch(API + '/admin/export-states', { headers: { 'Authorization': 'Bearer ' + TOKEN } });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+    _expCounts = j[mode] || { states: {}, none: 0 };
+  } catch (e) { document.getElementById('expStList').innerHTML = '<div style="color:#dc2626">' + esc(e.message || '加载失败') + '</div>'; return; }
+  const sts = Object.entries(_expCounts.states).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const box = (v, label, n) => `<label style="display:flex;align-items:center;gap:6px;border:1.5px solid #e5e7eb;border-radius:9px;padding:7px 10px;cursor:pointer;font-weight:700;font-size:.86rem;margin:0">
+    <input type="checkbox" class="exp-st" value="${v}" checked onchange="expStSum()" style="width:auto;margin:0"> ${label} <span style="margin-left:auto;color:#9ca3af;font-weight:500">${n}</span></label>`;
+  document.getElementById('expStList').innerHTML = sts.map(([s, n]) => box(s, s, n)).join('')
+    + (_expCounts.none ? box('__none__', '<span style="color:#6b7280">州不明</span>', _expCounts.none) : '')
+    || '<div style="color:#9ca3af">没有数据</div>';
+  expStSum();
+}
+function expStAll(on) { document.querySelectorAll('.exp-st').forEach(c => { c.checked = on; }); expStSum(); }
+function _expSel() {
+  const on = [...document.querySelectorAll('.exp-st:checked')].map(c => c.value);
+  return { states: on.filter(v => v !== '__none__'), none: on.includes('__none__') };
+}
+function expStSum() {
+  const s = _expSel();
+  const n = s.states.length || s.none;
+  document.getElementById('expStSum').textContent = n ? '已选：' + [...s.states, ...(s.none ? ['州不明'] : [])].join('、') : '请至少勾选一个';
+  document.getElementById('expStGo').disabled = !n;
+}
+function doExportStates() {
+  const s = _expSel();
+  if (!s.states.length && !s.none) return;
+  const qs = 'states=' + encodeURIComponent(s.states.join(',')) + (s.none ? '&nostate=1' : '');
+  document.getElementById('expStModal').style.display = 'none';
+  if (_expMode === 'contacts') exportAllContacts(qs);
+  else window.open(API + '/admin/employees/export?token=' + TOKEN + '&' + qs, '_blank');
+}
 // 一键导出系统里全部 姓名 + 手机号 (仅管理员), 带登录令牌下载, 不把令牌放进网址
-async function exportAllContacts() {
+async function exportAllContacts(qs) {
   const btn = document.getElementById('btnExportContacts');
   btn.disabled = true; const old = btn.textContent; btn.textContent = '导出中…';
   try {
-    const r = await fetch(API + '/admin/export-contacts', { headers: { 'Authorization': 'Bearer ' + TOKEN } });
+    const r = await fetch(API + '/admin/export-contacts' + (qs ? '?' + qs : ''), { headers: { 'Authorization': 'Bearer ' + TOKEN } });
     if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || ('HTTP ' + r.status)); }
     const blob = await r.blob();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'contacts-' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.download = ((r.headers.get('Content-Disposition') || '').match(/filename=([^;]+)/) || [])[1] || ('contacts-' + new Date().toISOString().slice(0, 10) + '.csv');
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   } catch (e) { alert('导出失败：' + (e.message || e)); }
@@ -52242,5 +52285,23 @@ fetch('/api/build', { cache: 'no-store' }).then(r => r.json()).then(b => {
   else boot();
 })();
 </script>
+<!-- 导出前选州 (IL / TX / …, 可多选) -->
+<div id="expStModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:1200;align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)this.style.display='none'">
+  <div style="background:#fff;border-radius:14px;padding:18px 20px;max-width:420px;width:100%;box-shadow:0 10px 30px rgba(0,0,0,.2)">
+    <div style="display:flex;align-items:center;margin-bottom:4px"><b id="expStTitle" style="font-size:1rem">导出</b><span style="flex:1"></span>
+      <button type="button" onclick="document.getElementById('expStModal').style.display='none'" style="border:none;background:#f3f4f6;border-radius:8px;padding:3px 10px;cursor:pointer">✕</button></div>
+    <div id="expStHint" style="font-size:.78rem;color:#6b7280;margin-bottom:10px"></div>
+    <div style="display:flex;gap:10px;margin-bottom:6px;font-size:.78rem">
+      <a style="cursor:pointer;color:#b45309;font-weight:700" onclick="expStAll(true)">全选</a>
+      <a style="cursor:pointer;color:#9ca3af" onclick="expStAll(false)">全不选</a>
+    </div>
+    <div id="expStList" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;max-height:50vh;overflow:auto"></div>
+    <div id="expStSum" style="font-size:.78rem;color:#374151;margin-top:10px"></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button type="button" class="btn btn-outline" style="flex:1" onclick="document.getElementById('expStModal').style.display='none'">取消</button>
+      <button type="button" class="btn btn-primary" id="expStGo" style="flex:2" onclick="doExportStates()">⬇ 导出</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>

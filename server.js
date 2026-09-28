@@ -19605,7 +19605,9 @@ app.get('/api/admin/employees/export', (req, res, next) => {
   if (req.query.token && validSession(req.query.token)) return next();
   return requireAdmin(req, res, next);
 }, (req, res) => {
-  const rows = db.prepare('SELECT * FROM employees ORDER BY last_name, first_name').all();
+  // ?states=IL,TX&nostate=1 按州筛 (员工号里的工作州, 没有就用住址州); 不传 = 全部
+  const keep = _stateFilter(req);
+  const rows = db.prepare('SELECT * FROM employees ORDER BY last_name, first_name').all().filter(e => { const st = _empState(e); return keep(st ? [st] : []); });
   const headers = ['Employee ID','Last Name','First Name','Email','Phone','Position','Department',
     'Hire Date','Pay Rate','Pay Type','Status','SSN Last4','City','State','DOB',
     'Emergency Name','Emergency Phone','Emergency Relation','Notes'];
@@ -19621,41 +19623,70 @@ app.get('/api/admin/employees/export', (req, res, next) => {
   res.send(csv);
 });
 
-// 一键导出系统里全部 姓名 + 手机号 (仅管理员): 员工 / 扫码登记 / 工头 / 介绍记录 / 短信·电话联系人 / 合作公司联系人,
-// 按手机号后 10 位去重, 同一号码的来源合并成一格; Excel 直接打开 (UTF-8 BOM)。每次导出记审计日志
+// ── 按州导出 ──
+// 员工的州: 员工号 WRK-XX-… 里的工作州优先, 没有就用住址州; 扫码登记: 申请的仓库州 apply_state, 否则住址州;
+// 工头: 名单里的州; 介绍工人: 仓库地址里的州; 合作公司联系人: 公司地址里的州。同一手机号可能有好几个州
+const _ST_RE = /^[A-Z]{2}$/;
+function _stateOf(v) { const t = String(v || '').trim().toUpperCase(); return _ST_RE.test(t) && t !== 'XX' ? t : ''; }
+function _stateFromAddr(a) { const m = String(a || '').toUpperCase().match(/,\s*([A-Z]{2})\s*,?\s*\d{5}(?:-\d{4})?\s*$/) || String(a || '').toUpperCase().match(/\b([A-Z]{2})\s+\d{5}(?:-\d{4})?\b/); return m ? _stateOf(m[1]) : ''; }
+function _empState(e) { const m = /^WRK-([A-Z]{2})-/.exec(String(e.employee_id || '')); return _stateOf(m && m[1]) || _stateOf(e.state); }
+// 全部姓名电话: 按手机号后 10 位去重, 来源和州合并
+function _collectContacts() {
+  const map = new Map();
+  const norm = p => { const d = String(p || '').replace(/\D/g, ''); return d.length === 11 && d[0] === '1' ? d.slice(1) : d.length === 10 ? d : ''; };
+  const add = (name, phone, src, st, status) => {
+    const k = norm(phone);
+    if (!k) return;
+    name = String(name || '').replace(/\s+/g, ' ').trim();
+    const x = map.get(k) || { name: '', phone: k, src: [], states: [], status: '' };
+    if (!x.name && name) x.name = name;
+    if (!x.src.includes(src)) x.src.push(src);
+    if (st && !x.states.includes(st)) x.states.push(st);
+    if (!x.status && status) x.status = status;
+    map.set(k, x);
+  };
+  const q = (sql, fn) => { try { db.prepare(sql).all().forEach(fn); } catch (e) {} };
+  q(`SELECT employee_id, first_name, last_name, phone, state, status FROM employees`, e => add(`${e.first_name || ''} ${e.last_name || ''}`, e.phone, '员工', _empState(e), e.status));
+  q(`SELECT name, phone, state, apply_state FROM applicant_submissions`, a => add(a.name, a.phone, '扫码登记', _stateOf(a.apply_state) || _stateOf(a.state)));
+  q(`SELECT name, phone, state FROM foremen`, f => add(f.name, f.phone, '工头', _stateOf(f.state)));
+  q(`SELECT worker_name, worker_phone, foreman_name, foreman_phone, warehouse_address FROM referrals`, r => { add(r.worker_name, r.worker_phone, '介绍工人', _stateFromAddr(r.warehouse_address)); add(r.foreman_name, r.foreman_phone, '介绍人/工头'); });
+  q(`SELECT name, phone_e164 FROM sms_contacts`, c => add(c.name, c.phone_e164, '短信联系人'));
+  q(`SELECT display_name, phone_number FROM phone_contacts`, c => add(c.display_name, c.phone_number, '电话联系人'));
+  q(`SELECT name, contact_person, phone, contacts, address FROM partners WHERE COALESCE(abolished,0)=0`, p => {
+    const st = _stateFromAddr(p.address);
+    add(p.contact_person, p.phone, '合作公司·' + (p.name || ''), st);
+    try { (JSON.parse(p.contacts || '[]') || []).forEach(c => c && add(c.name, c.phone, '合作公司·' + (p.name || ''), st)); } catch (e) {}
+  });
+  return [...map.values()];
+}
+// 勾选的州: ?states=IL,TX&nostate=1 (都不传 = 全部)
+function _stateFilter(req) {
+  const list = String(req.query.states || '').split(',').map(_stateOf).filter(Boolean);
+  const none = req.query.nostate === '1';
+  if (!list.length && !none) return () => true;
+  return sts => (sts.length ? sts.some(x => list.includes(x)) : none);
+}
+// 导出弹窗里的州选项和人数
+app.get('/api/admin/export-states', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const count = (arr, get) => { const c = {}; let none = 0; arr.forEach(x => { const s = get(x); if (!s.length) none++; s.forEach(t => { c[t] = (c[t] || 0) + 1; }); }); return { states: c, none, total: arr.length }; };
+    const emps = db.prepare(`SELECT employee_id, state FROM employees`).all();
+    res.json({ contacts: count(_collectContacts(), x => x.states), employees: count(emps, e => { const s = _empState(e); return s ? [s] : []; }) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 一键导出系统里全部 姓名 + 手机号 (仅管理员), 可按州筛; Excel 直接打开 (UTF-8 BOM)。每次导出记审计日志
 app.get('/api/admin/export-contacts', requireAdmin, requireRole('admin'), (req, res) => {
   try {
-    const map = new Map();
-    const norm = p => { const d = String(p || '').replace(/\D/g, ''); return d.length === 11 && d[0] === '1' ? d.slice(1) : d.length === 10 ? d : ''; };
-    const add = (name, phone, src, status) => {
-      const k = norm(phone);
-      if (!k) return;
-      name = String(name || '').replace(/\s+/g, ' ').trim();
-      const x = map.get(k) || { name: '', phone: k, src: [], status: '' };
-      if (!x.name && name) x.name = name;
-      if (!x.src.includes(src)) x.src.push(src);
-      if (!x.status && status) x.status = status;
-      map.set(k, x);
-    };
-    const q = (sql, fn) => { try { db.prepare(sql).all().forEach(fn); } catch (e) {} };
-    q(`SELECT first_name, last_name, phone, status FROM employees`, e => add(`${e.first_name || ''} ${e.last_name || ''}`, e.phone, '员工', e.status));
-    q(`SELECT name, phone FROM applicant_submissions`, a => add(a.name, a.phone, '扫码登记'));
-    q(`SELECT name, phone FROM foremen`, f => add(f.name, f.phone, '工头'));
-    q(`SELECT worker_name, worker_phone, foreman_name, foreman_phone FROM referrals`, r => { add(r.worker_name, r.worker_phone, '介绍工人'); add(r.foreman_name, r.foreman_phone, '介绍人/工头'); });
-    q(`SELECT name, phone_e164 FROM sms_contacts`, c => add(c.name, c.phone_e164, '短信联系人'));
-    q(`SELECT display_name, phone_number FROM phone_contacts`, c => add(c.display_name, c.phone_number, '电话联系人'));
-    q(`SELECT name, contact_person, phone, contacts FROM partners WHERE COALESCE(abolished,0)=0`, p => {
-      add(p.contact_person, p.phone, '合作公司·' + (p.name || ''));
-      try { (JSON.parse(p.contacts || '[]') || []).forEach(c => c && add(c.name, c.phone, '合作公司·' + (p.name || ''))); } catch (e) {}
-    });
-    const rows = [...map.values()].sort((a, b) => (!a.name - !b.name) || a.name.localeCompare(b.name));
+    const keep = _stateFilter(req);
+    const rows = _collectContacts().filter(x => keep(x.states)).sort((a, b) => (!a.name - !b.name) || a.name.localeCompare(b.name));
     const cell = v => `"${String(v || '').replace(/"/g, '""')}"`;
     const fmt = d => `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
-    const csv = '﻿' + ['姓名', '手机号', '来源', '员工状态'].join(',') + '\r\n'
-      + rows.map(r => [r.name, fmt(r.phone), r.src.join(' / '), r.status].map(cell).join(',')).join('\r\n') + '\r\n';
-    auditLog('export_contacts', req, { details: { count: rows.length } });
+    const csv = '﻿' + ['姓名', '手机号', '州', '来源', '员工状态'].join(',') + '\r\n'
+      + rows.map(r => [r.name, fmt(r.phone), r.states.join(' / '), r.src.join(' / '), r.status].map(cell).join(',')).join('\r\n') + '\r\n';
+    auditLog('export_contacts', req, { details: { count: rows.length, states: req.query.states || '', nostate: req.query.nostate === '1' } });
+    const tag = String(req.query.states || '').replace(/[^A-Z,]/gi, '').replace(/,/g, '-');
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename=contacts-${new Date().toISOString().slice(0, 10)}.csv`);
+    res.setHeader('Content-Disposition', `attachment; filename=contacts${tag ? '-' + tag : ''}-${new Date().toISOString().slice(0, 10)}.csv`);
     res.send(csv);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
