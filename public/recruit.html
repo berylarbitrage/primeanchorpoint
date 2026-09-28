@@ -459,14 +459,26 @@ function openFormIfHidden() {
 }
 // 仓库下拉: 选项值是 _whList 的下标 (同名客户可能有好几个地址); 编辑时按 名称+地址 回选
 const _whAddrKey = a => String(a || '').toLowerCase().replace(/\b(\d{5})-\d{4}\b/, '$1').replace(/[^a-z0-9]+/g, '');
+// 地址粗比对: 门牌号 + 5 位邮编 (写法不同也能对上, 如 Touhy Ave / West Touhy Avenue)
+function _whNumZip(a) {
+  const n = /^\s*(\d+)/.exec(String(a || '')), z = String(a || '').match(/\b(\d{5})(?:-\d{4})?\b(?!.*\b\d{5}\b)/);
+  return n && z ? n[1] + '|' + z[1] : '';
+}
 function renderWhOptions(current, currentAddr) {
   let sel = '';
   if (current && current !== OTHER) {
     const nm = current.trim().toLowerCase(), ak = _whAddrKey(currentAddr);
     let i = _whList.findIndex(w => w.name.toLowerCase() === nm && ak && _whAddrKey(w.address) === ak);
     if (i < 0) i = _whList.findIndex(w => w.name.toLowerCase() === nm);
-    if (i < 0) { _whList.push({ name: current, address: currentAddr || '' }); i = _whList.length - 1; }
-    sel = String(i);
+    // 名字不在合作公司名单 (公司改过名 / 旧名字): 按地址 门牌号+邮编 对到现在的公司, 对不上就让重新选,
+    // 不再把旧名字塞进下拉
+    if (i < 0) {
+      const pk = _whNumZip(currentAddr);
+      const hits = pk ? _whList.map((w, k) => _whNumZip(w.address) === pk ? k : -1).filter(k => k >= 0) : [];
+      if (hits.length === 1) i = hits[0];
+      else toast('原仓库「' + current + '」不在合作公司名单里，请重新选仓库');
+    }
+    sel = i >= 0 ? String(i) : '';
   } else if (current === OTHER) sel = OTHER;
   document.getElementById('fWarehouse').innerHTML = '<option value="">— 选择仓库 —</option>'
     + _whList.map((w, i) => '<option value="' + i + '"' + (String(i) === sel ? ' selected' : '') + '>🏭 ' + esc(w.name) + (w.address ? '　—　' + esc(w.address) : '') + '</option>').join('')

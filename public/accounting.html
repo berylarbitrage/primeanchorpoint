@@ -612,7 +612,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
           <input type="tel" id="raWorkerPhone" placeholder="输入号码自动查系统" oninput="raPhoneLookup('raWorkerPhone','raWorkerHits','worker')" style="width:100%;margin:.15rem 0 .55rem"></div>
       </div>
       <div id="raWorkerHits" style="margin:-0.3rem 0 .3rem;line-height:1.9"></div>
-      <label style="font-size:.76rem;color:var(--g500)">关联岗位 <span style="color:#dc2626">*</span> <span style="font-size:.7rem;color:var(--g400)">（必选；post 的招聘岗位，选了自动带出仓库；工资不带出，必须手动填）</span></label>
+      <label style="font-size:.76rem;color:var(--g500)">关联岗位 <span style="color:#dc2626">*</span> <span style="font-size:.7rem;color:var(--g400)">（必选；选「每日招工」里在招的，选了自动带出仓库；工资不带出，必须手动填）</span></label>
       <select id="raJobSel" onchange="raJobChanged()" style="width:100%;margin:.15rem 0 .55rem"><option value="">— 请选择岗位 —</option></select>
       <label style="font-size:.76rem;color:var(--g500)">工作仓库</label>
       <select id="raWhSel" onchange="raWhChanged()" style="width:100%;margin:.15rem 0 .55rem"><option value="">加载中…</option></select>
@@ -2261,16 +2261,15 @@ function raFillSelects(r) {
   wSel.innerHTML = '<option value="">— 选择仓库 —</option>'
     + whs.map((w, i) => `<option value="${i}">${w.name ? esc(w.name) : '（未写名称）'}${w.address ? '　—　' + esc(w.address) : ''}</option>`).join('')
     + '<option value="__new__">＋ 其他 / 新仓库</option>';
-  // 关联岗位下拉: 📢 每日招工 (有几个班次就几个选项, 可以关联到具体班次) + post 的在招岗位;
+  // 关联岗位下拉: 只列 📢 每日招工 (有几个班次就几个选项, 可以关联到具体班次);
   // 选项值 r:需求id:班次序号 / j:岗位id。编辑时已关闭/删除的, 用存的快照补一个选项照样显示
-  const jobs = (_refOpts && _refOpts.jobs) || [];
   const rec = (_refOpts && _refOpts.recruit) || [];
   const jSel = document.getElementById('raJobSel');
   const recOpts = rec.map(j => (j.shifts.length ? j.shifts.map((sh, i) => ({ v: `r:${j.id}:${i}`, t: `📢 ${j.warehouse || ''} · ${j.position || ''} · ${sh.shift}${sh.worker_pay || j.worker_pay ? '（' + (sh.worker_pay || j.worker_pay) + '）' : ''}` }))
     : [{ v: `r:${j.id}:`, t: `📢 ${j.warehouse || ''} · ${j.position || ''}${j.worker_pay ? '（' + j.worker_pay + '）' : ''}` }])).flat();
   jSel.innerHTML = '<option value="">— 请选择岗位 —</option>'
-    + (recOpts.length ? `<optgroup label="📢 每日招工（在招的，按班次选）">${recOpts.map(o => `<option value="${o.v}">${esc(o.t)}</option>`).join('')}</optgroup>` : '')
-    + (jobs.length ? `<optgroup label="📋 招聘岗位（post）">${jobs.map(j => `<option value="j:${j.id}">${esc(_raJobLabel(j))}</option>`).join('')}</optgroup>` : '');
+    + (recOpts.length ? `<optgroup label="📢 每日招工（在招的，按班次选）">${recOpts.map(o => `<option value="${o.v}">${esc(o.t)}</option>`).join('')}</optgroup>` : '');
+  // post 的招聘岗位不再列出 (只用每日招工); 老记录关联过的照样在下面补一个选项显示
   const ensure = (v, label) => {
     jSel.value = v;
     if (jSel.value !== v) { const o = document.createElement('option'); o.value = v; o.textContent = label; jSel.appendChild(o); jSel.value = v; }
