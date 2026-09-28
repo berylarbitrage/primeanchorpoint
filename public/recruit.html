@@ -320,7 +320,7 @@ function toast(msg) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
 }
 
-let USER = null, _jobs = [], _today = '', _warehouses = [], _whAddr = {};
+let USER = null, _jobs = [], _today = '', _whList = [];
 const OTHER = '__other__';
 let _filter = 'all', _openDetails = new Set();
 
@@ -330,11 +330,10 @@ async function load() {
     document.getElementById('roleTag').textContent = '👤 ' + (USER.display_name || USER.username || '');
     // 仓库下拉: 服务端合并好的 名字+地址（工作地点 + 合作公司），客服账号也可访问
     try {
+      // 一个客户好几个仓库的, 每个地址一行 (名称 — 地址)
       const whs = await api('/admin/recruit-warehouses');
-      _warehouses = (Array.isArray(whs) ? whs : []).map(w => w && w.name).filter(Boolean);
-      _whAddr = {};
-      (Array.isArray(whs) ? whs : []).forEach(w => { if (w && w.name && w.address) _whAddr[w.name] = String(w.address); });
-    } catch (_) { _warehouses = []; }
+      _whList = (Array.isArray(whs) ? whs : []).filter(w => w && w.name).map(w => ({ name: String(w.name), address: String(w.address || '') }));
+    } catch (_) { _whList = []; }
     renderWhOptions('');
     await reload();
   } catch (e) { document.getElementById('loading').textContent = e.message || '加载失败'; return; }
@@ -352,22 +351,31 @@ function toggleForm(forceCollapse) {
 function openFormIfHidden() {
   if (document.getElementById('formBody').style.display === 'none') toggleForm(false);
 }
-function renderWhOptions(current) {
-  const names = _warehouses.slice();
-  if (current && current !== OTHER && !names.includes(current)) names.push(current);
+// 仓库下拉: 选项值是 _whList 的下标 (同名客户可能有好几个地址); 编辑时按 名称+地址 回选
+const _whAddrKey = a => String(a || '').toLowerCase().replace(/\b(\d{5})-\d{4}\b/, '$1').replace(/[^a-z0-9]+/g, '');
+function renderWhOptions(current, currentAddr) {
+  let sel = '';
+  if (current && current !== OTHER) {
+    const nm = current.trim().toLowerCase(), ak = _whAddrKey(currentAddr);
+    let i = _whList.findIndex(w => w.name.toLowerCase() === nm && ak && _whAddrKey(w.address) === ak);
+    if (i < 0) i = _whList.findIndex(w => w.name.toLowerCase() === nm);
+    if (i < 0) { _whList.push({ name: current, address: currentAddr || '' }); i = _whList.length - 1; }
+    sel = String(i);
+  } else if (current === OTHER) sel = OTHER;
   document.getElementById('fWarehouse').innerHTML = '<option value="">— 选择仓库 —</option>'
-    + names.map(n => '<option value="' + esc(n) + '"' + (n === current ? ' selected' : '') + '>🏭 ' + esc(n) + '</option>').join('')
-    + '<option value="' + OTHER + '"' + (current === OTHER ? ' selected' : '') + '>✏️ 其他（手填）</option>';
+    + _whList.map((w, i) => '<option value="' + i + '"' + (String(i) === sel ? ' selected' : '') + '>🏭 ' + esc(w.name) + (w.address ? '　—　' + esc(w.address) : '') + '</option>').join('')
+    + '<option value="' + OTHER + '"' + (sel === OTHER ? ' selected' : '') + '>✏️ 其他（手填）</option>';
   onWhChange();
 }
 function onWhChange() {
   const v = document.getElementById('fWarehouse').value;
   document.getElementById('fWarehouseOther').style.display = v === OTHER ? '' : 'none';
-  // 选到已知仓库且地址栏为空或还是上一个仓库的地址 → 自动带出
+  // 选到已知仓库且地址栏为空或还是上一个仓库的地址 → 自动带出这个仓库自己的地址
+  const w = v && v !== OTHER ? _whList[parseInt(v)] : null;
   const addrEl = document.getElementById('fAddress');
-  if (v && v !== OTHER && _whAddr[v] && (!addrEl.value.trim() || addrEl.value === (addrEl._auto || ''))) {
-    addrEl.value = _whAddr[v];
-    addrEl._auto = _whAddr[v];
+  if (w && w.address && (!addrEl.value.trim() || addrEl.value === (addrEl._auto || ''))) {
+    addrEl.value = w.address;
+    addrEl._auto = w.address;
   }
 }
 async function reload() {
@@ -841,12 +849,14 @@ async function act(id, what) {
 }
 function _whValue() {
   const sel = document.getElementById('fWarehouse').value;
-  return sel === OTHER ? document.getElementById('fWarehouseOther').value.trim() : sel;
+  if (sel === OTHER) return document.getElementById('fWarehouseOther').value.trim();
+  const w = sel !== '' ? _whList[parseInt(sel)] : null;
+  return w ? w.name : '';
 }
 // 把一条招工装进左边表单 (asNew=true 时当新需求发, 不带 editId)
 function _fillForm(j, asNew) {
   document.getElementById('editId').value = asNew ? '' : j.id;
-  renderWhOptions(j.warehouse);
+  renderWhOptions(j.warehouse, j.address);
   document.getElementById('fPosition').value = j.position || '';
   document.getElementById('fDetails').value = j.details || '';
   document.getElementById('fWorkerPay').value = j.worker_pay || '';
