@@ -68,6 +68,9 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
 #invTable th:first-child,#invTable td:first-child{position:sticky;left:0;z-index:2;background:#fff;box-shadow:inset -1px 0 0 var(--g200)}
 #invTable thead th:first-child{z-index:4;background:#f8fafc}
 #invTable tbody tr:hover td{background:#f8fbff}
+/* 悬浮提示 (data-tip): 鼠标放上立刻出现, 点一下也能开关 (手机可用); 浮在最上层不会被表格裁掉 */
+#tipBox{position:fixed;z-index:5000;max-width:420px;background:#1f2937;color:#fff;font-size:.78rem;line-height:1.5;padding:.45rem .6rem;border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.25);white-space:pre-line;word-break:break-word;pointer-events:none;display:none}
+[data-tip]{cursor:help}
 </style>
 </head>
 <body>
@@ -3118,7 +3121,7 @@ function _invPayNoteTag(r) {
   const txt = t ? esc(t) : (d === 'under' ? '少付 ' : '多付 ') + money(diffAmt);
   // 只显示一行 (超长用 … 截断), 鼠标悬浮看完整备注; 几条备注在悬浮里分段
   const full = String(pn.note || '').trim() || (pn.bank_notes || []).join('\n\n') || t;
-  const tip = full ? ` title="${esc(full).replace(/"/g, '&quot;')}"` : '';
+  const tip = full ? ` data-tip="${esc(full).replace(/"/g, '&quot;')}"` : '';
   const clip = 'display:inline-block;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;cursor:help';
   if (d === 'under') return `<span${tip} style="${clip};background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;border-radius:6px;padding:1px 8px;font-size:.78rem;font-weight:700">⬇ ${txt}</span>`;
   if (d === 'over') return `<span${tip} style="${clip};background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd;border-radius:6px;padding:1px 8px;font-size:.78rem;font-weight:700">⬆ ${txt}</span>`;
@@ -3153,9 +3156,9 @@ function _invPayCols(r) {
     : x.diff < 0 ? `<span style="color:#b91c1c;font-weight:800">−${money(-x.diff)}</span>`
     : `<span style="color:#1d4ed8;font-weight:800">+${money(x.diff)}</span>`;
   const detail = x.detail.length ? x.detail.map(d =>
-    `<div title="${esc(d.desc)}" style="white-space:nowrap">${esc(d.date)} · <b>${money(d.amt)}</b>${d.share != null ? ` <span style="color:#7c3aed" title="这笔钱同时关联了 ${d.sharedN} 张发票，按发票金额分，本张分到 ${money(d.share)}">（${d.sharedN} 张共用，本张 ${money(d.share)}）</span>` : ''}${x.banks.length > 1 && d.bank ? ` · <span style="color:var(--g500)">${esc(d.bank)}</span>` : ''}${d.unverified ? ' <span style="color:#b45309;font-weight:700" title="这笔银行交易的标注还没审核通过（或还没做标注），不算已收款">⏳未核查</span>' : ''}</div>`).join('')
-    + (x.missing ? `<div title="关联的银行交易在银行记录里找不到了（多半是银行把待入账换成正式入账、交易号变了），点「编辑」重新关联" style="color:#b45309;font-weight:700">⚠ ${x.missing} 笔找不到银行记录</div>` : '')
-    : x.missing ? `<span title="关联的银行交易在银行记录里找不到了，点「编辑」重新关联" style="color:#b45309;font-weight:700">⚠ ${x.missing} 笔找不到银行记录</span>` : dash;
+    `<div data-tip="${esc(d.desc)}" style="white-space:nowrap">${esc(d.date)} · <b>${money(d.amt)}</b>${d.share != null ? ` <span style="color:#7c3aed;cursor:help" data-tip="这笔钱同时关联了 ${d.sharedN} 张发票，按发票金额分，本张分到 ${money(d.share)}">（${d.sharedN} 张共用，本张 ${money(d.share)}）</span>` : ''}${x.banks.length > 1 && d.bank ? ` · <span style="color:var(--g500)">${esc(d.bank)}</span>` : ''}${d.unverified ? ' <span style="color:#b45309;font-weight:700;cursor:help" data-tip="这笔银行交易的标注还没审核通过（或还没做标注），不算已收款">⏳未核查</span>' : ''}</div>`).join('')
+    + (x.missing ? `<div data-tip="关联的银行交易在银行记录里找不到了（多半是银行把待入账换成正式入账、交易号变了），点「编辑」重新关联" style="color:#b45309;font-weight:700">⚠ ${x.missing} 笔找不到银行记录</div>` : '')
+    : x.missing ? `<span data-tip="关联的银行交易在银行记录里找不到了，点「编辑」重新关联" style="color:#b45309;font-weight:700">⚠ ${x.missing} 笔找不到银行记录</span>` : dash;
   return `<td style="white-space:nowrap">${x.banks.length ? x.banks.map(esc).join('<br>') : dash}</td>
     <td style="${num}">${x.n || dash}</td>
     <td style="${num};font-weight:700">${x.got == null ? dash : money(x.got)}</td>
@@ -3208,7 +3211,7 @@ function renderInvList() {
     <td>${esc(r.company_name || '')}</td>
     <td style="white-space:nowrap;font-size:.78rem;color:var(--g500)">${esc(r.period_start || '?')} ~ ${esc(r.period_end || '?')}</td>
     <td style="text-align:right;font-weight:700">${money(r.subtotal)}</td>
-    <td style="white-space:nowrap">${payBadge(_acctPayStatus(r))}${r.verify && r.verify.reasons.length ? ` <span title="${esc('没核查通过的：\n' + r.verify.reasons.join('\n')).replace(/"/g, '&quot;')}" style="cursor:help;color:#b45309;font-weight:700">ⓘ</span>` : ''}</td>
+    <td style="white-space:nowrap">${payBadge(_acctPayStatus(r))}${r.verify && r.verify.reasons.length ? ` <span data-tip="${esc('没核查通过的：\n' + r.verify.reasons.join('\n')).replace(/"/g, '&quot;')}" style="cursor:help;color:#b45309;font-weight:700">ⓘ</span>` : ''}</td>
     ${_invPayCols(r)}
     <td class="inv-note">${_invPayNoteTag(r)}</td>
     <td style="white-space:nowrap">${_invRecCell(r)}</td>
@@ -5170,6 +5173,34 @@ async function bankReviewNote(id, note) {
     TOKEN = '';
   }
   document.getElementById('loginUser').focus();
+})();
+
+// ── 悬浮提示: 所有带 data-tip 的元素, 鼠标悬浮立刻显示; 点击也可开关 (触屏) ──
+(function () {
+  const box = document.createElement('div');
+  box.id = 'tipBox';
+  document.addEventListener('DOMContentLoaded', () => document.body.appendChild(box));
+  let pinned = null;
+  const show = (el, x, y) => {
+    if (!box.parentNode) document.body.appendChild(box);
+    box.textContent = el.getAttribute('data-tip') || '';
+    if (!box.textContent) return;
+    box.style.display = 'block';
+    const r = box.getBoundingClientRect();
+    let left = x + 12, top = y + 14;
+    if (left + r.width > window.innerWidth - 8) left = Math.max(8, x - r.width - 12);
+    if (top + r.height > window.innerHeight - 8) top = Math.max(8, y - r.height - 12);
+    box.style.left = left + 'px'; box.style.top = top + 'px';
+  };
+  const hide = () => { box.style.display = 'none'; };
+  document.addEventListener('mouseover', e => { const el = e.target.closest && e.target.closest('[data-tip]'); if (el && !pinned) show(el, e.clientX, e.clientY); });
+  document.addEventListener('mousemove', e => { const el = e.target.closest && e.target.closest('[data-tip]'); if (el && !pinned) show(el, e.clientX, e.clientY); else if (!el && !pinned) hide(); });
+  document.addEventListener('click', e => {
+    const el = e.target.closest && e.target.closest('[data-tip]');
+    if (el && el !== pinned) { pinned = el; show(el, e.clientX, e.clientY); }
+    else { pinned = null; hide(); }
+  });
+  document.addEventListener('scroll', () => { if (!pinned) hide(); }, true);
 })();
 </script>
 </body>
