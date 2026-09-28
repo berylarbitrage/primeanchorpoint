@@ -327,8 +327,8 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     </div>
     <div class="card" style="overflow-x:auto">
       <table><thead><tr>
-        <th>发票号</th><th>日期</th><th>公司</th><th>账期</th><th style="text-align:right">金额</th><th>付款状态</th><th>付款批注（会计）</th><th>批注</th><th></th>
-      </tr></thead><tbody id="invBody"><tr><td colspan="9" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+        <th>发票号</th><th>日期</th><th>公司</th><th>账期</th><th style="text-align:right">金额</th><th>付款状态</th><th>付款批注（会计）</th><th>付款备注</th><th>批注</th><th></th>
+      </tr></thead><tbody id="invBody"><tr><td colspan="10" style="color:var(--g400)">加载中…</td></tr></tbody></table>
     </div>
   </div>
 
@@ -1033,7 +1033,8 @@ const PAY_ST = { paid: ['✅ 已付', '#dcfce7', '#166534'], partial: ['🟡 部
 function _pnHasContent(pn) {
   return !!(pn && (pn.paid_status || pn.bank || pn.amount != null || pn.note || (pn.txn_ids || []).length || (pn.photos_urls || []).length));
 }
-function payNoteCell(type, id, pn, showTodo) {
+// noNote: 备注不塞在格子里 (发票列表单独一列「付款备注」), 整格一行
+function payNoteCell(type, id, pn, showTodo, noNote) {
   const edit = canAnnotate() ? ` <a style="cursor:pointer;font-size:.74rem;color:#0f4c6b;text-decoration:underline;white-space:nowrap" onclick="openPayNote('${type}', ${id})">${_pnHasContent(pn) ? '编辑' : '＋记录'}</a>` : '';
   if (!_pnHasContent(pn)) {
     // 发票列表: 还没在会计系统记过款 → 明确标成待办; 赔偿/保险等列表保持原样的 —
@@ -1047,6 +1048,7 @@ function payNoteCell(type, id, pn, showTodo) {
   if (pn.amount != null) parts.push('<b>' + money(pn.amount) + '</b>');
   if ((pn.txn_ids || []).length) parts.push(`🏦 ${pn.txn_ids.length} 笔`);
   if ((pn.photos_urls || []).length) parts.push(`📷 ${pn.photos_urls.length}`);
+  if (noNote) return `<span style="white-space:nowrap">${badge}<span style="font-size:.76rem">${parts.join(' · ')}</span>${edit}</span>`;
   return `${badge}<span style="font-size:.76rem">${parts.join(' · ')}</span>${pn.note ? `<div style="font-size:.7rem;color:var(--g400);max-width:200px">${esc(pn.note)}</div>` : ''}${edit}`;
 }
 
@@ -3079,10 +3081,11 @@ function renderInvList() {
     <td style="white-space:nowrap;font-size:.78rem;color:var(--g500)">${esc(r.period_start || '?')} ~ ${esc(r.period_end || '?')}</td>
     <td style="text-align:right;font-weight:700">${money(r.subtotal)}</td>
     <td>${payBadge(_acctPayStatus(r))}</td>
-    <td>${payNoteCell('invoice', r.id, r.pay_note, true)}</td>
+    <td>${payNoteCell('invoice', r.id, r.pay_note, true, true)}</td>
+    <td style="font-size:.76rem;color:#b45309;max-width:220px">${r.pay_note && r.pay_note.note ? esc(r.pay_note.note) : '<span style="color:var(--g300)">—</span>'}</td>
     <td>${annBadge(r.annotation_count)}</td>
     <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openInvoice(${r.id})">查看 / 批注</button></td>
-  </tr>`).join('') : '<tr><td colspan="9" style="color:var(--g400);padding:1rem">没有符合条件的发票。</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="10" style="color:var(--g400);padding:1rem">没有符合条件的发票。</td></tr>';
 }
 function renderStmtList() {
   const q = (document.getElementById('stmtSearch').value || '').toLowerCase();
