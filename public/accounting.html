@@ -1613,6 +1613,8 @@ const _phDigits = p => String(p || '').replace(/\D/g, '');
 function _raJobLabel(j) {
   return `${j.code ? j.code + ' · ' : ''}${j.title}${j.title_zh ? ' ' + j.title_zh : ''}${j.company_name ? ' — ' + j.company_name : ''}${j.pay ? `（${j.pay}${j.pay_period ? '/' + j.pay_period : ''}）` : ''}`;
 }
+// 地址比对口径 (和服务端仓库名单去重一致): 小写、去标点空格、ZIP+4 只看前 5 位
+function _raAddrKey(a) { return String(a || '').toLowerCase().replace(/\b(\d{5})-\d{4}\b/, '$1').replace(/[^a-z0-9]+/g, ''); }
 function raFillSelects(r) {
   const fm = (_refOpts && _refOpts.foremen) || [];
   const whs = (_refOpts && _refOpts.warehouses) || [];
@@ -1642,9 +1644,20 @@ function raFillSelects(r) {
   } else _raForeman = null;
   raFmRenderPicked();
   if (r && !r.warehouse_name && r.warehouse_address) {
-    const ad = String(r.warehouse_address).replace(/\s+/g, ' ').trim().toLowerCase();
-    const wi = whs.findIndex(w => !w.name && String(w.address || '').replace(/\s+/g, ' ').trim().toLowerCase() === ad);
-    wSel.value = wi >= 0 ? String(wi) : '';
+    // 只写了地址的老记录: 按地址 (忽略大小写/标点/邮编后四位) 找名单里的仓库, 带名称的也算;
+    // 名单里实在没有, 就把这条地址补成一个选项, 下拉照样显示已选
+    const ak = _raAddrKey(r.warehouse_address);
+    let wi = whs.findIndex(w => w.name && _raAddrKey(w.address) === ak);
+    if (wi < 0) wi = whs.findIndex(w => _raAddrKey(w.address) === ak);
+    if (wi < 0) {
+      whs.push({ name: '', address: String(r.warehouse_address).trim() });
+      wi = whs.length - 1;
+      const o = document.createElement('option');
+      o.value = String(wi);
+      o.textContent = '（未写名称）　—　' + String(r.warehouse_address).trim();
+      wSel.insertBefore(o, wSel.querySelector('option[value="__new__"]'));
+    }
+    wSel.value = String(wi);
   } else if (r && r.warehouse_name) {
     // 同名客户可能有好几个仓库: 先按 名称+地址 找, 找不到再按名称
     const nm = String(r.warehouse_name).trim().toLowerCase();
