@@ -125,7 +125,7 @@ i.req{color:#dc2626;font-style:normal;margin-left:1px}
 .seg{display:flex;border:1.5px solid var(--gray-200);border-radius:10px;overflow:hidden;background:#fff}
 .seg label{flex:1;margin:0 !important;display:block;cursor:pointer}
 .seg input{display:none}
-.seg span{display:block;text-align:center;padding:8px 6px;font-size:.84rem;font-weight:700;color:var(--gray-500)}
+.seg span{display:block;text-align:center;white-space:nowrap;padding:8px 6px;font-size:.84rem;font-weight:700;color:var(--gray-500)}
 .seg label+label span{border-left:1.5px solid var(--gray-200)}
 .seg input:checked+span{background:var(--sky-light);color:var(--blue)}
 .rf-missing{font-size:.78rem;line-height:1.6;border-radius:10px;padding:8px 12px;margin-top:4px}
@@ -186,7 +186,7 @@ i.req{color:#dc2626;font-style:normal;margin-left:1px}
               </datalist>
             </div>
           </div>
-          <label>性别 <i class="req">*</i> <span class="sub">只在内部卡片和工头版显示，工人版分享不带</span></label>
+          <label>性别 <i class="req">*</i> <span class="sub">卡片和分享文案里都会显示</span></label>
           <div class="seg" id="segGender">
             <label><input type="radio" name="fGender" value="不限"><span>不限</span></label>
             <label><input type="radio" name="fGender" value="男"><span>🚹 男</span></label>
@@ -351,6 +351,37 @@ i.req{color:#dc2626;font-style:normal;margin-left:1px}
     <div style="display:flex;gap:8px;margin-top:14px">
       <button onclick="closeRateModal()" style="flex:1;padding:11px;border:none;border-radius:10px;background:var(--gray-100);color:var(--gray-600);font-weight:700;font-size:.88rem;cursor:pointer;font-family:inherit">取消</button>
       <button onclick="confirmRateModal()" style="flex:1;padding:11px;border:none;border-radius:10px;background:var(--sky);color:#fff;font-weight:700;font-size:.88rem;cursor:pointer;font-family:inherit">生成</button>
+    </div>
+  </div>
+</div>
+<!-- 📋 复制文案前先预览 (可改), 可切中英西; 「给 Muse 的指令」把文案包进一段发送指令 -->
+<div id="cpModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:40;align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)closeCp()">
+  <div style="background:#fff;border-radius:14px;padding:16px 18px;max-width:560px;width:100%;max-height:92vh;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <h2 id="cpTitle" style="font-size:.95rem;color:var(--blue)">📋 工人版文案</h2>
+      <span style="flex:1"></span>
+      <button type="button" onclick="closeCp()" style="width:auto;border:none;background:var(--gray-100);border-radius:8px;padding:4px 10px;cursor:pointer;font-family:inherit">✕</button>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+      <div class="seg" style="width:auto">
+        <label><input type="radio" name="cpLang" value="zh" onchange="cpRegen()"><span style="padding:6px 12px">中文</span></label>
+        <label><input type="radio" name="cpLang" value="en" onchange="cpRegen()"><span style="padding:6px 12px">English</span></label>
+        <label><input type="radio" name="cpLang" value="es" onchange="cpRegen()"><span style="padding:6px 12px">Español</span></label>
+      </div>
+      <div class="seg" style="width:auto;margin-left:auto">
+        <label><input type="radio" name="cpMode" value="text" checked onchange="cpRender()"><span style="padding:6px 12px">📋 文案</span></label>
+        <label><input type="radio" name="cpMode" value="muse" onchange="cpRender()"><span style="padding:6px 12px">🤖 给 Muse 的指令</span></label>
+      </div>
+    </div>
+    <div id="cpMuseBox" style="display:none;margin-bottom:6px">
+      <label style="margin:0 0 3px">指令开头（可改，会记住）</label>
+      <textarea id="cpMusePrefix" oninput="cpSavePrefix();cpRender()" style="min-height:52px;font-size:.82rem"></textarea>
+    </div>
+    <div id="cpStatus" style="font-size:.74rem;color:var(--gray-400);margin-bottom:4px"></div>
+    <textarea id="cpText" style="flex:1;min-height:300px;font-size:.84rem;line-height:1.6"></textarea>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button type="button" onclick="closeCp()" style="flex:1;padding:11px;border:none;border-radius:10px;background:var(--gray-100);color:var(--gray-600);font-weight:700;font-size:.88rem;cursor:pointer;font-family:inherit">关闭</button>
+      <button type="button" onclick="cpCopy()" style="flex:2;padding:11px;border:none;border-radius:10px;background:var(--sky);color:#fff;font-weight:700;font-size:.88rem;cursor:pointer;font-family:inherit">📋 复制</button>
     </div>
   </div>
 </div>
@@ -785,18 +816,7 @@ async function copyAllOpen() {
   if (_filter === 'iv') open = open.filter(j => j.interview_required);
   if (q) open = open.filter(j => [j.warehouse, j.position, j.details, j.address].some(v => String(v || '').toLowerCase().includes(q)));
   if (!open.length) { toast('当前筛选下没有在招的活'); return; }
-  toast('生成中…（' + open.length + ' 条）');
-  try {
-    const texts = [];
-    for (const j of open) {
-      const r = await api('/admin/recruit-jobs/' + j.id + '/share-text?lang=' + lang);
-      if (r && r.text) texts.push(r.text);
-    }
-    const all = texts.join('\n\n━━━━━━━━━━━━\n\n');
-    try { await navigator.clipboard.writeText(all); }
-    catch (_) { const ta = document.createElement('textarea'); ta.value = all; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
-    toast('📋 已复制 ' + texts.length + ' 条在招文案（工人版），直接粘贴到群里');
-  } catch (e) { toast(e.message || '生成失败'); }
+  openCp(open.map(j => j.id), lang);
 }
 // ─── 分享: 复制文案 / 生成图片 (对外版本, 不含工头上限) ───
 async function _shareText(id) {
@@ -864,17 +884,54 @@ async function confirmRateModal() {
 }
 async function copyShare(id) {
   if (_shareAud(id) === 'foreman') { openRateModal(id, 'copy'); return; }
+  openCp([id], (document.getElementById('shareLang-' + id) || {}).value || 'zh');
+}
+// ─── 📋 复制预览弹窗: 先看到文案 (可改) 再复制; 可切语言; 可包成给 Muse 的发送指令 ───
+const CP_MUSE_DEFAULT = 'Muse，请帮我把下面这条招工信息发出去（原文照发，不要改动内容）：';
+let _cpIds = [], _cpBase = '', _cpSeq = 0;
+function _cpVal(name) { const r = document.querySelector('input[name="' + name + '"]:checked'); return r ? r.value : ''; }
+function openCp(ids, lang) {
+  _cpIds = ids;
+  document.getElementById('cpTitle').textContent = ids.length > 1 ? '📋 全部在招 · 工人版文案（' + ids.length + ' 条）' : '📋 工人版文案';
+  document.querySelectorAll('input[name="cpLang"]').forEach(r => { r.checked = r.value === (lang || 'zh'); });
+  let pre = '';
+  try { pre = localStorage.getItem('muse_prefix') || ''; } catch (_) {}
+  document.getElementById('cpMusePrefix').value = pre || CP_MUSE_DEFAULT;
+  document.getElementById('cpModal').style.display = 'flex';
+  cpRegen();
+}
+function closeCp() { document.getElementById('cpModal').style.display = 'none'; }
+function cpSavePrefix() { try { localStorage.setItem('muse_prefix', document.getElementById('cpMusePrefix').value); } catch (_) {} }
+async function cpRegen() {
+  const lang = _cpVal('cpLang') || 'zh', seq = ++_cpSeq;
+  const st = document.getElementById('cpStatus');
+  st.textContent = lang === 'zh' ? '生成中…' : '生成中…（翻译要几秒）';
+  document.getElementById('cpText').value = '';
   try {
-    const text = await _shareText(id);
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch (_) {
-      const ta = document.createElement('textarea');
-      ta.value = text; document.body.appendChild(ta); ta.select();
-      document.execCommand('copy'); ta.remove();
+    const texts = [];
+    for (const id of _cpIds) {
+      const r = await api('/admin/recruit-jobs/' + id + '/share-text?lang=' + lang);
+      if (r && r.error) throw new Error(r.error);
+      if (r && r.text) texts.push(r.text);
     }
-    toast('📋 文案已复制，直接粘贴到群里');
-  } catch (e) { toast(e.message || '复制失败'); }
+    if (seq !== _cpSeq) return;
+    _cpBase = texts.join('\n\n━━━━━━━━━━━━\n\n');
+    st.textContent = '可以直接在下面改，改完点「复制」';
+    cpRender();
+  } catch (e) { if (seq === _cpSeq) st.textContent = '⚠ ' + (e.message || '生成失败'); }
+}
+function cpRender() {
+  const muse = _cpVal('cpMode') === 'muse';
+  document.getElementById('cpMuseBox').style.display = muse ? '' : 'none';
+  const pre = document.getElementById('cpMusePrefix').value.trim();
+  document.getElementById('cpText').value = muse ? (pre ? pre + '\n\n' : '') + _cpBase : _cpBase;
+}
+async function cpCopy() {
+  const t = document.getElementById('cpText').value;
+  if (!t.trim()) return toast('还没生成好');
+  try { await navigator.clipboard.writeText(t); }
+  catch (_) { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+  toast(_cpVal('cpMode') === 'muse' ? '🤖 给 Muse 的指令已复制' : '📋 已复制，直接粘贴到群里');
 }
 async function shareImage(id) {
   if (_shareAud(id) === 'foreman') {
