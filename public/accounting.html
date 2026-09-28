@@ -492,8 +492,8 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
           <input type="tel" id="raWorkerPhone" placeholder="输入号码自动查系统" oninput="raPhoneLookup('raWorkerPhone','raWorkerHits','worker')" style="width:100%;margin:.15rem 0 .55rem"></div>
       </div>
       <div id="raWorkerHits" style="margin:-0.3rem 0 .3rem;line-height:1.9"></div>
-      <label style="font-size:.76rem;color:var(--g500)">关联岗位 <span style="font-size:.7rem;color:var(--g400)">（post 的招聘岗位，选了自动带出仓库；工资不带出，必须手动填）</span></label>
-      <select id="raJobSel" onchange="raJobChanged()" style="width:100%;margin:.15rem 0 .55rem"><option value="">— 不关联岗位 —</option></select>
+      <label style="font-size:.76rem;color:var(--g500)">关联岗位 <span style="color:#dc2626">*</span> <span style="font-size:.7rem;color:var(--g400)">（必选；post 的招聘岗位，选了自动带出仓库；工资不带出，必须手动填）</span></label>
+      <select id="raJobSel" onchange="raJobChanged()" style="width:100%;margin:.15rem 0 .55rem"><option value="">— 请选择岗位 —</option></select>
       <label style="font-size:.76rem;color:var(--g500)">工作仓库</label>
       <select id="raWhSel" onchange="raWhChanged()" style="width:100%;margin:.15rem 0 .55rem"><option value="">加载中…</option></select>
       <input type="text" id="raWh" placeholder="新仓库名称（必填，不知道就填客户公司名）" style="display:none;width:100%;margin:0 0 .55rem">
@@ -504,8 +504,8 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
           <input type="datetime-local" id="raInterview" style="width:100%;margin:.15rem 0 .55rem"></div>
         <div><label style="font-size:.76rem;color:var(--g500)">工资（工人的）<span style="color:#dc2626">*</span> <span style="font-size:.7rem;color:var(--g400)">手动填实际谈定的</span></label>
           <input type="text" id="raWage" placeholder="必填，例：$18/小时" style="width:100%;margin:.15rem 0 .55rem"></div>
-        <div><label style="font-size:.76rem;color:var(--g500)">介绍费 · 每周（$） <span style="font-size:.7rem;color:var(--g400)">每周默认按这个付，单周可改</span></label>
-          <input type="number" step="0.01" min="0" id="raAmount" placeholder="例：20.00" style="width:100%;margin:.15rem 0 .55rem"></div>
+        <div><label style="font-size:.76rem;color:var(--g500)">介绍费 · 每周（$）<span style="color:#dc2626">*</span> <span style="font-size:.7rem;color:var(--g400)">每周默认按这个付，单周可改</span></label>
+          <input type="number" step="0.01" min="0" id="raAmount" placeholder="必填，例：20.00" style="width:100%;margin:.15rem 0 .55rem"></div>
       </div>
       <div style="font-size:.72rem;color:var(--g400);margin-bottom:.5rem">面试去没去登记后在列表里专门一列标记；做了多久由会计关联发票、按发票账期自动算。</div>
       <label style="font-size:.76rem;color:var(--g500)">备注（可选）</label>
@@ -1660,7 +1660,7 @@ function raFillSelects(r) {
   // 关联岗位下拉: post 的在招岗位; 编辑时岗位已关闭/删除的, 用存的快照补一个选项照样显示
   const jobs = (_refOpts && _refOpts.jobs) || [];
   const jSel = document.getElementById('raJobSel');
-  jSel.innerHTML = '<option value="">— 不关联岗位 —</option>'
+  jSel.innerHTML = '<option value="">— 请选择岗位 —</option>'
     + jobs.map(j => `<option value="${j.id}">${esc(_raJobLabel(j))}</option>`).join('');
   if (r && r.job_id) {
     jSel.value = String(r.job_id);
@@ -1970,6 +1970,10 @@ async function submitRefAdd() {
   // 工资必须手动填: 岗位上的是招聘区间, 不是这个工人实际谈定的数
   const wWage = document.getElementById('raWage').value.trim();
   if (!wWage) return toast('请手动填写工人的工资（岗位上写的是区间，要填实际谈定的，如 $18/小时）', true);
+  // 岗位必须关联、介绍费必须写 (管理员核查和按周付款都靠这两项)
+  if (!document.getElementById('raJobSel').value) return toast('请选择关联岗位', true);
+  const amtV = document.getElementById('raAmount').value.trim();
+  if (amtV === '' || isNaN(Number(amtV)) || Number(amtV) <= 0) return toast('请填写每周介绍费（金额要大于 0）', true);
   const whSelV = document.getElementById('raWhSel').value;
   const whName = whSelV === '__new__'
     ? document.getElementById('raWh').value.trim()
