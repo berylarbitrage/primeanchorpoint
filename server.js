@@ -40356,12 +40356,45 @@ function _acctRecoverTxns(rows, targetType) {
     const found = new Set(pn.txns.map(t => t.txn_id));
     const missing = pn.txn_ids.filter(id => !found.has(id));
     const cand = _acctAnnLookup(annTxns, r, baseCount).filter(x => x.dir === dir && !found.has(x.id)).map(x => x.id);
-    if (cand.length && cand.length === missing.length) {
-      const next = [...pn.txn_ids.filter(id => found.has(id)), ...cand];
+    let repl = cand.length && cand.length === missing.length ? cand : null;
+    // 标注里找不回来: 按金额+日期到银行记录里找换了交易号的那笔 (只缺 1 笔时)。
+    // 金额 = 应收/应付减去还找得到的几笔 (付款批注写了金额就用它); 同方向、非待入账、
+    // 日期在单据日期前 7 天 ~ 后 150 天、还没被任何单据关联、也没在银行标注里写给别的单据 —— 唯一一笔才自动关上
+    if (!repl && missing.length === 1) {
+      const c = _acctRematchByAmount(r, pn, dir, found, annTxns);
+      if (c) repl = [c];
+    }
+    if (repl) {
+      const next = [...pn.txn_ids.filter(id => found.has(id)), ...repl];
       try { db.prepare('UPDATE acct_pay_notes SET txn_ids=? WHERE id=? AND target_type=?').run(JSON.stringify(next), pn.id, targetType); } catch (e) {}
       r.pay_note = _acctPayNoteOut(db.prepare('SELECT * FROM acct_pay_notes WHERE id=?').get(pn.id));
     }
   }
+}
+let _acctLinkedCache = null;
+function _acctRematchByAmount(r, pn, dir, found, annTxns) {
+  try {
+    const due = Number(r.subtotal != null ? r.subtotal : r.amount) || 0;
+    const have = (pn.txns || []).reduce((x, t) => x + Math.abs(Number(t.amount) || 0), 0);
+    const target = Math.round(((!found.size && pn.amount != null && Number(pn.amount) > 0) ? Number(pn.amount) : due - have) * 100) / 100;
+    const anchor = String(r.invoice_date || r.date || '').slice(0, 10);
+    if (!(target > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(anchor)) return '';
+    // 已被任何单据关联的交易号 (每次请求算一次)
+    if (!_acctLinkedCache || _acctLinkedCache.t < Date.now() - 2000) {
+      const set = new Set();
+      db.prepare(`SELECT txn_ids FROM acct_pay_notes WHERE COALESCE(txn_ids,'')<>''`).all().forEach(x => { try { (JSON.parse(x.txn_ids) || []).forEach(i => set.add(i)); } catch (e) {} });
+      _acctLinkedCache = { t: Date.now(), set };
+    }
+    const annotated = new Set();
+    Object.values(annTxns || {}).forEach(arr => arr.forEach(x => annotated.add(x.id)));
+    const rows = db.prepare(`SELECT txn_id FROM plaid_transactions
+      WHERE COALESCE(pending,0)=0 AND ABS(ABS(amount) - ?) < 0.005 AND ${dir === 'out' ? 'amount>0' : 'amount<0'}
+        AND date >= date(?, '-7 days') AND date <= date(?, '+150 days')`).all(target, anchor, anchor)
+      .filter(t => !_acctLinkedCache.set.has(t.txn_id) && !annotated.has(t.txn_id));
+    if (rows.length !== 1) return '';
+    _acctLinkedCache.set.add(rows[0].txn_id);  // 同一次里别的单据不能再用这笔
+    return rows[0].txn_id;
+  } catch (e) { return ''; }
 }
 // 银行标注直接挂到单据上: 标注里写了发票号 / 关联了这张 Bintique 账单的银行交易 (同方向)
 // 自动算这张单据的收付款, 不用再在单据上手动 link。和以前手动关联的合并; 标注找到了交易时,
