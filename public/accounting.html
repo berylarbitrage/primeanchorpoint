@@ -59,6 +59,15 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
 #annLightbox{position:fixed;inset:0;z-index:98;background:rgba(15,23,42,.85);display:none;align-items:center;justify-content:center;cursor:zoom-out}
 #annLightbox img{max-width:92vw;max-height:92vh;border-radius:8px}
 #annLightbox iframe{width:92vw;height:92vh;border:none;background:#fff;border-radius:8px}
+/* 发票列表: 列多, 左右 / 上下都能滑; 表头和发票号固定不动, 格子不折行 */
+.inv-scroll{overflow:auto;max-height:78vh;padding:0}
+#invTable{min-width:1750px;border-collapse:separate;border-spacing:0}
+#invTable th,#invTable td{white-space:nowrap;padding:.5rem .6rem}
+#invTable td.inv-note{white-space:normal;min-width:220px;max-width:320px}
+#invTable thead th{position:sticky;top:0;z-index:3;background:#f8fafc;box-shadow:inset 0 -1px 0 var(--g200)}
+#invTable th:first-child,#invTable td:first-child{position:sticky;left:0;z-index:2;background:#fff;box-shadow:inset -1px 0 0 var(--g200)}
+#invTable thead th:first-child{z-index:4;background:#f8fafc}
+#invTable tbody tr:hover td{background:#f8fbff}
 </style>
 </head>
 <body>
@@ -327,10 +336,10 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <span id="invStats" style="font-size:.8rem;color:var(--g500)"></span>
       <button class="btn btn-sm btn-outline" onclick="invExportCsv()" title="按当前筛选导出，每张发票一行：收款银行 / 笔数 / 到账合计 / 差额 / 每笔明细 / 备注，方便逐张审核" style="margin-left:auto">⬇ 导出 CSV（逐张审核用）</button>
     </div>
-    <div class="card" style="overflow-x:auto">
-      <table style="font-size:.84rem"><thead><tr>
+    <div class="card inv-scroll">
+      <table id="invTable" style="font-size:.84rem"><thead><tr>
         <th>发票号</th><th>日期</th><th>公司</th><th>账期</th><th style="text-align:right">发票金额</th><th>付款状态</th>
-        <th>收款银行</th><th style="text-align:right">笔数</th><th style="text-align:right">到账合计</th><th style="text-align:right">差额</th><th>收款明细（每笔）</th><th>付款备注</th><th>记录</th><th>批注</th><th></th>
+        <th>收款银行</th><th style="text-align:right">笔数</th><th style="text-align:right">到账合计</th><th style="text-align:right">差额</th><th>收款明细（每笔）</th><th class="inv-note">付款备注</th><th>记录</th><th>批注</th><th></th>
       </tr></thead><tbody id="invBody"><tr><td colspan="15" style="color:var(--g400)">加载中…</td></tr></tbody></table>
     </div>
   </div>
@@ -3120,7 +3129,9 @@ function _invPayInfo(r) {
   const detail = [...txns].sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))).map(t => ({
     date: t.date || '', amt: Math.abs(Number(t.amount) || 0), bank: t.acct_label || '', desc: t.merchant || t.name || '',
   }));
-  return { banks, n, got, diff, detail };
+  // 关联了但银行记录里找不到的笔数 (多半是银行把「待入账」换成正式入账, 交易号变了): 审核时要点名
+  const missing = Math.max(0, n - txns.length);
+  return { banks, n, got, diff, detail, missing };
 }
 function _invPayCols(r) {
   const x = _invPayInfo(r), dash = '<span style="color:var(--g300)">—</span>';
@@ -3130,7 +3141,9 @@ function _invPayCols(r) {
     : x.diff < 0 ? `<span style="color:#b91c1c;font-weight:800">−${money(-x.diff)}</span>`
     : `<span style="color:#1d4ed8;font-weight:800">+${money(x.diff)}</span>`;
   const detail = x.detail.length ? x.detail.map(d =>
-    `<div title="${esc(d.desc)}" style="white-space:nowrap">${esc(d.date)} · <b>${money(d.amt)}</b>${x.banks.length > 1 && d.bank ? ` · <span style="color:var(--g500)">${esc(d.bank)}</span>` : ''}</div>`).join('') : dash;
+    `<div title="${esc(d.desc)}" style="white-space:nowrap">${esc(d.date)} · <b>${money(d.amt)}</b>${x.banks.length > 1 && d.bank ? ` · <span style="color:var(--g500)">${esc(d.bank)}</span>` : ''}</div>`).join('')
+    + (x.missing ? `<div title="关联的银行交易在银行记录里找不到了（多半是银行把待入账换成正式入账、交易号变了），点「编辑」重新关联" style="color:#b45309;font-weight:700">⚠ ${x.missing} 笔找不到银行记录</div>` : '')
+    : x.missing ? `<span title="关联的银行交易在银行记录里找不到了，点「编辑」重新关联" style="color:#b45309;font-weight:700">⚠ ${x.missing} 笔找不到银行记录</span>` : dash;
   return `<td style="white-space:nowrap">${x.banks.length ? x.banks.map(esc).join('<br>') : dash}</td>
     <td style="${num}">${x.n || dash}</td>
     <td style="${num};font-weight:700">${x.got == null ? dash : money(x.got)}</td>
@@ -3153,7 +3166,7 @@ function invExportCsv() {
     const x = _invPayInfo(r);
     lines.push([r.invoice_number, r.invoice_date, r.company_name, r.period_start, r.period_end, (Number(r.subtotal) || 0).toFixed(2),
       ST[_acctPayStatus(r)] || '', x.banks.join(' / '), x.n || '', x.got == null ? '' : x.got.toFixed(2), x.diff == null ? '' : x.diff.toFixed(2),
-      x.detail.map(d => `${d.date} ${d.amt.toFixed(2)} ${d.bank} ${d.desc}`.trim()).join(' | '), _invPayNoteText(r), r.annotation_count || 0].map(q).join(','));
+      x.detail.map(d => `${d.date} ${d.amt.toFixed(2)} ${d.bank} ${d.desc}`.trim()).concat(x.missing ? [`⚠ ${x.missing} 笔找不到银行记录`] : []).join(' | '), _invPayNoteText(r), r.annotation_count || 0].map(q).join(','));
   }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
@@ -3185,7 +3198,7 @@ function renderInvList() {
     <td style="text-align:right;font-weight:700">${money(r.subtotal)}</td>
     <td>${payBadge(_acctPayStatus(r))}</td>
     ${_invPayCols(r)}
-    <td style="max-width:240px">${_invPayNoteTag(r)}</td>
+    <td class="inv-note">${_invPayNoteTag(r)}</td>
     <td style="white-space:nowrap">${_invRecCell(r)}</td>
     <td>${annBadge(r.annotation_count)}</td>
     <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openInvoice(${r.id})">查看 / 批注</button></td>
