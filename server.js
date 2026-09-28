@@ -30054,6 +30054,20 @@ app.get('/api/admin/recruit-jobs', requireAdmin, (req, res) => {
         .forEach(r => { (byJob[r.recruit_job_id] = byJob[r.recruit_job_id] || []).push(r); });
     } catch (e) {}
     jobs.forEach(j => { j.applicants = byJob[j.id] || []; });
+    // 仓库名不在合作公司名单里的 (公司改过名, 如旧的 IMG Global): 按地址 门牌号+邮编 对到现在的公司名显示;
+    // 编辑保存后就存成新名字
+    try {
+      const numZip = a => { const n = /^\s*(\d+)/.exec(String(a || '')), z = String(a || '').match(/\b(\d{5})(?:-\d{4})?\b(?!.*\b\d{5}\b)/); return n && z ? n[1] + '|' + z[1] : ''; };
+      const whs = _partnerWarehouseList();
+      const names = new Set(whs.map(w => w.name.toLowerCase()));
+      const byKey = {};
+      whs.forEach(w => { const k = numZip(w.address); if (k) (byKey[k] = byKey[k] || new Set()).add(w.name); });
+      jobs.forEach(j => {
+        if (!j.warehouse || names.has(String(j.warehouse).trim().toLowerCase())) return;
+        const hit = byKey[numZip(j.address)];
+        if (hit && hit.size === 1) { j.warehouse_old = j.warehouse; j.warehouse = [...hit][0]; }
+      });
+    } catch (e) {}
     res.json({ jobs, today: _recruitToday() });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
