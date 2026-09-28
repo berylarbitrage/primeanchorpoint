@@ -50,6 +50,11 @@ label{display:block;font-size:.74rem;font-weight:700;color:var(--gray-500);margi
 .form-toggle{margin-left:auto;border:none;background:var(--sky-light);color:var(--blue);border-radius:8px;font-size:.74rem;font-weight:700;padding:4px 10px;cursor:pointer;font-family:inherit}
 
 /* ── 列表工具栏 ── */
+.list-tabs{display:flex;gap:4px;margin-bottom:10px;background:#fff;border:1px solid #f3e8cd;border-radius:12px;padding:4px;box-shadow:0 1px 3px rgba(146,64,14,.05)}
+.ltab{flex:1;border:none;background:none;border-radius:9px;padding:9px 12px;font-size:.88rem;font-weight:800;color:var(--gray-500);cursor:pointer;font-family:inherit}
+.ltab b{display:inline-block;min-width:22px;margin-left:4px;padding:0 7px;border-radius:999px;background:var(--gray-100);font-size:.76rem}
+.ltab.on{background:var(--sky);color:#fff}
+.ltab.on b{background:rgba(255,255,255,.25)}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
 .toolbar input[type=search]{flex:1;min-width:150px;width:auto}
 .toolbar select{width:auto}
@@ -298,10 +303,15 @@ i.req{color:#dc2626;font-style:normal;margin-left:1px}
 
     <!-- ── 右栏: 在招列表 / 历史 ── -->
     <div class="col-list">
+      <div class="list-tabs" id="listTabs" style="display:none">
+        <button type="button" class="ltab" data-t="open" onclick="setTab('open')">📌 正在招 <b id="tabOpenN">0</b></button>
+        <button type="button" class="ltab" data-t="closed" onclick="setTab('closed')">🔒 已关闭 <b id="tabClosedN">0</b></button>
+      </div>
       <div class="toolbar" id="listToolbar" style="display:none">
         <input type="search" id="q" placeholder="🔍 搜仓库 / 工种 / 内容…" oninput="render()">
         <select id="whFilter" onchange="render()"></select>
         <button type="button" class="fchip" data-f="all" onclick="setFilter('all')">全部</button>
+        <span class="open-only" style="display:contents">
         <button type="button" class="fchip" data-f="unchecked" onclick="setFilter('unchecked')">⚠️ 今日未核对</button>
         <button type="button" class="fchip" data-f="ead" onclick="setFilter('ead')">🪪 要EAD</button>
         <button type="button" class="fchip" data-f="iv" onclick="setFilter('iv')">🗣 要面试</button>
@@ -309,6 +319,11 @@ i.req{color:#dc2626;font-style:normal;margin-left:1px}
           <option value="zh">中文</option><option value="en">English</option><option value="es">Español</option>
         </select>
         <button type="button" class="tool-btn" onclick="copyAllOpen()" title="把当前筛选出的在招职位合成一条工人版文案，直接发群">📋 复制全部在招</button>
+        </span>
+        <span class="closed-only" style="display:none">
+        <button type="button" class="fchip" data-f="filled" onclick="setFilter('filled')">🎉 找到人了</button>
+        <button type="button" class="fchip" data-f="closed" onclick="setFilter('closed')">🚫 不需要了</button>
+        </span>
       </div>
 
       <div class="section" id="openSec" style="display:none">
@@ -318,7 +333,7 @@ i.req{color:#dc2626;font-style:normal;margin-left:1px}
       <div class="section" id="emptySec" style="display:none"><div class="hint">现在没有在招的活 — 有新需求就在左边发布</div></div>
 
       <div class="section" id="histSec" style="display:none">
-        <h2>&#128337; 最近结束的（30 天内）</h2>
+        <h2>🔒 已关闭的 <span id="histCount" style="color:var(--gray-400);font-weight:400;font-size:.8rem"></span></h2>
         <div id="histList"></div>
       </div>
 
@@ -640,6 +655,12 @@ function renderShiftRows() {
   if (typeof rfCheck === 'function' && document.getElementById('rfMissing')) rfCheck();
 }
 // ─── 列表筛选 ───
+let _tab = (() => { try { return localStorage.getItem('recruit_tab') === 'closed' ? 'closed' : 'open'; } catch (_) { return 'open'; } })();
+function setTab(t) {
+  _tab = t;
+  try { localStorage.setItem('recruit_tab', t); } catch (_) {}
+  setFilter('all');
+}
 function setFilter(f) {
   _filter = f;
   document.querySelectorAll('.fchip').forEach(b => b.classList.toggle('on', b.getAttribute('data-f') === f));
@@ -679,7 +700,7 @@ function render() {
     ? '⚠️ 今天还有 ' + unchecked.length + ' 条招工没核对 — 请逐条确认：还在招？找到人了？不需要了？'
     : '✅ 今天的招工信息已全部核对完';
   // 统计行
-  const filled30 = done.filter(j => j.status === 'filled').length;
+  const filled30 = done.filter(j => j.status === 'filled' && _daysBetween(j.status_at || j.updated_at || j.created_at, _today) <= 30).length;
   const stats = document.getElementById('statsRow');
   stats.style.display = (_jobs.length ? '' : 'none');
   stats.innerHTML =
@@ -688,10 +709,18 @@ function render() {
     + '<span class="stat good">🎉 30天找到人 <b>' + filled30 + '</b> 条</span>'
     + '<span class="stat">🏭 涉及仓库 <b>' + new Set(open.map(j => j.warehouse)).size + '</b> 个</span>';
   // 工具栏 + 仓库筛选下拉
-  document.getElementById('listToolbar').style.display = open.length ? '' : 'none';
+  // 两个 tab: 正在招 / 已关闭
+  document.getElementById('listTabs').style.display = _jobs.length ? '' : 'none';
+  document.getElementById('tabOpenN').textContent = open.length;
+  document.getElementById('tabClosedN').textContent = done.length;
+  document.querySelectorAll('.ltab').forEach(b => b.classList.toggle('on', b.getAttribute('data-t') === _tab));
+  document.querySelectorAll('.open-only').forEach(e => { e.style.display = _tab === 'open' ? 'contents' : 'none'; });
+  document.querySelectorAll('.closed-only').forEach(e => { e.style.display = _tab === 'closed' ? 'contents' : 'none'; });
+  const tabList = _tab === 'open' ? open : done;
+  document.getElementById('listToolbar').style.display = tabList.length ? '' : 'none';
   const whSel = document.getElementById('whFilter');
   const prevWh = whSel.value;
-  const whs = [...new Set(open.map(j => j.warehouse).filter(Boolean))];
+  const whs = [...new Set(tabList.map(j => j.warehouse).filter(Boolean))];
   whSel.innerHTML = '<option value="">全部仓库</option>' + whs.map(w => '<option value="' + esc(w) + '"' + (w === prevWh ? ' selected' : '') + '>🏭 ' + esc(w) + '</option>').join('');
   if (!document.querySelector('.fchip.on')) document.querySelector('.fchip[data-f="all"]').classList.add('on');
   // 筛选
@@ -710,8 +739,8 @@ function render() {
     return au - bu || b.id - a.id;
   });
 
-  document.getElementById('openSec').style.display = open.length ? '' : 'none';
-  document.getElementById('emptySec').style.display = open.length ? 'none' : '';
+  document.getElementById('openSec').style.display = _tab === 'open' && open.length ? '' : 'none';
+  document.getElementById('emptySec').style.display = _tab === 'open' && !open.length ? '' : 'none';
   document.getElementById('openCount').textContent = '（显示 ' + shown.length + ' / 共 ' + open.length + ' 条）';
   document.getElementById('openList').innerHTML = shown.length ? shown.map(j => {
     const checkedToday = j.last_check_date === _today;
@@ -746,8 +775,16 @@ function render() {
       + '</div></div></div>';
   }).join('') : '<div class="hint">没有符合筛选条件的 — 点「全部」清掉筛选</div>';
 
-  document.getElementById('histSec').style.display = done.length ? '' : 'none';
-  document.getElementById('histList').innerHTML = done.map(j => {
+  // 已关闭 tab: 仓库 / 搜索 / 找到人了·不需要了 筛选
+  let doneShown = done;
+  if (wf) doneShown = doneShown.filter(j => j.warehouse === wf);
+  if (_filter === 'filled' || _filter === 'closed') doneShown = doneShown.filter(j => j.status === _filter);
+  if (q) doneShown = doneShown.filter(j => [j.warehouse, j.position, j.details, j.address].some(v => String(v || '').toLowerCase().includes(q)));
+  document.getElementById('histSec').style.display = _tab === 'closed' ? '' : 'none';
+  document.getElementById('histCount').textContent = '（显示 ' + doneShown.length + ' / 共 ' + done.length + ' 条）';
+  document.getElementById('histList').innerHTML = !done.length ? '<div class="hint">还没有关闭的招工</div>'
+    : !doneShown.length ? '<div class="hint">没有符合筛选条件的 — 点「全部」清掉筛选</div>'
+    : doneShown.map(j => {
     const dur = _daysBetween(j.created_at, j.status_at || j.updated_at || j.created_at);
     return '<div class="job-card done">'
     + '<div class="jc-head">'
