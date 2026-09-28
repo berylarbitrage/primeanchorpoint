@@ -40057,7 +40057,13 @@ function _acctInvoiceAnnTxns() {
       let nums = (Array.isArray(items) ? items : []).map(x => String((x && x.inv) || '').trim().toUpperCase()).filter(Boolean);
       if (!nums.length) nums = String(b.invoice_number || '').split(/[,，;；\s]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
       let links = []; try { links = JSON.parse(b.links || '[]'); } catch (e) { links = []; }
-      (Array.isArray(links) ? links : []).forEach(l => { const r = String((l && l.ref) || '').trim().toUpperCase(); if (r) nums.push(r); });
+      // Bintique 关联: ref 可能是账单号、去掉版本号的基号或账单 id; 另外按账单链接 url 认
+      (Array.isArray(links) ? links : []).forEach(l => {
+        const r = String((l && l.ref) || '').trim().toUpperCase();
+        if (r) { nums.push(r); if (/^\d+$/.test(r)) nums.push('ID:' + r); }
+        const u = String((l && l.url) || '').trim().toUpperCase();
+        if (u) nums.push('URL:' + u);
+      });
       for (const num of new Set(nums)) {
         const arr = out[num] || (out[num] = []);
         if (!arr.some(x => x.id === b.plaid_txn_id)) arr.push({ id: b.plaid_txn_id, dir: b.direction || 'in' });
@@ -40066,10 +40072,39 @@ function _acctInvoiceAnnTxns() {
   } catch (e) {}
   return out;
 }
+// 单号基号: BINV-XXX-20260701-01 → BINV-XXX-20260701 (Bintique 改版会换末尾版本号)
+function _acctBaseNo(n) {
+  const m = /^(BP?INV-[A-Z0-9]*-\d{8})-\d+$/.exec(String(n || '').trim().toUpperCase());
+  return m ? m[1] : '';
+}
+// 一张单据在标注索引里能对上的所有键: 单号, 木板账单再加账单 id 和账单链接;
+// 标注里只写了不带 -01/-02 的基号时, 只有列表里这个基号仅此一张才认 (-01/-02 可能是不同账单)
+function _acctRowKeys(r, baseCount) {
+  const num = String(r.invoice_number || '').trim().toUpperCase();
+  const base = _acctBaseNo(num);
+  const keys = [num];
+  if (base && baseCount && baseCount[base] === 1) keys.push(base);
+  if (r.bintique) {
+    keys.push('ID:' + r.id);
+    [r.bintique.doc_url, r.bintique.pdf_url].forEach(u => { u = String(u || '').trim().toUpperCase(); if (u) keys.push('URL:' + u); });
+  }
+  return keys.filter(Boolean);
+}
+function _acctBaseCount(rows) {
+  const c = {};
+  rows.forEach(r => { const b = _acctBaseNo(r.invoice_number); if (b) c[b] = (c[b] || 0) + 1; });
+  return c;
+}
+function _acctAnnLookup(ann, r, baseCount) {
+  const seen = new Set(), out = [];
+  for (const k of _acctRowKeys(r, baseCount)) for (const x of (ann[k] || [])) if (!seen.has(x.id)) { seen.add(x.id); out.push(x); }
+  return out;
+}
 // 付款批注关联的交易号有找不到的: 按单号从银行标注找回 (标注在入账换号时已跟着改过);
 // 找回笔数正好补上缺的就改写保存。rows: 发票 (收入) 或木板账单 (direction in/out)
 function _acctRecoverTxns(rows, targetType) {
   let annTxns = null;
+  const baseCount = _acctBaseCount(rows);
   for (const r of rows) {
     const pn = r.pay_note;
     if (!pn || !pn.id || !(pn.txn_ids.length > pn.txns.length)) continue;
@@ -40077,7 +40112,7 @@ function _acctRecoverTxns(rows, targetType) {
     const dir = r.direction || 'in';
     const found = new Set(pn.txns.map(t => t.txn_id));
     const missing = pn.txn_ids.filter(id => !found.has(id));
-    const cand = (annTxns[String(r.invoice_number || '').trim().toUpperCase()] || []).filter(x => x.dir === dir && !found.has(x.id)).map(x => x.id);
+    const cand = _acctAnnLookup(annTxns, r, baseCount).filter(x => x.dir === dir && !found.has(x.id)).map(x => x.id);
     if (cand.length && cand.length === missing.length) {
       const next = [...pn.txn_ids.filter(id => found.has(id)), ...cand];
       try { db.prepare('UPDATE acct_pay_notes SET txn_ids=? WHERE id=? AND target_type=?').run(JSON.stringify(next), pn.id, targetType); } catch (e) {}
@@ -40090,9 +40125,10 @@ function _acctRecoverTxns(rows, targetType) {
 // 手动关联里已经找不到的旧交易号 (待入账换号) 直接丢掉。
 function _acctAttachAnnTxns(rows) {
   const ann = _acctInvoiceAnnTxns();
+  const baseCount = _acctBaseCount(rows);
   for (const r of rows) {
     const dir = r.direction || 'in';
-    const annIds = (ann[String(r.invoice_number || '').trim().toUpperCase()] || []).filter(x => x.dir === dir).map(x => x.id);
+    const annIds = _acctAnnLookup(ann, r, baseCount).filter(x => x.dir === dir).map(x => x.id);
     if (!annIds.length) continue;
     const pn = r.pay_note;
     const manual = pn ? pn.txns.map(t => t.txn_id) : [];   // 手动关联里还找得到的
