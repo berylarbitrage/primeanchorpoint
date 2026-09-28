@@ -908,6 +908,11 @@ try { db.exec(`ALTER TABLE referrals ADD COLUMN profile_apl_id INTEGER DEFAULT N
 try { db.exec(`ALTER TABLE referrals ADD COLUMN profile_linked_by TEXT DEFAULT ''`); } catch(e) {}
 // HR 自己招的 (没有工头介绍): 不用填工头、没有介绍费, 只登记人和岗位
 try { db.exec(`ALTER TABLE referrals ADD COLUMN hr_self INTEGER DEFAULT 0`); } catch(e) {}
+// 上班后要确认的: 车补 (NULL/''=没确认, 'none'=没有, 其他=金额说明) / 付款方式 (gusto|zelle|cash|check|other) /
+// 关联的 Gusto 收款人 (gusto_contractors.uuid; 空 = 按姓名 + 收款人对照表自动对)
+try { db.exec(`ALTER TABLE referrals ADD COLUMN car_allowance TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE referrals ADD COLUMN pay_method TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE referrals ADD COLUMN gusto_uuid TEXT DEFAULT ''`); } catch(e) {}
 // 介绍费按周付: 关联的每张发票 (一周账期) = 一周, 每周单独记介绍费金额和付款批注
 // (acct_pay_notes target_type='referralweek', target_id=这里的 id); fee 为空 = 按介绍记录上的介绍费
 try { db.exec(`CREATE TABLE IF NOT EXISTS referral_weeks (
@@ -40746,10 +40751,70 @@ app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
     out.forEach(r => { r.clock = r.timeclock_code ? _referralClock(r.timeclock_code, r.work_start_date) : null; });
     const pIdx = _referralProfileIndex();
     out.forEach(r => { r.profile = _referralProfile(r, pIdx); });
+    const gIdx = _refGustoIndex();
+    out.forEach(r => { r.gusto = _refGustoLink(r, gIdx); });
     res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── 付款方式 Gusto: 这个工人在不在 Gusto 收款人里 ──
+// 手动选过的 (gusto_uuid) 为准; 没选的按 工人姓名 (和打卡档案姓名) 对 Gusto 收款人姓名,
+// 再过一遍工资表收款人对照表 (花名/并付给别人的)
+const _refNameKey = v => String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z]/g, '');
+function _refGustoIndex() {
+  const byUuid = {}, byName = {};
+  try {
+    db.prepare(`SELECT uuid, name, first_name, last_name, business_name, COALESCE(is_active,1) AS active FROM gusto_contractors`).all().forEach(c => {
+      const nm = (c.business_name || '').trim() || `${c.first_name || ''} ${c.last_name || ''}`.trim() || c.name || '';
+      const x = { uuid: c.uuid, name: nm, active: !!c.active };
+      byUuid[c.uuid] = x;
+      [nm, c.name, `${c.first_name || ''} ${c.last_name || ''}`, `${c.last_name || ''} ${c.first_name || ''}`].forEach(n => { const k = _refNameKey(n); if (k.length >= 4 && !byName[k]) byName[k] = x; });
+    });
+  } catch (e) {}
+  let aliases = [];
+  try { aliases = _gustoAliases(); } catch (e) {}
+  const alias = {};
+  (aliases || []).forEach(a => { if (a && a.from && a.to) alias[_refNameKey(a.from)] = a.to; });
+  return { byUuid, byName, alias, any: Object.keys(byUuid).length > 0 };
+}
+function _refGustoLink(r, idx) {
+  if ((r.pay_method || 'gusto') !== 'gusto') return null;
+  if (r.gusto_uuid) {
+    const c = idx.byUuid[r.gusto_uuid];
+    return c ? { linked: true, manual: true, name: c.name, uuid: c.uuid, active: c.active } : { linked: false, missing: true };
+  }
+  const names = [r.worker_name, r.profile && r.profile.name, r.clock && r.clock.name].filter(Boolean);
+  for (const n of names) {
+    const k = _refNameKey(n);
+    const via = idx.alias[k];
+    if (via && !/^(现金|跳过)$/.test(via)) { const c = idx.byName[_refNameKey(via)]; if (c) return { linked: true, auto: true, via_alias: true, name: c.name, uuid: c.uuid, active: c.active }; }
+    const c = idx.byName[k];
+    if (c) return { linked: true, auto: true, name: c.name, uuid: c.uuid, active: c.active };
+  }
+  return { linked: false, synced: idx.any };
+}
+// 车补 / 付款方式 / Gusto 收款人: 上班中随时可改 (核查状态不影响)
+app.post('/api/acct/referrals/:id/pay-setup', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+  const cur = db.prepare('SELECT id FROM referrals WHERE id=?').get(parseInt(req.params.id));
+  if (!cur) return res.status(404).json({ error: '记录不存在' });
+  const b = req.body || {};
+  const method = ['gusto', 'zelle', 'cash', 'check', 'other'].includes(b.pay_method) ? b.pay_method : '';
+  if (!method) return res.status(400).json({ error: '请选择付款方式' });
+  const car = String(b.car_allowance == null ? '' : b.car_allowance).trim().slice(0, 80);
+  if (!car) return res.status(400).json({ error: '请确认有没有车补' });
+  const uuid = method === 'gusto' ? String(b.gusto_uuid || '').trim().slice(0, 80) : '';
+  db.prepare(`UPDATE referrals SET car_allowance=?, pay_method=?, gusto_uuid=?, updated_at=datetime('now') WHERE id=?`).run(car, method, uuid, cur.id);
+  res.json({ success: true });
+});
+// Gusto 收款人搜索 (付款方式关联用): 只回名字
+app.get('/api/acct/gusto-payees', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+  try {
+    const q = _refNameKey(req.query.q);
+    const idx = _refGustoIndex();
+    const list = Object.values(idx.byUuid).filter(c => !q || _refNameKey(c.name).includes(q)).sort((a, b) => (b.active - a.active) || a.name.localeCompare(b.name)).slice(0, 30);
+    res.json({ payees: list, synced: idx.any });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 // 打卡 QR 码 → 员工: 扫出来是 PAWTC:12345678, 手输就是 8 位数字; 只查不建档 (不像打卡机那样自动建员工)
 function _referralCodeNorm(v) {
   const d = String(v || '').trim().replace(/^PAWTC:/i, '').replace(/\D/g, '');
@@ -41057,6 +41122,67 @@ app.get('/api/acct/referral-options', requireAdmin, requireAcctView, (req, res) 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// 🔎 查一个人的全部面试记录: 按姓名或电话 (4 位以上数字按包含) 跨所有面试来源汇总,
+// 时间倒序。来源: 介绍记录 / 面试登记 (701 初试 + 仓库面试) / 线上预约面试 (含历史存档) /
+// 短信约的面试 / 面试结果 (技能评估)。只回页面要显示的字段。
+app.get('/api/acct/interview-lookup', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    const ql = q.toLowerCase();
+    const dq = q.replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+    if (q.length < 2) return res.json({ items: [] });
+    const dg = v => String(v || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+    const hit = (name, phone) => (ql && String(name || '').toLowerCase().includes(ql)) || (dq.length >= 4 && dg(phone).includes(dq));
+    const items = [];
+    const push = o => items.push(Object.assign({ source: '', date: '', name: '', phone: '', place: '', result: '', detail: '' }, o));
+    const safe = fn => { try { fn(); } catch (e) {} };
+    // 介绍记录
+    safe(() => db.prepare(`SELECT id, worker_name, worker_phone, interview_at, interview_status, interview_attended_at, warehouse_name, warehouse_address,
+        job_title, foreman_name, COALESCE(hr_self,0) AS hr_self, work_start_date, worker_wage FROM referrals`).all().forEach(r => {
+      if (!hit(r.worker_name, r.worker_phone)) return;
+      push({ source: 'referral', ref_id: r.id, date: String(r.interview_at || '').replace('T', ' '), name: r.worker_name, phone: r.worker_phone,
+        place: [r.warehouse_name, r.warehouse_address].filter(Boolean).join(' · '),
+        result: r.interview_status === 'attended' ? '去了' : r.interview_status === 'no_show' ? '没去' : '待标记',
+        detail: [r.job_title, r.hr_self ? 'HR 自己招的' : (r.foreman_name ? '工头 ' + r.foreman_name : ''), r.worker_wage ? '工资 ' + r.worker_wage : '',
+          r.work_start_date ? r.work_start_date + ' 开始上班' : '', r.interview_attended_at ? '到场 ' + r.interview_attended_at : ''].filter(Boolean).join(' · ') });
+    }));
+    // 面试登记: 701 初试 + 仓库面试 各算一条
+    safe(() => db.prepare(`SELECT * FROM interview_registry`).all().forEach(r => {
+      if (!hit(r.name, r.phone)) return;
+      if (r.s701_at || r.s701_result) push({ source: 'registry701', date: r.s701_at || '', name: r.name, phone: r.phone, place: r.s701_place || '701 初试',
+        result: r.s701_result || '', detail: [r.position, r.notes].filter(Boolean).join(' · ') });
+      if (r.wh_at || r.wh_result || r.wh_partner_name) push({ source: 'registryWh', date: r.wh_at || '', name: r.name, phone: r.phone,
+        place: [r.wh_partner_name, r.wh_address].filter(Boolean).join(' · '), result: r.wh_result || '', detail: [r.position, r.notes].filter(Boolean).join(' · ') });
+    }));
+    // 线上预约面试: 历史存档 + 当前的
+    safe(() => db.prepare(`SELECT worker_name, worker_phone, slot_datetime, location, interview_type, status, admin_notes FROM interview_history`).all().forEach(r => {
+      if (!hit(r.worker_name, r.worker_phone)) return;
+      push({ source: 'booking', date: r.slot_datetime, name: r.worker_name, phone: r.worker_phone, place: r.location, result: r.status, detail: [r.interview_type, r.admin_notes].filter(Boolean).join(' · ') });
+    }));
+    safe(() => db.prepare(`SELECT i.status, i.admin_notes, i.interview_type, s.slot_datetime, s.location,
+        TRIM(COALESCE(e.first_name,'') || ' ' || COALESCE(e.last_name,'')) AS name, COALESCE(e.phone,'') AS phone
+      FROM interviews i JOIN interview_slots s ON s.id=i.slot_id JOIN worker_accounts w ON w.id=i.worker_account_id LEFT JOIN employees e ON e.id=w.employee_id`).all().forEach(r => {
+      if (!hit(r.name, r.phone)) return;
+      if (items.some(x => x.source === 'booking' && x.date === r.slot_datetime && dg(x.phone) === dg(r.phone))) return;
+      push({ source: 'booking', date: r.slot_datetime, name: r.name, phone: r.phone, place: r.location, result: r.status, detail: [r.interview_type, r.admin_notes].filter(Boolean).join(' · ') });
+    }));
+    // 短信约的面试
+    safe(() => db.prepare(`SELECT i.interview_at, i.address, i.note, i.status, c.name, c.phone_e164 FROM sms_interviews i JOIN sms_contacts c ON c.id=i.contact_id`).all().forEach(r => {
+      if (!hit(r.name, r.phone_e164)) return;
+      push({ source: 'sms', date: String(r.interview_at || '').replace('T', ' '), name: r.name, phone: r.phone_e164, place: r.address, result: r.status, detail: r.note });
+    }));
+    // 面试结果 (技能评估)
+    safe(() => db.prepare(`SELECT * FROM interview_results`).all().forEach(r => {
+      if (!hit(r.person_name, r.phone)) return;
+      const yn = (v, t) => v == null ? '' : (v ? '✓' : '✗') + t;
+      push({ source: 'result', date: r.created_at, name: r.person_name, phone: r.phone, place: '',
+        result: [yn(r.forklift, '叉车'), yn(r.cherry_picker, '高位叉车'), yn(r.container_unload, '卸柜'), yn(r.lang_en, '英语'), yn(r.lang_es, '西语'), yn(r.lang_zh, '中文')].filter(Boolean).join(' '),
+        detail: [r.note, r.created_by ? '记录人 ' + r.created_by : ''].filter(Boolean).join(' · ') });
+    }));
+    items.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    res.json({ items: items.slice(0, 200) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 // 手机号自动联想: 填工头/工人电话时查系统里已有的人, 直接 link 起来。
 // 覆盖 工头名单 foremen / 员工档案 employees / 招工申请 applicant_submissions,
 // 只回姓名+电话 (不带证件等敏感明细); 4 位以上就按包含匹配联想。

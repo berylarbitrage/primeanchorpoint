@@ -425,7 +425,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
   <div id="paneRef" style="display:none">
     <div id="refStages" class="ref-stages"></div>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
-      <input type="text" id="refSearch" placeholder="搜工头 / 工人 / 电话 / 仓库…" oninput="renderRefList()" style="width:230px">
+      <input type="text" id="refSearch" placeholder="搜工头 / 工人姓名 / 电话 / 仓库…（搜工人可看他全部面试记录）" oninput="renderRefList();refHistSchedule()" style="width:320px">
       <select id="refFilter" onchange="renderRefList()">
         <option value="">全部</option>
         <option value="pending">⏳ 待管理员核查</option>
@@ -440,6 +440,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <a id="refOwnPage" class="btn btn-outline" href="/referral" target="_blank" title="只看介绍费的独立页面">↗ Referral 页面</a>
       <span id="refStats" style="font-size:.8rem;color:var(--g500)"></span>
     </div>
+    <div id="refHist" style="display:none;margin-bottom:.75rem"></div>
     <div id="refBody" style="display:flex;flex-direction:column;gap:.75rem"><div class="card" style="color:var(--g400)">加载中…</div></div>
     <p style="font-size:.75rem;color:var(--g400);margin-top:.5rem">流程：客服 / 会计录入介绍信息（工头和工人的姓名电话、仓库、面试时间）→ 会计「关联发票」，每张发票（一周账期）就是一周 → 管理员核查、决定是否支付 → 同意支付后会计按周付款：每周一行，记实付金额并关联银行记录。</p>
   </div>
@@ -506,6 +507,35 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
 
   <!-- ➕ 新增 / 编辑介绍费弹窗 -->
   <!-- 👷 通过面试开始上班: 上班日期 + 工人打卡 QR 码 (扫码 / 上传截图 / 手输 8 位) -->
+  <!-- 💵 付款方式 & 车补: 开始上班后确认 (付款方式默认 Gusto, 关联 Gusto 收款人) -->
+  <div id="refPayModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:94;align-items:center;justify-content:center;padding:16px">
+    <div class="card" style="max-width:460px;width:100%;padding:1.2rem 1.2rem 1rem;max-height:92vh;overflow:auto">
+      <div style="font-weight:800;margin-bottom:.2rem">💵 付款方式 & 车补</div>
+      <div id="rpWho" style="font-size:.78rem;color:var(--g500);margin-bottom:.7rem"></div>
+      <label style="font-size:.76rem;color:var(--g500)">车补 <span style="color:#dc2626">*</span></label>
+      <div style="display:flex;gap:1rem;align-items:center;margin:.2rem 0 .3rem;font-size:.86rem">
+        <label style="cursor:pointer"><input type="radio" name="rpCar" value="none" onchange="rpCarSw()"> 没有车补</label>
+        <label style="cursor:pointer"><input type="radio" name="rpCar" value="yes" onchange="rpCarSw()"> 有车补</label>
+      </div>
+      <input type="text" id="rpCarAmt" placeholder="车补多少、怎么给，如 $10/天、$50/周" style="display:none;width:100%;margin:.1rem 0 .6rem">
+      <label style="font-size:.76rem;color:var(--g500);display:block;margin-top:.4rem">付款方式 <span style="color:#dc2626">*</span></label>
+      <select id="rpMethod" onchange="rpMethodSw()" style="width:100%;margin:.15rem 0 .6rem">
+        <option value="gusto">Gusto（默认）</option><option value="zelle">Zelle</option><option value="cash">现金</option><option value="check">支票</option><option value="other">其他</option>
+      </select>
+      <div id="rpGustoBox">
+        <label style="font-size:.76rem;color:var(--g500)">Gusto 收款人 <span style="font-size:.7rem;color:var(--g400)">（按姓名自动对；对不上的在这里搜着选）</span></label>
+        <div id="rpGustoPicked" style="margin:.15rem 0 .3rem;font-size:.84rem"></div>
+        <div style="position:relative">
+          <input type="text" id="rpGustoQ" placeholder="搜 Gusto 收款人姓名…" oninput="rpGustoSearch()" onfocus="rpGustoSearch()" autocomplete="off" style="width:100%">
+          <div id="rpGustoList" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--g200);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);max-height:220px;overflow:auto;z-index:6"></div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:.9rem">
+        <button class="btn btn-outline" onclick="document.getElementById('refPayModal').style.display='none'">取消</button>
+        <button class="btn btn-blue" id="rpSubmit" onclick="submitRefPay()">保存</button>
+      </div>
+    </div>
+  </div>
   <div id="refStartModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:93;align-items:center;justify-content:center;padding:16px">
     <div class="card" style="max-width:440px;width:100%;padding:1.2rem 1.2rem 1rem;max-height:92vh;overflow:auto">
       <div style="font-weight:800;margin-bottom:.2rem">👷 开始上班</div>
@@ -1544,6 +1574,61 @@ function _refPersonCell(name, phone, state) {
 function _refCanEdit(r) {
   return USER.role === 'admin' || (['accounting', 'cs'].includes(USER.role) && r.review_status === 'pending');
 }
+// 🔎 搜一个工人的姓名 / 电话 → 列出他过去全部的面试记录 (所有来源, 时间倒序)
+let _refHistT = null, _refHistQ = '';
+function refHistSchedule() {
+  clearTimeout(_refHistT);
+  _refHistT = setTimeout(refHistLoad, 350);
+}
+async function refHistLoad() {
+  const q = (document.getElementById('refSearch').value || '').trim();
+  const box = document.getElementById('refHist');
+  _refHistQ = q;
+  if (q.length < 2) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  let items = [];
+  try { const r = await api('/api/acct/interview-lookup?q=' + encodeURIComponent(q)); items = (r && r.items) || []; }
+  catch (e) { box.style.display = ''; box.innerHTML = `<div class="card" style="color:#dc2626">${esc(e.message || '查面试记录失败')}</div>`; return; }
+  if (q !== _refHistQ) return;
+  const SRC = { referral: ['🤝 介绍', '#fff7ed', '#c2410c'], registry701: ['🏢 701 初试', '#eff6ff', '#1d4ed8'], registryWh: ['🏭 仓库面试', '#eef2ff', '#4338ca'],
+    booking: ['📅 线上预约', '#f0fdf4', '#15803d'], sms: ['💬 短信约', '#fdf4ff', '#a21caf'], result: ['📝 面试结果', '#f8fafc', '#475569'] };
+  const resCls = t => /去了|通过|pass|attend|complete|hired|合格|✓/i.test(t) ? 'color:#047857;font-weight:700' : /没去|no.?show|不|fail|reject|cancel|✗/i.test(t) ? 'color:#b91c1c;font-weight:700' : 'color:#b45309';
+  const th = 'text-align:left;font-size:.7rem;color:var(--g400);font-weight:600;padding:.35rem .5rem;border-bottom:1px solid var(--g200);white-space:nowrap';
+  const td = 'padding:.4rem .5rem;border-bottom:1px solid var(--g100);font-size:.8rem;vertical-align:top';
+  box.style.display = '';
+  box.innerHTML = `<div class="card" style="padding:.7rem .8rem">
+    <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem"><b style="color:#0f4c6b">🔎 「${esc(q)}」的面试记录</b>
+      <span style="font-size:.76rem;color:var(--g500)">共 ${items.length} 条 · 所有来源（介绍 / 701 初试 / 仓库面试 / 线上预约 / 短信约 / 面试结果），新的在上</span></div>
+    ${items.length ? `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:820px"><thead><tr>
+      <th style="${th}">面试时间</th><th style="${th}">来源</th><th style="${th}">姓名 · 电话</th><th style="${th}">地点 / 仓库</th><th style="${th}">结果</th><th style="${th}">详情</th></tr></thead><tbody>
+      ${items.map(it => {
+        const sc = SRC[it.source] || [it.source, '#f8fafc', '#475569'];
+        const jump = it.source === 'referral' && it.ref_id ? ` onclick="refJumpTo(${it.ref_id})" style="cursor:pointer" data-tip="点一下跳到这条介绍"` : '';
+        return `<tr${jump}>
+          <td style="${td};white-space:nowrap;font-weight:700">${esc(it.date || '—')}</td>
+          <td style="${td};white-space:nowrap"><span style="background:${sc[1]};color:${sc[2]};border-radius:6px;padding:1px 7px;font-size:.72rem;font-weight:700">${sc[0]}</span></td>
+          <td style="${td};white-space:nowrap">${esc(it.name || '—')}${it.phone ? `<div style="color:var(--g500);font-size:.74rem">${esc(it.phone)}</div>` : ''}</td>
+          <td style="${td}">${esc(it.place || '—')}</td>
+          <td style="${td};white-space:nowrap;${resCls(it.result || '')}">${esc(it.result || '—')}</td>
+          <td style="${td};color:var(--g500)">${esc(it.detail || '')}</td></tr>`;
+      }).join('')}</tbody></table></div>` : '<div style="color:var(--g400);font-size:.82rem">没找到这个人的面试记录。</div>'}
+  </div>`;
+}
+// 从面试记录跳到对应的介绍卡片 (切到它所在的阶段页)
+function refJumpTo(id) {
+  const r = _refList.find(x => x.id === id);
+  if (!r) return;
+  refSetStage(_refStage(r));
+  // 被当前搜索/筛选挡住了就清掉筛选再找
+  if (!document.getElementById('refCard' + id)) { document.getElementById('refFilter').value = ''; renderRefList(); }
+  if (!document.getElementById('refCard' + id)) { document.getElementById('refSearch').value = ''; renderRefList(); }
+  setTimeout(() => {
+    const el = document.getElementById('refCard' + id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.style.outline = '3px solid #3b82f6';
+    setTimeout(() => { el.style.outline = ''; }, 1800);
+  }, 50);
+}
 // 面试时间已过、还没标去没去 (还没开始上班的): 整张卡片标红提醒
 function _refIvOverdue(r) {
   if (r.interview_status || r.work_start_date || !r.interview_at) return false;
@@ -1620,16 +1705,21 @@ function renderRefList() {
   _refWeeks = [];
   for (const r of _refList) (r.weeks || []).forEach((w, i) => { w.amount = w.fee_eff; w.week_no = i + 1; w.ref = r; _refWeeks.push(w); });
   let list = _refList;
-  if (q) list = list.filter(r => [r.foreman_name, r.foreman_phone, r.worker_name, r.worker_phone, r.worker_wage, r.warehouse_name, r.warehouse_address, r.job_title, r.description, ...(r.invoices || []).map(v => v.invoice_number + ' ' + v.company_name)].join(' ').toLowerCase().includes(q));
+  // 电话按数字比 (输 (630) 641-1979 / +1… 也能搜到存成 6306411979 的)
+  const qd = String(q || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+  const dg = v => String(v || '').replace(/\D/g, '');
+  if (q) list = list.filter(r => [r.foreman_name, r.foreman_phone, r.worker_name, r.worker_phone, r.worker_wage, r.warehouse_name, r.warehouse_address, r.job_title, r.description, ...(r.invoices || []).map(v => v.invoice_number + ' ' + v.company_name)].join(' ').toLowerCase().includes(q)
+    || (qd.length >= 4 && (dg(r.worker_phone).includes(qd) || dg(r.foreman_phone).includes(qd))));
   if (flt === 'noshow') list = list.filter(r => r.interview_status === 'no_show');
   else if (flt) list = list.filter(r => _refOverall(r) === flt);
   // 三个阶段分页: 数字按当前搜索/筛选算, 切过去不会扑空
   const stN = { interview: 0, working: 0, ended: 0, noshow: 0 };
   list.forEach(r => stN[_refStage(r)]++);
   const overN = list.filter(_refIvOverdue).length;
+  const payN = list.filter(r => _refStage(r) === 'working' && _refPayProblems(r).length).length;
   const stBtn = (k, t, sub) => `<button class="ref-stage${_refStageSel === k ? ' on' : ''}" onclick="refSetStage('${k}')">${t}<b>${stN[k]}</b><small>${sub}</small></button>`;
   document.getElementById('refStages').innerHTML = stBtn('interview', '📅 面试安排', overN ? `<span style="background:#dc2626;color:#fff;border-radius:4px;padding:0 5px;font-weight:800">⚠ ${overN} 个面试已过没标记</span>` : '约了面试、还没开始上班')
-    + stBtn('working', '👷 上班中', '通过面试已上班 · 三个月内')
+    + stBtn('working', '👷 上班中', payN ? `<span style="background:#dc2626;color:#fff;border-radius:4px;padding:0 5px;font-weight:800">⚠ ${payN} 个付款 / 车补 / 二维码没确认</span>` : '通过面试已上班 · 三个月内')
     + stBtn('ended', '⏹ 已满三个月', 'referral 期结束')
     + stBtn('noshow', '🚫 没去面试', '约了面试但没去的人');
   list = list.filter(r => _refStage(r) === _refStageSel);
@@ -1713,8 +1803,8 @@ function renderRefList() {
       : `<span style="color:var(--g400)">还没关联发票${canInv ? ' — 每张发票（一周账期）算一周，按周给工头付钱' : '，会计关联后按周列出'}</span>`;
     // 面试安排 / 没去面试 阶段不显示核查和每周付款 (开始上班后在「上班中」才有)
     const preWork = ['interview', 'noshow'].includes(_refStage(r));
-    const overdue = _refIvOverdue(r);
-    return `<div class="card ref-card" style="${r.review_status === 'rejected' ? 'opacity:.6;' : ''}${overdue ? 'background:#fef2f2;box-shadow:0 0 0 2px #fca5a5;' : ''}border-left-color:${overdue ? '#dc2626' : ov === 'paid' ? '#16a34a' : ov === 'rejected' ? '#cbd5e1' : ov === 'pending' ? '#fb923c' : '#3b82f6'}">
+    const overdue = _refIvOverdue(r) || (_refStage(r) === 'working' && _refPayProblems(r).length > 0);
+    return `<div class="card ref-card" id="refCard${r.id}" style="${r.review_status === 'rejected' ? 'opacity:.6;' : ''}${overdue ? 'background:#fef2f2;box-shadow:0 0 0 2px #fca5a5;' : ''}border-left-color:${overdue ? '#dc2626' : ov === 'paid' ? '#16a34a' : ov === 'rejected' ? '#cbd5e1' : ov === 'pending' ? '#fb923c' : '#3b82f6'}">
       <div class="ref-top">
         <div class="ref-ppl">
           <div>${lbl('工头 · 介绍人')}${r.hr_self ? '<span style="display:inline-block;background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;border-radius:6px;padding:1px 8px;font-size:.8rem;font-weight:700">🙋 HR 自己招的</span>' : person(r.foreman_name, r.foreman_phone, r.foreman_state ? ` · 📍 ${esc(r.foreman_state)}` : '')}</div>
@@ -1815,7 +1905,7 @@ function _refWorkRows(r) {
     }
     chips = cells.length ? `<div class="ref-wks">${cells.join('')}</div>` : '';
   }
-  return row + termRow + chips;
+  return row + termRow + _refPayRow(r) + chips;
 }
 // ── 🔗 员工档案: 按工人电话在系统里找, 找到就 link, 找不到红字提示先扫二维码登记 ──
 function _refProfileChip(r) {
@@ -2004,6 +2094,93 @@ async function rsImage(inp) {
     if (!_rsGot(q.data)) info.innerHTML = '<span style="color:#b45309">这不是打卡二维码</span>';
   } catch (e) { info.innerHTML = `<span style="color:#dc2626">${esc(e.message || '识别失败')}</span>`; }
 }
+// ── 💵 付款方式 & 车补 ──
+let _rpId = null, _rpUuid = '', _rpHits = [];
+function openRefPay(id) {
+  const r = _refList.find(x => x.id === id);
+  if (!r) return;
+  _rpId = id;
+  document.getElementById('rpWho').textContent = `${r.worker_name || ''}${r.worker_phone ? ' · ' + r.worker_phone : ''}`;
+  const car = r.car_allowance == null ? '' : String(r.car_allowance);
+  document.querySelectorAll('input[name="rpCar"]').forEach(x => { x.checked = car ? (car === 'none' ? x.value === 'none' : x.value === 'yes') : false; });
+  document.getElementById('rpCarAmt').value = car && car !== 'none' ? car : '';
+  rpCarSw();
+  document.getElementById('rpMethod').value = r.pay_method || 'gusto';
+  _rpUuid = r.gusto_uuid || '';
+  const g = r.gusto || {};
+  document.getElementById('rpGustoPicked').innerHTML = g.linked
+    ? `✅ <b>${esc(g.name)}</b>${g.auto ? ' <span style="color:var(--g400);font-size:.74rem">（按姓名自动对上的，不对就在下面重新选）</span>' : ''}`
+    : '<span style="color:#dc2626">⚠ 在 Gusto 收款人里没对上，请搜着选一个（Gusto 里还没加这个人就先去 Gusto 加）</span>';
+  document.getElementById('rpGustoQ').value = '';
+  document.getElementById('rpGustoList').style.display = 'none';
+  rpMethodSw();
+  document.getElementById('refPayModal').style.display = 'flex';
+}
+function rpCarSw() {
+  const yes = (document.querySelector('input[name="rpCar"]:checked') || {}).value === 'yes';
+  document.getElementById('rpCarAmt').style.display = yes ? '' : 'none';
+}
+function rpMethodSw() { document.getElementById('rpGustoBox').style.display = document.getElementById('rpMethod').value === 'gusto' ? '' : 'none'; }
+let _rpT = null;
+function rpGustoSearch() {
+  clearTimeout(_rpT);
+  _rpT = setTimeout(async () => {
+    const q = document.getElementById('rpGustoQ').value.trim();
+    const list = document.getElementById('rpGustoList');
+    try {
+      const j = await api('/api/acct/gusto-payees?q=' + encodeURIComponent(q));
+      _rpHits = (j && j.payees) || [];
+      list.innerHTML = _rpHits.length ? _rpHits.map((p, i) => `<a onclick="rpGustoPick(${i})" style="display:block;padding:.4rem .6rem;border-bottom:1px solid #f1f5f9;cursor:pointer;font-size:.84rem;color:#1f2937;text-decoration:none">${esc(p.name)}${p.active ? '' : ' <span style="color:var(--g400);font-size:.72rem">（Gusto 里已停用）</span>'}</a>`).join('')
+        : `<div style="color:var(--g400);padding:.45rem .6rem;font-size:.8rem">${j && j.synced ? '没搜到，这个人可能还没加进 Gusto' : 'Gusto 还没同步过收款人名单'}</div>`;
+      list.style.display = '';
+    } catch (e) {}
+  }, 250);
+}
+function rpGustoPick(i) {
+  const p = _rpHits[i];
+  if (!p) return;
+  _rpUuid = p.uuid;
+  document.getElementById('rpGustoPicked').innerHTML = `✅ <b>${esc(p.name)}</b> <span style="color:var(--g400);font-size:.74rem">（手动选的）</span>`;
+  document.getElementById('rpGustoList').style.display = 'none';
+}
+async function submitRefPay() {
+  const carSel = (document.querySelector('input[name="rpCar"]:checked') || {}).value;
+  if (!carSel) return toast('请确认有没有车补', true);
+  const amt = document.getElementById('rpCarAmt').value.trim();
+  if (carSel === 'yes' && !amt) return toast('有车补请写多少、怎么给（如 $10/天）', true);
+  const btn = document.getElementById('rpSubmit');
+  btn.disabled = true;
+  try {
+    const j = await api(`/api/acct/referrals/${_rpId}/pay-setup`, { method: 'POST', body: JSON.stringify({
+      car_allowance: carSel === 'none' ? 'none' : amt, pay_method: document.getElementById('rpMethod').value, gusto_uuid: _rpUuid }) });
+    if (j && j.error) throw new Error(j.error);
+    document.getElementById('refPayModal').style.display = 'none';
+    toast('✅ 已保存付款方式和车补');
+    loadRefList();
+  } catch (e) { toast(e.message || '保存失败', true); }
+  finally { btn.disabled = false; }
+}
+// 上班中的检查: 车补 / 付款方式 / Gusto 关联 / 打卡二维码登记, 缺的标红
+function _refPayProblems(r) {
+  const p = [];
+  if (r.car_allowance == null || r.car_allowance === '') p.push('没确认有没有车补');
+  if (!r.pay_method) p.push('没确认付款方式');
+  if ((r.pay_method || 'gusto') === 'gusto' && !(r.gusto && r.gusto.linked)) p.push('还没关联 Gusto 收款人');
+  const qrOk = (r.clock && r.clock.found) || (r.profile && r.profile.linked && r.profile.has_code);
+  if (!qrOk) p.push('打卡二维码还没登记');
+  return p;
+}
+function _refPayRow(r) {
+  const PM = { gusto: 'Gusto', zelle: 'Zelle', cash: '现金', check: '支票', other: '其他' };
+  const car = r.car_allowance == null || r.car_allowance === '' ? '<span style="color:var(--g400)">车补未确认</span>' : r.car_allowance === 'none' ? '没有车补' : `🚗 车补 <b>${esc(r.car_allowance)}</b>`;
+  const g = r.gusto;
+  const pay = !r.pay_method ? '<span style="color:var(--g400)">付款方式未确认</span>'
+    : `付款：<b>${PM[r.pay_method] || esc(r.pay_method)}</b>${r.pay_method === 'gusto' ? (g && g.linked ? ` · 🔗 ${esc(g.name)}${g.auto ? ' <span style="color:var(--g400)">(自动对上)</span>' : ''}` : ' · <span style="color:#dc2626">没关联</span>') : ''}`;
+  const probs = _refPayProblems(r);
+  const edit = `<button class="btn btn-sm ${probs.length ? 'btn-blue' : 'btn-outline'}" onclick="openRefPay(${r.id})">💵 ${probs.length ? '去确认' : '改'}</button>`;
+  return `<div class="ref-row" style="${probs.length ? 'background:#fef2f2;color:#991b1b' : ''}"><b style="color:${probs.length ? '#b91c1c' : 'var(--g600)'}">💵 付款 & 车补</b><span>${pay}</span><span style="color:var(--g300)">|</span><span>${car}</span>
+    ${probs.length ? `<span style="color:#dc2626;font-weight:800">⚠ ${esc(probs.join('、'))}</span>` : '<span style="color:#047857">✅ 都确认了</span>'}<span style="flex:1"></span>${edit}</div>`;
+}
 async function submitRefStart() {
   const date = document.getElementById('rsDate').value;
   const code = _rsDigits(document.getElementById('rsCode').value);
@@ -2025,8 +2202,10 @@ async function submitRefStart() {
       start_time: t1, end_time: t2, work_days: days, start_wage: wage, pay_cycle: cycle, pay_day: payDay }) });
     if (j && j.error) throw new Error(j.error);
     closeRefStart();
-    toast('✅ 已记开始上班，移到「👷 上班中」');
-    loadRefList();
+    toast('✅ 已记开始上班，移到「👷 上班中」；请确认付款方式和车补');
+    const sid = _rsId;
+    await loadRefList();
+    openRefPay(sid);
   } catch (e) { toast(e.message || '保存失败', true); }
   finally { btn.disabled = false; }
 }
