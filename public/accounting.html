@@ -578,6 +578,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <label style="font-size:.76rem;color:var(--g500)">凭证文件（可多选，PDF 或图片）</label>
       <input type="file" id="raFiles" multiple accept=".pdf,.jpg,.jpeg,.png,.gif,.webp" style="width:100%;margin:.15rem 0 .4rem">
       <div id="raOldFiles" style="margin-bottom:.6rem;line-height:1.9"></div>
+      <div id="raMissing" style="display:none;font-size:.78rem;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:.35rem .6rem;margin-bottom:.5rem"></div>
       <div style="display:flex;gap:.5rem;justify-content:flex-end;align-items:center">
         <button class="btn btn-outline" onclick="raCopyInfo()" title="把表单里填的信息整理成一段文字复制，直接粘贴发给经理" style="margin-right:auto">📋 复制信息</button>
         <button class="btn btn-outline" onclick="closeRefAdd()">取消</button>
@@ -2007,6 +2008,7 @@ function _fmLabel(f) {
   return `${esc(f.name)}${f.phone ? ' · ' + esc(f.phone) : ''}${f.state ? ` <span style="color:#0f4c6b">📍${esc(f.state)}${f.city ? ' ' + esc(f.city) : ''}</span>` : ''}`;
 }
 function raFmRenderPicked() {
+  setTimeout(raValidate, 0);
   const box = document.getElementById('raForemanPicked');
   const sBox = document.getElementById('raForemanBox');
   if (_raForeman) {
@@ -2263,8 +2265,39 @@ function raHrSelfSw() {
   const on = document.getElementById('raHrSelf').checked;
   document.getElementById('raForemanWrap').style.display = on ? 'none' : '';
   document.getElementById('raAmountWrap').style.visibility = on ? 'hidden' : '';
+  raValidate();
 }
+// 必填检查: 缺的标红框 + 列出「还差」, 没填齐「提交」按钮灰掉点不了 (点了也只跳到第一个缺的)
+function raValidate() {
+  const $ = id => document.getElementById(id);
+  if (!$('raSubmitBtn')) return [];
+  const hr = $('raHrSelf').checked;
+  const miss = [];
+  const need = (ok, label, el) => { if (!ok) miss.push({ label, el }); if (el) { el.style.borderColor = ok ? '' : '#dc2626'; el.style.background = ok ? '' : '#fff5f5'; } };
+  need(hr || !!(_raForeman && _raForeman.name), '工头（或勾选 HR 自己招的）', _raForeman ? null : $('raForemanSearch'));
+  if (_raForeman || hr) { const f = $('raForemanSearch'); f.style.borderColor = ''; f.style.background = ''; }
+  need(!!$('raWorkerName').value.trim(), '被介绍人姓名', $('raWorkerName'));
+  need(!!$('raJobSel').value, '关联岗位', $('raJobSel'));
+  need(!!$('raWage').value.trim(), '工资', $('raWage'));
+  const amt = $('raAmount').value.trim();
+  need(hr || (amt !== '' && !isNaN(Number(amt)) && Number(amt) > 0), '每周介绍费', hr ? null : $('raAmount'));
+  if (hr) { $('raAmount').style.borderColor = ''; $('raAmount').style.background = ''; }
+  if ($('raWhSel').value === '__new__') need(!!$('raWh').value.trim(), '新仓库名称', $('raWh'));
+  const box = $('raMissing'), btn = $('raSubmitBtn');
+  box.style.display = miss.length ? '' : 'none';
+  box.textContent = miss.length ? '⚠ 还没填完，不能提交：' + miss.map(m => m.label).join('、') : '';
+  if (btn.textContent !== '提交中…') { btn.style.opacity = miss.length ? '.45' : ''; btn.style.cursor = miss.length ? 'not-allowed' : ''; }
+  return miss;
+}
+document.addEventListener('input', e => { if (e.target.closest && e.target.closest('#refAddModal')) raValidate(); });
+document.addEventListener('change', e => { if (e.target.closest && e.target.closest('#refAddModal')) raValidate(); });
 async function submitRefAdd() {
+  const miss = raValidate();
+  if (miss.length) {
+    const el = miss[0].el;
+    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => el.focus(), 250); }
+    return toast('还没填完：' + miss.map(m => m.label).join('、'), true);
+  }
   const hrSelf = document.getElementById('raHrSelf').checked;
   // 工头: 从工头名单里搜索选中的那个 (名单里没有 → 先在工头名单里添加); HR 自招不用
   if (!hrSelf && (!_raForeman || !_raForeman.name)) return toast('请先搜索选择工头；名单里没有就点「＋ 添加新工头」；HR 自己招的请勾选上面的「HR 自己招的」', true);
