@@ -2297,10 +2297,10 @@ async function submitRefAdd() {
 }
 // ── 📋 复制介绍信息: 把整条信息整理成一段文字, 直接粘贴发给经理 ──
 function _refInfoText(o) {
-  const L = ['🤝 介绍信息'];
+  // 复制出去发给别人看的: 标题写「工人信息」, 不带工头
+  const L = ['👷 工人信息'];
   const add = (k, v) => { v = String(v || '').trim(); if (v) L.push(k + '：' + v); };
-  add('工头（介绍人）', o.foreman);
-  add('被介绍工人', o.worker);
+  add('工人姓名', o.worker);
   add('岗位', o.job);
   add('工作仓库', o.warehouse);
   add('仓库地址', o.address);
