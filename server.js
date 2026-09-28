@@ -29966,23 +29966,44 @@ function _recruitCleanShifts(v) {
 // 敏感信息的 /api/admin/partners 全量接口。
 app.get('/api/admin/recruit-warehouses', requireAdmin, (req, res) => {
   try {
-    const out = new Map(); // name → address
-    try {
-      db.prepare("SELECT name, address FROM job_sites WHERE active=1").all()
-        .forEach(s => { if (s.name) out.set(s.name, s.address || ''); });
-    } catch (_) {}
+    // 一个客户可以有好几个仓库: 按 名称+地址 一行一个 (之前按名称去重, 多仓库的客户只剩第一个地址)。
+    // 来源: 打卡地点 / 仓库表 / 客户公司 (addresses 逐条展开) / 以前发过的招工 / 介绍记录
+    const out = [], seen = new Set(), seenAddr = new Set();
+    const aKey = a => String(a || '').toLowerCase().replace(/\b(\d{5})-\d{4}\b/, '$1').replace(/[^a-z0-9]+/g, '');
+    const add = (name, address, onlyNewAddr) => {
+      name = String(name || '').trim(); address = String(address || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+      if (!name) return;
+      const ak = aKey(address);
+      if (onlyNewAddr && ak && seenAddr.has(ak)) return;
+      const k = name.toLowerCase() + '|' + ak;
+      if (seen.has(k)) return;
+      seen.add(k); if (ak) seenAddr.add(ak);
+      out.push({ name, address });
+    };
     try {
       db.prepare("SELECT name, address, addresses FROM partners WHERE active=1").all().forEach(pt => {
-        if (!pt.name) return;
-        let a = pt.address || '';
-        if (!a && pt.addresses) { try { const arr = JSON.parse(pt.addresses); if (Array.isArray(arr) && arr.length) a = arr[0].address || arr[0] || ''; } catch (_) {} }
-        if (!out.has(pt.name)) out.set(pt.name, String(a || ''));
-        else if (!out.get(pt.name) && a) out.set(pt.name, String(a));
+        let got = false;
+        try {
+          const arr = JSON.parse(pt.addresses || '[]');
+          if (Array.isArray(arr)) arr.forEach(a => { const ad = typeof a === 'string' ? a : String((a && a.address) || ''); if (ad.trim()) { add(pt.name, ad); got = true; } });
+        } catch (_) {}
+        if (!got) add(pt.name, pt.address);
       });
     } catch (_) {}
-    res.json([...out.entries()].map(([name, address]) => ({ name, address })));
+    try { db.prepare("SELECT warehouse_name, address FROM warehouses WHERE is_active=1").all().forEach(w => add(w.warehouse_name, w.address)); } catch (_) {}
+    try {
+      db.prepare("SELECT s.name, s.address, COALESCE(p.name,'') AS partner FROM job_sites s LEFT JOIN partners p ON s.partner_id=p.id WHERE s.active=1").all()
+        .forEach(s => add(s.partner || s.name, s.address, true));
+    } catch (_) {}
+    try { db.prepare("SELECT DISTINCT warehouse, COALESCE(address,'') AS address FROM recruit_jobs WHERE COALESCE(warehouse,'')<>''").all().forEach(r => add(r.warehouse, r.address, true)); } catch (_) {}
+    try { db.prepare("SELECT DISTINCT warehouse_name, warehouse_address FROM referrals WHERE COALESCE(warehouse_name,'')<>''").all().forEach(r => add(r.warehouse_name, r.warehouse_address, true)); } catch (_) {}
+    // 同名下已有带地址的, 没地址的那条就不显示
+    const list = out.filter(w => w.address || !out.some(x => x !== w && x.address && x.name.toLowerCase() === w.name.toLowerCase()));
+    list.sort((a, b) => a.name.localeCompare(b.name) || a.address.localeCompare(b.address));
+    res.json(list);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
 
 app.get('/api/admin/recruit-jobs', requireAdmin, (req, res) => {
   try {
