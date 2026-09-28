@@ -30037,8 +30037,28 @@ app.get('/api/admin/recruit-jobs', requireAdmin, (req, res) => {
     res.json({ jobs, today: _recruitToday() });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+// 招工必填 (除「给工头的上限」外都要填): 新增和编辑内容时都查, 返回第一个缺的
+function _recruitMissing(j) {
+  const t = v => String(v || '').trim();
+  let shifts = [];
+  try { shifts = typeof j.shifts === 'string' ? JSON.parse(j.shifts || '[]') : (Array.isArray(j.shifts) ? j.shifts : []); } catch (_) {}
+  if (!t(j.warehouse)) return '请选择仓库';
+  if (!t(j.address)) return '请填写仓库地址';
+  if (!t(j.position)) return '请填写工种';
+  if (!_recruitDays(j.work_days)) return '请选择一周哪几天上班';
+  if (!shifts.length) return '请加至少一个班次（含上班时间）';
+  if (!t(j.worker_pay) && !shifts.every(x => x && t(x.worker_pay))) return '请填写给工人的工资（班次里写或填统一工资）';
+  if (!t(j.details)) return '请填写具体工作内容';
+  if (!t(j.language_req)) return '请选择语言要求';
+  if (j.ead_required === undefined || j.ead_required === null || j.ead_required === '') return '请选择要不要 EAD';
+  if (j.interview_required === undefined || j.interview_required === null || j.interview_required === '') return '请选择要不要面试';
+  if (Number(j.interview_required) === 1 && !t(j.interview_notes)) return '请填写面试要求';
+  return '';
+}
 app.post('/api/admin/recruit-jobs', requireAdmin, (req, res) => {
   try {
+    const miss = _recruitMissing(req.body || {});
+    if (miss) return res.status(400).json({ error: miss });
     const { warehouse, position, details, worker_pay, foreman_cap, shifts, interview_required, interview_notes, language_req, ead_required, address, work_days } = req.body || {};
     if (!String(warehouse || '').trim()) return res.status(400).json({ error: '请选择仓库' });
     if (!String(position || '').trim()) return res.status(400).json({ error: '请填写工种' });
@@ -30069,6 +30089,10 @@ app.patch('/api/admin/recruit-jobs/:id', requireAdmin, (req, res) => {
         .run(b.status, req.userName || '', _recruitToday(), req.userName || '', job.id);
       return res.json({ ok: true });
     }
+    // 编辑内容: 合并后整条也要填齐
+    const merged = { ...job, ...Object.fromEntries(Object.entries(b).filter(([, v]) => v !== undefined)) };
+    const miss = _recruitMissing(merged);
+    if (miss) return res.status(400).json({ error: miss });
     db.prepare(`UPDATE recruit_jobs SET warehouse=?, position=?, details=?, worker_pay=?, foreman_cap=?, shifts=?, interview_required=?, interview_notes=?, language_req=?, ead_required=?, address=?, work_days=?, updated_at=datetime('now') WHERE id=?`)
       .run(
         String(b.warehouse !== undefined ? b.warehouse : job.warehouse).trim(),

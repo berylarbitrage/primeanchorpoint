@@ -97,6 +97,41 @@ label{display:block;font-size:.74rem;font-weight:700;color:var(--gray-500);margi
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--gray-800);color:#fff;padding:10px 22px;border-radius:999px;font-size:.85rem;opacity:0;transition:opacity .2s;pointer-events:none;z-index:50}
 .toast.show{opacity:1}
 .shift-row{display:flex;align-items:center;gap:8px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:6px 10px;margin-bottom:5px;font-size:.84rem;flex-wrap:wrap}
+/* ── 表单美化 ── */
+.fgroup{border:1px solid #f1e4c3;background:#fff;border-radius:12px;padding:12px 14px 14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(146,64,14,.04)}
+.fgroup-title{font-size:.86rem;font-weight:800;color:var(--blue);margin-bottom:4px;gap:8px}
+.step{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;font-size:.72rem;font-weight:800}
+label .sub{font-weight:500;color:var(--gray-400);font-size:.7rem;margin-left:4px}
+label .opt{font-weight:600;color:var(--gray-400);font-size:.68rem;background:var(--gray-100);border-radius:999px;padding:1px 7px;margin-left:4px}
+i.req{color:#dc2626;font-style:normal;margin-left:1px}
+.bad{border-color:#f87171 !important;background:#fff7f7 !important}
+.bad-box{outline:2px solid #fca5a5;outline-offset:3px;border-radius:10px}
+.day-row{display:flex;gap:6px;flex-wrap:wrap}
+.day-chip{width:38px;height:38px;border-radius:50%;border:1.5px solid var(--gray-200);background:#fff;font-weight:800;font-size:.86rem;color:var(--gray-600);cursor:pointer;font-family:inherit;transition:all .12s}
+.day-chip:hover{border-color:var(--accent)}
+.day-chip.on{background:var(--sky);border-color:var(--sky);color:#fff}
+.quick-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px}
+.qlink{border:none;background:none;color:var(--sky);font-weight:700;font-size:.76rem;cursor:pointer;padding:0;font-family:inherit}
+.qlink.mute{color:var(--gray-400);font-weight:500}
+.day-label{font-size:.76rem;color:var(--green);font-weight:700;margin-left:auto}
+.shift-box{background:#fffbeb;border:1px dashed #fcd34d;border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:6px}
+.shift-line{display:flex;gap:6px;align-items:center}
+.shift-line .plus{color:var(--gray-400);flex-shrink:0}
+.mini-lbl{font-size:.7rem;font-weight:700;color:var(--gray-500)}
+.add-shift{flex-shrink:0;padding:9px 12px;border:none;border-radius:9px;background:var(--accent);color:#fff;font-weight:800;font-size:.8rem;cursor:pointer;font-family:inherit;white-space:nowrap}
+.add-shift:hover{background:var(--sky)}
+.chip-row{display:flex;gap:6px;flex-wrap:wrap}
+.lang-chip.sm{padding:3px 9px;font-size:.72rem}
+.seg{display:flex;border:1.5px solid var(--gray-200);border-radius:10px;overflow:hidden;background:#fff}
+.seg label{flex:1;margin:0 !important;display:block;cursor:pointer}
+.seg input{display:none}
+.seg span{display:block;text-align:center;padding:8px 6px;font-size:.84rem;font-weight:700;color:var(--gray-500)}
+.seg label+label span{border-left:1.5px solid var(--gray-200)}
+.seg input:checked+span{background:var(--sky-light);color:var(--blue)}
+.rf-missing{font-size:.78rem;line-height:1.6;border-radius:10px;padding:8px 12px;margin-top:4px}
+.rf-missing.todo{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412}
+.rf-missing.ok{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}
+.btn.dim{opacity:.55}
 </style>
 </head>
 <body>
@@ -117,23 +152,23 @@ label{display:block;font-size:.74rem;font-weight:700;color:var(--gray-500);margi
         <h2 style="margin-bottom:0"><span id="formTitle">&#10133; 新增招工需求</span>
           <button type="button" class="form-toggle" id="formToggle" onclick="toggleForm()">收起 ▲</button>
         </h2>
-        <div id="formBody" style="margin-top:10px">
+        <div id="formBody" style="margin-top:12px" oninput="rfCheck()" onchange="rfCheck()" onclick="setTimeout(rfCheck)">
         <input type="hidden" id="editId">
 
-        <div class="fgroup">
-          <div class="fgroup-title">📍 在哪个仓库</div>
-          <label>仓库（下拉选择）</label>
+        <div class="fgroup" data-step="1">
+          <div class="fgroup-title"><span class="step">1</span>在哪个仓库</div>
+          <label for="fWarehouse">仓库 <i class="req">*</i></label>
           <select id="fWarehouse" onchange="onWhChange()"></select>
           <input id="fWarehouseOther" placeholder="输入仓库名" style="display:none;margin-top:6px">
-          <label>地址（选仓库自动带出，可改）</label>
+          <label for="fAddress">地址 <i class="req">*</i> <span class="sub">选仓库自动带出，可改</span></label>
           <input id="fAddress" placeholder="如 950 Lunt Ave, Elk Grove Village, IL">
         </div>
 
-        <div class="fgroup">
-          <div class="fgroup-title">👷 招什么人</div>
+        <div class="fgroup" data-step="2">
+          <div class="fgroup-title"><span class="step">2</span>招什么人</div>
           <div class="grid2">
             <div>
-              <label>工种</label>
+              <label for="fPosition">工种 <i class="req">*</i></label>
               <input id="fPosition" list="posList" placeholder="如 卸柜工 / 叉车工">
               <datalist id="posList">
                 <option value="普工"></option><option value="叉车工"></option><option value="高位叉车"></option>
@@ -142,7 +177,7 @@ label{display:block;font-size:.74rem;font-weight:700;color:var(--gray-500);margi
               </datalist>
             </div>
             <div>
-              <label>要几个人（选填）</label>
+              <label for="fHeadcount">要几个人 <i class="req">*</i></label>
               <input id="fHeadcount" list="hcList" placeholder="如 5 / 越多越好">
               <datalist id="hcList">
                 <option value="越多越好"></option>
@@ -153,98 +188,102 @@ label{display:block;font-size:.74rem;font-weight:700;color:var(--gray-500);margi
           </div>
         </div>
 
-        <div class="fgroup">
-          <div class="fgroup-title">⏰ 班次 &amp; 工资</div>
-          <label>一周哪几天上班（可多选；不选 = 没说）</label>
-          <div id="dayChips" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
-            <button type="button" class="lang-chip day-chip" data-d="一" onclick="toggleDay(this)" style="width:auto;padding:6px 11px">一</button>
-            <button type="button" class="lang-chip day-chip" data-d="二" onclick="toggleDay(this)" style="width:auto;padding:6px 11px">二</button>
-            <button type="button" class="lang-chip day-chip" data-d="三" onclick="toggleDay(this)" style="width:auto;padding:6px 11px">三</button>
-            <button type="button" class="lang-chip day-chip" data-d="四" onclick="toggleDay(this)" style="width:auto;padding:6px 11px">四</button>
-            <button type="button" class="lang-chip day-chip" data-d="五" onclick="toggleDay(this)" style="width:auto;padding:6px 11px">五</button>
-            <button type="button" class="lang-chip day-chip" data-d="六" onclick="toggleDay(this)" style="width:auto;padding:6px 11px">六</button>
-            <button type="button" class="lang-chip day-chip" data-d="日" onclick="toggleDay(this)" style="width:auto;padding:6px 11px">日</button>
-            <button type="button" onclick="setDays('一二三四五')" style="width:auto;border:none;background:none;color:var(--blue);font-size:.78rem;font-weight:700;cursor:pointer;padding:4px 2px;font-family:inherit">周一至五</button>
-            <button type="button" onclick="setDays('六日')" style="width:auto;border:none;background:none;color:var(--blue);font-size:.78rem;font-weight:700;cursor:pointer;padding:4px 2px;font-family:inherit">周末</button>
-            <button type="button" onclick="setDays('一二三四五六日')" style="width:auto;border:none;background:none;color:var(--blue);font-size:.78rem;font-weight:700;cursor:pointer;padding:4px 2px;font-family:inherit">每天</button>
-            <button type="button" onclick="setDays('')" style="width:auto;border:none;background:none;color:var(--gray-400);font-size:.78rem;cursor:pointer;padding:4px 2px;font-family:inherit">清空</button>
-            <span id="dayLabel" style="font-size:.78rem;color:var(--gray-500)"></span>
+        <div class="fgroup" data-step="3">
+          <div class="fgroup-title"><span class="step">3</span>上班时间 &amp; 工资</div>
+          <label>一周哪几天上班 <i class="req">*</i></label>
+          <div id="dayChips" class="day-row">
+            <button type="button" class="day-chip" data-d="一" onclick="toggleDay(this)">一</button><button type="button" class="day-chip" data-d="二" onclick="toggleDay(this)">二</button><button type="button" class="day-chip" data-d="三" onclick="toggleDay(this)">三</button><button type="button" class="day-chip" data-d="四" onclick="toggleDay(this)">四</button><button type="button" class="day-chip" data-d="五" onclick="toggleDay(this)">五</button><button type="button" class="day-chip" data-d="六" onclick="toggleDay(this)">六</button><button type="button" class="day-chip" data-d="日" onclick="toggleDay(this)">日</button>
           </div>
-          <label>不同班次可以不同价，可加多条；只有一个价就直接填最下面「统一工资」</label>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-            <select id="sfName" style="width:auto;padding:9px 10px">
-              <option value="早班">⏰ 早班</option><option value="中班">⏰ 中班</option>
-              <option value="晚班">⏰ 晚班</option><option value="夜班">⏰ 夜班</option>
-              <option value="白班">⏰ 白班</option><option value="周末班">⏰ 周末班</option>
-              <option value="临时">⏰ 临时</option>
-            </select>
-            <span style="color:var(--gray-400)">＋</span>
-            <select id="sfName2" style="width:auto;padding:9px 10px" title="连班：两个班拼在一起上，时间填两个班合起来的起止">
-              <option value="">（不连班）</option>
-              <option value="早班">早班</option><option value="中班">中班</option>
-              <option value="晚班">晚班</option><option value="夜班">夜班</option>
-              <option value="白班">白班</option><option value="周末班">周末班</option>
-              <option value="临时">临时</option>
-            </select>
-            <input type="time" id="sfStart" style="width:auto;padding:8px 9px">
-            <span style="color:var(--gray-400)">–</span>
-            <input type="time" id="sfEnd" style="width:auto;padding:8px 9px">
+          <div class="quick-row">
+            <button type="button" class="qlink" onclick="setDays('一二三四五')">周一至五</button>
+            <button type="button" class="qlink" onclick="setDays('六日')">周末</button>
+            <button type="button" class="qlink" onclick="setDays('一二三四五六日')">每天</button>
+            <button type="button" class="qlink mute" onclick="setDays('')">清空</button>
+            <span id="dayLabel" class="day-label"></span>
           </div>
-          <div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap">
-            <span style="font-size:.72rem;font-weight:700;color:var(--gray-500)">该班次语言（不选 = 按整体要求）:</span>
-            <button type="button" class="lang-chip sf-lang" data-lv="不限" onclick="toggleSfLang(this)" style="width:auto;padding:4px 10px;font-size:.76rem">🌐 不限</button>
-            <button type="button" class="lang-chip sf-lang" data-lv="英语" onclick="toggleSfLang(this)" style="width:auto;padding:4px 10px;font-size:.76rem">🇺🇸 英语</button>
-            <button type="button" class="lang-chip sf-lang" data-lv="西班牙语" onclick="toggleSfLang(this)" style="width:auto;padding:4px 10px;font-size:.76rem">🇲🇽 西班牙语</button>
-            <button type="button" class="lang-chip sf-lang" data-lv="中文" onclick="toggleSfLang(this)" style="width:auto;padding:4px 10px;font-size:.76rem">🇨🇳 中文</button>
-          </div>
-          <div style="display:flex;gap:6px;margin-top:6px;align-items:center">
-            <input id="sfWorkerPay" placeholder="给工人 如 $18/h" style="flex:1">
-            <input id="sfForemanCap" placeholder="工头上限（内部）" style="flex:1">
-            <button type="button" onclick="addShiftRow()" style="width:auto;flex-shrink:0;padding:10px 14px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-weight:700;font-size:.84rem;cursor:pointer;font-family:inherit">+ 加班次</button>
+
+          <label>班次 <i class="req">*</i> <span class="sub">填好点「+ 加班次」；不同班次可以不同价，可加多条</span></label>
+          <div class="shift-box">
+            <div class="shift-line">
+              <select id="sfName" style="flex:1">
+                <option value="早班">⏰ 早班</option><option value="中班">⏰ 中班</option>
+                <option value="晚班">⏰ 晚班</option><option value="夜班">⏰ 夜班</option>
+                <option value="白班">⏰ 白班</option><option value="周末班">⏰ 周末班</option>
+                <option value="临时">⏰ 临时</option>
+              </select>
+              <span class="plus">＋</span>
+              <select id="sfName2" style="flex:1" title="连班：两个班拼在一起上，时间填两个班合起来的起止">
+                <option value="">（不连班）</option>
+                <option value="早班">早班</option><option value="中班">中班</option>
+                <option value="晚班">晚班</option><option value="夜班">夜班</option>
+                <option value="白班">白班</option><option value="周末班">周末班</option>
+                <option value="临时">临时</option>
+              </select>
+            </div>
+            <div class="shift-line">
+              <input type="time" id="sfStart" style="flex:1"><span class="plus">–</span><input type="time" id="sfEnd" style="flex:1">
+            </div>
+            <div class="shift-line" style="flex-wrap:wrap;gap:5px">
+              <span class="mini-lbl">该班次语言</span>
+              <button type="button" class="lang-chip sm sf-lang" data-lv="不限" onclick="toggleSfLang(this)">🌐 不限</button>
+              <button type="button" class="lang-chip sm sf-lang" data-lv="英语" onclick="toggleSfLang(this)">🇺🇸 英语</button>
+              <button type="button" class="lang-chip sm sf-lang" data-lv="西班牙语" onclick="toggleSfLang(this)">🇲🇽 西语</button>
+              <button type="button" class="lang-chip sm sf-lang" data-lv="中文" onclick="toggleSfLang(this)">🇨🇳 中文</button>
+              <span class="mini-lbl" style="font-weight:400">不选 = 按整体要求</span>
+            </div>
+            <div class="shift-line">
+              <input id="sfWorkerPay" placeholder="给工人 如 $18/h" style="flex:1;min-width:0">
+              <input id="sfForemanCap" placeholder="工头上限（选填）" style="flex:1;min-width:0">
+              <button type="button" class="add-shift" onclick="addShiftRow()">+ 加班次</button>
+            </div>
           </div>
           <div id="shiftRows" style="margin-top:8px"></div>
-          <div class="grid2" style="margin-top:2px">
+          <div class="grid2" style="margin-top:4px">
             <div>
-              <label>统一工资 — 给工人（不分班次时填这里）</label>
+              <label for="fWorkerPay">统一工资 · 给工人 <span class="sub">班次都没写价时必填</span></label>
               <input id="fWorkerPay" placeholder="如 $18/h 或 $0.10/件">
             </div>
             <div>
-              <label>给工头的上限（内部）</label>
+              <label for="fForemanCap">给工头的上限 <span class="opt">选填 · 内部</span></label>
               <input id="fForemanCap" placeholder="如 $20/h（别外传）">
             </div>
           </div>
         </div>
 
-        <div class="fgroup">
-          <div class="fgroup-title">📋 工作内容 &amp; 要求</div>
-          <label>具体工作内容</label>
+        <div class="fgroup" data-step="4">
+          <div class="fgroup-title"><span class="step">4</span>工作内容 &amp; 要求</div>
+          <label for="fDetails">具体工作内容 <i class="req">*</i></label>
           <textarea id="fDetails" placeholder="比如：&#10;· 早7点到仓库，卸两个柜，约2000件&#10;· 需要有经验，能搬重物&#10;· 地址 / 找谁报到"></textarea>
-          <label>语言要求（整体，必选，可多选 — 个别班次不同的在上面班次里单独选）</label>
-          <div id="langChips" style="display:flex;gap:8px;flex-wrap:wrap">
-            <button type="button" class="lang-chip" data-lv="不限" onclick="toggleLang(this)" style="width:auto">🌐 不限</button>
-            <button type="button" class="lang-chip" data-lv="英语" onclick="toggleLang(this)" style="width:auto">🇺🇸 英语</button>
-            <button type="button" class="lang-chip" data-lv="西班牙语" onclick="toggleLang(this)" style="width:auto">🇲🇽 西班牙语</button>
-            <button type="button" class="lang-chip" data-lv="中文" onclick="toggleLang(this)" style="width:auto">🇨🇳 中文</button>
+          <label>语言要求 <i class="req">*</i> <span class="sub">可多选；个别班次不同的在班次里单独选</span></label>
+          <div id="langChips" class="chip-row">
+            <button type="button" class="lang-chip" data-lv="不限" onclick="toggleLang(this)">🌐 不限</button>
+            <button type="button" class="lang-chip" data-lv="英语" onclick="toggleLang(this)">🇺🇸 英语</button>
+            <button type="button" class="lang-chip" data-lv="西班牙语" onclick="toggleLang(this)">🇲🇽 西班牙语</button>
+            <button type="button" class="lang-chip" data-lv="中文" onclick="toggleLang(this)">🇨🇳 中文</button>
           </div>
           <div class="grid2">
             <div>
-              <label>是否需要真 EAD（工卡）</label>
-              <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-                <label style="display:inline-flex;align-items:center;gap:6px;margin:0;font-size:.86rem;font-weight:600;color:var(--gray-800);cursor:pointer"><input type="radio" name="fEad" value="0" checked style="width:auto">不要求</label>
-                <label style="display:inline-flex;align-items:center;gap:6px;margin:0;font-size:.86rem;font-weight:600;color:var(--gray-800);cursor:pointer"><input type="radio" name="fEad" value="1" style="width:auto">🪪 需要</label>
+              <label>要真 EAD（工卡）吗 <i class="req">*</i></label>
+              <div class="seg" id="segEad">
+                <label><input type="radio" name="fEad" value="0"><span>不要求</span></label>
+                <label><input type="radio" name="fEad" value="1"><span>🪪 需要</span></label>
               </div>
             </div>
             <div>
-              <label>是否需要面试</label>
-              <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-                <label style="display:inline-flex;align-items:center;gap:6px;margin:0;font-size:.86rem;font-weight:600;color:var(--gray-800);cursor:pointer"><input type="radio" name="fIv" value="0" checked onchange="onIvChange()" style="width:auto">不需要</label>
-                <label style="display:inline-flex;align-items:center;gap:6px;margin:0;font-size:.86rem;font-weight:600;color:var(--gray-800);cursor:pointer"><input type="radio" name="fIv" value="1" onchange="onIvChange()" style="width:auto">🗣 需要</label>
+              <label>要面试吗 <i class="req">*</i></label>
+              <div class="seg" id="segIv">
+                <label><input type="radio" name="fIv" value="0" onchange="onIvChange()"><span>不需要</span></label>
+                <label><input type="radio" name="fIv" value="1" onchange="onIvChange()"><span>🗣 需要</span></label>
               </div>
             </div>
           </div>
-          <textarea id="fIvNotes" style="display:none;margin-top:6px;min-height:60px" placeholder="面试要求：什么时间、去哪、找谁、带什么（如带ID、穿劳保鞋）"></textarea>
+          <div id="ivNotesWrap" style="display:none">
+            <label for="fIvNotes">面试要求 <i class="req">*</i></label>
+            <textarea id="fIvNotes" style="min-height:60px" placeholder="什么时间、去哪、找谁、带什么（如带ID、穿劳保鞋）"></textarea>
+          </div>
         </div>
 
+        <div id="rfMissing" class="rf-missing"></div>
         <button class="btn" id="saveBtn" onclick="saveJob()">📢 发布</button>
         <button class="btn" id="cancelEditBtn" onclick="cancelEdit()" style="display:none;background:var(--gray-100);color:var(--gray-600)">取消编辑</button>
         </div>
@@ -392,6 +431,7 @@ function onWhChange() {
     addrEl.value = w.address;
     addrEl._auto = w.address;
   }
+  rfCheck();
 }
 async function reload() {
   const r = await api('/admin/recruit-jobs');
@@ -468,9 +508,42 @@ function setDays(d) {
   document.getElementById('dayLabel').textContent = daysLabel(_daysValue());
 }
 function toggleDay(btn) { btn.classList.toggle('on'); setDays(_daysValue()); }
+function _radio(name) { const r = document.querySelector('input[name="' + name + '"]:checked'); return r ? r.value : ''; }
+function _setRadio(name, v) { document.querySelectorAll('input[name="' + name + '"]').forEach(r => { r.checked = v !== '' && r.value === String(v); }); }
 function onIvChange() {
-  const need = document.querySelector('input[name="fIv"]:checked').value === '1';
-  document.getElementById('fIvNotes').style.display = need ? '' : 'none';
+  document.getElementById('ivNotesWrap').style.display = _radio('fIv') === '1' ? '' : 'none';
+}
+// ─── 必填检查: 除了「给工头的上限」都要填; 下面实时列出还差什么, 点发布后缺的标红 ───
+let _rfTried = false;
+function rfCheck() {
+  const miss = [], bad = [];
+  const need = (ok, label, el) => { if (!ok) { miss.push(label); if (el) bad.push(el); } };
+  const $ = id => document.getElementById(id);
+  const whSel = $('fWarehouse').value;
+  need(whSel !== '' && (whSel !== OTHER || $('fWarehouseOther').value.trim()), '仓库', whSel === OTHER ? $('fWarehouseOther') : $('fWarehouse'));
+  need($('fAddress').value.trim(), '地址', $('fAddress'));
+  need($('fPosition').value.trim(), '工种', $('fPosition'));
+  // 编辑老招工: 人数已经写进工种 (「× 5人」) 的不用再填
+  need($('fHeadcount').value.trim() || / × /.test($('fPosition').value), '要几个人', $('fHeadcount'));
+  need(_daysValue(), '一周哪几天上班', $('dayChips'));
+  // 编辑区填了还没点「+ 加班次」的也算 (发布时自动加进去)
+  const pending = $('sfStart').value && $('sfEnd').value;
+  need(_shiftRows.length || pending, '班次（时间）', document.querySelector('.shift-box'));
+  const unified = $('fWorkerPay').value.trim();
+  const rowsPaid = _shiftRows.every(r => r.worker_pay) && (!pending || $('sfWorkerPay').value.trim());
+  need(unified || ((_shiftRows.length || pending) && rowsPaid), '给工人的工资（班次里写或填统一工资）', unified ? null : $('fWorkerPay'));
+  need($('fDetails').value.trim(), '具体工作内容', $('fDetails'));
+  need(_langValue(), '语言要求', $('langChips'));
+  need(_radio('fEad'), '要不要 EAD', $('segEad'));
+  need(_radio('fIv'), '要不要面试', $('segIv'));
+  if (_radio('fIv') === '1') need($('fIvNotes').value.trim(), '面试要求', $('fIvNotes'));
+  document.querySelectorAll('#formBody .bad, #formBody .bad-box').forEach(e => e.classList.remove('bad', 'bad-box'));
+  if (_rfTried) bad.forEach(e => e.classList.add(/^(INPUT|SELECT|TEXTAREA)$/.test(e.tagName) ? 'bad' : 'bad-box'));
+  const box = $('rfMissing');
+  box.className = 'rf-missing ' + (miss.length ? 'todo' : 'ok');
+  box.innerHTML = miss.length ? '还差：<b>' + miss.map(esc).join('</b>、<b>') + '</b>' : '✅ 都填好了，可以发布';
+  $('saveBtn').classList.toggle('dim', miss.length > 0);
+  return miss;
 }
 function addShiftRow() {
   const name = document.getElementById('sfName').value;
@@ -525,6 +598,7 @@ function renderShiftRows() {
     + '<span onclick="editShiftRow(' + i + ')" style="margin-left:auto;cursor:pointer;font-weight:700;color:var(--sky)">✏️ 修改</span>'
     + '<span onclick="removeShiftRow(' + i + ')" style="cursor:pointer;font-weight:900;color:var(--red);padding-left:6px">&times;</span>'
     + '</div>').join('');
+  if (typeof rfCheck === 'function' && document.getElementById('rfMissing')) rfCheck();
 }
 // ─── 列表筛选 ───
 function setFilter(f) {
@@ -897,14 +971,15 @@ function _fillForm(j, asNew) {
   document.getElementById('fHeadcount').value = '';
   _shiftRows = parseShifts(j.shifts);
   renderShiftRows();
-  document.querySelector('input[name="fIv"][value="' + (j.interview_required ? 1 : 0) + '"]').checked = true;
+  _setRadio('fIv', j.interview_required ? 1 : 0);
   document.getElementById('fIvNotes').value = j.interview_notes || '';
   onIvChange();
   _setLangValue(j.language_req || '');
   document.getElementById('fAddress').value = j.address || '';
   document.getElementById('fAddress')._auto = '';
-  document.querySelector('input[name="fEad"][value="' + (j.ead_required ? 1 : 0) + '"]').checked = true;
+  _setRadio('fEad', j.ead_required ? 1 : 0);
   setDays(j.work_days || '');
+  _rfTried = false; rfCheck();
   document.getElementById('formTitle').textContent = asNew ? '📄 复制再发（改改就能发）' : '✏️ 编辑招工需求 #' + j.id;
   document.getElementById('saveBtn').textContent = asNew ? '📢 发布' : '保存修改';
   document.getElementById('cancelEditBtn').style.display = '';
@@ -925,12 +1000,13 @@ function cancelEdit() {
   document.getElementById('fAddress')._auto = '';
   _shiftRows = [];
   renderShiftRows();
-  document.querySelector('input[name="fIv"][value="0"]').checked = true;
+  _setRadio('fIv', '');
   onIvChange();
   _setLangValue('');
-  document.querySelector('input[name="fEad"][value="0"]').checked = true;
+  _setRadio('fEad', '');
   setDays('');
   renderWhOptions('');
+  _rfTried = false; rfCheck();
   document.getElementById('formTitle').textContent = '➕ 新增招工需求';
   document.getElementById('saveBtn').textContent = '📢 发布';
   document.getElementById('cancelEditBtn').style.display = 'none';
@@ -940,10 +1016,10 @@ async function saveJob() {
     const warehouse = _whValue();
     const position = document.getElementById('fPosition').value.trim();
     const headcount = document.getElementById('fHeadcount').value.trim();
-    if (!warehouse) { toast('请选择仓库'); return; }
-    if (!position) { toast('请填写工种'); return; }
+    _rfTried = true;
+    const miss = rfCheck();
+    if (miss.length) { toast('还差：' + miss.join('、')); return; }
     const language_req = _langValue();
-    if (!language_req) { toast('请选择语言要求（不限也要选）'); return; }
     // 上面班次编辑区填了时间/工资但忘点「+ 加班次」的, 保存时自动补进列表, 不再悄悄丢掉
     if (document.getElementById('sfStart').value || document.getElementById('sfEnd').value
         || document.getElementById('sfWorkerPay').value.trim() || document.getElementById('sfForemanCap').value.trim()) {
@@ -956,10 +1032,10 @@ async function saveJob() {
       worker_pay: document.getElementById('fWorkerPay').value.trim(),
       foreman_cap: document.getElementById('fForemanCap').value.trim(),
       shifts: _shiftRows,
-      interview_required: document.querySelector('input[name="fIv"]:checked').value === '1' ? 1 : 0,
+      interview_required: _radio('fIv') === '1' ? 1 : 0,
       interview_notes: document.getElementById('fIvNotes').value.trim(),
       language_req,
-      ead_required: document.querySelector('input[name="fEad"]:checked').value === '1' ? 1 : 0,
+      ead_required: _radio('fEad') === '1' ? 1 : 0,
       address: document.getElementById('fAddress').value.trim(),
       work_days: _daysValue()
     };
