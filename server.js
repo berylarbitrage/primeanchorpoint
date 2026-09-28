@@ -913,6 +913,9 @@ try { db.exec(`ALTER TABLE referrals ADD COLUMN hr_self INTEGER DEFAULT 0`); } c
 try { db.exec(`ALTER TABLE referrals ADD COLUMN car_allowance TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE referrals ADD COLUMN pay_method TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE referrals ADD COLUMN gusto_uuid TEXT DEFAULT ''`); } catch(e) {}
+// 关联「每日招工」(recruit_jobs) 的某个需求 / 具体班次: 招工卡片上能看到这个需求来了哪些人
+try { db.exec(`ALTER TABLE referrals ADD COLUMN recruit_job_id INTEGER DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE referrals ADD COLUMN recruit_shift TEXT DEFAULT ''`); } catch(e) {}
 // 介绍费按周付: 关联的每张发票 (一周账期) = 一周, 每周单独记介绍费金额和付款批注
 // (acct_pay_notes target_type='referralweek', target_id=这里的 id); fee 为空 = 按介绍记录上的介绍费
 try { db.exec(`CREATE TABLE IF NOT EXISTS referral_weeks (
@@ -30039,6 +30042,15 @@ app.get('/api/admin/recruit-jobs', requireAdmin, (req, res) => {
     const jobs = db.prepare(`SELECT * FROM recruit_jobs
       WHERE status='open' OR datetime(COALESCE(status_at, updated_at)) >= datetime('now', '-30 days')
       ORDER BY CASE WHEN status='open' THEN 0 ELSE 1 END, id DESC`).all();
+    // 面试那边 (介绍) 关联了这个需求的申请人: 姓名电话 / 面试时间和结果 / 上班 / 班次
+    const byJob = {};
+    try {
+      db.prepare(`SELECT id, recruit_job_id, COALESCE(recruit_shift,'') AS recruit_shift, worker_name, worker_phone, interview_at, COALESCE(interview_status,'') AS interview_status,
+          COALESCE(work_start_date,'') AS work_start_date, foreman_name, COALESCE(hr_self,0) AS hr_self, created_at
+        FROM referrals WHERE recruit_job_id IS NOT NULL ORDER BY interview_at DESC, id DESC`).all()
+        .forEach(r => { (byJob[r.recruit_job_id] = byJob[r.recruit_job_id] || []).push(r); });
+    } catch (e) {}
+    jobs.forEach(j => { j.applicants = byJob[j.id] || []; });
     res.json({ jobs, today: _recruitToday() });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -41017,6 +41029,16 @@ function _referralBody(b) {
 // 关联岗位: 表单传 jobs.id, 存 id + 「编号 标题 中文名 — 公司」快照;
 // 编辑时岗位已被删的, 没换岗位就保留原快照, 换掉/清空按新值走
 function _referralJob(b, cur) {
+  // 选的是每日招工 (可到具体班次): job_id 空, 存 recruit_job_id + 班次, 岗位快照 = 仓库 · 工种 · 班次
+  const rid = parseInt(b.recruit_job_id);
+  if (rid > 0) {
+    const rj = db.prepare('SELECT id, warehouse, position FROM recruit_jobs WHERE id=?').get(rid);
+    if (rj || (cur && cur.recruit_job_id === rid)) {
+      const shift = String(b.recruit_shift || '').trim().slice(0, 80);
+      const t = rj ? ['📢', rj.position, rj.warehouse ? '— ' + rj.warehouse : '', shift ? '· ' + shift : ''].filter(Boolean).join(' ') : (cur.job_title || '');
+      return { job_id: null, job_title: t.slice(0, 300), recruit_job_id: rid, recruit_shift: shift };
+    }
+  }
   const id = parseInt(b.job_id);
   if (!id || id <= 0) return { job_id: null, job_title: '' };
   const j = db.prepare(`SELECT j.job_id AS code, j.title, COALESCE(j.title_zh,'') AS title_zh,
@@ -41038,7 +41060,7 @@ app.post('/api/acct/referrals', requireAdmin, requireRole('accounting', 'admin',
   if (!f.worker_wage) return res.status(400).json({ error: '请手动填写工人的工资（岗位上写的是区间，要填实际谈定的）' });
   if (!f.hr_self && !(f.amount > 0)) return res.status(400).json({ error: '请填写每周介绍费（金额要大于 0）' });
   const jb = _referralJob(req.body || {});
-  if (!jb.job_id) return res.status(400).json({ error: '请选择关联岗位' });
+  if (!jb.job_id && !jb.recruit_job_id) return res.status(400).json({ error: '请选择关联岗位' });
   const files = Array.isArray(req.files) ? req.files : [];
   const atts = files.map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
   const r = db.prepare(`INSERT INTO referrals
@@ -41047,6 +41069,7 @@ app.post('/api/acct/referrals', requireAdmin, requireRole('accounting', 'admin',
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.worker_wage, f.warehouse_name, f.warehouse_address,
       f.interview_at, f.amount, f.description, JSON.stringify(atts), jb.job_id, jb.job_title, req.userName || '', f.hr_self);
+  db.prepare('UPDATE referrals SET recruit_job_id=?, recruit_shift=? WHERE id=?').run(jb.recruit_job_id || null, jb.recruit_shift || '', r.lastInsertRowid);
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
@@ -41064,7 +41087,7 @@ app.put('/api/acct/referrals/:id', requireAdmin, requireRole('accounting', 'admi
   // 与新增一致: 介绍费必须写、岗位必须关联 (老记录没填的, 编辑保存时也要求补上)
   if (!f.hr_self && !(f.amount > 0)) return res.status(400).json({ error: '请填写每周介绍费（金额要大于 0）' });
   const jb = _referralJob(req.body || {}, cur);
-  if (!jb.job_id) return res.status(400).json({ error: '请选择关联岗位' });
+  if (!jb.job_id && !jb.recruit_job_id) return res.status(400).json({ error: '请选择关联岗位' });
   let atts = _claimAtts(cur);
   let rmList = []; try { rmList = JSON.parse((req.body || {}).remove_attachments || '[]'); } catch (e) { rmList = []; }
   if (Array.isArray(rmList) && rmList.length) {
@@ -41078,6 +41101,7 @@ app.put('/api/acct/referrals/:id', requireAdmin, requireRole('accounting', 'admi
       warehouse_name=?, warehouse_address=?, interview_at=?, amount=?, description=?, attachments=?, job_id=?, job_title=?, hr_self=?, updated_at=datetime('now') WHERE id=?`)
     .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.worker_wage, f.warehouse_name, f.warehouse_address,
       f.interview_at, f.amount, f.description, JSON.stringify(atts), jb.job_id, jb.job_title, f.hr_self, cur.id);
+  db.prepare('UPDATE referrals SET recruit_job_id=?, recruit_shift=? WHERE id=?').run(jb.recruit_job_id || null, jb.recruit_shift || '', cur.id);
   res.json({ success: true });
 });
 
@@ -41147,7 +41171,13 @@ app.get('/api/acct/referral-options', requireAdmin, requireAcctView, (req, res) 
         FROM jobs j LEFT JOIN partners p ON j.partner_id = p.id
         WHERE j.active=1 AND COALESCE(j.job_status,'open')='open' ORDER BY j.created_at DESC`).all();
     } catch (e) {}
-    res.json({ foremen, warehouses: whsOut, jobs });
+    // 每日招工在招的需求 (带班次), 关联岗位下拉里一个班次一个选项
+    let recruit = [];
+    try {
+      recruit = db.prepare(`SELECT id, warehouse, COALESCE(address,'') AS address, position, worker_pay, COALESCE(shifts,'') AS shifts FROM recruit_jobs WHERE status='open' ORDER BY id DESC`).all()
+        .map(j => { let sh = []; try { sh = JSON.parse(j.shifts || '[]'); } catch (e) {} return { id: j.id, warehouse: j.warehouse, address: j.address, position: j.position, worker_pay: j.worker_pay || '', shifts: Array.isArray(sh) ? sh.map(x => ({ shift: x.shift || '', worker_pay: x.worker_pay || '' })).filter(x => x.shift) : [] }; });
+    } catch (e) {}
+    res.json({ foremen, warehouses: whsOut, jobs, recruit });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
