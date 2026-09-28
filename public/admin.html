@@ -1368,7 +1368,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <h1>员工管理</h1>
     <div class="top-actions">
       <button class="btn btn-outline" onclick="openExportStates('employees')">导出 CSV</button>
-      <button class="btn btn-outline" id="btnExportContacts" onclick="openExportStates('contacts')" style="display:none" title="系统里全部的姓名 + 手机号（员工、扫码登记、工头、介绍记录、短信/电话联系人、合作公司联系人），按手机号去重">📇 导出全部姓名电话</button>
+      <button class="btn btn-outline" id="btnExportContacts" onclick="openExportStates('contacts')" style="display:none" title="工人的姓名 + 手机号（员工、扫码登记、介绍的工人；不含仓库联系人和工头），按手机号去重，可按州、中国人筛">📇 导出工人姓名电话</button>
       <button class="btn btn-outline" id="empExportDocsBtn" onclick="exportSelectedEmpDocs()" title="勾选员工后导出其姓名/电话/邮箱与 SSN、EAD 证件（生成 PDF 档案）">📎 导出证件 (0)</button>
       <button class="btn btn-outline" id="empSelClearBtn" onclick="_empSelClear()" style="display:none;color:#b91c1c;border-color:#fca5a5" title="清空已勾选的员工">✕ 取消选择</button>
       <a class="btn btn-outline" href="/timeclock" target="_blank">打卡页面 ↗</a>
@@ -18449,17 +18449,26 @@ function editFromDetail() {
 let _expMode = 'employees', _expCounts = null;
 async function openExportStates(mode) {
   _expMode = mode;
-  document.getElementById('expStTitle').textContent = mode === 'contacts' ? '📇 导出全部姓名电话' : '📄 导出员工 CSV';
+  document.getElementById('expStTitle').textContent = mode === 'contacts' ? '📇 导出工人姓名电话' : '📄 导出员工 CSV';
   document.getElementById('expStHint').textContent = mode === 'contacts'
-    ? '勾选要导出的州（员工按员工号里的工作州，扫码登记按申请的仓库州，介绍工人按仓库地址）'
+    ? '只导出工人（员工、扫码登记、介绍的工人），仓库联系人和工头不导出。州：员工按员工号里的工作州，扫码登记按申请的仓库州，介绍工人按仓库地址'
     : '勾选要导出的州（按员工号里的工作州，没有就按住址州）';
-  document.getElementById('expStList').innerHTML = '<div style="color:#9ca3af">加载中…</div>';
+  document.getElementById('expCnRow').style.display = mode === 'contacts' ? '' : 'none';
+  if (mode === 'contacts') document.querySelector('input[name="expCn"][value=""]').checked = true;
   document.getElementById('expStModal').style.display = 'flex';
+  await _expLoadStates();
+}
+function _expCn() { const r = document.querySelector('input[name="expCn"]:checked'); return _expMode === 'contacts' && r ? r.value : ''; }
+function expCnChanged() { _expLoadStates(); }
+async function _expLoadStates() {
+  const mode = _expMode;
+  document.getElementById('expStList').innerHTML = '<div style="color:#9ca3af">加载中…</div>';
   try {
-    const r = await fetch(API + '/admin/export-states', { headers: { 'Authorization': 'Bearer ' + TOKEN } });
+    const r = await fetch(API + '/admin/export-states?cn=' + _expCn(), { headers: { 'Authorization': 'Bearer ' + TOKEN } });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
     _expCounts = j[mode] || { states: {}, none: 0 };
+    document.getElementById('expCnN').textContent = j.cn_count != null ? '(' + j.cn_count + ')' : '';
   } catch (e) { document.getElementById('expStList').innerHTML = '<div style="color:#dc2626">' + esc(e.message || '加载失败') + '</div>'; return; }
   const sts = Object.entries(_expCounts.states).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   const box = (v, label, n) => `<label style="display:flex;align-items:center;gap:6px;border:1.5px solid #e5e7eb;border-radius:9px;padding:7px 10px;cursor:pointer;font-weight:700;font-size:.86rem;margin:0">
@@ -18483,7 +18492,7 @@ function expStSum() {
 function doExportStates() {
   const s = _expSel();
   if (!s.states.length && !s.none) return;
-  const qs = 'states=' + encodeURIComponent(s.states.join(',')) + (s.none ? '&nostate=1' : '');
+  const qs = 'states=' + encodeURIComponent(s.states.join(',')) + (s.none ? '&nostate=1' : '') + (_expCn() ? '&cn=' + _expCn() : '');
   document.getElementById('expStModal').style.display = 'none';
   if (_expMode === 'contacts') exportAllContacts(qs);
   else window.open(API + '/admin/employees/export?token=' + TOKEN + '&' + qs, '_blank');
@@ -52285,12 +52294,22 @@ fetch('/api/build', { cache: 'no-store' }).then(r => r.json()).then(b => {
   else boot();
 })();
 </script>
+<style>.exp-cn{display:inline-flex;align-items:center;gap:4px;border:1.5px solid #e5e7eb;border-radius:9px;padding:5px 10px;font-size:.82rem;font-weight:700;cursor:pointer;margin:0}.exp-cn input{width:auto;margin:0}</style>
 <!-- 导出前选州 (IL / TX / …, 可多选) -->
 <div id="expStModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:1200;align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)this.style.display='none'">
   <div style="background:#fff;border-radius:14px;padding:18px 20px;max-width:420px;width:100%;box-shadow:0 10px 30px rgba(0,0,0,.2)">
     <div style="display:flex;align-items:center;margin-bottom:4px"><b id="expStTitle" style="font-size:1rem">导出</b><span style="flex:1"></span>
       <button type="button" onclick="document.getElementById('expStModal').style.display='none'" style="border:none;background:#f3f4f6;border-radius:8px;padding:3px 10px;cursor:pointer">✕</button></div>
     <div id="expStHint" style="font-size:.78rem;color:#6b7280;margin-bottom:10px"></div>
+    <div id="expCnRow" style="display:none;margin-bottom:10px">
+      <div style="font-size:.78rem;font-weight:700;color:#374151;margin-bottom:4px">中国人</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <label class="exp-cn"><input type="radio" name="expCn" value="" checked onchange="expCnChanged()"> 全部工人</label>
+        <label class="exp-cn"><input type="radio" name="expCn" value="exclude" onchange="expCnChanged()"> 不含中国人</label>
+        <label class="exp-cn"><input type="radio" name="expCn" value="only" onchange="expCnChanged()"> 🇨🇳 只要中国人 <span id="expCnN" style="color:#9ca3af"></span></label>
+      </div>
+      <div style="font-size:.7rem;color:#9ca3af;margin-top:3px">按名字判断（汉字名，或中国姓 + 拼音名），导出的表里有「中国人」一列可核对</div>
+    </div>
     <div style="display:flex;gap:10px;margin-bottom:6px;font-size:.78rem">
       <a style="cursor:pointer;color:#b45309;font-weight:700" onclick="expStAll(true)">全选</a>
       <a style="cursor:pointer;color:#9ca3af" onclick="expStAll(false)">全不选</a>

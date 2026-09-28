@@ -19630,34 +19630,58 @@ const _ST_RE = /^[A-Z]{2}$/;
 function _stateOf(v) { const t = String(v || '').trim().toUpperCase(); return _ST_RE.test(t) && t !== 'XX' ? t : ''; }
 function _stateFromAddr(a) { const m = String(a || '').toUpperCase().match(/,\s*([A-Z]{2})\s*,?\s*\d{5}(?:-\d{4})?\s*$/) || String(a || '').toUpperCase().match(/\b([A-Z]{2})\s+\d{5}(?:-\d{4})?\b/); return m ? _stateOf(m[1]) : ''; }
 function _empState(e) { const m = /^WRK-([A-Z]{2})-/.exec(String(e.employee_id || '')); return _stateOf(m && m[1]) || _stateOf(e.state); }
-// 全部姓名电话: 按手机号后 10 位去重, 来源和州合并
+// ── 判断是不是中国人 (系统里没有国籍字段, 只能看名字): 名字里有汉字, 或者 姓是常见中国姓 + 每个词都是拼音 ──
+const _CN_SURNAMES = new Set(('wang li zhang liu chen yang huang zhao wu zhou xu sun ma zhu hu guo he lin gao luo zheng liang xie song tang han feng deng cao peng zeng xiao tian dong pan yuan cai jiang yu du ye cheng wei su lu ding ren shen yao lv cui zhong tan fan jin shi liao jia xia fu fang bai zou meng xiong qin qiu yin xue yan duan lei hou long tao gu mao hao gong shao wan qian dai xiang kong kang chang mo qi yi zhan geng ou ni guan lan niu hong qu ling mei chai jiao nie bao min rong sha cong wen yue dou ji zhuo huo zhai ai an bi chu diao zang').split(' '));
+const _PY_SYL = '(?:zh|ch|sh|[bpmfdtnlgkhjqxrzcsyw])?(?:iang|iong|uang|ueng|ang|eng|ing|ong|uai|uan|ian|iao|van|ai|ei|ao|ou|an|en|er|in|un|ui|ia|ie|iu|ua|uo|ue|ve|a|o|e|i|u|v)';
+const _NOT_PY_NAMES = new Set('maria ana juan diana mariana liliana adriana lina gina tina nina rena dana lena sena mena tania nancy anna hana jana sara'.split(' '));
+const _PY_WORD = new RegExp('^(?:' + _PY_SYL + '){1,3}$');
+function _isChineseName(name) {
+  const n = String(name || '').trim();
+  if (!n) return false;
+  if (/[一-鿿]/.test(n)) return true;
+  const toks = n.toLowerCase().replace(/[^a-z\s'-]/g, ' ').split(/[\s'-]+/).filter(Boolean);
+  if (toks.length < 2 || toks.length > 4) return false;
+  if (!_CN_SURNAMES.has(toks[0]) && !_CN_SURNAMES.has(toks[toks.length - 1])) return false;
+  // 拼音也拼得出来的常见西语 / 英文名, 不算
+  if (toks.some(t => _NOT_PY_NAMES.has(t))) return false;
+  return toks.every(t => _PY_WORD.test(t));
+}
+// 工人的姓名电话: 只取 员工 / 扫码登记 / 介绍的工人; 按手机号后 10 位去重, 来源和州合并。
+// 仓库那边的人 (合作公司联系人、客户账号、经理/员工后台账号) 和工头不导出 — 同一号码在这些名单里出现也排除
 function _collectContacts() {
   const map = new Map();
   const norm = p => { const d = String(p || '').replace(/\D/g, ''); return d.length === 11 && d[0] === '1' ? d.slice(1) : d.length === 10 ? d : ''; };
+  const q = (sql, fn) => { try { db.prepare(sql).all().forEach(fn); } catch (e) {} };
+  const notWorker = new Set();
+  const nw = p => { const k = norm(p); if (k) notWorker.add(k); };
+  q(`SELECT phone, contacts FROM partners`, p => { nw(p.phone); try { (JSON.parse(p.contacts || '[]') || []).forEach(c => c && nw(c.phone)); } catch (e) {} });
+  q(`SELECT phone FROM customer_accounts`, c => nw(c.phone));
+  q(`SELECT phone, sms_notify_phone, mfa_phone FROM admin_users`, u => { nw(u.phone); nw(u.sms_notify_phone); nw(u.mfa_phone); });
+  q(`SELECT phone FROM foremen`, f => nw(f.phone));
+  q(`SELECT foreman_phone FROM referrals`, r => nw(r.foreman_phone));
   const add = (name, phone, src, st, status) => {
     const k = norm(phone);
-    if (!k) return;
+    if (!k || notWorker.has(k)) return;
     name = String(name || '').replace(/\s+/g, ' ').trim();
-    const x = map.get(k) || { name: '', phone: k, src: [], states: [], status: '' };
+    const x = map.get(k) || { name: '', phone: k, src: [], states: [], status: '', names: [] };
     if (!x.name && name) x.name = name;
+    if (name && !x.names.includes(name)) x.names.push(name);
     if (!x.src.includes(src)) x.src.push(src);
     if (st && !x.states.includes(st)) x.states.push(st);
     if (!x.status && status) x.status = status;
     map.set(k, x);
   };
-  const q = (sql, fn) => { try { db.prepare(sql).all().forEach(fn); } catch (e) {} };
   q(`SELECT employee_id, first_name, last_name, phone, state, status FROM employees`, e => add(`${e.first_name || ''} ${e.last_name || ''}`, e.phone, '员工', _empState(e), e.status));
   q(`SELECT name, phone, state, apply_state FROM applicant_submissions`, a => add(a.name, a.phone, '扫码登记', _stateOf(a.apply_state) || _stateOf(a.state)));
-  q(`SELECT name, phone, state FROM foremen`, f => add(f.name, f.phone, '工头', _stateOf(f.state)));
-  q(`SELECT worker_name, worker_phone, foreman_name, foreman_phone, warehouse_address FROM referrals`, r => { add(r.worker_name, r.worker_phone, '介绍工人', _stateFromAddr(r.warehouse_address)); add(r.foreman_name, r.foreman_phone, '介绍人/工头'); });
-  q(`SELECT name, phone_e164 FROM sms_contacts`, c => add(c.name, c.phone_e164, '短信联系人'));
-  q(`SELECT display_name, phone_number FROM phone_contacts`, c => add(c.display_name, c.phone_number, '电话联系人'));
-  q(`SELECT name, contact_person, phone, contacts, address FROM partners WHERE COALESCE(abolished,0)=0`, p => {
-    const st = _stateFromAddr(p.address);
-    add(p.contact_person, p.phone, '合作公司·' + (p.name || ''), st);
-    try { (JSON.parse(p.contacts || '[]') || []).forEach(c => c && add(c.name, c.phone, '合作公司·' + (p.name || ''), st)); } catch (e) {}
-  });
-  return [...map.values()];
+  q(`SELECT worker_name, worker_phone, warehouse_address FROM referrals`, r => add(r.worker_name, r.worker_phone, '介绍工人', _stateFromAddr(r.warehouse_address)));
+  const out = [...map.values()];
+  out.forEach(x => { x.cn = x.names.some(_isChineseName); });
+  return out;
+}
+// 中国人范围: ?cn=only 只要中国人 / exclude 不要中国人 / 其他 = 全部
+function _cnFilter(req) {
+  const v = String(req.query.cn || '');
+  return v === 'only' ? x => x.cn : v === 'exclude' ? x => !x.cn : () => true;
 }
 // 勾选的州: ?states=IL,TX&nostate=1 (都不传 = 全部)
 function _stateFilter(req) {
@@ -19671,20 +19695,23 @@ app.get('/api/admin/export-states', requireAdmin, requireRole('admin'), (req, re
   try {
     const count = (arr, get) => { const c = {}; let none = 0; arr.forEach(x => { const s = get(x); if (!s.length) none++; s.forEach(t => { c[t] = (c[t] || 0) + 1; }); }); return { states: c, none, total: arr.length }; };
     const emps = db.prepare(`SELECT employee_id, state FROM employees`).all();
-    res.json({ contacts: count(_collectContacts(), x => x.states), employees: count(emps, e => { const s = _empState(e); return s ? [s] : []; }) });
+    const all = _collectContacts();
+    res.json({ contacts: count(all.filter(_cnFilter(req)), x => x.states), cn_count: all.filter(x => x.cn).length, worker_count: all.length,
+      employees: count(emps, e => { const s = _empState(e); return s ? [s] : []; }) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-// 一键导出系统里全部 姓名 + 手机号 (仅管理员), 可按州筛; Excel 直接打开 (UTF-8 BOM)。每次导出记审计日志
+// 一键导出工人的 姓名 + 手机号 (仅管理员), 可按州筛、可只要/排除中国人; Excel 直接打开 (UTF-8 BOM)。每次导出记审计日志
 app.get('/api/admin/export-contacts', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const keep = _stateFilter(req);
-    const rows = _collectContacts().filter(x => keep(x.states)).sort((a, b) => (!a.name - !b.name) || a.name.localeCompare(b.name));
+    const cnOk = _cnFilter(req);
+    const rows = _collectContacts().filter(x => cnOk(x) && keep(x.states)).sort((a, b) => (!a.name - !b.name) || a.name.localeCompare(b.name));
     const cell = v => `"${String(v || '').replace(/"/g, '""')}"`;
     const fmt = d => `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
-    const csv = '﻿' + ['姓名', '手机号', '州', '来源', '员工状态'].join(',') + '\r\n'
-      + rows.map(r => [r.name, fmt(r.phone), r.states.join(' / '), r.src.join(' / '), r.status].map(cell).join(',')).join('\r\n') + '\r\n';
-    auditLog('export_contacts', req, { details: { count: rows.length, states: req.query.states || '', nostate: req.query.nostate === '1' } });
-    const tag = String(req.query.states || '').replace(/[^A-Z,]/gi, '').replace(/,/g, '-');
+    const csv = '﻿' + ['姓名', '手机号', '州', '中国人', '来源', '员工状态'].join(',') + '\r\n'
+      + rows.map(r => [r.name, fmt(r.phone), r.states.join(' / '), r.cn ? '是' : '', r.src.join(' / '), r.status].map(cell).join(',')).join('\r\n') + '\r\n';
+    auditLog('export_contacts', req, { details: { count: rows.length, states: req.query.states || '', nostate: req.query.nostate === '1', cn: req.query.cn || '' } });
+    const tag = (req.query.cn === 'only' ? 'chinese-' : req.query.cn === 'exclude' ? 'non-chinese-' : '') + String(req.query.states || '').replace(/[^A-Z,]/gi, '').replace(/,/g, '-');
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename=contacts${tag ? '-' + tag : ''}-${new Date().toISOString().slice(0, 10)}.csv`);
     res.send(csv);
