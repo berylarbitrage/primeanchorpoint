@@ -2338,7 +2338,7 @@ function _palletPayBadge(r) {
   const why = r.verify && r.verify.reasons.length
     ? ` <span data-tip="${esc('没核查通过的：\n' + r.verify.reasons.join('\n')).replace(/"/g, '&quot;')}" style="cursor:help;color:#b45309;font-weight:700">ⓘ</span>` : '';
   if (r.direction === 'in') return `<span style="white-space:nowrap">${payBadge(st)}${why}</span>`;
-  const L = { paid: ['已付款', '#047857', '#ecfdf5', '#a7f3d0'], partial: ['部分付款', '#b45309', '#fffbeb', '#fcd34d'], unpaid: ['未付款', '#b91c1c', '#fef2f2', '#fecaca'] }[st];
+  const L = { paid: ['已付款', '#047857', '#ecfdf5', '#a7f3d0'], partial: ['部分付款', '#b45309', '#fffbeb', '#fcd34d'], unpaid: ['未付款', '#b91c1c', '#fef2f2', '#fecaca'], review: ['待审核', '#6d28d9', '#f5f3ff', '#c4b5fd'] }[st];
   return `<span style="white-space:nowrap"><span class="badge" style="color:${L[1]};background:${L[2]};border:1px solid ${L[3]}">${L[0]}</span>${why}</span>`;
 }
 // 🪵 木板账单明细弹窗: 账单信息 + 内嵌账单明细 / PDF + 付款批注入口
@@ -3106,7 +3106,7 @@ async function loadAll() {
   renderInvList();
   renderStmtList();
 }
-const PAY_LABEL = { paid: ['已收款', '#047857', '#ecfdf5', '#a7f3d0'], partial: ['部分收款', '#b45309', '#fffbeb', '#fcd34d'], unpaid: ['未收款', '#b91c1c', '#fef2f2', '#fecaca'] };
+const PAY_LABEL = { paid: ['已收款', '#047857', '#ecfdf5', '#a7f3d0'], partial: ['部分收款', '#b45309', '#fffbeb', '#fcd34d'], unpaid: ['未收款', '#b91c1c', '#fef2f2', '#fecaca'], review: ['待审核', '#6d28d9', '#f5f3ff', '#c4b5fd'] };
 function payBadge(s) {
   const [label, color, bg, border] = PAY_LABEL[s || 'unpaid'] || ['—', '#6b7280', '#f9fafb', '#e5e7eb'];
   return `<span class="badge" style="color:${color};background:${bg};border:1px solid ${border}">${label}</span>`;
@@ -3201,7 +3201,7 @@ function invExportCsv() {
   const rows = _invFilteredRows();
   const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
   const lines = [['发票号', '发票日期', '公司', '账期开始', '账期结束', '发票金额', '付款状态', '收款银行', '笔数', '到账合计', '差额(到账-发票)', '收款明细(日期 金额 账户 描述)', '付款备注', '批注数'].map(q).join(',')];
-  const ST = { paid: '已收款', partial: '部分收款', unpaid: '未收款' };
+  const ST = { paid: '已收款', partial: '部分收款', unpaid: '未收款', review: '待审核' };
   for (const r of rows) {
     const x = _invPayInfo(r);
     lines.push([r.invoice_number, r.invoice_date, r.company_name, r.period_start, r.period_end, (Number(r.subtotal) || 0).toFixed(2),
