@@ -466,7 +466,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <select id="raJobSel" onchange="raJobChanged()" style="width:100%;margin:.15rem 0 .55rem"><option value="">— 不关联岗位 —</option></select>
       <label style="font-size:.76rem;color:var(--g500)">工作仓库</label>
       <select id="raWhSel" onchange="raWhChanged()" style="width:100%;margin:.15rem 0 .55rem"><option value="">加载中…</option></select>
-      <input type="text" id="raWh" placeholder="输入新仓库名" style="display:none;width:100%;margin:0 0 .55rem">
+      <input type="text" id="raWh" placeholder="新仓库名称（必填，不知道就填客户公司名）" style="display:none;width:100%;margin:0 0 .55rem">
       <label style="font-size:.76rem;color:var(--g500)">仓库地址 <span style="font-size:.7rem;color:var(--g400)">（选仓库自动带出，可改）</span></label>
       <input type="text" id="raWhAddr" placeholder="例：1000 Bilter Rd, Aurora, IL" style="width:100%;margin:.15rem 0 .55rem">
       <div style="display:grid;grid-template-columns:1.2fr .9fr .9fr;gap:.2rem .6rem">
@@ -1611,7 +1611,7 @@ function raFillSelects(r) {
   const whs = (_refOpts && _refOpts.warehouses) || [];
   const wSel = document.getElementById('raWhSel');
   wSel.innerHTML = '<option value="">— 选择仓库 —</option>'
-    + whs.map((w, i) => `<option value="${i}">${esc(w.name)}${w.address ? '　—　' + esc(w.address) : ''}</option>`).join('')
+    + whs.map((w, i) => `<option value="${i}">${w.name ? esc(w.name) : '（未写名称）'}${w.address ? '　—　' + esc(w.address) : ''}</option>`).join('')
     + '<option value="__new__">＋ 其他 / 新仓库</option>';
   // 关联岗位下拉: post 的在招岗位; 编辑时岗位已关闭/删除的, 用存的快照补一个选项照样显示
   const jobs = (_refOpts && _refOpts.jobs) || [];
@@ -1634,7 +1634,11 @@ function raFillSelects(r) {
     _raForeman = fi >= 0 ? fm[fi] : { id: null, name: r.foreman_name || '', phone: r.foreman_phone || '', state: r.foreman_state || '' };
   } else _raForeman = null;
   raFmRenderPicked();
-  if (r && r.warehouse_name) {
+  if (r && !r.warehouse_name && r.warehouse_address) {
+    const ad = String(r.warehouse_address).replace(/\s+/g, ' ').trim().toLowerCase();
+    const wi = whs.findIndex(w => !w.name && String(w.address || '').replace(/\s+/g, ' ').trim().toLowerCase() === ad);
+    wSel.value = wi >= 0 ? String(wi) : '';
+  } else if (r && r.warehouse_name) {
     // 同名客户可能有好几个仓库: 先按 名称+地址 找, 找不到再按名称
     const nm = String(r.warehouse_name).trim().toLowerCase();
     const ad = String(r.warehouse_address || '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -1915,6 +1919,8 @@ async function submitRefAdd() {
   const whName = whSelV === '__new__'
     ? document.getElementById('raWh').value.trim()
     : (((_refOpts && _refOpts.warehouses) || [])[parseInt(whSelV)] || {}).name || '';
+  // 新仓库必须写名称, 否则下次下拉里认不出是哪家
+  if (whSelV === '__new__' && !whName) return toast('请填写新仓库的名称（不知道就填客户公司名），下次下拉里才找得到', true);
   const btn = document.getElementById('raSubmitBtn');
   btn.disabled = true; btn.textContent = '提交中…';
   try {
