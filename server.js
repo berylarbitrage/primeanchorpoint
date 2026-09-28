@@ -41057,6 +41057,67 @@ app.get('/api/acct/referral-options', requireAdmin, requireAcctView, (req, res) 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// 🔎 查一个人的全部面试记录: 按姓名或电话 (4 位以上数字按包含) 跨所有面试来源汇总,
+// 时间倒序。来源: 介绍记录 / 面试登记 (701 初试 + 仓库面试) / 线上预约面试 (含历史存档) /
+// 短信约的面试 / 面试结果 (技能评估)。只回页面要显示的字段。
+app.get('/api/acct/interview-lookup', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    const ql = q.toLowerCase();
+    const dq = q.replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+    if (q.length < 2) return res.json({ items: [] });
+    const dg = v => String(v || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+    const hit = (name, phone) => (ql && String(name || '').toLowerCase().includes(ql)) || (dq.length >= 4 && dg(phone).includes(dq));
+    const items = [];
+    const push = o => items.push(Object.assign({ source: '', date: '', name: '', phone: '', place: '', result: '', detail: '' }, o));
+    const safe = fn => { try { fn(); } catch (e) {} };
+    // 介绍记录
+    safe(() => db.prepare(`SELECT id, worker_name, worker_phone, interview_at, interview_status, interview_attended_at, warehouse_name, warehouse_address,
+        job_title, foreman_name, COALESCE(hr_self,0) AS hr_self, work_start_date, worker_wage FROM referrals`).all().forEach(r => {
+      if (!hit(r.worker_name, r.worker_phone)) return;
+      push({ source: 'referral', ref_id: r.id, date: String(r.interview_at || '').replace('T', ' '), name: r.worker_name, phone: r.worker_phone,
+        place: [r.warehouse_name, r.warehouse_address].filter(Boolean).join(' · '),
+        result: r.interview_status === 'attended' ? '去了' : r.interview_status === 'no_show' ? '没去' : '待标记',
+        detail: [r.job_title, r.hr_self ? 'HR 自己招的' : (r.foreman_name ? '工头 ' + r.foreman_name : ''), r.worker_wage ? '工资 ' + r.worker_wage : '',
+          r.work_start_date ? r.work_start_date + ' 开始上班' : '', r.interview_attended_at ? '到场 ' + r.interview_attended_at : ''].filter(Boolean).join(' · ') });
+    }));
+    // 面试登记: 701 初试 + 仓库面试 各算一条
+    safe(() => db.prepare(`SELECT * FROM interview_registry`).all().forEach(r => {
+      if (!hit(r.name, r.phone)) return;
+      if (r.s701_at || r.s701_result) push({ source: 'registry701', date: r.s701_at || '', name: r.name, phone: r.phone, place: r.s701_place || '701 初试',
+        result: r.s701_result || '', detail: [r.position, r.notes].filter(Boolean).join(' · ') });
+      if (r.wh_at || r.wh_result || r.wh_partner_name) push({ source: 'registryWh', date: r.wh_at || '', name: r.name, phone: r.phone,
+        place: [r.wh_partner_name, r.wh_address].filter(Boolean).join(' · '), result: r.wh_result || '', detail: [r.position, r.notes].filter(Boolean).join(' · ') });
+    }));
+    // 线上预约面试: 历史存档 + 当前的
+    safe(() => db.prepare(`SELECT worker_name, worker_phone, slot_datetime, location, interview_type, status, admin_notes FROM interview_history`).all().forEach(r => {
+      if (!hit(r.worker_name, r.worker_phone)) return;
+      push({ source: 'booking', date: r.slot_datetime, name: r.worker_name, phone: r.worker_phone, place: r.location, result: r.status, detail: [r.interview_type, r.admin_notes].filter(Boolean).join(' · ') });
+    }));
+    safe(() => db.prepare(`SELECT i.status, i.admin_notes, i.interview_type, s.slot_datetime, s.location,
+        TRIM(COALESCE(e.first_name,'') || ' ' || COALESCE(e.last_name,'')) AS name, COALESCE(e.phone,'') AS phone
+      FROM interviews i JOIN interview_slots s ON s.id=i.slot_id JOIN worker_accounts w ON w.id=i.worker_account_id LEFT JOIN employees e ON e.id=w.employee_id`).all().forEach(r => {
+      if (!hit(r.name, r.phone)) return;
+      if (items.some(x => x.source === 'booking' && x.date === r.slot_datetime && dg(x.phone) === dg(r.phone))) return;
+      push({ source: 'booking', date: r.slot_datetime, name: r.name, phone: r.phone, place: r.location, result: r.status, detail: [r.interview_type, r.admin_notes].filter(Boolean).join(' · ') });
+    }));
+    // 短信约的面试
+    safe(() => db.prepare(`SELECT i.interview_at, i.address, i.note, i.status, c.name, c.phone_e164 FROM sms_interviews i JOIN sms_contacts c ON c.id=i.contact_id`).all().forEach(r => {
+      if (!hit(r.name, r.phone_e164)) return;
+      push({ source: 'sms', date: String(r.interview_at || '').replace('T', ' '), name: r.name, phone: r.phone_e164, place: r.address, result: r.status, detail: r.note });
+    }));
+    // 面试结果 (技能评估)
+    safe(() => db.prepare(`SELECT * FROM interview_results`).all().forEach(r => {
+      if (!hit(r.person_name, r.phone)) return;
+      const yn = (v, t) => v == null ? '' : (v ? '✓' : '✗') + t;
+      push({ source: 'result', date: r.created_at, name: r.person_name, phone: r.phone, place: '',
+        result: [yn(r.forklift, '叉车'), yn(r.cherry_picker, '高位叉车'), yn(r.container_unload, '卸柜'), yn(r.lang_en, '英语'), yn(r.lang_es, '西语'), yn(r.lang_zh, '中文')].filter(Boolean).join(' '),
+        detail: [r.note, r.created_by ? '记录人 ' + r.created_by : ''].filter(Boolean).join(' · ') });
+    }));
+    items.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    res.json({ items: items.slice(0, 200) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 // 手机号自动联想: 填工头/工人电话时查系统里已有的人, 直接 link 起来。
 // 覆盖 工头名单 foremen / 员工档案 employees / 招工申请 applicant_submissions,
 // 只回姓名+电话 (不带证件等敏感明细); 4 位以上就按包含匹配联想。

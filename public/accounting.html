@@ -425,7 +425,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
   <div id="paneRef" style="display:none">
     <div id="refStages" class="ref-stages"></div>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
-      <input type="text" id="refSearch" placeholder="搜工头 / 工人 / 电话 / 仓库…" oninput="renderRefList()" style="width:230px">
+      <input type="text" id="refSearch" placeholder="搜工头 / 工人姓名 / 电话 / 仓库…（搜工人可看他全部面试记录）" oninput="renderRefList();refHistSchedule()" style="width:320px">
       <select id="refFilter" onchange="renderRefList()">
         <option value="">全部</option>
         <option value="pending">⏳ 待管理员核查</option>
@@ -440,6 +440,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <a id="refOwnPage" class="btn btn-outline" href="/referral" target="_blank" title="只看介绍费的独立页面">↗ Referral 页面</a>
       <span id="refStats" style="font-size:.8rem;color:var(--g500)"></span>
     </div>
+    <div id="refHist" style="display:none;margin-bottom:.75rem"></div>
     <div id="refBody" style="display:flex;flex-direction:column;gap:.75rem"><div class="card" style="color:var(--g400)">加载中…</div></div>
     <p style="font-size:.75rem;color:var(--g400);margin-top:.5rem">流程：客服 / 会计录入介绍信息（工头和工人的姓名电话、仓库、面试时间）→ 会计「关联发票」，每张发票（一周账期）就是一周 → 管理员核查、决定是否支付 → 同意支付后会计按周付款：每周一行，记实付金额并关联银行记录。</p>
   </div>
@@ -1544,6 +1545,61 @@ function _refPersonCell(name, phone, state) {
 function _refCanEdit(r) {
   return USER.role === 'admin' || (['accounting', 'cs'].includes(USER.role) && r.review_status === 'pending');
 }
+// 🔎 搜一个工人的姓名 / 电话 → 列出他过去全部的面试记录 (所有来源, 时间倒序)
+let _refHistT = null, _refHistQ = '';
+function refHistSchedule() {
+  clearTimeout(_refHistT);
+  _refHistT = setTimeout(refHistLoad, 350);
+}
+async function refHistLoad() {
+  const q = (document.getElementById('refSearch').value || '').trim();
+  const box = document.getElementById('refHist');
+  _refHistQ = q;
+  if (q.length < 2) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  let items = [];
+  try { const r = await api('/api/acct/interview-lookup?q=' + encodeURIComponent(q)); items = (r && r.items) || []; }
+  catch (e) { box.style.display = ''; box.innerHTML = `<div class="card" style="color:#dc2626">${esc(e.message || '查面试记录失败')}</div>`; return; }
+  if (q !== _refHistQ) return;
+  const SRC = { referral: ['🤝 介绍', '#fff7ed', '#c2410c'], registry701: ['🏢 701 初试', '#eff6ff', '#1d4ed8'], registryWh: ['🏭 仓库面试', '#eef2ff', '#4338ca'],
+    booking: ['📅 线上预约', '#f0fdf4', '#15803d'], sms: ['💬 短信约', '#fdf4ff', '#a21caf'], result: ['📝 面试结果', '#f8fafc', '#475569'] };
+  const resCls = t => /去了|通过|pass|attend|complete|hired|合格|✓/i.test(t) ? 'color:#047857;font-weight:700' : /没去|no.?show|不|fail|reject|cancel|✗/i.test(t) ? 'color:#b91c1c;font-weight:700' : 'color:#b45309';
+  const th = 'text-align:left;font-size:.7rem;color:var(--g400);font-weight:600;padding:.35rem .5rem;border-bottom:1px solid var(--g200);white-space:nowrap';
+  const td = 'padding:.4rem .5rem;border-bottom:1px solid var(--g100);font-size:.8rem;vertical-align:top';
+  box.style.display = '';
+  box.innerHTML = `<div class="card" style="padding:.7rem .8rem">
+    <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem"><b style="color:#0f4c6b">🔎 「${esc(q)}」的面试记录</b>
+      <span style="font-size:.76rem;color:var(--g500)">共 ${items.length} 条 · 所有来源（介绍 / 701 初试 / 仓库面试 / 线上预约 / 短信约 / 面试结果），新的在上</span></div>
+    ${items.length ? `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:820px"><thead><tr>
+      <th style="${th}">面试时间</th><th style="${th}">来源</th><th style="${th}">姓名 · 电话</th><th style="${th}">地点 / 仓库</th><th style="${th}">结果</th><th style="${th}">详情</th></tr></thead><tbody>
+      ${items.map(it => {
+        const sc = SRC[it.source] || [it.source, '#f8fafc', '#475569'];
+        const jump = it.source === 'referral' && it.ref_id ? ` onclick="refJumpTo(${it.ref_id})" style="cursor:pointer" data-tip="点一下跳到这条介绍"` : '';
+        return `<tr${jump}>
+          <td style="${td};white-space:nowrap;font-weight:700">${esc(it.date || '—')}</td>
+          <td style="${td};white-space:nowrap"><span style="background:${sc[1]};color:${sc[2]};border-radius:6px;padding:1px 7px;font-size:.72rem;font-weight:700">${sc[0]}</span></td>
+          <td style="${td};white-space:nowrap">${esc(it.name || '—')}${it.phone ? `<div style="color:var(--g500);font-size:.74rem">${esc(it.phone)}</div>` : ''}</td>
+          <td style="${td}">${esc(it.place || '—')}</td>
+          <td style="${td};white-space:nowrap;${resCls(it.result || '')}">${esc(it.result || '—')}</td>
+          <td style="${td};color:var(--g500)">${esc(it.detail || '')}</td></tr>`;
+      }).join('')}</tbody></table></div>` : '<div style="color:var(--g400);font-size:.82rem">没找到这个人的面试记录。</div>'}
+  </div>`;
+}
+// 从面试记录跳到对应的介绍卡片 (切到它所在的阶段页)
+function refJumpTo(id) {
+  const r = _refList.find(x => x.id === id);
+  if (!r) return;
+  refSetStage(_refStage(r));
+  // 被当前搜索/筛选挡住了就清掉筛选再找
+  if (!document.getElementById('refCard' + id)) { document.getElementById('refFilter').value = ''; renderRefList(); }
+  if (!document.getElementById('refCard' + id)) { document.getElementById('refSearch').value = ''; renderRefList(); }
+  setTimeout(() => {
+    const el = document.getElementById('refCard' + id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.style.outline = '3px solid #3b82f6';
+    setTimeout(() => { el.style.outline = ''; }, 1800);
+  }, 50);
+}
 // 面试时间已过、还没标去没去 (还没开始上班的): 整张卡片标红提醒
 function _refIvOverdue(r) {
   if (r.interview_status || r.work_start_date || !r.interview_at) return false;
@@ -1620,7 +1676,11 @@ function renderRefList() {
   _refWeeks = [];
   for (const r of _refList) (r.weeks || []).forEach((w, i) => { w.amount = w.fee_eff; w.week_no = i + 1; w.ref = r; _refWeeks.push(w); });
   let list = _refList;
-  if (q) list = list.filter(r => [r.foreman_name, r.foreman_phone, r.worker_name, r.worker_phone, r.worker_wage, r.warehouse_name, r.warehouse_address, r.job_title, r.description, ...(r.invoices || []).map(v => v.invoice_number + ' ' + v.company_name)].join(' ').toLowerCase().includes(q));
+  // 电话按数字比 (输 (630) 641-1979 / +1… 也能搜到存成 6306411979 的)
+  const qd = String(q || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+  const dg = v => String(v || '').replace(/\D/g, '');
+  if (q) list = list.filter(r => [r.foreman_name, r.foreman_phone, r.worker_name, r.worker_phone, r.worker_wage, r.warehouse_name, r.warehouse_address, r.job_title, r.description, ...(r.invoices || []).map(v => v.invoice_number + ' ' + v.company_name)].join(' ').toLowerCase().includes(q)
+    || (qd.length >= 4 && (dg(r.worker_phone).includes(qd) || dg(r.foreman_phone).includes(qd))));
   if (flt === 'noshow') list = list.filter(r => r.interview_status === 'no_show');
   else if (flt) list = list.filter(r => _refOverall(r) === flt);
   // 三个阶段分页: 数字按当前搜索/筛选算, 切过去不会扑空
@@ -1714,7 +1774,7 @@ function renderRefList() {
     // 面试安排 / 没去面试 阶段不显示核查和每周付款 (开始上班后在「上班中」才有)
     const preWork = ['interview', 'noshow'].includes(_refStage(r));
     const overdue = _refIvOverdue(r);
-    return `<div class="card ref-card" style="${r.review_status === 'rejected' ? 'opacity:.6;' : ''}${overdue ? 'background:#fef2f2;box-shadow:0 0 0 2px #fca5a5;' : ''}border-left-color:${overdue ? '#dc2626' : ov === 'paid' ? '#16a34a' : ov === 'rejected' ? '#cbd5e1' : ov === 'pending' ? '#fb923c' : '#3b82f6'}">
+    return `<div class="card ref-card" id="refCard${r.id}" style="${r.review_status === 'rejected' ? 'opacity:.6;' : ''}${overdue ? 'background:#fef2f2;box-shadow:0 0 0 2px #fca5a5;' : ''}border-left-color:${overdue ? '#dc2626' : ov === 'paid' ? '#16a34a' : ov === 'rejected' ? '#cbd5e1' : ov === 'pending' ? '#fb923c' : '#3b82f6'}">
       <div class="ref-top">
         <div class="ref-ppl">
           <div>${lbl('工头 · 介绍人')}${r.hr_self ? '<span style="display:inline-block;background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;border-radius:6px;padding:1px 8px;font-size:.8rem;font-weight:700">🙋 HR 自己招的</span>' : person(r.foreman_name, r.foreman_phone, r.foreman_state ? ` · 📍 ${esc(r.foreman_state)}` : '')}</div>
