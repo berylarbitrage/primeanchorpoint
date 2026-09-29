@@ -33810,7 +33810,7 @@ async function openInvpForEdit(id) {
   }
   if (inv.items && inv.items.length) {
     window._invpManualEmps = inv.items.map(item => {
-      const emp = { uid: _invpManualUidSeq++, name: item.name || '', category: item.category || '', subcontractor: item.subcontractor || '', referrer: item.referrer || '', missedPay: item.missedPay ? 1 : 0, note: item.note || '', noteType: item.noteType || '', noteDate: item.noteDate || '', rate: String(item.rate || ''), otRate: item.otRate ? String(item.otRate) : '', markup: (item.markup && item.markup > 0) ? String(item.markup) : '', days: {}, linked_employee_id: item.employee_id || null, linked_employee_code: item.employee_code || '', linked_employee_name: item.employee_name || '' };
+      const emp = { uid: _invpManualUidSeq++, name: item.name || '', category: item.category || '', subcontractor: item.subcontractor || '', referrer: item.referrer || '', missedPay: item.missedPay ? 1 : 0, note: item.note || '', noteType: item.noteType || '', noteDate: item.noteDate || '', rate: String(item.rate || ''), otRate: item.otRate ? String(item.otRate) : '', markup: (item.markup && item.markup > 0) ? String(item.markup) : '', days: {}, linked_employee_id: item.employee_id || null, linked_employee_code: item.employee_code || '', linked_employee_name: item.employee_name || '', wage_rate: Number(item.wage_rate) > 0 ? String(item.wage_rate) : '' };
       // 恢复 Excel 锁定拆分行（补差价/跨账期行），重开后金额保持与工资表一致
       if (item.fixed_split) {
         emp.fixedSplit = true;
@@ -37708,18 +37708,34 @@ async function invpSaveDraft() {
 // 汇总真实「付给工人」工资：用转入时留底的逐人工资时薪 emp.wage_rate × 工时。
 // 手动新增、没有工资时薪的行回退到其开票行额（利润算 0），避免虚增利润。
 // 没有任何行带工资时薪（即非「按月付款」转入的发票）时返回 null，让后端沿用按行额计的工资。
-function _invpComputeWageCost() {
-  const emps = window._invpManualEmps || [];
-  // 只有每一行都带工资时薪（按月付款完整转入的场景）才重算工资；
-  // 编辑旧发票/手工加行时部分行没有时薪或逐日工时，重算会把工资覆盖成
-  // 一两行的小数（利润虚高），这种情况返回 null 沿用原存的 wage_cost。
-  if (!emps.length || !emps.every(e => Number(e.wage_rate) > 0)) return null;
+function _invpComputeWageCost(items) {
+  // 只有有工时的每一行都填了「实付时薪」才重算工资（和服务器 _invoiceWageCost 同口径）；
+  // 有的行没填时重算会把工资算少（利润虚高），返回 null 沿用原存的 wage_cost。
+  // 加班按 加班时薪/时薪 的倍数给工人加成（一口价的班次倍数就是 1）。
+  items = items || getInvpManualItems();
+  const worked = items.filter(it => (Number(it.hours) || 0) > 0);
+  if (!worked.length || !worked.every(it => Number(it.wage_rate) > 0)) return null;
   let cost = 0;
-  emps.forEach(e => {
-    const hrs = Object.values(e.days || {}).reduce((s, v) => s + (Number(v) || 0), 0);
-    cost += hrs * Number(e.wage_rate);
+  worked.forEach(it => {
+    const w = Number(it.wage_rate), r = Number(it.rate) || 0, o = Number(it.otRate) || 0;
+    const otMult = r > 0 && o > 0 ? o / r : 1;
+    cost += (Number(it.regHours) || 0) * w + (Number(it.otHours) || 0) * w * otMult;
   });
   return Math.round(cost * 100) / 100;
+}
+// 表格下方: 实付工资合计 / 账单 / 利润 (只有有工时的行都填了实付时薪才算)
+function _invpRenderWageSummary() {
+  const box = document.getElementById('invpWageSummary');
+  if (!box) return;
+  const items = (window._invpManualEmps || []).length ? getInvpManualItems() : [];
+  const worked = items.filter(it => (Number(it.hours) || 0) > 0);
+  const filled = worked.filter(it => Number(it.wage_rate) > 0).length;
+  if (!worked.length || !filled) { box.innerHTML = ''; return; }
+  const cost = _invpComputeWageCost(items);
+  const billed = items.reduce((s, it) => s + (Number(it.billed) || 0), 0);
+  box.innerHTML = cost == null
+    ? `<span style="color:#b45309">实付时薪已填 ${filled}/${worked.length} 人，全部填完才算实付工资和利润</span>`
+    : `<span style="color:#15803d">实付工资 <b>$${cost.toFixed(2)}</b></span> · 账单 <b>$${billed.toFixed(2)}</b> · <span style="color:${billed - cost >= 0 ? '#047857' : '#dc2626'}">利润 <b>$${(billed - cost).toFixed(2)}</b></span>`;
 }
 
 async function saveInvpInvoice(status) {
@@ -37868,7 +37884,7 @@ async function saveInvpInvoice(status) {
   if (mode === 'container') {
     profileWithMode.wage_cost = Math.round(containerItems.reduce((s, i) => s + (Number(i.sub_total) || 0), 0) * 100) / 100;
   } else {
-    const _wageCost = _invpComputeWageCost();
+    const _wageCost = _invpComputeWageCost(items);
     if (_wageCost != null) profileWithMode.wage_cost = _wageCost;
     else if (window._invpLoadedWageCost != null) profileWithMode.wage_cost = window._invpLoadedWageCost;
   }
@@ -38158,6 +38174,8 @@ function _invpSaveTableState() {
       emp.note = _invpNoteStr(emp.noteType, emp.noteDate);
     }
     emp.rate = row.querySelector('.invp-man-rate').value;
+    const wageInp = row.querySelector('.invp-man-wage');
+    if (wageInp) emp.wage_rate = wageInp.value;
     const otRateInp = row.querySelector('.invp-man-ot-rate');
     emp.otRate = (otRateInp && otRateInp.dataset.auto !== 'false') ? '' : (otRateInp?.value || '');
     const mkInp = row.querySelector('.invp-man-markup');
@@ -38308,7 +38326,13 @@ function renderInvpManualTable(skipSave) {
           style="width:70px;text-align:right;border:1px solid var(--gray-200);border-radius:4px;padding:2px 5px;font-size:.83rem"
           oninput="invpUpdateRowTotal(this.closest('tr'))">
       </td>
-      ${showWage ? `<td style="padding:3px 6px;text-align:right;white-space:nowrap;font-size:.83rem;color:#15803d;font-weight:600" title="我们发给工人的时薪（来自工资记录，仅参考，不出现在客户发票上）">${Number(emp.wage_rate) > 0 ? '$' + Number(emp.wage_rate).toFixed(2) : '<span style="color:var(--gray-300);font-weight:400">—</span>'}</td>` : ''}
+      <td style="padding:3px 4px;text-align:right">
+        <input type="number" class="invp-man-wage" data-uid="${emp.uid}" value="${Number(emp.wage_rate) > 0 ? Number(emp.wage_rate).toFixed(2) : ''}"
+          min="0" step="0.01" placeholder="实付"
+          title="我们实际发给这个工人的时薪——只用来算工资成本和利润，不会出现在客户发票上"
+          style="width:70px;text-align:right;border:1px solid #86efac;border-radius:4px;padding:2px 5px;font-size:.83rem;background:#f0fdf4;color:#15803d;font-weight:600"
+          oninput="_invpSaveTableState();_invpRenderWageSummary()">
+      </td>
       <td style="padding:3px 4px;text-align:right">
         <input type="number" class="invp-man-ot-rate" data-uid="${emp.uid}" value="${otRateVal ? otRateVal.toFixed(2) : ''}"
           min="0" step="0.01" placeholder="OT $/h"
@@ -38356,7 +38380,7 @@ function renderInvpManualTable(skipSave) {
         <th style="padding:5px 6px;text-align:center;white-space:nowrap;color:#dc2626" title="漏发补发标注——勾选后在客户发票和分包商对账单上该员工名下显示「漏发补发」">漏发</th>
         ${dayTh}
         <th style="padding:5px 6px;text-align:right;white-space:nowrap${showWage ? ';color:#1d4ed8' : ''}">${showWage ? '公司收 $/h<br><span style="font-weight:400;font-size:.72rem">公司发我们</span>' : '时薪($/h)'}</th>
-        ${showWage ? '<th style="padding:5px 6px;text-align:right;white-space:nowrap;color:#15803d">付工人 $/h<br><span style="font-weight:400;font-size:.72rem">我们发工人</span></th>' : ''}
+        <th style="padding:5px 6px;text-align:right;white-space:nowrap;color:#15803d;background:#f0fdf4" title="我们实际发给工人的时薪，只用来算工资成本和利润，不上客户发票">实付时薪($/h)<br><span style="font-weight:400;font-size:.72rem">我们发工人 · 不上发票</span></th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap;background:#fffbeb">加班时薪($/h) <span style="font-weight:400;font-size:.72rem;color:#92400e">×1.5 自动</span></th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap;background:#fff7ed;color:#9a3412">Markup × <span style="font-weight:400;font-size:.72rem">留空=默认</span></th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap">正常工时</th>
@@ -38369,6 +38393,7 @@ function renderInvpManualTable(skipSave) {
       <tbody>${rowsHtml}</tbody>
     </table>
     </div>
+    <div id="invpWageSummary" style="margin-top:.4rem;font-size:.82rem;color:var(--gray-600)"></div>
     <div style="margin-top:.5rem;display:flex;gap:.5rem;flex-wrap:wrap">
       <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem" onclick="invpAddEmp()">＋ 添加员工</button>
       <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#7c3aed;border-color:#c4b5fd" onclick="invpOpenPasteImport()" title="粘贴一份名单（每行：姓名 时薪$ 工时H）一次性导入并自动填好时薪与工时">📋 粘贴名单</button>
@@ -38379,6 +38404,7 @@ function renderInvpManualTable(skipSave) {
       <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#047857;border-color:#047857" onclick="generateInvpSubcontractorStatement()" title="按工资（去掉 markup）生成给分包商的对账单（可打印/另存为 PDF）">📄 分包商对账单</button>
       <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:#047857;border-color:#6ee7b7" onclick="openSubStmtArchive()" title="查看已保存的分包商对账单（可填实付金额、重新打印）">📚 对账单存档</button>
     </div>`;
+  setTimeout(_invpRenderWageSummary, 0);
 }
 
 // Load the managed 分包商 list once so the invoice 分包商 column can pick from it
@@ -38684,6 +38710,8 @@ function invpUpdateRowTotal(row) {
     billedCell.textContent = '$' + _invpBilledAmt(regHrs * rate, otHrs * otRate, markup).toFixed(2);
     billedCell.style.color = markupInp?.value ? '#1d4ed8' : '#64748b';
   }
+  clearTimeout(window._invpWageSumT);
+  window._invpWageSumT = setTimeout(_invpRenderWageSummary, 150);
 }
 
 function invpAddEmp() {
@@ -41374,6 +41402,8 @@ function getInvpManualItems() {
       const billed = Math.round(_invpBilledAmt(regAmt, otAmt, markup) * 100) / 100;
       const it = { name, category: emp.category || '', subcontractor: emp.subcontractor || '', referrer: emp.referrer || '', missedPay: emp.missedPay ? 1 : 0, note: emp.note || '', noteType: emp.noteType || '', noteDate: emp.noteDate || '', hours: totalHours, regHours, otHours, rate, otRate, total, regAmt, otAmt, markup, otFee: _invpOtFeeRate(), billed, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
       if (emp.fixedSplit) it.fixed_split = 1; // 重开发票时按原样恢复锁定
+      // 实付时薪: 随发票存档 (算工资成本/利润), 不上客户发票
+      if (parseFloat(emp.wage_rate) > 0) it.wage_rate = Math.round(parseFloat(emp.wage_rate) * 10000) / 10000;
       return it;
     })
     .filter(Boolean);

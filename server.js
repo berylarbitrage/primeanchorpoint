@@ -21991,6 +21991,19 @@ function _invoiceWageCost(items_json, profile_json, subtotal) {
       return Math.round(cost * 100) / 100;
     }
     const items = items_json ? JSON.parse(items_json) : [];
+    // 发票页填了「实付时薪」(items[].wage_rate): 有工时的每一行都填了, 就按实付算工资 —
+    // 正常工时 × 实付时薪 + 加班工时 × 实付时薪 × (加班时薪/时薪 的倍数, 一口价的就是 1)
+    const worked = items.filter(it => (Number(it.hours) || 0) > 0);
+    if (worked.length && worked.every(it => Number(it.wage_rate) > 0)) {
+      const paid = worked.reduce((s, it) => {
+        const w = Number(it.wage_rate), r = Number(it.rate) || 0, o = Number(it.otRate) || 0;
+        const otMult = r > 0 && o > 0 ? o / r : 1;
+        const reg = it.regHours != null ? Number(it.regHours) || 0 : Number(it.hours) || 0;
+        const ot = Number(it.otHours) || 0;
+        return s + reg * w + ot * w * otMult;
+      }, 0);
+      return Math.round(paid * 100) / 100;
+    }
     const base = items.reduce((s, it) => s + (Number(it.total) || 0), 0);
     const sub = Number(subtotal) || 0;
     // 工时计费（账单 = 行小计 × markup）：行小计本身就是工资底价（时薪×工时），
