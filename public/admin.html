@@ -2888,11 +2888,12 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   <div class="modal" style="max-width:600px;width:95vw;max-height:90vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
       <div>
-        <h2 style="margin:0">📋 操作历史</h2>
+        <h2 style="margin:0">📋 操作历史 · 📎 原件</h2>
         <div id="invpHistoryInvoiceNum" style="font-size:.83rem;color:var(--gray-500);margin-top:.25rem"></div>
       </div>
       <button class="btn btn-outline" onclick="closeInvpHistoryModal()">✕ 关闭</button>
     </div>
+    <div id="invpHistoryFiles"></div>
     <div id="invpHistoryContent">
       <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
     </div>
@@ -33686,6 +33687,7 @@ function openInvpBuilderModal() {
   window._invpLoadedStatus = null;
   window._invpLoadedWageCost = null;
   window._invpShiftBlocks = null;
+  window._invpSourceFileIds = [];
   const fields = ['invPageNumber','invPageDate','invPageStart','invPageEnd','invPageBillName','invPageBillAddr','invPageUniformRate','invPageMarkupRate','invPageOtFeeRate','invPageEditId'];
   fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
@@ -33719,6 +33721,7 @@ async function openInvpForEdit(id) {
   // Discard the previously-opened invoice's rendered rows before populating, so
   // its crew can't bleed into this one (see _invpClearRenderedRows for why).
   _invpClearRenderedRows();
+  window._invpSourceFileIds = [];
   document.getElementById('invPageEditId').value = inv.id;
   // Re-point the shared builder state at the invoice being opened, so the
   // print-history entry is logged against THIS invoice (not whichever one was
@@ -35000,6 +35003,7 @@ async function openInvpHistoryModal(invoiceId, invoiceNumber) {
   document.getElementById('invpHistoryInvoiceNum').textContent = invoiceNumber || '';
   document.getElementById('invpHistoryContent').innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>';
   document.getElementById('invpHistoryModal').style.display = 'flex';
+  _invpLoadSourceFiles(invoiceId);
   const rows = await api('/admin/invoices/' + invoiceId + '/history').catch(() => []);
   const wrap = document.getElementById('invpHistoryContent');
   if (!rows || !rows.length) {
@@ -35032,6 +35036,25 @@ async function openInvpHistoryModal(invoiceId, invoiceNumber) {
         </div>
       </div>`;
     }).join('')}
+  </div>`;
+}
+
+// 这张发票上传过的所有原件: 导入的工时 Excel + 被替换/取消后留底的旧回执, 都能下载
+async function _invpLoadSourceFiles(invoiceId) {
+  const box = document.getElementById('invpHistoryFiles');
+  if (!box) return;
+  box.innerHTML = '';
+  const files = await api('/admin/invoices/' + invoiceId + '/files').catch(() => []);
+  if (_invpHistoryInvoiceId !== invoiceId) return;
+  const kindLbl = { excel: '📊 导入的 Excel', old_receipt: '🧾 旧回执留底' };
+  const kb = n => n ? (n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB') : '';
+  box.innerHTML = `<div style="border:1px solid var(--gray-200);border-radius:8px;padding:.6rem .75rem;margin-bottom:1rem;background:#f8fafc">
+    <div style="font-weight:700;font-size:.88rem;margin-bottom:.35rem">📎 上传的原件 <span style="font-weight:400;color:var(--gray-400);font-size:.78rem">（一律保留，不会删除）</span></div>
+    ${(files && files.length) ? files.map(f => `<div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;font-size:.82rem;padding:.25rem 0;border-top:1px dashed var(--gray-200)">
+      <span style="color:var(--gray-500);white-space:nowrap">${kindLbl[f.kind] || '📄 文件'}</span>
+      <a href="/api/admin/invoice-files/${f.id}/download" style="color:var(--sky);font-weight:600;word-break:break-all">${esc(f.original_name || '')}</a>
+      <span style="color:var(--gray-400);font-size:.76rem">${esc([kb(f.size), f.note, f.uploaded_by, String(f.created_at || '').replace('T', ' ')].filter(Boolean).join(' · '))}</span>
+    </div>`).join('') : '<div style="color:var(--gray-400);font-size:.8rem">这张发票还没有存档的原件（之前导入的 Excel 当时没存）。</div>'}
   </div>`;
 }
 
@@ -37851,7 +37874,8 @@ async function saveInvpInvoice(status) {
   }
   const payload = {
     invoice_number: invNum, invoice_date: invDate, company_name: billName, bill_to_addr: billAddr,
-    period_start: ps, period_end: pe, subtotal, items, markup_rate: markupRate, profile: profileWithMode, status
+    period_start: ps, period_end: pe, subtotal, items, markup_rate: markupRate, profile: profileWithMode, status,
+    source_file_ids: window._invpSourceFileIds || []
   };
 
   const send = () => editId
@@ -37869,6 +37893,7 @@ async function saveInvpInvoice(status) {
     payload.force = true;
     res = await send();
   }
+  if ((res && res.success) || (res && res.id)) window._invpSourceFileIds = [];
   if (editId) {
     if (res && res.success) {
       window._invpCurrentSavedId = parseInt(editId);
@@ -38709,13 +38734,18 @@ async function invpProcessExcelFile(file) {
   try {
     const fd = new FormData();
     fd.append('file', file);
+    // 编辑已存的发票时带上 id: 原件直接挂到这张发票
+    const editIdForSrc = (document.getElementById('invPageEditId') || {}).value || '';
+    if (editIdForSrc) fd.append('invoice_id', editIdForSrc);
     const resp = await fetch('/api/admin/invoices/parse-excel', { method: 'POST', body: fd });
     const data = await resp.json().catch(() => null);
+    // 服务器存下了原件 (解析失败也存): 记住 id, 保存发票时关联
+    if (data && data.source_file_id) (window._invpSourceFileIds = window._invpSourceFileIds || []).push(data.source_file_id);
     if (!resp.ok || !data || !data.ok) throw new Error((data && data.error) || ('HTTP ' + resp.status));
     invpApplyExcelData(data);
     // 文件本身认得出是哪家客户的 (如菜鸟 DFW 考勤 → Albatross America Inc): 自动选上客户公司
     if (data.companyHint) _invpSelectCompanyByName(data.companyHint, data.markupMultiplier);
-    setStatus(`✓ 已导入 ${data.employees.length} 名员工`, '#047857');
+    setStatus(`✓ 已导入 ${data.employees.length} 名员工${data.source_file_id ? ' · 📎 原件已存档' : ''}`, '#047857');
     let msg = `已从 Excel 导入 ${data.employees.length} 名员工`;
     if (data.periodStart) msg += `，周期 ${data.periodStart} ~ ${data.periodEnd}`;
     if (data.markupMultiplier) msg += `，Markup ×${data.markupMultiplier}`;
