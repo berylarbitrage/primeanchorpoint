@@ -22494,12 +22494,45 @@ app.post('/api/admin/invoices', requireAdmin, (req, res) => {
   `).run(invoice_number, invoice_date||null, companyName, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}), status||'saved', markup_rate||0);
   db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
     .run(result.lastInsertRowid, '创建', `Invoice 编号: ${invoice_number}`);
+  _invLinkSourceFiles(result.lastInsertRowid, req.body.source_file_ids);
   res.json({ id: result.lastInsertRowid });
 });
 
+// 发票原件存档: 上传到发票的原件一律保留, 不删 —
+//  kind='excel'        发票页导入的工时 Excel 原件 (上传即存, invoice_id 先空, 保存发票时关联上)
+//  kind='old_receipt'  收款回执 / 分包付款凭证 / 分项付款凭证 被替换或取消时, 旧文件留底 (文件本身不再删)
+db.exec(`CREATE TABLE IF NOT EXISTS invoice_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_id INTEGER DEFAULT NULL,
+  kind TEXT DEFAULT '',
+  file_path TEXT NOT NULL,
+  original_name TEXT DEFAULT '',
+  size INTEGER DEFAULT 0,
+  note TEXT DEFAULT '',
+  uploaded_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`CREATE INDEX IF NOT EXISTS idx_invoice_files_inv ON invoice_files(invoice_id)`); } catch (e) {}
+// 被替换/取消的回执: 不删文件, 记一行留底 (同一个文件只记一次)
+function _invKeepOldFile(invoiceId, filePath, note) {
+  try {
+    if (!filePath || !/\/uploads\//.test(String(filePath))) return; // 银行流水引用之类的不是文件
+    const dup = db.prepare('SELECT id FROM invoice_files WHERE invoice_id=? AND file_path=?').get(invoiceId, filePath);
+    if (dup) return;
+    db.prepare(`INSERT INTO invoice_files (invoice_id, kind, file_path, original_name, note) VALUES (?, 'old_receipt', ?, ?, ?)`)
+      .run(invoiceId, filePath, path.basename(filePath), note || '');
+  } catch (e) {}
+}
+// 保存发票时把这次导入的 Excel 原件关联上 (只认还没关联的, 防止改到别的发票的)
+function _invLinkSourceFiles(invoiceId, ids) {
+  if (!Array.isArray(ids) || !ids.length) return;
+  const st = db.prepare('UPDATE invoice_files SET invoice_id=? WHERE id=? AND invoice_id IS NULL');
+  ids.slice(0, 50).forEach(id => { const n = parseInt(id); if (n > 0) { try { st.run(invoiceId, n); } catch (e) {} } });
+}
+
 // Parse an uploaded payroll .xlsx and return structured data for the invoice
 // builder to auto-fill (period, markup, employees with reg/OT rates & hours).
-// Parsing only — nothing is persisted; the file is read from memory and dropped.
+// 原件同时存进 invoice-sources/ (invoice_files kind='excel'), 返回 source_file_id, 保存发票时关联。
 const parseInvoiceWorkbook = require('./xlsx-invoice');
 const invoiceXlsxUpload = multer({
   storage: multer.memoryStorage(),
@@ -22510,14 +22543,48 @@ const invoiceXlsxUpload = multer({
     cb(null, ok);
   },
 });
-app.post('/api/admin/invoices/parse-excel', requireAdmin, invoiceXlsxUpload.single('file'), (req, res) => {
+app.post('/api/admin/invoices/parse-excel', requireAdmin, invoiceXlsxUpload.single('file'), async (req, res) => {
   if (!req.file || !req.file.buffer) return res.status(400).json({ error: '请上传 .xls / .xlsx 文件' });
+  // 先存原件 (解析失败也留着); 存不上不影响导入
+  let sourceFileId = null;
+  try {
+    let orig = req.file.originalname || 'invoice.xlsx';
+    try { const u = Buffer.from(orig, 'latin1').toString('utf8'); if (u && !u.includes('\ufffd')) orig = u; } catch (_) {}
+    const ext = (path.extname(orig) || '.xlsx').toLowerCase();
+    const key = `invoice-sources/src-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`;
+    await storage.putObject(key, req.file.buffer, { contentType: req.file.mimetype || 'application/octet-stream' });
+    const editId = parseInt((req.body || {}).invoice_id) || null;
+    const exists = editId ? db.prepare('SELECT id FROM invoices WHERE id=?').get(editId) : null;
+    sourceFileId = db.prepare(`INSERT INTO invoice_files (invoice_id, kind, file_path, original_name, size, uploaded_by) VALUES (?, 'excel', ?, ?, ?, ?)`)
+      .run(exists ? editId : null, key, orig.slice(0, 200), req.file.buffer.length, req.userName || '').lastInsertRowid;
+  } catch (e) { console.log('[invoice-files] 原件保存失败:', e.message); }
   try {
     const data = parseInvoiceWorkbook(req.file.buffer, req.file.originalname);
-    res.json(data);
+    res.json(Object.assign({}, data, { source_file_id: sourceFileId }));
   } catch (e) {
-    res.status(400).json({ error: 'Excel 解析失败：' + (e && e.message ? e.message : String(e)) });
+    res.status(400).json({ error: 'Excel 解析失败：' + (e && e.message ? e.message : String(e)), source_file_id: sourceFileId });
   }
+});
+
+// 某张发票的所有原件 (导入的 Excel + 被替换留底的旧回执)
+app.get('/api/admin/invoices/:id/files', requireAdmin, (req, res) => {
+  const rows = db.prepare(`SELECT id, kind, original_name, size, note, uploaded_by, created_at, file_path FROM invoice_files WHERE invoice_id=? ORDER BY id DESC`).all(parseInt(req.params.id));
+  res.json(rows.map(r => ({ id: r.id, kind: r.kind, original_name: r.original_name || path.basename(r.file_path), size: r.size, note: r.note,
+    uploaded_by: r.uploaded_by, created_at: r.created_at })));
+});
+// 下载原件 (原文件名)
+app.get('/api/admin/invoice-files/:id/download', requireAdmin, async (req, res) => {
+  try {
+    const r = db.prepare('SELECT * FROM invoice_files WHERE id=?').get(parseInt(req.params.id));
+    if (!r) return res.status(404).json({ error: '文件不存在' });
+    const key = r.kind === 'excel' ? storage.normalizeKey(r.file_path) : storage.normalizeKey('uploads/' + path.basename(r.file_path));
+    if (!(await storage.exists(key))) return res.status(404).json({ error: '文件不存在' });
+    const buf = await storage.getBuffer(key);
+    const name = r.original_name || path.basename(r.file_path);
+    res.setHeader('Content-Disposition', `${req.query.inline ? 'inline' : 'attachment'}; filename="${encodeURIComponent(name)}"; filename*=UTF-8''${encodeURIComponent(name)}`);
+    res.type(path.extname(name) || 'application/octet-stream');
+    res.send(buf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ─── Gusto 合同工付款模板 (Contractor Pay CSV) ───
@@ -23121,6 +23188,7 @@ app.put('/api/admin/invoices/:id', requireAdmin, (req, res) => {
         .run(req.params.id, '编辑', changes.length ? changes.join('；') : '（已保存，未检测到字段变化）');
     } catch (_) { /* history logging is best-effort */ }
   }
+  _invLinkSourceFiles(parseInt(req.params.id), req.body.source_file_ids);
 
   res.json({ success: true });
 });
@@ -23408,13 +23476,9 @@ app.post('/api/admin/invoices/:id/mark-paid', requireAdmin, receiptUpload.array(
   // Replace the receipt set only when new files are uploaded; otherwise keep the
   // existing ones (lets "更新回执" edit amount/date/bank without re-uploading).
   let paths = _invoiceReceiptList(inv.payment_receipt_paths, inv.payment_receipt_path);
-  // Drop the previous receipt files from disk (only real /uploads/ files exist there;
-  // a bank-statement reference resolves to basename 'file' and is left untouched).
+  // 被替换的旧回执: 原件不删, 记到 invoice_files 留底 (银行流水引用不是文件, 跳过)
   const dropOldFiles = () => {
-    for (const old of paths) {
-      const oldPath = path.join(uploadsDir, path.basename(old));
-      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-    }
+    for (const old of paths) _invKeepOldFile(inv.id, old, '收款回执（被替换）');
   };
   // append_receipts='1' (更新时勾选"保留原有回执图片"): 旧文件不删除, 新凭证追加在后
   const appendRcpts = String(b.append_receipts || '') === '1';
@@ -23488,10 +23552,8 @@ app.post('/api/admin/invoices/:id/mark-paid', requireAdmin, receiptUpload.array(
 app.post('/api/admin/invoices/:id/mark-unpaid', requireAdmin, (req, res) => {
   const inv = db.prepare('SELECT id, payment_receipt_path, payment_receipt_paths FROM invoices WHERE id=?').get(req.params.id);
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
-  for (const old of _invoiceReceiptList(inv.payment_receipt_paths, inv.payment_receipt_path)) {
-    const oldPath = path.join(uploadsDir, path.basename(old));
-    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-  }
+  // 取消已付款: 回执原件不删, 留底
+  for (const old of _invoiceReceiptList(inv.payment_receipt_paths, inv.payment_receipt_path)) _invKeepOldFile(inv.id, old, '收款回执（取消已付款）');
   db.prepare(`UPDATE invoices SET payment_status='unpaid', payment_receipt_path=NULL, payment_receipt_paths=NULL, paid_at=NULL WHERE id=?`)
     .run(req.params.id);
   // Release the income transaction this invoice's 收款回执 had reserved (if any).
@@ -23511,13 +23573,9 @@ app.post('/api/admin/invoices/:id/mark-sub-paid', requireAdmin, subReceiptUpload
   // existing ones (lets "更新" edit amount/date/payee without re-uploading).
   const b = req.body || {};
   let paths = _invoiceReceiptList(inv.sub_payment_receipt_paths, inv.sub_payment_receipt_path);
-  // Drop the previous proof files from disk (only real /uploads/ files exist there;
-  // a bank-statement reference resolves to basename 'file' and is left untouched).
+  // 被替换的旧分包付款凭证: 原件不删, 留底
   const dropOldFiles = () => {
-    for (const old of paths) {
-      const oldPath = path.join(uploadsDir, path.basename(old));
-      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-    }
+    for (const old of paths) _invKeepOldFile(inv.id, old, '分包付款凭证（被替换）');
   };
   // append_receipts='1' (更新时勾选"保留原有回执图片"): 旧文件不删除, 新凭证追加在后
   const appendRcpts = String(b.append_receipts || '') === '1';
@@ -23596,10 +23654,8 @@ app.get('/api/admin/invoices/:id/linked-txns', requireAdmin, (req, res) => {
 app.post('/api/admin/invoices/:id/mark-sub-unpaid', requireAdmin, (req, res) => {
   const inv = db.prepare('SELECT id, sub_payment_receipt_path, sub_payment_receipt_paths FROM invoices WHERE id=?').get(req.params.id);
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
-  for (const old of _invoiceReceiptList(inv.sub_payment_receipt_paths, inv.sub_payment_receipt_path)) {
-    const oldPath = path.join(uploadsDir, path.basename(old));
-    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-  }
+  // 取消分包已付款: 凭证原件不删, 留底
+  for (const old of _invoiceReceiptList(inv.sub_payment_receipt_paths, inv.sub_payment_receipt_path)) _invKeepOldFile(inv.id, old, '分包付款凭证（取消已付款）');
   db.prepare(`UPDATE invoices SET sub_payment_status='unpaid', sub_payment_receipt_path=NULL, sub_payment_receipt_paths=NULL, sub_paid_at=NULL WHERE id=?`)
     .run(req.params.id);
   // Release the statement transaction this invoice's 分包回执 had reserved
@@ -23816,8 +23872,7 @@ app.post('/api/admin/invoices/:id/line-payments', requireAdmin, linePayUpload.ar
   res.json({ success: true, affected: affected.length, paths: newPaths });
 });
 
-// Remove one proof file from a line (dereference). Deletes the physical file only
-// if no other line still references it (batch uploads share one file across lines).
+// Remove one proof file from a line (dereference). The file itself is kept (invoice_files 留底).
 app.post('/api/admin/invoices/:id/line-payments/remove', requireAdmin, (req, res) => {
   const inv = db.prepare('SELECT id FROM invoices WHERE id=?').get(req.params.id);
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
@@ -23831,13 +23886,9 @@ app.post('/api/admin/invoices/:id/line-payments/remove', requireAdmin, (req, res
   const remaining = _linePayParse(row.receipt_paths).filter(p => p !== target);
   if (remaining.length) db.prepare("UPDATE invoice_line_payments SET receipt_paths=?, updated_at=datetime('now') WHERE id=?").run(JSON.stringify(remaining), row.id);
   else db.prepare('DELETE FROM invoice_line_payments WHERE id=?').run(row.id);
-  // Physical file is shared across lines on a batch upload — only unlink it when
-  // no remaining line-payment row references it.
+  // 原件不删: 没有别的分项再用这个文件时记到 invoice_files 留底
   const stillUsed = db.prepare('SELECT COUNT(*) AS n FROM invoice_line_payments WHERE receipt_paths LIKE ?').get('%' + target + '%').n;
-  if (!stillUsed) {
-    const fp = path.join(uploadsDir, path.basename(target));
-    if (fs.existsSync(fp)) { try { fs.unlinkSync(fp); } catch (_) {} }
-  }
+  if (!stillUsed) _invKeepOldFile(inv.id, target, `分项付款凭证（已移除 · ${lineType === 'container' ? '柜号' : '工人'} ${lineKey}）`);
   db.prepare('INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?,?,?)')
     .run(inv.id, '删除分项付款凭证', `${lineType === 'container' ? '柜号' : '工人'} ${lineKey}`);
   res.json({ success: true });
