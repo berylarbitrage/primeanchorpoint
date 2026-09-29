@@ -620,6 +620,16 @@ function looksLikeShiftLog(rows) {
   return false;
 }
 
+const SHEET_BREAK = '\u0000__sheet_break__';
+function _isSummaryName(name) {
+  const t = String(name || '').trim();
+  return /^(grand\s*|sub\s*)?totals?\b/i.test(t) || /(总计|合计|小计|汇总|结算|總計|合計|小計)/.test(t);
+}
+// 这一页有没有排班表头 (STAFF/姓名 + check): 没有的 (结算调整明细、汇总页之类) 不拼进排班流水
+function _sheetHasStaffHeader(rows) {
+  return (rows || []).some(r => { const c = (r || []).map(norm); return c.some(x => x === 'staff' || x === '姓名') && c.some(x => x.includes('check')); });
+}
+
 function buildFromShiftLog(rows, warnings) {
   const year = new Date().getFullYear();
   let col = null, curDate = '', curLabel = '';
@@ -633,6 +643,8 @@ function buildFromShiftLog(rows, warnings) {
     const row = row0 || [];
     const cellsN = row.map(norm);
     // 表头行 → 建立列映射 (每块可能重复表头, 重建无妨)
+    // 换分页: 上一页的列映射和日期作废, 别让后面的行套用
+    if (row[0] === SHEET_BREAK) { col = null; curDate = ''; curBlock = null; continue; }
     if (cellsN.some(c => c === 'staff' || c === '姓名')) {
       const idx = p => cellsN.findIndex(c => c && p(c));
       col = {
@@ -664,7 +676,8 @@ function buildFromShiftLog(rows, warnings) {
     }
     if (!col || !curDate || col.name < 0) continue;
     const name = cleanPersonName(row[col.name]);
-    if (!name || /^(total|合计|小计)$/i.test(name)) continue;
+    // 汇总行不是人: 小计 / 总计 / 合计 / 原表合计 / 最终结算 / Grand Total …
+    if (!name || _isSummaryName(name)) continue;
     const rate = col.pay >= 0 ? numOf(row[col.pay]) : null;
     // 工时: 优先表里的 total 列; 没有就用上下班时间减休息自己算 (跨午夜自动 +24h)
     let hrs = col.hours >= 0 ? (numOf(row[col.hours]) || 0) : 0;
@@ -746,6 +759,9 @@ module.exports = function parseInvoiceWorkbook(buf, filename) {
     for (const sh of sheets) {
       const nm = String(sh.name || '');
       if (/说明|instruction|readme/i.test(nm)) continue;
+      // 只拼有排班表头的页: 「结算调整明细」这类附页里的日期行和合计行会被当成班次和员工
+      if (sheets.length > 1 && !_sheetHasStaffHeader(sh.rows)) continue;
+      combined.push([SHEET_BREAK]);
       const m = nm.match(/(\d{1,2})[\/.\-月]\s*(\d{1,2})/);
       if (m) combined.push([null, nm.replace(/(\d{1,2})[.\-月]\s*(\d{1,2})日?/, (a, x, y) => (+x) + '/' + (+y))]);
       combined.push(...sh.rows);
