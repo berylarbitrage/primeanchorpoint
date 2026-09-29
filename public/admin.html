@@ -34782,6 +34782,7 @@ function renderInvpList() {
               <button class="btn btn-sm btn-outline" style="color:#0369a1;border-color:#7dd3fc" title="生成一封发这张 Invoice 的邮件（主题 + 正文），一键复制" onclick="openInvpEmail(${r.id})">✉️ 邮件</button>
               ${paidBtn}
               <button class="btn btn-sm btn-outline" style="color:#7c3aed;border-color:#c4b5fd" onclick="openInvpLinePayModal(${r.id}, '${esc(r.invoice_number)}')" title="按 container / 工人逐条或批量上传付款凭证">📎 分项凭证</button>
+              <button class="btn btn-sm btn-outline" style="color:#15803d;border-color:#86efac" title="每个工人的实付时薪 / 实付工资 / 利润（只在系统里看，不上发票）" onclick="openInvpWageView(${r.id})">👷 实付工资</button>
               <button class="btn btn-sm btn-outline" onclick="openInvpHistoryModal(${r.id}, '${esc(r.invoice_number)}')">历史</button>
               <button class="btn btn-sm btn-outline" style="color:var(--red);border-color:var(--red)" onclick="deleteInvpRecord(${r.id})">删除</button>
             </div>
@@ -34994,6 +34995,65 @@ async function deleteInvpRecord(id) {
   if (!await showConfirm('确定删除此 Invoice 记录？', { danger: true })) return;
   await api('/admin/invoices/' + id, { method: 'DELETE' });
   loadInvpList();
+}
+
+// 👷 实付工资: 逐个工人看 收费时薪 / 实付时薪 / 实付工资 / 账单 / 利润 — 只在系统里看, 客户发票上没有
+async function openInvpWageView(invoiceId) {
+  let ov = document.getElementById('invpWageOverlay'); if (ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'invpWageOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:720;display:flex;align-items:center;justify-content:center;padding:1rem';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:900px;width:96vw;max-height:90vh;overflow:auto;padding:1.1rem"><div style="color:var(--gray-400)">加载中…</div></div>';
+  document.body.appendChild(ov);
+  const box = ov.firstElementChild;
+  const inv = await api('/admin/invoices/' + invoiceId).catch(() => null);
+  if (!inv || inv.error) { box.innerHTML = '<div style="color:#dc2626">加载失败</div>'; return; }
+  const m = v => '$' + (Number(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const head = `<div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;margin-bottom:.6rem">
+      <div><h3 style="margin:0;font-size:1rem">👷 实付工资 · <span style="font-family:monospace;color:#1A3F7A">${esc(inv.invoice_number || '')}</span></h3>
+      <div style="font-size:.78rem;color:var(--gray-500);margin-top:.15rem">${esc(inv.company_name || '')} · ${esc((inv.period_start || '') + ' ~ ' + (inv.period_end || ''))} · <span style="color:#15803d">只在系统里看，不会出现在客户发票上</span></div></div>
+      <div style="display:flex;gap:.4rem"><button class="btn btn-sm btn-outline" onclick="document.getElementById('invpWageOverlay').remove();openInvpForEdit(${invoiceId})">✏️ 去填实付时薪</button>
+      <button class="btn btn-outline" onclick="document.getElementById('invpWageOverlay').remove()">✕ 关闭</button></div></div>`;
+  if ((inv.profile || {}).invoice_mode === 'container') {
+    box.innerHTML = head + '<div style="color:var(--gray-500);font-size:.85rem">这是 Container 发票，成本按分包价算，没有逐人时薪。</div>';
+    return;
+  }
+  const items = (inv.items || []).filter(it => (Number(it.hours) || 0) > 0 || (Number(it.billed) || 0) > 0);
+  let tCost = 0, tBill = 0, tHrs = 0, missing = 0;
+  const rows = items.map(it => {
+    const w = Number(it.wage_rate) || 0, r = Number(it.rate) || 0, o = Number(it.otRate) || 0;
+    const reg = it.regHours != null ? Number(it.regHours) || 0 : Number(it.hours) || 0, ot = Number(it.otHours) || 0;
+    const hrs = Number(it.hours) || (reg + ot);
+    const billed = it.billed != null ? Number(it.billed) || 0 : Number(it.total) || 0;
+    const cost = w > 0 ? reg * w + ot * w * (r > 0 && o > 0 ? o / r : 1) : null;
+    tHrs += hrs; tBill += billed;
+    if (cost == null) missing++; else tCost += cost;
+    const td = (v, st) => `<td style="padding:5px 8px;text-align:right;white-space:nowrap;${st || ''}">${v}</td>`;
+    return `<tr style="border-top:1px solid var(--gray-100)">
+      <td style="padding:5px 8px">${esc(it.name || '')}${it.subcontractor ? `<div style="font-size:.72rem;color:#047857">${esc(it.subcontractor)}</div>` : ''}</td>
+      ${td(hrs.toFixed(2) + 'h' + (ot > 0 ? `<div style="font-size:.72rem;color:var(--accent)">加班 ${ot.toFixed(2)}h</div>` : ''))}
+      ${td(m(r))}
+      ${td(w > 0 ? m(w) : '<span style="color:#b45309">没填</span>', 'color:#15803d;font-weight:700')}
+      ${td(cost != null ? m(cost) : '—', 'color:#15803d')}
+      ${td(m(billed), 'color:#1d4ed8;font-weight:600')}
+      ${td(cost != null ? m(billed - cost) : '—', cost != null && billed - cost < 0 ? 'color:#dc2626;font-weight:600' : 'color:#047857;font-weight:600')}
+    </tr>`;
+  }).join('');
+  const th = (t, st) => `<th style="padding:6px 8px;text-align:right;white-space:nowrap;${st || ''}">${t}</th>`;
+  box.innerHTML = head + (items.length ? `
+    ${missing ? `<div style="background:#fffbeb;border:1px solid #fcd34d;color:#92400e;border-radius:6px;padding:.4rem .6rem;font-size:.8rem;margin-bottom:.5rem">有 ${missing} 人还没填实付时薪 —— 点「去填实付时薪」在发票员工表里补上，列表的工资/利润才按实付算。</div>` : ''}
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.84rem">
+      <thead><tr style="background:#f8fafc"><th style="padding:6px 8px;text-align:left">工人</th>${th('工时')}${th('收费时薪')}${th('实付时薪', 'color:#15803d')}${th('实付工资', 'color:#15803d')}${th('账单', 'color:#1d4ed8')}${th('利润', 'color:#047857')}</tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr style="border-top:2px solid var(--gray-300);font-weight:700;background:#f8fafc">
+        <td style="padding:6px 8px">合计 ${items.length} 人</td>
+        <td style="padding:6px 8px;text-align:right">${tHrs.toFixed(2)}h</td><td></td><td></td>
+        <td style="padding:6px 8px;text-align:right;color:#15803d">${m(tCost)}${missing ? '<div style="font-size:.7rem;font-weight:400;color:#b45309">不含没填的</div>' : ''}</td>
+        <td style="padding:6px 8px;text-align:right;color:#1d4ed8">${m(tBill)}</td>
+        <td style="padding:6px 8px;text-align:right;color:#047857">${missing ? '—' : m(tBill - tCost)}</td>
+      </tr></tfoot>
+    </table></div>` : '<div style="color:var(--gray-400)">这张发票没有工人明细。</div>');
 }
 
 let _invpHistoryInvoiceId = null;
