@@ -183,6 +183,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <button class="tab" id="tabClaims" onclick="showTab('claims')"><span class="t-zh">⚠️ 赔偿事故</span><span class="t-en">Claims</span></button>
     <button class="tab" id="tabRef" onclick="showTab('ref')"><span class="t-zh">🤝 介绍费</span><span class="t-en">Referral</span><span id="refPendBadge" style="display:none;background:#d97706;color:#fff;border-radius:10px;font-size:.68rem;padding:1px 7px;position:absolute;top:3px;right:4px"></span></button>
     <button class="tab" id="tabGusto" onclick="showTab('gusto')"><span class="t-zh">💸 Gusto 工资</span><span class="t-en">Payroll</span></button>
+    <button class="tab" id="tabWages" onclick="showTab('wages')"><span class="t-zh">👷 员工工资汇总</span><span class="t-en">Wages</span></button>
     <button class="tab" id="tabFeeIns" onclick="showTab('feeins')"><span class="t-zh">🛡️ 保险费</span><span class="t-en">Insurance</span></button>
     <button class="tab" id="tabFeeLaw" onclick="showTab('feelaw')"><span class="t-zh">⚖️ 律师费</span><span class="t-en">Legal</span></button>
     <button class="tab" id="tabFeeCo" onclick="showTab('feeco')"><span class="t-zh">🏢 公司支出</span><span class="t-en">Expenses</span></button>
@@ -939,6 +940,35 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
   </div>
 
   <!-- 🚚 卡车费用 (Bintique 卡车订单联动)：卡车费交易 + pallet.bintique.com link 过来的卡车订单 -->
+  <div id="paneWages" style="display:none">
+    <div class="card">
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.55rem">
+        <b style="font-size:.92rem">员工工资汇总</b>
+        <select id="wgRange" onchange="wgRangeChanged()">
+          <option value="thisweek">本周</option>
+          <option value="lastweek">上周</option>
+          <option value="2w">近两周</option>
+          <option value="thismonth" selected>本月</option>
+          <option value="lastmonth">上月</option>
+          <option value="90d">近 90 天</option>
+          <option value="thisyear">今年</option>
+          <option value="custom">自定义…</option>
+        </select>
+        <input type="date" id="wgStart" onchange="wgLoad()" style="display:none">
+        <input type="date" id="wgEnd" onchange="wgLoad()" style="display:none">
+        <input type="text" id="wgSearch" placeholder="搜姓名 / 客户…" oninput="wgRender()" style="width:190px">
+        <button class="btn btn-sm btn-blue" id="wgMergeBtn" style="display:none" onclick="wgMerge()">🔗 合并选中</button>
+        <button class="btn btn-sm btn-outline" onclick="wgExport()">⬇️ 导出 CSV</button>
+      </div>
+      <div id="wgStats" style="font-size:.78rem;color:var(--g500);margin-bottom:.5rem"></div>
+      <div style="overflow-x:auto">
+        <table><thead><tr>
+          <th style="width:28px"></th><th>员工姓名</th><th>客户</th><th style="text-align:right">发票</th><th style="text-align:right">正常工时</th><th style="text-align:right">加班工时</th><th style="text-align:right">工资合计</th><th>最早 ~ 最近周期</th><th>明细</th>
+        </tr></thead><tbody id="wgBody"><tr><td colspan="9" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+      </div>
+      <p style="font-size:.74rem;color:var(--g400);margin-top:.5rem">数据来自正式发票（不含草稿、不含整柜计费）上的工资行，按发票工资周期的结束日筛选。同一个人在不同发票上写法不同（大小写、重音、错拼）时，勾选这几行再点「合并选中」，合并后大家看到的都一样；合并过的行可以点「拆开」恢复。</p>
+    </div>
+  </div>
   <div id="paneTruck" style="display:none">
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
       <input type="text" id="truckSearch" placeholder="搜卡车公司 / 订单号 / 备注…" oninput="renderTruckList()" style="width:220px">
@@ -1218,9 +1248,152 @@ function showTab(t) {
   document.getElementById('paneClaims').style.display = t === 'claims' ? '' : 'none';
   document.getElementById('tabRef').classList.toggle('on', t === 'ref');
   document.getElementById('paneRef').style.display = t === 'ref' ? '' : 'none';
+  document.getElementById('tabWages').classList.toggle('on', t === 'wages');
+  document.getElementById('paneWages').style.display = t === 'wages' ? '' : 'none';
+  if (t === 'wages') wgLoad();
   document.getElementById('tabGusto').classList.toggle('on', t === 'gusto');
   document.getElementById('paneGusto').style.display = t === 'gusto' ? '' : 'none';
   if (t === 'gusto') gustoInit();
+}
+// ── 👷 员工工资汇总: 发票工资行按人汇总, 可合并不同写法的名字 ──
+let _wg = null, _wgRows = [];
+const _wgSel = new Set(), _wgOpen = new Set();
+function _wgKey(n) { return String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim(); }
+function wgRangeDates() {
+  const v = document.getElementById('wgRange').value;
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  const monday = new Date(today.getTime() - ((today.getUTCDay() + 6) % 7) * 86400000);
+  if (v === 'thisweek') return [_gd(monday), _gd(new Date(monday.getTime() + 6 * 86400000))];
+  if (v === 'lastweek') return [_gd(new Date(monday.getTime() - 7 * 86400000)), _gd(new Date(monday.getTime() - 86400000))];
+  if (v === '2w') return [_gd(new Date(monday.getTime() - 7 * 86400000)), _gd(new Date(monday.getTime() + 6 * 86400000))];
+  if (v === 'thismonth') return [_gd(new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1))), _gd(new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 0)))];
+  if (v === 'lastmonth') return [_gd(new Date(Date.UTC(now.getFullYear(), now.getMonth() - 1, 1))), _gd(new Date(Date.UTC(now.getFullYear(), now.getMonth(), 0)))];
+  if (v === '90d') return [_gd(new Date(today.getTime() - 89 * 86400000)), _gd(today)];
+  if (v === 'thisyear') return [`${now.getFullYear()}-01-01`, `${now.getFullYear()}-12-31`];
+  return [document.getElementById('wgStart').value, document.getElementById('wgEnd').value];
+}
+function wgRangeChanged() {
+  const custom = document.getElementById('wgRange').value === 'custom';
+  ['wgStart', 'wgEnd'].forEach(id => { document.getElementById(id).style.display = custom ? '' : 'none'; });
+  if (custom && (!document.getElementById('wgStart').value || !document.getElementById('wgEnd').value)) {
+    const [a, b] = (() => { document.getElementById('wgRange').value = 'thismonth'; const d = wgRangeDates(); document.getElementById('wgRange').value = 'custom'; return d; })();
+    document.getElementById('wgStart').value = a;
+    document.getElementById('wgEnd').value = b;
+  }
+  wgLoad();
+}
+async function wgLoad() {
+  const [s, e] = wgRangeDates();
+  if (!s || !e) return;
+  document.getElementById('wgBody').innerHTML = '<tr><td colspan="9" style="color:var(--g400)">加载中…</td></tr>';
+  const r = await api(`/api/acct/payroll-summary?start=${s}&end=${e}`).catch(err => ({ error: err.message }));
+  if (!r || r.error) { document.getElementById('wgBody').innerHTML = `<tr><td colspan="9" style="color:#dc2626">${esc((r && r.error) || '加载失败')}</td></tr>`; return; }
+  _wg = r;
+  _wgSel.clear();
+  wgRender();
+}
+// 按合并表归组: 每组 = 一个人
+function _wgGroups() {
+  const m = (_wg && _wg.merges) || {};
+  const groups = new Map();
+  for (const it of (_wg ? _wg.items : [])) {
+    const to = m[it.key];
+    const gk = to ? 'm:' + _wgKey(to) : 'n:' + it.key;
+    if (!groups.has(gk)) groups.set(gk, { gk, name: to || it.name, merged: !!to, names: new Map(), items: [], companies: new Set(), invoices: new Set(), reg: 0, ot: 0, total: 0, first: '', last: '' });
+    const g = groups.get(gk);
+    g.items.push(it);
+    g.names.set(it.name, (g.names.get(it.name) || 0) + 1);
+    if (it.company) g.companies.add(it.company);
+    g.invoices.add(it.invoice_id);
+    g.reg += it.reg; g.ot += it.ot; g.total += it.total;
+    if (!g.first || it.period_end < g.first) g.first = it.period_end;
+    if (!g.last || it.period_end > g.last) g.last = it.period_end;
+  }
+  for (const g of groups.values()) {
+    // 没合并的组: 显示出现次数最多的写法
+    if (!g.merged) g.name = [...g.names.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    g.total = Math.round(g.total * 100) / 100;
+    g.reg = Math.round(g.reg * 100) / 100;
+    g.ot = Math.round(g.ot * 100) / 100;
+  }
+  return [...groups.values()].sort((a, b) => b.total - a.total);
+}
+function _wgHrs(h) { return h ? h.toFixed(2).replace(/\.?0+$/, '') : '<span style="color:var(--g400)">—</span>'; }
+function wgRender() {
+  if (!_wg) return;
+  const q = document.getElementById('wgSearch').value.trim().toLowerCase();
+  let groups = _wgGroups();
+  if (q) groups = groups.filter(g => [g.name, ...g.names.keys(), ...g.companies].join(' ').toLowerCase().includes(q));
+  const total = groups.reduce((s, g) => s + g.total, 0);
+  document.getElementById('wgStats').textContent = `${_wg.start} ~ ${_wg.end} · ${_wg.invoice_count} 张发票 · ${groups.length} 人 · 工资合计 ${money(Math.round(total * 100) / 100)}`;
+  const canEdit = !!_wg.can_edit;
+  document.getElementById('wgMergeBtn').style.display = canEdit && _wgSel.size >= 2 ? '' : 'none';
+  document.getElementById('wgMergeBtn').textContent = `🔗 合并选中（${_wgSel.size}）`;
+  if (!groups.length) { document.getElementById('wgBody').innerHTML = `<tr><td colspan="9" style="color:var(--g400)">${q ? '没有匹配的员工' : '这个日期范围内没有发票工资行'}</td></tr>`; return; }
+  _wgRows = groups;
+  document.getElementById('wgBody').innerHTML = groups.map((g, i) => {
+    const open = _wgOpen.has(g.gk);
+    const variants = [...g.names.keys()];
+    const alias = variants.length > 1 || (g.merged && variants[0] !== g.name)
+      ? `<div style="font-size:.72rem;color:var(--g500)">${g.merged ? '🔗 合并了：' : '写法：'}${variants.map(esc).join('、')}</div>` : '';
+    const unmerge = g.merged && canEdit ? ` <a style="cursor:pointer;font-size:.72rem;color:#dc2626;text-decoration:underline" onclick="wgUnmerge(_wgRows[${i}].gk)">拆开</a>` : '';
+    const det = g.items.slice().sort((a, b) => String(a.period_end).localeCompare(String(b.period_end))).map(it => `<tr>
+        <td>${esc(it.invoice_number)}</td><td>${esc(it.company)}</td><td>${esc(it.period_start)} ~ ${esc(it.period_end)}</td><td>${esc(it.name)}</td>
+        <td style="text-align:right">${_wgHrs(it.reg)}</td><td style="text-align:right">${_wgHrs(it.ot)}</td>
+        <td style="text-align:right">${it.rate ? money(it.rate) : '—'}</td><td style="text-align:right">${money(it.total)}</td></tr>`).join('');
+    return `<tr>
+      <td>${canEdit ? `<input type="checkbox" ${_wgSel.has(g.gk) ? 'checked' : ''} onchange="wgToggleSel(_wgRows[${i}].gk, this.checked)">` : ''}</td>
+      <td><b>${esc(g.name)}</b>${unmerge}${alias}</td>
+      <td style="font-size:.76rem;color:var(--g500)">${[...g.companies].map(esc).join('、')}</td>
+      <td style="text-align:right">${g.invoices.size}</td>
+      <td style="text-align:right">${_wgHrs(g.reg)}</td>
+      <td style="text-align:right">${_wgHrs(g.ot)}</td>
+      <td style="text-align:right"><b>${money(g.total)}</b></td>
+      <td style="font-size:.76rem;white-space:nowrap">${esc(g.first)}${g.last !== g.first ? ' ~ ' + esc(g.last) : ''}</td>
+      <td><a style="cursor:pointer;font-size:.76rem;color:#0f4c6b;text-decoration:underline" onclick="wgToggleOpen(_wgRows[${i}].gk)">${open ? '收起' : '明细'}</a></td>
+    </tr>${open ? `<tr><td colspan="9" style="background:#f8fafc;padding:.3rem .6rem"><table style="font-size:.76rem;width:100%"><thead><tr>
+      <th>发票</th><th>客户</th><th>工资周期</th><th>发票上的写法</th><th style="text-align:right">正常</th><th style="text-align:right">加班</th><th style="text-align:right">时薪</th><th style="text-align:right">工资</th>
+    </tr></thead><tbody>${det}</tbody></table></td></tr>` : ''}`;
+  }).join('');
+}
+function wgToggleSel(gk, on) { if (on) _wgSel.add(gk); else _wgSel.delete(gk); wgRender(); }
+function wgToggleOpen(gk) { if (_wgOpen.has(gk)) _wgOpen.delete(gk); else _wgOpen.add(gk); wgRender(); }
+async function wgMerge() {
+  const groups = _wgGroups().filter(g => _wgSel.has(g.gk));
+  if (groups.length < 2) return toast('至少勾选两个人才能合并', true);
+  const suggest = groups.slice().sort((a, b) => b.total - a.total)[0].name;
+  const to = prompt(`把这 ${groups.length} 个名字合并成同一个人：\n${groups.map(g => '· ' + g.name).join('\n')}\n\n合并后显示的名字：`, suggest);
+  if (to == null || !to.trim()) return;
+  const names = groups.flatMap(g => [g.name, ...g.names.keys()]);
+  const r = await api('/api/acct/payroll-merges', { method: 'POST', body: JSON.stringify({ names, to: to.trim() }) }).catch(e => ({ error: e.message }));
+  if (!r || !r.ok) return toast((r && r.error) || '合并失败', true);
+  _wg.merges = r.merges;
+  _wgSel.clear();
+  toast(`✅ 已合并为「${to.trim()}」`);
+  wgRender();
+}
+async function wgUnmerge(gk) {
+  const g = _wgGroups().find(x => x.gk === gk);
+  if (!g || !confirm(`拆开「${g.name}」？合并进来的 ${g.names.size} 种写法会恢复成各自一行。`)) return;
+  const m = _wg.merges || {};
+  const names = [g.name, ...g.names.keys(), ...Object.keys(m).filter(k => _wgKey(m[k]) === _wgKey(g.name))];
+  const r = await api('/api/acct/payroll-merges', { method: 'POST', body: JSON.stringify({ names, to: '' }) }).catch(e => ({ error: e.message }));
+  if (!r || !r.ok) return toast((r && r.error) || '拆开失败', true);
+  _wg.merges = r.merges;
+  toast('已拆开');
+  wgRender();
+}
+function wgExport() {
+  if (!_wg) return;
+  const q = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+  const lines = [['员工', '发票上的写法', '客户', '发票张数', '正常工时', '加班工时', '工资合计', '最早周期结束', '最近周期结束'].map(q).join(',')];
+  for (const g of _wgGroups()) lines.push([g.name, [...g.names.keys()].join(' / '), [...g.companies].join(' / '), g.invoices.size, g.reg, g.ot, g.total.toFixed(2), g.first, g.last].map(q).join(','));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
+  a.download = `员工工资汇总_${_wg.start}_${_wg.end}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 // ── 付款批注: 每张发票/每笔赔偿记录「付了没有/哪个银行付的/付了多少」 ──
 let _payTarget = null, _payBanksFilled = false;
@@ -3754,7 +3927,7 @@ async function gustoLoadRecon() {
   if (_gustoView !== 'recon') renderGustoIssues();
 }
 // ── 子页面: 对不上名册 / 现金发放（按人汇总, 展开看每张发票） ──
-let _gustoView = 'recon';
+let _gustoView = 'recon', _gustoIssueRows = [];
 const _gustoIssueOpen = new Set();
 function _gustoNameKey(n) { return String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, ' ').trim(); }
 function gustoSetView(v) {
@@ -3801,6 +3974,7 @@ function renderGustoIssues() {
     ? '收款人对照表里指定现金发放、不走 Gusto 的工资行，不参与按人对账。'
     : '这些工资行在 Gusto 名册里找不到对应收款人，没算进按人对账的应付。处理方法：在 Gusto 里加这个人，或者在后台「收款人对照表」里把名字指到名册上的人（同姓待确认 = 只有姓对上，确认是同一个人再加对照）。'}</div>`;
   if (!rows.length) { box.innerHTML = head + `<div style="color:var(--g400);padding:.6rem 0">${q ? '没有匹配的记录' : (isCash ? '这个周期没有现金发放' : '✅ 这个周期的工资行都对上了 Gusto 名册')}</div>`; _gustoKeepFocus(); return; }
+  _gustoIssueRows = rows;
   box.innerHTML = head + `<div style="overflow-x:auto"><table><thead><tr>
       <th>工资表上的名字</th>${isCash ? '' : '<th>问题</th><th>名册候选 / 对照</th>'}<th style="text-align:right">发票</th><th style="text-align:right">应付合计</th><th>明细</th>
     </tr></thead><tbody>${rows.map((g, i) => {
@@ -3814,7 +3988,7 @@ function renderGustoIssues() {
         ${isCash ? '' : `<td>${kinds}</td><td style="font-size:.76rem;color:var(--g500)">${[...g.hints].map(esc).join('、') || '—'}</td>`}
         <td style="text-align:right">${g.items.length}</td>
         <td style="text-align:right"><b>${money(g.owed)}</b></td>
-        <td><a style="cursor:pointer;font-size:.76rem;color:#0f4c6b;text-decoration:underline" onclick="gustoToggleIssue('${esc(g.key)}')">${open ? '收起' : '明细'}</a></td>
+        <td><a style="cursor:pointer;font-size:.76rem;color:#0f4c6b;text-decoration:underline" onclick="gustoToggleIssue(_gustoIssueRows[${i}].key)">${open ? '收起' : '明细'}</a></td>
       </tr>${open ? `<tr><td colspan="${isCash ? 4 : 6}" style="background:#f8fafc;padding:.3rem .6rem"><table style="font-size:.76rem;width:100%"><thead><tr><th>发票</th><th>客户</th><th>周期</th><th>工资表写法</th><th style="text-align:right">应付</th></tr></thead><tbody>${det}</tbody></table></td></tr>` : ''}`;
     }).join('')}</tbody></table></div>`;
   _gustoKeepFocus();

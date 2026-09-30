@@ -42065,6 +42065,77 @@ app.get('/api/acct/gusto/recon', requireAdmin, requireAcctView, (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── 👷 员工工资汇总: 正式发票上的工资行按人汇总 ───
+// 日期按发票工资周期结束日筛。名字合并存在 app_settings.payroll_name_merges:
+// { "<小写去重音的名字>": "合并后显示的名字" }, 所有人共用; 汇总在前端按这张表归并。
+function _payrollNameKey(n) {
+  return String(n || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+function _payrollMerges() {
+  try {
+    const r = db.prepare("SELECT value FROM app_settings WHERE key='payroll_name_merges'").get();
+    const m = r ? JSON.parse(r.value) : {};
+    return m && typeof m === 'object' && !Array.isArray(m) ? m : {};
+  } catch (e) { return {}; }
+}
+app.get('/api/acct/payroll-summary', requireAdmin, requireAcctView, (req, res) => {
+  try {
+    const start = String(req.query.start || '').slice(0, 10);
+    const end = String(req.query.end || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || start > end) {
+      return res.status(400).json({ error: '请选择日期范围' });
+    }
+    const invRows = db.prepare(`SELECT id, invoice_number, company_name, period_start, period_end, items_json, profile_json
+      FROM invoices WHERE COALESCE(status,'')!='draft' AND period_end>=? AND period_end<=?
+      ORDER BY period_end, id`).all(start, end);
+    const items = [];
+    let invoiceCount = 0;
+    for (const r of invRows) {
+      let list = [], profile = {};
+      try { list = JSON.parse(r.items_json || '[]'); } catch (e) {}
+      try { profile = JSON.parse(r.profile_json || '{}'); } catch (e) {}
+      if (profile.invoice_mode === 'container') continue;   // 整柜分包计费没有按人工资行
+      let n = 0;
+      for (const it of (Array.isArray(list) ? list : [])) {
+        const name = String(it.name || '').replace(/\s+/g, ' ').trim();
+        const total = Number(it.total) || 0;
+        if (!name || !total) continue;
+        n++;
+        items.push({
+          key: _payrollNameKey(name), name,
+          invoice_id: r.id, invoice_number: r.invoice_number || '', company: r.company_name || '',
+          period_start: r.period_start || '', period_end: r.period_end || '',
+          reg: Number(it.regHours != null ? it.regHours : it.hours) || 0,
+          ot: Number(it.otHours) || 0,
+          rate: Number(it.rate) || null,
+          total: Math.round(total * 100) / 100,
+        });
+      }
+      if (n) invoiceCount++;
+    }
+    res.json({ ok: true, start, end, invoice_count: invoiceCount, items, merges: _payrollMerges(),
+      can_edit: ['accounting', 'cs', 'admin'].includes(req.userRole) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 合并: body { names: [...], to: '显示名' }; 拆开: body { names: [...], to: '' }
+app.post('/api/acct/payroll-merges', requireAdmin, requireAcctWrite, (req, res) => {
+  try {
+    const names = Array.isArray((req.body || {}).names) ? req.body.names : [];
+    const to = String((req.body || {}).to || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    const keys = [...new Set(names.map(_payrollNameKey).filter(Boolean))].slice(0, 200);
+    if (!keys.length) return res.status(400).json({ error: '没有选中名字' });
+    if (to && keys.length < 2 && _payrollNameKey(to) === keys[0]) return res.status(400).json({ error: '至少选两个名字才能合并' });
+    const m = _payrollMerges();
+    for (const k of keys) { if (to) m[k] = to; else delete m[k]; }
+    // 合并后的显示名本身也指向自己, 以后别的写法再并进来还是同一组
+    if (to) m[_payrollNameKey(to)] = to;
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('payroll_name_merges', ?, CURRENT_TIMESTAMP)")
+      .run(JSON.stringify(m));
+    auditLog(to ? 'payroll_name_merge' : 'payroll_name_unmerge', req, { targetType: 'payroll', targetId: to || keys[0], details: { keys, to } });
+    res.json({ ok: true, merges: m });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/acct/statements', requireAdmin, requireAcctView, (req, res) => {
   try {
     const rows = db.prepare(`SELECT id, source, bank, account_name, operator, period, period_start, period_end, file_name, txn_count, total_in, total_out, created_at
