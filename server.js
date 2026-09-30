@@ -22618,6 +22618,27 @@ const gustoRosterUpload = multer({
   limits: { fileSize: 1024 * 1024 },
   fileFilter: (req, file, cb) => cb(null, /\.csv$/i.test(file.originalname || '') || /csv|text\/plain/i.test(file.mimetype || '')),
 });
+// 2026-09-30 名册 (contractor-pay-template (7).csv, 含 Brayan / Freismar / Yasmani /
+// Óscar / Uriel) 随代码存一份: 线上存的名册比它旧就换成它, 只跑一次; 之后在界面
+// 「🔄 更新名册」上传的新版本照常覆盖。
+(function _gustoRosterSeed() {
+  const markerKey = 'gusto_roster_seed_2026_09_30';
+  try {
+    if (db.prepare('SELECT value FROM app_settings WHERE key=?').get(markerKey)) return;
+    const seedAt = '2026-09-30T00:00:00.000Z';
+    const row = db.prepare("SELECT value FROM app_settings WHERE key='gusto_pay_template'").get();
+    let cur = null;
+    try { cur = row && row.value ? JSON.parse(row.value) : null; } catch (_) {}
+    if (!cur || !cur.uploaded_at || String(cur.uploaded_at) < seedAt) {
+      const csv = require('fs').readFileSync(require('path').join(__dirname, 'data', 'gusto-roster-2026-09-30.csv'), 'utf8');
+      parseRoster(csv); // 解析不了就不换
+      const tpl = { name: 'prime-anchorpoint-llc-contractor-pay-template (7).csv', csv, uploaded_at: seedAt, by: 'system' };
+      db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('gusto_pay_template', ?, CURRENT_TIMESTAMP)").run(JSON.stringify(tpl));
+      console.log('[migration] Gusto 名册更新为 2026-09-30 版本');
+    }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, '1')").run(markerKey);
+  } catch (e) { console.log('[migration] gusto roster seed error:', e.message); }
+})();
 function _gustoRoster() {
   const row = db.prepare("SELECT value FROM app_settings WHERE key='gusto_pay_template'").get();
   if (!row || !row.value) return null;
@@ -22671,6 +22692,7 @@ const GUSTO_ALIAS_DEFAULTS = [
   { from: 'Yasmani', to: 'Reyes Luis Yasmani' },
   { from: 'Oscar Hernández', to: 'Óscar Hernández Gonzále' },
   { from: 'Uriel Garcia Rodríguez', to: 'Uriel García Rodriguez' },
+  { from: 'Eloiso Cornelio Herrera Cano', to: 'Eloiso Cornelio Herrera Cano' },
 ];
 
 // 发工资时薪覆盖: 发票对客户照计费时薪开票（这三人 $18）, 发工资按这里的时薪
@@ -22748,6 +22770,7 @@ _gustoAliasUpsert('gusto_alias_2026_09_23', GUSTO_ALIAS_DEFAULTS.filter(a => /da
 _gustoAliasUpsert('gusto_alias_2026_09_23b', GUSTO_ALIAS_DEFAULTS.filter(a => /^(pepe alvarez rodriguez|marialex bastidas)$/i.test(a.from)));
 // 2026-09-30: Brayan Espinoza Orozco / Freismar / Yasmani / Oscar Hernández / Uriel Garcia Rodríguez
 _gustoAliasUpsert('gusto_alias_2026_09_30', GUSTO_ALIAS_DEFAULTS.filter(a => /^(brayan espinoza orozco|freismar|yasmani|oscar hernández|uriel garcia rodríguez)$/i.test(a.from)));
+_gustoAliasUpsert('gusto_alias_2026_09_30b', GUSTO_ALIAS_DEFAULTS.filter(a => /^eloiso cornelio herrera cano$/i.test(a.from)));
 _gustoAliasBackfill('gusto_alias_tecaxco_backfilled', GUSTO_ALIAS_DEFAULTS.filter(a => a.to === 'Tecaxco, Bugui Boy'));
 _gustoAliasBackfill('gusto_alias_eloy_backfilled', GUSTO_ALIAS_DEFAULTS.filter(a => a.to === 'Eloiso Cornelio Herrera Cano'));
 
