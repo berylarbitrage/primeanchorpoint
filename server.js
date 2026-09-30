@@ -41732,48 +41732,107 @@ app.post('/api/acct/gusto/import', requireAdmin, requireRole('admin'), gustoRepo
   try { parsed = gustoApi.parsePaymentReportCsv(csv); }
   catch (e) { return res.status(400).json({ error: e.message }); }
   const nowIso = new Date().toISOString();
-  const hasP = db.prepare('SELECT uuid FROM gusto_payments WHERE uuid=?');
+  const getP = db.prepare('SELECT * FROM gusto_payments WHERE uuid=?');
   const upP = db.prepare(`INSERT INTO gusto_payments (uuid, contractor_uuid, contractor_name, date, payment_method, wage_type, status, hours, hourly_rate, wage, bonus, reimbursement, wage_total, source, raw_json, synced_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'import', ?, ?)
     ON CONFLICT(uuid) DO UPDATE SET contractor_name=excluded.contractor_name, date=excluded.date,
       payment_method=excluded.payment_method, status=excluded.status, hours=excluded.hours,
       wage=excluded.wage, bonus=excluded.bonus, reimbursement=excluded.reimbursement,
       wage_total=excluded.wage_total, raw_json=excluded.raw_json, synced_at=excluded.synced_at`);
-  let inserted = 0, updated = 0, minD = '', maxD = '';
-  const uuids = [];
+  // 新上传不动已做的银行关联: 同一笔付款 uuid 不变, 上面的 UPDATE 不碰 bank_* 列。
+  // uuid 变了的(Gusto 里改了姓名写法或付款方式) → 按 日期+金额+(姓名或方式) 找回
+  // 旧导入行, 把关联(含审核状态)迁到新行, 旧行删掉免得双份; 撤销时原样还回去。
+  const findOld = db.prepare(`SELECT * FROM gusto_payments WHERE source='import' AND bank_txn_id!=''
+    AND date=? AND ABS(wage_total-?)<0.011 AND COALESCE(wage_type,'')=?
+    AND (LOWER(contractor_name)=? OR (payment_method!='' AND LOWER(payment_method)=?))`);
+  const moveLink = db.prepare(`UPDATE gusto_payments SET bank_txn_id=?, bank_link_status=?, bank_link_by=?, bank_link_at=?,
+    bank_link_review_by=?, bank_link_review_at=? WHERE uuid=?`);
+  let inserted = 0, updated = 0, carried = 0, minD = '', maxD = '';
+  const uuids = [], insertedUuids = [], prevRows = [], replaced = [];
+  const fileUuids = new Set(parsed.payments.map(p => p.uuid));
   db.transaction(() => {
     for (const p of parsed.payments) {
       uuids.push(p.uuid);
-      if (hasP.get(p.uuid)) updated++; else inserted++;
+      const before = getP.get(p.uuid);
+      if (before) { updated++; prevRows.push(before); } else { inserted++; insertedUuids.push(p.uuid); }
       upP.run(p.uuid, '', p.contractor_name, p.date, p.payment_method, p.wage_type, p.status,
         p.hours, p.hourly_rate, p.wage, p.bonus, p.reimbursement, p.wage_total, JSON.stringify(p.raw || {}), nowIso);
+      if (!before) {
+        const old = findOld.all(p.date, p.wage_total, p.wage_type || '', String(p.contractor_name || '').toLowerCase(),
+          String(p.payment_method || '').toLowerCase()).find(o => !fileUuids.has(o.uuid) && !replaced.some(r => r.row.uuid === o.uuid));
+        if (old) {
+          moveLink.run(old.bank_txn_id, old.bank_link_status || '', old.bank_link_by || '', old.bank_link_at || '',
+            old.bank_link_review_by || '', old.bank_link_review_at || '', p.uuid);
+          db.prepare('DELETE FROM gusto_payments WHERE uuid=?').run(old.uuid);
+          replaced.push({ by: p.uuid, row: old });
+          carried++;
+        }
+      }
       if (!minD || p.date < minD) minD = p.date;
       if (!maxD || p.date > maxD) maxD = p.date;
     }
   })();
   const total = Math.round(parsed.payments.reduce((s, p) => s + p.wage_total, 0) * 100) / 100;
+  // 撤销用的底: 这次新增的 uuid、被更新行的原值、被顶替的旧行
   db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('gusto_last_import', ?, CURRENT_TIMESTAMP)")
     .run(JSON.stringify({ at: nowIso, by: req.userName || '', file: req.file.originalname || '',
-      rows: parsed.payments.length, inserted, updated, window: [minD, maxD], total, uuids }));
+      rows: parsed.payments.length, inserted, updated, carried, window: [minD, maxD], total, uuids,
+      inserted_uuids: insertedUuids, prev_rows: prevRows, replaced }));
   auditLog('gusto_report_import', req, { targetType: 'gusto_payments', targetId: req.file.originalname || 'report',
-    details: { rows: parsed.payments.length, inserted, updated, window: [minD, maxD], total } });
-  res.json({ ok: true, kind: parsed.kind || 'contractor', rows: parsed.payments.length, inserted, updated, window: [minD, maxD], total, warnings: parsed.warnings });
+    details: { rows: parsed.payments.length, inserted, updated, carried, window: [minD, maxD], total } });
+  res.json({ ok: true, kind: parsed.kind || 'contractor', rows: parsed.payments.length, inserted, updated, carried, window: [minD, maxD], total, warnings: parsed.warnings });
 });
 
-// 撤销最近一次导入（删的只是那次导入写进来的行; 传错文件用）
+// 撤销最近一次导入（传错文件用）: 删这次新增的行、被更新的行还原成导入前的数据、
+// 被顶替的旧行放回去。银行关联一律保留——被更新的行关联不动, 迁过去的关联迁回旧行;
+// 导入后才新挂上关联的新增行不删, 告诉用户手动处理。
 app.post('/api/acct/gusto/import-undo', requireAdmin, requireRole('admin'), (req, res) => {
   const row = db.prepare("SELECT value FROM app_settings WHERE key='gusto_last_import'").get();
   let info = null;
   try { info = row && JSON.parse(row.value); } catch (e) {}
   if (!info || !Array.isArray(info.uuids) || !info.uuids.length) return res.status(400).json({ error: '没有可撤销的导入记录' });
-  let removed = 0;
+  // 旧格式记录(没分新增/更新): 只删没挂关联的行, 挂了关联的留着
+  const legacy = !Array.isArray(info.inserted_uuids);
+  const toDelete = legacy ? info.uuids : info.inserted_uuids;
+  const replacedBy = {};
+  for (const r of (info.replaced || [])) replacedBy[r.by] = r.row;
+  const LINK_COLS = ['bank_txn_id', 'bank_link_status', 'bank_link_by', 'bank_link_at', 'bank_link_review_by', 'bank_link_review_at'];
+  const DATA_COLS = ['contractor_uuid', 'contractor_name', 'date', 'payment_method', 'wage_type', 'status', 'hours', 'hourly_rate',
+    'wage', 'bonus', 'reimbursement', 'wage_total', 'source', 'raw_json', 'synced_at'];
+  let removed = 0, restored = 0, keptLinked = 0;
   db.transaction(() => {
+    const getP = db.prepare('SELECT * FROM gusto_payments WHERE uuid=?');
     const del = db.prepare("DELETE FROM gusto_payments WHERE uuid=? AND source='import'");
-    for (const u of info.uuids) removed += del.run(String(u)).changes;
+    for (const u of toDelete) {
+      const cur = getP.get(String(u));
+      if (!cur || cur.source !== 'import') continue;
+      const old = replacedBy[cur.uuid];
+      if (old) {
+        // 放回被顶替的旧行, 关联用新行上现在的(导入后可能又改过)
+        const r = { ...old };
+        for (const c of LINK_COLS) r[c] = cur[c] || '';
+        del.run(cur.uuid);
+        const cols = Object.keys(r);
+        db.prepare(`INSERT OR REPLACE INTO gusto_payments (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`)
+          .run(...cols.map(c => r[c]));
+        removed++; restored++;
+        continue;
+      }
+      if (cur.bank_txn_id) { keptLinked++; continue; }
+      removed += del.run(cur.uuid).changes;
+    }
+    if (!legacy) {
+      for (const prev of (info.prev_rows || [])) {
+        const cols = DATA_COLS.filter(c => c in prev);
+        if (!cols.length) continue;
+        restored += db.prepare(`UPDATE gusto_payments SET ${cols.map(c => c + '=?').join(', ')} WHERE uuid=?`)
+          .run(...cols.map(c => prev[c]), prev.uuid).changes;
+      }
+    }
     db.prepare("DELETE FROM app_settings WHERE key='gusto_last_import'").run();
   })();
-  auditLog('gusto_report_import_undo', req, { targetType: 'gusto_payments', targetId: info.file || '', details: { removed } });
-  res.json({ ok: true, removed });
+  auditLog('gusto_report_import_undo', req, { targetType: 'gusto_payments', targetId: info.file || '', details: { removed, restored, kept_linked: keptLinked } });
+  res.json({ ok: true, removed, restored, kept_linked: keptLinked });
 });
 
 // 实付流水（按付款日期倒序; start/end 过滤付款日期, q 搜姓名/方式/状态）
@@ -42003,6 +42062,77 @@ app.get('/api/acct/gusto/recon', requireAdmin, requireAcctView, (req, res) => {
       FROM gusto_payments WHERE COALESCE(wage_type,'')!='W2' AND date>=? AND date<=?`).all(start, payEnd);
     const recon = buildGustoRecon(contractors, invoices, payments, { aliases: _gustoAliases(), payRates: GUSTO_PAY_RATE_OVERRIDES, hoursMerge: GUSTO_HOURS_MERGE });
     res.json({ ok: true, start, end, pay_end: payEnd, pay_pad_days: pad, invoice_count: invoices.length, roster_source: rosterSource, ...recon });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── 👷 员工工资汇总: 正式发票上的工资行按人汇总 ───
+// 日期按发票工资周期结束日筛。名字合并存在 app_settings.payroll_name_merges:
+// { "<小写去重音的名字>": "合并后显示的名字" }, 所有人共用; 汇总在前端按这张表归并。
+function _payrollNameKey(n) {
+  return String(n || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+function _payrollMerges() {
+  try {
+    const r = db.prepare("SELECT value FROM app_settings WHERE key='payroll_name_merges'").get();
+    const m = r ? JSON.parse(r.value) : {};
+    return m && typeof m === 'object' && !Array.isArray(m) ? m : {};
+  } catch (e) { return {}; }
+}
+app.get('/api/acct/payroll-summary', requireAdmin, requireAcctView, (req, res) => {
+  try {
+    const start = String(req.query.start || '').slice(0, 10);
+    const end = String(req.query.end || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || start > end) {
+      return res.status(400).json({ error: '请选择日期范围' });
+    }
+    const invRows = db.prepare(`SELECT id, invoice_number, company_name, period_start, period_end, items_json, profile_json
+      FROM invoices WHERE COALESCE(status,'')!='draft' AND period_end>=? AND period_end<=?
+      ORDER BY period_end, id`).all(start, end);
+    const items = [];
+    let invoiceCount = 0;
+    for (const r of invRows) {
+      let list = [], profile = {};
+      try { list = JSON.parse(r.items_json || '[]'); } catch (e) {}
+      try { profile = JSON.parse(r.profile_json || '{}'); } catch (e) {}
+      if (profile.invoice_mode === 'container') continue;   // 整柜分包计费没有按人工资行
+      let n = 0;
+      for (const it of (Array.isArray(list) ? list : [])) {
+        const name = String(it.name || '').replace(/\s+/g, ' ').trim();
+        const total = Number(it.total) || 0;
+        if (!name || !total) continue;
+        n++;
+        items.push({
+          key: _payrollNameKey(name), name,
+          invoice_id: r.id, invoice_number: r.invoice_number || '', company: r.company_name || '',
+          period_start: r.period_start || '', period_end: r.period_end || '',
+          reg: Number(it.regHours != null ? it.regHours : it.hours) || 0,
+          ot: Number(it.otHours) || 0,
+          rate: Number(it.rate) || null,
+          total: Math.round(total * 100) / 100,
+        });
+      }
+      if (n) invoiceCount++;
+    }
+    res.json({ ok: true, start, end, invoice_count: invoiceCount, items, merges: _payrollMerges(),
+      can_edit: ['accounting', 'cs', 'admin'].includes(req.userRole) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 合并: body { names: [...], to: '显示名' }; 拆开: body { names: [...], to: '' }
+app.post('/api/acct/payroll-merges', requireAdmin, requireAcctWrite, (req, res) => {
+  try {
+    const names = Array.isArray((req.body || {}).names) ? req.body.names : [];
+    const to = String((req.body || {}).to || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    const keys = [...new Set(names.map(_payrollNameKey).filter(Boolean))].slice(0, 200);
+    if (!keys.length) return res.status(400).json({ error: '没有选中名字' });
+    if (to && keys.length < 2 && _payrollNameKey(to) === keys[0]) return res.status(400).json({ error: '至少选两个名字才能合并' });
+    const m = _payrollMerges();
+    for (const k of keys) { if (to) m[k] = to; else delete m[k]; }
+    // 合并后的显示名本身也指向自己, 以后别的写法再并进来还是同一组
+    if (to) m[_payrollNameKey(to)] = to;
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('payroll_name_merges', ?, CURRENT_TIMESTAMP)")
+      .run(JSON.stringify(m));
+    auditLog(to ? 'payroll_name_merge' : 'payroll_name_unmerge', req, { targetType: 'payroll', targetId: to || keys[0], details: { keys, to } });
+    res.json({ ok: true, merges: m });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
