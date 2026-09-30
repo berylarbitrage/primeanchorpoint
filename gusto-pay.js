@@ -353,7 +353,7 @@ function buildGustoCsv(templateCsv, employees, opts) {
       });
       if (!rate && overrideRates.length === m.sources.length && overrideRates.length) {
         const hrs = r2(m.sources.reduce((t, x) => t + (x.actualHours || 0), 0));
-        warnings.push(`「${entry.label}」在 Gusto 是固定金额付款（名册没有时薪，不能填 hours），按发工资时薪 $${overrideRates[0]} × ${hrs.toFixed(2)}h${m.sources.length > 1 ? '（' + m.sources.map(x => x.name).join('、') + ' 合计）' : ''} = $${owed.toFixed(2)} 填 flat_amount。要按工时付, 请在 Gusto 把他改成按小时 $${overrideRates[0]}, 重新导出名册上传, 之后自动填 hours = ${hrs.toFixed(2)}h。`);
+        warnings.push(`「${entry.label}」在 Gusto 是固定金额付款（名册没有时薪，不能填 hours），按发工资时薪 $${overrideRates[0]} × ${hrs.toFixed(2)}h${m.sources.length > 1 ? '（' + m.sources.map(x => x.name).join('、') + ' 合计）' : ''} = $${owed.toFixed(2)} 填 flat_amount。`);
       }
       if (!rate && roster.cols.fixed < 0) {
         warnings.push(`「${entry.label}」名册里没有时薪，模板又没有 flat_amount/fixed_amount 列，$${owed.toFixed(2)} 没法填，请在 Gusto 手动支付。`);
