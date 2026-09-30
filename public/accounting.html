@@ -475,12 +475,20 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <input type="date" id="gustoEnd" onchange="gustoCustomRange()" style="display:none">
         <span id="gustoReconStats" style="font-size:.78rem;color:var(--g500)"></span>
       </div>
+      <div id="gustoViewBar" style="display:flex;gap:.35rem;flex-wrap:wrap;margin-bottom:.55rem">
+        <button class="btn btn-sm" data-gv="recon" onclick="gustoSetView('recon')">📋 按人对账</button>
+        <button class="btn btn-sm btn-outline" data-gv="problems" onclick="gustoSetView('problems')">❗ 对不上名册 <span id="gustoProbCount"></span></button>
+        <button class="btn btn-sm btn-outline" data-gv="cash" onclick="gustoSetView('cash')">💵 现金发放 <span id="gustoCashCount"></span></button>
+      </div>
+      <div id="gustoIssueView" style="display:none"></div>
+      <div id="gustoReconView">
       <div style="overflow-x:auto">
         <table><thead><tr>
           <th>收款人（Gusto 名册）</th><th style="text-align:right">工资表应付</th><th style="text-align:right">Gusto 实付</th><th style="text-align:right">差额</th><th>状态</th><th>明细</th>
         </tr></thead><tbody id="gustoReconBody"><tr><td colspan="6" style="color:var(--g400)">加载中…</td></tr></tbody></table>
       </div>
       <div id="gustoReconExtras" style="font-size:.78rem;line-height:1.7;margin-top:.55rem"></div>
+      </div>
       <p style="font-size:.74rem;color:var(--g400);margin-top:.5rem">应付 = 周期结束日落在所选范围内的正式工时发票的工资行（按收款人对照表 / 发工资时薪覆盖折算，与生成 Gusto 付款 CSV 同一套口径）；实付 = 付款日期落在范围内及其后 14 天的 Gusto 付款（周五结账下周发钱，留了缓冲）。</p>
     </div>
     <div class="card">
@@ -3735,10 +3743,90 @@ async function gustoLoadRecon() {
   const ex = [];
   if (r.roster_source === 'template') ex.push('<div style="color:var(--g500)">ℹ️ 收款人名册来源：已上传的 Gusto 付款模板 CSV（API 连接后自动改用 API 实时名册）</div>');
   if (r.roster_source === 'none') ex.push('<div style="color:#b45309">⚠️ 还没有收款人名册（既没连 Gusto API，也没上传过付款模板 CSV），工资行没法归到收款人头上——先在发票生成器上传一次 Gusto 付款模板，或连接 API。</div>');
-  if ((r.cash || []).length) ex.push(`<div>💵 <b>现金发放（对照表指定不走 Gusto）：</b>${r.cash.map(c => `${esc(c.name)} ${money(c.owed)}（${esc(c.invoice_number || '')}）`).join('、')}</div>`);
-  if ((r.problems || []).length) ex.push(`<div style="color:#b45309">❗ <b>对不上 Gusto 名册的工资行（请在 Gusto 加人或改收款人对照表）：</b>${r.problems.map(p => `${esc(p.name)} ${money(p.owed)}（${esc(p.invoice_number || '')}${p.kind === 'ambiguous' ? ' · 多个候选' : p.kind === 'needConfirm' ? ' · 同姓待确认' : ''}）`).join('、')}</div>`);
-  if ((r.warnings || []).length) ex.push(`<details style="color:var(--g500)"><summary style="cursor:pointer">折算说明 ${r.warnings.length} 条</summary>${r.warnings.map(w => `<div>· ${esc(w)}</div>`).join('')}</details>`);
+  // 现金发放 / 对不上名册 以前整段堆在表格下面, 现在各自一个子页面, 这里只留一行入口
+  const probPeople = new Set((r.problems || []).map(p => _gustoNameKey(p.name))).size;
+  const cashPeople = new Set((r.cash || []).map(c => _gustoNameKey(c.name))).size;
+  document.getElementById('gustoProbCount').textContent = probPeople ? `${probPeople} 人 · ${money(r.totals.problems || 0)}` : '0';
+  document.getElementById('gustoCashCount').textContent = cashPeople ? `${cashPeople} 人 · ${money(r.totals.cash || 0)}` : '0';
+  if (probPeople) ex.push(`<div style="color:#b45309">❗ 还有 <b>${probPeople}</b> 人（${(r.problems || []).length} 条工资行，${money(r.totals.problems || 0)}）对不上 Gusto 名册，没算进上面的应付。<a style="cursor:pointer;text-decoration:underline" onclick="gustoSetView('problems')">去处理 →</a></div>`);
+  if (cashPeople) ex.push(`<div>💵 现金发放（对照表指定不走 Gusto）${cashPeople} 人，${money(r.totals.cash || 0)}。<a style="cursor:pointer;text-decoration:underline;color:#0f4c6b" onclick="gustoSetView('cash')">查看 →</a></div>`);
   document.getElementById('gustoReconExtras').innerHTML = ex.join('');
+  if (_gustoView !== 'recon') renderGustoIssues();
+}
+// ── 子页面: 对不上名册 / 现金发放（按人汇总, 展开看每张发票） ──
+let _gustoView = 'recon';
+const _gustoIssueOpen = new Set();
+function _gustoNameKey(n) { return String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, ' ').trim(); }
+function gustoSetView(v) {
+  _gustoView = v;
+  document.querySelectorAll('#gustoViewBar [data-gv]').forEach(b => b.classList.toggle('btn-outline', b.dataset.gv !== v));
+  document.getElementById('gustoReconView').style.display = v === 'recon' ? '' : 'none';
+  document.getElementById('gustoIssueView').style.display = v === 'recon' ? 'none' : '';
+  if (v !== 'recon') renderGustoIssues();
+}
+const GUSTO_PROB_KIND = {
+  unmatched: ['名册里没有', '#fee2e2', '#b91c1c'],
+  ambiguous: ['多个候选', '#fef3c7', '#b45309'],
+  needConfirm: ['同姓待确认', '#e0e7ff', '#3730a3'],
+};
+function renderGustoIssues() {
+  const box = document.getElementById('gustoIssueView');
+  const r = window._gustoRecon;
+  if (!r) { box.innerHTML = '<div style="color:var(--g400)">加载中…</div>'; return; }
+  const isCash = _gustoView === 'cash';
+  const list = (isCash ? r.cash : r.problems) || [];
+  const qEl = document.getElementById('gustoIssueSearch');
+  const q = qEl ? qEl.value.trim().toLowerCase() : '';
+  const groups = new Map();
+  for (const x of list) {
+    const k = _gustoNameKey(x.name);
+    if (!groups.has(k)) groups.set(k, { key: k, name: x.name, owed: 0, items: [], kinds: new Set(), hints: new Set() });
+    const g = groups.get(k);
+    g.owed = Math.round((g.owed + (Number(x.owed) || 0)) * 100) / 100;
+    g.items.push(x);
+    if (x.kind) g.kinds.add(x.kind);
+    if (x.candidate) g.hints.add(x.candidate);
+    (x.candidates || []).forEach(c => g.hints.add(c));
+    if (x.aliasTo) g.hints.add('对照表 → ' + x.aliasTo);
+    if (x.reason) g.hints.add(x.reason);
+  }
+  let rows = [...groups.values()].sort((a, b) => b.owed - a.owed);
+  if (q) rows = rows.filter(g => [g.name, ...g.hints, ...g.items.map(i => i.invoice_number)].join(' ').toLowerCase().includes(q));
+  const total = Math.round(rows.reduce((s, g) => s + g.owed, 0) * 100) / 100;
+  const head = `<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.5rem">
+    <input type="text" id="gustoIssueSearch" placeholder="搜姓名 / 发票号 / 候选人…" value="${esc(q)}" oninput="renderGustoIssues()" style="width:220px">
+    <span style="font-size:.78rem;color:var(--g500)">${rows.length} 人 · ${rows.reduce((s, g) => s + g.items.length, 0)} 条工资行 · 合计 ${money(total)}</span>
+  </div>
+  <div style="font-size:.74rem;color:var(--g500);margin-bottom:.45rem">${isCash
+    ? '收款人对照表里指定现金发放、不走 Gusto 的工资行，不参与按人对账。'
+    : '这些工资行在 Gusto 名册里找不到对应收款人，没算进按人对账的应付。处理方法：在 Gusto 里加这个人，或者在后台「收款人对照表」里把名字指到名册上的人（同姓待确认 = 只有姓对上，确认是同一个人再加对照）。'}</div>`;
+  if (!rows.length) { box.innerHTML = head + `<div style="color:var(--g400);padding:.6rem 0">${q ? '没有匹配的记录' : (isCash ? '这个周期没有现金发放' : '✅ 这个周期的工资行都对上了 Gusto 名册')}</div>`; _gustoKeepFocus(); return; }
+  box.innerHTML = head + `<div style="overflow-x:auto"><table><thead><tr>
+      <th>工资表上的名字</th>${isCash ? '' : '<th>问题</th><th>名册候选 / 对照</th>'}<th style="text-align:right">发票</th><th style="text-align:right">应付合计</th><th>明细</th>
+    </tr></thead><tbody>${rows.map((g, i) => {
+      const open = _gustoIssueOpen.has(_gustoView + ':' + g.key);
+      const kinds = [...g.kinds].map(k => { const st = GUSTO_PROB_KIND[k] || [k, '#f1f5f9', '#475569'];
+        return `<span style="background:${st[1]};color:${st[2]};border-radius:8px;padding:1px 7px;font-size:.72rem;font-weight:700;white-space:nowrap">${st[0]}</span>`; }).join(' ');
+      const det = g.items.slice().sort((a, b) => String(a.period_end).localeCompare(String(b.period_end))).map(x =>
+        `<tr><td>${esc(x.invoice_number || '')}</td><td>${esc(x.company || '')}</td><td>${esc(String(x.period_start || '').slice(5))} ~ ${esc(String(x.period_end || '').slice(5))}</td><td>${esc(x.name)}</td><td style="text-align:right">${money(x.owed)}</td></tr>`).join('');
+      return `<tr>
+        <td><b>${esc(g.name)}</b></td>
+        ${isCash ? '' : `<td>${kinds}</td><td style="font-size:.76rem;color:var(--g500)">${[...g.hints].map(esc).join('、') || '—'}</td>`}
+        <td style="text-align:right">${g.items.length}</td>
+        <td style="text-align:right"><b>${money(g.owed)}</b></td>
+        <td><a style="cursor:pointer;font-size:.76rem;color:#0f4c6b;text-decoration:underline" onclick="gustoToggleIssue('${esc(g.key)}')">${open ? '收起' : '明细'}</a></td>
+      </tr>${open ? `<tr><td colspan="${isCash ? 4 : 6}" style="background:#f8fafc;padding:.3rem .6rem"><table style="font-size:.76rem;width:100%"><thead><tr><th>发票</th><th>客户</th><th>周期</th><th>工资表写法</th><th style="text-align:right">应付</th></tr></thead><tbody>${det}</tbody></table></td></tr>` : ''}`;
+    }).join('')}</tbody></table></div>`;
+  _gustoKeepFocus();
+}
+function _gustoKeepFocus() {
+  const el = document.getElementById('gustoIssueSearch');
+  if (el && document.activeElement !== el && el.value) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+}
+function gustoToggleIssue(k) {
+  const id = _gustoView + ':' + k;
+  if (_gustoIssueOpen.has(id)) _gustoIssueOpen.delete(id); else _gustoIssueOpen.add(id);
+  renderGustoIssues();
 }
 function gustoDetailHtml(row) {
   const parts = [];
