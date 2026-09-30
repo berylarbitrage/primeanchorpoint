@@ -18256,21 +18256,30 @@ setTimeout(async () => {
 app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
   try {
     const norm = v => String(v || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
-    const digits = norm(req.query.phone);
-    if (digits.length < 7) return res.status(400).json({ error: '请输入至少 7 位的电话号码' });
+    // 按人名查: 传 ?name=, 或 ?phone= 里带字母时自动当人名。每个词都要出现在姓名里 (不分大小写/顺序)。
+    const rawName = String(req.query.name || (/[A-Za-z\u4e00-\u9fff]/.test(String(req.query.phone || '')) ? req.query.phone : '') || '').trim();
+    const byName = !!rawName;
+    const nameTokens = rawName.toLowerCase().split(/[\s,.\-']+/).filter(Boolean);
+    const digits = byName ? '' : norm(req.query.phone);
+    if (byName && rawName.replace(/\s/g, '').length < 2) return res.status(400).json({ error: '请输入至少 2 个字的姓名' });
+    if (!byName && digits.length < 7) return res.status(400).json({ error: '请输入至少 7 位的电话号码' });
+    const nameHit = (...parts) => {
+      const hay = parts.filter(Boolean).join(' ').toLowerCase();
+      return nameTokens.every(t => hay.includes(t));
+    };
     const match = v => norm(v) === digits;
     const applications = db.prepare(`SELECT s.id, s.partner_name, s.name, s.phone, s.email, s.position, s.status,
         s.address1, s.address2, s.city, s.state, s.zip, s.address_verified, s.timeclock_code, s.ssn_last4,
         s.apply_state, s.created_at, s.employee_id,
         (SELECT GROUP_CONCAT(doc_type) FROM applicant_docs d WHERE d.submission_id = s.id) AS doc_types
-      FROM applicant_submissions s ORDER BY s.created_at DESC`).all().filter(x => match(x.phone)).slice(0, 50);
+      FROM applicant_submissions s ORDER BY s.created_at DESC`).all().filter(x => byName ? nameHit(x.name) : match(x.phone)).slice(0, 50);
     // 带证件明细, 页面可直接看图
     const docsFor = db.prepare(`SELECT id, doc_type, file_name, verify_status, verify_by, ai_text,
       CASE WHEN COALESCE(cropped_path,'')!='' THEN 1 ELSE 0 END AS has_cropped
       FROM applicant_docs WHERE submission_id=?`);
     applications.forEach(a => { try { a.docs = docsFor.all(a.id); } catch (_) { a.docs = []; } });
     const employees = db.prepare(`SELECT id, employee_id, first_name, middle_name, last_name, phone, email, position, department, status, hire_date, timeclock_code, ssn_last4
-      FROM employees`).all().filter(x => match(x.phone)).slice(0, 50);
+      FROM employees`).all().filter(x => byName ? nameHit(x.first_name, x.middle_name, x.last_name) : match(x.phone)).slice(0, 50);
     // 档案上还没有打卡码的, 借用其关联申请单上自动生成的那个 (打卡验证时也是这么找的)
     const subCodeStmt = db.prepare(`SELECT timeclock_code FROM applicant_submissions WHERE employee_id=? AND timeclock_code!='' ORDER BY id DESC LIMIT 1`);
     employees.forEach(e => {
@@ -18337,7 +18346,7 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
     const empById = db.prepare('SELECT id, first_name, middle_name, last_name, employee_id, timeclock_code, ssn_last4 FROM employees WHERE id=?');
     applications.forEach(a => {
       let emp = a.employee_id ? empById.get(a.employee_id) : null;
-      if (!emp) emp = employees.find(x => match(x.phone)) || null;   // 未显式关联时按同号码的档案推断
+      if (!emp && norm(a.phone).length >= 7) emp = employees.find(x => norm(x.phone) === norm(a.phone)) || null;   // 未显式关联时按同号码的档案推断
       if (emp) {
         const official = [emp.first_name, emp.middle_name, emp.last_name].filter(Boolean).join(' ').trim();
         a.linked_employee = { id: emp.id, employee_id: emp.employee_id || '', name: official };
@@ -18348,8 +18357,8 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
       }
     });
     const foremen = db.prepare(`SELECT id, name, phone, email, warehouse, active, created_at FROM foremen`).all()
-      .filter(x => match(x.phone)).slice(0, 50);
-    res.json({ ok: true, phone: digits, found: !!(applications.length || employees.length || foremen.length), applications, employees, foremen });
+      .filter(x => byName ? nameHit(x.name) : match(x.phone)).slice(0, 50);
+    res.json({ ok: true, phone: digits, mode: byName ? 'name' : 'phone', query: byName ? rawName : digits, found: !!(applications.length || employees.length || foremen.length), applications, employees, foremen });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

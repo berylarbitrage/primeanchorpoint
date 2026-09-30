@@ -60,17 +60,17 @@ body{font-family:'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-ser
   <div class="head">
     <img src="/logo.svg" alt="logo">
     <div>
-      <h1>📱 电话登记查询</h1>
-      <p>输入电话号码，查这个人是否在系统里登记过 / 提交过招工申请表</p>
+      <h1>📱 电话 / 人名登记查询</h1>
+      <p>输入电话号码或人名，查这个人是否在系统里登记过 / 提交过招工申请表</p>
     </div>
   </div>
 
   <div class="card">
     <div class="searchrow">
-      <input id="phoneInput" type="tel" placeholder="输入电话号码，如 708-850-2703" autocomplete="off" autofocus>
+      <input id="phoneInput" type="text" placeholder="电话号码 708-850-2703 或人名 Mercedes" autocomplete="off" autofocus>
       <button id="searchBtn" onclick="doSearch()">🔍 查询</button>
     </div>
-    <div class="hint">只按数字比对（自动忽略空格、括号、横线和开头的 1）。覆盖：📨 招工申请 · 👷 员工档案 · 🦺 工头。</div>
+    <div class="hint">输入数字 = 按电话比对（自动忽略空格、括号、横线和开头的 1）；输入字母 = 按人名查（不分大小写，可只输名或姓，多个词都要匹配）。覆盖：📨 招工申请 · 👷 员工档案 · 🦺 工头。</div>
   </div>
 
   <div id="loginTip" class="login-tip">⚠️ 需要先登录管理后台才能查询。<a href="/admin.html" target="_blank">去登录</a>，登录后回到本页重试。</div>
@@ -154,24 +154,31 @@ async function doSearch(){
   const results=document.getElementById('results');
   const loginTip=document.getElementById('loginTip');
   const phone=(inp.value||'').trim();
+  const byName=/[A-Za-z\u4e00-\u9fff]/.test(phone);
   banner.className='banner'; results.innerHTML=''; loginTip.style.display='none';
   window._appById = {};            // 上一次查询的卡片数据作废
   window._docThumbs = docThumbs;   // 卡片重绘时还要用
-  if(phone.replace(/\D/g,'').length<7){ banner.className='banner err'; banner.textContent='请输入至少 7 位的电话号码'; return; }
+  if(byName){
+    if(phone.replace(/\s/g,'').length<2){ banner.className='banner err'; banner.textContent='请输入至少 2 个字的姓名'; return; }
+  }else if(phone.replace(/\D/g,'').length<7){ banner.className='banner err'; banner.textContent='请输入至少 7 位的电话号码，或输入人名'; return; }
   btn.disabled=true; btn.textContent='查询中…';
   try{
-    const res=await fetch('/api/admin/phone-check?phone='+encodeURIComponent(phone),{credentials:'same-origin'});
+    const res=await fetch('/api/admin/phone-check?'+(byName?'name=':'phone=')+encodeURIComponent(phone),{credentials:'same-origin'});
     if(res.status===401){ loginTip.style.display='block'; return; }
     const data=await res.json().catch(()=>null);
     if(!res.ok||!data||!data.ok) throw new Error((data&&data.error)||('HTTP '+res.status));
     const total=(data.applications||[]).length+(data.employees||[]).length+(data.foremen||[]).length;
     if(!data.found){
       banner.className='banner none';
-      banner.textContent='⚪ 未找到：'+data.phone+' 没有在系统里登记过，也没有提交过申请表。';
+      banner.textContent=byName
+        ? '⚪ 未找到：系统里没有名字包含「'+(data.query||phone)+'」的记录。'
+        : '⚪ 未找到：'+data.phone+' 没有在系统里登记过，也没有提交过申请表。';
       return;
     }
     banner.className='banner ok';
-    banner.textContent='✅ 已登记：'+data.phone+' 在系统里共找到 '+total+' 条记录。';
+    banner.textContent=byName
+      ? '✅ 按人名「'+(data.query||phone)+'」共找到 '+total+' 条记录（同名的可能不是同一个人，请核对电话 / 证件）。'
+      : '✅ 已登记：'+data.phone+' 在系统里共找到 '+total+' 条记录。';
     let html='';
     if((data.applications||[]).length){
       html+='<div class="sec-title">📨 招工申请（'+data.applications.length+'）</div>';
