@@ -22665,6 +22665,12 @@ const GUSTO_ALIAS_DEFAULTS = [
   // Eloy 是 Eloiso 的短称: 工资表的 Eloy Herrera 确认就是名册的 Eloiso Cornelio
   // Herrera Cano 本人（同姓的 Alejandra Abundis Herrera 是另一个人, 不相干）。
   { from: 'Eloy Herrera', to: 'Eloiso Cornelio Herrera Cano' },
+  // 2026-09-30: 工资表写法和名册对不上的, 人工指定名册收款人
+  { from: 'Brayan Espinoza Orozco', to: 'Brayan Espinoza Orozco' },
+  { from: 'Freismar', to: 'Freismar A Camacho Gimenez' },
+  { from: 'Yasmani', to: 'Reyes Luis Yasmani' },
+  { from: 'Oscar Hernández', to: 'Óscar Hernández Gonzále' },
+  { from: 'Uriel Garcia Rodríguez', to: 'Uriel García Rodriguez' },
 ];
 
 // 发工资时薪覆盖: 发票对客户照计费时薪开票（这三人 $18）, 发工资按这里的时薪
@@ -22740,6 +22746,8 @@ function _gustoAliasUpsert(markerKey, entries) {
 _gustoAliasUpsert('gusto_alias_2026_09_23', GUSTO_ALIAS_DEFAULTS.filter(a => /daniel|isabella|mervin|marvin|cliber|cleiber|rattia/i.test(a.from)));
 // 2026-09-23: Pepe Alvarez Rodriguez → Pedro Rodriguez; Marialex Bastidas → Youseli Briceno
 _gustoAliasUpsert('gusto_alias_2026_09_23b', GUSTO_ALIAS_DEFAULTS.filter(a => /^(pepe alvarez rodriguez|marialex bastidas)$/i.test(a.from)));
+// 2026-09-30: Brayan Espinoza Orozco / Freismar / Yasmani / Oscar Hernández / Uriel Garcia Rodríguez
+_gustoAliasUpsert('gusto_alias_2026_09_30', GUSTO_ALIAS_DEFAULTS.filter(a => /^(brayan espinoza orozco|freismar|yasmani|oscar hernández|uriel garcia rodríguez)$/i.test(a.from)));
 _gustoAliasBackfill('gusto_alias_tecaxco_backfilled', GUSTO_ALIAS_DEFAULTS.filter(a => a.to === 'Tecaxco, Bugui Boy'));
 _gustoAliasBackfill('gusto_alias_eloy_backfilled', GUSTO_ALIAS_DEFAULTS.filter(a => a.to === 'Eloiso Cornelio Herrera Cano'));
 
