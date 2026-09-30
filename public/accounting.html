@@ -3952,7 +3952,7 @@ async function gustoImportFile(input) {
     if (!resp.ok && !r.error) r.error = 'HTTP ' + resp.status;
   } catch (e) { r = { error: e.message }; }
   if (r && r.ok) {
-    toast(`✅ 导入成功${r.kind === 'w2' ? '（W-2 员工工资，只进流水不参与合同工对账）' : ''}：${r.rows} 笔（新增 ${r.inserted}、更新 ${r.updated}），${r.window[0]} ~ ${r.window[1]}，合计 ${money(r.total)}`);
+    toast(`✅ 导入成功${r.kind === 'w2' ? '（W-2 员工工资，只进流水不参与合同工对账）' : ''}：${r.rows} 笔（新增 ${r.inserted}、更新 ${r.updated}），${r.window[0]} ~ ${r.window[1]}，合计 ${money(r.total)}；已做的银行关联全部保留${r.carried ? `（其中 ${r.carried} 笔 Gusto 改了姓名/方式，关联已自动跟过去）` : ''}`);
     if ((r.warnings || []).length) toast(r.warnings[0] + (r.warnings.length > 1 ? `（还有 ${r.warnings.length - 1} 条类似）` : ''), true);
     await gustoLoadStatus();
     gustoLoadRecon();
@@ -3962,10 +3962,10 @@ async function gustoImportFile(input) {
   }
 }
 async function gustoImportUndo() {
-  if (!confirm('撤销最近一次导入？那次导入写入的付款记录会被删除。')) return;
+  if (!confirm('撤销最近一次导入？那次新增的付款记录会被删除、被更新的记录还原成导入前；已做的银行关联都保留。')) return;
   const r = await api('/api/acct/gusto/import-undo', { method: 'POST' }).catch(e => ({ error: e.message }));
   if (r && r.ok) {
-    toast(`已撤销，删除 ${r.removed} 笔`);
+    toast(`已撤销：删除 ${r.removed} 笔，还原 ${r.restored || 0} 笔${r.kept_linked ? `；${r.kept_linked} 笔导入后已挂银行关联，没删，请先解除关联再手动处理` : ''}`);
     await gustoLoadStatus();
     gustoLoadRecon();
     gustoLoadPayments();
