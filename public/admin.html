@@ -34324,6 +34324,15 @@ function resetInvpFilter() {
   renderInvpList();
 }
 
+// 每月利润表里点某个月：把日期筛选设成该月 1 日 ~ 月末
+function invpFilterMonth(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  const last = new Date(y, m, 0).getDate();
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set('invpFltFrom', ym + '-01'); set('invpFltTo', ym + '-' + String(last).padStart(2, '0'));
+  renderInvpList();
+}
+
 function renderInvpList() {
   const tableWrap = document.getElementById('invpTableWrap');
   const sumWrap = document.getElementById('invpSummaryBar');
@@ -34431,6 +34440,53 @@ function renderInvpList() {
     ? `<div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.1rem">${breakdownRows.join('')}</div>`
     : '';
 
+  // 按月利润：按 invoice_date 的年月分组（与上面「日期 从/到」筛选同一口径），
+  // 统计当前筛选结果里每个月的账单 / 工资 / 利润。点某个月 = 把日期筛选设成该月。
+  const byMonth = {};
+  for (const r of list) {
+    const m = String(r.invoice_date || '').slice(0, 7);
+    const k = /^\d{4}-\d{2}$/.test(m) ? m : '未知';
+    const b = byMonth[k] || (byMonth[k] = { n: 0, bill: 0, wage: 0 });
+    b.n++; b.bill += (r.subtotal || 0); b.wage += (r.wage_cost || 0);
+  }
+  const months = Object.keys(byMonth).sort().reverse();
+  let monthlyHtml = '';
+  if (months.length) {
+    let open = true;
+    try { open = localStorage.getItem('invpMonthlyOpen') !== '0'; } catch (_) {}
+    const maxP = Math.max(1, ...months.map(k => Math.abs(byMonth[k].bill - byMonth[k].wage)));
+    const td = 'padding:.35rem .6rem;border-bottom:1px solid var(--gray-100);white-space:nowrap';
+    const rowsHtml = months.map(k => {
+      const b = byMonth[k], p = b.bill - b.wage;
+      const pct = b.bill ? (p / b.bill * 100).toFixed(1) + '%' : '—';
+      const clickable = k !== '未知';
+      const w = Math.round(Math.abs(p) / maxP * 100);
+      return `<tr ${clickable ? `onclick="invpFilterMonth('${k}')" style="cursor:pointer" title="只看 ${k} 的 invoice"` : ''}>
+          <td style="${td};font-weight:700">${k}</td>
+          <td style="${td};text-align:right;color:var(--gray-500)">${b.n}</td>
+          <td style="${td};text-align:right">${money(b.bill)}</td>
+          <td style="${td};text-align:right;color:#b45309">${money(b.wage)}</td>
+          <td style="${td};text-align:right;font-weight:700;color:${p >= 0 ? '#16a34a' : '#dc2626'}">${money(p)}</td>
+          <td style="${td};text-align:right;color:var(--gray-500)">${pct}</td>
+          <td style="${td};width:28%"><div style="height:8px;border-radius:4px;background:${p >= 0 ? '#86efac' : '#fca5a5'};width:${w}%"></div></td>
+        </tr>`;
+    }).join('');
+    const th = 'padding:.35rem .6rem;border-bottom:1px solid var(--gray-200);font-size:.72rem;color:var(--gray-500);font-weight:600;white-space:nowrap';
+    monthlyHtml = `<details ${open ? 'open' : ''} ontoggle="try{localStorage.setItem('invpMonthlyOpen',this.open?'1':'0')}catch(_){}" style="background:#fff;border:1px solid var(--gray-200);border-radius:8px;padding:.45rem .75rem;margin-bottom:1.1rem">
+        <summary style="cursor:pointer;font-weight:700;font-size:.85rem">📅 每月利润（按 Invoice 日期，${months.length} 个月）<span style="font-weight:400;color:var(--gray-400);font-size:.75rem;margin-left:.5rem">点某个月只看该月</span></summary>
+        <div style="overflow-x:auto;margin-top:.4rem">
+          <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+            <thead><tr>
+              <th style="${th};text-align:left">月份</th><th style="${th};text-align:right">张数</th>
+              <th style="${th};text-align:right">账单</th><th style="${th};text-align:right">工资</th>
+              <th style="${th};text-align:right">利润</th><th style="${th};text-align:right">利润率</th><th style="${th}"></th>
+            </tr></thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+      </details>`;
+  }
+
   // 搜索命中工人名时：这个人在所有筛选结果里的行合计（几条 · 总工时 · 工资 · 账单）
   let nameHitHtml = '';
   if (_invpFilter.q) {
@@ -34458,6 +34514,7 @@ function renderInvpList() {
       ${card('利润总额（赚取）', money(totProfit), totProfit >= 0 ? '#16a34a' : '#dc2626')}
     </div>
     ${breakdownHtml}
+    ${monthlyHtml}
     ${nameHitHtml}`;
 
   const statusBadge = s => s === 'saved'
