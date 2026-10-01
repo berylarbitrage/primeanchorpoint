@@ -373,7 +373,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <input id="zcSearch" type="text" placeholder="搜员工姓名 / 电话 / 公司名…" oninput="zcSearch()" onfocus="zcSearch()" autocomplete="off" style="width:100%">
         <div id="zcList" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--g200);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);max-height:220px;overflow:auto;z-index:6"></div>
       </div>
-      <label style="font-size:.76rem;color:var(--g500)">🔀 合并其他 Zelle 名字（同一个人的其他账号 / 拼写）<span id="zcMergeAdminTip" style="color:var(--g400)"> · 提交后由管理员审批</span></label>
+      <label style="font-size:.76rem;color:var(--g500)">🔀 合并其他 Zelle 名字（同一个人的其他账号 / 拼写）<span id="zcMergeAdminTip" style="color:var(--g400)"> · 只有管理员能合并</span></label>
       <div id="zcAliases" style="display:flex;flex-wrap:wrap;gap:.3rem;margin:.15rem 0 .55rem"></div>
       <div id="zcMergeBox" style="position:relative;margin:-.25rem 0 .55rem">
         <input id="zcMergeQ" type="text" placeholder="搜收款人名字，点一下并进来…" oninput="zcMergeSearch()" onfocus="zcMergeSearch()" autocomplete="off" style="width:100%">
@@ -5480,7 +5480,7 @@ function zRender() {
     + chip(`转出 <b>${sums.oc}</b> 笔 <span style="color:#dc2626;font-weight:700">−${money(sums.ot)}</span>`)
     + chip(`转入 <b>${sums.ic}</b> 笔 <span style="color:#15803d;font-weight:700">+${money(sums.it)}</span>`)
     + chip(`净额 <b>${sums.it - sums.ot >= 0 ? '+' : '−'}${money(Math.abs(sums.it - sums.ot))}</b>`)
-    + (() => { const n = _zDupGroups().length; return n ? `<a onclick="zgOpenSuggest()" style="cursor:pointer;text-decoration:none;background:#f5f3ff;border:1px solid #c4b5fd;color:#6d28d9;border-radius:999px;padding:.2rem .7rem;font-weight:700">🔀 可能是同一个人：${n} 组 →</a>` : ''; })();
+    + (() => { const n = USER.role === 'admin' ? _zDupGroups().length : 0; return n ? `<a onclick="zgOpenSuggest()" style="cursor:pointer;text-decoration:none;background:#f5f3ff;border:1px solid #c4b5fd;color:#6d28d9;border-radius:999px;padding:.2rem .7rem;font-weight:700">🔀 可能是同一个人：${n} 组 →</a>` : ''; })();
   _zRenderSelBar();
   const view = document.getElementById('zView').value;
   document.getElementById('zBtnAll').style.display = view === 'txns' ? 'none' : '';
@@ -5510,7 +5510,7 @@ function zRender() {
     ].join('');
     const rows = _zDetailRows(p.txns);
     return `<tr onclick="zToggleRow('${esc(p.key).replace(/'/g, "\\'")}')" style="cursor:pointer">
-      <td style="white-space:nowrap"><input type="checkbox" title="勾选几个一起合并" ${_zSel.has(p.key) ? 'checked' : ''} onclick="event.stopPropagation();zSelToggle(${JSON.stringify(p.key).replace(/"/g, '&quot;')}, this.checked)" style="cursor:pointer;vertical-align:middle"> <span style="color:var(--g400)">${open ? '▼' : '▶'}</span></td>
+      <td style="white-space:nowrap">${USER.role === 'admin' ? `<input type="checkbox" title="勾选几个一起合并" ${_zSel.has(p.key) ? 'checked' : ''} onclick="event.stopPropagation();zSelToggle(${JSON.stringify(p.key).replace(/"/g, '&quot;')}, this.checked)" style="cursor:pointer;vertical-align:middle"> ` : ''}<span style="color:var(--g400)">${open ? '▼' : '▶'}</span></td>
       <td style="font-weight:700">${esc(p.name)} <span style="color:var(--g400);font-weight:400;font-size:.76rem">· ${p.txns.length} 笔</span>
         <a onclick="event.stopPropagation();zcEdit('${esc(p.key).replace(/'/g, "\\'")}')" style="cursor:pointer;color:#0ea5e9;font-size:.76rem;font-weight:400;text-decoration:underline;margin-left:.35rem">✎ 备注</a>${cInfo}</td>
       <td style="${num}">${p.out_count || '<span style="color:var(--g300)">—</span>'}</td>
@@ -5843,6 +5843,7 @@ function _zcPerson() { return ((_zData && _zData.people) || []).find(x => (x.key
 function zcRenderAliases() {
   const p = _zcPerson(), al = (p && p.aliases) || [], admin = USER.role === 'admin';
   document.getElementById('zcMergeAdminTip').style.display = admin ? 'none' : '';
+  document.getElementById('zcMergeBox').style.display = admin ? '' : 'none';   // 合并只有管理员能做
   document.getElementById('zcAliases').innerHTML = al.length ? al.map((a, i) =>
     `<span style="display:inline-flex;align-items:center;gap:5px;border:1px solid #c4b5fd;background:#f5f3ff;color:#6d28d9;border-radius:8px;padding:2px 8px;font-size:.8rem;font-weight:600">${esc(a)}
       ${admin ? `<a onclick="zcUnmerge(${i})" title="拆开，恢复成单独的收款人" style="cursor:pointer;color:#dc2626;font-weight:700">✕</a>` : ''}</span>`).join('')
@@ -5993,7 +5994,7 @@ function zSelToggle(k, on) { if (on) _zSel.add(k); else _zSel.delete(k); _zRende
 function _zRenderSelBar() {
   const bar = document.getElementById('zSelBar');
   const sel = ((_zData && _zData.people) || []).filter(p => _zSel.has(p.key));
-  if (!sel.length) { bar.style.display = 'none'; return; }
+  if (!sel.length || USER.role !== 'admin') { bar.style.display = 'none'; return; }
   bar.style.display = '';
   bar.innerHTML = `<b>已选 ${sel.length} 个：</b>${sel.map(p => `<span style="display:inline-block;background:#fff;border:1px solid #c4b5fd;border-radius:12px;padding:0 8px;margin:2px 3px">${esc(p.name)}</span>`).join('')}
     <button class="btn btn-sm" style="background:#7c3aed;color:#fff" ${sel.length < 2 ? 'disabled title="再勾选至少一个"' : ''} onclick="zgOpenSelected()">🔀 合并选中</button>
