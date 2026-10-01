@@ -1510,7 +1510,8 @@ function wgRender() {
         if (!z.keys.length) return _wg.can_zelle ? `<a onclick="wgZelleOpen(_wgRows[${i}].gk)" style="cursor:pointer;color:#0ea5e9;font-size:.74rem;text-decoration:underline">＋ 关联</a>` : '<span style="color:var(--g400)">—</span>';
         return `<a ${_wg.can_zelle ? `onclick="wgZelleOpen(_wgRows[${i}].gk)" ` : ''}title="${esc('Zelle：' + z.names.join('、'))}" style="cursor:pointer;text-decoration:none">
           <div style="font-weight:700;color:#7c3aed">${z.out ? '−' + money(z.out) : '$0.00'}</div>
-          <div style="font-size:.7rem;color:var(--g500)">💸 ${z.keys.length} 个账号 · ${z.count} 笔</div></a>`;
+          ${z.names.map(n => `<div style="font-size:.7rem;color:#6d28d9;white-space:normal;max-width:190px;margin-left:auto;line-height:1.3">💸 ${esc(n)}</div>`).join('')}
+          <div style="font-size:.68rem;color:var(--g400)">${z.count} 笔</div></a>`;
       })()}</td>
       <td style="text-align:center">${_wgTax(g)
         // 勾上后锁定成标记, 防误触: 点了要在弹窗里确认才取消
@@ -1539,9 +1540,10 @@ async function wgSetTax(keys, on) {
 }
 // ── 💸 关联 Zelle 账号: 一个人可连多个 Zelle 收款人, 金额按当前日期范围算 ──
 function _wgZ(g) {
-  const keys = (((_wg && _wg.zelle_links) || {})[g.gk] || {}).keys || [];
+  const link = ((_wg && _wg.zelle_links) || {})[g.gk] || {};
+  const keys = link.keys || [];
   let out = 0, count = 0;
-  const names = keys.map(k => { const p = _wgZelle[k]; if (p) { out += p.out_total || 0; count += p.out_count || 0; } return p ? p.name : k; });
+  const names = keys.map(k => { const p = _wgZelle[k]; if (p) { out += p.out_total || 0; count += p.out_count || 0; } return p ? p.name : ((link.names || {})[k] || k); });
   return { keys, names, out: Math.round(out * 100) / 100, count };
 }
 let _wgZGk = '', _wgZAll = null, _wgZPick = new Set();
@@ -1594,7 +1596,9 @@ function wgZelleList() {
 function wgZelleToggle(key, on) { if (on) _wgZPick.add(key); else _wgZPick.delete(key); wgZelleList(); }
 async function wgZelleSave() {
   const g = _wgGroups().find(x => x.gk === _wgZGk);
-  const r = await api('/api/acct/payroll-zelle-link', { method: 'POST', body: JSON.stringify({ gk: _wgZGk, label: g ? g.name : '', keys: [..._wgZPick] }) }).catch(e => ({ error: e.message }));
+  const names = {};
+  for (const k of _wgZPick) { const p = (_wgZAll || []).find(x => x.key === k) || _wgZelle[k]; if (p) names[k] = p.name; }
+  const r = await api('/api/acct/payroll-zelle-link', { method: 'POST', body: JSON.stringify({ gk: _wgZGk, label: g ? g.name : '', keys: [..._wgZPick], names }) }).catch(e => ({ error: e.message }));
   if (!r || !r.ok) return toast((r && r.error) || '保存失败', true);
   wgModalClose();
   _wg.zelle_links = r.zelle_links;
@@ -1603,9 +1607,11 @@ async function wgZelleSave() {
 }
 // 合并/拆开时 Zelle 关联跟着走: 合并 = 各人的账号并到一起; 拆开 = 给金额最大的那种写法
 async function _wgMoveZelle(fromGks, toGk, label) {
-  const keys = [...new Set(fromGks.flatMap(k => ((((_wg && _wg.zelle_links) || {})[k] || {}).keys || [])))];
+  const L = (_wg && _wg.zelle_links) || {};
+  const keys = [...new Set(fromGks.flatMap(k => ((L[k] || {}).keys || [])))];
   if (!keys.length) return;
-  const r = await api('/api/acct/payroll-zelle-link', { method: 'POST', body: JSON.stringify({ gk: toGk, label, keys }) }).catch(() => null);
+  const names = Object.assign({}, ...fromGks.map(k => (L[k] || {}).names || {}));
+  const r = await api('/api/acct/payroll-zelle-link', { method: 'POST', body: JSON.stringify({ gk: toGk, label, keys, names }) }).catch(() => null);
   if (r && r.ok) _wg.zelle_links = r.zelle_links;
 }
 // 取消「可报税」一律先确认(单个和批量都是), 防误触

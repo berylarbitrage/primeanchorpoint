@@ -42185,7 +42185,11 @@ app.post('/api/acct/payroll-zelle-link', requireAdmin, requireRole('admin'), (re
       const left = (v.keys || []).filter(k => !keys.includes(k));
       if (left.length) m[g] = { ...v, keys: left }; else delete m[g];
     }
-    if (keys.length) m[gk] = { label: String(b.label || '').slice(0, 160), keys, by: req.userName || '', at: new Date().toISOString() };
+    // names: 和 keys 一一对应的 Zelle 显示名 (键是小写, 不在当前日期范围时前端用这个显示)
+    const nm = (b.names && typeof b.names === 'object' && !Array.isArray(b.names)) ? b.names : {};
+    const names = {};
+    for (const k of keys) if (nm[k]) names[k] = String(nm[k]).slice(0, 120);
+    if (keys.length) m[gk] = { label: String(b.label || '').slice(0, 160), keys, names, by: req.userName || '', at: new Date().toISOString() };
     else delete m[gk];
     db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('payroll_zelle_links', ?, CURRENT_TIMESTAMP)")
       .run(JSON.stringify(m));
