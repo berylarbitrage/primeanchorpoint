@@ -957,6 +957,8 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <input type="date" id="wgStart" onchange="wgLoad()" style="display:none">
         <input type="date" id="wgEnd" onchange="wgLoad()" style="display:none">
         <input type="text" id="wgSearch" placeholder="搜姓名 / 客户…" oninput="wgRender()" style="width:190px">
+        <span style="display:inline-flex;align-items:center;gap:.3rem;font-size:.8rem;white-space:nowrap" title="所选日期范围内每人的累计工资">累计 ≥ $<input type="number" id="wgMin" min="0" step="100" oninput="wgMinChanged()" style="width:90px">
+          <label style="display:inline-flex;align-items:center;gap:.2rem;cursor:pointer"><input type="checkbox" id="wgMinOnly" onchange="wgMinChanged()"> 只看达到的</label></span>
         <button class="btn btn-sm btn-outline" onclick="wgExport()">⬇️ 导出 CSV</button>
       </div>
       <div id="wgTiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.5rem;margin-bottom:.45rem"></div>
@@ -1347,31 +1349,55 @@ function _wgGroups() {
   }
   return [...groups.values()].sort((a, b) => b.total - a.total);
 }
+function _wgMinVal() { try { const v = localStorage.getItem('wgMin'); return v != null && v !== '' ? v : '2000'; } catch (e) { return '2000'; } }
+function wgMinChanged() {
+  try { localStorage.setItem('wgMin', document.getElementById('wgMin').value); } catch (e) {}
+  wgRender();
+}
+function wgToggleMinOnly() {
+  const cb = document.getElementById('wgMinOnly');
+  cb.checked = !cb.checked;
+  wgRender();
+}
 function _wgHrs(h) { return h ? h.toFixed(2).replace(/\.?0+$/, '') : '<span style="color:var(--g400)">—</span>'; }
 function wgRender() {
   if (!_wg) return;
   const q = document.getElementById('wgSearch').value.trim().toLowerCase();
   let groups = _wgGroups();
   if (q) groups = groups.filter(g => [g.name, ...g.names.keys(), ...g.companies].join(' ').toLowerCase().includes(q));
+  // 累计工资门槛(默认 $2,000 = 2026 起 1099-NEC 申报门槛): 统计人数, 勾「只看达到的」就只列这些人
+  const minEl = document.getElementById('wgMin');
+  if (minEl.value === '') minEl.value = _wgMinVal();
+  const minV = Math.max(0, Number(minEl.value) || 0);
+  const over = groups.filter(g => g.total >= minV);
+  const overSum = Math.round(over.reduce((s2, g) => s2 + g.total, 0) * 100) / 100;
+  const minOnly = document.getElementById('wgMinOnly').checked;
+  const base = groups;   // 统计格按门槛筛选前的全部人算
+  if (minOnly) groups = over;
   _wgSortGroups(groups);
+  _wgRows = groups;
   document.querySelectorAll('#paneWages th[data-wgs]').forEach(th => {
     if (!th.dataset.label) { th.dataset.label = th.textContent; th.style.cursor = 'pointer'; th.style.userSelect = 'none'; th.onclick = () => wgSortBy(th.dataset.wgs); th.title = '点击排序'; }
     const on = th.dataset.wgs === _wgSort.k;
     th.textContent = th.dataset.label + (on ? (_wgSort.d > 0 ? ' ▲' : ' ▼') : '');
     th.style.color = on ? '#0f4c6b' : '';
   });
-  const total = groups.reduce((s, g) => s + g.total, 0);
+  const total = base.reduce((s, g) => s + g.total, 0);
   const allCount = _wgGroups().length;
-  const sumH = k => Math.round(groups.reduce((s, g) => s + g[k], 0) * 100) / 100;
+  const sumH = k => Math.round(base.reduce((s, g) => s + g[k], 0) * 100) / 100;
   const tile = (icon, label, val, sub) => `<div style="background:#f8fafc;border:1px solid var(--g200);border-radius:10px;padding:.5rem .7rem">
     <div style="font-size:.72rem;color:var(--g500)">${icon} ${label}</div>
     <div style="font-size:1.25rem;font-weight:800;color:#0f4c6b;line-height:1.3">${val}</div>
     ${sub ? `<div style="font-size:.7rem;color:var(--g400)">${sub}</div>` : ''}</div>`;
   document.getElementById('wgTiles').innerHTML =
-    tile('👷', '员工总数', `${groups.length} 人`, q ? `搜索结果；全部 ${allCount} 人` : '合并后按人计') +
+    tile('👷', '员工总数', `${base.length} 人`, q ? `搜索结果；全部 ${allCount} 人` : '合并后按人计') +
     tile('📄', '发票', `${_wg.invoice_count} 张`, '') +
     tile('💰', '工资合计', money(Math.round(total * 100) / 100), q ? '搜索结果' : '') +
-    tile('⏱️', '工时', `${sumH('reg').toLocaleString('en-US')} h`, `加班 ${sumH('ot').toLocaleString('en-US')} h`);
+    tile('⏱️', '工时', `${sumH('reg').toLocaleString('en-US')} h`, `加班 ${sumH('ot').toLocaleString('en-US')} h`) +
+    `<div onclick="wgToggleMinOnly()" title="点一下只看达到门槛的人，再点恢复" style="cursor:pointer;background:${minOnly ? '#fef3c7' : '#fffbeb'};border:1px solid ${minOnly ? '#f59e0b' : '#fde68a'};border-radius:10px;padding:.5rem .7rem">
+      <div style="font-size:.72rem;color:#92400e">🏷️ 累计 ≥ ${money(minV)}</div>
+      <div style="font-size:1.25rem;font-weight:800;color:#b45309;line-height:1.3">${over.length} 人</div>
+      <div style="font-size:.7rem;color:#a16207">合计 ${money(overSum)} · ${minOnly ? '正在只看这些人' : '点击只看这些人'}</div></div>`;
   document.getElementById('wgStats').textContent = `${_wg.start} ~ ${_wg.end}（按发票工资周期结束日）`;
   const canEdit = !!_wg.can_edit;
   // 已选的人: 搜索换了也保留, 可以先搜一个名字勾上, 再搜另一个名字勾上, 一起合并
@@ -1389,7 +1415,7 @@ function wgRender() {
       </span>
       ${sel.length < 2 ? '<div style="color:var(--g500);font-size:.74rem;margin-top:.2rem">再勾选至少一个人才能合并；可以换个搜索词找别的写法，已选的不会丢。</div>' : ''}`;
   } else selBar.style.display = 'none';
-  if (!groups.length) { document.getElementById('wgBody').innerHTML = `<tr><td colspan="9" style="color:var(--g400)">${q ? '没有匹配的员工' : '这个日期范围内没有发票工资行'}</td></tr>`; return; }
+  if (!groups.length) { document.getElementById('wgBody').innerHTML = `<tr><td colspan="9" style="color:var(--g400)">${q || document.getElementById('wgMinOnly').checked ? '没有符合条件的员工' : '这个日期范围内没有发票工资行'}</td></tr>`; return; }
   _wgRows = groups;
   document.getElementById('wgBody').innerHTML = groups.map((g, i) => {
     const open = _wgOpen.has(g.gk);
@@ -1495,7 +1521,8 @@ function wgExport() {
   if (!_wg) return;
   const q = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
   const lines = [['员工', '发票上的写法', '客户', '发票张数', '正常工时', '加班工时', '工资合计', '最早周期结束', '最近周期结束'].map(q).join(',')];
-  for (const g of _wgGroups()) lines.push([g.name, [...g.names.keys()].join(' / '), [...g.companies].join(' / '), g.invoices.size, g.reg, g.ot, g.total.toFixed(2), g.first, g.last].map(q).join(','));
+  // 导出当前看到的(搜索 / 累计门槛筛选后、当前排序)
+  for (const g of _wgRows) lines.push([g.name, [...g.names.keys()].join(' / '), [...g.companies].join(' / '), g.invoices.size, g.reg, g.ot, g.total.toFixed(2), g.first, g.last].map(q).join(','));
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
   a.download = `员工工资汇总_${_wg.start}_${_wg.end}.csv`;
