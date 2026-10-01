@@ -42159,7 +42159,7 @@ app.get('/api/acct/payroll-summary', requireAdmin, requireAcctView, (req, res) =
       if (n) invoiceCount++;
     }
     res.json({ ok: true, start, end, invoice_count: invoiceCount, items, merges: _payrollMerges(), tax_flags: _payrollTaxFlags(),
-      zelle_links: _payrollZelleLinks(), can_zelle: ['accounting', 'cs', 'admin'].includes(req.userRole),
+      zelle_links: _payrollZelleLinks(), can_zelle: req.userRole === 'admin', is_admin: req.userRole === 'admin',
       can_edit: ['accounting', 'cs', 'admin'].includes(req.userRole) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -42172,7 +42172,7 @@ function _payrollZelleLinks() {
     return m && typeof m === 'object' && !Array.isArray(m) ? m : {};
   } catch (e) { return {}; }
 }
-app.post('/api/acct/payroll-zelle-link', requireAdmin, requireAcctWrite, (req, res) => {
+app.post('/api/acct/payroll-zelle-link', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const b = req.body || {};
     const gk = String(b.gk || '').slice(0, 200);
@@ -42201,7 +42201,7 @@ function _payrollTaxFlags() {
     return m && typeof m === 'object' && !Array.isArray(m) ? m : {};
   } catch (e) { return {}; }
 }
-app.post('/api/acct/payroll-tax-flag', requireAdmin, requireAcctWrite, (req, res) => {
+app.post('/api/acct/payroll-tax-flag', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const keys = (Array.isArray((req.body || {}).keys) ? req.body.keys : [(req.body || {}).key])
       .map(k => String(k || '').slice(0, 200)).filter(k => /^[nm]:./.test(k)).slice(0, 500);
