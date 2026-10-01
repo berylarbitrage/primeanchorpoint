@@ -340,7 +340,7 @@ function parsePaymentReportCsv(csvText) {
       bonus: bonus == null ? 0 : bonus,
       reimbursement: reimb == null ? 0 : reimb,
       wage_total: total,
-      raw: Object.fromEntries(rows[0].map((h, c) => [String(h).trim(), String(cells[c] == null ? '' : cells[c])]).filter(([k]) => k)),
+      raw: Object.fromEntries(rows[hdrIdx].map((h, c) => [String(h).trim(), String(cells[c] == null ? '' : cells[c])]).filter(([k]) => k)),
     });
   }
   if (!out.length) throw new Error('报告里没有一行可导入的付款（都没有金额或日期）。' + (warnings[0] || ''));
