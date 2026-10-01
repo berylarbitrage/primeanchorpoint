@@ -5443,8 +5443,22 @@ function _zFiltered() {
     }
     out.push(r);
   }
-  out.sort((a, b) => (b.out_total + b.in_total) - (a.out_total + a.in_total));
+  // 排序: 点表头切换 (默认按金额), 记在本机
+  const { k, d } = _zSort;
+  const val = r => k === 'name' ? r.name.toLowerCase() : k === 'first' ? (r.first_date || '') : k === 'last' ? (r.last_date || '')
+    : k === 'amt' ? r.out_total + r.in_total : (r[k] || 0);
+  out.sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * d || ((b.out_total + b.in_total) - (a.out_total + a.in_total)); });
   return out;
+}
+let _zSort = (() => { try { return JSON.parse(localStorage.getItem('zSort')) || { k: 'amt', d: -1 }; } catch (e) { return { k: 'amt', d: -1 }; } })();
+function zSortBy(k) {
+  _zSort = _zSort.k === k ? { k, d: -_zSort.d } : { k, d: ['name', 'first'].includes(k) ? 1 : -1 };
+  try { localStorage.setItem('zSort', JSON.stringify(_zSort)); } catch (e) {}
+  zRender();
+}
+function _zTh(k, label, right) {
+  const on = _zSort.k === k;
+  return `<th onclick="zSortBy('${k}')" title="点击排序，再点反过来" style="cursor:pointer;user-select:none;${right ? 'text-align:right;' : ''}${on ? 'color:#0f4c6b' : ''}">${label}${on ? (_zSort.d > 0 ? ' ▲' : ' ▼') : ''}</th>`;
 }
 function _zAnnCounts() {
   const c = { blank: 0, pending: 0, unreviewed: 0, approved: 0 };
@@ -5471,10 +5485,10 @@ function zRender() {
   document.getElementById('zBtnAll').style.display = view === 'txns' ? 'none' : '';
   document.getElementById('zHead').innerHTML = view === 'txns'
     ? '<tr><th>日期</th><th>收款人 / 对方</th><th style="text-align:right">金额</th><th>账户</th><th>银行描述 / 标注</th><th></th></tr>'
-    : `<tr><th style="width:26px"></th><th>收款人 / 对方</th>
-        <th style="text-align:right">转出笔数</th><th style="text-align:right">转出合计</th>
-        <th style="text-align:right">转入笔数</th><th style="text-align:right">转入合计</th>
-        <th>首次</th><th>最近一笔</th></tr>`;
+    : `<tr><th style="width:26px"></th>${_zTh('name', '收款人 / 对方')}
+        ${_zTh('out_count', '转出笔数', 1)}${_zTh('out_total', '转出合计', 1)}
+        ${_zTh('in_count', '转入笔数', 1)}${_zTh('in_total', '转入合计', 1)}
+        ${_zTh('first', '首次')}${_zTh('last', '最近一笔')}</tr>`;
   // 全部转账明细: 时间段内所有 Zelle 平铺一张清单 (筛选/分组/单笔操作照常)
   if (view === 'txns') {
     document.getElementById('zBody').innerHTML = _zFlatBody(list) + _zRemovedSection(6);
@@ -5488,7 +5502,9 @@ function zRender() {
       c.link_type && c.link_label ? `<div style="font-size:.76rem;color:#0f4c6b;font-weight:400">${ZC_TYPE[c.link_type] || '🔗'} · ${esc(c.link_label)}</div>` : '',
       c.zelle_handle ? `<div style="font-size:.76rem;color:var(--g500);font-weight:400">📱 ${esc(c.zelle_handle)}</div>` : '',
       c.note ? `<div style="font-size:.74rem;color:#b45309;font-weight:400">📝 ${esc(c.note)}</div>` : '',
-      (p.aliases || []).length ? `<div style="font-size:.74rem;color:#6d28d9;font-weight:400">🔀 已合并：${esc(p.aliases.join('、'))}</div>` : '',
+      (p.aliases || []).length ? `<div style="font-size:.74rem;color:#6d28d9;font-weight:400">🔀 已合并：${p.aliases.map(a => USER.role === 'admin'
+        ? `<span style="white-space:nowrap">${esc(a)} <a onclick="event.stopPropagation();zUnmergeAlias(${JSON.stringify(p.name).replace(/"/g, '&quot;')}, ${JSON.stringify(a).replace(/"/g, '&quot;')})" title="拆开，恢复成单独的收款人" style="cursor:pointer;color:#dc2626;text-decoration:underline">✕ 拆开</a></span>`
+        : esc(a)).join('、')}</div>` : '',
       p.payroll_label ? `<div style="font-size:.74rem;color:#15803d;font-weight:400">👷 工资汇总：${esc(p.payroll_label)}</div>` : '',
     ].join('');
     const rows = _zDetailRows(p.txns);
@@ -6066,6 +6082,18 @@ async function zgMerge(gi) {
   await zLoad();
   if (g.id === '__sel') zgClose();
   else { _zgGroups = _zDupGroups(); _zgRender(); document.getElementById('zgTitle').textContent = `🔀 可能是同一个人（${_zgGroups.length} 组）`; }
+}
+// 列表上直接拆开合并过的名字 (仅管理员, 后端也只允许管理员)
+async function zUnmergeAlias(primary, alias) {
+  if (USER.role !== 'admin') return;
+  if (!(await pageConfirm(`把「${alias}」从「${primary}」拆开，恢复成单独的收款人？\n\n它的 Zelle 转账会重新单独统计。`))) return;
+  try {
+    const r = await api('/api/plaid/zelle-aliases', { method: 'POST', body: JSON.stringify({ action: 'unmerge', alias_name: alias }) });
+    if (r && r.error) throw new Error(r.error);
+    // 拆开后如果名字仍像同一个人, 「可能是同一个人」还会提示; 确认不是就点「不是同一个人」
+    await zLoad();
+    toast(`✅ 已拆开「${alias}」`);
+  } catch (e) { toast(e.message || '拆开失败', true); }
 }
 // 待审批的合并申请: 页面顶上一条提示; 管理员点进去逐条审核
 let _zReqs = [];
