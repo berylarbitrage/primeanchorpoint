@@ -41739,48 +41739,71 @@ app.post('/api/acct/gusto/import', requireAdmin, requireRole('admin'), gustoRepo
       payment_method=excluded.payment_method, status=excluded.status, hours=excluded.hours,
       wage=excluded.wage, bonus=excluded.bonus, reimbursement=excluded.reimbursement,
       wage_total=excluded.wage_total, raw_json=excluded.raw_json, synced_at=excluded.synced_at`);
-  // 新上传不动已做的银行关联: 同一笔付款 uuid 不变, 上面的 UPDATE 不碰 bank_* 列。
-  // uuid 变了的(Gusto 里改了姓名写法或付款方式) → 按 日期+金额+(姓名或方式) 找回
-  // 旧导入行, 把关联(含审核状态)迁到新行, 旧行删掉免得双份; 撤销时原样还回去。
-  const findOld = db.prepare(`SELECT * FROM gusto_payments WHERE source='import' AND bank_txn_id!=''
+  // 每次下载 Gusto 全年报告整份上传即可: 库里已有的付款自动跳过, 只补新的, 已做的银行
+  // 关联(含审核状态)一律不动。「同一笔付款」按 人+日期+金额 认, 不看付款方式——Processing
+  // 时方式只写 "Direct Deposit", 发完才变成 "Direct Deposit XXXX1234", 按 uuid 认会多出一份。
+  // 认出来的旧行原地更新(uuid 不变, UPDATE 不碰 bank_* 列), 关联自然保留。
+  // 姓名比较放在 JS 里: SQLite 的 LOWER() 只管 ASCII, Óscar 这类带重音的名字会对不上
+  const _sameKey = v => String(v || '').normalize('NFC').toLowerCase().replace(/\s+/g, ' ').trim();
+  const _findSameStmt = db.prepare(`SELECT * FROM gusto_payments WHERE source='import'
     AND date=? AND ABS(wage_total-?)<0.011 AND COALESCE(wage_type,'')=?
-    AND (LOWER(contractor_name)=? OR (payment_method!='' AND LOWER(payment_method)=?))`);
-  const moveLink = db.prepare(`UPDATE gusto_payments SET bank_txn_id=?, bank_link_status=?, bank_link_by=?, bank_link_at=?,
-    bank_link_review_by=?, bank_link_review_at=? WHERE uuid=?`);
-  let inserted = 0, updated = 0, carried = 0, minD = '', maxD = '';
-  const uuids = [], insertedUuids = [], prevRows = [], replaced = [];
-  const fileUuids = new Set(parsed.payments.map(p => p.uuid));
+    ORDER BY (bank_txn_id!='') DESC, uuid`);
+  const findSame = { all: (date, total, wt, name, method) => _findSameStmt.all(date, total, wt).filter(o =>
+    _sameKey(o.contractor_name) === _sameKey(name) || (/xxxx/i.test(o.payment_method || '') && _sameKey(o.payment_method) === _sameKey(method))) };
+  const DATA_FIELDS = ['contractor_name', 'date', 'payment_method', 'status', 'hours', 'wage', 'bonus', 'reimbursement', 'wage_total'];
+  let inserted = 0, updated = 0, unchanged = 0, keptLinks = 0, staleRemoved = 0, minD = '', maxD = '';
+  const uuids = [], insertedUuids = [], prevRows = [], removedRows = [];
+  const claimed = new Set();
   db.transaction(() => {
     for (const p of parsed.payments) {
-      uuids.push(p.uuid);
-      const before = getP.get(p.uuid);
-      if (before) { updated++; prevRows.push(before); } else { inserted++; insertedUuids.push(p.uuid); }
-      upP.run(p.uuid, '', p.contractor_name, p.date, p.payment_method, p.wage_type, p.status,
-        p.hours, p.hourly_rate, p.wage, p.bonus, p.reimbursement, p.wage_total, JSON.stringify(p.raw || {}), nowIso);
+      let before = claimed.has(p.uuid) ? null : getP.get(p.uuid);
       if (!before) {
-        const old = findOld.all(p.date, p.wage_total, p.wage_type || '', String(p.contractor_name || '').toLowerCase(),
-          String(p.payment_method || '').toLowerCase()).find(o => !fileUuids.has(o.uuid) && !replaced.some(r => r.row.uuid === o.uuid));
-        if (old) {
-          moveLink.run(old.bank_txn_id, old.bank_link_status || '', old.bank_link_by || '', old.bank_link_at || '',
-            old.bank_link_review_by || '', old.bank_link_review_at || '', p.uuid);
-          db.prepare('DELETE FROM gusto_payments WHERE uuid=?').run(old.uuid);
-          replaced.push({ by: p.uuid, row: old });
-          carried++;
+        before = findSame.all(p.date, p.wage_total, p.wage_type || '', String(p.contractor_name || '').toLowerCase(),
+          String(p.payment_method || '').toLowerCase()).find(o => !claimed.has(o.uuid)) || null;
+        if (before) p.uuid = before.uuid;   // 同一笔付款: 沿用旧 uuid
+      }
+      claimed.add(p.uuid);
+      uuids.push(p.uuid);
+      if (before) {
+        if (before.bank_txn_id) keptLinks++;
+        const same = DATA_FIELDS.every(f => String(before[f] == null ? '' : before[f]) === String(p[f] == null ? '' : p[f]));
+        if (same) { unchanged++; }
+        else {
+          updated++; prevRows.push(before);
+          upP.run(p.uuid, '', p.contractor_name, p.date, p.payment_method, p.wage_type, p.status,
+            p.hours, p.hourly_rate, p.wage, p.bonus, p.reimbursement, p.wage_total, JSON.stringify(p.raw || {}), nowIso);
         }
+      } else {
+        inserted++; insertedUuids.push(p.uuid);
+        upP.run(p.uuid, '', p.contractor_name, p.date, p.payment_method, p.wage_type, p.status,
+          p.hours, p.hourly_rate, p.wage, p.bonus, p.reimbursement, p.wage_total, JSON.stringify(p.raw || {}), nowIso);
       }
       if (!minD || p.date < minD) minD = p.date;
       if (!maxD || p.date > maxD) maxD = p.date;
+    }
+    // 上次还在 Processing、这份报告同一时间段里已经没有了的付款(Gusto 改了金额或取消了)
+    // → 删掉旧的, 免得和新数据双份。挂了银行关联的不删; Completed 的不动。
+    if (minD && maxD && (parsed.kind || 'contractor') !== 'w2') {
+      const stale = db.prepare(`SELECT * FROM gusto_payments WHERE source='import' AND COALESCE(wage_type,'')!='W2'
+        AND date>=? AND date<=? AND bank_txn_id='' AND LOWER(COALESCE(status,'')) NOT IN ('completed','funded','paid','')`).all(minD, maxD)
+        .filter(o => !claimed.has(o.uuid));
+      for (const o of stale) {
+        db.prepare('DELETE FROM gusto_payments WHERE uuid=?').run(o.uuid);
+        removedRows.push(o);
+        staleRemoved++;
+      }
     }
   })();
   const total = Math.round(parsed.payments.reduce((s, p) => s + p.wage_total, 0) * 100) / 100;
   // 撤销用的底: 这次新增的 uuid、被更新行的原值、被顶替的旧行
   db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('gusto_last_import', ?, CURRENT_TIMESTAMP)")
     .run(JSON.stringify({ at: nowIso, by: req.userName || '', file: req.file.originalname || '',
-      rows: parsed.payments.length, inserted, updated, carried, window: [minD, maxD], total, uuids,
-      inserted_uuids: insertedUuids, prev_rows: prevRows, replaced }));
+      rows: parsed.payments.length, inserted, updated, unchanged, kept_links: keptLinks, stale_removed: staleRemoved,
+      window: [minD, maxD], total, uuids, inserted_uuids: insertedUuids, prev_rows: prevRows, removed_rows: removedRows }));
   auditLog('gusto_report_import', req, { targetType: 'gusto_payments', targetId: req.file.originalname || 'report',
-    details: { rows: parsed.payments.length, inserted, updated, carried, window: [minD, maxD], total } });
-  res.json({ ok: true, kind: parsed.kind || 'contractor', rows: parsed.payments.length, inserted, updated, carried, window: [minD, maxD], total, warnings: parsed.warnings });
+    details: { rows: parsed.payments.length, inserted, updated, unchanged, kept_links: keptLinks, stale_removed: staleRemoved, window: [minD, maxD], total } });
+  res.json({ ok: true, kind: parsed.kind || 'contractor', rows: parsed.payments.length, inserted, updated, unchanged,
+    kept_links: keptLinks, stale_removed: staleRemoved, window: [minD, maxD], total, warnings: parsed.warnings });
 });
 
 // 撤销最近一次导入（传错文件用）: 删这次新增的行、被更新的行还原成导入前的数据、
@@ -41820,6 +41843,12 @@ app.post('/api/acct/gusto/import-undo', requireAdmin, requireRole('admin'), (req
       }
       if (cur.bank_txn_id) { keptLinked++; continue; }
       removed += del.run(cur.uuid).changes;
+    }
+    for (const o of (info.removed_rows || [])) {
+      if (getP.get(o.uuid)) continue;
+      const cols = Object.keys(o);
+      db.prepare(`INSERT INTO gusto_payments (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...cols.map(c => o[c]));
+      restored++;
     }
     if (!legacy) {
       for (const prev of (info.prev_rows || [])) {

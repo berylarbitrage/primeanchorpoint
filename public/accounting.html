@@ -4248,7 +4248,7 @@ async function gustoImportFile(input) {
     if (!resp.ok && !r.error) r.error = 'HTTP ' + resp.status;
   } catch (e) { r = { error: e.message }; }
   if (r && r.ok) {
-    toast(`✅ 导入成功${r.kind === 'w2' ? '（W-2 员工工资，只进流水不参与合同工对账）' : ''}：${r.rows} 笔（新增 ${r.inserted}、更新 ${r.updated}），${r.window[0]} ~ ${r.window[1]}，合计 ${money(r.total)}；已做的银行关联全部保留${r.carried ? `（其中 ${r.carried} 笔 Gusto 改了姓名/方式，关联已自动跟过去）` : ''}`);
+    toast(`✅ 导入成功${r.kind === 'w2' ? '（W-2 员工工资，只进流水不参与合同工对账）' : ''}：报告 ${r.rows} 笔，${r.window[0]} ~ ${r.window[1]} —— 新增 ${r.inserted} 笔、状态/金额有更新 ${r.updated} 笔、已有没变 ${r.unchanged || 0} 笔（自动跳过）${r.stale_removed ? `、移除 Gusto 已改掉的处理中付款 ${r.stale_removed} 笔` : ''}；已关联银行的 ${r.kept_links || 0} 笔关联保持不变`);
     if ((r.warnings || []).length) toast(r.warnings[0] + (r.warnings.length > 1 ? `（还有 ${r.warnings.length - 1} 条类似）` : ''), true);
     await gustoLoadStatus();
     gustoLoadRecon();
