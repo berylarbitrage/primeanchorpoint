@@ -5488,7 +5488,9 @@ function zRender() {
       c.link_type && c.link_label ? `<div style="font-size:.76rem;color:#0f4c6b;font-weight:400">${ZC_TYPE[c.link_type] || '🔗'} · ${esc(c.link_label)}</div>` : '',
       c.zelle_handle ? `<div style="font-size:.76rem;color:var(--g500);font-weight:400">📱 ${esc(c.zelle_handle)}</div>` : '',
       c.note ? `<div style="font-size:.74rem;color:#b45309;font-weight:400">📝 ${esc(c.note)}</div>` : '',
-      (p.aliases || []).length ? `<div style="font-size:.74rem;color:#6d28d9;font-weight:400">🔀 已合并：${esc(p.aliases.join('、'))}</div>` : '',
+      (p.aliases || []).length ? `<div style="font-size:.74rem;color:#6d28d9;font-weight:400">🔀 已合并：${p.aliases.map(a => USER.role === 'admin'
+        ? `<span style="white-space:nowrap">${esc(a)} <a onclick="event.stopPropagation();zUnmergeAlias(${JSON.stringify(p.name).replace(/"/g, '&quot;')}, ${JSON.stringify(a).replace(/"/g, '&quot;')})" title="拆开，恢复成单独的收款人" style="cursor:pointer;color:#dc2626;text-decoration:underline">✕ 拆开</a></span>`
+        : esc(a)).join('、')}</div>` : '',
       p.payroll_label ? `<div style="font-size:.74rem;color:#15803d;font-weight:400">👷 工资汇总：${esc(p.payroll_label)}</div>` : '',
     ].join('');
     const rows = _zDetailRows(p.txns);
@@ -6066,6 +6068,18 @@ async function zgMerge(gi) {
   await zLoad();
   if (g.id === '__sel') zgClose();
   else { _zgGroups = _zDupGroups(); _zgRender(); document.getElementById('zgTitle').textContent = `🔀 可能是同一个人（${_zgGroups.length} 组）`; }
+}
+// 列表上直接拆开合并过的名字 (仅管理员, 后端也只允许管理员)
+async function zUnmergeAlias(primary, alias) {
+  if (USER.role !== 'admin') return;
+  if (!(await pageConfirm(`把「${alias}」从「${primary}」拆开，恢复成单独的收款人？\n\n它的 Zelle 转账会重新单独统计。`))) return;
+  try {
+    const r = await api('/api/plaid/zelle-aliases', { method: 'POST', body: JSON.stringify({ action: 'unmerge', alias_name: alias }) });
+    if (r && r.error) throw new Error(r.error);
+    // 拆开后如果名字仍像同一个人, 「可能是同一个人」还会提示; 确认不是就点「不是同一个人」
+    await zLoad();
+    toast(`✅ 已拆开「${alias}」`);
+  } catch (e) { toast(e.message || '拆开失败', true); }
 }
 // 待审批的合并申请: 页面顶上一条提示; 管理员点进去逐条审核
 let _zReqs = [];
