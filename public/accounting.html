@@ -967,6 +967,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <button class="btn btn-sm btn-outline" onclick="wgExport()">⬇️ 导出 CSV</button>
       </div>
       <div id="wgTiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.5rem;margin-bottom:.45rem"></div>
+      <div id="wgTaxTiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:.5rem;margin-bottom:.45rem"></div>
       <div id="wgStats" style="font-size:.78rem;color:var(--g500);margin-bottom:.5rem"></div>
       <div id="wgSelBar" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.45rem .6rem;margin-bottom:.5rem;font-size:.8rem"></div>
       <div style="overflow-x:auto">
@@ -1355,11 +1356,14 @@ function _wgGroups() {
   }
   return [...groups.values()].sort((a, b) => b.total - a.total);
 }
+function _wgMinCur() { return Math.max(0, Number((document.getElementById('wgMin') || {}).value) || 0); }
 function _wgMinVal() { try { const v = localStorage.getItem('wgMin'); return v != null && v !== '' ? v : '2000'; } catch (e) { return '2000'; } }
 function wgMinChanged() {
   try { localStorage.setItem('wgMin', document.getElementById('wgMin').value); } catch (e) {}
   wgRender();
 }
+let _wgBucket = '';
+function wgSetBucket(k) { _wgBucket = _wgBucket === k ? '' : k; wgRender(); }
 function wgToggleMinOnly() {
   const cb = document.getElementById('wgMinOnly');
   cb.checked = !cb.checked;
@@ -1380,6 +1384,9 @@ function wgRender() {
   const minOnly = document.getElementById('wgMinOnly').checked;
   const base = groups;   // 统计格按门槛筛选前的全部人算
   if (minOnly) groups = over;
+  // 报税三分类(按累计门槛 + 可报税勾选): 可报税 / 不可报税(达到门槛没勾) / 不用报税(没到门槛)
+  const bucketOf = g => g.total < minV ? 'none' : (_wgTax(g) ? 'yes' : 'no');
+  if (_wgBucket) groups = groups.filter(g => bucketOf(g) === _wgBucket);
   const taxFlt = document.getElementById('wgTaxFlt').value;
   if (taxFlt) groups = groups.filter(g => !!_wgTax(g) === (taxFlt === '1'));
   _wgSortGroups(groups);
@@ -1406,6 +1413,21 @@ function wgRender() {
       <div style="font-size:.72rem;color:#92400e">🏷️ 累计 ≥ ${money(minV)}</div>
       <div style="font-size:1.25rem;font-weight:800;color:#b45309;line-height:1.3">${over.length} 人</div>
       <div style="font-size:.7rem;color:#a16207">合计 ${money(overSum)} · ${minOnly ? '正在只看这些人' : '点击只看这些人'}</div></div>`;
+  const bk = { yes: [], no: [], none: [] };
+  base.forEach(g => bk[bucketOf(g)].push(g));
+  const bsum = arr => money(Math.round(arr.reduce((s2, g) => s2 + g.total, 0) * 100) / 100);
+  const btile = (k, icon, label, sub, c) => {
+    const on = _wgBucket === k;
+    return `<div onclick="wgSetBucket('${k}')" title="${on ? '再点一次恢复全部' : '点击只看这一类'}" style="cursor:pointer;background:${on ? c[0] : '#fff'};border:${on ? 2 : 1}px solid ${c[1]};border-radius:10px;padding:.5rem .7rem">
+      <div style="font-size:.74rem;color:${c[2]};font-weight:700">${icon} ${label}</div>
+      <div style="display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap"><span style="font-size:1.25rem;font-weight:800;color:${c[2]}">${bsum(bk[k])}</span><span style="font-size:.82rem;color:${c[2]}">${bk[k].length} 人</span></div>
+      <div style="font-size:.7rem;color:var(--g500)">${sub}${on ? ' · <b>正在只看这一类</b>' : ''}</div></div>`;
+  };
+  const noneTaxed = bk.none.filter(g => _wgTax(g)).length;
+  document.getElementById('wgTaxTiles').innerHTML =
+    btile('yes', '✅', '可报税', `累计 ≥ ${money(minV)} 且已勾可报税`, ['#dcfce7', '#86efac', '#15803d']) +
+    btile('no', '⛔', '不可报税', `累计 ≥ ${money(minV)} 但没勾可报税`, ['#fee2e2', '#fca5a5', '#b91c1c']) +
+    btile('none', '➖', '不用报税', `累计 < ${money(minV)}${noneTaxed ? `（其中 ${noneTaxed} 人勾了可报税，金额不到门槛也算这里）` : ''}`, ['#f1f5f9', '#cbd5e1', '#475569']);
   const taxN = base.filter(g => _wgTax(g)).length;
   document.getElementById('wgStats').textContent = `${_wg.start} ~ ${_wg.end}（按发票工资周期结束日） · ✅ 可报税 ${taxN} 人${minOnly ? `（达到门槛的 ${over.length} 人里 ${over.filter(g => _wgTax(g)).length} 人）` : ''}`;
   const canEdit = !!_wg.can_edit;
@@ -1426,7 +1448,7 @@ function wgRender() {
       </span>
       ${sel.length < 2 ? '<div style="color:var(--g500);font-size:.74rem;margin-top:.2rem">再勾选至少一个人才能合并（标可报税一个人也行）；可以换个搜索词找别的写法，已选的不会丢。</div>' : ''}`;
   } else selBar.style.display = 'none';
-  if (!groups.length) { document.getElementById('wgBody').innerHTML = `<tr><td colspan="10" style="color:var(--g400)">${q || document.getElementById('wgMinOnly').checked || document.getElementById('wgTaxFlt').value ? '没有符合条件的员工' : '这个日期范围内没有发票工资行'}</td></tr>`; return; }
+  if (!groups.length) { document.getElementById('wgBody').innerHTML = `<tr><td colspan="10" style="color:var(--g400)">${q || _wgBucket || document.getElementById('wgMinOnly').checked || document.getElementById('wgTaxFlt').value ? '没有符合条件的员工' : '这个日期范围内没有发票工资行'}</td></tr>`; return; }
   _wgRows = groups;
   document.getElementById('wgBody').innerHTML = groups.map((g, i) => {
     const open = _wgOpen.has(g.gk);
@@ -1570,9 +1592,9 @@ async function wgUnmergeSubmit() {
 function wgExport() {
   if (!_wg) return;
   const q = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
-  const lines = [['员工', '发票上的写法', '客户', '发票张数', '正常工时', '加班工时', '工资合计', '最早周期结束', '最近周期结束', '可报税'].map(q).join(',')];
+  const lines = [['员工', '发票上的写法', '客户', '发票张数', '正常工时', '加班工时', '工资合计', '最早周期结束', '最近周期结束', '可报税', '报税分类'].map(q).join(',')];
   // 导出当前看到的(搜索 / 累计门槛筛选后、当前排序)
-  for (const g of _wgRows) lines.push([g.name, [...g.names.keys()].join(' / '), [...g.companies].join(' / '), g.invoices.size, g.reg, g.ot, g.total.toFixed(2), g.first, g.last, _wgTax(g) ? '是' : ''].map(q).join(','));
+  for (const g of _wgRows) lines.push([g.name, [...g.names.keys()].join(' / '), [...g.companies].join(' / '), g.invoices.size, g.reg, g.ot, g.total.toFixed(2), g.first, g.last, _wgTax(g) ? '是' : '', g.total < _wgMinCur() ? '不用报税' : (_wgTax(g) ? '可报税' : '不可报税')].map(q).join(','));
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
   a.download = `员工工资汇总_${_wg.start}_${_wg.end}.csv`;
