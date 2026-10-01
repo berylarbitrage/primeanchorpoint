@@ -972,8 +972,8 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <div id="wgSelBar" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.45rem .6rem;margin-bottom:.5rem;font-size:.8rem"></div>
       <div style="overflow-x:auto">
         <table><thead><tr>
-          <th style="width:28px"></th><th data-wgs="name">员工姓名</th><th data-wgs="company">客户</th><th data-wgs="invoices" style="text-align:right">发票</th><th data-wgs="reg" style="text-align:right">正常工时</th><th data-wgs="ot" style="text-align:right">加班工时</th><th data-wgs="total" style="text-align:right">工资合计</th><th data-wgs="last">最早 ~ 最近周期</th><th data-wgs="tax" style="text-align:center" title="勾上 = 这个人可以报税（所有人看到的一样）">可报税</th><th>明细</th>
-        </tr></thead><tbody id="wgBody"><tr><td colspan="10" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+          <th style="width:28px"></th><th data-wgs="name">员工姓名</th><th data-wgs="company">客户</th><th data-wgs="invoices" style="text-align:right">发票</th><th data-wgs="reg" style="text-align:right">正常工时</th><th data-wgs="ot" style="text-align:right">加班工时</th><th data-wgs="total" style="text-align:right">工资合计</th><th data-wgs="last">最早 ~ 最近周期</th><th data-wgs="zelle" style="text-align:right" title="关联的 Zelle 账号在所选日期内转给他的金额">Zelle</th><th data-wgs="tax" style="text-align:center" title="勾上 = 这个人可以报税（所有人看到的一样）">可报税</th><th>明细</th>
+        </tr></thead><tbody id="wgBody"><tr><td colspan="11" style="color:var(--g400)">加载中…</td></tr></tbody></table>
       </div>
       <p style="font-size:.74rem;color:var(--g400);margin-top:.5rem">点表头可以换排序（再点一次反过来）。数据来自正式发票（不含草稿、不含整柜计费）上的工资行，按发票工资周期的结束日筛选。同一个人在不同发票上写法不同（大小写、重音、错拼、名字顺序）时，勾选这几行再点「合并成一个人」，合并后大家看到的都一样；合并过的行可以点「拆开」恢复。</p>
     </div>
@@ -1277,10 +1277,10 @@ function showTab(t) {
   if (t === 'gusto') gustoInit();
 }
 // ── 👷 员工工资汇总: 发票工资行按人汇总, 可合并不同写法的名字 ──
-let _wg = null, _wgRows = [], _wgSelRows = [], _wgLoadSeq = 0;
+let _wg = null, _wgRows = [], _wgSelRows = [], _wgLoadSeq = 0, _wgZelle = {};
 // 排序: 点表头切换, 同一列再点反向; 记在本机
 let _wgSort = (() => { try { return JSON.parse(localStorage.getItem('wgSort')) || { k: 'total', d: -1 }; } catch (e) { return { k: 'total', d: -1 }; } })();
-const WG_SORT_DEFAULT_DIR = { tax: -1, name: 1, company: 1, invoices: -1, reg: -1, ot: -1, total: -1, last: -1 };
+const WG_SORT_DEFAULT_DIR = { zelle: -1, tax: -1, name: 1, company: 1, invoices: -1, reg: -1, ot: -1, total: -1, last: -1 };
 function wgSortBy(k) {
   _wgSort = _wgSort.k === k ? { k, d: -_wgSort.d } : { k, d: WG_SORT_DEFAULT_DIR[k] || -1 };
   try { localStorage.setItem('wgSort', JSON.stringify(_wgSort)); } catch (e) {}
@@ -1289,7 +1289,8 @@ function wgSortBy(k) {
 function _wgSortGroups(groups) {
   const { k, d } = _wgSort;
   const val = g => k === 'name' ? g.name.toLowerCase() : k === 'company' ? [...g.companies].sort().join(' ').toLowerCase()
-    : k === 'invoices' ? g.invoices.size : k === 'last' ? g.last : k === 'tax' ? (_wgTax(g) ? 1 : 0) : (g[k] || 0);
+    : k === 'invoices' ? g.invoices.size : k === 'last' ? g.last : k === 'tax' ? (_wgTax(g) ? 1 : 0)
+    : k === 'zelle' ? (_wgZ(g).keys.length ? _wgZ(g).out + 0.001 : 0) : (g[k] || 0);
   return groups.sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * d || (b.total - a.total); });
 }
 const _wgSel = new Set(), _wgOpen = new Set();
@@ -1321,11 +1322,17 @@ function wgRangeChanged() {
 async function wgLoad() {
   const [s, e] = wgRangeDates();
   if (!s || !e) return;
-  document.getElementById('wgBody').innerHTML = '<tr><td colspan="10" style="color:var(--g400)">加载中…</td></tr>';
+  document.getElementById('wgBody').innerHTML = '<tr><td colspan="11" style="color:var(--g400)">加载中…</td></tr>';
   const seq = ++_wgLoadSeq;   // 连着切日期时, 只认最后一次请求的结果
-  const r = await api(`/api/acct/payroll-summary?start=${s}&end=${e}`).catch(err => ({ error: err.message }));
+  const [r, z] = await Promise.all([
+    api(`/api/acct/payroll-summary?start=${s}&end=${e}`).catch(err => ({ error: err.message })),
+    // 同一日期范围的 Zelle 转账, 「Zelle」列用; 没权限/失败就不显示金额
+    api(`/api/plaid/zelle-stats?start=${s}&end=${e}`).catch(() => null),
+  ]);
   if (seq !== _wgLoadSeq) return;
-  if (!r || r.error) { document.getElementById('wgBody').innerHTML = `<tr><td colspan="10" style="color:#dc2626">${esc((r && r.error) || '加载失败')}</td></tr>`; return; }
+  _wgZelle = {};
+  for (const p of ((z && !z.error && z.people) || [])) _wgZelle[p.key] = p;
+  if (!r || r.error) { document.getElementById('wgBody').innerHTML = `<tr><td colspan="11" style="color:#dc2626">${esc((r && r.error) || '加载失败')}</td></tr>`; return; }
   _wg = r;
   _wgSel.clear();
   wgRender();
@@ -1448,7 +1455,7 @@ function wgRender() {
       </span>
       ${sel.length < 2 ? '<div style="color:var(--g500);font-size:.74rem;margin-top:.2rem">再勾选至少一个人才能合并（标可报税一个人也行）；可以换个搜索词找别的写法，已选的不会丢。</div>' : ''}`;
   } else selBar.style.display = 'none';
-  if (!groups.length) { document.getElementById('wgBody').innerHTML = `<tr><td colspan="10" style="color:var(--g400)">${q || _wgBucket || document.getElementById('wgMinOnly').checked || document.getElementById('wgTaxFlt').value ? '没有符合条件的员工' : '这个日期范围内没有发票工资行'}</td></tr>`; return; }
+  if (!groups.length) { document.getElementById('wgBody').innerHTML = `<tr><td colspan="11" style="color:var(--g400)">${q || _wgBucket || document.getElementById('wgMinOnly').checked || document.getElementById('wgTaxFlt').value ? '没有符合条件的员工' : '这个日期范围内没有发票工资行'}</td></tr>`; return; }
   _wgRows = groups;
   document.getElementById('wgBody').innerHTML = groups.map((g, i) => {
     const open = _wgOpen.has(g.gk);
@@ -1469,6 +1476,13 @@ function wgRender() {
       <td style="text-align:right">${_wgHrs(g.ot)}</td>
       <td style="text-align:right"><b>${money(g.total)}</b></td>
       <td style="font-size:.76rem;white-space:nowrap">${esc(g.first)}${g.last !== g.first ? ' ~ ' + esc(g.last) : ''}</td>
+      <td style="text-align:right;white-space:nowrap">${(() => {
+        const z = _wgZ(g);
+        if (!z.keys.length) return canEdit && _wg.can_zelle ? `<a onclick="wgZelleOpen(_wgRows[${i}].gk)" style="cursor:pointer;color:#0ea5e9;font-size:.74rem;text-decoration:underline">＋ 关联</a>` : '<span style="color:var(--g400)">—</span>';
+        return `<a ${canEdit && _wg.can_zelle ? `onclick="wgZelleOpen(_wgRows[${i}].gk)" ` : ''}title="${esc('Zelle：' + z.names.join('、'))}" style="cursor:pointer;text-decoration:none">
+          <div style="font-weight:700;color:#7c3aed">${z.out ? '−' + money(z.out) : '$0.00'}</div>
+          <div style="font-size:.7rem;color:var(--g500)">💸 ${z.keys.length} 个账号 · ${z.count} 笔</div></a>`;
+      })()}</td>
       <td style="text-align:center">${_wgTax(g)
         // 勾上后锁定成标记, 防误触: 点了要在弹窗里确认才取消
         ? `<span ${canEdit ? `onclick="wgUntaxAsk([_wgRows[${i}].gk])" ` : ''}title="${esc('已勾：' + (_wgTax(g).by || '') + ' ' + String(_wgTax(g).at || '').slice(0, 10) + (canEdit ? '\n要取消请点这里，会再确认一次' : ''))}" style="display:inline-block;background:#dcfce7;color:#15803d;border:1px solid #86efac;border-radius:10px;padding:1px 8px;font-size:.72rem;font-weight:800;white-space:nowrap;${canEdit ? 'cursor:pointer' : ''}">✅ 可报税</span>`
@@ -1476,7 +1490,7 @@ function wgRender() {
           ? `<input type="checkbox" onchange="wgSetTax([_wgRows[${i}].gk], true)" title="勾上 = 可报税" style="cursor:pointer;width:16px;height:16px;accent-color:#15803d">`
           : '<span style="color:var(--g400)">—</span>'}</td>
       <td><a style="cursor:pointer;font-size:.76rem;color:#0f4c6b;text-decoration:underline" onclick="wgToggleOpen(_wgRows[${i}].gk)">${open ? '收起' : '明细'}</a></td>
-    </tr>${open ? `<tr><td colspan="10" style="background:#f8fafc;padding:.3rem .6rem"><table style="font-size:.76rem;width:100%"><thead><tr>
+    </tr>${open ? `<tr><td colspan="11" style="background:#f8fafc;padding:.3rem .6rem"><table style="font-size:.76rem;width:100%"><thead><tr>
       <th>发票</th><th>客户</th><th>工资周期</th><th>发票上的写法</th><th style="text-align:right">正常</th><th style="text-align:right">加班</th><th style="text-align:right">时薪</th><th style="text-align:right">工资</th>
     </tr></thead><tbody>${det}</tbody></table></td></tr>` : ''}`;
   }).join('');
@@ -1493,6 +1507,77 @@ async function wgSetTax(keys, on) {
   _wg.tax_flags = r.tax_flags;
   if (keys.length > 1) toast(on ? `✅ ${keys.length} 人已标为可报税` : `已取消 ${keys.length} 人的可报税`);
   wgRender();
+}
+// ── 💸 关联 Zelle 账号: 一个人可连多个 Zelle 收款人, 金额按当前日期范围算 ──
+function _wgZ(g) {
+  const keys = (((_wg && _wg.zelle_links) || {})[g.gk] || {}).keys || [];
+  let out = 0, count = 0;
+  const names = keys.map(k => { const p = _wgZelle[k]; if (p) { out += p.out_total || 0; count += p.out_count || 0; } return p ? p.name : k; });
+  return { keys, names, out: Math.round(out * 100) / 100, count };
+}
+let _wgZGk = '', _wgZAll = null, _wgZPick = new Set();
+function _wgNameScore(a, b) {
+  const t = x => new Set(_wgKey(x).split(/[^a-z0-9\u4e00-\u9fff]+/).filter(w => w.length > 1));
+  const A = t(a), B = t(b);
+  let n = 0; A.forEach(w => { if (B.has(w)) n++; });
+  return n;
+}
+async function wgZelleOpen(gk) {
+  const g = _wgGroups().find(x => x.gk === gk);
+  if (!g) return;
+  _wgZGk = gk;
+  _wgZPick = new Set(_wgZ(g).keys);
+  _wgModalOpen(`💸 关联 Zelle 账号 · ${g.name}`,
+    `工资表合计 ${money(g.total)}。勾选通过 Zelle 给这个人转过钱的收款人（可以多个）；一个 Zelle 账号只能连一个人。`,
+    `<input type="text" id="wgZQ" placeholder="搜 Zelle 收款人姓名…" oninput="wgZelleList()" style="width:100%;margin-bottom:.45rem">
+     <div id="wgZList" style="border:1px solid var(--g200);border-radius:8px;max-height:50vh;overflow:auto"><div style="padding:.6rem;color:var(--g400)">加载 Zelle 收款人…</div></div>`,
+    '✅ 保存', wgZelleSave);
+  if (!_wgZAll) {
+    // 全部时间的收款人做候选 (不限当前日期范围)
+    const r = await api('/api/plaid/zelle-stats').catch(e => ({ error: e.message }));
+    if (!r || r.error) { document.getElementById('wgZList').innerHTML = `<div style="padding:.6rem;color:#dc2626">${esc((r && r.error) || '加载失败')}</div>`; return; }
+    _wgZAll = r.people || [];
+  }
+  wgZelleList();
+}
+function wgZelleList() {
+  const box = document.getElementById('wgZList');
+  if (!box || !_wgZAll) return;
+  const g = _wgGroups().find(x => x.gk === _wgZGk);
+  const q = (document.getElementById('wgZQ').value || '').trim().toLowerCase();
+  const owner = {};
+  for (const [k, v] of Object.entries((_wg && _wg.zelle_links) || {})) if (k !== _wgZGk) for (const z of (v.keys || [])) owner[z] = v.label || k.slice(2);
+  const names = g ? [g.name, ...g.names.keys()] : [];
+  let list = _wgZAll.map(p => ({ p, score: Math.max(0, ...names.map(n => _wgNameScore(n, p.name))) }));
+  if (q) list = list.filter(x => (x.p.name + ' ' + (x.p.aliases || []).join(' ')).toLowerCase().includes(q));
+  list.sort((a, b) => (_wgZPick.has(b.p.key) - _wgZPick.has(a.p.key)) || (b.score - a.score) || (b.p.out_total - a.p.out_total));
+  list = list.slice(0, 200);
+  box.innerHTML = list.length ? list.map(({ p, score }) => `<label style="display:flex;align-items:center;gap:.5rem;padding:.4rem .6rem;border-bottom:1px solid var(--g100);cursor:pointer;font-size:.82rem;${_wgZPick.has(p.key) ? 'background:#f5f3ff' : ''}">
+      <input type="checkbox" ${_wgZPick.has(p.key) ? 'checked' : ''} onchange="wgZelleToggle(${JSON.stringify(p.key).replace(/"/g, '&quot;')}, this.checked)">
+      <span style="flex:1;min-width:0"><b>${esc(p.name)}</b>${score && !_wgZPick.has(p.key) ? ' <span style="font-size:.68rem;color:#15803d;background:#dcfce7;border-radius:6px;padding:0 5px">名字相近</span>' : ''}
+        ${owner[p.key] ? `<span style="font-size:.7rem;color:#b45309"> · 已连给「${esc(owner[p.key])}」，勾上会改连到这个人</span>` : ''}
+        <br><span style="font-size:.72rem;color:var(--g500)">转出 ${p.out_count} 笔 · ${p.first_date || ''} ~ ${p.last_date || ''}${(p.aliases || []).length ? ' · 含 ' + esc(p.aliases.join('、')) : ''}</span></span>
+      <b style="color:#dc2626;white-space:nowrap">−${money(p.out_total)}</b></label>`).join('')
+    : `<div style="padding:.6rem;color:var(--g400)">${q ? '没有匹配的 Zelle 收款人' : '没有 Zelle 转账记录'}</div>`;
+  const info = document.getElementById('wgModalInfo');
+  if (info && g) info.innerHTML = `工资表合计 ${money(g.total)} · 已选 <b>${_wgZPick.size}</b> 个 Zelle 账号。勾选通过 Zelle 给这个人转过钱的收款人（可以多个）；一个 Zelle 账号只能连一个人。`;
+}
+function wgZelleToggle(key, on) { if (on) _wgZPick.add(key); else _wgZPick.delete(key); wgZelleList(); }
+async function wgZelleSave() {
+  const g = _wgGroups().find(x => x.gk === _wgZGk);
+  const r = await api('/api/acct/payroll-zelle-link', { method: 'POST', body: JSON.stringify({ gk: _wgZGk, label: g ? g.name : '', keys: [..._wgZPick] }) }).catch(e => ({ error: e.message }));
+  if (!r || !r.ok) return toast((r && r.error) || '保存失败', true);
+  wgModalClose();
+  _wg.zelle_links = r.zelle_links;
+  toast(_wgZPick.size ? `✅ 已关联 ${_wgZPick.size} 个 Zelle 账号` : '已取消 Zelle 关联');
+  wgRender();
+}
+// 合并/拆开时 Zelle 关联跟着走: 合并 = 各人的账号并到一起; 拆开 = 给金额最大的那种写法
+async function _wgMoveZelle(fromGks, toGk, label) {
+  const keys = [...new Set(fromGks.flatMap(k => ((((_wg && _wg.zelle_links) || {})[k] || {}).keys || [])))];
+  if (!keys.length) return;
+  const r = await api('/api/acct/payroll-zelle-link', { method: 'POST', body: JSON.stringify({ gk: toGk, label, keys }) }).catch(() => null);
+  if (r && r.ok) _wg.zelle_links = r.zelle_links;
 }
 // 取消「可报税」一律先确认(单个和批量都是), 防误触
 let _wgUntaxKeys = [];
@@ -1564,6 +1649,8 @@ async function wgMergeSubmit() {
   _wgSel.clear();
   toast(`✅ 已合并为「${to}」`);
   if (wasTax) await wgSetTax(['m:' + _wgKey(to)], true);
+  await _wgMoveZelle(_wgMergeGroups.map(g => g.gk), 'm:' + _wgKey(to), to);
+  wgRender();
   wgRender();
 }
 let _wgUnmergeGk = '';
@@ -1587,14 +1674,16 @@ async function wgUnmergeSubmit() {
   toast('已拆开');
   // 拆开前勾了可报税 → 拆出来的每种写法都保留勾选
   if (_wgTax(g)) await wgSetTax([...new Set([...g.names.keys()].map(n => 'n:' + _wgKey(n)))], true);
+  const big = _wgGroups().filter(x => [...g.names.keys()].some(n => 'n:' + _wgKey(n) === x.gk)).sort((a, b) => b.total - a.total)[0];
+  if (big) { await _wgMoveZelle([g.gk], big.gk, big.name); wgRender(); }
   wgRender();
 }
 function wgExport() {
   if (!_wg) return;
   const q = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
-  const lines = [['员工', '发票上的写法', '客户', '发票张数', '正常工时', '加班工时', '工资合计', '最早周期结束', '最近周期结束', '可报税', '报税分类'].map(q).join(',')];
+  const lines = [['员工', '发票上的写法', '客户', '发票张数', '正常工时', '加班工时', '工资合计', '最早周期结束', '最近周期结束', 'Zelle 账号', 'Zelle 转出', '可报税', '报税分类'].map(q).join(',')];
   // 导出当前看到的(搜索 / 累计门槛筛选后、当前排序)
-  for (const g of _wgRows) lines.push([g.name, [...g.names.keys()].join(' / '), [...g.companies].join(' / '), g.invoices.size, g.reg, g.ot, g.total.toFixed(2), g.first, g.last, _wgTax(g) ? '是' : '', g.total < _wgMinCur() ? '不用报税' : (_wgTax(g) ? '可报税' : '不可报税')].map(q).join(','));
+  for (const g of _wgRows) lines.push([g.name, [...g.names.keys()].join(' / '), [...g.companies].join(' / '), g.invoices.size, g.reg, g.ot, g.total.toFixed(2), g.first, g.last, _wgZ(g).names.join(' / '), _wgZ(g).keys.length ? _wgZ(g).out.toFixed(2) : '', _wgTax(g) ? '是' : '', g.total < _wgMinCur() ? '不用报税' : (_wgTax(g) ? '可报税' : '不可报税')].map(q).join(','));
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
   a.download = `员工工资汇总_${_wg.start}_${_wg.end}.csv`;
@@ -5260,7 +5349,7 @@ function _zFiltered() {
     const txns = p.txns.filter(t => (!dir || (dir === 'out' ? t.amount >= 0 : t.amount < 0))
       && (!annF || (annF === 'todo' ? ['pending', 'unreviewed'].includes(_zAnnSt(t)) : _zAnnSt(t) === annF)));
     if (!txns.length) continue;
-    const r = { name: p.name, key: p.key || p.name.toLowerCase(), contact: p.contact || null, txns, out_total: 0, out_count: 0, in_total: 0, in_count: 0, first_date: '', last_date: '' };
+    const r = { name: p.name, key: p.key || p.name.toLowerCase(), contact: p.contact || null, payroll_label: p.payroll_label || '', aliases: p.aliases || [], txns, out_total: 0, out_count: 0, in_total: 0, in_count: 0, first_date: '', last_date: '' };
     for (const t of txns) {
       if (t.amount >= 0) { r.out_total += t.amount; r.out_count++; } else { r.in_total += -t.amount; r.in_count++; }
       if (t.date && (!r.first_date || t.date < r.first_date)) r.first_date = t.date;
@@ -5312,6 +5401,7 @@ function zRender() {
       c.zelle_handle ? `<div style="font-size:.76rem;color:var(--g500);font-weight:400">📱 ${esc(c.zelle_handle)}</div>` : '',
       c.note ? `<div style="font-size:.74rem;color:#b45309;font-weight:400">📝 ${esc(c.note)}</div>` : '',
       (p.aliases || []).length ? `<div style="font-size:.74rem;color:#6d28d9;font-weight:400">🔀 已合并：${esc(p.aliases.join('、'))}</div>` : '',
+      p.payroll_label ? `<div style="font-size:.74rem;color:#15803d;font-weight:400">👷 工资汇总：${esc(p.payroll_label)}</div>` : '',
     ].join('');
     const rows = _zDetailRows(p.txns);
     return `<tr onclick="zToggleRow('${esc(p.key).replace(/'/g, "\\'")}')" style="cursor:pointer">
