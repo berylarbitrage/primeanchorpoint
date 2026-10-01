@@ -959,6 +959,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <input type="text" id="wgSearch" placeholder="搜姓名 / 客户…" oninput="wgRender()" style="width:190px">
         <button class="btn btn-sm btn-outline" onclick="wgExport()">⬇️ 导出 CSV</button>
       </div>
+      <div id="wgTiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.5rem;margin-bottom:.45rem"></div>
       <div id="wgStats" style="font-size:.78rem;color:var(--g500);margin-bottom:.5rem"></div>
       <div id="wgSelBar" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.45rem .6rem;margin-bottom:.5rem;font-size:.8rem"></div>
       <div style="overflow-x:auto">
@@ -967,6 +968,17 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         </tr></thead><tbody id="wgBody"><tr><td colspan="9" style="color:var(--g400)">加载中…</td></tr></tbody></table>
       </div>
       <p style="font-size:.74rem;color:var(--g400);margin-top:.5rem">点表头可以换排序（再点一次反过来）。数据来自正式发票（不含草稿、不含整柜计费）上的工资行，按发票工资周期的结束日筛选。同一个人在不同发票上写法不同（大小写、重音、错拼、名字顺序）时，勾选这几行再点「合并成一个人」，合并后大家看到的都一样；合并过的行可以点「拆开」恢复。</p>
+    </div>
+  </div>
+  <div id="wgModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:95;align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)wgModalClose()">
+    <div class="card" style="max-width:min(560px,96vw);width:100%;padding:1.1rem 1.3rem 1rem;max-height:92vh;display:flex;flex-direction:column">
+      <div id="wgModalTitle" style="font-weight:800;margin-bottom:.15rem"></div>
+      <div id="wgModalInfo" style="font-size:.78rem;color:var(--g500);margin-bottom:.55rem"></div>
+      <div id="wgModalBody" style="flex:1;overflow:auto"></div>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:.7rem">
+        <button class="btn btn-outline" onclick="wgModalClose()">取消</button>
+        <button class="btn btn-blue" id="wgModalOk"></button>
+      </div>
     </div>
   </div>
   <div id="paneTruck" style="display:none">
@@ -1256,7 +1268,7 @@ function showTab(t) {
   if (t === 'gusto') gustoInit();
 }
 // ── 👷 员工工资汇总: 发票工资行按人汇总, 可合并不同写法的名字 ──
-let _wg = null, _wgRows = [], _wgSelRows = [];
+let _wg = null, _wgRows = [], _wgSelRows = [], _wgLoadSeq = 0;
 // 排序: 点表头切换, 同一列再点反向; 记在本机
 let _wgSort = (() => { try { return JSON.parse(localStorage.getItem('wgSort')) || { k: 'total', d: -1 }; } catch (e) { return { k: 'total', d: -1 }; } })();
 const WG_SORT_DEFAULT_DIR = { name: 1, company: 1, invoices: -1, reg: -1, ot: -1, total: -1, last: -1 };
@@ -1301,7 +1313,9 @@ async function wgLoad() {
   const [s, e] = wgRangeDates();
   if (!s || !e) return;
   document.getElementById('wgBody').innerHTML = '<tr><td colspan="9" style="color:var(--g400)">加载中…</td></tr>';
+  const seq = ++_wgLoadSeq;   // 连着切日期时, 只认最后一次请求的结果
   const r = await api(`/api/acct/payroll-summary?start=${s}&end=${e}`).catch(err => ({ error: err.message }));
+  if (seq !== _wgLoadSeq) return;
   if (!r || r.error) { document.getElementById('wgBody').innerHTML = `<tr><td colspan="9" style="color:#dc2626">${esc((r && r.error) || '加载失败')}</td></tr>`; return; }
   _wg = r;
   _wgSel.clear();
@@ -1347,7 +1361,18 @@ function wgRender() {
     th.style.color = on ? '#0f4c6b' : '';
   });
   const total = groups.reduce((s, g) => s + g.total, 0);
-  document.getElementById('wgStats').textContent = `${_wg.start} ~ ${_wg.end} · ${_wg.invoice_count} 张发票 · ${groups.length} 人 · 工资合计 ${money(Math.round(total * 100) / 100)}`;
+  const allCount = _wgGroups().length;
+  const sumH = k => Math.round(groups.reduce((s, g) => s + g[k], 0) * 100) / 100;
+  const tile = (icon, label, val, sub) => `<div style="background:#f8fafc;border:1px solid var(--g200);border-radius:10px;padding:.5rem .7rem">
+    <div style="font-size:.72rem;color:var(--g500)">${icon} ${label}</div>
+    <div style="font-size:1.25rem;font-weight:800;color:#0f4c6b;line-height:1.3">${val}</div>
+    ${sub ? `<div style="font-size:.7rem;color:var(--g400)">${sub}</div>` : ''}</div>`;
+  document.getElementById('wgTiles').innerHTML =
+    tile('👷', '员工总数', `${groups.length} 人`, q ? `搜索结果；全部 ${allCount} 人` : '合并后按人计') +
+    tile('📄', '发票', `${_wg.invoice_count} 张`, '') +
+    tile('💰', '工资合计', money(Math.round(total * 100) / 100), q ? '搜索结果' : '') +
+    tile('⏱️', '工时', `${sumH('reg').toLocaleString('en-US')} h`, `加班 ${sumH('ot').toLocaleString('en-US')} h`);
+  document.getElementById('wgStats').textContent = `${_wg.start} ~ ${_wg.end}（按发票工资周期结束日）`;
   const canEdit = !!_wg.can_edit;
   // 已选的人: 搜索换了也保留, 可以先搜一个名字勾上, 再搜另一个名字勾上, 一起合并
   const all = _wgGroups();
@@ -1393,27 +1418,75 @@ function wgRender() {
 }
 function wgToggleSel(gk, on) { if (on) _wgSel.add(gk); else _wgSel.delete(gk); wgRender(); }
 function wgToggleOpen(gk) { if (_wgOpen.has(gk)) _wgOpen.delete(gk); else _wgOpen.add(gk); wgRender(); }
-async function wgMerge() {
+function wgModalClose() { document.getElementById('wgModal').style.display = 'none'; }
+function _wgModalOpen(title, info, body, okText, onOk) {
+  document.getElementById('wgModalTitle').textContent = title;
+  document.getElementById('wgModalInfo').innerHTML = info;
+  document.getElementById('wgModalBody').innerHTML = body;
+  const ok = document.getElementById('wgModalOk');
+  ok.textContent = okText;
+  ok.disabled = false;
+  ok.onclick = onOk;
+  document.getElementById('wgModal').style.display = 'flex';
+}
+let _wgMergeGroups = [];
+function wgMerge() {
   const groups = _wgGroups().filter(g => _wgSel.has(g.gk));
   if (groups.length < 2) return toast('至少勾选两个人才能合并', true);
-  const suggest = groups.slice().sort((a, b) => b.total - a.total)[0].name;
-  const to = prompt(`把这 ${groups.length} 个名字合并成同一个人：\n${groups.map(g => '· ' + g.name).join('\n')}\n\n合并后显示的名字：`, suggest);
-  if (to == null || !to.trim()) return;
-  const names = groups.flatMap(g => [g.name, ...g.names.keys()]);
-  const r = await api('/api/acct/payroll-merges', { method: 'POST', body: JSON.stringify({ names, to: to.trim() }) }).catch(e => ({ error: e.message }));
+  _wgMergeGroups = groups;
+  // 候选显示名: 各组名字 + 发票上出现过的写法, 去重; 默认工资最多的那组
+  const cands = [];
+  for (const g of groups.slice().sort((a, b) => b.total - a.total)) for (const n of [g.name, ...g.names.keys()]) if (!cands.includes(n)) cands.push(n);
+  const total = groups.reduce((s, g) => s + g.total, 0);
+  const inv = new Set(groups.flatMap(g => [...g.invoices])).size;
+  const body = `<div style="border:1px solid var(--g200);border-radius:8px;overflow:hidden;margin-bottom:.7rem">${groups.map(g => `
+      <div style="display:flex;justify-content:space-between;gap:.5rem;padding:.4rem .65rem;border-bottom:1px solid var(--g100);font-size:.82rem">
+        <span><b>${esc(g.name)}</b>${g.names.size > 1 ? `<span style="color:var(--g400);font-size:.72rem"> · ${g.names.size} 种写法</span>` : ''}<br><span style="color:var(--g500);font-size:.72rem">${[...g.companies].map(esc).join('、')} · ${g.invoices.size} 张发票</span></span>
+        <b style="white-space:nowrap">${money(g.total)}</b></div>`).join('')}
+      <div style="display:flex;justify-content:space-between;padding:.4rem .65rem;background:#eff6ff;font-size:.82rem"><span>合并后</span><b>${money(Math.round(total * 100) / 100)} · ${inv} 张发票</b></div>
+    </div>
+    <div style="font-size:.8rem;font-weight:700;margin-bottom:.3rem">合并后显示的名字</div>
+    <div style="display:flex;flex-direction:column;gap:.25rem;font-size:.82rem">${cands.map((n, i) => `
+      <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer"><input type="radio" name="wgMergeName" value="${i}" ${i === 0 ? 'checked' : ''} onchange="document.getElementById('wgMergeCustom').value=''"> ${esc(n)}</label>`).join('')}
+      <input type="text" id="wgMergeCustom" placeholder="或者自己填一个名字…" style="margin-top:.2rem" oninput="document.querySelectorAll('input[name=wgMergeName]').forEach(r => r.checked = false)">
+    </div>`;
+  window._wgMergeCands = cands;
+  _wgModalOpen('🔗 合并成同一个人', `把这 ${groups.length} 个名字算作同一个员工；所有人看到的汇总都会合并，随时可以「拆开」。`, body, '✅ 合并', wgMergeSubmit);
+}
+async function wgMergeSubmit() {
+  const custom = document.getElementById('wgMergeCustom').value.trim();
+  const r0 = document.querySelector('input[name=wgMergeName]:checked');
+  const to = custom || (r0 ? window._wgMergeCands[+r0.value] : '');
+  if (!to) return toast('请选一个名字或者自己填一个', true);
+  const ok = document.getElementById('wgModalOk');
+  ok.disabled = true;
+  const names = _wgMergeGroups.flatMap(g => [g.name, ...g.names.keys()]);
+  const r = await api('/api/acct/payroll-merges', { method: 'POST', body: JSON.stringify({ names, to }) }).catch(e => ({ error: e.message }));
+  ok.disabled = false;
   if (!r || !r.ok) return toast((r && r.error) || '合并失败', true);
+  wgModalClose();
   _wg.merges = r.merges;
   _wgSel.clear();
-  toast(`✅ 已合并为「${to.trim()}」`);
+  toast(`✅ 已合并为「${to}」`);
   wgRender();
 }
-async function wgUnmerge(gk) {
+let _wgUnmergeGk = '';
+function wgUnmerge(gk) {
   const g = _wgGroups().find(x => x.gk === gk);
-  if (!g || !confirm(`拆开「${g.name}」？合并进来的 ${g.names.size} 种写法会恢复成各自一行。`)) return;
+  if (!g) return;
+  _wgUnmergeGk = gk;
+  _wgModalOpen(`拆开「${g.name}」`, '这些写法会恢复成各自一行：',
+    `<div style="display:flex;flex-wrap:wrap;gap:.3rem">${[...g.names.keys()].map(n => `<span style="background:#f1f5f9;border-radius:12px;padding:1px 9px;font-size:.8rem">${esc(n)}</span>`).join('')}</div>`,
+    '拆开', wgUnmergeSubmit);
+}
+async function wgUnmergeSubmit() {
+  const g = _wgGroups().find(x => x.gk === _wgUnmergeGk);
+  if (!g) return wgModalClose();
   const m = _wg.merges || {};
   const names = [g.name, ...g.names.keys(), ...Object.keys(m).filter(k => _wgKey(m[k]) === _wgKey(g.name))];
   const r = await api('/api/acct/payroll-merges', { method: 'POST', body: JSON.stringify({ names, to: '' }) }).catch(e => ({ error: e.message }));
   if (!r || !r.ok) return toast((r && r.error) || '拆开失败', true);
+  wgModalClose();
   _wg.merges = r.merges;
   toast('已拆开');
   wgRender();
