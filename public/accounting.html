@@ -234,6 +234,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     </div>
     <div id="zSum" style="display:flex;gap:.45rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem;font-size:.82rem"></div>
     <div id="zReqBar" style="display:none;margin-bottom:.6rem"></div>
+    <div id="zSelBar" style="display:none;background:#f5f3ff;border:1px solid #c4b5fd;border-radius:8px;padding:.45rem .6rem;margin-bottom:.6rem;font-size:.8rem"></div>
     <div class="card" style="padding:0;overflow-x:auto">
       <table>
         <thead id="zHead"><tr>
@@ -296,6 +297,14 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     </div>
   </div>
   <!-- 🔀 Zelle 收款人合并确认: 仅管理员; 两边明细对照 → 勾选已核对 + 手输「合并」→ 最后再确认一次 -->
+  <div id="zgModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:96;align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)zgClose()">
+    <div class="card" style="max-width:min(760px,96vw);width:100%;padding:1.1rem 1.3rem 1rem;max-height:92vh;display:flex;flex-direction:column">
+      <div id="zgTitle" style="font-weight:800;margin-bottom:.15rem"></div>
+      <div id="zgInfo" style="font-size:.78rem;color:var(--g500);margin-bottom:.55rem"></div>
+      <div id="zgBody" style="flex:1;overflow:auto"></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:.6rem"><button class="btn btn-outline" onclick="zgClose()">关闭</button></div>
+    </div>
+  </div>
   <div id="zmModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:97;align-items:center;justify-content:center;padding:16px">
     <div class="card" style="max-width:560px;width:100%;padding:1.1rem 1.2rem 1rem;max-height:92vh;overflow:auto">
       <div style="font-weight:800;margin-bottom:.5rem;color:#6d28d9">🔀 合并收款人 · 请仔细核对</div>
@@ -5455,7 +5464,9 @@ function zRender() {
     chip(`共 <b>${list.length}</b> 人`)
     + chip(`转出 <b>${sums.oc}</b> 笔 <span style="color:#dc2626;font-weight:700">−${money(sums.ot)}</span>`)
     + chip(`转入 <b>${sums.ic}</b> 笔 <span style="color:#15803d;font-weight:700">+${money(sums.it)}</span>`)
-    + chip(`净额 <b>${sums.it - sums.ot >= 0 ? '+' : '−'}${money(Math.abs(sums.it - sums.ot))}</b>`);
+    + chip(`净额 <b>${sums.it - sums.ot >= 0 ? '+' : '−'}${money(Math.abs(sums.it - sums.ot))}</b>`)
+    + (() => { const n = _zDupGroups().length; return n ? `<a onclick="zgOpenSuggest()" style="cursor:pointer;text-decoration:none;background:#f5f3ff;border:1px solid #c4b5fd;color:#6d28d9;border-radius:999px;padding:.2rem .7rem;font-weight:700">🔀 可能是同一个人：${n} 组 →</a>` : ''; })();
+  _zRenderSelBar();
   const view = document.getElementById('zView').value;
   document.getElementById('zBtnAll').style.display = view === 'txns' ? 'none' : '';
   document.getElementById('zHead').innerHTML = view === 'txns'
@@ -5482,7 +5493,7 @@ function zRender() {
     ].join('');
     const rows = _zDetailRows(p.txns);
     return `<tr onclick="zToggleRow('${esc(p.key).replace(/'/g, "\\'")}')" style="cursor:pointer">
-      <td><span style="color:var(--g400)">${open ? '▼' : '▶'}</span></td>
+      <td style="white-space:nowrap"><input type="checkbox" title="勾选几个一起合并" ${_zSel.has(p.key) ? 'checked' : ''} onclick="event.stopPropagation();zSelToggle(${JSON.stringify(p.key).replace(/"/g, '&quot;')}, this.checked)" style="cursor:pointer;vertical-align:middle"> <span style="color:var(--g400)">${open ? '▼' : '▶'}</span></td>
       <td style="font-weight:700">${esc(p.name)} <span style="color:var(--g400);font-weight:400;font-size:.76rem">· ${p.txns.length} 笔</span>
         <a onclick="event.stopPropagation();zcEdit('${esc(p.key).replace(/'/g, "\\'")}')" style="cursor:pointer;color:#0ea5e9;font-size:.76rem;font-weight:400;text-decoration:underline;margin-left:.35rem">✎ 备注</a>${cInfo}</td>
       <td style="${num}">${p.out_count || '<span style="color:var(--g300)">—</span>'}</td>
@@ -5927,6 +5938,128 @@ async function zcUnmerge(i) {
   if (!a || USER.role !== 'admin') return;
   if (!(await pageConfirm(`把「${a}」从「${p.name}」拆开，恢复成单独的收款人？`))) return;
   _zcAliasPost('/api/plaid/zelle-aliases', { action: 'unmerge', alias_name: a }, `✅ 已拆开「${a}」`);
+}
+// ── 🔀 一次合并多个 Zelle 收款人: 自动找「可能是同一个人」+ 手动勾选 ──
+// 同一个人在不同银行的描述不一样 (Chase 带 Conf#, 有的带城市州名), 被拆成几行。
+// 判断依据: Zelle 号相同, 或名字去掉 Conf#… / 「, 城市, 州」尾巴后相同
+let _zSel = new Set(), _zgGroups = [], _zgDismiss = (() => { try { return new Set(JSON.parse(localStorage.getItem('zDupDismiss') || '[]')); } catch (e) { return new Set(); } })();
+function _zBaseName(n) {
+  return String(n || '').toLowerCase().replace(/\bconf\s*#.*$/, '').replace(/,.*$/, '').replace(/[^a-z0-9\u4e00-\u9fff ]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function _zHandles(p) {
+  return String(((p.contact || {}).zelle_handle) || '').split(/[,，;；\n]+/).map(h => {
+    h = h.trim().toLowerCase();
+    const d = h.replace(/\D/g, '');
+    return /@/.test(h) ? h : (d.length >= 10 ? d.slice(-10) : '');
+  }).filter(Boolean);
+}
+function _zDupGroups() {
+  const people = ((_zData && _zData.people) || []).filter(p => p.name !== '(未识别)');
+  const parent = people.map((_, i) => i);
+  const find = i => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const why = people.map(() => new Set());
+  const link = (i, j, r) => { why[i].add(r); why[j].add(r); const a = find(i), b = find(j); if (a !== b) parent[a] = b; };
+  const byName = new Map(), byHandle = new Map();
+  people.forEach((p, i) => {
+    const b = _zBaseName(p.name);
+    if (b.length >= 3) { if (byName.has(b)) link(i, byName.get(b), '名字相同（去掉 Conf# / 城市后）'); else byName.set(b, i); }
+    for (const h of _zHandles(p)) { if (byHandle.has(h)) link(i, byHandle.get(h), 'Zelle 号相同'); else byHandle.set(h, i); }
+  });
+  const g = new Map();
+  people.forEach((p, i) => { const r = find(i); if (!g.has(r)) g.set(r, { people: [], why: new Set() }); g.get(r).people.push(p); why[i].forEach(w => g.get(r).why.add(w)); });
+  return [...g.values()].filter(x => x.people.length > 1)
+    .map(x => ({ ...x, id: x.people.map(p => p.key).sort().join('|') }))
+    .filter(x => !_zgDismiss.has(x.id))
+    .sort((a, b) => b.people.reduce((s2, p) => s2 + p.out_total + p.in_total, 0) - a.people.reduce((s2, p) => s2 + p.out_total + p.in_total, 0));
+}
+function zSelToggle(k, on) { if (on) _zSel.add(k); else _zSel.delete(k); _zRenderSelBar(); }
+function _zRenderSelBar() {
+  const bar = document.getElementById('zSelBar');
+  const sel = ((_zData && _zData.people) || []).filter(p => _zSel.has(p.key));
+  if (!sel.length) { bar.style.display = 'none'; return; }
+  bar.style.display = '';
+  bar.innerHTML = `<b>已选 ${sel.length} 个：</b>${sel.map(p => `<span style="display:inline-block;background:#fff;border:1px solid #c4b5fd;border-radius:12px;padding:0 8px;margin:2px 3px">${esc(p.name)}</span>`).join('')}
+    <button class="btn btn-sm" style="background:#7c3aed;color:#fff" ${sel.length < 2 ? 'disabled title="再勾选至少一个"' : ''} onclick="zgOpenSelected()">🔀 合并选中</button>
+    <button class="btn btn-sm btn-outline" onclick="_zSel.clear();zRender()">清空</button>`;
+}
+function zgClose() { document.getElementById('zgModal').style.display = 'none'; }
+function zgOpenSuggest() {
+  _zgGroups = _zDupGroups();
+  document.getElementById('zgTitle').textContent = `🔀 可能是同一个人（${_zgGroups.length} 组）`;
+  document.getElementById('zgInfo').innerHTML = '同一个人从不同银行转账时，银行描述写法不一样（有的带 Conf#、有的带城市），被拆成了好几行。下面按 <b>Zelle 号相同</b> 或 <b>名字相同（去掉 Conf# / 城市后）</b> 找出来的，确认是同一个人就合并；不是的点「不是同一个人」以后不再提示。';
+  _zgRender();
+  document.getElementById('zgModal').style.display = 'flex';
+}
+function zgOpenSelected() {
+  const sel = ((_zData && _zData.people) || []).filter(p => _zSel.has(p.key));
+  if (sel.length < 2) return;
+  _zgGroups = [{ id: '__sel', people: sel, why: new Set(['手动勾选']) }];
+  document.getElementById('zgTitle').textContent = `🔀 合并选中的 ${sel.length} 个收款人`;
+  document.getElementById('zgInfo').textContent = '选一个保留的名字，其他名字所有时间的 Zelle 转账都会算到它名下，存过的 Zelle 号也并过来。';
+  _zgRender();
+  document.getElementById('zgModal').style.display = 'flex';
+}
+function _zgRender() {
+  const admin = USER.role === 'admin';
+  const box = document.getElementById('zgBody');
+  if (!_zgGroups.length) { box.innerHTML = '<div style="color:var(--g400);padding:.6rem">✅ 没有找到可能重复的收款人</div>'; return; }
+  box.innerHTML = _zgGroups.map((g, gi) => {
+    // 默认保留: 不带 Conf# / 城市的名字里笔数最多的
+    const def = g.people.slice().sort((a, b) => ((/conf\s*#|,/i.test(a.name)) - (/conf\s*#|,/i.test(b.name))) || (b.txns.length - a.txns.length))[0];
+    return `<div style="border:1px solid #c4b5fd;border-radius:10px;padding:.55rem .7rem;margin-bottom:.6rem">
+      <div style="font-size:.72rem;color:#6d28d9;margin-bottom:.3rem">${[...g.why].map(esc).join(' · ')}</div>
+      ${g.people.map(p => {
+        const accts = [...new Set(p.txns.map(t => t.account))];
+        return `<label style="display:flex;gap:.5rem;align-items:flex-start;padding:.3rem 0;border-bottom:1px dashed var(--g200);cursor:pointer;font-size:.8rem">
+          <input type="radio" name="zgPrim${gi}" value="${esc(p.key)}" ${p === def ? 'checked' : ''} style="margin-top:3px">
+          <span style="flex:1;min-width:0"><b>${esc(p.name)}</b> <span style="color:var(--g400)">· ${p.txns.length} 笔 · ${esc(p.first_date || '')} ~ ${esc(p.last_date || '')}</span>
+            ${(p.contact || {}).zelle_handle ? `<br><span style="color:var(--g500)">📱 ${esc(p.contact.zelle_handle)}</span>` : ''}
+            <br><span style="color:var(--g500);font-size:.74rem">🏦 ${accts.map(esc).join('、')}</span></span>
+          <span style="white-space:nowrap;text-align:right">${p.out_count ? `<b style="color:#dc2626">−${money(p.out_total)}</b>` : ''}${p.in_count ? `<br><b style="color:#15803d">+${money(p.in_total)}</b>` : ''}</span>
+        </label>`;
+      }).join('')}
+      <div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin-top:.45rem;font-size:.78rem">
+        <span style="color:var(--g500)">选中的名字保留，其他并进来。</span>
+        ${admin ? `<input type="text" id="zgType${gi}" placeholder="输入 合并 确认" style="width:110px;font-size:.78rem;padding:3px 6px" oninput="const b=document.getElementById('zgGo${gi}');b.disabled=this.value.trim()!=='合并';b.style.opacity=b.disabled?'.45':'1'">` : ''}
+        <span style="flex:1"></span>
+        ${g.id !== '__sel' ? `<button class="btn btn-sm btn-outline" onclick="zgDismiss(${gi})">不是同一个人</button>` : ''}
+        <button class="btn btn-sm" id="zgGo${gi}" style="background:#7c3aed;color:#fff;${admin ? 'opacity:.45' : ''}" ${admin ? 'disabled title="先在左边输入 合并"' : ''} onclick="zgMerge(${gi})">${admin ? '🔀 合并这一组' : '提交合并申请'}</button>
+      </div></div>`;
+  }).join('');
+}
+function zgDismiss(gi) {
+  const g = _zgGroups[gi];
+  if (!g) return;
+  _zgDismiss.add(g.id);
+  try { localStorage.setItem('zDupDismiss', JSON.stringify([..._zgDismiss])); } catch (e) {}
+  _zgGroups.splice(gi, 1);
+  _zgRender();
+  zRender();
+}
+async function zgMerge(gi) {
+  const g = _zgGroups[gi];
+  const r0 = document.querySelector(`input[name=zgPrim${gi}]:checked`);
+  if (!g || !r0) return;
+  const primary = g.people.find(p => p.key === r0.value);
+  const others = g.people.filter(p => p !== primary);
+  const admin = USER.role === 'admin';
+  if (admin && !(await pageConfirm(`最后确认：\n\n把 ${others.map(p => '「' + p.name + '」').join('、')}\n合并到「${primary.name}」？`))) return;
+  let ok = 0, err = '';
+  for (const p of others) {
+    try {
+      const r = await api(admin ? '/api/plaid/zelle-aliases' : '/api/plaid/zelle-alias-requests', { method: 'POST', body: JSON.stringify(admin
+        ? { action: 'merge', alias_name: p.name, primary_name: primary.name, confirm: '合并' }
+        : { alias_name: p.name, primary_name: primary.name, reason: '合并页面：' + [...g.why].join('、') }) });
+      if (r && r.error) throw new Error(r.error);
+      ok++;
+    } catch (e) { err = err || e.message || '失败'; }
+  }
+  if (err) toast(`${ok} 个成功，有失败的：${err}`, true);
+  else toast(admin ? `✅ 已把 ${ok} 个名字并入「${primary.name}」` : `✅ 已提交 ${ok} 条合并申请，等管理员审批`);
+  others.forEach(p => _zSel.delete(p.key)); _zSel.delete(primary.key);
+  await zLoad();
+  if (g.id === '__sel') zgClose();
+  else { _zgGroups = _zDupGroups(); _zgRender(); document.getElementById('zgTitle').textContent = `🔀 可能是同一个人（${_zgGroups.length} 组）`; }
 }
 // 待审批的合并申请: 页面顶上一条提示; 管理员点进去逐条审核
 let _zReqs = [];
