@@ -36020,6 +36020,11 @@ app.get('/api/plaid/zelle-stats', requireAdmin, requireRole('admin', 'cs', 'acco
         if (p) p.aliases.push(a.alias_name || a.alias_key);
       });
     } catch (e) {}
+    // 员工工资汇总里连到这个 Zelle 收款人的人 (只显示名字)
+    try {
+      const pl = _payrollZelleLinks();
+      for (const v of Object.values(pl)) for (const k of (v.keys || [])) { const p = people.get(k); if (p) p.payroll_label = v.label || ''; }
+    } catch (e) {}
     const out = [...people.values()].sort((a, b) => (b.out_total + b.in_total) - (a.out_total + a.in_total));
     res.json({
       people: out,
@@ -42143,7 +42148,37 @@ app.get('/api/acct/payroll-summary', requireAdmin, requireAcctView, (req, res) =
       if (n) invoiceCount++;
     }
     res.json({ ok: true, start, end, invoice_count: invoiceCount, items, merges: _payrollMerges(), tax_flags: _payrollTaxFlags(),
+      zelle_links: _payrollZelleLinks(), can_zelle: ['accounting', 'cs', 'admin'].includes(req.userRole),
       can_edit: ['accounting', 'cs', 'admin'].includes(req.userRole) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 工资汇总的人 ↔ Zelle 收款人: app_settings.payroll_zelle_links = { "<组键>": { label, keys: [Zelle 收款人键] } }
+// 一个人可以连多个 Zelle 账号; 一个 Zelle 账号只属于一个人(连给新的人时从旧的人那里拿走)
+function _payrollZelleLinks() {
+  try {
+    const r = db.prepare("SELECT value FROM app_settings WHERE key='payroll_zelle_links'").get();
+    const m = r ? JSON.parse(r.value) : {};
+    return m && typeof m === 'object' && !Array.isArray(m) ? m : {};
+  } catch (e) { return {}; }
+}
+app.post('/api/acct/payroll-zelle-link', requireAdmin, requireAcctWrite, (req, res) => {
+  try {
+    const b = req.body || {};
+    const gk = String(b.gk || '').slice(0, 200);
+    if (!/^[nm]:./.test(gk)) return res.status(400).json({ error: '没有指定员工' });
+    const keys = [...new Set((Array.isArray(b.keys) ? b.keys : []).map(k => String(k || '').trim().toLowerCase().slice(0, 120)).filter(Boolean))].slice(0, 50);
+    const m = _payrollZelleLinks();
+    for (const [g, v] of Object.entries(m)) {
+      if (g === gk) continue;
+      const left = (v.keys || []).filter(k => !keys.includes(k));
+      if (left.length) m[g] = { ...v, keys: left }; else delete m[g];
+    }
+    if (keys.length) m[gk] = { label: String(b.label || '').slice(0, 160), keys, by: req.userName || '', at: new Date().toISOString() };
+    else delete m[gk];
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('payroll_zelle_links', ?, CURRENT_TIMESTAMP)")
+      .run(JSON.stringify(m));
+    auditLog('payroll_zelle_link', req, { targetType: 'payroll', targetId: gk, details: { keys, label: b.label || '' } });
+    res.json({ ok: true, zelle_links: m });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // 「可报税」勾选: app_settings.payroll_tax_flags = { "<组键>": { by, at } }, 所有人共用。
