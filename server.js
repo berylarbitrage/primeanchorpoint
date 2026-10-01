@@ -42142,8 +42142,31 @@ app.get('/api/acct/payroll-summary', requireAdmin, requireAcctView, (req, res) =
       }
       if (n) invoiceCount++;
     }
-    res.json({ ok: true, start, end, invoice_count: invoiceCount, items, merges: _payrollMerges(),
+    res.json({ ok: true, start, end, invoice_count: invoiceCount, items, merges: _payrollMerges(), tax_flags: _payrollTaxFlags(),
       can_edit: ['accounting', 'cs', 'admin'].includes(req.userRole) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 「可报税」勾选: app_settings.payroll_tax_flags = { "<组键>": { by, at } }, 所有人共用。
+// 组键 = 前端按人归组的键 (n:<名字> / m:<合并后名字>, 小写去重音)
+function _payrollTaxFlags() {
+  try {
+    const r = db.prepare("SELECT value FROM app_settings WHERE key='payroll_tax_flags'").get();
+    const m = r ? JSON.parse(r.value) : {};
+    return m && typeof m === 'object' && !Array.isArray(m) ? m : {};
+  } catch (e) { return {}; }
+}
+app.post('/api/acct/payroll-tax-flag', requireAdmin, requireAcctWrite, (req, res) => {
+  try {
+    const keys = (Array.isArray((req.body || {}).keys) ? req.body.keys : [(req.body || {}).key])
+      .map(k => String(k || '').slice(0, 200)).filter(k => /^[nm]:./.test(k)).slice(0, 500);
+    if (!keys.length) return res.status(400).json({ error: '没有指定员工' });
+    const on = !!(req.body || {}).on;
+    const m = _payrollTaxFlags();
+    for (const k of keys) { if (on) m[k] = { by: req.userName || '', at: new Date().toISOString() }; else delete m[k]; }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('payroll_tax_flags', ?, CURRENT_TIMESTAMP)")
+      .run(JSON.stringify(m));
+    auditLog(on ? 'payroll_tax_flag_on' : 'payroll_tax_flag_off', req, { targetType: 'payroll', targetId: keys[0], details: { keys } });
+    res.json({ ok: true, tax_flags: m });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // 合并: body { names: [...], to: '显示名' }; 拆开: body { names: [...], to: '' }

@@ -959,6 +959,11 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <input type="text" id="wgSearch" placeholder="搜姓名 / 客户…" oninput="wgRender()" style="width:190px">
         <span style="display:inline-flex;align-items:center;gap:.3rem;font-size:.8rem;white-space:nowrap" title="所选日期范围内每人的累计工资">累计 ≥ $<input type="number" id="wgMin" min="0" step="100" oninput="wgMinChanged()" style="width:90px">
           <label style="display:inline-flex;align-items:center;gap:.2rem;cursor:pointer"><input type="checkbox" id="wgMinOnly" onchange="wgMinChanged()"> 只看达到的</label></span>
+        <select id="wgTaxFlt" onchange="wgRender()" title="按「可报税」勾选状态筛选">
+          <option value="">报税：全部</option>
+          <option value="1">✅ 已勾可报税</option>
+          <option value="0">☐ 未勾</option>
+        </select>
         <button class="btn btn-sm btn-outline" onclick="wgExport()">⬇️ 导出 CSV</button>
       </div>
       <div id="wgTiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.5rem;margin-bottom:.45rem"></div>
@@ -966,8 +971,8 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <div id="wgSelBar" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.45rem .6rem;margin-bottom:.5rem;font-size:.8rem"></div>
       <div style="overflow-x:auto">
         <table><thead><tr>
-          <th style="width:28px"></th><th data-wgs="name">员工姓名</th><th data-wgs="company">客户</th><th data-wgs="invoices" style="text-align:right">发票</th><th data-wgs="reg" style="text-align:right">正常工时</th><th data-wgs="ot" style="text-align:right">加班工时</th><th data-wgs="total" style="text-align:right">工资合计</th><th data-wgs="last">最早 ~ 最近周期</th><th>明细</th>
-        </tr></thead><tbody id="wgBody"><tr><td colspan="9" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+          <th style="width:28px"></th><th data-wgs="name">员工姓名</th><th data-wgs="company">客户</th><th data-wgs="invoices" style="text-align:right">发票</th><th data-wgs="reg" style="text-align:right">正常工时</th><th data-wgs="ot" style="text-align:right">加班工时</th><th data-wgs="total" style="text-align:right">工资合计</th><th data-wgs="last">最早 ~ 最近周期</th><th data-wgs="tax" style="text-align:center" title="勾上 = 这个人可以报税（所有人看到的一样）">可报税</th><th>明细</th>
+        </tr></thead><tbody id="wgBody"><tr><td colspan="10" style="color:var(--g400)">加载中…</td></tr></tbody></table>
       </div>
       <p style="font-size:.74rem;color:var(--g400);margin-top:.5rem">点表头可以换排序（再点一次反过来）。数据来自正式发票（不含草稿、不含整柜计费）上的工资行，按发票工资周期的结束日筛选。同一个人在不同发票上写法不同（大小写、重音、错拼、名字顺序）时，勾选这几行再点「合并成一个人」，合并后大家看到的都一样；合并过的行可以点「拆开」恢复。</p>
     </div>
@@ -1274,7 +1279,7 @@ function showTab(t) {
 let _wg = null, _wgRows = [], _wgSelRows = [], _wgLoadSeq = 0;
 // 排序: 点表头切换, 同一列再点反向; 记在本机
 let _wgSort = (() => { try { return JSON.parse(localStorage.getItem('wgSort')) || { k: 'total', d: -1 }; } catch (e) { return { k: 'total', d: -1 }; } })();
-const WG_SORT_DEFAULT_DIR = { name: 1, company: 1, invoices: -1, reg: -1, ot: -1, total: -1, last: -1 };
+const WG_SORT_DEFAULT_DIR = { tax: -1, name: 1, company: 1, invoices: -1, reg: -1, ot: -1, total: -1, last: -1 };
 function wgSortBy(k) {
   _wgSort = _wgSort.k === k ? { k, d: -_wgSort.d } : { k, d: WG_SORT_DEFAULT_DIR[k] || -1 };
   try { localStorage.setItem('wgSort', JSON.stringify(_wgSort)); } catch (e) {}
@@ -1283,7 +1288,7 @@ function wgSortBy(k) {
 function _wgSortGroups(groups) {
   const { k, d } = _wgSort;
   const val = g => k === 'name' ? g.name.toLowerCase() : k === 'company' ? [...g.companies].sort().join(' ').toLowerCase()
-    : k === 'invoices' ? g.invoices.size : k === 'last' ? g.last : (g[k] || 0);
+    : k === 'invoices' ? g.invoices.size : k === 'last' ? g.last : k === 'tax' ? (_wgTax(g) ? 1 : 0) : (g[k] || 0);
   return groups.sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * d || (b.total - a.total); });
 }
 const _wgSel = new Set(), _wgOpen = new Set();
@@ -1315,11 +1320,11 @@ function wgRangeChanged() {
 async function wgLoad() {
   const [s, e] = wgRangeDates();
   if (!s || !e) return;
-  document.getElementById('wgBody').innerHTML = '<tr><td colspan="9" style="color:var(--g400)">加载中…</td></tr>';
+  document.getElementById('wgBody').innerHTML = '<tr><td colspan="10" style="color:var(--g400)">加载中…</td></tr>';
   const seq = ++_wgLoadSeq;   // 连着切日期时, 只认最后一次请求的结果
   const r = await api(`/api/acct/payroll-summary?start=${s}&end=${e}`).catch(err => ({ error: err.message }));
   if (seq !== _wgLoadSeq) return;
-  if (!r || r.error) { document.getElementById('wgBody').innerHTML = `<tr><td colspan="9" style="color:#dc2626">${esc((r && r.error) || '加载失败')}</td></tr>`; return; }
+  if (!r || r.error) { document.getElementById('wgBody').innerHTML = `<tr><td colspan="10" style="color:#dc2626">${esc((r && r.error) || '加载失败')}</td></tr>`; return; }
   _wg = r;
   _wgSel.clear();
   wgRender();
@@ -1375,6 +1380,8 @@ function wgRender() {
   const minOnly = document.getElementById('wgMinOnly').checked;
   const base = groups;   // 统计格按门槛筛选前的全部人算
   if (minOnly) groups = over;
+  const taxFlt = document.getElementById('wgTaxFlt').value;
+  if (taxFlt) groups = groups.filter(g => !!_wgTax(g) === (taxFlt === '1'));
   _wgSortGroups(groups);
   _wgRows = groups;
   document.querySelectorAll('#paneWages th[data-wgs]').forEach(th => {
@@ -1399,7 +1406,8 @@ function wgRender() {
       <div style="font-size:.72rem;color:#92400e">🏷️ 累计 ≥ ${money(minV)}</div>
       <div style="font-size:1.25rem;font-weight:800;color:#b45309;line-height:1.3">${over.length} 人</div>
       <div style="font-size:.7rem;color:#a16207">合计 ${money(overSum)} · ${minOnly ? '正在只看这些人' : '点击只看这些人'}</div></div>`;
-  document.getElementById('wgStats').textContent = `${_wg.start} ~ ${_wg.end}（按发票工资周期结束日）`;
+  const taxN = base.filter(g => _wgTax(g)).length;
+  document.getElementById('wgStats').textContent = `${_wg.start} ~ ${_wg.end}（按发票工资周期结束日） · ✅ 可报税 ${taxN} 人${minOnly ? `（达到门槛的 ${over.length} 人里 ${over.filter(g => _wgTax(g)).length} 人）` : ''}`;
   const canEdit = !!_wg.can_edit;
   // 已选的人: 搜索换了也保留, 可以先搜一个名字勾上, 再搜另一个名字勾上, 一起合并
   const all = _wgGroups();
@@ -1412,11 +1420,13 @@ function wgRender() {
     selBar.innerHTML = `<b>已选 ${sel.length} 人：</b>${sel.map((g, i) => `<span style="display:inline-block;background:#fff;border:1px solid #bfdbfe;border-radius:12px;padding:0 8px;margin:2px 3px">${esc(g.name)} ${money(g.total)} <a style="cursor:pointer;color:#dc2626" title="取消选择" onclick="wgToggleSel(_wgSelRows[${i}].gk, false)">×</a></span>`).join('')}
       <span style="white-space:nowrap;margin-left:.3rem">
         <button class="btn btn-sm btn-blue" onclick="wgMerge()" ${sel.length < 2 ? 'disabled title="再勾选至少一个人"' : ''}>🔗 合并成一个人</button>
+        <button class="btn btn-sm btn-outline" onclick="wgSetTax([..._wgSel], true)" title="把已选的人都勾上可报税">✅ 标为可报税</button>
+        <button class="btn btn-sm btn-outline" onclick="wgSetTax([..._wgSel], false)">取消可报税</button>
         <button class="btn btn-sm btn-outline" onclick="_wgSel.clear();wgRender()">清空</button>
       </span>
-      ${sel.length < 2 ? '<div style="color:var(--g500);font-size:.74rem;margin-top:.2rem">再勾选至少一个人才能合并；可以换个搜索词找别的写法，已选的不会丢。</div>' : ''}`;
+      ${sel.length < 2 ? '<div style="color:var(--g500);font-size:.74rem;margin-top:.2rem">再勾选至少一个人才能合并（标可报税一个人也行）；可以换个搜索词找别的写法，已选的不会丢。</div>' : ''}`;
   } else selBar.style.display = 'none';
-  if (!groups.length) { document.getElementById('wgBody').innerHTML = `<tr><td colspan="9" style="color:var(--g400)">${q || document.getElementById('wgMinOnly').checked ? '没有符合条件的员工' : '这个日期范围内没有发票工资行'}</td></tr>`; return; }
+  if (!groups.length) { document.getElementById('wgBody').innerHTML = `<tr><td colspan="10" style="color:var(--g400)">${q || document.getElementById('wgMinOnly').checked || document.getElementById('wgTaxFlt').value ? '没有符合条件的员工' : '这个日期范围内没有发票工资行'}</td></tr>`; return; }
   _wgRows = groups;
   document.getElementById('wgBody').innerHTML = groups.map((g, i) => {
     const open = _wgOpen.has(g.gk);
@@ -1437,14 +1447,28 @@ function wgRender() {
       <td style="text-align:right">${_wgHrs(g.ot)}</td>
       <td style="text-align:right"><b>${money(g.total)}</b></td>
       <td style="font-size:.76rem;white-space:nowrap">${esc(g.first)}${g.last !== g.first ? ' ~ ' + esc(g.last) : ''}</td>
+      <td style="text-align:center">${canEdit
+        ? `<input type="checkbox" ${_wgTax(g) ? 'checked' : ''} onchange="wgSetTax([_wgRows[${i}].gk], this.checked)" title="${_wgTax(g) ? esc('已勾：' + (_wgTax(g).by || '') + ' ' + String(_wgTax(g).at || '').slice(0, 10)) : '勾上 = 可报税'}" style="cursor:pointer;width:16px;height:16px;accent-color:#15803d">`
+        : (_wgTax(g) ? '<span style="color:#15803d;font-weight:800">✓</span>' : '<span style="color:var(--g400)">—</span>')}</td>
       <td><a style="cursor:pointer;font-size:.76rem;color:#0f4c6b;text-decoration:underline" onclick="wgToggleOpen(_wgRows[${i}].gk)">${open ? '收起' : '明细'}</a></td>
-    </tr>${open ? `<tr><td colspan="9" style="background:#f8fafc;padding:.3rem .6rem"><table style="font-size:.76rem;width:100%"><thead><tr>
+    </tr>${open ? `<tr><td colspan="10" style="background:#f8fafc;padding:.3rem .6rem"><table style="font-size:.76rem;width:100%"><thead><tr>
       <th>发票</th><th>客户</th><th>工资周期</th><th>发票上的写法</th><th style="text-align:right">正常</th><th style="text-align:right">加班</th><th style="text-align:right">时薪</th><th style="text-align:right">工资</th>
     </tr></thead><tbody>${det}</tbody></table></td></tr>` : ''}`;
   }).join('');
 }
 function wgToggleSel(gk, on) { if (on) _wgSel.add(gk); else _wgSel.delete(gk); wgRender(); }
 function wgToggleOpen(gk) { if (_wgOpen.has(gk)) _wgOpen.delete(gk); else _wgOpen.add(gk); wgRender(); }
+// 「可报税」: 按人归组的键存服务器, 合并/拆开时跟着走
+function _wgTax(g) { return ((_wg && _wg.tax_flags) || {})[g.gk] || null; }
+async function wgSetTax(keys, on) {
+  keys = (keys || []).filter(Boolean);
+  if (!keys.length) return;
+  const r = await api('/api/acct/payroll-tax-flag', { method: 'POST', body: JSON.stringify({ keys, on }) }).catch(e => ({ error: e.message }));
+  if (!r || !r.ok) { toast((r && r.error) || '保存失败', true); wgRender(); return; }
+  _wg.tax_flags = r.tax_flags;
+  if (keys.length > 1) toast(on ? `✅ ${keys.length} 人已标为可报税` : `已取消 ${keys.length} 人的可报税`);
+  wgRender();
+}
 function wgModalClose() { document.getElementById('wgModal').style.display = 'none'; }
 function _wgModalOpen(title, info, body, okText, onOk) {
   document.getElementById('wgModalTitle').textContent = title;
@@ -1493,8 +1517,11 @@ async function wgMergeSubmit() {
   if (!r || !r.ok) return toast((r && r.error) || '合并失败', true);
   wgModalClose();
   _wg.merges = r.merges;
+  // 合并前任何一个人勾了可报税 → 合并后的这个人也勾上
+  const wasTax = _wgMergeGroups.some(g => _wgTax(g));
   _wgSel.clear();
   toast(`✅ 已合并为「${to}」`);
+  if (wasTax) await wgSetTax(['m:' + _wgKey(to)], true);
   wgRender();
 }
 let _wgUnmergeGk = '';
@@ -1516,14 +1543,16 @@ async function wgUnmergeSubmit() {
   wgModalClose();
   _wg.merges = r.merges;
   toast('已拆开');
+  // 拆开前勾了可报税 → 拆出来的每种写法都保留勾选
+  if (_wgTax(g)) await wgSetTax([...new Set([...g.names.keys()].map(n => 'n:' + _wgKey(n)))], true);
   wgRender();
 }
 function wgExport() {
   if (!_wg) return;
   const q = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
-  const lines = [['员工', '发票上的写法', '客户', '发票张数', '正常工时', '加班工时', '工资合计', '最早周期结束', '最近周期结束'].map(q).join(',')];
+  const lines = [['员工', '发票上的写法', '客户', '发票张数', '正常工时', '加班工时', '工资合计', '最早周期结束', '最近周期结束', '可报税'].map(q).join(',')];
   // 导出当前看到的(搜索 / 累计门槛筛选后、当前排序)
-  for (const g of _wgRows) lines.push([g.name, [...g.names.keys()].join(' / '), [...g.companies].join(' / '), g.invoices.size, g.reg, g.ot, g.total.toFixed(2), g.first, g.last].map(q).join(','));
+  for (const g of _wgRows) lines.push([g.name, [...g.names.keys()].join(' / '), [...g.companies].join(' / '), g.invoices.size, g.reg, g.ot, g.total.toFixed(2), g.first, g.last, _wgTax(g) ? '是' : ''].map(q).join(','));
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
   a.download = `员工工资汇总_${_wg.start}_${_wg.end}.csv`;
