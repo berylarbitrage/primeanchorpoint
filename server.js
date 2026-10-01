@@ -36059,7 +36059,8 @@ app.post('/api/plaid/zelle-contacts', requireAdmin, requireRole('admin', 'cs', '
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // 单笔改判: exclude 移除 / rename 重新标注给别的收款人 / clear 恢复自动归属
-app.post('/api/plaid/zelle-overrides', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
+// 单笔改归属 / 移除 / 恢复: 只有管理员能做
+app.post('/api/plaid/zelle-overrides', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const b = req.body || {};
     const txnId = String(b.txn_id || '').trim();
