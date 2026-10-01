@@ -6020,11 +6020,12 @@ function _zgRender() {
       }).join('')}
       <div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin-top:.45rem;font-size:.78rem">
         <span style="color:var(--g500)">选中的名字保留，其他并进来。</span>
-        ${admin ? `<input type="text" id="zgType${gi}" placeholder="输入 合并 确认" style="width:110px;font-size:.78rem;padding:3px 6px" oninput="const b=document.getElementById('zgGo${gi}');b.disabled=this.value.trim()!=='合并';b.style.opacity=b.disabled?'.45':'1'">` : ''}
+        <label style="display:inline-flex;align-items:center;gap:.3rem;cursor:pointer;font-weight:700;color:#6d28d9"><input type="checkbox" id="zgChk${gi}" onchange="const b=document.getElementById('zgGo${gi}');b.disabled=!this.checked;b.style.opacity=this.checked?'1':'.45'" style="width:16px;height:16px;accent-color:#7c3aed"> 我已核对，这些是同一个人</label>
         <span style="flex:1"></span>
         ${g.id !== '__sel' ? `<button class="btn btn-sm btn-outline" onclick="zgDismiss(${gi})">不是同一个人</button>` : ''}
-        <button class="btn btn-sm" id="zgGo${gi}" style="background:#7c3aed;color:#fff;${admin ? 'opacity:.45' : ''}" ${admin ? 'disabled title="先在左边输入 合并"' : ''} onclick="zgMerge(${gi})">${admin ? '🔀 合并这一组' : '提交合并申请'}</button>
-      </div></div>`;
+        <button class="btn btn-sm" id="zgGo${gi}" style="background:#7c3aed;color:#fff;opacity:.45" disabled title="先勾左边「我已核对」" onclick="zgMerge(${gi})">${admin ? '🔀 合并这一组' : '提交合并申请'}</button>
+      </div>
+      <div id="zgErr${gi}" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.35rem"></div></div>`;
   }).join('');
 }
 function zgDismiss(gi) {
@@ -6054,7 +6055,12 @@ async function zgMerge(gi) {
       ok++;
     } catch (e) { err = err || e.message || '失败'; }
   }
-  if (err) toast(`${ok} 个成功，有失败的：${err}`, true);
+  if (err) {
+    toast(`${ok} 个成功，有失败的：${err}`, true);
+    const e = document.getElementById('zgErr' + gi);
+    if (e) { e.style.display = ''; e.textContent = `❌ ${ok ? ok + ' 个已合并，' : ''}合并失败：${err}`; }
+    if (!ok) return;
+  }
   else toast(admin ? `✅ 已把 ${ok} 个名字并入「${primary.name}」` : `✅ 已提交 ${ok} 条合并申请，等管理员审批`);
   others.forEach(p => _zSel.delete(p.key)); _zSel.delete(primary.key);
   await zLoad();
