@@ -1073,6 +1073,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         </select>
         <select id="bankFltInternal" onchange="bankLoadTxns()" title="三家自家公司账户之间的往来" style="display:none"><option value="">内部往来：全部</option></select>
         <input type="text" id="bankFltQ" placeholder="搜商户 / 描述 / 备注…" oninput="clearTimeout(window._bq);window._bq=setTimeout(bankLoadTxns,300)" style="width:200px">
+        <input type="text" id="bankFltAmt" inputmode="decimal" placeholder="💲 金额，如 1600 / 700-900" title="按金额搜（收入、支出都算，不分正负）：&#10;1600 → 正好 $1,600.00&#10;700-900 → $700 到 $900 之间&#10;>2000 → 大于等于 $2,000&#10;<50 → 小于等于 $50" oninput="clearTimeout(window._bq);window._bq=setTimeout(bankLoadTxns,300)" style="width:170px">
         <input type="date" id="bankFltFrom" onchange="bankLoadTxns()">
         <span style="color:var(--g400)">→</span>
         <input type="date" id="bankFltTo" onchange="bankLoadTxns()">
@@ -6238,8 +6239,24 @@ function _bankInternalParty(x) {
   }
   return null;
 }
+// 金额搜索: "1600" 精确 / "700-900" 区间 / ">2000" / "<50"; 按绝对值, 收支都算。认不出返回 null(不筛)
+function _bankParseAmt(raw) {
+  const t = String(raw || '').replace(/[$,\s]/g, '').replace(/[~～—–]/g, '-').replace(/[＞]/g, '>').replace(/[＜]/g, '<');
+  if (!t) return null;
+  const num = v => (v === '' || isNaN(Number(v)) ? null : Math.abs(Number(v)));
+  let m = t.match(/^(>=?|<=?)(\d*\.?\d+)$/);
+  if (m) { const v = num(m[2]); return v == null ? null : (m[1][0] === '>' ? { min: v, max: Infinity } : { min: 0, max: v }); }
+  m = t.match(/^(\d*\.?\d+)-(\d*\.?\d+)$/);
+  if (m) { const a = num(m[1]), b = num(m[2]); return a == null || b == null ? null : { min: Math.min(a, b), max: Math.max(a, b) }; }
+  const v = num(t);
+  return v == null ? null : { min: v - 0.005, max: v + 0.005 };
+}
 function _bankApplyLocalFilters(list) {
   const val = id => (document.getElementById(id) || {}).value || '';
+  const amt = _bankParseAmt(val('bankFltAmt'));
+  const amtEl = document.getElementById('bankFltAmt');
+  if (amtEl) amtEl.style.borderColor = val('bankFltAmt').trim() && !amt ? '#dc2626' : '';
+  if (amt) list = list.filter(x => { const a = Math.abs(Number(x.amount) || 0); return a >= amt.min - 1e-9 && a <= amt.max + 1e-9; });
   const dir = val('bankFltDir'), cat = val('bankFltCat'), typ = val('bankFltType'), internal = val('bankFltInternal');
   // Plaid 金额: 正数=支出, 负数=收入
   if (dir) list = list.filter(x => dir === 'out' ? (x.amount || 0) > 0 : (x.amount || 0) < 0);
