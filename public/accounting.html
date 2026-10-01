@@ -495,8 +495,27 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <div class="card">
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.55rem">
         <b style="font-size:.92rem">Gusto 付款流水</b>
-        <span style="font-size:.72rem;color:var(--g400)">全部记录 · 按付款日期的自然周（周一~周日）分组，不受上面对账周期影响</span>
-        <input type="text" id="gustoPaySearch" placeholder="搜姓名 / 方式 / 状态…" oninput="renderGustoPayList()" style="width:200px">
+        <span style="font-size:.72rem;color:var(--g400)">不受上面对账周期影响</span>
+        <select id="gustoPayGrp" onchange="gustoPayPrefSave();renderGustoPayList()" title="分组方式">
+          <option value="payroll">💵 按 Payroll（每次发薪）</option>
+          <option value="week">📅 按自然周</option>
+          <option value="month">🗓️ 按月</option>
+          <option value="dept">🏢 按客户 / 部门</option>
+          <option value="">不分组</option>
+        </select>
+        <select id="gustoPayRange" onchange="gustoPayRangeChanged()" title="按付款日期筛选">
+          <option value="">时间：全部</option>
+          <option value="thisweek">本周</option>
+          <option value="lastweek">上周</option>
+          <option value="thismonth">本月</option>
+          <option value="lastmonth">上月</option>
+          <option value="90d">近 90 天</option>
+          <option value="thisyear">今年</option>
+          <option value="custom">自定义…</option>
+        </select>
+        <input type="date" id="gustoPayFrom" onchange="renderGustoPayList()" style="display:none">
+        <input type="date" id="gustoPayTo" onchange="renderGustoPayList()" style="display:none">
+        <input type="text" id="gustoPaySearch" placeholder="搜姓名 / 方式 / 状态 / 部门…" oninput="renderGustoPayList()" style="width:200px">
         <button class="btn btn-sm btn-outline" id="gustoAutoMatchBtn" style="display:none" onclick="gustoBankAutoMatch()" title="把未关联的付款和金额一致、日期±7天内的 Gusto 银行转账自动配对">⚡ 自动关联银行转账</button>
         <span id="gustoPayStats" style="font-size:.78rem;color:var(--g500)"></span>
       </div>
@@ -4323,22 +4342,79 @@ function _gustoWeekOf(dateStr) {
   const monday = new Date(d.getTime() - ((d.getUTCDay() + 6) % 7) * 86400000);
   return [_gd(monday), _gd(new Date(monday.getTime() + 6 * 86400000))];
 }
+// 流水的分组方式 / 时间范围: 记在本机
+function gustoPayPrefSave() {
+  try { localStorage.setItem('gustoPayPref', JSON.stringify({ g: document.getElementById('gustoPayGrp').value, r: document.getElementById('gustoPayRange').value })); } catch (e) {}
+}
+function _gustoPayPrefLoad() {
+  if (_gustoPayPrefLoaded) return;
+  _gustoPayPrefLoaded = true;
+  try {
+    const v = JSON.parse(localStorage.getItem('gustoPayPref') || 'null');
+    if (v) {
+      if ([...document.getElementById('gustoPayGrp').options].some(o => o.value === v.g)) document.getElementById('gustoPayGrp').value = v.g;
+      if (v.r !== 'custom' && [...document.getElementById('gustoPayRange').options].some(o => o.value === v.r)) document.getElementById('gustoPayRange').value = v.r;
+    }
+  } catch (e) {}
+}
+let _gustoPayPrefLoaded = false;
+function gustoPayRangeChanged() {
+  const custom = document.getElementById('gustoPayRange').value === 'custom';
+  ['gustoPayFrom', 'gustoPayTo'].forEach(id => { document.getElementById(id).style.display = custom ? '' : 'none'; });
+  gustoPayPrefSave();
+  renderGustoPayList();
+}
+function _gustoPayRangeDates() {
+  const v = document.getElementById('gustoPayRange').value;
+  if (!v) return ['', ''];
+  if (v === 'custom') return [document.getElementById('gustoPayFrom').value, document.getElementById('gustoPayTo').value];
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  const monday = new Date(today.getTime() - ((today.getUTCDay() + 6) % 7) * 86400000);
+  if (v === 'thisweek') return [_gd(monday), _gd(new Date(monday.getTime() + 6 * 86400000))];
+  if (v === 'lastweek') return [_gd(new Date(monday.getTime() - 7 * 86400000)), _gd(new Date(monday.getTime() - 86400000))];
+  if (v === 'thismonth') return [_gd(new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1))), _gd(new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 0)))];
+  if (v === 'lastmonth') return [_gd(new Date(Date.UTC(now.getFullYear(), now.getMonth() - 1, 1))), _gd(new Date(Date.UTC(now.getFullYear(), now.getMonth(), 0)))];
+  if (v === '90d') return [_gd(new Date(today.getTime() - 89 * 86400000)), _gd(today)];
+  if (v === 'thisyear') return [`${now.getFullYear()}-01-01`, `${now.getFullYear()}-12-31`];
+  return ['', ''];
+}
+const _GUSTO_WD = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 function renderGustoPayList() {
+  _gustoPayPrefLoad();
   document.getElementById('gustoAutoMatchBtn').style.display = canAnnotate() ? '' : 'none';
   const q = (document.getElementById('gustoPaySearch').value || '').trim().toLowerCase();
-  const rows = _gustoPayRows.filter(r => !q || (r.contractor_name || '').toLowerCase().includes(q)
-    || (r.payment_method || '').toLowerCase().includes(q) || (r.status || '').toLowerCase().includes(q));
+  const [from, to] = _gustoPayRangeDates();
+  const rows = _gustoPayRows.filter(r => (!from || r.date >= from) && (!to || r.date <= to)
+    && (!q || (r.contractor_name || '').toLowerCase().includes(q)
+    || (r.payment_method || '').toLowerCase().includes(q) || (r.status || '').toLowerCase().includes(q)
+    || (r.department || '').toLowerCase().includes(q)));
+  const grp = document.getElementById('gustoPayGrp').value;
+  const grpLabel = { payroll: '按 Payroll 分组', week: '按自然周分组', month: '按月分组', dept: '按客户/部门分组', '': '不分组' }[grp];
   const w2Sum = rows.filter(r => r.wage_type === 'W2').reduce((s2, x) => s2 + (+x.wage_total || 0), 0);
   document.getElementById('gustoPayStats').textContent =
-    `${rows.length} 笔 · 合计 ${money(rows.reduce((s2, x) => s2 + (+x.wage_total || 0), 0))}${w2Sum ? `（其中 W-2 员工工资 ${money(w2Sum)}）` : ''} · 按自然周分组`;
-  // 按自然周分组; 服务器按日期倒序给行, 依出现顺序建组 = 最近的周在最上面
+    `${from || to ? `${from || '…'} ~ ${to || '…'} · ` : ''}${rows.length} 笔 · 合计 ${money(rows.reduce((s2, x) => s2 + (+x.wage_total || 0), 0))}${w2Sum ? `（其中 W-2 员工工资 ${money(w2Sum)}）` : ''} · ${grpLabel}`;
+  // 分组: payroll = 同一付款日的一次发薪; 服务器按日期倒序给行, 依出现顺序建组 = 最近的在最上面
   const groups = new Map();
   for (const p of rows) {
-    const [ws, we] = _gustoWeekOf(p.date);
-    if (!groups.has(ws)) groups.set(ws, { ws, we, rows: [], sum: 0 });
-    const g = groups.get(ws);
+    let k, label;
+    if (grp === 'payroll') {
+      const d = new Date(String(p.date || '') + 'T00:00:00Z');
+      k = p.date; label = `💵 Payroll ${p.date}${isNaN(d) ? '' : '（' + _GUSTO_WD[d.getUTCDay()] + '）'}`;
+    } else if (grp === 'week') { const [ws, we] = _gustoWeekOf(p.date); k = ws; label = `📅 ${ws} ~ ${we}`; }
+    else if (grp === 'month') { k = String(p.date || '').slice(0, 7); label = `🗓️ ${k}`; }
+    else if (grp === 'dept') { k = p.department || '（没有部门）'; label = `🏢 ${k}`; }
+    else { k = ''; label = ''; }
+    if (!groups.has(k)) groups.set(k, { label, rows: [], sum: 0, linked: 0, people: new Set() });
+    const g = groups.get(k);
     g.rows.push(p);
     g.sum += (+p.wage_total || 0);
+    if (p.bank_txn_id) g.linked++;
+    g.people.add(p.contractor_name);
+  }
+  if (grp === 'dept') {
+    const arr = [...groups.entries()].sort((a, b) => b[1].sum - a[1].sum);
+    groups.clear(); arr.forEach(([k, v]) => groups.set(k, v));
   }
   // 银行转账列: 已挂的画徽章(绿=已审核通过, 黄=待审核, 悬停看银行/账户/经手人),
   // admin 对待审核的行内一键 ✓通过 / ✕驳回; 没挂的给「🔗 关联」入口 (staff 只读)
@@ -4375,7 +4451,7 @@ function renderGustoPayList() {
   };
   const rowHtml = p => `<tr>
     <td style="white-space:nowrap">${esc(p.date)}</td>
-    <td><b>${esc(p.contractor_name || p.contractor_uuid)}</b>${p.wage_type === 'W2' ? ' <span title="W-2 员工工资，不参与合同工对账" style="font-size:.68rem;color:#1e40af;background:#dbeafe;border:1px solid #bfdbfe;border-radius:6px;padding:0 4px">W-2</span>' : ''}</td>
+    <td><b>${esc(p.contractor_name || p.contractor_uuid)}</b>${p.department && grp !== 'dept' ? ` <span style="font-size:.68rem;color:var(--g500)">· ${esc(p.department)}</span>` : ''}${p.wage_type === 'W2' ? ' <span title="W-2 员工工资，不参与合同工对账" style="font-size:.68rem;color:#1e40af;background:#dbeafe;border:1px solid #bfdbfe;border-radius:6px;padding:0 4px">W-2</span>' : ''}</td>
     <td>${esc(p.payment_method || '—')}</td>
     <td style="text-align:right">${p.hours != null ? (+p.hours).toFixed(2) : '—'}</td>
     <td style="text-align:right">${p.wage ? money(p.wage) : '—'}</td>
@@ -4385,12 +4461,13 @@ function renderGustoPayList() {
     <td>${p.status === 'Funded' ? '<span style="color:#166534">✅ Funded</span>' : esc(p.status || '—')}${p.source === 'import' ? ' <span title="来自手动导入的付款报告" style="font-size:.68rem;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:0 4px">导入</span>' : ''}</td>
     <td>${bankCell(p)}</td>
   </tr>`;
-  document.getElementById('gustoPayBody').innerHTML = groups.size
-    ? [...groups.values()].map(g => `<tr style="background:#f1f5f9">
-        <td colspan="10" style="font-weight:700;font-size:.8rem;padding:.4rem .5rem">📅 ${esc(g.ws)} ~ ${esc(g.we)}
-          <span style="color:var(--g500);font-weight:400">· ${g.rows.length} 笔 · 小计</span> ${money(g.sum)}</td>
-      </tr>` + g.rows.map(rowHtml).join('')).join('')
-    : '<tr><td colspan="10" style="color:var(--g400)">还没有 Gusto 付款记录</td></tr>';
+  document.getElementById('gustoPayBody').innerHTML = rows.length
+    ? [...groups.values()].map(g => (g.label ? `<tr style="background:#f1f5f9">
+        <td colspan="10" style="font-weight:700;font-size:.8rem;padding:.4rem .5rem">${esc(g.label)}
+          <span style="color:var(--g500);font-weight:400">· ${g.rows.length} 笔 · ${g.people.size} 人 · 小计</span> ${money(g.sum)}
+          <span style="font-weight:400;font-size:.74rem;color:${g.linked === g.rows.length ? '#166534' : '#b45309'}">· 银行已关联 ${g.linked}/${g.rows.length}</span></td>
+      </tr>` : '') + g.rows.map(rowHtml).join('')).join('')
+    : `<tr><td colspan="10" style="color:var(--g400)">${_gustoPayRows.length ? '这个时间范围 / 搜索条件下没有付款' : '还没有 Gusto 付款记录'}</td></tr>`;
 }
 // ── 🏦 付款 ↔ 银行转账关联: 候选只有银行历史里的 Gusto 交易, 其他转账不能挂 ──
 let _gustoBankTxns = {}, _gustoBankRows = null, _gustoBankTarget = null, _gustoBankSel = '';

@@ -41772,7 +41772,12 @@ app.post('/api/acct/gusto/import', requireAdmin, requireRole('admin'), gustoRepo
       if (before) {
         if (before.bank_txn_id) keptLinks++;
         const same = DATA_FIELDS.every(f => String(before[f] == null ? '' : before[f]) === String(p[f] == null ? '' : p[f]));
-        if (same) { unchanged++; }
+        if (same) {
+          unchanged++;
+          // 数据没变也补一下原始行(以前的导入把表头认错了, 部门等列是空的), 不算「更新」
+          const rawNew = JSON.stringify(p.raw || {});
+          if (before.raw_json !== rawNew) db.prepare('UPDATE gusto_payments SET raw_json=? WHERE uuid=?').run(rawNew, before.uuid);
+        }
         else {
           updated++; prevRows.push(before);
           upP.run(p.uuid, '', p.contractor_name, p.date, p.payment_method, p.wage_type, p.status,
@@ -41878,9 +41883,15 @@ app.get('/api/acct/gusto/payments', requireAdmin, requireAcctView, (req, res) =>
     const ranged = /^\d{4}-\d{2}-\d{2}$/.test(start) && /^\d{4}-\d{2}-\d{2}$/.test(end);
     let rows = db.prepare(`SELECT uuid, contractor_uuid, contractor_name, date, payment_method, wage_type, status,
         hours, hourly_rate, wage, bonus, reimbursement, wage_total, source, bank_txn_id,
-        bank_link_status, bank_link_by, bank_link_at, bank_link_review_by, synced_at
+        bank_link_status, bank_link_by, bank_link_at, bank_link_review_by, synced_at, raw_json
       FROM gusto_payments ${ranged ? 'WHERE date>=? AND date<=?' : ''}
-      ORDER BY date DESC, contractor_name LIMIT 2000`).all(...(ranged ? [start, end] : []));
+      ORDER BY date DESC, contractor_name LIMIT 5000`).all(...(ranged ? [start, end] : []));
+    // 部门(报告里的 Department, 一般是客户公司)给前端分组用; raw_json 本身不下发
+    rows = rows.map(({ raw_json, ...r }) => {
+      let dep = '';
+      try { const j = JSON.parse(raw_json || '{}'); dep = String(j.Department || j.department || (j.department_name) || '').trim(); } catch (e) {}
+      return { ...r, department: dep };
+    });
     if (q) {
       rows = rows.filter(r => (r.contractor_name || '').toLowerCase().includes(q)
         || (r.payment_method || '').toLowerCase().includes(q)
