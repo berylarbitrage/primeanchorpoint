@@ -1421,7 +1421,7 @@ function wgRender() {
       <span style="white-space:nowrap;margin-left:.3rem">
         <button class="btn btn-sm btn-blue" onclick="wgMerge()" ${sel.length < 2 ? 'disabled title="再勾选至少一个人"' : ''}>🔗 合并成一个人</button>
         <button class="btn btn-sm btn-outline" onclick="wgSetTax([..._wgSel], true)" title="把已选的人都勾上可报税">✅ 标为可报税</button>
-        <button class="btn btn-sm btn-outline" onclick="wgSetTax([..._wgSel], false)">取消可报税</button>
+        <button class="btn btn-sm btn-outline" onclick="wgUntaxAsk([..._wgSel])">取消可报税</button>
         <button class="btn btn-sm btn-outline" onclick="_wgSel.clear();wgRender()">清空</button>
       </span>
       ${sel.length < 2 ? '<div style="color:var(--g500);font-size:.74rem;margin-top:.2rem">再勾选至少一个人才能合并（标可报税一个人也行）；可以换个搜索词找别的写法，已选的不会丢。</div>' : ''}`;
@@ -1447,9 +1447,12 @@ function wgRender() {
       <td style="text-align:right">${_wgHrs(g.ot)}</td>
       <td style="text-align:right"><b>${money(g.total)}</b></td>
       <td style="font-size:.76rem;white-space:nowrap">${esc(g.first)}${g.last !== g.first ? ' ~ ' + esc(g.last) : ''}</td>
-      <td style="text-align:center">${canEdit
-        ? `<input type="checkbox" ${_wgTax(g) ? 'checked' : ''} onchange="wgSetTax([_wgRows[${i}].gk], this.checked)" title="${_wgTax(g) ? esc('已勾：' + (_wgTax(g).by || '') + ' ' + String(_wgTax(g).at || '').slice(0, 10)) : '勾上 = 可报税'}" style="cursor:pointer;width:16px;height:16px;accent-color:#15803d">`
-        : (_wgTax(g) ? '<span style="color:#15803d;font-weight:800">✓</span>' : '<span style="color:var(--g400)">—</span>')}</td>
+      <td style="text-align:center">${_wgTax(g)
+        // 勾上后锁定成标记, 防误触: 点了要在弹窗里确认才取消
+        ? `<span ${canEdit ? `onclick="wgUntaxAsk([_wgRows[${i}].gk])" ` : ''}title="${esc('已勾：' + (_wgTax(g).by || '') + ' ' + String(_wgTax(g).at || '').slice(0, 10) + (canEdit ? '\n要取消请点这里，会再确认一次' : ''))}" style="display:inline-block;background:#dcfce7;color:#15803d;border:1px solid #86efac;border-radius:10px;padding:1px 8px;font-size:.72rem;font-weight:800;white-space:nowrap;${canEdit ? 'cursor:pointer' : ''}">✅ 可报税</span>`
+        : canEdit
+          ? `<input type="checkbox" onchange="wgSetTax([_wgRows[${i}].gk], true)" title="勾上 = 可报税" style="cursor:pointer;width:16px;height:16px;accent-color:#15803d">`
+          : '<span style="color:var(--g400)">—</span>'}</td>
       <td><a style="cursor:pointer;font-size:.76rem;color:#0f4c6b;text-decoration:underline" onclick="wgToggleOpen(_wgRows[${i}].gk)">${open ? '收起' : '明细'}</a></td>
     </tr>${open ? `<tr><td colspan="10" style="background:#f8fafc;padding:.3rem .6rem"><table style="font-size:.76rem;width:100%"><thead><tr>
       <th>发票</th><th>客户</th><th>工资周期</th><th>发票上的写法</th><th style="text-align:right">正常</th><th style="text-align:right">加班</th><th style="text-align:right">时薪</th><th style="text-align:right">工资</th>
@@ -1469,12 +1472,29 @@ async function wgSetTax(keys, on) {
   if (keys.length > 1) toast(on ? `✅ ${keys.length} 人已标为可报税` : `已取消 ${keys.length} 人的可报税`);
   wgRender();
 }
+// 取消「可报税」一律先确认(单个和批量都是), 防误触
+let _wgUntaxKeys = [];
+function wgUntaxAsk(keys) {
+  const groups = _wgGroups().filter(g => keys.includes(g.gk) && _wgTax(g));
+  if (!groups.length) return toast('选中的人都没有勾可报税', true);
+  _wgUntaxKeys = groups.map(g => g.gk);
+  _wgModalOpen(groups.length > 1 ? `取消 ${groups.length} 人的「可报税」？` : `取消「${groups[0].name}」的可报税？`,
+    '取消后需要重新勾选。确定不是误点？',
+    `<div style="display:flex;flex-direction:column;gap:.25rem;font-size:.82rem">${groups.map(g => `<div style="display:flex;justify-content:space-between;gap:.5rem;border-bottom:1px solid var(--g100);padding:.2rem 0">
+      <b>${esc(g.name)}</b><span style="color:var(--g500);font-size:.74rem">${money(g.total)} · 勾选人 ${esc(_wgTax(g).by || '—')} ${esc(String(_wgTax(g).at || '').slice(0, 10))}</span></div>`).join('')}</div>`,
+    '确认取消', async () => { wgModalClose(); await wgSetTax(_wgUntaxKeys, false); });
+  const ok = document.getElementById('wgModalOk');
+  ok.className = 'btn';
+  ok.style.cssText = 'background:#dc2626;color:#fff';
+}
 function wgModalClose() { document.getElementById('wgModal').style.display = 'none'; }
 function _wgModalOpen(title, info, body, okText, onOk) {
   document.getElementById('wgModalTitle').textContent = title;
   document.getElementById('wgModalInfo').innerHTML = info;
   document.getElementById('wgModalBody').innerHTML = body;
   const ok = document.getElementById('wgModalOk');
+  ok.className = 'btn btn-blue';
+  ok.style.cssText = '';
   ok.textContent = okText;
   ok.disabled = false;
   ok.onclick = onOk;
