@@ -373,7 +373,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <input id="zcSearch" type="text" placeholder="搜员工姓名 / 电话 / 公司名…" oninput="zcSearch()" onfocus="zcSearch()" autocomplete="off" style="width:100%">
         <div id="zcList" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);background:#fff;border:1px solid var(--g200);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);max-height:220px;overflow:auto;z-index:6"></div>
       </div>
-      <label style="font-size:.76rem;color:var(--g500)">🔀 合并其他 Zelle 名字（同一个人的其他账号 / 拼写）<span id="zcMergeAdminTip" style="color:var(--g400)"> · 提交后由管理员审批</span></label>
+      <label style="font-size:.76rem;color:var(--g500)">🔀 合并其他 Zelle 名字（同一个人的其他账号 / 拼写）<span id="zcMergeAdminTip" style="color:var(--g400)"> · 只有管理员能合并</span></label>
       <div id="zcAliases" style="display:flex;flex-wrap:wrap;gap:.3rem;margin:.15rem 0 .55rem"></div>
       <div id="zcMergeBox" style="position:relative;margin:-.25rem 0 .55rem">
         <input id="zcMergeQ" type="text" placeholder="搜收款人名字，点一下并进来…" oninput="zcMergeSearch()" onfocus="zcMergeSearch()" autocomplete="off" style="width:100%">
@@ -1466,6 +1466,7 @@ function wgRender() {
   const taxN = base.filter(g => _wgTax(g)).length;
   document.getElementById('wgStats').textContent = `${_wg.start} ~ ${_wg.end}（按发票工资周期结束日） · ✅ 可报税 ${taxN} 人${minOnly ? `（达到门槛的 ${over.length} 人里 ${over.filter(g => _wgTax(g)).length} 人）` : ''}`;
   const canEdit = !!_wg.can_edit;
+  const isAdmin = !!_wg.is_admin;   // 关联 Zelle / 可报税只有管理员能改
   // 已选的人: 搜索换了也保留, 可以先搜一个名字勾上, 再搜另一个名字勾上, 一起合并
   const all = _wgGroups();
   for (const k of [..._wgSel]) if (!all.some(g => g.gk === k)) _wgSel.delete(k);
@@ -1477,11 +1478,11 @@ function wgRender() {
     selBar.innerHTML = `<b>已选 ${sel.length} 人：</b>${sel.map((g, i) => `<span style="display:inline-block;background:#fff;border:1px solid #bfdbfe;border-radius:12px;padding:0 8px;margin:2px 3px">${esc(g.name)} ${money(g.total)} <a style="cursor:pointer;color:#dc2626" title="取消选择" onclick="wgToggleSel(_wgSelRows[${i}].gk, false)">×</a></span>`).join('')}
       <span style="white-space:nowrap;margin-left:.3rem">
         <button class="btn btn-sm btn-blue" onclick="wgMerge()" ${sel.length < 2 ? 'disabled title="再勾选至少一个人"' : ''}>🔗 合并成一个人</button>
-        <button class="btn btn-sm btn-outline" onclick="wgSetTax([..._wgSel], true)" title="把已选的人都勾上可报税">✅ 标为可报税</button>
-        <button class="btn btn-sm btn-outline" onclick="wgUntaxAsk([..._wgSel])">取消可报税</button>
+        ${isAdmin ? `<button class="btn btn-sm btn-outline" onclick="wgSetTax([..._wgSel], true)" title="把已选的人都勾上可报税">✅ 标为可报税</button>
+        <button class="btn btn-sm btn-outline" onclick="wgUntaxAsk([..._wgSel])">取消可报税</button>` : ''}
         <button class="btn btn-sm btn-outline" onclick="_wgSel.clear();wgRender()">清空</button>
       </span>
-      ${sel.length < 2 ? '<div style="color:var(--g500);font-size:.74rem;margin-top:.2rem">再勾选至少一个人才能合并（标可报税一个人也行）；可以换个搜索词找别的写法，已选的不会丢。</div>' : ''}`;
+      ${sel.length < 2 ? `<div style="color:var(--g500);font-size:.74rem;margin-top:.2rem">再勾选至少一个人才能合并${isAdmin ? '（标可报税一个人也行）' : ''}；可以换个搜索词找别的写法，已选的不会丢。</div>` : ''}`;
   } else selBar.style.display = 'none';
   if (!groups.length) { document.getElementById('wgBody').innerHTML = `<tr><td colspan="11" style="color:var(--g400)">${q || _wgBucket || document.getElementById('wgMinOnly').checked || document.getElementById('wgTaxFlt').value ? '没有符合条件的员工' : '这个日期范围内没有发票工资行'}</td></tr>`; return; }
   _wgRows = groups;
@@ -1506,15 +1507,16 @@ function wgRender() {
       <td style="font-size:.76rem;white-space:nowrap">${esc(g.first)}${g.last !== g.first ? ' ~ ' + esc(g.last) : ''}</td>
       <td style="text-align:right;white-space:nowrap">${(() => {
         const z = _wgZ(g);
-        if (!z.keys.length) return canEdit && _wg.can_zelle ? `<a onclick="wgZelleOpen(_wgRows[${i}].gk)" style="cursor:pointer;color:#0ea5e9;font-size:.74rem;text-decoration:underline">＋ 关联</a>` : '<span style="color:var(--g400)">—</span>';
-        return `<a ${canEdit && _wg.can_zelle ? `onclick="wgZelleOpen(_wgRows[${i}].gk)" ` : ''}title="${esc('Zelle：' + z.names.join('、'))}" style="cursor:pointer;text-decoration:none">
+        if (!z.keys.length) return _wg.can_zelle ? `<a onclick="wgZelleOpen(_wgRows[${i}].gk)" style="cursor:pointer;color:#0ea5e9;font-size:.74rem;text-decoration:underline">＋ 关联</a>` : '<span style="color:var(--g400)">—</span>';
+        return `<a ${_wg.can_zelle ? `onclick="wgZelleOpen(_wgRows[${i}].gk)" ` : ''}title="${esc('Zelle：' + z.names.join('、'))}" style="cursor:pointer;text-decoration:none">
           <div style="font-weight:700;color:#7c3aed">${z.out ? '−' + money(z.out) : '$0.00'}</div>
-          <div style="font-size:.7rem;color:var(--g500)">💸 ${z.keys.length} 个账号 · ${z.count} 笔</div></a>`;
+          ${z.names.map(n => `<div style="font-size:.7rem;color:#6d28d9;white-space:normal;max-width:190px;margin-left:auto;line-height:1.3">💸 ${esc(n)}</div>`).join('')}
+          <div style="font-size:.68rem;color:var(--g400)">${z.count} 笔</div></a>`;
       })()}</td>
       <td style="text-align:center">${_wgTax(g)
         // 勾上后锁定成标记, 防误触: 点了要在弹窗里确认才取消
-        ? `<span ${canEdit ? `onclick="wgUntaxAsk([_wgRows[${i}].gk])" ` : ''}title="${esc('已勾：' + (_wgTax(g).by || '') + ' ' + String(_wgTax(g).at || '').slice(0, 10) + (canEdit ? '\n要取消请点这里，会再确认一次' : ''))}" style="display:inline-block;background:#dcfce7;color:#15803d;border:1px solid #86efac;border-radius:10px;padding:1px 8px;font-size:.72rem;font-weight:800;white-space:nowrap;${canEdit ? 'cursor:pointer' : ''}">✅ 可报税</span>`
-        : canEdit
+        ? `<span ${isAdmin ? `onclick="wgUntaxAsk([_wgRows[${i}].gk])" ` : ''}title="${esc('已勾：' + (_wgTax(g).by || '') + ' ' + String(_wgTax(g).at || '').slice(0, 10) + (isAdmin ? '\n要取消请点这里，会再确认一次' : '\n只有管理员能修改'))}" style="display:inline-block;background:#dcfce7;color:#15803d;border:1px solid #86efac;border-radius:10px;padding:1px 8px;font-size:.72rem;font-weight:800;white-space:nowrap;${isAdmin ? 'cursor:pointer' : ''}">✅ 可报税</span>`
+        : isAdmin
           ? `<input type="checkbox" onchange="wgSetTax([_wgRows[${i}].gk], true)" title="勾上 = 可报税" style="cursor:pointer;width:16px;height:16px;accent-color:#15803d">`
           : '<span style="color:var(--g400)">—</span>'}</td>
       <td><a style="cursor:pointer;font-size:.76rem;color:#0f4c6b;text-decoration:underline" onclick="wgToggleOpen(_wgRows[${i}].gk)">${open ? '收起' : '明细'}</a></td>
@@ -1538,9 +1540,10 @@ async function wgSetTax(keys, on) {
 }
 // ── 💸 关联 Zelle 账号: 一个人可连多个 Zelle 收款人, 金额按当前日期范围算 ──
 function _wgZ(g) {
-  const keys = (((_wg && _wg.zelle_links) || {})[g.gk] || {}).keys || [];
+  const link = ((_wg && _wg.zelle_links) || {})[g.gk] || {};
+  const keys = link.keys || [];
   let out = 0, count = 0;
-  const names = keys.map(k => { const p = _wgZelle[k]; if (p) { out += p.out_total || 0; count += p.out_count || 0; } return p ? p.name : k; });
+  const names = keys.map(k => { const p = _wgZelle[k]; if (p) { out += p.out_total || 0; count += p.out_count || 0; } return p ? p.name : ((link.names || {})[k] || k); });
   return { keys, names, out: Math.round(out * 100) / 100, count };
 }
 let _wgZGk = '', _wgZAll = null, _wgZPick = new Set();
@@ -1593,7 +1596,9 @@ function wgZelleList() {
 function wgZelleToggle(key, on) { if (on) _wgZPick.add(key); else _wgZPick.delete(key); wgZelleList(); }
 async function wgZelleSave() {
   const g = _wgGroups().find(x => x.gk === _wgZGk);
-  const r = await api('/api/acct/payroll-zelle-link', { method: 'POST', body: JSON.stringify({ gk: _wgZGk, label: g ? g.name : '', keys: [..._wgZPick] }) }).catch(e => ({ error: e.message }));
+  const names = {};
+  for (const k of _wgZPick) { const p = (_wgZAll || []).find(x => x.key === k) || _wgZelle[k]; if (p) names[k] = p.name; }
+  const r = await api('/api/acct/payroll-zelle-link', { method: 'POST', body: JSON.stringify({ gk: _wgZGk, label: g ? g.name : '', keys: [..._wgZPick], names }) }).catch(e => ({ error: e.message }));
   if (!r || !r.ok) return toast((r && r.error) || '保存失败', true);
   wgModalClose();
   _wg.zelle_links = r.zelle_links;
@@ -1602,9 +1607,11 @@ async function wgZelleSave() {
 }
 // 合并/拆开时 Zelle 关联跟着走: 合并 = 各人的账号并到一起; 拆开 = 给金额最大的那种写法
 async function _wgMoveZelle(fromGks, toGk, label) {
-  const keys = [...new Set(fromGks.flatMap(k => ((((_wg && _wg.zelle_links) || {})[k] || {}).keys || [])))];
+  const L = (_wg && _wg.zelle_links) || {};
+  const keys = [...new Set(fromGks.flatMap(k => ((L[k] || {}).keys || [])))];
   if (!keys.length) return;
-  const r = await api('/api/acct/payroll-zelle-link', { method: 'POST', body: JSON.stringify({ gk: toGk, label, keys }) }).catch(() => null);
+  const names = Object.assign({}, ...fromGks.map(k => (L[k] || {}).names || {}));
+  const r = await api('/api/acct/payroll-zelle-link', { method: 'POST', body: JSON.stringify({ gk: toGk, label, keys, names }) }).catch(() => null);
   if (r && r.ok) _wg.zelle_links = r.zelle_links;
 }
 // 取消「可报税」一律先确认(单个和批量都是), 防误触
@@ -5479,7 +5486,7 @@ function zRender() {
     + chip(`转出 <b>${sums.oc}</b> 笔 <span style="color:#dc2626;font-weight:700">−${money(sums.ot)}</span>`)
     + chip(`转入 <b>${sums.ic}</b> 笔 <span style="color:#15803d;font-weight:700">+${money(sums.it)}</span>`)
     + chip(`净额 <b>${sums.it - sums.ot >= 0 ? '+' : '−'}${money(Math.abs(sums.it - sums.ot))}</b>`)
-    + (() => { const n = _zDupGroups().length; return n ? `<a onclick="zgOpenSuggest()" style="cursor:pointer;text-decoration:none;background:#f5f3ff;border:1px solid #c4b5fd;color:#6d28d9;border-radius:999px;padding:.2rem .7rem;font-weight:700">🔀 可能是同一个人：${n} 组 →</a>` : ''; })();
+    + (() => { const n = USER.role === 'admin' ? _zDupGroups().length : 0; return n ? `<a onclick="zgOpenSuggest()" style="cursor:pointer;text-decoration:none;background:#f5f3ff;border:1px solid #c4b5fd;color:#6d28d9;border-radius:999px;padding:.2rem .7rem;font-weight:700">🔀 可能是同一个人：${n} 组 →</a>` : ''; })();
   _zRenderSelBar();
   const view = document.getElementById('zView').value;
   document.getElementById('zBtnAll').style.display = view === 'txns' ? 'none' : '';
@@ -5509,7 +5516,7 @@ function zRender() {
     ].join('');
     const rows = _zDetailRows(p.txns);
     return `<tr onclick="zToggleRow('${esc(p.key).replace(/'/g, "\\'")}')" style="cursor:pointer">
-      <td style="white-space:nowrap"><input type="checkbox" title="勾选几个一起合并" ${_zSel.has(p.key) ? 'checked' : ''} onclick="event.stopPropagation();zSelToggle(${JSON.stringify(p.key).replace(/"/g, '&quot;')}, this.checked)" style="cursor:pointer;vertical-align:middle"> <span style="color:var(--g400)">${open ? '▼' : '▶'}</span></td>
+      <td style="white-space:nowrap">${USER.role === 'admin' ? `<input type="checkbox" title="勾选几个一起合并" ${_zSel.has(p.key) ? 'checked' : ''} onclick="event.stopPropagation();zSelToggle(${JSON.stringify(p.key).replace(/"/g, '&quot;')}, this.checked)" style="cursor:pointer;vertical-align:middle"> ` : ''}<span style="color:var(--g400)">${open ? '▼' : '▶'}</span></td>
       <td style="font-weight:700">${esc(p.name)} <span style="color:var(--g400);font-weight:400;font-size:.76rem">· ${p.txns.length} 笔</span>
         <a onclick="event.stopPropagation();zcEdit('${esc(p.key).replace(/'/g, "\\'")}')" style="cursor:pointer;color:#0ea5e9;font-size:.76rem;font-weight:400;text-decoration:underline;margin-left:.35rem">✎ 备注</a>${cInfo}</td>
       <td style="${num}">${p.out_count || '<span style="color:var(--g300)">—</span>'}</td>
@@ -5842,6 +5849,7 @@ function _zcPerson() { return ((_zData && _zData.people) || []).find(x => (x.key
 function zcRenderAliases() {
   const p = _zcPerson(), al = (p && p.aliases) || [], admin = USER.role === 'admin';
   document.getElementById('zcMergeAdminTip').style.display = admin ? 'none' : '';
+  document.getElementById('zcMergeBox').style.display = admin ? '' : 'none';   // 合并只有管理员能做
   document.getElementById('zcAliases').innerHTML = al.length ? al.map((a, i) =>
     `<span style="display:inline-flex;align-items:center;gap:5px;border:1px solid #c4b5fd;background:#f5f3ff;color:#6d28d9;border-radius:8px;padding:2px 8px;font-size:.8rem;font-weight:600">${esc(a)}
       ${admin ? `<a onclick="zcUnmerge(${i})" title="拆开，恢复成单独的收款人" style="cursor:pointer;color:#dc2626;font-weight:700">✕</a>` : ''}</span>`).join('')
@@ -5992,7 +6000,7 @@ function zSelToggle(k, on) { if (on) _zSel.add(k); else _zSel.delete(k); _zRende
 function _zRenderSelBar() {
   const bar = document.getElementById('zSelBar');
   const sel = ((_zData && _zData.people) || []).filter(p => _zSel.has(p.key));
-  if (!sel.length) { bar.style.display = 'none'; return; }
+  if (!sel.length || USER.role !== 'admin') { bar.style.display = 'none'; return; }
   bar.style.display = '';
   bar.innerHTML = `<b>已选 ${sel.length} 个：</b>${sel.map(p => `<span style="display:inline-block;background:#fff;border:1px solid #c4b5fd;border-radius:12px;padding:0 8px;margin:2px 3px">${esc(p.name)}</span>`).join('')}
     <button class="btn btn-sm" style="background:#7c3aed;color:#fff" ${sel.length < 2 ? 'disabled title="再勾选至少一个"' : ''} onclick="zgOpenSelected()">🔀 合并选中</button>

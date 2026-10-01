@@ -36149,7 +36149,8 @@ app.get('/api/plaid/zelle-alias-requests', requireAdmin, requireRole('admin', 'c
     res.json({ requests: rows });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-app.post('/api/plaid/zelle-alias-requests', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
+// 合并只有管理员能做: 客服/会计不再能提交合并申请 (以前提交的待审批申请, 管理员照常审)
+app.post('/api/plaid/zelle-alias-requests', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const b = req.body || {};
     const alias = String(b.alias_name || '').trim().slice(0, 120), primary = String(b.primary_name || '').trim().slice(0, 120);
@@ -42159,8 +42160,8 @@ app.get('/api/acct/payroll-summary', requireAdmin, requireAcctView, (req, res) =
       if (n) invoiceCount++;
     }
     res.json({ ok: true, start, end, invoice_count: invoiceCount, items, merges: _payrollMerges(), tax_flags: _payrollTaxFlags(),
-      zelle_links: _payrollZelleLinks(), can_zelle: ['accounting', 'cs', 'admin'].includes(req.userRole),
-      can_edit: ['accounting', 'cs', 'admin'].includes(req.userRole) });
+      zelle_links: _payrollZelleLinks(), can_zelle: req.userRole === 'admin', is_admin: req.userRole === 'admin',
+      can_edit: req.userRole === 'admin' });   // 合并 / 拆开 / 勾选都只有管理员
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // 工资汇总的人 ↔ Zelle 收款人: app_settings.payroll_zelle_links = { "<组键>": { label, keys: [Zelle 收款人键] } }
@@ -42172,7 +42173,7 @@ function _payrollZelleLinks() {
     return m && typeof m === 'object' && !Array.isArray(m) ? m : {};
   } catch (e) { return {}; }
 }
-app.post('/api/acct/payroll-zelle-link', requireAdmin, requireAcctWrite, (req, res) => {
+app.post('/api/acct/payroll-zelle-link', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const b = req.body || {};
     const gk = String(b.gk || '').slice(0, 200);
@@ -42184,7 +42185,11 @@ app.post('/api/acct/payroll-zelle-link', requireAdmin, requireAcctWrite, (req, r
       const left = (v.keys || []).filter(k => !keys.includes(k));
       if (left.length) m[g] = { ...v, keys: left }; else delete m[g];
     }
-    if (keys.length) m[gk] = { label: String(b.label || '').slice(0, 160), keys, by: req.userName || '', at: new Date().toISOString() };
+    // names: 和 keys 一一对应的 Zelle 显示名 (键是小写, 不在当前日期范围时前端用这个显示)
+    const nm = (b.names && typeof b.names === 'object' && !Array.isArray(b.names)) ? b.names : {};
+    const names = {};
+    for (const k of keys) if (nm[k]) names[k] = String(nm[k]).slice(0, 120);
+    if (keys.length) m[gk] = { label: String(b.label || '').slice(0, 160), keys, names, by: req.userName || '', at: new Date().toISOString() };
     else delete m[gk];
     db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('payroll_zelle_links', ?, CURRENT_TIMESTAMP)")
       .run(JSON.stringify(m));
@@ -42201,7 +42206,7 @@ function _payrollTaxFlags() {
     return m && typeof m === 'object' && !Array.isArray(m) ? m : {};
   } catch (e) { return {}; }
 }
-app.post('/api/acct/payroll-tax-flag', requireAdmin, requireAcctWrite, (req, res) => {
+app.post('/api/acct/payroll-tax-flag', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const keys = (Array.isArray((req.body || {}).keys) ? req.body.keys : [(req.body || {}).key])
       .map(k => String(k || '').slice(0, 200)).filter(k => /^[nm]:./.test(k)).slice(0, 500);
@@ -42216,7 +42221,7 @@ app.post('/api/acct/payroll-tax-flag', requireAdmin, requireAcctWrite, (req, res
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // 合并: body { names: [...], to: '显示名' }; 拆开: body { names: [...], to: '' }
-app.post('/api/acct/payroll-merges', requireAdmin, requireAcctWrite, (req, res) => {
+app.post('/api/acct/payroll-merges', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const names = Array.isArray((req.body || {}).names) ? req.body.names : [];
     const to = String((req.body || {}).to || '').replace(/\s+/g, ' ').trim().slice(0, 120);
