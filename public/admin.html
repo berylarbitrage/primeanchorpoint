@@ -17450,15 +17450,15 @@ async function _saveEmployeeInner() {
       { confirmLabel: '电话不同，单独建档', cancelLabel: '对比处理' });
     if (indep) { data.allow_email_dup = true; r = await doSave(data); }
   }
-  // 系统里已有同名 (或 生日+SSN末四位相同) 的档案, 电话邮箱对不上 (可能换过号) → 先问是不是同一人
+  // 系统里已有同名的档案, 电话邮箱对不上 (可能换过号) → 先问是不是同一人
   if (r && r.duplicate && r.field === 'name') {
     const ex = r.existing || {};
     const exName = `${[ex.first_name, ex.middle_name, ex.last_name].filter(Boolean).join(' ')}（员工号：${ex.employee_id || ''}${ex.phone ? '，电话 ' + ex.phone : ''}${ex.status === 'active' ? '，在职' : ''}）`;
-    const notSame = await showConfirm(`👤 系统里已有${r.why === 'dob_ssn' ? '生日和 SSN 末四位都相同' : '同名'}的员工「${esc(exName)}」，电话 / 邮箱和这次填的不一样。\n\n是同一个人（换过电话）就点「对比处理」，左右对照挑选保留哪些信息；\n不是同一个人就点「不是同一人，继续保存」。`,
+    const notSame = await showConfirm(`👤 系统里已有同名的员工「${esc(exName)}」，电话 / 邮箱和这次填的不一样。\n\n是同一个人（换过电话）就点「对比处理」，左右对照挑选保留哪些信息；\n不是同一个人就点「不是同一人，继续保存」。`,
       { confirmLabel: '不是同一人，继续保存', cancelLabel: '对比处理' });
     if (notSame) { data.allow_name_dup = true; r = await doSave(data); }
     else {
-      const p = { data, empId: id || null, field: 'name', fieldLabel: r.why === 'dob_ssn' ? '生日和 SSN' : '姓名', existingEmpId: ex.id, existingEmpName: exName, convertFromWorkerId: _convertFromWorkerId || null, convertFromApplicantId: _convertFromApplicantId || null };
+      const p = { data, empId: id || null, field: 'name', fieldLabel: '姓名', existingEmpId: ex.id, existingEmpName: exName, convertFromWorkerId: _convertFromWorkerId || null, convertFromApplicantId: _convertFromApplicantId || null };
       clearModalState('empModal'); closeEmpModal();
       openDupConflictPicker(p);
       return;
