@@ -20940,10 +20940,14 @@ function _findDupPerson(d, excludeId, cur) {
   const lastTok = v => { const t = norm(v).split(' '); return t[t.length - 1] || ''; };
   const firstTok = v => norm(v).split(' ')[0] || '';
   const fn = firstTok(d.first_name), ln = lastTok(d.last_name);
-  const dob = String(d.dob || (cur && cur.dob) || '').trim();
+  let dob = String(d.dob || (cur && cur.dob) || '').trim();
   let last4 = '';
   const sd = String(d.ssn || '').replace(/\D/g, '');
   if (sd.length === 9) last4 = sd.slice(-4); else if (cur && cur.ssn_last4) last4 = cur.ssn_last4;
+  // 占位值不算 (生日 0000-00-00 / SSN 000-00-0000 之类): 末四位 0000 的 SSN 本来就不存在,
+  // 年份 0000 / 非 YYYY-MM-DD 的生日也不是真生日 —— 拿占位值比会把毫不相干的两个人配到一起
+  if (!/^(19|20)\d\d-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(dob)) dob = '';
+  if (!/^\d{4}$/.test(last4) || last4 === '0000') last4 = '';
   const rows = db.prepare("SELECT id,first_name,middle_name,last_name,employee_id,phone,email,dob,ssn_last4,status FROM employees WHERE id!=?").all(parseInt(excludeId) || 0);
   const hit = rows.find(e => (fn && ln && firstTok(e.first_name) === fn && lastTok(e.last_name) === ln)
     || (dob && last4 && String(e.dob || '').trim() === dob && String(e.ssn_last4 || '') === last4));
