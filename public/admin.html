@@ -22909,8 +22909,6 @@ function trCheckConflicts() {
   const wizCity = document.getElementById('trIndAddrCity').value.trim();
   const wizState = document.getElementById('trIndAddrState').value.trim();
   const wizZip = document.getElementById('trIndAddrZip').value.trim();
-  const wizSsnRaw = (document.getElementById('trIndSsn').value || '').replace(/\D/g,'');
-  const wizSsnLast4 = wizSsnRaw.slice(-4);
 
   const conflicts = [];
   if (empName && wizName && norm(empName) !== norm(wizName))
@@ -22923,8 +22921,6 @@ function trCheckConflicts() {
     conflicts.push({ field: '州 State', wizard: wizState.toUpperCase(), employee: e.state.toUpperCase() });
   if (e.zip && wizZip && norm(e.zip) !== norm(wizZip))
     conflicts.push({ field: '邮编 ZIP', wizard: wizZip, employee: e.zip });
-  if (e.ssn_last4 && wizSsnLast4.length === 4 && e.ssn_last4 !== wizSsnLast4)
-    conflicts.push({ field: 'SSN 末四位 Last 4', wizard: `•••-••-${wizSsnLast4}`, employee: `•••-••-${e.ssn_last4}` });
 
   return conflicts.length ? conflicts : null;
 }
