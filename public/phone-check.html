@@ -21,6 +21,10 @@ body{font-family:'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-ser
 .searchrow input:focus{border-color:var(--blue)}
 .searchrow button{padding:.7rem 1.4rem;background:var(--blue);color:#fff;border:none;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer;white-space:nowrap}
 .searchrow button:disabled{opacity:.5;cursor:default}
+.searchrow select{padding:.7rem .5rem;border:2px solid var(--sky);border-radius:10px;font-size:.95rem;outline:none;background:#fff;color:var(--gray-800);font-family:inherit;cursor:pointer}
+.searchrow select:focus{border-color:var(--blue)}
+.searchrow select.on{border-color:var(--blue);background:#eff6ff;color:var(--blue);font-weight:700}
+@media (max-width:520px){.searchrow{flex-wrap:wrap}.searchrow input{flex-basis:100%}.searchrow select{flex:1}}
 .hint{font-size:.76rem;color:var(--gray-400);margin-top:.5rem}
 .banner{border-radius:10px;padding:.8rem 1rem;font-weight:700;font-size:.95rem;margin-bottom:1rem;display:none}
 .banner.ok{display:block;background:#ecfdf5;color:#065f46;border:1px solid #6ee7b7}
@@ -68,9 +72,10 @@ body{font-family:'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-ser
   <div class="card">
     <div class="searchrow">
       <input id="phoneInput" type="text" placeholder="电话号码 708-850-2703 或人名 Mercedes" autocomplete="off" autofocus>
+      <select id="stateSel" title="按州筛选：申请看申请地点或住址州，员工看工作州或住址州，工头看名单里的州" onchange="stateChanged()"><option value="">全部州</option></select>
       <button id="searchBtn" onclick="doSearch()">🔍 查询</button>
     </div>
-    <div class="hint">输入数字 = 按电话比对（自动忽略空格、括号、横线和开头的 1）；输入字母 = 按人名查（不分大小写，可只输名或姓，多个词都要匹配）。覆盖：📨 招工申请 · 👷 员工档案 · 🦺 工头。</div>
+    <div class="hint">输入数字 = 按电话比对（自动忽略空格、括号、横线和开头的 1）；输入字母 = 按人名查（不分大小写，可只输名或姓，多个词都要匹配）；右边选州 = 只看这个州的记录，不输电话 / 人名直接查就列出这个州的全部记录。覆盖：📨 招工申请 · 👷 员工档案 · 🦺 工头。</div>
   </div>
 
   <div id="loginTip" class="login-tip">⚠️ 需要先登录管理后台才能查询。<a href="/admin.html" target="_blank">去登录</a>，登录后回到本页重试。</div>
@@ -155,30 +160,40 @@ async function doSearch(){
   const loginTip=document.getElementById('loginTip');
   const phone=(inp.value||'').trim();
   const byName=/[A-Za-z\u4e00-\u9fff]/.test(phone);
+  const st=document.getElementById('stateSel').value;
+  const stateOnly=!!st&&!phone;
   banner.className='banner'; results.innerHTML=''; loginTip.style.display='none';
   window._appById = {};            // 上一次查询的卡片数据作废
   window._docThumbs = docThumbs;   // 卡片重绘时还要用
-  if(byName){
+  if(stateOnly){ /* 只选了州: 不用输电话 / 人名 */ }
+  else if(byName){
     if(phone.replace(/\s/g,'').length<2){ banner.className='banner err'; banner.textContent='请输入至少 2 个字的姓名'; return; }
-  }else if(phone.replace(/\D/g,'').length<7){ banner.className='banner err'; banner.textContent='请输入至少 7 位的电话号码，或输入人名'; return; }
+  }else if(phone.replace(/\D/g,'').length<7){ banner.className='banner err'; banner.textContent='请输入至少 7 位的电话号码，或输入人名，或选一个州'; return; }
   btn.disabled=true; btn.textContent='查询中…';
   try{
-    const res=await fetch('/api/admin/phone-check?'+(byName?'name=':'phone=')+encodeURIComponent(phone),{credentials:'same-origin'});
+    const qs=stateOnly?'':(byName?'name=':'phone=')+encodeURIComponent(phone);
+    const res=await fetch('/api/admin/phone-check?'+[qs,st?'state='+encodeURIComponent(st):''].filter(Boolean).join('&'),{credentials:'same-origin'});
     if(res.status===401){ loginTip.style.display='block'; return; }
     const data=await res.json().catch(()=>null);
     if(!res.ok||!data||!data.ok) throw new Error((data&&data.error)||('HTTP '+res.status));
     const total=(data.applications||[]).length+(data.employees||[]).length+(data.foremen||[]).length;
+    const stTxt=data.state?'（州：'+data.state+'）':'';
     if(!data.found){
       banner.className='banner none';
-      banner.textContent=byName
+      banner.textContent=stateOnly
+        ? '⚪ 未找到：'+data.state+' 州没有任何记录。'
+        : (byName
         ? '⚪ 未找到：系统里没有名字包含「'+(data.query||phone)+'」的记录。'
-        : '⚪ 未找到：'+data.phone+' 没有在系统里登记过，也没有提交过申请表。';
+        : '⚪ 未找到：'+data.phone+' 没有在系统里登记过，也没有提交过申请表。')+stTxt;
       return;
     }
     banner.className='banner ok';
-    banner.textContent=byName
-      ? '✅ 按人名「'+(data.query||phone)+'」共找到 '+total+' 条记录（同名的可能不是同一个人，请核对电话 / 证件）。'
-      : '✅ 已登记：'+data.phone+' 在系统里共找到 '+total+' 条记录。';
+    const capped=['applications','employees','foremen'].some(k=>(data[k]||[]).length>=(data.limit||50));
+    banner.textContent=(stateOnly
+      ? '✅ '+data.state+' 州共找到 '+total+' 条记录'+(capped?'（每类最多显示 '+data.limit+' 条，可再输电话 / 人名缩小范围）':'')+'。'
+      : (byName
+        ? '✅ 按人名「'+(data.query||phone)+'」共找到 '+total+' 条记录（同名的可能不是同一个人，请核对电话 / 证件）。'
+        : '✅ 已登记：'+data.phone+' 在系统里共找到 '+total+' 条记录。')+stTxt);
     let html='';
     if((data.applications||[]).length){
       html+='<div class="sec-title">📨 招工申请（'+data.applications.length+'）</div>';
@@ -191,6 +206,7 @@ async function doSearch(){
         <div class="meta">
           ${kv('员工编号',e.employee_id)} ${kv('电话',e.phone)} ${kv('邮箱',e.email)}
           ${kv('职位',e.position)} ${kv('部门',e.department)} ${kv('状态',e.status)} ${kv('入职日期',e.hire_date)}
+          ${kv('工作州',e.work_state)} ${kv('住址',[e.city,e.state].filter(Boolean).join(', '))}
           ${e.timeclock_code?`<span><span class="lbl">打卡码</span> <b style="font-family:ui-monospace,Consolas,monospace;letter-spacing:.08em;color:#047857">${esc(e.timeclock_code)}</b></span>`:''}
           ${e.ssn_last4?`<span><span class="lbl">SSN</span> <b>****${esc(e.ssn_last4)}</b></span>`:''}
         </div>
@@ -202,7 +218,7 @@ async function doSearch(){
       html+=data.foremen.map(f=>`<div class="rec fm">
         <div class="nm">${esc(f.name||'—')}</div>
         <div class="meta">
-          ${kv('电话',f.phone)} ${kv('邮箱',f.email)} ${kv('仓库',f.warehouse)}
+          ${kv('电话',f.phone)} ${kv('邮箱',f.email)} ${kv('仓库',f.warehouse)} ${kv('州',f.state)}
           <span><span class="lbl">状态</span> <b>${f.active?'启用':'停用'}</b></span>
           ${kv('创建时间',String(f.created_at||'').slice(0,16))}
         </div>
@@ -226,6 +242,21 @@ function normStateCode(v) {
   if (!u) return '';
   if (US_STATES.includes(u)) return u;
   return US_STATE_NAME2CODE[u] || u;   // 认不出 → 原样保留
+}
+// 州筛选下拉: 选项来自 US_STATES; 上次选的州记在本机 (读写失败就当没选)
+(function initStateSel(){
+  const sel = document.getElementById('stateSel');
+  sel.insertAdjacentHTML('beforeend', US_STATES.map(s => '<option value="' + s + '">' + s + '</option>').join(''));
+  try { const v = localStorage.getItem('pc_state') || ''; if (US_STATES.includes(v)) sel.value = v; } catch (_) {}
+  sel.classList.toggle('on', !!sel.value);
+})();
+function stateChanged() {
+  const sel = document.getElementById('stateSel');
+  sel.classList.toggle('on', !!sel.value);
+  try { localStorage.setItem('pc_state', sel.value); } catch (_) {}
+  // 已经输了东西 / 选了州 → 直接按新条件重查
+  if ((document.getElementById('phoneInput').value || '').trim() || sel.value) doSearch();
+  else { document.getElementById('banner').className = 'banner'; document.getElementById('results').innerHTML = ''; }
 }
 const APP_FIELDS = [
   ['name','姓名 NAME *','工人法定全名'], ['phone','电话 PHONE *','(555) 000-0000'], ['email','邮箱 EMAIL','email@example.com'],
