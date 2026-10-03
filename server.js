@@ -2027,6 +2027,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS referrer_referrals (
 )`);
 // Add quote_request column to inquiries if not already present (migration)
 try { db.exec('ALTER TABLE inquiries ADD COLUMN quote_request INTEGER DEFAULT 0'); } catch {}
+// 询盘来源: 姊妹站 (如 Velnaris Group) 跨域提交时记录站点名, 本站提交为空
+try { db.exec("ALTER TABLE inquiries ADD COLUMN source TEXT DEFAULT ''"); } catch {}
 
 // Verification codes table for registration
 db.exec(`CREATE TABLE IF NOT EXISTS verification_codes (
@@ -9261,24 +9263,43 @@ app.get('/api/jobs', (req, res) => {
   })));
 });
 
+// 姊妹站 (Velnaris Group, 托管在 GitHub Pages) 的联系表单跨域提交到这里。
+// 只放行白名单来源 (env INQUIRY_ORIGINS, 逗号分隔), 来源站点名记到 source 列。
+const INQUIRY_ORIGINS = String(process.env.INQUIRY_ORIGINS || 'https://berylarbitrage.github.io')
+  .split(',').map(s => s.trim()).filter(Boolean);
+const INQUIRY_SOURCES = ['Velnaris'];
+function _inquiryCors(req, res) {
+  const origin = req.headers.origin;
+  if (origin && INQUIRY_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Max-Age', '600');
+  }
+  res.setHeader('Vary', 'Origin');
+}
+app.options('/api/inquiry', (req, res) => { _inquiryCors(req, res); res.sendStatus(204); });
+
 // POST /api/inquiry - submit contact form
-app.post('/api/inquiry', upload.single('resume'), (req, res) => {
+app.post('/api/inquiry', (req, res, next) => { _inquiryCors(req, res); next(); }, upload.single('resume'), (req, res) => {
   try {
     const d = req.body;
+    const source = INQUIRY_SOURCES.includes(d.source) ? d.source : '';
     if (!d.name) return res.status(400).json({ error: 'Name required' });
     let employerId = '';
     if (d.type === 'Employer') {
       const city = (d.location || '').split(',')[0].trim();
       employerId = nextEmployerId(city);
     }
-    const stmt = db.prepare(`INSERT INTO inquiries (name, email, phone, company, type, employer_id, positions, workers, location, start_date, experience, languages, comments, resume_path, quote_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const stmt = db.prepare(`INSERT INTO inquiries (name, email, phone, company, type, employer_id, positions, workers, location, start_date, experience, languages, comments, resume_path, quote_request, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     const result = stmt.run(
       d.name, d.email || '', d.phone || '', d.company || '', d.type || '',
       employerId,
       d.positions || '', d.workers || '', d.location || '', d.start_date || '',
       d.experience || '', d.languages || '', d.comments || '',
       req.file ? req.file.filename : '',
-      d.quote_request ? 1 : 0
+      d.quote_request ? 1 : 0,
+      source
     );
     res.json({ success: true, id: result.lastInsertRowid, employer_id: employerId || undefined });
   } catch (e) {
