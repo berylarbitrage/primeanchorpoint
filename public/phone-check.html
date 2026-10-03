@@ -30,7 +30,22 @@ body{font-family:'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-ser
 .banner.ok{display:block;background:#ecfdf5;color:#065f46;border:1px solid #6ee7b7}
 .banner.none{display:block;background:var(--gray-100);color:var(--gray-600);border:1px solid var(--gray-200)}
 .banner.err{display:block;background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5}
-.sec-title{font-size:.85rem;font-weight:700;color:var(--gray-600);margin:1rem 0 .5rem}
+.sec-title{font-size:.85rem;font-weight:700;color:var(--gray-600);margin:1rem 0 .5rem;padding-left:.5rem;border-left:4px solid var(--sky)}
+.sec[data-kind="emp"] .sec-title{border-left-color:var(--green)}
+.sec[data-kind="fm"] .sec-title{border-left-color:#d97706}
+/* 卡片类型标签: 颜色与左边框一致 (蓝 = 工人扫码提交的申请问卷, 绿 = 员工档案, 橙 = 工头) */
+.ktags{display:flex;flex-wrap:wrap;gap:.3rem;margin-bottom:.3rem}
+.ktag{font-size:.68rem;font-weight:700;padding:.1rem .45rem;border-radius:5px;border:1px solid;white-space:nowrap}
+.ktag.app{background:#e0f2fe;color:#0369a1;border-color:#7dd3fc}
+.ktag.emp{background:#ecfdf5;color:#047857;border-color:#6ee7b7}
+.ktag.fm{background:#fffbeb;color:#b45309;border-color:#fcd34d}
+.ktag.todo{background:#fef2f2;color:#b91c1c;border-color:#fca5a5}
+.ktag.done{background:#f0fdf4;color:#15803d;border-color:#86efac}
+.ftabs{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;margin:-.3rem 0 .6rem}
+.ftabs .fl{font-size:.75rem;color:var(--gray-400);font-weight:700;margin-right:.1rem}
+.ftabs button{padding:.35rem .75rem;border-radius:999px;border:1.5px solid var(--gray-200);background:#fff;color:var(--gray-600);font-size:.8rem;font-weight:700;cursor:pointer;font-family:inherit}
+.ftabs button.on{border-color:var(--blue);background:var(--blue);color:#fff}
+.ftabs button:disabled{opacity:.4;cursor:default}
 .rec{border:1px solid var(--gray-200);border-left:4px solid var(--sky);border-radius:10px;padding:.7rem .85rem;margin-bottom:.6rem;background:#fff}
 .rec.emp{border-left-color:var(--green)}
 .rec.fm{border-left-color:#d97706}
@@ -194,14 +209,25 @@ async function doSearch(){
       : (byName
         ? '✅ 按人名「'+(data.query||phone)+'」共找到 '+total+' 条记录（同名的可能不是同一个人，请核对电话 / 证件）。'
         : '✅ 已登记：'+data.phone+' 在系统里共找到 '+total+' 条记录。')+stTxt);
-    let html='';
-    if((data.applications||[]).length){
-      html+='<div class="sec-title">📨 招工申请（'+data.applications.length+'）</div>';
-      html+=data.applications.map(a=>appCardHtml(a)).join('');
+    const apps=data.applications||[], emps=data.employees||[], fms=data.foremen||[];
+    const nLinked=apps.filter(appLinked).length;
+    const tab=(grp,v,label,n)=>`<button data-grp="${grp}" data-v="${v}" onclick="pcSetFilter('${grp}','${v}')"${n===0?' disabled':''}>${label}（${n}）</button>`;
+    let html='<div class="ftabs" id="pcTabs"><span class="fl">类型</span>'
+      +tab('kind','all','全部',total)+tab('kind','app','📨 申请问卷',apps.length)+tab('kind','emp','👷 员工档案',emps.length)+tab('kind','fm','🦺 工头',fms.length)
+      +'</div>';
+    if(apps.length){
+      html+='<div class="ftabs" id="pcTabsLink"><span class="fl">申请问卷</span>'
+        +tab('link','all','全部',apps.length)+tab('link','0','未建档',apps.length-nLinked)+tab('link','1','已建档',nLinked)
+        +'</div>';
     }
-    if((data.employees||[]).length){
-      html+='<div class="sec-title">👷 员工档案（'+data.employees.length+'）</div>';
-      html+=data.employees.map(e=>`<div class="rec emp">
+    if(apps.length){
+      html+='<div class="sec" data-kind="app"><div class="sec-title">📨 申请问卷（工人扫码提交的招工申请 · '+apps.length+'）</div>';
+      html+=apps.map(a=>appCardHtml(a)).join('')+'</div>';
+    }
+    if(emps.length){
+      html+='<div class="sec" data-kind="emp"><div class="sec-title">👷 员工档案（'+emps.length+'）</div>';
+      html+=emps.map(e=>`<div class="rec emp">
+        <div class="ktags"><span class="ktag emp">👷 员工档案</span></div>
         <div class="nm">${esc([e.first_name,e.last_name].filter(Boolean).join(' ')||'—')}</div>
         <div class="meta">
           ${kv('员工编号',e.employee_id)} ${kv('电话',e.phone)} ${kv('邮箱',e.email)}
@@ -211,20 +237,22 @@ async function doSearch(){
           ${e.ssn_last4?`<span><span class="lbl">SSN</span> <b>****${esc(e.ssn_last4)}</b></span>`:''}
         </div>
         ${allDocThumbs(e.id, e.all_docs)}
-      </div>`).join('');
+      </div>`).join('')+'</div>';
     }
-    if((data.foremen||[]).length){
-      html+='<div class="sec-title">🦺 工头（'+data.foremen.length+'）</div>';
-      html+=data.foremen.map(f=>`<div class="rec fm">
+    if(fms.length){
+      html+='<div class="sec" data-kind="fm"><div class="sec-title">🦺 工头（'+fms.length+'）</div>';
+      html+=fms.map(f=>`<div class="rec fm">
+        <div class="ktags"><span class="ktag fm">🦺 工头</span></div>
         <div class="nm">${esc(f.name||'—')}</div>
         <div class="meta">
           ${kv('电话',f.phone)} ${kv('邮箱',f.email)} ${kv('仓库',f.warehouse)} ${kv('州',f.state)}
           <span><span class="lbl">状态</span> <b>${f.active?'启用':'停用'}</b></span>
           ${kv('创建时间',String(f.created_at||'').slice(0,16))}
         </div>
-      </div>`).join('');
+      </div>`).join('')+'</div>';
     }
     results.innerHTML=html;
+    pcApplyFilter();
   }catch(e){
     banner.className='banner err';
     banner.textContent='查询失败：'+(e.message||e);
@@ -242,6 +270,26 @@ function normStateCode(v) {
   if (!u) return '';
   if (US_STATES.includes(u)) return u;
   return US_STATE_NAME2CODE[u] || u;   // 认不出 → 原样保留
+}
+// 结果类型筛选: 类型 (全部 / 申请问卷 / 员工档案 / 工头) + 申请问卷是否已建档。只在页面上显隐, 不重新查询; 选择记在本机
+window._pcFilter = { kind: 'all', link: 'all' };
+try { const f = JSON.parse(localStorage.getItem('pc_filter') || 'null'); if (f) Object.assign(window._pcFilter, f); } catch (_) {}
+function pcSetFilter(grp, v) {
+  window._pcFilter[grp] = v;
+  try { localStorage.setItem('pc_filter', JSON.stringify(window._pcFilter)); } catch (_) {}
+  pcApplyFilter();
+}
+function pcApplyFilter() {
+  const f = window._pcFilter, root = document.getElementById('results');
+  // 选中的类型这次没有结果 → 退回「全部」, 免得一片空白
+  const has = k => !!root.querySelector('.sec[data-kind="' + k + '"]');
+  const kind = (f.kind !== 'all' && !has(f.kind)) ? 'all' : f.kind;
+  root.querySelectorAll('.sec').forEach(s => { s.style.display = (kind === 'all' || s.dataset.kind === kind) ? '' : 'none'; });
+  const link = (f.link !== 'all' && !root.querySelector('.sec[data-kind="app"] .rec[data-linked="' + f.link + '"]')) ? 'all' : f.link;
+  root.querySelectorAll('.sec[data-kind="app"] .rec').forEach(r => { r.style.display = (link === 'all' || r.dataset.linked === link) ? '' : 'none'; });
+  root.querySelectorAll('.ftabs button').forEach(b => b.classList.toggle('on', (b.dataset.grp === 'kind' ? kind : link) === b.dataset.v));
+  const lt = document.getElementById('pcTabsLink');
+  if (lt) lt.style.display = (kind === 'all' || kind === 'app') ? '' : 'none';
 }
 // 州筛选下拉: 选项来自 US_STATES; 上次选的州记在本机 (读写失败就当没选)
 (function initStateSel(){
@@ -270,7 +318,17 @@ window._afVerified = window._afVerified || {};
 
 function appCardHtml(a) {
   window._appById[a.id] = a;
-  return '<div class="rec" id="appCard' + a.id + '">' + appCardInner(a) + '</div>';
+  return '<div class="rec" id="appCard' + a.id + '" data-linked="' + (appLinked(a) ? 1 : 0) + '">' + appCardInner(a) + '</div>';
+}
+// 申请有没有对应的员工档案 (显式关联, 或同号码的档案)
+function appLinked(a) { return !!(a.employee_id || a.linked_employee); }
+function appTagsHtml(a) {
+  const le = a.linked_employee;
+  return '<div class="ktags"><span class="ktag app">📨 申请问卷</span>'
+    + (appLinked(a)
+      ? '<span class="ktag done" title="这个人已经有员工档案">✓ 已建档' + (le && le.employee_id ? ' ' + esc(le.employee_id) : '') + '</span>'
+      : '<span class="ktag todo" title="还没有对应的员工档案">未建档</span>')
+    + '</div>';
 }
 function appNameMismatch(a) {
   const le = a.linked_employee;
@@ -286,7 +344,7 @@ function appCardInner(a) {
        <div style="font-size:12px;color:#64748b;margin-top:2px">工人提交时填的是：<b>${esc(a.name || '—')}</b>
          <button onclick="syncApplicantName(${a.id}, ${le.id}, this)" style="margin-left:6px;padding:2px 8px;font-size:11px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer">用档案名更正</button>${editBtn}</div>`
     : `<div class="nm">${esc(a.name || '—')}${editBtn}</div>`;
-  return `${nameLine}
+  return `${appTagsHtml(a)}${nameLine}
     <div class="meta">
       ${kv('电话', a.phone)} ${kv('邮箱', a.email)} ${kv('职位', a.position)}
       ${kv('申请公司', a.partner_name)} ${kv('申请地点', a.apply_state)}
