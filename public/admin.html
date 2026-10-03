@@ -9399,7 +9399,7 @@ async function loadDashboard() {
   document.getElementById('recentInq').innerHTML = recent.length ? '<table><thead><tr><th>姓名</th><th>类型</th><th>日期</th></tr></thead><tbody>' +
     recent.map(i => `<tr style="cursor:pointer" onclick='showInquiry(${JSON.stringify(i).replace(/'/g,"&#39;")})'>
       <td>${esc(i.name)}</td>
-      <td><span class="badge badge-${i.type === 'Employer' ? 'employer' : i.type === 'Job Seeker' ? 'seeker' : 'other'}">${typeLabel(i.type)}</span>${i.quote_request ? ' <span class="badge badge-urgent" style="background:#F5A623">报价</span>' : ''}</td>
+      <td><span class="badge badge-${i.type === 'Employer' ? 'employer' : i.type === 'Job Seeker' ? 'seeker' : 'other'}">${typeLabel(i.type)}</span>${i.quote_request ? ' <span class="badge badge-urgent" style="background:#F5A623">报价</span>' : ''}${i.source?` <span class="badge" style="background:#FF7A00;color:#1B1B1B">${esc(i.source)}</span>`:''}</td>
       <td>${new Date(i.created_at).toLocaleDateString()}</td>
     </tr>`).join('') +
     '</tbody></table>' : '<p class="empty">暂无问卷提交</p>';
@@ -11035,7 +11035,7 @@ function filterClientInquiries() {
   document.getElementById('cliInqTable').innerHTML = f.length ? f.map(i => `<tr style="cursor:pointer" onclick='showInquiry(${JSON.stringify(i).replace(/'/g,"&#39;")})'>
     <td style="white-space:nowrap">${new Date(i.created_at).toLocaleDateString()}<br><span style="font-size:.72rem;color:var(--gray-400)">${new Date(i.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'})}</span></td>
     <td><span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${esc(i.employer_id||'')}</span></td>
-    <td><strong>${esc(i.company||i.name)}</strong>${i.company&&i.company!==i.name?`<br><span style="font-size:.78rem;color:var(--gray-400)">${esc(i.name)}</span>`:''}</td>
+    <td><strong>${esc(i.company||i.name)}</strong>${i.source?` <span class="badge" style="background:#FF7A00;color:#1B1B1B">${esc(i.source)}</span>`:''}${i.company&&i.company!==i.name?`<br><span style="font-size:.78rem;color:var(--gray-400)">${esc(i.name)}</span>`:''}</td>
     <td style="max-width:180px">${i.positions?`<span style="font-size:.82rem">${esc(i.positions)}</span>`:'<span style="color:var(--gray-300)">—</span>'}${i.quote_request?' <span class="badge badge-urgent" style="background:#F5A623">报价</span>':''}</td>
     <td style="font-size:.82rem">${esc(i.workers||'—')}</td>
     <td style="font-size:.82rem">${esc(i.location||'')}</td>
@@ -11052,7 +11052,7 @@ function filterClientInquiryHistory() {
   if (st) f = f.filter(i => i.proc_status === st);
   document.getElementById('cliInqHistTable').innerHTML = f.length ? f.map(i => `<tr>
     <td style="white-space:nowrap;font-size:.82rem">${i.processed_at ? new Date(i.processed_at).toLocaleDateString() : '—'}</td>
-    <td><strong>${esc(i.company||i.name)}</strong>${i.company&&i.company!==i.name?`<br><span style="font-size:.75rem;color:var(--gray-400)">${esc(i.name)}</span>`:''}</td>
+    <td><strong>${esc(i.company||i.name)}</strong>${i.source?` <span class="badge" style="background:#FF7A00;color:#1B1B1B">${esc(i.source)}</span>`:''}${i.company&&i.company!==i.name?`<br><span style="font-size:.75rem;color:var(--gray-400)">${esc(i.name)}</span>`:''}</td>
     <td style="font-size:.82rem;max-width:160px">${esc(i.positions||'—')}</td>
     <td><span class="badge badge-${i.proc_status}">${procStatusIcon(i.proc_status)} ${procStatusLabel(i.proc_status)}</span></td>
     <td style="font-size:.82rem;max-width:200px;color:var(--gray-600)">${esc(i.proc_note||'—')}</td>
@@ -11191,6 +11191,7 @@ function showInquiry(i) {
   const fields = [
     ['公司编号', i.employer_id],
     ['姓名', i.name], ['邮箱', i.email], ['电话', i.phone], ['公司', i.company],
+    ['来源网站', i.source ? esc(i.source) : '本站'],
     ['类型', typeLabel(i.type)], ['申请职位', i.positions], ['需求人数', i.workers],
     ['地点', i.location], ['开始日期', i.start_date], ['工作经验', i.experience],
     ['语言能力', i.languages], ['备注', i.comments],
