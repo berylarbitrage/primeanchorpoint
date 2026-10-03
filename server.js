@@ -18297,7 +18297,7 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
       CASE WHEN COALESCE(cropped_path,'')!='' THEN 1 ELSE 0 END AS has_cropped
       FROM applicant_docs WHERE submission_id=?`);
     applications.forEach(a => { try { a.docs = docsFor.all(a.id); } catch (_) { a.docs = []; } });
-    const employees = db.prepare(`SELECT id, employee_id, first_name, middle_name, last_name, phone, email, position, department, status, hire_date, timeclock_code, ssn_last4, city, state
+    const employees = db.prepare(`SELECT id, employee_id, first_name, middle_name, last_name, phone, email, position, department, status, hire_date, dob, timeclock_code, ssn_last4, city, state
       FROM employees ORDER BY id DESC`).all()
       .filter(x => hit(x.phone, x.first_name, x.middle_name, x.last_name) && stHit(empWorkState(x), x.state)).slice(0, limit);
     employees.forEach(e => { e.work_state = _stateOf(empWorkState(e)); });

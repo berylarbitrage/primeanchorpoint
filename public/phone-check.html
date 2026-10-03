@@ -104,6 +104,19 @@ function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'
 const DOC_LABELS={ssn_front:'SSN 正面',ssn_back:'SSN 反面',ead_front:'EAD 正面',ead_back:'EAD 反面'};
 document.getElementById('phoneInput').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});
 
+// 生日: 能认出日期就带上年龄; 没填标红, 方便补资料
+function dobKv(v){
+  const t=String(v||'').trim();
+  if(!t) return '<span><span class="lbl">生日</span> <b style="color:#dc2626">未填</b></span>';
+  const m=/^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(t)||null;
+  let age='';
+  if(m){
+    const now=new Date(), y=+m[1], mo=+m[2], d=+m[3];
+    const a=now.getFullYear()-y-((now.getMonth()+1<mo||(now.getMonth()+1===mo&&now.getDate()<d))?1:0);
+    if(a>=0&&a<120) age='（'+a+' 岁）';
+  }
+  return '<span><span class="lbl">生日</span> <b>'+esc(t)+'</b>'+age+'</span>';
+}
 function kv(lbl,val){ return val ? `<span><span class="lbl">${esc(lbl)}</span> <b>${esc(val)}</b></span>` : ''; }
 // 证件真伪结论: 缩略图右上角小角标 + 边框颜色
 function vBadge(v){
@@ -231,7 +244,7 @@ async function doSearch(){
         <div class="nm">${esc([e.first_name,e.last_name].filter(Boolean).join(' ')||'—')}</div>
         <div class="meta">
           ${kv('员工编号',e.employee_id)} ${kv('电话',e.phone)} ${kv('邮箱',e.email)}
-          ${kv('职位',e.position)} ${kv('部门',e.department)} ${kv('状态',e.status)} ${kv('入职日期',e.hire_date)}
+          ${kv('职位',e.position)} ${kv('部门',e.department)} ${kv('状态',e.status)} ${kv('入职日期',e.hire_date)} ${dobKv(e.dob)}
           ${kv('工作州',e.work_state)} ${kv('住址',[e.city,e.state].filter(Boolean).join(', '))}
           ${e.timeclock_code?`<span><span class="lbl">打卡码</span> <b style="font-family:ui-monospace,Consolas,monospace;letter-spacing:.08em;color:#047857">${esc(e.timeclock_code)}</b></span>`:''}
           ${e.ssn_last4?`<span><span class="lbl">SSN</span> <b>****${esc(e.ssn_last4)}</b></span>`:''}
