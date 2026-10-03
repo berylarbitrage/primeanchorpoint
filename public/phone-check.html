@@ -775,7 +775,7 @@ function lbRender(opts) {
   const d = lbCur();
   _lb.sel = null; _lb.rot = 0; _lb.zoom = 1; _lb.edited = false;
   _lb.adj = { b: 100, c: 100, g: false };
-  if (!opts.keepVersion) _lb.showCropped = false;
+  if (!opts.keepVersion) _lb.showCropped = !!d.has_cropped;   // 裁剪过的默认打开裁剪版, 原件点「看原件」对照
   lbSyncAdjUI(); lbHideSel();
   _lb.verify = d.verify_status || ''; _lb.verifyBy = d.verify_by || '';
   const ed = lbEditable(d);
@@ -784,7 +784,7 @@ function lbRender(opts) {
   $lb('lbOrigLink').href = d.url ? (d.url + (d.url.indexOf('?') >= 0 ? '&' : '?') + 'v=orig') : '#';
   $lb('lbCropHint').textContent = ed
     ? (d.has_cropped
-        ? '这张已裁剪过：默认看到的是原件，点「看裁剪版」对照 · 原件永久保留，「🗑 删除裁剪版」可恢复显示原件'
+        ? '这张已裁剪过：默认看到的是裁剪版，点「看原件」对照 · 原件永久保留，「🗑 删除裁剪版」可恢复显示原件'
         : '拖框圈出证件后点【保存】；不拖框就是整张保存 · ↺ ↻ 转正歪照片 · 原件始终保留')
     : '此证件来自员工档案，可查看 / 旋转 / 调节 / 识别文字，但不支持保存修改';
   lbRenderVerify();
