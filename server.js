@@ -18261,25 +18261,39 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
     const byName = !!rawName;
     const nameTokens = rawName.toLowerCase().split(/[\s,.\-']+/).filter(Boolean);
     const digits = byName ? '' : norm(req.query.phone);
-    if (byName && rawName.replace(/\s/g, '').length < 2) return res.status(400).json({ error: '请输入至少 2 个字的姓名' });
-    if (!byName && digits.length < 7) return res.status(400).json({ error: '请输入至少 7 位的电话号码' });
+    // 按州筛选: ?state=IL。可以和电话 / 人名一起用, 也可以只选州 (列出这个州的全部记录, 每类最多 200 条)
+    const stFilter = _stateOf(req.query.state);
+    const stateOnly = !!stFilter && !byName && !digits;
+    if (!stateOnly) {
+      if (byName && rawName.replace(/\s/g, '').length < 2) return res.status(400).json({ error: '请输入至少 2 个字的姓名' });
+      if (!byName && digits.length < 7) return res.status(400).json({ error: '请输入至少 7 位的电话号码' });
+    }
+    const limit = stateOnly ? 200 : 50;
     const nameHit = (...parts) => {
       const hay = parts.filter(Boolean).join(' ').toLowerCase();
       return nameTokens.every(t => hay.includes(t));
     };
     const match = v => norm(v) === digits;
+    // 只选了州 → 不再按电话 / 人名过滤
+    const hit = (phone, ...names) => stateOnly || (byName ? nameHit(...names) : match(phone));
+    // 州: 申请 = 申请地点(仓库州) 或 住址州; 员工 = 员工号里的工作州 或 住址州; 工头 = 名单里的州。任一相符即算
+    const stHit = (...vals) => !stFilter || vals.some(v => _stateOf(v) === stFilter);
+    const empWorkState = e => { const m = /^WRK-([A-Z]{2})-/.exec(String(e.employee_id || '')); return m ? m[1] : ''; };
     const applications = db.prepare(`SELECT s.id, s.partner_name, s.name, s.phone, s.email, s.position, s.status,
         s.address1, s.address2, s.city, s.state, s.zip, s.address_verified, s.timeclock_code, s.ssn_last4,
         s.apply_state, s.created_at, s.employee_id,
         (SELECT GROUP_CONCAT(doc_type) FROM applicant_docs d WHERE d.submission_id = s.id) AS doc_types
-      FROM applicant_submissions s ORDER BY s.created_at DESC`).all().filter(x => byName ? nameHit(x.name) : match(x.phone)).slice(0, 50);
+      FROM applicant_submissions s ORDER BY s.created_at DESC`).all()
+      .filter(x => hit(x.phone, x.name) && stHit(x.apply_state, x.state)).slice(0, limit);
     // 带证件明细, 页面可直接看图
     const docsFor = db.prepare(`SELECT id, doc_type, file_name, verify_status, verify_by, ai_text,
       CASE WHEN COALESCE(cropped_path,'')!='' THEN 1 ELSE 0 END AS has_cropped
       FROM applicant_docs WHERE submission_id=?`);
     applications.forEach(a => { try { a.docs = docsFor.all(a.id); } catch (_) { a.docs = []; } });
-    const employees = db.prepare(`SELECT id, employee_id, first_name, middle_name, last_name, phone, email, position, department, status, hire_date, timeclock_code, ssn_last4
-      FROM employees`).all().filter(x => byName ? nameHit(x.first_name, x.middle_name, x.last_name) : match(x.phone)).slice(0, 50);
+    const employees = db.prepare(`SELECT id, employee_id, first_name, middle_name, last_name, phone, email, position, department, status, hire_date, timeclock_code, ssn_last4, city, state
+      FROM employees ORDER BY id DESC`).all()
+      .filter(x => hit(x.phone, x.first_name, x.middle_name, x.last_name) && stHit(empWorkState(x), x.state)).slice(0, limit);
+    employees.forEach(e => { e.work_state = _stateOf(empWorkState(e)); });
     // 档案上还没有打卡码的, 借用其关联申请单上自动生成的那个 (打卡验证时也是这么找的)
     const subCodeStmt = db.prepare(`SELECT timeclock_code FROM applicant_submissions WHERE employee_id=? AND timeclock_code!='' ORDER BY id DESC LIMIT 1`);
     employees.forEach(e => {
@@ -18356,9 +18370,9 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
         if (emp.ssn_last4) a.ssn_last4 = emp.ssn_last4;
       }
     });
-    const foremen = db.prepare(`SELECT id, name, phone, email, warehouse, active, created_at FROM foremen`).all()
-      .filter(x => byName ? nameHit(x.name) : match(x.phone)).slice(0, 50);
-    res.json({ ok: true, phone: digits, mode: byName ? 'name' : 'phone', query: byName ? rawName : digits, found: !!(applications.length || employees.length || foremen.length), applications, employees, foremen });
+    const foremen = db.prepare(`SELECT id, name, phone, email, warehouse, city, state, active, created_at FROM foremen`).all()
+      .filter(x => hit(x.phone, x.name) && stHit(x.state)).slice(0, limit);
+    res.json({ ok: true, phone: digits, mode: stateOnly ? 'state' : byName ? 'name' : 'phone', query: stateOnly ? '' : byName ? rawName : digits, state: stFilter, limit, found: !!(applications.length || employees.length || foremen.length), applications, employees, foremen });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
