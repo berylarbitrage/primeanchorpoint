@@ -9265,7 +9265,7 @@ app.get('/api/jobs', (req, res) => {
 
 // 姊妹站 (Velnaris Group, 托管在 GitHub Pages) 的联系表单跨域提交到这里。
 // 只放行白名单来源 (env INQUIRY_ORIGINS, 逗号分隔), 来源站点名记到 source 列。
-const INQUIRY_ORIGINS = String(process.env.INQUIRY_ORIGINS || 'https://berylarbitrage.github.io')
+const INQUIRY_ORIGINS = String(process.env.INQUIRY_ORIGINS || 'https://berylarbitrage.github.io,https://elnarisgroup.com,https://www.elnarisgroup.com')
   .split(',').map(s => s.trim()).filter(Boolean);
 const INQUIRY_SOURCES = ['Velnaris'];
 function _inquiryCors(req, res) {
