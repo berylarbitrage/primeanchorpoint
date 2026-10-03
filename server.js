@@ -1762,6 +1762,13 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_account_history (
 )`);
 
 // ─── Employee registration invites ───
+// 「疑似重复档案」列表里后台点了「不是同一人」的档案对 (a_id < b_id), 之后不再列出
+db.exec(`CREATE TABLE IF NOT EXISTS employee_dup_dismissed (
+  a_id INTEGER NOT NULL,
+  b_id INTEGER NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (a_id, b_id)
+)`);
 db.exec(`CREATE TABLE IF NOT EXISTS employee_registration_invites (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   employee_id INTEGER NOT NULL REFERENCES employees(id),
@@ -20843,6 +20850,17 @@ app.post('/api/admin/doc-set-file', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// 放在 /employees/:id 前面, 否则 dup-pairs 会被当成 :id
+app.get('/api/admin/employees/dup-pairs', requireAdmin, requireRole('admin'), (req, res) => {
+  const rows = db.prepare('SELECT id, first_name, last_name, phone, email, extra_phones, extra_emails FROM employees').all();
+  const dismissed = new Set(db.prepare('SELECT a_id, b_id FROM employee_dup_dismissed').all().map(r => r.a_id + ':' + r.b_id));
+  const order = { '电话': 0, '邮箱': 1, '姓名': 2 };
+  const pairs = _empDupPairs(rows).filter(p => !dismissed.has(p.a_id + ':' + p.b_id))
+    .map(p => ({ ...p, reasons: p.reasons.sort((x, y) => order[x] - order[y]) }))
+    .sort((x, y) => (y.reasons.length - x.reasons.length) || (order[x.reasons[0]] - order[y.reasons[0]]) || (y.b_id - x.b_id));
+  res.json({ pairs });
+});
+
 app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {
   const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
   if (!emp) return res.status(404).json({ error: 'Not found' });
@@ -20945,6 +20963,49 @@ function _findDupPerson(d, excludeId, cur) {
   if (!hit) return null;
   return { why: 'name', existing: { id: hit.id, first_name: hit.first_name, middle_name: hit.middle_name, last_name: hit.last_name, employee_id: hit.employee_id, phone: hit.phone || '', status: hit.status || '' } };
 }
+
+// 疑似重复档案: 姓名 (名 + 姓, 规则同 _findDupPerson) / 电话 (后 10 位, 含备用) / 邮箱 (不分大小写, 含备用)
+// 任何一项相同就成对列出。生日 / SSN 不参与。
+function _empDupKeys(e) {
+  const norm = v => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z一-鿿 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const fn = norm(e.first_name).split(' ')[0] || '';
+  const lt = norm(e.last_name).split(' '); const ln = lt[lt.length - 1] || '';
+  const parseArr = x => { try { const a = JSON.parse(x || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
+  const n10 = x => String(x || '').replace(/\D/g, '').slice(-10);
+  const phones = [...new Set([e.phone, ...parseArr(e.extra_phones)].map(n10).filter(x => x.length >= 7))];
+  const emails = [...new Set([e.email, ...parseArr(e.extra_emails)].map(x => String(x || '').trim().toLowerCase()).filter(x => x.includes('@')))];
+  return { name: fn && ln ? fn + ' ' + ln : '', phones, emails };
+}
+// rows 里两两对上的档案对 → [{ a_id, b_id, reasons: ['姓名'|'电话'|'邮箱'] }] (a_id < b_id)
+function _empDupPairs(rows) {
+  const buckets = new Map();   // 'n:xxx' / 'p:xxx' / 'e:xxx' → [id]
+  const add = (k, id) => { if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(id); };
+  for (const e of rows) {
+    const k = _empDupKeys(e);
+    if (k.name) add('n:' + k.name, e.id);
+    k.phones.forEach(x => add('p:' + x, e.id));
+    k.emails.forEach(x => add('e:' + x, e.id));
+  }
+  const label = { n: '姓名', p: '电话', e: '邮箱' };
+  const pairs = new Map();
+  for (const [k, ids] of buckets) {
+    const u = [...new Set(ids)].sort((x, y) => x - y);
+    for (let i = 0; i < u.length; i++) for (let j = i + 1; j < u.length; j++) {
+      const key = u[i] + ':' + u[j];
+      if (!pairs.has(key)) pairs.set(key, { a_id: u[i], b_id: u[j], reasons: [] });
+      const r = label[k[0]];
+      if (!pairs.get(key).reasons.includes(r)) pairs.get(key).reasons.push(r);
+    }
+  }
+  return [...pairs.values()];
+}
+
+app.post('/api/admin/employees/dup-dismiss', requireAdmin, requireRole('admin'), (req, res) => {
+  const x = parseInt(req.body && req.body.a_id), y = parseInt(req.body && req.body.b_id);
+  if (!x || !y || x === y) return res.status(400).json({ error: '参数错误' });
+  db.prepare('INSERT OR IGNORE INTO employee_dup_dismissed (a_id, b_id) VALUES (?, ?)').run(Math.min(x, y), Math.max(x, y));
+  res.json({ success: true });
+});
 
 app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
@@ -27642,6 +27703,18 @@ function _employeeFromApplicant(sub) {
   const newId = r.lastInsertRowid;
   db.prepare('UPDATE applicant_submissions SET employee_id=? WHERE id=?').run(newId, sub.id);
   _inheritTimeclockCode(sub.id, newId);   // 申请单上先录的 SSN 一并带到新档案
+  // 打卡自动建档没人核对: 姓名 / 电话 / 邮箱和已有档案对上的照常建档 (工人能打卡),
+  // 但在新档案备注里标「疑似重复」, 后台到员工管理「疑似重复档案」里对比处理
+  try {
+    const rows = db.prepare('SELECT id, first_name, last_name, employee_id, phone, email, extra_phones, extra_emails FROM employees').all();
+    const hits = _empDupPairs(rows).filter(p => p.a_id === newId || p.b_id === newId);
+    if (hits.length) {
+      const byId = new Map(rows.map(e => [e.id, e]));
+      const desc = hits.map(p => { const o = byId.get(p.a_id === newId ? p.b_id : p.a_id); return `${[o.first_name, o.last_name].filter(Boolean).join(' ')}（${o.employee_id || '#' + o.id}，${p.reasons.join('/')}相同）`; }).join('；');
+      const note = `⚠️ ${today} 疑似重复：与 ${desc}，请到员工管理「疑似重复档案」对比处理`;
+      db.prepare(`UPDATE employees SET notes=CASE WHEN COALESCE(notes,'')='' THEN ? ELSE notes || char(10) || ? END WHERE id=?`).run(note, note, newId);
+    }
+  } catch (e) { console.error('[Checkin] dup flag failed:', e.message); }
   console.log(`[Checkin] Auto-created employee #${newId} from applicant submission #${sub.id} (${sub.name})`);
   return db.prepare('SELECT id, first_name, middle_name, last_name, employee_id FROM employees WHERE id=?').get(newId);
 }

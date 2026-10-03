@@ -1372,6 +1372,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <button class="btn btn-outline" id="empExportDocsBtn" onclick="exportSelectedEmpDocs()" title="勾选员工后导出其姓名/电话/邮箱与 SSN、EAD 证件（生成 PDF 档案）">📎 导出证件 (0)</button>
       <button class="btn btn-outline" id="empSelClearBtn" onclick="_empSelClear()" style="display:none;color:#b91c1c;border-color:#fca5a5" title="清空已勾选的员工">✕ 取消选择</button>
       <a class="btn btn-outline" href="/timeclock" target="_blank">打卡页面 ↗</a>
+      <button class="btn btn-outline" id="btnEmpDupPairs" onclick="openEmpDupPairs()" style="display:none;color:#b91c1c;border-color:#fca5a5" title="姓名 / 电话 / 邮箱相同的员工档案成对列出，逐个对比合并或标「不是同一人」">🧩 疑似重复档案</button>
       <button class="btn btn-green" onclick="openEmpModal()">+ 新增员工</button>
     </div>
   </div>
@@ -8375,6 +8376,14 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 </div></div>
 
 <!-- 🧹 合并重复员工号: 两份档案左右对比, 点选保留哪份后再确认 -->
+<div class="modal-bg" id="empDupPairsModal"><div class="modal" style="max-width:820px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+    <h2 style="margin:0;font-size:1.05rem">🧩 疑似重复档案</h2>
+    <button class="btn btn-sm btn-outline" onclick="document.getElementById('empDupPairsModal').classList.remove('show')">✕ 关闭</button>
+  </div>
+  <p style="font-size:.8rem;color:var(--gray-500);margin:0 0 .75rem">姓名、电话、邮箱任何一项相同的档案成对列出（生日 / SSN 不参与）。点「对比合并」左右对照挑选保留哪些信息；不是同一个人就点「不是同一人」，以后不再列出。</p>
+  <div id="empDupPairsBody" style="max-height:65vh;overflow:auto"></div>
+</div></div>
 <div class="modal-bg" id="mergeDupModal" style="z-index:9998"><div class="modal" style="max-width:780px">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
     <h2 id="mergeDupTitle" style="margin:0;font-size:1.05rem">🧹 合并成一个员工号</h2>
@@ -8788,6 +8797,7 @@ async function api(path, opts = {}) {
 // ─── Login ───
 function applyRoleUI() {
   { const b = document.getElementById('btnExportContacts'); if (b) b.style.display = USER_ROLE === 'admin' ? '' : 'none'; }
+  { const b = document.getElementById('btnEmpDupPairs'); if (b) b.style.display = USER_ROLE === 'admin' ? '' : 'none'; }
   // Show/hide sidebar links based on role
   document.querySelectorAll('#sidebar a[data-role]').forEach(a => {
     const roles = a.getAttribute('data-role').split(',');
@@ -15934,6 +15944,10 @@ const PAY_TYPE_LABEL   = { hourly:'小时工', salary:'固定薪资' };
 async function loadEmployees() {
   allEmployees = await api('/admin/employees');
   updateEmpStats(allEmployees);
+  if (USER_ROLE === 'admin') api('/admin/employees/dup-pairs').then(r => {   // 按钮上显示疑似重复对数
+    const b = document.getElementById('btnEmpDupPairs');
+    if (b && r && Array.isArray(r.pairs)) b.textContent = `🧩 疑似重复档案 (${r.pairs.length})`;
+  }).catch(() => {});
   populateDeptFilter(allEmployees);
   filterEmployees();
 }
@@ -43882,6 +43896,51 @@ function _mergeDefaultPicks() {
     P.picks[f.key] = (!kv && String(f.get(P[other]) || '').trim()) ? other : keepSide;
   }
 }
+// ── 员工管理「疑似重复档案」: 姓名 / 电话 / 邮箱相同的档案对, 逐个对比合并或标「不是同一人」──
+async function openEmpDupPairs() {
+  document.getElementById('empDupPairsModal').classList.add('show');
+  await _renderEmpDupPairs();
+}
+async function _renderEmpDupPairs() {
+  const box = document.getElementById('empDupPairsBody');
+  box.innerHTML = '<div class="empty">加载中…</div>';
+  const r = await api('/admin/employees/dup-pairs').catch(() => null);
+  if (!r || !Array.isArray(r.pairs)) { box.innerHTML = '<div class="empty">加载失败，请刷新后再试</div>'; return; }
+  const byId = new Map((allEmployees || []).map(e => [e.id, e]));
+  const pairs = r.pairs.filter(p => byId.has(p.a_id) && byId.has(p.b_id));
+  const btn = document.getElementById('btnEmpDupPairs');
+  if (btn) btn.textContent = `🧩 疑似重复档案 (${pairs.length})`;
+  if (!pairs.length) { box.innerHTML = '<div class="empty">✅ 没有疑似重复的档案</div>'; return; }
+  const st = { active: '在职', onboarding: '待入职', inactive: '停职', terminated: '已离职' };
+  const card = e => `<div style="flex:1;min-width:0;font-size:.8rem;line-height:1.5">
+      <a href="javascript:void(0)" onclick="viewEmployee(${e.id})" style="font-weight:700;color:var(--navy)">${esc(titleCase([e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ')))}</a>
+      <span style="color:var(--gray-500)"> · ${esc(e.employee_id || '')} · ${esc(st[e.status] || e.status || '')}</span><br>
+      <span style="color:var(--gray-600)">${esc(e.phone || '—')} · ${esc(e.email || '—')}</span><br>
+      <span style="color:var(--gray-400)">工时 ${e.time_count || 0} 条${String(e.notes || '').includes('打卡自动建档') ? ' · 🤖 打卡自动建档' : ''}</span>
+    </div>`;
+  box.innerHTML = pairs.map(p => {
+    const a = byId.get(p.a_id), b = byId.get(p.b_id);
+    return `<div style="border:1px solid var(--gray-200);border-radius:10px;padding:.6rem .75rem;margin-bottom:.5rem">
+      <div style="margin-bottom:.4rem">${p.reasons.map(x => `<span style="display:inline-block;padding:.1rem .45rem;margin-right:.3rem;font-size:.72rem;font-weight:700;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:999px">${x}相同</span>`).join('')}</div>
+      <div style="display:flex;gap:.75rem;align-items:flex-start;flex-wrap:wrap">${card(a)}${card(b)}
+        <div style="display:flex;flex-direction:column;gap:.3rem">
+          <button class="btn btn-sm" style="background:#047857;color:#fff" onclick="empDupCompare(${a.id},${b.id})">对比合并</button>
+          <button class="btn btn-sm btn-outline" onclick="empDupDismiss(${a.id},${b.id})">不是同一人</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+function empDupCompare(aId, bId) {
+  inboxMergeDup(aId, bId);
+  if (_mergeDupPair) _mergeDupPair.fromDupList = true;
+}
+async function empDupDismiss(aId, bId) {
+  const r = await api('/admin/employees/dup-dismiss', { method: 'POST', body: JSON.stringify({ a_id: aId, b_id: bId }) }).catch(() => null);
+  if (!r || !r.success) { showToast('操作失败：' + ((r && r.error) || '请重试'), 'error'); return; }
+  showToast('已标为不是同一人，不再列出');
+  _renderEmpDupPairs();
+}
 function inboxMergeDup(linkedId, otherId) {
   const a = (allEmployees || []).find(e => e.id === linkedId);
   const b = (allEmployees || []).find(e => e.id === otherId);
@@ -44378,7 +44437,8 @@ async function execMergeDup() {
     closeMergeDup();
     showToast(`✅ 已合并：保留 ${nm(keep)}，重复员工号 ${absorb.employee_id} 已注销（问卷/记录全部保留并转移到保留档案）`);
     await loadEmployees();
-    openApplicantInbox(_inboxPartnerId, _inboxPartnerName); // 卡片按合并后的档案重新渲染
+    if (P.fromDupList) _renderEmpDupPairs();
+    else openApplicantInbox(_inboxPartnerId, _inboxPartnerName); // 卡片按合并后的档案重新渲染
   } catch (e) { showToast('合并失败：' + (e.message || e), 'error'); }
   btn.disabled = false; btn.textContent = '确认合并 / Merge';
 }
