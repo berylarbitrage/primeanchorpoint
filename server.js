@@ -22678,41 +22678,14 @@ app.post('/api/admin/invoices/parse-excel', requireAdmin, invoiceXlsxUpload.sing
   }
 });
 
-// 下载客户时间表模板 (按周 weekly / 按日期 daily), 填好后从「上传工资表 Excel」导入。
-// 按该客户最近一张工时发票预填员工名单、时薪、Markup。
+// 下载空白时间表模板 (按周 weekly / 按日期 daily), 所有客户通用: 交给 AI 按客户工时填好,
+// 再从新建 Invoice 的「上传工资表 Excel」导入。
 const { buildTimesheetTemplate } = require('./timesheet-template');
 app.get('/api/admin/invoices/timesheet-template', requireAdmin, (req, res) => {
   try {
-    const company = String(req.query.company || '').trim();
-    const kind = req.query.kind === 'daily' ? 'daily' : 'weekly';
-    const isoRe = /^\d{4}-\d{2}-\d{2}$/;
-    const start = isoRe.test(req.query.start || '') ? req.query.start : new Date().toISOString().slice(0, 10);
-    const end = isoRe.test(req.query.end || '') ? req.query.end : '';
-    let employees = [], markup = null;
-    if (company) {
-      const recent = db.prepare(`SELECT items_json, profile_json, markup_rate FROM invoices WHERE lower(trim(company_name)) = lower(?)
-        ORDER BY COALESCE(invoice_date, '') DESC, id DESC LIMIT 10`).all(company);
-      for (const inv of recent) {
-        let prof = {}, items = [];
-        try { prof = JSON.parse(inv.profile_json || '{}') || {}; } catch (_) {}
-        if (prof.invoice_mode === 'container') continue;
-        try { items = JSON.parse(inv.items_json || '[]') || []; } catch (_) {}
-        if (!items.length) continue;
-        const seen = new Set();
-        for (const it of items) {
-          const name = String(it.name || '').trim();
-          if (!name || seen.has(name.toLowerCase())) continue;
-          seen.add(name.toLowerCase());
-          const rate = Number(it.rate) || 0, ot = Number(it.otRate) || 0;
-          employees.push({ name, rate, otRate: ot && Math.abs(ot - rate * 1.5) > 0.005 ? ot : null });
-        }
-        if (Number(inv.markup_rate) > 0) markup = Number(inv.markup_rate);
-        break;
-      }
-    }
-    const out = buildTimesheetTemplate({ company, kind, start, end, markup, employees });
+    const out = buildTimesheetTemplate({ kind: req.query.kind === 'daily' ? 'daily' : 'weekly' });
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(out.fileName)}"; filename*=UTF-8''${encodeURIComponent(out.fileName)}`);
+    res.setHeader('Content-Disposition', `attachment; filename="${out.fileName}"`);
     res.send(out.buffer);
   } catch (e) { res.status(500).json({ error: '生成模板失败：' + e.message }); }
 });

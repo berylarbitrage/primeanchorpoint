@@ -1,14 +1,14 @@
 'use strict';
 
-// ─── 客户时间表模板 (可下载填写, 再上传进发票生成器) ───────────────────────────
+// ─── 空白时间表模板 (所有客户通用; 交给 AI 按客户工时填好, 再上传进发票生成器) ──────
 // 两种模板, 都在第一页「Timesheet」, A1 写 "PA TIMESHEET" 作为识别标记:
 //   WEEKLY — 一人一行, 一周 7 天每天一列 (和 DV Fulfillment 发来的表一样)
-//            Name | Rate | OT Rate | 9/28/2026 … 10/4/2026 | TOTAL
+//            Name | Rate | OT Rate | Mon … Sun   (日期由 B3 Week Start 推出)
 //   DAILY  — 按日期, 一人一天一行
 //            Date | Name | Rate | OT Rate | Time In | Time Out | Break (min) | Hours | Note
 // 表头上方是键值行: Company / Week Start (或 Period Start / Period End) / Markup。
-// 下载时按该客户最近一张发票预填员工名单、时薪、Markup; 上传时 parseTimesheetTemplate()
-// 把每人每天的工时读成 days 映射, 正常/加班按每周 (周一~周日) 超 40 小时拆分。
+// 上传时 parseTimesheetTemplate() 把每人每天的工时读成 days 映射,
+// 正常/加班按每周 (周一~周日) 超 40 小时拆分。
 
 const MARK = 'PA TIMESHEET';
 const KINDS = ['weekly', 'daily'];
@@ -20,7 +20,6 @@ const isoToSerial = s => { const [y, m, d] = s.split('-').map(Number); return (D
 const serialToIso = n => new Date(EPOCH + Math.round(n) * 86400000).toISOString().slice(0, 10);
 const addDays = (s, n) => serialToIso(isoToSerial(s) + n);
 const pad2 = n => String(n).padStart(2, '0');
-const isIso = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
 
 // 本周一 (按美国中部时间无所谓, 只需要日期)
 function mondayOf(iso) {
@@ -69,58 +68,76 @@ const num = v => { const n = typeof v === 'number' ? v : parseFloat(v); return N
 const str = v => (v == null ? '' : String(v).trim());
 const low = v => str(v).toLowerCase();
 
-// ─── 生成模板 ────────────────────────────────────────────────────────────────
-// opts: { company, kind: 'weekly'|'daily', start: 'YYYY-MM-DD', end?, markup (倍数, 如 1.25),
-//         employees: [{ name, rate, otRate }] }
-function buildTimesheetTemplate(opts) {
+// ─── 生成空白模板 ────────────────────────────────────────────────────────────
+// 空白模板, 不预填任何东西: 把模板 + 客户发来的工时 (截图/表格) 一起交给 AI, 让 AI 填好再上传。
+// 所以模板里不放公式 (AI 改表不会重算公式), 第二页「Instructions」写清楚每一格怎么填。
+const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const INSTRUCTIONS = {
+  weekly: [
+    ['HOW TO FILL — Weekly timesheet (one row per worker, one column per day)'],
+    [],
+    ['Only edit the "Timesheet" sheet. Keep cell A1 = "PA TIMESHEET" and B1 = "WEEKLY". Do not rename or move the header row.'],
+    ['B2  Company', 'Client company name, e.g. DV Fulfillment LLC (optional, used to auto-select the client).'],
+    ['B3  Week Start', 'First date of the week as a date or text MM/DD/YYYY, e.g. 09/28/2026. Required.'],
+    ['B4  Markup', 'Bill multiplier, e.g. 1.25 for 25%. Leave blank if unknown.'],
+    ['Name', 'Worker full name, one row per worker. Add more rows below if needed.'],
+    ['Rate', 'Regular hourly pay rate (number, no $). Leave blank if unknown.'],
+    ['OT Rate', 'Only if overtime is NOT 1.5 x Rate. Usually leave blank.'],
+    ['Mon … Sun', 'Hours worked that day as a number (8, 7.5). Leave blank or 0 if not worked. The 7 columns are the 7 days starting from Week Start.'],
+    [],
+    ['Overtime is calculated automatically: hours over 40 in a Mon–Sun week.'],
+    ['Then upload the file in Invoice → 新建 Invoice → 上传工资表 Excel.'],
+    [],
+    ['填写说明: 只改 Timesheet 页。B3 填本周第一天日期; 每人一行, Mon~Sun 每天填工时数字; 时薪/Markup 不知道就留空。'],
+  ],
+  daily: [
+    ['HOW TO FILL — Daily timesheet (one row per worker per day)'],
+    [],
+    ['Only edit the "Timesheet" sheet. Keep cell A1 = "PA TIMESHEET" and B1 = "DAILY". Do not rename or move the header row.'],
+    ['B2  Company', 'Client company name (optional, used to auto-select the client).'],
+    ['B3  Period Start', 'Service period start date, MM/DD/YYYY (optional; defaults to earliest date in rows).'],
+    ['B4  Period End', 'Service period end date, MM/DD/YYYY (optional; defaults to latest date in rows).'],
+    ['B5  Markup', 'Bill multiplier, e.g. 1.25 for 25%. Leave blank if unknown.'],
+    ['Date', 'Work date, MM/DD/YYYY. One row per worker per day worked.'],
+    ['Name', 'Worker full name (spell it the same way on every row).'],
+    ['Rate', 'Regular hourly pay rate (number, no $). Leave blank if unknown.'],
+    ['OT Rate', 'Only if overtime is NOT 1.5 x Rate. Usually leave blank.'],
+    ['Time In / Time Out', 'Optional clock times, e.g. 7:00 AM / 3:30 PM. Used only when Hours is blank.'],
+    ['Break (min)', 'Unpaid break minutes, subtracted from Time In/Out.'],
+    ['Hours', 'Hours worked that day as a number (8, 7.5). If filled, Time In/Out is ignored.'],
+    ['Note', 'Anything else (optional, not imported).'],
+    [],
+    ['Overtime is calculated automatically: hours over 40 in a Mon–Sun week.'],
+    ['Then upload the file in Invoice → 新建 Invoice → 上传工资表 Excel.'],
+    [],
+    ['填写说明: 只改 Timesheet 页。一人一天一行, 填日期、姓名、工时 (或上下班时间); 时薪/Markup 不知道就留空。'],
+  ],
+};
+
+function buildTimesheetTemplate(opts = {}) {
   const XLSX = require('xlsx');
   const kind = KINDS.includes(opts.kind) ? opts.kind : 'weekly';
-  const company = str(opts.company);
-  const start = kind === 'weekly' ? mondayOf(opts.start) : opts.start;
-  let end = kind === 'weekly' ? addDays(start, 6) : (isIso(opts.end) && opts.end >= start ? opts.end : addDays(start, 6));
-  if (isoToSerial(end) - isoToSerial(start) > 30) end = addDays(start, 30);
-  const nDays = isoToSerial(end) - isoToSerial(start) + 1;
-  const emps = (opts.employees || []).filter(e => str(e.name));
-  const markup = num(opts.markup) > 0 ? num(opts.markup) : '';
-  const rateCell = v => (num(v) > 0 ? num(v) : '');
-  const dateCell = (iso, f) => (f ? { t: 'n', v: isoToSerial(iso), f, z: 'm/d/yyyy' } : { t: 'n', v: isoToSerial(iso), z: 'm/d/yyyy' });
-
-  const aoa = [[MARK, kind.toUpperCase()], ['Company', company]];
-  let cols;
+  let aoa, cols;
   if (kind === 'weekly') {
-    aoa.push(['Week Start', dateCell(start)], ['Markup', markup],
-      ['每格填当天工时 (小时, 如 8 或 7.5); 没上班留空。改 Week Start 日期列会跟着变。Rate 留空 = 上传后在发票页填。'], []);
-    const hdrRow = aoa.length + 1; // 1-based Excel row of the header
-    aoa.push(['Name', 'Rate', 'OT Rate', ...Array.from({ length: 7 }, (_, i) => dateCell(addDays(start, i), `$B$3+${i}`)), 'TOTAL']);
-    const rows = [...emps.map(e => [e.name, rateCell(e.rate), rateCell(e.otRate)]), ...Array.from({ length: 15 }, () => [''])];
-    rows.forEach((r, i) => {
-      const x = hdrRow + 1 + i;
-      aoa.push([r[0], r[1] ?? '', r[2] ?? '', '', '', '', '', '', '', '', { t: 'n', v: 0, f: `SUM(D${x}:J${x})` }]);
-    });
-    cols = [24, 8, 8, 11, 11, 11, 11, 11, 11, 11, 8];
+    aoa = [[MARK, 'WEEKLY'], ['Company', ''], ['Week Start', ''], ['Markup', ''], [],
+      ['Name', 'Rate', 'OT Rate', ...DAY_NAMES]];
+    for (let i = 0; i < 30; i++) aoa.push(['']);
+    cols = [26, 8, 8, 7, 7, 7, 7, 7, 7, 7];
   } else {
-    aoa.push(['Period Start', dateCell(start)], ['Period End', dateCell(end)], ['Markup', markup],
-      ['一人一天一行: 填 Hours (小时), 或填 Time In / Time Out (+ Break 分钟) 自动算。没上班的行留空即可, 可自行加行。'], []);
-    aoa.push(['Date', 'Name', 'Rate', 'OT Rate', 'Time In', 'Time Out', 'Break (min)', 'Hours', 'Note']);
-    for (let i = 0; i < nDays; i++) {
-      const d = addDays(start, i);
-      for (const e of emps) aoa.push([dateCell(d), e.name, rateCell(e.rate), rateCell(e.otRate)]);
-    }
-    for (let i = 0; i < 20; i++) aoa.push(['']);
-    cols = [11, 24, 8, 8, 9, 9, 10, 8, 20];
+    aoa = [[MARK, 'DAILY'], ['Company', ''], ['Period Start', ''], ['Period End', ''], ['Markup', ''], [],
+      ['Date', 'Name', 'Rate', 'OT Rate', 'Time In', 'Time Out', 'Break (min)', 'Hours', 'Note']];
+    for (let i = 0; i < 60; i++) aoa.push(['']);
+    cols = [12, 26, 8, 8, 10, 10, 10, 8, 24];
   }
-
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = cols.map(w => ({ wch: w }));
+  const help = XLSX.utils.aoa_to_sheet(INSTRUCTIONS[kind]);
+  help['!cols'] = [{ wch: 22 }, { wch: 110 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Timesheet');
+  XLSX.utils.book_append_sheet(wb, help, 'Instructions');
   const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-
-  const [sy, sm, sd] = start.split('-'), [ey, em, ed] = end.split('-');
-  const safe = company.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_');
-  // 文件名带 MMDDMMDDYYYY 账期 (发票生成器的文件名账期规则也认)
-  const fileName = `${safe ? safe + '_' : ''}Timesheet_${kind === 'weekly' ? 'Weekly' : 'Daily'}_${sm}${sd}${em}${ed}${ey}.xlsx`;
-  return { buffer: buf, fileName, start, end, kind };
+  return { buffer: buf, fileName: `Timesheet_${kind === 'weekly' ? 'Weekly' : 'Daily'}_Template.xlsx`, kind };
 }
 
 // ─── 读回填好的模板 ──────────────────────────────────────────────────────────
@@ -164,16 +181,21 @@ function parseTimesheetTemplate(rows) {
   if (kind === 'weekly') {
     const weekStart = cellDate(meta['week start']);
     const cName = colOf('name'), cRate = colOf('rate'), cOt = colOf('ot rate');
+    // 日期列: 表头是 Mon~Sun → 落在 Week Start 起 7 天里同一个星期几的那天; 表头是日期就用日期
     const dayCols = [];
     hdr.forEach((h, c) => {
-      if (c === cName || c === cRate || c === cOt || h === 'total') return;
-      const raw = (rows[hdrIdx] || [])[c];
-      const iso = cellDate(raw, weekStart ? weekStart.slice(0, 4) : '');
+      if (c === cName || c === cRate || c === cOt || !h || h === 'total') return;
+      const dn = DAY_NAMES.findIndex(d => h.startsWith(d.toLowerCase()));
+      if (dn >= 0) {
+        if (!weekStart) return;
+        const off = (dn - ((new Date(weekStart + 'T00:00:00Z').getUTCDay() + 6) % 7) + 7) % 7;
+        dayCols.push({ c, iso: addDays(weekStart, off) });
+        return;
+      }
+      const iso = cellDate((rows[hdrIdx] || [])[c], weekStart ? weekStart.slice(0, 4) : '');
       if (iso) dayCols.push({ c, iso });
     });
-    // 日期列读不出来 (公式没缓存值) → 按 Week Start 往后排 7 列
-    if (!dayCols.length && weekStart) for (let i = 0; i < 7; i++) dayCols.push({ c: cOt + 1 + i, iso: addDays(weekStart, i) });
-    if (!dayCols.length) throw new Error('时间表模板读不出日期列，请检查 Week Start');
+    if (!dayCols.length) throw new Error('时间表模板读不出日期：请在 B3「Week Start」填本周第一天日期（如 09/28/2026）');
     for (let i = hdrIdx + 1; i < rows.length; i++) {
       const r = rows[i] || [];
       const name = str(r[cName]);
