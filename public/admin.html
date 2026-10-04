@@ -3006,6 +3006,11 @@ tr:hover td.invp-frz{background:var(--sky-light)}
           <span id="invpExcelStatus" style="font-size:.82rem;color:#047857"></span>
         </div>
         <div style="font-size:.76rem;color:#059669;margin-top:.35rem">把 .xlsx / .xls 文件 <b>直接拖到这个框里</b>，或点「选择 Excel 文件」。上传后自动填入服务周期、Markup、员工与工时（正常/加班）；填好后可继续手动修改再保存。</div>
+        <div style="display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;margin-top:.45rem;padding-top:.45rem;border-top:1px dashed #a7f3d0">
+          <span style="font-size:.8rem;color:#065f46">📥 下载该客户的时间表模板（先选上面的客户和服务周期）：</span>
+          <button type="button" class="btn btn-outline" style="font-size:.78rem;padding:.2rem .7rem" onclick="invpDownloadTimesheetTemplate('weekly')">按周（每天一列）</button>
+          <button type="button" class="btn btn-outline" style="font-size:.78rem;padding:.2rem .7rem" onclick="invpDownloadTimesheetTemplate('daily')">按日期（一天一行）</button>
+        </div>
       </div>
       <!-- Employee list -->
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:.4rem">
@@ -38824,6 +38829,26 @@ function invpHandleExcelUpload(input) {
   const file = input.files && input.files[0];
   input.value = ''; // allow re-uploading the same file later
   invpProcessExcelFile(file);
+}
+
+// 下载客户时间表模板: 按该客户最近一张发票预填员工/时薪/Markup, 填好工时后拖回上面的框导入
+async function invpDownloadTimesheetTemplate(kind) {
+  const company = String((document.getElementById('invPageBillName') || {}).value || '').trim();
+  if (!company) { showToast('请先选择客户公司（账单发往）', 'error'); return; }
+  const start = (document.getElementById('invPageStart') || {}).value || '';
+  const end = (document.getElementById('invPageEnd') || {}).value || '';
+  const qs = new URLSearchParams({ company, kind, start, end });
+  try {
+    const resp = await fetch(API + '/admin/invoices/timesheet-template?' + qs, { headers: { 'Authorization': `Bearer ${TOKEN}` } });
+    if (!resp.ok) { const d = await resp.json().catch(() => null); throw new Error((d && d.error) || ('HTTP ' + resp.status)); }
+    const cd = resp.headers.get('content-disposition') || '';
+    const m = cd.match(/filename\*=UTF-8''([^;]+)/);
+    const name = m ? decodeURIComponent(m[1]) : `${company}_Timesheet.xlsx`;
+    const url = URL.createObjectURL(await resp.blob());
+    const a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  } catch (e) { showToast('下载模板失败：' + (e.message || e), 'error'); }
 }
 
 // Drag-and-drop onto the green box: highlight on dragover, import on drop.

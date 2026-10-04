@@ -13,6 +13,7 @@
 // Columns are matched by header text (not position), so minor reordering is fine.
 
 const zlib = require('zlib');
+const { isTimesheetTemplate, parseTimesheetTemplate } = require('./timesheet-template');
 
 // Read the ZIP central directory → Map<filename, Buffer(uncompressed)>.
 function unzip(buf) {
@@ -754,6 +755,9 @@ module.exports = function parseInvoiceWorkbook(buf, filename) {
   let sheets = [];
   try { sheets = readAllSheetsAny(buf); } catch (_) { sheets = []; }
   let data = null;
+  // 我们自己的「客户时间表模板」(A1 = PA TIMESHEET, 按周 / 按日期): 下载填好再上传
+  const ts = sheets.find(sh => isTimesheetTemplate(sh.rows));
+  if (ts) return parseTimesheetTemplate(ts.rows);
   if (sheets.length) {
     const combined = [];
     for (const sh of sheets) {
