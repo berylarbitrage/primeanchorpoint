@@ -117,9 +117,9 @@ function buildTimesheetTemplate(opts) {
   const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
   const [sy, sm, sd] = start.split('-'), [ey, em, ed] = end.split('-');
-  const safe = (company || 'Company').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') || 'Company';
+  const safe = company.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_');
   // 文件名带 MMDDMMDDYYYY 账期 (发票生成器的文件名账期规则也认)
-  const fileName = `${safe}_Timesheet_${kind === 'weekly' ? 'Weekly' : 'Daily'}_${sm}${sd}${em}${ed}${ey}.xlsx`;
+  const fileName = `${safe ? safe + '_' : ''}Timesheet_${kind === 'weekly' ? 'Weekly' : 'Daily'}_${sm}${sd}${em}${ed}${ey}.xlsx`;
   return { buffer: buf, fileName, start, end, kind };
 }
 
