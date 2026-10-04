@@ -1,0 +1,8 @@
+{
+  "start": "2026-09-28",
+  "employees": [
+    { "name": "Kyontez Toney",  "hours": [8, 8, 0, 0, 0, null, null] },
+    { "name": "Demetri Gipson", "hours": [8, 8, 0, 0, 0, null, null] },
+    { "name": "Pacora Monrana", "hours": [8, 0, 0, 0, 0, null, null] }
+  ]
+}
