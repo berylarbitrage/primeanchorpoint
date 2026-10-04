@@ -1693,6 +1693,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <h1>🧾 公司 Invoice 管理</h1>
     <div class="top-actions">
       <button class="btn btn-green" onclick="openInvpBuilderModal()">+ 新建 Invoice</button>
+      <button class="btn btn-outline" style="color:#047857;border-color:#6ee7b7" onclick="invpOpenTemplateModal()" title="下载任意客户的时间表模板（按周 / 按日期），填好工时后在新建 Invoice 里上传">📥 时间表模板</button>
       <button class="btn btn-outline" onclick="loadInvpList()">刷新</button>
       <button class="btn btn-outline" style="color:#b45309;border-color:#fcd34d" onclick="scanInvpDuplicates()">🔍 检查串单</button>
       <button class="btn btn-outline" style="color:#0369a1;border-color:#7dd3fc" onclick="fixInvpNumberStates()" title="批量检查并修正：发票号里的州与账单地址所在州不一致的发票">🔧 修正发票号州</button>
@@ -3006,6 +3007,11 @@ tr:hover td.invp-frz{background:var(--sky-light)}
           <span id="invpExcelStatus" style="font-size:.82rem;color:#047857"></span>
         </div>
         <div style="font-size:.76rem;color:#059669;margin-top:.35rem">把 .xlsx / .xls 文件 <b>直接拖到这个框里</b>，或点「选择 Excel 文件」。上传后自动填入服务周期、Markup、员工与工时（正常/加班）；填好后可继续手动修改再保存。</div>
+        <div style="display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;margin-top:.45rem;padding-top:.45rem;border-top:1px dashed #a7f3d0">
+          <span style="font-size:.8rem;color:#065f46">📥 下载时间表模板（按上面选的客户和服务周期预填，没选客户 = 空白模板）：</span>
+          <button type="button" class="btn btn-outline" style="font-size:.78rem;padding:.2rem .7rem" onclick="invpDownloadTimesheetTemplate('weekly')">按周（每天一列）</button>
+          <button type="button" class="btn btn-outline" style="font-size:.78rem;padding:.2rem .7rem" onclick="invpDownloadTimesheetTemplate('daily')">按日期（一天一行）</button>
+        </div>
       </div>
       <!-- Employee list -->
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:.4rem">
@@ -38824,6 +38830,70 @@ function invpHandleExcelUpload(input) {
   const file = input.files && input.files[0];
   input.value = ''; // allow re-uploading the same file later
   invpProcessExcelFile(file);
+}
+
+// 下载客户时间表模板 (所有客户通用): 有客户 → 按它最近一张发票预填员工/时薪/Markup;
+// 不选客户 → 空白模板。填好工时后拖进新建 Invoice 的 Excel 框导入。
+async function invpFetchTimesheetTemplate(company, kind, start, end) {
+  const qs = new URLSearchParams({ company: company || '', kind, start: start || '', end: end || '' });
+  try {
+    const resp = await fetch(API + '/admin/invoices/timesheet-template?' + qs, { headers: { 'Authorization': `Bearer ${TOKEN}` } });
+    if (!resp.ok) { const d = await resp.json().catch(() => null); throw new Error((d && d.error) || ('HTTP ' + resp.status)); }
+    const cd = resp.headers.get('content-disposition') || '';
+    const m = cd.match(/filename\*=UTF-8''([^;]+)/);
+    const name = m ? decodeURIComponent(m[1]) : 'Timesheet.xlsx';
+    const url = URL.createObjectURL(await resp.blob());
+    const a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    return true;
+  } catch (e) { showToast('下载模板失败：' + (e.message || e), 'error'); return false; }
+}
+// 新建 Invoice 页里的按钮: 用当前选的客户和服务周期 (没选客户就给空白模板)
+function invpDownloadTimesheetTemplate(kind) {
+  const company = String((document.getElementById('invPageBillName') || {}).value || '').trim();
+  return invpFetchTimesheetTemplate(company, kind,
+    (document.getElementById('invPageStart') || {}).value || '', (document.getElementById('invPageEnd') || {}).value || '');
+}
+// Invoice 管理页的「📥 时间表模板」: 小窗里选客户 / 类型 / 日期
+async function invpOpenTemplateModal() {
+  if (!(window._invpPartners || []).length) await loadInvpCompanies().catch(() => {});
+  document.getElementById('invpTplModal')?.remove();
+  const mon = new Date(); mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7));
+  const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+  const opts = (window._invpPartners || []).map(p => `<option value="${esc(p.name || '')}">`).join('');
+  const fld = 'width:100%;border:1px solid var(--gray-200);border-radius:6px;padding:6px 8px;font-size:.88rem;box-sizing:border-box';
+  const wrap = document.createElement('div');
+  wrap.id = 'invpTplModal';
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px';
+  wrap.innerHTML = `<div style="background:#fff;border-radius:10px;padding:1.2rem 1.3rem;width:100%;max-width:420px;box-shadow:0 10px 30px rgba(0,0,0,.2)">
+    <h3 style="margin:0 0 .8rem">📥 下载时间表模板</h3>
+    <label style="font-size:.82rem;color:var(--gray-500)">客户公司（留空 = 空白模板）</label>
+    <input id="invpTplCompany" list="invpTplCompanies" placeholder="输入或选择客户…" style="${fld};margin:.2rem 0 .7rem">
+    <datalist id="invpTplCompanies">${opts}</datalist>
+    <label style="font-size:.82rem;color:var(--gray-500)">模板类型</label>
+    <div style="display:flex;gap:1rem;margin:.25rem 0 .7rem;font-size:.88rem">
+      <label style="cursor:pointer"><input type="radio" name="invpTplKind" value="weekly" checked onchange="document.getElementById('invpTplEndWrap').style.display='none'"> 按周（每天一列）</label>
+      <label style="cursor:pointer"><input type="radio" name="invpTplKind" value="daily" onchange="document.getElementById('invpTplEndWrap').style.display=''"> 按日期（一天一行）</label>
+    </div>
+    <div style="display:flex;gap:.6rem">
+      <div style="flex:1"><label style="font-size:.82rem;color:var(--gray-500)">开始日期（按周会对齐到周一）</label><input type="date" id="invpTplStart" value="${iso(mon)}" style="${fld};margin-top:.2rem"></div>
+      <div style="flex:1;display:none" id="invpTplEndWrap"><label style="font-size:.82rem;color:var(--gray-500)">结束日期</label><input type="date" id="invpTplEnd" value="${iso(sun)}" style="${fld};margin-top:.2rem"></div>
+    </div>
+    <div style="font-size:.76rem;color:var(--gray-500);margin:.7rem 0 .9rem">选了客户会按它最近一张发票预填员工名单、时薪、Markup。填好工时后，在「+ 新建 Invoice」的绿色 Excel 框上传即可。</div>
+    <div style="display:flex;justify-content:flex-end;gap:.5rem">
+      <button class="btn btn-outline" onclick="document.getElementById('invpTplModal').remove()">取消</button>
+      <button class="btn btn-green" id="invpTplGo">下载</button>
+    </div></div>`;
+  wrap.addEventListener('click', e => { if (e.target === wrap) wrap.remove(); });
+  document.body.appendChild(wrap);
+  document.getElementById('invpTplGo').onclick = async () => {
+    const kind = (wrap.querySelector('input[name="invpTplKind"]:checked') || {}).value || 'weekly';
+    const ok = await invpFetchTimesheetTemplate(document.getElementById('invpTplCompany').value.trim(), kind,
+      document.getElementById('invpTplStart').value, kind === 'daily' ? document.getElementById('invpTplEnd').value : '');
+    if (ok) wrap.remove();
+  };
 }
 
 // Drag-and-drop onto the green box: highlight on dragover, import on drop.
