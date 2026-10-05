@@ -54,6 +54,11 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
 .ref-stage b{display:inline-block;min-width:1.4rem;text-align:center;margin-left:.3rem;background:var(--g100);border-radius:999px;padding:0 .4rem;font-size:.76rem}
 .ref-stage.on{border-color:#0f4c6b;background:#0f4c6b;color:#fff}
 .ref-stage.on small{color:#cbd5e1}.ref-stage.on b{background:rgba(255,255,255,.2)}
+.ref-regions{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.55rem}
+.ref-region{border:1px solid var(--g200);background:#fff;border-radius:999px;padding:.3rem .85rem;cursor:pointer;font-weight:700;font-size:.84rem;color:var(--g600);font-family:inherit}
+.ref-region b{margin-left:.3rem;font-size:.74rem;background:var(--g100);border-radius:999px;padding:0 .4rem}
+.ref-region.on{border-color:#7c2d12;background:#7c2d12;color:#fff}.ref-region.on b{background:rgba(255,255,255,.2)}
+.ref-rg-tag{display:inline-block;margin-left:.35rem;padding:0 6px;border-radius:5px;font-size:.66rem;font-weight:700;background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;text-transform:none;letter-spacing:0}
 .ref-wks{display:flex;gap:.35rem;flex-wrap:wrap;padding:0 1rem .55rem}
 .ref-wk{border:1px solid var(--g200);border-radius:8px;padding:.2rem .5rem;font-size:.72rem;background:#fff;white-space:nowrap}
 .ref-wk.ok{border-color:#a7f3d0;background:#ecfdf5;color:#047857}
@@ -442,6 +447,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
 
   <!-- 🤝 介绍费 Referral: 工头介绍工人 → 录入面试/上工信息 → 会计关联发票 → 管理员核查决定是否支付 → 会计记付款并关联银行记录 -->
   <div id="paneRef" style="display:none">
+    <div id="refRegions" class="ref-regions"></div>
     <div id="refStages" class="ref-stages"></div>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
       <input type="text" id="refSearch" placeholder="搜工头 / 工人姓名 / 电话 / 仓库…（搜工人可看他全部面试记录）" oninput="renderRefList();refHistSchedule()" style="width:320px">
@@ -679,7 +685,9 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <select id="raWhSel" onchange="raWhChanged()" style="width:100%;margin:.15rem 0 .55rem"><option value="">加载中…</option></select>
       <input type="text" id="raWh" placeholder="新仓库名称（必填，不知道就填客户公司名）" style="display:none;width:100%;margin:0 0 .55rem">
       <label style="font-size:.76rem;color:var(--g500)">仓库地址 <span style="font-size:.7rem;color:var(--g400)">（选仓库自动带出，可改）</span></label>
-      <input type="text" id="raWhAddr" placeholder="例：1000 Bilter Rd, Aurora, IL" style="width:100%;margin:.15rem 0 .55rem">
+      <input type="text" id="raWhAddr" placeholder="例：1000 Bilter Rd, Aurora, IL" style="width:100%;margin:.15rem 0 .55rem" oninput="raRegionHint()">
+      <label style="font-size:.76rem;color:var(--g500)">城市 <span id="raRegionAuto" style="font-size:.7rem;color:var(--g400)"></span></label>
+      <select id="raRegion" style="width:100%;margin:.15rem 0 .55rem"></select>
       <div style="display:grid;grid-template-columns:1.2fr .9fr .9fr;gap:.2rem .6rem">
         <div><label style="font-size:.76rem;color:var(--g500)">面试时间（HR 约的）</label>
           <input type="datetime-local" id="raInterview" style="width:100%;margin:.15rem 0 .55rem"></div>
@@ -2055,6 +2063,19 @@ async function claimApprove(id, action) {
 
 // ── 🤝 介绍费 Referral: 录入 → 会计关联发票 → 管理员核查决定支付 → 会计记付款关联银行记录 ──
 let _refList = [], _refWeeks = [], _refEditId = null, _raRemove = new Set();
+// 分城市: 伊利诺伊 / 萨凡纳 / 亚特兰大 / 休斯顿 / 达拉斯; allowed = null 表示这个账号能看全部城市
+let _refRegions = { regions: [], allowed: null };
+let _refRegionSel = (() => { try { return localStorage.getItem('ref_region') || ''; } catch (e) { return ''; } })();
+async function loadRefRegions() {
+  try { const j = await api('/api/acct/referral-regions'); if (j && Array.isArray(j.regions)) _refRegions = j; } catch (e) {}
+}
+const _refRegionName = k => { const x = (_refRegions.regions || []).find(g => g.key === k); return x ? x.label : '未分城市'; };
+const _refRegionShort = k => ({ IL: '伊利诺伊', GA_SAV: '萨凡纳', GA_ATL: '亚特兰大', TX_HOU: '休斯顿', TX_DAL: '达拉斯' })[k] || '未分城市';
+function refSetRegion(k) {
+  _refRegionSel = k;
+  try { localStorage.setItem('ref_region', k); } catch (e) {}
+  renderRefList();
+}
 // 综合状态: 待核查 / 同意支付(待付款) / 已付款(按会计付款批注) / 拒绝支付
 function _refOverall(r) {
   if (r.review_status === 'rejected') return 'rejected';
@@ -2286,6 +2307,18 @@ function renderRefList() {
   if (flt === 'noshow') list = list.filter(r => r.interview_status === 'no_show');
   else if (flt === 'failed') list = list.filter(r => r.interview_status === 'failed');
   else if (flt) list = list.filter(r => _refOverall(r) === flt);
+  // 城市分页: 只列这个账号有权限的城市 (+ 能看全部的才有「全部」和「未分城市」)
+  const rgAll = !_refRegions.allowed;
+  const rgKeys = (_refRegions.regions || []).map(g => g.key).filter(k => rgAll || _refRegions.allowed.includes(k));
+  const rgN = { '': list.length, __none: 0 };
+  rgKeys.forEach(k => { rgN[k] = 0; });
+  list.forEach(r => { const k = r.region_eff || '__none'; if (k in rgN) rgN[k]++; });
+  const rgTabs = (rgAll || rgKeys.length > 1 ? [''] : []).concat(rgKeys, rgAll && rgN.__none ? ['__none'] : []);
+  if (!rgTabs.includes(_refRegionSel)) _refRegionSel = rgTabs[0] || '';
+  document.getElementById('refRegions').innerHTML = rgTabs.length > 1 ? rgTabs.map(k => `<button class="ref-region${_refRegionSel === k ? ' on' : ''}" onclick="refSetRegion('${k}')">${k === '' ? '🗺 全部城市' : k === '__none' ? '❔ 未分城市' : '📍 ' + esc(_refRegionName(k))}<b>${rgN[k]}</b></button>`).join('') : '';
+  const inRg = r => _refRegionSel === '__none' ? !r.region_eff : !_refRegionSel || r.region_eff === _refRegionSel;
+  list = list.filter(inRg);
+  const rgList = _refList.filter(inRg);
   // 三个阶段分页: 数字按当前搜索/筛选算, 切过去不会扑空
   const stN = { interview: 0, working: 0, ended: 0, noshow: 0 };
   list.forEach(r => stN[_refStage(r)]++);
@@ -2297,18 +2330,19 @@ function renderRefList() {
     + stBtn('ended', '⏹ 已满三个月', 'referral 期结束')
     + stBtn('noshow', '🚫 没去 / 没通过', '约了面试没去、或去了没通过的人');
   list = list.filter(r => _refStage(r) === _refStageSel);
-  const pendN = _refList.filter(r => r.review_status === 'pending').length;
-  const waitN = _refList.filter(r => ['approved', 'partpaid'].includes(_refOverall(r))).length;
-  const paidN = _refList.filter(r => _refOverall(r) === 'paid').length;
-  const tot = _refList.filter(r => r.review_status === 'approved').reduce((t, r) => { const x = _refWeekSums(r); t.due += x.due; t.paid += x.paid; return t; }, { due: 0, paid: 0 });
+  const pendN = rgList.filter(r => r.review_status === 'pending').length;
+  const waitN = rgList.filter(r => ['approved', 'partpaid'].includes(_refOverall(r))).length;
+  const paidN = rgList.filter(r => _refOverall(r) === 'paid').length;
+  const tot = rgList.filter(r => r.review_status === 'approved').reduce((t, r) => { const x = _refWeekSums(r); t.due += x.due; t.paid += x.paid; return t; }, { due: 0, paid: 0 });
   const stat = (lab, v, c) => `<span style="background:#fff;border:1px solid var(--g200);border-radius:999px;padding:.15rem .65rem;white-space:nowrap">${lab} <b style="color:${c || 'inherit'}">${v}</b></span>`;
   document.getElementById('refStats').innerHTML = [
-    stat('共', _refList.length + ' 条'), stat('⏳ 待核查', pendN, '#c2410c'), stat('✅ 待付款', waitN, '#b45309'), stat('💰 已付完', paidN, '#047857'),
+    stat('共', rgList.length + ' 条'), stat('⏳ 待核查', pendN, '#c2410c'), stat('✅ 待付款', waitN, '#b45309'), stat('💰 已付完', paidN, '#047857'),
     stat('已付', money(tot.paid), '#047857'), stat('还要付', money(Math.max(0, tot.due - tot.paid)), '#dc2626'),
   ].join(' ');
   const badge = document.getElementById('refPendBadge');
-  badge.style.display = pendN && USER.role === 'admin' ? '' : 'none';
-  badge.textContent = pendN;
+  const pendAll = _refList.filter(r => r.review_status === 'pending').length;
+  badge.style.display = pendAll && USER.role === 'admin' ? '' : 'none';
+  badge.textContent = pendAll;
   const pill = (txt, bg, bd, fg) => `<span style="display:inline-block;padding:2px 10px;border-radius:999px;font-size:.74rem;font-weight:700;background:${bg};border:1px solid ${bd};color:${fg};white-space:nowrap">${txt}</span>`;
   const lbl = t => `<div style="font-size:.66rem;color:var(--g400);text-transform:uppercase;letter-spacing:.03em;margin-bottom:1px">${t}</div>`;
   const person = (name, phone, extra) => `<div style="font-weight:800;font-size:.95rem;color:#0f172a;white-space:nowrap">${esc(name || '—')}</div>`
@@ -2385,7 +2419,7 @@ function renderRefList() {
           <div class="ref-arrow">➜</div>
           <div>${lbl('被介绍工人')}${person(r.worker_name, r.worker_phone, (r.worker_wage ? ` · <span style="color:#047857;font-weight:700">💵 ${esc(r.worker_wage)}</span>` : '') + attHtml)}${_refProfileChip(r)}</div>
         </div>
-        <div>${lbl('工作仓库')}<div style="font-weight:700;font-size:.84rem;color:#0f172a;line-height:1.3">${esc(whMain)}</div>
+        <div>${lbl('工作仓库' + `<span class="ref-rg-tag" title="${r.region ? '手动指定的城市' : '按地址自动判断的城市'}">📍 ${esc(_refRegionShort(r.region_eff))}</span>`)}<div style="font-weight:700;font-size:.84rem;color:#0f172a;line-height:1.3">${esc(whMain)}</div>
           ${whSub ? `<div style="font-size:.74rem;color:var(--g500);line-height:1.3">${esc(whSub)}</div>` : ''}${r.job_title ? `<div style="font-size:.72rem;color:#7c3aed;margin-top:2px">📌 ${esc(r.job_title)}</div>` : ''}</div>
         <div>${lbl('面试')}<div style="font-size:.82rem;font-weight:600;white-space:nowrap;margin-bottom:3px">${esc((r.interview_at || '').replace('T', ' ')) || '—'}</div>${_refInterviewMarkCell(r)}</div>
         <div>${lbl('介绍费 / 周')}<div style="font-weight:800;color:#0f4c6b;font-size:1rem">${r.amount != null ? money(r.amount) : '<span style="color:var(--g400);font-weight:400;font-size:.85rem">未定</span>'}</div></div>
@@ -2814,6 +2848,7 @@ async function openRefAdd(id) {
   document.getElementById('raWorkerName').value = r ? r.worker_name || '' : '';
   document.getElementById('raWorkerPhone').value = r ? r.worker_phone || '' : '';
   document.getElementById('raWhAddr').value = r ? r.warehouse_address || '' : '';
+  raFillRegion(r);
   document.getElementById('raWh').value = '';
   document.getElementById('raInterview').value = r ? r.interview_at || '' : '';
   document.getElementById('raWage').value = r ? r.worker_wage || '' : '';
@@ -3140,6 +3175,7 @@ function raJobChanged() {
     if (nm) document.getElementById('raWh').value = j.company_name;
     if (j.location) addrEl.value = j.location;
   }
+  raRegionHint();
 }
 // keepAddr=true 用于打开弹窗回填时: 不覆盖记录里已存的地址
 function raWhChanged(keepAddr) {
@@ -3151,6 +3187,7 @@ function raWhChanged(keepAddr) {
     const w = ((_refOpts && _refOpts.warehouses) || [])[parseInt(v)];
     if (w && w.address) document.getElementById('raWhAddr').value = w.address;
   }
+  raRegionHint();
 }
 function closeRefAdd() { document.getElementById('refAddModal').style.display = 'none'; }
 // 编辑时显示已有凭证, 可勾掉删除
@@ -3236,6 +3273,7 @@ async function submitRefAdd() {
     fd.append('worker_wage', document.getElementById('raWage').value.trim());
     fd.append('warehouse_name', whName);
     fd.append('warehouse_address', document.getElementById('raWhAddr').value.trim());
+    fd.append('region', document.getElementById('raRegion').value || '');
     const pk = _raJobPick();
     fd.append('job_id', pk.job_id || '');
     fd.append('recruit_job_id', pk.recruit_id || '');
@@ -3254,6 +3292,35 @@ async function submitRefAdd() {
     loadRefList();
   } catch (e) { toast(e.message || '提交失败', true); }
   btn.disabled = false; btn.textContent = '提交';
+}
+// 城市下拉: 「自动」= 按仓库地址判断 (服务器判断); 只能选自己有权限的城市
+function raFillRegion(r) {
+  const rgAll = !_refRegions.allowed;
+  const keys = (_refRegions.regions || []).map(g => g.key).filter(k => rgAll || _refRegions.allowed.includes(k));
+  const sel = document.getElementById('raRegion');
+  sel.innerHTML = '<option value="">自动（按仓库地址判断）</option>' + keys.map(k => `<option value="${k}">📍 ${esc(_refRegionName(k))}</option>`).join('');
+  // 新增时: 只有一个城市权限的直接选上; 正在看某个城市的默认选那个城市
+  let v = r ? (r.region || '') : (keys.length === 1 ? keys[0] : (keys.includes(_refRegionSel) ? _refRegionSel : ''));
+  if (v && !keys.includes(v)) v = '';
+  sel.value = v;
+  raRegionHint(r);
+}
+// 地址自动判断的结果给个提示 (粗判: 和服务器同样看州 / 邮编 / 大城市名)
+function raRegionHint(r) {
+  const el = document.getElementById('raRegionAuto');
+  if (!el) return;
+  const a = String(document.getElementById('raWhAddr').value || '');
+  let g = '';
+  const z = a.match(/\b(IL|GA|TX)\.?\s*,?\s*(\d{5})\b/i);
+  if (z) { const st = z[1].toUpperCase(), n = parseInt(z[2].slice(0, 3));
+    g = st === 'IL' ? 'IL' : st === 'GA' ? (n >= 313 && n <= 315 ? 'GA_SAV' : 'GA_ATL') : st === 'TX' ? (n >= 770 && n <= 775 ? 'TX_HOU' : (n >= 750 && n <= 754) || (n >= 760 && n <= 762) ? 'TX_DAL' : '') : ''; }
+  else if (/savannah|pooler|port wentworth|rincon/i.test(a)) g = 'GA_SAV';
+  else if (/houston|katy|baytown|pasadena/i.test(a)) g = 'TX_HOU';
+  else if (/dallas|fort worth|lancaster|wilmer|irving/i.test(a)) g = 'TX_DAL';
+  else if (/\b(GA|georgia)\b/i.test(a)) g = 'GA_ATL';
+  else if (/\b(IL|illinois)\b/i.test(a)) g = 'IL';
+  if (!g && r && !r.region && r.region_eff) g = r.region_eff;
+  el.textContent = g ? `（选「自动」会归到：${_refRegionShort(g)}）` : a.trim() ? '（地址看不出城市，请手动选）' : '';
 }
 // ── 📋 复制介绍信息: 把整条信息整理成一段文字, 直接粘贴发给经理 ──
 function _refInfoText(o) {
@@ -3550,6 +3617,7 @@ async function refDelete(id) {
 }
 async function loadRefList() {
   try {
+    if (!(_refRegions.regions || []).length) await loadRefRegions();
     const rows = await api('/api/acct/referrals');
     _refList = Array.isArray(rows) ? rows : [];
     renderRefList();
@@ -4643,6 +4711,7 @@ async function loadAll() {
     api('/api/acct/warehouse-claims').catch(() => []),
     api('/api/acct/fee-records').catch(() => []),
     api('/api/acct/referrals').catch(() => []),
+    loadRefRegions(),
   ]);
   _invList = Array.isArray(inv) ? inv : [];
   _stmtList = Array.isArray(stmt) ? stmt : [];

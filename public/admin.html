@@ -5053,6 +5053,17 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     </label>
     <div style="font-size:.72rem;color:var(--gray-400);margin-top:.25rem">勾选后此账号在 /banking、/accounting 能「审核通过」会计/客服提交的交易标注，自己做的标注也不用再等审核（对客服/会计角色生效；admin 本来就有此权限）</div>
   </div>
+  <div class="field" style="margin-top:.6rem">
+    <label style="font-size:.85rem;color:var(--gray-600)">🤝 Referral 介绍能看哪些城市</label>
+    <div id="accRefRegions" style="display:flex;flex-wrap:wrap;gap:.35rem .9rem;margin-top:.3rem;font-size:.85rem;color:var(--gray-600)">
+      <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer"><input type="checkbox" name="accRefRegion" value="IL"> 伊利诺伊（全州）</label>
+      <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer"><input type="checkbox" name="accRefRegion" value="GA_SAV"> 萨凡纳 Savannah</label>
+      <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer"><input type="checkbox" name="accRefRegion" value="GA_ATL"> 亚特兰大 Atlanta</label>
+      <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer"><input type="checkbox" name="accRefRegion" value="TX_HOU"> 休斯顿 Houston</label>
+      <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer"><input type="checkbox" name="accRefRegion" value="TX_DAL"> 达拉斯 Dallas</label>
+    </div>
+    <div style="font-size:.72rem;color:var(--gray-400);margin-top:.25rem">都不勾 = 全部城市都能看（包括还没分城市的）。勾了的话 /referral 页面只看得到、只能操作勾选城市的介绍。admin 角色永远能看全部。</div>
+  </div>
   <div id="accHint" class="field" style="background:var(--gray-100);border-radius:6px;padding:.6rem .75rem;font-size:.83rem;color:var(--gray-500)">
     新建账户默认未激活，用户首次登录时需自行设置密码完成激活
   </div>
@@ -20429,6 +20440,8 @@ async function openAccountModal(data) {
   document.getElementById('accSmsNotifyEnabled').checked = data ? (data.sms_notify_enabled !== 0) : true;
   document.getElementById('accMfaExempt').checked = data ? !!data.mfa_exempt : false;
   document.getElementById('accAnnReviewer').checked = data ? !!data.bank_ann_reviewer : false;
+  const refRg = String((data && data.referral_regions) || '').split(',').filter(Boolean);
+  document.querySelectorAll('#accRefRegions input[name=accRefRegion]').forEach(c => { c.checked = refRg.includes(c.value); });
   document.getElementById('accountModalTitle').textContent = data ? '编辑内部账户' : '新建内部账户';
   document.getElementById('accPassHint').textContent = data ? '(留空则不修改；修改密码将重置激活状态)' : '*';
   document.getElementById('accHint').textContent = data
@@ -20479,7 +20492,8 @@ async function saveAccount() {
     sms_notify_phone: document.getElementById('accSmsNotifyPhone').value.trim(),
     sms_notify_enabled: document.getElementById('accSmsNotifyEnabled').checked ? 1 : 0,
     mfa_exempt: document.getElementById('accMfaExempt').checked ? 1 : 0,
-    bank_ann_reviewer: document.getElementById('accAnnReviewer').checked ? 1 : 0
+    bank_ann_reviewer: document.getElementById('accAnnReviewer').checked ? 1 : 0,
+    referral_regions: [...document.querySelectorAll('#accRefRegions input[name=accRefRegion]:checked')].map(c => c.value).join(',')
   };
   if (!d.username) return alert('请输入用户名');
   if (!id && !d.password) return alert('请输入密码');

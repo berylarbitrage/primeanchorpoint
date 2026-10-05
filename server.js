@@ -918,6 +918,8 @@ try { db.exec(`ALTER TABLE referrals ADD COLUMN gusto_uuid TEXT DEFAULT ''`); } 
 // 关联「每日招工」(recruit_jobs) 的某个需求 / 具体班次: 招工卡片上能看到这个需求来了哪些人
 try { db.exec(`ALTER TABLE referrals ADD COLUMN recruit_job_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE referrals ADD COLUMN recruit_shift TEXT DEFAULT ''`); } catch(e) {}
+// 介绍分城市: '' = 自动 (按仓库地址的邮编 / 城市 / 州判断), 否则手动指定的区域 (见 REF_REGIONS)
+try { db.exec(`ALTER TABLE referrals ADD COLUMN region TEXT DEFAULT ''`); } catch(e) {}
 // 介绍费按周付: 关联的每张发票 (一周账期) = 一周, 每周单独记介绍费金额和付款批注
 // (acct_pay_notes target_type='referralweek', target_id=这里的 id); fee 为空 = 按介绍记录上的介绍费
 try { db.exec(`CREATE TABLE IF NOT EXISTS referral_weeks (
@@ -9366,6 +9368,8 @@ try { db.exec("ALTER TABLE admin_users ADD COLUMN mfa_phone TEXT DEFAULT ''"); }
 try { db.exec("ALTER TABLE admin_users ADD COLUMN mfa_exempt INTEGER DEFAULT 0"); } catch (e) {}
 // 银行标注审核员: 非 admin 账号 (如老板的 cs/会计号) 也可核对银行交易标注, 自己的改动不再置待审核
 try { db.exec("ALTER TABLE admin_users ADD COLUMN bank_ann_reviewer INTEGER DEFAULT 0"); } catch (e) {}
+// 账号能看哪些城市的介绍: '' = 全部; 否则逗号分隔的区域 key (管理员在账户管理里勾选; admin 角色永远全部)
+try { db.exec(`ALTER TABLE admin_users ADD COLUMN referral_regions TEXT DEFAULT ''`); } catch(e) {}
 db.exec(`CREATE TABLE IF NOT EXISTS mfa_trusted_devices (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
@@ -9777,9 +9781,15 @@ app.post('/api/manager/self-punch/:id/confirm', requireAdmin, requireRole('admin
 });
 
 // ─── Account Management (admin only) ───
+// 介绍费城市权限: 只留认识的区域 key, 逗号分隔; 空 = 全部城市
+function _refRegionsClean(v) {
+  const arr = Array.isArray(v) ? v : String(v || '').split(',');
+  const keys = new Set(arr.map(x => String(x).trim()));
+  return REF_REGIONS.map(x => x.key).filter(k => keys.has(k)).join(',');
+}
 app.get('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
   // password_plain 仅会计(accounting)角色有值, 且本接口本就仅限 admin 角色访问
-  res.json(db.prepare('SELECT id, username, role, display_name, email, phone, active, approval_status, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, sms_notify_phone, sms_notify_enabled, mfa_exempt, bank_ann_reviewer, created_at, password_plain FROM admin_users ORDER BY id').all());
+  res.json(db.prepare('SELECT id, username, role, display_name, email, phone, active, approval_status, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, sms_notify_phone, sms_notify_enabled, mfa_exempt, bank_ann_reviewer, referral_regions, created_at, password_plain FROM admin_users ORDER BY id').all());
 });
 
 // 批准会计自助注册的账号
@@ -9792,7 +9802,7 @@ app.post('/api/admin/accounts/:id/approve', requireAdmin, requireRole('admin'), 
 });
 
 app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
-  const { username, password, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, mfa_exempt, bank_ann_reviewer } = req.body;
+  const { username, password, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, mfa_exempt, bank_ann_reviewer, referral_regions } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   const pwErr = validatePassword(password);
   if (pwErr) return res.status(400).json({ error: pwErr });
@@ -9805,12 +9815,13 @@ app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) =
   const hash = hashPassword(password, salt);
   const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, active, password_plain, mfa_exempt, bank_ann_reviewer) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)')
     .run(username, hash, salt, role, display_name || '', assigned_partner_ids || '', assigned_employee_ids || '', assigned_job_ids || '', email || '', phone || '', role === 'accounting' ? password : '', mfa_exempt ? 1 : 0, bank_ann_reviewer ? 1 : 0);
+  if (referral_regions !== undefined) db.prepare('UPDATE admin_users SET referral_regions=? WHERE id=?').run(_refRegionsClean(referral_regions), result.lastInsertRowid);
   auditLog('account_create', req, { targetType: 'admin_user', targetId: result.lastInsertRowid, details: mfa_exempt ? { username, role, mfa_exempt: true } : { username, role } });
   res.json({ success: true, id: result.lastInsertRowid });
 });
 
 app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { username, password, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, sms_notify_phone, sms_notify_enabled, mfa_exempt, bank_ann_reviewer } = req.body;
+  const { username, password, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, sms_notify_phone, sms_notify_enabled, mfa_exempt, bank_ann_reviewer, referral_regions } = req.body;
   if (role && !['admin', 'staff', 'manager', 'accounting'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
@@ -9835,6 +9846,14 @@ app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res
   if (mfa_exempt !== undefined && (mfa_exempt ? 1 : 0) !== (user.mfa_exempt ? 1 : 0)) changes.mfa_exempt = { from: !!user.mfa_exempt, to: !!mfa_exempt };
   // 银行标注审核权同样留痕
   if (bank_ann_reviewer !== undefined && (bank_ann_reviewer ? 1 : 0) !== (user.bank_ann_reviewer ? 1 : 0)) changes.bank_ann_reviewer = { from: !!user.bank_ann_reviewer, to: !!bank_ann_reviewer };
+  // 介绍费能看哪些城市
+  if (referral_regions !== undefined) {
+    const rg = _refRegionsClean(referral_regions);
+    if (rg !== (user.referral_regions || '')) {
+      db.prepare('UPDATE admin_users SET referral_regions=? WHERE id=?').run(rg, req.params.id);
+      changes.referral_regions = { from: user.referral_regions || '全部', to: rg || '全部' };
+    }
+  }
   if (password) changes.password_reset = true;
   if (username && username !== user.username) changes.username = { from: user.username, to: username };
   auditLog('account_update', req, { targetType: 'admin_user', targetId: req.params.id, details: changes });
@@ -40731,6 +40750,14 @@ app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
   if (!['invoice', 'claim', 'fee', 'pallet', 'palletbill', 'truck', 'truckorder', 'referral', 'referralweek'].includes(target_type)) return res.status(400).json({ error: '无效对象类型' });
   const tid = parseInt(target_id);
   if (!tid) return res.status(400).json({ error: '无效对象' });
+  // 介绍费付款: 账号要有这条介绍所在城市的权限
+  if (target_type === 'referral' || target_type === 'referralweek') {
+    const allowedRg = _refAllowedRegions(req);
+    const rr = !allowedRg ? null : target_type === 'referral'
+      ? db.prepare('SELECT * FROM referrals WHERE id=?').get(tid)
+      : db.prepare('SELECT r.* FROM referral_weeks w JOIN referrals r ON r.id=w.referral_id WHERE w.id=?').get(tid);
+    if (rr && !_refRegionOk(allowedRg, _refRegionOf(rr))) return res.status(403).json({ error: '你没有这个城市介绍的权限' });
+  }
   const exists = target_type === 'invoice'
     ? db.prepare('SELECT id FROM invoices WHERE id=?').get(tid)
     : target_type === 'fee'
@@ -41169,6 +41196,96 @@ function _referralSyncWeeks(refId, invIds) {
     db.prepare('DELETE FROM referral_weeks WHERE id=?').run(w.id);
   });
 }
+// ── 介绍分城市: 伊利诺伊州全部算一个区; 佐治亚分萨凡纳 / 亚特兰大; 德州分休斯顿 / 达拉斯 ──
+// 区域先看手动指定的 (referrals.region), 没指定按仓库地址判断: 州后面的邮编 → 城市名 → 州。
+// 判断不出来的 (别的州 / 没地址) 归「未分城市」, 只有能看全部城市的账号看得到。
+const REF_REGIONS = [
+  { key: 'IL', label: '伊利诺伊 Illinois' },
+  { key: 'GA_SAV', label: '萨凡纳 Savannah' },
+  { key: 'GA_ATL', label: '亚特兰大 Atlanta' },
+  { key: 'TX_HOU', label: '休斯顿 Houston' },
+  { key: 'TX_DAL', label: '达拉斯 Dallas' },
+];
+const REF_REGION_KEYS = new Set(REF_REGIONS.map(x => x.key));
+const _REF_SAV_CITIES = ['savannah', 'pooler', 'port wentworth', 'garden city', 'rincon', 'richmond hill', 'bloomingdale', 'guyton', 'springfield', 'ellabell', 'pembroke', 'hinesville', 'midway', 'brunswick', 'statesboro', 'thunderbolt', 'tybee island', 'hardeeville', 'ridgeland'];
+const _REF_HOU_CITIES = ['houston', 'katy', 'baytown', 'pasadena', 'sugar land', 'la porte', 'missouri city', 'stafford', 'humble', 'spring', 'cypress', 'pearland', 'channelview', 'tomball', 'conroe', 'rosenberg', 'richmond', 'brookshire', 'deer park', 'webster', 'league city', 'friendswood', 'galena park', 'jersey village', 'kingwood', 'the woodlands', 'fresno', 'mont belvieu', 'waller', 'hockley', 'prairie view', 'alvin', 'texas city', 'freeport', 'galveston', 'manvel', 'fulshear', 'crosby', 'south houston', 'bellaire', 'seabrook', 'dayton', 'porter', 'new caney'];
+const _REF_DAL_CITIES = ['dallas', 'fort worth', 'irving', 'grand prairie', 'arlington', 'lancaster', 'wilmer', 'hutchins', 'coppell', 'desoto', 'duncanville', 'cedar hill', 'garland', 'mesquite', 'carrollton', 'farmers branch', 'plano', 'frisco', 'mckinney', 'allen', 'richardson', 'haslet', 'lewisville', 'flower mound', 'grapevine', 'euless', 'bedford', 'hurst', 'denton', 'keller', 'southlake', 'roanoke', 'justin', 'northlake', 'saginaw', 'forney', 'rockwall', 'rowlett', 'sachse', 'wylie', 'red oak', 'midlothian', 'waxahachie', 'ennis', 'mansfield', 'burleson', 'balch springs', 'seagoville', 'addison', 'the colony', 'little elm', 'prosper', 'celina', 'royse city', 'terrell', 'crowley', 'everman', 'kennedale', 'white settlement', 'benbrook', 'north richland hills', 'richland hills', 'haltom city', 'watauga', 'colleyville', 'glenn heights', 'ferris', 'palmer', 'sunnyvale'];
+function _refRegionDetect(text) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!t) return '';
+  // 1) 州后面跟的邮编最准: IL 600-629; GA 313-315 萨凡纳一带, 其余 GA 归亚特兰大; TX 770-775 休斯顿, 750-754 / 760-762 达拉斯-沃斯堡
+  const zm = t.match(/\b(IL|GA|TX|Illinois|Georgia|Texas)\.?\s*,?\s*(\d{5})\b/i);
+  if (zm) {
+    const st = { illinois: 'IL', georgia: 'GA', texas: 'TX' }[zm[1].toLowerCase()] || zm[1].toUpperCase(), z3 = parseInt(zm[2].slice(0, 3));
+    if (st === 'IL' && z3 >= 600 && z3 <= 629) return 'IL';
+    if (st === 'GA' && z3 >= 300 && z3 <= 319) return z3 >= 313 && z3 <= 315 ? 'GA_SAV' : 'GA_ATL';
+    if (st === 'GA' && z3 >= 398 && z3 <= 399) return 'GA_ATL';
+    if (st === 'TX' && z3 >= 770 && z3 <= 775) return 'TX_HOU';
+    if (st === 'TX' && ((z3 >= 750 && z3 <= 754) || (z3 >= 760 && z3 <= 762))) return 'TX_DAL';
+  }
+  const low = t.toLowerCase();
+  // 2) 州前面的城市名 (…, Pooler, GA / …, Katy TX)
+  const cityBefore = st => {
+    const m = low.match(new RegExp(`([a-z][a-z .'-]*?)\\s*,?\\s*\\b(${st})\\b\\.?\\s*,?\\s*(\\d{5}|$|,|usa|us\\b)`));
+    if (!m) return '';
+    return m[1].split(',').pop().replace(/^\s*\d+\s*/, '').trim();
+  };
+  const inList = (city, list) => city && list.some(c => city === c || city.endsWith(' ' + c));
+  const hasGA = /\b(ga|georgia)\b/.test(low), hasTX = /\b(tx|texas)\b/.test(low), hasIL = /\b(il|illinois)\b/.test(low);
+  if (hasGA) { const c = cityBefore('ga|georgia'); return inList(c, _REF_SAV_CITIES) ? 'GA_SAV' : 'GA_ATL'; }
+  if (hasTX) {
+    const c = cityBefore('tx|texas');
+    if (inList(c, _REF_HOU_CITIES)) return 'TX_HOU';
+    if (inList(c, _REF_DAL_CITIES)) return 'TX_DAL';
+  }
+  if (hasIL) return 'IL';
+  // 3) 没写州: 认几个大城市名
+  if (/\b(savannah|pooler|port wentworth|rincon)\b/.test(low)) return 'GA_SAV';
+  if (/\batlanta\b/.test(low)) return 'GA_ATL';
+  if (/\bhouston\b/.test(low)) return 'TX_HOU';
+  if (/\b(dallas|fort worth)\b/.test(low)) return 'TX_DAL';
+  if (/\bchicago\b/.test(low)) return 'IL';
+  return '';
+}
+// 一条介绍的区域: 手动指定的为准; 否则看仓库地址, 再看关联岗位 / 招工需求的地址, 最后看仓库名
+function _refRegionOf(r) {
+  if (r && REF_REGION_KEYS.has(r.region)) return r.region;
+  const tries = [r && r.warehouse_address];
+  try {
+    if (r && r.job_id) { const j = db.prepare('SELECT COALESCE(location,\'\') AS loc FROM jobs WHERE id=?').get(r.job_id); if (j) tries.push(j.loc); }
+    if (r && r.recruit_job_id) { const j = db.prepare('SELECT COALESCE(address,\'\') AS a, COALESCE(warehouse,\'\') AS w FROM recruit_jobs WHERE id=?').get(r.recruit_job_id); if (j) tries.push(j.a, j.w); }
+  } catch (e) {}
+  tries.push(r && r.warehouse_name, r && r.job_title);
+  for (const t of tries) { const g = _refRegionDetect(t); if (g) return g; }
+  return '';
+}
+// 当前账号能看的区域: null = 全部 (admin 角色 / 账号没限制)
+function _refAllowedRegions(req) {
+  if (req.userRole === 'admin') return null;
+  let v = '';
+  try { const u = db.prepare('SELECT COALESCE(referral_regions,\'\') AS v FROM admin_users WHERE id=?').get(req.userId); v = u ? u.v : ''; } catch (e) {}
+  const keys = String(v || '').split(',').map(s => s.trim()).filter(k => REF_REGION_KEYS.has(k));
+  return keys.length ? new Set(keys) : null;
+}
+const _refRegionOk = (allowed, region) => !allowed || allowed.has(region);
+const _refRegionLabel = k => (REF_REGIONS.find(x => x.key === k) || {}).label || '未分城市';
+// 按 id 操作一条介绍前先看这个账号有没有这个城市的权限 (路由里放在 requireAdmin 后面)
+function refRegionGuard(req, res, next) {
+  const allowed = _refAllowedRegions(req);
+  if (!allowed) return next();
+  let r = null;
+  if (/\/referral-weeks\//.test(req.originalUrl)) {
+    const w = db.prepare('SELECT referral_id FROM referral_weeks WHERE id=?').get(parseInt(req.params.id));
+    if (w) r = db.prepare('SELECT * FROM referrals WHERE id=?').get(w.referral_id);
+  } else r = db.prepare('SELECT * FROM referrals WHERE id=?').get(parseInt(req.params.id));
+  if (!r) return next();  // 不存在的交给路由自己回 404
+  if (!_refRegionOk(allowed, _refRegionOf(r))) return res.status(403).json({ error: `你没有「${_refRegionLabel(_refRegionOf(r))}」介绍的权限` });
+  next();
+}
+app.get('/api/acct/referral-regions', requireAdmin, requireAcctView, (req, res) => {
+  const allowed = _refAllowedRegions(req);
+  res.json({ regions: REF_REGIONS, allowed: allowed ? [...allowed] : null });
+});
 app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
   try {
     const rows = db.prepare(`SELECT * FROM referrals
@@ -41194,7 +41311,10 @@ app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
         fmStByName[String(f.name).trim().toLowerCase()] = f.state;
       });
     } catch (e) {}
-    const out = rows.map(r => _referralOut(r, invMap, payNotes, weeksBy, weekNotes));
+    // 分城市: 每条算出区域, 账号只看得到有权限的城市
+    const allowedRg = _refAllowedRegions(req);
+    const out = rows.map(r => { const x = _referralOut(r, invMap, payNotes, weeksBy, weekNotes); x.region_eff = _refRegionOf(r); return x; })
+      .filter(r => _refRegionOk(allowedRg, r.region_eff));
     out.forEach(r => { r.foreman_state = fmStByPhone[normP(r.foreman_phone)] || fmStByName[String(r.foreman_name).trim().toLowerCase()] || ''; });
     out.forEach(r => { r.clock = r.timeclock_code ? _referralClock(r.timeclock_code, r.work_start_date) : null; });
     const pIdx = _referralProfileIndex();
@@ -41242,7 +41362,7 @@ function _refGustoLink(r, idx) {
   return { linked: false, synced: idx.any };
 }
 // 车补 / 付款方式 / Gusto 收款人: 上班中随时可改 (核查状态不影响)
-app.post('/api/acct/referrals/:id/pay-setup', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+app.post('/api/acct/referrals/:id/pay-setup', requireAdmin, refRegionGuard, requireRole('accounting', 'admin', 'cs'), (req, res) => {
   const cur = db.prepare('SELECT id FROM referrals WHERE id=?').get(parseInt(req.params.id));
   if (!cur) return res.status(404).json({ error: '记录不存在' });
   const b = req.body || {};
@@ -41356,7 +41476,7 @@ function _referralProfileCode(r) {
   return '';
 }
 // 关联 / 取消关联员工档案 { kind: employee|applicant, id } 或 { action: 'unlink' }
-app.post('/api/acct/referrals/:id/profile', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+app.post('/api/acct/referrals/:id/profile', requireAdmin, refRegionGuard, requireRole('accounting', 'admin', 'cs'), (req, res) => {
   const cur = db.prepare('SELECT * FROM referrals WHERE id=?').get(parseInt(req.params.id));
   if (!cur) return res.status(404).json({ error: '记录不存在' });
   const b = req.body || {};
@@ -41384,7 +41504,7 @@ app.get('/api/acct/referral-clock-lookup', requireAdmin, requireRole('accounting
   res.json(w ? { found: true, code, name: w.name, phone: w.phone, status: w.status } : { found: false, code, error: '系统里查不到这个打卡码' });
 });
 // 通过面试 → 开始上班: 记上班日期 + 工人打卡 QR 码 (action=clear 撤回到面试阶段)
-app.post('/api/acct/referrals/:id/start', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+app.post('/api/acct/referrals/:id/start', requireAdmin, refRegionGuard, requireRole('accounting', 'admin', 'cs'), (req, res) => {
   const cur = db.prepare('SELECT * FROM referrals WHERE id=?').get(parseInt(req.params.id));
   if (!cur) return res.status(404).json({ error: '记录不存在' });
   if (req.userRole !== 'admin' && cur.review_status !== 'pending' && cur.work_start_date) return res.status(403).json({ error: '该记录管理员已核查，如需修改请联系管理员' });
@@ -41433,6 +41553,8 @@ function _referralBody(b) {
   for (const [k, max] of REFERRAL_FIELDS) out[k] = String(b[k] || '').trim().slice(0, max);
   const amtNum = Number(b.amount);
   out.amount = (b.amount != null && b.amount !== '' && !isNaN(amtNum)) ? amtNum : null;
+  // 城市: 空 = 按地址自动判断
+  out.region = REF_REGION_KEYS.has(String(b.region || '')) ? String(b.region) : '';
   out.hr_self = (b.hr_self === '1' || b.hr_self === 'true' || b.hr_self === true || b.hr_self === 1) ? 1 : 0;
   // HR 自招: 没有工头、介绍费为 0
   if (out.hr_self) { out.foreman_name = ''; out.foreman_phone = ''; out.amount = 0; }
@@ -41463,6 +41585,15 @@ function _referralJob(b, cur) {
   if (cur && cur.job_id === id) return { job_id: id, job_title: cur.job_title || '' };
   return { job_id: null, job_title: '' };
 }
+// 新增 / 编辑时: 存下去的这条 (按手动选的或地址判断的城市) 当前账号要有权限, 免得录了自己看不到
+function _refRegionCheck(req, rec) {
+  const allowed = _refAllowedRegions(req);
+  if (!allowed) return '';
+  const rg = _refRegionOf(rec);
+  if (_refRegionOk(allowed, rg)) return '';
+  return rg ? `你没有「${_refRegionLabel(rg)}」介绍的权限（按仓库地址判断是这个城市，如判断错了请在「城市」里手动选）`
+    : '按仓库地址判断不出是哪个城市，请在「城市」里选一个';
+}
 // 新增介绍: 客服/会计/管理员都可录入, 一律进「待核查」等管理员定夺
 app.post('/api/acct/referrals', requireAdmin, requireRole('accounting', 'admin', 'cs'), claimUpload.array('invoice', 20), (req, res) => {
   const f = _referralBody(req.body || {});
@@ -41473,6 +41604,8 @@ app.post('/api/acct/referrals', requireAdmin, requireRole('accounting', 'admin',
   if (!f.hr_self && !(f.amount > 0)) return res.status(400).json({ error: '请填写每周介绍费（金额要大于 0）' });
   const jb = _referralJob(req.body || {});
   if (!jb.job_id && !jb.recruit_job_id) return res.status(400).json({ error: '请选择关联岗位' });
+  const rgErr = _refRegionCheck(req, { ...f, ...jb });
+  if (rgErr) return res.status(403).json({ error: rgErr });
   const files = Array.isArray(req.files) ? req.files : [];
   const atts = files.map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
   const r = db.prepare(`INSERT INTO referrals
@@ -41481,13 +41614,13 @@ app.post('/api/acct/referrals', requireAdmin, requireRole('accounting', 'admin',
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.worker_wage, f.warehouse_name, f.warehouse_address,
       f.interview_at, f.amount, f.description, JSON.stringify(atts), jb.job_id, jb.job_title, req.userName || '', f.hr_self);
-  db.prepare('UPDATE referrals SET recruit_job_id=?, recruit_shift=? WHERE id=?').run(jb.recruit_job_id || null, jb.recruit_shift || '', r.lastInsertRowid);
+  db.prepare('UPDATE referrals SET recruit_job_id=?, recruit_shift=?, region=? WHERE id=?').run(jb.recruit_job_id || null, jb.recruit_shift || '', f.region, r.lastInsertRowid);
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
 // 编辑介绍信息 (可追加/删除凭证文件): 管理员随时可改;
 // 会计/客服只能改还在「待核查」的 — 核查过的以管理员定论为准。
-app.put('/api/acct/referrals/:id', requireAdmin, requireRole('accounting', 'admin', 'cs'), claimUpload.array('invoice', 20), (req, res) => {
+app.put('/api/acct/referrals/:id', requireAdmin, refRegionGuard, requireRole('accounting', 'admin', 'cs'), claimUpload.array('invoice', 20), (req, res) => {
   const cur = db.prepare('SELECT * FROM referrals WHERE id=?').get(parseInt(req.params.id));
   if (!cur) return res.status(404).json({ error: '记录不存在' });
   if (req.userRole !== 'admin' && cur.review_status !== 'pending') return res.status(403).json({ error: '该记录管理员已核查，如需修改请联系管理员' });
@@ -41500,6 +41633,8 @@ app.put('/api/acct/referrals/:id', requireAdmin, requireRole('accounting', 'admi
   if (!f.hr_self && !(f.amount > 0)) return res.status(400).json({ error: '请填写每周介绍费（金额要大于 0）' });
   const jb = _referralJob(req.body || {}, cur);
   if (!jb.job_id && !jb.recruit_job_id) return res.status(400).json({ error: '请选择关联岗位' });
+  const rgErr = _refRegionCheck(req, { ...f, ...jb });
+  if (rgErr) return res.status(403).json({ error: rgErr });
   let atts = _claimAtts(cur);
   let rmList = []; try { rmList = JSON.parse((req.body || {}).remove_attachments || '[]'); } catch (e) { rmList = []; }
   if (Array.isArray(rmList) && rmList.length) {
@@ -41513,12 +41648,12 @@ app.put('/api/acct/referrals/:id', requireAdmin, requireRole('accounting', 'admi
       warehouse_name=?, warehouse_address=?, interview_at=?, amount=?, description=?, attachments=?, job_id=?, job_title=?, hr_self=?, updated_at=datetime('now') WHERE id=?`)
     .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.worker_wage, f.warehouse_name, f.warehouse_address,
       f.interview_at, f.amount, f.description, JSON.stringify(atts), jb.job_id, jb.job_title, f.hr_self, cur.id);
-  db.prepare('UPDATE referrals SET recruit_job_id=?, recruit_shift=? WHERE id=?').run(jb.recruit_job_id || null, jb.recruit_shift || '', cur.id);
+  db.prepare('UPDATE referrals SET recruit_job_id=?, recruit_shift=?, region=? WHERE id=?').run(jb.recruit_job_id || null, jb.recruit_shift || '', f.region, cur.id);
   res.json({ success: true });
 });
 
 // 会计关联发票: 挂上能证明被介绍人确实在干活的发票 (发票 id 列表 + 说明), 供管理员核查
-app.post('/api/acct/referrals/:id/invoices', requireAdmin, requireRole('accounting', 'admin'), (req, res) => {
+app.post('/api/acct/referrals/:id/invoices', requireAdmin, refRegionGuard, requireRole('accounting', 'admin'), (req, res) => {
   const cur = db.prepare('SELECT id FROM referrals WHERE id=?').get(parseInt(req.params.id));
   if (!cur) return res.status(404).json({ error: '记录不存在' });
   const b = req.body || {};
@@ -41536,7 +41671,7 @@ app.post('/api/acct/referrals/:id/invoices', requireAdmin, requireRole('accounti
   res.json({ success: true, invoice_ids: ok });
 });
 // 改某一周的介绍费金额 (空 = 按介绍记录上的介绍费)
-app.put('/api/acct/referral-weeks/:id', requireAdmin, requireRole('accounting', 'admin'), (req, res) => {
+app.put('/api/acct/referral-weeks/:id', requireAdmin, refRegionGuard, requireRole('accounting', 'admin'), (req, res) => {
   const w = db.prepare('SELECT id FROM referral_weeks WHERE id=?').get(parseInt(req.params.id));
   if (!w) return res.status(404).json({ error: '记录不存在' });
   const v = (req.body || {}).fee;
@@ -41547,7 +41682,7 @@ app.put('/api/acct/referral-weeks/:id', requireAdmin, requireRole('accounting', 
 });
 
 // 管理员核查: 核实整条信息后决定是否支付 (approve 同意支付 / reject 拒绝支付 / reset 撤销重审)
-app.post('/api/acct/referrals/:id/review', requireAdmin, requireRole('admin'), (req, res) => {
+app.post('/api/acct/referrals/:id/review', requireAdmin, refRegionGuard, requireRole('admin'), (req, res) => {
   const cur = db.prepare('SELECT * FROM referrals WHERE id=?').get(parseInt(req.params.id));
   if (!cur) return res.status(404).json({ error: '记录不存在' });
   const action = String((req.body || {}).action || '');
@@ -41608,9 +41743,11 @@ app.get('/api/acct/interview-lookup', requireAdmin, requireRole('accounting', 'a
     const push = o => items.push(Object.assign({ source: '', date: '', name: '', phone: '', place: '', result: '', detail: '' }, o));
     const safe = fn => { try { fn(); } catch (e) {} };
     // 介绍记录
+    const allowedRg = _refAllowedRegions(req);
     safe(() => db.prepare(`SELECT id, worker_name, worker_phone, interview_at, interview_status, interview_attended_at, interview_fail_reason, warehouse_name, warehouse_address,
-        job_title, foreman_name, COALESCE(hr_self,0) AS hr_self, work_start_date, worker_wage FROM referrals`).all().forEach(r => {
+        job_title, foreman_name, COALESCE(hr_self,0) AS hr_self, work_start_date, worker_wage, job_id, recruit_job_id, COALESCE(region,'') AS region FROM referrals`).all().forEach(r => {
       if (!hit(r.worker_name, r.worker_phone)) return;
+      if (!_refRegionOk(allowedRg, _refRegionOf(r))) return;
       push({ source: 'referral', ref_id: r.id, date: String(r.interview_at || '').replace('T', ' '), name: r.worker_name, phone: r.worker_phone,
         place: [r.warehouse_name, r.warehouse_address].filter(Boolean).join(' · '),
         result: r.interview_status === 'attended' ? '去了' : r.interview_status === 'no_show' ? '没去' : r.interview_status === 'failed' ? '没通过' + (r.interview_fail_reason ? '：' + r.interview_fail_reason : '') : '待标记',
@@ -41738,7 +41875,7 @@ app.put('/api/acct/referral-foremen/:id', requireAdmin, requireRole('accounting'
 // 标记面试去没去: 约了面试未必去, 列表里一键标; 权限同编辑 (核查过的只有管理员能改)。
 // 标「去了」可带 attended_at 记实际到场时间, 之后还能再改; 改成没去/清除时到场时间一并清掉。
 // 标「没通过」(failed) 必须带 fail_reason (没通过的原因), 到场时间保留 (人是去了的)。
-app.post('/api/acct/referrals/:id/interview-status', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+app.post('/api/acct/referrals/:id/interview-status', requireAdmin, refRegionGuard, requireRole('accounting', 'admin', 'cs'), (req, res) => {
   const cur = db.prepare('SELECT * FROM referrals WHERE id=?').get(parseInt(req.params.id));
   if (!cur) return res.status(404).json({ error: '记录不存在' });
   if (req.userRole !== 'admin' && cur.review_status !== 'pending') return res.status(403).json({ error: '该记录管理员已核查，如需修改请联系管理员' });
@@ -41753,7 +41890,7 @@ app.post('/api/acct/referrals/:id/interview-status', requireAdmin, requireRole('
 });
 
 // 管理员删除介绍费记录 (附件与付款批注一并清掉)
-app.delete('/api/acct/referrals/:id', requireAdmin, requireRole('admin'), (req, res) => {
+app.delete('/api/acct/referrals/:id', requireAdmin, refRegionGuard, requireRole('admin'), (req, res) => {
   const cur = db.prepare('SELECT * FROM referrals WHERE id=?').get(parseInt(req.params.id));
   if (!cur) return res.status(404).json({ error: '记录不存在' });
   _claimAtts(cur).forEach(a => _claimDeleteFile(a.path));
