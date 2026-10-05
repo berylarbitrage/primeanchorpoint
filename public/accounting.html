@@ -736,6 +736,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <button class="btn btn-sm btn-outline" onclick="document.getElementById('fmModal').style.display='none'">✕ 关闭</button>
       </div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.55rem">
+        <select id="fmRegion" onchange="renderFmList()" title="按城市筛工头：工头自己的城市，或他介绍的工人所在城市"></select>
         <input type="text" id="fmSearch" placeholder="搜姓名 / 电话 / 州…" oninput="renderFmList()" style="flex:1;min-width:180px">
         <button class="btn btn-sm btn-blue" id="fmAddBtn" onclick="fmFormShow(null)" style="display:none">＋ 添加工头</button>
         <span id="fmStats" style="font-size:.76rem;color:var(--g500)"></span>
@@ -2987,6 +2988,7 @@ async function openFmList(fromPicker, prefillName) {
   _fmFromPicker = !!fromPicker;
   document.getElementById('fmModal').style.display = 'flex';
   document.getElementById('fmSearch').value = '';
+  fmFillRegion();
   document.getElementById('fmAddBtn').style.display = canAnnotate() ? '' : 'none';
   fmFormHide();
   await fmLoad();
@@ -3002,17 +3004,29 @@ async function fmLoad() {
     document.getElementById('fmBody').innerHTML = `<tr><td colspan="6" style="color:#dc2626">${esc(e.message || '加载失败')}</td></tr>`;
   }
 }
+// 城市下拉: 默认跟着介绍列表当前选的城市; 只列有权限的城市
+function fmFillRegion() {
+  const rgAll = !_refRegions.allowed;
+  const keys = (_refRegions.regions || []).map(g => g.key).filter(k => rgAll || _refRegions.allowed.includes(k));
+  const opts = (rgAll || keys.length > 1 ? [['', '🗺 全部城市']] : []).concat(keys.map(k => [k, '📍 ' + _refRegionName(k)]), rgAll ? [['__none', '❔ 未分城市']] : []);
+  const sel = document.getElementById('fmRegion');
+  sel.innerHTML = opts.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join('');
+  sel.value = opts.some(o => o[0] === _refRegionSel) ? _refRegionSel : (opts[0] || [''])[0];
+  sel.style.display = opts.length > 1 ? '' : 'none';
+}
 function renderFmList() {
   const q = (document.getElementById('fmSearch').value || '').trim().toLowerCase();
   const qd = _phDigits(q);
-  const list = _fmList.filter(f => !q || String(f.name).toLowerCase().includes(q)
+  const rg = document.getElementById('fmRegion').value;
+  const inRg = f => { const rr = f.ref_regions || []; return !rg ? true : rg === '__none' ? !f.region && !rr.length : f.region === rg || rr.includes(rg); };
+  const list = _fmList.filter(inRg).filter(f => !q || String(f.name).toLowerCase().includes(q)
     || (qd && _phDigits(f.phone).includes(qd)) || String(f.state || '').toLowerCase().includes(q) || String(f.city || '').toLowerCase().includes(q));
-  document.getElementById('fmStats').textContent = `共 ${_fmList.length} 位工头`;
+  document.getElementById('fmStats').textContent = `共 ${_fmList.filter(inRg).length} 位工头`;
   document.getElementById('fmBody').innerHTML = list.length ? list.map(f => `<tr>
     <td style="font-weight:600">${esc(f.name)}</td>
     <td style="white-space:nowrap">${f.phone ? `<a href="tel:${esc(f.phone)}" style="color:#0f4c6b;text-decoration:none">📞 ${esc(f.phone)}</a>` : '<span style="color:var(--g300)">—</span>'}</td>
     <td style="white-space:nowrap">${f.state ? `<span style="background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;border-radius:6px;padding:1px 7px;font-size:.74rem;font-weight:700">📍 ${esc(f.state)}</span>` : '<span style="color:var(--g300)">—</span>'}</td>
-    <td>${esc(f.city || '') || '<span style="color:var(--g300)">—</span>'}</td>
+    <td>${esc(f.city || '') || '<span style="color:var(--g300)">—</span>'}${f.region ? `<span class="ref-rg-tag">${esc(_refRegionShort(f.region))}</span>` : ''}</td>
     <td style="text-align:right">${f.referral_count ? `<b>${f.referral_count}</b>` : '<span style="color:var(--g300)">0</span>'}</td>
     <td style="white-space:nowrap">${canAnnotate() ? `<a style="cursor:pointer;color:#0f4c6b;font-size:.78rem;text-decoration:underline" onclick='fmFormShow(${JSON.stringify(JSON.stringify(f))})'>编辑</a>` : ''}</td>
   </tr>`).join('') : '<tr><td colspan="6" style="color:var(--g400);padding:1rem">没有符合的工头，点「＋ 添加工头」登记。</td></tr>';

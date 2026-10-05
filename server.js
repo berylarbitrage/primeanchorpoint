@@ -41282,6 +41282,34 @@ function refRegionGuard(req, res, next) {
   if (!_refRegionOk(allowed, _refRegionOf(r))) return res.status(403).json({ error: `你没有「${_refRegionLabel(_refRegionOf(r))}」介绍的权限` });
   next();
 }
+// 工头的城市: 按工头名单上的州 / 城市判断 (伊利诺伊只看州; 佐治亚 / 德州要有城市才分得出)
+function _refForemanRegion(f) {
+  const st = String((f && f.state) || '').trim().toUpperCase(), city = String((f && f.city) || '').trim();
+  if (st === 'IL' || st === 'ILLINOIS') return 'IL';
+  if (!city) return '';
+  return _refRegionDetect(`${city}, ${st}`);
+}
+// 工头按城市过滤: null = 全部可见; 否则返回 f => 能不能看。
+// 能看 = 工头自己的城市有权限, 或他介绍过有权限城市的工人;
+// 城市判断不出、也还没介绍过任何人的 (刚登记的新工头) 大家都能看, 免得登记完自己看不到。
+function _refForemanVisible(req) {
+  const allowed = _refAllowedRegions(req);
+  if (!allowed) return null;
+  const norm = p => String(p || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+  const okPh = new Set(), okNm = new Set(), anyPh = new Set(), anyNm = new Set();
+  db.prepare(`SELECT * FROM referrals WHERE COALESCE(foreman_name,'')!='' OR COALESCE(foreman_phone,'')!=''`).all().forEach(r => {
+    const pd = norm(r.foreman_phone), nm = String(r.foreman_name || '').trim().toLowerCase();
+    const ok = _refRegionOk(allowed, _refRegionOf(r));
+    if (pd) { anyPh.add(pd); if (ok) okPh.add(pd); } else if (nm) { anyNm.add(nm); if (ok) okNm.add(nm); }
+  });
+  return f => {
+    const rg = _refForemanRegion(f);
+    if (rg && allowed.has(rg)) return true;
+    const pd = norm(f.phone), nm = String(f.name || '').trim().toLowerCase();
+    if ((pd && okPh.has(pd)) || okNm.has(nm)) return true;
+    return !rg && !(pd && anyPh.has(pd)) && !anyNm.has(nm);
+  };
+}
 app.get('/api/acct/referral-regions', requireAdmin, requireAcctView, (req, res) => {
   const allowed = _refAllowedRegions(req);
   res.json({ regions: REF_REGIONS, allowed: allowed ? [...allowed] : null });
@@ -41701,9 +41729,14 @@ app.post('/api/acct/referrals/:id/review', requireAdmin, refRegionGuard, require
 app.get('/api/acct/referral-options', requireAdmin, requireAcctView, (req, res) => {
   try {
     const norm = p => String(p || '').replace(/\D/g, '');
-    const foremen = db.prepare(`SELECT id, name, phone, COALESCE(state,'') AS state, COALESCE(city,'') AS city FROM foremen WHERE active=1 ORDER BY name COLLATE NOCASE`).all();
+    const fmVis = _refForemanVisible(req);
+    const allowedRg = _refAllowedRegions(req);
+    const foremen = db.prepare(`SELECT id, name, phone, COALESCE(state,'') AS state, COALESCE(city,'') AS city FROM foremen WHERE active=1 ORDER BY name COLLATE NOCASE`).all()
+      .filter(f => !fmVis || fmVis(f));
     const seenF = new Set(foremen.map(f => `${String(f.name).trim().toLowerCase()}|${norm(f.phone)}`));
-    db.prepare(`SELECT DISTINCT foreman_name AS name, foreman_phone AS phone FROM referrals WHERE foreman_name!=''`).all().forEach(f => {
+    // 历史介绍里手输的工头: 只带有权限城市的介绍里的
+    db.prepare(`SELECT * FROM referrals WHERE foreman_name!=''`).all().filter(r => _refRegionOk(allowedRg, _refRegionOf(r)))
+      .map(r => ({ name: r.foreman_name, phone: r.foreman_phone })).forEach(f => {
       const k = `${String(f.name).trim().toLowerCase()}|${norm(f.phone)}`;
       if (!seenF.has(k)) { seenF.add(k); foremen.push({ id: null, name: f.name, phone: f.phone, state: '', city: '' }); }
     });
@@ -41810,7 +41843,8 @@ app.get('/api/acct/referral-phone-lookup', requireAdmin, requireRole('accounting
       seen.add(k);
       out.push({ source, name, phone, foreman_id: foremanId || null });
     };
-    db.prepare(`SELECT id, name, phone FROM foremen WHERE active=1`).all().filter(f => hit(f.phone)).forEach(f => add('工头名单', f.name, f.phone, f.id));
+    const fmVis = _refForemanVisible(req);
+    db.prepare(`SELECT id, name, phone, COALESCE(state,'') AS state, COALESCE(city,'') AS city FROM foremen WHERE active=1`).all().filter(f => hit(f.phone) && (!fmVis || fmVis(f))).forEach(f => add('工头名单', f.name, f.phone, f.id));
     db.prepare(`SELECT first_name, middle_name, last_name, phone FROM employees`).all().filter(e => hit(e.phone))
       .forEach(e => add('员工档案', [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '), e.phone));
     db.prepare(`SELECT name, phone FROM applicant_submissions`).all().filter(a => hit(a.phone)).forEach(a => add('招工申请', a.name, a.phone));
@@ -41826,11 +41860,19 @@ app.get('/api/acct/referral-foremen', requireAdmin, requireAcctView, (req, res) 
     const rows = db.prepare(`SELECT id, name, phone, COALESCE(state,'') AS state, COALESCE(city,'') AS city,
         COALESCE(warehouse,'') AS warehouse, created_at
       FROM foremen WHERE active=1 ORDER BY name COLLATE NOCASE`).all();
-    const refs = db.prepare(`SELECT foreman_name, foreman_phone FROM referrals`).all();
+    // 按城市权限: 只列看得到的工头, 被介绍次数也只算有权限城市的介绍
+    const fmVis = _refForemanVisible(req);
+    const allowedRg = _refAllowedRegions(req);
+    const refs = db.prepare(`SELECT * FROM referrals`).all().filter(r => _refRegionOk(allowedRg, _refRegionOf(r)));
+    for (const f of rows) f.region = _refForemanRegion(f);
+    if (fmVis) rows.splice(0, rows.length, ...rows.filter(fmVis));
     for (const f of rows) {
       const pd = norm(f.phone), nm = String(f.name).trim().toLowerCase();
-      f.referral_count = refs.filter(r => (pd && norm(r.foreman_phone) === pd)
-        || (!norm(r.foreman_phone) && String(r.foreman_name).trim().toLowerCase() === nm)).length;
+      const mine = refs.filter(r => (pd && norm(r.foreman_phone) === pd)
+        || (!norm(r.foreman_phone) && String(r.foreman_name).trim().toLowerCase() === nm));
+      f.referral_count = mine.length;
+      // 他介绍的工人在哪些城市 (名单按城市筛时, 工头自己没写城市也能归进去)
+      f.ref_regions = [...new Set(mine.map(r => _refRegionOf(r)).filter(Boolean))];
     }
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -41861,8 +41903,10 @@ app.post('/api/acct/referral-foremen', requireAdmin, requireRole('accounting', '
 
 // 编辑工头信息 (姓名/电话/州/城市) — 会计/客服/管理员都可维护工头数据库
 app.put('/api/acct/referral-foremen/:id', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
-  const cur = db.prepare('SELECT id FROM foremen WHERE id=? AND active=1').get(parseInt(req.params.id));
+  const cur = db.prepare('SELECT * FROM foremen WHERE id=? AND active=1').get(parseInt(req.params.id));
   if (!cur) return res.status(404).json({ error: '工头不存在' });
+  const fmVis = _refForemanVisible(req);
+  if (fmVis && !fmVis(cur)) return res.status(403).json({ error: '你没有这个工头所在城市的权限' });
   const b = req.body || {};
   const name = String(b.name || '').trim().slice(0, 120);
   if (!name) return res.status(400).json({ error: '请填写工头姓名' });
