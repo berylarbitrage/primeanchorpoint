@@ -33913,7 +33913,12 @@ async function attemptCloseInvpBuilder(fromBackdrop) {
 // renderInvpList() re-applies the filters, recomputes the summary, and rebuilds
 // only the table — so typing in the search box never rebuilds the controls.
 let _invpAllRows = [];
-const _invpFilter = { q: '', company: '', bank: '', type: '', state: '', from: '', to: '', container: '', amount: '', sort: 'date_desc' };
+const _invpFilter = { q: '', company: '', bank: '', type: '', state: '', from: '', to: '', month: '', container: '', amount: '', sort: 'date_desc' };
+// 每月利润的归属月份：按实际覆盖的服务周期开始日期（period_start）所在月份；没有周期时退回 invoice_date。
+const invpMonthKey = r => {
+  const m = String(r.period_start || r.invoice_date || '').slice(0, 7);
+  return /^\d{4}-\d{2}$/.test(m) ? m : '未知';
+};
 
 // Container numbers on a row that match the active 柜号 search, rendered as small
 // highlighted chips under the invoice number so it's obvious which container put
@@ -34330,34 +34335,31 @@ function invpToggleCard(card) {
 }
 
 function resetInvpFilter() {
-  Object.assign(_invpFilter, { q: '', company: '', bank: '', type: '', state: '', from: '', to: '', container: '', amount: '', sort: 'date_desc' });
+  Object.assign(_invpFilter, { q: '', company: '', bank: '', type: '', state: '', from: '', to: '', month: '', container: '', amount: '', sort: 'date_desc' });
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   set('invpFltCompany', ''); set('invpFltBank', ''); set('invpFltType', ''); set('invpFltState', ''); set('invpFltFrom', ''); set('invpFltTo', '');
   set('invpFltQ', ''); set('invpFltContainer', ''); set('invpFltAmount', '');
   renderInvpList();
 }
 
-// 每月利润表里点某个月：把日期筛选设成该月 1 日 ~ 月末
+// 每月利润表里点某个月：只看服务周期开始日期落在该月的发票（与每月利润同一口径），
+// 同时清掉「日期 从/到」（那个按 invoice_date 筛，两者口径不同）。
 function invpFilterMonth(ym) {
-  const [y, m] = ym.split('-').map(Number);
-  const last = new Date(y, m, 0).getDate();
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-  set('invpFltFrom', ym + '-01'); set('invpFltTo', ym + '-' + String(last).padStart(2, '0'));
+  set('invpFltFrom', ''); set('invpFltTo', '');
+  _invpFilter.month = ym;
   renderInvpList();
 }
 
-// 当前日期筛选正好是某个整月时返回 'YYYY-MM'，否则 ''
+// 当前选中的月份（'YYYY-MM'），没有则 ''
 function invpSelectedMonth() {
-  const f = _invpFilter.from || '', t = _invpFilter.to || '';
-  const m = f.slice(0, 7);
-  if (!/^\d{4}-\d{2}-01$/.test(f) || t.slice(0, 7) !== m) return '';
-  const [y, mo] = m.split('-').map(Number);
-  return t === m + '-' + String(new Date(y, mo, 0).getDate()).padStart(2, '0') ? m : '';
+  return _invpFilter.month || '';
 }
-// 清掉日期筛选（从 / 到），其它筛选保留
+// 清掉日期筛选（从 / 到 / 选中月份），其它筛选保留
 function invpClearDate() {
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   set('invpFltFrom', ''); set('invpFltTo', '');
+  _invpFilter.month = '';
   renderInvpList();
 }
 
@@ -34372,6 +34374,8 @@ function renderInvpList() {
   _invpFilter.state = val('invpFltState');
   _invpFilter.from = val('invpFltFrom');
   _invpFilter.to = val('invpFltTo');
+  // 手动设了「日期 从/到」就取消每月利润表里选中的月份
+  if (_invpFilter.from || _invpFilter.to) _invpFilter.month = '';
   _invpFilter.q = (val('invpFltQ') || '').trim().toLowerCase();
   _invpFilter.container = (val('invpFltContainer') || '').trim().toLowerCase();
   _invpFilter.amount = (val('invpFltAmount') || '').trim();
@@ -34430,6 +34434,7 @@ function renderInvpList() {
   // invoice_date is stored ISO (YYYY-MM-DD), so string compare = date compare.
   if (_invpFilter.from) list = list.filter(r => (r.invoice_date || '') >= _invpFilter.from);
   if (_invpFilter.to) list = list.filter(r => (r.invoice_date || '') <= _invpFilter.to);
+  if (_invpFilter.month) list = list.filter(r => invpMonthKey(r) === _invpFilter.month);
 
   list.sort(_invpComparator(_invpFilter.sort || 'date_desc'));
 
@@ -34438,7 +34443,7 @@ function renderInvpList() {
   const totBill = list.reduce((s, r) => s + (r.subtotal || 0), 0);
   const totWage = list.reduce((s, r) => s + (r.wage_cost || 0), 0);
   const totProfit = totBill - totWage;
-  const isFiltered = !!(_invpFilter.company || _invpFilter.bank || _invpFilter.type || _invpFilter.state || _invpFilter.from || _invpFilter.to || _invpFilter.q || _invpFilter.container || _invpFilter.amount);
+  const isFiltered = !!(_invpFilter.company || _invpFilter.bank || _invpFilter.type || _invpFilter.state || _invpFilter.from || _invpFilter.to || _invpFilter.month || _invpFilter.q || _invpFilter.container || _invpFilter.amount);
   const money = n => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const card = (label, value, color) => `
     <div style="flex:1 1 140px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:.55rem .85rem">
@@ -34471,13 +34476,12 @@ function renderInvpList() {
     ? `<div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.1rem">${breakdownRows.join('')}</div>`
     : '';
 
-  // 按月利润：按 invoice_date 的年月分组（与上面「日期 从/到」筛选同一口径）。
+  // 按月利润：按服务周期开始日期（period_start，缺失时用 invoice_date）的年月分组。
   // 不受日期筛选影响，始终列出所有月份；只有点「只看此月」才会设日期筛选，
   // 当前选中的月份高亮，并可一键「显示全部」清掉日期筛选。
   const byMonth = {};
   for (const r of listAllDates) {
-    const m = String(r.invoice_date || '').slice(0, 7);
-    const k = /^\d{4}-\d{2}$/.test(m) ? m : '未知';
+    const k = invpMonthKey(r);
     const b = byMonth[k] || (byMonth[k] = { n: 0, bill: 0, wage: 0 });
     b.n++; b.bill += (r.subtotal || 0); b.wage += (r.wage_cost || 0);
   }
@@ -34489,7 +34493,7 @@ function renderInvpList() {
     const maxP = Math.max(1, ...months.map(k => Math.abs(byMonth[k].bill - byMonth[k].wage)));
     const td = 'padding:.35rem .6rem;border-bottom:1px solid var(--gray-100);white-space:nowrap';
     const selMonth = invpSelectedMonth();
-    const hasDate = !!(_invpFilter.from || _invpFilter.to);
+    const hasDate = !!(_invpFilter.from || _invpFilter.to || _invpFilter.month);
     const rowsHtml = months.map(k => {
       const b = byMonth[k], p = b.bill - b.wage;
       const pct = b.bill ? (p / b.bill * 100).toFixed(1) + '%' : '—';
@@ -34511,7 +34515,7 @@ function renderInvpList() {
     }).join('');
     const th = 'padding:.35rem .6rem;border-bottom:1px solid var(--gray-200);font-size:.72rem;color:var(--gray-500);font-weight:600;white-space:nowrap';
     monthlyHtml = `<details ${open ? 'open' : ''} ontoggle="try{localStorage.setItem('invpMonthlyOpen',this.open?'1':'0')}catch(_){}" style="background:#fff;border:1px solid var(--gray-200);border-radius:8px;padding:.45rem .75rem;margin-bottom:1.1rem">
-        <summary style="cursor:pointer;font-weight:700;font-size:.85rem">📅 每月利润（按 Invoice 日期，${months.length} 个月）${hasDate
+        <summary style="cursor:pointer;font-weight:700;font-size:.85rem">📅 每月利润（按服务周期开始日期，${months.length} 个月）${hasDate
           ? `<button class="btn btn-sm btn-outline" onclick="event.preventDefault();invpClearDate()" style="font-size:.72rem;padding:1px 8px;margin-left:.6rem">✕ 清除日期筛选，显示全部</button>`
           : ''}</summary>
         <div style="overflow-x:auto;margin-top:.4rem">
