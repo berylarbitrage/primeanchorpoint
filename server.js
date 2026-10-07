@@ -22245,6 +22245,33 @@ try {
   }
 } catch (e) { console.log('[migration] wecharmer rename error:', e.message); }
 
+// Elogistek 的 Office_East_Coast 部门单独开票：公司归属仍是 Elogistek，发票上
+// BILL TO 才印 Office_East_Coast（profile.bill_to_name）。早先保存时把公司名
+// 直接写成了 Office_East_Coast 的发票，改回 Elogistek 并补上 bill_to_name。
+try {
+  const _oecDone = db.prepare("SELECT value FROM app_settings WHERE key='oec_company_to_elogistek_v1'").get();
+  if (!_oecDone) {
+    const _top = db.prepare("SELECT company_name, COUNT(*) n FROM invoices WHERE company_name LIKE '%elogistek%' GROUP BY company_name ORDER BY n DESC").get();
+    let _elo = _top && _top.company_name;
+    if (!_elo) { try { const p = db.prepare("SELECT name FROM partners WHERE name LIKE '%elogistek%' ORDER BY id").get(); _elo = p && p.name; } catch (_) {} }
+    if (_elo) {
+      const _invs = db.prepare("SELECT id, company_name, profile_json FROM invoices WHERE LOWER(TRIM(company_name))='office_east_coast'").all();
+      const _upd = db.prepare('UPDATE invoices SET company_name=?, profile_json=? WHERE id=?');
+      const _hist = db.prepare('INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?,?,?)');
+      db.transaction(() => {
+        for (const inv of _invs) {
+          let prof = {}; try { prof = inv.profile_json ? JSON.parse(inv.profile_json) : {}; } catch (_) { prof = {}; }
+          prof.bill_to_name = prof.bill_to_name || inv.company_name;
+          _upd.run(_elo, JSON.stringify(prof), inv.id);
+          _hist.run(inv.id, '公司归属', `${inv.company_name} → ${_elo}（BILL TO 仍显示 ${prof.bill_to_name}）`);
+        }
+      })();
+      if (_invs.length) console.log(`[migration] Office_East_Coast → ${_elo}: 发票 ${_invs.length} 张`);
+      db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('oec_company_to_elogistek_v1','1')").run();
+    }
+  }
+} catch (e) { console.log('[migration] office_east_coast company error:', e.message); }
+
 // 一次性：给 Wecharmer 新开一个客户门户账号 weiqiang@wecharmer.com（电话 6268232361）。
 // 挂到现有 wecharmer 账号同一家合作公司下、权限照抄，两个账号看到的是同一家公司的数据。
 // 约定初始密码 Wecharmer2026$（同实名管理员种子的做法），登录后可用「忘记密码」自行修改。
@@ -22334,6 +22361,7 @@ app.get('/api/admin/invoices', requireAdmin, (req, res) => {
       r.invoice_mode = p.invoice_mode || '';
       r.bank_name = p.bank_name || '';
       r.bank_account_name = p.bank_account_name || '';
+      r.bill_to_name = p.bill_to_name || '';
       const acct = String(p.bank_account_no || '').replace(/\D/g, '');
       r.bank_account_last4 = acct ? acct.slice(-4) : '';
       // Container numbers billed on this invoice, so the list can be searched by

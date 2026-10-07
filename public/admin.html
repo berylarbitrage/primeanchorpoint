@@ -2962,6 +2962,10 @@ tr:hover td.invp-frz{background:var(--sky-light)}
           <input type="text" id="invPageBillName" placeholder="客户公司名称" oninput="onInvBillNameInput()" onchange="_invpApplyCustomerPresets(this.value)">
         </div>
         <div class="field">
+          <label>Bill To 显示名称 <span style="font-size:.72rem;color:var(--gray-400);font-weight:400">（选填：发票上 BILL TO 显示的名字；留空 = 公司名称。公司归属、利润统计仍按上面的公司名称）</span></label>
+          <input type="text" id="invPageBillToName" placeholder="如 Office_East_Coast" oninput="_invpBillToNameChanged()">
+        </div>
+        <div class="field">
           <label>地址 <span id="invPageAddrHint" style="display:none;font-size:.72rem;color:var(--sky);font-weight:600">· 该公司有多个地址，请选择</span></label>
           <select id="invPageAddrSelect" onchange="onInvPageAddrSelect()" style="display:none;width:100%;margin-bottom:.4rem;padding:.5rem;border:1px solid var(--sky);border-radius:6px;font-size:.85rem;background:#f0f9ff"></select>
           <input type="text" id="invPageBillAddr" placeholder="客户地址">
@@ -33701,7 +33705,7 @@ function openInvpBuilderModal() {
   window._invpLoadedWageCost = null;
   window._invpShiftBlocks = null;
   window._invpSourceFileIds = [];
-  const fields = ['invPageNumber','invPageDate','invPageStart','invPageEnd','invPageBillName','invPageBillAddr','invPageUniformRate','invPageMarkupRate','invPageOtFeeRate','invPageEditId'];
+  const fields = ['invPageNumber','invPageDate','invPageStart','invPageEnd','invPageBillName','invPageBillToName','invPageBillAddr','invPageUniformRate','invPageMarkupRate','invPageOtFeeRate','invPageEditId'];
   fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
   _invpSetupAddrPicker([]); // hide the multi-address picker for a fresh invoice
@@ -33746,6 +33750,7 @@ async function openInvpForEdit(id) {
   document.getElementById('invPageStart').value = inv.period_start || '';
   document.getElementById('invPageEnd').value = inv.period_end || '';
   document.getElementById('invPageBillName').value = inv.company_name || '';
+  { const bt = document.getElementById('invPageBillToName'); if (bt) bt.value = (inv.profile && inv.profile.bill_to_name) || ''; }
   document.getElementById('invPageBillAddr').value = inv.bill_to_addr || '';
 
   // Look up partner state from company data
@@ -34691,7 +34696,7 @@ function renderInvpList() {
           <span style="font-family:monospace;font-weight:700;font-size:.84rem">${esc(r.invoice_number || '(无编号)')}</span>
           <span style="display:flex;gap:.3rem">${statusBadge(r.status)}${paidBadge}</span>
         </div>
-        <div style="font-size:.78rem;color:var(--gray-500);margin-top:.25rem">${typeIcon} ${esc(r.company_name || '—')} · ${esc(r.invoice_date || '')}</div>
+        <div style="font-size:.78rem;color:var(--gray-500);margin-top:.25rem">${typeIcon} ${esc(r.company_name || '—')}${r.bill_to_name ? ' (Bill To: ' + esc(r.bill_to_name) + ')' : ''} · ${esc(r.invoice_date || '')}</div>
         <div style="display:flex;gap:.9rem;margin-top:.45rem;font-size:.86rem;flex-wrap:wrap">
           <span>账单 <b>${money(r.subtotal)}</b></span>
           <span style="color:#b45309">工资 <b>${money(r.wage_cost)}</b></span>
@@ -34842,7 +34847,7 @@ function renderInvpList() {
             : '';
           return `<tr style="border-top:1px solid var(--gray-100)">
           <td class="invp-frz" style="padding:8px 10px;font-weight:600">${settledMark}<a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a>${invpMatchedContainers(r, _invpFilter.container)}</td>
-          <td class="invp-frz" style="padding:8px 10px">${esc(r.company_name||'')}${(() => {
+          <td class="invp-frz" style="padding:8px 10px">${esc(r.company_name||'')}${r.bill_to_name ? `<div style="font-size:.72rem;color:var(--gray-500)">Bill To: ${esc(r.bill_to_name)}</div>` : ''}${(() => {
             const q = _invpFilter.q;
             if (!q) return '';
             // 搜索命中工人名时：把这个人在本张账单里的行明细直接列出来
@@ -37540,7 +37545,7 @@ async function invpRefreshInvoiceNumber() {
   // address and the explicitly-picked address win over the partner default
   // (fixes multi-address companies showing the wrong state in the number).
   const state = (addrState || window._invpSelectedPartnerState || partnerState || 'XX').toUpperCase().slice(0,2);
-  const companyAbbr = billName.split(/[\s\-&,_]+/).map(w => (w[0]||'').toUpperCase()).join('').slice(0,4) || 'XX';
+  const companyAbbr = (_invpBillToName() || billName).split(/[\s\-&,_]+/).map(w => (w[0]||'').toUpperCase()).join('').slice(0,4) || 'XX';
   const datePart = _invpNumberDateSeg();
   // C = Container 计费, L = Labor 工时计费
   const modeLetter = (window._invpMode === 'container') ? 'C' : 'L';
@@ -37985,6 +37990,8 @@ async function saveInvpInvoice(status) {
   if (window._invpStmtSubSavedId != null) profileWithMode.stmt_sub_entity_id = window._invpStmtSubSavedId;
   // 加班服务费系数随发票存档（0 = 未启用，编辑旧发票时保持旧算法）。
   profileWithMode.ot_fee_rate = (mode !== 'container' && _invpOtFeeRate() != null) ? _invpOtFeeRate() : 0;
+  // Bill To 显示名称（与公司名称不同时才存）：发票上 BILL TO 印这个，公司归属仍是 company_name
+  { const bt = _invpBillToName(); if (bt && bt !== billName) profileWithMode.bill_to_name = bt; else delete profileWithMode.bill_to_name; }
   // 班次分组样式随发票存档 (无则不存)
   if (mode !== 'container' && window._invpShiftBlocks && window._invpShiftBlocks.length) profileWithMode.shift_blocks = window._invpShiftBlocks;
   // 两边分开记账：从「按月付款」转来的发票，行项目按公司价（从公司收）开给客户，真实「付给
@@ -38875,14 +38882,30 @@ const _INVP_DEPT_BILL_TO = {
 function _invpDeptBillTo(dept) {
   return _INVP_DEPT_BILL_TO[String(dept || '').trim().toLowerCase()] || null;
 }
-// 把「账单发往」设成指定名称 + 地址（不在客户名单里的部门抬头）
+// 部门抬头：公司名称不动（仍是 Elogistek，公司归属/利润统计不变），
+// 只把发票上印的 BILL TO 名称和地址换成该部门的；号码随之重新生成
 function _invpSetBillTo(name, addr) {
-  const sr = document.getElementById('invPageCompanySearch');
-  if (sr) sr.value = name;
-  document.getElementById('invPageBillName').value = name;
+  const bt = document.getElementById('invPageBillToName');
+  if (bt) bt.value = name;
   _invpSetupAddrPicker([addr]);
   _invpApplyBillAddr(addr);
-  _invpApplyCustomerPresets(name);
+}
+// 发票上 BILL TO 印的名字（留空 = 公司名称）
+function _invpBillToName() {
+  return String((document.getElementById('invPageBillToName') || {}).value || '').trim();
+}
+function _invpSavedBillToName(inv) {
+  let p = inv && (inv.profile || inv.profile_json);
+  if (typeof p === 'string') { try { p = JSON.parse(p); } catch (_) { p = null; } }
+  return (p && p.bill_to_name) ? String(p.bill_to_name) : '';
+}
+// 改了 Bill To 显示名称：新发票的号码缩写跟着变
+function _invpBillToNameChanged() {
+  clearTimeout(window._invpBillToNameTimer);
+  window._invpBillToNameTimer = setTimeout(() => {
+    const numEl = document.getElementById('invPageNumber');
+    if (numEl && !(document.getElementById('invPageEditId') || {}).value) { numEl.value = ''; invpRefreshInvoiceNumber(); }
+  }, 600);
 }
 // Excel 有多个部门分页时：每个部门单独开一张发票，弹窗选这次导入哪个部门
 function _invpPickDepartment(depts) {
@@ -38948,6 +38971,11 @@ async function invpProcessExcelFile(file) {
       data = Object.assign({}, dept.data, { source_file_id: data.source_file_id });
       const bt = _invpDeptBillTo(dept.name);
       if (bt) _invpSetBillTo(bt.name, bt.addr);
+      else if (_invpBillToName()) {
+        // 之前选过别的部门抬头：清掉，地址回到客户公司默认地址
+        document.getElementById('invPageBillToName').value = '';
+        if (window._invpSelectedPartnerId) selectInvPartner(window._invpSelectedPartnerId);
+      }
     }
     invpApplyExcelData(data);
     // 文件本身认得出是哪家客户的 (如菜鸟 DFW 考勤 → Albatross America Inc): 自动选上客户公司
@@ -41544,7 +41572,7 @@ function _invpOtFeeForHeadcount(n) { return n >= 71 ? 1.0 : (n >= 31 ? 1.05 : 1.
 // 加班服务费系数只适用于 Elogistek 的合同; 其他客户加班照常吃 Markup。
 function _invpOtFeeCompanyApplies(name) {
   const n = name !== undefined ? name : ((document.getElementById('invPageBillName') || {}).value || '');
-  return /elogistek/i.test(String(n)) || !!_invpDeptBillTo(n);
+  return /elogistek/i.test(String(n));
 }
 // 打印显示用：去掉 Elogistek 导出加在名字前的 "Chinese-" 语言标记
 // （新导入已在解析时去掉；这里兜底老发票里存的旧名字）。
@@ -41913,7 +41941,7 @@ async function generateInvpPreview() {
       </div>
       <div style="border-top:2.5px solid #29AAE1;margin-bottom:.9rem"></div>
       <table style="border-collapse:collapse;margin-bottom:.7rem;font-size:.85rem;line-height:1.55">
-        <tr><td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">BILL TO:</td><td style="padding:2px 0;font-weight:700;color:#29AAE1;font-size:.95rem">${esc(billName)}</td></tr>
+        <tr><td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">BILL TO:</td><td style="padding:2px 0;font-weight:700;color:#29AAE1;font-size:.95rem">${esc(_invpBillToName() || billName)}</td></tr>
         ${billAddr ? `<tr><td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">ADDRESS:</td><td style="padding:2px 0;color:#1e293b">${esc(billAddr)}</td></tr>` : ''}
         <tr><td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">SERVICE PERIOD:</td><td style="padding:2px 0;color:#1e293b;font-weight:600">${servicePeriodLabel}</td></tr>
       </table>
@@ -42531,7 +42559,7 @@ function showInvoicePreview(inv) {
       <!-- Bill To -->
       <div style="margin-bottom:1.5rem">
         <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:.35rem">账单发往</div>
-        <div style="font-size:1rem;font-weight:700;color:#0f172a">${esc(inv.company_name)}</div>
+        <div style="font-size:1rem;font-weight:700;color:#0f172a">${esc(_invpSavedBillToName(inv) || inv.company_name)}</div>
         ${p.contact_person ? `<div style="font-size:.87rem;color:#475569">${esc(p.contact_person)}</div>` : ''}
         ${p.address ? `<div style="font-size:.87rem;color:#475569">${esc(p.address)}</div>` : ''}
         ${p.email ? `<div style="font-size:.87rem;color:#475569">${esc(p.email)}</div>` : ''}
