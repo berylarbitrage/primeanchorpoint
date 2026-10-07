@@ -2962,6 +2962,10 @@ tr:hover td.invp-frz{background:var(--sky-light)}
           <input type="text" id="invPageBillName" placeholder="客户公司名称" oninput="onInvBillNameInput()" onchange="_invpApplyCustomerPresets(this.value)">
         </div>
         <div class="field">
+          <label>Bill To 显示名称 <span style="font-size:.72rem;color:var(--gray-400);font-weight:400">（选填：发票上 BILL TO 显示的名字；留空 = 公司名称。公司归属、利润统计仍按上面的公司名称）</span></label>
+          <input type="text" id="invPageBillToName" placeholder="如 Office_East_Coast" oninput="_invpBillToNameChanged()">
+        </div>
+        <div class="field">
           <label>地址 <span id="invPageAddrHint" style="display:none;font-size:.72rem;color:var(--sky);font-weight:600">· 该公司有多个地址，请选择</span></label>
           <select id="invPageAddrSelect" onchange="onInvPageAddrSelect()" style="display:none;width:100%;margin-bottom:.4rem;padding:.5rem;border:1px solid var(--sky);border-radius:6px;font-size:.85rem;background:#f0f9ff"></select>
           <input type="text" id="invPageBillAddr" placeholder="客户地址">
@@ -33701,7 +33705,7 @@ function openInvpBuilderModal() {
   window._invpLoadedWageCost = null;
   window._invpShiftBlocks = null;
   window._invpSourceFileIds = [];
-  const fields = ['invPageNumber','invPageDate','invPageStart','invPageEnd','invPageBillName','invPageBillAddr','invPageUniformRate','invPageMarkupRate','invPageOtFeeRate','invPageEditId'];
+  const fields = ['invPageNumber','invPageDate','invPageStart','invPageEnd','invPageBillName','invPageBillToName','invPageBillAddr','invPageUniformRate','invPageMarkupRate','invPageOtFeeRate','invPageEditId'];
   fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
   _invpSetupAddrPicker([]); // hide the multi-address picker for a fresh invoice
@@ -33746,6 +33750,7 @@ async function openInvpForEdit(id) {
   document.getElementById('invPageStart').value = inv.period_start || '';
   document.getElementById('invPageEnd').value = inv.period_end || '';
   document.getElementById('invPageBillName').value = inv.company_name || '';
+  { const bt = document.getElementById('invPageBillToName'); if (bt) bt.value = (inv.profile && inv.profile.bill_to_name) || ''; }
   document.getElementById('invPageBillAddr').value = inv.bill_to_addr || '';
 
   // Look up partner state from company data
@@ -34048,7 +34053,7 @@ async function invpOpenRecover() {
       <strong style="font-size:1rem">🗄 恢复已删除的发票</strong>
       <button class="btn btn-sm btn-outline" onclick="document.getElementById('invpRecoverOverlay').remove()">✕ 关闭</button>
     </div>
-    <div style="font-size:.78rem;color:var(--gray-500);padding:.55rem 1.1rem;line-height:1.5">删除的发票会先进「回收站」，可直接找回；更早删除的会从<b>每小时自动备份</b>里找回。找到后点「恢复」放回列表。<span style="color:#b45309">备份只保留最近约 10 小时，越早恢复越稳。</span></div>
+    <div style="font-size:.78rem;color:var(--gray-500);padding:.55rem 1.1rem;line-height:1.5">每一张删除过的发票都<b>永久保留</b>在「回收站」里，随时可以恢复，恢复后记录也不会消失。如果原号码已经被新发票用了，会恢复成「原号码-R1」，两张都保留。回收站上线之前删掉的，从<b>每小时自动备份</b>里找（<span style="color:#b45309">备份只保留最近约 10 小时</span>）。</div>
     <div style="padding:.5rem 1.1rem;border-top:1px dashed var(--gray-200);border-bottom:1px dashed var(--gray-200);background:#fffbeb;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;font-size:.75rem">
       <span style="color:#92400e">找不到？上传一份更早的数据库（<b>prime.db</b>，可从 Render 磁盘快照导出）再扫描：</span>
       <input type="file" id="invpRecoverUpload" accept=".db,.sqlite,application/octet-stream,application/x-sqlite3" style="font-size:.72rem;max-width:200px">
@@ -34075,29 +34080,35 @@ function invpRenderRecoverList(invs) {
       ? '<span style="font-size:.68rem;background:#dcfce7;color:#166534;border-radius:6px;padding:1px 6px">回收站</span>'
       : `<span style="font-size:.68rem;background:#fef3c7;color:#92400e;border-radius:6px;padding:1px 6px" title="${esc(v.backup_name || '')}">备份</span>`;
     const amt = (v.subtotal != null && v.subtotal !== '') ? ('$' + Number(v.subtotal).toFixed(2)) : '';
-    const meta = [esc(v.company_name || '—'), esc(v.invoice_date || ''), amt, v.deleted_at ? '删于 ' + esc(String(v.deleted_at).slice(0, 16)) : ''].filter(Boolean).join(' · ');
+    const period = v.period_start ? esc(v.period_start) + ' ~ ' + esc(v.period_end || '') : '';
+    const meta = [esc(v.company_name || '—'), period || esc(v.invoice_date || ''), amt,
+      v.deleted_at ? '删于 ' + esc(String(v.deleted_at).slice(0, 16)) + (v.deleted_by ? '（' + esc(v.deleted_by) + '）' : '') : ''].filter(Boolean).join(' · ');
+    const tags = (v.restored_at ? `<span style="font-size:.68rem;background:#e0e7ff;color:#3730a3;border-radius:6px;padding:1px 6px">已于 ${esc(String(v.restored_at).slice(0, 16))} 恢复为 ${esc(v.restored_as || '')}</span>` : '')
+      + (v.number_in_use && !v.restored_at ? '<span style="font-size:.68rem;background:#fee2e2;color:#991b1b;border-radius:6px;padding:1px 6px">号码已被新发票占用，恢复会加 -R 后缀</span>' : '');
     return `<div style="display:flex;align-items:center;gap:.7rem;padding:.55rem .2rem;border-bottom:1px solid var(--gray-100)">
       <div style="flex:1;min-width:0">
-        <div style="font-weight:600;font-size:.86rem">${esc(v.invoice_number)} ${srcBadge}</div>
+        <div style="font-weight:600;font-size:.86rem;display:flex;gap:.35rem;flex-wrap:wrap;align-items:center">${esc(v.invoice_number)} ${srcBadge} ${tags}</div>
         <div style="font-size:.74rem;color:var(--gray-500)">${meta}</div>
       </div>
-      <button class="btn btn-sm btn-green" data-num="${esc(v.invoice_number)}" data-bk="${esc(v.backup_name || '')}" onclick="invpDoRecover(this)">恢复</button>
+      <button class="btn btn-sm ${v.restored_at ? 'btn-outline' : 'btn-green'}" data-num="${esc(v.invoice_number)}" data-tid="${esc(v.trash_id || '')}" data-bk="${esc(v.backup_name || '')}" data-again="${v.restored_at ? '1' : ''}" onclick="invpDoRecover(this)">${v.restored_at ? '再恢复一份' : '恢复'}</button>
     </div>`;
   }).join('');
 }
 
 async function invpDoRecover(btn) {
-  const num = btn.dataset.num, bk = btn.dataset.bk || '';
+  const num = btn.dataset.num, bk = btn.dataset.bk || '', tid = btn.dataset.tid || '';
+  const label = btn.textContent;
+  if (btn.dataset.again && !(await showConfirm('这张发票已经恢复过一次，再恢复会多出一张（号码加 -R 后缀）。确定吗？', { confirmLabel: '再恢复一份' }))) return;
   btn.disabled = true; btn.textContent = '恢复中…';
   try {
-    const r = await api('/admin/invoices/recover', { method: 'POST', body: JSON.stringify({ invoice_number: num, backup_name: bk }) });
+    const r = await api('/admin/invoices/recover', { method: 'POST', body: JSON.stringify({ invoice_number: num, trash_id: tid || undefined, backup_name: bk }) });
     if (r && r.error) throw new Error(r.error);
-    showToast('已恢复发票 ' + num + ' ✓', 'success');
-    const row = btn.parentElement; if (row) row.remove();
-    const list = document.getElementById('invpRecoverList');
-    if (list && !list.querySelector('button')) invpRenderRecoverList([]);
+    showToast('已恢复发票 ' + (r.invoice_number || num) + (r.invoice_number && r.invoice_number !== num ? `（原号码 ${num} 已被占用）` : '') + ' ✓', 'success', 6000);
+    // 回收站记录永久保留：刷新列表显示「已恢复」
+    const rr = await api('/admin/invoices/recoverable').catch(() => null);
+    if (rr && rr.invoices) invpRenderRecoverList(rr.invoices);
     loadInvpList();
-  } catch (e) { btn.disabled = false; btn.textContent = '恢复'; showToast('恢复失败：' + (e.message || e), 'error'); }
+  } catch (e) { btn.disabled = false; btn.textContent = label; showToast('恢复失败：' + (e.message || e), 'error'); }
 }
 
 // Upload an older prime.db (e.g. pulled off a Render disk snapshot) so the recover
@@ -34685,7 +34696,7 @@ function renderInvpList() {
           <span style="font-family:monospace;font-weight:700;font-size:.84rem">${esc(r.invoice_number || '(无编号)')}</span>
           <span style="display:flex;gap:.3rem">${statusBadge(r.status)}${paidBadge}</span>
         </div>
-        <div style="font-size:.78rem;color:var(--gray-500);margin-top:.25rem">${typeIcon} ${esc(r.company_name || '—')} · ${esc(r.invoice_date || '')}</div>
+        <div style="font-size:.78rem;color:var(--gray-500);margin-top:.25rem">${typeIcon} ${esc(r.company_name || '—')}${r.bill_to_name ? ' (Bill To: ' + esc(r.bill_to_name) + ')' : ''} · ${esc(r.invoice_date || '')}</div>
         <div style="display:flex;gap:.9rem;margin-top:.45rem;font-size:.86rem;flex-wrap:wrap">
           <span>账单 <b>${money(r.subtotal)}</b></span>
           <span style="color:#b45309">工资 <b>${money(r.wage_cost)}</b></span>
@@ -34836,7 +34847,7 @@ function renderInvpList() {
             : '';
           return `<tr style="border-top:1px solid var(--gray-100)">
           <td class="invp-frz" style="padding:8px 10px;font-weight:600">${settledMark}<a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a>${invpMatchedContainers(r, _invpFilter.container)}</td>
-          <td class="invp-frz" style="padding:8px 10px">${esc(r.company_name||'')}${(() => {
+          <td class="invp-frz" style="padding:8px 10px">${esc(r.company_name||'')}${r.bill_to_name ? `<div style="font-size:.72rem;color:var(--gray-500)">Bill To: ${esc(r.bill_to_name)}</div>` : ''}${(() => {
             const q = _invpFilter.q;
             if (!q) return '';
             // 搜索命中工人名时：把这个人在本张账单里的行明细直接列出来
@@ -37534,14 +37545,16 @@ async function invpRefreshInvoiceNumber() {
   // address and the explicitly-picked address win over the partner default
   // (fixes multi-address companies showing the wrong state in the number).
   const state = (addrState || window._invpSelectedPartnerState || partnerState || 'XX').toUpperCase().slice(0,2);
-  const companyAbbr = billName.split(/[\s\-&,_]+/).map(w => (w[0]||'').toUpperCase()).join('').slice(0,4) || 'XX';
+  const companyAbbr = (_invpBillToName() || billName).split(/[\s\-&,_]+/).map(w => (w[0]||'').toUpperCase()).join('').slice(0,4) || 'XX';
   const datePart = _invpNumberDateSeg();
   // C = Container 计费, L = Labor 工时计费
   const modeLetter = (window._invpMode === 'container') ? 'C' : 'L';
   const prefix = `INV-${modeLetter}-${state}-${companyAbbr}-${datePart}-`;
   const existing = await api('/admin/invoices').catch(() => []);
-  const nums = (Array.isArray(existing) ? existing : [])
-    .map(r => r.invoice_number || '')
+  // 回收站里已删除发票的号码也算占用，新发票不重用
+  const deletedNums = await api('/admin/invoices/deleted-numbers').catch(() => []);
+  const nums = (Array.isArray(existing) ? existing : []).map(r => r.invoice_number || '')
+    .concat(Array.isArray(deletedNums) ? deletedNums : [])
     .filter(n => n.startsWith(prefix))
     .map(n => parseInt(n.slice(prefix.length)) || 0);
   const nextSeq = nums.length ? Math.max(...nums) + 1 : 1;
@@ -37560,9 +37573,10 @@ async function _invpRenumberStateOnly(newState, newDateSeg) {
   const dateSeg = newDateSeg || m[5];
   const prefix = `INV-${m[2]}-${String(newState).toUpperCase().slice(0,2)}-${m[4]}-${dateSeg}-`;
   const existing = await api('/admin/invoices').catch(() => []);
+  const deletedNums = await api('/admin/invoices/deleted-numbers').catch(() => []);
   let maxSeq = 0;
-  (Array.isArray(existing) ? existing : []).forEach(r => {
-    const n = r.invoice_number || '';
+  (Array.isArray(existing) ? existing : []).map(r => r.invoice_number || '')
+    .concat(Array.isArray(deletedNums) ? deletedNums : []).forEach(n => {
     if (n.startsWith(prefix)) { const s = parseInt(n.slice(prefix.length)) || 0; if (s > maxSeq) maxSeq = s; }
   });
   return prefix + String(maxSeq + 1).padStart(4, '0');
@@ -37579,9 +37593,10 @@ async function _invpRenumberDate(newDateSeg) {
   if (newDateSeg === m[5]) return cur;              // already matches the Invoice 日期
   const prefix = `INV-${m[2]}-${m[3]}-${m[4]}-${newDateSeg}-`;
   const existing = await api('/admin/invoices').catch(() => []);
+  const deletedNums = await api('/admin/invoices/deleted-numbers').catch(() => []);
   let maxSeq = 0;
-  (Array.isArray(existing) ? existing : []).forEach(r => {
-    const n = r.invoice_number || '';
+  (Array.isArray(existing) ? existing : []).map(r => r.invoice_number || '')
+    .concat(Array.isArray(deletedNums) ? deletedNums : []).forEach(n => {
     if (n.startsWith(prefix)) { const s = parseInt(n.slice(prefix.length)) || 0; if (s > maxSeq) maxSeq = s; }
   });
   return prefix + String(maxSeq + 1).padStart(4, '0');
@@ -37975,6 +37990,8 @@ async function saveInvpInvoice(status) {
   if (window._invpStmtSubSavedId != null) profileWithMode.stmt_sub_entity_id = window._invpStmtSubSavedId;
   // 加班服务费系数随发票存档（0 = 未启用，编辑旧发票时保持旧算法）。
   profileWithMode.ot_fee_rate = (mode !== 'container' && _invpOtFeeRate() != null) ? _invpOtFeeRate() : 0;
+  // Bill To 显示名称（与公司名称不同时才存）：发票上 BILL TO 印这个，公司归属仍是 company_name
+  { const bt = _invpBillToName(); if (bt && bt !== billName) profileWithMode.bill_to_name = bt; else delete profileWithMode.bill_to_name; }
   // 班次分组样式随发票存档 (无则不存)
   if (mode !== 'container' && window._invpShiftBlocks && window._invpShiftBlocks.length) profileWithMode.shift_blocks = window._invpShiftBlocks;
   // 两边分开记账：从「按月付款」转来的发票，行项目按公司价（从公司收）开给客户，真实「付给
@@ -38865,14 +38882,30 @@ const _INVP_DEPT_BILL_TO = {
 function _invpDeptBillTo(dept) {
   return _INVP_DEPT_BILL_TO[String(dept || '').trim().toLowerCase()] || null;
 }
-// 把「账单发往」设成指定名称 + 地址（不在客户名单里的部门抬头）
+// 部门抬头：公司名称不动（仍是 Elogistek，公司归属/利润统计不变），
+// 只把发票上印的 BILL TO 名称和地址换成该部门的；号码随之重新生成
 function _invpSetBillTo(name, addr) {
-  const sr = document.getElementById('invPageCompanySearch');
-  if (sr) sr.value = name;
-  document.getElementById('invPageBillName').value = name;
+  const bt = document.getElementById('invPageBillToName');
+  if (bt) bt.value = name;
   _invpSetupAddrPicker([addr]);
   _invpApplyBillAddr(addr);
-  _invpApplyCustomerPresets(name);
+}
+// 发票上 BILL TO 印的名字（留空 = 公司名称）
+function _invpBillToName() {
+  return String((document.getElementById('invPageBillToName') || {}).value || '').trim();
+}
+function _invpSavedBillToName(inv) {
+  let p = inv && (inv.profile || inv.profile_json);
+  if (typeof p === 'string') { try { p = JSON.parse(p); } catch (_) { p = null; } }
+  return (p && p.bill_to_name) ? String(p.bill_to_name) : '';
+}
+// 改了 Bill To 显示名称：新发票的号码缩写跟着变
+function _invpBillToNameChanged() {
+  clearTimeout(window._invpBillToNameTimer);
+  window._invpBillToNameTimer = setTimeout(() => {
+    const numEl = document.getElementById('invPageNumber');
+    if (numEl && !(document.getElementById('invPageEditId') || {}).value) { numEl.value = ''; invpRefreshInvoiceNumber(); }
+  }, 600);
 }
 // Excel 有多个部门分页时：每个部门单独开一张发票，弹窗选这次导入哪个部门
 function _invpPickDepartment(depts) {
@@ -38938,6 +38971,11 @@ async function invpProcessExcelFile(file) {
       data = Object.assign({}, dept.data, { source_file_id: data.source_file_id });
       const bt = _invpDeptBillTo(dept.name);
       if (bt) _invpSetBillTo(bt.name, bt.addr);
+      else if (_invpBillToName()) {
+        // 之前选过别的部门抬头：清掉，地址回到客户公司默认地址
+        document.getElementById('invPageBillToName').value = '';
+        if (window._invpSelectedPartnerId) selectInvPartner(window._invpSelectedPartnerId);
+      }
     }
     invpApplyExcelData(data);
     // 文件本身认得出是哪家客户的 (如菜鸟 DFW 考勤 → Albatross America Inc): 自动选上客户公司
@@ -41534,7 +41572,7 @@ function _invpOtFeeForHeadcount(n) { return n >= 71 ? 1.0 : (n >= 31 ? 1.05 : 1.
 // 加班服务费系数只适用于 Elogistek 的合同; 其他客户加班照常吃 Markup。
 function _invpOtFeeCompanyApplies(name) {
   const n = name !== undefined ? name : ((document.getElementById('invPageBillName') || {}).value || '');
-  return /elogistek/i.test(String(n)) || !!_invpDeptBillTo(n);
+  return /elogistek/i.test(String(n));
 }
 // 打印显示用：去掉 Elogistek 导出加在名字前的 "Chinese-" 语言标记
 // （新导入已在解析时去掉；这里兜底老发票里存的旧名字）。
@@ -41903,7 +41941,7 @@ async function generateInvpPreview() {
       </div>
       <div style="border-top:2.5px solid #29AAE1;margin-bottom:.9rem"></div>
       <table style="border-collapse:collapse;margin-bottom:.7rem;font-size:.85rem;line-height:1.55">
-        <tr><td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">BILL TO:</td><td style="padding:2px 0;font-weight:700;color:#29AAE1;font-size:.95rem">${esc(billName)}</td></tr>
+        <tr><td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">BILL TO:</td><td style="padding:2px 0;font-weight:700;color:#29AAE1;font-size:.95rem">${esc(_invpBillToName() || billName)}</td></tr>
         ${billAddr ? `<tr><td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">ADDRESS:</td><td style="padding:2px 0;color:#1e293b">${esc(billAddr)}</td></tr>` : ''}
         <tr><td style="padding:2px 14px 2px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;letter-spacing:.08em;vertical-align:top;white-space:nowrap">SERVICE PERIOD:</td><td style="padding:2px 0;color:#1e293b;font-weight:600">${servicePeriodLabel}</td></tr>
       </table>
@@ -42521,7 +42559,7 @@ function showInvoicePreview(inv) {
       <!-- Bill To -->
       <div style="margin-bottom:1.5rem">
         <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:.35rem">账单发往</div>
-        <div style="font-size:1rem;font-weight:700;color:#0f172a">${esc(inv.company_name)}</div>
+        <div style="font-size:1rem;font-weight:700;color:#0f172a">${esc(_invpSavedBillToName(inv) || inv.company_name)}</div>
         ${p.contact_person ? `<div style="font-size:.87rem;color:#475569">${esc(p.contact_person)}</div>` : ''}
         ${p.address ? `<div style="font-size:.87rem;color:#475569">${esc(p.address)}</div>` : ''}
         ${p.email ? `<div style="font-size:.87rem;color:#475569">${esc(p.email)}</div>` : ''}

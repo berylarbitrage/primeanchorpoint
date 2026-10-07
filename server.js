@@ -22245,6 +22245,33 @@ try {
   }
 } catch (e) { console.log('[migration] wecharmer rename error:', e.message); }
 
+// Elogistek 的 Office_East_Coast 部门单独开票：公司归属仍是 Elogistek，发票上
+// BILL TO 才印 Office_East_Coast（profile.bill_to_name）。早先保存时把公司名
+// 直接写成了 Office_East_Coast 的发票，改回 Elogistek 并补上 bill_to_name。
+try {
+  const _oecDone = db.prepare("SELECT value FROM app_settings WHERE key='oec_company_to_elogistek_v1'").get();
+  if (!_oecDone) {
+    const _top = db.prepare("SELECT company_name, COUNT(*) n FROM invoices WHERE company_name LIKE '%elogistek%' GROUP BY company_name ORDER BY n DESC").get();
+    let _elo = _top && _top.company_name;
+    if (!_elo) { try { const p = db.prepare("SELECT name FROM partners WHERE name LIKE '%elogistek%' ORDER BY id").get(); _elo = p && p.name; } catch (_) {} }
+    if (_elo) {
+      const _invs = db.prepare("SELECT id, company_name, profile_json FROM invoices WHERE LOWER(TRIM(company_name))='office_east_coast'").all();
+      const _upd = db.prepare('UPDATE invoices SET company_name=?, profile_json=? WHERE id=?');
+      const _hist = db.prepare('INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?,?,?)');
+      db.transaction(() => {
+        for (const inv of _invs) {
+          let prof = {}; try { prof = inv.profile_json ? JSON.parse(inv.profile_json) : {}; } catch (_) { prof = {}; }
+          prof.bill_to_name = prof.bill_to_name || inv.company_name;
+          _upd.run(_elo, JSON.stringify(prof), inv.id);
+          _hist.run(inv.id, '公司归属', `${inv.company_name} → ${_elo}（BILL TO 仍显示 ${prof.bill_to_name}）`);
+        }
+      })();
+      if (_invs.length) console.log(`[migration] Office_East_Coast → ${_elo}: 发票 ${_invs.length} 张`);
+      db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('oec_company_to_elogistek_v1','1')").run();
+    }
+  }
+} catch (e) { console.log('[migration] office_east_coast company error:', e.message); }
+
 // 一次性：给 Wecharmer 新开一个客户门户账号 weiqiang@wecharmer.com（电话 6268232361）。
 // 挂到现有 wecharmer 账号同一家合作公司下、权限照抄，两个账号看到的是同一家公司的数据。
 // 约定初始密码 Wecharmer2026$（同实名管理员种子的做法），登录后可用「忘记密码」自行修改。
@@ -22334,6 +22361,7 @@ app.get('/api/admin/invoices', requireAdmin, (req, res) => {
       r.invoice_mode = p.invoice_mode || '';
       r.bank_name = p.bank_name || '';
       r.bank_account_name = p.bank_account_name || '';
+      r.bill_to_name = p.bill_to_name || '';
       const acct = String(p.bank_account_no || '').replace(/\D/g, '');
       r.bank_account_last4 = acct ? acct.slice(-4) : '';
       // Container numbers billed on this invoice, so the list can be searched by
@@ -23247,7 +23275,9 @@ app.post('/api/admin/gusto/disconnect', requireAdmin, requireRole('admin'), (req
 });
 
 // Get single invoice (with full details)
-app.get('/api/admin/invoices/:id', requireAdmin, (req, res) => {
+app.get('/api/admin/invoices/:id', requireAdmin, (req, res, next) => {
+  // 只认数字 id；/recoverable、/deleted-numbers 等具名路由注册在后面，交给它们
+  if (!/^\d+$/.test(req.params.id)) return next();
   const row = db.prepare(`SELECT * FROM invoices WHERE id=?`).get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
   row.items = row.items_json ? JSON.parse(row.items_json) : [];
@@ -23360,6 +23390,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS deleted_invoices (
   deleted_by TEXT DEFAULT '',
   deleted_at TEXT DEFAULT (datetime('now'))
 )`);
+// 回收站记录永久保留：恢复时只记下恢复时间 / 恢复成的发票，不删记录，之后还能再恢复。
+try { db.exec(`ALTER TABLE deleted_invoices ADD COLUMN restored_at TEXT`); } catch (e) {}
+try { db.exec(`ALTER TABLE deleted_invoices ADD COLUMN restored_as TEXT`); } catch (e) {}
 
 app.delete('/api/admin/invoices/:id', requireAdmin, (req, res) => {
   try {
@@ -23391,28 +23424,42 @@ function _bkAllBackupFiles() {
   return out;
 }
 
+// 已删除发票用过的号码：生成新号码时跳过，免得新发票和回收站里的旧发票同号
+app.get('/api/admin/invoices/deleted-numbers', requireAdmin, (req, res) => {
+  try { res.json(db.prepare('SELECT DISTINCT invoice_number FROM deleted_invoices').all().map(r => String(r.invoice_number || '')).filter(Boolean)); }
+  catch (e) { res.json([]); }
+});
+
 app.get('/api/admin/invoices/recoverable', requireAdmin, blockManager, (req, res) => {
   try {
     const liveNums = new Set(db.prepare('SELECT invoice_number FROM invoices').all().map(r => String(r.invoice_number)));
-    const out = new Map();
+    // 回收站：每一次删除都列出来（永久保留，不按号码去重，也不因为同号的新发票存在就隐藏）
+    const trash = [];
+    const trashNums = new Set();
     for (const t of db.prepare('SELECT * FROM deleted_invoices ORDER BY id DESC').all()) {
       const num = String(t.invoice_number || '');
-      if (!num || liveNums.has(num) || out.has(num)) continue;
       let d = {}; try { d = JSON.parse(t.data_json || '{}'); } catch (e) {}
-      out.set(num, { invoice_number: num, company_name: d.company_name, invoice_date: d.invoice_date, subtotal: d.subtotal, status: d.status, source: 'trash', deleted_at: t.deleted_at, deleted_by: t.deleted_by });
+      trashNums.add(num);
+      trash.push({ trash_id: t.id, invoice_number: num, company_name: d.company_name, invoice_date: d.invoice_date,
+        period_start: d.period_start, period_end: d.period_end, subtotal: d.subtotal, status: d.status, source: 'trash',
+        deleted_at: t.deleted_at, deleted_by: t.deleted_by, restored_at: t.restored_at || null, restored_as: t.restored_as || null,
+        number_in_use: liveNums.has(num) });
     }
+    // 备份：只补回收站出现之前删掉的（回收站里已有的号码、仍在列表里的号码跳过）
+    const out = new Map();
     for (const bk of _bkAllBackupFiles()) {
       let bdb; try { bdb = new Database(bk.full, { readonly: true, fileMustExist: true }); } catch (e) { continue; }
       try {
         for (const r of bdb.prepare('SELECT invoice_number, invoice_date, company_name, subtotal, status FROM invoices').all()) {
           const num = String(r.invoice_number || '');
-          if (!num || liveNums.has(num) || out.has(num)) continue;
+          if (!num || liveNums.has(num) || trashNums.has(num) || out.has(num)) continue;
           out.set(num, { invoice_number: num, company_name: r.company_name, invoice_date: r.invoice_date, subtotal: r.subtotal, status: r.status, source: 'backup', backup_name: bk.name });
         }
       } catch (e) {}
       try { bdb.close(); } catch (e) {}
     }
-    const list = [...out.values()].sort((a, b) => String(b.invoice_date || '').localeCompare(String(a.invoice_date || '')));
+    const fromBackup = [...out.values()].sort((a, b) => String(b.invoice_date || '').localeCompare(String(a.invoice_date || '')));
+    const list = trash.concat(fromBackup);
     res.json({ count: list.length, invoices: list });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -23420,11 +23467,14 @@ app.get('/api/admin/invoices/recoverable', requireAdmin, blockManager, (req, res
 app.post('/api/admin/invoices/recover', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const num = String((req.body && req.body.invoice_number) || '').trim();
-    if (!num) return res.status(400).json({ error: '缺少发票号' });
-    if (db.prepare('SELECT 1 FROM invoices WHERE invoice_number=?').get(num)) return res.status(409).json({ error: '同号发票已存在（可能已恢复过）' });
+    const reqTrashId = parseInt(req.body && req.body.trash_id) || 0;
+    if (!num && !reqTrashId) return res.status(400).json({ error: '缺少发票号' });
     const liveCols = new Set(db.prepare('PRAGMA table_info(invoices)').all().map(c => c.name));
     let inv = null, hist = [], src = '', srcName = '', trashId = null;
-    const t = db.prepare('SELECT * FROM deleted_invoices WHERE invoice_number=? ORDER BY id DESC').get(num);
+    const t = reqTrashId
+      ? db.prepare('SELECT * FROM deleted_invoices WHERE id=?').get(reqTrashId)
+      : db.prepare('SELECT * FROM deleted_invoices WHERE invoice_number=? ORDER BY id DESC').get(num);
+    if (reqTrashId && !t) return res.status(404).json({ error: '回收站里找不到这条记录' });
     if (t) {
       try { inv = JSON.parse(t.data_json || 'null'); } catch (e) {}
       try { hist = JSON.parse(t.history_json || '[]'); } catch (e) {}
@@ -23444,6 +23494,13 @@ app.post('/api/admin/invoices/recover', requireAdmin, requireRole('admin'), (req
       src = 'backup'; srcName = bk.name;
     }
     if (!inv) return res.status(404).json({ error: '找不到发票数据' });
+    // 同号码已被别的发票占用（删了之后又开了同号的新发票）：恢复成「原号码-R1/-R2…」，两张都保留
+    const origNum = String(inv.invoice_number || num);
+    let newNum = origNum;
+    if (db.prepare('SELECT 1 FROM invoices WHERE invoice_number=?').get(newNum)) {
+      for (let k = 1; db.prepare('SELECT 1 FROM invoices WHERE invoice_number=?').get(newNum); k++) newNum = origNum + '-R' + k;
+      inv = Object.assign({}, inv, { invoice_number: newNum });
+    }
     const idFree = inv.id != null && !db.prepare('SELECT 1 FROM invoices WHERE id=?').get(inv.id);
     const cols = Object.keys(inv).filter(c => liveCols.has(c) && (idFree || c !== 'id'));
     const info = db.prepare(`INSERT INTO invoices (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...cols.map(c => inv[c]));
@@ -23451,10 +23508,12 @@ app.post('/api/admin/invoices/recover', requireAdmin, requireRole('admin'), (req
     try {
       const insH = db.prepare('INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?,?,?)');
       for (const h of (hist || [])) insH.run(newId, h.action || '', h.detail || '');
-      insH.run(newId, '恢复', src === 'trash' ? '从回收站恢复' : ('从备份 ' + srcName + ' 恢复'));
+      insH.run(newId, '恢复', (src === 'trash' ? '从回收站恢复' : ('从备份 ' + srcName + ' 恢复'))
+        + (newNum !== origNum ? `（原号码 ${origNum} 已被占用，恢复为 ${newNum}）` : ''));
     } catch (e) {}
-    if (trashId != null) { try { db.prepare('DELETE FROM deleted_invoices WHERE id=?').run(trashId); } catch (e) {} }
-    res.json({ success: true, id: newId, invoice_number: num, source: src });
+    // 回收站记录不删（永久保留），只标记恢复时间和恢复成的号码
+    if (trashId != null) { try { db.prepare(`UPDATE deleted_invoices SET restored_at=datetime('now'), restored_as=? WHERE id=?`).run(newNum, trashId); } catch (e) {} }
+    res.json({ success: true, id: newId, invoice_number: newNum, original_number: origNum, source: src });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -33508,11 +33567,6 @@ app.post('/api/admin/invoices', requireAdmin, blockManager, (req, res) => {
     JSON.stringify(d.items || []), JSON.stringify(d.profile || {})
   );
   res.json({ id: r.lastInsertRowid });
-});
-
-app.delete('/api/admin/invoices/:id', requireAdmin, blockManager, (req, res) => {
-  db.prepare('DELETE FROM invoices WHERE id=?').run(req.params.id);
-  res.json({ success: true });
 });
 
 // ─── DocuSeal Template Management ───
