@@ -37534,7 +37534,7 @@ async function invpRefreshInvoiceNumber() {
   // address and the explicitly-picked address win over the partner default
   // (fixes multi-address companies showing the wrong state in the number).
   const state = (addrState || window._invpSelectedPartnerState || partnerState || 'XX').toUpperCase().slice(0,2);
-  const companyAbbr = billName.split(/[\s\-&,]+/).map(w => (w[0]||'').toUpperCase()).join('').slice(0,4) || 'XX';
+  const companyAbbr = billName.split(/[\s\-&,_]+/).map(w => (w[0]||'').toUpperCase()).join('').slice(0,4) || 'XX';
   const datePart = _invpNumberDateSeg();
   // C = Container 计费, L = Labor 工时计费
   const modeLetter = (window._invpMode === 'container') ? 'C' : 'L';
