@@ -38857,6 +38857,51 @@ function invpExcelDrop(e) {
   invpProcessExcelFile(file);
 }
 
+// Elogistek 导出里按部门单独开发票、且 Bill To 不是 Elogistek 本身的部门
+// （key = 部门名小写）。没列在这里的部门沿用当前选中的客户公司。
+const _INVP_DEPT_BILL_TO = {
+  office_east_coast: { name: 'Office_East_Coast', addr: '160 S SOUTH CREEK PKWY, ROMEOVILLE, IL  60446-4600' },
+};
+function _invpDeptBillTo(dept) {
+  return _INVP_DEPT_BILL_TO[String(dept || '').trim().toLowerCase()] || null;
+}
+// 把「账单发往」设成指定名称 + 地址（不在客户名单里的部门抬头）
+function _invpSetBillTo(name, addr) {
+  const sr = document.getElementById('invPageCompanySearch');
+  if (sr) sr.value = name;
+  document.getElementById('invPageBillName').value = name;
+  _invpSetupAddrPicker([addr]);
+  _invpApplyBillAddr(addr);
+  _invpApplyCustomerPresets(name);
+}
+// Excel 有多个部门分页时：每个部门单独开一张发票，弹窗选这次导入哪个部门
+function _invpPickDepartment(depts) {
+  return new Promise(resolve => {
+    const money = n => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:10000';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:12px;padding:1.4rem 1.6rem;width:100%;max-width:460px;box-shadow:0 8px 32px rgba(0,0,0,.18);margin:1rem;max-height:85vh;overflow-y:auto';
+    box.innerHTML = `<div style="font-weight:700;margin-bottom:.35rem">这个 Excel 有 ${depts.length} 个部门</div>
+      <div style="font-size:.8rem;color:var(--gray-500);margin-bottom:1rem">每个部门单独开一张发票。选择这次要导入的部门；保存后再上传同一个文件选另一个部门。</div>
+      ${depts.map((d, i) => {
+        const emps = (d.data && d.data.employees) || [];
+        const sum = emps.reduce((s, e) => s + (Number(e.afterMarkup) || 0), 0);
+        const bt = _invpDeptBillTo(d.name);
+        return `<button data-i="${i}" class="btn btn-outline" style="display:block;width:100%;text-align:left;margin-bottom:.5rem;padding:.6rem .8rem">
+          <div style="font-weight:700">${esc(d.name)}</div>
+          <div style="font-size:.75rem;color:var(--gray-500)">${emps.length} 人${sum ? ' · Invoiced ' + money(sum) : ''}${bt ? ' · Bill To: ' + esc(bt.name) : ''}</div>
+        </button>`;
+      }).join('')}
+      <div style="text-align:right;margin-top:.4rem"><button data-i="-1" class="btn btn-sm btn-outline">取消</button></div>`;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    const done = d => { overlay.remove(); resolve(d); };
+    box.querySelectorAll('button[data-i]').forEach(b => { b.onclick = () => { const i = +b.dataset.i; done(i >= 0 ? depts[i] : null); }; });
+    overlay.onclick = e => { if (e.target === overlay) done(null); };
+  });
+}
+
 // Validate + upload one .xlsx file, then auto-fill the builder. Shared by the
 // file picker and drag-and-drop.
 async function invpProcessExcelFile(file) {
@@ -38880,15 +38925,25 @@ async function invpProcessExcelFile(file) {
     const editIdForSrc = (document.getElementById('invPageEditId') || {}).value || '';
     if (editIdForSrc) fd.append('invoice_id', editIdForSrc);
     const resp = await fetch('/api/admin/invoices/parse-excel', { method: 'POST', body: fd });
-    const data = await resp.json().catch(() => null);
+    let data = await resp.json().catch(() => null);
     // 服务器存下了原件 (解析失败也存): 记住 id, 保存发票时关联
     if (data && data.source_file_id) (window._invpSourceFileIds = window._invpSourceFileIds || []).push(data.source_file_id);
     if (!resp.ok || !data || !data.ok) throw new Error((data && data.error) || ('HTTP ' + resp.status));
+    // 多个部门分页（Elogistek）：选一个部门导入；该部门有专门的 Bill To 就换上
+    let deptName = '';
+    if (Array.isArray(data.departments) && data.departments.length > 1) {
+      const dept = await _invpPickDepartment(data.departments);
+      if (!dept) { setStatus('已取消', '#92400e'); return; }
+      deptName = dept.name;
+      data = Object.assign({}, dept.data, { source_file_id: data.source_file_id });
+      const bt = _invpDeptBillTo(dept.name);
+      if (bt) _invpSetBillTo(bt.name, bt.addr);
+    }
     invpApplyExcelData(data);
     // 文件本身认得出是哪家客户的 (如菜鸟 DFW 考勤 → Albatross America Inc): 自动选上客户公司
     if (data.companyHint) _invpSelectCompanyByName(data.companyHint, data.markupMultiplier);
-    setStatus(`✓ 已导入 ${data.employees.length} 名员工${data.source_file_id ? ' · 📎 原件已存档' : ''}`, '#047857');
-    let msg = `已从 Excel 导入 ${data.employees.length} 名员工`;
+    setStatus(`✓ 已导入 ${deptName ? deptName + ' · ' : ''}${data.employees.length} 名员工${data.source_file_id ? ' · 📎 原件已存档' : ''}`, '#047857');
+    let msg = `已从 Excel 导入${deptName ? '「' + deptName + '」' : ''} ${data.employees.length} 名员工`;
     if (data.periodStart) msg += `，周期 ${data.periodStart} ~ ${data.periodEnd}`;
     if (data.markupMultiplier) msg += `，Markup ×${data.markupMultiplier}`;
     if (_invpOtFeeCompanyApplies()) msg += `，加班服务费 ×${_invpOtFeeForHeadcount((data.employees || []).length).toFixed(2)}（Elogistek 合同：按人数档位，加班不吃 Markup）`;
@@ -41479,7 +41534,7 @@ function _invpOtFeeForHeadcount(n) { return n >= 71 ? 1.0 : (n >= 31 ? 1.05 : 1.
 // 加班服务费系数只适用于 Elogistek 的合同; 其他客户加班照常吃 Markup。
 function _invpOtFeeCompanyApplies(name) {
   const n = name !== undefined ? name : ((document.getElementById('invPageBillName') || {}).value || '');
-  return /elogistek/i.test(String(n));
+  return /elogistek/i.test(String(n)) || !!_invpDeptBillTo(n);
 }
 // 打印显示用：去掉 Elogistek 导出加在名字前的 "Chinese-" 语言标记
 // （新导入已在解析时去掉；这里兜底老发票里存的旧名字）。
