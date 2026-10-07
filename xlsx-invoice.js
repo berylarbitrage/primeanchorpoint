@@ -788,36 +788,38 @@ module.exports = function parseInvoiceWorkbook(buf, filename) {
     if (looksLikeShiftLog(combined)) data = buildFromShiftLog(combined, []);
   }
   // Elogistek 导出每个部门一个分页（invoice-Office_East_Coast、invoice-SPR_IL_US …，
-  // 外加一个 invoice-sum 汇总页）。表头相同的工资表分页全部合并成一张表再生成，
-  // 否则只会读到第一个部门。汇总页没有员工列，不参与合并。
+  // 外加一个 invoice-sum 汇总页）。客户要求每个部门单独开发票：每个工资表分页各自
+  // 解析，放进 departments[]，由前端让人选导入哪个部门；顶层数据 = 第一个部门。
+  // 汇总页没有员工列，不算部门。
+  let departments = null;
   if (!data) {
-    const payrollSheets = sheets.map(sh => ({ sh, h: _payrollHeaderIdx(sh.rows) })).filter(x => x.h >= 0);
+    const payrollSheets = sheets.filter(sh => _payrollHeaderIdx(sh.rows) >= 0);
     if (payrollSheets.length > 1) {
-      const base = (payrollSheets[0].sh.rows[payrollSheets[0].h] || []).map(norm);
-      const combined = [payrollSheets[0].sh.rows[payrollSheets[0].h]];
-      for (const { sh, h } of payrollSheets) {
-        // 按表头名对齐列（各分页列顺序不一定相同）
-        const map = (sh.rows[h] || []).map(norm).map(x => (x ? base.indexOf(x) : -1));
-        for (const r of sh.rows.slice(h + 1)) {
-          const out = new Array(base.length).fill(null);
-          (r || []).forEach((v, c) => { if (map[c] >= 0) out[map[c]] = v; });
-          combined.push(out);
-        }
-      }
-      data = buildInvoiceData(combined);
+      departments = payrollSheets.map(sh => {
+        const d = buildInvoiceData(sh.rows);
+        const name = d.warehouse || String(sh.name || '').replace(/^invoice[-_\s]*/i, '');
+        return { name, sheet: sh.name, data: d };
+      });
+      data = Object.assign({}, departments[0].data);
     }
   }
   if (!data) data = buildInvoiceData(readAnyWorkbook(buf));
   // If the sheet carried no service period, fall back to the one embedded in the
   // file name (weekly exports do this), else to a Year+Week (ISO 周号) summary
   // sheet (SPR 导出的 invoice-sum 页), and drop the "no period" warning.
-  if (data && data.ok && !data.periodStart) {
+  const fillPeriod = d => {
+    if (!d || !d.ok || d.periodStart) return;
     const p = (filename ? _periodFromFilename(filename) : null) || _periodFromYearWeek(sheets);
     if (p) {
-      data.periodStart = p.start; data.periodEnd = p.end;
-      if (!data.period) data.period = p.start + ' ~ ' + p.end;
-      data.warnings = (data.warnings || []).filter(w => !/服务周期/.test(w));
+      d.periodStart = p.start; d.periodEnd = p.end;
+      if (!d.period) d.period = p.start + ' ~ ' + p.end;
+      d.warnings = (d.warnings || []).filter(w => !/服务周期/.test(w));
     }
+  };
+  fillPeriod(data);
+  if (departments) {
+    departments.forEach(dp => fillPeriod(dp.data));
+    data.departments = departments;
   }
   return data;
 };
