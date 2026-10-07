@@ -3801,6 +3801,13 @@ app.get('/kiosk', (req, res, next) => {
   }
   next();
 });
+// 电话查重页面含员工 / 申请人个人信息: 页面本身也必须先登录管理后台才能打开
+// (/phone-check.html 已被上面的中间件 302 到 /phone-check)。未登录 → 跳去 /admin 登录。
+app.get('/phone-check', (req, res, next) => {
+  const cookieMatch = (req.headers.cookie || '').match(/pa_token=([^;]+)/);
+  if (!getSession(cookieMatch && cookieMatch[1])) return res.redirect(302, '/admin');
+  next();
+});
 app.use(express.static('public', {
   extensions: ['html'],
   setHeaders(res, filePath) {
