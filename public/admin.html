@@ -34048,7 +34048,7 @@ async function invpOpenRecover() {
       <strong style="font-size:1rem">🗄 恢复已删除的发票</strong>
       <button class="btn btn-sm btn-outline" onclick="document.getElementById('invpRecoverOverlay').remove()">✕ 关闭</button>
     </div>
-    <div style="font-size:.78rem;color:var(--gray-500);padding:.55rem 1.1rem;line-height:1.5">删除的发票会先进「回收站」，可直接找回；更早删除的会从<b>每小时自动备份</b>里找回。找到后点「恢复」放回列表。<span style="color:#b45309">备份只保留最近约 10 小时，越早恢复越稳。</span></div>
+    <div style="font-size:.78rem;color:var(--gray-500);padding:.55rem 1.1rem;line-height:1.5">每一张删除过的发票都<b>永久保留</b>在「回收站」里，随时可以恢复，恢复后记录也不会消失。如果原号码已经被新发票用了，会恢复成「原号码-R1」，两张都保留。回收站上线之前删掉的，从<b>每小时自动备份</b>里找（<span style="color:#b45309">备份只保留最近约 10 小时</span>）。</div>
     <div style="padding:.5rem 1.1rem;border-top:1px dashed var(--gray-200);border-bottom:1px dashed var(--gray-200);background:#fffbeb;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;font-size:.75rem">
       <span style="color:#92400e">找不到？上传一份更早的数据库（<b>prime.db</b>，可从 Render 磁盘快照导出）再扫描：</span>
       <input type="file" id="invpRecoverUpload" accept=".db,.sqlite,application/octet-stream,application/x-sqlite3" style="font-size:.72rem;max-width:200px">
@@ -34075,29 +34075,35 @@ function invpRenderRecoverList(invs) {
       ? '<span style="font-size:.68rem;background:#dcfce7;color:#166534;border-radius:6px;padding:1px 6px">回收站</span>'
       : `<span style="font-size:.68rem;background:#fef3c7;color:#92400e;border-radius:6px;padding:1px 6px" title="${esc(v.backup_name || '')}">备份</span>`;
     const amt = (v.subtotal != null && v.subtotal !== '') ? ('$' + Number(v.subtotal).toFixed(2)) : '';
-    const meta = [esc(v.company_name || '—'), esc(v.invoice_date || ''), amt, v.deleted_at ? '删于 ' + esc(String(v.deleted_at).slice(0, 16)) : ''].filter(Boolean).join(' · ');
+    const period = v.period_start ? esc(v.period_start) + ' ~ ' + esc(v.period_end || '') : '';
+    const meta = [esc(v.company_name || '—'), period || esc(v.invoice_date || ''), amt,
+      v.deleted_at ? '删于 ' + esc(String(v.deleted_at).slice(0, 16)) + (v.deleted_by ? '（' + esc(v.deleted_by) + '）' : '') : ''].filter(Boolean).join(' · ');
+    const tags = (v.restored_at ? `<span style="font-size:.68rem;background:#e0e7ff;color:#3730a3;border-radius:6px;padding:1px 6px">已于 ${esc(String(v.restored_at).slice(0, 16))} 恢复为 ${esc(v.restored_as || '')}</span>` : '')
+      + (v.number_in_use && !v.restored_at ? '<span style="font-size:.68rem;background:#fee2e2;color:#991b1b;border-radius:6px;padding:1px 6px">号码已被新发票占用，恢复会加 -R 后缀</span>' : '');
     return `<div style="display:flex;align-items:center;gap:.7rem;padding:.55rem .2rem;border-bottom:1px solid var(--gray-100)">
       <div style="flex:1;min-width:0">
-        <div style="font-weight:600;font-size:.86rem">${esc(v.invoice_number)} ${srcBadge}</div>
+        <div style="font-weight:600;font-size:.86rem;display:flex;gap:.35rem;flex-wrap:wrap;align-items:center">${esc(v.invoice_number)} ${srcBadge} ${tags}</div>
         <div style="font-size:.74rem;color:var(--gray-500)">${meta}</div>
       </div>
-      <button class="btn btn-sm btn-green" data-num="${esc(v.invoice_number)}" data-bk="${esc(v.backup_name || '')}" onclick="invpDoRecover(this)">恢复</button>
+      <button class="btn btn-sm ${v.restored_at ? 'btn-outline' : 'btn-green'}" data-num="${esc(v.invoice_number)}" data-tid="${esc(v.trash_id || '')}" data-bk="${esc(v.backup_name || '')}" data-again="${v.restored_at ? '1' : ''}" onclick="invpDoRecover(this)">${v.restored_at ? '再恢复一份' : '恢复'}</button>
     </div>`;
   }).join('');
 }
 
 async function invpDoRecover(btn) {
-  const num = btn.dataset.num, bk = btn.dataset.bk || '';
+  const num = btn.dataset.num, bk = btn.dataset.bk || '', tid = btn.dataset.tid || '';
+  const label = btn.textContent;
+  if (btn.dataset.again && !(await showConfirm('这张发票已经恢复过一次，再恢复会多出一张（号码加 -R 后缀）。确定吗？', { confirmLabel: '再恢复一份' }))) return;
   btn.disabled = true; btn.textContent = '恢复中…';
   try {
-    const r = await api('/admin/invoices/recover', { method: 'POST', body: JSON.stringify({ invoice_number: num, backup_name: bk }) });
+    const r = await api('/admin/invoices/recover', { method: 'POST', body: JSON.stringify({ invoice_number: num, trash_id: tid || undefined, backup_name: bk }) });
     if (r && r.error) throw new Error(r.error);
-    showToast('已恢复发票 ' + num + ' ✓', 'success');
-    const row = btn.parentElement; if (row) row.remove();
-    const list = document.getElementById('invpRecoverList');
-    if (list && !list.querySelector('button')) invpRenderRecoverList([]);
+    showToast('已恢复发票 ' + (r.invoice_number || num) + (r.invoice_number && r.invoice_number !== num ? `（原号码 ${num} 已被占用）` : '') + ' ✓', 'success', 6000);
+    // 回收站记录永久保留：刷新列表显示「已恢复」
+    const rr = await api('/admin/invoices/recoverable').catch(() => null);
+    if (rr && rr.invoices) invpRenderRecoverList(rr.invoices);
     loadInvpList();
-  } catch (e) { btn.disabled = false; btn.textContent = '恢复'; showToast('恢复失败：' + (e.message || e), 'error'); }
+  } catch (e) { btn.disabled = false; btn.textContent = label; showToast('恢复失败：' + (e.message || e), 'error'); }
 }
 
 // Upload an older prime.db (e.g. pulled off a Render disk snapshot) so the recover
@@ -37540,8 +37546,10 @@ async function invpRefreshInvoiceNumber() {
   const modeLetter = (window._invpMode === 'container') ? 'C' : 'L';
   const prefix = `INV-${modeLetter}-${state}-${companyAbbr}-${datePart}-`;
   const existing = await api('/admin/invoices').catch(() => []);
-  const nums = (Array.isArray(existing) ? existing : [])
-    .map(r => r.invoice_number || '')
+  // 回收站里已删除发票的号码也算占用，新发票不重用
+  const deletedNums = await api('/admin/invoices/deleted-numbers').catch(() => []);
+  const nums = (Array.isArray(existing) ? existing : []).map(r => r.invoice_number || '')
+    .concat(Array.isArray(deletedNums) ? deletedNums : [])
     .filter(n => n.startsWith(prefix))
     .map(n => parseInt(n.slice(prefix.length)) || 0);
   const nextSeq = nums.length ? Math.max(...nums) + 1 : 1;
@@ -37560,9 +37568,10 @@ async function _invpRenumberStateOnly(newState, newDateSeg) {
   const dateSeg = newDateSeg || m[5];
   const prefix = `INV-${m[2]}-${String(newState).toUpperCase().slice(0,2)}-${m[4]}-${dateSeg}-`;
   const existing = await api('/admin/invoices').catch(() => []);
+  const deletedNums = await api('/admin/invoices/deleted-numbers').catch(() => []);
   let maxSeq = 0;
-  (Array.isArray(existing) ? existing : []).forEach(r => {
-    const n = r.invoice_number || '';
+  (Array.isArray(existing) ? existing : []).map(r => r.invoice_number || '')
+    .concat(Array.isArray(deletedNums) ? deletedNums : []).forEach(n => {
     if (n.startsWith(prefix)) { const s = parseInt(n.slice(prefix.length)) || 0; if (s > maxSeq) maxSeq = s; }
   });
   return prefix + String(maxSeq + 1).padStart(4, '0');
@@ -37579,9 +37588,10 @@ async function _invpRenumberDate(newDateSeg) {
   if (newDateSeg === m[5]) return cur;              // already matches the Invoice 日期
   const prefix = `INV-${m[2]}-${m[3]}-${m[4]}-${newDateSeg}-`;
   const existing = await api('/admin/invoices').catch(() => []);
+  const deletedNums = await api('/admin/invoices/deleted-numbers').catch(() => []);
   let maxSeq = 0;
-  (Array.isArray(existing) ? existing : []).forEach(r => {
-    const n = r.invoice_number || '';
+  (Array.isArray(existing) ? existing : []).map(r => r.invoice_number || '')
+    .concat(Array.isArray(deletedNums) ? deletedNums : []).forEach(n => {
     if (n.startsWith(prefix)) { const s = parseInt(n.slice(prefix.length)) || 0; if (s > maxSeq) maxSeq = s; }
   });
   return prefix + String(maxSeq + 1).padStart(4, '0');
