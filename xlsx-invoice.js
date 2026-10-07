@@ -365,7 +365,8 @@ function buildFromPayroll({ rows, headerIdx, headers, find, cellNum, cellStr, wa
   if (col.name < 0) throw new Error('找不到员工姓名列（Employee / Username / Person Name）');
   let sawDoubleOt = false;
 
-  let warehouse = '', period = '', periodStart = '', periodEnd = '';
+  const warehouses = [];
+  let period = '', periodStart = '', periodEnd = '';
   const employees = [];
   const markupCounts = {};
   const offPeriodRows = []; // 行自己的 Pay Period 与整表主账期不同（补差价/跨周期行）
@@ -376,7 +377,8 @@ function buildFromPayroll({ rows, headerIdx, headers, find, cellNum, cellStr, wa
     // Skip blank rows and a trailing "Total" summary row.
     if (!name || /^total$/i.test(name)) continue;
 
-    if (!warehouse) warehouse = cellStr(row, col.warehouse);
+    const wh = cellStr(row, col.warehouse);
+    if (wh && !warehouses.includes(wh)) warehouses.push(wh);
     const rowPeriod = cellStr(row, col.period);
     if (!periodStart) {
       const p = rowPeriod;
@@ -476,6 +478,7 @@ function buildFromPayroll({ rows, headerIdx, headers, find, cellNum, cellStr, wa
     warnings.push('表格含「Reimbursement」报销金额，发票生成器暂不支持报销项，已忽略；如需请手动添加一行。');
   if (otHourCols.length > 1) warnings.push('加班分「1.5×」「2.0×」多列，已合并为「加班工时」，默认按 1.5× 计' + (sawDoubleOt ? '；本表含 2.0× 加班，请把相关员工加班时薪手动改为双倍。' : '。'));
 
+  const warehouse = warehouses.join(' / ');
   return { ok: true, format: 'payroll', warehouse, period, periodStart, periodEnd, defaultMarkupRate: topMarkup, markupMultiplier, impliedOtFee, employees, warnings };
 }
 
@@ -622,6 +625,18 @@ function looksLikeShiftLog(rows) {
 }
 
 const SHEET_BREAK = '\u0000__sheet_break__';
+// 工资/账单表的表头行号（Employee/Username + rate/pay/hour 列），不是则 -1。
+// 打卡考勤表（Person Name + Clock）不算。
+function _payrollHeaderIdx(rows) {
+  for (let i = 0; i < Math.min((rows || []).length, 15); i++) {
+    const cells = (rows[i] || []).map(norm);
+    const hasEmp = cells.some(c => c.includes('employee') || c === 'username');
+    const hasRateish = cells.some(c => c.includes('pay') || c.includes('rate') || c.includes('hour') || c.includes('salary'));
+    const isAttendance = cells.some(c => c.includes('person')) && cells.some(c => c.includes('clock') || c.includes('工作时长') || c.includes('工时'));
+    if (hasEmp && hasRateish && !isAttendance) return i;
+  }
+  return -1;
+}
 function _isSummaryName(name) {
   const t = String(name || '').trim();
   return /^(grand\s*|sub\s*)?totals?\b/i.test(t) || /(总计|合计|小计|汇总|结算|總計|合計|小計)/.test(t);
@@ -771,6 +786,26 @@ module.exports = function parseInvoiceWorkbook(buf, filename) {
       combined.push(...sh.rows);
     }
     if (looksLikeShiftLog(combined)) data = buildFromShiftLog(combined, []);
+  }
+  // Elogistek 导出每个部门一个分页（invoice-Office_East_Coast、invoice-SPR_IL_US …，
+  // 外加一个 invoice-sum 汇总页）。表头相同的工资表分页全部合并成一张表再生成，
+  // 否则只会读到第一个部门。汇总页没有员工列，不参与合并。
+  if (!data) {
+    const payrollSheets = sheets.map(sh => ({ sh, h: _payrollHeaderIdx(sh.rows) })).filter(x => x.h >= 0);
+    if (payrollSheets.length > 1) {
+      const base = (payrollSheets[0].sh.rows[payrollSheets[0].h] || []).map(norm);
+      const combined = [payrollSheets[0].sh.rows[payrollSheets[0].h]];
+      for (const { sh, h } of payrollSheets) {
+        // 按表头名对齐列（各分页列顺序不一定相同）
+        const map = (sh.rows[h] || []).map(norm).map(x => (x ? base.indexOf(x) : -1));
+        for (const r of sh.rows.slice(h + 1)) {
+          const out = new Array(base.length).fill(null);
+          (r || []).forEach((v, c) => { if (map[c] >= 0) out[map[c]] = v; });
+          combined.push(out);
+        }
+      }
+      data = buildInvoiceData(combined);
+    }
   }
   if (!data) data = buildInvoiceData(readAnyWorkbook(buf));
   // If the sheet carried no service period, fall back to the one embedded in the
