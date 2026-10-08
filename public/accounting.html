@@ -590,7 +590,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <div id="rfTitle" style="font-weight:800;margin-bottom:.2rem">🙅 面试没通过</div>
       <div id="rfWho" style="font-size:.78rem;color:var(--g500);margin-bottom:.6rem"></div>
       <div id="rfChips"></div>
-      <label style="font-size:.76rem;color:var(--g500);display:block;margin-top:.5rem">补充说明 <span style="font-size:.7rem;color:var(--g400)">没有合适的选项就直接写</span></label>
+      <label id="rfNoteLbl" style="font-size:.76rem;color:var(--g500);display:block;margin-top:.5rem">补充说明 <span style="font-size:.7rem;color:var(--g400)">没有合适的选项就直接写</span></label>
       <textarea id="rfNote" rows="2" style="width:100%;margin:.15rem 0 .6rem" placeholder="例：叉车测试倒车撞到货架"></textarea>
       <div style="display:flex;gap:.5rem;justify-content:flex-end">
         <button class="btn btn-outline" onclick="closeRefFail()">取消</button>
@@ -2180,8 +2180,11 @@ function _refInterviewMarkCell(r) {
   // 标了去了的显示实际到场时间, 可以随时更新
   const attendedAt = r.interview_status === 'attended' && r.interview_attended_at
     ? `<div style="font-size:.72rem;color:#047857;white-space:nowrap;margin-top:2px">到场 ${esc(r.interview_attended_at)}</div>` : '';
-  const failWhy = ['failed', 'fired'].includes(r.interview_status) && r.interview_fail_reason
-    ? `<div style="font-size:.72rem;color:${r.interview_status === 'fired' ? '#7f1d1d' : '#9a3412'};margin-top:2px;max-width:220px;line-height:1.35">${r.interview_status === 'fired' ? '开除原因' : '原因'}：${esc(r.interview_fail_reason)}</div>` : '';
+  const fs = r.interview_status === 'fired' ? _refFireSplit(r.interview_fail_reason) : null;
+  const failWhy = r.interview_status === 'failed' && r.interview_fail_reason
+    ? `<div style="font-size:.72rem;color:#9a3412;margin-top:2px;max-width:220px;line-height:1.35">原因：${esc(r.interview_fail_reason)}</div>`
+    : fs ? (fs.reasons ? `<div style="font-size:.72rem;color:#7f1d1d;margin-top:2px;max-width:220px;line-height:1.35">开除原因：${esc(fs.reasons)}</div>` : '')
+      + (fs.note ? `<div style="font-size:.72rem;color:var(--g500);margin-top:2px;max-width:220px;line-height:1.35">📝 备注：${esc(fs.note)}</div>` : '') : '';
   const B = (st, cls, label) => `<button type="button" class="iv-btn ${cls}" onclick="refMarkInterview(${r.id},'${st}')">${label}</button>`;
   // 没标记: 两个显眼按钮; 标过了: 小按钮改/清
   const links = _refCanEdit(r)
@@ -2190,7 +2193,7 @@ function _refInterviewMarkCell(r) {
         : r.interview_status === 'fired' ? B('fired', 'mini', '改原因') + B('attended', 'mini', '撤销开除') + B('', 'mini', '清除')
         : r.interview_status === 'no_show' ? B('attended', 'mini', '改为去了') + B('', 'mini', '清除')
         : r.interview_status === 'failed' ? B('failed', 'mini', '改原因') + B('attended', 'mini', '改为通过') + B('', 'mini', '清除')
-        : B('attended', 'go', '✓ 去了') + B('no_show', 'no', '✕ 没去') + B('failed', 'fail', '没通过')}</div>`
+        : B('attended', 'go', '✓ 去了') + B('no_show', 'no', '✕ 没去') + B('failed', 'fail', '没通过') + (r.work_start_date ? B('fired', 'fail', '被开除') : '')}</div>`
     : '';
   return chip + attendedAt + failWhy + links;
 }
@@ -2225,11 +2228,18 @@ const REF_FAIL_REASONS = [
 ];
 // 被开除的常见原因 (上了班之后被仓库/公司辞退)
 const REF_FIRE_REASONS = [
-  ['考勤', ['经常迟到 / 早退', '无故旷工 / 不来不请假', '打卡作假 / 代打卡']],
-  ['工作表现', ['效率太低 / 达不到指标', '干活出错多', '不听安排 / 态度差', '违反安全规定', '上班玩手机']],
-  ['其他', ['和同事 / 主管吵架打架', '偷东西', '证件 / 身份有问题', '背景调查 / 药检后来没过', '仓库裁员 / 没活了']],
+  ['考勤', ['经常迟到 / 早退', '无故旷工 / 不来不请假', '连续几天没来、联系不上', '打卡作假 / 代打卡', '上班时间偷跑 / 休息超时']],
+  ['工作表现', ['效率太低 / 达不到指标', '干活出错多（拣错货 / 漏货）', '学不会 / 跟不上', '不听安排 / 态度差', '违反安全规定', '叉车 / 设备操作不当、撞坏东西', '上班玩手机', '上班睡觉']],
+  ['行为', ['和同事 / 主管吵架打架', '骚扰同事', '偷东西', '上班喝酒 / 吸毒', '抽烟违规']],
+  ['证件 / 审查', ['证件 / 身份有问题', '背景调查后来没过', '药检后来没过', '用别人的身份上班']],
+  ['仓库原因', ['仓库裁员 / 没活了', '试用期没留下', '仓库说不要了、没给原因']],
 ];
 let _rfId = null, _rfKind = 'failed';
+function _refFireSplit(t) {
+  t = String(t || '');
+  const i = t.indexOf('备注：');
+  return i < 0 ? { reasons: t, note: '' } : { reasons: t.slice(0, i).replace(/；\s*$/, ''), note: t.slice(i + 3).trim() };
+}
 function openRefFail(id, kind) {
   const x = _refList.find(v => v.id === id);
   if (!x) return;
@@ -2237,7 +2247,12 @@ function openRefFail(id, kind) {
   _rfKind = kind === 'fired' ? 'fired' : 'failed';
   const groups = _rfKind === 'fired' ? REF_FIRE_REASONS : REF_FAIL_REASONS;
   document.getElementById('rfTitle').textContent = _rfKind === 'fired' ? '🚫 被开除' : '🙅 面试没通过';
-  const had = x.interview_status === _rfKind ? String(x.interview_fail_reason || '') : '';
+  const fired = _rfKind === 'fired';
+  document.getElementById('rfNoteLbl').innerHTML = fired ? '备注 <span style="font-size:.7rem;color:var(--g400)">可选 · 谁说的、哪天、具体经过</span>' : '补充说明 <span style="font-size:.7rem;color:var(--g400)">没有合适的选项就直接写</span>';
+  document.getElementById('rfNote').placeholder = fired ? '例：10/6 主管 Mike 打电话说连续三天迟到，不用再来了' : '例：叉车测试倒车撞到货架';
+  const had0 = x.interview_status === _rfKind ? String(x.interview_fail_reason || '') : '';
+  // 被开除: 原因和备注分开存 —「原因A；原因B；备注：……」
+  const { reasons: had, note: hadNote } = fired ? _refFireSplit(had0) : { reasons: had0, note: '' };
   // 之前存的原因: 认得出的预设项亮起, 剩下的放回补充说明
   const presets = groups.flatMap(g => g[1]);
   const parts = had ? had.split('；').map(t => t.trim()).filter(Boolean) : [];
@@ -2245,15 +2260,15 @@ function openRefFail(id, kind) {
   document.getElementById('rfWho').textContent = [x.worker_name, x.warehouse_name || x.warehouse_address].filter(Boolean).join(' · ');
   document.getElementById('rfChips').innerHTML = groups.map(([g, arr]) => `<div style="font-size:.72rem;color:var(--g400);margin:.2rem 0">${g}</div>
     <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.35rem">${arr.map(t => `<button type="button" class="rf-chip${on.has(t) ? ' on' : ''}" data-t="${esc(t)}" onclick="this.classList.toggle('on')">${esc(t)}</button>`).join('')}</div>`).join('');
-  document.getElementById('rfNote').value = parts.filter(t => !on.has(t)).join('；');
+  document.getElementById('rfNote').value = [...parts.filter(t => !on.has(t)), hadNote].filter(Boolean).join('；');
   document.getElementById('refFailModal').style.display = 'flex';
 }
 function closeRefFail() { document.getElementById('refFailModal').style.display = 'none'; _rfId = null; }
 async function saveRefFail() {
   const picked = [...document.querySelectorAll('#rfChips .rf-chip.on')].map(b => b.getAttribute('data-t'));
   const note = document.getElementById('rfNote').value.trim();
-  const reason = [...picked, note].filter(Boolean).join('；');
-  if (!reason) return toast('请选一个原因或写补充说明', true);
+  const reason = [...picked, note && _rfKind === 'fired' ? '备注：' + note : note].filter(Boolean).join('；');
+  if (!reason) return toast(_rfKind === 'fired' ? '请选一个开除原因或写备注' : '请选一个原因或写补充说明', true);
   const id = _rfId, kind = _rfKind;
   const x = _refList.find(v => v.id === id);
   try {
@@ -2470,10 +2485,11 @@ function _refWorkRows(r) {
     ? `🔗 <b>${esc(c.name || '—')}</b> <span style="color:var(--g400)">打卡码 ${code}</span>${c.employee_id ? '' : ' <span style="color:#b45309">（还没建员工档案，暂无打卡记录）</span>'}`
     : `<span style="color:#dc2626">⚠ 打卡码 ${code} 在系统里查不到员工</span>`;
   const ops = _refCanStart(r) ? ` <a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="openRefStart(${r.id})">改</a> · <a style="cursor:pointer;color:var(--g400);text-decoration:underline" onclick="refStartClear(${r.id})">撤回到面试</a>` : '';
+  const fireOp = _refCanEdit(r) ? `${ops ? ' ·' : ''} <a style="cursor:pointer;color:#b91c1c;text-decoration:underline" onclick="openRefFail(${r.id},'fired')">${r.interview_status === 'fired' ? '改开除原因' : '🚫 被开除'}</a>` : '';
   const row = `<div class="ref-row"><b style="color:var(--g600)">👷 上班</b><span><b>${esc(r.work_start_date)}</b> 起 → ${_refYmd(end)}</span>
     <span class="ref-prog" title="三个月 referral 期"><i style="width:${Math.round(done / total * 100)}%"></i></span>
     <span style="color:${r.interview_status === 'fired' ? '#b91c1c' : st === 'ended' ? '#047857' : 'var(--g500)'};${r.interview_status === 'fired' ? 'font-weight:700' : ''}">${r.interview_status === 'fired' ? `🚫 已被开除（做到第 ${Math.floor(done / 7) + 1} 周）` : st === 'ended' ? '✅ 已满三个月' : `第 ${Math.floor(done / 7) + 1} 周 · 还剩 ${left} 天`}</span>
-    <span style="color:var(--g300)">|</span><span>${who}</span>${c.found && c.employee_id ? `<span style="color:var(--g500)">· 共 <b>${c.total_hours || 0}</b> 小时</span>` : ''}<span style="flex:1"></span><span style="font-size:.74rem">${ops}</span></div>`;
+    <span style="color:var(--g300)">|</span><span>${who}</span>${c.found && c.employee_id ? `<span style="color:var(--g500)">· 共 <b>${c.total_hours || 0}</b> 小时</span>` : ''}<span style="flex:1"></span><span style="font-size:.74rem">${ops}${fireOp}</span></div>`;
   // 开始上班时确定的条件: 上班时间 · 工资 · 付款周期/付款日
   const terms = [
     r.start_time && r.end_time ? `🕘 ${esc(r.start_time)}–${esc(r.end_time)}${r.work_days ? ' · ' + esc(_refDaysLabel(r.work_days)) : ''}` : '',
