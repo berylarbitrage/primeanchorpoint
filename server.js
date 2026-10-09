@@ -882,6 +882,8 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS pallet_manual_invoices (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`); } catch(e) {}
+// 数量单位: pallet 按板 / truck 按车 (单价和 $/单位 折扣都跟着这个单位算)
+try { db.exec("ALTER TABLE pallet_manual_invoices ADD COLUMN quantity_unit TEXT DEFAULT 'pallet'"); } catch(e) {}
 // 介绍费 referral: 工头介绍工人来上班 — 记录工头(姓名/电话)、被介绍人(姓名/电话)、
 // 工作仓库/地址、面试时间、上工时间和做了多久。会计关联发票佐证 (invoice_ids),
 // 管理员核查整条信息决定是否支付 (review_status: pending → approved/rejected),
@@ -41132,7 +41134,7 @@ function _palletManualRow(m, notes) {
     period_start: m.period_from || '', period_end: m.period_to || '',
     amount: Number(m.total_amount) || 0,
     direction: m.invoice_type === 'purchase' ? 'out' : 'in',
-    quantity: m.quantity, unit_price: m.unit_price,
+    quantity: m.quantity, quantity_unit: m.quantity_unit === 'truck' ? 'truck' : 'pallet', unit_price: m.unit_price,
     discount_value: m.discount_value, discount_type: m.discount_type || '%',
     delivery_address: m.delivery_address || '', city: m.city || '', state: m.state || '', zip: m.zip || '',
     linked_po: m.linked_po || '', notes: m.notes || '',
@@ -41183,10 +41185,10 @@ app.post('/api/acct/pallet-manual', requireAdmin, requireRole('accounting', 'adm
     const isAdmin = req.userRole === 'admin';
     const S = (v, n) => String(v || '').trim().slice(0, n);
     const r = db.prepare(`INSERT INTO pallet_manual_invoices
-      (invoice_type, invoice_number, customer, invoice_date, period_from, period_to, quantity, unit_price, discount_value, discount_type,
+      (invoice_type, invoice_number, customer, invoice_date, period_from, period_to, quantity, quantity_unit, unit_price, discount_value, discount_type,
        total_amount, delivery_address, city, state, zip, linked_po, notes, attachments, approval_status, created_by, approved_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(type, num, customer, invDate, pFrom, pTo, qty, price, disc,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(type, num, customer, invDate, pFrom, pTo, qty, b.quantity_unit === 'truck' ? 'truck' : 'pallet', price, disc,
         ['%', '$/pl', '$'].includes(String(b.discount_type || '')) ? String(b.discount_type) : '%',
         Math.round(total * 100) / 100, S(b.delivery_address, 300), S(b.city, 100), S(b.state, 40), S(b.zip, 20),
         S(b.linked_po, 120), S(b.notes, 2000), JSON.stringify(atts),
