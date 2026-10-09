@@ -150,6 +150,7 @@
       </select>
       <select id="fCat" onchange="loadTxns()"><option value="">全部分类</option></select>
       <button class="btn sm" id="pendBtn" onclick="togglePending()" style="display:none">⏳ 待审核</button>
+      <select id="fAnn" onchange="loadTxns()" title="按是否已标注筛选"><option value="">标注：全部</option><option value="none">🔲 未标注</option><option value="done">✅ 已标注</option><option value="incomplete">⚠️ 标注缺信息</option></select>
       <input id="fQ" placeholder="搜描述 / 商户 / 分类…" oninput="qDebounce()" style="flex:1;min-width:160px">
       <a class="btn" id="csvBtn" href="#">⬇ 导出 CSV 给会计</a>
     </div>
@@ -340,6 +341,7 @@ async function loadTxns() {
   let rows = r.transactions || [];
   // 「待审核」筛选: 只看有待审核标注的交易（在当前筛选结果里过滤）
   if (_pendingOnly) rows = rows.filter(t => ANN[t.txn_id] && ANN[t.txn_id].ann_status === 'pending');
+  rows = annFilterRows(rows, document.getElementById('fAnn').value);
   const accName = id => acctDisplay(ACCTS.find(x => x.account_id === id));
   document.getElementById('sumLine').textContent =
     '共 ' + (r.total || 0) + ' 笔' + (rows.length < (r.total || 0) ? '（显示最近 ' + rows.length + ' 笔）' : '')
