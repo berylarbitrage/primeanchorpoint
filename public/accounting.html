@@ -1126,6 +1126,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <span style="color:var(--g400)">→</span>
         <input type="date" id="bankFltTo" onchange="bankLoadTxns()">
         <span id="bankTxnStats" style="font-size:.8rem;color:var(--g500)"></span>
+        <a id="bankCsfClear" onclick="csfClear('bank')" style="display:none;font-size:.78rem;color:#1d4ed8;cursor:pointer;text-decoration:underline">✕ 清除表头排序/筛选</a>
       </div>
       <div class="card" id="bankTblWrap">
         <table><thead><tr id="bankTxnHeadRow">
@@ -4806,7 +4807,7 @@ function csfApply(key, rows) {
 function csfHeadHtml(key) {
   const st = _csfState(key), cols = (_csfDefs[key] || {}).cols || [];
   return cols.map((c, i) => {
-    const al = c.align ? ` style="text-align:${c.align}"` : '';
+    const al = c.align || c.style ? ` style="${c.align ? 'text-align:' + c.align + ';' : ''}${c.style || ''}"` : '';
     const cls = c.cls ? ' ' + c.cls : '';
     if (!c.type) return `<th class="${cls.trim()}"${al}>${c.label}</th>`;
     const on = !!st.f[i], s = st.sort && st.sort.i === i ? (st.sort.dir === 'asc' ? '▲' : '▼') : '';
@@ -6984,6 +6985,31 @@ async function plaidLoadTxns() {
   } catch (e) { document.getElementById('bankTxnBody').innerHTML = '<tr><td colspan="8" style="color:#dc2626">' + esc(e.message || '加载失败') + '</td></tr>'; _bankRenderSum([]); return; }
   _plaidTxns = d.transactions || [];
   _TXNS = _plaidTxns;  // bank-ann.js 抽屉打开时按 txn_id 找交易信息用
+  _plaidTotal = d.total || 0;
+  _plaidRenderTxns();
+}
+// 表头逐列 排序 / 筛选: 只在本地重画, 不重新拉银行数据
+let _plaidTotal = 0;
+function _plaidAcctLabel(x) {
+  const a = (((_plaidAccts && _plaidAccts.accounts) || []).find(z => z.account_id === x.account_id)) || {};
+  return `${a.institution || ''}${a.company_label ? ' · ' + a.company_label : ''} ··${a.mask || ''}`.trim();
+}
+_csfDefs.bank = {
+  allRows: () => _plaidTxns,
+  rerender: () => _plaidRenderTxns(),
+  cols: [
+    { label: '<input type="checkbox" id="bankSelAllCb" onchange="_bankSelAll(this.checked)" title="全选 / 全不选当前列表" style="cursor:pointer">', type: null, style: 'width:26px' },
+    { label: '日期', type: 'date', get: x => x.date },
+    { label: '银行 / 账户', type: 'text', get: x => _plaidAcctLabel(x) },
+    { label: '商户 / 描述', type: 'search', get: x => [x.merchant, x.name].filter(Boolean).join(' ') },
+    { label: '分类', type: 'text', get: x => x.category },
+    { label: '金额', type: 'num', align: 'right', get: x => -(Number(x.amount) || 0) },   // 收入为正、支出为负 (和显示一致)
+    { label: '状态', type: 'text', get: x => x.pending ? '待入账' : '已入账' },
+    { label: '标注', type: 'text', get: x => { const b = ANN[x.txn_id]; return b ? (_bsPayeeDisplay(b.payee) || (b.direction === 'in' ? '收入' : '支出') + '（待填）') : '未标注'; } },
+  ],
+};
+function _plaidRenderTxns() {
+  const d = { total: _plaidTotal };
   // 「待审核」筛选 (与 /banking 同款): 只看有待审核标注的交易
   let list = _plaidTxns;
   if (_pendingOnly) list = list.filter(t => ANN[t.txn_id] && ANN[t.txn_id].ann_status === 'pending');
@@ -6992,12 +7018,14 @@ async function plaidLoadTxns() {
   _bankFillCatOptions(_plaidTxns);
   _bankFillInternalOptions();
   list = _bankApplyLocalFilters(list);
+  list = csfApply('bank', list);
   const accById = {};
   ((_plaidAccts && _plaidAccts.accounts) || []).forEach(a => { accById[a.account_id] = a; });
   document.getElementById('bankTxnStats').textContent = `共 ${d.total || _plaidTxns.length} 笔${_plaidTxns.length < (d.total || 0) ? `（显示最近 ${_plaidTxns.length} 笔）` : ''}${list.length !== _plaidTxns.length ? ` · 筛选后 ${list.length} 笔` : ''}`;
   // plaid 模式表头: 审核/备注两列合并为与 /banking 相同的「标注」列
   const headRow = document.getElementById('bankTxnHeadRow');
-  if (headRow) headRow.innerHTML = '<th style="width:26px"><input type="checkbox" id="bankSelAllCb" onchange="_bankSelAll(this.checked)" title="全选 / 全不选当前列表" style="cursor:pointer"></th><th>日期</th><th>银行 / 账户</th><th>商户 / 描述</th><th>分类</th><th style="text-align:right">金额</th><th>状态</th><th>标注</th>';
+  if (headRow) headRow.innerHTML = csfHeadHtml('bank');
+  const clr = document.getElementById('bankCsfClear'); if (clr) clr.style.display = csfActive('bank') ? '' : 'none';
 
   const rowHtml = (x, grpKey) => {
     const a = accById[x.account_id] || {};
