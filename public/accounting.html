@@ -3882,7 +3882,7 @@ function renderTruckList() {
   document.getElementById('truckStats').textContent = `卡车订单 ${_truckRows.length - manualN} 单${manualN ? ` + 手动添加 ${manualN} 笔` : ''} · 显示合计 ${money(sum)} · 会计已记付款 ${doneN}`;
   document.getElementById('truckBody').innerHTML = rows.length ? rows.map(r => `<tr>
     <td>${_truckDateCell(r)}</td>
-    <td style="font-size:.78rem">${r.manual
+    <td style="font-size:.78rem;white-space:nowrap">${r.manual
       ? `✍️ 手动添加 · ${esc(r.created_by || '')}${r.approval_status === 'pending' ? ' <span style="font-size:.62rem;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;border-radius:4px;padding:0 4px">待审核</span>' : r.approval_status === 'rejected' ? ' <span style="font-size:.62rem;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:4px;padding:0 4px">已驳回</span>' : ''}`
       : r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener" style="color:#0f4c6b;text-decoration:underline;font-weight:600;white-space:nowrap">${esc(r.rental_code || '卡车单')}</a>` : esc(r.rental_code || '')}</td>
     <td>${esc(r.customer) || '<span style="color:var(--g300)">—</span>'}</td>
