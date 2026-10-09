@@ -972,6 +972,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <option value="done">✅ 已收款 / 已付款（核查通过）</option>
       </select>
       <span id="palletStats" style="font-size:.8rem;color:var(--g500)"></span>
+      <button class="btn btn-sm" id="palletBatchApproveBtn" onclick="palletManualBatchApprove()" style="display:none;color:#047857;border-color:#a7f3d0;font-weight:700"></button>
       <a id="palletCsfClear" onclick="csfClear('pallet')" style="display:none;font-size:.78rem;color:#1d4ed8;cursor:pointer;text-decoration:underline">✕ 清除表头排序/筛选</a>
     </div>
     <div class="card inv-scroll">
@@ -4113,6 +4114,17 @@ async function palletManualApprove(id, action) {
     loadPalletList(true);
   } catch (e) { toast(e.message || '操作失败', true); }
 }
+let _palletPendShown = [];
+async function palletManualBatchApprove() {
+  const ids = _palletPendShown.slice();
+  if (!ids.length) return;
+  if (!confirm(`把当前显示的 ${ids.length} 张待审核手动发票全部审核通过？`)) return;
+  try {
+    const r = await bapi('/api/acct/pallet-manual/batch-approval', { method: 'POST', body: JSON.stringify({ ids, action: 'approve' }) });
+    toast(`✅ 已审核通过 ${r.updated || 0} 张`);
+    loadPalletList(true);
+  } catch (e) { toast(e.message || '操作失败', true); }
+}
 async function palletManualDelete(id) {
   if (!confirm('删除这张手动添加的木板发票？（附件和付款批注一并删除）')) return;
   try {
@@ -4352,11 +4364,18 @@ function renderPalletList() {
     + `<br>💸 支出（采购 ${purch.length} 张）${chip(money(purchSum), '#b91c1c')} · ${chip('✅ 已付 ' + money(pr.got), '#047857', '核查通过的付款')} · ${chip('⏳ 还没付 ' + money(pr.owe), '#b45309', '每张采购发票还欠的钱加起来')}`
     + ` · 净额（收入 − 支出）${chip((net >= 0 ? '+' : '−') + money(Math.abs(net)), net >= 0 ? '#047857' : '#b91c1c')} · 核查通过已收/付 ${doneN} 张`
     + (pendN ? ` · <a onclick="document.getElementById('palletFilter').value='pending';renderPalletList()" style="cursor:pointer;color:#b45309;font-weight:700;text-decoration:underline">⏳ ${pendN} 张手动发票待管理员审核（不计入汇总）</a>` : '');
+  // 管理员: 当前筛选里的待审核手动发票可以一键批量通过
+  const pendShown = rows.filter(r => r.manual && r.approval_status === 'pending');
+  _palletPendShown = pendShown.map(r => r.manual_id);
+  const bb = document.getElementById('palletBatchApproveBtn');
+  bb.style.display = USER.role === 'admin' && pendShown.length ? '' : 'none';
+  bb.textContent = `✓ 全部审核通过（当前显示的 ${pendShown.length} 张待审核）`;
   document.getElementById('palletHeadRow').innerHTML = csfHeadHtml('pallet');
   document.getElementById('palletCsfClear').style.display = csfActive('pallet') ? '' : 'none';
   document.getElementById('palletBody').innerHTML = rows.length ? rows.map(r => `<tr${r.manual && r.approval_status === 'pending' ? ' style="background:#fffbeb"' : r.manual && r.approval_status === 'rejected' ? ' style="opacity:.55"' : ''}>
     <td style="white-space:nowrap">${esc(r.date)}</td>
-    <td>${_palletTypePill(r)}</td>
+    <td style="white-space:nowrap">${_palletTypePill(r)}${USER.role === 'admin' && r.manual && r.approval_status === 'pending'
+      ? ` <a onclick="palletManualApprove(${r.manual_id}, 'approve')" data-tip="审核通过" style="cursor:pointer;color:#047857;font-weight:800;border:1px solid #a7f3d0;background:#ecfdf5;border-radius:4px;padding:0 5px;font-size:.74rem">✓</a> <a onclick="palletManualApprove(${r.manual_id}, 'reject')" data-tip="驳回" style="cursor:pointer;color:#b91c1c;font-weight:800;border:1px solid #fecaca;background:#fef2f2;border-radius:4px;padding:0 5px;font-size:.74rem">✗</a>` : ''}</td>
     <td>${esc(r.customer) || '<span style="color:var(--g300)">—</span>'}</td>
     <td>${_palletInvCell(r)}</td>
     <td>${_palletPeriodCell(r)}</td>
@@ -4365,7 +4384,8 @@ function renderPalletList() {
     ${_invPayCols(r)}
     <td class="inv-note">${_invPayNoteTag(r)}</td>
     ${r.manual ? '<td colspan="3" style="color:var(--g400);font-size:.74rem">✍️ 手动添加（非 Bintique）</td>' : _palletBintiqueCols(r)}
-    <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openPalletDetail('${r.id}')">查看明细</button></td>
+    <td style="white-space:nowrap">${USER.role === 'admin' && r.manual && r.approval_status === 'pending'
+      ? `<button class="btn btn-sm" style="color:#047857;border-color:#a7f3d0" onclick="palletManualApprove(${r.manual_id}, 'approve')">✓ 通过</button> <button class="btn btn-sm" style="color:#b91c1c;border-color:#fecaca" onclick="palletManualApprove(${r.manual_id}, 'reject')">✗ 驳回</button> ` : ''}<button class="btn btn-sm btn-blue" onclick="openPalletDetail('${r.id}')">查看明细</button></td>
   </tr>`).join('') : '<tr><td colspan="17" style="color:var(--g400);padding:1rem">没有账单。</td></tr>';
 }
 // ═══════════ 💸 Gusto 工资: API 实时同步 + 按人对账 ═══════════
