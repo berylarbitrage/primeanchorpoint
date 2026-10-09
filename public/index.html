@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bintique Liquidation - Liquidation Management System</title>
+<link rel="icon" href="/logo.jpg" type="image/jpeg">
+<script src="/vendor/chart.umd.js"></script>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-overlay">
+  <div class="login-box">
+    <div class="login-logo"><img src="/logo.jpg" alt="Bintique"/></div>
+    <div class="login-title">Bintique Liquidation</div>
+    <div class="login-sub" data-t="login_sub">Liquidation Management System</div>
+    <div class="login-field"><label class="login-label" data-t="username">Username</label><input class="login-input" id="login-user" autocomplete="username" autofocus/></div>
+    <div class="login-field"><label class="login-label" data-t="password">Password</label><input class="login-input" id="login-pass" type="password" autocomplete="current-password"/></div>
+    <button type="button" id="login-btn" class="login-btn" data-t="sign_in" onclick="doLogin()">Sign In</button>
+    <div class="login-err" id="login-err"></div>
+    <div style="display:flex;justify-content:center;gap:8px;margin-top:16px">
+      <button type="button" onclick="setLang('zh')" style="padding:4px 10px;border-radius:12px;border:1px solid var(--g200);background:var(--wh);font-size:11px">中文</button>
+      <button type="button" onclick="setLang('en')" style="padding:4px 10px;border-radius:12px;border:1px solid var(--g200);background:var(--wh);font-size:11px">English</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toast-container"></div>
+
+<div id="app">
+  <div class="mob-bar">
+    <button class="mb-toggle" type="button" onclick="toggleMobileNav()" aria-label="Open menu">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <img src="/logo.jpg" class="mb-logo" alt=""/>
+    <div class="mb-title">Bintique Liquidation</div>
+  </div>
+  <div class="nav-overlay" id="navOverlay" onclick="closeMobileNav()"></div>
+
+  <div class="sidebar" id="sideNav">
+    <div class="brand">
+      <div style="width:40px;height:40px;border-radius:8px;overflow:hidden;flex-shrink:0;border:2px solid var(--pri);box-shadow:0 2px 6px rgba(139,105,20,.25)"><img src="/logo.jpg" alt="Bintique" style="width:100%;height:100%;object-fit:cover"/></div>
+      <div><h2>Bintique Liquidation</h2><small>Management System</small></div>
+    </div>
+    <nav>
+      <div class="ns"><div class="nsl">MAIN</div></div>
+      <a href="#" class="active" data-tab="dashboard"><span class="icon"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></span><span data-t="dashboard">Dashboard</span></a>
+      <div class="ns"><div class="nsl">MANAGEMENT</div></div>
+      <a href="#" data-tab="lots"><span class="icon"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></span><span data-t="lots">Inventory</span></a>
+      <a href="#" data-tab="sales"><span class="icon"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></span><span data-t="sales">Sales</span></a>
+      <a href="#" data-tab="receivables"><span class="icon"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg></span><span><span data-t="receivables">Receivables</span> <span id="ar-badge" style="display:none;background:#B42318;color:#fff;font-size:9px;padding:1px 5px;border-radius:8px;margin-left:2px;font-weight:700">0</span></span></a>
+      <a href="#" data-tab="suppliers"><span class="icon"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></span><span data-t="suppliers">Suppliers</span></a>
+      <a href="#" data-tab="customers"><span class="icon"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></span><span data-t="customers">Customers</span></a>
+      <div class="ns admin-only"><div class="nsl">SYSTEM</div></div>
+      <a href="#" data-tab="users" class="admin-only"><span class="icon"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></span><span data-t="users">Users</span></a>
+      <a href="#" data-tab="backup" class="admin-only"><span class="icon"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></span><span>Backup</span></a>
+    </nav>
+    <div class="lang-bar">
+      <div class="lang-label">Language / 语言</div>
+      <button class="lang-btn" data-lang="zh" onclick="setLang('zh')"><span class="lang-flag">&#127464;&#127475;</span><span>中文</span><span class="lang-check">&#10003;</span></button>
+      <button class="lang-btn" data-lang="en" onclick="setLang('en')"><span class="lang-flag">&#127482;&#127480;</span><span>English</span><span class="lang-check">&#10003;</span></button>
+    </div>
+    <div class="user-info">
+      <div id="user-display"></div>
+      <div class="uname" id="user-role"></div>
+      <span class="logout" data-t="sign_out" onclick="doLogout()">Sign Out</span>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <!-- DASHBOARD -->
+    <div class="tab-content active" id="tab-dashboard">
+      <div class="tb-filters">
+        <h2 data-t="dashboard">Dashboard</h2>
+        <div style="display:flex;gap:6px;align-items:center;margin-left:auto">
+          <select id="dash-year" onchange="renderDashboard()"></select>
+          <select id="dash-month" onchange="renderDashboard()"></select>
+        </div>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:16px">
+        <div class="stats-grid" id="stats-grid"></div>
+        <div class="chart-grid">
+          <div class="chart-card"><h4 data-t="monthly_pl">Monthly Revenue / Cost / Profit</h4><div style="position:relative;height:220px"><canvas id="chart-monthly"></canvas></div></div>
+          <div class="chart-card"><h4 data-t="lot_status">Load Status</h4><div style="position:relative;height:220px"><canvas id="chart-status"></canvas></div></div>
+        </div>
+        <div class="chart-row">
+          <div class="chart-card"><h4 data-t="top_customers">Top Customers (Revenue)</h4><div style="position:relative;height:180px"><canvas id="chart-customers"></canvas></div></div>
+          <div class="chart-card"><h4 data-t="top_suppliers">Top Suppliers (Profit)</h4><div style="position:relative;height:180px"><canvas id="chart-suppliers"></canvas></div></div>
+        </div>
+        <div class="card" style="border:1px solid var(--g200);border-radius:8px;overflow:hidden">
+          <div class="card-header"><h3 data-t="recent_sales" style="font-size:13px">Recent Sales</h3></div>
+          <div class="tw" style="max-height:400px"><table>
+            <thead><tr><th data-t="th_lot">Lot #</th><th data-t="th_desc">Description</th><th data-t="th_customer">Sold To</th><th class="num" data-t="th_sale">Sale Price</th><th class="num" data-t="th_cost">Cost</th><th class="num" data-t="th_profit">Profit</th><th data-t="th_sold_date">Sold Date</th></tr></thead>
+            <tbody id="recent-sales"></tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOTS / INVENTORY -->
+    <div class="tab-content" id="tab-lots">
+      <div class="tb-filters">
+        <h2 data-t="lots">Inventory</h2>
+        <input type="text" id="lot-search" oninput="renderLots()" data-ph="search" autocomplete="off" style="width:160px"/>
+        <select id="lot-status" onchange="renderLots()"></select>
+        <select id="lot-supplier" onchange="renderLots()"></select>
+        <div class="tb-sep"></div>
+        <div id="lot-stats" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"></div>
+        <div style="flex:1"></div>
+        <button class="btn btn-export btn-sm" onclick="exportLots()" data-t="export_csv">Export CSV</button>
+        <button class="btn btn-pri" onclick="openLotModal()" data-t="new_lot">+ New Load</button>
+      </div>
+      <div class="tw" style="flex:1"><table>
+        <thead id="lot-thead"></thead>
+        <tbody id="lot-tbody"></tbody>
+      </table></div>
+    </div>
+
+    <!-- SALES -->
+    <div class="tab-content" id="tab-sales">
+      <div class="tb-filters">
+        <h2 data-t="sales">Sales</h2>
+        <input type="text" id="sale-search" oninput="renderSales()" data-ph="search" autocomplete="off" style="width:160px"/>
+        <select id="sale-customer" onchange="renderSales()"></select>
+        <input type="date" id="sale-from" onchange="renderSales()"/>
+        <span style="font-size:10px;color:var(--g400)">~</span>
+        <input type="date" id="sale-to" onchange="renderSales()"/>
+        <div class="tb-sep"></div>
+        <div id="sale-stats" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"></div>
+        <div style="flex:1"></div>
+        <button class="btn btn-export btn-sm" onclick="exportSales()" data-t="export_csv">Export CSV</button>
+      </div>
+      <div class="tw" style="flex:1"><table>
+        <thead id="sale-thead"></thead>
+        <tbody id="sale-tbody"></tbody>
+        <tfoot id="sale-tfoot"></tfoot>
+      </table></div>
+    </div>
+
+    <!-- RECEIVABLES -->
+    <div class="tab-content" id="tab-receivables">
+      <div class="tb-filters">
+        <h2 data-t="receivables">Receivables</h2>
+        <select id="ar-customer" onchange="renderReceivables()"></select>
+        <div class="tb-sep"></div>
+        <div id="ar-stats" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"></div>
+      </div>
+      <div class="tw" style="flex:1"><table>
+        <thead id="ar-thead"></thead>
+        <tbody id="ar-tbody"></tbody>
+      </table></div>
+    </div>
+
+    <!-- SUPPLIERS -->
+    <div class="tab-content" id="tab-suppliers">
+      <div class="tb-filters">
+        <h2 data-t="suppliers">Suppliers</h2>
+        <input type="text" id="sup-search" oninput="renderParties('suppliers')" data-ph="search" autocomplete="off" style="width:160px"/>
+        <div style="flex:1"></div>
+        <button class="btn btn-pri" onclick="openPartyModal('suppliers')" data-t="add_supplier">+ Add Supplier</button>
+      </div>
+      <div class="tw" style="flex:1"><table>
+        <thead id="suppliers-thead"></thead>
+        <tbody id="suppliers-tbody"></tbody>
+      </table></div>
+    </div>
+
+    <!-- CUSTOMERS -->
+    <div class="tab-content" id="tab-customers">
+      <div class="tb-filters">
+        <h2 data-t="customers">Customers</h2>
+        <input type="text" id="cust-search" oninput="renderParties('customers')" data-ph="search" autocomplete="off" style="width:160px"/>
+        <div style="flex:1"></div>
+        <button class="btn btn-pri" onclick="openPartyModal('customers')" data-t="add_customer">+ Add Customer</button>
+      </div>
+      <div class="tw" style="flex:1"><table>
+        <thead id="customers-thead"></thead>
+        <tbody id="customers-tbody"></tbody>
+      </table></div>
+    </div>
+
+    <!-- USERS -->
+    <div class="tab-content" id="tab-users">
+      <div class="tb-filters">
+        <h2 data-t="users">Users</h2>
+        <div style="flex:1"></div>
+        <button class="btn btn-pri" onclick="openUserModal()" data-t="add_user">+ Add User</button>
+      </div>
+      <div class="tw" style="flex:1"><table>
+        <thead><tr><th data-t="username">Username</th><th data-t="display_name">Name</th><th data-t="role">Role</th><th data-t="created">Created</th></tr></thead>
+        <tbody id="users-tbody"></tbody>
+      </table></div>
+    </div>
+
+    <!-- BACKUP -->
+    <div class="tab-content" id="tab-backup">
+      <div class="tb-filters"><h2>Backup</h2></div>
+      <div style="padding:16px">
+        <div class="chart-card" style="max-width:520px">
+          <h4 data-t="backup_title">Download a full backup</h4>
+          <p style="font-size:12px;color:var(--g600);margin-bottom:12px" data-t="backup_desc">Exports all suppliers, customers and loads as a JSON file.</p>
+          <a class="btn btn-pri" href="/api/backup" download data-t="download_backup">Download Backup</a>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- GENERIC MODAL -->
+<div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modal-box" style="width:720px">
+    <div class="modal-head"><h3 id="modal-title"></h3><button class="modal-close" onclick="closeModal()">&times;</button></div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
