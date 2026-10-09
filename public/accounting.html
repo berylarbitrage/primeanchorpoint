@@ -1040,13 +1040,13 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <option value="todo">⏳ 未付款（按会计批注）</option>
         <option value="done">✅ 已付款（按会计批注）</option>
         <option value="manual">✍️ 手动添加</option>
+        <option value="pending">⏳ 待管理员审核</option>
       </select>
       <span id="truckStats" style="font-size:.8rem;color:var(--g500)"></span>
+      <a id="truckCsfClear" onclick="csfClear('truck')" style="display:none;font-size:.78rem;color:#1d4ed8;cursor:pointer;text-decoration:underline">✕ 清除表头排序/筛选</a>
     </div>
     <div class="card" style="overflow-x:auto">
-      <table><thead><tr>
-        <th>日期</th><th>订单号</th><th>卡车公司</th><th>装货</th><th style="text-align:right">金额</th><th>付款状态</th><th>付款批注（会计）</th><th>Bintique 参考</th><th>备注</th><th></th>
-      </tr></thead><tbody id="truckBody"><tr><td colspan="10" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+      <table><thead><tr id="truckHeadRow"></tr></thead><tbody id="truckBody"><tr><td colspan="10" style="color:var(--g400)">加载中…</td></tr></tbody></table>
     </div>
     <p style="font-size:.75rem;color:var(--g400);margin-top:.5rem">这里显示 pallet.bintique.com 的全部卡车订单（一行一单，不从银行流水抓）+ 客服手动添加的卡车费用；付款状态只认这边会计的付款批注，「Bintique 参考」列是对方系统的收付记录，仅供参考。</p>
   </div>
@@ -3869,7 +3869,11 @@ function renderTruckList() {
   if (flt === 'todo') rows = rows.filter(r => !(r.pay_note && r.pay_note.paid_status === 'paid'));
   else if (flt === 'done') rows = rows.filter(r => r.pay_note && r.pay_note.paid_status === 'paid');
   else if (flt === 'manual') rows = rows.filter(r => r.manual);
+  else if (flt === 'pending') rows = rows.filter(r => r.manual && r.approval_status === 'pending');
   if (q) rows = rows.filter(r => [r.customer, r.note, r.rental_code || '', r.cargo || ''].join(' ').toLowerCase().includes(q));
+  rows = csfApply('truck', rows);
+  document.getElementById('truckHeadRow').innerHTML = csfHeadHtml('truck');
+  document.getElementById('truckCsfClear').style.display = csfActive('truck') ? '' : 'none';
   const sum = rows.reduce((s, r) => s + r.amount, 0);
   const manualN = _truckRows.filter(r => r.manual).length;
   const doneN = _truckRows.filter(r => r.pay_note && r.pay_note.paid_status === 'paid').length;
@@ -5223,6 +5227,28 @@ _csfDefs.inv = {
     { label: '收款明细（每笔，点开看银行记录）', type: 'search', get: r => _invPayInfo(r).detail.map(d => `${d.date} ${d.amt.toFixed(2)} ${d.bank} ${d.desc}`).join(' | ') },
     { label: '付款备注', type: 'search', cls: 'inv-note', get: r => _invPayNoteText(r) },
     { label: '批注', type: 'num', get: r => r.annotation_count || 0 },
+    { label: '', type: null },
+  ],
+};
+// 卡车费用的列定义 (顺序和表格列一致)
+function _truckStatusText(r) {
+  if (r.manual && r.approval_status === 'pending') return '待审核';
+  if (r.manual && r.approval_status === 'rejected') return '已驳回';
+  return ({ paid: '已付款', partial: '部分付款', unpaid: '未付款', review: '待审核' })[_palletStatus(r)] || '—';
+}
+_csfDefs.truck = {
+  allRows: () => _truckRows,
+  rerender: () => renderTruckList(),
+  cols: [
+    { label: '日期', type: 'date', get: r => r.date },
+    { label: '订单号', type: 'text', get: r => r.manual ? `手动添加 · ${r.created_by || ''}${r.approval_status === 'pending' ? ' · 待审核' : r.approval_status === 'rejected' ? ' · 已驳回' : ''}` : (r.rental_code || '') },
+    { label: '卡车公司', type: 'text', get: r => r.customer },
+    { label: '装货', type: 'text', get: r => r.cargo },
+    { label: '金额', type: 'num', align: 'right', get: r => Number(r.amount) || 0 },
+    { label: '付款状态', type: 'text', get: r => _truckStatusText(r) },
+    { label: '付款批注（会计）', type: 'text', get: r => { const st = r.pay_note && r.pay_note.paid_status; return ({ paid: '已付款', partial: '部分付款', unpaid: '未付款' })[st] || '待记录'; } },
+    { label: 'Bintique 参考', type: 'search', get: r => r.manual ? '' : [((r.bintique || {}).payment_date || ''), ((r.bintique || {}).payment_method || '')].join(' ').trim() },
+    { label: '备注', type: 'search', get: r => r.note },
     { label: '', type: null },
   ],
 };
