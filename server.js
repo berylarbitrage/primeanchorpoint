@@ -41327,6 +41327,32 @@ app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin
   res.json({ success: true, id: r.lastInsertRowid, approval_status: isAdmin ? 'approved' : 'pending' });
 });
 
+// ✏️ 修改手动添加的卡车费用: 没审核通过的 (待审核/已驳回) 客服/会计/admin 都能改, 通过后只有 admin 能改。
+// 非 admin 改过的回到「待审核」重新审; 已有凭证保留, 新上传的追加。
+app.put('/api/acct/fee-records/:id', requireAdmin, requireRole('accounting', 'admin', 'cs'), claimUpload.array('invoice', 50), (req, res) => {
+  const cur = db.prepare('SELECT * FROM fee_records WHERE id=?').get(req.params.id);
+  if (!cur) return res.status(404).json({ error: '记录不存在' });
+  if (cur.fee_type !== 'truck') return res.status(400).json({ error: '只能修改卡车费用' });
+  const isAdmin = req.userRole === 'admin';
+  if (!isAdmin && cur.approval_status === 'approved') return res.status(403).json({ error: '已审核通过的记录只有管理员能改' });
+  const b = req.body || {};
+  const party = String(b.party_name || '').trim().slice(0, 200);
+  if (!party) return res.status(400).json({ error: '请填写卡车公司' });
+  const amtNum = Number(b.amount), discNum = Number(b.discount_value);
+  const atts = _claimAtts(cur).concat((Array.isArray(req.files) ? req.files : []).map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) })));
+  const status = isAdmin ? cur.approval_status : 'pending';
+  db.prepare(`UPDATE fee_records SET party_name=?, fee_date=?, fee_date_end=?, amount=?, description=?, cargo=?, discount_value=?, discount_type=?,
+      attachments=?, approval_status=?, approval_note=CASE WHEN ?<>approval_status THEN '' ELSE approval_note END, updated_at=datetime('now') WHERE id=?`)
+    .run(party, String(b.fee_date || '').trim().slice(0, 20), String(b.fee_date_end || '').trim().slice(0, 20),
+      (b.amount != null && b.amount !== '' && !isNaN(amtNum)) ? amtNum : null,
+      String(b.description || '').trim().slice(0, 2000), String(b.cargo || '').trim().slice(0, 200),
+      (b.discount_value != null && b.discount_value !== '' && !isNaN(discNum)) ? discNum : null,
+      ['%', '$'].includes(String(b.discount_type || '')) ? String(b.discount_type) : '%',
+      JSON.stringify(atts), status, status, cur.id);
+  auditLog('fee_record_edit', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers }, { targetType: 'fee_record', targetId: cur.id });
+  res.json({ success: true, approval_status: status });
+});
+
 // 管理员审核会计提交的费用记录 (同赔偿事故)
 app.post('/api/acct/fee-records/:id/approval', requireAdmin, requireRole('admin'), (req, res) => {
   const cur = db.prepare('SELECT * FROM fee_records WHERE id=?').get(req.params.id);
