@@ -3862,6 +3862,8 @@ function _truckBintiqueCell(r) {
   if (b.payment_date) return `<div style="font-size:.74rem;color:var(--g500)">参考：${esc(b.payment_date)}${b.payment_method ? ' · ' + esc(b.payment_method) : ''}${link}</div>`;
   return `<span style="color:var(--g300)">—</span>${link}`;
 }
+// 手动卡车费用能不能改: 还没审核通过的 (待审核/已驳回) 客服/会计/管理员都能改; 通过后只有管理员能改
+function _truckCanEdit(r) { return !!r.manual && (USER.role === 'admin' || (canAnnotate() && r.approval_status !== 'approved')); }
 function renderTruckList() {
   const q = (document.getElementById('truckSearch').value || '').toLowerCase();
   const flt = document.getElementById('truckFilter').value;
@@ -3890,7 +3892,7 @@ function renderTruckList() {
     <td>${r.manual ? payNoteCell('truckfee', r.fee_id, r.pay_note, true) : payNoteCell('truckorder', r.order_id, r.pay_note, true)}</td>
     <td style="font-size:.78rem">${_truckBintiqueCell(r)}</td>
     <td style="font-size:.76rem;color:var(--g500);max-width:240px">${esc(r.note || '')}</td>
-    <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openTruckDetail('${r.id}')">查看明细</button></td>
+    <td style="white-space:nowrap">${_truckCanEdit(r) ? `<button class="btn btn-sm" onclick="openTruckEdit(${r.fee_id})">✏️ 修改</button> ` : ''}<button class="btn btn-sm btn-blue" onclick="openTruckDetail('${r.id}')">查看明细</button></td>
   </tr>`).join('') : '<tr><td colspan="10" style="color:var(--g400);padding:1rem">没有卡车费用记录。</td></tr>';
 }
 // 🚚 明细弹窗: 订单行显示 Bintique 卡车单信息, 手动行显示凭证/审核操作
@@ -3929,6 +3931,7 @@ function openTruckDetail(id) {
     ${canAnnotate() || USER.role === 'admin' ? `<div style="margin-top:.7rem;display:flex;justify-content:flex-end;gap:.5rem;align-items:center;flex-wrap:wrap">
       ${r.manual && USER.role === 'admin' && r.approval_status === 'pending' ? `<button class="btn btn-sm" style="color:#047857;border-color:#a7f3d0" onclick="truckFeeApprove(${r.fee_id}, 'approve')">✓ 审核通过</button>
       <button class="btn btn-sm" style="color:#b91c1c;border-color:#fecaca" onclick="truckFeeApprove(${r.fee_id}, 'reject')">✗ 驳回</button>` : ''}
+      ${_truckCanEdit(r) ? `<button class="btn btn-sm" onclick="openTruckEdit(${r.fee_id})">✏️ 修改</button>` : ''}
       ${r.manual && USER.role === 'admin' ? `<button class="btn btn-sm" style="color:#b91c1c" onclick="truckFeeDelete(${r.fee_id})">🗑 删除</button>` : ''}
       ${canAnnotate() ? `<button class="btn btn-sm btn-blue" onclick="document.getElementById('truckDetailModal').style.display='none';openPayNote('${r.manual ? 'truckfee' : 'truckorder'}', ${r.manual ? r.fee_id : r.order_id})">💵 付款批注</button>` : ''}
     </div>` : ''}
@@ -3965,7 +3968,7 @@ function openTruckAdd() {
     const REQ = '<span style="color:#dc2626">*</span>';
     m.innerHTML = `<div style="background:#fff;border-radius:14px;box-shadow:0 12px 48px rgba(0,0,0,.35);width:min(94vw,520px);max-height:92vh;overflow:auto;padding:1.1rem 1.25rem" onclick="event.stopPropagation()">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem">
-        <div style="font-weight:800;font-size:1rem;color:#1f2937">🚚 租车费用 / Truck Rental</div>
+        <div id="tfaTitle" style="font-weight:800;font-size:1rem;color:#1f2937">🚚 租车费用 / Truck Rental</div>
         <button onclick="document.getElementById('truckAddModal').style.display='none'" style="border:1px solid var(--g200);background:#fff;border-radius:8px;padding:.2rem .7rem;cursor:pointer;font-size:.8rem">✕</button>
       </div>
       <label style="${LB}">SELECT TRUCK COMPANY 请选择卡车公司 ${REQ}</label>
@@ -4024,9 +4027,35 @@ function openTruckAdd() {
   document.getElementById('tfaAmount').value = '';
   document.getElementById('tfaNote').value = '';
   document.getElementById('tfaMsg').textContent = '';
+  document.getElementById('tfaTitle').textContent = '🚚 租车费用 / Truck Rental';
+  _tfaEditId = null;
   _tfaFiles = [];
   _tfaRenderFiles();
   m.style.display = 'flex';
+}
+// ✏️ 修改手动添加的卡车费用 (待审核 / 已驳回的; 管理员任何时候都能改): 同一张表单, 预填原来的内容;
+// 已有凭证保留, 新选的文件追加。改完回到「待审核」。
+let _tfaEditId = null;
+function openTruckEdit(feeId) {
+  const r = _truckRows.find(x => x.manual && x.fee_id === feeId);
+  if (!r) return;
+  const dm = document.getElementById('truckDetailModal'); if (dm) dm.style.display = 'none';
+  openTruckAdd();
+  _tfaEditId = feeId;
+  document.getElementById('tfaTitle').textContent = '✏️ 修改卡车费用 / Edit Truck Rental';
+  const sel = document.getElementById('tfaPartySel'), partyNew = document.getElementById('tfaPartyNew');
+  if ([...sel.options].some(o => o.value === r.customer) && r.customer) { sel.value = r.customer; partyNew.style.display = 'none'; }
+  else { sel.value = '__new__'; partyNew.style.display = ''; partyNew.value = r.customer || ''; }
+  document.getElementById('tfaDate').value = r.date || '';
+  document.getElementById('tfaDateEnd').value = r.date_end || '';
+  document.getElementById('tfaDisc').value = r.discount_value != null ? r.discount_value : '0';
+  document.getElementById('tfaDiscType').value = r.discount_type === '$' ? '$' : '%';
+  const cargo = String(r.cargo || '').split(/\s*,\s*/);
+  document.querySelectorAll('.tfaCargo').forEach(c => { c.checked = cargo.includes(c.value); });
+  document.getElementById('tfaAmount').value = r.amount != null ? r.amount : '';
+  document.getElementById('tfaNote').value = r.note || '';
+  const n = (r.photos_urls || []).length;
+  document.getElementById('tfaMsg').innerHTML = n ? `<span style="color:var(--g500)">已有 ${n} 个凭证会保留，新选的追加</span>` : '';
 }
 async function submitTruckAdd() {
   const selV = document.getElementById('tfaPartySel').value;
@@ -4052,10 +4081,12 @@ async function submitTruckAdd() {
     const disc = Number(document.getElementById('tfaDisc').value);
     if (disc > 0) { fd.append('discount_value', String(disc)); fd.append('discount_type', document.getElementById('tfaDiscType').value); }
     _tfaFiles.forEach(f => fd.append('invoice', f));
-    const res = await fetch('/api/acct/fee-records', { method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd }).then(x => x.json());
+    const editing = _tfaEditId;
+    const res = await fetch(editing ? `/api/acct/fee-records/${editing}` : '/api/acct/fee-records', { method: editing ? 'PUT' : 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd }).then(x => x.json());
     if (res.error) throw new Error(res.error);
     document.getElementById('truckAddModal').style.display = 'none';
-    toast(res.approval_status === 'pending' ? '✅ 已添加，待老板审核' : '✅ 已添加');
+    _tfaEditId = null;
+    toast(editing ? (res.approval_status === 'pending' ? '✅ 已修改，待老板审核' : '✅ 已修改') : res.approval_status === 'pending' ? '✅ 已添加，待老板审核' : '✅ 已添加');
     loadTruckList(true);
   } catch (e) { document.getElementById('tfaMsg').textContent = e.message || '保存失败'; }
   btn.disabled = false;
