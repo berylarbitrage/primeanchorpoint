@@ -1352,6 +1352,14 @@ async function annCheckScanAll() {
   }
   _bsBoxList.forEach(b => { if (_bsAnnCheckMode(b) === 'full') annRefreshChip(b); });
 }
+// 「标注」筛选: none=未标注 / done=已标注 / incomplete=标注了但信息不全 (行内显示 ⚠缺… 的那些)
+function annFilterRows(rows, mode) {
+  if (!mode) return rows;
+  if (mode === 'none') return rows.filter(t => !ANN[t.txn_id]);
+  if (mode === 'done') return rows.filter(t => !!ANN[t.txn_id]);
+  if (mode === 'incomplete') return rows.filter(t => ANN[t.txn_id] && !_bsNoteSatisfied(ANN[t.txn_id]));
+  return rows;
+}
 // ── 行内徽章 + 抽屉开关 ──
 function annChipHtml(txnId) {
   const b = ANN[txnId];

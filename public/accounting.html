@@ -1082,6 +1082,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
           <option value="month">按月显示</option>
         </select>
         <button class="btn btn-outline" id="pendBtn" onclick="togglePending()" style="display:none">⏳ 待审核</button>
+        <select id="bankFltAnn" onchange="bankLoadTxns()" title="按是否已标注筛选" style="display:none"><option value="">标注：全部</option><option value="none">🔲 未标注</option><option value="done">✅ 已标注</option><option value="incomplete">⚠️ 标注缺信息</option></select>
         <select id="bankFltRev" onchange="bankLoadTxns()">
           <option value="">全部交易</option>
           <option value="0" selected>只看未审核</option>
@@ -6369,6 +6370,7 @@ function renderPlaidAccounts() {
   // 同步走 /api/plaid/sync (接口仅 admin); 非 admin 打开页面时服务器也会自动同步(10 分钟节流)
   document.getElementById('btnBankSync').style.display = (_bankStatus && _bankStatus.is_admin) ? '' : 'none';
   document.getElementById('bankFltRev').style.display = 'none';
+  document.getElementById('bankFltAnn').style.display = '';  // 标注只在 Plaid 数据源上有
   const vSel = document.getElementById('bankFltView');
   vSel.style.display = '';
   try { const v = localStorage.getItem('acctBankView'); if (v) vSel.value = v; } catch (e) {}
@@ -6831,6 +6833,7 @@ async function plaidLoadTxns() {
   // 「待审核」筛选 (与 /banking 同款): 只看有待审核标注的交易
   let list = _plaidTxns;
   if (_pendingOnly) list = list.filter(t => ANN[t.txn_id] && ANN[t.txn_id].ann_status === 'pending');
+  list = annFilterRows(list, document.getElementById('bankFltAnn').value);
   // 本地筛选: 收支 / 分类 / 类型 / 内部往来
   _bankFillCatOptions(_plaidTxns);
   _bankFillInternalOptions();
