@@ -852,6 +852,36 @@ try { db.exec("ALTER TABLE fee_records ADD COLUMN fee_date_end TEXT DEFAULT ''")
 try { db.exec("ALTER TABLE fee_records ADD COLUMN cargo TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN discount_value REAL DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN discount_type TEXT DEFAULT '%'"); } catch(e) {}
+// 🪵 会计手动添加的木板发票 (照 pallet.bintique.com 的 New Order 表单): 会计提交为
+// approval_status='pending', 管理员审核通过才计入木板账单汇总 / 才能记付款批注。
+// 付款批注 target_type='palletmanual' (与 Bintique 账单 id 分开编号)。
+try { db.exec(`CREATE TABLE IF NOT EXISTS pallet_manual_invoices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_type TEXT DEFAULT 'sales',
+  invoice_number TEXT DEFAULT '',
+  customer TEXT DEFAULT '',
+  invoice_date TEXT DEFAULT '',
+  period_from TEXT DEFAULT '',
+  period_to TEXT DEFAULT '',
+  quantity REAL DEFAULT NULL,
+  unit_price REAL DEFAULT NULL,
+  discount_value REAL DEFAULT NULL,
+  discount_type TEXT DEFAULT '%',
+  total_amount REAL DEFAULT 0,
+  delivery_address TEXT DEFAULT '',
+  city TEXT DEFAULT '',
+  state TEXT DEFAULT '',
+  zip TEXT DEFAULT '',
+  linked_po TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  attachments TEXT DEFAULT '[]',
+  approval_status TEXT DEFAULT 'pending',
+  created_by TEXT DEFAULT '',
+  approved_by TEXT DEFAULT '',
+  approval_note TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`); } catch(e) {}
 // 介绍费 referral: 工头介绍工人来上班 — 记录工头(姓名/电话)、被介绍人(姓名/电话)、
 // 工作仓库/地址、面试时间、上工时间和做了多久。会计关联发票佐证 (invoice_ids),
 // 管理员核查整条信息决定是否支付 (review_status: pending → approved/rejected),
@@ -36626,6 +36656,11 @@ app.post('/api/plaid/annotations/:id/approve', requireAdmin, requireRole('admin'
             bi = binvMap.get(normN(numStr)) || null;
             if (!bi && bNum) inv = q.get(numStr) || null;
           }
+          // 本系统和 Bintique 都没有: 再找会计手动添加的木板发票
+          if (!inv && !bi) {
+            const pm = _palletManualByNum(numStr);
+            if (pm) inv = { subtotal: pm.total_amount, company_name: pm.customer };
+          }
           let a = parseFloat(it.amt) || (inv ? Number(inv.subtotal) : 0) || 0;
           let company = inv ? String(inv.company_name || '') : '';
           if (bi) {
@@ -36725,6 +36760,16 @@ app.get('/api/plaid/invoice-check', requireAdmin, requireRole('admin', 'cs', 'ac
         const inv = byNum.get(normN(n));
         out[n] = inv ? binHit(inv) : { found: false };
       }
+    }
+    // 还没找到的: 会计手动添加的木板发票
+    for (const n of nums) {
+      if (out[n] && out[n].found) continue;
+      const pm = _palletManualByNum(n);
+      if (pm) out[n] = {
+        found: true, source: 'pallet_manual', invoice_number: pm.invoice_number,
+        company_name: pm.customer || '', period_start: pm.period_from || '', period_end: pm.period_to || '',
+        subtotal: Number(pm.total_amount) || 0, approval_status: pm.approval_status || '',
+      };
     }
     res.json({ invoices: out });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -40791,7 +40836,7 @@ function _acctPayNotesFor(type) {
 // 会计付款批注 upsert: 付了没有 / 哪个银行付的 / 付了多少 / 备注 / 关联银行交易(收款凭证)
 app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
   const { target_type, target_id, paid_status, bank, amount, note, txn_ids } = req.body || {};
-  if (!['invoice', 'claim', 'fee', 'pallet', 'palletbill', 'truck', 'truckorder', 'referral', 'referralweek'].includes(target_type)) return res.status(400).json({ error: '无效对象类型' });
+  if (!['invoice', 'claim', 'fee', 'pallet', 'palletbill', 'palletmanual', 'truck', 'truckorder', 'referral', 'referralweek'].includes(target_type)) return res.status(400).json({ error: '无效对象类型' });
   const tid = parseInt(target_id);
   if (!tid) return res.status(400).json({ error: '无效对象' });
   const exists = target_type === 'invoice'
@@ -40806,8 +40851,12 @@ app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
           ? db.prepare("SELECT id FROM bank_statement_txns WHERE id=? AND kind='box'").get(tid)
           : (target_type === 'palletbill' || target_type === 'truckorder')
             ? { id: tid } // Bintique 账单/卡车订单在对方系统, 本地不校验存在性
-            : db.prepare('SELECT id FROM warehouse_claims WHERE id=?').get(tid);
+            : target_type === 'palletmanual'
+              ? db.prepare('SELECT id, approval_status FROM pallet_manual_invoices WHERE id=?').get(tid)
+              : db.prepare('SELECT id FROM warehouse_claims WHERE id=?').get(tid);
   if (!exists) return res.status(404).json({ error: '对象不存在' });
+  // 手动添加的木板发票必须管理员审核通过后才能记付款
+  if (target_type === 'palletmanual' && exists.approval_status !== 'approved') return res.status(400).json({ error: '这张手动添加的木板发票还没通过管理员审核，暂不能记录付款' });
   // 介绍费必须管理员核查同意支付后, 会计才能记付款 / 关联银行记录
   if ((target_type === 'referral' || target_type === 'referralweek') && exists.review_status !== 'approved') return res.status(400).json({ error: '该介绍费还未通过管理员核查同意支付，暂不能记录付款' });
   const st = ['', 'unpaid', 'partial', 'paid'].includes(String(paid_status || '')) ? String(paid_status || '') : '';
@@ -41057,14 +41106,119 @@ app.get('/api/acct/pallet-bills', requireAdmin, requireAcctView, async (req, res
       },
       pay_note: payNotes[inv.id] || null,
     }));
-    rows.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || b.id - a.id);
-    // 付款状态和发票一样走核查口径: 银行记录找得到 + 银行标注审核通过的钱才算
+    // 会计手动添加的木板发票: 待审核/已驳回的也列出来 (前端标徽章、不进汇总), 只有审核通过的才挂付款
+    const manNotes = _acctPayNotesFor('palletmanual');
+    const manual = db.prepare('SELECT * FROM pallet_manual_invoices ORDER BY invoice_date DESC, id DESC').all()
+      .map(m => _palletManualRow(m, manNotes));
     _acctRecoverTxns(rows, 'palletbill');
-    _acctAttachAnnTxns(rows);
-    _acctInvoiceVerify(rows);
-    res.json({ count: rows.length, rows, configured: !!process.env.PALLET_API_KEY });
+    const manApproved = manual.filter(r => r.approval_status === 'approved');
+    _acctRecoverTxns(manApproved, 'palletmanual');
+    const all = rows.concat(manual);
+    all.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(b.id).localeCompare(String(a.id)));
+    // 付款状态和发票一样走核查口径: 银行记录找得到 + 银行标注审核通过的钱才算
+    const counted = all.filter(r => !r.manual || r.approval_status === 'approved');
+    _acctAttachAnnTxns(counted);
+    _acctInvoiceVerify(counted);
+    res.json({ count: all.length, rows: all, configured: !!process.env.PALLET_API_KEY });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+// ─── 🪵 会计手动添加木板发票 (照 pallet.bintique.com 的 New Order): 会计提交 → 管理员审核 ───
+function _palletManualRow(m, notes) {
+  return {
+    id: 'm-' + m.id, manual: true, manual_id: m.id,
+    date: m.invoice_date || m.period_to || m.period_from || String(m.created_at || '').slice(0, 10),
+    invoice_date: m.invoice_date || '',
+    customer: m.customer || '', invoice_number: m.invoice_number || '',
+    period_start: m.period_from || '', period_end: m.period_to || '',
+    amount: Number(m.total_amount) || 0,
+    direction: m.invoice_type === 'purchase' ? 'out' : 'in',
+    quantity: m.quantity, unit_price: m.unit_price,
+    discount_value: m.discount_value, discount_type: m.discount_type || '%',
+    delivery_address: m.delivery_address || '', city: m.city || '', state: m.state || '', zip: m.zip || '',
+    linked_po: m.linked_po || '', notes: m.notes || '',
+    attachments: _claimAtts(m),
+    approval_status: m.approval_status || 'pending', created_by: m.created_by || '',
+    approved_by: m.approved_by || '', approval_note: m.approval_note || '', created_at: m.created_at || '',
+    pay_note: m.approval_status === 'approved' ? ((notes && notes[m.id]) || null) : null,
+  };
+}
+// 按发票号找手动木板发票 (已驳回的不算), 标注审核 / 发票自动核对兜底用
+function _palletManualByNum(num) {
+  const n = String(num || '').trim();
+  if (!n) return null;
+  return db.prepare(`SELECT * FROM pallet_manual_invoices WHERE UPPER(TRIM(invoice_number))=UPPER(?) AND approval_status<>'rejected'
+    ORDER BY CASE WHEN approval_status='approved' THEN 0 ELSE 1 END, id DESC LIMIT 1`).get(n) || null;
+}
+app.post('/api/acct/pallet-manual', requireAdmin, requireRole('accounting', 'admin'), claimUpload.array('invoice', 50), async (req, res) => {
+  try {
+    const b = req.body || {};
+    const type = b.invoice_type === 'purchase' ? 'purchase' : 'sales';
+    const customer = String(b.customer || '').trim().slice(0, 200);
+    if (!customer) return res.status(400).json({ error: type === 'purchase' ? '请填写供应商' : '请填写客户' });
+    const invDate = String(b.invoice_date || '').trim().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(invDate)) return res.status(400).json({ error: '请选择服务日期 / 发票日期' });
+    const numOr = v => (v == null || v === '' || isNaN(Number(v))) ? null : Number(v);
+    const qty = numOr(b.quantity), price = numOr(b.unit_price), disc = numOr(b.discount_value);
+    const total = numOr(b.total_amount);
+    if (!(total > 0)) return res.status(400).json({ error: '总金额必须大于 0' });
+    const pFrom = String(b.period_from || '').trim().slice(0, 10), pTo = String(b.period_to || '').trim().slice(0, 10);
+    if (pFrom && pTo && pTo < pFrom) return res.status(400).json({ error: '账期结束不能早于开始' });
+    // 发票号: 不填就自动编 MINV(销售)/MPINV(采购)-<名段>-<日期>-NN, 和 Bintique 的 BINV/BPINV 号段分开
+    let num = String(b.invoice_number || '').trim().toUpperCase().slice(0, 80);
+    if (!num) {
+      const seg = (customer.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8)) || 'X';
+      const base = `${type === 'purchase' ? 'MPINV' : 'MINV'}-${seg}-${invDate.replace(/-/g, '')}`;
+      const used = new Set(db.prepare('SELECT UPPER(invoice_number) AS n FROM pallet_manual_invoices WHERE UPPER(invoice_number) LIKE ?').all(base + '-%').map(x => x.n));
+      let i = 1; while (used.has(`${base}-${String(i).padStart(2, '0')}`)) i++;
+      num = `${base}-${String(i).padStart(2, '0')}`;
+    } else {
+      // 手填的号不能和现有木板发票 (手动的 / Bintique 的) 或系统发票重号
+      if (_palletManualByNum(num)) return res.status(400).json({ error: `发票号 ${num} 已经存在（手动木板发票）` });
+      if (db.prepare('SELECT id FROM invoices WHERE TRIM(invoice_number)=? COLLATE NOCASE').get(num)) return res.status(400).json({ error: `发票号 ${num} 和系统里的发票重号` });
+      const normN = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+      if (((await _palletFetchInvoices()) || []).some(x => normN(x.invoice_number) === normN(num))) return res.status(400).json({ error: `发票号 ${num} 在 Bintique 已经有了，不用重复添加` });
+    }
+    const files = Array.isArray(req.files) ? req.files : [];
+    const atts = files.map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
+    const isAdmin = req.userRole === 'admin';
+    const S = (v, n) => String(v || '').trim().slice(0, n);
+    const r = db.prepare(`INSERT INTO pallet_manual_invoices
+      (invoice_type, invoice_number, customer, invoice_date, period_from, period_to, quantity, unit_price, discount_value, discount_type,
+       total_amount, delivery_address, city, state, zip, linked_po, notes, attachments, approval_status, created_by, approved_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(type, num, customer, invDate, pFrom, pTo, qty, price, disc,
+        ['%', '$/pl', '$'].includes(String(b.discount_type || '')) ? String(b.discount_type) : '%',
+        Math.round(total * 100) / 100, S(b.delivery_address, 300), S(b.city, 100), S(b.state, 40), S(b.zip, 20),
+        S(b.linked_po, 120), S(b.notes, 2000), JSON.stringify(atts),
+        isAdmin ? 'approved' : 'pending', req.userName || '', isAdmin ? (req.userName || '') : '');
+    res.json({ success: true, id: r.lastInsertRowid, invoice_number: num, approval_status: isAdmin ? 'approved' : 'pending' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 管理员审核: approve 计入 / reject 驳回 (可带原因, 提交人能看到)
+app.post('/api/acct/pallet-manual/:id/approval', requireAdmin, requireRole('admin'), (req, res) => {
+  const cur = db.prepare('SELECT * FROM pallet_manual_invoices WHERE id=?').get(req.params.id);
+  if (!cur) return res.status(404).json({ error: '记录不存在' });
+  if (cur.approval_status !== 'pending') return res.status(400).json({ error: '该发票不在待审核状态' });
+  const action = String((req.body || {}).action || '');
+  if (!['approve', 'reject'].includes(action)) return res.status(400).json({ error: '无效操作' });
+  db.prepare(`UPDATE pallet_manual_invoices SET approval_status=?, approved_by=?, approval_note=?, updated_at=datetime('now') WHERE id=?`)
+    .run(action === 'approve' ? 'approved' : 'rejected', req.userName || '',
+      String((req.body || {}).note || '').trim().slice(0, 300), cur.id);
+  auditLog('pallet_manual_' + action, { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers }, { targetType: 'pallet_manual_invoice', targetId: cur.id });
+  res.json({ success: true });
+});
+// 删除: 管理员随时可删; 会计只能删自己提交、还没审核通过的
+app.delete('/api/acct/pallet-manual/:id', requireAdmin, requireRole('accounting', 'admin'), (req, res) => {
+  const cur = db.prepare('SELECT * FROM pallet_manual_invoices WHERE id=?').get(req.params.id);
+  if (!cur) return res.status(404).json({ error: '记录不存在' });
+  if (req.userRole !== 'admin' && (cur.created_by !== req.userName || cur.approval_status === 'approved'))
+    return res.status(403).json({ error: '只能删除自己提交、还没审核通过的发票' });
+  _claimAtts(cur).forEach(a => _claimDeleteFile(a.path));
+  db.prepare('DELETE FROM pallet_manual_invoices WHERE id=?').run(cur.id);
+  db.prepare(`DELETE FROM acct_pay_notes WHERE target_type='palletmanual' AND target_id=?`).run(cur.id);
+  res.json({ success: true });
+});
+
 // 🚚 卡车费用页签: Bintique 全量卡车订单 (一行一单, 不从银行流水抓) +
 // 客服手动添加的卡车费用 (fee_records fee_type='truck')。付款状态只认
 // 会计付款批注 (卡车订单 target_type='truckorder', 手动记录用 fee 的)。
