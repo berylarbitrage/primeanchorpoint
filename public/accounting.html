@@ -123,6 +123,21 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
 /* 悬浮提示 (data-tip): 鼠标放上立刻出现, 点一下也能开关 (手机可用); 浮在最上层不会被表格裁掉 */
 #tipBox{position:fixed;z-index:5000;max-width:420px;background:#1f2937;color:#fff;font-size:.78rem;line-height:1.5;padding:.45rem .6rem;border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.25);white-space:pre-line;word-break:break-word;pointer-events:none;display:none}
 [data-tip]{cursor:help}
+/* 表头逐列 排序 / 筛选 (类似 Excel 的下拉) */
+.csf-th{cursor:pointer;user-select:none}
+.csf-btn{display:inline-block;margin-left:.25rem;padding:0 .25rem;border-radius:4px;color:var(--g400);font-size:.72rem;line-height:1.3}
+.csf-th:hover .csf-btn{background:#e2e8f0;color:#334155}
+.csf-btn.on{background:#dbeafe;color:#1d4ed8;font-weight:800}
+#csfPop{position:fixed;z-index:4000;width:260px;background:#fff;border:1px solid var(--g200);border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.22);padding:.55rem;font-size:.8rem;display:none}
+#csfPop .csf-sort{display:flex;gap:.3rem;margin-bottom:.45rem}
+#csfPop .csf-sort button{flex:1;padding:.3rem;border:1px solid var(--g200);border-radius:6px;background:#fff;cursor:pointer;font-size:.76rem}
+#csfPop .csf-sort button.on{background:#dbeafe;border-color:#93c5fd;color:#1d4ed8;font-weight:700}
+#csfPop .csf-list{max-height:230px;overflow:auto;border:1px solid var(--g100);border-radius:6px;padding:.25rem .35rem;margin:.35rem 0}
+#csfPop .csf-list label{display:flex;align-items:center;gap:.35rem;padding:.12rem 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+#csfPop .csf-list label span.n{margin-left:auto;color:var(--g400);font-size:.7rem}
+#csfPop input[type=text],#csfPop input[type=number],#csfPop input[type=date]{width:100%;box-sizing:border-box;padding:.28rem .4rem;border:1px solid var(--g200);border-radius:6px;font-size:.78rem}
+#csfPop .csf-row{display:flex;gap:.3rem;align-items:center;margin:.3rem 0}
+#csfPop .csf-foot{display:flex;gap:.3rem;justify-content:flex-end;margin-top:.4rem}
 </style>
 </head>
 <body>
@@ -400,13 +415,11 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <option value="with">只看有批注的</option>
       </select>
       <span id="invStats" style="font-size:.8rem;color:var(--g500)"></span>
+      <a id="invCsfClear" onclick="csfClear('inv')" style="display:none;font-size:.78rem;color:#1d4ed8;cursor:pointer;text-decoration:underline">✕ 清除表头排序/筛选</a>
       <button class="btn btn-sm btn-outline" onclick="invExportCsv()" title="按当前筛选导出，每张发票一行：收款银行 / 笔数 / 到账合计 / 差额 / 每笔明细 / 备注，方便逐张审核" style="margin-left:auto">⬇ 导出 CSV（逐张审核用）</button>
     </div>
     <div class="card inv-scroll">
-      <table id="invTable" class="acct-wide" style="font-size:.84rem"><thead><tr>
-        <th>发票号</th><th>日期</th><th>公司</th><th>账期</th><th style="text-align:right">发票金额</th><th>付款状态</th>
-        <th>收款银行</th><th style="text-align:right">笔数</th><th style="text-align:right">到账合计</th><th style="text-align:right">差额</th><th>收款明细（每笔，点开看银行记录）</th><th class="inv-note">付款备注</th><th>批注</th><th></th>
-      </tr></thead><tbody id="invBody"><tr><td colspan="14" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+      <table id="invTable" class="acct-wide" style="font-size:.84rem"><thead><tr id="invHeadRow"></tr></thead><tbody id="invBody"><tr><td colspan="14" style="color:var(--g400)">加载中…</td></tr></tbody></table>
     </div>
   </div>
 
@@ -4757,6 +4770,141 @@ function invExportCsv() {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
+// ═══ 表头逐列 排序 / 筛选 (通用) ═══
+// cols: [{ label, type: 'text'|'num'|'date'|'search'|null, get: r => 值, align }]
+//   text   = 勾选值列表 (带搜索)     num  = 最小/最大值     date = 起止日期
+//   search = 包含关键字 (值太散的列)  null = 这列不排序不筛选
+// 状态按表 key 存: _csf[key] = { sort: {i, dir}, f: {i: 条件} }
+const _csf = {};
+const _csfDefs = {};   // key → { cols, rerender }
+function _csfState(key) { return _csf[key] || (_csf[key] = { sort: null, f: {} }); }
+const _csfBlank = '（空）';
+function _csfTextVal(c, r) { const v = c.get(r); return v == null || String(v).trim() === '' ? _csfBlank : String(v); }
+function _csfNum(v) { if (v == null || v === '') return null; const n = Number(v); return Number.isFinite(n) ? n : null; }
+function csfApply(key, rows) {
+  const st = _csfState(key), cols = (_csfDefs[key] || {}).cols || [];
+  Object.keys(st.f).forEach(i => {
+    const c = cols[i], f = st.f[i];
+    if (!c || !f) return;
+    if (c.type === 'text') rows = rows.filter(r => f.vals.has(_csfTextVal(c, r)));
+    else if (c.type === 'search') { const q = f.q.toLowerCase(); rows = rows.filter(r => String(c.get(r) || '').toLowerCase().includes(q)); }
+    else if (c.type === 'num') rows = rows.filter(r => { const v = _csfNum(c.get(r)); if (v == null) return false; return (f.min == null || v >= f.min - 1e-9) && (f.max == null || v <= f.max + 1e-9); });
+    else if (c.type === 'date') rows = rows.filter(r => { const v = String(c.get(r) || ''); if (!v) return false; return (!f.from || v >= f.from) && (!f.to || v <= f.to); });
+  });
+  if (st.sort && cols[st.sort.i]) {
+    const c = cols[st.sort.i], d = st.sort.dir === 'desc' ? -1 : 1;
+    const val = r => c.type === 'num' ? _csfNum(c.get(r)) : (c.get(r) == null ? '' : String(c.get(r)));
+    rows = rows.slice().sort((a, b) => {
+      const x = val(a), y = val(b);
+      const ex = x == null || x === '', ey = y == null || y === '';
+      if (ex || ey) return ex === ey ? 0 : (ex ? 1 : -1);   // 空的永远排最后
+      return (c.type === 'num' ? x - y : String(x).localeCompare(String(y), 'zh')) * d;
+    });
+  }
+  return rows;
+}
+function csfHeadHtml(key) {
+  const st = _csfState(key), cols = (_csfDefs[key] || {}).cols || [];
+  return cols.map((c, i) => {
+    const al = c.align ? ` style="text-align:${c.align}"` : '';
+    const cls = c.cls ? ' ' + c.cls : '';
+    if (!c.type) return `<th class="${cls.trim()}"${al}>${c.label}</th>`;
+    const on = !!st.f[i], s = st.sort && st.sort.i === i ? (st.sort.dir === 'asc' ? '▲' : '▼') : '';
+    return `<th class="csf-th${cls}"${al} onclick="csfOpen('${key}',${i},this)" title="点一下：排序 / 筛选">${c.label}<span class="csf-btn${on || s ? ' on' : ''}">${s}${on ? '⛃' : ''}${!s && !on ? '▾' : ''}</span></th>`;
+  }).join('');
+}
+function csfActive(key) { const st = _csfState(key); return !!st.sort || Object.keys(st.f).length > 0; }
+function csfClear(key) { _csf[key] = { sort: null, f: {} }; csfClose(); (_csfDefs[key] || {}).rerender && _csfDefs[key].rerender(); }
+function csfClose() { const p = document.getElementById('csfPop'); if (p) p.style.display = 'none'; }
+document.addEventListener('mousedown', e => { const p = document.getElementById('csfPop'); if (p && p.style.display !== 'none' && !p.contains(e.target) && !e.target.closest('.csf-th')) csfClose(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') csfClose(); });
+let _csfCur = null;   // { key, i }
+function csfOpen(key, i, th) {
+  let p = document.getElementById('csfPop');
+  if (!p) { p = document.createElement('div'); p.id = 'csfPop'; document.body.appendChild(p); }
+  if (_csfCur && _csfCur.key === key && _csfCur.i === i && p.style.display !== 'none') { csfClose(); return; }
+  _csfCur = { key, i };
+  const def = _csfDefs[key], c = def.cols[i], st = _csfState(key), f = st.f[i];
+  const sd = st.sort && st.sort.i === i ? st.sort.dir : '';
+  const [aLbl, dLbl] = c.type === 'num' ? ['↑ 小→大', '↓ 大→小'] : c.type === 'date' ? ['↑ 旧→新', '↓ 新→旧'] : ['↑ A→Z', '↓ Z→A'];
+  let body = '';
+  if (c.type === 'text') {
+    const all = def.allRows ? def.allRows() : [];
+    const cnt = {};
+    all.forEach(r => { const v = _csfTextVal(c, r); cnt[v] = (cnt[v] || 0) + 1; });
+    const vals = Object.keys(cnt).sort((a, b) => a === _csfBlank ? 1 : b === _csfBlank ? -1 : a.localeCompare(b, 'zh'));
+    body = `<input type="text" placeholder="搜索…" oninput="csfListSearch(this.value)">
+      <div class="csf-row" style="font-size:.74rem"><a onclick="csfListAll(true)" style="cursor:pointer;color:#1d4ed8">全选</a><a onclick="csfListAll(false)" style="cursor:pointer;color:#1d4ed8">全不选</a></div>
+      <div class="csf-list">${vals.map(v => `<label data-v="${esc(v.toLowerCase())}"><input type="checkbox" value="${esc(v)}"${!f || f.vals.has(v) ? ' checked' : ''}>${esc(v)}<span class="n">${cnt[v]}</span></label>`).join('')}</div>`;
+  } else if (c.type === 'search') {
+    body = `<input type="text" id="csfQ" placeholder="包含…" value="${esc(f ? f.q : '')}" onkeydown="if(event.key==='Enter')csfOk()">`;
+  } else if (c.type === 'num') {
+    body = `<div class="csf-row"><input type="number" step="any" id="csfMin" placeholder="最小" value="${f && f.min != null ? f.min : ''}"> ~ <input type="number" step="any" id="csfMax" placeholder="最大" value="${f && f.max != null ? f.max : ''}"></div>`;
+  } else if (c.type === 'date') {
+    body = `<div class="csf-row"><input type="date" id="csfFrom" value="${f ? f.from || '' : ''}"></div><div class="csf-row"><input type="date" id="csfTo" value="${f ? f.to || '' : ''}"></div>`;
+  }
+  p.innerHTML = `<div style="font-weight:700;margin-bottom:.35rem">${c.label}</div>
+    <div class="csf-sort"><button class="${sd === 'asc' ? 'on' : ''}" onclick="csfSort('asc')">${aLbl}</button><button class="${sd === 'desc' ? 'on' : ''}" onclick="csfSort('desc')">${dLbl}</button></div>
+    <div style="font-size:.74rem;color:var(--g500)">筛选</div>${body}
+    <div class="csf-foot"><button class="btn btn-sm btn-outline" onclick="csfReset()">清除这列</button><button class="btn btn-sm btn-blue" onclick="csfOk()">确定</button></div>`;
+  p.style.display = 'block';
+  const rc = th.getBoundingClientRect();
+  p.style.top = Math.min(rc.bottom + 4, window.innerHeight - p.offsetHeight - 8) + 'px';
+  p.style.left = Math.max(8, Math.min(rc.left, window.innerWidth - p.offsetWidth - 8)) + 'px';
+  const first = p.querySelector('input[type=text],input[type=number],input[type=date]'); if (first) first.focus();
+}
+function csfListSearch(q) { q = String(q || '').toLowerCase(); document.querySelectorAll('#csfPop .csf-list label').forEach(l => { l.style.display = l.dataset.v.includes(q) ? '' : 'none'; }); }
+function csfListAll(on) { document.querySelectorAll('#csfPop .csf-list label').forEach(l => { if (l.style.display !== 'none') l.querySelector('input').checked = on; }); }
+function _csfRerender() { const def = _csfDefs[_csfCur.key]; if (def && def.rerender) def.rerender(); }
+function csfSort(dir) {
+  const st = _csfState(_csfCur.key);
+  st.sort = st.sort && st.sort.i === _csfCur.i && st.sort.dir === dir ? null : { i: _csfCur.i, dir };
+  document.querySelectorAll('#csfPop .csf-sort button').forEach((b, k) => b.classList.toggle('on', !!st.sort && st.sort.dir === (k ? 'desc' : 'asc')));
+  _csfRerender();
+}
+function csfReset() { delete _csfState(_csfCur.key).f[_csfCur.i]; csfClose(); _csfRerender(); }
+function csfOk() {
+  const { key, i } = _csfCur, c = _csfDefs[key].cols[i], st = _csfState(key);
+  const g = id => (document.getElementById(id) || {}).value || '';
+  let f = null;
+  if (c.type === 'text') {
+    const boxes = [...document.querySelectorAll('#csfPop .csf-list input')];
+    const vals = new Set(boxes.filter(b => b.checked).map(b => b.value));
+    if (vals.size < boxes.length) f = { vals };
+  } else if (c.type === 'search') { const q = g('csfQ').trim(); if (q) f = { q }; }
+  else if (c.type === 'num') { const min = _csfNum(g('csfMin')), max = _csfNum(g('csfMax')); if (min != null || max != null) f = { min, max }; }
+  else if (c.type === 'date') { const from = g('csfFrom'), to = g('csfTo'); if (from || to) f = { from, to }; }
+  if (f) st.f[i] = f; else delete st.f[i];
+  csfClose();
+  _csfRerender();
+}
+// 发票列表的列定义 (顺序和表格列一致)
+_csfDefs.inv = {
+  allRows: () => _invList,
+  rerender: () => renderInvList(),
+  cols: [
+    { label: '发票号', type: 'text', get: r => r.invoice_number },
+    { label: '日期', type: 'date', get: r => r.invoice_date },
+    { label: '公司', type: 'text', get: r => r.company_name },
+    { label: '账期', type: 'text', get: r => (r.period_start || '?') + ' ~ ' + (r.period_end || '?') },
+    { label: '发票金额', type: 'num', align: 'right', get: r => Number(r.subtotal) || 0 },
+    { label: '付款状态', type: 'text', get: r => (PAY_LABEL[_acctPayStatus(r)] || ['—'])[0] },
+    { label: '收款银行', type: 'text', get: r => _invPayInfo(r).banks.join(' / ') },
+    { label: '笔数', type: 'num', align: 'right', get: r => _invPayInfo(r).n || 0 },
+    { label: '到账合计', type: 'num', align: 'right', get: r => _invPayInfo(r).got },
+    { label: '差额', type: 'num', align: 'right', get: r => _invPayInfo(r).diff },
+    { label: '收款明细（每笔，点开看银行记录）', type: 'search', get: r => _invPayInfo(r).detail.map(d => `${d.date} ${d.amt.toFixed(2)} ${d.bank} ${d.desc}`).join(' | ') },
+    { label: '付款备注', type: 'search', cls: 'inv-note', get: r => _invPayNoteText(r) },
+    { label: '批注', type: 'num', get: r => r.annotation_count || 0 },
+    { label: '', type: null },
+  ],
+};
+// 已收到 / 未收到: 已收到 = 到账合计 (核查通过的钱); 未收到 = 发票金额减去已收到, 不够的部分 (多收的不抵别张)
+function _invRecvSums(rows) {
+  let got = 0, owe = 0;
+  rows.forEach(r => { const g = Number(_invPayInfo(r).got) || 0; got += g; owe += Math.max(0, _rowDue(r) - g); });
+  return { got: Math.round(got * 100) / 100, owe: Math.round(owe * 100) / 100 };
+}
 function _invFilteredRows() {
   const q = (document.getElementById('invSearch').value || '').toLowerCase();
   const flt = document.getElementById('invAnnFilter').value;
@@ -4767,13 +4915,19 @@ function _invFilteredRows() {
   else if (flt === 'review') rows = rows.filter(r => _acctPayStatus(r) === 'review');
   else if (flt === 'acctdone') rows = rows.filter(r => _acctPayStatus(r) === 'paid');
   else if (flt === 'diff') rows = rows.filter(r => { const d = _invPayInfo(r).diff; return d != null && Math.abs(d) >= 0.01; });
-  return rows;
+  return csfApply('inv', rows);
 }
 function renderInvList() {
   const rows = _invFilteredRows();
   const nOf = st => _invList.filter(r => _acctPayStatus(r) === st).length;
   const revN = nOf('review'), unN = nOf('unpaid');
-  document.getElementById('invStats').textContent = `共 ${rows.length} 张 · 合计 ${money(rows.reduce((s, r) => s + (Number(r.subtotal) || 0), 0))}${revN ? ` · 🟣 待审核 ${revN} 张` : ''}${unN ? ` · ❌ 未收款 ${unN} 张` : ''}`;
+  const rs = _invRecvSums(rows);
+  document.getElementById('invStats').innerHTML = `共 ${rows.length} 张 · 合计 ${money(rows.reduce((s, r) => s + (Number(r.subtotal) || 0), 0))}`
+    + ` · <b style="color:#047857" data-tip="当前列表里核查通过的到账合计">✅ 已收到 ${money(rs.got)}</b>`
+    + ` · <b style="color:#b91c1c" data-tip="当前列表里每张发票还差的钱加起来（发票金额 − 已收到，多收的不抵别张）">❌ 未收到 ${money(rs.owe)}</b>`
+    + `${revN ? ` · 🟣 待审核 ${revN} 张` : ''}${unN ? ` · ❌ 未收款 ${unN} 张` : ''}`;
+  document.getElementById('invHeadRow').innerHTML = csfHeadHtml('inv');
+  document.getElementById('invCsfClear').style.display = csfActive('inv') ? '' : 'none';
   document.getElementById('invBody').innerHTML = rows.length ? rows.map(r => `<tr>
     <td style="font-weight:700;white-space:nowrap">${esc(r.invoice_number)}</td>
     <td style="white-space:nowrap">${esc(r.invoice_date || '—')}</td>
