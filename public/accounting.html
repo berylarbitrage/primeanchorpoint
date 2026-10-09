@@ -4074,7 +4074,7 @@ async function truckFeeDelete(feeId) {
 // ── ✍️ 手动添加的木板发票: 明细 / 审核 / 删除 ──
 function _palletManualDetailRows(r, row) {
   const disc = Number(r.discount_value) > 0
-    ? (r.discount_type === '$' ? '$' + r.discount_value + '（总额）' : r.discount_type === '$/pl' ? '$' + r.discount_value + ' / 板' : r.discount_value + '%') : '';
+    ? (r.discount_type === '$' ? '$' + r.discount_value + '（总额）' : r.discount_type === '$/pl' ? '$' + r.discount_value + ' / ' + _pmaUnitZh(r.quantity_unit) : r.discount_value + '%') : '';
   const addr = [r.delivery_address, r.city, [r.state, r.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
   const atts = (r.attachments || []).map(a => /\.pdf(\?|$)/i.test(a.path)
     ? `<a onclick="showFileLightbox('${esc(a.path)}')" style="cursor:pointer;color:#0f4c6b;text-decoration:underline;margin-right:.5rem">📄 ${esc(a.name || 'PDF')}</a>`
@@ -4084,7 +4084,7 @@ function _palletManualDetailRows(r, row) {
     : `<span style="font-size:.7rem;background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;border-radius:4px;padding:0 5px">已审核通过</span>${r.approved_by ? ' · ' + esc(r.approved_by) : ''}`;
   return row('来源', `✍️ 手动添加 · ${esc(r.created_by || '')} ${st}`)
     + (r.approval_note ? row('审核备注', esc(r.approval_note)) : '')
-    + (r.quantity != null ? row('数量 × 单价', `${esc(String(r.quantity))} × ${r.unit_price != null ? money(r.unit_price) : '—'}`) : '')
+    + (r.quantity != null ? row('数量 × 单价', `${esc(String(r.quantity))} ${_pmaUnitZh(r.quantity_unit)} × ${r.unit_price != null ? money(r.unit_price) + ' / ' + _pmaUnitZh(r.quantity_unit) : '—'}`) : '')
     + (disc ? row('折扣', esc(disc)) : '')
     + (addr ? row('送货地址', esc(addr)) : '')
     + (r.linked_po ? row('关联 PO', esc(r.linked_po)) : '')
@@ -4125,7 +4125,19 @@ async function palletManualDelete(id) {
 // ＋ 添加木板发票: 表单照 pallet.bintique.com 的 New Order (销售/采购切换、客户、数量×单价、
 // 折扣 % / $/pl / $ total、服务日期、送货地址、关联 PO、备注) + 发票号 / 账期 / 附件。
 // 会计提交的进「待审核」, 管理员在查看明细里通过/驳回; 管理员自己加的直接通过。
-let _pmaFiles = [], _pmaType = 'sales', _pmaDisc = '%';
+let _pmaFiles = [], _pmaType = 'sales', _pmaDisc = '%', _pmaUnit = 'pallet';
+function _pmaUnitZh(u) { return u === 'truck' ? '车' : '板'; }
+// 数量单位: 按板 (pallet) 或按车 (truck) 算钱; 单价和「每单位减 $」折扣跟着单位走
+function _pmaSetUnit(u) {
+  _pmaUnit = u === 'truck' ? 'truck' : 'pallet';
+  document.querySelectorAll('.pmaUnitBtn').forEach(b => {
+    const on = b.dataset.u === _pmaUnit;
+    b.style.background = on ? '#8b6914' : '#f8fafc'; b.style.color = on ? '#fff' : '#1f2937';
+  });
+  document.getElementById('pmaPriceLbl').textContent = `UNIT PRICE 单价 ($ / ${_pmaUnit === 'truck' ? '车' : '板'})`;
+  document.querySelector('.pmaDiscBtn[data-d="$/pl"]').textContent = _pmaUnit === 'truck' ? '$/车' : '$/pl';
+  _pmaCalc();
+}
 function _pmaRenderFiles() {
   const el = document.getElementById('pmaFileList');
   el.innerHTML = _pmaFiles.length
@@ -4165,7 +4177,7 @@ function _pmaSetDisc(d) {
   });
   _pmaCalc();
 }
-// 总金额 = 数量 × 单价 减折扣 (% / 每板减 $ / 总额减 $); 总金额框可手动改
+// 总金额 = 数量 (板或车) × 单价 减折扣 (% / 每板或每车减 $ / 总额减 $); 总金额框可手动改
 function _pmaCalc() {
   const q = Number(document.getElementById('pmaQty').value) || 0;
   const p = Number(document.getElementById('pmaPrice').value) || 0;
@@ -4204,8 +4216,13 @@ function openPalletAdd() {
       <label style="${LB}">INVOICE NO. 发票号</label>
       <input type="text" id="pmaNum" placeholder="不填自动编号（MINV- / MPINV-…）" style="width:100%;margin-bottom:.55rem">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.55rem">
-        <div><label style="${LB}">QUANTITY 数量（板）</label><input type="number" step="1" min="0" id="pmaQty" value="1" style="width:100%" oninput="_pmaCalc()"></div>
-        <div><label style="${LB}">UNIT PRICE 单价 ($)</label><input type="number" step="0.01" min="0" id="pmaPrice" placeholder="Enter price" style="width:100%" oninput="_pmaCalc()"></div>
+        <div><label style="${LB}">QUANTITY 数量</label>
+          <div style="display:flex;gap:.3rem"><input type="number" step="1" min="0" id="pmaQty" value="1" style="flex:1;min-width:0" oninput="_pmaCalc()">
+            <div style="display:inline-flex;border:1px solid var(--g200);border-radius:8px;overflow:hidden;flex:0 0 auto">
+              <button class="pmaUnitBtn" data-u="pallet" style="${DB}" onclick="_pmaSetUnit('pallet')" title="按板数算钱">板</button>
+              <button class="pmaUnitBtn" data-u="truck" style="${DB}" onclick="_pmaSetUnit('truck')" title="按车数算钱">车</button>
+            </div></div></div>
+        <div><label id="pmaPriceLbl" style="${LB}">UNIT PRICE 单价 ($)</label><input type="number" step="0.01" min="0" id="pmaPrice" placeholder="Enter price" style="width:100%" oninput="_pmaCalc()"></div>
       </div>
       <label style="${LB}">DISCOUNT 折扣</label>
       <div style="display:inline-flex;border:1px solid var(--g200);border-radius:8px;overflow:hidden;margin-bottom:.35rem">
@@ -4265,6 +4282,7 @@ function openPalletAdd() {
   document.getElementById('pmaHint').style.display = USER.role === 'admin' ? 'none' : '';
   document.getElementById('pmaMsg').textContent = '';
   _pmaSetDisc('%');
+  _pmaSetUnit('pallet');
   _pmaFiles = [];
   _pmaRenderFiles();
   m.style.display = 'flex';
@@ -4286,6 +4304,7 @@ async function submitPalletAdd() {
     fd.append('customer', party);
     fd.append('invoice_number', v('pmaNum'));
     fd.append('quantity', v('pmaQty'));
+    fd.append('quantity_unit', _pmaUnit);
     fd.append('unit_price', v('pmaPrice'));
     if (Number(v('pmaDisc')) > 0) { fd.append('discount_value', v('pmaDisc')); fd.append('discount_type', _pmaDisc); }
     fd.append('total_amount', v('pmaTotal'));
