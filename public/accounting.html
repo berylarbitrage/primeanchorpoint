@@ -4120,11 +4120,13 @@ async function palletManualApprove(id, action) {
   try {
     await bapi(`/api/acct/pallet-manual/${id}/approval`, { method: 'POST', body: JSON.stringify({ action, note }) });
     toast(action === 'approve' ? '✅ 已审核通过' : '已驳回');
-    document.getElementById('palletDetailModal').style.display = 'none';
+    _palletDetailClose();
     await loadPalletList(true);
     if (_palletReview) { _palletReview.done++; palletReviewNext(); }
   } catch (e) { toast(e.message || '操作失败', true); }
 }
+// 明细弹窗可能还没建过 (直接在列表行里点 ✓/✗ 时), 关之前先判空
+function _palletDetailClose() { const m = document.getElementById('palletDetailModal'); if (m) m.style.display = 'none'; }
 let _palletPendShown = [];
 // 🔎 逐张审核: 按当前列表顺序一张张打开待审核发票的明细 (含附件), 通过 / 驳回 / 跳过后自动到下一张
 let _palletReview = null;
@@ -4140,7 +4142,7 @@ function palletReviewNext(skipId) {
   if (!next) {
     toast(`✅ 逐张审核完成：处理 ${_palletReview.done} 张${_palletReview.skipped.size ? `，跳过 ${_palletReview.skipped.size} 张` : ''}`);
     _palletReview = null;
-    document.getElementById('palletDetailModal').style.display = 'none';
+    _palletDetailClose();
     return;
   }
   openPalletDetail('m-' + next);
@@ -4151,7 +4153,7 @@ async function palletManualDelete(id) {
   try {
     await bapi(`/api/acct/pallet-manual/${id}`, { method: 'DELETE' });
     toast('已删除');
-    document.getElementById('palletDetailModal').style.display = 'none';
+    _palletDetailClose();
     loadPalletList(true);
   } catch (e) { toast(e.message || '删除失败', true); }
 }
