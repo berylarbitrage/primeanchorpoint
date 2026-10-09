@@ -166,10 +166,21 @@ function _bsPayeeDisplay(payee) {
   return p;
 }
 function _bsIsNA(box) { return !!(box && box.payee === BS_PAYEE_NA); }
+// 木板钱这些客户的账单不用填账期等信息: 发票号都填了、银行到账 = 发票合计就算齐
+const BS_PALLET_AMOUNT_ONLY = ['48'];
+function _bsPalletAmountOnly(box) {
+  return _bsPayeeKind(box) === 'pallet' && BS_PALLET_AMOUNT_ONLY.includes(_bsPalletParse(box.payee));
+}
+// 只认金额的木板客户: 金额对上了吗 (发票号都填了, 每张金额查得到或填了, 合计 = 银行到账)
+function _bsPalletAmountOk(box) {
+  const d = _bsAmtDiff(box);
+  return !!d && Math.abs(d.diff) < 0.01;
+}
 function _bsNoteSatisfied(box) {
   if (_bsIsNA(box)) return true;
   if (box.note && String(box.note).trim()) return true;
   const kind = _bsPayeeKind(box);
+  if (_bsPalletAmountOnly(box)) return _bsPalletAmountOk(box);
   if (kind === 'pallet' && _bsPalletParse(box.payee)
     && String(box.invoice_number || '').trim()
     && String(box.period_start || '').trim() && String(box.period_end || '').trim()) return true;
@@ -648,6 +659,10 @@ function _bsNoteMissing(box) {
     if (!String(box.purpose || '').trim()) missing.push('用途');
     if (!String(box.invoice_number || '').trim()) missing.push('发票号');
     if (!String(box.period_start || '').trim() || !String(box.period_end || '').trim()) missing.push('账期');
+  } else if (_bsPalletAmountOnly(box)) {
+    // 只要发票号 + 金额对得上; 金额对不上的走「差额」提示 (要写备注说明)
+    if (!_bsInvItems(box).some(it => String(it.inv || '').trim())) missing.push('账单号');
+    else if (!_bsAmtDiff(box)) missing.push('账单金额');
   } else if (kind === 'pallet' || kind === 'unload' || kind === 'employee') {
     if (!String(box.invoice_number || '').trim()) missing.push(kind === 'pallet' ? '账单号' : '发票号');
     if (!String(box.period_start || '').trim() || !String(box.period_end || '').trim()) missing.push('账期');
@@ -796,6 +811,8 @@ async function _bsAnnCheckRun(boxId) {
   if (box.id !== _annOpenId) return;
   el.innerHTML = _bsAnnCheckHtml(box, items, mode);
   _bsAutoSameCompanyNote(box, items);
+  // 只认金额的木板客户 (48): 发票金额查回来后才知道对不对得上, 备注框提示和行内徽章跟着刷新
+  if (_bsPalletAmountOnly(box)) { bsRefreshNoteState(box.id); annRefreshChip(box); }
 }
 // ── 同一家公司的两个名字 (发票抬头 vs 标注收款公司) ──
 // 命中时公司核对按同一家算 (不报「公司不符」、不拦审核), 备注空着就自动写上
