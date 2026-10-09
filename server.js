@@ -40574,7 +40574,7 @@ function _acctInvoiceAnnTxns() {
   // 发票号 / Bintique 账单号(大写) → [{id: 交易号, dir: in|out}]: 标注里写的发票号 + 关联的木板账单号都算
   const out = {};
   try {
-    db.prepare(`SELECT b.plaid_txn_id, b.direction, b.invoice_number, b.inv_items, b.links FROM bank_statement_txns b
+    db.prepare(`SELECT b.plaid_txn_id, b.direction, b.invoice_number, b.inv_items, b.links, t.amount AS tamt FROM bank_statement_txns b
         JOIN plaid_transactions t ON t.txn_id=b.plaid_txn_id
       WHERE b.kind='box' AND b.plaid_txn_id<>''
         AND (COALESCE(b.invoice_number,'')<>'' OR COALESCE(b.inv_items,'[]') NOT IN ('','[]') OR COALESCE(b.links,'[]') NOT IN ('','[]'))
@@ -40592,7 +40592,7 @@ function _acctInvoiceAnnTxns() {
       });
       for (const num of new Set(nums)) {
         const arr = out[num] || (out[num] = []);
-        if (!arr.some(x => x.id === b.plaid_txn_id)) arr.push({ id: b.plaid_txn_id, dir: b.direction || 'in' });
+        if (!arr.some(x => x.id === b.plaid_txn_id)) arr.push({ id: b.plaid_txn_id, dir: b.direction || 'in', amt: Math.abs(Number(b.tamt) || 0) });
       }
     });
   } catch (e) {}
@@ -40624,6 +40624,13 @@ function _acctBaseCount(rows) {
 function _acctAnnLookup(ann, r, baseCount) {
   const seen = new Set(), out = [];
   for (const k of _acctRowKeys(r, baseCount)) for (const x of (ann[k] || [])) if (!seen.has(x.id)) { seen.add(x.id); out.push(x); }
+  // 标注里只写了不带 -01/-02 的基号, 而列表里这个基号有好几张 (改版重开 / 同期两张):
+  // 银行这笔金额正好等于本张金额的才认, 免得挂到兄弟账单上
+  const base = _acctBaseNo(r.invoice_number);
+  if (base && baseCount && baseCount[base] > 1) {
+    const due = Number(r.subtotal != null ? r.subtotal : r.amount) || 0;
+    for (const x of (ann[base] || [])) if (!seen.has(x.id) && due > 0 && Math.abs((x.amt || 0) - due) < 0.005) { seen.add(x.id); out.push(x); }
+  }
   return out;
 }
 // 付款批注关联的交易号有找不到的: 按单号从银行标注找回 (标注在入账换号时已跟着改过);

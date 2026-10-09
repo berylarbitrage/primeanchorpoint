@@ -969,13 +969,10 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <option value="done">✅ 已收款 / 已付款（核查通过）</option>
       </select>
       <span id="palletStats" style="font-size:.8rem;color:var(--g500)"></span>
+      <a id="palletCsfClear" onclick="csfClear('pallet')" style="display:none;font-size:.78rem;color:#1d4ed8;cursor:pointer;text-decoration:underline">✕ 清除表头排序/筛选</a>
     </div>
     <div class="card inv-scroll">
-      <table id="palletTable" class="acct-wide" style="font-size:.84rem"><thead><tr>
-        <th>日期</th><th>类型</th><th>木板客户 / 供应商</th><th>发票号</th><th>账期</th><th style="text-align:right">金额</th><th>付款状态</th>
-        <th>银行账户</th><th style="text-align:right">笔数</th><th style="text-align:right">银行合计</th><th style="text-align:right">差额</th><th>银行明细（每笔，点开看银行记录）</th><th class="inv-note">付款备注</th>
-        <th>Bintique 付款日</th><th style="text-align:right">Bintique 实付</th><th>Bintique 付款方</th><th></th>
-      </tr></thead><tbody id="palletBody"><tr><td colspan="17" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+      <table id="palletTable" class="acct-wide" style="font-size:.84rem"><thead><tr id="palletHeadRow"></tr></thead><tbody id="palletBody"><tr><td colspan="17" style="color:var(--g400)">加载中…</td></tr></tbody></table>
     </div>
     <p style="font-size:.75rem;color:var(--g400);margin-top:.5rem">这里显示 pallet.bintique.com 的全部销售/采购发票（一行一张）；付款状态和发票一样只认核查通过的钱（关联的银行交易在银行记录里找得到、且银行标注审核通过），ⓘ 悬浮看原因；「Bintique 记录」列是对方系统自己的状态，仅供参考。</p>
   </div>
@@ -4067,10 +4064,19 @@ function renderPalletList() {
   else if (flt === 'todo') rows = rows.filter(r => _palletStatus(r) !== 'paid');
   else if (flt === 'done') rows = rows.filter(r => _palletStatus(r) === 'paid');
   if (q) rows = rows.filter(r => [r.customer, r.invoice_number, (r.bintique && r.bintique.paid_by) || ''].join(' ').toLowerCase().includes(q));
+  rows = csfApply('pallet', rows);
   const sales = rows.filter(r => r.direction === 'in'), purch = rows.filter(r => r.direction === 'out');
-  const salesSum = sales.reduce((s, r) => s + r.amount, 0), purchSum = purch.reduce((s, r) => s + r.amount, 0);
+  const salesSum = sales.reduce((s, r) => s + (Number(r.amount) || 0), 0), purchSum = purch.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const sr = _invRecvSums(sales), pr = _invRecvSums(purch);   // 已收/已付 = 核查通过的钱; 未收/未付 = 每张还差的钱之和
   const doneN = _palletRows.filter(r => _palletStatus(r) === 'paid').length;
-  document.getElementById('palletStats').textContent = `账单共 ${_palletRows.length} 张 · 销售 ${sales.length} 张 ${money(salesSum)} · 采购 ${purch.length} 张 ${money(purchSum)} · 核查通过已收/付 ${doneN} 张`;
+  const net = salesSum - purchSum;
+  const chip = (t, c, tip) => `<b style="color:${c}"${tip ? ` data-tip="${tip}"` : ''}>${t}</b>`;
+  document.getElementById('palletStats').innerHTML = `共 ${rows.length} 张${rows.length !== _palletRows.length ? `（全部 ${_palletRows.length}）` : ''}`
+    + `<br>💰 收入（销售 ${sales.length} 张）${chip(money(salesSum), '#047857')} · ${chip('✅ 已收到 ' + money(sr.got), '#047857', '核查通过的到账')} · ${chip('❌ 还没收到 ' + money(sr.owe), '#b91c1c', '每张销售发票还差的钱加起来')}`
+    + `<br>💸 支出（采购 ${purch.length} 张）${chip(money(purchSum), '#b91c1c')} · ${chip('✅ 已付 ' + money(pr.got), '#047857', '核查通过的付款')} · ${chip('⏳ 还没付 ' + money(pr.owe), '#b45309', '每张采购发票还欠的钱加起来')}`
+    + ` · 净额（收入 − 支出）${chip((net >= 0 ? '+' : '−') + money(Math.abs(net)), net >= 0 ? '#047857' : '#b91c1c')} · 核查通过已收/付 ${doneN} 张`;
+  document.getElementById('palletHeadRow').innerHTML = csfHeadHtml('pallet');
+  document.getElementById('palletCsfClear').style.display = csfActive('pallet') ? '' : 'none';
   document.getElementById('palletBody').innerHTML = rows.length ? rows.map(r => `<tr>
     <td style="white-space:nowrap">${esc(r.date)}</td>
     <td>${_palletTypePill(r)}</td>
@@ -4897,6 +4903,30 @@ _csfDefs.inv = {
     { label: '收款明细（每笔，点开看银行记录）', type: 'search', get: r => _invPayInfo(r).detail.map(d => `${d.date} ${d.amt.toFixed(2)} ${d.bank} ${d.desc}`).join(' | ') },
     { label: '付款备注', type: 'search', cls: 'inv-note', get: r => _invPayNoteText(r) },
     { label: '批注', type: 'num', get: r => r.annotation_count || 0 },
+    { label: '', type: null },
+  ],
+};
+// 木板账单的列定义 (顺序和表格列一致)
+_csfDefs.pallet = {
+  allRows: () => _palletRows,
+  rerender: () => renderPalletList(),
+  cols: [
+    { label: '日期', type: 'date', get: r => r.date },
+    { label: '类型', type: 'text', get: r => r.direction === 'in' ? '销售发票' : '采购发票' },
+    { label: '木板客户 / 供应商', type: 'text', get: r => r.customer },
+    { label: '发票号', type: 'text', get: r => r.invoice_number },
+    { label: '账期', type: 'text', get: r => (r.period_start || r.period_end) ? (r.period_start || '?') + ' ~ ' + (r.period_end || '?') : '' },
+    { label: '金额', type: 'num', align: 'right', get: r => Number(r.amount) || 0 },
+    { label: '付款状态', type: 'text', get: r => { const st = _palletStatus(r); return r.direction === 'in' ? (PAY_LABEL[st] || ['—'])[0] : ({ paid: '已付款', partial: '部分付款', unpaid: '未付款', review: '待审核' }[st] || '—'); } },
+    { label: '银行账户', type: 'text', get: r => _invPayInfo(r).banks.join(' / ') },
+    { label: '笔数', type: 'num', align: 'right', get: r => _invPayInfo(r).n || 0 },
+    { label: '银行合计', type: 'num', align: 'right', get: r => _invPayInfo(r).got },
+    { label: '差额', type: 'num', align: 'right', get: r => _invPayInfo(r).diff },
+    { label: '银行明细（每笔，点开看银行记录）', type: 'search', get: r => _invPayInfo(r).detail.map(d => `${d.date} ${d.amt.toFixed(2)} ${d.bank} ${d.desc}`).join(' | ') },
+    { label: '付款备注', type: 'search', cls: 'inv-note', get: r => _invPayNoteText(r) },
+    { label: 'Bintique 付款日', type: 'date', get: r => (r.bintique || {}).payment_date },
+    { label: 'Bintique 实付', type: 'num', align: 'right', get: r => (r.bintique || {}).payment_amount },
+    { label: 'Bintique 付款方', type: 'text', get: r => (r.bintique || {}).paid_by },
     { label: '', type: null },
   ],
 };
