@@ -961,10 +961,13 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
   <div id="panePallet" style="display:none">
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
       <input type="text" id="palletSearch" placeholder="搜客户 / 发票号…" oninput="renderPalletList()" style="width:220px">
+      <button class="btn btn-sm btn-blue" id="palletAddBtn" onclick="openPalletAdd()" style="display:none">＋ 添加发票</button>
       <select id="palletFilter" onchange="renderPalletList()">
         <option value="">全部</option>
         <option value="sales">销售发票</option>
         <option value="purchase">采购发票</option>
+        <option value="manual">✍️ 手动添加的</option>
+        <option value="pending">⏳ 待管理员审核</option>
         <option value="todo">⏳ 未收款 / 未付款（核查口径）</option>
         <option value="done">✅ 已收款 / 已付款（核查通过）</option>
       </select>
@@ -974,7 +977,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <div class="card inv-scroll">
       <table id="palletTable" class="acct-wide" style="font-size:.84rem"><thead><tr id="palletHeadRow"></tr></thead><tbody id="palletBody"><tr><td colspan="17" style="color:var(--g400)">加载中…</td></tr></tbody></table>
     </div>
-    <p style="font-size:.75rem;color:var(--g400);margin-top:.5rem">这里显示 pallet.bintique.com 的全部销售/采购发票（一行一张）；付款状态和发票一样只认核查通过的钱（关联的银行交易在银行记录里找得到、且银行标注审核通过），ⓘ 悬浮看原因；「Bintique 记录」列是对方系统自己的状态，仅供参考。</p>
+    <p style="font-size:.75rem;color:var(--g400);margin-top:.5rem">这里显示 pallet.bintique.com 的全部销售/采购发票（一行一张）+ 会计手动添加的发票（✍️，管理员审核通过才计入汇总、才能记付款）；付款状态和发票一样只认核查通过的钱（关联的银行交易在银行记录里找得到、且银行标注审核通过），ⓘ 悬浮看原因；「Bintique 记录」列是对方系统自己的状态，仅供参考。</p>
   </div>
 
   <!-- 🚚 卡车费用 (Bintique 卡车订单联动)：卡车费交易 + pallet.bintique.com link 过来的卡车订单 -->
@@ -1794,8 +1797,8 @@ function _bankPickRowHtml(t2, on, hit, acctShort, toggleFn) {
   </label>`;
 }
 async function openPayNote(type, id) {
-  const list = type === 'invoice' ? _invList : type === 'fee' ? _feeList : type === 'referralweek' ? _refWeeks : type === 'referral' ? _refList : (type === 'pallet' || type === 'palletbill') ? _palletRows : (type === 'truck' || type === 'truckfee' || type === 'truckorder') ? _truckRows : _claimList;
-  const item = type === 'truckfee' ? list.find(x => x.fee_id === id) : type === 'truckorder' ? list.find(x => x.order_id === id) : list.find(x => x.id === id);
+  const list = type === 'invoice' ? _invList : type === 'fee' ? _feeList : type === 'referralweek' ? _refWeeks : type === 'referral' ? _refList : (type === 'pallet' || type === 'palletbill' || type === 'palletmanual') ? _palletRows : (type === 'truck' || type === 'truckfee' || type === 'truckorder') ? _truckRows : _claimList;
+  const item = type === 'truckfee' ? list.find(x => x.fee_id === id) : type === 'truckorder' ? list.find(x => x.order_id === id) : type === 'palletmanual' ? list.find(x => x.manual_id === id) : list.find(x => x.id === id);
   if (!item) return;
   _payTarget = { type, id };
   _payTargetAmt = type === 'invoice' ? (Number(item.subtotal) || 0) : (Number(item.amount) || 0);
@@ -1807,7 +1810,7 @@ async function openPayNote(type, id) {
         ? `🤝 介绍费 · 第 ${item.week_no} 周 · ${item.ref.worker_name || ''}（工头 ${item.ref.foreman_name || ''}）· 发票 ${item.invoice.invoice_number || ''} ${item.invoice.period_start ? item.invoice.period_start + ' ~ ' + (item.invoice.period_end || '') : ''}${item.amount != null ? ' · ' + money(item.amount) : ''}`
       : type === 'referral'
         ? `🤝 介绍费 · 工头 ${item.foreman_name || ''} 介绍 ${item.worker_name || ''} · ${item.amount != null ? money(item.amount) : ''}`
-        : (type === 'pallet' || type === 'palletbill')
+        : (type === 'pallet' || type === 'palletbill' || type === 'palletmanual')
           ? `🪵 木板账单 ${item.invoice_number || ''} · ${item.customer || ''} · ${item.amount != null ? money(item.amount) : ''}`
           : (type === 'truck' || type === 'truckfee' || type === 'truckorder')
             ? `🚚 卡车费用 ${item.rental_code || ''} · ${item.customer || ''} · ${item.amount != null ? money(item.amount) : ''}`
@@ -1934,8 +1937,8 @@ async function pnDelPhoto(u) {
   try {
     const r = await bapi(`/api/acct/pay-notes/${_pnNoteId}/photos?photo=${encodeURIComponent(u.split('/').pop())}`, { method: 'DELETE' });
     pnRenderPhotos(r.photos_urls || []);
-    const list = !_payTarget ? null : _payTarget.type === 'invoice' ? _invList : _payTarget.type === 'fee' ? _feeList : _payTarget.type === 'referralweek' ? _refWeeks : type === 'referral' ? _refList : (_payTarget.type === 'pallet' || _payTarget.type === 'palletbill') ? _palletRows : (_payTarget.type === 'truck' || _payTarget.type === 'truckfee' || _payTarget.type === 'truckorder') ? _truckRows : _claimList;
-    const item = list && _payTarget ? (_payTarget.type === 'truckfee' ? list.find(x => x.fee_id === _payTarget.id) : _payTarget.type === 'truckorder' ? list.find(x => x.order_id === _payTarget.id) : list.find(x => x.id === _payTarget.id)) : null;
+    const list = !_payTarget ? null : _payTarget.type === 'invoice' ? _invList : _payTarget.type === 'fee' ? _feeList : _payTarget.type === 'referralweek' ? _refWeeks : _payTarget.type === 'referral' ? _refList : (_payTarget.type === 'pallet' || _payTarget.type === 'palletbill' || _payTarget.type === 'palletmanual') ? _palletRows : (_payTarget.type === 'truck' || _payTarget.type === 'truckfee' || _payTarget.type === 'truckorder') ? _truckRows : _claimList;
+    const item = list && _payTarget ? (_payTarget.type === 'truckfee' ? list.find(x => x.fee_id === _payTarget.id) : _payTarget.type === 'truckorder' ? list.find(x => x.order_id === _payTarget.id) : _payTarget.type === 'palletmanual' ? list.find(x => x.manual_id === _payTarget.id) : list.find(x => x.id === _payTarget.id)) : null;
     if (item && item.pay_note) item.pay_note.photos_urls = r.photos_urls || [];
   } catch (e) { toast(e.message || '删除失败', true); }
 }
@@ -1961,12 +1964,12 @@ async function savePayNote() {
       if (up.error) throw new Error(up.error);
       pn.photos_urls = up.photos_urls || [];
     }
-    const list = _payTarget.type === 'invoice' ? _invList : _payTarget.type === 'fee' ? _feeList : _payTarget.type === 'referralweek' ? _refWeeks : type === 'referral' ? _refList : (_payTarget.type === 'pallet' || _payTarget.type === 'palletbill') ? _palletRows : (_payTarget.type === 'truck' || _payTarget.type === 'truckfee' || _payTarget.type === 'truckorder') ? _truckRows : _claimList;
-    const item = _payTarget.type === 'truckfee' ? list.find(x => x.fee_id === _payTarget.id) : _payTarget.type === 'truckorder' ? list.find(x => x.order_id === _payTarget.id) : list.find(x => x.id === _payTarget.id);
+    const list = _payTarget.type === 'invoice' ? _invList : _payTarget.type === 'fee' ? _feeList : _payTarget.type === 'referralweek' ? _refWeeks : _payTarget.type === 'referral' ? _refList : (_payTarget.type === 'pallet' || _payTarget.type === 'palletbill' || _payTarget.type === 'palletmanual') ? _palletRows : (_payTarget.type === 'truck' || _payTarget.type === 'truckfee' || _payTarget.type === 'truckorder') ? _truckRows : _claimList;
+    const item = _payTarget.type === 'truckfee' ? list.find(x => x.fee_id === _payTarget.id) : _payTarget.type === 'truckorder' ? list.find(x => x.order_id === _payTarget.id) : _payTarget.type === 'palletmanual' ? list.find(x => x.manual_id === _payTarget.id) : list.find(x => x.id === _payTarget.id);
     if (item) item.pay_note = pn;
     closePayNote();
     toast('✅ 付款批注已保存');
-    if (_payTarget.type === 'invoice') renderInvList(); else if (_payTarget.type === 'fee') renderFeeList(); else if (_payTarget.type === 'referral' || _payTarget.type === 'referralweek') renderRefList(); else if (_payTarget.type === 'pallet' || _payTarget.type === 'palletbill') renderPalletList(); else if (_payTarget.type === 'truck' || _payTarget.type === 'truckfee' || _payTarget.type === 'truckorder') renderTruckList(); else renderClaimList();
+    if (_payTarget.type === 'invoice') renderInvList(); else if (_payTarget.type === 'fee') renderFeeList(); else if (_payTarget.type === 'referral' || _payTarget.type === 'referralweek') renderRefList(); else if (_payTarget.type === 'pallet' || _payTarget.type === 'palletbill' || _payTarget.type === 'palletmanual') renderPalletList(); else if (_payTarget.type === 'truck' || _payTarget.type === 'truckfee' || _payTarget.type === 'truckorder') renderTruckList(); else renderClaimList();
   } catch (e) { toast(e.message || '保存失败', true); }
   finally { btn.disabled = false; }
 }
@@ -3698,7 +3701,9 @@ async function feeDelete(id) {
 
 // ── 🪵 木板账单 (Bintique)：全量账单台账, 一行一张发票, 不混银行流水 ──
 let _palletRows = [], _palletLoaded = false;
+function canAddPallet() { return ['accounting', 'admin'].includes(USER.role); }
 async function loadPalletList(force) {
+  document.getElementById('palletAddBtn').style.display = canAddPallet() ? '' : 'none';
   if (_palletLoaded && !force) { renderPalletList(); return; }
   try {
     const r = await api('/api/acct/pallet-bills');
@@ -3718,7 +3723,7 @@ async function loadPalletList(force) {
 // 发票号可点击, 打开「查看明细」直接看账单
 function _palletInvCell(r) {
   return r.invoice_number
-    ? `<a onclick="openPalletDetail(${r.id})" title="点开查看明细" style="cursor:pointer;font-weight:600;white-space:nowrap;color:#0f4c6b;text-decoration:underline">${esc(r.invoice_number)}</a>`
+    ? `<a onclick="openPalletDetail('${r.id}')" title="点开查看明细" style="cursor:pointer;font-weight:600;white-space:nowrap;color:#0f4c6b;text-decoration:underline">${esc(r.invoice_number)}</a>`
     : '<span style="color:var(--g300)">—</span>';
 }
 function _palletPeriodCell(r) {
@@ -3727,10 +3732,20 @@ function _palletPeriodCell(r) {
     : '<span style="color:var(--g300)">—</span>';
 }
 function _palletTypePill(r) {
-  return r.direction === 'in'
+  return (r.direction === 'in'
     ? '<span style="font-size:.68rem;background:#fffbeb;border:1px solid #fbbf24;color:#92400e;border-radius:4px;padding:1px 6px;white-space:nowrap">销售发票</span>'
-    : '<span style="font-size:.68rem;background:#f5f3ff;border:1px solid #c4b5fd;color:#5b21b6;border-radius:4px;padding:1px 6px;white-space:nowrap">采购发票</span>';
+    : '<span style="font-size:.68rem;background:#f5f3ff;border:1px solid #c4b5fd;color:#5b21b6;border-radius:4px;padding:1px 6px;white-space:nowrap">采购发票</span>')
+    + (r.manual ? ' ' + _palletManualBadge(r) : '');
 }
+// 手动添加的发票: ✍️ + 审核状态 (待审核 / 已驳回; 审核通过只显示 ✍️)
+function _palletManualBadge(r) {
+  const tip = `手动添加 · ${r.created_by || ''}${r.approved_by ? ' · 审核人 ' + r.approved_by : ''}${r.approval_note ? '\n原因：' + r.approval_note : ''}`;
+  const st = r.approval_status === 'pending' ? '<span style="font-size:.62rem;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;border-radius:4px;padding:0 4px;margin-left:2px">待审核</span>'
+    : r.approval_status === 'rejected' ? '<span style="font-size:.62rem;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:4px;padding:0 4px;margin-left:2px">已驳回</span>' : '';
+  return `<span data-tip="${esc(tip).replace(/"/g, '&quot;')}" style="white-space:nowrap;cursor:help">✍️${st}</span>`;
+}
+// 只有非手动 / 审核通过的发票才计入汇总和付款
+function _palletCounted(r) { return !r.manual || r.approval_status === 'approved'; }
 // Bintique 那边的收付记录, 只作参考信息 —— 不显示对方的「已付款」状态:
 // 这里所有账单一律从未收款开始, 收没收款只认本系统会计的付款批注,
 // 由会计逐张核对处理 (和发票页「不显示历史已收款」同一规矩)。
@@ -3757,6 +3772,7 @@ function _palletStatus(r) {
   return (s === 'paid' || s === 'partial') ? s : 'unpaid';
 }
 function _palletPayBadge(r) {
+  if (r.manual && r.approval_status !== 'approved') return '<span style="color:var(--g400);font-size:.76rem;white-space:nowrap">审核通过后才记收付</span>';
   const st = _palletStatus(r);
   const why = r.verify && r.verify.reasons.length
     ? ` <span data-tip="${esc('没核查通过的：\n' + r.verify.reasons.join('\n')).replace(/"/g, '&quot;')}" style="cursor:help;color:#b45309;font-weight:700">ⓘ</span>` : '';
@@ -3766,7 +3782,7 @@ function _palletPayBadge(r) {
 }
 // 🪵 木板账单明细弹窗: 账单信息 + 内嵌账单明细 / PDF + 付款批注入口
 function openPalletDetail(id) {
-  const r = _palletRows.find(x => x.id === Number(id));
+  const r = _palletRows.find(x => String(x.id) === String(id));
   if (!r) return;
   let m = document.getElementById('palletDetailModal');
   if (!m) {
@@ -3794,7 +3810,7 @@ function openPalletDetail(id) {
     ${row('账期', _palletPeriodCell(r))}
     ${row('金额', `<b style="color:${r.direction === 'in' ? '#047857' : '#b91c1c'}">${money(r.amount)}</b>`)}
     ${row('付款状态', _palletPayBadge(r) + ' <span style="font-size:.72rem;color:var(--g400)">（按本系统会计批注）</span>')}
-    ${row('Bintique 记录', _palletBintiqueCell(r))}
+    ${r.manual ? _palletManualDetailRows(r, row) : row('Bintique 记录', _palletBintiqueCell(r))}
     ${pnPhotos ? row('批注凭证', pnPhotos) : ''}
     ${b.pdf_url ? `<div style="margin-top:.7rem">
       <div style="font-weight:700;color:#0f4c6b;font-size:.84rem;margin-bottom:.3rem">📄 PDF 账单（来自 pallet.bintique.com）</div>
@@ -3803,7 +3819,7 @@ function openPalletDetail(id) {
       <div style="font-weight:700;color:#92400e;font-size:.84rem;margin-bottom:.3rem">🪵 账单明细（来自 pallet.bintique.com）</div>
       <iframe src="${esc(b.doc_url)}" style="width:100%;height:62vh;border:1px solid var(--g200);border-radius:8px;background:#fff"></iframe>
     </div>` : ''}
-    ${canAnnotate() ? `<div style="margin-top:.7rem;display:flex;justify-content:flex-end;gap:.5rem;align-items:center">
+    ${r.manual ? _palletManualActions(r) : canAnnotate() ? `<div style="margin-top:.7rem;display:flex;justify-content:flex-end;gap:.5rem;align-items:center">
       <button class="btn btn-sm btn-blue" onclick="document.getElementById('palletDetailModal').style.display='none';openPayNote('palletbill', ${r.id})">💵 付款批注</button>
     </div>` : ''}
   </div>`;
@@ -4055,29 +4071,271 @@ async function truckFeeDelete(feeId) {
     loadTruckList(true);
   } catch (e) { toast(e.message || '删除失败', true); }
 }
+// ── ✍️ 手动添加的木板发票: 明细 / 审核 / 删除 ──
+function _palletManualDetailRows(r, row) {
+  const disc = Number(r.discount_value) > 0
+    ? (r.discount_type === '$' ? '$' + r.discount_value + '（总额）' : r.discount_type === '$/pl' ? '$' + r.discount_value + ' / 板' : r.discount_value + '%') : '';
+  const addr = [r.delivery_address, r.city, [r.state, r.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  const atts = (r.attachments || []).map(a => /\.pdf(\?|$)/i.test(a.path)
+    ? `<a onclick="showFileLightbox('${esc(a.path)}')" style="cursor:pointer;color:#0f4c6b;text-decoration:underline;margin-right:.5rem">📄 ${esc(a.name || 'PDF')}</a>`
+    : `<img src="${esc(a.path)}" onclick="showImgLightbox('${esc(a.path)}')" title="${esc(a.name || '')}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;border:1px solid var(--g200);cursor:zoom-in;margin-right:.3rem">`).join('');
+  const st = r.approval_status === 'pending' ? '<span style="font-size:.7rem;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;border-radius:4px;padding:0 5px">待管理员审核</span>'
+    : r.approval_status === 'rejected' ? `<span style="font-size:.7rem;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:4px;padding:0 5px">已驳回</span>${r.approved_by ? ' · ' + esc(r.approved_by) : ''}`
+    : `<span style="font-size:.7rem;background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;border-radius:4px;padding:0 5px">已审核通过</span>${r.approved_by ? ' · ' + esc(r.approved_by) : ''}`;
+  return row('来源', `✍️ 手动添加 · ${esc(r.created_by || '')} ${st}`)
+    + (r.approval_note ? row('审核备注', esc(r.approval_note)) : '')
+    + (r.quantity != null ? row('数量 × 单价', `${esc(String(r.quantity))} × ${r.unit_price != null ? money(r.unit_price) : '—'}`) : '')
+    + (disc ? row('折扣', esc(disc)) : '')
+    + (addr ? row('送货地址', esc(addr)) : '')
+    + (r.linked_po ? row('关联 PO', esc(r.linked_po)) : '')
+    + (r.notes ? row('备注', esc(r.notes)) : '')
+    + row('附件', atts || '<span style="color:var(--g400)">无</span>');
+}
+function _palletManualActions(r) {
+  const btns = [];
+  if (USER.role === 'admin' && r.approval_status === 'pending') {
+    btns.push(`<button class="btn btn-sm" style="color:#047857;border-color:#a7f3d0" onclick="palletManualApprove(${r.manual_id}, 'approve')">✓ 审核通过</button>`);
+    btns.push(`<button class="btn btn-sm" style="color:#b91c1c;border-color:#fecaca" onclick="palletManualApprove(${r.manual_id}, 'reject')">✗ 驳回</button>`);
+  }
+  if (USER.role === 'admin' || (USER.role === 'accounting' && r.created_by === USER.username && r.approval_status !== 'approved'))
+    btns.push(`<button class="btn btn-sm" style="color:#b91c1c" onclick="palletManualDelete(${r.manual_id})">🗑 删除</button>`);
+  if (canAnnotate() && r.approval_status === 'approved')
+    btns.push(`<button class="btn btn-sm btn-blue" onclick="document.getElementById('palletDetailModal').style.display='none';openPayNote('palletmanual', ${r.manual_id})">💵 付款批注</button>`);
+  return btns.length ? `<div style="margin-top:.7rem;display:flex;justify-content:flex-end;gap:.5rem;align-items:center;flex-wrap:wrap">${btns.join('')}</div>` : '';
+}
+async function palletManualApprove(id, action) {
+  let note = '';
+  if (action === 'reject') { note = prompt('驳回原因（提交人能看到，可不填）：', ''); if (note === null) return; }
+  try {
+    await bapi(`/api/acct/pallet-manual/${id}/approval`, { method: 'POST', body: JSON.stringify({ action, note }) });
+    toast(action === 'approve' ? '✅ 已审核通过' : '已驳回');
+    document.getElementById('palletDetailModal').style.display = 'none';
+    loadPalletList(true);
+  } catch (e) { toast(e.message || '操作失败', true); }
+}
+async function palletManualDelete(id) {
+  if (!confirm('删除这张手动添加的木板发票？（附件和付款批注一并删除）')) return;
+  try {
+    await bapi(`/api/acct/pallet-manual/${id}`, { method: 'DELETE' });
+    toast('已删除');
+    document.getElementById('palletDetailModal').style.display = 'none';
+    loadPalletList(true);
+  } catch (e) { toast(e.message || '删除失败', true); }
+}
+// ＋ 添加木板发票: 表单照 pallet.bintique.com 的 New Order (销售/采购切换、客户、数量×单价、
+// 折扣 % / $/pl / $ total、服务日期、送货地址、关联 PO、备注) + 发票号 / 账期 / 附件。
+// 会计提交的进「待审核」, 管理员在查看明细里通过/驳回; 管理员自己加的直接通过。
+let _pmaFiles = [], _pmaType = 'sales', _pmaDisc = '%';
+function _pmaRenderFiles() {
+  const el = document.getElementById('pmaFileList');
+  el.innerHTML = _pmaFiles.length
+    ? _pmaFiles.map((f, i) => `<span style="display:inline-flex;align-items:center;gap:4px;border:1px solid var(--g200);border-radius:6px;padding:2px 8px;margin:2px 4px 2px 0;font-size:.74rem;background:#f8fafc">${(/pdf/i.test(f.type) || /\.pdf$/i.test(f.name)) ? '📄' : '🖼️'} ${esc(f.name)} <a onclick="_pmaFiles.splice(${i},1);_pmaRenderFiles()" title="移除" style="cursor:pointer;color:#dc2626;font-weight:700">✕</a></span>`).join('')
+      + `<span style="font-size:.72rem;color:var(--g400);margin-left:4px">共 ${_pmaFiles.length} 个</span>`
+    : '<span style="font-size:.74rem;color:var(--g400)">还没选文件</span>';
+}
+function _pmaAddFiles(files) {
+  for (const f of files) {
+    if (!(/pdf|image/i.test(f.type || '') || /\.(pdf|jpe?g|png|webp|heic)$/i.test(f.name || ''))) { toast(`跳过 ${f.name}（只收 PDF / 图片）`, true); continue; }
+    _pmaFiles.push(f);
+  }
+  _pmaRenderFiles();
+}
+function _pmaSetType(t) {
+  _pmaType = t;
+  const on = 'background:#8b6914;color:#fff', off = 'background:#f8fafc;color:#1f2937';
+  document.getElementById('pmaTypeSales').style.cssText = document.getElementById('pmaTypeSales').dataset.base + (t === 'sales' ? on : off);
+  document.getElementById('pmaTypePurch').style.cssText = document.getElementById('pmaTypePurch').dataset.base + (t === 'purchase' ? on : off);
+  document.getElementById('pmaPartyLbl').innerHTML = (t === 'purchase' ? 'SUPPLIER 供应商' : 'CUSTOMER 客户') + ' <span style="color:#dc2626">*</span>';
+  // 客户/供应商下拉: 从现有木板账单同方向的名字里取
+  const dir = t === 'purchase' ? 'out' : 'in';
+  const names = [...new Set(_palletRows.filter(r => r.direction === dir).map(r => String(r.customer || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const sel = document.getElementById('pmaPartySel');
+  sel.innerHTML = `<option value="">-- Select ${t === 'purchase' ? 'Supplier 选择供应商' : 'Customer 选择客户'} --</option>`
+    + names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('')
+    + `<option value="__new__">＋ 其他 / 新${t === 'purchase' ? '供应商' : '客户'}</option>`;
+  const nw = document.getElementById('pmaPartyNew');
+  nw.value = '';
+  if (!names.length) { sel.value = '__new__'; nw.style.display = ''; } else { sel.value = ''; nw.style.display = 'none'; }
+}
+function _pmaSetDisc(d) {
+  _pmaDisc = d;
+  document.querySelectorAll('.pmaDiscBtn').forEach(b => {
+    const on = b.dataset.d === d;
+    b.style.background = on ? '#8b6914' : '#f8fafc'; b.style.color = on ? '#fff' : '#1f2937';
+  });
+  _pmaCalc();
+}
+// 总金额 = 数量 × 单价 减折扣 (% / 每板减 $ / 总额减 $); 总金额框可手动改
+function _pmaCalc() {
+  const q = Number(document.getElementById('pmaQty').value) || 0;
+  const p = Number(document.getElementById('pmaPrice').value) || 0;
+  const d = Number(document.getElementById('pmaDisc').value) || 0;
+  let t = q * p;
+  if (d > 0) t = _pmaDisc === '%' ? t * (1 - d / 100) : _pmaDisc === '$/pl' ? q * (p - d) : t - d;
+  t = Math.max(0, Math.round(t * 100) / 100);
+  document.getElementById('pmaTotal').value = t ? t.toFixed(2) : '';
+  document.getElementById('pmaTotalShow').textContent = money(t);
+}
+function openPalletAdd() {
+  let m = document.getElementById('palletAddModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'palletAddModal';
+    m.style.cssText = 'display:none;position:fixed;inset:0;z-index:2000;background:rgba(15,23,42,.55);align-items:center;justify-content:center;padding:1rem';
+    m.onclick = e => { if (e.target === m) m.style.display = 'none'; };
+    const LB = 'display:block;font-size:.68rem;font-weight:700;letter-spacing:.5px;color:var(--g500);margin-bottom:.25rem';
+    const SEC = 'font-weight:700;color:#8b6914;font-size:.86rem;border-bottom:1px solid var(--g200);padding-bottom:.25rem;margin:.4rem 0 .6rem';
+    const REQ = '<span style="color:#dc2626">*</span>';
+    const TB = 'flex:1;border:none;padding:.6rem;cursor:pointer;font-weight:700;font-size:.86rem;line-height:1.3;';
+    const DB = 'border:none;padding:.3rem .7rem;cursor:pointer;font-weight:700;font-size:.8rem;';
+    m.innerHTML = `<div style="background:#fff;border-radius:14px;box-shadow:0 12px 48px rgba(0,0,0,.35);width:min(94vw,560px);max-height:92vh;overflow:auto;padding:1.1rem 1.25rem" onclick="event.stopPropagation()">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem">
+        <div style="font-weight:800;font-size:1rem;color:#1f2937">＋ 添加木板发票 / New Invoice</div>
+        <button onclick="document.getElementById('palletAddModal').style.display='none'" style="border:1px solid var(--g200);background:#fff;border-radius:8px;padding:.2rem .7rem;cursor:pointer;font-size:.8rem">✕</button>
+      </div>
+      <div style="display:flex;border:1px solid var(--g200);border-radius:10px;overflow:hidden;margin-bottom:.8rem">
+        <button id="pmaTypeSales" data-base="${TB}" onclick="_pmaSetType('sales')">销售发票 Sales<br><span style="font-size:.7rem;font-weight:400">卖给客户</span></button>
+        <button id="pmaTypePurch" data-base="${TB}" onclick="_pmaSetType('purchase')">采购发票 Purchase<br><span style="font-size:.7rem;font-weight:400">从供应商买</span></button>
+      </div>
+      <div style="${SEC}">Invoice Information 发票信息</div>
+      <label id="pmaPartyLbl" style="${LB}"></label>
+      <select id="pmaPartySel" style="width:100%;margin-bottom:.4rem" onchange="document.getElementById('pmaPartyNew').style.display = this.value === '__new__' ? '' : 'none'"></select>
+      <input type="text" id="pmaPartyNew" placeholder="输入名称" style="width:100%;margin-bottom:.55rem;display:none">
+      <label style="${LB}">INVOICE NO. 发票号</label>
+      <input type="text" id="pmaNum" placeholder="不填自动编号（MINV- / MPINV-…）" style="width:100%;margin-bottom:.55rem">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.55rem">
+        <div><label style="${LB}">QUANTITY 数量（板）</label><input type="number" step="1" min="0" id="pmaQty" value="1" style="width:100%" oninput="_pmaCalc()"></div>
+        <div><label style="${LB}">UNIT PRICE 单价 ($)</label><input type="number" step="0.01" min="0" id="pmaPrice" placeholder="Enter price" style="width:100%" oninput="_pmaCalc()"></div>
+      </div>
+      <label style="${LB}">DISCOUNT 折扣</label>
+      <div style="display:inline-flex;border:1px solid var(--g200);border-radius:8px;overflow:hidden;margin-bottom:.35rem">
+        <button class="pmaDiscBtn" data-d="%" style="${DB}" onclick="_pmaSetDisc('%')">%</button>
+        <button class="pmaDiscBtn" data-d="$/pl" style="${DB}" onclick="_pmaSetDisc('$/pl')">$/pl</button>
+        <button class="pmaDiscBtn" data-d="$" style="${DB}" onclick="_pmaSetDisc('$')">$ total</button>
+      </div>
+      <input type="number" step="0.01" min="0" id="pmaDisc" value="0" style="width:50%;display:block;margin-bottom:.4rem" oninput="_pmaCalc()">
+      <div style="text-align:right;font-weight:800;color:#8b6914;font-size:1.05rem;margin-bottom:.4rem">Total: <span id="pmaTotalShow">$0.00</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.55rem">
+        <div><label style="${LB}">TOTAL AMOUNT 总金额 ($) ${REQ}</label><input type="number" step="0.01" min="0" id="pmaTotal" placeholder="0.00" style="width:100%" title="按数量×单价−折扣自动算，可手动改" oninput="document.getElementById('pmaTotalShow').textContent = money(Number(this.value) || 0)"></div>
+        <div><label style="${LB}">SERVICE DATE 服务时间 / 发票日期 ${REQ}</label><input type="date" id="pmaDate" style="width:100%"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.55rem">
+        <div><label style="${LB}">PERIOD FROM 账期开始</label><input type="date" id="pmaFrom" style="width:100%"></div>
+        <div><label style="${LB}">PERIOD TO 账期结束</label><input type="date" id="pmaTo" style="width:100%"></div>
+      </div>
+      <div style="${SEC}">Delivery Details 送货信息</div>
+      <label style="${LB}">DELIVERY ADDRESS 地址</label>
+      <input type="text" id="pmaAddr" style="width:100%;margin-bottom:.55rem">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.55rem">
+        <div><label style="${LB}">CITY</label><input type="text" id="pmaCity" style="width:100%"></div>
+        <div><label style="${LB}">STATE</label><input type="text" id="pmaState" style="width:100%"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.55rem">
+        <div><label style="${LB}">ZIP</label><input type="text" id="pmaZip" style="width:100%"></div>
+      </div>
+      <div style="${SEC}">Linked PO</div>
+      <label style="${LB}">LINK TO PO 关联采购单号</label>
+      <input type="text" id="pmaPo" placeholder="PO number / supplier…" style="width:100%;margin-bottom:.55rem">
+      <label style="${LB}">备注 NOTES</label>
+      <textarea id="pmaNote" rows="3" placeholder="可选备注 / Optional notes…" style="width:100%;margin-bottom:.55rem;resize:vertical"></textarea>
+      <label style="${LB}">ATTACHMENTS 附件（发票 PDF / 照片）</label>
+      <div id="pmaDrop" style="border:1px dashed var(--g300);border-radius:10px;background:#f8fafc;padding:.7rem 1rem;text-align:center;font-size:.82rem;color:var(--g600);cursor:pointer;margin-bottom:.4rem">📎 <b>上传附件</b><br><span style="font-size:.72rem;color:var(--g400)">拖到这里或点击选择 · PDF / 图片、可多个</span></div>
+      <input type="file" id="pmaFiles" accept="application/pdf,image/*" multiple style="display:none">
+      <div id="pmaFileList" style="margin-bottom:.7rem;line-height:1.9"></div>
+      <div id="pmaHint" style="font-size:.74rem;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.35rem .6rem;margin-bottom:.6rem">提交后进「待审核」，管理员审核通过才计入木板账单汇总、才能记付款。</div>
+      <div style="display:flex;justify-content:flex-end;gap:.5rem;align-items:center">
+        <span id="pmaMsg" style="font-size:.78rem;color:#dc2626;margin-right:auto"></span>
+        <button class="btn btn-outline" onclick="document.getElementById('palletAddModal').style.display='none'">Cancel 取消</button>
+        <button class="btn btn-blue" id="pmaSaveBtn" onclick="submitPalletAdd()">Save 保存</button>
+      </div>
+    </div>`;
+    document.body.appendChild(m);
+    const drop = document.getElementById('pmaDrop');
+    drop.onclick = () => document.getElementById('pmaFiles').click();
+    drop.ondragover = e => { e.preventDefault(); drop.style.background = '#eff6ff'; drop.style.borderColor = '#3b82f6'; };
+    drop.ondragleave = () => { drop.style.background = '#f8fafc'; drop.style.borderColor = 'var(--g300)'; };
+    drop.ondrop = e => { e.preventDefault(); drop.style.background = '#f8fafc'; drop.style.borderColor = 'var(--g300)'; _pmaAddFiles(e.dataTransfer.files); };
+    document.getElementById('pmaFiles').onchange = function () { _pmaAddFiles(this.files); this.value = ''; };
+  }
+  _pmaSetType('sales');
+  ['pmaNum', 'pmaPrice', 'pmaTotal', 'pmaFrom', 'pmaTo', 'pmaAddr', 'pmaCity', 'pmaState', 'pmaZip', 'pmaPo', 'pmaNote'].forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('pmaQty').value = '1';
+  document.getElementById('pmaDisc').value = '0';
+  document.getElementById('pmaDate').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('pmaHint').style.display = USER.role === 'admin' ? 'none' : '';
+  document.getElementById('pmaMsg').textContent = '';
+  _pmaSetDisc('%');
+  _pmaFiles = [];
+  _pmaRenderFiles();
+  m.style.display = 'flex';
+}
+async function submitPalletAdd() {
+  const v = id => document.getElementById(id).value.trim();
+  const msg = t => { document.getElementById('pmaMsg').textContent = t; };
+  const selV = document.getElementById('pmaPartySel').value;
+  const party = selV === '__new__' ? v('pmaPartyNew') : selV;
+  if (!party) return msg(_pmaType === 'purchase' ? '请选择或填写供应商' : '请选择或填写客户');
+  if (!(Number(v('pmaTotal')) > 0)) return msg('请填总金额');
+  if (!v('pmaDate')) return msg('请选服务日期');
+  if (v('pmaFrom') && v('pmaTo') && v('pmaTo') < v('pmaFrom')) return msg('账期结束不能早于开始');
+  const btn = document.getElementById('pmaSaveBtn');
+  btn.disabled = true;
+  try {
+    const fd = new FormData();
+    fd.append('invoice_type', _pmaType);
+    fd.append('customer', party);
+    fd.append('invoice_number', v('pmaNum'));
+    fd.append('quantity', v('pmaQty'));
+    fd.append('unit_price', v('pmaPrice'));
+    if (Number(v('pmaDisc')) > 0) { fd.append('discount_value', v('pmaDisc')); fd.append('discount_type', _pmaDisc); }
+    fd.append('total_amount', v('pmaTotal'));
+    fd.append('invoice_date', v('pmaDate'));
+    fd.append('period_from', v('pmaFrom'));
+    fd.append('period_to', v('pmaTo'));
+    fd.append('delivery_address', v('pmaAddr'));
+    fd.append('city', v('pmaCity'));
+    fd.append('state', v('pmaState'));
+    fd.append('zip', v('pmaZip'));
+    fd.append('linked_po', v('pmaPo'));
+    fd.append('notes', v('pmaNote'));
+    _pmaFiles.forEach(f => fd.append('invoice', f));
+    const res = await fetch('/api/acct/pallet-manual', { method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd }).then(x => x.json());
+    if (res.error) throw new Error(res.error);
+    document.getElementById('palletAddModal').style.display = 'none';
+    toast(`✅ 已添加 ${res.invoice_number || ''}${res.approval_status === 'pending' ? '，待管理员审核' : ''}`);
+    loadPalletList(true);
+  } catch (e) { msg(e.message || '保存失败'); }
+  btn.disabled = false;
+}
 function renderPalletList() {
   const q = (document.getElementById('palletSearch').value || '').toLowerCase();
   const flt = document.getElementById('palletFilter').value;
   let rows = _palletRows;
   if (flt === 'sales') rows = rows.filter(r => r.direction === 'in');
   else if (flt === 'purchase') rows = rows.filter(r => r.direction === 'out');
-  else if (flt === 'todo') rows = rows.filter(r => _palletStatus(r) !== 'paid');
-  else if (flt === 'done') rows = rows.filter(r => _palletStatus(r) === 'paid');
+  else if (flt === 'manual') rows = rows.filter(r => r.manual);
+  else if (flt === 'pending') rows = rows.filter(r => r.manual && r.approval_status === 'pending');
+  else if (flt === 'todo') rows = rows.filter(r => _palletCounted(r) && _palletStatus(r) !== 'paid');
+  else if (flt === 'done') rows = rows.filter(r => _palletCounted(r) && _palletStatus(r) === 'paid');
   if (q) rows = rows.filter(r => [r.customer, r.invoice_number, (r.bintique && r.bintique.paid_by) || ''].join(' ').toLowerCase().includes(q));
   rows = csfApply('pallet', rows);
-  const sales = rows.filter(r => r.direction === 'in'), purch = rows.filter(r => r.direction === 'out');
+  // 汇总只算 Bintique 的 + 审核通过的手动发票; 待审核 / 已驳回的单独提示
+  const counted = rows.filter(_palletCounted);
+  const pendN = _palletRows.filter(r => r.manual && r.approval_status === 'pending').length;
+  const sales = counted.filter(r => r.direction === 'in'), purch = counted.filter(r => r.direction === 'out');
   const salesSum = sales.reduce((s, r) => s + (Number(r.amount) || 0), 0), purchSum = purch.reduce((s, r) => s + (Number(r.amount) || 0), 0);
   const sr = _invRecvSums(sales), pr = _invRecvSums(purch);   // 已收/已付 = 核查通过的钱; 未收/未付 = 每张还差的钱之和
-  const doneN = _palletRows.filter(r => _palletStatus(r) === 'paid').length;
+  const doneN = _palletRows.filter(r => _palletCounted(r) && _palletStatus(r) === 'paid').length;
   const net = salesSum - purchSum;
   const chip = (t, c, tip) => `<b style="color:${c}"${tip ? ` data-tip="${tip}"` : ''}>${t}</b>`;
   document.getElementById('palletStats').innerHTML = `共 ${rows.length} 张${rows.length !== _palletRows.length ? `（全部 ${_palletRows.length}）` : ''}`
     + `<br>💰 收入（销售 ${sales.length} 张）${chip(money(salesSum), '#047857')} · ${chip('✅ 已收到 ' + money(sr.got), '#047857', '核查通过的到账')} · ${chip('❌ 还没收到 ' + money(sr.owe), '#b91c1c', '每张销售发票还差的钱加起来')}`
     + `<br>💸 支出（采购 ${purch.length} 张）${chip(money(purchSum), '#b91c1c')} · ${chip('✅ 已付 ' + money(pr.got), '#047857', '核查通过的付款')} · ${chip('⏳ 还没付 ' + money(pr.owe), '#b45309', '每张采购发票还欠的钱加起来')}`
-    + ` · 净额（收入 − 支出）${chip((net >= 0 ? '+' : '−') + money(Math.abs(net)), net >= 0 ? '#047857' : '#b91c1c')} · 核查通过已收/付 ${doneN} 张`;
+    + ` · 净额（收入 − 支出）${chip((net >= 0 ? '+' : '−') + money(Math.abs(net)), net >= 0 ? '#047857' : '#b91c1c')} · 核查通过已收/付 ${doneN} 张`
+    + (pendN ? ` · <a onclick="document.getElementById('palletFilter').value='pending';renderPalletList()" style="cursor:pointer;color:#b45309;font-weight:700;text-decoration:underline">⏳ ${pendN} 张手动发票待管理员审核（不计入汇总）</a>` : '');
   document.getElementById('palletHeadRow').innerHTML = csfHeadHtml('pallet');
   document.getElementById('palletCsfClear').style.display = csfActive('pallet') ? '' : 'none';
-  document.getElementById('palletBody').innerHTML = rows.length ? rows.map(r => `<tr>
+  document.getElementById('palletBody').innerHTML = rows.length ? rows.map(r => `<tr${r.manual && r.approval_status === 'pending' ? ' style="background:#fffbeb"' : r.manual && r.approval_status === 'rejected' ? ' style="opacity:.55"' : ''}>
     <td style="white-space:nowrap">${esc(r.date)}</td>
     <td>${_palletTypePill(r)}</td>
     <td>${esc(r.customer) || '<span style="color:var(--g300)">—</span>'}</td>
@@ -4087,8 +4345,8 @@ function renderPalletList() {
     <td>${_palletPayBadge(r)}</td>
     ${_invPayCols(r)}
     <td class="inv-note">${_invPayNoteTag(r)}</td>
-    ${_palletBintiqueCols(r)}
-    <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openPalletDetail(${r.id})">查看明细</button></td>
+    ${r.manual ? '<td colspan="3" style="color:var(--g400);font-size:.74rem">✍️ 手动添加（非 Bintique）</td>' : _palletBintiqueCols(r)}
+    <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openPalletDetail('${r.id}')">查看明细</button></td>
   </tr>`).join('') : '<tr><td colspan="17" style="color:var(--g400);padding:1rem">没有账单。</td></tr>';
 }
 // ═══════════ 💸 Gusto 工资: API 实时同步 + 按人对账 ═══════════
