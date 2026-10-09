@@ -41209,19 +41209,6 @@ app.post('/api/acct/pallet-manual/:id/approval', requireAdmin, requireRole('admi
   auditLog('pallet_manual_' + action, { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers }, { targetType: 'pallet_manual_invoice', targetId: cur.id });
   res.json({ success: true });
 });
-// 管理员批量审核 (列表「全部审核通过」): 只动还在待审核的
-app.post('/api/acct/pallet-manual/batch-approval', requireAdmin, requireRole('admin'), (req, res) => {
-  const b = req.body || {};
-  const action = String(b.action || '');
-  if (!['approve', 'reject'].includes(action)) return res.status(400).json({ error: '无效操作' });
-  const ids = (Array.isArray(b.ids) ? b.ids : []).map(x => parseInt(x)).filter(Boolean).slice(0, 2000);
-  if (!ids.length) return res.status(400).json({ error: '没有选中发票' });
-  const st = db.prepare(`UPDATE pallet_manual_invoices SET approval_status=?, approved_by=?, approval_note=?, updated_at=datetime('now') WHERE id=? AND approval_status='pending'`);
-  let updated = 0;
-  db.transaction(() => { for (const id of ids) updated += st.run(action === 'approve' ? 'approved' : 'rejected', req.userName || '', String(b.note || '').trim().slice(0, 300), id).changes; })();
-  auditLog('pallet_manual_batch_' + action, { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers }, { targetType: 'pallet_manual_invoice', details: { ids, updated } });
-  res.json({ success: true, updated });
-});
 // 删除: 管理员随时可删; 会计只能删自己提交、还没审核通过的
 app.delete('/api/acct/pallet-manual/:id', requireAdmin, requireRole('accounting', 'admin'), (req, res) => {
   const cur = db.prepare('SELECT * FROM pallet_manual_invoices WHERE id=?').get(req.params.id);
