@@ -71,6 +71,9 @@ const BS_PAYEE_REFERRAL = '__referral__';
 const BS_REFERRAL_PREFIX = '推荐费:';
 const BS_PAYEE_WAGEBONUS = '__wagebonus__';
 const BS_WAGEBONUS_PREFIX = '发工资奖励:';
+// 借款还款: 可选公司 (也可不选), 再填人名; 存成 '借款还款:<公司>|<姓名>'
+const BS_PAYEE_LOAN = '__loan__';
+const BS_LOAN_PREFIX = '借款还款:';
 const BS_FEE_TYPES = ['服务费 Service Fee', '支票费 Check Fee', '电汇费 Wire Fee', 'ACH 转账费 ACH Fee', '账户维护费 Maintenance Fee', '账户验证费 Account Verify', '透支费 Overdraft Fee', '退票费 NSF/Returned Item', 'ATM 费 ATM Fee', '停付费 Stop Payment', '现金处理费 Cash Handling', '外币兑换费 FX Fee', '纸质对账单费 Paper Statement'];
 // 公司收入的「用途」下拉: 可以是卸柜也可以是劳务工资 (下拉直选, 不再用输入建议——
 // 输入框里已有文字时 datalist 只显示匹配项, 会让人以为没有别的选项)
@@ -154,6 +157,7 @@ function _bsPayeeDisplay(payee) {
   if (p.indexOf('仓库押金:') === 0) { const w = p.slice('仓库押金:'.length); return '🏭 仓库押金' + (w ? ' · ' + w : ''); }
   if (p.indexOf('推荐费:') === 0) { const n = p.slice('推荐费:'.length); return '🤝 推荐费' + (n ? ' · ' + n : ''); }
   if (p.indexOf('发工资奖励:') === 0) { const n = p.slice('发工资奖励:'.length); return '🎁 发工资奖励' + (n ? ' · ' + n : ''); }
+  if (p.indexOf('借款还款:') === 0) { const l = _bsLoanParse(p); return '🔄 借款还款' + ((l.co || l.name) ? ' · ' + [l.co, l.name].filter(Boolean).join(' · ') : ''); }
   return p;
 }
 function _bsIsNA(box) { return !!(box && box.payee === BS_PAYEE_NA); }
@@ -176,6 +180,7 @@ function _bsNoteSatisfied(box) {
   if (kind === 'whdep' && _bsWhdepParse(box.payee)) return true;
   if (kind === 'referral' && _bsReferralParse(box.payee)) return true;
   if (kind === 'wagebonus' && _bsWageBonusParse(box.payee)) return true;
+  if (kind === 'loan' && _bsLoanParse(box.payee).name) return true;
   if ((kind === 'bankfee' || kind === 'office' || kind === 'compfee' || kind === 'meal' || kind === 'acct' || kind === 'personal') && String(box.purpose || '').trim()) return true;
   if (kind === 'employee' && String(box.invoice_number || '').trim()
     && String(box.period_start || '').trim() && String(box.period_end || '').trim()) return true;
@@ -203,6 +208,7 @@ function _bsPayeeKind(box) {
   if (_bsIsWhdep(p)) return 'whdep';
   if (_bsIsReferral(p)) return 'referral';
   if (_bsIsWageBonus(p)) return 'wagebonus';
+  if (_bsIsLoan(p)) return 'loan';
   if (BS_PAYEE_PEOPLE.includes(p)) return 'personal';
   if (p && p !== BS_PAYEE_CLAIM && p !== BS_PAYEE_CC && p !== BS_PAYEE_CASH && p !== BS_PAYEE_CASH_DEP && p !== BS_PAYEE_LAWSUIT && p !== BS_PAYEE_LAWYER && p !== BS_PAYEE_NA && p !== BS_PAYEE_PAP && p !== BS_PAYEE_PAW && p !== BS_PAYEE_BINTIQUE && p !== BS_PAYEE_DREAMHORSE && p !== BS_PAYEE_RETURNED) return 'company';
   return 'none';
@@ -251,6 +257,7 @@ function _bsPayeeOptionDefs(direction) {
     // PAP/PAW 转账两个旧选项已被「公司内部银行转账（选公司）」覆盖, 不再提供;
     // 存过这两个值的旧标注会显示在「其他」分组里
     { v: BS_PAYEE_INTERNAL, t: '🏦 公司内部银行转账（选公司）', d: 'both' },
+    { v: BS_PAYEE_LOAN, t: '🔄 借款还款（可选公司，填姓名）', d: 'both' },
     { v: BS_PAYEE_BINTIQUE, t: '📦 Bintique 货款', d: 'both' },
     { v: BS_PAYEE_DREAMHORSE, t: '↩️ 退回以梦为马的 eBay 货款', d: 'both' },
     { v: BS_PAYEE_CASH, t: '💵 取现金', d: 'out' },
@@ -378,6 +385,29 @@ function _bsIsWageBonus(payee) { return typeof payee === 'string' && payee.index
 function _bsWageBonusParse(payee) { return _bsIsWageBonus(payee) ? payee.slice(BS_WAGEBONUS_PREFIX.length) : ''; }
 function _bsWageBonusJoin(n) { return BS_WAGEBONUS_PREFIX + (n || ''); }
 function bsWageBonusUpdate(id, el) { bsUpdateBoxField(id, 'payee', _bsWageBonusJoin((el.value || '').trim())); bsUpdateBoxSections(id); }
+function _bsIsLoan(payee) { return typeof payee === 'string' && payee.indexOf(BS_LOAN_PREFIX) === 0; }
+function _bsLoanParse(payee) {
+  if (!_bsIsLoan(payee)) return { co: '', name: '' };
+  const rest = payee.slice(BS_LOAN_PREFIX.length);
+  const i = rest.indexOf('|');
+  return i < 0 ? { co: '', name: rest } : { co: rest.slice(0, i), name: rest.slice(i + 1) };
+}
+function _bsLoanJoin(co, name) { return BS_LOAN_PREFIX + (co || '') + '|' + (name || ''); }
+function _bsLoanCoOptions(current) {
+  const parts = ['<option value="">— 不选公司（个人）—</option>'];
+  const names = [...new Set([...BS_INTERNAL_COMPANIES, ..._bsCompanies])];
+  if (current && !names.includes(current)) names.push(current);
+  names.forEach(n => parts.push(`<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`));
+  return parts.join('');
+}
+function bsLoanUpdate(id, el) {
+  const wrap = el.closest('.bs-loan-wrap');
+  if (!wrap) return;
+  const co = wrap.querySelector('.bs-bx-loan-co').value;
+  const name = wrap.querySelector('.bs-bx-loan-name').value.trim();
+  bsUpdateBoxField(id, 'payee', _bsLoanJoin(co, name));
+  bsUpdateBoxSections(id);
+}
 function _bsIsCheck(payee) { return typeof payee === 'string' && (payee.indexOf(BS_CHECK_DEP_PREFIX) === 0 || payee.indexOf(BS_CHECK_WD_PREFIX) === 0); }
 function _bsCheckParse(payee) {
   if (typeof payee !== 'string') return { type: '', names: [] };
@@ -434,9 +464,10 @@ function bsPayeeSelChange(id, sel) {
   const xwrap = item.querySelector('.bs-fx-wrap');
   const fwrap = item.querySelector('.bs-referral-wrap');
   const bwrap = item.querySelector('.bs-wagebonus-wrap');
+  const lwrap = item.querySelector('.bs-loan-wrap');
   const iwrap = item.querySelector('.bs-internal-wrap');
   const nwrap = item.querySelector('.bs-insur-wrap');
-  const hideAll = () => { if (wrap) wrap.style.display = 'none'; if (pwrap) pwrap.style.display = 'none'; if (cwrap) cwrap.style.display = 'none'; if (twrap) twrap.style.display = 'none'; if (iwrap) iwrap.style.display = 'none'; if (nwrap) nwrap.style.display = 'none'; if (uwrap) uwrap.style.display = 'none'; if (rwrap) rwrap.style.display = 'none'; if (wwrap) wwrap.style.display = 'none'; if (xwrap) xwrap.style.display = 'none'; if (fwrap) fwrap.style.display = 'none'; if (bwrap) bwrap.style.display = 'none'; };
+  const hideAll = () => { if (wrap) wrap.style.display = 'none'; if (pwrap) pwrap.style.display = 'none'; if (cwrap) cwrap.style.display = 'none'; if (twrap) twrap.style.display = 'none'; if (iwrap) iwrap.style.display = 'none'; if (nwrap) nwrap.style.display = 'none'; if (uwrap) uwrap.style.display = 'none'; if (rwrap) rwrap.style.display = 'none'; if (wwrap) wwrap.style.display = 'none'; if (xwrap) xwrap.style.display = 'none'; if (fwrap) fwrap.style.display = 'none'; if (bwrap) bwrap.style.display = 'none'; if (lwrap) lwrap.style.display = 'none'; };
   if (sel.value === BS_PAYEE_EMP) {
     hideAll();
     if (wrap) { wrap.style.display = ''; const co = wrap.querySelector('.bs-bx-emp-co'); if (co) co.focus(); bsEmpUpdate(id, co); }
@@ -474,6 +505,9 @@ function bsPayeeSelChange(id, sel) {
   } else if (sel.value === BS_PAYEE_WAGEBONUS) {
     hideAll();
     if (bwrap) { bwrap.style.display = ''; const c = bwrap.querySelector('.bs-bx-wagebonus-name'); if (c) { c.focus(); bsWageBonusUpdate(id, c); } }
+  } else if (sel.value === BS_PAYEE_LOAN) {
+    hideAll();
+    if (lwrap) { lwrap.style.display = ''; const c = lwrap.querySelector('.bs-bx-loan-co'); if (c) { c.focus(); bsLoanUpdate(id, c); } }
   } else if (sel.value === BS_PAYEE_CHECK_DEP || sel.value === BS_PAYEE_CHECK_WD) {
     hideAll();
     const type = sel.value === BS_PAYEE_CHECK_WD ? 'wd' : 'dep';
@@ -534,6 +568,8 @@ function bsUpdateBoxSections(id) {
   if (rfw) rfw.style.display = kind === 'referral' ? '' : 'none';
   const wbw = item.querySelector('.bs-wagebonus-wrap');
   if (wbw) wbw.style.display = kind === 'wagebonus' ? '' : 'none';
+  const lnw = item.querySelector('.bs-loan-wrap');
+  if (lnw) lnw.style.display = kind === 'loan' ? '' : 'none';
   if (ofw) ofw.style.display = kind === 'office' ? '' : 'none';
   if (fw) fw.style.display = kind === 'bankfee' ? '' : 'none';
   if (pw) pw.style.display = kind === 'personal' ? '' : 'none';
@@ -1138,7 +1174,7 @@ function _bsRenderBoxPanel() {
       </div>
       ${_bsLinksHtml(box)}
       <div class="bs-date-err" style="color:#dc2626;font-size:.72rem;margin:-.1rem 0 .3rem;min-height:0"></div>
-      <select class="bs-bx-payee" onchange="bsPayeeSelChange(${box.id},this)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;background:#fff">${_bsPayeeOptions(_bsIsEmp(box.payee) ? BS_PAYEE_EMP : (_bsIsPallet(box.payee) ? BS_PAYEE_PALLET : (_bsIsCheck(box.payee) ? (_bsCheckParse(box.payee).type === 'wd' ? BS_PAYEE_CHECK_WD : BS_PAYEE_CHECK_DEP) : (_bsIsTruck(box.payee) ? BS_PAYEE_TRUCK : (_bsIsInternal(box.payee) ? BS_PAYEE_INTERNAL : (_bsIsUnload(box.payee) ? BS_PAYEE_UNLOAD : (_bsIsRent(box.payee) ? BS_PAYEE_RENT : (_bsIsInsur(box.payee) ? BS_PAYEE_INSUR : (_bsIsFx(box.payee) ? BS_PAYEE_FX : (_bsIsWhdep(box.payee) ? BS_PAYEE_WHDEP : (_bsIsReferral(box.payee) ? BS_PAYEE_REFERRAL : (_bsIsWageBonus(box.payee) ? BS_PAYEE_WAGEBONUS : (box.payee || '')))))))))))), box.direction)}</select>
+      <select class="bs-bx-payee" onchange="bsPayeeSelChange(${box.id},this)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;background:#fff">${_bsPayeeOptions(_bsIsEmp(box.payee) ? BS_PAYEE_EMP : (_bsIsPallet(box.payee) ? BS_PAYEE_PALLET : (_bsIsCheck(box.payee) ? (_bsCheckParse(box.payee).type === 'wd' ? BS_PAYEE_CHECK_WD : BS_PAYEE_CHECK_DEP) : (_bsIsTruck(box.payee) ? BS_PAYEE_TRUCK : (_bsIsInternal(box.payee) ? BS_PAYEE_INTERNAL : (_bsIsUnload(box.payee) ? BS_PAYEE_UNLOAD : (_bsIsRent(box.payee) ? BS_PAYEE_RENT : (_bsIsInsur(box.payee) ? BS_PAYEE_INSUR : (_bsIsFx(box.payee) ? BS_PAYEE_FX : (_bsIsWhdep(box.payee) ? BS_PAYEE_WHDEP : (_bsIsReferral(box.payee) ? BS_PAYEE_REFERRAL : (_bsIsWageBonus(box.payee) ? BS_PAYEE_WAGEBONUS : (_bsIsLoan(box.payee) ? BS_PAYEE_LOAN : (box.payee || ''))))))))))))), box.direction)}</select>
       <div class="bs-emp-wrap" style="display:${_bsIsEmp(box.payee) ? '' : 'none'};background:#f8fafc;border:1px dashed var(--gray-200);border-radius:6px;padding:.4rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:var(--gray-400);margin-bottom:.25rem">先选公司，再填员工姓名</div>
         <select class="bs-bx-emp-co" onchange="bsEmpUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;margin-bottom:.3rem;background:#fff">${_bsCompanyOptions(_bsEmpParse(box.payee).co)}</select>
@@ -1189,6 +1225,11 @@ function _bsRenderBoxPanel() {
       <div class="bs-wagebonus-wrap" style="display:${_bsIsWageBonus(box.payee) ? '' : 'none'};background:#fefce8;border:1px dashed #fde047;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:#a16207;margin-bottom:.25rem">奖励发给谁（姓名，多个用逗号隔开）</div>
         <input type="text" class="bs-bx-wagebonus-name" value="${esc(_bsWageBonusParse(box.payee))}" onchange="bsWageBonusUpdate(${box.id},this)" placeholder="姓名（多个用逗号隔开）" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">
+      </div>
+      <div class="bs-loan-wrap" style="display:${_bsIsLoan(box.payee) ? '' : 'none'};background:#f0fdf4;border:1px dashed #bbf7d0;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#15803d;margin-bottom:.25rem">公司可选（也可以不选），再填人名</div>
+        <select class="bs-bx-loan-co" onchange="bsLoanUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;margin-bottom:.3rem;background:#fff">${_bsLoanCoOptions(_bsLoanParse(box.payee).co)}</select>
+        <input type="text" class="bs-bx-loan-name" placeholder="人名（谁借的 / 还给谁）" value="${esc(_bsLoanParse(box.payee).name)}" onchange="bsLoanUpdate(${box.id},this)" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">
       </div>
       <div class="bs-fee-wrap" style="display:${box.payee === BS_PAYEE_BANKFEE ? '' : 'none'};background:#fffbeb;border:1px dashed #fde68a;border-radius:6px;padding:.45rem .5rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:#92400e;margin-bottom:.3rem">银行费用类型</div>
