@@ -1141,7 +1141,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
   </div>
 </div>
 
-<script src="bank-ann.js?v=20"></script>
+<script src="bank-ann.js?v=21"></script>
 <script>
 let TOKEN = localStorage.getItem('acct_token') || '';
 let USER = { username: '', role: '', display_name: '' };
@@ -6208,7 +6208,7 @@ function _zEnsureBankAnn() {
   if (typeof annOpen === 'function') return Promise.resolve();
   return new Promise((resolve, reject) => {
     const sc = document.createElement('script');
-    sc.src = 'bank-ann.js?v=20&r=' + Date.now();
+    sc.src = 'bank-ann.js?v=21&r=' + Date.now();
     sc.onload = () => { try { showConfirm = pageConfirm; } catch (e) {} resolve(); };
     sc.onerror = () => reject(new Error('标注面板脚本加载失败，请刷新页面 (Ctrl+Shift+R)'));
     document.head.appendChild(sc);

@@ -809,10 +809,38 @@ async function _bsAnnCheckRun(boxId) {
     } catch (e) { el.innerHTML = '<span style="color:#94a3b8">🤖 自动核对暂不可用</span>'; return; }
   }
   if (box.id !== _annOpenId) return;
+  _bsInvAutoFill(box, mode);
   el.innerHTML = _bsAnnCheckHtml(box, items, mode);
   _bsAutoSameCompanyNote(box, items);
   // 只认金额的木板客户 (48): 发票金额查回来后才知道对不对得上, 备注框提示和行内徽章跟着刷新
   if (_bsPalletAmountOnly(box)) { bsRefreshNoteState(box.id); annRefreshChip(box); }
+}
+// 发票号在系统里查到了 → 空着的「这张金额」/账期自动填上发票的数 (已填的不动),
+// 合计行跟着自动算。只认工资发票的 (exist) 不带金额, 只补账期。
+function _bsInvAutoFill(box, mode) {
+  const items = _bsInvItems(box);
+  const wraps = document.querySelectorAll(`.bs-box-item[data-id="${box.id}"] .bs-inv-item`);
+  let changed = false;
+  items.forEach((it, i) => {
+    const info = _bsInvCheckCache[String(it.inv || '').trim().toUpperCase()];
+    if (!info || !info.found) return;
+    const w = wraps[i];
+    if (mode === 'full' && !String(it.amt).trim() && Number(info.subtotal) > 0) {
+      it.amt = Number(info.subtotal).toFixed(2); changed = true;
+      const a = w && w.querySelector('.bs-bx-inv-amt'); if (a) a.value = it.amt;
+    }
+    if (!it.ps && !it.pe && info.period_start && info.period_end) {
+      it.ps = info.period_start; it.pe = info.period_end; changed = true;
+      if (w) {
+        const ds = w.querySelector('.bs-bx-pstart'), de = w.querySelector('.bs-bx-pend'), pt = w.querySelector('.bs-bx-period');
+        if (ds) ds.value = it.ps; if (de) de.value = it.pe; if (pt) pt.value = it.ps + ' ~ ' + it.pe;
+      }
+    }
+  });
+  if (!changed) return;
+  _bsInvItemsSave(box, items);
+  const sumEl = document.querySelector(`.bs-box-item[data-id="${box.id}"] .bs-inv-sum`);
+  if (sumEl) sumEl.innerHTML = _bsInvSumLineHtml(box, items);
 }
 // ── 同一家公司的两个名字 (发票抬头 vs 标注收款公司) ──
 // 命中时公司核对按同一家算 (不报「公司不符」、不拦审核), 备注空着就自动写上
