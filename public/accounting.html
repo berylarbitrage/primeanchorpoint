@@ -3863,6 +3863,7 @@ function _truckBintiqueCell(r) {
   return `<span style="color:var(--g300)">—</span>${link}`;
 }
 // 手动卡车费用能不能改: 还没审核通过的 (待审核/已驳回) 客服/会计/管理员都能改; 通过后只有管理员能改
+function _truckCanDelete(r) { return !!r.manual && ['accounting', 'admin'].includes(USER.role); }
 function _truckCanEdit(r) { return !!r.manual && (USER.role === 'admin' || (canAnnotate() && r.approval_status !== 'approved')); }
 function renderTruckList() {
   const q = (document.getElementById('truckSearch').value || '').toLowerCase();
@@ -3892,7 +3893,7 @@ function renderTruckList() {
     <td>${r.manual ? payNoteCell('truckfee', r.fee_id, r.pay_note, true) : payNoteCell('truckorder', r.order_id, r.pay_note, true)}</td>
     <td style="font-size:.78rem">${_truckBintiqueCell(r)}</td>
     <td style="font-size:.76rem;color:var(--g500);max-width:240px">${esc(r.note || '')}</td>
-    <td style="white-space:nowrap">${_truckCanEdit(r) ? `<button class="btn btn-sm" onclick="openTruckEdit(${r.fee_id})">✏️ 修改</button> ` : ''}<button class="btn btn-sm btn-blue" onclick="openTruckDetail('${r.id}')">查看明细</button></td>
+    <td style="white-space:nowrap">${_truckCanEdit(r) ? `<button class="btn btn-sm" onclick="openTruckEdit(${r.fee_id})">✏️ 修改</button> ` : ''}${_truckCanDelete(r) ? `<button class="btn btn-sm" style="color:#b91c1c" onclick="truckFeeDelete(${r.fee_id})">🗑 删除</button> ` : ''}<button class="btn btn-sm btn-blue" onclick="openTruckDetail('${r.id}')">查看明细</button></td>
   </tr>`).join('') : '<tr><td colspan="10" style="color:var(--g400);padding:1rem">没有卡车费用记录。</td></tr>';
 }
 // 🚚 明细弹窗: 订单行显示 Bintique 卡车单信息, 手动行显示凭证/审核操作
@@ -3932,7 +3933,7 @@ function openTruckDetail(id) {
       ${r.manual && USER.role === 'admin' && r.approval_status === 'pending' ? `<button class="btn btn-sm" style="color:#047857;border-color:#a7f3d0" onclick="truckFeeApprove(${r.fee_id}, 'approve')">✓ 审核通过</button>
       <button class="btn btn-sm" style="color:#b91c1c;border-color:#fecaca" onclick="truckFeeApprove(${r.fee_id}, 'reject')">✗ 驳回</button>` : ''}
       ${_truckCanEdit(r) ? `<button class="btn btn-sm" onclick="openTruckEdit(${r.fee_id})">✏️ 修改</button>` : ''}
-      ${r.manual && USER.role === 'admin' ? `<button class="btn btn-sm" style="color:#b91c1c" onclick="truckFeeDelete(${r.fee_id})">🗑 删除</button>` : ''}
+      ${_truckCanDelete(r) ? `<button class="btn btn-sm" style="color:#b91c1c" onclick="truckFeeDelete(${r.fee_id})">🗑 删除</button>` : ''}
       ${canAnnotate() ? `<button class="btn btn-sm btn-blue" onclick="document.getElementById('truckDetailModal').style.display='none';openPayNote('${r.manual ? 'truckfee' : 'truckorder'}', ${r.manual ? r.fee_id : r.order_id})">💵 付款批注</button>` : ''}
     </div>` : ''}
   </div>`;

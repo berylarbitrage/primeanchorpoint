@@ -41376,13 +41376,15 @@ app.post('/api/acct/fee-records/:id/status', requireAdmin, requireRole('admin'),
   res.json({ success: true, status: st });
 });
 
-// 管理员删除费用记录 (附件与付款批注一并清掉)
-app.delete('/api/acct/fee-records/:id', requireAdmin, requireRole('admin'), (req, res) => {
+// 删除费用记录 (附件与付款批注一并清掉): 管理员任何类型都能删; 手动添加的卡车费用会计也能删
+app.delete('/api/acct/fee-records/:id', requireAdmin, requireRole('accounting', 'admin'), (req, res) => {
   const cur = db.prepare('SELECT * FROM fee_records WHERE id=?').get(req.params.id);
   if (!cur) return res.status(404).json({ error: '记录不存在' });
+  if (req.userRole !== 'admin' && cur.fee_type !== 'truck') return res.status(403).json({ error: '只有管理员能删除' });
   _claimAtts(cur).forEach(a => _claimDeleteFile(a.path));
   db.prepare('DELETE FROM fee_records WHERE id=?').run(cur.id);
   db.prepare(`DELETE FROM acct_pay_notes WHERE target_type='fee' AND target_id=?`).run(cur.id);
+  auditLog('fee_record_delete', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers }, { targetType: 'fee_record', targetId: cur.id });
   res.json({ success: true });
 });
 
