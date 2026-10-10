@@ -850,6 +850,8 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS fee_records (
 // 卡车租车单字段 (照 Bintique 租车单思路: 起止日期 + 折扣 + 装货类型)
 try { db.exec("ALTER TABLE fee_records ADD COLUMN fee_date_end TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN cargo TEXT DEFAULT ''"); } catch(e) {}
+// 车型: 26 尺 / 53 尺 (空 = 没填)
+try { db.exec("ALTER TABLE fee_records ADD COLUMN truck_size TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN discount_value REAL DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN discount_type TEXT DEFAULT '%'"); } catch(e) {}
 // 🪵 会计手动添加的木板发票 (照 pallet.bintique.com 的 New Order 表单): 会计提交为
@@ -41253,7 +41255,7 @@ app.get('/api/acct/truck-bills', requireAdmin, requireAcctView, async (req, res)
       rental_code: o.rental_code || '',
       date: o.date || '', date_end: o.date_end || '',
       customer: o.truck_company || '', amount: Number(o.amount) || 0,
-      direction: 'out', note: o.notes || '', cargo: o.cargo || '',
+      direction: 'out', note: o.notes || '', cargo: o.cargo || '', truck_size: o.truck_size || '',
       url: o.url || '',
       bintique: { status: o.status || '', payment_date: o.payment_date || '', payment_method: o.payment_method || '' },
       pay_note: ordNotes[o.id] || null,
@@ -41266,7 +41268,7 @@ app.get('/api/acct/truck-bills', requireAdmin, requireAcctView, async (req, res)
         date: f.fee_date || String(f.created_at || '').slice(0, 10),
         date_end: f.fee_date_end || '',
         amount: Number(f.amount) || 0, direction: 'out',
-        customer: f.party_name || '', note: f.description || '', cargo: f.cargo || '',
+        customer: f.party_name || '', note: f.description || '', cargo: f.cargo || '', truck_size: f.truck_size || '',
         discount_value: f.discount_value != null ? Number(f.discount_value) : null,
         discount_type: f.discount_type || '%',
         photos_urls: (Array.isArray(atts) ? atts : []).map(a => (a && a.path) || '').filter(Boolean),
@@ -41298,6 +41300,7 @@ app.post('/api/acct/pallet-bills/:id/photos', requireAdmin, requireAcctWrite, co
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+const _feeTruckSize = v => ['26ft', '53ft'].includes(String(v || '')) ? String(v) : '';
 // 新增费用记录: 会计提交入库为 pending 待管理员审核, admin 提交直接 approved (发票文件复用 claimUpload)
 app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin', 'cs'), claimUpload.array('invoice', 50), (req, res) => {
   const b = req.body || {};
@@ -41314,13 +41317,14 @@ app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin
   // 租车单扩展字段 (卡车费用用, 照 Bintique 租车单): 结束日期 / 装货类型 / 折扣
   const discNum = Number(b.discount_value);
   const r = db.prepare(`INSERT INTO fee_records
-    (fee_type, party_name, fee_date, fee_date_end, amount, description, cargo, discount_value, discount_type, status, attachments, approval_status, created_by, approved_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`)
+    (fee_type, party_name, fee_date, fee_date_end, amount, description, cargo, truck_size, discount_value, discount_type, status, attachments, approval_status, created_by, approved_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`)
     .run(feeType, party, String(b.fee_date || '').trim().slice(0, 20),
       String(b.fee_date_end || '').trim().slice(0, 20),
       (b.amount != null && b.amount !== '' && !isNaN(amtNum)) ? amtNum : null,
       String(b.description || '').trim().slice(0, 2000),
       String(b.cargo || '').trim().slice(0, 200),
+      _feeTruckSize(b.truck_size),
       (b.discount_value != null && b.discount_value !== '' && !isNaN(discNum)) ? discNum : null,
       ['%', '$'].includes(String(b.discount_type || '')) ? String(b.discount_type) : '%',
       JSON.stringify(atts), isAdmin ? 'approved' : 'pending', req.userName || '', isAdmin ? (req.userName || '') : '');
@@ -41341,11 +41345,11 @@ app.put('/api/acct/fee-records/:id', requireAdmin, requireRole('accounting', 'ad
   const amtNum = Number(b.amount), discNum = Number(b.discount_value);
   const atts = _claimAtts(cur).concat((Array.isArray(req.files) ? req.files : []).map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) })));
   const status = isAdmin ? cur.approval_status : 'pending';
-  db.prepare(`UPDATE fee_records SET party_name=?, fee_date=?, fee_date_end=?, amount=?, description=?, cargo=?, discount_value=?, discount_type=?,
+  db.prepare(`UPDATE fee_records SET party_name=?, fee_date=?, fee_date_end=?, amount=?, description=?, cargo=?, truck_size=?, discount_value=?, discount_type=?,
       attachments=?, approval_status=?, approval_note=CASE WHEN ?<>approval_status THEN '' ELSE approval_note END, updated_at=datetime('now') WHERE id=?`)
     .run(party, String(b.fee_date || '').trim().slice(0, 20), String(b.fee_date_end || '').trim().slice(0, 20),
       (b.amount != null && b.amount !== '' && !isNaN(amtNum)) ? amtNum : null,
-      String(b.description || '').trim().slice(0, 2000), String(b.cargo || '').trim().slice(0, 200),
+      String(b.description || '').trim().slice(0, 2000), String(b.cargo || '').trim().slice(0, 200), _feeTruckSize(b.truck_size),
       (b.discount_value != null && b.discount_value !== '' && !isNaN(discNum)) ? discNum : null,
       ['%', '$'].includes(String(b.discount_type || '')) ? String(b.discount_type) : '%',
       JSON.stringify(atts), status, status, cur.id);

@@ -3873,7 +3873,7 @@ function renderTruckList() {
   else if (flt === 'done') rows = rows.filter(r => r.pay_note && r.pay_note.paid_status === 'paid');
   else if (flt === 'manual') rows = rows.filter(r => r.manual);
   else if (flt === 'pending') rows = rows.filter(r => r.manual && r.approval_status === 'pending');
-  if (q) rows = rows.filter(r => [r.customer, r.note, r.rental_code || '', r.cargo || ''].join(' ').toLowerCase().includes(q));
+  if (q) rows = rows.filter(r => [r.customer, r.note, r.rental_code || '', r.cargo || '', r.truck_size || ''].join(' ').toLowerCase().includes(q));
   rows = csfApply('truck', rows);
   document.getElementById('truckHeadRow').innerHTML = csfHeadHtml('truck');
   document.getElementById('truckCsfClear').style.display = csfActive('truck') ? '' : 'none';
@@ -3887,7 +3887,7 @@ function renderTruckList() {
       ? `✍️ 手动添加 · ${esc(r.created_by || '')}${r.approval_status === 'pending' ? ' <span style="font-size:.62rem;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;border-radius:4px;padding:0 4px">待审核</span>' : r.approval_status === 'rejected' ? ' <span style="font-size:.62rem;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:4px;padding:0 4px">已驳回</span>' : ''}`
       : r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener" style="color:#0f4c6b;text-decoration:underline;font-weight:600;white-space:nowrap">${esc(r.rental_code || '卡车单')}</a>` : esc(r.rental_code || '')}</td>
     <td>${esc(r.customer) || '<span style="color:var(--g300)">—</span>'}</td>
-    <td style="font-size:.76rem;color:var(--g500);white-space:nowrap">${esc(r.cargo || '') || '—'}</td>
+    <td style="font-size:.76rem;color:var(--g500);white-space:nowrap">${esc([r.truck_size, r.cargo].filter(Boolean).join(' · ')) || '—'}</td>
     <td style="text-align:right;font-weight:700;color:#b91c1c;white-space:nowrap">${money(r.amount)}</td>
     <td>${_palletPayBadge(r)}</td>
     <td>${r.manual ? payNoteCell('truckfee', r.fee_id, r.pay_note, true) : payNoteCell('truckorder', r.order_id, r.pay_note, true)}</td>
@@ -3922,6 +3922,7 @@ function openTruckDetail(id) {
       ? row('来源', `✍️ 手动添加 · ${esc(r.created_by || '')}${r.approval_status === 'pending' ? ' <span style="font-size:.66rem;background:#fffbeb;border:1px solid #fcd34d;color:#b45309;border-radius:4px;padding:0 4px">待审核</span>' : r.approval_status === 'rejected' ? ' <span style="font-size:.66rem;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:4px;padding:0 4px">已驳回</span>' : ' <span style="font-size:.66rem;background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;border-radius:4px;padding:0 4px">已审核</span>'}`)
       : row('订单号', r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener" style="color:#0f4c6b;text-decoration:underline;font-weight:700">${esc(r.rental_code || '卡车单')}</a> ↗` : esc(r.rental_code || '—'))}
     ${row('卡车公司', esc(r.customer) || '—')}
+    ${r.truck_size ? row('车型', esc(r.truck_size)) : ''}
     ${r.cargo ? row('装货类型', esc(r.cargo)) : ''}
     ${r.manual && r.discount_value > 0 ? row('折扣', esc(r.discount_type === '$' ? '$' + r.discount_value : r.discount_value + '%')) : ''}
     ${row('金额', `<b style="color:#b91c1c">${money(r.amount)}</b>${r.manual && r.discount_value > 0 ? ' <span style="font-size:.72rem;color:var(--g400)">（折后总金额）</span>' : ''}`)}
@@ -3975,6 +3976,11 @@ function openTruckAdd() {
       <label style="${LB}">SELECT TRUCK COMPANY 请选择卡车公司 ${REQ}</label>
       <select id="tfaPartySel" style="width:100%;margin-bottom:.4rem" onchange="document.getElementById('tfaPartyNew').style.display = this.value === '__new__' ? '' : 'none'"></select>
       <input type="text" id="tfaPartyNew" placeholder="输入新卡车公司名" style="width:100%;margin-bottom:.55rem;display:none">
+      <label style="${LB}">TRUCK SIZE 车型</label>
+      <div style="display:flex;gap:1.1rem;flex-wrap:wrap;margin-bottom:.6rem;font-size:.84rem">
+        <label style="display:inline-flex;align-items:center;gap:.3rem;cursor:pointer"><input type="radio" name="tfaSize" class="tfaSize" value="26ft"> 26 尺 (26ft)</label>
+        <label style="display:inline-flex;align-items:center;gap:.3rem;cursor:pointer"><input type="radio" name="tfaSize" class="tfaSize" value="53ft"> 53 尺 (53ft)</label>
+      </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.55rem">
         <div><label style="${LB}">START DATE 开始日期 ${REQ}</label><input type="date" id="tfaDate" style="width:100%"></div>
         <div><label style="${LB}">END DATE 结束日期</label><input type="date" id="tfaDateEnd" style="width:100%" title="单日/单程可不填"></div>
@@ -4025,6 +4031,7 @@ function openTruckAdd() {
   document.getElementById('tfaDisc').value = '0';
   document.getElementById('tfaDiscType').value = '%';
   document.querySelectorAll('.tfaCargo').forEach(c => { c.checked = false; });
+  document.querySelectorAll('.tfaSize').forEach(c => { c.checked = false; });
   document.getElementById('tfaAmount').value = '';
   document.getElementById('tfaNote').value = '';
   document.getElementById('tfaMsg').textContent = '';
@@ -4053,6 +4060,7 @@ function openTruckEdit(feeId) {
   document.getElementById('tfaDiscType').value = r.discount_type === '$' ? '$' : '%';
   const cargo = String(r.cargo || '').split(/\s*,\s*/);
   document.querySelectorAll('.tfaCargo').forEach(c => { c.checked = cargo.includes(c.value); });
+  document.querySelectorAll('.tfaSize').forEach(c => { c.checked = c.value === r.truck_size; });
   document.getElementById('tfaAmount').value = r.amount != null ? r.amount : '';
   document.getElementById('tfaNote').value = r.note || '';
   const n = (r.photos_urls || []).length;
@@ -4079,6 +4087,7 @@ async function submitTruckAdd() {
     fd.append('amount', amount);
     fd.append('description', document.getElementById('tfaNote').value.trim());
     fd.append('cargo', [...document.querySelectorAll('.tfaCargo:checked')].map(c => c.value).join(', '));
+    fd.append('truck_size', (document.querySelector('.tfaSize:checked') || {}).value || '');
     const disc = Number(document.getElementById('tfaDisc').value);
     if (disc > 0) { fd.append('discount_value', String(disc)); fd.append('discount_type', document.getElementById('tfaDiscType').value); }
     _tfaFiles.forEach(f => fd.append('invoice', f));
@@ -5275,7 +5284,7 @@ _csfDefs.truck = {
     { label: '日期', type: 'date', get: r => r.date },
     { label: '订单号', type: 'text', get: r => r.manual ? `手动添加 · ${r.created_by || ''}${r.approval_status === 'pending' ? ' · 待审核' : r.approval_status === 'rejected' ? ' · 已驳回' : ''}` : (r.rental_code || '') },
     { label: '卡车公司', type: 'text', get: r => r.customer },
-    { label: '装货', type: 'text', get: r => r.cargo },
+    { label: '装货', type: 'text', get: r => [r.truck_size, r.cargo].filter(Boolean).join(' · ') },
     { label: '金额', type: 'num', align: 'right', get: r => Number(r.amount) || 0 },
     { label: '付款状态', type: 'text', get: r => _truckStatusText(r) },
     { label: '付款批注（会计）', type: 'text', get: r => { const st = r.pay_note && r.pay_note.paid_status; return ({ paid: '已付款', partial: '部分付款', unpaid: '未付款' })[st] || '待记录'; } },
