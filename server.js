@@ -850,7 +850,7 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS fee_records (
 // 卡车租车单字段 (照 Bintique 租车单思路: 起止日期 + 折扣 + 装货类型)
 try { db.exec("ALTER TABLE fee_records ADD COLUMN fee_date_end TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN cargo TEXT DEFAULT ''"); } catch(e) {}
-// 车型: 26 尺 / 53 尺 (空 = 没填)
+// 车型: 16 尺 / 26 尺 / 53 尺 (空 = 没填)
 try { db.exec("ALTER TABLE fee_records ADD COLUMN truck_size TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN discount_value REAL DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN discount_type TEXT DEFAULT '%'"); } catch(e) {}
@@ -41300,7 +41300,7 @@ app.post('/api/acct/pallet-bills/:id/photos', requireAdmin, requireAcctWrite, co
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-const _feeTruckSize = v => ['26ft', '53ft'].includes(String(v || '')) ? String(v) : '';
+const _feeTruckSize = v => ['16ft', '26ft', '53ft'].includes(String(v || '')) ? String(v) : '';
 // 新增费用记录: 会计提交入库为 pending 待管理员审核, admin 提交直接 approved (发票文件复用 claimUpload)
 app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin', 'cs'), claimUpload.array('invoice', 50), (req, res) => {
   const b = req.body || {};
