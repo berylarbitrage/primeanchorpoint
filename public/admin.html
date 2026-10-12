@@ -38617,10 +38617,16 @@ function _invpParsePasteLines(text) {
     const line = raw.trim();
     if (!line) return;
     let s = ' ' + line + ' ';
-    let hours = null, rate = null;
-    // hours: a number immediately followed by h / hr / hrs / hour(s) / 小时
-    let m = s.match(/(\d+(?:\.\d+)?)\s*(?:h(?:rs?|ours?)?|小时)\b/i);
-    if (m) { hours = parseFloat(m[1]); s = s.replace(m[0], ' '); }
+    let hours = null, rate = null, ot = null;
+    const H = '(?:h(?:rs?|ours?)?|小时)';
+    // overtime: "OT 12.43H" / "加班 5h" / "12.43H OT" → added on top of regular hours
+    let m = s.match(new RegExp('(?:\\bOT|加班)\\s*[:：]?\\s*(\\d+(?:\\.\\d+)?)\\s*' + H + '?(?![\\w.$])', 'i'))
+         || s.match(new RegExp('(\\d+(?:\\.\\d+)?)\\s*' + H + '?\\s*(?:OT\\b|加班)', 'i'));
+    if (m) { ot = parseFloat(m[1]); s = s.replace(m[0], ' '); }
+    // hours: number(s) immediately followed by h / hr / hrs / hour(s) / 小时 (several are summed)
+    let hm;
+    const hre = new RegExp('(\\d+(?:\\.\\d+)?)\\s*' + H + '(?![a-z])', 'i');
+    while ((hm = s.match(hre))) { hours = (hours || 0) + parseFloat(hm[1]); s = s.replace(hm[0], ' '); }
     // rate: a number adjacent to $ (either side)
     m = s.match(/\$\s*(\d+(?:\.\d+)?)/) || s.match(/(\d+(?:\.\d+)?)\s*\$/);
     if (m) { rate = parseFloat(m[1] != null ? m[1] : m[2]); s = s.replace(m[0], ' '); }
@@ -38636,7 +38642,9 @@ function _invpParsePasteLines(text) {
     const name = s.replace(/\$/g, ' ').replace(/(^|\s)[-–—~]+(?=\s|$)/g, ' ')
       .replace(/\s+/g, ' ').trim().replace(/^[,;·、\-–—]+|[,;·、\-–—]+$/g, '').trim();
     if (!name) { bad.push({ raw: line }); return; }
-    rows.push({ name, rate: (rate != null && isFinite(rate)) ? rate : null, hours: (hours != null && isFinite(hours)) ? hours : null, raw: line });
+    if (ot != null && isFinite(ot)) hours = Math.round(((hours || 0) + ot) * 100) / 100;
+    else ot = null;
+    rows.push({ name, rate: (rate != null && isFinite(rate)) ? rate : null, hours: (hours != null && isFinite(hours)) ? hours : null, ot, raw: line });
   });
   return { rows, bad };
 }
@@ -38670,7 +38678,7 @@ function invpOpenPasteImport() {
     <div style="font-size:.8rem;color:#64748b;line-height:1.55;margin-bottom:.6rem">
       每行一个工人，格式：<code style="background:#f1f5f9;padding:1px 5px;border-radius:4px">姓名　时薪$　工时H</code>
       &nbsp;例如&nbsp;<code style="background:#f1f5f9;padding:1px 5px;border-radius:4px">Jimmerly Chirino 17$ 40H</code>。
-      <span style="color:#94a3b8">$ 和 H 可省略；工时会按服务周期天数平均分到每天（合计不变，&gt;40h 自动算加班）。</span>
+      <span style="color:#94a3b8">$ 和 H 可省略；加班可写 <code>40H OT 12.5H</code>（会合并为 52.5h）；工时会按服务周期天数平均分到每天（合计不变，&gt;40h 自动算加班）。</span>
     </div>
     <textarea id="invpPasteText" rows="8" placeholder="Jimmerly Chirino 17$ 40H&#10;Isabella Chirino 22$ 40H&#10;Yoseli Briceno 18$ 40H" oninput="invpRenderPastePreview()"
       style="width:100%;box-sizing:border-box;border:1px solid var(--gray-200);border-radius:8px;padding:.6rem .7rem;font-size:.9rem;font-family:'Menlo','Consolas',monospace;resize:vertical;margin-bottom:.6rem"></textarea>
@@ -38710,7 +38718,7 @@ function invpRenderPastePreview() {
       <td style="padding:2px 6px;color:var(--gray-400);text-align:right">${i + 1}</td>
       <td style="padding:2px 6px;font-weight:500">${esc(r.name)}</td>
       <td style="padding:2px 6px;text-align:right;${noRate ? 'color:#dc2626' : ''}">${r.rate != null ? '$' + r.rate : '—'}</td>
-      <td style="padding:2px 6px;text-align:right;${noHrs ? 'color:#dc2626' : ''}">${r.hours != null ? r.hours + 'h' : '—'}</td>
+      <td style="padding:2px 6px;text-align:right;${noHrs ? 'color:#dc2626' : ''}">${r.hours != null ? (r.ot ? `<span style="color:var(--gray-400)">${Math.round((r.hours - r.ot) * 100) / 100}+${r.ot}OT=</span>` : '') + r.hours + 'h' : '—'}</td>
     </tr>`;
   }).join('');
   box.innerHTML = `
