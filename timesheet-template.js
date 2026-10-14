@@ -6,12 +6,15 @@
 //            Name | Rate | OT Rate | Mon … Sun   (日期由 B3 Week Start 推出)
 //   DAILY  — 按日期, 一人一天一行
 //            Date | Name | Rate | OT Rate | Time In | Time Out | Break (min) | Hours | Note
+//   SHIFT  — 按天 / 班次分组, 一人一班一行; 发票按「8/29 day」分组打印, 组内编号 + 每组小计 + 总计
+//            Date | Shift | Name | Hours | Rate | Time In | Time Out | Break (min)
+//            时薪一口价 (不按 40h 拆加班), 和「日期+班次」排班流水导入一样
 // 表头上方是键值行: Company / Week Start (或 Period Start / Period End) / Markup。
 // 上传时 parseTimesheetTemplate() 把每人每天的工时读成 days 映射,
 // 正常/加班按每周 (周一~周日) 超 40 小时拆分。
 
 const MARK = 'PA TIMESHEET';
-const KINDS = ['weekly', 'daily'];
+const KINDS = ['weekly', 'daily', 'shift'];
 
 const r2 = n => Math.round(n * 100) / 100;
 const r3 = n => Math.round(n * 1000) / 1000;
@@ -112,6 +115,26 @@ const INSTRUCTIONS = {
     [],
     ['填写说明: 只改 Timesheet 页。一人一天一行, 填日期、姓名、工时 (或上下班时间); 时薪/Markup 不知道就留空。'],
   ],
+  shift: [
+    ['HOW TO FILL — Shift timesheet (one row per worker per shift; the invoice is grouped by date + shift with subtotals)'],
+    [],
+    ['Only edit the "Timesheet" sheet. Keep cell A1 = "PA TIMESHEET" and B1 = "SHIFT". Do not rename or move the header row.'],
+    ['B2  Company', 'Client company name, e.g. Looife Inc (optional, used to auto-select the client).'],
+    ['B3  Period Start', 'Service period start date, MM/DD/YYYY (optional; defaults to earliest date in rows).'],
+    ['B4  Period End', 'Service period end date, MM/DD/YYYY (optional; defaults to latest date in rows).'],
+    ['B5  Markup', 'Bill multiplier, e.g. 1.25 for 25%. Leave blank if billed at the pay rate.'],
+    ['Date', 'Work date, MM/DD/YYYY. One row per worker per shift. Rows with the same Date + Shift form one group on the invoice.'],
+    ['Shift', 'day / night (or any short label). Printed after the date, e.g. "8/29 day". Optional.'],
+    ['Name', 'Worker full name (spell it the same way on every row).'],
+    ['Hours', 'Hours worked that shift as a number (12.13). If blank, Time In/Out − Break is used.'],
+    ['Rate', 'Hourly rate for that shift (number, no $). Flat rate — overtime is NOT added for this template.'],
+    ['Time In / Time Out', 'Optional clock times, e.g. 7:00 PM / 7:30 AM (overnight is handled).'],
+    ['Break (min)', 'Unpaid break minutes, subtracted from Time In/Out.'],
+    [],
+    ['Then upload the file in Invoice → 新建 Invoice → 上传工资表 Excel.'],
+    [],
+    ['填写说明: 只改 Timesheet 页。一人一班一行: 日期、班次 (day/night)、姓名、工时、时薪。同一天同一班次的人在发票上排成一组并有小计; 时薪按一口价, 不另算加班。'],
+  ],
 };
 
 function buildTimesheetTemplate(opts = {}) {
@@ -123,6 +146,11 @@ function buildTimesheetTemplate(opts = {}) {
       ['Name', 'Rate', 'OT Rate', ...DAY_NAMES]];
     for (let i = 0; i < 30; i++) aoa.push(['']);
     cols = [26, 8, 8, 7, 7, 7, 7, 7, 7, 7];
+  } else if (kind === 'shift') {
+    aoa = [[MARK, 'SHIFT'], ['Company', ''], ['Period Start', ''], ['Period End', ''], ['Markup', ''], [],
+      ['Date', 'Shift', 'Name', 'Hours', 'Rate', 'Time In', 'Time Out', 'Break (min)']];
+    for (let i = 0; i < 80; i++) aoa.push(['']);
+    cols = [12, 8, 28, 8, 8, 10, 10, 10];
   } else {
     aoa = [[MARK, 'DAILY'], ['Company', ''], ['Period Start', ''], ['Period End', ''], ['Markup', ''], [],
       ['Date', 'Name', 'Rate', 'OT Rate', 'Time In', 'Time Out', 'Break (min)', 'Hours', 'Note']];
@@ -137,7 +165,8 @@ function buildTimesheetTemplate(opts = {}) {
   XLSX.utils.book_append_sheet(wb, ws, 'Timesheet');
   XLSX.utils.book_append_sheet(wb, help, 'Instructions');
   const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-  return { buffer: buf, fileName: `Timesheet_${kind === 'weekly' ? 'Weekly' : 'Daily'}_Template.xlsx`, kind };
+  const label = { weekly: 'Weekly', daily: 'Daily', shift: 'Shift' }[kind];
+  return { buffer: buf, fileName: `Timesheet_${label}_Template.xlsx`, kind };
 }
 
 // ─── 读回填好的模板 ──────────────────────────────────────────────────────────
@@ -148,16 +177,18 @@ function isTimesheetTemplate(rows) {
 function parseTimesheetTemplate(rows) {
   const warnings = [];
   let markIdx = rows.findIndex(r => low((r || [])[0]) === MARK.toLowerCase());
-  let kind = low((rows[markIdx] || [])[1]) === 'daily' ? 'daily' : 'weekly';
+  const kindCell = low((rows[markIdx] || [])[1]);
+  let kind = kindCell === 'daily' ? 'daily' : kindCell === 'shift' ? 'shift' : 'weekly';
   const meta = {};
   let hdrIdx = -1;
   for (let i = markIdx + 1; i < Math.min(rows.length, markIdx + 20); i++) {
     const r = rows[i] || [];
     const k = low(r[0]);
-    if ((k === 'name' && kind === 'weekly') || (k === 'date' && kind === 'daily')) { hdrIdx = i; break; }
+    if ((k === 'name' && kind === 'weekly') || (k === 'date' && kind !== 'weekly')) { hdrIdx = i; break; }
     if (k) meta[k] = r[1];
   }
   if (hdrIdx < 0) throw new Error('时间表模板找不到表头行（' + (kind === 'weekly' ? 'Name' : 'Date') + '）');
+  if (kind === 'shift') return parseShift(rows, hdrIdx, meta, warnings);
   const company = str(meta.company);
   const mult = num(meta.markup) > 0 ? num(meta.markup) : null;
   const markupMultiplier = mult == null ? null : (mult < 1 ? r3(1 + mult) : mult); // 填成 0.25 也认
@@ -263,6 +294,84 @@ function parseTimesheetTemplate(rows) {
     period: periodStart && periodEnd ? `${periodStart} ~ ${periodEnd}` : '',
     periodStart, periodEnd, defaultMarkupRate: markupMultiplier ? r3(markupMultiplier - 1) : null,
     markupMultiplier, employees, warnings,
+  };
+}
+
+// SHIFT: 一人一班一行 → 按 (日期, 班次) 分组成 shift_blocks (发票按组打印, 组内编号 + 小计),
+// 输出格式和「日期+班次」排班流水 (xlsx-invoice.js buildFromShiftLog) 一样: format 'shiftlog',
+// 时薪一口价 (otRate = rate), 同一人不同时薪拆成两行
+function parseShift(rows, hdrIdx, meta, warnings) {
+  const hdr = (rows[hdrIdx] || []).map(low);
+  const colOf = (...names) => hdr.findIndex(h => names.includes(h));
+  const c = { date: colOf('date'), shift: colOf('shift'), name: colOf('name'), hours: colOf('hours'), rate: colOf('rate', 'pay'),
+    tin: colOf('time in'), tout: colOf('time out'), brk: colOf('break (min)', 'break') };
+  const company = str(meta.company);
+  const mult = num(meta.markup) > 0 ? num(meta.markup) : null;
+  const markupMultiplier = mult == null ? null : (mult < 1 ? r3(1 + mult) : mult);
+  const ps = cellDate(meta['period start']), pe = cellDate(meta['period end']);
+  const year = (ps || pe || '').slice(0, 4) || String(new Date().getFullYear());
+  const order = [], byKey = new Map(), blocks = [], blockByKey = new Map(), allDates = [];
+  let lastDate = '', lastShift = '';
+  for (let i = hdrIdx + 1; i < rows.length; i++) {
+    const r = rows[i] || [];
+    const name = str(r[c.name]).replace(/\s+/g, ' ');
+    if (!name || /^(sub\s*|grand\s*)?totals?$/i.test(name)) continue;
+    const iso = cellDate(r[c.date], year) || lastDate; // 同一班连写多人时日期 / 班次可只写第一行
+    const dateCellBlank = r[c.date] == null || r[c.date] === '';
+    const shift = c.shift >= 0 ? (str(r[c.shift]) || (dateCellBlank ? lastShift : '')) : '';
+    if (iso) { lastDate = iso; lastShift = shift; }
+    let h = cellHours(r[c.hours]);
+    if (h == null) {
+      const a = cellClock(r[c.tin]), b = cellClock(r[c.tout]);
+      if (a != null && b != null) h = (b >= a ? b - a : b + 24 - a) - (num(r[c.brk]) || 0) / 60;
+    }
+    if (!h || h <= 0) continue;
+    if (!iso) { warnings.push(`${name} 有一行 ${r2(h)} 小时没写日期，已跳过。`); continue; }
+    h = r2(h);
+    const rate = num(r[c.rate]) > 0 ? num(r[c.rate]) : null;
+    const key = name.toLowerCase() + '|' + (rate == null ? '' : rate);
+    if (!byKey.has(key)) { byKey.set(key, { name, rate, total: 0, days: {} }); order.push(key); }
+    const rec = byKey.get(key);
+    rec.days[iso] = r3((rec.days[iso] || 0) + h);
+    rec.total = r3(rec.total + h);
+    allDates.push(iso);
+    const bk = iso + '|' + shift.toLowerCase();
+    if (!blockByKey.has(bk)) {
+      const [, mm, dd] = iso.split('-');
+      const blk = { label: `${+mm}/${+dd}${shift ? ' ' + shift : ''}`, date: iso, shift, entries: [], hours: 0, amount: 0 };
+      blockByKey.set(bk, blk); blocks.push(blk);
+    }
+    const blk = blockByKey.get(bk);
+    const amt = r2(h * (rate || 0));
+    blk.entries.push({ name, role: '', rate: rate || 0, hours: h, amount: amt });
+    blk.hours = r2(blk.hours + h);
+    blk.amount = r2(blk.amount + amt);
+  }
+  if (!order.length) throw new Error('时间表里没有填任何工时');
+  // 发票上按日期 (同一天 day 在 night 前) 排组
+  blocks.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : (a.shift || '').localeCompare(b.shift || ''));
+  const isos = [...allDates].sort();
+  const periodStart = ps || isos[0], periodEnd = pe || isos[isos.length - 1];
+  const outside = isos.filter(d => (ps && d < ps) || (pe && d > pe));
+  if (outside.length) warnings.push(`有 ${outside.length} 班的日期在 Period Start ~ End 之外（${[...new Set(outside)].join('、')}），请核对服务周期。`);
+  const employees = order.map(k => {
+    const r = byKey.get(k);
+    return {
+      name: r.name, type: '', regRate: r.rate, otRate: r.rate,
+      regHours: null, otHours: null, totalHours: r.total, days: r.days,
+      reimbursement: 0, markupRate: markupMultiplier ? r3(markupMultiplier - 1) : null,
+      regPay: null, otPay: null, totalPay: null, afterMarkup: null,
+    };
+  });
+  if (employees.some(e => !(e.regRate > 0))) warnings.push('有员工没填时薪（Rate），请在发票页补上：' + [...new Set(employees.filter(e => !(e.regRate > 0)).map(e => e.name))].join('、'));
+  const seen = new Set(), multi = new Set();
+  employees.forEach(e => { const k = e.name.toLowerCase(); if (seen.has(k)) multi.add(e.name); else seen.add(k); });
+  if (multi.size) warnings.push('同一人出现不同时薪，已拆成多行：' + [...multi].join('、'));
+  return {
+    ok: true, format: 'shiftlog', warehouse: '', companyHint: company || undefined,
+    period: periodStart && periodEnd ? `${periodStart} ~ ${periodEnd}` : '', periodStart, periodEnd,
+    defaultMarkupRate: markupMultiplier ? r3(markupMultiplier - 1) : null, markupMultiplier, employees, warnings,
+    shift_blocks: blocks,
   };
 }
 
