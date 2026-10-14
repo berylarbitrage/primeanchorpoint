@@ -895,7 +895,8 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
   <div id="lpModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:1600;align-items:center;justify-content:center;padding:16px">
     <div class="card" style="max-width:1200px;width:100%;padding:1.2rem 1.2rem 1rem;max-height:94vh;overflow:auto">
       <div style="font-weight:800;margin-bottom:.2rem">💵 这一条的付款备注</div>
-      <div id="lpTitle" style="font-size:.8rem;color:var(--g500);margin-bottom:.7rem"></div>
+      <div id="lpTitle" style="font-size:.8rem;color:var(--g500);margin-bottom:.35rem"></div>
+      <div id="lpReview" style="font-size:.78rem;margin-bottom:.6rem"></div>
       <div style="display:flex;gap:1.1rem;flex-wrap:wrap">
         <div style="flex:1;min-width:250px">
           <label style="font-size:.76rem;color:var(--g500)">这笔钱付了没有</label>
@@ -906,7 +907,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
             <option value="unpaid">❌ 未付</option>
           </select>
           <label style="font-size:.76rem;color:var(--g500)">怎么付的（银行/方式）</label>
-          <input type="text" id="lpMethod" list="lpMethodList" placeholder="例：Zelle / Chase ··0165 / 支票" style="width:100%;margin:.15rem 0 .55rem">
+          <input type="text" id="lpMethod" list="lpMethodList" placeholder="例：Zelle / Gusto / Chase ··0165 / 支票" oninput="lpMethodChanged()" style="width:100%;margin:.15rem 0 .55rem">
           <datalist id="lpMethodList"></datalist>
           <label style="font-size:.76rem;color:var(--g500)">备注</label>
           <input type="text" id="lpNote" placeholder="可选，例：8/30 付的，还差 $100" style="width:100%;margin:.15rem 0 .55rem">
@@ -1775,7 +1776,7 @@ function payNoteCell(type, id, pn, showTodo, noNote) {
 let _pnSel = new Set(), _pnTxnInfo = {}, _pnFiles = [], _pnNoteId = null, _payTargetAmt = 0;
 // 银行记录选择器的行 (pn* 付款批注 与 lp* 逐行备注 共用):
 // 第一行 日期/账户/金额, 第二行完整商户+银行原始描述不截断, 有标注(ANN)再带一行
-function _bankPickRowHtml(t2, on, hit, acctShort, toggleFn) {
+function _bankPickRowHtml(t2, on, hit, acctShort, toggleFn, nearDiff) {
   const isOut = (t2.amount || 0) > 0;
   const merchant = t2.merchant || t2.name || '';
   const fullDesc = (t2.name && t2.name !== merchant) ? t2.name : '';
@@ -1790,6 +1791,7 @@ function _bankPickRowHtml(t2, on, hit, acctShort, toggleFn) {
       <span style="white-space:nowrap;color:var(--g500)">${esc(t2.date || '')}</span>
       <span style="white-space:nowrap;color:var(--g400);font-size:.74rem">${esc(acctShort)}</span>
       ${hit ? '<span style="background:#dcfce7;color:#166534;border-radius:6px;padding:0 5px;font-size:.68rem;font-weight:700;white-space:nowrap">金额吻合</span>' : ''}
+      ${(!hit && nearDiff != null) ? `<span style="background:#fef3c7;color:#92400e;border-radius:6px;padding:0 5px;font-size:.68rem;font-weight:700;white-space:nowrap">Gusto 金额相近 · 差 ${money(nearDiff)}</span>` : ''}
       <b style="margin-left:auto;white-space:nowrap;color:${isOut ? '#dc2626' : '#15803d'}">${isOut ? '−' : '+'}${money(Math.abs(t2.amount || 0))}</b>
     </div>
     <div style="margin:1px 0 0 1.45rem;word-break:break-word">${esc(merchant)}</div>
@@ -5462,6 +5464,42 @@ async function openInvoice(id) {
 // ── 发票逐行付款备注: 每一条记「付了没有 / 怎么付的」+ 关联银行交易 + 上传凭证 ──
 let _invDoc = null, _lpIdx = null, _lpSel = new Set(), _lpTxnInfo = {}, _lpFiles = [], _lpNoteId = null, _lpAnnLoaded = false;
 const _LP_ST = { paid: ['✅ 已付', '#dcfce7', '#166534'], partial: ['🟡 部分', '#fef3c7', '#92400e'], unpaid: ['❌ 未付', '#fee2e2', '#991b1b'] };
+// 审核状态徽章: 会计/客服填的 → 待审核, admin 审核过 → 已审核; 旧数据 ('') 不显示
+function _lpReviewBadge(n) {
+  if (!n || !n.review_status) return '';
+  return n.review_status === 'pending'
+    ? ' <span style="background:#fef3c7;color:#92400e;border-radius:8px;padding:1px 7px;font-size:.7rem;font-weight:700;white-space:nowrap">⏳ 待审核</span>'
+    : ' <span style="background:#e0f2fe;color:#075985;border-radius:8px;padding:1px 7px;font-size:.7rem;font-weight:700;white-space:nowrap" title="审核人：' + esc(n.reviewed_by || '') + '">☑ 已审核</span>';
+}
+function lpReviewRefresh() {
+  const el = document.getElementById('lpReview');
+  const n = (_invDoc && _invDoc.line_pay_notes && _invDoc.line_pay_notes[_lpIdx]) || null;
+  if (!el) return;
+  if (!n || !n.review_status) { el.innerHTML = annCanReview() ? '' : '<span style="color:var(--g400)">保存后需 admin 审核</span>'; return; }
+  if (n.review_status === 'approved') { el.innerHTML = `<span style="color:#075985">☑ 已审核${n.reviewed_by ? '（' + esc(n.reviewed_by) + '）' : ''}</span>${annCanReview() ? '' : ' <span style="color:var(--g400)">· 再改会重新进入待审核</span>'}`; return; }
+  el.innerHTML = `<span style="color:#92400e;font-weight:700">⏳ 待 admin 审核</span>${n.created_by ? ` <span style="color:var(--g400)">· 填写人 ${esc(n.created_by)}</span>` : ''}` +
+    (annCanReview() ? ` <button type="button" class="btn btn-sm" onclick="lpApprove()" style="margin-left:.4rem;background:#16a34a;color:#fff;font-size:.72rem;padding:2px 10px">✓ 审核通过</button>` : '');
+}
+async function lpApprove() {
+  const n = _invDoc && _invDoc.line_pay_notes && _invDoc.line_pay_notes[_lpIdx];
+  if (!n || !n.id) return;
+  try {
+    const r = await bapi(`/api/acct/line-pay-notes/${n.id}/approve`, { method: 'POST' });
+    _invDoc.line_pay_notes[_lpIdx] = r.note;
+    const cell = document.getElementById('lpCell' + _lpIdx);
+    if (cell) cell.innerHTML = _lpChip(_lpIdx);
+    lpReviewRefresh();
+    toast('✅ 已审核通过');
+  } catch (e) { toast(e.message || '审核失败', true); }
+}
+function _lpIsGusto() { return /gusto/i.test(document.getElementById('lpMethod').value || ''); }
+function lpMethodChanged() {
+  const g = _lpIsGusto();
+  if (g === window._lpWasGusto) return;
+  window._lpWasGusto = g;
+  clearTimeout(window._lpMT);
+  window._lpMT = setTimeout(lpTxnLoad, 300);
+}
 function _lpChip(i) {
   const n = (_invDoc && _invDoc.line_pay_notes && _invDoc.line_pay_notes[i]) || null;
   const has = n && (n.paid_status || n.pay_method || n.note || (n.txn_ids || []).length || (n.photos_urls || []).length);
@@ -5473,7 +5511,7 @@ function _lpChip(i) {
   if ((n.txn_ids || []).length) bits.push(`🏦 ${n.txn_ids.length} 笔银行记录`);
   if ((n.photos_urls || []).length) bits.push(`📷 ${n.photos_urls.length}`);
   if (n.note) bits.push(esc(n.note));
-  const inner = `${badge}${bits.length ? ` <span style="font-size:.72rem;color:#475569">${bits.join(' · ')}</span>` : ''}`;
+  const inner = `${badge}${_lpReviewBadge(n)}${bits.length ? ` <span style="font-size:.72rem;color:#475569">${bits.join(' · ')}</span>` : ''}`;
   return canAnnotate()
     ? `<a style="cursor:pointer;text-decoration:none" title="点击编辑" onclick="openLinePay(${i})">${inner}</a>`
     : inner;
@@ -5511,13 +5549,16 @@ async function openLinePay(i) {
   document.getElementById('lpTitle').textContent = `${_invDoc.invoice_number || ''} · 第 ${i + 1} 行 · ${_lpLabel(i)} · ${money(_lpLineAmt(i))}`;
   document.getElementById('lpStatus').value = n.paid_status || '';
   document.getElementById('lpMethod').value = n.pay_method || '';
+  window._lpWasGusto = _lpIsGusto();
   document.getElementById('lpNote').value = n.note || '';
+  try { await _annEnsureReviewFlag(); } catch (e) {}
+  lpReviewRefresh();
   lpRenderPhotos(n.photos_urls || []);
   try {
     if (!_plaidAccts) _plaidAccts = await bapi('/api/plaid/accounts');
     const accs = (_plaidAccts && _plaidAccts.accounts) || [];
     const banks = accs.map(a => [a.institution, a.company_label || a.name].filter(Boolean).join(' ') + (a.mask ? ' ··' + a.mask : ''));
-    const methods = ['Zelle', '支票 Check', '电汇 Wire', 'ACH', '现金 Cash', '信用卡 Credit Card'];
+    const methods = ['Zelle', 'Gusto', '支票 Check', '电汇 Wire', 'ACH', '现金 Cash', '信用卡 Credit Card'];
     document.getElementById('lpMethodList').innerHTML = [...banks, ...methods].map(v => `<option value="${esc(v)}">`).join('');
     const aSel = document.getElementById('lpTxnAcct');
     const cur = aSel.value;
@@ -5549,18 +5590,27 @@ async function lpTxnLoad() {
   if (!isNaN(amtV) && amtV > 0) q.set('amount', String(amtV));
   q.set('limit', '300');
   const lineAmt = _lpLineAmt(_lpIdx);
-  let rows = [], matched = [];
+  const gusto = _lpIsGusto() && lineAmt > 0;
+  let rows = [], matched = [], near = [];
   try {
+    // 选了 Gusto: 另外全库找描述带 Gusto、金额在本行金额 60%~120% 之间的扣款 (工资比账单少个 markup),
+    // 按差额从小到大置顶显示
+    const nearReq = gusto
+      ? bapi(`/api/plaid/transactions?q=gusto&amt_lo=${(lineAmt * 0.6).toFixed(2)}&amt_hi=${(lineAmt * 1.2).toFixed(2)}&limit=200`).catch(() => ({ transactions: [] }))
+      : Promise.resolve({ transactions: [] });
     const reqs = [bapi('/api/plaid/transactions?' + q.toString())];
     // 没手动按金额筛时, 顺带全库找和本行金额一致的交易, 置顶高亮
     if ((isNaN(amtV) || amtV <= 0) && lineAmt > 0) reqs.push(bapi('/api/plaid/transactions?amount=' + lineAmt + '&limit=50').catch(() => ({ transactions: [] })));
     // 首次打开顺带拉标注 (bank-ann.js 的 ANN), 每行能显示自己做过的标注
     if (!_lpAnnLoaded) { _lpAnnLoaded = true; reqs.push(annLoadAll().catch(() => {})); }
-    const [r1, r2] = await Promise.all(reqs);
+    const [[r1, r2], rn] = await Promise.all([Promise.all(reqs), nearReq]);
     rows = r1.transactions || [];
     matched = (r2 && r2.transactions) || [];
+    near = ((rn && rn.transactions) || []).filter(t2 => (t2.amount || 0) > 0)
+      .sort((a, b) => Math.abs(Math.abs(a.amount) - lineAmt) - Math.abs(Math.abs(b.amount) - lineAmt));
   } catch (e) { box.innerHTML = `<span style="color:#dc2626">${esc(e.message || '加载失败')}</span>`; return; }
-  [...rows, ...matched].forEach(t2 => { _lpTxnInfo[t2.txn_id] = t2; });
+  [...rows, ...matched, ...near].forEach(t2 => { _lpTxnInfo[t2.txn_id] = t2; });
+  const nearIds = new Set(near.map(t2 => t2.txn_id));
   const matchIds = new Set(matched.map(m => m.txn_id));
   const isMatch = t2 => matchIds.has(t2.txn_id) || (lineAmt > 0 && Math.abs(Math.abs(t2.amount || 0) - lineAmt) < 0.005);
   // 顺序: 已选但不在结果里的 → 金额匹配的 → 其余
@@ -5568,10 +5618,13 @@ async function lpTxnLoad() {
   const pick = arr => arr.filter(t2 => t2 && !seen.has(t2.txn_id) && (seen.add(t2.txn_id), true));
   const pinnedSel = pick([..._lpSel].filter(id => !rows.some(r => r.txn_id === id) && !matchIds.has(id)).map(id => _lpTxnInfo[id]));
   const matchRows = pick([...matched, ...rows.filter(isMatch)]);
+  const nearRows = pick(near);
   const restRows = pick(rows);
-  const all = [...pinnedSel, ...matchRows, ...restRows];
+  const all = [...pinnedSel, ...matchRows, ...nearRows, ...restRows];
+  const nearDiff = t2 => nearIds.has(t2.txn_id) ? Math.abs(Math.abs(t2.amount || 0) - lineAmt) : null;
   box.innerHTML = all.length
-    ? all.map(t2 => _bankPickRowHtml(t2, _lpSel.has(t2.txn_id), isMatch(t2), _lpAcctShort(t2.account_id), 'lpTxnToggle')).join('')
+    ? (gusto ? `<div style="font-size:.72rem;color:#92400e;padding:.15rem .25rem .3rem">Gusto：金额相近的扣款 ${nearRows.length} 笔（本行 ${money(lineAmt)} 的 60%–120%，按差额排序）置顶</div>` : '') +
+      all.map(t2 => _bankPickRowHtml(t2, _lpSel.has(t2.txn_id), isMatch(t2), _lpAcctShort(t2.account_id), 'lpTxnToggle', nearDiff(t2))).join('')
     : '<span style="color:var(--g400)">没有符合条件的交易</span>';
   lpTxnSumRefresh();
 }
@@ -5616,7 +5669,7 @@ async function lpDelPhoto(u) {
     const r = await bapi(`/api/acct/line-pay-notes/${_lpNoteId}/photos?photo=${encodeURIComponent(u.split('/').pop())}`, { method: 'DELETE' });
     lpRenderPhotos(r.photos_urls || []);
     const n = _invDoc.line_pay_notes && _invDoc.line_pay_notes[_lpIdx];
-    if (n) { n.photos_urls = r.photos_urls || []; const cell = document.getElementById('lpCell' + _lpIdx); if (cell) cell.innerHTML = _lpChip(_lpIdx); }
+    if (n) { n.photos_urls = r.photos_urls || []; if (!annCanReview()) { n.review_status = 'pending'; n.reviewed_by = ''; } lpReviewRefresh(); const cell = document.getElementById('lpCell' + _lpIdx); if (cell) cell.innerHTML = _lpChip(_lpIdx); }
   } catch (e) { toast(e.message || '删除失败', true); }
 }
 function closeLinePay() { document.getElementById('lpModal').style.display = 'none'; }
