@@ -5492,6 +5492,24 @@ async function lpApprove() {
     toast('✅ 已审核通过');
   } catch (e) { toast(e.message || '审核失败', true); }
 }
+// Gusto 扣款按工人名字筛: 银行描述里没有人名, 名字来自这笔交易的标注 (员工:公司|姓名)
+// 和「Gusto 工资」页签挂的付款 (contractor_name)。名字按词比较, 一方的词全在另一方里就算同一人
+// (Carlos Hernandez ↔ Carlos Hernandez Fabian; 「Moyado, Jesus」也认)。
+function _lpNameTokens(n) { return String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z\u4e00-\u9fff]+/g, ' ').trim().split(/\s+/).filter(Boolean); }
+function _lpNameMatch(a, b) {
+  const ta = _lpNameTokens(a), tb = _lpNameTokens(b);
+  if (!ta.length || !tb.length) return false;
+  const [sm, lg] = ta.length <= tb.length ? [ta, tb] : [tb, ta];
+  return sm.every(t => lg.includes(t));
+}
+function _lpTxnNames(txnId) {
+  const names = [];
+  const ab = (typeof ANN !== 'undefined' && ANN[txnId]) || null;
+  if (ab && _bsIsEmp(ab.payee)) names.push(_bsEmpParse(ab.payee).name);
+  ((typeof GUSTO_LINKS !== 'undefined' && GUSTO_LINKS[txnId]) || []).forEach(g => names.push(g.contractor_name));
+  return names.filter(Boolean);
+}
+function lpNameFilterToggle(cb) { window._lpNameFilter = cb.checked; lpTxnLoad(); }
 function _lpIsGusto() { return /gusto/i.test(document.getElementById('lpMethod').value || ''); }
 function lpMethodChanged() {
   const g = _lpIsGusto();
@@ -5550,6 +5568,7 @@ async function openLinePay(i) {
   document.getElementById('lpStatus').value = n.paid_status || '';
   document.getElementById('lpMethod').value = n.pay_method || '';
   window._lpWasGusto = _lpIsGusto();
+  window._lpNameFilter = true;  // 每次打开默认按本行工人名字筛 Gusto 扣款
   document.getElementById('lpNote').value = n.note || '';
   try { await _annEnsureReviewFlag(); } catch (e) {}
   lpReviewRefresh();
@@ -5618,12 +5637,22 @@ async function lpTxnLoad() {
   const pick = arr => arr.filter(t2 => t2 && !seen.has(t2.txn_id) && (seen.add(t2.txn_id), true));
   const pinnedSel = pick([..._lpSel].filter(id => !rows.some(r => r.txn_id === id) && !matchIds.has(id)).map(id => _lpTxnInfo[id]));
   const matchRows = pick([...matched, ...rows.filter(isMatch)]);
+  // 按本行工人名字筛 (可关闭); 集装箱行没有人名, 不筛
+  const p0 = (_invDoc && _invDoc.profile) || {};
+  const workerName = p0.invoice_mode === 'container' ? '' : _lpLabel(_lpIdx);
+  const nameOn = gusto && !!workerName && window._lpNameFilter !== false;
+  const nearAll = near.length;
+  if (nameOn) near = near.filter(t2 => _lpTxnNames(t2.txn_id).some(n => _lpNameMatch(n, workerName)));
   const nearRows = pick(near);
   const restRows = pick(rows);
   const all = [...pinnedSel, ...matchRows, ...nearRows, ...restRows];
   const nearDiff = t2 => nearIds.has(t2.txn_id) ? Math.abs(Math.abs(t2.amount || 0) - lineAmt) : null;
   box.innerHTML = all.length
-    ? (gusto ? `<div style="font-size:.72rem;color:#92400e;padding:.15rem .25rem .3rem">Gusto：金额相近的扣款 ${nearRows.length} 笔（本行 ${money(lineAmt)} 的 60%–120%，按差额排序）置顶</div>` : '') +
+    ? (gusto ? `<div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.72rem;color:#92400e;padding:.15rem .25rem .3rem">
+        <span>Gusto：金额相近的扣款 ${nearRows.length} 笔${nameOn ? `（共 ${nearAll} 笔，已按名字筛）` : ''}（本行 ${money(lineAmt)} 的 60%–120%，按差额排序）置顶</span>
+        ${workerName ? `<label style="display:inline-flex;align-items:center;gap:.25rem;cursor:pointer;font-weight:700;margin-left:auto"><input type="checkbox" ${nameOn ? 'checked' : ''} onchange="lpNameFilterToggle(this)">只看「${esc(workerName)}」</label>` : ''}
+        ${(nameOn && !nearRows.length && nearAll) ? `<span style="color:var(--g500);width:100%">没找到标注为这个名字的扣款（名字来自交易标注 / Gusto 工资挂账），可取消勾选看全部 ${nearAll} 笔</span>` : ''}
+      </div>` : '') +
       all.map(t2 => _bankPickRowHtml(t2, _lpSel.has(t2.txn_id), isMatch(t2), _lpAcctShort(t2.account_id), 'lpTxnToggle', nearDiff(t2))).join('')
     : '<span style="color:var(--g400)">没有符合条件的交易</span>';
   lpTxnSumRefresh();
