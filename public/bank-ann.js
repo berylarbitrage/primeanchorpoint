@@ -644,14 +644,6 @@ function bsAmtInput(id, el) {
   el.style.borderColor = f ? 'var(--gray-200)' : '#dc2626';
   el.style.background = f ? '' : '#fff5f5';
 }
-function bsNoteInput(id, el) {
-  const box = _bsBoxList.find(b => b.id === id);
-  if (box) box.note = el.value;
-  bsRefreshNoteState(id);
-  // 自动核对里的「银行到账 ≠ 发票合计」跟着备注变: 写了备注就改成附上备注的灰色说明
-  clearTimeout(bsNoteInput._t);
-  bsNoteInput._t = setTimeout(() => _bsAnnCheckRun(id), 250);
-}
 // 免填备注还差哪些字段 (备注框提示和列表徽章共用): 公司收入等类型把
 // 用途/发票号/账期 填齐备注就是选填, 缺哪个点名哪个; 没有免填路径的返回 []。
 function _bsNoteMissing(box) {
@@ -679,16 +671,104 @@ function _bsNoteHint(box) {
   const missing = _bsNoteMissing(box);
   return missing.length ? `原因 / 备注（需补上——或把「${missing.join('、')}」填上即可免填）` : '原因 / 备注（需补上）';
 }
+// 多条备注: 一笔交易可写好几条原因, 每条各带一个金额 (存 note_items JSON [{t, amt}])。
+// note 字段仍存拼好的整段文字 ("原因A $100；原因B $200"), 其他地方的显示 / 必填检查照旧用 note。
+function _bsNoteItems(box) {
+  let a = box.note_items;
+  if (typeof a === 'string') { try { a = JSON.parse(a || '[]'); } catch (e) { a = []; } }
+  if (!Array.isArray(a)) a = [];
+  a = a.map(x => ({ t: String((x && x.t) || ''), amt: String((x && x.amt) || '') }));
+  // 旧标注只有 note 没有 note_items (或 note 是别处自动写的): 当成一条备注
+  if (!a.some(x => x.t.trim())) a = [{ t: String(box.note || ''), amt: (a[0] && a[0].amt) || '' }].concat(a.slice(1));
+  return a;
+}
+function _bsNoteJoin(items) {
+  const filled = items.filter(x => x.t.trim() || x.amt.trim());
+  if (filled.length === 1 && !filled[0].amt.trim()) return filled[0].t.trim();
+  return filled.map(x => {
+    const n = parseFloat(x.amt);
+    return (x.t.trim() + (isNaN(n) ? '' : ' ' + money(n))).trim();
+  }).join('；');
+}
+function _bsNoteSumLineHtml(box, items) {
+  if (items.length < 2 && !items.some(x => x.amt.trim())) return '';
+  const sum = items.reduce((s, x) => s + (parseFloat(x.amt) || 0), 0);
+  const bank = Math.abs(Number(box.amount) || 0);
+  const ok = Math.abs(sum - bank) < 0.005;
+  return `备注金额合计 <b>${money(sum)}</b> / 交易金额 ${money(bank)}` +
+    (ok ? ' <span style="color:#16a34a">✓ 对上</span>' : ` <span style="color:#dc2626">差 ${money(Math.abs(bank - sum))}</span>`);
+}
+function _bsNoteItemsHtml(box) {
+  const items = _bsNoteItems(box);
+  const ok = _bsNoteSatisfied(box);
+  const multi = items.length > 1;
+  const rows = items.map((it, i) => `<div class="bs-note-item" style="display:flex;gap:.3rem;align-items:center;margin-bottom:.3rem">
+      <input type="text" class="bs-bx-note" placeholder="${esc(i === 0 ? _bsNoteHint(box) : '原因 / 备注')}" value="${esc(it.t)}" oninput="bsNoteItemField(${box.id},${i},'t',this.value)" style="flex:1;min-width:0;box-sizing:border-box;padding:.32rem .4rem;border:1px solid ${ok ? 'var(--gray-200)' : '#dc2626'};border-radius:6px;font-size:.82rem;${ok ? '' : 'background:#fff5f5'}">
+      <span style="color:#94a3b8;font-size:.82rem">$</span>
+      <input type="number" step="0.01" placeholder="金额" value="${esc(it.amt)}" oninput="bsNoteItemField(${box.id},${i},'amt',this.value)" style="width:90px;box-sizing:border-box;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+      ${multi ? `<button onclick="bsNoteItemDel(${box.id},${i})" title="删除这条备注" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:.9rem;padding:0 .15rem">✕</button>` : ''}
+    </div>`).join('');
+  return `<div class="bs-note-items" style="margin-bottom:.4rem">${rows}
+      <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.75rem">
+        <span onclick="bsNoteItemAdd(${box.id})" style="cursor:pointer;color:#2563eb;font-weight:600">＋ 再加一条备注</span>
+        <span class="bs-note-sum" style="color:var(--gray-500)">${_bsNoteSumLineHtml(box, items)}</span>
+      </div>
+    </div>`;
+}
+const _bsNoteSaveTimers = {};
+function _bsNoteItemsSave(box, items) {
+  box.note_items = items;
+  box.note = _bsNoteJoin(items);
+  bsRefreshNoteState(box.id);
+  const item = document.querySelector(`.bs-box-item[data-id="${box.id}"]`);
+  const sumEl = item && item.querySelector('.bs-note-sum');
+  if (sumEl) sumEl.innerHTML = _bsNoteSumLineHtml(box, items);
+  // 自动核对里的「银行到账 ≠ 发票合计」跟着备注变
+  clearTimeout(_bsNoteSaveTimers[box.id]);
+  _bsNoteSaveTimers[box.id] = setTimeout(async () => {
+    try {
+      const r = await annApi(`/plaid/annotations/${box.id}`, { method: 'PUT', body: JSON.stringify({ note: box.note, note_items: JSON.stringify(items) }) });
+      if (r && r.ann_status !== undefined) { box.ann_status = r.ann_status; box.ann_by = r.ann_by || box.ann_by; annStatusLineRefresh(box); }
+      const s = document.getElementById('bsEdStatus'); if (s) { s.textContent = '已保存 ✓'; setTimeout(() => { if (s.textContent === '已保存 ✓') s.textContent = ''; }, 1200); }
+    } catch (e) { showToast('保存失败：' + (e.message || e), 'error'); }
+    annRefreshChip(box);
+    _bsAnnCheckRun(box.id);
+  }, 400);
+}
+function bsNoteItemField(boxId, idx, key, val) {
+  const box = _bsBoxList.find(b => b.id === boxId); if (!box) return;
+  const items = _bsNoteItems(box);
+  if (!items[idx]) return;
+  items[idx][key] = String(val || '');
+  _bsNoteItemsSave(box, items);
+}
+function bsNoteItemAdd(boxId) {
+  const box = _bsBoxList.find(b => b.id === boxId); if (!box) return;
+  const items = _bsNoteItems(box);
+  items.push({ t: '', amt: '' });
+  _bsNoteItemsSave(box, items);
+  _bsRenderBoxPanel();
+}
+function bsNoteItemDel(boxId, idx) {
+  const box = _bsBoxList.find(b => b.id === boxId); if (!box) return;
+  const items = _bsNoteItems(box);
+  items.splice(idx, 1);
+  if (!items.length) items.push({ t: '', amt: '' });
+  _bsNoteItemsSave(box, items);
+  _bsRenderBoxPanel();
+}
 function bsRefreshNoteState(id) {
   const box = _bsBoxList.find(b => b.id === id);
   const item = document.querySelector(`.bs-box-item[data-id="${id}"]`);
   if (!box || !item) return;
-  const el = item.querySelector('.bs-bx-note');
-  if (!el) return;
+  const els = item.querySelectorAll('.bs-bx-note');
+  if (!els.length) return;
   const ok = _bsNoteSatisfied(box);
-  el.style.borderColor = ok ? 'var(--gray-200)' : '#dc2626';
-  el.style.background = ok ? '' : '#fff5f5';
-  el.placeholder = _bsNoteHint(box);
+  els.forEach((el, i) => {
+    el.style.borderColor = ok ? 'var(--gray-200)' : '#dc2626';
+    el.style.background = ok ? '' : '#fff5f5';
+    if (i === 0) el.placeholder = _bsNoteHint(box);
+  });
 }
 async function bsUpdateBoxField(id, field, value) {
   const box = _bsBoxList.find(b => b.id === id);
@@ -1338,7 +1418,7 @@ function _bsRenderBoxPanel() {
         <input type="number" class="bs-bx-amt" value="${box.amount || 0}" readonly title="金额来自银行同步的交易，不可修改" style="flex:1;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:var(--gray-100);color:var(--gray-600);cursor:not-allowed">
         <span class="hint" style="flex:0 0 auto">银行同步，不可改</span>
       </div>
-      <input type="text" class="bs-bx-note" placeholder="${esc(_bsNoteHint(box))}" value="${esc(box.note || '')}" onchange="bsUpdateBoxField(${box.id},'note',this.value)" oninput="bsNoteInput(${box.id},this)" style="width:100%;box-sizing:border-box;padding:.32rem .4rem;border:1px solid ${_bsNoteSatisfied(box) ? 'var(--gray-200)' : '#dc2626'};border-radius:6px;font-size:.82rem;margin-bottom:.4rem;${_bsNoteSatisfied(box) ? '' : 'background:#fff5f5'}">
+      ${_bsNoteItemsHtml(box)}
       <div class="bs-bx-photozone" ondragover="bsPhotoDragOver(event,this)" ondragleave="bsPhotoDragLeave(event,this)" ondrop="bsPhotoDrop(event,${box.id},this)" style="border:1px dashed var(--gray-300);border-radius:6px;padding:.4rem .5rem;transition:background .15s,border-color .15s">
         <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem;flex-wrap:wrap">
           <span style="font-size:.75rem;color:var(--gray-500)">📷 照片${(box.photos_urls && box.photos_urls.length) ? ' (' + box.photos_urls.length + ')' : ''}</span>

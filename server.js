@@ -2870,6 +2870,8 @@ try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN links TEXT DEFAULT '[]
 try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN category TEXT DEFAULT ''`); } catch(e) {}
 // 一笔支出可以覆盖多张发票，每张各自的账期和金额：JSON [{inv, ps, pe, amt}]
 try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN inv_items TEXT DEFAULT '[]'`); } catch(e) {}
+// 多条备注, 每条各带金额：JSON [{t, amt}]; note 字段同时存拼好的整段文字
+try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN note_items TEXT DEFAULT '[]'`); } catch(e) {}
 // 银行直连 (Plaid) 交易的标注也存这张表：plaid_txn_id 关联 plaid_transactions.txn_id,
 // 挂在该 Plaid 账户对应的虚拟账单 (bank_statements.source='plaid:<account_id>') 下,
 // 编辑/照片/删除复用 /api/admin/bank-statements/:id/boxes/* 一套接口。
@@ -36505,7 +36507,7 @@ function annCanReview(req) {
 // 所有 Plaid 交易的标注, 按 plaid_txn_id 键成 map (银行对账页给每行画徽章用)
 app.get('/api/plaid/annotations', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
   try {
-    const rows = db.prepare(`SELECT id, statement_id, plaid_txn_id, txn_date, amount, note, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, inv_items, category, ann_status, ann_by, links
+    const rows = db.prepare(`SELECT id, statement_id, plaid_txn_id, txn_date, amount, note, payee, direction, photos, purpose, invoice_number, period_start, period_end, pay_portion, inv_items, note_items, category, ann_status, ann_by, links
       FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id<>''`).all();
     const map = {};
     for (const r of rows) map[r.plaid_txn_id] = plaidAnnWithPhotos(r);
@@ -36585,15 +36587,24 @@ app.put('/api/plaid/annotations/:id', requireAdmin, requireRole('admin', 'cs', '
         })));
       } catch (e2) { invItemsVal = row.inv_items; }
     }
+    let noteItemsVal = row.note_items;
+    if (has('note_items')) {
+      try {
+        const arr = typeof b.note_items === 'string' ? JSON.parse(b.note_items) : b.note_items;
+        noteItemsVal = JSON.stringify((Array.isArray(arr) ? arr : []).slice(0, 30).map(x => ({
+          t: String((x && x.t) || '').slice(0, 200), amt: String((x && x.amt) || '').slice(0, 20),
+        })));
+      } catch (e2) { noteItemsVal = row.note_items; }
+    }
     const isCs = !annCanReview(req); // 无审核权的客服/会计改动需审核; admin 和勾了审核权的账号直接生效
     const annStatus = isCs ? 'pending' : row.ann_status;
     const annBy = isCs ? (req.userName || '') : row.ann_by;
     db.prepare(`UPDATE bank_statement_txns SET
-        txn_date=?, note=?, payee=?, direction=?, purpose=?, invoice_number=?, period_start=?, period_end=?, pay_portion=?, inv_items=?,
+        txn_date=?, note=?, payee=?, direction=?, purpose=?, invoice_number=?, period_start=?, period_end=?, pay_portion=?, inv_items=?, note_items=?,
         ann_status=?, ann_by=?, updated_at=CURRENT_TIMESTAMP
       WHERE id=?`).run(
       has('txn_date') ? String(b.txn_date || '').slice(0, 40) : row.txn_date,
-      has('note') ? String(b.note || '').slice(0, 200) : row.note,
+      has('note') ? String(b.note || '').slice(0, 1000) : row.note,
       has('payee') ? String(b.payee || '').slice(0, 120) : row.payee,
       (!isCs && has('direction')) ? (b.direction === 'in' ? 'in' : 'out') : row.direction,
       has('purpose') ? String(b.purpose || '').slice(0, 80) : row.purpose,
@@ -36601,7 +36612,7 @@ app.put('/api/plaid/annotations/:id', requireAdmin, requireRole('admin', 'cs', '
       has('period_start') ? String(b.period_start || '').slice(0, 40) : row.period_start,
       has('period_end') ? String(b.period_end || '').slice(0, 40) : row.period_end,
       has('pay_portion') ? String(b.pay_portion || '').slice(0, 20) : row.pay_portion,
-      invItemsVal, annStatus, annBy, id);
+      invItemsVal, noteItemsVal, annStatus, annBy, id);
     res.json({ success: true, ann_status: annStatus, ann_by: annBy });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
