@@ -42313,7 +42313,25 @@ app.get('/api/acct/gusto/payments', requireAdmin, requireAcctView, (req, res) =>
         WHERE t.txn_id IN (${txnIds.map(() => '?').join(',')})`).all(...txnIds)
         .forEach(t => { bank_txns[t.txn_id] = t; });
     }
-    res.json({ rows, count: rows.length, total, bank_txns });
+    // 这笔银行转账有没有被发票「逐行付款备注」关联上 (txn → 哪张发票第几行, 审核状态),
+    // 列表上标「🧾 已连 invoice · 待审核/已审核」
+    const invoice_links = {};
+    if (txnIds.length) {
+      const want = new Set(txnIds);
+      db.prepare(`SELECT n.invoice_id, n.line_idx, n.line_label, n.txn_ids, n.review_status, n.reviewed_by, n.created_by,
+          COALESCE(i.invoice_number,'') AS invoice_number
+        FROM acct_line_pay_notes n LEFT JOIN invoices i ON i.id = n.invoice_id
+        WHERE n.txn_ids IS NOT NULL AND n.txn_ids NOT IN ('', '[]')`).all()
+        .forEach(n => {
+          let ids = []; try { ids = JSON.parse(n.txn_ids || '[]'); } catch (e) { ids = []; }
+          (Array.isArray(ids) ? ids : []).forEach(id => {
+            if (!want.has(id)) return;
+            (invoice_links[id] = invoice_links[id] || []).push({ invoice_id: n.invoice_id, invoice_number: n.invoice_number,
+              line_idx: n.line_idx, line_label: n.line_label, review_status: n.review_status || '', reviewed_by: n.reviewed_by || '', created_by: n.created_by || '' });
+          });
+        });
+    }
+    res.json({ rows, count: rows.length, total, bank_txns, invoice_links });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

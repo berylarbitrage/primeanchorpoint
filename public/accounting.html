@@ -4738,6 +4738,7 @@ async function gustoLoadPayments() {
   const r = await api('/api/acct/gusto/payments').catch(err => ({ error: err.message }));
   _gustoPayRows = (r && r.rows) || [];
   _gustoBankTxns = (r && r.bank_txns) || {};
+  _gustoInvLinks = (r && r.invoice_links) || {};
   renderGustoPayList();
 }
 // 付款日期所在的自然周（周一 ~ 周日）
@@ -4810,11 +4811,12 @@ function renderGustoPayList() {
     else if (grp === 'month') { k = String(p.date || '').slice(0, 7); label = `🗓️ ${k}`; }
     else if (grp === 'dept') { k = p.department || '（没有部门）'; label = `🏢 ${k}`; }
     else { k = ''; label = ''; }
-    if (!groups.has(k)) groups.set(k, { label, rows: [], sum: 0, linked: 0, people: new Set() });
+    if (!groups.has(k)) groups.set(k, { label, rows: [], sum: 0, linked: 0, invLinked: 0, people: new Set() });
     const g = groups.get(k);
     g.rows.push(p);
     g.sum += (+p.wage_total || 0);
     if (p.bank_txn_id) g.linked++;
+    if (p.bank_txn_id && (_gustoInvLinks[p.bank_txn_id] || []).length) g.invLinked++;
     g.people.add(p.contractor_name);
   }
   if (grp === 'dept') {
@@ -4854,6 +4856,22 @@ function renderGustoPayList() {
       ? `<a style="cursor:pointer;font-size:.76rem;color:#0f4c6b;text-decoration:underline;white-space:nowrap" onclick="openGustoBankLink('${esc(p.uuid)}')">🔗 关联</a>`
       : '<span style="color:var(--g400)">—</span>';
   };
+  // 发票关联: 银行转账被哪张发票的逐行付款备注连上 + admin 审核状态; 点击打开那张发票
+  const invCell = p => {
+    if (!p.bank_txn_id) return '';
+    const links = _gustoInvLinks[p.bank_txn_id] || [];
+    if (!links.length) return ' <span style="font-size:.7rem;color:var(--g400);white-space:nowrap">🧾 未连 invoice</span>';
+    return links.map(l => {
+      const st = l.review_status === 'approved'
+        ? ['已审核', 'color:#075985;background:#e0f2fe;border:1px solid #bae6fd']
+        : l.review_status === 'pending'
+          ? ['待审核', 'color:#92400e;background:#fef3c7;border:1px solid #fcd34d']
+          : ['', 'color:#334155;background:#f1f5f9;border:1px solid #e2e8f0'];
+      const tip = [`${l.invoice_number} 第 ${l.line_idx + 1} 行 ${l.line_label || ''}`, l.created_by ? '填写：' + l.created_by : '',
+        l.review_status === 'approved' ? '审核：' + (l.reviewed_by || '') : l.review_status === 'pending' ? '待 admin 审核' : ''].filter(Boolean).join('\n');
+      return ` <a onclick="openInvoice(${Number(l.invoice_id)})" title="${esc(tip)}" style="cursor:pointer;text-decoration:none;font-size:.72rem;${st[1]};border-radius:6px;padding:1px 6px;white-space:nowrap">🧾 ${esc(l.invoice_number)} #${l.line_idx + 1}${st[0] ? ' · ' + st[0] : ''}</a>`;
+    }).join('');
+  };
   const rowHtml = p => `<tr>
     <td style="white-space:nowrap">${esc(p.date)}</td>
     <td><b>${esc(p.contractor_name || p.contractor_uuid)}</b>${p.department && grp !== 'dept' ? ` <span style="font-size:.68rem;color:var(--g500)">· ${esc(p.department)}</span>` : ''}${p.wage_type === 'W2' ? ' <span title="W-2 员工工资，不参与合同工对账" style="font-size:.68rem;color:#1e40af;background:#dbeafe;border:1px solid #bfdbfe;border-radius:6px;padding:0 4px">W-2</span>' : ''}</td>
@@ -4864,17 +4882,19 @@ function renderGustoPayList() {
     <td style="text-align:right">${p.reimbursement ? money(p.reimbursement) : '—'}</td>
     <td style="text-align:right"><b>${money(p.wage_total)}</b></td>
     <td>${p.status === 'Funded' ? '<span style="color:#166534">✅ Funded</span>' : esc(p.status || '—')}${p.source === 'import' ? ' <span title="来自手动导入的付款报告" style="font-size:.68rem;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:0 4px">导入</span>' : ''}</td>
-    <td>${bankCell(p)}</td>
+    <td>${bankCell(p)}${invCell(p)}</td>
   </tr>`;
   document.getElementById('gustoPayBody').innerHTML = rows.length
     ? [...groups.values()].map(g => (g.label ? `<tr style="background:#f1f5f9">
         <td colspan="10" style="font-weight:700;font-size:.8rem;padding:.4rem .5rem">${esc(g.label)}
           <span style="color:var(--g500);font-weight:400">· ${g.rows.length} 笔 · ${g.people.size} 人 · 小计</span> ${money(g.sum)}
-          <span style="font-weight:400;font-size:.74rem;color:${g.linked === g.rows.length ? '#166534' : '#b45309'}">· 银行已关联 ${g.linked}/${g.rows.length}</span></td>
+          <span style="font-weight:400;font-size:.74rem;color:${g.linked === g.rows.length ? '#166534' : '#b45309'}">· 银行已关联 ${g.linked}/${g.rows.length}</span>
+          <span style="font-weight:400;font-size:.74rem;color:${g.invLinked === g.rows.length ? '#166534' : '#b45309'}">· Invoice 已关联 ${g.invLinked}/${g.rows.length}</span></td>
       </tr>` : '') + g.rows.map(rowHtml).join('')).join('')
     : `<tr><td colspan="10" style="color:var(--g400)">${_gustoPayRows.length ? '这个时间范围 / 搜索条件下没有付款' : '还没有 Gusto 付款记录'}</td></tr>`;
 }
 // ── 🏦 付款 ↔ 银行转账关联: 候选只有银行历史里的 Gusto 交易, 其他转账不能挂 ──
+let _gustoInvLinks = {};  // bank txn_id → [发票逐行付款备注关联], 见 /api/acct/gusto/payments
 let _gustoBankTxns = {}, _gustoBankRows = null, _gustoBankTarget = null, _gustoBankSel = '';
 async function openGustoBankLink(uuid) {
   const p = _gustoPayRows.find(x => x.uuid === uuid);
