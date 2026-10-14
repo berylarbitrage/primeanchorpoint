@@ -5549,16 +5549,10 @@ function _lpLineAmt(i) {
     return Number(c.total != null ? c.total : (Number(c.qty) || 0) * (Number(c.unit_price) || 0)) || 0;
   }
   // 付款备注记的是付给工人的钱, 按「工资金额」(工时×时薪, markup 前) 算——和发票表格里每行显示的
-  // Amount 一致; markup 后的账单额只在标题里附带显示
+  // Amount 一致
   const it = (Array.isArray(_invDoc.items) ? _invDoc.items : [])[i] || {};
   if (it.total != null) return Number(it.total) || 0;
   return Math.round(((Number(it.regHours != null ? it.regHours : it.hours) || 0) * (Number(it.rate) || 0) + (Number(it.otHours) || 0) * (Number(it.otRate) || 0)) * 100) / 100;
-}
-function _lpLineBilled(i) {
-  const p = (_invDoc && _invDoc.profile) || {};
-  if (p.invoice_mode === 'container') return 0;
-  const it = ((_invDoc && Array.isArray(_invDoc.items)) ? _invDoc.items : [])[i] || {};
-  return it.billed != null ? (Number(it.billed) || 0) : 0;
 }
 async function openLinePay(i) {
   if (!_invDoc) return;
@@ -5573,7 +5567,7 @@ async function openLinePay(i) {
   document.getElementById('lpFileMsg').textContent = '';
   document.getElementById('lpTxnAmt').value = '';
   document.getElementById('lpTxnAmtBtn').textContent = `🔎 找 ${money(_lpLineAmt(i))}`;
-  document.getElementById('lpTitle').textContent = `${_invDoc.invoice_number || ''} · 第 ${i + 1} 行 · ${_lpLabel(i)} · 工资 ${money(_lpLineAmt(i))}${(_lpLineBilled(i) && Math.abs(_lpLineBilled(i) - _lpLineAmt(i)) > 0.005) ? `（账单含 markup ${money(_lpLineBilled(i))}）` : ''}`;
+  document.getElementById('lpTitle').textContent = `${_invDoc.invoice_number || ''} · 第 ${i + 1} 行 · ${_lpLabel(i)} · 工资 ${money(_lpLineAmt(i))}`;
   document.getElementById('lpStatus').value = n.paid_status || '';
   document.getElementById('lpMethod').value = n.pay_method || '';
   window._lpWasGusto = _lpIsGusto();
