@@ -5548,8 +5548,17 @@ function _lpLineAmt(i) {
     const c = p.container_items[i] || {};
     return Number(c.total != null ? c.total : (Number(c.qty) || 0) * (Number(c.unit_price) || 0)) || 0;
   }
+  // 付款备注记的是付给工人的钱, 按「工资金额」(工时×时薪, markup 前) 算——和发票表格里每行显示的
+  // Amount 一致; markup 后的账单额只在标题里附带显示
   const it = (Array.isArray(_invDoc.items) ? _invDoc.items : [])[i] || {};
-  return Number(it.billed != null ? it.billed : it.total) || 0;
+  if (it.total != null) return Number(it.total) || 0;
+  return Math.round(((Number(it.regHours != null ? it.regHours : it.hours) || 0) * (Number(it.rate) || 0) + (Number(it.otHours) || 0) * (Number(it.otRate) || 0)) * 100) / 100;
+}
+function _lpLineBilled(i) {
+  const p = (_invDoc && _invDoc.profile) || {};
+  if (p.invoice_mode === 'container') return 0;
+  const it = ((_invDoc && Array.isArray(_invDoc.items)) ? _invDoc.items : [])[i] || {};
+  return it.billed != null ? (Number(it.billed) || 0) : 0;
 }
 async function openLinePay(i) {
   if (!_invDoc) return;
@@ -5564,7 +5573,7 @@ async function openLinePay(i) {
   document.getElementById('lpFileMsg').textContent = '';
   document.getElementById('lpTxnAmt').value = '';
   document.getElementById('lpTxnAmtBtn').textContent = `🔎 找 ${money(_lpLineAmt(i))}`;
-  document.getElementById('lpTitle').textContent = `${_invDoc.invoice_number || ''} · 第 ${i + 1} 行 · ${_lpLabel(i)} · ${money(_lpLineAmt(i))}`;
+  document.getElementById('lpTitle').textContent = `${_invDoc.invoice_number || ''} · 第 ${i + 1} 行 · ${_lpLabel(i)} · 工资 ${money(_lpLineAmt(i))}${(_lpLineBilled(i) && Math.abs(_lpLineBilled(i) - _lpLineAmt(i)) > 0.005) ? `（账单含 markup ${money(_lpLineBilled(i))}）` : ''}`;
   document.getElementById('lpStatus').value = n.paid_status || '';
   document.getElementById('lpMethod').value = n.pay_method || '';
   window._lpWasGusto = _lpIsGusto();
@@ -5612,10 +5621,10 @@ async function lpTxnLoad() {
   const gusto = _lpIsGusto() && lineAmt > 0;
   let rows = [], matched = [], near = [];
   try {
-    // 选了 Gusto: 另外全库找描述带 Gusto、金额在本行金额 60%~120% 之间的扣款 (工资比账单少个 markup),
+    // 选了 Gusto: 另外全库找描述带 Gusto、金额在本行工资 80%~120% 之间的扣款,
     // 按差额从小到大置顶显示
     const nearReq = gusto
-      ? bapi(`/api/plaid/transactions?q=gusto&amt_lo=${(lineAmt * 0.6).toFixed(2)}&amt_hi=${(lineAmt * 1.2).toFixed(2)}&limit=200`).catch(() => ({ transactions: [] }))
+      ? bapi(`/api/plaid/transactions?q=gusto&amt_lo=${(lineAmt * 0.8).toFixed(2)}&amt_hi=${(lineAmt * 1.2).toFixed(2)}&limit=200`).catch(() => ({ transactions: [] }))
       : Promise.resolve({ transactions: [] });
     const reqs = [bapi('/api/plaid/transactions?' + q.toString())];
     // 没手动按金额筛时, 顺带全库找和本行金额一致的交易, 置顶高亮
@@ -5649,7 +5658,7 @@ async function lpTxnLoad() {
   const nearDiff = t2 => nearIds.has(t2.txn_id) ? Math.abs(Math.abs(t2.amount || 0) - lineAmt) : null;
   box.innerHTML = all.length
     ? (gusto ? `<div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.72rem;color:#92400e;padding:.15rem .25rem .3rem">
-        <span>Gusto：金额相近的扣款 ${nearRows.length} 笔${nameOn ? `（共 ${nearAll} 笔，已按名字筛）` : ''}（本行 ${money(lineAmt)} 的 60%–120%，按差额排序）置顶</span>
+        <span>Gusto：金额相近的扣款 ${nearRows.length} 笔${nameOn ? `（共 ${nearAll} 笔，已按名字筛）` : ''}（本行 ${money(lineAmt)} 的 80%–120%，按差额排序）置顶</span>
         ${workerName ? `<label style="display:inline-flex;align-items:center;gap:.25rem;cursor:pointer;font-weight:700;margin-left:auto"><input type="checkbox" ${nameOn ? 'checked' : ''} onchange="lpNameFilterToggle(this)">只看「${esc(workerName)}」</label>` : ''}
         ${(nameOn && !nearRows.length && nearAll) ? `<span style="color:var(--g500);width:100%">没找到标注为这个名字的扣款（名字来自交易标注 / Gusto 工资挂账），可取消勾选看全部 ${nearAll} 笔</span>` : ''}
       </div>` : '') +
@@ -5762,7 +5771,7 @@ function renderInvoiceDoc(inv) {
   } else {
     const hasOt = items.some(it => Number(it.otHours) > 0);
     // 行金额显示「原始金额」(工时×时薪, markup 前)——和后台 Invoice 预览一致;
-    // markup 之后的账单额在 Total Due 上方单独列示。付款备注对银行流水时仍按账单额(billed)找。
+    // markup 之后的账单额在 Total Due 上方单独列示。付款备注也按这个工资金额找银行流水。
     const rawAmt = it => it.total != null ? (Number(it.total) || 0)
       : (Number(it.regHours != null ? it.regHours : it.hours) || 0) * (Number(it.rate) || 0) + (Number(it.otHours) || 0) * (Number(it.otRate) || 0);
     const totReg = items.reduce((s, it) => s + (Number(it.regHours != null ? it.regHours : it.hours) || 0), 0);
