@@ -2920,6 +2920,10 @@ db.exec(`CREATE TABLE IF NOT EXISTS acct_line_pay_notes (
 // 逐行付款备注可关联银行直连交易(txn_ids)与上传凭证截图/PDF(photos)
 try { db.exec("ALTER TABLE acct_line_pay_notes ADD COLUMN txn_ids TEXT DEFAULT '[]'"); } catch (e) {}
 try { db.exec("ALTER TABLE acct_line_pay_notes ADD COLUMN photos TEXT DEFAULT '[]'"); } catch (e) {}
+// 审核: 会计/客服保存或改凭证 → 'pending' 待审核; admin (或有银行标注审核权的账号) 保存或点审核 → 'approved'。
+// '' = 加审核之前的旧备注, 不显示审核状态。
+try { db.exec("ALTER TABLE acct_line_pay_notes ADD COLUMN review_status TEXT DEFAULT ''"); } catch (e) {}
+try { db.exec("ALTER TABLE acct_line_pay_notes ADD COLUMN reviewed_by TEXT DEFAULT ''"); } catch (e) {}
 // 会计付款批注: 每张发票/每笔赔偿事故记录「付了没有/哪个银行付的/付了多少」(一目标一条, upsert)
 db.exec(`CREATE TABLE IF NOT EXISTS acct_pay_notes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36024,6 +36028,10 @@ function plaidTxnQuery(req) {
   // 按金额找 (不分收支方向, 全库匹配): 发票逐行付款备注的「找金额匹配的交易」用
   const amt = Math.abs(parseFloat(amount));
   if (!isNaN(amt) && amt > 0) { where += ' AND ABS(ABS(amount) - ?) < 0.005'; params.push(amt); }
+  // 金额区间 (不分收支方向): 逐行付款备注选 Gusto 时找「金额相近」的扣款用
+  const lo = parseFloat(req.query && req.query.amt_lo), hi = parseFloat(req.query && req.query.amt_hi);
+  if (!isNaN(lo) && lo > 0) { where += ' AND ABS(amount) >= ?'; params.push(lo); }
+  if (!isNaN(hi) && hi > 0) { where += ' AND ABS(amount) <= ?'; params.push(hi); }
   return { where, params };
 }
 
@@ -40968,14 +40976,26 @@ app.post('/api/acct/invoices/:id/line-pay-note', requireAdmin, requireAcctWrite,
   if (isNaN(idx) || idx < 0 || idx > 500) return res.status(400).json({ error: '无效行号' });
   const st = ['', 'unpaid', 'partial', 'paid'].includes(String(paid_status || '')) ? String(paid_status || '') : '';
   const ids = (Array.isArray(txn_ids) ? txn_ids : []).map(t => String(t).slice(0, 100)).filter(Boolean).slice(0, 20);
-  db.prepare(`INSERT INTO acct_line_pay_notes (invoice_id, line_idx, line_label, paid_status, pay_method, note, txn_ids, created_by, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+  const canReview = annCanReview(req);
+  const rv = canReview ? 'approved' : 'pending';
+  db.prepare(`INSERT INTO acct_line_pay_notes (invoice_id, line_idx, line_label, paid_status, pay_method, note, txn_ids, created_by, review_status, reviewed_by, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(invoice_id, line_idx) DO UPDATE SET line_label=excluded.line_label, paid_status=excluded.paid_status,
-      pay_method=excluded.pay_method, note=excluded.note, txn_ids=excluded.txn_ids, created_by=excluded.created_by, updated_at=CURRENT_TIMESTAMP`)
-    .run(inv.id, idx, String(line_label || '').slice(0, 120), st, String(pay_method || '').slice(0, 120), String(note || '').slice(0, 500), JSON.stringify(ids), req.userName || '');
+      pay_method=excluded.pay_method, note=excluded.note, txn_ids=excluded.txn_ids, created_by=excluded.created_by,
+      review_status=excluded.review_status, reviewed_by=excluded.reviewed_by, updated_at=CURRENT_TIMESTAMP`)
+    .run(inv.id, idx, String(line_label || '').slice(0, 120), st, String(pay_method || '').slice(0, 120), String(note || '').slice(0, 500), JSON.stringify(ids), req.userName || '',
+      rv, canReview ? (req.userName || '') : '');
   res.json({ success: true, note: _lineNoteOut(db.prepare('SELECT * FROM acct_line_pay_notes WHERE invoice_id=? AND line_idx=?').get(inv.id, idx)) });
 });
 
+// 逐行付款备注: 审核通过 (admin 或有银行标注审核权的账号)
+app.post('/api/acct/line-pay-notes/:id/approve', requireAdmin, requireAcctWrite, (req, res) => {
+  if (!annCanReview(req)) return res.status(403).json({ error: '此账号没有审核权限' });
+  const n = db.prepare('SELECT * FROM acct_line_pay_notes WHERE id=?').get(parseInt(req.params.id));
+  if (!n) return res.status(404).json({ error: 'not found' });
+  db.prepare(`UPDATE acct_line_pay_notes SET review_status='approved', reviewed_by=? WHERE id=?`).run(req.userName || '', n.id);
+  res.json({ success: true, note: _lineNoteOut(db.prepare('SELECT * FROM acct_line_pay_notes WHERE id=?').get(n.id)) });
+});
 // 逐行付款备注: 上传凭证截图/PDF (追加)
 app.post('/api/acct/line-pay-notes/:id/photos', requireAdmin, requireAcctWrite, containerSubmitPhotoUpload.array('photos', 12), (req, res) => {
   const n = db.prepare('SELECT * FROM acct_line_pay_notes WHERE id=?').get(parseInt(req.params.id));
@@ -40985,6 +41005,7 @@ app.post('/api/acct/line-pay-notes/:id/photos', requireAdmin, requireAcctWrite, 
   (req.files || []).forEach(f => { const k = f.key || f.path; if (k) ph.push(k); });
   ph = ph.filter(Boolean).slice(0, 24);
   db.prepare('UPDATE acct_line_pay_notes SET photos=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(JSON.stringify(ph), n.id);
+  if (!annCanReview(req)) db.prepare(`UPDATE acct_line_pay_notes SET review_status='pending', reviewed_by='' WHERE id=?`).run(n.id);
   res.json({ success: true, photos_urls: ph.map(k => `/uploads/${path.basename(String(k))}`) });
 });
 // 逐行付款备注: 删除一张凭证
@@ -40997,6 +41018,7 @@ app.delete('/api/acct/line-pay-notes/:id/photos', requireAdmin, requireAcctWrite
   const kept = (Array.isArray(ph) ? ph : []).filter(k => path.basename(String(k)) !== target);
   const removed = (Array.isArray(ph) ? ph : []).find(k => path.basename(String(k)) === target);
   db.prepare('UPDATE acct_line_pay_notes SET photos=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(JSON.stringify(kept), n.id);
+  if (!annCanReview(req)) db.prepare(`UPDATE acct_line_pay_notes SET review_status='pending', reviewed_by='' WHERE id=?`).run(n.id);
   if (removed) storage.deleteObject(storage.keyFrom(removed, 'uploads')).catch(() => {});
   res.json({ success: true, photos_urls: kept.map(k => `/uploads/${path.basename(String(k))}`) });
 });
