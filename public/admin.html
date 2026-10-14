@@ -1695,6 +1695,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <button class="btn btn-green" onclick="openInvpBuilderModal()">+ 新建 Invoice</button>
       <button class="btn btn-outline" style="color:#047857;border-color:#6ee7b7" onclick="invpDownloadTimesheetTemplate('weekly')" title="空白模板（所有公司通用）：一人一行，周一~周日每天一列。交给 AI 按客户工时填好，再在新建 Invoice 上传">📥 空白模板·按周</button>
       <button class="btn btn-outline" style="color:#047857;border-color:#6ee7b7" onclick="invpDownloadTimesheetTemplate('daily')" title="空白模板（所有公司通用）：一人一天一行。交给 AI 按客户工时填好，再在新建 Invoice 上传">📥 空白模板·按日期</button>
+      <button class="btn btn-outline" style="color:#047857;border-color:#6ee7b7" onclick="invpDownloadTimesheetTemplate('shift')" title="空白模板（所有公司通用）：一人一班一行（日期 / 班次 day·night / 姓名 / 工时 / 时薪）。发票按「8/29 day」分组打印，每组小计 + 总计。填好在新建 Invoice 上传">📥 空白模板·按天分组</button>
       <button class="btn btn-outline" onclick="loadInvpList()">刷新</button>
       <button class="btn btn-outline" style="color:#b45309;border-color:#fcd34d" onclick="scanInvpDuplicates()">🔍 检查串单</button>
       <button class="btn btn-outline" style="color:#0369a1;border-color:#7dd3fc" onclick="fixInvpNumberStates()" title="批量检查并修正：发票号里的州与账单地址所在州不一致的发票">🔧 修正发票号州</button>
@@ -38864,7 +38865,7 @@ async function invpDownloadTimesheetTemplate(kind) {
     if (!resp.ok) { const d = await resp.json().catch(() => null); throw new Error((d && d.error) || ('HTTP ' + resp.status)); }
     const url = URL.createObjectURL(await resp.blob());
     const a = document.createElement('a');
-    a.href = url; a.download = `Timesheet_${kind === 'daily' ? 'Daily' : 'Weekly'}_Template.xlsx`;
+    a.href = url; a.download = `Timesheet_${{ daily: 'Daily', shift: 'Shift' }[kind] || 'Weekly'}_Template.xlsx`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   } catch (e) { showToast('下载模板失败：' + (e.message || e), 'error'); }

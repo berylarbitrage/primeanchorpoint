@@ -22754,7 +22754,7 @@ app.post('/api/admin/invoices/parse-excel', requireAdmin, invoiceXlsxUpload.sing
 const { buildTimesheetTemplate } = require('./timesheet-template');
 app.get('/api/admin/invoices/timesheet-template', requireAdmin, (req, res) => {
   try {
-    const out = buildTimesheetTemplate({ kind: req.query.kind === 'daily' ? 'daily' : 'weekly' });
+    const out = buildTimesheetTemplate({ kind: ['daily', 'shift'].includes(req.query.kind) ? req.query.kind : 'weekly' });
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${out.fileName}"`);
     res.send(out.buffer);
