@@ -2879,6 +2879,9 @@ try { db.exec(`CREATE INDEX IF NOT EXISTS idx_bstxn_plaid ON bank_statement_txns
 // 'pending'=客服提交待审核, 'approved'=管理员已审核; ann_by=标注人用户名
 try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN ann_status TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN ann_by TEXT DEFAULT ''`); } catch(e) {}
+// 以梦为马 eBay 货款原来只有一个「退回」选项, 收入也被迫选了它; 现在收入用「收到」,
+// 把旧的收入标注一次性改过来 (幂等: 再跑不会命中任何行)。
+try { db.prepare(`UPDATE bank_statement_txns SET payee=? WHERE payee=? AND direction='in'`).run('收到以梦为马的 eBay 货款', '退回以梦为马的 eBay 货款'); } catch(e) {}
 // ─── 会计只读批注 (accounting review annotations) ───
 // The accounting role can VIEW invoices & bank statements but not edit them;
 // its only write surface is this table: a circled region (normalized 0..1
