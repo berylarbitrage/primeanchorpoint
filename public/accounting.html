@@ -4958,6 +4958,8 @@ function renderGustoBankList() {
   }).join('')
     : '<div style="padding:.8rem;color:var(--g400);font-size:.8rem">银行历史里没找到 Gusto 交易——先在「银行直连」页签连上银行、同步到有 Gusto 扣款的流水</div>';
 }
+// 关联/解除后服务端会自动填/清这笔转账的银行标注 (👷 公司员工 + Gusto 工资备注), 本页缓存的标注跟着刷新
+function _gustoAnnRefresh() { if (typeof annLoadAll === 'function') annLoadAll().catch(() => {}); }
 async function submitGustoBankLink() {
   if (!_gustoBankTarget) return;
   if (!_gustoBankSel) return toast('请先选择一笔金额一致的 Gusto 银行转账', true);
@@ -4966,7 +4968,7 @@ async function submitGustoBankLink() {
   if (r && r.ok) {
     toast(r.status === 'pending' ? '✅ 已关联，等待管理员审核' : '✅ 已关联');
     document.getElementById('gustoBankModal').style.display = 'none';
-    gustoLoadPayments();
+    gustoLoadPayments(); _gustoAnnRefresh();
   } else toast((r && r.error) || '关联失败', true);
 }
 // admin 行内审核: 通过 / 驳回(解除)
@@ -4974,7 +4976,7 @@ async function gustoBankReview(uuid, action) {
   if (action === 'reject' && !confirm('驳回并解除这笔银行关联？')) return;
   const r = await api(`/api/acct/gusto/payments/${encodeURIComponent(uuid)}/bank-link-review`,
     { method: 'POST', body: JSON.stringify({ action }) }).catch(e => ({ error: e.message }));
-  if (r && r.ok) { toast(action === 'approve' ? '✅ 已通过' : '已驳回并解除'); gustoLoadPayments(); }
+  if (r && r.ok) { toast(action === 'approve' ? '✅ 已通过' : '已驳回并解除'); gustoLoadPayments(); _gustoAnnRefresh(); }
   else toast((r && r.error) || '操作失败', true);
 }
 // ⚡ 自动配对: 金额一致 + 日期 ±7 天
@@ -4983,7 +4985,7 @@ async function gustoBankAutoMatch() {
   const r = await api('/api/acct/gusto/bank-auto-match', { method: 'POST', body: JSON.stringify({}) }).catch(e => ({ error: e.message }));
   if (r && r.ok) {
     toast(`⚡ 自动关联 ${r.linked} 笔${r.status === 'pending' ? '（待管理员审核）' : ''}，还剩 ${r.remaining} 笔没配上`);
-    gustoLoadPayments();
+    gustoLoadPayments(); _gustoAnnRefresh();
   } else toast((r && r.error) || '自动关联失败', true);
 }
 async function gustoBankUnlink() {
@@ -4992,7 +4994,7 @@ async function gustoBankUnlink() {
   if (r && r.ok) {
     toast('已解除关联');
     document.getElementById('gustoBankModal').style.display = 'none';
-    gustoLoadPayments();
+    gustoLoadPayments(); _gustoAnnRefresh();
   } else toast((r && r.error) || '操作失败', true);
 }
 // ── 过渡期: 手动导入 Gusto 付款报告（CSV/Excel; API 连接后入口自动隐藏） ──
