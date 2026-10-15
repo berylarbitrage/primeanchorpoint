@@ -34509,6 +34509,8 @@ function renderInvpList() {
     const rowsHtml = months.map(k => {
       const b = byMonth[k], p = b.bill - b.wage;
       const pct = b.bill ? (p / b.bill * 100).toFixed(1) + '%' : '—';
+      // 加价率 = 利润 ÷ 工资 (markup 1.20 → 20%); 利润率 = 利润 ÷ 账单 (markup 1.20 → 16.7%)
+      const mkPct = b.wage ? (p / b.wage * 100).toFixed(1) + '%' : '—';
       const w = Math.round(Math.abs(p) / maxP * 100);
       const sel = k === selMonth;
       const btn = k === '未知' ? '' : sel
@@ -34521,6 +34523,7 @@ function renderInvpList() {
           <td style="${td};text-align:right;color:#b45309">${money(b.wage)}</td>
           <td style="${td};text-align:right;font-weight:700;color:${p >= 0 ? '#16a34a' : '#dc2626'}">${money(p)}</td>
           <td style="${td};text-align:right;color:var(--gray-500)">${pct}</td>
+          <td style="${td};text-align:right;color:#7c3aed;font-weight:600">${mkPct}</td>
           <td style="${td};width:28%"><div style="height:8px;border-radius:4px;background:${p >= 0 ? '#86efac' : '#fca5a5'};width:${w}%"></div></td>
           <td style="${td};text-align:right">${btn}</td>
         </tr>`;
@@ -34535,7 +34538,8 @@ function renderInvpList() {
             <thead><tr>
               <th style="${th};text-align:left">月份</th><th style="${th};text-align:right">张数</th>
               <th style="${th};text-align:right">账单</th><th style="${th};text-align:right">工资</th>
-              <th style="${th};text-align:right">利润</th><th style="${th};text-align:right">利润率</th><th style="${th}"></th><th style="${th}"></th>
+              <th style="${th};text-align:right">利润</th><th style="${th};text-align:right" title="利润 ÷ 账单（markup 1.20 → 16.7%）">利润率<span style="font-weight:400">(占账单)</span></th>
+              <th style="${th};text-align:right;color:#7c3aed" title="利润 ÷ 工资（markup 1.20 → 20%）">加价率<span style="font-weight:400">(占工资)</span></th><th style="${th}"></th><th style="${th}"></th>
             </tr></thead>
             <tbody>${rowsHtml}</tbody>
           </table>
@@ -34567,7 +34571,7 @@ function renderInvpList() {
     <div style="display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:${breakdownHtml ? '.6rem' : '1.1rem'}">
       ${card('账单总额', money(totBill))}
       ${card('工资总额（发出）', money(totWage), '#b45309')}
-      ${card('利润总额（赚取）', money(totProfit), totProfit >= 0 ? '#16a34a' : '#dc2626')}
+      ${card('利润总额（赚取）', money(totProfit) + `<span style="font-size:.74rem;font-weight:600;margin-left:.6rem;white-space:nowrap"><span style="color:var(--gray-500)" title="利润 ÷ 账单">占账单 ${totBill ? (totProfit / totBill * 100).toFixed(1) + '%' : '—'}</span> · <span style="color:#7c3aed" title="利润 ÷ 工资（即 markup 加价）">占工资 ${totWage ? (totProfit / totWage * 100).toFixed(1) + '%' : '—'}</span></span>`, totProfit >= 0 ? '#16a34a' : '#dc2626')}
     </div>
     ${breakdownHtml}
     ${monthlyHtml}
