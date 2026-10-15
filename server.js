@@ -42357,6 +42357,93 @@ function _gustoTxnOccupants() {
     });
   return occ;
 }
+// ── 关联后自动填银行标注 ──
+// Gusto 付款挂上银行转账后, 这笔转账的交易标注 (bank_statement_txns box) 自动填成
+// 「👷 公司员工」: 公司 = Gusto 报告里的部门(对上合作公司名), 姓名 = 收款人,
+// 备注写明 Gusto 工资日/金额; 逐行付款备注里已连上的发票号也带上。
+// 只填空着的标注 —— 人工已经选了别的收款方就不动。解除/驳回关联时, 还是自动填
+// 的原样内容就一起清掉。审核状态跟关联走: admin 挂的直接生效, 会计挂的待审核。
+const GUSTO_ANN_NOTE_PREFIX = 'Gusto 工资';
+function _gustoDeptToPartner(dept) {
+  const d = String(dept || '').trim();
+  if (!d) return '';
+  const norm = s => String(s || '').toLowerCase().replace(/\b(inc|llc|corp|co|ltd|group)\b/g, '').replace(/[^a-z0-9]/g, '');
+  const nd = norm(d);
+  if (!nd) return d;
+  let names = [];
+  try { names = db.prepare('SELECT name FROM partners WHERE COALESCE(abolished,0)=0').all().map(r => r.name).filter(Boolean); } catch (e) {}
+  return names.find(n => n.toLowerCase() === d.toLowerCase())
+    || names.find(n => norm(n) === nd)
+    || names.find(n => { const nn = norm(n); return nn && (nn.indexOf(nd) === 0 || nd.indexOf(nn) === 0); })
+    || d;
+}
+function _gustoPayDept(rawJson) {
+  try { const j = JSON.parse(rawJson || '{}'); return String(j.Department || j.department || j.department_name || '').trim(); } catch (e) { return ''; }
+}
+// 这笔银行转账按 Gusto 关联应该填成什么 (没挂付款返回 null)
+function _gustoAnnFill(txnId) {
+  const pays = db.prepare(`SELECT contractor_name, date, wage_total, raw_json, bank_link_status
+    FROM gusto_payments WHERE bank_txn_id=? ORDER BY date, contractor_name`).all(txnId);
+  if (!pays.length) return null;
+  const dept = pays.map(p => _gustoPayDept(p.raw_json)).find(Boolean) || '';
+  const names = [...new Set(pays.map(p => String(p.contractor_name || '').trim()).filter(Boolean))];
+  const payee = '员工:' + _gustoDeptToPartner(dept) + '|' + names.join(', ');
+  const note = GUSTO_ANN_NOTE_PREFIX + ' · ' + pays.map(p => `${p.date} $${(Number(p.wage_total) || 0).toFixed(2)} ${p.contractor_name || ''}`.trim()).join('；');
+  // 逐行付款备注里连了这笔转账的发票号
+  const invs = new Set();
+  try {
+    db.prepare(`SELECT n.txn_ids, COALESCE(i.invoice_number,'') AS invoice_number FROM acct_line_pay_notes n
+        LEFT JOIN invoices i ON i.id = n.invoice_id WHERE n.txn_ids LIKE ?`).all('%' + txnId + '%')
+      .forEach(n => {
+        let ids = []; try { ids = JSON.parse(n.txn_ids || '[]'); } catch (e) { ids = []; }
+        if (Array.isArray(ids) && ids.includes(txnId) && n.invoice_number) invs.add(n.invoice_number);
+      });
+  } catch (e) {}
+  return { payee, note, invoice_number: [...invs].join(', '), pending: pays.some(p => p.bank_link_status === 'pending') };
+}
+function _gustoSyncBankAnn(txnId, byName) {
+  if (!txnId) return;
+  try {
+    const txn = db.prepare('SELECT txn_id, account_id, date, amount, name, merchant FROM plaid_transactions WHERE txn_id=?').get(txnId);
+    if (!txn) return;
+    const fill = _gustoAnnFill(txnId);
+    let row = db.prepare(`SELECT * FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id=?`).get(txnId);
+    const autoFilled = r => r && String(r.note || '').indexOf(GUSTO_ANN_NOTE_PREFIX) === 0 && String(r.payee || '').indexOf('员工:') === 0;
+    if (!fill) {
+      // 关联没了: 还是自动填的原样就清回空白
+      if (autoFilled(row)) {
+        db.prepare(`UPDATE bank_statement_txns SET payee='', note='', ann_status='', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(row.id);
+      }
+      return;
+    }
+    const status = fill.pending ? 'pending' : '';
+    if (!row) {
+      db.prepare(`INSERT INTO bank_statement_txns (statement_id, kind, plaid_txn_id, txn_date, amount, direction, description,
+          payee, note, invoice_number, ann_status, ann_by)
+        VALUES (?,'box',?,?,?,?,?,?,?,?,?,?)`).run(plaidAnnStatementId(txn.account_id), txnId, txn.date || '', Math.abs(txn.amount || 0),
+          (txn.amount || 0) > 0 ? 'out' : 'in', txn.merchant || txn.name || '',
+          fill.payee, fill.note, fill.invoice_number, status, byName || '');
+      return;
+    }
+    if (row.ann_status === 'approved' && !autoFilled(row)) return;
+    const blank = !String(row.payee || '').trim();
+    if (!blank && !autoFilled(row)) return; // 人工选了别的, 不动
+    db.prepare(`UPDATE bank_statement_txns SET payee=?, note=?, invoice_number=?, ann_status=?, ann_by=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(fill.payee, (blank && String(row.note || '').trim()) ? row.note : fill.note,
+        String(row.invoice_number || '').trim() || fill.invoice_number,
+        row.ann_status === 'approved' && !fill.pending ? 'approved' : status, byName || row.ann_by || '', row.id);
+  } catch (e) { console.error('[gusto] 自动填银行标注失败', txnId, e.message); }
+}
+// 启动时补一轮: 加这个功能之前就挂好的关联, 标注还空着的补填上
+setTimeout(() => {
+  try {
+    const ids = db.prepare(`SELECT DISTINCT g.bank_txn_id AS id FROM gusto_payments g
+      WHERE g.bank_txn_id!='' AND NOT EXISTS (SELECT 1 FROM bank_statement_txns b
+        WHERE b.kind='box' AND b.plaid_txn_id=g.bank_txn_id AND TRIM(COALESCE(b.payee,''))!='')`).all().map(r => r.id);
+    ids.forEach(id => _gustoSyncBankAnn(id, 'Gusto 关联'));
+    if (ids.length) console.log(`[gusto] 已按 Gusto 关联补填 ${ids.length} 条银行标注`);
+  } catch (e) { console.error('[gusto] 补填银行标注失败', e.message); }
+}, 15000);
 app.get('/api/acct/gusto/bank-txns', requireAdmin, requireAcctView, (req, res) => {
   try {
     const q = String(req.query.q || '').trim().toLowerCase();
@@ -42387,6 +42474,7 @@ app.post('/api/acct/gusto/payments/:uuid/bank-link', requireAdmin, requireAcctWr
     if (!txnId) {
       db.prepare(`UPDATE gusto_payments SET bank_txn_id='', bank_link_status='', bank_link_by='', bank_link_at='',
         bank_link_review_by='', bank_link_review_at='' WHERE uuid=?`).run(p.uuid);
+      _gustoSyncBankAnn(p.bank_txn_id, req.userName);
       auditLog('gusto_bank_unlink', req, { targetType: 'gusto_payment', targetId: p.uuid, details: { name: p.contractor_name, date: p.date } });
       return res.json({ ok: true, unlinked: 1 });
     }
@@ -42403,6 +42491,8 @@ app.post('/api/acct/gusto/payments/:uuid/bank-link', requireAdmin, requireAcctWr
     db.prepare(`UPDATE gusto_payments SET bank_txn_id=?, bank_link_status=?, bank_link_by=?, bank_link_at=?,
       bank_link_review_by=?, bank_link_review_at=? WHERE uuid=?`)
       .run(t.txn_id, status, req.userName || '', now, isAdmin ? (req.userName || '') : '', isAdmin ? now : '', p.uuid);
+    if (p.bank_txn_id && p.bank_txn_id !== t.txn_id) _gustoSyncBankAnn(p.bank_txn_id, req.userName); // 改挂: 旧转账的自动标注清掉
+    _gustoSyncBankAnn(t.txn_id, req.userName);
     auditLog('gusto_bank_link', req, { targetType: 'gusto_payment', targetId: p.uuid,
       details: { txn: t.txn_id, txn_amount: t.amount, name: p.contractor_name, date: p.date, status } });
     res.json({ ok: true, linked: 1, status, txn: { txn_id: t.txn_id, date: t.date, amount: t.amount, bank: t.bank, mask: t.mask } });
@@ -42424,6 +42514,7 @@ app.post('/api/acct/gusto/payments/:uuid/bank-link-review', requireAdmin, requir
       db.prepare(`UPDATE gusto_payments SET bank_txn_id='', bank_link_status='', bank_link_by='', bank_link_at='',
         bank_link_review_by='', bank_link_review_at='' WHERE uuid=?`).run(p.uuid);
     }
+    _gustoSyncBankAnn(p.bank_txn_id, req.userName);
     auditLog('gusto_bank_link_review', req, { targetType: 'gusto_payment', targetId: p.uuid,
       details: { action, name: p.contractor_name, date: p.date, txn: p.bank_txn_id } });
     res.json({ ok: true, action });
@@ -42461,6 +42552,7 @@ app.post('/api/acct/gusto/bank-auto-match', requireAdmin, requireAcctWrite, (req
         upd.run(best.txn_id, isAdmin ? 'approved' : 'pending', req.userName || '', now,
           isAdmin ? (req.userName || '') : '', isAdmin ? now : '', p.uuid);
         linked++;
+        _gustoSyncBankAnn(best.txn_id, req.userName);
       }
     })();
     auditLog('gusto_bank_auto_match', req, { targetType: 'gusto_payments', targetId: 'auto-match',
