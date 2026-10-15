@@ -5519,12 +5519,18 @@ async function lpApproveRow(i, btn) {
     toast(e.message || '审核失败', true);
   }
 }
-// 付款日期: 周几 + 距上一个周日几天 (账期周一到周日, 看工资是周日后第几天发的)
+// 付款日期: 周几 + 距发票 Service Period 结束日几天 (看工资是账期结束后第几天发的)
 function _lpDayInfo(ds) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(ds || ''));
-  if (!m) return '';
-  const wd = new Date(+m[1], +m[2] - 1, +m[3]).getDay();
-  return ` <span style="color:#7c3aed;font-weight:700">周${'日一二三四五六'[wd]}</span> <span style="color:#64748b">· 上周日后 ${wd || 7} 天</span>`;
+  const ymd = v => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v || '')); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; };
+  const d = ymd(ds);
+  if (!d) return '';
+  const end = ymd(_invDoc && _invDoc.period_end);
+  let gap = '';
+  if (end) {
+    const n = Math.round((d - end) / 86400000);
+    gap = ` <span style="color:#64748b">· ${n > 0 ? `账期结束后 ${n} 天` : n < 0 ? `账期结束前 ${-n} 天` : '账期结束当天'}</span>`;
+  }
+  return ` <span style="color:#7c3aed;font-weight:700">周${'日一二三四五六'[d.getDay()]}</span>${gap}`;
 }
 async function lpApprove() {
   const n = _invDoc && _invDoc.line_pay_notes && _invDoc.line_pay_notes[_lpIdx];
