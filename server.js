@@ -40960,8 +40960,19 @@ function _lineNoteOut(n) {
   let ids = []; try { ids = JSON.parse(n.txn_ids || '[]'); } catch (e) { ids = []; }
   if (!Array.isArray(ids)) ids = [];
   n.txn_ids = ids;
-  n.txns = ids.length ? db.prepare(`SELECT txn_id, date, name, merchant, amount, account_id FROM plaid_transactions
-    WHERE txn_id IN (${ids.map(() => '?').join(',')})`).all(...ids) : [];
+  const ph0 = ids.map(() => '?').join(',');
+  n.txns = ids.length ? db.prepare(`SELECT t.txn_id, t.date, t.name, t.merchant, t.amount, t.account_id,
+      COALESCE(i.institution,'') AS acct_institution, COALESCE(a.company_label,'') AS acct_company, COALESCE(a.mask,'') AS acct_mask
+    FROM plaid_transactions t LEFT JOIN plaid_accounts a ON a.account_id=t.account_id LEFT JOIN plaid_items i ON i.item_id=a.item_id
+    WHERE t.txn_id IN (${ph0})`).all(...ids) : [];
+  // 收款人信息: 银行对账页这笔交易的标注 (收款人/备注/审核状态) + 「Gusto 工资」页签挂到这笔转账的付款 (付给谁/哪天/多少)
+  if (n.txns.length) {
+    const tids = n.txns.map(t => t.txn_id), ph = tids.map(() => '?').join(',');
+    const anns = {}, gl = {};
+    try { db.prepare(`SELECT plaid_txn_id, payee, note, purpose, ann_status, ann_by FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id IN (${ph})`).all(...tids).forEach(r => { anns[r.plaid_txn_id] = r; }); } catch (e) {}
+    try { db.prepare(`SELECT bank_txn_id, contractor_name, date, wage_total, payment_method, COALESCE(bank_link_status,'') AS link_status FROM gusto_payments WHERE bank_txn_id IN (${ph}) ORDER BY date`).all(...tids).forEach(g => { (gl[g.bank_txn_id] = gl[g.bank_txn_id] || []).push(g); }); } catch (e) {}
+    n.txns.forEach(t => { const a = anns[t.txn_id]; t.ann = a ? { payee: a.payee || '', note: a.note || '', purpose: a.purpose || '', status: a.ann_status || '', by: a.ann_by || '' } : null; t.gusto = gl[t.txn_id] || []; });
+  }
   let ph = []; try { ph = JSON.parse(n.photos || '[]'); } catch (e) { ph = []; }
   n.photos_urls = (Array.isArray(ph) ? ph : []).filter(Boolean).map(k => `/uploads/${path.basename(String(k))}`);
   delete n.photos;

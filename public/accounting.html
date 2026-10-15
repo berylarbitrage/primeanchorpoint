@@ -5588,10 +5588,40 @@ function _lpChip(i) {
     const sum = Math.round(txns.reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0) * 100) / 100;
     const lineAmt = _lpLineAmt(i);
     const d = Math.round((sum - lineAmt) * 100) / 100;
+    // 本行工人名字 (集装箱行没有人名, 不比对)
+    const p0 = _invDoc.profile || {};
+    const worker = p0.invoice_mode === 'container' ? '' : _lpLabel(i);
     const rows = txns.map(t => {
-      const a = ((_plaidAccts && _plaidAccts.accounts) || []).find(x => x.account_id === t.account_id);
-      const acct = a ? ` <span style="color:#94a3b8">${esc(a.institution || '')}${a.mask ? ' ··' + esc(a.mask) : ''}</span>` : '';
-      return `<div style="white-space:nowrap" title="${esc(t.merchant || t.name || '')}">🏦 ${esc(t.date || '')}${_lpDayInfo(t.date)} · <b style="color:#1e293b">${money(Math.abs(Number(t.amount) || 0))}</b>${acct}</div>`;
+      const a = ((_plaidAccts && _plaidAccts.accounts) || []).find(x => x.account_id === t.account_id) || {};
+      const inst = t.acct_institution || a.institution || '', co = t.acct_company || a.company_label || '', mask = t.acct_mask || a.mask || '';
+      const acct = inst || co || mask ? `${esc(inst)}${co ? ' · ' + esc(co) : ''}${mask ? ' ··' + esc(mask) : ''}` : '';
+      // 收款人: Gusto 挂账的工人 > 银行标注里的「员工:公司|姓名」> 标注里写的收款人
+      const ann = t.ann || null;
+      const payees = [];
+      (t.gusto || []).forEach(g => payees.push({ name: g.contractor_name, src: 'Gusto', extra: `${esc(g.date || '')} ${money(g.wage_total)}${g.link_status === 'pending' ? ' <span style="color:#b45309">⏳挂账待审核</span>' : ''}` }));
+      if (ann && ann.payee) {
+        const emp = _bsIsEmp(ann.payee) ? _bsEmpParse(ann.payee) : null;
+        const nm = emp ? emp.name : ann.payee;
+        if (!payees.some(x => _lpNameMatch(x.name, nm))) payees.push({ name: nm, src: '银行标注', extra: emp && emp.co ? esc(emp.co) : '' });
+      }
+      const payeeHtml = payees.length
+        ? payees.map(x => {
+            const ok = worker ? _lpNameMatch(x.name, worker) : null;
+            const chk = ok === true ? ' <span style="color:#15803d;font-weight:700">✓ 同本行工人</span>'
+              : ok === false ? ` <span style="color:#b91c1c;font-weight:700">⚠ 不是 ${esc(worker)}</span>` : '';
+            return `<div>👤 收款人 <b style="color:#0f172a">${esc(x.name || '')}</b> <span style="color:#94a3b8">(${x.src}${x.extra ? ' · ' + x.extra : ''})</span>${chk}</div>`;
+          }).join('')
+        : '<div style="color:#b45309">👤 收款人未标注（银行交易没做标注，也没挂 Gusto 付款）</div>';
+      const desc = [t.name, t.merchant && t.merchant !== t.name ? t.merchant : ''].filter(Boolean).map(esc).join(' / ');
+      const annSt = ann && ann.status === 'pending' ? ' <span style="color:#b45309;font-weight:700">⏳标注待审核</span>' : ann && ann.status === 'approved' ? ' <span style="color:#15803d">✓标注已审核</span>' : '';
+      const annNote = ann && (ann.purpose || ann.note) ? `<div>📝 ${esc([ann.purpose, ann.note].filter(Boolean).join(' · '))}${ann.by ? ` <span style="color:#94a3b8">(${esc(ann.by)})</span>` : ''}${annSt}</div>` : (annSt ? `<div>${annSt.trim()}</div>` : '');
+      return `<div style="border-left:3px solid #cbd5e1;padding:.15rem 0 .15rem .4rem;margin:.2rem 0;overflow-wrap:anywhere">
+        <div>🏦 ${esc(t.date || '')}${_lpDayInfo(t.date)} · <b style="color:#1e293b">${money(Math.abs(Number(t.amount) || 0))}</b></div>
+        ${payeeHtml}
+        ${acct ? `<div style="color:#64748b">付款账户 ${acct}</div>` : ''}
+        ${desc ? `<div style="color:#64748b">银行描述 ${desc}</div>` : ''}
+        ${annNote}
+      </div>`;
     }).join('');
     const missing = ids.length - txns.length;
     const miss = missing > 0 ? `<div style="color:#b45309;font-weight:700">⚠ ${missing} 笔找不到银行记录</div>` : '';
@@ -5841,7 +5871,7 @@ function renderInvoiceDoc(inv) {
         <td style="${tdR}">${Number(c.qty) || 0}</td>
         <td style="${tdR}">${money(c.unit_price)}</td>
         <td style="${tdR};font-weight:700">${money(c.total != null ? c.total : (Number(c.qty) || 0) * (Number(c.unit_price) || 0))}</td>
-        <td style="${td}" id="lpCell${i}">${_lpChip(i)}</td>
+        <td style="${td};width:36%;overflow-wrap:anywhere" id="lpCell${i}">${_lpChip(i)}</td>
       </tr>`).join('')}</tbody></table>`;
   } else {
     const hasOt = items.some(it => Number(it.otHours) > 0);
@@ -5862,7 +5892,7 @@ function renderInvoiceDoc(inv) {
           <td style="${tdR}">${money(it.rate)}</td>
           ${hasOt ? `<td style="${tdR}">${money(it.otRate)}</td>` : ''}
           <td style="${tdR};font-weight:700">${money(rawAmt(it))}</td>
-          <td style="${td}" id="lpCell${i}">${_lpChip(i)}</td>
+          <td style="${td};width:36%;overflow-wrap:anywhere" id="lpCell${i}">${_lpChip(i)}</td>
         </tr>`).join('')}
         <tr style="background:#e8f5fb;font-weight:700;color:#1e293b">
           <td colspan="2" style="${tdR};text-transform:uppercase;letter-spacing:.04em;border-top:2px solid #29AAE1;border-bottom:none">Total</td>
