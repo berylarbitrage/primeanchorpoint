@@ -37998,7 +37998,7 @@ async function saveInvpInvoice(status) {
   // Bill To 显示名称（与公司名称不同时才存）：发票上 BILL TO 印这个，公司归属仍是 company_name
   { const bt = _invpBillToName(); if (bt && bt !== billName) profileWithMode.bill_to_name = bt; else delete profileWithMode.bill_to_name; }
   // 班次分组样式随发票存档 (无则不存)
-  if (mode !== 'container' && window._invpShiftBlocks && window._invpShiftBlocks.length) profileWithMode.shift_blocks = window._invpShiftBlocks;
+  if (mode !== 'container') { const sb = _invpActiveShiftBlocks(items); if (sb) profileWithMode.shift_blocks = sb; else delete profileWithMode.shift_blocks; }
   // 两边分开记账：从「按月付款」转来的发票，行项目按公司价（从公司收）开给客户，真实「付给
   // 工人」工资单独存进 profile.wage_cost，后台列表才能正确显示工资/利润。由转入时留底的逐人
   // 工资时薪重算；重新编辑已存发票（行项目里没有工资时薪）时沿用原值，避免利润被清零。
@@ -41601,6 +41601,24 @@ function _invpRowSplit(emp, totalHrs) {
   return { reg: Math.min(totalHrs, 40), ot: Math.max(totalHrs - 40, 0) };
 }
 
+// 班次分组明细 (班次流水 Excel 导入) 只在它和当前员工表一致时才用：导入后又改了员工 /
+// 工时 / 时薪（或换了别家的单），旧的班次明细就作废，否则预览会印出另一张账单。
+function _invpActiveShiftBlocks(items) {
+  const blocks = window._invpShiftBlocks;
+  if (!Array.isArray(blocks) || !blocks.length) return null;
+  const key = (n, r) => String(n || '').trim().toLowerCase() + '|' + (Math.round((Number(r) || 0) * 100) / 100);
+  const want = new Map(), have = new Map();
+  for (const b of blocks) for (const en of (b.entries || [])) {
+    const k = key(en.name, en.rate); want.set(k, (want.get(k) || 0) + (Number(en.hours) || 0));
+  }
+  for (const it of (items || [])) {
+    const k = key(it.name, it.rate); have.set(k, (have.get(k) || 0) + (Number(it.hours) || 0));
+  }
+  if (want.size !== have.size) return null;
+  for (const [k, h] of want) if (!have.has(k) || Math.abs(have.get(k) - h) > 0.01) return null;
+  return blocks;
+}
+
 function getInvpManualItems() {
   _invpSaveTableState();
   return window._invpManualEmps
@@ -41841,7 +41859,7 @@ async function generateInvpPreview() {
     // ── 班次分组样式 (班次流水 Excel 导入时自动启用) ─────────────────────────
     // 每个 shift 一段: 段头 + 组内编号 + 每班小计, 表尾全部合计。金额 = 各班
     // 工时×时薪的平价合计 (与时间表 Total Pay 一致), Markup 照页面设置加成。
-    const shiftBlocks = (window._invpShiftBlocks && window._invpShiftBlocks.length) ? window._invpShiftBlocks : null;
+    const shiftBlocks = _invpActiveShiftBlocks(items);
     if (shiftBlocks) {
       const hasRole = shiftBlocks.some(b => (b.entries || []).some(en => (en.role || '').trim()));
       let grandH = 0, grandA = 0;
