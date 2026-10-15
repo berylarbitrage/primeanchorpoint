@@ -5466,6 +5466,7 @@ async function openInvoice(id) {
     if (inv.error) throw new Error(inv.error);
     document.getElementById('vwTitle').textContent = `📄 ${inv.invoice_number} · ${inv.company_name || ''}`;
     _invDoc = inv;
+    try { await _annEnsureReviewFlag(); } catch (e) {}  // 付款备注格子里的「审核通过」按钮要知道有没有审核权限
     cont.innerHTML = '';
     const page = document.createElement('div');
     page.className = 'vw-page';
@@ -5501,6 +5502,29 @@ function lpReviewRefresh() {
   if (n.review_status === 'approved') { el.innerHTML = `<span style="color:#075985">☑ 已审核${n.reviewed_by ? '（' + esc(n.reviewed_by) + '）' : ''}</span>${annCanReview() ? '' : ' <span style="color:var(--g400)">· 再改会重新进入待审核</span>'}`; return; }
   el.innerHTML = `<span style="color:#92400e;font-weight:700">⏳ 待 admin 审核</span>${n.created_by ? ` <span style="color:var(--g400)">· 填写人 ${esc(n.created_by)}</span>` : ''}` +
     (annCanReview() ? ` <button type="button" class="btn btn-sm" onclick="lpApprove()" style="margin-left:.4rem;background:#16a34a;color:#fff;font-size:.72rem;padding:2px 10px">✓ 审核通过</button>` : '');
+}
+// 发票上直接点「审核通过」, 不用打开弹窗
+async function lpApproveRow(i, btn) {
+  const n = _invDoc && _invDoc.line_pay_notes && _invDoc.line_pay_notes[i];
+  if (!n || !n.id) return;
+  if (btn) { btn.disabled = true; btn.textContent = '审核中…'; }
+  try {
+    const r = await bapi(`/api/acct/line-pay-notes/${n.id}/approve`, { method: 'POST' });
+    _invDoc.line_pay_notes[i] = r.note;
+    const cell = document.getElementById('lpCell' + i);
+    if (cell) cell.innerHTML = _lpChip(i);
+    toast('✅ 已审核通过');
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '✓ 审核通过'; }
+    toast(e.message || '审核失败', true);
+  }
+}
+// 付款日期: 周几 + 距上一个周日几天 (账期周一到周日, 看工资是周日后第几天发的)
+function _lpDayInfo(ds) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(ds || ''));
+  if (!m) return '';
+  const wd = new Date(+m[1], +m[2] - 1, +m[3]).getDay();
+  return ` <span style="color:#7c3aed;font-weight:700">周${'日一二三四五六'[wd]}</span> <span style="color:#64748b">· 上周日后 ${wd || 7} 天</span>`;
 }
 async function lpApprove() {
   const n = _invDoc && _invDoc.line_pay_notes && _invDoc.line_pay_notes[_lpIdx];
@@ -5561,7 +5585,7 @@ function _lpChip(i) {
     const rows = txns.map(t => {
       const a = ((_plaidAccts && _plaidAccts.accounts) || []).find(x => x.account_id === t.account_id);
       const acct = a ? ` <span style="color:#94a3b8">${esc(a.institution || '')}${a.mask ? ' ··' + esc(a.mask) : ''}</span>` : '';
-      return `<div style="white-space:nowrap" title="${esc(t.merchant || t.name || '')}">🏦 ${esc(t.date || '')} · <b style="color:#1e293b">${money(Math.abs(Number(t.amount) || 0))}</b>${acct}</div>`;
+      return `<div style="white-space:nowrap" title="${esc(t.merchant || t.name || '')}">🏦 ${esc(t.date || '')}${_lpDayInfo(t.date)} · <b style="color:#1e293b">${money(Math.abs(Number(t.amount) || 0))}</b>${acct}</div>`;
     }).join('');
     const missing = ids.length - txns.length;
     const miss = missing > 0 ? `<div style="color:#b45309;font-weight:700">⚠ ${missing} 笔找不到银行记录</div>` : '';
@@ -5576,10 +5600,14 @@ function _lpChip(i) {
   const upd = n.updated_at ? new Date(String(n.updated_at).replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(n.updated_at) ? '' : 'Z')) : null;
   const updTxt = upd && !isNaN(upd) ? `${upd.getFullYear()}-${String(upd.getMonth() + 1).padStart(2, '0')}-${String(upd.getDate()).padStart(2, '0')} ${String(upd.getHours()).padStart(2, '0')}:${String(upd.getMinutes()).padStart(2, '0')}` : '';
   const meta = updTxt ? `<div style="font-size:.66rem;color:#94a3b8;margin-top:.1rem;white-space:nowrap">${n.created_by ? esc(n.created_by) + ' · ' : ''}更新于 ${updTxt}${n.reviewed_by ? ' · 审核 ' + esc(n.reviewed_by) : ''}</div>` : '';
+  // 待审核 + 有审核权限: 徽章换成大按钮, 放在点击编辑的链接外面, 点它只审核不打开弹窗
+  const approveBtn = n.review_status === 'pending' && n.id && annCanReview()
+    ? `<button type="button" onclick="event.stopPropagation();lpApproveRow(${i},this)" style="display:block;margin:.3rem 0 .1rem;background:#16a34a;color:#fff;border:none;border-radius:6px;padding:5px 14px;font-size:.8rem;font-weight:700;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.15)">✓ 审核通过</button>`
+    : '';
   const inner = `${badge}${_lpReviewBadge(n)}${bits.length ? ` <span style="font-size:.72rem;color:#475569">${bits.join(' · ')}</span>` : ''}${txnHtml}${meta}`;
-  return canAnnotate()
+  return (canAnnotate()
     ? `<a style="cursor:pointer;text-decoration:none" title="点击编辑" onclick="openLinePay(${i})">${inner}</a>`
-    : inner;
+    : inner) + approveBtn;
 }
 function _lpLabel(i) {
   if (!_invDoc) return '';
