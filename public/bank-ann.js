@@ -40,6 +40,7 @@ const BS_PAYEE_CASH_DEP = '存现金';
 const BS_PAYEE_LAWSUIT = '诉讼费';
 const BS_PAYEE_LAWYER = '律师费用';
 const BS_PAYEE_RETURNED = '退回款 Returned Payment';
+const BS_PAYEE_TEST = '测试转账 Test Transfer'; // 银行验证小额测试转账, 不归任何公司
 const BS_PAYEE_NA = '无关';
 const BS_PAYEE_PALLET = '__pallet__';
 const BS_PALLET_PREFIX = '木板钱:';
@@ -227,7 +228,7 @@ function _bsPayeeKind(box) {
   if (_bsIsWageBonus(p)) return 'wagebonus';
   if (_bsIsLoan(p)) return 'loan';
   if (BS_PAYEE_PEOPLE.includes(p)) return 'personal';
-  if (p && p !== BS_PAYEE_CLAIM && p !== BS_PAYEE_CC && p !== BS_PAYEE_CASH && p !== BS_PAYEE_CASH_DEP && p !== BS_PAYEE_LAWSUIT && p !== BS_PAYEE_LAWYER && p !== BS_PAYEE_NA && p !== BS_PAYEE_PAP && p !== BS_PAYEE_PAW && p !== BS_PAYEE_BINTIQUE && p !== BS_PAYEE_DREAMHORSE && p !== BS_PAYEE_DREAMHORSE_IN && p !== BS_PAYEE_RETURNED) return 'company';
+  if (p && p !== BS_PAYEE_CLAIM && p !== BS_PAYEE_CC && p !== BS_PAYEE_CASH && p !== BS_PAYEE_CASH_DEP && p !== BS_PAYEE_LAWSUIT && p !== BS_PAYEE_LAWYER && p !== BS_PAYEE_NA && p !== BS_PAYEE_PAP && p !== BS_PAYEE_PAW && p !== BS_PAYEE_BINTIQUE && p !== BS_PAYEE_DREAMHORSE && p !== BS_PAYEE_DREAMHORSE_IN && p !== BS_PAYEE_RETURNED && p !== BS_PAYEE_TEST) return 'company';
   return 'none';
 }
 function _bsWantsInvoice(box) {
@@ -283,6 +284,7 @@ function _bsPayeeOptionDefs(direction) {
     { v: BS_PAYEE_CASH, t: '💵 取现金', d: 'out' },
     { v: BS_PAYEE_CASH_DEP, t: '💰 存现金', d: 'in' },
     { v: BS_PAYEE_RETURNED, t: '↩️ 退回款 Returned Payment', d: 'both' },
+    { v: BS_PAYEE_TEST, t: '🧪 测试转账 Test Transfer', d: 'both' },
     { v: BS_PAYEE_TRUCK, t: '🚚 卡车费（选公司）', d: 'out' },
     { v: BS_PAYEE_UNLOAD, t: '📦 支付卸柜账单（选公司）', d: 'out' },
     { v: BS_PAYEE_RENT, t: '🏠 付房租（选公司）', d: 'out' },
