@@ -49305,7 +49305,7 @@ function _bsRenderBoxPanel() {
         <select class="bs-bx-truck-co" onchange="bsTruckUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">${_bsTruckCoOptions(_bsTruckParse(box.payee))}</select>
       </div>
       <div class="bs-internal-wrap" style="display:${_bsIsInternal(box.payee) ? '' : 'none'};background:#eef2ff;border:1px dashed #c7d2fe;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
-        <div style="font-size:.72rem;color:#4338ca;margin-bottom:.25rem">选择公司（转给哪家自己的公司）</div>
+        <div class="bs-internal-label" style="font-size:.72rem;color:#4338ca;margin-bottom:.25rem">${box.direction === 'in' ? '选择公司（钱从自己哪家公司转过来）' : '选择公司（转给自己哪家公司）'}</div>
         <select class="bs-bx-internal-co" onchange="bsInternalUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">${_bsInternalCoOptions(_bsInternalParse(box.payee))}</select>
       </div>
       <div class="bs-unload-wrap" style="display:${_bsIsUnload(box.payee) ? '' : 'none'};background:#ecfeff;border:1px dashed #a5f3fc;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
@@ -49853,6 +49853,8 @@ async function bsUpdateBoxField(id, field, value) {
       if (ps) ps.innerHTML = _bsPalletCustOptions(ps.value, value);
       const pl = item.querySelector('.bs-pallet-label');
       if (pl) pl.textContent = value === 'in' ? '选择客户（木板卖给谁）' : '选择供应商（木板从谁那买）';
+      const il = item.querySelector('.bs-internal-label');
+      if (il) il.textContent = value === 'in' ? '选择公司（钱从自己哪家公司转过来）' : '选择公司（转给自己哪家公司）';
     }
     bsUpdateBoxSections(id); // income vs fee section depends on direction too
   }
