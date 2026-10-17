@@ -58,6 +58,17 @@ check(
   false,
 )
 
+check(
+  'a send status change is pushed again',
+  needsPush(message({ uploadedState: 'pending', uploadedSendStatus: 'sending', sendStatus: 'sent' })),
+  true,
+)
+check(
+  'the send status travels',
+  serialise(message({ direction: 'out', sendStatus: 'failed' })).send_status,
+  'failed',
+)
+
 const many = Array.from({ length: PUSH_BATCH + 40 }, (_, i) => message({ id: `dev:${i}` }))
 check('one batch at a time', pendingUploads(many).length, PUSH_BATCH)
 

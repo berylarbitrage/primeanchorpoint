@@ -10,7 +10,7 @@
  * message is re-sent once its translation arrives, so a row pushed before
  * Claude answered gets its translation filled in on the next pass.
  */
-import type { SmsMessage, TranslationState } from '../../shared/types'
+import type { SmsMessage } from '../../shared/types'
 
 export interface PushTarget {
   /** Full endpoint, e.g. https://primeanchorworkforce.com/api/device-sms/push */
@@ -34,7 +34,10 @@ export const PUSH_BATCH = 200
  * case that matters: the first push carries no translation).
  */
 export function needsPush(message: SmsMessage): boolean {
-  return message.uploadedState !== message.translationState
+  return (
+    message.uploadedState !== message.translationState ||
+    message.uploadedSendStatus !== message.sendStatus
+  )
 }
 
 export function pendingUploads(messages: SmsMessage[], limit = PUSH_BATCH): SmsMessage[] {
@@ -65,6 +68,8 @@ export function serialise(message: SmsMessage): Record<string, unknown> {
     risk_summary: message.analysis?.summary ?? '',
     // The image itself stays on this machine; only the fact of it travels.
     has_media: (message.attachments?.length ?? 0) > 0,
+    // Outgoing only: sending / sent / delivered / failed, straight from the phone.
+    send_status: message.sendStatus ?? '',
   }
 }
 
@@ -123,8 +128,11 @@ export async function pushMessages(
 /** What to record locally once a batch is accepted. */
 export function uploadedPatches(
   messages: SmsMessage[],
-): { id: string; partial: { uploadedState: TranslationState } }[] {
-  return messages.map((m) => ({ id: m.id, partial: { uploadedState: m.translationState } }))
+): { id: string; partial: Pick<SmsMessage, 'uploadedState' | 'uploadedSendStatus'> }[] {
+  return messages.map((m) => ({
+    id: m.id,
+    partial: { uploadedState: m.translationState, uploadedSendStatus: m.sendStatus },
+  }))
 }
 
 /** One queued message the website is waiting for this machine to send. */

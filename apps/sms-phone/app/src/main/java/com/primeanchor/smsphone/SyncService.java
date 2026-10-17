@@ -127,6 +127,7 @@ public class SyncService extends Service {
 
         try {
             int pushed = pushNew(api, token, prefs);
+            pushSendStatus(api, token, prefs);
             int sent = drainOutbox(api, token);
             if (pushed > 0) {
                 prefs.edit().putLong("pushedTotal", prefs.getLong("pushedTotal", 0) + pushed).apply();
@@ -161,7 +162,52 @@ public class SyncService extends Service {
                 .putString("lastPush", now() + " 推 " + batch.messages.length()
                         + " 条，服务器存 " + resp.optInt("saved", -1) + " 条")
                 .apply();
+        rememberSendStatus(prefs, batch.messages, false);
         return batch.messages.length();
+    }
+
+    /** 最近发出的短信多久之内还要盯着状态变化。 */
+    private static final long SEND_STATUS_WATCH_MS = 24L * 60 * 60 * 1000;
+
+    /**
+     * 最近发出的短信里，发送状态和上次推的不一样的，补推一次。
+     * 网页上「发送中 / 已发送 / 已送达 / 发送失败」就靠这个跟上手机。
+     */
+    private void pushSendStatus(String api, String token, SharedPreferences prefs) throws Exception {
+        JSONArray recent = SmsRepo.readRecentOutgoing(this,
+                System.currentTimeMillis() - SEND_STATUS_WATCH_MS, 100);
+        JSONObject seen = seenSendStatus(prefs);
+        JSONArray changed = new JSONArray();
+        for (int i = 0; i < recent.length(); i++) {
+            JSONObject m = recent.getJSONObject(i);
+            if (!m.optString("send_status").equals(seen.optString(m.getString("id")))) changed.put(m);
+        }
+        if (changed.length() > 0) {
+            JSONObject body = new JSONObject();
+            body.put("device_serial", serial());
+            body.put("messages", changed);
+            Api.postJson(api + "/push", token, body);
+        }
+        // 只留这 24 小时内的，记录不会越积越多
+        rememberSendStatus(prefs, recent, true);
+    }
+
+    private static JSONObject seenSendStatus(SharedPreferences prefs) {
+        try {
+            return new JSONObject(prefs.getString("sendStatusSeen", "{}"));
+        } catch (Exception e) {
+            return new JSONObject();
+        }
+    }
+
+    private static void rememberSendStatus(SharedPreferences prefs, JSONArray messages, boolean replace)
+            throws Exception {
+        JSONObject seen = replace ? new JSONObject() : seenSendStatus(prefs);
+        for (int i = 0; i < messages.length(); i++) {
+            JSONObject m = messages.getJSONObject(i);
+            if (m.has("send_status")) seen.put(m.getString("id"), m.getString("send_status"));
+        }
+        prefs.edit().putString("sendStatusSeen", seen.toString()).apply();
     }
 
     private int drainOutbox(String api, String token) throws Exception {

@@ -35350,6 +35350,8 @@ try { db.exec(`ALTER TABLE device_sms_messages ADD COLUMN star_note TEXT DEFAULT
 // 网页点「重新翻译」时置 1; 电脑取走重翻后推回来会清掉
 try { db.exec(`ALTER TABLE device_sms_messages ADD COLUMN needs_retranslate INTEGER DEFAULT 0`); } catch(e) {}
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_device_sms_starred ON device_sms_messages(starred)`); } catch(e) {}
+// 发出去的那条在手机短信库里的状态: sending / sent / delivered / failed (空 = 收到的, 或旧版客户端没报)
+try { db.exec(`ALTER TABLE device_sms_messages ADD COLUMN send_status TEXT DEFAULT ''`); } catch(e) {}
 
 function deviceSmsHashToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
@@ -36942,6 +36944,8 @@ app.post('/api/plaid/fire-test-webhook', requireAdmin, requireRole('admin'), asy
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+const DEVICE_SMS_SEND_STATUSES = new Set(['sending', 'sent', 'delivered', 'failed']);
+
 // POST /api/device-sms/push — 桌面版推送一批短信 (同一条重复推是安全的, 按 remote_id 覆盖)
 app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
   try {
@@ -36950,8 +36954,8 @@ app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
     const serial = String(body.device_serial || '').slice(0, 80);
     const upsert = db.prepare(`INSERT INTO device_sms_messages
         (device_id, remote_id, peer, address, contact, direction, kind, body, translated_body, source_lang,
-         risk_score, risk_category, risk_summary, has_media, sent_at, updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+         risk_score, risk_category, risk_summary, has_media, sent_at, send_status, updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
       ON CONFLICT(device_id, remote_id) DO UPDATE SET
         peer=excluded.peer, address=excluded.address,
         direction=excluded.direction, kind=excluded.kind, body=excluded.body,
@@ -36964,6 +36968,8 @@ app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
         risk_score=COALESCE(excluded.risk_score, device_sms_messages.risk_score),
         risk_category=COALESCE(NULLIF(excluded.risk_category,''), device_sms_messages.risk_category),
         risk_summary=COALESCE(NULLIF(excluded.risk_summary,''), device_sms_messages.risk_summary),
+        -- 发送状态会变 (发送中 → 已发送 → 已送达), 新的覆盖旧的; 旧版客户端不带这个字段就别清掉
+        send_status=COALESCE(NULLIF(excluded.send_status,''), device_sms_messages.send_status),
         -- 推上来新译文就说明电脑已经重翻过了
         needs_retranslate=CASE WHEN NULLIF(excluded.translated_body,'') IS NOT NULL THEN 0
                                ELSE device_sms_messages.needs_retranslate END`);
@@ -37001,7 +37007,8 @@ app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
           Number.isFinite(Number(m.risk_score)) ? Math.max(0, Math.min(5, Math.round(Number(m.risk_score)))) : null,
           String(m.risk_category || '').slice(0, 30), String(m.risk_summary || '').slice(0, 300),
           m.has_media ? 1 : 0,
-          sentIso
+          sentIso,
+          direction === 'out' && DEVICE_SMS_SEND_STATUSES.has(m.send_status) ? m.send_status : ''
         );
         saved++;
       }
