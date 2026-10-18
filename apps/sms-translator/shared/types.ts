@@ -27,6 +27,12 @@ export const CATEGORIES: Category[] = [
 
 export type TranslationState = 'pending' | 'done' | 'error' | 'skipped'
 
+/**
+ * How an outgoing message fared, as the phone's own SMS database records it.
+ * `delivered` only appears when the carrier sends delivery reports.
+ */
+export type SendStatus = 'sending' | 'sent' | 'delivered' | 'failed'
+
 export interface Translation {
   text: string
   sourceLang: string
@@ -55,6 +61,8 @@ export interface Attachment {
   error?: string
   /** Claude's description / OCR of the image, when enabled. */
   description?: string
+  /** The file has been sent to the website (or the website declined it for good). */
+  uploaded?: boolean
 }
 
 export interface SmsMessage {
@@ -85,6 +93,8 @@ export interface SmsMessage {
   translationError?: string
   translation?: Translation
   analysis?: Analysis
+  /** Outgoing only: the phone's verdict on whether it went out. */
+  sendStatus?: SendStatus
   /** Set on messages this app sent, before the phone's SMS database catches up. */
   pending?: boolean
   /**
@@ -99,6 +109,8 @@ export interface SmsMessage {
    * pushed before its translation arrived gets pushed again with it.
    */
   uploadedState?: TranslationState
+  /** `sendStatus` at the last push, so a sending → sent change is pushed too. */
+  uploadedSendStatus?: SendStatus
 }
 
 /** Per-conversation notes kept by this app (the phone is never written to). */

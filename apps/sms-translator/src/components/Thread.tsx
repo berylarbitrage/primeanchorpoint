@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { SmsMessage } from '../../shared/types'
+import type { SendStatus, SmsMessage } from '../../shared/types'
 import {
   categoryLabel,
   filtersActive,
@@ -12,6 +12,20 @@ import {
 } from '../lib/derive'
 import Composer from './Composer'
 import AttachmentView from './AttachmentView'
+
+const SEND_STATUS_LABEL: Record<SendStatus, string> = {
+  sending: '发送中…',
+  sent: '✓ 已发送',
+  delivered: '✓✓ 已送达',
+  failed: '✗ 发送失败',
+}
+
+const SEND_STATUS_HINT: Record<SendStatus, string> = {
+  sending: '手机还在发，或者在排队等信号',
+  sent: '手机已经发出去了（运营商没回送达报告时就停在这里）',
+  delivered: '运营商回报对方手机已收到',
+  failed: '手机没发出去——在手机的短信 App 里能看到红色感叹号，可以在那里重发',
+}
 
 interface Props {
   conversation: Conversation | null
@@ -345,6 +359,14 @@ function MessageBubble({
 
         <div className="footline">
           <span>{formatTime(message.date)}</span>
+          {message.direction === 'out' && !message.pending && message.sendStatus && (
+            <span
+              className={`send-status ${message.sendStatus}`}
+              title={SEND_STATUS_HINT[message.sendStatus]}
+            >
+              {SEND_STATUS_LABEL[message.sendStatus]}
+            </span>
+          )}
           {message.pending && (
             <span title="手机把这条写进短信库之后，这里就会换成手机里的那条">
               已交给手机发送…

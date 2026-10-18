@@ -86,6 +86,7 @@ button,input,select,textarea{font-family:inherit}
 .badge.warn{background:#fef3c7;color:#92400e}
 .badge.danger{background:#fee2e2;color:#b91c1c}
 .badge.queued{background:#e0f2fe;color:#0369a1}
+.badge.failed{background:#fee2e2;color:#b91c1c}
 
 /* ── 会话内容 ── */
 .contact-bar{background:var(--white);border-bottom:1px solid var(--gray-200);padding:9px 14px;
@@ -135,6 +136,10 @@ button,input,select,textarea{font-family:inherit}
   gap:6px;flex-wrap:wrap}
 .msg-row.out .msg-meta{justify-content:flex-end}
 .msg-fail{color:var(--red)}
+.send-st{font-weight:600}
+.send-st.sending{color:var(--gray-400)}
+.send-st.sent,.send-st.delivered{color:var(--green)}
+.send-st.failed{color:var(--red)}
 .date-divider{text-align:center;padding:12px 0 6px;font-size:.72rem;color:var(--gray-400);font-weight:600}
 
 /* ── 预制信息选单 + 发图片 ── */
@@ -560,6 +565,33 @@ function dedupeMessages(list) {
   return list.filter(m => !drop.has(m));
 }
 
+/* 发出去的那条在手机短信库里的状态（电脑/手机 App 读出来推上来的）。
+   空 = 旧版客户端推的，不知道 —— 不显示，免得假装「已发送」。 */
+const SEND_STATUS = {
+  sending:   ['⏳ 发送中', '手机还在发，或在排队等信号'],
+  sent:      ['✓ 已发送', '手机已经发出去了（运营商不回送达报告时就停在这一步）'],
+  delivered: ['✓✓ 已送达', '运营商回报对方手机已收到'],
+  failed:    ['✗ 发送失败', '手机没发出去。可以点「重发」，或在手机短信 App 里重发'],
+};
+function sendStatusHtml(m) {
+  const st = SEND_STATUS[m.send_status];
+  if (!st) return '';
+  return '<span class="send-st ' + m.send_status + '" title="' + esc(st[1]) + '">' + st[0] + '</span>'
+    + (m.send_status === 'failed'
+      ? '<button class="action-btn" style="padding:1px 8px;font-size:.7rem" onclick="resendFailed(' + Number(m.id) + ')">重发</button>'
+      : '');
+}
+
+async function resendFailed(id) {
+  const m = MESSAGES.find(x => Number(x.id) === id);
+  if (!m || !confirm('把这条重新排队发一次？\n\n' + String(m.body || '').slice(0, 200))) return;
+  const r = await api('/device-sms/send', {
+    method: 'POST', body: JSON.stringify({ to: m.address || m.peer, peer: m.peer, body: m.body })
+  });
+  if (!r.success) { alert(r.error || '排队失败'); return; }
+  await load(true);
+}
+
 /* 已收到的 + 排队待发的合成一条时间线。 */
 function allItems() {
   const real = dedupeMessages(MESSAGES);
@@ -664,6 +696,7 @@ function renderThreads(convos) {
       + (c.unread ? '<span class="badge" style="background:#2563eb;color:#fff">' + c.unread + ' 条新</span>' : '')
       + riskBadge(c.maxRisk, (c.list.find(m => Number(m.risk_score) === c.maxRisk) || {}).risk_category)
       + (c.queued ? '<span class="badge queued">待发送 ' + c.queued + '</span>' : '')
+      + (c.last.direction === 'out' && c.last.send_status === 'failed' ? '<span class="badge failed">✗ 发送失败</span>' : '')
       + (c.status === 'closed' ? '<span class="badge">已关闭</span>' : '')
       + (c.contactLang ? '<span class="badge">→ ' + esc(c.contactLang) + '</span>' : '')
       + ((c.spoken || []).length ? '<span class="badge">🗣 ' + c.spoken.map(l => SPOKEN_LABELS[l] || l).join('·') + '</span>' : '')
@@ -764,7 +797,9 @@ function renderDetail(convos) {
     const showBoth = translated && translated !== (m.body || '').trim();
     return divider + '<div class="msg-row ' + (m.direction === 'out' ? 'out' : 'in') + '">'
       + '<div class="msg-bubble' + (Number(m.risk_score) >= 4 ? ' risky' : '') + '">'
-      + bodyHtml(m.body || (m.has_media ? '［图片短信］' : ''))
+      + bodyHtml(m.body || (m.has_media && !inMedia(m).length ? '［图片短信］' : ''))
+      + inMedia(m).map(f => '<a href="/api/device-sms/media-in/' + f + '" target="_blank" rel="noopener">'
+        + '<img class="msg-img" src="/api/device-sms/media-in/' + f + '" loading="lazy"></a>').join('')
       + (showBoth ? '<div class="msg-translation">' + esc(translated) + '</div>' : '')
       + '</div>'
       + '<div class="msg-meta">'
@@ -773,6 +808,7 @@ function renderDetail(convos) {
       + ' onclick="toggleStar(' + m.id + ',' + (Number(m.starred) ? 0 : 1) + ')">'
       + (Number(m.starred) ? '★' : '☆') + '</button>'
       + '<span>' + fmtClock(m.sent_at) + '</span>'
+      + (m.direction === 'out' ? sendStatusHtml(m) : '')
       + (m.star_note ? '<span style="color:var(--blue)">📌 ' + esc(m.star_note) + '</span>' : '')
       + (m.kind === 'mms' ? '<span>图片短信</span>' : '')
       + (m.source_lang ? '<span>' + esc(m.source_lang) + '</span>' : '')
@@ -1306,6 +1342,14 @@ function renderImgChip() {
 function clearImage() { PENDING_IMG = null; renderImgChip(); }
 
 /* 短信里我们自己的图片链接直接显示成图。 */
+/* 收到的彩信图片（电脑端补传上来的），只取格式正确的文件名 */
+function inMedia(m) {
+  let list = [];
+  try { list = JSON.parse(m.media || '[]'); } catch (_) {}
+  return (Array.isArray(list) ? list : []).map(x => x && x.file)
+    .filter(f => /^[a-f0-9]{32}\.(jpg|png|gif|webp)$/.test(f || ''));
+}
+
 function bodyHtml(text) {
   return esc(text).replace(/(https?:\/\/[^\s&<]+\/i\/[a-f0-9]{32}\.(?:jpg|png|gif|webp))/g,
     '<a href="$1" target="_blank" rel="noopener"><img class="msg-img" src="$1" loading="lazy"></a>');

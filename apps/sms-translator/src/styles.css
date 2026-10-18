@@ -491,6 +491,16 @@ textarea:focus {
   color: var(--danger);
 }
 
+.footline .send-status.delivered,
+.footline .send-status.sent {
+  color: var(--ok);
+}
+
+.footline .send-status.failed {
+  color: var(--danger);
+  font-weight: 600;
+}
+
 .msg .footline {
   display: flex;
   gap: 8px;

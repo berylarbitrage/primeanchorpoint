@@ -38,7 +38,9 @@ function mergeAttachments(
   const byId = new Map(existing.map((a) => [a.partId, a]))
   return incoming.map((a) => {
     const prev = byId.get(a.partId)
-    return prev ? { ...a, file: prev.file, bytes: prev.bytes, description: prev.description, error: prev.error } : a
+    return prev
+      ? { ...a, file: prev.file, bytes: prev.bytes, description: prev.description, error: prev.error, uploaded: prev.uploaded }
+      : a
   })
 }
 
@@ -139,6 +141,7 @@ export class MessageStore {
           analysis: existing.analysis,
           // Bookkeeping for the website push — ours, not the phone's.
           uploadedState: existing.uploadedState,
+          uploadedSendStatus: existing.uploadedSendStatus,
           unconfirmed: existing.unconfirmed,
           // Downloaded files and their descriptions are ours, not the phone's.
           attachments: mergeAttachments(existing.attachments, message.attachments),

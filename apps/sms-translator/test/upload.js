@@ -15,6 +15,7 @@ const path = require('node:path')
 const dist = path.join(__dirname, '..', 'dist-electron', 'electron')
 const {
   needsPush, pendingUploads, serialise, pushMessages, uploadedPatches, PUSH_BATCH,
+  pendingMediaUploads, pushMedia,
   endpointBase, fetchOutbox, reportOutbox,
 } = require(path.join(dist, 'upload', 'push.js'))
 const { redactForRemote, sanitiseRemoteArgs } = require(path.join(dist, 'web', 'remote.js'))
@@ -56,6 +57,17 @@ check(
   'and not once that translation has been pushed too',
   needsPush(message({ uploadedState: 'done', translationState: 'done' })),
   false,
+)
+
+check(
+  'a send status change is pushed again',
+  needsPush(message({ uploadedState: 'pending', uploadedSendStatus: 'sending', sendStatus: 'sent' })),
+  true,
+)
+check(
+  'the send status travels',
+  serialise(message({ direction: 'out', sendStatus: 'failed' })).send_status,
+  'failed',
 )
 
 const many = Array.from({ length: PUSH_BATCH + 40 }, (_, i) => message({ id: `dev:${i}` }))
@@ -202,6 +214,49 @@ async function main() {
     sanitiseRemoteArgs('sms:send', ['+1555', 'hi']),
     ['+1555', 'hi'],
   )
+
+  // --- received pictures ---
+  const pic = (a) => ({ partId: 7, contentType: 'image/jpeg', file: 'f.jpg', bytes: 1000, ...a })
+  check(
+    'a downloaded picture on a pushed message is queued',
+    pendingMediaUploads([message({ uploadedState: 'done', attachments: [pic()] })]).length,
+    1,
+  )
+  check(
+    'not before the message itself is on the website',
+    pendingMediaUploads([message({ attachments: [pic()] })]).length,
+    0,
+  )
+  check(
+    'nor once uploaded, nor before downloaded, nor HEIC',
+    pendingMediaUploads([
+      message({
+        uploadedState: 'done',
+        attachments: [pic({ uploaded: true }), pic({ file: undefined }), pic({ contentType: 'image/heic' })],
+      }),
+    ]).length,
+    0,
+  )
+  let mediaReq = null
+  const sent = await pushMedia(
+    { url: 'https://example.com/api/device-sms/push', token: 'tok' },
+    'dev:mms:5',
+    pic(),
+    Buffer.from('abc'),
+    async (url, init) => {
+      mediaReq = { url, body: JSON.parse(init.body) }
+      return { ok: true, status: 200, text: async () => '{}' }
+    },
+  )
+  check('a picture upload lands', sent, { done: true })
+  check('it goes to media-in', mediaReq.url, 'https://example.com/api/device-sms/media-in')
+  check('with the message and part ids', [mediaReq.body.id, mediaReq.body.part_id, mediaReq.body.data], ['dev:mms:5', 7, 'YWJj'])
+  const gone = await pushMedia({ url: 'https://example.com/x', token: 't' }, 'x', pic(), Buffer.from('a'),
+    async () => ({ ok: false, status: 404, text: async () => 'no' }))
+  check('a 404 is final, not retried forever', gone.done, true)
+  const down = await pushMedia({ url: 'https://example.com/x', token: 't' }, 'x', pic(), Buffer.from('a'),
+    async () => ({ ok: false, status: 502, text: async () => '' }))
+  check('a 502 is retried', down.done, false)
 
   console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`)
   process.exit(failures === 0 ? 0 : 1)

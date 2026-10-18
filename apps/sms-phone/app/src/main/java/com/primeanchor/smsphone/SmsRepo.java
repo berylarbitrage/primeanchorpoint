@@ -38,10 +38,9 @@ final class SmsRepo {
         JSONArray messages = new JSONArray();
         long maxDate = sinceMs;
 
-        String[] projection = {"_id", "address", "date", "type", "read", "body"};
         try (Cursor cursor = context.getContentResolver().query(
                 Telephony.Sms.CONTENT_URI,
-                projection,
+                PROJECTION,
                 "date > ?",
                 new String[]{String.valueOf(sinceMs)},
                 "date ASC")) {
@@ -49,29 +48,11 @@ final class SmsRepo {
 
             int count = 0;
             while (cursor.moveToNext() && count < limit) {
-                long id = cursor.getLong(0);
-                String address = cursor.getString(1) == null ? "" : cursor.getString(1);
-                long date = cursor.getLong(2);
-                int type = cursor.getInt(3);
-
-                // 1 = 收件箱；2/4/5/6 = 发出（含发送中/失败）；3 = 草稿，跳过
-                String direction;
-                if (type == Telephony.Sms.MESSAGE_TYPE_INBOX) direction = "in";
-                else if (type == Telephony.Sms.MESSAGE_TYPE_DRAFT) continue;
-                else direction = "out";
-
-                String body = cursor.getString(5) == null ? "" : cursor.getString(5);
-
-                JSONObject message = new JSONObject();
-                message.put("id", "sms:" + id);
-                message.put("peer", normalisePeer(address));
-                message.put("address", address);
-                message.put("direction", direction);
-                message.put("kind", "sms");
-                message.put("date", date);
-                message.put("body", body);
+                JSONObject message = fromCursor(cursor);
+                if (message == null) continue;
                 messages.put(message);
 
+                long date = message.getLong("date");
                 if (date > maxDate) maxDate = date;
                 count++;
             }
@@ -79,6 +60,76 @@ final class SmsRepo {
             // 读不了就当这轮没有——权限被收回时 tick 循环里会把状态写出来
         }
         return new Batch(messages, maxDate);
+    }
+
+    /**
+     * `sinceMs` 之后所有发出的短信（含发送中/失败）。
+     *
+     * 发送状态会变（发送中 → 已发送 → 已送达 / 失败），但 date 不变，按游标
+     * 增量读永远读不到变化——所以最近发出的每轮都重读一遍，由调用方比对哪些变了。
+     */
+    static JSONArray readRecentOutgoing(Context context, long sinceMs, int limit) {
+        JSONArray messages = new JSONArray();
+        try (Cursor cursor = context.getContentResolver().query(
+                Telephony.Sms.CONTENT_URI,
+                PROJECTION,
+                "date > ? AND type != ? AND type != ?",
+                new String[]{String.valueOf(sinceMs),
+                        String.valueOf(Telephony.Sms.MESSAGE_TYPE_INBOX),
+                        String.valueOf(Telephony.Sms.MESSAGE_TYPE_DRAFT)},
+                "date DESC")) {
+            if (cursor == null) return messages;
+            while (cursor.moveToNext() && messages.length() < limit) {
+                JSONObject message = fromCursor(cursor);
+                if (message != null) messages.put(message);
+            }
+        } catch (Exception e) {
+            // 同上
+        }
+        return messages;
+    }
+
+    private static final String[] PROJECTION =
+            {"_id", "address", "date", "type", "read", "body", "status"};
+
+    /** 一行短信库 → 推送格式；草稿返回 null。 */
+    private static JSONObject fromCursor(Cursor cursor) throws Exception {
+        long id = cursor.getLong(0);
+        String address = cursor.getString(1) == null ? "" : cursor.getString(1);
+        long date = cursor.getLong(2);
+        int type = cursor.getInt(3);
+
+        // 1 = 收件箱；2/4/5/6 = 发出（含发送中/失败）；3 = 草稿，跳过
+        String direction;
+        if (type == Telephony.Sms.MESSAGE_TYPE_INBOX) direction = "in";
+        else if (type == Telephony.Sms.MESSAGE_TYPE_DRAFT) return null;
+        else direction = "out";
+
+        String body = cursor.getString(5) == null ? "" : cursor.getString(5);
+        int status = cursor.isNull(6) ? -1 : cursor.getInt(6);
+
+        JSONObject message = new JSONObject();
+        message.put("id", "sms:" + id);
+        message.put("peer", normalisePeer(address));
+        message.put("address", address);
+        message.put("direction", direction);
+        message.put("kind", "sms");
+        message.put("date", date);
+        message.put("body", body);
+        if ("out".equals(direction)) message.put("send_status", sendStatus(type, status));
+        return message;
+    }
+
+    /**
+     * 发出那条的状态，和电脑端 sendStatusFromRow 一致。
+     * type: 2 已发 / 4 发件箱 / 5 失败 / 6 排队；status 是送达报告: -1 无, 0 已送达, 32 等待, 64 失败。
+     */
+    static String sendStatus(int type, int status) {
+        if (type == Telephony.Sms.MESSAGE_TYPE_FAILED) return "failed";
+        if (type == Telephony.Sms.MESSAGE_TYPE_OUTBOX || type == Telephony.Sms.MESSAGE_TYPE_QUEUED) return "sending";
+        if (status == Telephony.Sms.STATUS_COMPLETE) return "delivered";
+        if (status >= Telephony.Sms.STATUS_FAILED) return "failed";
+        return "sent";
     }
 
     static final class Batch {

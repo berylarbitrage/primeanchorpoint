@@ -1,7 +1,7 @@
 import { runAdb, runAdbBinary, runAdbChecked, shellQuote, type AdbContext } from './adb'
 import { isEmptyResult, isPermissionDenied, parseContentRows, value } from './rows'
 import { normalisePeer } from './sms'
-import type { Attachment, Direction, SmsMessage } from '../../shared/types'
+import type { Attachment, Direction, SendStatus, SmsMessage } from '../../shared/types'
 
 /**
  * MMS is stored completely differently from SMS:
@@ -38,6 +38,7 @@ export interface MmsRow {
   direction: Direction
   readOnDevice: boolean
   subject: string
+  sendStatus?: SendStatus
 }
 
 export interface MmsPart {
@@ -48,11 +49,18 @@ export interface MmsPart {
   text: string
 }
 
-/** `msg_box`: 1 = inbox, 2 = sent, 4 = outbox. */
+/** `msg_box`: 1 = inbox, 2 = sent, 4 = outbox, 5 = failed. */
 function directionFromBox(box: number): Direction | null {
   if (box === 1) return 'in'
-  if (box === 2 || box === 4) return 'out'
+  if (box === 2 || box === 4 || box === 5) return 'out'
   return null // 3 = draft
+}
+
+function sendStatusFromBox(box: number): SendStatus | undefined {
+  if (box === 2) return 'sent'
+  if (box === 4) return 'sending'
+  if (box === 5) return 'failed'
+  return undefined
 }
 
 export function parseMmsRows(out: string): MmsRow[] {
@@ -71,6 +79,7 @@ export function parseMmsRows(out: string): MmsRow[] {
       direction,
       readOnDevice: value(row.read) === '1',
       subject: value(row.sub),
+      sendStatus: sendStatusFromBox(Number(row.msg_box)),
     })
   }
   return rows
@@ -267,6 +276,7 @@ export function buildMessage(
     // A picture-only MMS has nothing to translate, but it may still be worth
     // describing, so it does not start as 'skipped'.
     translationState: 'pending',
+    ...(row.sendStatus ? { sendStatus: row.sendStatus } : {}),
   }
 }
 

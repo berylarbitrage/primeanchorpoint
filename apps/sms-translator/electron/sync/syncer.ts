@@ -35,6 +35,16 @@ const PENDING_MATCH_MS = 10 * 60_000
 const PENDING_EXPIRY_MS = 5 * 60_000
 
 /**
+ * Outgoing SMS whose status can still change are re-read by id on every sync:
+ * the date cursor never revisits them, so without this a message would stay
+ * "sending" on screen after the phone has long since sent or failed it.
+ * `sent` is watched briefly too, for a delivery report that may follow.
+ */
+const RECHECK_SENDING_MS = 24 * 60 * 60_000
+const RECHECK_SENT_MS = 30 * 60_000
+const MAX_RECHECK = 50
+
+/**
  * Cap on attachments downloaded per sync. Each one is a separate adb round-trip,
  * and a first import covering months could otherwise stall the first sync for a
  * long time. Whatever is skipped gets picked up on the following passes.
@@ -200,6 +210,11 @@ export class Syncer {
       }
 
       const fetched = await querySms(ctx, device.serial, { sinceMs })
+      const recheck = this.unsettledSends(device.serial, new Set(fetched.map((m) => m.id)))
+      if (recheck.length) {
+        const rows = await querySms(ctx, device.serial, { rawIds: recheck }).catch(() => [])
+        fetched.push(...rows)
+      }
       if (settings.includeMms) {
         fetched.push(...(await this.fetchMms(ctx, device.serial, sinceMs)))
       }
@@ -253,6 +268,25 @@ export class Syncer {
     } finally {
       this.inFlight = false
     }
+  }
+
+  /** Provider ids of recent outgoing SMS that may still change status. */
+  private unsettledSends(deviceSerial: string, alreadyFetched: Set<string>): number[] {
+    const now = Date.now()
+    const ids: number[] = []
+    for (const m of this.deps.store.all()) {
+      if (m.deviceSerial !== deviceSerial || m.kind !== 'sms' || m.rawId <= 0) continue
+      if (m.direction !== 'out' || alreadyFetched.has(m.id)) continue
+      const age = now - m.date
+      if (
+        // No status yet = synced before this app read it; fill it in once.
+        ((m.sendStatus === undefined || m.sendStatus === 'sending') && age < RECHECK_SENDING_MS) ||
+        (m.sendStatus === 'sent' && age < RECHECK_SENT_MS)
+      ) {
+        ids.push(m.rawId)
+      }
+    }
+    return ids.slice(-MAX_RECHECK)
   }
 
   /**

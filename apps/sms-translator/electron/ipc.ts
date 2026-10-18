@@ -26,7 +26,9 @@ import {
   fetchNotes,
   fetchRetranslate,
   fetchOutbox,
+  pendingMediaUploads,
   pendingUploads,
+  pushMedia,
   pushMessages,
   pushNotes,
   reportOutbox,
@@ -143,6 +145,7 @@ async function pushToWebsite(): Promise<void> {
   const batch = pendingUploads(store.all())
   if (!batch.length) {
     uploadError = undefined
+    await pushPictures()
     return
   }
 
@@ -162,6 +165,42 @@ async function pushToWebsite(): Promise<void> {
       store.patchMany(uploadedPatches(batch))
     } else {
       uploadError = result.error
+    }
+  } finally {
+    uploadBusy = false
+  }
+}
+
+/**
+ * Send downloaded MMS pictures up, a few per pass. Without this the website
+ * only knows a message *had* a picture and shows「［图片短信］」with nothing in it.
+ */
+async function pushPictures(): Promise<void> {
+  const current = settings.public()
+  if (!current.uploadEnabled || uploadBusy) return
+  const queue = pendingMediaUploads(store.all())
+  if (!queue.length) return
+
+  uploadBusy = true
+  try {
+    const target = { url: current.uploadUrl, token: current.uploadToken }
+    for (const { message, attachment } of queue) {
+      let data: Buffer
+      try {
+        data = store.readAttachment(attachment.file!)
+      } catch {
+        continue // file went missing; the next sync downloads it again
+      }
+      const result = await pushMedia(target, message.id, attachment, data)
+      if (result.error) uploadError = result.error
+      if (!result.done) break
+      // Re-read: the sync may have touched this message while we were uploading.
+      const latest = store.get(message.id) ?? message
+      store.patch(message.id, {
+        attachments: (latest.attachments ?? []).map((a) =>
+          a.partId === attachment.partId ? { ...a, uploaded: true } : a,
+        ),
+      })
     }
   } finally {
     uploadBusy = false
