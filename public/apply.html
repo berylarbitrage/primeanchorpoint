@@ -181,7 +181,7 @@
     <div class="card">
       <h2 id="t-secDocs">⑤ Documentos</h2>
       <div class="doc-grid">
-        <div class="doc-slot">
+        <div class="doc-slot us-doc">
           <span class="doc-cap" id="t-ssnFront">SSN — Frente <span class="req">*</span></span>
           <div class="zone-row" id="ssn_front_zone">
             <label class="photo-zone" data-target="ssn_front_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
@@ -191,7 +191,7 @@
           <input type="file" id="ssn_front_gal" accept="image/*" data-doc="ssn_front">
           <div class="prev" id="ssn_front_prev"><img alt=""><button type="button" data-clear="ssn_front">×</button></div>
         </div>
-        <div class="doc-slot">
+        <div class="doc-slot us-doc">
           <span class="doc-cap" id="t-ssnBack">SSN — Reverso <span class="opt">(opcional)</span></span>
           <div class="zone-row" id="ssn_back_zone">
             <label class="photo-zone" data-target="ssn_back_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
@@ -201,7 +201,7 @@
           <input type="file" id="ssn_back_gal" accept="image/*" data-doc="ssn_back">
           <div class="prev" id="ssn_back_prev"><img alt=""><button type="button" data-clear="ssn_back">×</button></div>
         </div>
-        <div class="doc-slot">
+        <div class="doc-slot us-doc">
           <span class="doc-cap" id="t-eadFront">EAD — Frente <span class="req">*</span></span>
           <div class="zone-row" id="ead_front_zone">
             <label class="photo-zone" data-target="ead_front_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
@@ -211,7 +211,7 @@
           <input type="file" id="ead_front_gal" accept="image/*" data-doc="ead_front">
           <div class="prev" id="ead_front_prev"><img alt=""><button type="button" data-clear="ead_front">×</button></div>
         </div>
-        <div class="doc-slot">
+        <div class="doc-slot us-doc">
           <span class="doc-cap" id="t-eadBack">EAD — Reverso <span class="req">*</span></span>
           <div class="zone-row" id="ead_back_zone">
             <label class="photo-zone" data-target="ead_back_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
@@ -220,6 +220,27 @@
           <input type="file" id="ead_back_cam" accept="image/*" capture="environment" data-doc="ead_back">
           <input type="file" id="ead_back_gal" accept="image/*" data-doc="ead_back">
           <div class="prev" id="ead_back_prev"><img alt=""><button type="button" data-clear="ead_back">×</button></div>
+        </div>
+        <!-- 中国申请 (?cn=1): 身份证正反面代替 SSN/EAD -->
+        <div class="doc-slot cn-doc" style="display:none">
+          <span class="doc-cap" id="t-cnidFront">身份证 正面（人像面） <span class="req">*</span></span>
+          <div class="zone-row" id="cnid_front_zone">
+            <label class="photo-zone" data-target="cnid_front_cam"><span class="emoji">📷</span><span class="t-cam">拍照</span></label>
+            <label class="photo-zone" data-target="cnid_front_gal"><span class="emoji">🖼️</span><span class="t-gal">相册</span></label>
+          </div>
+          <input type="file" id="cnid_front_cam" accept="image/*" capture="environment" data-doc="cnid_front">
+          <input type="file" id="cnid_front_gal" accept="image/*" data-doc="cnid_front">
+          <div class="prev" id="cnid_front_prev"><img alt=""><button type="button" data-clear="cnid_front">×</button></div>
+        </div>
+        <div class="doc-slot cn-doc" style="display:none">
+          <span class="doc-cap" id="t-cnidBack">身份证 反面（国徽面） <span class="req">*</span></span>
+          <div class="zone-row" id="cnid_back_zone">
+            <label class="photo-zone" data-target="cnid_back_cam"><span class="emoji">📷</span><span class="t-cam">拍照</span></label>
+            <label class="photo-zone" data-target="cnid_back_gal"><span class="emoji">🖼️</span><span class="t-gal">相册</span></label>
+          </div>
+          <input type="file" id="cnid_back_cam" accept="image/*" capture="environment" data-doc="cnid_back">
+          <input type="file" id="cnid_back_gal" accept="image/*" data-doc="cnid_back">
+          <div class="prev" id="cnid_back_prev"><img alt=""><button type="button" data-clear="cnid_back">×</button></div>
         </div>
       </div>
     </div>
@@ -259,6 +280,7 @@ const I18N = {
     lAddr1: 'Dirección', lAddr2: 'Apt / Unidad', lCity: 'Ciudad', lState: 'Estado', lZip: 'Código postal',
     addrVerifying: 'Verificando dirección…', addrVerifiedMsg: '✓ Dirección verificada', addrUnverified: 'No se pudo verificar la dirección',
     verifyAddr: 'Verificar dirección', errAddr: 'Completa dirección, ciudad, estado y código postal.',
+    cnidFront: 'Cédula china — Frente (foto)', cnidBack: 'Cédula china — Reverso (escudo)', errDocsCn: 'Sube ambos lados de tu cédula de identidad china.',
     lStateCn: 'Provincia', lZipCn: 'Código postal', errAddrCn: 'Completa dirección y ciudad.', cnBadge: '🇨🇳 China', addrCnNote: 'Las direcciones de China no se verifican automáticamente.',
     sendCode: 'Enviar código', resend: 'Reenviar', verify: 'Verificar', verified: 'Verificado',
     ssnFront: 'SSN — Frente', ssnBack: 'SSN — Reverso', eadFront: 'EAD — Frente', eadBack: 'EAD — Reverso',
@@ -279,6 +301,7 @@ const I18N = {
     lAddr1: 'Street address', lAddr2: 'Apt / Unit', lCity: 'City', lState: 'State', lZip: 'ZIP code',
     addrVerifying: 'Verifying address…', addrVerifiedMsg: '✓ Address verified', addrUnverified: 'Address could not be verified',
     verifyAddr: 'Verify address', errAddr: 'Please fill in street, city, state and ZIP.',
+    cnidFront: 'China ID card — Front (photo side)', cnidBack: 'China ID card — Back (emblem side)', errDocsCn: 'Please upload both sides of your China ID card.',
     lStateCn: 'Province', lZipCn: 'Postal code', errAddrCn: 'Please fill in street and city.', cnBadge: '🇨🇳 China', addrCnNote: 'Addresses in China are not verified automatically.',
     sendCode: 'Send code', resend: 'Resend', verify: 'Verify', verified: 'Verified',
     ssnFront: 'SSN — Front', ssnBack: 'SSN — Back', eadFront: 'EAD — Front', eadBack: 'EAD — Back',
@@ -299,6 +322,7 @@ const I18N = {
     lAddr1: '街道地址', lAddr2: '公寓 / 单元号', lCity: '城市', lState: '州', lZip: '邮编',
     addrVerifying: '正在验证地址…', addrVerifiedMsg: '✓ 地址已验证', addrUnverified: '地址无法验证',
     verifyAddr: '验证地址', errAddr: '请填写街道地址、城市、州和邮编。',
+    cnidFront: '身份证 正面（人像面）', cnidBack: '身份证 反面（国徽面）', errDocsCn: '请上传身份证正面和反面。',
     lStateCn: '省份', lZipCn: '邮编', errAddrCn: '请填写详细地址和城市。', cnBadge: '🇨🇳 中国申请', addrCnNote: '中国地址无法自动验证，请仔细核对后提交。',
     sendCode: '获取验证码', resend: '重新发送', verify: '验证', verified: '已验证',
     ssnFront: 'SSN 正面', ssnBack: 'SSN 反面', eadFront: 'EAD 正面', eadBack: 'EAD 反面',
@@ -349,6 +373,8 @@ function applyLang() {
   document.getElementById('t-ssnBack').innerHTML = L.ssnBack + ' <span class="opt">' + L.optional + '</span>';
   document.getElementById('t-eadFront').innerHTML = L.eadFront + ' <span class="req">*</span>';
   document.getElementById('t-eadBack').innerHTML = L.eadBack + ' <span class="req">*</span>';
+  document.getElementById('t-cnidFront').innerHTML = L.cnidFront + ' <span class="req">*</span>';
+  document.getElementById('t-cnidBack').innerHTML = L.cnidBack + ' <span class="req">*</span>';
   document.querySelectorAll('.t-cam').forEach(el => { el.textContent = L.cam; });
   document.querySelectorAll('.t-gal').forEach(el => { el.textContent = L.gal; });
   // verify buttons reflect state
@@ -394,7 +420,7 @@ const OTP_T = FOREMAN ? FOREMAN_TOKEN : TOKEN;
 if (FOREMAN) document.body.classList.add('fm');
 
 let _partnerName = '';
-const _files = { ssn_front: null, ssn_back: null, ead_front: null, ead_back: null };
+const _files = { ssn_front: null, ssn_back: null, ead_front: null, ead_back: null, cnid_front: null, cnid_back: null };
 const _verified = { phone: false, email: false };
 const _otpSent = { phone: false, email: false };
 const _verifiedTarget = { phone: '', email: '' }; // value that was verified
@@ -427,6 +453,9 @@ function refreshAddressLabels() {
   // Google 地址验证不支持中国, 中国申请不显示验证按钮, 换成一句提示
   document.getElementById('addrVerifyBtn').style.display = CN_MODE ? 'none' : '';
   if (CN_MODE) setAddrMsg(L.addrCnNote, true);
+  // 证件: 中国申请只要身份证正反面, 不显示 SSN / EAD
+  document.querySelectorAll('.us-doc').forEach(el => { el.style.display = CN_MODE ? 'none' : ''; });
+  document.querySelectorAll('.cn-doc').forEach(el => { el.style.display = CN_MODE ? '' : 'none'; });
 }
 // 发给服务器的完整号码。中国: +86 加 11 位手机号 (去掉多打的 86 和开头的 0); 美国照旧。
 function fullPhone() {
@@ -705,7 +734,9 @@ async function submitForm() {
   if (!addr1 || !city || (isUS() && (!state || !zip))) { showErr(isUS() ? L.errAddr : L.errAddrCn); return; }
   if (!_verified.phone) { showErr(L.errPhone); return; }
   if (!_verified.email) { showErr(L.errEmail); return; }
-  if (!_files.ssn_front || !_files.ead_front || !_files.ead_back) { showErr(L.errDocs); return; }
+  if (CN_MODE ? !(_files.cnid_front && _files.cnid_back) : (!_files.ssn_front || !_files.ead_front || !_files.ead_back)) {
+    showErr(CN_MODE ? L.errDocsCn : L.errDocs); return;
+  }
   const btn = document.getElementById('submitBtn');
   btn.disabled = true;
   document.getElementById('t-submitBtn').textContent = L.submitting;

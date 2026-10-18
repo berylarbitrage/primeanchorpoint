@@ -17898,7 +17898,7 @@ async function loadEmpApplicantDocs(empId) {
     box.innerHTML = '<p class="empty" style="padding:1rem">暂无证件（工人扫码申请时上传的证件会显示在这里）</p>';
     return;
   }
-  const docLabel = { ssn_front: 'SSN 正', ssn_back: 'SSN 反', ead_front: 'EAD 正', ead_back: 'EAD 反' };
+  const docLabel = { ssn_front: 'SSN 正', ssn_back: 'SSN 反', ead_front: 'EAD 正', ead_back: 'EAD 反', cnid_front: '身份证 正', cnid_back: '身份证 反' };
   // 按申请分组: 一般只有一份; 多份或按电话/邮箱兜底匹配到的, 加一行来源说明
   const groups = [], bySub = {};
   docs.forEach(d => {
@@ -43658,7 +43658,7 @@ function renderApplicantInbox() {
     return;
   }
   const dl = (sid, did) => `/api/admin/applicant-submissions/${sid}/docs/${did}/download`;
-  const docLabel = { ssn_front: 'SSN 正', ssn_back: 'SSN 反', ead_front: 'EAD 正', ead_back: 'EAD 反' };
+  const docLabel = { ssn_front: 'SSN 正', ssn_back: 'SSN 反', ead_front: 'EAD 正', ead_back: 'EAD 反', cnid_front: '身份证 正', cnid_back: '身份证 反' };
   body.innerHTML = shown.map(s => {
     const docs = Array.isArray(s._docs) ? s._docs : [];
     const docThumbs = docs.map(d => {
@@ -43879,7 +43879,7 @@ function _inboxReviewPanel(s, emp, dl, docLabel) {
 function inboxBatchCrop(subId) {
   const s = (_inboxSubmissions || []).find(x => x.id === subId);
   if (!s) return;
-  const docLabel = { ssn_front: 'SSN 正', ssn_back: 'SSN 反', ead_front: 'EAD 正', ead_back: 'EAD 反' };
+  const docLabel = { ssn_front: 'SSN 正', ssn_back: 'SSN 反', ead_front: 'EAD 正', ead_back: 'EAD 反', cnid_front: '身份证 正', cnid_back: '身份证 反' };
   const items = (Array.isArray(s._docs) ? s._docs : []).filter(d => !d.has_cropped && !/\.pdf$/i.test(d.file_name || ''))
     .map(d => ({ url: `/api/admin/applicant-submissions/${s.id}/docs/${d.id}/download`, label: docLabel[d.doc_type] || d.doc_type, docType: d.doc_type || '', verify: d.verify_status || '' }));
   if (!items.length) { if (typeof showToast === 'function') showToast('证件都已裁剪', 'success'); return; }
@@ -44516,7 +44516,7 @@ function _mergeRenderDocsInto(box, docs) {
   const linked = docs.filter(d => d.linked);
   const show = linked.length ? linked : docs;
   if (!show.length) { box.innerHTML = '<span style="font-size:.72rem;color:var(--gray-300)">无证件</span>'; return; }
-  const docLabel = { ssn_front: 'SSN 正', ssn_back: 'SSN 反', ead_front: 'EAD 正', ead_back: 'EAD 反' };
+  const docLabel = { ssn_front: 'SSN 正', ssn_back: 'SSN 反', ead_front: 'EAD 正', ead_back: 'EAD 反', cnid_front: '身份证 正', cnid_back: '身份证 反' };
   box.innerHTML = show.map(d => {
     const url = `/api/admin/applicant-submissions/${d.submission_id}/docs/${d.id}/download`;
     const label = docLabel[d.doc_type] || d.doc_type || '证件';
@@ -44976,7 +44976,7 @@ async function renderApplicantDocPanel(subId, opts) {
   if (!panel) return;
   panel.style.display = '';
   panel.innerHTML = '<div style="font-size:.82rem;color:var(--gray-400)">加载证件中…</div>';
-  const docLabel = { ssn_front: 'SSN 正', ssn_back: 'SSN 反', ead_front: 'EAD 正', ead_back: 'EAD 反' };
+  const docLabel = { ssn_front: 'SSN 正', ssn_back: 'SSN 反', ead_front: 'EAD 正', ead_back: 'EAD 反', cnid_front: '身份证 正', cnid_back: '身份证 反' };
   const dl = (did) => `/api/admin/applicant-submissions/${subId}/docs/${did}/download`;
   let docs = [];
   try { docs = await api(`/admin/applicant-submissions/${subId}/docs`); } catch (_) {}
