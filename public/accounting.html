@@ -5462,13 +5462,16 @@ _csfDefs.inv = {
     { label: '批注', type: 'num', get: r => r.annotation_count || 0 },
   ],
 };
-// 这张发票的工人是不是都关联了银行付款记录 (发票里逐行的付款备注) → [筛选用文字, 显示用 html]
+// 这张发票的工人是不是都关联了银行付款记录 (发票里逐行的付款备注), 关联了的有没有过审核 → [筛选用文字, 显示用 html]
+// 颜色: 全部关联且都审核过 = 绿; 全部关联但还有待审核 = 紫 (和本页「待审核」同色); 只关联了一部分 = 黄; 都没关联 = 灰
 function _invLineBankState(r) {
-  const lp = r.line_pay || {}, n = lp.total || 0, k = Math.min(lp.linked || 0, n);
+  const lp = r.line_pay || {}, n = lp.total || 0, k = Math.min(lp.linked || 0, n), pend = Math.min(lp.pending || 0, k);
   if (!n) return ['无工人行', '<span style="color:var(--g300)">—</span>'];
-  const tip = `${n} 个工人: ${k} 个关联了银行记录, ${lp.paid || 0} 个记了已付`;
-  if (k >= n) return ['全部关联', `<span data-tip="${tip}" style="white-space:nowrap;font-weight:700;color:#047857;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:999px;padding:1px 7px;font-size:.74rem">🏦 ${k}/${n} 全部关联</span>`];
-  if (k > 0) return ['部分关联', `<span data-tip="${tip}" style="white-space:nowrap;font-weight:700;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:999px;padding:1px 7px;font-size:.74rem">🏦 ${k}/${n}</span>`];
+  const tip = `${n} 个工人: ${k} 个关联了银行记录${pend ? `（其中 ${pend} 个待管理员审核）` : ''}, ${lp.paid || 0} 个记了已付`;
+  const pill = (fg, bg, bd, txt) => `<span data-tip="${tip}" style="white-space:nowrap;font-weight:700;color:${fg};background:${bg};border:1px solid ${bd};border-radius:999px;padding:1px 7px;font-size:.74rem">${txt}</span>`;
+  if (k >= n && !pend) return ['全部关联·已审核', pill('#047857', '#ecfdf5', '#a7f3d0', `🏦 ${k}/${n} ✓ 已审核`)];
+  if (k >= n) return ['全部关联·待审核', pill('#6d28d9', '#f5f3ff', '#c4b5fd', `🏦 ${k}/${n} · 待审核 ${pend}`)];
+  if (k > 0) return ['部分关联', pill('#b45309', '#fffbeb', '#fcd34d', `🏦 ${k}/${n}${pend ? ` · 待审核 ${pend}` : ''}`)];
   return ['未关联', `<span data-tip="${tip}" style="white-space:nowrap;color:var(--g400);font-size:.74rem">🏦 0/${n}</span>`];
 }
 // 卡车费用的列定义 (顺序和表格列一致)

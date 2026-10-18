@@ -41215,11 +41215,13 @@ app.get('/api/acct/invoices', requireAdmin, requireAcctView, (req, res) => {
     const linePay = {};
     db.prepare(`SELECT invoice_id,
         SUM(CASE WHEN COALESCE(txn_ids,'[]') NOT IN ('','[]') THEN 1 ELSE 0 END) AS linked,
-        SUM(CASE WHEN paid_status='paid' THEN 1 ELSE 0 END) AS paid
+        SUM(CASE WHEN paid_status='paid' THEN 1 ELSE 0 END) AS paid,
+        -- 关联了银行记录但还在等管理员审核的 (review_status='' 是加审核之前的旧备注, 不算待审核)
+        SUM(CASE WHEN COALESCE(txn_ids,'[]') NOT IN ('','[]') AND review_status='pending' THEN 1 ELSE 0 END) AS pending
       FROM acct_line_pay_notes GROUP BY invoice_id`).all().forEach(x => { linePay[x.invoice_id] = x; });
     for (const r of rows) {
       const lp = linePay[r.id] || {};
-      r.line_pay = { total: r.line_n || 0, linked: lp.linked || 0, paid: lp.paid || 0 };
+      r.line_pay = { total: r.line_n || 0, linked: lp.linked || 0, paid: lp.paid || 0, pending: lp.pending || 0 };
       delete r.line_n;
       r.annotation_count = _acctAnnCount.get('invoice', r.id).n;
       r.pay_note = payNotes[r.id] || null;
