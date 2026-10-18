@@ -918,6 +918,8 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS referrals (
 )`); } catch(e) {}
 // 面试去没去: HR 约了面试他未必去 — '' 未标记 | attended 去了 | no_show 没去 | failed 去了但没通过
 try { db.exec(`ALTER TABLE referrals ADD COLUMN interview_status TEXT DEFAULT ''`); } catch(e) {}
+// 关联发票时还可以细到发票里的某几行 (这个工人那一行): { "<发票 id>": ["w3", ...] }, 行号 key 同 _invoicePayableLines
+try { db.exec(`ALTER TABLE referrals ADD COLUMN invoice_lines TEXT DEFAULT '{}'`); } catch(e) {}
 // 标了「去了」可以再记实际到场时间 (可能和约的时间不一样)
 try { db.exec(`ALTER TABLE referrals ADD COLUMN interview_attended_at TEXT DEFAULT ''`); } catch(e) {}
 // 面试去了但没通过 (interview_status='failed'): 记原因 — 常见原因勾选 + 自己补充, 存成一段文字
@@ -41696,17 +41698,30 @@ app.delete('/api/acct/fee-records/:id', requireAdmin, requireRole('accounting', 
 // ─── 🤝 介绍费 (referral): 工头介绍工人, 核查后付介绍费 ───
 // 流程: 客服/会计录入介绍信息 → 会计关联发票佐证 (被介绍人确实在给客户干活) →
 // 管理员核查整条信息、决定是否支付 → 同意后会计付款并在付款批注里关联银行记录。
-function _referralOut(r, invMap, payNotes, weeksBy, weekNotes) {
+// 介绍记录上勾的发票条目 → { 发票 id: [line_key...] } (只留还关联着的发票)
+function _referralLineKeys(r, invIds) {
+  let m = {}; try { m = JSON.parse(r.invoice_lines || '{}') || {}; } catch (e) { m = {}; }
+  const out = {};
+  for (const id of invIds) {
+    const keys = Array.isArray(m[id]) ? m[id].map(String).filter(Boolean) : [];
+    if (keys.length) out[id] = keys;
+  }
+  return out;
+}
+function _referralOut(r, invMap, payNotes, weeksBy, weekNotes, linesByInv) {
   r.attachments = _claimAtts(r);
   let ids = []; try { ids = JSON.parse(r.invoice_ids || '[]'); } catch (e) { ids = []; }
   r.invoice_ids = (Array.isArray(ids) ? ids : []).map(i => parseInt(i)).filter(Boolean);
   r.invoices = r.invoice_ids.map(id => invMap[id]).filter(Boolean);
+  r.invoice_lines = _referralLineKeys(r, r.invoice_ids);
   r.pay_note = payNotes[r.id] || null;
   // 每周付款: 按发票账期先后排, fee 空的按介绍记录上的介绍费
   r.weeks = ((weeksBy && weeksBy[r.id]) || []).filter(w => invMap[w.invoice_id]).map(w => ({
     id: w.id, invoice_id: w.invoice_id, fee: w.fee,
     fee_eff: w.fee != null ? w.fee : (r.amount != null ? r.amount : null),
     invoice: invMap[w.invoice_id], pay_note: (weekNotes && weekNotes[w.id]) || null,
+    // 这周发票里勾的那几行 (这个工人那一行), 没勾就是整张发票
+    lines: ((r.invoice_lines[w.invoice_id] || []).map(k => ((linesByInv && linesByInv[w.invoice_id]) || []).find(l => l.line_key === k)).filter(Boolean)),
   })).sort((a, b) => String(a.invoice.period_start || a.invoice.invoice_date || '').localeCompare(String(b.invoice.period_start || b.invoice.invoice_date || '')));
   return r;
 }
@@ -41746,7 +41761,13 @@ app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
         fmStByName[String(f.name).trim().toLowerCase()] = f.state;
       });
     } catch (e) {}
-    const out = rows.map(r => _referralOut(r, invMap, payNotes, weeksBy, weekNotes));
+    // 勾了条目的发票才去解析 items (发票条目可能很多, 不全读)
+    const lineInvIds = new Set();
+    rows.forEach(r => { let m = {}; try { m = JSON.parse(r.invoice_lines || '{}') || {}; } catch (e) {} Object.keys(m).forEach(k => { const n = parseInt(k); if (n && invMap[n]) lineInvIds.add(n); }); });
+    const linesByInv = {};
+    if (lineInvIds.size) db.prepare(`SELECT id, items_json, profile_json FROM invoices WHERE id IN (${[...lineInvIds].map(() => '?').join(',')})`)
+      .all(...lineInvIds).forEach(v => { linesByInv[v.id] = _invoiceLinesNumbered(v); });
+    const out = rows.map(r => _referralOut(r, invMap, payNotes, weeksBy, weekNotes, linesByInv));
     out.forEach(r => { r.foreman_state = fmStByPhone[normP(r.foreman_phone)] || fmStByName[String(r.foreman_name).trim().toLowerCase()] || ''; });
     out.forEach(r => { r.clock = r.timeclock_code ? _referralClock(r.timeclock_code, r.work_start_date) : null; });
     const pIdx = _referralProfileIndex();
@@ -42069,6 +42090,16 @@ app.put('/api/acct/referrals/:id', requireAdmin, requireRole('accounting', 'admi
   res.json({ success: true });
 });
 
+// 发票的条目 (工人一行一个 / 按柜结算的一柜一个), 带「第几行」, 关联发票弹窗里勾具体哪一行用
+function _invoiceLinesNumbered(inv) {
+  return _invoicePayableLines(inv).map((l, i) => ({ ...l, row: i + 1 }));
+}
+app.get('/api/acct/invoices/:id/lines', requireAdmin, requireAcctView, (req, res) => {
+  const inv = db.prepare('SELECT id, items_json, profile_json FROM invoices WHERE id=?').get(parseInt(req.params.id));
+  if (!inv) return res.status(404).json({ error: 'not found' });
+  res.json({ lines: _invoiceLinesNumbered(inv) });
+});
+
 // 会计关联发票: 挂上能证明被介绍人确实在干活的发票 (发票 id 列表 + 说明), 供管理员核查
 app.post('/api/acct/referrals/:id/invoices', requireAdmin, requireRole('accounting', 'admin'), (req, res) => {
   const cur = db.prepare('SELECT id FROM referrals WHERE id=?').get(parseInt(req.params.id));
@@ -42082,10 +42113,21 @@ app.post('/api/acct/referrals/:id/invoices', requireAdmin, requireRole('accounti
       JOIN acct_pay_notes n ON n.target_type='referralweek' AND n.target_id=w.id AND n.paid_status IN ('paid','partial')
       LEFT JOIN invoices i ON i.id=w.invoice_id WHERE w.referral_id=?`).all(cur.id).filter(w => !keep.has(w.invoice_id));
   if (paidGone.length) return res.status(400).json({ error: `发票 ${paidGone.map(w => w.invoice_number || w.invoice_id).join(', ')} 那周已记付款，不能取消关联（先改掉那周的付款记录）` });
-  db.prepare(`UPDATE referrals SET invoice_ids=?, invoice_note=?, invoice_linked_by=?, updated_at=datetime('now') WHERE id=?`)
-    .run(JSON.stringify(ok), String(b.invoice_note || '').trim().slice(0, 500), req.userName || '', cur.id);
+  // 勾的发票条目: 只收还关联着的发票里真实存在的行
+  const lines = {};
+  const want = (b.invoice_lines && typeof b.invoice_lines === 'object') ? b.invoice_lines : {};
+  for (const id of ok) {
+    const keys = Array.isArray(want[id]) ? [...new Set(want[id].map(String))] : [];
+    if (!keys.length) continue;
+    const inv = db.prepare('SELECT id, items_json, profile_json FROM invoices WHERE id=?').get(id);
+    const valid = new Set(_invoicePayableLines(inv).map(l => l.line_key));
+    const keep = keys.filter(k => valid.has(k)).slice(0, 50);
+    if (keep.length) lines[id] = keep;
+  }
+  db.prepare(`UPDATE referrals SET invoice_ids=?, invoice_lines=?, invoice_note=?, invoice_linked_by=?, updated_at=datetime('now') WHERE id=?`)
+    .run(JSON.stringify(ok), JSON.stringify(lines), String(b.invoice_note || '').trim().slice(0, 500), req.userName || '', cur.id);
   _referralSyncWeeks(cur.id, ok);
-  res.json({ success: true, invoice_ids: ok });
+  res.json({ success: true, invoice_ids: ok, invoice_lines: lines });
 });
 // 改某一周的介绍费金额 (空 = 按介绍记录上的介绍费)
 app.put('/api/acct/referral-weeks/:id', requireAdmin, requireRole('accounting', 'admin'), (req, res) => {

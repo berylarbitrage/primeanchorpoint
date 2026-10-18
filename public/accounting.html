@@ -2376,7 +2376,8 @@ function renderRefList() {
           return `<tr style="${paid ? 'background:#f0fdf4' : ''}">
             <td style="${td};font-weight:800;color:#0f4c6b;white-space:nowrap">第 ${i + 1} 周</td>
             <td style="${td};white-space:nowrap">${v.period_start || v.period_end ? `${esc(v.period_start || '?')} ~ ${esc(v.period_end || '?')}` : `<span style="color:var(--g400)">开票 ${esc(v.invoice_date || '—')}</span>`}</td>
-            <td style="${td}"><a onclick="openInvoice(${v.id})" style="cursor:pointer;color:#1d4ed8;font-weight:700;text-decoration:underline;white-space:nowrap">📄 ${esc(v.invoice_number || '')}</a> <span style="color:var(--g500);font-size:.74rem">${esc(v.company_name || '')}</span></td>
+            <td style="${td}"><a onclick="openInvoice(${v.id})" style="cursor:pointer;color:#1d4ed8;font-weight:700;text-decoration:underline;white-space:nowrap">📄 ${esc(v.invoice_number || '')}</a> <span style="color:var(--g500);font-size:.74rem">${esc(v.company_name || '')}</span>
+              ${(w.lines || []).map(l => `<div style="font-size:.72rem;color:#0f4c6b">↳ 第 ${l.row} 行 · ${esc(l.line_label)}${l.hint ? ` · ${esc(l.hint)}` : ''} · ${money(l.billed)}</div>`).join('')}</td>
             <td style="${td};text-align:right;color:var(--g500);white-space:nowrap">${money(v.subtotal)}</td>
             <td style="${td};text-align:right">${feeCell(w)}</td>
             <td style="${td}">${payCell(w)}</td></tr>`;
@@ -3487,13 +3488,22 @@ function rcCopyImg() {
     .then(() => toast('✅ 图片已复制，可直接粘贴发送'))
     .catch(() => { rcDownload(); toast('复制图片失败，已改为下载'); }), 'image/png');
 }
-// 🧾 会计关联发票: 勾选能证明被介绍人在干活的发票
+// 🧾 会计关联发票: 勾选能证明被介绍人在干活的发票, 还可以细到发票里的某一行 (这个工人那一行)
 let _riRefId = null, _riSel = new Set();
+let _riLines = {};          // 发票 id → Set(line_key): 勾的条目
+let _riOpen = new Set();    // 展开了条目列表的发票
+const _riLineCache = {};    // 发票 id → 条目数组 (第一次展开时拉)
+let _riWorker = '';         // 被介绍人名字, 用来标出名字对得上的那一行
 function openRefInv(id) {
   const r = _refList.find(x => x.id === id);
   if (!r) return;
   _riRefId = id;
   _riSel = new Set(r.invoice_ids || []);
+  _riLines = {};
+  Object.entries(r.invoice_lines || {}).forEach(([k, v]) => { _riLines[k] = new Set(v); });
+  _riOpen = new Set(Object.keys(_riLines).map(Number));   // 勾过条目的发票默认展开
+  _riWorker = r.worker_name || '';
+  _riOpen.forEach(riLoadLines);
   document.getElementById('riTitle').textContent = `工头 ${r.foreman_name || ''} 介绍 ${r.worker_name || ''}${r.warehouse_name ? ' · ' + r.warehouse_name : ''} — 勾选能证明这个工人在干活的发票`;
   document.getElementById('riSearch').value = '';
   document.getElementById('riNote').value = r.invoice_note || '';
@@ -3507,27 +3517,80 @@ function riRenderList() {
   // 已勾选的置顶, 其余按日期新旧, 最多显示 200 张
   const sel = rows.filter(v => _riSel.has(v.id)), rest = rows.filter(v => !_riSel.has(v.id)).slice(0, 200);
   document.getElementById('riList').innerHTML = (sel.length + rest.length)
-    ? [...sel, ...rest].map(v => `<label style="display:flex;align-items:center;gap:.45rem;padding:.3rem .25rem;border-bottom:1px solid #eef2f7;cursor:pointer;${_riSel.has(v.id) ? 'background:#eff6ff' : ''}">
-        <input type="checkbox" data-inv="${v.id}" ${_riSel.has(v.id) ? 'checked' : ''} onchange="riToggle(this)">
-        <b style="white-space:nowrap">${esc(v.invoice_number)}</b>
-        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.company_name || '')}</span>
-        <span style="white-space:nowrap;color:var(--g500);font-size:.74rem" title="发票账期，用来算工人做了多久">${(v.period_start || v.period_end) ? `账期 ${esc(v.period_start || '?')} ~ ${esc(v.period_end || '?')}` : esc(v.invoice_date || '')}</span>
-        <b style="white-space:nowrap">${money(v.subtotal)}</b>
-      </label>`).join('')
+    ? [...sel, ...rest].map(v => {
+        const on = _riSel.has(v.id), n = (_riLines[v.id] || new Set()).size, open = _riOpen.has(v.id);
+        return `<div style="border-bottom:1px solid #eef2f7;${on ? 'background:#eff6ff' : ''}" data-row="${v.id}">
+        <div style="display:flex;align-items:center;gap:.45rem;padding:.3rem .25rem">
+          <label style="display:flex;align-items:center;gap:.45rem;flex:1;min-width:0;cursor:pointer">
+            <input type="checkbox" data-inv="${v.id}" ${on ? 'checked' : ''} onchange="riToggle(this)">
+            <b style="white-space:nowrap">${esc(v.invoice_number)}</b>
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.company_name || '')}</span>
+            <span style="white-space:nowrap;color:var(--g500);font-size:.74rem" title="发票账期，用来算工人做了多久">${(v.period_start || v.period_end) ? `账期 ${esc(v.period_start || '?')} ~ ${esc(v.period_end || '?')}` : esc(v.invoice_date || '')}</span>
+            <b style="white-space:nowrap">${money(v.subtotal)}</b>
+          </label>
+          <button type="button" class="btn btn-outline" style="padding:1px 7px;font-size:.7rem;white-space:nowrap;${n ? 'color:#1d4ed8;border-color:#93c5fd' : ''}"
+            onclick="riToggleOpen(${v.id})" title="勾这张发票里具体是哪一行（这个工人那一行）">${open ? '收起' : '选条目'}${n ? ` · ${n}` : ''}</button>
+        </div>
+        ${open ? `<div style="padding:.1rem .3rem .45rem 1.7rem">${riLinesHtml(v.id)}</div>` : ''}
+      </div>`;
+      }).join('')
     : '<span style="color:var(--g400)">没有符合条件的发票</span>';
   riSumRefresh();
 }
+// 名字对得上: 被介绍人名字的每个词都出现在这一行的名字里 (不分大小写和重音)
+function _riNameMatch(label) {
+  const norm = x => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const toks = norm(_riWorker).split(/\s+/).filter(t => t.length > 1);
+  const l = norm(label);
+  return toks.length > 0 && toks.filter(t => l.includes(t)).length >= Math.min(2, toks.length);
+}
+function riLinesHtml(invId) {
+  const lines = _riLineCache[invId];
+  if (!lines) return '<span style="color:var(--g400);font-size:.76rem">加载条目中…</span>';
+  if (!lines.length) return '<span style="color:var(--g400);font-size:.76rem">这张发票没有条目</span>';
+  const picked = _riLines[invId] || new Set();
+  return lines.map(l => {
+    const on = picked.has(l.line_key), hit = _riNameMatch(l.line_label);
+    return `<label style="display:flex;align-items:center;gap:.4rem;padding:.12rem 0;font-size:.78rem;cursor:pointer;${hit ? 'font-weight:700' : ''}">
+      <input type="checkbox" ${on ? 'checked' : ''} data-key="${esc(l.line_key)}" onchange="riToggleLine(${invId}, this.dataset.key, this.checked)">
+      <span style="color:var(--g400);min-width:3.2em">第 ${l.row} 行</span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.line_label)}</span>
+      ${hit ? '<span style="color:#047857;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:999px;padding:0 6px;font-size:.66rem;font-weight:700">名字对得上</span>' : ''}
+      <span style="color:var(--g500);white-space:nowrap">${esc(l.hint || '')}</span>
+      <span style="white-space:nowrap">${money(l.billed)}</span>
+    </label>`;
+  }).join('');
+}
+async function riLoadLines(invId) {
+  if (_riLineCache[invId]) return;
+  try {
+    const r = await api('/api/acct/invoices/' + invId + '/lines');
+    _riLineCache[invId] = (r && r.lines) || [];
+  } catch (e) { _riLineCache[invId] = []; }
+  if (document.getElementById('refInvModal').style.display !== 'none') riRenderList();
+}
+function riToggleOpen(invId) {
+  if (_riOpen.has(invId)) _riOpen.delete(invId); else { _riOpen.add(invId); riLoadLines(invId); }
+  riRenderList();
+}
+// 勾某一行 = 这张发票自然也算关联上了
+function riToggleLine(invId, key, on) {
+  const set = _riLines[invId] || (_riLines[invId] = new Set());
+  if (on) { set.add(key); _riSel.add(invId); } else set.delete(key);
+  if (!set.size) delete _riLines[invId];
+  riRenderList();
+}
 function riToggle(cb) {
   const id = parseInt(cb.dataset.inv);
-  if (cb.checked) _riSel.add(id); else _riSel.delete(id);
-  cb.closest('label').style.background = cb.checked ? '#eff6ff' : '';
-  riSumRefresh();
+  if (cb.checked) _riSel.add(id); else { _riSel.delete(id); delete _riLines[id]; }   // 取消发票 = 条目一起取消
+  riRenderList();
 }
 function riSumRefresh() {
   const sel = _invList.filter(v => _riSel.has(v.id));
   const ip = _refInvPeriod({ invoices: sel });
+  const nLines = Object.values(_riLines).reduce((t, x) => t + x.size, 0);
   document.getElementById('riSum').textContent = _riSel.size
-    ? `已选 ${_riSel.size} 张发票${ip ? ` · 按发票算工作区间 ${ip.start || '?'} ~ ${ip.end || '?'}${ip.days ? `（${ip.days} 天）` : ''}` : ''}`
+    ? `已选 ${_riSel.size} 张发票${nLines ? `（其中勾了 ${nLines} 个条目）` : ''}${ip ? ` · 按发票算工作区间 ${ip.start || '?'} ~ ${ip.end || '?'}${ip.days ? `（${ip.days} 天）` : ''}` : ''}`
     : '未选择发票';
 }
 async function saveRefInv() {
@@ -3536,7 +3599,8 @@ async function saveRefInv() {
   btn.disabled = true;
   try {
     const r = await api('/api/acct/referrals/' + _riRefId + '/invoices', { method: 'POST',
-      body: JSON.stringify({ invoice_ids: [..._riSel], invoice_note: document.getElementById('riNote').value.trim() }) });
+      body: JSON.stringify({ invoice_ids: [..._riSel], invoice_note: document.getElementById('riNote').value.trim(),
+        invoice_lines: Object.fromEntries(Object.entries(_riLines).filter(([k, v]) => _riSel.has(Number(k)) && v.size).map(([k, v]) => [k, [...v]])) }) });
     if (r && r.error) throw new Error(r.error);
     document.getElementById('refInvModal').style.display = 'none';
     toast('✅ 已保存关联发票');
