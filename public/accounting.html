@@ -4041,19 +4041,25 @@ function _truckSizeCell(r) {
   return `<span>${txt}</span>${changed ? ` <span data-tip="${esc(`会计改过车型${r.size_by ? '（' + r.size_by + '）' : ''}，Bintique 上是「${r.bintique_size || '没填'}」`)}" style="font-size:.62rem;color:#1d4ed8;background:#eff6ff;border:1px solid #bfdbfe;border-radius:4px;padding:0 4px">已改</span>` : ''}
     <a onclick="truckSizeEdit(this, ${JSON.stringify(String(r.order_id)).replace(/"/g, '&quot;')})" title="改车型" style="cursor:pointer;color:#1d4ed8;margin-left:2px">✎</a>`;
 }
-// 点 ✎ 原地换成下拉; 选了就存, 点别处收起
+// 点 ✎ 原地换成「下拉 + 确定 / 取消」: 选好按确定才存, 取消 (或 Esc) 不改
 function truckSizeEdit(a, orderId) {
   const r = _truckRows.find(x => x.order && String(x.order_id) === String(orderId));
   if (!r) return;
   const td = a.closest('td');
-  td.innerHTML = `<select style="font-size:.76rem;padding:1px 2px">
+  td.innerHTML = `<span style="display:inline-flex;gap:.25rem;align-items:center">
+    <select style="font-size:.76rem;padding:1px 2px">
       <option value="">${r.bintique_size ? `按 Bintique（${esc(r.bintique_size)}）` : '— 没填 —'}</option>
       ${TRUCK_SIZES.map(z => `<option value="${z}" ${z === r.truck_size && r.truck_size !== r.bintique_size ? 'selected' : ''}>${z}</option>`).join('')}
-    </select>`;
-  const sel = td.querySelector('select');
+    </select>
+    <button type="button" class="btn btn-sm" data-act="ok" style="background:#16a34a;color:#fff;padding:2px 8px;font-size:.72rem">✓ 确定</button>
+    <button type="button" class="btn btn-sm btn-outline" data-act="cancel" style="padding:2px 8px;font-size:.72rem">取消</button>
+  </span>`;
+  const sel = td.querySelector('select'), ok = td.querySelector('[data-act="ok"]');
   sel.focus();
-  sel.onchange = async () => {
-    sel.disabled = true;
+  sel.onkeydown = e => { if (e.key === 'Escape') renderTruckList(); };
+  td.querySelector('[data-act="cancel"]').onclick = () => renderTruckList();
+  ok.onclick = async () => {
+    ok.disabled = sel.disabled = true;
     try {
       const res = await api('/api/acct/truck-orders/' + encodeURIComponent(orderId) + '/size', { method: 'POST', body: JSON.stringify({ truck_size: sel.value }) });
       if (res && res.error) throw new Error(res.error);
@@ -4063,7 +4069,6 @@ function truckSizeEdit(a, orderId) {
     } catch (e) { toast(e.message || '保存失败', true); }
     renderTruckList();
   };
-  sel.onblur = () => setTimeout(() => { if (!sel.disabled) renderTruckList(); }, 150);
 }
 function renderTruckList() {
   const q = (document.getElementById('truckSearch').value || '').toLowerCase();
