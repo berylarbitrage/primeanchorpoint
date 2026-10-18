@@ -24137,7 +24137,8 @@ function _invoicePayableLines(inv) {
   return (Array.isArray(items) ? items : []).map((it, i) => ({
     line_type: 'worker', line_key: `w${i}`,
     line_label: it.name || `工人 ${i + 1}`,
-    billed: Number(it.total) || 0, hint: (it.hours != null ? `${it.hours} 工时` : '') }));
+    // 工时是逐日加起来的小数, 存的可能是 28.830000000000002 这种浮点尾巴, 显示保留两位
+    billed: Number(it.total) || 0, hint: (it.hours != null && it.hours !== '' ? `${(Number(it.hours) || 0).toFixed(2)} 工时` : '') }));
 }
 function _linePayParse(paths) { try { const a = JSON.parse(paths || '[]'); return Array.isArray(a) ? a.filter(Boolean) : []; } catch (_) { return []; } }
 
