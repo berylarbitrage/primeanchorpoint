@@ -16038,6 +16038,18 @@ function _normApplyPhone(raw) {
   return '+' + d;
 }
 
+// 证件要求: 中国申请 = 身份证正反面; 其余 = SSN 正面 + EAD 正反面。缺了返回报错文案, 齐了返回 ''。
+// (只收这国家该有的那几样, 另一套多传了也不存, 免得中国申请里冒出 SSN 槽位)
+function _applyDocsMissing(country, files) {
+  if (country === 'CN') {
+    for (const k of ['ssn_front', 'ssn_back', 'ead_front', 'ead_back']) delete files[k];
+    return files.cnid_front && files.cnid_back ? '' : '请上传身份证正面和反面 / Please upload both sides of your ID card';
+  }
+  delete files.cnid_front; delete files.cnid_back;
+  return files.ssn_front && files.ead_front && files.ead_back ? ''
+    : '请上传 SSN 正面、EAD 正反面 / Please upload SSN front and EAD front & back';
+}
+
 // 申请表的地址国家: ISO 两位码, 没填或格式不对按美国
 function _applyCountry(raw) {
   const c = String(raw || '').trim().toUpperCase();
@@ -16293,6 +16305,8 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
   { name: 'ssn_back', maxCount: 1 },
   { name: 'ead_front', maxCount: 1 },
   { name: 'ead_back', maxCount: 1 },
+  { name: 'cnid_front', maxCount: 1 },   // 中国申请: 身份证正反面代替 SSN/EAD
+  { name: 'cnid_back', maxCount: 1 },
 ]), (req, res) => {
   try {
     const token = String(req.query.t || req.body.t || '');
@@ -16323,8 +16337,8 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
     if (!verified('phone', phone)) return res.status(400).json({ error: '请先完成手机验证 / Please verify your phone number first' });
     if (!verified('email', email)) return res.status(400).json({ error: '请先完成邮箱验证 / Please verify your email first' });
     const files = req.files || {};
-    if (!files.ssn_front || !files.ead_front || !files.ead_back)
-      return res.status(400).json({ error: '请上传 SSN 正面、EAD 正反面 / Please upload SSN front and EAD front & back' });
+    const docErr = _applyDocsMissing(country, files);
+    if (docErr) return res.status(400).json({ error: docErr });
     const r = db.prepare(`INSERT INTO applicant_submissions
       (partner_id, partner_name, name, phone, email, position, phone_verified, email_verified,
        address1, address2, city, state, zip, address_verified, apply_state, country, user_agent)
@@ -16397,6 +16411,8 @@ app.post('/api/public/foreman-register', applicantDocUpload.fields([
   { name: 'ssn_back', maxCount: 1 },
   { name: 'ead_front', maxCount: 1 },
   { name: 'ead_back', maxCount: 1 },
+  { name: 'cnid_front', maxCount: 1 },
+  { name: 'cnid_back', maxCount: 1 },
 ]), async (req, res) => {
   try {
     const FT = '__foreman_reg__';
@@ -16418,8 +16434,8 @@ app.post('/api/public/foreman-register', applicantDocUpload.fields([
     if (!verified('phone', phone)) return res.status(400).json({ error: '请先完成手机验证 / Please verify your phone first' });
     if (!verified('email', email)) return res.status(400).json({ error: '请先完成邮箱验证 / Please verify your email first' });
     const files = req.files || {};
-    if (!files.ssn_front || !files.ead_front || !files.ead_back)
-      return res.status(400).json({ error: '请上传 SSN 正面、EAD 正反面 / Please upload SSN front and EAD front & back' });
+    const docErr = _applyDocsMissing(country, files);
+    if (docErr) return res.status(400).json({ error: docErr });
     const token = crypto.randomBytes(16).toString('hex');
     const r = db.prepare(`INSERT INTO foremen (name, phone, email, warehouse, intake_token, address1, address2, city, state, zip, address_verified, country)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(name, phone, email, warehouse, token, address1, address2, city, state, zip, addressVerified, country);
@@ -16444,7 +16460,8 @@ const APPLICATION_NOTIFY_EMAIL = process.env.APPLICATION_NOTIFY_EMAIL || 'info@p
 const APPLICATION_NOTIFY_CC = (process.env.APPLICATION_NOTIFY_CC || 'boyingwong02@gmail.com,1907057747@qq.com,ztz3116188@gmail.com')
   .split(',').map(s => s.trim()).filter(Boolean);
 async function notifyNewApplication({ subId, partner, name, position, phone, email, address, applyState, docMeta, dup }) {
-  const docLabels = { ssn_front: 'SSN 正面 / Front', ssn_back: 'SSN 反面 / Back', ead_front: 'EAD 正面 / Front', ead_back: 'EAD 反面 / Back' };
+  const docLabels = { ssn_front: 'SSN 正面 / Front', ssn_back: 'SSN 反面 / Back', ead_front: 'EAD 正面 / Front', ead_back: 'EAD 反面 / Back',
+    cnid_front: '身份证 正面 / China ID Front', cnid_back: '身份证 反面 / China ID Back' };
   const when = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
   // Read each uploaded photo back from storage to attach.
   const files = [];
@@ -18405,7 +18422,7 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
       WHERE worker_account_id=? AND doc_type='ssn_card' AND COALESCE(file_path,'')!='' ORDER BY created_at DESC`);
     const wpStmt = db.prepare(`SELECT id, file_name, doc_number, expiry_date, created_at FROM work_permit_docs
       WHERE worker_account_id=? AND COALESCE(file_path,'')!='' ORDER BY created_at DESC`);
-    const APPLICANT_DOC_LABEL = { ssn_front: 'SSN 正面', ssn_back: 'SSN 反面', ead_front: 'EAD 正面', ead_back: 'EAD 反面' };
+    const APPLICANT_DOC_LABEL = { ssn_front: 'SSN 正面', ssn_back: 'SSN 反面', ead_front: 'EAD 正面', ead_back: 'EAD 反面', cnid_front: '身份证 正面', cnid_back: '身份证 反面' };
     employees.forEach(e => {
       const all = [];
       try {

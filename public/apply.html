@@ -29,10 +29,7 @@
   input:disabled{background:#f1f5f9;color:#64748b}
   .verify-row{display:flex;gap:.5rem;align-items:stretch}
   .verify-row input{flex:1;min-width:0}
-  select.fsel{width:100%;padding:.62rem .6rem;border:1px solid #cbd5e1;border-radius:8px;font-size:1rem;background:#fff;color:#0f172a;outline:none}
-  select.fsel:focus{border-color:#2E5BA0;box-shadow:0 0 0 3px rgba(46,91,160,.15)}
-  select.fsel:disabled{background:#f1f5f9;color:#64748b}
-  select.dial{flex:0 0 6.6rem;width:6.6rem;padding-right:.2rem}
+  .cn-badge{display:inline-block;margin-left:.4rem;padding:0 .5rem;border-radius:999px;background:#fee2e2;color:#b91c1c;font-size:.78rem;font-weight:700}
   .btn-code{flex:0 0 auto;padding:.5rem .8rem;background:#2E5BA0;color:#fff;border:none;border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer;white-space:nowrap}
   .btn-code:disabled{background:#94a3b8;cursor:default}
   .otp-box{display:none;margin-top:.5rem}
@@ -116,8 +113,6 @@
     <!-- Address -->
     <div class="card">
       <h2 id="t-secAddr">② Dirección</h2>
-      <label id="t-lCountry">País <span class="req">*</span></label>
-      <select id="fCountry" class="fsel" autocomplete="country" onchange="onCountryChange()"></select>
       <label id="t-lAddr1">Dirección <span class="req">*</span></label>
       <input type="text" id="fAddr1" autocomplete="address-line1" placeholder="123 Main St">
       <label id="t-lAddr2">Apt / Unidad <span class="opt">(opcional)</span></label>
@@ -144,7 +139,6 @@
       <h2 id="t-secPhone">③ Teléfono</h2>
       <label id="t-lPhone">Teléfono móvil <span class="req">*</span></label>
       <div class="verify-row">
-        <select id="fDial" class="fsel dial" aria-label="Country code" onchange="onDialChange()"></select>
         <input type="tel" id="fPhone" autocomplete="tel-national" inputmode="tel" placeholder="(555) 555-5555">
         <button type="button" class="btn-code" id="phoneSendBtn" onclick="sendCode('phone')">Enviar código</button>
       </div>
@@ -187,7 +181,7 @@
     <div class="card">
       <h2 id="t-secDocs">⑤ Documentos</h2>
       <div class="doc-grid">
-        <div class="doc-slot">
+        <div class="doc-slot us-doc">
           <span class="doc-cap" id="t-ssnFront">SSN — Frente <span class="req">*</span></span>
           <div class="zone-row" id="ssn_front_zone">
             <label class="photo-zone" data-target="ssn_front_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
@@ -197,7 +191,7 @@
           <input type="file" id="ssn_front_gal" accept="image/*" data-doc="ssn_front">
           <div class="prev" id="ssn_front_prev"><img alt=""><button type="button" data-clear="ssn_front">×</button></div>
         </div>
-        <div class="doc-slot">
+        <div class="doc-slot us-doc">
           <span class="doc-cap" id="t-ssnBack">SSN — Reverso <span class="opt">(opcional)</span></span>
           <div class="zone-row" id="ssn_back_zone">
             <label class="photo-zone" data-target="ssn_back_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
@@ -207,7 +201,7 @@
           <input type="file" id="ssn_back_gal" accept="image/*" data-doc="ssn_back">
           <div class="prev" id="ssn_back_prev"><img alt=""><button type="button" data-clear="ssn_back">×</button></div>
         </div>
-        <div class="doc-slot">
+        <div class="doc-slot us-doc">
           <span class="doc-cap" id="t-eadFront">EAD — Frente <span class="req">*</span></span>
           <div class="zone-row" id="ead_front_zone">
             <label class="photo-zone" data-target="ead_front_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
@@ -217,7 +211,7 @@
           <input type="file" id="ead_front_gal" accept="image/*" data-doc="ead_front">
           <div class="prev" id="ead_front_prev"><img alt=""><button type="button" data-clear="ead_front">×</button></div>
         </div>
-        <div class="doc-slot">
+        <div class="doc-slot us-doc">
           <span class="doc-cap" id="t-eadBack">EAD — Reverso <span class="req">*</span></span>
           <div class="zone-row" id="ead_back_zone">
             <label class="photo-zone" data-target="ead_back_cam"><span class="emoji">📷</span><span class="t-cam">Tomar foto</span></label>
@@ -226,6 +220,27 @@
           <input type="file" id="ead_back_cam" accept="image/*" capture="environment" data-doc="ead_back">
           <input type="file" id="ead_back_gal" accept="image/*" data-doc="ead_back">
           <div class="prev" id="ead_back_prev"><img alt=""><button type="button" data-clear="ead_back">×</button></div>
+        </div>
+        <!-- 中国申请 (?cn=1): 身份证正反面代替 SSN/EAD -->
+        <div class="doc-slot cn-doc" style="display:none">
+          <span class="doc-cap" id="t-cnidFront">身份证 正面（人像面） <span class="req">*</span></span>
+          <div class="zone-row" id="cnid_front_zone">
+            <label class="photo-zone" data-target="cnid_front_cam"><span class="emoji">📷</span><span class="t-cam">拍照</span></label>
+            <label class="photo-zone" data-target="cnid_front_gal"><span class="emoji">🖼️</span><span class="t-gal">相册</span></label>
+          </div>
+          <input type="file" id="cnid_front_cam" accept="image/*" capture="environment" data-doc="cnid_front">
+          <input type="file" id="cnid_front_gal" accept="image/*" data-doc="cnid_front">
+          <div class="prev" id="cnid_front_prev"><img alt=""><button type="button" data-clear="cnid_front">×</button></div>
+        </div>
+        <div class="doc-slot cn-doc" style="display:none">
+          <span class="doc-cap" id="t-cnidBack">身份证 反面（国徽面） <span class="req">*</span></span>
+          <div class="zone-row" id="cnid_back_zone">
+            <label class="photo-zone" data-target="cnid_back_cam"><span class="emoji">📷</span><span class="t-cam">拍照</span></label>
+            <label class="photo-zone" data-target="cnid_back_gal"><span class="emoji">🖼️</span><span class="t-gal">相册</span></label>
+          </div>
+          <input type="file" id="cnid_back_cam" accept="image/*" capture="environment" data-doc="cnid_back">
+          <input type="file" id="cnid_back_gal" accept="image/*" data-doc="cnid_back">
+          <div class="prev" id="cnid_back_prev"><img alt=""><button type="button" data-clear="cnid_back">×</button></div>
         </div>
       </div>
     </div>
@@ -265,7 +280,8 @@ const I18N = {
     lAddr1: 'Dirección', lAddr2: 'Apt / Unidad', lCity: 'Ciudad', lState: 'Estado', lZip: 'Código postal',
     addrVerifying: 'Verificando dirección…', addrVerifiedMsg: '✓ Dirección verificada', addrUnverified: 'No se pudo verificar la dirección',
     verifyAddr: 'Verificar dirección', errAddr: 'Completa dirección, ciudad, estado y código postal.',
-    lCountry: 'País', lStateIntl: 'Estado / Provincia', lZipIntl: 'Código postal', errAddrIntl: 'Completa dirección y ciudad.', phoneIntl: 'Número de teléfono',
+    cnidFront: 'Cédula china — Frente (foto)', cnidBack: 'Cédula china — Reverso (escudo)', errDocsCn: 'Sube ambos lados de tu cédula de identidad china.',
+    lStateCn: 'Provincia', lZipCn: 'Código postal', errAddrCn: 'Completa dirección y ciudad.', cnBadge: '🇨🇳 China', addrCnNote: 'Las direcciones de China no se verifican automáticamente.',
     sendCode: 'Enviar código', resend: 'Reenviar', verify: 'Verificar', verified: 'Verificado',
     ssnFront: 'SSN — Frente', ssnBack: 'SSN — Reverso', eadFront: 'EAD — Frente', eadBack: 'EAD — Reverso',
     optional: '(opcional)', cam: 'Tomar foto', gal: 'Galería', submitBtn: 'Enviar solicitud', submitting: 'Enviando…',
@@ -285,7 +301,8 @@ const I18N = {
     lAddr1: 'Street address', lAddr2: 'Apt / Unit', lCity: 'City', lState: 'State', lZip: 'ZIP code',
     addrVerifying: 'Verifying address…', addrVerifiedMsg: '✓ Address verified', addrUnverified: 'Address could not be verified',
     verifyAddr: 'Verify address', errAddr: 'Please fill in street, city, state and ZIP.',
-    lCountry: 'Country', lStateIntl: 'State / Province', lZipIntl: 'Postal code', errAddrIntl: 'Please fill in street and city.', phoneIntl: 'Phone number',
+    cnidFront: 'China ID card — Front (photo side)', cnidBack: 'China ID card — Back (emblem side)', errDocsCn: 'Please upload both sides of your China ID card.',
+    lStateCn: 'Province', lZipCn: 'Postal code', errAddrCn: 'Please fill in street and city.', cnBadge: '🇨🇳 China', addrCnNote: 'Addresses in China are not verified automatically.',
     sendCode: 'Send code', resend: 'Resend', verify: 'Verify', verified: 'Verified',
     ssnFront: 'SSN — Front', ssnBack: 'SSN — Back', eadFront: 'EAD — Front', eadBack: 'EAD — Back',
     optional: '(optional)', cam: 'Take photo', gal: 'Album', submitBtn: 'Submit application', submitting: 'Submitting…',
@@ -305,7 +322,8 @@ const I18N = {
     lAddr1: '街道地址', lAddr2: '公寓 / 单元号', lCity: '城市', lState: '州', lZip: '邮编',
     addrVerifying: '正在验证地址…', addrVerifiedMsg: '✓ 地址已验证', addrUnverified: '地址无法验证',
     verifyAddr: '验证地址', errAddr: '请填写街道地址、城市、州和邮编。',
-    lCountry: '国家 / 地区', lStateIntl: '州 / 省', lZipIntl: '邮编', errAddrIntl: '请填写街道地址和城市。', phoneIntl: '手机号码',
+    cnidFront: '身份证 正面（人像面）', cnidBack: '身份证 反面（国徽面）', errDocsCn: '请上传身份证正面和反面。',
+    lStateCn: '省份', lZipCn: '邮编', errAddrCn: '请填写详细地址和城市。', cnBadge: '🇨🇳 中国申请', addrCnNote: '中国地址无法自动验证，请仔细核对后提交。',
     sendCode: '获取验证码', resend: '重新发送', verify: '验证', verified: '已验证',
     ssnFront: 'SSN 正面', ssnBack: 'SSN 反面', eadFront: 'EAD 正面', eadBack: 'EAD 反面',
     optional: '（选填）', cam: '拍照', gal: '相册', submitBtn: '提交申请', submitting: '提交中…',
@@ -323,6 +341,7 @@ const I18N = {
 function pickInitialLang() {
   const stored = localStorage.getItem('apply_lang');
   if (stored && I18N[stored]) return stored;
+  if (/[?&]cn=1(&|$)/.test(location.search)) return 'zh';   // 中国专用二维码默认中文
   const nav = (navigator.language || navigator.userLanguage || '').toLowerCase();
   if (nav.startsWith('zh')) return 'zh';
   if (nav.startsWith('en')) return 'en';
@@ -346,8 +365,6 @@ function applyLang() {
   document.getElementById('t-lAddr1').innerHTML = L.lAddr1 + ' <span class="req">*</span>';
   document.getElementById('t-lAddr2').innerHTML = L.lAddr2 + ' <span class="opt">' + L.optional + '</span>';
   document.getElementById('t-lCity').innerHTML = L.lCity + ' <span class="req">*</span>';
-  document.getElementById('t-lCountry').innerHTML = L.lCountry + ' <span class="req">*</span>';
-  fillCountryOptions();
   refreshAddressLabels();
   txt('t-verifyAddr', 'verifyAddr');
   document.getElementById('t-lPhone').innerHTML = L.lPhone + ' <span class="req">*</span>';
@@ -356,6 +373,8 @@ function applyLang() {
   document.getElementById('t-ssnBack').innerHTML = L.ssnBack + ' <span class="opt">' + L.optional + '</span>';
   document.getElementById('t-eadFront').innerHTML = L.eadFront + ' <span class="req">*</span>';
   document.getElementById('t-eadBack').innerHTML = L.eadBack + ' <span class="req">*</span>';
+  document.getElementById('t-cnidFront').innerHTML = L.cnidFront + ' <span class="req">*</span>';
+  document.getElementById('t-cnidBack').innerHTML = L.cnidBack + ' <span class="req">*</span>';
   document.querySelectorAll('.t-cam').forEach(el => { el.textContent = L.cam; });
   document.querySelectorAll('.t-gal').forEach(el => { el.textContent = L.gal; });
   // verify buttons reflect state
@@ -366,7 +385,7 @@ function applyLang() {
     const cb = document.getElementById(ch + 'CheckBtn');
     if (cb) cb.textContent = L.verify;
   });
-  if (_partnerName) document.getElementById('partnerName').textContent = L.sendingTo + _partnerName + (APPLY_STATE ? ' · 📍 ' + APPLY_STATE : '');
+  if (_partnerName || CN_MODE) partnerLine();
   document.querySelectorAll('.lang button').forEach(b => b.classList.toggle('active', b.dataset.lang === _lang));
   if (FOREMAN) applyForemanLang();
 }
@@ -401,7 +420,7 @@ const OTP_T = FOREMAN ? FOREMAN_TOKEN : TOKEN;
 if (FOREMAN) document.body.classList.add('fm');
 
 let _partnerName = '';
-const _files = { ssn_front: null, ssn_back: null, ead_front: null, ead_back: null };
+const _files = { ssn_front: null, ssn_back: null, ead_front: null, ead_back: null, cnid_front: null, cnid_back: null };
 const _verified = { phone: false, email: false };
 const _otpSent = { phone: false, email: false };
 const _verifiedTarget = { phone: '', email: '' }; // value that was verified
@@ -414,86 +433,49 @@ window.onerror = function (message) {
   try { showErr('Error: ' + message); } catch (_) {}
 };
 
-// ── 国家 / 区号 ──
-// [ISO 两位码, 电话区号]。名字用浏览器的 Intl.DisplayNames 按页面语言显示, 不用自己维护三种语言的国名。
-const COUNTRIES = [
-  ['US','1'],['MX','52'],['CA','1'],['CN','86'],['HK','852'],['TW','886'],['MO','853'],
-  ['GT','502'],['SV','503'],['HN','504'],['NI','505'],['CR','506'],['PA','507'],['BZ','501'],
-  ['CU','53'],['DO','1'],['HT','509'],['JM','1'],['PR','1'],['PE','51'],['CO','57'],['VE','58'],
-  ['EC','593'],['BO','591'],['CL','56'],['AR','54'],['UY','598'],['PY','595'],['BR','55'],
-  ['GB','44'],['IE','353'],['FR','33'],['DE','49'],['ES','34'],['IT','39'],['PT','351'],['NL','31'],
-  ['BE','32'],['CH','41'],['AT','43'],['PL','48'],['RO','40'],['UA','380'],['RU','7'],['TR','90'],
-  ['GR','30'],['SE','46'],['NO','47'],['DK','45'],['FI','358'],['CZ','420'],['HU','36'],
-  ['IN','91'],['PK','92'],['BD','880'],['NP','977'],['LK','94'],['PH','63'],['VN','84'],['TH','66'],
-  ['MY','60'],['SG','65'],['ID','62'],['KH','855'],['LA','856'],['MM','95'],['JP','81'],['KR','82'],
-  ['AU','61'],['NZ','64'],['AF','93'],['IR','98'],['IQ','964'],['SY','963'],['LB','961'],['JO','962'],
-  ['SA','966'],['AE','971'],['IL','972'],['YE','967'],['EG','20'],['MA','212'],['DZ','213'],['TN','216'],
-  ['NG','234'],['GH','233'],['KE','254'],['ET','251'],['ER','291'],['SO','252'],['SD','249'],
-  ['CD','243'],['CM','237'],['SN','221'],['CI','225'],['TZ','255'],['UG','256'],['RW','250'],['ZA','27'],
-  ['UZ','998'],['KZ','7'],['KG','996'],['TJ','992'],['GE','995'],['AM','374'],['AZ','994'],
-];
-const TOP_COUNTRIES = ['US', 'MX', 'CA', 'CN'];   // 最常用的排最前, 其余按名字排序
-function flagOf(iso) { return String.fromCodePoint(...[...iso].map(c => 0x1F1A5 + c.charCodeAt(0))); }
-function countryName(iso) {
-  try { return new Intl.DisplayNames([_lang === 'zh' ? 'zh-CN' : _lang], { type: 'region' }).of(iso) || iso; }
-  catch (_) { return iso; }
-}
-function sortedCountries() {
-  const top = TOP_COUNTRIES.map(c => COUNTRIES.find(x => x[0] === c));
-  const rest = COUNTRIES.filter(x => !TOP_COUNTRIES.includes(x[0]))
-    .sort((a, b) => countryName(a[0]).localeCompare(countryName(b[0]), _lang));
-  return top.concat(rest);
-}
-function fillCountryOptions() {
-  const cSel = document.getElementById('fCountry'), dSel = document.getElementById('fDial');
-  const cur = cSel.value || 'US', curDial = dSel.value || 'US';
-  const list = sortedCountries();
-  cSel.innerHTML = list.map(([iso]) => '<option value="' + iso + '">' + flagOf(iso) + ' ' + countryName(iso) + '</option>').join('');
-  // 区号框窄, 选中后只显示「国旗 +区号」; 下拉里带国名方便找
-  dSel.innerHTML = list.map(([iso, dial]) => '<option value="' + iso + '" data-dial="' + dial + '" data-short="' + flagOf(iso) + ' +' + dial + '">'
-    + flagOf(iso) + ' ' + countryName(iso) + ' +' + dial + '</option>').join('');
-  cSel.value = cur; dSel.value = curDial;
-  shortenDialLabel();
-}
-// 收起时显示短标签, 展开时显示完整国名
-function shortenDialLabel() {
-  const dSel = document.getElementById('fDial');
-  for (const o of dSel.options) o.textContent = o.selected ? o.dataset.short : flagOf(o.value) + ' ' + countryName(o.value) + ' +' + o.dataset.dial;
-}
-function dialCode() { const o = document.getElementById('fDial').selectedOptions[0]; return o ? o.dataset.dial : '1'; }
-function isUS() { return (document.getElementById('fCountry').value || 'US') === 'US'; }
-let _dialTouched = false;
-function onDialChange() { _dialTouched = true; shortenDialLabel(); refreshAddressLabels(); }
-function onCountryChange() {
-  // 手机区号没手动改过、号码也还没验证, 跟着地址国家走
-  const dSel = document.getElementById('fDial');
-  if (!_dialTouched && !_verified.phone) { dSel.value = document.getElementById('fCountry').value; shortenDialLabel(); }
-  document.getElementById('addrVerified').classList.remove('show');
-  setAddrMsg('', true);
-  refreshAddressLabels();
-}
-// 美国: 州、邮编必填, 邮编数字键盘; 别的国家很多没有州/邮编, 改成选填
+// ── 中国申请 (二维码链接带 ?cn=1) ──
+// 短信只开通了美国和中国, 所以不让人随便选国家: 普通二维码 = 美国号码 + 美国地址,
+// 中国专用二维码 = +86 号码 + 中国地址 (省份/邮编选填, Google 不验证中国地址)。
+const CN_MODE = params.get('cn') === '1';
+function isUS() { return !CN_MODE; }
 function refreshAddressLabels() {
-  const L = I18N[_lang], us = isUS();
-  document.getElementById('t-lState').innerHTML = (us ? L.lState : L.lStateIntl) + (us ? ' <span class="req">*</span>' : ' <span class="opt">' + L.optional + '</span>');
-  document.getElementById('t-lZip').innerHTML = (us ? L.lZip : L.lZipIntl) + (us ? ' <span class="req">*</span>' : ' <span class="opt">' + L.optional + '</span>');
+  const L = I18N[_lang];
+  const req = ' <span class="req">*</span>', opt = ' <span class="opt">' + L.optional + '</span>';
+  document.getElementById('t-lState').innerHTML = CN_MODE ? L.lStateCn + opt : L.lState + req;
+  document.getElementById('t-lZip').innerHTML = CN_MODE ? L.lZipCn + opt : L.lZip + req;
   const st = document.getElementById('fState'), zp = document.getElementById('fZip');
-  st.placeholder = us ? 'CA' : ''; st.maxLength = us ? 20 : 60;
-  zp.placeholder = us ? '90001' : ''; zp.inputMode = us ? 'numeric' : 'text'; zp.maxLength = us ? 10 : 20;
-  document.getElementById('fAddr1').placeholder = us ? '123 Main St' : '';
-  document.getElementById('fPhone').placeholder = dialCode() === '1' ? '(555) 555-5555' : L.phoneIntl;
+  st.placeholder = CN_MODE ? '广东省' : 'CA';
+  st.maxLength = CN_MODE ? 60 : 20;
+  zp.placeholder = CN_MODE ? '510000' : '90001';
+  document.getElementById('fAddr1').placeholder = CN_MODE ? '天河区天河路 123 号' : '123 Main St';
+  document.getElementById('fCity').placeholder = CN_MODE ? '广州市' : '';
+  document.getElementById('fPhone').placeholder = CN_MODE ? '138 0013 8000' : '(555) 555-5555';
+  // Google 地址验证不支持中国, 中国申请不显示验证按钮, 换成一句提示
+  document.getElementById('addrVerifyBtn').style.display = CN_MODE ? 'none' : '';
+  if (CN_MODE) setAddrMsg(L.addrCnNote, true);
+  // 证件: 中国申请只要身份证正反面, 不显示 SSN / EAD
+  document.querySelectorAll('.us-doc').forEach(el => { el.style.display = CN_MODE ? 'none' : ''; });
+  document.querySelectorAll('.cn-doc').forEach(el => { el.style.display = CN_MODE ? '' : 'none'; });
 }
-// 发给服务器的完整号码 (+区号 号码)。自己打了 + 开头的就照用。
+// 发给服务器的完整号码。中国: +86 加 11 位手机号 (去掉多打的 86 和开头的 0); 美国照旧。
 function fullPhone() {
   const raw = document.getElementById('fPhone').value.trim();
-  if (!raw) return '';
+  if (!raw || !CN_MODE) return raw;
   if (raw.startsWith('+')) return raw;
-  const dial = dialCode();
   let d = raw.replace(/\D/g, '');
-  if (dial === '1' && d.length === 11 && d[0] === '1') d = d.slice(1);   // 美国号多打了开头的 1
-  else if (d.startsWith(dial) && d.length > dial.length + 7) d = d.slice(dial.length); // 区号又打了一遍
-  if (dial !== '39') d = d.replace(/^0+/, '');  // 国内长途前缀 0 (意大利的 0 是号码一部分)
-  return '+' + dial + ' ' + d;
+  if (d.length === 13 && d.startsWith('86')) d = d.slice(2);
+  d = d.replace(/^0+/, '');
+  return '+86 ' + d;
+}
+
+// 页头那行: 应聘公司 · 📍 州 · 🇨🇳 中国申请
+function partnerLine() {
+  const L = I18N[_lang], el = document.getElementById('partnerName');
+  const parts = [];
+  if (_partnerName) parts.push(L.sendingTo + _partnerName);
+  if (APPLY_STATE) parts.push('📍 ' + APPLY_STATE);
+  el.textContent = parts.join(' · ');
+  if (CN_MODE) el.insertAdjacentHTML('beforeend', '<span class="cn-badge">' + L.cnBadge + '</span>');
 }
 
 async function init() {
@@ -514,9 +496,7 @@ async function init() {
     }
     const info = await r.json();
     _partnerName = info.partner_name || '';
-    document.getElementById('partnerName').textContent = _partnerName
-      ? I18N[_lang].sendingTo + _partnerName + (APPLY_STATE ? ' · 📍 ' + APPLY_STATE : '')
-      : (APPLY_STATE ? '📍 ' + APPLY_STATE : '');
+    partnerLine();
   } catch (e) { /* 网络抖一下不挡人填表 —— token 无效的话提交时服务器会拦 */ }
 }
 init();
@@ -565,7 +545,6 @@ async function checkCode(ch) {
     document.getElementById(ch + 'Verified').classList.add('show');
     document.getElementById(ch + 'OtpBox').classList.remove('show');
     document.getElementById(ch === 'phone' ? 'fPhone' : 'fEmail').disabled = true;
-    if (ch === 'phone') document.getElementById('fDial').disabled = true;
     document.getElementById(ch + 'SendBtn').style.display = 'none';
   } catch (e) { setMsg(ch, 'Error: ' + (e.message || e), false); btn.disabled = false; }
 }
@@ -706,9 +685,10 @@ async function verifyAddressFields() {
   const city = document.getElementById('fCity').value.trim();
   const state = document.getElementById('fState').value.trim();
   const zip = document.getElementById('fZip').value.trim();
-  const country = document.getElementById('fCountry').value || 'US';
+  const country = CN_MODE ? 'CN' : 'US';
   document.getElementById('addrVerified').classList.remove('show');
-  if (!addr1 || !city || (country === 'US' && (!state || !zip))) { setAddrMsg(country === 'US' ? L.errAddr : L.errAddrIntl, false); return 0; }
+  if (CN_MODE) return 0; // 中国地址 Google 验证不了, 直接按未验证提交
+  if (!addr1 || !city || !state || !zip) { setAddrMsg(L.errAddr, false); return 0; }
   const vbtn = document.getElementById('addrVerifyBtn');
   if (vbtn) vbtn.disabled = true;
   setAddrMsg(L.addrVerifying, true);
@@ -751,10 +731,12 @@ async function submitForm() {
   const state = document.getElementById('fState').value.trim();
   const zip = document.getElementById('fZip').value.trim();
   if (!name || (!FOREMAN && !position) || !phone || !email) { showErr(L.errFields); return; }
-  if (!addr1 || !city || (isUS() && (!state || !zip))) { showErr(isUS() ? L.errAddr : L.errAddrIntl); return; }
+  if (!addr1 || !city || (isUS() && (!state || !zip))) { showErr(isUS() ? L.errAddr : L.errAddrCn); return; }
   if (!_verified.phone) { showErr(L.errPhone); return; }
   if (!_verified.email) { showErr(L.errEmail); return; }
-  if (!_files.ssn_front || !_files.ead_front || !_files.ead_back) { showErr(L.errDocs); return; }
+  if (CN_MODE ? !(_files.cnid_front && _files.cnid_back) : (!_files.ssn_front || !_files.ead_front || !_files.ead_back)) {
+    showErr(CN_MODE ? L.errDocsCn : L.errDocs); return;
+  }
   const btn = document.getElementById('submitBtn');
   btn.disabled = true;
   document.getElementById('t-submitBtn').textContent = L.submitting;
@@ -772,7 +754,7 @@ async function submitForm() {
     fd.append('city', document.getElementById('fCity').value.trim());
     fd.append('state', document.getElementById('fState').value.trim());
     fd.append('zip', document.getElementById('fZip').value.trim());
-    fd.append('country', document.getElementById('fCountry').value || 'US');
+    fd.append('country', CN_MODE ? 'CN' : 'US');
     fd.append('address_verified', addrVerified ? '1' : '0');
     if (!FOREMAN && APPLY_STATE) fd.append('st', APPLY_STATE);
     Object.entries(_files).forEach(([k, f]) => { if (f) fd.append(k, f); });
