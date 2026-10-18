@@ -42687,6 +42687,38 @@ app.post('/api/acct/gusto/import-undo', requireAdmin, requireRole('admin'), (req
   res.json({ ok: true, removed, restored, kept_linked: keptLinked });
 });
 
+// 🏢 公司支出 → 办公室员工 (会计 / HR / 客服) 工资明细: Gusto W-2 工资报表导入的行。
+// 报表原文 (raw_json) 里的 税前 / 员工税 / 公司税 / 扣款 / 实发 拆出来给前端, 列名按关键词认。
+app.get('/api/acct/gusto/w2', requireAdmin, requireAcctView, (req, res) => {
+  try {
+    const start = String(req.query.start || '').slice(0, 10);
+    const end = String(req.query.end || '').slice(0, 10);
+    const ranged = /^\d{4}-\d{2}-\d{2}$/.test(start) && /^\d{4}-\d{2}-\d{2}$/.test(end);
+    const num = v => { const n = parseFloat(String(v == null ? '' : v).replace(/[$,\s]/g, '').replace(/^\((.*)\)$/, '-$1')); return Number.isFinite(n) ? n : null; };
+    const pick = (j, re) => { const k = Object.keys(j).find(k => re.test(k)); return k ? num(j[k]) : null; };
+    const rows = db.prepare(`SELECT uuid, contractor_name, date, wage_total, bank_txn_id, raw_json
+      FROM gusto_payments WHERE wage_type='W2' ${ranged ? 'AND date>=? AND date<=?' : ''}
+      ORDER BY date DESC, contractor_name LIMIT 5000`).all(...(ranged ? [start, end] : [])).map(({ raw_json, ...r }) => {
+      let j = {};
+      try { j = JSON.parse(raw_json || '{}') || {}; } catch (e) {}
+      const payroll = Object.keys(j).find(k => /^payroll$/i.test(k.trim()));
+      const dep = Object.keys(j).find(k => /department/i.test(k));
+      return {
+        ...r,
+        payroll: payroll ? String(j[payroll] || '').trim() : '',
+        department: dep ? String(j[dep] || '').trim() : '',
+        gross: pick(j, /gross (earnings|pay)/i) ?? r.wage_total,
+        employee_taxes: pick(j, /employee.*tax/i),
+        employer_taxes: pick(j, /employer.*tax/i),
+        deductions: pick(j, /deduction/i),
+        net: pick(j, /net pay/i),
+        employer_cost: pick(j, /employer cost|total cost/i),
+      };
+    });
+    res.json({ rows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // 实付流水（按付款日期倒序; start/end 过滤付款日期, q 搜姓名/方式/状态）
 app.get('/api/acct/gusto/payments', requireAdmin, requireAcctView, (req, res) => {
   try {

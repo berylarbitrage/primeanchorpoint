@@ -805,6 +805,34 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <th id="feePartyTh">对方</th><th>日期</th><th style="text-align:right">金额</th><th>说明</th><th>状态</th><th>发票文件</th><th>付款批注（会计）</th><th></th>
       </tr></thead><tbody id="feeBody"><tr><td colspan="8" style="color:var(--g400)">加载中…</td></tr></tbody></table>
     </div>
+    <!-- 🧑‍💼 办公室员工工资 (会计 / HR / 客服): 只在「公司支出」显示, 数据是 Gusto 导入的 W-2 工资报表 -->
+    <div class="card" id="w2Card" style="display:none;margin-top:.8rem">
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.55rem">
+        <b style="font-size:.92rem">🧑‍💼 办公室员工工资（会计 / HR / 客服）</b>
+        <select id="w2Range" onchange="w2RangeChanged()" title="按发薪日期筛选">
+          <option value="thismonth">本月</option>
+          <option value="lastmonth">上月</option>
+          <option value="90d">近 90 天</option>
+          <option value="thisyear" selected>今年</option>
+          <option value="lastyear">去年</option>
+          <option value="">全部</option>
+          <option value="custom">自定义…</option>
+        </select>
+        <input type="date" id="w2From" onchange="w2Load()" style="display:none">
+        <input type="date" id="w2To" onchange="w2Load()" style="display:none">
+        <select id="w2Person" onchange="w2Render()"><option value="">全部员工</option></select>
+        <select id="w2View" onchange="w2Render()">
+          <option value="detail">每次发薪明细</option>
+          <option value="person">按人汇总</option>
+          <option value="month">按月汇总</option>
+        </select>
+        <span id="w2Stats" style="font-size:.78rem;color:var(--g500)"></span>
+      </div>
+      <div style="overflow-x:auto">
+        <table><thead id="w2Head"></thead><tbody id="w2Body"><tr><td style="color:var(--g400)">加载中…</td></tr></tbody></table>
+      </div>
+      <p style="font-size:.74rem;color:var(--g400);margin-top:.5rem">数据来自「💸 Gusto 工资」页导入的 W-2 员工工资报表（Year to date 等）。税前 = Gross earnings；员工税 / 公司税 / 实发 按报表原列显示，报表没有这一列就显示 —。公司实际成本 = 税前 + 公司税。</p>
+    </div>
   </div>
 
   <!-- ➕ 新增费用记录弹窗 (保险费/律师费共用; 会计提交 → 管理员审核; admin 提交直接生效) -->
@@ -1323,6 +1351,8 @@ function showTab(t) {
   const isFee = t === 'feeins' || t === 'feelaw' || t === 'feeco';
   document.getElementById('paneFee').style.display = isFee ? '' : 'none';
   if (isFee) { _feeType = t === 'feeins' ? 'insurance' : (t === 'feelaw' ? 'legal' : 'company'); feeApplyType(); renderFeeList(); }
+  document.getElementById('w2Card').style.display = t === 'feeco' ? '' : 'none';
+  if (t === 'feeco') w2Load();
   document.getElementById('paneInv').style.display = t === 'inv' ? '' : 'none';
   document.getElementById('paneStmt').style.display = t === 'stmt' ? '' : 'none';
   document.getElementById('paneClaims').style.display = t === 'claims' ? '' : 'none';
@@ -3805,6 +3835,95 @@ function renderFeeList() {
       <td style="white-space:nowrap">${USER.role === 'admin' ? `<a style="cursor:pointer;color:#b91c1c;font-size:.78rem" title="删除这条记录" onclick="feeDelete(${f.id})">🗑</a>` : ''}</td>
     </tr>`;
   }).join('') : `<tr><td colspan="8" style="color:var(--g400);padding:1rem">暂无${cfg.title.slice(cfg.title.indexOf(' ') + 1)}记录，点「＋ 新增」添加。</td></tr>`;
+}
+// ── 🧑‍💼 办公室员工工资 (公司支出页): Gusto W-2 工资报表的行, 全部拉下来前端按时间/人筛 ──
+let _w2Rows = [], _w2Loaded = false;
+async function w2Load() {
+  if (!_w2Loaded) {
+    const r = await api('/api/acct/gusto/w2').catch(e => ({ error: e.message }));
+    if (r.error) { document.getElementById('w2Body').innerHTML = `<tr><td style="color:#dc2626">${esc(r.error)}</td></tr>`; return; }
+    _w2Rows = r.rows || [];
+    _w2Loaded = true;
+  }
+  w2Render();
+}
+function w2RangeChanged() {
+  const custom = document.getElementById('w2Range').value === 'custom';
+  ['w2From', 'w2To'].forEach(id => { document.getElementById(id).style.display = custom ? '' : 'none'; });
+  w2Render();
+}
+function _w2RangeDates() {
+  const v = document.getElementById('w2Range').value;
+  const y = new Date().getFullYear();
+  if (v === 'custom') return [document.getElementById('w2From').value, document.getElementById('w2To').value];
+  if (v === 'lastyear') return [`${y - 1}-01-01`, `${y - 1}-12-31`];
+  if (!v) return ['', ''];
+  const sel = document.getElementById('gustoPayRange');   // 借用 Gusto 流水同一套日期口径
+  const keep = sel.value;
+  sel.value = v;
+  const out = _gustoPayRangeDates();
+  sel.value = keep;
+  return out;
+}
+function w2Render() {
+  const [from, to] = _w2RangeDates();
+  const inRange = _w2Rows.filter(r => (!from || r.date >= from) && (!to || r.date <= to));
+  const personSel = document.getElementById('w2Person');
+  const names = [...new Set(inRange.map(r => r.contractor_name))].sort((a, b) => a.localeCompare(b));
+  const who = names.includes(decodeURIComponent(personSel.value)) ? decodeURIComponent(personSel.value) : '';
+  personSel.innerHTML = '<option value="">全部员工</option>' + names.map(n => `<option value="${encodeURIComponent(n)}"${n === who ? ' selected' : ''}>${esc(n)}</option>`).join('');
+  const rows = inRange.filter(r => !who || r.contractor_name === who);
+  const sum = (list, k) => list.reduce((s, r) => s + (Number(r[k]) || 0), 0);
+  const has = k => rows.some(r => r[k] != null);
+  const m = (v) => v == null ? '<span style="color:var(--g400)">—</span>' : money(v);
+  const cost = r => (Number(r.gross) || 0) + (Number(r.employer_taxes) || 0);
+  document.getElementById('w2Stats').textContent = rows.length
+    ? `${rows.length} 笔 · ${new Set(rows.map(r => r.contractor_name)).size} 人 · 税前合计 ${money(sum(rows, 'gross'))}` + (has('net') ? ` · 实发合计 ${money(sum(rows, 'net'))}` : '') + (has('employer_taxes') ? ` · 公司成本 ${money(rows.reduce((s, r) => s + cost(r), 0))}` : '')
+    : '';
+  const view = document.getElementById('w2View').value;
+  const numTh = t => `<th style="text-align:right">${t}</th>`;
+  const moneyCols = ['税前工资', '员工税', '公司税', '扣款', '实发'].map(numTh).join('') + numTh('公司成本');
+  const moneyTds = list => {
+    const s = k => list.some(r => r[k] != null) ? sum(list, k) : null;
+    return [s('gross'), s('employee_taxes'), s('employer_taxes'), s('deductions'), s('net')].map(v => `<td style="text-align:right;white-space:nowrap">${m(v)}</td>`).join('')
+      + `<td style="text-align:right;white-space:nowrap;font-weight:700;color:#dc2626">${money(list.reduce((t, r) => t + cost(r), 0))}</td>`;
+  };
+  const head = document.getElementById('w2Head'), body = document.getElementById('w2Body');
+  if (!rows.length) {
+    head.innerHTML = '';
+    body.innerHTML = `<tr><td style="color:var(--g400);padding:1rem">${_w2Rows.length ? '这个时间段没有办公室员工工资记录。' : '还没有 W-2 员工工资数据——在「💸 Gusto 工资」页导入 Gusto 的 Year to date 等 W-2 工资报表后这里会显示。'}</td></tr>`;
+    return;
+  }
+  if (view === 'detail') {
+    head.innerHTML = `<tr><th>发薪日期</th><th>员工</th><th>Payroll</th>${moneyCols}</tr>`;
+    body.innerHTML = rows.map(r => `<tr>
+      <td style="white-space:nowrap">${esc(r.date)}</td>
+      <td style="font-weight:600">${esc(r.contractor_name)}${r.department ? ` <span style="font-size:.68rem;color:var(--g500)">· ${esc(r.department)}</span>` : ''}</td>
+      <td style="font-size:.78rem;color:var(--g500)">${esc(r.payroll || '')}</td>
+      ${moneyTds([r])}</tr>`).join('')
+      + `<tr style="background:#f8fafc;font-weight:700"><td colspan="3">合计</td>${moneyTds(rows)}</tr>`;
+    return;
+  }
+  const groups = new Map();
+  rows.forEach(r => {
+    const k = view === 'person' ? r.contractor_name : (r.date || '').slice(0, 7);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  });
+  const keys = [...groups.keys()].sort((a, b) => view === 'person' ? a.localeCompare(b) : b.localeCompare(a));
+  head.innerHTML = `<tr><th>${view === 'person' ? '员工' : '月份'}</th><th style="text-align:right">发薪次数</th>${moneyCols}</tr>`;
+  body.innerHTML = keys.map(k => {
+    const list = groups.get(k);
+    const label = view === 'person'
+      ? `<a style="cursor:pointer;color:var(--blue,#0f4c6b);text-decoration:underline" title="看这个人每次发薪明细" data-n="${encodeURIComponent(k)}" onclick="w2Drill(this.dataset.n)">${esc(k)}</a>`
+      : esc(k);
+    return `<tr><td style="font-weight:600;white-space:nowrap">${label}</td><td style="text-align:right">${list.length}</td>${moneyTds(list)}</tr>`;
+  }).join('') + `<tr style="background:#f8fafc;font-weight:700"><td>合计</td><td style="text-align:right">${rows.length}</td>${moneyTds(rows)}</tr>`;
+}
+function w2Drill(enc) {
+  document.getElementById('w2Person').value = enc;
+  document.getElementById('w2View').value = 'detail';
+  w2Render();
 }
 function openFeeAdd() {
   feeApplyType();
