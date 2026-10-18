@@ -964,6 +964,23 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS referral_weeks (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(referral_id, invoice_id)
 )`); } catch(e) {}
+// 每周介绍费要管理员确认: 金额 + 付不付 ('' 待确认 | approved 确认支付 | rejected 这周不付)。
+// 确认后会计才能记这周的付款, 记「已付/部分付」必须关联银行记录或上传凭证图片。
+for (const col of ["admin_status TEXT DEFAULT ''", 'admin_fee REAL DEFAULT NULL', "admin_by TEXT DEFAULT ''", 'admin_at TEXT DEFAULT NULL', "admin_note TEXT DEFAULT ''"]) {
+  try { db.exec(`ALTER TABLE referral_weeks ADD COLUMN ${col}`); } catch(e) {}
+}
+// 上线前已经记了付款的那几周: 当作管理员已确认 (金额按当时那周的介绍费), 免得已付的周被锁住改不了
+try {
+  const _rwKey = 'mig_referral_weeks_admin_confirm_v1';
+  if (!db.prepare('SELECT value FROM app_settings WHERE key=?').get(_rwKey)) {
+    const n = db.prepare(`UPDATE referral_weeks SET admin_status='approved',
+        admin_fee=COALESCE(fee, (SELECT amount FROM referrals r WHERE r.id=referral_weeks.referral_id)),
+        admin_by='(上线前已付)', admin_at=datetime('now')
+      WHERE COALESCE(admin_status,'')='' AND id IN (SELECT target_id FROM acct_pay_notes WHERE target_type='referralweek' AND paid_status IN ('paid','partial'))`).run().changes;
+    db.prepare(`INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(_rwKey, new Date().toISOString());
+    if (n) console.log(`[Referral] 已付的 ${n} 周标为管理员已确认`);
+  }
+} catch (e) { console.error('[Referral] 每周确认回填失败:', e.message); }
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL"); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) {}
@@ -41128,7 +41145,7 @@ app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
       : target_type === 'referral'
         ? db.prepare('SELECT id, review_status FROM referrals WHERE id=?').get(tid)
         : target_type === 'referralweek'
-          ? db.prepare('SELECT w.id, r.review_status FROM referral_weeks w JOIN referrals r ON r.id=w.referral_id WHERE w.id=?').get(tid)
+          ? db.prepare('SELECT w.id, w.admin_status, r.review_status FROM referral_weeks w JOIN referrals r ON r.id=w.referral_id WHERE w.id=?').get(tid)
         : (target_type === 'pallet' || target_type === 'truck')
           ? db.prepare("SELECT id FROM bank_statement_txns WHERE id=? AND kind='box'").get(tid)
           : (target_type === 'palletbill' || target_type === 'truckorder')
@@ -41141,9 +41158,17 @@ app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
   if (target_type === 'palletmanual' && exists.approval_status !== 'approved') return res.status(400).json({ error: '这张手动添加的木板发票还没通过管理员审核，暂不能记录付款' });
   // 介绍费必须管理员核查同意支付后, 会计才能记付款 / 关联银行记录
   if ((target_type === 'referral' || target_type === 'referralweek') && exists.review_status !== 'approved') return res.status(400).json({ error: '该介绍费还未通过管理员核查同意支付，暂不能记录付款' });
+  if (target_type === 'referralweek' && exists.admin_status !== 'approved') return res.status(400).json({ error: exists.admin_status === 'rejected' ? '管理员确认这周不付，不能记录付款' : '这周的介绍费还没经管理员确认金额，暂不能记录付款' });
   const st = ['', 'unpaid', 'partial', 'paid'].includes(String(paid_status || '')) ? String(paid_status || '') : '';
   const amt = (amount === '' || amount == null) ? null : (Number(amount) || 0);
   const ids = (Array.isArray(txn_ids) ? txn_ids : []).map(t => String(t).slice(0, 100)).filter(Boolean).slice(0, 20);
+  // 介绍费记「已付/部分付」必须有凭证: 关联银行记录, 或者已有/这次要传的付款截图 (截图在批注存好后由 /photos 接口上传)
+  if (target_type === 'referralweek' && (st === 'paid' || st === 'partial') && !ids.length) {
+    const prev = db.prepare('SELECT photos FROM acct_pay_notes WHERE target_type=? AND target_id=?').get(target_type, tid);
+    let ph = []; try { ph = JSON.parse((prev && prev.photos) || '[]'); } catch (e) { ph = []; }
+    if (!(Array.isArray(ph) && ph.length) && !(parseInt((req.body || {}).pending_photos) > 0))
+      return res.status(400).json({ error: '记已付款需要关联银行记录或上传付款截图' });
+  }
   // 更新时保留已上传的 photos（本接口不改 photos，凭证由 /photos 子接口维护）
   db.prepare(`INSERT INTO acct_pay_notes (target_type, target_id, paid_status, bank, amount, note, txn_ids, created_by, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -41718,7 +41743,10 @@ function _referralOut(r, invMap, payNotes, weeksBy, weekNotes, linesByInv) {
   // 每周付款: 按发票账期先后排, fee 空的按介绍记录上的介绍费
   r.weeks = ((weeksBy && weeksBy[r.id]) || []).filter(w => invMap[w.invoice_id]).map(w => ({
     id: w.id, invoice_id: w.invoice_id, fee: w.fee,
-    fee_eff: w.fee != null ? w.fee : (r.amount != null ? r.amount : null),
+    // 管理员确认过的按确认的金额; 这周不付 = 0
+    fee_eff: w.admin_status === 'rejected' ? 0 : w.admin_status === 'approved' && w.admin_fee != null ? w.admin_fee
+      : (w.fee != null ? w.fee : (r.amount != null ? r.amount : null)),
+    admin_status: w.admin_status || '', admin_fee: w.admin_fee, admin_by: w.admin_by || '', admin_at: w.admin_at, admin_note: w.admin_note || '',
     invoice: invMap[w.invoice_id], pay_note: (weekNotes && weekNotes[w.id]) || null,
     // 这周发票里勾的那几行 (这个工人那一行), 没勾就是整张发票
     lines: ((r.invoice_lines[w.invoice_id] || []).map(k => ((linesByInv && linesByInv[w.invoice_id]) || []).find(l => l.line_key === k)).filter(Boolean)),
@@ -42131,13 +42159,37 @@ app.post('/api/acct/referrals/:id/invoices', requireAdmin, requireRole('accounti
 });
 // 改某一周的介绍费金额 (空 = 按介绍记录上的介绍费)
 app.put('/api/acct/referral-weeks/:id', requireAdmin, requireRole('accounting', 'admin'), (req, res) => {
-  const w = db.prepare('SELECT id FROM referral_weeks WHERE id=?').get(parseInt(req.params.id));
+  const w = db.prepare('SELECT id, admin_status FROM referral_weeks WHERE id=?').get(parseInt(req.params.id));
   if (!w) return res.status(404).json({ error: '记录不存在' });
+  if (w.admin_status) return res.status(400).json({ error: '管理员已确认这周，金额不能再改（要改先请管理员撤销确认）' });
   const v = (req.body || {}).fee;
   const fee = (v === '' || v == null) ? null : Number(v);
   if (fee != null && (isNaN(fee) || fee < 0)) return res.status(400).json({ error: '金额不对' });
   db.prepare('UPDATE referral_weeks SET fee=? WHERE id=?').run(fee, w.id);
   res.json({ success: true, fee });
+});
+
+// 管理员确认某一周: approve 确认支付 (带金额) / reject 这周不付 / reset 撤销确认。已记付款的周不能撤销或改成不付
+app.post('/api/acct/referral-weeks/:id/review', requireAdmin, requireRole('admin'), (req, res) => {
+  const w = db.prepare(`SELECT w.*, r.amount AS ref_amount FROM referral_weeks w JOIN referrals r ON r.id=w.referral_id WHERE w.id=?`).get(parseInt(req.params.id));
+  if (!w) return res.status(404).json({ error: '记录不存在' });
+  const b = req.body || {};
+  const action = String(b.action || '');
+  if (!['approve', 'reject', 'reset'].includes(action)) return res.status(400).json({ error: '无效操作' });
+  const paid = db.prepare(`SELECT id FROM acct_pay_notes WHERE target_type='referralweek' AND target_id=? AND paid_status IN ('paid','partial')`).get(w.id);
+  if (paid && action !== 'approve') return res.status(400).json({ error: '这周已记付款，不能撤销或改成不付（先改掉付款记录）' });
+  let fee = null;
+  if (action === 'approve') {
+    const v = b.fee;
+    fee = (v === '' || v == null) ? (w.fee != null ? w.fee : w.ref_amount) : Number(v);
+    if (fee == null || isNaN(fee) || fee < 0) return res.status(400).json({ error: '请填写这周要付的金额' });
+  }
+  const st = action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : '';
+  db.prepare(`UPDATE referral_weeks SET admin_status=?, admin_fee=?, admin_by=?, admin_at=CASE WHEN ?='' THEN NULL ELSE datetime('now') END, admin_note=? WHERE id=?`)
+    .run(st, fee, st ? (req.userName || '') : '', st, st ? String(b.note || '').trim().slice(0, 300) : '', w.id);
+  auditLog('referral_week_review', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers },
+    { targetType: 'referral_week', targetId: w.id, details: { action, fee } });
+  res.json({ success: true, admin_status: st, admin_fee: fee });
 });
 
 // 管理员核查: 核实整条信息后决定是否支付 (approve 同意支付 / reject 拒绝支付 / reset 撤销重审)
