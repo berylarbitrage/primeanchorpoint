@@ -561,11 +561,16 @@ function dedupeMessages(list) {
       const m = arr[i];
       const close = new Date(sqlTime(m.sent_at)) - new Date(sqlTime(kept.sent_at)) <= 180000;
       if (close && m.device_id !== kept.device_id) {
+        // 两份各有所长时合到留下的那份上: 一份有译文, 另一份可能才有图片
+        // (电脑端先推了没图的那份, 手机 App 后推、图片挂在自己那份上)
+        const keptMedia = inMedia(kept).length ? kept.media : '', otherMedia = inMedia(m).length ? m.media : '';
         if (!kept.translated_body && m.translated_body) {
           m.sent_at = kept.sent_at;
+          if (!otherMedia && keptMedia) m.media = keptMedia;
           drop.add(kept);
           kept = m;
         } else {
+          if (!keptMedia && otherMedia) kept.media = otherMedia;
           drop.add(m);
         }
       } else {
@@ -1395,12 +1400,20 @@ function firstLink(m) {
   }
   return '';
 }
+function fallbackPreview(url) {
+  try {
+    const u = new URL(url);
+    const path = decodeURIComponent(u.pathname + u.search).replace(/\/$/, '');
+    return { site: u.hostname.replace(/^www\./, ''), title: path && path !== '/' ? path : u.hostname,
+      description: '这个页面没有给出预览（可能要登录才能看）', image: '' };
+  } catch (_) { return { site: '', title: url, description: '', image: '' }; }
+}
 function linkCardHtml(m) {
   const url = firstLink(m);
   if (!url) return '';
   const p = LINK_PREVIEWS.get(url);
   return '<a class="link-card" data-url="' + esc(url) + '" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer"'
-    + (p && !(p instanceof Promise) && (p.title || p.image) ? '>' + linkCardInner(p) : ' hidden>') + '</a>';
+    + (p && !(p instanceof Promise) ? '>' + linkCardInner(p.title || p.image ? p : fallbackPreview(url)) : ' hidden>') + '</a>';
 }
 function linkCardInner(p) {
   return (p.image ? '<img class="link-card-img" src="' + esc(p.image) + '" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">' : '')
@@ -1421,8 +1434,9 @@ function hydrateLinkCards() {
       LINK_PREVIEWS.set(url, p);
     }
     Promise.resolve(p).then(data => {
-      // 页面每几秒会重画, 按网址找当前还在的卡片填
-      if (!data || !(data.title || data.image)) return;
+      // 页面每几秒会重画, 按网址找当前还在的卡片填。
+      // 抓不到内容的(要登录 / 不公开 / 网站挡了抓取)也给个简卡: 网站名 + 路径, 不至于什么都没有
+      if (!data || !(data.title || data.image)) data = fallbackPreview(url);
       for (const c of document.querySelectorAll('.link-card[hidden]')) {
         if (c.dataset.url !== url) continue;
         c.innerHTML = linkCardInner(data);
