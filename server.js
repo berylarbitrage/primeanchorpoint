@@ -1174,6 +1174,8 @@ try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN address_verified INT
 // marker rides the apply URL (?st=IL) so the resulting application is tagged with
 // the location it was for. Empty for legacy / single-location companies.
 try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN apply_state TEXT DEFAULT ''`); } catch(e) {}
+// 地址所在国家 (ISO 两位码, 如 US / MX / CA); 旧数据为空 = 美国
+try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN country TEXT DEFAULT ''`); } catch(e) {}
 // Links an applicant to the employee档案 created from it. History/archival in the
 // inbox is driven by this linked employee reaching 在职 (after starting 待入职) —
 // NOT by any matching employee being active, which would archive legacy records.
@@ -1227,7 +1229,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS foreman_files (
   file_name TEXT DEFAULT '',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
-for (const col of ["address1 TEXT DEFAULT ''", "address2 TEXT DEFAULT ''", "city TEXT DEFAULT ''", "state TEXT DEFAULT ''", "zip TEXT DEFAULT ''", "address_verified INTEGER DEFAULT 0"]) {
+for (const col of ["address1 TEXT DEFAULT ''", "address2 TEXT DEFAULT ''", "city TEXT DEFAULT ''", "state TEXT DEFAULT ''", "zip TEXT DEFAULT ''", "address_verified INTEGER DEFAULT 0", "country TEXT DEFAULT ''"]) {
   try { db.exec(`ALTER TABLE foremen ADD COLUMN ${col}`); } catch(e) {}
 }
 
@@ -16029,9 +16031,22 @@ function _genTimeclockCode() {
 function _normApplyPhone(raw) {
   const d = String(raw || '').replace(/\D/g, '');
   if (!d) return '';
+  // 带 + 的是完整国际号码 (表单上选了国家区号), 原样用, 不再猜成美国号
+  if (String(raw).trim().startsWith('+')) return '+' + d;
   if (d.length === 10) return '+1' + d;
   if (d.length === 11 && d[0] === '1') return '+' + d;
   return '+' + d;
+}
+
+// 申请表的地址国家: ISO 两位码, 没填或格式不对按美国
+function _applyCountry(raw) {
+  const c = String(raw || '').trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(c) ? c : 'US';
+}
+// 美国地址要 街道/城市/州/邮编 齐全; 别的国家很多没有州或邮编, 只要街道和城市
+function _applyAddressComplete(country, address1, city, state, zip) {
+  if (!address1 || !city) return false;
+  return country !== 'US' || (!!state && !!zip);
 }
 
 // ADMIN: get or lazily create the applicant-form token + QR for a company.
@@ -16181,7 +16196,9 @@ app.post('/api/apply/send-code', async (req, res) => {
     if (token !== '__foreman_reg__' && !_partnerByApplyToken(token)) return res.status(404).json({ error: '链接无效 / Invalid link' });
     const channel = req.body.channel === 'email' ? 'email' : 'phone';
     const target = channel === 'phone' ? _normApplyPhone(req.body.phone) : String(req.body.email || '').trim().toLowerCase();
-    if (channel === 'phone' && target.replace(/\D/g, '').length < 10)
+    // 国际号码 (E.164) 连区号 8–15 位; 美国号 10 位
+    const phoneDigits = target.replace(/\D/g, '').length;
+    if (channel === 'phone' && (phoneDigits < 8 || phoneDigits > 15 || (target.startsWith('+1') && phoneDigits !== 11)))
       return res.status(400).json({ error: '请输入有效手机号 / Enter a valid phone number' });
     if (channel === 'email' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(target))
       return res.status(400).json({ error: '请输入有效邮箱 / Enter a valid email address' });
@@ -16292,13 +16309,14 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
     const state = String(d.state || '').trim().slice(0, 60);
     const zip = String(d.zip || '').trim().slice(0, 20);
     const addressVerified = (d.address_verified === '1' || d.address_verified === 1 || d.address_verified === true) ? 1 : 0;
+    const country = _applyCountry(d.country);
     // Company-location state this application came in through (from the QR's ?st=XX).
     // Only a well-formed 2-letter code is kept; anything else is treated as unset.
     const rawSt = String(d.st || d.apply_state || req.query.st || '').trim().toUpperCase();
     const applyState = /^[A-Z]{2}$/.test(rawSt) ? rawSt : '';
     if (!name || !phone || !email || !position)
       return res.status(400).json({ error: '请填写姓名、电话、邮箱和职位 / Name, phone, email and position are required' });
-    if (!address1 || !city || !state || !zip)
+    if (!_applyAddressComplete(country, address1, city, state, zip))
       return res.status(400).json({ error: '请填写完整地址 / Street, city, state and ZIP are required' });
     // Require a verified OTP for BOTH the submitted phone and email.
     const verified = (type, tgt) => !!db.prepare(`SELECT id FROM applicant_otp WHERE form_token=? AND type=? AND target=? AND verified=1 ORDER BY id DESC LIMIT 1`).get(token, type, tgt);
@@ -16309,10 +16327,10 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
       return res.status(400).json({ error: '请上传 SSN 正面、EAD 正反面 / Please upload SSN front and EAD front & back' });
     const r = db.prepare(`INSERT INTO applicant_submissions
       (partner_id, partner_name, name, phone, email, position, phone_verified, email_verified,
-       address1, address2, city, state, zip, address_verified, apply_state, user_agent)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+       address1, address2, city, state, zip, address_verified, apply_state, country, user_agent)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
         p.id, p.name, name, phone, email, position, 1, 1,
-        address1, address2, city, state, zip, addressVerified, applyState,
+        address1, address2, city, state, zip, addressVerified, applyState, country,
         String(req.headers['user-agent'] || '').slice(0, 250));
     const subId = r.lastInsertRowid;
     const docMeta = [];
@@ -16365,7 +16383,7 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
       }
     } catch (e) { console.error('[apply-dup] check failed:', e.message); }
     // Fire-and-forget: notify the company inbox with all applicant details + photo attachments.
-    const address = { address1, address2, city, state, zip, verified: addressVerified };
+    const address = { address1, address2, city, state, zip, country, verified: addressVerified };
     notifyNewApplication({ subId, partner: p, name, position, phone, email, address, applyState, docMeta, dup })
       .catch(e => console.error('[apply-notify] failed:', e.message));
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -16393,8 +16411,9 @@ app.post('/api/public/foreman-register', applicantDocUpload.fields([
     const state = String(d.state || '').trim().slice(0, 60);
     const zip = String(d.zip || '').trim().slice(0, 20);
     const addressVerified = (d.address_verified === '1' || d.address_verified === 1 || d.address_verified === true) ? 1 : 0;
+    const country = _applyCountry(d.country);
     if (!name || !phone || !email) return res.status(400).json({ error: '请填写姓名、电话、邮箱 / Name, phone and email are required' });
-    if (!address1 || !city || !state || !zip) return res.status(400).json({ error: '请填写完整地址 / Street, city, state and ZIP are required' });
+    if (!_applyAddressComplete(country, address1, city, state, zip)) return res.status(400).json({ error: '请填写完整地址 / Street, city, state and ZIP are required' });
     const verified = (type, tgt) => !!db.prepare(`SELECT id FROM applicant_otp WHERE form_token=? AND type=? AND target=? AND verified=1 ORDER BY id DESC LIMIT 1`).get(FT, type, tgt);
     if (!verified('phone', phone)) return res.status(400).json({ error: '请先完成手机验证 / Please verify your phone first' });
     if (!verified('email', email)) return res.status(400).json({ error: '请先完成邮箱验证 / Please verify your email first' });
@@ -16402,8 +16421,8 @@ app.post('/api/public/foreman-register', applicantDocUpload.fields([
     if (!files.ssn_front || !files.ead_front || !files.ead_back)
       return res.status(400).json({ error: '请上传 SSN 正面、EAD 正反面 / Please upload SSN front and EAD front & back' });
     const token = crypto.randomBytes(16).toString('hex');
-    const r = db.prepare(`INSERT INTO foremen (name, phone, email, warehouse, intake_token, address1, address2, city, state, zip, address_verified)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(name, phone, email, warehouse, token, address1, address2, city, state, zip, addressVerified);
+    const r = db.prepare(`INSERT INTO foremen (name, phone, email, warehouse, intake_token, address1, address2, city, state, zip, address_verified, country)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(name, phone, email, warehouse, token, address1, address2, city, state, zip, addressVerified, country);
     const foremanId = r.lastInsertRowid;
     for (const [docType, arr] of Object.entries(files)) {
       if (arr && arr[0]) {
@@ -16439,7 +16458,8 @@ async function notifyNewApplication({ subId, partner, name, position, phone, ema
   }
   const addrLine = address ? [
     [address.address1, address.address2].filter(Boolean).join(', '),
-    [address.city, address.state].filter(Boolean).join(', ') + ' ' + (address.zip || ''),
+    [address.city, address.state].filter(Boolean).join(', ') + ' ' + (address.zip || '')
+      + (address.country && address.country !== 'US' ? ' · ' + address.country : ''),
   ].filter(s => s && s.trim()).join('  ') : '';
   const partnerLabel = partner.name || (partner.id === 0 ? '通用申请 / General (no company)' : '');
   const rows = [
@@ -33440,7 +33460,8 @@ app.post('/api/validate-address', async (req, res) => {
 
     const addrLines = postalAddress.addressLines || [];
     const fullZip = postalAddress.postalCode || zip || '';
-    const zipParts = fullZip.replace('-', '').match(/^(\d{5})(\d{4})?$/);
+    // 只有美国邮编拆 5+4; 别的国家邮编原样 (之前一律截前 5 位, "SW1A 1AA" 会变成 "SW1A ")
+    const zipParts = isUs ? fullZip.replace('-', '').match(/^(\d{5})(\d{4})?$/) : null;
 
     // Google 回显的行同样去重后再返回 —— 未识别的输入会被原样回显, 别把重复片段带回表单
     const [stdStreet, stdStreet2] = _dedupeAddrFields(addrLines[0] || street, addrLines[1] || '');
@@ -33452,7 +33473,7 @@ app.post('/api/validate-address', async (req, res) => {
         street2: stdStreet2,
         city:    postalAddress.locality || city || '',
         state:   postalAddress.administrativeArea || state || '',
-        zip:     zipParts ? zipParts[1] : fullZip.substring(0, 5),
+        zip:     zipParts ? zipParts[1] : (isUs ? fullZip.substring(0, 5) : fullZip),
         zip4:    zipParts ? (zipParts[2] || '') : ''
       }
     });

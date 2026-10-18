@@ -17952,7 +17952,8 @@ async function loadEmpRelatedSubs(empId) {
   const vb = ok => ok ? '<span style="color:#15803d;font-weight:700;font-size:.68rem">✓已验证</span>' : '';
   box.innerHTML = subs.map(s => {
     const when = s.created_at ? new Date(s.created_at + 'Z').toLocaleString('zh-CN', { hour12: false }) : '—';
-    const addr = [[s.address1, s.address2].filter(Boolean).join(', '), [s.city, s.state].filter(Boolean).join(', '), s.zip].filter(Boolean).join(' · ');
+    const addr = [[s.address1, s.address2].filter(Boolean).join(', '), [s.city, s.state].filter(Boolean).join(', '), s.zip,
+      s.country && s.country !== 'US' ? s.country : ''].filter(Boolean).join(' · ');
     const note = String(s.review_note || '').trim();
     const tag = s.linked
       ? '<span style="padding:0 6px;font-size:.66rem;font-weight:700;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:999px">本档案关联</span>'
@@ -43684,6 +43685,7 @@ function renderApplicantInbox() {
     const addrLine = [
       [s.address1, s.address2].filter(Boolean).join(', '),
       [[s.city, s.state].filter(Boolean).join(', '), s.zip].filter(Boolean).join(' '),
+      s.country && s.country !== 'US' ? '🌐 ' + s.country : '',   // 非美国地址标出国家
     ].filter(x => x && x.trim()).join(' · ');
     const vBadge = ok => ok
       ? '<span style="display:inline-flex;align-items:center;gap:2px;background:#dcfce7;color:#15803d;border-radius:999px;padding:0 6px;font-size:.66rem;font-weight:700;vertical-align:middle">✓ 已验证</span>'
