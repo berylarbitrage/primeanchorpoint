@@ -16223,22 +16223,31 @@ app.post('/api/apply/send-code', async (req, res) => {
     let sent = false, code = null;
     const detail = [];   // collected provider errors, surfaced for diagnosis
     if (channel === 'phone') {
-      // Prefer Twilio Verify; if it isn't configured or the send fails, fall
-      // back to a locally-generated code over regular SMS (the app's SMS sender).
+      // 验证码优先走 Twilio Verify (Twilio 推荐的验证码通道, 发全球包括中国送达率比普通短信好)。
+      // 中国号码 (+86, 中国申请二维码) 只走 Verify, 用中文模板, 不退回普通短信 ——
+      // 普通短信自己拼的内容到中国常被运营商拦。Verify 发不出就把原因报出来, 好去 Twilio 后台查。
+      // 其他号码 Verify 失败时仍退回普通短信, 退回时把原因记进日志 (之前是悄悄退回, 看不出 Verify 为什么没发)。
+      const china = target.startsWith('+86');
       let usedVerify = false;
       if (twilioClient && TWILIO_VERIFY_SID) {
         try {
-          const v = await twilioClient.verify.v2.services(TWILIO_VERIFY_SID).verifications.create({ to: target, channel: 'sms' });
+          const v = await twilioClient.verify.v2.services(TWILIO_VERIFY_SID).verifications.create({
+            to: target, channel: 'sms', ...(china ? { locale: 'zh' } : {}) });
           usedVerify = (v.status === 'pending' || !!v.sid);
           if (!usedVerify) detail.push(`Verify status=${v.status}`);
         } catch (e) { detail.push(`Verify: ${e.message}${e.code ? ' (code ' + e.code + ')' : ''}`); }
       } else if (!twilioClient) {
         detail.push('TWILIO_ACCOUNT_SID/AUTH_TOKEN 未配置');
+      } else {
+        detail.push('TWILIO_VERIFY_SERVICE_SID 未配置');
       }
       if (usedVerify) {
         db.prepare('INSERT INTO applicant_otp (form_token,type,target,code,expires_at) VALUES (?,?,?,?,?)').run(token, 'phone', target, '__twilio_verify__', expires);
         sent = true;
+      } else if (china) {
+        // 不退回普通短信, 下面统一报错 (detail 里是 Verify 的原因)
       } else {
+        console.warn(`[apply] Verify unavailable for ${target}, falling back to SMS :: ${detail.join(' | ')}`);
         code = String(Math.floor(100000 + Math.random() * 900000));
         db.prepare('INSERT INTO applicant_otp (form_token,type,target,code,expires_at) VALUES (?,?,?,?,?)').run(token, 'phone', target, code, expires);
         const r = await sendSMSWithDetail(target, `[Prime Anchor Point LLC] 验证码 / Code: ${code}（15分钟有效 / valid 15 min）`);
