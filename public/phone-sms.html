@@ -128,6 +128,17 @@ button,input,select,textarea{font-family:inherit}
 .msg-bubble{max-width:82%;padding:10px 14px;border-radius:16px;font-size:.88rem;line-height:1.45;word-wrap:break-word}
 .msg-row.in .msg-bubble{background:var(--gray-100);color:var(--gray-800);border-bottom-left-radius:4px}
 .msg-row.out .msg-bubble{background:#2563eb;color:#fff;border-bottom-right-radius:4px}
+.msg-link{color:inherit;text-decoration:underline;word-break:break-all}
+.link-card{display:block;margin-top:8px;border-radius:10px;overflow:hidden;background:var(--white);color:var(--gray-800);
+  text-decoration:none;border:1px solid var(--gray-200);max-width:320px}
+.link-card[hidden]{display:none}
+.link-card-img{display:block;width:100%;max-height:170px;object-fit:cover;background:var(--gray-100)}
+.link-card-text{padding:8px 10px}
+.link-card-site{font-size:.68rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.02em}
+.link-card-title{font-size:.82rem;font-weight:600;line-height:1.3;margin-top:2px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.link-card-desc{font-size:.74rem;color:var(--gray-600);margin-top:3px;line-height:1.35;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .msg-row.queued .msg-bubble{background:var(--white);color:var(--gray-600);border:1px dashed var(--accent)}
 .msg-bubble.risky{box-shadow:0 0 0 2px #fca5a5}
 .msg-translation{font-size:.78rem;margin-top:5px;padding-top:5px;border-top:1px solid rgba(255,255,255,.3)}
@@ -668,6 +679,7 @@ function render() {
   const convos = conversations();
   renderThreads(convos);
   renderDetail(convos);
+  hydrateLinkCards();
 }
 
 function renderThreads(convos) {
@@ -797,10 +809,11 @@ function renderDetail(convos) {
     const showBoth = translated && translated !== (m.body || '').trim();
     return divider + '<div class="msg-row ' + (m.direction === 'out' ? 'out' : 'in') + '">'
       + '<div class="msg-bubble' + (Number(m.risk_score) >= 4 ? ' risky' : '') + '">'
-      + bodyHtml(m.body || (m.has_media && !inMedia(m).length ? '［图片短信］' : ''))
+      + bodyHtml(m.body || (m.has_media && !inMedia(m).length ? '［图片短信］' : ''), Number(m.risk_score) >= 4)
       + inMedia(m).map(f => '<a href="/api/device-sms/media-in/' + f + '" target="_blank" rel="noopener">'
         + '<img class="msg-img" src="/api/device-sms/media-in/' + f + '" loading="lazy"></a>').join('')
       + (showBoth ? '<div class="msg-translation">' + esc(translated) + '</div>' : '')
+      + linkCardHtml(m)
       + '</div>'
       + '<div class="msg-meta">'
       + '<button class="star-btn' + (Number(m.starred) ? ' msg-star' : '') + '"'
@@ -1350,9 +1363,73 @@ function inMedia(m) {
     .filter(f => /^[a-f0-9]{32}\.(jpg|png|gif|webp)$/.test(f || ''));
 }
 
-function bodyHtml(text) {
-  return esc(text).replace(/(https?:\/\/[^\s&<]+\/i\/[a-f0-9]{32}\.(?:jpg|png|gif|webp))/g,
-    '<a href="$1" target="_blank" rel="noopener"><img class="msg-img" src="$1" loading="lazy"></a>');
+/* 网址末尾的标点（句号、括号、引号）一般不是网址的一部分 */
+const URL_RE = /https?:\/\/[^\s<>"'，。！？、；：」』）]+/g;
+function trimUrl(u) { return u.replace(/[.,;:!?)\]}]+$/, ''); }
+const OWN_IMG_RE = /\/i\/[a-f0-9]{32}\.(?:jpg|png|gif|webp)$/;
+
+function bodyHtml(text, risky) {
+  // 先在原文上找网址再逐段转义, 免得 &amp; 之类把网址截断
+  const raw = String(text || '');
+  if (risky) return esc(raw); // 高风险短信里的网址不做成可点的链接, 免得一不小心点进诈骗页
+  let out = '', last = 0;
+  for (const match of raw.matchAll(URL_RE)) {
+    const url = trimUrl(match[0]);
+    out += esc(raw.slice(last, match.index));
+    out += OWN_IMG_RE.test(url)
+      ? '<a href="' + esc(url) + '" target="_blank" rel="noopener"><img class="msg-img" src="' + esc(url) + '" loading="lazy"></a>'
+      : '<a class="msg-link" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + esc(url) + '</a>';
+    last = match.index + url.length;
+  }
+  return out + esc(raw.slice(last));
+}
+
+/* ─── 链接预览卡片: 消息里第一个网址, 服务器抓标题/简介/配图 ───
+   高风险(诈骗)短信不预览 —— 不替骗子的链接去访问一趟, 也不把它包装得像正经网站。 */
+const LINK_PREVIEWS = new Map();   // url → {title, description, image, site} | Promise
+function firstLink(m) {
+  if (Number(m.risk_score) >= 4) return '';
+  for (const match of String(m.body || '').matchAll(URL_RE)) {
+    const url = trimUrl(match[0]);
+    if (!OWN_IMG_RE.test(url)) return url;
+  }
+  return '';
+}
+function linkCardHtml(m) {
+  const url = firstLink(m);
+  if (!url) return '';
+  const p = LINK_PREVIEWS.get(url);
+  return '<a class="link-card" data-url="' + esc(url) + '" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer"'
+    + (p && !(p instanceof Promise) && (p.title || p.image) ? '>' + linkCardInner(p) : ' hidden>') + '</a>';
+}
+function linkCardInner(p) {
+  return (p.image ? '<img class="link-card-img" src="' + esc(p.image) + '" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">' : '')
+    + '<div class="link-card-text">'
+    + (p.site ? '<div class="link-card-site">' + esc(p.site) + '</div>' : '')
+    + (p.title ? '<div class="link-card-title">' + esc(p.title) + '</div>' : '')
+    + (p.description ? '<div class="link-card-desc">' + esc(p.description) + '</div>' : '')
+    + '</div>';
+}
+function hydrateLinkCards() {
+  for (const card of document.querySelectorAll('.link-card[hidden]')) {
+    const url = card.dataset.url;
+    let p = LINK_PREVIEWS.get(url);
+    if (!p) {
+      p = api('/device-sms/link-preview?url=' + encodeURIComponent(url))
+        .catch(() => ({}))
+        .then(data => { LINK_PREVIEWS.set(url, data || {}); return data || {}; });
+      LINK_PREVIEWS.set(url, p);
+    }
+    Promise.resolve(p).then(data => {
+      // 页面每几秒会重画, 按网址找当前还在的卡片填
+      if (!data || !(data.title || data.image)) return;
+      for (const c of document.querySelectorAll('.link-card[hidden]')) {
+        if (c.dataset.url !== url) continue;
+        c.innerHTML = linkCardInner(data);
+        c.hidden = false;
+      }
+    });
+  }
 }
 
 function pick(peer) {

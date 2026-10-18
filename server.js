@@ -4277,6 +4277,9 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
 async function lookupTimezone(lat, lng) {
   try {
     const https = require('https');
+const http = require('http');
+const dns = require('dns');
+const net = require('net');
     return await new Promise((resolve) => {
       const url = `https://api.geotimezone.com/public/timezone?latitude=${lat}&longitude=${lng}`;
       https.get(url, (resp) => {
@@ -35354,6 +35357,13 @@ try { db.exec(`CREATE INDEX IF NOT EXISTS idx_device_sms_starred ON device_sms_m
 try { db.exec(`ALTER TABLE device_sms_messages ADD COLUMN send_status TEXT DEFAULT ''`); } catch(e) {}
 // 收到的彩信图片 (电脑端补传上来的), JSON 数组 [{part, file}]; 文件在 uploads/device-sms-in, 要登录才能看
 try { db.exec(`ALTER TABLE device_sms_messages ADD COLUMN media TEXT DEFAULT '[]'`); } catch(e) {}
+// 被当成重复丢掉的那份 (别的设备已推过同一条) 记下它对应哪一行, 之后它补传的图片挂到那一行上
+db.exec(`CREATE TABLE IF NOT EXISTS device_sms_aliases (
+  device_id INTEGER NOT NULL,
+  remote_id TEXT NOT NULL,
+  message_id INTEGER NOT NULL,
+  PRIMARY KEY (device_id, remote_id)
+)`);
 
 function deviceSmsHashToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
@@ -35414,8 +35424,11 @@ app.post('/api/device-sms/media-in', deviceSmsAuth, (req, res) => {
     const remoteId = String(id || '').slice(0, 120);
     const part = Number(part_id);
     if (!remoteId || !Number.isFinite(part)) return res.status(400).json({ error: '缺少短信或附件 id' });
+    // 这台设备自己那份; 没有的话可能是被当成重复丢了, 找它对应的那一行
     const row = db.prepare('SELECT id, media FROM device_sms_messages WHERE device_id=? AND remote_id=?')
-      .get(req.smsDevice.id, remoteId);
+        .get(req.smsDevice.id, remoteId)
+      || db.prepare(`SELECT m.id, m.media FROM device_sms_aliases a JOIN device_sms_messages m ON m.id = a.message_id
+          WHERE a.device_id=? AND a.remote_id=?`).get(req.smsDevice.id, remoteId);
     // 422 而不是 404: 客户端把 404 当「网站还没部署这个接口」, 会留着下轮重试
     if (!row) return res.status(422).json({ error: '网站上没有这条短信' });
     const buf = Buffer.from(String(data || ''), 'base64');
@@ -35443,6 +35456,116 @@ app.get('/api/device-sms/media-in/:file', requireAdmin, requireRole('admin', 'cs
   // 私人图片: 只让浏览器自己缓存, 不给中间的代理/CDN 缓存
   res.set('Cache-Control', 'private, max-age=2592000');
   res.sendFile(full, { cacheControl: false });
+});
+
+// ─── 短信里的链接预览 (标题 / 简介 / 配图, 像聊天软件那样) ───
+// 服务器替网页去抓链接页面的 og: 标签。抓的是短信里别人发来的任意链接, 所以:
+// 只许 http/https 默认端口; 连接时校验解析出的 IP, 内网/本机/云元数据地址一律拒绝
+// (在 lookup 里校验, DNS 换绑也绕不过去); 每次跳转重新校验; 只读前 512KB; 5 秒超时。
+const linkPreviewCache = new Map(); // url → { at, data }
+const LINK_PREVIEW_TTL = 6 * 3600 * 1000;
+
+function linkPreviewPrivateIp(ip) {
+  if (net.isIPv4(ip)) {
+    const [a, b] = ip.split('.').map(Number);
+    return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127)
+      || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+      || (a === 198 && (b === 18 || b === 19)) || a >= 224;
+  }
+  const v6 = ip.toLowerCase();
+  if (v6.startsWith('::ffff:')) return linkPreviewPrivateIp(v6.slice(7));
+  return v6 === '::' || v6 === '::1' || v6.startsWith('fc') || v6.startsWith('fd')
+    || v6.startsWith('fe8') || v6.startsWith('fe9') || v6.startsWith('fea') || v6.startsWith('feb') || v6.startsWith('ff');
+}
+
+function linkPreviewSafeLookup(hostname, options, cb) {
+  dns.lookup(hostname, { all: true }, (err, addrs) => {
+    if (err) return cb(err);
+    const ok = (addrs || []).filter(a => !linkPreviewPrivateIp(a.address));
+    if (!ok.length || ok.length !== addrs.length) return cb(new Error('blocked address'));
+    if (options && options.all) return cb(null, ok);
+    cb(null, ok[0].address, ok[0].family);
+  });
+}
+
+function linkPreviewGet(url, hops = 0) {
+  return new Promise((resolve, reject) => {
+    let u;
+    try { u = new URL(url); } catch (_) { return reject(new Error('bad url')); }
+    if (!/^https?:$/.test(u.protocol) || u.username || u.password || (u.port && !['80', '443'].includes(u.port))) {
+      return reject(new Error('unsupported url'));
+    }
+    // 直接写 IP 的链接 Node 不走 lookup, 要在这里单独拦
+    const literal = u.hostname.replace(/^\[|\]$/g, '');
+    if (net.isIP(literal) && linkPreviewPrivateIp(literal)) return reject(new Error('blocked address'));
+    const lib = u.protocol === 'https:' ? https : http;
+    const req = lib.get(u, {
+      lookup: linkPreviewSafeLookup,
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PrimeAnchorLinkPreview/1.0)', 'Accept': 'text/html', 'Accept-Language': 'en,zh;q=0.8' },
+      timeout: 5000
+    }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        if (hops >= 3) return reject(new Error('too many redirects'));
+        return linkPreviewGet(new URL(res.headers.location, u).toString(), hops + 1).then(resolve, reject);
+      }
+      if (res.statusCode !== 200 || !/text\/html|application\/xhtml/i.test(String(res.headers['content-type'] || ''))) {
+        res.resume();
+        return reject(new Error('not html'));
+      }
+      const chunks = [];
+      let size = 0;
+      res.on('data', (c) => {
+        chunks.push(c); size += c.length;
+        if (size > 512 * 1024) res.destroy();
+      });
+      const done = () => resolve({ url: u.toString(), html: Buffer.concat(chunks).toString('utf8') });
+      res.on('end', done);
+      res.on('close', done);
+      res.on('error', reject);
+    });
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.on('error', reject);
+  });
+}
+
+function linkPreviewParse(html, pageUrl) {
+  const decode = (t) => String(t || '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;|&#x27;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/\s+/g, ' ').trim();
+  const meta = {};
+  for (const tag of html.slice(0, 300000).match(/<meta\b[^>]*>/gi) || []) {
+    const key = (tag.match(/\b(?:property|name)\s*=\s*["']([^"']+)["']/i) || [])[1];
+    const val = (tag.match(/\bcontent\s*=\s*"([^"]*)"/i) || tag.match(/\bcontent\s*=\s*'([^']*)'/i) || [])[1];
+    if (key && val !== undefined && !(key.toLowerCase() in meta)) meta[key.toLowerCase()] = decode(val);
+  }
+  const title = meta['og:title'] || meta['twitter:title'] || decode((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1]);
+  let image = meta['og:image'] || meta['og:image:url'] || meta['twitter:image'] || '';
+  try { image = image ? new URL(image, pageUrl).toString() : ''; } catch (_) { image = ''; }
+  if (image && !/^https:/.test(image)) image = ''; // 混合内容浏览器会拦, 干脆不要
+  return {
+    title: title.slice(0, 200),
+    description: (meta['og:description'] || meta['twitter:description'] || meta['description'] || '').slice(0, 300),
+    image,
+    site: (meta['og:site_name'] || new URL(pageUrl).hostname.replace(/^www\./, '')).slice(0, 80)
+  };
+}
+
+app.get('/api/device-sms/link-preview', requireAdmin, requireRole('admin', 'cs'), async (req, res) => {
+  const url = String(req.query.url || '').trim().slice(0, 2000);
+  if (!/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'bad url' });
+  const hit = linkPreviewCache.get(url);
+  if (hit && Date.now() - hit.at < LINK_PREVIEW_TTL) return res.json(hit.data);
+  let data;
+  try {
+    const page = await linkPreviewGet(url);
+    data = linkPreviewParse(page.html, page.url);
+  } catch (e) {
+    data = { title: '', description: '', image: '', site: '' };
+  }
+  if (linkPreviewCache.size > 500) linkPreviewCache.delete(linkPreviewCache.keys().next().value);
+  linkPreviewCache.set(url, { at: Date.now(), data });
+  res.json(data);
 });
 
 // 这个号码在系统里入职了吗（员工档案 / 招工申请）——按电话尾号匹配
@@ -37025,6 +37148,7 @@ app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
     // 同人、同方向、同内容、时间差 3 分钟内, 且已有的那份来自别的设备, 就当重复丢弃。
     // 同一设备自己的更新(remote_id 相同, 比如电脑补推译文)不受影响。
     const existsSelf = db.prepare('SELECT id FROM device_sms_messages WHERE device_id=? AND remote_id=?');
+    const saveAlias = db.prepare(`INSERT OR REPLACE INTO device_sms_aliases (device_id, remote_id, message_id) VALUES (?,?,?)`);
     const existsOther = db.prepare(`SELECT id FROM device_sms_messages
       WHERE device_id != ? AND peer=? AND direction=? AND body=?
         AND ABS(strftime('%s', sent_at) - strftime('%s', ?)) <= 180 LIMIT 1`);
@@ -37040,9 +37164,12 @@ app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
         const bodyText = String(m.body || '').slice(0, 4000);
         const sentIso = new Date(sentAt).toISOString();
         // 纯图片彩信没有正文, 也按同人同方向同时间去重 (电脑端和手机 App 都会推彩信)
-        if ((bodyText.trim() || m.kind === 'mms') && !existsSelf.get(req.smsDevice.id, remoteId)
-            && existsOther.get(req.smsDevice.id, peerKey, direction, bodyText, sentIso)) {
-          continue;
+        if ((bodyText.trim() || m.kind === 'mms') && !existsSelf.get(req.smsDevice.id, remoteId)) {
+          const dup = existsOther.get(req.smsDevice.id, peerKey, direction, bodyText, sentIso);
+          if (dup) {
+            saveAlias.run(req.smsDevice.id, remoteId, dup.id);
+            continue;
+          }
         }
         upsert.run(
           req.smsDevice.id, remoteId,
@@ -37507,6 +37634,7 @@ app.delete('/api/device-sms/devices/:id', requireAdmin, requireRole('admin'), (r
 app.delete('/api/device-sms/messages', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const info = db.prepare('DELETE FROM device_sms_messages').run();
+    db.prepare('DELETE FROM device_sms_aliases').run();
     db.prepare('UPDATE device_sms_devices SET message_count=0').run();
     // 收到的图片跟着短信一起清掉
     for (const f of fs.readdirSync(deviceSmsInMediaDir)) {

@@ -181,11 +181,13 @@ public class SyncService extends Service {
      * 图片要等短信那一行在网站上有了才能挂上去，所以先推消息、再传图。
      */
     private int pushMms(String api, String token, SharedPreferences prefs) throws Exception {
-        // 0.7.0 把网站返回的 404（网站还没部署）当成「这张传不了」直接放弃了。
-        // 升级后清掉记录、从头重扫一次，那些图才补得回来（重复推送服务器会覆盖，安全）。
-        if (prefs.getInt("mmsRescan", 0) < 1) {
+        // 之前放弃过的图片，升级后清掉记录、从头重扫一次补回来（重复推送服务器会覆盖，安全）：
+        // 1 = 0.7.0 把 404（网站还没部署）当成传不了；
+        // 2 = 0.7.1 遇到电脑端已推过同一条时网站回 422，现在网站会把图挂到电脑那份上
+        if (prefs.getInt("mmsRescan", 0) < 2) {
             prefs.edit().putLong("mmsCursor", 0).putString("mmsImagesDone", "")
-                    .putString("mmsImageQueue", "[]").putInt("mmsRescan", 1).apply();
+                    .putString("mmsImageQueue", "[]").putInt("mmsRescan", 2)
+                    .putLong("mmsImagesSent", 0).putString("mmsImageError", "").apply();
         }
         long cursor = prefs.getLong("mmsCursor", 0);
         if (cursor == 0) cursor = System.currentTimeMillis() - FIRST_IMPORT_MS;
@@ -249,6 +251,8 @@ public class SyncService extends Service {
                     body.put("data", Base64.encodeToString((byte[]) read[0], Base64.NO_WRAP));
                     Api.postJson(api + "/media-in", token, body);
                     finished = true;
+                    // 只有真传上去的才计数，放弃的不算
+                    prefs.edit().putLong("mmsImagesSent", prefs.getLong("mmsImagesSent", 0) + 1).apply();
                 }
             } catch (Api.HttpError e) {
                 // 400（不收这种图）/ 422（网站上没有这条）重试也没用；
@@ -261,10 +265,7 @@ public class SyncService extends Service {
                 finished = false;
                 prefs.edit().putString("mmsImageError", now() + " " + e.getMessage()).apply();
             }
-            if (finished) {
-                done.append(done.length() > 0 ? "," : "").append(key);
-                prefs.edit().putLong("mmsImagesSent", prefs.getLong("mmsImagesSent", 0) + 1).apply();
-            }
+            if (finished) done.append(done.length() > 0 ? "," : "").append(key);
             else rest.put(image);
         }
 
