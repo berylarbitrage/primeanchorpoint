@@ -16050,6 +16050,10 @@ function _applyDocsMissing(country, files) {
     : '请上传 SSN 正面、EAD 正反面 / Please upload SSN front and EAD front & back';
 }
 
+function _applyAddressError(country) {
+  return country === 'US' ? '请填写完整地址 / Street, city, state and ZIP are required'
+    : '请填写详细地址和城市 / Street address and city are required';
+}
 // 手机号检查: 中国申请不发验证码 (Twilio Verify 发中国要先审核, 报 60220), 只要是 +86 的 11 位手机号;
 // 其余照旧要求验证过。返回报错文案, 没问题返回 ''。
 function _applyPhoneCheck(country, phone, verified) {
@@ -16351,7 +16355,7 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
     if (!name || !phone || !email || !position)
       return res.status(400).json({ error: '请填写姓名、电话、邮箱和职位 / Name, phone, email and position are required' });
     if (!_applyAddressComplete(country, address1, city, state, zip))
-      return res.status(400).json({ error: '请填写完整地址 / Street, city, state and ZIP are required' });
+      return res.status(400).json({ error: _applyAddressError(country) });
     // Require a verified OTP for BOTH the submitted phone and email.
     const verified = (type, tgt) => !!db.prepare(`SELECT id FROM applicant_otp WHERE form_token=? AND type=? AND target=? AND verified=1 ORDER BY id DESC LIMIT 1`).get(token, type, tgt);
     // 中国申请不验证手机 (Twilio 发中国的验证码要先审核, 见 60220), 只核对是 11 位中国手机号
@@ -16451,7 +16455,7 @@ app.post('/api/public/foreman-register', applicantDocUpload.fields([
     const addressVerified = (d.address_verified === '1' || d.address_verified === 1 || d.address_verified === true) ? 1 : 0;
     const country = _applyCountry(d.country);
     if (!name || !phone || !email) return res.status(400).json({ error: '请填写姓名、电话、邮箱 / Name, phone and email are required' });
-    if (!_applyAddressComplete(country, address1, city, state, zip)) return res.status(400).json({ error: '请填写完整地址 / Street, city, state and ZIP are required' });
+    if (!_applyAddressComplete(country, address1, city, state, zip)) return res.status(400).json({ error: _applyAddressError(country) });
     const verified = (type, tgt) => !!db.prepare(`SELECT id FROM applicant_otp WHERE form_token=? AND type=? AND target=? AND verified=1 ORDER BY id DESC LIMIT 1`).get(FT, type, tgt);
     const phoneErr = _applyPhoneCheck(country, phone, verified);
     if (phoneErr) return res.status(400).json({ error: phoneErr });
@@ -33303,7 +33307,9 @@ app.get('/api/geocode', async (req, res) => {
 // 曾有 bug: Google 验证把公寓号并进第一行返回、前端又把原公寓号塞回公寓框, 每验证一次
 // 地址就多一个 Apt —— 清洗在 申请入库/打卡建档/员工保存/验证 兜底。
 // 词归一: 去掉词首尾标点、统一小写 —— "PLAPTF," 与 "plaptf" 视为同一个词
-function _normAddrTok(t) { return String(t).toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, ''); }
+// 去掉词两头的标点再比对。字母/数字按 Unicode 算 —— 之前只认 a-z0-9, 中文地址 (「二七路」)
+// 整段被当成空的丢掉, 中文申请提交时报「请填写完整地址」; 西语的 Ñ、É 开头的词也会被削掉一截。
+function _normAddrTok(t) { return String(t).toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''); }
 function _normAddrLine(s) { return String(s || '').split(/\s+/).map(_normAddrTok).filter(Boolean).join(' '); }
 // 折叠一行里的重复:
 // ① 逗号分段去重 —— 与已留段(归一后)相同或互为词首/词尾子串的段, 只留信息多的那个
