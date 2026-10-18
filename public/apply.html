@@ -280,6 +280,7 @@ const I18N = {
     lAddr1: 'Dirección', lAddr2: 'Apt / Unidad', lCity: 'Ciudad', lState: 'Estado', lZip: 'Código postal',
     addrVerifying: 'Verificando dirección…', addrVerifiedMsg: '✓ Dirección verificada', addrUnverified: 'No se pudo verificar la dirección',
     verifyAddr: 'Verificar dirección', errAddr: 'Completa dirección, ciudad, estado y código postal.',
+    errPhoneCn: 'Ingresa un número móvil chino de 11 dígitos.',
     cnidFront: 'Cédula china — Frente (foto)', cnidBack: 'Cédula china — Reverso (escudo)', errDocsCn: 'Sube ambos lados de tu cédula de identidad china.',
     lStateCn: 'Provincia', lZipCn: 'Código postal', errAddrCn: 'Completa dirección y ciudad.', cnBadge: '🇨🇳 China', addrCnNote: 'Las direcciones de China no se verifican automáticamente.',
     sendCode: 'Enviar código', resend: 'Reenviar', verify: 'Verificar', verified: 'Verificado',
@@ -301,6 +302,7 @@ const I18N = {
     lAddr1: 'Street address', lAddr2: 'Apt / Unit', lCity: 'City', lState: 'State', lZip: 'ZIP code',
     addrVerifying: 'Verifying address…', addrVerifiedMsg: '✓ Address verified', addrUnverified: 'Address could not be verified',
     verifyAddr: 'Verify address', errAddr: 'Please fill in street, city, state and ZIP.',
+    errPhoneCn: 'Please enter an 11-digit China mobile number.',
     cnidFront: 'China ID card — Front (photo side)', cnidBack: 'China ID card — Back (emblem side)', errDocsCn: 'Please upload both sides of your China ID card.',
     lStateCn: 'Province', lZipCn: 'Postal code', errAddrCn: 'Please fill in street and city.', cnBadge: '🇨🇳 China', addrCnNote: 'Addresses in China are not verified automatically.',
     sendCode: 'Send code', resend: 'Resend', verify: 'Verify', verified: 'Verified',
@@ -322,6 +324,7 @@ const I18N = {
     lAddr1: '街道地址', lAddr2: '公寓 / 单元号', lCity: '城市', lState: '州', lZip: '邮编',
     addrVerifying: '正在验证地址…', addrVerifiedMsg: '✓ 地址已验证', addrUnverified: '地址无法验证',
     verifyAddr: '验证地址', errAddr: '请填写街道地址、城市、州和邮编。',
+    errPhoneCn: '请填写 11 位中国手机号。',
     cnidFront: '身份证 正面（人像面）', cnidBack: '身份证 反面（国徽面）', errDocsCn: '请上传身份证正面和反面。',
     lStateCn: '省份', lZipCn: '邮编', errAddrCn: '请填写详细地址和城市。', cnBadge: '🇨🇳 中国申请', addrCnNote: '中国地址无法自动验证，请仔细核对后提交。',
     sendCode: '获取验证码', resend: '重新发送', verify: '验证', verified: '已验证',
@@ -450,6 +453,8 @@ function refreshAddressLabels() {
   document.getElementById('fAddr1').placeholder = CN_MODE ? '天河区天河路 123 号' : '123 Main St';
   document.getElementById('fCity').placeholder = CN_MODE ? '广州市' : '';
   document.getElementById('fPhone').placeholder = CN_MODE ? '138 0013 8000' : '(555) 555-5555';
+  // 中国申请不用手机验证码 (Twilio 发中国验证码要先审核), 只填号码
+  document.getElementById('phoneSendBtn').style.display = CN_MODE ? 'none' : (_verified.phone ? 'none' : '');
   // Google 地址验证不支持中国, 中国申请不显示验证按钮, 换成一句提示
   document.getElementById('addrVerifyBtn').style.display = CN_MODE ? 'none' : '';
   if (CN_MODE) setAddrMsg(L.addrCnNote, true);
@@ -732,7 +737,7 @@ async function submitForm() {
   const zip = document.getElementById('fZip').value.trim();
   if (!name || (!FOREMAN && !position) || !phone || !email) { showErr(L.errFields); return; }
   if (!addr1 || !city || (isUS() && (!state || !zip))) { showErr(isUS() ? L.errAddr : L.errAddrCn); return; }
-  if (!_verified.phone) { showErr(L.errPhone); return; }
+  if (CN_MODE ? !/^\+86 1\d{10}$/.test(phone) : !_verified.phone) { showErr(CN_MODE ? L.errPhoneCn : L.errPhone); return; }
   if (!_verified.email) { showErr(L.errEmail); return; }
   if (CN_MODE ? !(_files.cnid_front && _files.cnid_back) : (!_files.ssn_front || !_files.ead_front || !_files.ead_back)) {
     showErr(CN_MODE ? L.errDocsCn : L.errDocs); return;

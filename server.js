@@ -16050,6 +16050,15 @@ function _applyDocsMissing(country, files) {
     : '请上传 SSN 正面、EAD 正反面 / Please upload SSN front and EAD front & back';
 }
 
+// 手机号检查: 中国申请不发验证码 (Twilio Verify 发中国要先审核, 报 60220), 只要是 +86 的 11 位手机号;
+// 其余照旧要求验证过。返回报错文案, 没问题返回 ''。
+function _applyPhoneCheck(country, phone, verified) {
+  if (country === 'CN') {
+    return /^\+861\d{10}$/.test(phone) ? '' : '请填写 11 位中国手机号 / Please enter an 11-digit China mobile number';
+  }
+  return verified('phone', phone) ? '' : '请先完成手机验证 / Please verify your phone number first';
+}
+
 // 申请表的地址国家: ISO 两位码, 没填或格式不对按美国
 function _applyCountry(raw) {
   const c = String(raw || '').trim().toUpperCase();
@@ -16345,7 +16354,9 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
       return res.status(400).json({ error: '请填写完整地址 / Street, city, state and ZIP are required' });
     // Require a verified OTP for BOTH the submitted phone and email.
     const verified = (type, tgt) => !!db.prepare(`SELECT id FROM applicant_otp WHERE form_token=? AND type=? AND target=? AND verified=1 ORDER BY id DESC LIMIT 1`).get(token, type, tgt);
-    if (!verified('phone', phone)) return res.status(400).json({ error: '请先完成手机验证 / Please verify your phone number first' });
+    // 中国申请不验证手机 (Twilio 发中国的验证码要先审核, 见 60220), 只核对是 11 位中国手机号
+    const phoneErr = _applyPhoneCheck(country, phone, verified);
+    if (phoneErr) return res.status(400).json({ error: phoneErr });
     if (!verified('email', email)) return res.status(400).json({ error: '请先完成邮箱验证 / Please verify your email first' });
     const files = req.files || {};
     const docErr = _applyDocsMissing(country, files);
@@ -16354,7 +16365,7 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
       (partner_id, partner_name, name, phone, email, position, phone_verified, email_verified,
        address1, address2, city, state, zip, address_verified, apply_state, country, user_agent)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
-        p.id, p.name, name, phone, email, position, 1, 1,
+        p.id, p.name, name, phone, email, position, country === 'CN' ? 0 : 1, 1,
         address1, address2, city, state, zip, addressVerified, applyState, country,
         String(req.headers['user-agent'] || '').slice(0, 250));
     const subId = r.lastInsertRowid;
@@ -16442,7 +16453,8 @@ app.post('/api/public/foreman-register', applicantDocUpload.fields([
     if (!name || !phone || !email) return res.status(400).json({ error: '请填写姓名、电话、邮箱 / Name, phone and email are required' });
     if (!_applyAddressComplete(country, address1, city, state, zip)) return res.status(400).json({ error: '请填写完整地址 / Street, city, state and ZIP are required' });
     const verified = (type, tgt) => !!db.prepare(`SELECT id FROM applicant_otp WHERE form_token=? AND type=? AND target=? AND verified=1 ORDER BY id DESC LIMIT 1`).get(FT, type, tgt);
-    if (!verified('phone', phone)) return res.status(400).json({ error: '请先完成手机验证 / Please verify your phone first' });
+    const phoneErr = _applyPhoneCheck(country, phone, verified);
+    if (phoneErr) return res.status(400).json({ error: phoneErr });
     if (!verified('email', email)) return res.status(400).json({ error: '请先完成邮箱验证 / Please verify your email first' });
     const files = req.files || {};
     const docErr = _applyDocsMissing(country, files);
