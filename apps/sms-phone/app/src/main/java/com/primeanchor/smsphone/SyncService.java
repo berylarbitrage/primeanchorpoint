@@ -12,6 +12,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
 import android.provider.Settings;
+import android.util.Base64;
 import android.telephony.SmsManager;
 
 import org.json.JSONArray;
@@ -128,6 +129,8 @@ public class SyncService extends Service {
         try {
             int pushed = pushNew(api, token, prefs);
             pushSendStatus(api, token, prefs);
+            pushed += pushMms(api, token, prefs);
+            uploadMmsImages(api, token, prefs);
             int sent = drainOutbox(api, token);
             if (pushed > 0) {
                 prefs.edit().putLong("pushedTotal", prefs.getLong("pushedTotal", 0) + pushed).apply();
@@ -164,6 +167,109 @@ public class SyncService extends Service {
                 .apply();
         rememberSendStatus(prefs, batch.messages, false);
         return batch.messages.length();
+    }
+
+    // ── 彩信（图片短信） ──
+
+    /** 网站单张图片上限。 */
+    private static final int MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+    /** 每轮补传几张，一张就是一次几百 KB 到几 MB 的上传。 */
+    private static final int IMAGES_PER_TICK = 4;
+
+    /**
+     * 新彩信推上网站（游标和短信分开记），里面的图片排进补传队列。
+     * 图片要等短信那一行在网站上有了才能挂上去，所以先推消息、再传图。
+     */
+    private int pushMms(String api, String token, SharedPreferences prefs) throws Exception {
+        long cursor = prefs.getLong("mmsCursor", 0);
+        if (cursor == 0) cursor = System.currentTimeMillis() - FIRST_IMPORT_MS;
+
+        MmsRepo.Batch batch = MmsRepo.readSince(this, cursor - OVERLAP_MS, 50);
+        if (batch.messages.length() == 0) return 0;
+
+        JSONObject body = new JSONObject();
+        body.put("device_serial", serial());
+        body.put("messages", batch.messages);
+        Api.postJson(api + "/push", token, body);
+
+        // 回看窗口会重读上一轮的彩信，按 id+part 去重，同一张图不排两次
+        JSONArray queue = imageQueue(prefs);
+        java.util.Set<String> queued = new java.util.HashSet<>();
+        for (int i = 0; i < queue.length(); i++) {
+            JSONObject q = queue.getJSONObject(i);
+            queued.add(q.getString("id") + "#" + q.getLong("part"));
+        }
+        java.util.Set<String> done = new java.util.HashSet<>(
+                java.util.Arrays.asList(prefs.getString("mmsImagesDone", "").split(",")));
+        for (int i = 0; i < batch.images.length(); i++) {
+            JSONObject image = batch.images.getJSONObject(i);
+            String key = image.getString("id") + "#" + image.getLong("part");
+            if (queued.add(key) && !done.contains(key)) queue.put(image);
+        }
+        prefs.edit().putLong("mmsCursor", batch.maxDate)
+                .putString("mmsImageQueue", queue.toString())
+                .apply();
+        return batch.messages.length();
+    }
+
+    /** 从队列头补传几张图片。传不上（网站挂了/没网）就停下，下一轮接着传。 */
+    private void uploadMmsImages(String api, String token, SharedPreferences prefs) throws Exception {
+        JSONArray queue = imageQueue(prefs);
+        if (queue.length() == 0) return;
+
+        JSONArray rest = new JSONArray();
+        StringBuilder done = new StringBuilder(prefs.getString("mmsImagesDone", ""));
+        int tried = 0;
+        boolean stop = false;
+        for (int i = 0; i < queue.length(); i++) {
+            JSONObject image = queue.getJSONObject(i);
+            if (stop || tried >= IMAGES_PER_TICK) {
+                rest.put(image);
+                continue;
+            }
+            tried++;
+            String key = image.getString("id") + "#" + image.getLong("part");
+            boolean finished;
+            try {
+                Object[] read = MmsRepo.readImage(this, image.getLong("part"),
+                        image.optString("type"), MAX_IMAGE_BYTES);
+                if (read == null) {
+                    finished = true; // 太大或解不开，重试也一样
+                } else {
+                    JSONObject body = new JSONObject();
+                    body.put("id", image.getString("id"));
+                    body.put("part_id", image.getLong("part"));
+                    body.put("type", read[1]);
+                    body.put("data", Base64.encodeToString((byte[]) read[0], Base64.NO_WRAP));
+                    Api.postJson(api + "/media-in", token, body);
+                    finished = true;
+                }
+            } catch (Api.HttpError e) {
+                // 400/404（网站上没有这条，或不收这种图）不会因为重试变好；其余的下轮再来
+                finished = e.code == 400 || e.code == 404;
+                if (!finished) stop = true;
+            } catch (Exception e) {
+                stop = true; // 没网等，下一轮再传
+                finished = false;
+            }
+            if (finished) done.append(done.length() > 0 ? "," : "").append(key);
+            else rest.put(image);
+        }
+
+        // 已传记录只留最近这些，回看窗口用得到就够了
+        String doneList = done.toString();
+        if (doneList.length() > 8000) doneList = doneList.substring(doneList.indexOf(',', doneList.length() - 8000) + 1);
+        prefs.edit().putString("mmsImageQueue", rest.toString())
+                .putString("mmsImagesDone", doneList)
+                .apply();
+    }
+
+    private static JSONArray imageQueue(SharedPreferences prefs) {
+        try {
+            return new JSONArray(prefs.getString("mmsImageQueue", "[]"));
+        } catch (Exception e) {
+            return new JSONArray();
+        }
     }
 
     /** 最近发出的短信多久之内还要盯着状态变化。 */

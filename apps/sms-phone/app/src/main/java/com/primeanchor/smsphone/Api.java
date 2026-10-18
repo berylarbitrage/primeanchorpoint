@@ -50,12 +50,22 @@ final class Api {
             String text = readAll(stream);
             if (code == 401) throw new IOException("网站不认这个令牌，请重新生成一个");
             if (code >= 400) {
-                throw new IOException("网站返回 " + code
+                throw new HttpError(code, "网站返回 " + code
                         + (text.isEmpty() ? "" : ": " + text.substring(0, Math.min(120, text.length()))));
             }
             return text.isEmpty() ? new JSONObject() : new JSONObject(text);
         } finally {
             conn.disconnect();
+        }
+    }
+
+    /** 网站回了错误码；调用方据此判断值不值得下一轮重试。 */
+    static final class HttpError extends IOException {
+        final int code;
+
+        HttpError(int code, String message) {
+            super(message);
+            this.code = code;
         }
     }
 

@@ -37038,7 +37038,8 @@ app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
         const direction = m.direction === 'out' ? 'out' : 'in';
         const bodyText = String(m.body || '').slice(0, 4000);
         const sentIso = new Date(sentAt).toISOString();
-        if (bodyText.trim() && !existsSelf.get(req.smsDevice.id, remoteId)
+        // 纯图片彩信没有正文, 也按同人同方向同时间去重 (电脑端和手机 App 都会推彩信)
+        if ((bodyText.trim() || m.kind === 'mms') && !existsSelf.get(req.smsDevice.id, remoteId)
             && existsOther.get(req.smsDevice.id, peerKey, direction, bodyText, sentIso)) {
           continue;
         }
