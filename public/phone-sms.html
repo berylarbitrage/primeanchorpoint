@@ -561,11 +561,16 @@ function dedupeMessages(list) {
       const m = arr[i];
       const close = new Date(sqlTime(m.sent_at)) - new Date(sqlTime(kept.sent_at)) <= 180000;
       if (close && m.device_id !== kept.device_id) {
+        // 两份各有所长时合到留下的那份上: 一份有译文, 另一份可能才有图片
+        // (电脑端先推了没图的那份, 手机 App 后推、图片挂在自己那份上)
+        const keptMedia = inMedia(kept).length ? kept.media : '', otherMedia = inMedia(m).length ? m.media : '';
         if (!kept.translated_body && m.translated_body) {
           m.sent_at = kept.sent_at;
+          if (!otherMedia && keptMedia) m.media = keptMedia;
           drop.add(kept);
           kept = m;
         } else {
+          if (!keptMedia && otherMedia) kept.media = otherMedia;
           drop.add(m);
         }
       } else {
