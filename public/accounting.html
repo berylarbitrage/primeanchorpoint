@@ -718,10 +718,19 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
 
   <!-- 🧾 介绍费关联发票弹窗 (会计): 勾选能证明被介绍人在干活的发票, 供管理员核查 -->
   <div id="refInvModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:92;align-items:center;justify-content:center;padding:16px">
-    <div class="card" style="max-width:640px;width:100%;padding:1.2rem 1.2rem 1rem;max-height:92vh;overflow:auto;display:flex;flex-direction:column">
+    <div class="card" style="max-width:780px;width:100%;padding:1.2rem 1.2rem 1rem;max-height:92vh;overflow:auto;display:flex;flex-direction:column">
       <div style="font-weight:800;margin-bottom:.2rem">🧾 关联发票</div>
       <div id="riTitle" style="font-size:.8rem;color:var(--g500);margin-bottom:.7rem"></div>
-      <input type="text" id="riSearch" placeholder="搜发票号 / 公司…" oninput="riRenderList()" style="width:100%;margin-bottom:.45rem">
+      <input type="text" id="riSearch" placeholder="搜发票号 / 公司 / 地址…" oninput="riRenderList()" style="width:100%;margin-bottom:.35rem">
+      <div style="display:flex;gap:.35rem;flex-wrap:wrap;align-items:center;margin-bottom:.45rem;font-size:.78rem">
+        <select id="riCo" onchange="riCoChanged()" style="flex:1 1 160px;min-width:0;font-size:.78rem" title="按公司筛选"></select>
+        <select id="riAddr" onchange="riRenderList()" style="flex:1 1 200px;min-width:0;font-size:.78rem" title="按地址筛选"></select>
+        <span style="white-space:nowrap;color:var(--g500)">账期</span>
+        <input type="date" id="riFrom" onchange="riRenderList()" style="font-size:.76rem" title="账期从">
+        <span style="color:var(--g400)">~</span>
+        <input type="date" id="riTo" onchange="riRenderList()" style="font-size:.76rem" title="账期到">
+        <a style="cursor:pointer;color:var(--g400);text-decoration:underline;white-space:nowrap" onclick="riClearFilters()">清除筛选</a>
+      </div>
       <div id="riList" style="max-height:44vh;min-height:200px;overflow:auto;border:1px solid var(--g200);border-radius:8px;padding:.3rem .45rem;font-size:.82rem;background:#fafafa;margin-bottom:.55rem">加载中…</div>
       <label style="font-size:.76rem;color:var(--g500)">说明（可选，例：INV-1023 第 3 行是这个工人的工时）</label>
       <input type="text" id="riNote" placeholder="" style="width:100%;margin:.15rem 0 .4rem">
@@ -3552,27 +3561,66 @@ function openRefInv(id) {
   _riOpen.forEach(riLoadLines);
   document.getElementById('riTitle').textContent = `工头 ${r.foreman_name || ''} 介绍 ${r.worker_name || ''}${r.warehouse_name ? ' · ' + r.warehouse_name : ''} — 勾选能证明这个工人在干活的发票`;
   document.getElementById('riSearch').value = '';
+  document.getElementById('riFrom').value = ''; document.getElementById('riTo').value = '';
+  // 公司下拉: 全部发票里出现过的公司; 被介绍人工作的仓库名对得上某家公司就默认选它
+  const cos = [...new Set(_invList.map(v => (v.company_name || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const wh = String(r.warehouse_name || '').trim().toLowerCase();
+  const guess = wh ? (cos.find(c => c.toLowerCase() === wh) || cos.find(c => c.toLowerCase().includes(wh) || wh.includes(c.toLowerCase())) || '') : '';
+  document.getElementById('riCo').innerHTML = '<option value="">全部公司</option>' + cos.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  document.getElementById('riCo').value = guess;
+  riFillAddr();
   document.getElementById('riNote').value = r.invoice_note || '';
   document.getElementById('refInvModal').style.display = 'flex';
   riRenderList();
 }
+const _riAddrOf = v => String(v.bill_to_addr || '').split(/\s*\n\s*/).map(x => x.trim()).filter(Boolean).join(', ');
+// 地址下拉跟着公司走: 选了公司只列这家公司的地址
+function riFillAddr() {
+  const co = document.getElementById('riCo').value;
+  const addrs = [...new Set(_invList.filter(v => !co || (v.company_name || '').trim() === co).map(_riAddrOf).filter(Boolean))].sort();
+  const el = document.getElementById('riAddr'), cur = el.value;
+  el.innerHTML = '<option value="">全部地址</option>' + addrs.map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join('');
+  el.value = addrs.includes(cur) ? cur : '';
+}
+function riCoChanged() { riFillAddr(); riRenderList(); }
+function riClearFilters() {
+  ['riSearch', 'riFrom', 'riTo'].forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('riCo').value = ''; riFillAddr(); document.getElementById('riAddr').value = ''; riRenderList();
+}
 function riRenderList() {
   const q = (document.getElementById('riSearch').value || '').trim().toLowerCase();
+  const co = document.getElementById('riCo').value, addr = document.getElementById('riAddr').value;
+  const from = document.getElementById('riFrom').value, to = document.getElementById('riTo').value;
   let rows = _invList;
-  if (q) rows = rows.filter(v => (v.invoice_number || '').toLowerCase().includes(q) || (v.company_name || '').toLowerCase().includes(q));
-  // 已勾选的置顶, 其余按日期新旧, 最多显示 200 张
-  const sel = rows.filter(v => _riSel.has(v.id)), rest = rows.filter(v => !_riSel.has(v.id)).slice(0, 200);
+  if (q) rows = rows.filter(v => [v.invoice_number, v.company_name, _riAddrOf(v)].join(' ').toLowerCase().includes(q));
+  if (co) rows = rows.filter(v => (v.company_name || '').trim() === co);
+  if (addr) rows = rows.filter(v => _riAddrOf(v) === addr);
+  // 账期和筛选区间有重叠就算 (没账期的按开票日)
+  if (from || to) rows = rows.filter(v => {
+    const a = v.period_start || v.invoice_date || '', b = v.period_end || v.period_start || v.invoice_date || '';
+    if (!a && !b) return false;
+    return (!from || (b || a) >= from) && (!to || (a || b) <= to);
+  });
+  // 已勾选的不管筛选都置顶显示 (看得到已经关联了哪些), 其余按日期新旧, 最多显示 200 张
+  const sel = _invList.filter(v => _riSel.has(v.id)), rest = rows.filter(v => !_riSel.has(v.id)).slice(0, 200);
+  const shownN = rows.filter(v => !_riSel.has(v.id)).length;
   document.getElementById('riList').innerHTML = (sel.length + rest.length)
     ? [...sel, ...rest].map(v => {
         const on = _riSel.has(v.id), n = (_riLines[v.id] || new Set()).size, open = _riOpen.has(v.id);
         return `<div style="border-bottom:1px solid #eef2f7;${on ? 'background:#eff6ff' : ''}" data-row="${v.id}">
         <div style="display:flex;align-items:center;gap:.45rem;padding:.3rem .25rem">
-          <label style="display:flex;align-items:center;gap:.45rem;flex:1;min-width:0;cursor:pointer">
-            <input type="checkbox" data-inv="${v.id}" ${on ? 'checked' : ''} onchange="riToggle(this)">
-            <b style="white-space:nowrap">${esc(v.invoice_number)}</b>
-            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.company_name || '')}</span>
-            <span style="white-space:nowrap;color:var(--g500);font-size:.74rem" title="发票账期，用来算工人做了多久">${(v.period_start || v.period_end) ? `账期 ${esc(v.period_start || '?')} ~ ${esc(v.period_end || '?')}` : esc(v.invoice_date || '')}</span>
-            <b style="white-space:nowrap">${money(v.subtotal)}</b>
+          <label style="display:flex;align-items:flex-start;gap:.45rem;flex:1;min-width:0;cursor:pointer">
+            <input type="checkbox" data-inv="${v.id}" ${on ? 'checked' : ''} onchange="riToggle(this)" style="margin-top:3px">
+            <span style="flex:1;min-width:0">
+              <span style="display:flex;gap:.45rem;align-items:baseline;flex-wrap:wrap">
+                <b style="white-space:nowrap">${esc(v.invoice_number)}</b>
+                <span style="white-space:nowrap;color:var(--g500);font-size:.74rem" title="发票账期，用来算工人做了多久">${(v.period_start || v.period_end) ? `账期 ${esc(v.period_start || '?')} ~ ${esc(v.period_end || '?')}` : esc(v.invoice_date || '')}</span>
+                <b style="white-space:nowrap;margin-left:auto">${money(v.subtotal)}</b>
+              </span>
+              <span style="display:block;font-size:.76rem;line-height:1.35;margin-top:1px">
+                <span style="font-weight:600;color:var(--g700)">${esc(v.company_name || '')}</span>${_riAddrOf(v) ? `<span style="color:var(--g500)"> · 📍 ${esc(_riAddrOf(v))}</span>` : ''}
+              </span>
+            </span>
           </label>
           <button type="button" class="btn btn-outline" style="padding:1px 7px;font-size:.7rem;white-space:nowrap;${n ? 'color:#1d4ed8;border-color:#93c5fd' : ''}"
             onclick="riToggleOpen(${v.id})" title="勾这张发票里具体是哪一行（这个工人那一行）">${open ? '收起' : '选条目'}${n ? ` · ${n}` : ''}</button>
@@ -3581,6 +3629,8 @@ function riRenderList() {
       </div>`;
       }).join('')
     : '<span style="color:var(--g400)">没有符合条件的发票</span>';
+  if (shownN > 200) document.getElementById('riList').insertAdjacentHTML('beforeend',
+    `<div style="color:var(--g400);font-size:.74rem;padding:.3rem">还有 ${shownN - 200} 张没显示，用上面的筛选缩小范围</div>`);
   riSumRefresh();
 }
 // 名字对得上: 被介绍人名字的每个词都出现在这一行的名字里 (不分大小写和重音)
