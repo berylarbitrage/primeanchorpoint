@@ -232,7 +232,7 @@ async function main() {
     pendingMediaUploads([
       message({
         uploadedState: 'done',
-        attachments: [pic({ uploaded: true }), pic({ file: undefined }), pic({ contentType: 'image/heic' })],
+        attachments: [pic({ pushed: true }), pic({ file: undefined }), pic({ contentType: 'image/heic' })],
       }),
     ]).length,
     0,
@@ -252,8 +252,11 @@ async function main() {
   check('it goes to media-in', mediaReq.url, 'https://example.com/api/device-sms/media-in')
   check('with the message and part ids', [mediaReq.body.id, mediaReq.body.part_id, mediaReq.body.data], ['dev:mms:5', 7, 'YWJj'])
   const gone = await pushMedia({ url: 'https://example.com/x', token: 't' }, 'x', pic(), Buffer.from('a'),
-    async () => ({ ok: false, status: 404, text: async () => 'no' }))
-  check('a 404 is final, not retried forever', gone.done, true)
+    async () => ({ ok: false, status: 422, text: async () => 'no' }))
+  check('a 422 (no such message) is final, not retried forever', gone.done, true)
+  const undeployed = await pushMedia({ url: 'https://example.com/x', token: 't' }, 'x', pic(), Buffer.from('a'),
+    async () => ({ ok: false, status: 404, text: async () => 'Cannot POST' }))
+  check('a 404 (website not deployed yet) is retried', undeployed.done, false)
   const down = await pushMedia({ url: 'https://example.com/x', token: 't' }, 'x', pic(), Buffer.from('a'),
     async () => ({ ok: false, status: 502, text: async () => '' }))
   check('a 502 is retried', down.done, false)

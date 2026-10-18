@@ -181,6 +181,12 @@ public class SyncService extends Service {
      * 图片要等短信那一行在网站上有了才能挂上去，所以先推消息、再传图。
      */
     private int pushMms(String api, String token, SharedPreferences prefs) throws Exception {
+        // 0.7.0 把网站返回的 404（网站还没部署）当成「这张传不了」直接放弃了。
+        // 升级后清掉记录、从头重扫一次，那些图才补得回来（重复推送服务器会覆盖，安全）。
+        if (prefs.getInt("mmsRescan", 0) < 1) {
+            prefs.edit().putLong("mmsCursor", 0).putString("mmsImagesDone", "")
+                    .putString("mmsImageQueue", "[]").putInt("mmsRescan", 1).apply();
+        }
         long cursor = prefs.getLong("mmsCursor", 0);
         if (cursor == 0) cursor = System.currentTimeMillis() - FIRST_IMPORT_MS;
 
@@ -245,14 +251,20 @@ public class SyncService extends Service {
                     finished = true;
                 }
             } catch (Api.HttpError e) {
-                // 400/404（网站上没有这条，或不收这种图）不会因为重试变好；其余的下轮再来
-                finished = e.code == 400 || e.code == 404;
+                // 400（不收这种图）/ 422（网站上没有这条）重试也没用；
+                // 404 是网站还没部署这个接口，和 5xx 一样留着下轮再来
+                finished = e.code == 400 || e.code == 422;
                 if (!finished) stop = true;
+                prefs.edit().putString("mmsImageError", now() + " " + e.getMessage()).apply();
             } catch (Exception e) {
                 stop = true; // 没网等，下一轮再传
                 finished = false;
+                prefs.edit().putString("mmsImageError", now() + " " + e.getMessage()).apply();
             }
-            if (finished) done.append(done.length() > 0 ? "," : "").append(key);
+            if (finished) {
+                done.append(done.length() > 0 ? "," : "").append(key);
+                prefs.edit().putLong("mmsImagesSent", prefs.getLong("mmsImagesSent", 0) + 1).apply();
+            }
             else rest.put(image);
         }
 
