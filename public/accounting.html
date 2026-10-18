@@ -4041,34 +4041,57 @@ function _truckSizeCell(r) {
   return `<span>${txt}</span>${changed ? ` <span data-tip="${esc(`会计改过车型${r.size_by ? '（' + r.size_by + '）' : ''}，Bintique 上是「${r.bintique_size || '没填'}」`)}" style="font-size:.62rem;color:#1d4ed8;background:#eff6ff;border:1px solid #bfdbfe;border-radius:4px;padding:0 4px">已改</span>` : ''}
     <a onclick="truckSizeEdit(this, ${JSON.stringify(String(r.order_id)).replace(/"/g, '&quot;')})" title="改车型" style="cursor:pointer;color:#1d4ed8;margin-left:2px">✎</a>`;
 }
-// 点 ✎ 原地换成「下拉 + 确定 / 取消」: 选好按确定才存, 取消 (或 Esc) 不改
+// 点 ✎ 弹窗改车型: 选好按「确定」才存, 取消 / Esc / 点外面不改
 function truckSizeEdit(a, orderId) {
   const r = _truckRows.find(x => x.order && String(x.order_id) === String(orderId));
   if (!r) return;
-  const td = a.closest('td');
-  td.innerHTML = `<span style="display:inline-flex;gap:.25rem;align-items:center">
-    <select style="font-size:.76rem;padding:1px 2px">
-      <option value="">${r.bintique_size ? `按 Bintique（${esc(r.bintique_size)}）` : '— 没填 —'}</option>
-      ${TRUCK_SIZES.map(z => `<option value="${z}" ${z === r.truck_size && r.truck_size !== r.bintique_size ? 'selected' : ''}>${z}</option>`).join('')}
-    </select>
-    <button type="button" class="btn btn-sm" data-act="ok" style="background:#16a34a;color:#fff;padding:2px 8px;font-size:.72rem">✓ 确定</button>
-    <button type="button" class="btn btn-sm btn-outline" data-act="cancel" style="padding:2px 8px;font-size:.72rem">取消</button>
-  </span>`;
-  const sel = td.querySelector('select'), ok = td.querySelector('[data-act="ok"]');
-  sel.focus();
-  sel.onkeydown = e => { if (e.key === 'Escape') renderTruckList(); };
-  td.querySelector('[data-act="cancel"]').onclick = () => renderTruckList();
+  let m = document.getElementById('truckSizeModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'truckSizeModal';
+    m.style.cssText = 'display:none;position:fixed;inset:0;z-index:2000;background:rgba(15,23,42,.45);align-items:center;justify-content:center;padding:16px';
+    m.onclick = e => { if (e.target === m) closeTruckSize(); };
+    document.body.appendChild(m);
+  }
+  const cur = r.truck_size && r.truck_size !== (r.bintique_size || '') ? r.truck_size : '';
+  const opt = (v, label, sub) => `<label style="display:flex;align-items:center;gap:.55rem;border:1px solid var(--g200);border-radius:8px;padding:.5rem .7rem;cursor:pointer;font-size:.88rem">
+      <input type="radio" name="tszOpt" value="${v}" ${v === cur ? 'checked' : ''}> <span style="font-weight:600">${label}</span>${sub ? `<span style="color:var(--g500);font-size:.78rem">${sub}</span>` : ''}</label>`;
+  m.innerHTML = `<div class="card" style="max-width:380px;width:100%;padding:1.2rem 1.3rem">
+    <div style="font-size:1.02rem;font-weight:700;margin-bottom:.3rem">🚚 修改车型</div>
+    <div style="font-size:.8rem;color:var(--g500);margin-bottom:.8rem;line-height:1.6">${esc([r.rental_code, r.customer, r.date, money(r.amount)].filter(Boolean).join(' · '))}<br>
+      现在：<b style="color:var(--g700)">${esc(r.truck_size || '没填')}</b> · Bintique 上：${esc(r.bintique_size || '没填')}</div>
+    <div style="display:flex;flex-direction:column;gap:.4rem">
+      ${opt('', r.bintique_size ? `按 Bintique（${esc(r.bintique_size)}）` : '按 Bintique（没填）', '不另改')}
+      ${TRUCK_SIZES.map(z => opt(z, parseInt(z) + ' 尺', '(' + z + ')')).join('')}
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem">
+      <button type="button" class="btn btn-outline" data-act="cancel">取消</button>
+      <button type="button" class="btn btn-blue" data-act="ok">确定</button>
+    </div>
+  </div>`;
+  m.style.display = 'flex';
+  const ok = m.querySelector('[data-act="ok"]');
+  m.querySelector('[data-act="cancel"]').onclick = closeTruckSize;
+  document.addEventListener('keydown', _truckSizeEsc);
   ok.onclick = async () => {
-    ok.disabled = sel.disabled = true;
+    const v = (m.querySelector('input[name="tszOpt"]:checked') || {}).value || '';
+    ok.disabled = true;
     try {
-      const res = await api('/api/acct/truck-orders/' + encodeURIComponent(orderId) + '/size', { method: 'POST', body: JSON.stringify({ truck_size: sel.value }) });
+      const res = await api('/api/acct/truck-orders/' + encodeURIComponent(orderId) + '/size', { method: 'POST', body: JSON.stringify({ truck_size: v }) });
       if (res && res.error) throw new Error(res.error);
-      r.truck_size = sel.value || r.bintique_size || '';
-      r.size_by = sel.value ? (USER.username || '') : '';
-      toast(sel.value ? `✅ 车型改为 ${sel.value}` : '已改回 Bintique 上的车型');
-    } catch (e) { toast(e.message || '保存失败', true); }
-    renderTruckList();
+      r.truck_size = v || r.bintique_size || '';
+      r.size_by = v ? (USER.username || '') : '';
+      toast(v ? `✅ 车型改为 ${v}` : '已改回 Bintique 上的车型');
+      closeTruckSize();
+      renderTruckList();
+    } catch (e) { toast(e.message || '保存失败', true); ok.disabled = false; }
   };
+}
+function _truckSizeEsc(e) { if (e.key === 'Escape') closeTruckSize(); }
+function closeTruckSize() {
+  const m = document.getElementById('truckSizeModal');
+  if (m) m.style.display = 'none';
+  document.removeEventListener('keydown', _truckSizeEsc);
 }
 function renderTruckList() {
   const q = (document.getElementById('truckSearch').value || '').toLowerCase();
