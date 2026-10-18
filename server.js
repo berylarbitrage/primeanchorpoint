@@ -35352,6 +35352,8 @@ try { db.exec(`ALTER TABLE device_sms_messages ADD COLUMN needs_retranslate INTE
 try { db.exec(`CREATE INDEX IF NOT EXISTS idx_device_sms_starred ON device_sms_messages(starred)`); } catch(e) {}
 // 发出去的那条在手机短信库里的状态: sending / sent / delivered / failed (空 = 收到的, 或旧版客户端没报)
 try { db.exec(`ALTER TABLE device_sms_messages ADD COLUMN send_status TEXT DEFAULT ''`); } catch(e) {}
+// 收到的彩信图片 (电脑端补传上来的), JSON 数组 [{part, file}]; 文件在 uploads/device-sms-in, 要登录才能看
+try { db.exec(`ALTER TABLE device_sms_messages ADD COLUMN media TEXT DEFAULT '[]'`); } catch(e) {}
 
 function deviceSmsHashToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
@@ -35396,6 +35398,50 @@ app.get('/i/:file', (req, res) => {
   const full = path.join(deviceSmsMediaDir, file);
   if (!fs.existsSync(full)) return res.status(404).end();
   res.sendFile(full, { maxAge: '365d' });
+});
+
+// ─── 收到的图片: 电脑端从手机下载彩信附件后补传上来 ───
+// 和上面发出去的图片不同, 这些是别人发给我们的(可能是证件、工时单), 不公开:
+// 只有登录的管理员/客服能看。文件名由 设备+短信+附件 id 算出来, 重传同一张是覆盖不是多一份。
+const deviceSmsInMediaDir = path.join(uploadsDir, 'device-sms-in');
+if (!fs.existsSync(deviceSmsInMediaDir)) fs.mkdirSync(deviceSmsInMediaDir, { recursive: true });
+
+app.post('/api/device-sms/media-in', deviceSmsAuth, (req, res) => {
+  try {
+    const { id, part_id, type, data } = req.body || {};
+    const ext = DEVICE_SMS_IMG_TYPES[String(type) === 'image/jpg' ? 'image/jpeg' : String(type)];
+    if (!ext) return res.status(400).json({ error: '只收 jpg / png / gif / webp' });
+    const remoteId = String(id || '').slice(0, 120);
+    const part = Number(part_id);
+    if (!remoteId || !Number.isFinite(part)) return res.status(400).json({ error: '缺少短信或附件 id' });
+    const row = db.prepare('SELECT id, media FROM device_sms_messages WHERE device_id=? AND remote_id=?')
+      .get(req.smsDevice.id, remoteId);
+    if (!row) return res.status(404).json({ error: '网站上没有这条短信' });
+    const buf = Buffer.from(String(data || ''), 'base64');
+    if (!buf.length) return res.status(400).json({ error: '空文件' });
+    if (buf.length > 10 * 1024 * 1024) return res.status(400).json({ error: '图片太大（上限 10MB）' });
+
+    const name = crypto.createHash('sha256').update(req.smsDevice.id + ':' + remoteId + ':' + part)
+      .digest('hex').slice(0, 32) + '.' + ext;
+    fs.writeFileSync(path.join(deviceSmsInMediaDir, name), buf);
+    let media = [];
+    try { media = JSON.parse(row.media || '[]'); } catch (_) {}
+    if (!Array.isArray(media)) media = [];
+    media = media.filter(m => m && m.part !== part).concat([{ part, file: name }]).sort((a, b) => a.part - b.part);
+    db.prepare(`UPDATE device_sms_messages SET media=?, has_media=1, updated_at=datetime('now') WHERE id=?`)
+      .run(JSON.stringify(media), row.id);
+    res.json({ success: true, file: name });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/device-sms/media-in/:file', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
+  const file = String(req.params.file || '');
+  if (!/^[a-f0-9]{32}\.(jpg|png|gif|webp)$/.test(file)) return res.status(404).end();
+  const full = path.join(deviceSmsInMediaDir, file);
+  if (!fs.existsSync(full)) return res.status(404).end();
+  // 私人图片: 只让浏览器自己缓存, 不给中间的代理/CDN 缓存
+  res.set('Cache-Control', 'private, max-age=2592000');
+  res.sendFile(full, { cacheControl: false });
 });
 
 // 这个号码在系统里入职了吗（员工档案 / 招工申请）——按电话尾号匹配
@@ -37460,6 +37506,10 @@ app.delete('/api/device-sms/messages', requireAdmin, requireRole('admin'), (req,
   try {
     const info = db.prepare('DELETE FROM device_sms_messages').run();
     db.prepare('UPDATE device_sms_devices SET message_count=0').run();
+    // 收到的图片跟着短信一起清掉
+    for (const f of fs.readdirSync(deviceSmsInMediaDir)) {
+      try { fs.unlinkSync(path.join(deviceSmsInMediaDir, f)); } catch (_) {}
+    }
     res.json({ success: true, deleted: info.changes });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

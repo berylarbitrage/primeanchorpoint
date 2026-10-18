@@ -10,7 +10,7 @@
  * message is re-sent once its translation arrives, so a row pushed before
  * Claude answered gets its translation filled in on the next pass.
  */
-import type { SmsMessage } from '../../shared/types'
+import type { Attachment, SmsMessage } from '../../shared/types'
 
 export interface PushTarget {
   /** Full endpoint, e.g. https://primeanchorworkforce.com/api/device-sms/push */
@@ -66,7 +66,7 @@ export function serialise(message: SmsMessage): Record<string, unknown> {
     risk_score: message.analysis ? message.analysis.risk : null,
     risk_category: message.analysis?.category ?? '',
     risk_summary: message.analysis?.summary ?? '',
-    // The image itself stays on this machine; only the fact of it travels.
+    // The picture itself follows separately (pushMedia), once this row exists.
     has_media: (message.attachments?.length ?? 0) > 0,
     // Outgoing only: sending / sent / delivered / failed, straight from the phone.
     send_status: message.sendStatus ?? '',
@@ -121,6 +121,77 @@ export async function pushMessages(
       ok: false,
       saved: 0,
       error: `连不上网站：${err instanceof Error ? err.message : String(err)}`,
+    }
+  }
+}
+
+/** Picture types a browser can show; the website accepts only these. */
+const UPLOADABLE_IMAGES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'])
+/** The website's per-file cap. */
+const MAX_MEDIA_BYTES = 10 * 1024 * 1024
+/** Pictures per pass — each is one request of up to a few MB. */
+export const MEDIA_BATCH = 4
+
+export interface MediaUpload {
+  message: SmsMessage
+  attachment: Attachment
+}
+
+/**
+ * Downloaded pictures the website does not have yet. Only for messages it
+ * already has: the picture is attached to an existing row there.
+ */
+export function pendingMediaUploads(messages: SmsMessage[], limit = MEDIA_BATCH): MediaUpload[] {
+  const out: MediaUpload[] = []
+  for (const message of messages) {
+    if (message.uploadedState === undefined || !message.attachments) continue
+    for (const attachment of message.attachments) {
+      if (!attachment.file || attachment.uploaded) continue
+      if (!UPLOADABLE_IMAGES.has(attachment.contentType.toLowerCase())) continue
+      if ((attachment.bytes ?? 0) > MAX_MEDIA_BYTES) continue
+      out.push({ message, attachment })
+      if (out.length >= limit) return out
+    }
+  }
+  return out
+}
+
+/**
+ * Send one picture. `done` means stop trying: it landed, or the website said
+ * it never will (the row is gone, the type is refused).
+ */
+export async function pushMedia(
+  target: PushTarget,
+  messageId: string,
+  attachment: Attachment,
+  data: Buffer,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ done: boolean; error?: string }> {
+  try {
+    const res = await fetchImpl(`${endpointBase(target.url)}/media-in`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${target.token}`,
+      },
+      body: JSON.stringify({
+        id: messageId,
+        part_id: attachment.partId,
+        type: attachment.contentType.toLowerCase(),
+        data: data.toString('base64'),
+      }),
+    })
+    if (res.ok) return { done: true }
+    const text = await res.text().catch(() => '')
+    // 400 / 404 will not change on a retry; anything else (5xx, 401) might.
+    return {
+      done: res.status === 400 || res.status === 404,
+      error: `上传图片：网站返回 ${res.status}${text ? `：${text.slice(0, 200)}` : ''}`,
+    }
+  } catch (err) {
+    return {
+      done: false,
+      error: `上传图片：连不上网站：${err instanceof Error ? err.message : String(err)}`,
     }
   }
 }

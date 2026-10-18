@@ -61,6 +61,8 @@ export interface Attachment {
   error?: string
   /** Claude's description / OCR of the image, when enabled. */
   description?: string
+  /** The file has been sent to the website (or the website declined it for good). */
+  uploaded?: boolean
 }
 
 export interface SmsMessage {

@@ -797,7 +797,9 @@ function renderDetail(convos) {
     const showBoth = translated && translated !== (m.body || '').trim();
     return divider + '<div class="msg-row ' + (m.direction === 'out' ? 'out' : 'in') + '">'
       + '<div class="msg-bubble' + (Number(m.risk_score) >= 4 ? ' risky' : '') + '">'
-      + bodyHtml(m.body || (m.has_media ? '［图片短信］' : ''))
+      + bodyHtml(m.body || (m.has_media && !inMedia(m).length ? '［图片短信］' : ''))
+      + inMedia(m).map(f => '<a href="/api/device-sms/media-in/' + f + '" target="_blank" rel="noopener">'
+        + '<img class="msg-img" src="/api/device-sms/media-in/' + f + '" loading="lazy"></a>').join('')
       + (showBoth ? '<div class="msg-translation">' + esc(translated) + '</div>' : '')
       + '</div>'
       + '<div class="msg-meta">'
@@ -1340,6 +1342,14 @@ function renderImgChip() {
 function clearImage() { PENDING_IMG = null; renderImgChip(); }
 
 /* 短信里我们自己的图片链接直接显示成图。 */
+/* 收到的彩信图片（电脑端补传上来的），只取格式正确的文件名 */
+function inMedia(m) {
+  let list = [];
+  try { list = JSON.parse(m.media || '[]'); } catch (_) {}
+  return (Array.isArray(list) ? list : []).map(x => x && x.file)
+    .filter(f => /^[a-f0-9]{32}\.(jpg|png|gif|webp)$/.test(f || ''));
+}
+
 function bodyHtml(text) {
   return esc(text).replace(/(https?:\/\/[^\s&<]+\/i\/[a-f0-9]{32}\.(?:jpg|png|gif|webp))/g,
     '<a href="$1" target="_blank" rel="noopener"><img class="msg-img" src="$1" loading="lazy"></a>');
