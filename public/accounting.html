@@ -5440,7 +5440,9 @@ _csfDefs.inv = {
   allRows: () => _invList,
   rerender: () => renderInvList(),
   cols: [
+    { label: '', type: null },
     { label: '发票号', type: 'text', get: r => r.invoice_number },
+    { label: '工人银行', type: 'text', get: r => _invLineBankState(r)[0] },
     { label: '日期', type: 'date', get: r => r.invoice_date },
     { label: '公司', type: 'text', get: r => r.company_name },
     { label: '账期', type: 'text', get: r => (r.period_start || '?') + ' ~ ' + (r.period_end || '?') },
@@ -5453,9 +5455,17 @@ _csfDefs.inv = {
     { label: '收款明细（每笔，点开看银行记录）', type: 'search', get: r => _invPayInfo(r).detail.map(d => `${d.date} ${d.amt.toFixed(2)} ${d.bank} ${d.desc}`).join(' | ') },
     { label: '付款备注', type: 'search', cls: 'inv-note', get: r => _invPayNoteText(r) },
     { label: '批注', type: 'num', get: r => r.annotation_count || 0 },
-    { label: '', type: null },
   ],
 };
+// 这张发票的工人是不是都关联了银行付款记录 (发票里逐行的付款备注) → [筛选用文字, 显示用 html]
+function _invLineBankState(r) {
+  const lp = r.line_pay || {}, n = lp.total || 0, k = Math.min(lp.linked || 0, n);
+  if (!n) return ['无工人行', '<span style="color:var(--g300)">—</span>'];
+  const tip = `${n} 个工人: ${k} 个关联了银行记录, ${lp.paid || 0} 个记了已付`;
+  if (k >= n) return ['全部关联', `<span data-tip="${tip}" style="white-space:nowrap;font-weight:700;color:#047857;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:999px;padding:1px 7px;font-size:.74rem">🏦 ${k}/${n} 全部关联</span>`];
+  if (k > 0) return ['部分关联', `<span data-tip="${tip}" style="white-space:nowrap;font-weight:700;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:999px;padding:1px 7px;font-size:.74rem">🏦 ${k}/${n}</span>`];
+  return ['未关联', `<span data-tip="${tip}" style="white-space:nowrap;color:var(--g400);font-size:.74rem">🏦 0/${n}</span>`];
+}
 // 卡车费用的列定义 (顺序和表格列一致)
 function _truckStatusText(r) {
   if (r.manual && r.approval_status === 'pending') return '待审核';
@@ -5532,7 +5542,9 @@ function renderInvList() {
   document.getElementById('invHeadRow').innerHTML = csfHeadHtml('inv');
   document.getElementById('invCsfClear').style.display = csfActive('inv') ? '' : 'none';
   document.getElementById('invBody').innerHTML = rows.length ? rows.map(r => `<tr>
+    <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openInvoice(${r.id})">查看 / 批注</button></td>
     <td style="font-weight:700;white-space:nowrap">${esc(r.invoice_number)}</td>
+    <td>${_invLineBankState(r)[1]}</td>
     <td style="white-space:nowrap">${esc(r.invoice_date || '—')}</td>
     <td>${esc(r.company_name || '')}</td>
     <td style="white-space:nowrap;font-size:.78rem;color:var(--g500)">${esc(r.period_start || '?')} ~ ${esc(r.period_end || '?')}</td>
@@ -5541,8 +5553,7 @@ function renderInvList() {
     ${_invPayCols(r)}
     <td class="inv-note">${_invPayNoteTag(r)}</td>
     <td>${annBadge(r.annotation_count)}</td>
-    <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openInvoice(${r.id})">查看 / 批注</button></td>
-  </tr>`).join('') : '<tr><td colspan="14" style="color:var(--g400);padding:1rem">没有符合条件的发票。</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="15" style="color:var(--g400);padding:1rem">没有符合条件的发票。</td></tr>';
 }
 function renderStmtList() {
   const q = (document.getElementById('stmtSearch').value || '').toLowerCase();
