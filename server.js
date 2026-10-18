@@ -16217,8 +16217,8 @@ app.post('/api/apply/send-code', async (req, res) => {
     // Basic rate limit: max 5 sends per target per 15 minutes.
     const recent = db.prepare(`SELECT COUNT(*) n FROM applicant_otp WHERE form_token=? AND type=? AND target=? AND created_at > datetime('now','-15 minutes')`).get(token, channel, target);
     if (recent && recent.n >= 5) return res.status(429).json({ error: '请求过于频繁，请稍后再试 / Too many requests, please try later' });
-    // Drop previous unverified codes for this target so only the newest is valid.
-    db.prepare('DELETE FROM applicant_otp WHERE form_token=? AND type=? AND target=? AND verified=0').run(token, channel, target);
+    // 之前发的码不删: 15 分钟内发过的都算数。短信常常晚到 (尤其中国号码), 人等不及点了「重新发送」,
+    // 再输第一条短信里的码就会被判「验证码错误」。保留旧行也让上面「15 分钟最多 5 次」真正生效。
     const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
     let sent = false, code = null;
     const detail = [];   // collected provider errors, surfaced for diagnosis
@@ -16282,18 +16282,20 @@ app.post('/api/apply/verify-code', async (req, res) => {
       console.log(`[apply] master code accepted for ${channel} ${target}`);
       return res.json({ success: true, verified: true });
     }
-    const row = db.prepare(`SELECT * FROM applicant_otp WHERE form_token=? AND type=? AND target=? ORDER BY id DESC LIMIT 1`).get(token, channel, target);
-    if (!row) return res.status(400).json({ error: '请先获取验证码 / Request a code first' });
-    if (new Date(row.expires_at).getTime() < Date.now()) return res.status(400).json({ error: '验证码已过期，请重新获取 / Code expired, request a new one' });
-    if (row.attempts >= 6) return res.status(429).json({ error: '尝试次数过多，请重新获取验证码 / Too many attempts' });
-    let ok = false;
-    if (row.code === '__twilio_verify__') {
-      ok = await checkVerifyCode(target, code);
-    } else {
-      ok = (row.code === code);
+    // 还没过期的码都比对 (最近 5 条): 重新发送过的话, 输哪一条短信里的码都行
+    const all = db.prepare(`SELECT * FROM applicant_otp WHERE form_token=? AND type=? AND target=? ORDER BY id DESC LIMIT 5`).all(token, channel, target);
+    if (!all.length) return res.status(400).json({ error: '请先获取验证码 / Request a code first' });
+    const live = all.filter(r => new Date(r.expires_at).getTime() >= Date.now());
+    if (!live.length) return res.status(400).json({ error: '验证码已过期，请重新获取 / Code expired, request a new one' });
+    const row = live[0];   // 尝试次数记在最新那条上
+    if (live.reduce((n, r) => n + (r.attempts || 0), 0) >= 6) return res.status(429).json({ error: '尝试次数过多，请重新获取验证码 / Too many attempts' });
+    let hit = live.find(r => r.code !== '__twilio_verify__' && r.code === code) || null;
+    if (!hit && live.some(r => r.code === '__twilio_verify__') && await checkVerifyCode(target, code)) {
+      hit = live.find(r => r.code === '__twilio_verify__');
     }
-    db.prepare('UPDATE applicant_otp SET attempts=attempts+1, verified=? WHERE id=?').run(ok ? 1 : row.verified, row.id);
-    if (!ok) return res.status(400).json({ error: '验证码错误 / Incorrect code' });
+    db.prepare('UPDATE applicant_otp SET attempts=attempts+1 WHERE id=?').run(row.id);
+    if (hit) db.prepare('UPDATE applicant_otp SET verified=1 WHERE id=?').run(hit.id);
+    if (!hit) return res.status(400).json({ error: '验证码错误 / Incorrect code' });
     res.json({ success: true, verified: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
