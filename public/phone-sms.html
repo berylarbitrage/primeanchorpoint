@@ -292,6 +292,7 @@ button,input,select,textarea{font-family:inherit}
 let TOKEN = localStorage.getItem('pa_phone_sms_token') || '';
 let ROLE = '';  // 'admin' | 'cs'（客服可看可回，设备令牌管理和清空仅管理员）
 let MESSAGES = [], OUTBOX = [], NOTES = {}, DEVICES = [];
+let RENDERED_PEER = null, RENDERED_BODY = '';     // 上次画的是哪个会话、什么内容（刷新时保住滚动位置）
 let PEER = null, RISK = false, QUEUED_ONLY = false, COMPOSING = false;
 let STARRED_ONLY = false, UNREAD_ONLY = false, SHOW_CLOSED = false, TAG_FILTER = '';
 let LIMIT = 400, TOTAL = 0;
@@ -839,6 +840,17 @@ function renderDetail(convos) {
     .map(l => '<option value="' + esc(l) + '"' + (l === selected ? ' selected' : '') + '>'
       + (l ? esc(l) : '（默认）') + '</option>').join('');
 
+  // 页面每几秒刷新一次。之前每次都整个重画、再跳到最底下, 往上翻看历史会被一直拽回去。
+  // 现在: 同一个会话、消息没变 → 原来那块消息区原样留着 (位置和已加载的图片都不动);
+  // 有新消息但人正往上翻着 → 保持在原位置; 换了会话或本来就在最底下 → 才跳到底。
+  const oldBox = document.getElementById('messages');
+  const samePeer = RENDERED_PEER === convo.peer && oldBox;
+  const wasAtBottom = !samePeer || oldBox.scrollHeight - oldBox.scrollTop - oldBox.clientHeight < 80;
+  const oldScroll = samePeer ? oldBox.scrollTop : 0;
+  const keepOld = samePeer && RENDERED_BODY === body;
+  RENDERED_PEER = convo.peer;
+  RENDERED_BODY = body;
+
   el.innerHTML = contactBar(convo.title, fmtPhone(convo.address), false)
     + '<div class="action-bar">'
     + '<button class="action-btn" onclick="editNote()">📝 备注</button>'
@@ -876,8 +888,12 @@ function renderDetail(convos) {
     + '<div class="messages" id="messages">' + body + '</div>'
     + replyBar(false);
 
-  const box = document.getElementById('messages');
-  box.scrollTop = box.scrollHeight;
+  let box = document.getElementById('messages');
+  if (keepOld) {
+    box.replaceWith(oldBox);
+    box = oldBox;
+  }
+  box.scrollTop = wasAtBottom ? box.scrollHeight : oldScroll;
   wireReply();
 }
 
