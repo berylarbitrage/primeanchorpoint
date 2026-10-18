@@ -43287,7 +43287,7 @@ const APPLY_QR_I18N = {
     scanHint: '扫码申请 · Scan to Apply', printBlocked: '浏览器拦截了打印窗口，请允许弹窗后重试',
     regenTitle: '作废旧二维码并生成新的', loadFail: '加载失败：',
     copied: '已复制链接', regenConfirm: '重新生成后，旧二维码将立即失效。确定继续？', regenFail: '失败：',
-    genericName: '通用（不限公司）',
+    genericName: '通用（不限公司）', cnLabel: '🇨🇳 中国申请', usLabel: '美国', cnHint: '给在中国的应聘者：中国手机号（+86）和中国地址',
     multiNote: '📍 该公司在多个州设有地址，请在下方选择州查看对应二维码，并按地点分发。应聘者扫描哪个州的码，其申请就归入该地点。',
     note: '📲 应聘者扫码后填写<strong>姓名 / 电话 / 邮箱 / 职位</strong>，需通过<strong>短信 + 邮箱验证码</strong>验证，并上传 <strong>SSN 正反面</strong> 与 <strong>EAD 正反面</strong>。支持中文 / English / Español。所有申请进入「📨 申请收件箱」。',
   },
@@ -43297,7 +43297,7 @@ const APPLY_QR_I18N = {
     scanHint: 'Scan to Apply · 扫码申请', printBlocked: 'The browser blocked the print window — allow pop-ups and retry',
     regenTitle: 'Void the old QR code and generate a new one', loadFail: 'Load failed: ',
     copied: 'Link copied', regenConfirm: 'Regenerating will immediately invalidate the old QR code. Continue?', regenFail: 'Failed: ',
-    genericName: 'General (any company)',
+    genericName: 'General (any company)', cnLabel: '🇨🇳 China applicants', usLabel: 'US', cnHint: 'For applicants in China: Chinese mobile (+86) and Chinese address',
     multiNote: '📍 This company has addresses in multiple states. Pick a state below to see its QR, and distribute by location; whichever state code an applicant scans, their application is filed under that location.',
     note: '📲 After scanning, the applicant fills in <strong>name / phone / email / position</strong>, verifies via <strong>SMS + email code</strong>, and uploads <strong>SSN (front & back)</strong> and <strong>EAD (front & back)</strong>. Available in 中文 / English / Español. All submissions go to the “📨 Applicant Inbox”.',
   },
@@ -43307,7 +43307,7 @@ const APPLY_QR_I18N = {
     scanHint: 'Escanee para aplicar · Scan to Apply', printBlocked: 'El navegador bloqueó la ventana de impresión; permita ventanas emergentes y reintente',
     regenTitle: 'Anular el QR anterior y generar uno nuevo', loadFail: 'Error al cargar: ',
     copied: 'Enlace copiado', regenConfirm: 'Al regenerar, el QR anterior quedará invalidado de inmediato. ¿Continuar?', regenFail: 'Error: ',
-    genericName: 'General (cualquier empresa)',
+    genericName: 'General (cualquier empresa)', cnLabel: '🇨🇳 Solicitantes en China', usLabel: 'EE. UU.', cnHint: 'Para solicitantes en China: móvil chino (+86) y dirección en China',
     multiNote: '📍 Esta empresa tiene direcciones en varios estados. Elija un estado abajo para ver su QR y distribúyalos por ubicación; el estado del código que escanee el solicitante determina la ubicación de su solicitud.',
     note: '📲 Tras escanear, el solicitante completa <strong>nombre / teléfono / correo / puesto</strong>, verifica con <strong>código por SMS + correo</strong> y sube <strong>SSN (frente y reverso)</strong> y <strong>EAD (frente y reverso)</strong>. Disponible en 中文 / English / Español. Todas las solicitudes llegan a «📨 Bandeja de solicitudes».',
   },
@@ -43324,7 +43324,7 @@ function setApplyQrLang(lang) {
     : `${t.company}<strong>${esc(_applyQrState.partnerName || '—')}</strong>`;
   const mn = document.getElementById('applyQrMultiNote');
   if (mn) {
-    const multi = (_applyQrState.qrs || []).length > 1;
+    const multi = (_applyQrState.qrs || []).filter(q => !q.cn).length > 1;   // 多个州才提示; 中国卡不算
     mn.style.display = multi ? '' : 'none';
     if (multi) mn.textContent = t.multiNote;
   }
@@ -43355,6 +43355,9 @@ async function openApplicantQrModal(partnerId, partnerName) {
     let qrs = Array.isArray(r && r.qrs) ? r.qrs.filter(q => q && q.url) : [];
     if (!qrs.length && r && r.url) qrs = [{ state: '', url: r.url }];
     if (!qrs.length) throw new Error(r && r.error || 'failed');
+    // 通用码再配一张「中国申请」: 同一个链接加 ?cn=1, 表单固定 +86 手机号和中国地址
+    // (短信只开通了美国和中国, 所以不让应聘者自己选国家)
+    if (generic) qrs.push({ state: '', cn: true, url: qrs[0].url + (qrs[0].url.includes('?') ? '&' : '?') + 'cn=1' });
     _applyQrState.qrs = qrs;
     await _loadQRLib();
     ld.style.display = 'none';
@@ -43383,11 +43386,12 @@ function renderApplyQrList() {
   const picker = multi ? `
     <div style="display:flex;gap:.4rem;justify-content:center;flex-wrap:wrap;width:100%;margin-bottom:.2rem">
       ${qrs.map((x, i) => `<button type="button" onclick="selectApplyQrState(${i})"
-        style="cursor:pointer;border:1px solid ${i === sel ? '#4338ca' : '#c7d2fe'};background:${i === sel ? '#4338ca' : '#fff'};color:${i === sel ? '#fff' : '#3730a3'};border-radius:999px;padding:.25rem .85rem;font-size:.88rem;font-weight:700">📍 ${esc(x.state || '—')}</button>`).join('')}
+        style="cursor:pointer;border:1px solid ${i === sel ? '#4338ca' : '#c7d2fe'};background:${i === sel ? '#4338ca' : '#fff'};color:${i === sel ? '#fff' : '#3730a3'};border-radius:999px;padding:.25rem .85rem;font-size:.88rem;font-weight:700">${x.cn ? esc(t.cnLabel) : '📍 ' + esc(x.state || (qrs.some(y => y.cn) ? t.usLabel : '—'))}</button>`).join('')}
     </div>` : '';
   wrap.innerHTML = `${picker}
     <div style="flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:.4rem;border:1px solid var(--gray-200);border-radius:12px;padding:.7rem;background:#fff">
-      ${q.state ? `<div style="font-weight:700;color:#3730a3;font-size:1rem">📍 ${esc(q.state)}</div>` : ''}
+      ${q.cn ? `<div style="font-weight:700;color:#b91c1c;font-size:1rem">${esc(t.cnLabel)}</div><div style="font-size:.74rem;color:var(--gray-500);max-width:250px">${esc(t.cnHint)}</div>`
+        : q.state ? `<div style="font-weight:700;color:#3730a3;font-size:1rem">📍 ${esc(q.state)}</div>` : ''}
       <div id="applyQrBoxSel" style="display:inline-block;padding:8px;background:#fff;border-radius:8px"></div>
       <div style="font-family:monospace;font-size:.62rem;color:var(--gray-500);word-break:break-all;max-width:${size + 24}px">${esc(q.url)}</div>
       <div style="display:flex;gap:.35rem;flex-wrap:wrap;justify-content:center">
@@ -43421,7 +43425,7 @@ function downloadApplyQrFor(i) {
   if (!img) return;
   const src = img.tagName === 'CANVAS' ? img.toDataURL('image/png') : img.src;
   const q = (_applyQrState.qrs || [])[i] || {};
-  const stateSuffix = q.state ? '-' + q.state : '';
+  const stateSuffix = q.cn ? '-中国' : q.state ? '-' + q.state : '';
   const a = document.createElement('a');
   a.href = src;
   a.download = `招工二维码-${(_applyQrState.generic ? '通用' : _applyQrState.partnerName || 'company').replace(/[^\w一-龥-]/g, '_')}${stateSuffix}.png`;
@@ -43456,7 +43460,7 @@ function printApplyQr46(i) {
   <div class="page">
     <div class="tt">🪪 招工申请 JOB APPLICATION</div>
     ${name ? `<div class="co">${esca(name)}</div>` : ''}
-    ${q.state ? `<div class="st">📍 ${esca(q.state)}</div>` : ''}
+    ${q.cn ? `<div class="st">${esca(t.cnLabel)}</div>` : q.state ? `<div class="st">📍 ${esca(q.state)}</div>` : ''}
     <img src="${src}" alt="QR">
     <div class="hint">${esca(t.scanHint)}</div>
     <div class="url">${esca(q.url)}</div>
