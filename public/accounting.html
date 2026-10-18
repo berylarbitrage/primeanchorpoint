@@ -15,6 +15,11 @@ h1{font-size:1.2rem;font-weight:800;color:#0f4c6b;margin:0;display:flex;align-it
 .btn-blue{background:var(--blue);color:#fff}.btn-blue:hover{background:#1d8fc0}
 .btn-outline{background:#fff;color:var(--g600);border:1px solid var(--g300)}
 .btn-sm{padding:.3rem .6rem;font-size:.78rem;border-radius:6px}
+/* 列表每行的「查看 / 批注」: 每行都有一个, 用浅色描边不抢数据的眼; 悬停才填满 */
+.btn-view{background:#f0f8fc;color:#0f4c6b;border:1px solid #bfe0ef;border-radius:999px;padding:.28rem .75rem .28rem .6rem;font-size:.76rem;font-weight:700;gap:.3rem;transition:background .15s,color .15s,border-color .15s,box-shadow .15s}
+.btn-view:hover{background:#0f4c6b;color:#fff;border-color:#0f4c6b;box-shadow:0 2px 6px rgba(15,76,107,.25)}
+.btn-view:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(41,170,225,.35)}
+.btn-view .ic{font-size:.85rem;line-height:1}
 .card{background:#fff;border:1px solid var(--g200);border-radius:12px;padding:14px 16px}
 .chip{display:inline-block;background:#fff;border:1px solid var(--g200);border-radius:10px;padding:.5rem .9rem;font-size:.8rem;color:var(--g500)}
 .chip b{font-size:1.05rem;margin-left:.3rem}
@@ -5542,7 +5547,7 @@ function renderInvList() {
   document.getElementById('invHeadRow').innerHTML = csfHeadHtml('inv');
   document.getElementById('invCsfClear').style.display = csfActive('inv') ? '' : 'none';
   document.getElementById('invBody').innerHTML = rows.length ? rows.map(r => `<tr>
-    <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openInvoice(${r.id})">查看 / 批注</button></td>
+    <td style="white-space:nowrap"><button class="btn btn-view" onclick="openInvoice(${r.id})"><span class="ic">📄</span>查看 / 批注</button></td>
     <td style="font-weight:700;white-space:nowrap">${esc(r.invoice_number)}</td>
     <td>${_invLineBankState(r)[1]}</td>
     <td style="white-space:nowrap">${esc(r.invoice_date || '—')}</td>
@@ -5571,7 +5576,7 @@ function renderStmtList() {
     <td style="text-align:right;color:#047857;font-weight:700">${r.total_in ? money(r.total_in) : '—'}</td>
     <td style="text-align:right;color:#b91c1c;font-weight:700">${r.total_out ? money(r.total_out) : '—'}</td>
     <td>${annBadge(r.annotation_count)}</td>
-    <td style="white-space:nowrap"><button class="btn btn-sm btn-blue" onclick="openStatement(${r.id})">查看 / 批注</button></td>
+    <td style="white-space:nowrap"><button class="btn btn-view" onclick="openStatement(${r.id})"><span class="ic">📄</span>查看 / 批注</button></td>
   </tr>`).join('') : '<tr><td colspan="9" style="color:var(--g400);padding:1rem">没有符合条件的流水。</td></tr>';
 }
 
