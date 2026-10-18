@@ -35416,7 +35416,8 @@ app.post('/api/device-sms/media-in', deviceSmsAuth, (req, res) => {
     if (!remoteId || !Number.isFinite(part)) return res.status(400).json({ error: '缺少短信或附件 id' });
     const row = db.prepare('SELECT id, media FROM device_sms_messages WHERE device_id=? AND remote_id=?')
       .get(req.smsDevice.id, remoteId);
-    if (!row) return res.status(404).json({ error: '网站上没有这条短信' });
+    // 422 而不是 404: 客户端把 404 当「网站还没部署这个接口」, 会留着下轮重试
+    if (!row) return res.status(422).json({ error: '网站上没有这条短信' });
     const buf = Buffer.from(String(data || ''), 'base64');
     if (!buf.length) return res.status(400).json({ error: '空文件' });
     if (buf.length > 10 * 1024 * 1024) return res.status(400).json({ error: '图片太大（上限 10MB）' });

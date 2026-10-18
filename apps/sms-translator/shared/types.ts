@@ -61,8 +61,12 @@ export interface Attachment {
   error?: string
   /** Claude's description / OCR of the image, when enabled. */
   description?: string
-  /** The file has been sent to the website (or the website declined it for good). */
-  uploaded?: boolean
+  /**
+   * The file has been sent to the website (or the website declined it for good).
+   * Renamed from `uploaded`, which 0.8.5 also set on a 404 from a website not yet
+   * deployed — those pictures never landed and are sent again under this name.
+   */
+  pushed?: boolean
 }
 
 export interface SmsMessage {

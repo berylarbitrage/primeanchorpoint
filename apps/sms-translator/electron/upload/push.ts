@@ -146,7 +146,7 @@ export function pendingMediaUploads(messages: SmsMessage[], limit = MEDIA_BATCH)
   for (const message of messages) {
     if (message.uploadedState === undefined || !message.attachments) continue
     for (const attachment of message.attachments) {
-      if (!attachment.file || attachment.uploaded) continue
+      if (!attachment.file || attachment.pushed) continue
       if (!UPLOADABLE_IMAGES.has(attachment.contentType.toLowerCase())) continue
       if ((attachment.bytes ?? 0) > MAX_MEDIA_BYTES) continue
       out.push({ message, attachment })
@@ -183,9 +183,11 @@ export async function pushMedia(
     })
     if (res.ok) return { done: true }
     const text = await res.text().catch(() => '')
-    // 400 / 404 will not change on a retry; anything else (5xx, 401) might.
+    // 400 (type/size refused) and 422 (no such message there) will not change on
+    // a retry. A 404 is the website not having this endpoint yet — not deployed —
+    // so it is retried, like 5xx and 401.
     return {
-      done: res.status === 400 || res.status === 404,
+      done: res.status === 400 || res.status === 422,
       error: `上传图片：网站返回 ${res.status}${text ? `：${text.slice(0, 200)}` : ''}`,
     }
   } catch (err) {

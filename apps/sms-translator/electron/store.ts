@@ -39,7 +39,7 @@ function mergeAttachments(
   return incoming.map((a) => {
     const prev = byId.get(a.partId)
     return prev
-      ? { ...a, file: prev.file, bytes: prev.bytes, description: prev.description, error: prev.error, uploaded: prev.uploaded }
+      ? { ...a, file: prev.file, bytes: prev.bytes, description: prev.description, error: prev.error, pushed: prev.pushed }
       : a
   })
 }

@@ -227,10 +227,47 @@ public class MainActivity extends Activity {
             text += newest.isEmpty()
                     ? "\n一条收到的都没有 —— 别人发的还没以「普通短信」到达这台手机"
                     : "\n最新收到: " + newest;
-            return text;
+            return text + "\n" + mmsSummary();
         } catch (Exception e) {
             return "短信库读取失败: " + e.getMessage();
         }
+    }
+
+    /**
+     * 诊断行：彩信库 7 天内收到了什么、图片补传到哪一步。
+     * 「收到彩信 0 条」= 图片没以彩信形式到达（多半走了 RCS 聊天），同步读不到；
+     * 「待下载」= 手机还没把彩信下载下来，在短信 App 里点开那条就会下载。
+     */
+    private String mmsSummary() {
+        SharedPreferences prefs = getSharedPreferences("cfg", MODE_PRIVATE);
+        int downloaded = 0, notDownloaded = 0;
+        try (Cursor cursor = getContentResolver().query(Telephony.Mms.CONTENT_URI,
+                new String[]{"m_type"},
+                "date > ? AND msg_box = " + Telephony.Mms.MESSAGE_BOX_INBOX,
+                new String[]{String.valueOf((System.currentTimeMillis() - 7L * 24 * 3600 * 1000) / 1000)},
+                null)) {
+            while (cursor != null && cursor.moveToNext()) {
+                if (cursor.getInt(0) == 130) notDownloaded++;
+                else downloaded++;
+            }
+        } catch (Exception e) {
+            return "彩信库读取失败: " + e.getMessage();
+        }
+        int queued = 0;
+        try {
+            queued = new org.json.JSONArray(prefs.getString("mmsImageQueue", "[]")).length();
+        } catch (Exception ignored) {
+            // 队列读不了就当 0
+        }
+        String text = "彩信库（7天）: 收到 " + downloaded + " 条"
+                + (notDownloaded > 0 ? "，另有 " + notDownloaded + " 条待下载（在短信 App 里点开就会下载）" : "")
+                + "\n图片: 已传网站 " + prefs.getLong("mmsImagesSent", 0) + " 张，排队 " + queued + " 张";
+        String error = prefs.getString("mmsImageError", "");
+        if (!error.isEmpty()) text += "\n图片最近一次出错: " + error;
+        if (downloaded == 0 && notDownloaded == 0) {
+            text += "\n一条彩信都没有 —— 对方的图片多半走了 RCS 聊天，不在彩信库里";
+        }
+        return text;
     }
 
     // ── 一键诊断：所有关键状态凑成一段文字，复制给技术支持，免得来回猜 ──
@@ -276,6 +313,7 @@ public class MainActivity extends Activity {
         r.append(" 电池").append(power != null && power.isIgnoringBatteryOptimizations(getPackageName()) ? "✓" : "✗")
                 .append("\n");
         r.append("默认短信App: ").append(Telephony.Sms.getDefaultSmsPackage(this)).append("\n");
+        r.append(mmsSummary()).append("\n");
 
         r.append(smsWindow("24小时", 24L * 3600 * 1000));
         r.append(smsWindow("7天", 7L * 24 * 3600 * 1000));

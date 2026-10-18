@@ -198,7 +198,7 @@ async function pushPictures(): Promise<void> {
       const latest = store.get(message.id) ?? message
       store.patch(message.id, {
         attachments: (latest.attachments ?? []).map((a) =>
-          a.partId === attachment.partId ? { ...a, uploaded: true } : a,
+          a.partId === attachment.partId ? { ...a, pushed: true } : a,
         ),
       })
     }
