@@ -859,6 +859,8 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS truck_order_overrides (
   updated_by TEXT DEFAULT '',
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`); } catch(e) {}
+// 装货类型 (Pallet / 装货 / Others) 也能改; NULL = 没改, 跟 Bintique 上的
+try { db.exec("ALTER TABLE truck_order_overrides ADD COLUMN cargo TEXT DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN discount_value REAL DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN discount_type TEXT DEFAULT '%'"); } catch(e) {}
 // 🪵 会计手动添加的木板发票 (照 pallet.bintique.com 的 New Order 表单): 会计提交为
@@ -41599,14 +41601,16 @@ app.get('/api/acct/truck-bills', requireAdmin, requireAcctView, async (req, res)
     const ordNotes = _acctPayNotesFor('truckorder');
     const feeNotes = _acctPayNotesFor('fee');
     const sizeOv = {};
-    db.prepare('SELECT order_id, truck_size, updated_by FROM truck_order_overrides').all().forEach(x => { sizeOv[x.order_id] = x; });
+    db.prepare('SELECT order_id, truck_size, cargo, updated_by FROM truck_order_overrides').all().forEach(x => { sizeOv[x.order_id] = x; });
     const out = orders.map(o => ({
       id: 'ord-' + o.id, order: true, order_id: o.id,
       rental_code: o.rental_code || '',
       date: o.date || '', date_end: o.date_end || '',
       customer: o.truck_company || '', amount: Number(o.amount) || 0,
-      direction: 'out', note: o.notes || '', cargo: o.cargo || '',
-      // 会计改过的车型优先; bintique_size 留着原值, 页面上标出「已改」
+      direction: 'out', note: o.notes || '',
+      // 会计改过的车型 / 装货优先; bintique_size / bintique_cargo 留着原值, 页面上标出「已改」
+      cargo: (sizeOv[o.id] && sizeOv[o.id].cargo != null) ? sizeOv[o.id].cargo : (o.cargo || ''),
+      bintique_cargo: o.cargo || '',
       truck_size: (sizeOv[o.id] && sizeOv[o.id].truck_size) || o.truck_size || '',
       bintique_size: o.truck_size || '', size_by: (sizeOv[o.id] && sizeOv[o.id].updated_by) || '',
       url: o.url || '',
@@ -41654,17 +41658,26 @@ app.post('/api/acct/pallet-bills/:id/photos', requireAdmin, requireAcctWrite, co
 });
 
 const _feeTruckSize = v => ['16ft', '26ft', '53ft'].includes(String(v || '')) ? String(v) : '';
-// 改 Bintique 卡车订单的车型 (只存本地, 不回写 pallet 系统); 传空 = 撤掉修改, 回到 Bintique 上的原值
+const TRUCK_CARGO = ['Pallet', '装货', 'Others'];
+// 改 Bintique 卡车订单的车型 / 装货 (只存本地, 不回写 pallet 系统)
+// truck_size 传空 = 车型跟 Bintique; cargo 传 null (或不传) = 装货跟 Bintique, 传字符串 (可以是空) = 改成这几项
 app.post('/api/acct/truck-orders/:id/size', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
   const id = String(req.params.id || '').slice(0, 64);
   if (!id) return res.status(400).json({ error: '无效订单' });
-  const raw = String((req.body || {}).truck_size || '');
+  const b = req.body || {};
+  const raw = String(b.truck_size || '');
   const size = _feeTruckSize(raw);
   if (raw && !size) return res.status(400).json({ error: '车型只能是 16ft / 26ft / 53ft' });
-  if (!size) db.prepare('DELETE FROM truck_order_overrides WHERE order_id=?').run(id);
-  else db.prepare(`INSERT INTO truck_order_overrides (order_id, truck_size, updated_by, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(order_id) DO UPDATE SET truck_size=excluded.truck_size, updated_by=excluded.updated_by, updated_at=CURRENT_TIMESTAMP`).run(id, size, req.userName || '');
-  res.json({ success: true, truck_size: size });
+  let cargo = null;
+  if (b.cargo != null) {
+    const picked = String(b.cargo).split(/\s*,\s*/).filter(Boolean);
+    if (picked.some(c => !TRUCK_CARGO.includes(c))) return res.status(400).json({ error: '装货只能是 Pallet / 装货 / Others' });
+    cargo = TRUCK_CARGO.filter(c => picked.includes(c)).join(', ');
+  }
+  if (!size && cargo == null) db.prepare('DELETE FROM truck_order_overrides WHERE order_id=?').run(id);
+  else db.prepare(`INSERT INTO truck_order_overrides (order_id, truck_size, cargo, updated_by, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(order_id) DO UPDATE SET truck_size=excluded.truck_size, cargo=excluded.cargo, updated_by=excluded.updated_by, updated_at=CURRENT_TIMESTAMP`).run(id, size, cargo, req.userName || '');
+  res.json({ success: true, truck_size: size, cargo });
 });
 
 // 新增费用记录: 会计提交入库为 pending 待管理员审核, admin 提交直接 approved (发票文件复用 claimUpload)

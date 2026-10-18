@@ -4032,16 +4032,19 @@ function _truckBintiqueCell(r) {
 // 手动卡车费用能不能改: 还没审核通过的 (待审核/已驳回) 客服/会计/管理员都能改; 通过后只有管理员能改
 function _truckCanDelete(r) { return !!r.manual && ['accounting', 'admin'].includes(USER.role); }
 function _truckCanEdit(r) { return !!r.manual && (USER.role === 'admin' || (canAnnotate() && r.approval_status !== 'approved')); }
-// 车型 · 装货 一格。Bintique 同步来的订单也能改车型 (存在本地, 盖在订单上); 手动添加的在「修改」里改
+// 车型 · 装货 一格。Bintique 同步来的订单也能改车型和装货 (存在本地, 盖在订单上); 手动添加的在「修改」里改
 const TRUCK_SIZES = ['16ft', '26ft', '53ft'];
+const TRUCK_CARGO = ['Pallet', '装货', 'Others'];
+// 装货字符串 → 按固定顺序排好的「Pallet, 装货」, 方便和 Bintique 上的比较
+const _truckCargoNorm = v => { const p = String(v || '').split(/\s*,\s*/).map(x => x.toLowerCase()); return TRUCK_CARGO.filter(c => p.includes(c.toLowerCase())).join(', '); };
 function _truckSizeCell(r) {
   const txt = esc([r.truck_size, r.cargo].filter(Boolean).join(' · ')) || '—';
   if (!r.order || !canAnnotate()) return txt;
-  const changed = r.truck_size && r.truck_size !== (r.bintique_size || '');
-  return `<span>${txt}</span>${changed ? ` <span data-tip="${esc(`会计改过车型${r.size_by ? '（' + r.size_by + '）' : ''}，Bintique 上是「${r.bintique_size || '没填'}」`)}" style="font-size:.62rem;color:#1d4ed8;background:#eff6ff;border:1px solid #bfdbfe;border-radius:4px;padding:0 4px">已改</span>` : ''}
-    <a onclick="truckSizeEdit(this, ${JSON.stringify(String(r.order_id)).replace(/"/g, '&quot;')})" title="改车型" style="cursor:pointer;color:#1d4ed8;margin-left:2px">✎</a>`;
+  const changed = (r.truck_size && r.truck_size !== (r.bintique_size || '')) || (r.cargo || '') !== (r.bintique_cargo || '');
+  return `<span>${txt}</span>${changed ? ` <span data-tip="${esc(`会计改过${r.size_by ? '（' + r.size_by + '）' : ''}，Bintique 上是「${[r.bintique_size, r.bintique_cargo].filter(Boolean).join(' · ') || '没填'}」`)}" style="font-size:.62rem;color:#1d4ed8;background:#eff6ff;border:1px solid #bfdbfe;border-radius:4px;padding:0 4px">已改</span>` : ''}
+    <a onclick="truckSizeEdit(this, ${JSON.stringify(String(r.order_id)).replace(/"/g, '&quot;')})" title="改车型 / 装货" style="cursor:pointer;color:#1d4ed8;margin-left:2px">✎</a>`;
 }
-// 点 ✎ 弹窗改车型: 选好按「确定」才存, 取消 / Esc / 点外面不改
+// 点 ✎ 弹窗改车型和装货: 选好按「确定」才存, 取消 / Esc / 点外面不改
 function truckSizeEdit(a, orderId) {
   const r = _truckRows.find(x => x.order && String(x.order_id) === String(orderId));
   if (!r) return;
@@ -4057,12 +4060,17 @@ function truckSizeEdit(a, orderId) {
   const opt = (v, label, sub) => `<label style="display:flex;align-items:center;gap:.55rem;border:1px solid var(--g200);border-radius:8px;padding:.5rem .7rem;cursor:pointer;font-size:.88rem">
       <input type="radio" name="tszOpt" value="${v}" ${v === cur ? 'checked' : ''}> <span style="font-weight:600">${label}</span>${sub ? `<span style="color:var(--g500);font-size:.78rem">${sub}</span>` : ''}</label>`;
   m.innerHTML = `<div class="card" style="max-width:380px;width:100%;padding:1.2rem 1.3rem">
-    <div style="font-size:1.02rem;font-weight:700;margin-bottom:.3rem">🚚 修改车型</div>
+    <div style="font-size:1.02rem;font-weight:700;margin-bottom:.3rem">🚚 修改车型 / 装货</div>
     <div style="font-size:.8rem;color:var(--g500);margin-bottom:.8rem;line-height:1.6">${esc([r.rental_code, r.customer, r.date, money(r.amount)].filter(Boolean).join(' · '))}<br>
-      现在：<b style="color:var(--g700)">${esc(r.truck_size || '没填')}</b> · Bintique 上：${esc(r.bintique_size || '没填')}</div>
+      现在：<b style="color:var(--g700)">${esc([r.truck_size, r.cargo].filter(Boolean).join(' · ') || '没填')}</b> · Bintique 上：${esc([r.bintique_size, r.bintique_cargo].filter(Boolean).join(' · ') || '没填')}</div>
+    <div style="font-size:.72rem;font-weight:700;color:var(--g500);margin-bottom:.35rem">车型 TRUCK SIZE</div>
     <div style="display:flex;flex-direction:column;gap:.4rem">
       ${opt('', r.bintique_size ? `按 Bintique（${esc(r.bintique_size)}）` : '按 Bintique（没填）', '不另改')}
       ${TRUCK_SIZES.map(z => opt(z, parseInt(z) + ' 尺', '(' + z + ')')).join('')}
+    </div>
+    <div style="font-size:.72rem;font-weight:700;color:var(--g500);margin:.8rem 0 .35rem">装货类型 CARGO TYPE</div>
+    <div style="display:flex;gap:1rem;font-size:.88rem">
+      ${TRUCK_CARGO.map(c => `<label style="display:inline-flex;align-items:center;gap:.3rem;cursor:pointer"><input type="checkbox" class="tszCargo" value="${c}" ${_truckCargoNorm(r.cargo).split(', ').includes(c) ? 'checked' : ''}> ${c}</label>`).join('')}
     </div>
     <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem">
       <button type="button" class="btn btn-outline" data-act="cancel">取消</button>
@@ -4075,13 +4083,17 @@ function truckSizeEdit(a, orderId) {
   document.addEventListener('keydown', _truckSizeEsc);
   ok.onclick = async () => {
     const v = (m.querySelector('input[name="tszOpt"]:checked') || {}).value || '';
+    const picked = [...m.querySelectorAll('.tszCargo:checked')].map(c => c.value).join(', ');
+    // 和 Bintique 上一样就不存, 以后 Bintique 改了还能跟着变
+    const cargo = picked === _truckCargoNorm(r.bintique_cargo) ? null : picked;
     ok.disabled = true;
     try {
-      const res = await api('/api/acct/truck-orders/' + encodeURIComponent(orderId) + '/size', { method: 'POST', body: JSON.stringify({ truck_size: v }) });
+      const res = await api('/api/acct/truck-orders/' + encodeURIComponent(orderId) + '/size', { method: 'POST', body: JSON.stringify({ truck_size: v, cargo }) });
       if (res && res.error) throw new Error(res.error);
       r.truck_size = v || r.bintique_size || '';
-      r.size_by = v ? (USER.username || '') : '';
-      toast(v ? `✅ 车型改为 ${v}` : '已改回 Bintique 上的车型');
+      r.cargo = cargo != null ? cargo : (r.bintique_cargo || '');
+      r.size_by = v || cargo != null ? (USER.username || '') : '';
+      toast(v || cargo != null ? `✅ 已改为 ${[r.truck_size, r.cargo].filter(Boolean).join(' · ') || '没填'}` : '已改回 Bintique 上的车型 / 装货');
       closeTruckSize();
       renderTruckList();
     } catch (e) { toast(e.message || '保存失败', true); ok.disabled = false; }
