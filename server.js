@@ -41207,10 +41207,20 @@ app.delete('/api/acct/pay-notes/:id/photos', requireAdmin, requireAcctWrite, (re
 // Read-only invoice list (no payment receipts / internal cost fields).
 app.get('/api/acct/invoices', requireAdmin, requireAcctView, (req, res) => {
   try {
-    const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, subtotal, markup_rate, status, payment_status, created_at
+    const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, subtotal, markup_rate, status, payment_status, created_at,
+        CASE WHEN json_valid(items_json) THEN json_array_length(items_json) ELSE 0 END AS line_n
       FROM invoices ORDER BY invoice_date DESC, id DESC`).all();
     const payNotes = _acctPayNotesFor('invoice');
+    // 逐行(每个工人)付款备注: 几行关联了银行记录 / 几行记了已付 —— 列表上一眼看出这张发票的人是不是都付到了
+    const linePay = {};
+    db.prepare(`SELECT invoice_id,
+        SUM(CASE WHEN COALESCE(txn_ids,'[]') NOT IN ('','[]') THEN 1 ELSE 0 END) AS linked,
+        SUM(CASE WHEN paid_status='paid' THEN 1 ELSE 0 END) AS paid
+      FROM acct_line_pay_notes GROUP BY invoice_id`).all().forEach(x => { linePay[x.invoice_id] = x; });
     for (const r of rows) {
+      const lp = linePay[r.id] || {};
+      r.line_pay = { total: r.line_n || 0, linked: lp.linked || 0, paid: lp.paid || 0 };
+      delete r.line_n;
       r.annotation_count = _acctAnnCount.get('invoice', r.id).n;
       r.pay_note = payNotes[r.id] || null;
     }
