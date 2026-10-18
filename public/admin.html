@@ -49617,7 +49617,8 @@ function _bsLoanParse(payee) {
 function _bsLoanJoin(sentinel, co, name) { const k = _BS_LOAN_KINDS.find(x => x[0] === sentinel) || _BS_LOAN_KINDS[1]; return k[1] + (co || '') + '|' + (name || ''); }
 function _bsLoanCoOptions(current) {
   const parts = ['<option value="">— 不选公司（个人）—</option>'];
-  const names = [...new Set([...BS_INTERNAL_COMPANIES, ..._bsCompanies])];
+  // Bintique Corp 不是内部公司也不在合作公司名单里, 借款/还款单独加上
+  const names = [...new Set([...BS_INTERNAL_COMPANIES, 'Bintique Corp', ..._bsCompanies])];
   if (current && !names.includes(current)) names.push(current);
   names.forEach(n => parts.push(`<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`));
   return parts.join('');
