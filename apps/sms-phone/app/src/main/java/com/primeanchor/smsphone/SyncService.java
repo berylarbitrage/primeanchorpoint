@@ -186,13 +186,20 @@ public class SyncService extends Service {
         // 2 = 0.7.1 遇到电脑端已推过同一条时网站回 422，现在网站会把图挂到电脑那份上
         if (prefs.getInt("mmsRescan", 0) < 2) {
             prefs.edit().putLong("mmsCursor", 0).putString("mmsImagesDone", "")
-                    .putString("mmsImageQueue", "[]").putInt("mmsRescan", 2)
+                    .putString("mmsImageQueue", "[]").putInt("mmsRescan", 2).putLong("mmsIdCursor", 0)
                     .putLong("mmsImagesSent", 0).putString("mmsImageError", "").apply();
         }
         long cursor = prefs.getLong("mmsCursor", 0);
         if (cursor == 0) cursor = System.currentTimeMillis() - FIRST_IMPORT_MS;
+        // 行号游标第一次建立（新装或刚升级）：这一轮只按时间取，同时把游标定在当前最大行号，
+        // 免得「行号 > 0」把几年前的彩信全拉一遍
+        long idCursor = prefs.getLong("mmsIdCursor", 0);
+        if (idCursor == 0) {
+            prefs.edit().putLong("mmsIdCursor", Math.max(1, MmsRepo.maxId(this))).apply();
+        }
 
-        MmsRepo.Batch batch = MmsRepo.readSince(this, cursor - OVERLAP_MS, 50);
+        MmsRepo.Batch batch = MmsRepo.readSince(this, cursor - OVERLAP_MS,
+                idCursor == 0 ? Long.MAX_VALUE : idCursor, 50);
         if (batch.messages.length() == 0) return 0;
 
         JSONObject body = new JSONObject();
@@ -214,7 +221,8 @@ public class SyncService extends Service {
             String key = image.getString("id") + "#" + image.getLong("part");
             if (queued.add(key) && !done.contains(key)) queue.put(image);
         }
-        prefs.edit().putLong("mmsCursor", batch.maxDate)
+        prefs.edit().putLong("mmsCursor", Math.max(cursor, batch.maxDate))
+                .putLong("mmsIdCursor", Math.max(prefs.getLong("mmsIdCursor", 0), batch.maxId))
                 .putString("mmsImageQueue", queue.toString())
                 .apply();
         return batch.messages.length();

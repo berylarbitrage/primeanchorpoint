@@ -30,8 +30,12 @@ final class MmsRepo {
     private static final int ADDR_TO = 151;
 
     /** m_type：128 = 发出的，132 = 收到并已下载的。130 是「有彩信待下载」通知，没有内容，跳过。 */
+    /**
+     * 按时间 *或* 行号取新彩信。手动点「下载」的彩信下载完是新写的一行（行号更大），
+     * 但 date 常常是对方当初发出的时间——比游标还早，只按时间取会漏掉它。
+     */
     private static final String WHERE =
-            "date > ? AND msg_box != " + Telephony.Mms.MESSAGE_BOX_DRAFTS + " AND m_type IN (128,132)";
+            "(date > ? OR _id > ?) AND msg_box != " + Telephony.Mms.MESSAGE_BOX_DRAFTS + " AND m_type IN (128,132)";
 
     /** 网站只收这几种；其它图片（如 HEIC）先转成 JPEG。 */
     static boolean webImage(String type) {
@@ -39,20 +43,24 @@ final class MmsRepo {
                 || "image/gif".equals(type) || "image/webp".equals(type);
     }
 
-    /** `sinceMs` 之后的彩信，按时间正序，最多 `limit` 条；顺带列出要补传的图片。 */
-    static Batch readSince(Context context, long sinceMs, int limit) {
+    /**
+     * `sinceMs` 之后、或行号大于 `sinceId` 的彩信，按行号正序，最多 `limit` 条；
+     * 顺带列出要补传的图片。`sinceId` 传 Long.MAX_VALUE = 只按时间。
+     */
+    static Batch readSince(Context context, long sinceMs, long sinceId, int limit) {
         JSONArray messages = new JSONArray();
         JSONArray images = new JSONArray();
         long maxDate = sinceMs;
+        long maxId = sinceId == Long.MAX_VALUE ? 0 : sinceId;
 
         try (Cursor cursor = context.getContentResolver().query(
                 Telephony.Mms.CONTENT_URI,
                 new String[]{"_id", "date", "msg_box", "sub"},
                 WHERE,
                 // 彩信的 date 是秒
-                new String[]{String.valueOf(sinceMs / 1000)},
-                "date ASC")) {
-            if (cursor == null) return new Batch(messages, images, maxDate);
+                new String[]{String.valueOf(sinceMs / 1000), String.valueOf(sinceId)},
+                "_id ASC")) {
+            if (cursor == null) return new Batch(messages, images, maxDate, maxId);
 
             while (cursor.moveToNext() && messages.length() < limit) {
                 long id = cursor.getLong(0);
@@ -106,11 +114,23 @@ final class MmsRepo {
                 messages.put(message);
 
                 if (date > maxDate) maxDate = date;
+                if (id > maxId) maxId = id;
             }
         } catch (Exception e) {
             // 读不了就当这轮没有；彩信是附加功能，不能拖垮普通短信同步
         }
-        return new Batch(messages, images, maxDate);
+        return new Batch(messages, images, maxDate, maxId);
+    }
+
+    /** 彩信库里最大的行号，游标第一次建立时用。 */
+    static long maxId(Context context) {
+        try (Cursor cursor = context.getContentResolver().query(
+                Telephony.Mms.CONTENT_URI, new String[]{"_id"}, null, null, "_id DESC")) {
+            if (cursor != null && cursor.moveToFirst()) return cursor.getLong(0);
+        } catch (Exception e) {
+            // 读不了就从 0 开始，下一轮再试
+        }
+        return 0;
     }
 
     /** 收到的取发件人，发出的取第一个收件人。 */
@@ -175,11 +195,14 @@ final class MmsRepo {
         final JSONArray images;
         /** 这批里最新一条的时间（毫秒），推送成功后作为新的游标。 */
         final long maxDate;
+        /** 这批里最大的行号，作为行号游标。 */
+        final long maxId;
 
-        Batch(JSONArray messages, JSONArray images, long maxDate) {
+        Batch(JSONArray messages, JSONArray images, long maxDate, long maxId) {
             this.messages = messages;
             this.images = images;
             this.maxDate = maxDate;
+            this.maxId = maxId;
         }
     }
 }
