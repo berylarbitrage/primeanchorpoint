@@ -985,6 +985,8 @@ try { db.exec(`ALTER TABLE referrals ADD COLUMN first_week_amount REAL DEFAULT N
 try { db.exec(`ALTER TABLE referral_weeks ADD COLUMN tier TEXT DEFAULT ''`); } catch(e) {}
 // 上班中途不去了: work_end_date = 最后上班那天, 再记原因和谁标的; 清空 = 撤销 (回到上班中)
 try { db.exec(`ALTER TABLE referrals ADD COLUMN quit_reason TEXT DEFAULT ''`); } catch(e) {}
+// HR 自己招的: 记是哪个 HR 招的 (张倪 / 陶斯亮 …)
+try { db.exec(`ALTER TABLE referrals ADD COLUMN hr_name TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE referrals ADD COLUMN quit_by TEXT DEFAULT ''`); } catch(e) {}
 // 上线前已经记了付款的那几周: 当作管理员已确认 (金额按当时那周的介绍费), 免得已付的周被锁住改不了
 try {
@@ -42125,6 +42127,7 @@ function _referralBody(b) {
   out.first_week_amount = (b.first_week_amount != null && b.first_week_amount !== '' && !isNaN(fwNum) && fwNum >= 0) ? fwNum : null;
   out.hr_self = (b.hr_self === '1' || b.hr_self === 'true' || b.hr_self === true || b.hr_self === 1) ? 1 : 0;
   // HR 自招: 没有工头; 介绍费照样要填 (没有就填 0)
+  out.hr_name = out.hr_self ? String(b.hr_name || '').trim().slice(0, 60) : '';
   if (out.hr_self) { out.foreman_name = ''; out.foreman_phone = ''; out.first_week_amount = null; }
   return out;
 }
@@ -42157,6 +42160,7 @@ function _referralJob(b, cur) {
 app.post('/api/acct/referrals', requireAdmin, requireRole('accounting', 'admin', 'cs'), claimUpload.array('invoice', 20), (req, res) => {
   const f = _referralBody(req.body || {});
   if (!f.hr_self && !f.foreman_name) return res.status(400).json({ error: '请填写工头姓名（HR 自己招的请勾选「HR 自己招的」）' });
+  if (f.hr_self && !f.hr_name) return res.status(400).json({ error: '请选择是哪个 HR 招的' });
   if (!f.worker_name) return res.status(400).json({ error: '请填写被介绍人姓名' });
   // 工资必须手动填写: 岗位上的是招聘区间, 不代表这个工人实际谈定的数
   if (!f.worker_wage) return res.status(400).json({ error: '请手动填写工人的工资（岗位上写的是区间，要填实际谈定的）' });
@@ -42172,7 +42176,7 @@ app.post('/api/acct/referrals', requireAdmin, requireRole('accounting', 'admin',
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.worker_wage, f.warehouse_name, f.warehouse_address,
       f.interview_at, f.amount, f.description, JSON.stringify(atts), jb.job_id, jb.job_title, req.userName || '', f.hr_self);
-  db.prepare('UPDATE referrals SET recruit_job_id=?, recruit_shift=?, first_week_amount=? WHERE id=?').run(jb.recruit_job_id || null, jb.recruit_shift || '', f.first_week_amount, r.lastInsertRowid);
+  db.prepare('UPDATE referrals SET recruit_job_id=?, recruit_shift=?, first_week_amount=?, hr_name=? WHERE id=?').run(jb.recruit_job_id || null, jb.recruit_shift || '', f.first_week_amount, f.hr_name, r.lastInsertRowid);
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
@@ -42184,6 +42188,7 @@ app.put('/api/acct/referrals/:id', requireAdmin, requireRole('accounting', 'admi
   if (req.userRole !== 'admin' && cur.review_status !== 'pending') return res.status(403).json({ error: '该记录管理员已核查，如需修改请联系管理员' });
   const f = _referralBody(req.body || {});
   if (!f.hr_self && !f.foreman_name) return res.status(400).json({ error: '请填写工头姓名（HR 自己招的请勾选「HR 自己招的」）' });
+  if (f.hr_self && !f.hr_name) return res.status(400).json({ error: '请选择是哪个 HR 招的' });
   if (!f.worker_name) return res.status(400).json({ error: '请填写被介绍人姓名' });
   // 与新增一致: 工资必须手动填写（老记录没填的, 编辑保存时也要求补上）
   if (!f.worker_wage) return res.status(400).json({ error: '请手动填写工人的工资（岗位上写的是区间，要填实际谈定的）' });
@@ -42205,7 +42210,7 @@ app.put('/api/acct/referrals/:id', requireAdmin, requireRole('accounting', 'admi
       warehouse_name=?, warehouse_address=?, interview_at=?, amount=?, description=?, attachments=?, job_id=?, job_title=?, hr_self=?, updated_at=datetime('now') WHERE id=?`)
     .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.worker_wage, f.warehouse_name, f.warehouse_address,
       f.interview_at, f.amount, f.description, JSON.stringify(atts), jb.job_id, jb.job_title, f.hr_self, cur.id);
-  db.prepare('UPDATE referrals SET recruit_job_id=?, recruit_shift=?, first_week_amount=? WHERE id=?').run(jb.recruit_job_id || null, jb.recruit_shift || '', f.first_week_amount, cur.id);
+  db.prepare('UPDATE referrals SET recruit_job_id=?, recruit_shift=?, first_week_amount=?, hr_name=? WHERE id=?').run(jb.recruit_job_id || null, jb.recruit_shift || '', f.first_week_amount, f.hr_name, cur.id);
   res.json({ success: true });
 });
 
