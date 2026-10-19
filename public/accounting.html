@@ -544,6 +544,8 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <input type="date" id="gustoPayTo" onchange="renderGustoPayList()" style="display:none">
         <input type="text" id="gustoPaySearch" placeholder="搜姓名 / 方式 / 状态 / 部门…" oninput="renderGustoPayList()" style="width:200px">
         <button class="btn btn-sm btn-outline" id="gustoAutoMatchBtn" style="display:none" onclick="gustoBankAutoMatch()" title="把未关联的付款和金额一致、日期±7天内的 Gusto 银行转账自动配对">⚡ 自动关联银行转账</button>
+        <button class="btn btn-sm btn-blue" id="gustoMultiLinkBtn" style="display:none" onclick="openGustoBankLinkMulti()" title="勾选的几笔付款一起挂到同一笔银行转账（合计要等于转账金额）"></button>
+        <a id="gustoMultiClearBtn" style="display:none;cursor:pointer;font-size:.76rem;color:var(--g500);text-decoration:underline" onclick="_gustoMultiSel.clear();renderGustoPayList()">清空勾选</a>
         <span id="gustoPayStats" style="font-size:.78rem;color:var(--g500)"></span>
       </div>
       <div style="overflow-x:auto">
@@ -560,7 +562,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <div id="gustoBankPayInfo" style="font-size:.78rem;color:var(--g500);margin-bottom:.5rem"></div>
         <input type="text" id="gustoBankSearch" placeholder="搜日期 / 描述 / 金额 / 银行 / 账户…" oninput="renderGustoBankList()" style="width:100%;margin-bottom:.45rem">
         <div id="gustoBankList" style="flex:1;overflow:auto;border:1px solid var(--g200);border-radius:8px;min-height:140px;max-height:60vh"></div>
-        <div style="font-size:.72rem;color:var(--g400);margin:.4rem 0">只显示银行历史里的 Gusto 交易；<b>只有金额和这笔付款一致的才能选</b>（银行里 Gusto 逐笔等额扣款），金额不同或已挂过别的付款的置灰。</div>
+        <div style="font-size:.72rem;color:var(--g400);margin:.4rem 0">只显示银行历史里的 Gusto 交易；<b>只有金额对得上的才能选</b>：转账金额 = 这次选的付款合计（加上这笔转账上已挂的其他付款）。一笔转账对多笔付款：先在列表里勾选几笔付款，再点「🔗 合并关联」。</div>
         <div style="display:flex;gap:.5rem;justify-content:flex-end">
           <button class="btn btn-outline" id="gustoBankUnlinkBtn" style="display:none;color:#dc2626;margin-right:auto" onclick="gustoBankUnlink()">解除关联</button>
           <button class="btn btn-outline" onclick="document.getElementById('gustoBankModal').style.display='none'">取消</button>
@@ -5134,6 +5136,7 @@ const _GUSTO_WD = ['周日', '周一', '周二', '周三', '周四', '周五', '
 function renderGustoPayList() {
   _gustoPayPrefLoad();
   document.getElementById('gustoAutoMatchBtn').style.display = canAnnotate() ? '' : 'none';
+  _gustoMultiBtnRefresh();
   const q = (document.getElementById('gustoPaySearch').value || '').trim().toLowerCase();
   const [from, to] = _gustoPayRangeDates();
   const rows = _gustoPayRows.filter(r => (!from || r.date >= from) && (!to || r.date <= to)
@@ -5170,6 +5173,9 @@ function renderGustoPayList() {
   }
   // 银行转账列: 已挂的画徽章(绿=已审核通过, 黄=待审核, 悬停看银行/账户/经手人),
   // admin 对待审核的行内一键 ✓通过 / ✕驳回; 没挂的给「🔗 关联」入口 (staff 只读)
+  // 一笔转账挂了几笔付款 (合并扣款), 徽章上标「合并 N 笔」
+  const txnCount = {};
+  _gustoPayRows.forEach(x => { if (x.bank_txn_id) txnCount[x.bank_txn_id] = (txnCount[x.bank_txn_id] || 0) + 1; });
   const bankCell = p => {
     const t = p.bank_txn_id ? _gustoBankTxns[p.bank_txn_id] : null;
     const canEdit = canAnnotate();
@@ -5179,7 +5185,8 @@ function renderGustoPayList() {
       // 徽章显示主体名(没有就银行名), 不放尾号——尾号只在悬停详情里
       const entity = t ? String(t.company_label || '').trim() || String(t.bank || '').trim() : '';
       // 银行记录找不到 (待入账换号没对上): 明说, 并给「重新关联」
-      const label = t ? `${t.date.slice(5)} ${money(Math.abs(t.amount))}${entity ? ' · ' + entity : ''}` : '已关联 · 银行记录找不到';
+      const multi = txnCount[p.bank_txn_id] > 1 ? txnCount[p.bank_txn_id] : 0;
+      const label = t ? `${t.date.slice(5)} ${money(Math.abs(t.amount))}${entity ? ' · ' + entity : ''}${multi ? ` · 合并 ${multi} 笔` : ''}` : '已关联 · 银行记录找不到';
       const tip = [
         t ? `${t.date} · ${money(Math.abs(t.amount))}` : p.bank_txn_id,
         t ? [t.bank, t.company_label, t.mask ? '··' + t.mask : ''].filter(Boolean).join(' · ') : '',
@@ -5199,7 +5206,8 @@ function renderGustoPayList() {
           ? ` <a style="cursor:pointer;font-size:.72rem;color:${t ? '#0f4c6b' : '#dc2626;font-weight:700'};text-decoration:underline" onclick="openGustoBankLink('${esc(p.uuid)}')">${t ? '改' : '重新关联'}</a>` : '');
     }
     return canEdit
-      ? `<a style="cursor:pointer;font-size:.76rem;color:#0f4c6b;text-decoration:underline;white-space:nowrap" onclick="openGustoBankLink('${esc(p.uuid)}')">🔗 关联</a>`
+      ? `<input type="checkbox" title="勾选几笔一起关联同一笔银行转账" ${_gustoMultiSel.has(p.uuid) ? 'checked' : ''} onchange="gustoMultiToggle('${esc(p.uuid)}',this.checked)" style="vertical-align:middle;margin:0 .3rem 0 0">` +
+        `<a style="cursor:pointer;font-size:.76rem;color:#0f4c6b;text-decoration:underline;white-space:nowrap" onclick="openGustoBankLink('${esc(p.uuid)}')">🔗 关联</a>`
       : '<span style="color:var(--g400)">—</span>';
   };
   // 发票关联: 银行转账被哪张发票的逐行付款备注连上 + admin 审核状态; 点击打开那张发票
@@ -5242,16 +5250,37 @@ function renderGustoPayList() {
 }
 // ── 🏦 付款 ↔ 银行转账关联: 候选只有银行历史里的 Gusto 交易, 其他转账不能挂 ──
 let _gustoInvLinks = {};  // bank txn_id → [发票逐行付款备注关联], 见 /api/acct/gusto/payments
+// _gustoBankTarget = { pays: [这次要挂的付款], total: 合计 }; 一笔转账可以挂多笔付款 (合计 = 转账金额)
 let _gustoBankTxns = {}, _gustoBankRows = null, _gustoBankTarget = null, _gustoBankSel = '';
-async function openGustoBankLink(uuid) {
+const _gustoMultiSel = new Set();   // 列表里勾选的未关联付款 uuid
+function gustoMultiToggle(uuid, on) { if (on) _gustoMultiSel.add(uuid); else _gustoMultiSel.delete(uuid); _gustoMultiBtnRefresh(); }
+function _gustoMultiBtnRefresh() {
+  const pays = _gustoPayRows.filter(x => _gustoMultiSel.has(x.uuid));
+  const btn = document.getElementById('gustoMultiLinkBtn');
+  btn.style.display = pays.length ? '' : 'none';
+  document.getElementById('gustoMultiClearBtn').style.display = pays.length ? '' : 'none';
+  btn.textContent = `🔗 合并关联（${pays.length} 笔 · ${money(pays.reduce((a, x) => a + (+x.wage_total || 0), 0))}）`;
+}
+function openGustoBankLink(uuid) {
   const p = _gustoPayRows.find(x => x.uuid === uuid);
-  if (!p) return;
-  _gustoBankTarget = p;
-  _gustoBankSel = p.bank_txn_id || '';
-  document.getElementById('gustoBankPayInfo').innerHTML =
-    `${esc(p.date)} · <b>${esc(p.contractor_name)}</b>${p.wage_type === 'W2' ? '（W-2）' : ''} · <b>${money(p.wage_total)}</b>${p.payment_method ? ' · ' + esc(p.payment_method) : ''}` +
-    ` <span style="color:var(--g400)">— 只能选金额同为 <b>${money(p.wage_total)}</b> 的 Gusto 转账</span>`;
-  document.getElementById('gustoBankUnlinkBtn').style.display = p.bank_txn_id ? '' : 'none';
+  if (p) _gustoOpenBankModal([p]);
+}
+function openGustoBankLinkMulti() {
+  const pays = _gustoPayRows.filter(x => _gustoMultiSel.has(x.uuid));
+  if (!pays.length) return toast('先勾选要一起关联的付款', true);
+  _gustoOpenBankModal(pays);
+}
+async function _gustoOpenBankModal(pays) {
+  const total = Math.round(pays.reduce((a, x) => a + Math.abs(+x.wage_total || 0), 0) * 100) / 100;
+  _gustoBankTarget = { pays, total, uuids: new Set(pays.map(x => x.uuid)) };
+  const ids = [...new Set(pays.map(x => x.bank_txn_id || ''))];
+  _gustoBankSel = ids.length === 1 ? ids[0] : '';
+  const one = pays.length === 1 ? pays[0] : null;
+  document.getElementById('gustoBankPayInfo').innerHTML = (one
+    ? `${esc(one.date)} · <b>${esc(one.contractor_name)}</b>${one.wage_type === 'W2' ? '（W-2）' : ''} · <b>${money(one.wage_total)}</b>${one.payment_method ? ' · ' + esc(one.payment_method) : ''}`
+    : `<b>${pays.length} 笔付款一起关联</b> · 合计 <b>${money(total)}</b><div style="margin-top:.2rem;max-height:5.5em;overflow:auto">${pays.map(x => `${esc(x.date)} ${esc(x.contractor_name)} ${money(x.wage_total)}`).join('；')}</div>`) +
+    ` <span style="color:var(--g400)">— 只能选金额对得上的 Gusto 转账（同一笔转账上已挂的其他付款也算进去）</span>`;
+  document.getElementById('gustoBankUnlinkBtn').style.display = pays.some(x => x.bank_txn_id) ? '' : 'none';
   document.getElementById('gustoBankSearch').value = '';
   document.getElementById('gustoBankModal').style.display = 'flex';
   document.getElementById('gustoBankList').innerHTML = '<div style="padding:.8rem;color:var(--g400);font-size:.8rem">加载中…</div>';
@@ -5276,12 +5305,15 @@ function renderGustoBankList() {
   const q = (document.getElementById('gustoBankSearch').value || '').trim().toLowerCase();
   let rows = _gustoBankRows.filter(t => !q || [t.name, t.merchant, t.date, String(t.amount), t.bank, t.company_label, t.account_name, t.mask].join(' ').toLowerCase().includes(q));
   // 金额一致且没被占用的排最前, 其余置灰不可选
-  const usable = t => Math.abs(Math.abs(+t.amount) - Math.abs(+P.wage_total)) <= 0.005 && (!t.linked || _gustoBankSel === t.txn_id);
+  // 这笔转账上已挂、但不在这次选的付款里的金额 —— 要一起算进合计
+  const otherSum = t => (t.linked && t.linked.pays ? t.linked.pays : []).filter(x => !P.uuids.has(x.uuid)).reduce((a, x) => a + Math.abs(+x.amt || 0), 0);
+  const usable = t => Math.abs(Math.abs(+t.amount) - otherSum(t) - P.total) <= 0.005;
   rows = [...rows.filter(usable), ...rows.filter(t => !usable(t))];
   document.getElementById('gustoBankList').innerHTML = rows.length ? rows.map(t => {
-    const ok = usable(t);
-    const amtMatch = Math.abs(Math.abs(+t.amount) - Math.abs(+P.wage_total)) <= 0.005;
-    const reason = !amtMatch ? '金额不同，不能挂' : (t.linked ? `已挂：${t.linked.name || ''} ${t.linked.date || ''}${t.linked.status === 'pending' ? '（待审核）' : ''}` : '');
+    const ok = usable(t), amtMatch = ok;
+    const os = otherSum(t);
+    const reason = (t.linked ? `已挂 ${t.linked.n} 笔${t.linked.n === 1 ? '：' + (t.linked.name || '') + ' ' + (t.linked.date || '') : ' · ' + money(t.linked.sum)}${t.linked.status === 'pending' ? '（待审核）' : ''}` : '')
+      + (!amtMatch ? `${t.linked ? ' · ' : ''}金额对不上${os ? `（还差 ${money(Math.abs(+t.amount) - os)}）` : ''}` : '');
     return `
     <label style="display:flex;align-items:flex-start;gap:.65rem;padding:.55rem .75rem;border-bottom:1px solid #eef2f7;${ok ? 'cursor:pointer;' : 'opacity:.5;cursor:not-allowed;'}${_gustoBankSel === t.txn_id ? 'background:#eff6ff;' : ''}">
       <input type="radio" name="gustoBankTxn" value="${esc(t.txn_id)}" ${_gustoBankSel === t.txn_id ? 'checked' : ''} ${ok ? '' : 'disabled'} onchange="_gustoBankSel=this.value;renderGustoBankList()" style="margin-top:5px">
@@ -5309,11 +5341,12 @@ function renderGustoBankList() {
 function _gustoAnnRefresh() { if (typeof annLoadAll === 'function') annLoadAll().catch(() => {}); }
 async function submitGustoBankLink() {
   if (!_gustoBankTarget) return;
-  if (!_gustoBankSel) return toast('请先选择一笔金额一致的 Gusto 银行转账', true);
-  const r = await api(`/api/acct/gusto/payments/${encodeURIComponent(_gustoBankTarget.uuid)}/bank-link`,
-    { method: 'POST', body: JSON.stringify({ txn_id: _gustoBankSel }) }).catch(e => ({ error: e.message }));
+  if (!_gustoBankSel) return toast('请先选择一笔金额对得上的 Gusto 银行转账', true);
+  const r = await api('/api/acct/gusto/bank-link',
+    { method: 'POST', body: JSON.stringify({ uuids: [..._gustoBankTarget.uuids], txn_id: _gustoBankSel }) }).catch(e => ({ error: e.message }));
   if (r && r.ok) {
-    toast(r.status === 'pending' ? '✅ 已关联，等待管理员审核' : '✅ 已关联');
+    toast((r.linked > 1 ? `✅ ${r.linked} 笔已关联` : '✅ 已关联') + (r.status === 'pending' ? '，等待管理员审核' : ''));
+    _gustoBankTarget.uuids.forEach(u => _gustoMultiSel.delete(u));
     document.getElementById('gustoBankModal').style.display = 'none';
     gustoLoadPayments(); _gustoAnnRefresh();
   } else toast((r && r.error) || '关联失败', true);
@@ -5337,7 +5370,9 @@ async function gustoBankAutoMatch() {
 }
 async function gustoBankUnlink() {
   if (!_gustoBankTarget) return;
-  const r = await api(`/api/acct/gusto/payments/${encodeURIComponent(_gustoBankTarget.uuid)}/bank-link`, { method: 'POST', body: JSON.stringify({ txn_id: '' }) }).catch(e => ({ error: e.message }));
+  const linked = _gustoBankTarget.pays.filter(x => x.bank_txn_id).map(x => x.uuid);
+  if (!linked.length) return;
+  const r = await api('/api/acct/gusto/bank-link', { method: 'POST', body: JSON.stringify({ uuids: linked, txn_id: '' }) }).catch(e => ({ error: e.message }));
   if (r && r.ok) {
     toast('已解除关联');
     document.getElementById('gustoBankModal').style.display = 'none';

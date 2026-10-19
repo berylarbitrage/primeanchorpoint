@@ -42818,12 +42818,13 @@ const _GUSTO_TXN_SELECT = `SELECT t.txn_id, t.date, t.name, t.merchant, t.amount
   LEFT JOIN plaid_items i ON i.item_id = a.item_id`;
 function _gustoTxnOccupants() {
   const occ = {};
-  db.prepare(`SELECT bank_txn_id, contractor_name, date, wage_total, bank_link_status
+  db.prepare(`SELECT uuid, bank_txn_id, contractor_name, date, wage_total, bank_link_status
     FROM gusto_payments WHERE bank_txn_id!=''`).all()
     .forEach(r => {
-      if (!occ[r.bank_txn_id]) occ[r.bank_txn_id] = { n: 0, sum: 0, name: r.contractor_name, date: r.date, status: r.bank_link_status };
+      if (!occ[r.bank_txn_id]) occ[r.bank_txn_id] = { n: 0, sum: 0, name: r.contractor_name, date: r.date, status: r.bank_link_status, pays: [] };
       occ[r.bank_txn_id].n++;
       occ[r.bank_txn_id].sum = Math.round((occ[r.bank_txn_id].sum + (Number(r.wage_total) || 0)) * 100) / 100;
+      occ[r.bank_txn_id].pays.push({ uuid: r.uuid, amt: Number(r.wage_total) || 0 });
     });
   return occ;
 }
@@ -42951,47 +42952,72 @@ app.get('/api/acct/gusto/bank-txns', requireAdmin, requireAcctView, (req, res) =
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 挂/解除关联。规则: ① 只能挂 Gusto 交易 ② 金额必须与付款一致（银行里 Gusto 逐笔
-// 等额扣款）③ 一笔转账只能挂一笔付款 ④ 会计/客服挂的进「待审核」, admin 挂的直接
-// 生效; 已通过审核的关联只有 admin 能改/解除。txn_id 传空 = 解除。
-app.post('/api/acct/gusto/payments/:uuid/bank-link', requireAdmin, requireAcctWrite, (req, res) => {
+// 挂/解除关联。规则: ① 只能挂 Gusto 交易 ② 金额必须对上: 一笔转账可以挂多笔付款
+// (Gusto 有时把几个人的工资合成一笔扣款), 挂上后这笔转账上所有付款的合计必须等于转账金额
+// ③ 会计/客服挂的进「待审核」, admin 挂的直接生效; 已通过审核的关联只有 admin 能改/解除。
+// txn_id 传空 = 解除。uuids 一次可以传多笔付款 (一起挂到同一笔转账)。
+function _gustoBankLinkHandler(req, res, uuids) {
   try {
-    const p = db.prepare(`SELECT uuid, date, contractor_name, wage_type, wage_total, bank_txn_id, bank_link_status
-      FROM gusto_payments WHERE uuid=?`).get(String(req.params.uuid || ''));
-    if (!p) return res.status(404).json({ error: '付款记录不存在' });
+    uuids = [...new Set((uuids || []).map(u => String(u || '').trim()).filter(Boolean))];
+    if (!uuids.length) return res.status(400).json({ error: '没有选付款' });
+    if (uuids.length > 200) return res.status(400).json({ error: '一次最多 200 笔' });
+    const getP = db.prepare(`SELECT uuid, date, contractor_name, wage_type, wage_total, bank_txn_id, bank_link_status
+      FROM gusto_payments WHERE uuid=?`);
+    const pays = uuids.map(u => getP.get(u));
+    if (pays.some(p => !p)) return res.status(404).json({ error: '付款记录不存在' });
     const isAdmin = req.userRole === 'admin';
-    if (p.bank_txn_id && p.bank_link_status === 'approved' && !isAdmin) {
-      return res.status(403).json({ error: '这笔关联已通过管理员审核，只有管理员能修改或解除' });
-    }
+    const locked = pays.find(p => p.bank_txn_id && p.bank_link_status === 'approved' && !isAdmin);
     const now = new Date().toISOString();
     const txnId = String((req.body || {}).txn_id || '').trim();
+    if (locked && locked.bank_txn_id !== txnId) {
+      return res.status(403).json({ error: `「${locked.contractor_name} ${locked.date}」的关联已通过管理员审核，只有管理员能修改或解除` });
+    }
+    const clear = db.prepare(`UPDATE gusto_payments SET bank_txn_id='', bank_link_status='', bank_link_by='', bank_link_at='',
+        bank_link_review_by='', bank_link_review_at='' WHERE uuid=?`);
     if (!txnId) {
-      db.prepare(`UPDATE gusto_payments SET bank_txn_id='', bank_link_status='', bank_link_by='', bank_link_at='',
-        bank_link_review_by='', bank_link_review_at='' WHERE uuid=?`).run(p.uuid);
-      _gustoSyncBankAnn(p.bank_txn_id, req.userName);
-      auditLog('gusto_bank_unlink', req, { targetType: 'gusto_payment', targetId: p.uuid, details: { name: p.contractor_name, date: p.date } });
-      return res.json({ ok: true, unlinked: 1 });
+      const oldIds = new Set();
+      db.transaction(() => pays.forEach(p => { clear.run(p.uuid); if (p.bank_txn_id) oldIds.add(p.bank_txn_id); }))();
+      oldIds.forEach(id => _gustoSyncBankAnn(id, req.userName));
+      pays.forEach(p => auditLog('gusto_bank_unlink', req, { targetType: 'gusto_payment', targetId: p.uuid, details: { name: p.contractor_name, date: p.date } }));
+      return res.json({ ok: true, unlinked: pays.length });
     }
     const t = db.prepare(`${_GUSTO_TXN_SELECT} WHERE t.txn_id=? AND ${_GUSTO_TXN_WHERE}`).get(txnId);
     if (!t) return res.status(400).json({ error: '只能关联银行历史里的 Gusto 交易，其他转账不能挂' });
-    if (Math.abs(Math.abs(Number(t.amount)) - Math.abs(Number(p.wage_total))) > 0.005) {
-      return res.status(400).json({ error: `金额不一致不能关联：付款 $${Number(p.wage_total).toFixed(2)}，转账 $${Math.abs(Number(t.amount)).toFixed(2)}` });
-    }
-    const holder = db.prepare("SELECT uuid, contractor_name, date FROM gusto_payments WHERE bank_txn_id=? AND uuid!=?").get(t.txn_id, p.uuid);
-    if (holder) {
-      return res.status(400).json({ error: `这笔转账已经挂在「${holder.contractor_name} ${holder.date}」的付款上，先解除那边才能改挂` });
+    // 这笔转账上已经挂着的别的付款 (不在这次选的里面) 也算进合计
+    const want = new Set(uuids);
+    const others = db.prepare('SELECT uuid, contractor_name, date, wage_total FROM gusto_payments WHERE bank_txn_id=?').all(t.txn_id)
+      .filter(o => !want.has(o.uuid));
+    const cents = v => Math.round((Number(v) || 0) * 100);
+    const selSum = pays.reduce((a, p) => a + cents(Math.abs(Number(p.wage_total))), 0);
+    const otherSum = others.reduce((a, o) => a + cents(Math.abs(Number(o.wage_total))), 0);
+    const txnAmt = cents(Math.abs(Number(t.amount)));
+    if (selSum + otherSum !== txnAmt) {
+      const $ = c => '$' + (c / 100).toFixed(2);
+      return res.status(400).json({ error: `金额对不上不能关联：转账 ${$(txnAmt)}，选的付款合计 ${$(selSum)}`
+        + (others.length ? `（这笔转账上已挂 ${others.length} 笔 ${$(otherSum)}，${otherSum >= txnAmt ? '已经挂满' : '还差 ' + $(txnAmt - otherSum)}）` : '') });
     }
     const status = isAdmin ? 'approved' : 'pending';
-    db.prepare(`UPDATE gusto_payments SET bank_txn_id=?, bank_link_status=?, bank_link_by=?, bank_link_at=?,
-      bank_link_review_by=?, bank_link_review_at=? WHERE uuid=?`)
-      .run(t.txn_id, status, req.userName || '', now, isAdmin ? (req.userName || '') : '', isAdmin ? now : '', p.uuid);
-    if (p.bank_txn_id && p.bank_txn_id !== t.txn_id) _gustoSyncBankAnn(p.bank_txn_id, req.userName); // 改挂: 旧转账的自动标注清掉
+    const upd = db.prepare(`UPDATE gusto_payments SET bank_txn_id=?, bank_link_status=?, bank_link_by=?, bank_link_at=?,
+      bank_link_review_by=?, bank_link_review_at=? WHERE uuid=?`);
+    const oldIds = new Set();
+    db.transaction(() => pays.forEach(p => {
+      // 原本就挂在这笔、已审核的不动 (非 admin 也能把别的付款补挂进来)
+      if (p.bank_txn_id === t.txn_id && p.bank_link_status === 'approved' && !isAdmin) return;
+      upd.run(t.txn_id, status, req.userName || '', now, isAdmin ? (req.userName || '') : '', isAdmin ? now : '', p.uuid);
+      if (p.bank_txn_id && p.bank_txn_id !== t.txn_id) oldIds.add(p.bank_txn_id);
+    }))();
+    oldIds.forEach(id => _gustoSyncBankAnn(id, req.userName)); // 改挂: 旧转账的自动标注清掉/更新
     _gustoSyncBankAnn(t.txn_id, req.userName);
-    auditLog('gusto_bank_link', req, { targetType: 'gusto_payment', targetId: p.uuid,
-      details: { txn: t.txn_id, txn_amount: t.amount, name: p.contractor_name, date: p.date, status } });
-    res.json({ ok: true, linked: 1, status, txn: { txn_id: t.txn_id, date: t.date, amount: t.amount, bank: t.bank, mask: t.mask } });
+    pays.forEach(p => auditLog('gusto_bank_link', req, { targetType: 'gusto_payment', targetId: p.uuid,
+      details: { txn: t.txn_id, txn_amount: t.amount, name: p.contractor_name, date: p.date, status, combined: pays.length + others.length } }));
+    res.json({ ok: true, linked: pays.length, status, txn: { txn_id: t.txn_id, date: t.date, amount: t.amount, bank: t.bank, mask: t.mask } });
   } catch (e) { res.status(500).json({ error: e.message }); }
-});
+}
+app.post('/api/acct/gusto/payments/:uuid/bank-link', requireAdmin, requireAcctWrite,
+  (req, res) => _gustoBankLinkHandler(req, res, [req.params.uuid]));
+// 多笔付款一起挂同一笔转账: body { uuids: [...], txn_id }
+app.post('/api/acct/gusto/bank-link', requireAdmin, requireAcctWrite,
+  (req, res) => _gustoBankLinkHandler(req, res, Array.isArray((req.body || {}).uuids) ? req.body.uuids : []));
 
 // admin 审核: approve 通过 / reject 驳回(解除关联)
 app.post('/api/acct/gusto/payments/:uuid/bank-link-review', requireAdmin, requireRole('admin'), (req, res) => {
