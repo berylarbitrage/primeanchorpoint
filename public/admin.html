@@ -49039,6 +49039,8 @@ function _bsPayeeLabel(direction) { return direction === 'in' ? '谁付的' : '�
 function _bsPayeeOptions(current, direction) {
   const opt = n => `<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`;
   const parts = [`<option value="">— 选择${_bsPayeeLabel(direction)} —</option>`,
+    // 卸柜费用很常用, 放最前面, 免得在长列表里翻不到
+    `<option value="${BS_PAYEE_UNLOAD}"${current === BS_PAYEE_UNLOAD ? ' selected' : ''}>📦 卸柜费用 · 支付卸柜账单（选公司）</option>`,
     `<option value="${esc(BS_PAYEE_BANKFEE)}"${current === BS_PAYEE_BANKFEE ? ' selected' : ''}>🏦 银行费用</option>`,
     `<option value="${esc(BS_PAYEE_OFFICE)}"${current === BS_PAYEE_OFFICE ? ' selected' : ''}>🧾 公司办公费用（选分类）</option>`,
     `<option value="${esc(BS_PAYEE_COMPFEE)}"${current === BS_PAYEE_COMPFEE ? ' selected' : ''}>🏛️ 公司相关费用（税务/成立费，选分类）</option>`,
@@ -49060,7 +49062,6 @@ function _bsPayeeOptions(current, direction) {
     `<option value="${esc(BS_PAYEE_RETURNED)}"${current === BS_PAYEE_RETURNED ? ' selected' : ''}>↩️ 退回款 Returned Payment</option>`,
     `<option value="${esc(BS_PAYEE_TEST)}"${current === BS_PAYEE_TEST ? ' selected' : ''}>🧪 测试转账 Test Transfer</option>`,
     `<option value="${BS_PAYEE_TRUCK}"${current === BS_PAYEE_TRUCK ? ' selected' : ''}>🚚 卡车费（选公司）</option>`,
-    `<option value="${BS_PAYEE_UNLOAD}"${current === BS_PAYEE_UNLOAD ? ' selected' : ''}>📦 支付卸柜账单（选公司）</option>`,
     `<option value="${BS_PAYEE_RENT}"${current === BS_PAYEE_RENT ? ' selected' : ''}>🏠 付房租（选公司）</option>`,
     `<option value="${BS_PAYEE_INSUR}"${current === BS_PAYEE_INSUR ? ' selected' : ''}>🛡️ 保险费（选保险公司）</option>`,
     `<option value="${BS_PAYEE_FX}"${current === BS_PAYEE_FX ? ' selected' : ''}>💱 换汇（选对方）</option>`,
