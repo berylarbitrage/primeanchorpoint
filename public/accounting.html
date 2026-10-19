@@ -5218,8 +5218,9 @@ function renderGustoPayList() {
       return ` <a onclick="openInvoice(${Number(l.invoice_id)})" title="${esc(tip)}" style="cursor:pointer;text-decoration:none;font-size:.72rem;${st[1]};border-radius:6px;padding:1px 6px;white-space:nowrap">🧾 ${esc(l.invoice_number)} #${l.line_idx + 1}${st[0] ? ' · ' + st[0] : ''}</a>`;
     }).join('');
   };
-  const rowHtml = p => `<tr>
-    <td style="white-space:nowrap">${esc(p.date)}</td>
+  // 每行不换行 (姓名·部门、状态·导入、银行徽章都排一行), 太宽就横向滚动
+  const rowHtml = p => `<tr style="white-space:nowrap">
+    <td>${esc(p.date)}</td>
     <td><b>${esc(p.contractor_name || p.contractor_uuid)}</b>${p.department && grp !== 'dept' ? ` <span style="font-size:.68rem;color:var(--g500)">· ${esc(p.department)}</span>` : ''}${p.wage_type === 'W2' ? ' <span title="W-2 员工工资，不参与合同工对账" style="font-size:.68rem;color:#1e40af;background:#dbeafe;border:1px solid #bfdbfe;border-radius:6px;padding:0 4px">W-2</span>' : ''}</td>
     <td>${esc(p.payment_method || '—')}</td>
     <td style="text-align:right">${p.hours != null ? (+p.hours).toFixed(2) : '—'}</td>
