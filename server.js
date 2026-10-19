@@ -939,7 +939,7 @@ try { db.exec(`ALTER TABLE referrals ADD COLUMN worker_wage TEXT DEFAULT ''`); }
 try { db.exec(`ALTER TABLE referrals ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE referrals ADD COLUMN job_title TEXT DEFAULT ''`); } catch(e) {}
 // 通过面试开始上班: 记上班日期 (work_start_date) + 工人的打卡 QR 码 (8 位打卡密码, employees.timeclock_code),
-// 靠打卡码对上员工档案和打卡记录, 按周工时核对介绍费; 上班满 3 个月 referral 期结束
+// 靠打卡码对上员工档案和打卡记录, 按周工时核对介绍费; 上班满 13 周 referral 期结束
 try { db.exec(`ALTER TABLE referrals ADD COLUMN timeclock_code TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE referrals ADD COLUMN started_by TEXT DEFAULT ''`); } catch(e) {}
 // 开始上班时确定的: 上班时间 (起止 + 一周哪几天)、工资、工资付款周期和付款日
@@ -983,6 +983,9 @@ for (const col of ["admin_status TEXT DEFAULT ''", 'admin_fee REAL DEFAULT NULL'
 // referral_weeks.tier: 这周按哪档算 — '' 自动 (最早那周算第一周) | first 第一周 | after 之后每周
 try { db.exec(`ALTER TABLE referrals ADD COLUMN first_week_amount REAL DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE referral_weeks ADD COLUMN tier TEXT DEFAULT ''`); } catch(e) {}
+// 上班中途不去了: work_end_date = 最后上班那天, 再记原因和谁标的; 清空 = 撤销 (回到上班中)
+try { db.exec(`ALTER TABLE referrals ADD COLUMN quit_reason TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE referrals ADD COLUMN quit_by TEXT DEFAULT ''`); } catch(e) {}
 // 上线前已经记了付款的那几周: 当作管理员已确认 (金额按当时那周的介绍费), 免得已付的周被锁住改不了
 try {
   const _rwKey = 'mig_referral_weeks_admin_confirm_v1';
@@ -42056,7 +42059,7 @@ app.post('/api/acct/referrals/:id/start', requireAdmin, requireRole('accounting'
   if (req.userRole !== 'admin' && cur.review_status !== 'pending' && cur.work_start_date) return res.status(403).json({ error: '该记录管理员已核查，如需修改请联系管理员' });
   const b = req.body || {};
   if (b.action === 'clear') {
-    db.prepare(`UPDATE referrals SET work_start_date='', timeclock_code='', started_by='', start_time='', end_time='', work_days='', start_wage='', pay_cycle='', pay_day='', updated_at=datetime('now') WHERE id=?`).run(cur.id);
+    db.prepare(`UPDATE referrals SET work_start_date='', timeclock_code='', started_by='', start_time='', end_time='', work_days='', start_wage='', pay_cycle='', pay_day='', work_end_date='', quit_reason='', quit_by='', updated_at=datetime('now') WHERE id=?`).run(cur.id);
     return res.json({ success: true });
   }
   const date = String(b.work_start_date || '').trim();
@@ -42084,6 +42087,24 @@ app.post('/api/acct/referrals/:id/start', requireAdmin, requireRole('accounting'
   }
   db.prepare(`UPDATE referrals SET work_start_date=?, timeclock_code=?, started_by=?, start_time=?, end_time=?, work_days=?, start_wage=?, pay_cycle=?, pay_day=?, pay_method=?, updated_at=datetime('now') WHERE id=?`)
     .run(date, code, req.userName || '', startTime, endTime, workDays, wage, cycle, payDay, method, cur.id);
+  res.json({ success: true });
+});
+
+// 上班中途不去了: { work_end_date: 最后上班那天, reason } / { action: 'clear' } 撤销回上班中
+app.post('/api/acct/referrals/:id/quit', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+  const cur = db.prepare('SELECT id, work_start_date FROM referrals WHERE id=?').get(parseInt(req.params.id));
+  if (!cur) return res.status(404).json({ error: '记录不存在' });
+  const b = req.body || {};
+  if (b.action === 'clear') {
+    db.prepare(`UPDATE referrals SET work_end_date='', quit_reason='', quit_by='', updated_at=datetime('now') WHERE id=?`).run(cur.id);
+    return res.json({ success: true });
+  }
+  if (!cur.work_start_date) return res.status(400).json({ error: '还没开始上班，不能标「中途不去了」' });
+  const date = String(b.work_end_date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: '请填写最后上班那天（YYYY-MM-DD）' });
+  if (date < cur.work_start_date) return res.status(400).json({ error: '最后上班那天不能早于开始上班的日期' });
+  db.prepare(`UPDATE referrals SET work_end_date=?, quit_reason=?, quit_by=?, updated_at=datetime('now') WHERE id=?`)
+    .run(date, String(b.reason || '').trim().slice(0, 300), req.userName || '', cur.id);
   res.json({ success: true });
 });
 
