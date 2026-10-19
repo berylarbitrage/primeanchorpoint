@@ -109,7 +109,7 @@ function bsPurposeSelChange(boxId, sel) {
   bsUpdateBoxField(boxId, 'purpose', val);
 }
 const BS_PAYEE_OFFICE = '办公费用';
-const BS_OFFICE_TYPES = ['Claude (Anthropic)', 'ChatGPT (OpenAI)', 'Gusto 工资系统', '软件订阅 Software', '办公用品 Supplies', '网络/电话 Internet & Phone', '域名/服务器 Domain & Hosting', '邮寄快递 Postage', '打印耗材 Printing', '会员/年费 Membership', '差旅 Travel', '其他 Other'];
+const BS_OFFICE_TYPES = ['Claude (Anthropic)', 'ChatGPT (OpenAI)', 'Gusto 工资系统', '软件订阅 Software', '办公用品 Supplies', '网络/电话 Internet & Phone', '域名/服务器 Domain & Hosting', '邮寄快递 Postage', '打印耗材 Printing', '会员/年费 Membership', '差旅 Travel', '交通费用 Transportation', '其他 Other'];
 const BS_PAYEE_COMPFEE = '公司相关费用';
 const BS_COMPFEE_TYPES = ['税务 Tax', '成立费 Incorporation', '注册代理 Registered Agent', '年报/年审 Annual Report', '执照/许可 License & Permit', '政府罚款 Penalty', '律师费 Legal', '会计/报税 Accounting', '公司保险 Insurance', '其他 Other'];
 const BS_PAYEE_MEAL = '餐饮支出';
