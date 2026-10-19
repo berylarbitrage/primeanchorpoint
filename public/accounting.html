@@ -2375,6 +2375,8 @@ function renderRefList() {
   const person = (name, phone, extra) => `<div style="font-weight:800;font-size:.95rem;color:#0f172a;white-space:nowrap">${esc(name || '—')}</div>`
     + `<div style="font-size:.74rem;color:var(--g500);white-space:nowrap">${phone ? `<a href="tel:${esc(phone)}" style="color:#0f4c6b;text-decoration:none">📞 ${esc(phone)}</a>` : ''}${extra || ''}</div>`;
   const canInv = ['accounting', 'admin'].includes(USER.role);
+  // 客服也能关联发票, 只是要管理员审核通过才生效
+  const canLinkInv = canInv || USER.role === 'cs';
   document.getElementById('refBody').innerHTML = list.length ? list.map(r => {
     const ov = _refOverall(r);
     const ws = _refWeekSums(r);
@@ -2458,7 +2460,7 @@ function renderRefList() {
     const whMain = r.warehouse_name || r.warehouse_address || '—';
     const whSub = r.warehouse_name ? r.warehouse_address : '';
     const weekHint = weeks.length ? sumLine
-      : `<span style="color:var(--g400)">还没关联发票${canInv ? ' — 每张发票（一周账期）算一周，按周给工头付钱' : '，会计关联后按周列出'}</span>`;
+      : `<span style="color:var(--g400)">还没关联发票${canLinkInv ? ' — 每张发票（一周账期）算一周，按周给工头付钱' : '，会计关联后按周列出'}</span>`;
     // 面试安排 / 没去面试 阶段不显示核查和每周付款 (开始上班后在「上班中」才有)
     const preWork = ['interview', 'noshow'].includes(_refStage(r));
     const overdue = _refIvOverdue(r) || (_refStage(r) === 'working' && _refPayProblems(r).length > 0);
@@ -2482,7 +2484,8 @@ function renderRefList() {
         ${_refWorkRows(r)}
         ${preWork ? '' : reviewBar}
         ${preWork && !weeks.length ? '' : `<div class="ref-row"><b style="color:var(--g600)">🗓 每周付款</b>${weekHint}<span style="flex:1"></span>
-          ${canInv ? `<button class="btn btn-sm btn-outline" onclick="openRefInv(${r.id})">${weeks.length ? '✎ 改关联发票' : '＋ 关联发票'}</button>` : ''}</div>`}
+          ${canLinkInv ? `<button class="btn btn-sm btn-outline" onclick="openRefInv(${r.id})">${weeks.length ? '✎ 改关联发票' : '＋ 关联发票'}</button>` : ''}</div>`}
+        ${_refInvPendRow(r)}
         ${weeks.length ? `<div class="ref-weeks">${weekTable}</div>` : ''}
         ${r.invoice_note ? `<div class="ref-row" style="color:var(--g500)">📝 ${esc(r.invoice_note)}</div>` : ''}
         ${legacy ? `<div class="ref-row">${legacy}</div>` : ''}
@@ -3659,11 +3662,14 @@ function openRefInv(id) {
   if (!r) return;
   _riRefId = id;
   _riRef = r;
-  _riSel = new Set(r.invoice_ids || []);
+  // 有客服待审核的那份: 客服接着改、管理员打开审核, 都从待审核的那份开始
+  const pend = ['cs', 'admin'].includes(USER.role) ? r.invoice_pending : null;
+  _riSel = new Set(pend ? pend.invoice_ids : (r.invoice_ids || []));
   _riTiers = {};
-  (r.weeks || []).forEach(w => { if (w.tier) _riTiers[w.invoice_id] = w.tier; });
+  if (pend) Object.assign(_riTiers, pend.invoice_tiers || {});
+  else (r.weeks || []).forEach(w => { if (w.tier) _riTiers[w.invoice_id] = w.tier; });
   _riLines = {};
-  Object.entries(r.invoice_lines || {}).forEach(([k, v]) => { _riLines[k] = new Set(v); });
+  Object.entries((pend ? pend.invoice_lines : r.invoice_lines) || {}).forEach(([k, v]) => { _riLines[k] = new Set(v); });
   _riOpen = new Set(Object.keys(_riLines).map(Number));   // 勾过条目的发票默认展开
   _riWorker = r.worker_name || '';
   _riOpen.forEach(riLoadLines);
@@ -3677,7 +3683,8 @@ function openRefInv(id) {
   document.getElementById('riCo').innerHTML = '<option value="">全部公司</option>' + cos.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
   document.getElementById('riCo').value = guess;
   riFillAddr();
-  document.getElementById('riNote').value = r.invoice_note || '';
+  document.getElementById('riNote').value = pend ? (pend.invoice_note || '') : (r.invoice_note || '');
+  document.getElementById('riSaveBtn').textContent = USER.role === 'cs' ? '提交给管理员审核' : pend ? '保存（按这份关联生效）' : '保存';
   document.getElementById('refInvModal').style.display = 'flex';
   riRenderList();
 }
@@ -3802,6 +3809,30 @@ function riSumRefresh() {
     ? `已选 ${_riSel.size} 张发票${nLines ? `（其中勾了 ${nLines} 个条目）` : ''}${ip ? ` · 按发票算工作区间 ${ip.start || '?'} ~ ${ip.end || '?'}${ip.days ? `（${ip.days} 天）` : ''}` : ''}`
     : '未选择发票';
 }
+// 客服提交的关联发票: 等管理员审核 (通过才生成每周付款行)
+function _refInvPendRow(r) {
+  const p = r.invoice_pending;
+  if (!p) return '';
+  const invs = (p.invoices || []).map(v => `<a onclick="openInvoice(${v.id})" style="cursor:pointer;color:#1d4ed8;text-decoration:underline;white-space:nowrap">📄 ${esc(v.invoice_number || '')}</a>`).join(' ');
+  const who = [p.by, p.at ? String(p.at).slice(0, 16) : ''].filter(Boolean).join(' · ');
+  const btns = USER.role === 'admin'
+    ? `<button class="btn btn-sm btn-outline" onclick="openRefInv(${r.id})" title="打开看看 / 改一下再保存（保存即生效）">👀 看 / 改</button>
+       <button class="btn btn-sm" style="background:#16a34a;color:#fff" onclick="refInvReview(${r.id},'approve')">✅ 通过</button>
+       <button class="btn btn-sm btn-outline" style="color:#dc2626;border-color:#fecaca" onclick="refInvReview(${r.id},'reject')">✖ 退回</button>`
+    : '<span style="font-size:.74rem;color:#b45309">等管理员审核</span>';
+  return `<div class="ref-row" style="background:#fff7ed;color:#9a3412"><b>⏳ 关联发票待审核</b>
+    <span>${(p.invoice_ids || []).length ? `${(p.invoice_ids || []).length} 张：${invs}` : '取消全部关联'}</span>${p.invoice_note ? `<span style="color:var(--g500)">📝 ${esc(p.invoice_note)}</span>` : ''}
+    ${who ? `<span style="color:var(--g400)">· ${esc(who)} 提交</span>` : ''}<span style="flex:1"></span>${btns}</div>`;
+}
+async function refInvReview(id, action) {
+  if (action === 'reject' && !confirm('退回这份关联发票？（原来的关联不变）')) return;
+  try {
+    const r = await api('/api/acct/referrals/' + id + '/invoices-review', { method: 'POST', body: JSON.stringify({ action }) });
+    if (r && r.error) throw new Error(r.error);
+    toast(action === 'approve' ? '✅ 已通过，发票已关联' : '已退回');
+    loadRefList();
+  } catch (e) { toast(e.message || '操作失败', true); }
+}
 async function saveRefInv() {
   if (!_riRefId) return;
   const btn = document.getElementById('riSaveBtn');
@@ -3813,7 +3844,7 @@ async function saveRefInv() {
         invoice_tiers: Object.fromEntries([..._riSel].map(id => [id, _riTiers[id] || ''])) }) });
     if (r && r.error) throw new Error(r.error);
     document.getElementById('refInvModal').style.display = 'none';
-    toast('✅ 已保存关联发票');
+    toast(r && r.pending ? '✅ 已提交，等管理员审核通过后生效' : '✅ 已保存关联发票');
     loadRefList();
   } catch (e) { toast(e.message || '保存失败', true); }
   btn.disabled = false;
