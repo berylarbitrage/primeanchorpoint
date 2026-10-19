@@ -5178,7 +5178,8 @@ function renderGustoPayList() {
       const pending = p.bank_link_status === 'pending';
       // 徽章显示主体名(没有就银行名), 不放尾号——尾号只在悬停详情里
       const entity = t ? String(t.company_label || '').trim() || String(t.bank || '').trim() : '';
-      const label = t ? `${t.date.slice(5)} ${money(Math.abs(t.amount))}${entity ? ' · ' + entity : ''}` : '已关联';
+      // 银行记录找不到 (待入账换号没对上): 明说, 并给「重新关联」
+      const label = t ? `${t.date.slice(5)} ${money(Math.abs(t.amount))}${entity ? ' · ' + entity : ''}` : '已关联 · 银行记录找不到';
       const tip = [
         t ? `${t.date} · ${money(Math.abs(t.amount))}` : p.bank_txn_id,
         t ? [t.bank, t.company_label, t.mask ? '··' + t.mask : ''].filter(Boolean).join(' · ') : '',
@@ -5194,8 +5195,8 @@ function renderGustoPayList() {
           ? ` <a style="cursor:pointer;font-size:.74rem;color:#166534;text-decoration:underline" title="审核通过" onclick="gustoBankReview('${esc(p.uuid)}','approve')">✓通过</a>` +
             ` <a style="cursor:pointer;font-size:.74rem;color:#dc2626;text-decoration:underline" title="驳回并解除关联" onclick="gustoBankReview('${esc(p.uuid)}','reject')">✕驳回</a>`
           : '') +
-        (canEdit && (!pending || !isAdmin) && !(p.bank_link_status === 'approved' && !isAdmin)
-          ? ` <a style="cursor:pointer;font-size:.72rem;color:#0f4c6b;text-decoration:underline" onclick="openGustoBankLink('${esc(p.uuid)}')">改</a>` : '');
+        (canEdit && (!t || ((!pending || !isAdmin) && !(p.bank_link_status === 'approved' && !isAdmin)))
+          ? ` <a style="cursor:pointer;font-size:.72rem;color:${t ? '#0f4c6b' : '#dc2626;font-weight:700'};text-decoration:underline" onclick="openGustoBankLink('${esc(p.uuid)}')">${t ? '改' : '重新关联'}</a>` : '');
     }
     return canEdit
       ? `<a style="cursor:pointer;font-size:.76rem;color:#0f4c6b;text-decoration:underline;white-space:nowrap" onclick="openGustoBankLink('${esc(p.uuid)}')">🔗 关联</a>`

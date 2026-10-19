@@ -36225,6 +36225,7 @@ async function plaidSyncItem(item) {
   db.prepare("UPDATE plaid_items SET sync_cursor=?, last_sync_at=datetime('now') WHERE id=?").run(cursor || '', item.id);
   // 修复前失联的老标注 (待入账时标的、入账换号没跟上): 每次同步后补挂
   try { _plaidBoxOrphanFix(); } catch (e) { console.error('[Plaid] orphan fix:', e.message); }
+  try { _gustoBankOrphanFix(); } catch (e) { console.error('[Plaid] gusto orphan fix:', e.message); }
   // 余额单独刷一次（sync 的 accounts 字段不一定带全）
   try {
     const acc = await plaidPost('/accounts/get', { access_token: token });
@@ -40921,6 +40922,8 @@ app.post('/api/acct/register', loginRateLimit, (req, res) => {
 // 的 txn_ids 里把旧号换成新号
 function _acctRelinkTxn(oldId, newId) {
   if (!oldId || !newId || oldId === newId) return;
+  // Gusto 付款挂的银行转账也跟着换号, 不然入账后徽章只剩「已关联」看不到日期/金额/账户
+  try { db.prepare('UPDATE gusto_payments SET bank_txn_id=? WHERE bank_txn_id=?').run(newId, oldId); } catch (e) {}
   for (const tbl of ['acct_pay_notes', 'acct_line_pay_notes']) {
     try {
       db.prepare(`SELECT id, txn_ids FROM ${tbl} WHERE txn_ids LIKE ?`).all('%' + JSON.stringify(String(oldId)) + '%').forEach(n => {
@@ -42847,6 +42850,30 @@ function _gustoDeptToPartner(dept) {
 function _gustoPayDept(rawJson) {
   try { const j = JSON.parse(rawJson || '{}'); return String(j.Department || j.department || j.department_name || '').trim(); } catch (e) { return ''; }
 }
+// 修复前失联的 Gusto 关联 (挂的是待入账交易号, 入账换号后旧号被删): 按挂在同一旧号上的付款合计金额,
+// 在付款日前后 7 天内找唯一一笔已入账、带 gusto、还没被别的付款挂上的银行转账, 改挂过去 (审核状态不变)
+function _gustoBankOrphanFix() {
+  const groups = {};
+  db.prepare(`SELECT uuid, bank_txn_id, date, wage_total FROM gusto_payments p
+      WHERE COALESCE(p.bank_txn_id,'')<>'' AND NOT EXISTS (SELECT 1 FROM plaid_transactions t WHERE t.txn_id=p.bank_txn_id)`).all()
+    .forEach(p => { const g = groups[p.bank_txn_id] || (groups[p.bank_txn_id] = { sum: 0, date: '' }); g.sum += Number(p.wage_total) || 0; if (p.date > g.date) g.date = p.date; });
+  let fixed = 0;
+  for (const [oldId, g] of Object.entries(groups)) {
+    const amt = Math.round(g.sum * 100) / 100;
+    if (!(amt > 0) || !g.date) continue;
+    const cands = db.prepare(`SELECT t.txn_id FROM plaid_transactions t
+        WHERE t.pending=0 AND ABS(ABS(t.amount)-?)<0.005 AND ${_GUSTO_TXN_WHERE}
+          AND ABS(julianday(t.date)-julianday(?))<=7
+          AND NOT EXISTS (SELECT 1 FROM gusto_payments p2 WHERE p2.bank_txn_id=t.txn_id)`).all(amt, g.date);
+    if (cands.length !== 1) continue;
+    db.prepare('UPDATE gusto_payments SET bank_txn_id=? WHERE bank_txn_id=?').run(cands[0].txn_id, oldId);
+    try { _gustoSyncBankAnn(cands[0].txn_id, 'Gusto 关联'); } catch (e) {}
+    fixed++;
+  }
+  if (fixed) console.log(`[gusto] 已补挂 ${fixed} 笔失联的银行转账关联 (待入账换号)`);
+  return fixed;
+}
+setTimeout(() => { try { _gustoBankOrphanFix(); } catch (e) { console.error('[gusto] orphan fix:', e.message); } }, 15000);
 // 这笔银行转账按 Gusto 关联应该填成什么 (没挂付款返回 null)
 function _gustoAnnFill(txnId) {
   const pays = db.prepare(`SELECT contractor_name, date, wage_total, raw_json, bank_link_status
