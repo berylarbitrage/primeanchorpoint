@@ -978,6 +978,11 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS referral_weeks (
 for (const col of ["admin_status TEXT DEFAULT ''", 'admin_fee REAL DEFAULT NULL', "admin_by TEXT DEFAULT ''", 'admin_at TEXT DEFAULT NULL', "admin_note TEXT DEFAULT ''"]) {
   try { db.exec(`ALTER TABLE referral_weeks ADD COLUMN ${col}`); } catch(e) {}
 }
+// 不同仓库介绍费规矩不同: 第一周一个价、之后每周另一个价 (例: 第一周 $25 之后 $12.5 / 第一周 $50 之后 $25)。
+// referrals.first_week_amount = 第一周介绍费 (空 = 第一周也按 amount); amount = 之后每周。
+// referral_weeks.tier: 这周按哪档算 — '' 自动 (最早那周算第一周) | first 第一周 | after 之后每周
+try { db.exec(`ALTER TABLE referrals ADD COLUMN first_week_amount REAL DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE referral_weeks ADD COLUMN tier TEXT DEFAULT ''`); } catch(e) {}
 // 上线前已经记了付款的那几周: 当作管理员已确认 (金额按当时那周的介绍费), 免得已付的周被锁住改不了
 try {
   const _rwKey = 'mig_referral_weeks_admin_confirm_v1';
@@ -41793,16 +41798,25 @@ function _referralOut(r, invMap, payNotes, weeksBy, weekNotes, linesByInv) {
   r.pay_note = payNotes[r.id] || null;
   // 每周付款: 按发票账期先后排, fee 空的按介绍记录上的介绍费
   r.weeks = ((weeksBy && weeksBy[r.id]) || []).filter(w => invMap[w.invoice_id]).map(w => ({
-    id: w.id, invoice_id: w.invoice_id, fee: w.fee,
-    // 管理员确认过的按确认的金额; 这周不付 = 0
-    fee_eff: w.admin_status === 'rejected' ? 0 : w.admin_status === 'approved' && w.admin_fee != null ? w.admin_fee
-      : (w.fee != null ? w.fee : (r.amount != null ? r.amount : null)),
+    id: w.id, invoice_id: w.invoice_id, fee: w.fee, tier: w.tier || '',
     admin_status: w.admin_status || '', admin_fee: w.admin_fee, admin_by: w.admin_by || '', admin_at: w.admin_at, admin_note: w.admin_note || '',
     invoice: invMap[w.invoice_id], pay_note: (weekNotes && weekNotes[w.id]) || null,
     // 这周发票里勾的那几行 (这个工人那一行), 没勾就是整张发票
     lines: ((r.invoice_lines[w.invoice_id] || []).map(k => ((linesByInv && linesByInv[w.invoice_id]) || []).find(l => l.line_key === k)).filter(Boolean)),
   })).sort((a, b) => String(a.invoice.period_start || a.invoice.invoice_date || '').localeCompare(String(b.invoice.period_start || b.invoice.invoice_date || '')));
+  // 按档算默认介绍费 (排好序后最早那周 = 第一周); 管理员确认过的按确认的金额; 这周不付 = 0
+  r.weeks.forEach((w, i) => {
+    w.tier_eff = w.tier || (i === 0 ? 'first' : 'after');
+    w.fee_default = _referralTierFee(r, w.tier_eff);
+    w.fee_eff = w.admin_status === 'rejected' ? 0 : w.admin_status === 'approved' && w.admin_fee != null ? w.admin_fee
+      : (w.fee != null ? w.fee : w.fee_default);
+  });
   return r;
+}
+// 第一周 / 之后每周 的介绍费: 没设第一周价的, 第一周也按 amount
+function _referralTierFee(r, tier) {
+  if (tier === 'first' && r.first_week_amount != null) return r.first_week_amount;
+  return r.amount != null ? r.amount : null;
 }
 // 关联发票 → 每周付款行 同步: 新关联的补一行, 取消关联的删掉 (连同空的付款批注)
 function _referralSyncWeeks(refId, invIds) {
@@ -42085,9 +42099,12 @@ function _referralBody(b) {
   for (const [k, max] of REFERRAL_FIELDS) out[k] = String(b[k] || '').trim().slice(0, max);
   const amtNum = Number(b.amount);
   out.amount = (b.amount != null && b.amount !== '' && !isNaN(amtNum)) ? amtNum : null;
+  // 第一周介绍费 (可选): 空 = 第一周也按每周的价
+  const fwNum = Number(b.first_week_amount);
+  out.first_week_amount = (b.first_week_amount != null && b.first_week_amount !== '' && !isNaN(fwNum) && fwNum >= 0) ? fwNum : null;
   out.hr_self = (b.hr_self === '1' || b.hr_self === 'true' || b.hr_self === true || b.hr_self === 1) ? 1 : 0;
   // HR 自招: 没有工头、介绍费为 0
-  if (out.hr_self) { out.foreman_name = ''; out.foreman_phone = ''; out.amount = 0; }
+  if (out.hr_self) { out.foreman_name = ''; out.foreman_phone = ''; out.amount = 0; out.first_week_amount = null; }
   return out;
 }
 // 关联岗位: 表单传 jobs.id, 存 id + 「编号 标题 中文名 — 公司」快照;
@@ -42133,7 +42150,7 @@ app.post('/api/acct/referrals', requireAdmin, requireRole('accounting', 'admin',
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.worker_wage, f.warehouse_name, f.warehouse_address,
       f.interview_at, f.amount, f.description, JSON.stringify(atts), jb.job_id, jb.job_title, req.userName || '', f.hr_self);
-  db.prepare('UPDATE referrals SET recruit_job_id=?, recruit_shift=? WHERE id=?').run(jb.recruit_job_id || null, jb.recruit_shift || '', r.lastInsertRowid);
+  db.prepare('UPDATE referrals SET recruit_job_id=?, recruit_shift=?, first_week_amount=? WHERE id=?').run(jb.recruit_job_id || null, jb.recruit_shift || '', f.first_week_amount, r.lastInsertRowid);
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
@@ -42165,7 +42182,7 @@ app.put('/api/acct/referrals/:id', requireAdmin, requireRole('accounting', 'admi
       warehouse_name=?, warehouse_address=?, interview_at=?, amount=?, description=?, attachments=?, job_id=?, job_title=?, hr_self=?, updated_at=datetime('now') WHERE id=?`)
     .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.worker_wage, f.warehouse_name, f.warehouse_address,
       f.interview_at, f.amount, f.description, JSON.stringify(atts), jb.job_id, jb.job_title, f.hr_self, cur.id);
-  db.prepare('UPDATE referrals SET recruit_job_id=?, recruit_shift=? WHERE id=?').run(jb.recruit_job_id || null, jb.recruit_shift || '', cur.id);
+  db.prepare('UPDATE referrals SET recruit_job_id=?, recruit_shift=?, first_week_amount=? WHERE id=?').run(jb.recruit_job_id || null, jb.recruit_shift || '', f.first_week_amount, cur.id);
   res.json({ success: true });
 });
 
@@ -42206,6 +42223,11 @@ app.post('/api/acct/referrals/:id/invoices', requireAdmin, requireRole('accounti
   db.prepare(`UPDATE referrals SET invoice_ids=?, invoice_lines=?, invoice_note=?, invoice_linked_by=?, updated_at=datetime('now') WHERE id=?`)
     .run(JSON.stringify(ok), JSON.stringify(lines), String(b.invoice_note || '').trim().slice(0, 500), req.userName || '', cur.id);
   _referralSyncWeeks(cur.id, ok);
+  // 每张发票 (一周) 按哪档付: first 第一周 / after 之后每周 / 不传或空 = 自动; 管理员确认过的周不动
+  if (b.invoice_tiers && typeof b.invoice_tiers === 'object') {
+    const up = db.prepare(`UPDATE referral_weeks SET tier=? WHERE referral_id=? AND invoice_id=? AND COALESCE(admin_status,'')=''`);
+    ok.forEach(id => { const t = b.invoice_tiers[id]; up.run(t === 'first' || t === 'after' ? t : '', cur.id, id); });
+  }
   res.json({ success: true, invoice_ids: ok, invoice_lines: lines });
 });
 // 改某一周的介绍费金额 (空 = 按介绍记录上的介绍费)
@@ -42213,7 +42235,14 @@ app.put('/api/acct/referral-weeks/:id', requireAdmin, requireRole('accounting', 
   const w = db.prepare('SELECT id, admin_status FROM referral_weeks WHERE id=?').get(parseInt(req.params.id));
   if (!w) return res.status(404).json({ error: '记录不存在' });
   if (w.admin_status) return res.status(400).json({ error: '管理员已确认这周，金额不能再改（要改先请管理员撤销确认）' });
-  const v = (req.body || {}).fee;
+  const b = req.body || {};
+  // 只改档 (第一周 / 之后每周 / 自动) 时不动金额
+  if ('tier' in b) {
+    const t = b.tier === 'first' || b.tier === 'after' ? b.tier : '';
+    db.prepare('UPDATE referral_weeks SET tier=? WHERE id=?').run(t, w.id);
+    if (!('fee' in b)) return res.json({ success: true, tier: t });
+  }
+  const v = b.fee;
   const fee = (v === '' || v == null) ? null : Number(v);
   if (fee != null && (isNaN(fee) || fee < 0)) return res.status(400).json({ error: '金额不对' });
   db.prepare('UPDATE referral_weeks SET fee=? WHERE id=?').run(fee, w.id);
@@ -42222,7 +42251,7 @@ app.put('/api/acct/referral-weeks/:id', requireAdmin, requireRole('accounting', 
 
 // 管理员确认某一周: approve 确认支付 (带金额) / reject 这周不付 / reset 撤销确认。已记付款的周不能撤销或改成不付
 app.post('/api/acct/referral-weeks/:id/review', requireAdmin, requireRole('admin'), (req, res) => {
-  const w = db.prepare(`SELECT w.*, r.amount AS ref_amount FROM referral_weeks w JOIN referrals r ON r.id=w.referral_id WHERE w.id=?`).get(parseInt(req.params.id));
+  const w = db.prepare(`SELECT w.*, r.amount AS ref_amount, r.first_week_amount AS ref_first FROM referral_weeks w JOIN referrals r ON r.id=w.referral_id WHERE w.id=?`).get(parseInt(req.params.id));
   if (!w) return res.status(404).json({ error: '记录不存在' });
   const b = req.body || {};
   const action = String(b.action || '');
@@ -42232,7 +42261,7 @@ app.post('/api/acct/referral-weeks/:id/review', requireAdmin, requireRole('admin
   let fee = null;
   if (action === 'approve') {
     const v = b.fee;
-    fee = (v === '' || v == null) ? (w.fee != null ? w.fee : w.ref_amount) : Number(v);
+    fee = (v === '' || v == null) ? (w.fee != null ? w.fee : _referralTierFee({ amount: w.ref_amount, first_week_amount: w.ref_first }, w.tier === 'first' ? 'first' : 'after')) : Number(v);
     if (fee == null || isNaN(fee) || fee < 0) return res.status(400).json({ error: '请填写这周要付的金额' });
   }
   const st = action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : '';
