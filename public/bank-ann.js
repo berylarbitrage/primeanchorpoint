@@ -30,6 +30,7 @@ const BS_EXTRA_COMPANIES = ['Dando Chemicals US LLC', 'BOOKFREIGHT INC', 'Nova E
 const BS_PAYEE_BANKFEE = '银行费用';
 const BS_PAYEE_CLAIM = 'Claim';
 const BS_PAYEE_CC = '还 Prime Anchor Point 信用卡';
+const BS_PAYEE_CC_BINTIQUE = '还 Bintique 信用卡';
 const BS_PAYEE_PAP = 'Prime Anchor Point 转账';
 const BS_PAYEE_PAW = 'Prime Anchor Workforce 转账';
 const BS_PAYEE_BINTIQUE = 'Bintique 货款';
@@ -228,7 +229,7 @@ function _bsPayeeKind(box) {
   if (_bsIsWageBonus(p)) return 'wagebonus';
   if (_bsIsLoan(p)) return 'loan';
   if (BS_PAYEE_PEOPLE.includes(p)) return 'personal';
-  if (p && p !== BS_PAYEE_CLAIM && p !== BS_PAYEE_CC && p !== BS_PAYEE_CASH && p !== BS_PAYEE_CASH_DEP && p !== BS_PAYEE_LAWSUIT && p !== BS_PAYEE_LAWYER && p !== BS_PAYEE_NA && p !== BS_PAYEE_PAP && p !== BS_PAYEE_PAW && p !== BS_PAYEE_BINTIQUE && p !== BS_PAYEE_DREAMHORSE && p !== BS_PAYEE_DREAMHORSE_IN && p !== BS_PAYEE_RETURNED && p !== BS_PAYEE_TEST) return 'company';
+  if (p && p !== BS_PAYEE_CLAIM && p !== BS_PAYEE_CC && p !== BS_PAYEE_CC_BINTIQUE && p !== BS_PAYEE_CASH && p !== BS_PAYEE_CASH_DEP && p !== BS_PAYEE_LAWSUIT && p !== BS_PAYEE_LAWYER && p !== BS_PAYEE_NA && p !== BS_PAYEE_PAP && p !== BS_PAYEE_PAW && p !== BS_PAYEE_BINTIQUE && p !== BS_PAYEE_DREAMHORSE && p !== BS_PAYEE_DREAMHORSE_IN && p !== BS_PAYEE_RETURNED && p !== BS_PAYEE_TEST) return 'company';
   return 'none';
 }
 function _bsWantsInvoice(box) {
@@ -273,6 +274,7 @@ function _bsPayeeOptionDefs(direction) {
     { v: BS_PAYEE_LAWYER, t: '👨‍⚖️ 律师费用', d: 'out' },
     { v: BS_PAYEE_CLAIM, t: '📋 Claim', d: 'both' },
     { v: BS_PAYEE_CC, t: '💳 还 Prime Anchor Point 信用卡', d: 'out' },
+    { v: BS_PAYEE_CC_BINTIQUE, t: '💳 还 Bintique 信用卡', d: 'out' },
     // PAP/PAW 转账两个旧选项已被「公司内部银行转账（选公司）」覆盖, 不再提供;
     // 存过这两个值的旧标注会显示在「其他」分组里
     { v: BS_PAYEE_INTERNAL, t: '🏦 公司内部银行转账（选公司）', d: 'both' },
