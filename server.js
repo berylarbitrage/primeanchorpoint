@@ -988,6 +988,8 @@ try { db.exec(`ALTER TABLE referrals ADD COLUMN quit_reason TEXT DEFAULT ''`); }
 // HR 自己招的: 记是哪个 HR 招的 (张倪 / 陶斯亮 …)
 try { db.exec(`ALTER TABLE referrals ADD COLUMN hr_name TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE referrals ADD COLUMN quit_by TEXT DEFAULT ''`); } catch(e) {}
+// 客服关联发票要管理员审核: 先存成待审核 { invoice_ids, invoice_lines, invoice_note, invoice_tiers, by, at }, 管理员通过才真正关联 (生成每周付款行)
+try { db.exec(`ALTER TABLE referrals ADD COLUMN invoice_pending TEXT DEFAULT ''`); } catch(e) {}
 // 上线前已经记了付款的那几周: 当作管理员已确认 (金额按当时那周的介绍费), 免得已付的周被锁住改不了
 try {
   const _rwKey = 'mig_referral_weeks_admin_confirm_v1';
@@ -41803,6 +41805,9 @@ function _referralOut(r, invMap, payNotes, weeksBy, weekNotes, linesByInv) {
   r.invoice_ids = (Array.isArray(ids) ? ids : []).map(i => parseInt(i)).filter(Boolean);
   r.invoices = r.invoice_ids.map(id => invMap[id]).filter(Boolean);
   r.invoice_lines = _referralLineKeys(r, r.invoice_ids);
+  // 客服提交、等管理员审核的关联发票
+  let pend = null; try { pend = r.invoice_pending ? JSON.parse(r.invoice_pending) : null; } catch (e) {}
+  r.invoice_pending = pend && Array.isArray(pend.invoice_ids) ? { ...pend, invoices: pend.invoice_ids.map(id => invMap[id]).filter(Boolean) } : null;
   r.pay_note = payNotes[r.id] || null;
   // 每周付款: 按发票账期先后排, fee 空的按介绍记录上的介绍费
   r.weeks = ((weeksBy && weeksBy[r.id]) || []).filter(w => invMap[w.invoice_id]).map(w => ({
@@ -41843,6 +41848,7 @@ app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
       ORDER BY CASE WHEN review_status='pending' THEN 0 ELSE 1 END, created_at DESC, id DESC`).all();
     const allIds = new Set();
     rows.forEach(r => { try { (JSON.parse(r.invoice_ids || '[]') || []).forEach(i => { const n = parseInt(i); if (n) allIds.add(n); }); } catch (e) {} });
+    rows.forEach(r => { try { ((r.invoice_pending && JSON.parse(r.invoice_pending).invoice_ids) || []).forEach(i => { const n = parseInt(i); if (n) allIds.add(n); }); } catch (e) {} });
     const invMap = {};
     if (allIds.size) db.prepare(`SELECT id, invoice_number, invoice_date, company_name, subtotal, period_start, period_end FROM invoices
       WHERE id IN (${[...allIds].map(() => '?').join(',')})`).all(...allIds).forEach(v => { invMap[v.id] = v; });
@@ -42227,20 +42233,22 @@ app.get('/api/acct/invoices/:id/lines', requireAdmin, requireAcctView, (req, res
   res.json({ lines: _invoiceLinesNumbered(inv) });
 });
 
-// 会计关联发票: 挂上能证明被介绍人确实在干活的发票 (发票 id 列表 + 说明), 供管理员核查
-app.post('/api/acct/referrals/:id/invoices', requireAdmin, requireRole('accounting', 'admin'), (req, res) => {
-  const cur = db.prepare('SELECT id FROM referrals WHERE id=?').get(parseInt(req.params.id));
-  if (!cur) return res.status(404).json({ error: '记录不存在' });
-  const b = req.body || {};
+// 关联发票: 挂上能证明被介绍人确实在干活的发票 (发票 id 列表 + 说明), 供管理员核查
+// 会计 / 管理员直接生效; 客服提交的先存成待审核, 管理员审核通过才生效
+function _referralInvoiceIds(b) {
   const ids = [...new Set((Array.isArray(b.invoice_ids) ? b.invoice_ids : []).map(i => parseInt(i)).filter(i => i > 0))].slice(0, 50);
-  const ok = ids.length ? db.prepare(`SELECT id FROM invoices WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids).map(v => v.id) : [];
-  // 已记了付款的那周不能取消关联 (先把那周的付款批注清掉)
+  return ids.length ? db.prepare(`SELECT id FROM invoices WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids).map(v => v.id) : [];
+}
+// 已记了付款的那周不能取消关联 (先把那周的付款批注清掉)
+function _referralPaidGoneError(refId, ok) {
   const keep = new Set(ok);
   const paidGone = db.prepare(`SELECT w.invoice_id, i.invoice_number FROM referral_weeks w
       JOIN acct_pay_notes n ON n.target_type='referralweek' AND n.target_id=w.id AND n.paid_status IN ('paid','partial')
-      LEFT JOIN invoices i ON i.id=w.invoice_id WHERE w.referral_id=?`).all(cur.id).filter(w => !keep.has(w.invoice_id));
-  if (paidGone.length) return res.status(400).json({ error: `发票 ${paidGone.map(w => w.invoice_number || w.invoice_id).join(', ')} 那周已记付款，不能取消关联（先改掉那周的付款记录）` });
-  // 勾的发票条目: 只收还关联着的发票里真实存在的行
+      LEFT JOIN invoices i ON i.id=w.invoice_id WHERE w.referral_id=?`).all(refId).filter(w => !keep.has(w.invoice_id));
+  return paidGone.length ? `发票 ${paidGone.map(w => w.invoice_number || w.invoice_id).join(', ')} 那周已记付款，不能取消关联（先改掉那周的付款记录）` : '';
+}
+// 勾的发票条目: 只收还关联着的发票里真实存在的行
+function _referralInvoiceLines(b, ok) {
   const lines = {};
   const want = (b.invoice_lines && typeof b.invoice_lines === 'object') ? b.invoice_lines : {};
   for (const id of ok) {
@@ -42251,15 +42259,60 @@ app.post('/api/acct/referrals/:id/invoices', requireAdmin, requireRole('accounti
     const keep = keys.filter(k => valid.has(k)).slice(0, 50);
     if (keep.length) lines[id] = keep;
   }
+  return lines;
+}
+function _referralApplyInvoices(refId, b, by) {
+  const ok = _referralInvoiceIds(b);
+  const err = _referralPaidGoneError(refId, ok);
+  if (err) return { error: err };
+  const lines = _referralInvoiceLines(b, ok);
   db.prepare(`UPDATE referrals SET invoice_ids=?, invoice_lines=?, invoice_note=?, invoice_linked_by=?, updated_at=datetime('now') WHERE id=?`)
-    .run(JSON.stringify(ok), JSON.stringify(lines), String(b.invoice_note || '').trim().slice(0, 500), req.userName || '', cur.id);
-  _referralSyncWeeks(cur.id, ok);
+    .run(JSON.stringify(ok), JSON.stringify(lines), String(b.invoice_note || '').trim().slice(0, 500), by || '', refId);
+  _referralSyncWeeks(refId, ok);
   // 每张发票 (一周) 按哪档付: first 第一周 / after 之后每周 / 不传或空 = 自动; 管理员确认过的周不动
   if (b.invoice_tiers && typeof b.invoice_tiers === 'object') {
     const up = db.prepare(`UPDATE referral_weeks SET tier=? WHERE referral_id=? AND invoice_id=? AND COALESCE(admin_status,'')=''`);
-    ok.forEach(id => { const t = b.invoice_tiers[id]; up.run(t === 'first' || t === 'after' ? t : '', cur.id, id); });
+    ok.forEach(id => { const t = b.invoice_tiers[id]; up.run(t === 'first' || t === 'after' ? t : '', refId, id); });
   }
-  res.json({ success: true, invoice_ids: ok, invoice_lines: lines });
+  return { invoice_ids: ok, invoice_lines: lines };
+}
+app.post('/api/acct/referrals/:id/invoices', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+  const cur = db.prepare('SELECT id FROM referrals WHERE id=?').get(parseInt(req.params.id));
+  if (!cur) return res.status(404).json({ error: '记录不存在' });
+  const b = req.body || {};
+  if (req.userRole === 'cs') {
+    const ok = _referralInvoiceIds(b);
+    const err = _referralPaidGoneError(cur.id, ok);
+    if (err) return res.status(400).json({ error: err });
+    const tiers = {};
+    if (b.invoice_tiers && typeof b.invoice_tiers === 'object') ok.forEach(id => { const t = b.invoice_tiers[id]; if (t === 'first' || t === 'after') tiers[id] = t; });
+    const pend = { invoice_ids: ok, invoice_lines: _referralInvoiceLines(b, ok), invoice_note: String(b.invoice_note || '').trim().slice(0, 500),
+      invoice_tiers: tiers, by: req.userName || '', at: new Date().toISOString().slice(0, 19).replace('T', ' ') };
+    db.prepare(`UPDATE referrals SET invoice_pending=?, updated_at=datetime('now') WHERE id=?`).run(JSON.stringify(pend), cur.id);
+    return res.json({ success: true, pending: true });
+  }
+  const r = _referralApplyInvoices(cur.id, b, req.userName || '');
+  if (r.error) return res.status(400).json({ error: r.error });
+  // 管理员自己改过关联 = 客服待审核的那份已经处理了
+  if (req.userRole === 'admin') db.prepare(`UPDATE referrals SET invoice_pending='' WHERE id=?`).run(cur.id);
+  res.json({ success: true, ...r });
+});
+// 管理员审核客服提交的关联发票: approve 通过 (按提交的关联) / reject 退回 (丢掉这份, 原来的关联不动)
+app.post('/api/acct/referrals/:id/invoices-review', requireAdmin, requireRole('admin'), (req, res) => {
+  const cur = db.prepare('SELECT id, invoice_pending FROM referrals WHERE id=?').get(parseInt(req.params.id));
+  if (!cur) return res.status(404).json({ error: '记录不存在' });
+  let pend = null; try { pend = cur.invoice_pending ? JSON.parse(cur.invoice_pending) : null; } catch (e) {}
+  if (!pend) return res.status(400).json({ error: '没有待审核的关联发票' });
+  const action = String((req.body || {}).action || '');
+  if (!['approve', 'reject'].includes(action)) return res.status(400).json({ error: '无效操作' });
+  if (action === 'approve') {
+    const r = _referralApplyInvoices(cur.id, pend, `${pend.by || '客服'}（${req.userName || '管理员'} 审核）`);
+    if (r.error) return res.status(400).json({ error: r.error });
+  }
+  db.prepare(`UPDATE referrals SET invoice_pending='', updated_at=datetime('now') WHERE id=?`).run(cur.id);
+  auditLog('referral_invoices_review', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers },
+    { targetType: 'referral', targetId: cur.id, details: { action, by: pend.by, invoice_ids: pend.invoice_ids } });
+  res.json({ success: true });
 });
 // 改某一周的介绍费金额 (空 = 按介绍记录上的介绍费)
 app.put('/api/acct/referral-weeks/:id', requireAdmin, requireRole('accounting', 'admin'), (req, res) => {
