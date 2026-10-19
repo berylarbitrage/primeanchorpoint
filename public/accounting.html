@@ -619,7 +619,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <div class="card" style="max-width:440px;width:100%;padding:1.2rem 1.2rem 1rem;max-height:92vh;overflow:auto">
       <div style="font-weight:800;margin-bottom:.2rem">👷 开始上班</div>
       <div id="rsWho" style="font-size:.78rem;color:var(--g500);margin-bottom:.7rem"></div>
-      <label style="font-size:.76rem;color:var(--g500)">从哪天开始上班 <span style="color:#dc2626">*</span> <span style="font-size:.7rem;color:var(--g400)">从这天起算三个月 referral 期</span></label>
+      <label style="font-size:.76rem;color:var(--g500)">从哪天开始上班 <span style="color:#dc2626">*</span> <span style="font-size:.7rem;color:var(--g400)">从这天起算 13 周 referral 期</span></label>
       <input type="date" id="rsDate" style="width:100%;margin:.15rem 0 .6rem">
       <label style="font-size:.76rem;color:var(--g500)">确定的上班时间 <span style="color:#dc2626">*</span></label>
       <div style="display:flex;gap:.35rem;align-items:center;margin:.15rem 0 .35rem">
@@ -674,7 +674,10 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <div id="refAddTitle" style="font-weight:800;margin-bottom:.2rem">🤝 新增介绍</div>
       <div id="refAddHint" style="font-size:.76rem;color:var(--g500);margin-bottom:.7rem"></div>
       <label style="display:flex;align-items:center;gap:.4rem;font-size:.82rem;margin-bottom:.45rem;cursor:pointer;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:.35rem .6rem">
-        <input type="checkbox" id="raHrSelf" onchange="raHrSelfSw()"> 🙋 <b>HR 自己招的</b>（没有工头介绍，不用填工头，也没有介绍费）</label>
+        <input type="checkbox" id="raHrSelf" onchange="raHrSelfSw()"> 🙋 <b>HR 自己招的</b>（没有工头介绍，不用填工头；介绍费照样要填，没有就填 0）</label>
+      <div id="raHrWhoWrap" style="display:none;margin:-.2rem 0 .55rem;font-size:.8rem;align-items:center;gap:.5rem;flex-wrap:wrap">
+        <span style="color:var(--g500)">哪个 HR 招的 <span style="color:#dc2626">*</span></span>
+        <span id="raHrWho"></span></div>
       <div id="raForemanWrap">
       <label style="font-size:.76rem;color:var(--g500)">工头（介绍人）<span style="color:#dc2626">*</span>
         <a style="cursor:pointer;font-size:.72rem;color:#0f4c6b;text-decoration:underline;margin-left:.4rem" onclick="openFmList()">👷 工头名单</a></label>
@@ -699,12 +702,19 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <label style="font-size:.76rem;color:var(--g500)">仓库地址 <span style="font-size:.7rem;color:var(--g400)">（选仓库自动带出，可改）</span></label>
       <input type="text" id="raWhAddr" placeholder="例：1000 Bilter Rd, Aurora, IL" style="width:100%;margin:.15rem 0 .55rem">
       <div style="display:grid;grid-template-columns:1.2fr .9fr .9fr;gap:.2rem .6rem">
-        <div><label style="font-size:.76rem;color:var(--g500)">面试时间（HR 约的）</label>
+        <div><label style="font-size:.76rem;color:var(--g500)">面试时间（HR 约的，芝加哥时间）<span style="color:#dc2626">*</span></label>
           <input type="datetime-local" id="raInterview" style="width:100%;margin:.15rem 0 .55rem"></div>
         <div><label style="font-size:.76rem;color:var(--g500)">工资（工人的）<span style="color:#dc2626">*</span> <span style="font-size:.7rem;color:var(--g400)">手动填实际谈定的</span></label>
           <input type="text" id="raWage" placeholder="必填，例：$18/小时" style="width:100%;margin:.15rem 0 .55rem"></div>
-        <div id="raAmountWrap"><label style="font-size:.76rem;color:var(--g500)">介绍费 · 每周（$）<span style="color:#dc2626">*</span> <span style="font-size:.7rem;color:var(--g400)">每周默认按这个付，单周可改</span></label>
-          <input type="number" step="0.01" min="0" id="raAmount" placeholder="必填，例：20.00" style="width:100%;margin:.15rem 0 .55rem"></div>
+        <div id="raAmountWrap"><label style="font-size:.76rem;color:var(--g500)">介绍费 · 之后每周（$）<span style="color:#dc2626">*</span> <span style="font-size:.7rem;color:var(--g400)">每周默认按这个付，单周可改</span></label>
+          <input type="number" step="0.01" min="0" id="raAmount" placeholder="必填，例：12.50" style="width:100%;margin:.15rem 0 .55rem"></div>
+      </div>
+      <div id="raFirstWrap" style="display:flex;gap:.5rem;align-items:flex-end;flex-wrap:wrap;margin:-.2rem 0 .55rem">
+        <div style="flex:0 0 190px"><label style="font-size:.76rem;color:var(--g500)">第一周介绍费（$）<span style="font-size:.7rem;color:var(--g400)">可选，空 = 跟之后一样</span></label>
+          <input type="number" step="0.01" min="0" id="raFirstAmount" placeholder="例：25.00" style="width:100%;margin-top:.15rem"></div>
+        <div style="font-size:.72rem;color:var(--g500);display:flex;gap:.3rem;align-items:center;flex-wrap:wrap">不同仓库规矩不同，快速填：
+          <button type="button" class="btn btn-sm btn-outline" style="padding:.15rem .5rem" onclick="raFeePreset(25, 12.5)">第一周 $25 · 之后 $12.5</button>
+          <button type="button" class="btn btn-sm btn-outline" style="padding:.15rem .5rem" onclick="raFeePreset(50, 25)">第一周 $50 · 之后 $25</button></div>
       </div>
       <div style="font-size:.72rem;color:var(--g400);margin-bottom:.5rem">面试去没去登记后在列表里专门一列标记；做了多久由会计关联发票、按发票账期自动算。</div>
       <label style="font-size:.76rem;color:var(--g500)">备注（可选）</label>
@@ -2199,8 +2209,16 @@ function refJumpTo(id) {
 // 面试时间已过、还没标去没去 (还没开始上班的): 整张卡片标红提醒
 function _refIvOverdue(r) {
   if (r.interview_status || r.work_start_date || !r.interview_at) return false;
-  const t = new Date(String(r.interview_at).replace(' ', 'T'));
-  return !isNaN(t) && t < new Date();
+  // 面试时间存的是芝加哥当地时间 (没带时区), 跟芝加哥现在的时间比, 不按电脑所在时区
+  const iv = String(r.interview_at).trim().replace(' ', 'T').slice(0, 16);
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(iv) && iv < _chicagoNowIso();
+}
+// 芝加哥现在的时间 'YYYY-MM-DDTHH:MM'
+function _chicagoNowIso() {
+  const p = {};
+  new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .formatToParts(new Date()).forEach(x => { p[x.type] = x.value; });
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
 }
 // 面试去没去专门一列: 约了未必去, 登记后在这列一键标 (去了/没去), 标错可改可清
 function _refInterviewMarkCell(r) {
@@ -2321,20 +2339,21 @@ function renderRefList() {
   // 电话按数字比 (输 (630) 641-1979 / +1… 也能搜到存成 6306411979 的)
   const qd = String(q || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
   const dg = v => String(v || '').replace(/\D/g, '');
-  if (q) list = list.filter(r => [r.foreman_name, r.foreman_phone, r.worker_name, r.worker_phone, r.worker_wage, r.warehouse_name, r.warehouse_address, r.job_title, r.description, ...(r.invoices || []).map(v => v.invoice_number + ' ' + v.company_name)].join(' ').toLowerCase().includes(q)
+  if (q) list = list.filter(r => [r.foreman_name, r.foreman_phone, r.hr_name, r.worker_name, r.worker_phone, r.worker_wage, r.warehouse_name, r.warehouse_address, r.job_title, r.description, ...(r.invoices || []).map(v => v.invoice_number + ' ' + v.company_name)].join(' ').toLowerCase().includes(q)
     || (qd.length >= 4 && (dg(r.worker_phone).includes(qd) || dg(r.foreman_phone).includes(qd))));
   if (flt === 'noshow') list = list.filter(r => r.interview_status === 'no_show');
   else if (flt === 'failed') list = list.filter(r => r.interview_status === 'failed');
   else if (flt) list = list.filter(r => _refOverall(r) === flt);
   // 三个阶段分页: 数字按当前搜索/筛选算, 切过去不会扑空
-  const stN = { interview: 0, working: 0, ended: 0, noshow: 0 };
+  const stN = { interview: 0, working: 0, ended: 0, quit: 0, noshow: 0 };
   list.forEach(r => stN[_refStage(r)]++);
   const overN = list.filter(_refIvOverdue).length;
   const payN = list.filter(r => _refStage(r) === 'working' && _refPayProblems(r).length).length;
   const stBtn = (k, t, sub) => `<button class="ref-stage${_refStageSel === k ? ' on' : ''}" onclick="refSetStage('${k}')">${t}<b>${stN[k]}</b><small>${sub}</small></button>`;
   document.getElementById('refStages').innerHTML = stBtn('interview', '📅 面试安排', overN ? `<span style="background:#dc2626;color:#fff;border-radius:4px;padding:0 5px;font-weight:800">⚠ ${overN} 个面试已过没标记</span>` : '约了面试、还没开始上班')
-    + stBtn('working', '👷 上班中', payN ? `<span style="background:#dc2626;color:#fff;border-radius:4px;padding:0 5px;font-weight:800">⚠ ${payN} 个付款 / 车补 / 二维码没确认</span>` : '通过面试已上班 · 三个月内')
-    + stBtn('ended', '⏹ 已满三个月', 'referral 期结束')
+    + stBtn('working', '👷 上班中', payN ? `<span style="background:#dc2626;color:#fff;border-radius:4px;padding:0 5px;font-weight:800">⚠ ${payN} 个付款 / 车补 / 二维码没确认</span>` : '通过面试已上班 · 13 周内')
+    + stBtn('ended', '⏹ 已满三个月', '满 13 周 · referral 期结束')
+    + stBtn('quit', '🚪 中途不去了', '上班后没做满 13 周就不去了')
     + stBtn('noshow', '🚫 没去 / 没通过', '约了面试没去、或去了没通过的人');
   list = list.filter(r => _refStage(r) === _refStageSel);
   const pendN = _refList.filter(r => r.review_status === 'pending').length;
@@ -2384,8 +2403,11 @@ function renderRefList() {
     const feeCell = w => w.admin_status === 'approved' ? `<b>${money(w.admin_fee)}</b>`
       : w.admin_status === 'rejected' ? '<span style="color:var(--g400)">—</span>'
       : canInv && r.review_status !== 'rejected'
-      ? `<span style="white-space:nowrap">$ <input type="number" step="0.01" min="0" value="${w.fee != null ? w.fee : ''}" placeholder="${r.amount != null ? r.amount : '金额'}" title="这周的介绍费；空着 = 按介绍记录上的介绍费" onchange="refWeekFee(${w.id}, this.value)" style="width:78px;padding:.15rem .3rem;font-size:.8rem;text-align:right"></span>`
-      : `<b>${w.fee_eff != null ? money(w.fee_eff) : '—'}</b>`;
+      ? `${_refTwoTier(r) ? `<select title="这周按第一周的价还是之后每周的价算；自动 = 最早那周算第一周" onchange="refWeekTier(${w.id}, this.value)" style="padding:.1rem .2rem;font-size:.72rem;margin-right:.25rem">
+            <option value="" ${!w.tier ? 'selected' : ''}>自动（${w.tier_eff === 'first' ? '第一周' : '之后'}）</option>
+            <option value="first" ${w.tier === 'first' ? 'selected' : ''}>第一周 ${money(r.first_week_amount)}</option>
+            <option value="after" ${w.tier === 'after' ? 'selected' : ''}>之后 ${money(r.amount)}</option></select>` : ''}<span style="white-space:nowrap">$ <input type="number" step="0.01" min="0" value="${w.fee != null ? w.fee : ''}" placeholder="${w.fee_default != null ? w.fee_default : '金额'}" title="这周的介绍费；空着 = 按上面选的档（第一周 / 之后每周）" onchange="refWeekFee(${w.id}, this.value)" style="width:78px;padding:.15rem .3rem;font-size:.8rem;text-align:right"></span>`
+      : `<b>${w.fee_eff != null ? money(w.fee_eff) : '—'}</b>${_refTwoTier(r) && w.admin_status !== 'rejected' ? `<div style="font-size:.68rem;color:var(--g400)">${w.tier_eff === 'first' ? '第一周价' : '之后每周价'}</div>` : ''}`;
     const payCell = w => r.review_status === 'rejected' || w.admin_status === 'rejected' ? '<span style="color:var(--g400)">—</span>'
       : r.review_status !== 'approved' ? '<span style="font-size:.72rem;color:var(--g400)">核查通过后可付</span>'
       : w.admin_status !== 'approved' ? '<span style="font-size:.72rem;color:var(--g400)">管理员确认后可付</span>'
@@ -2441,14 +2463,16 @@ function renderRefList() {
     return `<div class="card ref-card" id="refCard${r.id}" style="${r.review_status === 'rejected' ? 'opacity:.6;' : ''}${overdue ? 'background:#fef2f2;box-shadow:0 0 0 2px #fca5a5;' : ''}border-left-color:${overdue ? '#dc2626' : ov === 'paid' ? '#16a34a' : ov === 'rejected' ? '#cbd5e1' : ov === 'pending' ? '#fb923c' : '#3b82f6'}">
       <div class="ref-top">
         <div class="ref-ppl">
-          <div>${lbl('工头 · 介绍人')}${r.hr_self ? '<span style="display:inline-block;background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;border-radius:6px;padding:1px 8px;font-size:.8rem;font-weight:700">🙋 HR 自己招的</span>' : person(r.foreman_name, r.foreman_phone, r.foreman_state ? ` · 📍 ${esc(r.foreman_state)}` : '')}</div>
+          <div>${lbl('工头 · 介绍人')}${r.hr_self ? '<span style="display:inline-block;background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;border-radius:6px;padding:1px 8px;font-size:.8rem;font-weight:700">🙋 HR 自己招的' + (r.hr_name ? ` · ${esc(r.hr_name)}` : '') + '</span>' : person(r.foreman_name, r.foreman_phone, r.foreman_state ? ` · 📍 ${esc(r.foreman_state)}` : '')}</div>
           <div class="ref-arrow">➜</div>
           <div>${lbl('被介绍工人')}${person(r.worker_name, r.worker_phone, (r.worker_wage ? ` · <span style="color:#047857;font-weight:700">💵 ${esc(r.worker_wage)}</span>` : '') + attHtml)}${_refProfileChip(r)}</div>
         </div>
         <div>${lbl('工作仓库')}<div style="font-weight:700;font-size:.84rem;color:#0f172a;line-height:1.3">${esc(whMain)}</div>
           ${whSub ? `<div style="font-size:.74rem;color:var(--g500);line-height:1.3">${esc(whSub)}</div>` : ''}${r.job_title ? `<div style="font-size:.72rem;color:#7c3aed;margin-top:2px">📌 ${esc(r.job_title)}</div>` : ''}</div>
         <div>${lbl('面试')}<div style="font-size:.82rem;font-weight:600;white-space:nowrap;margin-bottom:3px">${esc((r.interview_at || '').replace('T', ' ')) || '—'}</div>${_refInterviewMarkCell(r)}</div>
-        <div>${lbl('介绍费 / 周')}<div style="font-weight:800;color:#0f4c6b;font-size:1rem">${r.amount != null ? money(r.amount) : '<span style="color:var(--g400);font-weight:400;font-size:.85rem">未定</span>'}</div></div>
+        <div>${lbl('介绍费 / 周')}${_refTwoTier(r)
+          ? `<div style="font-size:.74rem;color:var(--g500);white-space:nowrap">第一周 <b style="color:#0f4c6b;font-size:.95rem">${money(r.first_week_amount)}</b></div><div style="font-size:.74rem;color:var(--g500);white-space:nowrap">之后 <b style="color:#0f4c6b;font-size:.95rem">${money(r.amount)}</b></div>`
+          : `<div style="font-weight:800;color:#0f4c6b;font-size:1rem">${r.amount != null ? money(r.amount) : '<span style="color:var(--g400);font-weight:400;font-size:.85rem">未定</span>'}</div>`}</div>
         <div class="ref-side">${statusPill}<div style="white-space:nowrap">${ops}</div></div>
         ${r.description ? `<div class="ref-desc">💬 ${esc(r.description)}</div>` : ''}
       </div>
@@ -2462,7 +2486,7 @@ function renderRefList() {
         ${legacy ? `<div class="ref-row">${legacy}</div>` : ''}
       </div>
     </div>`;
-  }).join('') : `<div class="card" style="color:var(--g400)">${{ interview: '没有在面试阶段的介绍。点「＋ 新增介绍」添加。', working: '没有正在上班的介绍。面试通过后在「📅 面试安排」里点「👷 开始上班」。', ended: '还没有满三个月的介绍。', noshow: '没有标记「没去」或「没通过」的面试。' }[_refStageSel]}</div>`;
+  }).join('') : `<div class="card" style="color:var(--g400)">${{ interview: '没有在面试阶段的介绍。点「＋ 新增介绍」添加。', working: '没有正在上班的介绍。面试通过后在「📅 面试安排」里点「👷 开始上班」。', ended: '还没有满三个月的介绍。', quit: '没有中途不去了的人。', noshow: '没有标记「没去」或「没通过」的面试。' }[_refStageSel]}</div>`;
 }
 // ── Referral 阶段: 没上班日期 = 面试阶段; 上班日期起三个月内 = 上班中; 满三个月 = 结束 ──
 // 页面开着时每分钟重画一次: 面试时间一过没标记的马上变红
@@ -2477,19 +2501,47 @@ function refSetStage(k) {
   renderRefList();
 }
 const _refYmd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// referral 期 = 13 周: 第 13 周过完 (上班第 92 天) 自动挪到「已满三个月」
+const REF_WEEKS = 13;
 function _refEndDate(r) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(r.work_start_date || '')) return null;
-  const d = new Date(r.work_start_date + 'T00:00:00'), day = d.getDate();
-  d.setMonth(d.getMonth() + 3);
-  if (d.getDate() !== day) d.setDate(0); // 11/30 + 3 个月 → 2/28, 不跳到 3 月
+  const d = new Date(r.work_start_date + 'T00:00:00');
+  d.setDate(d.getDate() + REF_WEEKS * 7);
   return d;
 }
 function _refStage(r) {
   const end = _refEndDate(r);
   // 还没上班、面试标了没去 → 单独「没去面试」页
   if (!end) return ['no_show', 'failed'].includes(r.interview_status) ? 'noshow' : 'interview';
+  // 标了中途不去了 (有最后上班日) → 单独一页
+  if (r.work_end_date) return 'quit';
   const today = new Date(); today.setHours(0, 0, 0, 0);
   return today >= end ? 'ended' : 'working';
+}
+// 🚪 中途不去了: 填最后上班那天 + 原因
+async function refQuit(id) {
+  const r = _refList.find(x => x.id === id);
+  if (!r) return;
+  const date = prompt(`${r.worker_name || '这个工人'} 中途不去了 —— 最后上班是哪天？（YYYY-MM-DD）`, _refYmd(new Date()));
+  if (date === null) return;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) return toast('日期格式要像 2026-10-19', true);
+  const reason = prompt('为什么不去了？（可选）', '');
+  if (reason === null) return;
+  try {
+    const j = await api(`/api/acct/referrals/${id}/quit`, { method: 'POST', body: JSON.stringify({ work_end_date: date.trim(), reason }) });
+    if (j && j.error) throw new Error(j.error);
+    toast('已标记中途不去了');
+    loadRefList();
+  } catch (e) { toast(e.message || '操作失败', true); }
+}
+async function refQuitClear(id) {
+  if (!confirm('撤销「中途不去了」，放回上班中？')) return;
+  try {
+    const j = await api(`/api/acct/referrals/${id}/quit`, { method: 'POST', body: JSON.stringify({ action: 'clear' }) });
+    if (j && j.error) throw new Error(j.error);
+    toast('已撤销');
+    loadRefList();
+  } catch (e) { toast(e.message || '操作失败', true); }
 }
 function _refCanStart(r) {
   return USER.role === 'admin' || (['accounting', 'cs'].includes(USER.role) && (r.review_status === 'pending' || !r.work_start_date));
@@ -2505,18 +2557,22 @@ function _refWorkRows(r) {
   }
   const start = new Date(r.work_start_date + 'T00:00:00'), end = _refEndDate(r);
   const today = new Date(); today.setHours(0, 0, 0, 0);
+  // 中途不去了: 进度算到最后上班那天 (含那天)
+  const quitDay = st === 'quit' ? new Date(r.work_end_date + 'T00:00:00') : null;
+  const upTo = quitDay ? new Date(quitDay.getTime() + 86400000) : today;
   const total = Math.max(1, Math.round((end - start) / 86400000));
-  const done = Math.min(total, Math.max(0, Math.round((today - start) / 86400000)));
+  const done = Math.min(total, Math.max(0, Math.round((upTo - start) / 86400000)));
   const left = total - done;
   const c = r.clock || {};
   const code = r.timeclock_code ? `••••${esc(r.timeclock_code.slice(-4))}` : '';
   const who = c.found
     ? `🔗 <b>${esc(c.name || '—')}</b> <span style="color:var(--g400)">打卡码 ${code}</span>${c.employee_id ? '' : ' <span style="color:#b45309">（还没建员工档案，暂无打卡记录）</span>'}`
     : `<span style="color:#dc2626">⚠ 打卡码 ${code} 在系统里查不到员工</span>`;
-  const ops = _refCanStart(r) ? ` <a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="openRefStart(${r.id})">改</a> · <a style="cursor:pointer;color:var(--g400);text-decoration:underline" onclick="refStartClear(${r.id})">撤回到面试</a>` : '';
+  const ops = (st === 'working' ? `<a style="cursor:pointer;color:#b91c1c;text-decoration:underline;font-weight:700" onclick="refQuit(${r.id})">🚪 中途不去了</a>${_refCanStart(r) ? ' · ' : ''}` : '')
+    + (_refCanStart(r) ? ` <a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="openRefStart(${r.id})">改</a> · <a style="cursor:pointer;color:var(--g400);text-decoration:underline" onclick="refStartClear(${r.id})">撤回到面试</a>` : '');
   const row = `<div class="ref-row"><b style="color:var(--g600)">👷 上班</b><span><b>${esc(r.work_start_date)}</b> 起 → ${_refYmd(end)}</span>
     <span class="ref-prog" title="三个月 referral 期"><i style="width:${Math.round(done / total * 100)}%"></i></span>
-    <span style="color:${st === 'ended' ? '#047857' : 'var(--g500)'}">${st === 'ended' ? '✅ 已满三个月' : `第 ${Math.floor(done / 7) + 1} 周 · 还剩 ${left} 天`}</span>
+    <span style="color:${st === 'ended' ? '#047857' : st === 'quit' ? '#b91c1c' : 'var(--g500)'}">${st === 'ended' ? '✅ 已满三个月' : st === 'quit' ? `🚪 做到第 ${Math.max(1, Math.ceil(done / 7))} 周不去了` : `第 ${Math.floor(done / 7) + 1} 周 · 还剩 ${left} 天`}</span>
     <span style="color:var(--g300)">|</span><span>${who}</span>${c.found && c.employee_id ? `<span style="color:var(--g500)">· 共 <b>${c.total_hours || 0}</b> 小时</span>` : ''}<span style="flex:1"></span><span style="font-size:.74rem">${ops}</span></div>`;
   // 开始上班时确定的条件: 上班时间 · 工资 · 付款周期/付款日
   const terms = [
@@ -2530,7 +2586,8 @@ function _refWorkRows(r) {
   if (c.found && c.employee_id) {
     const hrs = {}; (c.weeks || []).forEach(w => { hrs[w.week_start] = w; });
     const wk = new Date(start); wk.setDate(wk.getDate() - ((wk.getDay() + 6) % 7));
-    const stop = today < end ? today : end;
+    const lim = quitDay || today;
+    const stop = lim < end ? lim : end;
     const cells = [];
     for (let i = 1; wk <= stop && i <= 20; i++, wk.setDate(wk.getDate() + 7)) {
       const w = hrs[_refYmd(wk)];
@@ -2539,7 +2596,9 @@ function _refWorkRows(r) {
     }
     chips = cells.length ? `<div class="ref-wks">${cells.join('')}</div>` : '';
   }
-  return row + termRow + _refPayRow(r) + chips;
+  const quitRow = st === 'quit' ? `<div class="ref-row" style="background:#fef2f2;color:#991b1b"><b>🚪 中途不去了</b><span>最后上班 <b>${esc(r.work_end_date)}</b> · 做了 ${done} 天</span>${r.quit_reason ? `<span style="color:var(--g600)">· ${esc(r.quit_reason)}</span>` : ''}${r.quit_by ? `<span style="color:var(--g400)">· ${esc(r.quit_by)} 标记</span>` : ''}<span style="flex:1"></span>
+    ${_refCanStart(r) || ['accounting', 'cs'].includes(USER.role) ? `<a style="cursor:pointer;color:var(--g400);text-decoration:underline;font-size:.74rem" onclick="refQuitClear(${r.id})">撤销，放回上班中</a>` : ''}</div>` : '';
+  return row + quitRow + termRow + _refPayRow(r) + chips;
 }
 // ── 🔗 员工档案: 按工人电话在系统里找, 找到就 link, 找不到红字提示先扫二维码登记 ──
 function _refProfileChip(r) {
@@ -2867,6 +2926,20 @@ async function refWeekReview(id, action) {
     loadRefList();
   } catch (e) { toast(e.message || '操作失败', true); }
 }
+// 这周按哪档: first 第一周 / after 之后每周 / '' 自动
+async function refWeekTier(id, tier) {
+  try {
+    const r = await api('/api/acct/referral-weeks/' + id, { method: 'PUT', body: JSON.stringify({ tier }) });
+    if (r && r.error) throw new Error(r.error);
+    toast('✅ 已更新这周按哪档算');
+    loadRefList();
+  } catch (e) { toast(e.message || '保存失败', true); }
+}
+// 有没有分「第一周 / 之后每周」两档价
+function _refTwoTier(r) { return r.first_week_amount != null && r.amount != null && Number(r.first_week_amount) !== Number(r.amount); }
+function _refFeeText(first, after) {
+  return first != null && Number(first) !== Number(after) ? `第一周 ${money(first)}，之后每周 ${money(after)}` : money(after);
+}
 async function refWeekFee(id, v) {
   try {
     const r = await api('/api/acct/referral-weeks/' + id, { method: 'PUT', body: JSON.stringify({ fee: v === '' ? '' : Number(v) }) });
@@ -2897,8 +2970,10 @@ async function openRefAdd(id) {
   document.getElementById('raInterview').value = r ? r.interview_at || '' : '';
   document.getElementById('raWage').value = r ? r.worker_wage || '' : '';
   document.getElementById('raAmount').value = r && r.amount != null ? r.amount : '';
+  document.getElementById('raFirstAmount').value = r && r.first_week_amount != null ? r.first_week_amount : '';
   document.getElementById('raDesc').value = r ? r.description || '' : '';
   document.getElementById('raHrSelf').checked = !!(r && r.hr_self);
+  _raHrName = r && r.hr_self ? r.hr_name || '' : '';
   raHrSelfSw();
   document.getElementById('raFiles').value = '';
   document.getElementById('raWorkerHits').innerHTML = '';
@@ -3247,11 +3322,27 @@ function raToggleRemove(p) {
   if (_raRemove.has(p)) _raRemove.delete(p); else _raRemove.add(p);
   raRenderOldFiles();
 }
-// HR 自己招的: 藏起工头和介绍费 (不用填)
+// HR 自己招的: 藏起工头; 介绍费照样要填 (没有就填 0)
 function raHrSelfSw() {
   const on = document.getElementById('raHrSelf').checked;
   document.getElementById('raForemanWrap').style.display = on ? 'none' : '';
-  document.getElementById('raAmountWrap').style.visibility = on ? 'hidden' : '';
+  document.getElementById('raFirstWrap').style.display = on ? 'none' : 'flex';
+  document.getElementById('raHrWhoWrap').style.display = on ? 'flex' : 'none';
+  raHrWhoRender();
+  raValidate();
+}
+// 介绍费快速填: 第一周一个价、之后每周另一个价
+// HR 名单: 自己招的要选是哪个 HR
+const REF_HRS = ['张倪', '陶斯亮'];
+let _raHrName = '';
+function raHrWhoRender() {
+  document.getElementById('raHrWho').innerHTML = REF_HRS.concat(_raHrName && !REF_HRS.includes(_raHrName) ? [_raHrName] : []).map(n =>
+    `<button type="button" class="btn btn-sm ${_raHrName === n ? '' : 'btn-outline'}" style="padding:.15rem .7rem;${_raHrName === n ? 'background:#6d28d9;color:#fff' : 'color:#6d28d9;border-color:#ddd6fe'}" onclick="raHrPick('${esc(n)}')">🙋 ${esc(n)}</button>`).join(' ');
+}
+function raHrPick(n) { _raHrName = n; raHrWhoRender(); raValidate(); }
+function raFeePreset(first, after) {
+  document.getElementById('raFirstAmount').value = first;
+  document.getElementById('raAmount').value = after;
   raValidate();
 }
 // 必填检查: 缺的标红框 + 列出「还差」, 没填齐「提交」按钮灰掉点不了 (点了也只跳到第一个缺的)
@@ -3266,9 +3357,10 @@ function raValidate() {
   need(!!$('raWorkerName').value.trim(), '被介绍人姓名', $('raWorkerName'));
   need(!!$('raJobSel').value, '关联岗位', $('raJobSel'));
   need(!!$('raWage').value.trim(), '工资', $('raWage'));
+  if (hr) need(!!_raHrName, '哪个 HR 招的', null);
+  need(!!$('raInterview').value, '面试时间', $('raInterview'));
   const amt = $('raAmount').value.trim();
-  need(hr || (amt !== '' && !isNaN(Number(amt)) && Number(amt) > 0), '每周介绍费', hr ? null : $('raAmount'));
-  if (hr) { $('raAmount').style.borderColor = ''; $('raAmount').style.background = ''; }
+  need(amt !== '' && !isNaN(Number(amt)) && (hr ? Number(amt) >= 0 : Number(amt) > 0), hr ? '介绍费（没有就填 0）' : '每周介绍费', $('raAmount'));
   if ($('raWhSel').value === '__new__') need(!!$('raWh').value.trim(), '新仓库名称', $('raWh'));
   const box = $('raMissing'), btn = $('raSubmitBtn');
   box.style.display = miss.length ? '' : 'none';
@@ -3297,7 +3389,8 @@ async function submitRefAdd() {
   // 岗位必须关联、介绍费必须写 (管理员核查和按周付款都靠这两项)
   if (!document.getElementById('raJobSel').value) return toast('请选择关联岗位', true);
   const amtV = document.getElementById('raAmount').value.trim();
-  if (!hrSelf && (amtV === '' || isNaN(Number(amtV)) || Number(amtV) <= 0)) return toast('请填写每周介绍费（金额要大于 0）', true);
+  if (amtV === '' || isNaN(Number(amtV)) || (hrSelf ? Number(amtV) < 0 : Number(amtV) <= 0)) return toast(hrSelf ? '请填写介绍费（HR 自己招的没有介绍费就填 0）' : '请填写每周介绍费（金额要大于 0）', true);
+  if (!document.getElementById('raInterview').value) return toast('请填写面试时间', true);
   const whSelV = document.getElementById('raWhSel').value;
   const whName = whSelV === '__new__'
     ? document.getElementById('raWh').value.trim()
@@ -3321,8 +3414,10 @@ async function submitRefAdd() {
     fd.append('recruit_shift', pk.shift || '');
     fd.append('interview_at', document.getElementById('raInterview').value || '');
     fd.append('amount', document.getElementById('raAmount').value || '');
+    fd.append('first_week_amount', hrSelf ? '' : document.getElementById('raFirstAmount').value || '');
     fd.append('description', document.getElementById('raDesc').value.trim());
     fd.append('hr_self', hrSelf ? '1' : '0');
+    fd.append('hr_name', hrSelf ? _raHrName : '');
     if (_refEditId && _raRemove.size) fd.append('remove_attachments', JSON.stringify([..._raRemove]));
     [...document.getElementById('raFiles').files].forEach(f => fd.append('invoice', f));
     const r = await fetch(_refEditId ? '/api/acct/referrals/' + _refEditId : '/api/acct/referrals',
@@ -3372,9 +3467,9 @@ function raCopyInfo() {
     ? document.getElementById('raWh').value.trim()
     : (((_refOpts && _refOpts.warehouses) || [])[parseInt(whSelV)] || {}).name || '';
   const jSel = document.getElementById('raJobSel');
-  const amt = document.getElementById('raAmount').value;
+  const amt = document.getElementById('raAmount').value, amtFirst = document.getElementById('raFirstAmount').value;
   _copyText(_refInfoText({
-    foreman: document.getElementById('raHrSelf').checked ? 'HR 自己招的（无工头）' : _raForeman
+    foreman: document.getElementById('raHrSelf').checked ? `HR 自己招的${_raHrName ? '（' + _raHrName + '）' : '（无工头）'}` : _raForeman
       ? `${_raForeman.name}${_raForeman.phone ? ' · ' + _raForeman.phone : ''}${_raForeman.state ? `（${_raForeman.state}${_raForeman.city ? ' ' + _raForeman.city : ''}）` : ''}`
       : document.getElementById('raForemanSearch').value.trim(),
     worker: [document.getElementById('raWorkerName').value.trim(), document.getElementById('raWorkerPhone').value.trim()].filter(Boolean).join(' · '),
@@ -3383,7 +3478,7 @@ function raCopyInfo() {
     address: document.getElementById('raWhAddr').value.trim(),
     interview: (document.getElementById('raInterview').value || '').replace('T', ' '),
     wage: document.getElementById('raWage').value.trim(),
-    amount: amt !== '' && !isNaN(Number(amt)) ? money(Number(amt)) : '',
+    amount: amt !== '' && !isNaN(Number(amt)) ? _refFeeText(amtFirst !== '' && !isNaN(Number(amtFirst)) ? Number(amtFirst) : null, Number(amt)) : '',
     note: document.getElementById('raDesc').value.trim(),
   }));
 }
@@ -3396,14 +3491,14 @@ function refCopyRow(id) {
     : r.interview_status === 'no_show' ? '（没去）'
     : r.interview_status === 'failed' ? `（没通过${r.interview_fail_reason ? '：' + r.interview_fail_reason : ''}）` : '';
   _copyText(_refInfoText({
-    foreman: r.hr_self ? 'HR 自己招的（无工头）' : `${r.foreman_name || ''}${r.foreman_phone ? ' · ' + r.foreman_phone : ''}${r.foreman_state ? `（${r.foreman_state}）` : ''}`,
+    foreman: r.hr_self ? `HR 自己招的${r.hr_name ? '（' + r.hr_name + '）' : '（无工头）'}` : `${r.foreman_name || ''}${r.foreman_phone ? ' · ' + r.foreman_phone : ''}${r.foreman_state ? `（${r.foreman_state}）` : ''}`,
     worker: [r.worker_name, r.worker_phone].filter(Boolean).join(' · '),
     job: r.job_title || '',
     warehouse: r.warehouse_name || '',
     address: r.warehouse_address || '',
     interview: (((r.interview_at || '').replace('T', ' ')) + (ivMark ? ' ' + ivMark : '')).trim(),
     wage: r.worker_wage || '',
-    amount: r.amount != null ? money(r.amount) : '',
+    amount: r.amount != null ? _refFeeText(r.first_week_amount, r.amount) : '',
     note: r.description || '',
   }));
 }
@@ -3438,7 +3533,8 @@ function _rcFields(r) {
       ['Position', _rcEn(String(r.job_title || '').split(/\s+—\s+/)[0]).replace(/^[A-Z]{2,}-[A-Z0-9-]+\s*/i, '')],
       ['Interview', ivTxt],
       ['Pay rate', _rcEn(r.worker_wage)],
-      ['Referral fee', r.amount != null && Number(r.amount) > 0 ? `${money(r.amount)} per week worked` : ''],
+      ['Referral fee', r.amount != null && Number(r.amount) > 0 ? (r.first_week_amount != null && Number(r.first_week_amount) !== Number(r.amount)
+        ? `${money(r.first_week_amount)} for the first week, then ${money(r.amount)} per week worked` : `${money(r.amount)} per week worked`) : ''],
     ].filter(x => x[1]),
     ref: 'REF-' + String(r.id).padStart(5, '0'),
     date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
@@ -3550,6 +3646,8 @@ function rcCopyImg() {
 }
 // 🧾 会计关联发票: 勾选能证明被介绍人在干活的发票, 还可以细到发票里的某一行 (这个工人那一行)
 let _riRefId = null, _riSel = new Set();
+let _riTiers = {};          // 发票 id → 'first' | 'after' (没有 = 自动): 这周按哪档介绍费付
+let _riRef = null;
 let _riLines = {};          // 发票 id → Set(line_key): 勾的条目
 let _riOpen = new Set();    // 展开了条目列表的发票
 const _riLineCache = {};    // 发票 id → 条目数组 (第一次展开时拉)
@@ -3558,7 +3656,10 @@ function openRefInv(id) {
   const r = _refList.find(x => x.id === id);
   if (!r) return;
   _riRefId = id;
+  _riRef = r;
   _riSel = new Set(r.invoice_ids || []);
+  _riTiers = {};
+  (r.weeks || []).forEach(w => { if (w.tier) _riTiers[w.invoice_id] = w.tier; });
   _riLines = {};
   Object.entries(r.invoice_lines || {}).forEach(([k, v]) => { _riLines[k] = new Set(v); });
   _riOpen = new Set(Object.keys(_riLines).map(Number));   // 勾过条目的发票默认展开
@@ -3627,6 +3728,10 @@ function riRenderList() {
               </span>
             </span>
           </label>
+          ${on && _riRef && _refTwoTier(_riRef) ? `<select onchange="riSetTier(${v.id}, this.value)" title="这张发票这周按第一周的价还是之后每周的价付" style="padding:1px 3px;font-size:.7rem">
+            <option value="">自动</option>
+            <option value="first" ${_riTiers[v.id] === 'first' ? 'selected' : ''}>第一周 ${money(_riRef.first_week_amount)}</option>
+            <option value="after" ${_riTiers[v.id] === 'after' ? 'selected' : ''}>之后 ${money(_riRef.amount)}</option></select>` : ''}
           <button type="button" class="btn btn-outline" style="padding:1px 7px;font-size:.7rem;white-space:nowrap;${n ? 'color:#1d4ed8;border-color:#93c5fd' : ''}"
             onclick="riToggleOpen(${v.id})" title="勾这张发票里具体是哪一行（这个工人那一行）">${open ? '收起' : '选条目'}${n ? ` · ${n}` : ''}</button>
         </div>
@@ -3686,6 +3791,7 @@ function riToggle(cb) {
   if (cb.checked) _riSel.add(id); else { _riSel.delete(id); delete _riLines[id]; }   // 取消发票 = 条目一起取消
   riRenderList();
 }
+function riSetTier(invId, t) { if (t) _riTiers[invId] = t; else delete _riTiers[invId]; }
 function riSumRefresh() {
   const sel = _invList.filter(v => _riSel.has(v.id));
   const ip = _refInvPeriod({ invoices: sel });
@@ -3701,7 +3807,8 @@ async function saveRefInv() {
   try {
     const r = await api('/api/acct/referrals/' + _riRefId + '/invoices', { method: 'POST',
       body: JSON.stringify({ invoice_ids: [..._riSel], invoice_note: document.getElementById('riNote').value.trim(),
-        invoice_lines: Object.fromEntries(Object.entries(_riLines).filter(([k, v]) => _riSel.has(Number(k)) && v.size).map(([k, v]) => [k, [...v]])) }) });
+        invoice_lines: Object.fromEntries(Object.entries(_riLines).filter(([k, v]) => _riSel.has(Number(k)) && v.size).map(([k, v]) => [k, [...v]])),
+        invoice_tiers: Object.fromEntries([..._riSel].map(id => [id, _riTiers[id] || ''])) }) });
     if (r && r.error) throw new Error(r.error);
     document.getElementById('refInvModal').style.display = 'none';
     toast('✅ 已保存关联发票');
