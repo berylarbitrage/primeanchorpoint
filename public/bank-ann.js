@@ -263,6 +263,7 @@ function _bsPayeeOptionDefs(direction) {
     // 最常用的两个放最前面, 免得在长列表里翻不到
     { v: BS_PAYEE_EMP, t: '👷 公司员工（填姓名）', d: 'both' },
     { v: BS_PAYEE_PALLET, t: direction === 'in' ? '🪵 木板钱（选客户）' : '🪵 木板钱（选供应商）', d: 'both' },
+    { v: BS_PAYEE_UNLOAD, t: '📦 卸柜费用 · 支付卸柜账单（选公司）', d: 'out' },
     { v: BS_PAYEE_BANKFEE, t: '🏦 银行费用', d: 'out' },
     { v: BS_PAYEE_OFFICE, t: '🧾 公司办公费用（选分类）', d: 'out' },
     { v: BS_PAYEE_COMPFEE, t: '🏛️ 公司相关费用（税务/成立费，选分类）', d: 'out' },
@@ -286,7 +287,6 @@ function _bsPayeeOptionDefs(direction) {
     { v: BS_PAYEE_RETURNED, t: '↩️ 退回款 Returned Payment', d: 'both' },
     { v: BS_PAYEE_TEST, t: '🧪 测试转账 Test Transfer', d: 'both' },
     { v: BS_PAYEE_TRUCK, t: '🚚 卡车费（选公司）', d: 'out' },
-    { v: BS_PAYEE_UNLOAD, t: '📦 支付卸柜账单（选公司）', d: 'out' },
     { v: BS_PAYEE_RENT, t: '🏠 付房租（选公司）', d: 'out' },
     { v: BS_PAYEE_INSUR, t: '🛡️ 保险费（选保险公司）', d: 'out' },
     { v: BS_PAYEE_FX, t: '💱 换汇（选对方）', d: 'both' },
