@@ -674,7 +674,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <div id="refAddTitle" style="font-weight:800;margin-bottom:.2rem">🤝 新增介绍</div>
       <div id="refAddHint" style="font-size:.76rem;color:var(--g500);margin-bottom:.7rem"></div>
       <label style="display:flex;align-items:center;gap:.4rem;font-size:.82rem;margin-bottom:.45rem;cursor:pointer;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:.35rem .6rem">
-        <input type="checkbox" id="raHrSelf" onchange="raHrSelfSw()"> 🙋 <b>HR 自己招的</b>（没有工头介绍，不用填工头，也没有介绍费）</label>
+        <input type="checkbox" id="raHrSelf" onchange="raHrSelfSw()"> 🙋 <b>HR 自己招的</b>（没有工头介绍，不用填工头；介绍费照样要填，没有就填 0）</label>
       <div id="raForemanWrap">
       <label style="font-size:.76rem;color:var(--g500)">工头（介绍人）<span style="color:#dc2626">*</span>
         <a style="cursor:pointer;font-size:.72rem;color:#0f4c6b;text-decoration:underline;margin-left:.4rem" onclick="openFmList()">👷 工头名单</a></label>
@@ -699,7 +699,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <label style="font-size:.76rem;color:var(--g500)">仓库地址 <span style="font-size:.7rem;color:var(--g400)">（选仓库自动带出，可改）</span></label>
       <input type="text" id="raWhAddr" placeholder="例：1000 Bilter Rd, Aurora, IL" style="width:100%;margin:.15rem 0 .55rem">
       <div style="display:grid;grid-template-columns:1.2fr .9fr .9fr;gap:.2rem .6rem">
-        <div><label style="font-size:.76rem;color:var(--g500)">面试时间（HR 约的）</label>
+        <div><label style="font-size:.76rem;color:var(--g500)">面试时间（HR 约的，芝加哥时间）<span style="color:#dc2626">*</span></label>
           <input type="datetime-local" id="raInterview" style="width:100%;margin:.15rem 0 .55rem"></div>
         <div><label style="font-size:.76rem;color:var(--g500)">工资（工人的）<span style="color:#dc2626">*</span> <span style="font-size:.7rem;color:var(--g400)">手动填实际谈定的</span></label>
           <input type="text" id="raWage" placeholder="必填，例：$18/小时" style="width:100%;margin:.15rem 0 .55rem"></div>
@@ -2206,8 +2206,16 @@ function refJumpTo(id) {
 // 面试时间已过、还没标去没去 (还没开始上班的): 整张卡片标红提醒
 function _refIvOverdue(r) {
   if (r.interview_status || r.work_start_date || !r.interview_at) return false;
-  const t = new Date(String(r.interview_at).replace(' ', 'T'));
-  return !isNaN(t) && t < new Date();
+  // 面试时间存的是芝加哥当地时间 (没带时区), 跟芝加哥现在的时间比, 不按电脑所在时区
+  const iv = String(r.interview_at).trim().replace(' ', 'T').slice(0, 16);
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(iv) && iv < _chicagoNowIso();
+}
+// 芝加哥现在的时间 'YYYY-MM-DDTHH:MM'
+function _chicagoNowIso() {
+  const p = {};
+  new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .formatToParts(new Date()).forEach(x => { p[x.type] = x.value; });
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
 }
 // 面试去没去专门一列: 约了未必去, 登记后在这列一键标 (去了/没去), 标错可改可清
 function _refInterviewMarkCell(r) {
@@ -3274,11 +3282,10 @@ function raToggleRemove(p) {
   if (_raRemove.has(p)) _raRemove.delete(p); else _raRemove.add(p);
   raRenderOldFiles();
 }
-// HR 自己招的: 藏起工头和介绍费 (不用填)
+// HR 自己招的: 藏起工头; 介绍费照样要填 (没有就填 0)
 function raHrSelfSw() {
   const on = document.getElementById('raHrSelf').checked;
   document.getElementById('raForemanWrap').style.display = on ? 'none' : '';
-  document.getElementById('raAmountWrap').style.visibility = on ? 'hidden' : '';
   document.getElementById('raFirstWrap').style.display = on ? 'none' : 'flex';
   raValidate();
 }
@@ -3300,9 +3307,9 @@ function raValidate() {
   need(!!$('raWorkerName').value.trim(), '被介绍人姓名', $('raWorkerName'));
   need(!!$('raJobSel').value, '关联岗位', $('raJobSel'));
   need(!!$('raWage').value.trim(), '工资', $('raWage'));
+  need(!!$('raInterview').value, '面试时间', $('raInterview'));
   const amt = $('raAmount').value.trim();
-  need(hr || (amt !== '' && !isNaN(Number(amt)) && Number(amt) > 0), '每周介绍费', hr ? null : $('raAmount'));
-  if (hr) { $('raAmount').style.borderColor = ''; $('raAmount').style.background = ''; }
+  need(amt !== '' && !isNaN(Number(amt)) && (hr ? Number(amt) >= 0 : Number(amt) > 0), hr ? '介绍费（没有就填 0）' : '每周介绍费', $('raAmount'));
   if ($('raWhSel').value === '__new__') need(!!$('raWh').value.trim(), '新仓库名称', $('raWh'));
   const box = $('raMissing'), btn = $('raSubmitBtn');
   box.style.display = miss.length ? '' : 'none';
@@ -3331,7 +3338,8 @@ async function submitRefAdd() {
   // 岗位必须关联、介绍费必须写 (管理员核查和按周付款都靠这两项)
   if (!document.getElementById('raJobSel').value) return toast('请选择关联岗位', true);
   const amtV = document.getElementById('raAmount').value.trim();
-  if (!hrSelf && (amtV === '' || isNaN(Number(amtV)) || Number(amtV) <= 0)) return toast('请填写每周介绍费（金额要大于 0）', true);
+  if (amtV === '' || isNaN(Number(amtV)) || (hrSelf ? Number(amtV) < 0 : Number(amtV) <= 0)) return toast(hrSelf ? '请填写介绍费（HR 自己招的没有介绍费就填 0）' : '请填写每周介绍费（金额要大于 0）', true);
+  if (!document.getElementById('raInterview').value) return toast('请填写面试时间', true);
   const whSelV = document.getElementById('raWhSel').value;
   const whName = whSelV === '__new__'
     ? document.getElementById('raWh').value.trim()

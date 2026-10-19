@@ -42103,8 +42103,8 @@ function _referralBody(b) {
   const fwNum = Number(b.first_week_amount);
   out.first_week_amount = (b.first_week_amount != null && b.first_week_amount !== '' && !isNaN(fwNum) && fwNum >= 0) ? fwNum : null;
   out.hr_self = (b.hr_self === '1' || b.hr_self === 'true' || b.hr_self === true || b.hr_self === 1) ? 1 : 0;
-  // HR 自招: 没有工头、介绍费为 0
-  if (out.hr_self) { out.foreman_name = ''; out.foreman_phone = ''; out.amount = 0; out.first_week_amount = null; }
+  // HR 自招: 没有工头; 介绍费照样要填 (没有就填 0)
+  if (out.hr_self) { out.foreman_name = ''; out.foreman_phone = ''; out.first_week_amount = null; }
   return out;
 }
 // 关联岗位: 表单传 jobs.id, 存 id + 「编号 标题 中文名 — 公司」快照;
@@ -42139,7 +42139,8 @@ app.post('/api/acct/referrals', requireAdmin, requireRole('accounting', 'admin',
   if (!f.worker_name) return res.status(400).json({ error: '请填写被介绍人姓名' });
   // 工资必须手动填写: 岗位上的是招聘区间, 不代表这个工人实际谈定的数
   if (!f.worker_wage) return res.status(400).json({ error: '请手动填写工人的工资（岗位上写的是区间，要填实际谈定的）' });
-  if (!f.hr_self && !(f.amount > 0)) return res.status(400).json({ error: '请填写每周介绍费（金额要大于 0）' });
+  if (f.hr_self ? !(f.amount >= 0) : !(f.amount > 0)) return res.status(400).json({ error: f.hr_self ? '请填写介绍费（HR 自己招的没有介绍费就填 0）' : '请填写每周介绍费（金额要大于 0）' });
+  if (!f.interview_at) return res.status(400).json({ error: '请填写面试时间' });
   const jb = _referralJob(req.body || {});
   if (!jb.job_id && !jb.recruit_job_id) return res.status(400).json({ error: '请选择关联岗位' });
   const files = Array.isArray(req.files) ? req.files : [];
@@ -42166,7 +42167,8 @@ app.put('/api/acct/referrals/:id', requireAdmin, requireRole('accounting', 'admi
   // 与新增一致: 工资必须手动填写（老记录没填的, 编辑保存时也要求补上）
   if (!f.worker_wage) return res.status(400).json({ error: '请手动填写工人的工资（岗位上写的是区间，要填实际谈定的）' });
   // 与新增一致: 介绍费必须写、岗位必须关联 (老记录没填的, 编辑保存时也要求补上)
-  if (!f.hr_self && !(f.amount > 0)) return res.status(400).json({ error: '请填写每周介绍费（金额要大于 0）' });
+  if (f.hr_self ? !(f.amount >= 0) : !(f.amount > 0)) return res.status(400).json({ error: f.hr_self ? '请填写介绍费（HR 自己招的没有介绍费就填 0）' : '请填写每周介绍费（金额要大于 0）' });
+  if (!f.interview_at) return res.status(400).json({ error: '请填写面试时间' });
   const jb = _referralJob(req.body || {}, cur);
   if (!jb.job_id && !jb.recruit_job_id) return res.status(400).json({ error: '请选择关联岗位' });
   let atts = _claimAtts(cur);
