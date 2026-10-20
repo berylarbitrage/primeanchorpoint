@@ -2228,6 +2228,8 @@ const REF_HR_BONUS = [
   { k: 'week1', label: '满 1 周', amt: 100, prorate: true },   // 按第 1 周工时 /40 折算
   { k: 'month1', label: '满 1 个月', amt: 150 },
 ];
+// 管理奖励: 上班第 6 周起, 每满一周 ¥25, 在岗就一直算 (中途不去了算到最后上班那天)
+const REF_HR_MGMT_FROM = 6, REF_HR_MGMT_AMT = 25;
 const yuan = n => '¥' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 });
 function _refHrOf(r) {
   if (r.hr_self) return r.hr_name || '';
@@ -2262,6 +2264,29 @@ function _refHrBonus(r) {
     return { ...m, ...x, amount, calc, row: (r.hr_bonus || {})[m.k] || null };
   });
 }
+// 管理奖励每周: 满了的周 (第 6 周起) 各一条; 还没到第 6 周 → 一条 wait / lost 说明
+function _refHrMgmt(r) {
+  const start = /^\d{4}-\d{2}-\d{2}$/.test(r.work_start_date || '') ? new Date(r.work_start_date + 'T00:00:00') : null;
+  if (!start) return [];
+  const DAY = 86400000;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const last = /^\d{4}-\d{2}-\d{2}$/.test(r.work_end_date || '') ? new Date(r.work_end_date + 'T00:00:00') : null;
+  // 算到哪天为止: 在岗 = 昨天 (今天还没过完), 不去了 = 最后上班那天
+  const upto = last && last < today ? last : new Date(today - DAY);
+  const full = upto < start ? 0 : Math.floor((Math.round((upto - start) / DAY) + 1) / 7);
+  const ymd = d => _refYmd(d).slice(5);
+  const out = [];
+  for (let k = REF_HR_MGMT_FROM; k <= full; k++) {
+    const a = new Date(start.getTime() + (k - 1) * 7 * DAY), b = new Date(start.getTime() + (k * 7 - 1) * DAY);
+    out.push({ k: 'mgmt' + k, label: `第 ${k} 周`, amt: REF_HR_MGMT_AMT, amount: REF_HR_MGMT_AMT, st: 'done', calc: `${ymd(a)}~${ymd(b)}`, row: (r.hr_bonus || {})['mgmt' + k] || null });
+  }
+  if (!out.length) {
+    const need = new Date(start.getTime() + (REF_HR_MGMT_FROM * 7 - 1) * DAY);
+    out.push(last && last < need ? { k: '', label: `第 ${REF_HR_MGMT_FROM} 周起`, amt: REF_HR_MGMT_AMT, st: 'lost', hint: '没做到第 6 周' }
+      : { k: '', label: `第 ${REF_HR_MGMT_FROM} 周起`, amt: REF_HR_MGMT_AMT, st: 'wait', hint: `还差 ${Math.round((need - today) / DAY) + 1} 天` });
+  }
+  return out;
+}
 function _refHrBonusRow(r) {
   const hr = _refHrOf(r);
   if (!hr) return '';
@@ -2286,8 +2311,28 @@ function _refHrBonusRow(r) {
         : '<span style="color:#b45309">待管理员确认</span>'));
   };
   const cells = items.map(cell).join(' ');
+  const mg = _refHrMgmt(r);
+  const mgCells = mg.map(cell).join(' ');
+  const mgOpen = mg.filter(b => b.k && b.st === 'done' && !b.row);
+  const mgAll = isAdmin && mgOpen.length > 1 ? `<button class="btn btn-sm" style="background:#16a34a;color:#fff;padding:0 7px;font-size:.7rem" onclick="refHrMgmtAll(${r.id})">✅ 全部确认（${mgOpen.length} 周 ${yuan(mgOpen.length * REF_HR_MGMT_AMT)}）</button>` : '';
+  const mgRow = mg.length ? `<div style="flex-basis:100%;display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;margin-top:.15rem"><b style="color:#6d28d9;font-size:.78rem;white-space:nowrap">🧑‍💼 管理奖励 · 第 ${REF_HR_MGMT_FROM} 周起 ${yuan(REF_HR_MGMT_AMT)}/周</b>${mgCells}${mgAll}</div>` : '';
   return `<div class="ref-row" style="background:#faf5ff;flex-wrap:wrap;gap:.35rem"><b style="color:#6d28d9;white-space:nowrap">🙋 HR 奖励 · ${esc(hr)}</b>${cells}
-    <span style="flex:1"></span><span style="font-size:.76rem;color:var(--g500);white-space:nowrap">已确认 <b>${yuan(due)}</b> · 已付 <b style="color:#047857">${yuan(paid)}</b></span></div>`;
+    <span style="flex:1"></span><span style="font-size:.76rem;color:var(--g500);white-space:nowrap">已确认 <b>${yuan(due)}</b> · 已付 <b style="color:#047857">${yuan(paid)}</b></span>${mgRow}</div>`;
+}
+// 管理奖励: 还没确认的满周一次全部按 ¥25 确认
+async function refHrMgmtAll(id) {
+  const r = _refList.find(x => x.id === id);
+  if (!r) return;
+  const open = _refHrMgmt(r).filter(b => b.k && b.st === 'done' && !b.row);
+  if (!open.length || !confirm(`确认 ${open.length} 周管理奖励，每周 ${yuan(REF_HR_MGMT_AMT)}，共 ${yuan(open.length * REF_HR_MGMT_AMT)}？`)) return;
+  try {
+    for (const b of open) {
+      const x = await api(`/api/acct/referrals/${id}/hr-bonus`, { method: 'POST', body: JSON.stringify({ milestone: b.k, action: 'approve', amount: REF_HR_MGMT_AMT, hr_name: _refHrOf(r) }) });
+      if (x && x.error) throw new Error(x.error);
+    }
+    toast(`✅ 已确认 ${open.length} 周管理奖励`);
+  } catch (e) { toast(e.message || '操作失败', true); }
+  loadRefList();
 }
 async function refHrBonus(id, ms, action) {
   const r = _refList.find(x => x.id === id);
