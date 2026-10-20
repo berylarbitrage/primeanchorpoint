@@ -474,6 +474,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <option value="noshow">❌ 没去面试</option>
         <option value="failed">🙅 面试没通过</option>
       </select>
+      <select id="refBy" onchange="renderRefList()" title="按谁提交的筛选"><option value="">👤 提交人：全部</option></select>
       <button class="btn btn-blue" id="btnRefAdd" onclick="openRefAdd()" style="display:none">＋ 新增介绍</button>
       <button class="btn btn-outline" onclick="openFmList()">👷 工头名单</button>
       <a id="refOwnPage" class="btn btn-outline" href="/referral" target="_blank" title="只看介绍费的独立页面">↗ Referral 页面</a>
@@ -2278,7 +2279,7 @@ function refJumpTo(id) {
   if (!r) return;
   refSetStage(_refStage(r));
   // 被当前搜索/筛选挡住了就清掉筛选再找
-  if (!document.getElementById('refCard' + id)) { document.getElementById('refFilter').value = ''; renderRefList(); }
+  if (!document.getElementById('refCard' + id)) { document.getElementById('refFilter').value = ''; document.getElementById('refBy').value = ''; renderRefList(); }
   if (!document.getElementById('refCard' + id)) { document.getElementById('refSearch').value = ''; renderRefList(); }
   setTimeout(() => {
     const el = document.getElementById('refCard' + id);
@@ -2411,9 +2412,33 @@ async function refMarkInterview(id, st) {
     toast(st === 'attended' ? '✅ 已标记：面试去了' + (attendedAt ? '（' + attendedAt + '）' : '') : st === 'no_show' ? '已标记：没去面试' : '已清除标记');
   } catch (e) { toast(e.message || '操作失败', true); }
 }
+// 提交人 / 核查人做成醒目的小标签; 点提交人 = 只看他提交的
+function _refWhoChip(name, verb) {
+  if (!name) return '';
+  const sub = verb === '提交';
+  return `<span ${sub ? `onclick="refBySet(this.dataset.who)" data-who="${esc(name)}" title="只看 ${esc(name)} 提交的"` : ''} style="display:inline-flex;align-items:center;gap:.2rem;white-space:nowrap;border-radius:999px;padding:1px 9px;font-size:.76rem;font-weight:700;${sub ? 'background:#ede9fe;color:#5b21b6;border:1px solid #c4b5fd;cursor:pointer' : 'background:#f1f5f9;color:#334155;border:1px solid #cbd5e1'}">${sub ? '👤' : '🔎'} ${esc(name)} ${verb}</span>`;
+}
+function refBySet(name) {
+  const sel = document.getElementById('refBy');
+  sel.value = sel.value === name ? '' : name;   // 再点一次取消筛选
+  renderRefList();
+}
+// 提交人下拉: 按现有记录里的提交人生成, 带条数; 保留当前选中
+function _refByOptions() {
+  const sel = document.getElementById('refBy');
+  const cur = sel.value, cnt = {};
+  _refList.forEach(r => { const k = r.created_by || ''; cnt[k] = (cnt[k] || 0) + 1; });
+  const names = Object.keys(cnt).filter(Boolean).sort((a, b) => cnt[b] - cnt[a] || a.localeCompare(b));
+  sel.innerHTML = '<option value="">👤 提交人：全部</option>' + names.map(n => `<option value="${esc(n)}">👤 ${esc(n)}（${cnt[n]}）</option>`).join('')
+    + (cnt[''] ? `<option value="__none__">👤 没记提交人（${cnt['']}）</option>` : '');
+  sel.value = cur && (names.includes(cur) || cur === '__none__') ? cur : '';
+  sel.style.cssText = sel.value ? 'background:#ede9fe;border-color:#a78bfa;color:#5b21b6;font-weight:700' : '';
+}
 function renderRefList() {
   const q = (document.getElementById('refSearch').value || '').trim().toLowerCase();
   const flt = document.getElementById('refFilter').value;
+  _refByOptions();
+  const by = document.getElementById('refBy').value;
   // 每周付款行拍平一份, 给付款批注弹窗按 id 找 (type=referralweek)
   _refWeeks = [];
   for (const r of _refList) (r.weeks || []).forEach((w, i) => { w.amount = w.fee_eff; w.week_no = i + 1; w.ref = r; _refWeeks.push(w); });
@@ -2426,6 +2451,7 @@ function renderRefList() {
   if (flt === 'noshow') list = list.filter(r => r.interview_status === 'no_show');
   else if (flt === 'failed') list = list.filter(r => r.interview_status === 'failed');
   else if (flt) list = list.filter(r => _refOverall(r) === flt);
+  if (by) list = list.filter(r => by === '__none__' ? !r.created_by : r.created_by === by);
   // 三个阶段分页: 数字按当前搜索/筛选算, 切过去不会扑空
   const stN = { interview: 0, working: 0, ended: 0, quit: 0, noshow: 0 };
   list.forEach(r => stN[_refStage(r)]++);
@@ -2474,14 +2500,14 @@ function renderRefList() {
       + (canEdit ? ` <a class="btn btn-sm btn-outline" style="padding:.15rem .5rem" onclick="openRefAdd(${r.id})">✎ 编辑</a>` : '')
       + (USER.role === 'admin' ? ` <a class="btn btn-sm btn-outline" style="padding:.15rem .45rem;color:#b91c1c" title="删除这条介绍记录" onclick="refDelete(${r.id})">🗑</a>` : '');
     // 管理员核查条
-    const who = [r.created_by ? esc(r.created_by) + ' 提交' : '', r.reviewed_by ? esc(r.reviewed_by) + ' 核查' : ''].filter(Boolean).join(' · ');
+    const who = _refWhoChip(r.created_by, '提交') + (r.reviewed_by ? ' ' + _refWhoChip(r.reviewed_by, '核查') : '');
     const reviewBar = r.review_status === 'pending'
       ? (USER.role === 'admin'
-        ? `<div class="ref-row" style="background:#fff7ed;color:#9a3412"><b>⏳ 等你核查</b><span>看过面试、发票没问题就同意支付</span>${who ? `<span style="color:var(--g400)">· ${who}</span>` : ''}<span style="flex:1"></span>
+        ? `<div class="ref-row" style="background:#fff7ed;color:#9a3412"><b>⏳ 等你核查</b><span>看过面试、发票没问题就同意支付</span>${who}<span style="flex:1"></span>
             <button class="btn btn-sm" style="background:#16a34a;color:#fff" onclick="refReview(${r.id},'approve')">✅ 同意支付</button>
             <button class="btn btn-sm btn-outline" style="color:#dc2626;border-color:#fecaca" onclick="refReview(${r.id},'reject')">✖ 拒绝</button></div>`
-        : `<div class="ref-row" style="color:var(--g400)">⏳ 等管理员核查${who ? ' · ' + who : ''}</div>`)
-      : `<div class="ref-row" style="color:var(--g500)">${r.review_status === 'approved' ? '✅ 同意支付' : '✖ 拒绝支付'}${who ? ' · ' + who : ''}${r.review_note ? ` · <span style="color:var(--g400)">${esc(r.review_note)}</span>` : ''}${USER.role === 'admin' ? ` · <a style="cursor:pointer;color:var(--g400);text-decoration:underline" onclick="refReview(${r.id},'reset')">撤销重审</a>` : ''}</div>`;
+        : `<div class="ref-row" style="color:var(--g400)">⏳ 等管理员核查 ${who}</div>`)
+      : `<div class="ref-row" style="color:var(--g500)">${r.review_status === 'approved' ? '✅ 同意支付' : '✖ 拒绝支付'} ${who}${r.review_note ? ` · <span style="color:var(--g400)">${esc(r.review_note)}</span>` : ''}${USER.role === 'admin' ? ` · <a style="cursor:pointer;color:var(--g400);text-decoration:underline" onclick="refReview(${r.id},'reset')">撤销重审</a>` : ''}</div>`;
     // 每周付款表
     const weeks = r.weeks || [];
     const feeCell = w => w.admin_status === 'approved' ? `<b>${money(w.admin_fee)}</b>`
@@ -3919,7 +3945,6 @@ function _refInvPendRow(r) {
   const p = r.invoice_pending;
   if (!p) return '';
   const invs = (p.invoices || []).map(v => `<a onclick="openInvoice(${v.id})" style="cursor:pointer;color:#1d4ed8;text-decoration:underline;white-space:nowrap">📄 ${esc(v.invoice_number || '')}</a>`).join(' ');
-  const who = [p.by, p.at ? String(p.at).slice(0, 16) : ''].filter(Boolean).join(' · ');
   const btns = USER.role === 'admin'
     ? `<button class="btn btn-sm btn-outline" onclick="openRefInv(${r.id})" title="打开看看 / 改一下再保存（保存即生效）">👀 看 / 改</button>
        <button class="btn btn-sm" style="background:#16a34a;color:#fff" onclick="refInvReview(${r.id},'approve')">✅ 通过</button>
@@ -3927,7 +3952,7 @@ function _refInvPendRow(r) {
     : '<span style="font-size:.74rem;color:#b45309">等管理员审核</span>';
   return `<div class="ref-row" style="background:#fff7ed;color:#9a3412"><b>⏳ 关联发票待审核</b>
     <span>${(p.invoice_ids || []).length ? `${(p.invoice_ids || []).length} 张：${invs}` : '取消全部关联'}</span>${p.invoice_note ? `<span style="color:var(--g500)">📝 ${esc(p.invoice_note)}</span>` : ''}
-    ${who ? `<span style="color:var(--g400)">· ${esc(who)} 提交</span>` : ''}<span style="flex:1"></span>${btns}</div>`;
+    ${_refWhoChip(p.by, '提交')}${p.at ? `<span style="color:var(--g400)">${esc(String(p.at).slice(0, 16))}</span>` : ''}<span style="flex:1"></span>${btns}</div>`;
 }
 async function refInvReview(id, action) {
   if (action === 'reject' && !confirm('退回这份关联发票？（原来的关联不变）')) return;
