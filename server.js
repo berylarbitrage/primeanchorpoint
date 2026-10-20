@@ -1011,6 +1011,24 @@ try { db.exec(`ALTER TABLE referral_weeks ADD COLUMN tier TEXT DEFAULT ''`); } c
 // 每周介绍费按工时折算: rate = 这周选的满周价 (第一周 $25 / $50, 之后 $12.5 / $25, 或手写),
 // 实付 = rate × min(工时, 40) / 40 (工时取这周发票里勾的那几行)。fee (旧的直接写死金额) 有值时仍以 fee 为准
 try { db.exec(`ALTER TABLE referral_weeks ADD COLUMN rate REAL DEFAULT NULL`); } catch(e) {}
+// HR 招工节点奖励 (人民币): HR 自己招的 + 工头介绍、HR 提交的, 都按节点给 HR —
+// interview 过面试 ¥30 / week1 连续上满 1 周 ¥100 (按第 1 周工时 /40 折算) / month1 满 1 个月且没问题 ¥150;
+// 管理奖励 mgmt6, mgmt7 … = 上班第 6 周起每满一周 ¥25 (一直在岗就一直有)。
+// 达没达成前端按日期算; 这里只存管理员的决定: approved 确认 (带金额) | rejected 不给 | paid 已付
+try { db.exec(`CREATE TABLE IF NOT EXISTS referral_hr_bonus (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  referral_id INTEGER NOT NULL,
+  milestone TEXT NOT NULL,
+  hr_name TEXT DEFAULT '',
+  status TEXT DEFAULT '',
+  amount REAL DEFAULT NULL,
+  note TEXT DEFAULT '',
+  decided_by TEXT DEFAULT '',
+  decided_at TEXT DEFAULT NULL,
+  paid_by TEXT DEFAULT '',
+  paid_at TEXT DEFAULT NULL,
+  UNIQUE(referral_id, milestone)
+)`); } catch(e) {}
 // 上班中途不去了: work_end_date = 最后上班那天, 再记原因和谁标的; 清空 = 撤销 (回到上班中)
 try { db.exec(`ALTER TABLE referrals ADD COLUMN quit_reason TEXT DEFAULT ''`); } catch(e) {}
 // HR 自己招的: 记是哪个 HR 招的 (张倪 / 陶斯亮 …)
@@ -42065,6 +42083,8 @@ app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
     const weeksBy = {};
     db.prepare('SELECT * FROM referral_weeks').all().forEach(w => { (weeksBy[w.referral_id] = weeksBy[w.referral_id] || []).push(w); });
     const weekNotes = _acctPayNotesFor('referralweek');
+    const hrBonusBy = {};
+    db.prepare('SELECT * FROM referral_hr_bonus').all().forEach(b => { (hrBonusBy[b.referral_id] = hrBonusBy[b.referral_id] || {})[b.milestone] = b; });
     // 工头所在州: 按电话对上工头名单 (没电话按姓名), 列表里工头名字下显示
     const normP = p => String(p || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
     const fmStByPhone = {}, fmStByName = {};
@@ -42094,6 +42114,7 @@ app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
     out.forEach(r => {
       r.created_by_name = dispBy[r.created_by] || r.created_by || '';
       r.hr_credit = (r.hr_self && r.hr_name) ? r.hr_name : r.created_by_name;
+      r.hr_bonus = hrBonusBy[r.id] || {};
     });
     res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -42806,6 +42827,42 @@ app.delete('/api/acct/referrals/:id', requireAdmin, requireRole('admin'), (req, 
   db.prepare(`DELETE FROM acct_pay_notes WHERE target_type='referral' AND target_id=?`).run(cur.id);
   db.prepare(`DELETE FROM acct_pay_notes WHERE target_type='referralweek' AND target_id IN (SELECT id FROM referral_weeks WHERE referral_id=?)`).run(cur.id);
   db.prepare('DELETE FROM referral_weeks WHERE referral_id=?').run(cur.id);
+  db.prepare('DELETE FROM referral_hr_bonus WHERE referral_id=?').run(cur.id);
+  res.json({ success: true });
+});
+
+// HR 招工节点奖励: 管理员 approve 确认 (带金额) / reject 不给 / reset 撤销; 确认后会计或管理员标 paid 已付 (unpaid 撤回)
+app.post('/api/acct/referrals/:id/hr-bonus', requireAdmin, requireRole('accounting', 'admin'), (req, res) => {
+  const cur = db.prepare('SELECT id FROM referrals WHERE id=?').get(parseInt(req.params.id));
+  if (!cur) return res.status(404).json({ error: '记录不存在' });
+  const b = req.body || {};
+  const ms = String(b.milestone || '');
+  // mgmtN = 管理奖励第 N 周 (第 6 周起每周 ¥25)
+  if (!['interview', 'week1', 'month1'].includes(ms) && !/^mgmt([6-9]|[1-9]\d{1,2})$/.test(ms)) return res.status(400).json({ error: '无效节点' });
+  const action = String(b.action || '');
+  if (!['approve', 'reject', 'reset', 'paid', 'unpaid'].includes(action)) return res.status(400).json({ error: '无效操作' });
+  if (['approve', 'reject', 'reset'].includes(action) && req.userRole !== 'admin') return res.status(403).json({ error: '只有管理员能确认' });
+  const row = db.prepare('SELECT * FROM referral_hr_bonus WHERE referral_id=? AND milestone=?').get(cur.id, ms);
+  const who = req.userName || '';
+  if (action === 'paid' || action === 'unpaid') {
+    if (!row || !['approved', 'paid'].includes(row.status)) return res.status(400).json({ error: '管理员确认后才能记已付' });
+    if (action === 'paid') db.prepare(`UPDATE referral_hr_bonus SET status='paid', paid_by=?, paid_at=datetime('now') WHERE id=?`).run(who, row.id);
+    else db.prepare(`UPDATE referral_hr_bonus SET status='approved', paid_by='', paid_at=NULL WHERE id=?`).run(row.id);
+  } else if (action === 'reset') {
+    if (row && row.status === 'paid') return res.status(400).json({ error: '已经记了已付，先撤回已付' });
+    db.prepare('DELETE FROM referral_hr_bonus WHERE referral_id=? AND milestone=?').run(cur.id, ms);
+  } else {
+    if (row && row.status === 'paid') return res.status(400).json({ error: '已经记了已付，先撤回已付' });
+    const amount = action === 'approve' ? Number(b.amount) : 0;
+    if (action === 'approve' && (b.amount === '' || b.amount == null || isNaN(amount) || amount < 0)) return res.status(400).json({ error: '请填写金额' });
+    db.prepare(`INSERT INTO referral_hr_bonus (referral_id, milestone, hr_name, status, amount, note, decided_by, decided_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(referral_id, milestone) DO UPDATE SET hr_name=excluded.hr_name, status=excluded.status, amount=excluded.amount,
+        note=excluded.note, decided_by=excluded.decided_by, decided_at=excluded.decided_at`)
+      .run(cur.id, ms, String(b.hr_name || '').slice(0, 50), action === 'approve' ? 'approved' : 'rejected', amount, String(b.note || '').trim().slice(0, 300), who);
+  }
+  auditLog('referral_hr_bonus', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers },
+    { targetType: 'referral', targetId: cur.id, details: { milestone: ms, action, amount: b.amount } });
   res.json({ success: true });
 });
 

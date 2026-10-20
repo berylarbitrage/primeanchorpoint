@@ -2190,6 +2190,11 @@ let _refList = [], _refWeeks = [], _refEditId = null, _raRemove = new Set();
 // 综合状态: 待核查 / 同意支付(待付款) / 已付款(按会计付款批注) / 拒绝支付
 function _refOverall(r) {
   if (r.review_status === 'rejected') return 'rejected';
+  if (r.review_status === 'approved' && r.hr_self) {
+    // HR 自己招的没有周介绍费, 按 HR 节点奖励: 满 1 个月那笔付了 = 付完
+    const bs = Object.values(r.hr_bonus || {});
+    return (r.hr_bonus || {}).month1 && r.hr_bonus.month1.status === 'paid' ? 'paid' : bs.some(b => b.status === 'paid') ? 'partpaid' : 'approved';
+  }
   if (r.review_status === 'approved') {
     const ws = (r.weeks || []).filter(w => w.admin_status !== 'rejected');
     if (ws.length) {
@@ -2203,6 +2208,7 @@ function _refOverall(r) {
 // 每周付款小计: 应付(各周介绍费) / 已付(付款批注里的实付金额, 没填按那周介绍费) / 待付
 function _refWeekSums(r) {
   const out = { n: 0, paidN: 0, due: 0, paid: 0 };
+  if (r.hr_self) return out;   // HR 自己招的不付周介绍费 (HR 拿节点奖励, 见 _refHrBonus)
   for (const w of r.weeks || []) {
     if (w.admin_status === 'rejected') continue;   // 管理员确认这周不付, 不算应付
     out.n++;
@@ -2215,6 +2221,138 @@ function _refWeekSums(r) {
     }
   }
   return out;
+}
+// 🙋 HR 招工节点奖励 (人民币): HR 自己招的 = 选的 HR; 工头介绍的 = 提交这条的 HR (提交人是 HR 才算)
+const REF_HR_BONUS = [
+  { k: 'interview', label: '过面试', amt: 30 },
+  { k: 'week1', label: '满 1 周', amt: 100, prorate: true },   // 按第 1 周工时 /40 折算
+  { k: 'month1', label: '满 1 个月', amt: 150 },
+];
+// 管理奖励: 上班第 6 周起, 每满一周 ¥25, 在岗就一直算 (中途不去了算到最后上班那天)
+const REF_HR_MGMT_FROM = 6, REF_HR_MGMT_AMT = 25;
+const yuan = n => '¥' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 });
+function _refHrOf(r) {
+  if (r.hr_self) return r.hr_name || '';
+  return REF_HRS.includes(r.hr_credit) ? r.hr_credit : '';
+}
+// 每个节点: done 达成 / wait 还没到 / lost 没达成 + 应得金额 (按日期自动判断, 管理员确认后才算数)
+function _refHrBonus(r) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const start = /^\d{4}-\d{2}-\d{2}$/.test(r.work_start_date || '') ? new Date(r.work_start_date + 'T00:00:00') : null;
+  const last = /^\d{4}-\d{2}-\d{2}$/.test(r.work_end_date || '') ? new Date(r.work_end_date + 'T00:00:00') : null;
+  const failedIv = ['no_show', 'failed'].includes(r.interview_status);
+  // 上满 n 天: 开始上班第 n 天 (start + n - 1) 还在 = 满; 中途不去了且最后一天早于那天 = 没满
+  const span = n => {
+    if (!start) return { st: failedIv ? 'lost' : 'wait', hint: failedIv ? (r.interview_status === 'failed' ? '面试没过' : '没去面试') : '还没开始上班' };
+    const need = new Date(start); need.setDate(need.getDate() + n - 1);
+    if (last && last < need) return { st: 'lost', hint: `做到 ${r.work_end_date} 就不去了` };
+    if (today > need) return { st: 'done', hint: '' };
+    return { st: 'wait', hint: `还差 ${Math.round((need - today) / 86400000) + 1} 天` };
+  };
+  const w1 = (r.weeks || [])[0];
+  return REF_HR_BONUS.map(m => {
+    let x;
+    if (m.k === 'interview') x = (r.interview_status === 'attended' || start) ? { st: 'done', hint: '' } : failedIv ? { st: 'lost', hint: r.interview_status === 'failed' ? '面试没过' : '没去面试' } : { st: 'wait', hint: '还没面试' };
+    else x = span(m.k === 'week1' ? 7 : 30);
+    let amount = m.amt, calc = '';
+    if (m.prorate) {
+      const h = w1 && w1.hours != null ? Number(w1.hours) : null;
+      if (h == null) calc = '还没关联第 1 周发票 / 没工时，先按满额';
+      else if (h >= 40) calc = `${h} 工时 ≥ 40 · 给满`;
+      else { amount = Math.round(m.amt * h / 40 * 100) / 100; calc = `${yuan(m.amt)} × ${h}/40 工时`; }
+    }
+    return { ...m, ...x, amount, calc, row: (r.hr_bonus || {})[m.k] || null };
+  });
+}
+// 管理奖励每周: 满了的周 (第 6 周起) 各一条; 还没到第 6 周 → 一条 wait / lost 说明
+function _refHrMgmt(r) {
+  const start = /^\d{4}-\d{2}-\d{2}$/.test(r.work_start_date || '') ? new Date(r.work_start_date + 'T00:00:00') : null;
+  if (!start) return [];
+  const DAY = 86400000;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const last = /^\d{4}-\d{2}-\d{2}$/.test(r.work_end_date || '') ? new Date(r.work_end_date + 'T00:00:00') : null;
+  // 算到哪天为止: 在岗 = 昨天 (今天还没过完), 不去了 = 最后上班那天
+  const upto = last && last < today ? last : new Date(today - DAY);
+  const full = upto < start ? 0 : Math.floor((Math.round((upto - start) / DAY) + 1) / 7);
+  const ymd = d => _refYmd(d).slice(5);
+  const out = [];
+  for (let k = REF_HR_MGMT_FROM; k <= full; k++) {
+    const a = new Date(start.getTime() + (k - 1) * 7 * DAY), b = new Date(start.getTime() + (k * 7 - 1) * DAY);
+    out.push({ k: 'mgmt' + k, label: `第 ${k} 周`, amt: REF_HR_MGMT_AMT, amount: REF_HR_MGMT_AMT, st: 'done', calc: `${ymd(a)}~${ymd(b)}`, row: (r.hr_bonus || {})['mgmt' + k] || null });
+  }
+  if (!out.length) {
+    const need = new Date(start.getTime() + (REF_HR_MGMT_FROM * 7 - 1) * DAY);
+    out.push(last && last < need ? { k: '', label: `第 ${REF_HR_MGMT_FROM} 周起`, amt: REF_HR_MGMT_AMT, st: 'lost', hint: '没做到第 6 周' }
+      : { k: '', label: `第 ${REF_HR_MGMT_FROM} 周起`, amt: REF_HR_MGMT_AMT, st: 'wait', hint: `还差 ${Math.round((need - today) / DAY) + 1} 天` });
+  }
+  return out;
+}
+function _refHrBonusRow(r) {
+  const hr = _refHrOf(r);
+  if (!hr) return '';
+  const items = _refHrBonus(r);
+  const isAdmin = USER.role === 'admin', canPay = ['accounting', 'admin'].includes(USER.role);
+  let due = 0, paid = 0;
+  const cell = b => {
+    const row = b.row, st = row ? row.status : '';
+    const head = `<b style="color:#334155">${b.label}</b> <span style="color:var(--g400)">${yuan(b.amt)}</span>`;
+    const box = (bg, bd, inner) => `<span style="display:inline-flex;align-items:center;gap:.3rem;flex-wrap:wrap;background:${bg};border:1px solid ${bd};border-radius:8px;padding:2px 8px;font-size:.76rem">${head} ${inner}</span>`;
+    const undo = (a, t) => `<a style="cursor:pointer;color:var(--g400);text-decoration:underline;font-size:.7rem" onclick="refHrBonus(${r.id},'${b.k}','${a}')">${t}</a>`;
+    if (st === 'paid') { due += row.amount || 0; paid += row.amount || 0; return box('#ecfdf5', '#a7f3d0', `<b style="color:#047857">💰 已付 ${yuan(row.amount)}</b>${canPay ? undo('unpaid', '撤回') : ''}`); }
+    if (st === 'approved') { due += row.amount || 0; return box('#eff6ff', '#bfdbfe', `<b style="color:#1d4ed8">✅ ${yuan(row.amount)}</b>${canPay ? `<button class="btn btn-sm btn-outline" style="padding:0 6px;font-size:.7rem" onclick="refHrBonus(${r.id},'${b.k}','paid')">💰 记已付</button>` : ''}${isAdmin ? undo('reset', '撤销') : ''}`); }
+    if (st === 'rejected') return box('#f8fafc', '#e2e8f0', `<span style="color:#b91c1c">✖ 不给</span>${row.note ? `<span style="color:var(--g400)">${esc(row.note)}</span>` : ''}${isAdmin ? undo('reset', '撤销') : ''}`);
+    if (b.st === 'lost') return box('#f8fafc', '#e2e8f0', `<span style="color:var(--g400);text-decoration:line-through">没达成</span><span style="color:var(--g400)">${esc(b.hint)}</span>`);
+    if (b.st === 'wait') return box('#fff', '#e2e8f0', `<span style="color:var(--g400)">${esc(b.hint)}</span>`);
+    const calc = b.calc ? `<span style="color:var(--g500)">${esc(b.calc)}${b.calc.includes('×') ? ` = <b style="color:#0f4c6b">${yuan(b.amount)}</b>` : ''}</span>` : '';
+    return box('#fffbeb', '#fcd34d', `<span style="color:#b45309;font-weight:700">已达成</span>${calc}`
+      + (isAdmin ? `<span style="white-space:nowrap">¥ <input type="number" step="0.01" min="0" id="rhb${r.id}${b.k}" value="${b.amount}" style="width:64px;padding:.1rem .3rem;font-size:.74rem"></span>
+          <button class="btn btn-sm" style="background:#16a34a;color:#fff;padding:0 6px;font-size:.7rem" onclick="refHrBonus(${r.id},'${b.k}','approve')">✅ 确认</button>
+          <button class="btn btn-sm btn-outline" style="color:#dc2626;border-color:#fecaca;padding:0 6px;font-size:.7rem" onclick="refHrBonus(${r.id},'${b.k}','reject')">✖ 不给</button>`
+        : '<span style="color:#b45309">待管理员确认</span>'));
+  };
+  const cells = items.map(cell).join(' ');
+  const mg = _refHrMgmt(r);
+  const mgCells = mg.map(cell).join(' ');
+  const mgOpen = mg.filter(b => b.k && b.st === 'done' && !b.row);
+  const mgAll = isAdmin && mgOpen.length > 1 ? `<button class="btn btn-sm" style="background:#16a34a;color:#fff;padding:0 7px;font-size:.7rem" onclick="refHrMgmtAll(${r.id})">✅ 全部确认（${mgOpen.length} 周 ${yuan(mgOpen.length * REF_HR_MGMT_AMT)}）</button>` : '';
+  const mgRow = mg.length ? `<div style="flex-basis:100%;display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;margin-top:.15rem"><b style="color:#6d28d9;font-size:.78rem;white-space:nowrap">🧑‍💼 管理奖励 · 第 ${REF_HR_MGMT_FROM} 周起 ${yuan(REF_HR_MGMT_AMT)}/周</b>${mgCells}${mgAll}</div>` : '';
+  return `<div class="ref-row" style="background:#faf5ff;flex-wrap:wrap;gap:.35rem"><b style="color:#6d28d9;white-space:nowrap">🙋 HR 奖励 · ${esc(hr)}</b>${cells}
+    <span style="flex:1"></span><span style="font-size:.76rem;color:var(--g500);white-space:nowrap">已确认 <b>${yuan(due)}</b> · 已付 <b style="color:#047857">${yuan(paid)}</b></span>${mgRow}</div>`;
+}
+// 管理奖励: 还没确认的满周一次全部按 ¥25 确认
+async function refHrMgmtAll(id) {
+  const r = _refList.find(x => x.id === id);
+  if (!r) return;
+  const open = _refHrMgmt(r).filter(b => b.k && b.st === 'done' && !b.row);
+  if (!open.length || !confirm(`确认 ${open.length} 周管理奖励，每周 ${yuan(REF_HR_MGMT_AMT)}，共 ${yuan(open.length * REF_HR_MGMT_AMT)}？`)) return;
+  try {
+    for (const b of open) {
+      const x = await api(`/api/acct/referrals/${id}/hr-bonus`, { method: 'POST', body: JSON.stringify({ milestone: b.k, action: 'approve', amount: REF_HR_MGMT_AMT, hr_name: _refHrOf(r) }) });
+      if (x && x.error) throw new Error(x.error);
+    }
+    toast(`✅ 已确认 ${open.length} 周管理奖励`);
+  } catch (e) { toast(e.message || '操作失败', true); }
+  loadRefList();
+}
+async function refHrBonus(id, ms, action) {
+  const r = _refList.find(x => x.id === id);
+  const body = { milestone: ms, action, hr_name: r ? _refHrOf(r) : '' };
+  if (action === 'approve') {
+    const v = (document.getElementById('rhb' + id + ms) || {}).value;
+    if (v === '' || v == null || isNaN(Number(v))) return toast('请填写金额', true);
+    body.amount = Number(v);
+  } else if (action === 'reject') {
+    const note = prompt('为什么不给（可选，比如：有投诉）：');
+    if (note === null) return;
+    body.note = note;
+  } else if (action === 'reset' && !confirm('撤销这个节点的确认？')) return;
+  else if (action === 'unpaid' && !confirm('撤回「已付」？')) return;
+  try {
+    const x = await api(`/api/acct/referrals/${id}/hr-bonus`, { method: 'POST', body: JSON.stringify(body) });
+    if (x && x.error) throw new Error(x.error);
+    toast(action === 'approve' ? `✅ 已确认 ${yuan(body.amount)}` : action === 'paid' ? '💰 已记已付' : '已更新');
+    loadRefList();
+  } catch (e) { toast(e.message || '操作失败', true); }
 }
 // 已工作时长: 从上工日期到离职日期(在职算到今天)
 function _refDuration(r) {
@@ -2524,7 +2662,8 @@ function renderRefList() {
       ? `没勾发票行、没有工时，按满周 = ${money(w.fee_default)}`
       : w.hours >= 40 ? `${w.hours} 工时 ≥ 40 · 给满 ${money(w.fee_default)}`
       : `${money(w.rate)} × ${w.hours}/40 工时 = <b style="color:#0f4c6b">${money(w.fee_default)}</b>`}</div>`;
-    const feeCell = w => w.admin_status === 'approved' ? `<b>${money(w.admin_fee)}</b>`
+    const feeCell = w => r.hr_self ? '<span style="font-size:.72rem;color:var(--g400)">HR 自己招的不付周介绍费</span>'
+      : w.admin_status === 'approved' ? `<b>${money(w.admin_fee)}</b>`
       : w.admin_status === 'rejected' ? '<span style="color:var(--g400)">—</span>'
       : canInv && r.review_status !== 'rejected' ? (() => {
         const presets = w.tier_eff === 'first' ? [25, 50] : [12.5, 25];
@@ -2541,7 +2680,7 @@ function renderRefList() {
             : `<div style="font-size:.68rem;color:#b45309;white-space:nowrap">还没选${w.fee != null ? ` · 现在写的 ${money(w.fee)}` : w.fee_default != null ? ` · 现在按 ${money(w.fee_default)}` : ''}</div>`);
       })()
       : `<b>${w.fee_eff != null ? money(w.fee_eff) : '—'}</b>${feeCalc(w)}`;
-    const payCell = w => r.review_status === 'rejected' || w.admin_status === 'rejected' ? '<span style="color:var(--g400)">—</span>'
+    const payCell = w => r.hr_self ? '<span style="color:var(--g400)">—</span>' : r.review_status === 'rejected' || w.admin_status === 'rejected' ? '<span style="color:var(--g400)">—</span>'
       : r.review_status !== 'approved' ? '<span style="font-size:.72rem;color:var(--g400)">核查通过后可付</span>'
       : w.admin_status !== 'approved' ? '<span style="font-size:.72rem;color:var(--g400)">管理员确认后可付</span>'
       : payNoteCell('referralweek', w.id, w.pay_note, true);
@@ -2549,6 +2688,7 @@ function renderRefList() {
     const isAdmin = USER.role === 'admin';
     const weekPaid = w => !!(w.pay_note && (w.pay_note.paid_status === 'paid' || w.pay_note.paid_status === 'partial'));
     const adminCell = w => {
+      if (r.hr_self) return '<span style="color:var(--g400)">—</span>';
       const who = [w.admin_by, w.admin_at ? String(w.admin_at).slice(0, 10) : ''].filter(Boolean).join(' · ');
       const undo = isAdmin && !weekPaid(w) ? ` <a style="cursor:pointer;color:var(--g400);text-decoration:underline;font-size:.7rem" onclick="refWeekReview(${w.id},'reset')">撤销</a>` : '';
       if (w.admin_status === 'approved') return `<span style="color:#047857;font-weight:700;white-space:nowrap">✅ 确认支付</span><div style="font-size:.68rem;color:var(--g400)">${esc(who)}${w.admin_note ? ' · ' + esc(w.admin_note) : ''}${undo}</div>`;
@@ -2612,6 +2752,7 @@ function renderRefList() {
       <div class="ref-foot">
         ${_refWorkRows(r)}
         ${preWork ? '' : reviewBar}
+        ${_refHrBonusRow(r)}
         ${preWork && !weeks.length ? '' : `<div class="ref-row"><b style="color:var(--g600)">🗓 每周付款</b>${weekHint}<span style="flex:1"></span>
           ${canLinkInv ? `<button class="btn btn-sm btn-outline" onclick="openRefInv(${r.id})">${weeks.length ? '✎ 改关联发票' : '＋ 关联发票'}</button>` : ''}</div>`}
         ${_refInvPendRow(r)}
