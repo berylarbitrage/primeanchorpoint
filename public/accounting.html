@@ -867,6 +867,8 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <input type="text" id="ceTitle" placeholder="例：会计 / 客服 / 运营" style="width:100%;margin:.15rem 0 .55rem">
       <label id="cePwLabel" style="font-size:.76rem;color:var(--g500)">🔑 查看密码（非管理员要输这个密码才能看他的工资明细）</label>
       <input type="password" id="cePw" autocomplete="new-password" placeholder="至少 4 位" style="width:100%;margin:.15rem 0 .55rem">
+      <label style="font-size:.76rem;color:var(--g500)">🔐 关联客服登录账号（这个客服账号只能看到自己的工资）</label>
+      <select id="ceLogin" style="width:100%;margin:.15rem 0 .55rem"><option value="">— 不关联 —</option></select>
       <label style="font-size:.76rem;color:var(--g500)">默认币种</label>
       <select id="ceCur" style="width:100%;margin:.15rem 0 .55rem"><option value="CNY">¥ 人民币</option><option value="USD">$ 美元</option></select>
       <label style="font-size:.76rem;color:var(--g500)">备注（可选）</label>
@@ -4116,8 +4118,9 @@ const _CUR_SYM = { CNY: '¥', USD: '$' };
 const _cnMoney = (v, cur) => (_CUR_SYM[cur] || '¥') + (Number(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 let _cnEmps = null, _cnEmpEdit = null, _cnPay = null, _ceProfile = null, _ceMatches = [], _ceTimer = null;
 const _cnOpen = new Set();
-// 国内工资只有管理员能录入 / 修改; 其他人输员工的查看密码只读看明细
+// 国内工资只有管理员能录入 / 修改; 会计能看全部; 客服只看关联到自己账号的员工, 还要输查看密码
 function canEditCn() { return USER.role === 'admin'; }
+function canSeeAllCn() { return ['admin', 'accounting'].includes(USER.role); }
 const _cnUnlocked = new Map();   // empId → 输密码后拿到的工资记录 (只在内存, 离开页签 / 刷新即清)
 let _cnPwEmp = null;
 function cnPwOpen(id) {
@@ -4157,8 +4160,8 @@ async function cnLoad() {
 function cnRender() {
   if (!_cnEmps || document.getElementById('paneCn').style.display === 'none') return;
   const q = (document.getElementById('cnSearch').value || '').trim().toLowerCase();
-  const admin = USER.role === 'admin';
-  const recs = admin ? _feeList.filter(f => f.fee_type === 'cnpay') : [..._cnUnlocked.values()].flat();
+  const admin = USER.role === 'admin', seeAll = canSeeAllCn();
+  const recs = seeAll ? _feeList.filter(f => f.fee_type === 'cnpay') : [..._cnUnlocked.values()].flat();
   // 名册里的员工 + 没挂名册的早期记录 (按名字归组)
   const groups = _cnEmps.map(e => ({ emp: e, name: e.name, recs: recs.filter(f => f.employee_id === e.id) }));
   recs.filter(f => !f.employee_id || !_cnEmps.some(e => e.id === f.employee_id)).forEach(f => {
@@ -4181,11 +4184,11 @@ function cnRender() {
     return Object.entries(by).map(([c, t]) => `Base ${_cnMoney(t.base, c)} · Bonus ${_cnMoney(t.bonus, c)} · 报销 ${_cnMoney(t.reimb, c)} · <b style="color:#dc2626">合计 ${_cnMoney(t.total, c)}</b>`).join('<br>');
   };
   const pendN = recs.filter(f => f.approval_status === 'pending').length;
-  document.getElementById('cnStats').innerHTML = admin
+  document.getElementById('cnStats').innerHTML = seeAll
     ? `${_cnEmps.length} 名员工 · ${recs.length} 条工资记录` + (pendN ? ` · ⏳ 待审核 ${pendN} 条` : '')
-    : `${_cnEmps.length} 名员工 · 🔒 点员工的「输入密码查看」看工资明细`;
+    : (_cnEmps.length ? '🔒 点「输入密码查看」看自己的工资明细' : '');
   if (!shown.length) {
-    document.getElementById('cnBody').innerHTML = `<div class="card" style="color:var(--g400);padding:1rem">${q ? '没有匹配的记录。' : admin ? '还没有国内员工，先点「＋ 添加员工」，再给员工录入每月工资。' : '还没有国内员工。'}</div>`;
+    document.getElementById('cnBody').innerHTML = `<div class="card" style="color:var(--g400);padding:1rem">${q ? '没有匹配的记录。' : admin ? '还没有国内员工，先点「＋ 添加员工」，再给员工录入每月工资。' : seeAll ? '还没有国内员工。' : '你的账号还没关联国内员工，看不到工资记录。请联系管理员。'}</div>`;
     return;
   }
   document.getElementById('cnBody').innerHTML = shown.map(g => {
@@ -4195,12 +4198,12 @@ function cnRender() {
       ? `<button class="btn btn-sm btn-blue" onclick="cpOpen(${e.id})">＋ 录入工资</button>
          <button class="btn btn-sm btn-outline" onclick="cnEmpOpen(${e.id})">✏️ 编辑员工</button>`
         + (USER.role === 'admin' && !g.recs.length ? ` <button class="btn btn-sm btn-outline" style="color:#b91c1c" onclick="cnEmpDelete(${e.id})">🗑</button>` : '')
-      : e && !admin
+      : e && !seeAll
         ? (_cnUnlocked.has(e.id)
           ? `<button class="btn btn-sm btn-outline" onclick="cnLock(${e.id})">🔒 锁上</button>`
           : `<button class="btn btn-sm btn-blue" onclick="cnPwOpen(${e.id})" ${e.has_pw ? '' : 'disabled style="opacity:.45;cursor:not-allowed" title="管理员还没给这个员工设查看密码"'}>🔒 输入密码查看</button>`)
         : '';
-    const locked = e && !admin && !_cnUnlocked.has(e.id);
+    const locked = e && !seeAll && !_cnUnlocked.has(e.id);
     const rows = g.recs.map(f => {
       const ls = _cnLines(f), open = _cnOpen.has(f.id), cur = f.currency || 'CNY';
       const ap = f.approval_status || 'approved';
@@ -4228,7 +4231,7 @@ function cnRender() {
         <td style="white-space:nowrap"><a style="cursor:pointer;color:#0f4c6b;font-weight:600" onclick="cnToggle(${f.id})">${open ? '▾' : '▸'} ${esc(f.fee_date || '—')}</a></td>
         ${col('base')}${col('bonus')}${col('reimb')}
         <td style="text-align:right;font-weight:700;color:#dc2626;white-space:nowrap">${_cnMoney(f.amount, cur)}</td>
-        <td>${status}</td><td>${files}</td><td>${admin ? payNoteCell('fee', f.id, f.pay_note) : payNoteCell('fee', f.id, f.pay_note).replace(/ <a [^>]*openPayNote[^>]*>[^<]*<\/a>/, '')}</td>
+        <td>${status}</td><td>${files}</td><td>${seeAll ? payNoteCell('fee', f.id, f.pay_note) : payNoteCell('fee', f.id, f.pay_note).replace(/ <a [^>]*openPayNote[^>]*>[^<]*<\/a>/, '')}</td>
         <td style="white-space:nowrap">${canEdit ? `<a style="cursor:pointer;font-size:.8rem" title="编辑明细" onclick="cpOpen(${e.id}, ${f.id})">✏️</a>` : ''}
           ${USER.role === 'admin' ? `<a style="cursor:pointer;color:#b91c1c;font-size:.78rem;margin-left:6px" title="删除" onclick="feeDelete(${f.id})">🗑</a>` : ''}</td>
       </tr>${detail}`;
@@ -4237,7 +4240,8 @@ function cnRender() {
       <div style="display:flex;gap:.6rem;align-items:flex-start;flex-wrap:wrap;margin-bottom:.4rem">
         <div><div style="font-weight:800;font-size:1rem">👤 ${esc(g.name)}${e && e.title ? ` <span style="font-weight:400;font-size:.8rem;color:var(--g500)">· ${esc(e.title)}</span>` : ''}${e && e.profile_id ? ` <a href="/admin.html?emp=${e.profile_id}" target="_blank" title="打开员工档案" style="font-size:.72rem;font-weight:700;color:#047857;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:6px;padding:1px 6px;text-decoration:none">🔗 员工档案${e.profile_code ? ' ' + esc(e.profile_code) : ''}</a>` : ''}</div>
           ${e && e.note ? `<div style="font-size:.74rem;color:var(--g400)">${esc(e.note)}</div>` : ''}
-          ${e && admin ? `<div style="font-size:.72rem;margin-top:.1rem">${e.has_pw ? '<span style="color:#047857">🔑 已设查看密码</span>' : '<span style="color:#b91c1c">⚠ 还没设查看密码 · 点「编辑员工」设置</span>'}</div>` : ''}
+          ${e && admin ? `<div style="font-size:.72rem;margin-top:.1rem">${e.has_pw ? '<span style="color:#047857">🔑 已设查看密码</span>' : '<span style="color:#b91c1c">⚠ 还没设查看密码 · 点「编辑员工」设置</span>'}
+            ${e.login_username ? ` · <span style="color:#1d4ed8">🔐 客服账号 ${esc(e.login_username)}</span>` : ' · <span style="color:var(--g400)">未关联客服账号</span>'}</div>` : ''}
           ${locked ? '' : `<div style="font-size:.78rem;color:var(--g600);margin-top:.15rem">${tot || '<span style="color:var(--g400)">暂无已通过的工资</span>'}</div>`}</div>
         <span style="flex:1"></span>${acts}
       </div>
@@ -4264,6 +4268,15 @@ function cnEmpOpen(id) {
   document.getElementById('ceCur').value = e.currency || 'CNY';
   document.getElementById('ceNote').value = e.note || '';
   document.getElementById('cePw').value = '';
+  const loginSel = document.getElementById('ceLogin');
+  loginSel.innerHTML = '<option value="">— 不关联 —</option>' + (e.login_username ? `<option value="${esc(e.login_username)}">${esc(e.login_username)}</option>` : '');
+  loginSel.value = e.login_username || '';
+  api('/api/acct/cn-login-accounts').then(list => {
+    if (!Array.isArray(list)) return;
+    const taken = new Set(_cnEmps.filter(x => x.login_username && x.id !== e.id).map(x => x.login_username.toLowerCase()));
+    loginSel.innerHTML = '<option value="">— 不关联 —</option>' + list.map(u => `<option value="${esc(u.username)}" ${taken.has(u.username.toLowerCase()) ? 'disabled' : ''}>${esc(u.display_name ? `${u.display_name}（${u.username}）` : u.username)}${u.role === 'staff' ? ' · staff' : ''}${taken.has(u.username.toLowerCase()) ? ' · 已关联别人' : ''}</option>`).join('');
+    loginSel.value = e.login_username || '';
+  }).catch(() => {});
   document.getElementById('cePw').placeholder = _cnEmpEdit && e.has_pw ? '留空 = 不改；填了就换成新密码' : '至少 4 位（必填）';
   _ceProfile = e.profile_id ? { id: e.profile_id, name: e.name, code: e.profile_code || '' } : null;
   ceRenderLinked();
@@ -4303,7 +4316,7 @@ function ceRenderLinked() {
     : '<span style="color:var(--g400)">未关联员工档案（直接输入的名字）</span>';
 }
 async function cnEmpSave() {
-  const body = { name: document.getElementById('ceName').value.trim(), title: document.getElementById('ceTitle').value.trim(), currency: document.getElementById('ceCur').value, note: document.getElementById('ceNote').value.trim(), profile_id: _ceProfile ? _ceProfile.id : null, password: document.getElementById('cePw').value };
+  const body = { name: document.getElementById('ceName').value.trim(), title: document.getElementById('ceTitle').value.trim(), currency: document.getElementById('ceCur').value, note: document.getElementById('ceNote').value.trim(), profile_id: _ceProfile ? _ceProfile.id : null, password: document.getElementById('cePw').value, login_username: document.getElementById('ceLogin').value };
   if (!body.name) return toast('请填写员工姓名', true);
   if ((!_cnEmpEdit || !_cnEmpEdit.has_pw || body.password) && body.password.length < 4) return toast('请设置查看密码（至少 4 位）', true);
   const r = await api('/api/acct/cn-employees' + (_cnEmpEdit ? '/' + _cnEmpEdit.id : ''), { method: _cnEmpEdit ? 'PUT' : 'POST', body: JSON.stringify(body) }).catch(e => ({ error: e.message }));
