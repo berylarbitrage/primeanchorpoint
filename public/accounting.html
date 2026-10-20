@@ -2226,7 +2226,7 @@ function _refWeekSums(r) {
 const REF_HR_BONUS = [
   { k: 'interview', label: '过面试', amt: 30 },
   { k: 'week1', label: '满 1 周', amt: 100, prorate: true },   // 按第 1 周工时 /40 折算
-  { k: 'month1', label: '满 1 个月', amt: 150 },
+  { k: 'month1', label: '满 1 个月', amt: 150, prorate: true },   // 按前 4 周工时 /160 折算
 ];
 // 管理奖励: 上班第 6 周起, 每满一周 ¥25, 在岗就一直算 (中途不去了算到最后上班那天)
 const REF_HR_MGMT_FROM = 6, REF_HR_MGMT_AMT = 25;
@@ -2249,17 +2249,21 @@ function _refHrBonus(r) {
     if (today > need) return { st: 'done', hint: '' };
     return { st: 'wait', hint: `还差 ${Math.round((need - today) / 86400000) + 1} 天` };
   };
-  const w1 = (r.weeks || [])[0];
+  // 折算用的周: 满 1 周看第 1 周 (满 40 工时给满), 满 1 个月看前 4 周 (满 160 工时给满)
+  const ws = (r.weeks || []).filter(w => w.admin_status !== 'rejected');
   return REF_HR_BONUS.map(m => {
     let x;
     if (m.k === 'interview') x = (r.interview_status === 'attended' || start) ? { st: 'done', hint: '' } : failedIv ? { st: 'lost', hint: r.interview_status === 'failed' ? '面试没过' : '没去面试' } : { st: 'wait', hint: '还没面试' };
     else x = span(m.k === 'week1' ? 7 : 30);
     let amount = m.amt, calc = '';
     if (m.prorate) {
-      const h = w1 && w1.hours != null ? Number(w1.hours) : null;
-      if (h == null) calc = '还没关联第 1 周发票 / 没工时，先按满额';
-      else if (h >= 40) calc = `${h} 工时 ≥ 40 · 给满`;
-      else { amount = Math.round(m.amt * h / 40 * 100) / 100; calc = `${yuan(m.amt)} × ${h}/40 工时`; }
+      const n = m.k === 'month1' ? 4 : 1, full = n * 40;
+      const use = ws.slice(0, n);
+      const h = use.length === n && use.every(w => w.hours != null) ? Math.round(use.reduce((t, w) => t + Number(w.hours), 0) * 100) / 100 : null;
+      if (h == null) calc = n === 1 ? '还没关联第 1 周发票 / 没工时，先按满额'
+        : `前 4 周发票还没关联齐${use.length ? `（已关联 ${use.length} 周）` : ''} / 没工时，先按满额`;
+      else if (h >= full) calc = `${n > 1 ? '前 4 周 ' : ''}${h} 工时 ≥ ${full} · 给满`;
+      else { amount = Math.round(m.amt * h / full * 100) / 100; calc = `${yuan(m.amt)} × ${n > 1 ? '前 4 周 ' : ''}${h}/${full} 工时`; }
     }
     return { ...m, ...x, amount, calc, row: (r.hr_bonus || {})[m.k] || null };
   });

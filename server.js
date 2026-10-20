@@ -1012,7 +1012,7 @@ try { db.exec(`ALTER TABLE referral_weeks ADD COLUMN tier TEXT DEFAULT ''`); } c
 // 实付 = rate × min(工时, 40) / 40 (工时取这周发票里勾的那几行)。fee (旧的直接写死金额) 有值时仍以 fee 为准
 try { db.exec(`ALTER TABLE referral_weeks ADD COLUMN rate REAL DEFAULT NULL`); } catch(e) {}
 // HR 招工节点奖励 (人民币): HR 自己招的 + 工头介绍、HR 提交的, 都按节点给 HR —
-// interview 过面试 ¥30 / week1 连续上满 1 周 ¥100 (按第 1 周工时 /40 折算) / month1 满 1 个月且没问题 ¥150;
+// interview 过面试 ¥30 / week1 连续上满 1 周 ¥100 (按第 1 周工时 /40 折算) / month1 满 1 个月且没问题 ¥150 (按前 4 周工时 /160 折算);
 // 管理奖励 mgmt6, mgmt7 … = 上班第 6 周起每满一周 ¥25 (一直在岗就一直有)。
 // 达没达成前端按日期算; 这里只存管理员的决定: approved 确认 (带金额) | rejected 不给 | paid 已付
 try { db.exec(`CREATE TABLE IF NOT EXISTS referral_hr_bonus (
