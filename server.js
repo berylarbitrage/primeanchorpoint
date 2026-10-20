@@ -883,6 +883,9 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS cn_employees (
 )`); } catch(e) {}
 // 关联系统里的员工档案 (employees.id); 空 = 手填的名字, 系统里没建档
 try { db.exec("ALTER TABLE cn_employees ADD COLUMN profile_id INTEGER DEFAULT NULL"); } catch(e) {}
+// 查看密码: 非管理员要输这个员工的密码才能看他的工资明细 (scrypt 哈希, 不存明文)
+try { db.exec("ALTER TABLE cn_employees ADD COLUMN view_pw_hash TEXT DEFAULT ''"); } catch(e) {}
+try { db.exec("ALTER TABLE cn_employees ADD COLUMN view_pw_salt TEXT DEFAULT ''"); } catch(e) {}
 // 🪵 会计手动添加的木板发票 (照 pallet.bintique.com 的 New Order 表单): 会计提交为
 // approval_status='pending', 管理员审核通过才计入木板账单汇总 / 才能记付款批注。
 // 付款批注 target_type='palletmanual' (与 Bintique 账单 id 分开编号)。
@@ -41186,7 +41189,7 @@ app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
   const exists = target_type === 'invoice'
     ? db.prepare('SELECT id FROM invoices WHERE id=?').get(tid)
     : target_type === 'fee'
-      ? db.prepare('SELECT id FROM fee_records WHERE id=?').get(tid)
+      ? db.prepare(`SELECT id FROM fee_records WHERE id=? ${req.userRole === 'admin' ? '' : "AND fee_type<>'cnpay'"}`).get(tid)
       : target_type === 'referral'
         ? db.prepare('SELECT id, review_status FROM referrals WHERE id=?').get(tid)
         : target_type === 'referralweek'
@@ -41424,7 +41427,8 @@ app.post('/api/acct/warehouse-claims/:id/approval', requireAdmin, requireRole('a
 // ─── 费用记录 (保险费 insurance / 律师费 legal) — 和赔偿事故同一套玩法 ───
 const FEE_RECORD_TYPES = ['insurance', 'legal', 'company', 'truck', 'cnpay'];
 app.get('/api/acct/fee-records', requireAdmin, requireAcctView, (req, res) => {
-  const rows = db.prepare(`SELECT * FROM fee_records
+  // 国内工资只给管理员; 其他人要用员工的查看密码走 /api/acct/cn-employees/:id/unlock
+  const rows = db.prepare(`SELECT * FROM fee_records ${req.userRole === 'admin' ? '' : "WHERE fee_type<>'cnpay'"}
     ORDER BY CASE WHEN approval_status='pending' THEN 0 ELSE 1 END, fee_date DESC, created_at DESC`).all();
   const payNotes = _acctPayNotesFor('fee');
   for (const r of rows) { r.attachments = _claimAtts(r); r.pay_note = payNotes[r.id] || null; }
@@ -41717,11 +41721,42 @@ app.post('/api/acct/truck-orders/:id/size', requireAdmin, requireRole('accountin
 
 // ─── 🇨🇳 国内员工名册 (会计 / admin) ───
 app.get('/api/acct/cn-employees', requireAdmin, requireAcctView, (req, res) => {
-  res.json(db.prepare(`SELECT c.*, e.employee_id AS profile_code FROM cn_employees c
-    LEFT JOIN employees e ON e.id=c.profile_id ORDER BY c.name COLLATE NOCASE`).all());
+  const rows = db.prepare(`SELECT c.*, e.employee_id AS profile_code FROM cn_employees c
+    LEFT JOIN employees e ON e.id=c.profile_id ORDER BY c.name COLLATE NOCASE`).all();
+  // 非管理员只拿到名字 (用来选人输密码), 备注 / 档案等都不给
+  res.json(rows.map(r => req.userRole === 'admin'
+    ? { ..._cnEmpOut(r), note: r.note, currency: r.currency, profile_id: r.profile_id, profile_code: r.profile_code, created_by: r.created_by }
+    : _cnEmpOut(r)));
+});
+function _cnEmpOut(r) { return { id: r.id, name: r.name, title: r.title, has_pw: !!r.view_pw_hash }; }
+function _cnSetPw(id, pw) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  db.prepare('UPDATE cn_employees SET view_pw_hash=?, view_pw_salt=? WHERE id=?').run(hashPassword(pw, salt), salt, id);
+}
+// 输错限流: 每个账号对每个员工 15 分钟内最多错 5 次
+const _cnPwFails = new Map();
+// 🔒 输查看密码 → 返回这个员工的工资记录 (只读)
+app.post('/api/acct/cn-employees/:id/unlock', requireAdmin, requireAcctView, (req, res) => {
+  const emp = db.prepare('SELECT * FROM cn_employees WHERE id=?').get(req.params.id);
+  if (!emp) return res.status(404).json({ error: '员工不存在' });
+  if (req.userRole !== 'admin') {
+    if (!emp.view_pw_hash) return res.status(403).json({ error: '这个员工还没设查看密码，请联系管理员' });
+    const key = `${req.userName}|${emp.id}`, now = Date.now();
+    const fails = (_cnPwFails.get(key) || []).filter(t => now - t < 15 * 60 * 1000);
+    if (fails.length >= 5) return res.status(429).json({ error: '密码错误次数太多，请 15 分钟后再试' });
+    let ok = false;
+    try { ok = verifyPassword(String((req.body || {}).password || ''), emp.view_pw_salt, emp.view_pw_hash); } catch (e) { ok = false; }
+    if (!ok) { fails.push(now); _cnPwFails.set(key, fails); return res.status(403).json({ error: '密码不对' }); }
+    _cnPwFails.delete(key);
+  }
+  const rows = db.prepare(`SELECT * FROM fee_records WHERE fee_type='cnpay' AND employee_id=? ORDER BY fee_date DESC, created_at DESC`).all(emp.id);
+  const payNotes = _acctPayNotesFor('fee');
+  for (const r of rows) { r.attachments = _claimAtts(r); r.pay_note = payNotes[r.id] || null; }
+  auditLog('cn_payroll_view', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers }, { targetType: 'cn_employee', targetId: emp.id });
+  res.json({ employee: _cnEmpOut(emp), records: rows });
 });
 // 添加国内员工时按名字 / 工号 / 电话搜员工档案
-app.get('/api/acct/cn-employee-search', requireAdmin, requireRole('accounting', 'admin'), (req, res) => {
+app.get('/api/acct/cn-employee-search', requireAdmin, requireRole('admin'), (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
   if (!q) return res.json({ matches: [] });
   const digits = q.replace(/\D/g, '');
@@ -41741,19 +41776,22 @@ function _cnProfileId(v) {
   const id = Number(v) || 0;
   return id && db.prepare('SELECT 1 FROM employees WHERE id=?').get(id) ? id : null;
 }
-app.post('/api/acct/cn-employees', requireAdmin, requireRole('accounting', 'admin'), (req, res) => {
+app.post('/api/acct/cn-employees', requireAdmin, requireRole('admin'), (req, res) => {
   const b = req.body || {};
   const name = String(b.name || '').trim().slice(0, 100);
   if (!name) return res.status(400).json({ error: '请填写员工姓名' });
+  const pw = String(b.password || '');
+  if (pw.length < 4) return res.status(400).json({ error: '请设置查看密码（至少 4 位）' });
   if (db.prepare('SELECT 1 FROM cn_employees WHERE name=? COLLATE NOCASE').get(name)) return res.status(400).json({ error: '已有同名员工' });
   const pid = _cnProfileId(b.profile_id);
   if (pid && db.prepare('SELECT 1 FROM cn_employees WHERE profile_id=?').get(pid)) return res.status(400).json({ error: '这个员工档案已经添加过了' });
   const r = db.prepare('INSERT INTO cn_employees (name, title, note, currency, profile_id, created_by) VALUES (?, ?, ?, ?, ?, ?)')
     .run(name, String(b.title || '').trim().slice(0, 100), String(b.note || '').trim().slice(0, 500),
       ['CNY', 'USD'].includes(String(b.currency || '')) ? String(b.currency) : 'CNY', pid, req.userName || '');
+  _cnSetPw(r.lastInsertRowid, pw);
   res.json({ success: true, id: r.lastInsertRowid });
 });
-app.put('/api/acct/cn-employees/:id', requireAdmin, requireRole('accounting', 'admin'), (req, res) => {
+app.put('/api/acct/cn-employees/:id', requireAdmin, requireRole('admin'), (req, res) => {
   const cur = db.prepare('SELECT * FROM cn_employees WHERE id=?').get(req.params.id);
   if (!cur) return res.status(404).json({ error: '员工不存在' });
   const b = req.body || {};
@@ -41762,6 +41800,11 @@ app.put('/api/acct/cn-employees/:id', requireAdmin, requireRole('accounting', 'a
   if (db.prepare('SELECT 1 FROM cn_employees WHERE name=? COLLATE NOCASE AND id<>?').get(name, cur.id)) return res.status(400).json({ error: '已有同名员工' });
   const pid = _cnProfileId(b.profile_id);
   if (pid && db.prepare('SELECT 1 FROM cn_employees WHERE profile_id=? AND id<>?').get(pid, cur.id)) return res.status(400).json({ error: '这个员工档案已经关联到别的员工了' });
+  // 密码留空 = 不改; 原来没设过的必须设
+  const pw = String(b.password || '');
+  if (pw && pw.length < 4) return res.status(400).json({ error: '查看密码至少 4 位' });
+  if (!pw && !cur.view_pw_hash) return res.status(400).json({ error: '请设置查看密码（至少 4 位）' });
+  if (pw) _cnSetPw(cur.id, pw);
   db.prepare('UPDATE cn_employees SET name=?, title=?, note=?, currency=?, profile_id=? WHERE id=?')
     .run(name, String(b.title || '').trim().slice(0, 100), String(b.note || '').trim().slice(0, 500),
       ['CNY', 'USD'].includes(String(b.currency || '')) ? String(b.currency) : cur.currency, pid, cur.id);
@@ -41798,6 +41841,7 @@ app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin
   if (!FEE_RECORD_TYPES.includes(feeType)) return res.status(400).json({ error: '无效费用类型' });
   // 客服只能添加卡车费用 (卡车页签「客服可以自己加」); 其他费用类型仍限 会计/admin
   if (req.userRole === 'cs' && feeType !== 'truck') return res.status(403).json({ error: '客服只能添加卡车费用' });
+  if (feeType === 'cnpay' && req.userRole !== 'admin') return res.status(403).json({ error: '国内工资只有管理员能录入' });
   let party = String(b.party_name || '').trim().slice(0, 200);
   if (!party && feeType !== 'cnpay') return res.status(400).json({ error: feeType === 'insurance' ? '请填写保险公司' : feeType === 'legal' ? '请填写律师 / 律所' : feeType === 'truck' ? '请填写卡车公司' : feeType === 'cnpay' ? '请填写员工姓名' : '请填写收款方 / 供应商' });
   let amtNum = Number(b.amount);
@@ -41842,7 +41886,7 @@ app.put('/api/acct/fee-records/:id', requireAdmin, requireRole('accounting', 'ad
   if (!isAdmin && cur.approval_status === 'approved') return res.status(403).json({ error: '已审核通过的记录只有管理员能改' });
   const b = req.body || {};
   if (cur.fee_type === 'cnpay') {
-    if (req.userRole === 'cs') return res.status(403).json({ error: '无权修改' });
+    if (!isAdmin) return res.status(403).json({ error: '国内工资只有管理员能修改' });
     const c = _cnPayLines(b.lines);
     if (!c.lines.length) return res.status(400).json({ error: '请至少填写一项明细' });
     // 去掉前端点了 ✕ 的旧凭证, 再追加新上传的
