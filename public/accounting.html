@@ -857,8 +857,12 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
   <div id="cnEmpModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:92;align-items:center;justify-content:center;padding:16px">
     <div class="card" style="max-width:400px;width:100%;padding:1.2rem 1.2rem 1rem">
       <div id="cnEmpTitle" style="font-weight:800;margin-bottom:.7rem">👤 添加国内员工</div>
-      <label style="font-size:.76rem;color:var(--g500)">姓名</label>
-      <input type="text" id="ceName" placeholder="员工姓名" style="width:100%;margin:.15rem 0 .55rem">
+      <label style="font-size:.76rem;color:var(--g500)">姓名（输入名字 / 工号 / 电话，从员工档案里找）</label>
+      <div style="position:relative">
+        <input type="text" id="ceName" placeholder="🔍 搜员工档案…" autocomplete="off" oninput="ceSearch()" onfocus="ceSearch()" onblur="setTimeout(()=>{document.getElementById('ceDrop').style.display='none'},200)" style="width:100%;margin:.15rem 0 .3rem">
+        <div id="ceDrop" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:5;background:#fff;border:1px solid var(--g200);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.12);max-height:260px;overflow:auto"></div>
+      </div>
+      <div id="ceLinked" style="font-size:.74rem;margin-bottom:.55rem"></div>
       <label style="font-size:.76rem;color:var(--g500)">职位（可选）</label>
       <input type="text" id="ceTitle" placeholder="例：会计 / 客服 / 运营" style="width:100%;margin:.15rem 0 .55rem">
       <label style="font-size:.76rem;color:var(--g500)">默认币种</label>
@@ -4095,7 +4099,7 @@ async function feeDelete(id) {
 const CN_KINDS = [['base', 'Base 底薪', '例：9 月基本工资'], ['bonus', 'Bonus 奖金', '例：Q3 绩效奖金'], ['reimb', '报销费用', '例：10/12 打车 / 差旅 / 餐费']];
 const _CUR_SYM = { CNY: '¥', USD: '$' };
 const _cnMoney = (v, cur) => (_CUR_SYM[cur] || '¥') + (Number(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-let _cnEmps = null, _cnEmpEdit = null, _cnPay = null;
+let _cnEmps = null, _cnEmpEdit = null, _cnPay = null, _ceProfile = null, _ceMatches = [], _ceTimer = null;
 const _cnOpen = new Set();
 function canEditCn() { return ['admin', 'accounting'].includes(USER.role); }
 // 明细: 新记录存 lines; 早期只有三项金额的记录, 各转成一条明细显示
@@ -4185,7 +4189,7 @@ function cnRender() {
     }).join('');
     return `<div class="card" style="margin-bottom:.7rem;overflow-x:auto">
       <div style="display:flex;gap:.6rem;align-items:flex-start;flex-wrap:wrap;margin-bottom:.4rem">
-        <div><div style="font-weight:800;font-size:1rem">👤 ${esc(g.name)}${e && e.title ? ` <span style="font-weight:400;font-size:.8rem;color:var(--g500)">· ${esc(e.title)}</span>` : ''}</div>
+        <div><div style="font-weight:800;font-size:1rem">👤 ${esc(g.name)}${e && e.title ? ` <span style="font-weight:400;font-size:.8rem;color:var(--g500)">· ${esc(e.title)}</span>` : ''}${e && e.profile_id ? ` <a href="/admin.html?emp=${e.profile_id}" target="_blank" title="打开员工档案" style="font-size:.72rem;font-weight:700;color:#047857;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:6px;padding:1px 6px;text-decoration:none">🔗 员工档案${e.profile_code ? ' ' + esc(e.profile_code) : ''}</a>` : ''}</div>
           ${e && e.note ? `<div style="font-size:.74rem;color:var(--g400)">${esc(e.note)}</div>` : ''}
           <div style="font-size:.78rem;color:var(--g600);margin-top:.15rem">${tot || '<span style="color:var(--g400)">暂无已通过的工资</span>'}</div></div>
         <span style="flex:1"></span>${acts}
@@ -4212,11 +4216,45 @@ function cnEmpOpen(id) {
   document.getElementById('ceTitle').value = e.title || '';
   document.getElementById('ceCur').value = e.currency || 'CNY';
   document.getElementById('ceNote').value = e.note || '';
+  _ceProfile = e.profile_id ? { id: e.profile_id, name: e.name, code: e.profile_code || '' } : null;
+  ceRenderLinked();
   document.getElementById('cnEmpModal').style.display = 'flex';
   document.getElementById('ceName').focus();
 }
+// 姓名框边输边搜员工档案, 选中后带出职位 / 入职日期, 并关联档案
+function ceSearch() {
+  clearTimeout(_ceTimer);
+  _ceTimer = setTimeout(async () => {
+    const q = document.getElementById('ceName').value.trim();
+    const drop = document.getElementById('ceDrop');
+    if (!q || (_ceProfile && q === _ceProfile.name)) { drop.style.display = 'none'; return; }
+    const r = await api('/api/acct/cn-employee-search?q=' + encodeURIComponent(q)).catch(() => null);
+    if (q !== document.getElementById('ceName').value.trim()) return;
+    _ceMatches = (r && r.matches) || [];
+    drop.innerHTML = (_ceMatches.length ? _ceMatches.map((m, i) => `<a onmousedown="cePick(${i})" style="display:block;padding:.4rem .6rem;font-size:.8rem;cursor:pointer;border-bottom:1px solid #f1f5f9${m.added ? ';opacity:.5' : ''}">👤 <b>${esc(m.name)}</b>${m.code ? ` <span style="color:var(--g400)">${esc(m.code)}</span>` : ''}
+        <span style="color:var(--g500)">${esc([m.position, m.phone, m.status && !['active', 'onboarding'].includes(m.status) ? m.status : ''].filter(Boolean).join(' · '))}</span>${m.added ? ' <span style="color:#b45309">（已添加）</span>' : ''}</a>`).join('')
+      : '<div style="padding:.45rem .6rem;font-size:.78rem;color:var(--g400)">员工档案里没找到，可以直接用这个名字添加</div>');
+    drop.style.display = '';
+  }, 200);
+}
+function cePick(i) {
+  const m = _ceMatches[i];
+  if (!m) return;
+  if (m.added) return toast('这个员工已经添加过了', true);
+  _ceProfile = m;
+  document.getElementById('ceName').value = m.name;
+  if (!document.getElementById('ceTitle').value) document.getElementById('ceTitle').value = m.position || '';
+  if (!document.getElementById('ceNote').value && m.hire_date) document.getElementById('ceNote').value = '入职日期：' + m.hire_date;
+  document.getElementById('ceDrop').style.display = 'none';
+  ceRenderLinked();
+}
+function ceRenderLinked() {
+  document.getElementById('ceLinked').innerHTML = _ceProfile
+    ? `<span style="background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;border-radius:6px;padding:1px 7px;font-weight:700">🔗 已关联员工档案 · ${esc(_ceProfile.name)}${_ceProfile.code ? ' ' + esc(_ceProfile.code) : ''}</span> <a style="cursor:pointer;color:var(--g400)" title="取消关联" onclick="_ceProfile=null;ceRenderLinked()">✕</a>`
+    : '<span style="color:var(--g400)">未关联员工档案（直接输入的名字）</span>';
+}
 async function cnEmpSave() {
-  const body = { name: document.getElementById('ceName').value.trim(), title: document.getElementById('ceTitle').value.trim(), currency: document.getElementById('ceCur').value, note: document.getElementById('ceNote').value.trim() };
+  const body = { name: document.getElementById('ceName').value.trim(), title: document.getElementById('ceTitle').value.trim(), currency: document.getElementById('ceCur').value, note: document.getElementById('ceNote').value.trim(), profile_id: _ceProfile ? _ceProfile.id : null };
   if (!body.name) return toast('请填写员工姓名', true);
   const r = await api('/api/acct/cn-employees' + (_cnEmpEdit ? '/' + _cnEmpEdit.id : ''), { method: _cnEmpEdit ? 'PUT' : 'POST', body: JSON.stringify(body) }).catch(e => ({ error: e.message }));
   if (r && r.error) return toast(r.error, true);

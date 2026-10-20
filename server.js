@@ -881,6 +881,8 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS cn_employees (
   created_by TEXT DEFAULT '',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`); } catch(e) {}
+// 关联系统里的员工档案 (employees.id); 空 = 手填的名字, 系统里没建档
+try { db.exec("ALTER TABLE cn_employees ADD COLUMN profile_id INTEGER DEFAULT NULL"); } catch(e) {}
 // 🪵 会计手动添加的木板发票 (照 pallet.bintique.com 的 New Order 表单): 会计提交为
 // approval_status='pending', 管理员审核通过才计入木板账单汇总 / 才能记付款批注。
 // 付款批注 target_type='palletmanual' (与 Bintique 账单 id 分开编号)。
@@ -41715,16 +41717,40 @@ app.post('/api/acct/truck-orders/:id/size', requireAdmin, requireRole('accountin
 
 // ─── 🇨🇳 国内员工名册 (会计 / admin) ───
 app.get('/api/acct/cn-employees', requireAdmin, requireAcctView, (req, res) => {
-  res.json(db.prepare('SELECT * FROM cn_employees ORDER BY name COLLATE NOCASE').all());
+  res.json(db.prepare(`SELECT c.*, e.employee_id AS profile_code FROM cn_employees c
+    LEFT JOIN employees e ON e.id=c.profile_id ORDER BY c.name COLLATE NOCASE`).all());
 });
+// 添加国内员工时按名字 / 工号 / 电话搜员工档案
+app.get('/api/acct/cn-employee-search', requireAdmin, requireRole('accounting', 'admin'), (req, res) => {
+  const q = String(req.query.q || '').trim().toLowerCase();
+  if (!q) return res.json({ matches: [] });
+  const digits = q.replace(/\D/g, '');
+  const linked = new Set(db.prepare('SELECT profile_id FROM cn_employees WHERE profile_id IS NOT NULL').all().map(r => r.profile_id));
+  const out = [];
+  db.prepare(`SELECT id, employee_id, first_name, middle_name, last_name, phone, position, hire_date, status FROM employees
+    WHERE COALESCE(is_test,0)=0 ORDER BY CASE WHEN status IN ('active','onboarding') THEN 0 ELSE 1 END, id DESC`).all().forEach(e => {
+    const name = [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ');
+    const hay = `${name} ${e.last_name || ''}${e.first_name || ''} ${e.employee_id || ''}`.toLowerCase();
+    if (hay.includes(q) || (digits.length >= 4 && String(e.phone || '').replace(/\D/g, '').includes(digits)))
+      out.push({ id: e.id, name, code: e.employee_id || '', phone: e.phone || '', position: e.position || '', hire_date: e.hire_date || '', status: e.status || '', added: linked.has(e.id) });
+  });
+  res.json({ matches: out.slice(0, 15) });
+});
+// 关联的员工档案 id: 必须真实存在, 否则当没关联
+function _cnProfileId(v) {
+  const id = Number(v) || 0;
+  return id && db.prepare('SELECT 1 FROM employees WHERE id=?').get(id) ? id : null;
+}
 app.post('/api/acct/cn-employees', requireAdmin, requireRole('accounting', 'admin'), (req, res) => {
   const b = req.body || {};
   const name = String(b.name || '').trim().slice(0, 100);
   if (!name) return res.status(400).json({ error: '请填写员工姓名' });
   if (db.prepare('SELECT 1 FROM cn_employees WHERE name=? COLLATE NOCASE').get(name)) return res.status(400).json({ error: '已有同名员工' });
-  const r = db.prepare('INSERT INTO cn_employees (name, title, note, currency, created_by) VALUES (?, ?, ?, ?, ?)')
+  const pid = _cnProfileId(b.profile_id);
+  if (pid && db.prepare('SELECT 1 FROM cn_employees WHERE profile_id=?').get(pid)) return res.status(400).json({ error: '这个员工档案已经添加过了' });
+  const r = db.prepare('INSERT INTO cn_employees (name, title, note, currency, profile_id, created_by) VALUES (?, ?, ?, ?, ?, ?)')
     .run(name, String(b.title || '').trim().slice(0, 100), String(b.note || '').trim().slice(0, 500),
-      ['CNY', 'USD'].includes(String(b.currency || '')) ? String(b.currency) : 'CNY', req.userName || '');
+      ['CNY', 'USD'].includes(String(b.currency || '')) ? String(b.currency) : 'CNY', pid, req.userName || '');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 app.put('/api/acct/cn-employees/:id', requireAdmin, requireRole('accounting', 'admin'), (req, res) => {
@@ -41734,9 +41760,11 @@ app.put('/api/acct/cn-employees/:id', requireAdmin, requireRole('accounting', 'a
   const name = String(b.name || '').trim().slice(0, 100);
   if (!name) return res.status(400).json({ error: '请填写员工姓名' });
   if (db.prepare('SELECT 1 FROM cn_employees WHERE name=? COLLATE NOCASE AND id<>?').get(name, cur.id)) return res.status(400).json({ error: '已有同名员工' });
-  db.prepare('UPDATE cn_employees SET name=?, title=?, note=?, currency=? WHERE id=?')
+  const pid = _cnProfileId(b.profile_id);
+  if (pid && db.prepare('SELECT 1 FROM cn_employees WHERE profile_id=? AND id<>?').get(pid, cur.id)) return res.status(400).json({ error: '这个员工档案已经关联到别的员工了' });
+  db.prepare('UPDATE cn_employees SET name=?, title=?, note=?, currency=?, profile_id=? WHERE id=?')
     .run(name, String(b.title || '').trim().slice(0, 100), String(b.note || '').trim().slice(0, 500),
-      ['CNY', 'USD'].includes(String(b.currency || '')) ? String(b.currency) : cur.currency, cur.id);
+      ['CNY', 'USD'].includes(String(b.currency || '')) ? String(b.currency) : cur.currency, pid, cur.id);
   // 改名同步到工资记录上显示的名字
   db.prepare("UPDATE fee_records SET party_name=? WHERE fee_type='cnpay' AND employee_id=?").run(name, cur.id);
   res.json({ success: true });
