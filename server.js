@@ -868,6 +868,19 @@ try { db.exec("ALTER TABLE fee_records ADD COLUMN base_amount REAL DEFAULT NULL"
 try { db.exec("ALTER TABLE fee_records ADD COLUMN bonus_amount REAL DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN reimb_amount REAL DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN currency TEXT DEFAULT 'USD'"); } catch(e) {}
+// 每项的明细: [{ kind: 'base'|'bonus'|'reimb', desc, date, amount }]; 三项小计由明细加总
+try { db.exec("ALTER TABLE fee_records ADD COLUMN lines TEXT DEFAULT '[]'"); } catch(e) {}
+try { db.exec("ALTER TABLE fee_records ADD COLUMN employee_id INTEGER DEFAULT NULL"); } catch(e) {}
+// 国内员工名册: 先建员工, 再按月录工资
+try { db.exec(`CREATE TABLE IF NOT EXISTS cn_employees (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT DEFAULT '',
+  title TEXT DEFAULT '',
+  note TEXT DEFAULT '',
+  currency TEXT DEFAULT 'CNY',
+  created_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`); } catch(e) {}
 // 🪵 会计手动添加的木板发票 (照 pallet.bintique.com 的 New Order 表单): 会计提交为
 // approval_status='pending', 管理员审核通过才计入木板账单汇总 / 才能记付款批注。
 // 付款批注 target_type='palletmanual' (与 Bintique 账单 id 分开编号)。
@@ -41700,6 +41713,56 @@ app.post('/api/acct/truck-orders/:id/size', requireAdmin, requireRole('accountin
   res.json({ success: true, truck_size: size, cargo });
 });
 
+// ─── 🇨🇳 国内员工名册 (会计 / admin) ───
+app.get('/api/acct/cn-employees', requireAdmin, requireAcctView, (req, res) => {
+  res.json(db.prepare('SELECT * FROM cn_employees ORDER BY name COLLATE NOCASE').all());
+});
+app.post('/api/acct/cn-employees', requireAdmin, requireRole('accounting', 'admin'), (req, res) => {
+  const b = req.body || {};
+  const name = String(b.name || '').trim().slice(0, 100);
+  if (!name) return res.status(400).json({ error: '请填写员工姓名' });
+  if (db.prepare('SELECT 1 FROM cn_employees WHERE name=? COLLATE NOCASE').get(name)) return res.status(400).json({ error: '已有同名员工' });
+  const r = db.prepare('INSERT INTO cn_employees (name, title, note, currency, created_by) VALUES (?, ?, ?, ?, ?)')
+    .run(name, String(b.title || '').trim().slice(0, 100), String(b.note || '').trim().slice(0, 500),
+      ['CNY', 'USD'].includes(String(b.currency || '')) ? String(b.currency) : 'CNY', req.userName || '');
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+app.put('/api/acct/cn-employees/:id', requireAdmin, requireRole('accounting', 'admin'), (req, res) => {
+  const cur = db.prepare('SELECT * FROM cn_employees WHERE id=?').get(req.params.id);
+  if (!cur) return res.status(404).json({ error: '员工不存在' });
+  const b = req.body || {};
+  const name = String(b.name || '').trim().slice(0, 100);
+  if (!name) return res.status(400).json({ error: '请填写员工姓名' });
+  if (db.prepare('SELECT 1 FROM cn_employees WHERE name=? COLLATE NOCASE AND id<>?').get(name, cur.id)) return res.status(400).json({ error: '已有同名员工' });
+  db.prepare('UPDATE cn_employees SET name=?, title=?, note=?, currency=? WHERE id=?')
+    .run(name, String(b.title || '').trim().slice(0, 100), String(b.note || '').trim().slice(0, 500),
+      ['CNY', 'USD'].includes(String(b.currency || '')) ? String(b.currency) : cur.currency, cur.id);
+  // 改名同步到工资记录上显示的名字
+  db.prepare("UPDATE fee_records SET party_name=? WHERE fee_type='cnpay' AND employee_id=?").run(name, cur.id);
+  res.json({ success: true });
+});
+app.delete('/api/acct/cn-employees/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const cur = db.prepare('SELECT * FROM cn_employees WHERE id=?').get(req.params.id);
+  if (!cur) return res.status(404).json({ error: '员工不存在' });
+  if (db.prepare("SELECT 1 FROM fee_records WHERE fee_type='cnpay' AND employee_id=?").get(cur.id)) return res.status(400).json({ error: '该员工已有工资记录，先删除工资记录' });
+  db.prepare('DELETE FROM cn_employees WHERE id=?').run(cur.id);
+  res.json({ success: true });
+});
+// 国内工资明细: 清洗前端传来的 lines, 按 base/bonus/reimb 加总
+function _cnPayLines(raw) {
+  let arr = [];
+  try { arr = typeof raw === 'string' ? JSON.parse(raw || '[]') : (raw || []); } catch (e) { arr = []; }
+  const lines = (Array.isArray(arr) ? arr : []).slice(0, 300).map(l => ({
+    kind: ['base', 'bonus', 'reimb'].includes(l && l.kind) ? l.kind : 'reimb',
+    desc: String((l && l.desc) || '').trim().slice(0, 300),
+    date: String((l && l.date) || '').trim().slice(0, 20),
+    amount: Math.round((Number(l && l.amount) || 0) * 100) / 100,
+  })).filter(l => l.desc || l.amount);
+  const sum = k => Math.round(lines.filter(l => l.kind === k).reduce((s, l) => s + l.amount, 0) * 100) / 100;
+  const base = sum('base'), bonus = sum('bonus'), reimb = sum('reimb');
+  return { lines, base, bonus, reimb, total: Math.round((base + bonus + reimb) * 100) / 100 };
+}
+
 // 新增费用记录: 会计提交入库为 pending 待管理员审核, admin 提交直接 approved (发票文件复用 claimUpload)
 app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin', 'cs'), claimUpload.array('invoice', 50), (req, res) => {
   const b = req.body || {};
@@ -41707,17 +41770,17 @@ app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin
   if (!FEE_RECORD_TYPES.includes(feeType)) return res.status(400).json({ error: '无效费用类型' });
   // 客服只能添加卡车费用 (卡车页签「客服可以自己加」); 其他费用类型仍限 会计/admin
   if (req.userRole === 'cs' && feeType !== 'truck') return res.status(403).json({ error: '客服只能添加卡车费用' });
-  const party = String(b.party_name || '').trim().slice(0, 200);
-  if (!party) return res.status(400).json({ error: feeType === 'insurance' ? '请填写保险公司' : feeType === 'legal' ? '请填写律师 / 律所' : feeType === 'truck' ? '请填写卡车公司' : feeType === 'cnpay' ? '请填写员工姓名' : '请填写收款方 / 供应商' });
+  let party = String(b.party_name || '').trim().slice(0, 200);
+  if (!party && feeType !== 'cnpay') return res.status(400).json({ error: feeType === 'insurance' ? '请填写保险公司' : feeType === 'legal' ? '请填写律师 / 律所' : feeType === 'truck' ? '请填写卡车公司' : feeType === 'cnpay' ? '请填写员工姓名' : '请填写收款方 / 供应商' });
   let amtNum = Number(b.amount);
-  // 国内工资: 底薪 / 奖金 / 报销 三项, 总额由服务端加总, 不信前端传的 amount
-  const _part = v => (v != null && v !== '' && !isNaN(Number(v))) ? Number(v) : null;
-  const base = feeType === 'cnpay' ? _part(b.base_amount) : null;
-  const bonus = feeType === 'cnpay' ? _part(b.bonus_amount) : null;
-  const reimb = feeType === 'cnpay' ? _part(b.reimb_amount) : null;
+  // 国内工资: 底薪 / 奖金 / 报销 每项按明细加总, 总额由服务端算, 不信前端传的 amount
+  let base = null, bonus = null, reimb = null, cnLines = [], empId = null;
   if (feeType === 'cnpay') {
-    if (base == null && bonus == null && reimb == null) return res.status(400).json({ error: '请至少填写底薪 / 奖金 / 报销其中一项' });
-    amtNum = Math.round(((base || 0) + (bonus || 0) + (reimb || 0)) * 100) / 100;
+    const emp = db.prepare('SELECT * FROM cn_employees WHERE id=?').get(Number(b.employee_id) || 0);
+    if (!emp) return res.status(400).json({ error: '请先选择员工' });
+    const c = _cnPayLines(b.lines);
+    if (!c.lines.length) return res.status(400).json({ error: '请至少填写一项明细' });
+    ({ base, bonus, reimb } = c); cnLines = c.lines; amtNum = c.total; empId = emp.id; party = emp.name;
   }
   const currency = ['CNY', 'USD'].includes(String(b.currency || '')) ? String(b.currency) : (feeType === 'cnpay' ? 'CNY' : 'USD');
   const files = Array.isArray(req.files) ? req.files : [];
@@ -41726,8 +41789,8 @@ app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin
   // 租车单扩展字段 (卡车费用用, 照 Bintique 租车单): 结束日期 / 装货类型 / 折扣
   const discNum = Number(b.discount_value);
   const r = db.prepare(`INSERT INTO fee_records
-    (fee_type, party_name, fee_date, fee_date_end, amount, description, cargo, truck_size, discount_value, discount_type, base_amount, bonus_amount, reimb_amount, currency, status, attachments, approval_status, created_by, approved_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`)
+    (fee_type, party_name, fee_date, fee_date_end, amount, description, cargo, truck_size, discount_value, discount_type, base_amount, bonus_amount, reimb_amount, currency, lines, employee_id, status, attachments, approval_status, created_by, approved_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`)
     .run(feeType, party, String(b.fee_date || '').trim().slice(0, 20),
       String(b.fee_date_end || '').trim().slice(0, 20),
       (feeType === 'cnpay' || (b.amount != null && b.amount !== '' && !isNaN(amtNum))) ? amtNum : null,
@@ -41736,7 +41799,7 @@ app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin
       _feeTruckSize(b.truck_size),
       (b.discount_value != null && b.discount_value !== '' && !isNaN(discNum)) ? discNum : null,
       ['%', '$'].includes(String(b.discount_type || '')) ? String(b.discount_type) : '%',
-      base, bonus, reimb, currency,
+      base, bonus, reimb, currency, JSON.stringify(cnLines), empId,
       JSON.stringify(atts), isAdmin ? 'approved' : 'pending', req.userName || '', isAdmin ? (req.userName || '') : '');
   res.json({ success: true, id: r.lastInsertRowid, approval_status: isAdmin ? 'approved' : 'pending' });
 });
@@ -41746,10 +41809,29 @@ app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin
 app.put('/api/acct/fee-records/:id', requireAdmin, requireRole('accounting', 'admin', 'cs'), claimUpload.array('invoice', 50), (req, res) => {
   const cur = db.prepare('SELECT * FROM fee_records WHERE id=?').get(req.params.id);
   if (!cur) return res.status(404).json({ error: '记录不存在' });
-  if (cur.fee_type !== 'truck') return res.status(400).json({ error: '只能修改卡车费用' });
+  if (cur.fee_type !== 'truck' && cur.fee_type !== 'cnpay') return res.status(400).json({ error: '只能修改卡车费用 / 国内工资' });
   const isAdmin = req.userRole === 'admin';
   if (!isAdmin && cur.approval_status === 'approved') return res.status(403).json({ error: '已审核通过的记录只有管理员能改' });
   const b = req.body || {};
+  if (cur.fee_type === 'cnpay') {
+    if (req.userRole === 'cs') return res.status(403).json({ error: '无权修改' });
+    const c = _cnPayLines(b.lines);
+    if (!c.lines.length) return res.status(400).json({ error: '请至少填写一项明细' });
+    // 去掉前端点了 ✕ 的旧凭证, 再追加新上传的
+    let keep = null; try { keep = b.keep_attachments != null ? JSON.parse(b.keep_attachments) : null; } catch (e) { keep = null; }
+    const old = _claimAtts(cur);
+    const kept = Array.isArray(keep) ? old.filter(a => keep.includes(a.path)) : old;
+    old.filter(a => !kept.includes(a)).forEach(a => _claimDeleteFile(a.path));
+    const atts = kept.concat((Array.isArray(req.files) ? req.files : []).map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) })));
+    const status = isAdmin ? cur.approval_status : 'pending';
+    db.prepare(`UPDATE fee_records SET fee_date=?, description=?, currency=?, lines=?, base_amount=?, bonus_amount=?, reimb_amount=?, amount=?,
+        attachments=?, approval_status=?, approval_note=CASE WHEN ?<>approval_status THEN '' ELSE approval_note END, updated_at=datetime('now') WHERE id=?`)
+      .run(String(b.fee_date || '').trim().slice(0, 20), String(b.description || '').trim().slice(0, 2000),
+        ['CNY', 'USD'].includes(String(b.currency || '')) ? String(b.currency) : cur.currency,
+        JSON.stringify(c.lines), c.base, c.bonus, c.reimb, c.total, JSON.stringify(atts), status, status, cur.id);
+    auditLog('fee_record_edit', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers }, { targetType: 'fee_record', targetId: cur.id });
+    return res.json({ success: true, approval_status: status });
+  }
   const party = String(b.party_name || '').trim().slice(0, 200);
   if (!party) return res.status(400).json({ error: '请填写卡车公司' });
   const amtNum = Number(b.amount), discNum = Number(b.discount_value);

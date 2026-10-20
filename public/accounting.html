@@ -207,7 +207,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <button class="tab" id="tabFeeIns" onclick="showTab('feeins')"><span class="t-zh">🛡️ 保险费</span><span class="t-en">Insurance</span></button>
     <button class="tab" id="tabFeeLaw" onclick="showTab('feelaw')"><span class="t-zh">⚖️ 律师费</span><span class="t-en">Legal</span></button>
     <button class="tab" id="tabFeeCo" onclick="showTab('feeco')"><span class="t-zh">🏢 公司支出</span><span class="t-en">Expenses</span></button>
-    <button class="tab" id="tabFeeCn" onclick="showTab('feecn')"><span class="t-zh">🇨🇳 国内工资</span><span class="t-en">CN Payroll</span></button>
+    <button class="tab" id="tabFeeCn" onclick="showTab('feecn')"><span class="t-zh">🏮 国内工资</span><span class="t-en">CN Payroll</span></button>
     <button class="tab" id="tabPallet" onclick="showTab('pallet')"><span class="t-zh">🪵 木板账单</span><span class="t-en">Pallet</span></button>
     <button class="tab" id="tabTruck" onclick="showTab('truck')"><span class="t-zh">🚚 卡车费用</span><span class="t-en">Truck</span></button>
     <button class="tab" id="tabBank" onclick="showTab('bank')" style="display:none"><span class="t-zh">🔗 银行直连</span><span class="t-en">Bank Feed</span><span id="bankUnrevBadge" style="display:none;background:#dc2626;color:#fff;border-radius:10px;font-size:.68rem;padding:1px 7px;position:absolute;top:3px;right:4px"></span></button>
@@ -814,7 +814,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <span id="feeStats" style="font-size:.8rem;color:var(--g500)"></span>
     </div>
     <div class="card" style="overflow-x:auto">
-      <table><thead id="feeHead"><tr>
+      <table><thead><tr>
         <th id="feePartyTh">对方</th><th>日期</th><th style="text-align:right">金额</th><th>说明</th><th>状态</th><th>发票文件</th><th>付款批注（会计）</th><th></th>
       </tr></thead><tbody id="feeBody"><tr><td colspan="8" style="color:var(--g400)">加载中…</td></tr></tbody></table>
     </div>
@@ -828,30 +828,10 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <label id="feePartyLabel" style="font-size:.76rem;color:var(--g500)">保险公司</label>
       <input type="text" id="faParty" list="faPartyList" placeholder="" style="width:100%;margin:.15rem 0 .55rem">
       <datalist id="faPartyList"></datalist>
-      <div id="faDateWrap">
-        <label style="font-size:.76rem;color:var(--g500)">日期</label>
-        <input type="date" id="faDate" style="width:100%;margin:.15rem 0 .55rem">
-        <label style="font-size:.76rem;color:var(--g500)">金额（$）</label>
-        <input type="number" step="0.01" min="0" id="faAmount" placeholder="例：1200.00" style="width:100%;margin:.15rem 0 .55rem">
-      </div>
-      <!-- 🇨🇳 国内工资: 工资月份 + 底薪 / 奖金 / 报销, 合计自动算 -->
-      <div id="faCnWrap" style="display:none">
-        <div style="display:flex;gap:.5rem">
-          <div style="flex:1"><label style="font-size:.76rem;color:var(--g500)">工资月份</label>
-            <input type="month" id="faMonth" style="width:100%;margin:.15rem 0 .55rem"></div>
-          <div style="width:110px"><label style="font-size:.76rem;color:var(--g500)">币种</label>
-            <select id="faCur" onchange="faCnSum()" style="width:100%;margin:.15rem 0 .55rem"><option value="CNY">¥ 人民币</option><option value="USD">$ 美元</option></select></div>
-        </div>
-        <div style="display:flex;gap:.5rem">
-          <div style="flex:1"><label style="font-size:.76rem;color:var(--g500)">Base 底薪</label>
-            <input type="number" step="0.01" min="0" id="faBase" oninput="faCnSum()" placeholder="0.00" style="width:100%;margin:.15rem 0 .55rem"></div>
-          <div style="flex:1"><label style="font-size:.76rem;color:var(--g500)">Bonus 奖金</label>
-            <input type="number" step="0.01" min="0" id="faBonus" oninput="faCnSum()" placeholder="0.00" style="width:100%;margin:.15rem 0 .55rem"></div>
-          <div style="flex:1"><label style="font-size:.76rem;color:var(--g500)">报销费用</label>
-            <input type="number" step="0.01" min="0" id="faReimb" oninput="faCnSum()" placeholder="0.00" style="width:100%;margin:.15rem 0 .55rem"></div>
-        </div>
-        <div id="faCnTotal" style="font-size:.82rem;color:var(--g500);margin:-.2rem 0 .55rem">合计：—</div>
-      </div>
+      <label style="font-size:.76rem;color:var(--g500)">日期</label>
+      <input type="date" id="faDate" style="width:100%;margin:.15rem 0 .55rem">
+      <label style="font-size:.76rem;color:var(--g500)">金额（$）</label>
+      <input type="number" step="0.01" min="0" id="faAmount" placeholder="例：1200.00" style="width:100%;margin:.15rem 0 .55rem">
       <label style="font-size:.76rem;color:var(--g500)">说明（可选）</label>
       <textarea id="faDesc" rows="3" placeholder="" style="width:100%;margin:.15rem 0 .55rem;font-family:inherit;resize:vertical"></textarea>
       <label style="font-size:.76rem;color:var(--g500)">发票 / 凭证文件（可多选，PDF 或图片）</label>
@@ -859,6 +839,61 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <div style="display:flex;gap:.5rem;justify-content:flex-end">
         <button class="btn btn-outline" onclick="closeFeeAdd()">取消</button>
         <button class="btn btn-blue" id="faSubmitBtn" onclick="submitFeeAdd()">提交</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🏮 国内工资: 先建员工名册, 再按月录工资; Base / Bonus / 报销 每项都有明细 (存 fee_records fee_type='cnpay') -->
+  <div id="paneCn" style="display:none">
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
+      <input type="text" id="cnSearch" placeholder="搜员工 / 月份 / 明细…" oninput="cnRender()" style="width:220px">
+      <button class="btn btn-blue" id="btnCnEmpAdd" onclick="cnEmpOpen()" style="display:none">＋ 添加员工</button>
+      <span id="cnStats" style="font-size:.8rem;color:var(--g500)"></span>
+    </div>
+    <div id="cnBody"><div class="card" style="color:var(--g400)">加载中…</div></div>
+  </div>
+
+  <!-- 👤 添加 / 编辑国内员工 -->
+  <div id="cnEmpModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:92;align-items:center;justify-content:center;padding:16px">
+    <div class="card" style="max-width:400px;width:100%;padding:1.2rem 1.2rem 1rem">
+      <div id="cnEmpTitle" style="font-weight:800;margin-bottom:.7rem">👤 添加国内员工</div>
+      <label style="font-size:.76rem;color:var(--g500)">姓名</label>
+      <input type="text" id="ceName" placeholder="员工姓名" style="width:100%;margin:.15rem 0 .55rem">
+      <label style="font-size:.76rem;color:var(--g500)">职位（可选）</label>
+      <input type="text" id="ceTitle" placeholder="例：会计 / 客服 / 运营" style="width:100%;margin:.15rem 0 .55rem">
+      <label style="font-size:.76rem;color:var(--g500)">默认币种</label>
+      <select id="ceCur" style="width:100%;margin:.15rem 0 .55rem"><option value="CNY">¥ 人民币</option><option value="USD">$ 美元</option></select>
+      <label style="font-size:.76rem;color:var(--g500)">备注（可选）</label>
+      <textarea id="ceNote" rows="2" placeholder="例：入职日期、发薪银行卡…" style="width:100%;margin:.15rem 0 .8rem;font-family:inherit;resize:vertical"></textarea>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="document.getElementById('cnEmpModal').style.display='none'">取消</button>
+        <button class="btn btn-blue" id="ceSaveBtn" onclick="cnEmpSave()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 💴 录入 / 编辑某员工某月工资: Base / Bonus / 报销 三块, 每块逐条明细 -->
+  <div id="cnPayModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:92;align-items:center;justify-content:center;padding:16px">
+    <div class="card" style="max-width:640px;width:100%;padding:1.2rem 1.2rem 1rem;max-height:94vh;overflow:auto">
+      <div id="cpTitle" style="font-weight:800;margin-bottom:.2rem">💴 录入工资</div>
+      <div id="cpHint" style="font-size:.76rem;color:var(--g500);margin-bottom:.7rem"></div>
+      <div style="display:flex;gap:.5rem">
+        <div style="flex:1"><label style="font-size:.76rem;color:var(--g500)">工资月份</label>
+          <input type="month" id="cpMonth" style="width:100%;margin:.15rem 0 .55rem"></div>
+        <div style="width:130px"><label style="font-size:.76rem;color:var(--g500)">币种</label>
+          <select id="cpCur" onchange="cpSum()" style="width:100%;margin:.15rem 0 .55rem"><option value="CNY">¥ 人民币</option><option value="USD">$ 美元</option></select></div>
+      </div>
+      <div id="cpSections"></div>
+      <div id="cpTotal" style="text-align:right;font-weight:800;font-size:.95rem;margin:.2rem 0 .6rem">合计：—</div>
+      <label style="font-size:.76rem;color:var(--g500)">备注（可选）</label>
+      <textarea id="cpDesc" rows="2" style="width:100%;margin:.15rem 0 .55rem;font-family:inherit;resize:vertical"></textarea>
+      <label style="font-size:.76rem;color:var(--g500)">工资单 / 报销凭证（PDF 或图片，可多个）</label>
+      <div id="cpDrop" ondragover="acctDZ(event,true,'cpDrop')" ondragenter="acctDZ(event,true,'cpDrop')" ondragleave="acctDZ(event,false,'cpDrop')" ondrop="acctDZ(event,false,'cpDrop');cpAddFiles(event.dataTransfer.files)" onclick="document.getElementById('cpFiles').click()" style="border:1.5px dashed var(--g200);border-radius:8px;padding:.8rem;background:#fafafa;text-align:center;font-size:.82rem;color:var(--g500);cursor:pointer;margin:.15rem 0 .35rem;transition:background .12s,border-color .12s">📎 <b>把文件拖到这里</b>，或点击选择</div>
+      <input type="file" id="cpFiles" multiple accept=".pdf,.jpg,.jpeg,.png,.gif,.webp" onchange="cpAddFiles(this.files);this.value=''" style="display:none">
+      <div id="cpFileList" style="font-size:.78rem;line-height:1.8;margin-bottom:.8rem"></div>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="document.getElementById('cnPayModal').style.display='none'">取消</button>
+        <button class="btn btn-blue" id="cpSaveBtn" onclick="cpSave()">保存</button>
       </div>
     </div>
   </div>
@@ -1342,6 +1377,8 @@ function showTab(t) {
   document.getElementById('tabFeeLaw').classList.toggle('on', t === 'feelaw');
   document.getElementById('tabFeeCo').classList.toggle('on', t === 'feeco');
   document.getElementById('tabFeeCn').classList.toggle('on', t === 'feecn');
+  document.getElementById('paneCn').style.display = t === 'feecn' ? '' : 'none';
+  if (t === 'feecn') cnLoad();
   document.getElementById('tabPallet').classList.toggle('on', t === 'pallet');
   document.getElementById('panePallet').style.display = t === 'pallet' ? '' : 'none';
   if (t === 'pallet') loadPalletList();
@@ -1354,9 +1391,9 @@ function showTab(t) {
   document.getElementById('tabZelle').classList.toggle('on', t === 'zelle');
   document.getElementById('paneZelle').style.display = t === 'zelle' ? '' : 'none';
   if (t === 'zelle') zInit();
-  const isFee = t === 'feeins' || t === 'feelaw' || t === 'feeco' || t === 'feecn';
+  const isFee = t === 'feeins' || t === 'feelaw' || t === 'feeco';
   document.getElementById('paneFee').style.display = isFee ? '' : 'none';
-  if (isFee) { _feeType = t === 'feeins' ? 'insurance' : t === 'feelaw' ? 'legal' : t === 'feecn' ? 'cnpay' : 'company'; feeApplyType(); renderFeeList(); }
+  if (isFee) { _feeType = t === 'feeins' ? 'insurance' : (t === 'feelaw' ? 'legal' : 'company'); feeApplyType(); renderFeeList(); }
   document.getElementById('paneInv').style.display = t === 'inv' ? '' : 'none';
   document.getElementById('paneStmt').style.display = t === 'stmt' ? '' : 'none';
   document.getElementById('paneClaims').style.display = t === 'claims' ? '' : 'none';
@@ -1856,7 +1893,7 @@ async function openPayNote(type, id) {
   document.getElementById('pnTitle').textContent = type === 'invoice'
     ? `发票 ${item.invoice_number || ''} · ${item.company_name || ''} · ${money(item.subtotal)}`
     : type === 'fee'
-      ? `${(FEE_CFG[item.fee_type] || FEE_CFG.insurance).title} · ${item.party_name || ''}${item.fee_type === 'cnpay' && item.fee_date ? ' · ' + item.fee_date : ''} · ${item.amount != null ? (item.fee_type === 'cnpay' ? _feeMoney(item.amount, item.currency) : money(item.amount)) : ''}`
+      ? `${item.fee_type === 'cnpay' ? '🏮 国内工资' : (FEE_CFG[item.fee_type] || FEE_CFG.insurance).title} · ${item.party_name || ''}${item.fee_type === 'cnpay' ? ' · ' + (item.fee_date || '') : ''} · ${item.amount != null ? (item.fee_type === 'cnpay' ? _cnMoney(item.amount, item.currency) : money(item.amount)) : ''}`
       : type === 'referralweek'
         ? `🤝 介绍费 · 第 ${item.week_no} 周 · ${item.ref.worker_name || ''}（工头 ${item.ref.foreman_name || ''}）· 发票 ${item.invoice.invoice_number || ''} ${item.invoice.period_start ? item.invoice.period_start + ' ~ ' + (item.invoice.period_end || '') : ''}${item.amount != null ? ' · ' + money(item.amount) : ''}`
       : type === 'referral'
@@ -2027,7 +2064,7 @@ async function savePayNote() {
     if (item) item.pay_note = pn;
     closePayNote();
     toast('✅ 付款批注已保存');
-    if (_payTarget.type === 'invoice') renderInvList(); else if (_payTarget.type === 'fee') renderFeeList(); else if (_payTarget.type === 'referral' || _payTarget.type === 'referralweek') renderRefList(); else if (_payTarget.type === 'pallet' || _payTarget.type === 'palletbill' || _payTarget.type === 'palletmanual') renderPalletList(); else if (_payTarget.type === 'truck' || _payTarget.type === 'truckfee' || _payTarget.type === 'truckorder') renderTruckList(); else renderClaimList();
+    if (_payTarget.type === 'invoice') renderInvList(); else if (_payTarget.type === 'fee') { renderFeeList(); cnRender(); } else if (_payTarget.type === 'referral' || _payTarget.type === 'referralweek') renderRefList(); else if (_payTarget.type === 'pallet' || _payTarget.type === 'palletbill' || _payTarget.type === 'palletmanual') renderPalletList(); else if (_payTarget.type === 'truck' || _payTarget.type === 'truckfee' || _payTarget.type === 'truckorder') renderTruckList(); else renderClaimList();
   } catch (e) { toast(e.message || '保存失败', true); }
   finally { btn.disabled = false; }
 }
@@ -3933,31 +3970,17 @@ const FEE_CFG = {
   insurance: { title: '🛡️ 保险费', party: '保险公司', searchPh: '搜保险公司 / 说明…', addTitle: '🛡️ 新增保险费', partyPh: '例：桃园保险 / State Farm', descPh: '例：仓库责任险 2026 年度保费' },
   legal: { title: '⚖️ 律师费', party: '律师 / 律所', searchPh: '搜律师 / 说明…', addTitle: '⚖️ 新增律师费', partyPh: '例：XX Law Firm / 王律师', descPh: '例：劳工纠纷咨询、合同审阅…' },
   company: { title: '🏢 公司支出', party: '收款方 / 供应商', searchPh: '搜收款方 / 说明…', addTitle: '🏢 新增公司支出', partyPh: '例：供应商 / 服务商名称', descPh: '例：办公用品、软件订阅、税务、差旅…' },
-  cnpay: { title: '🇨🇳 国内工资', party: '员工', searchPh: '搜员工 / 月份 / 说明…', addTitle: '🇨🇳 新增国内员工工资', partyPh: '员工姓名', descPh: '例：报销明细（差旅、打车、餐费…）、奖金说明' },
 };
-const _CUR_SYM = { CNY: '¥', USD: '$' };
-const _feeMoney = (v, cur) => v == null || v === '' ? '—' : (_CUR_SYM[cur] || '$') + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-// 新增弹窗里底薪 / 奖金 / 报销 实时合计
-function faCnSum() {
-  const n = id => Number(document.getElementById(id).value) || 0;
-  const any = ['faBase', 'faBonus', 'faReimb'].some(id => document.getElementById(id).value !== '');
-  document.getElementById('faCnTotal').textContent = '合计：' + (any ? _feeMoney(n('faBase') + n('faBonus') + n('faReimb'), document.getElementById('faCur').value) : '—');
-}
 let _feeType = 'insurance', _feeList = [];
 // 切换 保险费/律师费 页签时更新列头、搜索框和新增弹窗的文案
 function feeApplyType() {
   const cfg = FEE_CFG[_feeType];
+  document.getElementById('feePartyTh').textContent = cfg.party;
   document.getElementById('feeSearch').placeholder = cfg.searchPh;
   document.getElementById('feeAddTitle').textContent = cfg.addTitle;
   document.getElementById('feePartyLabel').textContent = cfg.party;
   document.getElementById('faParty').placeholder = cfg.partyPh;
   document.getElementById('faDesc').placeholder = cfg.descPh;
-  const cn = _feeType === 'cnpay';
-  document.getElementById('faDateWrap').style.display = cn ? 'none' : '';
-  document.getElementById('faCnWrap').style.display = cn ? '' : 'none';
-  document.getElementById('feeHead').innerHTML = cn
-    ? `<tr><th>员工</th><th>月份</th><th style="text-align:right">Base 底薪</th><th style="text-align:right">Bonus 奖金</th><th style="text-align:right">报销</th><th style="text-align:right">合计</th><th>说明</th><th>状态</th><th>凭证文件</th><th>付款批注（会计）</th><th></th></tr>`
-    : `<tr><th id="feePartyTh">${esc(cfg.party)}</th><th>日期</th><th style="text-align:right">金额</th><th>说明</th><th>状态</th><th>发票文件</th><th>付款批注（会计）</th><th></th></tr>`;
   // 保险费的对方下拉建议用标注面板同一份保险公司名单 (bank-ann.js 的 BS_INSUR_COMPANIES)
   const names = _feeType === 'insurance' && typeof BS_INSUR_COMPANIES !== 'undefined' ? BS_INSUR_COMPANIES : [];
   document.getElementById('faPartyList').innerHTML = names.map(n => `<option value="${esc(n)}"></option>`).join('');
@@ -3975,22 +3998,11 @@ function renderFeeList() {
   const cfg = FEE_CFG[_feeType];
   const q = (document.getElementById('feeSearch').value || '').trim().toLowerCase();
   const list = _feeList.filter(f => f.fee_type === _feeType)
-    .filter(f => !q || `${f.party_name || ''} ${f.description || ''} ${f.fee_date || ''}`.toLowerCase().includes(q));
-  const cn = _feeType === 'cnpay';
+    .filter(f => !q || `${f.party_name || ''} ${f.description || ''}`.toLowerCase().includes(q));
   // 只有审核通过(approved)的才计入笔数和总额; 待审核/已拒绝单独提示 (同赔偿事故)
   const okRows = list.filter(f => (f.approval_status || 'approved') === 'approved');
   const pendN = list.filter(f => f.approval_status === 'pending').length;
   const total = okRows.reduce((s, f) => s + (Number(f.amount) || 0), 0);
-  if (cn) {
-    // 按币种分开合计 底薪 / 奖金 / 报销
-    const byCur = {};
-    okRows.forEach(f => {
-      const c = f.currency || 'CNY', t = byCur[c] || (byCur[c] = { base: 0, bonus: 0, reimb: 0, total: 0 });
-      t.base += Number(f.base_amount) || 0; t.bonus += Number(f.bonus_amount) || 0; t.reimb += Number(f.reimb_amount) || 0; t.total += Number(f.amount) || 0;
-    });
-    const parts = Object.entries(byCur).map(([c, t]) => `合计 ${_feeMoney(t.total, c)}（Base ${_feeMoney(t.base, c)} · Bonus ${_feeMoney(t.bonus, c)} · 报销 ${_feeMoney(t.reimb, c)}）`);
-    document.getElementById('feeStats').textContent = `${okRows.length} 笔` + (parts.length ? ' · ' + parts.join(' ； ') : ' · 合计 ¥0.00') + (pendN ? ` · ⏳ 待审核 ${pendN} 笔` : '');
-  } else
   document.getElementById('feeStats').textContent = `${okRows.length} 笔 · 合计 $${total.toFixed(2)}` + (pendN ? ` · ⏳ 待审核 ${pendN} 笔` : '');
   document.getElementById('feeBody').innerHTML = list.length ? list.map(f => {
     const atts = Array.isArray(f.attachments) ? f.attachments : [];
@@ -4009,18 +4021,14 @@ function renderFeeList() {
     return `<tr${ap === 'rejected' ? ' style="opacity:.55"' : ''}>
       <td style="font-weight:600">${esc(f.party_name || '—')}</td>
       <td style="white-space:nowrap">${esc(f.fee_date || '—')}</td>
-      ${cn ? `<td style="text-align:right;white-space:nowrap">${_feeMoney(f.base_amount, f.currency)}</td>
-      <td style="text-align:right;white-space:nowrap">${_feeMoney(f.bonus_amount, f.currency)}</td>
-      <td style="text-align:right;white-space:nowrap">${_feeMoney(f.reimb_amount, f.currency)}</td>
-      <td style="text-align:right;font-weight:700;color:#dc2626;white-space:nowrap">${_feeMoney(f.amount, f.currency)}</td>`
-      : `<td style="text-align:right;font-weight:700;color:#dc2626;white-space:nowrap">${f.amount != null ? '$' + Number(f.amount).toFixed(2) : '—'}</td>`}
+      <td style="text-align:right;font-weight:700;color:#dc2626;white-space:nowrap">${f.amount != null ? '$' + Number(f.amount).toFixed(2) : '—'}</td>
       <td style="max-width:320px">${esc(f.description || '')}</td>
       <td>${statusCell}</td>
       <td>${files}</td>
       <td>${payNoteCell('fee', f.id, f.pay_note)}</td>
       <td style="white-space:nowrap">${USER.role === 'admin' ? `<a style="cursor:pointer;color:#b91c1c;font-size:.78rem" title="删除这条记录" onclick="feeDelete(${f.id})">🗑</a>` : ''}</td>
     </tr>`;
-  }).join('') : `<tr><td colspan="${cn ? 11 : 8}" style="color:var(--g400);padding:1rem">暂无${cfg.title.slice(cfg.title.indexOf(' ') + 1)}记录，点「＋ 新增」添加。</td></tr>`;
+  }).join('') : `<tr><td colspan="8" style="color:var(--g400);padding:1rem">暂无${cfg.title.slice(cfg.title.indexOf(' ') + 1)}记录，点「＋ 新增」添加。</td></tr>`;
 }
 function openFeeAdd() {
   feeApplyType();
@@ -4040,23 +4048,14 @@ async function submitFeeAdd() {
     const fd = new FormData();
     fd.append('fee_type', _feeType);
     fd.append('party_name', party);
-    if (_feeType === 'cnpay') {
-      fd.append('fee_date', document.getElementById('faMonth').value || '');
-      fd.append('base_amount', document.getElementById('faBase').value || '');
-      fd.append('bonus_amount', document.getElementById('faBonus').value || '');
-      fd.append('reimb_amount', document.getElementById('faReimb').value || '');
-      fd.append('currency', document.getElementById('faCur').value || 'CNY');
-    } else {
-      fd.append('fee_date', document.getElementById('faDate').value || '');
-      fd.append('amount', document.getElementById('faAmount').value || '');
-    }
+    fd.append('fee_date', document.getElementById('faDate').value || '');
+    fd.append('amount', document.getElementById('faAmount').value || '');
     fd.append('description', document.getElementById('faDesc').value.trim());
     [...document.getElementById('faFiles').files].forEach(f => fd.append('invoice', f));
     const r = await fetch('/api/acct/fee-records', { method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd }).then(x => x.json());
     if (r.error) throw new Error(r.error);
     closeFeeAdd();
-    ['faParty', 'faDate', 'faAmount', 'faDesc', 'faFiles', 'faMonth', 'faBase', 'faBonus', 'faReimb'].forEach(id => { document.getElementById(id).value = ''; });
-    faCnSum();
+    ['faParty', 'faDate', 'faAmount', 'faDesc', 'faFiles'].forEach(id => { document.getElementById(id).value = ''; });
     toast(r.approval_status === 'approved' ? '✅ 已添加' : '✅ 已提交，等待管理员审核');
     loadAll();
   } catch (e) { toast(e.message || '提交失败', true); }
@@ -4090,6 +4089,225 @@ async function feeDelete(id) {
     toast('已删除');
     loadAll();
   } catch (e) { toast(e.message || '删除失败', true); }
+}
+
+// ── 🏮 国内工资: 员工名册 + 每月工资 (Base / Bonus / 报销 都有明细), 记录存 fee_records fee_type='cnpay' ──
+const CN_KINDS = [['base', 'Base 底薪', '例：9 月基本工资'], ['bonus', 'Bonus 奖金', '例：Q3 绩效奖金'], ['reimb', '报销费用', '例：10/12 打车 / 差旅 / 餐费']];
+const _CUR_SYM = { CNY: '¥', USD: '$' };
+const _cnMoney = (v, cur) => (_CUR_SYM[cur] || '¥') + (Number(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+let _cnEmps = null, _cnEmpEdit = null, _cnPay = null;
+const _cnOpen = new Set();
+function canEditCn() { return ['admin', 'accounting'].includes(USER.role); }
+// 明细: 新记录存 lines; 早期只有三项金额的记录, 各转成一条明细显示
+function _cnLines(f) {
+  let ls = [];
+  try { ls = typeof f.lines === 'string' ? JSON.parse(f.lines || '[]') : (f.lines || []); } catch (e) { ls = []; }
+  if (Array.isArray(ls) && ls.length) return ls;
+  return CN_KINDS.filter(([k]) => f[k + '_amount'] != null).map(([k]) => ({ kind: k, desc: '', date: '', amount: Number(f[k + '_amount']) || 0 }));
+}
+async function cnLoad() {
+  document.getElementById('btnCnEmpAdd').style.display = canEditCn() ? '' : 'none';
+  const r = await api('/api/acct/cn-employees').catch(e => ({ error: e.message }));
+  if (r && r.error) { document.getElementById('cnBody').innerHTML = `<div class="card" style="color:#dc2626">${esc(r.error)}</div>`; return; }
+  _cnEmps = Array.isArray(r) ? r : [];
+  cnRender();
+}
+function cnRender() {
+  if (!_cnEmps || document.getElementById('paneCn').style.display === 'none') return;
+  const q = (document.getElementById('cnSearch').value || '').trim().toLowerCase();
+  const recs = _feeList.filter(f => f.fee_type === 'cnpay');
+  // 名册里的员工 + 没挂名册的早期记录 (按名字归组)
+  const groups = _cnEmps.map(e => ({ emp: e, name: e.name, recs: recs.filter(f => f.employee_id === e.id) }));
+  recs.filter(f => !f.employee_id || !_cnEmps.some(e => e.id === f.employee_id)).forEach(f => {
+    let g = groups.find(x => !x.emp && x.name === f.party_name);
+    if (!g) groups.push(g = { emp: null, name: f.party_name || '(未命名)', recs: [] });
+    g.recs.push(f);
+  });
+  const hit = f => !q || `${f.fee_date || ''} ${f.description || ''} ${_cnLines(f).map(l => l.desc).join(' ')}`.toLowerCase().includes(q);
+  const shown = groups.map(g => {
+    const nameHit = !q || `${g.name} ${(g.emp && g.emp.title) || ''}`.toLowerCase().includes(q);
+    return { ...g, recs: nameHit ? g.recs : g.recs.filter(hit), show: nameHit || g.recs.some(hit) };
+  }).filter(g => g.show);
+  // 汇总只算审核通过的
+  const sumBy = list => {
+    const by = {};
+    list.filter(f => (f.approval_status || 'approved') === 'approved').forEach(f => {
+      const c = f.currency || 'CNY', t = by[c] || (by[c] = { base: 0, bonus: 0, reimb: 0, total: 0 });
+      t.base += Number(f.base_amount) || 0; t.bonus += Number(f.bonus_amount) || 0; t.reimb += Number(f.reimb_amount) || 0; t.total += Number(f.amount) || 0;
+    });
+    return Object.entries(by).map(([c, t]) => `Base ${_cnMoney(t.base, c)} · Bonus ${_cnMoney(t.bonus, c)} · 报销 ${_cnMoney(t.reimb, c)} · <b style="color:#dc2626">合计 ${_cnMoney(t.total, c)}</b>`).join('<br>');
+  };
+  const pendN = recs.filter(f => f.approval_status === 'pending').length;
+  document.getElementById('cnStats').innerHTML = `${_cnEmps.length} 名员工 · ${recs.length} 条工资记录` + (pendN ? ` · ⏳ 待审核 ${pendN} 条` : '');
+  if (!shown.length) {
+    document.getElementById('cnBody').innerHTML = `<div class="card" style="color:var(--g400);padding:1rem">${q ? '没有匹配的记录。' : '还没有国内员工，先点「＋ 添加员工」，再给员工录入每月工资。'}</div>`;
+    return;
+  }
+  document.getElementById('cnBody').innerHTML = shown.map(g => {
+    const e = g.emp;
+    const tot = sumBy(g.recs);
+    const acts = e && canEditCn()
+      ? `<button class="btn btn-sm btn-blue" onclick="cpOpen(${e.id})">＋ 录入工资</button>
+         <button class="btn btn-sm btn-outline" onclick="cnEmpOpen(${e.id})">✏️ 编辑员工</button>`
+        + (USER.role === 'admin' && !g.recs.length ? ` <button class="btn btn-sm btn-outline" style="color:#b91c1c" onclick="cnEmpDelete(${e.id})">🗑</button>` : '')
+      : '';
+    const rows = g.recs.map(f => {
+      const ls = _cnLines(f), open = _cnOpen.has(f.id), cur = f.currency || 'CNY';
+      const ap = f.approval_status || 'approved';
+      const atts = Array.isArray(f.attachments) ? f.attachments : [];
+      const files = atts.length ? atts.map((a, i) => `<a href="${esc(a.path)}" target="_blank" title="${esc(a.name || '')}" style="color:#0f4c6b;text-decoration:underline;margin-right:5px;white-space:nowrap">${atts.length > 1 ? '文件' + (i + 1) : '查看'}</a>`).join('') : '<span style="color:var(--g400)">—</span>';
+      const status = ap === 'pending'
+        ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#fff7ed;color:#c2410c;border:1px solid #fed7aa">⏳ 待审核</span>'
+          + (f.created_by ? `<div style="font-size:.68rem;color:var(--g400)">${esc(f.created_by)} 提交</div>` : '')
+          + (USER.role === 'admin' ? `<div style="white-space:nowrap"><a style="cursor:pointer;color:#15803d;font-size:.74rem;text-decoration:underline" onclick="feeApprove(${f.id},'approve')">✅ 通过</a><a style="cursor:pointer;color:#dc2626;font-size:.74rem;text-decoration:underline;margin-left:8px" onclick="feeApprove(${f.id},'reject')">✖ 拒绝</a></div>` : '')
+        : ap === 'rejected'
+          ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#f3f4f6;color:#6b7280">✖ 已拒绝</span>' + (f.approval_note ? `<div style="font-size:.68rem;color:var(--g400)">${esc(f.approval_note)}</div>` : '')
+          : _feeStatusBadge(f).replace(/feeStatusToggle\(/, 'cnStatusToggle(');
+      const canEdit = e && canEditCn() && (USER.role === 'admin' || ap !== 'approved');
+      const col = k => `<td style="text-align:right;white-space:nowrap">${f[k + '_amount'] != null ? _cnMoney(f[k + '_amount'], cur) : '<span style="color:var(--g300)">—</span>'}<div style="font-size:.68rem;color:var(--g400)">${ls.filter(l => l.kind === k).length || ''}${ls.some(l => l.kind === k) ? ' 项' : ''}</div></td>`;
+      const detail = open ? `<tr><td colspan="10" style="background:#f8fafc;padding:.5rem .8rem">
+          <div style="display:flex;gap:1rem;flex-wrap:wrap">${CN_KINDS.map(([k, label]) => {
+            const items = ls.filter(l => l.kind === k);
+            return `<div style="flex:1;min-width:200px"><div style="font-weight:700;font-size:.78rem;margin-bottom:.2rem">${label}</div>`
+              + (items.length ? `<table style="width:100%;font-size:.78rem">${items.map(l => `<tr><td style="padding:2px 4px">${esc(l.desc || '—')}</td><td style="padding:2px 4px;color:var(--g400);white-space:nowrap">${esc(l.date || '')}</td><td style="padding:2px 4px;text-align:right;white-space:nowrap">${_cnMoney(l.amount, cur)}</td></tr>`).join('')}</table>`
+                : '<div style="font-size:.76rem;color:var(--g400)">无</div>') + '</div>';
+          }).join('')}</div>
+          ${f.description ? `<div style="font-size:.76rem;color:var(--g500);margin-top:.4rem">备注：${esc(f.description)}</div>` : ''}
+        </td></tr>` : '';
+      return `<tr${ap === 'rejected' ? ' style="opacity:.55"' : ''}>
+        <td style="white-space:nowrap"><a style="cursor:pointer;color:#0f4c6b;font-weight:600" onclick="cnToggle(${f.id})">${open ? '▾' : '▸'} ${esc(f.fee_date || '—')}</a></td>
+        ${col('base')}${col('bonus')}${col('reimb')}
+        <td style="text-align:right;font-weight:700;color:#dc2626;white-space:nowrap">${_cnMoney(f.amount, cur)}</td>
+        <td>${status}</td><td>${files}</td><td>${payNoteCell('fee', f.id, f.pay_note)}</td>
+        <td style="white-space:nowrap">${canEdit ? `<a style="cursor:pointer;font-size:.8rem" title="编辑明细" onclick="cpOpen(${e.id}, ${f.id})">✏️</a>` : ''}
+          ${USER.role === 'admin' ? `<a style="cursor:pointer;color:#b91c1c;font-size:.78rem;margin-left:6px" title="删除" onclick="feeDelete(${f.id})">🗑</a>` : ''}</td>
+      </tr>${detail}`;
+    }).join('');
+    return `<div class="card" style="margin-bottom:.7rem;overflow-x:auto">
+      <div style="display:flex;gap:.6rem;align-items:flex-start;flex-wrap:wrap;margin-bottom:.4rem">
+        <div><div style="font-weight:800;font-size:1rem">👤 ${esc(g.name)}${e && e.title ? ` <span style="font-weight:400;font-size:.8rem;color:var(--g500)">· ${esc(e.title)}</span>` : ''}</div>
+          ${e && e.note ? `<div style="font-size:.74rem;color:var(--g400)">${esc(e.note)}</div>` : ''}
+          <div style="font-size:.78rem;color:var(--g600);margin-top:.15rem">${tot || '<span style="color:var(--g400)">暂无已通过的工资</span>'}</div></div>
+        <span style="flex:1"></span>${acts}
+      </div>
+      ${g.recs.length ? `<table><thead><tr><th>月份</th><th style="text-align:right">Base 底薪</th><th style="text-align:right">Bonus 奖金</th><th style="text-align:right">报销</th><th style="text-align:right">合计</th><th>状态</th><th>凭证</th><th>付款批注（会计）</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+        : '<div style="font-size:.8rem;color:var(--g400);padding:.3rem 0">还没有工资记录' + (e && canEditCn() ? '，点「＋ 录入工资」添加。' : '。') + '</div>'}
+    </div>`;
+  }).join('');
+}
+function cnToggle(id) { _cnOpen.has(id) ? _cnOpen.delete(id) : _cnOpen.add(id); cnRender(); }
+async function cnStatusToggle(id, status) {
+  const r = await api('/api/acct/fee-records/' + id + '/status', { method: 'POST', body: JSON.stringify({ status }) }).catch(e => ({ error: e.message }));
+  if (r && r.error) return toast(r.error, true);
+  const f = _feeList.find(x => x.id === id);
+  if (f) f.status = status;
+  cnRender();
+}
+// 员工名册
+function cnEmpOpen(id) {
+  _cnEmpEdit = id ? _cnEmps.find(e => e.id === id) : null;
+  const e = _cnEmpEdit || {};
+  document.getElementById('cnEmpTitle').textContent = _cnEmpEdit ? '✏️ 编辑员工' : '👤 添加国内员工';
+  document.getElementById('ceName').value = e.name || '';
+  document.getElementById('ceTitle').value = e.title || '';
+  document.getElementById('ceCur').value = e.currency || 'CNY';
+  document.getElementById('ceNote').value = e.note || '';
+  document.getElementById('cnEmpModal').style.display = 'flex';
+  document.getElementById('ceName').focus();
+}
+async function cnEmpSave() {
+  const body = { name: document.getElementById('ceName').value.trim(), title: document.getElementById('ceTitle').value.trim(), currency: document.getElementById('ceCur').value, note: document.getElementById('ceNote').value.trim() };
+  if (!body.name) return toast('请填写员工姓名', true);
+  const r = await api('/api/acct/cn-employees' + (_cnEmpEdit ? '/' + _cnEmpEdit.id : ''), { method: _cnEmpEdit ? 'PUT' : 'POST', body: JSON.stringify(body) }).catch(e => ({ error: e.message }));
+  if (r && r.error) return toast(r.error, true);
+  document.getElementById('cnEmpModal').style.display = 'none';
+  toast(_cnEmpEdit ? '✅ 已保存' : '✅ 已添加员工，可以录入工资了');
+  if (_cnEmpEdit) await loadAll();
+  cnLoad();
+}
+async function cnEmpDelete(id) {
+  if (!confirm('删除这个员工？')) return;
+  const r = await api('/api/acct/cn-employees/' + id, { method: 'DELETE' }).catch(e => ({ error: e.message }));
+  if (r && r.error) return toast(r.error, true);
+  cnLoad();
+}
+// 录入 / 编辑工资: _cnPay = { empId, recId, lines, files(新文件), keep(保留的旧凭证) }
+function cpOpen(empId, recId) {
+  const emp = _cnEmps.find(e => e.id === empId);
+  const rec = recId ? _feeList.find(f => f.id === recId) : null;
+  _cnPay = { empId, recId: rec ? rec.id : null, lines: rec ? _cnLines(rec).map(l => ({ ...l })) : [], files: [], keep: rec && Array.isArray(rec.attachments) ? rec.attachments.slice() : [] };
+  // 每块至少留一行空的, 方便直接填
+  CN_KINDS.forEach(([k]) => { if (!_cnPay.lines.some(l => l.kind === k)) _cnPay.lines.push({ kind: k, desc: '', date: '', amount: '' }); });
+  document.getElementById('cpTitle').textContent = `💴 ${rec ? '编辑' : '录入'}工资 · ${emp ? emp.name : ''}`;
+  document.getElementById('cpHint').textContent = USER.role === 'admin' ? '管理员保存直接生效。' : '保存后需管理员审核通过才计入。';
+  const d = new Date();
+  document.getElementById('cpMonth').value = rec ? (rec.fee_date || '') : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  document.getElementById('cpCur').value = rec ? (rec.currency || 'CNY') : ((emp && emp.currency) || 'CNY');
+  document.getElementById('cpDesc').value = rec ? (rec.description || '') : '';
+  cpRenderLines(); cpRenderFiles();
+  document.getElementById('cnPayModal').style.display = 'flex';
+}
+function cpRenderLines() {
+  const cur = document.getElementById('cpCur').value;
+  document.getElementById('cpSections').innerHTML = CN_KINDS.map(([k, label, ph]) => `
+    <div style="border:1px solid var(--g200);border-radius:8px;padding:.5rem .6rem;margin-bottom:.55rem">
+      <div style="display:flex;align-items:center;margin-bottom:.3rem"><b style="font-size:.84rem">${label}</b><span style="flex:1"></span><span id="cpSub_${k}" style="font-size:.8rem;font-weight:700"></span></div>
+      ${_cnPay.lines.map((l, i) => l.kind !== k ? '' : `<div style="display:flex;gap:.35rem;margin-bottom:.3rem">
+        <input type="text" value="${esc(l.desc)}" placeholder="${ph}" oninput="_cnPay.lines[${i}].desc=this.value" style="flex:1;min-width:0">
+        <input type="date" value="${esc(l.date)}" onchange="_cnPay.lines[${i}].date=this.value" title="日期（可选）" style="width:135px">
+        <input type="number" step="0.01" value="${esc(l.amount)}" placeholder="${_CUR_SYM[cur] || ''}0.00" oninput="_cnPay.lines[${i}].amount=this.value;cpSum()" style="width:110px;text-align:right">
+        <button class="btn btn-sm btn-outline" title="删除这一项" onclick="_cnPay.lines.splice(${i},1);cpRenderLines()">✕</button>
+      </div>`).join('')}
+      <a style="cursor:pointer;font-size:.78rem;color:#0f4c6b" onclick="_cnPay.lines.push({kind:'${k}',desc:'',date:'',amount:''});cpRenderLines()">＋ 添加一项</a>
+    </div>`).join('');
+  cpSum();
+}
+function cpSum() {
+  const cur = document.getElementById('cpCur').value;
+  let all = 0;
+  CN_KINDS.forEach(([k]) => {
+    const s = _cnPay.lines.filter(l => l.kind === k).reduce((a, l) => a + (Number(l.amount) || 0), 0);
+    all += s;
+    const el = document.getElementById('cpSub_' + k);
+    if (el) el.textContent = '小计 ' + _cnMoney(s, cur);
+  });
+  document.getElementById('cpTotal').textContent = '合计：' + _cnMoney(all, cur);
+}
+function cpAddFiles(files) { _cnPay.files = _cnPay.files.concat([...(files || [])]); cpRenderFiles(); }
+function cpRenderFiles() {
+  const old = _cnPay.keep.map((a, i) => `📎 <a href="${esc(a.path)}" target="_blank">${esc(a.name || '文件')}</a> <a style="cursor:pointer;color:#b91c1c" title="移除" onclick="_cnPay.keep.splice(${i},1);cpRenderFiles()">✕</a>`);
+  const neu = _cnPay.files.map((f, i) => `📄 ${esc(f.name)} <span style="color:var(--g400)">（新）</span> <a style="cursor:pointer;color:#b91c1c" title="移除" onclick="_cnPay.files.splice(${i},1);cpRenderFiles()">✕</a>`);
+  document.getElementById('cpFileList').innerHTML = old.concat(neu).join('<br>');
+}
+async function cpSave() {
+  const month = document.getElementById('cpMonth').value;
+  if (!month) return toast('请选择工资月份', true);
+  const lines = _cnPay.lines.filter(l => String(l.desc).trim() || Number(l.amount));
+  if (!lines.length) return toast('请至少填写一项明细', true);
+  if (lines.some(l => isNaN(Number(l.amount)))) return toast('金额格式不对', true);
+  const emp = _cnEmps.find(e => e.id === _cnPay.empId);
+  const dup = !_cnPay.recId && _feeList.find(f => f.fee_type === 'cnpay' && f.employee_id === _cnPay.empId && f.fee_date === month && f.approval_status !== 'rejected');
+  if (dup && !confirm(`${emp ? emp.name : ''} ${month} 已经有一条工资记录了，确定再加一条？\n（要补明细可以点那条记录的 ✏️ 编辑）`)) return;
+  const btn = document.getElementById('cpSaveBtn');
+  btn.disabled = true; btn.textContent = '保存中…';
+  try {
+    const fd = new FormData();
+    fd.append('fee_type', 'cnpay');
+    fd.append('employee_id', _cnPay.empId);
+    fd.append('party_name', emp ? emp.name : '');
+    fd.append('fee_date', month);
+    fd.append('currency', document.getElementById('cpCur').value);
+    fd.append('description', document.getElementById('cpDesc').value.trim());
+    fd.append('lines', JSON.stringify(lines.map(l => ({ kind: l.kind, desc: String(l.desc).trim(), date: l.date, amount: Number(l.amount) || 0 }))));
+    if (_cnPay.recId) fd.append('keep_attachments', JSON.stringify(_cnPay.keep.map(a => a.path)));
+    _cnPay.files.forEach(f => fd.append('invoice', f));
+    const r = await fetch('/api/acct/fee-records' + (_cnPay.recId ? '/' + _cnPay.recId : ''), { method: _cnPay.recId ? 'PUT' : 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd }).then(x => x.json());
+    if (r.error) throw new Error(r.error);
+    document.getElementById('cnPayModal').style.display = 'none';
+    toast(r.approval_status === 'approved' ? '✅ 已保存' : '✅ 已提交，等待管理员审核');
+    await loadAll();
+  } catch (e) { toast(e.message || '保存失败', true); }
+  btn.disabled = false; btn.textContent = '保存';
 }
 
 // ── 🪵 木板账单 (Bintique)：全量账单台账, 一行一张发票, 不混银行流水 ──
@@ -5560,6 +5778,7 @@ async function loadAll() {
   _refList = Array.isArray(refs) ? refs : [];
   renderClaimList();
   renderFeeList();
+  cnRender();
   renderRefList();
   renderInvList();
   renderStmtList();
