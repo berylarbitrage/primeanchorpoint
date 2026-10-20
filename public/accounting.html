@@ -2211,7 +2211,7 @@ function _refWeekSums(r) {
   if (r.hr_self) return out;   // HR 自己招的不付周介绍费 (HR 拿节点奖励, 见 _refHrBonus)
   for (const w of r.weeks || []) {
     if (w.admin_status === 'rejected') continue;   // 管理员确认这周不付, 不算应付
-    out.n++;
+    out.n += w.span_eff || 1;
     const fee = Number(w.fee_eff) || 0;
     out.due += fee;
     const pn = w.pay_note;
@@ -2226,7 +2226,7 @@ function _refWeekSums(r) {
 const REF_HR_BONUS = [
   { k: 'interview', label: '过面试', amt: 30 },
   { k: 'week1', label: '满 1 周', amt: 100, prorate: true },   // 按第 1 周工时 /40 折算
-  { k: 'month1', label: '满 1 个月', amt: 150 },
+  { k: 'month1', label: '满 1 个月', amt: 150, prorate: true },   // 按周算: 前 4 周每周 ¥37.5 × 工时/40
 ];
 // 管理奖励: 上班第 6 周起, 每满一周 ¥25, 在岗就一直算 (中途不去了算到最后上班那天)
 const REF_HR_MGMT_FROM = 6, REF_HR_MGMT_AMT = 25;
@@ -2236,6 +2236,28 @@ function _refHrOf(r) {
   return REF_HRS.includes(r.hr_credit) ? r.hr_credit : '';
 }
 // 每个节点: done 达成 / wait 还没到 / lost 没达成 + 应得金额 (按日期自动判断, 管理员确认后才算数)
+// 每周付款行摊成一周一周: 两周的发票算 2 周, 工时平分; 管理员标了不付的周跳过
+function _refWeekUnits(r) {
+  const out = [];
+  (r.weeks || []).filter(w => w.admin_status !== 'rejected').forEach(w => {
+    const n = w.span_eff || 1;
+    for (let j = 0; j < n; j++) out.push({ w, hours: w.hours == null ? null : Math.round(Number(w.hours) / n * 100) / 100 });
+  });
+  return out;
+}
+// 每周付款行的周号: 第 k 周 / 两周的发票 = 第 k–k+1 周
+function _refWeekLabels(r) {
+  let k = 1;
+  return (r.weeks || []).map(w => { const n = w.span_eff || 1, lab = n > 1 ? `${k}–${k + n - 1}` : String(k); k += n; return lab; });
+}
+async function refWeekSpan(id, v) {
+  try {
+    const r = await api('/api/acct/referral-weeks/' + id, { method: 'PUT', body: JSON.stringify({ span: v }) });
+    if (r && r.error) throw new Error(r.error);
+    toast('✅ 已更新这张发票算几周');
+    loadRefList();
+  } catch (e) { toast(e.message || '保存失败', true); }
+}
 function _refHrBonus(r) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const start = /^\d{4}-\d{2}-\d{2}$/.test(r.work_start_date || '') ? new Date(r.work_start_date + 'T00:00:00') : null;
@@ -2249,17 +2271,27 @@ function _refHrBonus(r) {
     if (today > need) return { st: 'done', hint: '' };
     return { st: 'wait', hint: `还差 ${Math.round((need - today) / 86400000) + 1} 天` };
   };
-  const w1 = (r.weeks || [])[0];
+  // 折算按周算: 发票摊成一周一周 (两周的发票工时平分两周), 每周满 40 工时给满、不满按 工时/40
+  // 满 1 周看第 1 周; 满 1 个月看前 4 周, 每周 ¥150/4
+  const units = _refWeekUnits(r);
   return REF_HR_BONUS.map(m => {
     let x;
     if (m.k === 'interview') x = (r.interview_status === 'attended' || start) ? { st: 'done', hint: '' } : failedIv ? { st: 'lost', hint: r.interview_status === 'failed' ? '面试没过' : '没去面试' } : { st: 'wait', hint: '还没面试' };
     else x = span(m.k === 'week1' ? 7 : 30);
     let amount = m.amt, calc = '';
     if (m.prorate) {
-      const h = w1 && w1.hours != null ? Number(w1.hours) : null;
-      if (h == null) calc = '还没关联第 1 周发票 / 没工时，先按满额';
-      else if (h >= 40) calc = `${h} 工时 ≥ 40 · 给满`;
-      else { amount = Math.round(m.amt * h / 40 * 100) / 100; calc = `${yuan(m.amt)} × ${h}/40 工时`; }
+      const n = m.k === 'month1' ? 4 : 1, per = m.amt / n;
+      const use = units.slice(0, n);
+      if (use.length < n || use.some(u => u.hours == null)) {
+        calc = n === 1 ? '还没关联第 1 周发票 / 没工时，先按满额'
+          : `前 4 周发票还没关联齐${use.length ? `（已有 ${use.length} 周）` : ''} / 没工时，先按满额`;
+      } else if (use.every(u => u.hours >= 40)) {
+        calc = n === 1 ? `${use[0].hours} 工时 ≥ 40 · 给满` : '前 4 周每周都满 40 工时 · 给满';
+      } else {
+        amount = Math.round(use.reduce((t, u) => t + per * Math.min(u.hours, 40) / 40, 0) * 100) / 100;
+        calc = n === 1 ? `${yuan(m.amt)} × ${use[0].hours}/40 工时`
+          : `每周 ${yuan(per)} × 工时/40：${use.map(u => Math.min(u.hours, 40)).join(' + ')}`;
+      }
     }
     return { ...m, ...x, amount, calc, row: (r.hr_bonus || {})[m.k] || null };
   });
@@ -2587,7 +2619,7 @@ function renderRefList() {
   const by = document.getElementById('refBy').value;
   // 每周付款行拍平一份, 给付款批注弹窗按 id 找 (type=referralweek)
   _refWeeks = [];
-  for (const r of _refList) (r.weeks || []).forEach((w, i) => { w.amount = w.fee_eff; w.week_no = i + 1; w.ref = r; _refWeeks.push(w); });
+  for (const r of _refList) { const labs = _refWeekLabels(r); (r.weeks || []).forEach((w, i) => { w.amount = w.fee_eff; w.week_no = labs[i]; w.ref = r; _refWeeks.push(w); }); }
   let list = _refList;
   // 电话按数字比 (输 (630) 641-1979 / +1… 也能搜到存成 6306411979 的)
   const qd = String(q || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
@@ -2658,10 +2690,10 @@ function renderRefList() {
     // 每周付款表
     const weeks = r.weeks || [];
     // 这周介绍费: 选满周价 (第一周 $25 / $50, 之后 $12.5 / $25, 都不要再手写), 按工时折算 — 满 40 工时给满, 不满按 工时/40
-    const feeCalc = w => w.rate == null ? '' : `<div style="font-size:.68rem;color:${w.hours == null ? '#b45309' : 'var(--g500)'};white-space:nowrap">${w.hours == null
-      ? `没勾发票行、没有工时，按满周 = ${money(w.fee_default)}`
-      : w.hours >= 40 ? `${w.hours} 工时 ≥ 40 · 给满 ${money(w.fee_default)}`
-      : `${money(w.rate)} × ${w.hours}/40 工时 = <b style="color:#0f4c6b">${money(w.fee_default)}</b>`}</div>`;
+    const feeCalc = w => { const n = w.span_eff || 1; return w.rate == null ? '' : `<div style="font-size:.68rem;color:${w.hours == null ? '#b45309' : 'var(--g500)'};white-space:nowrap">${w.hours == null
+      ? `没勾发票行、没有工时，按满 ${n} 周 = ${money(w.fee_default)}`
+      : w.hours >= 40 * n ? `${w.hours} 工时 ≥ ${40 * n} · 给满${n > 1 ? ` ${n} 周` : ''} ${money(w.fee_default)}`
+      : `${money(w.rate)} × ${w.hours}/40 工时 = <b style="color:#0f4c6b">${money(w.fee_default)}</b>`}</div>`; };
     const feeCell = w => r.hr_self ? '<span style="font-size:.72rem;color:var(--g400)">HR 自己招的不付周介绍费</span>'
       : w.admin_status === 'approved' ? `<b>${money(w.admin_fee)}</b>`
       : w.admin_status === 'rejected' ? '<span style="color:var(--g400)">—</span>'
@@ -2705,11 +2737,18 @@ function renderRefList() {
     const weekTable = weeks.length
       ? `<table style="width:100%;border-collapse:collapse;min-width:760px"><thead><tr>
           <th style="${th}">周</th><th style="${th}">账期</th><th style="${th}">发票</th><th style="${th};text-align:right">发票金额</th><th style="${th};text-align:right">这周介绍费</th><th style="${th}">管理员确认</th><th style="${th}">付款</th></tr></thead><tbody>`
-        + weeks.map((w, i) => {
+        + (() => { const labs = _refWeekLabels(r); return weeks.map((w, i) => {
           const v = w.invoice || {};
+          const n = w.span_eff || 1;
+          const spanSel = canInv && !w.admin_status && r.review_status !== 'rejected'
+            ? `<div><select title="这张发票算几周：两周发一次工资的发票选「2 周」，介绍费和 HR 奖励都按 2 周算" onchange="refWeekSpan(${w.id}, this.value)" style="padding:.05rem .15rem;font-size:.68rem;margin-top:2px">
+                <option value="" ${!w.span ? 'selected' : ''}>自动（${w.span_auto || 1} 周）</option>
+                <option value="1" ${w.span === 1 ? 'selected' : ''}>按 1 周</option>
+                <option value="2" ${w.span === 2 ? 'selected' : ''}>按 2 周</option></select></div>`
+            : n > 1 ? '<div style="font-size:.68rem;color:var(--g500);font-weight:400">两周的发票</div>' : '';
           const paid = w.pay_note && w.pay_note.paid_status === 'paid';
           return `<tr style="${paid ? 'background:#f0fdf4' : w.admin_status === 'rejected' ? 'background:#fafafa;color:var(--g400)' : ''}">
-            <td style="${td};font-weight:800;color:#0f4c6b;white-space:nowrap">第 ${i + 1} 周</td>
+            <td style="${td};font-weight:800;color:#0f4c6b;white-space:nowrap">第 ${labs[i]} 周${spanSel}</td>
             <td style="${td};white-space:nowrap">${v.period_start || v.period_end ? `${esc(v.period_start || '?')} ~ ${esc(v.period_end || '?')}` : `<span style="color:var(--g400)">开票 ${esc(v.invoice_date || '—')}</span>`}</td>
             <td style="${td}"><a onclick="openInvoice(${v.id})" style="cursor:pointer;color:#1d4ed8;font-weight:700;text-decoration:underline;white-space:nowrap">📄 ${esc(v.invoice_number || '')}</a> <span style="color:var(--g500);font-size:.74rem">${esc(v.company_name || '')}</span>
               ${(w.lines || []).map(l => `<div style="font-size:.72rem;color:#0f4c6b">↳ 第 ${l.row} 行 · ${esc(l.line_label)}${l.hint ? ` · ${esc(l.hint)}` : ''} · ${money(l.billed)}</div>`).join('')}</td>
@@ -2717,7 +2756,7 @@ function renderRefList() {
             <td style="${td};text-align:right">${feeCell(w)}</td>
             <td style="${td}">${adminCell(w)}</td>
             <td style="${td}">${payCell(w)}</td></tr>`;
-        }).join('') + `</tbody></table>`
+        }).join(''); })() + `</tbody></table>`
       : '';
     // 旧记录: 按周付款上线前记在整条介绍上的付款批注, 照样显示
     const legacy = _pnHasContent(r.pay_note) ? `<div style="font-size:.74rem;color:var(--g500)">整笔付款记录（旧）：${payNoteCell('referral', r.id, r.pay_note, false)}</div>` : '';
