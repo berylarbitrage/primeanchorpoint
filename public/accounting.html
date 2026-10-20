@@ -6402,6 +6402,28 @@ function lpMethodChanged() {
   clearTimeout(window._lpMT);
   window._lpMT = setTimeout(lpTxnLoad, 300);
 }
+// 标注里的发票号 / 账期 / 全额·部分 和本张发票核对 (发票号忽略大小写、空格、横杠)
+function _lpInvKey(v) { return String(v || '').toUpperCase().replace(/[\s\-_#]/g, ''); }
+function _lpAnnCheck(ann) {
+  if (!ann) return '';
+  const ok = s => ` <span style="color:#15803d;font-weight:700">✓ ${s}</span>`, bad = s => ` <span style="color:#b91c1c;font-weight:700">⚠ ${s}</span>`;
+  const me = _lpInvKey(_invDoc.invoice_number), ps0 = _invDoc.period_start || '', pe0 = _invDoc.period_end || '';
+  const items = (ann.inv_items || []).filter(x => x.inv || x.ps || x.pe);
+  const out = [];
+  // 账单号: 标注里一笔转账可能对多张发票, 有一张是本张就算对上
+  const hit = items.find(x => x.inv && _lpInvKey(x.inv) === me);
+  const invs = items.map(x => x.inv).filter(Boolean);
+  out.push(`🧾 账单号 ${invs.length ? `<b style="color:#0f172a">${invs.map(esc).join(', ')}</b>` : '<span style="color:#94a3b8">未填</span>'}`
+    + (!invs.length ? bad('标注没填账单号') : hit ? ok('同本发票') : bad(`不是本发票（${esc(_invDoc.invoice_number || '')}）`)));
+  // 账期: 认对上的那张; 没对上就看第一张
+  const it = hit || items[0] || {};
+  const per = it.ps || it.pe ? `${esc(it.ps || '?')} ~ ${esc(it.pe || '?')}` : '';
+  out.push(`📅 账期 ${per ? `<b style="color:#0f172a">${per}</b>` : '<span style="color:#94a3b8">未填</span>'}`
+    + (!per ? bad('标注没填账期') : (ps0 && pe0 && it.ps === ps0 && it.pe === pe0) ? ok('同本发票账期') : bad(`不符（本发票 ${esc(ps0)} ~ ${esc(pe0)}）`)));
+  const pp = ann.pay_portion === 'full' ? '<b style="color:#0f172a">全额</b>' : ann.pay_portion === 'partial' ? '<b style="color:#1d4ed8">部分</b>' : '';
+  out.push(`💵 ${pp || '<span style="color:#94a3b8">全额 / 部分</span>'}${pp ? '' : bad('标注没选全额 / 部分')}`);
+  return out.map(x => `<div>${x}</div>`).join('');
+}
 function _lpChip(i) {
   const n = (_invDoc && _invDoc.line_pay_notes && _invDoc.line_pay_notes[i]) || null;
   const has = n && (n.paid_status || n.pay_method || n.note || (n.txn_ids || []).length || (n.photos_urls || []).length);
@@ -6452,15 +6474,24 @@ function _lpChip(i) {
         ${payeeHtml}
         ${acct ? `<div style="color:#64748b">付款账户 ${acct}</div>` : ''}
         ${desc ? `<div style="color:#64748b">银行描述 ${desc}</div>` : ''}
+        ${_lpAnnCheck(ann)}
         ${annNote}
       </div>`;
     }).join('');
+    // 全额 / 部分 和金额对一下: 付齐了还标部分, 或标全额却没付齐
+    const pps = txns.map(t => t.ann && t.ann.pay_portion).filter(Boolean);
+    const paidUp = Math.abs(d) < 0.01;
+    const portionChk = !pps.length ? ''
+      : paidUp && txns.length === 1 && pps[0] === 'partial' ? ' <span style="color:#b45309;font-weight:700">⚠ 已付齐，但标注是「部分」</span>'
+      : !paidUp && d < 0 && pps.includes('full') && !pps.includes('partial') ? ' <span style="color:#b91c1c;font-weight:700">⚠ 标注「全额」但没付齐</span>'
+      : !paidUp && d < 0 && pps.includes('partial') ? ' <span style="color:#1d4ed8;font-weight:700">· 部分付款，还差 ' + money(Math.abs(d)) + '</span>'
+      : '';
     const missing = ids.length - txns.length;
     const miss = missing > 0 ? `<div style="color:#b45309;font-weight:700">⚠ ${missing} 笔找不到银行记录</div>` : '';
     const tot = txns.length
       ? `<div style="white-space:nowrap">${txns.length > 1 ? `合计 <b style="color:#1e293b">${money(sum)}</b> ` : ''}${Math.abs(d) < 0.01
           ? '<span style="color:#15803d;font-weight:700">✓ 与本行金额一致</span>'
-          : `<span style="color:${d < 0 ? '#b91c1c' : '#1d4ed8'};font-weight:700">${d < 0 ? '少' : '多'} ${money(Math.abs(d))}</span> <span style="color:#94a3b8">(本行 ${money(lineAmt)})</span>`}</div>`
+          : `<span style="color:${d < 0 ? '#b91c1c' : '#1d4ed8'};font-weight:700">${d < 0 ? '少' : '多'} ${money(Math.abs(d))}</span> <span style="color:#94a3b8">(本行 ${money(lineAmt)})</span>`}${portionChk}</div>`
       : '';
     txnHtml = `<div style="font-size:.72rem;color:#475569;margin-top:.2rem;line-height:1.45">${rows}${miss}${tot}</div>`;
   }

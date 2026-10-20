@@ -41312,9 +41312,16 @@ function _lineNoteOut(n) {
   if (n.txns.length) {
     const tids = n.txns.map(t => t.txn_id), ph = tids.map(() => '?').join(',');
     const anns = {}, gl = {};
-    try { db.prepare(`SELECT plaid_txn_id, payee, note, purpose, ann_status, ann_by FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id IN (${ph})`).all(...tids).forEach(r => { anns[r.plaid_txn_id] = r; }); } catch (e) {}
+    try { db.prepare(`SELECT plaid_txn_id, payee, note, purpose, ann_status, ann_by, invoice_number, period_start, period_end, pay_portion, inv_items FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id IN (${ph})`).all(...tids).forEach(r => { anns[r.plaid_txn_id] = r; }); } catch (e) {}
     try { db.prepare(`SELECT bank_txn_id, contractor_name, date, wage_total, payment_method, COALESCE(bank_link_status,'') AS link_status FROM gusto_payments WHERE bank_txn_id IN (${ph}) ORDER BY date`).all(...tids).forEach(g => { (gl[g.bank_txn_id] = gl[g.bank_txn_id] || []).push(g); }); } catch (e) {}
-    n.txns.forEach(t => { const a = anns[t.txn_id]; t.ann = a ? { payee: a.payee || '', note: a.note || '', purpose: a.purpose || '', status: a.ann_status || '', by: a.ann_by || '' } : null; t.gusto = gl[t.txn_id] || []; });
+    // 标注里填的发票号 / 账期 / 全额·部分 也带上, 逐行付款备注拿来和本张发票核对
+    const invItems = a => {
+      let arr = []; try { arr = JSON.parse(a.inv_items || '[]'); } catch (e) { arr = []; }
+      arr = (Array.isArray(arr) ? arr : []).map(x => ({ inv: String((x && x.inv) || ''), ps: String((x && x.ps) || ''), pe: String((x && x.pe) || '') }));
+      return arr.length ? arr : [{ inv: a.invoice_number || '', ps: a.period_start || '', pe: a.period_end || '' }];
+    };
+    n.txns.forEach(t => { const a = anns[t.txn_id]; t.ann = a ? { payee: a.payee || '', note: a.note || '', purpose: a.purpose || '', status: a.ann_status || '', by: a.ann_by || '',
+      pay_portion: a.pay_portion || '', inv_items: invItems(a) } : null; t.gusto = gl[t.txn_id] || []; });
   }
   let ph = []; try { ph = JSON.parse(n.photos || '[]'); } catch (e) { ph = []; }
   n.photos_urls = (Array.isArray(ph) ? ph : []).filter(Boolean).map(k => `/uploads/${path.basename(String(k))}`);
