@@ -1906,7 +1906,24 @@ function _bankPickRowHtml(t2, on, hit, acctShort, toggleFn, nearDiff) {
     ${annHtml}
   </label>`;
 }
+// 💰 批量记已付: 一次选银行记录 / 传截图, 勾的每一周各按自己的金额记已付, 关联同一批银行记录
+async function openPayNoteBatch(ids) {
+  const rows = _refPayWeekRows(_refList).filter(x => ids.includes(x.w.id));
+  if (!rows.length) return;
+  await openPayNote('referralweek', rows[0].w.id);
+  _payTarget = { type: 'referralweek', id: rows[0].w.id, batch: rows.map(x => ({ id: x.w.id, amt: x.amt })) };
+  _payTargetAmt = Math.round(rows.reduce((t, x) => t + x.amt, 0) * 100) / 100;
+  const payees = [...new Set(rows.map(x => x.payee))];
+  document.getElementById('pnTitle').textContent = `💰 批量记已付 · ${rows.length} 笔 · 合计 ${money(_payTargetAmt)} · ${payees.join(' / ')}`;
+  document.getElementById('pnStatus').value = 'paid';
+  const amt = document.getElementById('pnAmount');
+  amt.value = ''; amt.disabled = true; amt.placeholder = '每周按各自的金额记';
+  document.getElementById('pnTxnAmtBtn').textContent = `🔎 找 ${money(_payTargetAmt)}`;
+  pnTxnSumRefresh();
+}
 async function openPayNote(type, id) {
+  const _amtIn = document.getElementById('pnAmount');
+  _amtIn.disabled = false; _amtIn.placeholder = '例：1770.65';
   const list = type === 'invoice' ? _invList : type === 'fee' ? _feeList : type === 'referralweek' ? _refWeeks : type === 'referral' ? _refList : (type === 'pallet' || type === 'palletbill' || type === 'palletmanual') ? _palletRows : (type === 'truck' || type === 'truckfee' || type === 'truckorder') ? _truckRows : _claimList;
   const item = type === 'truckfee' ? list.find(x => x.fee_id === id) : type === 'truckorder' ? list.find(x => x.order_id === id) : type === 'palletmanual' ? list.find(x => x.manual_id === id) : list.find(x => x.id === id);
   if (!item) return;
@@ -2063,6 +2080,33 @@ async function savePayNote() {
     if (!(cur && (cur.photos_urls || []).length)) return toast('记已付款需要关联银行记录或上传付款截图', true);
   }
   btn.disabled = true;
+  if (_payTarget.batch) {
+    // 批量: 每周各记一条, 金额按各自的, 银行记录 / 截图共用
+    let ok = 0, err = '';
+    for (const b of _payTarget.batch) {
+      try {
+        const r = await bapi('/api/acct/pay-note', { method: 'POST', body: JSON.stringify({
+          pending_photos: _pnFiles.length, target_type: 'referralweek', target_id: b.id,
+          paid_status: document.getElementById('pnStatus').value, bank: document.getElementById('pnBank').value.trim(),
+          amount: b.amt, note: document.getElementById('pnNote').value.trim(), txn_ids: [..._pnSel],
+        }) });
+        if (r && r.error) throw new Error(r.error);
+        if (_pnFiles.length && r.pay_note && r.pay_note.id) {
+          const fd = new FormData();
+          _pnFiles.forEach(f => fd.append('photos', f));
+          const up = await fetch(`/api/acct/pay-notes/${r.pay_note.id}/photos`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd }).then(x => x.json());
+          if (up.error) throw new Error(up.error);
+        }
+        ok++;
+      } catch (e) { err = err || e.message; }
+    }
+    btn.disabled = false;
+    closePayNote();
+    _refPwSel.clear();
+    toast(`💰 已记已付 ${ok} 笔${err ? `；${_payTarget.batch.length - ok} 笔没成功（${err}）` : ''}`, !!err);
+    loadRefList();
+    return;
+  }
   try {
     const r = await bapi('/api/acct/pay-note', { method: 'POST', body: JSON.stringify({
       pending_photos: _pnFiles.length,
@@ -2583,8 +2627,43 @@ async function refHistLoad() {
 }
 // 从面试记录跳到对应的介绍卡片 (切到它所在的阶段页)
 // ── 💰 每周付款汇总: 所有工头每周介绍费按账期分组, 每周付给谁、多少钱、走到哪一步 ──
-let _refPwFilter = (() => { try { return localStorage.getItem('ref_pw_filter') || ''; } catch (e) { return ''; } })();
-function refPwFilter(v) { _refPwFilter = v; try { localStorage.setItem('ref_pw_filter', v); } catch (e) {} renderRefList(); }
+// 子页签: todo 待确认 (确认金额 / 确认支付 / 审核) → topay 待付款 (已审核) → paid 付款记录; all 全部
+let _refPwTab = (() => { try { return localStorage.getItem('ref_pw_tab') || 'todo'; } catch (e) { return 'todo'; } })();
+const _refPwSel = new Set();
+function refPwTab(v) { _refPwTab = v; _refPwSel.clear(); try { localStorage.setItem('ref_pw_tab', v); } catch (e) {} renderRefList(); }
+const _REF_PW_TABS = { todo: ['amount', 'req', 'review'], topay: ['topay'], paid: ['paid'], all: null };
+// 勾选: 每行 / 每周全选 / 当前页签全选
+function refPwPick(id, on) { on ? _refPwSel.add(id) : _refPwSel.delete(id); renderRefList(); }
+function refPwPickMany(ids, on) { String(ids).split(',').filter(Boolean).map(Number).forEach(id => on ? _refPwSel.add(id) : _refPwSel.delete(id)); renderRefList(); }
+// 付款日期: 关联了银行记录按银行那笔的日期, 没关联按记已付那天
+function _refPwPaidDate(w) {
+  const ds = ((w.pay_note && w.pay_note.txns) || []).map(t => t.date).filter(Boolean).sort();
+  return ds[0] || (_refAt(w.pay_note && w.pay_note.updated_at) || '').slice(0, 10);
+}
+// 批量: amount 确认金额 (管理员) / request 确认支付 (会计) / approve 审核通过 (管理员) / pay 记已付 + 关联银行记录 (会计)
+async function refPwBatch(action) {
+  const rows = _refPayWeekRows(_refList).filter(x => _refPwSel.has(x.w.id));
+  const need = { amount: 'amount', request: 'req', approve: 'review', pay: 'topay' }[action];
+  const pick = rows.filter(x => x.st === need);
+  if (!pick.length) return toast('勾选的里面没有可以这样操作的', true);
+  if (action === 'pay') return openPayNoteBatch(pick.map(x => x.w.id));
+  const sum = pick.reduce((t, x) => t + x.amt, 0);
+  const label = { amount: '确认金额', request: '确认支付', approve: '审核通过支付' }[action];
+  if (!confirm(`${label} ${pick.length} 笔，合计 ${money(sum)}？`)) return;
+  let ok = 0, err = '';
+  for (const x of pick) {
+    try {
+      const r = action === 'amount'
+        ? await api(`/api/acct/referral-weeks/${x.w.id}/review`, { method: 'POST', body: JSON.stringify({ action: 'approve', fee: x.amt }) })
+        : await api(`/api/acct/referral-weeks/${x.w.id}/pay-req`, { method: 'POST', body: JSON.stringify({ action }) });
+      if (r && r.error) throw new Error(r.error);
+      ok++;
+    } catch (e) { err = err || `${x.r.worker_name || ''}：${e.message}`; }
+  }
+  _refPwSel.clear();
+  toast(`✅ ${label} ${ok} 笔${err ? `；${pick.length - ok} 笔没成功（${err}）` : ''}`, !!err);
+  loadRefList();
+}
 // 每周付款行 → 一行汇总 (HR 自己招的没有周介绍费; 拒绝支付的不列)
 function _refPayWeekRows(list) {
   const out = [];
@@ -2612,49 +2691,89 @@ const _REF_PW_ST = {
   topay: ['🛡 已审核 · 待付款', '#1d4ed8', '#eff6ff'], paid: ['💰 已付', '#047857', '#ecfdf5'], nopay: ['✖ 不付', '#94a3b8', '#f8fafc'],
 };
 function _refPayWeeksHtml(list) {
-  let rows = _refPayWeekRows(list);
-  const f = _refPwFilter;
-  if (f === 'unpaid') rows = rows.filter(x => !['paid', 'nopay'].includes(x.st));
-  else if (f) rows = rows.filter(x => x.st === f);
-  const opt = (v, t) => `<option value="${v}" ${f === v ? 'selected' : ''}>${t}</option>`;
-  const bar = `<div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:.1rem">
-    <select onchange="refPwFilter(this.value)">${opt('', '全部状态')}${opt('unpaid', '还没付的')}${opt('amount', '待确认金额')}${opt('req', '待会计确认支付')}${opt('review', '⏳ 待管理员审核')}${opt('topay', '🛡 已审核 · 待付款')}${opt('paid', '💰 已付')}${opt('nopay', '✖ 不付')}</select>
-    <span style="font-size:.76rem;color:var(--g500)">工头每周介绍费（美元），按发票账期分组；HR 奖励在各条卡片里。点工人名字跳到那条介绍。</span></div>`;
-  if (!rows.length) return bar + '<div class="card" style="color:var(--g400)">没有符合条件的每周付款。</div>';
+  const all = _refPayWeekRows(list);
+  const tab = _REF_PW_TABS[_refPwTab] === undefined ? 'todo' : _refPwTab;
+  const inTab = (x, t) => !_REF_PW_TABS[t] || _REF_PW_TABS[t].includes(x.st);
+  const rows = all.filter(x => inTab(x, tab));
+  const isAdmin = USER.role === 'admin', canAcct = ['accounting', 'admin'].includes(USER.role);
+  // 这个页签里能勾的: 有下一步可做的行
+  const actOf = x => x.st === 'amount' ? (isAdmin ? 'amount' : '') : x.st === 'req' ? (canAcct ? 'request' : '') : x.st === 'review' ? (isAdmin ? 'approve' : '') : x.st === 'topay' ? (canAcct ? 'pay' : '') : '';
+  [..._refPwSel].forEach(id => { if (!rows.some(x => x.w.id === id && actOf(x))) _refPwSel.delete(id); });
+  const sel = rows.filter(x => _refPwSel.has(x.w.id));
+  const tb = (k, t) => { const n = all.filter(x => inTab(x, k)).length; return `<button class="btn btn-sm ${tab === k ? 'btn-blue' : 'btn-outline'}" onclick="refPwTab('${k}')">${t} <b>${n}</b></button>`; };
+  const cnt = a => sel.filter(x => actOf(x) === a);
+  const bbtn = (a, t, bg) => { const c = cnt(a); return c.length ? `<button class="btn btn-sm" style="background:${bg};color:#fff" onclick="refPwBatch('${a}')">${t}（${c.length} 笔 ${money(c.reduce((s2, x) => s2 + x.amt, 0))}）</button>` : ''; };
+  const pickable = rows.filter(x => actOf(x)).map(x => x.w.id);
+  const allOn = pickable.length && pickable.every(id => _refPwSel.has(id));
+  const bar = `<div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin-bottom:.1rem">
+      ${tb('todo', '⏳ 待确认')}${tb('topay', '🛡 待付款')}${tb('paid', '💰 付款记录')}${tb('all', '全部')}
+      <span style="font-size:.74rem;color:var(--g500)">工头每周介绍费（美元）。确认金额 → 会计确认支付 → 管理员审核 → 待付款 → 记已付；点工人名字跳到那条介绍。</span></div>
+    ${pickable.length ? `<div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;background:#fff;border:1px solid var(--g200);border-radius:10px;padding:.4rem .6rem">
+      <label style="font-size:.8rem;cursor:pointer;white-space:nowrap"><input type="checkbox" ${allOn ? 'checked' : ''} onchange="refPwPickMany('${pickable.join(',')}', this.checked)"> 全选这个页签（${pickable.length}）</label>
+      <span style="font-size:.78rem;color:var(--g500)">已选 <b>${sel.length}</b> 笔 · <b>${money(sel.reduce((t, x) => t + x.amt, 0))}</b></span><span style="flex:1"></span>
+      ${bbtn('amount', '✅ 批量确认金额', '#16a34a')}${bbtn('request', '💳 批量确认支付', '#0f4c6b')}${bbtn('approve', '🛡 批量审核通过', '#16a34a')}${bbtn('pay', '💰 批量记已付 + 关联银行记录', '#047857')}
+    </div>` : ''}`;
+  if (!rows.length) return bar + `<div class="card" style="color:var(--g400)">${{ todo: '没有待确认的每周付款。', topay: '没有待付款的。管理员审核通过的会到这里。', paid: '还没有付款记录。', all: '没有每周付款。' }[tab]}</div>`;
+  // 分组: 付款记录按付款日期 (一周一付), 其它按发票账期
+  const keyOf = x => tab === 'paid' ? _refPwPaidDate(x.w) || '?' : `${x.ps}~${x.pe}`;
   const groups = {};
-  rows.forEach(x => { const k = `${x.ps}~${x.pe}`; (groups[k] = groups[k] || []).push(x); });
+  rows.forEach(x => { const k = keyOf(x); (groups[k] = groups[k] || []).push(x); });
   const th = 'text-align:left;font-size:.68rem;color:var(--g400);font-weight:600;padding:.3rem .5rem;border-bottom:1px solid var(--g200);white-space:nowrap';
   const td = 'padding:.35rem .5rem;border-bottom:1px solid var(--g100);font-size:.8rem;vertical-align:middle;white-space:nowrap';
   const sumOf = a => a.reduce((t, x) => t + x.amt, 0);
   const html = Object.keys(groups).sort((a, b) => b.localeCompare(a)).map(k => {
     const g = groups[k].sort((a, b) => a.payee.localeCompare(b.payee) || String(a.r.worker_name || '').localeCompare(String(b.r.worker_name || '')));
-    const [ps, pe] = k.split('~');
     const live = g.filter(x => x.st !== 'nopay');
     const paidAmt = sumOf(live.filter(x => x.st === 'paid')), total = sumOf(live);
-    // 同一周按工头合计: 每个工头这周拿多少
+    // 同一组按工头合计: 每个工头拿多少
     const by = {};
     live.forEach(x => { by[x.payee] = (by[x.payee] || 0) + x.amt; });
     const byTxt = Object.entries(by).sort((a, b) => b[1] - a[1]).map(([n, a]) => `${esc(n)} <b>${money(a)}</b>`).join(' · ');
+    const gPick = g.filter(x => actOf(x)).map(x => x.w.id);
+    const gOn = gPick.length && gPick.every(id => _refPwSel.has(id));
+    let head;
+    if (tab === 'paid') {
+      // 付款记录: 这天付了多少, 用了哪些银行记录
+      const txns = {};
+      g.forEach(x => ((x.w.pay_note && x.w.pay_note.txns) || []).forEach(t => { txns[t.txn_id] = t; }));
+      const tl = Object.values(txns);
+      head = `<b style="color:#047857">💰 ${esc(k)} 付款</b>
+        <span style="font-size:.78rem;color:var(--g500)">${live.length} 笔 · 共 <b style="color:#0f172a">${money(total)}</b>${tl.length ? ` · 🏦 关联银行记录 ${tl.length} 笔 ${money(tl.reduce((t, x) => t + Math.abs(Number(x.amount) || 0), 0))}` : ' · <span style="color:#b45309">没关联银行记录</span>'}</span>`;
+    } else {
+      const [ps, pe] = k.split('~');
+      head = `<b style="color:#0f4c6b">🗓 ${esc(ps || '?')} ~ ${esc(pe || '?')}</b>
+        <span style="font-size:.78rem;color:var(--g500)">${live.length} 人 · 共 <b style="color:#0f172a">${money(total)}</b>${tab === 'all' ? ` · 已付 <b style="color:#047857">${money(paidAmt)}</b>${total - paidAmt > 0.005 ? ` · 还差 <b style="color:#dc2626">${money(total - paidAmt)}</b>` : ''}` : ''}</span>`;
+    }
     const body = g.map(x => {
       const [t, fg, bg] = _REF_PW_ST[x.st];
-      const w = x.w, n = w.span_eff || 1;
+      const w = x.w, n = w.span_eff || 1, a = actOf(x);
       const calc = w.rate != null ? (w.hours != null && w.hours < 40 * n ? `${money(w.rate)} × ${w.hours}/40 工时` : `满周 ${money(w.rate)}${n > 1 ? ` × ${n}` : ''}`) : '';
-      return `<tr${x.st === 'nopay' ? ' style="color:var(--g400)"' : ''}>
+      const pn = w.pay_note || {};
+      const when = x.st === 'paid' ? `${esc(_refAt(pn.updated_at))}${pn.created_by ? ' · ' + esc(pn.created_by) : ''}${(pn.txns || []).length ? ` · 🏦 ${pn.txns.map(t => `${esc(t.date || '')} ${money(Math.abs(Number(t.amount) || 0))}`).join(' / ')}` : ''}`
+        : x.st === 'topay' ? `🛡 ${esc(w.pay_ok_by)} ${esc(_refAt(w.pay_ok_at))}`
+        : x.st === 'review' ? `💳 ${esc(w.pay_req_by)} ${esc(_refAt(w.pay_req_at))}`
+        : x.st === 'req' ? `✅ ${esc(w.admin_by)} ${esc(_refAt(w.admin_at))}` : '';
+      return `<tr${x.st === 'nopay' ? ' style="color:var(--g400)"' : _refPwSel.has(w.id) ? ' style="background:#eff6ff"' : ''}>
+        <td style="${td};width:22px">${a ? `<input type="checkbox" ${_refPwSel.has(w.id) ? 'checked' : ''} onchange="refPwPick(${w.id}, this.checked)">` : ''}</td>
         <td style="${td};font-weight:700">${esc(x.payee)}${x.r.foreman_phone ? ` <span style="font-weight:400;font-size:.72rem;color:var(--g400)">${esc(x.r.foreman_phone)}</span>` : ''}</td>
         <td style="${td}"><a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="refJumpTo(${x.r.id})">${esc(x.r.worker_name || '—')}</a></td>
-        <td style="${td};color:var(--g500)">第 ${x.lab} 周</td>
+        <td style="${td};color:var(--g500)">第 ${x.lab} 周${tab === 'paid' ? ` <span style="font-size:.72rem;color:var(--g400)">${esc(x.ps)} ~ ${esc(x.pe)}</span>` : ''}</td>
         <td style="${td};text-align:right;font-weight:800">${x.est ? '<span style="color:var(--g400);font-weight:400" title="还没确认金额，按现在算出来的">≈ </span>' : ''}${money(x.amt)}</td>
         <td style="${td};font-size:.72rem;color:var(--g500)">${esc(calc)}</td>
-        <td style="${td}"><span style="display:inline-block;padding:1px 8px;border-radius:999px;font-size:.72rem;font-weight:700;color:${fg};background:${bg}">${t}${x.partial ? '（部分）' : ''}</span></td></tr>`;
+        <td style="${td}"><span style="display:inline-block;padding:1px 8px;border-radius:999px;font-size:.72rem;font-weight:700;color:${fg};background:${bg}">${t}${x.partial ? '（部分）' : ''}</span> <span style="font-size:.7rem;color:var(--g400)">${when}</span>${_refHistLink(`${x.r.id}|w${w.id}`, _refHistOpen.has(`${x.r.id}|w${w.id}`))}</td></tr>`
+        + (_refHistOpen.has(`${x.r.id}|w${w.id}`) ? `<tr><td></td><td colspan="6" style="background:#faf5ff;padding:.35rem .8rem;font-size:.74rem;line-height:1.7">${_refTimeline(x.r, 'w' + w.id, '$', [
+            { action: w.admin_status === 'rejected' ? 'amount_reject' : 'amount_approve', alt: ['amount_approve', 'amount_reject'], at: w.admin_at, by: w.admin_by, amount: w.admin_status === 'approved' ? w.admin_fee : null },
+            { action: 'payreq_request', at: w.pay_req_at, by: w.pay_req_by }, { action: 'payreq_approve', at: w.pay_ok_at, by: w.pay_ok_by },
+            { action: pn.paid_status === 'partial' ? 'pay_note_partial' : 'pay_note_paid', alt: ['pay_note_paid', 'pay_note_partial'], at: x.st === 'paid' ? pn.updated_at : null, by: pn.created_by, amount: pn.amount },
+          ])}</td></tr>` : '');
     }).join('');
     return `<div class="card" style="padding:.6rem .7rem">
       <div style="display:flex;gap:.6rem;align-items:baseline;flex-wrap:wrap;margin-bottom:.3rem">
-        <b style="color:#0f4c6b">🗓 ${esc(ps || '?')} ~ ${esc(pe || '?')}</b>
-        <span style="font-size:.78rem;color:var(--g500)">${live.length} 人 · 共 <b style="color:#0f172a">${money(total)}</b> · 已付 <b style="color:#047857">${money(paidAmt)}</b>${total - paidAmt > 0.005 ? ` · 还差 <b style="color:#dc2626">${money(total - paidAmt)}</b>` : ''}</span>
+        ${gPick.length ? `<input type="checkbox" title="全选这一组" ${gOn ? 'checked' : ''} onchange="refPwPickMany('${gPick.join(',')}', this.checked)">` : ''}${head}
         <span style="font-size:.74rem;color:var(--g500)">${byTxt}</span>
       </div>
-      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:680px"><thead><tr>
-        <th style="${th}">工头（收款人）</th><th style="${th}">介绍的工人</th><th style="${th}">周</th><th style="${th};text-align:right">介绍费</th><th style="${th}">怎么算</th><th style="${th}">状态</th></tr></thead>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:760px"><thead><tr>
+        <th style="${th}"></th><th style="${th}">工头（收款人）</th><th style="${th}">介绍的工人</th><th style="${th}">周</th><th style="${th};text-align:right">介绍费</th><th style="${th}">怎么算</th><th style="${th}">状态 / 时间</th></tr></thead>
         <tbody>${body}</tbody></table></div></div>`;
   }).join('');
   return bar + html;
@@ -2857,7 +2976,7 @@ function renderRefList() {
     + stBtn('ended', '⏹ 已满三个月', '满 13 周 · referral 期结束')
     + stBtn('quit', '🚪 中途不去了', '上班后没做满 13 周就不去了')
     + stBtn('noshow', '🚫 没去 / 没通过', '约了面试没去、或去了没通过的人')
-    + `<button class="ref-stage${_refStageSel === 'payweeks' ? ' on' : ''}" onclick="refSetStage('payweeks')">💰 每周付款<b>${_refPayWeekRows(list).length}</b><small>每周付给哪些工头、多少钱</small></button>`;
+    + `<button class="ref-stage${_refStageSel === 'payweeks' ? ' on' : ''}" onclick="refSetStage('payweeks')">💰 每周付款<b>${_refPayWeekRows(list).filter(x => !['paid', 'nopay'].includes(x.st)).length}</b><small>每周付给哪些工头、多少钱 · 付款记录</small></button>`;
   const pwMode = _refStageSel === 'payweeks';
   if (!pwMode) list = list.filter(r => _refStage(r) === _refStageSel);
   const pendN = _refList.filter(r => r.review_status === 'pending').length;
