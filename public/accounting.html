@@ -2281,7 +2281,8 @@ const REF_HR_4W = 4, REF_HR_4W_AMT = 37.5, REF_HR_4W_FROM = 2, REF_HR_4W_TO = RE
 const REF_HR_MGMT_FROM = 6, REF_HR_MGMT_AMT = 25;
 const yuan = n => '¥' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 });
 function _refHrOf(r) {
-  if (r.hr_self) return r.hr_name || '';
+  // HR 自己招的: 选了哪个 HR 就算谁的; 没选的按提交人 (提交人在 HR 名单里才算)
+  if (r.hr_self) return r.hr_name || (REF_HRS.includes(r.hr_credit) ? r.hr_credit : '');
   // 工头介绍的: 提交人在 HR 名单里 (张倪 / 陶斯亮) 才算给他; 其他客服 / 会计提交的不算
   return REF_HRS.includes(r.hr_credit) ? r.hr_credit : '';
 }
@@ -3198,7 +3199,7 @@ function renderRefList() {
     return `<div class="card ref-card" id="refCard${r.id}" style="${r.review_status === 'rejected' ? 'opacity:.6;' : ''}${overdue ? 'background:#fef2f2;box-shadow:0 0 0 2px #fca5a5;' : ''}border-left-color:${overdue ? '#dc2626' : ov === 'paid' ? '#16a34a' : ov === 'rejected' ? '#cbd5e1' : ov === 'pending' ? '#fb923c' : '#3b82f6'}">
       <div class="ref-top">
         <div class="ref-ppl">
-          <div>${lbl('工头 · 介绍人')}${r.hr_self ? '<span style="display:inline-block;background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;border-radius:6px;padding:1px 8px;font-size:.8rem;font-weight:700">🙋 HR 自己招的' + (r.hr_name ? ` · ${esc(r.hr_name)}` : '') + '</span>' : person(r.foreman_name, r.foreman_phone, r.foreman_state ? ` · 📍 ${esc(r.foreman_state)}` : '')}${preWork && r.created_by ? `<div style="margin-top:3px">${_refWhoChip(r.created_by, '提交')}</div>` : ''}</div>
+          <div>${lbl('工头 · 介绍人')}${r.hr_self ? '<span style="display:inline-block;background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;border-radius:6px;padding:1px 8px;font-size:.8rem;font-weight:700">🙋 HR 自己招的' + (r.hr_name ? ` · ${esc(r.hr_name)}` : _refHrOf(r) ? ` · ${esc(_refHrOf(r))}<span style="font-weight:400;font-size:.7rem;color:#8b5cf6" title="编辑时没选是哪个 HR，按提交人算">（按提交人）</span>` : '') + '</span>' : person(r.foreman_name, r.foreman_phone, r.foreman_state ? ` · 📍 ${esc(r.foreman_state)}` : '')}${preWork && r.created_by ? `<div style="margin-top:3px">${_refWhoChip(r.created_by, '提交')}</div>` : ''}</div>
           <div class="ref-arrow">➜</div>
           <div>${lbl('被介绍工人')}${person(r.worker_name, r.worker_phone, (r.worker_wage ? ` · <span style="color:#047857;font-weight:700">💵 ${esc(r.worker_wage)}</span>` : '') + attHtml)}${_refProfileChip(r)}</div>
         </div>
