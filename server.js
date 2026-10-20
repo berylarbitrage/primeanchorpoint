@@ -42117,10 +42117,13 @@ app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
     const gIdx = _refGustoIndex();
     out.forEach(r => { r.gusto = _refGustoLink(r, gIdx); });
     // 登记人: 登录名 → 账号显示名 (张倪 / zhangni 对上); hr_credit = 这条算哪个 HR 的 (HR 自己招的按选的 HR, 否则按登记人)
-    const dispBy = {};
-    try { db.prepare('SELECT username, display_name FROM admin_users').all().forEach(u => { if (u.display_name) dispBy[u.username] = u.display_name.trim(); }); } catch (e) {}
+    // 没填显示名的 HR 账号按这里对上「HR 自己招的」名单里的名字
+    const HR_LOGIN_NAME = { zhangni: '张倪' };
+    const dispBy = {}, roleBy = {};
+    try { db.prepare('SELECT username, display_name, role FROM admin_users').all().forEach(u => { roleBy[u.username] = u.role || ''; if (u.display_name) dispBy[u.username] = u.display_name.trim(); }); } catch (e) {}
     out.forEach(r => {
-      r.created_by_name = dispBy[r.created_by] || r.created_by || '';
+      r.created_by_name = dispBy[r.created_by] || HR_LOGIN_NAME[String(r.created_by || '').toLowerCase()] || r.created_by || '';
+      r.created_by_role = roleBy[r.created_by] || '';
       r.hr_credit = (r.hr_self && r.hr_name) ? r.hr_name : r.created_by_name;
       r.hr_bonus = hrBonusBy[r.id] || {};
     });
