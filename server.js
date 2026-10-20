@@ -42122,7 +42122,8 @@ app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
     const dispBy = {}, roleBy = {};
     try { db.prepare('SELECT username, display_name, role FROM admin_users').all().forEach(u => { roleBy[u.username] = u.role || ''; if (u.display_name) dispBy[u.username] = u.display_name.trim(); }); } catch (e) {}
     out.forEach(r => {
-      r.created_by_name = dispBy[r.created_by] || HR_LOGIN_NAME[String(r.created_by || '').toLowerCase()] || r.created_by || '';
+      // 对照表优先: 显示名就填了登录名 (zhangni) 的也能对上「张倪」
+      r.created_by_name = HR_LOGIN_NAME[String(r.created_by || '').toLowerCase()] || dispBy[r.created_by] || r.created_by || '';
       r.created_by_role = roleBy[r.created_by] || '';
       r.hr_credit = (r.hr_self && r.hr_name) ? r.hr_name : r.created_by_name;
       r.hr_bonus = hrBonusBy[r.id] || {};
