@@ -39307,7 +39307,9 @@ app.patch('/api/sms/assist-requests/:id', requireAdmin, requireRole('admin'), (r
 app.post('/api/sms/cs-invites', requireAdmin, requireRole('admin'), async (req, res) => {
   try {
     const token = crypto.randomBytes(18).toString('hex');
-    const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+    // 有效期: 账户管理页可传 hours (1–720), 不传默认 7 天
+    const h = Math.min(Math.max(parseInt((req.body || {}).hours) || 168, 1), 720);
+    const expiresAt = new Date(Date.now() + h * 3600 * 1000).toISOString();
     db.prepare('INSERT INTO sms_cs_invites (token, created_by, expires_at) VALUES (?,?,?)').run(token, req.userId, expiresAt);
     const url = (BASE_URL || 'https://primeanchorpoint.com') + '/cs-signup?t=' + token;
     const qr = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 300 });

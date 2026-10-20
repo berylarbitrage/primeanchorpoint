@@ -3766,7 +3766,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   <!-- Admin Invite Panel -->
   <div id="adminInvitePanel" style="display:none;background:#fefce8;border:1px solid #fde68a;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1rem;position:relative">
     <button onclick="toggleInvitePanel()" style="position:absolute;top:.6rem;right:.75rem;background:none;border:none;font-size:1.1rem;cursor:pointer;color:#92400e">×</button>
-    <div style="font-weight:700;color:#78350f;margin-bottom:.5rem">🔗 Manager 邀请链接</div>
+    <div style="font-weight:700;color:#78350f;margin-bottom:.5rem">🔗 邀请链接（Manager / Staff / CS 客服）</div>
     <div id="inviteLinkList" style="font-size:.82rem;color:#92400e;margin-bottom:.75rem">加载中…</div>
     <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
       <label style="font-size:.8rem;font-weight:600;color:#78350f;white-space:nowrap">角色</label>
@@ -3774,6 +3774,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
         <option value="manager">Manager</option>
         <option value="staff">Staff</option>
         <option value="admin">Admin</option>
+        <option value="cs">CS 客服</option>
       </select>
       <label style="font-size:.8rem;font-weight:600;color:#78350f;white-space:nowrap">有效期（小时）</label>
       <input id="inviteHours" type="number" value="24" min="1" max="720" style="width:60px;padding:.3rem .4rem;border:1px solid #fde68a;border-radius:6px;font-size:.82rem;text-align:center">
@@ -20282,6 +20283,24 @@ async function genInviteLink() {
   const notes = document.getElementById('inviteNotes').value.trim();
   btn.disabled = true; btn.textContent = '生成中…';
   resultEl.innerHTML = '';
+  // CS 客服: 走客服自助注册 (/cs-signup), 有效期内多人可用, 附二维码
+  if (role === 'cs') {
+    try {
+      const r = await api('/sms/cs-invites', { method: 'POST', body: JSON.stringify({ hours }) });
+      if (!r || !r.url) throw new Error(r && r.error ? r.error : '服务器未返回链接，请重试');
+      const safeUrl = r.url.replace(/'/g, '%27');
+      const exp = new Date(r.expires_at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', timeZone: localTz(), timeZoneName: 'short' });
+      resultEl.innerHTML = `<div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+        ${r.qr ? `<img src="${r.qr}" alt="二维码" style="width:120px;height:120px;border:1px solid #fde68a;border-radius:8px;background:#fff">` : ''}
+        <div style="flex:1;min-width:200px">
+          <div style="color:#166534;font-weight:700;margin-bottom:.25rem">✓ CS 客服注册链接已生成 · 有效至 ${esc(exp)} · 有效期内可多人注册</div>
+          <span style="word-break:break-all;color:#44403c;cursor:pointer;text-decoration:underline" onclick="navigator.clipboard.writeText('${safeUrl}').then(()=>showToast('✅ 链接已复制'))">${esc(r.url)}</span>
+          <button onclick="navigator.clipboard.writeText('${safeUrl}').then(()=>showToast('✅ 链接已复制'))" style="margin-left:.4rem;padding:.2rem .6rem;border:1px solid #166534;border-radius:6px;background:#f0fdf4;color:#166534;cursor:pointer;font-size:.78rem">复制</button>
+        </div></div>`;
+    } catch (e) { resultEl.innerHTML = `<span style="color:#dc2626">生成失败：${esc(e.message)}</span>`; }
+    btn.disabled = false; btn.textContent = '+ 生成';
+    return;
+  }
   try {
     const r = await api('/admin/invite-links', { method: 'POST', body: JSON.stringify({ role, hours, notes }) });
     if (!r || !r.url) {
