@@ -2404,6 +2404,9 @@ function _refHrBonusRow(r) {
         : '<span style="color:#b45309">已达成 · 待管理员确认</span>';
     }
     if (!how && b.calc) how = `<span style="color:var(--g500)">${esc(b.calc)}${b.calc.includes('×') || b.calc.startsWith('每周') ? ` = <b style="color:#0f4c6b">${yuan(b.amount)}</b>` : ''}</span>`;
+    // 已确认 / 已付的金额和现在算出来的不一样 (确认时改过, 或之后发票工时变了) 就标出来
+    if ((st === 'approved' || st === 'paid') && b.calc && Math.abs((Number(row.amount) || 0) - (Number(b.amount) || 0)) > 0.005)
+      how += ` <span style="color:#b45309;white-space:nowrap">· 确认金额 ${yuan(row.amount)}（算出 ${yuan(b.amount)}）</span>`;
     return `<tr><td style="${td};font-weight:700;color:#334155;white-space:nowrap">${b.label}</td><td style="${td};color:var(--g500);white-space:nowrap">${yuan(b.amt)}</td>
       <td style="${td}">${how}</td><td style="${td};text-align:right;white-space:nowrap">${amt}</td><td style="${td}">${act}</td></tr>`;
   };
@@ -2773,7 +2776,10 @@ function renderRefList() {
       : n > 1 ? `${money(w.rate * n)}（${n} 周）× ${w.hours}/${40 * n} 工时 = <b style="color:#0f4c6b">${money(w.fee_default)}</b>`
       : `${money(w.rate)} × ${w.hours}/40 工时 = <b style="color:#0f4c6b">${money(w.fee_default)}</b>`}</div>`; };
     const feeCell = w => r.hr_self ? '<span style="font-size:.72rem;color:var(--g400)">HR 自己招的不付周介绍费</span>'
-      : w.admin_status === 'approved' ? `<b>${money(w.admin_fee)}</b>`
+      // 确认后照样显示怎么算的; 管理员确认时改了金额就标出来
+      : w.admin_status === 'approved' ? `<b>${money(w.admin_fee)}</b>${feeCalc(w)
+          || (w.fee != null ? `<div style="font-size:.68rem;color:var(--g500);white-space:nowrap">手写 ${money(w.fee)}</div>` : w.fee_default != null ? `<div style="font-size:.68rem;color:var(--g500);white-space:nowrap">按介绍费 ${money(w.fee_default)}${(w.span_eff || 1) > 1 ? `（${w.span_eff} 周）` : ''}</div>` : '')}${
+          w.fee_default != null && w.fee == null && Math.abs(Number(w.admin_fee) - Number(w.fee_default)) > 0.005 ? `<div style="font-size:.68rem;color:#b45309;white-space:nowrap">算出 ${money(w.fee_default)}，确认时改成 ${money(w.admin_fee)}</div>` : ''}`
       : w.admin_status === 'rejected' ? '<span style="color:var(--g400)">—</span>'
       : canInv && r.review_status !== 'rejected' ? (() => {
         const presets = w.tier_eff === 'first' ? [25, 50] : [12.5, 25];
