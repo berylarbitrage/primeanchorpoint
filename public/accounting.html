@@ -865,6 +865,8 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <div id="ceLinked" style="font-size:.74rem;margin-bottom:.55rem"></div>
       <label style="font-size:.76rem;color:var(--g500)">职位（可选）</label>
       <input type="text" id="ceTitle" placeholder="例：会计 / 客服 / 运营" style="width:100%;margin:.15rem 0 .55rem">
+      <label id="cePwLabel" style="font-size:.76rem;color:var(--g500)">🔑 查看密码（非管理员要输这个密码才能看他的工资明细）</label>
+      <input type="password" id="cePw" autocomplete="new-password" placeholder="至少 4 位" style="width:100%;margin:.15rem 0 .55rem">
       <label style="font-size:.76rem;color:var(--g500)">默认币种</label>
       <select id="ceCur" style="width:100%;margin:.15rem 0 .55rem"><option value="CNY">¥ 人民币</option><option value="USD">$ 美元</option></select>
       <label style="font-size:.76rem;color:var(--g500)">备注（可选）</label>
@@ -872,6 +874,19 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <div style="display:flex;gap:.5rem;justify-content:flex-end">
         <button class="btn btn-outline" onclick="document.getElementById('cnEmpModal').style.display='none'">取消</button>
         <button class="btn btn-blue" id="ceSaveBtn" onclick="cnEmpSave()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🔒 非管理员输员工查看密码 -->
+  <div id="cnPwModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:93;align-items:center;justify-content:center;padding:16px">
+    <div class="card" style="max-width:340px;width:100%;padding:1.2rem 1.2rem 1rem">
+      <div id="cuTitle" style="font-weight:800;margin-bottom:.6rem">🔒 输入查看密码</div>
+      <input type="password" id="cuPw" autocomplete="off" placeholder="查看密码" onkeydown="if(event.key==='Enter')cnUnlock()" style="width:100%;margin-bottom:.4rem">
+      <div id="cuMsg" style="font-size:.76rem;color:#dc2626;min-height:1em;margin-bottom:.5rem"></div>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="document.getElementById('cnPwModal').style.display='none'">取消</button>
+        <button class="btn btn-blue" id="cuBtn" onclick="cnUnlock()">查看</button>
       </div>
     </div>
   </div>
@@ -1382,7 +1397,7 @@ function showTab(t) {
   document.getElementById('tabFeeCo').classList.toggle('on', t === 'feeco');
   document.getElementById('tabFeeCn').classList.toggle('on', t === 'feecn');
   document.getElementById('paneCn').style.display = t === 'feecn' ? '' : 'none';
-  if (t === 'feecn') cnLoad();
+  if (t === 'feecn') cnLoad(); else _cnUnlocked.clear();   // 离开页签就重新锁上
   document.getElementById('tabPallet').classList.toggle('on', t === 'pallet');
   document.getElementById('panePallet').style.display = t === 'pallet' ? '' : 'none';
   if (t === 'pallet') loadPalletList();
@@ -4101,7 +4116,30 @@ const _CUR_SYM = { CNY: '¥', USD: '$' };
 const _cnMoney = (v, cur) => (_CUR_SYM[cur] || '¥') + (Number(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 let _cnEmps = null, _cnEmpEdit = null, _cnPay = null, _ceProfile = null, _ceMatches = [], _ceTimer = null;
 const _cnOpen = new Set();
-function canEditCn() { return ['admin', 'accounting'].includes(USER.role); }
+// 国内工资只有管理员能录入 / 修改; 其他人输员工的查看密码只读看明细
+function canEditCn() { return USER.role === 'admin'; }
+const _cnUnlocked = new Map();   // empId → 输密码后拿到的工资记录 (只在内存, 离开页签 / 刷新即清)
+let _cnPwEmp = null;
+function cnPwOpen(id) {
+  _cnPwEmp = _cnEmps.find(e => e.id === id);
+  document.getElementById('cuTitle').textContent = `🔒 ${_cnPwEmp ? _cnPwEmp.name : ''} · 输入查看密码`;
+  document.getElementById('cuPw').value = '';
+  document.getElementById('cuMsg').textContent = '';
+  document.getElementById('cnPwModal').style.display = 'flex';
+  document.getElementById('cuPw').focus();
+}
+async function cnUnlock() {
+  if (!_cnPwEmp) return;
+  const btn = document.getElementById('cuBtn');
+  btn.disabled = true;
+  const r = await api(`/api/acct/cn-employees/${_cnPwEmp.id}/unlock`, { method: 'POST', body: JSON.stringify({ password: document.getElementById('cuPw').value }) }).catch(e => ({ error: e.message }));
+  btn.disabled = false;
+  if (!r || r.error) { document.getElementById('cuMsg').textContent = (r && r.error) || '失败'; return; }
+  _cnUnlocked.set(_cnPwEmp.id, r.records || []);
+  document.getElementById('cnPwModal').style.display = 'none';
+  cnRender();
+}
+function cnLock(id) { _cnUnlocked.delete(id); cnRender(); }
 // 明细: 新记录存 lines; 早期只有三项金额的记录, 各转成一条明细显示
 function _cnLines(f) {
   let ls = [];
@@ -4119,7 +4157,8 @@ async function cnLoad() {
 function cnRender() {
   if (!_cnEmps || document.getElementById('paneCn').style.display === 'none') return;
   const q = (document.getElementById('cnSearch').value || '').trim().toLowerCase();
-  const recs = _feeList.filter(f => f.fee_type === 'cnpay');
+  const admin = USER.role === 'admin';
+  const recs = admin ? _feeList.filter(f => f.fee_type === 'cnpay') : [..._cnUnlocked.values()].flat();
   // 名册里的员工 + 没挂名册的早期记录 (按名字归组)
   const groups = _cnEmps.map(e => ({ emp: e, name: e.name, recs: recs.filter(f => f.employee_id === e.id) }));
   recs.filter(f => !f.employee_id || !_cnEmps.some(e => e.id === f.employee_id)).forEach(f => {
@@ -4142,9 +4181,11 @@ function cnRender() {
     return Object.entries(by).map(([c, t]) => `Base ${_cnMoney(t.base, c)} · Bonus ${_cnMoney(t.bonus, c)} · 报销 ${_cnMoney(t.reimb, c)} · <b style="color:#dc2626">合计 ${_cnMoney(t.total, c)}</b>`).join('<br>');
   };
   const pendN = recs.filter(f => f.approval_status === 'pending').length;
-  document.getElementById('cnStats').innerHTML = `${_cnEmps.length} 名员工 · ${recs.length} 条工资记录` + (pendN ? ` · ⏳ 待审核 ${pendN} 条` : '');
+  document.getElementById('cnStats').innerHTML = admin
+    ? `${_cnEmps.length} 名员工 · ${recs.length} 条工资记录` + (pendN ? ` · ⏳ 待审核 ${pendN} 条` : '')
+    : `${_cnEmps.length} 名员工 · 🔒 点员工的「输入密码查看」看工资明细`;
   if (!shown.length) {
-    document.getElementById('cnBody').innerHTML = `<div class="card" style="color:var(--g400);padding:1rem">${q ? '没有匹配的记录。' : '还没有国内员工，先点「＋ 添加员工」，再给员工录入每月工资。'}</div>`;
+    document.getElementById('cnBody').innerHTML = `<div class="card" style="color:var(--g400);padding:1rem">${q ? '没有匹配的记录。' : admin ? '还没有国内员工，先点「＋ 添加员工」，再给员工录入每月工资。' : '还没有国内员工。'}</div>`;
     return;
   }
   document.getElementById('cnBody').innerHTML = shown.map(g => {
@@ -4154,7 +4195,12 @@ function cnRender() {
       ? `<button class="btn btn-sm btn-blue" onclick="cpOpen(${e.id})">＋ 录入工资</button>
          <button class="btn btn-sm btn-outline" onclick="cnEmpOpen(${e.id})">✏️ 编辑员工</button>`
         + (USER.role === 'admin' && !g.recs.length ? ` <button class="btn btn-sm btn-outline" style="color:#b91c1c" onclick="cnEmpDelete(${e.id})">🗑</button>` : '')
-      : '';
+      : e && !admin
+        ? (_cnUnlocked.has(e.id)
+          ? `<button class="btn btn-sm btn-outline" onclick="cnLock(${e.id})">🔒 锁上</button>`
+          : `<button class="btn btn-sm btn-blue" onclick="cnPwOpen(${e.id})" ${e.has_pw ? '' : 'disabled style="opacity:.45;cursor:not-allowed" title="管理员还没给这个员工设查看密码"'}>🔒 输入密码查看</button>`)
+        : '';
+    const locked = e && !admin && !_cnUnlocked.has(e.id);
     const rows = g.recs.map(f => {
       const ls = _cnLines(f), open = _cnOpen.has(f.id), cur = f.currency || 'CNY';
       const ap = f.approval_status || 'approved';
@@ -4182,7 +4228,7 @@ function cnRender() {
         <td style="white-space:nowrap"><a style="cursor:pointer;color:#0f4c6b;font-weight:600" onclick="cnToggle(${f.id})">${open ? '▾' : '▸'} ${esc(f.fee_date || '—')}</a></td>
         ${col('base')}${col('bonus')}${col('reimb')}
         <td style="text-align:right;font-weight:700;color:#dc2626;white-space:nowrap">${_cnMoney(f.amount, cur)}</td>
-        <td>${status}</td><td>${files}</td><td>${payNoteCell('fee', f.id, f.pay_note)}</td>
+        <td>${status}</td><td>${files}</td><td>${admin ? payNoteCell('fee', f.id, f.pay_note) : payNoteCell('fee', f.id, f.pay_note).replace(/ <a [^>]*openPayNote[^>]*>[^<]*<\/a>/, '')}</td>
         <td style="white-space:nowrap">${canEdit ? `<a style="cursor:pointer;font-size:.8rem" title="编辑明细" onclick="cpOpen(${e.id}, ${f.id})">✏️</a>` : ''}
           ${USER.role === 'admin' ? `<a style="cursor:pointer;color:#b91c1c;font-size:.78rem;margin-left:6px" title="删除" onclick="feeDelete(${f.id})">🗑</a>` : ''}</td>
       </tr>${detail}`;
@@ -4191,10 +4237,11 @@ function cnRender() {
       <div style="display:flex;gap:.6rem;align-items:flex-start;flex-wrap:wrap;margin-bottom:.4rem">
         <div><div style="font-weight:800;font-size:1rem">👤 ${esc(g.name)}${e && e.title ? ` <span style="font-weight:400;font-size:.8rem;color:var(--g500)">· ${esc(e.title)}</span>` : ''}${e && e.profile_id ? ` <a href="/admin.html?emp=${e.profile_id}" target="_blank" title="打开员工档案" style="font-size:.72rem;font-weight:700;color:#047857;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:6px;padding:1px 6px;text-decoration:none">🔗 员工档案${e.profile_code ? ' ' + esc(e.profile_code) : ''}</a>` : ''}</div>
           ${e && e.note ? `<div style="font-size:.74rem;color:var(--g400)">${esc(e.note)}</div>` : ''}
-          <div style="font-size:.78rem;color:var(--g600);margin-top:.15rem">${tot || '<span style="color:var(--g400)">暂无已通过的工资</span>'}</div></div>
+          ${e && admin ? `<div style="font-size:.72rem;margin-top:.1rem">${e.has_pw ? '<span style="color:#047857">🔑 已设查看密码</span>' : '<span style="color:#b91c1c">⚠ 还没设查看密码 · 点「编辑员工」设置</span>'}</div>` : ''}
+          ${locked ? '' : `<div style="font-size:.78rem;color:var(--g600);margin-top:.15rem">${tot || '<span style="color:var(--g400)">暂无已通过的工资</span>'}</div>`}</div>
         <span style="flex:1"></span>${acts}
       </div>
-      ${g.recs.length ? `<table><thead><tr><th>月份</th><th style="text-align:right">Base 底薪</th><th style="text-align:right">Bonus 奖金</th><th style="text-align:right">报销</th><th style="text-align:right">合计</th><th>状态</th><th>凭证</th><th>付款批注（会计）</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+      ${locked ? '<div style="font-size:.8rem;color:var(--g400);padding:.3rem 0">🔒 工资明细已隐藏，输入这个员工的查看密码后显示。</div>' : g.recs.length ? `<table><thead><tr><th>月份</th><th style="text-align:right">Base 底薪</th><th style="text-align:right">Bonus 奖金</th><th style="text-align:right">报销</th><th style="text-align:right">合计</th><th>状态</th><th>凭证</th><th>付款批注（会计）</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
         : '<div style="font-size:.8rem;color:var(--g400);padding:.3rem 0">还没有工资记录' + (e && canEditCn() ? '，点「＋ 录入工资」添加。' : '。') + '</div>'}
     </div>`;
   }).join('');
@@ -4216,6 +4263,8 @@ function cnEmpOpen(id) {
   document.getElementById('ceTitle').value = e.title || '';
   document.getElementById('ceCur').value = e.currency || 'CNY';
   document.getElementById('ceNote').value = e.note || '';
+  document.getElementById('cePw').value = '';
+  document.getElementById('cePw').placeholder = _cnEmpEdit && e.has_pw ? '留空 = 不改；填了就换成新密码' : '至少 4 位（必填）';
   _ceProfile = e.profile_id ? { id: e.profile_id, name: e.name, code: e.profile_code || '' } : null;
   ceRenderLinked();
   document.getElementById('cnEmpModal').style.display = 'flex';
@@ -4254,8 +4303,9 @@ function ceRenderLinked() {
     : '<span style="color:var(--g400)">未关联员工档案（直接输入的名字）</span>';
 }
 async function cnEmpSave() {
-  const body = { name: document.getElementById('ceName').value.trim(), title: document.getElementById('ceTitle').value.trim(), currency: document.getElementById('ceCur').value, note: document.getElementById('ceNote').value.trim(), profile_id: _ceProfile ? _ceProfile.id : null };
+  const body = { name: document.getElementById('ceName').value.trim(), title: document.getElementById('ceTitle').value.trim(), currency: document.getElementById('ceCur').value, note: document.getElementById('ceNote').value.trim(), profile_id: _ceProfile ? _ceProfile.id : null, password: document.getElementById('cePw').value };
   if (!body.name) return toast('请填写员工姓名', true);
+  if ((!_cnEmpEdit || !_cnEmpEdit.has_pw || body.password) && body.password.length < 4) return toast('请设置查看密码（至少 4 位）', true);
   const r = await api('/api/acct/cn-employees' + (_cnEmpEdit ? '/' + _cnEmpEdit.id : ''), { method: _cnEmpEdit ? 'PUT' : 'POST', body: JSON.stringify(body) }).catch(e => ({ error: e.message }));
   if (r && r.error) return toast(r.error, true);
   document.getElementById('cnEmpModal').style.display = 'none';
