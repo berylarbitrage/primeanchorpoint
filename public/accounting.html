@@ -2411,24 +2411,21 @@ function _refHr4w(r) {
 }
 // 管理奖励每周: 满了的周 (第 6 周起) 各一条; 还没到第 6 周 → 一条 wait / lost 说明
 function _refHrMgmt(r) {
-  const start = /^\d{4}-\d{2}-\d{2}$/.test(r.work_start_date || '') ? new Date(r.work_start_date + 'T00:00:00') : null;
-  if (!start) return [];
-  const DAY = 86400000;
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const last = /^\d{4}-\d{2}-\d{2}$/.test(r.work_end_date || '') ? new Date(r.work_end_date + 'T00:00:00') : null;
-  // 算到哪天为止: 在岗 = 昨天 (今天还没过完), 不去了 = 最后上班那天
-  const upto = last && last < today ? last : new Date(today - DAY);
-  const full = upto < start ? 0 : Math.floor((Math.round((upto - start) / DAY) + 1) / 7);
-  const ymd = d => _refYmd(d).slice(5);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(r.work_start_date || '')) return [];
+  // 按关联的发票算第几周 (和第 2–5 周一样): 第 6 张周发票出来了才有第 6 周; 两周的发票算 2 周
+  const units = _refWeekUnits(r);
   const out = [];
-  for (let k = REF_HR_MGMT_FROM; k <= full; k++) {
-    const a = new Date(start.getTime() + (k - 1) * 7 * DAY), b = new Date(start.getTime() + (k * 7 - 1) * DAY);
-    out.push({ k: 'mgmt' + k, label: `第 ${k} 周`, amt: REF_HR_MGMT_AMT, amount: REF_HR_MGMT_AMT, st: 'done', calc: `${ymd(a)}~${ymd(b)}`, row: (r.hr_bonus || {})['mgmt' + k] || null });
+  for (let k = REF_HR_MGMT_FROM; k <= units.length; k++) {
+    const u = units[k - 1];
+    out.push({ k: 'mgmt' + k, label: `第 ${k} 周`, amt: REF_HR_MGMT_AMT, amount: REF_HR_MGMT_AMT, st: 'done', calc: '', period: _refInvPer(u.w), row: (r.hr_bonus || {})['mgmt' + k] || null });
   }
+  // 之前按日期确认过、但发票还没关联到那周的, 照样列出来 (可以撤销)
+  Object.keys(r.hr_bonus || {}).map(k => /^mgmt(\d+)$/.exec(k)).filter(m => m && +m[1] > units.length).sort((a, b) => a[1] - b[1]).forEach(m => {
+    out.push({ k: m[0], label: `第 ${m[1]} 周`, sub: '还没关联这周发票', amt: REF_HR_MGMT_AMT, amount: REF_HR_MGMT_AMT, st: 'done', calc: '', row: r.hr_bonus[m[0]] });
+  });
   if (!out.length) {
-    const need = new Date(start.getTime() + (REF_HR_MGMT_FROM * 7 - 1) * DAY);
-    out.push(last && last < need ? { k: '', label: `第 ${REF_HR_MGMT_FROM} 周起`, amt: REF_HR_MGMT_AMT, st: 'lost', hint: '没做到第 6 周' }
-      : { k: '', label: `第 ${REF_HR_MGMT_FROM} 周起`, amt: REF_HR_MGMT_AMT, st: 'wait', hint: `还差 ${Math.round((need - today) / DAY) + 1} 天` });
+    out.push(r.work_end_date ? { k: '', label: `第 ${REF_HR_MGMT_FROM} 周起`, amt: REF_HR_MGMT_AMT, st: 'lost', hint: `没做到第 ${REF_HR_MGMT_FROM} 周` }
+      : { k: '', label: `第 ${REF_HR_MGMT_FROM} 周起`, amt: REF_HR_MGMT_AMT, st: 'wait', hint: units.length ? `还没到 · 发票关联到第 ${units.length} 周` : '还没关联发票' });
   }
   return out;
 }
