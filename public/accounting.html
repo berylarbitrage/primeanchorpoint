@@ -2282,17 +2282,17 @@ function _refHrBonus(r) {
     let amount = m.amt, calc = '';
     if (m.prorate) {
       const n = m.k === 'month1' ? 4 : 1, per = m.amt / n;
-      const use = units.slice(0, n);
-      if (use.length < n || use.some(u => u.hours == null)) {
-        calc = n === 1 ? '还没关联第 1 周发票 / 没工时，先按满额'
-          : `前 4 周发票还没关联齐${use.length ? `（已有 ${use.length} 周）` : ''} / 没工时，先按满额`;
-      } else if (use.every(u => u.hours >= 40)) {
-        calc = n === 1 ? `${use[0].hours} 工时 ≥ 40 · 给满` : '前 4 周每周都满 40 工时 · 给满';
-      } else {
-        amount = Math.round(use.reduce((t, u) => t + per * Math.min(u.hours, 40) / 40, 0) * 100) / 100;
-        calc = n === 1 ? `${yuan(m.amt)} × ${use[0].hours}/40 工时`
-          : `每周 ${yuan(per)} × 工时/40：${use.map(u => Math.min(u.hours, 40)).join(' + ')}`;
-      }
+      // 一周一周算: 有工时的按 工时/40 (满 40 给满), 还没关联发票 / 没工时的那周先按满额
+      const part = [...Array(n)].map((_, j) => {
+        const u = units[j], h = u && u.hours != null ? Number(u.hours) : null;
+        const v = h == null ? per : per * Math.min(h, 40) / 40;
+        const t = h == null ? `${yuan(per)}（第 ${j + 1} 周还没发票，先按满）` : h >= 40 ? `${yuan(per)}（${h} 工时满）` : `${yuan(per)}×${h}/40`;
+        return { v, t, h };
+      });
+      amount = Math.round(part.reduce((t, x) => t + x.v, 0) * 100) / 100;
+      calc = n === 1
+        ? (part[0].h == null ? '还没关联第 1 周发票 / 没工时，先按满额' : part[0].h >= 40 ? `${part[0].h} 工时 ≥ 40 · 给满` : `${yuan(m.amt)} × ${part[0].h}/40 工时`)
+        : `每周 ${yuan(per)}：${part.map(x => x.t).join(' + ')}`;
     }
     return { ...m, ...x, amount, calc, row: (r.hr_bonus || {})[m.k] || null };
   });
@@ -2335,14 +2335,19 @@ function _refHrBonusRow(r) {
     else if (st === 'approved') { due += row.amount || 0; amt = `<b>${yuan(row.amount)}</b>`; act = `<b style="color:#1d4ed8">✅ 已确认</b>${canPay ? ` <button class="btn btn-sm btn-outline" style="padding:0 6px;font-size:.7rem" onclick="refHrBonus(${r.id},'${b.k}','paid')">💰 记已付</button>` : ''}${isAdmin ? undo('reset', '撤销') : ''}`; }
     else if (st === 'rejected') { amt = '<span style="color:var(--g400)">—</span>'; act = `<span style="color:#b91c1c">✖ 不给</span>${row.note ? ` <span style="color:var(--g400)">${esc(row.note)}</span>` : ''}${isAdmin ? undo('reset', '撤销') : ''}`; }
     else if (b.st === 'lost') { how = `<span style="color:var(--g400)">${esc(b.hint)}</span>`; amt = '<span style="color:var(--g400)">—</span>'; act = '<span style="color:var(--g400);text-decoration:line-through">没达成</span>'; }
-    else if (b.st === 'wait') { how = `<span style="color:var(--g400)">${esc(b.hint)}</span>`; amt = '<span style="color:var(--g400)">—</span>'; act = '<span style="color:var(--g400)">还没到</span>'; }
+    else if (b.st === 'wait') {
+      // 还没到也先把怎么算、大概多少列出来
+      how = `<span style="color:var(--g400)">${esc(b.hint)}</span>${b.calc ? ` · <span style="color:var(--g500)">${esc(b.calc)}</span>` : ''}`;
+      amt = b.calc ? `<span style="color:var(--g400)" title="现在算出来的数，到期再确认">≈ ${yuan(b.amount)}</span>` : '<span style="color:var(--g400)">—</span>';
+      act = '<span style="color:var(--g400)">还没到</span>';
+    }
     else {
       amt = isAdmin ? `<span style="white-space:nowrap">¥ <input type="number" step="0.01" min="0" id="rhb${r.id}${b.k}" value="${b.amount}" style="width:68px;padding:.1rem .3rem;font-size:.76rem;text-align:right"></span>` : `<b>${yuan(b.amount)}</b>`;
       act = isAdmin ? `<span style="color:#b45309;font-weight:700">已达成</span> <button class="btn btn-sm" style="background:#16a34a;color:#fff;padding:0 6px;font-size:.7rem" onclick="refHrBonus(${r.id},'${b.k}','approve')">✅ 确认</button>
           <button class="btn btn-sm btn-outline" style="color:#dc2626;border-color:#fecaca;padding:0 6px;font-size:.7rem" onclick="refHrBonus(${r.id},'${b.k}','reject')">✖ 不给</button>`
         : '<span style="color:#b45309">已达成 · 待管理员确认</span>';
     }
-    if (!how && b.calc) how = `<span style="color:var(--g500)">${esc(b.calc)}${b.calc.includes('×') ? ` = <b style="color:#0f4c6b">${yuan(b.amount)}</b>` : ''}</span>`;
+    if (!how && b.calc) how = `<span style="color:var(--g500)">${esc(b.calc)}${b.calc.includes('×') || b.calc.startsWith('每周') ? ` = <b style="color:#0f4c6b">${yuan(b.amount)}</b>` : ''}</span>`;
     return `<tr><td style="${td};font-weight:700;color:#334155;white-space:nowrap">${b.label}</td><td style="${td};color:var(--g500);white-space:nowrap">${yuan(b.amt)}</td>
       <td style="${td}">${how}</td><td style="${td};text-align:right;white-space:nowrap">${amt}</td><td style="${td}">${act}</td></tr>`;
   };
