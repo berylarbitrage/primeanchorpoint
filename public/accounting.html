@@ -2339,12 +2339,12 @@ function _refHrBonus(r) {
         return { v, t, h };
       });
       amount = Math.round(part.reduce((t, x) => t + x.v, 0) * 100) / 100;
-      // 第 1 周是两周的发票: 按整张发票 工时/80 说 (和平分后 /40 是同一个数)
+      // 满 1 周只算一周: 基准 40 工时; 第 1 张是两周的发票就取平分后的第 1 周工时
       const w0 = units[0] && units[0].w, sp = (w0 && w0.span_eff) || 1, H = w0 && w0.hours != null ? Number(w0.hours) : null;
+      const from2 = sp > 1 && H != null ? `（这张发票 ${sp} 周 ${H} 工时，第 1 周算 ${part[0].h}）` : '';
       calc = n === 1
         ? (part[0].h == null ? '还没关联第 1 周发票 / 没工时，先按满额'
-          : sp > 1 ? (H >= 40 * sp ? `这张发票 ${sp} 周 ${H} 工时 ≥ ${40 * sp} · 给满` : `${yuan(m.amt)} × ${H}/${40 * sp} 工时（这张发票 ${sp} 周）`)
-          : part[0].h >= 40 ? `${part[0].h} 工时 ≥ 40 · 给满` : `${yuan(m.amt)} × ${part[0].h}/40 工时`)
+          : part[0].h >= 40 ? `${part[0].h} 工时 ≥ 40 · 给满${from2}` : `${yuan(m.amt)} × ${part[0].h}/40 工时${from2}`)
         : `每周 ${yuan(per)}：${part.map(x => x.t).join(' + ')}`;
       if (w0) x = { ...x, period: _refInvPer(w0) };
     }
@@ -2385,14 +2385,16 @@ function _refHr4w(r) {
       if (row) out.push({ k: 'm4_' + w.id, label: `第 ${k} 周（和满 1 周重复，请撤销）`, amt: 0, amount: row.amount, calc: '', cnt: 0, st: 'done', hint: '', row });
       k += n; continue;
     }
-    // 基准工时跟着发票走: 1 周的发票 40 工时, 2 周的 80 工时; 不满按 工时/基准 折算
-    const H = w.hours == null ? null : Number(w.hours), base = 40 * n;
+    // 基准工时按这一行算几周: 一周 40 工时, 两周一起算 (第 3–4 周) 80 工时;
+    // 两周的发票只有一周落在这里时, 按平分后那一周的工时 /40
+    const H = w.hours == null ? null : Number(w.hours), base = 40 * cnt;
+    const h = H == null ? null : cnt === n ? H : Math.round(H / n * cnt * 100) / 100;
     const full = REF_HR_4W_AMT * cnt;
-    const amount = H == null ? full : Math.round(full * Math.min(H, base) / base * 100) / 100;
-    const only = cnt < n ? `，只算${wl([from, to])}` : '';
-    const calc = H == null ? `这张发票没工时，先按满 ${yuan(full)}`
-      : H >= base ? `${n > 1 ? `这张发票 ${n} 周 ` : ''}${H} 工时 ≥ ${base} · 给满${only}`
-      : `${yuan(full)}${cnt > 1 ? `（${cnt} 周）` : ''} × ${H}/${base} 工时${n > 1 ? `（这张发票 ${n} 周${only}）` : ''}`;
+    const amount = h == null ? full : Math.round(full * Math.min(h, base) / base * 100) / 100;
+    const note = cnt < n ? `（这张发票 ${n} 周 ${H} 工时，${wl([from, to])}算 ${h}）` : '';
+    const calc = h == null ? `这张发票没工时，先按满 ${yuan(full)}`
+      : h >= base ? `${h} 工时 ≥ ${base} · 给满${note}`
+      : `${yuan(full)}${cnt > 1 ? `（${cnt} 周）` : ''} × ${h}/${base} 工时${note}`;
     out.push({ k: 'm4_' + w.id, label: wl([from, to]), amt: full, amount, calc, cnt, period: _refInvPer(w), ...stOf(to), row });
     k += n;
   }
@@ -2472,16 +2474,18 @@ function _refHrBonusRow(r) {
     // 已确认 / 已付的金额和现在算出来的不一样 (确认时改过, 或之后发票工时变了) 就标出来
     if ((st === 'approved' || st === 'paid') && b.calc && Math.abs((Number(row.amount) || 0) - (Number(b.amount) || 0)) > 0.005)
       how += ` <span style="color:#b45309;white-space:nowrap">· 确认金额 ${yuan(row.amount)}（算出 ${yuan(b.amount)}）</span>`;
-    return `<tr><td style="${td};font-weight:700;color:#334155;white-space:nowrap">${b.label}${b.period ? `<div style="font-weight:400;font-size:.68rem;color:var(--g400)">${esc(b.period)}</div>` : ''}</td><td style="${td};color:var(--g500);white-space:nowrap">${yuan(b.amt)}</td>
-      <td style="${td}">${how}</td><td style="${td};text-align:right;white-space:nowrap">${amt}</td><td style="${td};white-space:nowrap">${act}${b.k && (row || ((r.pay_log || {})['hb:' + b.k] || []).length) ? _refHistLink(hkey, hopen) : ''}</td></tr>`
+    return `<tr><td style="${td};font-weight:700;color:#334155;white-space:nowrap">${b.label}${b.sub ? ` <span style="font-weight:400;font-size:.7rem;color:var(--g500)">${esc(b.sub)}</span>` : ''}${b.period ? `<div style="font-weight:400;font-size:.68rem;color:var(--g400)">${esc(b.period)}</div>` : ''}</td><td style="${td};color:var(--g500);white-space:nowrap">${yuan(b.amt)}</td>
+      <td style="${td}">${how}</td><td style="${td};text-align:right;white-space:nowrap">${amt}</td><td style="${td};white-space:nowrap">${act}${b.k && (row || String(b.k).split(',').some(k => ((r.pay_log || {})['hb:' + k] || []).length)) ? _refHistLink(hkey, hopen) : ''}</td></tr>`
       + (hopen ? `<tr><td colspan="5" style="background:#fff;padding:.35rem .9rem;font-size:.74rem;line-height:1.7;border-bottom:1px solid #f3e8ff">${_refTimeline(r, 'hb:' + b.k, '¥', row ? [
           { action: row.status === 'rejected' ? 'reject' : 'approve', alt: ['approve', 'reject'], at: row.decided_at, by: row.decided_by, amount: row.status === 'rejected' ? null : row.amount },
           { action: 'payreq', at: row.pay_req_at, by: row.pay_req_by }, { action: 'payok', at: row.pay_ok_at, by: row.pay_ok_by },
           { action: 'paid', at: row.status === 'paid' ? row.paid_at : null, by: row.paid_by, amount: row.amount },
         ] : [])}</td></tr>` : '');
   };
-  const items = _refHrBonus(r).map(line).join('');
-  const f4 = _refHr4w(r);
+  const items0 = _refHrBonus(r), f40 = _refHr4w(r);
+  const m12 = _refHrMerge12(r, items0, f40);
+  const items = (m12 ? items0.map(b => b.k === 'week1' ? m12 : b) : items0).map(line).join('');
+  const f4 = m12 ? f40.filter(b => !m12.k.split(',').includes(b.k)) : f40;
   const f4Open = f4.filter(b => b.k && b.st === 'done' && !b.row);
   const f4All = isAdmin && f4Open.length > 1 ? ` <button class="btn btn-sm" style="background:#16a34a;color:#fff;padding:0 7px;font-size:.7rem" onclick="refHrConfirmAll(${r.id},'f4')">✅ 全部确认（${f4Open.length} 条 ${yuan(f4Open.reduce((t, b) => t + b.amount, 0))}）</button>` : '';
   const f4Items = f4.map(line).join('');
@@ -2496,15 +2500,36 @@ function _refHrBonusRow(r) {
     <div class="ref-weeks"><table style="width:100%;border-collapse:collapse;min-width:640px"><thead><tr>
       <th style="${th}">奖励</th><th style="${th}">标准</th><th style="${th}">怎么算</th><th style="${th};text-align:right">金额</th><th style="${th}">确认 / 付款</th></tr></thead><tbody>
       ${sub('🎯 招工奖励')}${items}
-      ${f4.length ? sub(`📆 第 ${REF_HR_4W_FROM}–${REF_HR_4W_TO} 周 · 每周 ${yuan(REF_HR_4W_AMT)} × 工时/40（跟发票一样 1 周一组或 2 周一组）${f4All}`) + f4Items : ''}
+      ${f4.length ? sub(`📆 第 ${m12 ? REF_HR_4W_FROM + 1 : REF_HR_4W_FROM}–${REF_HR_4W_TO} 周 · 每周 ${yuan(REF_HR_4W_AMT)} × 工时/40（跟发票一样 1 周一组或 2 周一组）${f4All}`) + f4Items : ''}
       ${mg.length ? sub(`🧑‍💼 管理奖励 · 第 ${REF_HR_MGMT_FROM} 周起 ${yuan(REF_HR_MGMT_AMT)}/周${mgAll}`) + mgItems : ''}
     </tbody></table></div>`;
 }
 // 一次全部确认: mgmt 管理奖励 / f4 前 4 周奖励 (还没确认、已达成的, 按算出来的金额)
+// 第一张发票是两周的: 「满 1 周 ¥100」和「第 2 周 ¥37.5」合成一行「第 1–2 周 ¥137.5」, 按 80 工时一起算。
+// 存的时候仍是两个节点 (week1 / m4_<行>), 金额按 100 : 37.5 拆; 两边状态不一样 (之前分开确认过) 就不合并
+const _refHrParts = {};
+function _refHrMerge12(r, items, f4) {
+  const w1 = items.find(b => b.k === 'week1'), m = f4[0];
+  const w0 = (_refWeekUnits(r)[0] || {}).w;
+  if (!w1 || !m || !w0 || (w0.span_eff || 1) < 2 || m.k !== 'm4_' + w0.id || m.cnt !== 1) return null;
+  const a = w1.row, b = m.row;
+  const same = (!a && !b) || (a && b && a.status === b.status && (a.pay_req || '') === (b.pay_req || ''));
+  if (!same) return null;
+  const H = w0.hours == null ? null : Number(w0.hours), amt = w1.amt + m.amt;
+  const amount = H == null ? amt : Math.round(amt * Math.min(H, 80) / 80 * 100) / 100;
+  const calc = H == null ? `这张发票没工时，先按满 ${yuan(amt)}` : H >= 80 ? `${H} 工时 ≥ 80 · 给满` : `${yuan(amt)} × ${H}/80 工时`;
+  const k = `week1,${m.k}`;
+  _refHrParts[`${r.id}|${k}`] = [{ k: 'week1', share: w1.amt / amt }, { k: m.k, share: m.amt / amt }];
+  // 已确认 / 已付的: 金额两边加起来显示
+  const row = a ? { ...a, amount: (Number(a.amount) || 0) + (Number(b.amount) || 0) } : null;
+  return { k, label: '第 1–2 周', sub: '满 1 周 + 第 2 周', amt, amount, calc, period: _refInvPer(w0), st: m.st, hint: m.hint, row };
+}
 async function refHrConfirmAll(id, grp) {
   const r = _refList.find(x => x.id === id);
   if (!r) return;
-  const open = (grp === 'f4' ? _refHr4w(r) : _refHrMgmt(r)).filter(b => b.k && b.st === 'done' && !b.row);
+  // 合进「第 1–2 周」那一行的不在这里一起确认
+  const merged = _refHrMerge12(r, _refHrBonus(r), _refHr4w(r));
+  const open = (grp === 'f4' ? _refHr4w(r) : _refHrMgmt(r)).filter(b => b.k && b.st === 'done' && !b.row && !(merged && merged.k.split(',').includes(b.k)));
   const tot = open.reduce((t, b) => t + b.amount, 0);
   if (!open.length || !confirm(`确认 ${open.length} 条${grp === 'f4' ? '前 4 周奖励' : '管理奖励'}，共 ${yuan(tot)}？`)) return;
   try {
@@ -2537,7 +2562,9 @@ const _refHistOpen = new Set();
 function refHistToggle(key) { _refHistOpen.has(key) ? _refHistOpen.delete(key) : _refHistOpen.add(key); renderRefList(); }
 // 时间线: 有操作记录就按记录列; 上线前就确认 / 付过的, 用表上留的人和时间补一条
 function _refTimeline(r, item, cur, synth) {
-  const log = ((r.pay_log || {})[item] || []).slice();
+  // 合并行: 'hb:week1,m4_12' → 两个节点的记录放一起
+  const pre = item.startsWith('hb:') ? 'hb:' : '';
+  const log = item.slice(pre.length).split(',').flatMap(k => ((r.pay_log || {})[pre + k] || []).slice());
   synth.forEach(x => { if (x.at && !log.some(l => l.action === x.action || (x.alt || []).includes(l.action))) log.push(x); });
   log.sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')));
   if (!log.length) return '<span style="color:var(--g400)">还没有操作记录</span>';
@@ -2559,6 +2586,7 @@ async function refWeekPayReq(id, action) {
 }
 async function refHrBonus(id, ms, action) {
   const r = _refList.find(x => x.id === id);
+  if (String(ms).includes(',')) return refHrBonusMulti(id, ms, action);
   const body = { milestone: ms, action, hr_name: r ? _refHrOf(r) : '' };
   if (action === 'approve') {
     const v = (document.getElementById('rhb' + id + ms) || {}).value;
@@ -2577,6 +2605,31 @@ async function refHrBonus(id, ms, action) {
     toast(action === 'approve' ? `✅ 已确认 ${yuan(body.amount)}` : action === 'paid' ? '💰 已记已付' : action === 'payreq' ? '💳 已确认支付，等管理员审核' : action === 'payok' ? '🛡 已审核通过，可以付款了' : '已更新');
     loadRefList();
   } catch (e) { toast(e.message || '操作失败', true); }
+}
+// 合并行 (第 1–2 周): 同一个操作对两个节点各做一次; 确认金额按比例拆开
+async function refHrBonusMulti(id, ms, action) {
+  const r = _refList.find(x => x.id === id);
+  const parts = _refHrParts[`${id}|${ms}`] || ms.split(',').map(k => ({ k, share: 1 / ms.split(',').length }));
+  let total = null, note = '';
+  if (action === 'approve') {
+    const v = (document.getElementById('rhb' + id + ms) || {}).value;
+    if (v === '' || v == null || isNaN(Number(v))) return toast('请填写金额', true);
+    total = Number(v);
+  } else if (action === 'reject') { note = prompt('为什么不给（可选，比如：有投诉）：'); if (note === null) return; }
+  else if (action === 'reset' && !confirm('撤销这个节点的确认？')) return;
+  else if (action === 'unpaid' && !confirm('撤回「已付」？')) return;
+  else if (action === 'payreturn' && !confirm('退回这笔的确认支付？会计要重新确认。')) return;
+  try {
+    let left = total;
+    for (let i = 0; i < parts.length; i++) {
+      const body = { milestone: parts[i].k, action, hr_name: r ? _refHrOf(r) : '', note };
+      if (action === 'approve') { body.amount = i === parts.length - 1 ? Math.round(left * 100) / 100 : Math.round(total * parts[i].share * 100) / 100; left -= body.amount; }
+      const x = await api(`/api/acct/referrals/${id}/hr-bonus`, { method: 'POST', body: JSON.stringify(body) });
+      if (x && x.error) throw new Error(x.error);
+    }
+    toast(action === 'approve' ? `✅ 已确认 ${yuan(total)}` : action === 'paid' ? '💰 已记已付' : action === 'payreq' ? '💳 已确认支付，等管理员审核' : action === 'payok' ? '🛡 已审核通过，可以付款了' : '已更新');
+  } catch (e) { toast(e.message || '操作失败', true); }
+  loadRefList();
 }
 // 已工作时长: 从上工日期到离职日期(在职算到今天)
 function _refDuration(r) {
