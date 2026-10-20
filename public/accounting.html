@@ -474,7 +474,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <option value="noshow">❌ 没去面试</option>
         <option value="failed">🙅 面试没通过</option>
       </select>
-      <select id="refBy" onchange="renderRefList()" title="按谁提交的筛选"><option value="">👤 提交人：全部</option></select>
+      <select id="refBy" onchange="renderRefList()" title="按 HR 筛选：HR 自己招的算选的那个 HR，其余算提交这条的账号"><option value="">👤 HR / 提交人：全部</option></select>
       <button class="btn btn-blue" id="btnRefAdd" onclick="openRefAdd()" style="display:none">＋ 新增介绍</button>
       <button class="btn btn-outline" onclick="openFmList()">👷 工头名单</button>
       <a id="refOwnPage" class="btn btn-outline" href="/referral" target="_blank" title="只看介绍费的独立页面">↗ Referral 页面</a>
@@ -2412,9 +2412,17 @@ async function refMarkInterview(id, st) {
     toast(st === 'attended' ? '✅ 已标记：面试去了' + (attendedAt ? '（' + attendedAt + '）' : '') : st === 'no_show' ? '已标记：没去面试' : '已清除标记');
   } catch (e) { toast(e.message || '操作失败', true); }
 }
-// 提交人 / 核查人做成醒目的小标签; 点提交人 = 只看他提交的
+// 登录名 → 账号显示名 (服务器按 admin_users.display_name 给的), 让 zhangni 和「HR 自己招的 · 张倪」对上
+function _refDisp(u) {
+  const r = u && _refList.find(x => x.created_by === u && x.created_by_name);
+  return r ? r.created_by_name : (u || '');
+}
+// 这条介绍算哪个 HR 的: HR 自己招的 = 选的那个 HR, 否则 = 提交 (登记) 这条的账号
+const _refHrKey = r => r.hr_credit || _refDisp(r.created_by);
+// 提交人 / 核查人做成醒目的小标签; 点提交人 = 只看算他的
 function _refWhoChip(name, verb) {
   if (!name) return '';
+  name = _refDisp(name);
   const sub = verb === '提交';
   return `<span ${sub ? `onclick="refBySet(this.dataset.who)" data-who="${esc(name)}" title="只看 ${esc(name)} 提交的"` : ''} style="display:inline-flex;align-items:center;gap:.2rem;white-space:nowrap;border-radius:999px;padding:1px 9px;font-size:.76rem;font-weight:700;${sub ? 'background:#ede9fe;color:#5b21b6;border:1px solid #c4b5fd;cursor:pointer' : 'background:#f1f5f9;color:#334155;border:1px solid #cbd5e1'}">${sub ? '👤' : '🔎'} ${esc(name)} ${verb}</span>`;
 }
@@ -2427,9 +2435,9 @@ function refBySet(name) {
 function _refByOptions() {
   const sel = document.getElementById('refBy');
   const cur = sel.value, cnt = {};
-  _refList.forEach(r => { const k = r.created_by || ''; cnt[k] = (cnt[k] || 0) + 1; });
+  _refList.forEach(r => { const k = _refHrKey(r); cnt[k] = (cnt[k] || 0) + 1; });
   const names = Object.keys(cnt).filter(Boolean).sort((a, b) => cnt[b] - cnt[a] || a.localeCompare(b));
-  sel.innerHTML = '<option value="">👤 提交人：全部</option>' + names.map(n => `<option value="${esc(n)}">👤 ${esc(n)}（${cnt[n]}）</option>`).join('')
+  sel.innerHTML = '<option value="">👤 HR / 提交人：全部</option>' + names.map(n => `<option value="${esc(n)}">👤 ${esc(n)}（${cnt[n]}）</option>`).join('')
     + (cnt[''] ? `<option value="__none__">👤 没记提交人（${cnt['']}）</option>` : '');
   sel.value = cur && (names.includes(cur) || cur === '__none__') ? cur : '';
   sel.style.cssText = sel.value ? 'background:#ede9fe;border-color:#a78bfa;color:#5b21b6;font-weight:700' : '';
@@ -2446,12 +2454,12 @@ function renderRefList() {
   // 电话按数字比 (输 (630) 641-1979 / +1… 也能搜到存成 6306411979 的)
   const qd = String(q || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
   const dg = v => String(v || '').replace(/\D/g, '');
-  if (q) list = list.filter(r => [r.foreman_name, r.foreman_phone, r.hr_name, r.worker_name, r.worker_phone, r.worker_wage, r.warehouse_name, r.warehouse_address, r.job_title, r.description, ...(r.invoices || []).map(v => v.invoice_number + ' ' + v.company_name)].join(' ').toLowerCase().includes(q)
+  if (q) list = list.filter(r => [r.foreman_name, r.foreman_phone, r.hr_name, r.created_by, r.created_by_name, r.worker_name, r.worker_phone, r.worker_wage, r.warehouse_name, r.warehouse_address, r.job_title, r.description, ...(r.invoices || []).map(v => v.invoice_number + ' ' + v.company_name)].join(' ').toLowerCase().includes(q)
     || (qd.length >= 4 && (dg(r.worker_phone).includes(qd) || dg(r.foreman_phone).includes(qd))));
   if (flt === 'noshow') list = list.filter(r => r.interview_status === 'no_show');
   else if (flt === 'failed') list = list.filter(r => r.interview_status === 'failed');
   else if (flt) list = list.filter(r => _refOverall(r) === flt);
-  if (by) list = list.filter(r => by === '__none__' ? !r.created_by : r.created_by === by);
+  if (by) list = list.filter(r => by === '__none__' ? !_refHrKey(r) : _refHrKey(r) === by);
   // 三个阶段分页: 数字按当前搜索/筛选算, 切过去不会扑空
   const stN = { interview: 0, attended: 0, working: 0, ended: 0, quit: 0, noshow: 0 };
   list.forEach(r => stN[_refStage(r)]++);
@@ -2574,7 +2582,7 @@ function renderRefList() {
     return `<div class="card ref-card" id="refCard${r.id}" style="${r.review_status === 'rejected' ? 'opacity:.6;' : ''}${overdue ? 'background:#fef2f2;box-shadow:0 0 0 2px #fca5a5;' : ''}border-left-color:${overdue ? '#dc2626' : ov === 'paid' ? '#16a34a' : ov === 'rejected' ? '#cbd5e1' : ov === 'pending' ? '#fb923c' : '#3b82f6'}">
       <div class="ref-top">
         <div class="ref-ppl">
-          <div>${lbl('工头 · 介绍人')}${r.hr_self ? '<span style="display:inline-block;background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;border-radius:6px;padding:1px 8px;font-size:.8rem;font-weight:700">🙋 HR 自己招的' + (r.hr_name ? ` · ${esc(r.hr_name)}` : '') + '</span>' : person(r.foreman_name, r.foreman_phone, r.foreman_state ? ` · 📍 ${esc(r.foreman_state)}` : '')}</div>
+          <div>${lbl('工头 · 介绍人')}${r.hr_self ? '<span style="display:inline-block;background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;border-radius:6px;padding:1px 8px;font-size:.8rem;font-weight:700">🙋 HR 自己招的' + (r.hr_name ? ` · ${esc(r.hr_name)}` : '') + '</span>' : person(r.foreman_name, r.foreman_phone, r.foreman_state ? ` · 📍 ${esc(r.foreman_state)}` : '')}${preWork && r.created_by ? `<div style="margin-top:3px">${_refWhoChip(r.created_by, '提交')}</div>` : ''}</div>
           <div class="ref-arrow">➜</div>
           <div>${lbl('被介绍工人')}${person(r.worker_name, r.worker_phone, (r.worker_wage ? ` · <span style="color:#047857;font-weight:700">💵 ${esc(r.worker_wage)}</span>` : '') + attHtml)}${_refProfileChip(r)}</div>
         </div>
