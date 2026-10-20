@@ -863,6 +863,11 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS truck_order_overrides (
 try { db.exec("ALTER TABLE truck_order_overrides ADD COLUMN cargo TEXT DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN discount_value REAL DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN discount_type TEXT DEFAULT '%'"); } catch(e) {}
+// 🇨🇳 国内员工工资 (fee_type='cnpay'): 底薪 / 奖金 / 报销 分开记, amount = 三项合计; 币种默认人民币
+try { db.exec("ALTER TABLE fee_records ADD COLUMN base_amount REAL DEFAULT NULL"); } catch(e) {}
+try { db.exec("ALTER TABLE fee_records ADD COLUMN bonus_amount REAL DEFAULT NULL"); } catch(e) {}
+try { db.exec("ALTER TABLE fee_records ADD COLUMN reimb_amount REAL DEFAULT NULL"); } catch(e) {}
+try { db.exec("ALTER TABLE fee_records ADD COLUMN currency TEXT DEFAULT 'USD'"); } catch(e) {}
 // 🪵 会计手动添加的木板发票 (照 pallet.bintique.com 的 New Order 表单): 会计提交为
 // approval_status='pending', 管理员审核通过才计入木板账单汇总 / 才能记付款批注。
 // 付款批注 target_type='palletmanual' (与 Bintique 账单 id 分开编号)。
@@ -41402,7 +41407,7 @@ app.post('/api/acct/warehouse-claims/:id/approval', requireAdmin, requireRole('a
 });
 
 // ─── 费用记录 (保险费 insurance / 律师费 legal) — 和赔偿事故同一套玩法 ───
-const FEE_RECORD_TYPES = ['insurance', 'legal', 'company', 'truck'];
+const FEE_RECORD_TYPES = ['insurance', 'legal', 'company', 'truck', 'cnpay'];
 app.get('/api/acct/fee-records', requireAdmin, requireAcctView, (req, res) => {
   const rows = db.prepare(`SELECT * FROM fee_records
     ORDER BY CASE WHEN approval_status='pending' THEN 0 ELSE 1 END, fee_date DESC, created_at DESC`).all();
@@ -41703,24 +41708,35 @@ app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin
   // 客服只能添加卡车费用 (卡车页签「客服可以自己加」); 其他费用类型仍限 会计/admin
   if (req.userRole === 'cs' && feeType !== 'truck') return res.status(403).json({ error: '客服只能添加卡车费用' });
   const party = String(b.party_name || '').trim().slice(0, 200);
-  if (!party) return res.status(400).json({ error: feeType === 'insurance' ? '请填写保险公司' : feeType === 'legal' ? '请填写律师 / 律所' : feeType === 'truck' ? '请填写卡车公司' : '请填写收款方 / 供应商' });
-  const amtNum = Number(b.amount);
+  if (!party) return res.status(400).json({ error: feeType === 'insurance' ? '请填写保险公司' : feeType === 'legal' ? '请填写律师 / 律所' : feeType === 'truck' ? '请填写卡车公司' : feeType === 'cnpay' ? '请填写员工姓名' : '请填写收款方 / 供应商' });
+  let amtNum = Number(b.amount);
+  // 国内工资: 底薪 / 奖金 / 报销 三项, 总额由服务端加总, 不信前端传的 amount
+  const _part = v => (v != null && v !== '' && !isNaN(Number(v))) ? Number(v) : null;
+  const base = feeType === 'cnpay' ? _part(b.base_amount) : null;
+  const bonus = feeType === 'cnpay' ? _part(b.bonus_amount) : null;
+  const reimb = feeType === 'cnpay' ? _part(b.reimb_amount) : null;
+  if (feeType === 'cnpay') {
+    if (base == null && bonus == null && reimb == null) return res.status(400).json({ error: '请至少填写底薪 / 奖金 / 报销其中一项' });
+    amtNum = Math.round(((base || 0) + (bonus || 0) + (reimb || 0)) * 100) / 100;
+  }
+  const currency = ['CNY', 'USD'].includes(String(b.currency || '')) ? String(b.currency) : (feeType === 'cnpay' ? 'CNY' : 'USD');
   const files = Array.isArray(req.files) ? req.files : [];
   const atts = files.map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) }));
   const isAdmin = req.userRole === 'admin';
   // 租车单扩展字段 (卡车费用用, 照 Bintique 租车单): 结束日期 / 装货类型 / 折扣
   const discNum = Number(b.discount_value);
   const r = db.prepare(`INSERT INTO fee_records
-    (fee_type, party_name, fee_date, fee_date_end, amount, description, cargo, truck_size, discount_value, discount_type, status, attachments, approval_status, created_by, approved_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`)
+    (fee_type, party_name, fee_date, fee_date_end, amount, description, cargo, truck_size, discount_value, discount_type, base_amount, bonus_amount, reimb_amount, currency, status, attachments, approval_status, created_by, approved_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`)
     .run(feeType, party, String(b.fee_date || '').trim().slice(0, 20),
       String(b.fee_date_end || '').trim().slice(0, 20),
-      (b.amount != null && b.amount !== '' && !isNaN(amtNum)) ? amtNum : null,
+      (feeType === 'cnpay' || (b.amount != null && b.amount !== '' && !isNaN(amtNum))) ? amtNum : null,
       String(b.description || '').trim().slice(0, 2000),
       String(b.cargo || '').trim().slice(0, 200),
       _feeTruckSize(b.truck_size),
       (b.discount_value != null && b.discount_value !== '' && !isNaN(discNum)) ? discNum : null,
       ['%', '$'].includes(String(b.discount_type || '')) ? String(b.discount_type) : '%',
+      base, bonus, reimb, currency,
       JSON.stringify(atts), isAdmin ? 'approved' : 'pending', req.userName || '', isAdmin ? (req.userName || '') : '');
   res.json({ success: true, id: r.lastInsertRowid, approval_status: isAdmin ? 'approved' : 'pending' });
 });

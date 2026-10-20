@@ -207,6 +207,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <button class="tab" id="tabFeeIns" onclick="showTab('feeins')"><span class="t-zh">🛡️ 保险费</span><span class="t-en">Insurance</span></button>
     <button class="tab" id="tabFeeLaw" onclick="showTab('feelaw')"><span class="t-zh">⚖️ 律师费</span><span class="t-en">Legal</span></button>
     <button class="tab" id="tabFeeCo" onclick="showTab('feeco')"><span class="t-zh">🏢 公司支出</span><span class="t-en">Expenses</span></button>
+    <button class="tab" id="tabFeeCn" onclick="showTab('feecn')"><span class="t-zh">🇨🇳 国内工资</span><span class="t-en">CN Payroll</span></button>
     <button class="tab" id="tabPallet" onclick="showTab('pallet')"><span class="t-zh">🪵 木板账单</span><span class="t-en">Pallet</span></button>
     <button class="tab" id="tabTruck" onclick="showTab('truck')"><span class="t-zh">🚚 卡车费用</span><span class="t-en">Truck</span></button>
     <button class="tab" id="tabBank" onclick="showTab('bank')" style="display:none"><span class="t-zh">🔗 银行直连</span><span class="t-en">Bank Feed</span><span id="bankUnrevBadge" style="display:none;background:#dc2626;color:#fff;border-radius:10px;font-size:.68rem;padding:1px 7px;position:absolute;top:3px;right:4px"></span></button>
@@ -813,7 +814,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <span id="feeStats" style="font-size:.8rem;color:var(--g500)"></span>
     </div>
     <div class="card" style="overflow-x:auto">
-      <table><thead><tr>
+      <table><thead id="feeHead"><tr>
         <th id="feePartyTh">对方</th><th>日期</th><th style="text-align:right">金额</th><th>说明</th><th>状态</th><th>发票文件</th><th>付款批注（会计）</th><th></th>
       </tr></thead><tbody id="feeBody"><tr><td colspan="8" style="color:var(--g400)">加载中…</td></tr></tbody></table>
     </div>
@@ -827,10 +828,30 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <label id="feePartyLabel" style="font-size:.76rem;color:var(--g500)">保险公司</label>
       <input type="text" id="faParty" list="faPartyList" placeholder="" style="width:100%;margin:.15rem 0 .55rem">
       <datalist id="faPartyList"></datalist>
-      <label style="font-size:.76rem;color:var(--g500)">日期</label>
-      <input type="date" id="faDate" style="width:100%;margin:.15rem 0 .55rem">
-      <label style="font-size:.76rem;color:var(--g500)">金额（$）</label>
-      <input type="number" step="0.01" min="0" id="faAmount" placeholder="例：1200.00" style="width:100%;margin:.15rem 0 .55rem">
+      <div id="faDateWrap">
+        <label style="font-size:.76rem;color:var(--g500)">日期</label>
+        <input type="date" id="faDate" style="width:100%;margin:.15rem 0 .55rem">
+        <label style="font-size:.76rem;color:var(--g500)">金额（$）</label>
+        <input type="number" step="0.01" min="0" id="faAmount" placeholder="例：1200.00" style="width:100%;margin:.15rem 0 .55rem">
+      </div>
+      <!-- 🇨🇳 国内工资: 工资月份 + 底薪 / 奖金 / 报销, 合计自动算 -->
+      <div id="faCnWrap" style="display:none">
+        <div style="display:flex;gap:.5rem">
+          <div style="flex:1"><label style="font-size:.76rem;color:var(--g500)">工资月份</label>
+            <input type="month" id="faMonth" style="width:100%;margin:.15rem 0 .55rem"></div>
+          <div style="width:110px"><label style="font-size:.76rem;color:var(--g500)">币种</label>
+            <select id="faCur" onchange="faCnSum()" style="width:100%;margin:.15rem 0 .55rem"><option value="CNY">¥ 人民币</option><option value="USD">$ 美元</option></select></div>
+        </div>
+        <div style="display:flex;gap:.5rem">
+          <div style="flex:1"><label style="font-size:.76rem;color:var(--g500)">Base 底薪</label>
+            <input type="number" step="0.01" min="0" id="faBase" oninput="faCnSum()" placeholder="0.00" style="width:100%;margin:.15rem 0 .55rem"></div>
+          <div style="flex:1"><label style="font-size:.76rem;color:var(--g500)">Bonus 奖金</label>
+            <input type="number" step="0.01" min="0" id="faBonus" oninput="faCnSum()" placeholder="0.00" style="width:100%;margin:.15rem 0 .55rem"></div>
+          <div style="flex:1"><label style="font-size:.76rem;color:var(--g500)">报销费用</label>
+            <input type="number" step="0.01" min="0" id="faReimb" oninput="faCnSum()" placeholder="0.00" style="width:100%;margin:.15rem 0 .55rem"></div>
+        </div>
+        <div id="faCnTotal" style="font-size:.82rem;color:var(--g500);margin:-.2rem 0 .55rem">合计：—</div>
+      </div>
       <label style="font-size:.76rem;color:var(--g500)">说明（可选）</label>
       <textarea id="faDesc" rows="3" placeholder="" style="width:100%;margin:.15rem 0 .55rem;font-family:inherit;resize:vertical"></textarea>
       <label style="font-size:.76rem;color:var(--g500)">发票 / 凭证文件（可多选，PDF 或图片）</label>
@@ -1320,6 +1341,7 @@ function showTab(t) {
   document.getElementById('tabFeeIns').classList.toggle('on', t === 'feeins');
   document.getElementById('tabFeeLaw').classList.toggle('on', t === 'feelaw');
   document.getElementById('tabFeeCo').classList.toggle('on', t === 'feeco');
+  document.getElementById('tabFeeCn').classList.toggle('on', t === 'feecn');
   document.getElementById('tabPallet').classList.toggle('on', t === 'pallet');
   document.getElementById('panePallet').style.display = t === 'pallet' ? '' : 'none';
   if (t === 'pallet') loadPalletList();
@@ -1332,9 +1354,9 @@ function showTab(t) {
   document.getElementById('tabZelle').classList.toggle('on', t === 'zelle');
   document.getElementById('paneZelle').style.display = t === 'zelle' ? '' : 'none';
   if (t === 'zelle') zInit();
-  const isFee = t === 'feeins' || t === 'feelaw' || t === 'feeco';
+  const isFee = t === 'feeins' || t === 'feelaw' || t === 'feeco' || t === 'feecn';
   document.getElementById('paneFee').style.display = isFee ? '' : 'none';
-  if (isFee) { _feeType = t === 'feeins' ? 'insurance' : (t === 'feelaw' ? 'legal' : 'company'); feeApplyType(); renderFeeList(); }
+  if (isFee) { _feeType = t === 'feeins' ? 'insurance' : t === 'feelaw' ? 'legal' : t === 'feecn' ? 'cnpay' : 'company'; feeApplyType(); renderFeeList(); }
   document.getElementById('paneInv').style.display = t === 'inv' ? '' : 'none';
   document.getElementById('paneStmt').style.display = t === 'stmt' ? '' : 'none';
   document.getElementById('paneClaims').style.display = t === 'claims' ? '' : 'none';
@@ -1834,7 +1856,7 @@ async function openPayNote(type, id) {
   document.getElementById('pnTitle').textContent = type === 'invoice'
     ? `发票 ${item.invoice_number || ''} · ${item.company_name || ''} · ${money(item.subtotal)}`
     : type === 'fee'
-      ? `${(FEE_CFG[item.fee_type] || FEE_CFG.insurance).title} · ${item.party_name || ''} · ${item.amount != null ? money(item.amount) : ''}`
+      ? `${(FEE_CFG[item.fee_type] || FEE_CFG.insurance).title} · ${item.party_name || ''}${item.fee_type === 'cnpay' && item.fee_date ? ' · ' + item.fee_date : ''} · ${item.amount != null ? (item.fee_type === 'cnpay' ? _feeMoney(item.amount, item.currency) : money(item.amount)) : ''}`
       : type === 'referralweek'
         ? `🤝 介绍费 · 第 ${item.week_no} 周 · ${item.ref.worker_name || ''}（工头 ${item.ref.foreman_name || ''}）· 发票 ${item.invoice.invoice_number || ''} ${item.invoice.period_start ? item.invoice.period_start + ' ~ ' + (item.invoice.period_end || '') : ''}${item.amount != null ? ' · ' + money(item.amount) : ''}`
       : type === 'referral'
@@ -3911,17 +3933,31 @@ const FEE_CFG = {
   insurance: { title: '🛡️ 保险费', party: '保险公司', searchPh: '搜保险公司 / 说明…', addTitle: '🛡️ 新增保险费', partyPh: '例：桃园保险 / State Farm', descPh: '例：仓库责任险 2026 年度保费' },
   legal: { title: '⚖️ 律师费', party: '律师 / 律所', searchPh: '搜律师 / 说明…', addTitle: '⚖️ 新增律师费', partyPh: '例：XX Law Firm / 王律师', descPh: '例：劳工纠纷咨询、合同审阅…' },
   company: { title: '🏢 公司支出', party: '收款方 / 供应商', searchPh: '搜收款方 / 说明…', addTitle: '🏢 新增公司支出', partyPh: '例：供应商 / 服务商名称', descPh: '例：办公用品、软件订阅、税务、差旅…' },
+  cnpay: { title: '🇨🇳 国内工资', party: '员工', searchPh: '搜员工 / 月份 / 说明…', addTitle: '🇨🇳 新增国内员工工资', partyPh: '员工姓名', descPh: '例：报销明细（差旅、打车、餐费…）、奖金说明' },
 };
+const _CUR_SYM = { CNY: '¥', USD: '$' };
+const _feeMoney = (v, cur) => v == null || v === '' ? '—' : (_CUR_SYM[cur] || '$') + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// 新增弹窗里底薪 / 奖金 / 报销 实时合计
+function faCnSum() {
+  const n = id => Number(document.getElementById(id).value) || 0;
+  const any = ['faBase', 'faBonus', 'faReimb'].some(id => document.getElementById(id).value !== '');
+  document.getElementById('faCnTotal').textContent = '合计：' + (any ? _feeMoney(n('faBase') + n('faBonus') + n('faReimb'), document.getElementById('faCur').value) : '—');
+}
 let _feeType = 'insurance', _feeList = [];
 // 切换 保险费/律师费 页签时更新列头、搜索框和新增弹窗的文案
 function feeApplyType() {
   const cfg = FEE_CFG[_feeType];
-  document.getElementById('feePartyTh').textContent = cfg.party;
   document.getElementById('feeSearch').placeholder = cfg.searchPh;
   document.getElementById('feeAddTitle').textContent = cfg.addTitle;
   document.getElementById('feePartyLabel').textContent = cfg.party;
   document.getElementById('faParty').placeholder = cfg.partyPh;
   document.getElementById('faDesc').placeholder = cfg.descPh;
+  const cn = _feeType === 'cnpay';
+  document.getElementById('faDateWrap').style.display = cn ? 'none' : '';
+  document.getElementById('faCnWrap').style.display = cn ? '' : 'none';
+  document.getElementById('feeHead').innerHTML = cn
+    ? `<tr><th>员工</th><th>月份</th><th style="text-align:right">Base 底薪</th><th style="text-align:right">Bonus 奖金</th><th style="text-align:right">报销</th><th style="text-align:right">合计</th><th>说明</th><th>状态</th><th>凭证文件</th><th>付款批注（会计）</th><th></th></tr>`
+    : `<tr><th id="feePartyTh">${esc(cfg.party)}</th><th>日期</th><th style="text-align:right">金额</th><th>说明</th><th>状态</th><th>发票文件</th><th>付款批注（会计）</th><th></th></tr>`;
   // 保险费的对方下拉建议用标注面板同一份保险公司名单 (bank-ann.js 的 BS_INSUR_COMPANIES)
   const names = _feeType === 'insurance' && typeof BS_INSUR_COMPANIES !== 'undefined' ? BS_INSUR_COMPANIES : [];
   document.getElementById('faPartyList').innerHTML = names.map(n => `<option value="${esc(n)}"></option>`).join('');
@@ -3939,11 +3975,22 @@ function renderFeeList() {
   const cfg = FEE_CFG[_feeType];
   const q = (document.getElementById('feeSearch').value || '').trim().toLowerCase();
   const list = _feeList.filter(f => f.fee_type === _feeType)
-    .filter(f => !q || `${f.party_name || ''} ${f.description || ''}`.toLowerCase().includes(q));
+    .filter(f => !q || `${f.party_name || ''} ${f.description || ''} ${f.fee_date || ''}`.toLowerCase().includes(q));
+  const cn = _feeType === 'cnpay';
   // 只有审核通过(approved)的才计入笔数和总额; 待审核/已拒绝单独提示 (同赔偿事故)
   const okRows = list.filter(f => (f.approval_status || 'approved') === 'approved');
   const pendN = list.filter(f => f.approval_status === 'pending').length;
   const total = okRows.reduce((s, f) => s + (Number(f.amount) || 0), 0);
+  if (cn) {
+    // 按币种分开合计 底薪 / 奖金 / 报销
+    const byCur = {};
+    okRows.forEach(f => {
+      const c = f.currency || 'CNY', t = byCur[c] || (byCur[c] = { base: 0, bonus: 0, reimb: 0, total: 0 });
+      t.base += Number(f.base_amount) || 0; t.bonus += Number(f.bonus_amount) || 0; t.reimb += Number(f.reimb_amount) || 0; t.total += Number(f.amount) || 0;
+    });
+    const parts = Object.entries(byCur).map(([c, t]) => `合计 ${_feeMoney(t.total, c)}（Base ${_feeMoney(t.base, c)} · Bonus ${_feeMoney(t.bonus, c)} · 报销 ${_feeMoney(t.reimb, c)}）`);
+    document.getElementById('feeStats').textContent = `${okRows.length} 笔` + (parts.length ? ' · ' + parts.join(' ； ') : ' · 合计 ¥0.00') + (pendN ? ` · ⏳ 待审核 ${pendN} 笔` : '');
+  } else
   document.getElementById('feeStats').textContent = `${okRows.length} 笔 · 合计 $${total.toFixed(2)}` + (pendN ? ` · ⏳ 待审核 ${pendN} 笔` : '');
   document.getElementById('feeBody').innerHTML = list.length ? list.map(f => {
     const atts = Array.isArray(f.attachments) ? f.attachments : [];
@@ -3962,14 +4009,18 @@ function renderFeeList() {
     return `<tr${ap === 'rejected' ? ' style="opacity:.55"' : ''}>
       <td style="font-weight:600">${esc(f.party_name || '—')}</td>
       <td style="white-space:nowrap">${esc(f.fee_date || '—')}</td>
-      <td style="text-align:right;font-weight:700;color:#dc2626;white-space:nowrap">${f.amount != null ? '$' + Number(f.amount).toFixed(2) : '—'}</td>
+      ${cn ? `<td style="text-align:right;white-space:nowrap">${_feeMoney(f.base_amount, f.currency)}</td>
+      <td style="text-align:right;white-space:nowrap">${_feeMoney(f.bonus_amount, f.currency)}</td>
+      <td style="text-align:right;white-space:nowrap">${_feeMoney(f.reimb_amount, f.currency)}</td>
+      <td style="text-align:right;font-weight:700;color:#dc2626;white-space:nowrap">${_feeMoney(f.amount, f.currency)}</td>`
+      : `<td style="text-align:right;font-weight:700;color:#dc2626;white-space:nowrap">${f.amount != null ? '$' + Number(f.amount).toFixed(2) : '—'}</td>`}
       <td style="max-width:320px">${esc(f.description || '')}</td>
       <td>${statusCell}</td>
       <td>${files}</td>
       <td>${payNoteCell('fee', f.id, f.pay_note)}</td>
       <td style="white-space:nowrap">${USER.role === 'admin' ? `<a style="cursor:pointer;color:#b91c1c;font-size:.78rem" title="删除这条记录" onclick="feeDelete(${f.id})">🗑</a>` : ''}</td>
     </tr>`;
-  }).join('') : `<tr><td colspan="8" style="color:var(--g400);padding:1rem">暂无${cfg.title.slice(cfg.title.indexOf(' ') + 1)}记录，点「＋ 新增」添加。</td></tr>`;
+  }).join('') : `<tr><td colspan="${cn ? 11 : 8}" style="color:var(--g400);padding:1rem">暂无${cfg.title.slice(cfg.title.indexOf(' ') + 1)}记录，点「＋ 新增」添加。</td></tr>`;
 }
 function openFeeAdd() {
   feeApplyType();
@@ -3989,14 +4040,23 @@ async function submitFeeAdd() {
     const fd = new FormData();
     fd.append('fee_type', _feeType);
     fd.append('party_name', party);
-    fd.append('fee_date', document.getElementById('faDate').value || '');
-    fd.append('amount', document.getElementById('faAmount').value || '');
+    if (_feeType === 'cnpay') {
+      fd.append('fee_date', document.getElementById('faMonth').value || '');
+      fd.append('base_amount', document.getElementById('faBase').value || '');
+      fd.append('bonus_amount', document.getElementById('faBonus').value || '');
+      fd.append('reimb_amount', document.getElementById('faReimb').value || '');
+      fd.append('currency', document.getElementById('faCur').value || 'CNY');
+    } else {
+      fd.append('fee_date', document.getElementById('faDate').value || '');
+      fd.append('amount', document.getElementById('faAmount').value || '');
+    }
     fd.append('description', document.getElementById('faDesc').value.trim());
     [...document.getElementById('faFiles').files].forEach(f => fd.append('invoice', f));
     const r = await fetch('/api/acct/fee-records', { method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd }).then(x => x.json());
     if (r.error) throw new Error(r.error);
     closeFeeAdd();
-    ['faParty', 'faDate', 'faAmount', 'faDesc', 'faFiles'].forEach(id => { document.getElementById(id).value = ''; });
+    ['faParty', 'faDate', 'faAmount', 'faDesc', 'faFiles', 'faMonth', 'faBase', 'faBonus', 'faReimb'].forEach(id => { document.getElementById(id).value = ''; });
+    faCnSum();
     toast(r.approval_status === 'approved' ? '✅ 已添加' : '✅ 已提交，等待管理员审核');
     loadAll();
   } catch (e) { toast(e.message || '提交失败', true); }
