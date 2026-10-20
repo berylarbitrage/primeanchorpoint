@@ -2395,9 +2395,10 @@ function _refHrBonusRow(r) {
       due += row.amount || 0; amt = `<b>${yuan(row.amount)}</b>`;
       const conf = `<b style="color:#1d4ed8">✅ 金额已确认</b> <span style="${tiny}">${esc(row.decided_by || '')} ${esc(_refAt(row.decided_at))}</span>${isAdmin && !row.pay_req ? undo('reset', '撤销') : ''}`;
       const btn = (a, t, bg) => ` <button class="btn btn-sm${bg ? '' : ' btn-outline'}" style="padding:0 6px;font-size:.7rem${bg ? `;background:${bg};color:#fff` : ''}" onclick="refHrBonus(${r.id},'${b.k}','${a}')">${t}</button>`;
-      if (row.pay_req === 'approved') act = `${conf}<div><span style="color:#047857;font-weight:700">🛡 支付已审核</span> <span style="${tiny}">${esc(row.pay_ok_by || '')} ${esc(_refAt(row.pay_ok_at))}</span>${canPay ? btn('paid', '💰 记已付') : ''}${isAdmin ? undo('payreturn', '退回') : ''}</div>`;
-      else if (row.pay_req === 'requested') act = `${conf}<div><span style="color:#b45309;font-weight:700">⏳ 已确认支付 · 待审核</span> <span style="${tiny}">💳 ${esc(row.pay_req_by || '')} ${esc(_refAt(row.pay_req_at))}</span>${isAdmin ? btn('payok', '🛡 审核通过', '#16a34a') + undo('payreturn', '退回') : canPay ? undo('paycancel', '撤回') : ''}</div>`;
-      else act = `${conf}${canPay ? `<div>${btn('payreq', '💳 确认支付', '#0f4c6b')}</div>` : ''}`;
+      const sep = ' <span style="color:var(--g300)">→</span> ';
+      if (row.pay_req === 'approved') act = `${conf}${sep}<span style="color:#047857;font-weight:700">🛡 支付已审核</span> <span style="${tiny}">${esc(row.pay_ok_by || '')} ${esc(_refAt(row.pay_ok_at))}</span>${canPay ? btn('paid', '💰 记已付') : ''}${isAdmin ? undo('payreturn', '退回') : ''}`;
+      else if (row.pay_req === 'requested') act = `${conf}${sep}<span style="color:#b45309;font-weight:700">⏳ 已确认支付 · 待审核</span> <span style="${tiny}">💳 ${esc(row.pay_req_by || '')} ${esc(_refAt(row.pay_req_at))}</span>${isAdmin ? btn('payok', '🛡 审核通过', '#16a34a') + undo('payreturn', '退回') : canPay ? undo('paycancel', '撤回') : ''}`;
+      else act = `${conf}${canPay ? btn('payreq', '💳 确认支付', '#0f4c6b') : ''}`;
     }
     else if (st === 'rejected') { amt = '<span style="color:var(--g400)">—</span>'; act = `<span style="color:#b91c1c">✖ 不给</span>${row.note ? ` <span style="color:var(--g400)">${esc(row.note)}</span>` : ''}${isAdmin ? undo('reset', '撤销') : ''}`; }
     else if (b.st === 'lost') { how = `<span style="color:var(--g400)">${esc(b.hint)}</span>`; amt = '<span style="color:var(--g400)">—</span>'; act = '<span style="color:var(--g400);text-decoration:line-through">没达成</span>'; }
@@ -2418,7 +2419,7 @@ function _refHrBonusRow(r) {
     if ((st === 'approved' || st === 'paid') && b.calc && Math.abs((Number(row.amount) || 0) - (Number(b.amount) || 0)) > 0.005)
       how += ` <span style="color:#b45309;white-space:nowrap">· 确认金额 ${yuan(row.amount)}（算出 ${yuan(b.amount)}）</span>`;
     return `<tr><td style="${td};font-weight:700;color:#334155;white-space:nowrap">${b.label}</td><td style="${td};color:var(--g500);white-space:nowrap">${yuan(b.amt)}</td>
-      <td style="${td}">${how}</td><td style="${td};text-align:right;white-space:nowrap">${amt}</td><td style="${td}">${act}${b.k && (row || ((r.pay_log || {})['hb:' + b.k] || []).length) ? _refHistLink(hkey, hopen) : ''}</td></tr>`
+      <td style="${td}">${how}</td><td style="${td};text-align:right;white-space:nowrap">${amt}</td><td style="${td};white-space:nowrap">${act}${b.k && (row || ((r.pay_log || {})['hb:' + b.k] || []).length) ? _refHistLink(hkey, hopen) : ''}</td></tr>`
       + (hopen ? `<tr><td colspan="5" style="background:#fff;padding:.35rem .9rem;font-size:.74rem;line-height:1.7;border-bottom:1px solid #f3e8ff">${_refTimeline(r, 'hb:' + b.k, '¥', row ? [
           { action: row.status === 'rejected' ? 'reject' : 'approve', alt: ['approve', 'reject'], at: row.decided_at, by: row.decided_by, amount: row.status === 'rejected' ? null : row.amount },
           { action: 'payreq', at: row.pay_req_at, by: row.pay_req_by }, { action: 'payok', at: row.pay_ok_at, by: row.pay_ok_by },
@@ -2856,19 +2857,18 @@ function renderRefList() {
       })()
       : `<b>${w.fee_eff != null ? money(w.fee_eff) : '—'}</b>${feeCalc(w)}`;
     const payCell = w => r.hr_self ? '<span style="color:var(--g400)">—</span>' : r.review_status === 'rejected' || w.admin_status === 'rejected' ? '<span style="color:var(--g400)">—</span>'
-      : r.review_status !== 'approved' ? '<span style="font-size:.72rem;color:var(--g400)">核查通过后可付</span>'
       : w.admin_status !== 'approved' ? '<span style="font-size:.72rem;color:var(--g400)">管理员确认金额后可付</span>'
       : (() => {
         // 金额确认后: 会计确认支付 → 管理员审核通过 → 会计付款、记已付 (记过已付的照常显示)
         const tiny = 'font-size:.68rem;color:var(--g400);white-space:nowrap';
         const canReq = ['accounting', 'admin'].includes(USER.role);
         if (weekPaid(w) || w.pay_req === 'approved') {
-          const ok = w.pay_req === 'approved' ? `<div style="${tiny}">🛡 支付已审核 · ${esc(w.pay_ok_by)} ${esc(_refAt(w.pay_ok_at))}${isAdmin && !weekPaid(w) ? ` <a style="cursor:pointer;text-decoration:underline" onclick="refWeekPayReq(${w.id},'return')">退回</a>` : ''}</div>` : '';
+          const ok = w.pay_req === 'approved' ? ` <span style="${tiny}">🛡 支付已审核 · ${esc(w.pay_ok_by)} ${esc(_refAt(w.pay_ok_at))}${isAdmin && !weekPaid(w) ? ` <a style="cursor:pointer;text-decoration:underline" onclick="refWeekPayReq(${w.id},'return')">退回</a>` : ''}</span>` : '';
           return payNoteCell('referralweek', w.id, w.pay_note, true) + ok;
         }
         if (w.pay_req === 'requested') {
-          return `<span style="color:#b45309;font-weight:700;white-space:nowrap">⏳ 已确认支付 · 待管理员审核</span><div style="${tiny}">💳 ${esc(w.pay_req_by)} ${esc(_refAt(w.pay_req_at))}${canReq && !isAdmin ? ` <a style="cursor:pointer;text-decoration:underline" onclick="refWeekPayReq(${w.id},'cancel')">撤回</a>` : ''}</div>`
-            + (isAdmin ? `<div style="margin-top:3px;white-space:nowrap"><button class="btn btn-sm" style="background:#16a34a;color:#fff;padding:1px 8px;font-size:.72rem" onclick="refWeekPayReq(${w.id},'approve')">🛡 审核通过</button> <button class="btn btn-sm btn-outline" style="color:#dc2626;border-color:#fecaca;padding:1px 7px;font-size:.72rem" onclick="refWeekPayReq(${w.id},'return')">↩ 退回</button></div>` : '');
+          return `<span style="color:#b45309;font-weight:700">⏳ 已确认支付 · 待审核</span> <span style="${tiny}">💳 ${esc(w.pay_req_by)} ${esc(_refAt(w.pay_req_at))}${canReq && !isAdmin ? ` <a style="cursor:pointer;text-decoration:underline" onclick="refWeekPayReq(${w.id},'cancel')">撤回</a>` : ''}</span>`
+            + (isAdmin ? ` <button class="btn btn-sm" style="background:#16a34a;color:#fff;padding:1px 8px;font-size:.72rem" onclick="refWeekPayReq(${w.id},'approve')">🛡 审核通过</button> <button class="btn btn-sm btn-outline" style="color:#dc2626;border-color:#fecaca;padding:1px 7px;font-size:.72rem" onclick="refWeekPayReq(${w.id},'return')">↩ 退回</button>` : '');
         }
         return canReq ? `<button class="btn btn-sm" style="background:#0f4c6b;color:#fff;padding:2px 9px;font-size:.74rem" title="会计确认这周要付，提交管理员审核；审核通过后才能付款、记已付" onclick="refWeekPayReq(${w.id},'request')">💳 确认支付</button>`
           : '<span style="font-size:.72rem;color:var(--g400)">等会计确认支付</span>';
@@ -2880,8 +2880,8 @@ function renderRefList() {
       if (r.hr_self) return '<span style="color:var(--g400)">—</span>';
       const who = [w.admin_by, _refAt(w.admin_at)].filter(Boolean).join(' · ');
       const undo = isAdmin && !weekPaid(w) ? ` <a style="cursor:pointer;color:var(--g400);text-decoration:underline;font-size:.7rem" onclick="refWeekReview(${w.id},'reset')">撤销</a>` : '';
-      if (w.admin_status === 'approved') return `<span style="color:#047857;font-weight:700;white-space:nowrap">✅ 金额已确认</span><div style="font-size:.68rem;color:var(--g400)">${esc(who)}${w.admin_note ? ' · ' + esc(w.admin_note) : ''}${undo}</div>`;
-      if (w.admin_status === 'rejected') return `<span style="color:#b91c1c;font-weight:700;white-space:nowrap">✖ 这周不付</span><div style="font-size:.68rem;color:var(--g400)">${esc(who)}${w.admin_note ? ' · ' + esc(w.admin_note) : ''}${undo}</div>`;
+      if (w.admin_status === 'approved') return `<span style="color:#047857;font-weight:700">✅ 金额已确认</span> <span style="font-size:.68rem;color:var(--g400)">${esc(who)}${w.admin_note ? ' · ' + esc(w.admin_note) : ''}${undo}</span>`;
+      if (w.admin_status === 'rejected') return `<span style="color:#b91c1c;font-weight:700">✖ 这周不付</span> <span style="font-size:.68rem;color:var(--g400)">${esc(who)}${w.admin_note ? ' · ' + esc(w.admin_note) : ''}${undo}</span>`;
       if (r.review_status === 'rejected') return '<span style="color:var(--g400)">—</span>';
       if (!isAdmin) return '<span style="font-size:.72rem;color:#b45309">待管理员确认</span>';
       return `<div style="display:flex;gap:.25rem;align-items:center;flex-wrap:wrap">
@@ -2918,8 +2918,8 @@ function renderRefList() {
               ${(w.lines || []).map(l => `<div style="font-size:.72rem;color:#0f4c6b">↳ 第 ${l.row} 行 · ${esc(l.line_label)}${l.hint ? ` · ${esc(l.hint)}` : ''} · ${money(l.billed)}</div>`).join('')}</td>
             <td style="${td};text-align:right;color:var(--g500);white-space:nowrap">${money(v.subtotal)}</td>
             <td style="${td};text-align:right">${feeCell(w)}</td>
-            <td style="${td}">${adminCell(w)}</td>
-            <td style="${td}">${payCell(w)}${hk(w)}</td></tr>${hrow(w)}`;
+            <td style="${td};white-space:nowrap">${adminCell(w)}</td>
+            <td style="${td};white-space:nowrap">${payCell(w)}${hk(w)}</td></tr>${hrow(w)}`;
         }).join(''); })() + `</tbody></table>`
       : '';
     // 旧记录: 按周付款上线前记在整条介绍上的付款批注, 照样显示
