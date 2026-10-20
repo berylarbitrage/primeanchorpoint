@@ -2399,12 +2399,7 @@ function _refHr4w(r) {
     out.push({ k: 'm4_' + w.id, label: wl([from, to]), amt: full, amount, calc, cnt, period: _refInvPer(w), ...stOf(to), row });
     k += n;
   }
-  const k0 = Math.max(k, REF_HR_4W_FROM);
-  if (k0 <= REF_HR_4W_TO) {
-    const x = stOf(REF_HR_4W_TO), left = REF_HR_4W_TO - k0 + 1;
-    out.push({ k: '', label: wl([k0, REF_HR_4W_TO]), amt: REF_HR_4W_AMT * left, amount: REF_HR_4W_AMT * left, cnt: 0,
-      st: x.st === 'lost' ? 'lost' : 'wait', hint: x.st === 'lost' ? x.hint : x.st === 'done' ? '还没关联发票，关联后才能确认' : `${x.hint} · 还没关联发票`, calc: '' });
-  }
+  // 还没关联发票的周不列 (关联到哪周才显示哪周)
   // 上线前按「满 1 个月」确认过的, 照样列出来
   const old = (r.hr_bonus || {}).month1;
   if (old) out.unshift({ k: 'month1', label: '满 1 个月（旧）', amt: 150, amount: old.amount, calc: '', cnt: REF_HR_4W, st: 'done', hint: '', row: old });
@@ -2424,10 +2419,7 @@ function _refHrMgmt(r) {
   Object.keys(r.hr_bonus || {}).map(k => /^mgmt(\d+)$/.exec(k)).filter(m => m && +m[1] > units.length).sort((a, b) => a[1] - b[1]).forEach(m => {
     out.push({ k: m[0], label: `第 ${m[1]} 周`, sub: '还没关联这周发票', amt: REF_HR_MGMT_AMT, amount: REF_HR_MGMT_AMT, st: 'done', calc: '', row: r.hr_bonus[m[0]] });
   });
-  if (!out.length) {
-    out.push(r.work_end_date ? { k: '', label: `第 ${REF_HR_MGMT_FROM} 周起`, amt: REF_HR_MGMT_AMT, st: 'lost', hint: `没做到第 ${REF_HR_MGMT_FROM} 周` }
-      : { k: '', label: `第 ${REF_HR_MGMT_FROM} 周起`, amt: REF_HR_MGMT_AMT, st: 'wait', hint: units.length ? `还没到 · 发票关联到第 ${units.length} 周` : '还没关联发票' });
-  }
+  // 发票还没关联到第 6 周: 不列
   return out;
 }
 function _refHrBonusRow(r) {
@@ -2480,7 +2472,9 @@ function _refHrBonusRow(r) {
           { action: 'paid', at: row.status === 'paid' ? row.paid_at : null, by: row.paid_by, amount: row.amount },
         ] : [])}</td></tr>` : '');
   };
-  const items0 = _refHrBonus(r), f40 = _refHr4w(r);
+  // 满 1 周要关联了第 1 周发票才显示 (已经确认过的照样显示)
+  const hasW1 = _refWeekUnits(r).length > 0;
+  const items0 = _refHrBonus(r).filter(b => b.k !== 'week1' || hasW1 || b.row), f40 = _refHr4w(r);
   const m12 = _refHrMerge12(r, items0, f40);
   const items = (m12 ? items0.map(b => b.k === 'week1' ? m12 : b) : items0).map(line).join('');
   const f4 = m12 ? f40.filter(b => !m12.k.split(',').includes(b.k)) : f40;
