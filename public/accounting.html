@@ -2519,14 +2519,28 @@ function renderRefList() {
       : `<div class="ref-row" style="color:var(--g500)">${r.review_status === 'approved' ? '✅ 同意支付' : '✖ 拒绝支付'} ${who}${r.review_note ? ` · <span style="color:var(--g400)">${esc(r.review_note)}</span>` : ''}${USER.role === 'admin' ? ` · <a style="cursor:pointer;color:var(--g400);text-decoration:underline" onclick="refReview(${r.id},'reset')">撤销重审</a>` : ''}</div>`;
     // 每周付款表
     const weeks = r.weeks || [];
+    // 这周介绍费: 选满周价 (第一周 $25 / $50, 之后 $12.5 / $25, 都不要再手写), 按工时折算 — 满 40 工时给满, 不满按 工时/40
+    const feeCalc = w => w.rate == null ? '' : `<div style="font-size:.68rem;color:${w.hours == null ? '#b45309' : 'var(--g500)'};white-space:nowrap">${w.hours == null
+      ? `没勾发票行、没有工时，按满周 = ${money(w.fee_default)}`
+      : w.hours >= 40 ? `${w.hours} 工时 ≥ 40 · 给满 ${money(w.fee_default)}`
+      : `${money(w.rate)} × ${w.hours}/40 工时 = <b style="color:#0f4c6b">${money(w.fee_default)}</b>`}</div>`;
     const feeCell = w => w.admin_status === 'approved' ? `<b>${money(w.admin_fee)}</b>`
       : w.admin_status === 'rejected' ? '<span style="color:var(--g400)">—</span>'
-      : canInv && r.review_status !== 'rejected'
-      ? `${_refTwoTier(r) ? `<select title="这周按第一周的价还是之后每周的价算；自动 = 最早那周算第一周" onchange="refWeekTier(${w.id}, this.value)" style="padding:.1rem .2rem;font-size:.72rem;margin-right:.25rem">
-            <option value="" ${!w.tier ? 'selected' : ''}>自动（${w.tier_eff === 'first' ? '第一周' : '之后'}）</option>
-            <option value="first" ${w.tier === 'first' ? 'selected' : ''}>第一周 ${money(r.first_week_amount)}</option>
-            <option value="after" ${w.tier === 'after' ? 'selected' : ''}>之后 ${money(r.amount)}</option></select>` : ''}<span style="white-space:nowrap">$ <input type="number" step="0.01" min="0" value="${w.fee != null ? w.fee : ''}" placeholder="${w.fee_default != null ? w.fee_default : '金额'}" title="这周的介绍费；空着 = 按上面选的档（第一周 / 之后每周）" onchange="refWeekFee(${w.id}, this.value)" style="width:78px;padding:.15rem .3rem;font-size:.8rem;text-align:right"></span>`
-      : `<b>${w.fee_eff != null ? money(w.fee_eff) : '—'}</b>${_refTwoTier(r) && w.admin_status !== 'rejected' ? `<div style="font-size:.68rem;color:var(--g400)">${w.tier_eff === 'first' ? '第一周价' : '之后每周价'}</div>` : ''}`;
+      : canInv && r.review_status !== 'rejected' ? (() => {
+        const presets = w.tier_eff === 'first' ? [25, 50] : [12.5, 25];
+        const custom = w.rate != null && !presets.includes(Number(w.rate));
+        const pb = p => `<button class="btn btn-sm ${Number(w.rate) === p ? '' : 'btn-outline'}" style="padding:1px 7px;font-size:.74rem;${Number(w.rate) === p ? 'background:#0f4c6b;color:#fff' : ''}" onclick="refWeekRate(${w.id}, ${p})">${money(p)}</button>`;
+        return `<div style="display:flex;gap:.25rem;align-items:center;justify-content:flex-end;flex-wrap:wrap">
+            <select title="这周按第一周还是之后每周的价选；自动 = 最早那周算第一周" onchange="refWeekTier(${w.id}, this.value)" style="padding:.1rem .2rem;font-size:.72rem">
+              <option value="" ${!w.tier ? 'selected' : ''}>自动（${w.tier_eff === 'first' ? '第一周' : '之后'}）</option>
+              <option value="first" ${w.tier === 'first' ? 'selected' : ''}>第一周</option>
+              <option value="after" ${w.tier === 'after' ? 'selected' : ''}>之后每周</option></select>
+            ${presets.map(pb).join('')}
+            <input type="number" step="0.01" min="0" value="${custom ? w.rate : ''}" placeholder="手写" title="${presets.map(money).join(' / ')} 都不合适才手写满周价，同样按工时折算" onchange="refWeekRate(${w.id}, this.value)" style="width:62px;padding:.15rem .3rem;font-size:.76rem;text-align:right${custom ? ';border-color:#0f4c6b;font-weight:700' : ''}"></div>`
+          + (w.rate != null ? feeCalc(w)
+            : `<div style="font-size:.68rem;color:#b45309;white-space:nowrap">还没选${w.fee != null ? ` · 现在写的 ${money(w.fee)}` : w.fee_default != null ? ` · 现在按 ${money(w.fee_default)}` : ''}</div>`);
+      })()
+      : `<b>${w.fee_eff != null ? money(w.fee_eff) : '—'}</b>${feeCalc(w)}`;
     const payCell = w => r.review_status === 'rejected' || w.admin_status === 'rejected' ? '<span style="color:var(--g400)">—</span>'
       : r.review_status !== 'approved' ? '<span style="font-size:.72rem;color:var(--g400)">核查通过后可付</span>'
       : w.admin_status !== 'approved' ? '<span style="font-size:.72rem;color:var(--g400)">管理员确认后可付</span>'
@@ -3061,9 +3075,10 @@ function _refTwoTier(r) { return r.first_week_amount != null && r.amount != null
 function _refFeeText(first, after) {
   return first != null && Number(first) !== Number(after) ? `第一周 ${money(first)}，之后每周 ${money(after)}` : money(after);
 }
-async function refWeekFee(id, v) {
+// 选这周的满周价 (按工时折算), 空 = 清掉
+async function refWeekRate(id, v) {
   try {
-    const r = await api('/api/acct/referral-weeks/' + id, { method: 'PUT', body: JSON.stringify({ fee: v === '' ? '' : Number(v) }) });
+    const r = await api('/api/acct/referral-weeks/' + id, { method: 'PUT', body: JSON.stringify({ rate: v === '' ? '' : Number(v) }) });
     if (r && r.error) throw new Error(r.error);
     toast('✅ 已更新这周介绍费');
     loadRefList();

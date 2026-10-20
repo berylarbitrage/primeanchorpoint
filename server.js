@@ -1008,6 +1008,9 @@ for (const col of ["admin_status TEXT DEFAULT ''", 'admin_fee REAL DEFAULT NULL'
 // referral_weeks.tier: 这周按哪档算 — '' 自动 (最早那周算第一周) | first 第一周 | after 之后每周
 try { db.exec(`ALTER TABLE referrals ADD COLUMN first_week_amount REAL DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE referral_weeks ADD COLUMN tier TEXT DEFAULT ''`); } catch(e) {}
+// 每周介绍费按工时折算: rate = 这周选的满周价 (第一周 $25 / $50, 之后 $12.5 / $25, 或手写),
+// 实付 = rate × min(工时, 40) / 40 (工时取这周发票里勾的那几行)。fee (旧的直接写死金额) 有值时仍以 fee 为准
+try { db.exec(`ALTER TABLE referral_weeks ADD COLUMN rate REAL DEFAULT NULL`); } catch(e) {}
 // 上班中途不去了: work_end_date = 最后上班那天, 再记原因和谁标的; 清空 = 撤销 (回到上班中)
 try { db.exec(`ALTER TABLE referrals ADD COLUMN quit_reason TEXT DEFAULT ''`); } catch(e) {}
 // HR 自己招的: 记是哪个 HR 招的 (张倪 / 陶斯亮 …)
@@ -24184,7 +24187,8 @@ function _invoicePayableLines(inv) {
     line_type: 'worker', line_key: `w${i}`,
     line_label: it.name || `工人 ${i + 1}`,
     // 工时是逐日加起来的小数, 存的可能是 28.830000000000002 这种浮点尾巴, 显示保留两位
-    billed: Number(it.total) || 0, hint: (it.hours != null && it.hours !== '' ? `${(Number(it.hours) || 0).toFixed(2)} 工时` : '') }));
+    billed: Number(it.total) || 0, hint: (it.hours != null && it.hours !== '' ? `${(Number(it.hours) || 0).toFixed(2)} 工时` : ''),
+    hours: it.hours != null && it.hours !== '' ? (Number(it.hours) || 0) : null }));
 }
 function _linePayParse(paths) { try { const a = JSON.parse(paths || '[]'); return Array.isArray(a) ? a.filter(Boolean) : []; } catch (_) { return []; } }
 
@@ -42010,7 +42014,7 @@ function _referralOut(r, invMap, payNotes, weeksBy, weekNotes, linesByInv) {
   r.pay_note = payNotes[r.id] || null;
   // 每周付款: 按发票账期先后排, fee 空的按介绍记录上的介绍费
   r.weeks = ((weeksBy && weeksBy[r.id]) || []).filter(w => invMap[w.invoice_id]).map(w => ({
-    id: w.id, invoice_id: w.invoice_id, fee: w.fee, tier: w.tier || '',
+    id: w.id, invoice_id: w.invoice_id, fee: w.fee, rate: w.rate, tier: w.tier || '',
     admin_status: w.admin_status || '', admin_fee: w.admin_fee, admin_by: w.admin_by || '', admin_at: w.admin_at, admin_note: w.admin_note || '',
     invoice: invMap[w.invoice_id], pay_note: (weekNotes && weekNotes[w.id]) || null,
     // 这周发票里勾的那几行 (这个工人那一行), 没勾就是整张发票
@@ -42019,7 +42023,11 @@ function _referralOut(r, invMap, payNotes, weeksBy, weekNotes, linesByInv) {
   // 按档算默认介绍费 (排好序后最早那周 = 第一周); 管理员确认过的按确认的金额; 这周不付 = 0
   r.weeks.forEach((w, i) => {
     w.tier_eff = w.tier || (i === 0 ? 'first' : 'after');
-    w.fee_default = _referralTierFee(r, w.tier_eff);
+    // 这周工时 = 勾的那几行加起来 (没勾行 / 行上没工时 = null, 按满周算)
+    const hl = w.lines.filter(l => l.hours != null);
+    w.hours = hl.length ? Math.round(hl.reduce((t, l) => t + l.hours, 0) * 100) / 100 : null;
+    w.ratio = w.hours == null ? 1 : Math.min(w.hours, 40) / 40;
+    w.fee_default = w.rate != null ? Math.round(w.rate * w.ratio * 100) / 100 : _referralTierFee(r, w.tier_eff);
     w.fee_eff = w.admin_status === 'rejected' ? 0 : w.admin_status === 'approved' && w.admin_fee != null ? w.admin_fee
       : (w.fee != null ? w.fee : w.fee_default);
   });
@@ -42545,6 +42553,13 @@ app.put('/api/acct/referral-weeks/:id', requireAdmin, requireRole('accounting', 
     const t = b.tier === 'first' || b.tier === 'after' ? b.tier : '';
     db.prepare('UPDATE referral_weeks SET tier=? WHERE id=?').run(t, w.id);
     if (!('fee' in b)) return res.json({ success: true, tier: t });
+  }
+  // 选满周价 (按工时折算): 同时清掉旧的写死金额, 免得 fee 盖过折算结果
+  if ('rate' in b) {
+    const rate = (b.rate === '' || b.rate == null) ? null : Number(b.rate);
+    if (rate != null && (isNaN(rate) || rate < 0)) return res.status(400).json({ error: '金额不对' });
+    db.prepare('UPDATE referral_weeks SET rate=?, fee=NULL WHERE id=?').run(rate, w.id);
+    return res.json({ success: true, rate });
   }
   const v = b.fee;
   const fee = (v === '' || v == null) ? null : Number(v);
