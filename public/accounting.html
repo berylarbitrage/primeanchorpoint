@@ -2238,8 +2238,8 @@ const REF_HR_MGMT_FROM = 6, REF_HR_MGMT_AMT = 25;
 const yuan = n => '¥' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 });
 function _refHrOf(r) {
   if (r.hr_self) return r.hr_name || '';
-  // 工头介绍的: 提交人是 HR (在 HR 名单里, 或是客服 cs 账号) 才算给他
-  return REF_HRS.includes(r.hr_credit) || (r.created_by_role === 'cs' && r.hr_credit) ? r.hr_credit : '';
+  // 工头介绍的: 提交人在 HR 名单里 (张倪 / 陶斯亮) 才算给他; 其他客服 / 会计提交的不算
+  return REF_HRS.includes(r.hr_credit) ? r.hr_credit : '';
 }
 // 每个节点: done 达成 / wait 还没到 / lost 没达成 + 应得金额 (按日期自动判断, 管理员确认后才算数)
 // 每周付款行摊成一周一周: 两周的发票算 2 周, 工时平分; 管理员标了不付的周跳过
