@@ -42233,6 +42233,20 @@ app.get('/api/acct/invoices/:id/lines', requireAdmin, requireAcctView, (req, res
   res.json({ lines: _invoiceLinesNumbered(inv) });
 });
 
+// 关联发票弹窗按员工名搜: 发票条目里名字对得上的行 (不分大小写和重音, 搜的每个词都要出现) → { 发票 id: [行] }
+app.get('/api/acct/invoice-worker-search', requireAdmin, requireAcctView, (req, res) => {
+  const norm = x => String(x || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const toks = norm(req.query.q).split(/\s+/).filter(Boolean).slice(0, 6);
+  if (!toks.length || toks.join('').length < 2) return res.json({ hits: {} });
+  try {
+    const hits = {};
+    db.prepare(`SELECT id, items_json, profile_json FROM invoices WHERE COALESCE(items_json,'') NOT IN ('','[]')`).all().forEach(inv => {
+      const m = _invoiceLinesNumbered(inv).filter(l => l.line_type === 'worker' && toks.every(t => norm(l.line_label).includes(t)));
+      if (m.length) hits[inv.id] = m.slice(0, 10);
+    });
+    res.json({ hits });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 // 关联发票: 挂上能证明被介绍人确实在干活的发票 (发票 id 列表 + 说明), 供管理员核查
 // 会计 / 管理员直接生效; 客服提交的先存成待审核, 管理员审核通过才生效
 function _referralInvoiceIds(b) {
