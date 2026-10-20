@@ -738,7 +738,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <div class="card" style="max-width:780px;width:100%;padding:1.2rem 1.2rem 1rem;max-height:92vh;overflow:auto;display:flex;flex-direction:column">
       <div style="font-weight:800;margin-bottom:.2rem">🧾 关联发票</div>
       <div id="riTitle" style="font-size:.8rem;color:var(--g500);margin-bottom:.7rem"></div>
-      <input type="text" id="riSearch" placeholder="搜发票号 / 公司 / 地址…" oninput="riRenderList()" style="width:100%;margin-bottom:.35rem">
+      <input type="text" id="riSearch" placeholder="搜员工名 / 发票号 / 公司 / 地址…" oninput="riSearchInput()" style="width:100%;margin-bottom:.35rem">
       <div style="display:flex;gap:.35rem;flex-wrap:wrap;align-items:center;margin-bottom:.45rem;font-size:.78rem">
         <select id="riCo" onchange="riCoChanged()" style="flex:1 1 160px;min-width:0;font-size:.78rem" title="按公司筛选"></select>
         <select id="riAddr" onchange="riRenderList()" style="flex:1 1 200px;min-width:0;font-size:.78rem" title="按地址筛选"></select>
@@ -3675,6 +3675,7 @@ function openRefInv(id) {
   _riOpen.forEach(riLoadLines);
   document.getElementById('riTitle').textContent = `工头 ${r.foreman_name || ''} 介绍 ${r.worker_name || ''}${r.warehouse_name ? ' · ' + r.warehouse_name : ''} — 勾选能证明这个工人在干活的发票`;
   document.getElementById('riSearch').value = '';
+  _riNameHits = {}; _riNameQ = '';
   document.getElementById('riFrom').value = ''; document.getElementById('riTo').value = '';
   // 公司下拉: 全部发票里出现过的公司; 被介绍人工作的仓库名对得上某家公司就默认选它
   const cos = [...new Set(_invList.map(v => (v.company_name || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
@@ -3700,14 +3701,32 @@ function riFillAddr() {
 function riCoChanged() { riFillAddr(); riRenderList(); }
 function riClearFilters() {
   ['riSearch', 'riFrom', 'riTo'].forEach(id => { document.getElementById(id).value = ''; });
+  _riNameHits = {}; _riNameQ = '';
   document.getElementById('riCo').value = ''; riFillAddr(); document.getElementById('riAddr').value = ''; riRenderList();
+}
+// 搜员工名: 去服务端翻发票条目 (列表里没有条目), 对上的发票带着那几行一起列出来
+let _riNameHits = {}, _riNameQ = '', _riNameT = null;
+function riSearchInput() {
+  riRenderList();
+  clearTimeout(_riNameT);
+  const q = (document.getElementById('riSearch').value || '').trim();
+  _riNameT = setTimeout(async () => {
+    if (q.length < 2) { _riNameHits = {}; _riNameQ = ''; return riRenderList(); }
+    try {
+      const r = await api('/api/acct/invoice-worker-search?q=' + encodeURIComponent(q));
+      if ((document.getElementById('riSearch').value || '').trim() !== q) return;   // 已经又改了
+      _riNameHits = (r && r.hits) || {}; _riNameQ = q.toLowerCase();
+    } catch (e) { _riNameHits = {}; _riNameQ = ''; }
+    if (document.getElementById('refInvModal').style.display !== 'none') riRenderList();
+  }, 300);
 }
 function riRenderList() {
   const q = (document.getElementById('riSearch').value || '').trim().toLowerCase();
+  const nameHits = q && q === _riNameQ ? _riNameHits : {};
   const co = document.getElementById('riCo').value, addr = document.getElementById('riAddr').value;
   const from = document.getElementById('riFrom').value, to = document.getElementById('riTo').value;
   let rows = _invList;
-  if (q) rows = rows.filter(v => [v.invoice_number, v.company_name, _riAddrOf(v)].join(' ').toLowerCase().includes(q));
+  if (q) rows = rows.filter(v => nameHits[v.id] || [v.invoice_number, v.company_name, _riAddrOf(v)].join(' ').toLowerCase().includes(q));
   if (co) rows = rows.filter(v => (v.company_name || '').trim() === co);
   if (addr) rows = rows.filter(v => _riAddrOf(v) === addr);
   // 账期和筛选区间有重叠就算 (没账期的按开票日)
@@ -3744,6 +3763,12 @@ function riRenderList() {
           <button type="button" class="btn btn-outline" style="padding:1px 7px;font-size:.7rem;white-space:nowrap;${n ? 'color:#1d4ed8;border-color:#93c5fd' : ''}"
             onclick="riToggleOpen(${v.id})" title="勾这张发票里具体是哪一行（这个工人那一行）">${open ? '收起' : '选条目'}${n ? ` · ${n}` : ''}</button>
         </div>
+        ${!open && nameHits[v.id] ? `<div style="padding:0 .3rem .35rem 1.7rem">${nameHits[v.id].map(l => {
+          const lon = (_riLines[v.id] || new Set()).has(l.line_key);
+          return `<label style="display:flex;align-items:center;gap:.4rem;font-size:.76rem;cursor:pointer;color:#0f4c6b">
+            <input type="checkbox" ${lon ? 'checked' : ''} data-key="${esc(l.line_key)}" onchange="riToggleLine(${v.id}, this.dataset.key, this.checked)">
+            👤 第 ${l.row} 行 · <b>${esc(l.line_label)}</b><span style="color:var(--g500)">${esc(l.hint || '')}</span><span>${money(l.billed)}</span></label>`;
+        }).join('')}</div>` : ''}
         ${open ? `<div style="padding:.1rem .3rem .45rem 1.7rem">${riLinesHtml(v.id)}</div>` : ''}
       </div>`;
       }).join('')
