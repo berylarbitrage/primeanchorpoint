@@ -474,7 +474,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <option value="noshow">❌ 没去面试</option>
         <option value="failed">🙅 面试没通过</option>
       </select>
-      <select id="refCreator" onchange="renderRefList()" title="按登记的账号筛选（HR 介绍费按这个算）"><option value="">📝 全部登记人</option></select>
+      <select id="refCreator" onchange="renderRefList()" title="按 HR 筛选：HR 自己招的算选的那个 HR，其余算登记这条的账号"><option value="">🙋 全部 HR</option></select>
       <button class="btn btn-blue" id="btnRefAdd" onclick="openRefAdd()" style="display:none">＋ 新增介绍</button>
       <button class="btn btn-outline" onclick="openFmList()">👷 工头名单</button>
       <a id="refOwnPage" class="btn btn-outline" href="/referral" target="_blank" title="只看介绍费的独立页面">↗ Referral 页面</a>
@@ -2415,23 +2415,23 @@ async function refMarkInterview(id, st) {
 function renderRefList() {
   const q = (document.getElementById('refSearch').value || '').trim().toLowerCase();
   const flt = document.getElementById('refFilter').value;
-  // 登记人 = 录入这条的登录账号 (服务器记的, 改不了); 下拉带每人条数
+  // 按 HR 筛: hr_credit = HR 自己招的选的 HR, 否则登记这条的账号 (服务器记的, 改不了); 下拉带每人条数
   const crSel = document.getElementById('refCreator');
   const crBy = crSel.value;
   const crN = {};
-  _refList.forEach(r => { const k = r.created_by || ''; crN[k] = (crN[k] || 0) + 1; });
-  crSel.innerHTML = '<option value="">📝 全部登记人</option>' + Object.keys(crN).sort((a, b) => crN[b] - crN[a] || a.localeCompare(b))
+  _refList.forEach(r => { const k = r.hr_credit || ''; crN[k] = (crN[k] || 0) + 1; });
+  crSel.innerHTML = '<option value="">🙋 全部 HR</option>' + Object.keys(crN).sort((a, b) => crN[b] - crN[a] || a.localeCompare(b))
     .map(k => `<option value="${esc(k || '-')}">${esc(k || '（没记录）')} · ${crN[k]} 条</option>`).join('');
   crSel.value = crBy && (crBy === '-' ? '' in crN : crBy in crN) ? crBy : '';
   // 每周付款行拍平一份, 给付款批注弹窗按 id 找 (type=referralweek)
   _refWeeks = [];
   for (const r of _refList) (r.weeks || []).forEach((w, i) => { w.amount = w.fee_eff; w.week_no = i + 1; w.ref = r; _refWeeks.push(w); });
   let list = _refList;
-  if (crSel.value) list = list.filter(r => (r.created_by || '-') === crSel.value);
+  if (crSel.value) list = list.filter(r => (r.hr_credit || '-') === crSel.value);
   // 电话按数字比 (输 (630) 641-1979 / +1… 也能搜到存成 6306411979 的)
   const qd = String(q || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
   const dg = v => String(v || '').replace(/\D/g, '');
-  if (q) list = list.filter(r => [r.foreman_name, r.foreman_phone, r.hr_name, r.created_by, r.worker_name, r.worker_phone, r.worker_wage, r.warehouse_name, r.warehouse_address, r.job_title, r.description, ...(r.invoices || []).map(v => v.invoice_number + ' ' + v.company_name)].join(' ').toLowerCase().includes(q)
+  if (q) list = list.filter(r => [r.foreman_name, r.foreman_phone, r.hr_name, r.created_by, r.created_by_name, r.worker_name, r.worker_phone, r.worker_wage, r.warehouse_name, r.warehouse_address, r.job_title, r.description, ...(r.invoices || []).map(v => v.invoice_number + ' ' + v.company_name)].join(' ').toLowerCase().includes(q)
     || (qd.length >= 4 && (dg(r.worker_phone).includes(qd) || dg(r.foreman_phone).includes(qd))));
   if (flt === 'noshow') list = list.filter(r => r.interview_status === 'no_show');
   else if (flt === 'failed') list = list.filter(r => r.interview_status === 'failed');
@@ -2558,7 +2558,7 @@ function renderRefList() {
       <div class="ref-top">
         <div class="ref-ppl">
           <div>${lbl('工头 · 介绍人')}${r.hr_self ? '<span style="display:inline-block;background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe;border-radius:6px;padding:1px 8px;font-size:.8rem;font-weight:700">🙋 HR 自己招的' + (r.hr_name ? ` · ${esc(r.hr_name)}` : '') + '</span>' : person(r.foreman_name, r.foreman_phone, r.foreman_state ? ` · 📍 ${esc(r.foreman_state)}` : '')}
-            <div style="margin-top:3px"><span title="录入这条介绍的登录账号" style="display:inline-block;background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;border-radius:6px;padding:0 7px;font-size:.72rem;font-weight:700;white-space:nowrap">📝 登记：${esc(r.created_by || '没记录')}</span></div></div>
+            <div style="margin-top:3px"><span title="录入这条介绍的登录账号" style="display:inline-block;background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;border-radius:6px;padding:0 7px;font-size:.72rem;font-weight:700;white-space:nowrap">📝 登记：${esc(r.created_by_name || '没记录')}${r.created_by && r.created_by_name !== r.created_by ? `（${esc(r.created_by)}）` : ''}</span></div></div>
           <div class="ref-arrow">➜</div>
           <div>${lbl('被介绍工人')}${person(r.worker_name, r.worker_phone, (r.worker_wage ? ` · <span style="color:#047857;font-weight:700">💵 ${esc(r.worker_wage)}</span>` : '') + attHtml)}${_refProfileChip(r)}</div>
         </div>
