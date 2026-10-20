@@ -2194,7 +2194,7 @@ function _refOverall(r) {
     // HR 自己招的没有周介绍费, 按 HR 节点奖励: 满 1 个月那笔付了 = 付完
     const bs = Object.values(r.hr_bonus || {});
     // 前 4 周的奖励都付了 = 付完
-    const f4 = _refHr4w(r).filter(b => b.k);
+    const f4 = _refHr4w(r).filter(b => b.k && b.cnt);
     const done4 = f4.reduce((t, b) => t + (b.cnt || 0), 0) >= REF_HR_4W && f4.every(b => b.row && b.row.status === 'paid');
     return done4 ? 'paid' : bs.some(b => b.status === 'paid') ? 'partpaid' : 'approved';
   }
@@ -2230,8 +2230,9 @@ const REF_HR_BONUS = [
   { k: 'interview', label: '过面试', amt: 30 },
   { k: 'week1', label: '满 1 周', amt: 100, prorate: true },   // 按第 1 周工时 /40 折算
 ];
-// 前 4 周奖励 (原「满 1 个月 ¥150」): 每周 ¥37.5 × 工时/40, 跟每周付款表一样按发票分组 (1 周一组 / 2 周一组)
-const REF_HR_4W = 4, REF_HR_4W_AMT = 37.5;
+// 4 周奖励 (原「满 1 个月 ¥150」): 第 2–5 周 (第 1 周已经算在「满 1 周 ¥100」里, 不重复),
+// 每周 ¥37.5 × 工时/40, 跟每周付款表一样按发票分组 (1 周一组 / 2 周一组)
+const REF_HR_4W = 4, REF_HR_4W_AMT = 37.5, REF_HR_4W_FROM = 2, REF_HR_4W_TO = REF_HR_4W_FROM + REF_HR_4W - 1;
 // 管理奖励: 上班第 6 周起, 每满一周 ¥25, 在岗就一直算 (中途不去了算到最后上班那天)
 const REF_HR_MGMT_FROM = 6, REF_HR_MGMT_AMT = 25;
 const yuan = n => '¥' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 });
@@ -2320,22 +2321,31 @@ function _refHr4w(r) {
   const out = [];
   let k = 1;
   for (const w of r.weeks || []) {
-    if (k > REF_HR_4W) break;
-    const n = w.span_eff || 1, to = Math.min(k + n - 1, REF_HR_4W), cnt = to - k + 1;
+    if (k > REF_HR_4W_TO) break;
+    const n = w.span_eff || 1, end = k + n - 1;
+    const row = (r.hr_bonus || {})['m4_' + w.id] || null;
+    // 这张发票落在第 2–5 周里的那几周
+    const from = Math.max(k, REF_HR_4W_FROM), to = Math.min(end, REF_HR_4W_TO), cnt = to - from + 1;
+    if (cnt <= 0) {
+      // 只有第 1 周的发票: 不算 (已在「满 1 周」里); 之前误确认过的列出来好撤销
+      if (row) out.push({ k: 'm4_' + w.id, label: `第 ${k} 周（和满 1 周重复，请撤销）`, amt: 0, amount: row.amount, calc: '', cnt: 0, st: 'done', hint: '', row });
+      k += n; continue;
+    }
     const hpw = w.hours == null ? null : Math.round(Number(w.hours) / n * 100) / 100;   // 两周的发票工时平分
     const full = REF_HR_4W_AMT * cnt;
     const amount = hpw == null ? full : Math.round(full * Math.min(hpw, 40) / 40 * 100) / 100;
+    const only = cnt < n ? `（这张发票 ${n} 周 ${w.hours} 工时，只算${wl([from, to])}）` : '';
     const calc = hpw == null ? `这张发票没工时，先按满 ${yuan(full)}`
-      : hpw >= 40 ? `每周 ${hpw} 工时 ≥ 40 · 给满`
+      : hpw >= 40 ? `每周 ${hpw} 工时 ≥ 40 · 给满${only}`
       : cnt > 1 ? `${yuan(full)}（${cnt} 周）× ${w.hours}/${40 * cnt} 工时`
-      : n > 1 ? `${yuan(full)} × ${hpw}/40 工时（这张发票 ${n} 周 ${w.hours} 工时，只算第 ${k} 周）`
-      : `${yuan(full)} × ${hpw}/40 工时`;
-    out.push({ k: 'm4_' + w.id, label: wl([k, to]), amt: full, amount, calc, cnt, ...stOf(to), row: (r.hr_bonus || {})['m4_' + w.id] || null });
+      : `${yuan(full)} × ${hpw}/40 工时${only}`;
+    out.push({ k: 'm4_' + w.id, label: wl([from, to]), amt: full, amount, calc, cnt, ...stOf(to), row });
     k += n;
   }
-  if (k <= REF_HR_4W) {
-    const x = stOf(REF_HR_4W);
-    out.push({ k: '', label: wl([k, REF_HR_4W]), amt: REF_HR_4W_AMT * (REF_HR_4W - k + 1), amount: REF_HR_4W_AMT * (REF_HR_4W - k + 1), cnt: 0,
+  const k0 = Math.max(k, REF_HR_4W_FROM);
+  if (k0 <= REF_HR_4W_TO) {
+    const x = stOf(REF_HR_4W_TO), left = REF_HR_4W_TO - k0 + 1;
+    out.push({ k: '', label: wl([k0, REF_HR_4W_TO]), amt: REF_HR_4W_AMT * left, amount: REF_HR_4W_AMT * left, cnt: 0,
       st: x.st === 'lost' ? 'lost' : 'wait', hint: x.st === 'lost' ? x.hint : x.st === 'done' ? '还没关联发票，关联后才能确认' : `${x.hint} · 还没关联发票`, calc: '' });
   }
   // 上线前按「满 1 个月」确认过的, 照样列出来
@@ -2413,7 +2423,7 @@ function _refHrBonusRow(r) {
     <div class="ref-weeks"><table style="width:100%;border-collapse:collapse;min-width:640px"><thead><tr>
       <th style="${th}">奖励</th><th style="${th}">标准</th><th style="${th}">怎么算</th><th style="${th};text-align:right">金额</th><th style="${th}">确认 / 付款</th></tr></thead><tbody>
       ${sub('🎯 招工奖励')}${items}
-      ${f4.length ? sub(`📆 前 ${REF_HR_4W} 周 · 每周 ${yuan(REF_HR_4W_AMT)} × 工时/40（跟发票一样 1 周一组或 2 周一组）${f4All}`) + f4Items : ''}
+      ${f4.length ? sub(`📆 第 ${REF_HR_4W_FROM}–${REF_HR_4W_TO} 周 · 每周 ${yuan(REF_HR_4W_AMT)} × 工时/40（跟发票一样 1 周一组或 2 周一组）${f4All}`) + f4Items : ''}
       ${mg.length ? sub(`🧑‍💼 管理奖励 · 第 ${REF_HR_MGMT_FROM} 周起 ${yuan(REF_HR_MGMT_AMT)}/周${mgAll}`) + mgItems : ''}
     </tbody></table></div>`;
 }
