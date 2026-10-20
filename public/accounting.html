@@ -2395,9 +2395,10 @@ function _refHrBonusRow(r) {
       due += row.amount || 0; amt = `<b>${yuan(row.amount)}</b>`;
       const conf = `<b style="color:#1d4ed8">✅ 金额已确认</b> <span style="${tiny}">${esc(row.decided_by || '')} ${esc(_refAt(row.decided_at))}</span>${isAdmin && !row.pay_req ? undo('reset', '撤销') : ''}`;
       const btn = (a, t, bg) => ` <button class="btn btn-sm${bg ? '' : ' btn-outline'}" style="padding:0 6px;font-size:.7rem${bg ? `;background:${bg};color:#fff` : ''}" onclick="refHrBonus(${r.id},'${b.k}','${a}')">${t}</button>`;
-      if (row.pay_req === 'approved') act = `${conf}<div><span style="color:#047857;font-weight:700">🛡 支付已审核</span> <span style="${tiny}">${esc(row.pay_ok_by || '')} ${esc(_refAt(row.pay_ok_at))}</span>${canPay ? btn('paid', '💰 记已付') : ''}${isAdmin ? undo('payreturn', '退回') : ''}</div>`;
-      else if (row.pay_req === 'requested') act = `${conf}<div><span style="color:#b45309;font-weight:700">⏳ 已确认支付 · 待审核</span> <span style="${tiny}">💳 ${esc(row.pay_req_by || '')} ${esc(_refAt(row.pay_req_at))}</span>${isAdmin ? btn('payok', '🛡 审核通过', '#16a34a') + undo('payreturn', '退回') : canPay ? undo('paycancel', '撤回') : ''}</div>`;
-      else act = `${conf}${canPay ? `<div>${btn('payreq', '💳 确认支付', '#0f4c6b')}</div>` : ''}`;
+      const sep = ' <span style="color:var(--g300)">→</span> ';
+      if (row.pay_req === 'approved') act = `${conf}${sep}<span style="color:#047857;font-weight:700">🛡 支付已审核</span> <span style="${tiny}">${esc(row.pay_ok_by || '')} ${esc(_refAt(row.pay_ok_at))}</span>${canPay ? btn('paid', '💰 记已付') : ''}${isAdmin ? undo('payreturn', '退回') : ''}`;
+      else if (row.pay_req === 'requested') act = `${conf}${sep}<span style="color:#b45309;font-weight:700">⏳ 已确认支付 · 待审核</span> <span style="${tiny}">💳 ${esc(row.pay_req_by || '')} ${esc(_refAt(row.pay_req_at))}</span>${isAdmin ? btn('payok', '🛡 审核通过', '#16a34a') + undo('payreturn', '退回') : canPay ? undo('paycancel', '撤回') : ''}`;
+      else act = `${conf}${canPay ? btn('payreq', '💳 确认支付', '#0f4c6b') : ''}`;
     }
     else if (st === 'rejected') { amt = '<span style="color:var(--g400)">—</span>'; act = `<span style="color:#b91c1c">✖ 不给</span>${row.note ? ` <span style="color:var(--g400)">${esc(row.note)}</span>` : ''}${isAdmin ? undo('reset', '撤销') : ''}`; }
     else if (b.st === 'lost') { how = `<span style="color:var(--g400)">${esc(b.hint)}</span>`; amt = '<span style="color:var(--g400)">—</span>'; act = '<span style="color:var(--g400);text-decoration:line-through">没达成</span>'; }
@@ -2418,7 +2419,7 @@ function _refHrBonusRow(r) {
     if ((st === 'approved' || st === 'paid') && b.calc && Math.abs((Number(row.amount) || 0) - (Number(b.amount) || 0)) > 0.005)
       how += ` <span style="color:#b45309;white-space:nowrap">· 确认金额 ${yuan(row.amount)}（算出 ${yuan(b.amount)}）</span>`;
     return `<tr><td style="${td};font-weight:700;color:#334155;white-space:nowrap">${b.label}</td><td style="${td};color:var(--g500);white-space:nowrap">${yuan(b.amt)}</td>
-      <td style="${td}">${how}</td><td style="${td};text-align:right;white-space:nowrap">${amt}</td><td style="${td}">${act}${b.k && (row || ((r.pay_log || {})['hb:' + b.k] || []).length) ? _refHistLink(hkey, hopen) : ''}</td></tr>`
+      <td style="${td}">${how}</td><td style="${td};text-align:right;white-space:nowrap">${amt}</td><td style="${td};white-space:nowrap">${act}${b.k && (row || ((r.pay_log || {})['hb:' + b.k] || []).length) ? _refHistLink(hkey, hopen) : ''}</td></tr>`
       + (hopen ? `<tr><td colspan="5" style="background:#fff;padding:.35rem .9rem;font-size:.74rem;line-height:1.7;border-bottom:1px solid #f3e8ff">${_refTimeline(r, 'hb:' + b.k, '¥', row ? [
           { action: row.status === 'rejected' ? 'reject' : 'approve', alt: ['approve', 'reject'], at: row.decided_at, by: row.decided_by, amount: row.status === 'rejected' ? null : row.amount },
           { action: 'payreq', at: row.pay_req_at, by: row.pay_req_by }, { action: 'payok', at: row.pay_ok_at, by: row.pay_ok_by },
@@ -2581,6 +2582,83 @@ async function refHistLoad() {
   </div>`;
 }
 // 从面试记录跳到对应的介绍卡片 (切到它所在的阶段页)
+// ── 💰 每周付款汇总: 所有工头每周介绍费按账期分组, 每周付给谁、多少钱、走到哪一步 ──
+let _refPwFilter = (() => { try { return localStorage.getItem('ref_pw_filter') || ''; } catch (e) { return ''; } })();
+function refPwFilter(v) { _refPwFilter = v; try { localStorage.setItem('ref_pw_filter', v); } catch (e) {} renderRefList(); }
+// 每周付款行 → 一行汇总 (HR 自己招的没有周介绍费; 拒绝支付的不列)
+function _refPayWeekRows(list) {
+  const out = [];
+  list.forEach(r => {
+    if (r.hr_self || r.review_status === 'rejected') return;
+    const labs = _refWeekLabels(r);
+    (r.weeks || []).forEach((w, i) => {
+      const v = w.invoice || {};
+      const pn = w.pay_note;
+      const paid = !!(pn && ['paid', 'partial'].includes(pn.paid_status));
+      let st, amt = w.admin_status === 'approved' ? Number(w.admin_fee) || 0 : Number(w.fee_eff) || 0, est = false;
+      if (w.admin_status === 'rejected') { st = 'nopay'; amt = 0; }
+      else if (paid) { st = 'paid'; if (pn.amount != null) amt = Number(pn.amount) || 0; }
+      else if (w.admin_status !== 'approved') { st = 'amount'; est = true; }
+      else if (w.pay_req === 'approved') st = 'topay';
+      else if (w.pay_req === 'requested') st = 'review';
+      else st = 'req';
+      out.push({ r, w, lab: labs[i], ps: v.period_start || v.invoice_date || '', pe: v.period_end || '', payee: r.foreman_name || '—', amt, est, st, partial: paid && pn.paid_status === 'partial' });
+    });
+  });
+  return out;
+}
+const _REF_PW_ST = {
+  amount: ['待确认金额', '#64748b', '#f1f5f9'], req: ['待会计确认支付', '#b45309', '#fffbeb'], review: ['⏳ 待管理员审核', '#c2410c', '#fff7ed'],
+  topay: ['🛡 已审核 · 待付款', '#1d4ed8', '#eff6ff'], paid: ['💰 已付', '#047857', '#ecfdf5'], nopay: ['✖ 不付', '#94a3b8', '#f8fafc'],
+};
+function _refPayWeeksHtml(list) {
+  let rows = _refPayWeekRows(list);
+  const f = _refPwFilter;
+  if (f === 'unpaid') rows = rows.filter(x => !['paid', 'nopay'].includes(x.st));
+  else if (f) rows = rows.filter(x => x.st === f);
+  const opt = (v, t) => `<option value="${v}" ${f === v ? 'selected' : ''}>${t}</option>`;
+  const bar = `<div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:.1rem">
+    <select onchange="refPwFilter(this.value)">${opt('', '全部状态')}${opt('unpaid', '还没付的')}${opt('amount', '待确认金额')}${opt('req', '待会计确认支付')}${opt('review', '⏳ 待管理员审核')}${opt('topay', '🛡 已审核 · 待付款')}${opt('paid', '💰 已付')}${opt('nopay', '✖ 不付')}</select>
+    <span style="font-size:.76rem;color:var(--g500)">工头每周介绍费（美元），按发票账期分组；HR 奖励在各条卡片里。点工人名字跳到那条介绍。</span></div>`;
+  if (!rows.length) return bar + '<div class="card" style="color:var(--g400)">没有符合条件的每周付款。</div>';
+  const groups = {};
+  rows.forEach(x => { const k = `${x.ps}~${x.pe}`; (groups[k] = groups[k] || []).push(x); });
+  const th = 'text-align:left;font-size:.68rem;color:var(--g400);font-weight:600;padding:.3rem .5rem;border-bottom:1px solid var(--g200);white-space:nowrap';
+  const td = 'padding:.35rem .5rem;border-bottom:1px solid var(--g100);font-size:.8rem;vertical-align:middle;white-space:nowrap';
+  const sumOf = a => a.reduce((t, x) => t + x.amt, 0);
+  const html = Object.keys(groups).sort((a, b) => b.localeCompare(a)).map(k => {
+    const g = groups[k].sort((a, b) => a.payee.localeCompare(b.payee) || String(a.r.worker_name || '').localeCompare(String(b.r.worker_name || '')));
+    const [ps, pe] = k.split('~');
+    const live = g.filter(x => x.st !== 'nopay');
+    const paidAmt = sumOf(live.filter(x => x.st === 'paid')), total = sumOf(live);
+    // 同一周按工头合计: 每个工头这周拿多少
+    const by = {};
+    live.forEach(x => { by[x.payee] = (by[x.payee] || 0) + x.amt; });
+    const byTxt = Object.entries(by).sort((a, b) => b[1] - a[1]).map(([n, a]) => `${esc(n)} <b>${money(a)}</b>`).join(' · ');
+    const body = g.map(x => {
+      const [t, fg, bg] = _REF_PW_ST[x.st];
+      const w = x.w, n = w.span_eff || 1;
+      const calc = w.rate != null ? (w.hours != null && w.hours < 40 * n ? `${money(w.rate)} × ${w.hours}/40 工时` : `满周 ${money(w.rate)}${n > 1 ? ` × ${n}` : ''}`) : '';
+      return `<tr${x.st === 'nopay' ? ' style="color:var(--g400)"' : ''}>
+        <td style="${td};font-weight:700">${esc(x.payee)}${x.r.foreman_phone ? ` <span style="font-weight:400;font-size:.72rem;color:var(--g400)">${esc(x.r.foreman_phone)}</span>` : ''}</td>
+        <td style="${td}"><a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="refJumpTo(${x.r.id})">${esc(x.r.worker_name || '—')}</a></td>
+        <td style="${td};color:var(--g500)">第 ${x.lab} 周</td>
+        <td style="${td};text-align:right;font-weight:800">${x.est ? '<span style="color:var(--g400);font-weight:400" title="还没确认金额，按现在算出来的">≈ </span>' : ''}${money(x.amt)}</td>
+        <td style="${td};font-size:.72rem;color:var(--g500)">${esc(calc)}</td>
+        <td style="${td}"><span style="display:inline-block;padding:1px 8px;border-radius:999px;font-size:.72rem;font-weight:700;color:${fg};background:${bg}">${t}${x.partial ? '（部分）' : ''}</span></td></tr>`;
+    }).join('');
+    return `<div class="card" style="padding:.6rem .7rem">
+      <div style="display:flex;gap:.6rem;align-items:baseline;flex-wrap:wrap;margin-bottom:.3rem">
+        <b style="color:#0f4c6b">🗓 ${esc(ps || '?')} ~ ${esc(pe || '?')}</b>
+        <span style="font-size:.78rem;color:var(--g500)">${live.length} 人 · 共 <b style="color:#0f172a">${money(total)}</b> · 已付 <b style="color:#047857">${money(paidAmt)}</b>${total - paidAmt > 0.005 ? ` · 还差 <b style="color:#dc2626">${money(total - paidAmt)}</b>` : ''}</span>
+        <span style="font-size:.74rem;color:var(--g500)">${byTxt}</span>
+      </div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:680px"><thead><tr>
+        <th style="${th}">工头（收款人）</th><th style="${th}">介绍的工人</th><th style="${th}">周</th><th style="${th};text-align:right">介绍费</th><th style="${th}">怎么算</th><th style="${th}">状态</th></tr></thead>
+        <tbody>${body}</tbody></table></div></div>`;
+  }).join('');
+  return bar + html;
+}
 function refJumpTo(id) {
   const r = _refList.find(x => x.id === id);
   if (!r) return;
@@ -2778,8 +2856,10 @@ function renderRefList() {
     + stBtn('working', '👷 上班中', payN ? `<span style="background:#dc2626;color:#fff;border-radius:4px;padding:0 5px;font-weight:800">⚠ ${payN} 个付款 / 车补 / 二维码没确认</span>` : '通过面试已上班 · 13 周内')
     + stBtn('ended', '⏹ 已满三个月', '满 13 周 · referral 期结束')
     + stBtn('quit', '🚪 中途不去了', '上班后没做满 13 周就不去了')
-    + stBtn('noshow', '🚫 没去 / 没通过', '约了面试没去、或去了没通过的人');
-  list = list.filter(r => _refStage(r) === _refStageSel);
+    + stBtn('noshow', '🚫 没去 / 没通过', '约了面试没去、或去了没通过的人')
+    + `<button class="ref-stage${_refStageSel === 'payweeks' ? ' on' : ''}" onclick="refSetStage('payweeks')">💰 每周付款<b>${_refPayWeekRows(list).length}</b><small>每周付给哪些工头、多少钱</small></button>`;
+  const pwMode = _refStageSel === 'payweeks';
+  if (!pwMode) list = list.filter(r => _refStage(r) === _refStageSel);
   const pendN = _refList.filter(r => r.review_status === 'pending').length;
   const waitN = _refList.filter(r => ['approved', 'partpaid'].includes(_refOverall(r))).length;
   const paidN = _refList.filter(r => _refOverall(r) === 'paid').length;
@@ -2792,6 +2872,7 @@ function renderRefList() {
   const badge = document.getElementById('refPendBadge');
   badge.style.display = pendN && USER.role === 'admin' ? '' : 'none';
   badge.textContent = pendN;
+  if (pwMode) { document.getElementById('refBody').innerHTML = _refPayWeeksHtml(list); return; }
   const pill = (txt, bg, bd, fg) => `<span style="display:inline-block;padding:2px 10px;border-radius:999px;font-size:.74rem;font-weight:700;background:${bg};border:1px solid ${bd};color:${fg};white-space:nowrap">${txt}</span>`;
   const lbl = t => `<div style="font-size:.66rem;color:var(--g400);text-transform:uppercase;letter-spacing:.03em;margin-bottom:1px">${t}</div>`;
   const person = (name, phone, extra) => `<div style="font-weight:800;font-size:.95rem;color:#0f172a;white-space:nowrap">${esc(name || '—')}</div>`
@@ -2856,19 +2937,18 @@ function renderRefList() {
       })()
       : `<b>${w.fee_eff != null ? money(w.fee_eff) : '—'}</b>${feeCalc(w)}`;
     const payCell = w => r.hr_self ? '<span style="color:var(--g400)">—</span>' : r.review_status === 'rejected' || w.admin_status === 'rejected' ? '<span style="color:var(--g400)">—</span>'
-      : r.review_status !== 'approved' ? '<span style="font-size:.72rem;color:var(--g400)">核查通过后可付</span>'
       : w.admin_status !== 'approved' ? '<span style="font-size:.72rem;color:var(--g400)">管理员确认金额后可付</span>'
       : (() => {
         // 金额确认后: 会计确认支付 → 管理员审核通过 → 会计付款、记已付 (记过已付的照常显示)
         const tiny = 'font-size:.68rem;color:var(--g400);white-space:nowrap';
         const canReq = ['accounting', 'admin'].includes(USER.role);
         if (weekPaid(w) || w.pay_req === 'approved') {
-          const ok = w.pay_req === 'approved' ? `<div style="${tiny}">🛡 支付已审核 · ${esc(w.pay_ok_by)} ${esc(_refAt(w.pay_ok_at))}${isAdmin && !weekPaid(w) ? ` <a style="cursor:pointer;text-decoration:underline" onclick="refWeekPayReq(${w.id},'return')">退回</a>` : ''}</div>` : '';
+          const ok = w.pay_req === 'approved' ? ` <span style="${tiny}">🛡 支付已审核 · ${esc(w.pay_ok_by)} ${esc(_refAt(w.pay_ok_at))}${isAdmin && !weekPaid(w) ? ` <a style="cursor:pointer;text-decoration:underline" onclick="refWeekPayReq(${w.id},'return')">退回</a>` : ''}</span>` : '';
           return payNoteCell('referralweek', w.id, w.pay_note, true) + ok;
         }
         if (w.pay_req === 'requested') {
-          return `<span style="color:#b45309;font-weight:700;white-space:nowrap">⏳ 已确认支付 · 待管理员审核</span><div style="${tiny}">💳 ${esc(w.pay_req_by)} ${esc(_refAt(w.pay_req_at))}${canReq && !isAdmin ? ` <a style="cursor:pointer;text-decoration:underline" onclick="refWeekPayReq(${w.id},'cancel')">撤回</a>` : ''}</div>`
-            + (isAdmin ? `<div style="margin-top:3px;white-space:nowrap"><button class="btn btn-sm" style="background:#16a34a;color:#fff;padding:1px 8px;font-size:.72rem" onclick="refWeekPayReq(${w.id},'approve')">🛡 审核通过</button> <button class="btn btn-sm btn-outline" style="color:#dc2626;border-color:#fecaca;padding:1px 7px;font-size:.72rem" onclick="refWeekPayReq(${w.id},'return')">↩ 退回</button></div>` : '');
+          return `<span style="color:#b45309;font-weight:700">⏳ 已确认支付 · 待审核</span> <span style="${tiny}">💳 ${esc(w.pay_req_by)} ${esc(_refAt(w.pay_req_at))}${canReq && !isAdmin ? ` <a style="cursor:pointer;text-decoration:underline" onclick="refWeekPayReq(${w.id},'cancel')">撤回</a>` : ''}</span>`
+            + (isAdmin ? ` <button class="btn btn-sm" style="background:#16a34a;color:#fff;padding:1px 8px;font-size:.72rem" onclick="refWeekPayReq(${w.id},'approve')">🛡 审核通过</button> <button class="btn btn-sm btn-outline" style="color:#dc2626;border-color:#fecaca;padding:1px 7px;font-size:.72rem" onclick="refWeekPayReq(${w.id},'return')">↩ 退回</button>` : '');
         }
         return canReq ? `<button class="btn btn-sm" style="background:#0f4c6b;color:#fff;padding:2px 9px;font-size:.74rem" title="会计确认这周要付，提交管理员审核；审核通过后才能付款、记已付" onclick="refWeekPayReq(${w.id},'request')">💳 确认支付</button>`
           : '<span style="font-size:.72rem;color:var(--g400)">等会计确认支付</span>';
@@ -2880,8 +2960,8 @@ function renderRefList() {
       if (r.hr_self) return '<span style="color:var(--g400)">—</span>';
       const who = [w.admin_by, _refAt(w.admin_at)].filter(Boolean).join(' · ');
       const undo = isAdmin && !weekPaid(w) ? ` <a style="cursor:pointer;color:var(--g400);text-decoration:underline;font-size:.7rem" onclick="refWeekReview(${w.id},'reset')">撤销</a>` : '';
-      if (w.admin_status === 'approved') return `<span style="color:#047857;font-weight:700;white-space:nowrap">✅ 金额已确认</span><div style="font-size:.68rem;color:var(--g400)">${esc(who)}${w.admin_note ? ' · ' + esc(w.admin_note) : ''}${undo}</div>`;
-      if (w.admin_status === 'rejected') return `<span style="color:#b91c1c;font-weight:700;white-space:nowrap">✖ 这周不付</span><div style="font-size:.68rem;color:var(--g400)">${esc(who)}${w.admin_note ? ' · ' + esc(w.admin_note) : ''}${undo}</div>`;
+      if (w.admin_status === 'approved') return `<span style="color:#047857;font-weight:700">✅ 金额已确认</span> <span style="font-size:.68rem;color:var(--g400)">${esc(who)}${w.admin_note ? ' · ' + esc(w.admin_note) : ''}${undo}</span>`;
+      if (w.admin_status === 'rejected') return `<span style="color:#b91c1c;font-weight:700">✖ 这周不付</span> <span style="font-size:.68rem;color:var(--g400)">${esc(who)}${w.admin_note ? ' · ' + esc(w.admin_note) : ''}${undo}</span>`;
       if (r.review_status === 'rejected') return '<span style="color:var(--g400)">—</span>';
       if (!isAdmin) return '<span style="font-size:.72rem;color:#b45309">待管理员确认</span>';
       return `<div style="display:flex;gap:.25rem;align-items:center;flex-wrap:wrap">
@@ -2918,8 +2998,8 @@ function renderRefList() {
               ${(w.lines || []).map(l => `<div style="font-size:.72rem;color:#0f4c6b">↳ 第 ${l.row} 行 · ${esc(l.line_label)}${l.hint ? ` · ${esc(l.hint)}` : ''} · ${money(l.billed)}</div>`).join('')}</td>
             <td style="${td};text-align:right;color:var(--g500);white-space:nowrap">${money(v.subtotal)}</td>
             <td style="${td};text-align:right">${feeCell(w)}</td>
-            <td style="${td}">${adminCell(w)}</td>
-            <td style="${td}">${payCell(w)}${hk(w)}</td></tr>${hrow(w)}`;
+            <td style="${td};white-space:nowrap">${adminCell(w)}</td>
+            <td style="${td};white-space:nowrap">${payCell(w)}${hk(w)}</td></tr>${hrow(w)}`;
         }).join(''); })() + `</tbody></table>`
       : '';
     // 旧记录: 按周付款上线前记在整条介绍上的付款批注, 照样显示

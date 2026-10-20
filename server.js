@@ -41259,7 +41259,10 @@ app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
   // 手动添加的木板发票必须管理员审核通过后才能记付款
   if (target_type === 'palletmanual' && exists.approval_status !== 'approved') return res.status(400).json({ error: '这张手动添加的木板发票还没通过管理员审核，暂不能记录付款' });
   // 介绍费必须管理员核查同意支付后, 会计才能记付款 / 关联银行记录
-  if ((target_type === 'referral' || target_type === 'referralweek') && exists.review_status !== 'approved') return res.status(400).json({ error: '该介绍费还未通过管理员核查同意支付，暂不能记录付款' });
+  // 每周介绍费: 管理员审核通过了这周的确认支付, 也算同意付这周 (整条还在待核查也能记)
+  if (target_type === 'referralweek' && exists.review_status !== 'approved' && exists.pay_req !== 'approved' && exists.review_status !== 'rejected')
+    return res.status(400).json({ error: exists.pay_req === 'requested' ? '会计已确认支付，等管理员审核通过后才能记已付' : '请先点「确认支付」，管理员审核通过后才能记已付' });
+  if ((target_type === 'referral' || (target_type === 'referralweek' && exists.pay_req !== 'approved')) && exists.review_status !== 'approved') return res.status(400).json({ error: '该介绍费还未通过管理员核查同意支付，暂不能记录付款' });
   if (target_type === 'referralweek' && exists.admin_status !== 'approved') return res.status(400).json({ error: exists.admin_status === 'rejected' ? '管理员确认这周不付，不能记录付款' : '这周的介绍费还没经管理员确认金额，暂不能记录付款' });
   const st = ['', 'unpaid', 'partial', 'paid'].includes(String(paid_status || '')) ? String(paid_status || '') : '';
   const amt = (amount === '' || amount == null) ? null : (Number(amount) || 0);
@@ -42657,7 +42660,7 @@ app.post('/api/acct/referral-weeks/:id/pay-req', requireAdmin, requireRole('acco
   if (paid && action !== 'request') return res.status(400).json({ error: '这周已记付款，不能撤回或退回（先改掉付款记录）' });
   const who = req.userName || '';
   if (action === 'request') {
-    if (w.review_status !== 'approved') return res.status(400).json({ error: '这条介绍还没通过核查' });
+    if (w.review_status === 'rejected') return res.status(400).json({ error: '这条介绍已拒绝支付' });
     if (w.admin_status !== 'approved') return res.status(400).json({ error: '管理员确认金额后才能确认支付' });
     if (w.pay_req) return res.status(400).json({ error: '已经确认支付过了' });
     db.prepare(`UPDATE referral_weeks SET pay_req='requested', pay_req_by=?, pay_req_at=datetime('now') WHERE id=?`).run(who, w.id);
