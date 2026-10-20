@@ -2453,12 +2453,13 @@ function renderRefList() {
   else if (flt) list = list.filter(r => _refOverall(r) === flt);
   if (by) list = list.filter(r => by === '__none__' ? !r.created_by : r.created_by === by);
   // 三个阶段分页: 数字按当前搜索/筛选算, 切过去不会扑空
-  const stN = { interview: 0, working: 0, ended: 0, quit: 0, noshow: 0 };
+  const stN = { interview: 0, attended: 0, working: 0, ended: 0, quit: 0, noshow: 0 };
   list.forEach(r => stN[_refStage(r)]++);
   const overN = list.filter(_refIvOverdue).length;
   const payN = list.filter(r => _refStage(r) === 'working' && _refPayProblems(r).length).length;
   const stBtn = (k, t, sub) => `<button class="ref-stage${_refStageSel === k ? ' on' : ''}" onclick="refSetStage('${k}')">${t}<b>${stN[k]}</b><small>${sub}</small></button>`;
-  document.getElementById('refStages').innerHTML = stBtn('interview', '📅 面试安排', overN ? `<span style="background:#dc2626;color:#fff;border-radius:4px;padding:0 5px;font-weight:800">⚠ ${overN} 个面试已过没标记</span>` : '约了面试、还没开始上班')
+  document.getElementById('refStages').innerHTML = stBtn('interview', '📅 面试安排', overN ? `<span style="background:#dc2626;color:#fff;border-radius:4px;padding:0 5px;font-weight:800">⚠ ${overN} 个面试已过没标记</span>` : '约了面试、还没标去没去')
+    + stBtn('attended', '✅ 已去面试', '标了去了 · 等开始上班')
     + stBtn('working', '👷 上班中', payN ? `<span style="background:#dc2626;color:#fff;border-radius:4px;padding:0 5px;font-weight:800">⚠ ${payN} 个付款 / 车补 / 二维码没确认</span>` : '通过面试已上班 · 13 周内')
     + stBtn('ended', '⏹ 已满三个月', '满 13 周 · referral 期结束')
     + stBtn('quit', '🚪 中途不去了', '上班后没做满 13 周就不去了')
@@ -2568,7 +2569,7 @@ function renderRefList() {
     const weekHint = weeks.length ? sumLine
       : `<span style="color:var(--g400)">还没关联发票${canLinkInv ? ' — 每张发票（一周账期）算一周，按周给工头付钱' : '，会计关联后按周列出'}</span>`;
     // 面试安排 / 没去面试 阶段不显示核查和每周付款 (开始上班后在「上班中」才有)
-    const preWork = ['interview', 'noshow'].includes(_refStage(r));
+    const preWork = ['interview', 'attended', 'noshow'].includes(_refStage(r));
     const overdue = _refIvOverdue(r) || (_refStage(r) === 'working' && _refPayProblems(r).length > 0);
     return `<div class="card ref-card" id="refCard${r.id}" style="${r.review_status === 'rejected' ? 'opacity:.6;' : ''}${overdue ? 'background:#fef2f2;box-shadow:0 0 0 2px #fca5a5;' : ''}border-left-color:${overdue ? '#dc2626' : ov === 'paid' ? '#16a34a' : ov === 'rejected' ? '#cbd5e1' : ov === 'pending' ? '#fb923c' : '#3b82f6'}">
       <div class="ref-top">
@@ -2597,7 +2598,7 @@ function renderRefList() {
         ${legacy ? `<div class="ref-row">${legacy}</div>` : ''}
       </div>
     </div>`;
-  }).join('') : `<div class="card" style="color:var(--g400)">${{ interview: '没有在面试阶段的介绍。点「＋ 新增介绍」添加。', working: '没有正在上班的介绍。面试通过后在「📅 面试安排」里点「👷 开始上班」。', ended: '还没有满三个月的介绍。', quit: '没有中途不去了的人。', noshow: '没有标记「没去」或「没通过」的面试。' }[_refStageSel]}</div>`;
+  }).join('') : `<div class="card" style="color:var(--g400)">${{ interview: '没有在面试阶段的介绍。点「＋ 新增介绍」添加。', attended: '没有标了「去了」、还没开始上班的人。', working: '没有正在上班的介绍。面试通过后在「✅ 已去面试」里点「👷 开始上班」。', ended: '还没有满三个月的介绍。', quit: '没有中途不去了的人。', noshow: '没有标记「没去」或「没通过」的面试。' }[_refStageSel]}</div>`;
 }
 // ── Referral 阶段: 没上班日期 = 面试阶段; 上班日期起三个月内 = 上班中; 满三个月 = 结束 ──
 // 页面开着时每分钟重画一次: 面试时间一过没标记的马上变红
@@ -2623,7 +2624,8 @@ function _refEndDate(r) {
 function _refStage(r) {
   const end = _refEndDate(r);
   // 还没上班、面试标了没去 → 单独「没去面试」页
-  if (!end) return ['no_show', 'failed'].includes(r.interview_status) ? 'noshow' : 'interview';
+  // 面试标了「去了」、还没开始上班 → 单独「已去面试」页
+  if (!end) return ['no_show', 'failed'].includes(r.interview_status) ? 'noshow' : r.interview_status === 'attended' ? 'attended' : 'interview';
   // 标了中途不去了 (有最后上班日) → 单独一页
   if (r.work_end_date) return 'quit';
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -2661,7 +2663,7 @@ function _refCanStart(r) {
 function _refWorkRows(r) {
   const st = _refStage(r);
   if (st === 'noshow') return '';
-  if (st === 'interview') {
+  if (st === 'interview' || st === 'attended') {
     if (!_refCanStart(r) || ['no_show', 'failed'].includes(r.interview_status) || r.review_status === 'rejected') return '';
     return `<div class="ref-row" style="background:#f0f9ff;color:#075985"><b>👷 通过面试开始上班了？</b><span style="color:var(--g500)">填上班日期和工人的打卡 QR 码，按打卡工时对上每周付款</span><span style="flex:1"></span>
       <button class="btn btn-sm btn-blue" onclick="openRefStart(${r.id})">👷 开始上班</button></div>`;
