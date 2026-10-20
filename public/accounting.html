@@ -2339,12 +2339,12 @@ function _refHrBonus(r) {
         return { v, t, h };
       });
       amount = Math.round(part.reduce((t, x) => t + x.v, 0) * 100) / 100;
-      // 第 1 周是两周的发票: 按整张发票 工时/80 说 (和平分后 /40 是同一个数)
+      // 满 1 周只算一周: 基准 40 工时; 第 1 张是两周的发票就取平分后的第 1 周工时
       const w0 = units[0] && units[0].w, sp = (w0 && w0.span_eff) || 1, H = w0 && w0.hours != null ? Number(w0.hours) : null;
+      const from2 = sp > 1 && H != null ? `（这张发票 ${sp} 周 ${H} 工时，第 1 周算 ${part[0].h}）` : '';
       calc = n === 1
         ? (part[0].h == null ? '还没关联第 1 周发票 / 没工时，先按满额'
-          : sp > 1 ? (H >= 40 * sp ? `这张发票 ${sp} 周 ${H} 工时 ≥ ${40 * sp} · 给满` : `${yuan(m.amt)} × ${H}/${40 * sp} 工时（这张发票 ${sp} 周）`)
-          : part[0].h >= 40 ? `${part[0].h} 工时 ≥ 40 · 给满` : `${yuan(m.amt)} × ${part[0].h}/40 工时`)
+          : part[0].h >= 40 ? `${part[0].h} 工时 ≥ 40 · 给满${from2}` : `${yuan(m.amt)} × ${part[0].h}/40 工时${from2}`)
         : `每周 ${yuan(per)}：${part.map(x => x.t).join(' + ')}`;
       if (w0) x = { ...x, period: _refInvPer(w0) };
     }
@@ -2385,14 +2385,16 @@ function _refHr4w(r) {
       if (row) out.push({ k: 'm4_' + w.id, label: `第 ${k} 周（和满 1 周重复，请撤销）`, amt: 0, amount: row.amount, calc: '', cnt: 0, st: 'done', hint: '', row });
       k += n; continue;
     }
-    // 基准工时跟着发票走: 1 周的发票 40 工时, 2 周的 80 工时; 不满按 工时/基准 折算
-    const H = w.hours == null ? null : Number(w.hours), base = 40 * n;
+    // 基准工时按这一行算几周: 一周 40 工时, 两周一起算 (第 3–4 周) 80 工时;
+    // 两周的发票只有一周落在这里时, 按平分后那一周的工时 /40
+    const H = w.hours == null ? null : Number(w.hours), base = 40 * cnt;
+    const h = H == null ? null : cnt === n ? H : Math.round(H / n * cnt * 100) / 100;
     const full = REF_HR_4W_AMT * cnt;
-    const amount = H == null ? full : Math.round(full * Math.min(H, base) / base * 100) / 100;
-    const only = cnt < n ? `，只算${wl([from, to])}` : '';
-    const calc = H == null ? `这张发票没工时，先按满 ${yuan(full)}`
-      : H >= base ? `${n > 1 ? `这张发票 ${n} 周 ` : ''}${H} 工时 ≥ ${base} · 给满${only}`
-      : `${yuan(full)}${cnt > 1 ? `（${cnt} 周）` : ''} × ${H}/${base} 工时${n > 1 ? `（这张发票 ${n} 周${only}）` : ''}`;
+    const amount = h == null ? full : Math.round(full * Math.min(h, base) / base * 100) / 100;
+    const note = cnt < n ? `（这张发票 ${n} 周 ${H} 工时，${wl([from, to])}算 ${h}）` : '';
+    const calc = h == null ? `这张发票没工时，先按满 ${yuan(full)}`
+      : h >= base ? `${h} 工时 ≥ ${base} · 给满${note}`
+      : `${yuan(full)}${cnt > 1 ? `（${cnt} 周）` : ''} × ${h}/${base} 工时${note}`;
     out.push({ k: 'm4_' + w.id, label: wl([from, to]), amt: full, amount, calc, cnt, period: _refInvPer(w), ...stOf(to), row });
     k += n;
   }
