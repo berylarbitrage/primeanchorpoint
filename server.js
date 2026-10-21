@@ -42130,7 +42130,8 @@ function _referralOut(r, invMap, payNotes, weeksBy, weekNotes, linesByInv) {
     const tierFee = _referralTierFee(r, w.tier_eff);
     w.fee_default = w.rate != null ? Math.round(w.rate * w.ratio * 100) / 100 : tierFee != null ? tierFee * w.span_eff : null;
     // 工头介绍的: 第 1 周不到 16 工时 → 按比例的介绍费照算, 另加过面试 $5
-    if (i === 0 && !r.hr_self && w.hours != null) {
+    // 0 工时 = 没算通过面试, 不给 $5
+    if (i === 0 && !r.hr_self && Number(w.hours) > 0) {
       const h1 = w.hours / w.span_eff;
       if (h1 < REF_MIN_WEEK_HOURS) {
         w.under16 = Math.round(h1 * 100) / 100;

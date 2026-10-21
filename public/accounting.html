@@ -2270,6 +2270,8 @@ function _refWeekSums(r) {
   return out;
 }
 // 🙋 HR 招工节点奖励 (人民币): HR 自己招的 = 选的 HR; 工头介绍的 = 提交这条的 HR (提交人是 HR 才算)
+// 通过面试 = 关联的发票里这个工人有不等于 0 的工时
+const _refHasHours = r => (r.weeks || []).some(w => Number(w.hours) > 0);
 const REF_MIN_WEEK_HOURS = 16;   // 第 1 周不到 16 工时: 工头按比例的介绍费 + 过面试 $5 (HR 照常按比例)
 const REF_HR_BONUS = [
   { k: 'interview', label: '过面试', amt: 30 },
@@ -2328,7 +2330,10 @@ function _refHrBonus(r) {
   const units = _refWeekUnits(r);
   return REF_HR_BONUS.map(m => {
     let x;
-    if (m.k === 'interview') x = (r.interview_status === 'attended' || start) ? { st: 'done', hint: '' } : failedIv ? { st: 'lost', hint: r.interview_status === 'failed' ? '面试没过' : '没去面试' } : { st: 'wait', hint: '还没面试' };
+    // 过面试: 要关联了发票、而且有不等于 0 的工时才算 (光标「去了」不算)
+    if (m.k === 'interview') x = failedIv && !start ? { st: 'lost', hint: r.interview_status === 'failed' ? '面试没过' : '没去面试' }
+      : _refHasHours(r) ? { st: 'done', hint: '' }
+      : { st: 'wait', hint: (r.weeks || []).length ? '关联的发票上没有工时，有工时才算通过面试' : '还没关联发票，有工时才算通过面试' };
     else x = span(m.k === 'week1' ? 7 : 30);
     let amount = m.amt, calc = '';
     if (m.prorate) {
