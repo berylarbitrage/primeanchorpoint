@@ -3055,6 +3055,11 @@ function renderRefList() {
     + `<button class="ref-stage${_refStageSel === 'payweeks' ? ' on' : ''}" onclick="refSetStage('payweeks')">💰 每周付款<b>${_refPayWeekRows(list).filter(x => !['paid', 'nopay'].includes(x.st)).length}</b><small>每周付给哪些工头、多少钱 · 付款记录</small></button>`;
   const pwMode = _refStageSel === 'payweeks';
   if (!pwMode) list = list.filter(r => _refStage(r) === _refStageSel);
+  // 按通过面试 (到场) 的时间排, 新的在上; 还在「面试安排」的按约的面试时间, 近的在上
+  const ivKey = r => String(r.interview_attended_at || r.interview_at || '').replace('T', ' ');
+  if (!pwMode) list = list.slice().sort(_refStageSel === 'interview'
+    ? (a, b) => ivKey(a).localeCompare(ivKey(b)) || b.id - a.id
+    : (a, b) => ivKey(b).localeCompare(ivKey(a)) || b.id - a.id);
   const pendN = _refList.filter(r => r.review_status === 'pending').length;
   const waitN = _refList.filter(r => ['approved', 'partpaid'].includes(_refOverall(r))).length;
   const paidN = _refList.filter(r => _refOverall(r) === 'paid').length;
