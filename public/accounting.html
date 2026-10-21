@@ -4817,7 +4817,7 @@ function cnRender() {
     if (!g) groups.push(g = { emp: null, name: f.party_name || '(未命名)', recs: [] });
     g.recs.push(f);
   });
-  const hit = f => !q || `${f.fee_date || ''} ${f.description || ''} ${_cnLines(f).map(l => l.desc).join(' ')}`.toLowerCase().includes(q);
+  const hit = f => !q || `${f.fee_date || ''} ${f.description || ''} ${_cnLines(f).map(l => `${l.desc || ''} ${l.note || ''}`).join(' ')}`.toLowerCase().includes(q);
   const shown = groups.map(g => {
     const nameHit = !q || `${g.name} ${(g.emp && g.emp.title) || ''}`.toLowerCase().includes(q);
     return { ...g, recs: nameHit ? g.recs : g.recs.filter(hit), show: nameHit || g.recs.some(hit) };
@@ -4870,7 +4870,7 @@ function cnRender() {
           <div style="display:flex;gap:1rem;flex-wrap:wrap">${CN_KINDS.map(([k, label]) => {
             const items = ls.filter(l => l.kind === k);
             return `<div style="flex:1;min-width:200px"><div style="font-weight:700;font-size:.78rem;margin-bottom:.2rem">${label}</div>`
-              + (items.length ? `<table style="width:100%;font-size:.78rem">${items.map(l => `<tr><td style="padding:2px 4px">${esc(l.desc || '—')}</td><td style="padding:2px 4px;color:var(--g400);white-space:nowrap">${esc(l.date || '')}</td><td style="padding:2px 4px;text-align:right;white-space:nowrap">${_cnMoney(l.amount, cur)}</td></tr>`).join('')}</table>`
+              + (items.length ? `<table style="width:100%;font-size:.78rem">${items.map(l => `<tr><td style="padding:2px 4px">${esc(l.desc || '—')}${l.note ? `<div style="font-size:.7rem;color:var(--g500)">💬 ${esc(l.note)}</div>` : ''}</td><td style="padding:2px 4px;color:var(--g400);white-space:nowrap">${esc(l.date || '')}</td><td style="padding:2px 4px;text-align:right;white-space:nowrap">${_cnMoney(l.amount, cur)}</td></tr>`).join('')}</table>`
                 : '<div style="font-size:.76rem;color:var(--g400)">无</div>') + '</div>';
           }).join('')}</div>
           ${f.description ? `<div style="font-size:.76rem;color:var(--g500);margin-top:.4rem">备注：${esc(f.description)}</div>` : ''}
@@ -4986,7 +4986,7 @@ function cpOpen(empId, recId) {
   const rec = recId ? _feeList.find(f => f.id === recId) : null;
   _cnPay = { empId, recId: rec ? rec.id : null, lines: rec ? _cnLines(rec).map(l => ({ ...l })) : [], files: [], keep: rec && Array.isArray(rec.attachments) ? rec.attachments.slice() : [] };
   // 每块至少留一行空的, 方便直接填
-  CN_KINDS.forEach(([k]) => { if (!_cnPay.lines.some(l => l.kind === k)) _cnPay.lines.push({ kind: k, desc: '', date: '', amount: '' }); });
+  CN_KINDS.forEach(([k]) => { if (!_cnPay.lines.some(l => l.kind === k)) _cnPay.lines.push({ kind: k, desc: '', date: '', amount: '', note: '' }); });
   document.getElementById('cpTitle').textContent = `💴 ${rec ? '编辑' : '录入'}工资 · ${emp ? emp.name : ''}`;
   document.getElementById('cpHint').textContent = USER.role === 'admin' ? '管理员保存直接生效。' : '保存后需管理员审核通过才计入。';
   const d = new Date();
@@ -5001,13 +5001,14 @@ function cpRenderLines() {
   document.getElementById('cpSections').innerHTML = CN_KINDS.map(([k, label, ph]) => `
     <div style="border:1px solid var(--g200);border-radius:8px;padding:.5rem .6rem;margin-bottom:.55rem">
       <div style="display:flex;align-items:center;margin-bottom:.3rem"><b style="font-size:.84rem">${label}</b><span style="flex:1"></span><span id="cpSub_${k}" style="font-size:.8rem;font-weight:700"></span></div>
-      ${_cnPay.lines.map((l, i) => l.kind !== k ? '' : `<div style="display:flex;gap:.35rem;margin-bottom:.3rem">
+      ${_cnPay.lines.map((l, i) => l.kind !== k ? '' : `<div style="margin-bottom:.45rem"><div style="display:flex;gap:.35rem;margin-bottom:.2rem">
         <input type="text" value="${esc(l.desc)}" placeholder="${ph}" oninput="_cnPay.lines[${i}].desc=this.value" style="flex:1;min-width:0">
         <input type="date" value="${esc(l.date)}" onchange="_cnPay.lines[${i}].date=this.value" title="日期（可选）" style="width:135px">
         <input type="number" step="0.01" value="${esc(l.amount)}" placeholder="${_CUR_SYM[cur] || ''}0.00" oninput="_cnPay.lines[${i}].amount=this.value;cpSum()" style="width:110px;text-align:right">
         <button class="btn btn-sm btn-outline" title="删除这一项" onclick="_cnPay.lines.splice(${i},1);cpRenderLines()">✕</button>
-      </div>`).join('')}
-      <a style="cursor:pointer;font-size:.78rem;color:#0f4c6b" onclick="_cnPay.lines.push({kind:'${k}',desc:'',date:'',amount:''});cpRenderLines()">＋ 添加一项</a>
+      </div>
+      <input type="text" value="${esc(l.note || '')}" placeholder="这一项的备注（可选）" oninput="_cnPay.lines[${i}].note=this.value" style="width:100%;box-sizing:border-box;font-size:.78rem;padding:.25rem .5rem;color:var(--g600)"></div>`).join('')}
+      <a style="cursor:pointer;font-size:.78rem;color:#0f4c6b" onclick="_cnPay.lines.push({kind:'${k}',desc:'',date:'',amount:'',note:''});cpRenderLines()">＋ 添加一项</a>
     </div>`).join('');
   cpSum();
 }
@@ -5031,7 +5032,7 @@ function cpRenderFiles() {
 async function cpSave() {
   const month = document.getElementById('cpMonth').value;
   if (!month) return toast('请选择工资月份', true);
-  const lines = _cnPay.lines.filter(l => String(l.desc).trim() || Number(l.amount));
+  const lines = _cnPay.lines.filter(l => String(l.desc).trim() || Number(l.amount) || String(l.note || '').trim());
   if (!lines.length) return toast('请至少填写一项明细', true);
   if (lines.some(l => isNaN(Number(l.amount)))) return toast('金额格式不对', true);
   const emp = _cnEmps.find(e => e.id === _cnPay.empId);
@@ -5047,7 +5048,7 @@ async function cpSave() {
     fd.append('fee_date', month);
     fd.append('currency', document.getElementById('cpCur').value);
     fd.append('description', document.getElementById('cpDesc').value.trim());
-    fd.append('lines', JSON.stringify(lines.map(l => ({ kind: l.kind, desc: String(l.desc).trim(), date: l.date, amount: Number(l.amount) || 0 }))));
+    fd.append('lines', JSON.stringify(lines.map(l => ({ kind: l.kind, desc: String(l.desc).trim(), date: l.date, amount: Number(l.amount) || 0, note: String(l.note || '').trim() }))));
     if (_cnPay.recId) fd.append('keep_attachments', JSON.stringify(_cnPay.keep.map(a => a.path)));
     _cnPay.files.forEach(f => fd.append('invoice', f));
     const r = await fetch('/api/acct/fee-records' + (_cnPay.recId ? '/' + _cnPay.recId : ''), { method: _cnPay.recId ? 'PUT' : 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd }).then(x => x.json());
