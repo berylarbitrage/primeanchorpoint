@@ -4858,7 +4858,10 @@ function cnRender() {
       const ls = _cnLines(f), open = _cnOpen.has(f.id), cur = f.currency || 'CNY';
       const ap = f.approval_status || 'approved';
       const atts = Array.isArray(f.attachments) ? f.attachments : [];
-      const files = atts.length ? atts.map((a, i) => `<a href="${esc(a.path)}" target="_blank" title="${esc(a.name || '')}" style="color:#0f4c6b;text-decoration:underline;margin-right:5px;white-space:nowrap">${atts.length > 1 ? '文件' + (i + 1) : '查看'}</a>`).join('') : '<span style="color:var(--g400)">—</span>';
+      // 明细行上的凭证只显示个数, 展开明细看具体哪一项
+      const lineN = ls.reduce((t, l) => t + ((l.files || []).length), 0);
+      const files = (atts.length ? atts.map((a, i) => `<a href="${esc(a.path)}" target="_blank" title="${esc(a.name || '')}" style="color:#0f4c6b;text-decoration:underline;margin-right:5px;white-space:nowrap">${atts.length > 1 ? '文件' + (i + 1) : '查看'}</a>`).join('') : lineN ? '' : '<span style="color:var(--g400)">—</span>')
+        + (lineN ? `<a style="cursor:pointer;font-size:.72rem;color:var(--g500);white-space:nowrap" onclick="cnToggle(${f.id})" title="展开明细看每一项的凭证">📎 明细 ${lineN} 个</a>` : '');
       const status = ap === 'pending'
         ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#fff7ed;color:#c2410c;border:1px solid #fed7aa">⏳ 待审核</span>'
           + (f.created_by ? `<div style="font-size:.68rem;color:var(--g400)">${esc(f.created_by)} 提交</div>` : '')
@@ -4872,7 +4875,7 @@ function cnRender() {
           <div style="display:flex;gap:1rem;flex-wrap:wrap">${CN_KINDS.map(([k, label]) => {
             const items = ls.filter(l => l.kind === k);
             return `<div style="flex:1;min-width:200px"><div style="font-weight:700;font-size:.78rem;margin-bottom:.2rem">${label}</div>`
-              + (items.length ? `<table style="width:100%;font-size:.78rem">${items.map(l => `<tr><td style="padding:2px 4px">${esc(l.desc || '—')}${l.kind === 'ot' ? `<div style="font-size:.7rem;color:var(--g500)">⏱ ${Number(l.hours) || 0} 小时 × ${_cnMoney(l.rate, cur)}/小时</div>` : ''}${l.note ? `<div style="font-size:.7rem;color:var(--g500)">💬 ${esc(l.note)}</div>` : ''}</td><td style="padding:2px 4px;color:var(--g400);white-space:nowrap">${esc(l.date || '')}</td><td style="padding:2px 4px;text-align:right;white-space:nowrap">${_cnMoney(l.amount, cur)}</td></tr>`).join('')}</table>`
+              + (items.length ? `<table style="width:100%;font-size:.78rem">${items.map(l => `<tr><td style="padding:2px 4px">${esc(l.desc || '—')}${l.kind === 'ot' ? `<div style="font-size:.7rem;color:var(--g500)">⏱ ${Number(l.hours) || 0} 小时 × ${_cnMoney(l.rate, cur)}/小时</div>` : ''}${l.note ? `<div style="font-size:.7rem;color:var(--g500)">💬 ${esc(l.note)}</div>` : ''}${(l.files || []).length ? `<div style="font-size:.7rem">${l.files.map((f, j) => `<a href="${esc(f.path)}" target="_blank" title="${esc(f.name || '')}" style="color:#0f4c6b;text-decoration:underline;margin-right:6px;white-space:nowrap">📎 ${l.files.length > 1 ? '凭证' + (j + 1) : '凭证'}</a>`).join('')}</div>` : ''}</td><td style="padding:2px 4px;color:var(--g400);white-space:nowrap">${esc(l.date || '')}</td><td style="padding:2px 4px;text-align:right;white-space:nowrap">${_cnMoney(l.amount, cur)}</td></tr>`).join('')}</table>`
                 : '<div style="font-size:.76rem;color:var(--g400)">无</div>') + '</div>';
           }).join('')}</div>
           ${f.description ? `<div style="font-size:.76rem;color:var(--g500);margin-top:.4rem">备注：${esc(f.description)}</div>` : ''}
@@ -4986,7 +4989,7 @@ async function cnEmpDelete(id) {
 function cpOpen(empId, recId) {
   const emp = _cnEmps.find(e => e.id === empId);
   const rec = recId ? _feeList.find(f => f.id === recId) : null;
-  _cnPay = { empId, recId: rec ? rec.id : null, lines: rec ? _cnLines(rec).map(l => ({ ...l })) : [], files: [], keep: rec && Array.isArray(rec.attachments) ? rec.attachments.slice() : [] };
+  _cnPay = { empId, recId: rec ? rec.id : null, lines: rec ? _cnLines(rec).map(l => ({ ...l, files: (l.files || []).slice(), newFiles: [] })) : [], files: [], keep: rec && Array.isArray(rec.attachments) ? rec.attachments.slice() : [] };
   // 每块至少留一行空的, 方便直接填
   CN_KINDS.forEach(([k]) => { if (!_cnPay.lines.some(l => l.kind === k)) _cnPay.lines.push({ kind: k, desc: '', date: '', amount: '', note: '' }); });
   document.getElementById('cpTitle').textContent = `💴 ${rec ? '编辑' : '录入'}工资 · ${emp ? emp.name : ''}`;
@@ -5013,7 +5016,10 @@ function cpRenderLines() {
         : `<input type="number" step="0.01" value="${esc(l.amount)}" placeholder="${_CUR_SYM[cur] || ''}0.00" oninput="_cnPay.lines[${i}].amount=this.value;cpSum()" style="width:110px;text-align:right">`}
         <button class="btn btn-sm btn-outline" title="删除这一项" onclick="_cnPay.lines.splice(${i},1);cpRenderLines()">✕</button>
       </div>
-      <input type="text" value="${esc(l.note || '')}" placeholder="这一项的备注（可选）" oninput="_cnPay.lines[${i}].note=this.value" style="width:100%;box-sizing:border-box;font-size:.78rem;padding:.25rem .5rem;color:var(--g600)"></div>`).join('')}
+      <div style="display:flex;gap:.35rem;align-items:center">
+        <input type="text" value="${esc(l.note || '')}" placeholder="这一项的备注（可选）" oninput="_cnPay.lines[${i}].note=this.value" style="flex:1;min-width:0;box-sizing:border-box;font-size:.78rem;padding:.25rem .5rem;color:var(--g600)">
+        <label class="btn btn-sm btn-outline" title="给这一项上传图片 / PDF（可多个）" style="cursor:pointer;white-space:nowrap;font-size:.74rem;padding:.15rem .5rem">📎 凭证<input type="file" multiple accept="image/*,.pdf" style="display:none" onchange="cpLineAddFiles(${i}, this.files);this.value=''"></label>
+      </div>${_cpLineFiles(l, i)}</div>`).join('')}
       <a style="cursor:pointer;font-size:.78rem;color:#0f4c6b" onclick="_cnPay.lines.push({kind:'${k}',desc:'',date:'',amount:'',note:''${k === 'ot' ? ",hours:'',rate:_cpLastRate()" : ''}});cpRenderLines()">＋ 添加一项</a>
     </div>`).join('');
   cpSum();
@@ -5025,6 +5031,20 @@ function cpOtRow(i) {
   const el = document.getElementById('cpOt' + i);
   if (el) el.textContent = '= ' + _cnMoney(l.amount, document.getElementById('cpCur').value);
   cpSum();
+}
+// 每项明细的凭证: files = 已存的 [{path,name}], newFiles = 这次新选的 File
+const _CP_FILE_OK = /\.(pdf|jpg|jpeg|png|gif|webp)$/i;
+function cpLineAddFiles(i, files) {
+  const l = _cnPay.lines[i];
+  const ok = [...(files || [])].filter(f => _CP_FILE_OK.test(f.name));
+  if (ok.length < (files || []).length) toast('只能传 PDF / JPG / PNG / GIF / WEBP（iPhone 的 HEIC 先转成 JPG）', true);
+  l.newFiles = (l.newFiles || []).concat(ok);
+  cpRenderLines();
+}
+function _cpLineFiles(l, i) {
+  const old = (l.files || []).map((f, j) => `<span style="white-space:nowrap">📎 <a href="${esc(f.path)}" target="_blank">${esc(f.name || '文件')}</a> <a style="cursor:pointer;color:#b91c1c" title="移除" onclick="_cnPay.lines[${i}].files.splice(${j},1);cpRenderLines()">✕</a></span>`);
+  const neu = (l.newFiles || []).map((f, j) => `<span style="white-space:nowrap">📄 ${esc(f.name)} <span style="color:var(--g400)">（新）</span> <a style="cursor:pointer;color:#b91c1c" title="移除" onclick="_cnPay.lines[${i}].newFiles.splice(${j},1);cpRenderLines()">✕</a></span>`);
+  return old.length || neu.length ? `<div style="font-size:.74rem;margin-top:.2rem;display:flex;gap:.2rem .7rem;flex-wrap:wrap">${old.concat(neu).join('')}</div>` : '';
 }
 // 新加的加班行默认用上一行的时薪
 function _cpLastRate() { const o = _cnPay.lines.filter(l => l.kind === 'ot' && l.rate !== '' && l.rate != null); return o.length ? o[o.length - 1].rate : ''; }
@@ -5048,7 +5068,7 @@ function cpRenderFiles() {
 async function cpSave() {
   const month = document.getElementById('cpMonth').value;
   if (!month) return toast('请选择工资月份', true);
-  const lines = _cnPay.lines.filter(l => String(l.desc).trim() || Number(l.amount) || Number(l.hours) || String(l.note || '').trim());
+  const lines = _cnPay.lines.filter(l => String(l.desc).trim() || Number(l.amount) || Number(l.hours) || String(l.note || '').trim() || (l.files || []).length || (l.newFiles || []).length);
   if (!lines.length) return toast('请至少填写一项明细', true);
   if (lines.some(l => isNaN(Number(l.amount)))) return toast('金额格式不对', true);
   const emp = _cnEmps.find(e => e.id === _cnPay.empId);
@@ -5065,9 +5085,13 @@ async function cpSave() {
     fd.append('currency', document.getElementById('cpCur').value);
     fd.append('description', document.getElementById('cpDesc').value.trim());
     fd.append('lines', JSON.stringify(lines.map(l => ({ kind: l.kind, desc: String(l.desc).trim(), date: l.date, note: String(l.note || '').trim(),
+      files: (l.files || []).map(f => ({ path: f.path })), new_files: (l.newFiles || []).length,
       ...(l.kind === 'ot' ? { hours: Number(l.hours) || 0, rate: Number(l.rate) || 0, amount: _cnOtAmt(l) } : { amount: Number(l.amount) || 0 }) }))));
     if (_cnPay.recId) fd.append('keep_attachments', JSON.stringify(_cnPay.keep.map(a => a.path)));
+    // 先放整条记录的凭证, 再按明细顺序放每行的 (服务器按 general_count 和每行 new_files 分)
     _cnPay.files.forEach(f => fd.append('invoice', f));
+    fd.append('general_count', _cnPay.files.length);
+    lines.forEach(l => (l.newFiles || []).forEach(f => fd.append('invoice', f)));
     const r = await fetch('/api/acct/fee-records' + (_cnPay.recId ? '/' + _cnPay.recId : ''), { method: _cnPay.recId ? 'PUT' : 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd }).then(x => x.json());
     if (r.error) throw new Error(r.error);
     document.getElementById('cnPayModal').style.display = 'none';

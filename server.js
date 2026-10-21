@@ -41913,7 +41913,12 @@ app.delete('/api/acct/cn-employees/:id', requireAdmin, requireRole('admin'), (re
   res.json({ success: true });
 });
 // 国内工资明细: 清洗前端传来的 lines, 按 base/bonus/ot/reimb 加总; 加班 (ot) 金额 = 小时 × 时薪
-function _cnPayLines(raw) {
+// 每项明细可带凭证 files [{path,name}]: opt.uploads = 这次上传给明细的文件 (按顺序, 每行 new_files 张),
+// opt.old = 原记录明细里的文件 (编辑时只认原来就有的 path, 不信前端随便传的)
+function _cnPayLines(raw, opt = {}) {
+  const uploads = (opt.uploads || []).slice();
+  const oldBy = new Map();
+  (opt.old || []).forEach(l => (Array.isArray(l && l.files) ? l.files : []).forEach(f => { if (f && f.path) oldBy.set(f.path, f); }));
   let arr = [];
   try { arr = typeof raw === 'string' ? JSON.parse(raw || '[]') : (raw || []); } catch (e) { arr = []; }
   const r2 = v => Math.round((Number(v) || 0) * 100) / 100;
@@ -41927,11 +41932,26 @@ function _cnPayLines(raw) {
       note: String((l && l.note) || '').trim().slice(0, 500),
     };
     if (kind === 'ot') { o.hours = r2(l && l.hours); o.rate = r2(l && l.rate); o.amount = r2(o.hours * o.rate); }
+    const keep = (Array.isArray(l && l.files) ? l.files : []).map(f => oldBy.get(f && f.path)).filter(Boolean);
+    const n = Math.max(0, Math.min(parseInt(l && l.new_files) || 0, uploads.length));
+    const files = keep.concat(uploads.splice(0, n).map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) })));
+    if (files.length) o.files = files;
     return o;
-  }).filter(l => l.desc || l.amount || l.note || l.hours);
+  }).filter(l => l.desc || l.amount || l.note || l.hours || (l.files && l.files.length));
+  // 没用上的旧文件 / 多出来的上传 → 删掉
+  const used = new Set(lines.flatMap(l => (l.files || []).map(f => f.path)));
+  const drop = [...oldBy.keys()].filter(p => !used.has(p))
+    .concat((opt.uploads || []).map(fl => `/uploads/${fl.filename}`).filter(p => !used.has(p)));
   const sum = k => Math.round(lines.filter(l => l.kind === k).reduce((s, l) => s + l.amount, 0) * 100) / 100;
   const base = sum('base'), bonus = sum('bonus'), ot = sum('ot'), reimb = sum('reimb');
-  return { lines, base, bonus, ot, reimb, total: Math.round((base + bonus + ot + reimb) * 100) / 100 };
+  return { lines, base, bonus, ot, reimb, total: Math.round((base + bonus + ot + reimb) * 100) / 100, drop };
+}
+// 国内工资上传: 前 general_count 个是整条记录的凭证, 后面的按顺序是各明细行的
+function _cnSplitUploads(req) {
+  const all = Array.isArray(req.files) ? req.files : [];
+  const g = (req.body || {}).general_count;
+  const n = g == null || g === '' ? all.length : Math.max(0, Math.min(parseInt(g) || 0, all.length));
+  return { general: all.slice(0, n), lineUps: all.slice(n) };
 }
 
 // 新增费用记录: 会计提交入库为 pending 待管理员审核, admin 提交直接 approved (发票文件复用 claimUpload)
@@ -41950,8 +41970,11 @@ app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin
   if (feeType === 'cnpay') {
     const emp = db.prepare('SELECT * FROM cn_employees WHERE id=?').get(Number(b.employee_id) || 0);
     if (!emp) return res.status(400).json({ error: '请先选择员工' });
-    const c = _cnPayLines(b.lines);
+    const up = _cnSplitUploads(req);
+    const c = _cnPayLines(b.lines, { uploads: up.lineUps });
     if (!c.lines.length) return res.status(400).json({ error: '请至少填写一项明细' });
+    c.drop.forEach(_claimDeleteFile);
+    req.files = up.general;   // 下面整条记录的凭证只用前面那部分
     ({ base, bonus, ot, reimb } = c); cnLines = c.lines; amtNum = c.total; empId = emp.id; party = emp.name;
   }
   const currency = ['CNY', 'USD'].includes(String(b.currency || '')) ? String(b.currency) : (feeType === 'cnpay' ? 'CNY' : 'USD');
@@ -41987,8 +42010,12 @@ app.put('/api/acct/fee-records/:id', requireAdmin, requireRole('accounting', 'ad
   const b = req.body || {};
   if (cur.fee_type === 'cnpay') {
     if (!isAdmin) return res.status(403).json({ error: '国内工资只有管理员能修改' });
-    const c = _cnPayLines(b.lines);
+    const up = _cnSplitUploads(req);
+    let oldLines = []; try { oldLines = JSON.parse(cur.lines || '[]') || []; } catch (e) { oldLines = []; }
+    const c = _cnPayLines(b.lines, { uploads: up.lineUps, old: oldLines });
     if (!c.lines.length) return res.status(400).json({ error: '请至少填写一项明细' });
+    c.drop.forEach(_claimDeleteFile);
+    req.files = up.general;
     // 去掉前端点了 ✕ 的旧凭证, 再追加新上传的
     let keep = null; try { keep = b.keep_attachments != null ? JSON.parse(b.keep_attachments) : null; } catch (e) { keep = null; }
     const old = _claimAtts(cur);
