@@ -5018,7 +5018,9 @@ function cpRenderLines() {
       </div>
       <div style="display:flex;gap:.35rem;align-items:center">
         <input type="text" value="${esc(l.note || '')}" placeholder="这一项的备注（可选）" oninput="_cnPay.lines[${i}].note=this.value" style="flex:1;min-width:0;box-sizing:border-box;font-size:.78rem;padding:.25rem .5rem;color:var(--g600)">
-        <label class="btn btn-sm btn-outline" title="给这一项上传图片 / PDF（可多个）" style="cursor:pointer;white-space:nowrap;font-size:.74rem;padding:.15rem .5rem">📎 凭证<input type="file" multiple accept="image/*,.pdf" style="display:none" onchange="cpLineAddFiles(${i}, this.files);this.value=''"></label>
+        <label id="cpLD${i}" title="把图片 / PDF 拖到这里，或点击选择（可多个）"
+          ondragover="acctDZ(event,true,'cpLD${i}')" ondragenter="acctDZ(event,true,'cpLD${i}')" ondragleave="acctDZ(event,false,'cpLD${i}')" ondrop="acctDZ(event,false,'cpLD${i}');cpLineAddFiles(${i}, event.dataTransfer.files)"
+          style="cursor:pointer;white-space:nowrap;font-size:.74rem;padding:.2rem .6rem;border:1.5px dashed var(--g200);border-radius:6px;background:#fafafa;color:var(--g600);transition:background .12s,border-color .12s">📎 凭证 · 拖到这里或点击<input type="file" multiple accept="image/*,.pdf" style="display:none" onchange="cpLineAddFiles(${i}, this.files);this.value=''"></label>
       </div>${_cpLineFiles(l, i)}</div>`).join('')}
       <a style="cursor:pointer;font-size:.78rem;color:#0f4c6b" onclick="_cnPay.lines.push({kind:'${k}',desc:'',date:'',amount:'',note:''${k === 'ot' ? ",hours:'',rate:_cpLastRate()" : ''}});cpRenderLines()">＋ 添加一项</a>
     </div>`).join('');
