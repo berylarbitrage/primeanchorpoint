@@ -2270,7 +2270,7 @@ function _refWeekSums(r) {
   return out;
 }
 // 🙋 HR 招工节点奖励 (人民币): HR 自己招的 = 选的 HR; 工头介绍的 = 提交这条的 HR (提交人是 HR 才算)
-const REF_MIN_WEEK_HOURS = 16;   // 第 1 周不到 16 工时: HR 没有「满 1 周」, 工头只拿过面试 $5
+const REF_MIN_WEEK_HOURS = 16;   // 第 1 周不到 16 工时: HR 没有「满 1 周」, 工头按比例的介绍费 + 过面试 $5
 const REF_HR_BONUS = [
   { k: 'interview', label: '过面试', amt: 30 },
   { k: 'week1', label: '满 1 周', amt: 100, prorate: true },   // 按第 1 周工时 /40 折算
@@ -3086,7 +3086,7 @@ function renderRefList() {
     const weeks = r.weeks || [];
     // 这周介绍费: 选满周价 (第一周 $25 / $50, 之后 $12.5 / $25, 都不要再手写), 按工时折算 — 满 40 工时给满, 不满按 工时/40
     const feeCalc = w => { const n = w.span_eff || 1;
-      if (w.under16 != null) return `<div style="font-size:.68rem;color:#b45309;white-space:nowrap">第 1 周只有 ${w.under16} 工时 &lt; ${REF_MIN_WEEK_HOURS} · 只给过面试 ${money(5)}${n > 1 ? ' + 第 2 周照算' : ''} = <b style="color:#0f4c6b">${money(w.fee_default)}</b></div>`;
+      if (w.under16 != null) return `<div style="font-size:.68rem;color:#b45309;white-space:nowrap">第 1 周只有 ${w.under16} 工时 &lt; ${REF_MIN_WEEK_HOURS} · 按比例 ${money(w.fee_prorated)} + 过面试 ${money(5)} = <b style="color:#0f4c6b">${money(w.fee_default)}</b></div>`;
       return w.rate == null ? '' : `<div style="font-size:.68rem;color:${w.hours == null ? '#b45309' : 'var(--g500)'};white-space:nowrap">${w.hours == null
       ? `没勾发票行、没有工时，按满 ${n} 周 = ${money(w.fee_default)}`
       : w.hours >= 40 * n ? `${w.hours} 工时 ≥ ${40 * n} · 给满${n > 1 ? ` ${n} 周` : ''} ${money(w.fee_default)}`
