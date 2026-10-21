@@ -4761,7 +4761,9 @@ async function feeDelete(id) {
 }
 
 // ── 🏮 国内工资: 员工名册 + 每月工资 (Base / Bonus / 报销 都有明细), 记录存 fee_records fee_type='cnpay' ──
-const CN_KINDS = [['base', 'Base 底薪', '例：9 月基本工资'], ['bonus', 'Bonus 奖金', '例：Q3 绩效奖金'], ['reimb', '报销费用', '例：10/12 打车 / 差旅 / 餐费']];
+const CN_KINDS = [['base', 'Base 底薪', '例：9 月基本工资'], ['bonus', 'Bonus 奖金', '例：Q3 绩效奖金'], ['ot', '加班工资', '例：10/12 周末加班'], ['reimb', '报销费用', '例：10/12 打车 / 差旅 / 餐费']];
+// 加班工资: 小时数 × 时薪 = 金额
+const _cnOtAmt = l => Math.round((Number(l.hours) || 0) * (Number(l.rate) || 0) * 100) / 100;
 const _CUR_SYM = { CNY: '¥', USD: '$' };
 const _cnMoney = (v, cur) => (_CUR_SYM[cur] || '¥') + (Number(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 let _cnEmps = null, _cnEmpEdit = null, _cnPay = null, _ceProfile = null, _ceMatches = [], _ceTimer = null;
@@ -4826,10 +4828,10 @@ function cnRender() {
   const sumBy = list => {
     const by = {};
     list.filter(f => (f.approval_status || 'approved') === 'approved').forEach(f => {
-      const c = f.currency || 'CNY', t = by[c] || (by[c] = { base: 0, bonus: 0, reimb: 0, total: 0 });
-      t.base += Number(f.base_amount) || 0; t.bonus += Number(f.bonus_amount) || 0; t.reimb += Number(f.reimb_amount) || 0; t.total += Number(f.amount) || 0;
+      const c = f.currency || 'CNY', t = by[c] || (by[c] = { base: 0, bonus: 0, ot: 0, reimb: 0, total: 0 });
+      t.base += Number(f.base_amount) || 0; t.bonus += Number(f.bonus_amount) || 0; t.ot += Number(f.ot_amount) || 0; t.reimb += Number(f.reimb_amount) || 0; t.total += Number(f.amount) || 0;
     });
-    return Object.entries(by).map(([c, t]) => `Base ${_cnMoney(t.base, c)} · Bonus ${_cnMoney(t.bonus, c)} · 报销 ${_cnMoney(t.reimb, c)} · <b style="color:#dc2626">合计 ${_cnMoney(t.total, c)}</b>`).join('<br>');
+    return Object.entries(by).map(([c, t]) => `Base ${_cnMoney(t.base, c)} · Bonus ${_cnMoney(t.bonus, c)}${t.ot ? ` · 加班 ${_cnMoney(t.ot, c)}` : ''} · 报销 ${_cnMoney(t.reimb, c)} · <b style="color:#dc2626">合计 ${_cnMoney(t.total, c)}</b>`).join('<br>');
   };
   const pendN = recs.filter(f => f.approval_status === 'pending').length;
   document.getElementById('cnStats').innerHTML = seeAll
@@ -4870,14 +4872,14 @@ function cnRender() {
           <div style="display:flex;gap:1rem;flex-wrap:wrap">${CN_KINDS.map(([k, label]) => {
             const items = ls.filter(l => l.kind === k);
             return `<div style="flex:1;min-width:200px"><div style="font-weight:700;font-size:.78rem;margin-bottom:.2rem">${label}</div>`
-              + (items.length ? `<table style="width:100%;font-size:.78rem">${items.map(l => `<tr><td style="padding:2px 4px">${esc(l.desc || '—')}${l.note ? `<div style="font-size:.7rem;color:var(--g500)">💬 ${esc(l.note)}</div>` : ''}</td><td style="padding:2px 4px;color:var(--g400);white-space:nowrap">${esc(l.date || '')}</td><td style="padding:2px 4px;text-align:right;white-space:nowrap">${_cnMoney(l.amount, cur)}</td></tr>`).join('')}</table>`
+              + (items.length ? `<table style="width:100%;font-size:.78rem">${items.map(l => `<tr><td style="padding:2px 4px">${esc(l.desc || '—')}${l.kind === 'ot' ? `<div style="font-size:.7rem;color:var(--g500)">⏱ ${Number(l.hours) || 0} 小时 × ${_cnMoney(l.rate, cur)}/小时</div>` : ''}${l.note ? `<div style="font-size:.7rem;color:var(--g500)">💬 ${esc(l.note)}</div>` : ''}</td><td style="padding:2px 4px;color:var(--g400);white-space:nowrap">${esc(l.date || '')}</td><td style="padding:2px 4px;text-align:right;white-space:nowrap">${_cnMoney(l.amount, cur)}</td></tr>`).join('')}</table>`
                 : '<div style="font-size:.76rem;color:var(--g400)">无</div>') + '</div>';
           }).join('')}</div>
           ${f.description ? `<div style="font-size:.76rem;color:var(--g500);margin-top:.4rem">备注：${esc(f.description)}</div>` : ''}
         </td></tr>` : '';
       return `<tr${ap === 'rejected' ? ' style="opacity:.55"' : ''}>
         <td style="white-space:nowrap"><a style="cursor:pointer;color:#0f4c6b;font-weight:600" onclick="cnToggle(${f.id})">${open ? '▾' : '▸'} ${esc(f.fee_date || '—')}</a></td>
-        ${col('base')}${col('bonus')}${col('reimb')}
+        ${col('base')}${col('bonus')}${col('ot')}${col('reimb')}
         <td style="text-align:right;font-weight:700;color:#dc2626;white-space:nowrap">${_cnMoney(f.amount, cur)}</td>
         <td>${status}</td><td>${files}</td><td>${seeAll ? payNoteCell('fee', f.id, f.pay_note) : payNoteCell('fee', f.id, f.pay_note).replace(/ <a [^>]*openPayNote[^>]*>[^<]*<\/a>/, '')}</td>
         <td style="white-space:nowrap">${canEdit ? `<a style="cursor:pointer;font-size:.8rem" title="编辑明细" onclick="cpOpen(${e.id}, ${f.id})">✏️</a>` : ''}
@@ -4893,7 +4895,7 @@ function cnRender() {
           ${locked ? '' : `<div style="font-size:.78rem;color:var(--g600);margin-top:.15rem">${tot || '<span style="color:var(--g400)">暂无已通过的工资</span>'}</div>`}</div>
         <span style="flex:1"></span>${acts}
       </div>
-      ${locked ? '<div style="font-size:.8rem;color:var(--g400);padding:.3rem 0">🔒 工资明细已隐藏，输入这个员工的查看密码后显示。</div>' : g.recs.length ? `<table><thead><tr><th>月份</th><th style="text-align:right">Base 底薪</th><th style="text-align:right">Bonus 奖金</th><th style="text-align:right">报销</th><th style="text-align:right">合计</th><th>状态</th><th>凭证</th><th>付款批注（会计）</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+      ${locked ? '<div style="font-size:.8rem;color:var(--g400);padding:.3rem 0">🔒 工资明细已隐藏，输入这个员工的查看密码后显示。</div>' : g.recs.length ? `<table><thead><tr><th>月份</th><th style="text-align:right">Base 底薪</th><th style="text-align:right">Bonus 奖金</th><th style="text-align:right">加班</th><th style="text-align:right">报销</th><th style="text-align:right">合计</th><th>状态</th><th>凭证</th><th>付款批注（会计）</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
         : '<div style="font-size:.8rem;color:var(--g400);padding:.3rem 0">还没有工资记录' + (e && canEditCn() ? '，点「＋ 录入工资」添加。' : '。') + '</div>'}
     </div>`;
   }).join('');
@@ -5004,19 +5006,33 @@ function cpRenderLines() {
       ${_cnPay.lines.map((l, i) => l.kind !== k ? '' : `<div style="margin-bottom:.45rem"><div style="display:flex;gap:.35rem;margin-bottom:.2rem">
         <input type="text" value="${esc(l.desc)}" placeholder="${ph}" oninput="_cnPay.lines[${i}].desc=this.value" style="flex:1;min-width:0">
         <input type="date" value="${esc(l.date)}" onchange="_cnPay.lines[${i}].date=this.value" title="日期（可选）" style="width:135px">
-        <input type="number" step="0.01" value="${esc(l.amount)}" placeholder="${_CUR_SYM[cur] || ''}0.00" oninput="_cnPay.lines[${i}].amount=this.value;cpSum()" style="width:110px;text-align:right">
+        ${k === 'ot' ? `<input type="number" step="0.01" min="0" value="${esc(l.hours ?? '')}" placeholder="小时" title="加班小时数" oninput="_cnPay.lines[${i}].hours=this.value;cpOtRow(${i})" style="width:70px;text-align:right">
+        <span style="align-self:center;color:var(--g400)">×</span>
+        <input type="number" step="0.01" min="0" value="${esc(l.rate ?? '')}" placeholder="${_CUR_SYM[cur] || ''}时薪" title="每小时多少钱" oninput="_cnPay.lines[${i}].rate=this.value;cpOtRow(${i})" style="width:80px;text-align:right">
+        <span id="cpOt${i}" style="align-self:center;width:90px;text-align:right;font-weight:700;white-space:nowrap">= ${_cnMoney(_cnOtAmt(l), cur)}</span>`
+        : `<input type="number" step="0.01" value="${esc(l.amount)}" placeholder="${_CUR_SYM[cur] || ''}0.00" oninput="_cnPay.lines[${i}].amount=this.value;cpSum()" style="width:110px;text-align:right">`}
         <button class="btn btn-sm btn-outline" title="删除这一项" onclick="_cnPay.lines.splice(${i},1);cpRenderLines()">✕</button>
       </div>
       <input type="text" value="${esc(l.note || '')}" placeholder="这一项的备注（可选）" oninput="_cnPay.lines[${i}].note=this.value" style="width:100%;box-sizing:border-box;font-size:.78rem;padding:.25rem .5rem;color:var(--g600)"></div>`).join('')}
-      <a style="cursor:pointer;font-size:.78rem;color:#0f4c6b" onclick="_cnPay.lines.push({kind:'${k}',desc:'',date:'',amount:'',note:''});cpRenderLines()">＋ 添加一项</a>
+      <a style="cursor:pointer;font-size:.78rem;color:#0f4c6b" onclick="_cnPay.lines.push({kind:'${k}',desc:'',date:'',amount:'',note:''${k === 'ot' ? ",hours:'',rate:_cpLastRate()" : ''}});cpRenderLines()">＋ 添加一项</a>
     </div>`).join('');
   cpSum();
 }
+// 加班行: 小时 / 时薪变了, 重算这一行的金额
+function cpOtRow(i) {
+  const l = _cnPay.lines[i];
+  l.amount = _cnOtAmt(l);
+  const el = document.getElementById('cpOt' + i);
+  if (el) el.textContent = '= ' + _cnMoney(l.amount, document.getElementById('cpCur').value);
+  cpSum();
+}
+// 新加的加班行默认用上一行的时薪
+function _cpLastRate() { const o = _cnPay.lines.filter(l => l.kind === 'ot' && l.rate !== '' && l.rate != null); return o.length ? o[o.length - 1].rate : ''; }
 function cpSum() {
   const cur = document.getElementById('cpCur').value;
   let all = 0;
   CN_KINDS.forEach(([k]) => {
-    const s = _cnPay.lines.filter(l => l.kind === k).reduce((a, l) => a + (Number(l.amount) || 0), 0);
+    const s = _cnPay.lines.filter(l => l.kind === k).reduce((a, l) => a + (k === 'ot' ? _cnOtAmt(l) : (Number(l.amount) || 0)), 0);
     all += s;
     const el = document.getElementById('cpSub_' + k);
     if (el) el.textContent = '小计 ' + _cnMoney(s, cur);
@@ -5032,7 +5048,7 @@ function cpRenderFiles() {
 async function cpSave() {
   const month = document.getElementById('cpMonth').value;
   if (!month) return toast('请选择工资月份', true);
-  const lines = _cnPay.lines.filter(l => String(l.desc).trim() || Number(l.amount) || String(l.note || '').trim());
+  const lines = _cnPay.lines.filter(l => String(l.desc).trim() || Number(l.amount) || Number(l.hours) || String(l.note || '').trim());
   if (!lines.length) return toast('请至少填写一项明细', true);
   if (lines.some(l => isNaN(Number(l.amount)))) return toast('金额格式不对', true);
   const emp = _cnEmps.find(e => e.id === _cnPay.empId);
@@ -5048,7 +5064,8 @@ async function cpSave() {
     fd.append('fee_date', month);
     fd.append('currency', document.getElementById('cpCur').value);
     fd.append('description', document.getElementById('cpDesc').value.trim());
-    fd.append('lines', JSON.stringify(lines.map(l => ({ kind: l.kind, desc: String(l.desc).trim(), date: l.date, amount: Number(l.amount) || 0, note: String(l.note || '').trim() }))));
+    fd.append('lines', JSON.stringify(lines.map(l => ({ kind: l.kind, desc: String(l.desc).trim(), date: l.date, note: String(l.note || '').trim(),
+      ...(l.kind === 'ot' ? { hours: Number(l.hours) || 0, rate: Number(l.rate) || 0, amount: _cnOtAmt(l) } : { amount: Number(l.amount) || 0 }) }))));
     if (_cnPay.recId) fd.append('keep_attachments', JSON.stringify(_cnPay.keep.map(a => a.path)));
     _cnPay.files.forEach(f => fd.append('invoice', f));
     const r = await fetch('/api/acct/fee-records' + (_cnPay.recId ? '/' + _cnPay.recId : ''), { method: _cnPay.recId ? 'PUT' : 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd }).then(x => x.json());
