@@ -868,7 +868,7 @@ try { db.exec("ALTER TABLE fee_records ADD COLUMN base_amount REAL DEFAULT NULL"
 try { db.exec("ALTER TABLE fee_records ADD COLUMN bonus_amount REAL DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN reimb_amount REAL DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN currency TEXT DEFAULT 'USD'"); } catch(e) {}
-// 每项的明细: [{ kind: 'base'|'bonus'|'reimb', desc, date, amount }]; 三项小计由明细加总
+// 每项的明细: [{ kind: 'base'|'bonus'|'reimb', desc, date, amount, note }]; 三项小计由明细加总
 try { db.exec("ALTER TABLE fee_records ADD COLUMN lines TEXT DEFAULT '[]'"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN employee_id INTEGER DEFAULT NULL"); } catch(e) {}
 // 国内员工名册: 先建员工, 再按月录工资
@@ -41919,7 +41919,8 @@ function _cnPayLines(raw) {
     desc: String((l && l.desc) || '').trim().slice(0, 300),
     date: String((l && l.date) || '').trim().slice(0, 20),
     amount: Math.round((Number(l && l.amount) || 0) * 100) / 100,
-  })).filter(l => l.desc || l.amount);
+    note: String((l && l.note) || '').trim().slice(0, 500),
+  })).filter(l => l.desc || l.amount || l.note);
   const sum = k => Math.round(lines.filter(l => l.kind === k).reduce((s, l) => s + l.amount, 0) * 100) / 100;
   const base = sum('base'), bonus = sum('bonus'), reimb = sum('reimb');
   return { lines, base, bonus, reimb, total: Math.round((base + bonus + reimb) * 100) / 100 };
