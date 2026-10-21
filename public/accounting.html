@@ -311,6 +311,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
   <div id="pcModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:3500;align-items:center;justify-content:center;padding:16px">
     <div class="card" style="max-width:400px;width:100%;padding:1.1rem 1.2rem 1rem">
       <div id="pcMsg" style="font-size:.86rem;line-height:1.55;white-space:pre-line;margin-bottom:.9rem"></div>
+      <input type="text" id="pcInput" style="display:none;width:100%;box-sizing:border-box;margin:-.35rem 0 .9rem">
       <div style="display:flex;gap:.5rem;justify-content:flex-end">
         <button class="btn btn-outline" id="pcNo">取消</button>
         <button class="btn btn-blue" id="pcYes">确定</button>
@@ -1266,15 +1267,25 @@ function toast(msg, bad) {
   setTimeout(() => t.remove(), 2600);
 }
 // 页内确认框: 返回 Promise<boolean>, 覆盖 bank-ann.js 里基于浏览器 confirm 的 showConfirm
-function pageConfirm(msg) {
+function pageConfirm(msg) { return _pageDialog(msg, null); }
+// 页内输入框 (代替浏览器 prompt): 确定 → 输入的文字, 取消 → null
+function pagePrompt(msg, def = '') { return _pageDialog(msg, def == null ? '' : String(def)); }
+function _pageDialog(msg, def) {
   return new Promise(resolve => {
-    const m = document.getElementById('pcModal');
+    const m = document.getElementById('pcModal'), inp = document.getElementById('pcInput');
+    const ask = def !== null;
     document.getElementById('pcMsg').textContent = msg;
-    const done = v => { m.style.display = 'none'; resolve(v); };
-    document.getElementById('pcYes').onclick = () => done(true);
-    document.getElementById('pcNo').onclick = () => done(false);
-    m.onclick = e => { if (e.target === m) done(false); };
+    inp.style.display = ask ? '' : 'none';
+    inp.value = ask ? def : '';
+    const done = v => { m.style.display = 'none'; document.removeEventListener('keydown', key, true); resolve(v); };
+    const yes = () => done(ask ? inp.value : true), no = () => done(ask ? null : false);
+    const key = e => { if (e.key === 'Escape') { e.preventDefault(); no(); } else if (e.key === 'Enter' && (ask || document.activeElement === document.getElementById('pcYes') || document.activeElement === document.body)) { e.preventDefault(); yes(); } };
+    document.getElementById('pcYes').onclick = yes;
+    document.getElementById('pcNo').onclick = no;
+    m.onclick = e => { if (e.target === m) no(); };
+    document.addEventListener('keydown', key, true);
     m.style.display = 'flex';
+    setTimeout(() => (ask ? inp : document.getElementById('pcYes')).focus(), 0);
   });
 }
 showConfirm = pageConfirm;
@@ -2060,7 +2071,7 @@ function pnRenderPhotos(urls) {
 }
 async function pnDelPhoto(u) {
   if (!_pnNoteId) return;
-  if (!confirm('删除这张凭证？')) return;
+  if (!await pageConfirm('删除这张凭证？')) return;
   try {
     const r = await bapi(`/api/acct/pay-notes/${_pnNoteId}/photos?photo=${encodeURIComponent(u.split('/').pop())}`, { method: 'DELETE' });
     pnRenderPhotos(r.photos_urls || []);
@@ -2220,7 +2231,7 @@ async function submitClaimAdd() {
 // 管理员在本页直接审核 (通过/拒绝) 会计提交的事故
 async function claimApprove(id, action) {
   let note = '';
-  if (action === 'reject') { note = prompt('拒绝原因（可选，会显示给提交人）：'); if (note === null) return; }
+  if (action === 'reject') { note = await pagePrompt('拒绝原因（可选，会显示给提交人）：'); if (note === null) return; }
   try {
     const r = await api('/api/acct/warehouse-claims/' + id + '/approval', { method: 'POST', body: JSON.stringify({ action, note }) });
     if (r && r.error) throw new Error(r.error);
@@ -2529,7 +2540,7 @@ async function refHrConfirmAll(id, grp) {
   const merged = _refHrMerge12(r, _refHrBonus(r), _refHr4w(r));
   const open = (grp === 'f4' ? _refHr4w(r) : _refHrMgmt(r)).filter(b => b.k && b.st === 'done' && !b.row && !(merged && merged.k.split(',').includes(b.k)));
   const tot = open.reduce((t, b) => t + b.amount, 0);
-  if (!open.length || !confirm(`确认 ${open.length} 条${grp === 'f4' ? '前 4 周奖励' : '管理奖励'}，共 ${yuan(tot)}？`)) return;
+  if (!open.length || !await pageConfirm(`确认 ${open.length} 条${grp === 'f4' ? '前 4 周奖励' : '管理奖励'}，共 ${yuan(tot)}？`)) return;
   try {
     for (const b of open) {
       const x = await api(`/api/acct/referrals/${id}/hr-bonus`, { method: 'POST', body: JSON.stringify({ milestone: b.k, action: 'approve', amount: b.amount, hr_name: _refHrOf(r) }) });
@@ -2574,7 +2585,7 @@ function _refTimeline(r, item, cur, synth) {
 }
 const _refHistLink = (key, open) => ` <a style="cursor:pointer;color:#6d28d9;font-size:.7rem;white-space:nowrap" onclick="refHistToggle('${key}')">🕘 ${open ? '收起' : '历史'}</a>`;
 async function refWeekPayReq(id, action) {
-  if (action === 'return' && !confirm('退回这周的确认支付？会计要重新确认。')) return;
+  if (action === 'return' && !await pageConfirm('退回这周的确认支付？会计要重新确认。')) return;
   try {
     const x = await api(`/api/acct/referral-weeks/${id}/pay-req`, { method: 'POST', body: JSON.stringify({ action }) });
     if (x && x.error) throw new Error(x.error);
@@ -2591,12 +2602,12 @@ async function refHrBonus(id, ms, action) {
     if (v === '' || v == null || isNaN(Number(v))) return toast('请填写金额', true);
     body.amount = Number(v);
   } else if (action === 'reject') {
-    const note = prompt('为什么不给（可选，比如：有投诉）：');
+    const note = await pagePrompt('为什么不给（可选，比如：有投诉）：');
     if (note === null) return;
     body.note = note;
-  } else if (action === 'reset' && !confirm('撤销这个节点的确认？')) return;
-  else if (action === 'unpaid' && !confirm('撤回「已付」？')) return;
-  else if (action === 'payreturn' && !confirm('退回这笔的确认支付？会计要重新确认。')) return;
+  } else if (action === 'reset' && !await pageConfirm('撤销这个节点的确认？')) return;
+  else if (action === 'unpaid' && !await pageConfirm('撤回「已付」？')) return;
+  else if (action === 'payreturn' && !await pageConfirm('退回这笔的确认支付？会计要重新确认。')) return;
   try {
     const x = await api(`/api/acct/referrals/${id}/hr-bonus`, { method: 'POST', body: JSON.stringify(body) });
     if (x && x.error) throw new Error(x.error);
@@ -2613,10 +2624,10 @@ async function refHrBonusMulti(id, ms, action) {
     const v = (document.getElementById('rhb' + id + ms) || {}).value;
     if (v === '' || v == null || isNaN(Number(v))) return toast('请填写金额', true);
     total = Number(v);
-  } else if (action === 'reject') { note = prompt('为什么不给（可选，比如：有投诉）：'); if (note === null) return; }
-  else if (action === 'reset' && !confirm('撤销这个节点的确认？')) return;
-  else if (action === 'unpaid' && !confirm('撤回「已付」？')) return;
-  else if (action === 'payreturn' && !confirm('退回这笔的确认支付？会计要重新确认。')) return;
+  } else if (action === 'reject') { note = await pagePrompt('为什么不给（可选，比如：有投诉）：'); if (note === null) return; }
+  else if (action === 'reset' && !await pageConfirm('撤销这个节点的确认？')) return;
+  else if (action === 'unpaid' && !await pageConfirm('撤回「已付」？')) return;
+  else if (action === 'payreturn' && !await pageConfirm('退回这笔的确认支付？会计要重新确认。')) return;
   try {
     let left = total;
     for (let i = 0; i < parts.length; i++) {
@@ -2710,7 +2721,7 @@ async function refPwBatch(action) {
   if (action === 'pay') return openPayNoteBatch(pick.map(x => x.w.id));
   const sum = pick.reduce((t, x) => t + x.amt, 0);
   const label = { amount: '确认金额', request: '确认支付', approve: '审核通过支付' }[action];
-  if (!confirm(`${label} ${pick.length} 笔，合计 ${money(sum)}？`)) return;
+  if (!await pageConfirm(`${label} ${pick.length} 笔，合计 ${money(sum)}？`)) return;
   let ok = 0, err = '';
   for (const x of pick) {
     try {
@@ -2965,7 +2976,7 @@ async function refMarkInterview(id, st) {
   if (st === 'attended' && x) {
     // 标「去了」顺带记实际到场时间 (默认按约的时间, 可改); 之后点「改时间」还能更新
     const def = x.interview_attended_at || (x.interview_at || '').replace('T', ' ');
-    const v = prompt('实际到场时间（可改，例：2026-09-28 10:30）：', def);
+    const v = await pagePrompt('实际到场时间（可改，例：2026-09-28 10:30）：', def);
     if (v === null) return;
     attendedAt = v.trim();
   }
@@ -3263,10 +3274,10 @@ function _refStage(r) {
 async function refQuit(id) {
   const r = _refList.find(x => x.id === id);
   if (!r) return;
-  const date = prompt(`${r.worker_name || '这个工人'} 中途不去了 —— 最后上班是哪天？（YYYY-MM-DD）`, _refYmd(new Date()));
+  const date = await pagePrompt(`${r.worker_name || '这个工人'} 中途不去了 —— 最后上班是哪天？（YYYY-MM-DD）`, _refYmd(new Date()));
   if (date === null) return;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) return toast('日期格式要像 2026-10-19', true);
-  const reason = prompt('为什么不去了？（可选）', '');
+  const reason = await pagePrompt('为什么不去了？（可选）', '');
   if (reason === null) return;
   try {
     const j = await api(`/api/acct/referrals/${id}/quit`, { method: 'POST', body: JSON.stringify({ work_end_date: date.trim(), reason }) });
@@ -3276,7 +3287,7 @@ async function refQuit(id) {
   } catch (e) { toast(e.message || '操作失败', true); }
 }
 async function refQuitClear(id) {
-  if (!confirm('撤销「中途不去了」，放回上班中？')) return;
+  if (!await pageConfirm('撤销「中途不去了」，放回上班中？')) return;
   try {
     const j = await api(`/api/acct/referrals/${id}/quit`, { method: 'POST', body: JSON.stringify({ action: 'clear' }) });
     if (j && j.error) throw new Error(j.error);
@@ -3370,7 +3381,7 @@ async function refProfileLink(id, kind, pid) {
   } catch (e) { toast(e.message || '关联失败', true); }
 }
 async function refProfileUnlink(id) {
-  if (!confirm('取消关联这个员工档案？')) return;
+  if (!await pageConfirm('取消关联这个员工档案？')) return;
   try {
     const j = await api(`/api/acct/referrals/${id}/profile`, { method: 'POST', body: JSON.stringify({ action: 'unlink' }) });
     if (j && j.error) throw new Error(j.error);
@@ -3640,7 +3651,7 @@ async function submitRefStart() {
   finally { btn.disabled = false; }
 }
 async function refStartClear(id) {
-  if (!confirm('撤回到面试阶段？会清掉上班日期和打卡码。')) return;
+  if (!await pageConfirm('撤回到面试阶段？会清掉上班日期和打卡码。')) return;
   try {
     const j = await api(`/api/acct/referrals/${id}/start`, { method: 'POST', body: JSON.stringify({ action: 'clear' }) });
     if (j && j.error) throw new Error(j.error);
@@ -3656,10 +3667,10 @@ async function refWeekReview(id, action) {
     if (v === '' || v == null || isNaN(Number(v))) return toast('请填写这周要付的金额', true);
     body.fee = Number(v);
   } else if (action === 'reject') {
-    const note = prompt('这周不付的原因（可选）：');
+    const note = await pagePrompt('这周不付的原因（可选）：');
     if (note === null) return;
     body.note = note;
-  } else if (!confirm('撤销对这周的确认？')) return;
+  } else if (!await pageConfirm('撤销对这周的确认？')) return;
   try {
     const r = await api('/api/acct/referral-weeks/' + id + '/review', { method: 'POST', body: JSON.stringify(body) });
     if (r && r.error) throw new Error(r.error);
@@ -3936,7 +3947,7 @@ async function fmSave() {
     .filter(x => _fmEditId ? true : !(x.sameName && x.samePhone));
   if (dups.length) {
     const who = dups.slice(0, 3).map(x => `${x.f.name}${x.f.phone ? ' · ' + x.f.phone : ''}${x.f.state ? '（' + x.f.state + (x.f.city ? ' ' + x.f.city : '') + '）' : ''}`).join('、');
-    if (!confirm(`名单里已有：${who}\n确定不是同一个人、还要继续保存吗？`)) return;
+    if (!await pageConfirm(`名单里已有：${who}\n确定不是同一个人、还要继续保存吗？`)) return;
   }
   const body = JSON.stringify({
     name,
@@ -4586,7 +4597,7 @@ function _refInvPendRow(r) {
     ${_refWhoChip(p.by, '提交')}${p.at ? `<span style="color:var(--g400)">${esc(String(p.at).slice(0, 16))}</span>` : ''}<span style="flex:1"></span>${btns}</div>`;
 }
 async function refInvReview(id, action) {
-  if (action === 'reject' && !confirm('退回这份关联发票？（原来的关联不变）')) return;
+  if (action === 'reject' && !await pageConfirm('退回这份关联发票？（原来的关联不变）')) return;
   try {
     const r = await api('/api/acct/referrals/' + id + '/invoices-review', { method: 'POST', body: JSON.stringify({ action }) });
     if (r && r.error) throw new Error(r.error);
@@ -4613,9 +4624,9 @@ async function saveRefInv() {
 // 管理员核查: 同意支付 / 拒绝支付 (可带原因) / 撤销重审
 async function refReview(id, action) {
   let note = '';
-  if (action === 'reject') { note = prompt('拒绝支付的原因（可选，会显示给提交人）：'); if (note === null) return; }
-  else if (action === 'approve') { note = prompt('核查备注（可选，例：已核对发票和面试记录）：'); if (note === null) return; }
-  else if (action === 'reset' && !confirm('撤销核查结论、退回待核查？')) return;
+  if (action === 'reject') { note = await pagePrompt('拒绝支付的原因（可选，会显示给提交人）：'); if (note === null) return; }
+  else if (action === 'approve') { note = await pagePrompt('核查备注（可选，例：已核对发票和面试记录）：'); if (note === null) return; }
+  else if (action === 'reset' && !await pageConfirm('撤销核查结论、退回待核查？')) return;
   try {
     const r = await api('/api/acct/referrals/' + id + '/review', { method: 'POST', body: JSON.stringify({ action, note }) });
     if (r && r.error) throw new Error(r.error);
@@ -4624,7 +4635,7 @@ async function refReview(id, action) {
   } catch (e) { toast(e.message || '操作失败', true); }
 }
 async function refDelete(id) {
-  if (!confirm('删除这条介绍记录？凭证和付款批注会一并删除。')) return;
+  if (!await pageConfirm('删除这条介绍记录？凭证和付款批注会一并删除。')) return;
   try {
     const r = await api('/api/acct/referrals/' + id, { method: 'DELETE' });
     if (r && r.error) throw new Error(r.error);
@@ -4741,7 +4752,7 @@ async function submitFeeAdd() {
 // 管理员在本页直接审核 (通过/拒绝) 会计提交的费用记录
 async function feeApprove(id, action) {
   let note = '';
-  if (action === 'reject') { note = prompt('拒绝原因（可选，会显示给提交人）：'); if (note === null) return; }
+  if (action === 'reject') { note = await pagePrompt('拒绝原因（可选，会显示给提交人）：'); if (note === null) return; }
   try {
     const r = await api('/api/acct/fee-records/' + id + '/approval', { method: 'POST', body: JSON.stringify({ action, note }) });
     if (r && r.error) throw new Error(r.error);
@@ -4759,7 +4770,7 @@ async function feeStatusToggle(id, status) {
   } catch (e) { toast(e.message || '操作失败', true); }
 }
 async function feeDelete(id) {
-  if (!confirm('删除这条记录？附件和付款批注会一并删除。')) return;
+  if (!await pageConfirm('删除这条记录？附件和付款批注会一并删除。')) return;
   try {
     const r = await api('/api/acct/fee-records/' + id, { method: 'DELETE' });
     if (r && r.error) throw new Error(r.error);
@@ -4988,7 +4999,7 @@ async function cnEmpSave() {
   cnLoad();
 }
 async function cnEmpDelete(id) {
-  if (!confirm('删除这个员工？')) return;
+  if (!await pageConfirm('删除这个员工？')) return;
   const r = await api('/api/acct/cn-employees/' + id, { method: 'DELETE' }).catch(e => ({ error: e.message }));
   if (r && r.error) return toast(r.error, true);
   cnLoad();
@@ -5083,7 +5094,7 @@ async function cpSave() {
   if (lines.some(l => isNaN(Number(l.amount)))) return toast('金额格式不对', true);
   const emp = _cnEmps.find(e => e.id === _cnPay.empId);
   const dup = !_cnPay.recId && _feeList.find(f => f.fee_type === 'cnpay' && f.employee_id === _cnPay.empId && f.fee_date === month && f.approval_status !== 'rejected');
-  if (dup && !confirm(`${emp ? emp.name : ''} ${month} 已经有一条工资记录了，确定再加一条？\n（要补明细可以点那条记录的 ✏️ 编辑）`)) return;
+  if (dup && !await pageConfirm(`${emp ? emp.name : ''} ${month} 已经有一条工资记录了，确定再加一条？\n（要补明细可以点那条记录的 ✏️ 编辑）`)) return;
   const btn = document.getElementById('cpSaveBtn');
   btn.disabled = true; btn.textContent = '保存中…';
   try {
@@ -5596,7 +5607,7 @@ async function truckFeeApprove(feeId, action) {
   } catch (e) { toast(e.message || '操作失败', true); }
 }
 async function truckFeeDelete(feeId) {
-  if (!confirm('删除这条手动添加的卡车费用？')) return;
+  if (!await pageConfirm('删除这条手动添加的卡车费用？')) return;
   try {
     const r = await api(`/api/acct/fee-records/${feeId}`, { method: 'DELETE' });
     if (r && r.error) throw new Error(r.error);
@@ -5646,7 +5657,7 @@ function _palletManualActions(r) {
 }
 async function palletManualApprove(id, action) {
   let note = '';
-  if (action === 'reject') { note = prompt('驳回原因（提交人能看到，可不填）：', ''); if (note === null) return; }
+  if (action === 'reject') { note = await pagePrompt('驳回原因（提交人能看到，可不填）：', ''); if (note === null) return; }
   try {
     await bapi(`/api/acct/pallet-manual/${id}/approval`, { method: 'POST', body: JSON.stringify({ action, note }) });
     toast(action === 'approve' ? '✅ 已审核通过' : '已驳回');
@@ -5679,7 +5690,7 @@ function palletReviewNext(skipId) {
 }
 function palletReviewStop() { _palletReview = null; }
 async function palletManualDelete(id) {
-  if (!confirm('删除这张手动添加的木板发票？（附件和付款批注一并删除）')) return;
+  if (!await pageConfirm('删除这张手动添加的木板发票？（附件和付款批注一并删除）')) return;
   try {
     await bapi(`/api/acct/pallet-manual/${id}`, { method: 'DELETE' });
     toast('已删除');
@@ -6035,7 +6046,7 @@ async function gustoSaveCreds() {
 }
 function gustoConnect() { location.href = '/api/admin/gusto/connect'; }
 async function gustoDisconnect() {
-  if (!confirm('断开 Gusto 连接？已同步的付款记录会保留，重新连接后继续更新。')) return;
+  if (!await pageConfirm('断开 Gusto 连接？已同步的付款记录会保留，重新连接后继续更新。')) return;
   const r = await api('/api/admin/gusto/disconnect', { method: 'POST' }).catch(e => ({ error: e.message }));
   if (r && r.success) { toast('已断开'); gustoLoadStatus(); }
   else toast((r && r.error) || '操作失败', true);
@@ -6488,7 +6499,7 @@ async function submitGustoBankLink() {
 }
 // admin 行内审核: 通过 / 驳回(解除)
 async function gustoBankReview(uuid, action) {
-  if (action === 'reject' && !confirm('驳回并解除这笔银行关联？')) return;
+  if (action === 'reject' && !await pageConfirm('驳回并解除这笔银行关联？')) return;
   const r = await api(`/api/acct/gusto/payments/${encodeURIComponent(uuid)}/bank-link-review`,
     { method: 'POST', body: JSON.stringify({ action }) }).catch(e => ({ error: e.message }));
   if (r && r.ok) { toast(action === 'approve' ? '✅ 已通过' : '已驳回并解除'); gustoLoadPayments(); _gustoAnnRefresh(); }
@@ -6496,7 +6507,7 @@ async function gustoBankReview(uuid, action) {
 }
 // ⚡ 自动配对: 金额一致 + 日期 ±7 天
 async function gustoBankAutoMatch() {
-  if (!confirm('自动把未关联的付款和金额一致、日期相近（±7天）的 Gusto 银行转账配对？配不上的留着手动。')) return;
+  if (!await pageConfirm('自动把未关联的付款和金额一致、日期相近（±7天）的 Gusto 银行转账配对？配不上的留着手动。')) return;
   const r = await api('/api/acct/gusto/bank-auto-match', { method: 'POST', body: JSON.stringify({}) }).catch(e => ({ error: e.message }));
   if (r && r.ok) {
     toast(`⚡ 自动关联 ${r.linked} 笔${r.status === 'pending' ? '（待管理员审核）' : ''}，还剩 ${r.remaining} 笔没配上`);
@@ -6540,7 +6551,7 @@ async function gustoImportFile(input) {
   }
 }
 async function gustoImportUndo() {
-  if (!confirm('撤销最近一次导入？那次新增的付款记录会被删除、被更新的记录还原成导入前；已做的银行关联都保留。')) return;
+  if (!await pageConfirm('撤销最近一次导入？那次新增的付款记录会被删除、被更新的记录还原成导入前；已做的银行关联都保留。')) return;
   const r = await api('/api/acct/gusto/import-undo', { method: 'POST' }).catch(e => ({ error: e.message }));
   if (r && r.ok) {
     toast(`已撤销：删除 ${r.removed} 笔，还原 ${r.restored || 0} 笔${r.kept_linked ? `；${r.kept_linked} 笔导入后已挂银行关联，没删，请先解除关联再手动处理` : ''}`);
@@ -7370,7 +7381,7 @@ function lpRenderPhotos(urls) {
 }
 async function lpDelPhoto(u) {
   if (!_lpNoteId) return;
-  if (!confirm('删除这张凭证？')) return;
+  if (!await pageConfirm('删除这张凭证？')) return;
   try {
     const r = await bapi(`/api/acct/line-pay-notes/${_lpNoteId}/photos?photo=${encodeURIComponent(u.split('/').pop())}`, { method: 'DELETE' });
     lpRenderPhotos(r.photos_urls || []);
@@ -7662,7 +7673,7 @@ async function annUpdateNote(id, note) {
   setVwStatus('已保存 ✓');
 }
 async function annDelete(id) {
-  if (!confirm('删除这个批注？')) return;
+  if (!await pageConfirm('删除这个批注？')) return;
   const r = await api('/api/acct/annotations/' + id, { method: 'DELETE' });
   if (r.error) { toast('删除失败：' + r.error, true); return; }
   _view.anns = _view.anns.filter(a => a.id !== id);
@@ -8873,7 +8884,7 @@ function _plaidOpenLink(linkToken, receivedRedirectUri) {
 // /banking 页同一组 key —— OAuth 银行整页跳去授权后回到 /banking, 由那边
 // 的 plaidOauthResume 恢复并完成。
 async function bankRelinkPlaid(itemId, name) {
-  if (!confirm('重新授权「' + name + '」以补拉历史交易（最多两年）？\n会打开银行授权窗口；部分银行会整页跳去银行页面授权，完成后回到 /banking 页。')) return;
+  if (!await pageConfirm('重新授权「' + name + '」以补拉历史交易（最多两年）？\n会打开银行授权窗口；部分银行会整页跳去银行页面授权，完成后回到 /banking 页。')) return;
   try {
     await _loadPlaidScript();
     const d = await bapi('/api/plaid/link-token', { method: 'POST', body: JSON.stringify({ item_id: itemId }) });
@@ -8946,7 +8957,7 @@ async function bankSync() {
   btn.disabled = false;
 }
 async function bankUnlink(itemRowId) {
-  if (!confirm('确定解绑这个银行连接吗？已同步的交易记录会保留。')) return;
+  if (!await pageConfirm('确定解绑这个银行连接吗？已同步的交易记录会保留。')) return;
   try { await bapi('/api/acct/bank/items/' + itemRowId, { method: 'DELETE' }); toast('已解绑'); bankRefreshStatus(); }
   catch (e) { toast(e.message || '解绑失败', true); }
 }
