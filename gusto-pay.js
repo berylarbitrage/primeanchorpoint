@@ -18,7 +18,7 @@
 //     （宁多不少）。时薪一致时相当于 正常工时 + 1.5×加班工时。
 //
 // 姓名匹配: 工资表的 "Jose Guerrero" 要对上名册的 last_name=Guerrero,
-// first_name=Jose。按分词集合做四档匹配（完全一致 → 包含 → 共享长词 → 近似拼写),
+// first_name=Jose。按分词集合做五档匹配（完全一致 → 包含 → 全名逐词近似 → 共享长词 → 近似拼写),
 // 同一档命中多行算歧义, 宁可不填也不能付错人。多行工资对到同一名册行（同姓家人
 // 或同一人两种时薪）自动合并成一笔, 在 sources 里列明细。
 // 低档位（只共享姓氏 / 近似拼写）额外要求名字对得上: 工资表写了名字但和名册行
@@ -106,6 +106,17 @@ function matchScore(empT, entry, tokenCount) {
   if (empT.size === rosterT.size && isSubset(empT, rosterT)) return 100;
   if (joined(empT) === joined(rosterT)) return 100;      // "Finova Operations" ≈ "FINOVAOPERATIONS"
   if (isSubset(empT, rosterT) || isSubset(rosterT, empT)) return 80;
+  // 全名逐词对上、每个词最多差一个字母（"FreismarA Camacho Gimenez" ≈ 名册
+  // "Camacho Gimenez, Freismar A"——中间名缩写粘在名字上）: 词数相同、一一对应,
+  // 不要求姓氏全名册唯一。
+  if (empT.size === rosterT.size && empT.size >= 2) {
+    const left = [...rosterT];
+    const all = [...empT].every(a => {
+      const k = left.findIndex(b => a === b || (a.length >= 4 && b.length >= 4 && editDist1(a, b)));
+      return k >= 0 && left.splice(k, 1);
+    });
+    if (all) return 70;
+  }
   for (const t of empT) {
     if (t.length >= 4 && entry.lastTokens.has(t) && tokenCount.get(t) === 1) return 60;
   }
@@ -264,7 +275,7 @@ function matchEmployees(entries, tokenCount, employees, opts) {
       rate: empRate,
       actualHours: r2((Number(emp.regHours) || 0) + (Number(emp.otHours) || 0)),
       payRate: payRate || null,
-      fuzzy: best === 50 && !alias,
+      fuzzy: (best === 50 || best === 70) && !alias,
       score: best,
       // 本人度: 工资表原名和这行名册的相似分。合并付款挑「hours 本人」时,
       // 对照表并进来的人（原名和名册无关, selfScore 0）不该抢本人位。
