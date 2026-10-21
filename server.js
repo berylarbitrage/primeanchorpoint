@@ -1013,6 +1013,9 @@ try { db.exec(`ALTER TABLE referral_weeks ADD COLUMN tier TEXT DEFAULT ''`); } c
 // 每周介绍费按工时折算: rate = 这周选的满周价 (第一周 $25 / $50, 之后 $12.5 / $25, 或手写),
 // 实付 = rate × min(工时, 40) / 40 (工时取这周发票里勾的那几行)。fee (旧的直接写死金额) 有值时仍以 fee 为准
 try { db.exec(`ALTER TABLE referral_weeks ADD COLUMN rate REAL DEFAULT NULL`); } catch(e) {}
+// 工头「过面试 $5」: 每周付款表里单独一行, kind='iv', invoice_id = -介绍记录 id (不对应发票);
+// 工人在关联的发票上有工时 (> 0) 就自动加上这一行, 走和每周一样的 管理员确认 → 确认支付 → 记付款
+try { db.exec(`ALTER TABLE referral_weeks ADD COLUMN kind TEXT DEFAULT ''`); } catch(e) {}
 // 这张发票算几周: 1 / 2 (两周发一次工资的发票); NULL = 自动, 账期 ≥ 13 天算 2 周
 try { db.exec(`ALTER TABLE referral_weeks ADD COLUMN span INTEGER DEFAULT NULL`); } catch(e) {}
 // HR 招工节点奖励 (人民币): HR 自己招的 + 工头介绍、HR 提交的, 都按节点给 HR —
@@ -42115,6 +42118,9 @@ function _referralOut(r, invMap, payNotes, weeksBy, weekNotes, linesByInv) {
     // 这周发票里勾的那几行 (这个工人那一行), 没勾就是整张发票
     lines: ((r.invoice_lines[w.invoice_id] || []).map(k => ((linesByInv && linesByInv[w.invoice_id]) || []).find(l => l.line_key === k)).filter(Boolean)),
   })).sort((a, b) => String(a.invoice.period_start || a.invoice.invoice_date || '').localeCompare(String(b.invoice.period_start || b.invoice.invoice_date || '')));
+  // 过面试 $5 那行 (kind='iv'): 不在 r.weeks 里, 单独 r.iv_week
+  const ivRow = ((weeksBy && weeksBy[r.id]) || []).find(w => w.kind === 'iv');
+  r.iv_week = ivRow ? _referralIvWeek(ivRow, weekNotes) : null;
   // 按档算默认介绍费 (排好序后最早那周 = 第一周); 管理员确认过的按确认的金额; 这周不付 = 0
   r.weeks.forEach((w, i) => {
     w.tier_eff = w.tier || (i === 0 ? 'first' : 'after');
@@ -42130,22 +42136,23 @@ function _referralOut(r, invMap, payNotes, weeksBy, weekNotes, linesByInv) {
     const tierFee = _referralTierFee(r, w.tier_eff);
     w.fee_default = w.rate != null ? Math.round(w.rate * w.ratio * 100) / 100 : tierFee != null ? tierFee * w.span_eff : null;
     // 工头介绍的: 第 1 周不到 16 工时 → 按比例的介绍费照算, 另加过面试 $5
-    // 0 工时 = 没算通过面试, 不给 $5
-    if (i === 0 && !r.hr_self && Number(w.hours) > 0) {
-      const h1 = w.hours / w.span_eff;
-      if (h1 < REF_MIN_WEEK_HOURS) {
-        w.under16 = Math.round(h1 * 100) / 100;
-        w.fee_prorated = w.fee_default;
-        w.fee_default = Math.round(((w.fee_default || 0) + REF_UNDER16_FEE) * 100) / 100;
-      }
-    }
     w.fee_eff = w.admin_status === 'rejected' ? 0 : w.admin_status === 'approved' && w.admin_fee != null ? w.admin_fee
       : (w.fee != null ? w.fee : w.fee_default);
   });
   return r;
 }
-// 第 1 周工时不到 16 小时: 工头按比例的介绍费 + 过面试 $5 (HR 的满 1 周照常按比例)
-const REF_MIN_WEEK_HOURS = 16, REF_UNDER16_FEE = 5;
+// 工头过面试奖励: 有工时就给, 单独一行
+const REF_FM_IV_FEE = 5;
+function _referralIvWeek(w, weekNotes) {
+  const o = {
+    id: w.id, invoice_id: w.invoice_id, kind: 'iv', fee: w.fee, span_eff: 1, hours: null, lines: [],
+    pay_req: w.pay_req || '', pay_req_by: w.pay_req_by || '', pay_req_at: w.pay_req_at, pay_ok_by: w.pay_ok_by || '', pay_ok_at: w.pay_ok_at,
+    admin_status: w.admin_status || '', admin_fee: w.admin_fee, admin_by: w.admin_by || '', admin_at: w.admin_at, admin_note: w.admin_note || '',
+    pay_note: (weekNotes && weekNotes[w.id]) || null, fee_default: REF_FM_IV_FEE,
+  };
+  o.fee_eff = o.admin_status === 'rejected' ? 0 : o.admin_status === 'approved' && o.admin_fee != null ? o.admin_fee : (o.fee != null ? o.fee : REF_FM_IV_FEE);
+  return o;
+}
 // 第一周 / 之后每周 的介绍费: 没设第一周价的, 第一周也按 amount
 function _referralTierFee(r, tier) {
   if (tier === 'first' && r.first_week_amount != null) return r.first_week_amount;
@@ -42156,7 +42163,7 @@ function _referralSyncWeeks(refId, invIds) {
   const ins = db.prepare('INSERT OR IGNORE INTO referral_weeks (referral_id, invoice_id) VALUES (?, ?)');
   invIds.forEach(i => ins.run(refId, i));
   const keep = new Set(invIds);
-  db.prepare('SELECT id, invoice_id FROM referral_weeks WHERE referral_id=?').all(refId).forEach(w => {
+  db.prepare("SELECT id, invoice_id FROM referral_weeks WHERE referral_id=? AND COALESCE(kind,'')<>'iv'").all(refId).forEach(w => {
     if (keep.has(w.invoice_id)) return;
     db.prepare("DELETE FROM acct_pay_notes WHERE target_type='referralweek' AND target_id=?").run(w.id);
     db.prepare('DELETE FROM referral_weeks WHERE id=?').run(w.id);
@@ -42199,6 +42206,18 @@ app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
     if (lineInvIds.size) db.prepare(`SELECT id, items_json, profile_json FROM invoices WHERE id IN (${[...lineInvIds].map(() => '?').join(',')})`)
       .all(...lineInvIds).forEach(v => { linesByInv[v.id] = _invoiceLinesNumbered(v); });
     const out = rows.map(r => _referralOut(r, invMap, payNotes, weeksBy, weekNotes, linesByInv));
+    // 工头「过面试 $5」: 关联的发票上有工时就补一行; 没工时了、又还没确认 / 付款的就去掉
+    out.forEach(r => {
+      const has = !r.hr_self && r.weeks.some(w => Number(w.hours) > 0);
+      if (has && !r.iv_week) {
+        db.prepare("INSERT OR IGNORE INTO referral_weeks (referral_id, invoice_id, kind) VALUES (?, ?, 'iv')").run(r.id, -r.id);
+        const row = db.prepare("SELECT * FROM referral_weeks WHERE referral_id=? AND kind='iv'").get(r.id);
+        if (row) r.iv_week = _referralIvWeek(row, weekNotes);
+      } else if (!has && r.iv_week && !r.iv_week.admin_status && !r.iv_week.pay_req && !r.iv_week.pay_note) {
+        db.prepare('DELETE FROM referral_weeks WHERE id=?').run(r.iv_week.id);
+        r.iv_week = null;
+      }
+    });
     out.forEach(r => { r.foreman_state = fmStByPhone[normP(r.foreman_phone)] || fmStByName[String(r.foreman_name).trim().toLowerCase()] || ''; });
     out.forEach(r => { r.clock = r.timeclock_code ? _referralClock(r.timeclock_code, r.work_start_date) : null; });
     const pIdx = _referralProfileIndex();
