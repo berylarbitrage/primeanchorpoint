@@ -42143,7 +42143,7 @@ function _referralOut(r, invMap, payNotes, weeksBy, weekNotes, linesByInv) {
   });
   return r;
 }
-// 第 1 周工时不到 16 小时: 工头按比例的介绍费 + 过面试 $5; HR 拿不到「满 1 周」
+// 第 1 周工时不到 16 小时: 工头按比例的介绍费 + 过面试 $5 (HR 的满 1 周照常按比例)
 const REF_MIN_WEEK_HOURS = 16, REF_UNDER16_FEE = 5;
 // 第一周 / 之后每周 的介绍费: 没设第一周价的, 第一周也按 amount
 function _referralTierFee(r, tier) {

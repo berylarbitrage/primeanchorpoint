@@ -2270,7 +2270,7 @@ function _refWeekSums(r) {
   return out;
 }
 // 🙋 HR 招工节点奖励 (人民币): HR 自己招的 = 选的 HR; 工头介绍的 = 提交这条的 HR (提交人是 HR 才算)
-const REF_MIN_WEEK_HOURS = 16;   // 第 1 周不到 16 工时: HR 没有「满 1 周」, 工头按比例的介绍费 + 过面试 $5
+const REF_MIN_WEEK_HOURS = 16;   // 第 1 周不到 16 工时: 工头按比例的介绍费 + 过面试 $5 (HR 照常按比例)
 const REF_HR_BONUS = [
   { k: 'interview', label: '过面试', amt: 30 },
   { k: 'week1', label: '满 1 周', amt: 100, prorate: true },   // 按第 1 周工时 /40 折算
@@ -2349,8 +2349,6 @@ function _refHrBonus(r) {
           : part[0].h >= 40 ? `${part[0].h} 工时 ≥ 40 · 给满${from2}` : `${yuan(m.amt)} × ${part[0].h}/40 工时${from2}`)
         : `每周 ${yuan(per)}：${part.map(x => x.t).join(' + ')}`;
       if (w0) x = { ...x, period: _refInvPer(w0) };
-      // 第 1 周不到 16 工时: 满 1 周不算, 只有过面试那笔
-      if (part[0].h != null && part[0].h < REF_MIN_WEEK_HOURS) { x = { ...x, st: 'lost', hint: `第 1 周只有 ${part[0].h} 工时 < ${REF_MIN_WEEK_HOURS}，不算（只给过面试）` }; amount = 0; }
     }
     return { ...m, ...x, amount, calc, row: (r.hr_bonus || {})[m.k] || null };
   });
