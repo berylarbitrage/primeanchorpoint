@@ -863,10 +863,12 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS truck_order_overrides (
 try { db.exec("ALTER TABLE truck_order_overrides ADD COLUMN cargo TEXT DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN discount_value REAL DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN discount_type TEXT DEFAULT '%'"); } catch(e) {}
-// 🇨🇳 国内员工工资 (fee_type='cnpay'): 底薪 / 奖金 / 报销 分开记, amount = 三项合计; 币种默认人民币
+// 🇨🇳 国内员工工资 (fee_type='cnpay'): 底薪 / 奖金 / 加班 / 报销 分开记, amount = 各项合计; 币种默认人民币
 try { db.exec("ALTER TABLE fee_records ADD COLUMN base_amount REAL DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN bonus_amount REAL DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN reimb_amount REAL DEFAULT NULL"); } catch(e) {}
+// 加班工资: 明细 kind='ot', 每条 小时数 hours × 时薪 rate = amount (服务端算)
+try { db.exec("ALTER TABLE fee_records ADD COLUMN ot_amount REAL DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE fee_records ADD COLUMN currency TEXT DEFAULT 'USD'"); } catch(e) {}
 // 每项的明细: [{ kind: 'base'|'bonus'|'reimb', desc, date, amount, note }]; 三项小计由明细加总
 try { db.exec("ALTER TABLE fee_records ADD COLUMN lines TEXT DEFAULT '[]'"); } catch(e) {}
@@ -41910,20 +41912,26 @@ app.delete('/api/acct/cn-employees/:id', requireAdmin, requireRole('admin'), (re
   db.prepare('DELETE FROM cn_employees WHERE id=?').run(cur.id);
   res.json({ success: true });
 });
-// 国内工资明细: 清洗前端传来的 lines, 按 base/bonus/reimb 加总
+// 国内工资明细: 清洗前端传来的 lines, 按 base/bonus/ot/reimb 加总; 加班 (ot) 金额 = 小时 × 时薪
 function _cnPayLines(raw) {
   let arr = [];
   try { arr = typeof raw === 'string' ? JSON.parse(raw || '[]') : (raw || []); } catch (e) { arr = []; }
-  const lines = (Array.isArray(arr) ? arr : []).slice(0, 300).map(l => ({
-    kind: ['base', 'bonus', 'reimb'].includes(l && l.kind) ? l.kind : 'reimb',
-    desc: String((l && l.desc) || '').trim().slice(0, 300),
-    date: String((l && l.date) || '').trim().slice(0, 20),
-    amount: Math.round((Number(l && l.amount) || 0) * 100) / 100,
-    note: String((l && l.note) || '').trim().slice(0, 500),
-  })).filter(l => l.desc || l.amount || l.note);
+  const r2 = v => Math.round((Number(v) || 0) * 100) / 100;
+  const lines = (Array.isArray(arr) ? arr : []).slice(0, 300).map(l => {
+    const kind = ['base', 'bonus', 'ot', 'reimb'].includes(l && l.kind) ? l.kind : 'reimb';
+    const o = {
+      kind,
+      desc: String((l && l.desc) || '').trim().slice(0, 300),
+      date: String((l && l.date) || '').trim().slice(0, 20),
+      amount: r2(l && l.amount),
+      note: String((l && l.note) || '').trim().slice(0, 500),
+    };
+    if (kind === 'ot') { o.hours = r2(l && l.hours); o.rate = r2(l && l.rate); o.amount = r2(o.hours * o.rate); }
+    return o;
+  }).filter(l => l.desc || l.amount || l.note || l.hours);
   const sum = k => Math.round(lines.filter(l => l.kind === k).reduce((s, l) => s + l.amount, 0) * 100) / 100;
-  const base = sum('base'), bonus = sum('bonus'), reimb = sum('reimb');
-  return { lines, base, bonus, reimb, total: Math.round((base + bonus + reimb) * 100) / 100 };
+  const base = sum('base'), bonus = sum('bonus'), ot = sum('ot'), reimb = sum('reimb');
+  return { lines, base, bonus, ot, reimb, total: Math.round((base + bonus + ot + reimb) * 100) / 100 };
 }
 
 // 新增费用记录: 会计提交入库为 pending 待管理员审核, admin 提交直接 approved (发票文件复用 claimUpload)
@@ -41938,13 +41946,13 @@ app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin
   if (!party && feeType !== 'cnpay') return res.status(400).json({ error: feeType === 'insurance' ? '请填写保险公司' : feeType === 'legal' ? '请填写律师 / 律所' : feeType === 'truck' ? '请填写卡车公司' : feeType === 'cnpay' ? '请填写员工姓名' : '请填写收款方 / 供应商' });
   let amtNum = Number(b.amount);
   // 国内工资: 底薪 / 奖金 / 报销 每项按明细加总, 总额由服务端算, 不信前端传的 amount
-  let base = null, bonus = null, reimb = null, cnLines = [], empId = null;
+  let base = null, bonus = null, ot = null, reimb = null, cnLines = [], empId = null;
   if (feeType === 'cnpay') {
     const emp = db.prepare('SELECT * FROM cn_employees WHERE id=?').get(Number(b.employee_id) || 0);
     if (!emp) return res.status(400).json({ error: '请先选择员工' });
     const c = _cnPayLines(b.lines);
     if (!c.lines.length) return res.status(400).json({ error: '请至少填写一项明细' });
-    ({ base, bonus, reimb } = c); cnLines = c.lines; amtNum = c.total; empId = emp.id; party = emp.name;
+    ({ base, bonus, ot, reimb } = c); cnLines = c.lines; amtNum = c.total; empId = emp.id; party = emp.name;
   }
   const currency = ['CNY', 'USD'].includes(String(b.currency || '')) ? String(b.currency) : (feeType === 'cnpay' ? 'CNY' : 'USD');
   const files = Array.isArray(req.files) ? req.files : [];
@@ -41953,8 +41961,8 @@ app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin
   // 租车单扩展字段 (卡车费用用, 照 Bintique 租车单): 结束日期 / 装货类型 / 折扣
   const discNum = Number(b.discount_value);
   const r = db.prepare(`INSERT INTO fee_records
-    (fee_type, party_name, fee_date, fee_date_end, amount, description, cargo, truck_size, discount_value, discount_type, base_amount, bonus_amount, reimb_amount, currency, lines, employee_id, status, attachments, approval_status, created_by, approved_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`)
+    (fee_type, party_name, fee_date, fee_date_end, amount, description, cargo, truck_size, discount_value, discount_type, base_amount, bonus_amount, reimb_amount, ot_amount, currency, lines, employee_id, status, attachments, approval_status, created_by, approved_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`)
     .run(feeType, party, String(b.fee_date || '').trim().slice(0, 20),
       String(b.fee_date_end || '').trim().slice(0, 20),
       (feeType === 'cnpay' || (b.amount != null && b.amount !== '' && !isNaN(amtNum))) ? amtNum : null,
@@ -41963,7 +41971,7 @@ app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin
       _feeTruckSize(b.truck_size),
       (b.discount_value != null && b.discount_value !== '' && !isNaN(discNum)) ? discNum : null,
       ['%', '$'].includes(String(b.discount_type || '')) ? String(b.discount_type) : '%',
-      base, bonus, reimb, currency, JSON.stringify(cnLines), empId,
+      base, bonus, reimb, ot, currency, JSON.stringify(cnLines), empId,
       JSON.stringify(atts), isAdmin ? 'approved' : 'pending', req.userName || '', isAdmin ? (req.userName || '') : '');
   res.json({ success: true, id: r.lastInsertRowid, approval_status: isAdmin ? 'approved' : 'pending' });
 });
@@ -41988,11 +41996,11 @@ app.put('/api/acct/fee-records/:id', requireAdmin, requireRole('accounting', 'ad
     old.filter(a => !kept.includes(a)).forEach(a => _claimDeleteFile(a.path));
     const atts = kept.concat((Array.isArray(req.files) ? req.files : []).map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) })));
     const status = isAdmin ? cur.approval_status : 'pending';
-    db.prepare(`UPDATE fee_records SET fee_date=?, description=?, currency=?, lines=?, base_amount=?, bonus_amount=?, reimb_amount=?, amount=?,
+    db.prepare(`UPDATE fee_records SET fee_date=?, description=?, currency=?, lines=?, base_amount=?, bonus_amount=?, reimb_amount=?, ot_amount=?, amount=?,
         attachments=?, approval_status=?, approval_note=CASE WHEN ?<>approval_status THEN '' ELSE approval_note END, updated_at=datetime('now') WHERE id=?`)
       .run(String(b.fee_date || '').trim().slice(0, 20), String(b.description || '').trim().slice(0, 2000),
         ['CNY', 'USD'].includes(String(b.currency || '')) ? String(b.currency) : cur.currency,
-        JSON.stringify(c.lines), c.base, c.bonus, c.reimb, c.total, JSON.stringify(atts), status, status, cur.id);
+        JSON.stringify(c.lines), c.base, c.bonus, c.reimb, c.ot, c.total, JSON.stringify(atts), status, status, cur.id);
     auditLog('fee_record_edit', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers }, { targetType: 'fee_record', targetId: cur.id });
     return res.json({ success: true, approval_status: status });
   }
