@@ -475,6 +475,24 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <option value="failed">🙅 面试没通过</option>
       </select>
       <select id="refBy" onchange="renderRefList()" title="按 HR 筛选：HR 自己招的算选的那个 HR，其余算提交这条的账号"><option value="">👤 HR / 提交人：全部</option></select>
+      <select id="refDateField" onchange="renderRefList()" title="按哪个日期筛选时间">
+        <option value="interview">📅 按面试时间</option>
+        <option value="start">👷 按上班日期</option>
+        <option value="created">📝 按登记日期</option>
+      </select>
+      <select id="refRange" onchange="refRangeChanged()" title="按时间筛选">
+        <option value="">时间：全部</option>
+        <option value="today">今天</option>
+        <option value="thisweek">本周</option>
+        <option value="lastweek">上周</option>
+        <option value="thismonth">本月</option>
+        <option value="lastmonth">上月</option>
+        <option value="90d">近 90 天</option>
+        <option value="thisyear">今年</option>
+        <option value="custom">自定义…</option>
+      </select>
+      <input type="date" id="refFrom" onchange="renderRefList()" style="display:none">
+      <input type="date" id="refTo" onchange="renderRefList()" style="display:none">
       <button class="btn btn-blue" id="btnRefAdd" onclick="openRefAdd()" style="display:none">＋ 新增介绍</button>
       <button class="btn btn-outline" onclick="openFmList()">👷 工头名单</button>
       <a id="refOwnPage" class="btn btn-outline" href="/referral" target="_blank" title="只看介绍费的独立页面">↗ Referral 页面</a>
@@ -2838,7 +2856,7 @@ function refJumpTo(id) {
   if (!r) return;
   refSetStage(_refStage(r));
   // 被当前搜索/筛选挡住了就清掉筛选再找
-  if (!document.getElementById('refCard' + id)) { document.getElementById('refFilter').value = ''; document.getElementById('refBy').value = ''; renderRefList(); }
+  if (!document.getElementById('refCard' + id)) { document.getElementById('refFilter').value = ''; document.getElementById('refBy').value = ''; document.getElementById('refRange').value = ''; refRangeChanged(); }
   if (!document.getElementById('refCard' + id)) { document.getElementById('refSearch').value = ''; renderRefList(); }
   setTimeout(() => {
     const el = document.getElementById('refCard' + id);
@@ -3001,6 +3019,11 @@ function _refByOptions() {
   sel.value = cur && (names.includes(cur) || cur === '__none__') ? cur : '';
   sel.style.cssText = sel.value ? 'background:#ede9fe;border-color:#a78bfa;color:#5b21b6;font-weight:700' : '';
 }
+function refRangeChanged() {
+  const custom = document.getElementById('refRange').value === 'custom';
+  ['refFrom', 'refTo'].forEach(id => { document.getElementById(id).style.display = custom ? '' : 'none'; });
+  renderRefList();
+}
 function renderRefList() {
   const q = (document.getElementById('refSearch').value || '').trim().toLowerCase();
   const flt = document.getElementById('refFilter').value;
@@ -3019,6 +3042,15 @@ function renderRefList() {
   else if (flt === 'failed') list = list.filter(r => r.interview_status === 'failed');
   else if (flt) list = list.filter(r => _refOverall(r) === flt);
   if (by) list = list.filter(r => by === '__none__' ? !_refHrKey(r) : _refHrKey(r) === by);
+  // 时间筛选: 按面试时间 / 上班日期 / 登记日期; 没填那个日期的不算在内
+  const rng = document.getElementById('refRange');
+  const [from, to] = rng.value === 'custom' ? [document.getElementById('refFrom').value, document.getElementById('refTo').value] : _rangePresetDates(rng.value);
+  rng.style.cssText = from || to ? 'background:#e0f2fe;border-color:#7dd3fc;color:#0c4a6e;font-weight:700' : '';
+  if (from || to) {
+    const fld = document.getElementById('refDateField').value;
+    const dateOf = r => String((fld === 'start' ? r.work_start_date : fld === 'created' ? r.created_at : r.interview_at) || '').slice(0, 10);
+    list = list.filter(r => { const d = dateOf(r); return d && (!from || d >= from) && (!to || d <= to); });
+  }
   // 三个阶段分页: 数字按当前搜索/筛选算, 切过去不会扑空
   const stN = { interview: 0, attended: 0, working: 0, ended: 0, quit: 0, noshow: 0 };
   list.forEach(r => stN[_refStage(r)]++);
@@ -6246,11 +6278,16 @@ function gustoPayRangeChanged() {
 }
 function _gustoPayRangeDates() {
   const v = document.getElementById('gustoPayRange').value;
-  if (!v) return ['', ''];
   if (v === 'custom') return [document.getElementById('gustoPayFrom').value, document.getElementById('gustoPayTo').value];
+  return _rangePresetDates(v);
+}
+// 时间下拉的预设 (本周 / 上月 / 近 90 天…) → [起, 止] YYYY-MM-DD; 不认识的返回 ['', '']
+function _rangePresetDates(v) {
+  if (!v) return ['', ''];
   const now = new Date();
   const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
   const monday = new Date(today.getTime() - ((today.getUTCDay() + 6) % 7) * 86400000);
+  if (v === 'today') return [_gd(today), _gd(today)];
   if (v === 'thisweek') return [_gd(monday), _gd(new Date(monday.getTime() + 6 * 86400000))];
   if (v === 'lastweek') return [_gd(new Date(monday.getTime() - 7 * 86400000)), _gd(new Date(monday.getTime() - 86400000))];
   if (v === 'thismonth') return [_gd(new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1))), _gd(new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 0)))];
