@@ -2270,6 +2270,7 @@ function _refWeekSums(r) {
   return out;
 }
 // 🙋 HR 招工节点奖励 (人民币): HR 自己招的 = 选的 HR; 工头介绍的 = 提交这条的 HR (提交人是 HR 才算)
+const REF_MIN_WEEK_HOURS = 16;   // 第 1 周不到 16 工时: HR 没有「满 1 周」, 工头只拿过面试 $5
 const REF_HR_BONUS = [
   { k: 'interview', label: '过面试', amt: 30 },
   { k: 'week1', label: '满 1 周', amt: 100, prorate: true },   // 按第 1 周工时 /40 折算
@@ -2348,6 +2349,8 @@ function _refHrBonus(r) {
           : part[0].h >= 40 ? `${part[0].h} 工时 ≥ 40 · 给满${from2}` : `${yuan(m.amt)} × ${part[0].h}/40 工时${from2}`)
         : `每周 ${yuan(per)}：${part.map(x => x.t).join(' + ')}`;
       if (w0) x = { ...x, period: _refInvPer(w0) };
+      // 第 1 周不到 16 工时: 满 1 周不算, 只有过面试那笔
+      if (part[0].h != null && part[0].h < REF_MIN_WEEK_HOURS) { x = { ...x, st: 'lost', hint: `第 1 周只有 ${part[0].h} 工时 < ${REF_MIN_WEEK_HOURS}，不算（只给过面试）` }; amount = 0; }
     }
     return { ...m, ...x, amount, calc, row: (r.hr_bonus || {})[m.k] || null };
   });
@@ -3082,7 +3085,9 @@ function renderRefList() {
     // 每周付款表
     const weeks = r.weeks || [];
     // 这周介绍费: 选满周价 (第一周 $25 / $50, 之后 $12.5 / $25, 都不要再手写), 按工时折算 — 满 40 工时给满, 不满按 工时/40
-    const feeCalc = w => { const n = w.span_eff || 1; return w.rate == null ? '' : `<div style="font-size:.68rem;color:${w.hours == null ? '#b45309' : 'var(--g500)'};white-space:nowrap">${w.hours == null
+    const feeCalc = w => { const n = w.span_eff || 1;
+      if (w.under16 != null) return `<div style="font-size:.68rem;color:#b45309;white-space:nowrap">第 1 周只有 ${w.under16} 工时 &lt; ${REF_MIN_WEEK_HOURS} · 只给过面试 ${money(5)}${n > 1 ? ' + 第 2 周照算' : ''} = <b style="color:#0f4c6b">${money(w.fee_default)}</b></div>`;
+      return w.rate == null ? '' : `<div style="font-size:.68rem;color:${w.hours == null ? '#b45309' : 'var(--g500)'};white-space:nowrap">${w.hours == null
       ? `没勾发票行、没有工时，按满 ${n} 周 = ${money(w.fee_default)}`
       : w.hours >= 40 * n ? `${w.hours} 工时 ≥ ${40 * n} · 给满${n > 1 ? ` ${n} 周` : ''} ${money(w.fee_default)}`
       : n > 1 ? `${money(w.rate * n)}（${n} 周）× ${w.hours}/${40 * n} 工时 = <b style="color:#0f4c6b">${money(w.fee_default)}</b>`
@@ -3106,7 +3111,7 @@ function renderRefList() {
               <option value="after" ${w.tier === 'after' ? 'selected' : ''}>之后每周</option></select>
             ${presets.map(pb).join('')}
             <input type="number" step="0.01" min="0" value="${custom ? Math.round(w.rate * n * 100) / 100 : ''}" placeholder="手写" title="${presets.map(p => money(p * n)).join(' / ')} 都不合适才手写${n > 1 ? ` ${n} 周的` : '满周'}价，同样按工时折算" onchange="refWeekRate(${w.id}, this.value === '' ? '' : Number(this.value) / ${n})" style="width:62px;padding:.15rem .3rem;font-size:.76rem;text-align:right${custom ? ';border-color:#0f4c6b;font-weight:700' : ''}"></div>`
-          + (w.rate != null ? feeCalc(w)
+          + (w.rate != null || w.under16 != null ? feeCalc(w)
             : `<div style="font-size:.68rem;color:#b45309;white-space:nowrap">还没选${w.fee != null ? ` · 现在写的 ${money(w.fee)}` : w.fee_default != null ? ` · 现在按 ${money(w.fee_default)}` : ''}</div>`);
       })()
       : `<b>${w.fee_eff != null ? money(w.fee_eff) : '—'}</b>${feeCalc(w)}`;

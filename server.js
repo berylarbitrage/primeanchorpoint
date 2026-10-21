@@ -42129,11 +42129,22 @@ function _referralOut(r, invMap, payNotes, weeksBy, weekNotes, linesByInv) {
     w.ratio = w.hours == null ? w.span_eff : Math.min(w.hours, 40 * w.span_eff) / 40;
     const tierFee = _referralTierFee(r, w.tier_eff);
     w.fee_default = w.rate != null ? Math.round(w.rate * w.ratio * 100) / 100 : tierFee != null ? tierFee * w.span_eff : null;
+    // 工头介绍的: 第 1 周不到 16 工时 → 第 1 周不按周算, 只给过面试 $5 (两周的发票, 第 2 周那份照算)
+    if (i === 0 && !r.hr_self && w.hours != null) {
+      const h1 = w.hours / w.span_eff;
+      if (h1 < REF_MIN_WEEK_HOURS) {
+        w.under16 = Math.round(h1 * 100) / 100;
+        const rest = w.span_eff > 1 && w.fee_default != null ? w.fee_default * (w.span_eff - 1) / w.span_eff : 0;
+        w.fee_default = Math.round((REF_UNDER16_FEE + rest) * 100) / 100;
+      }
+    }
     w.fee_eff = w.admin_status === 'rejected' ? 0 : w.admin_status === 'approved' && w.admin_fee != null ? w.admin_fee
       : (w.fee != null ? w.fee : w.fee_default);
   });
   return r;
 }
+// 第 1 周工时不到 16 小时: 工头只拿过面试 $5, HR 拿不到「满 1 周」
+const REF_MIN_WEEK_HOURS = 16, REF_UNDER16_FEE = 5;
 // 第一周 / 之后每周 的介绍费: 没设第一周价的, 第一周也按 amount
 function _referralTierFee(r, tier) {
   if (tier === 'first' && r.first_week_amount != null) return r.first_week_amount;
