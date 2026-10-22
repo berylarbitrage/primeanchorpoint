@@ -22303,6 +22303,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoices (
 //   hourly  → sum of each worker's wage (items[].total = hours × rate)
 //   container → sum of each line's subcontractor price (sub_price)
 // The bill (subtotal) minus this is our profit.
+// Returns null when the wage is unknown (hourly invoice with no 实付时薪, no markup
+// gap and no recorded wage) — the list then shows 利润「不确定」 instead of a number.
 function _invoiceWageCost(items_json, profile_json, subtotal) {
   let cost = 0;
   try {
@@ -22345,7 +22347,7 @@ function _invoiceWageCost(items_json, profile_json, subtotal) {
     if (profile && profile.wage_cost != null && isFinite(Number(profile.wage_cost))) {
       return Math.round(Number(profile.wage_cost) * 100) / 100;
     }
-    cost = base;
+    return null;
   } catch (_) { /* malformed JSON → cost 0 */ }
   return Math.round(cost * 100) / 100;
 }
@@ -22446,6 +22448,39 @@ try {
     console.log(`[migration] labor wage repair v2: 修复 ${fixed2} 张发票`);
   }
 } catch (e) { console.log('[migration] labor wage repair v2 error:', e.message); }
+
+// v3：开票页把打开过的发票的 profile（含 wage_cost）存进浏览器共享档案，下一张
+// 新建的工时发票保存时就带上了别人的工资（如 Albatross 账单 $1000 却记了 Looife
+// 的工资 $1969.11，利润成负数）。清掉这种串值：工时发票、没有实付时薪、工资取自
+// stash，且与另一家公司更早的发票工资分毫不差 → 删掉 stash，列表显示「未填 / 不确定」。
+try {
+  const _wageFix3 = db.prepare("SELECT value FROM app_settings WHERE key='labor_wage_cost_leak_repair_v3'").get();
+  if (!_wageFix3) {
+    const rows3 = db.prepare('SELECT id, invoice_number, company_name, subtotal, items_json, profile_json FROM invoices ORDER BY id').all();
+    const seen = []; // { company, wage } of earlier invoices
+    let fixed3 = 0;
+    for (const inv of rows3) {
+      const wage = _invoiceWageCost(inv.items_json, inv.profile_json, inv.subtotal);
+      let prof = {}, items = [];
+      try { prof = JSON.parse(inv.profile_json || '{}') || {}; items = JSON.parse(inv.items_json || '[]') || []; } catch { prof = null; }
+      const company = String(inv.company_name || '').trim().toLowerCase();
+      const fromStash = prof && prof.invoice_mode !== 'container' && prof.wage_cost != null
+        && Array.isArray(items) && !items.some(it => Number(it && it.wage_rate) > 0)
+        && wage != null && Math.abs(wage - Number(prof.wage_cost)) < 0.005
+        && _invoiceWageCost(inv.items_json, JSON.stringify({ ...prof, wage_cost: undefined }), inv.subtotal) == null;
+      if (fromStash && wage > 0 && seen.some(x => x.company !== company && Math.abs(x.wage - wage) < 0.005)) {
+        delete prof.wage_cost;
+        db.prepare('UPDATE invoices SET profile_json=? WHERE id=?').run(JSON.stringify(prof), inv.id);
+        console.log(`[migration] 工资串值清除 ${inv.invoice_number}: ${wage} → (未填)`);
+        fixed3++;
+        continue;
+      }
+      if (wage != null && wage > 0) seen.push({ company, wage });
+    }
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('labor_wage_cost_leak_repair_v3','1')").run();
+    console.log(`[migration] labor wage leak repair v3: 清除 ${fixed3} 张发票`);
+  }
+} catch (e) { console.log('[migration] labor wage leak repair v3 error:', e.message); }
 
 // 一次性：合作公司 Wecharmer 改名 Nexware —— 历史发票的客户名同步改掉，
 // 付款记录 (company_worker_payments) 里的公司名也一起改，否则发票的
@@ -22579,7 +22614,10 @@ app.get('/api/admin/invoices', requireAdmin, (req, res) => {
   // ("所有上传凭证的加和"), independent of any hand-entered amount.
   const linkedSumStmt = db.prepare(`SELECT COALESCE(SUM(ABS(amount)),0) AS s FROM bank_statement_txns WHERE used_invoice_id=? AND used_kind=? AND kind='box'`);
   for (const r of rows) {
-    r.wage_cost = _invoiceWageCost(r.items_json, r.profile_json, r.subtotal);
+    const _wc = _invoiceWageCost(r.items_json, r.profile_json, r.subtotal);
+    // 工资未知：wage_cost 记成账单额，汇总里这张发票的利润按 0 计（不虚增也不算亏）。
+    r.wage_unknown = _wc == null;
+    r.wage_cost = _wc == null ? (Number(r.subtotal) || 0) : _wc;
     try { r.payment_txn_sum = Number(linkedSumStmt.get(r.id, 'recv').s) || 0; } catch (_) { r.payment_txn_sum = 0; }
     try { r.sub_payment_txn_sum = Number(linkedSumStmt.get(r.id, 'sub').s) || 0; } catch (_) { r.sub_payment_txn_sum = 0; }
     // Surface a lightweight bank label (bank name + account last-4) and the payee
