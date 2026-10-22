@@ -43707,6 +43707,282 @@ app.get('/api/acct/gusto/recon', requireAdmin, requireAcctView, (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── 🆕 新员工入职 (/onboarding) ───
+// 每周看一次: 名字第一次出现在正式发票工资表上的人 = 新员工 (有账单才说明要给他付钱)。
+// 登记电话、在哪个仓库干活 (发票客户公司)、发票链接, 再定怎么付: gusto 入职 / 现金 / 支票 / zelle,
+// 走 Gusto 的按检查清单跟进。清单自动打勾的来源: Gusto API 同步的合同工名册
+// (onboarding_status / onboarded)、Gusto 付款记录、粘贴进来的 Gusto 通知邮件标题;
+// 也能手动勾。名字按工资汇总页的合并表归一 (payroll_name_merges), 同一个人改过拼写不会重复算新人。
+const wob = require('./worker-onboarding');
+const { contractorEntries: _wobEntries, matchEmployees: _wobMatch } = require('./gusto-pay');
+db.exec(`CREATE TABLE IF NOT EXISTS new_hire_onboarding (
+  name_key TEXT PRIMARY KEY,
+  name TEXT DEFAULT '',
+  phone TEXT DEFAULT '',
+  warehouse TEXT DEFAULT '',
+  pay_method TEXT DEFAULT '',
+  pay_note TEXT DEFAULT '',
+  gusto_uuid TEXT DEFAULT '',
+  checklist TEXT DEFAULT '{}',
+  updated_by TEXT DEFAULT '',
+  updated_at TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+// 粘贴进来的 Gusto 通知邮件 (只存解析结果, 同一封重复粘贴不重复记); 读的时候再按名字对人
+db.exec(`CREATE TABLE IF NOT EXISTS gusto_email_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,
+  name TEXT NOT NULL,
+  date TEXT DEFAULT '',
+  subject TEXT DEFAULT '',
+  added_by TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(kind, name, date)
+)`);
+
+// 所有正式发票的工资行按人归并: key → { name, first_end, last_end, lines: [...] }
+function _wobInvoicePeople() {
+  const merges = _payrollMerges();
+  const people = new Map();
+  const rows = db.prepare(`SELECT id, invoice_number, company_name, period_start, period_end, invoice_date, items_json, profile_json
+    FROM invoices WHERE COALESCE(status,'')!='draft' ORDER BY id`).all();
+  for (const r of rows) {
+    let items = [], profile = {};
+    try { profile = JSON.parse(r.profile_json || '{}') || {}; } catch (e) {}
+    if (profile.invoice_mode === 'container') continue;   // 整柜分包计费没有按人工资行
+    try { items = JSON.parse(r.items_json || '[]'); } catch (e) {}
+    const end = String(r.period_end || r.invoice_date || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(end)) continue;
+    for (const it of (Array.isArray(items) ? items : [])) {
+      const raw = String((it && it.name) || '').replace(/\s+/g, ' ').trim();
+      const total = Number(it && it.total) || 0, hours = Number(it && it.hours) || 0;
+      if (!raw || (!total && !hours)) continue;
+      const display = merges[_payrollNameKey(raw)] || raw;
+      const key = _payrollNameKey(display);
+      if (!key) continue;
+      let p = people.get(key);
+      if (!p) { p = { key, name: display, names: new Set(), first_end: end, last_end: end, lines: [] }; people.set(key, p); }
+      p.names.add(raw);
+      if (end < p.first_end) p.first_end = end;
+      if (end > p.last_end) p.last_end = end;
+      p.lines.push({ invoice_id: r.id, invoice_number: r.invoice_number || '', company: r.company_name || '',
+        period_start: String(r.period_start || '').slice(0, 10), period_end: end, hours: Math.round(hours * 100) / 100, total: Math.round(total * 100) / 100 });
+    }
+  }
+  return people;
+}
+
+// 电话 / 仓库猜测: 员工档案 → 介绍记录 → 扫码登记, 都按名字 (字母拼起来, 名姓两种顺序) 对
+function _wobPhoneIndex() {
+  const idx = {};
+  const put = (n, v) => { const k = _refNameKey(n); if (k.length >= 5 && v.phone && !idx[k]) idx[k] = v; };
+  try {
+    for (const e of db.prepare(`SELECT id, first_name, last_name, phone FROM employees WHERE COALESCE(phone,'')!='' ORDER BY id DESC`).all()) {
+      const v = { phone: e.phone, source: '员工档案' };
+      put(`${e.first_name} ${e.last_name}`, v); put(`${e.last_name} ${e.first_name}`, v);
+    }
+  } catch (e) {}
+  try {
+    for (const r of db.prepare(`SELECT worker_name, worker_phone, warehouse_name, pay_method, gusto_uuid FROM referrals WHERE COALESCE(worker_phone,'')!='' ORDER BY id DESC`).all()) {
+      put(r.worker_name, { phone: r.worker_phone, source: '介绍记录', warehouse: r.warehouse_name || '', pay_method: r.pay_method || '', gusto_uuid: r.gusto_uuid || '' });
+    }
+  } catch (e) {}
+  try {
+    for (const a of db.prepare(`SELECT name, phone FROM applicant_submissions WHERE COALESCE(phone,'')!='' ORDER BY id DESC`).all()) put(a.name, { phone: a.phone, source: '扫码登记' });
+  } catch (e) {}
+  return idx;
+}
+
+function _wobBuild() {
+  const people = _wobInvoicePeople();
+  const saved = {};
+  for (const r of db.prepare('SELECT * FROM new_hire_onboarding').all()) saved[r.name_key] = r;
+  const phones = _wobPhoneIndex();
+  // Gusto 名册: API 同步的合同工 (带 onboarding 状态); 没连 API 时退回付款 CSV 模板名册, 只能对名字
+  const contractors = db.prepare('SELECT uuid, name, first_name, last_name, business_name, hourly_rate, is_active, raw_json FROM gusto_contractors').all();
+  const cByUuid = {};
+  for (const c of contractors) { let raw = {}; try { raw = JSON.parse(c.raw_json || '{}'); } catch (e) {} cByUuid[c.uuid] = { ...c, raw }; }
+  let roster = contractors;
+  if (!roster.length) {
+    const tpl = _gustoRoster();
+    if (tpl) {
+      try {
+        const pr = parseRoster(tpl.csv);
+        roster = pr.entries.map(e => ({ uuid: '', first_name: pr.cols.first >= 0 ? String(e.cells[pr.cols.first] || '') : '',
+          last_name: pr.cols.last >= 0 ? String(e.cells[pr.cols.last] || '') : '', business_name: pr.cols.business >= 0 ? String(e.cells[pr.cols.business] || '') : '' }));
+      } catch (e) {}
+    }
+  }
+  const { entries, tokenCount } = _wobEntries(roster);
+  const aliases = _gustoAliases();
+  // Gusto 付款: 每个收款人第一笔付款日期 (uuid 优先; 导入的报告行只有名字)
+  const firstPayByUuid = {}, firstPayByName = {};
+  for (const p of db.prepare(`SELECT contractor_uuid, contractor_name, MIN(date) AS d FROM gusto_payments
+      WHERE COALESCE(wage_type,'')!='W2' GROUP BY contractor_uuid, contractor_name`).all()) {
+    if (p.contractor_uuid) { if (!firstPayByUuid[p.contractor_uuid] || p.d < firstPayByUuid[p.contractor_uuid]) firstPayByUuid[p.contractor_uuid] = p.d; }
+    const nm = String(p.contractor_name || '');
+    const flip = nm.includes(',') ? nm.split(',').map(s => s.trim()).reverse().join(' ') : nm;
+    for (const k of [_refNameKey(nm), _refNameKey(flip)]) if (k && (!firstPayByName[k] || p.d < firstPayByName[k])) firstPayByName[k] = p.d;
+  }
+
+  const list = [];
+  for (const p of people.values()) {
+    const s = saved[p.key] || {};
+    const names = [...p.names];
+    const ph = names.map(n => phones[_refNameKey(n)]).find(Boolean) || null;
+    // Gusto 收款人: 手动关联 > 对照表/名字自动匹配
+    let gusto = null, suggest = null;
+    if (s.gusto_uuid) {
+      const c = cByUuid[s.gusto_uuid];
+      gusto = { uuid: s.gusto_uuid, name: c ? c.name : '(名册里找不到了)', link: 'manual', active: c ? !!c.is_active : false, raw: c ? c.raw : null };
+    } else if (entries.length) {
+      const m = _wobMatch(entries, tokenCount, [{ name: p.name, total: 1 }], { aliases });
+      const hit = [...m.byRosterIdx.values()][0];
+      if (hit && !(hit.sources[0] && hit.sources[0].fuzzy)) {
+        const c = hit.entry.uuid ? cByUuid[hit.entry.uuid] : null;
+        gusto = { uuid: hit.entry.uuid || '', name: hit.entry.label, link: 'auto', active: c ? !!c.is_active : true, raw: c ? c.raw : null };
+      } else if (m.skipped.length) suggest = { method: 'cash', why: `收款人对照表标了「${m.skipped[0].reason}」` };
+      else if (hit || m.ambiguous.length || m.needConfirm.length) {
+        const cand = hit ? [hit.entry.label] : m.ambiguous.length ? m.ambiguous[0].candidates : [m.needConfirm[0].candidate];
+        gusto = { uuid: '', name: '', link: '', candidates: cand };
+      }
+    }
+    if (!suggest && gusto && gusto.link) suggest = { method: 'gusto', why: '已在 Gusto 名册' };
+    if (!suggest && ph && ph.pay_method) suggest = { method: ph.pay_method, why: '介绍记录上填的付款方式' };
+    const firstPay = (gusto && gusto.uuid && firstPayByUuid[gusto.uuid])
+      || (gusto && gusto.name && firstPayByName[_refNameKey(gusto.name)]) || '';
+    let manual = {};
+    try { manual = JSON.parse(s.checklist || '{}') || {}; } catch (e) {}
+    const firstWeek = wob.weekStart(p.first_end);
+    const firstLines = p.lines.filter(l => wob.weekStart(l.period_end) === firstWeek);
+    list.push({
+      key: p.key, name: s.name || p.name, invoice_names: names,
+      first_end: p.first_end, last_end: p.last_end, week: firstWeek,
+      invoices: firstLines, later_invoices: new Set(p.lines.filter(l => wob.weekStart(l.period_end) !== firstWeek).map(l => l.invoice_id)).size,
+      warehouses: s.warehouse ? [s.warehouse] : [...new Set(firstLines.map(l => l.company).filter(Boolean))],
+      warehouse_saved: s.warehouse || '',
+      phone: s.phone || (ph ? ph.phone : ''), phone_source: s.phone ? '' : (ph ? ph.source : ''),
+      pay_method: s.pay_method || '', pay_note: s.pay_note || '', suggest,
+      gusto, first_payment: firstPay, manual,
+      updated_by: s.updated_by || '', updated_at: s.updated_at || '',
+    });
+  }
+  // 邮件事件按名字对到人: 候选名字 = 发票上的写法 + 关联的 Gusto 收款人名字
+  const events = db.prepare('SELECT kind, name, date, subject FROM gusto_email_events ORDER BY date, id').all();
+  const cands = list.map(w => ({ key: w.key, names: [...w.invoice_names, w.name, w.gusto && w.gusto.name].filter(Boolean) }));
+  const byKey = {};
+  const unmatched = [];
+  for (const ev of events) {
+    const { hits } = wob.matchEmailName(ev.name, cands);
+    if (hits.length === 1) (byKey[hits[0]] = byKey[hits[0]] || []).push(ev);
+    else unmatched.push({ ...ev, ambiguous: hits.length > 1 });
+  }
+  for (const w of list) {
+    w.emails = byKey[w.key] || [];
+    w.checklist = wob.buildChecklist({ contractor: w.gusto && w.gusto.raw ? { raw: w.gusto.raw } : (w.gusto && w.gusto.link ? { raw: {} } : null),
+      emails: w.emails, manual: w.manual, firstPayment: w.first_payment });
+    if (w.gusto) delete w.gusto.raw;
+    // Gusto 那边已经走完入职还付过钱的, 没手动选付款方式也算处理完
+    w.done = w.pay_method === 'skip' || (!!w.pay_method && (w.pay_method !== 'gusto' || w.checklist.done))
+      || (!w.pay_method && !!(w.gusto && w.gusto.link) && w.checklist.done);
+  }
+  return { list, unmatched };
+}
+
+app.get('/onboarding', (req, res) => res.sendFile(path.join(__dirname, 'public', 'onboarding.html')));
+
+app.get('/api/acct/onboarding', requireAdmin, requireAcctView, (req, res) => {
+  try {
+    const { list, unmatched } = _wobBuild();
+    const today = new Date().toISOString().slice(0, 10);
+    const thisWeek = wob.weekStart(today);
+    // 最近 12 周每周新人数 / 未处理数
+    const weeks = [];
+    for (let i = 0; i < 12; i++) {
+      const wk = wob.addDays(thisWeek, -7 * i);
+      const ws = list.filter(w => w.week === wk);
+      weeks.push({ week: wk, total: ws.length, open: ws.filter(w => !w.done).length });
+    }
+    const view = req.query.view === 'open' ? 'open' : 'week';
+    let week = wob.weekStart(req.query.week);
+    if (!week) week = (weeks.find(w => w.total) || weeks[0]).week;
+    // 「待处理」: 最近 16 周进来的、还没处理完的人 (更早的是老员工, 不再追)
+    const since = wob.addDays(thisWeek, -7 * 16);
+    const rows = view === 'open'
+      ? list.filter(w => !w.done && w.week >= since)
+      : list.filter(w => w.week === week);
+    rows.sort((a, b) => (a.done - b.done) || b.first_end.localeCompare(a.first_end) || a.name.localeCompare(b.name));
+    const st = _gustoApiCfg().cfg;
+    res.json({ ok: true, view, week, weeks, rows,
+      open_total: list.filter(w => !w.done && w.week >= since).length,
+      unmatched_emails: unmatched.filter(e => e.date >= since).slice(-50),
+      pay_methods: wob.PAY_METHODS, steps: wob.GUSTO_STEPS,
+      gusto: { connected: !!(st.access_token && st.refresh_token), last_sync_at: st.last_sync_at || '',
+        contractors: db.prepare('SELECT COUNT(*) AS n FROM gusto_contractors').get().n },
+      can_edit: ['admin', 'accounting', 'cs'].includes(req.userRole),
+      can_sync: ['admin', 'accounting'].includes(req.userRole) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/acct/onboarding/:key', requireAdmin, requireAcctWrite, (req, res) => {
+  try {
+    const key = _payrollNameKey(req.params.key);
+    if (!key) return res.status(400).json({ error: '缺少员工' });
+    const b = req.body || {};
+    const cur = db.prepare('SELECT * FROM new_hire_onboarding WHERE name_key=?').get(key) || {};
+    const next = { name: cur.name || '', phone: cur.phone || '', warehouse: cur.warehouse || '', pay_method: cur.pay_method || '',
+      pay_note: cur.pay_note || '', gusto_uuid: cur.gusto_uuid || '', checklist: cur.checklist || '{}' };
+    const str = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
+    if (b.name !== undefined) next.name = str(b.name, 120);
+    if (b.phone !== undefined) next.phone = str(b.phone, 40);
+    if (b.warehouse !== undefined) next.warehouse = str(b.warehouse, 200);
+    if (b.pay_note !== undefined) next.pay_note = str(b.pay_note, 1000);
+    if (b.gusto_uuid !== undefined) next.gusto_uuid = str(b.gusto_uuid, 80);
+    if (b.pay_method !== undefined) {
+      const m = str(b.pay_method, 20);
+      if (m && !wob.PAY_METHODS.includes(m)) return res.status(400).json({ error: '付款方式不对' });
+      next.pay_method = m;
+    }
+    if (b.step) {
+      const step = str(b.step, 40);
+      if (!wob.GUSTO_STEPS.some(s => s.id === step)) return res.status(400).json({ error: '没有这一步' });
+      let ck = {};
+      try { ck = JSON.parse(next.checklist) || {}; } catch (e) {}
+      if (b.checked) ck[step] = { at: new Date().toISOString(), by: req.userName || '' };
+      else delete ck[step];
+      next.checklist = JSON.stringify(ck);
+    }
+    db.prepare(`INSERT INTO new_hire_onboarding (name_key, name, phone, warehouse, pay_method, pay_note, gusto_uuid, checklist, updated_by, updated_at)
+      VALUES (@key, @name, @phone, @warehouse, @pay_method, @pay_note, @gusto_uuid, @checklist, @by, datetime('now'))
+      ON CONFLICT(name_key) DO UPDATE SET name=@name, phone=@phone, warehouse=@warehouse, pay_method=@pay_method, pay_note=@pay_note,
+        gusto_uuid=@gusto_uuid, checklist=@checklist, updated_by=@by, updated_at=datetime('now')`)
+      .run({ key, ...next, by: req.userName || '' });
+    auditLog('new_hire_onboarding_save', req, { targetType: 'new_hire_onboarding', targetId: key,
+      details: { fields: Object.keys(b).filter(k => k !== 'checked') } });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 粘贴 Gusto 通知邮件 (Gmail 列表整屏复制即可): 解析出 接受邀请 / 可以付款 / 银行有误 / 银行已更新
+app.post('/api/acct/onboarding-emails', requireAdmin, requireAcctWrite, (req, res) => {
+  try {
+    const events = wob.parseGustoEmails(String((req.body && req.body.text) || '').slice(0, 200000), new Date().toISOString());
+    const ins = db.prepare(`INSERT OR IGNORE INTO gusto_email_events (kind, name, date, subject, added_by) VALUES (?, ?, ?, ?, ?)`);
+    let added = 0;
+    db.transaction(() => { for (const ev of events) added += ins.run(ev.kind, ev.name, ev.date, ev.subject, req.userName || '').changes; })();
+    if (added) auditLog('gusto_email_import', req, { targetType: 'gusto_email_events', targetId: 'paste', details: { parsed: events.length, added } });
+    res.json({ ok: true, parsed: events.length, added, events: events.map(e => ({ ...e, label: wob.EMAIL_KIND_LABEL[e.kind] })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 现查一个合同工在 Gusto 的入职步骤明细 (需要已连接 Gusto API)
+app.get('/api/acct/onboarding-gusto/:uuid', requireAdmin, requireAcctView, async (req, res) => {
+  try {
+    const { token, environment } = await _gustoAccessToken();
+    res.json({ ok: true, ...(await gustoApi.contractorOnboardingStatus(environment, token, String(req.params.uuid || ''))) });
+  } catch (e) { res.status(e && e.code === 'not_connected' ? 400 : e && e.status === 404 ? 404 : 502).json({ error: (e && e.message) || String(e) }); }
+});
+
 // ─── 👷 员工工资汇总: 正式发票上的工资行按人汇总 ───
 // 日期按发票工资周期结束日筛。名字合并存在 app_settings.payroll_name_merges:
 // { "<小写去重音的名字>": "合并后显示的名字" }, 所有人共用; 汇总在前端按这张表归并。

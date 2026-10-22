@@ -191,6 +191,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
   <div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap">
     <h1 id="mainTitle">🧾 会计对账 · Accounting Review</h1>
     <div style="display:flex;align-items:center;gap:.5rem">
+      <a class="btn btn-sm btn-outline" href="/onboarding" target="_blank" title="每周新员工: 电话 / 仓库 / 账单 / 付款方式 / Gusto 入职清单" style="text-decoration:none">🆕 新员工入职</a>
       <span id="whoami" style="font-size:.82rem;color:var(--g500)"></span>
       <button class="btn btn-sm btn-outline" onclick="acctLogout()">退出</button>
     </div>
@@ -1388,6 +1389,9 @@ function enterMain() {
     showTab('ref');
   }
   loadAll();
+  // /accounting?invoice=<id>: 别的页面 (例如 /onboarding) 直接链到某张发票
+  const invQ = new URLSearchParams(location.search).get('invoice');
+  if (/^\d+$/.test(invQ || '')) openInvoice(Number(invQ));
   bankOauthResume();
   gustoOauthResume();
 }
