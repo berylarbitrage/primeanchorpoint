@@ -128,13 +128,13 @@ function matchEmailName(name, candidates) {
 // ── Gusto 入职检查清单 ──
 // 每一步: auto = 系统看出来做完了 (Gusto API / 邮件 / 付款记录), manual = 有人手动勾了。
 // 两者有一个就算完成; bank 一步是「有没有问题」, 有未处理的银行错误邮件就标红。
+// 三步, 按顺序: ① 我们这边 (admin / manager) 在 Gusto 加人发邀请, 手动打勾 (Gusto 名册里已经有这个人也算);
+// ② 工人接受邀请 (邮件「accepted your offer」/ Gusto API); ③ 工人入职完成 (邮件「can now be paid」/ Gusto API / 已付过款)。
+// 后两步也能手动勾 (邮件漏了的时候), 前一步没完成后一步不能勾。银行信息的邮件不在清单里, 单独做成提醒。
 const GUSTO_STEPS = [
-  { id: 'added', label: '在 Gusto 添加合同工并发邀请', hint: 'Gusto → People → Add contractor，填姓名和邮箱/电话发邀请' },
+  { id: 'added', label: '在 Gusto 添加合同工并发邀请', hint: 'Gusto → People → Add contractor，填姓名和邮箱/电话发邀请；做完回来打勾' },
   { id: 'accepted', label: '工人接受邀请', hint: '邮件「… accepted your offer」' },
-  { id: 'info', label: '工人填完资料（地址、W-9、银行）', hint: '工人自己在 Gusto 里填' },
-  { id: 'ready', label: 'Gusto 入职完成，可以付款', hint: '邮件「… can now be paid」' },
-  { id: 'bank', label: '银行信息无误', hint: '收到「bank account details are incorrect」要叫工人改' },
-  { id: 'paid', label: '第一笔 Gusto 付款已发', hint: '从 Gusto 付款记录自动看' },
+  { id: 'ready', label: '工人入职完成', hint: '邮件「… can now be paid」' },
 ];
 
 // ctx: { contractor: {raw}|null, emails: [{kind,date}], manual: {step: {at,by}}, firstPayment: 'YYYY-MM-DD'|'' }
@@ -143,26 +143,26 @@ function buildChecklist(ctx) {
   const g = ctx.contractor ? gustoStage(ctx.contractor.raw) : { stage: 0, status: '', label: '' };
   const emails = (ctx.emails || []).slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
   const lastOf = k => emails.filter(e => e.kind === k).pop();
-  const em = { accepted: lastOf('accepted'), ready: lastOf('ready'), bad: lastOf('bank_bad'), upd: lastOf('bank_updated') };
-  const bankBad = !!em.bad && !(em.upd && String(em.upd.date || '') >= String(em.bad.date || ''));
+  const em = { accepted: lastOf('accepted'), ready: lastOf('ready') };
   const paid = String(ctx.firstPayment || '');
-  const stage = Math.max(g.stage, em.ready || paid ? 3 : em.accepted ? 2 : emails.length ? 1 : 0);
   const auto = {
-    added: stage >= 1 ? (ctx.contractor ? 'Gusto 名册里有这个人' : '邮件') : '',
-    accepted: stage >= 2 ? (em.accepted ? `邮件 ${em.accepted.date || ''}`.trim() : g.stage >= 2 ? 'Gusto API' : '已可付款') : '',
-    info: (g.stage >= 2 && /review|completed/.test(g.status)) || stage >= 3 ? (g.stage >= 2 ? 'Gusto API' : em.ready ? '邮件' : '已付款') : '',
-    ready: stage >= 3 ? (g.stage >= 3 ? 'Gusto API' : em.ready ? `邮件 ${em.ready.date || ''}`.trim() : '已付款') : '',
-    bank: !bankBad && (paid || em.upd) ? (paid ? '已成功付款' : `邮件: 银行已更新 ${em.upd.date || ''}`.trim()) : '',
-    paid: paid ? `首笔 ${paid}` : '',
+    added: ctx.contractor ? 'Gusto 名册里有这个人' : '',
+    accepted: em.accepted ? `邮件 ${em.accepted.date || ''}`.trim() : g.stage >= 2 ? 'Gusto API' : '',
+    ready: em.ready ? `邮件 ${em.ready.date || ''}`.trim() : g.stage >= 3 ? 'Gusto API' : paid ? `已付款 ${paid}` : '',
   };
+  // 后面的步骤做完了, 前面的自然也做完了 (例如直接收到 can now be paid)
+  if (auto.ready && !auto.accepted) auto.accepted = '已入职完成';
+  if ((auto.accepted || auto.ready) && !auto.added) auto.added = '工人已收到邀请';
   const manual = ctx.manual || {};
+  let prevDone = true;
   const steps = GUSTO_STEPS.map(s => {
     const m = manual[s.id];
-    const problem = s.id === 'bank' && bankBad ? `银行信息有误 (邮件 ${em.bad.date || ''})`.trim() : '';
-    return { ...s, auto: auto[s.id] || '', manual: m ? { at: m.at || '', by: m.by || '' } : null,
-      problem, done: !problem && !!(auto[s.id] || m) };
+    const done = !!(auto[s.id] || m);
+    const step = { ...s, auto: auto[s.id] || '', manual: m ? { at: m.at || '', by: m.by || '' } : null, done, locked: !prevDone };
+    prevDone = done;
+    return step;
   });
-  return { steps, gusto: g, bank_bad: bankBad, done: steps.every(s => s.done), done_count: steps.filter(s => s.done).length };
+  return { steps, gusto: g, done: steps.every(s => s.done), done_count: steps.filter(s => s.done).length };
 }
 
 module.exports = {
