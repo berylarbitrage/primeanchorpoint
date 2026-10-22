@@ -27,6 +27,16 @@ input,select,textarea{padding:.38rem .5rem;border:1px solid var(--g300);border-r
 .wk .open{color:var(--amber);font-weight:700}
 .wk.on{background:#0f4c6b;border-color:#0f4c6b;color:#e0f2fe}.wk.on b{color:#fff}.wk.on .open{color:#fde68a}
 .wk.pend{border-color:#fcd34d;background:#fffbeb}
+.invs{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:.5rem;margin-bottom:12px}
+.ic{border:1px solid var(--g200);background:#fff;border-radius:10px;padding:.5rem .7rem;cursor:pointer;font-family:inherit;text-align:left;color:var(--g600);font-size:.76rem}
+.ic b{display:block;color:#0f4c6b;font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ic .co{font-weight:700;color:#0f172a;font-size:.84rem}
+.ic .cnt{display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.3rem}
+.ic.on{border-color:#0f4c6b;box-shadow:0 0 0 2px #0f4c6b inset}
+.ic.left{border-left:4px solid var(--amber)}.ic.ok{border-left:4px solid var(--green)}
+.old{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;padding:.45rem 1rem;font-size:.8rem;margin-bottom:6px;border-left:4px solid var(--g300)}
+.old.done{border-left-color:var(--green)}
+.old .pm button{padding:.15rem .55rem;font-size:.72rem}
 .gbar{font-size:.78rem;color:var(--g600);background:#fff;border:1px solid var(--g200);border-radius:10px;padding:.5rem .8rem;margin-bottom:12px;display:flex;gap:.8rem;flex-wrap:wrap;align-items:center}
 .w{padding:0;overflow:hidden;border-left:4px solid var(--amber);margin-bottom:10px}
 .w.done{border-left-color:var(--green)}
@@ -74,7 +84,7 @@ textarea{width:100%}
   <div class="top">
     <div>
       <h1>🆕 新员工入职 · Onboarding</h1>
-      <div class="sub">每周看一次：名字<b>第一次出现在发票工资表上</b>的人就是新员工（有账单才说明要给他付钱）。登记电话、仓库，定好怎么付；走 Gusto 的按清单跟进。</div>
+      <div class="sub">每周看一次：名字<b>第一次出现在发票工资表上</b>的人就是新员工（有账单才说明要给他付钱）。先选一张发票看上面的员工，登记电话、定好怎么付；系统匹配到的 Gusto 收款人 / 电话 / 邮件都要 manager 或 admin 点「通过」才算数。</div>
     </div>
     <div style="display:flex;gap:.4rem;flex-wrap:wrap">
       <button class="btn btn-outline" onclick="openHook()">📬 邮箱自动同步</button>
@@ -85,6 +95,7 @@ textarea{width:100%}
   </div>
   <div class="gbar" id="gbar"></div>
   <div class="weeks" id="weeks"></div>
+  <div id="invs"></div>
   <div id="list"><div class="empty">加载中…</div></div>
   <div id="unmatched"></div>
 </div>
@@ -105,7 +116,7 @@ textarea{width:100%}
 <div class="modal" id="hookModal" onclick="if(event.target===this)this.style.display='none'">
   <div class="card" style="max-width:760px">
     <div style="font-weight:800;margin-bottom:.3rem">📬 邮箱自动同步 Gusto 邮件</div>
-    <div class="muted" style="margin-bottom:.6rem">在收 Gusto 邮件的 Gmail 里装一段 Google Apps Script：每 5 分钟把新的 Gusto 邮件标题发过来，系统认出是入职相关的（接受邀请 / 可以付款 / 银行有误 / 银行已更新）就自动在清单上打勾，并把<b>这几封</b>转发给下面填的邮箱。只发标题，不发正文。</div>
+    <div class="muted" style="margin-bottom:.6rem">在收 Gusto 邮件的 Gmail 里装一段 Google Apps Script：每 5 分钟把新的 Gusto 邮件标题发过来，系统认出是入职相关的（接受邀请 / 可以付款 / 银行有误 / 银行已更新）就匹配到对应的员工（manager / admin 点「通过」后在清单上打勾），并把<b>这几封</b>转发给下面填的邮箱。只发标题，不发正文。</div>
     <div id="hookBody"><div class="muted">加载中…</div></div>
   </div>
 </div>
@@ -120,11 +131,12 @@ textarea{width:100%}
 <script>
 let TOKEN = localStorage.getItem('acct_token') || localStorage.getItem('adminToken') || '';
 let D = null;                     // 最近一次 /api/acct/onboarding 的结果
-let VIEW = 'week', WEEK = '';
+let VIEW = 'week', WEEK = '', INV = 0;
+const EXP = new Set();            // 发票视图里展开看全卡片的老员工
 const PM_LABEL = { gusto: 'Gusto 入职', cash: '现金', check: '支票', zelle: 'Zelle', skip: '不用处理' };
 
 function esc(s) { if (s == null) return ''; const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
-function money(v) { return '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function money(v) { if (v == null) return ''; return '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function md(d) { return d ? `${+d.slice(5, 7)}/${+d.slice(8, 10)}` : ''; }
 function wkLabel(w) { const e = new Date(w + 'T00:00:00Z'); e.setUTCDate(e.getUTCDate() + 6); return `${md(w)}–${md(e.toISOString().slice(0, 10))}`; }
 function toast(msg, bad) {
@@ -160,16 +172,17 @@ async function login() {
 }
 
 async function load() {
-  const q = VIEW === 'open' ? '?view=open' : (WEEK ? '?week=' + WEEK : '');
+  const q = VIEW !== 'week' ? '?view=' + VIEW : (WEEK ? '?week=' + WEEK + (INV ? '&invoice=' + INV : '') : '');
   let j;
   try { j = await api('/api/acct/onboarding' + q); } catch (e) { return; }
   if (j.error) { document.getElementById('list').innerHTML = `<div class="empty" style="color:var(--red)">${esc(j.error)}</div>`; return; }
   D = j;
   WEEK = j.week;
+  INV = j.invoice ? j.invoice.id : 0;
   document.getElementById('main').style.display = '';
   document.getElementById('btnSync').style.display = j.can_sync && j.gusto.connected ? '' : 'none';
   document.getElementById('btnEmail').style.display = j.can_edit ? '' : 'none';
-  renderBar(); renderWeeks(); renderList(); renderUnmatched();
+  renderBar(); renderWeeks(); renderInvs(); renderList(); renderUnmatched();
 }
 function renderBar() {
   const g = D.gusto;
@@ -178,51 +191,87 @@ function renderBar() {
     : `<span style="color:var(--amber);font-weight:700">⚠ Gusto API 还没连接</span><span class="muted">清单只能靠粘贴 Gusto 邮件和手动勾选。连接后入职状态会自动读取：会计对账 →「💸 Gusto 工资」页签。</span>`;
 }
 function renderWeeks() {
-  const pend = `<button class="wk pend ${VIEW === 'open' ? 'on' : ''}" onclick="VIEW='open';load()"><b>⏳ 待处理</b><span class="n">最近 16 周 · <span class="open">${D.open_total}</span> 人</span></button>`;
-  document.getElementById('weeks').innerHTML = pend + D.weeks.map(w => `<button class="wk ${VIEW === 'week' && w.week === WEEK ? 'on' : ''}" onclick="VIEW='week';WEEK='${w.week}';load()">
+  const pend = `<button class="wk pend ${VIEW === 'open' ? 'on' : ''}" onclick="VIEW='open';INV=0;load()"><b>⏳ 待处理</b><span class="n">最近 16 周 · <span class="open">${D.open_total}</span> 人</span></button>`;
+  const rev = D.review_total || VIEW === 'review' ? `<button class="wk ${VIEW === 'review' ? 'on' : ''}" style="border-color:#a5b4fc;background:${VIEW === 'review' ? '' : '#eef2ff'}" onclick="VIEW='review';INV=0;load()"><b>🔎 待审核</b><span class="n">系统匹配 · <span class="open">${D.review_total}</span> 人</span></button>` : '';
+  document.getElementById('weeks').innerHTML = pend + rev + D.weeks.map(w => `<button class="wk ${VIEW === 'week' && w.week === WEEK ? 'on' : ''}" onclick="VIEW='week';WEEK='${w.week}';INV=0;load()">
     <b>${wkLabel(w.week)}</b><span class="n">新 ${w.total}${w.open ? ` · <span class="open">待 ${w.open}</span>` : w.total ? ' · ✓' : ''}</span></button>`).join('');
+}
+// 这周的发票: 选一张才列出上面的人; 每张标 新人数、付款方式待定 / 已定 人数
+function renderInvs() {
+  const el = document.getElementById('invs');
+  if (VIEW !== 'week') { el.innerHTML = ''; return; }
+  if (!D.invoices.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="lbl">${wkLabel(WEEK)} 的发票（${D.invoices.length} 张）· 点一张看上面的员工</div><div class="invs">` + D.invoices.map(v => `
+    <button class="ic ${v.id === INV ? 'on' : ''} ${v.unsettled ? 'left' : 'ok'}" onclick="INV=${v.id};load()">
+      <span class="co">${esc(v.company || '—')}</span><b>📄 ${esc(v.invoice_number)}</b>
+      <span>${md(v.period_start)}–${md(v.period_end)} · ${v.workers} 人${v.total != null ? ' · ' + money(v.total) : ''}</span>
+      <span class="cnt">${v.unsettled ? `<span class="tag" style="background:#fef3c7;color:#92400e">待定 ${v.unsettled}</span>` : ''}<span class="tag" style="background:#dcfce7;color:#166534">已定 ${v.settled}</span>${v.new ? `<span class="tag" style="background:#e0f2fe;color:#075985">🆕 新 ${v.new}</span>` : ''}${v.review ? `<span class="tag" style="background:#eef2ff;color:#3730a3">🔎 审核 ${v.review}</span>` : ''}</span>
+    </button>`).join('') + '</div>';
 }
 function renderList() {
   const rows = D.rows;
   const el = document.getElementById('list');
-  if (!rows.length) {
-    el.innerHTML = `<div class="card empty">${VIEW === 'open' ? '🎉 没有待处理的新员工' : `${wkLabel(WEEK)} 这周发票上没有新名字`}</div>`;
+  if (VIEW === 'week' && !D.invoice) {
+    el.innerHTML = `<div class="card empty">${D.invoices.length ? '👆 选一张发票，看上面有哪些员工、谁的付款方式还没定' : `${wkLabel(WEEK)} 这周没有发票`}</div>`;
     return;
   }
-  el.innerHTML = rows.map((w, i) => card(w, i)).join('');
+  if (!rows.length) {
+    el.innerHTML = `<div class="card empty">${VIEW === 'open' ? '🎉 没有待处理的新员工' : VIEW === 'review' ? '🎉 没有等审核的系统匹配' : '这张发票上没有员工工资行'}</div>`;
+    return;
+  }
+  const v = D.invoice;
+  const head = v ? `<div class="row" style="margin-bottom:.5rem"><b style="color:#0f4c6b">📄 ${esc(v.invoice_number)} · ${esc(v.company)}</b>
+      ${D.can_open_invoice ? `<a class="inv" href="/accounting?invoice=${v.id}" target="_blank">打开发票 ↗</a>` : ''}
+      <span class="muted">${v.workers} 人 · 新 ${v.new} · 付款方式待定 ${v.unsettled} · 已定 ${v.settled}</span></div>` : '';
+  el.innerHTML = head + rows.map((w, i) => v && !w.is_new && !EXP.has(w.key) ? oldRow(w, i) : card(w, i)).join('');
+}
+// 发票视图里的老员工: 一行, 能直接定付款方式, 点「展开」看全卡片
+function oldRow(w, k) {
+  const dis = D.can_edit ? '' : 'disabled';
+  const pm = Object.keys(PM_LABEL).map(m => `<button ${dis} class="${w.pay_method === m ? 'on' : ''}" onclick="save(${k},{pay_method:'${w.pay_method === m ? '' : m}'})">${PM_LABEL[m]}</button>`).join('');
+  return `<div class="card old ${w.settled ? 'done' : ''}">
+    <b>${esc(w.name)}</b><span class="tag" style="background:var(--g100);color:var(--g600)">老员工 · 第一次 ${esc(w.first_end)}</span>
+    <span class="muted">${w.line.hours ? w.line.hours + 'h' : ''}${w.line.total != null ? ' · ' + money(w.line.total) : ''}</span>
+    ${w.pending_review ? `<span class="tag" style="background:#eef2ff;color:#3730a3">🔎 ${w.pending_review} 条待审核</span>` : ''}
+    ${w.settled ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ ${esc(PM_LABEL[w.pay_method] || 'Gusto 已付过')}</span>` : '<span class="tag" style="background:#fef3c7;color:#92400e">付款方式待定</span>'}
+    <span class="pm" style="margin-left:auto">${pm}</span>
+    <button class="btn btn-outline btn-sm" onclick="EXP.add(D.rows[${k}].key);renderList()">展开</button>
+  </div>`;
 }
 function card(w, k) {
   const dis = D.can_edit ? '' : 'disabled';
   const bad = w.checklist.bank_bad && w.pay_method === 'gusto';
-  const invs = w.invoices.map(l => `<a class="inv" href="/accounting?invoice=${l.invoice_id}" target="_blank" title="${esc(l.company)} · ${esc(l.period_start)}~${esc(l.period_end)}">📄 ${esc(l.invoice_number)} <span style="font-weight:400">${md(l.period_end)} · ${l.hours ? l.hours + 'h · ' : ''}${money(l.total)}</span></a>`).join('');
+  const invs = (w.line ? [{ ...w.line, invoice_id: D.invoice.id }] : w.invoices).map(l => `<a class="inv" ${D.can_open_invoice ? `href="/accounting?invoice=${l.invoice_id}" target="_blank"` : ''} title="${esc(l.company)} · ${esc(l.period_start)}~${esc(l.period_end)}">📄 ${esc(l.invoice_number)} <span style="font-weight:400">${md(l.period_end)}${l.hours ? ' · ' + l.hours + 'h' : ''}${l.total != null ? ' · ' + money(l.total) : ''}</span></a>`).join('');
   const alias = w.invoice_names.filter(n => n !== w.name);
   const sug = w.suggest && !w.pay_method ? w.suggest.method : '';
   const pm = Object.keys(PM_LABEL).map(m => `<button ${dis} class="${w.pay_method === m ? 'on' : ''} ${sug === m ? 'sug' : ''}" onclick="save(${k},{pay_method:'${w.pay_method === m ? '' : m}'})">${PM_LABEL[m]}</button>`).join('');
   let gusto = '';
-  if (w.pay_method === 'gusto' || (!w.pay_method && w.gusto && w.gusto.link)) {
-    const g = w.gusto;
+  if (w.pay_method === 'gusto' || (w.gusto && w.gusto.link) || w.gusto_proposal || w.email_proposals.length || w.emails.length) {
+    const g = w.gusto, gp = w.gusto_proposal;
     const who = g && g.link
-      ? `<span class="tag" style="background:#dcfce7;color:#166534">Gusto: ${esc(g.name)}${g.link === 'auto' ? ' (按名字自动对)' : ''}</span>${g.active === false ? ' <span class="tag" style="background:#fee2e2;color:#991b1b">已停用</span>' : ''}`
+      ? `<span class="tag" style="background:#dcfce7;color:#166534">Gusto: ${esc(g.name)}</span><span class="muted">${esc(g.by)} 通过</span>${g.active === false ? ' <span class="tag" style="background:#fee2e2;color:#991b1b">已停用</span>' : ''}`
+      : gp ? `<span class="tag" style="background:#eef2ff;color:#3730a3">🔎 系统匹配 Gusto: ${esc(gp.name)}（${esc(gp.why)}）</span>${reviewBtns(k, `{approve:'gusto',uuid:'${esc(gp.uuid)}'}`, `{reject:'gusto',uuid:'${esc(gp.uuid)}'}`)}`
       : `<span class="tag" style="background:#fef3c7;color:#92400e">Gusto 名册里还没找到${g && g.candidates ? '，可能是：' + esc(g.candidates.join(' / ')) : ''}</span>`;
+    const emailProps = w.email_proposals.map(e => `<div class="row" style="margin:.2rem 0 0"><span class="tag" style="background:#eef2ff;color:#3730a3">🔎 邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span><span class="muted">${esc(e.subject)}</span>${reviewBtns(k, `{approve:'email',event_id:${e.id}}`, `{reject:'email',event_id:${e.id}}`)}</div>`).join('');
     const st = w.checklist.gusto && w.checklist.gusto.label ? ` <span class="muted">${esc(w.checklist.gusto.label)}</span>` : '';
     const steps = w.checklist.steps.map(s => `<label class="step ${s.done ? 'ok' : ''}" title="${esc(s.hint)}">
         <input type="checkbox" ${s.done ? 'checked' : ''} ${dis} ${s.auto && !s.manual ? 'disabled' : ''} onchange="save(${k},{step:'${s.id}',checked:this.checked})">
         <span><span class="t">${esc(s.label)}</span>${s.problem ? `<br><span class="prob">⚠ ${esc(s.problem)}</span>` : s.auto ? `<br><span class="src">✓ ${esc(s.auto)}</span>` : s.manual ? `<br><span class="muted">手动 ${esc(s.manual.by)} ${esc((s.manual.at || '').slice(0, 10))}</span>` : ''}</span></label>`).join('');
     gusto = `<div class="ck" style="grid-template-columns:1fr;padding-bottom:0;border-bottom:none"><div class="row" style="margin:0">${who}${st}
-        ${D.can_edit ? `<button class="btn btn-outline btn-sm" onclick="pickGusto(${k})">${g && g.link === 'manual' ? '改' : '手动'}关联</button>` : ''}
+        ${D.can_edit ? `<button class="btn btn-outline btn-sm" onclick="pickGusto(${k})">${g && g.link ? '改' : '手动'}关联</button>` : ''}
         ${g && g.uuid && D.gusto.connected ? `<button class="btn btn-outline btn-sm" onclick="gustoSteps(${k})">Gusto 明细</button>` : ''}
-        <span class="muted">${w.checklist.done_count}/${w.checklist.steps.length}</span></div></div>
+        <span class="muted">${w.checklist.done_count}/${w.checklist.steps.length}</span></div>${emailProps}</div>
       <div class="ck">${steps}</div>`;
   }
   return `<div class="card w ${w.done ? 'done' : ''} ${bad ? 'bad' : ''}">
     <div class="w-main">
       <div>
-        <div class="row" style="margin-bottom:.15rem"><span class="name">${esc(w.name)}</span>${w.done ? '<span class="tag" style="background:#dcfce7;color:#166534">✓ 已处理</span>' : '<span class="tag" style="background:#fef3c7;color:#92400e">待处理</span>'}</div>
+        <div class="row" style="margin-bottom:.15rem"><span class="name">${esc(w.name)}</span>${w.line && w.is_new ? '<span class="tag" style="background:#e0f2fe;color:#075985">🆕 新</span>' : ''}${w.done ? '<span class="tag" style="background:#dcfce7;color:#166534">✓ 已处理</span>' : '<span class="tag" style="background:#fef3c7;color:#92400e">待处理</span>'}${w.pending_review ? `<span class="tag" style="background:#eef2ff;color:#3730a3">🔎 ${w.pending_review} 条待审核</span>` : ''}</div>
         ${alias.length ? `<div class="muted">发票上写作：${esc(alias.join(' / '))}</div>` : ''}
         <div class="muted">第一次上账单：${esc(w.first_end)}${w.later_invoices ? ` · 之后还有 ${w.later_invoices} 张` : ''}</div>
         <div style="margin-top:.45rem"><div class="lbl">电话</div>
           <input ${dis} value="${esc(w.phone)}" placeholder="电话" style="width:100%;max-width:220px" onchange="save(${k},{phone:this.value})">
-          ${w.phone_source ? `<div class="muted">自动带出：${esc(w.phone_source)}（改了就以你填的为准）</div>` : ''}</div>
+          ${w.phone_suggest ? `<div class="row" style="margin:.25rem 0 0"><span class="tag" style="background:#eef2ff;color:#3730a3">🔎 系统找到 ${esc(w.phone_suggest.phone)}（${esc(w.phone_suggest.source)}）</span>${reviewBtns(k, `{approve:'phone',phone_value:'${esc(w.phone_suggest.phone)}'}`, `{reject:'phone',phone_value:'${esc(w.phone_suggest.phone)}'}`)}</div>` : ''}</div>
       </div>
       <div>
         <div class="lbl">仓库</div>
@@ -239,6 +288,11 @@ function card(w, k) {
     </div>
     ${gusto}
   </div>`;
+}
+// 系统匹配的建议: manager / admin 才有 通过 / 不是 按钮, 其他人只看到「等审核」
+function reviewBtns(k, yes, no) {
+  if (!D.can_approve) return '<span class="muted">等 manager / admin 审核</span>';
+  return `<button class="btn btn-blue btn-sm" onclick="save(${k},${yes})">✓ 通过</button><button class="btn btn-outline btn-sm" onclick="save(${k},${no})">✗ 不是</button>`;
 }
 function renderUnmatched() {
   const u = D.unmatched_emails || [];
