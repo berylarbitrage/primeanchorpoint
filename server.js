@@ -43937,7 +43937,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS new_hire_onboarding (
 for (const col of ["gusto_ok INTEGER DEFAULT 0", "gusto_ok_by TEXT DEFAULT ''", "gusto_ok_at TEXT DEFAULT ''",
   "gusto_rejected TEXT DEFAULT '[]'", "phone_rejected TEXT DEFAULT '[]'",
   // 关联系统里的员工档案 (employees.id): 和 Gusto 一样, 系统按名字匹配只是建议, emp_ok=1 才算关联上
-  "employee_id INTEGER DEFAULT NULL", "emp_ok INTEGER DEFAULT 0", "emp_ok_by TEXT DEFAULT ''", "emp_ok_at TEXT DEFAULT ''", "emp_rejected TEXT DEFAULT '[]'"]) {
+  "employee_id INTEGER DEFAULT NULL", "emp_ok INTEGER DEFAULT 0",
+  // 付 Zelle 的: 收款的 Zelle 号 (电话/邮箱) 和这个 Zelle 号的户主姓名 (可能不是工人本人)
+  "zelle_account TEXT DEFAULT ''", "zelle_name TEXT DEFAULT ''", "emp_ok_by TEXT DEFAULT ''", "emp_ok_at TEXT DEFAULT ''", "emp_rejected TEXT DEFAULT '[]'"]) {
   try { db.exec(`ALTER TABLE new_hire_onboarding ADD COLUMN ${col}`); } catch (e) {}
 }
 // 粘贴进来的 Gusto 通知邮件 (只存解析结果, 同一封重复粘贴不重复记); 读的时候再按名字对人
@@ -44108,6 +44110,7 @@ function _wobBuild() {
       warehouse_saved: s.warehouse || '',
       employee, employee_proposals: empProposals, phone: employee ? employee.phone : '', phone_old: s.phone || '',
       pay_method: s.pay_method || '', pay_note: s.pay_note || '', suggest,
+      zelle_account: s.zelle_account || '', zelle_name: s.zelle_name || '',
       gusto, gusto_proposal: proposal, first_payment: firstPay, manual,
       updated_by: s.updated_by || '', updated_at: s.updated_at || '',
     });
@@ -44154,6 +44157,13 @@ function _wobScope(req) {
   if (!pids.length) return new Set();
   return new Set(db.prepare(`SELECT name FROM partners WHERE id IN (${pids.map(() => '?').join(',')})`).all(...pids)
     .map(r => _canonCompanyName(r.name)));
+}
+// 仓库下拉: 合作公司 (没停用的); manager 只有自己负责的
+function _wobWarehouseOptions(req) {
+  const scope = _wobScope(req);
+  const names = db.prepare(`SELECT name FROM partners WHERE COALESCE(active,1)=1 AND COALESCE(abolished,0)=0 ORDER BY name COLLATE NOCASE`).all()
+    .map(r => _canonCompanyName(r.name)).filter(Boolean);
+  return [...new Set(names)].filter(n => !scope || scope.has(n));
 }
 function _wobScoped(req) {
   const out = _wobBuild();
@@ -44238,6 +44248,7 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
       role: req.userRole,
       can_edit: ['admin', 'accounting', 'cs', 'manager'].includes(req.userRole),
       can_approve: _wobCanApprove(req),
+      warehouse_options: _wobWarehouseOptions(req),
       can_open_invoice: req.userRole !== 'manager',
       can_open_employee: ['admin', 'staff'].includes(req.userRole),
       can_sync: ['admin', 'accounting'].includes(req.userRole) });
@@ -44262,12 +44273,20 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       gusto_ok: cur.gusto_ok ? 1 : 0, gusto_ok_by: cur.gusto_ok_by || '', gusto_ok_at: cur.gusto_ok_at || '',
       gusto_rejected: cur.gusto_rejected || '[]', phone_rejected: cur.phone_rejected || '[]',
       employee_id: cur.employee_id || null, emp_ok: cur.emp_ok ? 1 : 0, emp_ok_by: cur.emp_ok_by || '', emp_ok_at: cur.emp_ok_at || '',
-      emp_rejected: cur.emp_rejected || '[]' };
+      emp_rejected: cur.emp_rejected || '[]', zelle_account: cur.zelle_account || '', zelle_name: cur.zelle_name || '' };
     const str = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
     const now = new Date().toISOString();
     if (b.name !== undefined) next.name = str(b.name, 120);
     if (b.phone !== undefined) next.phone = str(b.phone, 40);
-    if (b.warehouse !== undefined) next.warehouse = str(b.warehouse, 200);
+    if (b.warehouse !== undefined) {
+      // 只能从下拉里选: 合作公司, 或这个人发票上的客户公司
+      const wh = str(b.warehouse, 200);
+      const own = (_wobScoped(req).list.find(x => x.key === key) || { _lines: [] })._lines.map(l => l.company);
+      if (wh && !_wobWarehouseOptions(req).includes(wh) && !own.includes(wh)) return res.status(400).json({ error: '仓库要从下拉里选' });
+      next.warehouse = wh;
+    }
+    if (b.zelle_account !== undefined) next.zelle_account = str(b.zelle_account, 120);
+    if (b.zelle_name !== undefined) next.zelle_name = str(b.zelle_name, 120);
     if (b.pay_note !== undefined) next.pay_note = str(b.pay_note, 1000);
     // 手动选 Gusto 收款人: manager / admin 选的直接算通过, 其他人选的进待审核
     if (b.gusto_uuid !== undefined) {
@@ -44332,6 +44351,9 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       if (m && !wob.PAY_METHODS.includes(m)) return res.status(400).json({ error: '付款方式不对' });
       next.pay_method = m;
     }
+    if (next.pay_method === 'zelle' && (b.pay_method !== undefined || b.zelle_account !== undefined || b.zelle_name !== undefined)) {
+      if (!next.zelle_account || !next.zelle_name) return res.status(400).json({ error: '付 Zelle 要填 Zelle 号和这个 Zelle 号的户主姓名' });
+    }
     if (b.step) {
       const step = str(b.step, 40);
       if (!wob.GUSTO_STEPS.some(s => s.id === step)) return res.status(400).json({ error: '没有这一步' });
@@ -44342,13 +44364,13 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       next.checklist = JSON.stringify(ck);
     }
     db.prepare(`INSERT INTO new_hire_onboarding (name_key, name, phone, warehouse, pay_method, pay_note, gusto_uuid, checklist,
-        gusto_ok, gusto_ok_by, gusto_ok_at, gusto_rejected, phone_rejected, employee_id, emp_ok, emp_ok_by, emp_ok_at, emp_rejected, updated_by, updated_at)
+        gusto_ok, gusto_ok_by, gusto_ok_at, gusto_rejected, phone_rejected, employee_id, emp_ok, emp_ok_by, emp_ok_at, emp_rejected, zelle_account, zelle_name, updated_by, updated_at)
       VALUES (@key, @name, @phone, @warehouse, @pay_method, @pay_note, @gusto_uuid, @checklist,
-        @gusto_ok, @gusto_ok_by, @gusto_ok_at, @gusto_rejected, @phone_rejected, @employee_id, @emp_ok, @emp_ok_by, @emp_ok_at, @emp_rejected, @by, datetime('now'))
+        @gusto_ok, @gusto_ok_by, @gusto_ok_at, @gusto_rejected, @phone_rejected, @employee_id, @emp_ok, @emp_ok_by, @emp_ok_at, @emp_rejected, @zelle_account, @zelle_name, @by, datetime('now'))
       ON CONFLICT(name_key) DO UPDATE SET name=@name, phone=@phone, warehouse=@warehouse, pay_method=@pay_method, pay_note=@pay_note,
         gusto_uuid=@gusto_uuid, checklist=@checklist, gusto_ok=@gusto_ok, gusto_ok_by=@gusto_ok_by, gusto_ok_at=@gusto_ok_at,
         gusto_rejected=@gusto_rejected, phone_rejected=@phone_rejected, employee_id=@employee_id, emp_ok=@emp_ok, emp_ok_by=@emp_ok_by,
-        emp_ok_at=@emp_ok_at, emp_rejected=@emp_rejected, updated_by=@by, updated_at=datetime('now')`)
+        emp_ok_at=@emp_ok_at, emp_rejected=@emp_rejected, zelle_account=@zelle_account, zelle_name=@zelle_name, updated_by=@by, updated_at=datetime('now')`)
       .run({ key, ...next, by: req.userName || '' });
     auditLog('new_hire_onboarding_save', req, { targetType: 'new_hire_onboarding', targetId: key,
       details: { fields: Object.keys(b).filter(k => k !== 'checked'), approve: b.approve || '', reject: b.reject || '' } });

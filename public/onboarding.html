@@ -121,6 +121,18 @@ textarea{width:100%}
   </div>
 </div>
 
+<div class="modal" id="pmModal" onclick="if(event.target===this)this.style.display='none'">
+  <div class="card" style="max-width:440px">
+    <div style="font-weight:800;margin-bottom:.4rem">确认付款方式</div>
+    <div id="pmBody"></div>
+    <div id="pmErr" style="color:var(--red);font-size:.8rem;min-height:1.1em;margin-top:.3rem"></div>
+    <div style="display:flex;gap:.4rem;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="document.getElementById('pmModal').style.display='none'">取消</button>
+      <button class="btn btn-blue" id="pmGo">确认</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal" id="gModal" onclick="if(event.target===this)this.style.display='none'">
   <div class="card">
     <div style="font-weight:800;margin-bottom:.5rem" id="gTitle">关联 Gusto 收款人</div>
@@ -228,13 +240,14 @@ function renderList() {
 // 发票视图里的老员工: 一行, 能直接定付款方式, 点「展开」看全卡片
 function oldRow(w, k) {
   const dis = D.can_edit ? '' : 'disabled';
-  const pm = Object.keys(PM_LABEL).map(m => `<button ${dis} class="${w.pay_method === m ? 'on' : ''}" onclick="save(${k},{pay_method:'${w.pay_method === m ? '' : m}'})">${PM_LABEL[m]}</button>`).join('');
+  const pm = Object.keys(PM_LABEL).map(m => `<button ${dis} class="${w.pay_method === m ? 'on' : ''}" onclick="pickPay(${k},'${w.pay_method === m ? '' : m}')">${PM_LABEL[m]}</button>`).join('');
   return `<div class="card old ${w.settled ? 'done' : ''}">
     <b>${esc(w.name)}</b><span class="tag" style="background:var(--g100);color:var(--g600)">老员工 · 第一次 ${esc(w.first_end)}</span>
     ${w.employee ? `<span class="tag" style="background:#dcfce7;color:#166534">👤 ${esc(w.employee.code || '#' + w.employee.id)}${w.employee.phone ? ' · ' + esc(w.employee.phone) : ''}</span>` : '<span class="tag" style="background:#fee2e2;color:#991b1b">未关联档案</span>'}
     <span class="muted">${w.line.hours ? w.line.hours + 'h' : ''}${w.line.total != null ? ' · ' + money(w.line.total) : ''}</span>
     ${w.pending_review ? `<span class="tag" style="background:#eef2ff;color:#3730a3">🔎 ${w.pending_review} 条待审核</span>` : ''}
     ${w.settled ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ ${esc(PM_LABEL[w.pay_method] || 'Gusto 已付过')}</span>` : '<span class="tag" style="background:#fef3c7;color:#92400e">付款方式待定</span>'}
+    ${w.pay_method === 'zelle' ? `<span class="muted">Zelle ${esc(w.zelle_account)} · ${esc(w.zelle_name)}</span>` : ''}
     <span class="pm" style="margin-left:auto">${pm}</span>
     <button class="btn btn-outline btn-sm" onclick="EXP.add(D.rows[${k}].key);renderList()">展开</button>
   </div>`;
@@ -245,7 +258,7 @@ function card(w, k) {
   const invs = (w.line ? [{ ...w.line, invoice_id: D.invoice.id }] : w.invoices).map(l => `<a class="inv" ${D.can_open_invoice ? `href="/accounting?invoice=${l.invoice_id}" target="_blank"` : ''} title="${esc(l.company)} · ${esc(l.period_start)}~${esc(l.period_end)}">📄 ${esc(l.invoice_number)} <span style="font-weight:400">${md(l.period_end)}${l.hours ? ' · ' + l.hours + 'h' : ''}${l.total != null ? ' · ' + money(l.total) : ''}</span></a>`).join('');
   const alias = w.invoice_names.filter(n => n !== w.name);
   const sug = w.suggest && !w.pay_method ? w.suggest.method : '';
-  const pm = Object.keys(PM_LABEL).map(m => `<button ${dis} class="${w.pay_method === m ? 'on' : ''} ${sug === m ? 'sug' : ''}" onclick="save(${k},{pay_method:'${w.pay_method === m ? '' : m}'})">${PM_LABEL[m]}</button>`).join('');
+  const pm = Object.keys(PM_LABEL).map(m => `<button ${dis} class="${w.pay_method === m ? 'on' : ''} ${sug === m ? 'sug' : ''}" onclick="pickPay(${k},'${w.pay_method === m ? '' : m}')">${PM_LABEL[m]}</button>`).join('');
   let gusto = '';
   if (w.pay_method === 'gusto' || (w.gusto && w.gusto.link) || w.gusto_proposal || w.email_proposals.length || w.emails.length) {
     const g = w.gusto, gp = w.gusto_proposal;
@@ -274,13 +287,14 @@ function card(w, k) {
       </div>
       <div>
         <div class="lbl">仓库</div>
-        <input ${dis} value="${esc(w.warehouses.join(' / '))}" style="width:100%;margin-bottom:.4rem" onchange="save(${k},{warehouse:this.value})" title="默认取发票的客户公司，可以改">
+        ${whSelect(w, k, dis)}
         <div class="lbl">账单</div>
         <div>${invs || '<span class="muted">—</span>'}</div>
       </div>
       <div>
         <div class="lbl">怎么付${w.suggest && !w.pay_method ? ` <span style="text-transform:none;color:#0369a1;font-weight:400">· 建议 ${PM_LABEL[w.suggest.method] || w.suggest.method}（${esc(w.suggest.why)}）</span>` : ''}</div>
         <div class="pm" style="margin-bottom:.45rem">${pm}</div>
+        ${zelleLine(w, k)}
         <textarea ${dis} rows="2" placeholder="备注：Zelle 账号 / 支票抬头 / 现金谁给 …" onchange="save(${k},{pay_note:this.value})">${esc(w.pay_note)}</textarea>
         ${w.updated_by ? `<div class="muted">最后修改 ${esc(w.updated_by)} ${esc((w.updated_at || '').slice(0, 16))}</div>` : ''}
       </div>
@@ -304,9 +318,10 @@ function renderUnmatched() {
 
 async function save(k, body) {
   const j = await api('/api/acct/onboarding/' + encodeURIComponent(D.rows[k].key), { method: 'POST', body }).catch(e => ({ error: e.message }));
-  if (j.error) return toast(j.error, true);
+  if (j.error) { toast(j.error, true); return false; }
   toast('已保存');
   load();
+  return true;
 }
 async function syncGusto() {
   const b = document.getElementById('btnSync');
@@ -332,6 +347,43 @@ async function submitEmail() {
     (j.events.length ? '<ul style="margin:.3rem 0 0 1rem;padding:0">' + j.events.map(e => `<li>${esc(e.date)} · <b>${esc(e.name)}</b> ${esc(e.label)}</li>`).join('') + '</ul>' : '<div class="muted">没认出 Gusto 入职相关的邮件</div>');
   document.getElementById('emailText').value = '';
   load();
+}
+// 仓库只能从下拉里选: 合作公司 + 这个人发票上的客户公司
+function whSelect(w, k, dis) {
+  const cur = w.warehouses[0] || '';
+  const opts = [...new Set([cur, ...w.invoices.map(l => l.company), ...(w.line ? [w.line.company] : []), ...(D.warehouse_options || [])].filter(Boolean))];
+  return `<select ${dis} style="width:100%;margin-bottom:.4rem" onchange="save(${k},{warehouse:this.value})" title="默认取发票的客户公司">
+    ${opts.map(o => `<option ${o === cur ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+}
+function zelleLine(w, k) {
+  if (w.pay_method !== 'zelle') return '';
+  return `<div class="row" style="margin:-.15rem 0 .4rem"><span class="tag" style="background:#ede9fe;color:#5b21b6">Zelle：${esc(w.zelle_account || '—')} · 户主 ${esc(w.zelle_name || '—')}</span>
+    ${D.can_edit ? `<button class="btn btn-outline btn-sm" onclick="pickPay(${k},'zelle')">修改</button>` : ''}</div>`;
+}
+// 选付款方式先弹窗确认; Zelle 要填 Zelle 号和户主姓名
+function pickPay(k, m) {
+  const w = D.rows[k];
+  const from = w.pay_method ? PM_LABEL[w.pay_method] : '未选';
+  const to = m ? PM_LABEL[m] : '不选（清空）';
+  document.getElementById('pmErr').textContent = '';
+  document.getElementById('pmBody').innerHTML = `<div style="font-size:.88rem;margin-bottom:.5rem"><b>${esc(w.name)}</b> 的付款方式：${esc(from)} → <b>${esc(to)}</b></div>` +
+    (m === 'zelle' ? `<div class="lbl">Zelle 号（电话或邮箱）</div><input id="pmZa" style="width:100%;margin-bottom:.5rem" value="${esc(w.zelle_account)}" placeholder="例：626-555-1234 / name@gmail.com">
+      <div class="lbl">这个 Zelle 号的户主姓名</div><input id="pmZn" style="width:100%" value="${esc(w.zelle_name)}" placeholder="Zelle 里显示的名字（可能不是工人本人）">` : '');
+  const go = document.getElementById('pmGo');
+  go.onclick = async () => {
+    const body = { pay_method: m };
+    if (m === 'zelle') {
+      body.zelle_account = document.getElementById('pmZa').value.trim();
+      body.zelle_name = document.getElementById('pmZn').value.trim();
+      if (!body.zelle_account || !body.zelle_name) { document.getElementById('pmErr').textContent = 'Zelle 号和户主姓名都要填'; return; }
+    }
+    go.disabled = true;
+    const ok = await save(k, body);
+    go.disabled = false;
+    if (ok) document.getElementById('pmModal').style.display = 'none';
+  };
+  document.getElementById('pmModal').style.display = 'flex';
+  if (m === 'zelle') setTimeout(() => document.getElementById('pmZa').focus(), 0);
 }
 // 员工档案: 已关联就显示档案摘要; 否则列出系统按名字找到的 (待审核) + 手动关联按钮
 function empBlock(w, k) {
