@@ -334,7 +334,7 @@ function card(w, k) {
   }
   const bankBox = w.bank_alerts.length ? `<div class="ck" style="grid-template-columns:1fr;background:#fef2f2">${w.bank_alerts.map(b => `<div class="row" style="margin:0">
       <span class="tag" style="background:${b.ack_at ? 'var(--g100);color:var(--g500)' : '#fee2e2;color:#991b1b'}">⚠ ${esc(b.date)} · ${esc(b.label)}</span><span class="muted">${esc(b.subject)}</span>
-      ${b.ack_at ? `<span class="muted">${esc(b.ack_by)} 已处理 ${esc(fmtTime(b.ack_at))}</span>` : D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="ackBank(${b.id})">知道了</button>` : ''}</div>`).join('')}</div>` : '';
+      ${b.ack_at ? `<span class="muted">${esc(b.ack_by)} 已处理 ${esc(fmtTime(b.ack_at))}</span>` : clearAsk(b, '') + (D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="ackBank(${b.id})">知道了</button>` : '')}</div>`).join('')}</div>` : '';
   return `<div class="card w ${w.done ? 'done' : ''} ${bad ? 'bad' : ''}">
     <div class="w-main">
       <div>
@@ -504,6 +504,25 @@ function ackBank(id) {
     toast('已处理'); load(); return true;
   });
 }
+// 「银行已更新」时之前还有没处理的「银行有误」: 问要不要一起消除
+function clearAsk(x, style) {
+  if (x.ack_at || !x.clears || !x.clears.length) return '';
+  return `<span class="tag" style="background:#dcfce7;color:#166534;${style}">🔄 之前有 ${x.clears.length} 条「银行信息有误」，现在已更新</span>` +
+    (D.can_approve ? `<button class="btn btn-blue btn-sm" onclick="clearBank(${x.id})">消除之前的提醒</button>` : '');
+}
+function clearBank(id) {
+  const all = [...(D.bank_alerts || []), ...D.rows.flatMap(w => w.bank_alerts)];
+  const u = all.find(x => x.id === id) || {};
+  const olds = (u.clears || []).map(cid => all.find(x => x.id === cid)).filter(Boolean);
+  confirmBox('消除之前的银行信息提醒？', `<div style="font-size:.88rem"><b>${esc(u.worker || u.name || '')}</b> 的银行信息已经更新（Gusto 邮件 ${esc(u.date || '')}）。</div>
+    <div style="font-size:.84rem;margin-top:.4rem">一起消除这些提醒：</div>
+    <ul style="margin:.2rem 0 0 1.1rem;padding:0;font-size:.82rem">${olds.map(o => `<li>${esc(o.date)} · ${esc(o.label)}</li>`).join('')}<li>${esc(u.date || '')} · ${esc(u.label || '')}</li></ul>
+    <div class="lbl" style="margin-top:.5rem">处理说明（可不填）</div><input id="ackNote" style="width:100%" placeholder="例：已核实是工人本人改的">`, async () => {
+    const j = await api('/api/acct/onboarding-bank-ack', { method: 'POST', body: { event_ids: [id, ...(u.clears || [])], note: document.getElementById('ackNote').value } }).catch(e => ({ error: e.message }));
+    if (j.error) { toast(j.error, true); return false; }
+    toast(`已消除 ${j.acked} 条提醒`); load(); return true;
+  });
+}
 // 页面最上方: 银行信息提醒 (有误 / 被更新), 点「知道了」前一直在
 function renderAlerts() {
   const a = D.bank_alerts || [];
@@ -513,7 +532,8 @@ function renderAlerts() {
       <button class="btn btn-outline btn-sm" onclick="VIEW='alerts';INV=0;load()">只看这些人</button></div>` +
     a.map(x => `<div class="a"><span class="tag" style="background:#fee2e2;color:#991b1b">${esc(x.label)}</span><b>${esc(x.worker || x.name)}</b>
       <span class="muted">${esc(x.date)} · ${esc(x.subject)}${x.key ? '' : ' · 系统里没对上是哪个工人'}</span>
-      ${D.can_approve ? `<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="ackBank(${x.id})">知道了</button>` : ''}</div>`).join('') + '</div>';
+      ${clearAsk(x, 'margin-left:auto')}
+      ${D.can_approve ? `<button class="btn btn-outline btn-sm" style="${x.clears && x.clears.length ? '' : 'margin-left:auto'}" onclick="ackBank(${x.id})">知道了</button>` : ''}</div>`).join('') + '</div>';
 }
 async function showHistory(k) {
   const w = D.rows[k];
