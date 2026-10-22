@@ -3022,6 +3022,11 @@ tr:hover td.invp-frz{background:var(--sky-light)}
           <span style="font-size:.83rem;color:var(--gray-500)">统一时薪：</span>
           <input type="number" id="invPageUniformRate" placeholder="如 20.5" min="0" step="0.5" style="width:90px;border:1px solid var(--gray-200);border-radius:6px;padding:4px 8px;font-size:.85rem" oninput="applyInvUniformRate(this.value)">
           <span style="font-size:.83rem;color:var(--gray-500)">$/h</span>
+          <span style="font-size:.83rem;color:var(--gray-500);margin-left:.6rem">加班工资：</span>
+          <select id="invPageOtMult" onchange="invpOtMultChanged()" title="超过 40 小时的加班工时按几倍时薪算；有的客户加班不加倍" style="border:1px solid #fbbf24;border-radius:6px;padding:4px 6px;font-size:.85rem;color:#92400e;font-weight:600;background:#fffbeb">
+            <option value="1.5">×1.5 倍</option>
+            <option value="1">×1 不加倍</option>
+          </select>
         </div>
       </div>
       <div id="invPageEmpWrap" style="border:1px solid var(--gray-200);border-radius:8px;background:#fafafa;padding:.5rem;min-height:80px;margin-bottom:.5rem;overflow-x:auto">
@@ -33742,6 +33747,7 @@ function openInvpBuilderModal() {
   window._invpSourceFileIds = [];
   const fields = ['invPageNumber','invPageDate','invPageStart','invPageEnd','invPageBillName','invPageBillToName','invPageBillAddr','invPageUniformRate','invPageMarkupRate','invPageOtFeeRate','invPageEditId'];
   fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  { const otm = document.getElementById('invPageOtMult'); if (otm) otm.value = '1.5'; }
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
   _invpSetupAddrPicker([]); // hide the multi-address picker for a fresh invoice
   const iw = document.getElementById('invpEmpImportWrap'); if (iw) iw.style.display = 'none';
@@ -33804,6 +33810,8 @@ async function openInvpForEdit(id) {
   {
     const otf = document.getElementById('invPageOtFeeRate');
     if (otf) otf.value = (inv.profile && Number(inv.profile.ot_fee_rate) > 0) ? String(inv.profile.ot_fee_rate) : '';
+    const otm = document.getElementById('invPageOtMult');
+    if (otm) otm.value = (inv.profile && Number(inv.profile.ot_mult) === 1) ? '1' : '1.5';
   }
   window._invpShiftBlocks = (inv.profile && Array.isArray(inv.profile.shift_blocks) && inv.profile.shift_blocks.length) ? inv.profile.shift_blocks : null;
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
@@ -38068,6 +38076,7 @@ async function saveInvpInvoice(status) {
   if (window._invpStmtSubSavedId != null) profileWithMode.stmt_sub_entity_id = window._invpStmtSubSavedId;
   // 加班服务费系数随发票存档（0 = 未启用，编辑旧发票时保持旧算法）。
   profileWithMode.ot_fee_rate = (mode !== 'container' && _invpOtFeeRate() != null) ? _invpOtFeeRate() : 0;
+  if (mode !== 'container' && _invpOtMult() === 1) profileWithMode.ot_mult = 1; else delete profileWithMode.ot_mult;
   // Bill To 显示名称（与公司名称不同时才存）：发票上 BILL TO 印这个，公司归属仍是 company_name
   { const bt = _invpBillToName(); if (bt && bt !== billName) profileWithMode.bill_to_name = bt; else delete profileWithMode.bill_to_name; }
   // 班次分组样式随发票存档 (无则不存)
@@ -38460,7 +38469,7 @@ function renderInvpManualTable(skipSave) {
     }).join('');
     const totalHrs = dates.reduce((s, d) => s + (parseFloat((emp.days && emp.days[d]) || 0)), 0);
     const rate = parseFloat(emp.rate) || 0;
-    const otRateVal = parseFloat(emp.otRate) || (rate ? rate * 1.5 : 0);
+    const otRateVal = parseFloat(emp.otRate) || (rate ? rate * _invpOtMult() : 0);
     const otRateIsAuto = !emp.otRate;
     const _sp = _invpRowSplit(emp, totalHrs);
     const regHrs = _sp.reg;
@@ -38587,7 +38596,7 @@ function renderInvpManualTable(skipSave) {
         ${dayTh}
         <th style="padding:5px 6px;text-align:right;white-space:nowrap${showWage ? ';color:#1d4ed8' : ''}">${showWage ? '公司收 $/h<br><span style="font-weight:400;font-size:.72rem">公司发我们</span>' : '时薪($/h)'}</th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap;color:#15803d;background:#f0fdf4" title="我们实际发给工人的时薪，只用来算工资成本和利润，不上客户发票">实付时薪($/h)<br><span style="font-weight:400;font-size:.72rem">我们发工人 · 不上发票</span></th>
-        <th style="padding:5px 6px;text-align:right;white-space:nowrap;background:#fffbeb">加班时薪($/h) <span style="font-weight:400;font-size:.72rem;color:#92400e">×1.5 自动</span></th>
+        <th style="padding:5px 6px;text-align:right;white-space:nowrap;background:#fffbeb">加班时薪($/h) <span style="font-weight:400;font-size:.72rem;color:#92400e">×${_invpOtMult() === 1 ? '1' : '1.5'} 自动</span></th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap;background:#fff7ed;color:#9a3412">Markup × <span style="font-weight:400;font-size:.72rem">留空=默认</span></th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap">正常工时</th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap;color:var(--accent)">加班工时 <span style="font-weight:400;font-size:.72rem">&gt;40h/周</span></th>
@@ -38898,11 +38907,11 @@ function invpUpdateRowTotal(row) {
   const dayInputs = row.querySelectorAll('.invp-man-day');
   const rate = parseFloat(row.querySelector('.invp-man-rate').value) || 0;
   const otRateInp = row.querySelector('.invp-man-ot-rate');
-  // Auto-sync OT rate to 1.5x when rate changes and user hasn't manually set it
+  // Auto-sync OT rate to 1.5x (或「加班工资」选的倍数) when rate changes and user hasn't manually set it
   if (otRateInp && otRateInp.dataset.auto !== 'false') {
-    otRateInp.value = rate ? (rate * 1.5).toFixed(2) : '';
+    otRateInp.value = rate ? (rate * _invpOtMult()).toFixed(2) : '';
   }
-  const otRate = parseFloat(otRateInp?.value) || rate * 1.5;
+  const otRate = parseFloat(otRateInp?.value) || rate * _invpOtMult();
   const totalHrs = [...dayInputs].reduce((s, inp) => s + (parseFloat(inp.value) || 0), 0);
   const emp = (window._invpManualEmps || []).find(e => String(e.uid) === String(row.dataset.uid));
   const _sp = _invpRowSplit(emp, totalHrs);
@@ -39167,7 +39176,7 @@ function invpApplyExcelData(data) {
     // Keep an explicit OT rate only when it isn't the automatic 1.5× (so the form
     // can keep auto-tracking the rate when it matches).
     const reg = Number(e.regRate) || 0;
-    if (e.otRate != null && Number(e.otRate) > 0 && Math.abs(Number(e.otRate) - reg * 1.5) > 0.005) {
+    if (e.otRate != null && Number(e.otRate) > 0 && Math.abs(Number(e.otRate) - reg * _invpOtMult()) > 0.005) {
       emp.otRate = String(e.otRate);
     }
     // Per-employee markup override when this row's markup ≠ the invoice default.
@@ -41651,6 +41660,17 @@ function applyInvUniformRate(val) {
   });
 }
 
+// ── 加班工资倍数：默认 1.5 倍时薪；有的客户加班不加倍 (×1)。只影响「自动」的加班时薪，
+// 手动改过加班时薪的行保持手填的值。随发票存档 (profile.ot_mult)。
+function _invpOtMult() {
+  const el = document.getElementById('invPageOtMult');
+  return el && el.value === '1' ? 1 : 1.5;
+}
+function invpOtMultChanged() {
+  renderInvpManualTable(true);
+  showToast(_invpOtMult() === 1 ? '加班工资改为 ×1（加班时薪 = 时薪）' : '加班工资改为 ×1.5', 'success');
+}
+
 // ── 加班计费系数（合同：加班费的 1.5× 工资部分不吃 Markup，只加 OT 服务费）──
 // 输入框留空 → null → 旧算法：加班和正常工资一起 × Markup。
 function _invpOtFeeRate() {
@@ -41709,7 +41729,7 @@ function getInvpManualItems() {
       const name = emp.name || '';
       if (!name.trim()) return null;
       const rate = parseFloat(emp.rate) || 0;
-      const otRate = parseFloat(emp.otRate) || rate * 1.5;
+      const otRate = parseFloat(emp.otRate) || rate * _invpOtMult();
       const dates = _invpGetDates();
       const totalHours = dates.reduce((s, d) => s + (parseFloat((emp.days && emp.days[d]) || 0)), 0);
       const sp = _invpRowSplit(emp, totalHours);
@@ -41883,7 +41903,7 @@ async function generateInvpPreview() {
     const allSameMk = uniqueMks.length === 1;
     const anyMarkup = effMks.some(v => v > 1);
     hasPosition = items.some(i => i.category);
-    window._invpAllOtZero = (totalOtHrs === 0);
+    window._invpAllOtZero = (totalOtHrs === 0) || items.every(i => Math.abs((i.otRate || 0) - (i.rate || 0)) < 0.005);
     // 没有加班费(每行 OT 价 = 正常价,或本就没 OT)时,正常/加班拆分没意义 →
     // 合并成一个「Hours 总工时」列、去掉 OT 两列。只有真有加班加价时才保留拆分。
     const hideOt = !items.some(i => (i.otHours || 0) > 0 && (i.otRate || 0) > (i.rate || 0) + 0.001);

@@ -45168,7 +45168,8 @@ app.post('/api/hooks/gusto-mail', (req, res) => {
             backfill ? 'backfill' : '', oldBank ? '历史邮件（自动）' : '', oldBank ? new Date().toISOString() : '').changes;
         }
         mark.run(id, ev ? ev.kind : '', ev ? ev.name : '', subject, String(m.date || ''));
-        results.push({ id, new: true, forward: !!ev && !backfill, kind: ev ? ev.kind : '', name: ev ? ev.name : '', label: ev ? wob.EMAIL_KIND_LABEL[ev.kind] : '' });
+        results.push({ id, new: true, forward: !!ev && !backfill, kind: ev ? ev.kind : '', name: ev ? ev.name : '', label: ev ? wob.EMAIL_KIND_LABEL[ev.kind] : '',
+          _subject: subject, _date: date, _body: String((m && m.body) || '').slice(0, 3000) });
       }
     })();
     const newCount = results.filter(r => r.new).length;
@@ -45176,10 +45177,31 @@ app.post('/api/hooks/gusto-mail', (req, res) => {
       ...(newCount ? { last_new_at: new Date().toISOString() } : {}),
       ...(backfill ? { backfill_at: new Date().toISOString(), backfill_total: (_mailHookCfg().backfill_total || 0) + results.filter(r => r.new).length } : {}) });
     if (added) setImmediate(_wobNotifyBank);
-    const forwardTo = [...new Set([...(cfg.forward_to || []), ..._wobSubscribers()])].join(',');
-    res.json({ ok: true, results, forward_to: forwardTo, added });
+    const forwardList = [...new Set([...(cfg.forward_to || []), ..._wobSubscribers()])];
+    // 第 4 版脚本起由系统直接发邮件给经理 (Gmail 转发占 Gmail 每天的发信额度, 收件人一多就被停);
+    // 旧版脚本还是自己用 Gmail 转发, 系统只告诉它发给谁
+    const serverSends = Number(ver) >= 4;
+    const fwd = results.filter(r => r.forward);
+    if (serverSends && fwd.length && forwardList.length) setImmediate(() => _wobForwardMail(fwd, forwardList));
+    res.json({ ok: true, results: results.map(({ _subject, _date, _body, ...r }) => r), forward_to: serverSends ? '' : forwardList.join(','), added });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// 入职相关的 Gusto 邮件 → 系统发给转发名单 (每封邮件一封, 带原邮件正文)
+async function _wobForwardMail(list, to) {
+  const base = (process.env.BASE_URL || '').replace(/\/$/, '');
+  let ok = 0, fail = '';
+  for (const r of list) {
+    const subject = `[入职] ${r.label} · ${r.name} — ${r._subject}`.slice(0, 250);
+    const text = `Gusto 邮件 ${r._date}: ${r._subject}\n\n${r._body ? r._body.trim() + '\n\n' : ''}— 到新员工入职页查看 / 处理: ${base}/onboarding`;
+    for (const addr of to) {
+      let d; try { d = await sendEmailWithDetail(addr, subject, text); } catch (e) { d = { ok: false, error: e.message }; }
+      if (d && d.ok) ok++;
+      else { fail = `${addr}: ${(d && d.error) || '发送失败'}`; console.log('[onboarding] 转发 Gusto 邮件失败:', fail); }
+    }
+  }
+  _mailHookSave({ last_forward_at: new Date().toISOString(), last_forward_ok: ok, last_forward_error: fail.slice(0, 300) });
+}
 
 // 设置: 所有能看页面的人都能看状态; 生成/换 token、改转发地址只有 admin (token 也只给 admin 看)
 app.get('/api/acct/onboarding-mailhook', requireAdmin, requireWobView, (req, res) => {
@@ -45192,6 +45214,7 @@ app.get('/api/acct/onboarding-mailhook', requireAdmin, requireWobView, (req, res
     backfill_at: cfg.backfill_at || '', backfill_total: cfg.backfill_total || 0, last_new_at: cfg.last_new_at || '',
     backfill_done_at: cfg.backfill_done_at || '',
     script_version: cfg.script_version || '', last_error: cfg.last_error || '', last_error_at: cfg.last_error_at || '',
+    last_forward_at: cfg.last_forward_at || '', last_forward_ok: cfg.last_forward_ok || 0, last_forward_error: cfg.last_forward_error || '',
     total_seen: db.prepare('SELECT COUNT(*) AS n FROM gusto_mail_seen').get().n, recent });
 });
 app.post('/api/acct/onboarding-mailhook', requireAdmin, requireRole('admin'), (req, res) => {
