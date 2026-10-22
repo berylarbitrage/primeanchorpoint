@@ -455,7 +455,7 @@ function pickWorkerFor(evId) {
   const m = document.getElementById('gModal');
   document.getElementById('gTitle').textContent = `这封邮件是哪个工人的？`;
   document.getElementById('gBody').innerHTML = `<div class="muted" style="margin-bottom:.4rem">${esc(e.date || '')} · ${esc(e.subject || '')}</div>
-    <input id="wQ" placeholder="搜工人名字" style="width:100%;margin-bottom:.5rem" oninput="wSearch(${evId})"><div id="wRes" style="max-height:50vh;overflow:auto"></div>
+    <input id="wQ" placeholder="搜发票上的工人名字（名字里任何一段都行）" style="width:100%;margin-bottom:.5rem" oninput="wSearch(${evId})"><div id="wRes" style="max-height:50vh;overflow:auto"></div>
     <div style="text-align:right;margin-top:.5rem"><button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none'">关闭</button></div>`;
   m.style.display = 'flex';
   document.getElementById('wQ').value = (e.name || '').split(' ')[0];
@@ -468,9 +468,15 @@ function wSearch(evId) {
     const j = await api('/api/acct/onboarding-workers?q=' + encodeURIComponent(document.getElementById('wQ').value)).catch(e => ({ error: e.message }));
     const el = document.getElementById('wRes');
     if (j.error) { el.innerHTML = `<div style="color:var(--red)">${esc(j.error)}</div>`; return; }
-    el.innerHTML = (j.workers || []).map(w => `<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--g100);padding:.35rem 0;margin:0">
-        <span><b>${esc(w.name)}</b> <span class="muted">${esc(w.companies.join(' / '))} · 第一次 ${esc(w.first_end)}${w.employee ? ' · ' + esc(w.employee) : ''}</span></span>
-        <button class="btn btn-blue btn-sm" onclick="assignEmail(${evId},${pk(w.key, w.name)})">选这个人</button></div>`).join('')
+    el.innerHTML = (j.workers || []).map(w => {
+      const alias = (w.invoice_names || []).filter(n => n !== w.name);
+      const invs = w.invoices.map(v => `<a class="inv" ${D.can_open_invoice ? `href="/accounting?invoice=${v.id}" target="_blank"` : ''} title="${esc(v.company)} · ${esc(v.period_start)}~${esc(v.period_end)}">📄 ${esc(v.number)} <span style="font-weight:400">${esc(v.company)} · ${md(v.period_end)}${v.hours ? ' · ' + v.hours + 'h' : ''}</span></a>`).join('');
+      return `<div style="border-bottom:1px solid var(--g100);padding:.45rem 0">
+        <div class="row" style="justify-content:space-between;margin:0"><span><b>${esc(w.name)}</b>${alias.length ? ` <span class="muted">发票上也写作 ${esc(alias.join(' / '))}</span>` : ''}
+          <span class="muted"> · 第一次 ${esc(w.first_end)}${w.employee ? ' · 档案 ' + esc(w.employee) : ''} · ${w.invoices.length} 张发票</span></span>
+          <button class="btn btn-blue btn-sm" onclick="assignEmail(${evId},${pk(w.key, w.name)})">选这个人</button></div>
+        <div style="margin-top:.3rem;max-height:96px;overflow:auto">${invs}</div></div>`;
+    }).join('')
       || '<div class="muted">没找到。换个写法搜（只搜名字的一部分也行）</div>';
   }, 250);
 }
@@ -773,7 +779,12 @@ function syncGustoMail() {
     let start = Number(props.getProperty('backfill_start') || 0);
     while (Date.now() - t0 < 4 * 60 * 1000) {          // 每轮最多读 4 分钟 (Google 限制一次 6 分钟)
       const threads = GmailApp.search(QUERY, start, 100);
-      if (!threads.length) { props.setProperty('backfill_done', '1'); break; }
+      if (!threads.length) {
+        props.setProperty('backfill_done', '1');
+        UrlFetchApp.fetch(HOOK_URL, { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+          payload: JSON.stringify({ backfill: true, backfill_done: true, messages: [] }) });
+        break;
+      }
       sendToSystem_(threads, true);
       start += threads.length;
       props.setProperty('backfill_start', String(start));
@@ -832,7 +843,10 @@ async function openHook() {
   const kind = { accepted: '接受邀请', ready: '可以付款', bank_bad: '银行有误', bank_updated: '银行已更新' };
   const ms = mailSyncState(j);
   const status = j.last_at
-    ? `<div class="row"><span class="tag" style="background:${ms.bad ? '#fee2e2;color:#991b1b' : '#dcfce7;color:#166534'}">${ms.bad ? '⚠ 超过 15 分钟没报到' : '✓ 在同步'}</span><span class="muted">脚本上次报到 ${esc(fmtTime(j.last_at))}${j.last_new_at ? ' · 上次收到新邮件 ' + esc(fmtTime(j.last_new_at)) : ''} · 累计看过 ${j.total_seen} 封${j.backfill_at ? ` · 以前的邮件已读入 ${j.backfill_total} 封（最近一批 ${esc(fmtTime(j.backfill_at))}）` : ''}</span></div>`
+    ? `<div class="row"><span class="tag" style="background:${ms.bad ? '#fee2e2;color:#991b1b' : '#dcfce7;color:#166534'}">${ms.bad ? '⚠ 超过 15 分钟没报到' : '✓ 在同步'}</span><span class="muted">脚本上次报到 ${esc(fmtTime(j.last_at))}${j.last_new_at ? ' · 上次收到新邮件 ' + esc(fmtTime(j.last_new_at)) : ''} · 累计看过 ${j.total_seen} 封</span></div>
+      <div class="row" style="margin:.2rem 0 0">${j.backfill_done_at ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ 以前的 Gusto 邮件已全部读完</span><span class="muted">共读入 ${j.backfill_total} 封 · ${esc(fmtTime(j.backfill_done_at))}</span>`
+        : j.backfill_at ? `<span class="tag" style="background:#e0f2fe;color:#075985">⏳ 正在读以前的邮件</span><span class="muted">已读入 ${j.backfill_total} 封 · 每 5 分钟接着读，读完这里会显示 ✓</span>`
+        : `<span class="tag" style="background:#fee2e2;color:#991b1b">⚠ 以前的邮件还没开始读</span><span class="muted">你装的可能是旧版脚本（只读最近 2 天）。点下面「📋 复制」重新复制，粘贴覆盖后运行一次 install</span>`}</div>`
     : `<div class="row"><span class="tag" style="background:#fef3c7;color:#92400e">${j.configured ? '链接已生成，脚本还没跑过' : '还没设置'}</span></div>`;
   const recent = j.recent.length ? `<details style="margin:.4rem 0"><summary class="muted" style="cursor:pointer">最近认出的入职邮件（${j.recent.length}）</summary>${j.recent.map(r => `<div class="muted">${esc((r.received_at || r.created_at || '').slice(0, 10))} · ${esc(kind[r.kind] || r.kind)} · <b>${esc(r.name)}</b></div>`).join('')}</details>` : '';
   if (!j.is_admin) { el.innerHTML = status + recent + '<div class="muted">设置和转发地址只有管理员能改。</div>'; return; }

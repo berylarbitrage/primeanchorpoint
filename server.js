@@ -44673,10 +44673,20 @@ app.get('/api/acct/onboarding-workers', requireAdmin, requireWobView, (req, res)
   try {
     const words = wob.nameWords(req.query.q);
     const { list } = _wobScoped(req);
-    const out = list.filter(w => !words.length || words.every(x => wob.nameWords([w.name, ...w.invoice_names].join(' ')).some(y => y.startsWith(x))))
-      .sort((a, b) => b.last_end.localeCompare(a.last_end)).slice(0, 30)
-      .map(w => ({ key: w.key, name: w.name, first_end: w.first_end, last_end: w.last_end, companies: [...new Set(w._lines.map(l => l.company))].slice(0, 3),
-        employee: w.employee ? (w.employee.code || '') : '' }));
+    // 名字里任何位置包含都算 (Miguel 也能搜到 Juan Miguel); 每个人带上出现过的所有发票
+    const out = list.filter(w => !words.length || words.every(x => wob.nameWords([w.name, ...w.invoice_names].join(' ')).some(y => y.includes(x))))
+      .sort((a, b) => b.last_end.localeCompare(a.last_end)).slice(0, 40)
+      .map(w => {
+        const inv = new Map();
+        for (const l of w._lines) {
+          const v = inv.get(l.invoice_id) || { id: l.invoice_id, number: l.invoice_number, company: l.company, period_start: l.period_start, period_end: l.period_end, hours: 0, name: '' };
+          v.hours = Math.round((v.hours + (l.hours || 0)) * 100) / 100;
+          inv.set(l.invoice_id, v);
+        }
+        return { key: w.key, name: w.name, invoice_names: w.invoice_names, first_end: w.first_end, last_end: w.last_end,
+          companies: [...new Set(w._lines.map(l => l.company))].slice(0, 3), employee: w.employee ? (w.employee.code || '') : '',
+          invoices: [...inv.values()].sort((a, b) => String(b.period_end).localeCompare(String(a.period_end))) };
+      });
     res.json({ workers: out });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -44855,6 +44865,8 @@ app.post('/api/hooks/gusto-mail', (req, res) => {
     // backfill = 脚本第一次把邮箱里以前的 Gusto 邮件全读一遍: 只记进系统, 不转发、不发提醒邮件;
     // 两周以前的银行信息邮件直接算已处理 (早就过去了), 两周内的照样在页面上提醒
     const backfill = !!(req.body && req.body.backfill);
+    // 脚本读完以前所有邮件时会发一次 backfill_done (页面上显示「以前的邮件已全部读完」)
+    if (req.body && req.body.backfill_done) _mailHookSave({ backfill_done_at: new Date().toISOString() });
     const oldCut = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);
     const seen = db.prepare('SELECT 1 FROM gusto_mail_seen WHERE message_id=?');
     const mark = db.prepare('INSERT OR IGNORE INTO gusto_mail_seen (message_id, kind, name, subject, received_at) VALUES (?, ?, ?, ?, ?)');
@@ -44899,6 +44911,7 @@ app.get('/api/acct/onboarding-mailhook', requireAdmin, requireWobView, (req, res
     hook_url: isAdmin && cfg.token ? _mailHookUrl(req, cfg.token) : '',
     last_at: cfg.last_at || '', last_received: cfg.last_received || 0, last_added: cfg.last_added || 0,
     backfill_at: cfg.backfill_at || '', backfill_total: cfg.backfill_total || 0, last_new_at: cfg.last_new_at || '',
+    backfill_done_at: cfg.backfill_done_at || '',
     total_seen: db.prepare('SELECT COUNT(*) AS n FROM gusto_mail_seen').get().n, recent });
 });
 app.post('/api/acct/onboarding-mailhook', requireAdmin, requireRole('admin'), (req, res) => {
