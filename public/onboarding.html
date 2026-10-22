@@ -102,6 +102,11 @@ input,select,textarea{padding:.38rem .5rem;border:1px solid var(--g300);border-r
 .ecard:hover{border-color:#93c5fd}
 .egrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:.2rem .8rem;margin-top:.4rem;font-size:.78rem}
 .ek{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pc{background:#fff;border:1px solid #fde68a;border-radius:8px;padding:.4rem .6rem;margin-top:.35rem;font-size:.8rem}
+.pc-h{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap}
+.pc-b{margin-left:auto;display:flex;gap:.3rem}
+.pc ul{margin:.25rem 0 0 1.1rem;padding:0}
+.pc-c{margin-top:0}
 .um-cats{display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.55rem}
 .um-cat{border:1px solid var(--g200);background:var(--g100);border-radius:999px;padding:.2rem .7rem;font-size:.76rem;color:var(--g600);cursor:pointer;font-family:inherit}
 .um-cat b{margin-left:.15rem}
@@ -171,6 +176,7 @@ textarea{width:100%}
       <a class="btn btn-outline btn-sm" href="/accounting">← 会计对账</a>
     </div>
   </div>
+  <div id="pchanges"></div>
   <div id="regs"></div>
   <div id="alerts"></div>
   <div class="stats" id="stats"></div>
@@ -252,7 +258,8 @@ function wkLabel(w) { const e = new Date(w + 'T00:00:00Z'); e.setUTCDate(e.getUT
 function toast(msg, bad) {
   const t = document.createElement('div');
   t.textContent = msg;
-  t.style.cssText = `position:fixed;left:50%;top:18px;transform:translateX(-50%);background:${bad ? '#dc2626' : '#16a34a'};color:#fff;padding:.5rem 1rem;border-radius:8px;font-size:.85rem;z-index:3000;box-shadow:0 6px 20px rgba(0,0,0,.25)`;
+  const pend = /^📝/.test(String(msg));   // 「已提交审批」用橙色, 不当成出错
+  t.style.cssText = `position:fixed;left:50%;top:18px;transform:translateX(-50%);background:${pend ? '#d97706' : bad ? '#dc2626' : '#16a34a'};color:#fff;padding:.5rem 1rem;border-radius:8px;font-size:.85rem;z-index:3000;box-shadow:0 6px 20px rgba(0,0,0,.25)`;
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 2600);
 }
@@ -265,6 +272,8 @@ async function api(path, opts = {}) {
   if (r.status === 401) { showGate(); throw new Error('请先登录'); }
   const j = await r.json().catch(() => ({}));
   if (!r.ok && !j.error) j.error = 'HTTP ' + r.status;
+  // 需要审批的账号提交了修改: 刷新一下, 让「等审批」马上显示在对应的地方
+  if (j.pending) setTimeout(() => load(), 300);
   return j;
 }
 function showGate() { document.getElementById('gate').style.display = 'flex'; document.getElementById('main').style.display = 'none'; }
@@ -311,7 +320,7 @@ async function load() {
   document.getElementById('btnSync').style.display = j.can_sync && j.gusto.connected ? '' : 'none';
   document.getElementById('btnEmail').style.display = j.can_edit ? '' : 'none';
   document.getElementById('btnAccess').style.display = j.role === 'admin' ? '' : 'none';
-  renderRegs(); renderAlerts(); renderBar(); renderWeeks(); renderInvs(); renderList(); renderUnmatched();
+  renderPChanges(); renderRegs(); renderAlerts(); renderBar(); renderWeeks(); renderInvs(); renderList(); renderUnmatched();
 }
 // 邮件同步脚本每 5 分钟报到一次; 超过 15 分钟没报到 = 脚本停了或出错了
 function mailSyncState(m) {
@@ -392,6 +401,7 @@ function oldRow(w, k) {
     ${w.pay_method === 'zelle' ? `<span class="muted">Zelle ${zList(w.zelle_accounts)}</span>` : ''}
     <span class="pm" style="margin-left:auto">${pm}</span>
     ${w.bank_alert_open ? '<span class="tag" style="background:#fee2e2;color:#991b1b">⚠ 银行信息</span>' : ''}
+    ${pcOf(c => c.kind === 'worker' && c.key === w.key).length ? `<button class="tag" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;cursor:pointer" onclick="EXP.add(D.rows[${k}].key);renderList()">📝 有修改等审批 →</button>` : ''}
     <button class="btn btn-outline btn-sm" onclick="showHistory(${k})">📜 历史</button>
     <button class="btn btn-outline btn-sm" onclick="EXP.add(D.rows[${k}].key);renderList()">展开</button>
   </div>`;
@@ -468,6 +478,7 @@ function card(w, k) {
         ${w.updated_by ? `<div class="muted">最后修改 ${esc(w.updated_by)} ${esc((w.updated_at || '').slice(0, 16))}</div>` : ''}
       </div>
     </div>
+    ${(() => { const pc = pcOf(c => c.kind === 'worker' && c.key === w.key); return pc.length ? `<div class="ck" style="grid-template-columns:1fr;background:#fffbeb">${pcBlock(pc, true)}</div>` : ''; })()}
     ${bankBox}
     ${gusto}
   </div>`;
@@ -507,7 +518,8 @@ function renderUnmatched() {
       <div class="um-top"><span class="um-date">${esc(e.date)}</span><span class="tag" style="background:${kb};color:${kc}">${esc(kl)}</span>
         <b class="um-name">${esc(e.name)}</b>${e.ambiguous ? '<span class="tag" style="background:#eef2ff;color:#3730a3">对上 ' + all.length + ' 个人</span>' : ''}
         <span class="um-subj" title="${esc(e.subject)}">${esc(e.subject)}</span></div>
-      <div class="um-bot"><div class="um-cands">${cands}</div><div class="um-act">${act}</div></div></div>`;
+      <div class="um-bot"><div class="um-cands">${cands}</div><div class="um-act">${act}</div></div>
+      ${pcBlock(pcOf(c => c.kind === 'email' && c.event_ids.includes(e.id)), true)}</div>`;
   }).join('');
   el.innerHTML = `<details class="card" style="margin-top:14px;padding:12px 14px" ${open ? 'open' : ''}><summary style="cursor:pointer;font-weight:700;font-size:.88rem">📧 对不上人的 Gusto 邮件（${open}）
       <span class="muted" style="font-weight:400"> — 点「可能是」里的名字直接确认，或「🔍 手动关联」搜发票上的名字；不用管的点「暂时忽略」</span></summary>
@@ -751,6 +763,44 @@ async function openAccess() {
   body.innerHTML = groups + `<div class="muted" style="border-top:1px solid var(--g200);padding-top:.5rem">Gusto 邮件另外还转发给：${j.forward_to.length ? esc(j.forward_to.join('、')) : '（没填）'} · 改账号去后台「🔐 账户管理」</div>
     <div style="text-align:right;margin-top:.5rem"><button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none'">关闭</button></div>`;
 }
+// ── 「所有修改需要审批」的账号 (例如公司经理) 提交的修改: 在原来的位置直接显示, staff / admin 直接同意 / 拒绝 ──
+function pcOf(pred) { return (D.pending_changes || []).filter(pred); }
+function pcBlock(list, compact) {
+  if (!list.length) return '';
+  return list.map(c => `<div class="pc ${compact ? 'pc-c' : ''}">
+    <div class="pc-h"><b>📝 ${esc(c.by)}</b> 提交的修改 <span class="muted">${esc(fmtTime(String(c.at).replace(' ', 'T') + 'Z'))}</span>
+      ${D.can_decide_changes ? `<span class="pc-b"><button class="btn btn-sm" style="background:#16a34a;color:#fff" onclick="decideChange(${c.id},true)">✓ 同意</button><button class="btn btn-outline btn-sm" onclick="decideChange(${c.id},false)">✗ 拒绝</button></span>`
+        : '<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:auto">等 staff / admin 同意</span>'}</div>
+    <ul>${c.items.map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>`).join('');
+}
+function renderPChanges() {
+  const all = D.pending_changes || [];
+  const el = document.getElementById('pchanges');
+  if (!all.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="card" style="margin-bottom:12px;border-color:#fcd34d;background:#fffbeb">
+    <div style="font-weight:800;color:#92400e;margin-bottom:.35rem">📝 等审批的修改（${all.length}）<span class="muted" style="font-weight:400"> — ${D.can_decide_changes ? '同意后才会生效；也可以在下面对应的工人卡片上直接审批' : '你提交的修改，等 staff / admin 同意后才会生效'}</span></div>
+    ${all.map(c => `<div class="pc"><div class="pc-h"><b>📝 ${esc(c.by)}</b>${c.worker ? ` · 工人 <a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="jumpWorker('${encodeURIComponent(c.key)}')">${esc(c.worker)}</a>` : ''}
+        <span class="muted">${esc(fmtTime(String(c.at).replace(' ', 'T') + 'Z'))}</span>
+        ${D.can_decide_changes ? `<span class="pc-b"><button class="btn btn-sm" style="background:#16a34a;color:#fff" onclick="decideChange(${c.id},true)">✓ 同意</button><button class="btn btn-outline btn-sm" onclick="decideChange(${c.id},false)">✗ 拒绝</button></span>` : ''}</div>
+      <ul>${c.items.map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>`).join('')}</div>`;
+}
+async function decideChange(id, ok) {
+  const c = (D.pending_changes || []).find(x => x.id === id) || { items: [] };
+  confirmBox(ok ? '同意这个修改？' : '拒绝这个修改？', `<div style="font-size:.86rem"><b>${esc(c.by || '')}</b> 提交的：</div><ul style="font-size:.84rem;margin:.3rem 0 0 1.1rem;padding:0">${c.items.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
+    <div class="muted" style="margin-top:.4rem">${ok ? '同意后马上按他提交的内容执行' : '拒绝后作废'}</div><input id="pcNote" placeholder="备注（可不填）" style="width:100%;margin-top:.5rem">`, async () => {
+    const j = await api('/api/approvals/' + id, { method: 'POST', body: { approve: ok, note: document.getElementById('pcNote').value } }).catch(e => ({ error: e.message }));
+    if (j.error) { toast(j.error, true); return false; }
+    if (j.status === 'failed') { toast('执行出错：' + String(j.result_body || '').slice(0, 120), true); load(); return true; }
+    toast(ok ? '已同意，修改已生效' : '已拒绝'); load(); return true;
+  });
+}
+// 从顶部汇总跳到那个工人: 看他第一次上账单的那一周、那张发票
+function jumpWorker(keyEnc) {
+  const key = decodeURIComponent(keyEnc);
+  const row = (D.rows || []).find(r => r.key === key);
+  if (row) { EXP.add(key); renderList(); const i = D.rows.indexOf(row); setTimeout(() => { const el = document.querySelectorAll('#list .w, #list .old')[i]; if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 50); return; }
+  toast('这个工人不在当前列表里，可以切到「🔎 待审核」或他第一次上账单的那一周看');
+}
 // 管理员: 等批准的注册申请
 function renderRegs() {
   const r = D.pending_registrations || [];
@@ -781,7 +831,8 @@ function renderAlerts() {
       <span class="muted">${esc(x.date)} · ${esc(x.subject)}${x.key ? '' : ' · 系统里没对上是哪个工人'}</span>
       ${!x.key && D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="pickWorkerFor(${x.id})">手动关联</button>` : ''}
       ${clearAsk(x, 'margin-left:auto')}
-      ${D.can_approve ? `<button class="btn btn-outline btn-sm" style="${x.clears && x.clears.length ? '' : 'margin-left:auto'}" onclick="ackBank(${x.id})">知道了</button>` : ''}</div>`).join('') + '</div>';
+      ${D.can_approve ? `<button class="btn btn-outline btn-sm" style="${x.clears && x.clears.length ? '' : 'margin-left:auto'}" onclick="ackBank(${x.id})">知道了</button>` : ''}</div>
+      ${pcBlock(pcOf(c => c.kind === 'bank' && c.event_ids.includes(x.id)), true)}`).join('') + '</div>';
 }
 async function showHistory(k) {
   const w = D.rows[k];
