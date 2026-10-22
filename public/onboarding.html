@@ -84,7 +84,7 @@ textarea{width:100%}
   <div class="top">
     <div>
       <h1>🆕 新员工入职 · Onboarding</h1>
-      <div class="sub">每周看一次：名字<b>第一次出现在发票工资表上</b>的人就是新员工（有账单才说明要给他付钱）。先选一张发票看上面的员工，登记电话、定好怎么付；系统匹配到的 Gusto 收款人 / 电话 / 邮件都要 manager 或 admin 点「通过」才算数。</div>
+      <div class="sub">每周看一次：名字<b>第一次出现在发票工资表上</b>的人就是新员工（有账单才说明要给他付钱）。先选一张发票看上面的员工，关联系统里的员工档案、定好怎么付；系统匹配到的员工档案 / Gusto 收款人 / 邮件都要 manager 或 admin 点「通过」才算数。</div>
     </div>
     <div style="display:flex;gap:.4rem;flex-wrap:wrap">
       <button class="btn btn-outline" onclick="openHook()">📬 邮箱自动同步</button>
@@ -231,6 +231,7 @@ function oldRow(w, k) {
   const pm = Object.keys(PM_LABEL).map(m => `<button ${dis} class="${w.pay_method === m ? 'on' : ''}" onclick="save(${k},{pay_method:'${w.pay_method === m ? '' : m}'})">${PM_LABEL[m]}</button>`).join('');
   return `<div class="card old ${w.settled ? 'done' : ''}">
     <b>${esc(w.name)}</b><span class="tag" style="background:var(--g100);color:var(--g600)">老员工 · 第一次 ${esc(w.first_end)}</span>
+    ${w.employee ? `<span class="tag" style="background:#dcfce7;color:#166534">👤 ${esc(w.employee.code || '#' + w.employee.id)}${w.employee.phone ? ' · ' + esc(w.employee.phone) : ''}</span>` : '<span class="tag" style="background:#fee2e2;color:#991b1b">未关联档案</span>'}
     <span class="muted">${w.line.hours ? w.line.hours + 'h' : ''}${w.line.total != null ? ' · ' + money(w.line.total) : ''}</span>
     ${w.pending_review ? `<span class="tag" style="background:#eef2ff;color:#3730a3">🔎 ${w.pending_review} 条待审核</span>` : ''}
     ${w.settled ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ ${esc(PM_LABEL[w.pay_method] || 'Gusto 已付过')}</span>` : '<span class="tag" style="background:#fef3c7;color:#92400e">付款方式待定</span>'}
@@ -269,9 +270,7 @@ function card(w, k) {
         <div class="row" style="margin-bottom:.15rem"><span class="name">${esc(w.name)}</span>${w.line && w.is_new ? '<span class="tag" style="background:#e0f2fe;color:#075985">🆕 新</span>' : ''}${w.done ? '<span class="tag" style="background:#dcfce7;color:#166534">✓ 已处理</span>' : '<span class="tag" style="background:#fef3c7;color:#92400e">待处理</span>'}${w.pending_review ? `<span class="tag" style="background:#eef2ff;color:#3730a3">🔎 ${w.pending_review} 条待审核</span>` : ''}</div>
         ${alias.length ? `<div class="muted">发票上写作：${esc(alias.join(' / '))}</div>` : ''}
         <div class="muted">第一次上账单：${esc(w.first_end)}${w.later_invoices ? ` · 之后还有 ${w.later_invoices} 张` : ''}</div>
-        <div style="margin-top:.45rem"><div class="lbl">电话</div>
-          <input ${dis} value="${esc(w.phone)}" placeholder="电话" style="width:100%;max-width:220px" onchange="save(${k},{phone:this.value})">
-          ${w.phone_suggest ? `<div class="row" style="margin:.25rem 0 0"><span class="tag" style="background:#eef2ff;color:#3730a3">🔎 系统找到 ${esc(w.phone_suggest.phone)}（${esc(w.phone_suggest.source)}）</span>${reviewBtns(k, `{approve:'phone',phone_value:'${esc(w.phone_suggest.phone)}'}`, `{reject:'phone',phone_value:'${esc(w.phone_suggest.phone)}'}`)}</div>` : ''}</div>
+        <div style="margin-top:.45rem"><div class="lbl">员工档案</div>${empBlock(w, k)}</div>
       </div>
       <div>
         <div class="lbl">仓库</div>
@@ -333,6 +332,44 @@ async function submitEmail() {
     (j.events.length ? '<ul style="margin:.3rem 0 0 1rem;padding:0">' + j.events.map(e => `<li>${esc(e.date)} · <b>${esc(e.name)}</b> ${esc(e.label)}</li>`).join('') + '</ul>' : '<div class="muted">没认出 Gusto 入职相关的邮件</div>');
   document.getElementById('emailText').value = '';
   load();
+}
+// 员工档案: 已关联就显示档案摘要; 否则列出系统按名字找到的 (待审核) + 手动关联按钮
+function empBlock(w, k) {
+  const e = w.employee;
+  const info = x => `<b>${esc(x.name)}</b>${x.code ? ` <span class="muted">${esc(x.code)}</span>` : ''}<br><span class="muted">📞 ${esc(x.phone || '档案里没有电话')}${x.status && x.status !== 'active' ? ' · ' + esc(x.status) : ''}${x.timeclock_code ? ' · 打卡码 ' + esc(x.timeclock_code) : ''}</span>`;
+  const btn = D.can_edit ? `<button class="btn btn-outline btn-sm" onclick="pickEmployee(${k})">${e ? '改关联' : '关联员工档案'}</button>` : '';
+  if (e) return `<div class="row" style="align-items:flex-start;margin:0"><span class="tag" style="background:#dcfce7;color:#166534;font-size:.78rem;padding:.2rem .6rem;line-height:1.4;text-align:left">👤 ${info(e)}</span></div>
+    <div class="row" style="margin:.2rem 0 0"><span class="muted">${esc(e.by)} 通过</span>${D.can_open_employee ? `<a class="btn btn-outline btn-sm" href="/admin.html?emp=${e.id}" target="_blank">打开档案 ↗</a>` : ''}${btn}</div>`;
+  const props = (w.employee_proposals || []).map(x => `<div class="row" style="margin:.25rem 0 0;align-items:flex-start"><span class="tag" style="background:#eef2ff;color:#3730a3;font-size:.76rem;line-height:1.4;text-align:left">🔎 ${info(x)}<br><span style="font-weight:400">系统匹配：${esc(x.why)}</span></span>
+      ${reviewBtns(k, `{approve:'employee',id:${x.id}}`, `{reject:'employee',id:${x.id}}`)}</div>`).join('');
+  return (props || '<span class="tag" style="background:#fee2e2;color:#991b1b">系统里没找到这个人的档案</span>') +
+    `<div class="row" style="margin:.3rem 0 0">${btn}${w.phone_old ? `<span class="muted">之前手填的电话 ${esc(w.phone_old)}</span>` : ''}</div>`;
+}
+async function pickEmployee(k) {
+  const m = document.getElementById('gModal');
+  document.getElementById('gTitle').textContent = `关联员工档案 · ${D.rows[k].name}`;
+  document.getElementById('gBody').innerHTML = `<input id="eQ" placeholder="搜 名字 / 电话 / 员工编号 / 打卡码" style="width:100%;margin-bottom:.5rem" oninput="eSearch(${k})"><div id="eRes" style="max-height:50vh;overflow:auto"></div>
+    <div class="muted" style="margin-top:.4rem">${D.can_approve ? '你选的直接生效。' : '你选的要 manager / admin 审核通过才生效。'}</div>
+    <div style="display:flex;justify-content:space-between;margin-top:.5rem">${D.rows[k].employee ? `<button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none';save(${k},{employee_id:null})">取消关联</button>` : '<span></span>'}<button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none'">关闭</button></div>`;
+  m.style.display = 'flex';
+  document.getElementById('eQ').value = D.rows[k].name;
+  eSearch(k);
+}
+let _eT = null;
+function eSearch(k) {
+  clearTimeout(_eT);
+  _eT = setTimeout(async () => {
+    const q = document.getElementById('eQ').value;
+    const el = document.getElementById('eRes');
+    let j = await api('/api/acct/onboarding-employees?q=' + encodeURIComponent(q)).catch(e => ({ error: e.message }));
+    // 全名搜不到就退一步只搜名字的第一个词
+    if (!j.error && !(j.employees || []).length && q.trim().includes(' ')) j = await api('/api/acct/onboarding-employees?q=' + encodeURIComponent(q.trim().split(/\s+/)[0])).catch(e => ({ error: e.message }));
+    if (j.error) { el.innerHTML = `<div style="color:var(--red)">${esc(j.error)}</div>`; return; }
+    el.innerHTML = (j.employees || []).map(e => `<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--g100);padding:.35rem 0;margin:0">
+        <span><b>${esc(e.name)}</b> <span class="muted">${esc(e.code)} · 📞 ${esc(e.phone || '—')}${e.status && e.status !== 'active' ? ' · ' + esc(e.status) : ''}</span></span>
+        <button class="btn btn-blue btn-sm" onclick="document.getElementById('gModal').style.display='none';save(${k},{employee_id:${e.id}})">关联</button></div>`).join('')
+      || '<div class="muted">没找到。可以换个写法搜，或者先去员工管理建档。</div>';
+  }, 250);
 }
 async function pickGusto(k) {
   const m = document.getElementById('gModal');
