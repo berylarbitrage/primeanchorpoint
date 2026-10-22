@@ -77,6 +77,7 @@ textarea{width:100%}
       <div class="sub">每周看一次：名字<b>第一次出现在发票工资表上</b>的人就是新员工（有账单才说明要给他付钱）。登记电话、仓库，定好怎么付；走 Gusto 的按清单跟进。</div>
     </div>
     <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+      <button class="btn btn-outline" onclick="openHook()">📬 邮箱自动同步</button>
       <button class="btn btn-outline" id="btnEmail" onclick="openEmail()">📧 粘贴 Gusto 邮件</button>
       <button class="btn btn-outline" id="btnSync" onclick="syncGusto()" style="display:none">↻ 同步 Gusto</button>
       <a class="btn btn-outline" href="/accounting">← 会计对账</a>
@@ -98,6 +99,14 @@ textarea{width:100%}
       <button class="btn btn-outline" onclick="closeEmail()">关闭</button>
       <button class="btn btn-blue" id="emailGo" onclick="submitEmail()">识别并保存</button>
     </div>
+  </div>
+</div>
+
+<div class="modal" id="hookModal" onclick="if(event.target===this)this.style.display='none'">
+  <div class="card" style="max-width:760px">
+    <div style="font-weight:800;margin-bottom:.3rem">📬 邮箱自动同步 Gusto 邮件</div>
+    <div class="muted" style="margin-bottom:.6rem">在收 Gusto 邮件的 Gmail 里装一段 Google Apps Script：每 5 分钟把新的 Gusto 邮件标题发过来，系统认出是入职相关的（接受邀请 / 可以付款 / 银行有误 / 银行已更新）就自动在清单上打勾，并把<b>这几封</b>转发给下面填的邮箱。只发标题，不发正文。</div>
+    <div id="hookBody"><div class="muted">加载中…</div></div>
   </div>
 </div>
 
@@ -305,6 +314,90 @@ async function gustoSteps(k) {
     : `<div class="muted" style="margin-bottom:.4rem">状态：${esc(j.onboarding_status || '—')}</div>` +
       (j.steps.map(s => `<div class="step ${s.completed ? 'ok' : ''}" style="margin-bottom:.3rem"><span>${s.completed ? '✅' : '⬜'}</span><span>${esc(s.title)}${s.required ? '' : ' <span class="muted">(选填)</span>'}</span></div>`).join('') || '<div class="muted">Gusto 没返回步骤</div>') +
       `<div style="text-align:right;margin-top:.5rem"><button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none'">关闭</button></div>`;
+}
+
+// ── 邮箱自动同步设置 ──
+function hookScript(url) {
+  return `// Prime Anchor · Gusto 入职邮件同步 (Google Apps Script)
+// 每 5 分钟: 找最近 2 天 Gusto 发来的邮件 → 标题发给系统 → 入职相关的自动标注并转发
+const HOOK_URL = '${url}';
+const LABEL = 'PA 入职已同步';
+
+function syncGustoMail() {
+  const threads = GmailApp.search('from:gusto.com newer_than:2d', 0, 50);
+  const msgs = [];
+  threads.forEach(t => t.getMessages().forEach(m => {
+    if (/gusto\\.com/i.test(m.getFrom())) msgs.push(m);
+  }));
+  if (!msgs.length) return;
+  const res = UrlFetchApp.fetch(HOOK_URL, {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    payload: JSON.stringify({ messages: msgs.map(m => ({
+      id: m.getId(), subject: m.getSubject(), from: m.getFrom(), date: m.getDate().toISOString() })) }),
+  });
+  if (res.getResponseCode() !== 200) throw new Error('同步失败 ' + res.getResponseCode() + ': ' + res.getContentText());
+  const out = JSON.parse(res.getContentText());
+  const label = GmailApp.getUserLabelByName(LABEL) || GmailApp.createLabel(LABEL);
+  const byId = {};
+  (out.results || []).forEach(r => { byId[r.id] = r; });
+  msgs.forEach(m => {
+    const r = byId[m.getId()];
+    if (!r || !r.new || !r.forward) return;   // 只处理第一次见到、入职相关的
+    if (out.forward_to) m.forward(out.forward_to, { subject: '[入职] ' + r.label + ' · ' + r.name + ' — ' + m.getSubject() });
+    m.getThread().addLabel(label);
+  });
+}
+
+// 第一次: 选中 install 点「运行」, 按提示授权一次即可 (之后自动每 5 分钟跑)
+function install() {
+  ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('syncGustoMail').timeBased().everyMinutes(5).create();
+  syncGustoMail();
+}
+`;
+}
+async function openHook() {
+  document.getElementById('hookModal').style.display = 'flex';
+  const j = await api('/api/acct/onboarding-mailhook').catch(e => ({ error: e.message }));
+  const el = document.getElementById('hookBody');
+  if (j.error) { el.innerHTML = `<div style="color:var(--red)">${esc(j.error)}</div>`; return; }
+  const kind = { accepted: '接受邀请', ready: '可以付款', bank_bad: '银行有误', bank_updated: '银行已更新' };
+  const status = j.last_at
+    ? `<div class="row"><span class="tag" style="background:#dcfce7;color:#166534">✓ 在同步</span><span class="muted">上次收到 ${esc(new Date(j.last_at).toLocaleString())} · 累计看过 ${j.total_seen} 封</span></div>`
+    : `<div class="row"><span class="tag" style="background:#fef3c7;color:#92400e">${j.configured ? '链接已生成，脚本还没跑过' : '还没设置'}</span></div>`;
+  const recent = j.recent.length ? `<details style="margin:.4rem 0"><summary class="muted" style="cursor:pointer">最近认出的入职邮件（${j.recent.length}）</summary>${j.recent.map(r => `<div class="muted">${esc((r.received_at || r.created_at || '').slice(0, 10))} · ${esc(kind[r.kind] || r.kind)} · <b>${esc(r.name)}</b></div>`).join('')}</details>` : '';
+  if (!j.is_admin) { el.innerHTML = status + recent + '<div class="muted">设置和转发地址只有管理员能改。</div>'; return; }
+  el.innerHTML = status + recent + `
+    <div class="lbl" style="margin-top:.5rem">转发给（多个用逗号隔开，留空就只标注不转发）</div>
+    <div class="row"><input id="hookFwd" style="flex:1;min-width:220px" value="${esc(j.forward_to.join(', '))}" placeholder="hr@example.com, boss@example.com">
+      <button class="btn btn-blue btn-sm" onclick="saveHook(false)">${j.configured ? '保存' : '保存并生成链接'}</button></div>
+    ${j.configured ? `
+    <div class="lbl" style="margin-top:.6rem">安装步骤（只做一次）</div>
+    <ol style="font-size:.8rem;margin:.2rem 0 .5rem 1.1rem;padding:0;line-height:1.6">
+      <li>用<b>收 Gusto 邮件的那个 Google 账号</b>打开 <a href="https://script.google.com/home/projects/create" target="_blank">script.google.com 新建项目</a></li>
+      <li>把编辑器里原有的代码全删掉，粘贴下面这段，点 💾 保存</li>
+      <li>上方函数下拉框选 <code>install</code>，点「运行」→ 按提示授权（会说"Google 未验证此应用"，点 高级 → 继续，这是你自己的脚本）</li>
+      <li>完成。以后每 5 分钟自动跑；在 Gmail 里同步过的入职邮件会打上「PA 入职已同步」标签</li>
+    </ol>
+    <div class="row" style="justify-content:space-between;margin-bottom:.3rem"><span class="lbl" style="margin:0">脚本（链接里带密钥，别外传）</span>
+      <span><button class="btn btn-outline btn-sm" onclick="copyHook()">📋 复制</button>
+      <button class="btn btn-outline btn-sm" onclick="saveHook(true)" title="旧脚本会立刻失效，需要重新粘贴">🔄 换新密钥</button></span></div>
+    <textarea id="hookCode" rows="14" readonly style="font-family:ui-monospace,Menlo,monospace;font-size:.72rem">${esc(hookScript(j.hook_url))}</textarea>` : ''}
+    <div style="text-align:right;margin-top:.5rem"><button class="btn btn-outline btn-sm" onclick="document.getElementById('hookModal').style.display='none'">关闭</button></div>`;
+}
+async function saveHook(regenerate) {
+  if (regenerate && !confirm('换新密钥后旧脚本立刻失效，要把新脚本重新粘贴到 Apps Script。继续？')) return;
+  const body = { forward_to: document.getElementById('hookFwd').value };
+  if (regenerate) body.regenerate = true;
+  const j = await api('/api/acct/onboarding-mailhook', { method: 'POST', body }).catch(e => ({ error: e.message }));
+  if (j.error) return toast(j.error, true);
+  toast('已保存');
+  openHook();
+}
+function copyHook() {
+  const t = document.getElementById('hookCode');
+  t.select();
+  (navigator.clipboard ? navigator.clipboard.writeText(t.value) : Promise.reject()).then(() => toast('已复制'), () => { document.execCommand('copy'); toast('已复制'); });
 }
 
 load();

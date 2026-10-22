@@ -43983,6 +43983,90 @@ app.get('/api/acct/onboarding-gusto/:uuid', requireAdmin, requireAcctView, async
   } catch (e) { res.status(e && e.code === 'not_connected' ? 400 : e && e.status === 404 ? 404 : 502).json({ error: (e && e.message) || String(e) }); }
 });
 
+// ── 邮箱自动同步: 邮箱里跑一段 Google Apps Script, 每 5 分钟把新的 Gusto 邮件标题推过来 ──
+// 这边认出是入职相关的 (接受邀请 / 可以付款 / 银行有误 / 银行已更新) 就记成邮件事件 (清单自动打勾),
+// 回给脚本「这封要转发」+ 转发给谁; 转发由脚本在用户自己的邮箱里做, 原邮件原样转出。
+// 配置存 app_settings.gusto_mail_hook = { token, forward_to: [...], last_at, last_received, last_added }
+db.exec(`CREATE TABLE IF NOT EXISTS gusto_mail_seen (
+  message_id TEXT PRIMARY KEY,
+  kind TEXT DEFAULT '',
+  name TEXT DEFAULT '',
+  subject TEXT DEFAULT '',
+  received_at TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+function _mailHookCfg() {
+  try { const r = db.prepare("SELECT value FROM app_settings WHERE key='gusto_mail_hook'").get(); return r ? (JSON.parse(r.value) || {}) : {}; }
+  catch (e) { return {}; }
+}
+function _mailHookSave(patch) {
+  const cfg = { ..._mailHookCfg(), ...patch };
+  db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('gusto_mail_hook', ?, CURRENT_TIMESTAMP)").run(JSON.stringify(cfg));
+  return cfg;
+}
+function _mailHookUrl(req, token) {
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const base = (process.env.BASE_URL || '').replace(/\/$/, '') || `${proto}://${req.get('host')}`;
+  return `${base}/api/hooks/gusto-mail?t=${token}`;
+}
+
+app.post('/api/hooks/gusto-mail', (req, res) => {
+  const cfg = _mailHookCfg();
+  const got = Buffer.from(String(req.query.t || req.get('x-hook-token') || ''));
+  const want = Buffer.from(String(cfg.token || ''));
+  if (!cfg.token || got.length !== want.length || !crypto.timingSafeEqual(got, want)) return res.status(401).json({ error: 'bad token' });
+  try {
+    const msgs = (Array.isArray(req.body && req.body.messages) ? req.body.messages : []).slice(0, 200);
+    const seen = db.prepare('SELECT 1 FROM gusto_mail_seen WHERE message_id=?');
+    const mark = db.prepare('INSERT OR IGNORE INTO gusto_mail_seen (message_id, kind, name, subject, received_at) VALUES (?, ?, ?, ?, ?)');
+    const ins = db.prepare(`INSERT OR IGNORE INTO gusto_email_events (kind, name, date, subject, added_by) VALUES (?, ?, ?, ?, '邮箱自动同步')`);
+    const results = [];
+    let added = 0;
+    db.transaction(() => {
+      for (const m of msgs) {
+        const id = String((m && m.id) || '').slice(0, 200);
+        const subject = String((m && m.subject) || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+        if (!id || !subject) continue;
+        const date = /^\d{4}-\d{2}-\d{2}/.test(String(m.date || '')) ? String(m.date).slice(0, 10) : new Date().toISOString().slice(0, 10);
+        if (seen.get(id)) { results.push({ id, new: false, forward: false }); continue; }
+        const ev = wob.parseGustoEmails(subject, date)[0] || null;
+        if (ev) { ev.date = date; added += ins.run(ev.kind, ev.name, ev.date, ev.subject).changes; }
+        mark.run(id, ev ? ev.kind : '', ev ? ev.name : '', subject, String(m.date || ''));
+        results.push({ id, new: true, forward: !!ev, kind: ev ? ev.kind : '', name: ev ? ev.name : '', label: ev ? wob.EMAIL_KIND_LABEL[ev.kind] : '' });
+      }
+    })();
+    _mailHookSave({ last_at: new Date().toISOString(), last_received: results.filter(r => r.new).length, last_added: added });
+    const forwardTo = (cfg.forward_to || []).join(',');
+    res.json({ ok: true, results, forward_to: forwardTo, added });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 设置: 所有能看页面的人都能看状态; 生成/换 token、改转发地址只有 admin (token 也只给 admin 看)
+app.get('/api/acct/onboarding-mailhook', requireAdmin, requireAcctView, (req, res) => {
+  const cfg = _mailHookCfg();
+  const isAdmin = req.userRole === 'admin';
+  const recent = db.prepare(`SELECT kind, name, subject, received_at, created_at FROM gusto_mail_seen WHERE kind!='' ORDER BY created_at DESC LIMIT 15`).all();
+  res.json({ configured: !!cfg.token, is_admin: isAdmin, forward_to: cfg.forward_to || [],
+    hook_url: isAdmin && cfg.token ? _mailHookUrl(req, cfg.token) : '',
+    last_at: cfg.last_at || '', last_received: cfg.last_received || 0, last_added: cfg.last_added || 0,
+    total_seen: db.prepare('SELECT COUNT(*) AS n FROM gusto_mail_seen').get().n, recent });
+});
+app.post('/api/acct/onboarding-mailhook', requireAdmin, requireRole('admin'), (req, res) => {
+  const b = req.body || {};
+  const patch = {};
+  if (b.forward_to !== undefined) {
+    const list = String(Array.isArray(b.forward_to) ? b.forward_to.join(',') : b.forward_to).split(/[\s,;]+/).map(s => s.trim()).filter(Boolean);
+    const bad = list.filter(s => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s));
+    if (bad.length) return res.status(400).json({ error: '邮箱格式不对: ' + bad.join(', ') });
+    patch.forward_to = [...new Set(list)].slice(0, 10);
+  }
+  if (b.regenerate || !_mailHookCfg().token) patch.token = crypto.randomBytes(24).toString('hex');
+  const cfg = _mailHookSave(patch);
+  auditLog('gusto_mail_hook_save', req, { targetType: 'app_settings', targetId: 'gusto_mail_hook',
+    details: { forward_to: cfg.forward_to || [], regenerated: !!patch.token } });
+  res.json({ ok: true, hook_url: _mailHookUrl(req, cfg.token), forward_to: cfg.forward_to || [] });
+});
+
 // ─── 👷 员工工资汇总: 正式发票上的工资行按人汇总 ───
 // 日期按发票工资周期结束日筛。名字合并存在 app_settings.payroll_name_merges:
 // { "<小写去重音的名字>": "合并后显示的名字" }, 所有人共用; 汇总在前端按这张表归并。
