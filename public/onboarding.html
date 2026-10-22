@@ -92,6 +92,10 @@ input,select,textarea{padding:.38rem .5rem;border:1px solid var(--g300);border-r
 .alerts{background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:.6rem .9rem;margin-bottom:12px}
 .alerts .a{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;font-size:.82rem;padding:.25rem 0}
 .alerts .a+.a{border-top:1px dashed #fecaca}
+.um-cats{display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.55rem}
+.um-cat{border:1px solid var(--g200);background:var(--g100);border-radius:999px;padding:.2rem .7rem;font-size:.76rem;color:var(--g600);cursor:pointer;font-family:inherit}
+.um-cat b{margin-left:.15rem}
+.um-cat.on{background:#0f4c6b;border-color:#0f4c6b;color:#fff}
 .um-list{margin-top:.5rem;display:flex;flex-direction:column;gap:.4rem}
 .um{border:1px solid var(--g200);border-radius:10px;padding:.5rem .7rem;background:#fff}
 .um:hover{border-color:#bfdbfe;background:#fafcff}
@@ -446,14 +450,22 @@ function reviewBtns(k, yes, no) {
 }
 // 对不上人的 Gusto 邮件: manager / admin 可以手动关联到某个工人, 或者暂时忽略
 const UM_EXP = new Set();          // 候选人多的邮件, 点「+N」展开全部
+let UM_CAT = '';                  // 对不上人的邮件按类型 / 有没有候选人分类筛选
 function renderUnmatched() {
   const u = D.unmatched_emails || [], nIgn = D.unmatched_ignored || 0;
   const el = document.getElementById('unmatched');
   if (!u.length && !nIgn) { el.innerHTML = ''; return; }
   const kind = { accepted: ['接受邀请', '#e0f2fe', '#075985'], ready: ['可以付款', '#dcfce7', '#166534'], bank_bad: ['银行有误', '#fee2e2', '#991b1b'], bank_updated: ['银行已更新', '#fef3c7', '#92400e'] };
   const open = u.filter(e => !e.ignored_at).length;
+  // 分类: 按邮件类型, 或有没有系统找到的候选人
+  const CATS = [['', '全部', () => true], ['accepted', '接受邀请', e => e.kind === 'accepted'], ['ready', '可以付款', e => e.kind === 'ready'],
+    ['bank_bad', '银行有误', e => e.kind === 'bank_bad'], ['bank_updated', '银行已更新', e => e.kind === 'bank_updated'],
+    ['cand', '有候选人（点一下确认）', e => (e.candidates || []).length > 0], ['nocand', '没候选人（要手动搜）', e => !(e.candidates || []).length]];
+  const catBar = `<div class="um-cats">${CATS.map(([k, label, fn]) => { const n = u.filter(fn).length;
+    return n || !k ? `<button class="um-cat ${UM_CAT === k ? 'on' : ''}" onclick="UM_CAT='${k}';renderUnmatched()">${label} <b>${n}</b></button>` : ''; }).join('')}</div>`;
+  const catFn = (CATS.find(c => c[0] === UM_CAT) || CATS[0])[2];
   // 一封邮件一张卡: 第一行 日期 · 类型 · 邮件里的名字 · 标题; 第二行 可能是谁 (候选) + 操作按钮
-  const cards = u.slice().reverse().map(e => {
+  const cards = u.filter(catFn).reverse().map(e => {
     const [kl, kb, kc] = kind[e.kind] || [e.kind, 'var(--g100)', 'var(--g600)'];
     const all = e.candidates || [];
     const shown = UM_EXP.has(e.id) ? all : all.slice(0, 4);
@@ -471,6 +483,7 @@ function renderUnmatched() {
   el.innerHTML = `<details class="card" style="margin-top:14px;padding:12px 14px" ${open ? 'open' : ''}><summary style="cursor:pointer;font-weight:700;font-size:.88rem">📧 对不上人的 Gusto 邮件（${open}）
       <span class="muted" style="font-weight:400"> — 点「可能是」里的名字直接确认，或「🔍 手动关联」搜发票上的名字；不用管的点「暂时忽略」</span></summary>
     ${nIgn ? `<div style="margin:.5rem 0 0"><label class="muted" style="cursor:pointer"><input type="checkbox" ${SHOW_IGN ? 'checked' : ''} onchange="SHOW_IGN=this.checked;load()"> 显示已忽略的（${nIgn}）</label></div>` : ''}
+    ${u.length ? catBar : ''}
     <div class="um-list">${cards || '<div class="muted" style="padding:.6rem">没有了</div>'}</div></details>`;
 }
 // 手动关联: 先搜人 (默认用邮件里的名字搜), 选了再弹窗确认
