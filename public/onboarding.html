@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>新员工入职 · Prime Anchor</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%86%95%3C/text%3E%3C/svg%3E">
+<style>
+:root{--g100:#f3f4f6;--g200:#e5e7eb;--g300:#d1d5db;--g400:#9ca3af;--g500:#6b7280;--g600:#4b5563;--g700:#374151;--blue:#29AAE1;--red:#dc2626;--green:#16a34a;--amber:#d97706}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;background:#eef3f8;color:#1f2937}
+.wrap{max-width:1400px;margin:0 auto;padding:18px 16px 60px}
+h1{font-size:1.2rem;font-weight:800;color:#0f4c6b;margin:0}
+.sub{font-size:.8rem;color:var(--g500);margin-top:.2rem}
+.btn{display:inline-flex;align-items:center;gap:.25rem;border:none;border-radius:8px;padding:.5rem .9rem;font-size:.85rem;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit;text-decoration:none}
+.btn-blue{background:var(--blue);color:#fff}.btn-blue:hover{background:#1d8fc0}
+.btn-outline{background:#fff;color:var(--g600);border:1px solid var(--g300)}
+.btn-sm{padding:.25rem .55rem;font-size:.76rem;border-radius:6px}
+.btn:disabled{opacity:.5;cursor:default}
+.card{background:#fff;border:1px solid var(--g200);border-radius:12px;padding:14px 16px}
+input,select,textarea{padding:.38rem .5rem;border:1px solid var(--g300);border-radius:6px;font-size:.84rem;background:#fff;font-family:inherit;color:inherit}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;margin-bottom:12px}
+.weeks{display:flex;gap:.4rem;overflow-x:auto;padding-bottom:4px;margin-bottom:12px}
+.wk{border:1px solid var(--g200);background:#fff;border-radius:10px;padding:.4rem .7rem;cursor:pointer;font-family:inherit;font-size:.78rem;color:var(--g600);text-align:left;white-space:nowrap;min-width:96px}
+.wk b{display:block;font-size:.86rem;color:#0f4c6b}
+.wk .n{font-size:.72rem}
+.wk .open{color:var(--amber);font-weight:700}
+.wk.on{background:#0f4c6b;border-color:#0f4c6b;color:#e0f2fe}.wk.on b{color:#fff}.wk.on .open{color:#fde68a}
+.wk.pend{border-color:#fcd34d;background:#fffbeb}
+.gbar{font-size:.78rem;color:var(--g600);background:#fff;border:1px solid var(--g200);border-radius:10px;padding:.5rem .8rem;margin-bottom:12px;display:flex;gap:.8rem;flex-wrap:wrap;align-items:center}
+.w{padding:0;overflow:hidden;border-left:4px solid var(--amber);margin-bottom:10px}
+.w.done{border-left-color:var(--green)}
+.w.bad{border-left-color:var(--red)}
+.w-main{display:grid;grid-template-columns:minmax(210px,1fr) minmax(250px,1.3fr) minmax(300px,1.4fr);gap:.6rem 1.2rem;padding:.8rem 1rem}
+.w-main>div{min-width:0}
+.lbl{font-size:.7rem;color:var(--g400);font-weight:700;margin-bottom:.2rem;text-transform:uppercase;letter-spacing:.02em}
+.name{font-weight:800;font-size:1rem;color:#0f172a}
+.muted{color:var(--g500);font-size:.74rem}
+.row{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin-bottom:.35rem}
+.inv{display:inline-flex;gap:.3rem;align-items:center;background:#f0f8fc;border:1px solid #bfe0ef;border-radius:999px;padding:.12rem .55rem;font-size:.74rem;color:#0f4c6b;text-decoration:none;font-weight:700;margin:0 .25rem .25rem 0}
+.inv:hover{background:#0f4c6b;color:#fff}
+.pm{display:flex;gap:.3rem;flex-wrap:wrap}
+.pm button{border:1px solid var(--g300);background:#fff;border-radius:999px;padding:.25rem .7rem;font-size:.78rem;font-weight:700;cursor:pointer;font-family:inherit;color:var(--g600)}
+.pm button.on{background:#0f4c6b;border-color:#0f4c6b;color:#fff}
+.pm button.sug{border-color:#7dd3fc;border-style:dashed}
+.ck{border-top:1px solid var(--g100);background:#fbfcfe;padding:.55rem 1rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.35rem .9rem}
+.step{display:flex;gap:.45rem;align-items:flex-start;font-size:.8rem}
+.step input{margin-top:.15rem}
+.step .src{font-size:.7rem;color:var(--green)}
+.step .prob{font-size:.72rem;color:var(--red);font-weight:700}
+.step.ok .t{color:var(--g500);text-decoration:line-through}
+.tag{display:inline-block;border-radius:999px;padding:.05rem .5rem;font-size:.7rem;font-weight:700}
+.empty{text-align:center;color:var(--g400);padding:2.5rem 1rem}
+.modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:flex-start;justify-content:center;z-index:2000;padding:5vh 16px;overflow:auto}
+.modal .card{width:100%;max-width:640px}
+textarea{width:100%}
+@media (max-width:1000px){.w-main{grid-template-columns:1fr 1fr}.w-main>div:last-child{grid-column:1/-1}}
+@media (max-width:640px){.w-main{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div id="gate" style="position:fixed;inset:0;background:#eef3f8;display:none;align-items:center;justify-content:center;z-index:1000;padding:16px">
+  <div class="card" style="max-width:360px;width:100%;text-align:center;padding:26px 22px">
+    <img src="/logo.svg" style="height:52px" alt="Logo">
+    <div style="font-weight:800;font-size:1.05rem;margin:.5rem 0">🆕 新员工入职 · Onboarding</div>
+    <input type="text" id="loginUser" placeholder="用户名或邮箱" style="width:100%;margin-bottom:.5rem" autocomplete="username">
+    <input type="password" id="loginPw" placeholder="密码" style="width:100%" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()">
+    <div id="gateErr" style="color:var(--red);font-size:.8rem;min-height:1.1em;margin-top:.4rem"></div>
+    <button class="btn btn-blue" style="width:100%;justify-content:center;margin-top:.4rem" onclick="login()">登录</button>
+  </div>
+</div>
+
+<div class="wrap" id="main" style="display:none">
+  <div class="top">
+    <div>
+      <h1>🆕 新员工入职 · Onboarding</h1>
+      <div class="sub">每周看一次：名字<b>第一次出现在发票工资表上</b>的人就是新员工（有账单才说明要给他付钱）。登记电话、仓库，定好怎么付；走 Gusto 的按清单跟进。</div>
+    </div>
+    <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+      <button class="btn btn-outline" onclick="openHook()">📬 邮箱自动同步</button>
+      <button class="btn btn-outline" id="btnEmail" onclick="openEmail()">📧 粘贴 Gusto 邮件</button>
+      <button class="btn btn-outline" id="btnSync" onclick="syncGusto()" style="display:none">↻ 同步 Gusto</button>
+      <a class="btn btn-outline" href="/accounting">← 会计对账</a>
+    </div>
+  </div>
+  <div class="gbar" id="gbar"></div>
+  <div class="weeks" id="weeks"></div>
+  <div id="list"><div class="empty">加载中…</div></div>
+  <div id="unmatched"></div>
+</div>
+
+<div class="modal" id="emailModal" onclick="if(event.target===this)closeEmail()">
+  <div class="card">
+    <div style="font-weight:800;margin-bottom:.3rem">📧 粘贴 Gusto 通知邮件</div>
+    <div class="muted" style="margin-bottom:.5rem">在 Gmail 搜 <code>from:gusto</code>，把列表整屏选中复制粘贴到这里（一行一封）。能认出：<b>accepted your offer</b>（接受邀请）、<b>can now be paid</b>（入职完成）、<b>bank account details are incorrect / were updated</b>（银行有误 / 已更新）。重复粘贴不会重复记。</div>
+    <textarea id="emailText" rows="10" placeholder="Cesar accepted your offer at Prime AnchorPoint LLC! …"></textarea>
+    <div id="emailOut" style="font-size:.8rem;margin:.5rem 0"></div>
+    <div style="display:flex;gap:.4rem;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="closeEmail()">关闭</button>
+      <button class="btn btn-blue" id="emailGo" onclick="submitEmail()">识别并保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="hookModal" onclick="if(event.target===this)this.style.display='none'">
+  <div class="card" style="max-width:760px">
+    <div style="font-weight:800;margin-bottom:.3rem">📬 邮箱自动同步 Gusto 邮件</div>
+    <div class="muted" style="margin-bottom:.6rem">在收 Gusto 邮件的 Gmail 里装一段 Google Apps Script：每 5 分钟把新的 Gusto 邮件标题发过来，系统认出是入职相关的（接受邀请 / 可以付款 / 银行有误 / 银行已更新）就自动在清单上打勾，并把<b>这几封</b>转发给下面填的邮箱。只发标题，不发正文。</div>
+    <div id="hookBody"><div class="muted">加载中…</div></div>
+  </div>
+</div>
+
+<div class="modal" id="gModal" onclick="if(event.target===this)this.style.display='none'">
+  <div class="card">
+    <div style="font-weight:800;margin-bottom:.5rem" id="gTitle">关联 Gusto 收款人</div>
+    <div id="gBody"></div>
+  </div>
+</div>
+
+<script>
+let TOKEN = localStorage.getItem('acct_token') || localStorage.getItem('adminToken') || '';
+let D = null;                     // 最近一次 /api/acct/onboarding 的结果
+let VIEW = 'week', WEEK = '';
+const PM_LABEL = { gusto: 'Gusto 入职', cash: '现金', check: '支票', zelle: 'Zelle', skip: '不用处理' };
+
+function esc(s) { if (s == null) return ''; const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+function money(v) { return '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function md(d) { return d ? `${+d.slice(5, 7)}/${+d.slice(8, 10)}` : ''; }
+function wkLabel(w) { const e = new Date(w + 'T00:00:00Z'); e.setUTCDate(e.getUTCDate() + 6); return `${md(w)}–${md(e.toISOString().slice(0, 10))}`; }
+function toast(msg, bad) {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = `position:fixed;left:50%;top:18px;transform:translateX(-50%);background:${bad ? '#dc2626' : '#16a34a'};color:#fff;padding:.5rem 1rem;border-radius:8px;font-size:.85rem;z-index:3000;box-shadow:0 6px 20px rgba(0,0,0,.25)`;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2600);
+}
+async function api(path, opts = {}) {
+  const r = await fetch(path, {
+    method: opts.method || 'GET',
+    headers: { ...(TOKEN ? { 'Authorization': 'Bearer ' + TOKEN } : {}), ...(opts.body ? { 'Content-Type': 'application/json' } : {}) },
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  if (r.status === 401) { showGate(); throw new Error('请先登录'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok && !j.error) j.error = 'HTTP ' + r.status;
+  return j;
+}
+function showGate() { document.getElementById('gate').style.display = 'flex'; document.getElementById('main').style.display = 'none'; }
+async function login() {
+  const username = document.getElementById('loginUser').value.trim(), password = document.getElementById('loginPw').value;
+  const err = document.getElementById('gateErr');
+  err.textContent = '';
+  const r = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) }).then(x => x.json()).catch(() => ({}));
+  if (r.mfa_required) { location.href = '/mfa?token=' + encodeURIComponent(r.mfa_token) + '&next=' + encodeURIComponent(location.pathname + location.search) + (r.phone_hint ? '&hint=' + encodeURIComponent(r.phone_hint) : ''); return; }
+  if (!r.success) { err.textContent = r.error || '登录失败（首次登录请先到 /accounting 激活账号）'; return; }
+  TOKEN = r.token;
+  localStorage.setItem('acct_token', TOKEN);
+  document.getElementById('gate').style.display = 'none';
+  load();
+}
+
+async function load() {
+  const q = VIEW === 'open' ? '?view=open' : (WEEK ? '?week=' + WEEK : '');
+  let j;
+  try { j = await api('/api/acct/onboarding' + q); } catch (e) { return; }
+  if (j.error) { document.getElementById('list').innerHTML = `<div class="empty" style="color:var(--red)">${esc(j.error)}</div>`; return; }
+  D = j;
+  WEEK = j.week;
+  document.getElementById('main').style.display = '';
+  document.getElementById('btnSync').style.display = j.can_sync && j.gusto.connected ? '' : 'none';
+  document.getElementById('btnEmail').style.display = j.can_edit ? '' : 'none';
+  renderBar(); renderWeeks(); renderList(); renderUnmatched();
+}
+function renderBar() {
+  const g = D.gusto;
+  document.getElementById('gbar').innerHTML = g.connected
+    ? `<span>🔗 Gusto API 已连接 · 名册 ${g.contractors} 人 · 上次同步 ${g.last_sync_at ? esc(new Date(g.last_sync_at).toLocaleString()) : '—'}</span><span class="muted">入职状态（接受邀请 / 填完资料 / 可以付款）自动从 Gusto 读，邮件只是补充</span>`
+    : `<span style="color:var(--amber);font-weight:700">⚠ Gusto API 还没连接</span><span class="muted">清单只能靠粘贴 Gusto 邮件和手动勾选。连接后入职状态会自动读取：会计对账 →「💸 Gusto 工资」页签。</span>`;
+}
+function renderWeeks() {
+  const pend = `<button class="wk pend ${VIEW === 'open' ? 'on' : ''}" onclick="VIEW='open';load()"><b>⏳ 待处理</b><span class="n">最近 16 周 · <span class="open">${D.open_total}</span> 人</span></button>`;
+  document.getElementById('weeks').innerHTML = pend + D.weeks.map(w => `<button class="wk ${VIEW === 'week' && w.week === WEEK ? 'on' : ''}" onclick="VIEW='week';WEEK='${w.week}';load()">
+    <b>${wkLabel(w.week)}</b><span class="n">新 ${w.total}${w.open ? ` · <span class="open">待 ${w.open}</span>` : w.total ? ' · ✓' : ''}</span></button>`).join('');
+}
+function renderList() {
+  const rows = D.rows;
+  const el = document.getElementById('list');
+  if (!rows.length) {
+    el.innerHTML = `<div class="card empty">${VIEW === 'open' ? '🎉 没有待处理的新员工' : `${wkLabel(WEEK)} 这周发票上没有新名字`}</div>`;
+    return;
+  }
+  el.innerHTML = rows.map((w, i) => card(w, i)).join('');
+}
+function card(w, k) {
+  const dis = D.can_edit ? '' : 'disabled';
+  const bad = w.checklist.bank_bad && w.pay_method === 'gusto';
+  const invs = w.invoices.map(l => `<a class="inv" href="/accounting?invoice=${l.invoice_id}" target="_blank" title="${esc(l.company)} · ${esc(l.period_start)}~${esc(l.period_end)}">📄 ${esc(l.invoice_number)} <span style="font-weight:400">${md(l.period_end)} · ${l.hours ? l.hours + 'h · ' : ''}${money(l.total)}</span></a>`).join('');
+  const alias = w.invoice_names.filter(n => n !== w.name);
+  const sug = w.suggest && !w.pay_method ? w.suggest.method : '';
+  const pm = Object.keys(PM_LABEL).map(m => `<button ${dis} class="${w.pay_method === m ? 'on' : ''} ${sug === m ? 'sug' : ''}" onclick="save(${k},{pay_method:'${w.pay_method === m ? '' : m}'})">${PM_LABEL[m]}</button>`).join('');
+  let gusto = '';
+  if (w.pay_method === 'gusto' || (!w.pay_method && w.gusto && w.gusto.link)) {
+    const g = w.gusto;
+    const who = g && g.link
+      ? `<span class="tag" style="background:#dcfce7;color:#166534">Gusto: ${esc(g.name)}${g.link === 'auto' ? ' (按名字自动对)' : ''}</span>${g.active === false ? ' <span class="tag" style="background:#fee2e2;color:#991b1b">已停用</span>' : ''}`
+      : `<span class="tag" style="background:#fef3c7;color:#92400e">Gusto 名册里还没找到${g && g.candidates ? '，可能是：' + esc(g.candidates.join(' / ')) : ''}</span>`;
+    const st = w.checklist.gusto && w.checklist.gusto.label ? ` <span class="muted">${esc(w.checklist.gusto.label)}</span>` : '';
+    const steps = w.checklist.steps.map(s => `<label class="step ${s.done ? 'ok' : ''}" title="${esc(s.hint)}">
+        <input type="checkbox" ${s.done ? 'checked' : ''} ${dis} ${s.auto && !s.manual ? 'disabled' : ''} onchange="save(${k},{step:'${s.id}',checked:this.checked})">
+        <span><span class="t">${esc(s.label)}</span>${s.problem ? `<br><span class="prob">⚠ ${esc(s.problem)}</span>` : s.auto ? `<br><span class="src">✓ ${esc(s.auto)}</span>` : s.manual ? `<br><span class="muted">手动 ${esc(s.manual.by)} ${esc((s.manual.at || '').slice(0, 10))}</span>` : ''}</span></label>`).join('');
+    gusto = `<div class="ck" style="grid-template-columns:1fr;padding-bottom:0;border-bottom:none"><div class="row" style="margin:0">${who}${st}
+        ${D.can_edit ? `<button class="btn btn-outline btn-sm" onclick="pickGusto(${k})">${g && g.link === 'manual' ? '改' : '手动'}关联</button>` : ''}
+        ${g && g.uuid && D.gusto.connected ? `<button class="btn btn-outline btn-sm" onclick="gustoSteps(${k})">Gusto 明细</button>` : ''}
+        <span class="muted">${w.checklist.done_count}/${w.checklist.steps.length}</span></div></div>
+      <div class="ck">${steps}</div>`;
+  }
+  return `<div class="card w ${w.done ? 'done' : ''} ${bad ? 'bad' : ''}">
+    <div class="w-main">
+      <div>
+        <div class="row" style="margin-bottom:.15rem"><span class="name">${esc(w.name)}</span>${w.done ? '<span class="tag" style="background:#dcfce7;color:#166534">✓ 已处理</span>' : '<span class="tag" style="background:#fef3c7;color:#92400e">待处理</span>'}</div>
+        ${alias.length ? `<div class="muted">发票上写作：${esc(alias.join(' / '))}</div>` : ''}
+        <div class="muted">第一次上账单：${esc(w.first_end)}${w.later_invoices ? ` · 之后还有 ${w.later_invoices} 张` : ''}</div>
+        <div style="margin-top:.45rem"><div class="lbl">电话</div>
+          <input ${dis} value="${esc(w.phone)}" placeholder="电话" style="width:100%;max-width:220px" onchange="save(${k},{phone:this.value})">
+          ${w.phone_source ? `<div class="muted">自动带出：${esc(w.phone_source)}（改了就以你填的为准）</div>` : ''}</div>
+      </div>
+      <div>
+        <div class="lbl">仓库</div>
+        <input ${dis} value="${esc(w.warehouses.join(' / '))}" style="width:100%;margin-bottom:.4rem" onchange="save(${k},{warehouse:this.value})" title="默认取发票的客户公司，可以改">
+        <div class="lbl">账单</div>
+        <div>${invs || '<span class="muted">—</span>'}</div>
+      </div>
+      <div>
+        <div class="lbl">怎么付${w.suggest && !w.pay_method ? ` <span style="text-transform:none;color:#0369a1;font-weight:400">· 建议 ${PM_LABEL[w.suggest.method] || w.suggest.method}（${esc(w.suggest.why)}）</span>` : ''}</div>
+        <div class="pm" style="margin-bottom:.45rem">${pm}</div>
+        <textarea ${dis} rows="2" placeholder="备注：Zelle 账号 / 支票抬头 / 现金谁给 …" onchange="save(${k},{pay_note:this.value})">${esc(w.pay_note)}</textarea>
+        ${w.updated_by ? `<div class="muted">最后修改 ${esc(w.updated_by)} ${esc((w.updated_at || '').slice(0, 16))}</div>` : ''}
+      </div>
+    </div>
+    ${gusto}
+  </div>`;
+}
+function renderUnmatched() {
+  const u = D.unmatched_emails || [];
+  const el = document.getElementById('unmatched');
+  if (!u.length) { el.innerHTML = ''; return; }
+  const kind = { accepted: '接受邀请', ready: '可以付款', bank_bad: '银行有误', bank_updated: '银行已更新' };
+  el.innerHTML = `<details class="card" style="margin-top:14px"><summary style="cursor:pointer;font-weight:700;font-size:.85rem">📧 对不上人的 Gusto 邮件（${u.length}）<span class="muted"> — 发票上的名字和 Gusto 里写法差太多，可在卡片上「手动关联」Gusto 收款人</span></summary>
+    <table style="width:100%;font-size:.8rem;margin-top:.5rem;border-collapse:collapse">${u.slice().reverse().map(e => `<tr><td style="padding:.25rem .4rem;white-space:nowrap">${esc(e.date)}</td><td style="padding:.25rem .4rem">${esc(kind[e.kind] || e.kind)}</td><td style="padding:.25rem .4rem;font-weight:700">${esc(e.name)}${e.ambiguous ? ' <span class="muted">(对上多个人)</span>' : ''}</td><td class="muted" style="padding:.25rem .4rem">${esc(e.subject)}</td></tr>`).join('')}</table></details>`;
+}
+
+async function save(k, body) {
+  const j = await api('/api/acct/onboarding/' + encodeURIComponent(D.rows[k].key), { method: 'POST', body }).catch(e => ({ error: e.message }));
+  if (j.error) return toast(j.error, true);
+  toast('已保存');
+  load();
+}
+async function syncGusto() {
+  const b = document.getElementById('btnSync');
+  b.disabled = true; b.textContent = '同步中…';
+  const j = await api('/api/acct/gusto/sync', { method: 'POST', body: {} }).catch(e => ({ error: e.message }));
+  b.disabled = false; b.textContent = '↻ 同步 Gusto';
+  if (j.error || j.ok === false) return toast(j.error || '同步失败', true);
+  toast(j.busy ? '已经在同步了，稍后刷新' : '同步完成');
+  load();
+}
+function openEmail() { document.getElementById('emailModal').style.display = 'flex'; document.getElementById('emailOut').innerHTML = ''; document.getElementById('emailText').focus(); }
+function closeEmail() { document.getElementById('emailModal').style.display = 'none'; }
+async function submitEmail() {
+  const text = document.getElementById('emailText').value;
+  if (!text.trim()) return;
+  const btn = document.getElementById('emailGo');
+  btn.disabled = true;
+  const j = await api('/api/acct/onboarding-emails', { method: 'POST', body: { text } }).catch(e => ({ error: e.message }));
+  btn.disabled = false;
+  const out = document.getElementById('emailOut');
+  if (j.error) { out.innerHTML = `<span style="color:var(--red)">${esc(j.error)}</span>`; return; }
+  out.innerHTML = `认出 <b>${j.parsed}</b> 封，新记 <b>${j.added}</b> 封（其余之前记过）` +
+    (j.events.length ? '<ul style="margin:.3rem 0 0 1rem;padding:0">' + j.events.map(e => `<li>${esc(e.date)} · <b>${esc(e.name)}</b> ${esc(e.label)}</li>`).join('') + '</ul>' : '<div class="muted">没认出 Gusto 入职相关的邮件</div>');
+  document.getElementById('emailText').value = '';
+  load();
+}
+async function pickGusto(k) {
+  const m = document.getElementById('gModal');
+  document.getElementById('gTitle').textContent = '关联 Gusto 收款人';
+  document.getElementById('gBody').innerHTML = `<input id="gQ" placeholder="搜名字" style="width:100%;margin-bottom:.5rem" oninput="gSearch(${k})"><div id="gRes" style="max-height:50vh;overflow:auto"></div>
+    <div style="display:flex;justify-content:space-between;margin-top:.5rem"><button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none';save(${k},{gusto_uuid:''})">清除手动关联（改回按名字自动对）</button><button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none'">关闭</button></div>`;
+  m.style.display = 'flex';
+  document.getElementById('gQ').value = D.rows[k].name.split(' ')[0];
+  gSearch(k);
+}
+let _gT = null;
+function gSearch(k) {
+  clearTimeout(_gT);
+  _gT = setTimeout(async () => {
+    const q = document.getElementById('gQ').value;
+    const j = await api('/api/acct/gusto-payees?q=' + encodeURIComponent(q)).catch(e => ({ error: e.message }));
+    const el = document.getElementById('gRes');
+    if (j.error) { el.innerHTML = `<div style="color:var(--red)">${esc(j.error)}</div>`; return; }
+    if (!j.synced) { el.innerHTML = '<div class="muted">Gusto 名册还没同步（需要先连接 Gusto API）</div>'; return; }
+    el.innerHTML = (j.payees || []).map(p => `<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--g100);padding:.3rem 0;margin:0"><span>${esc(p.name)}${p.active ? '' : ' <span class="muted">已停用</span>'}</span>
+      <button class="btn btn-blue btn-sm" onclick="document.getElementById('gModal').style.display='none';save(${k},{gusto_uuid:'${esc(p.uuid)}',pay_method:'gusto'})">关联</button></div>`).join('') || '<div class="muted">没有匹配的人。还没在 Gusto 添加的话，先去 Gusto 加人发邀请。</div>';
+  }, 200);
+}
+async function gustoSteps(k) {
+  const { uuid, name } = D.rows[k].gusto;
+  const m = document.getElementById('gModal');
+  document.getElementById('gTitle').textContent = `Gusto 入职明细 · ${name}`;
+  document.getElementById('gBody').innerHTML = '<div class="muted">从 Gusto 查询中…</div>';
+  m.style.display = 'flex';
+  const j = await api('/api/acct/onboarding-gusto/' + encodeURIComponent(uuid)).catch(e => ({ error: e.message }));
+  document.getElementById('gBody').innerHTML = j.error
+    ? `<div style="color:var(--red)">${esc(j.error)}</div>`
+    : `<div class="muted" style="margin-bottom:.4rem">状态：${esc(j.onboarding_status || '—')}</div>` +
+      (j.steps.map(s => `<div class="step ${s.completed ? 'ok' : ''}" style="margin-bottom:.3rem"><span>${s.completed ? '✅' : '⬜'}</span><span>${esc(s.title)}${s.required ? '' : ' <span class="muted">(选填)</span>'}</span></div>`).join('') || '<div class="muted">Gusto 没返回步骤</div>') +
+      `<div style="text-align:right;margin-top:.5rem"><button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none'">关闭</button></div>`;
+}
+
+// ── 邮箱自动同步设置 ──
+function hookScript(url) {
+  return `// Prime Anchor · Gusto 入职邮件同步 (Google Apps Script)
+// 每 5 分钟: 找最近 2 天 Gusto 发来的邮件 → 标题发给系统 → 入职相关的自动标注并转发
+const HOOK_URL = '${url}';
+const LABEL = 'PA 入职已同步';
+
+function syncGustoMail() {
+  const threads = GmailApp.search('from:gusto.com newer_than:2d', 0, 50);
+  const msgs = [];
+  threads.forEach(t => t.getMessages().forEach(m => {
+    if (/gusto\\.com/i.test(m.getFrom())) msgs.push(m);
+  }));
+  if (!msgs.length) return;
+  const res = UrlFetchApp.fetch(HOOK_URL, {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    payload: JSON.stringify({ messages: msgs.map(m => ({
+      id: m.getId(), subject: m.getSubject(), from: m.getFrom(), date: m.getDate().toISOString() })) }),
+  });
+  if (res.getResponseCode() !== 200) throw new Error('同步失败 ' + res.getResponseCode() + ': ' + res.getContentText());
+  const out = JSON.parse(res.getContentText());
+  const label = GmailApp.getUserLabelByName(LABEL) || GmailApp.createLabel(LABEL);
+  const byId = {};
+  (out.results || []).forEach(r => { byId[r.id] = r; });
+  msgs.forEach(m => {
+    const r = byId[m.getId()];
+    if (!r || !r.new || !r.forward) return;   // 只处理第一次见到、入职相关的
+    if (out.forward_to) m.forward(out.forward_to, { subject: '[入职] ' + r.label + ' · ' + r.name + ' — ' + m.getSubject() });
+    m.getThread().addLabel(label);
+  });
+}
+
+// 第一次: 选中 install 点「运行」, 按提示授权一次即可 (之后自动每 5 分钟跑)
+function install() {
+  ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('syncGustoMail').timeBased().everyMinutes(5).create();
+  syncGustoMail();
+}
+`;
+}
+async function openHook() {
+  document.getElementById('hookModal').style.display = 'flex';
+  const j = await api('/api/acct/onboarding-mailhook').catch(e => ({ error: e.message }));
+  const el = document.getElementById('hookBody');
+  if (j.error) { el.innerHTML = `<div style="color:var(--red)">${esc(j.error)}</div>`; return; }
+  const kind = { accepted: '接受邀请', ready: '可以付款', bank_bad: '银行有误', bank_updated: '银行已更新' };
+  const status = j.last_at
+    ? `<div class="row"><span class="tag" style="background:#dcfce7;color:#166534">✓ 在同步</span><span class="muted">上次收到 ${esc(new Date(j.last_at).toLocaleString())} · 累计看过 ${j.total_seen} 封</span></div>`
+    : `<div class="row"><span class="tag" style="background:#fef3c7;color:#92400e">${j.configured ? '链接已生成，脚本还没跑过' : '还没设置'}</span></div>`;
+  const recent = j.recent.length ? `<details style="margin:.4rem 0"><summary class="muted" style="cursor:pointer">最近认出的入职邮件（${j.recent.length}）</summary>${j.recent.map(r => `<div class="muted">${esc((r.received_at || r.created_at || '').slice(0, 10))} · ${esc(kind[r.kind] || r.kind)} · <b>${esc(r.name)}</b></div>`).join('')}</details>` : '';
+  if (!j.is_admin) { el.innerHTML = status + recent + '<div class="muted">设置和转发地址只有管理员能改。</div>'; return; }
+  el.innerHTML = status + recent + `
+    <div class="lbl" style="margin-top:.5rem">转发给（多个用逗号隔开，留空就只标注不转发）</div>
+    <div class="row"><input id="hookFwd" style="flex:1;min-width:220px" value="${esc(j.forward_to.join(', '))}" placeholder="hr@example.com, boss@example.com">
+      <button class="btn btn-blue btn-sm" onclick="saveHook(false)">${j.configured ? '保存' : '保存并生成链接'}</button></div>
+    ${j.configured ? `
+    <div class="lbl" style="margin-top:.6rem">安装步骤（只做一次）</div>
+    <ol style="font-size:.8rem;margin:.2rem 0 .5rem 1.1rem;padding:0;line-height:1.6">
+      <li>用<b>收 Gusto 邮件的那个 Google 账号</b>打开 <a href="https://script.google.com/home/projects/create" target="_blank">script.google.com 新建项目</a></li>
+      <li>把编辑器里原有的代码全删掉，粘贴下面这段，点 💾 保存</li>
+      <li>上方函数下拉框选 <code>install</code>，点「运行」→ 按提示授权（会说"Google 未验证此应用"，点 高级 → 继续，这是你自己的脚本）</li>
+      <li>完成。以后每 5 分钟自动跑；在 Gmail 里同步过的入职邮件会打上「PA 入职已同步」标签</li>
+    </ol>
+    <div class="row" style="justify-content:space-between;margin-bottom:.3rem"><span class="lbl" style="margin:0">脚本（链接里带密钥，别外传）</span>
+      <span><button class="btn btn-outline btn-sm" onclick="copyHook()">📋 复制</button>
+      <button class="btn btn-outline btn-sm" onclick="saveHook(true)" title="旧脚本会立刻失效，需要重新粘贴">🔄 换新密钥</button></span></div>
+    <textarea id="hookCode" rows="14" readonly style="font-family:ui-monospace,Menlo,monospace;font-size:.72rem">${esc(hookScript(j.hook_url))}</textarea>` : ''}
+    <div style="text-align:right;margin-top:.5rem"><button class="btn btn-outline btn-sm" onclick="document.getElementById('hookModal').style.display='none'">关闭</button></div>`;
+}
+async function saveHook(regenerate) {
+  if (regenerate && !confirm('换新密钥后旧脚本立刻失效，要把新脚本重新粘贴到 Apps Script。继续？')) return;
+  const body = { forward_to: document.getElementById('hookFwd').value };
+  if (regenerate) body.regenerate = true;
+  const j = await api('/api/acct/onboarding-mailhook', { method: 'POST', body }).catch(e => ({ error: e.message }));
+  if (j.error) return toast(j.error, true);
+  toast('已保存');
+  openHook();
+}
+function copyHook() {
+  const t = document.getElementById('hookCode');
+  t.select();
+  (navigator.clipboard ? navigator.clipboard.writeText(t.value) : Promise.reject()).then(() => toast('已复制'), () => { document.execCommand('copy'); toast('已复制'); });
+}
+
+load();
+</script>
+</body>
+</html>

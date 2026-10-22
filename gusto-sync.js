@@ -135,6 +135,20 @@ async function listContractors(environment, accessToken, companyUuid, fetchImpl)
   return out.filter(c => c.uuid);
 }
 
+// 单个合同工的入职步骤明细 (/onboarding 页「Gusto 明细」按钮现查):
+// { onboarding_status, onboarding_steps: [{ id, title, required, completed }] }
+async function contractorOnboardingStatus(environment, accessToken, contractorUuid, fetchImpl) {
+  const j = await apiGet(environment, accessToken,
+    `/v1/contractors/${encodeURIComponent(contractorUuid)}/onboarding_status`, fetchImpl) || {};
+  return {
+    onboarding_status: String(j.onboarding_status || ''),
+    steps: (Array.isArray(j.onboarding_steps) ? j.onboarding_steps : []).map(s => ({
+      id: String(s.id || ''), title: String(s.title || s.id || ''),
+      required: s.required !== false, completed: !!s.completed,
+    })),
+  };
+}
+
 function contractorDisplayName(c) {
   const business = String(c.business_name || '').trim();
   if (business) return business;
@@ -405,6 +419,6 @@ function _parseW2Report(rows, hdrIdx, headers) {
 
 module.exports = {
   apiHost, authorizeUrl, exchangeCode, refreshTokens, apiGet,
-  tokenInfo, companyInfo, listContractors, listContractorPayments,
+  tokenInfo, companyInfo, listContractors, listContractorPayments, contractorOnboardingStatus,
   contractorDisplayName, normalizePayment, chunkRanges, parsePaymentReportCsv,
 };
