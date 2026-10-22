@@ -3950,9 +3950,11 @@ function _ivDigestEmail({ nowIso, today, tomorrow, overdue, todayRows, tomorrowR
     : r.overdue ? ['⚠ 超时未标记', '#dc2626']
     : ['⏳ 还没到时间', '#6b7280'];
   const nOver = overdue.length;
-  const todayUnmarked = todayRows.filter(r => r.overdue).length;
-  const subject = (nOver ? `【⚠ ${nOver} 人超时未标记】` : '【✅ 面试都已标记】')
-    + `面试日报 ${when} · 今天 ${todayRows.length} 人 · 明天 ${tomorrowRows.length} 人`;
+  // 今天去面试 = 今天的面试里标了去了 / 没通过 (去了没过) / 已上班的
+  const nWent = todayRows.filter(r => ['attended', 'failed'].includes(r.interview_status) || (!r.interview_status && r.work_start_date)).length;
+  const nTomorrow = tomorrowRows.length;
+  const subject = (nOver ? `【⚠ ${nOver} 人还没标记】` : '【✅ 都已标记】')
+    + `面试日报 ${when} · 今天去面试 ${nWent} 人 · 明天安排面试 ${nTomorrow} 人`;
 
   const td = 'padding:8px 10px;border-bottom:1px solid #f1f5f9;vertical-align:top;font-size:13px';
   const th = 'padding:8px 10px;color:#6b7280;font-size:12px;text-align:left;background:#f9fafb';
@@ -3967,6 +3969,10 @@ ${rows.map(r => { const [mt, mc] = mark(r); return `<tr${r.overdue ? ' style="ba
   ${withMark ? `<td style="${td};white-space:nowrap;font-weight:700;color:${mc}">${esc(mt)}</td>` : ''}
 </tr>`; }).join('')}
 </table>` : '<p style="margin:0;color:#9ca3af;font-size:13px">（没有）</p>';
+  const tile = (label, n, color, bg, sub) => `<td width="33%" style="padding:0 6px"><div style="background:${bg};border:1px solid ${color}33;border-radius:8px;padding:10px 12px;text-align:center">
+  <div style="font-size:12px;color:#6b7280">${label}</div>
+  <div style="font-size:28px;font-weight:800;color:${color};line-height:1.2">${n} <span style="font-size:14px">人</span></div>
+  <div style="font-size:11px;color:#9ca3af">${sub}</div></div></td>`;
   const h2 = (title, color) => `<p style="margin:0 0 8px;font-size:15px;font-weight:700;color:${color || '#111827'}">${title}</p>`;
   const banner = nOver
     ? `<td style="background:#dc2626;padding:20px 24px">
@@ -3980,10 +3986,12 @@ ${rows.map(r => { const [mt, mc] = mark(r); return `<tr${r.overdue ? ' style="ba
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:24px 0"><tr><td align="center">
 <table width="760" cellpadding="0" cellspacing="0" style="max-width:760px;width:100%;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)">
 <tr>${banner}</tr>
-<tr><td style="padding:14px 24px;background:#f9fafb;border-bottom:1px solid #e5e7eb;font-size:14px;color:#374151">
-  超时未标记 <b style="color:${nOver ? '#dc2626' : '#047857'};font-size:16px">${nOver}</b> 人 ·
-  今天（${today}）面试 <b>${todayRows.length}</b> 人${todayRows.length ? (todayUnmarked ? `，<b style="color:#dc2626">${todayUnmarked} 人超时未标记</b>` : '，过了时间的都已标记') : ''} ·
-  明天（${tomorrow}）面试 <b>${tomorrowRows.length}</b> 人
+<tr><td style="padding:14px 18px;background:#f9fafb;border-bottom:1px solid #e5e7eb">
+<table width="100%" cellpadding="0" cellspacing="0"><tr>
+  ${tile('还没标记', nOver, nOver ? '#dc2626' : '#047857', nOver ? '#fef2f2' : '#ecfdf5', '面试时间已过')}
+  ${tile('今天去面试', nWent, '#1e40af', '#eff6ff', today)}
+  ${tile('明天安排面试', nTomorrow, '#7c3aed', '#f5f3ff', tomorrow)}
+</tr></table>
 </td></tr>
 ${nOver ? `<tr><td style="padding:18px 24px 6px">${h2(`⚠ 超时未标记（${nOver} 人）`, '#dc2626')}${table(overdue, false, true)}</td></tr>` : ''}
 <tr><td style="padding:18px 24px 6px">${h2(`📋 今天的面试（${today}，${todayRows.length} 人）— 标记情况`)}${table(todayRows, true)}</td></tr>
@@ -3996,6 +4004,7 @@ ${nOver ? `<tr><td style="padding:18px 24px 6px">${h2(`⚠ 超时未标记（${n
 
   const line = (r, withMark) => `- ${r.worker_name || '(没填名字)'} ${r.worker_phone || '(没留电话)'} | 面试 ${r.iv.replace('T', ' ')}${r.overdue ? '（' + ago(r.iv) + '）' : ''} | ${r.warehouse_name || ''}${r.job_title ? ' · ' + r.job_title : ''} | 工头 ${r.foreman_name || ''} ${r.foreman_phone || ''} | ${r.submitter || ''} 提交${withMark ? ' | ' + mark(r)[0] : ''}`;
   const text = [
+    `还没标记 ${nOver} 人 · 今天去面试 ${nWent} 人 · 明天安排面试 ${nTomorrow} 人`, '',
     nOver ? `⚠ ${nOver} 人面试超时未标记（面试时间已过，还没标去了 / 没去 / 没通过）` : '✅ 面试都已标记，没有超时未标记的',
     `截至 ${when}（芝加哥时间）`, '',
     ...(nOver ? [`【超时未标记 ${nOver} 人】`, ...overdue.map(r => line(r)), ''] : []),
