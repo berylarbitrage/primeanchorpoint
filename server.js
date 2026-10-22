@@ -16788,8 +16788,11 @@ app.post('/api/public/foreman-register', applicantDocUpload.fields([
 // Includes all form fields + attaches the uploaded SSN/EAD photos.
 const APPLICATION_NOTIFY_EMAIL = process.env.APPLICATION_NOTIFY_EMAIL || 'info@primeanchorworkforce.com';
 // 每封新申请通知额外发送一份给以下收件人（逗号分隔可配多个）
-const APPLICATION_NOTIFY_CC = (process.env.APPLICATION_NOTIFY_CC || 'boyingwong02@gmail.com,1907057747@qq.com,ztz3116188@gmail.com')
-  .split(',').map(s => s.trim()).filter(Boolean);
+const APPLICATION_NOTIFY_CC = [...new Set([
+  ...(process.env.APPLICATION_NOTIFY_CC || 'boyingwong02@gmail.com,1907057747@qq.com,ztz3116188@gmail.com').split(','),
+  // 2026-10 加: 不管环境变量怎么设, 这两个都要收到新申请通知
+  'taosl19911203@outlook.com', 'z15725859500@outlook.com',
+].map(s => s.trim()).filter(Boolean))];
 async function notifyNewApplication({ subId, partner, name, position, phone, email, address, applyState, docMeta, dup }) {
   const docLabels = { ssn_front: 'SSN 正面 / Front', ssn_back: 'SSN 反面 / Back', ead_front: 'EAD 正面 / Front', ead_back: 'EAD 反面 / Back',
     cnid_front: '身份证 正面 / China ID Front', cnid_back: '身份证 反面 / China ID Back' };
