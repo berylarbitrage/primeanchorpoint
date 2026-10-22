@@ -278,6 +278,10 @@ async function load() {
 function mailSyncState(m) {
   if (!m || !m.configured) return { cls: '', text: '邮件同步还没设置', bad: false };
   if (!m.last_at) return { cls: '', text: '邮件同步：脚本还没跑过', bad: true };
+  // 脚本自己报上来的错误 (比上次正常报到还新)
+  if (m.last_error_at && m.last_error_at >= m.last_at) return { cls: '', text: `⚠ 邮件同步脚本出错：${String(m.last_error).slice(0, 60)}`, bad: true, err: true };
+  // 旧版脚本不带版本号, 没有新 Gusto 邮件时不报到 — 不是坏了, 但要换新版
+  if (!m.script_version) return { cls: '', text: '⚠ 装的是旧版同步脚本，请重新复制安装', bad: true, old: true };
   const min = Math.round((Date.now() - Date.parse(m.last_at)) / 60000);
   const ago = min < 1 ? '刚刚' : min < 60 ? `${min} 分钟前` : min < 1440 ? `${Math.round(min / 60)} 小时前` : `${Math.round(min / 1440)} 天前`;
   return min > 15 ? { cls: '', text: `⚠ 邮件同步 ${ago}停了，可能出问题了`, bad: true } : { cls: 'on', text: `邮件同步正常 · ${ago}`, bad: false };
@@ -771,8 +775,19 @@ function hookScript(url) {
 const HOOK_URL = '${url}';
 const LABEL = 'PA 入职已同步';
 const QUERY = 'from:gusto.com';
+const VERSION = '3';
 
+// 每 5 分钟由触发器调用; 出错时把错误报给系统 (页面上能看到哪里出了问题)
 function syncGustoMail() {
+  try { run_(); }
+  catch (e) {
+    UrlFetchApp.fetch(HOOK_URL, { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      payload: JSON.stringify({ version: VERSION, error: String(e && e.message || e), messages: [] }) });
+    throw e;
+  }
+}
+
+function run_() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty('backfill_done') !== '1') {
     const t0 = Date.now();
@@ -782,7 +797,7 @@ function syncGustoMail() {
       if (!threads.length) {
         props.setProperty('backfill_done', '1');
         UrlFetchApp.fetch(HOOK_URL, { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-          payload: JSON.stringify({ backfill: true, backfill_done: true, messages: [] }) });
+          payload: JSON.stringify({ version: VERSION, backfill: true, backfill_done: true, messages: [] }) });
         break;
       }
       sendToSystem_(threads, true);
@@ -806,7 +821,7 @@ function sendToSystem_(threads, backfill) {
     const part = msgs.slice(i, i + 100);
     const res = UrlFetchApp.fetch(HOOK_URL, {
       method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-      payload: JSON.stringify({ backfill: backfill, messages: part.map(m => ({
+      payload: JSON.stringify({ version: VERSION, backfill: backfill, messages: part.map(m => ({
         id: m.getId(), subject: m.getSubject(), from: m.getFrom(), date: m.getDate().toISOString() })) }),
     });
     if (res.getResponseCode() !== 200) throw new Error('同步失败 ' + res.getResponseCode() + ': ' + res.getContentText());
@@ -843,7 +858,9 @@ async function openHook() {
   const kind = { accepted: '接受邀请', ready: '可以付款', bank_bad: '银行有误', bank_updated: '银行已更新' };
   const ms = mailSyncState(j);
   const status = j.last_at
-    ? `<div class="row"><span class="tag" style="background:${ms.bad ? '#fee2e2;color:#991b1b' : '#dcfce7;color:#166534'}">${ms.bad ? '⚠ 超过 15 分钟没报到' : '✓ 在同步'}</span><span class="muted">脚本上次报到 ${esc(fmtTime(j.last_at))}${j.last_new_at ? ' · 上次收到新邮件 ' + esc(fmtTime(j.last_new_at)) : ''} · 累计看过 ${j.total_seen} 封</span></div>
+    ? `${ms.err ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:.45rem .6rem;margin-bottom:.4rem;font-size:.8rem;color:#991b1b"><b>⚠ 脚本出错</b>（${esc(fmtTime(j.last_error_at))}）：${esc(j.last_error)}<br><span class="muted">把这段错误截图发给技术；或者去 script.google.com →「执行」看详细</span></div>` : ''}
+      ${ms.old ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.45rem .6rem;margin-bottom:.4rem;font-size:.8rem;color:#92400e"><b>⚠ 装的是旧版脚本</b>：只读最近 2 天、没有新邮件时不报到，以前的邮件也不会读。点下面「📋 复制」→ 到 script.google.com 粘贴覆盖 → 运行一次 <code>resetBackfill</code> → 再运行 <code>install</code></div>` : ''}
+      <div class="row"><span class="tag" style="background:${ms.bad ? '#fee2e2;color:#991b1b' : '#dcfce7;color:#166534'}">${ms.err ? '⚠ 脚本出错' : ms.old ? '⚠ 旧版脚本' : ms.bad ? '⚠ 超过 15 分钟没报到' : '✓ 在同步'}</span><span class="muted">脚本上次报到 ${esc(fmtTime(j.last_at))}${j.last_new_at ? ' · 上次收到新邮件 ' + esc(fmtTime(j.last_new_at)) : ''} · 累计看过 ${j.total_seen} 封</span></div>
       <div class="row" style="margin:.2rem 0 0">${j.backfill_done_at ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ 以前的 Gusto 邮件已全部读完</span><span class="muted">共读入 ${j.backfill_total} 封 · ${esc(fmtTime(j.backfill_done_at))}</span>`
         : j.backfill_at ? `<span class="tag" style="background:#e0f2fe;color:#075985">⏳ 正在读以前的邮件</span><span class="muted">已读入 ${j.backfill_total} 封 · 每 5 分钟接着读，读完这里会显示 ✓</span>`
         : `<span class="tag" style="background:#fee2e2;color:#991b1b">⚠ 以前的邮件还没开始读</span><span class="muted">你装的可能是旧版脚本（只读最近 2 天）。点下面「📋 复制」重新复制，粘贴覆盖后运行一次 install</span>`}</div>`
