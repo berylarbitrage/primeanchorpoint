@@ -44303,6 +44303,8 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
       bank_alerts: bank.filter(b => !b.ack_at).map(b => ({ ...b, worker: b.key ? ((list.find(w => w.key === b.key) || {}).name || '') : '' })).reverse(),
       unmatched_emails: unmatched.filter(e => e.date >= since).slice(-50),
       pay_methods: wob.PAY_METHODS, steps: wob.GUSTO_STEPS,
+      // 邮件同步脚本状态 (页面顶部显示正常 / 停了)
+      mail_sync: (() => { const m = _mailHookCfg(); return { configured: !!m.token, last_at: m.last_at || '', last_new_at: m.last_new_at || '' }; })(),
       gusto: { connected: !!(st.access_token && st.refresh_token), last_sync_at: st.last_sync_at || '',
         contractors: db.prepare('SELECT COUNT(*) AS n FROM gusto_contractors').get().n },
       role: req.userRole,
@@ -44683,7 +44685,9 @@ app.post('/api/hooks/gusto-mail', (req, res) => {
         results.push({ id, new: true, forward: !!ev && !backfill, kind: ev ? ev.kind : '', name: ev ? ev.name : '', label: ev ? wob.EMAIL_KIND_LABEL[ev.kind] : '' });
       }
     })();
-    _mailHookSave({ last_at: new Date().toISOString(), last_received: results.filter(r => r.new).length, last_added: added,
+    const newCount = results.filter(r => r.new).length;
+    _mailHookSave({ last_at: new Date().toISOString(), last_received: newCount, last_added: added,
+      ...(newCount ? { last_new_at: new Date().toISOString() } : {}),
       ...(backfill ? { backfill_at: new Date().toISOString(), backfill_total: (_mailHookCfg().backfill_total || 0) + results.filter(r => r.new).length } : {}) });
     if (added) setImmediate(_wobNotifyBank);
     const forwardTo = (cfg.forward_to || []).join(',');
@@ -44699,7 +44703,7 @@ app.get('/api/acct/onboarding-mailhook', requireAdmin, requireWobView, (req, res
   res.json({ configured: !!cfg.token, is_admin: isAdmin, forward_to: cfg.forward_to || [],
     hook_url: isAdmin && cfg.token ? _mailHookUrl(req, cfg.token) : '',
     last_at: cfg.last_at || '', last_received: cfg.last_received || 0, last_added: cfg.last_added || 0,
-    backfill_at: cfg.backfill_at || '', backfill_total: cfg.backfill_total || 0,
+    backfill_at: cfg.backfill_at || '', backfill_total: cfg.backfill_total || 0, last_new_at: cfg.last_new_at || '',
     total_seen: db.prepare('SELECT COUNT(*) AS n FROM gusto_mail_seen').get().n, recent });
 });
 app.post('/api/acct/onboarding-mailhook', requireAdmin, requireRole('admin'), (req, res) => {
