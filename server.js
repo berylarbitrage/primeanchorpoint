@@ -3901,7 +3901,7 @@ schedule24hReminders();
 // ① 面试时间已过还没标「去了 / 没去 / 没通过」的 (口径同会计对账页的红色提醒: 有面试时间、
 //    没标、还没开始上班) — 标红并醒目写出几个; ② 今天的面试和标记情况; ③ 明天有哪些人面试。
 // 收件人可用 IV_OVERDUE_EMAILS (逗号分隔) 覆盖。
-const IV_OVERDUE_EMAILS = (process.env.IV_OVERDUE_EMAILS || 'info@primeanchorworkforce.com,taosl19911203@163.com,z15725859500@outlook.com')
+const IV_OVERDUE_EMAILS = (process.env.IV_OVERDUE_EMAILS || 'info@primeanchorworkforce.com,taosl19911203@outlook.com,z15725859500@outlook.com')
   .split(',').map(s => s.trim()).filter(Boolean);
 const IV_OVERDUE_HOURS = [14, 20];
 
