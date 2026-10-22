@@ -183,7 +183,10 @@ textarea{width:100%}
 let TOKEN = localStorage.getItem('acct_token') || localStorage.getItem('adminToken') || '';
 let D = null;                     // 最近一次 /api/acct/onboarding 的结果
 let VIEW = 'week', WEEK = '', INV = 0;
-const ZEDIT = {};                 // 正在编辑 Zelle 账号的人: key → [{account, name}]
+const ZEDIT = {};
+let SHOW_IGN = false;
+const PICKS = [];                 // 关联邮件时可选的工人 {key, name} (按钮里只放下标, 名字里有引号也没事)
+function pk(key, name) { PICKS.push({ key, name }); return PICKS.length - 1; }             // 对不上人的邮件: 是否也列出已忽略的                 // 正在编辑 Zelle 账号的人: key → [{account, name}]
 const EXP = new Set();            // 发票视图里展开看全卡片的老员工
 const PM_LABEL = { gusto: 'Gusto 入职', cash: '现金', check: '支票', zelle: 'Zelle', skip: '不用处理' };
 
@@ -225,8 +228,9 @@ async function login() {
 
 async function load() {
   const q = VIEW !== 'week' ? '?view=' + VIEW : (WEEK ? '?week=' + WEEK + (INV ? '&invoice=' + INV : '') : '');
+  const q2 = q + (SHOW_IGN ? (q ? '&' : '?') + 'show_ignored=1' : '');
   let j;
-  try { j = await api('/api/acct/onboarding' + q); } catch (e) { return; }
+  try { j = await api('/api/acct/onboarding' + q2); } catch (e) { return; }
   if (j.error) { document.getElementById('list').innerHTML = `<div class="empty" style="color:var(--red)">${esc(j.error)}</div>`; return; }
   D = j;
   WEEK = j.week;
@@ -389,13 +393,70 @@ function reviewBtns(k, yes, no) {
   if (!D.can_approve) return '<span class="muted">等 manager / admin 审核</span>';
   return `<button class="btn btn-blue btn-sm" onclick="save(${k},${yes})">✓ 通过</button><button class="btn btn-outline btn-sm" onclick="save(${k},${no})">✗ 不是</button>`;
 }
+// 对不上人的 Gusto 邮件: manager / admin 可以手动关联到某个工人, 或者暂时忽略
 function renderUnmatched() {
-  const u = D.unmatched_emails || [];
+  const u = D.unmatched_emails || [], nIgn = D.unmatched_ignored || 0;
   const el = document.getElementById('unmatched');
-  if (!u.length) { el.innerHTML = ''; return; }
+  if (!u.length && !nIgn) { el.innerHTML = ''; return; }
   const kind = { accepted: '接受邀请', ready: '可以付款', bank_bad: '银行有误', bank_updated: '银行已更新' };
-  el.innerHTML = `<details class="card" style="margin-top:14px"><summary style="cursor:pointer;font-weight:700;font-size:.85rem">📧 对不上人的 Gusto 邮件（${u.length}）<span class="muted"> — 发票上的名字和 Gusto 里写法差太多，可在卡片上「手动关联」Gusto 收款人</span></summary>
-    <table style="width:100%;font-size:.8rem;margin-top:.5rem;border-collapse:collapse">${u.slice().reverse().map(e => `<tr><td style="padding:.25rem .4rem;white-space:nowrap">${esc(e.date)}</td><td style="padding:.25rem .4rem">${esc(kind[e.kind] || e.kind)}</td><td style="padding:.25rem .4rem;font-weight:700">${esc(e.name)}${e.ambiguous ? ' <span class="muted">(对上多个人)</span>' : ''}</td><td class="muted" style="padding:.25rem .4rem">${esc(e.subject)}</td></tr>`).join('')}</table></details>`;
+  const open = u.filter(e => !e.ignored_at).length;
+  const td = 'padding:.35rem .4rem;border-top:1px solid var(--g100);vertical-align:middle';
+  const rows = u.slice().reverse().map(e => {
+    const cands = (e.candidates || []).map(c => `<button class="btn btn-outline btn-sm" onclick="assignEmail(${e.id},${pk(c.key, c.name)})">是 ${esc(c.name)}？</button>`).join(' ');
+    const act = !D.can_approve ? '<span class="muted">等 manager / admin 处理</span>'
+      : e.ignored_at ? `<span class="muted">${esc(e.ignored_by)} 已忽略</span> <button class="btn btn-outline btn-sm" onclick="ignoreEmail(${e.id},false)">取消忽略</button>`
+      : `${cands} <button class="btn btn-blue btn-sm" onclick="pickWorkerFor(${e.id})">手动关联</button> <button class="btn btn-outline btn-sm" onclick="ignoreEmail(${e.id},true)">暂时忽略</button>`;
+    return `<tr style="${e.ignored_at ? 'opacity:.55' : ''}"><td style="${td};white-space:nowrap">${esc(e.date)}</td><td style="${td};white-space:nowrap">${esc(kind[e.kind] || e.kind)}</td>
+      <td style="${td};font-weight:700">${esc(e.name)}${e.ambiguous ? ' <span class="muted">(对上多个人)</span>' : ''}</td><td class="muted" style="${td}">${esc(e.subject)}</td>
+      <td style="${td};text-align:right;white-space:nowrap">${act}</td></tr>`;
+  }).join('');
+  el.innerHTML = `<details class="card" style="margin-top:14px" ${open ? 'open' : ''}><summary style="cursor:pointer;font-weight:700;font-size:.85rem">📧 对不上人的 Gusto 邮件（${open}）<span class="muted"> — 邮件里的名字和发票上的写法差太多，点「手动关联」选是哪个工人，或者「暂时忽略」</span></summary>
+    ${nIgn ? `<div style="margin:.4rem 0 0"><label class="muted" style="cursor:pointer"><input type="checkbox" ${SHOW_IGN ? 'checked' : ''} onchange="SHOW_IGN=this.checked;load()"> 显示已忽略的（${nIgn}）</label></div>` : ''}
+    <table style="width:100%;font-size:.8rem;margin-top:.4rem;border-collapse:collapse">${rows || '<tr><td class="muted" style="padding:.5rem">没有了</td></tr>'}</table></details>`;
+}
+// 手动关联: 先搜人 (默认用邮件里的名字搜), 选了再弹窗确认
+function pickWorkerFor(evId) {
+  const all = [...(D.unmatched_emails || []), ...(D.bank_alerts || [])];
+  const e = all.find(x => x.id === evId) || {};
+  const m = document.getElementById('gModal');
+  document.getElementById('gTitle').textContent = `这封邮件是哪个工人的？`;
+  document.getElementById('gBody').innerHTML = `<div class="muted" style="margin-bottom:.4rem">${esc(e.date || '')} · ${esc(e.subject || '')}</div>
+    <input id="wQ" placeholder="搜工人名字" style="width:100%;margin-bottom:.5rem" oninput="wSearch(${evId})"><div id="wRes" style="max-height:50vh;overflow:auto"></div>
+    <div style="text-align:right;margin-top:.5rem"><button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none'">关闭</button></div>`;
+  m.style.display = 'flex';
+  document.getElementById('wQ').value = (e.name || '').split(' ')[0];
+  wSearch(evId);
+}
+let _wT = null;
+function wSearch(evId) {
+  clearTimeout(_wT);
+  _wT = setTimeout(async () => {
+    const j = await api('/api/acct/onboarding-workers?q=' + encodeURIComponent(document.getElementById('wQ').value)).catch(e => ({ error: e.message }));
+    const el = document.getElementById('wRes');
+    if (j.error) { el.innerHTML = `<div style="color:var(--red)">${esc(j.error)}</div>`; return; }
+    el.innerHTML = (j.workers || []).map(w => `<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--g100);padding:.35rem 0;margin:0">
+        <span><b>${esc(w.name)}</b> <span class="muted">${esc(w.companies.join(' / '))} · 第一次 ${esc(w.first_end)}${w.employee ? ' · ' + esc(w.employee) : ''}</span></span>
+        <button class="btn btn-blue btn-sm" onclick="assignEmail(${evId},${pk(w.key, w.name)})">选这个人</button></div>`).join('')
+      || '<div class="muted">没找到。换个写法搜（只搜名字的一部分也行）</div>';
+  }, 250);
+}
+function assignEmail(evId, pi) {
+  const { key, name } = PICKS[pi];
+  const all = [...(D.unmatched_emails || []), ...(D.bank_alerts || [])];
+  const e = all.find(x => x.id === evId) || {};
+  document.getElementById('gModal').style.display = 'none';
+  confirmBox('确认关联这封邮件', `<div style="font-size:.88rem">邮件里的「<b>${esc(e.name || '')}</b>」（${esc(e.date || '')} · ${esc(e.label || '')}）</div>
+    <div style="font-size:.88rem;margin-top:.3rem">→ 关联到工人 <b>${esc(name)}</b></div>
+    <div class="muted" style="margin-top:.3rem">关联后算已确认，直接进这个人的入职清单 / 银行提醒</div>`, async () => {
+    const j = await api('/api/acct/onboarding-email-assign', { method: 'POST', body: { event_id: evId, key } }).catch(x => ({ error: x.message }));
+    if (j.error) { toast(j.error, true); return false; }
+    toast('已关联到 ' + j.worker); load(); return true;
+  });
+}
+async function ignoreEmail(evId, on) {
+  const j = await api('/api/acct/onboarding-email-ignore', { method: 'POST', body: { event_id: evId, ignore: on } }).catch(x => ({ error: x.message }));
+  if (j.error) return toast(j.error, true);
+  toast(on ? '已忽略' : '已取消忽略'); load();
 }
 
 async function save(k, body) {
@@ -553,6 +614,7 @@ function renderAlerts() {
       <button class="btn btn-outline btn-sm" onclick="VIEW='alerts';INV=0;load()">只看这些人</button></div>` +
     a.map(x => `<div class="a"><span class="tag" style="background:#fee2e2;color:#991b1b">${esc(x.label)}</span><b>${esc(x.worker || x.name)}</b>
       <span class="muted">${esc(x.date)} · ${esc(x.subject)}${x.key ? '' : ' · 系统里没对上是哪个工人'}</span>
+      ${!x.key && D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="pickWorkerFor(${x.id})">手动关联</button>` : ''}
       ${clearAsk(x, 'margin-left:auto')}
       ${D.can_approve ? `<button class="btn btn-outline btn-sm" style="${x.clears && x.clears.length ? '' : 'margin-left:auto'}" onclick="ackBank(${x.id})">知道了</button>` : ''}</div>`).join('') + '</div>';
 }
