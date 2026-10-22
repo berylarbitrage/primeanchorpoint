@@ -3943,12 +3943,23 @@ function _ivDigestEmail({ nowIso, today, tomorrow, overdue, todayRows, tomorrowR
     return h >= 24 ? `已过 ${Math.floor(h / 24)} 天` : h >= 1 ? `已过 ${h} 小时` : '刚过';
   };
   // 标记状态: 文字 + 颜色
-  const mark = r => r.interview_status === 'attended' ? ['✅ 去了' + (r.interview_attended_at ? `（到场 ${r.interview_attended_at}）` : ''), '#047857']
-    : r.interview_status === 'no_show' ? ['❌ 没去', '#b91c1c']
-    : r.interview_status === 'failed' ? ['🙅 没通过', '#9a3412']
-    : r.work_start_date ? [`已上班（${r.work_start_date}）`, '#047857']
-    : r.overdue ? ['⚠ 超时未标记', '#dc2626']
-    : ['⏳ 还没到时间', '#6b7280'];
+  // 标记状态: [文字, 颜色, 小字补充]
+  const mark = r => r.interview_status === 'attended' ? ['✅ 去了', '#047857', r.interview_attended_at ? `到场 ${String(r.interview_attended_at).replace(/^\d{4}-\d{2}-\d{2}[ T]/, '')}` : '']
+    : r.interview_status === 'no_show' ? ['❌ 没去', '#b91c1c', '']
+    : r.interview_status === 'failed' ? ['🙅 没通过', '#9a3412', '']
+    : r.work_start_date ? ['✅ 已上班', '#047857', r.work_start_date]
+    : r.overdue ? ['⚠ 超时未标记', '#dc2626', '']
+    : ['⏳ 还没到时间', '#6b7280', ''];
+  // 岗位名去掉开头的图标、「× 越多越好…」和重复的仓库名, 只留 工种 · 班次 (如「卸柜工 · 早班 07:00–19:00」)
+  const shortJob = t => {
+    t = String(t || '').replace(/^[^\p{L}\p{N}]+/u, '').trim();
+    if (!t) return '';
+    const [head, tail = ''] = t.split(' — ');
+    const role = head.split(' × ')[0].trim();
+    const shift = tail.split(' · ').slice(1).join(' · ').trim();
+    const out = [role, shift].filter(Boolean).join(' · ');
+    return out.length > 40 ? out.slice(0, 39) + '…' : out;
+  };
   const nOver = overdue.length;
   // 今天去面试 = 今天的面试里标了去了 / 没通过 (去了没过) / 已上班的
   const nWent = todayRows.filter(r => ['attended', 'failed'].includes(r.interview_status) || (!r.interview_status && r.work_start_date)).length;
@@ -3958,15 +3969,15 @@ function _ivDigestEmail({ nowIso, today, tomorrow, overdue, todayRows, tomorrowR
 
   const td = 'padding:8px 10px;border-bottom:1px solid #f1f5f9;vertical-align:top;font-size:13px';
   const th = 'padding:8px 10px;color:#6b7280;font-size:12px;text-align:left;background:#f9fafb';
-  const table = (rows, withMark, red) => rows.length ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:${red ? '2px solid #dc2626' : '1px solid #e5e7eb'}">
-<tr><th style="${th}">被介绍工人</th><th style="${th}">面试时间</th><th style="${th}">工作仓库</th><th style="${th}">工头</th><th style="${th}">提交人</th>${withMark ? `<th style="${th}">标记</th>` : ''}</tr>
-${rows.map(r => { const [mt, mc] = mark(r); return `<tr${r.overdue ? ' style="background:#fef2f2"' : ''}>
-  <td style="${td}"><b>${esc(r.worker_name || '(没填名字)')}</b><br><span style="color:#6b7280">${esc(r.worker_phone || '没留电话')}</span></td>
-  <td style="${td};white-space:nowrap"><b${r.overdue ? ' style="color:#dc2626"' : ''}>${esc(r.iv.replace('T', ' '))}</b>${r.overdue ? `<br><span style="color:#dc2626;font-size:12px">${ago(r.iv)}</span>` : ''}</td>
-  <td style="${td}">${esc(r.warehouse_name || '—')}${r.job_title ? `<br><span style="color:#6b7280;font-size:12px">${esc(r.job_title)}</span>` : ''}</td>
-  <td style="${td}">${esc(r.foreman_name || '—')}<br><span style="color:#6b7280">${esc(r.foreman_phone || '')}</span></td>
-  <td style="${td}">${esc(r.submitter || '—')}</td>
-  ${withMark ? `<td style="${td};white-space:nowrap;font-weight:700;color:${mc}">${esc(mt)}</td>` : ''}
+  // fullDate: 超时未标记那张表跨好几天, 写完整日期; 今天 / 明天的表只写几点
+  const table = (rows, withMark, red, fullDate) => rows.length ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:${red ? '2px solid #dc2626' : '1px solid #e5e7eb'};table-layout:auto">
+<tr><th style="${th}">被介绍工人</th><th style="${th};white-space:nowrap">面试时间</th><th style="${th}">仓库 / 岗位</th><th style="${th}">工头 · 提交人</th>${withMark ? `<th style="${th};white-space:nowrap">标记</th>` : ''}</tr>
+${rows.map(r => { const [mt, mc, ms] = mark(r); const job = shortJob(r.job_title); return `<tr${r.overdue ? ' style="background:#fef2f2"' : ''}>
+  <td style="${td}"><b style="white-space:nowrap">${esc(r.worker_name || '(没填名字)')}</b><br><span style="color:#9ca3af;font-size:12px;white-space:nowrap">${esc(r.worker_phone || '没留电话')}</span></td>
+  <td style="${td};white-space:nowrap"><b${r.overdue ? ' style="color:#dc2626"' : ''}>${esc(fullDate ? r.iv.replace('T', ' ') : r.iv.slice(11))}</b>${r.overdue ? `<br><span style="color:#dc2626;font-size:12px">${ago(r.iv)}</span>` : ''}</td>
+  <td style="${td}">${esc(r.warehouse_name || '—')}${job ? `<br><span style="color:#6b7280;font-size:12px">${esc(job)}</span>` : ''}</td>
+  <td style="${td}"><span style="white-space:nowrap">${esc(r.foreman_name || '—')}</span>${r.foreman_phone ? ` <span style="color:#6b7280;font-size:12px;white-space:nowrap">${esc(r.foreman_phone)}</span>` : ''}<br><span style="color:#9ca3af;font-size:12px;white-space:nowrap">${esc(r.submitter || '—')} 提交</span></td>
+  ${withMark ? `<td style="${td};white-space:nowrap"><b style="color:${mc}">${esc(mt)}</b>${ms ? `<br><span style="color:#6b7280;font-size:12px">${esc(ms)}</span>` : ''}</td>` : ''}
 </tr>`; }).join('')}
 </table>` : '<p style="margin:0;color:#9ca3af;font-size:13px">（没有）</p>';
   const tile = (label, n, color, bg, sub) => `<td width="33%" style="padding:0 6px"><div style="background:${bg};border:1px solid ${color}33;border-radius:8px;padding:10px 12px;text-align:center">
@@ -3993,7 +4004,7 @@ ${rows.map(r => { const [mt, mc] = mark(r); return `<tr${r.overdue ? ' style="ba
   ${tile('明天安排面试', nTomorrow, '#7c3aed', '#f5f3ff', tomorrow)}
 </tr></table>
 </td></tr>
-${nOver ? `<tr><td style="padding:18px 24px 6px">${h2(`⚠ 超时未标记（${nOver} 人）`, '#dc2626')}${table(overdue, false, true)}</td></tr>` : ''}
+${nOver ? `<tr><td style="padding:18px 24px 6px">${h2(`⚠ 超时未标记（${nOver} 人）`, '#dc2626')}${table(overdue, false, true, true)}</td></tr>` : ''}
 <tr><td style="padding:18px 24px 6px">${h2(`📋 今天的面试（${today}，${todayRows.length} 人）— 标记情况`)}${table(todayRows, true)}</td></tr>
 <tr><td style="padding:18px 24px 6px">${h2(`📅 明天的面试（${tomorrow}，${tomorrowRows.length} 人）`)}${table(tomorrowRows, false)}</td></tr>
 <tr><td style="padding:16px 24px 22px">
@@ -4002,7 +4013,7 @@ ${nOver ? `<tr><td style="padding:18px 24px 6px">${h2(`⚠ 超时未标记（${n
 <tr><td style="padding:12px 24px;border-top:1px solid #f3f4f6;color:#9ca3af;font-size:11px">Prime Anchor Workforce 系统自动发送 · 每天 14:00 和 20:00（芝加哥时间）。</td></tr>
 </table></td></tr></table></body></html>`;
 
-  const line = (r, withMark) => `- ${r.worker_name || '(没填名字)'} ${r.worker_phone || '(没留电话)'} | 面试 ${r.iv.replace('T', ' ')}${r.overdue ? '（' + ago(r.iv) + '）' : ''} | ${r.warehouse_name || ''}${r.job_title ? ' · ' + r.job_title : ''} | 工头 ${r.foreman_name || ''} ${r.foreman_phone || ''} | ${r.submitter || ''} 提交${withMark ? ' | ' + mark(r)[0] : ''}`;
+  const line = (r, withMark) => `- ${r.worker_name || '(没填名字)'} ${r.worker_phone || '(没留电话)'} | 面试 ${r.iv.replace('T', ' ')}${r.overdue ? '（' + ago(r.iv) + '）' : ''} | ${r.warehouse_name || ''}${shortJob(r.job_title) ? ' · ' + shortJob(r.job_title) : ''} | 工头 ${r.foreman_name || ''} ${r.foreman_phone || ''} | ${r.submitter || ''} 提交${withMark ? ' | ' + mark(r).filter(Boolean).filter((x, i) => i !== 1).join(' ') : ''}`;
   const text = [
     `还没标记 ${nOver} 人 · 今天去面试 ${nWent} 人 · 明天安排面试 ${nTomorrow} 人`, '',
     nOver ? `⚠ ${nOver} 人面试超时未标记（面试时间已过，还没标去了 / 没去 / 没通过）` : '✅ 面试都已标记，没有超时未标记的',
