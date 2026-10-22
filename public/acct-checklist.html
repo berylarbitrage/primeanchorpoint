@@ -153,8 +153,39 @@ function render() {
   document.getElementById('pane').innerHTML = TAB === 'bills' ? paneBills() : TAB === 'pay' ? panePay() : paneSetup();
 }
 function payTag(i) { const p = PAY[i.pay_status] || PAY.unpaid; return `<span class="tag ${p[1]}" title="${esc((i.pay_reasons || []).join('；'))}">${p[0]}</span>`; }
-// 发票号点开 → 会计对账页直接打开这张发票 (新标签页)
-function invA(i) { return `<a href="/accounting?invoice=${i.id}" target="_blank" title="打开这张发票" style="color:inherit;font-weight:700;text-decoration:underline dotted">${esc(i.invoice_number)} ↗</a>`; }
+// 发票号点开 → 本页弹窗里看这张发票 (嵌入会计对账页的发票查看, 不跳转)
+function invA(i) { return `<a href="/accounting?invoice=${i.id}" onclick="openInv(${i.id});return false" title="打开这张发票" style="color:inherit;font-weight:700;text-decoration:underline dotted">${esc(i.invoice_number)} 🔍</a>`; }
+function openInv(id) {
+  let m = document.getElementById('invFrameModal');
+  if (!m) {
+    m = document.createElement('div'); m.id = 'invFrameModal';
+    m.style.cssText = 'position:fixed;inset:0;z-index:2500;background:transparent';
+    m.innerHTML = '<iframe id="invFrame" style="position:absolute;inset:0;width:100%;height:100%;border:0;background:transparent" allowtransparency="true"></iframe>';
+    document.body.appendChild(m);
+  }
+  document.getElementById('invFrame').src = '/accounting?embed=1&invoice=' + id;
+  m.style.display = 'block';
+}
+function closeInv() { const m = document.getElementById('invFrameModal'); if (m) { m.style.display = 'none'; document.getElementById('invFrame').src = 'about:blank'; } }
+window.addEventListener('message', e => { if (e.origin === location.origin && e.data === 'pa-inv-close') closeInv(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeInv(); });
+// 页面中间的确认弹窗 (返回 Promise<boolean>)
+function confirmBox(html, okLabel = '确定') {
+  return new Promise(resolve => {
+    const m = document.createElement('div');
+    m.style.cssText = 'position:fixed;inset:0;z-index:3000;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:16px';
+    m.innerHTML = `<div class="card" style="max-width:440px;width:100%;margin:0;box-shadow:0 10px 30px rgba(0,0,0,.25)"><div style="font-size:.9rem;line-height:1.6">${html}</div>
+      <div class="row" style="justify-content:flex-end;margin-top:.9rem;gap:.5rem"><button class="btn btn-outline" data-v="0">取消</button><button class="btn btn-blue" data-v="1">${esc(okLabel)}</button></div></div>`;
+    const done = v => { m.remove(); resolve(v); };
+    m.addEventListener('click', e => { if (e.target === m) done(false); const b = e.target.closest('button[data-v]'); if (b) done(b.dataset.v === '1'); });
+    document.body.appendChild(m);
+    m.querySelector('button[data-v="1"]').focus();
+  });
+}
+function findInv(id) {
+  const all = [...(D.candidates || []), ...(D.extra || []), ...(D.unpaid || []), ...D.items.flatMap(x => [...(x.hints || []), ...(x.invoices || [])])];
+  return all.find(i => i.id === id) || null;
+}
 function invLine(i) {
   const per = i.period_start || i.period_end ? `${md(i.period_start)}–${md(i.period_end)}` : md(i.invoice_date);
   return `<div class="inv">${invA(i)} · ${per} · ${money(i.subtotal)} ${payTag(i)}</div>`;
@@ -196,10 +227,20 @@ function paneBills() {
         <button class="btn btn-blue btn-sm" onclick="linkExtra(${i.id})">link</button></div></td></tr>`).join('') + `</tbody></table></div>`;
   return h;
 }
-function link(expectId, invoiceId) { save('/api/acct/checklist/link', { week: WEEK, expect_id: expectId, invoice_id: invoiceId }); }
+async function link(expectId, invoiceId) {
+  const x = D.items.find(e => e.id === expectId), i = findInv(invoiceId);
+  const inv = i ? `<b>${esc(i.invoice_number)}</b> · ${esc(i.company_name || '')}${i.bill_to ? ' · ' + esc(i.bill_to) : ''} · ${md(i.period_start)}–${md(i.period_end)} · <b>${money(i.subtotal)}</b>` : '这张发票';
+  const item = x ? `${itemName(x)} · ${KIND[x.kind] || ''}` : '这一项';
+  if (!(await confirmBox(`把发票<div style="margin:.3rem 0 .5rem;padding:.4rem .6rem;background:#f8fafc;border-radius:8px">${inv}</div>link 到 ${item}（${md(WEEK)} 这周）？`, '确定 link'))) return;
+  save('/api/acct/checklist/link', { week: WEEK, expect_id: expectId, invoice_id: invoiceId });
+}
 function linkSel(expectId) { const v = document.getElementById('sel' + expectId).value; if (!v) { toast('先选一张发票', true); return; } link(expectId, +v); }
 function linkExtra(invoiceId) { const v = document.getElementById('xsel' + invoiceId).value; if (!v) { toast('先选清单项', true); return; } link(+v, invoiceId); }
-function unlink(invoiceId) { save('/api/acct/checklist/link', { invoice_id: invoiceId, unlink: true }); }
+async function unlink(invoiceId) {
+  const i = findInv(invoiceId);
+  if (!(await confirmBox(`取消 <b>${esc(i ? i.invoice_number : '这张发票')}</b> 的 link？`, '取消 link'))) return;
+  save('/api/acct/checklist/link', { invoice_id: invoiceId, unlink: true });
+}
 async function markNa(id) {
   const x = D.items.find(e => e.id === id);
   const weekly = x.freq === 'weekly';

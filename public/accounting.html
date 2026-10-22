@@ -1448,6 +1448,7 @@ function finishLogin(r) {
   enterMain();
 }
 const REF_ONLY = /^\/referral\/?$/.test(location.pathname);
+const EMBED = new URLSearchParams(location.search).get('embed') === '1' && window.parent !== window;
 if (REF_ONLY) {
   document.title = 'Referral · Prime Anchor';
   document.getElementById('gateTitle').textContent = '🤝 Referral · 介绍';
@@ -1472,6 +1473,14 @@ function enterMain() {
     document.getElementById('mainTitle').textContent = '🤝 Referral · 介绍';
     document.getElementById('mainSub').textContent = '面试安排 → 通过面试开始上班（填工人打卡 QR 码，按打卡工时对上每周付款）→ 上班满三个月 referral 期结束。';
     showTab('ref');
+  }
+  // ?embed=1&invoice=<id>: 别的页面 (例如每周核对清单) 用 iframe 弹窗只看这张发票, 不显示会计对账页本身
+  if (EMBED) {
+    document.getElementById('main').style.display = 'none';
+    document.documentElement.style.background = document.body.style.background = 'transparent';
+    const id = new URLSearchParams(location.search).get('invoice');
+    if (/^\d+$/.test(id || '')) openInvoice(Number(id));
+    return;
   }
   loadAll();
   refScopeInit();
@@ -7188,6 +7197,7 @@ function setVwStatus(t) { const s = document.getElementById('vwStatus'); if (s) 
 function closeViewer() {
   document.getElementById('vwModal').style.display = 'none';
   _view = null;
+  if (EMBED) { window.parent.postMessage('pa-inv-close', location.origin); return; }
   loadAll(); // 刷新批注数
 }
 function vwToggleDraw() {
