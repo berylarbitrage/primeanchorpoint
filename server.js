@@ -9432,6 +9432,12 @@ function requireAdmin(req, res, next) {
     const acctAllowed = p.startsWith('/api/acct/') || p.startsWith('/api/plaid/') || p === '/api/admin/me' || p === '/api/admin/logout';
     if (!acctAllowed) return res.status(403).json({ error: '会计账号仅限使用对账查看页 (/accounting) 和银行对账页 (/banking)' });
   }
+  // 入职专员(onboarding): 在 /onboarding 自助注册、管理员批准的账号, 只能用新员工入职页, 并自动收 Gusto 入职邮件
+  if (session.role === 'onboarding') {
+    const p = req.originalUrl.split('?')[0];
+    const ok = p.startsWith('/api/acct/onboarding') || p === '/api/acct/gusto-payees' || p === '/api/admin/me' || p === '/api/admin/logout';
+    if (!ok) return res.status(403).json({ error: '入职专员账号仅限使用新员工入职页 (/onboarding)' });
+  }
   const _u = db.prepare('SELECT assigned_partner_ids, assigned_employee_ids, assigned_job_ids FROM admin_users WHERE id=?').get(session.userId);
   req.assignedPartnerIds = (_u && _u.assigned_partner_ids) || '';
   req.assignedEmployeeIds = (_u && _u.assigned_employee_ids) || '';
@@ -10117,7 +10123,7 @@ app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) =
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   const pwErr = validatePassword(password);
   if (pwErr) return res.status(400).json({ error: pwErr });
-  if (!['admin', 'staff', 'manager', 'accounting'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+  if (!['admin', 'staff', 'manager', 'accounting', 'onboarding'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const existing = db.prepare('SELECT id, active FROM admin_users WHERE username = ?').get(username);
   if (existing && existing.active) return res.status(400).json({ error: 'Username already exists' });
   // Overwrite unverified (inactive) account with same username
@@ -10132,7 +10138,7 @@ app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) =
 
 app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
   const { username, password, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, sms_notify_phone, sms_notify_enabled, mfa_exempt, bank_ann_reviewer } = req.body;
-  if (role && !['admin', 'staff', 'manager', 'accounting'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+  if (role && !['admin', 'staff', 'manager', 'accounting', 'onboarding'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   const effRole = role || user.role;
@@ -10182,6 +10188,7 @@ app.get('/api/admin/audit-log', requireAdmin, requireRole('admin'), (req, res) =
 function inviteUrlPath(role) {
   if (role === 'staff') return '/staff';
   if (role === 'manager') return '/manager';
+  if (role === 'onboarding') return '/onboarding';
   return '/admin-invite';
 }
 
@@ -42505,7 +42512,7 @@ app.post('/api/acct/referrals/:id/pay-setup', requireAdmin, requireRole('account
   res.json({ success: true });
 });
 // Gusto 收款人搜索 (付款方式关联用): 只回名字
-app.get('/api/acct/gusto-payees', requireAdmin, requireRole('accounting', 'admin', 'cs', 'manager'), (req, res) => {
+app.get('/api/acct/gusto-payees', requireAdmin, requireRole('accounting', 'admin', 'cs', 'manager', 'onboarding'), (req, res) => {
   try {
     const q = _refNameKey(req.query.q);
     const idx = _refGustoIndex();
@@ -44208,8 +44215,8 @@ function _wobBuild() {
 app.get('/onboarding', (req, res) => res.sendFile(path.join(__dirname, 'public', 'onboarding.html')));
 
 // 权限: manager 也能用这一页 (只看自己负责仓库的发票, 不显示金额); 系统匹配的建议只有 manager / admin 能通过
-const requireWobView = requireRole('accounting', 'cs', 'admin', 'staff', 'manager');
-const requireWobWrite = requireRole('accounting', 'cs', 'admin', 'manager');
+const requireWobView = requireRole('accounting', 'cs', 'admin', 'staff', 'manager', 'onboarding');
+const requireWobWrite = requireRole('accounting', 'cs', 'admin', 'manager', 'onboarding');
 const _wobCanApprove = req => ['admin', 'manager'].includes(req.userRole);
 // manager 负责的仓库 (合作公司标准名); 其他角色 null = 全部
 function _wobScope(req) {
@@ -44316,7 +44323,10 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
       gusto: { connected: !!(st.access_token && st.refresh_token), last_sync_at: st.last_sync_at || '',
         contractors: db.prepare('SELECT COUNT(*) AS n FROM gusto_contractors').get().n },
       role: req.userRole,
-      can_edit: ['admin', 'accounting', 'cs', 'manager'].includes(req.userRole),
+      can_edit: ['admin', 'accounting', 'cs', 'manager', 'onboarding'].includes(req.userRole),
+      // 管理员: 在 /onboarding 自助注册、等批准的入职专员
+      pending_registrations: req.userRole === 'admin' ? db.prepare(`SELECT id, username, display_name, email, phone, created_at FROM admin_users
+        WHERE role='onboarding' AND approval_status='pending' ORDER BY id`).all() : [],
       can_approve: _wobCanApprove(req),
       warehouse_options: _wobWarehouseOptions(req),
       can_open_invoice: req.userRole !== 'manager',
@@ -44626,7 +44636,8 @@ async function _wobNotifyBank() {
     const pending = db.prepare("SELECT id FROM gusto_email_events WHERE kind IN ('bank_bad','bank_updated') AND COALESCE(notified_at,'')='' AND COALESCE(ack_at,'')=''").all();
     if (!pending.length) return;
     const { list, bank } = _wobBuild();
-    const users = db.prepare("SELECT role, email, assigned_partner_ids FROM admin_users WHERE role IN ('admin','manager') AND COALESCE(active,1)=1 AND COALESCE(email,'')!=''").all();
+    const users = db.prepare(`SELECT role, email, assigned_partner_ids FROM admin_users WHERE role IN ('admin','manager','onboarding')
+      AND COALESCE(active,1)=1 AND COALESCE(approval_status,'approved')='approved' AND COALESCE(email,'')!=''`).all();
     const base = (process.env.BASE_URL || '').replace(/\/$/, '');
     for (const { id } of pending) {
       const b = bank.find(x => x.id === id);
@@ -44635,7 +44646,7 @@ async function _wobNotifyBank() {
       const w = b.key ? list.find(x => x.key === b.key) : null;
       const companies = new Set(w ? w._lines.map(l => _canonCompanyName(l.company)) : []);
       const to = users.filter(u => {
-        if (u.role === 'admin') return true;
+        if (u.role === 'admin' || u.role === 'onboarding') return true;
         const pids = String(u.assigned_partner_ids || '').split(',').map(x => parseInt(x, 10)).filter(Boolean);
         if (!pids.length || !companies.size) return false;
         return db.prepare(`SELECT name FROM partners WHERE id IN (${pids.map(() => '?').join(',')})`).all(...pids).some(p => companies.has(_canonCompanyName(p.name)));
@@ -44668,6 +44679,51 @@ app.get('/api/acct/onboarding-gusto/:uuid', requireAdmin, requireWobView, async 
     const { token, environment } = await _gustoAccessToken();
     res.json({ ok: true, ...(await gustoApi.contractorOnboardingStatus(environment, token, String(req.params.uuid || ''))) });
   } catch (e) { res.status(e && e.code === 'not_connected' ? 400 : e && e.status === 404 ? 404 : 502).json({ error: (e && e.message) || String(e) }); }
+});
+
+// ── 入职专员自助注册: /onboarding 没登录时可以注册, 管理员在页面上 (或账户管理) 批准后才能登录;
+// 批准了的入职专员自动收 Gusto 入职邮件转发 + 银行信息提醒 (_wobSubscribers)
+function _wobSubscribers() {
+  return db.prepare(`SELECT email FROM admin_users WHERE role='onboarding' AND COALESCE(active,1)=1
+    AND COALESCE(approval_status,'approved')='approved' AND COALESCE(email,'')!=''`).all().map(r => r.email.trim()).filter(Boolean);
+}
+app.post('/api/onboarding/register', loginRateLimit, (req, res) => {
+  try {
+    const b = req.body || {};
+    const uname = String(b.username || '').trim(), name = String(b.display_name || '').trim().slice(0, 80);
+    const email = String(b.email || '').trim().slice(0, 120), phone = String(b.phone || '').trim().slice(0, 30);
+    if (!name) return res.status(400).json({ error: '请填写姓名' });
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: '请填写正确的邮箱（Gusto 入职邮件发到这里）' });
+    if (phone.replace(/\D/g, '').length < 10) return res.status(400).json({ error: '请填写手机号（登录时收验证码）' });
+    if (uname.length < 3 || uname.length > 40) return res.status(400).json({ error: '用户名需 3–40 个字符' });
+    const pwErr = validatePassword(b.password);
+    if (pwErr) return res.status(400).json({ error: pwErr });
+    if (db.prepare('SELECT id FROM admin_users WHERE username=?').get(uname)) return res.status(400).json({ error: '用户名已存在，换一个' });
+    const salt = crypto.randomBytes(16).toString('hex');
+    const r = db.prepare(`INSERT INTO admin_users (username, password_hash, salt, role, display_name, email, phone, active, approval_status)
+      VALUES (?, ?, ?, 'onboarding', ?, ?, ?, 1, 'pending')`).run(uname, hashPassword(b.password, salt), salt, name, email, phone);
+    auditLog('onboarding_register', { ip: req.ip, connection: req.connection, headers: req.headers }, { targetType: 'admin_user', targetId: r.lastInsertRowid, details: { username: uname, email } });
+    // 通知管理员去批准
+    const base = (process.env.BASE_URL || '').replace(/\/$/, '');
+    for (const a of db.prepare("SELECT email FROM admin_users WHERE role='admin' AND COALESCE(active,1)=1 AND COALESCE(email,'')!=''").all()) {
+      sendEmail(a.email, `新员工入职页有人注册: ${name}`, `${name}（用户名 ${uname}，邮箱 ${email}，电话 ${phone}）申请使用新员工入职页。\n批准后 TA 能登录 /onboarding，并自动收到 Gusto 入职相关邮件。\n\n去批准: ${base}/onboarding`).catch(() => {});
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 管理员批准 / 拒绝 (拒绝 = 删掉这个申请)
+app.post('/api/acct/onboarding-registrations/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const u = db.prepare("SELECT id, username, display_name, email FROM admin_users WHERE id=? AND role='onboarding' AND approval_status='pending'").get(req.params.id);
+    if (!u) return res.status(404).json({ error: '找不到这个申请（可能已经处理过了）' });
+    if (req.body && req.body.approve) {
+      db.prepare("UPDATE admin_users SET approval_status='approved' WHERE id=?").run(u.id);
+      const base = (process.env.BASE_URL || '').replace(/\/$/, '');
+      if (u.email) sendEmail(u.email, '新员工入职页账号已开通', `${u.display_name || u.username}，你的账号（用户名 ${u.username}）已经批准，可以登录: ${base}/onboarding\n以后 Gusto 入职相关的邮件会自动转发到这个邮箱。`).catch(() => {});
+    } else db.prepare('DELETE FROM admin_users WHERE id=?').run(u.id);
+    auditLog(req.body && req.body.approve ? 'account_approve' : 'onboarding_register_reject', req, { targetType: 'admin_user', targetId: u.id, details: { username: u.username, role: 'onboarding' } });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── 邮箱自动同步: 邮箱里跑一段 Google Apps Script, 每 5 分钟把新的 Gusto 邮件标题推过来 ──
@@ -44737,7 +44793,7 @@ app.post('/api/hooks/gusto-mail', (req, res) => {
       ...(newCount ? { last_new_at: new Date().toISOString() } : {}),
       ...(backfill ? { backfill_at: new Date().toISOString(), backfill_total: (_mailHookCfg().backfill_total || 0) + results.filter(r => r.new).length } : {}) });
     if (added) setImmediate(_wobNotifyBank);
-    const forwardTo = (cfg.forward_to || []).join(',');
+    const forwardTo = [...new Set([...(cfg.forward_to || []), ..._wobSubscribers()])].join(',');
     res.json({ ok: true, results, forward_to: forwardTo, added });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -44747,7 +44803,7 @@ app.get('/api/acct/onboarding-mailhook', requireAdmin, requireWobView, (req, res
   const cfg = _mailHookCfg();
   const isAdmin = req.userRole === 'admin';
   const recent = db.prepare(`SELECT kind, name, subject, received_at, created_at FROM gusto_mail_seen WHERE kind!='' ORDER BY created_at DESC LIMIT 15`).all();
-  res.json({ configured: !!cfg.token, is_admin: isAdmin, forward_to: cfg.forward_to || [],
+  res.json({ configured: !!cfg.token, is_admin: isAdmin, forward_to: cfg.forward_to || [], subscribers: isAdmin ? _wobSubscribers() : [],
     hook_url: isAdmin && cfg.token ? _mailHookUrl(req, cfg.token) : '',
     last_at: cfg.last_at || '', last_received: cfg.last_received || 0, last_added: cfg.last_added || 0,
     backfill_at: cfg.backfill_at || '', backfill_total: cfg.backfill_total || 0, last_new_at: cfg.last_new_at || '',

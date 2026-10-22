@@ -106,10 +106,26 @@ textarea{width:100%}
   <div class="card" style="max-width:360px;width:100%;text-align:center;padding:26px 22px">
     <img src="/logo.svg" style="height:52px" alt="Logo">
     <div style="font-weight:800;font-size:1.05rem;margin:.5rem 0">🆕 新员工入职 · Onboarding</div>
-    <input type="text" id="loginUser" placeholder="用户名或邮箱" style="width:100%;margin-bottom:.5rem" autocomplete="username">
-    <input type="password" id="loginPw" placeholder="密码" style="width:100%" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()">
-    <div id="gateErr" style="color:var(--red);font-size:.8rem;min-height:1.1em;margin-top:.4rem"></div>
-    <button class="btn btn-blue" style="width:100%;justify-content:center;margin-top:.4rem" onclick="login()">登录</button>
+    <div id="loginForm">
+      <input type="text" id="loginUser" placeholder="用户名或邮箱" style="width:100%;margin-bottom:.5rem" autocomplete="username">
+      <input type="password" id="loginPw" placeholder="密码" style="width:100%" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()">
+      <div id="gateErr" style="color:var(--red);font-size:.8rem;min-height:1.1em;margin-top:.4rem"></div>
+      <button class="btn btn-blue" style="width:100%;justify-content:center;margin-top:.4rem" onclick="login()">登录</button>
+      <div style="font-size:.8rem;color:var(--g500);margin-top:.8rem">没有账号？<a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="showReg(true)">注册</a></div>
+    </div>
+    <div id="regForm" style="display:none;text-align:left">
+      <div style="font-size:.8rem;color:#075985;background:#e0f2fe;border:1px solid #bae6fd;border-radius:8px;padding:.5rem .6rem;margin-bottom:.6rem">注册后要<b>管理员批准</b>才能登录。批准后，Gusto 入职相关的邮件会自动发到你填的邮箱。</div>
+      <input id="regName" placeholder="姓名" style="width:100%;margin-bottom:.45rem">
+      <input id="regEmail" type="email" placeholder="邮箱（接收 Gusto 入职邮件）" style="width:100%;margin-bottom:.45rem">
+      <input id="regPhone" type="tel" placeholder="手机号（登录时收验证码）" style="width:100%;margin-bottom:.45rem">
+      <input id="regUser" placeholder="登录用户名（3 个字以上）" style="width:100%;margin-bottom:.45rem" autocomplete="username">
+      <input id="regPw" type="password" placeholder="密码（至少 8 位，含字母和数字）" style="width:100%;margin-bottom:.45rem" autocomplete="new-password">
+      <input id="regPw2" type="password" placeholder="再输一次密码" style="width:100%" autocomplete="new-password" onkeydown="if(event.key==='Enter')register()">
+      <div id="regErr" style="color:var(--red);font-size:.8rem;min-height:1.1em;margin-top:.4rem"></div>
+      <button class="btn btn-blue" style="width:100%;justify-content:center" onclick="register()">提交注册</button>
+      <div style="font-size:.8rem;color:var(--g500);margin-top:.7rem;text-align:center"><a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="showReg(false)">← 返回登录</a></div>
+    </div>
+    <div id="regDone" style="display:none;font-size:.88rem;color:#166534;background:#dcfce7;border-radius:8px;padding:.7rem">✓ 已提交，等管理员批准。批准后会发邮件通知你，然后用刚才的用户名和密码登录。</div>
   </div>
 </div>
 
@@ -127,6 +143,7 @@ textarea{width:100%}
       <a class="btn btn-outline btn-sm" href="/accounting">← 会计对账</a>
     </div>
   </div>
+  <div id="regs"></div>
   <div id="alerts"></div>
   <div class="stats" id="stats"></div>
   <div class="card weekbar"><span class="wl">📅 按周</span>
@@ -213,6 +230,23 @@ async function api(path, opts = {}) {
   return j;
 }
 function showGate() { document.getElementById('gate').style.display = 'flex'; document.getElementById('main').style.display = 'none'; }
+function showReg(on) {
+  document.getElementById('loginForm').style.display = on ? 'none' : '';
+  document.getElementById('regForm').style.display = on ? '' : 'none';
+  document.getElementById('regDone').style.display = 'none';
+}
+async function register() {
+  const v = id => document.getElementById(id).value.trim();
+  const err = document.getElementById('regErr');
+  err.textContent = '';
+  if (document.getElementById('regPw').value !== document.getElementById('regPw2').value) { err.textContent = '两次密码不一样'; return; }
+  const r = await fetch('/api/onboarding/register', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ display_name: v('regName'), email: v('regEmail'), phone: v('regPhone'), username: v('regUser'), password: document.getElementById('regPw').value }) })
+    .then(x => x.json()).catch(() => ({ error: '网络错误' }));
+  if (!r.ok) { err.textContent = r.error || '注册失败'; return; }
+  document.getElementById('regForm').style.display = 'none';
+  document.getElementById('regDone').style.display = '';
+}
 async function login() {
   const username = document.getElementById('loginUser').value.trim(), password = document.getElementById('loginPw').value;
   const err = document.getElementById('gateErr');
@@ -238,7 +272,7 @@ async function load() {
   document.getElementById('main').style.display = '';
   document.getElementById('btnSync').style.display = j.can_sync && j.gusto.connected ? '' : 'none';
   document.getElementById('btnEmail').style.display = j.can_edit ? '' : 'none';
-  renderAlerts(); renderBar(); renderWeeks(); renderInvs(); renderList(); renderUnmatched();
+  renderRegs(); renderAlerts(); renderBar(); renderWeeks(); renderInvs(); renderList(); renderUnmatched();
 }
 // 邮件同步脚本每 5 分钟报到一次; 超过 15 分钟没报到 = 脚本停了或出错了
 function mailSyncState(m) {
@@ -605,6 +639,25 @@ function clearBank(id) {
     toast(`已消除 ${j.acked} 条提醒`); load(); return true;
   });
 }
+// 管理员: 等批准的注册申请
+function renderRegs() {
+  const r = D.pending_registrations || [];
+  const el = document.getElementById('regs');
+  if (!r.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="card" style="margin-bottom:12px;border-color:#bae6fd;background:#f0f9ff"><div style="font-weight:800;color:#075985;margin-bottom:.3rem">📝 注册申请（${r.length}）<span class="muted" style="font-weight:400"> — 批准后能登录这一页，并自动收到 Gusto 入职邮件</span></div>` +
+    r.map(x => `<div class="row" style="margin:.25rem 0;border-top:1px dashed #bae6fd;padding-top:.3rem"><b>${esc(x.display_name || x.username)}</b>
+      <span class="muted">用户名 ${esc(x.username)} · ${esc(x.email)} · ${esc(x.phone)} · ${esc(String(x.created_at || '').slice(0, 16))}</span>
+      <span style="margin-left:auto;display:flex;gap:.3rem"><button class="btn btn-blue btn-sm" onclick="decideReg(${x.id},true)">✓ 批准</button><button class="btn btn-outline btn-sm" onclick="decideReg(${x.id},false)">✗ 拒绝</button></span></div>`).join('') + '</div>';
+}
+function decideReg(id, ok) {
+  const x = (D.pending_registrations || []).find(r => r.id === id) || {};
+  confirmBox(ok ? '批准注册' : '拒绝注册', `<div style="font-size:.88rem"><b>${esc(x.display_name || x.username)}</b>（${esc(x.email)}）</div>
+    <div class="muted" style="margin-top:.3rem">${ok ? '批准后 TA 能登录新员工入职页，Gusto 入职邮件会自动转发到 ' + esc(x.email) + '，也会收到银行信息提醒' : '拒绝会删掉这个申请'}</div>`, async () => {
+    const j = await api('/api/acct/onboarding-registrations/' + id, { method: 'POST', body: { approve: ok } }).catch(e => ({ error: e.message }));
+    if (j.error) { toast(j.error, true); return false; }
+    toast(ok ? '已批准' : '已拒绝'); load(); return true;
+  });
+}
 // 页面最上方: 银行信息提醒 (有误 / 被更新), 点「知道了」前一直在
 function renderAlerts() {
   const a = D.bank_alerts || [];
@@ -785,6 +838,7 @@ async function openHook() {
   if (!j.is_admin) { el.innerHTML = status + recent + '<div class="muted">设置和转发地址只有管理员能改。</div>'; return; }
   el.innerHTML = status + recent + `
     <div class="lbl" style="margin-top:.5rem">转发给（多个用逗号隔开，留空就只标注不转发）</div>
+    ${j.subscribers && j.subscribers.length ? `<div class="muted" style="margin:-.1rem 0 .3rem">另外，批准了的入职专员也会自动收到：${esc(j.subscribers.join('、'))}</div>` : ''}
     <div class="row"><input id="hookFwd" style="flex:1;min-width:220px" value="${esc(j.forward_to.join(', '))}" placeholder="hr@example.com, boss@example.com">
       <button class="btn btn-blue btn-sm" onclick="saveHook(false)">${j.configured ? '保存' : '保存并生成链接'}</button></div>
     ${j.configured ? `
