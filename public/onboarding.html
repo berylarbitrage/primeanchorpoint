@@ -92,6 +92,10 @@ input,select,textarea{padding:.38rem .5rem;border:1px solid var(--g300);border-r
 .alerts{background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:.6rem .9rem;margin-bottom:12px}
 .alerts .a{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;font-size:.82rem;padding:.25rem 0}
 .alerts .a+.a{border-top:1px dashed #fecaca}
+.ecard{border:1px solid var(--g200);border-radius:10px;padding:.6rem .75rem;margin-bottom:.45rem}
+.ecard:hover{border-color:#93c5fd}
+.egrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:.2rem .8rem;margin-top:.4rem;font-size:.78rem}
+.ek{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .um-cats{display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.55rem}
 .um-cat{border:1px solid var(--g200);background:var(--g100);border-radius:999px;padding:.2rem .7rem;font-size:.76rem;color:var(--g600);cursor:pointer;font-family:inherit}
 .um-cat b{margin-left:.15rem}
@@ -758,9 +762,25 @@ function eSearch(k) {
     // 全名搜不到就退一步只搜名字的第一个词
     if (!j.error && !(j.employees || []).length && q.trim().includes(' ')) j = await api('/api/acct/onboarding-employees?q=' + encodeURIComponent(q.trim().split(/\s+/)[0])).catch(e => ({ error: e.message }));
     if (j.error) { el.innerHTML = `<div style="color:var(--red)">${esc(j.error)}</div>`; return; }
-    el.innerHTML = (j.employees || []).map(e => `<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--g100);padding:.35rem 0;margin:0">
-        <span><b>${esc(e.name)}</b> <span class="muted">${esc(e.code)} · 📞 ${esc(e.phone || '—')}${e.status && e.status !== 'active' ? ' · ' + esc(e.status) : ''}</span></span>
-        <button class="btn btn-blue btn-sm" onclick="document.getElementById('gModal').style.display='none';save(${k},{employee_id:${e.id}})">关联</button></div>`).join('')
+    // 每个人一张信息卡 (和 phone check 差不多), 确认是同一个人再关联
+    const kv = (l, v) => v ? `<span class="ek"><span class="muted">${esc(l)}</span> <b>${esc(v)}</b></span>` : '';
+    const st = s => s === 'active' ? ['在职', '#dcfce7', '#166534'] : s === 'onboarding' ? ['入职中', '#e0f2fe', '#075985'] : s === 'terminated' || s === 'inactive' ? ['已离职', '#fee2e2', '#991b1b'] : [s || '—', 'var(--g100)', 'var(--g600)'];
+    const vb = v => v === 'real' ? ' ✅' : v === 'fake' ? ' ❌' : v === 'pending' ? ' ⏳' : '';
+    el.innerHTML = (j.employees || []).map(e => { const [sl, sb, sc] = st(e.status); return `<div class="ecard">
+        <div class="row" style="justify-content:space-between;margin:0;align-items:flex-start">
+          <div><b style="font-size:.95rem">${esc(e.name)}</b> <span class="tag" style="background:${sb};color:${sc}">${esc(sl)}</span>
+            <div class="muted" style="margin-top:.1rem">${esc(e.code || '没有员工编号')}${e.work_state ? ' · 工作州 ' + esc(e.work_state) : ''}</div></div>
+          <div style="display:flex;gap:.3rem;flex:none">${j.can_phone_check && (e.phone || e.name) ? `<a class="btn btn-outline btn-sm" href="/phone-check.html?q=${encodeURIComponent((e.phone || '').replace(/\D/g, '').length >= 7 ? e.phone : e.name)}" target="_blank">Phone check ↗</a>` : ''}
+            <button class="btn btn-blue btn-sm" onclick="document.getElementById('gModal').style.display='none';save(${k},{employee_id:${e.id}})">关联</button></div>
+        </div>
+        <div class="egrid">
+          ${kv('📞', e.phone || '没有电话')}${kv('✉️', e.email)}${kv('职位', [e.position, e.department].filter(Boolean).join(' · '))}
+          ${kv('入职', e.hire_date)}${kv('住址', [e.city, e.state].filter(Boolean).join(', '))}${kv('打卡码', e.timeclock_code)}${kv('SSN 末四位', e.ssn_last4 ? '****' + e.ssn_last4 : '')}
+          ${kv('最近打卡', e.last_punch ? e.last_punch.at.replace('T', ' ') + (e.last_punch.company ? ' · ' + e.last_punch.company : '') : '')}${kv('打卡次数', e.punches ? String(e.punches) : '')}
+          ${kv('扫码申请', e.application ? e.application.at + (e.application.partner ? ' · ' + e.application.partner : '') : '')}${kv('建档', String(e.created_at || '').slice(0, 10))}
+        </div>
+        ${e.docs.length ? `<div style="margin-top:.3rem;display:flex;gap:.25rem;flex-wrap:wrap">${e.docs.map(d => `<span class="tag" style="background:#f5f3ff;color:#5b21b6">🪪 ${esc(d.label)}${vb(d.status)}${d.extra ? ' · ' + esc(d.extra) : ''}</span>`).join('')}</div>` : '<div class="muted" style="margin-top:.3rem">没有上传证件</div>'}
+      </div>`; }).join('')
       || '<div class="muted">没找到。可以换个写法搜，或者先去员工管理建档。</div>';
   }, 250);
 }

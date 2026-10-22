@@ -1537,6 +1537,13 @@ function pcPrompt(label, value) {
     + '<button data-act="ok" style="' + _pcBtnStyle + ';background:#0F2B5B;color:#fff;border:none">保存</button>'
     + '</div>');
 }
+// /phone-check.html?q=电话或人名: 别的页面 (例如 /onboarding 关联员工档案) 直接跳过来查
+(function () {
+  const q = new URLSearchParams(location.search).get('q');
+  if (!q) return;
+  document.getElementById('phoneInput').value = q;
+  setTimeout(() => doSearch(), 0);
+})();
 </script>
 <div id="pcToastWrap" style="position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:15000;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none"></div>
 <!-- 证件审阅小窗: 故意不加全屏遮罩 —— 后面的页面照常能点、能滚、能改资料 -->
