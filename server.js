@@ -18858,9 +18858,12 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
       CASE WHEN COALESCE(cropped_path,'')!='' THEN 1 ELSE 0 END AS has_cropped
       FROM applicant_docs WHERE submission_id=?`);
     applications.forEach(a => { try { a.docs = docsFor.all(a.id); } catch (_) { a.docs = []; } });
-    const employees = db.prepare(`SELECT id, employee_id, first_name, middle_name, last_name, phone, email, position, department, status, hire_date, dob, timeclock_code, ssn_last4, city, state
+    const _arr = v => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a.map(String).filter(Boolean) : []; } catch (_) { return []; } };
+    const employees = db.prepare(`SELECT id, employee_id, first_name, middle_name, last_name, phone, email, extra_phones, extra_emails, position, department, status, hire_date, dob, timeclock_code, ssn_last4, city, state
       FROM employees ORDER BY id DESC`).all()
-      .filter(x => hit(x.phone, x.first_name, x.middle_name, x.last_name) && stHit(empWorkState(x), x.state)).slice(0, limit);
+      .map(x => { x.extra_phones = _arr(x.extra_phones); x.extra_emails = _arr(x.extra_emails); return x; })
+      // 按电话查时备用电话也算
+      .filter(x => (hit(x.phone, x.first_name, x.middle_name, x.last_name) || (!byName && !stateOnly && x.extra_phones.some(match))) && stHit(empWorkState(x), x.state)).slice(0, limit);
     employees.forEach(e => { e.work_state = _stateOf(empWorkState(e)); });
     // 档案上还没有打卡码的, 借用其关联申请单上自动生成的那个 (打卡验证时也是这么找的)
     const subCodeStmt = db.prepare(`SELECT timeclock_code FROM applicant_submissions WHERE employee_id=? AND timeclock_code!='' ORDER BY id DESC LIMIT 1`);
@@ -18971,18 +18974,42 @@ function _ecrNormPhone(v) {
   if (d.length === 11 && d[0] === '1') return '+' + d;
   return '';
 }
+// field: phone / email = 改主电话 / 主邮箱; add_phone / add_email = 加一个 (主的空着就填到主的, 否则加进备用 extra_*)
 function _ecrApply(empId, field, value, req, note) {
-  const col = field === 'phone' ? 'phone' : 'email';
-  const prev = db.prepare(`SELECT ${col} AS v FROM employees WHERE id=?`).get(empId);
-  db.prepare(`UPDATE employees SET ${col}=? WHERE id=?`).run(value, empId);
-  auditLog('employee_contact_update', req, { targetType: 'employee', targetId: String(empId), details: { field, from: prev ? prev.v : '', to: value, note: note || '' } });
+  const isPhone = /phone/.test(field), col = isPhone ? 'phone' : 'email', xcol = isPhone ? 'extra_phones' : 'extra_emails';
+  const prev = db.prepare(`SELECT ${col} AS v, ${xcol} AS x FROM employees WHERE id=?`).get(empId);
+  if (!prev) return;
+  if (field === 'phone' || field === 'email' || !String(prev.v || '').trim()) {
+    db.prepare(`UPDATE employees SET ${col}=? WHERE id=?`).run(value, empId);
+  } else {
+    let xs = []; try { xs = JSON.parse(prev.x || '[]'); } catch (_) {}
+    if (!Array.isArray(xs)) xs = [];
+    const key = v => isPhone ? String(v || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '') : String(v || '').trim().toLowerCase();
+    if (key(prev.v) !== key(value) && !xs.some(x => key(x) === key(value))) xs.push(value);
+    db.prepare(`UPDATE employees SET ${xcol}=? WHERE id=?`).run(JSON.stringify(xs), empId);
+  }
+  auditLog('employee_contact_update', req, { targetType: 'employee', targetId: String(empId), details: { field, from: prev.v || '', to: value, note: note || '' } });
 }
 app.post('/api/admin/phone-check/contact', requireAdmin, (req, res) => {
   try {
     const empId = parseInt((req.body || {}).employee_id, 10);
-    const emp = db.prepare('SELECT id, first_name, last_name, phone, email FROM employees WHERE id=?').get(empId);
+    const emp = db.prepare('SELECT id, first_name, last_name, phone, email, extra_phones, extra_emails FROM employees WHERE id=?').get(empId);
     if (!emp) return res.status(404).json({ error: '找不到这个员工档案' });
     const changes = [];
+    const xs = c => { try { const a = JSON.parse(emp[c] || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
+    const p10 = v => String(v || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+    if ((req.body || {}).add_phone !== undefined && String(req.body.add_phone).trim() !== '') {
+      const v = _ecrNormPhone(req.body.add_phone);
+      if (!v) return res.status(400).json({ error: '加的电话要 10 位美国号码' });
+      if ([emp.phone, ...xs('extra_phones')].some(x => p10(x) === p10(v))) return res.status(400).json({ error: '这个电话档案里已经有了' });
+      changes.push(['add_phone', '', v]);
+    }
+    if ((req.body || {}).add_email !== undefined && String(req.body.add_email).trim() !== '') {
+      const v = String(req.body.add_email).trim().toLowerCase().slice(0, 120);
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return res.status(400).json({ error: '加的邮箱格式不对' });
+      if ([emp.email, ...xs('extra_emails')].some(x => String(x || '').trim().toLowerCase() === v)) return res.status(400).json({ error: '这个邮箱档案里已经有了' });
+      changes.push(['add_email', '', v]);
+    }
     if ((req.body || {}).phone !== undefined && String(req.body.phone).trim() !== '') {
       const v = _ecrNormPhone(req.body.phone);
       if (!v) return res.status(400).json({ error: '电话要 10 位美国号码' });
@@ -19002,7 +19029,8 @@ app.post('/api/admin/phone-check/contact', requireAdmin, (req, res) => {
     // 同一个人同一项还在等审核的, 用新的替换掉旧的
     const ins = db.prepare(`INSERT INTO employee_contact_requests (employee_id, field, old_value, new_value, requested_by, requested_role) VALUES (?, ?, ?, ?, ?, ?)`);
     db.transaction(() => changes.forEach(([f, o, v]) => {
-      db.prepare(`UPDATE employee_contact_requests SET status='rejected', decided_by='（被新提交替换）', decided_at=? WHERE employee_id=? AND field=? AND status='pending' AND requested_by=?`)
+      // 「加」可以连着加几个, 不替换; 「改」同一项只留最新一条
+      if (!f.startsWith('add_')) db.prepare(`UPDATE employee_contact_requests SET status='rejected', decided_by='（被新提交替换）', decided_at=? WHERE employee_id=? AND field=? AND status='pending' AND requested_by=?`)
         .run(new Date().toISOString(), emp.id, f, who);
       ins.run(emp.id, f, o, v, who, req.userRole || '');
     }))();
@@ -19010,7 +19038,8 @@ app.post('/api/admin/phone-check/contact', requireAdmin, (req, res) => {
     // 提醒 admin 去审核
     const nm = [emp.first_name, emp.last_name].filter(Boolean).join(' ');
     const base = (process.env.BASE_URL || '').replace(/\/$/, '');
-    const text = `${who} 提交了员工档案联系方式修改，等你审核：\n\n${nm}\n` + changes.map(([f, o, v]) => `${f === 'phone' ? '电话' : '邮箱'}：${o || '（空）'} → ${v}`).join('\n')
+    const FL = { phone: '改电话', email: '改邮箱', add_phone: '加电话', add_email: '加邮箱' };
+    const text = `${who} 提交了员工档案联系方式修改，等你审核：\n\n${nm}\n` + changes.map(([f, o, v]) => `${FL[f]}：${f.startsWith('add_') ? v : (o || '（空）') + ' → ' + v}`).join('\n')
       + `\n\n到电话 / 人名查询页审核: ${base}/phone-check?q=${encodeURIComponent(nm)}`;
     const admins = db.prepare(`SELECT email FROM admin_users WHERE role='admin' AND COALESCE(active,1)=1 AND COALESCE(needs_approval,0)=0 AND COALESCE(email,'')!=''`).all().map(r => r.email);
     setImmediate(async () => { for (const a of [...new Set(admins)]) { try { await sendEmail(a, `📝 员工电话/邮箱修改等审核：${nm}`, text); } catch (e) {} } });
