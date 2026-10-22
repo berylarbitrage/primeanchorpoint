@@ -18940,7 +18940,102 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
     });
     const foremen = db.prepare(`SELECT id, name, phone, email, warehouse, city, state, active, created_at FROM foremen`).all()
       .filter(x => hit(x.phone, x.name) && stHit(x.state)).slice(0, limit);
-    res.json({ ok: true, phone: digits, mode: stateOnly ? 'state' : byName ? 'name' : 'phone', query: stateOnly ? '' : byName ? rawName : digits, state: stFilter, limit, found: !!(applications.length || employees.length || foremen.length), applications, employees, foremen });
+    // 员工档案上等 admin 审核的电话 / 邮箱修改 (manager 等提交的)
+    const ecrStmt = db.prepare(`SELECT id, field, old_value, new_value, requested_by, created_at FROM employee_contact_requests WHERE employee_id=? AND status='pending' ORDER BY id`);
+    employees.forEach(e => { e.contact_reqs = ecrStmt.all(e.id); });
+    res.json({ ok: true, phone: digits, mode: stateOnly ? 'state' : byName ? 'name' : 'phone', query: stateOnly ? '' : byName ? rawName : digits, state: stFilter, limit, found: !!(applications.length || employees.length || foremen.length), applications, employees, foremen,
+      me: { role: req.userRole, can_approve: _ecrApprover(req) },
+      contact_pending: _ecrApprover(req) ? db.prepare(`SELECT COUNT(*) AS n FROM employee_contact_requests WHERE status='pending'`).get().n : 0 });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── 员工档案电话 / 邮箱: admin 直接改; manager 等其他账号提交后要 admin 审核才生效 ──
+db.exec(`CREATE TABLE IF NOT EXISTS employee_contact_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id INTEGER NOT NULL,
+  field TEXT NOT NULL,            -- phone | email
+  old_value TEXT DEFAULT '',
+  new_value TEXT NOT NULL,
+  requested_by TEXT DEFAULT '',
+  requested_role TEXT DEFAULT '',
+  status TEXT DEFAULT 'pending',  -- pending | approved | rejected
+  decided_by TEXT DEFAULT '',
+  decided_at TEXT DEFAULT '',
+  note TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+function _ecrApprover(req) { return req.userRole === 'admin' && !req.needsApproval; }
+function _ecrNormPhone(v) {
+  const d = String(v || '').replace(/\D/g, '');
+  if (d.length === 10) return '+1' + d;
+  if (d.length === 11 && d[0] === '1') return '+' + d;
+  return '';
+}
+function _ecrApply(empId, field, value, req, note) {
+  const col = field === 'phone' ? 'phone' : 'email';
+  const prev = db.prepare(`SELECT ${col} AS v FROM employees WHERE id=?`).get(empId);
+  db.prepare(`UPDATE employees SET ${col}=? WHERE id=?`).run(value, empId);
+  auditLog('employee_contact_update', req, { targetType: 'employee', targetId: String(empId), details: { field, from: prev ? prev.v : '', to: value, note: note || '' } });
+}
+app.post('/api/admin/phone-check/contact', requireAdmin, (req, res) => {
+  try {
+    const empId = parseInt((req.body || {}).employee_id, 10);
+    const emp = db.prepare('SELECT id, first_name, last_name, phone, email FROM employees WHERE id=?').get(empId);
+    if (!emp) return res.status(404).json({ error: '找不到这个员工档案' });
+    const changes = [];
+    if ((req.body || {}).phone !== undefined && String(req.body.phone).trim() !== '') {
+      const v = _ecrNormPhone(req.body.phone);
+      if (!v) return res.status(400).json({ error: '电话要 10 位美国号码' });
+      if (v !== (emp.phone || '')) changes.push(['phone', emp.phone || '', v]);
+    }
+    if ((req.body || {}).email !== undefined && String(req.body.email).trim() !== '') {
+      const v = String(req.body.email).trim().toLowerCase().slice(0, 120);
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return res.status(400).json({ error: '邮箱格式不对' });
+      if (v !== String(emp.email || '').toLowerCase()) changes.push(['email', emp.email || '', v]);
+    }
+    if (!changes.length) return res.status(400).json({ error: '没有要改的（和现在的一样）' });
+    const who = req.userName || req.username || '';
+    if (_ecrApprover(req)) {
+      changes.forEach(([f, , v]) => _ecrApply(emp.id, f, v, req, 'admin 直接修改'));
+      return res.json({ ok: true, applied: true });
+    }
+    // 同一个人同一项还在等审核的, 用新的替换掉旧的
+    const ins = db.prepare(`INSERT INTO employee_contact_requests (employee_id, field, old_value, new_value, requested_by, requested_role) VALUES (?, ?, ?, ?, ?, ?)`);
+    db.transaction(() => changes.forEach(([f, o, v]) => {
+      db.prepare(`UPDATE employee_contact_requests SET status='rejected', decided_by='（被新提交替换）', decided_at=? WHERE employee_id=? AND field=? AND status='pending' AND requested_by=?`)
+        .run(new Date().toISOString(), emp.id, f, who);
+      ins.run(emp.id, f, o, v, who, req.userRole || '');
+    }))();
+    auditLog('employee_contact_request', req, { targetType: 'employee', targetId: String(emp.id), details: { changes } });
+    // 提醒 admin 去审核
+    const nm = [emp.first_name, emp.last_name].filter(Boolean).join(' ');
+    const base = (process.env.BASE_URL || '').replace(/\/$/, '');
+    const text = `${who} 提交了员工档案联系方式修改，等你审核：\n\n${nm}\n` + changes.map(([f, o, v]) => `${f === 'phone' ? '电话' : '邮箱'}：${o || '（空）'} → ${v}`).join('\n')
+      + `\n\n到电话 / 人名查询页审核: ${base}/phone-check?q=${encodeURIComponent(nm)}`;
+    const admins = db.prepare(`SELECT email FROM admin_users WHERE role='admin' AND COALESCE(active,1)=1 AND COALESCE(needs_approval,0)=0 AND COALESCE(email,'')!=''`).all().map(r => r.email);
+    setImmediate(async () => { for (const a of [...new Set(admins)]) { try { await sendEmail(a, `📝 员工电话/邮箱修改等审核：${nm}`, text); } catch (e) {} } });
+    res.json({ ok: true, pending: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/admin/phone-check/contact-requests', requireAdmin, (req, res) => {
+  if (!_ecrApprover(req)) return res.status(403).json({ error: '只有 admin 能审核' });
+  const rows = db.prepare(`SELECT r.*, e.first_name, e.last_name, e.employee_id AS emp_code FROM employee_contact_requests r
+    LEFT JOIN employees e ON e.id=r.employee_id WHERE r.status='pending' ORDER BY r.id`).all();
+  res.json({ ok: true, requests: rows });
+});
+app.post('/api/admin/phone-check/contact-requests/:id', requireAdmin, (req, res) => {
+  try {
+    if (!_ecrApprover(req)) return res.status(403).json({ error: '只有 admin 能审核' });
+    const r = db.prepare(`SELECT * FROM employee_contact_requests WHERE id=?`).get(req.params.id);
+    if (!r) return res.status(404).json({ error: '找不到这条申请' });
+    if (r.status !== 'pending') return res.status(409).json({ error: '这条已经处理过了' });
+    const ok = !!(req.body || {}).approve, note = String((req.body || {}).note || '').slice(0, 200);
+    const who = req.userName || req.username || '';
+    db.prepare(`UPDATE employee_contact_requests SET status=?, decided_by=?, decided_at=?, note=? WHERE id=?`)
+      .run(ok ? 'approved' : 'rejected', who, new Date().toISOString(), note, r.id);
+    if (ok) _ecrApply(r.employee_id, r.field, r.new_value, req, `审核通过 ${r.requested_by} 的修改`);
+    else auditLog('employee_contact_reject', req, { targetType: 'employee', targetId: String(r.employee_id), details: { field: r.field, value: r.new_value, by: r.requested_by, note } });
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
