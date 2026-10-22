@@ -43914,7 +43914,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS new_hire_onboarding (
 // 系统匹配的东西 (Gusto 收款人 / 电话 / 邮件对人) 都要 manager 或 admin 通过:
 // gusto_ok 通过了 gusto_uuid; gusto_rejected / phone_rejected 记被否掉的建议, 不再推荐
 for (const col of ["gusto_ok INTEGER DEFAULT 0", "gusto_ok_by TEXT DEFAULT ''", "gusto_ok_at TEXT DEFAULT ''",
-  "gusto_rejected TEXT DEFAULT '[]'", "phone_rejected TEXT DEFAULT '[]'"]) {
+  "gusto_rejected TEXT DEFAULT '[]'", "phone_rejected TEXT DEFAULT '[]'",
+  // 关联系统里的员工档案 (employees.id): 和 Gusto 一样, 系统按名字匹配只是建议, emp_ok=1 才算关联上
+  "employee_id INTEGER DEFAULT NULL", "emp_ok INTEGER DEFAULT 0", "emp_ok_by TEXT DEFAULT ''", "emp_ok_at TEXT DEFAULT ''", "emp_rejected TEXT DEFAULT '[]'"]) {
   try { db.exec(`ALTER TABLE new_hire_onboarding ADD COLUMN ${col}`); } catch (e) {}
 }
 // 粘贴进来的 Gusto 通知邮件 (只存解析结果, 同一封重复粘贴不重复记); 读的时候再按名字对人
@@ -43987,11 +43989,28 @@ function _wobPhoneIndex() {
 }
 
 function _wobJson(v, dflt) { try { const x = JSON.parse(v || ''); return x == null ? dflt : x; } catch (e) { return dflt; } }
+// 员工档案索引: id → 摘要; 名字 (名姓 / 姓名 / 带中间名, 只留字母) → [id]
+function _wobEmployees() {
+  const byId = {}, byName = {};
+  for (const e of db.prepare(`SELECT id, employee_id, first_name, middle_name, last_name, phone, status, timeclock_code
+      FROM employees WHERE COALESCE(is_test,0)=0`).all()) {
+    const name = [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ');
+    byId[e.id] = { id: e.id, name, code: e.employee_id || '', phone: e.phone || '', status: e.status || '', timeclock_code: e.timeclock_code || '' };
+    for (const n of [`${e.first_name} ${e.last_name}`, `${e.last_name} ${e.first_name}`, name, `${e.last_name} ${e.first_name} ${e.middle_name || ''}`]) {
+      const k = _refNameKey(n);
+      if (k.length < 4) continue;
+      const arr = byName[k] = byName[k] || [];
+      if (!arr.includes(e.id)) arr.push(e.id);
+    }
+  }
+  return { byId, byName };
+}
 function _wobBuild() {
   const people = _wobInvoicePeople();
   const saved = {};
   for (const r of db.prepare('SELECT * FROM new_hire_onboarding').all()) saved[r.name_key] = r;
   const phones = _wobPhoneIndex();
+  const emps = _wobEmployees();
   // Gusto 名册: API 同步的合同工 (带 onboarding 状态); 没连 API 时退回付款 CSV 模板名册, 只能对名字
   const contractors = db.prepare('SELECT uuid, name, first_name, last_name, business_name, hourly_rate, is_active, raw_json FROM gusto_contractors').all();
   const cByUuid = {};
@@ -44050,15 +44069,23 @@ function _wobBuild() {
     try { manual = JSON.parse(s.checklist || '{}') || {}; } catch (e) {}
     const firstWeek = wob.weekStart(p.first_end);
     const firstLines = p.lines.filter(l => wob.weekStart(l.period_end) === firstWeek);
-    // 电话: 填进去的才算; 系统从档案里找到的只是建议, 要通过才写进去
-    const phoneSug = !s.phone && ph && !_wobJson(s.phone_rejected, []).includes(ph.phone) ? { phone: ph.phone, source: ph.source } : null;
+    // 员工档案: 已通过的关联 / 有人手动选的 (待审核) / 系统按名字找到的 (待审核, 同名多个就都列出来让人挑)
+    let employee = null, empProposals = [];
+    const empRej = _wobJson(s.emp_rejected, []);
+    if (s.employee_id && s.emp_ok) employee = { ...(emps.byId[s.employee_id] || { id: s.employee_id, name: '(档案找不到了)' }), by: s.emp_ok_by || '', at: s.emp_ok_at || '' };
+    else if (s.employee_id) empProposals = [{ ...(emps.byId[s.employee_id] || { id: s.employee_id, name: '(档案找不到了)' }), why: `${s.updated_by || '有人'} 手动选的` }];
+    else {
+      const ids = new Set();
+      for (const n of [p.name, ...names]) for (const id of emps.byName[_refNameKey(n)] || []) if (!empRej.includes(id)) ids.add(id);
+      empProposals = [...ids].slice(0, 5).map(id => ({ ...emps.byId[id], why: ids.size > 1 ? '同名的有好几个, 挑一个' : '名字一致' }));
+    }
     list.push({
       key: p.key, name: s.name || p.name, invoice_names: names,
       first_end: p.first_end, last_end: p.last_end, week: firstWeek,
       invoices: firstLines, _lines: p.lines, later_invoices: new Set(p.lines.filter(l => wob.weekStart(l.period_end) !== firstWeek).map(l => l.invoice_id)).size,
       warehouses: s.warehouse ? [s.warehouse] : [...new Set(firstLines.map(l => l.company).filter(Boolean))],
       warehouse_saved: s.warehouse || '',
-      phone: s.phone || '', phone_suggest: phoneSug,
+      employee, employee_proposals: empProposals, phone: employee ? employee.phone : '', phone_old: s.phone || '',
       pay_method: s.pay_method || '', pay_note: s.pay_note || '', suggest,
       gusto, gusto_proposal: proposal, first_payment: firstPay, manual,
       updated_by: s.updated_by || '', updated_at: s.updated_at || '',
@@ -44083,7 +44110,7 @@ function _wobBuild() {
     w.checklist = wob.buildChecklist({ contractor: w.gusto && w.gusto.link ? { raw: w.gusto.raw || {} } : null,
       emails: w.emails, manual: w.manual, firstPayment: w.first_payment });
     if (w.gusto) delete w.gusto.raw;
-    w.pending_review = (w.gusto_proposal ? 1 : 0) + (w.phone_suggest ? 1 : 0) + w.email_proposals.length;
+    w.pending_review = (w.gusto_proposal ? 1 : 0) + (w.employee_proposals.length ? 1 : 0) + w.email_proposals.length;
     // 已通过关联的 Gusto 收款人走完入职还付过钱的, 没手动选付款方式也算处理完
     w.done = w.pay_method === 'skip' || (!!w.pay_method && (w.pay_method !== 'gusto' || w.checklist.done))
       || (!w.pay_method && !!(w.gusto && w.gusto.link) && w.checklist.done);
@@ -44171,6 +44198,11 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
     rows = rows.map(({ _lines, ...w }) => w);
     // manager 不看金额 (发票计费 / 工资)
     if (req.userRole === 'manager') {
+      // 系统按名字找到的档案里, 只给 manager 看他能看的
+      const vis = new Set();
+      const ids = [...new Set(rows.flatMap(w => w.employee_proposals.map(e => e.id)))];
+      for (const id of ids) if (_wobEmpVisible(req, id)) vis.add(id);
+      for (const w of rows) w.employee_proposals = w.employee_proposals.filter(e => vis.has(e.id));
       for (const v of invoices) v.total = null;
       for (const w of rows) { w.invoices = w.invoices.map(l => ({ ...l, total: null })); if (w.line) w.line = { ...w.line, total: null }; }
     }
@@ -44186,6 +44218,7 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
       can_edit: ['admin', 'accounting', 'cs', 'manager'].includes(req.userRole),
       can_approve: _wobCanApprove(req),
       can_open_invoice: req.userRole !== 'manager',
+      can_open_employee: ['admin', 'staff'].includes(req.userRole),
       can_sync: ['admin', 'accounting'].includes(req.userRole) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -44206,7 +44239,9 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
     const next = { name: cur.name || '', phone: cur.phone || '', warehouse: cur.warehouse || '', pay_method: cur.pay_method || '',
       pay_note: cur.pay_note || '', gusto_uuid: cur.gusto_uuid || '', checklist: cur.checklist || '{}',
       gusto_ok: cur.gusto_ok ? 1 : 0, gusto_ok_by: cur.gusto_ok_by || '', gusto_ok_at: cur.gusto_ok_at || '',
-      gusto_rejected: cur.gusto_rejected || '[]', phone_rejected: cur.phone_rejected || '[]' };
+      gusto_rejected: cur.gusto_rejected || '[]', phone_rejected: cur.phone_rejected || '[]',
+      employee_id: cur.employee_id || null, emp_ok: cur.emp_ok ? 1 : 0, emp_ok_by: cur.emp_ok_by || '', emp_ok_at: cur.emp_ok_at || '',
+      emp_rejected: cur.emp_rejected || '[]' };
     const str = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
     const now = new Date().toISOString();
     if (b.name !== undefined) next.name = str(b.name, 120);
@@ -44229,6 +44264,25 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
         if (!rej.includes(uuid)) rej.push(uuid);
         next.gusto_rejected = JSON.stringify(rej.slice(-20));
         if (next.gusto_uuid === uuid) Object.assign(next, { gusto_uuid: '', gusto_ok: 0, gusto_ok_by: '', gusto_ok_at: '' });
+      }
+    }
+    // 手动选员工档案: manager / admin 选的直接算通过, 其他人选的进待审核
+    if (b.employee_id !== undefined) {
+      const id = parseInt(b.employee_id, 10) || null;
+      if (id && !db.prepare('SELECT 1 FROM employees WHERE id=?').get(id)) return res.status(404).json({ error: '找不到这个员工档案' });
+      if (id && req.userRole === 'manager' && !_wobEmpVisible(req, id)) return res.status(403).json({ error: '这个员工档案不在你负责的范围' });
+      Object.assign(next, { employee_id: id, emp_ok: id && approver ? 1 : 0, emp_ok_by: id && approver ? (req.userName || '') : '', emp_ok_at: id && approver ? now : '' });
+    }
+    if (b.approve === 'employee' || b.reject === 'employee') {
+      const id = parseInt(b.id, 10) || 0;
+      if (!id || !db.prepare('SELECT 1 FROM employees WHERE id=?').get(id)) return res.status(404).json({ error: '找不到这个员工档案' });
+      if (b.approve && req.userRole === 'manager' && !_wobEmpVisible(req, id)) return res.status(403).json({ error: '这个员工档案不在你负责的范围' });
+      if (b.approve) Object.assign(next, { employee_id: id, emp_ok: 1, emp_ok_by: req.userName || '', emp_ok_at: now });
+      else {
+        const rej = _wobJson(next.emp_rejected, []);
+        if (!rej.includes(id)) rej.push(id);
+        next.emp_rejected = JSON.stringify(rej.slice(-20));
+        if (next.employee_id === id) Object.assign(next, { employee_id: null, emp_ok: 0, emp_ok_by: '', emp_ok_at: '' });
       }
     }
     if (b.approve === 'phone' || b.reject === 'phone') {
@@ -44267,16 +44321,50 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       next.checklist = JSON.stringify(ck);
     }
     db.prepare(`INSERT INTO new_hire_onboarding (name_key, name, phone, warehouse, pay_method, pay_note, gusto_uuid, checklist,
-        gusto_ok, gusto_ok_by, gusto_ok_at, gusto_rejected, phone_rejected, updated_by, updated_at)
+        gusto_ok, gusto_ok_by, gusto_ok_at, gusto_rejected, phone_rejected, employee_id, emp_ok, emp_ok_by, emp_ok_at, emp_rejected, updated_by, updated_at)
       VALUES (@key, @name, @phone, @warehouse, @pay_method, @pay_note, @gusto_uuid, @checklist,
-        @gusto_ok, @gusto_ok_by, @gusto_ok_at, @gusto_rejected, @phone_rejected, @by, datetime('now'))
+        @gusto_ok, @gusto_ok_by, @gusto_ok_at, @gusto_rejected, @phone_rejected, @employee_id, @emp_ok, @emp_ok_by, @emp_ok_at, @emp_rejected, @by, datetime('now'))
       ON CONFLICT(name_key) DO UPDATE SET name=@name, phone=@phone, warehouse=@warehouse, pay_method=@pay_method, pay_note=@pay_note,
         gusto_uuid=@gusto_uuid, checklist=@checklist, gusto_ok=@gusto_ok, gusto_ok_by=@gusto_ok_by, gusto_ok_at=@gusto_ok_at,
-        gusto_rejected=@gusto_rejected, phone_rejected=@phone_rejected, updated_by=@by, updated_at=datetime('now')`)
+        gusto_rejected=@gusto_rejected, phone_rejected=@phone_rejected, employee_id=@employee_id, emp_ok=@emp_ok, emp_ok_by=@emp_ok_by,
+        emp_ok_at=@emp_ok_at, emp_rejected=@emp_rejected, updated_by=@by, updated_at=datetime('now')`)
       .run({ key, ...next, by: req.userName || '' });
     auditLog('new_hire_onboarding_save', req, { targetType: 'new_hire_onboarding', targetId: key,
       details: { fields: Object.keys(b).filter(k => k !== 'checked'), approve: b.approve || '', reject: b.reject || '' } });
     res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// manager 能看到的员工档案: 直接分给他的员工, 或在他负责仓库打过卡的员工 (和员工列表同一口径)
+function _wobEmpVisibleSql(req) {
+  const pids = managerPartnerIds(req), eids = managerEmployeeIds(req);
+  const conds = [], params = [];
+  if (pids.length) {
+    conds.push(`e.id IN (SELECT DISTINCT t.employee_id FROM time_entries t JOIN jobs j ON t.job_id=j.id WHERE j.partner_id IN (${pids.map(() => '?').join(',')}))`);
+    params.push(...pids);
+  }
+  if (eids.length) { conds.push(`e.id IN (${eids.map(() => '?').join(',')})`); params.push(...eids); }
+  return { sql: conds.length ? `(${conds.join(' OR ')})` : '0', params };
+}
+function _wobEmpVisible(req, id) {
+  const v = _wobEmpVisibleSql(req);
+  return !!db.prepare(`SELECT 1 FROM employees e WHERE e.id=? AND ${v.sql}`).get(id, ...v.params);
+}
+// 关联员工档案时搜人: 名字 / 电话 / 员工编号 / 打卡码
+app.get('/api/acct/onboarding-employees', requireAdmin, requireWobWrite, (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim().slice(0, 60);
+    if (q.length < 2) return res.json({ employees: [] });
+    const like = `%${q.replace(/[%_]/g, '')}%`;
+    const digits = q.replace(/\D/g, '');
+    let sql = `SELECT e.id, e.employee_id, e.first_name, e.middle_name, e.last_name, e.phone, e.status, e.timeclock_code FROM employees e
+      WHERE COALESCE(e.is_test,0)=0 AND ((e.first_name || ' ' || e.last_name) LIKE ? OR (e.last_name || ' ' || e.first_name) LIKE ?
+        OR e.employee_id LIKE ? OR (? != '' AND (REPLACE(REPLACE(REPLACE(REPLACE(e.phone,'-',''),' ',''),'(',''),')','') LIKE ? OR e.timeclock_code = ?)))`;
+    const params = [like, like, like, digits, `%${digits}%`, digits];
+    if (req.userRole === 'manager') { const v = _wobEmpVisibleSql(req); sql += ` AND ${v.sql}`; params.push(...v.params); }
+    sql += ` ORDER BY CASE WHEN e.status='active' THEN 0 ELSE 1 END, e.id DESC LIMIT 30`;
+    res.json({ employees: db.prepare(sql).all(...params).map(e => ({ id: e.id, name: [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '),
+      code: e.employee_id || '', phone: e.phone || '', status: e.status || '', timeclock_code: e.timeclock_code || '' })) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
