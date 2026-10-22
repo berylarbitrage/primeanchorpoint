@@ -22733,6 +22733,21 @@ try {
 } catch (e) { console.log('[migration] weiqiang 记录起始日 error:', e.message); }
 
 // 手动修正的参考值：按付款记录算这张发票账期的 工资/开票 合计，✎ 弹窗预填。
+// 面试日报手动触发: 浏览器直接打开 (凭 pa_token cookie)。默认只预览; ?send=1 立刻按当前状态发给收件人。
+app.get('/api/admin/iv-digest', requireAdmin, blockManager, async (req, res) => {
+  try {
+    const data = _ivDigestData();
+    const { subject, html } = _ivDigestEmail(data);
+    let note = `预览（没有发送）· 收件人：${IV_OVERDUE_EMAILS.join('、')} · 加 ?send=1 立刻发送`;
+    if (req.query.send === '1') {
+      const r = await sendIvOverdueDigest();
+      note = `已发送 ${r.sent}/${IV_OVERDUE_EMAILS.length} 封 · 收件人：${IV_OVERDUE_EMAILS.join('、')}`;
+    }
+    const e = v => String(v).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    res.type('html').send(`<div style="font:14px sans-serif;padding:12px 16px;background:#fffbeb;border-bottom:1px solid #fcd34d"><b>${e(note)}</b><br>主题：${e(subject)}</div>` + html);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/api/admin/invoices/:id/wage-suggest', requireAdmin, (req, res) => {
   try {
     const inv = db.prepare('SELECT company_name, period_start, period_end, subtotal FROM invoices WHERE id=?').get(req.params.id);
