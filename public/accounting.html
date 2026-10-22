@@ -764,6 +764,28 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
   </div>
 
   <!-- 👷 工头名单弹窗: 专门的工头数据库 — 查看/搜索/添加/编辑 (含所在州), 登记介绍时从这里选人 -->
+  <div id="ivdModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:94;align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)ivdClose()">
+    <div class="card" style="max-width:860px;width:100%;padding:1.1rem 1.2rem 1rem;max-height:94vh;display:flex;flex-direction:column">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;margin-bottom:.55rem">
+        <div style="font-weight:800">📧 面试日报 · 发送前预览</div>
+        <button class="btn btn-sm btn-outline" onclick="ivdClose()">✕ 关闭</button>
+      </div>
+      <div style="font-size:.8rem;color:var(--g500);display:grid;grid-template-columns:auto 1fr;gap:.25rem .7rem;margin-bottom:.6rem">
+        <span>收件人</span><span id="ivdTo" style="color:var(--g700)">…</span>
+        <span>主题</span><span id="ivdSubject" style="color:var(--g700);font-weight:600">…</span>
+      </div>
+      <div style="flex:1;min-height:320px;border:1px solid var(--g200);border-radius:8px;overflow:hidden;background:#f4f4f5">
+        <iframe id="ivdFrame" sandbox="" style="width:100%;height:62vh;border:0;display:block;background:#f4f4f5"></iframe>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;margin-top:.7rem;flex-wrap:wrap">
+        <span style="font-size:.74rem;color:var(--g400)">按现在的状态生成；每天 14:00、20:00（芝加哥时间）也会自动发</span>
+        <span style="display:flex;gap:.5rem">
+          <button class="btn btn-outline" onclick="ivdClose()">取消</button>
+          <button class="btn btn-blue" id="ivdSendBtn" onclick="ivdSend()" disabled>📧 确认发送</button>
+        </span>
+      </div>
+    </div>
+  </div>
   <div id="fmModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:94;align-items:center;justify-content:center;padding:16px">
     <div class="card" style="max-width:780px;width:100%;padding:1.1rem 1.2rem 1rem;max-height:92vh;overflow:auto;display:flex;flex-direction:column">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;margin-bottom:.55rem">
@@ -1260,17 +1282,37 @@ let ROLE = '';  // 与 /banking 同名: 'admin' | 'cs' | 'accounting' | 'staff'
 function annApi(path, opts) { return bapi('/api' + path, opts); }
 function loadTxns() { bankLoadTxns(); }  // 待审核筛选切换时由 bank-ann.js 调用
 function money(v) { return '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-// 「📧 立刻发面试日报」: 不等 14:00 / 20:00, 按当前状态马上发一封
+// 「📧 立刻发面试日报」: 先弹窗预览这封邮件 (按当前状态), 确认后马上发, 不等 14:00 / 20:00
 async function sendIvDigestNow() {
-  if (!confirm('按现在的状态立刻发一封面试日报？\n（还没标记 / 今天去面试 / 明天安排面试，发给面试日报的收件人）')) return;
-  const btn = document.getElementById('btnIvDigest');
-  if (btn) { btn.disabled = true; btn.textContent = '发送中…'; }
+  const m = document.getElementById('ivdModal');
+  const btn = document.getElementById('ivdSendBtn');
+  m.style.display = 'flex';
+  btn.disabled = true; btn.textContent = '📧 确认发送';
+  document.getElementById('ivdTo').textContent = '加载中…';
+  document.getElementById('ivdSubject').textContent = '';
+  document.getElementById('ivdFrame').srcdoc = '<p style="font:14px sans-serif;color:#9ca3af;padding:20px">正在生成预览…</p>';
+  try {
+    const r = await api('/api/acct/iv-digest/preview');
+    if (r.error) throw new Error(r.error);
+    document.getElementById('ivdTo').textContent = (r.to || []).join('、');
+    document.getElementById('ivdSubject').textContent = r.subject || '';
+    document.getElementById('ivdFrame').srcdoc = r.html || '';
+    btn.disabled = false;
+  } catch (e) {
+    document.getElementById('ivdTo').textContent = '—';
+    document.getElementById('ivdFrame').srcdoc = `<p style="font:14px sans-serif;color:#dc2626;padding:20px">预览生成失败：${esc(e.message)}</p>`;
+  }
+}
+function ivdClose() { document.getElementById('ivdModal').style.display = 'none'; }
+async function ivdSend() {
+  const btn = document.getElementById('ivdSendBtn');
+  btn.disabled = true; btn.textContent = '发送中…';
   try {
     const r = await api('/api/acct/iv-digest/send', { method: 'POST', body: '{}' });
     if (r.error) throw new Error(r.error);
     toast(`📧 已发送 ${r.sent}/${r.total} 封（还没标记 ${r.overdue} 人）：${(r.to || []).join('、')}`, r.sent < r.total);
-  } catch (e) { toast('发送失败：' + e.message, true); }
-  if (btn) { btn.disabled = false; btn.textContent = '📧 立刻发面试日报'; }
+    ivdClose();
+  } catch (e) { toast('发送失败：' + e.message, true); btn.disabled = false; btn.textContent = '📧 确认发送'; }
 }
 function toast(msg, bad) {
   const t = document.createElement('div');
