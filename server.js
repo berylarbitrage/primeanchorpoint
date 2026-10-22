@@ -43974,7 +43974,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS gusto_email_events (
 // 邮件对到哪个人: 通过后记 worker_key; 否掉的人记 rejected_keys (JSON 数组)
 // 银行信息邮件 (有误 / 已更新) 是提醒: admin / manager 点「知道了」记 ack_by / ack_at; notified_at = 已发邮件提醒
 for (const col of ["worker_key TEXT DEFAULT ''", "rejected_keys TEXT DEFAULT '[]'", "review_by TEXT DEFAULT ''", "review_at TEXT DEFAULT ''",
-  "ack_by TEXT DEFAULT ''", "ack_at TEXT DEFAULT ''", "notified_at TEXT DEFAULT ''"]) {
+  "ack_by TEXT DEFAULT ''", "ack_at TEXT DEFAULT ''", "notified_at TEXT DEFAULT ''",
+  // 对不上人的邮件可以「暂时忽略」(不再列出来, 想看可以再打开)
+  "ignored_by TEXT DEFAULT ''", "ignored_at TEXT DEFAULT ''"]) {
   try { db.exec(`ALTER TABLE gusto_email_events ADD COLUMN ${col}`); } catch (e) {}
 }
 // 上线前已经存在的银行邮件不补发提醒邮件 (页面上方照样提示, 等人点「知道了」)
@@ -44149,7 +44151,10 @@ function _wobBuild() {
     });
   }
   // 邮件事件按名字对到人也只是建议: 通过后 (worker_key) 才进清单; 否掉的人记在 rejected_keys
-  const events = db.prepare("SELECT id, kind, name, date, subject, worker_key, rejected_keys, review_by, ack_by, ack_at FROM gusto_email_events ORDER BY date, id").all();
+  const events = db.prepare("SELECT id, kind, name, date, subject, worker_key, rejected_keys, review_by, ack_by, ack_at, ignored_by, ignored_at FROM gusto_email_events ORDER BY date, id").all();
+  const nameOf = {};
+  for (const w of list) nameOf[w.key] = w.name;
+  const candOf = hits => hits.slice(0, 6).map(k => ({ key: k, name: nameOf[k] || k }));
   const cands = list.map(w => ({ key: w.key, names: [...w.invoice_names, w.name, w.gusto && w.gusto.name, w.gusto_proposal && w.gusto_proposal.name].filter(Boolean) }));
   const approved = {}, proposed = {};
   const unmatched = [], bank = [];
@@ -44162,14 +44167,15 @@ function _wobBuild() {
         const hits = wob.matchEmailName(ev.name, cands).hits.filter(k => !_wobJson(ev.rejected_keys, []).includes(k));
         if (hits.length === 1) key = hits[0];
       }
-      bank.push({ ...e, key, ack_by: ev.ack_by || '', ack_at: ev.ack_at || '' });
+      const bh = key ? [] : wob.matchEmailName(ev.name, cands).hits.filter(k => !_wobJson(ev.rejected_keys, []).includes(k));
+      bank.push({ ...e, key, ack_by: ev.ack_by || '', ack_at: ev.ack_at || '', candidates: candOf(bh) });
       continue;
     }
     if (ev.worker_key) { (approved[ev.worker_key] = approved[ev.worker_key] || []).push({ ...e, by: ev.review_by || '' }); continue; }
     const rej = _wobJson(ev.rejected_keys, []);
     const hits = wob.matchEmailName(ev.name, cands).hits.filter(k => !rej.includes(k));
     if (hits.length === 1) (proposed[hits[0]] = proposed[hits[0]] || []).push(e);
-    else unmatched.push({ ...e, ambiguous: hits.length > 1 });
+    else unmatched.push({ ...e, ambiguous: hits.length > 1, candidates: candOf(hits), ignored_by: ev.ignored_by || '', ignored_at: ev.ignored_at || '' });
   }
   // 「银行已更新」之前同一个人还有没处理的「银行有误」→ 记在 clears 里, 页面上问要不要一起消除
   // (对上人的按人比; 对不上人的按邮件里的名字比)
@@ -44301,7 +44307,9 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
       review_total: list.filter(w => w.pending_review).length,
       // 银行信息提醒 (页面最上方): 还没人点「知道了」的
       bank_alerts: bank.filter(b => !b.ack_at).map(b => ({ ...b, worker: b.key ? ((list.find(w => w.key === b.key) || {}).name || '') : '' })).reverse(),
-      unmatched_emails: unmatched.filter(e => e.date >= since).slice(-50),
+      // 对不上人的邮件: 没忽略的; 忽略的只给个数, 页面上点「显示已忽略」再带出来
+      unmatched_emails: unmatched.filter(e => e.date >= since && (req.query.show_ignored === '1' || !e.ignored_at)).slice(-80),
+      unmatched_ignored: unmatched.filter(e => e.date >= since && e.ignored_at).length,
       pay_methods: wob.PAY_METHODS, steps: wob.GUSTO_STEPS,
       // 邮件同步脚本状态 (页面顶部显示正常 / 停了)
       mail_sync: (() => { const m = _mailHookCfg(); return { configured: !!m.token, last_at: m.last_at || '', last_new_at: m.last_new_at || '' }; })(),
@@ -44529,6 +44537,45 @@ app.get('/api/acct/onboarding-employees', requireAdmin, requireWobWrite, (req, r
     sql += ` ORDER BY CASE WHEN e.status='active' THEN 0 ELSE 1 END, e.id DESC LIMIT 30`;
     res.json({ employees: db.prepare(sql).all(...params).map(e => ({ id: e.id, name: [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '),
       code: e.employee_id || '', phone: e.phone || '', status: e.status || '', timeclock_code: e.timeclock_code || '' })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 对不上人的 Gusto 邮件: manager / admin 手动关联到某个工人 (直接算通过), 或者暂时忽略
+app.post('/api/acct/onboarding-email-assign', requireAdmin, requireWobWrite, (req, res) => {
+  try {
+    if (!_wobCanApprove(req)) return res.status(403).json({ error: '只有 manager / admin 能关联邮件' });
+    const id = parseInt(req.body && req.body.event_id, 10) || 0;
+    const ev = db.prepare('SELECT id, kind, name, date FROM gusto_email_events WHERE id=?').get(id);
+    if (!ev) return res.status(404).json({ error: '找不到这封邮件' });
+    const key = _payrollNameKey(req.body.key);
+    const w = _wobScoped(req).list.find(x => x.key === key);
+    if (!w) return res.status(404).json({ error: '找不到这个员工' });
+    db.prepare("UPDATE gusto_email_events SET worker_key=?, review_by=?, review_at=?, ignored_by='', ignored_at='' WHERE id=?")
+      .run(key, req.userName || '', new Date().toISOString(), id);
+    _wobLog(key, req.userName, '手动关联 Gusto 邮件', `${ev.date} ${wob.EMAIL_KIND_LABEL[ev.kind] || ev.kind} · 邮件里的名字「${ev.name}」`);
+    res.json({ ok: true, worker: w.name });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/acct/onboarding-email-ignore', requireAdmin, requireWobWrite, (req, res) => {
+  try {
+    if (!_wobCanApprove(req)) return res.status(403).json({ error: '只有 manager / admin 能处理邮件' });
+    const id = parseInt(req.body && req.body.event_id, 10) || 0;
+    if (!db.prepare('SELECT 1 FROM gusto_email_events WHERE id=?').get(id)) return res.status(404).json({ error: '找不到这封邮件' });
+    const on = req.body.ignore !== false;
+    db.prepare('UPDATE gusto_email_events SET ignored_by=?, ignored_at=? WHERE id=?').run(on ? (req.userName || '') : '', on ? new Date().toISOString() : '', id);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 关联邮件时挑人: 按名字搜这页上的员工 (manager 只有自己仓库的)
+app.get('/api/acct/onboarding-workers', requireAdmin, requireWobView, (req, res) => {
+  try {
+    const words = wob.nameWords(req.query.q);
+    const { list } = _wobScoped(req);
+    const out = list.filter(w => !words.length || words.every(x => wob.nameWords([w.name, ...w.invoice_names].join(' ')).some(y => y.startsWith(x))))
+      .sort((a, b) => b.last_end.localeCompare(a.last_end)).slice(0, 30)
+      .map(w => ({ key: w.key, name: w.name, first_end: w.first_end, last_end: w.last_end, companies: [...new Set(w._lines.map(l => l.company))].slice(0, 3),
+        employee: w.employee ? (w.employee.code || '') : '' }));
+    res.json({ workers: out });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
