@@ -44645,10 +44645,13 @@ app.get('/api/acct/onboarding-employees', requireAdmin, requireWobWrite, (req, r
     const lastPunch = db.prepare(`SELECT clock_in, company_name FROM time_entries WHERE employee_id=? ORDER BY clock_in DESC LIMIT 1`);
     const punchN = db.prepare(`SELECT COUNT(*) AS n FROM time_entries WHERE employee_id=?`);
     const subOf = db.prepare(`SELECT id, partner_name, position, created_at, timeclock_code FROM applicant_submissions WHERE employee_id=? ORDER BY id DESC LIMIT 1`);
-    const subDocs = db.prepare(`SELECT doc_type, verify_status FROM applicant_docs WHERE submission_id=?`);
+    const subDocs = db.prepare(`SELECT id, doc_type, verify_status, file_name FROM applicant_docs WHERE submission_id=?`);
     const waOf = db.prepare('SELECT id FROM worker_accounts WHERE employee_id=? ORDER BY active DESC, id ASC LIMIT 1');
-    const ssnCard = db.prepare(`SELECT COUNT(*) AS n FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='ssn_card' AND COALESCE(file_path,'')!=''`);
-    const wp = db.prepare(`SELECT expiry_date FROM work_permit_docs WHERE worker_account_id=? AND COALESCE(file_path,'')!='' ORDER BY created_at DESC LIMIT 1`);
+    const ssnCards = db.prepare(`SELECT id, file_name FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='ssn_card' AND COALESCE(file_path,'')!='' ORDER BY created_at DESC`);
+    const wps = db.prepare(`SELECT id, file_name, expiry_date FROM work_permit_docs WHERE worker_account_id=? AND COALESCE(file_path,'')!='' ORDER BY created_at DESC`);
+    const empDocs = db.prepare(`SELECT id, doc_type, doc_label, file_name, expiry_date FROM employee_documents WHERE employee_id=? AND COALESCE(file_path,'')!='' ORDER BY uploaded_at DESC`);
+    // 证件图: 和 phone check 一样只给管理员 / staff (图片接口本来就是这两个角色能看)
+    const canImg = ['admin', 'staff'].includes(req.userRole);
     const DOC = { ssn_front: 'SSN 正面', ssn_back: 'SSN 反面', ead_front: 'EAD 正面', ead_back: 'EAD 反面', cnid_front: '身份证 正面', cnid_back: '身份证 反面' };
     const safe = (fn, d) => { try { return fn(); } catch (e) { return d; } };
     res.json({ employees: db.prepare(sql).all(...params).map(e => {
@@ -44656,12 +44659,15 @@ app.get('/api/acct/onboarding-employees', requireAdmin, requireWobWrite, (req, r
       const wa = safe(() => waOf.get(e.id), null);
       const lp = safe(() => lastPunch.get(e.id), null);
       const docs = [];
-      if (sub) for (const d of safe(() => subDocs.all(sub.id), [])) docs.push({ label: DOC[d.doc_type] || d.doc_type, status: d.verify_status || '' });
+      const img = url => canImg ? url : '';
+      if (sub) for (const d of safe(() => subDocs.all(sub.id), [])) docs.push({ label: DOC[d.doc_type] || d.doc_type, status: d.verify_status || '', file_name: d.file_name || '',
+        url: img(`/api/admin/applicant-submissions/${sub.id}/docs/${d.id}/download`), orig: img(`/api/admin/applicant-submissions/${sub.id}/docs/${d.id}/download?v=orig`) });
       if (wa) {
-        if (safe(() => ssnCard.get(wa.id).n, 0)) docs.push({ label: 'SSN 卡', status: '' });
-        const w = safe(() => wp.get(wa.id), null);
-        if (w) docs.push({ label: '工卡 EAD', status: '', extra: w.expiry_date ? '到期 ' + w.expiry_date : '' });
+        for (const d of safe(() => ssnCards.all(wa.id), [])) docs.push({ label: 'SSN 卡', status: '', file_name: d.file_name || '', url: img('/api/admin/employees/id-doc-image/wc_' + d.id) });
+        for (const d of safe(() => wps.all(wa.id), [])) docs.push({ label: '工卡 EAD', status: '', extra: d.expiry_date ? '到期 ' + d.expiry_date : '', file_name: d.file_name || '', url: img('/api/admin/employees/id-doc-image/wp_' + d.id) });
       }
+      for (const d of safe(() => empDocs.all(e.id), [])) docs.push({ label: d.doc_label || d.doc_type || '档案文件', status: '', extra: d.expiry_date ? '到期 ' + d.expiry_date : '',
+        file_name: d.file_name || '', url: img('/api/admin/employees/id-doc-image/ed_' + d.id) });
       const ws = /^WRK-([A-Z]{2})-/.exec(String(e.employee_id || ''));
       return { id: e.id, name: [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '),
         code: e.employee_id || '', phone: e.phone || '', status: e.status || '', timeclock_code: e.timeclock_code || (sub && sub.timeclock_code) || '',

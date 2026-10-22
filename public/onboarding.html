@@ -92,6 +92,12 @@ input,select,textarea{padding:.38rem .5rem;border:1px solid var(--g300);border-r
 .alerts{background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:.6rem .9rem;margin-bottom:12px}
 .alerts .a{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;font-size:.82rem;padding:.25rem 0}
 .alerts .a+.a{border-top:1px dashed #fecaca}
+.dthumbs{display:flex;gap:.45rem;flex-wrap:wrap;margin-top:.45rem}
+.dthumb{width:132px;cursor:zoom-in;border:1px solid var(--g200);border-radius:8px;overflow:hidden;background:#f8fafc}
+.dthumb:hover{border-color:#3b82f6;box-shadow:0 2px 8px rgba(59,130,246,.2)}
+.dthumb img,.dnoimg{width:100%;height:84px;object-fit:cover;display:block;background:#e5e7eb}
+.dnoimg{display:flex;align-items:center;justify-content:center;font-size:.74rem;color:var(--g500)}
+.dlab{font-size:.7rem;font-weight:700;padding:.2rem .35rem;color:#5b21b6;line-height:1.3}
 .ecard{border:1px solid var(--g200);border-radius:10px;padding:.6rem .75rem;margin-bottom:.45rem}
 .ecard:hover{border-color:#93c5fd}
 .egrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:.2rem .8rem;margin-top:.4rem;font-size:.78rem}
@@ -208,6 +214,16 @@ textarea{width:100%}
       <button class="btn btn-blue" id="pmGo">确认</button>
     </div>
   </div>
+</div>
+
+<div id="docView" onclick="if(event.target===this)this.style.display='none'" style="position:fixed;inset:0;background:rgba(15,23,42,.85);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:2600;padding:16px">
+  <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem;color:#fff;font-weight:700">
+    <span id="docTitle"></span>
+    <button class="btn btn-outline btn-sm" id="docOrig" style="background:#fff">看原件</button>
+    <a class="btn btn-outline btn-sm" id="docOpen" target="_blank" style="background:#fff">新窗口打开 ↗</a>
+    <button class="btn btn-outline btn-sm" style="background:#fff" onclick="document.getElementById('docView').style.display='none'">关闭</button>
+  </div>
+  <img id="docImg" style="max-width:min(1000px,96vw);max-height:84vh;border-radius:8px;background:#fff">
 </div>
 
 <div class="modal" id="gModal" onclick="if(event.target===this)this.style.display='none'">
@@ -752,6 +768,29 @@ async function pickEmployee(k) {
   document.getElementById('eQ').value = D.rows[k].name;
   eSearch(k);
 }
+// 证件缩略图 (管理员 / staff): 点开看大图; PDF 等非图片给链接
+const DOCS = [];
+function docThumb(d) {
+  const vb = { real: ['✅ 真', '#166534'], fake: ['❌ 假', '#991b1b'], pending: ['⏳ 待审', '#92400e'] }[d.status];
+  const isImg = !/\.pdf$/i.test(d.file_name || '');
+  DOCS.push(d);
+  const i = DOCS.length - 1;
+  return `<div class="dthumb" onclick="openDoc(${i})" title="${esc(d.label)} · 点开看大图">
+    ${isImg ? `<img src="${esc(d.url)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'dnoimg',textContent:'看不了'}))">` : '<div class="dnoimg">📄 PDF</div>'}
+    <div class="dlab">${esc(d.label)}${vb ? ` <span style="color:${vb[1]}">${vb[0]}</span>` : ''}${d.extra ? `<br><span class="muted">${esc(d.extra)}</span>` : ''}</div></div>`;
+}
+function openDoc(i) {
+  const d = DOCS[i];
+  if (/\.pdf$/i.test(d.file_name || '')) { window.open(d.url, '_blank'); return; }
+  const o = document.getElementById('docView');
+  document.getElementById('docImg').src = d.url;
+  document.getElementById('docTitle').textContent = d.label + (d.extra ? ' · ' + d.extra : '');
+  const orig = document.getElementById('docOrig');
+  orig.style.display = d.orig ? '' : 'none';
+  orig.onclick = () => { document.getElementById('docImg').src = d.orig; orig.style.display = 'none'; };
+  document.getElementById('docOpen').href = d.url;
+  o.style.display = 'flex';
+}
 let _eT = null;
 function eSearch(k) {
   clearTimeout(_eT);
@@ -779,7 +818,9 @@ function eSearch(k) {
           ${kv('最近打卡', e.last_punch ? e.last_punch.at.replace('T', ' ') + (e.last_punch.company ? ' · ' + e.last_punch.company : '') : '')}${kv('打卡次数', e.punches ? String(e.punches) : '')}
           ${kv('扫码申请', e.application ? e.application.at + (e.application.partner ? ' · ' + e.application.partner : '') : '')}${kv('建档', String(e.created_at || '').slice(0, 10))}
         </div>
-        ${e.docs.length ? `<div style="margin-top:.3rem;display:flex;gap:.25rem;flex-wrap:wrap">${e.docs.map(d => `<span class="tag" style="background:#f5f3ff;color:#5b21b6">🪪 ${esc(d.label)}${vb(d.status)}${d.extra ? ' · ' + esc(d.extra) : ''}</span>`).join('')}</div>` : '<div class="muted" style="margin-top:.3rem">没有上传证件</div>'}
+        ${!e.docs.length ? '<div class="muted" style="margin-top:.3rem">没有上传证件</div>'
+          : e.docs.some(d => d.url) ? `<div class="dthumbs">${e.docs.map(d => docThumb(d)).join('')}</div>`
+          : `<div style="margin-top:.3rem;display:flex;gap:.25rem;flex-wrap:wrap">${e.docs.map(d => `<span class="tag" style="background:#f5f3ff;color:#5b21b6">🪪 ${esc(d.label)}${vb(d.status)}${d.extra ? ' · ' + esc(d.extra) : ''}</span>`).join('')}</div>`}
       </div>`; }).join('')
       || '<div class="muted">没找到。可以换个写法搜，或者先去员工管理建档。</div>';
   }, 250);
