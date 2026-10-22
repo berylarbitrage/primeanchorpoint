@@ -41811,7 +41811,7 @@ const _ckKey = (company, kind, label) => _ckNorm(company) + '|' + kind + '|' + _
     [
       ['Elogistek LLC', 'labor', 'EL', 'weekly', '每周两张劳务账单: INV-L-IL-EL-…'],
       ['Elogistek LLC', 'labor', 'Office_East_Coast', 'weekly', '每周两张劳务账单: INV-L-IL-OEC-… (Bill To: Office_East_Coast)'],
-      ['Albatross America Inc', 'any', '', 'confirm', '有时候有有时候没有, 每周都要确认一下'],
+      ['Albatross America Inc', 'labor', '', 'confirm', '有时候有有时候没有, 每周都要确认一下'],
       ['Nexware Inc', 'labor', '', 'weekly', ''],
       ['Nexware Inc', 'container', '', 'weekly', ''],
       ['Looife Inc', 'labor', '', 'weekly', ''],
@@ -41822,6 +41822,13 @@ const _ckKey = (company, kind, label) => _ckNorm(company) + '|' + kind + '|' + _
       ['Cargowill LLC', 'labor', '', 'occasional', ''],
     ].forEach(([c, k, l, f, n]) => { if (!have.has(_ckKey(c, k, l))) ins.run(c, k, l, f, n); });
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('acct_checklist_seed_v1', '1')`).run();
+  }
+  // Albatross 只有劳务账单 (第一版种的是「不限类型」, 已经种过的改过来)
+  if (!db.prepare(`SELECT value FROM app_settings WHERE key='acct_checklist_fix_albatross'`).get()) {
+    db.prepare('SELECT id, company_name FROM acct_checklist_expect WHERE kind=?').all('any')
+      .filter(x => _ckNorm(x.company_name) === _ckNorm('Albatross America Inc'))
+      .forEach(x => db.prepare(`UPDATE acct_checklist_expect SET kind='labor' WHERE id=?`).run(x.id));
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('acct_checklist_fix_albatross', '1')`).run();
   }
 }
 // 任意日期 → 那一周的周一 (YYYY-MM-DD)
