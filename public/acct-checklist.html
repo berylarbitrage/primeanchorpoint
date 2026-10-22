@@ -153,9 +153,11 @@ function render() {
   document.getElementById('pane').innerHTML = TAB === 'bills' ? paneBills() : TAB === 'pay' ? panePay() : paneSetup();
 }
 function payTag(i) { const p = PAY[i.pay_status] || PAY.unpaid; return `<span class="tag ${p[1]}" title="${esc((i.pay_reasons || []).join('；'))}">${p[0]}</span>`; }
+// 发票号点开 → 会计对账页直接打开这张发票 (新标签页)
+function invA(i) { return `<a href="/accounting?invoice=${i.id}" target="_blank" title="打开这张发票" style="color:inherit;font-weight:700;text-decoration:underline dotted">${esc(i.invoice_number)} ↗</a>`; }
 function invLine(i) {
   const per = i.period_start || i.period_end ? `${md(i.period_start)}–${md(i.period_end)}` : md(i.invoice_date);
-  return `<div class="inv"><b>${esc(i.invoice_number)}</b> · ${per} · ${money(i.subtotal)} ${payTag(i)}</div>`;
+  return `<div class="inv">${invA(i)} · ${per} · ${money(i.subtotal)} ${payTag(i)}</div>`;
 }
 
 // ① 账单都出了吗: 会计把这周的发票 link 到清单项上才算出了
@@ -180,7 +182,7 @@ function paneBills() {
   else h += `<table><thead><tr><th>公司 / 仓库</th><th>类型</th><th>状态</th><th>已 link 的账单</th><th>操作</th></tr></thead><tbody>` + items.map(x => {
     const s = x.state === 'na' ? `<span class="tag t-gray">➖ 本周没有</span>${x.mark.note ? `<div class="muted">${esc(x.mark.note)}</div>` : ''}<div class="muted">${esc(x.mark.marked_by)}</div>` : STATE[x.state];
     const linked = x.invoices.map(i => invLine(i) + `<button class="btn btn-outline btn-sm" style="padding:.05rem .4rem" title="取消 link" onclick="unlink(${i.id})">✕</button>`).join('');
-    const hint = x.hints.map(i => `<div class="inv" style="color:var(--amber)">可能是 <b>${esc(i.invoice_number)}</b>${i.bill_to ? ' · ' + esc(i.bill_to) : ''} · ${money(i.subtotal)} <button class="btn btn-blue btn-sm" style="padding:.05rem .45rem" onclick="link(${x.id},${i.id})">link</button></div>`).join('');
+    const hint = x.hints.map(i => `<div class="inv" style="color:var(--amber)">可能是 ${invA(i)}${i.bill_to ? ' · ' + esc(i.bill_to) : ''} · ${money(i.subtotal)} <button class="btn btn-blue btn-sm" style="padding:.05rem .45rem" onclick="link(${x.id},${i.id})">link</button></div>`).join('');
     const act = `<div class="row" style="flex-wrap:nowrap"><select id="sel${x.id}" style="max-width:220px">${candOptions(x)}</select><button class="btn btn-blue btn-sm" onclick="linkSel(${x.id})">link</button></div>`
       + (x.state === 'na' ? `<button class="btn btn-outline btn-sm" style="margin-top:.3rem" onclick="unmark(${x.id})">撤销「本周没有」</button>`
         : x.state !== 'done' ? `<button class="btn btn-outline btn-sm" style="margin-top:.3rem" onclick="markNa(${x.id})">本周没有</button>` : '');
@@ -235,7 +237,7 @@ function panePay() {
     h += `<tr class="co-head"><td colspan="8">${esc(n)} <span class="muted">· ${g.length} 张${owe > 0 ? ` · 还欠 <b style="color:var(--red)">${money(owe)}</b>` : ''}</span></td></tr>`;
     h += g.map(i => {
       const a = age(i.invoice_date);
-      return `<tr><td><b>${esc(i.invoice_number)}</b></td><td>${KIND[i.kind]}</td><td>${md(i.period_start)}–${md(i.period_end)}</td><td>${money(i.subtotal)}</td>
+      return `<tr><td>${invA(i)}</td><td>${KIND[i.kind]}</td><td>${md(i.period_start)}–${md(i.period_end)}</td><td>${money(i.subtotal)}</td>
         <td>${i.pay_got != null ? money(i.pay_got) : '—'}</td><td>${payTag(i)}${i.pay_reasons.length ? `<div class="muted">${esc(i.pay_reasons.join('；'))}</div>` : ''}</td>
         <td>${md(i.invoice_date)}${a != null && i.pay_status !== 'paid' ? `<div class="muted" style="${a > 30 ? 'color:var(--red);font-weight:700' : ''}">${a} 天</div>` : ''}</td>
         <td style="min-width:180px">${i.follow ? `<div style="font-size:.8rem">${esc(i.follow.note)}</div><div class="muted">${esc(i.follow.updated_by)} · ${esc(String(i.follow.updated_at).slice(5, 16))}</div>` : ''}
