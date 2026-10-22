@@ -43155,6 +43155,15 @@ app.put('/api/acct/referral-foremen/:id', requireAdmin, requireRole('accounting'
 // 标记面试去没去: 约了面试未必去, 列表里一键标; 权限同编辑 (核查过的只有管理员能改)。
 // 标「去了」可带 attended_at 记实际到场时间, 之后还能再改; 改成没去/清除时到场时间一并清掉。
 // 标「没通过」(failed) 必须带 fail_reason (没通过的原因), 到场时间保留 (人是去了的)。
+// 「📧 立刻发面试日报」弹窗里的预览: 按当前状态生成的邮件 (不发送)
+app.get('/api/acct/iv-digest/preview', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+  try {
+    const data = _ivDigestData();
+    const { subject, html } = _ivDigestEmail(data);
+    res.json({ subject, html, to: IV_OVERDUE_EMAILS, overdue: data.overdue.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // 会计对账「介绍费」页上的「📧 立刻发面试日报」按钮: 按当前状态马上发一封 (不影响 14:00 / 20:00 定时那两封)
 app.post('/api/acct/iv-digest/send', requireAdmin, requireRole('accounting', 'admin', 'cs'), async (req, res) => {
   try {
