@@ -1166,6 +1166,8 @@ try { db.exec("ALTER TABLE admin_users ADD COLUMN password_plain TEXT DEFAULT ''
 try { db.exec("ALTER TABLE admin_users ADD COLUMN approval_status TEXT DEFAULT 'approved'"); } catch {}
 // 客服主管: role='cs' 且 cs_lead=1 — 介绍费页能看到所有客服的记录, 收完整的面试日报; 普通客服只看 / 只收自己提交的
 try { db.exec("ALTER TABLE admin_users ADD COLUMN cs_lead INTEGER DEFAULT 0"); } catch {}
+// 新员工入职页「能审核」: 不是 manager / admin 的账号 (例如 staff) 单独给 manager 那样的审核权限
+try { db.exec("ALTER TABLE admin_users ADD COLUMN wob_approver INTEGER DEFAULT 0"); } catch {}
 
 // Migrate partners table (add new columns if missing)
 const partnerMigrations = ['contacts','addresses','social_media','links'];
@@ -9461,8 +9463,9 @@ function requireAdmin(req, res, next) {
     const ok = p.startsWith('/api/acct/onboarding') || p === '/api/acct/gusto-payees' || p === '/api/admin/me' || p === '/api/admin/logout';
     if (!ok) return res.status(403).json({ error: '入职专员账号仅限使用新员工入职页 (/onboarding)' });
   }
-  const _u = db.prepare('SELECT assigned_partner_ids, assigned_employee_ids, assigned_job_ids, cs_lead FROM admin_users WHERE id=?').get(session.userId);
+  const _u = db.prepare('SELECT assigned_partner_ids, assigned_employee_ids, assigned_job_ids, cs_lead, wob_approver FROM admin_users WHERE id=?').get(session.userId);
   req.csLead = !!(_u && _u.cs_lead);
+  req.wobApprover = !!(_u && _u.wob_approver);
   req.assignedPartnerIds = (_u && _u.assigned_partner_ids) || '';
   req.assignedEmployeeIds = (_u && _u.assigned_employee_ids) || '';
   req.assignedJobIds = (_u && _u.assigned_job_ids) || '';
@@ -44311,8 +44314,10 @@ app.get('/onboarding', (req, res) => res.sendFile(path.join(__dirname, 'public',
 
 // 权限: manager 也能用这一页 (只看自己负责仓库的发票, 不显示金额); 系统匹配的建议只有 manager / admin 能通过
 const requireWobView = requireRole('accounting', 'cs', 'admin', 'staff', 'manager', 'onboarding');
-const requireWobWrite = requireRole('accounting', 'cs', 'admin', 'manager', 'onboarding');
-const _wobCanApprove = req => ['admin', 'manager'].includes(req.userRole);
+// 能改: 这些角色, 或单独开了「能审核」的账号 (staff 平时只能看)
+const requireWobWrite = (req, res, next) => (['accounting', 'cs', 'admin', 'manager', 'onboarding'].includes(req.userRole) || req.wobApprover)
+  ? next() : res.status(403).json({ error: 'Permission denied' });
+const _wobCanApprove = req => ['admin', 'manager'].includes(req.userRole) || !!req.wobApprover;
 // manager 负责的仓库 (合作公司标准名); 其他角色 null = 全部
 function _wobScope(req) {
   if (req.userRole !== 'manager') return null;
@@ -44419,7 +44424,7 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
       gusto: { connected: !!(st.access_token && st.refresh_token), last_sync_at: st.last_sync_at || '',
         contractors: db.prepare('SELECT COUNT(*) AS n FROM gusto_contractors').get().n },
       role: req.userRole,
-      can_edit: ['admin', 'accounting', 'cs', 'manager', 'onboarding'].includes(req.userRole),
+      can_edit: ['admin', 'accounting', 'cs', 'manager', 'onboarding'].includes(req.userRole) || !!req.wobApprover,
       // 管理员: 在 /onboarding 自助注册、等批准的入职专员
       pending_registrations: req.userRole === 'admin' ? db.prepare(`SELECT id, username, display_name, email, phone, created_at FROM admin_users
         WHERE role='onboarding' AND approval_status='pending' ORDER BY id`).all() : [],
@@ -44781,7 +44786,7 @@ async function _wobNotifyBank() {
     const pending = db.prepare("SELECT id FROM gusto_email_events WHERE kind IN ('bank_bad','bank_updated') AND COALESCE(notified_at,'')='' AND COALESCE(ack_at,'')=''").all();
     if (!pending.length) return;
     const { list, bank } = _wobBuild();
-    const users = db.prepare(`SELECT role, email, assigned_partner_ids FROM admin_users WHERE role IN ('admin','manager','onboarding')
+    const users = db.prepare(`SELECT role, email, assigned_partner_ids, wob_approver FROM admin_users WHERE (role IN ('admin','manager','onboarding') OR wob_approver=1)
       AND COALESCE(active,1)=1 AND COALESCE(approval_status,'approved')='approved' AND COALESCE(email,'')!=''`).all();
     const base = (process.env.BASE_URL || '').replace(/\/$/, '');
     for (const { id } of pending) {
@@ -44791,7 +44796,7 @@ async function _wobNotifyBank() {
       const w = b.key ? list.find(x => x.key === b.key) : null;
       const companies = new Set(w ? w._lines.map(l => _canonCompanyName(l.company)) : []);
       const to = users.filter(u => {
-        if (u.role === 'admin' || u.role === 'onboarding') return true;
+        if (u.role === 'admin' || u.role === 'onboarding' || (u.wob_approver && u.role !== 'manager')) return true;
         const pids = String(u.assigned_partner_ids || '').split(',').map(x => parseInt(x, 10)).filter(Boolean);
         if (!pids.length || !companies.size) return false;
         return db.prepare(`SELECT name FROM partners WHERE id IN (${pids.map(() => '?').join(',')})`).all(...pids).some(p => companies.has(_canonCompanyName(p.name)));
@@ -44864,7 +44869,7 @@ app.get('/api/acct/onboarding-access', requireAdmin, requireRole('admin'), (req,
     db.prepare('SELECT id, name FROM partners').all().forEach(p => { pname[p.id] = p.name; });
     const subs = new Set(_wobSubscribers().map(e => e.toLowerCase()));
     const rows = db.prepare(`SELECT id, username, display_name, role, email, active, COALESCE(approval_status,'approved') AS approval_status,
-        assigned_partner_ids, created_at FROM admin_users WHERE role IN (${roles.map(() => '?').join(',')}) ORDER BY role, username`).all(...roles)
+        assigned_partner_ids, created_at, wob_approver FROM admin_users WHERE role IN (${roles.map(() => '?').join(',')}) ORDER BY role, username`).all(...roles)
       .map(u => {
         const ok = u.approval_status === 'approved';
         const pids = String(u.assigned_partner_ids || '').split(',').map(x => parseInt(x, 10)).filter(Boolean);
@@ -44874,12 +44879,26 @@ app.get('/api/acct/onboarding-access', requireAdmin, requireRole('admin'), (req,
           status: !ok ? (u.approval_status === 'pending' ? 'pending' : u.approval_status) : (u.active ? 'ok' : 'inactive'),
           warehouses: u.role === 'manager' ? pids.map(id => pname[id] || ('#' + id)) : [],
           gets_forward: ok && !!email && subs.has(email.toLowerCase()),
-          gets_bank: ok && !!email && (u.role === 'admin' || u.role === 'onboarding' || (u.role === 'manager' && pids.length > 0)),
+          approver: u.role === 'admin' || u.role === 'manager' || !!u.wob_approver, approver_flag: !!u.wob_approver,
+          gets_bank: ok && !!email && (u.role === 'admin' || u.role === 'onboarding' || (u.wob_approver && u.role !== 'manager') || (u.role === 'manager' && pids.length > 0)),
           created_at: String(u.created_at || '').slice(0, 10),
         };
       });
     const cfg = _mailHookCfg();
     res.json({ accounts: rows, forward_to: cfg.forward_to || [] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 管理员: 给某个账号开 / 关入职页「能审核」(manager 那样的审核权限, 后台其他权限不变)
+app.post('/api/acct/onboarding-access/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const u = db.prepare('SELECT id, username, role FROM admin_users WHERE id=?').get(req.params.id);
+    if (!u) return res.status(404).json({ error: '找不到这个账号' });
+    if (['admin', 'manager'].includes(u.role)) return res.status(400).json({ error: '管理员和仓库经理本来就能审核' });
+    const on = !!(req.body && req.body.wob_approver);
+    db.prepare('UPDATE admin_users SET wob_approver=? WHERE id=?').run(on ? 1 : 0, u.id);
+    auditLog('wob_approver_set', req, { targetType: 'admin_user', targetId: u.id, details: { username: u.username, role: u.role, on } });
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
