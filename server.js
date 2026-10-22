@@ -41752,7 +41752,7 @@ app.get('/api/acct/invoices/:id', requireAdmin, requireAcctView, (req, res) => {
 // 每周五会计核对两件事: ① 该出的账单都出了没有 (一个仓库可能既有卸柜又有劳务, 各算一张)
 // ② 出了的账单客户都付了没有 (付款状态沿用会计对账页的核查口径 _acctInvoiceVerify)。
 // 「应出账单」清单: 公司 + 类型(container 卸柜 / labor 劳务 / any 不限) + 频率 + 标签(同公司同类型有两张时区分)。
-// 频率: weekly 每周必出 (没出标红) / confirm 有时有有时没有, 每周都要确认一次 / occasional 偶尔有, 不确认也不算漏。
+// 频率: weekly 每周必出 (没出标红) / confirm 有时有有时没有 / occasional 偶尔有 —— 后两种每周都要 link 或手动确认「本周没有」。
 // 「已出」不自动算: 会计要把这周的发票 link 到清单项上 (系统只提示可能是哪张)。
 db.exec(`CREATE TABLE IF NOT EXISTS acct_checklist_expect (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41811,7 +41811,7 @@ const _ckKey = (company, kind, label) => _ckNorm(company) + '|' + kind + '|' + _
     [
       ['Elogistek LLC', 'labor', 'EL', 'weekly', '每周两张劳务账单: INV-L-IL-EL-…'],
       ['Elogistek LLC', 'labor', 'Office_East_Coast', 'weekly', '每周两张劳务账单: INV-L-IL-OEC-… (Bill To: Office_East_Coast)'],
-      ['Albatross America Inc', 'any', '', 'confirm', '有时候有有时候没有, 每周都要确认一下'],
+      ['Albatross America Inc', 'labor', '', 'confirm', '有时候有有时候没有, 每周都要确认一下'],
       ['Nexware Inc', 'labor', '', 'weekly', ''],
       ['Nexware Inc', 'container', '', 'weekly', ''],
       ['Looife Inc', 'labor', '', 'weekly', ''],
@@ -41822,6 +41822,13 @@ const _ckKey = (company, kind, label) => _ckNorm(company) + '|' + kind + '|' + _
       ['Cargowill LLC', 'labor', '', 'occasional', ''],
     ].forEach(([c, k, l, f, n]) => { if (!have.has(_ckKey(c, k, l))) ins.run(c, k, l, f, n); });
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('acct_checklist_seed_v1', '1')`).run();
+  }
+  // Albatross 只有劳务账单 (第一版种的是「不限类型」, 已经种过的改过来)
+  if (!db.prepare(`SELECT value FROM app_settings WHERE key='acct_checklist_fix_albatross'`).get()) {
+    db.prepare('SELECT id, company_name FROM acct_checklist_expect WHERE kind=?').all('any')
+      .filter(x => _ckNorm(x.company_name) === _ckNorm('Albatross America Inc'))
+      .forEach(x => db.prepare(`UPDATE acct_checklist_expect SET kind='labor' WHERE id=?`).run(x.id));
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('acct_checklist_fix_albatross', '1')`).run();
   }
 }
 // 任意日期 → 那一周的周一 (YYYY-MM-DD)
@@ -41879,7 +41886,8 @@ app.get('/api/acct/checklist', requireAdmin, requireAcctView, (req, res) => {
       const mark = marks[x.id] || null;
       // 可能是这几张: 同公司 (+ 同类型), 账期和这周重叠, 还没 link
       const hints = linked.length ? [] : near.filter(r => _ckNorm(r.company_name) === _ckNorm(x.company_name) && (x.kind === 'any' || r.kind === x.kind) && _ckOverlap(r, ws, we)).map(brief);
-      const state = linked.length ? 'done' : mark ? 'na' : x.freq === 'occasional' ? 'optional' : x.freq === 'confirm' ? 'confirm' : 'missing';
+      // 偶尔有 / 有时有: 没 link 也没点「本周没有」都算待确认, 要会计手动确认这周确实没有
+      const state = linked.length ? 'done' : mark ? 'na' : x.freq === 'weekly' ? 'missing' : 'confirm';
       return { ...x, invoices: linked, hints, mark, state };
     });
     // 这周出了、但还没 link 到任何清单项的发票
