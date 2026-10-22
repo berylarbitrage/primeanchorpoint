@@ -44171,6 +44171,13 @@ function _wobBuild() {
     if (hits.length === 1) (proposed[hits[0]] = proposed[hits[0]] || []).push(e);
     else unmatched.push({ ...e, ambiguous: hits.length > 1 });
   }
+  // 「银行已更新」之前同一个人还有没处理的「银行有误」→ 记在 clears 里, 页面上问要不要一起消除
+  // (对上人的按人比; 对不上人的按邮件里的名字比)
+  const sameWho = (a, b) => a.key ? a.key === b.key : (!b.key && a.name.toLowerCase() === b.name.toLowerCase());
+  for (const u of bank) {
+    if (u.kind !== 'bank_updated') continue;
+    u.clears = bank.filter(b => b.kind === 'bank_bad' && !b.ack_at && sameWho(u, b) && String(b.date) <= String(u.date)).map(b => b.id);
+  }
   const bankByKey = {};
   for (const b of bank) if (b.key) (bankByKey[b.key] = bankByKey[b.key] || []).push(b);
   for (const w of list) {
@@ -44526,13 +44533,18 @@ app.get('/api/acct/onboarding-employees', requireAdmin, requireWobWrite, (req, r
 app.post('/api/acct/onboarding-bank-ack', requireAdmin, requireWobWrite, (req, res) => {
   try {
     if (!_wobCanApprove(req)) return res.status(403).json({ error: '只有 manager / admin 能处理银行信息提醒' });
-    const id = parseInt(req.body && req.body.event_id, 10) || 0;
+    // event_id 一条; 或 event_ids 多条 (银行已更新时一起消除之前的「有误」)
+    const ids = [...new Set([req.body && req.body.event_id, ...((req.body && req.body.event_ids) || [])].map(x => parseInt(x, 10)).filter(Boolean))].slice(0, 50);
     const { bank } = _wobScoped(req);
-    const b = bank.find(x => x.id === id);
-    if (!b) return res.status(404).json({ error: '找不到这条提醒' });
-    db.prepare('UPDATE gusto_email_events SET ack_by=?, ack_at=? WHERE id=?').run(req.userName || '', new Date().toISOString(), id);
-    if (b.key) _wobLog(b.key, req.userName, '银行信息提醒: 知道了', `${b.date} ${b.label}${req.body.note ? ' · ' + String(req.body.note).slice(0, 300) : ''}`);
-    res.json({ ok: true });
+    const items = ids.map(id => bank.find(x => x.id === id));
+    if (!items.length || items.some(x => !x)) return res.status(404).json({ error: '找不到这条提醒' });
+    const now = new Date().toISOString(), note = req.body.note ? ' · ' + String(req.body.note).slice(0, 300) : '';
+    const action = items.length > 1 ? '银行信息已更新: 消除之前的提醒' : '银行信息提醒: 知道了';
+    for (const b of items) {
+      db.prepare('UPDATE gusto_email_events SET ack_by=?, ack_at=? WHERE id=?').run(req.userName || '', now, b.id);
+      if (b.key) _wobLog(b.key, req.userName, action, `${b.date} ${b.label}${note}`);
+    }
+    res.json({ ok: true, acked: items.length });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -44580,7 +44592,8 @@ async function _wobNotifyBank() {
       }).map(u => u.email);
       const who = w ? w.name : b.name;
       const subject = `⚠ 工人银行信息${b.kind === 'bank_bad' ? '有误' : '已被更新'}: ${who}`;
-      const text = `${who} — ${b.label}（Gusto 邮件 ${b.date}）\n${b.subject}\n\n${w ? '' : '系统里没对上是哪个工人，请到页面上看。\n'}请到新员工入职页处理: ${base}/onboarding`;
+      const clears = b.clears && b.clears.length ? `之前还有 ${b.clears.length} 条「银行信息有误」提醒没处理，请到页面上确认要不要一起消除。\n` : '';
+      const text = `${who} — ${b.label}（Gusto 邮件 ${b.date}）\n${b.subject}\n\n${clears}${w ? '' : '系统里没对上是哪个工人，请到页面上看。\n'}请到新员工入职页处理: ${base}/onboarding`;
       for (const addr of [...new Set(to)]) { try { await sendEmail(addr, subject, text); } catch (e) { console.log('[onboarding] 提醒邮件失败:', e.message); } }
     }
   } catch (e) { console.log('[onboarding] 银行提醒失败:', e.message); }
