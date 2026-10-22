@@ -33797,7 +33797,22 @@ async function openInvpForEdit(id) {
   }
   window._invpShiftBlocks = (inv.profile && Array.isArray(inv.profile.shift_blocks) && inv.profile.shift_blocks.length) ? inv.profile.shift_blocks : null;
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
-  _invpSetupAddrPicker([]); // editing a saved invoice keeps its stored address; no picker
+  // 编辑已存发票：默认保留它存的地址；客户公司有多个地址（如后来新加的）时也显示下拉，可改选。
+  {
+    const _nm = (inv.company_name || '').trim().toLowerCase();
+    const _p = (window._invpPartners || []).find(p => (p.name || '').trim().toLowerCase() === _nm);
+    let addrs = [];
+    if (_p) { try { addrs = JSON.parse(_p.addresses || '[]'); } catch {} }
+    if (!Array.isArray(addrs)) addrs = [];
+    if (!addrs.length && _p && _p.address) addrs = [_p.address];
+    const norm = a => _invpFmtAddr(a).toLowerCase().replace(/[^a-z0-9]/g, '');
+    const stored = inv.bill_to_addr || '';
+    let idx = stored ? addrs.findIndex(a => norm(a) === norm(stored)) : 0;
+    if (idx < 0) { addrs = [stored, ...addrs]; idx = 0; }
+    _invpSetupAddrPicker(addrs);
+    const sel = document.getElementById('invPageAddrSelect');
+    if (sel && addrs.length > 1) sel.value = String(idx);
+  }
   const iw = document.getElementById('invpEmpImportWrap'); if (iw) iw.style.display = 'none';
 
   // Restore profile from this invoice's own saved snapshot. ALWAYS overwrite the
@@ -38162,6 +38177,15 @@ function onInvPageAddrSelect() {
   const sel = document.getElementById('invPageAddrSelect');
   const addrs = window._invpSelectedPartnerAddrs || [];
   const idx = parseInt(sel && sel.value, 10) || 0;
+  const editEl = document.getElementById('invPageEditId');
+  if (editEl && editEl.value) {
+    // 已存发票：只换地址，发票号不重新生成（州变了才只改州、日期不变）
+    document.getElementById('invPageBillAddr').value = _invpFmtAddr(addrs[idx] || '');
+    window._invpSelectedPartnerState = _invpAddrState(addrs[idx]) || window._invpSelectedPartnerState;
+    window._invpDirty = true;
+    _invpSyncNumberToAddr();
+    return;
+  }
   _invpApplyBillAddr(addrs[idx] || '');
 }
 
