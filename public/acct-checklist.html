@@ -51,7 +51,7 @@ h3{margin:0 0 .5rem;font-size:.98rem;color:var(--navy)}
 <div class="wrap" id="main" style="display:none">
   <div class="row" style="justify-content:space-between">
     <div><div style="font-size:1.2rem;font-weight:800;color:var(--navy)">📋 会计每周核对清单</div>
-      <div class="muted">每周五核对：① 该出的账单都出了没有（同一个仓库有卸柜也有劳务的，两张都要出）② 出了的账单客户都付款了没有</div></div>
+      <div class="muted">每周五核对：① 该出的账单都出了没有（把这周的发票 link 到清单上；同一个仓库有卸柜也有劳务的，两张都要出）② 出了的账单客户都付款了没有</div></div>
     <div class="row">
       <a class="btn btn-outline" href="/accounting" target="_blank">🧾 会计对账 ↗</a>
       <button class="btn btn-outline" onclick="load()">↻ 刷新</button>
@@ -76,7 +76,8 @@ h3{margin:0 0 .5rem;font-size:.98rem;color:var(--navy)}
 <script>
 let TOKEN = localStorage.getItem('acct_token') || localStorage.getItem('adminToken') || '';
 let D = null, TAB = 'bills', WEEK = '', PAY_SCOPE = 'all';
-const KIND = { container: '🚛 卸柜', labor: '👷 劳务' };
+const KIND = { container: '🚛 卸柜', labor: '👷 劳务', any: '📄 不限类型' };
+const FREQ = { weekly: '每周必出', confirm: '有时有 · 每周确认', occasional: '偶尔有' };
 const PAY = { paid: ['✅ 已收款', 't-ok'], partial: ['🟡 部分收款', 't-warn'], review: ['⏳ 待审核', 't-blue'], unpaid: ['❌ 未收款', 't-bad'] };
 function esc(s) { if (s == null) return ''; const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML.replace(/"/g, '&quot;'); }
 function money(n) { return '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -124,13 +125,14 @@ async function load() {
 function render() {
   document.getElementById('wk').value = D.week_start;
   document.getElementById('wkLabel').textContent = `${md(D.week_start)}（周一）– ${md(D.week_end)}（周日）`;
-  const miss = D.items.filter(x => x.state === 'missing'), done = D.items.filter(x => x.state === 'done'), na = D.items.filter(x => x.state === 'na');
+  const st = s => D.items.filter(x => x.state === s);
+  const miss = st('missing'), conf = st('confirm'), done = st('done'), na = st('na');
   const wkInv = D.week_invoices, wkPaid = wkInv.filter(i => i.pay_status === 'paid');
   const unpaidAmt = D.unpaid.reduce((s, i) => s + Math.max(0, i.subtotal - (i.pay_got || 0)), 0);
   document.getElementById('stats').innerHTML = [
-    [D.items.length, '应出账单（清单）', 'var(--navy)'],
-    [done.length, '✅ 已出', 'var(--green)'],
-    [miss.length, '❌ 还没出', miss.length ? 'var(--red)' : 'var(--g400)'],
+    [done.length, '✅ 已出（已 link）', 'var(--green)'],
+    [miss.length, '❌ 每周必出、还没 link', miss.length ? 'var(--red)' : 'var(--g400)'],
+    [conf.length, '❓ 待确认有没有', conf.length ? 'var(--amber)' : 'var(--g400)'],
     [`${wkPaid.length}/${wkInv.length}`, '本周账单已收款', wkPaid.length < wkInv.length ? 'var(--amber)' : 'var(--green)'],
     [money(unpaidAmt), `所有未收款（${D.unpaid.length} 张）`, D.unpaid.length ? 'var(--red)' : 'var(--g400)'],
   ].map(([n, l, c]) => `<div class="stat"><div class="n" style="color:${c}">${n}</div><div class="l">${l}</div></div>`).join('');
@@ -139,12 +141,14 @@ function render() {
     ? `<span class="tag t-ok">✅ ${esc(dn.done_by)} 已于 ${esc(String(dn.done_at).slice(0, 16))} 核对完成</span><button class="btn btn-outline btn-sm" onclick="weekDone(false)">撤销</button>`
     : `<button class="btn btn-green" onclick="weekDone(true)">✅ 这周核对完成</button>`;
   const fri = new Date().getDay() === 5;
+  const nm = x => esc(x.company_name) + (x.label ? `（${esc(x.label)}）` : '') + ' ' + KIND[x.kind];
   let ban = '';
-  if (!D.items.length) ban = `<div class="banner b-warn">还没设「应出账单清单」：先到「⚙️ 应出账单清单」把每个仓库要出的账单加进去（一个仓库有卸柜也有劳务就加两条）。</div>`;
-  else if (miss.length) ban = `<div class="banner b-warn">${fri ? '今天周五，' : ''}这周还有 <b>${miss.length}</b> 张账单没出：${miss.map(x => esc(x.company_name) + ' ' + KIND[x.kind]).join('、')}</div>`;
-  else ban = `<div class="banner b-ok">这周清单里的账单都出了 👍${D.extra.length ? `（另有 ${D.extra.length} 张清单外的账单）` : ''}</div>`;
+  if (!D.items.length) ban = `<div class="banner b-warn">还没设「应出账单清单」：先到「⚙️ 应出账单清单」把每个仓库要出的账单加进去。</div>`;
+  else if (miss.length || conf.length) ban = `<div class="banner b-warn">${fri ? '今天周五，' : ''}${miss.length ? `还有 <b>${miss.length}</b> 张每周必出的账单没 link：${miss.map(nm).join('、')}` : ''}${miss.length && conf.length ? '<br>' : ''}${conf.length ? `<b>${conf.length}</b> 家要确认这周有没有：${conf.map(nm).join('、')}` : ''}</div>`;
+  else ban = `<div class="banner b-ok">这周清单都核对过了 👍${D.extra.length ? `（还有 ${D.extra.length} 张这周的发票没 link）` : ''}</div>`;
   document.getElementById('banner').innerHTML = ban;
-  const tabs = [['bills', `① 账单都出了吗${miss.length ? ` (${miss.length})` : ''}`], ['pay', `② 都付款了吗${D.unpaid.length ? ` (${D.unpaid.length})` : ''}`], ['setup', '⚙️ 应出账单清单']];
+  const todo = miss.length + conf.length;
+  const tabs = [['bills', `① 账单都出了吗${todo ? ` (${todo})` : ''}`], ['pay', `② 都付款了吗${D.unpaid.length ? ` (${D.unpaid.length})` : ''}`], ['setup', '⚙️ 应出账单清单']];
   document.getElementById('tabs').innerHTML = tabs.map(([k, l]) => `<button class="tab ${TAB === k ? 'on' : ''}" onclick="TAB='${k}';render()">${l}</button>`).join('');
   document.getElementById('pane').innerHTML = TAB === 'bills' ? paneBills() : TAB === 'pay' ? panePay() : paneSetup();
 }
@@ -154,38 +158,60 @@ function invLine(i) {
   return `<div class="inv"><b>${esc(i.invoice_number)}</b> · ${per} · ${money(i.subtotal)} ${payTag(i)}</div>`;
 }
 
-// ① 账单都出了吗
+// ① 账单都出了吗: 会计把这周的发票 link 到清单项上才算出了
+const STATE = {
+  missing: '<span class="tag t-bad">❌ 还没出</span>',
+  confirm: '<span class="tag t-warn">❓ 待确认有没有</span>',
+  optional: '<span class="tag t-gray">⚪ 偶尔有 · 有就 link</span>',
+  done: '<span class="tag t-ok">✅ 已出</span>',
+};
+function itemName(x) { return `<b>${esc(x.company_name)}</b>${x.label ? ` <span class="tag t-blue">${esc(x.label)}</span>` : ''}`; }
+function candOptions(x) {
+  const hintIds = new Set(x.hints.map(i => i.id));
+  const opt = i => `<option value="${i.id}">${esc(i.invoice_number)} · ${esc(i.company_name)}${i.bill_to ? ' · ' + esc(i.bill_to) : ''} · ${md(i.period_start)}–${md(i.period_end)} · ${money(i.subtotal)}</option>`;
+  const same = D.candidates.filter(i => !hintIds.has(i.id) && i.company_name && i.company_name.toLowerCase().replace(/[^a-z0-9]/g, '') === x.company_name.toLowerCase().replace(/[^a-z0-9]/g, ''));
+  const rest = D.candidates.filter(i => !hintIds.has(i.id) && !same.includes(i));
+  return `<option value="">选发票 link…</option>${x.hints.length ? `<optgroup label="可能是这张（同公司、账期在这周）">${x.hints.map(opt).join('')}</optgroup>` : ''}${same.length ? `<optgroup label="同公司其他发票">${same.map(opt).join('')}</optgroup>` : ''}${rest.length ? `<optgroup label="其他公司（前后一周）">${rest.map(opt).join('')}</optgroup>` : ''}`;
+}
 function paneBills() {
-  const order = { missing: 0, na: 1, done: 2 };
-  const items = [...D.items].sort((a, b) => order[a.state] - order[b.state] || a.company_name.localeCompare(b.company_name));
-  let h = `<div class="card scroll"><h3>这周应出的账单</h3>`;
+  const order = { missing: 0, confirm: 1, optional: 2, na: 3, done: 4 };
+  const items = [...D.items].sort((a, b) => order[a.state] - order[b.state] || a.company_name.localeCompare(b.company_name) || String(a.label).localeCompare(String(b.label)));
+  let h = `<div class="card scroll"><h3>这周应出的账单</h3><div class="muted" style="margin-bottom:.4rem">每一项都要把这周出的发票 <b>link</b> 上才算出了；系统只会提示「可能是这张」。这周没有的点「本周没有」。</div>`;
   if (!items.length) h += `<div class="muted">清单是空的，先到「⚙️ 应出账单清单」添加。</div>`;
-  else h += `<table><thead><tr><th>公司 / 仓库</th><th>类型</th><th>状态</th><th>出了的账单</th><th></th></tr></thead><tbody>` + items.map(x => {
-    const st = x.state === 'done' ? '<span class="tag t-ok">✅ 已出</span>' : x.state === 'na'
-      ? `<span class="tag t-gray">➖ 本周不需要</span><div class="muted">${esc(x.mark.note)} · ${esc(x.mark.marked_by)}</div>`
-      : '<span class="tag t-bad">❌ 还没出</span>';
-    const act = x.state === 'missing' ? `<button class="btn btn-outline btn-sm" onclick="markNa(${x.id})">本周不需要</button>`
-      : x.state === 'na' ? `<button class="btn btn-outline btn-sm" onclick="unmark(${x.id})">撤销</button>` : '';
-    return `<tr class="${x.state === 'missing' ? 'missing' : ''}"><td><b>${esc(x.company_name)}</b>${x.note ? `<div class="muted">${esc(x.note)}</div>` : ''}</td>
-      <td>${KIND[x.kind]}</td><td>${st}</td><td>${x.invoices.map(invLine).join('') || '<span class="muted">—</span>'}</td><td>${act}</td></tr>`;
+  else h += `<table><thead><tr><th>公司 / 仓库</th><th>类型</th><th>状态</th><th>已 link 的账单</th><th>操作</th></tr></thead><tbody>` + items.map(x => {
+    const s = x.state === 'na' ? `<span class="tag t-gray">➖ 本周没有</span>${x.mark.note ? `<div class="muted">${esc(x.mark.note)}</div>` : ''}<div class="muted">${esc(x.mark.marked_by)}</div>` : STATE[x.state];
+    const linked = x.invoices.map(i => invLine(i) + `<button class="btn btn-outline btn-sm" style="padding:.05rem .4rem" title="取消 link" onclick="unlink(${i.id})">✕</button>`).join('');
+    const hint = x.hints.map(i => `<div class="inv" style="color:var(--amber)">可能是 <b>${esc(i.invoice_number)}</b>${i.bill_to ? ' · ' + esc(i.bill_to) : ''} · ${money(i.subtotal)} <button class="btn btn-blue btn-sm" style="padding:.05rem .45rem" onclick="link(${x.id},${i.id})">link</button></div>`).join('');
+    const act = `<div class="row" style="flex-wrap:nowrap"><select id="sel${x.id}" style="max-width:220px">${candOptions(x)}</select><button class="btn btn-blue btn-sm" onclick="linkSel(${x.id})">link</button></div>`
+      + (x.state === 'na' ? `<button class="btn btn-outline btn-sm" style="margin-top:.3rem" onclick="unmark(${x.id})">撤销「本周没有」</button>`
+        : x.state !== 'done' ? `<button class="btn btn-outline btn-sm" style="margin-top:.3rem" onclick="markNa(${x.id})">本周没有</button>` : '');
+    return `<tr class="${x.state === 'missing' ? 'missing' : ''}"><td>${itemName(x)}<div class="muted">${FREQ[x.freq] || ''}${x.note ? ' · ' + esc(x.note) : ''}</div></td>
+      <td style="white-space:nowrap">${KIND[x.kind]}</td><td>${s}</td><td>${linked || hint || '<span class="muted">—</span>'}</td><td>${act}</td></tr>`;
   }).join('') + `</tbody></table>`;
   h += `</div>`;
-  if (D.extra.length) h += `<div class="card scroll"><h3>清单外的账单</h3><div class="muted" style="margin-bottom:.4rem">这周出了、但不在应出清单里的。以后每周都要出的话点「加入清单」。</div>
-    <table><thead><tr><th>公司</th><th>类型</th><th>账单</th><th></th></tr></thead><tbody>` + D.extra.map(i => `<tr><td>${esc(i.company_name)}</td><td>${KIND[i.kind]}</td><td>${invLine(i)}</td>
-      <td><button class="btn btn-outline btn-sm" onclick='addExpect(${JSON.stringify(i.company_name)}, "${i.kind}")'>＋ 加入清单</button></td></tr>`).join('') + `</tbody></table></div>`;
+  if (D.extra.length) h += `<div class="card scroll"><h3>这周还没 link 的发票（${D.extra.length}）</h3><div class="muted" style="margin-bottom:.4rem">账期在这周、还没 link 到清单任何一项的。选一项 link 上；以后每周都会有的，先到「⚙️ 应出账单清单」加一项。</div>
+    <table><thead><tr><th>公司</th><th>类型</th><th>账单</th><th>link 到</th></tr></thead><tbody>` + D.extra.map(i => `<tr><td>${esc(i.company_name)}${i.bill_to ? `<div class="muted">Bill To: ${esc(i.bill_to)}</div>` : ''}</td><td style="white-space:nowrap">${KIND[i.kind]}</td><td>${invLine(i)}</td>
+      <td><div class="row" style="flex-wrap:nowrap"><select id="xsel${i.id}" style="max-width:220px"><option value="">选清单项…</option>${D.items.map(x => `<option value="${x.id}">${esc(x.company_name)}${x.label ? '（' + esc(x.label) + '）' : ''} · ${KIND[x.kind]}</option>`).join('')}</select>
+        <button class="btn btn-blue btn-sm" onclick="linkExtra(${i.id})">link</button></div></td></tr>`).join('') + `</tbody></table></div>`;
   return h;
 }
+function link(expectId, invoiceId) { save('/api/acct/checklist/link', { week: WEEK, expect_id: expectId, invoice_id: invoiceId }); }
+function linkSel(expectId) { const v = document.getElementById('sel' + expectId).value; if (!v) { toast('先选一张发票', true); return; } link(expectId, +v); }
+function linkExtra(invoiceId) { const v = document.getElementById('xsel' + invoiceId).value; if (!v) { toast('先选清单项', true); return; } link(+v, invoiceId); }
+function unlink(invoiceId) { save('/api/acct/checklist/link', { invoice_id: invoiceId, unlink: true }); }
 async function markNa(id) {
-  const note = prompt('这周为什么不用出这张账单？（例如：这周没干活 / 并到另一张账单里了）');
+  const x = D.items.find(e => e.id === id);
+  const weekly = x.freq === 'weekly';
+  const note = prompt(weekly ? '这张每周都该出，这周为什么没有？（例如：这周没干活 / 并到另一张账单里了）' : '确认这周没有这张账单。备注（可不填）：', '');
   if (note == null) return;
-  if (!note.trim()) { toast('请写一下原因', true); return; }
+  if (weekly && !note.trim()) { toast('请写一下原因', true); return; }
   save('/api/acct/checklist/mark', { week: WEEK, expect_id: id, status: 'na', note });
 }
 function unmark(id) { save('/api/acct/checklist/mark', { week: WEEK, expect_id: id, status: '' }); }
 async function weekDone(done) {
   if (done) {
-    const miss = D.items.filter(x => x.state === 'missing').length;
-    if (miss && !confirm(`还有 ${miss} 张账单没出，确定标记这周核对完成？`)) return;
+    const open = D.items.filter(x => x.state === 'missing' || x.state === 'confirm').length;
+    if (open && !confirm(`还有 ${open} 项没 link / 没确认，确定标记这周核对完成？`)) return;
     if (D.unpaid.length && !confirm(`还有 ${D.unpaid.length} 张账单没收到款，确定标记这周核对完成？`)) return;
   }
   save('/api/acct/checklist/week-done', { week: WEEK, done });
@@ -228,35 +254,40 @@ function follow(id) {
 
 // ⚙️ 应出账单清单
 function paneSetup() {
-  let h = `<div class="card"><h3>添加应出账单</h3><div class="muted" style="margin-bottom:.5rem">每个仓库 / 公司每周要出的账单一条一条加。同一个仓库既有卸柜又有劳务的，加两条。系统按「公司名 + 类型」和这周账期对上就算已出（公司名忽略大小写和标点）。</div>
-    <div class="row"><input id="nCo" list="coList" placeholder="公司 / 仓库名（和发票上的公司名一致）" style="flex:1;min-width:240px">
+  let h = `<div class="card"><h3>添加应出账单</h3><div class="muted" style="margin-bottom:.5rem">每个仓库 / 公司要出的账单一条一条加。同一个仓库既有卸柜又有劳务的，加两条；同一类型每周有两张的（例如 Elogistek 的 EL 和 Office_East_Coast），用「标签」区分各加一条。</div>
+    <div class="row"><input id="nCo" list="coList" placeholder="公司 / 仓库名" style="flex:1;min-width:220px">
       <datalist id="coList">${D.companies.map(c => `<option value="${esc(c)}">`).join('')}</datalist>
-      <select id="nKind"><option value="labor">👷 劳务（按工时）</option><option value="container">🚛 卸柜（按柜）</option></select>
-      <input id="nNote" placeholder="备注（可选）" style="width:200px">
-      <button class="btn btn-blue" onclick="addExpect(document.getElementById('nCo').value, document.getElementById('nKind').value, document.getElementById('nNote').value)">＋ 添加</button></div></div>`;
-  if (D.suggestions.length) h += `<div class="card scroll"><h3>💡 建议加入</h3><div class="muted" style="margin-bottom:.4rem">最近 8 周出过、但还不在清单里的</div><table><tbody>` +
-    D.suggestions.map(s => `<tr><td><b>${esc(s.company_name)}</b></td><td>${KIND[s.kind]}</td><td class="muted">最近 8 周 ${s.count} 张 · 最后账期到 ${md(s.last)}</td>
-      <td><button class="btn btn-outline btn-sm" onclick='addExpect(${JSON.stringify(s.company_name)}, "${s.kind}")'>＋ 加入清单</button></td></tr>`).join('') + `</tbody></table></div>`;
+      <select id="nKind"><option value="labor">👷 劳务（按工时）</option><option value="container">🚛 卸柜（按柜）</option><option value="any">📄 不限类型</option></select>
+      <select id="nFreq"><option value="weekly">每周必出</option><option value="confirm">有时有有时没有 · 每周确认</option><option value="occasional">偶尔有</option></select>
+      <input id="nLabel" placeholder="标签（可选，如 EL）" style="width:150px">
+      <input id="nNote" placeholder="备注（可选）" style="width:180px">
+      <button class="btn btn-blue" onclick="addExpect()">＋ 添加</button></div></div>`;
   h += `<div class="card scroll"><h3>当前清单（${D.expects.length}）</h3>`;
   if (!D.expects.length) h += `<div class="muted">还没有</div>`;
-  else h += `<table><thead><tr><th>公司 / 仓库</th><th>类型</th><th>备注</th><th>状态</th><th></th></tr></thead><tbody>` + D.expects.map(x => `<tr style="${x.active ? '' : 'opacity:.55'}">
-      <td><b>${esc(x.company_name)}</b></td><td>${KIND[x.kind]}</td><td>${esc(x.note)}</td>
-      <td>${x.active ? '<span class="tag t-ok">每周核对</span>' : '<span class="tag t-gray">已停用</span>'}</td>
-      <td style="white-space:nowrap"><button class="btn btn-outline btn-sm" onclick="editNote(${x.id})">备注</button>
+  else h += `<table><thead><tr><th>公司 / 仓库</th><th>类型</th><th>频率</th><th>备注</th><th>状态</th><th></th></tr></thead><tbody>` + D.expects.map(x => `<tr style="${x.active ? '' : 'opacity:.55'}">
+      <td>${itemName(x)}</td><td style="white-space:nowrap">${KIND[x.kind]}</td>
+      <td><select onchange="save('/api/acct/checklist/expect/${x.id}', {freq: this.value}, 'PUT')">${Object.entries(FREQ).map(([k, l]) => `<option value="${k}" ${x.freq === k ? 'selected' : ''}>${l}</option>`).join('')}</select></td>
+      <td>${esc(x.note)}</td>
+      <td>${x.active ? '<span class="tag t-ok">核对中</span>' : '<span class="tag t-gray">已停用</span>'}</td>
+      <td style="white-space:nowrap"><button class="btn btn-outline btn-sm" onclick="editExpect(${x.id})">标签 / 备注</button>
         <button class="btn btn-outline btn-sm" onclick="save('/api/acct/checklist/expect/${x.id}', {active: ${x.active ? 0 : 1}}, 'PUT')">${x.active ? '停用' : '启用'}</button>
         <button class="btn btn-outline btn-sm" style="color:var(--red)" onclick="delExpect(${x.id})">删除</button></td></tr>`).join('') + `</tbody></table>`;
   return h + `</div>`;
 }
-function addExpect(company_name, kind, note) {
-  if (!String(company_name || '').trim()) { toast('请填写公司 / 仓库名', true); return; }
-  save('/api/acct/checklist/expect', { company_name, kind, note: note || '' });
+function addExpect() {
+  const v = id => document.getElementById(id).value;
+  if (!v('nCo').trim()) { toast('请填写公司 / 仓库名', true); return; }
+  save('/api/acct/checklist/expect', { company_name: v('nCo'), kind: v('nKind'), freq: v('nFreq'), label: v('nLabel'), note: v('nNote') });
 }
-function editNote(id) {
+function editExpect(id) {
   const x = D.expects.find(e => e.id === id);
+  const label = prompt('标签（同公司同类型有两张时区分用，可留空）', x.label || '');
+  if (label == null) return;
   const note = prompt('备注', x.note || '');
-  if (note != null) save('/api/acct/checklist/expect/' + id, { note }, 'PUT');
+  if (note == null) return;
+  save('/api/acct/checklist/expect/' + id, { label, note }, 'PUT');
 }
-function delExpect(id) { if (confirm('从清单删除这一条？（不想核对了也可以先「停用」）')) save('/api/acct/checklist/expect/' + id, null, 'DELETE'); }
+function delExpect(id) { if (confirm('从清单删除这一条？（已 link 的记录也会一起删掉；不想核对了可以先「停用」）')) save('/api/acct/checklist/expect/' + id, null, 'DELETE'); }
 
 if (TOKEN) load().catch(() => {}); else document.getElementById('gate').style.display = 'flex';
 </script>
