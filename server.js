@@ -1164,6 +1164,8 @@ try { db.exec("ALTER TABLE admin_users ADD COLUMN phone TEXT DEFAULT ''"); } cat
 try { db.exec("ALTER TABLE admin_users ADD COLUMN password_plain TEXT DEFAULT ''"); } catch {}
 // 会计自助注册的审批状态: 自注册=pending(不能登录), 管理员批准后=approved; 既有账号默认 approved
 try { db.exec("ALTER TABLE admin_users ADD COLUMN approval_status TEXT DEFAULT 'approved'"); } catch {}
+// 客服主管: role='cs' 且 cs_lead=1 — 介绍费页能看到所有客服的记录, 收完整的面试日报; 普通客服只看 / 只收自己提交的
+try { db.exec("ALTER TABLE admin_users ADD COLUMN cs_lead INTEGER DEFAULT 0"); } catch {}
 
 // Migrate partners table (add new columns if missing)
 const partnerMigrations = ['contacts','addresses','social_media','links'];
@@ -3901,13 +3903,14 @@ function schedule24hReminders() {
 }
 schedule24hReminders();
 
-// ─── 介绍费面试日报: 每天芝加哥 14:00 和 20:00 发邮件 (没有待办也发) ───
+// ─── 介绍费面试日报: 每天芝加哥 9:00、14:00、20:00 发邮件 (没有待办也发) ───
+// 收件人: 完整版 → IV_OVERDUE_EMAILS + 管理员 + 客服主管 (有邮箱的); 普通客服 → 只含自己提交的面试那一版。
 // ① 面试时间已过还没标「去了 / 没去 / 没通过」的 (口径同会计对账页的红色提醒: 有面试时间、
 //    没标、还没开始上班) — 标红并醒目写出几个; ② 今天的面试和标记情况; ③ 明天有哪些人面试。
 // 收件人可用 IV_OVERDUE_EMAILS (逗号分隔) 覆盖。
 const IV_OVERDUE_EMAILS = (process.env.IV_OVERDUE_EMAILS || 'info@primeanchorworkforce.com,taosl19911203@outlook.com,z15725859500@outlook.com')
   .split(',').map(s => s.trim()).filter(Boolean);
-const IV_OVERDUE_HOURS = [14, 20];
+const IV_OVERDUE_HOURS = (process.env.IV_DIGEST_HOURS || '9,14,20').split(',').map(Number).filter(h => h >= 0 && h < 24);
 
 function _chicagoParts(d = new Date()) {
   const p = {};
@@ -3917,7 +3920,8 @@ function _chicagoParts(d = new Date()) {
 }
 
 // 返回 { nowIso, today, tomorrow, overdue, todayRows, tomorrowRows }
-function _ivDigestData() {
+// onlyUser: 只要这个账号 (created_by) 提交的 — 普通客服那一版
+function _ivDigestData(onlyUser) {
   const nowIso = _chicagoParts().iso, today = nowIso.slice(0, 10);
   const t = new Date(today + 'T12:00:00Z'); t.setUTCDate(t.getUTCDate() + 1);
   const tomorrow = t.toISOString().slice(0, 10);
@@ -3929,6 +3933,7 @@ function _ivDigestData() {
     FROM referrals WHERE COALESCE(interview_at,'')!='' ORDER BY interview_at`).all()
     .map(r => ({ ...r, iv: String(r.interview_at).trim().replace(' ', 'T').slice(0, 16) }))
     .filter(r => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(r.iv))
+    .filter(r => !onlyUser || String(r.created_by || '').toLowerCase() === String(onlyUser).toLowerCase())
     .map(r => ({ ...r,
       overdue: !r.interview_status && !r.work_start_date && r.iv < nowIso,
       submitter: (r.hr_self && r.hr_name) ? r.hr_name : (HR_LOGIN_NAME[String(r.created_by || '').toLowerCase()] || dispBy[r.created_by] || r.created_by || '') }));
@@ -3938,7 +3943,7 @@ function _ivDigestData() {
     tomorrowRows: rows.filter(r => r.iv.slice(0, 10) === tomorrow) };
 }
 
-function _ivDigestEmail({ nowIso, today, tomorrow, overdue, todayRows, tomorrowRows }) {
+function _ivDigestEmail({ nowIso, today, tomorrow, overdue, todayRows, tomorrowRows }, forWho) {
   const esc = v => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const url = (process.env.BASE_URL || 'https://primeanchorpoint.com').replace(/\/$/, '') + '/accounting';
   const when = nowIso.replace('T', ' ');
@@ -3968,7 +3973,7 @@ function _ivDigestEmail({ nowIso, today, tomorrow, overdue, todayRows, tomorrowR
   // 今天去面试 = 今天的面试里标了去了 / 没通过 (去了没过) / 已上班的
   const nWent = todayRows.filter(r => ['attended', 'failed'].includes(r.interview_status) || (!r.interview_status && r.work_start_date)).length;
   const nTomorrow = tomorrowRows.length;
-  const subject = (nOver ? `【⚠ ${nOver} 人还没标记】` : '【✅ 都已标记】')
+  const subject = (forWho ? `[${forWho} 提交的] ` : '') + (nOver ? `【⚠ ${nOver} 人还没标记】` : '【✅ 都已标记】')
     + `面试日报 ${when} · 今天去面试 ${nWent} 人 · 明天安排面试 ${nTomorrow} 人`;
 
   const td = 'padding:8px 10px;border-bottom:1px solid #f1f5f9;vertical-align:top;font-size:13px';
@@ -4014,7 +4019,7 @@ ${nOver ? `<tr><td style="padding:18px 24px 6px">${h2(`⚠ 超时未标记（${n
 <tr><td style="padding:16px 24px 22px">
   <a href="${esc(url)}" style="display:inline-block;background:#1e40af;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:6px">打开会计对账 → 介绍费 →</a>
 </td></tr>
-<tr><td style="padding:12px 24px;border-top:1px solid #f3f4f6;color:#9ca3af;font-size:11px">Prime Anchor Workforce 系统自动发送 · 每天 14:00 和 20:00（芝加哥时间）。</td></tr>
+<tr><td style="padding:12px 24px;border-top:1px solid #f3f4f6;color:#9ca3af;font-size:11px">Prime Anchor Workforce 系统自动发送 · 每天 ${IV_OVERDUE_HOURS.map(h => h + ':00').join('、')}（芝加哥时间）${forWho ? ` · 这封只含 ${esc(forWho)} 提交的面试` : ''}。</td></tr>
 </table></td></tr></table></body></html>`;
 
   const line = (r, withMark) => `- ${r.worker_name || '(没填名字)'} ${r.worker_phone || '(没留电话)'} | 面试 ${r.iv.replace('T', ' ')}${r.overdue ? '（' + ago(r.iv) + '）' : ''} | ${r.warehouse_name || ''}${shortJob(r.job_title) ? ' · ' + shortJob(r.job_title) : ''} | 工头 ${r.foreman_name || ''} ${r.foreman_phone || ''} | ${r.submitter || ''} 提交${withMark ? ' | ' + mark(r).filter(Boolean).filter((x, i) => i !== 1).join(' ') : ''}`;
@@ -4025,18 +4030,36 @@ ${nOver ? `<tr><td style="padding:18px 24px 6px">${h2(`⚠ 超时未标记（${n
     ...(nOver ? [`【超时未标记 ${nOver} 人】`, ...overdue.map(r => line(r)), ''] : []),
     `【今天 ${today} 面试 ${todayRows.length} 人】`, ...(todayRows.length ? todayRows.map(r => line(r, true)) : ['（没有）']), '',
     `【明天 ${tomorrow} 面试 ${tomorrowRows.length} 人】`, ...(tomorrowRows.length ? tomorrowRows.map(r => line(r)) : ['（没有）']), '',
-    `会计对账 → 介绍费：${url}`, '', '— Prime Anchor Workforce 系统自动发送（每天 14:00、20:00）',
+    `会计对账 → 介绍费：${url}`, '', `— Prime Anchor Workforce 系统自动发送（每天 ${IV_OVERDUE_HOURS.map(h => h + ':00').join('、')}）${forWho ? ' · 只含 ' + forWho + ' 提交的面试' : ''}`,
   ].join('\n');
   return { subject, text, html };
 }
 
-async function sendIvOverdueDigest() {
+// 收件人: full = 完整版 (固定名单 + 管理员 + 客服主管); personal = 普通客服各自那一版
+function _ivDigestRecipients() {
+  const users = db.prepare(`SELECT username, display_name, email, role, cs_lead FROM admin_users
+    WHERE role IN ('admin','cs') AND COALESCE(active,1)=1 AND COALESCE(approval_status,'approved')='approved' AND COALESCE(email,'')!=''`).all();
+  const full = [...new Set([...IV_OVERDUE_EMAILS, ...users.filter(u => u.role === 'admin' || u.cs_lead).map(u => u.email.trim())].map(e => e.toLowerCase()))];
+  const personal = users.filter(u => u.role === 'cs' && !u.cs_lead && !full.includes(u.email.trim().toLowerCase()))
+    .map(u => ({ username: u.username, name: (u.display_name || u.username).trim(), email: u.email.trim() }));
+  return { full, personal };
+}
+// onlyFor: 只发某个普通客服自己那一版 (客服点「立刻发」时); 不传 = 全部收件人
+async function sendIvOverdueDigest(onlyFor) {
+  const { full, personal } = _ivDigestRecipients();
+  let sent = 0, total = 0;
   const data = _ivDigestData();
-  const { subject, text, html } = _ivDigestEmail(data);
-  let sent = 0;
-  for (const to of IV_OVERDUE_EMAILS) { if (await sendEmail(to, subject, text, html).catch(() => false)) sent++; }
-  console.log(`[IvDigest] 超时未标记 ${data.overdue.length} · 今天 ${data.todayRows.length} · 明天 ${data.tomorrowRows.length}, 邮件发出 ${sent}/${IV_OVERDUE_EMAILS.length}`);
-  return { sent, overdue: data.overdue.length };
+  if (!onlyFor) {
+    const { subject, text, html } = _ivDigestEmail(data);
+    for (const to of full) { total++; if (await sendEmail(to, subject, text, html).catch(() => false)) sent++; }
+  }
+  for (const p of personal) {
+    if (onlyFor && p.username !== onlyFor) continue;
+    const { subject, text, html } = _ivDigestEmail(_ivDigestData(p.username), p.name);
+    total++; if (await sendEmail(p.email, subject, text, html).catch(() => false)) sent++;
+  }
+  console.log(`[IvDigest] 超时未标记 ${data.overdue.length} · 今天 ${data.todayRows.length} · 明天 ${data.tomorrowRows.length}, 邮件发出 ${sent}/${total}${onlyFor ? ' (只发 ' + onlyFor + ')' : ''}`);
+  return { sent, total, overdue: data.overdue.length };
 }
 
 // 每分钟看一眼芝加哥时间; 到 14 点 / 20 点那一小时内发一次 (app_settings 记已发, 重启不重发, 部署时错过整点也补发)
@@ -9432,7 +9455,14 @@ function requireAdmin(req, res, next) {
     const acctAllowed = p.startsWith('/api/acct/') || p.startsWith('/api/plaid/') || p === '/api/admin/me' || p === '/api/admin/logout';
     if (!acctAllowed) return res.status(403).json({ error: '会计账号仅限使用对账查看页 (/accounting) 和银行对账页 (/banking)' });
   }
-  const _u = db.prepare('SELECT assigned_partner_ids, assigned_employee_ids, assigned_job_ids FROM admin_users WHERE id=?').get(session.userId);
+  // 入职专员(onboarding): 在 /onboarding 自助注册、管理员批准的账号, 只能用新员工入职页, 并自动收 Gusto 入职邮件
+  if (session.role === 'onboarding') {
+    const p = req.originalUrl.split('?')[0];
+    const ok = p.startsWith('/api/acct/onboarding') || p === '/api/acct/gusto-payees' || p === '/api/admin/me' || p === '/api/admin/logout';
+    if (!ok) return res.status(403).json({ error: '入职专员账号仅限使用新员工入职页 (/onboarding)' });
+  }
+  const _u = db.prepare('SELECT assigned_partner_ids, assigned_employee_ids, assigned_job_ids, cs_lead FROM admin_users WHERE id=?').get(session.userId);
+  req.csLead = !!(_u && _u.cs_lead);
   req.assignedPartnerIds = (_u && _u.assigned_partner_ids) || '';
   req.assignedEmployeeIds = (_u && _u.assigned_employee_ids) || '';
   req.assignedJobIds = (_u && _u.assigned_job_ids) || '';
@@ -10117,7 +10147,7 @@ app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) =
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   const pwErr = validatePassword(password);
   if (pwErr) return res.status(400).json({ error: pwErr });
-  if (!['admin', 'staff', 'manager', 'accounting'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+  if (!['admin', 'staff', 'manager', 'accounting', 'onboarding'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const existing = db.prepare('SELECT id, active FROM admin_users WHERE username = ?').get(username);
   if (existing && existing.active) return res.status(400).json({ error: 'Username already exists' });
   // Overwrite unverified (inactive) account with same username
@@ -10132,7 +10162,7 @@ app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) =
 
 app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
   const { username, password, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, sms_notify_phone, sms_notify_enabled, mfa_exempt, bank_ann_reviewer } = req.body;
-  if (role && !['admin', 'staff', 'manager', 'accounting'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+  if (role && !['admin', 'staff', 'manager', 'accounting', 'onboarding'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   const effRole = role || user.role;
@@ -10182,6 +10212,7 @@ app.get('/api/admin/audit-log', requireAdmin, requireRole('admin'), (req, res) =
 function inviteUrlPath(role) {
   if (role === 'staff') return '/staff';
   if (role === 'manager') return '/manager';
+  if (role === 'onboarding') return '/onboarding';
   return '/admin-invite';
 }
 
@@ -22753,10 +22784,12 @@ app.get('/api/admin/iv-digest', requireAdmin, blockManager, async (req, res) => 
   try {
     const data = _ivDigestData();
     const { subject, html } = _ivDigestEmail(data);
-    let note = `预览（没有发送）· 收件人：${IV_OVERDUE_EMAILS.join('、')} · 加 ?send=1 立刻发送`;
+    const rc = _ivDigestRecipients();
+    const toList = [...rc.full, ...rc.personal.map(p => `${p.email}（只含 ${p.name} 的）`)].join('、');
+    let note = `预览（没有发送）· 收件人：${toList} · 加 ?send=1 立刻发送`;
     if (req.query.send === '1') {
       const r = await sendIvOverdueDigest();
-      note = `已发送 ${r.sent}/${IV_OVERDUE_EMAILS.length} 封 · 收件人：${IV_OVERDUE_EMAILS.join('、')}`;
+      note = `已发送 ${r.sent}/${r.total} 封 · 收件人：${toList}`;
     }
     const e = v => String(v).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
     res.type('html').send(`<div style="font:14px sans-serif;padding:12px 16px;background:#fffbeb;border-bottom:1px solid #fcd34d"><b>${e(note)}</b><br>主题：${e(subject)}</div>` + html);
@@ -41192,6 +41225,10 @@ const _acctAnnCount = db.prepare(`SELECT COUNT(*) AS n FROM acct_annotations WHE
 // 会计自助注册 (登录页「注册」入口): 建 accounting 角色账号, 待管理员在账户管理批准后方可登录
 app.post('/api/acct/register', loginRateLimit, (req, res) => {
   const { username, password, display_name, phone } = req.body || {};
+  // /referral 页注册 = 客服账号 (可申请客服主管), 要填邮箱 (收面试日报); /accounting 页注册 = 会计
+  const isRef = (req.body || {}).kind === 'referral';
+  const email = String((req.body || {}).email || '').trim().slice(0, 120);
+  if (isRef && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: '请填写正确的邮箱（面试日报发到这里）' });
   const uname = String(username || '').trim();
   if (!uname || !password) return res.status(400).json({ error: '请填写用户名和密码' });
   if (uname.length < 3 || uname.length > 40) return res.status(400).json({ error: '用户名需 3–40 个字符' });
@@ -41202,10 +41239,21 @@ app.post('/api/acct/register', loginRateLimit, (req, res) => {
   if (db.prepare('SELECT id FROM admin_users WHERE username=?').get(uname)) return res.status(400).json({ error: '用户名已存在 / Username already exists' });
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
-  const r = db.prepare(`INSERT INTO admin_users (username, password_hash, salt, role, display_name, phone, active, approval_status, password_plain)
-    VALUES (?, ?, ?, 'accounting', ?, ?, 1, 'pending', ?)`)
-    .run(uname, hash, salt, String(display_name || '').slice(0, 80), String(phone || '').slice(0, 30), password);
-  auditLog('acct_register', { ip: req.ip, connection: req.connection, headers: req.headers }, { targetType: 'admin_user', targetId: r.lastInsertRowid, details: { username: uname } });
+  const r = isRef
+    ? db.prepare(`INSERT INTO admin_users (username, password_hash, salt, role, display_name, phone, email, cs_lead, active, approval_status)
+        VALUES (?, ?, ?, 'cs', ?, ?, ?, ?, 1, 'pending')`)
+        .run(uname, hash, salt, String(display_name || '').slice(0, 80), String(phone || '').slice(0, 30), email, (req.body || {}).want_lead ? 1 : 0)
+    : db.prepare(`INSERT INTO admin_users (username, password_hash, salt, role, display_name, phone, active, approval_status, password_plain)
+        VALUES (?, ?, ?, 'accounting', ?, ?, 1, 'pending', ?)`)
+        .run(uname, hash, salt, String(display_name || '').slice(0, 80), String(phone || '').slice(0, 30), password);
+  auditLog('acct_register', { ip: req.ip, connection: req.connection, headers: req.headers }, { targetType: 'admin_user', targetId: r.lastInsertRowid, details: { username: uname, kind: isRef ? 'referral' : 'accounting' } });
+  if (isRef) {
+    const base = (process.env.BASE_URL || '').replace(/\/$/, '');
+    for (const a of db.prepare("SELECT email FROM admin_users WHERE role='admin' AND COALESCE(active,1)=1 AND COALESCE(email,'')!=''").all()) {
+      sendEmail(a.email, `介绍费页有人注册${(req.body || {}).want_lead ? '（申请客服主管）' : '（客服）'}: ${display_name || uname}`,
+        `${display_name || uname}（用户名 ${uname}，邮箱 ${email}，电话 ${phone}）申请${(req.body || {}).want_lead ? '客服主管' : '客服'}账号。\n去批准: ${base}/referral`).catch(() => {});
+    }
+  }
   res.json({ success: true, awaiting_approval: true });
 });
 
@@ -42383,10 +42431,54 @@ function _referralSyncWeeks(refId, invIds) {
     db.prepare('DELETE FROM referral_weeks WHERE id=?').run(w.id);
   });
 }
+// 介绍费页的「👥 客服账号」(管理员): 注册申请批准 / 拒绝, 设不设客服主管
+app.get('/api/acct/cs-accounts', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    res.json({ accounts: db.prepare(`SELECT id, username, display_name, email, phone, active, approval_status, cs_lead, created_at
+      FROM admin_users WHERE role='cs' ORDER BY CASE WHEN approval_status='pending' THEN 0 ELSE 1 END, username`).all() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/acct/cs-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const u = db.prepare("SELECT id, username, display_name, email, approval_status, cs_lead FROM admin_users WHERE id=? AND role='cs'").get(req.params.id);
+    if (!u) return res.status(404).json({ error: '找不到这个客服账号' });
+    const b = req.body || {};
+    if (b.reject) {
+      if (u.approval_status !== 'pending') return res.status(400).json({ error: '只能拒绝还没批准的申请' });
+      db.prepare('DELETE FROM admin_users WHERE id=?').run(u.id);
+      auditLog('cs_register_reject', req, { targetType: 'admin_user', targetId: u.id, details: { username: u.username } });
+      return res.json({ ok: true });
+    }
+    if (b.cs_lead !== undefined) db.prepare('UPDATE admin_users SET cs_lead=? WHERE id=?').run(b.cs_lead ? 1 : 0, u.id);
+    if (b.approve && u.approval_status === 'pending') {
+      db.prepare("UPDATE admin_users SET approval_status='approved' WHERE id=?").run(u.id);
+      const base = (process.env.BASE_URL || '').replace(/\/$/, '');
+      if (u.email) sendEmail(u.email, '介绍费页账号已开通', `${u.display_name || u.username}，你的${b.cs_lead ? '客服主管' : '客服'}账号（用户名 ${u.username}）已经批准，可以登录: ${base}/referral\n每天会收到面试日报邮件。`).catch(() => {});
+    }
+    auditLog('cs_account_update', req, { targetType: 'admin_user', targetId: u.id, details: { username: u.username, approve: !!b.approve, cs_lead: b.cs_lead } });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 当前登录的人能不能看全部介绍记录 (页面上显示「只看到自己提交的」提示用)
+app.get('/api/acct/ref-scope', requireAdmin, requireAcctView, (req, res) => {
+  res.json({ only_mine: !!_refOnlyUser(req), cs_lead: !!req.csLead, role: req.userRole });
+});
+
+// 普通客服 (cs, 不是主管) 只看 / 只改自己提交的介绍记录; 客服主管、管理员、会计看全部
+function _refOnlyUser(req) { return req.userRole === 'cs' && !req.csLead ? String(req.userName || '') : null; }
+function refOwn(req, res, next) {
+  const only = _refOnlyUser(req);
+  if (!only) return next();
+  const r = db.prepare('SELECT created_by FROM referrals WHERE id=?').get(req.params.id);
+  if (r && String(r.created_by || '').toLowerCase() !== only.toLowerCase()) return res.status(403).json({ error: '这条不是你提交的，只能看 / 改自己提交的介绍记录' });
+  next();
+}
 app.get('/api/acct/referrals', requireAdmin, requireAcctView, (req, res) => {
   try {
+    const only = _refOnlyUser(req);
     const rows = db.prepare(`SELECT * FROM referrals
-      ORDER BY CASE WHEN review_status='pending' THEN 0 ELSE 1 END, created_at DESC, id DESC`).all();
+      ORDER BY CASE WHEN review_status='pending' THEN 0 ELSE 1 END, created_at DESC, id DESC`).all()
+      .filter(r => !only || String(r.created_by || '').toLowerCase() === only.toLowerCase());
     const allIds = new Set();
     rows.forEach(r => { try { (JSON.parse(r.invoice_ids || '[]') || []).forEach(i => { const n = parseInt(i); if (n) allIds.add(n); }); } catch (e) {} });
     rows.forEach(r => { try { ((r.invoice_pending && JSON.parse(r.invoice_pending).invoice_ids) || []).forEach(i => { const n = parseInt(i); if (n) allIds.add(n); }); } catch (e) {} });
@@ -42492,7 +42584,7 @@ function _refGustoLink(r, idx) {
   return { linked: false, synced: idx.any };
 }
 // 车补 / 付款方式 / Gusto 收款人: 上班中随时可改 (核查状态不影响)
-app.post('/api/acct/referrals/:id/pay-setup', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+app.post('/api/acct/referrals/:id/pay-setup', requireAdmin, requireRole('accounting', 'admin', 'cs'), refOwn, (req, res) => {
   const cur = db.prepare('SELECT id FROM referrals WHERE id=?').get(parseInt(req.params.id));
   if (!cur) return res.status(404).json({ error: '记录不存在' });
   const b = req.body || {};
@@ -42505,7 +42597,7 @@ app.post('/api/acct/referrals/:id/pay-setup', requireAdmin, requireRole('account
   res.json({ success: true });
 });
 // Gusto 收款人搜索 (付款方式关联用): 只回名字
-app.get('/api/acct/gusto-payees', requireAdmin, requireRole('accounting', 'admin', 'cs', 'manager'), (req, res) => {
+app.get('/api/acct/gusto-payees', requireAdmin, requireRole('accounting', 'admin', 'cs', 'manager', 'onboarding'), (req, res) => {
   try {
     const q = _refNameKey(req.query.q);
     const idx = _refGustoIndex();
@@ -42606,7 +42698,7 @@ function _referralProfileCode(r) {
   return '';
 }
 // 关联 / 取消关联员工档案 { kind: employee|applicant, id } 或 { action: 'unlink' }
-app.post('/api/acct/referrals/:id/profile', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+app.post('/api/acct/referrals/:id/profile', requireAdmin, requireRole('accounting', 'admin', 'cs'), refOwn, (req, res) => {
   const cur = db.prepare('SELECT * FROM referrals WHERE id=?').get(parseInt(req.params.id));
   if (!cur) return res.status(404).json({ error: '记录不存在' });
   const b = req.body || {};
@@ -42634,7 +42726,7 @@ app.get('/api/acct/referral-clock-lookup', requireAdmin, requireRole('accounting
   res.json(w ? { found: true, code, name: w.name, phone: w.phone, status: w.status } : { found: false, code, error: '系统里查不到这个打卡码' });
 });
 // 通过面试 → 开始上班: 记上班日期 + 工人打卡 QR 码 (action=clear 撤回到面试阶段)
-app.post('/api/acct/referrals/:id/start', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+app.post('/api/acct/referrals/:id/start', requireAdmin, requireRole('accounting', 'admin', 'cs'), refOwn, (req, res) => {
   const cur = db.prepare('SELECT * FROM referrals WHERE id=?').get(parseInt(req.params.id));
   if (!cur) return res.status(404).json({ error: '记录不存在' });
   if (req.userRole !== 'admin' && cur.review_status !== 'pending' && cur.work_start_date) return res.status(403).json({ error: '该记录管理员已核查，如需修改请联系管理员' });
@@ -42672,7 +42764,7 @@ app.post('/api/acct/referrals/:id/start', requireAdmin, requireRole('accounting'
 });
 
 // 上班中途不去了: { work_end_date: 最后上班那天, reason } / { action: 'clear' } 撤销回上班中
-app.post('/api/acct/referrals/:id/quit', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+app.post('/api/acct/referrals/:id/quit', requireAdmin, requireRole('accounting', 'admin', 'cs'), refOwn, (req, res) => {
   const cur = db.prepare('SELECT id, work_start_date FROM referrals WHERE id=?').get(parseInt(req.params.id));
   if (!cur) return res.status(404).json({ error: '记录不存在' });
   const b = req.body || {};
@@ -42764,7 +42856,7 @@ app.post('/api/acct/referrals', requireAdmin, requireRole('accounting', 'admin',
 
 // 编辑介绍信息 (可追加/删除凭证文件): 管理员随时可改;
 // 会计/客服只能改还在「待核查」的 — 核查过的以管理员定论为准。
-app.put('/api/acct/referrals/:id', requireAdmin, requireRole('accounting', 'admin', 'cs'), claimUpload.array('invoice', 20), (req, res) => {
+app.put('/api/acct/referrals/:id', requireAdmin, requireRole('accounting', 'admin', 'cs'), refOwn, claimUpload.array('invoice', 20), (req, res) => {
   const cur = db.prepare('SELECT * FROM referrals WHERE id=?').get(parseInt(req.params.id));
   if (!cur) return res.status(404).json({ error: '记录不存在' });
   if (req.userRole !== 'admin' && cur.review_status !== 'pending') return res.status(403).json({ error: '该记录管理员已核查，如需修改请联系管理员' });
@@ -42863,7 +42955,7 @@ function _referralApplyInvoices(refId, b, by) {
   }
   return { invoice_ids: ok, invoice_lines: lines };
 }
-app.post('/api/acct/referrals/:id/invoices', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+app.post('/api/acct/referrals/:id/invoices', requireAdmin, requireRole('accounting', 'admin', 'cs'), refOwn, (req, res) => {
   const cur = db.prepare('SELECT id FROM referrals WHERE id=?').get(parseInt(req.params.id));
   if (!cur) return res.status(404).json({ error: '记录不存在' });
   const b = req.body || {};
@@ -43190,22 +43282,29 @@ app.put('/api/acct/referral-foremen/:id', requireAdmin, requireRole('accounting'
 // 「📧 立刻发面试日报」弹窗里的预览: 按当前状态生成的邮件 (不发送)
 app.get('/api/acct/iv-digest/preview', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
   try {
-    const data = _ivDigestData();
-    const { subject, html } = _ivDigestEmail(data);
-    res.json({ subject, html, to: IV_OVERDUE_EMAILS, overdue: data.overdue.length });
+    const only = _refOnlyUser(req);
+    const me = only ? db.prepare('SELECT display_name, email FROM admin_users WHERE username=?').get(only) || {} : null;
+    const data = _ivDigestData(only);
+    const { subject, html } = _ivDigestEmail(data, only ? (me.display_name || only) : '');
+    const rc = _ivDigestRecipients();
+    res.json({ subject, html, to: only ? [me.email || '（你的账号没填邮箱）'] : [...rc.full, ...rc.personal.map(p => `${p.email}（只含 ${p.name} 的）`)], overdue: data.overdue.length });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // 会计对账「介绍费」页上的「📧 立刻发面试日报」按钮: 按当前状态马上发一封 (不影响 14:00 / 20:00 定时那两封)
 app.post('/api/acct/iv-digest/send', requireAdmin, requireRole('accounting', 'admin', 'cs'), async (req, res) => {
   try {
-    const r = await sendIvOverdueDigest();
+    // 普通客服点: 只给自己发自己那一版
+    const only = _refOnlyUser(req);
+    const r = await sendIvOverdueDigest(only || undefined);
     console.log(`[IvDigest] 手动触发 by ${req.userName || ''}`);
-    res.json({ success: true, sent: r.sent, total: IV_OVERDUE_EMAILS.length, overdue: r.overdue, to: IV_OVERDUE_EMAILS });
+    const rc = _ivDigestRecipients();
+    res.json({ success: true, sent: r.sent, total: r.total, overdue: r.overdue,
+      to: only ? rc.personal.filter(p => p.username === only).map(p => p.email) : [...rc.full, ...rc.personal.map(p => p.email)] });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/acct/referrals/:id/interview-status', requireAdmin, requireRole('accounting', 'admin', 'cs'), (req, res) => {
+app.post('/api/acct/referrals/:id/interview-status', requireAdmin, requireRole('accounting', 'admin', 'cs'), refOwn, (req, res) => {
   const cur = db.prepare('SELECT * FROM referrals WHERE id=?').get(parseInt(req.params.id));
   if (!cur) return res.status(404).json({ error: '记录不存在' });
   if (req.userRole !== 'admin' && cur.review_status !== 'pending') return res.status(403).json({ error: '该记录管理员已核查，如需修改请联系管理员' });
@@ -44208,8 +44307,8 @@ function _wobBuild() {
 app.get('/onboarding', (req, res) => res.sendFile(path.join(__dirname, 'public', 'onboarding.html')));
 
 // 权限: manager 也能用这一页 (只看自己负责仓库的发票, 不显示金额); 系统匹配的建议只有 manager / admin 能通过
-const requireWobView = requireRole('accounting', 'cs', 'admin', 'staff', 'manager');
-const requireWobWrite = requireRole('accounting', 'cs', 'admin', 'manager');
+const requireWobView = requireRole('accounting', 'cs', 'admin', 'staff', 'manager', 'onboarding');
+const requireWobWrite = requireRole('accounting', 'cs', 'admin', 'manager', 'onboarding');
 const _wobCanApprove = req => ['admin', 'manager'].includes(req.userRole);
 // manager 负责的仓库 (合作公司标准名); 其他角色 null = 全部
 function _wobScope(req) {
@@ -44316,7 +44415,10 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
       gusto: { connected: !!(st.access_token && st.refresh_token), last_sync_at: st.last_sync_at || '',
         contractors: db.prepare('SELECT COUNT(*) AS n FROM gusto_contractors').get().n },
       role: req.userRole,
-      can_edit: ['admin', 'accounting', 'cs', 'manager'].includes(req.userRole),
+      can_edit: ['admin', 'accounting', 'cs', 'manager', 'onboarding'].includes(req.userRole),
+      // 管理员: 在 /onboarding 自助注册、等批准的入职专员
+      pending_registrations: req.userRole === 'admin' ? db.prepare(`SELECT id, username, display_name, email, phone, created_at FROM admin_users
+        WHERE role='onboarding' AND approval_status='pending' ORDER BY id`).all() : [],
       can_approve: _wobCanApprove(req),
       warehouse_options: _wobWarehouseOptions(req),
       can_open_invoice: req.userRole !== 'manager',
@@ -44626,7 +44728,8 @@ async function _wobNotifyBank() {
     const pending = db.prepare("SELECT id FROM gusto_email_events WHERE kind IN ('bank_bad','bank_updated') AND COALESCE(notified_at,'')='' AND COALESCE(ack_at,'')=''").all();
     if (!pending.length) return;
     const { list, bank } = _wobBuild();
-    const users = db.prepare("SELECT role, email, assigned_partner_ids FROM admin_users WHERE role IN ('admin','manager') AND COALESCE(active,1)=1 AND COALESCE(email,'')!=''").all();
+    const users = db.prepare(`SELECT role, email, assigned_partner_ids FROM admin_users WHERE role IN ('admin','manager','onboarding')
+      AND COALESCE(active,1)=1 AND COALESCE(approval_status,'approved')='approved' AND COALESCE(email,'')!=''`).all();
     const base = (process.env.BASE_URL || '').replace(/\/$/, '');
     for (const { id } of pending) {
       const b = bank.find(x => x.id === id);
@@ -44635,7 +44738,7 @@ async function _wobNotifyBank() {
       const w = b.key ? list.find(x => x.key === b.key) : null;
       const companies = new Set(w ? w._lines.map(l => _canonCompanyName(l.company)) : []);
       const to = users.filter(u => {
-        if (u.role === 'admin') return true;
+        if (u.role === 'admin' || u.role === 'onboarding') return true;
         const pids = String(u.assigned_partner_ids || '').split(',').map(x => parseInt(x, 10)).filter(Boolean);
         if (!pids.length || !companies.size) return false;
         return db.prepare(`SELECT name FROM partners WHERE id IN (${pids.map(() => '?').join(',')})`).all(...pids).some(p => companies.has(_canonCompanyName(p.name)));
@@ -44668,6 +44771,51 @@ app.get('/api/acct/onboarding-gusto/:uuid', requireAdmin, requireWobView, async 
     const { token, environment } = await _gustoAccessToken();
     res.json({ ok: true, ...(await gustoApi.contractorOnboardingStatus(environment, token, String(req.params.uuid || ''))) });
   } catch (e) { res.status(e && e.code === 'not_connected' ? 400 : e && e.status === 404 ? 404 : 502).json({ error: (e && e.message) || String(e) }); }
+});
+
+// ── 入职专员自助注册: /onboarding 没登录时可以注册, 管理员在页面上 (或账户管理) 批准后才能登录;
+// 批准了的入职专员自动收 Gusto 入职邮件转发 + 银行信息提醒 (_wobSubscribers)
+function _wobSubscribers() {
+  return db.prepare(`SELECT email FROM admin_users WHERE role='onboarding' AND COALESCE(active,1)=1
+    AND COALESCE(approval_status,'approved')='approved' AND COALESCE(email,'')!=''`).all().map(r => r.email.trim()).filter(Boolean);
+}
+app.post('/api/onboarding/register', loginRateLimit, (req, res) => {
+  try {
+    const b = req.body || {};
+    const uname = String(b.username || '').trim(), name = String(b.display_name || '').trim().slice(0, 80);
+    const email = String(b.email || '').trim().slice(0, 120), phone = String(b.phone || '').trim().slice(0, 30);
+    if (!name) return res.status(400).json({ error: '请填写姓名' });
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: '请填写正确的邮箱（Gusto 入职邮件发到这里）' });
+    if (phone.replace(/\D/g, '').length < 10) return res.status(400).json({ error: '请填写手机号（登录时收验证码）' });
+    if (uname.length < 3 || uname.length > 40) return res.status(400).json({ error: '用户名需 3–40 个字符' });
+    const pwErr = validatePassword(b.password);
+    if (pwErr) return res.status(400).json({ error: pwErr });
+    if (db.prepare('SELECT id FROM admin_users WHERE username=?').get(uname)) return res.status(400).json({ error: '用户名已存在，换一个' });
+    const salt = crypto.randomBytes(16).toString('hex');
+    const r = db.prepare(`INSERT INTO admin_users (username, password_hash, salt, role, display_name, email, phone, active, approval_status)
+      VALUES (?, ?, ?, 'onboarding', ?, ?, ?, 1, 'pending')`).run(uname, hashPassword(b.password, salt), salt, name, email, phone);
+    auditLog('onboarding_register', { ip: req.ip, connection: req.connection, headers: req.headers }, { targetType: 'admin_user', targetId: r.lastInsertRowid, details: { username: uname, email } });
+    // 通知管理员去批准
+    const base = (process.env.BASE_URL || '').replace(/\/$/, '');
+    for (const a of db.prepare("SELECT email FROM admin_users WHERE role='admin' AND COALESCE(active,1)=1 AND COALESCE(email,'')!=''").all()) {
+      sendEmail(a.email, `新员工入职页有人注册: ${name}`, `${name}（用户名 ${uname}，邮箱 ${email}，电话 ${phone}）申请使用新员工入职页。\n批准后 TA 能登录 /onboarding，并自动收到 Gusto 入职相关邮件。\n\n去批准: ${base}/onboarding`).catch(() => {});
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 管理员批准 / 拒绝 (拒绝 = 删掉这个申请)
+app.post('/api/acct/onboarding-registrations/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const u = db.prepare("SELECT id, username, display_name, email FROM admin_users WHERE id=? AND role='onboarding' AND approval_status='pending'").get(req.params.id);
+    if (!u) return res.status(404).json({ error: '找不到这个申请（可能已经处理过了）' });
+    if (req.body && req.body.approve) {
+      db.prepare("UPDATE admin_users SET approval_status='approved' WHERE id=?").run(u.id);
+      const base = (process.env.BASE_URL || '').replace(/\/$/, '');
+      if (u.email) sendEmail(u.email, '新员工入职页账号已开通', `${u.display_name || u.username}，你的账号（用户名 ${u.username}）已经批准，可以登录: ${base}/onboarding\n以后 Gusto 入职相关的邮件会自动转发到这个邮箱。`).catch(() => {});
+    } else db.prepare('DELETE FROM admin_users WHERE id=?').run(u.id);
+    auditLog(req.body && req.body.approve ? 'account_approve' : 'onboarding_register_reject', req, { targetType: 'admin_user', targetId: u.id, details: { username: u.username, role: 'onboarding' } });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── 邮箱自动同步: 邮箱里跑一段 Google Apps Script, 每 5 分钟把新的 Gusto 邮件标题推过来 ──
@@ -44737,7 +44885,7 @@ app.post('/api/hooks/gusto-mail', (req, res) => {
       ...(newCount ? { last_new_at: new Date().toISOString() } : {}),
       ...(backfill ? { backfill_at: new Date().toISOString(), backfill_total: (_mailHookCfg().backfill_total || 0) + results.filter(r => r.new).length } : {}) });
     if (added) setImmediate(_wobNotifyBank);
-    const forwardTo = (cfg.forward_to || []).join(',');
+    const forwardTo = [...new Set([...(cfg.forward_to || []), ..._wobSubscribers()])].join(',');
     res.json({ ok: true, results, forward_to: forwardTo, added });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -44747,7 +44895,7 @@ app.get('/api/acct/onboarding-mailhook', requireAdmin, requireWobView, (req, res
   const cfg = _mailHookCfg();
   const isAdmin = req.userRole === 'admin';
   const recent = db.prepare(`SELECT kind, name, subject, received_at, created_at FROM gusto_mail_seen WHERE kind!='' ORDER BY created_at DESC LIMIT 15`).all();
-  res.json({ configured: !!cfg.token, is_admin: isAdmin, forward_to: cfg.forward_to || [],
+  res.json({ configured: !!cfg.token, is_admin: isAdmin, forward_to: cfg.forward_to || [], subscribers: isAdmin ? _wobSubscribers() : [],
     hook_url: isAdmin && cfg.token ? _mailHookUrl(req, cfg.token) : '',
     last_at: cfg.last_at || '', last_received: cfg.last_received || 0, last_added: cfg.last_added || 0,
     backfill_at: cfg.backfill_at || '', backfill_total: cfg.backfill_total || 0, last_new_at: cfg.last_new_at || '',
