@@ -43939,7 +43939,11 @@ for (const col of ["gusto_ok INTEGER DEFAULT 0", "gusto_ok_by TEXT DEFAULT ''", 
   // 关联系统里的员工档案 (employees.id): 和 Gusto 一样, 系统按名字匹配只是建议, emp_ok=1 才算关联上
   "employee_id INTEGER DEFAULT NULL", "emp_ok INTEGER DEFAULT 0",
   // 付 Zelle 的: 收款的 Zelle 号 (电话/邮箱) 和这个 Zelle 号的户主姓名 (可能不是工人本人)
-  "zelle_account TEXT DEFAULT ''", "zelle_name TEXT DEFAULT ''", "emp_ok_by TEXT DEFAULT ''", "emp_ok_at TEXT DEFAULT ''", "emp_rejected TEXT DEFAULT '[]'"]) {
+  "zelle_account TEXT DEFAULT ''", "zelle_name TEXT DEFAULT ''",
+  // 一个人可以登记多个 Zelle 账号: [{account, name, at, by}] (上面两列是旧的单账号, 读的时候并进来)
+  "zelle_accounts TEXT DEFAULT '[]'",
+  // 付款方式可以换, 换掉的留底: pay_history [{method, since, until, by, zelle: [...]}]; pay_since = 当前方式从什么时候开始
+  "pay_history TEXT DEFAULT '[]'", "pay_since TEXT DEFAULT ''", "emp_ok_by TEXT DEFAULT ''", "emp_ok_at TEXT DEFAULT ''", "emp_rejected TEXT DEFAULT '[]'"]) {
   try { db.exec(`ALTER TABLE new_hire_onboarding ADD COLUMN ${col}`); } catch (e) {}
 }
 // 每个人的修改历史: 谁、什么时候、改了什么 (查看历史时再和发票 / 邮件这些系统事件按时间合在一起)
@@ -44034,6 +44038,12 @@ function _wobPhoneIndex() {
   return idx;
 }
 
+// Zelle 账号列表 (兼容旧的单账号两列)
+function _wobZelle(row) {
+  const list = _wobJson(row && row.zelle_accounts, []);
+  if (Array.isArray(list) && list.length) return list;
+  return row && row.zelle_account ? [{ account: row.zelle_account, name: row.zelle_name || '', at: '', by: '' }] : [];
+}
 function _wobJson(v, dflt) { try { const x = JSON.parse(v || ''); return x == null ? dflt : x; } catch (e) { return dflt; } }
 // 员工档案索引: id → 摘要; 名字 (名姓 / 姓名 / 带中间名, 只留字母) → [id]
 function _wobEmployees() {
@@ -44133,7 +44143,7 @@ function _wobBuild() {
       warehouse_saved: s.warehouse || '',
       employee, employee_proposals: empProposals, phone: employee ? employee.phone : '', phone_old: s.phone || '',
       pay_method: s.pay_method || '', pay_note: s.pay_note || '', suggest,
-      zelle_account: s.zelle_account || '', zelle_name: s.zelle_name || '',
+      zelle_accounts: _wobZelle(s), pay_history: _wobJson(s.pay_history, []), pay_since: s.pay_since || '',
       gusto, gusto_proposal: proposal, first_payment: firstPay, manual,
       updated_by: s.updated_by || '', updated_at: s.updated_at || '',
     });
@@ -44316,7 +44326,8 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       gusto_ok: cur.gusto_ok ? 1 : 0, gusto_ok_by: cur.gusto_ok_by || '', gusto_ok_at: cur.gusto_ok_at || '',
       gusto_rejected: cur.gusto_rejected || '[]', phone_rejected: cur.phone_rejected || '[]',
       employee_id: cur.employee_id || null, emp_ok: cur.emp_ok ? 1 : 0, emp_ok_by: cur.emp_ok_by || '', emp_ok_at: cur.emp_ok_at || '',
-      emp_rejected: cur.emp_rejected || '[]', zelle_account: cur.zelle_account || '', zelle_name: cur.zelle_name || '' };
+      emp_rejected: cur.emp_rejected || '[]', zelle_account: cur.zelle_account || '', zelle_name: cur.zelle_name || '',
+      zelle_accounts: JSON.stringify(_wobZelle(cur)), pay_history: cur.pay_history || '[]', pay_since: cur.pay_since || '' };
     const str = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
     const now = new Date().toISOString();
     if (b.name !== undefined) next.name = str(b.name, 120);
@@ -44328,8 +44339,17 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       if (wh && !_wobWarehouseOptions(req).includes(wh) && !own.includes(wh)) return res.status(400).json({ error: '仓库要从下拉里选' });
       next.warehouse = wh;
     }
-    if (b.zelle_account !== undefined) next.zelle_account = str(b.zelle_account, 120);
-    if (b.zelle_name !== undefined) next.zelle_name = str(b.zelle_name, 120);
+    // Zelle 账号整表替换: 每个账号 Zelle 号 + 户主姓名都要填; 已有的账号保留原来的登记时间
+    if (b.zelle_accounts !== undefined) {
+      const old = _wobJson(next.zelle_accounts, []);
+      const list = (Array.isArray(b.zelle_accounts) ? b.zelle_accounts : []).slice(0, 10)
+        .map(z => ({ account: str(z && z.account, 120), name: str(z && z.name, 120) })).filter(z => z.account || z.name);
+      if (list.some(z => !z.account || !z.name)) return res.status(400).json({ error: '每个 Zelle 账号都要填 Zelle 号和户主姓名' });
+      next.zelle_accounts = JSON.stringify(list.map(z => {
+        const o = old.find(x => x.account === z.account && x.name === z.name);
+        return o ? o : { ...z, at: new Date().toISOString(), by: req.userName || '' };
+      }));
+    }
     if (b.pay_note !== undefined) next.pay_note = str(b.pay_note, 1000);
     // 手动选 Gusto 收款人: manager / admin 选的直接算通过, 其他人选的进待审核
     if (b.gusto_uuid !== undefined) {
@@ -44392,10 +44412,20 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
     if (b.pay_method !== undefined) {
       const m = str(b.pay_method, 20);
       if (m && !wob.PAY_METHODS.includes(m)) return res.status(400).json({ error: '付款方式不对' });
+      // 换付款方式: 原来的方式连同当时的 Zelle 账号留底
+      if (m !== next.pay_method) {
+        if (next.pay_method) {
+          const hist = _wobJson(next.pay_history, []);
+          hist.push({ method: next.pay_method, since: next.pay_since || '', until: now, by: req.userName || '',
+            zelle: next.pay_method === 'zelle' ? _wobJson(next.zelle_accounts, []) : undefined });
+          next.pay_history = JSON.stringify(hist.slice(-30));
+        }
+        next.pay_since = m ? now : '';
+      }
       next.pay_method = m;
     }
-    if (next.pay_method === 'zelle' && (b.pay_method !== undefined || b.zelle_account !== undefined || b.zelle_name !== undefined)) {
-      if (!next.zelle_account || !next.zelle_name) return res.status(400).json({ error: '付 Zelle 要填 Zelle 号和这个 Zelle 号的户主姓名' });
+    if (next.pay_method === 'zelle' && (b.pay_method !== undefined || b.zelle_accounts !== undefined) && !_wobJson(next.zelle_accounts, []).length) {
+      return res.status(400).json({ error: '付 Zelle 至少登记一个 Zelle 账号（Zelle 号 + 户主姓名）' });
     }
     if (b.step) {
       const step = str(b.step, 40);
@@ -44422,7 +44452,8 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
     const chg = (field, label, fmt) => { const a = cur[field] == null ? '' : cur[field], z = next[field] == null ? '' : next[field];
       if (String(a) !== String(z)) logs.push([label, `${fmt ? fmt(a) : (a || '空')} → ${fmt ? fmt(z) : (z || '空')}`]); };
     chg('pay_method', '付款方式', v => PM[v] || v);
-    chg('zelle_account', 'Zelle 号'); chg('zelle_name', 'Zelle 户主');
+    const zl = v => { const a = _wobJson(v, []); return a.length ? a.map(z => `${z.account}（${z.name}）`).join('、') : '无'; };
+    if (zl(JSON.stringify(_wobZelle(cur))) !== zl(next.zelle_accounts)) logs.push(['Zelle 账号', `${zl(JSON.stringify(_wobZelle(cur)))} → ${zl(next.zelle_accounts)}`]);
     chg('warehouse', '仓库'); chg('pay_note', '备注'); chg('name', '名字');
     const empName = id => { if (!id) return '无'; const e = db.prepare('SELECT first_name, last_name, employee_id FROM employees WHERE id=?').get(id); return e ? `${e.first_name} ${e.last_name}${e.employee_id ? ' ' + e.employee_id : ''}` : '#' + id; };
     const gName = u => { if (!u) return '无'; const c = db.prepare('SELECT name FROM gusto_contractors WHERE uuid=?').get(u); return c ? c.name : u; };
@@ -44442,13 +44473,14 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       logs.push([b.checked ? '清单打勾' : '清单取消打勾', st ? st.label : b.step]);
     }
     db.prepare(`INSERT INTO new_hire_onboarding (name_key, name, phone, warehouse, pay_method, pay_note, gusto_uuid, checklist,
-        gusto_ok, gusto_ok_by, gusto_ok_at, gusto_rejected, phone_rejected, employee_id, emp_ok, emp_ok_by, emp_ok_at, emp_rejected, zelle_account, zelle_name, updated_by, updated_at)
+        gusto_ok, gusto_ok_by, gusto_ok_at, gusto_rejected, phone_rejected, employee_id, emp_ok, emp_ok_by, emp_ok_at, emp_rejected, zelle_account, zelle_name, zelle_accounts, pay_history, pay_since, updated_by, updated_at)
       VALUES (@key, @name, @phone, @warehouse, @pay_method, @pay_note, @gusto_uuid, @checklist,
-        @gusto_ok, @gusto_ok_by, @gusto_ok_at, @gusto_rejected, @phone_rejected, @employee_id, @emp_ok, @emp_ok_by, @emp_ok_at, @emp_rejected, @zelle_account, @zelle_name, @by, datetime('now'))
+        @gusto_ok, @gusto_ok_by, @gusto_ok_at, @gusto_rejected, @phone_rejected, @employee_id, @emp_ok, @emp_ok_by, @emp_ok_at, @emp_rejected, @zelle_account, @zelle_name, @zelle_accounts, @pay_history, @pay_since, @by, datetime('now'))
       ON CONFLICT(name_key) DO UPDATE SET name=@name, phone=@phone, warehouse=@warehouse, pay_method=@pay_method, pay_note=@pay_note,
         gusto_uuid=@gusto_uuid, checklist=@checklist, gusto_ok=@gusto_ok, gusto_ok_by=@gusto_ok_by, gusto_ok_at=@gusto_ok_at,
         gusto_rejected=@gusto_rejected, phone_rejected=@phone_rejected, employee_id=@employee_id, emp_ok=@emp_ok, emp_ok_by=@emp_ok_by,
-        emp_ok_at=@emp_ok_at, emp_rejected=@emp_rejected, zelle_account=@zelle_account, zelle_name=@zelle_name, updated_by=@by, updated_at=datetime('now')`)
+        emp_ok_at=@emp_ok_at, emp_rejected=@emp_rejected, zelle_account=@zelle_account, zelle_name=@zelle_name, zelle_accounts=@zelle_accounts,
+        pay_history=@pay_history, pay_since=@pay_since, updated_by=@by, updated_at=datetime('now')`)
       .run({ key, ...next, by: req.userName || '' });
     for (const [action, detail] of logs) _wobLog(key, req.userName, action, detail);
     auditLog('new_hire_onboarding_save', req, { targetType: 'new_hire_onboarding', targetId: key,

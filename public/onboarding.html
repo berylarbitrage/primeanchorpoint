@@ -19,14 +19,36 @@ h1{font-size:1.2rem;font-weight:800;color:#0f4c6b;margin:0}
 .btn:disabled{opacity:.5;cursor:default}
 .card{background:#fff;border:1px solid var(--g200);border-radius:12px;padding:14px 16px}
 input,select,textarea{padding:.38rem .5rem;border:1px solid var(--g300);border-radius:6px;font-size:.84rem;background:#fff;font-family:inherit;color:inherit}
-.top{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;margin-bottom:12px}
-.weeks{display:flex;gap:.4rem;overflow-x:auto;padding-bottom:4px;margin-bottom:12px}
-.wk{border:1px solid var(--g200);background:#fff;border-radius:10px;padding:.4rem .7rem;cursor:pointer;font-family:inherit;font-size:.78rem;color:var(--g600);text-align:left;white-space:nowrap;min-width:96px}
-.wk b{display:block;font-size:.86rem;color:#0f4c6b}
-.wk .n{font-size:.72rem}
-.wk .open{color:var(--amber);font-weight:700}
-.wk.on{background:#0f4c6b;border-color:#0f4c6b;color:#e0f2fe}.wk.on b{color:#fff}.wk.on .open{color:#fde68a}
-.wk.pend{border-color:#fcd34d;background:#fffbeb}
+.hero{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:12px;padding:16px 18px;
+  background:linear-gradient(135deg,#0f4c6b 0%,#1679a6 100%);border:none;color:#e0f2fe}
+.hero h1{color:#fff;font-size:1.25rem}
+.hero .sub{color:#bae6fd;margin-top:.25rem}
+.hero .btn-outline{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3)}
+.hero .btn-outline:hover{background:rgba(255,255,255,.22)}
+.gpill{display:inline-flex;align-items:center;gap:.4rem;margin-top:.55rem;font-size:.74rem;background:rgba(255,255,255,.12);border-radius:999px;padding:.2rem .7rem;color:#e0f2fe}
+.gpill .dot{width:8px;height:8px;border-radius:50%;background:#fbbf24}.gpill.on .dot{background:#4ade80}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.stat{background:#fff;border:1px solid var(--g200);border-radius:12px;padding:.7rem .9rem;cursor:pointer;text-align:left;font-family:inherit;display:flex;align-items:center;gap:.75rem;transition:box-shadow .15s,border-color .15s}
+.stat:hover{box-shadow:0 4px 14px rgba(15,76,107,.1)}
+.stat .ic2{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex:none}
+.stat .num{font-size:1.4rem;font-weight:800;line-height:1.1;color:#0f172a}
+.stat .t2{font-size:.78rem;color:var(--g500);font-weight:600}
+.stat.on{border-color:#0f4c6b;box-shadow:0 0 0 2px #0f4c6b inset}
+.stat.zero{opacity:.6}
+.weekbar{display:flex;align-items:center;gap:.4rem;padding:8px 10px;margin-bottom:12px}
+.weekbar .wl{font-size:.74rem;font-weight:700;color:var(--g500);padding:0 .3rem;white-space:nowrap}
+.arrow{border:1px solid var(--g200);background:#fff;border-radius:8px;width:30px;height:30px;cursor:pointer;color:var(--g600);font-size:1rem;flex:none}
+.arrow:hover{background:var(--g100)}
+.weeks{position:relative;display:flex;gap:.4rem;overflow-x:auto;scrollbar-width:none;flex:1;min-width:0}
+.weeks::-webkit-scrollbar{display:none}
+.wk{border:1px solid transparent;background:var(--g100);border-radius:9px;padding:.35rem .7rem;cursor:pointer;font-family:inherit;font-size:.72rem;color:var(--g500);text-align:left;white-space:nowrap;flex:none}
+.wk:hover{background:#e0f2fe}
+.wk b{display:block;font-size:.84rem;color:#0f4c6b;margin-bottom:.1rem}
+.wk .pill{display:inline-block;border-radius:999px;padding:0 .4rem;font-weight:700;margin-right:.15rem}
+.wk .p-new{background:#fff;color:var(--g600)}.wk .p-open{background:#fef3c7;color:#92400e}.wk .p-ok{background:#dcfce7;color:#166534}
+.wk.on{background:#0f4c6b;color:#e0f2fe}.wk.on b{color:#fff}
+.wk.empty0{opacity:.55}
+@media (max-width:700px){.stats{grid-template-columns:1fr}}
 .invs{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:.5rem;margin-bottom:12px}
 .ic{border:1px solid var(--g200);background:#fff;border-radius:10px;padding:.5rem .7rem;cursor:pointer;font-family:inherit;text-align:left;color:var(--g600);font-size:.76rem}
 .ic b{display:block;color:#0f4c6b;font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -37,7 +59,10 @@ input,select,textarea{padding:.38rem .5rem;border:1px solid var(--g300);border-r
 .old{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;padding:.45rem 1rem;font-size:.8rem;margin-bottom:6px;border-left:4px solid var(--g300)}
 .old.done{border-left-color:var(--green)}
 .old .pm button{padding:.15rem .55rem;font-size:.72rem}
-.gbar{font-size:.78rem;color:var(--g600);background:#fff;border:1px solid var(--g200);border-radius:10px;padding:.5rem .8rem;margin-bottom:12px;display:flex;gap:.8rem;flex-wrap:wrap;align-items:center}
+.zrow{display:grid;grid-template-columns:1fr 1fr 28px;gap:.35rem;margin-bottom:.35rem}
+.zrow input{min-width:0}
+.zbox{background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:.5rem;margin-bottom:.45rem}
+.zhead{display:grid;grid-template-columns:1fr 1fr 28px;gap:.35rem;font-size:.68rem;color:#6d28d9;font-weight:700;margin-bottom:.2rem}
 .w{padding:0;overflow:hidden;border-left:4px solid var(--amber);margin-bottom:10px}
 .w.done{border-left-color:var(--green)}
 .w.bad{border-left-color:var(--red)}
@@ -51,6 +76,7 @@ input,select,textarea{padding:.38rem .5rem;border:1px solid var(--g300);border-r
 .inv:hover{background:#0f4c6b;color:#fff}
 .pm{display:flex;gap:.3rem;flex-wrap:wrap}
 .pm button{border:1px solid var(--g300);background:#fff;border-radius:999px;padding:.25rem .7rem;font-size:.78rem;font-weight:700;cursor:pointer;font-family:inherit;color:var(--g600)}
+.pm button:disabled{opacity:.4;cursor:not-allowed}
 .pm button.on{background:#0f4c6b;border-color:#0f4c6b;color:#fff}
 .pm button.sug{border-color:#7dd3fc;border-style:dashed}
 .ck{border-top:1px solid var(--g100);background:#fbfcfe;padding:.55rem 1rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.35rem .9rem}
@@ -88,21 +114,26 @@ textarea{width:100%}
 </div>
 
 <div class="wrap" id="main" style="display:none">
-  <div class="top">
+  <div class="card hero">
     <div>
       <h1>🆕 新员工入职 · Onboarding</h1>
-      <div class="sub">每周看一次：名字<b>第一次出现在发票工资表上</b>的人就是新员工（有账单才说明要给他付钱）。先选一张发票看上面的员工，关联系统里的员工档案、定好怎么付；系统匹配到的员工档案 / Gusto 收款人 / 邮件都要 manager 或 admin 点「通过」才算数。</div>
+      <div class="sub">按周看发票上第一次出现的人 → 关联员工档案 → 定付款方式。系统匹配的都要 manager / admin 点「通过」才算数。</div>
+      <div id="gbar"></div>
     </div>
     <div style="display:flex;gap:.4rem;flex-wrap:wrap">
-      <button class="btn btn-outline" onclick="openHook()">📬 邮箱自动同步</button>
-      <button class="btn btn-outline" id="btnEmail" onclick="openEmail()">📧 粘贴 Gusto 邮件</button>
-      <button class="btn btn-outline" id="btnSync" onclick="syncGusto()" style="display:none">↻ 同步 Gusto</button>
-      <a class="btn btn-outline" href="/accounting">← 会计对账</a>
+      <button class="btn btn-outline btn-sm" onclick="openHook()">📬 邮箱自动同步</button>
+      <button class="btn btn-outline btn-sm" id="btnEmail" onclick="openEmail()">📧 粘贴 Gusto 邮件</button>
+      <button class="btn btn-outline btn-sm" id="btnSync" onclick="syncGusto()" style="display:none">↻ 同步 Gusto</button>
+      <a class="btn btn-outline btn-sm" href="/accounting">← 会计对账</a>
     </div>
   </div>
   <div id="alerts"></div>
-  <div class="gbar" id="gbar"></div>
-  <div class="weeks" id="weeks"></div>
+  <div class="stats" id="stats"></div>
+  <div class="card weekbar"><span class="wl">📅 按周</span>
+    <button class="arrow" onclick="document.getElementById('weeks').scrollBy({left:-320})" title="更早">‹</button>
+    <div class="weeks" id="weeks"></div>
+    <button class="arrow" onclick="document.getElementById('weeks').scrollBy({left:320})" title="更近">›</button>
+  </div>
   <div id="invs"></div>
   <div id="list"><div class="empty">加载中…</div></div>
   <div id="unmatched"></div>
@@ -152,6 +183,7 @@ textarea{width:100%}
 let TOKEN = localStorage.getItem('acct_token') || localStorage.getItem('adminToken') || '';
 let D = null;                     // 最近一次 /api/acct/onboarding 的结果
 let VIEW = 'week', WEEK = '', INV = 0;
+const ZEDIT = {};                 // 正在编辑 Zelle 账号的人: key → [{account, name}]
 const EXP = new Set();            // 发票视图里展开看全卡片的老员工
 const PM_LABEL = { gusto: 'Gusto 入职', cash: '现金', check: '支票', zelle: 'Zelle', skip: '不用处理' };
 
@@ -207,14 +239,24 @@ async function load() {
 function renderBar() {
   const g = D.gusto;
   document.getElementById('gbar').innerHTML = g.connected
-    ? `<span>🔗 Gusto API 已连接 · 名册 ${g.contractors} 人 · 上次同步 ${g.last_sync_at ? esc(new Date(g.last_sync_at).toLocaleString()) : '—'}</span><span class="muted">入职状态（接受邀请 / 填完资料 / 可以付款）自动从 Gusto 读，邮件只是补充</span>`
-    : `<span style="color:var(--amber);font-weight:700">⚠ Gusto API 还没连接</span><span class="muted">清单只能靠粘贴 Gusto 邮件和手动勾选。连接后入职状态会自动读取：会计对账 →「💸 Gusto 工资」页签。</span>`;
+    ? `<span class="gpill on"><span class="dot"></span>Gusto API 已连接 · 名册 ${g.contractors} 人 · 上次同步 ${g.last_sync_at ? esc(fmtTime(g.last_sync_at)) : '—'}</span>`
+    : `<span class="gpill" title="连接后入职状态自动读取：会计对账 →「💸 Gusto 工资」页签"><span class="dot"></span>Gusto API 还没连接 · 进度靠 Gusto 邮件和手动确认</span>`;
 }
 function renderWeeks() {
-  const pend = `<button class="wk pend ${VIEW === 'open' ? 'on' : ''}" onclick="VIEW='open';INV=0;load()"><b>⏳ 待处理</b><span class="n">最近 16 周 · <span class="open">${D.open_total}</span> 人</span></button>`;
-  const rev = D.review_total || VIEW === 'review' ? `<button class="wk ${VIEW === 'review' ? 'on' : ''}" style="border-color:#a5b4fc;background:${VIEW === 'review' ? '' : '#eef2ff'}" onclick="VIEW='review';INV=0;load()"><b>🔎 待审核</b><span class="n">系统匹配 · <span class="open">${D.review_total}</span> 人</span></button>` : '';
-  document.getElementById('weeks').innerHTML = pend + rev + D.weeks.map(w => `<button class="wk ${VIEW === 'week' && w.week === WEEK ? 'on' : ''}" onclick="VIEW='week';WEEK='${w.week}';INV=0;load()">
-    <b>${wkLabel(w.week)}</b><span class="n">新 ${w.total}${w.open ? ` · <span class="open">待 ${w.open}</span>` : w.total ? ' · ✓' : ''}</span></button>`).join('');
+  const bankN = (D.bank_alerts || []).length;
+  const stat = (view, icon, bg, num, label, cap) => `<button class="stat ${VIEW === view ? 'on' : ''} ${num ? '' : 'zero'}" onclick="VIEW='${view}';INV=0;load()">
+      <span class="ic2" style="background:${bg}">${icon}</span><span><span class="num">${num}</span><br><span class="t2">${label}</span> <span class="muted">${cap}</span></span></button>`;
+  document.getElementById('stats').innerHTML =
+    stat('open', '⏳', '#fef3c7', D.open_total, '待处理', '最近 16 周的新人') +
+    stat('review', '🔎', '#eef2ff', D.review_total, '待审核', '系统匹配等通过') +
+    stat('alerts', '⚠️', '#fee2e2', bankN, '银行信息提醒', '还没处理');
+  const thisWk = D.weeks[0] && D.weeks[0].week;
+  const tag = w => w.week === thisWk ? '本周 · ' : D.weeks[1] && w.week === D.weeks[1].week ? '上周 · ' : '';
+  const el = document.getElementById('weeks');
+  el.innerHTML = D.weeks.slice().reverse().map(w => `<button class="wk ${VIEW === 'week' && w.week === WEEK ? 'on' : ''} ${w.total ? '' : 'empty0'}" onclick="VIEW='week';WEEK='${w.week}';INV=0;load()">
+    <b>${tag(w)}${wkLabel(w.week)}</b><span class="pill p-new">新 ${w.total}</span>${w.open ? `<span class="pill p-open">待 ${w.open}</span>` : w.total ? '<span class="pill p-ok">✓ 齐了</span>' : ''}</button>`).join('');
+  const on = el.querySelector('.wk.on');
+  el.scrollLeft = on ? on.offsetLeft - el.clientWidth / 2 + on.offsetWidth / 2 : el.scrollWidth;
 }
 // 这周的发票: 选一张才列出上面的人; 每张标 新人数、付款方式待定 / 已定 人数
 function renderInvs() {
@@ -256,7 +298,7 @@ function oldRow(w, k) {
     <span class="muted">${w.line.hours ? w.line.hours + 'h' : ''}${w.line.total != null ? ' · ' + money(w.line.total) : ''}</span>
     ${w.pending_review ? `<span class="tag" style="background:#eef2ff;color:#3730a3">🔎 ${w.pending_review} 条待审核</span>` : ''}
     ${w.settled ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ ${esc(PM_LABEL[w.pay_method] || 'Gusto 已付过')}</span>` : '<span class="tag" style="background:#fef3c7;color:#92400e">付款方式待定</span>'}
-    ${w.pay_method === 'zelle' ? `<span class="muted">Zelle ${esc(w.zelle_account)} · ${esc(w.zelle_name)}</span>` : ''}
+    ${w.pay_method === 'zelle' ? `<span class="muted">Zelle ${zList(w.zelle_accounts)}</span>` : ''}
     <span class="pm" style="margin-left:auto">${pm}</span>
     ${w.bank_alert_open ? '<span class="tag" style="background:#fee2e2;color:#991b1b">⚠ 银行信息</span>' : ''}
     <button class="btn btn-outline btn-sm" onclick="showHistory(${k})">📜 历史</button>
@@ -374,36 +416,67 @@ function whSelect(w, k, dis) {
   return `<select ${dis} style="width:100%;margin-bottom:.4rem" onchange="save(${k},{warehouse:this.value})" title="默认取发票的客户公司">
     ${opts.map(o => `<option ${o === cur ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
 }
+const PM_SHORT = { gusto: 'Gusto', cash: '现金', check: '支票', zelle: 'Zelle', skip: '不用处理' };
+function zList(list) { return (list || []).map(z => `${esc(z.account)}（${esc(z.name)}）`).join('、'); }
+// 付款方式下面: Zelle 账号 (直接在这里填, 可以多个, 一行两格) + 以前用过的付款方式
 function zelleLine(w, k) {
-  if (w.pay_method !== 'zelle') return '';
-  return `<div class="row" style="margin:-.15rem 0 .4rem"><span class="tag" style="background:#ede9fe;color:#5b21b6">Zelle：${esc(w.zelle_account || '—')} · 户主 ${esc(w.zelle_name || '—')}</span>
-    ${D.can_edit ? `<button class="btn btn-outline btn-sm" onclick="pickPay(${k},'zelle')">修改</button>` : ''}</div>`;
+  let out = '';
+  const ed = ZEDIT[w.key];
+  if (ed) {
+    const switching = w.pay_method !== 'zelle';
+    out += `<div class="zbox"><div class="zhead"><span>Zelle 号（电话或邮箱）</span><span>这个 Zelle 号的户主姓名</span><span></span></div>
+      ${ed.map((z, i) => `<div class="zrow"><input data-zk="${k}" data-zi="${i}" data-zf="account" value="${esc(z.account)}" placeholder="626-555-1234 / name@gmail.com">
+        <input data-zk="${k}" data-zi="${i}" data-zf="name" value="${esc(z.name)}" placeholder="Zelle 里显示的名字">
+        <button class="arrow" style="width:28px;height:30px" title="删掉这一行" onclick="zRow(${k},${i})">✕</button></div>`).join('')}
+      <div class="row" style="margin:.2rem 0 0;justify-content:space-between">
+        <button class="btn btn-outline btn-sm" onclick="zRow(${k},-1)">＋ 再加一个 Zelle 账号</button>
+        <span style="display:flex;gap:.3rem"><button class="btn btn-outline btn-sm" onclick="delete ZEDIT[D.rows[${k}].key];renderList()">取消</button>
+        <button class="btn btn-blue btn-sm" onclick="zSave(${k})">${switching ? `确认改成 Zelle${w.pay_method ? '（原来：' + PM_SHORT[w.pay_method] + '）' : ''}` : '保存 Zelle 账号'}</button></span></div></div>`;
+  } else if (w.pay_method === 'zelle') {
+    out += `<div class="zbox">${w.zelle_accounts.map(z => `<div class="row" style="margin:0 0 .2rem"><span class="tag" style="background:#ede9fe;color:#5b21b6">Zelle ${esc(z.account)}</span><span style="font-size:.8rem">户主 <b>${esc(z.name)}</b></span></div>`).join('')}
+      ${D.can_edit ? `<button class="btn btn-outline btn-sm" onclick="zEdit(${k})">编辑 / 加账号</button>` : ''}</div>`;
+  } else if (w.zelle_accounts.length) {
+    out += `<div class="muted" style="margin:-.1rem 0 .35rem">保留的 Zelle 账号：${zList(w.zelle_accounts)}</div>`;
+  }
+  if (w.pay_history.length) {
+    out += `<div class="muted" style="margin:-.1rem 0 .4rem">之前的付款方式：${w.pay_history.slice().reverse().map(h =>
+      `<span class="tag" style="background:var(--g100);color:var(--g600)">${esc(PM_SHORT[h.method] || h.method)}${h.zelle && h.zelle.length ? ' ' + zList(h.zelle) : ''} · ${esc((h.since || '').slice(0, 10) || '?')} ~ ${esc((h.until || '').slice(0, 10))}</span>`).join(' ')}</div>`;
+  }
+  return out;
 }
-// 选付款方式先弹窗确认; Zelle 要填 Zelle 号和户主姓名
+function zSync(k) {
+  const ed = ZEDIT[D.rows[k].key];
+  document.querySelectorAll(`[data-zk="${k}"]`).forEach(inp => { const r = ed[+inp.dataset.zi]; if (r) r[inp.dataset.zf] = inp.value; });
+}
+function zEdit(k) {
+  const w = D.rows[k];
+  ZEDIT[w.key] = w.zelle_accounts.length ? w.zelle_accounts.map(z => ({ account: z.account, name: z.name })) : [{ account: '', name: '' }];
+  EXP.add(w.key);
+  renderList();
+}
+function zRow(k, i) {
+  zSync(k);
+  const ed = ZEDIT[D.rows[k].key];
+  if (i < 0) ed.push({ account: '', name: '' }); else { ed.splice(i, 1); if (!ed.length) ed.push({ account: '', name: '' }); }
+  renderList();
+}
+async function zSave(k) {
+  zSync(k);
+  const w = D.rows[k];
+  const list = ZEDIT[w.key].map(z => ({ account: z.account.trim(), name: z.name.trim() })).filter(z => z.account || z.name);
+  if (!list.length) return toast('至少登记一个 Zelle 账号', true);
+  if (list.some(z => !z.account || !z.name)) return toast('每个 Zelle 账号都要填 Zelle 号和户主姓名', true);
+  const ok = await save(k, { pay_method: 'zelle', zelle_accounts: list });
+  if (ok) delete ZEDIT[w.key];
+}
+// 选付款方式: Zelle 直接在下面填账号; 其他的弹窗确认 (换掉的方式会留底)
 function pickPay(k, m) {
   const w = D.rows[k];
+  if (m === 'zelle') return zEdit(k);
   const from = w.pay_method ? PM_LABEL[w.pay_method] : '未选';
   const to = m ? PM_LABEL[m] : '不选（清空）';
-  document.getElementById('pmErr').textContent = '';
-  document.getElementById('pmTitle').textContent = '确认付款方式';
-  document.getElementById('pmBody').innerHTML = `<div style="font-size:.88rem;margin-bottom:.5rem"><b>${esc(w.name)}</b> 的付款方式：${esc(from)} → <b>${esc(to)}</b></div>` +
-    (m === 'zelle' ? `<div class="lbl">Zelle 号（电话或邮箱）</div><input id="pmZa" style="width:100%;margin-bottom:.5rem" value="${esc(w.zelle_account)}" placeholder="例：626-555-1234 / name@gmail.com">
-      <div class="lbl">这个 Zelle 号的户主姓名</div><input id="pmZn" style="width:100%" value="${esc(w.zelle_name)}" placeholder="Zelle 里显示的名字（可能不是工人本人）">` : '');
-  const go = document.getElementById('pmGo');
-  go.onclick = async () => {
-    const body = { pay_method: m };
-    if (m === 'zelle') {
-      body.zelle_account = document.getElementById('pmZa').value.trim();
-      body.zelle_name = document.getElementById('pmZn').value.trim();
-      if (!body.zelle_account || !body.zelle_name) { document.getElementById('pmErr').textContent = 'Zelle 号和户主姓名都要填'; return; }
-    }
-    go.disabled = true;
-    const ok = await save(k, body);
-    go.disabled = false;
-    if (ok) document.getElementById('pmModal').style.display = 'none';
-  };
-  document.getElementById('pmModal').style.display = 'flex';
-  if (m === 'zelle') setTimeout(() => document.getElementById('pmZa').focus(), 0);
+  confirmBox('确认付款方式', `<div style="font-size:.88rem"><b>${esc(w.name)}</b> 的付款方式：${esc(from)} → <b>${esc(to)}</b></div>
+    ${w.pay_method ? `<div class="muted" style="margin-top:.3rem">原来的「${esc(from)}」${w.pay_method === 'zelle' ? '和 Zelle 账号' : ''}会留在记录里</div>` : ''}`, () => save(k, { pay_method: m }));
 }
 function fmtTime(t) { if (!t) return ''; const d = new Date(t); return isNaN(d) ? String(t) : d.toLocaleString(); }
 // 通用确认弹窗 (页面居中): 确认后跑 fn, fn 返回 true 才关
