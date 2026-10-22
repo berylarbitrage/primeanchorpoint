@@ -130,9 +130,9 @@ textarea{width:100%}
   <div id="alerts"></div>
   <div class="stats" id="stats"></div>
   <div class="card weekbar"><span class="wl">📅 按周</span>
-    <button class="arrow" onclick="document.getElementById('weeks').scrollBy({left:-320})" title="更早">‹</button>
+    <button class="arrow" onclick="document.getElementById('weeks').scrollBy({left:-320})" title="更近">‹</button>
     <div class="weeks" id="weeks"></div>
-    <button class="arrow" onclick="document.getElementById('weeks').scrollBy({left:320})" title="更近">›</button>
+    <button class="arrow" onclick="document.getElementById('weeks').scrollBy({left:320})" title="更早">›</button>
   </div>
   <div id="invs"></div>
   <div id="list"><div class="empty">加载中…</div></div>
@@ -253,10 +253,10 @@ function renderWeeks() {
   const thisWk = D.weeks[0] && D.weeks[0].week;
   const tag = w => w.week === thisWk ? '本周 · ' : D.weeks[1] && w.week === D.weeks[1].week ? '上周 · ' : '';
   const el = document.getElementById('weeks');
-  el.innerHTML = D.weeks.slice().reverse().map(w => `<button class="wk ${VIEW === 'week' && w.week === WEEK ? 'on' : ''} ${w.total ? '' : 'empty0'}" onclick="VIEW='week';WEEK='${w.week}';INV=0;load()">
+  el.innerHTML = D.weeks.map(w => `<button class="wk ${VIEW === 'week' && w.week === WEEK ? 'on' : ''} ${w.total ? '' : 'empty0'}" onclick="VIEW='week';WEEK='${w.week}';INV=0;load()">
     <b>${tag(w)}${wkLabel(w.week)}</b><span class="pill p-new">新 ${w.total}</span>${w.open ? `<span class="pill p-open">待 ${w.open}</span>` : w.total ? '<span class="pill p-ok">✓ 齐了</span>' : ''}</button>`).join('');
   const on = el.querySelector('.wk.on');
-  el.scrollLeft = on ? on.offsetLeft - el.clientWidth / 2 + on.offsetWidth / 2 : el.scrollWidth;
+  el.scrollLeft = on ? on.offsetLeft - el.clientWidth / 2 + on.offsetWidth / 2 : 0;
 }
 // 这周的发票: 选一张才列出上面的人; 每张标 新人数、付款方式待定 / 已定 人数
 function renderInvs() {
