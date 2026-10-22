@@ -41751,7 +41751,9 @@ app.get('/api/acct/invoices/:id', requireAdmin, requireAcctView, (req, res) => {
 // ─── 会计每周核对清单 (/acct-checklist) ───────────────────────────────────────
 // 每周五会计核对两件事: ① 该出的账单都出了没有 (一个仓库可能既有卸柜又有劳务, 各算一张)
 // ② 出了的账单客户都付了没有 (付款状态沿用会计对账页的核查口径 _acctInvoiceVerify)。
-// 「应出账单」清单由会计自己维护: 公司 + 类型(container 卸柜 / labor 劳务)。
+// 「应出账单」清单: 公司 + 类型(container 卸柜 / labor 劳务 / any 不限) + 频率 + 标签(同公司同类型有两张时区分)。
+// 频率: weekly 每周必出 (没出标红) / confirm 有时有有时没有, 每周都要确认一次 / occasional 偶尔有, 不确认也不算漏。
+// 「已出」不自动算: 会计要把这周的发票 link 到清单项上 (系统只提示可能是哪张)。
 db.exec(`CREATE TABLE IF NOT EXISTS acct_checklist_expect (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   company_name TEXT NOT NULL,
@@ -41761,7 +41763,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS acct_checklist_expect (
   created_by TEXT DEFAULT '',
   created_at TEXT DEFAULT (datetime('now'))
 )`);
-// 某周某项不用出 (这周没活 / 并到别的账单里了): 标「本周不需要」+ 原因
+try { db.exec(`ALTER TABLE acct_checklist_expect ADD COLUMN label TEXT DEFAULT ''`); } catch (e) {}
+try { db.exec(`ALTER TABLE acct_checklist_expect ADD COLUMN freq TEXT DEFAULT 'weekly'`); } catch (e) {}
+// 某周某项没有 / 不用出: weekly 要写原因, confirm / occasional 点「本周没有」即可
 db.exec(`CREATE TABLE IF NOT EXISTS acct_checklist_marks (
   week_start TEXT NOT NULL,
   expect_id INTEGER NOT NULL,
@@ -41770,6 +41774,14 @@ db.exec(`CREATE TABLE IF NOT EXISTS acct_checklist_marks (
   marked_by TEXT DEFAULT '',
   marked_at TEXT DEFAULT (datetime('now')),
   PRIMARY KEY (week_start, expect_id)
+)`);
+// 会计把发票 link 到某周的清单项上 = 这张账单出了; 一张发票只能 link 一次
+db.exec(`CREATE TABLE IF NOT EXISTS acct_checklist_links (
+  invoice_id INTEGER PRIMARY KEY,
+  week_start TEXT NOT NULL,
+  expect_id INTEGER NOT NULL,
+  linked_by TEXT DEFAULT '',
+  linked_at TEXT DEFAULT (datetime('now'))
 )`);
 // 这一周核对完了 (谁、什么时候)
 db.exec(`CREATE TABLE IF NOT EXISTS acct_checklist_weeks (
@@ -41785,9 +41797,33 @@ db.exec(`CREATE TABLE IF NOT EXISTS acct_checklist_pay_follow (
   updated_by TEXT DEFAULT '',
   updated_at TEXT DEFAULT (datetime('now'))
 )`);
-const _ckKinds = ['container', 'labor'];
+const _ckKinds = ['container', 'labor', 'any'];
+const _ckFreqs = ['weekly', 'confirm', 'occasional'];
 // 公司名比对: 忽略大小写、空格和标点
 const _ckNorm = s => String(s || '').toLowerCase().replace(/[^a-z0-9一-鿿]/g, '');
+const _ckKey = (company, kind, label) => _ckNorm(company) + '|' + kind + '|' + _ckNorm(label);
+// 初始清单 (老板给的, 只种一次; 之后会计在页面上自己改)
+{
+  const seeded = db.prepare(`SELECT value FROM app_settings WHERE key='acct_checklist_seed_v1'`).get();
+  if (!seeded) {
+    const have = new Set(db.prepare('SELECT company_name, kind, label FROM acct_checklist_expect').all().map(x => _ckKey(x.company_name, x.kind, x.label)));
+    const ins = db.prepare(`INSERT INTO acct_checklist_expect (company_name, kind, label, freq, note, created_by) VALUES (?, ?, ?, ?, ?, 'system')`);
+    [
+      ['Elogistek LLC', 'labor', 'EL', 'weekly', '每周两张劳务账单: INV-L-IL-EL-…'],
+      ['Elogistek LLC', 'labor', 'Office_East_Coast', 'weekly', '每周两张劳务账单: INV-L-IL-OEC-… (Bill To: Office_East_Coast)'],
+      ['Albatross America Inc', 'any', '', 'confirm', '有时候有有时候没有, 每周都要确认一下'],
+      ['Nexware Inc', 'labor', '', 'weekly', ''],
+      ['Nexware Inc', 'container', '', 'weekly', ''],
+      ['Looife Inc', 'labor', '', 'weekly', ''],
+      ['SLM Group Inc', 'labor', '', 'weekly', ''],
+      ['Smart Supply Chain Chicago Inc', 'container', '', 'occasional', ''],
+      ['Translead Group, Inc.', 'labor', '', 'weekly', ''],
+      ['DV Fulfillment LLC', 'labor', '', 'occasional', ''],
+      ['Cargowill LLC', 'labor', '', 'occasional', ''],
+    ].forEach(([c, k, l, f, n]) => { if (!have.has(_ckKey(c, k, l))) ins.run(c, k, l, f, n); });
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('acct_checklist_seed_v1', '1')`).run();
+  }
+}
 // 任意日期 → 那一周的周一 (YYYY-MM-DD)
 function _ckWeekStart(d) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || ''));
@@ -41802,11 +41838,12 @@ function _ckSpan(r) {
   const s = ps || pe || d, e = pe || ps || d;
   return s && e ? (s <= e ? [s, e] : [e, s]) : null;
 }
+const _ckOverlap = (r, a, b) => { const sp = _ckSpan(r); return !!sp && sp[0] <= b && sp[1] >= a; };
 
 app.get('/api/acct/checklist', requireAdmin, requireAcctView, (req, res) => {
   try {
     const ws = _ckWeekStart(req.query.week), we = _ckAddDays(ws, 6);
-    const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, profile_json, created_at FROM invoices`).all();
+    const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, subtotal, profile_json, created_at FROM invoices`).all();
     for (const r of rows) {
       let p = {}; try { p = JSON.parse(r.profile_json || '{}') || {}; } catch (e) { p = {}; }
       r.kind = p.invoice_mode === 'container' ? 'container' : 'labor';
@@ -41820,79 +41857,94 @@ app.get('/api/acct/checklist', requireAdmin, requireAcctView, (req, res) => {
     _acctInvoiceVerify(rows);
     const follow = {};
     db.prepare('SELECT * FROM acct_checklist_pay_follow').all().forEach(f => { follow[f.invoice_id] = f; });
+    const links = {};
+    db.prepare('SELECT * FROM acct_checklist_links').all().forEach(l => { links[l.invoice_id] = l; });
     const brief = r => ({
-      id: r.id, invoice_number: r.invoice_number, invoice_date: r.invoice_date, company_name: r.company_name, kind: r.kind,
+      id: r.id, invoice_number: r.invoice_number, invoice_date: r.invoice_date, company_name: r.company_name, bill_to: String(r.bill_to_addr || '').split('\n')[0].slice(0, 80), kind: r.kind,
       period_start: r.period_start, period_end: r.period_end, subtotal: Number(r.subtotal) || 0,
       pay_status: (r.verify && r.verify.status) || 'unpaid', pay_got: r.verify ? r.verify.got : null,
       pay_reasons: (r.verify && r.verify.reasons) || [], follow: follow[r.id] || null,
+      link: links[r.id] ? { week_start: links[r.id].week_start, expect_id: links[r.id].expect_id } : null,
     });
-    const inWeek = rows.filter(r => { const sp = _ckSpan(r); return sp && sp[0] <= we && sp[1] >= ws; });
+    const byId = {}; rows.forEach(r => { byId[r.id] = r; });
+    const inWeek = rows.filter(r => _ckOverlap(r, ws, we));
+    // 可以 link 的: 账期在这周前后一周内、还没 link 过的发票
+    const near = rows.filter(r => !links[r.id] && _ckOverlap(r, _ckAddDays(ws, -7), _ckAddDays(we, 7)));
 
-    const expects = db.prepare('SELECT * FROM acct_checklist_expect ORDER BY company_name COLLATE NOCASE, kind').all();
+    const expects = db.prepare('SELECT * FROM acct_checklist_expect ORDER BY company_name COLLATE NOCASE, kind, label').all();
     const marks = {};
     db.prepare('SELECT * FROM acct_checklist_marks WHERE week_start=?').all(ws).forEach(m => { marks[m.expect_id] = m; });
-    const used = new Set();
     const items = expects.filter(x => x.active).map(x => {
-      const inv = inWeek.filter(r => r.kind === x.kind && _ckNorm(r.company_name) === _ckNorm(x.company_name));
-      inv.forEach(r => used.add(r.id));
+      const linked = Object.values(links).filter(l => l.week_start === ws && l.expect_id === x.id && byId[l.invoice_id]).map(l => brief(byId[l.invoice_id]));
       const mark = marks[x.id] || null;
-      return { ...x, invoices: inv.map(brief), mark, state: inv.length ? 'done' : mark ? 'na' : 'missing' };
+      // 可能是这几张: 同公司 (+ 同类型), 账期和这周重叠, 还没 link
+      const hints = linked.length ? [] : near.filter(r => _ckNorm(r.company_name) === _ckNorm(x.company_name) && (x.kind === 'any' || r.kind === x.kind) && _ckOverlap(r, ws, we)).map(brief);
+      const state = linked.length ? 'done' : mark ? 'na' : x.freq === 'occasional' ? 'optional' : x.freq === 'confirm' ? 'confirm' : 'missing';
+      return { ...x, invoices: linked, hints, mark, state };
     });
-    // 这周出了、但不在清单里的账单 (提醒要不要加进清单)
-    const extra = inWeek.filter(r => !used.has(r.id)).map(brief);
-    // 建议: 最近 8 周出过、清单里还没有的「公司 + 类型」
-    const have = new Set(expects.map(x => _ckNorm(x.company_name) + '|' + x.kind));
-    const from = _ckAddDays(ws, -56), sugg = {};
-    rows.forEach(r => {
-      const sp = _ckSpan(r); if (!sp || sp[1] < from || sp[0] > we || !r.company_name) return;
-      const k = _ckNorm(r.company_name) + '|' + r.kind; if (have.has(k)) return;
-      const s = sugg[k] || (sugg[k] = { company_name: r.company_name, kind: r.kind, count: 0, last: '' });
-      s.count++; if (sp[1] > s.last) s.last = sp[1];
-    });
-    // 收款: 账期到这周为止、还没核查到全额收款的发票
+    // 这周出了、但还没 link 到任何清单项的发票
+    const extra = inWeek.filter(r => !links[r.id]).map(brief);
     const unpaid = rows.filter(r => { const sp = _ckSpan(r); return sp && sp[0] <= we && (r.verify && r.verify.status) !== 'paid'; })
       .map(brief).sort((a, b) => String(a.invoice_date || '').localeCompare(String(b.invoice_date || '')) || a.id - b.id);
     const companies = [...new Set(rows.map(r => String(r.company_name || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
     res.json({
-      week_start: ws, week_end: we, items, extra, unpaid, companies,
-      expects, suggestions: Object.values(sugg).sort((a, b) => b.count - a.count),
+      week_start: ws, week_end: we, items, extra, unpaid, companies, expects,
+      candidates: near.map(brief).sort((a, b) => String(a.company_name || '').localeCompare(String(b.company_name || '')) || String(a.invoice_number).localeCompare(String(b.invoice_number))),
       week_invoices: inWeek.map(brief),
       done: db.prepare('SELECT * FROM acct_checklist_weeks WHERE week_start=?').get(ws) || null,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/acct/checklist/expect', requireAdmin, requireAcctWrite, (req, res) => {
-  const { company_name, kind, note } = req.body || {};
-  const name = String(company_name || '').trim().slice(0, 200);
+  const { company_name, kind, label, freq, note } = req.body || {};
+  const name = String(company_name || '').trim().slice(0, 200), lb = String(label || '').trim().slice(0, 100);
   if (!name) return res.status(400).json({ error: '请填写公司 / 仓库名' });
   if (!_ckKinds.includes(kind)) return res.status(400).json({ error: '请选择账单类型' });
-  const dup = db.prepare('SELECT id, company_name FROM acct_checklist_expect WHERE kind=?').all(kind).find(x => _ckNorm(x.company_name) === _ckNorm(name));
-  if (dup) { db.prepare('UPDATE acct_checklist_expect SET active=1 WHERE id=?').run(dup.id); return res.json({ success: true, id: dup.id }); }
-  const r = db.prepare('INSERT INTO acct_checklist_expect (company_name, kind, note, created_by) VALUES (?, ?, ?, ?)').run(name, kind, String(note || '').slice(0, 300), req.userName || '');
+  const fq = _ckFreqs.includes(freq) ? freq : 'weekly';
+  const dup = db.prepare('SELECT * FROM acct_checklist_expect').all().find(x => _ckKey(x.company_name, x.kind, x.label) === _ckKey(name, kind, lb));
+  if (dup) { db.prepare('UPDATE acct_checklist_expect SET active=1, freq=? WHERE id=?').run(fq, dup.id); return res.json({ success: true, id: dup.id }); }
+  const r = db.prepare('INSERT INTO acct_checklist_expect (company_name, kind, label, freq, note, created_by) VALUES (?, ?, ?, ?, ?, ?)').run(name, kind, lb, fq, String(note || '').slice(0, 300), req.userName || '');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 app.put('/api/acct/checklist/expect/:id', requireAdmin, requireAcctWrite, (req, res) => {
   const x = db.prepare('SELECT * FROM acct_checklist_expect WHERE id=?').get(parseInt(req.params.id));
   if (!x) return res.status(404).json({ error: 'not found' });
   const b = req.body || {};
-  db.prepare('UPDATE acct_checklist_expect SET note=?, active=? WHERE id=?')
-    .run(b.note != null ? String(b.note).slice(0, 300) : x.note, b.active != null ? (b.active ? 1 : 0) : x.active, x.id);
+  db.prepare('UPDATE acct_checklist_expect SET note=?, active=?, freq=?, label=? WHERE id=?')
+    .run(b.note != null ? String(b.note).slice(0, 300) : x.note, b.active != null ? (b.active ? 1 : 0) : x.active,
+      _ckFreqs.includes(b.freq) ? b.freq : x.freq, b.label != null ? String(b.label).trim().slice(0, 100) : x.label, x.id);
   res.json({ success: true });
 });
 app.delete('/api/acct/checklist/expect/:id', requireAdmin, requireAcctWrite, (req, res) => {
   const id = parseInt(req.params.id);
   db.prepare('DELETE FROM acct_checklist_expect WHERE id=?').run(id);
   db.prepare('DELETE FROM acct_checklist_marks WHERE expect_id=?').run(id);
+  db.prepare('DELETE FROM acct_checklist_links WHERE expect_id=?').run(id);
   res.json({ success: true });
 });
-// 本周不需要出 (status='na' + 原因) / 撤销 (status='')
+// 把发票 link 到这周的清单项 (= 这张出了) / 取消 link
+app.post('/api/acct/checklist/link', requireAdmin, requireAcctWrite, (req, res) => {
+  const { week, expect_id, invoice_id, unlink } = req.body || {};
+  const ws = _ckWeekStart(week), eid = parseInt(expect_id), iid = parseInt(invoice_id);
+  if (unlink) { db.prepare('DELETE FROM acct_checklist_links WHERE invoice_id=?').run(iid); return res.json({ success: true }); }
+  if (!db.prepare('SELECT id FROM acct_checklist_expect WHERE id=?').get(eid)) return res.status(404).json({ error: '清单项不存在' });
+  if (!db.prepare('SELECT id FROM invoices WHERE id=?').get(iid)) return res.status(404).json({ error: '发票不存在' });
+  const prev = db.prepare('SELECT * FROM acct_checklist_links WHERE invoice_id=?').get(iid);
+  if (prev && !(prev.week_start === ws && prev.expect_id === eid)) return res.status(400).json({ error: `这张发票已经 link 到 ${prev.week_start} 那周的另一项了，先取消那边的 link` });
+  db.prepare(`INSERT OR REPLACE INTO acct_checklist_links (invoice_id, week_start, expect_id, linked_by, linked_at) VALUES (?, ?, ?, ?, datetime('now'))`).run(iid, ws, eid, req.userName || '');
+  // link 上了就不再是「本周没有」
+  db.prepare('DELETE FROM acct_checklist_marks WHERE week_start=? AND expect_id=?').run(ws, eid);
+  res.json({ success: true });
+});
+// 本周没有 / 不需要 (status='na' + 原因) / 撤销 (status='')
 app.post('/api/acct/checklist/mark', requireAdmin, requireAcctWrite, (req, res) => {
   const { week, expect_id, status, note } = req.body || {};
   const ws = _ckWeekStart(week), id = parseInt(expect_id);
-  if (!id) return res.status(400).json({ error: '无效项目' });
+  const x = db.prepare('SELECT * FROM acct_checklist_expect WHERE id=?').get(id);
+  if (!x) return res.status(400).json({ error: '无效项目' });
   if (status !== 'na') { db.prepare('DELETE FROM acct_checklist_marks WHERE week_start=? AND expect_id=?').run(ws, id); return res.json({ success: true }); }
   const n = String(note || '').trim().slice(0, 300);
-  if (!n) return res.status(400).json({ error: '请写一下为什么这周不用出' });
+  if (!n && (x.freq || 'weekly') === 'weekly') return res.status(400).json({ error: '每周都该出的账单，请写一下这周为什么没有' });
   db.prepare(`INSERT INTO acct_checklist_marks (week_start, expect_id, status, note, marked_by, marked_at) VALUES (?, ?, 'na', ?, ?, datetime('now'))
     ON CONFLICT(week_start, expect_id) DO UPDATE SET status='na', note=excluded.note, marked_by=excluded.marked_by, marked_at=excluded.marked_at`).run(ws, id, n, req.userName || '');
   res.json({ success: true });
