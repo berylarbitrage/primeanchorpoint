@@ -479,6 +479,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       <button class="btn btn-blue" id="btnRefAdd" onclick="openRefAdd()" style="display:none">＋ 新增介绍</button>
       <button class="btn btn-outline" onclick="openFmList()">👷 工头名单</button>
       <a id="refOwnPage" class="btn btn-outline" href="/referral" target="_blank" title="只看介绍费的独立页面">↗ Referral 页面</a>
+      <button class="btn btn-outline" id="btnIvDigest" onclick="sendIvDigestNow()" title="按现在的状态立刻发一封面试日报（还没标记 / 今天去面试 / 明天安排面试）；每天 14:00、20:00 也会自动发">📧 立刻发面试日报</button>
       <span id="refStats" style="font-size:.8rem;color:var(--g500)"></span>
     </div>
     <div id="refHist" style="display:none;margin-bottom:.75rem"></div>
@@ -1259,6 +1260,18 @@ let ROLE = '';  // 与 /banking 同名: 'admin' | 'cs' | 'accounting' | 'staff'
 function annApi(path, opts) { return bapi('/api' + path, opts); }
 function loadTxns() { bankLoadTxns(); }  // 待审核筛选切换时由 bank-ann.js 调用
 function money(v) { return '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+// 「📧 立刻发面试日报」: 不等 14:00 / 20:00, 按当前状态马上发一封
+async function sendIvDigestNow() {
+  if (!confirm('按现在的状态立刻发一封面试日报？\n（还没标记 / 今天去面试 / 明天安排面试，发给面试日报的收件人）')) return;
+  const btn = document.getElementById('btnIvDigest');
+  if (btn) { btn.disabled = true; btn.textContent = '发送中…'; }
+  try {
+    const r = await api('/api/acct/iv-digest/send', { method: 'POST', body: '{}' });
+    if (r.error) throw new Error(r.error);
+    toast(`📧 已发送 ${r.sent}/${r.total} 封（还没标记 ${r.overdue} 人）：${(r.to || []).join('、')}`, r.sent < r.total);
+  } catch (e) { toast('发送失败：' + e.message, true); }
+  if (btn) { btn.disabled = false; btn.textContent = '📧 立刻发面试日报'; }
+}
 function toast(msg, bad) {
   const t = document.createElement('div');
   t.textContent = msg;
