@@ -329,7 +329,7 @@ function mailSyncState(m) {
   // 脚本自己报上来的错误 (比上次正常报到还新)
   if (m.last_error_at && m.last_error_at >= m.last_at) return { cls: '', text: `⚠ 邮件同步脚本出错：${String(m.last_error).slice(0, 60)}`, bad: true, err: true };
   // 旧版脚本不带版本号, 没有新 Gusto 邮件时不报到 — 不是坏了, 但要换新版
-  if (!m.script_version) return { cls: '', text: '⚠ 装的是旧版同步脚本，请重新复制安装', bad: true, old: true };
+  if (!m.script_version || Number(m.script_version) < 4) return { cls: '', text: '⚠ 装的是旧版同步脚本（会被 Google 停掉），请重新复制安装第 4 版', bad: true, old: true };
   const min = Math.round((Date.now() - Date.parse(m.last_at)) / 60000);
   const ago = min < 1 ? '刚刚' : min < 60 ? `${min} 分钟前` : min < 1440 ? `${Math.round(min / 60)} 小时前` : `${Math.round(min / 1440)} 天前`;
   return min > 15 ? { cls: '', text: `⚠ 邮件同步 ${ago}停了，可能出问题了`, bad: true } : { cls: 'on', text: `邮件同步正常 · ${ago}`, bad: false };
@@ -962,14 +962,14 @@ async function gustoSteps(k) {
 
 // ── 邮箱自动同步设置 ──
 function hookScript(url) {
-  return `// Prime Anchor · Gusto 入职邮件同步 (Google Apps Script)
-// 每 5 分钟跑一次:
+  return `// Prime Anchor · Gusto 入职邮件同步 (Google Apps Script) · 第 4 版
+// 每 5 分钟跑一次, 每次只看上次之后的新邮件 (几秒就跑完, 不会把 Google 每天的运行时间用光):
 //   第一次 —— 把邮箱里以前所有 Gusto 邮件读一遍 (一次读不完下一轮接着读), 只记进系统, 不转发
-//   之后   —— 读最近 2 天的新 Gusto 邮件, 入职相关的在系统里标注并转发
+//   之后   —— 新的 Gusto 邮件发给系统; 入职相关的由系统发邮件给经理 (不再用 Gmail 转发, 不占 Gmail 每天的发信额度)
 const HOOK_URL = '${url}';
 const LABEL = 'PA 入职已同步';
 const QUERY = 'from:gusto.com';
-const VERSION = '3';
+const VERSION = '4';
 
 // 每 5 分钟由触发器调用; 出错时把错误报给系统 (页面上能看到哪里出了问题)
 function syncGustoMail() {
@@ -990,42 +990,52 @@ function run_() {
       const threads = GmailApp.search(QUERY, start, 100);
       if (!threads.length) {
         props.setProperty('backfill_done', '1');
-        UrlFetchApp.fetch(HOOK_URL, { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-          payload: JSON.stringify({ version: VERSION, backfill: true, backfill_done: true, messages: [] }) });
+        props.setProperty('last_ts', String(Date.now()));
+        post_({ backfill: true, backfill_done: true, messages: [] });
         break;
       }
-      sendToSystem_(threads, true);
+      send_(GmailApp.getMessagesForThreads(threads), true);
       start += threads.length;
       props.setProperty('backfill_start', String(start));
     }
     if (props.getProperty('backfill_done') !== '1') return;   // 以前的还没读完, 下一轮接着读
   }
-  sendToSystem_(GmailApp.search(QUERY + ' newer_than:2d', 0, 100), false);
+  // 只看上次之后的邮件 (往前多看 1 小时, 防止邮件晚到); 系统按邮件 id 去重, 不会重复处理
+  const last = Number(props.getProperty('last_ts') || 0) || (Date.now() - 2 * 86400000);
+  const since = Math.floor((last - 3600000) / 1000);
+  const now = Date.now();
+  const threads = GmailApp.search(QUERY + ' after:' + since, 0, 50);
+  send_(threads.length ? GmailApp.getMessagesForThreads(threads) : [], false, since * 1000);
+  props.setProperty('last_ts', String(now));
 }
 
-function sendToSystem_(threads, backfill) {
+function post_(body) {
+  body.version = VERSION;
+  const res = UrlFetchApp.fetch(HOOK_URL, { method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify(body) });
+  if (res.getResponseCode() !== 200) throw new Error('同步失败 ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200));
+  return JSON.parse(res.getContentText());
+}
+
+function send_(byThread, backfill, sinceMs) {
   const msgs = [];
-  threads.forEach(t => t.getMessages().forEach(m => {
+  byThread.forEach(list => list.forEach(m => {
+    if (sinceMs && m.getDate().getTime() < sinceMs) return;
     if (/gusto\\.com/i.test(m.getFrom())) msgs.push(m);
   }));
   if (!msgs.length && backfill) return;
-  const label = GmailApp.getUserLabelByName(LABEL) || GmailApp.createLabel(LABEL);
-  // 每次最多发 100 封给系统; 没有新邮件也发一次 (让系统知道脚本还在正常跑)
-  for (let i = 0; i < Math.max(msgs.length, 1); i += 100) {
-    const part = msgs.slice(i, i + 100);
-    const res = UrlFetchApp.fetch(HOOK_URL, {
-      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-      payload: JSON.stringify({ version: VERSION, backfill: backfill, messages: part.map(m => ({
-        id: m.getId(), subject: m.getSubject(), from: m.getFrom(), date: m.getDate().toISOString() })) }),
-    });
-    if (res.getResponseCode() !== 200) throw new Error('同步失败 ' + res.getResponseCode() + ': ' + res.getContentText());
-    const out = JSON.parse(res.getContentText());
+  let label = null;
+  // 每次最多发 50 封给系统; 没有新邮件也发一次 (让系统知道脚本还在正常跑)
+  for (let i = 0; i < Math.max(msgs.length, 1); i += 50) {
+    const part = msgs.slice(i, i + 50);
+    const out = post_({ backfill: backfill, messages: part.map(m => ({
+      id: m.getId(), subject: m.getSubject(), from: m.getFrom(), date: m.getDate().toISOString(),
+      body: backfill ? '' : m.getPlainBody().slice(0, 3000) })) });
     const byId = {};
     (out.results || []).forEach(r => { byId[r.id] = r; });
     part.forEach(m => {
       const r = byId[m.getId()];
-      if (!r || !r.new || !r.kind) return;                 // 只处理第一次见到、入职相关的
-      if (r.forward && out.forward_to) m.forward(out.forward_to, { subject: '[入职] ' + r.label + ' · ' + r.name + ' — ' + m.getSubject() });
+      if (!r || !r.new || !r.kind) return;                 // 只给第一次见到、入职相关的打标签
+      label = label || GmailApp.getUserLabelByName(LABEL) || GmailApp.createLabel(LABEL);
       m.getThread().addLabel(label);
     });
   }
@@ -1053,8 +1063,10 @@ async function openHook() {
   const ms = mailSyncState(j);
   const status = j.last_at
     ? `${ms.err ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:.45rem .6rem;margin-bottom:.4rem;font-size:.8rem;color:#991b1b"><b>⚠ 脚本出错</b>（${esc(fmtTime(j.last_error_at))}）：${esc(j.last_error)}<br><span class="muted">把这段错误截图发给技术；或者去 script.google.com →「执行」看详细</span></div>` : ''}
-      ${ms.old ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.45rem .6rem;margin-bottom:.4rem;font-size:.8rem;color:#92400e"><b>⚠ 装的是旧版脚本</b>：只读最近 2 天、没有新邮件时不报到，以前的邮件也不会读。点下面「📋 复制」→ 到 script.google.com 粘贴覆盖 → 运行一次 <code>resetBackfill</code> → 再运行 <code>install</code></div>` : ''}
+      ${ms.old ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.45rem .6rem;margin-bottom:.4rem;font-size:.8rem;color:#92400e"><b>⚠ 装的是旧版脚本</b>：${j.script_version ? '旧版每 5 分钟都把最近 2 天的 Gusto 邮件全读一遍，很费时间，会把 Google 每天给脚本的运行时间用光，然后被 Google 停掉（新邮件就抓不到、也转发不出去）。第 4 版只看新邮件，转发也改成系统直接发。点下面「📋 复制」→ 到 script.google.com 全选粘贴覆盖 → 保存 → 函数选 <code>install</code> 点「运行」' : '只读最近 2 天、没有新邮件时不报到，以前的邮件也不会读。点下面「📋 复制」→ 到 script.google.com 粘贴覆盖 → 运行一次 <code>resetBackfill</code> → 再运行 <code>install</code>'}</div>` : ''}
+      ${ms.bad && !ms.old && !ms.err ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:.45rem .6rem;margin-bottom:.4rem;font-size:.8rem;color:#991b1b"><b>脚本没报到</b>：打开 script.google.com → 这个项目 → 左边「执行」(Executions)，看最近几次是不是「失败 / 超时」。常见原因：Google 每天给脚本的运行时间用完了（第二天会自己恢复）、授权过期（重新运行一次 <code>install</code>）、触发器被删了（运行 <code>install</code>）。</div>` : ''}
       <div class="row"><span class="tag" style="background:${ms.bad ? '#fee2e2;color:#991b1b' : '#dcfce7;color:#166534'}">${ms.err ? '⚠ 脚本出错' : ms.old ? '⚠ 旧版脚本' : ms.bad ? '⚠ 超过 15 分钟没报到' : '✓ 在同步'}</span><span class="muted">脚本上次报到 ${esc(fmtTime(j.last_at))}${j.last_new_at ? ' · 上次收到新邮件 ' + esc(fmtTime(j.last_new_at)) : ''} · 累计看过 ${j.total_seen} 封</span></div>
+      ${j.last_forward_at ? `<div class="muted" style="margin-top:.2rem;${j.last_forward_error ? 'color:var(--red)' : ''}">📨 上次系统转发 ${esc(fmtTime(j.last_forward_at))} · 成功 ${j.last_forward_ok} 封${j.last_forward_error ? ' · 失败：' + esc(j.last_forward_error) : ''}</div>` : ''}
       <div class="row" style="margin:.2rem 0 0">${j.backfill_done_at ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ 以前的 Gusto 邮件已全部读完</span><span class="muted">共读入 ${j.backfill_total} 封 · ${esc(fmtTime(j.backfill_done_at))}</span>`
         : j.backfill_at ? `<span class="tag" style="background:#e0f2fe;color:#075985">⏳ 正在读以前的邮件</span><span class="muted">已读入 ${j.backfill_total} 封 · 每 5 分钟接着读，读完这里会显示 ✓</span>`
         : `<span class="tag" style="background:#fee2e2;color:#991b1b">⚠ 以前的邮件还没开始读</span><span class="muted">你装的可能是旧版脚本（只读最近 2 天）。点下面「📋 复制」重新复制，粘贴覆盖后运行一次 install</span>`}</div>`
