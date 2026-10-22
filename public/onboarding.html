@@ -92,6 +92,23 @@ input,select,textarea{padding:.38rem .5rem;border:1px solid var(--g300);border-r
 .alerts{background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:.6rem .9rem;margin-bottom:12px}
 .alerts .a{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;font-size:.82rem;padding:.25rem 0}
 .alerts .a+.a{border-top:1px dashed #fecaca}
+.um-cats{display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.55rem}
+.um-cat{border:1px solid var(--g200);background:var(--g100);border-radius:999px;padding:.2rem .7rem;font-size:.76rem;color:var(--g600);cursor:pointer;font-family:inherit}
+.um-cat b{margin-left:.15rem}
+.um-cat.on{background:#0f4c6b;border-color:#0f4c6b;color:#fff}
+.um-list{margin-top:.5rem;display:flex;flex-direction:column;gap:.4rem}
+.um{border:1px solid var(--g200);border-radius:10px;padding:.5rem .7rem;background:#fff}
+.um:hover{border-color:#bfdbfe;background:#fafcff}
+.um-top{display:flex;align-items:center;gap:.5rem;min-width:0;font-size:.82rem}
+.um-date{color:var(--g500);font-size:.76rem;white-space:nowrap;font-variant-numeric:tabular-nums}
+.um-name{white-space:nowrap}
+.um-subj{color:var(--g400);font-size:.76rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+.um-bot{display:flex;align-items:center;justify-content:space-between;gap:.6rem;margin-top:.35rem;flex-wrap:wrap}
+.um-cands{display:flex;align-items:center;gap:.3rem;flex-wrap:wrap;font-size:.76rem;min-width:0}
+.um-act{display:flex;gap:.3rem;align-items:center;margin-left:auto}
+.um-c{border:1px dashed #a5b4fc;background:#eef2ff;color:#3730a3;border-radius:999px;padding:.12rem .55rem;font-size:.74rem;font-weight:700;cursor:pointer;font-family:inherit}
+.um-c:hover{background:#3730a3;color:#fff;border-style:solid}
+.um-more{background:#fff;color:var(--g600);border-color:var(--g300)}
 .hist{border-left:2px solid var(--g200);margin-left:.4rem;padding-left:.8rem}
 .hist .h{position:relative;padding:.3rem 0;font-size:.8rem}
 .hist .h:before{content:'';position:absolute;left:-1.18rem;top:.6rem;width:9px;height:9px;border-radius:50%;background:var(--g300)}
@@ -432,25 +449,42 @@ function reviewBtns(k, yes, no) {
   return `<button class="btn btn-blue btn-sm" onclick="save(${k},${yes})">✓ 通过</button><button class="btn btn-outline btn-sm" onclick="save(${k},${no})">✗ 不是</button>`;
 }
 // 对不上人的 Gusto 邮件: manager / admin 可以手动关联到某个工人, 或者暂时忽略
+const UM_EXP = new Set();          // 候选人多的邮件, 点「+N」展开全部
+let UM_CAT = '';                  // 对不上人的邮件按类型 / 有没有候选人分类筛选
 function renderUnmatched() {
   const u = D.unmatched_emails || [], nIgn = D.unmatched_ignored || 0;
   const el = document.getElementById('unmatched');
   if (!u.length && !nIgn) { el.innerHTML = ''; return; }
-  const kind = { accepted: '接受邀请', ready: '可以付款', bank_bad: '银行有误', bank_updated: '银行已更新' };
+  const kind = { accepted: ['接受邀请', '#e0f2fe', '#075985'], ready: ['可以付款', '#dcfce7', '#166534'], bank_bad: ['银行有误', '#fee2e2', '#991b1b'], bank_updated: ['银行已更新', '#fef3c7', '#92400e'] };
   const open = u.filter(e => !e.ignored_at).length;
-  const td = 'padding:.35rem .4rem;border-top:1px solid var(--g100);vertical-align:middle';
-  const rows = u.slice().reverse().map(e => {
-    const cands = (e.candidates || []).map(c => `<button class="btn btn-outline btn-sm" onclick="assignEmail(${e.id},${pk(c.key, c.name)})">是 ${esc(c.name)}？</button>`).join(' ');
+  // 分类: 按邮件类型, 或有没有系统找到的候选人
+  const CATS = [['', '全部', () => true], ['accepted', '接受邀请', e => e.kind === 'accepted'], ['ready', '可以付款', e => e.kind === 'ready'],
+    ['bank_bad', '银行有误', e => e.kind === 'bank_bad'], ['bank_updated', '银行已更新', e => e.kind === 'bank_updated'],
+    ['cand', '有候选人（点一下确认）', e => (e.candidates || []).length > 0], ['nocand', '没候选人（要手动搜）', e => !(e.candidates || []).length]];
+  const catBar = `<div class="um-cats">${CATS.map(([k, label, fn]) => { const n = u.filter(fn).length;
+    return n || !k ? `<button class="um-cat ${UM_CAT === k ? 'on' : ''}" onclick="UM_CAT='${k}';renderUnmatched()">${label} <b>${n}</b></button>` : ''; }).join('')}</div>`;
+  const catFn = (CATS.find(c => c[0] === UM_CAT) || CATS[0])[2];
+  // 一封邮件一张卡: 第一行 日期 · 类型 · 邮件里的名字 · 标题; 第二行 可能是谁 (候选) + 操作按钮
+  const cards = u.filter(catFn).reverse().map(e => {
+    const [kl, kb, kc] = kind[e.kind] || [e.kind, 'var(--g100)', 'var(--g600)'];
+    const all = e.candidates || [];
+    const shown = UM_EXP.has(e.id) ? all : all.slice(0, 4);
+    const cands = !D.can_approve || e.ignored_at || !all.length ? ''
+      : `<span class="muted" style="white-space:nowrap">可能是：</span>${shown.map(c => `<button class="um-c" onclick="assignEmail(${e.id},${pk(c.key, c.name)})">${esc(c.name)}</button>`).join('')}${all.length > shown.length ? `<button class="um-c um-more" onclick="UM_EXP.add(${e.id});renderUnmatched()">+${all.length - shown.length}</button>` : ''}`;
     const act = !D.can_approve ? '<span class="muted">等 manager / admin 处理</span>'
-      : e.ignored_at ? `<span class="muted">${esc(e.ignored_by)} 已忽略</span> <button class="btn btn-outline btn-sm" onclick="ignoreEmail(${e.id},false)">取消忽略</button>`
-      : `${cands} <button class="btn btn-blue btn-sm" onclick="pickWorkerFor(${e.id})">手动关联</button> <button class="btn btn-outline btn-sm" onclick="ignoreEmail(${e.id},true)">暂时忽略</button>`;
-    return `<tr style="${e.ignored_at ? 'opacity:.55' : ''}"><td style="${td};white-space:nowrap">${esc(e.date)}</td><td style="${td};white-space:nowrap">${esc(kind[e.kind] || e.kind)}</td>
-      <td style="${td};font-weight:700">${esc(e.name)}${e.ambiguous ? ' <span class="muted">(对上多个人)</span>' : ''}</td><td class="muted" style="${td}">${esc(e.subject)}</td>
-      <td style="${td};text-align:right;white-space:nowrap">${act}</td></tr>`;
+      : e.ignored_at ? `<span class="muted">${esc(e.ignored_by)} 已忽略</span><button class="btn btn-outline btn-sm" onclick="ignoreEmail(${e.id},false)">取消忽略</button>`
+      : `<button class="btn btn-blue btn-sm" onclick="pickWorkerFor(${e.id})">🔍 手动关联</button><button class="btn btn-outline btn-sm" onclick="ignoreEmail(${e.id},true)">暂时忽略</button>`;
+    return `<div class="um" style="${e.ignored_at ? 'opacity:.55' : ''}">
+      <div class="um-top"><span class="um-date">${esc(e.date)}</span><span class="tag" style="background:${kb};color:${kc}">${esc(kl)}</span>
+        <b class="um-name">${esc(e.name)}</b>${e.ambiguous ? '<span class="tag" style="background:#eef2ff;color:#3730a3">对上 ' + all.length + ' 个人</span>' : ''}
+        <span class="um-subj" title="${esc(e.subject)}">${esc(e.subject)}</span></div>
+      <div class="um-bot"><div class="um-cands">${cands}</div><div class="um-act">${act}</div></div></div>`;
   }).join('');
-  el.innerHTML = `<details class="card" style="margin-top:14px" ${open ? 'open' : ''}><summary style="cursor:pointer;font-weight:700;font-size:.85rem">📧 对不上人的 Gusto 邮件（${open}）<span class="muted"> — 邮件里的名字和发票上的写法差太多，点「手动关联」选是哪个工人，或者「暂时忽略」</span></summary>
-    ${nIgn ? `<div style="margin:.4rem 0 0"><label class="muted" style="cursor:pointer"><input type="checkbox" ${SHOW_IGN ? 'checked' : ''} onchange="SHOW_IGN=this.checked;load()"> 显示已忽略的（${nIgn}）</label></div>` : ''}
-    <table style="width:100%;font-size:.8rem;margin-top:.4rem;border-collapse:collapse">${rows || '<tr><td class="muted" style="padding:.5rem">没有了</td></tr>'}</table></details>`;
+  el.innerHTML = `<details class="card" style="margin-top:14px;padding:12px 14px" ${open ? 'open' : ''}><summary style="cursor:pointer;font-weight:700;font-size:.88rem">📧 对不上人的 Gusto 邮件（${open}）
+      <span class="muted" style="font-weight:400"> — 点「可能是」里的名字直接确认，或「🔍 手动关联」搜发票上的名字；不用管的点「暂时忽略」</span></summary>
+    ${nIgn ? `<div style="margin:.5rem 0 0"><label class="muted" style="cursor:pointer"><input type="checkbox" ${SHOW_IGN ? 'checked' : ''} onchange="SHOW_IGN=this.checked;load()"> 显示已忽略的（${nIgn}）</label></div>` : ''}
+    ${u.length ? catBar : ''}
+    <div class="um-list">${cards || '<div class="muted" style="padding:.6rem">没有了</div>'}</div></details>`;
 }
 // 手动关联: 先搜人 (默认用邮件里的名字搜), 选了再弹窗确认
 function pickWorkerFor(evId) {
