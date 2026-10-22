@@ -33349,7 +33349,11 @@ const INVP_PROFILE_KEY = 'inv_profile_v1';
 let _invpPresets = []; // all presets from server
 
 function getInvpProfile() {
-  try { return JSON.parse(localStorage.getItem(INVP_PROFILE_KEY)) || {}; } catch { return {}; }
+  // wage_cost 是单张发票自己的工资，不属于共享的开票档案：打开旧发票时它曾被一起存进
+  // 这里，下一张新发票保存时就带上了别人的工资（如账单 $1000 却显示工资 $1969.11、利润为负）。
+  let p; try { p = JSON.parse(localStorage.getItem(INVP_PROFILE_KEY)) || {}; } catch { p = {}; }
+  delete p.wage_cost;
+  return p;
 }
 function saveInvpProfileData(data) {
   localStorage.setItem(INVP_PROFILE_KEY, JSON.stringify(data));
@@ -34724,8 +34728,8 @@ function renderInvpList() {
         <div style="font-size:.78rem;color:var(--gray-500);margin-top:.25rem">${typeIcon} ${esc(r.company_name || '—')}${r.bill_to_name ? ' (Bill To: ' + esc(r.bill_to_name) + ')' : ''} · ${esc(r.invoice_date || '')}</div>
         <div style="display:flex;gap:.9rem;margin-top:.45rem;font-size:.86rem;flex-wrap:wrap">
           <span>账单 <b>${money(r.subtotal)}</b></span>
-          <span style="color:#b45309">工资 <b>${money(r.wage_cost)}</b></span>
-          <span style="color:${profit >= 0 ? '#16a34a' : '#dc2626'}">利润 <b>${money(profit)}</b></span>
+          <span style="color:#b45309">工资 <b>${r.wage_unknown ? '未填' : money(r.wage_cost)}</b></span>
+          <span style="color:${r.wage_unknown ? 'var(--gray-400)' : profit >= 0 ? '#16a34a' : '#dc2626'}">利润 <b>${r.wage_unknown ? '不确定' : money(profit)}</b></span>
         </div>
         <div class="invp-card-detail" style="display:none;border-top:1px dashed var(--gray-200);margin-top:.55rem;padding-top:.55rem" onclick="event.stopPropagation()">
           <div style="font-size:.8rem;color:var(--gray-600);display:grid;grid-template-columns:auto 1fr;gap:.2rem .7rem">
@@ -34781,6 +34785,8 @@ function renderInvpList() {
           // 账单 = what the client pays (subtotal); 工资 = what we pay out
           // (wage_cost, from the server); 利润 = the difference we keep.
           const profit = (r.subtotal || 0) - (r.wage_cost || 0);
+          // 没填工资（wage_unknown）：工资显示「未填」、利润「不确定」，不按负数/0 显示。
+          const wageUnknown = !!r.wage_unknown;
           const payInfo = isPaid ? [
             r.payment_amount != null ? `$${Number(r.payment_amount).toFixed(2)}` : null,
             r.payment_date || null, _upBank(r.payment_bank || '', r.bank_account_last4) || null,
@@ -34842,7 +34848,7 @@ function renderInvpList() {
           // 分包付款金额 = 分包回执交易的加和（无凭证时回退手填值）。
           const subAmt = (Number(r.sub_payment_txn_sum) > 0) ? Number(r.sub_payment_txn_sum)
             : (r.sub_payment_amount != null ? Number(r.sub_payment_amount) : null);
-          const subMismatch = subPaid && subAmt != null && Math.abs(subAmt - wageOwed) > 5;
+          const subMismatch = subPaid && subAmt != null && !wageUnknown && Math.abs(subAmt - wageOwed) > 5;
           const subInfo = subPaid ? [
             subAmt != null ? `$${subAmt.toFixed(2)}` : null,
             r.sub_payment_date || null, r.sub_payment_entity || null,
@@ -34901,8 +34907,8 @@ function renderInvpList() {
             : '—'}</td>
           <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${r.period_start||''} ~ ${r.period_end||''}</td>
           <td class="invp-frz" style="padding:8px 10px;text-align:right;font-weight:700;white-space:nowrap${amtMismatch ? ';color:#dc2626' : ''}" ${amtMismatch ? 'title="实收金额与账单不一致"' : ''}>$${(r.subtotal||0).toFixed(2)}</td>
-          <td class="invp-frz" style="padding:8px 10px;text-align:right;white-space:nowrap;color:${subMismatch ? '#dc2626' : 'var(--gray-600)'}" ${subMismatch ? 'title="分包付款金额与工资不一致"' : ''}>$${(r.wage_cost||0).toFixed(2)} <span onclick="event.stopPropagation();invpEditWageCost(${r.id},${r.wage_cost||0},'${esc(r.invoice_mode||'')}')" title="手动修正这张发票的工资成本" style="cursor:pointer;color:#b45309;font-size:.72rem">✎</span></td>
-          <td class="invp-frz" style="padding:8px 10px;text-align:right;font-weight:600;white-space:nowrap;color:${profit>=0?'#16a34a':'#dc2626'}">$${profit.toFixed(2)}</td>
+          <td class="invp-frz" style="padding:8px 10px;text-align:right;white-space:nowrap;color:${subMismatch ? '#dc2626' : 'var(--gray-600)'}" ${subMismatch ? 'title="分包付款金额与工资不一致"' : wageUnknown ? 'title="这张发票没填工资，点 ✎ 填写"' : ''}>${wageUnknown ? '<span style="color:var(--gray-400)">未填</span>' : '$' + (r.wage_cost||0).toFixed(2)} <span onclick="event.stopPropagation();invpEditWageCost(${r.id},${wageUnknown?0:(r.wage_cost||0)},'${esc(r.invoice_mode||'')}')" title="手动修正这张发票的工资成本" style="cursor:pointer;color:#b45309;font-size:.72rem">✎</span></td>
+          <td class="invp-frz" style="padding:8px 10px;text-align:right;font-weight:600;white-space:nowrap;color:${wageUnknown?'var(--gray-400)':profit>=0?'#16a34a':'#dc2626'}" ${wageUnknown ? 'title="没填工资，利润不确定"' : ''}>${wageUnknown ? '不确定' : '$' + profit.toFixed(2)}</td>
           <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${r.invoice_date||''}</td>
           <td style="padding:8px 10px;text-align:center">${statusBadge(r.status)}</td>
           <td style="padding:8px 10px;text-align:center">${paidStatusCell}</td>
@@ -35539,8 +35545,8 @@ async function invpOpenSubReceiptGallery(invoiceId) {
         ${info('INVOICE 日期', esc(row.invoice_date || '—'))}
         ${info('服务周期', esc((row.period_start || '') + ' ~ ' + (row.period_end || '')))}
         ${info('账单', money(row.subtotal))}
-        ${info('工资', money(row.wage_cost))}
-        ${info('利润', money((Number(row.subtotal) || 0) - (Number(row.wage_cost) || 0)), '#047857')}
+        ${info('工资', row.wage_unknown ? '未填' : money(row.wage_cost))}
+        ${info('利润', row.wage_unknown ? '不确定' : money((Number(row.subtotal) || 0) - (Number(row.wage_cost) || 0)), row.wage_unknown ? 'var(--gray-400)' : '#047857')}
       </div>
       <div style="display:flex;gap:.9rem;flex-wrap:wrap;align-items:center;border-top:1px dashed #e2e8f0;padding-top:.35rem">
         ${info('收款银行', esc((typeof invpBankLabel === 'function' ? invpBankLabel(row) : '') || (row.bank_account_last4 ? '账户 ••' + row.bank_account_last4 : '—'))
@@ -38041,6 +38047,7 @@ async function saveInvpInvoice(status) {
     const _wageCost = _invpComputeWageCost(items);
     if (_wageCost != null) profileWithMode.wage_cost = _wageCost;
     else if (window._invpLoadedWageCost != null) profileWithMode.wage_cost = window._invpLoadedWageCost;
+    else delete profileWithMode.wage_cost;
   }
   const payload = {
     invoice_number: invNum, invoice_date: invDate, company_name: billName, bill_to_addr: billAddr,
