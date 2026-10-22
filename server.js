@@ -44856,6 +44856,33 @@ app.post('/api/onboarding/register', loginRateLimit, (req, res) => {
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+// 管理员: 现在有哪些账号能打开 /onboarding、能做什么、收不收邮件
+app.get('/api/acct/onboarding-access', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const roles = ['admin', 'manager', 'accounting', 'cs', 'onboarding', 'staff'];
+    const pname = {};
+    db.prepare('SELECT id, name FROM partners').all().forEach(p => { pname[p.id] = p.name; });
+    const subs = new Set(_wobSubscribers().map(e => e.toLowerCase()));
+    const rows = db.prepare(`SELECT id, username, display_name, role, email, active, COALESCE(approval_status,'approved') AS approval_status,
+        assigned_partner_ids, created_at FROM admin_users WHERE role IN (${roles.map(() => '?').join(',')}) ORDER BY role, username`).all(...roles)
+      .map(u => {
+        const ok = u.approval_status === 'approved';
+        const pids = String(u.assigned_partner_ids || '').split(',').map(x => parseInt(x, 10)).filter(Boolean);
+        const email = String(u.email || '').trim();
+        return {
+          id: u.id, username: u.username, name: u.display_name || '', role: u.role, email,
+          status: !ok ? (u.approval_status === 'pending' ? 'pending' : u.approval_status) : (u.active ? 'ok' : 'inactive'),
+          warehouses: u.role === 'manager' ? pids.map(id => pname[id] || ('#' + id)) : [],
+          gets_forward: ok && !!email && subs.has(email.toLowerCase()),
+          gets_bank: ok && !!email && (u.role === 'admin' || u.role === 'onboarding' || (u.role === 'manager' && pids.length > 0)),
+          created_at: String(u.created_at || '').slice(0, 10),
+        };
+      });
+    const cfg = _mailHookCfg();
+    res.json({ accounts: rows, forward_to: cfg.forward_to || [] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // 管理员批准 / 拒绝 (拒绝 = 删掉这个申请)
 app.post('/api/acct/onboarding-registrations/:id', requireAdmin, requireRole('admin'), (req, res) => {
   try {

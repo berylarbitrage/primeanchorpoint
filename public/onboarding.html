@@ -164,6 +164,7 @@ textarea{width:100%}
       <div id="gbar"></div>
     </div>
     <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+      <button class="btn btn-outline btn-sm" id="btnAccess" onclick="openAccess()" style="display:none">👥 谁能看这页</button>
       <button class="btn btn-outline btn-sm" onclick="openHook()">📬 邮箱自动同步</button>
       <button class="btn btn-outline btn-sm" id="btnEmail" onclick="openEmail()">📧 粘贴 Gusto 邮件</button>
       <button class="btn btn-outline btn-sm" id="btnSync" onclick="syncGusto()" style="display:none">↻ 同步 Gusto</button>
@@ -309,6 +310,7 @@ async function load() {
   document.getElementById('main').style.display = '';
   document.getElementById('btnSync').style.display = j.can_sync && j.gusto.connected ? '' : 'none';
   document.getElementById('btnEmail').style.display = j.can_edit ? '' : 'none';
+  document.getElementById('btnAccess').style.display = j.role === 'admin' ? '' : 'none';
   renderRegs(); renderAlerts(); renderBar(); renderWeeks(); renderInvs(); renderList(); renderUnmatched();
 }
 // 邮件同步脚本每 5 分钟报到一次; 超过 15 分钟没报到 = 脚本停了或出错了
@@ -702,6 +704,39 @@ function clearBank(id) {
     if (j.error) { toast(j.error, true); return false; }
     toast(`已消除 ${j.acked} 条提醒`); load(); return true;
   });
+}
+// 管理员: 有哪些账号能看这一页 (按角色分组, 每个角色能做什么, 收不收邮件)
+const ROLE_INFO = {
+  admin: ['管理员', '全部权限：审核、银行提醒、批准注册、邮箱同步设置；看 SSN 末四位和证件图'],
+  manager: ['仓库经理', '只看自己负责仓库的工人（看不到金额 / 发票）；能改、能审核、能处理银行提醒'],
+  accounting: ['会计', '看全部、能改；自己选的档案 / Gusto 收款人要审核；能同步 Gusto'],
+  cs: ['客服', '看全部、能改；自己选的档案 / Gusto 收款人要审核'],
+  onboarding: ['入职专员', '只能用这一页；看全部、能改，选的要审核；自动收 Gusto 入职邮件和银行提醒'],
+  staff: ['Staff', '只能看，不能改；能看证件图、跳 Phone check'],
+};
+async function openAccess() {
+  const m = document.getElementById('gModal');
+  document.getElementById('gTitle').textContent = '👥 现在谁能看新员工入职页';
+  document.getElementById('gBody').innerHTML = '<div class="muted">加载中…</div>';
+  m.style.display = 'flex';
+  const j = await api('/api/acct/onboarding-access').catch(e => ({ error: e.message }));
+  const body = document.getElementById('gBody');
+  if (j.error) { body.innerHTML = `<div style="color:var(--red)">${esc(j.error)}</div>`; return; }
+  const ST = { ok: ['能登录', '#dcfce7', '#166534'], pending: ['等批准', '#fef3c7', '#92400e'], inactive: ['没激活 / 停用', 'var(--g100)', 'var(--g500)'] };
+  const groups = Object.keys(ROLE_INFO).map(r => {
+    const list = j.accounts.filter(a => a.role === r);
+    if (!list.length) return '';
+    const n = list.filter(a => a.status === 'ok').length;
+    return `<div style="margin-bottom:.8rem"><div style="font-weight:800;color:#0f4c6b">${esc(ROLE_INFO[r][0])} <span class="muted" style="font-weight:400">· ${n} 个能登录${list.length > n ? ' / 共 ' + list.length + ' 个' : ''}</span></div>
+      <div class="muted" style="margin-bottom:.3rem">${esc(ROLE_INFO[r][1])}</div>
+      ${list.map(a => { const [sl, sb, sc] = ST[a.status] || [a.status, 'var(--g100)', 'var(--g500)']; return `<div class="row" style="margin:0;padding:.3rem 0;border-top:1px solid var(--g100)">
+        <b>${esc(a.name || a.username)}</b><span class="muted">${esc(a.username)}</span><span class="tag" style="background:${sb};color:${sc}">${esc(sl)}</span>
+        ${a.warehouses.length ? `<span class="muted">仓库：${esc(a.warehouses.join('、'))}</span>` : a.role === 'manager' ? '<span class="tag" style="background:#fee2e2;color:#991b1b">没分配仓库 = 什么都看不到</span>' : ''}
+        <span style="margin-left:auto;display:flex;gap:.25rem;flex-wrap:wrap">${a.email ? `<span class="muted">${esc(a.email)}</span>` : '<span class="tag" style="background:var(--g100);color:var(--g500)">没填邮箱</span>'}
+          ${a.gets_forward ? '<span class="tag" style="background:#e0f2fe;color:#075985">收 Gusto 转发</span>' : ''}${a.gets_bank ? '<span class="tag" style="background:#fee2e2;color:#991b1b">收银行提醒</span>' : ''}</span></div>`; }).join('')}</div>`;
+  }).join('');
+  body.innerHTML = groups + `<div class="muted" style="border-top:1px solid var(--g200);padding-top:.5rem">Gusto 邮件另外还转发给：${j.forward_to.length ? esc(j.forward_to.join('、')) : '（没填）'} · 改账号去后台「🔐 账户管理」</div>
+    <div style="text-align:right;margin-top:.5rem"><button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none'">关闭</button></div>`;
 }
 // 管理员: 等批准的注册申请
 function renderRegs() {
