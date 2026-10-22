@@ -37753,6 +37753,13 @@ function toggleInvpAmountOnly() {
   generateInvpPreviewSafe();
 }
 
+// 「按日期分类」模板：每天一段，列当天上班的员工、工时、时薪、金额，每天小计。
+window._invpByDate = false;
+function toggleInvpByDate() {
+  window._invpByDate = !window._invpByDate;
+  generateInvpPreviewSafe();
+}
+
 // ── 预览里点员工名字选中 → 复制逗号分隔的名单（不选任何人 = 复制全部）──
 function invpToggleNameSel(td) {
   td.classList.toggle('invp-name-sel');
@@ -37871,10 +37878,14 @@ function updateInvpPreviewBtns() {
   const amtToggle = (window._invpMode || 'hourly') === 'hourly'
     ? `<button class="btn btn-outline" onclick="toggleInvpAmountOnly()" title="切换发票模板：只列员工和金额，不显示工时" style="color:#0369a1;border-color:#7dd3fc;background:${window._invpAmountOnly ? '#e0f2fe' : '#fff'}">${window._invpAmountOnly ? '⏱ 显示工时（标准模板）' : '💲 只显示金额模板'}</button>`
     : '';
+  const dateToggle = (window._invpMode || 'hourly') === 'hourly' && !_invpActiveShiftBlocks(getInvpManualItems())
+    ? `<button class="btn btn-outline" onclick="toggleInvpByDate()" title="切换发票模板：按日期分段，每天列当天的员工和小计" style="color:#0369a1;border-color:#7dd3fc;background:${window._invpByDate ? '#e0f2fe' : '#fff'}">${window._invpByDate ? '👤 按员工汇总' : '📅 按日期分类'}</button>`
+    : '';
   wrap.innerHTML = `
     ${copyBtn}
     ${otToggle}
     ${amtToggle}
+    ${dateToggle}
     ${saveBtns}
     <button class="btn btn-outline" style="${hasRecord ? '' : 'opacity:.45;pointer-events:none;'}" onclick="printInvpInvoice()" ${hasRecord ? '' : 'disabled'}>🖨️ 打印 / 另存为 PDF</button>
     <button class="btn btn-outline" onclick="closeInvpPreview()">关闭</button>
@@ -41959,6 +41970,76 @@ async function generateInvpPreview() {
       </table>`;
     }
 
+    // ── 按日期分类模板：每天一段 (当天工时 × 时薪)，每段小计，表尾合计 ──
+    // 加班按周算、分不到某一天，所以 OT 多出来的钱 (OT 时薪 - 时薪) 单独列一段
+    // 「Overtime Premium」，保证合计和员工汇总模板完全一样。
+    if (window._invpByDate) {
+      const amtOnly = !!window._invpAmountOnly;
+      const dates = _invpGetDates();
+      const emps = (window._invpManualEmps || []).filter(e => (e.name || '').trim());
+      const cell = 'padding:6px 8px;border-bottom:1px solid #e2e8f0';
+      const cols = 2 + (hasPosition ? 1 : 0) + (amtOnly ? 0 : 2) + 1;
+      const posTd = i => hasPosition ? `<td style="${cell};text-align:left;color:#475569">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>` : '';
+      const nameTd = i => `<td class="invp-name-cell" data-wname="${esc(_invpDisplayWorkerName(i.name))}" onclick="invpToggleNameSel(this)" style="${cell};text-align:left;white-space:nowrap;text-transform:capitalize;font-weight:500">${esc(_invpDisplayWorkerName(i.name))}</td>`;
+      const head = t => `<tr><td colspan="${cols}" style="background:#e8f5fb;color:#075985;font-weight:700;padding:7px 9px;border-top:2px solid #29AAE1;font-size:.8rem">${t}</td></tr>`;
+      const sub = (h, a, label) => `<tr style="background:#f0f9ff;font-weight:700;color:#0369a1;font-size:.78rem">
+            <td colspan="${amtOnly ? cols - 1 : cols - 3}" style="padding:5px 9px;text-align:right;text-transform:uppercase;letter-spacing:.03em">${label || 'Subtotal'}</td>
+            ${amtOnly ? '' : `<td style="padding:5px 8px;text-align:right">${h == null ? '' : h.toFixed(2) + 'h'}</td><td></td>`}
+            <td style="padding:5px 8px;text-align:right">$${a.toFixed(2)}</td></tr>`;
+      const dayLabel = d => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+      let grandH = 0, grandA = 0;
+      let body = dates.map(d => {
+        const rows = [];
+        items.forEach((i, k) => {
+          const h = parseFloat((emps[k] && emps[k].days && emps[k].days[d]) || 0) || 0;
+          if (h > 0) rows.push({ i, h, a: Math.round(h * (i.rate || 0) * 100) / 100 });
+        });
+        if (!rows.length) return '';
+        const dh = rows.reduce((s, r) => s + r.h, 0), da = rows.reduce((s, r) => s + r.a, 0);
+        grandH += dh; grandA += da;
+        return head(`📅 ${esc(dayLabel(d))}`) + rows.map((r, n) => `<tr style="background:${n % 2 ? '#f8fafc' : '#fff'}">
+            <td style="${cell};text-align:center;color:#64748b">${n + 1}</td>${nameTd(r.i)}${posTd(r.i)}
+            ${amtOnly ? '' : `<td style="${cell};text-align:right">${r.h.toFixed(2)}</td><td style="${cell};text-align:right">$${(r.i.rate || 0).toFixed(2)}</td>`}
+            <td style="${cell};text-align:right;font-weight:600">$${r.a.toFixed(2)}</td></tr>`).join('') + sub(dh, da);
+      }).join('');
+      // 和员工汇总的差额 = 加班多出来的钱 (以及按天四舍五入的几分钱)
+      const adj = items.map(i => ({ i, a: Math.round(((i.total || 0) - (i.hours || 0) * (i.rate || 0)) * 100) / 100 })).filter(x => Math.abs(x.a) >= 0.005);
+      if (adj.length) {
+        const aa = adj.reduce((s, x) => s + x.a, 0);
+        grandA += aa;
+        body += head('⏱ Overtime Premium') + adj.map((x, n) => `<tr style="background:${n % 2 ? '#f8fafc' : '#fff'}">
+            <td style="${cell};text-align:center;color:#64748b">${n + 1}</td>${nameTd(x.i)}${posTd(x.i)}
+            ${amtOnly ? '' : `<td style="${cell};text-align:right">${(x.i.otHours || 0) > 0 ? (x.i.otHours).toFixed(2) : ''}</td><td style="${cell};text-align:right">${(x.i.otHours || 0) > 0 ? '+$' + ((x.i.otRate || 0) - (x.i.rate || 0)).toFixed(2) : ''}</td>`}
+            <td style="${cell};text-align:right;font-weight:600">$${x.a.toFixed(2)}</td></tr>`).join('') + sub(null, aa);
+      }
+      // 有天数里没工时的员工 (例如只填了总额) 合计会对不上，这种情况别用这个模板
+      if (Math.abs(grandA - baseAmt) < 0.02) {
+        lineItemTableHtml = `
+      <table style="width:100%;border-collapse:collapse;margin-bottom:.85rem;font-size:.8rem;border:1px solid #29AAE1">
+        <thead>
+          <tr style="background:#f0f9ff;color:#075985;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #0E7BB8">
+            <th style="padding:7px 6px;font-weight:700;text-align:center">N.</th>
+            <th style="padding:7px 8px;font-weight:700;text-align:left">Worker</th>
+            ${hasPosition ? `<th style="padding:7px 8px;font-weight:700;text-align:left">Position</th>` : ''}
+            ${amtOnly ? '' : `<th style="padding:7px 8px;font-weight:700;text-align:right;white-space:nowrap">Hours</th>
+            <th style="padding:7px 8px;font-weight:700;text-align:right;white-space:nowrap">Rate</th>`}
+            <th style="padding:7px 8px;font-weight:700;text-align:right;white-space:nowrap">${amtOnly ? 'Amount' : 'Total'}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${body}
+          <tr style="background:#e8f5fb;font-weight:800;color:#1e293b;border-top:2px solid #29AAE1">
+            <td colspan="${amtOnly ? cols - 1 : cols - 3}" style="padding:8px 9px;text-align:right;text-transform:uppercase;letter-spacing:.04em">Grand Total</td>
+            ${amtOnly ? '' : `<td style="padding:8px 8px;text-align:right">${(Math.round(grandH * 100) / 100).toFixed(2)}h</td><td></td>`}
+            <td style="padding:8px 8px;text-align:right">$${baseAmt.toFixed(2)}</td>
+          </tr>
+        </tbody>
+      </table>`;
+      } else {
+        showToast('有员工没有按天的工时，没法按日期分类，先显示按员工汇总', 'error', 5000);
+      }
+    }
+
     // ── 班次分组样式 (班次流水 Excel 导入时自动启用) ─────────────────────────
     // 每个 shift 一段: 段头 + 组内编号 + 每班小计, 表尾全部合计。金额 = 各班
     // 工时×时薪的平价合计 (与时间表 Total Pay 一致), Markup 照页面设置加成。
@@ -42167,6 +42248,7 @@ function closeInvpPreview() {
   document.getElementById('invpPreviewModal').style.display = 'none';
   window._invpHideOtCols = false;
   window._invpAmountOnly = false;
+  window._invpByDate = false;
   window._invpPreviewKind = 'invoice';
 }
 
