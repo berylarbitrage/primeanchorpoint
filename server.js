@@ -44632,14 +44632,47 @@ app.get('/api/acct/onboarding-employees', requireAdmin, requireWobWrite, (req, r
     if (q.length < 2) return res.json({ employees: [] });
     const like = `%${q.replace(/[%_]/g, '')}%`;
     const digits = q.replace(/\D/g, '');
-    let sql = `SELECT e.id, e.employee_id, e.first_name, e.middle_name, e.last_name, e.phone, e.status, e.timeclock_code FROM employees e
+    let sql = `SELECT e.id, e.employee_id, e.first_name, e.middle_name, e.last_name, e.phone, e.status, e.timeclock_code,
+        e.email, e.position, e.department, e.hire_date, e.city, e.state, e.ssn_last4, e.created_at FROM employees e
       WHERE COALESCE(e.is_test,0)=0 AND ((e.first_name || ' ' || e.last_name) LIKE ? OR (e.last_name || ' ' || e.first_name) LIKE ?
         OR e.employee_id LIKE ? OR (? != '' AND (REPLACE(REPLACE(REPLACE(REPLACE(e.phone,'-',''),' ',''),'(',''),')','') LIKE ? OR e.timeclock_code = ?)))`;
     const params = [like, like, like, digits, `%${digits}%`, digits];
     if (req.userRole === 'manager') { const v = _wobEmpVisibleSql(req); sql += ` AND ${v.sql}`; params.push(...v.params); }
     sql += ` ORDER BY CASE WHEN e.status='active' THEN 0 ELSE 1 END, e.id DESC LIMIT 30`;
-    res.json({ employees: db.prepare(sql).all(...params).map(e => ({ id: e.id, name: [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '),
-      code: e.employee_id || '', phone: e.phone || '', status: e.status || '', timeclock_code: e.timeclock_code || '' })) });
+    // 和 /phone-check 差不多的一张卡: 编号 / 电话 / 邮箱 / 职位 / 入职 / 住址州 + 工作州 / 打卡码 / 最近打卡 / 申请记录 / 证件
+    // SSN 末四位只给管理员 (和 phone check 一样只在后台能看); 证件只给类型和审核状态, 看图去 phone check
+    const isAdmin = req.userRole === 'admin';
+    const lastPunch = db.prepare(`SELECT clock_in, company_name FROM time_entries WHERE employee_id=? ORDER BY clock_in DESC LIMIT 1`);
+    const punchN = db.prepare(`SELECT COUNT(*) AS n FROM time_entries WHERE employee_id=?`);
+    const subOf = db.prepare(`SELECT id, partner_name, position, created_at, timeclock_code FROM applicant_submissions WHERE employee_id=? ORDER BY id DESC LIMIT 1`);
+    const subDocs = db.prepare(`SELECT doc_type, verify_status FROM applicant_docs WHERE submission_id=?`);
+    const waOf = db.prepare('SELECT id FROM worker_accounts WHERE employee_id=? ORDER BY active DESC, id ASC LIMIT 1');
+    const ssnCard = db.prepare(`SELECT COUNT(*) AS n FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='ssn_card' AND COALESCE(file_path,'')!=''`);
+    const wp = db.prepare(`SELECT expiry_date FROM work_permit_docs WHERE worker_account_id=? AND COALESCE(file_path,'')!='' ORDER BY created_at DESC LIMIT 1`);
+    const DOC = { ssn_front: 'SSN 正面', ssn_back: 'SSN 反面', ead_front: 'EAD 正面', ead_back: 'EAD 反面', cnid_front: '身份证 正面', cnid_back: '身份证 反面' };
+    const safe = (fn, d) => { try { return fn(); } catch (e) { return d; } };
+    res.json({ employees: db.prepare(sql).all(...params).map(e => {
+      const sub = safe(() => subOf.get(e.id), null);
+      const wa = safe(() => waOf.get(e.id), null);
+      const lp = safe(() => lastPunch.get(e.id), null);
+      const docs = [];
+      if (sub) for (const d of safe(() => subDocs.all(sub.id), [])) docs.push({ label: DOC[d.doc_type] || d.doc_type, status: d.verify_status || '' });
+      if (wa) {
+        if (safe(() => ssnCard.get(wa.id).n, 0)) docs.push({ label: 'SSN 卡', status: '' });
+        const w = safe(() => wp.get(wa.id), null);
+        if (w) docs.push({ label: '工卡 EAD', status: '', extra: w.expiry_date ? '到期 ' + w.expiry_date : '' });
+      }
+      const ws = /^WRK-([A-Z]{2})-/.exec(String(e.employee_id || ''));
+      return { id: e.id, name: [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '),
+        code: e.employee_id || '', phone: e.phone || '', status: e.status || '', timeclock_code: e.timeclock_code || (sub && sub.timeclock_code) || '',
+        email: e.email || '', position: e.position || (sub && sub.position) || '', department: e.department || '', hire_date: e.hire_date || '',
+        city: e.city || '', state: e.state || '', work_state: ws ? ws[1] : '', created_at: e.created_at || '',
+        ssn_last4: isAdmin ? (e.ssn_last4 || '') : '',
+        last_punch: lp ? { at: String(lp.clock_in || '').slice(0, 16), company: lp.company_name || '' } : null,
+        punches: safe(() => punchN.get(e.id).n, 0),
+        application: sub ? { partner: sub.partner_name || '', at: String(sub.created_at || '').slice(0, 10) } : null,
+        docs };
+    }), can_phone_check: ['admin', 'staff'].includes(req.userRole) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
