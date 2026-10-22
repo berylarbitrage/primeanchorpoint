@@ -3903,14 +3903,14 @@ function schedule24hReminders() {
 }
 schedule24hReminders();
 
-// ─── 介绍费面试日报: 每天芝加哥 9:00、14:00、20:00 发邮件 (没有待办也发) ───
+// ─── 介绍费面试日报: 每天芝加哥 14:00 和 20:00 发邮件 (没有待办也发; IV_DIGEST_HOURS 可改) ───
 // 收件人: 完整版 → IV_OVERDUE_EMAILS + 管理员 + 客服主管 (有邮箱的); 普通客服 → 只含自己提交的面试那一版。
 // ① 面试时间已过还没标「去了 / 没去 / 没通过」的 (口径同会计对账页的红色提醒: 有面试时间、
 //    没标、还没开始上班) — 标红并醒目写出几个; ② 今天的面试和标记情况; ③ 明天有哪些人面试。
 // 收件人可用 IV_OVERDUE_EMAILS (逗号分隔) 覆盖。
 const IV_OVERDUE_EMAILS = (process.env.IV_OVERDUE_EMAILS || 'info@primeanchorworkforce.com,taosl19911203@outlook.com,z15725859500@outlook.com')
   .split(',').map(s => s.trim()).filter(Boolean);
-const IV_OVERDUE_HOURS = (process.env.IV_DIGEST_HOURS || '9,14,20').split(',').map(Number).filter(h => h >= 0 && h < 24);
+const IV_OVERDUE_HOURS = (process.env.IV_DIGEST_HOURS || '14,20').split(',').map(Number).filter(h => h >= 0 && h < 24);
 
 function _chicagoParts(d = new Date()) {
   const p = {};
