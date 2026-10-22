@@ -323,9 +323,20 @@ function card(w, k) {
     const emailProps = w.email_proposals.map(e => `<div class="row" style="margin:.2rem 0 0"><span class="tag" style="background:#eef2ff;color:#3730a3">🔎 邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span><span class="muted">${esc(e.subject)}</span>${reviewBtns(k, `{approve:'email',event_id:${e.id}}`, `{reject:'email',event_id:${e.id}}`)}</div>`).join('');
     const st = w.checklist.gusto && w.checklist.gusto.label ? ` <span class="muted">${esc(w.checklist.gusto.label)}</span>` : '';
     // 三步按顺序; 只有 manager / admin 能勾, 勾之前弹窗确认; 系统自动看出来的 (邮件 / Gusto) 不用勾
-    const steps = w.checklist.steps.map((s, i) => `<label class="step ${s.done ? 'ok' : ''}" title="${esc(s.hint)}" style="${s.locked ? 'opacity:.45' : ''}">
-        <input type="checkbox" ${s.done ? 'checked' : ''} ${!D.can_approve || s.locked || (s.auto && !s.manual) ? 'disabled' : ''} onclick="event.preventDefault();tickStep(${k},${i})">
-        <span><b>${i + 1}.</b> <span class="t">${esc(s.label)}</span>${s.auto ? `<br><span class="src">✓ ${esc(s.auto)}</span>` : s.manual ? `<br><span class="muted">${esc(s.manual.by)} 确认 ${esc(fmtTime(s.manual.at))}</span>` : s.locked ? '<br><span class="muted">等上一步</span>' : !D.can_approve ? '<br><span class="muted">manager / admin 确认</span>' : ''}</span></label>`).join('');
+    // 第一步 manager / admin 弹窗确认后打勾; 后两步只能等 Gusto 邮件 (邮件对人通过后) 自动完成, 没有勾选框
+    const steps = w.checklist.steps.map((s, i) => {
+      const note = s.auto ? `<br><span class="src">✓ ${esc(s.auto)}</span>`
+        : s.manual ? `<br><span class="muted">${esc(s.manual.by)} 确认 ${esc(fmtTime(s.manual.at))}</span>`
+        : s.pending ? `<br><span style="font-size:.72rem;color:#3730a3">🔎 ${esc(s.pending)}</span>`
+        : s.locked ? '<br><span class="muted">等上一步</span>'
+        : s.tickable ? (D.can_approve ? '' : '<br><span class="muted">manager / admin 确认</span>')
+        : '<br><span class="muted">⏳ 等 Gusto 邮件</span>';
+      const box = s.tickable
+        ? `<input type="checkbox" ${s.done ? 'checked' : ''} ${!D.can_approve || s.locked || (s.auto && !s.manual) ? 'disabled' : ''} onclick="event.preventDefault();tickStep(${k},${i})">`
+        : `<span style="width:16px;text-align:center;flex:none">${s.done ? '✅' : s.pending ? '🔎' : '⏳'}</span>`;
+      return `<label class="step ${s.done ? 'ok' : ''}" title="${esc(s.hint)}" style="${s.locked ? 'opacity:.45' : ''}">${box}
+        <span><b>${i + 1}.</b> <span class="t">${esc(s.label)}</span>${note}</span></label>`;
+    }).join('');
     gusto = `<div class="ck" style="grid-template-columns:1fr;padding-bottom:0;border-bottom:none"><div class="row" style="margin:0">${who}${st}
         ${D.can_edit ? `<button class="btn btn-outline btn-sm" onclick="pickGusto(${k})">${g && g.link ? '改' : '手动'}关联</button>` : ''}
         ${g && g.uuid && D.gusto.connected ? `<button class="btn btn-outline btn-sm" onclick="gustoSteps(${k})">Gusto 明细</button>` : ''}
@@ -440,7 +451,7 @@ function zelleLine(w, k) {
   }
   if (w.pay_history.length) {
     out += `<div class="muted" style="margin:-.1rem 0 .4rem">之前的付款方式：${w.pay_history.slice().reverse().map(h =>
-      `<span class="tag" style="background:var(--g100);color:var(--g600)">${esc(PM_SHORT[h.method] || h.method)}${h.zelle && h.zelle.length ? ' ' + zList(h.zelle) : ''} · ${esc((h.since || '').slice(0, 10) || '?')} ~ ${esc((h.until || '').slice(0, 10))}</span>`).join(' ')}</div>`;
+      `<span class="tag" style="background:var(--g100);color:var(--g600)">${esc(PM_SHORT[h.method] || h.method)}${h.zelle && h.zelle.length ? ' ' + zList(h.zelle) : ''} · ${h.since ? esc(h.since.slice(0, 10)) + ' ~ ' : '到 '}${esc((h.until || '').slice(0, 10))}</span>`).join(' ')}</div>`;
   }
   return out;
 }
@@ -490,7 +501,7 @@ function confirmBox(title, html, fn) {
 }
 function tickStep(k, i) {
   const w = D.rows[k], s = w.checklist.steps[i];
-  if (!D.can_approve || s.locked || (s.auto && !s.manual)) return;
+  if (!s.tickable || !D.can_approve || s.locked || (s.auto && !s.manual)) return;
   const on = !s.manual;
   confirmBox(on ? '确认这一步已完成' : '取消这一步', `<div style="font-size:.88rem"><b>${esc(w.name)}</b>：${i + 1}. ${esc(s.label)}</div>
     <div class="muted" style="margin-top:.3rem">${on ? esc(s.hint) : '取消后这一步回到未完成'}</div>`, () => save(k, { step: s.id, checked: on }));

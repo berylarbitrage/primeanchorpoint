@@ -130,14 +130,16 @@ function matchEmailName(name, candidates) {
 // 两者有一个就算完成; bank 一步是「有没有问题」, 有未处理的银行错误邮件就标红。
 // 三步, 按顺序: ① 我们这边 (admin / manager) 在 Gusto 加人发邀请, 手动打勾 (Gusto 名册里已经有这个人也算);
 // ② 工人接受邀请 (邮件「accepted your offer」/ Gusto API); ③ 工人入职完成 (邮件「can now be paid」/ Gusto API / 已付过款)。
-// 后两步也能手动勾 (邮件漏了的时候), 前一步没完成后一步不能勾。银行信息的邮件不在清单里, 单独做成提醒。
+// 只有第一步能手动勾; 后两步只能等 Gusto 邮件 (邮件对人要 manager / admin 通过) 自动完成。
+// 银行信息的邮件不在清单里, 单独做成提醒。
 const GUSTO_STEPS = [
-  { id: 'added', label: '在 Gusto 添加合同工并发邀请', hint: 'Gusto → People → Add contractor，填姓名和邮箱/电话发邀请；做完回来打勾' },
-  { id: 'accepted', label: '工人接受邀请', hint: '邮件「… accepted your offer」' },
-  { id: 'ready', label: '工人入职完成', hint: '邮件「… can now be paid」' },
+  { id: 'added', label: '在 Gusto 添加合同工并发邀请', hint: 'Gusto → People → Add contractor，填姓名和邮箱/电话发邀请；做完回来打勾', tickable: true },
+  { id: 'accepted', label: '工人接受邀请', hint: '等 Gusto 邮件「… accepted your offer」' },
+  { id: 'ready', label: '工人入职完成', hint: '等 Gusto 邮件「… can now be paid」' },
 ];
 
-// ctx: { contractor: {raw}|null, emails: [{kind,date}], manual: {step: {at,by}}, firstPayment: 'YYYY-MM-DD'|'' }
+// ctx: { contractor: {raw}|null, emails: [{kind,date}] (已通过的), pendingEmails: [{kind,date}] (对上了等确认的),
+//        manual: {step: {at,by}}, firstPayment: 'YYYY-MM-DD'|'' }
 function buildChecklist(ctx) {
   ctx = ctx || {};
   const g = ctx.contractor ? gustoStage(ctx.contractor.raw) : { stage: 0, status: '', label: '' };
@@ -154,11 +156,14 @@ function buildChecklist(ctx) {
   if (auto.ready && !auto.accepted) auto.accepted = '已入职完成';
   if ((auto.accepted || auto.ready) && !auto.added) auto.added = '工人已收到邀请';
   const manual = ctx.manual || {};
+  const pend = k => (ctx.pendingEmails || []).filter(e => e.kind === k).pop();
   let prevDone = true;
   const steps = GUSTO_STEPS.map(s => {
-    const m = manual[s.id];
+    const m = s.tickable ? manual[s.id] : null;   // 后两步就算以前手动勾过也不算
     const done = !!(auto[s.id] || m);
-    const step = { ...s, auto: auto[s.id] || '', manual: m ? { at: m.at || '', by: m.by || '' } : null, done, locked: !prevDone };
+    const p = !done && s.id !== 'added' ? pend(s.id) : null;
+    const step = { ...s, auto: auto[s.id] || '', manual: m ? { at: m.at || '', by: m.by || '' } : null, done, locked: !prevDone,
+      pending: p ? `收到邮件 ${p.date || ''}，等确认是不是这个人`.replace('  ', ' ') : '' };
     prevDone = done;
     return step;
   });

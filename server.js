@@ -44184,7 +44184,7 @@ function _wobBuild() {
     w.emails = approved[w.key] || [];
     w.email_proposals = proposed[w.key] || [];
     w.checklist = wob.buildChecklist({ contractor: w.gusto && w.gusto.link ? { raw: w.gusto.raw || {} } : null,
-      emails: w.emails, manual: w.manual, firstPayment: w.first_payment });
+      emails: w.emails, pendingEmails: w.email_proposals, manual: w.manual, firstPayment: w.first_payment });
     if (w.gusto) delete w.gusto.raw;
     w.pending_review = (w.gusto_proposal ? 1 : 0) + (w.employee_proposals.length ? 1 : 0) + w.email_proposals.length;
     w.bank_alerts = bankByKey[w.key] || [];
@@ -44438,6 +44438,7 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       const step = str(b.step, 40);
       if (!wob.GUSTO_STEPS.some(s => s.id === step)) return res.status(400).json({ error: '没有这一步' });
       if (!approver) return res.status(403).json({ error: 'Gusto 入职清单只有 manager / admin 能勾' });
+      if (!wob.GUSTO_STEPS.find(s => s.id === step).tickable) return res.status(400).json({ error: '这一步只能等 Gusto 邮件自动完成，不能手动勾' });
       if (b.checked) {
         const w = _wobScoped(req).list.find(x => x.key === key);
         const st = w && w.checklist.steps.find(x => x.id === step);
