@@ -44465,6 +44465,65 @@ function _wobScoped(req) {
   return out;
 }
 
+// 「所有修改需要审批」的账号在入职页提交的修改: 翻成中文, 标出是哪个工人 / 哪封邮件, 入职页上直接显示、直接审批
+function _wobPendingChanges() {
+  const rows = db.prepare(`SELECT id, user_id, username, display_name, method, path, body, created_at FROM pending_changes
+    WHERE status='pending' AND path LIKE '/api/acct/onboarding%' ORDER BY id`).all();
+  const PM = { gusto: 'Gusto 入职', cash: '现金', check: '支票', zelle: 'Zelle', skip: '不用处理', '': '不选' };
+  const empName = id => { const e = id && db.prepare('SELECT first_name, last_name, employee_id FROM employees WHERE id=?').get(id); return e ? `${e.first_name} ${e.last_name}${e.employee_id ? '（' + e.employee_id + '）' : ''}` : (id ? '#' + id : '无'); };
+  const gName = u => { const c = u && db.prepare('SELECT name FROM gusto_contractors WHERE uuid=?').get(u); return c ? c.name : (u || '无'); };
+  const evOf = id => db.prepare('SELECT id, kind, name, date FROM gusto_email_events WHERE id=?').get(parseInt(id, 10) || 0);
+  const evTxt = ev => ev ? `${ev.date} ${wob.EMAIL_KIND_LABEL[ev.kind] || ev.kind} ·「${ev.name}」` : '（邮件已不在）';
+  return rows.map(c => {
+    let b = {}; try { b = JSON.parse(c.body || '{}') || {}; } catch (e) {}
+    const p = c.path.split('?')[0];
+    const out = { id: c.id, by: c.display_name || c.username, user_id: c.user_id, at: c.created_at, key: '', event_ids: [], kind: 'other', items: [] };
+    let m;
+    if ((m = /^\/api\/acct\/onboarding\/([^/]+)$/.exec(p))) {
+      out.kind = 'worker';
+      out.key = _payrollNameKey(decodeURIComponent(m[1]));
+      const cur = db.prepare('SELECT * FROM new_hire_onboarding WHERE name_key=?').get(out.key) || {};
+      if (b.pay_method !== undefined) out.items.push(`付款方式：${PM[cur.pay_method || ''] || cur.pay_method} → ${PM[b.pay_method] || b.pay_method}`);
+      if (Array.isArray(b.zelle_accounts)) out.items.push(`Zelle 账号：${b.zelle_accounts.map(z => `${z.account}（户主 ${z.name}）`).join('、') || '清空'}`);
+      if (b.warehouse !== undefined) out.items.push(`仓库：${cur.warehouse || '（发票上的）'} → ${b.warehouse || '（发票上的）'}`);
+      if (b.pay_note !== undefined) out.items.push(`备注：「${String(b.pay_note).slice(0, 120)}」`);
+      if (b.name !== undefined) out.items.push(`名字 → ${b.name}`);
+      if (b.employee_id !== undefined) out.items.push(b.employee_id ? `关联员工档案 → ${empName(b.employee_id)}` : '取消员工档案关联');
+      if (b.gusto_uuid !== undefined) out.items.push(b.gusto_uuid ? `关联 Gusto 收款人 → ${gName(b.gusto_uuid)}` : '取消 Gusto 关联');
+      const what = b.approve || b.reject;
+      if (what === 'employee') out.items.push(`${b.approve ? '通过' : '否掉'}系统匹配的员工档案：${empName(b.id)}`);
+      if (what === 'gusto') out.items.push(`${b.approve ? '通过' : '否掉'}系统匹配的 Gusto 收款人：${gName(b.uuid)}`);
+      if (what === 'email') { out.items.push(`${b.approve ? '通过' : '否掉'}邮件对人：${evTxt(evOf(b.event_id))}`); out.event_ids.push(parseInt(b.event_id, 10)); }
+      if (what === 'phone') out.items.push(`${b.approve ? '通过' : '否掉'}电话：${b.phone_value}`);
+      if (b.step) { const st = wob.GUSTO_STEPS.find(x => x.id === b.step); out.items.push(`清单${b.checked ? '打勾' : '取消打勾'}：${st ? st.label : b.step}`); }
+    } else if (p === '/api/acct/onboarding-email-assign') {
+      out.kind = 'email'; out.key = _payrollNameKey(b.key); out.event_ids.push(parseInt(b.event_id, 10));
+      out.items.push(`把邮件 ${evTxt(evOf(b.event_id))} 关联到工人`);
+    } else if (p === '/api/acct/onboarding-email-ignore') {
+      out.kind = 'email'; out.event_ids.push(parseInt(b.event_id, 10));
+      out.items.push(`${b.ignore === false ? '取消忽略' : '暂时忽略'}邮件 ${evTxt(evOf(b.event_id))}`);
+    } else if (p === '/api/acct/onboarding-bank-ack') {
+      out.kind = 'bank';
+      const ids = [b.event_id, ...(b.event_ids || [])].map(x => parseInt(x, 10)).filter(Boolean);
+      out.event_ids.push(...ids);
+      out.items.push(`银行信息提醒${ids.length > 1 ? '一起消除 ' + ids.length + ' 条' : '：知道了'}：${ids.map(i => evTxt(evOf(i))).join('；')}${b.note ? '（说明：' + String(b.note).slice(0, 100) + '）' : ''}`);
+    } else if (p === '/api/acct/onboarding-emails') {
+      out.items.push(`粘贴 Gusto 邮件（${String(b.text || '').split('\n').filter(x => x.trim()).length} 行）`);
+    } else if ((m = /^\/api\/acct\/onboarding-registrations\/(\d+)$/.exec(p))) {
+      const u = db.prepare('SELECT username, display_name, email FROM admin_users WHERE id=?').get(m[1]) || {};
+      out.items.push(`${b.approve ? '批准' : '拒绝'}注册申请：${u.display_name || u.username || '#' + m[1]}${u.email ? '（' + u.email + '）' : ''}`);
+    } else if ((m = /^\/api\/acct\/onboarding-access\/(\d+)$/.exec(p))) {
+      const u = db.prepare('SELECT username, display_name FROM admin_users WHERE id=?').get(m[1]) || {};
+      out.items.push(`${b.wob_approver ? '打开' : '关掉'}「能审核」：${u.display_name || u.username || '#' + m[1]}`);
+    } else if (p === '/api/acct/onboarding-mailhook') {
+      out.items.push(`邮箱同步设置${b.forward_to !== undefined ? '：转发给 ' + (String(b.forward_to).trim() || '（清空）') : ''}${b.regenerate ? '，换新密钥' : ''}`);
+    }
+    if (!out.items.length) out.items.push(`${c.method} ${c.path}`);
+    if (out.key) { const r = db.prepare('SELECT name FROM new_hire_onboarding WHERE name_key=?').get(out.key); out.worker = (r && r.name) || out.key; }
+    return out;
+  });
+}
+
 app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
   try {
     const { list, unmatched, bank } = _wobScoped(req);
@@ -44549,6 +44608,10 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
       pending_registrations: req.userRole === 'admin' ? db.prepare(`SELECT id, username, display_name, email, phone, created_at FROM admin_users
         WHERE role='onboarding' AND approval_status='pending' ORDER BY id`).all() : [],
       can_approve: _wobCanApprove(req),
+      // 「所有修改需要审批」账号提交、还没审批的入职页修改 (审批人和提交人自己看得到); 审批走 /api/approvals/:id
+      pending_changes: (_approverOk(req) || req.needsApproval) ? _wobPendingChanges().filter(c => _approverOk(req) || c.user_id === req.userId) : [],
+      can_decide_changes: _approverOk(req),
+      needs_approval: !!req.needsApproval,
       warehouse_options: _wobWarehouseOptions(req),
       can_open_invoice: req.userRole !== 'manager',
       can_open_employee: ['admin', 'staff'].includes(req.userRole),
