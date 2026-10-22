@@ -480,6 +480,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <div id="refStages" class="ref-stages"></div>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
       <input type="text" id="refSearch" placeholder="搜工头 / 工人姓名 / 电话 / 仓库…（搜工人可看他全部面试记录）" oninput="renderRefList();refHistSchedule()" style="width:320px">
+      <label title="介绍费要有账单才能付：勾上就不看本周（本周才上班的人、本周账期的每周付款）" style="font-size:.8rem;white-space:nowrap;cursor:pointer;background:#fff;border:1px solid var(--g300);border-radius:6px;padding:.35rem .55rem"><input type="checkbox" id="refPastOnly" onchange="refPastOnly(this.checked)"> 只看到上周为止（不含本周）</label>
       <select id="refFilter" onchange="renderRefList()">
         <option value="">全部</option>
         <option value="pending">⏳ 待管理员核查</option>
@@ -2823,6 +2824,14 @@ async function refHistLoad() {
 // 从面试记录跳到对应的介绍卡片 (切到它所在的阶段页)
 // ── 💰 每周付款汇总: 所有工头每周介绍费按账期分组, 每周付给谁、多少钱、走到哪一步 ──
 // 子页签: todo 待确认 (确认金额 / 确认支付 / 审核) → topay 待付款 (已审核) → paid 付款记录; all 全部
+// 「只看到上周为止」: 介绍费要有账单才能付, 这一周还没账单 → 不含本周 (记在浏览器里)
+let _refPastOnly = (() => { try { return localStorage.getItem('ref_past_only') === '1'; } catch (e) { return false; } })();
+function _refLastSunday() {
+  const d = new Date(); d.setHours(12, 0, 0, 0);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7) - 1);   // 本周一的前一天
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function refPastOnly(on) { _refPastOnly = !!on; try { localStorage.setItem('ref_past_only', on ? '1' : '0'); } catch (e) {} renderRefList(); }
 let _refPwTab = (() => { try { return localStorage.getItem('ref_pw_tab') || 'todo'; } catch (e) { return 'todo'; } })();
 const _refPwSel = new Set();
 function refPwTab(v) { _refPwTab = v; _refPwSel.clear(); try { localStorage.setItem('ref_pw_tab', v); } catch (e) {} renderRefList(); }
@@ -2862,11 +2871,13 @@ async function refPwBatch(action) {
 // 每周付款行 → 一行汇总 (HR 自己招的没有周介绍费; 拒绝支付的不列)
 function _refPayWeekRows(list) {
   const out = [];
+  const lastSun = _refPastOnly ? _refLastSunday() : '';
   list.forEach(r => {
     if (r.hr_self || r.review_status === 'rejected') return;
     const labs = _refWeekLabels(r);
     (r.weeks || []).forEach((w, i) => {
       const v = w.invoice || {};
+      if (lastSun && String(v.period_end || v.invoice_date || '').slice(0, 10) > lastSun) return;   // 本周的不看
       const pn = w.pay_note;
       const paid = !!(pn && ['paid', 'partial'].includes(pn.paid_status));
       let st, amt = w.admin_status === 'approved' ? Number(w.admin_fee) || 0 : Number(w.fee_eff) || 0, est = false;
@@ -2897,7 +2908,8 @@ function _refPayWeeksHtml(list) {
   const sel = rows.filter(x => _refPwSel.has(x.w.id));
   const tb = (k, t) => { const n = all.filter(x => inTab(x, k)).length; return `<button class="btn btn-sm ${tab === k ? 'btn-blue' : 'btn-outline'}" onclick="refPwTab('${k}')">${t} <b>${n}</b></button>`; };
   const cnt = a => sel.filter(x => actOf(x) === a);
-  const bbtn = (a, t, bg) => { const c = cnt(a); return c.length ? `<button class="btn btn-sm" style="background:${bg};color:#fff" onclick="refPwBatch('${a}')">${t}（${c.length} 笔 ${money(c.reduce((s2, x) => s2 + x.amt, 0))}）</button>` : ''; };
+  // 没确认金额的 (est) 不写钱数, 合计只算确认了的
+  const bbtn = (a, t, bg) => { const c = cnt(a); return c.length ? `<button class="btn btn-sm" style="background:${bg};color:#fff" onclick="refPwBatch('${a}')">${t}（${c.length} 笔${a === 'amount' ? '' : ' ' + money(c.reduce((s2, x) => s2 + x.amt, 0))}）</button>` : ''; };
   const pickable = rows.filter(x => actOf(x)).map(x => x.w.id);
   const allOn = pickable.length && pickable.every(id => _refPwSel.has(id));
   const bar = `<div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin-bottom:.1rem">
@@ -2905,7 +2917,7 @@ function _refPayWeeksHtml(list) {
       <span style="font-size:.74rem;color:var(--g500)">工头每周介绍费（美元）。确认金额 → 会计确认支付 → 管理员审核 → 待付款 → 记已付；点工人名字跳到那条介绍。</span></div>
     ${pickable.length ? `<div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;background:#fff;border:1px solid var(--g200);border-radius:10px;padding:.4rem .6rem">
       <label style="font-size:.8rem;cursor:pointer;white-space:nowrap"><input type="checkbox" ${allOn ? 'checked' : ''} onchange="refPwPickMany('${pickable.join(',')}', this.checked)"> 全选这个页签（${pickable.length}）</label>
-      <span style="font-size:.78rem;color:var(--g500)">已选 <b>${sel.length}</b> 笔 · <b>${money(sel.reduce((t, x) => t + x.amt, 0))}</b></span><span style="flex:1"></span>
+      <span style="font-size:.78rem;color:var(--g500)">已选 <b>${sel.length}</b> 笔${sel.some(x => !x.est) ? ` · <b>${money(sel.filter(x => !x.est).reduce((t, x) => t + x.amt, 0))}</b>` : ''}${sel.some(x => x.est) ? `（${sel.filter(x => x.est).length} 笔待确认金额）` : ''}</span><span style="flex:1"></span>
       ${bbtn('amount', '✅ 批量确认金额', '#16a34a')}${bbtn('request', '💳 批量确认支付', '#0f4c6b')}${bbtn('approve', '🛡 批量审核通过', '#16a34a')}${bbtn('pay', '💰 批量记已付 + 关联银行记录', '#047857')}
     </div>` : ''}`;
   if (!rows.length) return bar + `<div class="card" style="color:var(--g400)">${{ todo: '没有待确认的每周付款。', topay: '没有待付款的。管理员审核通过的会到这里。', paid: '还没有付款记录。', all: '没有每周付款。' }[tab]}</div>`;
@@ -2919,10 +2931,11 @@ function _refPayWeeksHtml(list) {
   const html = Object.keys(groups).sort((a, b) => b.localeCompare(a)).map(k => {
     const g = groups[k].sort((a, b) => a.payee.localeCompare(b.payee) || String(a.r.worker_name || '').localeCompare(String(b.r.worker_name || '')));
     const live = g.filter(x => x.st !== 'nopay');
-    const paidAmt = sumOf(live.filter(x => x.st === 'paid')), total = sumOf(live);
-    // 同一组按工头合计: 每个工头拿多少
+    const conf = live.filter(x => !x.est), nEst = live.length - conf.length;
+    const paidAmt = sumOf(live.filter(x => x.st === 'paid')), total = sumOf(conf);
+    // 同一组按工头合计: 每个工头拿多少 (只算确认了金额的)
     const by = {};
-    live.forEach(x => { by[x.payee] = (by[x.payee] || 0) + x.amt; });
+    conf.forEach(x => { by[x.payee] = (by[x.payee] || 0) + x.amt; });
     const byTxt = Object.entries(by).sort((a, b) => b[1] - a[1]).map(([n, a]) => `${esc(n)} <b>${money(a)}</b>`).join(' · ');
     const gPick = g.filter(x => actOf(x)).map(x => x.w.id);
     const gOn = gPick.length && gPick.every(id => _refPwSel.has(id));
@@ -2937,7 +2950,7 @@ function _refPayWeeksHtml(list) {
     } else {
       const [ps, pe] = k.split('~');
       head = `<b style="color:#0f4c6b">🗓 ${esc(ps || '?')} ~ ${esc(pe || '?')}</b>
-        <span style="font-size:.78rem;color:var(--g500)">${live.length} 人 · 共 <b style="color:#0f172a">${money(total)}</b>${tab === 'all' ? ` · 已付 <b style="color:#047857">${money(paidAmt)}</b>${total - paidAmt > 0.005 ? ` · 还差 <b style="color:#dc2626">${money(total - paidAmt)}</b>` : ''}` : ''}</span>`;
+        <span style="font-size:.78rem;color:var(--g500)">${live.length} 人${conf.length ? ` · 已确认 <b style="color:#0f172a">${money(total)}</b>` : ''}${nEst ? ` · <span style="color:#64748b">${nEst} 人待确认金额</span>` : ''}${tab === 'all' ? ` · 已付 <b style="color:#047857">${money(paidAmt)}</b>${total - paidAmt > 0.005 ? ` · 还差 <b style="color:#dc2626">${money(total - paidAmt)}</b>` : ''}` : ''}</span>`;
     }
     const body = g.map(x => {
       const [t, fg, bg] = _REF_PW_ST[x.st];
@@ -2954,7 +2967,7 @@ function _refPayWeeksHtml(list) {
         <td style="${td};font-weight:700">${esc(x.payee)}${x.r.foreman_phone ? ` <span style="font-weight:400;font-size:.72rem;color:var(--g400)">${esc(x.r.foreman_phone)}</span>` : ''}</td>
         <td style="${td}"><a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="refJumpTo(${x.r.id})">${esc(x.r.worker_name || '—')}</a></td>
         <td style="${td};color:var(--g500)">第 ${x.lab} 周${tab === 'paid' ? ` <span style="font-size:.72rem;color:var(--g400)">${esc(x.ps)} ~ ${esc(x.pe)}</span>` : ''}</td>
-        <td style="${td};text-align:right;font-weight:800">${x.est ? '<span style="color:var(--g400);font-weight:400" title="还没确认金额，按现在算出来的">≈ </span>' : ''}${money(x.amt)}</td>
+        <td style="${td};text-align:right;font-weight:800">${x.est ? '<span style="color:var(--g400);font-weight:400" title="还没确认金额">待确认</span>' : money(x.amt)}</td>
         <td style="${td};font-size:.72rem;color:var(--g500)">${esc(calc)}</td>
         <td style="${td}"><span style="display:inline-block;padding:1px 8px;border-radius:999px;font-size:.72rem;font-weight:700;color:${fg};background:${bg}">${t}${x.partial ? '（部分）' : ''}</span> <span style="font-size:.7rem;color:var(--g400)">${when}</span>${_refHistLink(`${x.r.id}|w${w.id}`, _refHistOpen.has(`${x.r.id}|w${w.id}`))}</td></tr>`
         + (_refHistOpen.has(`${x.r.id}|w${w.id}`) ? `<tr><td></td><td colspan="6" style="background:#faf5ff;padding:.35rem .8rem;font-size:.74rem;line-height:1.7">${_refTimeline(x.r, 'w' + w.id, '$', [
@@ -3164,6 +3177,9 @@ function renderRefList() {
   else if (flt === 'failed') list = list.filter(r => r.interview_status === 'failed');
   else if (flt) list = list.filter(r => _refOverall(r) === flt);
   if (by) list = list.filter(r => by === '__none__' ? !_refHrKey(r) : _refHrKey(r) === by);
+  // 只看到上周为止: 本周才开始上班的 (还没账单) 不列; 没开始上班的不受影响
+  if (_refPastOnly) { const ls = _refLastSunday(); list = list.filter(r => !r.work_start_date || String(r.work_start_date).slice(0, 10) <= ls); }
+  { const cb = document.getElementById('refPastOnly'); if (cb) cb.checked = _refPastOnly; }
   // 三个阶段分页: 数字按当前搜索/筛选算, 切过去不会扑空
   const stN = { interview: 0, attended: 0, working: 0, ended: 0, quit: 0, noshow: 0 };
   list.forEach(r => stN[_refStage(r)]++);
@@ -3187,11 +3203,22 @@ function renderRefList() {
   const pendN = _refList.filter(r => r.review_status === 'pending').length;
   const waitN = _refList.filter(r => ['approved', 'partpaid'].includes(_refOverall(r))).length;
   const paidN = _refList.filter(r => _refOverall(r) === 'paid').length;
-  const tot = _refList.filter(r => r.review_status === 'approved').reduce((t, r) => { const x = _refWeekSums(r); t.due += x.due; t.paid += x.paid; return t; }, { due: 0, paid: 0 });
+  // 「还要付」只算管理员确认了金额的周; 没确认的单独数几周, 不写钱数
+  const tot = { due: 0, paid: 0, est: 0 };
+  _refList.filter(r => r.review_status === 'approved' && !r.hr_self).forEach(r => {
+    for (const w of (r.weeks || []).concat(r.iv_week ? [r.iv_week] : [])) {
+      if (w.admin_status === 'rejected') continue;
+      const pn = w.pay_note, paid = pn && ['paid', 'partial'].includes(pn.paid_status);
+      if (paid) tot.paid += pn.amount != null ? Number(pn.amount) || 0 : Number(w.admin_fee ?? w.fee_eff) || 0;
+      if (w.admin_status === 'approved') tot.due += Number(w.admin_fee) || 0;
+      else if (!paid) tot.est++;
+    }
+  });
   const stat = (lab, v, c) => `<span style="background:#fff;border:1px solid var(--g200);border-radius:999px;padding:.15rem .65rem;white-space:nowrap">${lab} <b style="color:${c || 'inherit'}">${v}</b></span>`;
   document.getElementById('refStats').innerHTML = [
     stat('共', _refList.length + ' 条'), stat('⏳ 待核查', pendN, '#c2410c'), stat('✅ 待付款', waitN, '#b45309'), stat('💰 已付完', paidN, '#047857'),
-    stat('已付', money(tot.paid), '#047857'), stat('还要付', money(Math.max(0, tot.due - tot.paid)), '#dc2626'),
+    stat('已付', money(tot.paid), '#047857'), stat('还要付（已确认）', money(Math.max(0, tot.due - tot.paid)), '#dc2626'),
+    ...(tot.est ? [stat('待确认金额', tot.est + ' 周', '#64748b')] : []),
   ].join(' ');
   const badge = document.getElementById('refPendBadge');
   badge.style.display = pendN && USER.role === 'admin' ? '' : 'none';
