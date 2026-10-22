@@ -155,7 +155,7 @@ textarea{width:100%}
 <div class="modal" id="hookModal" onclick="if(event.target===this)this.style.display='none'">
   <div class="card" style="max-width:760px">
     <div style="font-weight:800;margin-bottom:.3rem">📬 邮箱自动同步 Gusto 邮件</div>
-    <div class="muted" style="margin-bottom:.6rem">在收 Gusto 邮件的 Gmail 里装一段 Google Apps Script：每 5 分钟把新的 Gusto 邮件标题发过来，系统认出是入职相关的（接受邀请 / 可以付款 / 银行有误 / 银行已更新）就匹配到对应的员工（manager / admin 点「通过」后在清单上打勾），并把<b>这几封</b>转发给下面填的邮箱。只发标题，不发正文。</div>
+    <div class="muted" style="margin-bottom:.6rem">在收 Gusto 邮件的 Gmail 里装一段 Google Apps Script：每 5 分钟读一次 Gusto 邮件（第一次会把以前的全部读一遍，只记录不转发），标题发过来，系统认出是入职相关的（接受邀请 / 可以付款 / 银行有误 / 银行已更新）就匹配到对应的员工（manager / admin 点「通过」后在清单上打勾），并把<b>这几封</b>转发给下面填的邮箱。只发标题，不发正文。</div>
     <div id="hookBody"><div class="muted">加载中…</div></div>
   </div>
 </div>
@@ -634,40 +634,67 @@ async function gustoSteps(k) {
 // ── 邮箱自动同步设置 ──
 function hookScript(url) {
   return `// Prime Anchor · Gusto 入职邮件同步 (Google Apps Script)
-// 每 5 分钟: 找最近 2 天 Gusto 发来的邮件 → 标题发给系统 → 入职相关的自动标注并转发
+// 每 5 分钟跑一次:
+//   第一次 —— 把邮箱里以前所有 Gusto 邮件读一遍 (一次读不完下一轮接着读), 只记进系统, 不转发
+//   之后   —— 读最近 2 天的新 Gusto 邮件, 入职相关的在系统里标注并转发
 const HOOK_URL = '${url}';
 const LABEL = 'PA 入职已同步';
+const QUERY = 'from:gusto.com';
 
 function syncGustoMail() {
-  const threads = GmailApp.search('from:gusto.com newer_than:2d', 0, 50);
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('backfill_done') !== '1') {
+    const t0 = Date.now();
+    let start = Number(props.getProperty('backfill_start') || 0);
+    while (Date.now() - t0 < 4 * 60 * 1000) {          // 每轮最多读 4 分钟 (Google 限制一次 6 分钟)
+      const threads = GmailApp.search(QUERY, start, 100);
+      if (!threads.length) { props.setProperty('backfill_done', '1'); break; }
+      sendToSystem_(threads, true);
+      start += threads.length;
+      props.setProperty('backfill_start', String(start));
+    }
+    if (props.getProperty('backfill_done') !== '1') return;   // 以前的还没读完, 下一轮接着读
+  }
+  sendToSystem_(GmailApp.search(QUERY + ' newer_than:2d', 0, 100), false);
+}
+
+function sendToSystem_(threads, backfill) {
   const msgs = [];
   threads.forEach(t => t.getMessages().forEach(m => {
     if (/gusto\\.com/i.test(m.getFrom())) msgs.push(m);
   }));
   if (!msgs.length) return;
-  const res = UrlFetchApp.fetch(HOOK_URL, {
-    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-    payload: JSON.stringify({ messages: msgs.map(m => ({
-      id: m.getId(), subject: m.getSubject(), from: m.getFrom(), date: m.getDate().toISOString() })) }),
-  });
-  if (res.getResponseCode() !== 200) throw new Error('同步失败 ' + res.getResponseCode() + ': ' + res.getContentText());
-  const out = JSON.parse(res.getContentText());
   const label = GmailApp.getUserLabelByName(LABEL) || GmailApp.createLabel(LABEL);
-  const byId = {};
-  (out.results || []).forEach(r => { byId[r.id] = r; });
-  msgs.forEach(m => {
-    const r = byId[m.getId()];
-    if (!r || !r.new || !r.forward) return;   // 只处理第一次见到、入职相关的
-    if (out.forward_to) m.forward(out.forward_to, { subject: '[入职] ' + r.label + ' · ' + r.name + ' — ' + m.getSubject() });
-    m.getThread().addLabel(label);
-  });
+  for (let i = 0; i < msgs.length; i += 100) {            // 每次最多发 100 封给系统
+    const part = msgs.slice(i, i + 100);
+    const res = UrlFetchApp.fetch(HOOK_URL, {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      payload: JSON.stringify({ backfill: backfill, messages: part.map(m => ({
+        id: m.getId(), subject: m.getSubject(), from: m.getFrom(), date: m.getDate().toISOString() })) }),
+    });
+    if (res.getResponseCode() !== 200) throw new Error('同步失败 ' + res.getResponseCode() + ': ' + res.getContentText());
+    const out = JSON.parse(res.getContentText());
+    const byId = {};
+    (out.results || []).forEach(r => { byId[r.id] = r; });
+    part.forEach(m => {
+      const r = byId[m.getId()];
+      if (!r || !r.new || !r.kind) return;                 // 只处理第一次见到、入职相关的
+      if (r.forward && out.forward_to) m.forward(out.forward_to, { subject: '[入职] ' + r.label + ' · ' + r.name + ' — ' + m.getSubject() });
+      m.getThread().addLabel(label);
+    });
+  }
 }
 
-// 第一次: 选中 install 点「运行」, 按提示授权一次即可 (之后自动每 5 分钟跑)
+// 第一次: 函数下拉框选 install, 点「运行」, 按提示授权一次 (之后每 5 分钟自动跑)
 function install() {
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('syncGustoMail').timeBased().everyMinutes(5).create();
   syncGustoMail();
+}
+
+// 想把以前的邮件重新读一遍: 运行一次 resetBackfill (系统里已经记过的不会重复)
+function resetBackfill() {
+  PropertiesService.getScriptProperties().deleteAllProperties();
 }
 `;
 }
@@ -678,7 +705,7 @@ async function openHook() {
   if (j.error) { el.innerHTML = `<div style="color:var(--red)">${esc(j.error)}</div>`; return; }
   const kind = { accepted: '接受邀请', ready: '可以付款', bank_bad: '银行有误', bank_updated: '银行已更新' };
   const status = j.last_at
-    ? `<div class="row"><span class="tag" style="background:#dcfce7;color:#166534">✓ 在同步</span><span class="muted">上次收到 ${esc(new Date(j.last_at).toLocaleString())} · 累计看过 ${j.total_seen} 封</span></div>`
+    ? `<div class="row"><span class="tag" style="background:#dcfce7;color:#166534">✓ 在同步</span><span class="muted">上次收到 ${esc(new Date(j.last_at).toLocaleString())} · 累计看过 ${j.total_seen} 封${j.backfill_at ? ` · 以前的邮件已读入 ${j.backfill_total} 封（最近一批 ${esc(fmtTime(j.backfill_at))}）` : ''}</span></div>`
     : `<div class="row"><span class="tag" style="background:#fef3c7;color:#92400e">${j.configured ? '链接已生成，脚本还没跑过' : '还没设置'}</span></div>`;
   const recent = j.recent.length ? `<details style="margin:.4rem 0"><summary class="muted" style="cursor:pointer">最近认出的入职邮件（${j.recent.length}）</summary>${j.recent.map(r => `<div class="muted">${esc((r.received_at || r.created_at || '').slice(0, 10))} · ${esc(kind[r.kind] || r.kind)} · <b>${esc(r.name)}</b></div>`).join('')}</details>` : '';
   if (!j.is_admin) { el.innerHTML = status + recent + '<div class="muted">设置和转发地址只有管理员能改。</div>'; return; }

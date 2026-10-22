@@ -44655,9 +44655,14 @@ app.post('/api/hooks/gusto-mail', (req, res) => {
   if (!cfg.token || got.length !== want.length || !crypto.timingSafeEqual(got, want)) return res.status(401).json({ error: 'bad token' });
   try {
     const msgs = (Array.isArray(req.body && req.body.messages) ? req.body.messages : []).slice(0, 200);
+    // backfill = 脚本第一次把邮箱里以前的 Gusto 邮件全读一遍: 只记进系统, 不转发、不发提醒邮件;
+    // 两周以前的银行信息邮件直接算已处理 (早就过去了), 两周内的照样在页面上提醒
+    const backfill = !!(req.body && req.body.backfill);
+    const oldCut = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);
     const seen = db.prepare('SELECT 1 FROM gusto_mail_seen WHERE message_id=?');
     const mark = db.prepare('INSERT OR IGNORE INTO gusto_mail_seen (message_id, kind, name, subject, received_at) VALUES (?, ?, ?, ?, ?)');
-    const ins = db.prepare(`INSERT OR IGNORE INTO gusto_email_events (kind, name, date, subject, added_by) VALUES (?, ?, ?, ?, '邮箱自动同步')`);
+    const ins = db.prepare(`INSERT OR IGNORE INTO gusto_email_events (kind, name, date, subject, added_by, notified_at, ack_by, ack_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
     const results = [];
     let added = 0;
     db.transaction(() => {
@@ -44668,12 +44673,18 @@ app.post('/api/hooks/gusto-mail', (req, res) => {
         const date = /^\d{4}-\d{2}-\d{2}/.test(String(m.date || '')) ? String(m.date).slice(0, 10) : new Date().toISOString().slice(0, 10);
         if (seen.get(id)) { results.push({ id, new: false, forward: false }); continue; }
         const ev = wob.parseGustoEmails(subject, date)[0] || null;
-        if (ev) { ev.date = date; added += ins.run(ev.kind, ev.name, ev.date, ev.subject).changes; }
+        if (ev) {
+          ev.date = date;
+          const oldBank = backfill && /^bank_/.test(ev.kind) && date < oldCut;
+          added += ins.run(ev.kind, ev.name, ev.date, ev.subject, backfill ? '邮箱同步（历史邮件）' : '邮箱自动同步',
+            backfill ? 'backfill' : '', oldBank ? '历史邮件（自动）' : '', oldBank ? new Date().toISOString() : '').changes;
+        }
         mark.run(id, ev ? ev.kind : '', ev ? ev.name : '', subject, String(m.date || ''));
-        results.push({ id, new: true, forward: !!ev, kind: ev ? ev.kind : '', name: ev ? ev.name : '', label: ev ? wob.EMAIL_KIND_LABEL[ev.kind] : '' });
+        results.push({ id, new: true, forward: !!ev && !backfill, kind: ev ? ev.kind : '', name: ev ? ev.name : '', label: ev ? wob.EMAIL_KIND_LABEL[ev.kind] : '' });
       }
     })();
-    _mailHookSave({ last_at: new Date().toISOString(), last_received: results.filter(r => r.new).length, last_added: added });
+    _mailHookSave({ last_at: new Date().toISOString(), last_received: results.filter(r => r.new).length, last_added: added,
+      ...(backfill ? { backfill_at: new Date().toISOString(), backfill_total: (_mailHookCfg().backfill_total || 0) + results.filter(r => r.new).length } : {}) });
     if (added) setImmediate(_wobNotifyBank);
     const forwardTo = (cfg.forward_to || []).join(',');
     res.json({ ok: true, results, forward_to: forwardTo, added });
@@ -44688,6 +44699,7 @@ app.get('/api/acct/onboarding-mailhook', requireAdmin, requireWobView, (req, res
   res.json({ configured: !!cfg.token, is_admin: isAdmin, forward_to: cfg.forward_to || [],
     hook_url: isAdmin && cfg.token ? _mailHookUrl(req, cfg.token) : '',
     last_at: cfg.last_at || '', last_received: cfg.last_received || 0, last_added: cfg.last_added || 0,
+    backfill_at: cfg.backfill_at || '', backfill_total: cfg.backfill_total || 0,
     total_seen: db.prepare('SELECT COUNT(*) AS n FROM gusto_mail_seen').get().n, recent });
 });
 app.post('/api/acct/onboarding-mailhook', requireAdmin, requireRole('admin'), (req, res) => {
