@@ -33893,10 +33893,15 @@ async function openInvpForEdit(id) {
         emp.fixedReg = Number(item.regHours) || 0;
         emp.fixedOt = Number(item.otHours) || 0;
       }
+      // 存了每天工时的发票按原样还原；旧发票没存，只能平均摊（标记 _spread，按日期分类时会提示）
+      if (item.days && typeof item.days === 'object' && Object.keys(item.days).length) {
+        for (const [d, h] of Object.entries(item.days)) if (Number(h) > 0) emp.days[d] = (Math.round(Number(h) * 100) / 100).toFixed(2);
+      } else
       // Distribute hours evenly across dates, with the last day absorbing the
       // rounding remainder so the per-day cells still sum to the exact total
       // (avoids 40h appearing as 5.71 × 7 = 39.97).
       if (dates.length && item.hours) {
+        emp._spread = true;
         const totalHrs = item.hours;
         const perDay = Math.round((totalHrs / dates.length) * 100) / 100;
         let acc = 0;
@@ -38417,7 +38422,7 @@ function renderInvpManualTable(skipSave) {
     (window._invpManualEmps || []).forEach(e => {
       if (!(Number(e.pendingHours) > 0)) return;
       const hasDay = Object.values(e.days || {}).some(v => parseFloat(v) > 0);
-      if (!hasDay) { _invpDistributeHours(e, Number(e.pendingHours), dates); filled++; }
+      if (!hasDay) { _invpDistributeHours(e, Number(e.pendingHours), dates); e._spread = true; filled++; }
       delete e.pendingHours;
     });
     if (filled && window.showToast) showToast(`已把 Excel 导入的 ${filled} 名员工的工时按服务周期摊到每天`, 'success', 5000);
@@ -39193,6 +39198,7 @@ function invpApplyExcelData(data) {
         if (hv > 0) emp.days[d] = (Math.round(hv * 100) / 100).toFixed(2);
       }
     } else if (dates.length && total > 0) {
+      emp._spread = true;   // Excel 只有总工时，平均摊到每天
       const perDay = Math.round((total / dates.length) * 100) / 100;
       let acc = 0;
       dates.forEach((d, i) => {
@@ -41707,8 +41713,28 @@ function _invpRowSplit(emp, totalHrs) {
 // 班次分组明细 (班次流水 Excel 导入) 只在它和当前员工表一致时才用：导入后又改了员工 /
 // 工时 / 时薪（或换了别家的单），旧的班次明细就作废，否则预览会印出另一张账单。
 function _invpActiveShiftBlocks(items) {
-  const blocks = window._invpShiftBlocks;
+  let blocks = window._invpShiftBlocks;
   if (!Array.isArray(blocks) || !blocks.length) return null;
+  // Excel 里没填时薪 (Rate 空) 的班次，用表格里给这个人填的时薪 (例如「统一时薪」) 补上，
+  // 否则一填时薪班次明细就作废、发票退回按员工汇总。同名只有一个时薪才补。
+  const rateOf = new Map();
+  for (const it of (items || [])) {
+    const k = String(it.name || '').trim().toLowerCase();
+    if (!rateOf.has(k)) rateOf.set(k, new Set());
+    rateOf.get(k).add(Math.round((Number(it.rate) || 0) * 100) / 100);
+  }
+  if (blocks.some(b => (b.entries || []).some(en => !(Number(en.rate) > 0)))) {
+    blocks = blocks.map(b => {
+      const entries = (b.entries || []).map(en => {
+        if (Number(en.rate) > 0) return en;
+        const rs = rateOf.get(String(en.name || '').trim().toLowerCase());
+        if (!rs || rs.size !== 1) return en;
+        const rate = [...rs][0];
+        return { ...en, rate, amount: Math.round((Number(en.hours) || 0) * rate * 100) / 100 };
+      });
+      return { ...b, entries, amount: Math.round(entries.reduce((s, en) => s + (Number(en.amount) || 0), 0) * 100) / 100 };
+    });
+  }
   const key = (n, r) => String(n || '').trim().toLowerCase() + '|' + (Math.round((Number(r) || 0) * 100) / 100);
   const want = new Map(), have = new Map();
   for (const b of blocks) for (const en of (b.entries || [])) {
@@ -41743,6 +41769,12 @@ function getInvpManualItems() {
       const billed = Math.round(_invpBilledAmt(regAmt, otAmt, markup) * 100) / 100;
       const it = { name, category: emp.category || '', subcontractor: emp.subcontractor || '', referrer: emp.referrer || '', missedPay: emp.missedPay ? 1 : 0, note: emp.note || '', noteType: emp.noteType || '', noteDate: emp.noteDate || '', hours: totalHours, regHours, otHours, rate, otRate, total, regAmt, otAmt, markup, otFee: _invpOtFeeRate(), billed, employee_id: emp.linked_employee_id || null, employee_code: emp.linked_employee_code || '', employee_name: emp.linked_employee_name || '' };
       if (emp.fixedSplit) it.fixed_split = 1; // 重开发票时按原样恢复锁定
+      // 每天的工时随发票存档，重开后还原（按日期分类模板要用）；平均摊出来的不是真数据，不存
+      if (!emp._spread) {
+        const dd = {};
+        dates.forEach(d => { const h = parseFloat((emp.days && emp.days[d]) || 0); if (h > 0) dd[d] = Math.round(h * 100) / 100; });
+        if (Object.keys(dd).length) it.days = dd;
+      }
       // 实付时薪: 随发票存档 (算工资成本/利润), 不上客户发票
       if (parseFloat(emp.wage_rate) > 0) it.wage_rate = Math.round(parseFloat(emp.wage_rate) * 10000) / 10000;
       return it;
@@ -41993,7 +42025,10 @@ async function generateInvpPreview() {
     // ── 按日期分类模板：每天一段 (当天工时 × 时薪)，每段小计，表尾合计 ──
     // 加班按周算、分不到某一天，所以 OT 多出来的钱 (OT 时薪 - 时薪) 单独列一段
     // 「Overtime Premium」，保证合计和员工汇总模板完全一样。
-    if (window._invpByDate) {
+    const _spreadRows = window._invpByDate ? (window._invpManualEmps || []).filter(e => e._spread && (e.name || '').trim()) : [];
+    if (window._invpByDate && _spreadRows.length) {
+      showToast(`有 ${_spreadRows.length} 个员工没有真实的每天工时（旧发票保存时没存每天工时，或 Excel 只有总工时，系统是平均摊的），没法按日期分类。请重新上传带日期的 Excel 再保存。`, 'error', 9000);
+    } else if (window._invpByDate) {
       const amtOnly = !!window._invpAmountOnly;
       const dates = _invpGetDates();
       const emps = (window._invpManualEmps || []).filter(e => (e.name || '').trim());
