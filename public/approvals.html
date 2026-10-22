@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>待审批修改 · Prime Anchor</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9C%85%3C/text%3E%3C/svg%3E">
+<style>
+:root{--g100:#f3f4f6;--g200:#e5e7eb;--g300:#d1d5db;--g400:#9ca3af;--g500:#6b7280;--g600:#4b5563;--blue:#29AAE1;--red:#dc2626}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;background:#eef3f8;color:#1f2937}
+.wrap{max-width:1100px;margin:0 auto;padding:18px 16px 60px}
+.card{background:#fff;border:1px solid var(--g200);border-radius:12px;padding:14px 16px}
+.btn{display:inline-flex;align-items:center;gap:.25rem;border:none;border-radius:8px;padding:.45rem .85rem;font-size:.84rem;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit}
+.btn-blue{background:var(--blue);color:#fff}.btn-green{background:#16a34a;color:#fff}.btn-outline{background:#fff;color:var(--g600);border:1px solid var(--g300)}
+.btn:disabled{opacity:.5;cursor:default}
+input,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-radius:6px;font-size:.85rem;font-family:inherit}
+.muted{color:var(--g500);font-size:.78rem}
+.tag{display:inline-block;border-radius:999px;padding:.08rem .55rem;font-size:.72rem;font-weight:700}
+.tabs{display:flex;gap:.4rem;margin:12px 0}
+.tab{border:1px solid var(--g200);background:#fff;border-radius:999px;padding:.3rem .9rem;font-size:.82rem;cursor:pointer;font-family:inherit;color:var(--g600)}
+.tab.on{background:#0f4c6b;border-color:#0f4c6b;color:#fff}
+.ch{margin-bottom:10px;border-left:4px solid #f59e0b}
+.ch.approved{border-left-color:#16a34a}.ch.rejected{border-left-color:var(--g400)}.ch.failed{border-left-color:var(--red)}
+.kv{display:grid;grid-template-columns:minmax(120px,max-content) 1fr;gap:.15rem .8rem;font-size:.8rem;margin-top:.4rem;background:#f8fafc;border-radius:8px;padding:.5rem .7rem}
+.kv .k{color:var(--g500)}.kv .v{word-break:break-all}
+.row{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div id="gate" style="position:fixed;inset:0;background:#eef3f8;display:none;align-items:center;justify-content:center;padding:16px">
+  <div class="card" style="max-width:360px;width:100%;text-align:center">
+    <div style="font-weight:800;margin-bottom:.6rem">✅ 待审批修改</div>
+    <input id="lu" placeholder="用户名" style="width:100%;margin-bottom:.5rem">
+    <input id="lp" type="password" placeholder="密码" style="width:100%" onkeydown="if(event.key==='Enter')login()">
+    <div id="le" style="color:var(--red);font-size:.8rem;min-height:1.1em;margin-top:.4rem"></div>
+    <button class="btn btn-blue" style="width:100%;justify-content:center" onclick="login()">登录</button>
+  </div>
+</div>
+<div class="wrap" id="main" style="display:none">
+  <div class="row" style="justify-content:space-between">
+    <div><div style="font-size:1.2rem;font-weight:800;color:#0f4c6b">✅ 待审批修改</div>
+      <div class="muted">设了「所有修改需要审批」的账号（例如公司经理）能看所有页面，但改动要 staff / admin 在这里同意才会生效。同意 = 按他当时提交的内容执行一次。</div></div>
+    <button class="btn btn-outline" onclick="load()">↻ 刷新</button>
+  </div>
+  <div class="tabs" id="tabs"></div>
+  <div id="list"></div>
+</div>
+<script>
+let TOKEN = localStorage.getItem('adminToken') || localStorage.getItem('acct_token') || '';
+let D = null, TAB = 'pending';
+function esc(s) { if (s == null) return ''; const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML.replace(/"/g, '&quot;'); }
+function toast(msg, bad) {
+  const t = document.createElement('div'); t.textContent = msg;
+  t.style.cssText = `position:fixed;left:50%;top:18px;transform:translateX(-50%);background:${bad ? '#dc2626' : '#16a34a'};color:#fff;padding:.5rem 1rem;border-radius:8px;font-size:.85rem;z-index:3000`;
+  document.body.appendChild(t); setTimeout(() => t.remove(), 2800);
+}
+async function api(path, opts = {}) {
+  const r = await fetch(path, { method: opts.method || 'GET', headers: { ...(TOKEN ? { Authorization: 'Bearer ' + TOKEN } : {}), ...(opts.body ? { 'Content-Type': 'application/json' } : {}) }, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  if (r.status === 401) { document.getElementById('gate').style.display = 'flex'; document.getElementById('main').style.display = 'none'; throw new Error('请先登录'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok && !j.error) j.error = 'HTTP ' + r.status;
+  return j;
+}
+async function login() {
+  const r = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: document.getElementById('lu').value.trim(), password: document.getElementById('lp').value }) }).then(x => x.json()).catch(() => ({}));
+  if (r.mfa_required) { location.href = '/mfa?token=' + encodeURIComponent(r.mfa_token) + '&next=/approvals' + (r.phone_hint ? '&hint=' + encodeURIComponent(r.phone_hint) : ''); return; }
+  if (!r.success) { document.getElementById('le').textContent = r.error || '登录失败'; return; }
+  TOKEN = r.token; localStorage.setItem('adminToken', TOKEN);
+  document.getElementById('gate').style.display = 'none'; load();
+}
+// 接口路径 → 大概是哪个页面的什么
+const AREA = [[/^\/api\/acct\/onboarding/, '新员工入职'], [/^\/api\/acct\/referral|^\/api\/acct\/cs-accounts/, '介绍费'], [/^\/api\/(admin|acct)\/invoices/, '发票'],
+  [/^\/api\/admin\/employees/, '员工档案'], [/^\/api\/admin\/accounts/, '账户管理'], [/^\/api\/admin\/applicant/, '申请 / 证件'], [/^\/api\/admin\/partners/, '合作公司'],
+  [/^\/api\/admin\/(time|timesheet)/, '工时 / 打卡'], [/^\/api\/plaid|^\/api\/acct\/bank/, '银行'], [/^\/api\/sms|^\/api\/device-sms/, '短信'], [/^\/api\/acct\/gusto/, 'Gusto']];
+const VERB = { POST: '新增 / 提交', PUT: '修改', PATCH: '修改', DELETE: '删除', GET: '发送' };
+function area(p) { const a = AREA.find(([re]) => re.test(p)); return a ? a[1] : '其他'; }
+function fmt(t) { if (!t) return ''; const d = new Date(String(t).includes('T') ? t : String(t).replace(' ', 'T') + 'Z'); return isNaN(d) ? t : d.toLocaleString(); }
+function bodyKv(c) {
+  if (c.has_file) return `<div class="kv"><span class="k">内容</span><span class="v">📎 上传文件（${Math.round(c.size / 1024)} KB）</span></div>`;
+  let o = null; try { o = JSON.parse(c.body || '{}'); } catch (e) {}
+  if (!o || typeof o !== 'object' || !Object.keys(o).length) return '';
+  const show = v => { const s = typeof v === 'string' ? v : JSON.stringify(v); return s.length > 300 ? s.slice(0, 300) + '…' : s; };
+  return `<div class="kv">${Object.entries(o).map(([k, v]) => `<span class="k">${esc(k)}</span><span class="v">${esc(show(v))}</span>`).join('')}</div>`;
+}
+const ST = { pending: ['⏳ 等审批', '#92400e', '#fef3c7'], approved: ['✅ 已同意并执行', '#166534', '#dcfce7'], rejected: ['✗ 已拒绝', '#4b5563', '#f3f4f6'], failed: ['⚠ 同意了但执行出错', '#991b1b', '#fee2e2'], running: ['执行中…', '#1e40af', '#dbeafe'] };
+async function load() {
+  let j; try { j = await api('/api/approvals'); } catch (e) { return; }
+  document.getElementById('main').style.display = '';
+  if (j.error) { document.getElementById('list').innerHTML = `<div class="card" style="color:var(--red)">${esc(j.error)}</div>`; return; }
+  D = j;
+  const n = s => j.changes.filter(c => s === 'all' || c.status === s || (s === 'done' && c.status !== 'pending')).length;
+  document.getElementById('tabs').innerHTML = [['pending', '⏳ 等审批'], ['done', '已处理'], ['all', '全部']].map(([k, l]) => `<button class="tab ${TAB === k ? 'on' : ''}" onclick="TAB='${k}';load()">${l} ${n(k)}</button>`).join('');
+  const rows = j.changes.filter(c => TAB === 'all' || (TAB === 'pending' ? c.status === 'pending' : c.status !== 'pending'));
+  document.getElementById('list').innerHTML = rows.map(c => {
+    const [sl, sc, sb] = ST[c.status] || [c.status, '#4b5563', '#f3f4f6'];
+    const p = c.path.split('?')[0];
+    let page = ''; try { page = c.referer ? new URL(c.referer).pathname : ''; } catch (e) {}
+    return `<div class="card ch ${esc(c.status)}">
+      <div class="row"><b>${esc(c.display_name || c.username)}</b><span class="muted">${esc(fmt(c.created_at))}</span>
+        <span class="tag" style="background:#e0f2fe;color:#075985">${esc(area(p))}</span><span class="tag" style="background:var(--g100);color:var(--g600)">${esc(VERB[c.method] || c.method)}</span>
+        <span class="tag" style="background:${sb};color:${sc}">${sl}</span></div>
+      <div class="muted" style="margin-top:.25rem">在页面 <b>${esc(page || '—')}</b> · <code>${esc(c.method)} ${esc(c.path)}</code></div>
+      ${bodyKv(c)}
+      ${c.status === 'pending' ? `<div class="row" style="margin-top:.5rem"><input id="note${c.id}" placeholder="备注（可不填）" style="flex:1;min-width:180px">
+          <button class="btn btn-green" onclick="decide(${c.id},true)">✓ 同意并执行</button><button class="btn btn-outline" onclick="decide(${c.id},false)">✗ 拒绝</button></div>`
+        : `<div class="muted" style="margin-top:.4rem">${esc(c.decided_by)} ${esc(fmt(c.decided_at))}${c.note ? ' · ' + esc(c.note) : ''}${c.status === 'failed' ? ` · 执行结果 ${c.result_status}：${esc(String(c.result_body || '').slice(0, 300))}` : ''}</div>`}
+    </div>`;
+  }).join('') || `<div class="card muted">${TAB === 'pending' ? '🎉 没有等审批的修改' : '没有记录'}</div>`;
+}
+async function decide(id, ok) {
+  if (!confirm(ok ? '同意并按他提交的内容执行这个修改？' : '拒绝这个修改？')) return;
+  const j = await api('/api/approvals/' + id, { method: 'POST', body: { approve: ok, note: document.getElementById('note' + id).value } }).catch(e => ({ error: e.message }));
+  if (j.error) toast(j.error, true);
+  else if (j.status === 'failed') toast(`执行出错（${j.result_status}）：${String(j.result_body || '').slice(0, 120)}`, true);
+  else toast(ok ? '已同意并执行' : '已拒绝');
+  load();
+}
+load();
+</script>
+</body>
+</html>

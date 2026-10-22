@@ -730,6 +730,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     </div>
     <div class="nav-group-items">
       <a onclick="showTab('approvals')" data-tab="approvals" data-role="admin">📋 待审批</a>
+      <a href="/approvals" target="_blank" title="设了「所有修改需要审批」的账号提交的修改，staff / admin 都能审批">✅ 待审批修改 ↗</a>
       <a onclick="showTab('internal-staff')" data-tab="internal-staff" data-role="admin">👤 内部人员</a>
       <a onclick="showTab('accounts')" data-tab="accounts" data-role="admin">🔐 账户管理</a>
       <a onclick="showTab('integrations')" data-tab="integrations" data-role="admin">🔗 集成设置</a>
@@ -5053,6 +5054,12 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <input type="checkbox" id="accMfaExempt"> 🔓 登录免短信验证（只需账号密码）
     </label>
     <div style="font-size:.72rem;color:#92400e;margin-top:.25rem">勾选后此账号在任何设备登录都不再要求短信验证码，请只给信任的账号开启</div>
+  </div>
+  <div class="field" style="margin-top:.6rem">
+    <label style="display:flex;align-items:center;gap:.45rem;cursor:pointer;font-size:.85rem;color:var(--gray-600)">
+      <input type="checkbox" id="accNeedsApproval"> 📝 所有修改需要审批
+    </label>
+    <div style="font-size:.72rem;color:#92400e;margin-top:.25rem">勾选后这个账号能进所有页面、看所有信息，但任何修改（保存、删除、上传、审核…）都要 staff / admin 在「✅ 待审批修改」里同意才生效。适合公司经理：角色选 Admin 再勾这个</div>
   </div>
   <div class="field" style="margin-top:.6rem">
     <label style="display:flex;align-items:center;gap:.45rem;cursor:pointer;font-size:.85rem;color:var(--gray-600)">
@@ -20410,7 +20417,7 @@ async function loadAccounts() {
     <td>${esc(a.display_name||'')}</td>
     <td><span class="badge ${roleBadge(a.role)}">${roleLabel[a.role]||a.role}</span></td>
     <td style="font-size:.8rem;color:var(--gray-500)">${a.role==='manager'?esc(partnerName(a.assigned_partner_ids)):'—'}</td>
-    <td>${a.approval_status==='pending'?'<span class="badge badge-orange">待批准</span>':a.active?'<span style="color:var(--green)">已激活</span>':'<span style="color:var(--gray-400)">待激活</span>'}${a.mfa_exempt?' <span class="badge badge-orange" title="登录免短信验证，只需账号密码">🔓 免短信</span>':''}</td>
+    <td>${a.approval_status==='pending'?'<span class="badge badge-orange">待批准</span>':a.active?'<span style="color:var(--green)">已激活</span>':'<span style="color:var(--gray-400)">待激活</span>'}${a.mfa_exempt?' <span class="badge badge-orange" title="登录免短信验证，只需账号密码">🔓 免短信</span>':''}${a.needs_approval?' <span class="badge badge-orange" title="能看所有信息，修改要 staff / admin 同意">📝 修改需审批</span>':''}</td>
     <td style="font-size:.78rem">${a.sms_notify_phone&&a.sms_notify_enabled?'<span style="color:var(--green)" title="'+esc(a.sms_notify_phone)+'">📱 ON</span>':a.sms_notify_phone?'<span style="color:var(--gray-400)" title="'+esc(a.sms_notify_phone)+'">📱 OFF</span>':'<span style="color:var(--gray-300)">—</span>'}</td>
     <td>${(a.created_at||'').slice(0,10)}</td>
     <td style="white-space:nowrap">
@@ -20454,6 +20461,7 @@ async function openAccountModal(data) {
   document.getElementById('accSmsNotifyPhone').value = data ? (data.sms_notify_phone||'') : '';
   document.getElementById('accSmsNotifyEnabled').checked = data ? (data.sms_notify_enabled !== 0) : true;
   document.getElementById('accMfaExempt').checked = data ? !!data.mfa_exempt : false;
+  document.getElementById('accNeedsApproval').checked = data ? !!data.needs_approval : false;
   document.getElementById('accAnnReviewer').checked = data ? !!data.bank_ann_reviewer : false;
   document.getElementById('accountModalTitle').textContent = data ? '编辑内部账户' : '新建内部账户';
   document.getElementById('accPassHint').textContent = data ? '(留空则不修改；修改密码将重置激活状态)' : '*';
@@ -20505,6 +20513,7 @@ async function saveAccount() {
     sms_notify_phone: document.getElementById('accSmsNotifyPhone').value.trim(),
     sms_notify_enabled: document.getElementById('accSmsNotifyEnabled').checked ? 1 : 0,
     mfa_exempt: document.getElementById('accMfaExempt').checked ? 1 : 0,
+    needs_approval: document.getElementById('accNeedsApproval').checked ? 1 : 0,
     bank_ann_reviewer: document.getElementById('accAnnReviewer').checked ? 1 : 0
   };
   if (!d.username) return alert('请输入用户名');
