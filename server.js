@@ -43287,11 +43287,11 @@ app.get('/api/acct/iv-digest/preview', requireAdmin, requireRole('accounting', '
     const data = _ivDigestData(only);
     const { subject, html } = _ivDigestEmail(data, only ? (me.display_name || only) : '');
     const rc = _ivDigestRecipients();
-    res.json({ subject, html, to: only ? [me.email || '（你的账号没填邮箱）'] : [...rc.full, ...rc.personal.map(p => `${p.email}（只含 ${p.name} 的）`)], overdue: data.overdue.length });
+    res.json({ subject, html, to: only ? [me.email || '（你的账号没填邮箱）'] : [...rc.full, ...rc.personal.map(p => `${p.email}（只含 ${p.name} 的）`)], overdue: data.overdue.length, hours: IV_OVERDUE_HOURS });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 会计对账「介绍费」页上的「📧 立刻发面试日报」按钮: 按当前状态马上发一封 (不影响 14:00 / 20:00 定时那两封)
+// 会计对账「介绍费」页上的「📧 立刻发面试日报」按钮: 按当前状态马上发一封 (不影响每天定时那几封)
 app.post('/api/acct/iv-digest/send', requireAdmin, requireRole('accounting', 'admin', 'cs'), async (req, res) => {
   try {
     // 普通客服点: 只给自己发自己那一版
@@ -44411,7 +44411,8 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
       unmatched_ignored: unmatched.filter(e => e.date >= since && e.ignored_at).length,
       pay_methods: wob.PAY_METHODS, steps: wob.GUSTO_STEPS,
       // 邮件同步脚本状态 (页面顶部显示正常 / 停了)
-      mail_sync: (() => { const m = _mailHookCfg(); return { configured: !!m.token, last_at: m.last_at || '', last_new_at: m.last_new_at || '' }; })(),
+      mail_sync: (() => { const m = _mailHookCfg(); return { configured: !!m.token, last_at: m.last_at || '', last_new_at: m.last_new_at || '',
+        script_version: m.script_version || '', last_error: m.last_error || '', last_error_at: m.last_error_at || '' }; })(),
       gusto: { connected: !!(st.access_token && st.refresh_token), last_sync_at: st.last_sync_at || '',
         contractors: db.prepare('SELECT COUNT(*) AS n FROM gusto_contractors').get().n },
       role: req.userRole,
@@ -44867,6 +44868,13 @@ app.post('/api/hooks/gusto-mail', (req, res) => {
     const backfill = !!(req.body && req.body.backfill);
     // 脚本读完以前所有邮件时会发一次 backfill_done (页面上显示「以前的邮件已全部读完」)
     if (req.body && req.body.backfill_done) _mailHookSave({ backfill_done_at: new Date().toISOString() });
+    // 脚本版本 (旧版脚本不带, 没新邮件时也不报到) + 脚本自己报上来的出错信息
+    const ver = String((req.body && req.body.version) || '').slice(0, 10);
+    if (req.body && req.body.error) {
+      _mailHookSave({ script_version: ver, last_error: String(req.body.error).slice(0, 500), last_error_at: new Date().toISOString() });
+      return res.json({ ok: true });
+    }
+    _mailHookSave({ script_version: ver, last_error: '', last_error_at: '' });
     const oldCut = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);
     const seen = db.prepare('SELECT 1 FROM gusto_mail_seen WHERE message_id=?');
     const mark = db.prepare('INSERT OR IGNORE INTO gusto_mail_seen (message_id, kind, name, subject, received_at) VALUES (?, ?, ?, ?, ?)');
@@ -44912,6 +44920,7 @@ app.get('/api/acct/onboarding-mailhook', requireAdmin, requireWobView, (req, res
     last_at: cfg.last_at || '', last_received: cfg.last_received || 0, last_added: cfg.last_added || 0,
     backfill_at: cfg.backfill_at || '', backfill_total: cfg.backfill_total || 0, last_new_at: cfg.last_new_at || '',
     backfill_done_at: cfg.backfill_done_at || '',
+    script_version: cfg.script_version || '', last_error: cfg.last_error || '', last_error_at: cfg.last_error_at || '',
     total_seen: db.prepare('SELECT COUNT(*) AS n FROM gusto_mail_seen').get().n, recent });
 });
 app.post('/api/acct/onboarding-mailhook', requireAdmin, requireRole('admin'), (req, res) => {

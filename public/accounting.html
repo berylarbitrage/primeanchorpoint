@@ -798,7 +798,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <iframe id="ivdFrame" sandbox="" style="width:100%;height:62vh;border:0;display:block;background:#f4f4f5"></iframe>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;margin-top:.7rem;flex-wrap:wrap">
-        <span style="font-size:.74rem;color:var(--g400)">按现在的状态生成；每天 14:00、20:00（芝加哥时间）也会自动发</span>
+        <span style="font-size:.74rem;color:var(--g400)" id="ivdHours">按现在的状态生成；每天定时自动发（芝加哥时间）</span>
         <span style="display:flex;gap:.5rem">
           <button class="btn btn-outline" onclick="ivdClose()">取消</button>
           <button class="btn btn-blue" id="ivdSendBtn" onclick="ivdSend()" disabled>📧 确认发送</button>
@@ -1302,7 +1302,7 @@ let ROLE = '';  // 与 /banking 同名: 'admin' | 'cs' | 'accounting' | 'staff'
 function annApi(path, opts) { return bapi('/api' + path, opts); }
 function loadTxns() { bankLoadTxns(); }  // 待审核筛选切换时由 bank-ann.js 调用
 function money(v) { return '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-// 「📧 立刻发面试日报」: 先弹窗预览这封邮件 (按当前状态), 确认后马上发, 不等 14:00 / 20:00
+// 「📧 立刻发面试日报」: 先弹窗预览这封邮件 (按当前状态), 确认后马上发, 不等定时那几封
 async function sendIvDigestNow() {
   const m = document.getElementById('ivdModal');
   const btn = document.getElementById('ivdSendBtn');
@@ -1315,6 +1315,7 @@ async function sendIvDigestNow() {
     const r = await api('/api/acct/iv-digest/preview');
     if (r.error) throw new Error(r.error);
     document.getElementById('ivdTo').textContent = (r.to || []).join('、');
+    if (r.hours) document.getElementById('ivdHours').textContent = `按现在的状态生成；每天 ${r.hours.map(h => h + ':00').join('、')}（芝加哥时间）也会自动发`;
     document.getElementById('ivdSubject').textContent = r.subject || '';
     document.getElementById('ivdFrame').srcdoc = r.html || '';
     btn.disabled = false;
