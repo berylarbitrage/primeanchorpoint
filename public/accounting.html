@@ -713,8 +713,11 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
           <input type="datetime-local" id="raInterview" style="width:100%;margin:.15rem 0 .55rem"></div>
         <div><label style="font-size:.76rem;color:var(--g500)">工资（工人的）<span style="color:#dc2626">*</span> <span style="font-size:.7rem;color:var(--g400)">手动填实际谈定的</span></label>
           <input type="text" id="raWage" placeholder="必填，例：$18/小时" style="width:100%;margin:.15rem 0 .55rem"></div>
-        <div id="raAmountWrap"><label style="font-size:.76rem;color:var(--g500)">介绍费 · 之后每周（$）<span style="color:#dc2626">*</span> <span style="font-size:.7rem;color:var(--g400)">每周默认按这个付，单周可改</span></label>
-          <input type="number" step="0.01" min="0" id="raAmount" placeholder="必填，例：12.50" style="width:100%;margin:.15rem 0 .55rem"></div>
+        <div id="raAmountWrap"><label style="font-size:.76rem;color:var(--g500)"><span id="raAmountLbl">介绍费 · 之后每周（$）</span><span style="color:#dc2626">*</span> <span id="raAmountHint" style="font-size:.7rem;color:var(--g400)">每周默认按这个付，单周可改</span></label>
+          <div style="display:flex;gap:.3rem;margin:.15rem 0 .25rem" title="卸柜的按柜算介绍费：每周 = 每柜介绍费 × 这周几个柜">
+            <button type="button" class="btn btn-sm" id="raUnitWeek" onclick="raFeeUnit('')" style="flex:1;padding:.15rem .4rem;font-size:.74rem">🗓 按周</button>
+            <button type="button" class="btn btn-sm" id="raUnitCont" onclick="raFeeUnit('container')" style="flex:1;padding:.15rem .4rem;font-size:.74rem">📦 按柜</button></div>
+          <input type="number" step="0.01" min="0" id="raAmount" placeholder="必填，例：12.50" style="width:100%;margin:0 0 .55rem"></div>
       </div>
       <div id="raFirstWrap" style="display:flex;gap:.5rem;align-items:flex-end;flex-wrap:wrap;margin:-.2rem 0 .55rem">
         <div style="flex:0 0 190px"><label style="font-size:.76rem;color:var(--g500)">第一周介绍费（$）<span style="font-size:.7rem;color:var(--g400)">可选，空 = 跟之后一样</span></label>
@@ -2878,7 +2881,8 @@ function _refPayWeeksHtml(list) {
     const body = g.map(x => {
       const [t, fg, bg] = _REF_PW_ST[x.st];
       const w = x.w, n = w.span_eff || 1, a = actOf(x);
-      const calc = w.rate != null ? (w.hours != null && w.hours < 40 * n ? `${money(w.rate)} × ${w.hours}/40 工时` : `满周 ${money(w.rate)}${n > 1 ? ` × ${n}` : ''}`) : '';
+      const calc = x.r && x.r.fee_unit === 'container' ? (w.containers_eff != null ? `${money(x.r.amount)}/柜 × ${w.containers_eff} 柜` : '柜数未填')
+        : w.rate != null ? (w.hours != null && w.hours < 40 * n ? `${money(w.rate)} × ${w.hours}/40 工时` : `满周 ${money(w.rate)}${n > 1 ? ` × ${n}` : ''}`) : '';
       const pn = w.pay_note || {};
       const when = x.st === 'paid' ? `${esc(_refAt(pn.updated_at))}${pn.created_by ? ' · ' + esc(pn.created_by) : ''}${(pn.txns || []).length ? ` · 🏦 ${pn.txns.map(t => `${esc(t.date || '')} ${money(Math.abs(Number(t.amount) || 0))}`).join(' / ')}` : ''}`
         : x.st === 'topay' ? `🛡 ${esc(w.pay_ok_by)} ${esc(_refAt(w.pay_ok_at))}`
@@ -3168,6 +3172,9 @@ function renderRefList() {
     const weeks = r.weeks || [];
     // 这周介绍费: 选满周价 (第一周 $25 / $50, 之后 $12.5 / $25, 都不要再手写), 按工时折算 — 满 40 工时给满, 不满按 工时/40
     const feeCalc = w => { const n = w.span_eff || 1;
+      if (r.fee_unit === 'container') return `<div style="font-size:.68rem;color:${w.containers_eff == null ? '#b45309' : 'var(--g500)'};white-space:nowrap">${w.containers_eff == null
+        ? `还不知道几个柜（发票里没勾柜子），填柜数`
+        : `${money(r.amount)}/柜 × ${w.containers_eff} 柜${w.containers == null ? '（按勾的柜子）' : ''} = <b style="color:#0f4c6b">${money(w.fee_default)}</b>`}</div>`;
       return w.rate == null ? '' : `<div style="font-size:.68rem;color:${w.hours == null ? '#b45309' : 'var(--g500)'};white-space:nowrap">${w.hours == null
       ? `没勾发票行、没有工时，按满 ${n} 周 = ${money(w.fee_default)}`
       : w.hours >= 40 * n ? `${w.hours} 工时 ≥ ${40 * n} · 给满${n > 1 ? ` ${n} 周` : ''} ${money(w.fee_default)}`
@@ -3181,6 +3188,8 @@ function renderRefList() {
           || (w.fee != null ? `<div style="font-size:.68rem;color:var(--g500);white-space:nowrap">手写 ${money(w.fee)}</div>` : w.fee_default != null ? `<div style="font-size:.68rem;color:var(--g500);white-space:nowrap">按介绍费 ${money(w.fee_default)}${(w.span_eff || 1) > 1 ? `（${w.span_eff} 周）` : ''}</div>` : '')}${
           w.fee_default != null && w.fee == null && Math.abs(Number(w.admin_fee) - Number(w.fee_default)) > 0.005 ? `<div style="font-size:.68rem;color:#b45309;white-space:nowrap">算出 ${money(w.fee_default)}，确认时改成 ${money(w.admin_fee)}</div>` : ''}`
       : w.admin_status === 'rejected' ? '<span style="color:var(--g400)">—</span>'
+      : canInv && r.review_status !== 'rejected' && r.fee_unit === 'container' ? `<div style="display:flex;gap:.25rem;align-items:center;justify-content:flex-end">
+            <input type="number" step="1" min="0" value="${w.containers != null ? w.containers : ''}" placeholder="${w.containers_auto != null ? w.containers_auto : '柜数'}" title="这周卸了几个柜；空 = 按发票里勾的柜子行数${w.containers_auto != null ? '（' + w.containers_auto + ' 个）' : ''}" onchange="refWeekContainers(${w.id}, this.value)" style="width:58px;padding:.15rem .3rem;font-size:.76rem;text-align:right"><span style="font-size:.74rem;color:var(--g500)">柜</span></div>${feeCalc(w)}`
       : canInv && r.review_status !== 'rejected' ? (() => {
         const presets = w.tier_eff === 'first' ? [25, 50] : [12.5, 25];
         const custom = w.rate != null && !presets.includes(Number(w.rate));
@@ -3297,7 +3306,7 @@ function renderRefList() {
         <div>${lbl('工作仓库')}<div style="font-weight:700;font-size:.84rem;color:#0f172a;line-height:1.3">${esc(whMain)}</div>
           ${whSub ? `<div style="font-size:.74rem;color:var(--g500);line-height:1.3">${esc(whSub)}</div>` : ''}${r.job_title ? `<div style="font-size:.72rem;color:#7c3aed;margin-top:2px">📌 ${esc(r.job_title)}</div>` : ''}</div>
         <div>${lbl('面试')}<div style="font-size:.82rem;font-weight:600;white-space:nowrap;margin-bottom:3px">${esc((r.interview_at || '').replace('T', ' ')) || '—'}</div>${_refInterviewMarkCell(r)}</div>
-        <div>${lbl('介绍费 / 周')}${_refTwoTier(r)
+        <div>${lbl(r.fee_unit === 'container' ? '介绍费 / 柜' : '介绍费 / 周')}${_refTwoTier(r)
           ? `<div style="font-size:.74rem;color:var(--g500);white-space:nowrap">第一周 <b style="color:#0f4c6b;font-size:.95rem">${money(r.first_week_amount)}</b></div><div style="font-size:.74rem;color:var(--g500);white-space:nowrap">之后 <b style="color:#0f4c6b;font-size:.95rem">${money(r.amount)}</b></div>`
           : `<div style="font-weight:800;color:#0f4c6b;font-size:1rem">${r.amount != null ? money(r.amount) : '<span style="color:var(--g400);font-weight:400;font-size:.85rem">未定</span>'}</div>`}</div>
         <div class="ref-side">${statusPill}<div style="white-space:nowrap">${ops}</div></div>
@@ -3767,8 +3776,18 @@ async function refWeekTier(id, tier) {
 }
 // 有没有分「第一周 / 之后每周」两档价
 function _refTwoTier(r) { return r.first_week_amount != null && r.amount != null && Number(r.first_week_amount) !== Number(r.amount); }
-function _refFeeText(first, after) {
+function _refFeeText(first, after, unit) {
+  if (unit === 'container') return `每个柜 ${money(after)}`;
   return first != null && Number(first) !== Number(after) ? `第一周 ${money(first)}，之后每周 ${money(after)}` : money(after);
+}
+// 按柜算的: 这周几个柜, 空 = 按发票里勾的柜子行数
+async function refWeekContainers(id, v) {
+  try {
+    const r = await api('/api/acct/referral-weeks/' + id, { method: 'PUT', body: JSON.stringify({ containers: v === '' ? '' : Number(v) }) });
+    if (r && r.error) throw new Error(r.error);
+    toast('✅ 已更新这周柜数');
+    loadRefList();
+  } catch (e) { toast(e.message || '保存失败', true); }
 }
 // 选这周的满周价 (按工时折算), 空 = 清掉
 async function refWeekRate(id, v) {
@@ -3802,6 +3821,8 @@ async function openRefAdd(id) {
   document.getElementById('raWage').value = r ? r.worker_wage || '' : '';
   document.getElementById('raAmount').value = r && r.amount != null ? r.amount : '';
   document.getElementById('raFirstAmount').value = r && r.first_week_amount != null ? r.first_week_amount : '';
+  _raFeeUnit = r ? (r.fee_unit === 'container' ? 'container' : '') : '';
+  _raFeeUnitTouched = !!r;
   document.getElementById('raDesc').value = r ? r.description || '' : '';
   document.getElementById('raHrSelf').checked = !!(r && r.hr_self);
   _raHrName = r && r.hr_self ? r.hr_name || '' : '';
@@ -4157,10 +4178,28 @@ function raToggleRemove(p) {
 function raHrSelfSw() {
   const on = document.getElementById('raHrSelf').checked;
   document.getElementById('raForemanWrap').style.display = on ? 'none' : '';
-  document.getElementById('raFirstWrap').style.display = on ? 'none' : 'flex';
   document.getElementById('raHrWhoWrap').style.display = on ? 'flex' : 'none';
   raHrWhoRender();
+  raFeeUnitRender();
   raValidate();
+}
+// 介绍费按周 / 按柜: 卸柜的工人按柜算 (每周 = 每柜介绍费 × 这周几个柜), 没有「第一周另一个价」
+let _raFeeUnit = '', _raFeeUnitTouched = false;
+function raFeeUnit(u) { _raFeeUnit = u === 'container' ? 'container' : ''; _raFeeUnitTouched = true; raFeeUnitRender(); raValidate(); }
+function raFeeUnitRender() {
+  const c = _raFeeUnit === 'container', hr = document.getElementById('raHrSelf').checked;
+  const on = (el, yes) => { el.className = 'btn btn-sm' + (yes ? '' : ' btn-outline'); el.style.background = yes ? '#0f4c6b' : ''; el.style.color = yes ? '#fff' : ''; };
+  on(document.getElementById('raUnitWeek'), !c); on(document.getElementById('raUnitCont'), c);
+  document.getElementById('raAmountLbl').textContent = c ? '介绍费 · 每个柜（$）' : '介绍费 · 之后每周（$）';
+  document.getElementById('raAmountHint').textContent = c ? '每周 = 这个 × 这周几个柜' : '每周默认按这个付，单周可改';
+  document.getElementById('raAmount').placeholder = c ? '必填，例：5.00' : '必填，例：12.50';
+  document.getElementById('raFirstWrap').style.display = hr || c ? 'none' : 'flex';
+}
+// 新登记时工资写的是按柜 (例「180—一个柜子」/「$180/柜」), 自动切到按柜; 手动选过就不动
+function raWageUnitGuess() {
+  if (_raFeeUnitTouched) return;
+  const c = /柜|container/i.test(document.getElementById('raWage').value || '');
+  if (c !== (_raFeeUnit === 'container')) { _raFeeUnit = c ? 'container' : ''; raFeeUnitRender(); }
 }
 // 介绍费快速填: 第一周一个价、之后每周另一个价
 // HR 名单: 自己招的要选是哪个 HR
@@ -4178,6 +4217,7 @@ function raFeePreset(first, after) {
 }
 // 必填检查: 缺的标红框 + 列出「还差」, 没填齐「提交」按钮灰掉点不了 (点了也只跳到第一个缺的)
 function raValidate() {
+  raWageUnitGuess();
   const $ = id => document.getElementById(id);
   if (!$('raSubmitBtn')) return [];
   const hr = $('raHrSelf').checked;
@@ -4191,7 +4231,7 @@ function raValidate() {
   if (hr) need(!!_raHrName, '哪个 HR 招的', null);
   need(!!$('raInterview').value, '面试时间', $('raInterview'));
   const amt = $('raAmount').value.trim();
-  need(amt !== '' && !isNaN(Number(amt)) && (hr ? Number(amt) >= 0 : Number(amt) > 0), hr ? '介绍费（没有就填 0）' : '每周介绍费', $('raAmount'));
+  need(amt !== '' && !isNaN(Number(amt)) && (hr ? Number(amt) >= 0 : Number(amt) > 0), hr ? '介绍费（没有就填 0）' : _raFeeUnit ? '每柜介绍费' : '每周介绍费', $('raAmount'));
   if ($('raWhSel').value === '__new__') need(!!$('raWh').value.trim(), '新仓库名称', $('raWh'));
   const box = $('raMissing'), btn = $('raSubmitBtn');
   box.style.display = miss.length ? '' : 'none';
@@ -4245,7 +4285,8 @@ async function submitRefAdd() {
     fd.append('recruit_shift', pk.shift || '');
     fd.append('interview_at', document.getElementById('raInterview').value || '');
     fd.append('amount', document.getElementById('raAmount').value || '');
-    fd.append('first_week_amount', hrSelf ? '' : document.getElementById('raFirstAmount').value || '');
+    fd.append('first_week_amount', hrSelf || _raFeeUnit ? '' : document.getElementById('raFirstAmount').value || '');
+    fd.append('fee_unit', _raFeeUnit);
     fd.append('description', document.getElementById('raDesc').value.trim());
     fd.append('hr_self', hrSelf ? '1' : '0');
     fd.append('hr_name', hrSelf ? _raHrName : '');
@@ -4309,7 +4350,7 @@ function raCopyInfo() {
     address: document.getElementById('raWhAddr').value.trim(),
     interview: (document.getElementById('raInterview').value || '').replace('T', ' '),
     wage: document.getElementById('raWage').value.trim(),
-    amount: amt !== '' && !isNaN(Number(amt)) ? _refFeeText(amtFirst !== '' && !isNaN(Number(amtFirst)) ? Number(amtFirst) : null, Number(amt)) : '',
+    amount: amt !== '' && !isNaN(Number(amt)) ? _refFeeText(amtFirst !== '' && !isNaN(Number(amtFirst)) ? Number(amtFirst) : null, Number(amt), _raFeeUnit) : '',
     note: document.getElementById('raDesc').value.trim(),
   }));
 }
@@ -4329,7 +4370,7 @@ function refCopyRow(id) {
     address: r.warehouse_address || '',
     interview: (((r.interview_at || '').replace('T', ' ')) + (ivMark ? ' ' + ivMark : '')).trim(),
     wage: r.worker_wage || '',
-    amount: r.amount != null ? _refFeeText(r.first_week_amount, r.amount) : '',
+    amount: r.amount != null ? _refFeeText(r.first_week_amount, r.amount, r.fee_unit) : '',
     note: r.description || '',
   }));
 }
@@ -4364,7 +4405,7 @@ function _rcFields(r) {
       ['Position', _rcEn(String(r.job_title || '').split(/\s+—\s+/)[0]).replace(/^[A-Z]{2,}-[A-Z0-9-]+\s*/i, '')],
       ['Interview', ivTxt],
       ['Pay rate', _rcEn(r.worker_wage)],
-      ['Referral fee', r.amount != null && Number(r.amount) > 0 ? (r.first_week_amount != null && Number(r.first_week_amount) !== Number(r.amount)
+      ['Referral fee', r.amount != null && Number(r.amount) > 0 ? r.fee_unit === 'container' ? `${money(r.amount)} per container unloaded` : (r.first_week_amount != null && Number(r.first_week_amount) !== Number(r.amount)
         ? `${money(r.first_week_amount)} for the first week, then ${money(r.amount)} per week worked` : `${money(r.amount)} per week worked`) : ''],
     ].filter(x => x[1]),
     ref: 'REF-' + String(r.id).padStart(5, '0'),

@@ -1018,6 +1018,10 @@ try { db.exec(`ALTER TABLE referral_weeks ADD COLUMN rate REAL DEFAULT NULL`); }
 try { db.exec(`ALTER TABLE referral_weeks ADD COLUMN kind TEXT DEFAULT ''`); } catch(e) {}
 // 这张发票算几周: 1 / 2 (两周发一次工资的发票); NULL = 自动, 账期 ≥ 13 天算 2 周
 try { db.exec(`ALTER TABLE referral_weeks ADD COLUMN span INTEGER DEFAULT NULL`); } catch(e) {}
+// 卸柜的工人介绍费按柜算: referrals.fee_unit = '' 按周 (amount = 每周介绍费) | 'container' 按柜 (amount = 每个柜的介绍费)。
+// 按柜时每周 = amount × 这周柜数; 柜数默认 = 这周发票 (container 发票) 里勾的柜子行数, referral_weeks.containers 手填的为准
+try { db.exec(`ALTER TABLE referrals ADD COLUMN fee_unit TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE referral_weeks ADD COLUMN containers REAL DEFAULT NULL`); } catch(e) {}
 // HR 招工节点奖励 (人民币): HR 自己招的 + 工头介绍、HR 提交的, 都按节点给 HR —
 // interview 过面试 ¥30 / week1 连续上满 1 周 ¥100 (按第 1 周工时 /40 折算) /
 // m4_<每周付款行 id> 前 4 周每周 ¥37.5 × 工时/40, 跟发票一样 1 周或 2 周一组 (原 month1 满 1 个月 ¥150, 旧记录保留);
@@ -42314,7 +42318,7 @@ function _referralOut(r, invMap, payNotes, weeksBy, weekNotes, linesByInv) {
   r.pay_note = payNotes[r.id] || null;
   // 每周付款: 按发票账期先后排, fee 空的按介绍记录上的介绍费
   r.weeks = ((weeksBy && weeksBy[r.id]) || []).filter(w => invMap[w.invoice_id]).map(w => ({
-    id: w.id, invoice_id: w.invoice_id, fee: w.fee, rate: w.rate, tier: w.tier || '', span: w.span === 1 || w.span === 2 ? w.span : null,
+    id: w.id, invoice_id: w.invoice_id, fee: w.fee, rate: w.rate, containers: w.containers, tier: w.tier || '', span: w.span === 1 || w.span === 2 ? w.span : null,
     pay_req: w.pay_req || '', pay_req_by: w.pay_req_by || '', pay_req_at: w.pay_req_at, pay_ok_by: w.pay_ok_by || '', pay_ok_at: w.pay_ok_at,
     admin_status: w.admin_status || '', admin_fee: w.admin_fee, admin_by: w.admin_by || '', admin_at: w.admin_at, admin_note: w.admin_note || '',
     invoice: invMap[w.invoice_id], pay_note: (weekNotes && weekNotes[w.id]) || null,
@@ -42338,6 +42342,13 @@ function _referralOut(r, invMap, payNotes, weeksBy, weekNotes, linesByInv) {
     w.ratio = w.hours == null ? w.span_eff : Math.min(w.hours, 40 * w.span_eff) / 40;
     const tierFee = _referralTierFee(r, w.tier_eff);
     w.fee_default = w.rate != null ? Math.round(w.rate * w.ratio * 100) / 100 : tierFee != null ? tierFee * w.span_eff : null;
+    // 按柜算: 每柜价 × 柜数 (手填的为准, 没填按这周勾的柜子行数; 都没有 = 还不知道几个柜)
+    if (r.fee_unit === 'container') {
+      const cl = w.lines.filter(l => l.line_type === 'container').length;
+      w.containers_auto = cl || null;
+      w.containers_eff = w.containers != null ? w.containers : w.containers_auto;
+      w.fee_default = r.amount != null && w.containers_eff != null ? Math.round(r.amount * w.containers_eff * 100) / 100 : null;
+    }
     // 工头介绍的: 第 1 周不到 16 工时 → 按比例的介绍费照算, 另加过面试 $5
     w.fee_eff = w.admin_status === 'rejected' ? 0 : w.admin_status === 'approved' && w.admin_fee != null ? w.admin_fee
       : (w.fee != null ? w.fee : w.fee_default);
@@ -42697,6 +42708,9 @@ function _referralBody(b) {
   // HR 自招: 没有工头; 介绍费照样要填 (没有就填 0)
   out.hr_name = out.hr_self ? String(b.hr_name || '').trim().slice(0, 60) : '';
   if (out.hr_self) { out.foreman_name = ''; out.foreman_phone = ''; out.first_week_amount = null; }
+  // 按柜算的没有「第一周另一个价」
+  out.fee_unit = b.fee_unit === 'container' ? 'container' : '';
+  if (out.fee_unit) out.first_week_amount = null;
   return out;
 }
 // 关联岗位: 表单传 jobs.id, 存 id + 「编号 标题 中文名 — 公司」快照;
@@ -42744,7 +42758,7 @@ app.post('/api/acct/referrals', requireAdmin, requireRole('accounting', 'admin',
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.worker_wage, f.warehouse_name, f.warehouse_address,
       f.interview_at, f.amount, f.description, JSON.stringify(atts), jb.job_id, jb.job_title, req.userName || '', f.hr_self);
-  db.prepare('UPDATE referrals SET recruit_job_id=?, recruit_shift=?, first_week_amount=?, hr_name=? WHERE id=?').run(jb.recruit_job_id || null, jb.recruit_shift || '', f.first_week_amount, f.hr_name, r.lastInsertRowid);
+  db.prepare('UPDATE referrals SET recruit_job_id=?, recruit_shift=?, first_week_amount=?, hr_name=?, fee_unit=? WHERE id=?').run(jb.recruit_job_id || null, jb.recruit_shift || '', f.first_week_amount, f.hr_name, f.fee_unit, r.lastInsertRowid);
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
@@ -42778,7 +42792,7 @@ app.put('/api/acct/referrals/:id', requireAdmin, requireRole('accounting', 'admi
       warehouse_name=?, warehouse_address=?, interview_at=?, amount=?, description=?, attachments=?, job_id=?, job_title=?, hr_self=?, updated_at=datetime('now') WHERE id=?`)
     .run(f.foreman_name, f.foreman_phone, f.worker_name, f.worker_phone, f.worker_wage, f.warehouse_name, f.warehouse_address,
       f.interview_at, f.amount, f.description, JSON.stringify(atts), jb.job_id, jb.job_title, f.hr_self, cur.id);
-  db.prepare('UPDATE referrals SET recruit_job_id=?, recruit_shift=?, first_week_amount=?, hr_name=? WHERE id=?').run(jb.recruit_job_id || null, jb.recruit_shift || '', f.first_week_amount, f.hr_name, cur.id);
+  db.prepare('UPDATE referrals SET recruit_job_id=?, recruit_shift=?, first_week_amount=?, hr_name=?, fee_unit=? WHERE id=?').run(jb.recruit_job_id || null, jb.recruit_shift || '', f.first_week_amount, f.hr_name, f.fee_unit, cur.id);
   res.json({ success: true });
 });
 
@@ -42904,6 +42918,13 @@ app.put('/api/acct/referral-weeks/:id', requireAdmin, requireRole('accounting', 
     const sp = Number(b.span) === 1 || Number(b.span) === 2 ? Number(b.span) : null;
     db.prepare('UPDATE referral_weeks SET span=? WHERE id=?').run(sp, w.id);
     return res.json({ success: true, span: sp });
+  }
+  // 按柜算: 这周几个柜 (空 = 按勾的柜子行数); 同时清掉旧的写死金额
+  if ('containers' in b) {
+    const n = (b.containers === '' || b.containers == null) ? null : Number(b.containers);
+    if (n != null && (isNaN(n) || n < 0)) return res.status(400).json({ error: '柜数不对' });
+    db.prepare('UPDATE referral_weeks SET containers=?, fee=NULL WHERE id=?').run(n, w.id);
+    return res.json({ success: true, containers: n });
   }
   // 选满周价 (按工时折算): 同时清掉旧的写死金额, 免得 fee 盖过折算结果
   if ('rate' in b) {
