@@ -3897,9 +3897,10 @@ function schedule24hReminders() {
 }
 schedule24hReminders();
 
-// ─── 介绍费: 面试时间已过还没标「去了 / 没去」的, 每天芝加哥 14:00 和 20:00 发邮件提醒 ───
-// 口径同会计对账页的红色「面试时间已过，还没标记」: 有面试时间、没标去没去、还没开始上班。
-// 一条都没有就不发。收件人可用 IV_OVERDUE_EMAILS (逗号分隔) 覆盖。
+// ─── 介绍费面试日报: 每天芝加哥 14:00 和 20:00 发邮件 (没有待办也发) ───
+// ① 面试时间已过还没标「去了 / 没去 / 没通过」的 (口径同会计对账页的红色提醒: 有面试时间、
+//    没标、还没开始上班) — 标红并醒目写出几个; ② 今天的面试和标记情况; ③ 明天有哪些人面试。
+// 收件人可用 IV_OVERDUE_EMAILS (逗号分隔) 覆盖。
 const IV_OVERDUE_EMAILS = (process.env.IV_OVERDUE_EMAILS || 'info@primeanchorworkforce.com,taosl19911203@163.com,z15725859500@outlook.com')
   .split(',').map(s => s.trim()).filter(Boolean);
 const IV_OVERDUE_HOURS = [14, 20];
@@ -3911,74 +3912,107 @@ function _chicagoParts(d = new Date()) {
   return { date: `${p.year}-${p.month}-${p.day}`, hour: Number(p.hour), iso: `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}` };
 }
 
-function _ivOverdueReferrals() {
-  const nowIso = _chicagoParts().iso;
+// 返回 { nowIso, today, tomorrow, overdue, todayRows, tomorrowRows }
+function _ivDigestData() {
+  const nowIso = _chicagoParts().iso, today = nowIso.slice(0, 10);
+  const t = new Date(today + 'T12:00:00Z'); t.setUTCDate(t.getUTCDate() + 1);
+  const tomorrow = t.toISOString().slice(0, 10);
   const dispBy = {};
   try { db.prepare('SELECT username, display_name FROM admin_users').all().forEach(u => { if (u.display_name) dispBy[u.username] = u.display_name.trim(); }); } catch (e) {}
   const HR_LOGIN_NAME = { zhangni: '张倪' };
-  return db.prepare(`SELECT id, foreman_name, foreman_phone, worker_name, worker_phone, warehouse_name, warehouse_address,
-      interview_at, job_title, recruit_shift, created_by, hr_self, hr_name
-    FROM referrals
-    WHERE COALESCE(interview_status,'')='' AND COALESCE(work_start_date,'')='' AND COALESCE(interview_at,'')!=''
-    ORDER BY interview_at`).all()
+  const rows = db.prepare(`SELECT id, foreman_name, foreman_phone, worker_name, worker_phone, warehouse_name,
+      interview_at, interview_status, interview_attended_at, work_start_date, job_title, created_by, hr_self, hr_name
+    FROM referrals WHERE COALESCE(interview_at,'')!='' ORDER BY interview_at`).all()
     .map(r => ({ ...r, iv: String(r.interview_at).trim().replace(' ', 'T').slice(0, 16) }))
-    .filter(r => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(r.iv) && r.iv < nowIso)
-    .map(r => ({ ...r, submitter: (r.hr_self && r.hr_name) ? r.hr_name : (HR_LOGIN_NAME[String(r.created_by || '').toLowerCase()] || dispBy[r.created_by] || r.created_by || '') }));
+    .filter(r => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(r.iv))
+    .map(r => ({ ...r,
+      overdue: !r.interview_status && !r.work_start_date && r.iv < nowIso,
+      submitter: (r.hr_self && r.hr_name) ? r.hr_name : (HR_LOGIN_NAME[String(r.created_by || '').toLowerCase()] || dispBy[r.created_by] || r.created_by || '') }));
+  return { nowIso, today, tomorrow,
+    overdue: rows.filter(r => r.overdue),
+    todayRows: rows.filter(r => r.iv.slice(0, 10) === today),
+    tomorrowRows: rows.filter(r => r.iv.slice(0, 10) === tomorrow) };
 }
 
-function _ivOverdueEmail(rows, nowIso) {
+function _ivDigestEmail({ nowIso, today, tomorrow, overdue, todayRows, tomorrowRows }) {
   const esc = v => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const url = (process.env.BASE_URL || 'https://primeanchorpoint.com').replace(/\/$/, '') + '/accounting';
   const when = nowIso.replace('T', ' ');
   const ago = iv => {
     const h = Math.floor((Date.parse(nowIso + 'Z') - Date.parse(iv + 'Z')) / 3600000);
-    return h >= 24 ? `${Math.floor(h / 24)} 天前` : h >= 1 ? `${h} 小时前` : '刚过';
+    return h >= 24 ? `已过 ${Math.floor(h / 24)} 天` : h >= 1 ? `已过 ${h} 小时` : '刚过';
   };
-  const subject = `【面试待标记】${rows.length} 人面试时间已过，还没标记去没去（${when}）`;
-  const text = [
-    `截至 ${when}（芝加哥时间），以下 ${rows.length} 个介绍的工人面试时间已过，还没标记「去了 / 没去 / 没通过」：`, '',
-    ...rows.map((r, i) => `${i + 1}. ${r.worker_name || '(没填名字)'} ${r.worker_phone || '(没留电话)'} | 面试 ${r.iv.replace('T', ' ')}（${ago(r.iv)}）| ${r.warehouse_name || ''}${r.job_title ? ' · ' + r.job_title : ''} | 工头 ${r.foreman_name || ''} ${r.foreman_phone || ''} | ${r.submitter || ''} 提交`),
-    '', `请到 会计对账 → 介绍费 → 面试安排 标记：${url}`, '', '— Prime Anchor Workforce 系统自动提醒（每天 14:00、20:00）',
-  ].join('\n');
+  // 标记状态: 文字 + 颜色
+  const mark = r => r.interview_status === 'attended' ? ['✅ 去了' + (r.interview_attended_at ? `（到场 ${r.interview_attended_at}）` : ''), '#047857']
+    : r.interview_status === 'no_show' ? ['❌ 没去', '#b91c1c']
+    : r.interview_status === 'failed' ? ['🙅 没通过', '#9a3412']
+    : r.work_start_date ? [`已上班（${r.work_start_date}）`, '#047857']
+    : r.overdue ? ['⚠ 超时未标记', '#dc2626']
+    : ['⏳ 还没到时间', '#6b7280'];
+  const nOver = overdue.length;
+  const todayUnmarked = todayRows.filter(r => r.overdue).length;
+  const subject = (nOver ? `【⚠ ${nOver} 人超时未标记】` : '【✅ 面试都已标记】')
+    + `面试日报 ${when} · 今天 ${todayRows.length} 人 · 明天 ${tomorrowRows.length} 人`;
+
   const td = 'padding:8px 10px;border-bottom:1px solid #f1f5f9;vertical-align:top;font-size:13px';
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:24px 0"><tr><td align="center">
-<table width="720" cellpadding="0" cellspacing="0" style="max-width:720px;width:100%;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)">
-<tr><td style="background:#dc2626;padding:18px 24px">
-  <p style="margin:0;color:#fff;font-size:17px;font-weight:700">⚠ ${rows.length} 人面试时间已过，还没标记</p>
-  <p style="margin:4px 0 0;color:#fee2e2;font-size:12px">截至 ${esc(when)}（芝加哥时间）· 介绍费 → 面试安排</p>
-</td></tr>
-<tr><td style="padding:18px 24px 6px;color:#374151;font-size:14px">下面这些工人的面试时间已经过了，但还没标记「✓ 去了 / ✕ 没去 / 没通过」。请跟工头或工人确认后到系统里标记：</td></tr>
-<tr><td style="padding:6px 24px">
-<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e5e7eb;border-radius:6px">
-<tr style="background:#f9fafb;color:#6b7280;font-size:12px;text-align:left">
-  <th style="padding:8px 10px">被介绍工人</th><th style="padding:8px 10px">面试时间</th><th style="padding:8px 10px">工作仓库</th><th style="padding:8px 10px">工头</th><th style="padding:8px 10px">提交人</th>
-</tr>
-${rows.map(r => `<tr>
+  const th = 'padding:8px 10px;color:#6b7280;font-size:12px;text-align:left;background:#f9fafb';
+  const table = (rows, withMark, red) => rows.length ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:${red ? '2px solid #dc2626' : '1px solid #e5e7eb'}">
+<tr><th style="${th}">被介绍工人</th><th style="${th}">面试时间</th><th style="${th}">工作仓库</th><th style="${th}">工头</th><th style="${th}">提交人</th>${withMark ? `<th style="${th}">标记</th>` : ''}</tr>
+${rows.map(r => { const [mt, mc] = mark(r); return `<tr${r.overdue ? ' style="background:#fef2f2"' : ''}>
   <td style="${td}"><b>${esc(r.worker_name || '(没填名字)')}</b><br><span style="color:#6b7280">${esc(r.worker_phone || '没留电话')}</span></td>
-  <td style="${td};white-space:nowrap"><b style="color:#dc2626">${esc(r.iv.replace('T', ' '))}</b><br><span style="color:#9ca3af;font-size:12px">${ago(r.iv)}</span></td>
+  <td style="${td};white-space:nowrap"><b${r.overdue ? ' style="color:#dc2626"' : ''}>${esc(r.iv.replace('T', ' '))}</b>${r.overdue ? `<br><span style="color:#dc2626;font-size:12px">${ago(r.iv)}</span>` : ''}</td>
   <td style="${td}">${esc(r.warehouse_name || '—')}${r.job_title ? `<br><span style="color:#6b7280;font-size:12px">${esc(r.job_title)}</span>` : ''}</td>
   <td style="${td}">${esc(r.foreman_name || '—')}<br><span style="color:#6b7280">${esc(r.foreman_phone || '')}</span></td>
   <td style="${td}">${esc(r.submitter || '—')}</td>
-</tr>`).join('')}
-</table></td></tr>
-<tr><td style="padding:16px 24px 22px" align="left">
-  <a href="${esc(url)}" style="display:inline-block;background:#1e40af;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:6px">打开会计对账去标记 →</a>
+  ${withMark ? `<td style="${td};white-space:nowrap;font-weight:700;color:${mc}">${esc(mt)}</td>` : ''}
+</tr>`; }).join('')}
+</table>` : '<p style="margin:0;color:#9ca3af;font-size:13px">（没有）</p>';
+  const h2 = (title, color) => `<p style="margin:0 0 8px;font-size:15px;font-weight:700;color:${color || '#111827'}">${title}</p>`;
+  const banner = nOver
+    ? `<td style="background:#dc2626;padding:20px 24px">
+  <p style="margin:0;color:#fff;font-size:26px;font-weight:800">⚠ ${nOver} 人面试超时未标记</p>
+  <p style="margin:6px 0 0;color:#fee2e2;font-size:13px">面试时间已过，还没标「去了 / 没去 / 没通过」，请尽快确认标记 · 截至 ${esc(when)}（芝加哥时间）</p></td>`
+    : `<td style="background:#047857;padding:20px 24px">
+  <p style="margin:0;color:#fff;font-size:22px;font-weight:800">✅ 面试都已标记，没有超时未标记的</p>
+  <p style="margin:6px 0 0;color:#d1fae5;font-size:13px">截至 ${esc(when)}（芝加哥时间）</p></td>`;
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:24px 0"><tr><td align="center">
+<table width="760" cellpadding="0" cellspacing="0" style="max-width:760px;width:100%;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)">
+<tr>${banner}</tr>
+<tr><td style="padding:14px 24px;background:#f9fafb;border-bottom:1px solid #e5e7eb;font-size:14px;color:#374151">
+  超时未标记 <b style="color:${nOver ? '#dc2626' : '#047857'};font-size:16px">${nOver}</b> 人 ·
+  今天（${today}）面试 <b>${todayRows.length}</b> 人${todayRows.length ? (todayUnmarked ? `，<b style="color:#dc2626">${todayUnmarked} 人超时未标记</b>` : '，过了时间的都已标记') : ''} ·
+  明天（${tomorrow}）面试 <b>${tomorrowRows.length}</b> 人
 </td></tr>
-<tr><td style="padding:12px 24px;border-top:1px solid #f3f4f6;color:#9ca3af;font-size:11px">Prime Anchor Workforce 系统自动提醒 · 每天 14:00 和 20:00（芝加哥时间）发送，全部标记完就不再发。</td></tr>
+${nOver ? `<tr><td style="padding:18px 24px 6px">${h2(`⚠ 超时未标记（${nOver} 人）`, '#dc2626')}${table(overdue, false, true)}</td></tr>` : ''}
+<tr><td style="padding:18px 24px 6px">${h2(`📋 今天的面试（${today}，${todayRows.length} 人）— 标记情况`)}${table(todayRows, true)}</td></tr>
+<tr><td style="padding:18px 24px 6px">${h2(`📅 明天的面试（${tomorrow}，${tomorrowRows.length} 人）`)}${table(tomorrowRows, false)}</td></tr>
+<tr><td style="padding:16px 24px 22px">
+  <a href="${esc(url)}" style="display:inline-block;background:#1e40af;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:6px">打开会计对账 → 介绍费 →</a>
+</td></tr>
+<tr><td style="padding:12px 24px;border-top:1px solid #f3f4f6;color:#9ca3af;font-size:11px">Prime Anchor Workforce 系统自动发送 · 每天 14:00 和 20:00（芝加哥时间）。</td></tr>
 </table></td></tr></table></body></html>`;
+
+  const line = (r, withMark) => `- ${r.worker_name || '(没填名字)'} ${r.worker_phone || '(没留电话)'} | 面试 ${r.iv.replace('T', ' ')}${r.overdue ? '（' + ago(r.iv) + '）' : ''} | ${r.warehouse_name || ''}${r.job_title ? ' · ' + r.job_title : ''} | 工头 ${r.foreman_name || ''} ${r.foreman_phone || ''} | ${r.submitter || ''} 提交${withMark ? ' | ' + mark(r)[0] : ''}`;
+  const text = [
+    nOver ? `⚠ ${nOver} 人面试超时未标记（面试时间已过，还没标去了 / 没去 / 没通过）` : '✅ 面试都已标记，没有超时未标记的',
+    `截至 ${when}（芝加哥时间）`, '',
+    ...(nOver ? [`【超时未标记 ${nOver} 人】`, ...overdue.map(r => line(r)), ''] : []),
+    `【今天 ${today} 面试 ${todayRows.length} 人】`, ...(todayRows.length ? todayRows.map(r => line(r, true)) : ['（没有）']), '',
+    `【明天 ${tomorrow} 面试 ${tomorrowRows.length} 人】`, ...(tomorrowRows.length ? tomorrowRows.map(r => line(r)) : ['（没有）']), '',
+    `会计对账 → 介绍费：${url}`, '', '— Prime Anchor Workforce 系统自动发送（每天 14:00、20:00）',
+  ].join('\n');
   return { subject, text, html };
 }
 
-async function sendIvOverdueDigest(force) {
-  const rows = _ivOverdueReferrals();
-  if (!rows.length && !force) return { sent: 0, count: 0 };
-  const { subject, text, html } = _ivOverdueEmail(rows, _chicagoParts().iso);
+async function sendIvOverdueDigest() {
+  const data = _ivDigestData();
+  const { subject, text, html } = _ivDigestEmail(data);
   let sent = 0;
   for (const to of IV_OVERDUE_EMAILS) { if (await sendEmail(to, subject, text, html).catch(() => false)) sent++; }
-  console.log(`[IvOverdue] ${rows.length} 人未标记, 邮件发出 ${sent}/${IV_OVERDUE_EMAILS.length}`);
-  return { sent, count: rows.length };
+  console.log(`[IvDigest] 超时未标记 ${data.overdue.length} · 今天 ${data.todayRows.length} · 明天 ${data.tomorrowRows.length}, 邮件发出 ${sent}/${IV_OVERDUE_EMAILS.length}`);
+  return { sent, overdue: data.overdue.length };
 }
 
 // 每分钟看一眼芝加哥时间; 到 14 点 / 20 点那一小时内发一次 (app_settings 记已发, 重启不重发, 部署时错过整点也补发)
@@ -3989,7 +4023,7 @@ setInterval(() => {
     const key = `iv_overdue_mail_${date}_${hour}`;
     if (db.prepare('SELECT 1 FROM app_settings WHERE key=?').get(key)) return;
     db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, '1')").run(key);
-    sendIvOverdueDigest().catch(e => console.error('[IvOverdue]', e.message));
+    sendIvOverdueDigest().catch(e => console.error('[IvDigest]', e.message));
   } catch (e) { /* 下一分钟再试 */ }
 }, 60 * 1000);
 
