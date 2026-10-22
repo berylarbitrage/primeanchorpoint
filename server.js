@@ -1168,6 +1168,8 @@ try { db.exec("ALTER TABLE admin_users ADD COLUMN approval_status TEXT DEFAULT '
 try { db.exec("ALTER TABLE admin_users ADD COLUMN cs_lead INTEGER DEFAULT 0"); } catch {}
 // 新员工入职页「能审核」: 不是 manager / admin 的账号 (例如 staff) 单独给 manager 那样的审核权限
 try { db.exec("ALTER TABLE admin_users ADD COLUMN wob_approver INTEGER DEFAULT 0"); } catch {}
+// 所有修改需要审批: 这个账号能进所有页面、看所有信息, 但任何修改 (非 GET 请求) 先进「待审批修改」, staff / admin 同意后才执行
+try { db.exec("ALTER TABLE admin_users ADD COLUMN needs_approval INTEGER DEFAULT 0"); } catch {}
 
 // Migrate partners table (add new columns if missing)
 const partnerMigrations = ['contacts','addresses','social_media','links'];
@@ -9427,6 +9429,78 @@ function getSession(token) {
 }
 function validSession(token) { return !!getSession(token); }
 
+// ─── 修改审批 (admin_users.needs_approval) ───
+db.exec(`CREATE TABLE IF NOT EXISTS pending_changes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER, username TEXT DEFAULT '', display_name TEXT DEFAULT '',
+  method TEXT DEFAULT '', path TEXT DEFAULT '', referer TEXT DEFAULT '',
+  content_type TEXT DEFAULT '', body TEXT DEFAULT '', body_b64 TEXT DEFAULT '', size INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'pending', note TEXT DEFAULT '',
+  decided_by TEXT DEFAULT '', decided_at TEXT DEFAULT '', result_status INTEGER DEFAULT NULL, result_body TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+const _approvalReplayTokens = new Set();   // 同意后重放用的临时会话, 不再拦
+// 不算修改、直接放行的: 退出登录; 审批接口本身 (那里会直接拒绝这种账号)
+function _isChangeRequest(req) {
+  const p = req.originalUrl.split('?')[0];
+  if (p === '/api/admin/logout' || p.startsWith('/api/approvals')) return false;
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return true;
+  return String(req.query && req.query.send) === '1';   // 带 ?send=1 的 GET 会真的发东西 (例如立刻发面试日报)
+}
+async function _queueChange(req, res, session) {
+  try {
+    const ctype = String(req.headers['content-type'] || '');
+    let body = '', b64 = '', size = 0;
+    if (/json|urlencoded/i.test(ctype) || req.body && Object.keys(req.body).length) {
+      body = JSON.stringify(req.body || {}); size = body.length;
+    } else if (ctype) {
+      // 上传文件等: 原始请求体原样存下来, 同意后原样发
+      const chunks = []; let n = 0;
+      for await (const c of req) { n += c.length; if (n > 20 * 1024 * 1024) return res.status(413).json({ error: '文件太大，没法提交审批' }); chunks.push(c); }
+      const buf = Buffer.concat(chunks); b64 = buf.toString('base64'); size = buf.length;
+    }
+    const u = db.prepare('SELECT display_name FROM admin_users WHERE id=?').get(session.userId) || {};
+    const r = db.prepare(`INSERT INTO pending_changes (user_id, username, display_name, method, path, referer, content_type, body, body_b64, size)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(session.userId, session.username, u.display_name || '', req.method, req.originalUrl,
+      String(req.headers.referer || '').slice(0, 300), b64 ? ctype : (body ? 'application/json' : ''), body, b64, size);
+    setImmediate(_notifyPendingChanges);
+    // 202 + error 字段: 各页面都会把 error 弹出来, 用户能看到「已提交审批」, 页面也不会当成改好了
+    res.status(202).json({ pending: true, approval_id: r.lastInsertRowid, error: '📝 已提交审批，等 staff / admin 同意后才会生效', message: '已提交审批' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+// 新的审批请求: 发邮件告诉 admin 和 staff (15 分钟内最多一封, 免得一直改一直发)
+async function _notifyPendingChanges() {
+  try {
+    const k = 'pending_changes_notified_at';
+    const last = db.prepare('SELECT value FROM app_settings WHERE key=?').get(k);
+    if (last && Date.now() - Number(last.value) < 15 * 60 * 1000) return;
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)").run(k, String(Date.now()));
+    const n = db.prepare("SELECT COUNT(*) AS n FROM pending_changes WHERE status='pending'").get().n;
+    const base = (process.env.BASE_URL || '').replace(/\/$/, '');
+    for (const a of db.prepare("SELECT email FROM admin_users WHERE role IN ('admin','staff') AND COALESCE(needs_approval,0)=0 AND COALESCE(active,1)=1 AND COALESCE(email,'')!=''").all()) {
+      sendEmail(a.email, `有 ${n} 个修改等你审批`, `有 ${n} 个修改等 staff / admin 同意后才会生效。\n去审批: ${base}/approvals`).catch(() => {});
+    }
+  } catch (e) { console.log('[approvals] notify error:', e.message); }
+}
+// 同意: 用提交人的身份 (临时会话, 不再拦) 把当时的请求原样发一次, 记下结果
+async function _replayChange(c) {
+  const user = db.prepare('SELECT * FROM admin_users WHERE id=?').get(c.user_id);
+  if (!user) return { status: 0, text: '提交人的账号已经不在了' };
+  const token = createSession(user, null);
+  _approvalReplayTokens.add(token);
+  try {
+    const headers = { Authorization: 'Bearer ' + token };
+    let body;
+    if (c.body_b64) { body = Buffer.from(c.body_b64, 'base64'); headers['Content-Type'] = c.content_type; }
+    else if (c.body) { body = c.body; headers['Content-Type'] = 'application/json'; }
+    const r = await fetch(`http://127.0.0.1:${PORT}${c.path}`, { method: c.method, headers, body: ['GET', 'HEAD'].includes(c.method) ? undefined : body });
+    return { status: r.status, text: (await r.text()).slice(0, 2000) };
+  } finally {
+    _approvalReplayTokens.delete(token);
+    try { db.prepare('DELETE FROM admin_sessions WHERE token=?').run(token); } catch (e) {}
+  }
+}
+
 function requireAdmin(req, res, next) {
   const auth = req.headers.authorization;
   let session = null;
@@ -9463,9 +9537,15 @@ function requireAdmin(req, res, next) {
     const ok = p.startsWith('/api/acct/onboarding') || p === '/api/acct/gusto-payees' || p === '/api/admin/me' || p === '/api/admin/logout';
     if (!ok) return res.status(403).json({ error: '入职专员账号仅限使用新员工入职页 (/onboarding)' });
   }
-  const _u = db.prepare('SELECT assigned_partner_ids, assigned_employee_ids, assigned_job_ids, cs_lead, wob_approver FROM admin_users WHERE id=?').get(session.userId);
+  const _u = db.prepare('SELECT assigned_partner_ids, assigned_employee_ids, assigned_job_ids, cs_lead, wob_approver, needs_approval FROM admin_users WHERE id=?').get(session.userId);
   req.csLead = !!(_u && _u.cs_lead);
   req.wobApprover = !!(_u && _u.wob_approver);
+  req.needsApproval = !!(_u && _u.needs_approval);
+  // 「所有修改需要审批」的账号: 修改请求不执行, 存起来等 staff / admin 同意 (同意后按原样重放一次)
+  if (req.needsApproval && !_approvalReplayTokens.has(token) && _isChangeRequest(req)) {
+    req.assignedPartnerIds = (_u && _u.assigned_partner_ids) || '';
+    return _queueChange(req, res, session);
+  }
   req.assignedPartnerIds = (_u && _u.assigned_partner_ids) || '';
   req.assignedEmployeeIds = (_u && _u.assigned_employee_ids) || '';
   req.assignedJobIds = (_u && _u.assigned_job_ids) || '';
@@ -10133,7 +10213,7 @@ app.post('/api/manager/self-punch/:id/confirm', requireAdmin, requireRole('admin
 // ─── Account Management (admin only) ───
 app.get('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
   // password_plain 仅会计(accounting)角色有值, 且本接口本就仅限 admin 角色访问
-  res.json(db.prepare('SELECT id, username, role, display_name, email, phone, active, approval_status, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, sms_notify_phone, sms_notify_enabled, mfa_exempt, bank_ann_reviewer, created_at, password_plain FROM admin_users ORDER BY id').all());
+  res.json(db.prepare('SELECT id, username, role, display_name, email, phone, active, approval_status, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, sms_notify_phone, sms_notify_enabled, mfa_exempt, bank_ann_reviewer, needs_approval, created_at, password_plain FROM admin_users ORDER BY id').all());
 });
 
 // 批准会计自助注册的账号
@@ -10159,6 +10239,7 @@ app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) =
   const hash = hashPassword(password, salt);
   const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, active, password_plain, mfa_exempt, bank_ann_reviewer) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)')
     .run(username, hash, salt, role, display_name || '', assigned_partner_ids || '', assigned_employee_ids || '', assigned_job_ids || '', email || '', phone || '', role === 'accounting' ? password : '', mfa_exempt ? 1 : 0, bank_ann_reviewer ? 1 : 0);
+  if (req.body.needs_approval) db.prepare('UPDATE admin_users SET needs_approval=1 WHERE id=?').run(result.lastInsertRowid);
   auditLog('account_create', req, { targetType: 'admin_user', targetId: result.lastInsertRowid, details: mfa_exempt ? { username, role, mfa_exempt: true } : { username, role } });
   res.json({ success: true, id: result.lastInsertRowid });
 });
@@ -10183,6 +10264,7 @@ app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res
   // active field is intentionally excluded — only the user themselves can activate via self-verification
   db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, assigned_partner_ids=?, assigned_employee_ids=?, assigned_job_ids=?, email=?, phone=?, sms_notify_phone=?, sms_notify_enabled=?, mfa_exempt=?, bank_ann_reviewer=? WHERE id=?')
     .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, assigned_partner_ids !== undefined ? assigned_partner_ids : (user.assigned_partner_ids || ''), assigned_employee_ids !== undefined ? assigned_employee_ids : (user.assigned_employee_ids || ''), assigned_job_ids !== undefined ? assigned_job_ids : (user.assigned_job_ids || ''), email !== undefined ? email : (user.email || ''), phone !== undefined ? phone : (user.phone || ''), sms_notify_phone !== undefined ? sms_notify_phone : (user.sms_notify_phone || ''), sms_notify_enabled !== undefined ? (sms_notify_enabled ? 1 : 0) : (user.sms_notify_enabled ?? 1), mfa_exempt !== undefined ? (mfa_exempt ? 1 : 0) : (user.mfa_exempt ?? 0), bank_ann_reviewer !== undefined ? (bank_ann_reviewer ? 1 : 0) : (user.bank_ann_reviewer ?? 0), req.params.id);
+  if (req.body.needs_approval !== undefined) db.prepare('UPDATE admin_users SET needs_approval=? WHERE id=?').run(req.body.needs_approval ? 1 : 0, req.params.id);
   const changes = {};
   if (role && role !== user.role) changes.role = { from: user.role, to: role };
   // 免短信验证是安全开关, 谁改的、从啥改成啥要留审计痕迹
@@ -10201,6 +10283,44 @@ app.delete('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, 
   db.prepare('DELETE FROM admin_users WHERE id = ?').run(req.params.id);
   auditLog('account_delete', req, { targetType: 'admin_user', targetId: req.params.id, details: { username: deleted?.username, role: deleted?.role } });
   res.json({ success: true });
+});
+
+// ─── ✅ 待审批修改 (/approvals): staff / admin 看「所有修改需要审批」的账号提交的修改, 同意 = 原样执行一次 ───
+app.get('/approvals', (req, res) => res.sendFile(path.join(__dirname, 'public', 'approvals.html')));
+const _approverOk = req => ['admin', 'staff'].includes(req.userRole) && !req.needsApproval;
+app.get('/api/approvals', requireAdmin, (req, res) => {
+  if (!_approverOk(req)) return res.status(403).json({ error: '只有 staff / admin 能审批' });
+  try {
+    const rows = db.prepare(`SELECT id, user_id, username, display_name, method, path, referer, content_type, body, size, status, note,
+        decided_by, decided_at, result_status, result_body, created_at, CASE WHEN body_b64!='' THEN 1 ELSE 0 END AS has_file
+      FROM pending_changes ORDER BY CASE WHEN status='pending' THEN 0 ELSE 1 END, id DESC LIMIT 300`).all();
+    res.json({ changes: rows, pending: rows.filter(r => r.status === 'pending').length, me: req.userName });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/approvals/:id', requireAdmin, async (req, res) => {
+  if (!_approverOk(req)) return res.status(403).json({ error: '只有 staff / admin 能审批' });
+  try {
+    const c = db.prepare("SELECT * FROM pending_changes WHERE id=? AND status='pending'").get(req.params.id);
+    if (!c) return res.status(404).json({ error: '找不到这个审批（可能已经处理过了）' });
+    if (c.user_id === req.userId) return res.status(400).json({ error: '不能审批自己提交的修改' });
+    const now = new Date().toISOString(), note = String((req.body && req.body.note) || '').slice(0, 500);
+    // 先占住这一条, 免得两个人同时点「同意」执行两次
+    const lock = db.prepare("UPDATE pending_changes SET status='running', decided_by=?, decided_at=?, note=? WHERE id=? AND status='pending'").run(req.userName || '', now, note, c.id);
+    if (!lock.changes) return res.status(409).json({ error: '别人正在处理这一条' });
+    if (!(req.body && req.body.approve)) {
+      db.prepare("UPDATE pending_changes SET status='rejected' WHERE id=?").run(c.id);
+      auditLog('change_reject', req, { targetType: 'pending_change', targetId: c.id, details: { by_user: c.username, method: c.method, path: c.path } });
+      return res.json({ ok: true, status: 'rejected' });
+    }
+    const r = await _replayChange(c);
+    const ok = r.status >= 200 && r.status < 300;
+    db.prepare('UPDATE pending_changes SET status=?, result_status=?, result_body=? WHERE id=?').run(ok ? 'approved' : 'failed', r.status, r.text, c.id);
+    auditLog('change_approve', req, { targetType: 'pending_change', targetId: c.id, details: { by_user: c.username, method: c.method, path: c.path, result: r.status } });
+    res.json({ ok: true, status: ok ? 'approved' : 'failed', result_status: r.status, result_body: r.text });
+  } catch (e) {
+    try { db.prepare("UPDATE pending_changes SET status='pending' WHERE id=? AND status='running'").run(req.params.id); } catch (_) {}
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ─── Admin Audit Log Viewer ───
