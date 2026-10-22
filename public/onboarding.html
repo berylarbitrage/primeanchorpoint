@@ -61,8 +61,15 @@ input,select,textarea{padding:.38rem .5rem;border:1px solid var(--g300);border-r
 .step.ok .t{color:var(--g500);text-decoration:line-through}
 .tag{display:inline-block;border-radius:999px;padding:.05rem .5rem;font-size:.7rem;font-weight:700}
 .empty{text-align:center;color:var(--g400);padding:2.5rem 1rem}
-.modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:flex-start;justify-content:center;z-index:2000;padding:5vh 16px;overflow:auto}
-.modal .card{width:100%;max-width:640px}
+.modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;z-index:2000;padding:5vh 16px;overflow:auto}
+.modal .card{width:100%;max-width:640px;max-height:90vh;overflow:auto;margin:auto}
+.alerts{background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:.6rem .9rem;margin-bottom:12px}
+.alerts .a{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;font-size:.82rem;padding:.25rem 0}
+.alerts .a+.a{border-top:1px dashed #fecaca}
+.hist{border-left:2px solid var(--g200);margin-left:.4rem;padding-left:.8rem}
+.hist .h{position:relative;padding:.3rem 0;font-size:.8rem}
+.hist .h:before{content:'';position:absolute;left:-1.18rem;top:.6rem;width:9px;height:9px;border-radius:50%;background:var(--g300)}
+.hist .h.edit:before{background:var(--blue)}.hist .h.alert:before{background:var(--red)}
 textarea{width:100%}
 @media (max-width:1000px){.w-main{grid-template-columns:1fr 1fr}.w-main>div:last-child{grid-column:1/-1}}
 @media (max-width:640px){.w-main{grid-template-columns:1fr}}
@@ -93,6 +100,7 @@ textarea{width:100%}
       <a class="btn btn-outline" href="/accounting">← 会计对账</a>
     </div>
   </div>
+  <div id="alerts"></div>
   <div class="gbar" id="gbar"></div>
   <div class="weeks" id="weeks"></div>
   <div id="invs"></div>
@@ -123,7 +131,7 @@ textarea{width:100%}
 
 <div class="modal" id="pmModal" onclick="if(event.target===this)this.style.display='none'">
   <div class="card" style="max-width:440px">
-    <div style="font-weight:800;margin-bottom:.4rem">确认付款方式</div>
+    <div style="font-weight:800;margin-bottom:.4rem" id="pmTitle">确认付款方式</div>
     <div id="pmBody"></div>
     <div id="pmErr" style="color:var(--red);font-size:.8rem;min-height:1.1em;margin-top:.3rem"></div>
     <div style="display:flex;gap:.4rem;justify-content:flex-end">
@@ -194,7 +202,7 @@ async function load() {
   document.getElementById('main').style.display = '';
   document.getElementById('btnSync').style.display = j.can_sync && j.gusto.connected ? '' : 'none';
   document.getElementById('btnEmail').style.display = j.can_edit ? '' : 'none';
-  renderBar(); renderWeeks(); renderInvs(); renderList(); renderUnmatched();
+  renderAlerts(); renderBar(); renderWeeks(); renderInvs(); renderList(); renderUnmatched();
 }
 function renderBar() {
   const g = D.gusto;
@@ -228,7 +236,7 @@ function renderList() {
     return;
   }
   if (!rows.length) {
-    el.innerHTML = `<div class="card empty">${VIEW === 'open' ? '🎉 没有待处理的新员工' : VIEW === 'review' ? '🎉 没有等审核的系统匹配' : '这张发票上没有员工工资行'}</div>`;
+    el.innerHTML = `<div class="card empty">${VIEW === 'open' ? '🎉 没有待处理的新员工' : VIEW === 'alerts' ? '🎉 没有银行信息提醒' : VIEW === 'review' ? '🎉 没有等审核的系统匹配' : '这张发票上没有员工工资行'}</div>`;
     return;
   }
   const v = D.invoice;
@@ -240,8 +248,9 @@ function renderList() {
 // 发票视图里的老员工: 一行, 能直接定付款方式, 点「展开」看全卡片
 function oldRow(w, k) {
   const dis = D.can_edit ? '' : 'disabled';
-  const pm = Object.keys(PM_LABEL).map(m => `<button ${dis} class="${w.pay_method === m ? 'on' : ''}" onclick="pickPay(${k},'${w.pay_method === m ? '' : m}')">${PM_LABEL[m]}</button>`).join('');
-  return `<div class="card old ${w.settled ? 'done' : ''}">
+  const pdis = D.can_edit && w.employee ? '' : 'disabled';
+  const pm = Object.keys(PM_LABEL).map(m => `<button ${pdis} title="${w.employee ? '' : '先关联员工档案'}" class="${w.pay_method === m ? 'on' : ''}" onclick="pickPay(${k},'${w.pay_method === m ? '' : m}')">${PM_LABEL[m]}</button>`).join('');
+  return `<div class="card old ${w.settled ? 'done' : ''}" style="${w.bank_alert_open ? 'border-left-color:var(--red)' : ''}">
     <b>${esc(w.name)}</b><span class="tag" style="background:var(--g100);color:var(--g600)">老员工 · 第一次 ${esc(w.first_end)}</span>
     ${w.employee ? `<span class="tag" style="background:#dcfce7;color:#166534">👤 ${esc(w.employee.code || '#' + w.employee.id)}${w.employee.phone ? ' · ' + esc(w.employee.phone) : ''}</span>` : '<span class="tag" style="background:#fee2e2;color:#991b1b">未关联档案</span>'}
     <span class="muted">${w.line.hours ? w.line.hours + 'h' : ''}${w.line.total != null ? ' · ' + money(w.line.total) : ''}</span>
@@ -249,18 +258,21 @@ function oldRow(w, k) {
     ${w.settled ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ ${esc(PM_LABEL[w.pay_method] || 'Gusto 已付过')}</span>` : '<span class="tag" style="background:#fef3c7;color:#92400e">付款方式待定</span>'}
     ${w.pay_method === 'zelle' ? `<span class="muted">Zelle ${esc(w.zelle_account)} · ${esc(w.zelle_name)}</span>` : ''}
     <span class="pm" style="margin-left:auto">${pm}</span>
+    ${w.bank_alert_open ? '<span class="tag" style="background:#fee2e2;color:#991b1b">⚠ 银行信息</span>' : ''}
+    <button class="btn btn-outline btn-sm" onclick="showHistory(${k})">📜 历史</button>
     <button class="btn btn-outline btn-sm" onclick="EXP.add(D.rows[${k}].key);renderList()">展开</button>
   </div>`;
 }
 function card(w, k) {
   const dis = D.can_edit ? '' : 'disabled';
-  const bad = w.checklist.bank_bad && w.pay_method === 'gusto';
+  const bad = w.bank_alert_open > 0;
   const invs = (w.line ? [{ ...w.line, invoice_id: D.invoice.id }] : w.invoices).map(l => `<a class="inv" ${D.can_open_invoice ? `href="/accounting?invoice=${l.invoice_id}" target="_blank"` : ''} title="${esc(l.company)} · ${esc(l.period_start)}~${esc(l.period_end)}">📄 ${esc(l.invoice_number)} <span style="font-weight:400">${md(l.period_end)}${l.hours ? ' · ' + l.hours + 'h' : ''}${l.total != null ? ' · ' + money(l.total) : ''}</span></a>`).join('');
   const alias = w.invoice_names.filter(n => n !== w.name);
   const sug = w.suggest && !w.pay_method ? w.suggest.method : '';
-  const pm = Object.keys(PM_LABEL).map(m => `<button ${dis} class="${w.pay_method === m ? 'on' : ''} ${sug === m ? 'sug' : ''}" onclick="pickPay(${k},'${w.pay_method === m ? '' : m}')">${PM_LABEL[m]}</button>`).join('');
+  const pdis = D.can_edit && w.employee ? '' : 'disabled';
+  const pm = Object.keys(PM_LABEL).map(m => `<button ${pdis} class="${w.pay_method === m ? 'on' : ''} ${sug === m && w.employee ? 'sug' : ''}" onclick="pickPay(${k},'${w.pay_method === m ? '' : m}')">${PM_LABEL[m]}</button>`).join('');
   let gusto = '';
-  if (w.pay_method === 'gusto' || (w.gusto && w.gusto.link) || w.gusto_proposal || w.email_proposals.length || w.emails.length) {
+  if (w.pay_method === 'gusto') {
     const g = w.gusto, gp = w.gusto_proposal;
     const who = g && g.link
       ? `<span class="tag" style="background:#dcfce7;color:#166534">Gusto: ${esc(g.name)}</span><span class="muted">${esc(g.by)} 通过</span>${g.active === false ? ' <span class="tag" style="background:#fee2e2;color:#991b1b">已停用</span>' : ''}`
@@ -268,19 +280,24 @@ function card(w, k) {
       : `<span class="tag" style="background:#fef3c7;color:#92400e">Gusto 名册里还没找到${g && g.candidates ? '，可能是：' + esc(g.candidates.join(' / ')) : ''}</span>`;
     const emailProps = w.email_proposals.map(e => `<div class="row" style="margin:.2rem 0 0"><span class="tag" style="background:#eef2ff;color:#3730a3">🔎 邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span><span class="muted">${esc(e.subject)}</span>${reviewBtns(k, `{approve:'email',event_id:${e.id}}`, `{reject:'email',event_id:${e.id}}`)}</div>`).join('');
     const st = w.checklist.gusto && w.checklist.gusto.label ? ` <span class="muted">${esc(w.checklist.gusto.label)}</span>` : '';
-    const steps = w.checklist.steps.map(s => `<label class="step ${s.done ? 'ok' : ''}" title="${esc(s.hint)}">
-        <input type="checkbox" ${s.done ? 'checked' : ''} ${dis} ${s.auto && !s.manual ? 'disabled' : ''} onchange="save(${k},{step:'${s.id}',checked:this.checked})">
-        <span><span class="t">${esc(s.label)}</span>${s.problem ? `<br><span class="prob">⚠ ${esc(s.problem)}</span>` : s.auto ? `<br><span class="src">✓ ${esc(s.auto)}</span>` : s.manual ? `<br><span class="muted">手动 ${esc(s.manual.by)} ${esc((s.manual.at || '').slice(0, 10))}</span>` : ''}</span></label>`).join('');
+    // 三步按顺序; 只有 manager / admin 能勾, 勾之前弹窗确认; 系统自动看出来的 (邮件 / Gusto) 不用勾
+    const steps = w.checklist.steps.map((s, i) => `<label class="step ${s.done ? 'ok' : ''}" title="${esc(s.hint)}" style="${s.locked ? 'opacity:.45' : ''}">
+        <input type="checkbox" ${s.done ? 'checked' : ''} ${!D.can_approve || s.locked || (s.auto && !s.manual) ? 'disabled' : ''} onclick="event.preventDefault();tickStep(${k},${i})">
+        <span><b>${i + 1}.</b> <span class="t">${esc(s.label)}</span>${s.auto ? `<br><span class="src">✓ ${esc(s.auto)}</span>` : s.manual ? `<br><span class="muted">${esc(s.manual.by)} 确认 ${esc(fmtTime(s.manual.at))}</span>` : s.locked ? '<br><span class="muted">等上一步</span>' : !D.can_approve ? '<br><span class="muted">manager / admin 确认</span>' : ''}</span></label>`).join('');
     gusto = `<div class="ck" style="grid-template-columns:1fr;padding-bottom:0;border-bottom:none"><div class="row" style="margin:0">${who}${st}
         ${D.can_edit ? `<button class="btn btn-outline btn-sm" onclick="pickGusto(${k})">${g && g.link ? '改' : '手动'}关联</button>` : ''}
         ${g && g.uuid && D.gusto.connected ? `<button class="btn btn-outline btn-sm" onclick="gustoSteps(${k})">Gusto 明细</button>` : ''}
         <span class="muted">${w.checklist.done_count}/${w.checklist.steps.length}</span></div>${emailProps}</div>
-      <div class="ck">${steps}</div>`;
+      <div class="ck" style="grid-template-columns:repeat(3,minmax(0,1fr))">${steps}</div>`;
   }
+  const bankBox = w.bank_alerts.length ? `<div class="ck" style="grid-template-columns:1fr;background:#fef2f2">${w.bank_alerts.map(b => `<div class="row" style="margin:0">
+      <span class="tag" style="background:${b.ack_at ? 'var(--g100);color:var(--g500)' : '#fee2e2;color:#991b1b'}">⚠ ${esc(b.date)} · ${esc(b.label)}</span><span class="muted">${esc(b.subject)}</span>
+      ${b.ack_at ? `<span class="muted">${esc(b.ack_by)} 已处理 ${esc(fmtTime(b.ack_at))}</span>` : D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="ackBank(${b.id})">知道了</button>` : ''}</div>`).join('')}</div>` : '';
   return `<div class="card w ${w.done ? 'done' : ''} ${bad ? 'bad' : ''}">
     <div class="w-main">
       <div>
-        <div class="row" style="margin-bottom:.15rem"><span class="name">${esc(w.name)}</span>${w.line && w.is_new ? '<span class="tag" style="background:#e0f2fe;color:#075985">🆕 新</span>' : ''}${w.done ? '<span class="tag" style="background:#dcfce7;color:#166534">✓ 已处理</span>' : '<span class="tag" style="background:#fef3c7;color:#92400e">待处理</span>'}${w.pending_review ? `<span class="tag" style="background:#eef2ff;color:#3730a3">🔎 ${w.pending_review} 条待审核</span>` : ''}</div>
+        <div class="row" style="margin-bottom:.15rem"><span class="name">${esc(w.name)}</span>${w.line && w.is_new ? '<span class="tag" style="background:#e0f2fe;color:#075985">🆕 新</span>' : ''}${w.done ? '<span class="tag" style="background:#dcfce7;color:#166534">✓ 已处理</span>' : '<span class="tag" style="background:#fef3c7;color:#92400e">待处理</span>'}${w.pending_review ? `<span class="tag" style="background:#eef2ff;color:#3730a3">🔎 ${w.pending_review} 条待审核</span>` : ''}${w.bank_alert_open ? '<span class="tag" style="background:#fee2e2;color:#991b1b">⚠ 银行信息</span>' : ''}
+          <button class="btn btn-outline btn-sm" onclick="showHistory(${k})">📜 历史</button></div>
         ${alias.length ? `<div class="muted">发票上写作：${esc(alias.join(' / '))}</div>` : ''}
         <div class="muted">第一次上账单：${esc(w.first_end)}${w.later_invoices ? ` · 之后还有 ${w.later_invoices} 张` : ''}</div>
         <div style="margin-top:.45rem"><div class="lbl">员工档案</div>${empBlock(w, k)}</div>
@@ -294,11 +311,13 @@ function card(w, k) {
       <div>
         <div class="lbl">怎么付${w.suggest && !w.pay_method ? ` <span style="text-transform:none;color:#0369a1;font-weight:400">· 建议 ${PM_LABEL[w.suggest.method] || w.suggest.method}（${esc(w.suggest.why)}）</span>` : ''}</div>
         <div class="pm" style="margin-bottom:.45rem">${pm}</div>
+        ${w.employee ? '' : '<div class="muted" style="margin:-.2rem 0 .4rem;color:#b45309">① 先关联员工档案，再选付款方式</div>'}
         ${zelleLine(w, k)}
         <textarea ${dis} rows="2" placeholder="备注：Zelle 账号 / 支票抬头 / 现金谁给 …" onchange="save(${k},{pay_note:this.value})">${esc(w.pay_note)}</textarea>
         ${w.updated_by ? `<div class="muted">最后修改 ${esc(w.updated_by)} ${esc((w.updated_at || '').slice(0, 16))}</div>` : ''}
       </div>
     </div>
+    ${bankBox}
     ${gusto}
   </div>`;
 }
@@ -366,6 +385,7 @@ function pickPay(k, m) {
   const from = w.pay_method ? PM_LABEL[w.pay_method] : '未选';
   const to = m ? PM_LABEL[m] : '不选（清空）';
   document.getElementById('pmErr').textContent = '';
+  document.getElementById('pmTitle').textContent = '确认付款方式';
   document.getElementById('pmBody').innerHTML = `<div style="font-size:.88rem;margin-bottom:.5rem"><b>${esc(w.name)}</b> 的付款方式：${esc(from)} → <b>${esc(to)}</b></div>` +
     (m === 'zelle' ? `<div class="lbl">Zelle 号（电话或邮箱）</div><input id="pmZa" style="width:100%;margin-bottom:.5rem" value="${esc(w.zelle_account)}" placeholder="例：626-555-1234 / name@gmail.com">
       <div class="lbl">这个 Zelle 号的户主姓名</div><input id="pmZn" style="width:100%" value="${esc(w.zelle_name)}" placeholder="Zelle 里显示的名字（可能不是工人本人）">` : '');
@@ -384,6 +404,54 @@ function pickPay(k, m) {
   };
   document.getElementById('pmModal').style.display = 'flex';
   if (m === 'zelle') setTimeout(() => document.getElementById('pmZa').focus(), 0);
+}
+function fmtTime(t) { if (!t) return ''; const d = new Date(t); return isNaN(d) ? String(t) : d.toLocaleString(); }
+// 通用确认弹窗 (页面居中): 确认后跑 fn, fn 返回 true 才关
+function confirmBox(title, html, fn) {
+  document.getElementById('pmTitle').textContent = title;
+  document.getElementById('pmBody').innerHTML = html;
+  document.getElementById('pmErr').textContent = '';
+  const go = document.getElementById('pmGo');
+  go.onclick = async () => { go.disabled = true; const ok = await fn(); go.disabled = false; if (ok) document.getElementById('pmModal').style.display = 'none'; };
+  document.getElementById('pmModal').style.display = 'flex';
+}
+function tickStep(k, i) {
+  const w = D.rows[k], s = w.checklist.steps[i];
+  if (!D.can_approve || s.locked || (s.auto && !s.manual)) return;
+  const on = !s.manual;
+  confirmBox(on ? '确认这一步已完成' : '取消这一步', `<div style="font-size:.88rem"><b>${esc(w.name)}</b>：${i + 1}. ${esc(s.label)}</div>
+    <div class="muted" style="margin-top:.3rem">${on ? esc(s.hint) : '取消后这一步回到未完成'}</div>`, () => save(k, { step: s.id, checked: on }));
+}
+function ackBank(id) {
+  const a = (D.bank_alerts || []).find(x => x.id === id) || D.rows.flatMap(w => w.bank_alerts).find(x => x.id === id) || {};
+  confirmBox('银行信息提醒：知道了', `<div style="font-size:.88rem"><b>${esc(a.worker || a.name || '')}</b>：${esc(a.label || '')}（${esc(a.date || '')}）</div>
+    <div class="lbl" style="margin-top:.5rem">处理说明（可不填）</div><input id="ackNote" style="width:100%" placeholder="例：已叫工人在 Gusto 改好 / 已核实是本人改的">`, async () => {
+    const j = await api('/api/acct/onboarding-bank-ack', { method: 'POST', body: { event_id: id, note: document.getElementById('ackNote').value } }).catch(e => ({ error: e.message }));
+    if (j.error) { toast(j.error, true); return false; }
+    toast('已处理'); load(); return true;
+  });
+}
+// 页面最上方: 银行信息提醒 (有误 / 被更新), 点「知道了」前一直在
+function renderAlerts() {
+  const a = D.bank_alerts || [];
+  const el = document.getElementById('alerts');
+  if (!a.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="alerts"><div class="row" style="margin:0 0 .2rem"><b style="color:#991b1b">⚠ 银行信息提醒（${a.length}）</b>
+      <button class="btn btn-outline btn-sm" onclick="VIEW='alerts';INV=0;load()">只看这些人</button></div>` +
+    a.map(x => `<div class="a"><span class="tag" style="background:#fee2e2;color:#991b1b">${esc(x.label)}</span><b>${esc(x.worker || x.name)}</b>
+      <span class="muted">${esc(x.date)} · ${esc(x.subject)}${x.key ? '' : ' · 系统里没对上是哪个工人'}</span>
+      ${D.can_approve ? `<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="ackBank(${x.id})">知道了</button>` : ''}</div>`).join('') + '</div>';
+}
+async function showHistory(k) {
+  const w = D.rows[k];
+  const m = document.getElementById('gModal');
+  document.getElementById('gTitle').textContent = `📜 ${w.name} 的历史记录`;
+  document.getElementById('gBody').innerHTML = '<div class="muted">加载中…</div>';
+  m.style.display = 'flex';
+  const j = await api('/api/acct/onboarding-history/' + encodeURIComponent(w.key)).catch(e => ({ error: e.message }));
+  document.getElementById('gBody').innerHTML = j.error ? `<div style="color:var(--red)">${esc(j.error)}</div>`
+    : `<div class="hist">${j.items.map(h => `<div class="h ${h.kind}"><span class="muted">${esc(h.date_only ? h.at : fmtTime(h.at))}${h.by ? ' · ' + esc(h.by) : h.kind !== 'edit' ? ' · 系统' : ''}</span><br><b>${esc(h.action)}</b> ${esc(h.detail)}</div>`).join('') || '<div class="muted">还没有记录</div>'}</div>
+      <div style="text-align:right;margin-top:.6rem"><button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none'">关闭</button></div>`;
 }
 // 员工档案: 已关联就显示档案摘要; 否则列出系统按名字找到的 (待审核) + 手动关联按钮
 function empBlock(w, k) {

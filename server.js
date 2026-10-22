@@ -43942,6 +43942,20 @@ for (const col of ["gusto_ok INTEGER DEFAULT 0", "gusto_ok_by TEXT DEFAULT ''", 
   "zelle_account TEXT DEFAULT ''", "zelle_name TEXT DEFAULT ''", "emp_ok_by TEXT DEFAULT ''", "emp_ok_at TEXT DEFAULT ''", "emp_rejected TEXT DEFAULT '[]'"]) {
   try { db.exec(`ALTER TABLE new_hire_onboarding ADD COLUMN ${col}`); } catch (e) {}
 }
+// 每个人的修改历史: 谁、什么时候、改了什么 (查看历史时再和发票 / 邮件这些系统事件按时间合在一起)
+db.exec(`CREATE TABLE IF NOT EXISTS new_hire_onboarding_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name_key TEXT NOT NULL,
+  at TEXT DEFAULT (datetime('now')),
+  by_user TEXT DEFAULT '',
+  action TEXT DEFAULT '',
+  detail TEXT DEFAULT ''
+)`);
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_nho_log_key ON new_hire_onboarding_log(name_key, at)'); } catch (e) {}
+function _wobLog(key, by, action, detail) {
+  try { db.prepare('INSERT INTO new_hire_onboarding_log (name_key, by_user, action, detail) VALUES (?, ?, ?, ?)').run(key, by || '', action, String(detail || '').slice(0, 1000)); }
+  catch (e) { console.log('[onboarding] log error:', e.message); }
+}
 // 粘贴进来的 Gusto 通知邮件 (只存解析结果, 同一封重复粘贴不重复记); 读的时候再按名字对人
 db.exec(`CREATE TABLE IF NOT EXISTS gusto_email_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43954,9 +43968,18 @@ db.exec(`CREATE TABLE IF NOT EXISTS gusto_email_events (
   UNIQUE(kind, name, date)
 )`);
 // 邮件对到哪个人: 通过后记 worker_key; 否掉的人记 rejected_keys (JSON 数组)
-for (const col of ["worker_key TEXT DEFAULT ''", "rejected_keys TEXT DEFAULT '[]'", "review_by TEXT DEFAULT ''", "review_at TEXT DEFAULT ''"]) {
+// 银行信息邮件 (有误 / 已更新) 是提醒: admin / manager 点「知道了」记 ack_by / ack_at; notified_at = 已发邮件提醒
+for (const col of ["worker_key TEXT DEFAULT ''", "rejected_keys TEXT DEFAULT '[]'", "review_by TEXT DEFAULT ''", "review_at TEXT DEFAULT ''",
+  "ack_by TEXT DEFAULT ''", "ack_at TEXT DEFAULT ''", "notified_at TEXT DEFAULT ''"]) {
   try { db.exec(`ALTER TABLE gusto_email_events ADD COLUMN ${col}`); } catch (e) {}
 }
+// 上线前已经存在的银行邮件不补发提醒邮件 (页面上方照样提示, 等人点「知道了」)
+try {
+  if (!db.prepare("SELECT 1 FROM app_settings WHERE key='gusto_bank_notify_backfilled'").get()) {
+    db.prepare("UPDATE gusto_email_events SET notified_at='before-launch' WHERE COALESCE(notified_at,'')=''").run();
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('gusto_bank_notify_backfilled', '1', CURRENT_TIMESTAMP)").run();
+  }
+} catch (e) { console.log('[migration] gusto bank notify backfill error:', e.message); }
 
 // 所有正式发票的工资行按人归并: key → { name, first_end, last_end, lines: [...] }
 function _wobInvoicePeople() {
@@ -44116,18 +44139,30 @@ function _wobBuild() {
     });
   }
   // 邮件事件按名字对到人也只是建议: 通过后 (worker_key) 才进清单; 否掉的人记在 rejected_keys
-  const events = db.prepare("SELECT id, kind, name, date, subject, worker_key, rejected_keys, review_by FROM gusto_email_events ORDER BY date, id").all();
+  const events = db.prepare("SELECT id, kind, name, date, subject, worker_key, rejected_keys, review_by, ack_by, ack_at FROM gusto_email_events ORDER BY date, id").all();
   const cands = list.map(w => ({ key: w.key, names: [...w.invoice_names, w.name, w.gusto && w.gusto.name, w.gusto_proposal && w.gusto_proposal.name].filter(Boolean) }));
   const approved = {}, proposed = {};
-  const unmatched = [];
+  const unmatched = [], bank = [];
   for (const ev of events) {
     const e = { id: ev.id, kind: ev.kind, name: ev.name, date: ev.date, subject: ev.subject, label: wob.EMAIL_KIND_LABEL[ev.kind] || ev.kind };
+    // 银行信息邮件: 不进清单, 做成提醒 (对到人就标在那个人身上; 对不上的也照样提醒)
+    if (ev.kind === 'bank_bad' || ev.kind === 'bank_updated') {
+      let key = ev.worker_key || '';
+      if (!key) {
+        const hits = wob.matchEmailName(ev.name, cands).hits.filter(k => !_wobJson(ev.rejected_keys, []).includes(k));
+        if (hits.length === 1) key = hits[0];
+      }
+      bank.push({ ...e, key, ack_by: ev.ack_by || '', ack_at: ev.ack_at || '' });
+      continue;
+    }
     if (ev.worker_key) { (approved[ev.worker_key] = approved[ev.worker_key] || []).push({ ...e, by: ev.review_by || '' }); continue; }
     const rej = _wobJson(ev.rejected_keys, []);
     const hits = wob.matchEmailName(ev.name, cands).hits.filter(k => !rej.includes(k));
     if (hits.length === 1) (proposed[hits[0]] = proposed[hits[0]] || []).push(e);
     else unmatched.push({ ...e, ambiguous: hits.length > 1 });
   }
+  const bankByKey = {};
+  for (const b of bank) if (b.key) (bankByKey[b.key] = bankByKey[b.key] || []).push(b);
   for (const w of list) {
     w.emails = approved[w.key] || [];
     w.email_proposals = proposed[w.key] || [];
@@ -44135,13 +44170,16 @@ function _wobBuild() {
       emails: w.emails, manual: w.manual, firstPayment: w.first_payment });
     if (w.gusto) delete w.gusto.raw;
     w.pending_review = (w.gusto_proposal ? 1 : 0) + (w.employee_proposals.length ? 1 : 0) + w.email_proposals.length;
+    w.bank_alerts = bankByKey[w.key] || [];
+    w.bank_alert_open = w.bank_alerts.filter(b => !b.ack_at).length;
+    // 第一步一律是关联员工档案; 关联了才看付款方式。
     // 已通过关联的 Gusto 收款人走完入职还付过钱的, 没手动选付款方式也算处理完
-    w.done = w.pay_method === 'skip' || (!!w.pay_method && (w.pay_method !== 'gusto' || w.checklist.done))
-      || (!w.pay_method && !!(w.gusto && w.gusto.link) && w.checklist.done);
-    // 付款方式定没定 (发票上标「待定 / 已定」用): 选了付款方式, 或 Gusto 那边已经付过
-    w.settled = !!w.pay_method || w.done;
+    w.done = !!w.employee && (w.pay_method === 'skip' || (!!w.pay_method && (w.pay_method !== 'gusto' || w.checklist.done))
+      || (!w.pay_method && !!(w.gusto && w.gusto.link) && w.checklist.done));
+    // 付款方式定没定 (发票上标「待定 / 已定」用): 关联了档案, 并且选了付款方式或 Gusto 那边已经付过
+    w.settled = !!w.employee && (!!w.pay_method || w.done);
   }
-  return { list, unmatched };
+  return { list, unmatched, bank };
 }
 
 app.get('/onboarding', (req, res) => res.sendFile(path.join(__dirname, 'public', 'onboarding.html')));
@@ -44172,12 +44210,14 @@ function _wobScoped(req) {
   const inScope = l => scope.has(_canonCompanyName(l.company));
   out.list = out.list.filter(w => w._lines.some(inScope)).map(w => ({ ...w, _lines: w._lines.filter(inScope), invoices: w.invoices.filter(inScope) }));
   out.unmatched = [];
+  const keys = new Set(out.list.map(w => w.key));
+  out.bank = out.bank.filter(b => b.key && keys.has(b.key));
   return out;
 }
 
 app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
   try {
-    const { list, unmatched } = _wobScoped(req);
+    const { list, unmatched, bank } = _wobScoped(req);
     const today = new Date().toISOString().slice(0, 10);
     const thisWeek = wob.weekStart(today);
     // 最近 12 周每周新人数 / 未处理数
@@ -44187,7 +44227,7 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
       const ws = list.filter(w => w.week === wk);
       weeks.push({ week: wk, total: ws.length, open: ws.filter(w => !w.done).length });
     }
-    const view = ['open', 'review'].includes(req.query.view) ? req.query.view : 'week';
+    const view = ['open', 'review', 'alerts'].includes(req.query.view) ? req.query.view : 'week';
     let week = wob.weekStart(req.query.week);
     if (!week) week = (weeks.find(w => w.total) || weeks[0]).week;
     // 「待处理」: 最近 16 周进来的、还没处理完的人 (更早的是老员工, 不再追)
@@ -44220,6 +44260,7 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
     let rows = [];
     if (view === 'open') rows = list.filter(w => !w.done && w.week >= since);
     else if (view === 'review') rows = list.filter(w => w.pending_review);
+    else if (view === 'alerts') rows = list.filter(w => w.bank_alert_open);
     else if (invSel) {
       rows = list.filter(w => w._lines.some(l => l.invoice_id === invSel.id)).map(w => ({ ...w,
         is_new: w.week === week,
@@ -44241,6 +44282,8 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
     res.json({ ok: true, view, week, weeks, rows, invoices, invoice: invSel,
       open_total: list.filter(w => !w.done && w.week >= since).length,
       review_total: list.filter(w => w.pending_review).length,
+      // 银行信息提醒 (页面最上方): 还没人点「知道了」的
+      bank_alerts: bank.filter(b => !b.ack_at).map(b => ({ ...b, worker: b.key ? ((list.find(w => w.key === b.key) || {}).name || '') : '' })).reverse(),
       unmatched_emails: unmatched.filter(e => e.date >= since).slice(-50),
       pay_methods: wob.PAY_METHODS, steps: wob.GUSTO_STEPS,
       gusto: { connected: !!(st.access_token && st.refresh_token), last_sync_at: st.last_sync_at || '',
@@ -44357,11 +44400,46 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
     if (b.step) {
       const step = str(b.step, 40);
       if (!wob.GUSTO_STEPS.some(s => s.id === step)) return res.status(400).json({ error: '没有这一步' });
+      if (!approver) return res.status(403).json({ error: 'Gusto 入职清单只有 manager / admin 能勾' });
+      if (b.checked) {
+        const w = _wobScoped(req).list.find(x => x.key === key);
+        const st = w && w.checklist.steps.find(x => x.id === step);
+        if (st && st.locked) return res.status(400).json({ error: '上一步还没完成' });
+      }
       let ck = {};
       try { ck = JSON.parse(next.checklist) || {}; } catch (e) {}
       if (b.checked) ck[step] = { at: now, by: req.userName || '' };
       else delete ck[step];
       next.checklist = JSON.stringify(ck);
+    }
+    // 第一步一律是关联员工档案: 没有已通过的档案不能选付款方式
+    if (next.pay_method && next.pay_method !== (cur.pay_method || '') && !(next.employee_id && next.emp_ok)) {
+      return res.status(400).json({ error: '先关联员工档案（并审核通过），再选付款方式' });
+    }
+    // 修改历史: 一条一条记下改了什么
+    const PM = { gusto: 'Gusto 入职', cash: '现金', check: '支票', zelle: 'Zelle', skip: '不用处理', '': '未选' };
+    const logs = [];
+    const chg = (field, label, fmt) => { const a = cur[field] == null ? '' : cur[field], z = next[field] == null ? '' : next[field];
+      if (String(a) !== String(z)) logs.push([label, `${fmt ? fmt(a) : (a || '空')} → ${fmt ? fmt(z) : (z || '空')}`]); };
+    chg('pay_method', '付款方式', v => PM[v] || v);
+    chg('zelle_account', 'Zelle 号'); chg('zelle_name', 'Zelle 户主');
+    chg('warehouse', '仓库'); chg('pay_note', '备注'); chg('name', '名字');
+    const empName = id => { if (!id) return '无'; const e = db.prepare('SELECT first_name, last_name, employee_id FROM employees WHERE id=?').get(id); return e ? `${e.first_name} ${e.last_name}${e.employee_id ? ' ' + e.employee_id : ''}` : '#' + id; };
+    const gName = u => { if (!u) return '无'; const c = db.prepare('SELECT name FROM gusto_contractors WHERE uuid=?').get(u); return c ? c.name : u; };
+    if (b.approve === 'employee') logs.push(['审核通过员工档案', empName(parseInt(b.id, 10))]);
+    else if (b.reject === 'employee') logs.push(['否掉系统匹配的员工档案', empName(parseInt(b.id, 10))]);
+    else if (String(cur.employee_id || '') !== String(next.employee_id || '') || (cur.emp_ok ? 1 : 0) !== next.emp_ok)
+      logs.push([next.emp_ok ? '关联员工档案' : next.employee_id ? '手动选员工档案（待审核）' : '取消员工档案关联', empName(next.employee_id)]);
+    if (b.approve === 'gusto') logs.push(['审核通过 Gusto 收款人', gName(b.uuid)]);
+    else if (b.reject === 'gusto') logs.push(['否掉系统匹配的 Gusto 收款人', gName(b.uuid)]);
+    else if ((cur.gusto_uuid || '') !== next.gusto_uuid) logs.push([next.gusto_ok ? '关联 Gusto 收款人' : next.gusto_uuid ? '手动选 Gusto 收款人（待审核）' : '取消 Gusto 关联', gName(next.gusto_uuid)]);
+    if (b.approve === 'email' || b.reject === 'email') {
+      const ev = db.prepare('SELECT kind, name, date FROM gusto_email_events WHERE id=?').get(parseInt(b.event_id, 10) || 0);
+      if (ev) logs.push([b.approve ? '审核通过 Gusto 邮件' : '否掉邮件对人', `${ev.date} ${wob.EMAIL_KIND_LABEL[ev.kind] || ev.kind} · ${ev.name}`]);
+    }
+    if (b.step) {
+      const st = wob.GUSTO_STEPS.find(x => x.id === b.step);
+      logs.push([b.checked ? '清单打勾' : '清单取消打勾', st ? st.label : b.step]);
     }
     db.prepare(`INSERT INTO new_hire_onboarding (name_key, name, phone, warehouse, pay_method, pay_note, gusto_uuid, checklist,
         gusto_ok, gusto_ok_by, gusto_ok_at, gusto_rejected, phone_rejected, employee_id, emp_ok, emp_ok_by, emp_ok_at, emp_rejected, zelle_account, zelle_name, updated_by, updated_at)
@@ -44372,6 +44450,7 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
         gusto_rejected=@gusto_rejected, phone_rejected=@phone_rejected, employee_id=@employee_id, emp_ok=@emp_ok, emp_ok_by=@emp_ok_by,
         emp_ok_at=@emp_ok_at, emp_rejected=@emp_rejected, zelle_account=@zelle_account, zelle_name=@zelle_name, updated_by=@by, updated_at=datetime('now')`)
       .run({ key, ...next, by: req.userName || '' });
+    for (const [action, detail] of logs) _wobLog(key, req.userName, action, detail);
     auditLog('new_hire_onboarding_save', req, { targetType: 'new_hire_onboarding', targetId: key,
       details: { fields: Object.keys(b).filter(k => k !== 'checked'), approve: b.approve || '', reject: b.reject || '' } });
     res.json({ ok: true });
@@ -44411,6 +44490,70 @@ app.get('/api/acct/onboarding-employees', requireAdmin, requireWobWrite, (req, r
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// 银行信息提醒「知道了」: manager / admin
+app.post('/api/acct/onboarding-bank-ack', requireAdmin, requireWobWrite, (req, res) => {
+  try {
+    if (!_wobCanApprove(req)) return res.status(403).json({ error: '只有 manager / admin 能处理银行信息提醒' });
+    const id = parseInt(req.body && req.body.event_id, 10) || 0;
+    const { bank } = _wobScoped(req);
+    const b = bank.find(x => x.id === id);
+    if (!b) return res.status(404).json({ error: '找不到这条提醒' });
+    db.prepare('UPDATE gusto_email_events SET ack_by=?, ack_at=? WHERE id=?').run(req.userName || '', new Date().toISOString(), id);
+    if (b.key) _wobLog(b.key, req.userName, '银行信息提醒: 知道了', `${b.date} ${b.label}${req.body.note ? ' · ' + String(req.body.note).slice(0, 300) : ''}`);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 一个人的全部历史: 手动修改记录 + 系统事件 (上发票、收到 Gusto 邮件), 按时间倒序
+app.get('/api/acct/onboarding-history/:key', requireAdmin, requireWobView, (req, res) => {
+  try {
+    const key = _payrollNameKey(req.params.key);
+    const { list, bank } = _wobScoped(req);
+    const w = list.find(x => x.key === key);
+    if (!w) return res.status(404).json({ error: '找不到这个员工' });
+    const items = db.prepare('SELECT at, by_user, action, detail FROM new_hire_onboarding_log WHERE name_key=? ORDER BY id').all(key)
+      .map(r => ({ at: String(r.at).replace(' ', 'T') + (String(r.at).includes('Z') ? '' : 'Z'), by: r.by_user, action: r.action, detail: r.detail, kind: 'edit' }));
+    const seen = new Set();
+    for (const l of w._lines) {
+      if (seen.has(l.invoice_id)) continue;
+      seen.add(l.invoice_id);
+      items.push({ at: l.period_end, date_only: true, by: '', action: '上发票', detail: `${l.invoice_number} · ${l.company} · ${l.period_start}~${l.period_end}${l.hours ? ' · ' + l.hours + 'h' : ''}`, kind: 'system' });
+    }
+    for (const e of [...w.emails, ...w.email_proposals]) items.push({ at: e.date, date_only: true, by: '', action: `收到 Gusto 邮件${e.by === undefined ? '（待审核）' : ''}`, detail: `${e.label} · ${e.subject}`, kind: 'system' });
+    for (const e of bank.filter(x => x.key === key)) items.push({ at: e.date, date_only: true, by: '', action: '⚠ 银行信息提醒', detail: `${e.label} · ${e.subject}${e.ack_at ? ` （${e.ack_by} 已处理）` : ''}`, kind: 'alert' });
+    items.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+    res.json({ ok: true, name: w.name, items });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 新收到的银行信息邮件 → 发邮件提醒 admin 和负责这个人仓库的 manager (只发一次, notified_at)
+async function _wobNotifyBank() {
+  try {
+    const pending = db.prepare("SELECT id FROM gusto_email_events WHERE kind IN ('bank_bad','bank_updated') AND COALESCE(notified_at,'')='' AND COALESCE(ack_at,'')=''").all();
+    if (!pending.length) return;
+    const { list, bank } = _wobBuild();
+    const users = db.prepare("SELECT role, email, assigned_partner_ids FROM admin_users WHERE role IN ('admin','manager') AND COALESCE(active,1)=1 AND COALESCE(email,'')!=''").all();
+    const base = (process.env.BASE_URL || '').replace(/\/$/, '');
+    for (const { id } of pending) {
+      const b = bank.find(x => x.id === id);
+      db.prepare("UPDATE gusto_email_events SET notified_at=? WHERE id=?").run(new Date().toISOString(), id);
+      if (!b) continue;
+      const w = b.key ? list.find(x => x.key === b.key) : null;
+      const companies = new Set(w ? w._lines.map(l => _canonCompanyName(l.company)) : []);
+      const to = users.filter(u => {
+        if (u.role === 'admin') return true;
+        const pids = String(u.assigned_partner_ids || '').split(',').map(x => parseInt(x, 10)).filter(Boolean);
+        if (!pids.length || !companies.size) return false;
+        return db.prepare(`SELECT name FROM partners WHERE id IN (${pids.map(() => '?').join(',')})`).all(...pids).some(p => companies.has(_canonCompanyName(p.name)));
+      }).map(u => u.email);
+      const who = w ? w.name : b.name;
+      const subject = `⚠ 工人银行信息${b.kind === 'bank_bad' ? '有误' : '已被更新'}: ${who}`;
+      const text = `${who} — ${b.label}（Gusto 邮件 ${b.date}）\n${b.subject}\n\n${w ? '' : '系统里没对上是哪个工人，请到页面上看。\n'}请到新员工入职页处理: ${base}/onboarding`;
+      for (const addr of [...new Set(to)]) { try { await sendEmail(addr, subject, text); } catch (e) { console.log('[onboarding] 提醒邮件失败:', e.message); } }
+    }
+  } catch (e) { console.log('[onboarding] 银行提醒失败:', e.message); }
+}
+
 // 粘贴 Gusto 通知邮件 (Gmail 列表整屏复制即可): 解析出 接受邀请 / 可以付款 / 银行有误 / 银行已更新
 app.post('/api/acct/onboarding-emails', requireAdmin, requireWobWrite, (req, res) => {
   try {
@@ -44419,6 +44562,7 @@ app.post('/api/acct/onboarding-emails', requireAdmin, requireWobWrite, (req, res
     let added = 0;
     db.transaction(() => { for (const ev of events) added += ins.run(ev.kind, ev.name, ev.date, ev.subject, req.userName || '').changes; })();
     if (added) auditLog('gusto_email_import', req, { targetType: 'gusto_email_events', targetId: 'paste', details: { parsed: events.length, added } });
+    if (added) setImmediate(_wobNotifyBank);
     res.json({ ok: true, parsed: events.length, added, events: events.map(e => ({ ...e, label: wob.EMAIL_KIND_LABEL[e.kind] })) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -44484,6 +44628,7 @@ app.post('/api/hooks/gusto-mail', (req, res) => {
       }
     })();
     _mailHookSave({ last_at: new Date().toISOString(), last_received: results.filter(r => r.new).length, last_added: added });
+    if (added) setImmediate(_wobNotifyBank);
     const forwardTo = (cfg.forward_to || []).join(',');
     res.json({ ok: true, results, forward_to: forwardTo, added });
   } catch (e) { res.status(500).json({ error: e.message }); }
