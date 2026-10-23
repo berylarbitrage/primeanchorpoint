@@ -1256,7 +1256,8 @@ async function openHook() {
       <button class="btn btn-blue btn-sm" onclick="saveHook(false)">${j.configured ? '保存' : '保存并生成链接'}</button></div>
     <div class="row" style="margin-top:.35rem;align-items:center"><span class="muted">后来才加进来的人收不到以前的邮件：</span>
       <select id="resendTo" style="max-width:240px">${[...new Set([...j.forward_to, ...(j.subscribers || [])])].map(a => `<option>${esc(a)}</option>`).join('')}</select>
-      <select id="resendMode"><option value="digest">一封汇总</option><option value="each">一封一封发</option></select>
+      <select id="resendMode"><option value="digest">一封汇总</option><option value="each">一封一封发</option></select></div>
+    <div class="row" style="margin-top:.3rem;align-items:center"><span class="muted">邮件日期从</span><input type="date" id="resendFrom"><span class="muted">到</span><input type="date" id="resendTo2"><span class="muted">（不填 = 全部）</span>
       <button class="btn btn-outline btn-sm" onclick="resendOld()">📨 补发以前的入职邮件</button></div>
     ${j.configured ? `
     <div class="lbl" style="margin-top:.6rem">安装步骤（只做一次）</div>
@@ -1272,12 +1273,20 @@ async function openHook() {
     <textarea id="hookCode" rows="14" readonly style="font-family:ui-monospace,Menlo,monospace;font-size:.72rem">${esc(hookScript(j.hook_url))}</textarea>` : ''}
     <div style="text-align:right;margin-top:.5rem"><button class="btn btn-outline btn-sm" onclick="document.getElementById('hookModal').style.display='none'">关闭</button></div>`;
 }
-function resendOld() {
+async function resendOld() {
   const to = document.getElementById('resendTo').value, mode = document.getElementById('resendMode').value;
+  const from = document.getElementById('resendFrom').value, until = document.getElementById('resendTo2').value;
   if (!to) return toast('先在上面填转发地址并保存', true);
-  confirmBox('补发以前的入职邮件', `<div style="font-size:.88rem">把系统里所有入职相关的 Gusto 邮件（接受邀请 / 可以付款 / 银行信息）${mode === 'digest' ? '<b>汇总成一封</b>' : '<b>一封一封</b>'}发给 <b>${esc(to)}</b>？</div>
+  if (from && until && from > until) return toast('开始日期不能晚于结束日期', true);
+  // 先数一下这个时间段有几封, 确认框里写清楚
+  const cnt = await api('/api/acct/onboarding-mailhook/resend', { method: 'POST', body: { to, from, to_date: until, count_only: true } }).catch(e => ({ error: e.message }));
+  if (cnt.error) return toast(cnt.error, true);
+  const n = cnt && cnt.count != null ? cnt.count : '?';
+  if (n === 0) return toast('这个时间段没有入职相关的 Gusto 邮件', true);
+  const range = from || until ? `${from || '最早'} ~ ${until || '现在'} 的` : '所有';
+  confirmBox('补发以前的入职邮件', `<div style="font-size:.88rem">把${range}入职相关 Gusto 邮件（接受邀请 / 可以付款 / 银行信息，共 <b>${n}</b> 封）${mode === 'digest' ? '<b>汇总成一封</b>' : '<b>一封一封</b>'}发给 <b>${esc(to)}</b>？</div>
     <div class="muted" style="margin-top:.3rem">系统只存了每封邮件的标题（日期、类型、名字），没有原邮件正文。${mode === 'each' ? '一封一封发会发很多封邮件。' : ''}</div>`, async () => {
-    const j = await api('/api/acct/onboarding-mailhook/resend', { method: 'POST', body: { to, mode } }).catch(e => ({ error: e.message }));
+    const j = await api('/api/acct/onboarding-mailhook/resend', { method: 'POST', body: { to, mode, from, to_date: until } }).catch(e => ({ error: e.message }));
     if (j.error) { document.getElementById('pmErr').textContent = j.error; return false; }
     toast(`已补发 ${j.count} 封入职邮件给 ${to}${mode === 'digest' ? '（汇总成一封）' : ''}`);
     return true;
