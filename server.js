@@ -45391,6 +45391,35 @@ app.get('/api/acct/onboarding-employees', requireAdmin, requireWobWrite, (req, r
 });
 
 // 对不上人的 Gusto 邮件: manager / admin 手动关联到某个工人 (直接算通过), 或者暂时忽略
+// 手动关联 Gusto: 列出所有「接受邀请 / 可以付款」邮件里的名字 (同名的放一起), 按和这个工人名字像不像排序, 最像的标「最合适」
+app.get('/api/acct/onboarding-email-names', requireAdmin, requireWobView, (req, res) => {
+  try {
+    const key = _payrollNameKey(req.query.key);
+    const { list } = _wobScoped(req);
+    const w = list.find(x => x.key === key);
+    if (!w) return res.status(404).json({ error: '找不到这个员工' });
+    const mine = [w.name, ...(w.invoice_names || []), w.employee && w.employee.name].filter(Boolean);
+    const myWords = mine.map(n => new Set(wob.nameWords(n)));
+    const nameOf = k => { const x = list.find(y => y.key === k); return x ? x.name : k; };
+    const groups = new Map();
+    for (const ev of db.prepare(`SELECT id, kind, name, date, worker_key FROM gusto_email_events WHERE kind IN ('accepted','ready') ORDER BY date DESC, id DESC`).all()) {
+      const g = groups.get(ev.name.toLowerCase()) || { name: ev.name, events: [] };
+      g.events.push({ id: ev.id, kind: ev.kind, label: wob.EMAIL_KIND_LABEL[ev.kind] || ev.kind, date: ev.date,
+        worker_key: ev.worker_key || '', worker_name: ev.worker_key ? nameOf(ev.worker_key) : '' });
+      groups.set(ev.name.toLowerCase(), g);
+    }
+    // 像不像: 名字里的词有几个对得上 (邮件常常只写名 + 姓, 发票上可能多一个中间名)
+    const score = n => {
+      const ws = wob.nameWords(n);
+      if (!ws.length) return 0;
+      return Math.max(0, ...myWords.map(m => { const hit = ws.filter(x => m.has(x)).length; return hit ? Math.round(100 * (2 * hit) / (ws.length + m.size)) : 0; }));
+    };
+    const out = [...groups.values()].map(g => ({ ...g, score: score(g.name), mine: g.events.some(e => e.worker_key === key) }))
+      .sort((a, b) => b.score - a.score || String(b.events[0].date).localeCompare(String(a.events[0].date)));
+    if (out.length && out[0].score >= 50) out[0].best = true;
+    res.json({ ok: true, worker: w.name, names: out.slice(0, 300), can_assign: _wobCanApprove(req) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.post('/api/acct/onboarding-email-assign', requireAdmin, requireWobWrite, (req, res) => {
   try {
     if (!_wobCanApprove(req)) return res.status(403).json({ error: '只有 manager / admin 能关联邮件' });

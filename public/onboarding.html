@@ -59,6 +59,8 @@ input,select,textarea{padding:.38rem .5rem;border:1px solid var(--g300);border-r
 .old{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;padding:.45rem 1rem;font-size:.8rem;margin-bottom:6px;border-left:4px solid var(--g300)}
 .old.done{border-left-color:var(--green)}
 .old .pm button{padding:.15rem .55rem;font-size:.72rem}
+.gn{display:flex;gap:.5rem;align-items:center;border:1px solid var(--g200);border-radius:8px;padding:.45rem .6rem;margin-bottom:.35rem}
+.gn.best{border-color:#16a34a;background:#f0fdf4}
 .zacc{border-bottom:1px dashed #ddd6fe;padding-bottom:.35rem;margin-bottom:.4rem}
 .zrow{display:grid;grid-template-columns:1fr 1fr 28px;gap:.35rem;margin-bottom:.3rem;align-items:center}
 .zshots{display:flex;gap:.35rem;flex-wrap:wrap;align-items:center;margin-bottom:.25rem}
@@ -1035,14 +1037,61 @@ function eSearch(k) {
       || '<div class="muted">没找到。可以换个写法搜，或者先去员工管理建档。</div>';
   }, 250);
 }
+// 手动关联 Gusto: 列出「接受邀请 / 可以付款」邮件里的所有名字, 系统按名字像不像排好, 最像的标「⭐ 最合适」;
+// 关联要弹窗确认两次。连了 Gusto API 的话下面还能直接选 Gusto 收款人
+let GN = null;
 async function pickGusto(k) {
-  const m = document.getElementById('gModal');
-  document.getElementById('gTitle').textContent = '关联 Gusto 收款人';
-  document.getElementById('gBody').innerHTML = `<input id="gQ" placeholder="搜名字" style="width:100%;margin-bottom:.5rem" oninput="gSearch(${k})"><div id="gRes" style="max-height:50vh;overflow:auto"></div>
-    <div style="display:flex;justify-content:space-between;margin-top:.5rem"><button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none';save(${k},{gusto_uuid:''})">清除手动关联（改回按名字自动对）</button><button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none'">关闭</button></div>`;
+  const m = document.getElementById('gModal'), w = D.rows[k];
+  document.getElementById('gTitle').textContent = `关联 Gusto · ${w.name}`;
+  document.getElementById('gBody').innerHTML = `<input id="gnQ" placeholder="筛选名字" style="width:100%;margin-bottom:.4rem" oninput="gnRender(${k})">
+    <div class="muted" style="margin-bottom:.35rem">Gusto 邮件（接受邀请 / 可以付款）里的所有名字，按和「${esc(w.name)}」像不像排好了</div>
+    <div id="gnRes" style="max-height:46vh;overflow:auto"><div class="muted">加载中…</div></div>
+    ${D.gusto.connected ? `<div class="lbl" style="margin-top:.6rem">或者直接选 Gusto 收款人（Gusto API）</div><input id="gQ" placeholder="搜名字" style="width:100%;margin-bottom:.4rem" oninput="gSearch(${k})"><div id="gRes" style="max-height:24vh;overflow:auto"></div>` : ''}
+    <div style="display:flex;justify-content:space-between;margin-top:.5rem">${D.gusto.connected ? `<button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none';save(${k},{gusto_uuid:''})">清除手动关联（改回按名字自动对）</button>` : '<span></span>'}<button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none'">关闭</button></div>`;
   m.style.display = 'flex';
-  document.getElementById('gQ').value = D.rows[k].name.split(' ')[0];
-  gSearch(k);
+  if (D.gusto.connected) { document.getElementById('gQ').value = w.name.split(' ')[0]; gSearch(k); }
+  GN = await api('/api/acct/onboarding-email-names?key=' + encodeURIComponent(w.key)).catch(e => ({ error: e.message }));
+  gnRender(k);
+}
+function gnRender(k) {
+  const el = document.getElementById('gnRes');
+  if (!el || !GN) return;
+  if (GN.error) { el.innerHTML = `<div style="color:var(--red)">${esc(GN.error)}</div>`; return; }
+  const q = (document.getElementById('gnQ').value || '').trim().toLowerCase();
+  const rows = GN.names.map((g, i) => ({ g, i })).filter(({ g }) => !q || g.name.toLowerCase().includes(q));
+  el.innerHTML = rows.map(({ g, i }) => `<div class="gn ${g.best ? 'best' : ''}">
+      <div style="flex:1;min-width:0"><b>${esc(g.name)}</b>
+        ${g.best ? '<span class="tag" style="background:#16a34a;color:#fff">⭐ 最合适</span>' : g.score ? `<span class="tag" style="background:var(--g100);color:var(--g600)">像 ${g.score}%</span>` : ''}
+        ${g.mine ? '<span class="tag" style="background:#dcfce7;color:#166534">已关联到这个人</span>' : ''}
+        <div style="margin-top:.15rem">${g.events.map(e => `<span class="tag" style="background:#e0f2fe;color:#075985">${esc(e.date)} ${esc(e.label)}</span>${e.worker_key && e.worker_key !== D.rows[k].key ? `<span class="muted"> 已关联给 ${esc(e.worker_name)}</span>` : ''}`).join(' ')}</div></div>
+      ${GN.can_assign && !g.mine ? `<button class="btn ${g.best ? 'btn-blue' : 'btn-outline'} btn-sm" onclick="gnAssign(${k},${i})">关联</button>` : ''}</div>`).join('')
+    || '<div class="muted">没有 Gusto 邮件（接受邀请 / 可以付款）。邮件同步正常的话，工人接受邀请后这里就会有。</div>';
+  if (!GN.can_assign) el.insertAdjacentHTML('afterbegin', '<div class="muted" style="margin-bottom:.3rem">关联 Gusto 邮件要 manager / admin 来做</div>');
+}
+function gnAssign(k, i) {
+  const w = D.rows[k], g = GN.names[i];
+  const others = [...new Set(g.events.filter(e => e.worker_key && e.worker_key !== w.key).map(e => e.worker_name))];
+  const evs = g.events.map(e => `${esc(e.date)} ${esc(e.label)}`).join('、');
+  document.getElementById('gModal').style.display = 'none';
+  // 第一次确认
+  confirmBox('关联 Gusto 邮件', `<div style="font-size:.88rem">把 Gusto 邮件里的「<b>${esc(g.name)}</b>」（${evs}）关联到工人 <b>${esc(w.name)}</b>？</div>
+    ${g.best ? '' : '<div style="margin-top:.35rem;color:#b45309;font-size:.82rem">⚠ 系统觉得这个名字不是最合适的，请仔细核对</div>'}
+    ${others.length ? `<div style="margin-top:.35rem;color:#991b1b;font-size:.82rem">⚠ 这些邮件现在关联给了 ${esc(others.join('、'))}，关联后会改到 ${esc(w.name)}</div>` : ''}`, () => {
+    // 第二次确认
+    confirmBox('再确认一次', `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:.55rem .7rem;font-size:.88rem;color:#991b1b">
+        确定「<b>${esc(g.name)}</b>」就是 <b>${esc(w.name)}</b>？<br>关联后 Gusto 清单的「工人接受邀请 / 入职完成」会按这些邮件打勾。</div>`, async () => {
+      let pend = false;
+      for (const e of g.events) {
+        const j = await api('/api/acct/onboarding-email-assign', { method: 'POST', body: { event_id: e.id, key: w.key } }).catch(x => ({ error: x.message }));
+        if (j.pending) { pend = true; continue; }
+        if (j.error) { document.getElementById('pmErr').textContent = j.error; return false; }
+      }
+      toast(pend ? '📝 已提交审批，等 staff / admin 同意后才会生效' : `已关联：${g.name} → ${w.name}`);
+      load();
+      return true;
+    });
+    return false;
+  });
 }
 let _gT = null;
 function gSearch(k) {
