@@ -45754,14 +45754,17 @@ app.post('/api/hooks/gusto-mail', (req, res) => {
         const date = /^\d{4}-\d{2}-\d{2}/.test(String(m.date || '')) ? String(m.date).slice(0, 10) : new Date().toISOString().slice(0, 10);
         if (seen.get(id)) { results.push({ id, new: false, forward: false }); continue; }
         const ev = wob.parseGustoEmails(subject, date)[0] || null;
+        let inserted = 0;
         if (ev) {
           ev.date = date;
           const oldBank = backfill && /^bank_/.test(ev.kind) && date < oldCut;
-          added += ins.run(ev.kind, ev.name, ev.date, ev.subject, backfill ? '邮箱同步（历史邮件）' : '邮箱自动同步',
+          inserted = ins.run(ev.kind, ev.name, ev.date, ev.subject, backfill ? '邮箱同步（历史邮件）' : '邮箱自动同步',
             backfill ? 'backfill' : '', oldBank ? '历史邮件（自动）' : '', oldBank ? new Date().toISOString() : '').changes;
+          added += inserted;
         }
         mark.run(id, ev ? ev.kind : '', ev ? ev.name : '', subject, String(m.date || ''));
-        results.push({ id, new: true, forward: !!ev && !backfill, kind: ev ? ev.kind : '', name: ev ? ev.name : '', label: ev ? wob.EMAIL_KIND_LABEL[ev.kind] : '',
+        // 同一天同一个人同一种邮件已经记过了 (Gusto 重复发 / 同一封在别的线程里) = 重复: 不再转发、不再算新的
+        results.push({ id, new: true, dup: !!ev && !inserted, forward: !!ev && !backfill && inserted > 0, kind: ev ? ev.kind : '', name: ev ? ev.name : '', label: ev ? wob.EMAIL_KIND_LABEL[ev.kind] : '',
           _subject: subject, _date: date, _body: String((m && m.body) || '').slice(0, 3000) });
       }
     })();
@@ -45800,7 +45803,9 @@ async function _wobForwardMail(list, to) {
 app.get('/api/acct/onboarding-mailhook', requireAdmin, requireWobView, (req, res) => {
   const cfg = _mailHookCfg();
   const isAdmin = req.userRole === 'admin';
-  const recent = db.prepare(`SELECT kind, name, subject, received_at, created_at FROM gusto_mail_seen WHERE kind!='' ORDER BY created_at DESC LIMIT 15`).all();
+  // 同一天同一个人同一种邮件只列一次 (重复的邮件不再列出来)
+  const recent = db.prepare(`SELECT kind, name, MAX(subject) AS subject, MAX(received_at) AS received_at, MAX(created_at) AS created_at FROM gusto_mail_seen
+    WHERE kind!='' GROUP BY kind, LOWER(name), substr(received_at, 1, 10) ORDER BY MAX(created_at) DESC LIMIT 15`).all();
   res.json({ configured: !!cfg.token, is_admin: isAdmin, forward_to: cfg.forward_to || [], subscribers: isAdmin ? _wobSubscribers() : [],
     hook_url: isAdmin && cfg.token ? _mailHookUrl(req, cfg.token) : '',
     last_at: cfg.last_at || '', last_received: cfg.last_received || 0, last_added: cfg.last_added || 0,
