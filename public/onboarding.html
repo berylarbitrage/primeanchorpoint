@@ -767,7 +767,7 @@ function zNameSame(a, b) {
   const wa = cleanName(a).toLowerCase().split(' ').filter(Boolean), wb = cleanName(b).toLowerCase().split(' ').filter(Boolean);
   return wa.length > 0 && wa.length === wb.length && wa.every(x => wb.includes(x));
 }
-function zChecks(w, k, z) {
+function zChecks(w, k, z, noBtns) {
   const c = [];
   const who = esc(w.employee ? w.employee.name : w.name);
   if (z.name_match === 'ok') c.push(`<span class="ok">✓ 户主和工人同名</span>`);
@@ -787,7 +787,7 @@ function zChecks(w, k, z) {
   } else if (shot && D.can_approve && !z.ok) c.push(`<span style="padding:0"><button class="btn btn-outline btn-sm" style="padding:.05rem .45rem;font-size:.72rem" onclick="zReadShot('${shot}','${w.pay_method}')">🔍 读截图核对</button></span>`);
   else if (!shot) c.push(`<span class="warn">⚠ 没截图，核对不了</span>`);
   const i = accsOf(w, w.pay_method).indexOf(z);
-  const btns = !D.can_approve ? '' : !z.ok
+  const btns = !D.can_approve || noBtns ? '' : !z.ok
     ? `<span style="padding:0;margin-left:auto;display:flex;gap:.25rem"><button class="btn btn-blue btn-sm" style="padding:.1rem .6rem" onclick="zReview(${k},${i},true)">✓ 通过</button>
        ${z.rejected ? '' : `<button class="btn btn-outline btn-sm" style="padding:.1rem .6rem;color:#991b1b" onclick="zReview(${k},${i},false)">✗ 不对</button>`}</span>`
     : `<span style="padding:0;margin-left:auto"><button class="btn btn-outline btn-sm" style="padding:.05rem .45rem;font-size:.7rem" onclick="zReview(${k},${i},false)">改成不对</button></span>`;
@@ -799,14 +799,26 @@ async function zReadShot(id, kind) {
   ZREAD[id] = r.error ? { error: r.error } : { account: r.account || '', name: r.name || '', routing: r.routing || '' };
   renderList();
 }
+// 审核弹窗: 这个收款人的截图 (账号截图 + 聊天记录) 放大摆出来, 读完再点通过 / 不对
 function zReview(k, i, ok) {
   const w = D.rows[k], z = accsOf(w, w.pay_method)[i];
   if (!z) return;
+  const A = ACC[w.pay_method];
   const warn = z.name_match !== 'ok' || (z.dup_with || []).length || !(z.chat_shots || []).length;
-  confirmBox(ok ? '收款账号审核通过' : '收款账号不对', `<div style="font-size:.88rem"><b>${esc(w.name)}</b>：${esc(ACC[w.pay_method].label)} ${z.type === 'ach' ? '路由 ' + esc(z.routing) + ' 账号 ' : ''}${esc(z.account)}，户主 <b>${esc(z.name || '')}</b></div>
+  const big = (ids, kind) => ids.length ? ids.map(id => `<a href="${shotUrl(id)}" target="_blank" class="shot-a" data-kind="${esc(kind)}" onclick="return shotView(event,this)" title="点开全屏看"><img src="${shotUrl(id)}" style="width:100%;max-height:62vh;object-fit:contain;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;display:block;margin-bottom:.4rem"></a>`).join('')
+    : `<div style="background:#fef2f2;color:#991b1b;border-radius:8px;padding:1.2rem .6rem;text-align:center;font-weight:700">没有${esc(kind)}</div>`;
+  confirmBox(ok ? '审核收款账号：通过' : '审核收款账号：不对', `<div class="zv">
+    <div style="font-size:.92rem"><b>${esc(w.name)}</b>${w.employee ? `（档案：${esc(w.employee.name)}）` : ''} → ${esc(A.label)} ${z.type === 'ach' ? '路由 <b>' + esc(z.routing) + '</b> 账号 ' : ''}<b>${esc(z.account)}</b>，户主 <b>${esc(z.name || '')}</b></div>
+    ${zChecks(w, k, z, true)}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:.7rem;margin-top:.6rem">
+      <div><div class="lbl" style="margin-bottom:.25rem">① ${esc(A.shot || A.label + ' 截图')}（${shotsOf(z).length} 张）</div>${big(shotsOf(z), A.shot || A.label + ' 截图')}</div>
+      <div><div class="lbl" style="margin-bottom:.25rem">② 聊天记录（${(z.chat_shots || []).length} 张）</div>${big(z.chat_shots || [], '聊天记录')}</div>
+    </div>
+    <div class="muted" style="margin-top:.2rem">图还看不清就点一下，全屏看（← → 翻页）。</div>
     ${ok && warn ? '<div style="margin-top:.4rem;background:#fef2f2;color:#991b1b;border-radius:6px;padding:.35rem .5rem;font-size:.82rem">上面有 ⚠ 提醒（户主名字对不上 / 别人也在用这个账号 / 没有聊天记录），核实过了再通过</div>' : ''}
-    ${ok ? '' : '<div class="lbl" style="margin-top:.5rem">哪里不对（填的人会看到）</div><input id="zRejNote" style="width:100%" placeholder="例：户主不是本人 / 号码和截图不一样">'}`,
-    () => save(k, ok ? { approve: 'zelle', type: w.pay_method, account: z.account, routing: z.routing } : { reject: 'zelle', type: w.pay_method, account: z.account, routing: z.routing, note: document.getElementById('zRejNote').value }));
+    ${ok ? '' : '<div class="lbl" style="margin-top:.5rem">哪里不对（填的人会看到）</div><input id="zRejNote" style="width:100%" placeholder="例：户主不是本人 / 号码和截图不一样">'}</div>`,
+    () => save(k, ok ? { approve: 'zelle', type: w.pay_method, account: z.account, routing: z.routing } : { reject: 'zelle', type: w.pay_method, account: z.account, routing: z.routing, note: document.getElementById('zRejNote').value }), true);
+  document.getElementById('pmGo').textContent = ok ? '✓ 确认通过' : '✗ 确认不对';
 }
 function zSync(k) {
   const ed = ZEDIT[D.rows[k].key];
@@ -924,11 +936,18 @@ function pickPay(k, m) {
 }
 function fmtTime(t) { if (!t) return ''; const d = new Date(t); return isNaN(d) ? String(t) : d.toLocaleString(); }
 // 通用确认弹窗 (页面居中): 确认后跑 fn, fn 返回 true 才关
-function confirmBox(title, html, fn) {
+function confirmBox(title, html, fn, wide) {
+  // wide: 审核收款账号时要看大截图, 弹窗放宽、内容太高就滚动
+  const card = document.querySelector('#pmModal > .card');
+  card.style.maxWidth = wide ? 'min(1150px, 96vw)' : '440px';
+  card.style.width = wide ? '100%' : '';
+  card.style.maxHeight = wide ? '88vh' : '';
+  card.style.overflowY = wide ? 'auto' : '';
   document.getElementById('pmTitle').textContent = title;
   document.getElementById('pmBody').innerHTML = html;
   document.getElementById('pmErr').textContent = '';
   const go = document.getElementById('pmGo');
+  go.textContent = '确认';
   go.onclick = async () => { go.disabled = true; const ok = await fn(); go.disabled = false; if (ok) document.getElementById('pmModal').style.display = 'none'; };
   document.getElementById('pmModal').style.display = 'flex';
 }
