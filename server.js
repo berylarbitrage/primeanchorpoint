@@ -44786,6 +44786,15 @@ function _wobAccKey(v) {
   const d = t.replace(/\D/g, '');
   return d.length === 11 && d[0] === '1' ? d.slice(1) : (/[a-z]/.test(t) ? t : d);
 }
+// ACH 路由号 (ABA) 9 位 + 校验位: 3·(d1+d4+d7) + 7·(d2+d5+d8) + (d3+d6+d9) 能被 10 整除
+function _wobAbaOk(v) {
+  const d = String(v || '').replace(/\D/g, '');
+  if (d.length !== 9) return false;
+  const n = [...d].map(Number);
+  return (3 * (n[0] + n[3] + n[6]) + 7 * (n[1] + n[4] + n[7]) + (n[2] + n[5] + n[8])) % 10 === 0;
+}
+// 一个收款账号的身份: ACH 是 路由号 + 账号, 其他是账号本身
+const _wobAccId = z => (z.type === 'ach' ? 'ach:' + String(z.routing || '').replace(/\D/g, '') + ':' + String(z.account || '').replace(/\D/g, '') : _wobAccKey(z.account));
 const _wobNameWords = v => String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/[^a-z]+/).filter(Boolean);
 // 户主名字和这些名字 (工人 / 员工档案 / 发票上的) 比: ok = 词都对得上 (多个中间名不算错), partial = 只有部分词一样 (比如同姓), no = 完全不像
 function _wobHolderMatch(holder, names) {
@@ -44908,7 +44917,8 @@ function _wobBuild() {
       employee, employee_proposals: empProposals, phone: employee ? employee.phone : '', phone_old: s.phone || '',
       inv_states: invStates, state_bad: !!(employee && employee.state_bad),
       pay_method: s.pay_method || '', pay_note: s.pay_note || '', suggest,
-      zelle_accounts: _wobZelle(s).filter(z => z.type !== 'cashapp'), cashapp_accounts: _wobZelle(s).filter(z => z.type === 'cashapp'),
+      zelle_accounts: _wobZelle(s).filter(z => !['cashapp', 'ach'].includes(z.type)), cashapp_accounts: _wobZelle(s).filter(z => z.type === 'cashapp'),
+      ach_accounts: _wobZelle(s).filter(z => z.type === 'ach'),
       pay_history: _wobJson(s.pay_history, []), pay_since: s.pay_since || '',
       gusto, gusto_proposal: proposal, first_payment: firstPay, manual,
       updated_by: s.updated_by || '', updated_at: s.updated_at || '',
@@ -44954,7 +44964,7 @@ function _wobBuild() {
   const accUsers = {};
   for (const r of db.prepare(`SELECT name_key, name, zelle_accounts, zelle_account, zelle_name FROM new_hire_onboarding`).all()) {
     for (const z of _wobZelle(r)) {
-      const k = _wobAccKey(z.account);
+      const k = _wobAccId(z);
       if (!k) continue;
       const arr = accUsers[k] = accUsers[k] || [];
       if (!arr.some(u => u.key === r.name_key)) arr.push({ key: r.name_key, name: r.name || r.name_key });
@@ -44968,15 +44978,16 @@ function _wobBuild() {
     if (w.gusto) delete w.gusto.raw;
     // Zelle / Cash App 账号的审核信息: 户主名字对不对、同一个账号还有谁在用、截图读到的对不对
     const names = [w.name, ...(w.invoice_names || []), w.employee && w.employee.name].filter(Boolean);
-    for (const z of [...w.zelle_accounts, ...w.cashapp_accounts]) {
+    for (const z of [...w.zelle_accounts, ...w.cashapp_accounts, ...w.ach_accounts]) {
       z.name_match = _wobHolderMatch(z.name, names);
-      z.dup_with = (accUsers[_wobAccKey(z.account)] || []).filter(u => u.key !== w.key).map(u => u.name);
-      if (z.read && (z.read.account || z.read.name)) {
-        z.read_acc_ok = !z.read.account || _wobAccKey(z.read.account) === _wobAccKey(z.account);
+      z.dup_with = (accUsers[_wobAccId(z)] || []).filter(u => u.key !== w.key).map(u => u.name);
+      if (z.read && (z.read.account || z.read.name || z.read.routing)) {
+        z.read_acc_ok = (!z.read.account || _wobAccKey(z.read.account) === _wobAccKey(z.account))
+          && (z.type !== 'ach' || !z.read.routing || z.read.routing.replace(/\D/g, '') === String(z.routing || ''));
         z.read_name_ok = !z.read.name || _wobHolderMatch(z.read.name, [z.name]) === 'ok';
       }
     }
-    const curAccs = w.pay_method === 'zelle' ? w.zelle_accounts : w.pay_method === 'cashapp' ? w.cashapp_accounts : [];
+    const curAccs = w.pay_method === 'zelle' ? w.zelle_accounts : w.pay_method === 'cashapp' ? w.cashapp_accounts : w.pay_method === 'ach' ? w.ach_accounts : [];
     w.pay_review = curAccs.filter(z => !z.ok && !z.rejected).length;
     w.pay_rejected = curAccs.filter(z => z.rejected).length;
     w.pending_review = (w.gusto_proposal ? 1 : 0) + (w.employee_proposals.length ? 1 : 0) + w.email_proposals.length + w.pay_review;
@@ -45023,10 +45034,10 @@ app.get('/api/acct/onboarding-shot/:id', requireAdmin, requireWobView, (req, res
   res.setHeader('Cache-Control', 'private, max-age=86400');
   res.sendFile(path.resolve(fp));
 });
-// 从截图里读账号 + 户主名字. kind: zelle (电话 / 邮箱) | cashapp ($Cashtag)
+// 从截图里读账号 + 户主名字. kind: zelle (电话 / 邮箱) | cashapp ($Cashtag) | ach (路由号 + 账号, 支票 / 银行 App / 直存表)
 app.post('/api/acct/onboarding-shot-read', requireAdmin, requireWobWrite, async (req, res) => {
   try {
-    const kind = (req.body || {}).kind === 'cashapp' ? 'cashapp' : 'zelle';
+    const kind = ['cashapp', 'ach'].includes((req.body || {}).kind) ? req.body.kind : 'zelle';
     const id = String((req.body || {}).id || '');
     if (!/^[a-f0-9]{32}\.(jpg|png|webp)$/.test(id) || !fs.existsSync(path.join(_wobShotDir, id))) return res.status(400).json({ error: '先上传截图' });
     const buf = fs.readFileSync(path.join(_wobShotDir, id));
@@ -45034,14 +45045,24 @@ app.post('/api/acct/onboarding-shot-read', requireAdmin, requireWobWrite, async 
     const fromText = t => {
       t = String(t || '');
       if (kind === 'cashapp') { const c = t.match(/\$[A-Za-z][A-Za-z0-9_]{0,19}/); return { account: c ? c[0] : '', name: '' }; }
+      if (kind === 'ach') {
+        // 9 位且校验位对的当路由号; 剩下 4-17 位的数字当账号
+        const nums = (t.match(/\d[\d -]{2,20}\d/g) || []).map(x => x.replace(/\D/g, ''));
+        const routing = nums.find(_wobAbaOk) || '';
+        const account = nums.find(x => x !== routing && x.length >= 4 && x.length <= 17) || '';
+        return { routing, account, name: '' };
+      }
       const e = t.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/), p = t.match(/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/);
       return { account: e ? e[0] : p ? p[0].trim() : '', name: '' };
     };
     const key = process.env.ANTHROPIC_API_KEY;
     if (key) {
       const model = process.env.ANTHROPIC_VISION_MODEL || 'claude-sonnet-5';
-      const what = kind === 'cashapp' ? 'Cash App 收款信息（$Cashtag 和账户名字）' : 'Zelle 收款信息（Zelle 绑定的电话或邮箱，和账户名字）';
-      const prompt = `这是一张${what}的手机截图。只输出 JSON，不要别的内容：
+      const what = kind === 'cashapp' ? 'Cash App 收款信息（$Cashtag 和账户名字）' : kind === 'ach' ? '银行账户信息（支票、银行 App 账户详情页或直存表，有路由号 routing number 和账号 account number）' : 'Zelle 收款信息（Zelle 绑定的电话或邮箱，和账户名字）';
+      const prompt = kind === 'ach' ? `这是一张${what}的照片或截图。只输出 JSON，不要别的内容：
+{"routing":"9 位路由号 (routing / ABA)，只要数字","account":"银行账号 (account number)，只要数字","name":"账户户主名字（英文原样）","bank":"银行名字","confidence":"high|low","note":"看不清或不确定的地方"}
+支票底下一排数字一般是：路由号、账号、支票号，不要把支票号当账号。读不到的填空字符串。数字逐位核对，不要猜。`
+        : `这是一张${what}的手机截图。只输出 JSON，不要别的内容：
 {"account":"${kind === 'cashapp' ? '$Cashtag，带 $ 号' : 'Zelle 电话或邮箱，原样照抄'}","name":"账户上显示的名字（英文原样）","confidence":"high|low","note":"看不清或不确定的地方"}
 读不到的填空字符串。账号逐字符核对，不要猜。`;
       const r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -45054,7 +45075,15 @@ app.post('/api/acct/onboarding-shot-read', requireAdmin, requireWobWrite, async 
       if (!r.ok) return res.status(502).json({ error: 'AI 识别失败: ' + ((body.error && body.error.message) || r.status) });
       const text = ((body.content || []).find(c => c.type === 'text') || {}).text || '';
       let j = {}; try { j = JSON.parse((text.match(/\{[\s\S]*\}/) || ['{}'])[0]); } catch (e) {}
-      return res.json({ ok: true, engine: 'claude', account: String(j.account || '').trim(), name: String(j.name || '').trim(), confidence: j.confidence || '', note: j.note || '' });
+      const out = { ok: true, engine: 'claude', account: String(j.account || '').trim(), name: String(j.name || '').trim(), confidence: j.confidence || '', note: j.note || '' };
+      if (kind === 'ach') {
+        out.account = out.account.replace(/\D/g, '');
+        out.routing = String(j.routing || '').replace(/\D/g, '');
+        out.bank = String(j.bank || '').trim();
+        // 路由号校验位不对 = 读错了一位 (或者不是路由号), 提醒人核对
+        if (out.routing && !_wobAbaOk(out.routing)) { out.confidence = 'low'; out.note = ['路由号校验不对，可能读错了一位', out.note].filter(Boolean).join('；'); }
+      }
+      return res.json(out);
     }
     const gKey = process.env.GOOGLE_VISION_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
     if (gKey) {
@@ -45116,7 +45145,7 @@ function _wobPendingChanges() {
   _wobCloseNoopChanges();
   const rows = db.prepare(`SELECT id, user_id, username, display_name, method, path, body, created_at FROM pending_changes
     WHERE status='pending' AND path LIKE '/api/acct/onboarding%' ORDER BY id`).all();
-  const PM = { gusto: 'Gusto 入职', cash: '现金', check: '支票', zelle: 'Zelle', cashapp: 'Cash App', skip: '不用处理', '': '不选' };
+  const PM = { gusto: 'Gusto 入职', cash: '现金', check: '支票', zelle: 'Zelle', cashapp: 'Cash App', ach: 'ACH 转账', skip: '不用处理', '': '不选' };
   const empName = id => { const e = id && db.prepare('SELECT first_name, last_name, employee_id FROM employees WHERE id=?').get(id); return e ? `${e.first_name} ${e.last_name}${e.employee_id ? '（' + e.employee_id + '）' : ''}` : (id ? '#' + id : '无'); };
   const gName = u => { const c = u && db.prepare('SELECT name FROM gusto_contractors WHERE uuid=?').get(u); return c ? c.name : (u || '无'); };
   const evOf = id => db.prepare('SELECT id, kind, name, date FROM gusto_email_events WHERE id=?').get(parseInt(id, 10) || 0);
@@ -45130,12 +45159,13 @@ function _wobPendingChanges() {
       out.kind = 'worker';
       // 页面上先按「已经选了」显示 (付款方式 / 账号 / 勾的步骤 / 关联的档案), 后面的步骤不用等审批
       out.body = {};
-      for (const f of ['pay_method', 'zelle_accounts', 'cashapp_accounts', 'step', 'checked', 'employee_id', 'approve', 'id', 'uuid', 'gusto_uuid']) if (b[f] !== undefined) out.body[f] = b[f];
+      for (const f of ['pay_method', 'zelle_accounts', 'cashapp_accounts', 'ach_accounts', 'step', 'checked', 'employee_id', 'approve', 'id', 'uuid', 'gusto_uuid']) if (b[f] !== undefined) out.body[f] = b[f];
       out.key = _payrollNameKey(decodeURIComponent(m[1]));
       const cur = db.prepare('SELECT * FROM new_hire_onboarding WHERE name_key=?').get(out.key) || {};
       if (b.pay_method !== undefined) out.items.push(`付款方式：${PM[cur.pay_method || ''] || cur.pay_method} → ${PM[b.pay_method] || b.pay_method}`);
       if (Array.isArray(b.zelle_accounts)) out.items.push(`Zelle 账号：${b.zelle_accounts.map(z => `${z.account}（户主 ${z.name}）`).join('、') || '清空'}`);
       if (Array.isArray(b.cashapp_accounts)) out.items.push(`Cash App 账号：${b.cashapp_accounts.map(z => `${z.account}（户主 ${z.name}）`).join('、') || '清空'}`);
+      if (Array.isArray(b.ach_accounts)) out.items.push(`ACH 账户：${b.ach_accounts.map(z => `路由 ${z.routing} 账号 ${z.account}（户主 ${z.name}）`).join('、') || '清空'}`);
       if (b.unapprove) out.items.push(`撤销通过：${{ employee: '员工档案', gusto: 'Gusto 收款人', email: 'Gusto 邮件' }[b.unapprove] || b.unapprove}`);
       if (b.warehouse !== undefined) out.items.push(`仓库：${cur.warehouse || '（发票上的）'} → ${b.warehouse || '（发票上的）'}`);
       if (b.pay_note !== undefined) out.items.push(`备注：「${String(b.pay_note).slice(0, 120)}」`);
@@ -45146,7 +45176,7 @@ function _wobPendingChanges() {
       if (what === 'employee') out.items.push(`${b.approve ? '通过' : '否掉'}系统匹配的员工档案：${empName(b.id)}`);
       if (what === 'gusto') out.items.push(`${b.approve ? '通过' : '否掉'}系统匹配的 Gusto 收款人：${gName(b.uuid)}`);
       if (what === 'email') { out.items.push(`${b.approve ? '通过' : '否掉'}邮件对人：${evTxt(evOf(b.event_id))}`); out.event_ids.push(parseInt(b.event_id, 10)); }
-      if (what === 'zelle') out.items.push(`${b.approve ? '通过' : '否掉'}收款账号：${b.type === 'cashapp' ? 'Cash App' : 'Zelle'} ${b.account}${b.note ? '（' + b.note + '）' : ''}`);
+      if (what === 'zelle') out.items.push(`${b.approve ? '通过' : '否掉'}收款账号：${{ cashapp: 'Cash App', ach: 'ACH' }[b.type] || 'Zelle'} ${b.account}${b.note ? '（' + b.note + '）' : ''}`);
       if (what === 'phone') out.items.push(`${b.approve ? '通过' : '否掉'}电话：${b.phone_value}`);
       if (b.step) { const st = wob.GUSTO_STEPS.find(x => x.id === b.step); out.items.push(`清单${b.checked ? '打勾' : '取消打勾'}：${st ? st.label : b.step}`); }
     } else if (p === '/api/acct/onboarding-email-assign') {
@@ -45308,24 +45338,31 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
     }
     // Zelle / Cash App 账号 (存在同一个 zelle_accounts 里, type 区分) 按类型整表替换:
     // 每个账号都要填号 + 户主姓名 + 截图 (新加的必须有截图); 已有的账号保留原来的登记时间
-    for (const [field, type, label] of [['zelle_accounts', 'zelle', 'Zelle'], ['cashapp_accounts', 'cashapp', 'Cash App']]) {
+    for (const [field, type, label] of [['zelle_accounts', 'zelle', 'Zelle'], ['cashapp_accounts', 'cashapp', 'Cash App'], ['ach_accounts', 'ach', 'ACH']]) {
       if (b[field] === undefined) continue;
       const all = _wobJson(next.zelle_accounts, []);
       const old = all.filter(x => (x.type || 'zelle') === type), others = all.filter(x => (x.type || 'zelle') !== type);
       const list = (Array.isArray(b[field]) ? b[field] : []).slice(0, 10)
         // 截图可以多张: shots 数组 (旧的单张 shot 也认)
-        .map(z => ({ account: str(z && z.account, 120), name: str(z && z.name, 120),
-          read: z && z.read && typeof z.read === 'object' ? { account: str(z.read.account, 120), name: str(z.read.name, 120) } : null,
+        .map(z => ({ account: type === 'ach' ? str(z && z.account, 40).replace(/\D/g, '') : str(z && z.account, 120), name: str(z && z.name, 120),
+          routing: type === 'ach' ? str(z && z.routing, 20).replace(/\D/g, '') : undefined,
+          read: z && z.read && typeof z.read === 'object' ? { account: str(z.read.account, 120), name: str(z.read.name, 120), ...(type === 'ach' ? { routing: str(z.read.routing, 20) } : {}) } : null,
           shots: [...new Set([...(Array.isArray(z && z.shots) ? z.shots : []), z && z.shot].map(v => str(v, 80))
             .filter(v => /^[a-f0-9]{32}\.(jpg|png|webp)$/.test(v) && fs.existsSync(path.join(_wobShotDir, v))))].slice(0, 10),
           // 聊天记录截图: 为什么可以把钱付到这个账号 (工人自己说的 / 同意付给家里人)
           chat_shots: [...new Set((Array.isArray(z && z.chat_shots) ? z.chat_shots : []).map(v => str(v, 80))
             .filter(v => /^[a-f0-9]{32}\.(jpg|png|webp)$/.test(v) && fs.existsSync(path.join(_wobShotDir, v))))].slice(0, 10) }))
         .filter(z => z.account || z.name);
-      if (list.some(z => !z.account || !z.name)) return res.status(400).json({ error: `每个 ${label} 账号都要填 ${label} 号和户主姓名` });
+      if (list.some(z => !z.account || !z.name)) return res.status(400).json({ error: type === 'ach' ? '每个 ACH 账户都要填账号和户主姓名' : `每个 ${label} 账号都要填 ${label} 号和户主姓名` });
+      if (type === 'ach') {
+        const bad = list.find(z => !_wobAbaOk(z.routing));
+        if (bad) return res.status(400).json({ error: `路由号 ${bad.routing || '（没填）'} 不对：要 9 位数字，而且校验位要对得上，请对照截图再核对` });
+        const badAcc = list.find(z => z.account.length < 4 || z.account.length > 17);
+        if (badAcc) return res.status(400).json({ error: `银行账号 ${badAcc.account} 不对：一般是 4–17 位数字` });
+      }
       const merged = [];
       for (const z of list) {
-        const o = old.find(x => x.account === z.account && x.name === z.name);
+        const o = old.find(x => x.account === z.account && x.name === z.name && (type !== 'ach' || x.routing === z.routing));
         const shots = z.shots.length ? z.shots : (o ? (o.shots || (o.shot ? [o.shot] : [])) : []);
         if (!shots.length) return res.status(400).json({ error: `${label} ${z.account} 要上传截图（${label} 里显示账号和名字的那一页）` });
         // 新登记的账号还要聊天记录截图; 以前登记的没有也能存 (审核时标出来)
@@ -45333,15 +45370,16 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
         if (!chat_shots.length && !o) return res.status(400).json({ error: `${label} ${z.account} 要上传聊天记录截图（工人说可以付到这个账号的那段聊天）` });
         // 账号或名字改了就是新账号, 要重新审核; 截图读到的结果留着给审核的人对照
         const read = z.read && (z.read.account || z.read.name) ? z.read : (o && o.read) || null;
-        merged.push(o ? { ...o, type, shots, shot: shots[0], chat_shots, read } : { type, account: z.account, name: z.name, shots, shot: shots[0], chat_shots, read, at: new Date().toISOString(), by: req.userName || '' });
+        const extra = type === 'ach' ? { routing: z.routing } : {};
+        merged.push(o ? { ...o, type, shots, shot: shots[0], chat_shots, read } : { type, account: z.account, name: z.name, ...extra, shots, shot: shots[0], chat_shots, read, at: new Date().toISOString(), by: req.userName || '' });
       }
       next.zelle_accounts = JSON.stringify([...others, ...merged]);
     }
     // 审核 Zelle / Cash App 账号: 通过 / 不对 (不对要写原因, 让填的人改)
     if (b.approve === 'zelle' || b.reject === 'zelle') {
       const all = _wobJson(next.zelle_accounts, []);
-      const type = b.type === 'cashapp' ? 'cashapp' : 'zelle';
-      const z = all.find(x => (x.type || 'zelle') === type && x.account === str(b.account, 120));
+      const type = ['cashapp', 'ach'].includes(b.type) ? b.type : 'zelle';
+      const z = all.find(x => (x.type || 'zelle') === type && x.account === str(b.account, 120) && (type !== 'ach' || !b.routing || x.routing === str(b.routing, 20)));
       if (!z) return res.status(404).json({ error: '这个账号已经改过了，刷新再看' });
       if (b.approve) Object.assign(z, { ok: 1, ok_by: req.userName || '', ok_at: now, rejected: 0, reject_note: '' });
       else Object.assign(z, { ok: 0, ok_by: req.userName || '', ok_at: now, rejected: 1, reject_note: str(b.note, 300) });
@@ -45438,7 +45476,7 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
         if (next.pay_method) {
           const hist = _wobJson(next.pay_history, []);
           hist.push({ method: next.pay_method, since: next.pay_since || '', until: now, by: req.userName || '',
-            zelle: ['zelle', 'cashapp'].includes(next.pay_method) ? _wobJson(next.zelle_accounts, []).filter(z => (z.type || 'zelle') === next.pay_method) : undefined });
+            zelle: ['zelle', 'cashapp', 'ach'].includes(next.pay_method) ? _wobJson(next.zelle_accounts, []).filter(z => (z.type || 'zelle') === next.pay_method) : undefined });
           next.pay_history = JSON.stringify(hist.slice(-30));
         }
         next.pay_since = m ? now : '';
@@ -45450,6 +45488,9 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
     }
     if (next.pay_method === 'cashapp' && (b.pay_method !== undefined || b.cashapp_accounts !== undefined) && !_wobJson(next.zelle_accounts, []).filter(z => z.type === 'cashapp').length) {
       return res.status(400).json({ error: '付 Cash App 至少登记一个 Cash App 账号（$Cashtag + 户主姓名 + 截图）' });
+    }
+    if (next.pay_method === 'ach' && (b.pay_method !== undefined || b.ach_accounts !== undefined) && !_wobJson(next.zelle_accounts, []).filter(z => z.type === 'ach').length) {
+      return res.status(400).json({ error: '付 ACH 至少登记一个银行账户（路由号 + 账号 + 户主姓名 + 截图）' });
     }
     if (b.step) {
       const step = str(b.step, 40);
@@ -45473,13 +45514,13 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       return res.status(400).json({ error: '先关联员工档案（并审核通过），再选付款方式' });
     }
     // 修改历史: 一条一条记下改了什么
-    const PM = { gusto: 'Gusto 入职', cash: '现金', check: '支票', zelle: 'Zelle', cashapp: 'Cash App', skip: '不用处理', '': '未选' };
+    const PM = { gusto: 'Gusto 入职', cash: '现金', check: '支票', zelle: 'Zelle', cashapp: 'Cash App', ach: 'ACH 转账', skip: '不用处理', '': '未选' };
     const logs = [];
     const chg = (field, label, fmt) => { const a = cur[field] == null ? '' : cur[field], z = next[field] == null ? '' : next[field];
       if (String(a) !== String(z)) logs.push([label, `${fmt ? fmt(a) : (a || '空')} → ${fmt ? fmt(z) : (z || '空')}`]); };
     chg('pay_method', '付款方式', v => PM[v] || v);
-    const zl = v => { const a = _wobJson(v, []); return a.length ? a.map(z => `${z.type === 'cashapp' ? 'Cash App ' : 'Zelle '}${z.account}（${z.name}）`).join('、') : '无'; };
-    if (b.approve === 'zelle' || b.reject === 'zelle') logs.push([b.approve ? '审核通过收款账号' : '收款账号不对', `${b.type === 'cashapp' ? 'Cash App' : 'Zelle'} ${b.account}${b.reject && b.note ? '：' + str(b.note, 300) : ''}`]);
+    const zl = v => { const a = _wobJson(v, []); return a.length ? a.map(z => `${z.type === 'cashapp' ? 'Cash App ' : z.type === 'ach' ? 'ACH 路由 ' + z.routing + ' 账号 ' : 'Zelle '}${z.account}（${z.name}）`).join('、') : '无'; };
+    if (b.approve === 'zelle' || b.reject === 'zelle') logs.push([b.approve ? '审核通过收款账号' : '收款账号不对', `${{ cashapp: 'Cash App', ach: 'ACH' }[b.type] || 'Zelle'} ${b.account}${b.reject && b.note ? '：' + str(b.note, 300) : ''}`]);
     else if (zl(JSON.stringify(_wobZelle(cur))) !== zl(next.zelle_accounts)) logs.push(['Zelle / Cash App 账号', `${zl(JSON.stringify(_wobZelle(cur)))} → ${zl(next.zelle_accounts)}`]);
     chg('warehouse', '仓库'); chg('pay_note', '备注'); chg('name', '名字');
     const empName = id => { if (!id) return '无'; const e = db.prepare('SELECT first_name, last_name, employee_id FROM employees WHERE id=?').get(id); return e ? `${e.first_name} ${e.last_name}${e.employee_id ? ' ' + e.employee_id : ''}` : '#' + id; };
