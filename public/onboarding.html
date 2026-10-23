@@ -757,7 +757,7 @@ function zelleLine(w, k) {
           <div class="zgrp"><span class="zlbl" style="color:#b45309">② 聊天记录</span><div class="zthumbs">${th(z.chat_shots || [], '没聊天<br>记录')}</div></div>
         </div>
         ${zChecks(w, k, z, true)}
-        <div class="zv-act"><button class="btn btn-outline btn-sm" onclick="zOpen(${k},${i})">🔍 看大图${D.can_approve && !z.ok ? '审核' : ''}</button>${zBtns(k, i, z)}</div>
+        <div class="zv-act"><button class="btn btn-outline btn-sm" onclick="zOpen(${k},${i})">🔍 看大图${D.can_approve && !z.ok && !z.pend_new ? '审核' : ''}</button>${zBtns(k, i, z)}</div>
       </div>`; }).join('')}
       ${D.can_edit ? `<button class="btn btn-outline btn-sm" onclick="zEdit(${k},'${w.pay_method}')">编辑 / 加账号</button>` : ''}</div>`;
   } else {
@@ -790,6 +790,7 @@ function copyTxt(t) {
 // 收款账号审核: 状态标签 + 给审核的人看的几项核对 (户主和工人名字 / 别人也在用这个号 / 截图读到的)
 const ZREAD = {};   // 审核时现读的截图结果 (以前登记的账号没存读到的内容): shot id → {account, name} 或 {error}
 function zStatus(z) {
+  if (z.pend_new) return '<span class="tag" style="background:#fef3c7;color:#92400e" title="这个账号是在等审批的修改里，同意那条修改后才会存上">⏳ 等审批，还没存</span>';
   if (z.ok) return `<span class="tag" style="background:#dcfce7;color:#166534" title="${esc(z.ok_by)} ${esc(fmtTime(z.ok_at))}">✓ 已审核 · ${esc(z.ok_by)}</span>`;
   if (z.rejected) return `<span class="tag" style="background:#fee2e2;color:#991b1b" title="${esc(z.ok_by)} ${esc(fmtTime(z.ok_at))}">✗ 不对${z.reject_note ? '：' + esc(z.reject_note) : ''}，请改</span>`;
   return '<span class="tag" style="background:#eef2ff;color:#3730a3">🔎 待审核</span>';
@@ -799,6 +800,8 @@ function zNameSame(a, b) {
   return wa.length > 0 && wa.length === wb.length && wa.every(x => wb.includes(x));
 }
 function zChecks(w, k, z, noBtns) {
+  // 还在等审批、没存上的账号, 服务器还没核对过
+  if (z.pend_new) return '<div class="zck"><span class="warn">⏳ 这个账号在等审批的修改里，同意以后才会核对名字、查重</span></div>';
   const c = [];
   const who = esc(w.employee ? w.employee.name : w.name);
   if (z.name_match === 'ok') c.push(`<span class="ok">✓ 户主和工人同名</span>`);
@@ -821,7 +824,7 @@ function zChecks(w, k, z, noBtns) {
 }
 // 通过 / 不对 都先打开审核弹窗 (看大图、看员工信息), 在弹窗里确认
 function zBtns(k, i, z) {
-  if (!D.can_approve) return '';
+  if (!D.can_approve || z.pend_new) return '';
   if (z.ok) return `<button class="btn btn-outline btn-sm" style="font-size:.72rem" onclick="zOpen(${k},${i},'no')">改成不对</button>`;
   return `<button class="btn btn-blue btn-sm" onclick="zOpen(${k},${i},'ok')">✓ 通过</button>${z.rejected ? '' : `<button class="btn btn-outline btn-sm" style="color:#991b1b" onclick="zOpen(${k},${i},'no')">✗ 不对</button>`}`;
 }
@@ -878,7 +881,7 @@ function zrRender() {
       <div class="muted">${esc(z.by || '')} 登记 ${esc(fmtTime(z.at))}</div><div style="margin-top:.2rem">${zStatus(z)}</div></div>
     <div class="zv" style="border:none;padding:0">${zChecks(w, ZR.k, z, true)}</div>
   </div>`;
-  const canAct = D.can_approve;
+  const canAct = D.can_approve && !z.pend_new;
   m.innerHTML = `<div class="zr-card">
     <div class="zr-head"><div style="display:flex;align-items:center;gap:.5rem"><b style="font-size:1rem">审核收款账号</b>
       <span class="muted">${esc(w.name)} → ${esc(A.label)} ${esc(z.account)}（户主 ${esc(z.name)}）</span><span style="flex:1"></span>
@@ -889,7 +892,7 @@ function zrRender() {
       ${canAct ? `<input id="zrNote" placeholder="不对的话写原因（填的人会看到）" style="width:min(320px,60vw);${ZR.mode === 'no' ? '' : 'display:none'}">
         ${z.ok ? '' : `<button class="btn btn-blue" id="zrOk" onclick="zrDecide(true)">✓ 审核通过</button>`}
         <button class="btn btn-outline" id="zrNo" style="color:#991b1b" onclick="zrDecide(false)">✗ 不对</button>
-        <div id="zrMsg" style="flex-basis:100%;text-align:right;font-size:.82rem;min-height:0"></div>` : '<span class="muted">只有 manager / admin 能审核</span>'}
+        <div id="zrMsg" style="flex-basis:100%;text-align:right;font-size:.82rem;min-height:0"></div>` : (z.pend_new ? '<span class="muted">这个账号还在等审批的修改里，先在上面「等审批的修改」里同意，存上了才能审核</span>' : '<span class="muted">只有 manager / admin 能审核</span>')}
     </div></div>`;
   zrApply('a'); zrApply('b');
   if (ZR.mode === 'no') setTimeout(() => { const n = document.getElementById('zrNote'); if (n) n.focus(); }, 0);
@@ -1176,9 +1179,15 @@ function applyPendingOverlay() {
     const b = c.body;
     w.pend = w.pend || {};
     if (b.pay_method !== undefined) { w.pend.pay = true; w.pay_method = b.pay_method; }
-    if (Array.isArray(b.zelle_accounts)) { w.zelle_accounts = b.zelle_accounts; w.pend.acc = true; }
-    if (Array.isArray(b.cashapp_accounts)) { w.cashapp_accounts = b.cashapp_accounts; w.pend.acc = true; }
-    if (Array.isArray(b.ach_accounts)) { w.ach_accounts = b.ach_accounts; w.pend.acc = true; }
+    // 等审批的账号列表: 已经存在服务器上的同一个账号用服务器那份 (带审核状态、核对结果), 不然审核通过了
+    // 页面还显示等审批里那份「待审核」; 服务器上还没有的才标成「等审批」
+    for (const [f, t] of [['zelle_accounts', 'zelle'], ['cashapp_accounts', 'cashapp'], ['ach_accounts', 'ach']]) {
+      if (!Array.isArray(b[f])) continue;
+      const have = w[f] || [];
+      const same = (x, y) => x.account === y.account && x.name === y.name && (t !== 'ach' || String(x.routing || '') === String(y.routing || ''));
+      const merged = b[f].map(p => have.find(h => same(h, p)) || { ...p, type: t, pend_new: true });
+      if (merged.some(x => x.pend_new) || merged.length !== have.length) { w[f] = merged; w.pend.acc = true; }
+    }
     if (b.employee_id || b.approve === 'employee') w.pend.emp = true;
     if (b.step && w.checklist) {
       const steps = w.checklist.steps, st = steps.find(x => x.id === b.step);
