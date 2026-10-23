@@ -45317,6 +45317,9 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
         .map(z => ({ account: str(z && z.account, 120), name: str(z && z.name, 120),
           read: z && z.read && typeof z.read === 'object' ? { account: str(z.read.account, 120), name: str(z.read.name, 120) } : null,
           shots: [...new Set([...(Array.isArray(z && z.shots) ? z.shots : []), z && z.shot].map(v => str(v, 80))
+            .filter(v => /^[a-f0-9]{32}\.(jpg|png|webp)$/.test(v) && fs.existsSync(path.join(_wobShotDir, v))))].slice(0, 10),
+          // 聊天记录截图: 为什么可以把钱付到这个账号 (工人自己说的 / 同意付给家里人)
+          chat_shots: [...new Set((Array.isArray(z && z.chat_shots) ? z.chat_shots : []).map(v => str(v, 80))
             .filter(v => /^[a-f0-9]{32}\.(jpg|png|webp)$/.test(v) && fs.existsSync(path.join(_wobShotDir, v))))].slice(0, 10) }))
         .filter(z => z.account || z.name);
       if (list.some(z => !z.account || !z.name)) return res.status(400).json({ error: `每个 ${label} 账号都要填 ${label} 号和户主姓名` });
@@ -45325,9 +45328,12 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
         const o = old.find(x => x.account === z.account && x.name === z.name);
         const shots = z.shots.length ? z.shots : (o ? (o.shots || (o.shot ? [o.shot] : [])) : []);
         if (!shots.length) return res.status(400).json({ error: `${label} ${z.account} 要上传截图（${label} 里显示账号和名字的那一页）` });
+        // 新登记的账号还要聊天记录截图; 以前登记的没有也能存 (审核时标出来)
+        const chat_shots = z.chat_shots.length ? z.chat_shots : ((o && o.chat_shots) || []);
+        if (!chat_shots.length && !o) return res.status(400).json({ error: `${label} ${z.account} 要上传聊天记录截图（工人说可以付到这个账号的那段聊天）` });
         // 账号或名字改了就是新账号, 要重新审核; 截图读到的结果留着给审核的人对照
         const read = z.read && (z.read.account || z.read.name) ? z.read : (o && o.read) || null;
-        merged.push(o ? { ...o, type, shots, shot: shots[0], read } : { type, account: z.account, name: z.name, shots, shot: shots[0], read, at: new Date().toISOString(), by: req.userName || '' });
+        merged.push(o ? { ...o, type, shots, shot: shots[0], chat_shots, read } : { type, account: z.account, name: z.name, shots, shot: shots[0], chat_shots, read, at: new Date().toISOString(), by: req.userName || '' });
       }
       next.zelle_accounts = JSON.stringify([...others, ...merged]);
     }

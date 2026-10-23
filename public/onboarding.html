@@ -63,6 +63,7 @@ input,select,textarea{padding:.38rem .5rem;border:1px solid var(--g300);border-r
 .gn.best{border-color:#16a34a;background:#f0fdf4}
 .zacc{border-bottom:1px dashed #ddd6fe;padding-bottom:.35rem;margin-bottom:.4rem}
 .zrow{display:grid;grid-template-columns:1fr 1fr 28px;gap:.35rem;margin-bottom:.3rem;align-items:center}
+.zlbl{font-size:.68rem;font-weight:700;color:#6d28d9;white-space:nowrap}
 .zshots{display:flex;gap:.35rem;flex-wrap:wrap;align-items:center;margin-bottom:.25rem}
 .zth{position:relative;display:inline-block}
 .zth button{position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:none;background:#dc2626;color:#fff;font-size:.75rem;line-height:1;cursor:pointer;padding:0}
@@ -665,13 +666,16 @@ function zelleLine(w, k) {
         <input data-zk="${k}" data-zi="${i}" data-zf="account" value="${esc(z.account)}" placeholder="${A.ph}">
         <input data-zk="${k}" data-zi="${i}" data-zf="name" value="${esc(z.name)}" placeholder="${A.namePh}">
         <button class="arrow" style="width:28px;height:30px" title="删掉这个账号" onclick="zRow(${k},${i})">✕</button></div>
-        <div class="zshots">${z.shots.map((id, j) => `<span class="zth">${shotThumb(id, 46)}<button title="删掉这张截图" onclick="zShotDel(${k},${i},${j})">×</button></span>`).join('')}
+        <div class="zshots"><span class="zlbl">① ${A.label} 截图</span>${z.shots.map((id, j) => `<span class="zth">${shotThumb(id, 46)}<button title="删掉这张截图" onclick="zShotDel(${k},${i},${j})">×</button></span>`).join('')}
           <label class="zshot" title="上传截图（${A.label} 里显示账号和名字的那一页），可以选好几张">${z.busy ? '<span style="font-size:.7rem">上传中…</span>' : `📷<span>${z.shots.length ? '再加' : '截图'}</span>`}
-            <input type="file" accept="image/*" multiple style="display:none" onchange="zShot(${k},${i},this)"></label></div>
+            <input type="file" accept="image/*" multiple style="display:none" onchange="zShot(${k},${i},this)"></label>
+          <span class="zlbl" style="margin-left:.4rem">② 聊天记录</span>${z.chat_shots.map((id, j) => `<span class="zth">${shotThumb(id, 46)}<button title="删掉这张截图" onclick="zShotDel(${k},${i},${j},'chat')">×</button></span>`).join('')}
+          <label class="zshot" style="border-color:#f59e0b;color:#b45309" title="上传聊天记录截图：工人说可以把钱付到这个账号的那段聊天，可以选好几张">${z.chatBusy ? '<span style="font-size:.7rem">上传中…</span>' : `💬<span>${z.chat_shots.length ? '再加' : '聊天'}</span>`}
+            <input type="file" accept="image/*" multiple style="display:none" onchange="zChatShot(${k},${i},this)"></label></div>
         ${z.read && (z.read.account || z.read.name) ? `<div class="zread">截图读到（点一下复制）：${['account', 'name'].filter(f => z.read[f]).map(f =>
           `<button title="复制" onclick="copyTxt(this.textContent)">${esc(z.read[f])}</button>`).join('')}</div>` : ''}
         ${z.ai ? `<div class="zai ${z.ai.bad ? 'bad' : ''}">${esc(z.ai.text)}</div>` : ''}</div>`).join('')}
-      <div class="muted" style="margin:.1rem 0 .3rem">每个账号至少一张截图，可以传好几张；上传后系统自动读出账号和名字，请对照截图再核对一遍。</div>
+      <div class="muted" style="margin:.1rem 0 .3rem">每个账号要传两种截图：① ${A.label} 截图（显示账号和名字的那一页，上传后系统自动读出账号和名字，请再核对一遍）；② 聊天记录截图（为什么可以付到这个账号，比如工人发来的账号、说明是家里人的账号）。</div>
       <div class="row" style="margin:.2rem 0 0;justify-content:space-between">
         <button class="btn btn-outline btn-sm" onclick="zRow(${k},-1)">＋ 再加一个 ${A.label} 账号</button>
         <span style="display:flex;gap:.3rem"><button class="btn btn-outline btn-sm" onclick="delete ZEDIT[D.rows[${k}].key];renderList()">取消</button>
@@ -679,7 +683,8 @@ function zelleLine(w, k) {
   } else if (ACC[w.pay_method]) {
     const A = ACC[w.pay_method];
     out += `<div class="zbox">${accsOf(w, w.pay_method).map(z => `<div class="zv"><div class="row" style="margin:0;align-items:center">${shotsOf(z).map(id => shotThumb(id, 34)).join('') || '<span class="tag" style="background:#fee2e2;color:#991b1b" title="以前登记的，没有截图">没截图</span>'}
-        <span class="tag" style="background:${A.bg};color:${A.fg}">${A.label} ${esc(z.account)}</span><span style="font-size:.8rem">户主 <b>${esc(z.name)}</b></span>${zStatus(z)}</div>
+        <span class="tag" style="background:${A.bg};color:${A.fg}">${A.label} ${esc(z.account)}</span><span style="font-size:.8rem">户主 <b>${esc(z.name)}</b></span>${zStatus(z)}
+        ${(z.chat_shots || []).length ? `<span class="zlbl" style="color:#b45309">💬 聊天记录</span>${z.chat_shots.map(id => shotThumb(id, 34)).join('')}` : ''}</div>
         ${zChecks(w, k, z)}</div>`).join('')}
       ${D.can_edit ? `<button class="btn btn-outline btn-sm" onclick="zEdit(${k},'${w.pay_method}')">编辑 / 加账号</button>` : ''}</div>`;
   } else {
@@ -725,6 +730,7 @@ function zChecks(w, k, z) {
   if (z.name_match === 'ok') c.push(`<span class="ok">✓ 户主和工人同名</span>`);
   else if (z.name_match === 'partial') c.push(`<span class="warn">⚠ 户主只对上一部分名字（工人：${who}），是不是家里人的账号？</span>`);
   else c.push(`<span class="bad">✗ 户主和工人不是一个名字（工人：${who}），钱会付到别人账上</span>`);
+  if (!(z.chat_shots || []).length) c.push(`<span class="bad">✗ 没有聊天记录截图（为什么可以付到这个账号），点「编辑 / 加账号」补上</span>`);
   if ((z.dup_with || []).length) c.push(`<span class="bad">⚠ 这个账号还登记在 ${z.dup_with.map(esc).join('、')} 名下</span>`);
   const shot = shotsOf(z)[0];
   const rd = z.read && (z.read.account || z.read.name) ? z.read : ZREAD[shot];
@@ -751,9 +757,9 @@ async function zReadShot(id, kind) {
 function zReview(k, i, ok) {
   const w = D.rows[k], z = accsOf(w, w.pay_method)[i];
   if (!z) return;
-  const warn = z.name_match !== 'ok' || (z.dup_with || []).length;
+  const warn = z.name_match !== 'ok' || (z.dup_with || []).length || !(z.chat_shots || []).length;
   confirmBox(ok ? '收款账号审核通过' : '收款账号不对', `<div style="font-size:.88rem"><b>${esc(w.name)}</b>：${esc(ACC[w.pay_method].label)} ${esc(z.account)}，户主 <b>${esc(z.name || '')}</b></div>
-    ${ok && warn ? '<div style="margin-top:.4rem;background:#fef2f2;color:#991b1b;border-radius:6px;padding:.35rem .5rem;font-size:.82rem">上面有 ⚠ 提醒（户主名字对不上，或别人也在用这个账号），核实过了再通过</div>' : ''}
+    ${ok && warn ? '<div style="margin-top:.4rem;background:#fef2f2;color:#991b1b;border-radius:6px;padding:.35rem .5rem;font-size:.82rem">上面有 ⚠ 提醒（户主名字对不上 / 别人也在用这个账号 / 没有聊天记录），核实过了再通过</div>' : ''}
     ${ok ? '' : '<div class="lbl" style="margin-top:.5rem">哪里不对（填的人会看到）</div><input id="zRejNote" style="width:100%" placeholder="例：户主不是本人 / 号码和截图不一样">'}`,
     () => save(k, ok ? { approve: 'zelle', type: w.pay_method, account: z.account } : { reject: 'zelle', type: w.pay_method, account: z.account, note: document.getElementById('zRejNote').value }));
 }
@@ -763,14 +769,14 @@ function zSync(k) {
 }
 function zEdit(k, type) {
   const w = D.rows[k], cur = accsOf(w, type);
-  ZEDIT[w.key] = { type, rows: cur.length ? cur.map(z => ({ account: z.account, name: z.name, shots: shotsOf(z).slice(), read: z.read || null })) : [{ account: '', name: '', shots: [] }] };
+  ZEDIT[w.key] = { type, rows: cur.length ? cur.map(z => ({ account: z.account, name: z.name, shots: shotsOf(z).slice(), chat_shots: (z.chat_shots || []).slice(), read: z.read || null })) : [{ account: '', name: '', shots: [], chat_shots: [] }] };
   EXP.add(w.key);
   renderList();
 }
 function zRow(k, i) {
   zSync(k);
   const ed = ZEDIT[D.rows[k].key];
-  if (i < 0) ed.rows.push({ account: '', name: '', shots: [] }); else { ed.rows.splice(i, 1); if (!ed.rows.length) ed.rows.push({ account: '', name: '', shots: [] }); }
+  if (i < 0) ed.rows.push({ account: '', name: '', shots: [], chat_shots: [] }); else { ed.rows.splice(i, 1); if (!ed.rows.length) ed.rows.push({ account: '', name: '', shots: [], chat_shots: [] }); }
   renderList();
 }
 // 手机截图常常很大: 缩到最长边 1600px 的 JPG 再传
@@ -787,7 +793,23 @@ function shrinkImage(file) {
     img.src = url;
   });
 }
-function zShotDel(k, i, j) { zSync(k); ZEDIT[D.rows[k].key].rows[i].shots.splice(j, 1); renderList(); }
+function zShotDel(k, i, j, chat) { zSync(k); ZEDIT[D.rows[k].key].rows[i][chat ? 'chat_shots' : 'shots'].splice(j, 1); renderList(); }
+// 聊天记录截图: 只上传, 不用 AI 读
+async function zChatShot(k, i, input) {
+  const files = [...(input.files || [])];
+  if (!files.length) return;
+  zSync(k);
+  const row = ZEDIT[D.rows[k].key].rows[i];
+  row.chatBusy = true; renderList();
+  try {
+    for (const f of files.slice(0, 10)) {
+      const up = await api('/api/acct/onboarding-shot', { method: 'POST', body: { data: await shrinkImage(f) } });
+      if (up.error) throw new Error(up.error);
+      row.chat_shots.push(up.id);
+    }
+  } catch (e) { toast(e.message, true); }
+  row.chatBusy = false; renderList();
+}
 // 可以一次选好几张: 一张张传上去, 每张都让 AI 读一下, 读到账号 / 名字就填
 async function zShot(k, i, input) {
   const files = [...(input.files || [])];
@@ -826,11 +848,13 @@ async function zShot(k, i, input) {
 async function zSave(k) {
   zSync(k);
   const w = D.rows[k], ed = ZEDIT[w.key], A = ACC[ed.type];
-  if (ed.rows.some(z => z.busy)) return toast('截图还在上传', true);
-  const list = ed.rows.map(z => ({ account: cleanAcc(z.account), name: cleanName(z.name), shots: z.shots, read: z.read || null })).filter(z => z.account || z.name);
+  if (ed.rows.some(z => z.busy || z.chatBusy)) return toast('截图还在上传', true);
+  const list = ed.rows.map(z => ({ account: cleanAcc(z.account), name: cleanName(z.name), shots: z.shots, chat_shots: z.chat_shots, read: z.read || null })).filter(z => z.account || z.name);
   if (!list.length) return toast(`至少登记一个 ${A.label} 账号`, true);
   if (list.some(z => !z.account || !z.name)) return toast(`每个 ${A.label} 账号都要填账号和户主姓名`, true);
-  if (list.some(z => !z.shots.length)) return toast(`每个 ${A.label} 账号至少上传一张截图`, true);
+  if (list.some(z => !z.shots.length)) return toast(`每个 ${A.label} 账号至少上传一张 ${A.label} 截图`, true);
+  if (list.some(z => !z.chat_shots.length && !accsOf(w, ed.type).some(o => o.account === z.account && o.name === z.name)))
+    return toast(`每个 ${A.label} 账号还要上传聊天记录截图（为什么可以付到这个账号）`, true);
   if (ed.type === 'cashapp' && list.some(z => !/^\$/.test(z.account))) return toast('Cash App 账号是 $ 开头的 $Cashtag', true);
   const ok = await save(k, { pay_method: ed.type, [A.field]: list });
   if (ok) delete ZEDIT[w.key];
