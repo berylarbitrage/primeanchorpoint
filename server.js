@@ -9461,6 +9461,12 @@ async function _queueChange(req, res, session) {
       for await (const c of req) { n += c.length; if (n > 20 * 1024 * 1024) return res.status(413).json({ error: '文件太大，没法提交审批' }); chunks.push(c); }
       const buf = Buffer.concat(chunks); b64 = buf.toString('base64'); size = buf.length;
     }
+    // 一模一样的修改已经在等审批了: 不再排一条, 免得审核的人看到两遍
+    if (!b64) {
+      const dup = db.prepare(`SELECT id FROM pending_changes WHERE status='pending' AND user_id=? AND method=? AND path=? AND body=?`)
+        .get(session.userId, req.method, req.originalUrl, body);
+      if (dup) return res.status(202).json({ pending: true, approval_id: dup.id, duplicate: true, error: '📝 一样的修改已经在等审批了，不用再提交', message: '已在等审批' });
+    }
     const u = db.prepare('SELECT display_name FROM admin_users WHERE id=?').get(session.userId) || {};
     const r = db.prepare(`INSERT INTO pending_changes (user_id, username, display_name, method, path, referer, content_type, body, body_b64, size)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(session.userId, session.username, u.display_name || '', req.method, req.originalUrl,
@@ -10324,6 +10330,7 @@ const _approverOk = req => ['admin', 'staff'].includes(req.userRole) && !req.nee
 app.get('/api/approvals', requireAdmin, (req, res) => {
   if (!_approverOk(req)) return res.status(403).json({ error: '只有 staff / admin 能审批' });
   try {
+    _wobCloseNoopChanges();
     const rows = db.prepare(`SELECT id, user_id, username, display_name, method, path, referer, content_type, body, size, status, note,
         decided_by, decided_at, result_status, result_body, created_at, CASE WHEN body_b64!='' THEN 1 ELSE 0 END AS has_file
       FROM pending_changes ORDER BY CASE WHEN status='pending' THEN 0 ELSE 1 END, id DESC LIMIT 300`).all();
@@ -44950,7 +44957,50 @@ function _wobScoped(req) {
 }
 
 // 「所有修改需要审批」的账号在入职页提交的修改: 翻成中文, 标出是哪个工人 / 哪封邮件, 入职页上直接显示、直接审批
+// 等审批的入职修改里, 已经是这个状态的 (例如以前直接关联过的档案、别人已经处理了的邮件 / 银行提醒) 自动关掉,
+// 标「重复」, 不再让人审一遍
+function _wobCloseNoopChanges() {
+  try {
+    const rows = db.prepare(`SELECT id, path, body FROM pending_changes WHERE status='pending' AND method='POST' AND path LIKE '/api/acct/onboarding%'`).all();
+    const close = db.prepare(`UPDATE pending_changes SET status='duplicate', decided_by='（自动）', decided_at=?, note=? WHERE id=? AND status='pending'`);
+    for (const c of rows) {
+      let b = {}; try { b = JSON.parse(c.body || '{}') || {}; } catch (e) { continue; }
+      const p = c.path.split('?')[0];
+      let why = '';
+      let m;
+      if ((m = /^\/api\/acct\/onboarding\/([^/]+)$/.exec(p))) {
+        const cur = db.prepare('SELECT * FROM new_hire_onboarding WHERE name_key=?').get(_payrollNameKey(decodeURIComponent(m[1])));
+        if (!cur) continue;
+        let ck = {}; try { ck = JSON.parse(cur.checklist || '{}') || {}; } catch (e) {}
+        const known = { force_state: 1, id: 1, uuid: 1 };
+        const same = {
+          employee_id: () => b.employee_id ? (cur.employee_id === parseInt(b.employee_id, 10) && cur.emp_ok) : !cur.employee_id,
+          approve: () => b.approve === 'employee' ? (cur.employee_id === parseInt(b.id, 10) && cur.emp_ok)
+            : b.approve === 'gusto' ? (cur.gusto_uuid === String(b.uuid || '') && cur.gusto_ok) : false,
+          pay_method: () => (cur.pay_method || '') === String(b.pay_method || '') && b.zelle_accounts === undefined && b.cashapp_accounts === undefined,
+          step: () => b.checked ? !!ck[b.step] : !ck[b.step],
+          checked: () => true,
+          warehouse: () => (cur.warehouse || '') === String(b.warehouse || ''),
+          pay_note: () => (cur.pay_note || '') === String(b.pay_note || ''),
+        };
+        const fields = Object.keys(b).filter(f => !known[f]);
+        if (fields.length && fields.every(f => same[f] && same[f]())) why = '已经是这个状态了';
+      } else if (p === '/api/acct/onboarding-email-assign') {
+        const ev = db.prepare('SELECT worker_key FROM gusto_email_events WHERE id=?').get(parseInt(b.event_id, 10) || 0);
+        if (ev && ev.worker_key && ev.worker_key === _payrollNameKey(b.key)) why = '这封邮件已经关联到这个人了';
+      } else if (p === '/api/acct/onboarding-email-ignore') {
+        const ev = db.prepare('SELECT ignored_at FROM gusto_email_events WHERE id=?').get(parseInt(b.event_id, 10) || 0);
+        if (ev && !!ev.ignored_at === !!b.ignore) why = b.ignore ? '这封邮件已经忽略了' : '这封邮件已经不忽略了';
+      } else if (p === '/api/acct/onboarding-bank-ack') {
+        const ev = db.prepare('SELECT ack_at FROM gusto_email_events WHERE id=?').get(parseInt(b.event_id, 10) || 0);
+        if (ev && ev.ack_at) why = '这条银行提醒已经处理了';
+      }
+      if (why) close.run(new Date().toISOString(), why, c.id);
+    }
+  } catch (e) { console.log('[approvals] noop close:', e.message); }
+}
 function _wobPendingChanges() {
+  _wobCloseNoopChanges();
   const rows = db.prepare(`SELECT id, user_id, username, display_name, method, path, body, created_at FROM pending_changes
     WHERE status='pending' AND path LIKE '/api/acct/onboarding%' ORDER BY id`).all();
   const PM = { gusto: 'Gusto 入职', cash: '现金', check: '支票', zelle: 'Zelle', cashapp: 'Cash App', skip: '不用处理', '': '不选' };
