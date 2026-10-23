@@ -9440,6 +9440,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS pending_changes (
   created_at TEXT DEFAULT (datetime('now'))
 )`);
 const _approvalReplayTokens = new Set();   // 同意后重放用的临时会话, 不再拦
+// 重放时带上「点同意的人」能不能审核入职匹配: 提交人自己审不了 (比如入职专员提交的「通过系统匹配」),
+// 但 admin 同意了就该按 admin 的权限执行, 不然一同意就 403
+const _approvalReplayWob = new Map();       // token → 同意的人能审核入职匹配
 // 不算修改、直接放行的: 退出登录; 审批接口本身 (那里会直接拒绝这种账号)
 function _isChangeRequest(req) {
   const p = req.originalUrl.split('?')[0];
@@ -9517,11 +9520,12 @@ async function _notifyPendingChanges() {
   } catch (e) { console.log('[approvals] notify error:', e.message); }
 }
 // 同意: 用提交人的身份 (临时会话, 不再拦) 把当时的请求原样发一次, 记下结果
-async function _replayChange(c) {
+async function _replayChange(c, deciderWob) {
   const user = db.prepare('SELECT * FROM admin_users WHERE id=?').get(c.user_id);
   if (!user) return { status: 0, text: '提交人的账号已经不在了' };
   const token = createSession(user, null);
   _approvalReplayTokens.add(token);
+  if (deciderWob) _approvalReplayWob.set(token, true);
   try {
     const headers = { Authorization: 'Bearer ' + token };
     let body;
@@ -9531,6 +9535,7 @@ async function _replayChange(c) {
     return { status: r.status, text: (await r.text()).slice(0, 2000) };
   } finally {
     _approvalReplayTokens.delete(token);
+    _approvalReplayWob.delete(token);
     try { db.prepare('DELETE FROM admin_sessions WHERE token=?').run(token); } catch (e) {}
   }
 }
@@ -9577,6 +9582,7 @@ function requireAdmin(req, res, next) {
   req.needsApproval = !!(_u && _u.needs_approval);
   // 「所有修改需要审批」的账号: 修改请求不执行, 存起来等 staff / admin 同意 (同意后按原样重放一次)
   req.isApprovalReplay = _approvalReplayTokens.has(token);   // staff / admin 同意后按原样重放的请求
+  req.replayWobApprover = _approvalReplayWob.has(token);
   if (req.needsApproval && !_approvalReplayTokens.has(token) && _isChangeRequest(req)) {
     req.assignedPartnerIds = (_u && _u.assigned_partner_ids) || '';
     return _queueChange(req, res, session);
@@ -10385,7 +10391,7 @@ app.post('/api/approvals/:id', requireAdmin, async (req, res) => {
       auditLog('change_reject', req, { targetType: 'pending_change', targetId: c.id, details: { by_user: c.username, method: c.method, path: c.path } });
       return res.json({ ok: true, status: 'rejected' });
     }
-    const r = await _replayChange(c);
+    const r = await _replayChange(c, _wobCanApprove(req));
     const ok = r.status >= 200 && r.status < 300;
     db.prepare('UPDATE pending_changes SET status=?, result_status=?, result_body=? WHERE id=?').run(ok ? 'approved' : 'failed', r.status, r.text, c.id);
     auditLog('change_approve', req, { targetType: 'pending_change', targetId: c.id, details: { by_user: c.username, method: c.method, path: c.path, result: r.status } });
@@ -45010,7 +45016,7 @@ const requireWobView = requireRole('accounting', 'cs', 'admin', 'staff', 'manage
 // 能改: 这些角色, 或单独开了「能审核」的账号 (staff 平时只能看)
 const requireWobWrite = (req, res, next) => (['accounting', 'cs', 'admin', 'manager', 'onboarding'].includes(req.userRole) || req.wobApprover)
   ? next() : res.status(403).json({ error: 'Permission denied' });
-const _wobCanApprove = req => ['admin', 'manager'].includes(req.userRole) || !!req.wobApprover;
+const _wobCanApprove = req => ['admin', 'manager'].includes(req.userRole) || !!req.wobApprover || !!req.replayWobApprover;
 
 // ── Zelle / Cash App 截图: 登记账号必须上传截图, AI 读出账号和户主名字填上 (避免打错字) ──
 const _wobShotDir = path.join(dataDir, 'onboarding-shots');
@@ -45135,6 +45141,30 @@ function _wobCloseNoopChanges() {
     const close = db.prepare(`UPDATE pending_changes SET status='duplicate', decided_by='（自动）', decided_at=?, note='重复提交（一样的修改已经有一条了）' WHERE id=? AND status='pending'`);
     for (const r of rows) close.run(new Date().toISOString(), r.id);
   } catch (e) { console.log('[approvals] dup close:', e.message); }
+  // 只是「通过 / 否掉系统匹配」的审批, 而这个人已经被 manager / admin 直接审过了 (结果一样): 关掉,
+  // 不然它一直挂在卡片上, 每次刷新都像没审过一样
+  try {
+    const done = db.prepare(`UPDATE pending_changes SET status='duplicate', decided_by='（自动）', decided_at=?, note='已经审核过了（结果一样）' WHERE id=? AND status='pending'`);
+    const rowOf = db.prepare('SELECT * FROM new_hire_onboarding WHERE name_key=?');
+    const evOf = db.prepare('SELECT worker_key, rejected_keys FROM gusto_email_events WHERE id=?');
+    for (const c of db.prepare(`SELECT id, path, body FROM pending_changes WHERE status='pending' AND path LIKE '/api/acct/onboarding/%' AND COALESCE(body_b64,'')=''`).all()) {
+      const m = /^\/api\/acct\/onboarding\/([^/?]+)$/.exec(c.path.split('?')[0]);
+      if (!m) continue;
+      let b = {}; try { b = JSON.parse(c.body || '{}') || {}; } catch (e) { continue; }
+      const what = b.approve || b.reject;
+      if (!what || Object.keys(b).some(k => !['approve', 'reject', 'id', 'uuid', 'event_id', 'type', 'account', 'routing', 'note'].includes(k))) continue;
+      let key; try { key = _payrollNameKey(decodeURIComponent(m[1])); } catch (e) { continue; }
+      const r = rowOf.get(key);
+      if (!r) continue;
+      const has = (json, v) => _wobJson(json, []).map(String).includes(String(v));
+      let settled = false;
+      if (what === 'employee') settled = b.approve ? (r.emp_ok && String(r.employee_id) === String(b.id)) : has(r.emp_rejected, b.id);
+      else if (what === 'gusto') settled = b.approve ? (r.gusto_ok && r.gusto_uuid === b.uuid) : has(r.gusto_rejected, b.uuid);
+      else if (what === 'email') { const ev = evOf.get(parseInt(b.event_id, 10) || 0); settled = !ev || (b.approve ? ev.worker_key === key : has(ev.rejected_keys, key)); }
+      else if (what === 'zelle') { const z = _wobJson(r.zelle_accounts, []).find(x => x.account === b.account && (x.type || 'zelle') === (b.type || 'zelle')); settled = !z || (b.approve ? !!z.ok : !!z.rejected); }
+      if (settled) done.run(new Date().toISOString(), c.id);
+    }
+  } catch (e) { console.log('[approvals] settled close:', e.message); }
 }
 // 之前按「已经是这个状态了」关掉的 (不是一模一样的重复) 恢复成等审批
 try {
