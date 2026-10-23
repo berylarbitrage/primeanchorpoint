@@ -9948,6 +9948,9 @@ app.post('/api/admin/logout', requireAdmin, (req, res) => {
   if (auth && auth.startsWith('Bearer ')) {
     db.prepare('DELETE FROM admin_sessions WHERE token=?').run(auth.slice(7));
   }
+  // 只靠 cookie 登录的页面: cookie 里的会话也要删掉, 不然只是清了 cookie, 会话还在
+  const cookieMatch = (req.headers.cookie || '').match(/pa_token=([^;]+)/);
+  if (cookieMatch) db.prepare('DELETE FROM admin_sessions WHERE token=?').run(cookieMatch[1]);
   res.clearCookie('pa_token');
   res.json({ success: true });
 });
@@ -9956,7 +9959,28 @@ app.post('/api/admin/logout', requireAdmin, (req, res) => {
 app.get('/api/admin/me', requireAdmin, (req, res) => {
   const user = db.prepare('SELECT id, username, role, display_name, bank_ann_reviewer FROM admin_users WHERE id = ?').get(req.userId);
   if (!user) return res.status(404).json({ error: 'User not found' });
-  res.json(user);
+  // 右上角账号卡片 (account-badge.js) 用: 邮箱 + 角色 + 权限说明
+  const x = db.prepare(`SELECT email, cs_lead, wob_approver, needs_approval, assigned_partner_ids FROM admin_users WHERE id=?`).get(req.userId) || {};
+  const ROLE = { admin: '管理员', staff: '员工 (staff)', manager: '仓库经理', accounting: '会计', cs: x.cs_lead ? '客服主管' : '客服', onboarding: '入职专员' };
+  const ROLE_DESC = {
+    admin: '所有页面、所有功能，包括账户管理和审批',
+    staff: '大部分管理页面；账户管理只有管理员能做',
+    manager: '只看自己负责的仓库 / 公司的人和记录，看不到金额',
+    accounting: '会计对账、发票、银行、付款相关页面',
+    cs: x.cs_lead ? '介绍费 / 面试：能看所有客服的记录' : '介绍费 / 面试：只看自己提交的记录',
+    onboarding: '新员工入职页；会收到 Gusto 入职相关邮件',
+  };
+  const perms = [ROLE_DESC[user.role] || ''];
+  const pids = String(x.assigned_partner_ids || '').split(',').map(v => parseInt(v, 10)).filter(Boolean);
+  if (user.role === 'manager') {
+    const names = pids.length ? db.prepare(`SELECT name FROM partners WHERE id IN (${pids.map(() => '?').join(',')})`).all(...pids).map(r => r.name) : [];
+    perms.push(names.length ? '负责：' + names.join('、') : '还没分配仓库 / 公司');
+  }
+  if (x.needs_approval) perms.push('所有修改要 staff / admin 同意后才生效');
+  if (x.wob_approver) perms.push('能审核新员工入职的系统匹配');
+  if (user.bank_ann_reviewer) perms.push('能审核银行流水批注');
+  res.json({ ...user, email: x.email || '', role_label: ROLE[user.role] || user.role, perms: perms.filter(Boolean),
+    needs_approval: !!x.needs_approval, wob_approver: !!x.wob_approver, cs_lead: !!x.cs_lead });
 });
 
 // ─── Manager Portal Endpoints ───
