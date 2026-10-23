@@ -9544,6 +9544,7 @@ function requireAdmin(req, res, next) {
   req.wobApprover = !!(_u && _u.wob_approver);
   req.needsApproval = !!(_u && _u.needs_approval);
   // 「所有修改需要审批」的账号: 修改请求不执行, 存起来等 staff / admin 同意 (同意后按原样重放一次)
+  req.isApprovalReplay = _approvalReplayTokens.has(token);   // staff / admin 同意后按原样重放的请求
   if (req.needsApproval && !_approvalReplayTokens.has(token) && _isChangeRequest(req)) {
     req.assignedPartnerIds = (_u && _u.assigned_partner_ids) || '';
     return _queueChange(req, res, session);
@@ -44964,6 +44965,9 @@ function _wobPendingChanges() {
     let m;
     if ((m = /^\/api\/acct\/onboarding\/([^/]+)$/.exec(p))) {
       out.kind = 'worker';
+      // 页面上先按「已经选了」显示 (付款方式 / 账号 / 勾的步骤 / 关联的档案), 后面的步骤不用等审批
+      out.body = {};
+      for (const f of ['pay_method', 'zelle_accounts', 'cashapp_accounts', 'step', 'checked', 'employee_id', 'approve', 'id', 'uuid', 'gusto_uuid']) if (b[f] !== undefined) out.body[f] = b[f];
       out.key = _payrollNameKey(decodeURIComponent(m[1]));
       const cur = db.prepare('SELECT * FROM new_hire_onboarding WHERE name_key=?').get(out.key) || {};
       if (b.pay_method !== undefined) out.items.push(`付款方式：${PM[cur.pay_method || ''] || cur.pay_method} → ${PM[b.pay_method] || b.pay_method}`);
@@ -45264,7 +45268,8 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       next.checklist = JSON.stringify(ck);
     }
     // 第一步一律是关联员工档案: 没有已通过的档案不能选付款方式
-    if (next.pay_method && next.pay_method !== (cur.pay_method || '') && !(next.employee_id && next.emp_ok)) {
+    // (审批重放不卡: 总监先选了付款方式、档案关联还在等审批时, 不管先同意哪个都能生效)
+    if (next.pay_method && next.pay_method !== (cur.pay_method || '') && !(next.employee_id && next.emp_ok) && !req.isApprovalReplay) {
       return res.status(400).json({ error: '先关联员工档案（并审核通过），再选付款方式' });
     }
     // 修改历史: 一条一条记下改了什么

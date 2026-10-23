@@ -318,6 +318,7 @@ async function load() {
   try { j = await api('/api/acct/onboarding' + q2); } catch (e) { return; }
   if (j.error) { document.getElementById('list').innerHTML = `<div class="empty" style="color:var(--red)">${esc(j.error)}</div>`; return; }
   D = j;
+  applyPendingOverlay();
   WEEK = j.week;
   INV = j.invoice ? j.invoice.id : 0;
   document.getElementById('main').style.display = '';
@@ -394,14 +395,14 @@ function renderList() {
 // 发票视图里的老员工: 一行, 能直接定付款方式, 点「展开」看全卡片
 function oldRow(w, k) {
   const dis = D.can_edit ? '' : 'disabled';
-  const pdis = D.can_edit && w.employee ? '' : 'disabled';
+  const pdis = D.can_edit && (w.employee || (w.pend && w.pend.emp)) ? '' : 'disabled';
   const pm = Object.keys(PM_LABEL).map(m => `<button ${pdis} title="${w.employee ? '' : '先关联员工档案'}" class="${w.pay_method === m ? 'on' : ''}" onclick="pickPay(${k},'${w.pay_method === m ? '' : m}')">${PM_LABEL[m]}</button>`).join('');
   return `<div class="card old ${w.settled ? 'done' : ''}" style="${w.bank_alert_open ? 'border-left-color:var(--red)' : ''}">
     <b>${esc(w.name)}</b><span class="tag" style="background:var(--g100);color:var(--g600)">老员工 · 第一次 ${esc(w.first_end)}</span>
     ${w.employee ? `<span class="tag" style="background:#dcfce7;color:#166534">👤 ${esc(w.employee.code || '#' + w.employee.id)}${w.employee.phone ? ' · ' + esc(w.employee.phone) : ''}</span>` : '<span class="tag" style="background:#fee2e2;color:#991b1b">未关联档案</span>'}${w.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff" title="发票是 ${esc((w.inv_states || []).join(' / '))}，档案是 ${esc(w.employee.state)}">⚠ 州不一致：发票 ${esc((w.inv_states || []).join('/'))} · 档案 ${esc(w.employee.state)}</span>` : ''}
     <span class="muted">${w.line.hours ? w.line.hours + 'h' : ''}${w.line.total != null ? ' · ' + money(w.line.total) : ''}</span>
     ${w.pending_review ? `<button class="tag" style="background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;cursor:pointer" title="展开去审核" onclick="EXP.add(D.rows[${k}].key);renderList()">🔎 ${w.pending_review} 条待审核 →</button>` : ''}
-    ${w.settled ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ ${esc(PM_LABEL[w.pay_method] || 'Gusto 已付过')}</span>` : '<span class="tag" style="background:#fef3c7;color:#92400e">付款方式待定</span>'}
+    ${w.pend && w.pend.pay ? `<span class="tag" style="background:#fef3c7;color:#92400e">⏳ ${esc(PM_LABEL[w.pay_method] || '不选')} 等审批</span>` : w.settled ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ ${esc(PM_LABEL[w.pay_method] || 'Gusto 已付过')}</span>` : '<span class="tag" style="background:#fef3c7;color:#92400e">付款方式待定</span>'}
     ${w.pay_method === 'zelle' ? `<span class="muted">Zelle ${zList(w.zelle_accounts)}</span>` : w.pay_method === 'cashapp' ? `<span class="muted">Cash App ${zList(w.cashapp_accounts)}</span>` : ''}
     <span class="pm" style="margin-left:auto">${pm}</span>
     ${w.bank_alert_open ? '<span class="tag" style="background:#fee2e2;color:#991b1b">⚠ 银行信息</span>' : ''}
@@ -416,7 +417,7 @@ function card(w, k) {
   const invs = (w.line ? [{ ...w.line, invoice_id: D.invoice.id }] : w.invoices).map(l => `<a class="inv" ${D.can_open_invoice ? `href="/accounting?invoice=${l.invoice_id}" target="_blank"` : ''} title="${esc(l.company)} · ${esc(l.period_start)}~${esc(l.period_end)}">📄 ${esc(l.invoice_number)} <span style="font-weight:400">${md(l.period_end)}${l.hours ? ' · ' + l.hours + 'h' : ''}${l.total != null ? ' · ' + money(l.total) : ''}</span></a>`).join('');
   const alias = w.invoice_names.filter(n => n !== w.name);
   const sug = w.suggest && !w.pay_method ? w.suggest.method : '';
-  const pdis = D.can_edit && w.employee ? '' : 'disabled';
+  const pdis = D.can_edit && (w.employee || (w.pend && w.pend.emp)) ? '' : 'disabled';
   const pm = Object.keys(PM_LABEL).map(m => `<button ${pdis} class="${w.pay_method === m ? 'on' : ''} ${sug === m && w.employee ? 'sug' : ''}" onclick="pickPay(${k},'${w.pay_method === m ? '' : m}')">${PM_LABEL[m]}</button>`).join('');
   let gusto = '';
   // 还没选 Gusto 时, Gusto 收款人 / 邮件的待审核也要能看到、能审 (单独一块)
@@ -474,9 +475,9 @@ function card(w, k) {
         <div>${invs || '<span class="muted">—</span>'}</div>
       </div>
       <div>
-        <div class="lbl">怎么付${w.suggest && !w.pay_method ? ` <span style="text-transform:none;color:#0369a1;font-weight:400">· 建议 ${PM_LABEL[w.suggest.method] || w.suggest.method}（${esc(w.suggest.why)}）</span>` : ''}</div>
+        <div class="lbl">怎么付${w.pend && w.pend.pay ? ' <span class="tag" style="text-transform:none;background:#fef3c7;color:#92400e">⏳ 等审批，下面可以先接着做</span>' : ''}${w.suggest && !w.pay_method ? ` <span style="text-transform:none;color:#0369a1;font-weight:400">· 建议 ${PM_LABEL[w.suggest.method] || w.suggest.method}（${esc(w.suggest.why)}）</span>` : ''}</div>
         <div class="pm" style="margin-bottom:.45rem">${pm}</div>
-        ${w.employee ? '' : '<div class="muted" style="margin:-.2rem 0 .4rem;color:#b45309">① 先关联员工档案，再选付款方式</div>'}
+        ${w.employee || (w.pend && w.pend.emp) ? '' : '<div class="muted" style="margin:-.2rem 0 .4rem;color:#b45309">① 先关联员工档案，再选付款方式</div>'}
         ${zelleLine(w, k)}
         <textarea ${dis} rows="2" placeholder="备注：支票抬头 / 现金谁给 …" onchange="save(${k},{pay_note:this.value})">${esc(w.pay_note)}</textarea>
         ${w.updated_by ? `<div class="muted">最后修改 ${esc(w.updated_by)} ${esc((w.updated_at || '').slice(0, 16))}</div>` : ''}
@@ -829,6 +830,31 @@ async function openAccess() {
     <div style="text-align:right;margin-top:.5rem"><button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none'">关闭</button></div>`;
 }
 // ── 「所有修改需要审批」的账号 (例如总监) 提交的修改: 在原来的位置直接显示, staff / admin 直接同意 / 拒绝 ──
+// 提交了等审批的修改 (总监这类账号): 页面上先按「已经改了」显示, 后面的步骤可以接着做, 不用等审批。
+// 每个改动还是各自等 staff / admin 同意才真正生效; 卡片上标「等审批」
+function applyPendingOverlay() {
+  for (const c of D.pending_changes || []) {
+    if (c.kind !== 'worker' || !c.body) continue;
+    const w = (D.rows || []).find(x => x.key === c.key);
+    if (!w) continue;
+    const b = c.body;
+    w.pend = w.pend || {};
+    if (b.pay_method !== undefined) { w.pend.pay = true; w.pay_method = b.pay_method; }
+    if (Array.isArray(b.zelle_accounts)) { w.zelle_accounts = b.zelle_accounts; w.pend.acc = true; }
+    if (Array.isArray(b.cashapp_accounts)) { w.cashapp_accounts = b.cashapp_accounts; w.pend.acc = true; }
+    if (b.employee_id || b.approve === 'employee') w.pend.emp = true;
+    if (b.step && w.checklist) {
+      const steps = w.checklist.steps, st = steps.find(x => x.id === b.step);
+      if (st) {
+        if (b.checked) { st.manual = { by: (c.by || '') + '（等审批）', at: c.at }; st.done = true; }
+        else { st.manual = null; st.done = !!st.auto; }
+        steps.forEach((x, i) => { x.locked = i > 0 && !steps[i - 1].done; });
+        w.checklist.done_count = steps.filter(x => x.done).length;
+        w.pend.step = true;
+      }
+    }
+  }
+}
 function pcOf(pred) { return (D.pending_changes || []).filter(pred); }
 function pcBlock(list, compact) {
   if (!list.length) return '';
