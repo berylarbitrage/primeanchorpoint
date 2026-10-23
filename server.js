@@ -44964,48 +44964,22 @@ function _wobScoped(req) {
 }
 
 // 「所有修改需要审批」的账号在入职页提交的修改: 翻成中文, 标出是哪个工人 / 哪封邮件, 入职页上直接显示、直接审批
-// 等审批的入职修改里, 已经是这个状态的 (例如以前直接关联过的档案、别人已经处理了的邮件 / 银行提醒) 自动关掉,
-// 标「重复」, 不再让人审一遍
+// 重复的审批: 同一个人提交的、和另一条 (更早还在等的, 或已经同意执行了的) 一模一样的修改, 自动关掉标「重复」。
+// 只关一模一样的重复提交; 内容不一样的 (哪怕看起来已经是这个状态了) 一律留着让人审
 function _wobCloseNoopChanges() {
   try {
-    const rows = db.prepare(`SELECT id, path, body FROM pending_changes WHERE status='pending' AND method='POST' AND path LIKE '/api/acct/onboarding%' AND COALESCE(note,'') NOT LIKE '↩%'`).all();
-    const close = db.prepare(`UPDATE pending_changes SET status='duplicate', decided_by='（自动）', decided_at=?, note=? WHERE id=? AND status='pending'`);
-    for (const c of rows) {
-      let b = {}; try { b = JSON.parse(c.body || '{}') || {}; } catch (e) { continue; }
-      const p = c.path.split('?')[0];
-      let why = '';
-      let m;
-      if ((m = /^\/api\/acct\/onboarding\/([^/]+)$/.exec(p))) {
-        const cur = db.prepare('SELECT * FROM new_hire_onboarding WHERE name_key=?').get(_payrollNameKey(decodeURIComponent(m[1])));
-        if (!cur) continue;
-        let ck = {}; try { ck = JSON.parse(cur.checklist || '{}') || {}; } catch (e) {}
-        const known = { force_state: 1, id: 1, uuid: 1 };
-        const same = {
-          employee_id: () => b.employee_id ? (cur.employee_id === parseInt(b.employee_id, 10) && cur.emp_ok) : !cur.employee_id,
-          approve: () => b.approve === 'employee' ? (cur.employee_id === parseInt(b.id, 10) && cur.emp_ok)
-            : b.approve === 'gusto' ? (cur.gusto_uuid === String(b.uuid || '') && cur.gusto_ok) : false,
-          pay_method: () => (cur.pay_method || '') === String(b.pay_method || '') && b.zelle_accounts === undefined && b.cashapp_accounts === undefined,
-          step: () => b.checked ? !!ck[b.step] : !ck[b.step],
-          checked: () => true,
-          warehouse: () => (cur.warehouse || '') === String(b.warehouse || ''),
-          pay_note: () => (cur.pay_note || '') === String(b.pay_note || ''),
-        };
-        const fields = Object.keys(b).filter(f => !known[f]);
-        if (fields.length && fields.every(f => same[f] && same[f]())) why = '已经是这个状态了';
-      } else if (p === '/api/acct/onboarding-email-assign') {
-        const ev = db.prepare('SELECT worker_key FROM gusto_email_events WHERE id=?').get(parseInt(b.event_id, 10) || 0);
-        if (ev && ev.worker_key && ev.worker_key === _payrollNameKey(b.key)) why = '这封邮件已经关联到这个人了';
-      } else if (p === '/api/acct/onboarding-email-ignore') {
-        const ev = db.prepare('SELECT ignored_at FROM gusto_email_events WHERE id=?').get(parseInt(b.event_id, 10) || 0);
-        if (ev && !!ev.ignored_at === !!b.ignore) why = b.ignore ? '这封邮件已经忽略了' : '这封邮件已经不忽略了';
-      } else if (p === '/api/acct/onboarding-bank-ack') {
-        const ev = db.prepare('SELECT ack_at FROM gusto_email_events WHERE id=?').get(parseInt(b.event_id, 10) || 0);
-        if (ev && ev.ack_at) why = '这条银行提醒已经处理了';
-      }
-      if (why) close.run(new Date().toISOString(), why, c.id);
-    }
-  } catch (e) { console.log('[approvals] noop close:', e.message); }
+    const rows = db.prepare(`SELECT p.id FROM pending_changes p WHERE p.status='pending' AND COALESCE(p.note,'') NOT LIKE '↩%' AND COALESCE(p.body_b64,'')=''
+      AND EXISTS (SELECT 1 FROM pending_changes q WHERE q.id!=p.id AND q.user_id=p.user_id AND q.method=p.method AND q.path=p.path AND q.body=p.body
+        AND ((q.status='pending' AND q.id<p.id) OR q.status='approved'))`).all();
+    const close = db.prepare(`UPDATE pending_changes SET status='duplicate', decided_by='（自动）', decided_at=?, note='重复提交（一样的修改已经有一条了）' WHERE id=? AND status='pending'`);
+    for (const r of rows) close.run(new Date().toISOString(), r.id);
+  } catch (e) { console.log('[approvals] dup close:', e.message); }
 }
+// 之前按「已经是这个状态了」关掉的 (不是一模一样的重复) 恢复成等审批
+try {
+  db.prepare(`UPDATE pending_changes SET status='pending', decided_by='', decided_at='', note='' WHERE status='duplicate'
+    AND note IN ('已经是这个状态了', '这封邮件已经关联到这个人了', '这封邮件已经忽略了', '这封邮件已经不忽略了', '这条银行提醒已经处理了')`).run();
+} catch (e) {}
 function _wobPendingChanges() {
   _wobCloseNoopChanges();
   const rows = db.prepare(`SELECT id, user_id, username, display_name, method, path, body, created_at FROM pending_changes
@@ -45157,7 +45131,7 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
       // 「所有修改需要审批」账号提交、还没审批的入职页修改 (审批人和提交人自己看得到); 审批走 /api/approvals/:id
       pending_changes: (_approverOk(req) || req.needsApproval) ? _wobPendingChanges().filter(c => _approverOk(req) || c.user_id === req.userId) : [],
       can_decide_changes: _approverOk(req),
-      // 最近 7 天系统当「重复」自动关掉的入职修改 (页面上提一句, 去待审批页能看原因 / 恢复)
+      // 最近 7 天系统当「重复提交」自动关掉的入职修改 (页面上提一句, 去待审批页能看 / 恢复)
       dup_closed: _approverOk(req) ? db.prepare(`SELECT COUNT(*) AS n FROM pending_changes WHERE status='duplicate' AND path LIKE '/api/acct/onboarding%' AND decided_at >= ?`).get(new Date(Date.now() - 7 * 86400000).toISOString()).n : 0,
       needs_approval: !!req.needsApproval,
       warehouse_options: _wobWarehouseOptions(req),
