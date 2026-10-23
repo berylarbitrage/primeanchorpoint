@@ -9979,7 +9979,10 @@ app.get('/api/admin/me', requireAdmin, (req, res) => {
   if (x.needs_approval) perms.push('所有修改要 staff / admin 同意后才生效');
   if (x.wob_approver) perms.push('能审核新员工入职的系统匹配');
   if (user.bank_ann_reviewer) perms.push('能审核银行流水批注');
-  res.json({ ...user, email: x.email || '', role_label: ROLE[user.role] || user.role, perms: perms.filter(Boolean),
+  // 「所有修改需要审批」的 admin / staff = 公司经理: 能看所有页面, 改动要审批
+  const roleLabel = x.needs_approval && (user.role === 'admin' || user.role === 'staff') ? '公司经理' : (ROLE[user.role] || user.role);
+  if (roleLabel === '公司经理') perms[0] = '能进所有页面、看所有信息';
+  res.json({ ...user, email: x.email || '', role_label: roleLabel, perms: perms.filter(Boolean),
     needs_approval: !!x.needs_approval, wob_approver: !!x.wob_approver, cs_lead: !!x.cs_lead });
 });
 
