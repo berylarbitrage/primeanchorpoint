@@ -45004,6 +45004,7 @@ function _wobPendingChanges() {
       if (b.pay_method !== undefined) out.items.push(`付款方式：${PM[cur.pay_method || ''] || cur.pay_method} → ${PM[b.pay_method] || b.pay_method}`);
       if (Array.isArray(b.zelle_accounts)) out.items.push(`Zelle 账号：${b.zelle_accounts.map(z => `${z.account}（户主 ${z.name}）`).join('、') || '清空'}`);
       if (Array.isArray(b.cashapp_accounts)) out.items.push(`Cash App 账号：${b.cashapp_accounts.map(z => `${z.account}（户主 ${z.name}）`).join('、') || '清空'}`);
+      if (b.unapprove) out.items.push(`撤销通过：${{ employee: '员工档案', gusto: 'Gusto 收款人', email: 'Gusto 邮件' }[b.unapprove] || b.unapprove}`);
       if (b.warehouse !== undefined) out.items.push(`仓库：${cur.warehouse || '（发票上的）'} → ${b.warehouse || '（发票上的）'}`);
       if (b.pay_note !== undefined) out.items.push(`备注：「${String(b.pay_note).slice(0, 120)}」`);
       if (b.name !== undefined) out.items.push(`名字 → ${b.name}`);
@@ -45255,6 +45256,17 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
         next.phone_rejected = JSON.stringify(rej.slice(-20));
       }
     }
+    // 撤销通过: 回到「待审核」(不算否掉, 系统还会把它当建议再列出来)
+    if (b.unapprove) {
+      if (!approver) return res.status(403).json({ error: '只有 manager / admin 能撤销通过' });
+      if (b.unapprove === 'employee') Object.assign(next, { emp_ok: 0, emp_ok_by: '', emp_ok_at: '' });
+      else if (b.unapprove === 'gusto') Object.assign(next, { gusto_ok: 0, gusto_ok_by: '', gusto_ok_at: '' });
+      else if (b.unapprove === 'email') {
+        const ev = db.prepare('SELECT id, worker_key FROM gusto_email_events WHERE id=?').get(parseInt(b.event_id, 10) || 0);
+        if (!ev || ev.worker_key !== key) return res.status(404).json({ error: '这封邮件没有关联到这个人' });
+        db.prepare("UPDATE gusto_email_events SET worker_key='', review_by=?, review_at=? WHERE id=?").run(req.userName || '', now, ev.id);
+      } else return res.status(400).json({ error: '不知道撤销什么' });
+    }
     if (b.approve === 'email' || b.reject === 'email') {
       const ev = db.prepare('SELECT id, worker_key, rejected_keys FROM gusto_email_events WHERE id=?').get(parseInt(b.event_id, 10) || 0);
       if (!ev) return res.status(404).json({ error: '找不到这封邮件' });
@@ -45319,6 +45331,7 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
     chg('warehouse', '仓库'); chg('pay_note', '备注'); chg('name', '名字');
     const empName = id => { if (!id) return '无'; const e = db.prepare('SELECT first_name, last_name, employee_id FROM employees WHERE id=?').get(id); return e ? `${e.first_name} ${e.last_name}${e.employee_id ? ' ' + e.employee_id : ''}` : '#' + id; };
     const gName = u => { if (!u) return '无'; const c = db.prepare('SELECT name FROM gusto_contractors WHERE uuid=?').get(u); return c ? c.name : u; };
+    if (b.unapprove) logs.push(['撤销通过', { employee: '员工档案', gusto: 'Gusto 收款人', email: 'Gusto 邮件 #' + b.event_id }[b.unapprove] || b.unapprove]);
     if (b.approve === 'employee') logs.push(['审核通过员工档案', empName(parseInt(b.id, 10))]);
     else if (b.reject === 'employee') logs.push(['否掉系统匹配的员工档案', empName(parseInt(b.id, 10))]);
     else if (String(cur.employee_id || '') !== String(next.employee_id || '') || (cur.emp_ok ? 1 : 0) !== next.emp_ok)
