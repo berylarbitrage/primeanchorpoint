@@ -9961,11 +9961,11 @@ app.get('/api/admin/me', requireAdmin, (req, res) => {
   if (!user) return res.status(404).json({ error: 'User not found' });
   // 右上角账号卡片 (account-badge.js) 用: 邮箱 + 角色 + 权限说明
   const x = db.prepare(`SELECT email, cs_lead, wob_approver, needs_approval, assigned_partner_ids FROM admin_users WHERE id=?`).get(req.userId) || {};
-  const ROLE = { admin: '管理员', staff: '员工 (staff)', manager: '仓库经理', accounting: '会计', cs: x.cs_lead ? '客服主管' : '客服', onboarding: '入职专员' };
+  const ROLE = { admin: '管理员', staff: '员工 (staff)', manager: '客户经理', accounting: '会计', cs: x.cs_lead ? '客服主管' : '客服', onboarding: '入职专员' };
   const ROLE_DESC = {
     admin: '所有页面、所有功能，包括账户管理和审批',
-    staff: '大部分管理页面；账户管理只有管理员能做',
-    manager: '只看自己负责的仓库 / 公司的人和记录，看不到金额',
+    staff: '和管理员基本一样（每人一个账号）；能审批总监的修改',
+    manager: '我们公司的经理，负责指定的客户公司：只看这些公司的人和记录，看不到金额',
     accounting: '会计对账、发票、银行、付款相关页面',
     cs: x.cs_lead ? '介绍费 / 面试：能看所有客服的记录' : '介绍费 / 面试：只看自己提交的记录',
     onboarding: '新员工入职页；会收到 Gusto 入职相关邮件',
@@ -9979,7 +9979,10 @@ app.get('/api/admin/me', requireAdmin, (req, res) => {
   if (x.needs_approval) perms.push('所有修改要 staff / admin 同意后才生效');
   if (x.wob_approver) perms.push('能审核新员工入职的系统匹配');
   if (user.bank_ann_reviewer) perms.push('能审核银行流水批注');
-  res.json({ ...user, email: x.email || '', role_label: ROLE[user.role] || user.role, perms: perms.filter(Boolean),
+  // 「所有修改需要审批」的 admin / staff = 总监: 能看所有页面, 改动要审批
+  const roleLabel = x.needs_approval && user.role === 'admin' ? '总监' : (ROLE[user.role] || user.role);
+  if (roleLabel === '总监') perms[0] = '能进所有页面、看所有信息';
+  res.json({ ...user, email: x.email || '', role_label: roleLabel, perms: perms.filter(Boolean),
     needs_approval: !!x.needs_approval, wob_approver: !!x.wob_approver, cs_lead: !!x.cs_lead });
 });
 
@@ -10236,8 +10239,10 @@ app.post('/api/manager/self-punch/:id/confirm', requireAdmin, requireRole('admin
 
 // ─── Account Management (admin only) ───
 app.get('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
-  // password_plain 仅会计(accounting)角色有值, 且本接口本就仅限 admin 角色访问
-  res.json(db.prepare('SELECT id, username, role, display_name, email, phone, active, approval_status, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, sms_notify_phone, sms_notify_enabled, mfa_exempt, bank_ann_reviewer, needs_approval, created_at, password_plain FROM admin_users ORDER BY id').all());
+  // password_plain 仅会计(accounting)角色有值, 且本接口本就仅限 admin 角色访问; 总监 (改动要审批) 看不到密码
+  const rows = db.prepare('SELECT id, username, role, display_name, email, phone, active, approval_status, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, sms_notify_phone, sms_notify_enabled, mfa_exempt, bank_ann_reviewer, needs_approval, created_at, password_plain FROM admin_users ORDER BY id').all();
+  if (req.needsApproval) rows.forEach(r => { r.password_plain = ''; });
+  res.json(rows);
 });
 
 // 批准会计自助注册的账号
@@ -10309,8 +10314,9 @@ app.delete('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, 
   res.json({ success: true });
 });
 
-// ─── ✅ 待审批修改 (/approvals): staff / admin 看「所有修改需要审批」的账号提交的修改, 同意 = 原样执行一次 ───
+// ─── ✅ 待审批修改 (/approvals): admin 看「所有修改需要审批」的账号提交的修改, 同意 = 原样执行一次 ───
 app.get('/approvals', (req, res) => res.sendFile(path.join(__dirname, 'public', 'approvals.html')));
+// 总监 (admin + 所有修改需要审批) 的改动: staff / admin 审批 (staff 和 admin 权限基本一样, 只是按人分账号)
 const _approverOk = req => ['admin', 'staff'].includes(req.userRole) && !req.needsApproval;
 app.get('/api/approvals', requireAdmin, (req, res) => {
   if (!_approverOk(req)) return res.status(403).json({ error: '只有 staff / admin 能审批' });
@@ -18967,7 +18973,7 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
     });
     const foremen = db.prepare(`SELECT id, name, phone, email, warehouse, city, state, active, created_at FROM foremen`).all()
       .filter(x => hit(x.phone, x.name) && stHit(x.state)).slice(0, limit);
-    // 员工档案上等 admin 审核的电话 / 邮箱修改 (manager 等提交的)
+    // 员工档案上等 staff / admin 审核的电话 / 邮箱修改 (manager 等提交的)
     const ecrStmt = db.prepare(`SELECT id, field, old_value, new_value, requested_by, created_at FROM employee_contact_requests WHERE employee_id=? AND status='pending' ORDER BY id`);
     employees.forEach(e => { e.contact_reqs = ecrStmt.all(e.id); });
     res.json({ ok: true, phone: digits, mode: stateOnly ? 'state' : byName ? 'name' : 'phone', query: stateOnly ? '' : byName ? rawName : digits, state: stFilter, limit, found: !!(applications.length || employees.length || foremen.length), applications, employees, foremen,
@@ -18976,7 +18982,7 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── 员工档案电话 / 邮箱: admin 直接改; manager 等其他账号提交后要 admin 审核才生效 ──
+// ── 员工档案电话 / 邮箱: staff / admin 直接改; 客户经理等其他账号提交后要 staff / admin 审核才生效 ──
 db.exec(`CREATE TABLE IF NOT EXISTS employee_contact_requests (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   employee_id INTEGER NOT NULL,
@@ -18991,7 +18997,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS employee_contact_requests (
   note TEXT DEFAULT '',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
-function _ecrApprover(req) { return req.userRole === 'admin' && !req.needsApproval; }
+function _ecrApprover(req) { return ['admin', 'staff'].includes(req.userRole) && !req.needsApproval; }
 function _ecrNormPhone(v) {
   const d = String(v || '').replace(/\D/g, '');
   if (d.length === 10) return '+1' + d;
@@ -19072,20 +19078,20 @@ app.post('/api/admin/phone-check/contact', requireAdmin, (req, res) => {
     const FL = { phone: '改电话', email: '改邮箱', add_phone: '加电话', add_email: '加邮箱' };
     const text = `${who} 提交了员工档案联系方式修改，等你审核：\n\n${nm}\n` + changes.map(([f, o, v]) => `${FL[f]}：${f.startsWith('add_') ? v : (o || '（空）') + ' → ' + v}`).join('\n')
       + `\n\n到电话 / 人名查询页审核: ${base}/phone-check?q=${encodeURIComponent(nm)}`;
-    const admins = db.prepare(`SELECT email FROM admin_users WHERE role='admin' AND COALESCE(active,1)=1 AND COALESCE(needs_approval,0)=0 AND COALESCE(email,'')!=''`).all().map(r => r.email);
+    const admins = db.prepare(`SELECT email FROM admin_users WHERE role IN ('admin','staff') AND COALESCE(active,1)=1 AND COALESCE(needs_approval,0)=0 AND COALESCE(email,'')!=''`).all().map(r => r.email);
     setImmediate(async () => { for (const a of [...new Set(admins)]) { try { await sendEmail(a, `📝 员工电话/邮箱修改等审核：${nm}`, text); } catch (e) {} } });
     res.json({ ok: true, pending: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.get('/api/admin/phone-check/contact-requests', requireAdmin, (req, res) => {
-  if (!_ecrApprover(req)) return res.status(403).json({ error: '只有 admin 能审核' });
+  if (!_ecrApprover(req)) return res.status(403).json({ error: '只有 staff / admin 能审核' });
   const rows = db.prepare(`SELECT r.*, e.first_name, e.last_name, e.employee_id AS emp_code FROM employee_contact_requests r
     LEFT JOIN employees e ON e.id=r.employee_id WHERE r.status='pending' ORDER BY r.id`).all();
   res.json({ ok: true, requests: rows });
 });
 app.post('/api/admin/phone-check/contact-requests/:id', requireAdmin, (req, res) => {
   try {
-    if (!_ecrApprover(req)) return res.status(403).json({ error: '只有 admin 能审核' });
+    if (!_ecrApprover(req)) return res.status(403).json({ error: '只有 staff / admin 能审核' });
     const r = db.prepare(`SELECT * FROM employee_contact_requests WHERE id=?`).get(req.params.id);
     if (!r) return res.status(404).json({ error: '找不到这条申请' });
     if (r.status !== 'pending') return res.status(409).json({ error: '这条已经处理过了' });
@@ -45462,7 +45468,7 @@ app.post('/api/acct/onboarding-access/:id', requireAdmin, requireRole('admin'), 
   try {
     const u = db.prepare('SELECT id, username, role FROM admin_users WHERE id=?').get(req.params.id);
     if (!u) return res.status(404).json({ error: '找不到这个账号' });
-    if (['admin', 'manager'].includes(u.role)) return res.status(400).json({ error: '管理员和仓库经理本来就能审核' });
+    if (['admin', 'manager'].includes(u.role)) return res.status(400).json({ error: '管理员和客户经理本来就能审核' });
     const on = !!(req.body && req.body.wob_approver);
     db.prepare('UPDATE admin_users SET wob_approver=? WHERE id=?').run(on ? 1 : 0, u.id);
     auditLog('wob_approver_set', req, { targetType: 'admin_user', targetId: u.id, details: { username: u.username, role: u.role, on } });
