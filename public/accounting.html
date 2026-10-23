@@ -481,6 +481,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <div id="refStages" class="ref-stages"></div>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
       <input type="text" id="refSearch" placeholder="搜工头 / 工人姓名 / 电话 / 仓库…（搜工人可看他全部面试记录）" oninput="renderRefList();refHistSchedule()" style="width:320px">
+      <button type="button" id="refSortBtn" onclick="refToggleSort()" title="按面试 / 到场时间排序，点一下反过来" style="font-size:.8rem;white-space:nowrap;cursor:pointer;background:#fff;border:1px solid var(--g300);border-radius:6px;padding:.35rem .55rem">⇅ 新的在上</button>
       <label title="介绍费要有账单才能付：勾上就不看本周（本周才上班的人、本周账期的每周付款）" style="font-size:.8rem;white-space:nowrap;cursor:pointer;background:#fff;border:1px solid var(--g300);border-radius:6px;padding:.35rem .55rem"><input type="checkbox" id="refPastOnly" onchange="refPastOnly(this.checked)"> 只看到上周为止（不含本周）</label>
       <select id="refFilter" onchange="renderRefList()">
         <option value="">全部</option>
@@ -3165,6 +3166,8 @@ function _refByOptions() {
   sel.value = cur && (names.includes(cur) || cur === '__none__') ? cur : '';
   sel.style.cssText = sel.value ? 'background:#ede9fe;border-color:#a78bfa;color:#5b21b6;font-weight:700' : '';
 }
+function _refSortDesc() { try { return localStorage.getItem('ref_sort') !== 'asc'; } catch (e) { return true; } }
+function refToggleSort() { try { localStorage.setItem('ref_sort', _refSortDesc() ? 'asc' : 'desc'); } catch (e) {} renderRefList(); }
 function renderRefList() {
   const q = (document.getElementById('refSearch').value || '').trim().toLowerCase();
   const flt = document.getElementById('refFilter').value;
@@ -3205,11 +3208,11 @@ function renderRefList() {
     + `<button class="ref-stage${_refStageSel === 'payweeks' ? ' on' : ''}" onclick="refSetStage('payweeks')">💰 每周付款<b>${_refPayWeekRows(list).filter(x => !['paid', 'nopay'].includes(x.st)).length}</b><small>每周付给哪些工头、多少钱 · 付款记录</small></button>`;
   const pwMode = _refStageSel === 'payweeks';
   if (!pwMode) list = list.filter(r => _refStage(r) === _refStageSel);
-  // 按通过面试 (到场) 的时间排, 新的在上; 还在「面试安排」的按约的面试时间, 近的在上
+  // 按通过面试 (到场) 的时间排 (没到场的按约的面试时间), 默认新的在上; 「⇅」按钮可以反过来 (记在本机)
   const ivKey = r => String(r.interview_attended_at || r.interview_at || '').replace('T', ' ');
-  if (!pwMode) list = list.slice().sort(_refStageSel === 'interview'
-    ? (a, b) => ivKey(a).localeCompare(ivKey(b)) || b.id - a.id
-    : (a, b) => ivKey(b).localeCompare(ivKey(a)) || b.id - a.id);
+  const desc = _refSortDesc();
+  const sb = document.getElementById('refSortBtn'); if (sb) sb.textContent = desc ? '⇅ 新的在上' : '⇅ 旧的在上';
+  if (!pwMode) list = list.slice().sort((a, b) => (desc ? ivKey(b).localeCompare(ivKey(a)) : ivKey(a).localeCompare(ivKey(b))) || (desc ? b.id - a.id : a.id - b.id));
   const pendN = _refList.filter(r => r.review_status === 'pending').length;
   const waitN = _refList.filter(r => ['approved', 'partpaid'].includes(_refOverall(r))).length;
   const paidN = _refList.filter(r => _refOverall(r) === 'paid').length;
