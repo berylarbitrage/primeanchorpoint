@@ -45448,7 +45448,9 @@ app.get('/api/acct/onboarding-email-names', requireAdmin, requireWobView, (req, 
     const myWords = mine.map(n => new Set(wob.nameWords(n)));
     const nameOf = k => { const x = list.find(y => y.key === k); return x ? x.name : k; };
     const groups = new Map();
-    for (const ev of db.prepare(`SELECT id, kind, name, date, worker_key FROM gusto_email_events WHERE kind IN ('accepted','ready') ORDER BY date DESC, id DESC`).all()) {
+    // kind=accepted / ready: 只列这一步的邮件 (第二步没完成看「接受邀请」, 完成了看「可以付款」)
+    const kinds = ['accepted', 'ready'].includes(String(req.query.kind)) ? [String(req.query.kind)] : ['accepted', 'ready'];
+    for (const ev of db.prepare(`SELECT id, kind, name, date, worker_key FROM gusto_email_events WHERE kind IN (${kinds.map(() => '?').join(',')}) ORDER BY date DESC, id DESC`).all(...kinds)) {
       const g = groups.get(ev.name.toLowerCase()) || { name: ev.name, events: [] };
       g.events.push({ id: ev.id, kind: ev.kind, label: wob.EMAIL_KIND_LABEL[ev.kind] || ev.kind, date: ev.date,
         worker_key: ev.worker_key || '', worker_name: ev.worker_key ? nameOf(ev.worker_key) : '' });
