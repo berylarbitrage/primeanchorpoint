@@ -300,7 +300,7 @@ function toast(msg, bad) {
   const t = document.createElement('div');
   t.textContent = msg;
   const pend = /^📝/.test(String(msg));   // 「已提交审批」用橙色, 不当成出错
-  t.style.cssText = `position:fixed;left:50%;top:18px;transform:translateX(-50%);background:${pend ? '#d97706' : bad ? '#dc2626' : '#16a34a'};color:#fff;padding:.5rem 1rem;border-radius:8px;font-size:.85rem;z-index:3000;box-shadow:0 6px 20px rgba(0,0,0,.25)`;
+  t.style.cssText = `position:fixed;left:50%;top:18px;transform:translateX(-50%);background:${pend ? '#d97706' : bad ? '#dc2626' : '#16a34a'};color:#fff;padding:.5rem 1rem;border-radius:8px;font-size:.85rem;z-index:6000;box-shadow:0 6px 20px rgba(0,0,0,.25)`;
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 2600);
 }
@@ -887,8 +887,9 @@ function zrRender() {
     <div class="zr-foot">
       <span class="muted">图看不清：点图片放大，或用 ＋ －；两边可以分开放大。</span><span style="flex:1"></span>
       ${canAct ? `<input id="zrNote" placeholder="不对的话写原因（填的人会看到）" style="width:min(320px,60vw);${ZR.mode === 'no' ? '' : 'display:none'}">
-        ${z.ok ? '' : `<button class="btn btn-blue" onclick="zrDecide(true)">✓ 审核通过</button>`}
-        <button class="btn btn-outline" style="color:#991b1b" onclick="zrDecide(false)">✗ 不对</button>` : '<span class="muted">只有 manager / admin 能审核</span>'}
+        ${z.ok ? '' : `<button class="btn btn-blue" id="zrOk" onclick="zrDecide(true)">✓ 审核通过</button>`}
+        <button class="btn btn-outline" id="zrNo" style="color:#991b1b" onclick="zrDecide(false)">✗ 不对</button>
+        <div id="zrMsg" style="flex-basis:100%;text-align:right;font-size:.82rem;min-height:0"></div>` : '<span class="muted">只有 manager / admin 能审核</span>'}
     </div></div>`;
   zrApply('a'); zrApply('b');
   if (ZR.mode === 'no') setTimeout(() => { const n = document.getElementById('zrNote'); if (n) n.focus(); }, 0);
@@ -927,8 +928,28 @@ async function zrDecide(ok) {
   }
   const body = ok ? { approve: 'zelle', type: w.pay_method, account: z.account, routing: z.routing }
     : { reject: 'zelle', type: w.pay_method, account: z.account, routing: z.routing, note: note.value };
-  const k = ZR.k;
-  if (await save(k, body)) zrClose();
+  // 直接在弹窗里存, 结果 (成功 / 出错原因) 写在弹窗底下, 不靠一闪而过的提示
+  const k = ZR.k, msg = document.getElementById('zrMsg');
+  const btns = ['zrOk', 'zrNo'].map(id => document.getElementById(id)).filter(Boolean);
+  const btn = document.getElementById(ok ? 'zrOk' : 'zrNo'), label = btn ? btn.textContent : '';
+  btns.forEach(b => { b.disabled = true; });
+  if (btn) btn.textContent = '保存中…';
+  msg.style.color = '#475569'; msg.textContent = '';
+  let j;
+  try { j = await api('/api/acct/onboarding/' + encodeURIComponent(D.rows[k].key), { method: 'POST', body }); }
+  catch (e) { j = { error: e.message === '请先登录' ? '登录过期了，请关掉这个窗口重新登录' : e.message || '网络出错' }; }
+  btns.forEach(b => { b.disabled = false; });
+  if (btn) btn.textContent = label;
+  if (j.error) {
+    msg.style.color = j.pending ? '#b45309' : '#b91c1c';
+    msg.textContent = (j.pending ? '' : '⚠ 没存上：') + j.error;
+    toast(j.error, !j.pending);
+    if (j.pending) setTimeout(zrClose, 1200);
+    return;
+  }
+  toast(ok ? '已审核通过' : '已标成不对');
+  zrClose();
+  load();
 }
 function zSync(k) {
   const ed = ZEDIT[D.rows[k].key];
