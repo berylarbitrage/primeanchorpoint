@@ -18998,16 +18998,23 @@ app.post('/api/admin/phone-check/contact', requireAdmin, (req, res) => {
     const changes = [];
     const xs = c => { try { const a = JSON.parse(emp[c] || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
     const p10 = v => String(v || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
-    if ((req.body || {}).add_phone !== undefined && String(req.body.add_phone).trim() !== '') {
-      const v = _ecrNormPhone(req.body.add_phone);
-      if (!v) return res.status(400).json({ error: '加的电话要 10 位美国号码' });
-      if ([emp.phone, ...xs('extra_phones')].some(x => p10(x) === p10(v))) return res.status(400).json({ error: '这个电话档案里已经有了' });
+    // 加: 可以一次加好几个 (add_phones / add_emails 数组; 也兼容单个 add_phone / add_email)
+    const list = (many, one) => [...(Array.isArray((req.body || {})[many]) ? req.body[many] : []), (req.body || {})[one]]
+      .map(v => String(v == null ? '' : v).trim()).filter(Boolean).slice(0, 10);
+    const havePhones = [emp.phone, ...xs('extra_phones')].map(p10);
+    for (const raw of list('add_phones', 'add_phone')) {
+      const v = _ecrNormPhone(raw);
+      if (!v) return res.status(400).json({ error: `加的电话 ${raw} 要 10 位美国号码` });
+      if (havePhones.includes(p10(v))) return res.status(400).json({ error: `电话 ${v} 档案里已经有了` });
+      havePhones.push(p10(v));
       changes.push(['add_phone', '', v]);
     }
-    if ((req.body || {}).add_email !== undefined && String(req.body.add_email).trim() !== '') {
-      const v = String(req.body.add_email).trim().toLowerCase().slice(0, 120);
-      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return res.status(400).json({ error: '加的邮箱格式不对' });
-      if ([emp.email, ...xs('extra_emails')].some(x => String(x || '').trim().toLowerCase() === v)) return res.status(400).json({ error: '这个邮箱档案里已经有了' });
+    const haveEmails = [emp.email, ...xs('extra_emails')].map(x => String(x || '').trim().toLowerCase());
+    for (const raw of list('add_emails', 'add_email')) {
+      const v = raw.toLowerCase().slice(0, 120);
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return res.status(400).json({ error: `加的邮箱 ${raw} 格式不对` });
+      if (haveEmails.includes(v)) return res.status(400).json({ error: `邮箱 ${v} 档案里已经有了` });
+      haveEmails.push(v);
       changes.push(['add_email', '', v]);
     }
     if ((req.body || {}).phone !== undefined && String(req.body.phone).trim() !== '') {

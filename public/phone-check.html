@@ -300,8 +300,8 @@ function ecrEdit(id){
   if(!e||!box) return;
   box.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;margin-top:.35rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:.5rem .6rem">
     <div style="width:100%;font-size:.76rem;font-weight:700;color:#334155">➕ 加（原来的保留）</div>
-    <label style="font-size:.78rem;color:#64748b">加电话 <input id="ecrAP${id}" placeholder="10 位号码" style="width:150px;padding:.3rem .45rem;border:1px solid #cbd5e1;border-radius:6px"></label>
-    <label style="font-size:.78rem;color:#64748b">加邮箱 <input id="ecrAE${id}" placeholder="name@example.com" style="width:220px;padding:.3rem .45rem;border:1px solid #cbd5e1;border-radius:6px"></label>
+    <div style="width:100%;display:flex;flex-wrap:wrap;gap:.4rem;align-items:center"><span style="font-size:.78rem;color:#64748b">加电话</span><span id="ecrAPs${id}" style="display:contents">${ecrAddInp('ecrAP',id,'10 位号码',150)}</span><button class="ecr-b" onclick="ecrMore('ecrAP',${id},'10 位号码',150)">＋ 再加一个电话</button></div>
+    <div style="width:100%;display:flex;flex-wrap:wrap;gap:.4rem;align-items:center"><span style="font-size:.78rem;color:#64748b">加邮箱</span><span id="ecrAEs${id}" style="display:contents">${ecrAddInp('ecrAE',id,'name@example.com',220)}</span><button class="ecr-b" onclick="ecrMore('ecrAE',${id},'name@example.com',220)">＋ 再加一个邮箱</button></div>
     <div style="width:100%;font-size:.76rem;font-weight:700;color:#334155;margin-top:.2rem">✏️ 改主电话 / 主邮箱（不改就别动）</div>
     <label style="font-size:.78rem;color:#64748b">电话 <input id="ecrP${id}" value="${esc(e.phone||'')}" placeholder="10 位号码" style="width:150px;padding:.3rem .45rem;border:1px solid #cbd5e1;border-radius:6px"></label>
     <label style="font-size:.78rem;color:#64748b">邮箱 <input id="ecrE${id}" value="${esc(e.email||'')}" placeholder="name@example.com" style="width:220px;padding:.3rem .45rem;border:1px solid #cbd5e1;border-radius:6px"></label>
@@ -309,7 +309,13 @@ function ecrEdit(id){
     <button class="ecr-b ok" onclick="ecrSubmit(${id})">${me.can_approve?'💾 保存':'📝 提交给 admin 审核'}</button>
     <button class="ecr-b" onclick="ecrCancel(${id})">取消</button>
     ${me.can_approve?'':'<div style="width:100%;font-size:.74rem;color:#92400e">提交后要 admin 审核通过才会改到员工档案上。</div>'}</div>`;
-  document.getElementById('ecrAP'+id).focus();
+  document.querySelector('.ecrAP'+id).focus();
+}
+function ecrAddInp(cls,id,ph,w){ return `<input class="${cls}${id}" placeholder="${ph}" style="width:${w}px;padding:.3rem .45rem;border:1px solid #cbd5e1;border-radius:6px">`; }
+function ecrMore(cls,id,ph,w){
+  const box=document.getElementById(cls+'s'+id); if(!box) return;
+  box.insertAdjacentHTML('beforeend',ecrAddInp(cls,id,ph,w));
+  const all=box.querySelectorAll('input'); all[all.length-1].focus();
 }
 function ecrCancel(id){ const e=(window._pcEmps||{})[id], box=document.getElementById('ecr'+id); if(e&&box) box.outerHTML=ecrBlock(e); }
 async function ecrPost(url, body){
@@ -321,15 +327,16 @@ async function ecrPost(url, body){
 async function ecrSubmit(id){
   const e=(window._pcEmps||{})[id];
   const phone=document.getElementById('ecrP'+id).value.trim(), email=document.getElementById('ecrE'+id).value.trim();
-  const add_phone=document.getElementById('ecrAP'+id).value.trim(), add_email=document.getElementById('ecrAE'+id).value.trim();
+  const vals=cls=>[...document.querySelectorAll('.'+cls+id)].map(i=>i.value.trim()).filter(Boolean);
+  const add_phones=vals('ecrAP'), add_emails=vals('ecrAE');
   const ch=[];
-  if(add_phone) ch.push('加电话 '+add_phone); if(add_email) ch.push('加邮箱 '+add_email);
+  add_phones.forEach(v=>ch.push('加电话 '+v)); add_emails.forEach(v=>ch.push('加邮箱 '+v));
   if(phone&&phone!==(e.phone||'')) ch.push('主电话改成 '+phone); if(email&&email.toLowerCase()!==String(e.email||'').toLowerCase()) ch.push('主邮箱改成 '+email);
   if(!ch.length){ pcToast('没有要改的（和现在的一样）','err'); return; }
   const nm=[e.first_name,e.last_name].filter(Boolean).join(' ');
   if(!(await pcConfirm(((window._pcMe||{}).can_approve?'确定修改 ':'提交给 admin 审核：')+nm+'\n'+ch.join('\n'),(window._pcMe||{}).can_approve?'保存':'提交审核'))) return;
   try{
-    const j=await ecrPost('/api/admin/phone-check/contact',{employee_id:id,phone:phone!==(e.phone||'')?phone:'',email:email.toLowerCase()!==String(e.email||'').toLowerCase()?email:'',add_phone,add_email});
+    const j=await ecrPost('/api/admin/phone-check/contact',{employee_id:id,phone:phone!==(e.phone||'')?phone:'',email:email.toLowerCase()!==String(e.email||'').toLowerCase()?email:'',add_phones,add_emails});
     pcToast(j.applied?'✅ 已保存':'📝 已提交，等 admin 审核通过后生效','success');
     doSearch();
   }catch(err){ pcToast('失败：'+err.message,'err'); }
