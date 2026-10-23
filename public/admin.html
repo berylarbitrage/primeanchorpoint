@@ -731,7 +731,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <div class="nav-group-items">
       <a onclick="showTab('approvals')" data-tab="approvals" data-role="admin">📋 待审批</a>
       <a href="/acct-checklist" target="_blank" title="会计每周五核对: 该出的账单都出了没有 + 客户都付款了没有">📋 会计每周核对 ↗</a>
-      <a href="/approvals" target="_blank" title="总监（所有修改需要审批）提交的修改，admin 审批">✅ 待审批修改 ↗</a>
+      <a href="/approvals" target="_blank" title="总监（所有修改需要审批）提交的修改，staff / admin 审批">✅ 待审批修改 ↗</a>
       <a onclick="showTab('internal-staff')" data-tab="internal-staff" data-role="admin">👤 内部人员</a>
       <a onclick="showTab('accounts')" data-tab="accounts" data-role="admin">🔐 账户管理</a>
       <a onclick="showTab('integrations')" data-tab="integrations" data-role="admin">🔗 集成设置</a>
@@ -5030,9 +5030,9 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   </div>
   <div class="field"><label>角色 *</label>
     <select id="accRole" onchange="onAccRoleChange()">
-      <option value="admin">Admin — 管理员（完全权限）</option>
-      <option value="gm">总监 Director — 能看所有页面、所有信息；所有修改要 admin 审核后才生效</option>
-      <option value="staff" selected>Staff — 员工（删除须审批）</option>
+      <option value="admin">Admin — 管理员（万能账户，完全权限）</option>
+      <option value="staff" selected>Staff — 和 Admin 权限基本一样，每人一个账号（删除须审批）</option>
+      <option value="gm">总监 Director — 能看所有页面、所有信息；所有修改要 staff / admin 审核后才生效</option>
       <option value="manager">客户经理 — 我们公司的经理，负责指定的客户公司（只看这些公司的工时 / 人员，看不到金额）</option>
       <option value="accounting">Accounting — 会计（只读：发票/银行流水/赔偿事故＋银行对账，登录 /accounting 或 /banking，其他页面无权限）</option>
       <option value="onboarding">Onboarding — 入职专员（只能用 /onboarding 新员工入职页，自动收 Gusto 入职邮件）</option>
@@ -5066,7 +5066,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <label style="display:flex;align-items:center;gap:.45rem;cursor:pointer;font-size:.85rem;color:var(--gray-600)">
       <input type="checkbox" id="accNeedsApproval"> 📝 所有修改需要审批
     </label>
-    <div style="font-size:.72rem;color:#92400e;margin-top:.25rem">勾选后这个账号能进所有页面、看所有信息，但任何修改（保存、删除、上传、审核…）都要 admin 在「✅ 待审批修改」里同意才生效。总监直接在上面角色选「总监」就行</div>
+    <div style="font-size:.72rem;color:#92400e;margin-top:.25rem">勾选后这个账号能进所有页面、看所有信息，但任何修改（保存、删除、上传、审核…）都要 staff / admin 在「✅ 待审批修改」里同意才生效。总监直接在上面角色选「总监」就行</div>
   </div>
   <div class="field" style="margin-top:.6rem">
     <label style="display:flex;align-items:center;gap:.45rem;cursor:pointer;font-size:.85rem;color:var(--gray-600)">
@@ -20424,7 +20424,7 @@ async function loadAccounts() {
     <td>${esc(a.display_name||'')}</td>
     <td><span class="badge ${roleBadge(a.role)}">${a.role==='admin'&&a.needs_approval?'总监':(roleLabel[a.role]||a.role)}</span></td>
     <td style="font-size:.8rem;color:var(--gray-500)">${a.role==='manager'?esc(partnerName(a.assigned_partner_ids)):'—'}</td>
-    <td>${a.approval_status==='pending'?'<span class="badge badge-orange">待批准</span>':a.active?'<span style="color:var(--green)">已激活</span>':'<span style="color:var(--gray-400)">待激活</span>'}${a.mfa_exempt?' <span class="badge badge-orange" title="登录免短信验证，只需账号密码">🔓 免短信</span>':''}${a.needs_approval?' <span class="badge badge-orange" title="能看所有信息，修改要 admin 同意">📝 修改需审批</span>':''}</td>
+    <td>${a.approval_status==='pending'?'<span class="badge badge-orange">待批准</span>':a.active?'<span style="color:var(--green)">已激活</span>':'<span style="color:var(--gray-400)">待激活</span>'}${a.mfa_exempt?' <span class="badge badge-orange" title="登录免短信验证，只需账号密码">🔓 免短信</span>':''}${a.needs_approval?' <span class="badge badge-orange" title="能看所有信息，修改要 staff / admin 同意">📝 修改需审批</span>':''}</td>
     <td style="font-size:.78rem">${a.sms_notify_phone&&a.sms_notify_enabled?'<span style="color:var(--green)" title="'+esc(a.sms_notify_phone)+'">📱 ON</span>':a.sms_notify_phone?'<span style="color:var(--gray-400)" title="'+esc(a.sms_notify_phone)+'">📱 OFF</span>':'<span style="color:var(--gray-300)">—</span>'}</td>
     <td>${(a.created_at||'').slice(0,10)}</td>
     <td style="white-space:nowrap">

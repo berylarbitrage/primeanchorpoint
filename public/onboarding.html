@@ -763,14 +763,14 @@ async function openAccess() {
   body.innerHTML = groups + `<div class="muted" style="border-top:1px solid var(--g200);padding-top:.5rem">Gusto 邮件另外还转发给：${j.forward_to.length ? esc(j.forward_to.join('、')) : '（没填）'} · 改账号去后台「🔐 账户管理」</div>
     <div style="text-align:right;margin-top:.5rem"><button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none'">关闭</button></div>`;
 }
-// ── 「所有修改需要审批」的账号 (例如总监) 提交的修改: 在原来的位置直接显示, admin 直接同意 / 拒绝 ──
+// ── 「所有修改需要审批」的账号 (例如总监) 提交的修改: 在原来的位置直接显示, staff / admin 直接同意 / 拒绝 ──
 function pcOf(pred) { return (D.pending_changes || []).filter(pred); }
 function pcBlock(list, compact) {
   if (!list.length) return '';
   return list.map(c => `<div class="pc ${compact ? 'pc-c' : ''}">
     <div class="pc-h"><b>📝 ${esc(c.by)}</b> 提交的修改 <span class="muted">${esc(fmtTime(String(c.at).replace(' ', 'T') + 'Z'))}</span>
       ${D.can_decide_changes ? `<span class="pc-b"><button class="btn btn-sm" style="background:#16a34a;color:#fff" onclick="decideChange(${c.id},true)">✓ 同意</button><button class="btn btn-outline btn-sm" onclick="decideChange(${c.id},false)">✗ 拒绝</button></span>`
-        : '<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:auto">等 admin 同意</span>'}</div>
+        : '<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:auto">等 staff / admin 同意</span>'}</div>
     <ul>${c.items.map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>`).join('');
 }
 function renderPChanges() {
@@ -778,7 +778,7 @@ function renderPChanges() {
   const el = document.getElementById('pchanges');
   if (!all.length) { el.innerHTML = ''; return; }
   el.innerHTML = `<div class="card" style="margin-bottom:12px;border-color:#fcd34d;background:#fffbeb">
-    <div style="font-weight:800;color:#92400e;margin-bottom:.35rem">📝 等审批的修改（${all.length}）<span class="muted" style="font-weight:400"> — ${D.can_decide_changes ? '同意后才会生效；也可以在下面对应的工人卡片上直接审批' : '你提交的修改，等 admin 同意后才会生效'}</span></div>
+    <div style="font-weight:800;color:#92400e;margin-bottom:.35rem">📝 等审批的修改（${all.length}）<span class="muted" style="font-weight:400"> — ${D.can_decide_changes ? '同意后才会生效；也可以在下面对应的工人卡片上直接审批' : '你提交的修改，等 staff / admin 同意后才会生效'}</span></div>
     ${all.map(c => `<div class="pc"><div class="pc-h"><b>📝 ${esc(c.by)}</b>${c.worker ? ` · 工人 <a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="jumpWorker('${encodeURIComponent(c.key)}')">${esc(c.worker)}</a>` : ''}
         <span class="muted">${esc(fmtTime(String(c.at).replace(' ', 'T') + 'Z'))}</span>
         ${D.can_decide_changes ? `<span class="pc-b"><button class="btn btn-sm" style="background:#16a34a;color:#fff" onclick="decideChange(${c.id},true)">✓ 同意</button><button class="btn btn-outline btn-sm" onclick="decideChange(${c.id},false)">✗ 拒绝</button></span>` : ''}</div>
