@@ -21,7 +21,7 @@ input,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-radius:6p
 .tab{border:1px solid var(--g200);background:#fff;border-radius:999px;padding:.3rem .9rem;font-size:.82rem;cursor:pointer;font-family:inherit;color:var(--g600)}
 .tab.on{background:#0f4c6b;border-color:#0f4c6b;color:#fff}
 .ch{margin-bottom:10px;border-left:4px solid #f59e0b}
-.ch.approved{border-left-color:#16a34a}.ch.rejected{border-left-color:var(--g400)}.ch.failed{border-left-color:var(--red)}
+.ch.approved{border-left-color:#16a34a}.ch.rejected{border-left-color:var(--g400)}.ch.duplicate{border-left-color:var(--g300);opacity:.75}.ch.failed{border-left-color:var(--red)}
 .kv{display:grid;grid-template-columns:minmax(120px,max-content) 1fr;gap:.15rem .8rem;font-size:.8rem;margin-top:.4rem;background:#f8fafc;border-radius:8px;padding:.5rem .7rem}
 .kv .k{color:var(--g500)}.kv .v{word-break:break-all}
 .row{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
@@ -83,7 +83,7 @@ function bodyKv(c) {
   const show = v => { const s = typeof v === 'string' ? v : JSON.stringify(v); return s.length > 300 ? s.slice(0, 300) + '…' : s; };
   return `<div class="kv">${Object.entries(o).map(([k, v]) => `<span class="k">${esc(k)}</span><span class="v">${esc(show(v))}</span>`).join('')}</div>`;
 }
-const ST = { pending: ['⏳ 等审批', '#92400e', '#fef3c7'], approved: ['✅ 已同意并执行', '#166534', '#dcfce7'], rejected: ['✗ 已拒绝', '#4b5563', '#f3f4f6'], failed: ['⚠ 同意了但执行出错', '#991b1b', '#fee2e2'], running: ['执行中…', '#1e40af', '#dbeafe'] };
+const ST = { pending: ['⏳ 等审批', '#92400e', '#fef3c7'], approved: ['✅ 已同意并执行', '#166534', '#dcfce7'], rejected: ['✗ 已拒绝', '#4b5563', '#f3f4f6'], failed: ['⚠ 同意了但执行出错', '#991b1b', '#fee2e2'], running: ['执行中…', '#1e40af', '#dbeafe'], duplicate: ['↺ 重复，已自动关掉', '#4b5563', '#f3f4f6'] };
 async function load() {
   let j; try { j = await api('/api/approvals'); } catch (e) { return; }
   document.getElementById('main').style.display = '';
