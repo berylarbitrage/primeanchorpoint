@@ -45437,7 +45437,7 @@ app.get('/api/acct/onboarding-employees', requireAdmin, requireWobWrite, (req, r
 });
 
 // 对不上人的 Gusto 邮件: manager / admin 手动关联到某个工人 (直接算通过), 或者暂时忽略
-// 手动关联 Gusto: 列出所有「接受邀请 / 可以付款」邮件里的名字 (同名的放一起), 按和这个工人名字像不像排序, 最像的标「最合适」
+// 手动关联 Gusto: 列出这一步的 Gusto 邮件 (一封一行), 按邮件里的名字和这个工人名字像不像排序, 最像的标「最合适」
 app.get('/api/acct/onboarding-email-names', requireAdmin, requireWobView, (req, res) => {
   try {
     const key = _payrollNameKey(req.query.key);
@@ -45451,10 +45451,9 @@ app.get('/api/acct/onboarding-email-names', requireAdmin, requireWobView, (req, 
     // kind=accepted / ready: 只列这一步的邮件 (第二步没完成看「接受邀请」, 完成了看「可以付款」)
     const kinds = ['accepted', 'ready'].includes(String(req.query.kind)) ? [String(req.query.kind)] : ['accepted', 'ready'];
     for (const ev of db.prepare(`SELECT id, kind, name, date, worker_key FROM gusto_email_events WHERE kind IN (${kinds.map(() => '?').join(',')}) ORDER BY date DESC, id DESC`).all(...kinds)) {
-      const g = groups.get(ev.name.toLowerCase()) || { name: ev.name, events: [] };
-      g.events.push({ id: ev.id, kind: ev.kind, label: wob.EMAIL_KIND_LABEL[ev.kind] || ev.kind, date: ev.date,
-        worker_key: ev.worker_key || '', worker_name: ev.worker_key ? nameOf(ev.worker_key) : '' });
-      groups.set(ev.name.toLowerCase(), g);
+      // 一封邮件一行: 同一个名字不同日期的邮件是不同的人 (一个邀请不可能被接受两次)
+      groups.set(ev.id, { name: ev.name, events: [{ id: ev.id, kind: ev.kind, label: wob.EMAIL_KIND_LABEL[ev.kind] || ev.kind, date: ev.date,
+        worker_key: ev.worker_key || '', worker_name: ev.worker_key ? nameOf(ev.worker_key) : '' }] });
     }
     // 像不像: 名字里的词有几个对得上 (邮件常常只写名 + 姓, 发票上可能多一个中间名)
     const score = n => {

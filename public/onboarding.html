@@ -1090,7 +1090,7 @@ function gnAssign(k, i) {
   const evs = g.events.map(e => `${esc(e.date)} ${esc(e.label)}`).join('、');
   document.getElementById('gModal').style.display = 'none';
   // 第一次确认
-  confirmBox('关联 Gusto 邮件', `<div style="font-size:.88rem">把 Gusto 邮件里的「<b>${esc(g.name)}</b>」（${evs}）关联到工人 <b>${esc(w.name)}</b>？</div>
+  confirmBox('关联 Gusto 邮件', `<div style="font-size:.88rem">把 ${evs} 的 Gusto 邮件「<b>${esc(g.name)}</b>」关联到工人 <b>${esc(w.name)}</b>？</div>
     ${g.best ? '' : '<div style="margin-top:.35rem;color:#b45309;font-size:.82rem">⚠ 系统觉得这个名字不是最合适的，请仔细核对</div>'}
     ${others.length ? `<div style="margin-top:.35rem;color:#991b1b;font-size:.82rem">⚠ 这些邮件现在关联给了 ${esc(others.join('、'))}，关联后会改到 ${esc(w.name)}</div>` : ''}`, () => {
     // 第二次确认
