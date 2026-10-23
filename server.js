@@ -45146,15 +45146,18 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       const all = _wobJson(next.zelle_accounts, []);
       const old = all.filter(x => (x.type || 'zelle') === type), others = all.filter(x => (x.type || 'zelle') !== type);
       const list = (Array.isArray(b[field]) ? b[field] : []).slice(0, 10)
-        .map(z => ({ account: str(z && z.account, 120), name: str(z && z.name, 120), shot: /^[a-f0-9]{32}\.(jpg|png|webp)$/.test(str(z && z.shot, 80)) ? str(z.shot, 80) : '' }))
+        // 截图可以多张: shots 数组 (旧的单张 shot 也认)
+        .map(z => ({ account: str(z && z.account, 120), name: str(z && z.name, 120),
+          shots: [...new Set([...(Array.isArray(z && z.shots) ? z.shots : []), z && z.shot].map(v => str(v, 80))
+            .filter(v => /^[a-f0-9]{32}\.(jpg|png|webp)$/.test(v) && fs.existsSync(path.join(_wobShotDir, v))))].slice(0, 10) }))
         .filter(z => z.account || z.name);
       if (list.some(z => !z.account || !z.name)) return res.status(400).json({ error: `每个 ${label} 账号都要填 ${label} 号和户主姓名` });
       const merged = [];
       for (const z of list) {
         const o = old.find(x => x.account === z.account && x.name === z.name);
-        const shot = z.shot && fs.existsSync(path.join(_wobShotDir, z.shot)) ? z.shot : (o && o.shot) || '';
-        if (!shot) return res.status(400).json({ error: `${label} ${z.account} 要上传截图（${label} 里显示账号和名字的那一页）` });
-        merged.push(o ? { ...o, type, shot } : { type, account: z.account, name: z.name, shot, at: new Date().toISOString(), by: req.userName || '' });
+        const shots = z.shots.length ? z.shots : (o ? (o.shots || (o.shot ? [o.shot] : [])) : []);
+        if (!shots.length) return res.status(400).json({ error: `${label} ${z.account} 要上传截图（${label} 里显示账号和名字的那一页）` });
+        merged.push(o ? { ...o, type, shots, shot: shots[0] } : { type, account: z.account, name: z.name, shots, shot: shots[0], at: new Date().toISOString(), by: req.userName || '' });
       }
       next.zelle_accounts = JSON.stringify([...others, ...merged]);
     }
