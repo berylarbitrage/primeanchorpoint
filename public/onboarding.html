@@ -59,10 +59,14 @@ input,select,textarea{padding:.38rem .5rem;border:1px solid var(--g300);border-r
 .old{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;padding:.45rem 1rem;font-size:.8rem;margin-bottom:6px;border-left:4px solid var(--g300)}
 .old.done{border-left-color:var(--green)}
 .old .pm button{padding:.15rem .55rem;font-size:.72rem}
-.zrow{display:grid;grid-template-columns:1fr 1fr 28px;gap:.35rem;margin-bottom:.35rem}
+.zrow{display:grid;grid-template-columns:46px 1fr 1fr 28px;gap:.35rem;margin-bottom:.35rem;align-items:center}
+.zshot{width:46px;height:46px;border:1.5px dashed #a78bfa;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;background:#fff;font-size:1rem;color:#6d28d9;line-height:1.1;overflow:hidden}
+.zshot span{font-size:.62rem;font-weight:700}
+.zai{font-size:.74rem;color:#166534;background:#f0fdf4;border-radius:6px;padding:.2rem .45rem}
+.zai.bad{color:#92400e;background:#fffbeb}
 .zrow input{min-width:0}
 .zbox{background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:.5rem;margin-bottom:.45rem}
-.zhead{display:grid;grid-template-columns:1fr 1fr 28px;gap:.35rem;font-size:.68rem;color:#6d28d9;font-weight:700;margin-bottom:.2rem}
+.zhead{display:grid;grid-template-columns:46px 1fr 1fr 28px;gap:.35rem;font-size:.68rem;color:#6d28d9;font-weight:700;margin-bottom:.2rem}
 .w{padding:0;overflow:hidden;border-left:4px solid var(--amber);margin-bottom:10px}
 .w.done{border-left-color:var(--green)}
 .w.bad{border-left-color:var(--red)}
@@ -249,7 +253,7 @@ let SHOW_IGN = false;
 const PICKS = [];                 // 关联邮件时可选的工人 {key, name} (按钮里只放下标, 名字里有引号也没事)
 function pk(key, name) { PICKS.push({ key, name }); return PICKS.length - 1; }             // 对不上人的邮件: 是否也列出已忽略的                 // 正在编辑 Zelle 账号的人: key → [{account, name}]
 const EXP = new Set();            // 发票视图里展开看全卡片的老员工
-const PM_LABEL = { gusto: 'Gusto 入职', cash: '现金', check: '支票', zelle: 'Zelle', skip: '不用处理' };
+const PM_LABEL = { gusto: 'Gusto 入职', cash: '现金', check: '支票', zelle: 'Zelle', cashapp: 'Cash App', skip: '不用处理' };
 
 function esc(s) { if (s == null) return ''; const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
 function money(v) { if (v == null) return ''; return '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -314,6 +318,7 @@ async function load() {
   try { j = await api('/api/acct/onboarding' + q2); } catch (e) { return; }
   if (j.error) { document.getElementById('list').innerHTML = `<div class="empty" style="color:var(--red)">${esc(j.error)}</div>`; return; }
   D = j;
+  applyPendingOverlay();
   WEEK = j.week;
   INV = j.invoice ? j.invoice.id : 0;
   document.getElementById('main').style.display = '';
@@ -390,15 +395,15 @@ function renderList() {
 // 发票视图里的老员工: 一行, 能直接定付款方式, 点「展开」看全卡片
 function oldRow(w, k) {
   const dis = D.can_edit ? '' : 'disabled';
-  const pdis = D.can_edit && w.employee ? '' : 'disabled';
+  const pdis = D.can_edit && (w.employee || (w.pend && w.pend.emp)) ? '' : 'disabled';
   const pm = Object.keys(PM_LABEL).map(m => `<button ${pdis} title="${w.employee ? '' : '先关联员工档案'}" class="${w.pay_method === m ? 'on' : ''}" onclick="pickPay(${k},'${w.pay_method === m ? '' : m}')">${PM_LABEL[m]}</button>`).join('');
   return `<div class="card old ${w.settled ? 'done' : ''}" style="${w.bank_alert_open ? 'border-left-color:var(--red)' : ''}">
     <b>${esc(w.name)}</b><span class="tag" style="background:var(--g100);color:var(--g600)">老员工 · 第一次 ${esc(w.first_end)}</span>
     ${w.employee ? `<span class="tag" style="background:#dcfce7;color:#166534">👤 ${esc(w.employee.code || '#' + w.employee.id)}${w.employee.phone ? ' · ' + esc(w.employee.phone) : ''}</span>` : '<span class="tag" style="background:#fee2e2;color:#991b1b">未关联档案</span>'}${w.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff" title="发票是 ${esc((w.inv_states || []).join(' / '))}，档案是 ${esc(w.employee.state)}">⚠ 州不一致：发票 ${esc((w.inv_states || []).join('/'))} · 档案 ${esc(w.employee.state)}</span>` : ''}
     <span class="muted">${w.line.hours ? w.line.hours + 'h' : ''}${w.line.total != null ? ' · ' + money(w.line.total) : ''}</span>
     ${w.pending_review ? `<button class="tag" style="background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;cursor:pointer" title="展开去审核" onclick="EXP.add(D.rows[${k}].key);renderList()">🔎 ${w.pending_review} 条待审核 →</button>` : ''}
-    ${w.settled ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ ${esc(PM_LABEL[w.pay_method] || 'Gusto 已付过')}</span>` : '<span class="tag" style="background:#fef3c7;color:#92400e">付款方式待定</span>'}
-    ${w.pay_method === 'zelle' ? `<span class="muted">Zelle ${zList(w.zelle_accounts)}</span>` : ''}
+    ${w.pend && w.pend.pay ? `<span class="tag" style="background:#fef3c7;color:#92400e">⏳ ${esc(PM_LABEL[w.pay_method] || '不选')} 等审批</span>` : w.settled ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ ${esc(PM_LABEL[w.pay_method] || 'Gusto 已付过')}</span>` : '<span class="tag" style="background:#fef3c7;color:#92400e">付款方式待定</span>'}
+    ${w.pay_method === 'zelle' ? `<span class="muted">Zelle ${zList(w.zelle_accounts)}</span>` : w.pay_method === 'cashapp' ? `<span class="muted">Cash App ${zList(w.cashapp_accounts)}</span>` : ''}
     <span class="pm" style="margin-left:auto">${pm}</span>
     ${w.bank_alert_open ? '<span class="tag" style="background:#fee2e2;color:#991b1b">⚠ 银行信息</span>' : ''}
     ${pcOf(c => c.kind === 'worker' && c.key === w.key).length ? `<button class="tag" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;cursor:pointer" onclick="EXP.add(D.rows[${k}].key);renderList()">📝 有修改等审批 →</button>` : ''}
@@ -412,7 +417,7 @@ function card(w, k) {
   const invs = (w.line ? [{ ...w.line, invoice_id: D.invoice.id }] : w.invoices).map(l => `<a class="inv" ${D.can_open_invoice ? `href="/accounting?invoice=${l.invoice_id}" target="_blank"` : ''} title="${esc(l.company)} · ${esc(l.period_start)}~${esc(l.period_end)}">📄 ${esc(l.invoice_number)} <span style="font-weight:400">${md(l.period_end)}${l.hours ? ' · ' + l.hours + 'h' : ''}${l.total != null ? ' · ' + money(l.total) : ''}</span></a>`).join('');
   const alias = w.invoice_names.filter(n => n !== w.name);
   const sug = w.suggest && !w.pay_method ? w.suggest.method : '';
-  const pdis = D.can_edit && w.employee ? '' : 'disabled';
+  const pdis = D.can_edit && (w.employee || (w.pend && w.pend.emp)) ? '' : 'disabled';
   const pm = Object.keys(PM_LABEL).map(m => `<button ${pdis} class="${w.pay_method === m ? 'on' : ''} ${sug === m && w.employee ? 'sug' : ''}" onclick="pickPay(${k},'${w.pay_method === m ? '' : m}')">${PM_LABEL[m]}</button>`).join('');
   let gusto = '';
   // 还没选 Gusto 时, Gusto 收款人 / 邮件的待审核也要能看到、能审 (单独一块)
@@ -470,11 +475,11 @@ function card(w, k) {
         <div>${invs || '<span class="muted">—</span>'}</div>
       </div>
       <div>
-        <div class="lbl">怎么付${w.suggest && !w.pay_method ? ` <span style="text-transform:none;color:#0369a1;font-weight:400">· 建议 ${PM_LABEL[w.suggest.method] || w.suggest.method}（${esc(w.suggest.why)}）</span>` : ''}</div>
+        <div class="lbl">怎么付${w.pend && w.pend.pay ? ' <span class="tag" style="text-transform:none;background:#fef3c7;color:#92400e">⏳ 等审批，下面可以先接着做</span>' : ''}${w.suggest && !w.pay_method ? ` <span style="text-transform:none;color:#0369a1;font-weight:400">· 建议 ${PM_LABEL[w.suggest.method] || w.suggest.method}（${esc(w.suggest.why)}）</span>` : ''}</div>
         <div class="pm" style="margin-bottom:.45rem">${pm}</div>
-        ${w.employee ? '' : '<div class="muted" style="margin:-.2rem 0 .4rem;color:#b45309">① 先关联员工档案，再选付款方式</div>'}
+        ${w.employee || (w.pend && w.pend.emp) ? '' : '<div class="muted" style="margin:-.2rem 0 .4rem;color:#b45309">① 先关联员工档案，再选付款方式</div>'}
         ${zelleLine(w, k)}
-        <textarea ${dis} rows="2" placeholder="备注：Zelle 账号 / 支票抬头 / 现金谁给 …" onchange="save(${k},{pay_note:this.value})">${esc(w.pay_note)}</textarea>
+        <textarea ${dis} rows="2" placeholder="备注：支票抬头 / 现金谁给 …" onchange="save(${k},{pay_note:this.value})">${esc(w.pay_note)}</textarea>
         ${w.updated_by ? `<div class="muted">最后修改 ${esc(w.updated_by)} ${esc((w.updated_at || '').slice(0, 16))}</div>` : ''}
       </div>
     </div>
@@ -623,27 +628,43 @@ function whSelect(w, k, dis) {
   return `<select ${dis} style="width:100%;margin-bottom:.4rem" onchange="save(${k},{warehouse:this.value})" title="默认取发票的客户公司">
     ${opts.map(o => `<option ${o === cur ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
 }
-const PM_SHORT = { gusto: 'Gusto', cash: '现金', check: '支票', zelle: 'Zelle', skip: '不用处理' };
+const PM_SHORT = { gusto: 'Gusto', cash: '现金', check: '支票', zelle: 'Zelle', cashapp: 'Cash App', skip: '不用处理' };
 function zList(list) { return (list || []).map(z => `${esc(z.account)}（${esc(z.name)}）`).join('、'); }
-// 付款方式下面: Zelle 账号 (直接在这里填, 可以多个, 一行两格) + 以前用过的付款方式
+// 付款方式下面: Zelle / Cash App 账号 (直接在这里填, 可以多个) + 以前用过的付款方式
+// 每个账号都要上传截图 (显示账号和名字的那一页), AI 读出账号 / 名字自动填上, 人再对照截图核对一遍
+const ACC = {
+  zelle: { label: 'Zelle', acc: 'Zelle 号（电话或邮箱）', ph: '626-555-1234 / name@gmail.com', namePh: 'Zelle 里显示的名字', field: 'zelle_accounts', bg: '#ede9fe', fg: '#5b21b6' },
+  cashapp: { label: 'Cash App', acc: '$Cashtag', ph: '$name123', namePh: 'Cash App 里显示的名字', field: 'cashapp_accounts', bg: '#dcfce7', fg: '#166534' },
+};
+const shotUrl = id => '/api/acct/onboarding-shot/' + encodeURIComponent(id);
+function accsOf(w, t) { return (t === 'cashapp' ? w.cashapp_accounts : w.zelle_accounts) || []; }
+function shotThumb(id, size) { return id ? `<a href="${shotUrl(id)}" target="_blank" title="点开看截图"><img src="${shotUrl(id)}" style="width:${size}px;height:${size}px;object-fit:cover;border-radius:6px;border:1px solid #c4b5fd;display:block"></a>` : ''; }
 function zelleLine(w, k) {
   let out = '';
   const ed = ZEDIT[w.key];
   if (ed) {
-    const switching = w.pay_method !== 'zelle';
-    out += `<div class="zbox"><div class="zhead"><span>Zelle 号（电话或邮箱）</span><span>这个 Zelle 号的户主姓名</span><span></span></div>
-      ${ed.map((z, i) => `<div class="zrow"><input data-zk="${k}" data-zi="${i}" data-zf="account" value="${esc(z.account)}" placeholder="626-555-1234 / name@gmail.com">
-        <input data-zk="${k}" data-zi="${i}" data-zf="name" value="${esc(z.name)}" placeholder="Zelle 里显示的名字">
-        <button class="arrow" style="width:28px;height:30px" title="删掉这一行" onclick="zRow(${k},${i})">✕</button></div>`).join('')}
+    const A = ACC[ed.type], switching = w.pay_method !== ed.type;
+    out += `<div class="zbox"><div class="zhead"><span>截图</span><span>${A.acc}</span><span>这个账号的户主姓名</span><span></span></div>
+      ${ed.rows.map((z, i) => `<div class="zrow">
+        <label class="zshot" title="上传截图（${A.label} 里显示账号和名字的那一页）">${z.shot ? shotThumb(z.shot, 44) : (z.busy ? '<span style="font-size:.7rem">上传中…</span>' : '📷<span>截图</span>')}
+          <input type="file" accept="image/*" style="display:none" onchange="zShot(${k},${i},this)"></label>
+        <input data-zk="${k}" data-zi="${i}" data-zf="account" value="${esc(z.account)}" placeholder="${A.ph}">
+        <input data-zk="${k}" data-zi="${i}" data-zf="name" value="${esc(z.name)}" placeholder="${A.namePh}">
+        <button class="arrow" style="width:28px;height:30px" title="删掉这一行" onclick="zRow(${k},${i})">✕</button>
+        ${z.ai ? `<div class="zai ${z.ai.bad ? 'bad' : ''}" style="grid-column:2/5">${esc(z.ai.text)}</div>` : ''}</div>`).join('')}
+      <div class="muted" style="margin:.1rem 0 .3rem">每个账号都要上传截图；上传后系统自动读出账号和名字，请对照截图再核对一遍。</div>
       <div class="row" style="margin:.2rem 0 0;justify-content:space-between">
-        <button class="btn btn-outline btn-sm" onclick="zRow(${k},-1)">＋ 再加一个 Zelle 账号</button>
+        <button class="btn btn-outline btn-sm" onclick="zRow(${k},-1)">＋ 再加一个 ${A.label} 账号</button>
         <span style="display:flex;gap:.3rem"><button class="btn btn-outline btn-sm" onclick="delete ZEDIT[D.rows[${k}].key];renderList()">取消</button>
-        <button class="btn btn-blue btn-sm" onclick="zSave(${k})">${switching ? `确认改成 Zelle${w.pay_method ? '（原来：' + PM_SHORT[w.pay_method] + '）' : ''}` : '保存 Zelle 账号'}</button></span></div></div>`;
-  } else if (w.pay_method === 'zelle') {
-    out += `<div class="zbox">${w.zelle_accounts.map(z => `<div class="row" style="margin:0 0 .2rem"><span class="tag" style="background:#ede9fe;color:#5b21b6">Zelle ${esc(z.account)}</span><span style="font-size:.8rem">户主 <b>${esc(z.name)}</b></span></div>`).join('')}
-      ${D.can_edit ? `<button class="btn btn-outline btn-sm" onclick="zEdit(${k})">编辑 / 加账号</button>` : ''}</div>`;
-  } else if (w.zelle_accounts.length) {
-    out += `<div class="muted" style="margin:-.1rem 0 .35rem">保留的 Zelle 账号：${zList(w.zelle_accounts)}</div>`;
+        <button class="btn btn-blue btn-sm" onclick="zSave(${k})">${switching ? `确认改成 ${A.label}${w.pay_method ? '（原来：' + PM_SHORT[w.pay_method] + '）' : ''}` : `保存 ${A.label} 账号`}</button></span></div></div>`;
+  } else if (ACC[w.pay_method]) {
+    const A = ACC[w.pay_method];
+    out += `<div class="zbox">${accsOf(w, w.pay_method).map(z => `<div class="row" style="margin:0 0 .25rem;align-items:center">${shotThumb(z.shot, 34) || '<span class="tag" style="background:#fee2e2;color:#991b1b" title="以前登记的，没有截图">没截图</span>'}
+        <span class="tag" style="background:${A.bg};color:${A.fg}">${A.label} ${esc(z.account)}</span><span style="font-size:.8rem">户主 <b>${esc(z.name)}</b></span></div>`).join('')}
+      ${D.can_edit ? `<button class="btn btn-outline btn-sm" onclick="zEdit(${k},'${w.pay_method}')">编辑 / 加账号</button>` : ''}</div>`;
+  } else {
+    if (w.zelle_accounts.length) out += `<div class="muted" style="margin:-.1rem 0 .35rem">保留的 Zelle 账号：${zList(w.zelle_accounts)}</div>`;
+    if ((w.cashapp_accounts || []).length) out += `<div class="muted" style="margin:-.1rem 0 .35rem">保留的 Cash App 账号：${zList(w.cashapp_accounts)}</div>`;
   }
   if (w.pay_history.length) {
     out += `<div class="muted" style="margin:-.1rem 0 .4rem">之前的付款方式：${w.pay_history.slice().reverse().map(h =>
@@ -653,37 +674,76 @@ function zelleLine(w, k) {
 }
 function zSync(k) {
   const ed = ZEDIT[D.rows[k].key];
-  document.querySelectorAll(`[data-zk="${k}"]`).forEach(inp => { const r = ed[+inp.dataset.zi]; if (r) r[inp.dataset.zf] = inp.value; });
+  document.querySelectorAll(`[data-zk="${k}"]`).forEach(inp => { const r = ed.rows[+inp.dataset.zi]; if (r) r[inp.dataset.zf] = inp.value; });
 }
-function zEdit(k) {
-  const w = D.rows[k];
-  ZEDIT[w.key] = w.zelle_accounts.length ? w.zelle_accounts.map(z => ({ account: z.account, name: z.name })) : [{ account: '', name: '' }];
+function zEdit(k, type) {
+  const w = D.rows[k], cur = accsOf(w, type);
+  ZEDIT[w.key] = { type, rows: cur.length ? cur.map(z => ({ account: z.account, name: z.name, shot: z.shot || '' })) : [{ account: '', name: '', shot: '' }] };
   EXP.add(w.key);
   renderList();
 }
 function zRow(k, i) {
   zSync(k);
   const ed = ZEDIT[D.rows[k].key];
-  if (i < 0) ed.push({ account: '', name: '' }); else { ed.splice(i, 1); if (!ed.length) ed.push({ account: '', name: '' }); }
+  if (i < 0) ed.rows.push({ account: '', name: '', shot: '' }); else { ed.rows.splice(i, 1); if (!ed.rows.length) ed.rows.push({ account: '', name: '', shot: '' }); }
+  renderList();
+}
+// 手机截图常常很大: 缩到最长边 1600px 的 JPG 再传
+function shrinkImage(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const r = Math.min(1, 1600 / Math.max(img.width, img.height));
+      const c = document.createElement('canvas'); c.width = Math.round(img.width * r); c.height = Math.round(img.height * r);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url); resolve(c.toDataURL('image/jpeg', 0.88));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('读不了这张图片')); };
+    img.src = url;
+  });
+}
+async function zShot(k, i, input) {
+  const f = input.files && input.files[0];
+  if (!f) return;
+  zSync(k);
+  const w = D.rows[k], ed = ZEDIT[w.key], row = ed.rows[i];
+  row.busy = true; row.ai = null; renderList();
+  try {
+    const up = await api('/api/acct/onboarding-shot', { method: 'POST', body: { data: await shrinkImage(f) } });
+    if (up.error) throw new Error(up.error);
+    row.shot = up.id; row.busy = false;
+    row.ai = { text: '🔍 正在从截图里读账号和名字…' }; renderList();
+    const rd = await api('/api/acct/onboarding-shot-read', { method: 'POST', body: { id: up.id, kind: ed.type } });
+    if (rd.error) { row.ai = { text: '⚠ ' + rd.error, bad: true }; renderList(); return; }
+    // 读到的填进去; 原来已经手填了不一样的, 不覆盖, 标出来让人核对
+    const diff = [];
+    if (rd.account) { if (row.account && row.account.replace(/\s/g, '').toLowerCase() !== rd.account.replace(/\s/g, '').toLowerCase()) diff.push(`账号截图上是 ${rd.account}`); else row.account = rd.account; }
+    if (rd.name) { if (row.name && row.name.trim().toLowerCase() !== rd.name.trim().toLowerCase()) diff.push(`名字截图上是 ${rd.name}`); else row.name = rd.name; }
+    row.ai = diff.length ? { text: '⚠ 和你填的不一样：' + diff.join('；') + '，请核对', bad: true }
+      : { text: `✓ 从截图读到：${rd.account || '（账号没读到）'} · ${rd.name || '（名字没读到）'}${rd.confidence === 'low' || rd.note ? '，' + (rd.note || '有地方看不清') : ''}，请对照截图核对`, bad: !rd.account || !rd.name || rd.confidence === 'low' };
+  } catch (e) { row.busy = false; row.ai = { text: '⚠ ' + e.message, bad: true }; }
   renderList();
 }
 async function zSave(k) {
   zSync(k);
-  const w = D.rows[k];
-  const list = ZEDIT[w.key].map(z => ({ account: z.account.trim(), name: z.name.trim() })).filter(z => z.account || z.name);
-  if (!list.length) return toast('至少登记一个 Zelle 账号', true);
-  if (list.some(z => !z.account || !z.name)) return toast('每个 Zelle 账号都要填 Zelle 号和户主姓名', true);
-  const ok = await save(k, { pay_method: 'zelle', zelle_accounts: list });
+  const w = D.rows[k], ed = ZEDIT[w.key], A = ACC[ed.type];
+  if (ed.rows.some(z => z.busy)) return toast('截图还在上传', true);
+  const list = ed.rows.map(z => ({ account: z.account.trim(), name: z.name.trim(), shot: z.shot || '' })).filter(z => z.account || z.name);
+  if (!list.length) return toast(`至少登记一个 ${A.label} 账号`, true);
+  if (list.some(z => !z.account || !z.name)) return toast(`每个 ${A.label} 账号都要填账号和户主姓名`, true);
+  if (list.some(z => !z.shot)) return toast(`每个 ${A.label} 账号都要上传截图`, true);
+  if (ed.type === 'cashapp' && list.some(z => !/^\$/.test(z.account))) return toast('Cash App 账号是 $ 开头的 $Cashtag', true);
+  const ok = await save(k, { pay_method: ed.type, [A.field]: list });
   if (ok) delete ZEDIT[w.key];
 }
-// 选付款方式: Zelle 直接在下面填账号; 其他的弹窗确认 (换掉的方式会留底)
+// 选付款方式: Zelle / Cash App 直接在下面填账号; 其他的弹窗确认 (换掉的方式会留底)
 function pickPay(k, m) {
   const w = D.rows[k];
-  if (m === 'zelle') return zEdit(k);
+  if (ACC[m]) return zEdit(k, m);
   const from = w.pay_method ? PM_LABEL[w.pay_method] : '未选';
   const to = m ? PM_LABEL[m] : '不选（清空）';
   confirmBox('确认付款方式', `<div style="font-size:.88rem"><b>${esc(w.name)}</b> 的付款方式：${esc(from)} → <b>${esc(to)}</b></div>
-    ${w.pay_method ? `<div class="muted" style="margin-top:.3rem">原来的「${esc(from)}」${w.pay_method === 'zelle' ? '和 Zelle 账号' : ''}会留在记录里</div>` : ''}`, () => save(k, { pay_method: m }));
+    ${w.pay_method ? `<div class="muted" style="margin-top:.3rem">原来的「${esc(from)}」${ACC[w.pay_method] ? '和账号' : ''}会留在记录里</div>` : ''}`, () => save(k, { pay_method: m }));
 }
 function fmtTime(t) { if (!t) return ''; const d = new Date(t); return isNaN(d) ? String(t) : d.toLocaleString(); }
 // 通用确认弹窗 (页面居中): 确认后跑 fn, fn 返回 true 才关
@@ -770,6 +830,31 @@ async function openAccess() {
     <div style="text-align:right;margin-top:.5rem"><button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none'">关闭</button></div>`;
 }
 // ── 「所有修改需要审批」的账号 (例如总监) 提交的修改: 在原来的位置直接显示, staff / admin 直接同意 / 拒绝 ──
+// 提交了等审批的修改 (总监这类账号): 页面上先按「已经改了」显示, 后面的步骤可以接着做, 不用等审批。
+// 每个改动还是各自等 staff / admin 同意才真正生效; 卡片上标「等审批」
+function applyPendingOverlay() {
+  for (const c of D.pending_changes || []) {
+    if (c.kind !== 'worker' || !c.body) continue;
+    const w = (D.rows || []).find(x => x.key === c.key);
+    if (!w) continue;
+    const b = c.body;
+    w.pend = w.pend || {};
+    if (b.pay_method !== undefined) { w.pend.pay = true; w.pay_method = b.pay_method; }
+    if (Array.isArray(b.zelle_accounts)) { w.zelle_accounts = b.zelle_accounts; w.pend.acc = true; }
+    if (Array.isArray(b.cashapp_accounts)) { w.cashapp_accounts = b.cashapp_accounts; w.pend.acc = true; }
+    if (b.employee_id || b.approve === 'employee') w.pend.emp = true;
+    if (b.step && w.checklist) {
+      const steps = w.checklist.steps, st = steps.find(x => x.id === b.step);
+      if (st) {
+        if (b.checked) { st.manual = { by: (c.by || '') + '（等审批）', at: c.at }; st.done = true; }
+        else { st.manual = null; st.done = !!st.auto; }
+        steps.forEach((x, i) => { x.locked = i > 0 && !steps[i - 1].done; });
+        w.checklist.done_count = steps.filter(x => x.done).length;
+        w.pend.step = true;
+      }
+    }
+  }
+}
 function pcOf(pred) { return (D.pending_changes || []).filter(pred); }
 function pcBlock(list, compact) {
   if (!list.length) return '';
