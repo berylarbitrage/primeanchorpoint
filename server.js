@@ -45822,20 +45822,27 @@ app.post('/api/acct/onboarding-mailhook/resend', requireAdmin, requireRole('admi
     const to = String((req.body || {}).to || '').trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return res.status(400).json({ error: '邮箱格式不对' });
     const mode = (req.body || {}).mode === 'each' ? 'each' : 'digest';
-    const rows = db.prepare(`SELECT kind, name, date, subject FROM gusto_email_events WHERE kind IN ('accepted','ready','bank_bad','bank_updated') ORDER BY date DESC, id DESC`).all();
-    if (!rows.length) return res.status(400).json({ error: '还没有入职相关的 Gusto 邮件' });
+    // 时间段 (邮件日期, 含头含尾); 不填就是全部
+    const day = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : '';
+    const from = day((req.body || {}).from), until = day((req.body || {}).to_date);
+    if (from && until && from > until) return res.status(400).json({ error: '开始日期不能晚于结束日期' });
+    const rows = db.prepare(`SELECT kind, name, date, subject FROM gusto_email_events WHERE kind IN ('accepted','ready','bank_bad','bank_updated')
+      AND (? = '' OR date >= ?) AND (? = '' OR date <= ?) ORDER BY date DESC, id DESC`).all(from, from, until, until);
+    if (req.body && req.body.count_only) return res.json({ ok: true, count: rows.length });
+    if (!rows.length) return res.status(400).json({ error: from || until ? '这个时间段没有入职相关的 Gusto 邮件' : '还没有入职相关的 Gusto 邮件' });
+    const range = from || until ? `（${from || '最早'} ~ ${until || '现在'}）` : '';
     const base = (process.env.BASE_URL || '').replace(/\/$/, '');
     const line = r => `${r.date} · ${wob.EMAIL_KIND_LABEL[r.kind] || r.kind} · ${r.name}\n    ${r.subject}`;
     let ok = 0, fail = '';
     const send = async (subject, text) => { const d = await sendEmailWithDetail(to, subject, text).catch(e => ({ ok: false, error: e.message })); if (d && d.ok) ok++; else fail = (d && d.error) || '发送失败'; };
     if (mode === 'digest') {
-      await send(`[入职] 以前的 Gusto 入职邮件汇总（${rows.length} 封）`,
+      await send(`[入职] Gusto 入职邮件汇总${range}（${rows.length} 封）`,
         `以下是系统里记下的所有入职相关 Gusto 邮件（新的在前）。系统只存了邮件标题，没有原邮件正文。\n\n${rows.map(line).join('\n\n')}\n\n— 新员工入职页: ${base}/onboarding`);
     } else {
       for (const r of rows.slice(0, 300)) await send(`[入职] ${wob.EMAIL_KIND_LABEL[r.kind] || r.kind} · ${r.name} — ${r.subject}`.slice(0, 250),
         `Gusto 邮件 ${r.date}: ${r.subject}\n\n（补发：系统只存了邮件标题，没有原邮件正文）\n\n— 新员工入职页: ${base}/onboarding`);
     }
-    auditLog('gusto_mail_resend', req, { targetType: 'app_settings', targetId: 'gusto_mail_hook', details: { to, mode, count: rows.length, ok, fail } });
+    auditLog('gusto_mail_resend', req, { targetType: 'app_settings', targetId: 'gusto_mail_hook', details: { to, mode, from, until, count: rows.length, ok, fail } });
     if (!ok) return res.status(502).json({ error: '发送失败：' + fail });
     res.json({ ok: true, count: rows.length, sent: ok, error_note: fail });
   } catch (e) { res.status(500).json({ error: e.message }); }
