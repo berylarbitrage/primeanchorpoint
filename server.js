@@ -9961,11 +9961,11 @@ app.get('/api/admin/me', requireAdmin, (req, res) => {
   if (!user) return res.status(404).json({ error: 'User not found' });
   // 右上角账号卡片 (account-badge.js) 用: 邮箱 + 角色 + 权限说明
   const x = db.prepare(`SELECT email, cs_lead, wob_approver, needs_approval, assigned_partner_ids FROM admin_users WHERE id=?`).get(req.userId) || {};
-  const ROLE = { admin: '管理员', staff: '员工 (staff)', manager: '仓库经理', accounting: '会计', cs: x.cs_lead ? '客服主管' : '客服', onboarding: '入职专员' };
+  const ROLE = { admin: '管理员', staff: '员工 (staff)', manager: '客户经理', accounting: '会计', cs: x.cs_lead ? '客服主管' : '客服', onboarding: '入职专员' };
   const ROLE_DESC = {
     admin: '所有页面、所有功能，包括账户管理和审批',
     staff: '大部分管理页面；账户管理只有管理员能做',
-    manager: '只看自己负责的仓库 / 公司的人和记录，看不到金额',
+    manager: '我们公司的经理，负责指定的客户公司：只看这些公司的人和记录，看不到金额',
     accounting: '会计对账、发票、银行、付款相关页面',
     cs: x.cs_lead ? '介绍费 / 面试：能看所有客服的记录' : '介绍费 / 面试：只看自己提交的记录',
     onboarding: '新员工入职页；会收到 Gusto 入职相关邮件',
@@ -45468,7 +45468,7 @@ app.post('/api/acct/onboarding-access/:id', requireAdmin, requireRole('admin'), 
   try {
     const u = db.prepare('SELECT id, username, role FROM admin_users WHERE id=?').get(req.params.id);
     if (!u) return res.status(404).json({ error: '找不到这个账号' });
-    if (['admin', 'manager'].includes(u.role)) return res.status(400).json({ error: '管理员和仓库经理本来就能审核' });
+    if (['admin', 'manager'].includes(u.role)) return res.status(400).json({ error: '管理员和客户经理本来就能审核' });
     const on = !!(req.body && req.body.wob_approver);
     db.prepare('UPDATE admin_users SET wob_approver=? WHERE id=?').run(on ? 1 : 0, u.id);
     auditLog('wob_approver_set', req, { targetType: 'admin_user', targetId: u.id, details: { username: u.username, role: u.role, on } });

@@ -3723,7 +3723,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <select id="isRoleFilter" onchange="filterInternalStaff()" style="padding:.5rem;border:1px solid var(--gray-200);border-radius:6px">
       <option value="">全部角色</option>
       <option value="admin">Admin — 管理员</option>
-      <option value="manager">Manager — 经理</option>
+      <option value="manager">Manager — 客户经理</option>
       <option value="staff">Staff — 员工</option>
     </select>
     <select id="isStatusFilter" onchange="filterInternalStaff()" style="padding:.5rem;border:1px solid var(--gray-200);border-radius:6px">
@@ -5033,13 +5033,13 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <option value="admin">Admin — 管理员（完全权限）</option>
       <option value="gm">公司经理 — 能看所有页面、所有信息；所有修改要 admin 审核后才生效</option>
       <option value="staff" selected>Staff — 员工（删除须审批）</option>
-      <option value="manager">Manager — 经理（仅管理指定公司工时）</option>
+      <option value="manager">客户经理 — 我们公司的经理，负责指定的客户公司（只看这些公司的工时 / 人员，看不到金额）</option>
       <option value="accounting">Accounting — 会计（只读：发票/银行流水/赔偿事故＋银行对账，登录 /accounting 或 /banking，其他页面无权限）</option>
       <option value="onboarding">Onboarding — 入职专员（只能用 /onboarding 新员工入职页，自动收 Gusto 入职邮件）</option>
     </select>
   </div>
   <div class="field" id="accPartnerField" style="display:none">
-    <label>指定管理的公司（多选，Manager 专用）</label>
+    <label>负责的客户公司（多选，客户经理专用）</label>
     <div id="accPartnerCheckboxes" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.4rem;max-height:140px;overflow:auto;padding:.4rem;border:1px solid var(--gray-200);border-radius:6px"></div>
   </div>
   <div class="field" id="accJobField" style="display:none">
@@ -8842,7 +8842,7 @@ function finishLogin(r) {
   const role = r.role || 'staff';
   // Enforce page role restriction
   if (PAGE_ROLE && role !== PAGE_ROLE) {
-    const label = { admin: 'Admin 管理员', staff: 'Staff 员工', manager: 'Manager 经理' };
+    const label = { admin: 'Admin 管理员', staff: 'Staff 员工', manager: 'Manager 客户经理' };
     document.getElementById('loginErr').textContent = `此页面仅限 ${label[PAGE_ROLE] || PAGE_ROLE} 账户登录`;
     return;
   }
@@ -9141,7 +9141,7 @@ function logout() {
 
 // Set login page subtitle based on portal role
 (function() {
-  const subtitles = { admin: 'Admin 管理员', staff: 'Staff 员工', manager: 'Manager 经理' };
+  const subtitles = { admin: 'Admin 管理员', staff: 'Staff 员工', manager: 'Manager 客户经理' };
   if (PAGE_ROLE) document.getElementById('loginSubtitle').textContent = subtitles[PAGE_ROLE] + ' 登录';
 })();
 
@@ -20413,7 +20413,7 @@ async function loadAccounts() {
   const partners = await api('/admin/partners').catch(()=>[]);
   _allPartners = partners;
   const roleBadge = r => r==='admin'?'badge-blue':r==='manager'?'badge-yellow':'';
-  const roleLabel = { admin:'Admin 管理员', staff:'Staff 员工', manager:'Manager 经理', accounting:'Accounting 会计', onboarding:'Onboarding 入职专员' };
+  const roleLabel = { admin:'Admin 管理员', staff:'Staff 员工', manager:'Manager 客户经理', accounting:'Accounting 会计', onboarding:'Onboarding 入职专员' };
   const partnerName = ids => (ids||'').split(',').filter(Boolean).map(id=>{const p=partners.find(p=>p.id==id);return p?p.name:'#'+id;}).join(', ') || '—';
   window._accPwMap = {};
   rows.forEach(a => { if (a.role === 'accounting' && a.password_plain) window._accPwMap[a.id] = a.password_plain; });
@@ -20587,7 +20587,7 @@ function filterInternalStaff() {
 
 function renderInternalStaffTable(rows, partners) {
   const roleBadge = r => r==='admin'?'badge-blue':r==='manager'?'badge-yellow':'';
-  const roleLabel = { admin:'Admin 管理员', staff:'Staff 员工', manager:'Manager 经理', accounting:'Accounting 会计', onboarding:'Onboarding 入职专员' };
+  const roleLabel = { admin:'Admin 管理员', staff:'Staff 员工', manager:'Manager 客户经理', accounting:'Accounting 会计', onboarding:'Onboarding 入职专员' };
   const partnerName = ids => (ids||'').split(',').filter(Boolean).map(id=>{const p=partners.find(p=>p.id==id);return p?p.name:'#'+id;}).join(', ') || '—';
   document.getElementById('internalStaffTable').innerHTML = rows.length ? rows.map(a => `<tr>
     <td><strong>${esc(a.username)}</strong></td>
