@@ -731,7 +731,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <div class="nav-group-items">
       <a onclick="showTab('approvals')" data-tab="approvals" data-role="admin">📋 待审批</a>
       <a href="/acct-checklist" target="_blank" title="会计每周五核对: 该出的账单都出了没有 + 客户都付款了没有">📋 会计每周核对 ↗</a>
-      <a href="/approvals" target="_blank" title="设了「所有修改需要审批」的账号提交的修改，staff / admin 都能审批">✅ 待审批修改 ↗</a>
+      <a href="/approvals" target="_blank" title="公司经理（所有修改需要审批）提交的修改，admin 审批">✅ 待审批修改 ↗</a>
       <a onclick="showTab('internal-staff')" data-tab="internal-staff" data-role="admin">👤 内部人员</a>
       <a onclick="showTab('accounts')" data-tab="accounts" data-role="admin">🔐 账户管理</a>
       <a onclick="showTab('integrations')" data-tab="integrations" data-role="admin">🔗 集成设置</a>
@@ -5031,6 +5031,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
   <div class="field"><label>角色 *</label>
     <select id="accRole" onchange="onAccRoleChange()">
       <option value="admin">Admin — 管理员（完全权限）</option>
+      <option value="gm">公司经理 — 能看所有页面、所有信息；所有修改要 admin 审核后才生效</option>
       <option value="staff" selected>Staff — 员工（删除须审批）</option>
       <option value="manager">Manager — 经理（仅管理指定公司工时）</option>
       <option value="accounting">Accounting — 会计（只读：发票/银行流水/赔偿事故＋银行对账，登录 /accounting 或 /banking，其他页面无权限）</option>
@@ -5065,7 +5066,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <label style="display:flex;align-items:center;gap:.45rem;cursor:pointer;font-size:.85rem;color:var(--gray-600)">
       <input type="checkbox" id="accNeedsApproval"> 📝 所有修改需要审批
     </label>
-    <div style="font-size:.72rem;color:#92400e;margin-top:.25rem">勾选后这个账号能进所有页面、看所有信息，但任何修改（保存、删除、上传、审核…）都要 staff / admin 在「✅ 待审批修改」里同意才生效。适合公司经理：角色选 Admin 再勾这个（右上角会显示「公司经理」）</div>
+    <div style="font-size:.72rem;color:#92400e;margin-top:.25rem">勾选后这个账号能进所有页面、看所有信息，但任何修改（保存、删除、上传、审核…）都要 admin 在「✅ 待审批修改」里同意才生效。公司经理直接在上面角色选「公司经理」就行</div>
   </div>
   <div class="field" style="margin-top:.6rem">
     <label style="display:flex;align-items:center;gap:.45rem;cursor:pointer;font-size:.85rem;color:var(--gray-600)">
@@ -20421,9 +20422,9 @@ async function loadAccounts() {
       <div style="font-size:.75rem;color:var(--gray-500);margin-top:2px;white-space:nowrap">密码: <span id="accPw${a.id}" data-shown="0" style="font-family:monospace">••••••</span>
         <a style="cursor:pointer" onclick="toggleAccPw(${a.id})" title="显示/隐藏密码">👁</a></div>` : ''}</td>
     <td>${esc(a.display_name||'')}</td>
-    <td><span class="badge ${roleBadge(a.role)}">${roleLabel[a.role]||a.role}</span></td>
+    <td><span class="badge ${roleBadge(a.role)}">${a.role==='admin'&&a.needs_approval?'公司经理':(roleLabel[a.role]||a.role)}</span></td>
     <td style="font-size:.8rem;color:var(--gray-500)">${a.role==='manager'?esc(partnerName(a.assigned_partner_ids)):'—'}</td>
-    <td>${a.approval_status==='pending'?'<span class="badge badge-orange">待批准</span>':a.active?'<span style="color:var(--green)">已激活</span>':'<span style="color:var(--gray-400)">待激活</span>'}${a.mfa_exempt?' <span class="badge badge-orange" title="登录免短信验证，只需账号密码">🔓 免短信</span>':''}${a.needs_approval?' <span class="badge badge-orange" title="能看所有信息，修改要 staff / admin 同意">📝 修改需审批</span>':''}</td>
+    <td>${a.approval_status==='pending'?'<span class="badge badge-orange">待批准</span>':a.active?'<span style="color:var(--green)">已激活</span>':'<span style="color:var(--gray-400)">待激活</span>'}${a.mfa_exempt?' <span class="badge badge-orange" title="登录免短信验证，只需账号密码">🔓 免短信</span>':''}${a.needs_approval?' <span class="badge badge-orange" title="能看所有信息，修改要 admin 同意">📝 修改需审批</span>':''}</td>
     <td style="font-size:.78rem">${a.sms_notify_phone&&a.sms_notify_enabled?'<span style="color:var(--green)" title="'+esc(a.sms_notify_phone)+'">📱 ON</span>':a.sms_notify_phone?'<span style="color:var(--gray-400)" title="'+esc(a.sms_notify_phone)+'">📱 OFF</span>':'<span style="color:var(--gray-300)">—</span>'}</td>
     <td>${(a.created_at||'').slice(0,10)}</td>
     <td style="white-space:nowrap">
@@ -20450,6 +20451,9 @@ async function approveAccount(id, name) {
 function onAccRoleChange() {
   const role = document.getElementById('accRole').value;
   const isManager = role === 'manager';
+  // 公司经理 = Admin + 所有修改需要审批: 选了就不用再勾
+  const na = document.getElementById('accNeedsApproval');
+  if (na) { if (role === 'gm') na.checked = true; na.closest('.field').style.display = role === 'gm' ? 'none' : ''; }
   document.getElementById('accPartnerField').style.display = isManager ? '' : 'none';
   document.getElementById('accJobField').style.display = isManager ? '' : 'none';
   const hint = document.getElementById('accPhoneHint');
@@ -20463,7 +20467,7 @@ async function openAccountModal(data) {
   document.getElementById('accDisplayName').value = data ? (data.display_name||'') : '';
   document.getElementById('accEmail').value = data ? (data.email||'') : '';
   document.getElementById('accPhone').value = data ? (data.phone||'') : '';
-  document.getElementById('accRole').value = data ? (data.role||'staff') : 'staff';
+  document.getElementById('accRole').value = data ? (data.role === 'admin' && data.needs_approval ? 'gm' : (data.role||'staff')) : 'staff';
   document.getElementById('accSmsNotifyPhone').value = data ? (data.sms_notify_phone||'') : '';
   document.getElementById('accSmsNotifyEnabled').checked = data ? (data.sms_notify_enabled !== 0) : true;
   document.getElementById('accMfaExempt').checked = data ? !!data.mfa_exempt : false;
@@ -20519,9 +20523,10 @@ async function saveAccount() {
     sms_notify_phone: document.getElementById('accSmsNotifyPhone').value.trim(),
     sms_notify_enabled: document.getElementById('accSmsNotifyEnabled').checked ? 1 : 0,
     mfa_exempt: document.getElementById('accMfaExempt').checked ? 1 : 0,
-    needs_approval: document.getElementById('accNeedsApproval').checked ? 1 : 0,
+    needs_approval: document.getElementById('accNeedsApproval').checked || document.getElementById('accRole').value === 'gm' ? 1 : 0,
     bank_ann_reviewer: document.getElementById('accAnnReviewer').checked ? 1 : 0
   };
+  if (d.role === 'gm') d.role = 'admin';   // 公司经理存成 admin + needs_approval
   if (!d.username) return alert('请输入用户名');
   if (!id && !d.password) return alert('请输入密码');
   if (!d.password) delete d.password;
@@ -20587,7 +20592,7 @@ function renderInternalStaffTable(rows, partners) {
   document.getElementById('internalStaffTable').innerHTML = rows.length ? rows.map(a => `<tr>
     <td><strong>${esc(a.username)}</strong></td>
     <td>${esc(a.display_name||'')}</td>
-    <td><span class="badge ${roleBadge(a.role)}">${roleLabel[a.role]||a.role}</span></td>
+    <td><span class="badge ${roleBadge(a.role)}">${a.role==='admin'&&a.needs_approval?'公司经理':(roleLabel[a.role]||a.role)}</span></td>
     <td style="font-size:.82rem">${a.email ? `<a href="mailto:${esc(a.email)}" style="color:var(--sky)">${esc(a.email)}</a>` : '<span style="color:var(--gray-300)">—</span>'}</td>
     <td style="font-size:.82rem">${a.phone ? `<a href="tel:${esc(a.phone)}" style="color:var(--sky)">${esc(a.phone)}</a>` : '<span style="color:var(--gray-300)">—</span>'}</td>
     <td style="font-size:.8rem;color:var(--gray-500)">${a.role==='manager'?esc(partnerName(a.assigned_partner_ids)):'—'}</td>

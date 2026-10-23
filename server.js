@@ -1168,7 +1168,7 @@ try { db.exec("ALTER TABLE admin_users ADD COLUMN approval_status TEXT DEFAULT '
 try { db.exec("ALTER TABLE admin_users ADD COLUMN cs_lead INTEGER DEFAULT 0"); } catch {}
 // 新员工入职页「能审核」: 不是 manager / admin 的账号 (例如 staff) 单独给 manager 那样的审核权限
 try { db.exec("ALTER TABLE admin_users ADD COLUMN wob_approver INTEGER DEFAULT 0"); } catch {}
-// 所有修改需要审批: 这个账号能进所有页面、看所有信息, 但任何修改 (非 GET 请求) 先进「待审批修改」, staff / admin 同意后才执行
+// 所有修改需要审批: 这个账号能进所有页面、看所有信息, 但任何修改 (非 GET 请求) 先进「待审批修改」, admin 同意后才执行
 try { db.exec("ALTER TABLE admin_users ADD COLUMN needs_approval INTEGER DEFAULT 0"); } catch {}
 
 // Migrate partners table (add new columns if missing)
@@ -9465,7 +9465,7 @@ async function _queueChange(req, res, session) {
       String(req.headers.referer || '').slice(0, 300), b64 ? ctype : (body ? 'application/json' : ''), body, b64, size);
     setImmediate(_notifyPendingChanges);
     // 202 + error 字段: 各页面都会把 error 弹出来, 用户能看到「已提交审批」, 页面也不会当成改好了
-    res.status(202).json({ pending: true, approval_id: r.lastInsertRowid, error: '📝 已提交审批，等 staff / admin 同意后才会生效', message: '已提交审批' });
+    res.status(202).json({ pending: true, approval_id: r.lastInsertRowid, error: '📝 已提交审批，等 admin 同意后才会生效', message: '已提交审批' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 // 新的审批请求: 发邮件告诉 admin 和 staff (15 分钟内最多一封, 免得一直改一直发)
@@ -9477,8 +9477,8 @@ async function _notifyPendingChanges() {
     db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)").run(k, String(Date.now()));
     const n = db.prepare("SELECT COUNT(*) AS n FROM pending_changes WHERE status='pending'").get().n;
     const base = (process.env.BASE_URL || '').replace(/\/$/, '');
-    for (const a of db.prepare("SELECT email FROM admin_users WHERE role IN ('admin','staff') AND COALESCE(needs_approval,0)=0 AND COALESCE(active,1)=1 AND COALESCE(email,'')!=''").all()) {
-      sendEmail(a.email, `有 ${n} 个修改等你审批`, `有 ${n} 个修改等 staff / admin 同意后才会生效。\n去审批: ${base}/approvals`).catch(() => {});
+    for (const a of db.prepare("SELECT email FROM admin_users WHERE role='admin' AND COALESCE(needs_approval,0)=0 AND COALESCE(active,1)=1 AND COALESCE(email,'')!=''").all()) {
+      sendEmail(a.email, `有 ${n} 个修改等你审批`, `有 ${n} 个修改等 admin 同意后才会生效。\n去审批: ${base}/approvals`).catch(() => {});
     }
   } catch (e) { console.log('[approvals] notify error:', e.message); }
 }
@@ -9541,7 +9541,7 @@ function requireAdmin(req, res, next) {
   req.csLead = !!(_u && _u.cs_lead);
   req.wobApprover = !!(_u && _u.wob_approver);
   req.needsApproval = !!(_u && _u.needs_approval);
-  // 「所有修改需要审批」的账号: 修改请求不执行, 存起来等 staff / admin 同意 (同意后按原样重放一次)
+  // 「所有修改需要审批」的账号: 修改请求不执行, 存起来等 admin 同意 (同意后按原样重放一次)
   if (req.needsApproval && !_approvalReplayTokens.has(token) && _isChangeRequest(req)) {
     req.assignedPartnerIds = (_u && _u.assigned_partner_ids) || '';
     return _queueChange(req, res, session);
@@ -9976,11 +9976,11 @@ app.get('/api/admin/me', requireAdmin, (req, res) => {
     const names = pids.length ? db.prepare(`SELECT name FROM partners WHERE id IN (${pids.map(() => '?').join(',')})`).all(...pids).map(r => r.name) : [];
     perms.push(names.length ? '负责：' + names.join('、') : '还没分配仓库 / 公司');
   }
-  if (x.needs_approval) perms.push('所有修改要 staff / admin 同意后才生效');
+  if (x.needs_approval) perms.push('所有修改要 admin 同意后才生效');
   if (x.wob_approver) perms.push('能审核新员工入职的系统匹配');
   if (user.bank_ann_reviewer) perms.push('能审核银行流水批注');
   // 「所有修改需要审批」的 admin / staff = 公司经理: 能看所有页面, 改动要审批
-  const roleLabel = x.needs_approval && (user.role === 'admin' || user.role === 'staff') ? '公司经理' : (ROLE[user.role] || user.role);
+  const roleLabel = x.needs_approval && user.role === 'admin' ? '公司经理' : (ROLE[user.role] || user.role);
   if (roleLabel === '公司经理') perms[0] = '能进所有页面、看所有信息';
   res.json({ ...user, email: x.email || '', role_label: roleLabel, perms: perms.filter(Boolean),
     needs_approval: !!x.needs_approval, wob_approver: !!x.wob_approver, cs_lead: !!x.cs_lead });
@@ -10239,8 +10239,10 @@ app.post('/api/manager/self-punch/:id/confirm', requireAdmin, requireRole('admin
 
 // ─── Account Management (admin only) ───
 app.get('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
-  // password_plain 仅会计(accounting)角色有值, 且本接口本就仅限 admin 角色访问
-  res.json(db.prepare('SELECT id, username, role, display_name, email, phone, active, approval_status, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, sms_notify_phone, sms_notify_enabled, mfa_exempt, bank_ann_reviewer, needs_approval, created_at, password_plain FROM admin_users ORDER BY id').all());
+  // password_plain 仅会计(accounting)角色有值, 且本接口本就仅限 admin 角色访问; 公司经理 (改动要审批) 看不到密码
+  const rows = db.prepare('SELECT id, username, role, display_name, email, phone, active, approval_status, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, sms_notify_phone, sms_notify_enabled, mfa_exempt, bank_ann_reviewer, needs_approval, created_at, password_plain FROM admin_users ORDER BY id').all();
+  if (req.needsApproval) rows.forEach(r => { r.password_plain = ''; });
+  res.json(rows);
 });
 
 // 批准会计自助注册的账号
@@ -10312,11 +10314,12 @@ app.delete('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, 
   res.json({ success: true });
 });
 
-// ─── ✅ 待审批修改 (/approvals): staff / admin 看「所有修改需要审批」的账号提交的修改, 同意 = 原样执行一次 ───
+// ─── ✅ 待审批修改 (/approvals): admin 看「所有修改需要审批」的账号提交的修改, 同意 = 原样执行一次 ───
 app.get('/approvals', (req, res) => res.sendFile(path.join(__dirname, 'public', 'approvals.html')));
-const _approverOk = req => ['admin', 'staff'].includes(req.userRole) && !req.needsApproval;
+// 公司经理 (admin + 所有修改需要审批) 的改动只有 admin 能审批
+const _approverOk = req => req.userRole === 'admin' && !req.needsApproval;
 app.get('/api/approvals', requireAdmin, (req, res) => {
-  if (!_approverOk(req)) return res.status(403).json({ error: '只有 staff / admin 能审批' });
+  if (!_approverOk(req)) return res.status(403).json({ error: '只有 admin 能审批' });
   try {
     const rows = db.prepare(`SELECT id, user_id, username, display_name, method, path, referer, content_type, body, size, status, note,
         decided_by, decided_at, result_status, result_body, created_at, CASE WHEN body_b64!='' THEN 1 ELSE 0 END AS has_file
@@ -10325,7 +10328,7 @@ app.get('/api/approvals', requireAdmin, (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/approvals/:id', requireAdmin, async (req, res) => {
-  if (!_approverOk(req)) return res.status(403).json({ error: '只有 staff / admin 能审批' });
+  if (!_approverOk(req)) return res.status(403).json({ error: '只有 admin 能审批' });
   try {
     const c = db.prepare("SELECT * FROM pending_changes WHERE id=? AND status='pending'").get(req.params.id);
     if (!c) return res.status(404).json({ error: '找不到这个审批（可能已经处理过了）' });
