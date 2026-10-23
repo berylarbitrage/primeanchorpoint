@@ -9444,6 +9444,8 @@ const _approvalReplayTokens = new Set();   // 同意后重放用的临时会话,
 function _isChangeRequest(req) {
   const p = req.originalUrl.split('?')[0];
   if (p === '/api/admin/logout' || p.startsWith('/api/approvals')) return false;
+  // 只存截图 / 识别截图, 不改任何记录 (关联账号的保存才进审批)
+  if (p === '/api/acct/onboarding-shot' || p === '/api/acct/onboarding-shot-read') return false;
   if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return true;
   return String(req.query && req.query.send) === '1';   // 带 ?send=1 的 GET 会真的发东西 (例如立刻发面试日报)
 }
@@ -44782,7 +44784,8 @@ function _wobBuild() {
       employee, employee_proposals: empProposals, phone: employee ? employee.phone : '', phone_old: s.phone || '',
       inv_states: invStates, state_bad: !!(employee && employee.state_bad),
       pay_method: s.pay_method || '', pay_note: s.pay_note || '', suggest,
-      zelle_accounts: _wobZelle(s), pay_history: _wobJson(s.pay_history, []), pay_since: s.pay_since || '',
+      zelle_accounts: _wobZelle(s).filter(z => z.type !== 'cashapp'), cashapp_accounts: _wobZelle(s).filter(z => z.type === 'cashapp'),
+      pay_history: _wobJson(s.pay_history, []), pay_since: s.pay_since || '',
       gusto, gusto_proposal: proposal, first_payment: firstPay, manual,
       updated_by: s.updated_by || '', updated_at: s.updated_at || '',
     });
@@ -44850,6 +44853,74 @@ const requireWobView = requireRole('accounting', 'cs', 'admin', 'staff', 'manage
 const requireWobWrite = (req, res, next) => (['accounting', 'cs', 'admin', 'manager', 'onboarding'].includes(req.userRole) || req.wobApprover)
   ? next() : res.status(403).json({ error: 'Permission denied' });
 const _wobCanApprove = req => ['admin', 'manager'].includes(req.userRole) || !!req.wobApprover;
+
+// ── Zelle / Cash App 截图: 登记账号必须上传截图, AI 读出账号和户主名字填上 (避免打错字) ──
+const _wobShotDir = path.join(dataDir, 'onboarding-shots');
+try { fs.mkdirSync(_wobShotDir, { recursive: true }); } catch (e) {}
+app.post('/api/acct/onboarding-shot', requireAdmin, requireWobWrite, (req, res) => {
+  try {
+    const m = String((req.body || {}).data || '').match(/^data:image\/(png|jpeg|webp);base64,(.+)$/);
+    if (!m) return res.status(400).json({ error: '只支持 PNG / JPG / WebP 图片' });
+    const buf = Buffer.from(m[2], 'base64');
+    if (buf.length > 8 * 1024 * 1024) return res.status(400).json({ error: '图片太大（最多 8MB）' });
+    const id = crypto.randomBytes(16).toString('hex') + '.' + (m[1] === 'jpeg' ? 'jpg' : m[1]);
+    fs.writeFileSync(path.join(_wobShotDir, id), buf);
+    res.json({ ok: true, id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/acct/onboarding-shot/:id', requireAdmin, requireWobView, (req, res) => {
+  const id = String(req.params.id || '');
+  if (!/^[a-f0-9]{32}\.(jpg|png|webp)$/.test(id)) return res.status(400).end();
+  const fp = path.join(_wobShotDir, id);
+  if (!fs.existsSync(fp)) return res.status(404).end();
+  res.setHeader('Cache-Control', 'private, max-age=86400');
+  res.sendFile(path.resolve(fp));
+});
+// 从截图里读账号 + 户主名字. kind: zelle (电话 / 邮箱) | cashapp ($Cashtag)
+app.post('/api/acct/onboarding-shot-read', requireAdmin, requireWobWrite, async (req, res) => {
+  try {
+    const kind = (req.body || {}).kind === 'cashapp' ? 'cashapp' : 'zelle';
+    const id = String((req.body || {}).id || '');
+    if (!/^[a-f0-9]{32}\.(jpg|png|webp)$/.test(id) || !fs.existsSync(path.join(_wobShotDir, id))) return res.status(400).json({ error: '先上传截图' });
+    const buf = fs.readFileSync(path.join(_wobShotDir, id));
+    const mt = id.endsWith('.png') ? 'image/png' : id.endsWith('.webp') ? 'image/webp' : 'image/jpeg';
+    const fromText = t => {
+      t = String(t || '');
+      if (kind === 'cashapp') { const c = t.match(/\$[A-Za-z][A-Za-z0-9_]{0,19}/); return { account: c ? c[0] : '', name: '' }; }
+      const e = t.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/), p = t.match(/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/);
+      return { account: e ? e[0] : p ? p[0].trim() : '', name: '' };
+    };
+    const key = process.env.ANTHROPIC_API_KEY;
+    if (key) {
+      const model = process.env.ANTHROPIC_VISION_MODEL || 'claude-sonnet-5';
+      const what = kind === 'cashapp' ? 'Cash App 收款信息（$Cashtag 和账户名字）' : 'Zelle 收款信息（Zelle 绑定的电话或邮箱，和账户名字）';
+      const prompt = `这是一张${what}的手机截图。只输出 JSON，不要别的内容：
+{"account":"${kind === 'cashapp' ? '$Cashtag，带 $ 号' : 'Zelle 电话或邮箱，原样照抄'}","name":"账户上显示的名字（英文原样）","confidence":"high|low","note":"看不清或不确定的地方"}
+读不到的填空字符串。账号逐字符核对，不要猜。`;
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model, max_tokens: 400, messages: [{ role: 'user', content: [
+          { type: 'image', source: { type: 'base64', media_type: mt, data: buf.toString('base64') } }, { type: 'text', text: prompt }] }] }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) return res.status(502).json({ error: 'AI 识别失败: ' + ((body.error && body.error.message) || r.status) });
+      const text = ((body.content || []).find(c => c.type === 'text') || {}).text || '';
+      let j = {}; try { j = JSON.parse((text.match(/\{[\s\S]*\}/) || ['{}'])[0]); } catch (e) {}
+      return res.json({ ok: true, engine: 'claude', account: String(j.account || '').trim(), name: String(j.name || '').trim(), confidence: j.confidence || '', note: j.note || '' });
+    }
+    const gKey = process.env.GOOGLE_VISION_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+    if (gKey) {
+      const vr = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${gKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requests: [{ image: { content: buf.toString('base64') }, features: [{ type: 'TEXT_DETECTION' }] }] }) });
+      const vd = await vr.json().catch(() => ({}));
+      if (!vr.ok) return res.status(502).json({ error: 'Google 识别失败: ' + ((vd.error && vd.error.message) || vr.status) });
+      const t = (vd.responses && vd.responses[0] && vd.responses[0].fullTextAnnotation && vd.responses[0].fullTextAnnotation.text) || '';
+      return res.json({ ok: true, engine: 'google', ...fromText(t), note: '名字请对照截图手动填' });
+    }
+    res.status(400).json({ error: '还没配置图片识别（ANTHROPIC_API_KEY 或 GOOGLE_VISION_API_KEY），请对照截图手动填' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 // manager 负责的仓库 (合作公司标准名); 其他角色 null = 全部
 function _wobScope(req) {
   if (req.userRole !== 'manager') return null;
@@ -44881,7 +44952,7 @@ function _wobScoped(req) {
 function _wobPendingChanges() {
   const rows = db.prepare(`SELECT id, user_id, username, display_name, method, path, body, created_at FROM pending_changes
     WHERE status='pending' AND path LIKE '/api/acct/onboarding%' ORDER BY id`).all();
-  const PM = { gusto: 'Gusto 入职', cash: '现金', check: '支票', zelle: 'Zelle', skip: '不用处理', '': '不选' };
+  const PM = { gusto: 'Gusto 入职', cash: '现金', check: '支票', zelle: 'Zelle', cashapp: 'Cash App', skip: '不用处理', '': '不选' };
   const empName = id => { const e = id && db.prepare('SELECT first_name, last_name, employee_id FROM employees WHERE id=?').get(id); return e ? `${e.first_name} ${e.last_name}${e.employee_id ? '（' + e.employee_id + '）' : ''}` : (id ? '#' + id : '无'); };
   const gName = u => { const c = u && db.prepare('SELECT name FROM gusto_contractors WHERE uuid=?').get(u); return c ? c.name : (u || '无'); };
   const evOf = id => db.prepare('SELECT id, kind, name, date FROM gusto_email_events WHERE id=?').get(parseInt(id, 10) || 0);
@@ -44897,6 +44968,7 @@ function _wobPendingChanges() {
       const cur = db.prepare('SELECT * FROM new_hire_onboarding WHERE name_key=?').get(out.key) || {};
       if (b.pay_method !== undefined) out.items.push(`付款方式：${PM[cur.pay_method || ''] || cur.pay_method} → ${PM[b.pay_method] || b.pay_method}`);
       if (Array.isArray(b.zelle_accounts)) out.items.push(`Zelle 账号：${b.zelle_accounts.map(z => `${z.account}（户主 ${z.name}）`).join('、') || '清空'}`);
+      if (Array.isArray(b.cashapp_accounts)) out.items.push(`Cash App 账号：${b.cashapp_accounts.map(z => `${z.account}（户主 ${z.name}）`).join('、') || '清空'}`);
       if (b.warehouse !== undefined) out.items.push(`仓库：${cur.warehouse || '（发票上的）'} → ${b.warehouse || '（发票上的）'}`);
       if (b.pay_note !== undefined) out.items.push(`备注：「${String(b.pay_note).slice(0, 120)}」`);
       if (b.name !== undefined) out.items.push(`名字 → ${b.name}`);
@@ -45063,16 +45135,24 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       if (wh && !_wobWarehouseOptions(req).includes(wh) && !own.includes(wh)) return res.status(400).json({ error: '仓库要从下拉里选' });
       next.warehouse = wh;
     }
-    // Zelle 账号整表替换: 每个账号 Zelle 号 + 户主姓名都要填; 已有的账号保留原来的登记时间
-    if (b.zelle_accounts !== undefined) {
-      const old = _wobJson(next.zelle_accounts, []);
-      const list = (Array.isArray(b.zelle_accounts) ? b.zelle_accounts : []).slice(0, 10)
-        .map(z => ({ account: str(z && z.account, 120), name: str(z && z.name, 120) })).filter(z => z.account || z.name);
-      if (list.some(z => !z.account || !z.name)) return res.status(400).json({ error: '每个 Zelle 账号都要填 Zelle 号和户主姓名' });
-      next.zelle_accounts = JSON.stringify(list.map(z => {
+    // Zelle / Cash App 账号 (存在同一个 zelle_accounts 里, type 区分) 按类型整表替换:
+    // 每个账号都要填号 + 户主姓名 + 截图 (新加的必须有截图); 已有的账号保留原来的登记时间
+    for (const [field, type, label] of [['zelle_accounts', 'zelle', 'Zelle'], ['cashapp_accounts', 'cashapp', 'Cash App']]) {
+      if (b[field] === undefined) continue;
+      const all = _wobJson(next.zelle_accounts, []);
+      const old = all.filter(x => (x.type || 'zelle') === type), others = all.filter(x => (x.type || 'zelle') !== type);
+      const list = (Array.isArray(b[field]) ? b[field] : []).slice(0, 10)
+        .map(z => ({ account: str(z && z.account, 120), name: str(z && z.name, 120), shot: /^[a-f0-9]{32}\.(jpg|png|webp)$/.test(str(z && z.shot, 80)) ? str(z.shot, 80) : '' }))
+        .filter(z => z.account || z.name);
+      if (list.some(z => !z.account || !z.name)) return res.status(400).json({ error: `每个 ${label} 账号都要填 ${label} 号和户主姓名` });
+      const merged = [];
+      for (const z of list) {
         const o = old.find(x => x.account === z.account && x.name === z.name);
-        return o ? o : { ...z, at: new Date().toISOString(), by: req.userName || '' };
-      }));
+        const shot = z.shot && fs.existsSync(path.join(_wobShotDir, z.shot)) ? z.shot : (o && o.shot) || '';
+        if (!shot) return res.status(400).json({ error: `${label} ${z.account} 要上传截图（${label} 里显示账号和名字的那一页）` });
+        merged.push(o ? { ...o, type, shot } : { type, account: z.account, name: z.name, shot, at: new Date().toISOString(), by: req.userName || '' });
+      }
+      next.zelle_accounts = JSON.stringify([...others, ...merged]);
     }
     if (b.pay_note !== undefined) next.pay_note = str(b.pay_note, 1000);
     // 手动选 Gusto 收款人: manager / admin 选的直接算通过, 其他人选的进待审核
@@ -45154,15 +45234,18 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
         if (next.pay_method) {
           const hist = _wobJson(next.pay_history, []);
           hist.push({ method: next.pay_method, since: next.pay_since || '', until: now, by: req.userName || '',
-            zelle: next.pay_method === 'zelle' ? _wobJson(next.zelle_accounts, []) : undefined });
+            zelle: ['zelle', 'cashapp'].includes(next.pay_method) ? _wobJson(next.zelle_accounts, []).filter(z => (z.type || 'zelle') === next.pay_method) : undefined });
           next.pay_history = JSON.stringify(hist.slice(-30));
         }
         next.pay_since = m ? now : '';
       }
       next.pay_method = m;
     }
-    if (next.pay_method === 'zelle' && (b.pay_method !== undefined || b.zelle_accounts !== undefined) && !_wobJson(next.zelle_accounts, []).length) {
-      return res.status(400).json({ error: '付 Zelle 至少登记一个 Zelle 账号（Zelle 号 + 户主姓名）' });
+    if (next.pay_method === 'zelle' && (b.pay_method !== undefined || b.zelle_accounts !== undefined) && !_wobJson(next.zelle_accounts, []).filter(z => (z.type || 'zelle') === 'zelle').length) {
+      return res.status(400).json({ error: '付 Zelle 至少登记一个 Zelle 账号（Zelle 号 + 户主姓名 + 截图）' });
+    }
+    if (next.pay_method === 'cashapp' && (b.pay_method !== undefined || b.cashapp_accounts !== undefined) && !_wobJson(next.zelle_accounts, []).filter(z => z.type === 'cashapp').length) {
+      return res.status(400).json({ error: '付 Cash App 至少登记一个 Cash App 账号（$Cashtag + 户主姓名 + 截图）' });
     }
     if (b.step) {
       const step = str(b.step, 40);
@@ -45185,13 +45268,13 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       return res.status(400).json({ error: '先关联员工档案（并审核通过），再选付款方式' });
     }
     // 修改历史: 一条一条记下改了什么
-    const PM = { gusto: 'Gusto 入职', cash: '现金', check: '支票', zelle: 'Zelle', skip: '不用处理', '': '未选' };
+    const PM = { gusto: 'Gusto 入职', cash: '现金', check: '支票', zelle: 'Zelle', cashapp: 'Cash App', skip: '不用处理', '': '未选' };
     const logs = [];
     const chg = (field, label, fmt) => { const a = cur[field] == null ? '' : cur[field], z = next[field] == null ? '' : next[field];
       if (String(a) !== String(z)) logs.push([label, `${fmt ? fmt(a) : (a || '空')} → ${fmt ? fmt(z) : (z || '空')}`]); };
     chg('pay_method', '付款方式', v => PM[v] || v);
-    const zl = v => { const a = _wobJson(v, []); return a.length ? a.map(z => `${z.account}（${z.name}）`).join('、') : '无'; };
-    if (zl(JSON.stringify(_wobZelle(cur))) !== zl(next.zelle_accounts)) logs.push(['Zelle 账号', `${zl(JSON.stringify(_wobZelle(cur)))} → ${zl(next.zelle_accounts)}`]);
+    const zl = v => { const a = _wobJson(v, []); return a.length ? a.map(z => `${z.type === 'cashapp' ? 'Cash App ' : 'Zelle '}${z.account}（${z.name}）`).join('、') : '无'; };
+    if (zl(JSON.stringify(_wobZelle(cur))) !== zl(next.zelle_accounts)) logs.push(['Zelle / Cash App 账号', `${zl(JSON.stringify(_wobZelle(cur)))} → ${zl(next.zelle_accounts)}`]);
     chg('warehouse', '仓库'); chg('pay_note', '备注'); chg('name', '名字');
     const empName = id => { if (!id) return '无'; const e = db.prepare('SELECT first_name, last_name, employee_id FROM employees WHERE id=?').get(id); return e ? `${e.first_name} ${e.last_name}${e.employee_id ? ' ' + e.employee_id : ''}` : '#' + id; };
     const gName = u => { if (!u) return '无'; const c = db.prepare('SELECT name FROM gusto_contractors WHERE uuid=?').get(u); return c ? c.name : u; };
