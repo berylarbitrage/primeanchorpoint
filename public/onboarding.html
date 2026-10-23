@@ -893,12 +893,38 @@ function zrRender() {
   zrApply('a'); zrApply('b');
   if (ZR.mode === 'no') setTimeout(() => { const n = document.getElementById('zrNote'); if (n) n.focus(); }, 0);
 }
+// 页面风格的确认框 (代替浏览器自带的 confirm), 盖在审核弹窗等所有弹窗上面; 返回 Promise<true/false>
+function uiConfirm(title, html, okText, danger) {
+  return new Promise(resolve => {
+    const m = document.createElement('div');
+    m.style.cssText = 'position:fixed;inset:0;z-index:5000;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:16px';
+    m.innerHTML = `<div class="card" style="max-width:440px;width:100%;margin:0;box-shadow:0 20px 50px rgba(0,0,0,.3)">
+      <div style="font-weight:800;margin-bottom:.45rem">${esc(title)}</div><div style="font-size:.86rem;line-height:1.55">${html}</div>
+      <div style="display:flex;gap:.4rem;justify-content:flex-end;margin-top:.8rem">
+        <button class="btn btn-outline" data-v="0">取消</button><button class="btn ${danger ? '' : 'btn-blue'}" data-v="1" ${danger ? 'style="background:#dc2626;color:#fff"' : ''}>${esc(okText || '确认')}</button></div></div>`;
+    const done = v => { m.remove(); document.removeEventListener('keydown', key, true); resolve(v); };
+    const key = e => { if (e.key === 'Escape') { e.stopPropagation(); done(false); } else if (e.key === 'Enter') { e.preventDefault(); done(true); } };
+    m.onclick = e => { if (e.target === m) done(false); const b = e.target.closest('[data-v]'); if (b) done(b.dataset.v === '1'); };
+    document.addEventListener('keydown', key, true);
+    document.body.appendChild(m);
+    m.querySelector('[data-v="1"]').focus();
+  });
+}
 async function zrDecide(ok) {
   const w = D.rows[ZR.k], z = accsOf(w, w.pay_method)[ZR.i];
   const note = document.getElementById('zrNote');
   if (!ok && note.style.display === 'none') { note.style.display = ''; note.focus(); return; }   // 第一下先让写原因
-  if (ok && (z.name_match !== 'ok' || (z.dup_with || []).length || !(z.chat_shots || []).length)
-      && !confirm('上面有 ⚠ 提醒（户主名字对不上 / 别人也在用这个账号 / 没有聊天记录）。确认核实过了，通过？')) return;
+  if (ok) {
+    // 有提醒的一条条列出来, 核实过了再通过
+    const warns = [];
+    if (z.name_match === 'no') warns.push(`户主 <b>${esc(z.name)}</b> 和工人 <b>${esc(w.employee ? w.employee.name : w.name)}</b> 不是一个名字`);
+    else if (z.name_match === 'partial') warns.push(`户主 <b>${esc(z.name)}</b> 和工人 <b>${esc(w.employee ? w.employee.name : w.name)}</b> 只对上一部分名字`);
+    if ((z.dup_with || []).length) warns.push(`这个账号还登记在 <b>${z.dup_with.map(esc).join('、')}</b> 名下`);
+    if (!(z.chat_shots || []).length) warns.push('没有聊天记录截图');
+    if (warns.length && !(await uiConfirm('⚠ 确认通过？', `<div style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:8px;padding:.45rem .6rem">
+        <ul style="margin:0;padding-left:1.1rem">${warns.map(x => `<li>${x}</li>`).join('')}</ul></div>
+        <div class="muted" style="margin-top:.45rem">确认已经看过截图和聊天记录、核实过了再通过。</div>`, '✓ 核实过了，通过'))) return;
+  }
   const body = ok ? { approve: 'zelle', type: w.pay_method, account: z.account, routing: z.routing }
     : { reject: 'zelle', type: w.pay_method, account: z.account, routing: z.routing, note: note.value };
   const k = ZR.k;
@@ -1556,7 +1582,7 @@ async function resendOld() {
   });
 }
 async function saveHook(regenerate) {
-  if (regenerate && !confirm('换新密钥后旧脚本立刻失效，要把新脚本重新粘贴到 Apps Script。继续？')) return;
+  if (regenerate && !(await uiConfirm('换新密钥', '换新密钥后旧脚本立刻失效，要把新脚本重新粘贴到 Apps Script。继续？', '换新密钥', true))) return;
   const body = { forward_to: document.getElementById('hookFwd').value };
   if (regenerate) body.regenerate = true;
   const j = await api('/api/acct/onboarding-mailhook', { method: 'POST', body }).catch(e => ({ error: e.message }));
