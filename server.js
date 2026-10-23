@@ -45815,6 +45815,31 @@ app.get('/api/acct/onboarding-mailhook', requireAdmin, requireWobView, (req, res
     last_forward_at: cfg.last_forward_at || '', last_forward_ok: cfg.last_forward_ok || 0, last_forward_error: cfg.last_forward_error || '',
     total_seen: db.prepare('SELECT COUNT(*) AS n FROM gusto_mail_seen').get().n, recent });
 });
+// 补发以前的入职相关 Gusto 邮件 (后来才加进转发名单的人收不到以前的): 系统只存了标题, 没有原邮件正文。
+// mode=digest 一封汇总 (默认); mode=each 一封一封发
+app.post('/api/acct/onboarding-mailhook/resend', requireAdmin, requireRole('admin'), async (req, res) => {
+  try {
+    const to = String((req.body || {}).to || '').trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return res.status(400).json({ error: '邮箱格式不对' });
+    const mode = (req.body || {}).mode === 'each' ? 'each' : 'digest';
+    const rows = db.prepare(`SELECT kind, name, date, subject FROM gusto_email_events WHERE kind IN ('accepted','ready','bank_bad','bank_updated') ORDER BY date DESC, id DESC`).all();
+    if (!rows.length) return res.status(400).json({ error: '还没有入职相关的 Gusto 邮件' });
+    const base = (process.env.BASE_URL || '').replace(/\/$/, '');
+    const line = r => `${r.date} · ${wob.EMAIL_KIND_LABEL[r.kind] || r.kind} · ${r.name}\n    ${r.subject}`;
+    let ok = 0, fail = '';
+    const send = async (subject, text) => { const d = await sendEmailWithDetail(to, subject, text).catch(e => ({ ok: false, error: e.message })); if (d && d.ok) ok++; else fail = (d && d.error) || '发送失败'; };
+    if (mode === 'digest') {
+      await send(`[入职] 以前的 Gusto 入职邮件汇总（${rows.length} 封）`,
+        `以下是系统里记下的所有入职相关 Gusto 邮件（新的在前）。系统只存了邮件标题，没有原邮件正文。\n\n${rows.map(line).join('\n\n')}\n\n— 新员工入职页: ${base}/onboarding`);
+    } else {
+      for (const r of rows.slice(0, 300)) await send(`[入职] ${wob.EMAIL_KIND_LABEL[r.kind] || r.kind} · ${r.name} — ${r.subject}`.slice(0, 250),
+        `Gusto 邮件 ${r.date}: ${r.subject}\n\n（补发：系统只存了邮件标题，没有原邮件正文）\n\n— 新员工入职页: ${base}/onboarding`);
+    }
+    auditLog('gusto_mail_resend', req, { targetType: 'app_settings', targetId: 'gusto_mail_hook', details: { to, mode, count: rows.length, ok, fail } });
+    if (!ok) return res.status(502).json({ error: '发送失败：' + fail });
+    res.json({ ok: true, count: rows.length, sent: ok, error_note: fail });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.post('/api/acct/onboarding-mailhook', requireAdmin, requireRole('admin'), (req, res) => {
   const b = req.body || {};
   const patch = {};

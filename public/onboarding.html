@@ -1254,6 +1254,10 @@ async function openHook() {
     ${j.subscribers && j.subscribers.length ? `<div class="muted" style="margin:-.1rem 0 .3rem">另外，批准了的入职专员也会自动收到：${esc(j.subscribers.join('、'))}</div>` : ''}
     <div class="row"><input id="hookFwd" style="flex:1;min-width:220px" value="${esc(j.forward_to.join(', '))}" placeholder="hr@example.com, boss@example.com">
       <button class="btn btn-blue btn-sm" onclick="saveHook(false)">${j.configured ? '保存' : '保存并生成链接'}</button></div>
+    <div class="row" style="margin-top:.35rem;align-items:center"><span class="muted">后来才加进来的人收不到以前的邮件：</span>
+      <select id="resendTo" style="max-width:240px">${[...new Set([...j.forward_to, ...(j.subscribers || [])])].map(a => `<option>${esc(a)}</option>`).join('')}</select>
+      <select id="resendMode"><option value="digest">一封汇总</option><option value="each">一封一封发</option></select>
+      <button class="btn btn-outline btn-sm" onclick="resendOld()">📨 补发以前的入职邮件</button></div>
     ${j.configured ? `
     <div class="lbl" style="margin-top:.6rem">安装步骤（只做一次）</div>
     <ol style="font-size:.8rem;margin:.2rem 0 .5rem 1.1rem;padding:0;line-height:1.6">
@@ -1267,6 +1271,17 @@ async function openHook() {
       <button class="btn btn-outline btn-sm" onclick="saveHook(true)" title="旧脚本会立刻失效，需要重新粘贴">🔄 换新密钥</button></span></div>
     <textarea id="hookCode" rows="14" readonly style="font-family:ui-monospace,Menlo,monospace;font-size:.72rem">${esc(hookScript(j.hook_url))}</textarea>` : ''}
     <div style="text-align:right;margin-top:.5rem"><button class="btn btn-outline btn-sm" onclick="document.getElementById('hookModal').style.display='none'">关闭</button></div>`;
+}
+function resendOld() {
+  const to = document.getElementById('resendTo').value, mode = document.getElementById('resendMode').value;
+  if (!to) return toast('先在上面填转发地址并保存', true);
+  confirmBox('补发以前的入职邮件', `<div style="font-size:.88rem">把系统里所有入职相关的 Gusto 邮件（接受邀请 / 可以付款 / 银行信息）${mode === 'digest' ? '<b>汇总成一封</b>' : '<b>一封一封</b>'}发给 <b>${esc(to)}</b>？</div>
+    <div class="muted" style="margin-top:.3rem">系统只存了每封邮件的标题（日期、类型、名字），没有原邮件正文。${mode === 'each' ? '一封一封发会发很多封邮件。' : ''}</div>`, async () => {
+    const j = await api('/api/acct/onboarding-mailhook/resend', { method: 'POST', body: { to, mode } }).catch(e => ({ error: e.message }));
+    if (j.error) { document.getElementById('pmErr').textContent = j.error; return false; }
+    toast(`已补发 ${j.count} 封入职邮件给 ${to}${mode === 'digest' ? '（汇总成一封）' : ''}`);
+    return true;
+  });
 }
 async function saveHook(regenerate) {
   if (regenerate && !confirm('换新密钥后旧脚本立刻失效，要把新脚本重新粘贴到 Apps Script。继续？')) return;
