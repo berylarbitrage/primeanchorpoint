@@ -660,7 +660,42 @@ function abaOk(v) { const d = String(v || '').replace(/\D/g, ''); if (d.length !
 const shotUrl = id => '/api/acct/onboarding-shot/' + encodeURIComponent(id);
 function accsOf(w, t) { return (t === 'cashapp' ? w.cashapp_accounts : t === 'ach' ? w.ach_accounts : w.zelle_accounts) || []; }
 function shotsOf(z) { return z.shots && z.shots.length ? z.shots : (z.shot ? [z.shot] : []); }
-function shotThumb(id, size) { return id ? `<a href="${shotUrl(id)}" target="_blank" title="点开看截图"><img src="${shotUrl(id)}" style="width:${size}px;height:${size}px;object-fit:cover;border-radius:6px;border:1px solid #c4b5fd;display:block"></a>` : ''; }
+// 缩略图点开是弹窗大图: 同一个账号的截图 (账号截图 + 聊天记录) 可以左右一张张翻; kind 是这张属于哪一组
+function shotThumb(id, size, kind) { return id ? `<a href="${shotUrl(id)}" target="_blank" class="shot-a" data-kind="${esc(kind || '截图')}" title="点开看大图" onclick="return shotView(event,this)"><img src="${shotUrl(id)}" style="width:${size}px;height:${size}px;object-fit:cover;border-radius:6px;border:1px solid #c4b5fd;display:block"></a>` : ''; }
+let SV = null;   // 正在看的: {list: [{url, kind}], i}
+function shotView(ev, a) {
+  if (ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.button === 1) return true;   // Ctrl/中键点还是新窗口打开
+  ev.preventDefault();
+  const box = a.closest('.zv, .zacc') || a.parentElement;
+  const all = [...box.querySelectorAll('a.shot-a')];
+  SV = { list: all.map(x => ({ url: x.getAttribute('href'), kind: x.dataset.kind })), i: Math.max(0, all.indexOf(a)) };
+  shotShow();
+  return false;
+}
+function shotShow() {
+  let m = document.getElementById('svModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'svModal';
+    m.style.cssText = 'position:fixed;inset:0;z-index:4000;background:rgba(15,23,42,.88);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px';
+    m.onclick = e => { if (e.target === m) shotClose(); };
+    document.body.appendChild(m);
+    document.addEventListener('keydown', shotKey);
+  }
+  const it = SV.list[SV.i], n = SV.list.length;
+  const nav = (d, ch) => n > 1 ? `<button onclick="shotGo(${d})" style="flex-shrink:0;width:44px;height:44px;border-radius:50%;border:none;background:rgba(255,255,255,.9);font-size:1.5rem;cursor:pointer;color:#1e293b" title="${d < 0 ? '上一张（←）' : '下一张（→）'}">${ch}</button>` : '';
+  m.innerHTML = `<div style="color:#fff;font-size:.85rem;margin-bottom:8px;display:flex;gap:12px;align-items:center">
+      <b>${esc(it.kind)}</b><span>${SV.i + 1} / ${n}</span>
+      <a href="${it.url}" target="_blank" style="color:#bfdbfe">新窗口打开 ↗</a>
+      <button onclick="shotClose()" style="border:none;background:rgba(255,255,255,.15);color:#fff;border-radius:6px;padding:2px 10px;cursor:pointer" title="关闭（Esc）">✕ 关闭</button></div>
+    <div style="display:flex;align-items:center;gap:12px;max-width:100%;min-height:0;flex:1">
+      ${nav(-1, '‹')}<img src="${it.url}" style="max-width:min(86vw,1100px);max-height:calc(100vh - 140px);object-fit:contain;border-radius:8px;background:#fff">${nav(1, '›')}</div>
+    ${n > 1 ? `<div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;justify-content:center">${SV.list.map((x, k) =>
+      `<img src="${x.url}" onclick="SV.i=${k};shotShow()" title="${esc(x.kind)}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid ${k === SV.i ? '#38bdf8' : 'transparent'};opacity:${k === SV.i ? 1 : .65}">`).join('')}</div>` : ''}`;
+}
+function shotGo(d) { SV.i = (SV.i + d + SV.list.length) % SV.list.length; shotShow(); }
+function shotClose() { const m = document.getElementById('svModal'); if (m) m.remove(); document.removeEventListener('keydown', shotKey); SV = null; }
+function shotKey(e) { if (!SV) return; if (e.key === 'Escape') shotClose(); else if (e.key === 'ArrowLeft') shotGo(-1); else if (e.key === 'ArrowRight') shotGo(1); }
 function zelleLine(w, k) {
   let out = '';
   const ed = ZEDIT[w.key];
@@ -673,10 +708,10 @@ function zelleLine(w, k) {
         <input data-zk="${k}" data-zi="${i}" data-zf="account" value="${esc(z.account)}" placeholder="${A.ph}">
         <input data-zk="${k}" data-zi="${i}" data-zf="name" value="${esc(z.name)}" placeholder="${A.namePh}">
         <button class="arrow" style="width:28px;height:30px" title="删掉这个账号" onclick="zRow(${k},${i})">✕</button></div>
-        <div class="zshots"><span class="zlbl">① ${A.shot || A.label + ' 截图'}</span>${z.shots.map((id, j) => `<span class="zth">${shotThumb(id, 46)}<button title="删掉这张截图" onclick="zShotDel(${k},${i},${j})">×</button></span>`).join('')}
+        <div class="zshots"><span class="zlbl">① ${A.shot || A.label + ' 截图'}</span>${z.shots.map((id, j) => `<span class="zth">${shotThumb(id, 46, (A.shot || A.label + ' 截图'))}<button title="删掉这张截图" onclick="zShotDel(${k},${i},${j})">×</button></span>`).join('')}
           <label class="zshot" title="上传截图（${A.shotTip || A.label + ' 里显示账号和名字的那一页'}），可以选好几张">${z.busy ? '<span style="font-size:.7rem">上传中…</span>' : `📷<span>${z.shots.length ? '再加' : '截图'}</span>`}
             <input type="file" accept="image/*" multiple style="display:none" onchange="zShot(${k},${i},this)"></label>
-          <span class="zlbl" style="margin-left:.4rem">② 聊天记录</span>${z.chat_shots.map((id, j) => `<span class="zth">${shotThumb(id, 46)}<button title="删掉这张截图" onclick="zShotDel(${k},${i},${j},'chat')">×</button></span>`).join('')}
+          <span class="zlbl" style="margin-left:.4rem">② 聊天记录</span>${z.chat_shots.map((id, j) => `<span class="zth">${shotThumb(id, 46, '聊天记录')}<button title="删掉这张截图" onclick="zShotDel(${k},${i},${j},'chat')">×</button></span>`).join('')}
           <label class="zshot" style="border-color:#f59e0b;color:#b45309" title="上传聊天记录截图：工人说可以把钱付到这个账号的那段聊天，可以选好几张">${z.chatBusy ? '<span style="font-size:.7rem">上传中…</span>' : `💬<span>${z.chat_shots.length ? '再加' : '聊天'}</span>`}
             <input type="file" accept="image/*" multiple style="display:none" onchange="zChatShot(${k},${i},this)"></label></div>
         ${z.read && (z.read.account || z.read.name || z.read.routing) ? `<div class="zread">截图读到（点一下复制）：${['routing', 'account', 'name', 'bank'].filter(f => z.read[f]).map(f =>
@@ -689,9 +724,9 @@ function zelleLine(w, k) {
         <button class="btn btn-blue btn-sm" onclick="zSave(${k})">${switching ? `确认改成 ${A.label}${w.pay_method ? '（原来：' + PM_SHORT[w.pay_method] + '）' : ''}` : `保存 ${A.label} 账号`}</button></span></div></div>`;
   } else if (ACC[w.pay_method]) {
     const A = ACC[w.pay_method];
-    out += `<div class="zbox">${accsOf(w, w.pay_method).map(z => `<div class="zv"><div class="row" style="margin:0;align-items:center">${shotsOf(z).map(id => shotThumb(id, 34)).join('') || '<span class="tag" style="background:#fee2e2;color:#991b1b" title="以前登记的，没有截图">没截图</span>'}
+    out += `<div class="zbox">${accsOf(w, w.pay_method).map(z => `<div class="zv"><div class="row" style="margin:0;align-items:center">${shotsOf(z).map(id => shotThumb(id, 34, (A.shot || A.label + ' 截图'))).join('') || '<span class="tag" style="background:#fee2e2;color:#991b1b" title="以前登记的，没有截图">没截图</span>'}
         <span class="tag" style="background:${A.bg};color:${A.fg}">${A.label} ${z.type === 'ach' ? '路由 ' + esc(z.routing) + ' · 账号 ' : ''}${esc(z.account)}</span><span style="font-size:.8rem">户主 <b>${esc(z.name)}</b></span>${zStatus(z)}
-        ${(z.chat_shots || []).length ? `<span class="zlbl" style="color:#b45309">💬 聊天记录</span>${z.chat_shots.map(id => shotThumb(id, 34)).join('')}` : ''}</div>
+        ${(z.chat_shots || []).length ? `<span class="zlbl" style="color:#b45309">💬 聊天记录</span>${z.chat_shots.map(id => shotThumb(id, 34, '聊天记录')).join('')}` : ''}</div>
         ${zChecks(w, k, z)}</div>`).join('')}
       ${D.can_edit ? `<button class="btn btn-outline btn-sm" onclick="zEdit(${k},'${w.pay_method}')">编辑 / 加账号</button>` : ''}</div>`;
   } else {
@@ -732,7 +767,7 @@ function zNameSame(a, b) {
   const wa = cleanName(a).toLowerCase().split(' ').filter(Boolean), wb = cleanName(b).toLowerCase().split(' ').filter(Boolean);
   return wa.length > 0 && wa.length === wb.length && wa.every(x => wb.includes(x));
 }
-function zChecks(w, k, z) {
+function zChecks(w, k, z, noBtns) {
   const c = [];
   const who = esc(w.employee ? w.employee.name : w.name);
   if (z.name_match === 'ok') c.push(`<span class="ok">✓ 户主和工人同名</span>`);
@@ -752,7 +787,7 @@ function zChecks(w, k, z) {
   } else if (shot && D.can_approve && !z.ok) c.push(`<span style="padding:0"><button class="btn btn-outline btn-sm" style="padding:.05rem .45rem;font-size:.72rem" onclick="zReadShot('${shot}','${w.pay_method}')">🔍 读截图核对</button></span>`);
   else if (!shot) c.push(`<span class="warn">⚠ 没截图，核对不了</span>`);
   const i = accsOf(w, w.pay_method).indexOf(z);
-  const btns = !D.can_approve ? '' : !z.ok
+  const btns = !D.can_approve || noBtns ? '' : !z.ok
     ? `<span style="padding:0;margin-left:auto;display:flex;gap:.25rem"><button class="btn btn-blue btn-sm" style="padding:.1rem .6rem" onclick="zReview(${k},${i},true)">✓ 通过</button>
        ${z.rejected ? '' : `<button class="btn btn-outline btn-sm" style="padding:.1rem .6rem;color:#991b1b" onclick="zReview(${k},${i},false)">✗ 不对</button>`}</span>`
     : `<span style="padding:0;margin-left:auto"><button class="btn btn-outline btn-sm" style="padding:.05rem .45rem;font-size:.7rem" onclick="zReview(${k},${i},false)">改成不对</button></span>`;
@@ -764,14 +799,26 @@ async function zReadShot(id, kind) {
   ZREAD[id] = r.error ? { error: r.error } : { account: r.account || '', name: r.name || '', routing: r.routing || '' };
   renderList();
 }
+// 审核弹窗: 这个收款人的截图 (账号截图 + 聊天记录) 放大摆出来, 读完再点通过 / 不对
 function zReview(k, i, ok) {
   const w = D.rows[k], z = accsOf(w, w.pay_method)[i];
   if (!z) return;
+  const A = ACC[w.pay_method];
   const warn = z.name_match !== 'ok' || (z.dup_with || []).length || !(z.chat_shots || []).length;
-  confirmBox(ok ? '收款账号审核通过' : '收款账号不对', `<div style="font-size:.88rem"><b>${esc(w.name)}</b>：${esc(ACC[w.pay_method].label)} ${z.type === 'ach' ? '路由 ' + esc(z.routing) + ' 账号 ' : ''}${esc(z.account)}，户主 <b>${esc(z.name || '')}</b></div>
+  const big = (ids, kind) => ids.length ? ids.map(id => `<a href="${shotUrl(id)}" target="_blank" class="shot-a" data-kind="${esc(kind)}" onclick="return shotView(event,this)" title="点开全屏看"><img src="${shotUrl(id)}" style="width:100%;max-height:62vh;object-fit:contain;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;display:block;margin-bottom:.4rem"></a>`).join('')
+    : `<div style="background:#fef2f2;color:#991b1b;border-radius:8px;padding:1.2rem .6rem;text-align:center;font-weight:700">没有${esc(kind)}</div>`;
+  confirmBox(ok ? '审核收款账号：通过' : '审核收款账号：不对', `<div class="zv">
+    <div style="font-size:.92rem"><b>${esc(w.name)}</b>${w.employee ? `（档案：${esc(w.employee.name)}）` : ''} → ${esc(A.label)} ${z.type === 'ach' ? '路由 <b>' + esc(z.routing) + '</b> 账号 ' : ''}<b>${esc(z.account)}</b>，户主 <b>${esc(z.name || '')}</b></div>
+    ${zChecks(w, k, z, true)}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:.7rem;margin-top:.6rem">
+      <div><div class="lbl" style="margin-bottom:.25rem">① ${esc(A.shot || A.label + ' 截图')}（${shotsOf(z).length} 张）</div>${big(shotsOf(z), A.shot || A.label + ' 截图')}</div>
+      <div><div class="lbl" style="margin-bottom:.25rem">② 聊天记录（${(z.chat_shots || []).length} 张）</div>${big(z.chat_shots || [], '聊天记录')}</div>
+    </div>
+    <div class="muted" style="margin-top:.2rem">图还看不清就点一下，全屏看（← → 翻页）。</div>
     ${ok && warn ? '<div style="margin-top:.4rem;background:#fef2f2;color:#991b1b;border-radius:6px;padding:.35rem .5rem;font-size:.82rem">上面有 ⚠ 提醒（户主名字对不上 / 别人也在用这个账号 / 没有聊天记录），核实过了再通过</div>' : ''}
-    ${ok ? '' : '<div class="lbl" style="margin-top:.5rem">哪里不对（填的人会看到）</div><input id="zRejNote" style="width:100%" placeholder="例：户主不是本人 / 号码和截图不一样">'}`,
-    () => save(k, ok ? { approve: 'zelle', type: w.pay_method, account: z.account, routing: z.routing } : { reject: 'zelle', type: w.pay_method, account: z.account, routing: z.routing, note: document.getElementById('zRejNote').value }));
+    ${ok ? '' : '<div class="lbl" style="margin-top:.5rem">哪里不对（填的人会看到）</div><input id="zRejNote" style="width:100%" placeholder="例：户主不是本人 / 号码和截图不一样">'}</div>`,
+    () => save(k, ok ? { approve: 'zelle', type: w.pay_method, account: z.account, routing: z.routing } : { reject: 'zelle', type: w.pay_method, account: z.account, routing: z.routing, note: document.getElementById('zRejNote').value }), true);
+  document.getElementById('pmGo').textContent = ok ? '✓ 确认通过' : '✗ 确认不对';
 }
 function zSync(k) {
   const ed = ZEDIT[D.rows[k].key];
@@ -889,11 +936,18 @@ function pickPay(k, m) {
 }
 function fmtTime(t) { if (!t) return ''; const d = new Date(t); return isNaN(d) ? String(t) : d.toLocaleString(); }
 // 通用确认弹窗 (页面居中): 确认后跑 fn, fn 返回 true 才关
-function confirmBox(title, html, fn) {
+function confirmBox(title, html, fn, wide) {
+  // wide: 审核收款账号时要看大截图, 弹窗放宽、内容太高就滚动
+  const card = document.querySelector('#pmModal > .card');
+  card.style.maxWidth = wide ? 'min(1150px, 96vw)' : '440px';
+  card.style.width = wide ? '100%' : '';
+  card.style.maxHeight = wide ? '88vh' : '';
+  card.style.overflowY = wide ? 'auto' : '';
   document.getElementById('pmTitle').textContent = title;
   document.getElementById('pmBody').innerHTML = html;
   document.getElementById('pmErr').textContent = '';
   const go = document.getElementById('pmGo');
+  go.textContent = '确认';
   go.onclick = async () => { go.disabled = true; const ok = await fn(); go.disabled = false; if (ok) document.getElementById('pmModal').style.display = 'none'; };
   document.getElementById('pmModal').style.display = 'flex';
 }
