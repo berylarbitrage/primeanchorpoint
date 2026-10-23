@@ -45069,7 +45069,7 @@ app.post('/api/acct/onboarding-shot-read', requireAdmin, requireWobWrite, async 
 {"routing":"9 位路由号 (routing / ABA)，只要数字","account":"银行账号 (account number)，只要数字","name":"账户户主名字（英文原样）","bank":"银行名字","confidence":"high|low","note":"看不清或不确定的地方"}
 支票底下一排数字一般是：路由号、账号、支票号，不要把支票号当账号。读不到的填空字符串。数字逐位核对，不要猜。`
         : `这是一张${what}的手机截图。只输出 JSON，不要别的内容：
-{"account":"${kind === 'cashapp' ? '$Cashtag，带 $ 号' : 'Zelle 电话或邮箱，原样照抄'}","name":"账户上显示的名字（英文原样）","confidence":"high|low","note":"看不清或不确定的地方"}
+{"seen":"zelle|cashapp|bank|other（这张截图实际是什么：Zelle 页面 / Cash App 页面 / 银行账户信息（有路由号和账号）/ 其他）","account":"${kind === 'cashapp' ? '$Cashtag，带 $ 号' : 'Zelle 电话或邮箱，原样照抄'}","name":"账户上显示的名字（英文原样）","confidence":"high|low","note":"看不清或不确定的地方"}
 读不到的填空字符串。账号逐字符核对，不要猜。`;
       const r = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -45082,6 +45082,9 @@ app.post('/api/acct/onboarding-shot-read', requireAdmin, requireWobWrite, async 
       const text = ((body.content || []).find(c => c.type === 'text') || {}).text || '';
       let j = {}; try { j = JSON.parse((text.match(/\{[\s\S]*\}/) || ['{}'])[0]); } catch (e) {}
       const out = { ok: true, engine: 'claude', account: String(j.account || '').trim(), name: String(j.name || '').trim(), confidence: j.confidence || '', note: j.note || '' };
+      // 截图其实是别的付款方式的 (比如在 Cash App 里传了银行账户截图): 告诉页面, 让人改到对的那一栏
+      const seen = { zelle: 'zelle', cashapp: 'cashapp', bank: 'ach' }[String(j.seen || '').toLowerCase()];
+      if (seen && seen !== kind) out.seen = seen;
       if (kind === 'ach') {
         out.account = out.account.replace(/\D/g, '');
         out.routing = String(j.routing || '').replace(/\D/g, '');
