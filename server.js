@@ -9447,6 +9447,7 @@ function _isChangeRequest(req) {
   // 只存截图 / 识别截图, 不改任何记录 (关联账号的保存才进审批)
   if (p === '/api/acct/onboarding-shot' || p === '/api/acct/onboarding-shot-read') return false;
   if (_isCsSmsSend(req, p)) return false;
+  if (_isWobGustoWork(req, p)) return false;
   if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return true;
   return String(req.query && req.query.send) === '1';   // 带 ?send=1 的 GET 会真的发东西 (例如立刻发面试日报)
 }
@@ -9466,6 +9467,13 @@ function _isCsSmsSend(req, p) {
     return keys.includes('read') && keys.every(k => k === 'peer' || k === 'read');
   }
   return false;
+}
+// 总监做新员工入职 (/onboarding) 的 Gusto 板块不用审批: 付款方式、关联档案 / Gusto、通过 / 否掉系统匹配、
+// 清单打勾、邮件关联 / 忽略、银行提醒、粘贴邮件都直接生效, 不会卡住下一步。注册审批、权限、邮箱设置仍要审批。
+function _isWobGustoWork(req, p) {
+  if (req.method !== 'POST') return false;
+  return /^\/api\/acct\/onboarding\/[^/]+$/.test(p)
+    || ['/api/acct/onboarding-email-assign', '/api/acct/onboarding-email-ignore', '/api/acct/onboarding-bank-ack', '/api/acct/onboarding-emails'].includes(p);
 }
 async function _queueChange(req, res, session) {
   try {
