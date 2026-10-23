@@ -791,8 +791,10 @@ function copyTxt(t) {
 const ZREAD = {};   // 审核时现读的截图结果 (以前登记的账号没存读到的内容): shot id → {account, name} 或 {error}
 function zStatus(z) {
   if (z.pend_new) return '<span class="tag" style="background:#fef3c7;color:#92400e" title="这个账号是在等审批的修改里，同意那条修改后才会存上">⏳ 等审批，还没存</span>';
-  if (z.ok) return `<span class="tag" style="background:#dcfce7;color:#166534" title="${esc(z.ok_by)} ${esc(fmtTime(z.ok_at))}">✓ 已审核 · ${esc(z.ok_by)}</span>`;
-  if (z.rejected) return `<span class="tag" style="background:#fee2e2;color:#991b1b" title="${esc(z.ok_by)} ${esc(fmtTime(z.ok_at))}">✗ 不对${z.reject_note ? '：' + esc(z.reject_note) : ''}，请改</span>`;
+  // 谁、什么时候审的 (本地时间 月/日 时:分), 悬停看完整时间
+  const when = t => { const d = new Date(t); return t && !isNaN(d) ? ` · ${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : ''; };
+  if (z.ok) return `<span class="tag" style="background:#dcfce7;color:#166534" title="${esc(z.ok_by)} 审核通过 ${esc(fmtTime(z.ok_at))}">✓ 已审核 · ${esc(z.ok_by)}${when(z.ok_at)}</span>`;
+  if (z.rejected) return `<span class="tag" style="background:#fee2e2;color:#991b1b" title="${esc(z.ok_by)} 标成不对 ${esc(fmtTime(z.ok_at))}">✗ 不对${z.reject_note ? '：' + esc(z.reject_note) : ''}，请改 · ${esc(z.ok_by)}${when(z.ok_at)}</span>`;
   return '<span class="tag" style="background:#eef2ff;color:#3730a3">🔎 待审核</span>';
 }
 function zNameSame(a, b) {
