@@ -436,7 +436,7 @@ function card(w, k) {
   if (w.pay_method === 'gusto') {
     const g = w.gusto, gp = w.gusto_proposal;
     const who = g && g.link
-      ? `<span class="tag" style="background:#dcfce7;color:#166534">Gusto: ${esc(g.name)}</span><span class="muted">${esc(g.by)} 通过</span>${g.active === false ? ' <span class="tag" style="background:#fee2e2;color:#991b1b">已停用</span>' : ''}`
+      ? `<span class="tag" style="background:#dcfce7;color:#166534">Gusto: ${esc(g.name)}</span><span class="muted">${esc(g.by)} 通过</span>${D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="undoApprove(${k},'gusto')">↩ 撤销通过</button>` : ''}${g.active === false ? ' <span class="tag" style="background:#fee2e2;color:#991b1b">已停用</span>' : ''}`
       : gp ? `<span class="tag" style="background:#eef2ff;color:#3730a3">🔎 系统匹配 Gusto: ${esc(gp.name)}（${esc(gp.why)}）</span>${reviewBtns(k, `{approve:'gusto',uuid:'${esc(gp.uuid)}'}`, `{reject:'gusto',uuid:'${esc(gp.uuid)}'}`)}`
       : `<span class="tag" style="background:#fef3c7;color:#92400e">Gusto 名册里还没找到${g && g.candidates ? '，可能是：' + esc(g.candidates.join(' / ')) : ''}</span>`;
     const emailProps = w.email_proposals.map(e => `<div class="row" style="margin:.2rem 0 0"><span class="tag" style="background:#eef2ff;color:#3730a3">🔎 邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span><span class="muted">${esc(e.subject)}</span>${reviewBtns(k, `{approve:'email',event_id:${e.id}}`, `{reject:'email',event_id:${e.id}}`)}</div>`).join('');
@@ -459,7 +459,8 @@ function card(w, k) {
     gusto = `<div class="ck" style="grid-template-columns:1fr;padding-bottom:0;border-bottom:none"><div class="row" style="margin:0">${who}${st}
         ${D.can_edit ? `<button class="btn btn-outline btn-sm" onclick="pickGusto(${k})">${g && g.link ? '改' : '手动'}关联</button>` : ''}
         ${g && g.uuid && D.gusto.connected ? `<button class="btn btn-outline btn-sm" onclick="gustoSteps(${k})">Gusto 明细</button>` : ''}
-        <span class="muted">${w.checklist.done_count}/${w.checklist.steps.length}</span></div>${emailProps}</div>
+        <span class="muted">${w.checklist.done_count}/${w.checklist.steps.length}</span></div>${emailProps}
+        ${(w.emails || []).map(e => `<div class="row" style="margin:.2rem 0 0"><span class="tag" style="background:#dcfce7;color:#166534">✓ 邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span><span class="muted">${e.by ? esc(e.by) + ' 通过' : ''}</span>${D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="undoApprove(${k},'email',${e.id})">↩ 撤销通过</button>` : ''}</div>`).join('')}</div>
       <div class="ck" style="grid-template-columns:repeat(3,minmax(0,1fr))">${steps}</div>`;
   }
   const bankBox = w.bank_alerts.length ? `<div class="ck" style="grid-template-columns:1fr;background:#fef2f2">${w.bank_alerts.map(b => `<div class="row" style="margin:0">
@@ -775,6 +776,15 @@ function confirmBox(title, html, fn) {
   go.onclick = async () => { go.disabled = true; const ok = await fn(); go.disabled = false; if (ok) document.getElementById('pmModal').style.display = 'none'; };
   document.getElementById('pmModal').style.display = 'flex';
 }
+// 撤销通过: 回到「待审核」, 不算否掉
+function undoApprove(k, what, evId) {
+  const w = D.rows[k];
+  const txt = what === 'employee' ? `员工档案「${w.employee ? w.employee.name : ''}」` : what === 'gusto' ? `Gusto 收款人「${w.gusto ? w.gusto.name : ''}」`
+    : (() => { const e = (w.emails || []).find(x => x.id === evId) || {}; return `Gusto 邮件「${e.date || ''} ${e.label || ''} · ${e.name || ''}」`; })();
+  confirmBox('撤销通过', `<div style="font-size:.88rem"><b>${esc(w.name)}</b>：撤销 ${esc(txt)} 的通过？</div>
+    <div class="muted" style="margin-top:.3rem">撤销后回到「待审核」，可以重新通过或点「不是」${what === 'email' ? '；Gusto 清单里靠这封邮件打的勾也会取消' : ''}</div>`,
+    () => save(k, what === 'email' ? { unapprove: 'email', event_id: evId } : { unapprove: what }));
+}
 function tickStep(k, i) {
   const w = D.rows[k], s = w.checklist.steps[i];
   if (!s.tickable || !D.can_approve || s.locked || (s.auto && !s.manual)) return;
@@ -964,7 +974,7 @@ function empBlock(w, k) {
     + (x.state_bad ? `<br><span style="display:inline-block;margin-top:.15rem;background:#dc2626;color:#fff;border-radius:6px;padding:.05rem .45rem;font-weight:700">⚠ 州不一致：发票是 ${esc((w.inv_states || []).join(' / '))}，档案是 ${esc(x.state)}（${esc(x.state_src)}）</span>` : '');
   const btn = D.can_edit ? `<button class="btn btn-outline btn-sm" onclick="pickEmployee(${k})">${e ? '改关联' : '关联员工档案'}</button>` : '';
   if (e) return `<div class="row" style="align-items:flex-start;margin:0"><span class="tag" style="background:#dcfce7;color:#166534;font-size:.78rem;padding:.2rem .6rem;line-height:1.4;text-align:left">👤 ${info(e)}</span></div>
-    <div class="row" style="margin:.2rem 0 0"><span class="muted">${esc(e.by)} 通过</span>${D.can_open_employee ? `<a class="btn btn-outline btn-sm" href="/admin.html?emp=${e.id}" target="_blank">打开档案 ↗</a>` : ''}${btn}</div>`;
+    <div class="row" style="margin:.2rem 0 0"><span class="muted">${esc(e.by)} 通过</span>${D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="undoApprove(${k},'employee')">↩ 撤销通过</button>` : ''}${D.can_open_employee ? `<a class="btn btn-outline btn-sm" href="/admin.html?emp=${e.id}" target="_blank">打开档案 ↗</a>` : ''}${btn}</div>`;
   const props = (w.employee_proposals || []).map(x => `<div class="row" style="margin:.25rem 0 0;align-items:flex-start"><span class="tag" style="background:#eef2ff;color:#3730a3;font-size:.76rem;line-height:1.4;text-align:left">🔎 ${info(x)}<br><span style="font-weight:400">系统匹配：${esc(x.why)}</span></span>
       ${reviewBtns(k, `{approve:'employee',id:${x.id}}`, `{reject:'employee',id:${x.id}}`)}</div>`).join('');
   return (props || '<span class="tag" style="background:#fee2e2;color:#991b1b">系统里没找到这个人的档案</span>') +
