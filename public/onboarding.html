@@ -75,7 +75,29 @@ input,select,textarea{padding:.38rem .5rem;border:1px solid var(--g300);border-r
 .zread button{border:1px solid #c4b5fd;background:#fff;border-radius:6px;padding:.1rem .4rem;font-size:.74rem;cursor:pointer;color:#1f2937;font-family:inherit}
 .zread button:hover{background:#ede9fe}
 .zrow input{min-width:0}
-.zv{padding:.3rem 0;border-bottom:1px dashed #ddd6fe}
+.zv{padding:.45rem 0;border-bottom:1px dashed #ddd6fe;display:grid;gap:.35rem}
+.zv-top{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem}
+.zv-shots{display:flex;flex-wrap:wrap;gap:.6rem}
+.zgrp{background:#fff;border:1px solid #e9e5ff;border-radius:8px;padding:.3rem .4rem;display:grid;gap:.25rem}
+.zgrp .zthumbs{display:flex;gap:.3rem;flex-wrap:wrap}
+.zt{width:60px;height:60px;object-fit:cover;border-radius:6px;border:1px solid #c4b5fd;cursor:zoom-in;display:block;background:#f8fafc}
+.zt:hover{outline:2px solid #7c3aed}
+.zmiss{width:60px;height:60px;border-radius:6px;border:1.5px dashed #fca5a5;color:#b91c1c;font-size:.68rem;font-weight:700;display:flex;align-items:center;justify-content:center;text-align:center;background:#fef2f2}
+.zv-act{display:flex;justify-content:flex-end;gap:.3rem;align-items:center}
+/* 审核弹窗 */
+#zrModal{position:fixed;inset:0;z-index:3000;background:rgba(15,23,42,.6);display:flex;align-items:center;justify-content:center;padding:2vh 12px}
+#zrModal .zr-card{background:#fff;border-radius:12px;width:min(1400px,98vw);max-height:96vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+#zrModal .zr-head{padding:.6rem .9rem;border-bottom:1px solid #e2e8f0;display:grid;gap:.35rem}
+#zrModal .zr-body{flex:1;min-height:0;display:grid;grid-template-columns:260px 1fr 1fr;gap:.6rem;padding:.6rem .9rem;overflow:auto}
+#zrModal .zr-info{font-size:.8rem;display:grid;gap:.35rem;align-content:start}
+#zrModal .zr-info .box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:.45rem .55rem;line-height:1.55}
+#zrModal .zr-col{display:flex;flex-direction:column;min-width:0;min-height:0}
+#zrModal .zr-bar{display:flex;align-items:center;gap:.3rem;margin-bottom:.3rem;font-size:.78rem;font-weight:700;color:#6d28d9}
+#zrModal .zr-bar button{border:1px solid #cbd5e1;background:#fff;border-radius:6px;padding:0 .45rem;cursor:pointer;font-size:.8rem;line-height:1.6}
+#zrModal .zr-pane{flex:1;min-height:55vh;max-height:72vh;overflow:auto;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:.35rem}
+#zrModal .zr-pane img{display:block;margin:0 auto .4rem;max-width:none;cursor:zoom-in;border-radius:6px;background:#fff}
+#zrModal .zr-foot{padding:.55rem .9rem;border-top:1px solid #e2e8f0;display:flex;gap:.4rem;align-items:center;flex-wrap:wrap}
+@media(max-width:900px){#zrModal .zr-body{grid-template-columns:1fr}#zrModal .zr-pane{min-height:40vh}}
 .zv:last-of-type{border-bottom:none}
 .zck{display:flex;flex-wrap:wrap;gap:.25rem;margin:.25rem 0 0}
 .zck span{font-size:.72rem;border-radius:6px;padding:.1rem .4rem}
@@ -724,10 +746,19 @@ function zelleLine(w, k) {
         <button class="btn btn-blue btn-sm" onclick="zSave(${k})">${switching ? `确认改成 ${A.label}${w.pay_method ? '（原来：' + PM_SHORT[w.pay_method] + '）' : ''}` : `保存 ${A.label} 账号`}</button></span></div></div>`;
   } else if (ACC[w.pay_method]) {
     const A = ACC[w.pay_method];
-    out += `<div class="zbox">${accsOf(w, w.pay_method).map(z => `<div class="zv"><div class="row" style="margin:0;align-items:center">${shotsOf(z).map(id => shotThumb(id, 34, (A.shot || A.label + ' 截图'))).join('') || '<span class="tag" style="background:#fee2e2;color:#991b1b" title="以前登记的，没有截图">没截图</span>'}
-        <span class="tag" style="background:${A.bg};color:${A.fg}">${A.label} ${z.type === 'ach' ? '路由 ' + esc(z.routing) + ' · 账号 ' : ''}${esc(z.account)}</span><span style="font-size:.8rem">户主 <b>${esc(z.name)}</b></span>${zStatus(z)}
-        ${(z.chat_shots || []).length ? `<span class="zlbl" style="color:#b45309">💬 聊天记录</span>${z.chat_shots.map(id => shotThumb(id, 34, '聊天记录')).join('')}` : ''}</div>
-        ${zChecks(w, k, z)}</div>`).join('')}
+    // 一个收款账号一块: 账号 + 户主 + 状态 / 两组截图 (点开审核) / 核对 / 按钮
+    out += `<div class="zbox">${accsOf(w, w.pay_method).map((z, i) => {
+      const th = (ids, miss) => ids.length ? ids.map(id => `<img class="zt" src="${shotUrl(id)}" title="点开看大图审核" onclick="zOpen(${k},${i})">`).join('') : `<span class="zmiss">${miss}</span>`;
+      return `<div class="zv">
+        <div class="zv-top"><span class="tag" style="background:${A.bg};color:${A.fg};font-size:.8rem">${A.label} ${z.type === 'ach' ? '路由 ' + esc(z.routing) + ' · 账号 ' : ''}${esc(z.account)}</span>
+          <span style="font-size:.82rem">户主 <b>${esc(z.name)}</b></span><span style="margin-left:auto">${zStatus(z)}</span></div>
+        <div class="zv-shots">
+          <div class="zgrp"><span class="zlbl">① ${esc(A.shot || A.label + ' 截图')}</span><div class="zthumbs">${th(shotsOf(z), '没截图')}</div></div>
+          <div class="zgrp"><span class="zlbl" style="color:#b45309">② 聊天记录</span><div class="zthumbs">${th(z.chat_shots || [], '没聊天<br>记录')}</div></div>
+        </div>
+        ${zChecks(w, k, z, true)}
+        <div class="zv-act"><button class="btn btn-outline btn-sm" onclick="zOpen(${k},${i})">🔍 看大图${D.can_approve && !z.ok ? '审核' : ''}</button>${zBtns(k, i, z)}</div>
+      </div>`; }).join('')}
       ${D.can_edit ? `<button class="btn btn-outline btn-sm" onclick="zEdit(${k},'${w.pay_method}')">编辑 / 加账号</button>` : ''}</div>`;
   } else {
     if (w.zelle_accounts.length) out += `<div class="muted" style="margin:-.1rem 0 .35rem">保留的 Zelle 账号：${zList(w.zelle_accounts)}</div>`;
@@ -786,39 +817,92 @@ function zChecks(w, k, z, noBtns) {
       : `<span class="bad">✗ 截图上是 ${!accOk ? esc(rdAcc) : ''}${!accOk && !nmOk ? ' · ' : ''}${!nmOk ? esc(rd.name) : ''}，和登记的不一样</span>`);
   } else if (shot && D.can_approve && !z.ok) c.push(`<span style="padding:0"><button class="btn btn-outline btn-sm" style="padding:.05rem .45rem;font-size:.72rem" onclick="zReadShot('${shot}','${w.pay_method}')">🔍 读截图核对</button></span>`);
   else if (!shot) c.push(`<span class="warn">⚠ 没截图，核对不了</span>`);
-  const i = accsOf(w, w.pay_method).indexOf(z);
-  const btns = !D.can_approve || noBtns ? '' : !z.ok
-    ? `<span style="padding:0;margin-left:auto;display:flex;gap:.25rem"><button class="btn btn-blue btn-sm" style="padding:.1rem .6rem" onclick="zReview(${k},${i},true)">✓ 通过</button>
-       ${z.rejected ? '' : `<button class="btn btn-outline btn-sm" style="padding:.1rem .6rem;color:#991b1b" onclick="zReview(${k},${i},false)">✗ 不对</button>`}</span>`
-    : `<span style="padding:0;margin-left:auto"><button class="btn btn-outline btn-sm" style="padding:.05rem .45rem;font-size:.7rem" onclick="zReview(${k},${i},false)">改成不对</button></span>`;
-  return `<div class="zck">${c.join('')}${btns}</div>`;
+  return `<div class="zck">${c.join('')}</div>`;
+}
+// 通过 / 不对 都先打开审核弹窗 (看大图、看员工信息), 在弹窗里确认
+function zBtns(k, i, z) {
+  if (!D.can_approve) return '';
+  if (z.ok) return `<button class="btn btn-outline btn-sm" style="font-size:.72rem" onclick="zOpen(${k},${i},'no')">改成不对</button>`;
+  return `<button class="btn btn-blue btn-sm" onclick="zOpen(${k},${i},'ok')">✓ 通过</button>${z.rejected ? '' : `<button class="btn btn-outline btn-sm" style="color:#991b1b" onclick="zOpen(${k},${i},'no')">✗ 不对</button>`}`;
 }
 async function zReadShot(id, kind) {
   ZREAD[id] = { error: '正在读…' }; renderList();
   const r = await api('/api/acct/onboarding-shot-read', { method: 'POST', body: { id, kind } }).catch(e => ({ error: e.message }));
   ZREAD[id] = r.error ? { error: r.error } : { account: r.account || '', name: r.name || '', routing: r.routing || '' };
   renderList();
+  if (ZR) zrRender();
 }
-// 审核弹窗: 这个收款人的截图 (账号截图 + 聊天记录) 放大摆出来, 读完再点通过 / 不对
-function zReview(k, i, ok) {
-  const w = D.rows[k], z = accsOf(w, w.pay_method)[i];
-  if (!z) return;
-  const A = ACC[w.pay_method];
-  const warn = z.name_match !== 'ok' || (z.dup_with || []).length || !(z.chat_shots || []).length;
-  const big = (ids, kind) => ids.length ? ids.map(id => `<a href="${shotUrl(id)}" target="_blank" class="shot-a" data-kind="${esc(kind)}" onclick="return shotView(event,this)" title="点开全屏看"><img src="${shotUrl(id)}" style="width:100%;max-height:62vh;object-fit:contain;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;display:block;margin-bottom:.4rem"></a>`).join('')
-    : `<div style="background:#fef2f2;color:#991b1b;border-radius:8px;padding:1.2rem .6rem;text-align:center;font-weight:700">没有${esc(kind)}</div>`;
-  confirmBox(ok ? '审核收款账号：通过' : '审核收款账号：不对', `<div class="zv">
-    <div style="font-size:.92rem"><b>${esc(w.name)}</b>${w.employee ? `（档案：${esc(w.employee.name)}）` : ''} → ${esc(A.label)} ${z.type === 'ach' ? '路由 <b>' + esc(z.routing) + '</b> 账号 ' : ''}<b>${esc(z.account)}</b>，户主 <b>${esc(z.name || '')}</b></div>
-    ${zChecks(w, k, z, true)}
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:.7rem;margin-top:.6rem">
-      <div><div class="lbl" style="margin-bottom:.25rem">① ${esc(A.shot || A.label + ' 截图')}（${shotsOf(z).length} 张）</div>${big(shotsOf(z), A.shot || A.label + ' 截图')}</div>
-      <div><div class="lbl" style="margin-bottom:.25rem">② 聊天记录（${(z.chat_shots || []).length} 张）</div>${big(z.chat_shots || [], '聊天记录')}</div>
-    </div>
-    <div class="muted" style="margin-top:.2rem">图还看不清就点一下，全屏看（← → 翻页）。</div>
-    ${ok && warn ? '<div style="margin-top:.4rem;background:#fef2f2;color:#991b1b;border-radius:6px;padding:.35rem .5rem;font-size:.82rem">上面有 ⚠ 提醒（户主名字对不上 / 别人也在用这个账号 / 没有聊天记录），核实过了再通过</div>' : ''}
-    ${ok ? '' : '<div class="lbl" style="margin-top:.5rem">哪里不对（填的人会看到）</div><input id="zRejNote" style="width:100%" placeholder="例：户主不是本人 / 号码和截图不一样">'}</div>`,
-    () => save(k, ok ? { approve: 'zelle', type: w.pay_method, account: z.account, routing: z.routing } : { reject: 'zelle', type: w.pay_method, account: z.account, routing: z.routing, note: document.getElementById('zRejNote').value }), true);
-  document.getElementById('pmGo').textContent = ok ? '✓ 确认通过' : '✗ 确认不对';
+// 审核弹窗: 左边是被付款的员工信息, 中间 / 右边并排放大这个收款账号的截图和聊天记录 (能放大缩小),
+// 底下直接通过 / 不对。mode: 'ok' / 'no' 是从按钮点进来的 (先把对应操作准备好)
+let ZR = null;   // {k, i, zoom: {a, b}}
+function zReview(k, i, ok) { zOpen(k, i, ok ? 'ok' : 'no'); }
+function zOpen(k, i, mode) {
+  ZR = { k, i, zoom: { a: 0, b: 0 }, mode: mode || '' };   // zoom 0 = 适应宽度
+  zrRender();
+  document.addEventListener('keydown', zrKey);
+}
+function zrClose() { const m = document.getElementById('zrModal'); if (m) m.remove(); document.removeEventListener('keydown', zrKey); ZR = null; }
+function zrKey(e) { if (e.key === 'Escape' && !document.getElementById('svModal')) zrClose(); }
+function zrZoom(col, d) {
+  const z = ZR.zoom[col];
+  ZR.zoom[col] = d === 0 ? 0 : Math.max(0, Math.min(400, (z || 100) + d));
+  zrApply(col);
+}
+function zrApply(col) {
+  const z = ZR.zoom[col];
+  document.querySelectorAll(`#zrModal .zr-pane[data-col="${col}"] img`).forEach(img => { img.style.width = z ? z + '%' : '100%'; img.style.cursor = z >= 200 ? 'zoom-out' : 'zoom-in'; });
+  const lab = document.querySelector(`#zrModal [data-zl="${col}"]`); if (lab) lab.textContent = z ? z + '%' : '适应';
+}
+function zrRender() {
+  const w = D.rows[ZR.k], z = accsOf(w, w.pay_method)[ZR.i];
+  if (!w || !z) return zrClose();
+  const A = ACC[w.pay_method], e = w.employee;
+  let m = document.getElementById('zrModal');
+  if (!m) { m = document.createElement('div'); m.id = 'zrModal'; m.onclick = ev => { if (ev.target === m) zrClose(); }; document.body.appendChild(m); }
+  const pane = (col, ids, kind) => `<div class="zr-col"><div class="zr-bar">${esc(kind)}（${ids.length} 张）<span style="flex:1"></span>
+      <button onclick="zrZoom('${col}',-25)" title="缩小">－</button><span data-zl="${col}" style="min-width:2.6rem;text-align:center;color:#475569">适应</span><button onclick="zrZoom('${col}',25)" title="放大">＋</button>
+      <button onclick="zrZoom('${col}',0)" title="还原成适应宽度">↺</button></div>
+    <div class="zr-pane" data-col="${col}">${ids.length ? ids.map(id => `<img src="${shotUrl(id)}" style="width:100%" onclick="ZR.zoom['${col}']=ZR.zoom['${col}']>=200?0:200;zrApply('${col}')" title="点一下放大 / 还原">`).join('')
+      : `<div style="color:#991b1b;font-weight:700;text-align:center;padding:2rem .5rem">没有${esc(kind)}</div>`}</div></div>`;
+  const lines = (w.line ? [w.line] : (w.invoices || [])).slice(0, 6);
+  const info = `<div class="zr-info">
+    <div class="box"><div style="font-weight:800;font-size:.9rem">${esc(w.name)}</div>
+      ${e ? `<div>👤 档案：<b>${esc(e.name)}</b>${e.code ? ' · ' + esc(e.code) : ''}</div>
+        ${e.phone ? `<div>📞 ${esc(e.phone)}</div>` : ''}
+        <div>状态 ${esc(e.status || '—')}${e.state ? ' · ' + esc(e.state) + ' 州' : ''}${e.timeclock_code ? ' · 打卡码 ' + esc(e.timeclock_code) : ''}</div>
+        ${D.can_open_employee ? `<a href="/admin.html?emp=${e.id}" target="_blank">打开员工档案 ↗</a>` : ''}`
+      : '<div style="color:#b91c1c;font-weight:700">还没关联员工档案</div>'}</div>
+    <div class="box"><div class="lbl">仓库 / 账单</div>${esc((w.warehouses || []).join('、') || '—')}<br>第一次上账单 ${esc(w.first_end || '')}
+      ${lines.map(l => `<div class="muted">📄 ${esc(l.invoice_number || '')} ${esc(md(l.period_end))}${l.hours ? ' · ' + l.hours + 'h' : ''}${l.total != null ? ' · ' + money(l.total) : ''}</div>`).join('')}</div>
+    <div class="box"><div class="lbl">付到这个账号</div>${esc(A.label)} ${z.type === 'ach' ? '路由 <b>' + esc(z.routing) + '</b><br>账号 ' : ''}<b>${esc(z.account)}</b><br>户主 <b>${esc(z.name)}</b>
+      <div class="muted">${esc(z.by || '')} 登记 ${esc(fmtTime(z.at))}</div><div style="margin-top:.2rem">${zStatus(z)}</div></div>
+    <div class="zv" style="border:none;padding:0">${zChecks(w, ZR.k, z, true)}</div>
+  </div>`;
+  const canAct = D.can_approve;
+  m.innerHTML = `<div class="zr-card">
+    <div class="zr-head"><div style="display:flex;align-items:center;gap:.5rem"><b style="font-size:1rem">审核收款账号</b>
+      <span class="muted">${esc(w.name)} → ${esc(A.label)} ${esc(z.account)}（户主 ${esc(z.name)}）</span><span style="flex:1"></span>
+      <button class="btn btn-outline btn-sm" onclick="zrClose()">✕ 关闭</button></div></div>
+    <div class="zr-body">${info}${pane('a', shotsOf(z), A.shot || A.label + ' 截图')}${pane('b', z.chat_shots || [], '聊天记录')}</div>
+    <div class="zr-foot">
+      <span class="muted">图看不清：点图片放大，或用 ＋ －；两边可以分开放大。</span><span style="flex:1"></span>
+      ${canAct ? `<input id="zrNote" placeholder="不对的话写原因（填的人会看到）" style="width:min(320px,60vw);${ZR.mode === 'no' ? '' : 'display:none'}">
+        ${z.ok ? '' : `<button class="btn btn-blue" onclick="zrDecide(true)">✓ 审核通过</button>`}
+        <button class="btn btn-outline" style="color:#991b1b" onclick="zrDecide(false)">✗ 不对</button>` : '<span class="muted">只有 manager / admin 能审核</span>'}
+    </div></div>`;
+  zrApply('a'); zrApply('b');
+  if (ZR.mode === 'no') setTimeout(() => { const n = document.getElementById('zrNote'); if (n) n.focus(); }, 0);
+}
+async function zrDecide(ok) {
+  const w = D.rows[ZR.k], z = accsOf(w, w.pay_method)[ZR.i];
+  const note = document.getElementById('zrNote');
+  if (!ok && note.style.display === 'none') { note.style.display = ''; note.focus(); return; }   // 第一下先让写原因
+  if (ok && (z.name_match !== 'ok' || (z.dup_with || []).length || !(z.chat_shots || []).length)
+      && !confirm('上面有 ⚠ 提醒（户主名字对不上 / 别人也在用这个账号 / 没有聊天记录）。确认核实过了，通过？')) return;
+  const body = ok ? { approve: 'zelle', type: w.pay_method, account: z.account, routing: z.routing }
+    : { reject: 'zelle', type: w.pay_method, account: z.account, routing: z.routing, note: note.value };
+  const k = ZR.k;
+  if (await save(k, body)) zrClose();
 }
 function zSync(k) {
   const ed = ZEDIT[D.rows[k].key];
