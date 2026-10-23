@@ -36123,6 +36123,17 @@ db.exec(`CREATE TABLE IF NOT EXISTS device_sms_aliases (
   PRIMARY KEY (device_id, remote_id)
 )`);
 
+// 多部手机号: 每台设备 (电脑 / 手机 App) 标上它连的是哪个手机号 (10 位数字)。
+// 同一个号可以有好几台设备 (电脑 + 手机 App), 它们之间才去重; 网页按号码切换,
+// 发短信也只交给那个号码的设备发。没标号码的设备按老规矩, 什么都收。
+try { db.exec(`ALTER TABLE device_sms_devices ADD COLUMN line TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE device_sms_outbox ADD COLUMN line TEXT DEFAULT ''`); } catch(e) {}
+db.exec(`CREATE TABLE IF NOT EXISTS device_sms_lines (
+  line TEXT PRIMARY KEY,
+  label TEXT DEFAULT ''
+)`);
+function deviceSmsLine(v) { const d = String(v || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : ''; }
+
 function deviceSmsHashToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
 }
@@ -37908,9 +37919,12 @@ app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
     // 同一设备自己的更新(remote_id 相同, 比如电脑补推译文)不受影响。
     const existsSelf = db.prepare('SELECT id FROM device_sms_messages WHERE device_id=? AND remote_id=?');
     const saveAlias = db.prepare(`INSERT OR REPLACE INTO device_sms_aliases (device_id, remote_id, message_id) VALUES (?,?,?)`);
+    // 只跟同一个手机号的设备去重: 两个号码各收到同一个人发的同一句话是两条真短信
     const existsOther = db.prepare(`SELECT id FROM device_sms_messages
       WHERE device_id != ? AND peer=? AND direction=? AND body=?
+        AND device_id IN (SELECT id FROM device_sms_devices WHERE COALESCE(line,'')=?)
         AND ABS(strftime('%s', sent_at) - strftime('%s', ?)) <= 180 LIMIT 1`);
+    const myLine = req.smsDevice.line || '';
 
     let saved = 0;
     const write = db.transaction((rows) => {
@@ -37924,7 +37938,7 @@ app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
         const sentIso = new Date(sentAt).toISOString();
         // 纯图片彩信没有正文, 也按同人同方向同时间去重 (电脑端和手机 App 都会推彩信)
         if ((bodyText.trim() || m.kind === 'mms') && !existsSelf.get(req.smsDevice.id, remoteId)) {
-          const dup = existsOther.get(req.smsDevice.id, peerKey, direction, bodyText, sentIso);
+          const dup = existsOther.get(req.smsDevice.id, peerKey, direction, bodyText, myLine, sentIso);
           if (dup) {
             saveAlias.run(req.smsDevice.id, remoteId, dup.id);
             continue;
@@ -38095,8 +38109,13 @@ app.post('/api/device-sms/send', requireAdmin, requireRole('admin', 'cs'), (req,
     // 字母开头的服务号码 (银行/快递) 回不了, 电脑那边也发不出去, 先在这里拦掉
     if (!/[0-9]/.test(to)) return res.status(400).json({ error: '这个号码不能回复短信（是服务号）' });
     const translateTo = String((req.body || {}).translate_to || '').slice(0, 40);
-    const info = db.prepare(`INSERT INTO device_sms_outbox (to_address, peer, body, translate_to, created_by) VALUES (?,?,?,?,?)`)
-      .run(to, peer, body, translateTo, req.userName || '');
+    // 用哪个手机号发: 不填 = 哪台设备都能发 (只有一个号时)
+    const line = deviceSmsLine((req.body || {}).line);
+    if (line && !db.prepare(`SELECT 1 FROM device_sms_devices WHERE line=? AND active=1`).get(line)) {
+      return res.status(400).json({ error: '这个手机号没有连着的设备，发不出去' });
+    }
+    const info = db.prepare(`INSERT INTO device_sms_outbox (to_address, peer, body, translate_to, created_by, line) VALUES (?,?,?,?,?,?)`)
+      .run(to, peer, body, translateTo, req.userName || '', line);
     res.json({ success: true, id: info.lastInsertRowid });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -38108,7 +38127,8 @@ app.get('/api/device-sms/outbox', deviceSmsAuth, (req, res) => {
     // 被别的设备取走不到 60 秒的先跳过，它没回报结果才轮得到下一个。
     const rows = db.prepare(`SELECT id, to_address, peer, body, attempts, translate_to FROM device_sms_outbox
       WHERE status='pending' AND (taken_at IS NULL OR device_id=? OR taken_at < datetime('now','-60 seconds'))
-      ORDER BY id ASC LIMIT 10`).all(req.smsDevice.id);
+        AND (COALESCE(line,'')='' OR line=?)
+      ORDER BY id ASC LIMIT 10`).all(req.smsDevice.id, req.smsDevice.line || '');
     if (rows.length) {
       const mark = db.prepare(`UPDATE device_sms_outbox SET attempts=attempts+1, taken_at=datetime('now'), device_id=? WHERE id=?`);
       for (const row of rows) mark.run(req.smsDevice.id, row.id);
@@ -38335,6 +38355,10 @@ app.get('/api/device-sms/messages', requireAdmin, requireRole('admin', 'cs'), (r
     const params = [];
     if (minRisk > 0) { where += ' AND COALESCE(m.risk_score,0) >= ?'; params.push(minRisk); }
     if (peer) { where += ' AND m.peer = ?'; params.push(peer); }
+    // line=10 位号码只看那个号; line=none 只看没标号码的设备
+    const lineQ = String(req.query.line || '').trim();
+    const line = lineQ === 'none' ? 'none' : deviceSmsLine(lineQ);
+    if (line) { where += " AND m.device_id IN (SELECT id FROM device_sms_devices WHERE COALESCE(line,'')=?)"; params.push(line === 'none' ? '' : line); }
     if (String(req.query.starred || '') === '1') where += ' AND m.starred=1';
     if (q) {
       where += ' AND (m.body LIKE ? OR m.translated_body LIKE ? OR m.contact LIKE ? OR m.address LIKE ? OR n.alias LIKE ? OR n.note LIKE ?)';
@@ -38351,24 +38375,40 @@ app.get('/api/device-sms/messages', requireAdmin, requireRole('admin', 'cs'), (r
       WHERE ${where} ORDER BY m.sent_at DESC LIMIT ? OFFSET ?`).all(...params, limit, offset);
     const total = db.prepare(`SELECT COUNT(*) AS n FROM device_sms_messages m
       LEFT JOIN device_sms_peer_notes n ON n.peer = m.peer WHERE ${where}`).get(...params).n;
-    const devices = db.prepare('SELECT id, name, serial, last_push_at, message_count FROM device_sms_devices WHERE active=1').all();
+    const devices = db.prepare(`SELECT id, name, serial, last_push_at, message_count, active, COALESCE(line,'') AS line
+      FROM device_sms_devices WHERE active=1 OR message_count>0`).all();
+    // 号码切换条: 每个号码有几个会话没读 (进行中的)
+    const lines = db.prepare(`SELECT COALESCE(d.line,'') AS line, COALESCE(l.label,'') AS label,
+        MAX(d.active) AS active, MAX(d.last_push_at) AS last_push_at,
+        (SELECT COUNT(DISTINCT m.peer) FROM device_sms_messages m
+           JOIN device_sms_devices d2 ON d2.id=m.device_id AND COALESCE(d2.line,'')=COALESCE(d.line,'')
+           LEFT JOIN device_sms_peer_notes n ON n.peer=m.peer
+          WHERE m.direction='in' AND COALESCE(n.status,'open')='open'
+            AND (n.read_at IS NULL OR m.sent_at > n.read_at)) AS unread
+      FROM device_sms_devices d LEFT JOIN device_sms_lines l ON l.line=d.line
+      WHERE d.active=1 OR d.message_count>0
+      GROUP BY COALESCE(d.line,'') ORDER BY COALESCE(d.line,'')=''`).all();
     // 还没发出去的 / 发失败的也一起给, 页面上排在对话末尾显示状态。
     // 刚发出去(sent)的也带上: 电脑发完到手机把真实短信推回来之间有几分钟空档,
     // 不带的话消息会先消失一阵, 像没发出去一样; 前端等真实消息到了自动去重隐藏。
-    const outbox = db.prepare(`SELECT id, to_address, peer, body, status, note, created_at FROM device_sms_outbox
-      WHERE status IN ('pending','failed')
-         OR (status='sent' AND done_at >= datetime('now','-2 days'))
-      ORDER BY id ASC LIMIT 100`).all();
+    const outbox = db.prepare(`SELECT id, to_address, peer, body, status, note, created_at, COALESCE(line,'') AS line FROM device_sms_outbox
+      WHERE (status IN ('pending','failed')
+         OR (status='sent' AND done_at >= datetime('now','-2 days')))
+        ${line && line !== 'none' ? "AND (COALESCE(line,'')='' OR line=?)" : ''}
+      ORDER BY id ASC LIMIT 100`).all(...(line && line !== 'none' ? [line] : []));
     const notes = db.prepare(`SELECT peer, alias, note, tags, status, contact_lang, agent_lang,
       auto_translate, read_at, spoken_langs, ratings, us_state FROM device_sms_peer_notes`).all();
-    res.json({ messages: rows.reverse(), devices, outbox, notes, total, offset, limit });
+    res.json({ messages: rows.reverse(), devices, lines, outbox, notes, total, offset, limit });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // GET/POST/DELETE /api/device-sms/devices — 令牌管理 (明文令牌只在创建时返回一次)
 app.get('/api/device-sms/devices', requireAdmin, requireRole('admin'), (req, res) => {
   try {
-    res.json({ devices: db.prepare('SELECT id, name, serial, active, last_push_at, message_count, created_at FROM device_sms_devices ORDER BY id DESC').all() });
+    res.json({
+      devices: db.prepare(`SELECT id, name, serial, active, last_push_at, message_count, created_at, COALESCE(line,'') AS line FROM device_sms_devices ORDER BY id DESC`).all(),
+      lines: db.prepare('SELECT line, label FROM device_sms_lines').all()
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -38378,6 +38418,26 @@ app.post('/api/device-sms/devices', requireAdmin, requireRole('admin'), (req, re
     const token = crypto.randomBytes(32).toString('hex');
     const info = db.prepare('INSERT INTO device_sms_devices (name, token_hash) VALUES (?,?)').run(name, deviceSmsHashToken(token));
     res.json({ success: true, id: info.lastInsertRowid, name, token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/device-sms/devices/:id — 改设备名 / 标它连的是哪个手机号 (号码的备注名一起存)
+app.post('/api/device-sms/devices/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const body = req.body || {};
+    const dev = db.prepare('SELECT id FROM device_sms_devices WHERE id=?').get(req.params.id);
+    if (!dev) return res.status(404).json({ error: '没有这台设备' });
+    if (body.name !== undefined) db.prepare('UPDATE device_sms_devices SET name=? WHERE id=?').run(String(body.name).trim().slice(0, 60), dev.id);
+    if (body.line !== undefined) {
+      const line = deviceSmsLine(body.line);
+      if (String(body.line).trim() && !line) return res.status(400).json({ error: '手机号要 10 位数字' });
+      db.prepare('UPDATE device_sms_devices SET line=? WHERE id=?').run(line, dev.id);
+      if (line && body.label !== undefined) {
+        db.prepare(`INSERT INTO device_sms_lines (line, label) VALUES (?,?) ON CONFLICT(line) DO UPDATE SET label=excluded.label`)
+          .run(line, String(body.label).trim().slice(0, 30));
+      }
+    }
+    res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -44719,6 +44779,29 @@ function _wobZelle(row) {
   if (Array.isArray(list) && list.length) return list;
   return row && row.zelle_account ? [{ account: row.zelle_account, name: row.zelle_name || '', at: '', by: '' }] : [];
 }
+// Zelle / Cash App 审核用: 账号去掉符号比 (电话只留 10 位数字), 名字拆成词比 (不管顺序 / 大小写 / 重音)
+function _wobAccKey(v) {
+  const t = String(v || '').trim().toLowerCase().replace(/\s/g, '');
+  if (!t || t.includes('@') || t.startsWith('$')) return t;
+  const d = t.replace(/\D/g, '');
+  return d.length === 11 && d[0] === '1' ? d.slice(1) : (/[a-z]/.test(t) ? t : d);
+}
+const _wobNameWords = v => String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/[^a-z]+/).filter(Boolean);
+// 户主名字和这些名字 (工人 / 员工档案 / 发票上的) 比: ok = 词都对得上 (多个中间名不算错), partial = 只有部分词一样 (比如同姓), no = 完全不像
+function _wobHolderMatch(holder, names) {
+  const h = _wobNameWords(holder);
+  if (!h.length) return 'no';
+  let best = 'no';
+  for (const n of names) {
+    const w = _wobNameWords(n);
+    if (!w.length) continue;
+    const common = h.filter(x => w.includes(x)).length;
+    if (common >= 2 && (common === h.length || common === w.length)) return 'ok';
+    if (h.join('') === w.join('')) return 'ok';
+    if (common) best = 'partial';
+  }
+  return best;
+}
 function _wobJson(v, dflt) { try { const x = JSON.parse(v || ''); return x == null ? dflt : x; } catch (e) { return dflt; } }
 // 员工档案索引: id → 摘要; 名字 (名姓 / 姓名 / 带中间名, 只留字母) → [id]
 function _wobEmployees() {
@@ -44867,13 +44950,36 @@ function _wobBuild() {
   }
   const bankByKey = {};
   for (const b of bank) if (b.key) (bankByKey[b.key] = bankByKey[b.key] || []).push(b);
+  // 同一个 Zelle / Cash App 账号登记在几个人名下 (全部工人, 不分仓库)
+  const accUsers = {};
+  for (const r of db.prepare(`SELECT name_key, name, zelle_accounts, zelle_account, zelle_name FROM new_hire_onboarding`).all()) {
+    for (const z of _wobZelle(r)) {
+      const k = _wobAccKey(z.account);
+      if (!k) continue;
+      const arr = accUsers[k] = accUsers[k] || [];
+      if (!arr.some(u => u.key === r.name_key)) arr.push({ key: r.name_key, name: r.name || r.name_key });
+    }
+  }
   for (const w of list) {
     w.emails = approved[w.key] || [];
     w.email_proposals = proposed[w.key] || [];
     w.checklist = wob.buildChecklist({ contractor: w.gusto && w.gusto.link ? { raw: w.gusto.raw || {} } : null,
       emails: w.emails, pendingEmails: w.email_proposals, manual: w.manual, firstPayment: w.first_payment });
     if (w.gusto) delete w.gusto.raw;
-    w.pending_review = (w.gusto_proposal ? 1 : 0) + (w.employee_proposals.length ? 1 : 0) + w.email_proposals.length;
+    // Zelle / Cash App 账号的审核信息: 户主名字对不对、同一个账号还有谁在用、截图读到的对不对
+    const names = [w.name, ...(w.invoice_names || []), w.employee && w.employee.name].filter(Boolean);
+    for (const z of [...w.zelle_accounts, ...w.cashapp_accounts]) {
+      z.name_match = _wobHolderMatch(z.name, names);
+      z.dup_with = (accUsers[_wobAccKey(z.account)] || []).filter(u => u.key !== w.key).map(u => u.name);
+      if (z.read && (z.read.account || z.read.name)) {
+        z.read_acc_ok = !z.read.account || _wobAccKey(z.read.account) === _wobAccKey(z.account);
+        z.read_name_ok = !z.read.name || _wobHolderMatch(z.read.name, [z.name]) === 'ok';
+      }
+    }
+    const curAccs = w.pay_method === 'zelle' ? w.zelle_accounts : w.pay_method === 'cashapp' ? w.cashapp_accounts : [];
+    w.pay_review = curAccs.filter(z => !z.ok && !z.rejected).length;
+    w.pay_rejected = curAccs.filter(z => z.rejected).length;
+    w.pending_review = (w.gusto_proposal ? 1 : 0) + (w.employee_proposals.length ? 1 : 0) + w.email_proposals.length + w.pay_review;
     w.bank_alerts = bankByKey[w.key] || [];
     w.bank_alert_open = w.bank_alerts.filter(b => !b.ack_at).length;
     // 第一步一律是关联员工档案; 关联了才看付款方式。
@@ -45040,6 +45146,7 @@ function _wobPendingChanges() {
       if (what === 'employee') out.items.push(`${b.approve ? '通过' : '否掉'}系统匹配的员工档案：${empName(b.id)}`);
       if (what === 'gusto') out.items.push(`${b.approve ? '通过' : '否掉'}系统匹配的 Gusto 收款人：${gName(b.uuid)}`);
       if (what === 'email') { out.items.push(`${b.approve ? '通过' : '否掉'}邮件对人：${evTxt(evOf(b.event_id))}`); out.event_ids.push(parseInt(b.event_id, 10)); }
+      if (what === 'zelle') out.items.push(`${b.approve ? '通过' : '否掉'}收款账号：${b.type === 'cashapp' ? 'Cash App' : 'Zelle'} ${b.account}${b.note ? '（' + b.note + '）' : ''}`);
       if (what === 'phone') out.items.push(`${b.approve ? '通过' : '否掉'}电话：${b.phone_value}`);
       if (b.step) { const st = wob.GUSTO_STEPS.find(x => x.id === b.step); out.items.push(`清单${b.checked ? '打勾' : '取消打勾'}：${st ? st.label : b.step}`); }
     } else if (p === '/api/acct/onboarding-email-assign') {
@@ -45208,7 +45315,11 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       const list = (Array.isArray(b[field]) ? b[field] : []).slice(0, 10)
         // 截图可以多张: shots 数组 (旧的单张 shot 也认)
         .map(z => ({ account: str(z && z.account, 120), name: str(z && z.name, 120),
+          read: z && z.read && typeof z.read === 'object' ? { account: str(z.read.account, 120), name: str(z.read.name, 120) } : null,
           shots: [...new Set([...(Array.isArray(z && z.shots) ? z.shots : []), z && z.shot].map(v => str(v, 80))
+            .filter(v => /^[a-f0-9]{32}\.(jpg|png|webp)$/.test(v) && fs.existsSync(path.join(_wobShotDir, v))))].slice(0, 10),
+          // 聊天记录截图: 为什么可以把钱付到这个账号 (工人自己说的 / 同意付给家里人)
+          chat_shots: [...new Set((Array.isArray(z && z.chat_shots) ? z.chat_shots : []).map(v => str(v, 80))
             .filter(v => /^[a-f0-9]{32}\.(jpg|png|webp)$/.test(v) && fs.existsSync(path.join(_wobShotDir, v))))].slice(0, 10) }))
         .filter(z => z.account || z.name);
       if (list.some(z => !z.account || !z.name)) return res.status(400).json({ error: `每个 ${label} 账号都要填 ${label} 号和户主姓名` });
@@ -45217,9 +45328,24 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
         const o = old.find(x => x.account === z.account && x.name === z.name);
         const shots = z.shots.length ? z.shots : (o ? (o.shots || (o.shot ? [o.shot] : [])) : []);
         if (!shots.length) return res.status(400).json({ error: `${label} ${z.account} 要上传截图（${label} 里显示账号和名字的那一页）` });
-        merged.push(o ? { ...o, type, shots, shot: shots[0] } : { type, account: z.account, name: z.name, shots, shot: shots[0], at: new Date().toISOString(), by: req.userName || '' });
+        // 新登记的账号还要聊天记录截图; 以前登记的没有也能存 (审核时标出来)
+        const chat_shots = z.chat_shots.length ? z.chat_shots : ((o && o.chat_shots) || []);
+        if (!chat_shots.length && !o) return res.status(400).json({ error: `${label} ${z.account} 要上传聊天记录截图（工人说可以付到这个账号的那段聊天）` });
+        // 账号或名字改了就是新账号, 要重新审核; 截图读到的结果留着给审核的人对照
+        const read = z.read && (z.read.account || z.read.name) ? z.read : (o && o.read) || null;
+        merged.push(o ? { ...o, type, shots, shot: shots[0], chat_shots, read } : { type, account: z.account, name: z.name, shots, shot: shots[0], chat_shots, read, at: new Date().toISOString(), by: req.userName || '' });
       }
       next.zelle_accounts = JSON.stringify([...others, ...merged]);
+    }
+    // 审核 Zelle / Cash App 账号: 通过 / 不对 (不对要写原因, 让填的人改)
+    if (b.approve === 'zelle' || b.reject === 'zelle') {
+      const all = _wobJson(next.zelle_accounts, []);
+      const type = b.type === 'cashapp' ? 'cashapp' : 'zelle';
+      const z = all.find(x => (x.type || 'zelle') === type && x.account === str(b.account, 120));
+      if (!z) return res.status(404).json({ error: '这个账号已经改过了，刷新再看' });
+      if (b.approve) Object.assign(z, { ok: 1, ok_by: req.userName || '', ok_at: now, rejected: 0, reject_note: '' });
+      else Object.assign(z, { ok: 0, ok_by: req.userName || '', ok_at: now, rejected: 1, reject_note: str(b.note, 300) });
+      next.zelle_accounts = JSON.stringify(all);
     }
     if (b.pay_note !== undefined) next.pay_note = str(b.pay_note, 1000);
     // 手动选 Gusto 收款人: manager / admin 选的直接算通过, 其他人选的进待审核
@@ -45353,7 +45479,8 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       if (String(a) !== String(z)) logs.push([label, `${fmt ? fmt(a) : (a || '空')} → ${fmt ? fmt(z) : (z || '空')}`]); };
     chg('pay_method', '付款方式', v => PM[v] || v);
     const zl = v => { const a = _wobJson(v, []); return a.length ? a.map(z => `${z.type === 'cashapp' ? 'Cash App ' : 'Zelle '}${z.account}（${z.name}）`).join('、') : '无'; };
-    if (zl(JSON.stringify(_wobZelle(cur))) !== zl(next.zelle_accounts)) logs.push(['Zelle / Cash App 账号', `${zl(JSON.stringify(_wobZelle(cur)))} → ${zl(next.zelle_accounts)}`]);
+    if (b.approve === 'zelle' || b.reject === 'zelle') logs.push([b.approve ? '审核通过收款账号' : '收款账号不对', `${b.type === 'cashapp' ? 'Cash App' : 'Zelle'} ${b.account}${b.reject && b.note ? '：' + str(b.note, 300) : ''}`]);
+    else if (zl(JSON.stringify(_wobZelle(cur))) !== zl(next.zelle_accounts)) logs.push(['Zelle / Cash App 账号', `${zl(JSON.stringify(_wobZelle(cur)))} → ${zl(next.zelle_accounts)}`]);
     chg('warehouse', '仓库'); chg('pay_note', '备注'); chg('name', '名字');
     const empName = id => { if (!id) return '无'; const e = db.prepare('SELECT first_name, last_name, employee_id FROM employees WHERE id=?').get(id); return e ? `${e.first_name} ${e.last_name}${e.employee_id ? ' ' + e.employee_id : ''}` : '#' + id; };
     const gName = u => { if (!u) return '无'; const c = db.prepare('SELECT name FROM gusto_contractors WHERE uuid=?').get(u); return c ? c.name : u; };
