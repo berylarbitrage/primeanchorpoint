@@ -45754,14 +45754,17 @@ app.post('/api/hooks/gusto-mail', (req, res) => {
         const date = /^\d{4}-\d{2}-\d{2}/.test(String(m.date || '')) ? String(m.date).slice(0, 10) : new Date().toISOString().slice(0, 10);
         if (seen.get(id)) { results.push({ id, new: false, forward: false }); continue; }
         const ev = wob.parseGustoEmails(subject, date)[0] || null;
+        let inserted = 0;
         if (ev) {
           ev.date = date;
           const oldBank = backfill && /^bank_/.test(ev.kind) && date < oldCut;
-          added += ins.run(ev.kind, ev.name, ev.date, ev.subject, backfill ? '邮箱同步（历史邮件）' : '邮箱自动同步',
+          inserted = ins.run(ev.kind, ev.name, ev.date, ev.subject, backfill ? '邮箱同步（历史邮件）' : '邮箱自动同步',
             backfill ? 'backfill' : '', oldBank ? '历史邮件（自动）' : '', oldBank ? new Date().toISOString() : '').changes;
+          added += inserted;
         }
         mark.run(id, ev ? ev.kind : '', ev ? ev.name : '', subject, String(m.date || ''));
-        results.push({ id, new: true, forward: !!ev && !backfill, kind: ev ? ev.kind : '', name: ev ? ev.name : '', label: ev ? wob.EMAIL_KIND_LABEL[ev.kind] : '',
+        // 同一天同一个人同一种邮件已经记过了 (Gusto 重复发 / 同一封在别的线程里) = 重复: 不再转发、不再算新的
+        results.push({ id, new: true, dup: !!ev && !inserted, forward: !!ev && !backfill && inserted > 0, kind: ev ? ev.kind : '', name: ev ? ev.name : '', label: ev ? wob.EMAIL_KIND_LABEL[ev.kind] : '',
           _subject: subject, _date: date, _body: String((m && m.body) || '').slice(0, 3000) });
       }
     })();
@@ -45800,7 +45803,9 @@ async function _wobForwardMail(list, to) {
 app.get('/api/acct/onboarding-mailhook', requireAdmin, requireWobView, (req, res) => {
   const cfg = _mailHookCfg();
   const isAdmin = req.userRole === 'admin';
-  const recent = db.prepare(`SELECT kind, name, subject, received_at, created_at FROM gusto_mail_seen WHERE kind!='' ORDER BY created_at DESC LIMIT 15`).all();
+  // 同一天同一个人同一种邮件只列一次 (重复的邮件不再列出来)
+  const recent = db.prepare(`SELECT kind, name, MAX(subject) AS subject, MAX(received_at) AS received_at, MAX(created_at) AS created_at FROM gusto_mail_seen
+    WHERE kind!='' GROUP BY kind, LOWER(name), substr(received_at, 1, 10) ORDER BY MAX(created_at) DESC LIMIT 15`).all();
   res.json({ configured: !!cfg.token, is_admin: isAdmin, forward_to: cfg.forward_to || [], subscribers: isAdmin ? _wobSubscribers() : [],
     hook_url: isAdmin && cfg.token ? _mailHookUrl(req, cfg.token) : '',
     last_at: cfg.last_at || '', last_received: cfg.last_received || 0, last_added: cfg.last_added || 0,
@@ -45809,6 +45814,31 @@ app.get('/api/acct/onboarding-mailhook', requireAdmin, requireWobView, (req, res
     script_version: cfg.script_version || '', last_error: cfg.last_error || '', last_error_at: cfg.last_error_at || '',
     last_forward_at: cfg.last_forward_at || '', last_forward_ok: cfg.last_forward_ok || 0, last_forward_error: cfg.last_forward_error || '',
     total_seen: db.prepare('SELECT COUNT(*) AS n FROM gusto_mail_seen').get().n, recent });
+});
+// 补发以前的入职相关 Gusto 邮件 (后来才加进转发名单的人收不到以前的): 系统只存了标题, 没有原邮件正文。
+// mode=digest 一封汇总 (默认); mode=each 一封一封发
+app.post('/api/acct/onboarding-mailhook/resend', requireAdmin, requireRole('admin'), async (req, res) => {
+  try {
+    const to = String((req.body || {}).to || '').trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return res.status(400).json({ error: '邮箱格式不对' });
+    const mode = (req.body || {}).mode === 'each' ? 'each' : 'digest';
+    const rows = db.prepare(`SELECT kind, name, date, subject FROM gusto_email_events WHERE kind IN ('accepted','ready','bank_bad','bank_updated') ORDER BY date DESC, id DESC`).all();
+    if (!rows.length) return res.status(400).json({ error: '还没有入职相关的 Gusto 邮件' });
+    const base = (process.env.BASE_URL || '').replace(/\/$/, '');
+    const line = r => `${r.date} · ${wob.EMAIL_KIND_LABEL[r.kind] || r.kind} · ${r.name}\n    ${r.subject}`;
+    let ok = 0, fail = '';
+    const send = async (subject, text) => { const d = await sendEmailWithDetail(to, subject, text).catch(e => ({ ok: false, error: e.message })); if (d && d.ok) ok++; else fail = (d && d.error) || '发送失败'; };
+    if (mode === 'digest') {
+      await send(`[入职] 以前的 Gusto 入职邮件汇总（${rows.length} 封）`,
+        `以下是系统里记下的所有入职相关 Gusto 邮件（新的在前）。系统只存了邮件标题，没有原邮件正文。\n\n${rows.map(line).join('\n\n')}\n\n— 新员工入职页: ${base}/onboarding`);
+    } else {
+      for (const r of rows.slice(0, 300)) await send(`[入职] ${wob.EMAIL_KIND_LABEL[r.kind] || r.kind} · ${r.name} — ${r.subject}`.slice(0, 250),
+        `Gusto 邮件 ${r.date}: ${r.subject}\n\n（补发：系统只存了邮件标题，没有原邮件正文）\n\n— 新员工入职页: ${base}/onboarding`);
+    }
+    auditLog('gusto_mail_resend', req, { targetType: 'app_settings', targetId: 'gusto_mail_hook', details: { to, mode, count: rows.length, ok, fail } });
+    if (!ok) return res.status(502).json({ error: '发送失败：' + fail });
+    res.json({ ok: true, count: rows.length, sent: ok, error_note: fail });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/acct/onboarding-mailhook', requireAdmin, requireRole('admin'), (req, res) => {
   const b = req.body || {};
