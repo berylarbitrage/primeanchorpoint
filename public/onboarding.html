@@ -367,7 +367,7 @@ function renderInvs() {
     <button class="ic ${v.id === INV ? 'on' : ''} ${v.unsettled ? 'left' : 'ok'}" onclick="INV=${v.id};load()">
       <span class="co">${esc(v.company || '—')}</span><b>📄 ${esc(v.invoice_number)}</b>
       <span>${md(v.period_start)}–${md(v.period_end)} · ${v.workers} 人${v.total != null ? ' · ' + money(v.total) : ''}</span>
-      <span class="cnt">${v.unsettled ? `<span class="tag" style="background:#fef3c7;color:#92400e">待定 ${v.unsettled}</span>` : ''}<span class="tag" style="background:#dcfce7;color:#166534">已定 ${v.settled}</span>${v.new ? `<span class="tag" style="background:#e0f2fe;color:#075985">🆕 新 ${v.new}</span>` : ''}${v.review ? `<span class="tag" style="background:#eef2ff;color:#3730a3">🔎 审核 ${v.review}</span>` : ''}</span>
+      <span class="cnt">${v.unsettled ? `<span class="tag" style="background:#fef3c7;color:#92400e">待定 ${v.unsettled}</span>` : ''}<span class="tag" style="background:#dcfce7;color:#166534">已定 ${v.settled}</span>${v.new ? `<span class="tag" style="background:#e0f2fe;color:#075985">🆕 新 ${v.new}</span>` : ''}${v.review ? `<span class="tag" style="background:#eef2ff;color:#3730a3">🔎 审核 ${v.review}</span>` : ''}${v.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff" title="关联的员工档案和发票（${esc(v.state)}）不是一个州">⚠ 州不对 ${v.state_bad}</span>` : ''}</span>
     </button>`).join('') + '</div>';
 }
 function renderList() {
@@ -394,7 +394,7 @@ function oldRow(w, k) {
   const pm = Object.keys(PM_LABEL).map(m => `<button ${pdis} title="${w.employee ? '' : '先关联员工档案'}" class="${w.pay_method === m ? 'on' : ''}" onclick="pickPay(${k},'${w.pay_method === m ? '' : m}')">${PM_LABEL[m]}</button>`).join('');
   return `<div class="card old ${w.settled ? 'done' : ''}" style="${w.bank_alert_open ? 'border-left-color:var(--red)' : ''}">
     <b>${esc(w.name)}</b><span class="tag" style="background:var(--g100);color:var(--g600)">老员工 · 第一次 ${esc(w.first_end)}</span>
-    ${w.employee ? `<span class="tag" style="background:#dcfce7;color:#166534">👤 ${esc(w.employee.code || '#' + w.employee.id)}${w.employee.phone ? ' · ' + esc(w.employee.phone) : ''}</span>` : '<span class="tag" style="background:#fee2e2;color:#991b1b">未关联档案</span>'}
+    ${w.employee ? `<span class="tag" style="background:#dcfce7;color:#166534">👤 ${esc(w.employee.code || '#' + w.employee.id)}${w.employee.phone ? ' · ' + esc(w.employee.phone) : ''}</span>` : '<span class="tag" style="background:#fee2e2;color:#991b1b">未关联档案</span>'}${w.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff" title="发票是 ${esc((w.inv_states || []).join(' / '))}，档案是 ${esc(w.employee.state)}">⚠ 州不一致：发票 ${esc((w.inv_states || []).join('/'))} · 档案 ${esc(w.employee.state)}</span>` : ''}
     <span class="muted">${w.line.hours ? w.line.hours + 'h' : ''}${w.line.total != null ? ' · ' + money(w.line.total) : ''}</span>
     ${w.pending_review ? `<button class="tag" style="background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;cursor:pointer" title="展开去审核" onclick="EXP.add(D.rows[${k}].key);renderList()">🔎 ${w.pending_review} 条待审核 →</button>` : ''}
     ${w.settled ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ ${esc(PM_LABEL[w.pay_method] || 'Gusto 已付过')}</span>` : '<span class="tag" style="background:#fef3c7;color:#92400e">付款方式待定</span>'}
@@ -454,10 +454,10 @@ function card(w, k) {
   const bankBox = w.bank_alerts.length ? `<div class="ck" style="grid-template-columns:1fr;background:#fef2f2">${w.bank_alerts.map(b => `<div class="row" style="margin:0">
       <span class="tag" style="background:${b.ack_at ? 'var(--g100);color:var(--g500)' : '#fee2e2;color:#991b1b'}">⚠ ${esc(b.date)} · ${esc(b.label)}</span><span class="muted">${esc(b.subject)}</span>
       ${b.ack_at ? `<span class="muted">${esc(b.ack_by)} 已处理 ${esc(fmtTime(b.ack_at))}</span>` : clearAsk(b, '') + (D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="ackBank(${b.id})">知道了</button>` : '')}</div>`).join('')}</div>` : '';
-  return `<div class="card w ${w.done ? 'done' : ''} ${bad ? 'bad' : ''}">
+  return `<div class="card w ${w.done ? 'done' : ''} ${bad || w.state_bad ? 'bad' : ''}">
     <div class="w-main">
       <div>
-        <div class="row" style="margin-bottom:.15rem"><span class="name">${esc(w.name)}</span>${w.line && w.is_new ? '<span class="tag" style="background:#e0f2fe;color:#075985">🆕 新</span>' : ''}${w.done ? '<span class="tag" style="background:#dcfce7;color:#166534">✓ 已处理</span>' : '<span class="tag" style="background:#fef3c7;color:#92400e">待处理</span>'}${w.pending_review ? `<span class="tag" style="background:#eef2ff;color:#3730a3">🔎 ${w.pending_review} 条待审核</span>` : ''}${w.bank_alert_open ? '<span class="tag" style="background:#fee2e2;color:#991b1b">⚠ 银行信息</span>' : ''}
+        <div class="row" style="margin-bottom:.15rem"><span class="name">${esc(w.name)}</span>${w.line && w.is_new ? '<span class="tag" style="background:#e0f2fe;color:#075985">🆕 新</span>' : ''}${w.done ? '<span class="tag" style="background:#dcfce7;color:#166534">✓ 已处理</span>' : '<span class="tag" style="background:#fef3c7;color:#92400e">待处理</span>'}${w.pending_review ? `<span class="tag" style="background:#eef2ff;color:#3730a3">🔎 ${w.pending_review} 条待审核</span>` : ''}${w.bank_alert_open ? '<span class="tag" style="background:#fee2e2;color:#991b1b">⚠ 银行信息</span>' : ''}${w.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff">⚠ 州不一致</span>` : ''}
           <button class="btn btn-outline btn-sm" onclick="showHistory(${k})">📜 历史</button></div>
         ${alias.length ? `<div class="muted">发票上写作：${esc(alias.join(' / '))}</div>` : ''}
         <div class="muted">第一次上账单：${esc(w.first_end)}${w.later_invoices ? ` · 之后还有 ${w.later_invoices} 张` : ''}</div>
@@ -580,6 +580,12 @@ async function ignoreEmail(evId, on) {
 
 async function save(k, body) {
   const j = await api('/api/acct/onboarding/' + encodeURIComponent(D.rows[k].key), { method: 'POST', body }).catch(e => ({ error: e.message }));
+  // 员工档案和发票不是一个州: 报错, 确认了才关联
+  if (j.state_mismatch) {
+    confirmBox('⚠ 州不一致', `<div style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:8px;padding:.55rem .7rem;font-size:.88rem;font-weight:700">${esc(j.error)}</div>
+      <div class="muted" style="margin-top:.45rem">${esc(D.rows[k].name)}：一般是关联错了人。确定是同一个人（例如换了州上班）才点「确定」。</div>`, () => save(k, { ...body, force_state: true }));
+    return false;
+  }
   if (j.error) { toast(j.error, true); return false; }
   toast('已保存');
   load();
@@ -848,7 +854,8 @@ async function showHistory(k) {
 // 员工档案: 已关联就显示档案摘要; 否则列出系统按名字找到的 (待审核) + 手动关联按钮
 function empBlock(w, k) {
   const e = w.employee;
-  const info = x => `<b>${esc(x.name)}</b>${x.code ? ` <span class="muted">${esc(x.code)}</span>` : ''}<br><span class="muted">📞 ${esc(x.phone || '档案里没有电话')}${x.status && x.status !== 'active' ? ' · ' + esc(x.status) : ''}${x.timeclock_code ? ' · 打卡码 ' + esc(x.timeclock_code) : ''}</span>`;
+  const info = x => `<b>${esc(x.name)}</b>${x.code ? ` <span class="muted">${esc(x.code)}</span>` : ''}<br><span class="muted">📞 ${esc(x.phone || '档案里没有电话')}${x.status && x.status !== 'active' ? ' · ' + esc(x.status) : ''}${x.timeclock_code ? ' · 打卡码 ' + esc(x.timeclock_code) : ''}${x.state ? ' · ' + esc(x.state) + ' 州' : ''}</span>`
+    + (x.state_bad ? `<br><span style="display:inline-block;margin-top:.15rem;background:#dc2626;color:#fff;border-radius:6px;padding:.05rem .45rem;font-weight:700">⚠ 州不一致：发票是 ${esc((w.inv_states || []).join(' / '))}，档案是 ${esc(x.state)}（${esc(x.state_src)}）</span>` : '');
   const btn = D.can_edit ? `<button class="btn btn-outline btn-sm" onclick="pickEmployee(${k})">${e ? '改关联' : '关联员工档案'}</button>` : '';
   if (e) return `<div class="row" style="align-items:flex-start;margin:0"><span class="tag" style="background:#dcfce7;color:#166534;font-size:.78rem;padding:.2rem .6rem;line-height:1.4;text-align:left">👤 ${info(e)}</span></div>
     <div class="row" style="margin:.2rem 0 0"><span class="muted">${esc(e.by)} 通过</span>${D.can_open_employee ? `<a class="btn btn-outline btn-sm" href="/admin.html?emp=${e.id}" target="_blank">打开档案 ↗</a>` : ''}${btn}</div>`;
@@ -907,7 +914,8 @@ function eSearch(k) {
     el.innerHTML = (j.employees || []).map(e => { const [sl, sb, sc] = st(e.status); return `<div class="ecard">
         <div class="row" style="justify-content:space-between;margin:0;align-items:flex-start">
           <div><b style="font-size:.95rem">${esc(e.name)}</b> <span class="tag" style="background:${sb};color:${sc}">${esc(sl)}</span>
-            <div class="muted" style="margin-top:.1rem">${esc(e.code || '没有员工编号')}${e.work_state ? ' · 工作州 ' + esc(e.work_state) : ''}</div></div>
+            <div class="muted" style="margin-top:.1rem">${esc(e.code || '没有员工编号')}${e.work_state ? ' · 工作州 ' + esc(e.work_state) : ''}</div>
+            ${(() => { const inv = D.rows[k].inv_states || [], es = e.work_state || String(e.state || '').toUpperCase(); return es && inv.length && !inv.includes(es) ? `<div style="margin-top:.2rem;display:inline-block;background:#dc2626;color:#fff;border-radius:6px;padding:.05rem .45rem;font-size:.76rem;font-weight:700">⚠ 州不一致：发票是 ${esc(inv.join(' / '))}，这个档案是 ${esc(es)}</div>` : ''; })()}</div>
           <div style="display:flex;gap:.3rem;flex:none">${j.can_phone_check && (e.phone || e.name) ? `<a class="btn btn-outline btn-sm" href="/phone-check.html?q=${encodeURIComponent((e.phone || '').replace(/\D/g, '').length >= 7 ? e.phone : e.name)}" target="_blank">Phone check ↗</a>` : ''}
             <button class="btn btn-blue btn-sm" onclick="document.getElementById('gModal').style.display='none';save(${k},{employee_id:${e.id}})">关联</button></div>
         </div>

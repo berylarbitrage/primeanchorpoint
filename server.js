@@ -44604,10 +44604,24 @@ try {
 } catch (e) { console.log('[migration] gusto bank notify backfill error:', e.message); }
 
 // 所有正式发票的工资行按人归并: key → { name, first_end, last_end, lines: [...] }
+// 发票是哪个州的: 发票号 INV-L-TX-… 第三段; 没有就看 Bill To 地址里的「TX 75060」
+function _wobInvState(r) {
+  const m = /^INV-[A-Z]+-([A-Z]{2})-/i.exec(String(r.invoice_number || ''));
+  if (m && _stateOf(m[1])) return _stateOf(m[1]);
+  const a = [...String(r.bill_to_addr || '').toUpperCase().matchAll(/\b([A-Z]{2})\s+\d{5}\b/g)].pop();
+  return a ? _stateOf(a[1]) : '';
+}
+// 员工档案是哪个州的: 员工编号 WRK-IL-… 里的工作州; 没有就用住址州
+function _wobEmpState(e) {
+  const m = /^WRK-([A-Z]{2})-/i.exec(String(e.employee_id || e.code || ''));
+  if (m && _stateOf(m[1])) return { state: _stateOf(m[1]), src: '员工编号' };
+  const st = _stateOf(e.state);
+  return st ? { state: st, src: '住址' } : { state: '', src: '' };
+}
 function _wobInvoicePeople() {
   const merges = _payrollMerges();
   const people = new Map();
-  const rows = db.prepare(`SELECT id, invoice_number, company_name, period_start, period_end, invoice_date, items_json, profile_json
+  const rows = db.prepare(`SELECT id, invoice_number, company_name, bill_to_addr, period_start, period_end, invoice_date, items_json, profile_json
     FROM invoices WHERE COALESCE(status,'')!='draft' ORDER BY id`).all();
   for (const r of rows) {
     let items = [], profile = {};
@@ -44628,7 +44642,7 @@ function _wobInvoicePeople() {
       p.names.add(raw);
       if (end < p.first_end) p.first_end = end;
       if (end > p.last_end) p.last_end = end;
-      p.lines.push({ invoice_id: r.id, invoice_number: r.invoice_number || '', company: r.company_name || '',
+      p.lines.push({ invoice_id: r.id, invoice_number: r.invoice_number || '', company: r.company_name || '', state: _wobInvState(r),
         period_start: String(r.period_start || '').slice(0, 10), period_end: end, hours: Math.round(hours * 100) / 100, total: Math.round(total * 100) / 100 });
     }
   }
@@ -44666,10 +44680,11 @@ function _wobJson(v, dflt) { try { const x = JSON.parse(v || ''); return x == nu
 // 员工档案索引: id → 摘要; 名字 (名姓 / 姓名 / 带中间名, 只留字母) → [id]
 function _wobEmployees() {
   const byId = {}, byName = {};
-  for (const e of db.prepare(`SELECT id, employee_id, first_name, middle_name, last_name, phone, status, timeclock_code
+  for (const e of db.prepare(`SELECT id, employee_id, first_name, middle_name, last_name, phone, status, timeclock_code, state
       FROM employees WHERE COALESCE(is_test,0)=0`).all()) {
     const name = [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ');
-    byId[e.id] = { id: e.id, name, code: e.employee_id || '', phone: e.phone || '', status: e.status || '', timeclock_code: e.timeclock_code || '' };
+    const st = _wobEmpState(e);
+    byId[e.id] = { id: e.id, name, code: e.employee_id || '', phone: e.phone || '', status: e.status || '', timeclock_code: e.timeclock_code || '', state: st.state, state_src: st.src };
     for (const n of [`${e.first_name} ${e.last_name}`, `${e.last_name} ${e.first_name}`, name, `${e.last_name} ${e.first_name} ${e.middle_name || ''}`]) {
       const k = _refNameKey(n);
       if (k.length < 4) continue;
@@ -44753,6 +44768,11 @@ function _wobBuild() {
       for (const n of [p.name, ...names]) for (const id of emps.byName[_refNameKey(n)] || []) if (!empRej.includes(id)) ids.add(id);
       empProposals = [...ids].slice(0, 5).map(id => ({ ...emps.byId[id], why: ids.size > 1 ? '同名的有好几个, 挑一个' : '名字一致' }));
     }
+    // 发票的州和员工档案的州对不上 → 标红 (多半是关联错了人)
+    const invStates = [...new Set(p.lines.map(l => l.state).filter(Boolean))];
+    const stBad = x => !!(x && x.state && invStates.length && !invStates.includes(x.state));
+    if (employee) employee.state_bad = stBad(employee);
+    empProposals.forEach(x => { x.state_bad = stBad(x); });
     list.push({
       key: p.key, name: s.name || p.name, invoice_names: names,
       first_end: p.first_end, last_end: p.last_end, week: firstWeek,
@@ -44760,6 +44780,7 @@ function _wobBuild() {
       warehouses: s.warehouse ? [s.warehouse] : [...new Set(firstLines.map(l => l.company).filter(Boolean))],
       warehouse_saved: s.warehouse || '',
       employee, employee_proposals: empProposals, phone: employee ? employee.phone : '', phone_old: s.phone || '',
+      inv_states: invStates, state_bad: !!(employee && employee.state_bad),
       pay_method: s.pay_method || '', pay_note: s.pay_note || '', suggest,
       zelle_accounts: _wobZelle(s), pay_history: _wobJson(s.pay_history, []), pay_since: s.pay_since || '',
       gusto, gusto_proposal: proposal, first_payment: firstPay, manual,
@@ -44940,7 +44961,7 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
         let inv = invMap.get(l.invoice_id);
         if (!inv) {
           inv = { id: l.invoice_id, invoice_number: l.invoice_number, company: l.company, period_start: l.period_start,
-            period_end: l.period_end, keys: new Set(), workers: 0, new: 0, new_open: 0, settled: 0, unsettled: 0, review: 0, total: 0 };
+            period_end: l.period_end, state: l.state || '', keys: new Set(), workers: 0, new: 0, new_open: 0, settled: 0, unsettled: 0, review: 0, state_bad: 0, total: 0 };
           invMap.set(l.invoice_id, inv);
         }
         inv.total = Math.round((inv.total + l.total) * 100) / 100;
@@ -44950,6 +44971,7 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
         if (w.week === week) { inv.new++; if (!w.done) inv.new_open++; }
         if (w.settled) inv.settled++; else inv.unsettled++;
         if (w.pending_review) inv.review++;
+        if (w.state_bad) inv.state_bad++;
       }
     }
     const invoices = [...invMap.values()].map(({ keys, ...x }) => x)
@@ -45071,8 +45093,20 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
         if (next.gusto_uuid === uuid) Object.assign(next, { gusto_uuid: '', gusto_ok: 0, gusto_ok_by: '', gusto_ok_at: '' });
       }
     }
+    // 员工档案的州 (员工编号里的工作州 / 住址州) 和这个人发票的州对不上 → 报错, 确认了 (force_state) 才关联
+    const stateErr = id => {
+      if (!id || b.force_state) return null;
+      const e = db.prepare('SELECT employee_id, first_name, last_name, state FROM employees WHERE id=?').get(id);
+      const es = e ? _wobEmpState(e) : { state: '' };
+      const w = _wobBuild().list.find(x => x.key === key);
+      const inv = (w && w.inv_states) || [];
+      if (!es.state || !inv.length || inv.includes(es.state)) return null;
+      return { error: `州不一致：发票是 ${inv.join(' / ')}，员工档案是 ${es.state}（${es.src}${e.employee_id ? ' ' + e.employee_id : ''}）。可能关联错了人`, state_mismatch: true, inv_states: inv, emp_state: es.state };
+    };
     // 手动选员工档案: manager / admin 选的直接算通过, 其他人选的进待审核
     if (b.employee_id !== undefined) {
+      const se = stateErr(parseInt(b.employee_id, 10) || null);
+      if (se) return res.status(409).json(se);
       const id = parseInt(b.employee_id, 10) || null;
       if (id && !db.prepare('SELECT 1 FROM employees WHERE id=?').get(id)) return res.status(404).json({ error: '找不到这个员工档案' });
       if (id && req.userRole === 'manager' && !_wobEmpVisible(req, id)) return res.status(403).json({ error: '这个员工档案不在你负责的范围' });
@@ -45082,6 +45116,7 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       const id = parseInt(b.id, 10) || 0;
       if (!id || !db.prepare('SELECT 1 FROM employees WHERE id=?').get(id)) return res.status(404).json({ error: '找不到这个员工档案' });
       if (b.approve && req.userRole === 'manager' && !_wobEmpVisible(req, id)) return res.status(403).json({ error: '这个员工档案不在你负责的范围' });
+      if (b.approve) { const se = stateErr(id); if (se) return res.status(409).json(se); }
       if (b.approve) Object.assign(next, { employee_id: id, emp_ok: 1, emp_ok_by: req.userName || '', emp_ok_at: now });
       else {
         const rej = _wobJson(next.emp_rejected, []);
