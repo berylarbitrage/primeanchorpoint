@@ -36123,6 +36123,17 @@ db.exec(`CREATE TABLE IF NOT EXISTS device_sms_aliases (
   PRIMARY KEY (device_id, remote_id)
 )`);
 
+// 多部手机号: 每台设备 (电脑 / 手机 App) 标上它连的是哪个手机号 (10 位数字)。
+// 同一个号可以有好几台设备 (电脑 + 手机 App), 它们之间才去重; 网页按号码切换,
+// 发短信也只交给那个号码的设备发。没标号码的设备按老规矩, 什么都收。
+try { db.exec(`ALTER TABLE device_sms_devices ADD COLUMN line TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE device_sms_outbox ADD COLUMN line TEXT DEFAULT ''`); } catch(e) {}
+db.exec(`CREATE TABLE IF NOT EXISTS device_sms_lines (
+  line TEXT PRIMARY KEY,
+  label TEXT DEFAULT ''
+)`);
+function deviceSmsLine(v) { const d = String(v || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : ''; }
+
 function deviceSmsHashToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
 }
@@ -37908,9 +37919,12 @@ app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
     // 同一设备自己的更新(remote_id 相同, 比如电脑补推译文)不受影响。
     const existsSelf = db.prepare('SELECT id FROM device_sms_messages WHERE device_id=? AND remote_id=?');
     const saveAlias = db.prepare(`INSERT OR REPLACE INTO device_sms_aliases (device_id, remote_id, message_id) VALUES (?,?,?)`);
+    // 只跟同一个手机号的设备去重: 两个号码各收到同一个人发的同一句话是两条真短信
     const existsOther = db.prepare(`SELECT id FROM device_sms_messages
       WHERE device_id != ? AND peer=? AND direction=? AND body=?
+        AND device_id IN (SELECT id FROM device_sms_devices WHERE COALESCE(line,'')=?)
         AND ABS(strftime('%s', sent_at) - strftime('%s', ?)) <= 180 LIMIT 1`);
+    const myLine = req.smsDevice.line || '';
 
     let saved = 0;
     const write = db.transaction((rows) => {
@@ -37924,7 +37938,7 @@ app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
         const sentIso = new Date(sentAt).toISOString();
         // 纯图片彩信没有正文, 也按同人同方向同时间去重 (电脑端和手机 App 都会推彩信)
         if ((bodyText.trim() || m.kind === 'mms') && !existsSelf.get(req.smsDevice.id, remoteId)) {
-          const dup = existsOther.get(req.smsDevice.id, peerKey, direction, bodyText, sentIso);
+          const dup = existsOther.get(req.smsDevice.id, peerKey, direction, bodyText, myLine, sentIso);
           if (dup) {
             saveAlias.run(req.smsDevice.id, remoteId, dup.id);
             continue;
@@ -38095,8 +38109,13 @@ app.post('/api/device-sms/send', requireAdmin, requireRole('admin', 'cs'), (req,
     // 字母开头的服务号码 (银行/快递) 回不了, 电脑那边也发不出去, 先在这里拦掉
     if (!/[0-9]/.test(to)) return res.status(400).json({ error: '这个号码不能回复短信（是服务号）' });
     const translateTo = String((req.body || {}).translate_to || '').slice(0, 40);
-    const info = db.prepare(`INSERT INTO device_sms_outbox (to_address, peer, body, translate_to, created_by) VALUES (?,?,?,?,?)`)
-      .run(to, peer, body, translateTo, req.userName || '');
+    // 用哪个手机号发: 不填 = 哪台设备都能发 (只有一个号时)
+    const line = deviceSmsLine((req.body || {}).line);
+    if (line && !db.prepare(`SELECT 1 FROM device_sms_devices WHERE line=? AND active=1`).get(line)) {
+      return res.status(400).json({ error: '这个手机号没有连着的设备，发不出去' });
+    }
+    const info = db.prepare(`INSERT INTO device_sms_outbox (to_address, peer, body, translate_to, created_by, line) VALUES (?,?,?,?,?,?)`)
+      .run(to, peer, body, translateTo, req.userName || '', line);
     res.json({ success: true, id: info.lastInsertRowid });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -38108,7 +38127,8 @@ app.get('/api/device-sms/outbox', deviceSmsAuth, (req, res) => {
     // 被别的设备取走不到 60 秒的先跳过，它没回报结果才轮得到下一个。
     const rows = db.prepare(`SELECT id, to_address, peer, body, attempts, translate_to FROM device_sms_outbox
       WHERE status='pending' AND (taken_at IS NULL OR device_id=? OR taken_at < datetime('now','-60 seconds'))
-      ORDER BY id ASC LIMIT 10`).all(req.smsDevice.id);
+        AND (COALESCE(line,'')='' OR line=?)
+      ORDER BY id ASC LIMIT 10`).all(req.smsDevice.id, req.smsDevice.line || '');
     if (rows.length) {
       const mark = db.prepare(`UPDATE device_sms_outbox SET attempts=attempts+1, taken_at=datetime('now'), device_id=? WHERE id=?`);
       for (const row of rows) mark.run(req.smsDevice.id, row.id);
@@ -38335,6 +38355,10 @@ app.get('/api/device-sms/messages', requireAdmin, requireRole('admin', 'cs'), (r
     const params = [];
     if (minRisk > 0) { where += ' AND COALESCE(m.risk_score,0) >= ?'; params.push(minRisk); }
     if (peer) { where += ' AND m.peer = ?'; params.push(peer); }
+    // line=10 位号码只看那个号; line=none 只看没标号码的设备
+    const lineQ = String(req.query.line || '').trim();
+    const line = lineQ === 'none' ? 'none' : deviceSmsLine(lineQ);
+    if (line) { where += " AND m.device_id IN (SELECT id FROM device_sms_devices WHERE COALESCE(line,'')=?)"; params.push(line === 'none' ? '' : line); }
     if (String(req.query.starred || '') === '1') where += ' AND m.starred=1';
     if (q) {
       where += ' AND (m.body LIKE ? OR m.translated_body LIKE ? OR m.contact LIKE ? OR m.address LIKE ? OR n.alias LIKE ? OR n.note LIKE ?)';
@@ -38351,24 +38375,40 @@ app.get('/api/device-sms/messages', requireAdmin, requireRole('admin', 'cs'), (r
       WHERE ${where} ORDER BY m.sent_at DESC LIMIT ? OFFSET ?`).all(...params, limit, offset);
     const total = db.prepare(`SELECT COUNT(*) AS n FROM device_sms_messages m
       LEFT JOIN device_sms_peer_notes n ON n.peer = m.peer WHERE ${where}`).get(...params).n;
-    const devices = db.prepare('SELECT id, name, serial, last_push_at, message_count FROM device_sms_devices WHERE active=1').all();
+    const devices = db.prepare(`SELECT id, name, serial, last_push_at, message_count, active, COALESCE(line,'') AS line
+      FROM device_sms_devices WHERE active=1 OR message_count>0`).all();
+    // 号码切换条: 每个号码有几个会话没读 (进行中的)
+    const lines = db.prepare(`SELECT COALESCE(d.line,'') AS line, COALESCE(l.label,'') AS label,
+        MAX(d.active) AS active, MAX(d.last_push_at) AS last_push_at,
+        (SELECT COUNT(DISTINCT m.peer) FROM device_sms_messages m
+           JOIN device_sms_devices d2 ON d2.id=m.device_id AND COALESCE(d2.line,'')=COALESCE(d.line,'')
+           LEFT JOIN device_sms_peer_notes n ON n.peer=m.peer
+          WHERE m.direction='in' AND COALESCE(n.status,'open')='open'
+            AND (n.read_at IS NULL OR m.sent_at > n.read_at)) AS unread
+      FROM device_sms_devices d LEFT JOIN device_sms_lines l ON l.line=d.line
+      WHERE d.active=1 OR d.message_count>0
+      GROUP BY COALESCE(d.line,'') ORDER BY COALESCE(d.line,'')=''`).all();
     // 还没发出去的 / 发失败的也一起给, 页面上排在对话末尾显示状态。
     // 刚发出去(sent)的也带上: 电脑发完到手机把真实短信推回来之间有几分钟空档,
     // 不带的话消息会先消失一阵, 像没发出去一样; 前端等真实消息到了自动去重隐藏。
-    const outbox = db.prepare(`SELECT id, to_address, peer, body, status, note, created_at FROM device_sms_outbox
-      WHERE status IN ('pending','failed')
-         OR (status='sent' AND done_at >= datetime('now','-2 days'))
-      ORDER BY id ASC LIMIT 100`).all();
+    const outbox = db.prepare(`SELECT id, to_address, peer, body, status, note, created_at, COALESCE(line,'') AS line FROM device_sms_outbox
+      WHERE (status IN ('pending','failed')
+         OR (status='sent' AND done_at >= datetime('now','-2 days')))
+        ${line && line !== 'none' ? "AND (COALESCE(line,'')='' OR line=?)" : ''}
+      ORDER BY id ASC LIMIT 100`).all(...(line && line !== 'none' ? [line] : []));
     const notes = db.prepare(`SELECT peer, alias, note, tags, status, contact_lang, agent_lang,
       auto_translate, read_at, spoken_langs, ratings, us_state FROM device_sms_peer_notes`).all();
-    res.json({ messages: rows.reverse(), devices, outbox, notes, total, offset, limit });
+    res.json({ messages: rows.reverse(), devices, lines, outbox, notes, total, offset, limit });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // GET/POST/DELETE /api/device-sms/devices — 令牌管理 (明文令牌只在创建时返回一次)
 app.get('/api/device-sms/devices', requireAdmin, requireRole('admin'), (req, res) => {
   try {
-    res.json({ devices: db.prepare('SELECT id, name, serial, active, last_push_at, message_count, created_at FROM device_sms_devices ORDER BY id DESC').all() });
+    res.json({
+      devices: db.prepare(`SELECT id, name, serial, active, last_push_at, message_count, created_at, COALESCE(line,'') AS line FROM device_sms_devices ORDER BY id DESC`).all(),
+      lines: db.prepare('SELECT line, label FROM device_sms_lines').all()
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -38378,6 +38418,26 @@ app.post('/api/device-sms/devices', requireAdmin, requireRole('admin'), (req, re
     const token = crypto.randomBytes(32).toString('hex');
     const info = db.prepare('INSERT INTO device_sms_devices (name, token_hash) VALUES (?,?)').run(name, deviceSmsHashToken(token));
     res.json({ success: true, id: info.lastInsertRowid, name, token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/device-sms/devices/:id — 改设备名 / 标它连的是哪个手机号 (号码的备注名一起存)
+app.post('/api/device-sms/devices/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const body = req.body || {};
+    const dev = db.prepare('SELECT id FROM device_sms_devices WHERE id=?').get(req.params.id);
+    if (!dev) return res.status(404).json({ error: '没有这台设备' });
+    if (body.name !== undefined) db.prepare('UPDATE device_sms_devices SET name=? WHERE id=?').run(String(body.name).trim().slice(0, 60), dev.id);
+    if (body.line !== undefined) {
+      const line = deviceSmsLine(body.line);
+      if (String(body.line).trim() && !line) return res.status(400).json({ error: '手机号要 10 位数字' });
+      db.prepare('UPDATE device_sms_devices SET line=? WHERE id=?').run(line, dev.id);
+      if (line && body.label !== undefined) {
+        db.prepare(`INSERT INTO device_sms_lines (line, label) VALUES (?,?) ON CONFLICT(line) DO UPDATE SET label=excluded.label`)
+          .run(line, String(body.label).trim().slice(0, 30));
+      }
+    }
+    res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
