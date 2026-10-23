@@ -6,7 +6,7 @@
 // 粘贴的 Gusto 通知邮件标题解析。数据装配和路由在 server.js。
 
 // 付款方式: gusto 要走入职检查清单; 其余只记一笔备注
-const PAY_METHODS = ['gusto', 'cash', 'check', 'zelle', 'cashapp', 'skip'];
+const PAY_METHODS = ['gusto', 'cash', 'check', 'zelle', 'cashapp', 'ach', 'skip'];
 
 // YYYY-MM-DD → 所在周的周一 (发票工资周期按周一开始)
 function weekStart(dateStr) {
