@@ -887,9 +887,10 @@ function pcBlock(list, compact) {
 function renderPChanges() {
   const all = D.pending_changes || [];
   const el = document.getElementById('pchanges');
-  if (!all.length) { el.innerHTML = ''; return; }
+  const dup = D.dup_closed ? `<div class="muted" style="margin:.1rem 0 .3rem">↺ 最近 7 天有 ${D.dup_closed} 条修改因为「已经是这个状态了 / 重复提交」被自动关掉了，<a href="/approvals" target="_blank" style="color:#0f4c6b">去待审批页「已处理」看原因，关错了可以恢复 ↗</a></div>` : '';
+  if (!all.length) { el.innerHTML = dup ? `<div class="card" style="margin-bottom:12px;padding:.5rem .9rem">${dup}</div>` : ''; return; }
   el.innerHTML = `<div class="card" style="margin-bottom:12px;border-color:#fcd34d;background:#fffbeb">
-    <div style="font-weight:800;color:#92400e;margin-bottom:.35rem">📝 等审批的修改（${all.length}）<span class="muted" style="font-weight:400"> — ${D.can_decide_changes ? '同意后才会生效；也可以在下面对应的工人卡片上直接审批' : '你提交的修改，等 staff / admin 同意后才会生效'}</span></div>
+    <div style="font-weight:800;color:#92400e;margin-bottom:.35rem">📝 等审批的修改（${all.length}）<span class="muted" style="font-weight:400"> — ${D.can_decide_changes ? '同意后才会生效；也可以在下面对应的工人卡片上直接审批' : '你提交的修改，等 staff / admin 同意后才会生效'}</span></div>${dup}
     ${all.map(c => `<div class="pc"><div class="pc-h"><b>📝 ${esc(c.by)}</b>${c.worker ? ` · 工人 <a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="jumpWorker('${encodeURIComponent(c.key)}')">${esc(c.worker)}</a>` : ''}
         <span class="muted">${esc(fmtTime(String(c.at).replace(' ', 'T') + 'Z'))}</span>
         ${D.can_decide_changes ? `<span class="pc-b"><button class="btn btn-sm" style="background:#16a34a;color:#fff" onclick="decideChange(${c.id},true)">✓ 同意</button><button class="btn btn-outline btn-sm" onclick="decideChange(${c.id},false)">✗ 拒绝</button></span>` : ''}</div>

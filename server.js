@@ -10340,6 +10340,13 @@ app.get('/api/approvals', requireAdmin, (req, res) => {
 app.post('/api/approvals/:id', requireAdmin, async (req, res) => {
   if (!_approverOk(req)) return res.status(403).json({ error: '只有 staff / admin 能审批' });
   try {
+    // 系统自动当「重复」关掉的, 觉得关错了可以恢复成等审批 (恢复的不会再被自动关)
+    if (req.body && req.body.reopen) {
+      const r = db.prepare("UPDATE pending_changes SET status='pending', decided_by='', decided_at='', note='↩ 恢复，不再自动关' WHERE id=? AND status='duplicate'").run(req.params.id);
+      if (!r.changes) return res.status(404).json({ error: '这条不是自动关掉的重复修改' });
+      auditLog('change_reopen', req, { targetType: 'pending_change', targetId: req.params.id });
+      return res.json({ ok: true, status: 'pending' });
+    }
     const c = db.prepare("SELECT * FROM pending_changes WHERE id=? AND status='pending'").get(req.params.id);
     if (!c) return res.status(404).json({ error: '找不到这个审批（可能已经处理过了）' });
     if (c.user_id === req.userId) return res.status(400).json({ error: '不能审批自己提交的修改' });
@@ -44961,7 +44968,7 @@ function _wobScoped(req) {
 // 标「重复」, 不再让人审一遍
 function _wobCloseNoopChanges() {
   try {
-    const rows = db.prepare(`SELECT id, path, body FROM pending_changes WHERE status='pending' AND method='POST' AND path LIKE '/api/acct/onboarding%'`).all();
+    const rows = db.prepare(`SELECT id, path, body FROM pending_changes WHERE status='pending' AND method='POST' AND path LIKE '/api/acct/onboarding%' AND COALESCE(note,'') NOT LIKE '↩%'`).all();
     const close = db.prepare(`UPDATE pending_changes SET status='duplicate', decided_by='（自动）', decided_at=?, note=? WHERE id=? AND status='pending'`);
     for (const c of rows) {
       let b = {}; try { b = JSON.parse(c.body || '{}') || {}; } catch (e) { continue; }
@@ -45150,6 +45157,8 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
       // 「所有修改需要审批」账号提交、还没审批的入职页修改 (审批人和提交人自己看得到); 审批走 /api/approvals/:id
       pending_changes: (_approverOk(req) || req.needsApproval) ? _wobPendingChanges().filter(c => _approverOk(req) || c.user_id === req.userId) : [],
       can_decide_changes: _approverOk(req),
+      // 最近 7 天系统当「重复」自动关掉的入职修改 (页面上提一句, 去待审批页能看原因 / 恢复)
+      dup_closed: _approverOk(req) ? db.prepare(`SELECT COUNT(*) AS n FROM pending_changes WHERE status='duplicate' AND path LIKE '/api/acct/onboarding%' AND decided_at >= ?`).get(new Date(Date.now() - 7 * 86400000).toISOString()).n : 0,
       needs_approval: !!req.needsApproval,
       warehouse_options: _wobWarehouseOptions(req),
       can_open_invoice: req.userRole !== 'manager',
