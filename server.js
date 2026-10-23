@@ -9446,8 +9446,26 @@ function _isChangeRequest(req) {
   if (p === '/api/admin/logout' || p.startsWith('/api/approvals')) return false;
   // 只存截图 / 识别截图, 不改任何记录 (关联账号的保存才进审批)
   if (p === '/api/acct/onboarding-shot' || p === '/api/acct/onboarding-shot-read') return false;
+  if (_isCsSmsSend(req, p)) return false;
   if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return true;
   return String(req.query && req.query.send) === '1';   // 带 ?send=1 的 GET 会真的发东西 (例如立刻发面试日报)
+}
+// 总监发客服短信不用审批: 手机短信 (/phone-sms) 和 SMS Inbox 上发一条短信要用到的接口
+// (翻译、传图、发送、撤回还没发出的、标已读) 直接放行。备注 / 标签 / 群发 / 设置等仍要审批。
+const _CS_SMS_SEND_POST = new Set([
+  '/api/device-sms/translate', '/api/device-sms/retranslate', '/api/device-sms/media', '/api/device-sms/send',
+  '/api/sms/translate', '/api/sms/translate-batch', '/api/sms/upload-media', '/api/sms/start-thread'
+]);
+function _isCsSmsSend(req, p) {
+  if (req.method === 'POST' && _CS_SMS_SEND_POST.has(p)) return true;
+  if (req.method === 'DELETE' && /^\/api\/device-sms\/outbox\/\d+$/.test(p)) return true;
+  if (req.method === 'POST' && /^\/api\/sms\/threads\/\d+\/(messages|read|retry\/\d+)$/.test(p)) return true;
+  // 打开会话自动标已读 / 标为未读: 只带 peer + read 才放行, 改别的字段照样审批
+  if (req.method === 'POST' && p === '/api/device-sms/peer') {
+    const keys = Object.keys(req.body || {});
+    return keys.includes('read') && keys.every(k => k === 'peer' || k === 'read');
+  }
+  return false;
 }
 async function _queueChange(req, res, session) {
   try {
