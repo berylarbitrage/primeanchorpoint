@@ -45146,15 +45146,18 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       const all = _wobJson(next.zelle_accounts, []);
       const old = all.filter(x => (x.type || 'zelle') === type), others = all.filter(x => (x.type || 'zelle') !== type);
       const list = (Array.isArray(b[field]) ? b[field] : []).slice(0, 10)
-        .map(z => ({ account: str(z && z.account, 120), name: str(z && z.name, 120), shot: /^[a-f0-9]{32}\.(jpg|png|webp)$/.test(str(z && z.shot, 80)) ? str(z.shot, 80) : '' }))
+        // 截图可以多张: shots 数组 (旧的单张 shot 也认)
+        .map(z => ({ account: str(z && z.account, 120), name: str(z && z.name, 120),
+          shots: [...new Set([...(Array.isArray(z && z.shots) ? z.shots : []), z && z.shot].map(v => str(v, 80))
+            .filter(v => /^[a-f0-9]{32}\.(jpg|png|webp)$/.test(v) && fs.existsSync(path.join(_wobShotDir, v))))].slice(0, 10) }))
         .filter(z => z.account || z.name);
       if (list.some(z => !z.account || !z.name)) return res.status(400).json({ error: `每个 ${label} 账号都要填 ${label} 号和户主姓名` });
       const merged = [];
       for (const z of list) {
         const o = old.find(x => x.account === z.account && x.name === z.name);
-        const shot = z.shot && fs.existsSync(path.join(_wobShotDir, z.shot)) ? z.shot : (o && o.shot) || '';
-        if (!shot) return res.status(400).json({ error: `${label} ${z.account} 要上传截图（${label} 里显示账号和名字的那一页）` });
-        merged.push(o ? { ...o, type, shot } : { type, account: z.account, name: z.name, shot, at: new Date().toISOString(), by: req.userName || '' });
+        const shots = z.shots.length ? z.shots : (o ? (o.shots || (o.shot ? [o.shot] : [])) : []);
+        if (!shots.length) return res.status(400).json({ error: `${label} ${z.account} 要上传截图（${label} 里显示账号和名字的那一页）` });
+        merged.push(o ? { ...o, type, shots, shot: shots[0] } : { type, account: z.account, name: z.name, shots, shot: shots[0], at: new Date().toISOString(), by: req.userName || '' });
       }
       next.zelle_accounts = JSON.stringify([...others, ...merged]);
     }
@@ -45388,6 +45391,35 @@ app.get('/api/acct/onboarding-employees', requireAdmin, requireWobWrite, (req, r
 });
 
 // 对不上人的 Gusto 邮件: manager / admin 手动关联到某个工人 (直接算通过), 或者暂时忽略
+// 手动关联 Gusto: 列出所有「接受邀请 / 可以付款」邮件里的名字 (同名的放一起), 按和这个工人名字像不像排序, 最像的标「最合适」
+app.get('/api/acct/onboarding-email-names', requireAdmin, requireWobView, (req, res) => {
+  try {
+    const key = _payrollNameKey(req.query.key);
+    const { list } = _wobScoped(req);
+    const w = list.find(x => x.key === key);
+    if (!w) return res.status(404).json({ error: '找不到这个员工' });
+    const mine = [w.name, ...(w.invoice_names || []), w.employee && w.employee.name].filter(Boolean);
+    const myWords = mine.map(n => new Set(wob.nameWords(n)));
+    const nameOf = k => { const x = list.find(y => y.key === k); return x ? x.name : k; };
+    const groups = new Map();
+    for (const ev of db.prepare(`SELECT id, kind, name, date, worker_key FROM gusto_email_events WHERE kind IN ('accepted','ready') ORDER BY date DESC, id DESC`).all()) {
+      const g = groups.get(ev.name.toLowerCase()) || { name: ev.name, events: [] };
+      g.events.push({ id: ev.id, kind: ev.kind, label: wob.EMAIL_KIND_LABEL[ev.kind] || ev.kind, date: ev.date,
+        worker_key: ev.worker_key || '', worker_name: ev.worker_key ? nameOf(ev.worker_key) : '' });
+      groups.set(ev.name.toLowerCase(), g);
+    }
+    // 像不像: 名字里的词有几个对得上 (邮件常常只写名 + 姓, 发票上可能多一个中间名)
+    const score = n => {
+      const ws = wob.nameWords(n);
+      if (!ws.length) return 0;
+      return Math.max(0, ...myWords.map(m => { const hit = ws.filter(x => m.has(x)).length; return hit ? Math.round(100 * (2 * hit) / (ws.length + m.size)) : 0; }));
+    };
+    const out = [...groups.values()].map(g => ({ ...g, score: score(g.name), mine: g.events.some(e => e.worker_key === key) }))
+      .sort((a, b) => b.score - a.score || String(b.events[0].date).localeCompare(String(a.events[0].date)));
+    if (out.length && out[0].score >= 50) out[0].best = true;
+    res.json({ ok: true, worker: w.name, names: out.slice(0, 300), can_assign: _wobCanApprove(req) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.post('/api/acct/onboarding-email-assign', requireAdmin, requireWobWrite, (req, res) => {
   try {
     if (!_wobCanApprove(req)) return res.status(403).json({ error: '只有 manager / admin 能关联邮件' });
