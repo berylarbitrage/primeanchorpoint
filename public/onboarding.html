@@ -763,7 +763,7 @@ async function openAccess() {
   body.innerHTML = groups + `<div class="muted" style="border-top:1px solid var(--g200);padding-top:.5rem">Gusto 邮件另外还转发给：${j.forward_to.length ? esc(j.forward_to.join('、')) : '（没填）'} · 改账号去后台「🔐 账户管理」</div>
     <div style="text-align:right;margin-top:.5rem"><button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none'">关闭</button></div>`;
 }
-// ── 「所有修改需要审批」的账号 (例如公司经理) 提交的修改: 在原来的位置直接显示, admin 直接同意 / 拒绝 ──
+// ── 「所有修改需要审批」的账号 (例如总监) 提交的修改: 在原来的位置直接显示, admin 直接同意 / 拒绝 ──
 function pcOf(pred) { return (D.pending_changes || []).filter(pred); }
 function pcBlock(list, compact) {
   if (!list.length) return '';

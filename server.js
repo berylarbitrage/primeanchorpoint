@@ -9979,9 +9979,9 @@ app.get('/api/admin/me', requireAdmin, (req, res) => {
   if (x.needs_approval) perms.push('所有修改要 admin 同意后才生效');
   if (x.wob_approver) perms.push('能审核新员工入职的系统匹配');
   if (user.bank_ann_reviewer) perms.push('能审核银行流水批注');
-  // 「所有修改需要审批」的 admin / staff = 公司经理: 能看所有页面, 改动要审批
-  const roleLabel = x.needs_approval && user.role === 'admin' ? '公司经理' : (ROLE[user.role] || user.role);
-  if (roleLabel === '公司经理') perms[0] = '能进所有页面、看所有信息';
+  // 「所有修改需要审批」的 admin / staff = 总监: 能看所有页面, 改动要审批
+  const roleLabel = x.needs_approval && user.role === 'admin' ? '总监' : (ROLE[user.role] || user.role);
+  if (roleLabel === '总监') perms[0] = '能进所有页面、看所有信息';
   res.json({ ...user, email: x.email || '', role_label: roleLabel, perms: perms.filter(Boolean),
     needs_approval: !!x.needs_approval, wob_approver: !!x.wob_approver, cs_lead: !!x.cs_lead });
 });
@@ -10239,7 +10239,7 @@ app.post('/api/manager/self-punch/:id/confirm', requireAdmin, requireRole('admin
 
 // ─── Account Management (admin only) ───
 app.get('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
-  // password_plain 仅会计(accounting)角色有值, 且本接口本就仅限 admin 角色访问; 公司经理 (改动要审批) 看不到密码
+  // password_plain 仅会计(accounting)角色有值, 且本接口本就仅限 admin 角色访问; 总监 (改动要审批) 看不到密码
   const rows = db.prepare('SELECT id, username, role, display_name, email, phone, active, approval_status, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, sms_notify_phone, sms_notify_enabled, mfa_exempt, bank_ann_reviewer, needs_approval, created_at, password_plain FROM admin_users ORDER BY id').all();
   if (req.needsApproval) rows.forEach(r => { r.password_plain = ''; });
   res.json(rows);
@@ -10316,7 +10316,7 @@ app.delete('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, 
 
 // ─── ✅ 待审批修改 (/approvals): admin 看「所有修改需要审批」的账号提交的修改, 同意 = 原样执行一次 ───
 app.get('/approvals', (req, res) => res.sendFile(path.join(__dirname, 'public', 'approvals.html')));
-// 公司经理 (admin + 所有修改需要审批) 的改动只有 admin 能审批
+// 总监 (admin + 所有修改需要审批) 的改动只有 admin 能审批
 const _approverOk = req => req.userRole === 'admin' && !req.needsApproval;
 app.get('/api/approvals', requireAdmin, (req, res) => {
   if (!_approverOk(req)) return res.status(403).json({ error: '只有 admin 能审批' });
