@@ -498,7 +498,13 @@ function card(w, k) {
         <span><b>${i + 1}.</b> <span class="t">${esc(s.label)}</span>${note}</span></label>`;
     }).join('');
     gusto = `<div class="ck" style="grid-template-columns:1fr;padding-bottom:0;border-bottom:none"><div class="row" style="margin:0">${who}${st}
-        ${D.can_edit ? `<button class="btn ${needGustoLink(w) ? 'btn-blue' : 'btn-outline'} btn-sm" onclick="pickGusto(${k})">${g && g.link ? '改关联' : needGustoLink(w) ? '① 先手动关联' : '手动关联'}</button>` : ''}
+        ${D.can_edit ? (() => {
+          // 两步各一个关联按钮; 第二步做完了或者 director 通过了在等 admin 确认, 第三步就能关联
+          const acc = w.checklist.steps.find(s => s.id === 'accepted') || {};
+          const can3 = acc.done || acc.awaiting;
+          return `<button class="btn ${needGustoLink(w) || !(acc.done || acc.awaiting) ? 'btn-blue' : 'btn-outline'} btn-sm" onclick="pickGusto(${k},'accepted')">🔗 关联第 2 步邮件（接受邀请）</button>`
+            + `<button class="btn ${can3 && !(w.checklist.steps.find(s => s.id === 'ready') || {}).done ? 'btn-blue' : 'btn-outline'} btn-sm" ${can3 ? '' : 'disabled title="先关联第 2 步的邮件"'} onclick="pickGusto(${k},'ready')">🔗 关联第 3 步邮件（入职完成）</button>`;
+        })() : ''}
         ${g && g.uuid && D.gusto.connected ? `<button class="btn btn-outline btn-sm" onclick="gustoSteps(${k})">Gusto 明细</button>` : ''}
         <span class="muted">${w.checklist.done_count}/${w.checklist.steps.length}</span></div>${emailProps}
         ${(w.emails || []).map(e => `<div class="row" style="margin:.2rem 0 0">${e.admin_ok
@@ -1513,15 +1519,14 @@ function eSearch(k) {
 // 手动关联 Gusto: 列出「接受邀请 / 可以付款」邮件里的所有名字, 系统按名字像不像排好, 最像的标「⭐ 最合适」;
 // 关联要弹窗确认两次。连了 Gusto API 的话下面还能直接选 Gusto 收款人
 let GN = null;
-async function pickGusto(k) {
+async function pickGusto(k, kind) {
   const m = document.getElementById('gModal'), w = D.rows[k];
-  // 第二步 (工人接受邀请) 还没完成: 只列「accepted your offer」; 完成了: 只列「can now be paid」
-  const acc = (w.checklist && w.checklist.steps || []).find(s => s.id === 'accepted');
-  const kind = acc && acc.done ? 'ready' : 'accepted';
+  // 第 2 步按钮只列「accepted your offer」, 第 3 步按钮只列「can now be paid」
+  if (kind !== 'ready') kind = 'accepted';
   const kindTxt = kind === 'ready' ? '可以付款了（can now be paid）' : '接受了邀请（accepted your offer）';
   document.getElementById('gTitle').textContent = `关联 Gusto · ${w.name}`;
   document.getElementById('gBody').innerHTML = `<input id="gnQ" placeholder="筛选名字" style="width:100%;margin-bottom:.4rem" oninput="gnRender(${k})">
-    <div class="muted" style="margin-bottom:.35rem">${kind === 'ready' ? '第 2 步已完成，' : ''}Gusto「${kindTxt}」邮件里的所有名字，按和「${esc(w.name)}」像不像排好了</div>
+    <div class="muted" style="margin-bottom:.35rem">第 ${kind === 'ready' ? 3 : 2} 步：Gusto「${kindTxt}」邮件里的所有名字，按和「${esc(w.name)}」像不像排好了</div>
     <div id="gnRes" style="max-height:46vh;overflow:auto"><div class="muted">加载中…</div></div>
     ${D.gusto.connected ? `<div class="lbl" style="margin-top:.6rem">或者直接选 Gusto 收款人（Gusto API）</div><input id="gQ" placeholder="搜名字" style="width:100%;margin-bottom:.4rem" oninput="gSearch(${k})"><div id="gRes" style="max-height:24vh;overflow:auto"></div>` : ''}
     <div style="display:flex;justify-content:space-between;margin-top:.5rem">${D.gusto.connected ? `<button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none';save(${k},{gusto_uuid:''})">清除手动关联（改回按名字自动对）</button>` : '<span></span>'}<button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none'">关闭</button></div>`;
