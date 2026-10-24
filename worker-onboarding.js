@@ -159,7 +159,8 @@ const GUSTO_STEPS = [
   { id: 'ready', label: '工人入职完成', hint: '等 Gusto 邮件「… can now be paid」' },
 ];
 
-// ctx: { contractor: {raw}|null, emails: [{kind,date}] (已通过的), pendingEmails: [{kind,date}] (对上了等确认的),
+// ctx: { contractor: {raw}|null, emails: [{kind,date}] (admin 确认过的), confirmEmails: [{kind,date,by}] (别人关联、等 admin 确认的),
+//        pendingEmails: [{kind,date}] (对上了等确认的),
 //        manual: {step: {at,by}}, firstPayment: 'YYYY-MM-DD'|'' }
 function buildChecklist(ctx) {
   ctx = ctx || {};
@@ -178,13 +179,16 @@ function buildChecklist(ctx) {
   if ((auto.accepted || auto.ready) && !auto.added) auto.added = '工人已收到邀请';
   const manual = ctx.manual || {};
   const pend = k => (ctx.pendingEmails || []).filter(e => e.kind === k).pop();
+  const conf = k => (ctx.confirmEmails || []).filter(e => e.kind === k).pop();
   let prevDone = true;
   const steps = GUSTO_STEPS.map(s => {
     const m = s.tickable ? manual[s.id] : null;   // 后两步就算以前手动勾过也不算
     const done = !!(auto[s.id] || m);
-    const p = !done && s.id !== 'added' ? pend(s.id) : null;
+    const c = !done && s.id !== 'added' ? conf(s.id) : null;
+    const p = !done && s.id !== 'added' && !c ? pend(s.id) : null;
     const step = { ...s, auto: auto[s.id] || '', manual: m ? { at: m.at || '', by: m.by || '' } : null, done, locked: !prevDone,
-      pending: p ? `收到邮件 ${p.date || ''}，等确认是不是这个人`.replace('  ', ' ') : '' };
+      pending: c ? `邮件 ${c.date || ''}${c.by ? ' · ' + c.by + ' 通过' : ''}，等 admin 确认`.replace('  ', ' ')
+        : p ? `收到邮件 ${p.date || ''}，等确认是不是这个人`.replace('  ', ' ') : '' };
     prevDone = done;
     return step;
   });

@@ -45257,7 +45257,9 @@ function _wobBuild() {
     });
   }
   // 邮件事件按名字对到人也只是建议: 通过后 (worker_key) 才进清单; 否掉的人记在 rejected_keys
-  const events = db.prepare("SELECT id, kind, name, date, subject, worker_key, rejected_keys, review_by, ack_by, ack_at, ignored_by, ignored_at, added_by, created_at, detail FROM gusto_email_events ORDER BY date, id").all();
+  const events = db.prepare("SELECT id, kind, name, date, subject, worker_key, rejected_keys, review_by, ack_by, ack_at, ignored_by, ignored_at, added_by, created_at, detail, admin_ok_by FROM gusto_email_events ORDER BY date, id").all();
+  // 跟 /gusto-mails 一样: admin 审核过的才算数 (记了 admin_ok_by, 或者以前审核人本身是 admin 账号); director / manager 关联的要 admin 再确认
+  const okAdmins = new Set(db.prepare("SELECT username FROM admin_users WHERE role='admin' AND COALESCE(needs_approval,0)=0").all().map(u => u.username));
   // 每封发给过谁; 记录是后来才有的, 之前「邮箱自动同步」收到的新邮件当时自动转发过 (发给当时的转发名单, 具体是谁没记)
   const sentBy = {};
   try { for (const r of db.prepare('SELECT event_id, to_addr, MIN(sent_at) AS at FROM gusto_mail_sends GROUP BY event_id, to_addr').all()) (sentBy[r.event_id] = sentBy[r.event_id] || []).push({ to: r.to_addr, at: r.at }); } catch (e) {}
@@ -45282,7 +45284,11 @@ function _wobBuild() {
       bank.push({ ...e, key, ack_by: ev.ack_by || '', ack_at: ev.ack_at || '', candidates: candOf(bh) });
       continue;
     }
-    if (ev.worker_key) { (approved[ev.worker_key] = approved[ev.worker_key] || []).push({ ...e, by: ev.review_by || '' }); continue; }
+    if (ev.worker_key) {
+      const adminOk = ev.admin_ok_by || (okAdmins.has(ev.review_by) ? ev.review_by : '');
+      (approved[ev.worker_key] = approved[ev.worker_key] || []).push({ ...e, by: ev.review_by || '', admin_ok: adminOk });
+      continue;
+    }
     const rej = _wobJson(ev.rejected_keys, []);
     const hits = wob.matchEmailName(ev.name, cands).hits.filter(k => !rej.includes(k));
     if (hits.length === 1) (proposed[hits[0]] = proposed[hits[0]] || []).push(e);
@@ -45311,8 +45317,11 @@ function _wobBuild() {
   for (const w of list) {
     w.emails = approved[w.key] || [];
     w.email_proposals = proposed[w.key] || [];
+    // 清单只认 admin 确认过的邮件; 别人关联、等 admin 确认的显示成「等 admin 确认」
+    w.email_confirm = w.emails.filter(e => !e.admin_ok).length;
     w.checklist = wob.buildChecklist({ contractor: w.gusto && w.gusto.link ? { raw: w.gusto.raw || {} } : null,
-      emails: w.emails, pendingEmails: w.email_proposals, manual: w.manual, firstPayment: w.first_payment });
+      emails: w.emails.filter(e => e.admin_ok), confirmEmails: w.emails.filter(e => !e.admin_ok),
+      pendingEmails: w.email_proposals, manual: w.manual, firstPayment: w.first_payment });
     if (w.gusto) delete w.gusto.raw;
     // Zelle / Cash App 账号的审核信息: 户主名字对不对、同一个账号还有谁在用、截图读到的对不对
     const names = [w.name, ...(w.invoice_names || []), w.employee && w.employee.name].filter(Boolean);
@@ -45623,6 +45632,9 @@ function _wobPendingChanges() {
 app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
   try {
     const { list, unmatched, bank } = _wobScoped(req);
+    // admin: 别人 (director / manager) 关联、等你确认的 Gusto 邮件也算「👤 待审核」
+    const canConfirm = req.userRole === 'admin' && !req.needsApproval;
+    if (canConfirm) for (const w of list) if (w.email_confirm) { w.pending_review += w.email_confirm; w.review_people += w.email_confirm; }
     const today = new Date().toISOString().slice(0, 10);
     const thisWeek = wob.weekStart(today);
     // 最近 12 周每周新人数 / 未处理数
@@ -45716,6 +45728,7 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
       pending_registrations: req.userRole === 'admin' ? db.prepare(`SELECT id, username, display_name, email, phone, created_at FROM admin_users
         WHERE role='onboarding' AND approval_status='pending' ORDER BY id`).all() : [],
       can_approve: _wobCanApprove(req),
+      can_confirm: canConfirm,
       // 「所有修改需要审批」账号提交、还没审批的入职页修改 (审批人和提交人自己看得到); 审批走 /api/approvals/:id
       pending_changes: (_approverOk(req) || req.needsApproval) ? _wobPendingChanges().filter(c => _approverOk(req) || c.user_id === req.userId) : [],
       can_decide_changes: _approverOk(req),
