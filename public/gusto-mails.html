@@ -44,7 +44,7 @@ tr:hover td{background:#fafcff}
 .tag{display:inline-flex;align-items:center;gap:.2rem;padding:.1rem .5rem;border-radius:999px;font-size:.72rem;font-weight:700;white-space:nowrap}
 .k-accepted{background:#e0f2fe;color:#075985}.k-ready{background:#dcfce7;color:#166534}
 .k-bank_bad{background:#fee2e2;color:#991b1b}.k-bank_updated{background:#fef3c7;color:#92400e}.k-other{background:var(--g100);color:var(--g600)}
-.s-linked{background:#dcfce7;color:#166534}.s-proposed{background:#e0f2fe;color:#075985}.s-unmatched{background:#fef2f2;color:#991b1b}
+.s-linked{background:#dcfce7;color:#166534}.s-confirm{background:#fef3c7;color:#92400e}.cf-btns{display:flex;gap:.3rem;margin-top:.3rem}.cf-btns button{font-size:.75rem;padding:.2rem .55rem;border-radius:6px;cursor:pointer;font-weight:600}.s-proposed{background:#e0f2fe;color:#075985}.s-unmatched{background:#fef2f2;color:#991b1b}
 .s-ignored{background:var(--g100);color:var(--g500)}
 .subj{color:var(--g500);font-size:.74rem;margin-top:.15rem;word-break:break-word}
 .muted{color:var(--g500);font-size:.74rem}
@@ -93,9 +93,9 @@ let ROWS = [], KIND = 'all', LINK = 'all', SENT = 'all', IS_ADMIN = false;
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const KINDS = [['all', '全部', '所有 Gusto 邮件'], ['accepted', '接受邀请', 'accepted your offer'], ['ready', '可以付款', 'can now be paid'],
   ['bank_bad', '银行有误', 'bank details incorrect'], ['bank_updated', '银行已更新', 'bank details updated'], ['other', '其他 Gusto 邮件', '工资单、通知等']];
-const LINKS = [['all', '全部'], ['linked', '✓ 已关联'], ['proposed', '🔎 系统对上，等确认'], ['unmatched', '✗ 对不上人'], ['ignored', '暂时忽略']];
+const LINKS = [['all', '全部'], ['linked', '✓ 已关联'], ['confirm', '👤 别人关联，等你确认'], ['proposed', '🔎 系统对上，等确认'], ['unmatched', '✗ 对不上人'], ['ignored', '暂时忽略']];
 const SENTS = [['all', '全部'], ['yes', '📨 已转发'], ['no', '没转发']];
-const STATUS = { linked: ['✓ 已关联', 's-linked'], proposed: ['🔎 系统对上，等确认', 's-proposed'], unmatched: ['✗ 对不上人', 's-unmatched'], ignored: ['暂时忽略', 's-ignored'] };
+const STATUS = { linked: ['✓ 已关联', 's-linked'], confirm: ['👤 别人关联，等你确认', 's-confirm'], proposed: ['🔎 系统对上，等确认', 's-proposed'], unmatched: ['✗ 对不上人', 's-unmatched'], ignored: ['暂时忽略', 's-ignored'] };
 function fmtTime(t) { if (!t) return ''; const d = new Date(/[TZ]/.test(t) ? t : String(t).replace(' ', 'T') + 'Z'); return isNaN(d) ? String(t) : d.toLocaleString(); }
 
 async function api(path) {
@@ -143,7 +143,7 @@ function render() {
   // 上面的类型卡片: 每种多少封 (按当前的关联 / 转发 / 搜索筛选数)
   document.getElementById('stats').innerHTML = KINDS.map(([k, t, s]) => {
     const list = ROWS.filter(r => (k === 'all' || r.kind === k) && pass(r, 'kind'));
-    const extra = k === 'other' || !list.length ? s : `已关联 ${list.filter(r => r.status === 'linked').length} · 已转发 ${list.filter(isSent).length}`;
+    const extra = k === 'other' || !list.length ? s : `已关联 ${list.filter(r => r.status === 'linked').length}${list.some(r => r.status === 'confirm') ? ` · 等确认 ${list.filter(r => r.status === 'confirm').length}` : ''} · 已转发 ${list.filter(isSent).length}`;
     return `<button class="stat ${KIND === k ? 'on' : ''}" onclick="KIND='${k}';render()"><div class="n">${list.length}</div><div class="t">${esc(t)}</div><div class="s">${esc(extra)}</div></button>`;
   }).join('');
   const seg = (id, opts, cur, set, field) => document.getElementById(id).innerHTML = opts.map(([k, t]) => {
@@ -164,7 +164,8 @@ function render() {
   document.getElementById('list').innerHTML = `<table><thead><tr><th>日期</th><th>类型</th><th>邮件里的名字 / 标题</th><th>关联到</th><th>转发</th></tr></thead><tbody>${rows.slice(0, 1500).map(r => {
     const st = STATUS[r.status];
     const link = r.kind === 'other' ? '<span class="muted">不是入职邮件</span>'
-      : `${st ? `<span class="tag ${st[1]}">${st[0]}</span>` : ''}${r.worker ? `<div style="margin-top:.2rem"><b>${esc(r.worker)}</b>${r.by ? `<span class="muted"> · ${esc(r.by)} 确认</span>` : ''}</div>` : ''}`
+      : `${st ? `<span class="tag ${st[1]}">${st[0]}</span>` : ''}${r.worker ? `<div style="margin-top:.2rem"><b>${esc(r.worker)}</b>${r.status === 'linked' && r.admin_ok ? `<span class="muted"> · ${esc(r.admin_ok)} 审核${r.admin_ok_at ? ' ' + esc(fmtTime(r.admin_ok_at)) : ''}</span>` : r.by ? `<span class="muted"> · ${esc(r.by)} 关联的</span>` : ''}</div>` : ''}`
+        + (r.status === 'confirm' && IS_ADMIN ? `<div class="cf-btns"><button style="background:#16a34a;color:#fff;border:0" onclick="confirmLink(${r.id},true)">✓ 对，确认</button><button style="background:#fff;color:#dc2626;border:1px solid #fca5a5" onclick="confirmLink(${r.id},false)">✗ 不是这个人</button></div>` : '')
         + (r.status === 'unmatched' && r.candidates.length ? `<div class="muted">可能是：${r.candidates.map(esc).join('、')}</div>` : '')
         + (r.status === 'ignored' && r.ignored_by ? `<div class="muted">${esc(r.ignored_by)} 忽略的</div>` : '')
         + (/^bank_/.test(r.kind) ? `<div class="muted">${r.ack_at ? '✓ ' + esc(r.ack_by) + ' 已处理' : '⚠ 还没处理'}</div>` : '');
@@ -188,15 +189,23 @@ function toast(msg, bad) {
   document.body.appendChild(t); setTimeout(() => t.remove(), 3500);
 }
 // 页面风格的确认框
-function ask(html, okText) {
+function ask(html, okText, title) {
   return new Promise(done => {
     const m = document.createElement('div');
     m.style.cssText = 'position:fixed;inset:0;z-index:40;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:16px';
-    m.innerHTML = `<div class="card" style="max-width:460px;width:100%"><div style="font-weight:800;margin-bottom:.45rem">📨 一键转发没转发的邮件</div><div style="font-size:.86rem;line-height:1.6">${html}</div>
+    m.innerHTML = `<div class="card" style="max-width:460px;width:100%"><div style="font-weight:800;margin-bottom:.45rem">${esc(title || '📨 一键转发没转发的邮件')}</div><div style="font-size:.86rem;line-height:1.6">${html}</div>
       <div style="display:flex;gap:.4rem;justify-content:flex-end;margin-top:.8rem"><button class="btn" style="background:#fff;border:1px solid var(--g300);color:var(--g600)" data-v="0">取消</button><button class="btn btn-blue" data-v="1">${esc(okText)}</button></div></div>`;
     m.onclick = e => { const b = e.target.closest('[data-v]'); if (e.target === m || b) { m.remove(); done(!!b && b.dataset.v === '1'); } };
     document.body.appendChild(m);
   });
+}
+async function confirmLink(id, ok) {
+  const r = ROWS.find(x => x.id === id); if (!r) return;
+  if (!ok && !(await ask(`这封「${esc(r.label)} · ${esc(r.name)}」不是 <b>${esc(r.worker)}</b> 的？<div class="muted" style="margin-top:.3rem">会取消关联（${esc(r.by || '别人')} 关联的），以后系统也不会再把它对到这个人。</div>`, '不是，取消关联', '✗ 否掉这个关联'))) return;
+  const j = await post(`/api/acct/onboarding-mails/${id}/confirm`, { ok });
+  if (j.error) return toast(j.error, true);
+  toast(ok ? `已确认：${r.name} → ${r.worker}` : '已取消关联');
+  load();
 }
 async function forwardUnsent() {
   const ids = ROWS.filter(r => pass(r) && r.kind !== 'other' && r.status !== 'ignored' && !isSent(r)).map(r => r.id);
