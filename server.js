@@ -45839,7 +45839,7 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       const ev = db.prepare('SELECT id, kind, worker_key, rejected_keys FROM gusto_email_events WHERE id=?').get(parseInt(b.event_id, 10) || 0);
       if (!ev) return res.status(404).json({ error: '找不到这封邮件' });
       // 入职进度邮件 (接受邀请 / 可以付款) 要按步骤来: 先选 Gusto 入职, 前一步完成了才能通过这一步的邮件
-      if (b.approve && ['accepted', 'ready'].includes(ev.kind) && !req.isApprovalReplay) {
+      if ((b.approve || b.reject) && ['accepted', 'ready'].includes(ev.kind) && !req.isApprovalReplay) {
         if (next.pay_method !== 'gusto') return res.status(400).json({ error: '付款方式还不是「Gusto 入职」，先选 Gusto 入职再审核 Gusto 邮件' });
         if (_wobNeedGustoLink(next)) return res.status(400).json({ error: '先关联 Gusto 名册里的这个人（点「手动关联」），再审核 Gusto 邮件' });
         const w = _wobBuild().list.find(x => x.key === key);
