@@ -45328,10 +45328,14 @@ function _wobBuild() {
     w.bank_alert_open = w.bank_alerts.filter(b => !b.ack_at).length;
     // 第一步一律是关联员工档案; 关联了才看付款方式。
     // 已通过关联的 Gusto 收款人走完入职还付过钱的, 没手动选付款方式也算处理完
-    w.done = !!w.employee && (w.pay_method === 'skip' || (!!w.pay_method && (w.pay_method !== 'gusto' || w.checklist.done))
+    // 全部做完才算: Gusto 三步都完成; Zelle / Cash App / ACH 的账号都审核通过了; 也没有还在等审核的
+    const accOk = curAccs.length > 0 && curAccs.every(z => z.ok);
+    w.done = !!w.employee && !w.pending_review && (w.pay_method === 'skip'
+      || (!!w.pay_method && (w.pay_method === 'gusto' ? w.checklist.done : ['zelle', 'cashapp', 'ach'].includes(w.pay_method) ? accOk : true))
       || (!w.pay_method && !!(w.gusto && w.gusto.link) && w.checklist.done));
-    // 付款方式定没定 (发票上标「待定 / 已定」用): 关联了档案, 并且选了付款方式或 Gusto 那边已经付过
-    w.settled = !!w.employee && (!!w.pay_method || w.done);
+    // 发票上的三种: 已定 = 全部做完; 进行中 = 选了付款方式但步骤 / 审核还没做完; 待定 = 还没选
+    w.settled = w.done;
+    w.stage = w.done ? 'settled' : (w.employee && (w.pay_method || (w.gusto && w.gusto.link))) ? 'progress' : 'pending';
   }
   return { list, unmatched, bank };
 }
@@ -45621,13 +45625,15 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
     // 有「等审批的修改」(director 提交的) 的人, 算在 👤 别人选的 里
     let pendKeys = new Set();
     try { pendKeys = new Set(_wobPendingChanges().filter(c => c.kind === 'worker' && c.key).map(c => c.key)); } catch (e) {}
+    // 还有修改在等审批的, 不算做完 (已定 → 进行中)
+    for (const w of list) if (pendKeys.has(w.key) && w.done) { w.done = false; w.settled = false; w.stage = 'progress'; }
     for (const w of list) {
       for (const l of w._lines) {
         if (wob.weekStart(l.period_end) !== week) continue;
         let inv = invMap.get(l.invoice_id);
         if (!inv) {
           inv = { id: l.invoice_id, invoice_number: l.invoice_number, company: l.company, period_start: l.period_start,
-            period_end: l.period_end, state: l.state || '', keys: new Set(), workers: 0, new: 0, new_open: 0, settled: 0, unsettled: 0, review: 0, state_bad: 0, total: 0 };
+            period_end: l.period_end, state: l.state || '', keys: new Set(), workers: 0, new: 0, new_open: 0, settled: 0, progress: 0, unsettled: 0, review: 0, state_bad: 0, total: 0 };
           invMap.set(l.invoice_id, inv);
         }
         inv.total = Math.round((inv.total + l.total) * 100) / 100;
@@ -45636,7 +45642,7 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
         inv.keys.add(w.key);
         inv.workers++;
         if (w.week === week) { inv.new++; if (!w.done) inv.new_open++; }
-        if (w.settled) inv.settled++; else inv.unsettled++;
+        if (w.stage === 'settled') inv.settled++; else if (w.stage === 'progress') inv.progress++; else inv.unsettled++;
         if (w.pending_review) inv.review++;
         if (w.review_people || pendKeys.has(w.key)) inv.review_people++;
         if (w.review_system) inv.review_system++;
@@ -45644,7 +45650,7 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
       }
     }
     const invoices = [...invMap.values()].map(({ keys, ...x }) => x)
-      .sort((a, b) => (b.unsettled - a.unsettled) || a.company.localeCompare(b.company) || a.invoice_number.localeCompare(b.invoice_number));
+      .sort((a, b) => ((b.unsettled + b.progress) - (a.unsettled + a.progress)) || a.company.localeCompare(b.company) || a.invoice_number.localeCompare(b.invoice_number));
     // 选了发票才列人: 这张发票上的所有人, 新人排前面
     const invId = parseInt(req.query.invoice, 10) || 0;
     const invSel = view === 'week' && invId ? (invoices.find(x => x.id === invId) || null) : null;
