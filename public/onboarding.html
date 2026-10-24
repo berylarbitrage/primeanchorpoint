@@ -446,7 +446,7 @@ function oldRow(w, k) {
     ${w.employee ? `<span class="tag" style="background:#dcfce7;color:#166534">👤 ${esc(w.employee.code || '#' + w.employee.id)}${w.employee.phone ? ' · ' + esc(w.employee.phone) : ''}</span>` : '<span class="tag" style="background:#fee2e2;color:#991b1b">未关联档案</span>'}${w.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff" title="发票是 ${esc((w.inv_states || []).join(' / '))}，档案是 ${esc(w.employee.state)}">⚠ 州不一致：发票 ${esc((w.inv_states || []).join('/'))} · 档案 ${esc(w.employee.state)}</span>` : ''}
     <span class="muted">${w.line.hours ? w.line.hours + 'h' : ''}${w.line.total != null ? ' · ' + money(w.line.total) : ''}</span>
     ${rvTags(w.review_people || 0, w.review_system || 0, k)}
-    ${w.pend && w.pend.pay ? `<span class="tag" style="background:#fef3c7;color:#92400e">⏳ ${esc(PM_LABEL[w.pay_method] || '不选')} 等审批</span>` : w.settled ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ 已定 · ${esc(PM_LABEL[w.pay_method] || 'Gusto 已付过')}</span>`
+    ${w.pend && w.pend.pay ? `<span class="tag" style="background:#fef3c7;color:#92400e">⏳ ${esc(PM_LABEL[w.pay_method] || '不选')} 等审批</span>` : w.pay_confirm ? `<span class="tag" style="${RV_PEOPLE}">👤 ${esc(PM_LABEL[w.pay_method] || w.pay_method)} · ${esc(w.pay_by || '别人')} 选的，等 admin 确认</span>${D.can_confirm ? `<button class="btn btn-blue btn-sm" onclick="save(${k},{approve:'pay'})">✓ 确认</button>` : ''}` : w.settled ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ 已定 · ${esc(PM_LABEL[w.pay_method] || 'Gusto 已付过')}</span>`
       : w.stage === 'progress' ? `<span class="tag" style="background:#dbeafe;color:#1e40af" title="选了付款方式，步骤或审核还没做完">⏳ 进行中 · ${esc(PM_LABEL[w.pay_method] || 'Gusto')}</span>`
       : '<span class="tag" style="background:#fef3c7;color:#92400e">付款方式待定</span>'}
     ${w.pay_method === 'zelle' ? `<span class="muted">Zelle ${zList(w.zelle_accounts)}</span>` : w.pay_method === 'cashapp' ? `<span class="muted">Cash App ${zList(w.cashapp_accounts)}</span>` : w.pay_method === 'ach' ? `<span class="muted">ACH ${zList(w.ach_accounts)}</span>` : ''}
@@ -498,7 +498,13 @@ function card(w, k) {
         <span><b>${i + 1}.</b> <span class="t">${esc(s.label)}</span>${note}</span></label>`;
     }).join('');
     gusto = `<div class="ck" style="grid-template-columns:1fr;padding-bottom:0;border-bottom:none"><div class="row" style="margin:0">${who}${st}
-        ${D.can_edit ? `<button class="btn ${needGustoLink(w) ? 'btn-blue' : 'btn-outline'} btn-sm" onclick="pickGusto(${k})">${g && g.link ? '改关联' : needGustoLink(w) ? '① 先手动关联' : '手动关联'}</button>` : ''}
+        ${D.can_edit ? (() => {
+          // 两步各一个关联按钮; 第二步做完了或者 director 通过了在等 admin 确认, 第三步就能关联
+          const acc = w.checklist.steps.find(s => s.id === 'accepted') || {};
+          const can3 = acc.done || acc.awaiting;
+          return `<button class="btn ${needGustoLink(w) || !(acc.done || acc.awaiting) ? 'btn-blue' : 'btn-outline'} btn-sm" onclick="pickGusto(${k},'accepted')">🔗 关联第 2 步邮件（接受邀请）</button>`
+            + `<button class="btn ${can3 && !(w.checklist.steps.find(s => s.id === 'ready') || {}).done ? 'btn-blue' : 'btn-outline'} btn-sm" ${can3 ? '' : 'disabled title="先关联第 2 步的邮件"'} onclick="pickGusto(${k},'ready')">🔗 关联第 3 步邮件（入职完成）</button>`;
+        })() : ''}
         ${g && g.uuid && D.gusto.connected ? `<button class="btn btn-outline btn-sm" onclick="gustoSteps(${k})">Gusto 明细</button>` : ''}
         <span class="muted">${w.checklist.done_count}/${w.checklist.steps.length}</span></div>${emailProps}
         ${(w.emails || []).map(e => `<div class="row" style="margin:.2rem 0 0">${e.admin_ok
@@ -529,6 +535,7 @@ function card(w, k) {
       <div>
         <div class="lbl">怎么付${w.pend && w.pend.pay ? ' <span class="tag" style="text-transform:none;background:#fef3c7;color:#92400e">⏳ 等审批，下面可以先接着做</span>' : ''}${w.suggest && !w.pay_method ? ` <span style="text-transform:none;color:#0369a1;font-weight:400">· 建议 ${PM_LABEL[w.suggest.method] || w.suggest.method}（${esc(w.suggest.why)}）</span>` : ''}</div>
         <div class="pm" style="margin-bottom:.45rem">${pm}</div>
+        ${payConfirm(w, k)}
         ${w.employee || (w.pend && w.pend.emp) ? '' : '<div class="muted" style="margin:-.2rem 0 .4rem;color:#b45309">① 先关联员工档案，再选付款方式</div>'}
         ${zelleLine(w, k)}
         <textarea ${dis} rows="2" placeholder="备注：支票抬头 / 现金谁给 …" onchange="save(${k},{pay_note:this.value})">${esc(w.pay_note)}</textarea>
@@ -550,6 +557,13 @@ function sentTag(e) {
   if (!s.length) return '';
   if (s.length === 1 && s[0].guess) return `<span class="tag" style="background:#f0fdf4;color:#166534" title="收到时系统自动转发给了当时的转发名单（具体发给谁那时还没记）">📨 已自动转发</span>`;
   return `<span class="tag" style="background:#f0fdf4;color:#166534" title="${esc(s.map(x => x.to + ' ' + fmtTime(String(x.at).replace(' ', 'T') + 'Z')).join('\n'))}">📨 已发给 ${esc(s.map(x => x.to.split('@')[0]).join('、'))}</span>`;
+}
+// director / manager 选的付款方式要 admin 确认; admin 在这里确认或者否掉 (否掉 = 回到没选)
+function payConfirm(w, k) {
+  if (!w.pay_confirm) return '';
+  return `<div class="row" style="margin:0 0 .4rem">${D.can_confirm ? `<span class="tag" style="${RV_PEOPLE}">👤 ${esc(w.pay_by || '别人')} 选的${esc(PM_LABEL[w.pay_method] || w.pay_method)}，等你确认</span>`
+      : `<span class="tag" style="background:#fef3c7;color:#92400e">⏳ ${esc(PM_LABEL[w.pay_method] || w.pay_method)} · ${esc(w.pay_by || '')} 选的，等 admin 确认</span>`}
+    ${D.can_confirm ? `<button class="btn btn-blue btn-sm" onclick="save(${k},{approve:'pay'})">✓ 对，确认</button><button class="btn btn-outline btn-sm" style="color:#dc2626" onclick="save(${k},{reject:'pay'})">✗ 不对</button>` : ''}</div>`;
 }
 // 两种待审核用不同颜色: 👤 别人选的 (橙) / 🤖 系统匹配的 (蓝)
 const RV_PEOPLE = 'background:#ffedd5;color:#9a3412;border:1px solid #fdba74';
@@ -1505,15 +1519,14 @@ function eSearch(k) {
 // 手动关联 Gusto: 列出「接受邀请 / 可以付款」邮件里的所有名字, 系统按名字像不像排好, 最像的标「⭐ 最合适」;
 // 关联要弹窗确认两次。连了 Gusto API 的话下面还能直接选 Gusto 收款人
 let GN = null;
-async function pickGusto(k) {
+async function pickGusto(k, kind) {
   const m = document.getElementById('gModal'), w = D.rows[k];
-  // 第二步 (工人接受邀请) 还没完成: 只列「accepted your offer」; 完成了: 只列「can now be paid」
-  const acc = (w.checklist && w.checklist.steps || []).find(s => s.id === 'accepted');
-  const kind = acc && acc.done ? 'ready' : 'accepted';
+  // 第 2 步按钮只列「accepted your offer」, 第 3 步按钮只列「can now be paid」
+  if (kind !== 'ready') kind = 'accepted';
   const kindTxt = kind === 'ready' ? '可以付款了（can now be paid）' : '接受了邀请（accepted your offer）';
   document.getElementById('gTitle').textContent = `关联 Gusto · ${w.name}`;
   document.getElementById('gBody').innerHTML = `<input id="gnQ" placeholder="筛选名字" style="width:100%;margin-bottom:.4rem" oninput="gnRender(${k})">
-    <div class="muted" style="margin-bottom:.35rem">${kind === 'ready' ? '第 2 步已完成，' : ''}Gusto「${kindTxt}」邮件里的所有名字，按和「${esc(w.name)}」像不像排好了</div>
+    <div class="muted" style="margin-bottom:.35rem">第 ${kind === 'ready' ? 3 : 2} 步：Gusto「${kindTxt}」邮件里的所有名字，按和「${esc(w.name)}」像不像排好了</div>
     <div id="gnRes" style="max-height:46vh;overflow:auto"><div class="muted">加载中…</div></div>
     ${D.gusto.connected ? `<div class="lbl" style="margin-top:.6rem">或者直接选 Gusto 收款人（Gusto API）</div><input id="gQ" placeholder="搜名字" style="width:100%;margin-bottom:.4rem" oninput="gSearch(${k})"><div id="gRes" style="max-height:24vh;overflow:auto"></div>` : ''}
     <div style="display:flex;justify-content:space-between;margin-top:.5rem">${D.gusto.connected ? `<button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none';save(${k},{gusto_uuid:''})">清除手动关联（改回按名字自动对）</button>` : '<span></span>'}<button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none'">关闭</button></div>`;
