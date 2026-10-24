@@ -9450,6 +9450,8 @@ function _isChangeRequest(req) {
   // 只存截图 / 识别截图, 不改任何记录 (关联账号的保存才进审批)
   if (p === '/api/acct/onboarding-shot' || p === '/api/acct/onboarding-shot-read') return false;
   if (_isCsSmsSend(req, p)) return false;
+  // 换号申请 / 批准本身就是一道审批, director 批准时不能再被拦去等审批
+  if (p === '/api/device-sms/my-line' || p.startsWith('/api/device-sms/line-requests')) return false;
   if (_isWobGustoWork(req, p)) return false;
   if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return true;
   return String(req.query && req.query.send) === '1';   // 带 ?send=1 的 GET 会真的发东西 (例如立刻发面试日报)
@@ -36138,6 +36140,26 @@ db.exec(`CREATE TABLE IF NOT EXISTS device_sms_lines (
   line TEXT PRIMARY KEY,
   label TEXT DEFAULT ''
 )`);
+// 一个账号固定一个手机号 (admin_users.sms_line): 绑了以后手机短信页只看、只用这个号发。
+// 第一次自己选 (页面上确认两遍); 以后要换号得提申请, 发邮件给所有 director / admin, 任意一个批准才换。
+try { db.exec(`ALTER TABLE admin_users ADD COLUMN sms_line TEXT DEFAULT ''`); } catch(e) {}
+db.exec(`CREATE TABLE IF NOT EXISTS device_sms_line_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  username TEXT DEFAULT '',
+  from_line TEXT DEFAULT '',
+  to_line TEXT NOT NULL,
+  reason TEXT DEFAULT '',
+  status TEXT DEFAULT 'pending',
+  decided_by TEXT DEFAULT '',
+  decided_at TEXT DEFAULT NULL,
+  note TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+function deviceSmsMyLine(req) {
+  const u = db.prepare('SELECT sms_line FROM admin_users WHERE id=?').get(req.userId);
+  return (u && u.sms_line) || '';
+}
 function deviceSmsLine(v) { const d = String(v || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : ''; }
 
 function deviceSmsHashToken(token) {
@@ -38116,7 +38138,11 @@ app.post('/api/device-sms/send', requireAdmin, requireRole('admin', 'cs'), (req,
     if (!/[0-9]/.test(to)) return res.status(400).json({ error: '这个号码不能回复短信（是服务号）' });
     const translateTo = String((req.body || {}).translate_to || '').slice(0, 40);
     // 用哪个手机号发: 不填 = 哪台设备都能发 (只有一个号时)
-    const line = deviceSmsLine((req.body || {}).line);
+    const myLine = deviceSmsMyLine(req);
+    const line = myLine || deviceSmsLine((req.body || {}).line);
+    if (myLine && (req.body || {}).line && deviceSmsLine(req.body.line) !== myLine) {
+      return res.status(403).json({ error: '你的账号绑的是 ' + myLine + '，只能用这个号发。要换号请在页面上申请' });
+    }
     if (line && !db.prepare(`SELECT 1 FROM device_sms_devices WHERE line=? AND active=1`).get(line)) {
       return res.status(400).json({ error: '这个手机号没有连着的设备，发不出去' });
     }
@@ -38363,7 +38389,9 @@ app.get('/api/device-sms/messages', requireAdmin, requireRole('admin', 'cs'), (r
     if (peer) { where += ' AND m.peer = ?'; params.push(peer); }
     // line=10 位号码只看那个号; line=none 只看没标号码的设备
     const lineQ = String(req.query.line || '').trim();
-    const line = lineQ === 'none' ? 'none' : deviceSmsLine(lineQ);
+    // 绑了号的账号只看自己的号, 不管页面传什么
+    const myLine = deviceSmsMyLine(req);
+    const line = myLine || (lineQ === 'none' ? 'none' : deviceSmsLine(lineQ));
     if (line) { where += " AND m.device_id IN (SELECT id FROM device_sms_devices WHERE COALESCE(line,'')=?)"; params.push(line === 'none' ? '' : line); }
     if (String(req.query.starred || '') === '1') where += ' AND m.starred=1';
     if (q) {
@@ -38426,6 +38454,87 @@ app.post('/api/device-sms/devices', requireAdmin, requireRole('admin'), (req, re
     const token = crypto.randomBytes(32).toString('hex');
     const info = db.prepare('INSERT INTO device_sms_devices (name, token_hash, line) VALUES (?,?,?)').run(name, deviceSmsHashToken(token), line);
     res.json({ success: true, id: info.lastInsertRowid, name, line, token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── 账号绑定的手机号 ───
+// GET: 我绑的号、我有没有在等批准的换号申请; director / admin 还能看到所有等批准的申请
+app.get('/api/device-sms/my-line', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
+  try {
+    const line = deviceSmsMyLine(req);
+    const mine = db.prepare(`SELECT id, from_line, to_line, reason, status, decided_by, decided_at, note, created_at FROM device_sms_line_requests
+      WHERE user_id=? ORDER BY id DESC LIMIT 1`).get(req.userId) || null;
+    const approver = req.userRole === 'admin';
+    const pending = approver ? db.prepare(`SELECT r.id, r.user_id, r.username, COALESCE(u.display_name,'') AS display_name, r.from_line, r.to_line, r.reason, r.created_at
+      FROM device_sms_line_requests r LEFT JOIN admin_users u ON u.id=r.user_id WHERE r.status='pending' ORDER BY r.id`).all() : [];
+    res.json({ line, request: mine, approver, pending });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// POST: 第一次绑号 (还没绑过才行; 绑过了要走换号申请)
+app.post('/api/device-sms/my-line', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
+  try {
+    if (deviceSmsMyLine(req)) return res.status(400).json({ error: '你已经绑了号，换号要提申请' });
+    const line = deviceSmsLine((req.body || {}).line);
+    if (!line) return res.status(400).json({ error: '手机号要 10 位数字' });
+    db.prepare(`UPDATE admin_users SET sms_line=? WHERE id=?`).run(line, req.userId);
+    auditLog('sms_line_bind', req, { targetType: 'admin_user', targetId: req.userId, details: { line } });
+    res.json({ success: true, line });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// POST: 申请换号 → 邮件给所有 director / admin
+app.post('/api/device-sms/line-requests', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
+  try {
+    const from = deviceSmsMyLine(req);
+    const to = deviceSmsLine((req.body || {}).to_line);
+    const reason = String((req.body || {}).reason || '').trim().slice(0, 500);
+    if (!to) return res.status(400).json({ error: '新手机号要 10 位数字' });
+    if (to === from) return res.status(400).json({ error: '跟现在的号一样' });
+    if (!reason) return res.status(400).json({ error: '要写换号的原因' });
+    if (db.prepare(`SELECT 1 FROM device_sms_line_requests WHERE user_id=? AND status='pending'`).get(req.userId)) {
+      return res.status(400).json({ error: '你已经有一个换号申请在等批准了' });
+    }
+    const info = db.prepare(`INSERT INTO device_sms_line_requests (user_id, username, from_line, to_line, reason) VALUES (?,?,?,?,?)`)
+      .run(req.userId, req.userName || '', from, to, reason);
+    const u = db.prepare('SELECT display_name FROM admin_users WHERE id=?').get(req.userId) || {};
+    const who = u.display_name || req.userName || '';
+    const base = (process.env.BASE_URL || '').replace(/\/$/, '');
+    const fmt = l => l ? `(${l.slice(0, 3)}) ${l.slice(3, 6)}-${l.slice(6)}` : '（没绑）';
+    const text = `${who} 申请换手机短信的号码：\n\n  现在：${fmt(from)}\n  换成：${fmt(to)}\n  原因：${reason}\n\n`
+      + `一个账号一般只用一个号，换号要 director 或 admin 批准（任意一个批准就生效）。\n去批准或拒绝：${base}/phone-sms#linereq=${info.lastInsertRowid}`;
+    for (const a of db.prepare(`SELECT email FROM admin_users WHERE role='admin' AND COALESCE(active,1)=1 AND COALESCE(email,'')!='' AND id!=?`).all(req.userId)) {
+      sendEmail(a.email, `【换号申请】${who}：${fmt(from)} → ${fmt(to)}`, text).catch(() => {});
+    }
+    auditLog('sms_line_request', req, { targetType: 'device_sms_line_request', targetId: info.lastInsertRowid, details: { from, to } });
+    res.json({ success: true, id: info.lastInsertRowid });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// POST: 批准 / 拒绝 (director 和 admin 都能批, 不能批自己的); 申请人自己可以撤回 (cancel)
+app.post('/api/device-sms/line-requests/:id', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
+  try {
+    const r = db.prepare(`SELECT * FROM device_sms_line_requests WHERE id=?`).get(req.params.id);
+    if (!r) return res.status(404).json({ error: '找不到这个申请' });
+    if (r.status !== 'pending') return res.status(409).json({ error: '这个申请已经处理过了（' + r.status + '）' });
+    const b = req.body || {};
+    const now = new Date().toISOString();
+    if (b.cancel) {
+      if (r.user_id !== req.userId) return res.status(403).json({ error: '只能撤回自己的申请' });
+      db.prepare(`UPDATE device_sms_line_requests SET status='cancelled', decided_by=?, decided_at=? WHERE id=?`).run(req.userName || '', now, r.id);
+      return res.json({ success: true, status: 'cancelled' });
+    }
+    if (req.userRole !== 'admin') return res.status(403).json({ error: '只有 director / admin 能批准换号' });
+    if (r.user_id === req.userId) return res.status(400).json({ error: '不能批准自己的换号申请' });
+    const note = String(b.note || '').trim().slice(0, 300);
+    if (b.approve) {
+      db.prepare(`UPDATE admin_users SET sms_line=? WHERE id=?`).run(r.to_line, r.user_id);
+      db.prepare(`UPDATE device_sms_line_requests SET status='approved', decided_by=?, decided_at=?, note=? WHERE id=?`).run(req.userName || '', now, note, r.id);
+    } else {
+      db.prepare(`UPDATE device_sms_line_requests SET status='rejected', decided_by=?, decided_at=?, note=? WHERE id=?`).run(req.userName || '', now, note, r.id);
+    }
+    auditLog(b.approve ? 'sms_line_approve' : 'sms_line_reject', req, { targetType: 'device_sms_line_request', targetId: r.id, details: { user: r.username, from: r.from_line, to: r.to_line } });
+    // 告诉申请人结果
+    const u = db.prepare('SELECT email FROM admin_users WHERE id=?').get(r.user_id);
+    if (u && u.email) sendEmail(u.email, `换号申请${b.approve ? '已批准' : '没批准'}`, `你申请把手机短信的号换成 ${r.to_line}，${req.userName || ''} ${b.approve ? '已批准，刷新页面就是新号了' : '没批准'}。${note ? '\n说明：' + note : ''}`).catch(() => {});
+    res.json({ success: true, status: b.approve ? 'approved' : 'rejected' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
