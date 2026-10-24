@@ -45320,6 +45320,10 @@ function _wobBuild() {
     const linked = !(w.pay_method === 'gusto' && !(w.gusto && w.gusto.link) && gustoRosterN > 0);
     const emailActionable = w.email_proposals.filter(e => !['accepted', 'ready'].includes(e.kind) || (w.pay_method === 'gusto' && linked && stepsDone[e.kind])).length;
     w.pending_review = (w.gusto_proposal ? 1 : 0) + (w.employee_proposals.length ? 1 : 0) + emailActionable + w.pay_review;
+    // 待审核分两种: 👤 别人 (director / 入职专员) 选的、填的, 等你确认; 🤖 系统按名字匹配的, 等你认
+    const byHand = x => /手动选的/.test((x && x.why) || '');
+    w.review_people = (byHand(w.gusto_proposal) ? 1 : 0) + (w.employee_proposals.length && byHand(w.employee_proposals[0]) ? 1 : 0) + w.pay_review;
+    w.review_system = w.pending_review - w.review_people;
     w.bank_alerts = bankByKey[w.key] || [];
     w.bank_alert_open = w.bank_alerts.filter(b => !b.ack_at).length;
     // 第一步一律是关联员工档案; 关联了才看付款方式。
@@ -45603,6 +45607,9 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
     const since = wob.addDays(thisWeek, -7 * 16);
     // 这周的发票 (按工资周期结束日): 每张上有几个人、几个新人、付款方式待定 / 已定几个、几条待审核
     const invMap = new Map();
+    // 有「等审批的修改」(director 提交的) 的人, 算在 👤 别人选的 里
+    let pendKeys = new Set();
+    try { pendKeys = new Set(_wobPendingChanges().filter(c => c.kind === 'worker' && c.key).map(c => c.key)); } catch (e) {}
     for (const w of list) {
       for (const l of w._lines) {
         if (wob.weekStart(l.period_end) !== week) continue;
@@ -45613,12 +45620,15 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
           invMap.set(l.invoice_id, inv);
         }
         inv.total = Math.round((inv.total + l.total) * 100) / 100;
+        inv.review_people = inv.review_people || 0; inv.review_system = inv.review_system || 0;
         if (inv.keys.has(w.key)) continue;
         inv.keys.add(w.key);
         inv.workers++;
         if (w.week === week) { inv.new++; if (!w.done) inv.new_open++; }
         if (w.settled) inv.settled++; else inv.unsettled++;
         if (w.pending_review) inv.review++;
+        if (w.review_people || pendKeys.has(w.key)) inv.review_people++;
+        if (w.review_system) inv.review_system++;
         if (w.state_bad) inv.state_bad++;
       }
     }
@@ -45652,6 +45662,8 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
     res.json({ ok: true, view, week, weeks, rows, invoices, invoice: invSel,
       open_total: list.filter(w => !w.done && w.week >= since).length,
       review_total: list.filter(w => w.pending_review).length,
+      review_people_total: list.filter(w => w.review_people || pendKeys.has(w.key)).length,
+      review_system_total: list.filter(w => w.review_system).length,
       // 银行信息提醒 (页面最上方): 还没人点「知道了」的
       bank_alerts: bank.filter(b => !b.ack_at).map(b => ({ ...b, worker: b.key ? ((list.find(w => w.key === b.key) || {}).name || '') : '' })).reverse(),
       // 对不上人的邮件: 没忽略的; 忽略的只给个数, 页面上点「显示已忽略」再带出来
