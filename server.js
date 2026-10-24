@@ -46448,6 +46448,50 @@ app.get('/api/acct/onboarding-mailhook', requireAdmin, requireWobView, (req, res
     last_forward_at: cfg.last_forward_at || '', last_forward_ok: cfg.last_forward_ok || 0, last_forward_error: cfg.last_forward_error || '',
     total_seen: db.prepare('SELECT COUNT(*) AS n FROM gusto_mail_seen').get().n, recent });
 });
+// 全部 Gusto 邮件 (单独页面 /gusto-mails 用): 每封的分类、有没有对上人 (关联)、发给过谁。
+// 入职相关的 (接受邀请 / 可以付款 / 银行) 带关联状态; 其他 Gusto 邮件 (工资单、通知…) 只列标题。
+app.get('/api/acct/onboarding-mails', requireAdmin, requireWobView, (req, res) => {
+  try {
+    const { list, unmatched, bank } = _wobScoped(req);
+    const scoped = !!_wobScope(req);
+    const nameOf = {}; for (const w of list) nameOf[w.key] = w.name;
+    const linked = {}, proposed = {};
+    for (const w of list) {
+      for (const e of w.emails || []) linked[e.id] = { key: w.key, worker: w.name, by: e.by || '' };
+      for (const e of w.email_proposals || []) proposed[e.id] = { key: w.key, worker: w.name };
+    }
+    const um = {}; for (const e of unmatched) um[e.id] = e;
+    const bk = {}; for (const b of bank) bk[b.id] = b;
+    const sentBy = {};
+    for (const r of db.prepare('SELECT event_id, to_addr, MIN(sent_at) AS at, MIN(how) AS how FROM gusto_mail_sends GROUP BY event_id, to_addr').all())
+      (sentBy[r.event_id] = sentBy[r.event_id] || []).push({ to: r.to_addr, at: r.at, how: r.how });
+    const rows = [];
+    for (const ev of db.prepare(`SELECT id, kind, name, date, subject, worker_key, review_by, review_at, rejected_keys, ignored_by, ignored_at,
+        ack_by, ack_at, added_by, created_at FROM gusto_email_events ORDER BY date DESC, id DESC`).all()) {
+      let status = 'none', worker = '', key = '', by = '', candidates = [];
+      if (/^bank_/.test(ev.kind)) {
+        const b = bk[ev.id];
+        if (b && b.key) { status = ev.worker_key ? 'linked' : 'proposed'; key = b.key; worker = nameOf[b.key] || ''; by = ev.review_by || ''; }
+        else { status = 'unmatched'; candidates = ((b && b.candidates) || []).map(c => c.name); }
+      } else if (linked[ev.id]) { status = 'linked'; ({ key, worker, by } = linked[ev.id]); }
+      else if (ev.worker_key) { status = 'linked'; key = ev.worker_key; worker = nameOf[ev.worker_key] || ev.worker_key; by = ev.review_by || ''; }
+      else if (proposed[ev.id]) { status = 'proposed'; ({ key, worker } = proposed[ev.id]); }
+      else if (ev.ignored_at) status = 'ignored';
+      else { status = 'unmatched'; candidates = ((um[ev.id] && um[ev.id].candidates) || []).map(c => c.name); }
+      // manager 只看自己仓库的人 (对不上人的不给)
+      if (scoped && !(key && nameOf[key])) continue;
+      rows.push({ id: ev.id, kind: ev.kind, label: wob.EMAIL_KIND_LABEL[ev.kind] || ev.kind, name: ev.name, date: ev.date, subject: ev.subject,
+        status, key, worker, by, candidates, ignored_by: ev.ignored_by || '', ack_by: ev.ack_by || '', ack_at: ev.ack_at || '',
+        source: ev.added_by || '', sent: sentBy[ev.id] || (ev.added_by === '邮箱自动同步' ? [{ to: '转发名单', at: ev.created_at, guess: true }] : []) });
+    }
+    // 其他 Gusto 邮件 (不是入职相关的): 只有标题
+    const other = scoped ? [] : db.prepare(`SELECT message_id, subject, received_at FROM gusto_mail_seen WHERE COALESCE(kind,'')='' ORDER BY received_at DESC LIMIT 2000`).all()
+      .map(m => ({ id: 'm' + m.message_id, kind: 'other', label: '其他 Gusto 邮件', name: '', date: String(m.received_at || '').slice(0, 10), subject: m.subject, status: 'na', sent: [] }));
+    const cfg = _mailHookCfg();
+    res.json({ rows: rows.concat(other), mail_sync: { last_at: cfg.last_at || '', last_auto_at: cfg.last_auto_at || '', backfill_done_at: cfg.backfill_done_at || '' },
+      forward_to: req.userRole === 'admin' ? (cfg.forward_to || []) : [] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 // 邮件抓全了没有: 系统一共记下多少封入职邮件 (按类型 / 状态), Gusto 入职的人里谁缺「接受邀请」「可以付款」
 app.get('/api/acct/onboarding-mail-coverage', requireAdmin, requireWobView, (req, res) => {
   try {
