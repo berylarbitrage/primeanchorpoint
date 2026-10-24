@@ -45540,7 +45540,7 @@ function _wobPendingChanges() {
       out.kind = 'worker';
       // 页面上先按「已经选了」显示 (付款方式 / 账号 / 勾的步骤 / 关联的档案), 后面的步骤不用等审批
       out.body = {};
-      for (const f of ['pay_method', 'zelle_accounts', 'cashapp_accounts', 'ach_accounts', 'step', 'checked', 'employee_id', 'approve', 'id', 'uuid', 'gusto_uuid']) if (b[f] !== undefined) out.body[f] = b[f];
+      for (const f of ['pay_method', 'zelle_accounts', 'cashapp_accounts', 'ach_accounts', 'event_id', 'step', 'checked', 'employee_id', 'approve', 'id', 'uuid', 'gusto_uuid']) if (b[f] !== undefined) out.body[f] = b[f];
       out.key = _payrollNameKey(decodeURIComponent(m[1]));
       const cur = db.prepare('SELECT * FROM new_hire_onboarding WHERE name_key=?').get(out.key) || {};
       if (b.pay_method !== undefined) out.items.push(`付款方式：${PM[cur.pay_method || ''] || cur.pay_method} → ${PM[b.pay_method] || b.pay_method}`);
@@ -45862,7 +45862,8 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       const ev = db.prepare('SELECT id, kind, worker_key, rejected_keys FROM gusto_email_events WHERE id=?').get(parseInt(b.event_id, 10) || 0);
       if (!ev) return res.status(404).json({ error: '找不到这封邮件' });
       // 入职进度邮件 (接受邀请 / 可以付款) 要按步骤来: 先选 Gusto 入职, 前一步完成了才能通过这一步的邮件
-      if ((b.approve || b.reject) && ['accepted', 'ready'].includes(ev.kind) && !req.isApprovalReplay) {
+      // 同意别人提交的 (重放) 也一样按步骤卡, 不然第二步没完成就能把第三步的邮件通过了
+      if ((b.approve || b.reject) && ['accepted', 'ready'].includes(ev.kind)) {
         if (next.pay_method !== 'gusto') return res.status(400).json({ error: '付款方式还不是「Gusto 入职」，先选 Gusto 入职再审核 Gusto 邮件' });
         if (_wobNeedGustoLink(next)) return res.status(400).json({ error: '先关联 Gusto 名册里的这个人（点「手动关联」），再审核 Gusto 邮件' });
         const w = _wobBuild().list.find(x => x.key === key);
@@ -45906,7 +45907,7 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       const step = str(b.step, 40);
       if (!wob.GUSTO_STEPS.some(s => s.id === step)) return res.status(400).json({ error: '没有这一步' });
       if (!approver) return res.status(403).json({ error: 'Gusto 入职清单只有 manager / admin 能勾' });
-      if (b.checked && !req.isApprovalReplay && _wobNeedGustoLink(next)) return res.status(400).json({ error: '先关联 Gusto 名册里的这个人（点「手动关联」），再做入职步骤' });
+      if (b.checked && _wobNeedGustoLink(next)) return res.status(400).json({ error: '先关联 Gusto 名册里的这个人（点「手动关联」），再做入职步骤' });
       if (!wob.GUSTO_STEPS.find(s => s.id === step).tickable) return res.status(400).json({ error: '这一步只能等 Gusto 邮件自动完成，不能手动勾' });
       if (b.checked) {
         const w = _wobScoped(req).list.find(x => x.key === key);
