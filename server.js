@@ -35955,6 +35955,7 @@ app.post('/api/sms/webhook/inbound', express.urlencoded({ extended: false }), va
   try {
     const { From, To, Body, MessageSid, NumMedia } = req.body;
     if (!From || !To) return res.type('text/xml').send('<Response></Response>');
+    if (deviceSmsIdentifyHit(From, Body)) return res.type('text/xml').send('<Response></Response>');
 
     // WhatsApp 消息的 From/To 带 "whatsapp:" 前缀 — 同一个 webhook 一起接
     const isWhatsApp = /^whatsapp:/i.test(String(From)) || /^whatsapp:/i.test(String(To));
@@ -36229,6 +36230,31 @@ function deviceSmsGuessLine(deviceId) {
   if (!tally.size) return null;
   const [line, hits] = [...tally.entries()].sort((a, b) => b[1] - a[1])[0];
   return { line, hits, how: 'twilio' };
+}
+// 「自动认号」: 让这台设备 (手机) 给公司 Twilio 号发一条带认号码的短信, Twilio 收到时 From 就是它的号。
+// 不靠运营商有没有把号码写进 SIM 卡, 也不靠以前有没有往来, 一定能认出来。
+try { db.exec(`ALTER TABLE device_sms_outbox ADD COLUMN target_device_id INTEGER DEFAULT NULL`); } catch(e) {}
+db.exec(`CREATE TABLE IF NOT EXISTS device_sms_identify (
+  code TEXT PRIMARY KEY,
+  device_id INTEGER NOT NULL,
+  number TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now')),
+  done_at TEXT DEFAULT NULL
+)`);
+// Twilio 收到短信时先看是不是认号短信: 是就记下号码, 不进收件箱
+function deviceSmsIdentifyHit(from, body) {
+  try {
+    const m = String(body || '').match(/认号\s*([A-Z0-9]{6})/);
+    if (!m) return false;
+    const row = db.prepare(`SELECT * FROM device_sms_identify WHERE code=? AND done_at IS NULL AND created_at >= datetime('now','-1 day')`).get(m[1]);
+    if (!row) return false;
+    const num = String(from || '').replace(/\D/g, '').slice(-10);
+    if (num.length !== 10) return false;
+    db.prepare(`UPDATE device_sms_identify SET number=?, done_at=datetime('now') WHERE code=?`).run(num, m[1]);
+    db.prepare(`UPDATE device_sms_devices SET reported_number=? WHERE id=?`).run(num, row.device_id);
+    console.log('[Device SMS] identify: device', row.device_id, '=', num);
+    return true;
+  } catch (e) { console.error('[Device SMS] identify:', e.message); return false; }
 }
 function deviceSmsLine(v) { const d = String(v || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : ''; }
 
@@ -38035,6 +38061,8 @@ app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
         const peerKey = String(m.peer || '').slice(0, 40);
         const direction = m.direction === 'out' ? 'out' : 'in';
         const bodyText = String(m.body || '').slice(0, 4000);
+        // 自动认号发给公司号的那条, 不放进短信列表
+        if (/^Prime Anchor 认号 [A-Z0-9]{6}/.test(bodyText)) continue;
         const sentIso = new Date(sentAt).toISOString();
         // 纯图片彩信没有正文, 也按同人同方向同时间去重 (电脑端和手机 App 都会推彩信)
         if ((bodyText.trim() || m.kind === 'mms') && !existsSelf.get(req.smsDevice.id, remoteId)) {
@@ -38231,8 +38259,8 @@ app.get('/api/device-sms/outbox', deviceSmsAuth, (req, res) => {
     // 被别的设备取走不到 60 秒的先跳过，它没回报结果才轮得到下一个。
     const rows = db.prepare(`SELECT id, to_address, peer, body, attempts, translate_to FROM device_sms_outbox
       WHERE status='pending' AND (taken_at IS NULL OR device_id=? OR taken_at < datetime('now','-60 seconds'))
-        AND (COALESCE(line,'')='' OR line=?)
-      ORDER BY id ASC LIMIT 10`).all(req.smsDevice.id, req.smsDevice.line || '');
+        AND ((target_device_id IS NULL AND (COALESCE(line,'')='' OR line=?)) OR target_device_id=?)
+      ORDER BY id ASC LIMIT 10`).all(req.smsDevice.id, req.smsDevice.line || '', req.smsDevice.id);
     if (rows.length) {
       const mark = db.prepare(`UPDATE device_sms_outbox SET attempts=attempts+1, taken_at=datetime('now'), device_id=? WHERE id=?`);
       for (const row of rows) mark.run(req.smsDevice.id, row.id);
@@ -38498,7 +38526,7 @@ app.get('/api/device-sms/messages', requireAdmin, requireRole('admin', 'cs'), (r
     // 刚发出去(sent)的也带上: 电脑发完到手机把真实短信推回来之间有几分钟空档,
     // 不带的话消息会先消失一阵, 像没发出去一样; 前端等真实消息到了自动去重隐藏。
     const outbox = db.prepare(`SELECT id, to_address, peer, body, status, note, created_at, COALESCE(line,'') AS line FROM device_sms_outbox
-      WHERE (status IN ('pending','failed')
+      WHERE target_device_id IS NULL AND (status IN ('pending','failed')
          OR (status='sent' AND done_at >= datetime('now','-2 days')))
         ${line && line !== 'none' ? "AND (COALESCE(line,'')='' OR line=?)" : ''}
       ORDER BY id ASC LIMIT 100`).all(...(line && line !== 'none' ? [line] : []));
@@ -38515,7 +38543,10 @@ app.get('/api/device-sms/devices', requireAdmin, requireRole('admin'), (req, res
       devices: db.prepare(`SELECT id, name, serial, active, last_push_at, message_count, created_at, COALESCE(line,'') AS line, COALESCE(reported_number,'') AS reported_number
         FROM device_sms_devices ORDER BY id DESC`).all().map(d => {
         // 还没设号码、在用的: 帮着认一下号码 (手机自己报的优先, 没有就拿公司号的收发记录去对)
-        if (!d.line && d.active) d.guess = d.reported_number ? { line: d.reported_number, how: 'phone' } : (d.message_count ? deviceSmsGuessLine(d.id) : null);
+        if (!d.line && d.active) {
+          const idf = d.reported_number && db.prepare(`SELECT 1 FROM device_sms_identify WHERE device_id=? AND number=?`).get(d.id, d.reported_number);
+          d.guess = d.reported_number ? { line: d.reported_number, how: idf ? 'identify' : 'phone' } : (d.message_count ? deviceSmsGuessLine(d.id) : null);
+        }
         return d;
       }),
       lines: db.prepare('SELECT line, label FROM device_sms_lines').all()
@@ -38661,6 +38692,32 @@ app.post('/api/device-sms/lines', requireAdmin, requireRole('admin'), (req, res)
     db.prepare(`INSERT INTO device_sms_lines (line, label) VALUES (?,?) ON CONFLICT(line) DO UPDATE SET label=excluded.label`)
       .run(line, String((req.body || {}).label || '').trim().slice(0, 30));
     res.json({ success: true, line });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/device-sms/devices/:id/identify — 自动认号: 让这台设备给公司号发一条认号短信
+// GET 同一个地址 — 看认出来没有
+app.post('/api/device-sms/devices/:id/identify', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const dev = db.prepare('SELECT id, active FROM device_sms_devices WHERE id=?').get(req.params.id);
+    if (!dev || !dev.active) return res.status(404).json({ error: '这台设备没在用' });
+    const to = TWILIO_FROM;
+    if (!to) return res.status(400).json({ error: '公司号 (TWILIO_PHONE_NUMBER) 没配置，没法自动认号' });
+    // 一小时内已经发过、还没认出来的, 不再重复发 (每发一次就是一条真短信)
+    const recent = db.prepare(`SELECT code FROM device_sms_identify WHERE device_id=? AND done_at IS NULL AND created_at >= datetime('now','-1 hour') ORDER BY created_at DESC LIMIT 1`).get(dev.id);
+    if (recent && !(req.body || {}).again) return res.json({ success: true, code: recent.code, reused: true });
+    const code = crypto.randomBytes(6).toString('base64').replace(/[^A-Z0-9]/gi, '').toUpperCase().padEnd(6, '7').slice(0, 6);
+    db.prepare(`INSERT INTO device_sms_identify (code, device_id) VALUES (?,?)`).run(code, dev.id);
+    db.prepare(`INSERT INTO device_sms_outbox (to_address, peer, body, created_by, target_device_id) VALUES (?,?,?,?,?)`)
+      .run(to, String(to).replace(/\D/g, '').slice(-10), `Prime Anchor 认号 ${code}（系统自动发的，用来认出这部手机的号码，可以忽略）`, req.userName || '', dev.id);
+    res.json({ success: true, code });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/device-sms/devices/:id/identify', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const row = db.prepare(`SELECT number, done_at, created_at FROM device_sms_identify WHERE device_id=? ORDER BY created_at DESC LIMIT 1`).get(req.params.id);
+    const ob = db.prepare(`SELECT status, note FROM device_sms_outbox WHERE target_device_id=? ORDER BY id DESC LIMIT 1`).get(req.params.id);
+    res.json({ number: row && row.number || '', sent: ob ? ob.status : '', note: ob ? ob.note : '' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -40811,6 +40868,7 @@ app.post('/api/twilio/sms/incoming', express.urlencoded({ extended: false }), va
   try {
     const { From, To, Body, MessageSid } = req.body;
     if (!From) return res.send('<Response/>');
+    if (deviceSmsIdentifyHit(From, Body)) return res.send('<Response/>');
 
     const customerPhone = formatPhoneE164(From);
     const bodyTrimmed = (Body || '').trim();
