@@ -501,7 +501,9 @@ function card(w, k) {
         ${D.can_edit ? `<button class="btn ${needGustoLink(w) ? 'btn-blue' : 'btn-outline'} btn-sm" onclick="pickGusto(${k})">${g && g.link ? '改关联' : needGustoLink(w) ? '① 先手动关联' : '手动关联'}</button>` : ''}
         ${g && g.uuid && D.gusto.connected ? `<button class="btn btn-outline btn-sm" onclick="gustoSteps(${k})">Gusto 明细</button>` : ''}
         <span class="muted">${w.checklist.done_count}/${w.checklist.steps.length}</span></div>${emailProps}
-        ${(w.emails || []).map(e => `<div class="row" style="margin:.2rem 0 0"><span class="tag" style="background:#dcfce7;color:#166534">✓ 邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span>${sentTag(e)}<span class="muted">${e.by ? esc(e.by) + ' 通过' : ''}</span>${D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="undoApprove(${k},'email',${e.id})">↩ 撤销通过</button>` : ''}</div>`).join('')}</div>
+        ${(w.emails || []).map(e => `<div class="row" style="margin:.2rem 0 0">${e.admin_ok
+          ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ 邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span>`
+          : `${D.can_confirm ? rvMark(`${e.by || '别人'} 手动选的`) : ''}<span class="tag" style="background:#fef3c7;color:#92400e">邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span>`}${sentTag(e)}<span class="muted">${e.by ? esc(e.by) + ' 通过' : ''}${e.admin_ok ? (e.admin_ok !== e.by ? ` · ${esc(e.admin_ok)} 确认` : '') : '，等 admin 确认'}</span>${!e.admin_ok && D.can_confirm ? `<button class="btn btn-blue btn-sm" onclick="confirmEmail(${k},${e.id},true)">✓ 对，确认</button><button class="btn btn-outline btn-sm" style="color:#dc2626" onclick="confirmEmail(${k},${e.id},false)">✗ 不是这个人</button>` : ''}${D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="undoApprove(${k},'email',${e.id})">↩ 撤销通过</button>` : ''}</div>`).join('')}</div>
       <div class="ck" style="grid-template-columns:repeat(3,minmax(0,1fr))">${steps}</div>`;
   }
   const bankBox = w.bank_alerts.length ? `<div class="ck" style="grid-template-columns:1fr;background:#fef2f2">${w.bank_alerts.map(b => `<div class="row" style="margin:0">
@@ -1179,6 +1181,18 @@ function undoApprove(k, what, evId) {
   confirmBox('撤销通过', `<div style="font-size:.88rem"><b>${esc(w.name)}</b>：撤销 ${esc(txt)} 的通过？</div>
     <div class="muted" style="margin-top:.3rem">撤销后回到「待审核」，可以重新通过或点「不是」${what === 'email' ? '；Gusto 清单里靠这封邮件打的勾也会取消' : ''}</div>`,
     () => save(k, what === 'email' ? { unapprove: 'email', event_id: evId } : { unapprove: what }));
+}
+// admin 确认别人 (director / manager) 通过的 Gusto 邮件: 对 → 清单按这封邮件打勾; 不是 → 取消关联, 以后也不再对到这个人
+function confirmEmail(k, evId, ok) {
+  const w = D.rows[k], e = (w.emails || []).find(x => x.id === evId) || {};
+  const run = async () => {
+    const j = await api(`/api/acct/onboarding-mails/${evId}/confirm`, { method: 'POST', body: { ok } }).catch(x => ({ error: x.message }));
+    if (j.error) { toast(j.error, true); return false; }
+    toast(ok ? `已确认：${e.name || ''} → ${w.name}` : '已取消关联'); load(); return true;
+  };
+  if (ok) return run();
+  confirmBox('不是这个人', `<div style="font-size:.88rem">Gusto 邮件「${esc(e.date || '')} ${esc(e.label || '')} · ${esc(e.name || '')}」不是 <b>${esc(w.name)}</b> 的？</div>
+    <div class="muted" style="margin-top:.3rem">会取消关联（${esc(e.by || '别人')} 通过的），以后系统也不会再把它对到这个人</div>`, run);
 }
 function tickStep(k, i) {
   const w = D.rows[k], s = w.checklist.steps[i];
