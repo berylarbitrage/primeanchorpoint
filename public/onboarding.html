@@ -575,7 +575,7 @@ function emailLock(w, e) {
   if (needGustoLink(w)) return '先关联 Gusto 名册里的这个人（点「手动关联」）';
   const steps = (w.checklist && w.checklist.steps) || [];
   const i = steps.findIndex(s => s.id === e.kind);
-  return i > 0 && !steps[i - 1].done ? `先完成第 ${i} 步「${steps[i - 1].label}」` : '';
+  return i > 0 && !steps[i - 1].done && !steps[i - 1].awaiting ? `先完成第 ${i} 步「${steps[i - 1].label}」` : '';
 }
 function reviewBtns(k, yes, no, lockWhy) {
   if (!D.can_approve) return '<span class="muted">等 manager / admin 审核</span>';
@@ -1300,7 +1300,7 @@ function applyPendingOverlay() {
       if (st) {
         if (b.checked) { st.manual = { by: (c.by || '') + '（等审批）', at: c.at }; st.done = true; }
         else { st.manual = null; st.done = !!st.auto; }
-        steps.forEach((x, i) => { x.locked = i > 0 && !steps[i - 1].done; });
+        steps.forEach((x, i) => { x.locked = i > 0 && !steps[i - 1].done && !steps[i - 1].awaiting; });
         w.checklist.done_count = steps.filter(x => x.done).length;
         w.pend.step = true;
       }

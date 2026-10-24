@@ -152,6 +152,7 @@ function matchEmailName(name, candidates) {
 // 三步, 按顺序: ① 我们这边 (admin / manager) 在 Gusto 加人发邀请, 手动打勾 (Gusto 名册里已经有这个人也算);
 // ② 工人接受邀请 (邮件「accepted your offer」/ Gusto API); ③ 工人入职完成 (邮件「can now be paid」/ Gusto API / 已付过款)。
 // 只有第一步能手动勾; 后两步只能等 Gusto 邮件 (邮件对人要 manager / admin 通过) 自动完成。
+// director 通过、等 admin 确认的那一步不打勾, 但下一步可以先接着做 (awaiting); admin 否掉了, 后面那步跟着取消。
 // 银行信息的邮件不在清单里, 单独做成提醒。
 const GUSTO_STEPS = [
   { id: 'added', label: '在 Gusto 添加合同工并发邀请', hint: 'Gusto → People → Add contractor，填姓名和邮箱/电话发邀请；做完回来打勾', tickable: true },
@@ -180,16 +181,17 @@ function buildChecklist(ctx) {
   const manual = ctx.manual || {};
   const pend = k => (ctx.pendingEmails || []).filter(e => e.kind === k).pop();
   const conf = k => (ctx.confirmEmails || []).filter(e => e.kind === k).pop();
-  let prevDone = true;
+  let prevDone = true;   // 上一步做完了, 或者 director 已经通过、等 admin 确认
   const steps = GUSTO_STEPS.map(s => {
     const m = s.tickable ? manual[s.id] : null;   // 后两步就算以前手动勾过也不算
     const done = !!(auto[s.id] || m);
     const c = !done && s.id !== 'added' ? conf(s.id) : null;
     const p = !done && s.id !== 'added' && !c ? pend(s.id) : null;
     const step = { ...s, auto: auto[s.id] || '', manual: m ? { at: m.at || '', by: m.by || '' } : null, done, locked: !prevDone,
+      awaiting: !!c,
       pending: c ? `邮件 ${c.date || ''}${c.by ? ' · ' + c.by + ' 通过' : ''}，等 admin 确认`.replace('  ', ' ')
         : p ? `收到邮件 ${p.date || ''}，等确认是不是这个人`.replace('  ', ' ') : '' };
-    prevDone = done;
+    prevDone = done || !!c;
     return step;
   });
   return { steps, gusto: g, done: steps.every(s => s.done), done_count: steps.filter(s => s.done).length };
