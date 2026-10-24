@@ -482,17 +482,18 @@ function card(w, k) {
       const note = s.auto ? `<br><span class="src">✓ ${esc(s.auto)}</span>`
         : s.manual ? `<br><span class="muted">${esc(s.manual.by)} 确认 ${esc(fmtTime(s.manual.at))}</span>`
         : s.pending ? `<br><span style="font-size:.72rem;color:#3730a3">🔎 ${esc(s.pending)}</span>`
+        : needGustoLink(w) && !s.done ? '<br><span style="font-size:.72rem;color:#b45309">🔒 先关联 Gusto 名册里的这个人</span>'
         : s.locked ? '<br><span class="muted">等上一步</span>'
         : s.tickable ? (D.can_approve ? '' : '<br><span class="muted">manager / admin 确认</span>')
         : '<br><span class="muted">⏳ 等 Gusto 邮件</span>';
       const box = s.tickable
-        ? `<input type="checkbox" ${s.done ? 'checked' : ''} ${!D.can_approve || s.locked || (s.auto && !s.manual) ? 'disabled' : ''} onclick="event.preventDefault();tickStep(${k},${i})">`
+        ? `<input type="checkbox" ${s.done ? 'checked' : ''} ${!D.can_approve || s.locked || (s.auto && !s.manual) || (needGustoLink(w) && !s.done) ? 'disabled' : ''} onclick="event.preventDefault();tickStep(${k},${i})">`
         : `<span style="width:16px;text-align:center;flex:none">${s.done ? '✅' : s.pending ? '🔎' : '⏳'}</span>`;
-      return `<label class="step ${s.done ? 'ok' : ''}" title="${esc(s.hint)}" style="${s.locked ? 'opacity:.45' : ''}">${box}
+      return `<label class="step ${s.done ? 'ok' : ''}" title="${esc(s.hint)}" style="${s.locked || (needGustoLink(w) && !s.done) ? 'opacity:.45' : ''}">${box}
         <span><b>${i + 1}.</b> <span class="t">${esc(s.label)}</span>${note}</span></label>`;
     }).join('');
     gusto = `<div class="ck" style="grid-template-columns:1fr;padding-bottom:0;border-bottom:none"><div class="row" style="margin:0">${who}${st}
-        ${D.can_edit ? `<button class="btn btn-outline btn-sm" onclick="pickGusto(${k})">${g && g.link ? '改' : '手动'}关联</button>` : ''}
+        ${D.can_edit ? `<button class="btn ${needGustoLink(w) ? 'btn-blue' : 'btn-outline'} btn-sm" onclick="pickGusto(${k})">${g && g.link ? '改关联' : needGustoLink(w) ? '① 先手动关联' : '手动关联'}</button>` : ''}
         ${g && g.uuid && D.gusto.connected ? `<button class="btn btn-outline btn-sm" onclick="gustoSteps(${k})">Gusto 明细</button>` : ''}
         <span class="muted">${w.checklist.done_count}/${w.checklist.steps.length}</span></div>${emailProps}
         ${(w.emails || []).map(e => `<div class="row" style="margin:.2rem 0 0"><span class="tag" style="background:#dcfce7;color:#166534">✓ 邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span><span class="muted">${e.by ? esc(e.by) + ' 通过' : ''}</span>${D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="undoApprove(${k},'email',${e.id})">↩ 撤销通过</button>` : ''}</div>`).join('')}</div>
@@ -533,9 +534,12 @@ function card(w, k) {
 // 系统匹配的建议: manager / admin 才有 通过 / 不是 按钮, 其他人只看到「等审核」
 // lockWhy: 现在还不能通过的原因 (按步骤来), 有的话「通过」变灰、写出先做哪一步; 「不是」照样能点
 // 入职进度邮件能不能通过: 先选 Gusto 入职; 「接受邀请」要第 1 步做完, 「可以付款」要第 2 步做完
+// Gusto 入职要先关联 Gusto 名册里的这个人 (名册是空的就不卡)
+const needGustoLink = w => w.pay_method === 'gusto' && !(w.gusto && w.gusto.link) && D.gusto && D.gusto.contractors > 0;
 function emailLock(w, e) {
   if (!['accepted', 'ready'].includes(e.kind)) return '';
   if (w.pay_method !== 'gusto') return '先选「Gusto 入职」';
+  if (needGustoLink(w)) return '先关联 Gusto 名册里的这个人（点「手动关联」）';
   const steps = (w.checklist && w.checklist.steps) || [];
   const i = steps.findIndex(s => s.id === e.kind);
   return i > 0 && !steps[i - 1].done ? `先完成第 ${i} 步「${steps[i - 1].label}」` : '';
@@ -1147,6 +1151,7 @@ function undoApprove(k, what, evId) {
 function tickStep(k, i) {
   const w = D.rows[k], s = w.checklist.steps[i];
   if (!s.tickable || !D.can_approve || s.locked || (s.auto && !s.manual)) return;
+  if (s.manual ? false : needGustoLink(w)) return toast('先关联 Gusto 名册里的这个人（点「手动关联」）', true);
   const on = !s.manual;
   confirmBox(on ? '确认这一步已完成' : '取消这一步', `<div style="font-size:.88rem"><b>${esc(w.name)}</b>：${i + 1}. ${esc(s.label)}</div>
     <div class="muted" style="margin-top:.3rem">${on ? esc(s.hint) : '取消后这一步回到未完成'}</div>`, () => save(k, { step: s.id, checked: on }));
