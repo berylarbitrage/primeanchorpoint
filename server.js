@@ -45004,6 +45004,20 @@ db.exec(`CREATE TABLE IF NOT EXISTS new_hire_onboarding_log (
   detail TEXT DEFAULT ''
 )`);
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_nho_log_key ON new_hire_onboarding_log(name_key, at)'); } catch (e) {}
+// 第二步 (接受邀请) 的邮件被否掉 / 撤销以后, 这个人第二步既没完成也没在等确认了:
+// 还没 admin 确认的第三步 (可以付款) 邮件是跟着第二步先做的, 一起取消关联 (回到待审核, 不算否掉)
+function _wobCascadeReady(key, by) {
+  const w = _wobBuild().list.find(x => x.key === key);
+  const st = w && w.checklist && w.checklist.steps.find(s => s.id === 'accepted');
+  if (!st || st.done || st.awaiting) return;
+  const now = new Date().toISOString();
+  const okAdmins = new Set(db.prepare("SELECT username FROM admin_users WHERE role='admin' AND COALESCE(needs_approval,0)=0").all().map(u => u.username));
+  for (const ev of db.prepare("SELECT id, name, date, review_by, admin_ok_by FROM gusto_email_events WHERE worker_key=? AND kind='ready'").all(key)) {
+    if (ev.admin_ok_by || okAdmins.has(ev.review_by)) continue;
+    db.prepare("UPDATE gusto_email_events SET worker_key='', review_by=?, review_at=?, admin_ok_by='', admin_ok_at='' WHERE id=?").run(by || '', now, ev.id);
+    _wobLog(key, by, '第二步没通过，第三步跟着取消', `${ev.date} ${wob.EMAIL_KIND_LABEL.ready || 'ready'} · ${ev.name}`);
+  }
+}
 function _wobLog(key, by, action, detail) {
   try { db.prepare('INSERT INTO new_hire_onboarding_log (name_key, by_user, action, detail) VALUES (?, ?, ?, ?)').run(key, by || '', action, String(detail || '').slice(0, 1000)); }
   catch (e) { console.log('[onboarding] log error:', e.message); }
@@ -45909,7 +45923,7 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
         const w = _wobBuild().list.find(x => x.key === key);
         const steps = (w && w.checklist && w.checklist.steps) || [];
         const i = steps.findIndex(s => s.id === ev.kind);
-        if (i > 0 && !steps[i - 1].done) return res.status(400).json({ error: `先完成第 ${i} 步「${steps[i - 1].label}」，再审核这封邮件` });
+        if (i > 0 && !steps[i - 1].done && !steps[i - 1].awaiting) return res.status(400).json({ error: `先完成第 ${i} 步「${steps[i - 1].label}」，再审核这封邮件` });
       }
       const adm = _wobAdminOk(req);
       if (b.approve) db.prepare("UPDATE gusto_email_events SET worker_key=?, review_by=?, review_at=?, admin_ok_by=?, admin_ok_at=? WHERE id=?").run(key, req.userName || '', now, adm, adm ? now : '', ev.id);
@@ -46006,6 +46020,10 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
         pay_history=@pay_history, pay_since=@pay_since, updated_by=@by, updated_at=datetime('now')`)
       .run({ key, ...next, by: req.userName || '' });
     for (const [action, detail] of logs) _wobLog(key, req.userName, action, detail);
+    if (b.reject === 'email' || b.unapprove === 'email') {
+      const ev = db.prepare('SELECT kind FROM gusto_email_events WHERE id=?').get(parseInt(b.event_id, 10) || 0);
+      if (ev && ev.kind === 'accepted') _wobCascadeReady(key, req.userName);
+    }
     auditLog('new_hire_onboarding_save', req, { targetType: 'new_hire_onboarding', targetId: key,
       details: { fields: Object.keys(b).filter(k => k !== 'checked'), approve: b.approve || '', reject: b.reject || '' } });
     res.json({ ok: true });
@@ -46583,6 +46601,7 @@ app.post('/api/acct/onboarding-mails/:id/confirm', requireAdmin, requireRole('ad
       db.prepare("UPDATE gusto_email_events SET worker_key='', rejected_keys=?, review_by=?, review_at=?, admin_ok_by='', admin_ok_at='' WHERE id=?")
         .run(JSON.stringify(rej), req.userName || '', now, ev.id);
       _wobLog(ev.worker_key, req.userName, 'admin 否掉 Gusto 邮件关联', what);
+      if (ev.kind === 'accepted') _wobCascadeReady(ev.worker_key, req.userName);
     }
     auditLog('gusto_mail_admin_confirm', req, { targetType: 'gusto_email_event', targetId: ev.id, details: { ok: !!(req.body && req.body.ok), worker_key: ev.worker_key } });
     res.json({ ok: true });
