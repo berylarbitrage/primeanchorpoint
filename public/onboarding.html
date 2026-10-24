@@ -466,7 +466,7 @@ function card(w, k) {
     const gp = w.gusto_proposal;
     gusto = `<div class="ck" style="grid-template-columns:1fr;background:#f5f7ff"><div style="font-weight:700;font-size:.8rem;color:#3730a3">🔎 待审核</div>
       ${gp ? `<div class="row" style="margin:0"><span class="tag" style="background:#eef2ff;color:#3730a3">系统匹配 Gusto 收款人: ${esc(gp.name)}（${esc(gp.why)}）</span>${reviewBtns(k, `{approve:'gusto',uuid:'${esc(gp.uuid)}'}`, `{reject:'gusto',uuid:'${esc(gp.uuid)}'}`)}</div>` : ''}
-      ${w.email_proposals.map(e => `<div class="row" style="margin:0"><span class="tag" style="background:#eef2ff;color:#3730a3">邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span><span class="muted">${esc(e.subject)}</span>${reviewBtns(k, `{approve:'email',event_id:${e.id}}`, `{reject:'email',event_id:${e.id}}`)}</div>`).join('')}</div>`;
+      ${w.email_proposals.map(e => `<div class="row" style="margin:0"><span class="tag" style="background:#eef2ff;color:#3730a3">邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span><span class="muted">${esc(e.subject)}</span>${reviewBtns(k, `{approve:'email',event_id:${e.id}}`, `{reject:'email',event_id:${e.id}}`, emailLock(w, e))}</div>`).join('')}</div>`;
   }
   if (w.pay_method === 'gusto') {
     const g = w.gusto, gp = w.gusto_proposal;
@@ -474,7 +474,7 @@ function card(w, k) {
       ? `<span class="tag" style="background:#dcfce7;color:#166534">Gusto: ${esc(g.name)}</span><span class="muted">${esc(g.by)} 通过</span>${D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="undoApprove(${k},'gusto')">↩ 撤销通过</button>` : ''}${g.active === false ? ' <span class="tag" style="background:#fee2e2;color:#991b1b">已停用</span>' : ''}`
       : gp ? `<span class="tag" style="background:#eef2ff;color:#3730a3">🔎 系统匹配 Gusto: ${esc(gp.name)}（${esc(gp.why)}）</span>${reviewBtns(k, `{approve:'gusto',uuid:'${esc(gp.uuid)}'}`, `{reject:'gusto',uuid:'${esc(gp.uuid)}'}`)}`
       : `<span class="tag" style="background:#fef3c7;color:#92400e">Gusto 名册里还没找到${g && g.candidates ? '，可能是：' + esc(g.candidates.join(' / ')) : ''}</span>`;
-    const emailProps = w.email_proposals.map(e => `<div class="row" style="margin:.2rem 0 0"><span class="tag" style="background:#eef2ff;color:#3730a3">🔎 邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span><span class="muted">${esc(e.subject)}</span>${reviewBtns(k, `{approve:'email',event_id:${e.id}}`, `{reject:'email',event_id:${e.id}}`)}</div>`).join('');
+    const emailProps = w.email_proposals.map(e => `<div class="row" style="margin:.2rem 0 0"><span class="tag" style="background:#eef2ff;color:#3730a3">🔎 邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span><span class="muted">${esc(e.subject)}</span>${reviewBtns(k, `{approve:'email',event_id:${e.id}}`, `{reject:'email',event_id:${e.id}}`, emailLock(w, e))}</div>`).join('');
     const st = w.checklist.gusto && w.checklist.gusto.label ? ` <span class="muted">${esc(w.checklist.gusto.label)}</span>` : '';
     // 三步按顺序; 只有 manager / admin 能勾, 勾之前弹窗确认; 系统自动看出来的 (邮件 / Gusto) 不用勾
     // 第一步 manager / admin 弹窗确认后打勾; 后两步只能等 Gusto 邮件 (邮件对人通过后) 自动完成, 没有勾选框
@@ -531,8 +531,18 @@ function card(w, k) {
   </div>`;
 }
 // 系统匹配的建议: manager / admin 才有 通过 / 不是 按钮, 其他人只看到「等审核」
-function reviewBtns(k, yes, no) {
+// lockWhy: 现在还不能通过的原因 (按步骤来), 有的话「通过」变灰、写出先做哪一步; 「不是」照样能点
+// 入职进度邮件能不能通过: 先选 Gusto 入职; 「接受邀请」要第 1 步做完, 「可以付款」要第 2 步做完
+function emailLock(w, e) {
+  if (!['accepted', 'ready'].includes(e.kind)) return '';
+  if (w.pay_method !== 'gusto') return '先选「Gusto 入职」';
+  const steps = (w.checklist && w.checklist.steps) || [];
+  const i = steps.findIndex(s => s.id === e.kind);
+  return i > 0 && !steps[i - 1].done ? `先完成第 ${i} 步「${steps[i - 1].label}」` : '';
+}
+function reviewBtns(k, yes, no, lockWhy) {
   if (!D.can_approve) return '<span class="muted">等 manager / admin 审核</span>';
+  if (lockWhy) return `<button class="btn btn-sm" disabled style="background:#e5e7eb;color:#6b7280;cursor:not-allowed" title="${esc(lockWhy)}">🔒 通过</button><span class="muted" style="color:#b45309">${esc(lockWhy)}</span><button class="btn btn-outline btn-sm" onclick="save(${k},${no})">✗ 不是</button>`;
   return `<button class="btn btn-blue btn-sm" onclick="save(${k},${yes})">✓ 通过</button><button class="btn btn-outline btn-sm" onclick="save(${k},${no})">✗ 不是</button>`;
 }
 // 对不上人的 Gusto 邮件: manager / admin 可以手动关联到某个工人, 或者暂时忽略
