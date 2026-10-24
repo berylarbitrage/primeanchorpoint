@@ -253,6 +253,7 @@ button,input,select,textarea{font-family:inherit}
 .qr-pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-top:8px}
 .qr-card{position:relative;text-align:center;border:1.5px dashed #fde68a;border-radius:12px;padding:12px 10px;display:grid;gap:6px;justify-items:center;background:#fffdf5}
 .qr-card .hint{text-align:left}
+.qr-wait{width:190px;height:190px;border:2px dashed #e5e7eb;border-radius:10px;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--gray-400);font-size:.85rem;background:#fff}
 .qr-n{position:absolute;left:10px;top:8px;font-size:1.2rem;font-weight:800;color:var(--sky)}
 .dev-meta{font-size:.75rem;color:var(--gray-600);min-width:120px}
 .modal .dev-row input,.modal .dev-row select{width:auto;padding:6px 10px;font-size:.82rem}
@@ -2234,8 +2235,8 @@ function renderSetup() {
       + '<input id="nlLabel" placeholder="备注名，如 芝加哥2" style="' + inp + ';width:160px">'
       + '<button class="action-btn primary" onclick="addLine()">加上</button></div>';
   } else if (S.tab === 'help') {
-    body = '<div class="hint"><b>推荐：手机上装「短信同步」App</b>，手机自己推送，不用电脑。① 先扫下面的码下载安装；② 再到对应手机号那一栏点「连一台新设备」扫第二个码，网址和令牌自动填好。用了 App 就把电脑版的「同步到公司网站」关掉，免得重复。</div>'
-      + '<div class="qr-pair">' + apkQrCard() + '</div>'
+    body = '<div class="hint"><b>推荐：手机上装「短信同步」App</b>，手机自己推送，不用电脑。① 先扫左边的码下载安装；② 再在右边选这部手机的号码，点「生成连接码」扫一下，网址和令牌自动填好。用了 App 就把电脑版的「同步到公司网站」关掉，免得重复。</div>'
+      + qrPair('')
       + '<div class="hint">用电脑的话：桌面版「SMS 译信」设置 → 同步到公司网站，填：</div>'
       + '<div class="hint">网址（App 填这个）<br><code>' + location.origin + '</code></div>'
       + '<div class="hint">推送网址（电脑版填这个）<br><code>' + location.origin + '/api/device-sms/push</code></div>'
@@ -2284,8 +2285,8 @@ function renderSetup() {
       + '<button class="action-btn" style="padding:4px 12px" onclick="saveLineLabel(\'' + l.line + '\')">保存备注</button></div>'
       + '<div class="hint" style="margin-top:4px"><b>这个号的设备</b>（' + l.devices.length + ' 台）</div>'
       + (l.devices.length ? l.devices.map(devRow).join('') : '<div class="hint" style="color:#b45309">这个号还没有设备，收不到也发不出短信。点下面连一台。</div>')
-      + '<div style="margin-top:6px"><button class="action-btn primary" onclick="newToken(\'' + l.line + '\')">＋ 给这个号连一台新设备</button></div>'
-      + '<div id="tokenBox"></div>';
+      + '<div class="hint" style="margin-top:6px"><b>给这个号连一部手机</b>：先扫 ① 装 App，再扫 ② 连上。</div>'
+      + '<div id="tokenBox">' + qrPair(l.line) + '</div>';
   }
   openModal('<div style="display:flex;align-items:center;gap:8px"><h2 style="flex:1">手机号和设备</h2><button class="action-btn" onclick="closeModal()">关闭</button></div>'
     + '<div class="line-bar" style="padding:0 0 8px;border-bottom:1px solid var(--gray-200)">'
@@ -2369,8 +2370,9 @@ async function saveLineLabel(line) {
 async function newToken(line) {
   const res = await api('/device-sms/devices', { method: 'POST', body: JSON.stringify({ name: '新设备', line }) });
   if (!res.token) { pToast(res.error || '生成失败', true); return; }
-  await openSetup(line);
+  await openSetup(line || undefined);
   SETUP.token = res.token;   // 刷新设备列表后再把二维码摆出来
+  SETUP.tokenLine = line;
   showToken(res.token);
 }
 function showToken(token) {
@@ -2382,10 +2384,25 @@ function showToken(token) {
   try { const qr = qrcode(0, 'M'); qr.addData(link); qr.make(); qrTag = qr.createImgTag(4, 8); } catch (_) { /* 令牌文本照样能用 */ }
   // 两个码并排: ① 下载安装 App ② 自动连接
   box.innerHTML = '<div class="qr-pair">' + apkQrCard()
-    + '<div class="qr-card"><div class="qr-n">②</div><b>扫码自动连接</b>'
+    + '<div class="qr-card"><div class="qr-n">②</div><b>扫码自动连接' + (SETUP && SETUP.tokenLine ? ' · ' + esc(lineName(SETUP.tokenLine)) : '') + '</b>'
     + qrTag.replace('<img ', '<img style="max-width:190px;width:100%;image-rendering:pixelated" ')
     + '<div class="hint">装好 App 以后，用手机相机扫这个 → 点开链接 → 点「打开 App，自动连接」→ 权限全部允许。<br>连上以后它的短信就算这个号的。</div></div></div>'
     + '<div class="hint">不方便扫码就手动填——设备令牌（只显示这一次，关掉就看不到了）<br><code>' + esc(token) + '</code></div>';
+}
+// 两张卡并排: ① 一直是下载码; ② 连接码要点一下才生成 (每生成一次就是一台新设备的令牌)
+function qrPair(line) {
+  const S = SETUP;
+  const pick = line ? '' : (S.lines.length
+    ? '<select id="tokLine" style="padding:6px 10px;border:1px solid var(--gray-200);border-radius:8px;width:auto">'
+      + S.lines.map(l => '<option value="' + l.line + '">📱 ' + esc(l.label || fmtPhone(l.line)) + (l.label ? ' ' + esc(fmtPhone(l.line)) : '') + '</option>').join('') + '</select>'
+    : '<div class="hint" style="color:#b45309">先在「＋ 加手机号」里加号码</div>');
+  const go = line ? "newToken('" + line + "')" : "newToken((document.getElementById('tokLine')||{}).value||'')";
+  return '<div class="qr-pair">' + apkQrCard()
+    + '<div class="qr-card"><div class="qr-n">②</div><b>扫码自动连接</b>'
+    + '<div class="qr-wait">连接码<br>点下面生成</div>'
+    + (line ? '<div class="hint" style="text-align:center">连到 <b>' + esc(lineName(line)) + ' ' + esc(fmtPhone(line)) + '</b></div>' : '<div>连到哪个号：' + pick + '</div>')
+    + '<button class="action-btn primary" style="padding:8px 16px" onclick="' + go + '"' + (line || S.lines.length ? '' : ' disabled') + '>生成连接码</button>'
+    + '<div class="hint">装好 App 以后点「生成连接码」，用手机相机扫 → 点开链接 →「打开 App，自动连接」。</div></div></div>';
 }
 // ① 扫码下载 App: 固定地址 /sms-phone.apk, 永远是最新版
 function apkQrCard() {
