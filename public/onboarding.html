@@ -526,9 +526,13 @@ function card(w, k) {
         ${w.updated_by ? `<div class="muted">最后修改 ${esc(w.updated_by)} ${esc((w.updated_at || '').slice(0, 16))}</div>` : ''}
       </div>
     </div>
-    ${(() => { const pc = pcOf(c => c.kind === 'worker' && c.key === w.key); return pc.length ? `<div class="ck" style="grid-template-columns:1fr;background:#fffbeb">${pcBlock(pc, true)}</div>` : ''; })()}
+    ${(() => { const pc = pcOf(c => c.kind === 'worker' && c.key === w.key && (c.step_rank || 90) < 50); return pc.length ? `<div class="ck" style="grid-template-columns:1fr;background:#fffbeb">${pcBlock(pc, true, 0, pcOf(c => c.kind === 'worker' && c.key === w.key).length)}</div>` : ''; })()}
     ${bankBox}
     ${gusto}
+    ${(() => {
+      // 跟 Gusto 邮件有关的修改放在邮件那一块后面: 从上往下就是「先认接受邀请的邮件, 再认可以付款的」
+      const all = pcOf(c => c.kind === 'worker' && c.key === w.key), late = all.filter(c => (c.step_rank || 90) >= 50);
+      return late.length ? `<div class="ck" style="grid-template-columns:1fr;background:#fffbeb">${pcBlock(late, true, all.length - late.length, all.length)}</div>` : ''; })()}
   </div>`;
 }
 // 两种待审核用不同颜色: 👤 别人选的 (橙) / 🤖 系统匹配的 (蓝)
@@ -1270,18 +1274,27 @@ function applyPendingOverlay() {
     }
   }
 }
-function pcOf(pred) { return (D.pending_changes || []).filter(pred); }
-function pcBlock(list, compact) {
+// 同一个人的修改按入职步骤排, 同一步按提交时间: 从上往下审就是正确的顺序
+function pcOf(pred) {
+  return (D.pending_changes || []).filter(pred).slice()
+    .sort((x, y) => ((x.step_rank || 90) - (y.step_rank || 90)) || String(x.at).localeCompare(String(y.at)));
+}
+const CIRC = '①②③④⑤⑥⑦⑧⑨⑩';
+// offset / total: 一个人的修改分在两块里时, 编号接着往下数
+function pcBlock(list, compact, offset, total) {
   if (!list.length) return '';
-  return list.map(c => `<div class="pc ${compact ? 'pc-c' : ''}">
-    <div class="pc-h"><span class="tag" style="${RV_PEOPLE}">👤 别人提交的</span><b>${esc(c.by)}</b> 提交的修改 <span class="muted">${esc(fmtTime(String(c.at).replace(' ', 'T') + 'Z'))}</span>
+  offset = offset || 0; total = total || list.length;
+  return list.map((c, i) => `<div class="pc ${compact ? 'pc-c' : ''}">
+    <div class="pc-h">${compact && total > 1 ? `<b style="font-size:1rem;color:#9a3412" title="按步骤顺序，从上往下审">${CIRC[offset + i] || offset + i + 1}</b>` : ''}<span class="tag" style="${RV_PEOPLE}">👤 别人提交的</span><b>${esc(c.by)}</b> 提交的修改 <span class="muted">${esc(fmtTime(String(c.at).replace(' ', 'T') + 'Z'))}</span>
       ${D.can_decide_changes ? `<span class="pc-b"><button class="btn btn-sm" style="background:#16a34a;color:#fff" onclick="decideChange(${c.id},true)">✓ 同意</button><button class="btn btn-outline btn-sm" onclick="decideChange(${c.id},false)">✗ 拒绝</button></span>`
         : '<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:auto">等 staff / admin 同意</span>'}</div>
     <ul>${c.items.map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>`).join('');
 }
 let PC_OPEN = false;
 function renderPChanges() {
-  const all = D.pending_changes || [];
+  // 汇总里也按人放一起、每个人按步骤顺序
+  const all = (D.pending_changes || []).slice().sort((x, y) => String(x.key || '~').localeCompare(String(y.key || '~'))
+    || ((x.step_rank || 90) - (y.step_rank || 90)) || String(x.at).localeCompare(String(y.at)));
   const el = document.getElementById('pchanges');
   const dup = D.dup_closed ? `<div class="muted" style="margin:.1rem 0 .3rem">↺ 最近 7 天有 ${D.dup_closed} 条一模一样的重复提交被自动关掉了，<a href="/approvals" target="_blank" style="color:#0f4c6b">去待审批页「已处理」看原因，关错了可以恢复 ↗</a></div>` : '';
   if (!all.length) { el.innerHTML = dup ? `<div class="card" style="margin-bottom:12px;padding:.5rem .9rem">${dup}</div>` : ''; return; }
