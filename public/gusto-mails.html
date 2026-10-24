@@ -47,6 +47,7 @@ tr:hover td{background:#fafcff}
 .s-linked{background:#dcfce7;color:#166534}.s-confirm{background:#fef3c7;color:#92400e}.cf-btns{display:flex;gap:.3rem;margin-top:.3rem}.cf-btns button{font-size:.75rem;padding:.2rem .55rem;border-radius:6px;cursor:pointer;font-weight:600}.s-proposed{background:#e0f2fe;color:#075985}.s-unmatched{background:#fef2f2;color:#991b1b}
 .s-ignored{background:var(--g100);color:var(--g500)}
 .subj{color:var(--g500);font-size:.74rem;margin-top:.15rem;word-break:break-word}
+.det{display:flex;flex-wrap:wrap;gap:.25rem .6rem;margin-top:.25rem;font-size:.74rem;color:#991b1b;background:#fef2f2;border-radius:6px;padding:.2rem .45rem}
 .muted{color:var(--g500);font-size:.74rem}
 .empty{padding:40px;text-align:center;color:var(--g500)}
 @media(max-width:820px){ .hide-sm{display:none} }
@@ -89,9 +90,10 @@ tr:hover td{background:#fafcff}
 
 <script>
 let TOKEN = localStorage.getItem('acct_token') || localStorage.getItem('adminToken') || '';
-let ROWS = [], KIND = 'all', LINK = 'all', SENT = 'all', IS_ADMIN = false;
+let ROWS = [], KIND = 'all', LINK = 'all', SENT = 'all', IS_ADMIN = false, CAN_CONFIRM = false;
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const KINDS = [['all', '全部', '所有 Gusto 邮件'], ['accepted', '接受邀请', 'accepted your offer'], ['ready', '可以付款', 'can now be paid'],
+// 「入职相关」= 只看 接受邀请 + 可以付款
+const KINDS = [['all', '全部', '所有 Gusto 邮件'], ['onboard', '入职相关', '接受邀请 + 可以付款'], ['accepted', '接受邀请', 'accepted your offer'], ['ready', '可以付款', 'can now be paid'],
   ['bank_bad', '银行有误', 'bank details incorrect'], ['bank_updated', '银行已更新', 'bank details updated'], ['other', '其他 Gusto 邮件', '工资单、通知等']];
 const LINKS = [['all', '全部'], ['linked', '✓ 已关联'], ['confirm', '👤 别人关联，等你确认'], ['proposed', '🔎 系统对上，等确认'], ['unmatched', '✗ 对不上人'], ['ignored', '暂时忽略']];
 const SENTS = [['all', '全部'], ['yes', '📨 已转发'], ['no', '没转发']];
@@ -120,16 +122,22 @@ async function load() {
   let j;
   try { j = await api('/api/acct/onboarding-mails'); } catch (e) { return; }
   if (j.error) { document.getElementById('list').innerHTML = `<div class="card empty" style="color:var(--red)">${esc(j.error)}</div>`; document.getElementById('main').style.display = ''; return; }
-  IS_ADMIN = !!j.is_admin;
+  IS_ADMIN = !!j.is_admin; CAN_CONFIRM = !!j.can_confirm;
   ROWS = (j.rows || []).slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));   // 新的在前 (入职邮件和其他邮件混在一起排)
   const m = j.mail_sync || {};
   document.getElementById('syncInfo').textContent = m.last_at ? `邮箱同步上次报到 ${fmtTime(m.last_at)}${m.last_auto_at ? ' · 上次自动运行 ' + fmtTime(m.last_auto_at) : ''}${m.backfill_done_at ? ' · 以前的邮件已全部读完' : ''}${(j.forward_to || []).length ? ' · 转发给 ' + j.forward_to.join('、') : ''}` : '邮箱同步还没跑过';
   document.getElementById('main').style.display = '';
   render();
 }
+const kindOk = (r, k) => k === 'all' || (k === 'onboard' ? r.kind === 'accepted' || r.kind === 'ready' : r.kind === k);
+// 银行有误邮件正文里读到的: 账号尾号 / 错误原因 / 截止日期
+function detailHtml(d) {
+  if (!d || !(d.acct || d.error || d.deadline)) return '';
+  return `<div class="det">${d.acct ? `<span>🏦 账号尾号 <b>${esc(d.acct)}</b></span>` : ''}${d.error ? `<span>❗ ${esc(d.error)}</span>` : ''}${d.deadline ? `<span>⏰ <b>${esc(d.deadline)}</b> 前不改好，钱退回公司</span>` : ''}</div>`;
+}
 function isSent(r) { return (r.sent || []).length > 0; }
 function pass(r, skip) {
-  if (skip !== 'kind' && KIND !== 'all' && r.kind !== KIND) return false;
+  if (skip !== 'kind' && !kindOk(r, KIND)) return false;
   if (skip !== 'link' && LINK !== 'all' && r.status !== LINK) return false;
   if (skip !== 'sent' && SENT !== 'all' && (SENT === 'yes') !== isSent(r)) return false;
   const q = document.getElementById('q').value.trim().toLowerCase();
@@ -142,7 +150,7 @@ function pass(r, skip) {
 function render() {
   // 上面的类型卡片: 每种多少封 (按当前的关联 / 转发 / 搜索筛选数)
   document.getElementById('stats').innerHTML = KINDS.map(([k, t, s]) => {
-    const list = ROWS.filter(r => (k === 'all' || r.kind === k) && pass(r, 'kind'));
+    const list = ROWS.filter(r => kindOk(r, k) && pass(r, 'kind'));
     const extra = k === 'other' || !list.length ? s : `已关联 ${list.filter(r => r.status === 'linked').length}${list.some(r => r.status === 'confirm') ? ` · 等确认 ${list.filter(r => r.status === 'confirm').length}` : ''} · 已转发 ${list.filter(isSent).length}`;
     return `<button class="stat ${KIND === k ? 'on' : ''}" onclick="KIND='${k}';render()"><div class="n">${list.length}</div><div class="t">${esc(t)}</div><div class="s">${esc(extra)}</div></button>`;
   }).join('');
@@ -165,7 +173,7 @@ function render() {
     const st = STATUS[r.status];
     const link = r.kind === 'other' ? '<span class="muted">不是入职邮件</span>'
       : `${st ? `<span class="tag ${st[1]}">${st[0]}</span>` : ''}${r.worker ? `<div style="margin-top:.2rem"><b>${esc(r.worker)}</b>${r.status === 'linked' && r.admin_ok ? `<span class="muted"> · ${esc(r.admin_ok)} 审核${r.admin_ok_at ? ' ' + esc(fmtTime(r.admin_ok_at)) : ''}</span>` : r.by ? `<span class="muted"> · ${esc(r.by)} 关联的</span>` : ''}</div>` : ''}`
-        + (r.status === 'confirm' && IS_ADMIN ? `<div class="cf-btns"><button style="background:#16a34a;color:#fff;border:0" onclick="confirmLink(${r.id},true)">✓ 对，确认</button><button style="background:#fff;color:#dc2626;border:1px solid #fca5a5" onclick="confirmLink(${r.id},false)">✗ 不是这个人</button></div>` : '')
+        + (r.status === 'confirm' && CAN_CONFIRM ? `<div class="cf-btns"><button style="background:#16a34a;color:#fff;border:0" onclick="confirmLink(${r.id},true)">✓ 对，确认</button><button style="background:#fff;color:#dc2626;border:1px solid #fca5a5" onclick="confirmLink(${r.id},false)">✗ 不是这个人</button></div>` : '')
         + (r.status === 'unmatched' && r.candidates.length ? `<div class="muted">可能是：${r.candidates.map(esc).join('、')}</div>` : '')
         + (r.status === 'ignored' && r.ignored_by ? `<div class="muted">${esc(r.ignored_by)} 忽略的</div>` : '')
         + (/^bank_/.test(r.kind) ? `<div class="muted">${r.ack_at ? '✓ ' + esc(r.ack_by) + ' 已处理' : '⚠ 还没处理'}</div>` : '');
@@ -173,7 +181,7 @@ function render() {
       : r.sent.length === 1 && r.sent[0].guess ? '<span class="tag" style="background:#f0fdf4;color:#166534" title="收到时自动转发给了当时的转发名单（具体是谁那时还没记）">📨 已自动转发</span>'
       : r.sent.map(x => `<div><span class="tag" style="background:#f0fdf4;color:#166534">📨 ${esc(x.to)}</span> <span class="muted">${esc(fmtTime(x.at))}${/resend/.test(x.how || '') ? ' · 补发' : ''}</span></div>`).join('');
     return `<tr><td style="white-space:nowrap">${esc(r.date)}</td><td><span class="tag k-${esc(r.kind)}">${esc(r.label)}</span></td>
-      <td>${r.name ? `<b>${esc(r.name)}</b>` : ''}<div class="subj">${esc(r.subject)}</div></td><td>${link}</td><td>${sent}</td></tr>`;
+      <td>${r.name ? `<b>${esc(r.name)}</b>` : ''}<div class="subj">${esc(r.subject)}</div>${detailHtml(r.detail)}</td><td>${link}</td><td>${sent}</td></tr>`;
   }).join('')}</tbody></table>${rows.length > 1500 ? '<div class="muted" style="margin-top:6px">只显示前 1500 封，用上面的筛选缩小范围</div>' : ''}`;
 }
 async function post(path, body) {

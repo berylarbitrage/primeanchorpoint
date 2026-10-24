@@ -10418,7 +10418,7 @@ app.post('/api/approvals/:id', requireAdmin, async (req, res) => {
       auditLog('change_reject', req, { targetType: 'pending_change', targetId: c.id, details: { by_user: c.username, method: c.method, path: c.path } });
       return res.json({ ok: true, status: 'rejected' });
     }
-    const r = await _replayChange(c, _wobCanApprove(req), { name: req.userName || '', role: req.userRole });
+    const r = await _replayChange(c, _wobCanApprove(req), { name: req.userName || '', role: req.userRole, needs_approval: !!req.needsApproval });
     const ok = r.status >= 200 && r.status < 300;
     db.prepare('UPDATE pending_changes SET status=?, result_status=?, result_body=? WHERE id=?').run(ok ? 'approved' : 'failed', r.status, r.text, c.id);
     auditLog('change_approve', req, { targetType: 'pending_change', targetId: c.id, details: { by_user: c.username, method: c.method, path: c.path, result: r.status } });
@@ -45025,7 +45025,9 @@ for (const col of ["worker_key TEXT DEFAULT ''", "rejected_keys TEXT DEFAULT '[]
   // 对不上人的邮件可以「暂时忽略」(不再列出来, 想看可以再打开)
   "ignored_by TEXT DEFAULT ''", "ignored_at TEXT DEFAULT ''",
   // admin 审核过的才算「已关联」; manager / director 关联的要 admin 再确认 (admin 自己通过的, 或者 admin 同意别人提交的, 直接记上)
-  "admin_ok_by TEXT DEFAULT ''", "admin_ok_at TEXT DEFAULT ''"]) {
+  "admin_ok_by TEXT DEFAULT ''", "admin_ok_at TEXT DEFAULT ''",
+  // 从邮件正文读到的关键信息 (JSON): 银行有误邮件的账号尾号 acct / 错误原因 error / 截止日期 deadline
+  "detail TEXT DEFAULT ''"]) {
   try { db.exec(`ALTER TABLE gusto_email_events ADD COLUMN ${col}`); } catch (e) {}
 }
 // 上线前已经存在的银行邮件不补发提醒邮件 (页面上方照样提示, 等人点「知道了」)
@@ -45255,7 +45257,7 @@ function _wobBuild() {
     });
   }
   // 邮件事件按名字对到人也只是建议: 通过后 (worker_key) 才进清单; 否掉的人记在 rejected_keys
-  const events = db.prepare("SELECT id, kind, name, date, subject, worker_key, rejected_keys, review_by, ack_by, ack_at, ignored_by, ignored_at, added_by, created_at FROM gusto_email_events ORDER BY date, id").all();
+  const events = db.prepare("SELECT id, kind, name, date, subject, worker_key, rejected_keys, review_by, ack_by, ack_at, ignored_by, ignored_at, added_by, created_at, detail FROM gusto_email_events ORDER BY date, id").all();
   // 每封发给过谁; 记录是后来才有的, 之前「邮箱自动同步」收到的新邮件当时自动转发过 (发给当时的转发名单, 具体是谁没记)
   const sentBy = {};
   try { for (const r of db.prepare('SELECT event_id, to_addr, MIN(sent_at) AS at FROM gusto_mail_sends GROUP BY event_id, to_addr').all()) (sentBy[r.event_id] = sentBy[r.event_id] || []).push({ to: r.to_addr, at: r.at }); } catch (e) {}
@@ -45267,6 +45269,7 @@ function _wobBuild() {
   const unmatched = [], bank = [];
   for (const ev of events) {
     const e = { id: ev.id, kind: ev.kind, name: ev.name, date: ev.date, subject: ev.subject, label: wob.EMAIL_KIND_LABEL[ev.kind] || ev.kind,
+      detail: _wobJson(ev.detail, null),
       sent: sentBy[ev.id] || (ev.added_by === '邮箱自动同步' ? [{ to: '转发名单', at: ev.created_at, guess: true }] : []) };
     // 银行信息邮件: 不进清单, 做成提醒 (对到人就标在那个人身上; 对不上的也照样提醒)
     if (ev.kind === 'bank_bad' || ev.kind === 'bank_updated') {
@@ -45357,9 +45360,10 @@ const requireWobView = requireRole('accounting', 'cs', 'admin', 'staff', 'manage
 // 能改: 这些角色, 或单独开了「能审核」的账号 (staff 平时只能看)
 const requireWobWrite = (req, res, next) => (['accounting', 'cs', 'admin', 'manager', 'onboarding'].includes(req.userRole) || req.wobApprover)
   ? next() : res.status(403).json({ error: 'Permission denied' });
-// 这次审核算不算 admin 审核的: admin 自己点的, 或者 admin 同意了别人提交的修改 → 返回 admin 的名字
-const _wobAdminOk = req => req.userRole === 'admin' ? (req.userName || 'admin')
-  : (req.replayDecider && req.replayDecider.role === 'admin' ? req.replayDecider.name || 'admin' : '');
+// 这次审核算不算 admin 审核的: admin 自己点的, 或者 admin 同意了别人提交的修改 → 返回 admin 的名字。
+// director (admin 账号但「所有修改需要审批」) 做入职 Gusto 板块不用审批、直接生效, 但不算 admin 审核, 还要 admin 确认
+const _wobAdminOk = req => req.userRole === 'admin' && !req.needsApproval && !req.isApprovalReplay ? (req.userName || 'admin')
+  : (req.replayDecider && req.replayDecider.role === 'admin' && !req.replayDecider.needs_approval ? req.replayDecider.name || 'admin' : '');
 const _wobCanApprove = req => ['admin', 'manager'].includes(req.userRole) || !!req.wobApprover || !!req.replayWobApprover;
 
 // ── Zelle / Cash App 截图: 登记账号必须上传截图, AI 读出账号和户主名字填上 (避免打错字) ──
@@ -46185,6 +46189,15 @@ app.get('/api/acct/onboarding-history/:key', requireAdmin, requireWobView, (req,
 });
 
 // 新收到的银行信息邮件 → 发邮件提醒 admin 和负责这个人仓库的 manager (只发一次, notified_at)
+// 邮件正文读到的关键信息 → 一行字 (提醒邮件 / 页面用)
+function _wobDetailText(d) {
+  if (!d) return '';
+  return [d.acct ? '银行账号尾号 ' + d.acct : '', d.error ? '错误: ' + d.error : '', d.deadline ? `${d.deadline} 前不改好 Gusto 会把钱退回公司` : ''].filter(Boolean).join(' · ');
+}
+// 记一封入职邮件: 已经有同一天同一人同一种的, 正文信息补上 (以前只存了标题的)
+const _wobEvIns = () => db.prepare(`INSERT OR IGNORE INTO gusto_email_events (kind, name, date, subject, added_by, notified_at, ack_by, ack_at, detail)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+const _wobEvDetail = () => db.prepare("UPDATE gusto_email_events SET detail=? WHERE kind=? AND name=? AND date=? AND COALESCE(detail,'')=''");
 async function _wobNotifyBank() {
   try {
     const pending = db.prepare("SELECT id FROM gusto_email_events WHERE kind IN ('bank_bad','bank_updated') AND COALESCE(notified_at,'')='' AND COALESCE(ack_at,'')=''").all();
@@ -46208,7 +46221,7 @@ async function _wobNotifyBank() {
       const who = w ? w.name : b.name;
       const subject = `⚠ 工人银行信息${b.kind === 'bank_bad' ? '有误' : '已被更新'}: ${who}`;
       const clears = b.clears && b.clears.length ? `之前还有 ${b.clears.length} 条「银行信息有误」提醒没处理，请到页面上确认要不要一起消除。\n` : '';
-      const text = `${who} — ${b.label}（Gusto 邮件 ${b.date}）\n${b.subject}\n\n${clears}${w ? '' : '系统里没对上是哪个工人，请到页面上看。\n'}请到新员工入职页处理: ${base}/onboarding`;
+      const text = `${who} — ${b.label}（Gusto 邮件 ${b.date}）\n${b.subject}\n${_wobDetailText(b.detail) ? _wobDetailText(b.detail) + '\n' : ''}\n${clears}${w ? '' : '系统里没对上是哪个工人，请到页面上看。\n'}请到新员工入职页处理: ${base}/onboarding`;
       for (const addr of [...new Set(to)]) { try { await sendEmail(addr, subject, text); } catch (e) { console.log('[onboarding] 提醒邮件失败:', e.message); } }
     }
   } catch (e) { console.log('[onboarding] 银行提醒失败:', e.message); }
@@ -46217,10 +46230,22 @@ async function _wobNotifyBank() {
 // 粘贴 Gusto 通知邮件 (Gmail 列表整屏复制即可): 解析出 接受邀请 / 可以付款 / 银行有误 / 银行已更新
 app.post('/api/acct/onboarding-emails', requireAdmin, requireWobWrite, (req, res) => {
   try {
-    const events = wob.parseGustoEmails(String((req.body && req.body.text) || '').slice(0, 200000), new Date().toISOString());
-    const ins = db.prepare(`INSERT OR IGNORE INTO gusto_email_events (kind, name, date, subject, added_by) VALUES (?, ?, ?, ?, ?)`);
+    const text = String((req.body && req.body.text) || '').slice(0, 200000), today = new Date().toISOString();
+    const events = wob.parseGustoEmails(text, today);
+    // 整封「has contractor with incorrect bank account details」邮件 (标题没名字) 粘进来: 读正文里的名字 / 账号尾号 / 错误原因
+    if (wob.isBankBodyMail('', text)) {
+      const dl = text.match(/\d{1,2}\s*月\s*\d{1,2}\s*日|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.? \d{1,2}\b/i);
+      const d = (dl && wob._emailDate(dl[0], today)) || today.slice(0, 10);
+      for (const ev of wob.parseGustoBankBody('', text, d)) if (!events.some(x => x.kind === ev.kind && x.name === ev.name)) events.push(ev);
+    }
+    const ins = _wobEvIns(), upd = _wobEvDetail();
     let added = 0;
-    db.transaction(() => { for (const ev of events) added += ins.run(ev.kind, ev.name, ev.date, ev.subject, req.userName || '').changes; })();
+    db.transaction(() => { for (const ev of events) {
+      const det = ev.detail ? JSON.stringify(ev.detail) : '';
+      const n = ins.run(ev.kind, ev.name, ev.date, ev.subject, req.userName || '', '', '', '', det).changes;
+      added += n;
+      if (!n && det) upd.run(det, ev.kind, ev.name, ev.date);
+    } })();
     if (added) auditLog('gusto_email_import', req, { targetType: 'gusto_email_events', targetId: 'paste', details: { parsed: events.length, added } });
     if (added) setImmediate(_wobNotifyBank);
     res.json({ ok: true, parsed: events.length, added, events: events.map(e => ({ ...e, label: wob.EMAIL_KIND_LABEL[e.kind] })) });
@@ -46382,10 +46407,12 @@ app.post('/api/hooks/gusto-mail', (req, res) => {
     }
     _mailHookSave({ script_version: ver, ...trig, last_error: '', last_error_at: '' });
     const oldCut = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);
-    const seen = db.prepare('SELECT 1 FROM gusto_mail_seen WHERE message_id=?');
+    // rescan = 第 6 版脚本第一次把以前「正文里才有名字」的银行有误邮件带正文重读一遍: 和 backfill 一样只记不转发
+    const quiet = backfill || !!(req.body && req.body.rescan);
+    const seen = db.prepare('SELECT kind FROM gusto_mail_seen WHERE message_id=?');
     const mark = db.prepare('INSERT OR IGNORE INTO gusto_mail_seen (message_id, kind, name, subject, received_at) VALUES (?, ?, ?, ?, ?)');
-    const ins = db.prepare(`INSERT OR IGNORE INTO gusto_email_events (kind, name, date, subject, added_by, notified_at, ack_by, ack_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+    const remark = db.prepare('UPDATE gusto_mail_seen SET kind=?, name=? WHERE message_id=?');
+    const ins = _wobEvIns(), upd = _wobEvDetail();
     const results = [];
     let added = 0;
     db.transaction(() => {
@@ -46394,20 +46421,33 @@ app.post('/api/hooks/gusto-mail', (req, res) => {
         const subject = String((m && m.subject) || '').replace(/\s+/g, ' ').trim().slice(0, 500);
         if (!id || !subject) continue;
         const date = /^\d{4}-\d{2}-\d{2}/.test(String(m.date || '')) ? String(m.date).slice(0, 10) : new Date().toISOString().slice(0, 10);
-        if (seen.get(id)) { results.push({ id, new: false, forward: false }); continue; }
-        const ev = wob.parseGustoEmails(subject, date)[0] || null;
+        const body = String((m && m.body) || '').slice(0, 5000);
+        const was = seen.get(id);
+        // 见过而且已经认出是入职邮件的跳过; 以前当「其他邮件」的, 现在带了正文能认出来 (银行有误那种) 就补记上
+        if (was && (was.kind || !body)) { results.push({ id, new: false, forward: false }); continue; }
+        let evs = wob.parseGustoEmails(subject, date).slice(0, 1);
+        if (!evs.length) evs = wob.parseGustoBankBody(subject, body, date);
+        if (was && !evs.length) { results.push({ id, new: false, forward: false }); continue; }
         let inserted = 0;
-        if (ev) {
+        for (const ev of evs) {
           ev.date = date;
-          const oldBank = backfill && /^bank_/.test(ev.kind) && date < oldCut;
-          inserted = ins.run(ev.kind, ev.name, ev.date, ev.subject, backfill ? '邮箱同步（历史邮件）' : '邮箱自动同步',
-            backfill ? 'backfill' : '', oldBank ? '历史邮件（自动）' : '', oldBank ? new Date().toISOString() : '').changes;
-          added += inserted;
+          const oldBank = quiet && /^bank_/.test(ev.kind) && date < oldCut;
+          const det = ev.detail ? JSON.stringify(ev.detail) : '';
+          const n = ins.run(ev.kind, ev.name, ev.date, ev.subject, quiet ? '邮箱同步（历史邮件）' : '邮箱自动同步',
+            quiet ? 'backfill' : '', oldBank ? '历史邮件（自动）' : '', oldBank ? new Date().toISOString() : '', det).changes;
+          if (!n && det) upd.run(det, ev.kind, ev.name, ev.date);
+          inserted += n;
         }
-        mark.run(id, ev ? ev.kind : '', ev ? ev.name : '', subject, String(m.date || ''));
+        added += inserted;
+        const ev = evs[0] || null;
+        if (was) remark.run(ev.kind, evs.map(e => e.name).join(', ').slice(0, 200), id);
+        else mark.run(id, ev ? ev.kind : '', ev ? evs.map(e => e.name).join(', ').slice(0, 200) : '', subject, String(m.date || ''));
         // 同一天同一个人同一种邮件已经记过了 (Gusto 重复发 / 同一封在别的线程里) = 重复: 不再转发、不再算新的
-        results.push({ id, new: true, dup: !!ev && !inserted, forward: !!ev && !backfill && inserted > 0, kind: ev ? ev.kind : '', name: ev ? ev.name : '', label: ev ? wob.EMAIL_KIND_LABEL[ev.kind] : '',
-          _subject: subject, _date: date, _body: String((m && m.body) || '').slice(0, 3000) });
+        // 一封银行有误邮件里可能有好几个人: 每个人一条 (转发时每人一封)
+        const fw = !!ev && !quiet && inserted > 0;
+        evs.forEach((e, i) => results.push({ id, new: true, dup: !inserted, forward: fw && (i === 0 || evs.length > 1), kind: e.kind, name: e.name, label: wob.EMAIL_KIND_LABEL[e.kind],
+          _subject: subject, _date: date, _body: body.slice(0, 3000) }));
+        if (!ev) results.push({ id, new: true, dup: false, forward: false, kind: '', name: '', label: '', _subject: subject, _date: date, _body: '' });
       }
     })();
     const newCount = results.filter(r => r.new).length;
@@ -46479,9 +46519,10 @@ app.get('/api/acct/onboarding-mails', requireAdmin, requireWobView, (req, res) =
       (sentBy[r.event_id] = sentBy[r.event_id] || []).push({ to: r.to_addr, at: r.at, how: r.how });
     const rows = [];
     // 只有 admin 审核过的才算「已关联」: 记了 admin_ok_by, 或者 (以前的) 审核人本身是 admin 账号
-    const admins = new Set(db.prepare("SELECT username FROM admin_users WHERE role='admin'").all().map(u => u.username));
+    // director (admin 账号但「所有修改需要审批」) 不算
+    const admins = new Set(db.prepare("SELECT username FROM admin_users WHERE role='admin' AND COALESCE(needs_approval,0)=0").all().map(u => u.username));
     for (const ev of db.prepare(`SELECT id, kind, name, date, subject, worker_key, review_by, review_at, rejected_keys, ignored_by, ignored_at,
-        ack_by, ack_at, added_by, created_at, admin_ok_by, admin_ok_at FROM gusto_email_events ORDER BY date DESC, id DESC`).all()) {
+        ack_by, ack_at, added_by, created_at, admin_ok_by, admin_ok_at, detail FROM gusto_email_events ORDER BY date DESC, id DESC`).all()) {
       let status = 'none', worker = '', key = '', by = '', candidates = [];
       const adminOk = ev.admin_ok_by || (admins.has(ev.review_by) ? ev.review_by : '');
       const lk = () => adminOk ? 'linked' : 'confirm';
@@ -46497,7 +46538,7 @@ app.get('/api/acct/onboarding-mails', requireAdmin, requireWobView, (req, res) =
       // manager 只看自己仓库的人 (对不上人的不给)
       if (scoped && !(key && nameOf[key])) continue;
       rows.push({ id: ev.id, kind: ev.kind, label: wob.EMAIL_KIND_LABEL[ev.kind] || ev.kind, name: ev.name, date: ev.date, subject: ev.subject,
-        status, key, worker, by, admin_ok: ev.worker_key ? adminOk : '', admin_ok_at: ev.worker_key && adminOk ? (ev.admin_ok_at || ev.review_at || '') : '', candidates, ignored_by: ev.ignored_by || '', ack_by: ev.ack_by || '', ack_at: ev.ack_at || '',
+        detail: _wobJson(ev.detail, null), status, key, worker, by, admin_ok: ev.worker_key ? adminOk : '', admin_ok_at: ev.worker_key && adminOk ? (ev.admin_ok_at || ev.review_at || '') : '', candidates, ignored_by: ev.ignored_by || '', ack_by: ev.ack_by || '', ack_at: ev.ack_at || '',
         source: ev.added_by || '', sent: sentBy[ev.id] || (ev.added_by === '邮箱自动同步' ? [{ to: '转发名单', at: ev.created_at, guess: true }] : []) });
     }
     // 其他 Gusto 邮件 (不是入职相关的): 只有标题
@@ -46505,12 +46546,13 @@ app.get('/api/acct/onboarding-mails', requireAdmin, requireWobView, (req, res) =
       .map(m => ({ id: 'm' + m.message_id, kind: 'other', label: '其他 Gusto 邮件', name: '', date: String(m.received_at || '').slice(0, 10), subject: m.subject, status: 'na', sent: [] }));
     const cfg = _mailHookCfg();
     res.json({ rows: rows.concat(other), mail_sync: { last_at: cfg.last_at || '', last_auto_at: cfg.last_auto_at || '', backfill_done_at: cfg.backfill_done_at || '' },
-      forward_to: req.userRole === 'admin' ? (cfg.forward_to || []) : [], is_admin: req.userRole === 'admin' });
+      forward_to: req.userRole === 'admin' ? (cfg.forward_to || []) : [], is_admin: req.userRole === 'admin', can_confirm: req.userRole === 'admin' && !req.needsApproval });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // admin 确认别人 (manager / director) 关联的邮件: ok=true 记上 admin 审核; ok=false 关联错了, 取消关联并记下不是这个人
 app.post('/api/acct/onboarding-mails/:id/confirm', requireAdmin, requireRole('admin'), (req, res) => {
   try {
+    if (req.needsApproval) return res.status(403).json({ error: '要 admin 确认（director 关联的就是等 admin 确认）' });
     const ev = db.prepare('SELECT id, kind, name, date, worker_key, rejected_keys FROM gusto_email_events WHERE id=?').get(parseInt(req.params.id, 10) || 0);
     if (!ev) return res.status(404).json({ error: '找不到这封邮件' });
     if (!ev.worker_key) return res.status(400).json({ error: '这封邮件已经没有关联了，刷新再看' });
@@ -46538,7 +46580,7 @@ app.post('/api/acct/onboarding-mails/forward', requireAdmin, requireRole('admin'
     if (!to.length) return res.status(400).json({ error: '还没有转发名单：先在入职页「邮箱自动同步」里填转发给谁' });
     const ids = Array.isArray((req.body || {}).ids) ? new Set(req.body.ids.map(Number).filter(Boolean)) : null;
     const anySent = db.prepare('SELECT 1 FROM gusto_mail_sends WHERE event_id=? LIMIT 1');
-    const evs = db.prepare(`SELECT id, kind, name, date, subject, added_by FROM gusto_email_events
+    const evs = db.prepare(`SELECT id, kind, name, date, subject, added_by, detail FROM gusto_email_events
       WHERE kind IN ('accepted','ready','bank_bad','bank_updated') AND COALESCE(ignored_at,'')='' ORDER BY date, id`).all()
       .filter(e => (!ids || ids.has(e.id)) && !anySent.get(e.id) && e.added_by !== '邮箱自动同步');   // 「邮箱自动同步」收到的当时已经自动转发过
     if ((req.body || {}).count_only) return res.json({ ok: true, count: evs.length, to });
@@ -46550,7 +46592,7 @@ app.post('/api/acct/onboarding-mails/forward', requireAdmin, requireRole('admin'
       for (const addr of to) {
         if (_wobSentTo.get(e.id, addr)) continue;
         const d = await sendEmailWithDetail(addr, `[入职] ${label} · ${e.name} — ${e.subject}`.slice(0, 250),
-          `Gusto 邮件 ${e.date}: ${e.subject}\n\n（补发：系统只存了邮件标题，没有原邮件正文）\n\n— 新员工入职页: ${base}/onboarding\n— 全部 Gusto 邮件: ${base}/gusto-mails`).catch(err => ({ ok: false, error: err.message }));
+          `Gusto 邮件 ${e.date}: ${e.subject}\n${_wobDetailText(_wobJson(e.detail, null)) ? '\n' + _wobDetailText(_wobJson(e.detail, null)) + '\n' : ''}\n（补发：系统只存了邮件标题，没有原邮件正文）\n\n— 新员工入职页: ${base}/onboarding\n— 全部 Gusto 邮件: ${base}/gusto-mails`).catch(err => ({ ok: false, error: err.message }));
         if (d && d.ok) { sent++; _wobSendMark(e.id, addr, 'resend'); } else fail = `${addr}: ${(d && d.error) || '发送失败'}`;
       }
     }
