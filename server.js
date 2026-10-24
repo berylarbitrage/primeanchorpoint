@@ -45583,6 +45583,17 @@ function _wobPendingChanges() {
       out.items.push(`邮箱同步设置${b.forward_to !== undefined ? '：转发给 ' + (String(b.forward_to).trim() || '（清空）') : ''}${b.regenerate ? '，换新密钥' : ''}`);
     }
     if (!out.items.length) out.items.push(`${c.method} ${c.path}`);
+    // 按入职步骤排先后 (页面上同一个人的修改从上到下照这个顺序审):
+    // 关联档案 → 付款方式 → 收款账号 / Gusto 收款人 → 清单打勾 → 接受邀请邮件 → 可以付款邮件 → 其他
+    if (out.kind === 'worker') {
+      const ek = b.event_id ? (evOf(b.event_id) || {}).kind : '';
+      out.step_rank = (b.employee_id !== undefined || [b.approve, b.reject].includes('employee')) ? 10
+        : b.pay_method !== undefined ? 20
+        : (b.zelle_accounts || b.cashapp_accounts || b.ach_accounts || [b.approve, b.reject].includes('zelle')) ? 25
+        : (b.gusto_uuid !== undefined || [b.approve, b.reject].includes('gusto')) ? 30
+        : b.step ? 40
+        : ek === 'accepted' ? 50 : ek === 'ready' ? 60 : 90;
+    }
     if (out.key) { const r = db.prepare('SELECT name FROM new_hire_onboarding WHERE name_key=?').get(out.key); out.worker = (r && r.name) || out.key; }
     return out;
   });
