@@ -36195,6 +36195,41 @@ function _smsLineDecide(r, actor, approve, note, req) {
     approve ? `你申请用 ${_fmtLine(r.to_line)} 收发短信，${actor.name || ''} 已批准。\n只有一天：到 ${new Date(now.getTime() + SMS_LINE_TEMP_MS).toLocaleString('zh-CN', { timeZone: 'America/Chicago' })}（芝加哥时间）为止，之后自动换回 ${_fmtLine(r.from_line)}。第二天还要用请再申请。${note ? '\n说明：' + note : ''}`
       : `你申请用 ${_fmtLine(r.to_line)} 收发短信，${actor.name || ''} 没批准。${note ? '\n说明：' + note : ''}`).catch(() => {});
 }
+// 手机自己报的号码 (短信同步 App 新版会报; 运营商不给的话是空的)
+try { db.exec(`ALTER TABLE device_sms_devices ADD COLUMN reported_number TEXT DEFAULT ''`); } catch(e) {}
+// 猜这台设备是哪个手机号: 拿它的短信去对公司 Twilio 号的收发记录 ——
+//   公司号发给它的短信 (Twilio 那边 outbound, to_number = 它的号) 它这边是收到;
+//   它发给公司号的短信 (Twilio 那边 inbound, from_number = 它的号) 它这边是发出。
+// 同内容、时间差 10 分钟内算对上; 对上次数最多的号码就是它。
+function deviceSmsGuessLine(deviceId) {
+  const mine = db.prepare(`SELECT direction, body, sent_at FROM device_sms_messages
+    WHERE device_id=? AND LENGTH(TRIM(COALESCE(body,''))) >= 6 ORDER BY id DESC LIMIT 3000`).all(deviceId);
+  if (!mine.length) return null;
+  const byBody = new Map();
+  for (const m of mine) {
+    const k = m.body.trim();
+    if (!byBody.has(k)) byBody.set(k, []);
+    byBody.get(k).push(m);
+  }
+  const tally = new Map();
+  const t = v => new Date(/[TZ]/.test(String(v)) ? v : String(v).replace(' ', 'T') + 'Z').getTime();
+  const scan = rows => {
+    for (const r of rows) {
+      const list = byBody.get(String(r.body || '').trim());
+      if (!list) continue;
+      const out = /^out/.test(r.direction), num = String(out ? r.to_number : r.from_number).replace(/\D/g, '').slice(-10);
+      if (num.length !== 10) continue;
+      // Twilio 发出 ↔ 手机收到; Twilio 收到 ↔ 手机发出
+      if (list.some(m => (m.direction === (out ? 'in' : 'out')) && Math.abs(t(m.sent_at) - t(r.created_at)) <= 600000)) tally.set(num, (tally.get(num) || 0) + 1);
+    }
+  };
+  for (const tbl of ['sms_messages', 'comm_messages']) {
+    try { scan(db.prepare(`SELECT direction, from_number, to_number, body, created_at FROM ${tbl} WHERE LENGTH(TRIM(COALESCE(body,''))) >= 6 ORDER BY id DESC LIMIT 50000`).all()); } catch (e) {}
+  }
+  if (!tally.size) return null;
+  const [line, hits] = [...tally.entries()].sort((a, b) => b[1] - a[1])[0];
+  return { line, hits, how: 'twilio' };
+}
 function deviceSmsLine(v) { const d = String(v || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : ''; }
 
 function deviceSmsHashToken(token) {
@@ -37955,6 +37990,8 @@ app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
     const body = req.body || {};
     const list = Array.isArray(body.messages) ? body.messages.slice(0, 500) : [];
     const serial = String(body.device_serial || '').slice(0, 80);
+    const own = (() => { const d = String(body.own_number || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : ''; })();
+    if (own) db.prepare(`UPDATE device_sms_devices SET reported_number=? WHERE id=?`).run(own, req.smsDevice.id);
     const upsert = db.prepare(`INSERT INTO device_sms_messages
         (device_id, remote_id, peer, address, contact, direction, kind, body, translated_body, source_lang,
          risk_score, risk_category, risk_summary, has_media, sent_at, send_status, updated_at)
@@ -38475,7 +38512,12 @@ app.get('/api/device-sms/messages', requireAdmin, requireRole('admin', 'cs'), (r
 app.get('/api/device-sms/devices', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     res.json({
-      devices: db.prepare(`SELECT id, name, serial, active, last_push_at, message_count, created_at, COALESCE(line,'') AS line FROM device_sms_devices ORDER BY id DESC`).all(),
+      devices: db.prepare(`SELECT id, name, serial, active, last_push_at, message_count, created_at, COALESCE(line,'') AS line, COALESCE(reported_number,'') AS reported_number
+        FROM device_sms_devices ORDER BY id DESC`).all().map(d => {
+        // 还没设号码、在用的: 帮着认一下号码 (手机自己报的优先, 没有就拿公司号的收发记录去对)
+        if (!d.line && d.active) d.guess = d.reported_number ? { line: d.reported_number, how: 'phone' } : (d.message_count ? deviceSmsGuessLine(d.id) : null);
+        return d;
+      }),
       lines: db.prepare('SELECT line, label FROM device_sms_lines').all()
     });
   } catch (e) { res.status(500).json({ error: e.message }); }

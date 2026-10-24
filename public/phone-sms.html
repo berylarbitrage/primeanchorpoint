@@ -246,6 +246,8 @@ button,input,select,textarea{font-family:inherit}
 .dev-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
 .simple-step{display:flex;gap:12px;align-items:flex-start;padding:12px;border:1px solid var(--gray-200);border-radius:12px;font-size:.88rem}
 .step-n{width:26px;height:26px;border-radius:50%;background:var(--sky);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.guess{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 10px;background:#fff;border:1.5px dashed #16a34a;border-radius:8px}
+.modal .guess input{width:auto;padding:6px 10px;font-size:.82rem}
 .dev-big{display:grid;gap:6px;padding:10px 12px;border:1.5px solid #bbf7d0;background:#f0fdf4;border-radius:10px}
 .modal .dev-big input{width:auto;padding:6px 10px;font-size:.82rem}
 .dev-meta{font-size:.75rem;color:var(--gray-600);min-width:120px}
@@ -2247,7 +2249,12 @@ function renderSetup() {
       + (live.length ? live.map(d => '<div class="dev-big">'
           + '<div><span class="dev-dot" style="background:#16a34a;display:inline-block;margin-right:6px"></span><b>' + esc(d.name || '设备') + '</b>'
           + '<span style="color:var(--gray-600)"> · 已同步 ' + (d.message_count || 0) + ' 条短信 · ' + synced(d) + '</span></div>'
-          + '<div style="font-size:.85rem">这部手机的号码是：</div>'
+          + (d.guess ? '<div class="guess"><span>🔍 认出来了，这部手机的号码应该是 <b style="font-size:1rem">' + esc(fmtPhone(d.guess.line)) + '</b></span>'
+              + '<span style="color:var(--gray-600);font-size:.78rem">' + (d.guess.how === 'phone' ? '（手机自己报的）' : '（它的短信跟公司号的 ' + d.guess.hits + ' 条收发记录对上了）') + '</span>'
+              + '<input id="gl' + d.id + '" placeholder="叫什么，如 芝加哥1" style="' + inp + ';width:150px" value="' + esc((S.lines.find(l => l.line === d.guess.line) || {}).label || '') + '">'
+              + '<button class="action-btn primary" style="padding:6px 14px" onclick="assignGuess(' + d.id + ',\'' + d.guess.line + '\')">✓ 对，就是这个号</button></div>'
+              + '<div style="font-size:.8rem;color:var(--gray-600)">不对的话，下面自己选或填：</div>'
+            : '<div style="font-size:.85rem">这部手机的号码是：</div>')
           + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' + pickBtns(d)
           + '<span style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap">' + (S.lines.length ? '<span style="color:var(--gray-600);font-size:.8rem">或新号码</span>' : '')
           + '<input id="nn' + d.id + '" placeholder="号码，如 (224) 591-5888" style="' + inp + ';width:190px">'
@@ -2289,6 +2296,16 @@ async function assignLine(id, line) {
   pToast('好了，这部手机是 ' + fmtPhone(line));
   await load(true);
   openSetup(SETUP.none.length > 1 ? 'none' : line);
+}
+// 认出来的号码点「对」: 号码没加过就加上 (带备注名), 再归过去
+async function assignGuess(id, line) {
+  const label = document.getElementById('gl' + id).value;
+  const have = SETUP.lines.find(l => l.line === line);
+  if (!have || (label && label !== have.label)) {
+    const r = await api('/device-sms/lines', { method: 'POST', body: JSON.stringify({ line, label }) });
+    if (!r.success) { pToast(r.error || '没加上', true); return; }
+  }
+  await assignLine(id, line);
 }
 // 还没有这个号码: 先加号码, 再归过去
 async function assignNewLine(id) {
