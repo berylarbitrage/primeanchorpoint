@@ -446,7 +446,7 @@ function oldRow(w, k) {
     ${w.employee ? `<span class="tag" style="background:#dcfce7;color:#166534">👤 ${esc(w.employee.code || '#' + w.employee.id)}${w.employee.phone ? ' · ' + esc(w.employee.phone) : ''}</span>` : '<span class="tag" style="background:#fee2e2;color:#991b1b">未关联档案</span>'}${w.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff" title="发票是 ${esc((w.inv_states || []).join(' / '))}，档案是 ${esc(w.employee.state)}">⚠ 州不一致：发票 ${esc((w.inv_states || []).join('/'))} · 档案 ${esc(w.employee.state)}</span>` : ''}
     <span class="muted">${w.line.hours ? w.line.hours + 'h' : ''}${w.line.total != null ? ' · ' + money(w.line.total) : ''}</span>
     ${rvTags(w.review_people || 0, w.review_system || 0, k)}
-    ${w.pend && w.pend.pay ? `<span class="tag" style="background:#fef3c7;color:#92400e">⏳ ${esc(PM_LABEL[w.pay_method] || '不选')} 等审批</span>` : w.settled ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ 已定 · ${esc(PM_LABEL[w.pay_method] || 'Gusto 已付过')}</span>`
+    ${w.pend && w.pend.pay ? `<span class="tag" style="background:#fef3c7;color:#92400e">⏳ ${esc(PM_LABEL[w.pay_method] || '不选')} 等审批</span>` : w.pay_confirm ? `<span class="tag" style="${RV_PEOPLE}">👤 ${esc(PM_LABEL[w.pay_method] || w.pay_method)} · ${esc(w.pay_by || '别人')} 选的，等 admin 确认</span>${D.can_confirm ? `<button class="btn btn-blue btn-sm" onclick="save(${k},{approve:'pay'})">✓ 确认</button>` : ''}` : w.settled ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ 已定 · ${esc(PM_LABEL[w.pay_method] || 'Gusto 已付过')}</span>`
       : w.stage === 'progress' ? `<span class="tag" style="background:#dbeafe;color:#1e40af" title="选了付款方式，步骤或审核还没做完">⏳ 进行中 · ${esc(PM_LABEL[w.pay_method] || 'Gusto')}</span>`
       : '<span class="tag" style="background:#fef3c7;color:#92400e">付款方式待定</span>'}
     ${w.pay_method === 'zelle' ? `<span class="muted">Zelle ${zList(w.zelle_accounts)}</span>` : w.pay_method === 'cashapp' ? `<span class="muted">Cash App ${zList(w.cashapp_accounts)}</span>` : w.pay_method === 'ach' ? `<span class="muted">ACH ${zList(w.ach_accounts)}</span>` : ''}
@@ -529,6 +529,7 @@ function card(w, k) {
       <div>
         <div class="lbl">怎么付${w.pend && w.pend.pay ? ' <span class="tag" style="text-transform:none;background:#fef3c7;color:#92400e">⏳ 等审批，下面可以先接着做</span>' : ''}${w.suggest && !w.pay_method ? ` <span style="text-transform:none;color:#0369a1;font-weight:400">· 建议 ${PM_LABEL[w.suggest.method] || w.suggest.method}（${esc(w.suggest.why)}）</span>` : ''}</div>
         <div class="pm" style="margin-bottom:.45rem">${pm}</div>
+        ${payConfirm(w, k)}
         ${w.employee || (w.pend && w.pend.emp) ? '' : '<div class="muted" style="margin:-.2rem 0 .4rem;color:#b45309">① 先关联员工档案，再选付款方式</div>'}
         ${zelleLine(w, k)}
         <textarea ${dis} rows="2" placeholder="备注：支票抬头 / 现金谁给 …" onchange="save(${k},{pay_note:this.value})">${esc(w.pay_note)}</textarea>
@@ -550,6 +551,13 @@ function sentTag(e) {
   if (!s.length) return '';
   if (s.length === 1 && s[0].guess) return `<span class="tag" style="background:#f0fdf4;color:#166534" title="收到时系统自动转发给了当时的转发名单（具体发给谁那时还没记）">📨 已自动转发</span>`;
   return `<span class="tag" style="background:#f0fdf4;color:#166534" title="${esc(s.map(x => x.to + ' ' + fmtTime(String(x.at).replace(' ', 'T') + 'Z')).join('\n'))}">📨 已发给 ${esc(s.map(x => x.to.split('@')[0]).join('、'))}</span>`;
+}
+// director / manager 选的付款方式要 admin 确认; admin 在这里确认或者否掉 (否掉 = 回到没选)
+function payConfirm(w, k) {
+  if (!w.pay_confirm) return '';
+  return `<div class="row" style="margin:0 0 .4rem">${D.can_confirm ? `<span class="tag" style="${RV_PEOPLE}">👤 ${esc(w.pay_by || '别人')} 选的${esc(PM_LABEL[w.pay_method] || w.pay_method)}，等你确认</span>`
+      : `<span class="tag" style="background:#fef3c7;color:#92400e">⏳ ${esc(PM_LABEL[w.pay_method] || w.pay_method)} · ${esc(w.pay_by || '')} 选的，等 admin 确认</span>`}
+    ${D.can_confirm ? `<button class="btn btn-blue btn-sm" onclick="save(${k},{approve:'pay'})">✓ 对，确认</button><button class="btn btn-outline btn-sm" style="color:#dc2626" onclick="save(${k},{reject:'pay'})">✗ 不对</button>` : ''}</div>`;
 }
 // 两种待审核用不同颜色: 👤 别人选的 (橙) / 🤖 系统匹配的 (蓝)
 const RV_PEOPLE = 'background:#ffedd5;color:#9a3412;border:1px solid #fdba74';

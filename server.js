@@ -44991,7 +44991,9 @@ for (const col of ["gusto_ok INTEGER DEFAULT 0", "gusto_ok_by TEXT DEFAULT ''", 
   // 一个人可以登记多个 Zelle 账号: [{account, name, at, by}] (上面两列是旧的单账号, 读的时候并进来)
   "zelle_accounts TEXT DEFAULT '[]'",
   // 付款方式可以换, 换掉的留底: pay_history [{method, since, until, by, zelle: [...]}]; pay_since = 当前方式从什么时候开始
-  "pay_history TEXT DEFAULT '[]'", "pay_since TEXT DEFAULT ''", "emp_ok_by TEXT DEFAULT ''", "emp_ok_at TEXT DEFAULT ''", "emp_rejected TEXT DEFAULT '[]'"]) {
+  "pay_history TEXT DEFAULT '[]'", "pay_since TEXT DEFAULT ''", "emp_ok_by TEXT DEFAULT ''", "emp_ok_at TEXT DEFAULT ''", "emp_rejected TEXT DEFAULT '[]'",
+  // 谁选的这个付款方式; director / manager 选的要 admin 确认 (pay_ok_by)。pay_by 是 NULL 的是加这两列之前选的, 看修改历史
+  "pay_by TEXT DEFAULT NULL", "pay_ok_by TEXT DEFAULT ''", "pay_ok_at TEXT DEFAULT ''"]) {
   try { db.exec(`ALTER TABLE new_hire_onboarding ADD COLUMN ${col}`); } catch (e) {}
 }
 // 每个人的修改历史: 谁、什么时候、改了什么 (查看历史时再和发票 / 邮件这些系统事件按时间合在一起)
@@ -45180,6 +45182,10 @@ function _wobBuild() {
   const people = _wobInvoicePeople();
   const saved = {};
   for (const r of db.prepare('SELECT * FROM new_hire_onboarding').all()) saved[r.name_key] = r;
+  // 付款方式要 admin 选的 / admin 确认过的才算定了; 加记录之前选的, 从修改历史里找最后是谁改的付款方式
+  const payAdmins = new Set(db.prepare("SELECT username FROM admin_users WHERE role='admin' AND COALESCE(needs_approval,0)=0").all().map(u => u.username));
+  const payLogBy = {};
+  for (const r of db.prepare("SELECT name_key, by_user FROM new_hire_onboarding_log WHERE action='付款方式' ORDER BY id").all()) payLogBy[r.name_key] = r.by_user || '';
   const phones = _wobPhoneIndex();
   const emps = _wobEmployees();
   // Gusto 名册: API 同步的合同工 (带 onboarding 状态); 没连 API 时退回付款 CSV 模板名册, 只能对名字
@@ -45267,6 +45273,8 @@ function _wobBuild() {
       zelle_accounts: _wobZelle(s).filter(z => !['cashapp', 'ach'].includes(z.type)), cashapp_accounts: _wobZelle(s).filter(z => z.type === 'cashapp'),
       ach_accounts: _wobZelle(s).filter(z => z.type === 'ach'),
       pay_history: _wobJson(s.pay_history, []), pay_since: s.pay_since || '',
+      pay_by: s.pay_by != null ? s.pay_by : (payLogBy[p.key] || ''),
+      pay_confirm: !!s.pay_method && !s.pay_ok_by && (s.pay_by != null ? !payAdmins.has(s.pay_by) : !!payLogBy[p.key] && !payAdmins.has(payLogBy[p.key])),
       gusto, gusto_proposal: proposal, first_payment: firstPay, manual,
       updated_by: s.updated_by || '', updated_at: s.updated_at || '',
     });
@@ -45370,7 +45378,7 @@ function _wobBuild() {
     // 已通过关联的 Gusto 收款人走完入职还付过钱的, 没手动选付款方式也算处理完
     // 全部做完才算: Gusto 三步都完成; Zelle / Cash App / ACH 的账号都审核通过了; 也没有还在等审核的
     const accOk = curAccs.length > 0 && curAccs.every(z => z.ok);
-    w.done = !!w.employee && !w.pending_review && (w.pay_method === 'skip'
+    w.done = !!w.employee && !w.pending_review && !w.pay_confirm && (w.pay_method === 'skip'
       || (!!w.pay_method && (w.pay_method === 'gusto' ? w.checklist.done : ['zelle', 'cashapp', 'ach'].includes(w.pay_method) ? accOk : true))
       || (!w.pay_method && !!(w.gusto && w.gusto.link) && w.checklist.done));
     // 发票上的三种: 已定 = 全部做完; 进行中 = 选了付款方式但步骤 / 审核还没做完; 待定 = 还没选
@@ -45653,6 +45661,7 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
     // admin: 别人 (director / manager) 关联、等你确认的 Gusto 邮件也算「👤 待审核」
     const canConfirm = req.userRole === 'admin' && !req.needsApproval;
     if (canConfirm) for (const w of list) if (w.email_confirm) { w.pending_review += w.email_confirm; w.review_people += w.email_confirm; }
+    if (canConfirm) for (const w of list) if (w.pay_confirm) { w.pending_review++; w.review_people++; }
     const today = new Date().toISOString().slice(0, 10);
     const thisWeek = wob.weekStart(today);
     // 最近 12 周每周新人数 / 未处理数
@@ -45779,7 +45788,8 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       gusto_rejected: cur.gusto_rejected || '[]', phone_rejected: cur.phone_rejected || '[]',
       employee_id: cur.employee_id || null, emp_ok: cur.emp_ok ? 1 : 0, emp_ok_by: cur.emp_ok_by || '', emp_ok_at: cur.emp_ok_at || '',
       emp_rejected: cur.emp_rejected || '[]', zelle_account: cur.zelle_account || '', zelle_name: cur.zelle_name || '',
-      zelle_accounts: JSON.stringify(_wobZelle(cur)), pay_history: cur.pay_history || '[]', pay_since: cur.pay_since || '' };
+      zelle_accounts: JSON.stringify(_wobZelle(cur)), pay_history: cur.pay_history || '[]', pay_since: cur.pay_since || '',
+      pay_by: cur.pay_by != null ? cur.pay_by : null, pay_ok_by: cur.pay_ok_by || '', pay_ok_at: cur.pay_ok_at || '' };
     const str = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
     const now = new Date().toISOString();
     if (b.name !== undefined) next.name = str(b.name, 120);
@@ -45935,6 +45945,13 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
           .run(key, key, key, JSON.stringify(rej), req.userName || '', now, ev.id);
       }
     }
+    // director / manager 选的付款方式: admin 确认 (approve: 'pay') 或者否掉 (reject: 'pay' = 回到没选)
+    if (b.approve === 'pay' || b.reject === 'pay') {
+      if (!_wobAdminOk(req)) return res.status(403).json({ error: '付款方式要 admin 确认' });
+      if (!next.pay_method) return res.status(400).json({ error: '还没选付款方式，刷新再看' });
+      if (b.approve === 'pay') { next.pay_ok_by = _wobAdminOk(req); next.pay_ok_at = now; }
+      else b.pay_method = '';
+    }
     if (b.pay_method !== undefined) {
       const m = str(b.pay_method, 20);
       if (m && !wob.PAY_METHODS.includes(m)) return res.status(400).json({ error: '付款方式不对' });
@@ -45947,6 +45964,10 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
           next.pay_history = JSON.stringify(hist.slice(-30));
         }
         next.pay_since = m ? now : '';
+        // 换了就重新算: admin 自己选的直接算确认过, 别人选的等 admin 确认
+        next.pay_by = m ? (req.userName || '') : '';
+        next.pay_ok_by = m ? _wobAdminOk(req) : '';
+        next.pay_ok_at = next.pay_ok_by ? now : '';
       }
       next.pay_method = m;
     }
@@ -45998,6 +46019,7 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
     else if (b.reject === 'employee') logs.push(['否掉系统匹配的员工档案', empName(parseInt(b.id, 10))]);
     else if (String(cur.employee_id || '') !== String(next.employee_id || '') || (cur.emp_ok ? 1 : 0) !== next.emp_ok)
       logs.push([next.emp_ok ? '关联员工档案' : next.employee_id ? '手动选员工档案（待审核）' : '取消员工档案关联', empName(next.employee_id)]);
+    if (b.approve === 'pay') logs.push(['admin 确认付款方式', `${PM[next.pay_method] || next.pay_method}${next.pay_by ? '（' + next.pay_by + ' 选的）' : ''}`]);
     if (b.approve === 'gusto') logs.push(['审核通过 Gusto 收款人', gName(b.uuid)]);
     else if (b.reject === 'gusto') logs.push(['否掉系统匹配的 Gusto 收款人', gName(b.uuid)]);
     else if ((cur.gusto_uuid || '') !== next.gusto_uuid) logs.push([next.gusto_ok ? '关联 Gusto 收款人' : next.gusto_uuid ? '手动选 Gusto 收款人（待审核）' : '取消 Gusto 关联', gName(next.gusto_uuid)]);
@@ -46010,14 +46032,14 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       logs.push([b.checked ? '清单打勾' : '清单取消打勾', st ? st.label : b.step]);
     }
     db.prepare(`INSERT INTO new_hire_onboarding (name_key, name, phone, warehouse, pay_method, pay_note, gusto_uuid, checklist,
-        gusto_ok, gusto_ok_by, gusto_ok_at, gusto_rejected, phone_rejected, employee_id, emp_ok, emp_ok_by, emp_ok_at, emp_rejected, zelle_account, zelle_name, zelle_accounts, pay_history, pay_since, updated_by, updated_at)
+        gusto_ok, gusto_ok_by, gusto_ok_at, gusto_rejected, phone_rejected, employee_id, emp_ok, emp_ok_by, emp_ok_at, emp_rejected, zelle_account, zelle_name, zelle_accounts, pay_history, pay_since, pay_by, pay_ok_by, pay_ok_at, updated_by, updated_at)
       VALUES (@key, @name, @phone, @warehouse, @pay_method, @pay_note, @gusto_uuid, @checklist,
-        @gusto_ok, @gusto_ok_by, @gusto_ok_at, @gusto_rejected, @phone_rejected, @employee_id, @emp_ok, @emp_ok_by, @emp_ok_at, @emp_rejected, @zelle_account, @zelle_name, @zelle_accounts, @pay_history, @pay_since, @by, datetime('now'))
+        @gusto_ok, @gusto_ok_by, @gusto_ok_at, @gusto_rejected, @phone_rejected, @employee_id, @emp_ok, @emp_ok_by, @emp_ok_at, @emp_rejected, @zelle_account, @zelle_name, @zelle_accounts, @pay_history, @pay_since, @pay_by, @pay_ok_by, @pay_ok_at, @by, datetime('now'))
       ON CONFLICT(name_key) DO UPDATE SET name=@name, phone=@phone, warehouse=@warehouse, pay_method=@pay_method, pay_note=@pay_note,
         gusto_uuid=@gusto_uuid, checklist=@checklist, gusto_ok=@gusto_ok, gusto_ok_by=@gusto_ok_by, gusto_ok_at=@gusto_ok_at,
         gusto_rejected=@gusto_rejected, phone_rejected=@phone_rejected, employee_id=@employee_id, emp_ok=@emp_ok, emp_ok_by=@emp_ok_by,
         emp_ok_at=@emp_ok_at, emp_rejected=@emp_rejected, zelle_account=@zelle_account, zelle_name=@zelle_name, zelle_accounts=@zelle_accounts,
-        pay_history=@pay_history, pay_since=@pay_since, updated_by=@by, updated_at=datetime('now')`)
+        pay_history=@pay_history, pay_since=@pay_since, pay_by=@pay_by, pay_ok_by=@pay_ok_by, pay_ok_at=@pay_ok_at, updated_by=@by, updated_at=datetime('now')`)
       .run({ key, ...next, by: req.userName || '' });
     for (const [action, detail] of logs) _wobLog(key, req.userName, action, detail);
     if (b.reject === 'email' || b.unapprove === 'email') {
