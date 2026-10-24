@@ -1280,13 +1280,33 @@ function pcOf(pred) {
     .sort((x, y) => ((x.step_rank || 90) - (y.step_rank || 90)) || String(x.at).localeCompare(String(y.at)));
 }
 const CIRC = '①②③④⑤⑥⑦⑧⑨⑩';
+// 别人提交的修改现在能不能审: 同一个人上面还有没处理的 → 先处理上面的; 邮件要按步骤; 打勾要先关联 Gusto 名册
+function pcLock(c) {
+  if (c.kind !== 'worker') return '';
+  const w = (D.rows || []).find(x => x.key === c.key);
+  const mine = pcOf(x => x.kind === 'worker' && x.key === c.key);
+  const i = mine.findIndex(x => x.id === c.id);
+  if (i > 0) return `先处理上面的 ${CIRC[0]}${i > 1 ? '–' + CIRC[i - 1] : ''}`;
+  if (!w) return '';
+  const r = c.step_rank || 90;
+  if (r === 50 || r === 60) return emailLock(w, { kind: r === 50 ? 'accepted' : 'ready' });
+  if (r === 40 && c.body && c.body.checked && needGustoLink(w)) return '先关联 Gusto 名册里的这个人（点「手动关联」）';
+  return '';
+}
+// 同意 / 拒绝: 还不能审的两个都锁上, 写出先做什么 (按钮要放在 pc-b 里, 跟原来的位置一样)
+function pcBtns(c) {
+  const why = pcLock(c);
+  return why
+    ? `<span class="pc-b"><span class="muted" style="color:#b45309">${esc(why)}</span><button class="btn btn-sm" disabled style="background:#e5e7eb;color:#6b7280;cursor:not-allowed">🔒 同意</button><button class="btn btn-sm" disabled style="background:#f3f4f6;color:#9ca3af;border:1px solid #e5e7eb;cursor:not-allowed">🔒 拒绝</button></span>`
+    : `<span class="pc-b"><button class="btn btn-sm" style="background:#16a34a;color:#fff" onclick="decideChange(${c.id},true)">✓ 同意</button><button class="btn btn-outline btn-sm" onclick="decideChange(${c.id},false)">✗ 拒绝</button></span>`;
+}
 // offset / total: 一个人的修改分在两块里时, 编号接着往下数
 function pcBlock(list, compact, offset, total) {
   if (!list.length) return '';
   offset = offset || 0; total = total || list.length;
   return list.map((c, i) => `<div class="pc ${compact ? 'pc-c' : ''}">
     <div class="pc-h">${compact && total > 1 ? `<b style="font-size:1rem;color:#9a3412" title="按步骤顺序，从上往下审">${CIRC[offset + i] || offset + i + 1}</b>` : ''}<span class="tag" style="${RV_PEOPLE}">👤 别人提交的</span><b>${esc(c.by)}</b> 提交的修改 <span class="muted">${esc(fmtTime(String(c.at).replace(' ', 'T') + 'Z'))}</span>
-      ${D.can_decide_changes ? `<span class="pc-b"><button class="btn btn-sm" style="background:#16a34a;color:#fff" onclick="decideChange(${c.id},true)">✓ 同意</button><button class="btn btn-outline btn-sm" onclick="decideChange(${c.id},false)">✗ 拒绝</button></span>`
+      ${D.can_decide_changes ? pcBtns(c)
         : '<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:auto">等 staff / admin 同意</span>'}</div>
     <ul>${c.items.map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>`).join('');
 }
@@ -1304,7 +1324,7 @@ function renderPChanges() {
     <div style="margin-top:.35rem">${dup}
     ${all.map(c => `<div class="pc"><div class="pc-h"><b>📝 ${esc(c.by)}</b>${c.worker ? ` · 工人 <a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="jumpWorker('${encodeURIComponent(c.key)}')">${esc(c.worker)}</a>` : ''}
         <span class="muted">${esc(fmtTime(String(c.at).replace(' ', 'T') + 'Z'))}</span>
-        ${D.can_decide_changes ? `<span class="pc-b"><button class="btn btn-sm" style="background:#16a34a;color:#fff" onclick="decideChange(${c.id},true)">✓ 同意</button><button class="btn btn-outline btn-sm" onclick="decideChange(${c.id},false)">✗ 拒绝</button></span>` : ''}</div>
+        ${D.can_decide_changes ? pcBtns(c) : ''}</div>
       <ul>${c.items.map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>`).join('')}</div></details>`;
 }
 async function decideChange(id, ok) {
