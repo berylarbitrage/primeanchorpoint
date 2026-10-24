@@ -377,6 +377,8 @@ function mailSyncState(m) {
   // 第 4 版要运行 install 才装定时器; 只点了「运行」(默认是 syncGustoMail) 的就只跑那一次, 不会自动跑
   if (Number(m.script_version) < 5) return { cls: '', text: '⚠ 邮件同步可能没装自动运行，请复制第 5 版脚本覆盖', bad: true, old: true, v4: true };
   if (m.has_trigger === false) return { cls: '', text: '⚠ 邮件同步没装上自动运行（定时器）', bad: true, notrig: true };
+  // 第 6 版: 读「银行有误」邮件的正文 (那种邮件标题里没有名字)
+  if (Number(m.script_version) < 6) return { cls: '', text: '⚠ 请换第 6 版同步脚本（要读银行有误邮件的正文）', bad: true, v5: true };
   const min = Math.round((Date.now() - Date.parse(m.last_at)) / 60000);
   const ago = min < 1 ? '刚刚' : min < 60 ? `${min} 分钟前` : min < 1440 ? `${Math.round(min / 60)} 小时前` : `${Math.round(min / 1440)} 天前`;
   return min > 15 ? { cls: '', text: `⚠ 邮件同步 ${ago}停了，可能出问题了`, bad: true } : { cls: 'on', text: `邮件同步正常 · ${ago}`, bad: false };
@@ -503,7 +505,7 @@ function card(w, k) {
       <div class="ck" style="grid-template-columns:repeat(3,minmax(0,1fr))">${steps}</div>`;
   }
   const bankBox = w.bank_alerts.length ? `<div class="ck" style="grid-template-columns:1fr;background:#fef2f2">${w.bank_alerts.map(b => `<div class="row" style="margin:0">
-      <span class="tag" style="background:${b.ack_at ? 'var(--g100);color:var(--g500)' : '#fee2e2;color:#991b1b'}">⚠ ${esc(b.date)} · ${esc(b.label)}</span><span class="muted">${esc(b.subject)}</span>
+      <span class="tag" style="background:${b.ack_at ? 'var(--g100);color:var(--g500)' : '#fee2e2;color:#991b1b'}">⚠ ${esc(b.date)} · ${esc(b.label)}</span><span class="muted">${esc(b.subject)}</span>${bankDetail(b.detail)}
       ${b.ack_at ? `<span class="muted">${esc(b.ack_by)} 已处理 ${esc(fmtTime(b.ack_at))}</span>` : clearAsk(b, '') + (D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="ackBank(${b.id})">知道了</button>` : '')}</div>`).join('')}</div>` : '';
   return `<div class="card w ${w.done ? 'done' : ''} ${bad || w.state_bad ? 'bad' : ''}">
     <div class="w-main">
@@ -1195,6 +1197,11 @@ function ackBank(id) {
     toast('已处理'); load(); return true;
   });
 }
+// 银行有误邮件正文里读到的: 账号尾号 / 错误原因 / 截止日期
+function bankDetail(d) {
+  if (!d || !(d.acct || d.error || d.deadline)) return '';
+  return `<span class="tag" style="background:#fff;color:#991b1b;border:1px solid #fecaca">${[d.acct ? '🏦 尾号 ' + esc(d.acct) : '', d.error ? '❗ ' + esc(d.error) : '', d.deadline ? '⏰ ' + esc(d.deadline) + ' 前要改好' : ''].filter(Boolean).join(' · ')}</span>`;
+}
 // 「银行已更新」时之前还有没处理的「银行有误」: 问要不要一起消除
 function clearAsk(x, style) {
   if (x.ack_at || !x.clears || !x.clears.length) return '';
@@ -1383,7 +1390,7 @@ function renderAlerts() {
   el.innerHTML = `<div class="alerts"><div class="row" style="margin:0 0 .2rem"><b style="color:#991b1b">⚠ 银行信息提醒（${a.length}）</b>
       <button class="btn btn-outline btn-sm" onclick="VIEW='alerts';INV=0;load()">只看这些人</button></div>` +
     a.map(x => `<div class="a"><span class="tag" style="background:#fee2e2;color:#991b1b">${esc(x.label)}</span><b>${esc(x.worker || x.name)}</b>
-      <span class="muted">${esc(x.date)} · ${esc(x.subject)}${x.key ? '' : ' · 系统里没对上是哪个工人'}</span>
+      <span class="muted">${esc(x.date)} · ${esc(x.subject)}${x.key ? '' : ' · 系统里没对上是哪个工人'}</span>${bankDetail(x.detail)}
       ${!x.key && D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="pickWorkerFor(${x.id})">手动关联</button>` : ''}
       ${clearAsk(x, 'margin-left:auto')}
       ${D.can_approve ? `<button class="btn btn-outline btn-sm" style="${x.clears && x.clears.length ? '' : 'margin-left:auto'}" onclick="ackBank(${x.id})">知道了</button>` : ''}</div>
@@ -1571,15 +1578,17 @@ async function gustoSteps(k) {
 
 // ── 邮箱自动同步设置 ──
 function hookScript(url) {
-  return `// Prime Anchor · Gusto 入职邮件同步 (Google Apps Script) · 第 5 版
+  return `// Prime Anchor · Gusto 入职邮件同步 (Google Apps Script) · 第 6 版
 // 每 5 分钟自动跑一次, 每次只看上次之后的新邮件 (几秒就跑完, 不会把 Google 每天的运行时间用光):
 //   第一次 —— 把邮箱里以前所有 Gusto 邮件读一遍 (一次读不完下一轮接着读), 只记进系统, 不转发
 //   之后   —— 新的 Gusto 邮件发给系统; 入职相关的由系统发邮件给经理 (不再用 Gmail 转发, 不占 Gmail 每天的发信额度)
 // 第 5 版: 不管点「运行」的是哪个函数, 都会自动装上「每 5 分钟跑一次」的定时器
+// 第 6 版: 「银行信息有误」那种标题没名字的邮件, 把正文也发给系统 (名字、账号尾号、错误原因在正文里); 以前的这种邮件重读一遍
 const HOOK_URL = '${url}';
 const LABEL = 'PA 入职已同步';
 const QUERY = 'from:gusto.com';
-const VERSION = '5';
+const VERSION = '6';
+const BANK_RE = /incorrect bank account|bank account details/i;
 
 // 第一次: 点上方「运行」(默认就是这个 install), 按提示授权一次 → 之后每 5 分钟自动跑
 function install() {
@@ -1627,6 +1636,12 @@ function run_() {
     }
     if (props.getProperty('backfill_done') !== '1') return;   // 以前的还没读完, 下一轮接着读
   }
+  // 第 6 版第一次跑: 以前的银行有误邮件带正文重读一遍 (以前只发了标题, 读不到名字)
+  if (props.getProperty('rescan6') !== '1') {
+    const old = GmailApp.search(QUERY + ' "incorrect bank account details"', 0, 100);
+    if (old.length) send_(GmailApp.getMessagesForThreads(old), false, 0, true);
+    props.setProperty('rescan6', '1');
+  }
   // 只看上次之后的邮件 (往前多看 1 小时, 防止邮件晚到); 系统按邮件 id 去重, 不会重复处理
   const last = Number(props.getProperty('last_ts') || 0) || (Date.now() - 2 * 86400000);
   const since = Math.floor((last - 3600000) / 1000);
@@ -1645,7 +1660,7 @@ function post_(body) {
   return JSON.parse(res.getContentText());
 }
 
-function send_(byThread, backfill, sinceMs) {
+function send_(byThread, backfill, sinceMs, rescan) {
   const msgs = [];
   byThread.forEach(list => list.forEach(m => {
     if (sinceMs && m.getDate().getTime() < sinceMs) return;
@@ -1656,9 +1671,10 @@ function send_(byThread, backfill, sinceMs) {
   // 每次最多发 50 封给系统; 没有新邮件也发一次 (让系统知道脚本还在正常跑)
   for (let i = 0; i < Math.max(msgs.length, 1); i += 50) {
     const part = msgs.slice(i, i + 50);
-    const out = post_({ backfill: backfill, messages: part.map(m => ({
+    const out = post_({ backfill: backfill, rescan: !!rescan, messages: part.map(m => ({
       id: m.getId(), subject: m.getSubject(), from: m.getFrom(), date: m.getDate().toISOString(),
-      body: backfill ? '' : m.getPlainBody().slice(0, 3000) })) });
+      // 读以前的邮件时只带银行邮件的正文 (其他的只要标题, 省时间)
+      body: backfill && !BANK_RE.test(m.getSubject()) ? '' : m.getPlainBody().slice(0, 5000) })) });
     const byId = {};
     (out.results || []).forEach(r => { byId[r.id] = r; });
     part.forEach(m => {
@@ -1686,10 +1702,11 @@ async function openHook() {
   const status = j.last_at
     ? `${ms.err ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:.45rem .6rem;margin-bottom:.4rem;font-size:.8rem;color:#991b1b"><b>⚠ 脚本出错</b>（${esc(fmtTime(j.last_error_at))}）：${esc(j.last_error)}<br><span class="muted">把这段错误截图发给技术；或者去 script.google.com →「执行」看详细</span></div>` : ''}
       ${ms.v4 ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.45rem .6rem;margin-bottom:.4rem;font-size:.8rem;color:#92400e"><b>⚠ 可能没有自动运行</b>：第 4 版只有运行 <code>install</code> 才会装上「每 5 分钟自动跑」；Google 编辑器默认选的是第一个函数，点「运行」只跑了一次。<br><b>换第 5 版就好了</b>：点下面「📋 复制」→ 到 script.google.com 全选粘贴覆盖 → 💾 保存 → 直接点「运行」（默认就是 install）。第 5 版不管运行哪个函数都会自己装上自动运行。</div>`
+        : ms.v5 ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.45rem .6rem;margin-bottom:.4rem;font-size:.8rem;color:#92400e"><b>⚠ 请换第 6 版脚本</b>：Gusto 有一种「银行信息有误」邮件，标题里没有名字（<i>… has contractor with incorrect bank account details</i>），名字、账号尾号、错误原因都在正文里。第 6 版会把正文发给系统，并且把以前这种邮件<b>重读一遍</b>。<br>点下面「📋 复制」→ 到 script.google.com 全选粘贴覆盖 → 💾 保存 → 点「运行」。</div>`
         : ms.notrig ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:.45rem .6rem;margin-bottom:.4rem;font-size:.8rem;color:#991b1b"><b>⚠ 没装上自动运行</b>：脚本报告自己没有定时器（多半是授权时没有允许「在你不在时运行」）。到 script.google.com 打开这个项目，点「运行」<code>install</code>，授权时全部允许。</div>`
         : ms.old ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.45rem .6rem;margin-bottom:.4rem;font-size:.8rem;color:#92400e"><b>⚠ 装的是旧版脚本</b>：${j.script_version ? '旧版每 5 分钟都把最近 2 天的 Gusto 邮件全读一遍，很费时间，会把 Google 每天给脚本的运行时间用光，然后被 Google 停掉（新邮件就抓不到、也转发不出去）。第 4 版只看新邮件，转发也改成系统直接发。点下面「📋 复制」→ 到 script.google.com 全选粘贴覆盖 → 保存 → 函数选 <code>install</code> 点「运行」' : '只读最近 2 天、没有新邮件时不报到，以前的邮件也不会读。点下面「📋 复制」→ 到 script.google.com 粘贴覆盖 → 运行一次 <code>resetBackfill</code> → 再运行 <code>install</code>'}</div>` : ''}
-      ${ms.bad && !ms.old && !ms.err ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:.45rem .6rem;margin-bottom:.4rem;font-size:.8rem;color:#991b1b"><b>脚本没报到</b>：打开 script.google.com → 这个项目 → 左边「执行」(Executions)，看最近几次是不是「失败 / 超时」。常见原因：Google 每天给脚本的运行时间用完了（第二天会自己恢复）、授权过期（重新运行一次 <code>install</code>）、触发器被删了（运行 <code>install</code>）。</div>` : ''}
-      <div class="row"><span class="tag" style="background:${ms.bad ? '#fee2e2;color:#991b1b' : '#dcfce7;color:#166534'}">${ms.err ? '⚠ 脚本出错' : ms.v4 ? '⚠ 可能没自动运行' : ms.notrig ? '⚠ 没装自动运行' : ms.old ? '⚠ 旧版脚本' : ms.bad ? '⚠ 超过 15 分钟没报到' : '✓ 在自动同步'}</span><span class="muted">脚本上次报到 ${esc(fmtTime(j.last_at))}${j.last_auto_at ? ' · 上次自动运行 ' + esc(fmtTime(j.last_auto_at)) : ''}${j.last_new_at ? ' · 上次收到新邮件 ' + esc(fmtTime(j.last_new_at)) : ''} · 累计看过 ${j.total_seen} 封</span></div>
+      ${ms.bad && !ms.old && !ms.err && !ms.v5 ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:.45rem .6rem;margin-bottom:.4rem;font-size:.8rem;color:#991b1b"><b>脚本没报到</b>：打开 script.google.com → 这个项目 → 左边「执行」(Executions)，看最近几次是不是「失败 / 超时」。常见原因：Google 每天给脚本的运行时间用完了（第二天会自己恢复）、授权过期（重新运行一次 <code>install</code>）、触发器被删了（运行 <code>install</code>）。</div>` : ''}
+      <div class="row"><span class="tag" style="background:${ms.bad ? '#fee2e2;color:#991b1b' : '#dcfce7;color:#166534'}">${ms.err ? '⚠ 脚本出错' : ms.v4 ? '⚠ 可能没自动运行' : ms.v5 ? '⚠ 请换第 6 版' : ms.notrig ? '⚠ 没装自动运行' : ms.old ? '⚠ 旧版脚本' : ms.bad ? '⚠ 超过 15 分钟没报到' : '✓ 在自动同步'}</span><span class="muted">脚本上次报到 ${esc(fmtTime(j.last_at))}${j.last_auto_at ? ' · 上次自动运行 ' + esc(fmtTime(j.last_auto_at)) : ''}${j.last_new_at ? ' · 上次收到新邮件 ' + esc(fmtTime(j.last_new_at)) : ''} · 累计看过 ${j.total_seen} 封</span></div>
       ${j.last_forward_at ? `<div class="muted" style="margin-top:.2rem;${j.last_forward_error ? 'color:var(--red)' : ''}">📨 上次系统转发 ${esc(fmtTime(j.last_forward_at))} · 成功 ${j.last_forward_ok} 封${j.last_forward_error ? ' · 失败：' + esc(j.last_forward_error) : ''}</div>` : ''}
       <div class="row" style="margin:.2rem 0 0">${j.backfill_done_at ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ 以前的 Gusto 邮件已全部读完</span><span class="muted">共读入 ${j.backfill_total} 封 · ${esc(fmtTime(j.backfill_done_at))}</span>`
         : j.backfill_at ? `<span class="tag" style="background:#e0f2fe;color:#075985">⏳ 正在读以前的邮件</span><span class="muted">已读入 ${j.backfill_total} 封 · 每 5 分钟接着读，读完这里会显示 ✓</span>`

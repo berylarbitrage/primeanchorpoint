@@ -97,6 +97,27 @@ function parseGustoEmails(text, today) {
   return out;
 }
 
+// 银行有误的另一种邮件: 标题里没有名字 (「Prime AnchorPoint LLC has contractor with incorrect bank account details」),
+// 要读正文: 每个人一段「Name: …  Bank account number: XXXX0786  Error Message: Account Frozen」, 最后「If no action is taken by 2026-11-05」
+const BANK_BODY_RE = /has (?:an? |some )?(?:contractors?|employees?|team members?) with incorrect bank account details/i;
+function isBankBodyMail(subject, body) { return BANK_BODY_RE.test(String(subject || '')) || BANK_BODY_RE.test(String(body || '').slice(0, 600)); }
+function parseGustoBankBody(subject, body, date) {
+  if (!isBankBodyMail(subject, body)) return [];
+  const t = String(body || '').replace(/\r/g, '').replace(/\u00a0/g, ' ');
+  const deadline = (t.match(/no action is taken by\s*(\d{4}-\d{2}-\d{2})/i) || [])[1] || '';
+  const subj = (String(subject || '').match(BANK_BODY_RE) ? String(subject) : (t.match(/[^\n]*has [^\n]*with incorrect bank account details[^\n]*/i) || [''])[0])
+    .replace(/\s*(?:收件箱|Inbox).*$/i, '').replace(/\s+/g, ' ').trim().slice(0, 200) || 'Gusto: contractor with incorrect bank account details';
+  const out = [];
+  for (const part of t.split(/\bName\s*:\s*/i).slice(1)) {
+    const name = part.split('\n')[0].replace(/[*_•]/g, '').replace(/\s+/g, ' ').trim();
+    if (!name || name.length > 80 || !/[a-z]/i.test(name)) continue;
+    const acct = (part.match(/account number\s*:\s*[X*•x\s]*(\d{2,8})/i) || [])[1] || '';
+    const error = ((part.match(/Error Message\s*:\s*([^\n]+)/i) || [])[1] || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    out.push({ kind: 'bank_bad', name, date, subject: subj, detail: { acct, error, deadline } });
+  }
+  return out;
+}
+
 // 名字分词: 小写、去重音、只留字母 (和 gusto-pay.js 的口径一致, 这里不依赖它免得循环引用)
 function nameWords(n) {
   return String(n || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -172,5 +193,5 @@ function buildChecklist(ctx) {
 
 module.exports = {
   PAY_METHODS, GUSTO_STEPS, EMAIL_KIND_LABEL,
-  weekStart, addDays, gustoStage, parseGustoEmails, nameWords, matchEmailName, buildChecklist,
+  weekStart, addDays, gustoStage, parseGustoEmails, parseGustoBankBody, isBankBodyMail, _emailDate, nameWords, matchEmailName, buildChecklist,
 };
