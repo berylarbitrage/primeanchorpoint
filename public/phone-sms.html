@@ -91,6 +91,23 @@ button,input,select,textarea{font-family:inherit}
   font-size:.85rem;outline:none}
 .filters input[type=search]:focus{border-color:var(--sky)}
 .filter-row{display:flex;gap:6px;flex-wrap:wrap}
+.seg5{display:grid;grid-template-columns:repeat(5,1fr);border:1px solid var(--gray-200);border-radius:12px;overflow:hidden;background:var(--white)}
+.seg-btn{display:flex;flex-direction:column;align-items:center;gap:1px;padding:6px 2px;border:0;border-left:1px solid var(--gray-200);background:none;
+  font-family:inherit;font-size:.72rem;font-weight:600;color:var(--gray-600);cursor:pointer;white-space:nowrap}
+.seg-btn:first-child{border-left:0}
+.seg-btn .si{font-size:.85rem;line-height:1.1}
+.seg-btn:hover{background:var(--off-white);color:var(--sky)}
+.seg-btn.on{background:var(--sky);color:#fff}
+#unreadChip .si{color:#2563eb}
+#unreadChip.on .si{color:#fff}
+.tag-box{display:grid;gap:5px}
+.tag-head{display:flex;align-items:center;gap:6px;font-size:.7rem;font-weight:700;color:var(--gray-400)}
+.tag-head .clr{margin-left:auto;border:0;background:none;color:var(--sky);font-size:.7rem;cursor:pointer;font-family:inherit}
+.tag-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:5px}
+.tag-chip{display:flex;align-items:center;justify-content:center;gap:3px;padding:5px 6px;border-radius:8px;border:1px solid var(--gray-200);background:var(--white);
+  font-family:inherit;font-size:.74rem;font-weight:600;color:var(--gray-600);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tag-chip:hover{border-color:var(--sky);color:var(--sky)}
+.tag-chip.on{background:var(--sky-light);border-color:var(--sky);color:var(--sky)}
 .chip{padding:4px 12px;border-radius:20px;border:1px solid var(--gray-200);background:var(--white);
   color:var(--gray-600);font-size:.75rem;font-weight:600;cursor:pointer}
 .chip:hover{border-color:var(--sky);color:var(--sky)}
@@ -324,14 +341,15 @@ button,input,select,textarea{font-family:inherit}
     <div class="line-bar" id="lineBar" style="display:none"></div>
     <div class="filters">
       <input type="search" id="q" placeholder="搜原文 / 译文 / 号码…" oninput="debounced()">
-      <div class="filter-row">
-        <button class="chip" id="unreadChip" onclick="toggleFilter('unread')" title="只看有新消息的会话">未读</button>
-        <button class="chip" id="riskChip" onclick="toggleFilter('risk')" title="只看 AI 判为可疑或诈骗的短信">🚨 可疑</button>
-        <button class="chip" id="starChip" onclick="toggleFilter('star')" title="只看标了星的消息">★ 星标</button>
-        <button class="chip" id="queuedChip" onclick="toggleFilter('queued')" title="只看还没发出去的">✎ 待发送</button>
-        <button class="chip" id="closedChip" onclick="toggleFilter('closed')" title="看已关闭的会话">✓ 已关闭</button>
+      <!-- 状态筛选: 一排五格, 图标在上字在下 -->
+      <div class="seg5">
+        <button class="seg-btn" id="unreadChip" onclick="toggleFilter('unread')" title="只看有新消息的会话"><span class="si">●</span>未读</button>
+        <button class="seg-btn" id="riskChip" onclick="toggleFilter('risk')" title="只看 AI 判为可疑或诈骗的短信"><span class="si">🚨</span>可疑</button>
+        <button class="seg-btn" id="starChip" onclick="toggleFilter('star')" title="只看标了星的消息"><span class="si">★</span>星标</button>
+        <button class="seg-btn" id="queuedChip" onclick="toggleFilter('queued')" title="只看还没发出去的"><span class="si">✎</span>待发送</button>
+        <button class="seg-btn" id="closedChip" onclick="toggleFilter('closed')" title="看已关闭的会话"><span class="si">✓</span>已关闭</button>
       </div>
-      <div class="filter-row" id="tagRow"></div>
+      <div id="tagRow"></div>
     </div>
     <div class="threads" id="threads"></div>
   </div>
@@ -762,9 +780,12 @@ function renderTagRow() {
   for (const state of Object.values(NOTES)) for (const t of state.tags || []) seen.add(t);
   const row = document.getElementById('tagRow');
   const tags = [...seen].sort();
-  row.innerHTML = tags.map(t =>
-    '<button class="chip' + (TAG_FILTER === t ? ' on' : '') + '" onclick="pickTag(\'' + esc(t) + '\')">🏷 '
-    + esc(t) + '</button>').join('');
+  // 标签: 小标题 + 等宽小格子, 选中的可以一键清掉
+  row.className = 'tag-box';
+  row.innerHTML = '<div class="tag-head">按标签筛选' + (TAG_FILTER ? '<button class="clr" onclick="pickTag(\'' + esc(TAG_FILTER) + '\')">✕ 清除</button>' : '') + '</div>'
+    + '<div class="tag-grid">' + tags.map(t =>
+      '<button class="tag-chip' + (TAG_FILTER === t ? ' on' : '') + '" onclick="pickTag(\'' + esc(t) + '\')" title="' + esc(t) + '">' + tagIcon(t) + ' '
+      + esc(t) + '</button>').join('') + '</div>';
   row.style.display = tags.length ? '' : 'none';
 }
 
