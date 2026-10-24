@@ -532,7 +532,7 @@ function card(w, k) {
   </div>`;
 }
 // 系统匹配的建议: manager / admin 才有 通过 / 不是 按钮, 其他人只看到「等审核」
-// lockWhy: 现在还不能通过的原因 (按步骤来), 有的话「通过」变灰、写出先做哪一步; 「不是」照样能点
+// lockWhy: 现在还不能审的原因 (按步骤来), 有的话「通过」「不是」都变灰、写出先做哪一步
 // 入职进度邮件能不能通过: 先选 Gusto 入职; 「接受邀请」要第 1 步做完, 「可以付款」要第 2 步做完
 // Gusto 入职要先关联 Gusto 名册里的这个人 (名册是空的就不卡)
 const needGustoLink = w => w.pay_method === 'gusto' && !(w.gusto && w.gusto.link) && D.gusto && D.gusto.contractors > 0;
@@ -546,7 +546,8 @@ function emailLock(w, e) {
 }
 function reviewBtns(k, yes, no, lockWhy) {
   if (!D.can_approve) return '<span class="muted">等 manager / admin 审核</span>';
-  if (lockWhy) return `<button class="btn btn-sm" disabled style="background:#e5e7eb;color:#6b7280;cursor:not-allowed" title="${esc(lockWhy)}">🔒 通过</button><span class="muted" style="color:#b45309">${esc(lockWhy)}</span><button class="btn btn-outline btn-sm" onclick="save(${k},${no})">✗ 不是</button>`;
+  // 还没轮到这一步: 「通过」「不是」都点不了, 写出先做哪一步
+  if (lockWhy) return `<button class="btn btn-sm" disabled style="background:#e5e7eb;color:#6b7280;cursor:not-allowed" title="${esc(lockWhy)}">🔒 通过</button><button class="btn btn-sm" disabled style="background:#f3f4f6;color:#9ca3af;border:1px solid #e5e7eb;cursor:not-allowed" title="${esc(lockWhy)}">🔒 不是</button><span class="muted" style="color:#b45309">${esc(lockWhy)}</span>`;
   return `<button class="btn btn-blue btn-sm" onclick="save(${k},${yes})">✓ 通过</button><button class="btn btn-outline btn-sm" onclick="save(${k},${no})">✗ 不是</button>`;
 }
 // 对不上人的 Gusto 邮件: manager / admin 可以手动关联到某个工人, 或者暂时忽略
