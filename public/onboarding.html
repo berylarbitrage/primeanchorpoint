@@ -394,7 +394,7 @@ function renderWeeks() {
       <span class="ic2" style="background:${bg}">${icon}</span><span><span class="num">${num}</span><br><span class="t2">${label}</span> <span class="muted">${cap}</span></span></button>`;
   document.getElementById('stats').innerHTML =
     stat('open', '⏳', '#fef3c7', D.open_total, '待处理', '最近 16 周的新人') +
-    stat('review', '🔎', '#eef2ff', D.review_total, '待审核', '系统匹配等通过') +
+    stat('review', '🔎', '#eef2ff', D.review_total, '待审核', `<span style="color:#9a3412">👤 ${D.review_people_total || 0} 别人选的</span> · <span style="color:#075985">🤖 ${D.review_system_total || 0} 系统匹配</span>`) +
     stat('alerts', '⚠️', '#fee2e2', bankN, '银行信息提醒', '还没处理');
   const thisWk = D.weeks[0] && D.weeks[0].week;
   const tag = w => w.week === thisWk ? '本周 · ' : D.weeks[1] && w.week === D.weeks[1].week ? '上周 · ' : '';
@@ -413,7 +413,7 @@ function renderInvs() {
     <button class="ic ${v.id === INV ? 'on' : ''} ${v.unsettled ? 'left' : 'ok'}" onclick="INV=${v.id};load()">
       <span class="co">${esc(v.company || '—')}</span><b>📄 ${esc(v.invoice_number)}</b>
       <span>${md(v.period_start)}–${md(v.period_end)} · ${v.workers} 人${v.total != null ? ' · ' + money(v.total) : ''}</span>
-      <span class="cnt">${v.unsettled ? `<span class="tag" style="background:#fef3c7;color:#92400e">待定 ${v.unsettled}</span>` : ''}<span class="tag" style="background:#dcfce7;color:#166534">已定 ${v.settled}</span>${v.new ? `<span class="tag" style="background:#e0f2fe;color:#075985">🆕 新 ${v.new}</span>` : ''}${v.review ? `<span class="tag" style="background:#eef2ff;color:#3730a3">🔎 审核 ${v.review}</span>` : ''}${v.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff" title="关联的员工档案和发票（${esc(v.state)}）不是一个州">⚠ 州不对 ${v.state_bad}</span>` : ''}</span>
+      <span class="cnt">${v.unsettled ? `<span class="tag" style="background:#fef3c7;color:#92400e">待定 ${v.unsettled}</span>` : ''}<span class="tag" style="background:#dcfce7;color:#166534">已定 ${v.settled}</span>${v.new ? `<span class="tag" style="background:#e0f2fe;color:#075985">🆕 新 ${v.new}</span>` : ''}${v.review_people ? `<span class="tag" style="${RV_PEOPLE}" title="有人选的 / 填的，等你确认">👤 ${v.review_people}</span>` : ''}${v.review_system ? `<span class="tag" style="${RV_SYSTEM}" title="系统匹配的，等你认">🤖 ${v.review_system}</span>` : ''}${v.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff" title="关联的员工档案和发票（${esc(v.state)}）不是一个州">⚠ 州不对 ${v.state_bad}</span>` : ''}</span>
     </button>`).join('') + '</div>';
 }
 function renderList() {
@@ -442,12 +442,12 @@ function oldRow(w, k) {
     <b>${esc(w.name)}</b><span class="tag" style="background:var(--g100);color:var(--g600)">老员工 · 第一次 ${esc(w.first_end)}</span>
     ${w.employee ? `<span class="tag" style="background:#dcfce7;color:#166534">👤 ${esc(w.employee.code || '#' + w.employee.id)}${w.employee.phone ? ' · ' + esc(w.employee.phone) : ''}</span>` : '<span class="tag" style="background:#fee2e2;color:#991b1b">未关联档案</span>'}${w.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff" title="发票是 ${esc((w.inv_states || []).join(' / '))}，档案是 ${esc(w.employee.state)}">⚠ 州不一致：发票 ${esc((w.inv_states || []).join('/'))} · 档案 ${esc(w.employee.state)}</span>` : ''}
     <span class="muted">${w.line.hours ? w.line.hours + 'h' : ''}${w.line.total != null ? ' · ' + money(w.line.total) : ''}</span>
-    ${w.pending_review ? `<button class="tag" style="background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;cursor:pointer" title="展开去审核" onclick="EXP.add(D.rows[${k}].key);renderList()">🔎 ${w.pending_review} 条待审核 →</button>` : ''}
+    ${rvTags(w.review_people || 0, w.review_system || 0, k)}
     ${w.pend && w.pend.pay ? `<span class="tag" style="background:#fef3c7;color:#92400e">⏳ ${esc(PM_LABEL[w.pay_method] || '不选')} 等审批</span>` : w.settled ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ ${esc(PM_LABEL[w.pay_method] || 'Gusto 已付过')}</span>` : '<span class="tag" style="background:#fef3c7;color:#92400e">付款方式待定</span>'}
     ${w.pay_method === 'zelle' ? `<span class="muted">Zelle ${zList(w.zelle_accounts)}</span>` : w.pay_method === 'cashapp' ? `<span class="muted">Cash App ${zList(w.cashapp_accounts)}</span>` : w.pay_method === 'ach' ? `<span class="muted">ACH ${zList(w.ach_accounts)}</span>` : ''}
     <span class="pm" style="margin-left:auto">${pm}</span>
     ${w.bank_alert_open ? '<span class="tag" style="background:#fee2e2;color:#991b1b">⚠ 银行信息</span>' : ''}${w.pay_rejected ? '<span class="tag" style="background:#fee2e2;color:#991b1b">✗ 收款账号不对</span>' : ''}
-    ${pcOf(c => c.kind === 'worker' && c.key === w.key).length ? `<button class="tag" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;cursor:pointer" onclick="EXP.add(D.rows[${k}].key);renderList()">📝 有修改等审批 →</button>` : ''}
+    ${pcOf(c => c.kind === 'worker' && c.key === w.key).length ? `<button class="tag" style="${RV_PEOPLE};cursor:pointer" onclick="EXP.add(D.rows[${k}].key);renderList()" title="director / 入职专员提交的修改，等你确认">👤 有人提交了修改，等你确认 →</button>` : ''}
     <button class="btn btn-outline btn-sm" onclick="showHistory(${k})">📜 历史</button>
     <button class="btn btn-outline btn-sm" onclick="EXP.add(D.rows[${k}].key);renderList()">展开</button>
   </div>`;
@@ -465,16 +465,16 @@ function card(w, k) {
   if (w.pay_method !== 'gusto' && (w.gusto_proposal || w.email_proposals.length)) {
     const gp = w.gusto_proposal;
     gusto = `<div class="ck" style="grid-template-columns:1fr;background:#f5f7ff"><div style="font-weight:700;font-size:.8rem;color:#3730a3">🔎 待审核</div>
-      ${gp ? `<div class="row" style="margin:0"><span class="tag" style="background:#eef2ff;color:#3730a3">系统匹配 Gusto 收款人: ${esc(gp.name)}（${esc(gp.why)}）</span>${reviewBtns(k, `{approve:'gusto',uuid:'${esc(gp.uuid)}'}`, `{reject:'gusto',uuid:'${esc(gp.uuid)}'}`)}</div>` : ''}
-      ${w.email_proposals.map(e => `<div class="row" style="margin:0"><span class="tag" style="background:#eef2ff;color:#3730a3">邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span><span class="muted">${esc(e.subject)}</span>${reviewBtns(k, `{approve:'email',event_id:${e.id}}`, `{reject:'email',event_id:${e.id}}`, emailLock(w, e))}</div>`).join('')}</div>`;
+      ${gp ? `<div class="row" style="margin:0">${rvMark(gp.why)}<span class="tag" style="background:#eef2ff;color:#3730a3">Gusto 收款人: ${esc(gp.name)}</span>${reviewBtns(k, `{approve:'gusto',uuid:'${esc(gp.uuid)}'}`, `{reject:'gusto',uuid:'${esc(gp.uuid)}'}`)}</div>` : ''}
+      ${w.email_proposals.map(e => `<div class="row" style="margin:0">${rvMark('')}<span class="tag" style="background:#eef2ff;color:#3730a3">邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span><span class="muted">${esc(e.subject)}</span>${reviewBtns(k, `{approve:'email',event_id:${e.id}}`, `{reject:'email',event_id:${e.id}}`, emailLock(w, e))}</div>`).join('')}</div>`;
   }
   if (w.pay_method === 'gusto') {
     const g = w.gusto, gp = w.gusto_proposal;
     const who = g && g.link
       ? `<span class="tag" style="background:#dcfce7;color:#166534">Gusto: ${esc(g.name)}</span><span class="muted">${esc(g.by)} 通过</span>${D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="undoApprove(${k},'gusto')">↩ 撤销通过</button>` : ''}${g.active === false ? ' <span class="tag" style="background:#fee2e2;color:#991b1b">已停用</span>' : ''}`
-      : gp ? `<span class="tag" style="background:#eef2ff;color:#3730a3">🔎 系统匹配 Gusto: ${esc(gp.name)}（${esc(gp.why)}）</span>${reviewBtns(k, `{approve:'gusto',uuid:'${esc(gp.uuid)}'}`, `{reject:'gusto',uuid:'${esc(gp.uuid)}'}`)}`
+      : gp ? `${rvMark(gp.why)}<span class="tag" style="background:#eef2ff;color:#3730a3">Gusto: ${esc(gp.name)}</span>${reviewBtns(k, `{approve:'gusto',uuid:'${esc(gp.uuid)}'}`, `{reject:'gusto',uuid:'${esc(gp.uuid)}'}`)}`
       : `<span class="tag" style="background:#fef3c7;color:#92400e">Gusto 名册里还没找到${g && g.candidates ? '，可能是：' + esc(g.candidates.join(' / ')) : ''}</span>`;
-    const emailProps = w.email_proposals.map(e => `<div class="row" style="margin:.2rem 0 0"><span class="tag" style="background:#eef2ff;color:#3730a3">🔎 邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span><span class="muted">${esc(e.subject)}</span>${reviewBtns(k, `{approve:'email',event_id:${e.id}}`, `{reject:'email',event_id:${e.id}}`, emailLock(w, e))}</div>`).join('');
+    const emailProps = w.email_proposals.map(e => `<div class="row" style="margin:.2rem 0 0">${rvMark('')}<span class="tag" style="background:#eef2ff;color:#3730a3"> 邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span><span class="muted">${esc(e.subject)}</span>${reviewBtns(k, `{approve:'email',event_id:${e.id}}`, `{reject:'email',event_id:${e.id}}`, emailLock(w, e))}</div>`).join('');
     const st = w.checklist.gusto && w.checklist.gusto.label ? ` <span class="muted">${esc(w.checklist.gusto.label)}</span>` : '';
     // 三步按顺序; 只有 manager / admin 能勾, 勾之前弹窗确认; 系统自动看出来的 (邮件 / Gusto) 不用勾
     // 第一步 manager / admin 弹窗确认后打勾; 后两步只能等 Gusto 邮件 (邮件对人通过后) 自动完成, 没有勾选框
@@ -505,7 +505,7 @@ function card(w, k) {
   return `<div class="card w ${w.done ? 'done' : ''} ${bad || w.state_bad ? 'bad' : ''}">
     <div class="w-main">
       <div>
-        <div class="row" style="margin-bottom:.15rem"><span class="name">${esc(w.name)}</span>${w.line && w.is_new ? '<span class="tag" style="background:#e0f2fe;color:#075985">🆕 新</span>' : ''}${w.done ? '<span class="tag" style="background:#dcfce7;color:#166534">✓ 已处理</span>' : '<span class="tag" style="background:#fef3c7;color:#92400e">待处理</span>'}${w.pending_review ? `<span class="tag" style="background:#eef2ff;color:#3730a3">🔎 ${w.pending_review} 条待审核</span>` : ''}${w.bank_alert_open ? '<span class="tag" style="background:#fee2e2;color:#991b1b">⚠ 银行信息</span>' : ''}${w.pay_rejected ? '<span class="tag" style="background:#fee2e2;color:#991b1b">✗ 收款账号不对</span>' : ''}${w.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff">⚠ 州不一致</span>` : ''}
+        <div class="row" style="margin-bottom:.15rem"><span class="name">${esc(w.name)}</span>${w.line && w.is_new ? '<span class="tag" style="background:#e0f2fe;color:#075985">🆕 新</span>' : ''}${w.done ? '<span class="tag" style="background:#dcfce7;color:#166534">✓ 已处理</span>' : '<span class="tag" style="background:#fef3c7;color:#92400e">待处理</span>'}${rvTags((w.review_people || 0) + pcOf(c => c.kind === 'worker' && c.key === w.key).length, w.review_system || 0)}${w.bank_alert_open ? '<span class="tag" style="background:#fee2e2;color:#991b1b">⚠ 银行信息</span>' : ''}${w.pay_rejected ? '<span class="tag" style="background:#fee2e2;color:#991b1b">✗ 收款账号不对</span>' : ''}${w.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff">⚠ 州不一致</span>` : ''}
           <button class="btn btn-outline btn-sm" onclick="showHistory(${k})">📜 历史</button></div>
         ${alias.length ? `<div class="muted">发票上写作：${esc(alias.join(' / '))}</div>` : ''}
         <div class="muted">第一次上账单：${esc(w.first_end)}${w.later_invoices ? ` · 之后还有 ${w.later_invoices} 张` : ''}</div>
@@ -530,6 +530,19 @@ function card(w, k) {
     ${bankBox}
     ${gusto}
   </div>`;
+}
+// 两种待审核用不同颜色: 👤 别人选的 (橙) / 🤖 系统匹配的 (蓝)
+const RV_PEOPLE = 'background:#ffedd5;color:#9a3412;border:1px solid #fdba74';
+const RV_SYSTEM = 'background:#e0f2fe;color:#075985;border:1px solid #7dd3fc';
+// 一条审核前面的小标: why 里有「手动选的」= 别人选的, 否则系统匹配
+function rvMark(why) {
+  return /手动选的/.test(why || '') ? `<span class="tag" style="${RV_PEOPLE}">👤 ${esc(why.replace(' 手动选的', ''))} 选的，等你确认</span>`
+    : `<span class="tag" style="${RV_SYSTEM}">🤖 系统匹配${why ? '（' + esc(why) + '）' : ''}，等你认</span>`;
+}
+function rvTags(people, system, k) {
+  const click = k == null ? '' : ` onclick="EXP.add(D.rows[${k}].key);renderList()" style="cursor:pointer;`;
+  return (people ? `<span class="tag" title="director / 入职专员选的或填的，等你确认"${click ? click + RV_PEOPLE + '"' : ` style="${RV_PEOPLE}"`}>👤 ${people} 条别人选的，等你确认</span>` : '')
+    + (system ? `<span class="tag" title="系统按名字自动匹配的，等你认"${click ? click + RV_SYSTEM + '"' : ` style="${RV_SYSTEM}"`}>🤖 ${system} 条系统匹配，等你认</span>` : '');
 }
 // 系统匹配的建议: manager / admin 才有 通过 / 不是 按钮, 其他人只看到「等审核」
 // lockWhy: 现在还不能审的原因 (按步骤来), 有的话「通过」「不是」都变灰、写出先做哪一步
@@ -814,7 +827,7 @@ function zStatus(z) {
   const when = t => { const d = new Date(t); return t && !isNaN(d) ? ` · ${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : ''; };
   if (z.ok) return `<span class="tag" style="background:#dcfce7;color:#166534" title="${esc(z.ok_by)} 审核通过 ${esc(fmtTime(z.ok_at))}">✓ 已审核 · ${esc(z.ok_by)}${when(z.ok_at)}</span>`;
   if (z.rejected) return `<span class="tag" style="background:#fee2e2;color:#991b1b" title="${esc(z.ok_by)} 标成不对 ${esc(fmtTime(z.ok_at))}">✗ 不对${z.reject_note ? '：' + esc(z.reject_note) : ''}，请改 · ${esc(z.ok_by)}${when(z.ok_at)}</span>`;
-  return '<span class="tag" style="background:#eef2ff;color:#3730a3">🔎 待审核</span>';
+  return `<span class="tag" style="${RV_PEOPLE}">👤 ${esc(z.by || '有人')} 填的，等你确认</span>`;
 }
 function zNameSame(a, b) {
   const wa = cleanName(a).toLowerCase().split(' ').filter(Boolean), wb = cleanName(b).toLowerCase().split(' ').filter(Boolean);
@@ -1261,7 +1274,7 @@ function pcOf(pred) { return (D.pending_changes || []).filter(pred); }
 function pcBlock(list, compact) {
   if (!list.length) return '';
   return list.map(c => `<div class="pc ${compact ? 'pc-c' : ''}">
-    <div class="pc-h"><b>📝 ${esc(c.by)}</b> 提交的修改 <span class="muted">${esc(fmtTime(String(c.at).replace(' ', 'T') + 'Z'))}</span>
+    <div class="pc-h"><span class="tag" style="${RV_PEOPLE}">👤 别人提交的</span><b>${esc(c.by)}</b> 提交的修改 <span class="muted">${esc(fmtTime(String(c.at).replace(' ', 'T') + 'Z'))}</span>
       ${D.can_decide_changes ? `<span class="pc-b"><button class="btn btn-sm" style="background:#16a34a;color:#fff" onclick="decideChange(${c.id},true)">✓ 同意</button><button class="btn btn-outline btn-sm" onclick="decideChange(${c.id},false)">✗ 拒绝</button></span>`
         : '<span class="tag" style="background:#fef3c7;color:#92400e;margin-left:auto">等 staff / admin 同意</span>'}</div>
     <ul>${c.items.map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>`).join('');
@@ -1350,7 +1363,7 @@ function empBlock(w, k) {
   const btn = D.can_edit ? `<button class="btn btn-outline btn-sm" onclick="pickEmployee(${k})">${e ? '改关联' : '关联员工档案'}</button>` : '';
   if (e) return `<div class="row" style="align-items:flex-start;margin:0"><span class="tag" style="background:#dcfce7;color:#166534;font-size:.78rem;padding:.2rem .6rem;line-height:1.4;text-align:left">👤 ${info(e)}</span></div>
     <div class="row" style="margin:.2rem 0 0"><span class="muted">${esc(e.by)} 通过</span>${D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="undoApprove(${k},'employee')">↩ 撤销通过</button>` : ''}${D.can_open_employee ? `<a class="btn btn-outline btn-sm" href="/admin.html?emp=${e.id}" target="_blank">打开档案 ↗</a>` : ''}${btn}</div>`;
-  const props = (w.employee_proposals || []).map(x => `<div class="row" style="margin:.25rem 0 0;align-items:flex-start"><span class="tag" style="background:#eef2ff;color:#3730a3;font-size:.76rem;line-height:1.4;text-align:left">🔎 ${info(x)}<br><span style="font-weight:400">系统匹配：${esc(x.why)}</span></span>
+  const props = (w.employee_proposals || []).map(x => `<div class="row" style="margin:.25rem 0 0;align-items:flex-start"><span class="tag" style="background:#eef2ff;color:#3730a3;font-size:.76rem;line-height:1.4;text-align:left">🔎 ${info(x)}</span>${rvMark(x.why)}
       ${reviewBtns(k, `{approve:'employee',id:${x.id}}`, `{reject:'employee',id:${x.id}}`)}</div>`).join('');
   return (props || '<span class="tag" style="background:#fee2e2;color:#991b1b">系统里没找到这个人的档案</span>') +
     `<div class="row" style="margin:.3rem 0 0">${btn}${w.phone_old ? `<span class="muted">之前手填的电话 ${esc(w.phone_old)}</span>` : ''}</div>`;
