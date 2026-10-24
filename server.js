@@ -4146,6 +4146,27 @@ app.get('/kiosk', (req, res, next) => {
   }
   next();
 });
+// 「短信同步」手机 App 的固定下载地址: 扫码直接下最新版 APK (GitHub Releases 里最新的 sms-phone-v*)。
+// 版本号在 GitHub 上变, 网站上的链接 / 二维码不用跟着改。查到的地址缓存 10 分钟。
+let _smsPhoneApk = { url: '', tag: '', at: 0 };
+async function smsPhoneLatestApk() {
+  if (_smsPhoneApk.url && Date.now() - _smsPhoneApk.at < 10 * 60 * 1000) return _smsPhoneApk;
+  const r = await fetch('https://api.github.com/repos/berylarbitrage/primeanchorpoint/releases?per_page=40',
+    { headers: { 'User-Agent': 'primeanchorpoint', Accept: 'application/vnd.github+json' } });
+  if (!r.ok) throw new Error('GitHub ' + r.status);
+  const rel = (await r.json()).find(x => !x.draft && !x.prerelease && /^sms-phone-v/.test(x.tag_name) && (x.assets || []).some(a => /\.apk$/i.test(a.name)));
+  if (!rel) throw new Error('还没有发布过手机 App');
+  const asset = rel.assets.find(a => /\.apk$/i.test(a.name));
+  _smsPhoneApk = { url: asset.browser_download_url, tag: rel.tag_name, at: Date.now() };
+  return _smsPhoneApk;
+}
+app.get(['/sms-phone.apk', '/app/sms-phone'], async (req, res) => {
+  try { res.redirect(302, (await smsPhoneLatestApk()).url); }
+  catch (e) { res.redirect(302, 'https://github.com/berylarbitrage/primeanchorpoint/releases'); }
+});
+app.get('/api/sms-phone-version', async (req, res) => {
+  try { const a = await smsPhoneLatestApk(); res.json({ tag: a.tag }); } catch (e) { res.json({ tag: '' }); }
+});
 app.use(express.static('public', {
   extensions: ['html'],
   setHeaders(res, filePath) {

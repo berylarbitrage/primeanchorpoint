@@ -250,6 +250,10 @@ button,input,select,textarea{font-family:inherit}
 .modal .guess input{width:auto;padding:6px 10px;font-size:.82rem}
 .dev-big{display:grid;gap:6px;padding:10px 12px;border:1.5px solid #bbf7d0;background:#f0fdf4;border-radius:10px}
 .modal .dev-big input{width:auto;padding:6px 10px;font-size:.82rem}
+.qr-pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-top:8px}
+.qr-card{position:relative;text-align:center;border:1.5px dashed #fde68a;border-radius:12px;padding:12px 10px;display:grid;gap:6px;justify-items:center;background:#fffdf5}
+.qr-card .hint{text-align:left}
+.qr-n{position:absolute;left:10px;top:8px;font-size:1.2rem;font-weight:800;color:var(--sky)}
 .dev-meta{font-size:.75rem;color:var(--gray-600);min-width:120px}
 .modal .dev-row input,.modal .dev-row select{width:auto;padding:6px 10px;font-size:.82rem}
 .modal .dev-row select{max-width:240px}
@@ -2230,8 +2234,8 @@ function renderSetup() {
       + '<input id="nlLabel" placeholder="备注名，如 芝加哥2" style="' + inp + ';width:160px">'
       + '<button class="action-btn primary" onclick="addLine()">加上</button></div>';
   } else if (S.tab === 'help') {
-    body = '<div class="hint"><b>推荐：手机上装「短信同步」App</b>（GitHub Releases 下载 SMS.Phone-*.apk 旁路安装），手机自己推送，不用电脑。'
-      + '到对应手机号的那一栏点「连一台新设备」，用手机相机扫二维码，网址和令牌自动填好。用了 App 就把电脑版的「同步到公司网站」关掉，免得重复。</div>'
+    body = '<div class="hint"><b>推荐：手机上装「短信同步」App</b>，手机自己推送，不用电脑。① 先扫下面的码下载安装；② 再到对应手机号那一栏点「连一台新设备」扫第二个码，网址和令牌自动填好。用了 App 就把电脑版的「同步到公司网站」关掉，免得重复。</div>'
+      + '<div class="qr-pair">' + apkQrCard() + '</div>'
       + '<div class="hint">用电脑的话：桌面版「SMS 译信」设置 → 同步到公司网站，填：</div>'
       + '<div class="hint">网址（App 填这个）<br><code>' + location.origin + '</code></div>'
       + '<div class="hint">推送网址（电脑版填这个）<br><code>' + location.origin + '/api/device-sms/push</code></div>'
@@ -2376,10 +2380,22 @@ function showToken(token) {
   const link = location.origin + '/app-connect#u=' + encodeURIComponent(location.origin) + '&t=' + encodeURIComponent(token);
   let qrTag = '';
   try { const qr = qrcode(0, 'M'); qr.addData(link); qr.make(); qrTag = qr.createImgTag(4, 8); } catch (_) { /* 令牌文本照样能用 */ }
-  box.innerHTML = '<div class="hint" style="text-align:center;border:1px dashed #fde68a;border-radius:10px;padding:10px;margin-top:6px"><b>用要连的那部手机的相机扫一下</b><br>'
-    + qrTag.replace('<img ', '<img style="max-width:200px;width:100%;image-rendering:pixelated" ')
-    + '<br>扫出来的链接点开 → 点「打开 App，自动连接」。连上以后它推的短信就算这个号的。</div>'
+  // 两个码并排: ① 下载安装 App ② 自动连接
+  box.innerHTML = '<div class="qr-pair">' + apkQrCard()
+    + '<div class="qr-card"><div class="qr-n">②</div><b>扫码自动连接</b>'
+    + qrTag.replace('<img ', '<img style="max-width:190px;width:100%;image-rendering:pixelated" ')
+    + '<div class="hint">装好 App 以后，用手机相机扫这个 → 点开链接 → 点「打开 App，自动连接」→ 权限全部允许。<br>连上以后它的短信就算这个号的。</div></div></div>'
     + '<div class="hint">不方便扫码就手动填——设备令牌（只显示这一次，关掉就看不到了）<br><code>' + esc(token) + '</code></div>';
+}
+// ① 扫码下载 App: 固定地址 /sms-phone.apk, 永远是最新版
+function apkQrCard() {
+  const url = location.origin + '/sms-phone.apk';
+  let tag = '';
+  try { const qr = qrcode(0, 'M'); qr.addData(url); qr.make(); tag = qr.createImgTag(4, 8); } catch (_) {}
+  return '<div class="qr-card"><div class="qr-n">①</div><b>扫码下载安装 App</b>'
+    + tag.replace('<img ', '<img style="max-width:190px;width:100%;image-rendering:pixelated" ')
+    + '<div class="hint">用要连的那部<b>安卓手机</b>的相机扫 → 下载「短信同步」→ 点开安装（提示「不允许安装未知应用」就去设置里允许）。'
+    + '<br>已经装过旧版的，先卸载旧版再装。<br><a href="' + url + '">' + esc(url) + '</a></div></div>';
 }
 async function wipeAll() {
   closeModal();
