@@ -45634,7 +45634,8 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
       pay_methods: wob.PAY_METHODS, steps: wob.GUSTO_STEPS,
       // 邮件同步脚本状态 (页面顶部显示正常 / 停了)
       mail_sync: (() => { const m = _mailHookCfg(); return { configured: !!m.token, last_at: m.last_at || '', last_new_at: m.last_new_at || '',
-        script_version: m.script_version || '', last_error: m.last_error || '', last_error_at: m.last_error_at || '' }; })(),
+        script_version: m.script_version || '', last_error: m.last_error || '', last_error_at: m.last_error_at || '',
+        has_trigger: m.has_trigger == null ? null : !!m.has_trigger, last_auto_at: m.last_auto_at || '' }; })(),
       gusto: { connected: !!(st.access_token && st.refresh_token), last_sync_at: st.last_sync_at || '',
         contractors: db.prepare('SELECT COUNT(*) AS n FROM gusto_contractors').get().n },
       role: req.userRole,
@@ -46279,11 +46280,14 @@ app.post('/api/hooks/gusto-mail', (req, res) => {
     if (req.body && req.body.backfill_done) _mailHookSave({ backfill_done_at: new Date().toISOString() });
     // 脚本版本 (旧版脚本不带, 没新邮件时也不报到) + 脚本自己报上来的出错信息
     const ver = String((req.body && req.body.version) || '').slice(0, 10);
+    // 第 5 版起: 有没有装定时器、这次是不是定时器自动跑的
+    const trig = req.body && typeof req.body.has_trigger === 'boolean' ? { has_trigger: req.body.has_trigger } : { has_trigger: null };
+    if (req.body && req.body.auto) trig.last_auto_at = new Date().toISOString();
     if (req.body && req.body.error) {
-      _mailHookSave({ script_version: ver, last_error: String(req.body.error).slice(0, 500), last_error_at: new Date().toISOString() });
+      _mailHookSave({ script_version: ver, ...trig, last_error: String(req.body.error).slice(0, 500), last_error_at: new Date().toISOString() });
       return res.json({ ok: true });
     }
-    _mailHookSave({ script_version: ver, last_error: '', last_error_at: '' });
+    _mailHookSave({ script_version: ver, ...trig, last_error: '', last_error_at: '' });
     const oldCut = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);
     const seen = db.prepare('SELECT 1 FROM gusto_mail_seen WHERE message_id=?');
     const mark = db.prepare('INSERT OR IGNORE INTO gusto_mail_seen (message_id, kind, name, subject, received_at) VALUES (?, ?, ?, ?, ?)');
@@ -46357,6 +46361,7 @@ app.get('/api/acct/onboarding-mailhook', requireAdmin, requireWobView, (req, res
     backfill_at: cfg.backfill_at || '', backfill_total: cfg.backfill_total || 0, last_new_at: cfg.last_new_at || '',
     backfill_done_at: cfg.backfill_done_at || '',
     script_version: cfg.script_version || '', last_error: cfg.last_error || '', last_error_at: cfg.last_error_at || '',
+    has_trigger: cfg.has_trigger == null ? null : !!cfg.has_trigger, last_auto_at: cfg.last_auto_at || '',
     last_forward_at: cfg.last_forward_at || '', last_forward_ok: cfg.last_forward_ok || 0, last_forward_error: cfg.last_forward_error || '',
     total_seen: db.prepare('SELECT COUNT(*) AS n FROM gusto_mail_seen').get().n, recent });
 });

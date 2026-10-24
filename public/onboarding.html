@@ -372,7 +372,10 @@ function mailSyncState(m) {
   // 脚本自己报上来的错误 (比上次正常报到还新)
   if (m.last_error_at && m.last_error_at >= m.last_at) return { cls: '', text: `⚠ 邮件同步脚本出错：${String(m.last_error).slice(0, 60)}`, bad: true, err: true };
   // 旧版脚本不带版本号, 没有新 Gusto 邮件时不报到 — 不是坏了, 但要换新版
-  if (!m.script_version || Number(m.script_version) < 4) return { cls: '', text: '⚠ 装的是旧版同步脚本（会被 Google 停掉），请重新复制安装第 4 版', bad: true, old: true };
+  if (!m.script_version || Number(m.script_version) < 4) return { cls: '', text: '⚠ 装的是旧版同步脚本（会被 Google 停掉），请重新复制安装第 5 版', bad: true, old: true };
+  // 第 4 版要运行 install 才装定时器; 只点了「运行」(默认是 syncGustoMail) 的就只跑那一次, 不会自动跑
+  if (Number(m.script_version) < 5) return { cls: '', text: '⚠ 邮件同步可能没装自动运行，请复制第 5 版脚本覆盖', bad: true, old: true, v4: true };
+  if (m.has_trigger === false) return { cls: '', text: '⚠ 邮件同步没装上自动运行（定时器）', bad: true, notrig: true };
   const min = Math.round((Date.now() - Date.parse(m.last_at)) / 60000);
   const ago = min < 1 ? '刚刚' : min < 60 ? `${min} 分钟前` : min < 1440 ? `${Math.round(min / 60)} 小时前` : `${Math.round(min / 1440)} 天前`;
   return min > 15 ? { cls: '', text: `⚠ 邮件同步 ${ago}停了，可能出问题了`, bad: true } : { cls: 'on', text: `邮件同步正常 · ${ago}`, bad: false };
@@ -1494,24 +1497,42 @@ async function gustoSteps(k) {
 
 // ── 邮箱自动同步设置 ──
 function hookScript(url) {
-  return `// Prime Anchor · Gusto 入职邮件同步 (Google Apps Script) · 第 4 版
-// 每 5 分钟跑一次, 每次只看上次之后的新邮件 (几秒就跑完, 不会把 Google 每天的运行时间用光):
+  return `// Prime Anchor · Gusto 入职邮件同步 (Google Apps Script) · 第 5 版
+// 每 5 分钟自动跑一次, 每次只看上次之后的新邮件 (几秒就跑完, 不会把 Google 每天的运行时间用光):
 //   第一次 —— 把邮箱里以前所有 Gusto 邮件读一遍 (一次读不完下一轮接着读), 只记进系统, 不转发
 //   之后   —— 新的 Gusto 邮件发给系统; 入职相关的由系统发邮件给经理 (不再用 Gmail 转发, 不占 Gmail 每天的发信额度)
+// 第 5 版: 不管点「运行」的是哪个函数, 都会自动装上「每 5 分钟跑一次」的定时器
 const HOOK_URL = '${url}';
 const LABEL = 'PA 入职已同步';
 const QUERY = 'from:gusto.com';
-const VERSION = '4';
+const VERSION = '5';
 
-// 每 5 分钟由触发器调用; 出错时把错误报给系统 (页面上能看到哪里出了问题)
-function syncGustoMail() {
+// 第一次: 点上方「运行」(默认就是这个 install), 按提示授权一次 → 之后每 5 分钟自动跑
+function install() {
+  ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('syncGustoMail').timeBased().everyMinutes(5).create();
+  syncGustoMail();
+}
+
+// 没有定时器就装一个 (以前只点了「运行 syncGustoMail」、没运行 install 的, 也会自己补上)
+function ensureTrigger_() {
+  const has = ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'syncGustoMail');
+  if (!has) ScriptApp.newTrigger('syncGustoMail').timeBased().everyMinutes(5).create();
+  return true;
+}
+
+// 每 5 分钟由定时器调用 (定时器调用时 e 有值, 手动点「运行」时没有); 出错时把错误报给系统
+function syncGustoMail(e) {
+  AUTO_ = !!(e && e.triggerUid);
+  try { ensureTrigger_(); HAS_TRIGGER_ = true; } catch (err) { HAS_TRIGGER_ = false; }
   try { run_(); }
   catch (e) {
     UrlFetchApp.fetch(HOOK_URL, { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-      payload: JSON.stringify({ version: VERSION, error: String(e && e.message || e), messages: [] }) });
+      payload: JSON.stringify({ version: VERSION, has_trigger: HAS_TRIGGER_, auto: AUTO_, error: String(e && e.message || e), messages: [] }) });
     throw e;
   }
 }
+var AUTO_ = false, HAS_TRIGGER_ = false;
 
 function run_() {
   const props = PropertiesService.getScriptProperties();
@@ -1543,6 +1564,8 @@ function run_() {
 
 function post_(body) {
   body.version = VERSION;
+  body.has_trigger = HAS_TRIGGER_;   // 有没有装定时器
+  body.auto = AUTO_;                 // 这次是定时器自动跑的, 还是手动点的
   const res = UrlFetchApp.fetch(HOOK_URL, { method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify(body) });
   if (res.getResponseCode() !== 200) throw new Error('同步失败 ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200));
   return JSON.parse(res.getContentText());
@@ -1573,13 +1596,6 @@ function send_(byThread, backfill, sinceMs) {
   }
 }
 
-// 第一次: 函数下拉框选 install, 点「运行」, 按提示授权一次 (之后每 5 分钟自动跑)
-function install() {
-  ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
-  ScriptApp.newTrigger('syncGustoMail').timeBased().everyMinutes(5).create();
-  syncGustoMail();
-}
-
 // 想把以前的邮件重新读一遍: 运行一次 resetBackfill (系统里已经记过的不会重复)
 function resetBackfill() {
   PropertiesService.getScriptProperties().deleteAllProperties();
@@ -1595,9 +1611,11 @@ async function openHook() {
   const ms = mailSyncState(j);
   const status = j.last_at
     ? `${ms.err ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:.45rem .6rem;margin-bottom:.4rem;font-size:.8rem;color:#991b1b"><b>⚠ 脚本出错</b>（${esc(fmtTime(j.last_error_at))}）：${esc(j.last_error)}<br><span class="muted">把这段错误截图发给技术；或者去 script.google.com →「执行」看详细</span></div>` : ''}
-      ${ms.old ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.45rem .6rem;margin-bottom:.4rem;font-size:.8rem;color:#92400e"><b>⚠ 装的是旧版脚本</b>：${j.script_version ? '旧版每 5 分钟都把最近 2 天的 Gusto 邮件全读一遍，很费时间，会把 Google 每天给脚本的运行时间用光，然后被 Google 停掉（新邮件就抓不到、也转发不出去）。第 4 版只看新邮件，转发也改成系统直接发。点下面「📋 复制」→ 到 script.google.com 全选粘贴覆盖 → 保存 → 函数选 <code>install</code> 点「运行」' : '只读最近 2 天、没有新邮件时不报到，以前的邮件也不会读。点下面「📋 复制」→ 到 script.google.com 粘贴覆盖 → 运行一次 <code>resetBackfill</code> → 再运行 <code>install</code>'}</div>` : ''}
+      ${ms.v4 ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.45rem .6rem;margin-bottom:.4rem;font-size:.8rem;color:#92400e"><b>⚠ 可能没有自动运行</b>：第 4 版只有运行 <code>install</code> 才会装上「每 5 分钟自动跑」；Google 编辑器默认选的是第一个函数，点「运行」只跑了一次。<br><b>换第 5 版就好了</b>：点下面「📋 复制」→ 到 script.google.com 全选粘贴覆盖 → 💾 保存 → 直接点「运行」（默认就是 install）。第 5 版不管运行哪个函数都会自己装上自动运行。</div>`
+        : ms.notrig ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:.45rem .6rem;margin-bottom:.4rem;font-size:.8rem;color:#991b1b"><b>⚠ 没装上自动运行</b>：脚本报告自己没有定时器（多半是授权时没有允许「在你不在时运行」）。到 script.google.com 打开这个项目，点「运行」<code>install</code>，授权时全部允许。</div>`
+        : ms.old ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.45rem .6rem;margin-bottom:.4rem;font-size:.8rem;color:#92400e"><b>⚠ 装的是旧版脚本</b>：${j.script_version ? '旧版每 5 分钟都把最近 2 天的 Gusto 邮件全读一遍，很费时间，会把 Google 每天给脚本的运行时间用光，然后被 Google 停掉（新邮件就抓不到、也转发不出去）。第 4 版只看新邮件，转发也改成系统直接发。点下面「📋 复制」→ 到 script.google.com 全选粘贴覆盖 → 保存 → 函数选 <code>install</code> 点「运行」' : '只读最近 2 天、没有新邮件时不报到，以前的邮件也不会读。点下面「📋 复制」→ 到 script.google.com 粘贴覆盖 → 运行一次 <code>resetBackfill</code> → 再运行 <code>install</code>'}</div>` : ''}
       ${ms.bad && !ms.old && !ms.err ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:.45rem .6rem;margin-bottom:.4rem;font-size:.8rem;color:#991b1b"><b>脚本没报到</b>：打开 script.google.com → 这个项目 → 左边「执行」(Executions)，看最近几次是不是「失败 / 超时」。常见原因：Google 每天给脚本的运行时间用完了（第二天会自己恢复）、授权过期（重新运行一次 <code>install</code>）、触发器被删了（运行 <code>install</code>）。</div>` : ''}
-      <div class="row"><span class="tag" style="background:${ms.bad ? '#fee2e2;color:#991b1b' : '#dcfce7;color:#166534'}">${ms.err ? '⚠ 脚本出错' : ms.old ? '⚠ 旧版脚本' : ms.bad ? '⚠ 超过 15 分钟没报到' : '✓ 在同步'}</span><span class="muted">脚本上次报到 ${esc(fmtTime(j.last_at))}${j.last_new_at ? ' · 上次收到新邮件 ' + esc(fmtTime(j.last_new_at)) : ''} · 累计看过 ${j.total_seen} 封</span></div>
+      <div class="row"><span class="tag" style="background:${ms.bad ? '#fee2e2;color:#991b1b' : '#dcfce7;color:#166534'}">${ms.err ? '⚠ 脚本出错' : ms.v4 ? '⚠ 可能没自动运行' : ms.notrig ? '⚠ 没装自动运行' : ms.old ? '⚠ 旧版脚本' : ms.bad ? '⚠ 超过 15 分钟没报到' : '✓ 在自动同步'}</span><span class="muted">脚本上次报到 ${esc(fmtTime(j.last_at))}${j.last_auto_at ? ' · 上次自动运行 ' + esc(fmtTime(j.last_auto_at)) : ''}${j.last_new_at ? ' · 上次收到新邮件 ' + esc(fmtTime(j.last_new_at)) : ''} · 累计看过 ${j.total_seen} 封</span></div>
       ${j.last_forward_at ? `<div class="muted" style="margin-top:.2rem;${j.last_forward_error ? 'color:var(--red)' : ''}">📨 上次系统转发 ${esc(fmtTime(j.last_forward_at))} · 成功 ${j.last_forward_ok} 封${j.last_forward_error ? ' · 失败：' + esc(j.last_forward_error) : ''}</div>` : ''}
       <div class="row" style="margin:.2rem 0 0">${j.backfill_done_at ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ 以前的 Gusto 邮件已全部读完</span><span class="muted">共读入 ${j.backfill_total} 封 · ${esc(fmtTime(j.backfill_done_at))}</span>`
         : j.backfill_at ? `<span class="tag" style="background:#e0f2fe;color:#075985">⏳ 正在读以前的邮件</span><span class="muted">已读入 ${j.backfill_total} 封 · 每 5 分钟接着读，读完这里会显示 ✓</span>`
@@ -1620,8 +1638,8 @@ async function openHook() {
     <ol style="font-size:.8rem;margin:.2rem 0 .5rem 1.1rem;padding:0;line-height:1.6">
       <li>用<b>收 Gusto 邮件的那个 Google 账号</b>打开 <a href="https://script.google.com/home/projects/create" target="_blank">script.google.com 新建项目</a></li>
       <li>把编辑器里原有的代码全删掉，粘贴下面这段，点 💾 保存</li>
-      <li>上方函数下拉框选 <code>install</code>，点「运行」→ 按提示授权（会说"Google 未验证此应用"，点 高级 → 继续，这是你自己的脚本）</li>
-      <li>完成。以后每 5 分钟自动跑；在 Gmail 里同步过的入职邮件会打上「PA 入职已同步」标签</li>
+      <li>点上方「运行」（默认选的就是 <code>install</code>）→ 按提示授权，<b>全部允许</b>（会说"Google 未验证此应用"，点 高级 → 继续，这是你自己的脚本）</li>
+      <li>完成。以后<b>每 5 分钟自动跑</b>，不用再点；这里会显示「上次自动运行」的时间。在 Gmail 里同步过的入职邮件会打上「PA 入职已同步」标签</li>
     </ol>
     <div class="row" style="justify-content:space-between;margin-bottom:.3rem"><span class="lbl" style="margin:0">脚本（链接里带密钥，别外传）</span>
       <span><button class="btn btn-outline btn-sm" onclick="copyHook()">📋 复制</button>
