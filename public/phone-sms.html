@@ -50,6 +50,12 @@ button,input,select,textarea{font-family:inherit}
   color:var(--gray-600);cursor:pointer;font-size:.95rem;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .icon-btn:hover{border-color:var(--sky);color:var(--sky)}
 
+/* ── 我的号 (账号绑定的手机号) ── */
+.me-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid var(--gray-200);font-size:.8rem;background:#fffbeb}
+.me-bar b{font-size:.88rem}
+.me-bar.warn{background:#fef3c7}
+.me-bar .grow{flex:1}
+.req-card{border:1px solid var(--gray-200);border-radius:10px;padding:10px 12px;display:grid;gap:4px;font-size:.82rem}
 /* ── 号码切换 ── */
 .line-bar{display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--gray-200);overflow-x:auto;flex-shrink:0;scrollbar-width:thin}
 .line-btn{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:5px 10px;border-radius:10px;
@@ -286,6 +292,7 @@ button,input,select,textarea{font-family:inherit}
       <button class="icon-btn" onclick="load()" title="刷新">↻</button>
       <button class="icon-btn" id="setupBtn" onclick="openSetup()" title="连接电脑 / 清空数据">⚙</button>
     </div>
+    <div id="meBar"></div>
     <div class="line-bar" id="lineBar" style="display:none"></div>
     <div class="filters">
       <input type="search" id="q" placeholder="搜原文 / 译文 / 号码…" oninput="debounced()">
@@ -314,6 +321,7 @@ let MESSAGES = [], OUTBOX = [], NOTES = {}, DEVICES = [];
 // 手机号切换: '' = 全部号码; 10 位数字 = 只看这个号; 'none' = 没标号码的设备。记在浏览器里, 下次打开还是这个号
 let LINE = (() => { try { return localStorage.getItem('pa_phone_sms_line') || ''; } catch (_) { return ''; } })();
 let LINES = [];
+let ME = { line: '', home_line: '', temp_until: null, request: null, approver: false, pending: [] };   // 我的账号绑的号 / 换号申请 / 等我批的申请
 let RENDERED_PEER = null, RENDERED_BODY = '';     // 上次画的是哪个会话、什么内容（刷新时保住滚动位置）
 let PEER = null, RISK = false, QUEUED_ONLY = false, COMPOSING = false;
 let STARRED_ONLY = false, UNREAD_ONLY = false, SHOW_CLOSED = false, TAG_FILTER = '';
@@ -356,7 +364,7 @@ function lineName(line) {
   return (l && l.label) || fmtPhone(line);
 }
 /** 能发短信的号码 (有在用的设备并且标了号) */
-function sendLines() { return LINES.filter(l => l.line && l.active).map(l => l.line); }
+function sendLines() { return ME.line ? [ME.line] : LINES.filter(l => l.line && l.active).map(l => l.line); }
 function pickLine(line, quiet) {
   LINE = line;
   try { line ? localStorage.setItem('pa_phone_sms_line', line) : localStorage.removeItem('pa_phone_sms_line'); } catch (_) {}
@@ -366,7 +374,10 @@ function pickLine(line, quiet) {
   load();
 }
 function renderLineBar() {
+  renderMeBar();
   const bar = document.getElementById('lineBar');
+  // 账号绑了号: 不能切, 只显示自己的号 (在上面的 meBar 里)
+  if (ME.line) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
   // 只有一个号码 (或还没标号码) 就不占地方
   if (LINES.length < 2) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
   const total = LINES.reduce((n, l) => n + (l.unread || 0), 0);
@@ -378,6 +389,134 @@ function renderLineBar() {
     + LINES.map(l => l.line
       ? btn(l.line, l.label || fmtPhone(l.line), l.label ? fmtPhone(l.line) : (l.active ? (l.last_push_at ? timeAgo(l.last_push_at) + '同步' : '还没同步') : '设备已停用'), l.unread, !l.active)
       : btn('none', '未标号码', ROLE === 'admin' ? '点 ⚙ 标上号码' : '旧设备', l.unread, false)).join('');
+}
+
+/* ── 我的号: 一个账号固定一个号; 换号要申请, director / admin 批准 ── */
+function renderMeBar() {
+  const el = document.getElementById('meBar');
+  const req = ME.request && ME.request.status === 'pending' ? ME.request : null;
+  let h = '';
+  const until = ME.temp_until ? new Date(ME.temp_until) : null;
+  if (ME.line && until) {
+    // 批了一天的临时号
+    h = '<div class="me-bar" style="background:#ecfdf5"><span>📱 今天临时用</span><b>' + esc(lineName(ME.line)) + '</b>'
+      + '<span style="color:var(--gray-600)">' + esc(fmtPhone(ME.line)) + '</span><span class="grow"></span>'
+      + '<span style="color:#047857">到 ' + (until.getMonth() + 1) + '/' + until.getDate() + ' ' + String(until.getHours()).padStart(2, '0') + ':' + String(until.getMinutes()).padStart(2, '0')
+      + ' 为止，之后自动换回 ' + esc(ME.home_line ? fmtPhone(ME.home_line) : '自己的号') + '</span></div>';
+  } else if (ME.line) {
+    h = '<div class="me-bar"><span>📱 我的号</span><b>' + esc(lineName(ME.line)) + '</b>'
+      + (lineName(ME.line) !== fmtPhone(ME.line) ? '<span style="color:var(--gray-600)">' + esc(fmtPhone(ME.line)) + '</span>' : '')
+      + '<span class="grow"></span>'
+      + (req ? '<span style="color:#b45309">⏳ 换成 ' + esc(fmtPhone(req.to_line)) + ' 等批准</span><button class="action-btn" style="padding:2px 10px" onclick="cancelLineReq(' + req.id + ')">撤回</button>'
+             : '<button class="action-btn" style="padding:2px 10px" onclick="startLineChange()" title="临时用另一个号，批准后只给一天">申请用别的号</button>')
+      + '</div>';
+  } else if (ROLE === 'cs' || sendLines().length > 1) {
+    h = '<div class="me-bar warn"><span>⚠ 你的账号还没绑手机号</span><span class="grow"></span>'
+      + '<button class="action-btn primary" style="padding:2px 10px" onclick="startBind()">选我的号</button></div>';
+  }
+  // 最近一次申请的结果 (批了 / 没批) 提一句
+  if (ME.request && ['approved', 'rejected'].includes(ME.request.status) && ME.request.decided_at
+      && Date.now() - new Date(sqlTime(ME.request.decided_at)).getTime() < 3 * 86400000) {
+    h += '<div class="me-bar" style="background:' + (ME.request.status === 'approved' ? '#ecfdf5' : '#fef2f2') + '">'
+      + (ME.request.status === 'approved' ? (until ? '✓ 已批准（' + esc(ME.request.decided_by) + '），只有今天这一天' : '✓ 上次的临时号已经到期，换回自己的号了；还要用请再申请') : '✗ 换号没批准（' + esc(ME.request.decided_by) + '）')
+      + (ME.request.note ? '：' + esc(ME.request.note) : '') + '</div>';
+  }
+  if (ME.approver && ME.pending.length) {
+    h += '<div class="me-bar" style="background:#eff6ff"><span>🔔 ' + ME.pending.length + ' 个换号申请等批准</span><span class="grow"></span>'
+      + '<button class="action-btn primary" style="padding:2px 10px" onclick="openLineReqs()">去看</button></div>';
+  }
+  el.innerHTML = h;
+}
+// 号码选择 (单选), 用在绑号和换号
+function linePicker(exclude, sel) {
+  const ls = LINES.filter(l => l.line && l.line !== exclude);
+  if (!ls.length) return '<div class="hint" style="color:var(--red)">还没有别的手机号可选，请 admin 先在 ⚙ 里加。</div>';
+  return '<div style="display:grid;gap:6px">' + ls.map(l => '<label class="req-card" style="cursor:pointer;grid-template-columns:auto 1fr;align-items:center">'
+    + '<input type="radio" name="pickLine" value="' + l.line + '"' + (l.line === sel ? ' checked' : '') + ' style="width:auto">'
+    + '<span><b>' + esc(l.label || fmtPhone(l.line)) + '</b> ' + (l.label ? esc(fmtPhone(l.line)) : '') + (l.active ? '' : ' <span style="color:var(--red)">（没有在用的设备）</span>') + '</span></label>').join('') + '</div>';
+}
+const pickedLine = () => { const r = document.querySelector('input[name="pickLine"]:checked'); return r ? r.value : ''; };
+// 最后一步: 输入号码后 4 位才算确认, 防手滑
+function typeLast4(title, html, line, okText) {
+  return new Promise(resolve => {
+    openModal('<h2>' + esc(title) + '</h2>' + html
+      + '<div class="hint">请输入这个号码的<b>后 4 位</b>确认：</div><input id="last4" inputmode="numeric" maxlength="4" placeholder="' + esc(line.slice(-4).replace(/./g, '•')) + '">'
+      + '<div class="hint" id="last4Err" style="color:var(--red)"></div>'
+      + '<div class="row"><button class="action-btn" id="l4No">取消</button><button class="action-btn primary" id="l4Ok">' + esc(okText) + '</button></div>');
+    document.getElementById('last4').focus();
+    document.getElementById('l4No').onclick = () => { closeModal(); resolve(false); };
+    document.getElementById('l4Ok').onclick = () => {
+      if (document.getElementById('last4').value.trim() !== line.slice(-4)) { document.getElementById('last4Err').textContent = '后 4 位不对'; return; }
+      closeModal(); resolve(true);
+    };
+  });
+}
+function startBind() {
+  openModal('<h2>选我的手机号</h2><div class="hint">一个账号固定用一个号收发短信。选好以后<b>换号要提申请，director 或 admin 批准</b>才能换，请选对。</div>'
+    + linePicker('', LINE) + '<div class="row"><button class="action-btn" onclick="closeModal()">取消</button><button class="action-btn primary" id="bindNext">下一步</button></div>');
+  document.getElementById('bindNext').onclick = async () => {
+    const line = pickedLine();
+    if (!line) return;
+    closeModal();
+    if (!(await confirmBox('确定你的账号固定用 ' + lineName(line) + ' ' + fmtPhone(line) + '？以后换号要申请、等批准。'))) return;
+    if (!(await typeLast4('最后确认', '<div class="hint">绑定 <b>' + esc(lineName(line)) + ' ' + esc(fmtPhone(line)) + '</b></div>', line, '确认绑定'))) return;
+    const r = await api('/device-sms/my-line', { method: 'POST', body: JSON.stringify({ line }) });
+    if (!r.success) { pToast(r.error || '没绑上', true); return; }
+    pToast('已绑定');
+    load();
+  };
+}
+function startLineChange() {
+  const home = ME.home_line || ME.line;
+  openModal('<h2>申请用别的号</h2><div class="hint">自己的号：<b>' + esc(lineName(home)) + ' ' + esc(fmtPhone(home)) + '</b>。用别的号是特殊情况，'
+    + '提交后会<b>发邮件给所有 director 和 admin</b>，任意一个批准后才换；<b>批准只给一天</b>，24 小时后自动换回自己的号，第二天还要用得再申请。</div>'
+    + '<label>用哪个号</label>' + linePicker(home, '')
+    + '<label>为什么要换</label><textarea id="lcReason" placeholder="例：原来的手机坏了 / 负责的仓库换到另一个号"></textarea>'
+    + '<div class="hint" id="lcErr" style="color:var(--red)"></div>'
+    + '<div class="row"><button class="action-btn" onclick="closeModal()">取消</button><button class="action-btn primary" id="lcNext">下一步</button></div>');
+  document.getElementById('lcNext').onclick = async () => {
+    const to = pickedLine(), reason = document.getElementById('lcReason').value.trim();
+    if (!to) { document.getElementById('lcErr').textContent = '选一个新号'; return; }
+    if (!reason) { document.getElementById('lcErr').textContent = '要写原因'; return; }
+    closeModal();
+    if (!(await confirmBox('确定申请今天用 ' + lineName(to) + ' ' + fmtPhone(to) + '？会发邮件给 director 和 admin，批了只给一天。'))) return;
+    if (!(await typeLast4('再确认一次', '<div class="hint">' + esc(fmtPhone(home)) + ' → <b>' + esc(lineName(to)) + ' ' + esc(fmtPhone(to)) + '</b><br>原因：' + esc(reason) + '</div>', to, '提交申请'))) return;
+    const r = await api('/device-sms/line-requests', { method: 'POST', body: JSON.stringify({ to_line: to, reason }) });
+    if (!r.success) { pToast(r.error || '没提交上', true); return; }
+    pToast('已提交，等 director / admin 批准');
+    load();
+  };
+}
+async function cancelLineReq(id) {
+  if (!(await confirmBox('撤回这个换号申请？'))) return;
+  const r = await api('/device-sms/line-requests/' + id, { method: 'POST', body: JSON.stringify({ cancel: true }) });
+  if (!r.success) { pToast(r.error || '没撤回', true); return; }
+  load();
+}
+// director / admin: 等批准的换号申请
+function openLineReqs(focusId) {
+  const list = ME.pending || [];
+  openModal('<h2>换号申请</h2>' + (list.length ? list.map(q => '<div class="req-card"' + (q.id === focusId ? ' style="border-color:var(--sky);background:var(--sky-light)"' : '') + '>'
+      + '<div><b>' + esc(q.display_name || q.username) + '</b> <span style="color:var(--gray-600)">' + esc(timeAgo(q.created_at)) + '申请</span></div>'
+      + '<div>' + esc(q.from_line ? lineName(q.from_line) + ' ' + fmtPhone(q.from_line) : '（没绑）') + ' → <b>' + esc(lineName(q.to_line) + ' ' + fmtPhone(q.to_line)) + '</b></div>'
+      + '<div style="color:var(--gray-600)">原因：' + esc(q.reason) + '</div>'
+      + '<div class="row" style="justify-content:flex-start"><button class="action-btn primary" onclick="decideLineReq(' + q.id + ',true)">批准（一天）</button>'
+      + '<button class="action-btn danger" onclick="decideLineReq(' + q.id + ',false)">拒绝</button></div></div>').join('')
+    : '<div class="hint">没有等批准的换号申请。</div>')
+    + '<div class="row"><button class="action-btn" onclick="closeModal()">关闭</button></div>', 'wide');
+}
+async function decideLineReq(id, ok) {
+  const q = (ME.pending || []).find(x => x.id === id);
+  if (!q) return;
+  closeModal();
+  const who = q.display_name || q.username;
+  if (!(await confirmBox((ok ? '批准 ' : '拒绝 ') + who + ' 换号：' + (q.from_line ? fmtPhone(q.from_line) : '（没绑）') + ' → ' + fmtPhone(q.to_line) + '？'))) { openLineReqs(id); return; }
+  if (ok && !(await typeLast4('再确认一次', '<div class="hint">批准以后 <b>' + esc(who) + '</b> 在 24 小时内用 <b>' + esc(lineName(q.to_line) + ' ' + fmtPhone(q.to_line)) + '</b> 收发短信，之后自动换回。</div>', q.to_line, '确认批准（一天）'))) { openLineReqs(id); return; }
+  const r = await api('/device-sms/line-requests/' + id, { method: 'POST', body: JSON.stringify({ approve: ok }) });
+  if (!r.success) { pToast(r.error || '没处理成', true); return; }
+  pToast(ok ? '已批准' : '已拒绝');
+  await load(true);
+  if ((ME.pending || []).length) openLineReqs();
 }
 
 function timeAgo(value) {
@@ -505,10 +644,13 @@ async function load(silent, fromPoll) {
     url += '&status=' + (SHOW_CLOSED ? 'closed' : 'open');
     if (q) url += '&q=' + encodeURIComponent(q);
     if (LINE) url += '&line=' + encodeURIComponent(LINE);
-    const r = await api(url);
+    const [r, me] = await Promise.all([api(url), api('/device-sms/my-line').catch(() => null)]);
+    if (me && !me.error) ME = me;
+    // 绑了号就只用这个号 (服务器那边也只给这个号的)
+    if (ME.line && LINE !== ME.line) { LINE = ME.line; try { localStorage.setItem('pa_phone_sms_line', LINE); } catch (_) {} }
     LINES = r.lines || [];
     // 记住的号码已经没有设备了 → 回到「全部」重新拿一次
-    if (LINE && !LINES.some(l => (l.line || 'none') === LINE)) { pickLine('', true); return load(silent, fromPoll); }
+    if (LINE && !ME.line && !LINES.some(l => (l.line || 'none') === LINE)) { pickLine('', true); return load(silent, fromPoll); }
     TOTAL = r.total || 0;
     MESSAGES = r.messages || [];
     OUTBOX = r.outbox || [];
@@ -1011,7 +1153,11 @@ function replyBar(composing) {
 
 /* 从面试登记页跳过来：#p=号码 → 打开(或新建)这个号码的对话 */
 let DEEP_DONE = false;
+let LINEREQ_DONE = false;
 function handleDeepLink() {
+  // 邮件里的链接: #linereq=ID → 打开换号申请
+  const lr = location.hash.match(/linereq=(\d+)/);
+  if (lr && !LINEREQ_DONE) { LINEREQ_DONE = true; if (ME.approver) openLineReqs(+lr[1]); }
   if (DEEP_DONE) return;
   const m = location.hash.match(/p=(\d{7,})/);
   DEEP_DONE = true;
