@@ -45314,7 +45314,10 @@ function _wobBuild() {
     const curAccs = w.pay_method === 'zelle' ? w.zelle_accounts : w.pay_method === 'cashapp' ? w.cashapp_accounts : w.pay_method === 'ach' ? w.ach_accounts : [];
     w.pay_review = curAccs.filter(z => !z.ok && !z.rejected).length;
     w.pay_rejected = curAccs.filter(z => z.rejected).length;
-    w.pending_review = (w.gusto_proposal ? 1 : 0) + (w.employee_proposals.length ? 1 : 0) + w.email_proposals.length + w.pay_review;
+    // 入职进度邮件按步骤来: 还没选 Gusto / 前一步没做完的, 现在审不了, 不算进「待审核」
+    const stepsDone = Object.fromEntries((w.checklist.steps || []).map((st, i, arr) => [st.id, i === 0 || arr[i - 1].done]));
+    const emailActionable = w.email_proposals.filter(e => !['accepted', 'ready'].includes(e.kind) || (w.pay_method === 'gusto' && stepsDone[e.kind])).length;
+    w.pending_review = (w.gusto_proposal ? 1 : 0) + (w.employee_proposals.length ? 1 : 0) + emailActionable + w.pay_review;
     w.bank_alerts = bankByKey[w.key] || [];
     w.bank_alert_open = w.bank_alerts.filter(b => !b.ack_at).length;
     // 第一步一律是关联员工档案; 关联了才看付款方式。
@@ -45810,8 +45813,16 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       } else return res.status(400).json({ error: '不知道撤销什么' });
     }
     if (b.approve === 'email' || b.reject === 'email') {
-      const ev = db.prepare('SELECT id, worker_key, rejected_keys FROM gusto_email_events WHERE id=?').get(parseInt(b.event_id, 10) || 0);
+      const ev = db.prepare('SELECT id, kind, worker_key, rejected_keys FROM gusto_email_events WHERE id=?').get(parseInt(b.event_id, 10) || 0);
       if (!ev) return res.status(404).json({ error: '找不到这封邮件' });
+      // 入职进度邮件 (接受邀请 / 可以付款) 要按步骤来: 先选 Gusto 入职, 前一步完成了才能通过这一步的邮件
+      if (b.approve && ['accepted', 'ready'].includes(ev.kind) && !req.isApprovalReplay) {
+        if (next.pay_method !== 'gusto') return res.status(400).json({ error: '付款方式还不是「Gusto 入职」，先选 Gusto 入职再审核 Gusto 邮件' });
+        const w = _wobBuild().list.find(x => x.key === key);
+        const steps = (w && w.checklist && w.checklist.steps) || [];
+        const i = steps.findIndex(s => s.id === ev.kind);
+        if (i > 0 && !steps[i - 1].done) return res.status(400).json({ error: `先完成第 ${i} 步「${steps[i - 1].label}」，再审核这封邮件` });
+      }
       if (b.approve) db.prepare("UPDATE gusto_email_events SET worker_key=?, review_by=?, review_at=? WHERE id=?").run(key, req.userName || '', now, ev.id);
       else {
         const rej = _wobJson(ev.rejected_keys, []);
