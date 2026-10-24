@@ -156,6 +156,7 @@ public class SyncService extends Service {
 
         JSONObject body = new JSONObject();
         body.put("device_serial", serial());
+        body.put("own_number", ownNumber());
         body.put("messages", batch.messages);
         JSONObject resp = Api.postJson(api + "/push", token, body);
 
@@ -204,6 +205,7 @@ public class SyncService extends Service {
 
         JSONObject body = new JSONObject();
         body.put("device_serial", serial());
+        body.put("own_number", ownNumber());
         body.put("messages", batch.messages);
         Api.postJson(api + "/push", token, body);
 
@@ -312,6 +314,7 @@ public class SyncService extends Service {
         if (changed.length() > 0) {
             JSONObject body = new JSONObject();
             body.put("device_serial", serial());
+            body.put("own_number", ownNumber());
             body.put("messages", changed);
             Api.postJson(api + "/push", token, body);
         }
@@ -375,6 +378,27 @@ public class SyncService extends Service {
             manager.sendTextMessage(to, null, body, null, null);
         } else {
             manager.sendMultipartTextMessage(to, null, parts, null, null);
+        }
+    }
+
+    /** 本机号码 (给网站自动认号)。没权限、运营商没写进 SIM 卡时是空的, 网站会用别的办法猜。 */
+    private String ownNumber() {
+        try {
+            if (checkSelfPermission(android.Manifest.permission.READ_PHONE_NUMBERS)
+                    != android.content.pm.PackageManager.PERMISSION_GRANTED) return "";
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                android.telephony.SubscriptionManager sm = getSystemService(android.telephony.SubscriptionManager.class);
+                java.util.List<android.telephony.SubscriptionInfo> subs = sm.getActiveSubscriptionInfoList();
+                if (subs != null) for (android.telephony.SubscriptionInfo si : subs) {
+                    String n = sm.getPhoneNumber(si.getSubscriptionId());
+                    if (n != null && !n.isEmpty()) return n;
+                }
+            }
+            android.telephony.TelephonyManager tm = getSystemService(android.telephony.TelephonyManager.class);
+            String n = tm.getLine1Number();
+            return n == null ? "" : n;
+        } catch (Exception e) {
+            return "";
         }
     }
 

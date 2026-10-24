@@ -425,10 +425,12 @@ public class MainActivity extends Activity {
         getSharedPreferences("cfg", MODE_PRIVATE)
                 .edit().putString("url", url).putString("token", token).apply();
 
+        // READ_PHONE_NUMBERS: 读本机号码给网站自动认号; 拒绝了也照常同步
         String[] permissions = Build.VERSION.SDK_INT >= 33
                 ? new String[]{Manifest.permission.READ_SMS, Manifest.permission.SEND_SMS,
-                        Manifest.permission.POST_NOTIFICATIONS}
-                : new String[]{Manifest.permission.READ_SMS, Manifest.permission.SEND_SMS};
+                        Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.READ_PHONE_NUMBERS}
+                : new String[]{Manifest.permission.READ_SMS, Manifest.permission.SEND_SMS,
+                        Manifest.permission.READ_PHONE_NUMBERS};
         requestPermissions(permissions, REQ_START);
     }
 
