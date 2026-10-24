@@ -410,10 +410,10 @@ function renderInvs() {
   if (VIEW !== 'week') { el.innerHTML = ''; return; }
   if (!D.invoices.length) { el.innerHTML = ''; return; }
   el.innerHTML = `<div class="lbl">${wkLabel(WEEK)} 的发票（${D.invoices.length} 张）· 点一张看上面的员工</div><div class="invs">` + D.invoices.map(v => `
-    <button class="ic ${v.id === INV ? 'on' : ''} ${v.unsettled ? 'left' : 'ok'}" onclick="INV=${v.id};load()">
+    <button class="ic ${v.id === INV ? 'on' : ''} ${v.unsettled || v.progress ? 'left' : 'ok'}" onclick="INV=${v.id};load()">
       <span class="co">${esc(v.company || '—')}</span><b>📄 ${esc(v.invoice_number)}</b>
       <span>${md(v.period_start)}–${md(v.period_end)} · ${v.workers} 人${v.total != null ? ' · ' + money(v.total) : ''}</span>
-      <span class="cnt">${v.unsettled ? `<span class="tag" style="background:#fef3c7;color:#92400e">待定 ${v.unsettled}</span>` : ''}<span class="tag" style="background:#dcfce7;color:#166534">已定 ${v.settled}</span>${v.new ? `<span class="tag" style="background:#e0f2fe;color:#075985">🆕 新 ${v.new}</span>` : ''}${v.review_people ? `<span class="tag" style="${RV_PEOPLE}" title="有人选的 / 填的，等你确认">👤 ${v.review_people}</span>` : ''}${v.review_system ? `<span class="tag" style="${RV_SYSTEM}" title="系统匹配的，等你认">🤖 ${v.review_system}</span>` : ''}${v.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff" title="关联的员工档案和发票（${esc(v.state)}）不是一个州">⚠ 州不对 ${v.state_bad}</span>` : ''}</span>
+      <span class="cnt">${v.unsettled ? `<span class="tag" style="background:#fef3c7;color:#92400e" title="还没选付款方式">待定 ${v.unsettled}</span>` : ''}${v.progress ? `<span class="tag" style="background:#dbeafe;color:#1e40af" title="选了付款方式，步骤或审核还没做完">进行中 ${v.progress}</span>` : ''}<span class="tag" style="background:#dcfce7;color:#166534" title="全部做完、都审核过了">已定 ${v.settled}</span>${v.new ? `<span class="tag" style="background:#e0f2fe;color:#075985">🆕 新 ${v.new}</span>` : ''}${v.review_people ? `<span class="tag" style="${RV_PEOPLE}" title="有人选的 / 填的，等你确认">👤 ${v.review_people}</span>` : ''}${v.review_system ? `<span class="tag" style="${RV_SYSTEM}" title="系统匹配的，等你认">🤖 ${v.review_system}</span>` : ''}${v.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff" title="关联的员工档案和发票（${esc(v.state)}）不是一个州">⚠ 州不对 ${v.state_bad}</span>` : ''}</span>
     </button>`).join('') + '</div>';
 }
 function renderList() {
@@ -430,7 +430,7 @@ function renderList() {
   const v = D.invoice;
   const head = v ? `<div class="row" style="margin-bottom:.5rem"><b style="color:#0f4c6b">📄 ${esc(v.invoice_number)} · ${esc(v.company)}</b>
       ${D.can_open_invoice ? `<a class="inv" href="/accounting?invoice=${v.id}" target="_blank">打开发票 ↗</a>` : ''}
-      <span class="muted">${v.workers} 人 · 新 ${v.new} · 付款方式待定 ${v.unsettled} · 已定 ${v.settled}</span></div>` : '';
+      <span class="muted">${v.workers} 人 · 新 ${v.new} · 待定 ${v.unsettled} · 进行中 ${v.progress || 0} · 已定 ${v.settled}</span></div>` : '';
   el.innerHTML = head + rows.map((w, i) => v && !w.is_new && !EXP.has(w.key) ? oldRow(w, i) : card(w, i)).join('');
 }
 // 发票视图里的老员工: 一行, 能直接定付款方式, 点「展开」看全卡片
@@ -443,7 +443,9 @@ function oldRow(w, k) {
     ${w.employee ? `<span class="tag" style="background:#dcfce7;color:#166534">👤 ${esc(w.employee.code || '#' + w.employee.id)}${w.employee.phone ? ' · ' + esc(w.employee.phone) : ''}</span>` : '<span class="tag" style="background:#fee2e2;color:#991b1b">未关联档案</span>'}${w.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff" title="发票是 ${esc((w.inv_states || []).join(' / '))}，档案是 ${esc(w.employee.state)}">⚠ 州不一致：发票 ${esc((w.inv_states || []).join('/'))} · 档案 ${esc(w.employee.state)}</span>` : ''}
     <span class="muted">${w.line.hours ? w.line.hours + 'h' : ''}${w.line.total != null ? ' · ' + money(w.line.total) : ''}</span>
     ${rvTags(w.review_people || 0, w.review_system || 0, k)}
-    ${w.pend && w.pend.pay ? `<span class="tag" style="background:#fef3c7;color:#92400e">⏳ ${esc(PM_LABEL[w.pay_method] || '不选')} 等审批</span>` : w.settled ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ ${esc(PM_LABEL[w.pay_method] || 'Gusto 已付过')}</span>` : '<span class="tag" style="background:#fef3c7;color:#92400e">付款方式待定</span>'}
+    ${w.pend && w.pend.pay ? `<span class="tag" style="background:#fef3c7;color:#92400e">⏳ ${esc(PM_LABEL[w.pay_method] || '不选')} 等审批</span>` : w.settled ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ 已定 · ${esc(PM_LABEL[w.pay_method] || 'Gusto 已付过')}</span>`
+      : w.stage === 'progress' ? `<span class="tag" style="background:#dbeafe;color:#1e40af" title="选了付款方式，步骤或审核还没做完">⏳ 进行中 · ${esc(PM_LABEL[w.pay_method] || 'Gusto')}</span>`
+      : '<span class="tag" style="background:#fef3c7;color:#92400e">付款方式待定</span>'}
     ${w.pay_method === 'zelle' ? `<span class="muted">Zelle ${zList(w.zelle_accounts)}</span>` : w.pay_method === 'cashapp' ? `<span class="muted">Cash App ${zList(w.cashapp_accounts)}</span>` : w.pay_method === 'ach' ? `<span class="muted">ACH ${zList(w.ach_accounts)}</span>` : ''}
     <span class="pm" style="margin-left:auto">${pm}</span>
     ${w.bank_alert_open ? '<span class="tag" style="background:#fee2e2;color:#991b1b">⚠ 银行信息</span>' : ''}${w.pay_rejected ? '<span class="tag" style="background:#fee2e2;color:#991b1b">✗ 收款账号不对</span>' : ''}
@@ -505,7 +507,9 @@ function card(w, k) {
   return `<div class="card w ${w.done ? 'done' : ''} ${bad || w.state_bad ? 'bad' : ''}">
     <div class="w-main">
       <div>
-        <div class="row" style="margin-bottom:.15rem"><span class="name">${esc(w.name)}</span>${w.line && w.is_new ? '<span class="tag" style="background:#e0f2fe;color:#075985">🆕 新</span>' : ''}${w.done ? '<span class="tag" style="background:#dcfce7;color:#166534">✓ 已处理</span>' : '<span class="tag" style="background:#fef3c7;color:#92400e">待处理</span>'}${rvTags((w.review_people || 0) + pcOf(c => c.kind === 'worker' && c.key === w.key).length, w.review_system || 0)}${w.bank_alert_open ? '<span class="tag" style="background:#fee2e2;color:#991b1b">⚠ 银行信息</span>' : ''}${w.pay_rejected ? '<span class="tag" style="background:#fee2e2;color:#991b1b">✗ 收款账号不对</span>' : ''}${w.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff">⚠ 州不一致</span>` : ''}
+        <div class="row" style="margin-bottom:.15rem"><span class="name">${esc(w.name)}</span>${w.line && w.is_new ? '<span class="tag" style="background:#e0f2fe;color:#075985">🆕 新</span>' : ''}${w.done ? '<span class="tag" style="background:#dcfce7;color:#166534" title="全部做完、都审核过了">✓ 已定</span>'
+          : w.stage === 'progress' ? '<span class="tag" style="background:#dbeafe;color:#1e40af" title="选了付款方式，步骤或审核还没做完">⏳ 进行中</span>'
+          : '<span class="tag" style="background:#fef3c7;color:#92400e">待定</span>'}${rvTags((w.review_people || 0) + pcOf(c => c.kind === 'worker' && c.key === w.key).length, w.review_system || 0)}${w.bank_alert_open ? '<span class="tag" style="background:#fee2e2;color:#991b1b">⚠ 银行信息</span>' : ''}${w.pay_rejected ? '<span class="tag" style="background:#fee2e2;color:#991b1b">✗ 收款账号不对</span>' : ''}${w.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff">⚠ 州不一致</span>` : ''}
           <button class="btn btn-outline btn-sm" onclick="showHistory(${k})">📜 历史</button></div>
         ${alias.length ? `<div class="muted">发票上写作：${esc(alias.join(' / '))}</div>` : ''}
         <div class="muted">第一次上账单：${esc(w.first_end)}${w.later_invoices ? ` · 之后还有 ${w.later_invoices} 张` : ''}</div>
