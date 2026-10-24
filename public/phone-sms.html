@@ -66,6 +66,23 @@ button,input,select,textarea{font-family:inherit}
 .line-btn .ll{font-size:.66rem;color:var(--gray-400);white-space:nowrap}
 .line-btn .lu{position:absolute;top:-6px;right:-6px;background:#2563eb;color:#fff;border-radius:10px;font-size:.62rem;font-weight:700;padding:0 5px;line-height:15px}
 .line-btn .off{color:var(--red)}
+/* 侧栏的号码切换: 「全部号码」一整行, 下面每个号一格, 两列排开, 不用左右滑 */
+.num-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:10px 12px;border-bottom:1px solid var(--gray-200);flex-shrink:0;background:#fffdf7}
+.num-tile{display:flex;align-items:center;gap:8px;min-width:0;padding:7px 9px;border-radius:10px;border:1.5px solid var(--gray-200);
+  background:var(--white);cursor:pointer;text-align:left;color:var(--gray-800);font-family:inherit;transition:border-color .15s,background .15s}
+.num-tile:hover{border-color:var(--accent)}
+.num-tile.all{grid-column:1 / -1}
+.num-tile.on{background:var(--sky);border-color:var(--sky);color:#fff}
+.num-tile .nd{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:#22c55e}
+.num-tile .nd.off{background:#d1d5db}
+.num-tile .nd.warn{background:#f59e0b}
+.num-tile .nt{flex:1;min-width:0;display:grid;line-height:1.25}
+.num-tile .nn{font-size:.8rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.num-tile .np{font-size:.68rem;color:var(--gray-400);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.num-tile.on .np{color:rgba(255,255,255,.8)}
+.num-tile .nu{flex-shrink:0;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:#2563eb;color:#fff;font-size:.68rem;font-weight:800;
+  display:flex;align-items:center;justify-content:center}
+.num-tile.on .nu{background:#fff;color:var(--sky)}
 .line-tag{font-size:.64rem;font-weight:700;padding:0 6px;border-radius:8px;background:#ede9fe;color:#5b21b6;white-space:nowrap}
 
 /* ── 筛选 ── */
@@ -392,16 +409,19 @@ function renderLineBar() {
   // 只有一个号码 (或还没标号码) 就不占地方
   if (LINES.length < 2) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
   const total = LINES.reduce((n, l) => n + (l.unread || 0), 0);
-  const btn = (key, name, sub, unread, off) => '<button class="line-btn' + (LINE === key ? ' on' : '') + '" onclick="pickLine(\'' + key + '\')">'
-    + '<span class="ln">' + esc(name) + '</span><span class="ll' + (off ? ' off' : '') + '">' + esc(sub) + '</span>'
-    + (unread ? '<span class="lu" title="' + unread + ' 个会话有新消息">' + unread + '</span>' : '') + '</button>';
+  // 一格: 状态点 (绿 = 手机在同步, 灰 = 没设备, 橙 = 要设置) / 名字 / 号码 / 未读数
+  const tile = (key, name, sub, unread, dot, cls) => '<button class="num-tile' + (cls ? ' ' + cls : '') + (LINE === key ? ' on' : '') + '" onclick="pickLine(\'' + key + '\')" title="' + esc(name + ' ' + sub) + '">'
+    + (dot ? '<span class="nd ' + dot + '"></span>' : '<span style="font-size:.9rem">📱</span>')
+    + '<span class="nt"><span class="nn">' + esc(name) + '</span><span class="np">' + esc(sub) + '</span></span>'
+    + (unread ? '<span class="nu" title="' + unread + ' 个会话有新消息">' + unread + '</span>' : '') + '</button>';
+  bar.className = 'num-grid';
   bar.style.display = '';
-  bar.innerHTML = btn('', '全部号码', LINES.length + ' 个号', total, false)
+  bar.innerHTML = tile('', '全部号码', LINES.length + ' 个号一起看', total, '', 'all')
     + LINES.map(l => l.line
-      ? btn(l.line, l.label || fmtPhone(l.line), l.label ? fmtPhone(l.line) : (l.active ? (l.last_push_at ? timeAgo(l.last_push_at) + '同步' : '还没同步') : '设备已停用'), l.unread, !l.active)
+      ? tile(l.line, l.label || fmtPhone(l.line), l.label ? fmtPhone(l.line) : (l.active ? (l.last_push_at ? timeAgo(l.last_push_at) + '同步' : '还没同步') : '没有在用的手机'), l.unread, l.active ? 'ok' : 'off')
       // 没设号码的设备推上来的短信: 设备还在用 → 提醒去设置; 都停用了 → 就是以前的短信
-      : (l.active ? btn('none', '⚠ 没设号码', ROLE === 'admin' ? '点 ⚙ 设置' : '旧设备', l.unread, false)
-                  : btn('none', '以前的短信', '旧设备同步的', l.unread, false))).join('');
+      : (l.active ? tile('none', '没设号码', ROLE === 'admin' ? '点 ⚙ 设置' : '旧设备', l.unread, 'warn')
+                  : tile('none', '以前的短信', '旧设备同步的', l.unread, 'off'))).join('');
 }
 
 /* ── 我的号: 一个账号固定一个号; 换号要申请, director / admin 批准 ── */
