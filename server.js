@@ -38550,11 +38550,12 @@ app.get('/api/device-sms/messages', requireAdmin, requireRole('admin', 'cs'), (r
     // 还没发出去的 / 发失败的也一起给, 页面上排在对话末尾显示状态。
     // 刚发出去(sent)的也带上: 电脑发完到手机把真实短信推回来之间有几分钟空档,
     // 不带的话消息会先消失一阵, 像没发出去一样; 前端等真实消息到了自动去重隐藏。
+    // 只看一个号时: 没指定号的那些按「实际取走它的设备」的号算; 还没被取走的哪个号都可能发, 都显示
     const outbox = db.prepare(`SELECT id, to_address, peer, body, status, note, created_at, COALESCE(line,'') AS line FROM device_sms_outbox
       WHERE target_device_id IS NULL AND (status IN ('pending','failed')
          OR (status='sent' AND done_at >= datetime('now','-2 days')))
-        ${line && line !== 'none' ? "AND (COALESCE(line,'')='' OR line=?)" : ''}
-      ORDER BY id ASC LIMIT 100`).all(...(line && line !== 'none' ? [line] : []));
+        ${line ? `AND COALESCE(NULLIF(line,''), (SELECT COALESCE(d.line,'') FROM device_sms_devices d WHERE d.id=device_sms_outbox.device_id), ?) = ?` : ''}
+      ORDER BY id ASC LIMIT 100`).all(...(line ? [line === 'none' ? '' : line, line === 'none' ? '' : line] : []));
     const notes = db.prepare(`SELECT peer, alias, note, tags, status, contact_lang, agent_lang,
       auto_translate, read_at, spoken_langs, ratings, us_state FROM device_sms_peer_notes`).all();
     res.json({ messages: rows.reverse(), devices, lines, outbox, notes, total, offset, limit });

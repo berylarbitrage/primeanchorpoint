@@ -684,7 +684,10 @@ function scheduleNextLoad() {
   _pollTimer = setTimeout(() => load(true, true), hasPending ? 4000 : 20000);
 }
 
+let _loadSeq = 0;
 async function load(silent, fromPoll) {
+  // 切号码时上一次刷新可能还在路上; 它回来晚了会把别的号 (或全部号码) 的短信盖上来, 只认最后一次
+  const seq = ++_loadSeq;
   try {
     const q = document.getElementById('q').value.trim();
     let url = '/device-sms/messages?limit=' + LIMIT;
@@ -696,6 +699,7 @@ async function load(silent, fromPoll) {
     if (q) url += '&q=' + encodeURIComponent(q);
     if (LINE) url += '&line=' + encodeURIComponent(LINE);
     const [r, me] = await Promise.all([api(url), api('/device-sms/my-line').catch(() => null)]);
+    if (seq !== _loadSeq) return;
     if (me && !me.error) ME = me;
     // 绑了号就只用这个号 (服务器那边也只给这个号的)
     if (ME.line && LINE !== ME.line) { LINE = ME.line; try { localStorage.setItem('pa_phone_sms_line', LINE); } catch (_) {} }
