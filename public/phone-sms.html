@@ -443,7 +443,7 @@ function renderMeBar() {
       + (req ? '<span style="color:#b45309">⏳ 换成 ' + esc(fmtPhone(req.to_line)) + ' 等批准</span><button class="action-btn" style="padding:2px 10px" onclick="cancelLineReq(' + req.id + ')">撤回</button>'
              : '<button class="action-btn" style="padding:2px 10px" onclick="startLineChange()" title="临时用另一个号，批准后只给一天">申请用别的号</button>')
       + '</div>';
-  } else if (ROLE === 'cs' || sendLines().length > 1) {
+  } else if (ROLE === 'cs') {   // 只有客服要绑号; admin / director 随便切
     h = '<div class="me-bar warn"><span>⚠ 你的账号还没绑手机号</span><span class="grow"></span>'
       + '<button class="action-btn primary" style="padding:2px 10px" onclick="startBind()">选我的号</button></div>';
   }

@@ -36187,8 +36187,8 @@ function deviceSmsLineInfo(userId) {
   const tempOn = !!(u.sms_line_temp && u.sms_line_temp_until && new Date(u.sms_line_temp_until).getTime() > Date.now());
   return { home: u.sms_line || '', temp: tempOn ? u.sms_line_temp : '', until: tempOn ? u.sms_line_temp_until : null, line: tempOn ? u.sms_line_temp : (u.sms_line || '') };
 }
-// 现在能用的号 (临时批的号优先)
-function deviceSmsMyLine(req) { return deviceSmsLineInfo(req.userId).line; }
+// 现在能用的号 (临时批的号优先)。只有客服 (cs) 绑号; admin / director 随便切, 不受绑号限制
+function deviceSmsMyLine(req) { return req.userRole === 'cs' ? deviceSmsLineInfo(req.userId).line : ''; }
 // 邮件里「点一下就批」的链接: 每个收件人一个签名, 知道是谁批的; 密钥存在 app_settings
 function _smsLineMailSecret() {
   const k = 'sms_line_mail_secret';
@@ -38590,7 +38590,7 @@ app.post('/api/device-sms/devices', requireAdmin, requireRole('admin'), (req, re
 // GET: 我绑的号、我有没有在等批准的换号申请; director / admin 还能看到所有等批准的申请
 app.get('/api/device-sms/my-line', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
   try {
-    const info = deviceSmsLineInfo(req.userId);
+    const info = req.userRole === 'cs' ? deviceSmsLineInfo(req.userId) : { home: '', temp: '', until: null, line: '' };
     const line = info.line;
     const mine = db.prepare(`SELECT id, from_line, to_line, reason, status, decided_by, decided_at, note, created_at FROM device_sms_line_requests
       WHERE user_id=? ORDER BY id DESC LIMIT 1`).get(req.userId) || null;
@@ -38603,6 +38603,7 @@ app.get('/api/device-sms/my-line', requireAdmin, requireRole('admin', 'cs'), (re
 // POST: 第一次绑号 (还没绑过才行; 绑过了要走换号申请)
 app.post('/api/device-sms/my-line', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
   try {
+    if (req.userRole !== 'cs') return res.status(400).json({ error: '管理员 / director 不用绑号，可以随便切换' });
     if (deviceSmsLineInfo(req.userId).home) return res.status(400).json({ error: '你已经绑了号，换号要提申请' });
     const line = deviceSmsLine((req.body || {}).line);
     if (!line) return res.status(400).json({ error: '手机号要 10 位数字' });
@@ -38614,6 +38615,7 @@ app.post('/api/device-sms/my-line', requireAdmin, requireRole('admin', 'cs'), (r
 // POST: 申请换号 → 邮件给所有 director / admin
 app.post('/api/device-sms/line-requests', requireAdmin, requireRole('admin', 'cs'), (req, res) => {
   try {
+    if (req.userRole !== 'cs') return res.status(400).json({ error: '管理员 / director 不用申请，直接切换号码就行' });
     const cur = deviceSmsLineInfo(req.userId), from = cur.home;
     const to = deviceSmsLine((req.body || {}).to_line);
     const reason = String((req.body || {}).reason || '').trim().slice(0, 500);
