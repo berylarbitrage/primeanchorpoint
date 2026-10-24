@@ -45315,8 +45315,11 @@ function _wobBuild() {
     }
   }
   for (const w of list) {
-    w.emails = approved[w.key] || [];
-    w.email_proposals = proposed[w.key] || [];
+    // 邮件按清单步骤排: 接受邀请在入职完成上面, 同一步按日期
+    const stepOrd = e => { const i = wob.GUSTO_STEPS.findIndex(s => s.id === e.kind); return i < 0 ? 99 : i; };
+    const byStep = (a, b) => stepOrd(a) - stepOrd(b) || String(a.date || '').localeCompare(String(b.date || '')) || a.id - b.id;
+    w.emails = (approved[w.key] || []).sort(byStep);
+    w.email_proposals = (proposed[w.key] || []).sort(byStep);
     // 清单只认 admin 确认过的邮件; 别人关联、等 admin 确认的显示成「等 admin 确认」
     w.email_confirm = w.emails.filter(e => !e.admin_ok).length;
     w.checklist = wob.buildChecklist({ contractor: w.gusto && w.gusto.link ? { raw: w.gusto.raw || {} } : null,
