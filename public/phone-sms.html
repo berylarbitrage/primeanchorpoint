@@ -2250,11 +2250,14 @@ function renderSetup() {
           + '<div><span class="dev-dot" style="background:#16a34a;display:inline-block;margin-right:6px"></span><b>' + esc(d.name || '设备') + '</b>'
           + '<span style="color:var(--gray-600)"> · 已同步 ' + (d.message_count || 0) + ' 条短信 · ' + synced(d) + '</span></div>'
           + (d.guess ? '<div class="guess"><span>🔍 认出来了，这部手机的号码应该是 <b style="font-size:1rem">' + esc(fmtPhone(d.guess.line)) + '</b></span>'
-              + '<span style="color:var(--gray-600);font-size:.78rem">' + (d.guess.how === 'phone' ? '（手机自己报的）' : '（它的短信跟公司号的 ' + d.guess.hits + ' 条收发记录对上了）') + '</span>'
+              + '<span style="color:var(--gray-600);font-size:.78rem">' + (d.guess.how === 'identify' ? '（这部手机刚给公司号发了认号短信，公司号收到时显示的就是这个号）' : d.guess.how === 'phone' ? '（手机自己报的）' : '（它的短信跟公司号的 ' + d.guess.hits + ' 条收发记录对上了）') + '</span>'
               + '<input id="gl' + d.id + '" placeholder="叫什么，如 芝加哥1" style="' + inp + ';width:150px" value="' + esc((S.lines.find(l => l.line === d.guess.line) || {}).label || '') + '">'
               + '<button class="action-btn primary" style="padding:6px 14px" onclick="assignGuess(' + d.id + ',\'' + d.guess.line + '\')">✓ 对，就是这个号</button></div>'
               + '<div style="font-size:.8rem;color:var(--gray-600)">不对的话，下面自己选或填：</div>'
-            : '<div style="font-size:.85rem">这部手机的号码是：</div>')
+            : '<div class="guess" style="border-color:#93c5fd;background:#eff6ff">' + (IDENT[d.id] && IDENT[d.id].err
+                ? '<span style="color:var(--red)">⚠ 自动认号没成功：' + esc(IDENT[d.id].err) + '</span><button class="action-btn" style="padding:4px 10px" onclick="identify(' + d.id + ',true)">再试一次</button>'
+                : '<span>🔍 正在自动认号码…这部手机会给公司号发一条短信，公司号收到就知道它是哪个号（一般半分钟到两分钟）</span>') + '</div>'
+              + '<div style="font-size:.85rem">也可以直接填：</div>')
           + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' + pickBtns(d)
           + '<span style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap">' + (S.lines.length ? '<span style="color:var(--gray-600);font-size:.8rem">或新号码</span>' : '')
           + '<input id="nn' + d.id + '" placeholder="号码，如 (224) 591-5888" style="' + inp + ';width:190px">'
@@ -2287,6 +2290,10 @@ function renderSetup() {
     + tabBtn('add', '＋ 加手机号', '新号码') + tabBtn('help', '连接说明', '网址 / 清空') + '</div>'
     + '<div style="display:grid;gap:8px">' + body + '</div>', 'setup');
   if (S.token) showToken(S.token);
+  if (S.tab === 'none') for (const d of S.none) {
+    const recent = d.active && d.last_push_at && (Date.now() - new Date(sqlTime(d.last_push_at)).getTime()) < 3 * 86400000;
+    if (recent && !d.guess && !IDENT[d.id]) identify(d.id);
+  }
 }
 // 「这部手机的号码是 X」: 一点就归过去
 async function assignLine(id, line) {
@@ -2298,6 +2305,23 @@ async function assignLine(id, line) {
   openSetup(SETUP.none.length > 1 ? 'none' : line);
 }
 // 认出来的号码点「对」: 号码没加过就加上 (带备注名), 再归过去
+// 自动认号: 让这部手机给公司号发一条短信, 等公司号收到 (每台设备只启动一次, 2 分半没结果就提示)
+const IDENT = {};
+async function identify(id, again) {
+  IDENT[id] = { started: Date.now() };
+  const r = await api('/device-sms/devices/' + id + '/identify', { method: 'POST', body: JSON.stringify({ again: !!again }) });
+  if (!r.success) { IDENT[id] = { err: r.error || '发不出去' }; if (SETUP && SETUP.tab === 'none') renderSetup(); return; }
+  if (SETUP && SETUP.tab === 'none') renderSetup();
+  const poll = async () => {
+    if (!document.querySelector('.modal.setup')) return;   // 窗口关了就不等了
+    const g = await api('/device-sms/devices/' + id + '/identify').catch(() => ({}));
+    if (g.number) { delete IDENT[id]; openSetup('none'); return; }
+    if (g.sent === 'failed') { IDENT[id] = { err: '手机没发出去' + (g.note ? '（' + g.note + '）' : '') }; renderSetup(); return; }
+    if (Date.now() - IDENT[id].started > 150000) { IDENT[id] = { err: '等了两分多钟公司号还没收到。手机要开着「短信同步」App；也可以直接填号码' }; renderSetup(); return; }
+    setTimeout(poll, 4000);
+  };
+  setTimeout(poll, 4000);
+}
 async function assignGuess(id, line) {
   const label = document.getElementById('gl' + id).value;
   const have = SETUP.lines.find(l => l.line === line);
