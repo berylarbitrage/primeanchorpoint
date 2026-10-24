@@ -38421,9 +38421,22 @@ app.get('/api/device-sms/devices', requireAdmin, requireRole('admin'), (req, res
 app.post('/api/device-sms/devices', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const name = String((req.body || {}).name || '我的电脑').slice(0, 60);
+    // 在某个手机号下面「连一台新设备」: 令牌一生成就归到这个号
+    const line = deviceSmsLine((req.body || {}).line);
     const token = crypto.randomBytes(32).toString('hex');
-    const info = db.prepare('INSERT INTO device_sms_devices (name, token_hash) VALUES (?,?)').run(name, deviceSmsHashToken(token));
-    res.json({ success: true, id: info.lastInsertRowid, name, token });
+    const info = db.prepare('INSERT INTO device_sms_devices (name, token_hash, line) VALUES (?,?,?)').run(name, deviceSmsHashToken(token), line);
+    res.json({ success: true, id: info.lastInsertRowid, name, line, token });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/device-sms/lines — 加一个手机号 / 改号码备注名 (还没有设备也可以先加上)
+app.post('/api/device-sms/lines', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const line = deviceSmsLine((req.body || {}).line);
+    if (!line) return res.status(400).json({ error: '手机号要 10 位数字' });
+    db.prepare(`INSERT INTO device_sms_lines (line, label) VALUES (?,?) ON CONFLICT(line) DO UPDATE SET label=excluded.label`)
+      .run(line, String((req.body || {}).label || '').trim().slice(0, 30));
+    res.json({ success: true, line });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

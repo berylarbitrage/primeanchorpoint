@@ -235,6 +235,12 @@ button,input,select,textarea{font-family:inherit}
 .modal .hint{font-size:.75rem;color:var(--gray-600);line-height:1.6}
 /* 标签弹窗的三档打分 (照 /interview-result 同款配色): 熟练=绿 会一点=橙 不会=红 */
 .modal.wide{width:min(560px,100%)}
+.modal.setup{width:min(900px,100%);align-content:start}
+.dev-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--gray-200);border-radius:10px;background:#fffdf5}
+.dev-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.dev-meta{font-size:.75rem;color:var(--gray-600);min-width:120px}
+.modal .dev-row input,.modal .dev-row select{width:auto;padding:6px 10px;font-size:.82rem}
+.modal .dev-row select{max-width:240px}
 .rate-group{font-size:.75rem;font-weight:800;color:var(--gray-600);background:var(--gray-100);border-radius:8px;padding:.35rem .6rem;margin:.35rem 0 .1rem}
 .q-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:5px 0;border-bottom:1px solid var(--gray-100)}
 .q-label{font-size:.82rem;font-weight:600}
@@ -2027,79 +2033,125 @@ function editNote() {
   };
 }
 
-async function openSetup() {
+/* ── ⚙ 手机号和设备: 上面一排按手机号切换, 切到哪个号只看那个号的设备 ── */
+let SETUP = null;   // {tab, devices, lines, token}
+async function openSetup(tab) {
   const r = await api('/device-sms/devices');
-  const labels = {};
-  for (const l of r.lines || []) labels[l.line] = l.label || '';
-  // 每台设备标上它连的是哪个手机号; 同一个号的手机 App 和电脑填同一个号码
-  const rows = (r.devices || []).filter(d => d.active || d.message_count).map(d =>
-    '<div class="hint" style="display:grid;gap:4px;padding:6px 0;border-bottom:1px dashed var(--gray-200)">'
-    + '<div><b>' + esc(d.name || '电脑') + '</b>' + (d.active ? '' : '（已停用）')
-    + ' · ' + (d.message_count || 0) + ' 条' + (d.last_push_at ? ' · ' + timeAgo(d.last_push_at) + '同步' : '')
-    + (d.active ? ' <button class="action-btn" style="padding:1px 8px" onclick="revoke(' + d.id + ')">停用</button>' : '') + '</div>'
-    + '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">'
-    + '<input id="dvName' + d.id + '" value="' + esc(d.name || '') + '" placeholder="设备名" style="width:90px;padding:4px 8px;border:1px solid var(--gray-200);border-radius:6px">'
-    + '<input id="dvLine' + d.id + '" value="' + esc(d.line ? fmtPhone(d.line) : '') + '" placeholder="这台连的手机号" style="width:130px;padding:4px 8px;border:1px solid var(--gray-200);border-radius:6px">'
-    + '<input id="dvLabel' + d.id + '" value="' + esc(labels[d.line] || '') + '" placeholder="号码备注，如 芝加哥2" style="width:120px;padding:4px 8px;border:1px solid var(--gray-200);border-radius:6px">'
-    + '<button class="action-btn" style="padding:2px 10px" onclick="saveDevice(' + d.id + ')">保存</button>'
-    + (d.line ? '' : '<span style="color:#b45309">⚠ 还没标号码</span>')
-    + '</div></div>').join('') || '<div class="hint">还没连过电脑。</div>';
-
-  openModal('<h2>连接手机或电脑</h2>'
-    + '<div class="hint"><b>推荐：手机上装「短信同步」App</b>（到 GitHub Releases 下载 '
-    + 'SMS.Phone-*.apk 旁路安装）——手机自己推送，不需要电脑、没有掉线问题。'
-    + '装好后点下面「生成新令牌」，<b>用手机相机扫出现的二维码</b>，网址和令牌就自动填进 App 了。用了 App 就把电脑版的「同步到公司网站」关掉，免得短信重复。</div>'
-    + '<div class="hint">或者用电脑：桌面版「SMS 译信」的 设置 → 同步到公司网站 里填这两样：</div>'
-    + '<div class="hint">网址（App 填这个）<br><code>' + location.origin + '</code></div>'
-    + '<div class="hint">推送网址（电脑版填这个）<br><code>' + location.origin + '/api/device-sms/push</code></div>'
-    + '<div id="tokenBox"></div>'
-    + '<div class="row" style="justify-content:flex-start">'
-    + '<button class="action-btn primary" id="newTok">生成新令牌</button></div>'
-    + '<div class="hint">令牌只显示这一次，关掉就看不到了；丢了再生成一个。</div>'
-    + '<div style="border-top:1px solid var(--gray-200);padding-top:8px"><div class="hint"><b>每台设备连的是哪个手机号</b>——有好几个号时上面可以切换，'
-    + '回复也会用对应的号发。同一个号的手机 App 和电脑填同一个号码。</div>' + rows + '</div>'
-    + '<div class="row" style="justify-content:space-between">'
-    + '<button class="action-btn danger" id="wipeBtn">清空所有手机短信</button>'
-    + '<button class="action-btn" onclick="closeModal()">关闭</button></div>');
-
-  document.getElementById('newTok').onclick = async () => {
-    const res = await api('/device-sms/devices', { method: 'POST', body: JSON.stringify({ name: '新设备' }) });
-    if (!res.token) {
-      document.getElementById('tokenBox').innerHTML =
-        '<div class="hint" style="color:var(--red)">' + esc(res.error || '生成失败') + '</div>';
-      return;
-    }
-    // 令牌放 # 后面: 不进服务器日志。二维码里带的是当前域名, 从根上杜绝「网址填错」。
-    const link = location.origin + '/app-connect#u=' + encodeURIComponent(location.origin)
-      + '&t=' + encodeURIComponent(res.token);
-    let qrTag = '';
-    try {
-      const qr = qrcode(0, 'M');
-      qr.addData(link);
-      qr.make();
-      qrTag = qr.createImgTag(4, 8);
-    } catch (_) { /* 令牌文本照样能用 */ }
-    document.getElementById('tokenBox').innerHTML =
-      '<div class="hint" style="text-align:center"><b>手机相机对着扫一下</b><br>'
-      + qrTag.replace('<img ', '<img style="max-width:200px;width:100%;image-rendering:pixelated" ')
-      + '<br>扫出来的链接点开 → 点「打开 App，自动连接」→ 网址和令牌自动填好</div>'
-      + '<div class="hint">不方便扫码就手动填——设备令牌（只显示这一次）<br><code>'
-      + esc(res.token) + '</code></div>';
-  };
-  document.getElementById('wipeBtn').onclick = async () => {
-    closeModal();
-    if (!(await confirmBox('把服务器上所有手机短信删掉？不可撤销。手机和电脑上的不受影响。'))) return;
-    const res = await api('/device-sms/messages', { method: 'DELETE' });
-    await load(true);
-    openModal('<h2>已清空</h2><div class="hint">删除了 ' + (res.deleted || 0) + ' 条。</div>'
-      + '<div class="row"><button class="action-btn primary" onclick="closeModal()">好</button></div>');
-  };
+  const lines = new Map();
+  for (const l of r.lines || []) lines.set(l.line, { line: l.line, label: l.label || '', devices: [] });
+  const devs = (r.devices || []).filter(d => d.active || d.message_count);   // 停用了又没推过短信的不用看
+  for (const d of devs) {
+    if (!d.line) continue;
+    if (!lines.has(d.line)) lines.set(d.line, { line: d.line, label: '', devices: [] });
+    lines.get(d.line).devices.push(d);
+  }
+  const prev = SETUP ? SETUP.tab : '';
+  SETUP = { devices: devs, lines: [...lines.values()], none: devs.filter(d => !d.line), token: null };
+  const ok = t => t === 'none' ? SETUP.none.length : t === 'add' || t === 'help' || SETUP.lines.some(l => l.line === t);
+  SETUP.tab = [tab, prev, LINE].find(t => t && ok(t)) || (SETUP.lines[0] && SETUP.lines[0].line) || (SETUP.none.length ? 'none' : 'add');
+  renderSetup();
+}
+function setupTab(t) { SETUP.tab = t; SETUP.token = null; renderSetup(); }
+function renderSetup() {
+  const S = SETUP, inp = 'padding:6px 10px;border:1px solid var(--gray-200);border-radius:8px;font-size:.82rem';
+  const tabBtn = (key, title, sub, warn) => '<button class="line-btn' + (S.tab === key ? ' on' : '') + '" onclick="setupTab(\'' + key + '\')">'
+    + '<span class="ln"' + (warn ? ' style="color:#b45309"' : '') + '>' + esc(title) + '</span><span class="ll">' + esc(sub) + '</span></button>';
+  const synced = d => d.last_push_at ? timeAgo(d.last_push_at) + '同步' : '还没同步';
+  const fresh = d => d.active && d.last_push_at && (Date.now() - new Date(sqlTime(d.last_push_at)).getTime()) < 3 * 3600 * 1000;
+  // 一台设备一行: 名字 / 条数 / 同步时间 / 归到哪个号 / 停用
+  const devRow = d => '<div class="dev-row">'
+    + '<span class="dev-dot" style="background:' + (!d.active ? '#d1d5db' : fresh(d) ? '#16a34a' : '#f59e0b') + '" title="' + (!d.active ? '已停用' : fresh(d) ? '最近在同步' : '有一阵没同步了') + '"></span>'
+    + '<input id="dvName' + d.id + '" value="' + esc(d.name || '') + '" placeholder="设备名，如 芝加哥2 手机" style="' + inp + ';width:170px">'
+    + '<span class="dev-meta">' + (d.message_count || 0) + ' 条 · ' + synced(d) + (d.active ? '' : ' · 已停用') + '</span>'
+    + '<select id="dvLine' + d.id + '" style="' + inp + '">'
+    + S.lines.map(l => '<option value="' + l.line + '"' + (l.line === d.line ? ' selected' : '') + '>📱 ' + esc(l.label ? l.label + ' ' + fmtPhone(l.line) : fmtPhone(l.line)) + '</option>').join('')
+    + '<option value=""' + (d.line ? '' : ' selected') + '>未标号码</option></select>'
+    + '<button class="action-btn" style="padding:4px 12px" onclick="saveDevice(' + d.id + ')">保存</button>'
+    + (d.active ? '<button class="action-btn" style="padding:4px 10px;color:var(--red)" onclick="revoke(' + d.id + ')">停用</button>' : '')
+    + '</div>';
+  let body = '';
+  if (S.tab === 'add') {
+    body = '<div class="hint">加一个手机号（比如新弄的芝加哥号码）。加好以后在这个号下面「连一台新设备」，扫码连上那部手机。</div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap"><input id="nlLine" placeholder="手机号，如 (630) 431-8158" style="' + inp + ';width:200px">'
+      + '<input id="nlLabel" placeholder="备注名，如 芝加哥2" style="' + inp + ';width:160px">'
+      + '<button class="action-btn primary" onclick="addLine()">加上</button></div>';
+  } else if (S.tab === 'help') {
+    body = '<div class="hint"><b>推荐：手机上装「短信同步」App</b>（GitHub Releases 下载 SMS.Phone-*.apk 旁路安装），手机自己推送，不用电脑。'
+      + '到对应手机号的那一栏点「连一台新设备」，用手机相机扫二维码，网址和令牌自动填好。用了 App 就把电脑版的「同步到公司网站」关掉，免得重复。</div>'
+      + '<div class="hint">用电脑的话：桌面版「SMS 译信」设置 → 同步到公司网站，填：</div>'
+      + '<div class="hint">网址（App 填这个）<br><code>' + location.origin + '</code></div>'
+      + '<div class="hint">推送网址（电脑版填这个）<br><code>' + location.origin + '/api/device-sms/push</code></div>'
+      + '<div style="border-top:1px solid var(--gray-200);padding-top:10px;margin-top:4px"><button class="action-btn danger" onclick="wipeAll()">清空所有手机短信</button>'
+      + '<span class="hint" style="margin-left:8px">只删服务器上的，手机和电脑上的不受影响</span></div>';
+  } else if (S.tab === 'none') {
+    body = '<div class="hint">这些设备还没说是哪个手机号的。<b>绿点</b>是最近在同步的（正在用的那台），选好号码点「保存」。同一部手机的 App 和电脑选同一个号。</div>'
+      + (S.lines.length ? '' : '<div class="hint" style="color:#b45309">还没有手机号，先点上面「＋ 加手机号」。</div>')
+      + S.none.slice().sort((x, y) => (fresh(y) - fresh(x)) || (y.message_count - x.message_count)).map(devRow).join('');
+  } else {
+    const l = S.lines.find(x => x.line === S.tab);
+    body = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+      + '<span style="font-size:1.15rem;font-weight:800">' + esc(fmtPhone(l.line)) + '</span>'
+      + '<input id="lnLabel" value="' + esc(l.label) + '" placeholder="备注名，如 芝加哥1" style="' + inp + ';width:160px">'
+      + '<button class="action-btn" style="padding:4px 12px" onclick="saveLineLabel(\'' + l.line + '\')">保存备注</button></div>'
+      + '<div class="hint" style="margin-top:4px"><b>这个号的设备</b>（' + l.devices.length + ' 台）</div>'
+      + (l.devices.length ? l.devices.map(devRow).join('') : '<div class="hint" style="color:#b45309">这个号还没有设备，收不到也发不出短信。点下面连一台。</div>')
+      + '<div style="margin-top:6px"><button class="action-btn primary" onclick="newToken(\'' + l.line + '\')">＋ 给这个号连一台新设备</button></div>'
+      + '<div id="tokenBox"></div>';
+  }
+  openModal('<div style="display:flex;align-items:center;gap:8px"><h2 style="flex:1">手机号和设备</h2><button class="action-btn" onclick="closeModal()">关闭</button></div>'
+    + '<div class="line-bar" style="padding:0 0 8px;border-bottom:1px solid var(--gray-200)">'
+    + S.lines.map(l => tabBtn(l.line, l.label || fmtPhone(l.line), (l.label ? fmtPhone(l.line) + ' · ' : '') + l.devices.length + ' 台设备')).join('')
+    + (S.none.length ? tabBtn('none', '⚠ 未标号码', S.none.length + ' 台设备', true) : '')
+    + tabBtn('add', '＋ 加手机号', '新号码') + tabBtn('help', '连接说明', '网址 / 清空') + '</div>'
+    + '<div style="display:grid;gap:8px">' + body + '</div>', 'setup');
+  if (S.token) showToken(S.token);
+}
+async function addLine() {
+  const line = document.getElementById('nlLine').value, label = document.getElementById('nlLabel').value;
+  const r = await api('/device-sms/lines', { method: 'POST', body: JSON.stringify({ line, label }) });
+  if (!r.success) { pToast(r.error || '没加上', true); return; }
+  pToast('已加上');
+  await openSetup(r.line);
+}
+async function saveLineLabel(line) {
+  const r = await api('/device-sms/lines', { method: 'POST', body: JSON.stringify({ line, label: document.getElementById('lnLabel').value }) });
+  if (!r.success) { pToast(r.error || '没存上', true); return; }
+  pToast('已保存');
+  await load(true);
+  openSetup(line);
+}
+async function newToken(line) {
+  const res = await api('/device-sms/devices', { method: 'POST', body: JSON.stringify({ name: '新设备', line }) });
+  if (!res.token) { pToast(res.error || '生成失败', true); return; }
+  await openSetup(line);
+  SETUP.token = res.token;   // 刷新设备列表后再把二维码摆出来
+  showToken(res.token);
+}
+function showToken(token) {
+  const box = document.getElementById('tokenBox');
+  if (!box) return;
+  // 令牌放 # 后面: 不进服务器日志。二维码里带的是当前域名, 从根上杜绝「网址填错」。
+  const link = location.origin + '/app-connect#u=' + encodeURIComponent(location.origin) + '&t=' + encodeURIComponent(token);
+  let qrTag = '';
+  try { const qr = qrcode(0, 'M'); qr.addData(link); qr.make(); qrTag = qr.createImgTag(4, 8); } catch (_) { /* 令牌文本照样能用 */ }
+  box.innerHTML = '<div class="hint" style="text-align:center;border:1px dashed #fde68a;border-radius:10px;padding:10px;margin-top:6px"><b>用要连的那部手机的相机扫一下</b><br>'
+    + qrTag.replace('<img ', '<img style="max-width:200px;width:100%;image-rendering:pixelated" ')
+    + '<br>扫出来的链接点开 → 点「打开 App，自动连接」。连上以后它推的短信就算这个号的。</div>'
+    + '<div class="hint">不方便扫码就手动填——设备令牌（只显示这一次，关掉就看不到了）<br><code>' + esc(token) + '</code></div>';
+}
+async function wipeAll() {
+  closeModal();
+  if (!(await confirmBox('把服务器上所有手机短信删掉？不可撤销。手机和电脑上的不受影响。'))) return;
+  const res = await api('/device-sms/messages', { method: 'DELETE' });
+  await load(true);
+  openModal('<h2>已清空</h2><div class="hint">删除了 ' + (res.deleted || 0) + ' 条。</div>'
+    + '<div class="row"><button class="action-btn primary" onclick="closeModal()">好</button></div>');
 }
 
 async function saveDevice(id) {
   const v = k => document.getElementById(k + id).value;
-  const r = await api('/device-sms/devices/' + id, { method: 'POST', body: JSON.stringify({ name: v('dvName'), line: v('dvLine'), label: v('dvLabel') }) });
-  if (!r.success) { alert(r.error || '保存失败'); return; }
+  const r = await api('/device-sms/devices/' + id, { method: 'POST', body: JSON.stringify({ name: v('dvName'), line: v('dvLine') }) });
+  if (!r.success) { pToast(r.error || '保存失败', true); return; }
   pToast('已保存');
   await load(true);
   openSetup();
@@ -2107,7 +2159,7 @@ async function saveDevice(id) {
 
 async function revoke(id) {
   closeModal();
-  if (!(await confirmBox('停用这台电脑的令牌？已经推上来的短信还留着。'))) return;
+  if (!(await confirmBox('停用这台设备的令牌？它就不能再推短信、发短信了；已经推上来的短信还留着。'))) return;
   await api('/device-sms/devices/' + id, { method: 'DELETE' });
   openSetup();
 }
