@@ -45484,11 +45484,26 @@ function _wobCloseNoopChanges() {
       if (!m) continue;
       let b = {}; try { b = JSON.parse(c.body || '{}') || {}; } catch (e) { continue; }
       const what = b.approve || b.reject;
-      if (!what || Object.keys(b).some(k => !['approve', 'reject', 'id', 'uuid', 'event_id', 'type', 'account', 'routing', 'note'].includes(k))) continue;
       let key; try { key = _payrollNameKey(decodeURIComponent(m[1])); } catch (e) { continue; }
       const r = rowOf.get(key);
       if (!r) continue;
       const has = (json, v) => _wobJson(json, []).map(String).includes(String(v));
+      // 不是审核, 而是「改成某个状态」的修改 (关联档案 / 选 Gusto 收款人 / 付款方式 / 仓库 / 备注):
+      // 每一项都已经是现在的样子了 (比如 admin 已经直接关联并通过了同一个档案), 就关掉
+      if (!what) {
+        const same = {
+          employee_id: v => !v ? !r.employee_id : (String(r.employee_id) === String(v) && !!r.emp_ok),
+          gusto_uuid: v => !v ? !r.gusto_uuid : (r.gusto_uuid === v && !!r.gusto_ok),
+          pay_method: v => String(r.pay_method || '') === String(v || ''),
+          warehouse: v => String(r.warehouse || '') === String(v || '').trim(),
+          pay_note: v => String(r.pay_note || '') === String(v || '').trim(),
+          force_state: () => true,
+        };
+        const keys = Object.keys(b);
+        if (keys.length && keys.every(k => same[k] && same[k](b[k]))) done.run(new Date().toISOString(), c.id);
+        continue;
+      }
+      if (Object.keys(b).some(k => !['approve', 'reject', 'id', 'uuid', 'event_id', 'type', 'account', 'routing', 'note'].includes(k))) continue;
       let settled = false;
       if (what === 'employee') settled = b.approve ? (r.emp_ok && String(r.employee_id) === String(b.id)) : has(r.emp_rejected, b.id);
       else if (what === 'gusto') settled = b.approve ? (r.gusto_ok && r.gusto_uuid === b.uuid) : has(r.gusto_rejected, b.uuid);
