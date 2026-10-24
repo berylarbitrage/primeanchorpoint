@@ -44,7 +44,7 @@ tr:hover td{background:#fafcff}
 .tag{display:inline-flex;align-items:center;gap:.2rem;padding:.1rem .5rem;border-radius:999px;font-size:.72rem;font-weight:700;white-space:nowrap}
 .k-accepted{background:#e0f2fe;color:#075985}.k-ready{background:#dcfce7;color:#166534}
 .k-bank_bad{background:#fee2e2;color:#991b1b}.k-bank_updated{background:#fef3c7;color:#92400e}.k-other{background:var(--g100);color:var(--g600)}
-.s-linked{background:#dcfce7;color:#166534}.s-proposed{background:#e0f2fe;color:#075985}.s-unmatched{background:#fef2f2;color:#991b1b}
+.s-linked{background:#dcfce7;color:#166534}.s-confirm{background:#fef3c7;color:#92400e}.cf-btns{display:flex;gap:.3rem;margin-top:.3rem}.cf-btns button{font-size:.75rem;padding:.2rem .55rem;border-radius:6px;cursor:pointer;font-weight:600}.s-proposed{background:#e0f2fe;color:#075985}.s-unmatched{background:#fef2f2;color:#991b1b}
 .s-ignored{background:var(--g100);color:var(--g500)}
 .subj{color:var(--g500);font-size:.74rem;margin-top:.15rem;word-break:break-word}
 .muted{color:var(--g500);font-size:.74rem}
@@ -69,7 +69,8 @@ tr:hover td{background:#fafcff}
     <div><h1>📧 全部 Gusto 邮件</h1>
       <div class="sub">邮箱同步读到的每一封 Gusto 邮件：什么类型、有没有对上人、转发给过谁。要关联 / 通过请到新员工入职页。</div>
       <div class="sub" id="syncInfo"></div></div>
-    <div style="display:flex;gap:.4rem;flex-wrap:wrap"><a class="btn btn-ghost" href="/onboarding">← 新员工入职</a><button class="btn btn-ghost" onclick="load()">↻ 刷新</button></div>
+    <div style="display:flex;gap:.4rem;flex-wrap:wrap"><a class="btn btn-ghost" href="/onboarding">← 新员工入职</a><button class="btn btn-ghost" onclick="load()">↻ 刷新</button>
+      <button class="btn" id="fwdBtn" style="display:none;background:#fff;color:#0f4c6b" onclick="forwardUnsent()" title="把还没转发过的入职邮件发给转发名单（只发上面筛选出来的；暂时忽略的不发）">📨 一键转发没转发的</button></div>
   </div>
 
   <div class="stats" id="stats"></div>
@@ -88,13 +89,13 @@ tr:hover td{background:#fafcff}
 
 <script>
 let TOKEN = localStorage.getItem('acct_token') || localStorage.getItem('adminToken') || '';
-let ROWS = [], KIND = 'all', LINK = 'all', SENT = 'all';
+let ROWS = [], KIND = 'all', LINK = 'all', SENT = 'all', IS_ADMIN = false;
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const KINDS = [['all', '全部', '所有 Gusto 邮件'], ['accepted', '接受邀请', 'accepted your offer'], ['ready', '可以付款', 'can now be paid'],
   ['bank_bad', '银行有误', 'bank details incorrect'], ['bank_updated', '银行已更新', 'bank details updated'], ['other', '其他 Gusto 邮件', '工资单、通知等']];
-const LINKS = [['all', '全部'], ['linked', '✓ 已关联'], ['proposed', '🔎 系统对上，等确认'], ['unmatched', '✗ 对不上人'], ['ignored', '暂时忽略']];
+const LINKS = [['all', '全部'], ['linked', '✓ 已关联'], ['confirm', '👤 别人关联，等你确认'], ['proposed', '🔎 系统对上，等确认'], ['unmatched', '✗ 对不上人'], ['ignored', '暂时忽略']];
 const SENTS = [['all', '全部'], ['yes', '📨 已转发'], ['no', '没转发']];
-const STATUS = { linked: ['✓ 已关联', 's-linked'], proposed: ['🔎 系统对上，等确认', 's-proposed'], unmatched: ['✗ 对不上人', 's-unmatched'], ignored: ['暂时忽略', 's-ignored'] };
+const STATUS = { linked: ['✓ 已关联', 's-linked'], confirm: ['👤 别人关联，等你确认', 's-confirm'], proposed: ['🔎 系统对上，等确认', 's-proposed'], unmatched: ['✗ 对不上人', 's-unmatched'], ignored: ['暂时忽略', 's-ignored'] };
 function fmtTime(t) { if (!t) return ''; const d = new Date(/[TZ]/.test(t) ? t : String(t).replace(' ', 'T') + 'Z'); return isNaN(d) ? String(t) : d.toLocaleString(); }
 
 async function api(path) {
@@ -119,6 +120,7 @@ async function load() {
   let j;
   try { j = await api('/api/acct/onboarding-mails'); } catch (e) { return; }
   if (j.error) { document.getElementById('list').innerHTML = `<div class="card empty" style="color:var(--red)">${esc(j.error)}</div>`; document.getElementById('main').style.display = ''; return; }
+  IS_ADMIN = !!j.is_admin;
   ROWS = (j.rows || []).slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));   // 新的在前 (入职邮件和其他邮件混在一起排)
   const m = j.mail_sync || {};
   document.getElementById('syncInfo').textContent = m.last_at ? `邮箱同步上次报到 ${fmtTime(m.last_at)}${m.last_auto_at ? ' · 上次自动运行 ' + fmtTime(m.last_auto_at) : ''}${m.backfill_done_at ? ' · 以前的邮件已全部读完' : ''}${(j.forward_to || []).length ? ' · 转发给 ' + j.forward_to.join('、') : ''}` : '邮箱同步还没跑过';
@@ -141,7 +143,7 @@ function render() {
   // 上面的类型卡片: 每种多少封 (按当前的关联 / 转发 / 搜索筛选数)
   document.getElementById('stats').innerHTML = KINDS.map(([k, t, s]) => {
     const list = ROWS.filter(r => (k === 'all' || r.kind === k) && pass(r, 'kind'));
-    const extra = k === 'other' || !list.length ? s : `已关联 ${list.filter(r => r.status === 'linked').length} · 已转发 ${list.filter(isSent).length}`;
+    const extra = k === 'other' || !list.length ? s : `已关联 ${list.filter(r => r.status === 'linked').length}${list.some(r => r.status === 'confirm') ? ` · 等确认 ${list.filter(r => r.status === 'confirm').length}` : ''} · 已转发 ${list.filter(isSent).length}`;
     return `<button class="stat ${KIND === k ? 'on' : ''}" onclick="KIND='${k}';render()"><div class="n">${list.length}</div><div class="t">${esc(t)}</div><div class="s">${esc(extra)}</div></button>`;
   }).join('');
   const seg = (id, opts, cur, set, field) => document.getElementById(id).innerHTML = opts.map(([k, t]) => {
@@ -151,12 +153,19 @@ function render() {
   seg('segLink', LINKS, LINK, 'LINK', 'link');
   seg('segSent', SENTS, SENT, 'SENT', 'sent');
   const rows = ROWS.filter(r => pass(r));
+  // 一键转发: 当前筛选出来的、入职相关、没转发过、没忽略的
+  const unsent = rows.filter(r => r.kind !== 'other' && r.status !== 'ignored' && !isSent(r));
+  const fb = document.getElementById('fwdBtn');
+  fb.style.display = IS_ADMIN ? '' : 'none';
+  fb.disabled = !unsent.length;
+  fb.textContent = unsent.length ? `📨 一键转发没转发的（${unsent.length}）` : '📨 都转发过了';
   document.getElementById('count').textContent = `${rows.length} 封${rows.length !== ROWS.length ? `（共 ${ROWS.length} 封）` : ''} · 新的在前`;
   if (!rows.length) { document.getElementById('list').innerHTML = '<div class="card empty">没有符合条件的邮件</div>'; return; }
   document.getElementById('list').innerHTML = `<table><thead><tr><th>日期</th><th>类型</th><th>邮件里的名字 / 标题</th><th>关联到</th><th>转发</th></tr></thead><tbody>${rows.slice(0, 1500).map(r => {
     const st = STATUS[r.status];
     const link = r.kind === 'other' ? '<span class="muted">不是入职邮件</span>'
-      : `${st ? `<span class="tag ${st[1]}">${st[0]}</span>` : ''}${r.worker ? `<div style="margin-top:.2rem"><b>${esc(r.worker)}</b>${r.by ? `<span class="muted"> · ${esc(r.by)} 确认</span>` : ''}</div>` : ''}`
+      : `${st ? `<span class="tag ${st[1]}">${st[0]}</span>` : ''}${r.worker ? `<div style="margin-top:.2rem"><b>${esc(r.worker)}</b>${r.status === 'linked' && r.admin_ok ? `<span class="muted"> · ${esc(r.admin_ok)} 审核${r.admin_ok_at ? ' ' + esc(fmtTime(r.admin_ok_at)) : ''}</span>` : r.by ? `<span class="muted"> · ${esc(r.by)} 关联的</span>` : ''}</div>` : ''}`
+        + (r.status === 'confirm' && IS_ADMIN ? `<div class="cf-btns"><button style="background:#16a34a;color:#fff;border:0" onclick="confirmLink(${r.id},true)">✓ 对，确认</button><button style="background:#fff;color:#dc2626;border:1px solid #fca5a5" onclick="confirmLink(${r.id},false)">✗ 不是这个人</button></div>` : '')
         + (r.status === 'unmatched' && r.candidates.length ? `<div class="muted">可能是：${r.candidates.map(esc).join('、')}</div>` : '')
         + (r.status === 'ignored' && r.ignored_by ? `<div class="muted">${esc(r.ignored_by)} 忽略的</div>` : '')
         + (/^bank_/.test(r.kind) ? `<div class="muted">${r.ack_at ? '✓ ' + esc(r.ack_by) + ' 已处理' : '⚠ 还没处理'}</div>` : '');
@@ -166,6 +175,51 @@ function render() {
     return `<tr><td style="white-space:nowrap">${esc(r.date)}</td><td><span class="tag k-${esc(r.kind)}">${esc(r.label)}</span></td>
       <td>${r.name ? `<b>${esc(r.name)}</b>` : ''}<div class="subj">${esc(r.subject)}</div></td><td>${link}</td><td>${sent}</td></tr>`;
   }).join('')}</tbody></table>${rows.length > 1500 ? '<div class="muted" style="margin-top:6px">只显示前 1500 封，用上面的筛选缩小范围</div>' : ''}`;
+}
+async function post(path, body) {
+  const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(TOKEN ? { Authorization: 'Bearer ' + TOKEN } : {}) }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok && !j.error) j.error = 'HTTP ' + r.status;
+  return j;
+}
+function toast(msg, bad) {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = `position:fixed;left:50%;top:18px;transform:translateX(-50%);background:${bad ? '#dc2626' : '#16a34a'};color:#fff;padding:.5rem 1rem;border-radius:8px;font-size:.85rem;z-index:50;box-shadow:0 6px 20px rgba(0,0,0,.25)`;
+  document.body.appendChild(t); setTimeout(() => t.remove(), 3500);
+}
+// 页面风格的确认框
+function ask(html, okText, title) {
+  return new Promise(done => {
+    const m = document.createElement('div');
+    m.style.cssText = 'position:fixed;inset:0;z-index:40;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:16px';
+    m.innerHTML = `<div class="card" style="max-width:460px;width:100%"><div style="font-weight:800;margin-bottom:.45rem">${esc(title || '📨 一键转发没转发的邮件')}</div><div style="font-size:.86rem;line-height:1.6">${html}</div>
+      <div style="display:flex;gap:.4rem;justify-content:flex-end;margin-top:.8rem"><button class="btn" style="background:#fff;border:1px solid var(--g300);color:var(--g600)" data-v="0">取消</button><button class="btn btn-blue" data-v="1">${esc(okText)}</button></div></div>`;
+    m.onclick = e => { const b = e.target.closest('[data-v]'); if (e.target === m || b) { m.remove(); done(!!b && b.dataset.v === '1'); } };
+    document.body.appendChild(m);
+  });
+}
+async function confirmLink(id, ok) {
+  const r = ROWS.find(x => x.id === id); if (!r) return;
+  if (!ok && !(await ask(`这封「${esc(r.label)} · ${esc(r.name)}」不是 <b>${esc(r.worker)}</b> 的？<div class="muted" style="margin-top:.3rem">会取消关联（${esc(r.by || '别人')} 关联的），以后系统也不会再把它对到这个人。</div>`, '不是，取消关联', '✗ 否掉这个关联'))) return;
+  const j = await post(`/api/acct/onboarding-mails/${id}/confirm`, { ok });
+  if (j.error) return toast(j.error, true);
+  toast(ok ? `已确认：${r.name} → ${r.worker}` : '已取消关联');
+  load();
+}
+async function forwardUnsent() {
+  const ids = ROWS.filter(r => pass(r) && r.kind !== 'other' && r.status !== 'ignored' && !isSent(r)).map(r => r.id);
+  if (!ids.length) return;
+  const c = await post('/api/acct/onboarding-mails/forward', { ids, count_only: true });
+  if (c.error) return toast(c.error, true);
+  if (!c.count) return toast('都已经转发过了');
+  if (!(await ask(`把 <b>${c.count}</b> 封还没转发过的入职邮件，<b>一封一封</b>发给：<br><b>${c.to.map(esc).join('、')}</b>
+      <div class="muted" style="margin-top:.4rem">只发上面筛选出来的；已经发给过某个人的不会再发给他；暂时忽略的不发。系统只存了邮件标题，发出去的是标题和链接，没有原邮件正文。${c.count > 300 ? '<br>一次最多发 300 封，剩下的再点一次。' : ''}</div>`, `发 ${Math.min(c.count, 300)} 封`))) return;
+  const b = document.getElementById('fwdBtn'); b.disabled = true; b.textContent = '发送中…';
+  const j = await post('/api/acct/onboarding-mails/forward', { ids });
+  if (j.error) { toast(j.error, true); render(); return; }
+  toast(`已转发 ${j.count} 封（共发出 ${j.sent} 封邮件）${j.more ? `，还剩 ${j.more} 封，再点一次` : ''}${j.error_note ? '；有的没发出去：' + j.error_note : ''}`, !!j.error_note);
+  load();
 }
 function clearFilters() { KIND = 'all'; LINK = 'all'; SENT = 'all'; ['q', 'd1', 'd2'].forEach(id => document.getElementById(id).value = ''); render(); }
 

@@ -9464,6 +9464,7 @@ const _approvalReplayTokens = new Set();   // 同意后重放用的临时会话,
 // 重放时带上「点同意的人」能不能审核入职匹配: 提交人自己审不了 (比如入职专员提交的「通过系统匹配」),
 // 但 admin 同意了就该按 admin 的权限执行, 不然一同意就 403
 const _approvalReplayWob = new Map();       // token → 同意的人能审核入职匹配
+const _approvalReplayDecider = new Map();   // token → 点同意的人 { name, role }
 // 不算修改、直接放行的: 退出登录; 审批接口本身 (那里会直接拒绝这种账号)
 function _isChangeRequest(req) {
   const p = req.originalUrl.split('?')[0];
@@ -9543,12 +9544,13 @@ async function _notifyPendingChanges() {
   } catch (e) { console.log('[approvals] notify error:', e.message); }
 }
 // 同意: 用提交人的身份 (临时会话, 不再拦) 把当时的请求原样发一次, 记下结果
-async function _replayChange(c, deciderWob) {
+async function _replayChange(c, deciderWob, decider) {
   const user = db.prepare('SELECT * FROM admin_users WHERE id=?').get(c.user_id);
   if (!user) return { status: 0, text: '提交人的账号已经不在了' };
   const token = createSession(user, null);
   _approvalReplayTokens.add(token);
   if (deciderWob) _approvalReplayWob.set(token, true);
+  if (decider) _approvalReplayDecider.set(token, decider);
   try {
     const headers = { Authorization: 'Bearer ' + token };
     let body;
@@ -9559,6 +9561,7 @@ async function _replayChange(c, deciderWob) {
   } finally {
     _approvalReplayTokens.delete(token);
     _approvalReplayWob.delete(token);
+    _approvalReplayDecider.delete(token);
     try { db.prepare('DELETE FROM admin_sessions WHERE token=?').run(token); } catch (e) {}
   }
 }
@@ -9606,6 +9609,7 @@ function requireAdmin(req, res, next) {
   // 「所有修改需要审批」的账号: 修改请求不执行, 存起来等 staff / admin 同意 (同意后按原样重放一次)
   req.isApprovalReplay = _approvalReplayTokens.has(token);   // staff / admin 同意后按原样重放的请求
   req.replayWobApprover = _approvalReplayWob.has(token);
+  req.replayDecider = _approvalReplayDecider.get(token) || null;
   if (req.needsApproval && !_approvalReplayTokens.has(token) && _isChangeRequest(req)) {
     req.assignedPartnerIds = (_u && _u.assigned_partner_ids) || '';
     return _queueChange(req, res, session);
@@ -10414,7 +10418,7 @@ app.post('/api/approvals/:id', requireAdmin, async (req, res) => {
       auditLog('change_reject', req, { targetType: 'pending_change', targetId: c.id, details: { by_user: c.username, method: c.method, path: c.path } });
       return res.json({ ok: true, status: 'rejected' });
     }
-    const r = await _replayChange(c, _wobCanApprove(req));
+    const r = await _replayChange(c, _wobCanApprove(req), { name: req.userName || '', role: req.userRole });
     const ok = r.status >= 200 && r.status < 300;
     db.prepare('UPDATE pending_changes SET status=?, result_status=?, result_body=? WHERE id=?').run(ok ? 'approved' : 'failed', r.status, r.text, c.id);
     auditLog('change_approve', req, { targetType: 'pending_change', targetId: c.id, details: { by_user: c.username, method: c.method, path: c.path, result: r.status } });
@@ -45019,7 +45023,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS gusto_email_events (
 for (const col of ["worker_key TEXT DEFAULT ''", "rejected_keys TEXT DEFAULT '[]'", "review_by TEXT DEFAULT ''", "review_at TEXT DEFAULT ''",
   "ack_by TEXT DEFAULT ''", "ack_at TEXT DEFAULT ''", "notified_at TEXT DEFAULT ''",
   // 对不上人的邮件可以「暂时忽略」(不再列出来, 想看可以再打开)
-  "ignored_by TEXT DEFAULT ''", "ignored_at TEXT DEFAULT ''"]) {
+  "ignored_by TEXT DEFAULT ''", "ignored_at TEXT DEFAULT ''",
+  // admin 审核过的才算「已关联」; manager / director 关联的要 admin 再确认 (admin 自己通过的, 或者 admin 同意别人提交的, 直接记上)
+  "admin_ok_by TEXT DEFAULT ''", "admin_ok_at TEXT DEFAULT ''"]) {
   try { db.exec(`ALTER TABLE gusto_email_events ADD COLUMN ${col}`); } catch (e) {}
 }
 // 上线前已经存在的银行邮件不补发提醒邮件 (页面上方照样提示, 等人点「知道了」)
@@ -45351,6 +45357,9 @@ const requireWobView = requireRole('accounting', 'cs', 'admin', 'staff', 'manage
 // 能改: 这些角色, 或单独开了「能审核」的账号 (staff 平时只能看)
 const requireWobWrite = (req, res, next) => (['accounting', 'cs', 'admin', 'manager', 'onboarding'].includes(req.userRole) || req.wobApprover)
   ? next() : res.status(403).json({ error: 'Permission denied' });
+// 这次审核算不算 admin 审核的: admin 自己点的, 或者 admin 同意了别人提交的修改 → 返回 admin 的名字
+const _wobAdminOk = req => req.userRole === 'admin' ? (req.userName || 'admin')
+  : (req.replayDecider && req.replayDecider.role === 'admin' ? req.replayDecider.name || 'admin' : '');
 const _wobCanApprove = req => ['admin', 'manager'].includes(req.userRole) || !!req.wobApprover || !!req.replayWobApprover;
 
 // ── Zelle / Cash App 截图: 登记账号必须上传截图, AI 读出账号和户主名字填上 (避免打错字) ──
@@ -45865,7 +45874,7 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       else if (b.unapprove === 'email') {
         const ev = db.prepare('SELECT id, worker_key FROM gusto_email_events WHERE id=?').get(parseInt(b.event_id, 10) || 0);
         if (!ev || ev.worker_key !== key) return res.status(404).json({ error: '这封邮件没有关联到这个人' });
-        db.prepare("UPDATE gusto_email_events SET worker_key='', review_by=?, review_at=? WHERE id=?").run(req.userName || '', now, ev.id);
+        db.prepare("UPDATE gusto_email_events SET worker_key='', review_by=?, review_at=?, admin_ok_by='', admin_ok_at='' WHERE id=?").run(req.userName || '', now, ev.id);
       } else return res.status(400).json({ error: '不知道撤销什么' });
     }
     if (b.approve === 'email' || b.reject === 'email') {
@@ -45881,12 +45890,14 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
         const i = steps.findIndex(s => s.id === ev.kind);
         if (i > 0 && !steps[i - 1].done) return res.status(400).json({ error: `先完成第 ${i} 步「${steps[i - 1].label}」，再审核这封邮件` });
       }
-      if (b.approve) db.prepare("UPDATE gusto_email_events SET worker_key=?, review_by=?, review_at=? WHERE id=?").run(key, req.userName || '', now, ev.id);
+      const adm = _wobAdminOk(req);
+      if (b.approve) db.prepare("UPDATE gusto_email_events SET worker_key=?, review_by=?, review_at=?, admin_ok_by=?, admin_ok_at=? WHERE id=?").run(key, req.userName || '', now, adm, adm ? now : '', ev.id);
       else {
         const rej = _wobJson(ev.rejected_keys, []);
         if (!rej.includes(key)) rej.push(key);
-        db.prepare("UPDATE gusto_email_events SET worker_key=CASE WHEN worker_key=? THEN '' ELSE worker_key END, rejected_keys=?, review_by=?, review_at=? WHERE id=?")
-          .run(key, JSON.stringify(rej), req.userName || '', now, ev.id);
+        db.prepare(`UPDATE gusto_email_events SET admin_ok_by=CASE WHEN worker_key=? THEN '' ELSE admin_ok_by END, admin_ok_at=CASE WHEN worker_key=? THEN '' ELSE admin_ok_at END,
+          worker_key=CASE WHEN worker_key=? THEN '' ELSE worker_key END, rejected_keys=?, review_by=?, review_at=? WHERE id=?`)
+          .run(key, key, key, JSON.stringify(rej), req.userName || '', now, ev.id);
       }
     }
     if (b.pay_method !== undefined) {
@@ -46092,8 +46103,9 @@ app.post('/api/acct/onboarding-email-assign', requireAdmin, requireWobWrite, (re
     const key = _payrollNameKey(req.body.key);
     const w = _wobScoped(req).list.find(x => x.key === key);
     if (!w) return res.status(404).json({ error: '找不到这个员工' });
-    db.prepare("UPDATE gusto_email_events SET worker_key=?, review_by=?, review_at=?, ignored_by='', ignored_at='' WHERE id=?")
-      .run(key, req.userName || '', new Date().toISOString(), id);
+    const adm = _wobAdminOk(req), at = new Date().toISOString();
+    db.prepare("UPDATE gusto_email_events SET worker_key=?, review_by=?, review_at=?, admin_ok_by=?, admin_ok_at=?, ignored_by='', ignored_at='' WHERE id=?")
+      .run(key, req.userName || '', at, adm, adm ? at : '', id);
     _wobLog(key, req.userName, '手动关联 Gusto 邮件', `${ev.date} ${wob.EMAIL_KIND_LABEL[ev.kind] || ev.kind} · 邮件里的名字「${ev.name}」`);
     res.json({ ok: true, worker: w.name });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -46466,22 +46478,26 @@ app.get('/api/acct/onboarding-mails', requireAdmin, requireWobView, (req, res) =
     for (const r of db.prepare('SELECT event_id, to_addr, MIN(sent_at) AS at, MIN(how) AS how FROM gusto_mail_sends GROUP BY event_id, to_addr').all())
       (sentBy[r.event_id] = sentBy[r.event_id] || []).push({ to: r.to_addr, at: r.at, how: r.how });
     const rows = [];
+    // 只有 admin 审核过的才算「已关联」: 记了 admin_ok_by, 或者 (以前的) 审核人本身是 admin 账号
+    const admins = new Set(db.prepare("SELECT username FROM admin_users WHERE role='admin'").all().map(u => u.username));
     for (const ev of db.prepare(`SELECT id, kind, name, date, subject, worker_key, review_by, review_at, rejected_keys, ignored_by, ignored_at,
-        ack_by, ack_at, added_by, created_at FROM gusto_email_events ORDER BY date DESC, id DESC`).all()) {
+        ack_by, ack_at, added_by, created_at, admin_ok_by, admin_ok_at FROM gusto_email_events ORDER BY date DESC, id DESC`).all()) {
       let status = 'none', worker = '', key = '', by = '', candidates = [];
+      const adminOk = ev.admin_ok_by || (admins.has(ev.review_by) ? ev.review_by : '');
+      const lk = () => adminOk ? 'linked' : 'confirm';
       if (/^bank_/.test(ev.kind)) {
         const b = bk[ev.id];
-        if (b && b.key) { status = ev.worker_key ? 'linked' : 'proposed'; key = b.key; worker = nameOf[b.key] || ''; by = ev.review_by || ''; }
+        if (b && b.key) { status = ev.worker_key ? lk() : 'proposed'; key = b.key; worker = nameOf[b.key] || ''; by = ev.review_by || ''; }
         else { status = 'unmatched'; candidates = ((b && b.candidates) || []).map(c => c.name); }
-      } else if (linked[ev.id]) { status = 'linked'; ({ key, worker, by } = linked[ev.id]); }
-      else if (ev.worker_key) { status = 'linked'; key = ev.worker_key; worker = nameOf[ev.worker_key] || ev.worker_key; by = ev.review_by || ''; }
+      } else if (linked[ev.id]) { status = lk(); ({ key, worker, by } = linked[ev.id]); }
+      else if (ev.worker_key) { status = lk(); key = ev.worker_key; worker = nameOf[ev.worker_key] || ev.worker_key; by = ev.review_by || ''; }
       else if (proposed[ev.id]) { status = 'proposed'; ({ key, worker } = proposed[ev.id]); }
       else if (ev.ignored_at) status = 'ignored';
       else { status = 'unmatched'; candidates = ((um[ev.id] && um[ev.id].candidates) || []).map(c => c.name); }
       // manager 只看自己仓库的人 (对不上人的不给)
       if (scoped && !(key && nameOf[key])) continue;
       rows.push({ id: ev.id, kind: ev.kind, label: wob.EMAIL_KIND_LABEL[ev.kind] || ev.kind, name: ev.name, date: ev.date, subject: ev.subject,
-        status, key, worker, by, candidates, ignored_by: ev.ignored_by || '', ack_by: ev.ack_by || '', ack_at: ev.ack_at || '',
+        status, key, worker, by, admin_ok: ev.worker_key ? adminOk : '', admin_ok_at: ev.worker_key && adminOk ? (ev.admin_ok_at || ev.review_at || '') : '', candidates, ignored_by: ev.ignored_by || '', ack_by: ev.ack_by || '', ack_at: ev.ack_at || '',
         source: ev.added_by || '', sent: sentBy[ev.id] || (ev.added_by === '邮箱自动同步' ? [{ to: '转发名单', at: ev.created_at, guess: true }] : []) });
     }
     // 其他 Gusto 邮件 (不是入职相关的): 只有标题
@@ -46489,7 +46505,58 @@ app.get('/api/acct/onboarding-mails', requireAdmin, requireWobView, (req, res) =
       .map(m => ({ id: 'm' + m.message_id, kind: 'other', label: '其他 Gusto 邮件', name: '', date: String(m.received_at || '').slice(0, 10), subject: m.subject, status: 'na', sent: [] }));
     const cfg = _mailHookCfg();
     res.json({ rows: rows.concat(other), mail_sync: { last_at: cfg.last_at || '', last_auto_at: cfg.last_auto_at || '', backfill_done_at: cfg.backfill_done_at || '' },
-      forward_to: req.userRole === 'admin' ? (cfg.forward_to || []) : [] });
+      forward_to: req.userRole === 'admin' ? (cfg.forward_to || []) : [], is_admin: req.userRole === 'admin' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// admin 确认别人 (manager / director) 关联的邮件: ok=true 记上 admin 审核; ok=false 关联错了, 取消关联并记下不是这个人
+app.post('/api/acct/onboarding-mails/:id/confirm', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const ev = db.prepare('SELECT id, kind, name, date, worker_key, rejected_keys FROM gusto_email_events WHERE id=?').get(parseInt(req.params.id, 10) || 0);
+    if (!ev) return res.status(404).json({ error: '找不到这封邮件' });
+    if (!ev.worker_key) return res.status(400).json({ error: '这封邮件已经没有关联了，刷新再看' });
+    const now = new Date().toISOString(), what = `${ev.date} ${wob.EMAIL_KIND_LABEL[ev.kind] || ev.kind} · ${ev.name}`;
+    if (req.body && req.body.ok) {
+      db.prepare('UPDATE gusto_email_events SET admin_ok_by=?, admin_ok_at=? WHERE id=?').run(req.userName || 'admin', now, ev.id);
+      _wobLog(ev.worker_key, req.userName, 'admin 确认 Gusto 邮件关联', what);
+    } else {
+      const rej = _wobJson(ev.rejected_keys, []);
+      if (!rej.includes(ev.worker_key)) rej.push(ev.worker_key);
+      db.prepare("UPDATE gusto_email_events SET worker_key='', rejected_keys=?, review_by=?, review_at=?, admin_ok_by='', admin_ok_at='' WHERE id=?")
+        .run(JSON.stringify(rej), req.userName || '', now, ev.id);
+      _wobLog(ev.worker_key, req.userName, 'admin 否掉 Gusto 邮件关联', what);
+    }
+    auditLog('gusto_mail_admin_confirm', req, { targetType: 'gusto_email_event', targetId: ev.id, details: { ok: !!(req.body && req.body.ok), worker_key: ev.worker_key } });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 一键转发还没转发过的入职邮件: 发给现在的转发名单 (每封一封); 已经发给过这个人的跳过, 发完记下来。
+// ids = 页面上当前筛选出来的那些 (不传就是全部); 暂时忽略的不发
+app.post('/api/acct/onboarding-mails/forward', requireAdmin, requireRole('admin'), async (req, res) => {
+  try {
+    const cfg = _mailHookCfg();
+    const to = [...new Set([...(cfg.forward_to || []), ..._wobSubscribers()].map(a => String(a).trim().toLowerCase()).filter(Boolean))];
+    if (!to.length) return res.status(400).json({ error: '还没有转发名单：先在入职页「邮箱自动同步」里填转发给谁' });
+    const ids = Array.isArray((req.body || {}).ids) ? new Set(req.body.ids.map(Number).filter(Boolean)) : null;
+    const anySent = db.prepare('SELECT 1 FROM gusto_mail_sends WHERE event_id=? LIMIT 1');
+    const evs = db.prepare(`SELECT id, kind, name, date, subject, added_by FROM gusto_email_events
+      WHERE kind IN ('accepted','ready','bank_bad','bank_updated') AND COALESCE(ignored_at,'')='' ORDER BY date, id`).all()
+      .filter(e => (!ids || ids.has(e.id)) && !anySent.get(e.id) && e.added_by !== '邮箱自动同步');   // 「邮箱自动同步」收到的当时已经自动转发过
+    if ((req.body || {}).count_only) return res.json({ ok: true, count: evs.length, to });
+    if (!evs.length) return res.json({ ok: true, count: 0, sent: 0, to });
+    const base = (process.env.BASE_URL || '').replace(/\/$/, '');
+    let sent = 0, fail = '';
+    for (const e of evs.slice(0, 300)) {
+      const label = wob.EMAIL_KIND_LABEL[e.kind] || e.kind;
+      for (const addr of to) {
+        if (_wobSentTo.get(e.id, addr)) continue;
+        const d = await sendEmailWithDetail(addr, `[入职] ${label} · ${e.name} — ${e.subject}`.slice(0, 250),
+          `Gusto 邮件 ${e.date}: ${e.subject}\n\n（补发：系统只存了邮件标题，没有原邮件正文）\n\n— 新员工入职页: ${base}/onboarding\n— 全部 Gusto 邮件: ${base}/gusto-mails`).catch(err => ({ ok: false, error: err.message }));
+        if (d && d.ok) { sent++; _wobSendMark(e.id, addr, 'resend'); } else fail = `${addr}: ${(d && d.error) || '发送失败'}`;
+      }
+    }
+    auditLog('gusto_mail_forward_unsent', req, { targetType: 'app_settings', targetId: 'gusto_mail_hook', details: { count: evs.length, to, sent, fail } });
+    if (!sent && fail) return res.status(502).json({ error: '发送失败：' + fail });
+    res.json({ ok: true, count: Math.min(evs.length, 300), more: Math.max(0, evs.length - 300), sent, to, error_note: fail });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // 邮件抓全了没有: 系统一共记下多少封入职邮件 (按类型 / 状态), Gusto 入职的人里谁缺「接受邀请」「可以付款」
