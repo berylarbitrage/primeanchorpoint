@@ -297,6 +297,37 @@ const isOpen = w => EXP.has(w.key) || (w.is_new && !COL.has(w.key));
 // 有东西等审核 / 等确认的: 系统匹配、别人选的、提交的修改
 const needsReview = w => !!(w.pending_review || w.pay_confirm || w.email_confirm || pcOf(c => c.kind === 'worker' && c.key === w.key).length);
 // 一键: all = 全部展开; none = 全部折叠; review = 只展开待审核的
+// 审核按人来: 一个人的待审核一条一条审完, 才能审下面的人。现在轮到的 = 列表里第一个还有「我能审的」的人
+const myReview = w => (w.pending_review || 0) + (D.can_decide_changes ? pcOf(c => c.kind === 'worker' && c.key === w.key).length : 0);
+let CUR_KEY = '', _lastCur = '';
+const RV_SKIP = new Set();        // 这次先跳过的人 (卡住了审不下去), 排到最后; 刷新页面就清掉
+function rvTurn() {
+  const canReview = D.can_approve || D.can_confirm || D.can_decide_changes;
+  const rows = (D.rows || []).filter(w => myReview(w) > 0);
+  const cur = canReview ? (rows.find(w => !RV_SKIP.has(w.key)) || rows[0]) : null;
+  CUR_KEY = cur ? cur.key : '';
+  return cur;
+}
+// 不是现在轮到的人: 返回「先审完 X」; 轮到了 / 没东西审 / 不按人卡的返回 ''
+function rvWait(key) {
+  rvTurn();
+  if (!CUR_KEY || key === CUR_KEY) return '';
+  const w = (D.rows || []).find(x => x.key === key);
+  if (!w || !myReview(w)) return '';
+  const cur = D.rows.find(x => x.key === CUR_KEY);
+  return `先审完 ${cur ? cur.name : '上面的人'}`;
+}
+// 点审核按钮时再卡一次 (有些按钮是弹窗里的)
+function rvGate(key) {
+  const why = rvWait(key);
+  if (!why) return true;
+  toast(why + '，再审下一个人', true);
+  const i = D.rows.findIndex(x => x.key === CUR_KEY);
+  const el = i >= 0 && document.querySelectorAll('#list .w, #list .old')[i];
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  return false;
+}
+function rvSkip(k) { const key = D.rows[k].key; RV_SKIP.delete(key); RV_SKIP.add(key); COL.add(key); EXP.delete(key); _lastCur = ''; rvTurn(); if (CUR_KEY) EXP.add(CUR_KEY); renderList(); }
 function foldAll(mode) {
   EXP.clear(); COL.clear();
   for (const w of D.rows) {
@@ -453,7 +484,12 @@ function renderList() {
         <button class="btn btn-outline btn-sm" onclick="foldAll('none')">全部折叠</button>
         <button class="btn btn-blue btn-sm" onclick="foldAll('review')" title="只展开有东西等审核 / 等确认的，其他折叠">只展开待审核（${rows.filter(needsReview).length}）</button>
       </span></div>` : '';
+  // 上一个人审完了: 自动展开下一个轮到的人, 滚过去
+  const cur = rvTurn(), next = cur && _lastCur && cur.key !== _lastCur && !rows.some(w => w.key === _lastCur && myReview(w));
+  if (next) EXP.add(cur.key);
+  _lastCur = cur ? cur.key : '';
   el.innerHTML = head + rows.map((w, i) => v && !isOpen(w) ? oldRow(w, i) : card(w, i)).join('');
+  if (next) setTimeout(() => { const n = document.querySelectorAll('#list .w, #list .old')[rows.indexOf(cur)]; if (n) n.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
 }
 // 发票视图里的老员工: 一行, 能直接定付款方式, 点「展开」看全卡片
 function oldRow(w, k) {
@@ -464,8 +500,8 @@ function oldRow(w, k) {
     <b>${esc(w.name)}</b><span class="tag" style="background:var(--g100);color:var(--g600)">${w.is_new ? "🆕 新" : "老员工"} · 第一次 ${esc(w.first_end)}</span>
     ${w.employee ? `<span class="tag" style="background:#dcfce7;color:#166534">👤 ${esc(w.employee.code || '#' + w.employee.id)}${w.employee.phone ? ' · ' + esc(w.employee.phone) : ''}</span>` : '<span class="tag" style="background:#fee2e2;color:#991b1b">未关联档案</span>'}${w.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff" title="发票是 ${esc((w.inv_states || []).join(' / '))}，档案是 ${esc(w.employee.state)}">⚠ 州不一致：发票 ${esc((w.inv_states || []).join('/'))} · 档案 ${esc(w.employee.state)}</span>` : ''}
     <span class="muted">${w.line.hours ? w.line.hours + 'h' : ''}${w.line.total != null ? ' · ' + money(w.line.total) : ''}</span>
-    ${rvTags(w.review_people || 0, w.review_system || 0, k)}${confirmAllBtn(w, k)}
-    ${w.pend && w.pend.pay ? `<span class="tag" style="background:#fef3c7;color:#92400e">⏳ ${esc(PM_LABEL[w.pay_method] || '不选')} 等审批</span>` : w.pay_confirm ? `<span class="tag" style="${RV_PEOPLE}">👤 ${esc(PM_LABEL[w.pay_method] || w.pay_method)} · ${esc(w.pay_by || '别人')} 选的，等 admin 确认</span>` : w.settled ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ 已定 · ${esc(PM_LABEL[w.pay_method] || 'Gusto 已付过')}</span>`
+    ${rvTags(w.review_people || 0, w.review_system || 0, k)}${w.key === CUR_KEY ? '<span class="tag" style="background:#0284c7;color:#fff">👉 现在审这个人</span>' : rvWait(w.key) ? '<span class="tag" style="background:#f3f4f6;color:#6b7280">🔒 排队</span>' : ''}
+    ${w.pend && w.pend.pay ? `<span class="tag" style="background:#fef3c7;color:#92400e">⏳ ${esc(PM_LABEL[w.pay_method] || '不选')} 等审批</span>` : w.pay_confirm ? `<span class="tag" style="${RV_PEOPLE}">👤 ${esc(PM_LABEL[w.pay_method] || w.pay_method)} · ${esc(w.pay_by || '别人')} 选的，等 admin 确认</span>${D.can_confirm ? `<button class="btn btn-blue btn-sm" onclick="save(${k},{approve:'pay'})">✓ 确认</button>` : ''}` : w.settled ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ 已定 · ${esc(PM_LABEL[w.pay_method] || 'Gusto 已付过')}</span>`
       : w.stage === 'progress' ? `<span class="tag" style="background:#dbeafe;color:#1e40af" title="选了付款方式，步骤或审核还没做完">⏳ 进行中 · ${esc(PM_LABEL[w.pay_method] || 'Gusto')}</span>`
       : '<span class="tag" style="background:#fef3c7;color:#92400e">付款方式待定</span>'}
     ${w.pay_method === 'zelle' ? `<span class="muted">Zelle ${zList(w.zelle_accounts)}</span>` : w.pay_method === 'cashapp' ? `<span class="muted">Cash App ${zList(w.cashapp_accounts)}</span>` : w.pay_method === 'ach' ? `<span class="muted">ACH ${zList(w.ach_accounts)}</span>` : ''}
@@ -528,18 +564,21 @@ function card(w, k) {
         <span class="muted">${w.checklist.done_count}/${w.checklist.steps.length}</span></div>${emailProps}
         ${(w.emails || []).map(e => `<div class="row" style="margin:.2rem 0 0">${e.admin_ok
           ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ 邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span>`
-          : `${D.can_confirm ? rvMark(`${e.by || '别人'} 手动选的`) : ''}<span class="tag" style="background:#fef3c7;color:#92400e">邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span>`}${sentTag(e)}<span class="muted">${e.by ? esc(e.by) + ' 通过' : ''}${e.admin_ok ? (e.admin_ok !== e.by ? ` · ${esc(e.admin_ok)} 确认` : '') : '，等 admin 确认'}</span>${!e.admin_ok && D.can_confirm ? `<button class="btn btn-outline btn-sm" style="color:#dc2626" onclick="confirmEmail(${k},${e.id},false)">✗ 不是这个人</button>` : ''}${D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="undoApprove(${k},'email',${e.id})">↩ 撤销通过</button>` : ''}</div>`).join('')}</div>
+          : `${D.can_confirm ? rvMark(`${e.by || '别人'} 手动选的`) : ''}<span class="tag" style="background:#fef3c7;color:#92400e">邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span>`}${sentTag(e)}<span class="muted">${e.by ? esc(e.by) + ' 通过' : ''}${e.admin_ok ? (e.admin_ok !== e.by ? ` · ${esc(e.admin_ok)} 确认` : '') : '，等 admin 确认'}</span>${!e.admin_ok && D.can_confirm ? `<button class="btn btn-blue btn-sm" onclick="confirmEmail(${k},${e.id},true)">✓ 对，确认</button><button class="btn btn-outline btn-sm" style="color:#dc2626" onclick="confirmEmail(${k},${e.id},false)">✗ 不是这个人</button>` : ''}${D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="undoApprove(${k},'email',${e.id})">↩ 撤销通过</button>` : ''}</div>`).join('')}</div>
       <div class="ck" style="grid-template-columns:repeat(3,minmax(0,1fr))">${steps}</div>`;
   }
   const bankBox = w.bank_alerts.length ? `<div class="ck" style="grid-template-columns:1fr;background:#fef2f2">${w.bank_alerts.map(b => `<div class="row" style="margin:0">
       <span class="tag" style="background:${b.ack_at ? 'var(--g100);color:var(--g500)' : '#fee2e2;color:#991b1b'}">⚠ ${esc(b.date)} · ${esc(b.label)}</span><span class="muted">${esc(b.subject)}</span>${bankDetail(b.detail)}
       ${b.ack_at ? `<span class="muted">${esc(b.ack_by)} 已处理 ${esc(fmtTime(b.ack_at))}</span>` : clearAsk(b, '') + (D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="ackBank(${b.id})">知道了</button>` : '')}</div>`).join('')}</div>` : '';
-  return `<div class="card w ${w.done ? 'done' : ''} ${bad || w.state_bad ? 'bad' : ''}">
+  const wait = rvWait(w.key);
+  return `<div class="card w ${w.done ? 'done' : ''} ${bad || w.state_bad ? 'bad' : ''}" style="${w.key === CUR_KEY ? 'box-shadow:0 0 0 3px #38bdf8' : ''}">
+    ${w.key === CUR_KEY ? `<div style="background:#e0f2fe;color:#075985;border-radius:8px;padding:.3rem .6rem;margin-bottom:.5rem;font-size:.82rem;font-weight:700">👉 现在审这个人：一条一条审完，再到下一个人<button class="btn btn-outline btn-sm" style="float:right;padding:0 .5rem" onclick="rvSkip(${k})" title="这个人现在审不下去（比如在等 Gusto），先审下一个">先跳过</button></div>`
+      : wait ? `<div style="background:#f3f4f6;color:#6b7280;border-radius:8px;padding:.3rem .6rem;margin-bottom:.5rem;font-size:.82rem">🔒 ${esc(wait)}，再审这个人</div>` : ''}
     <div class="w-main">
       <div>
         <div class="row" style="margin-bottom:.15rem"><span class="name">${esc(w.name)}</span>${w.line && w.is_new ? '<span class="tag" style="background:#e0f2fe;color:#075985">🆕 新</span>' : ''}${w.done ? '<span class="tag" style="background:#dcfce7;color:#166534" title="全部做完、都审核过了">✓ 已定</span>'
           : w.stage === 'progress' ? '<span class="tag" style="background:#dbeafe;color:#1e40af" title="选了付款方式，步骤或审核还没做完">⏳ 进行中</span>'
-          : '<span class="tag" style="background:#fef3c7;color:#92400e">待定</span>'}${rvTags((w.review_people || 0) + pcOf(c => c.kind === 'worker' && c.key === w.key).length, w.review_system || 0)}${confirmAllBtn(w, k)}${w.bank_alert_open ? '<span class="tag" style="background:#fee2e2;color:#991b1b">⚠ 银行信息</span>' : ''}${w.pay_rejected ? '<span class="tag" style="background:#fee2e2;color:#991b1b">✗ 收款账号不对</span>' : ''}${w.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff">⚠ 州不一致</span>` : ''}
+          : '<span class="tag" style="background:#fef3c7;color:#92400e">待定</span>'}${rvTags((w.review_people || 0) + pcOf(c => c.kind === 'worker' && c.key === w.key).length, w.review_system || 0)}${w.bank_alert_open ? '<span class="tag" style="background:#fee2e2;color:#991b1b">⚠ 银行信息</span>' : ''}${w.pay_rejected ? '<span class="tag" style="background:#fee2e2;color:#991b1b">✗ 收款账号不对</span>' : ''}${w.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff">⚠ 州不一致</span>` : ''}
           <button class="btn btn-outline btn-sm" onclick="showHistory(${k})">📜 历史</button>${D.invoice ? `<button class="btn btn-outline btn-sm" onclick="foldOne(${k})">折叠</button>` : ''}</div>
         ${alias.length ? `<div class="muted">发票上写作：${esc(alias.join(' / '))}</div>` : ''}
         <div class="muted">第一次上账单：${esc(w.first_end)}${w.later_invoices ? ` · 之后还有 ${w.later_invoices} 张` : ''}</div>
@@ -577,39 +616,12 @@ function sentTag(e) {
   if (s.length === 1 && s[0].guess) return `<span class="tag" style="background:#f0fdf4;color:#166534" title="收到时系统自动转发给了当时的转发名单（具体发给谁那时还没记）">📨 已自动转发</span>`;
   return `<span class="tag" style="background:#f0fdf4;color:#166534" title="${esc(s.map(x => x.to + ' ' + fmtTime(String(x.at).replace(' ', 'T') + 'Z')).join('\n'))}">📨 已发给 ${esc(s.map(x => x.to.split('@')[0]).join('、'))}</span>`;
 }
-// 一个人别人选的东西 (付款方式 + 等 admin 确认的 Gusto 邮件) 一次全部确认; 哪条不对就在那一条点 ✗
-function toConfirm(w) {
-  const order = { accepted: 1, ready: 2 };
-  return [...(w.pay_confirm ? [{ pay: true, txt: `付款方式：${PM_LABEL[w.pay_method] || w.pay_method}（${w.pay_by || '别人'} 选的）` }] : []),
-    ...(w.emails || []).filter(e => !e.admin_ok).sort((a, b) => (order[a.kind] || 9) - (order[b.kind] || 9))
-      .map(e => ({ ev: e.id, txt: `邮件 ${e.date} · ${e.label} · ${e.name}（${e.by || '别人'} 通过）` }))];
-}
-function confirmAllBtn(w, k) {
-  if (!D.can_confirm) return '';
-  const n = toConfirm(w).length;
-  return n ? `<button class="btn btn-blue btn-sm" onclick="confirmAll(${k})" title="付款方式和 Gusto 邮件一次确认完；有哪条不对，先在那一条点 ✗">✓ 这个人全部确认（${n}）</button>` : '';
-}
-function confirmAll(k) {
-  const w = D.rows[k], items = toConfirm(w);
-  confirmBox('全部确认', `<div style="font-size:.88rem"><b>${esc(w.name)}</b> 这些一起确认：</div>
-    <ul style="font-size:.85rem;margin:.35rem 0 0 1.1rem">${items.map(x => `<li>${esc(x.txt)}</li>`).join('')}</ul>
-    <div class="muted" style="margin-top:.35rem">有哪条不对，先取消，在那一条点 ✗</div>`, async () => {
-    for (const x of items) {
-      const j = x.pay ? await api('/api/acct/onboarding/' + encodeURIComponent(w.key), { method: 'POST', body: { approve: 'pay' } }).catch(e => ({ error: e.message }))
-        : await api(`/api/acct/onboarding-mails/${x.ev}/confirm`, { method: 'POST', body: { ok: true } }).catch(e => ({ error: e.message }));
-      if (j.error) { toast(`${x.txt}：${j.error}`, true); load(); return true; }
-    }
-    toast(`已确认 ${w.name} 的 ${items.length} 条`);
-    load();
-    return true;
-  });
-}
 // director / manager 选的付款方式要 admin 确认; admin 在这里确认或者否掉 (否掉 = 回到没选)
 function payConfirm(w, k) {
   if (!w.pay_confirm) return '';
   return `<div class="row" style="margin:0 0 .4rem">${D.can_confirm ? `<span class="tag" style="${RV_PEOPLE}">👤 ${esc(w.pay_by || '别人')} 选的${esc(PM_LABEL[w.pay_method] || w.pay_method)}，等你确认</span>`
       : `<span class="tag" style="background:#fef3c7;color:#92400e">⏳ ${esc(PM_LABEL[w.pay_method] || w.pay_method)} · ${esc(w.pay_by || '')} 选的，等 admin 确认</span>`}
-    ${D.can_confirm ? `<button class="btn btn-outline btn-sm" style="color:#dc2626" onclick="save(${k},{reject:'pay'})">✗ 不对</button>` : ''}</div>`;
+    ${D.can_confirm ? `<button class="btn btn-blue btn-sm" onclick="save(${k},{approve:'pay'})">✓ 对，确认</button><button class="btn btn-outline btn-sm" style="color:#dc2626" onclick="save(${k},{reject:'pay'})">✗ 不对</button>` : ''}</div>`;
 }
 // 两种待审核用不同颜色: 👤 别人选的 (橙) / 🤖 系统匹配的 (蓝)
 const RV_PEOPLE = 'background:#ffedd5;color:#9a3412;border:1px solid #fdba74';
@@ -639,6 +651,7 @@ function emailLock(w, e) {
 }
 function reviewBtns(k, yes, no, lockWhy) {
   if (!D.can_approve) return '<span class="muted">等 manager / admin 审核</span>';
+  lockWhy = rvWait(D.rows[k].key) || lockWhy;
   // 还没轮到这一步: 「通过」「不是」都点不了, 写出先做哪一步
   if (lockWhy) return `<button class="btn btn-sm" disabled style="background:#e5e7eb;color:#6b7280;cursor:not-allowed" title="${esc(lockWhy)}">🔒 通过</button><button class="btn btn-sm" disabled style="background:#f3f4f6;color:#9ca3af;border:1px solid #e5e7eb;cursor:not-allowed" title="${esc(lockWhy)}">🔒 不是</button><span class="muted" style="color:#b45309">${esc(lockWhy)}</span>`;
   return `<button class="btn btn-blue btn-sm" onclick="save(${k},${yes})">✓ 通过</button><button class="btn btn-outline btn-sm" onclick="save(${k},${no})">✗ 不是</button>`;
@@ -734,6 +747,7 @@ async function ignoreEmail(evId, on) {
 }
 
 async function save(k, body) {
+  if ((body.approve || body.reject) && !rvGate(D.rows[k].key)) return false;
   const j = await api('/api/acct/onboarding/' + encodeURIComponent(D.rows[k].key), { method: 'POST', body }).catch(e => ({ error: e.message }));
   // 员工档案和发票不是一个州: 报错, 确认了才关联
   if (j.state_mismatch) {
@@ -952,7 +966,7 @@ async function zReadShot(id, kind) {
 // 审核弹窗: 左边是被付款的员工信息, 中间 / 右边并排放大这个收款账号的截图和聊天记录 (能放大缩小),
 // 底下直接通过 / 不对。mode: 'ok' / 'no' 是从按钮点进来的 (先把对应操作准备好)
 let ZR = null;   // {k, i, zoom: {a, b}}
-function zReview(k, i, ok) { zOpen(k, i, ok ? 'ok' : 'no'); }
+function zReview(k, i, ok) { if (!rvGate(D.rows[k].key)) return; zOpen(k, i, ok ? 'ok' : 'no'); }
 function zOpen(k, i, mode) {
   ZR = { k, i, zoom: { a: 0, b: 0 }, mode: mode || '' };   // zoom 0 = 适应宽度
   zrRender();
@@ -1244,6 +1258,7 @@ function undoApprove(k, what, evId) {
 }
 // admin 确认别人 (director / manager) 通过的 Gusto 邮件: 对 → 清单按这封邮件打勾; 不是 → 取消关联, 以后也不再对到这个人
 function confirmEmail(k, evId, ok) {
+  if (!rvGate(D.rows[k].key)) return;
   const w = D.rows[k], e = (w.emails || []).find(x => x.id === evId) || {};
   const run = async () => {
     const j = await api(`/api/acct/onboarding-mails/${evId}/confirm`, { method: 'POST', body: { ok } }).catch(x => ({ error: x.message }));
@@ -1377,6 +1392,8 @@ const CIRC = '①②③④⑤⑥⑦⑧⑨⑩';
 function pcLock(c) {
   if (c.kind !== 'worker') return '';
   const w = (D.rows || []).find(x => x.key === c.key);
+  const wait = rvWait(c.key);
+  if (wait) return wait;
   const mine = pcOf(x => x.kind === 'worker' && x.key === c.key);
   const i = mine.findIndex(x => x.id === c.id);
   if (i > 0) return `先处理上面的 ${CIRC[0]}${i > 1 ? '–' + CIRC[i - 1] : ''}`;
@@ -1422,6 +1439,7 @@ function renderPChanges() {
 }
 async function decideChange(id, ok) {
   const c = (D.pending_changes || []).find(x => x.id === id) || { items: [] };
+  if (c.key && !rvGate(c.key)) return;
   confirmBox(ok ? '同意这个修改？' : '拒绝这个修改？', `<div style="font-size:.86rem"><b>${esc(c.by || '')}</b> 提交的：</div><ul style="font-size:.84rem;margin:.3rem 0 0 1.1rem;padding:0">${c.items.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
     <div class="muted" style="margin-top:.4rem">${ok ? '同意后马上按他提交的内容执行' : '拒绝后作废'}</div><input id="pcNote" placeholder="备注（可不填）" style="width:100%;margin-top:.5rem">`, async () => {
     const j = await api('/api/approvals/' + id, { method: 'POST', body: { approve: ok, note: document.getElementById('pcNote').value } }).catch(e => ({ error: e.message }));
