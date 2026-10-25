@@ -292,6 +292,20 @@ let SHOW_IGN = false;
 const PICKS = [];                 // 关联邮件时可选的工人 {key, name} (按钮里只放下标, 名字里有引号也没事)
 function pk(key, name) { PICKS.push({ key, name }); return PICKS.length - 1; }             // 对不上人的邮件: 是否也列出已忽略的                 // 正在编辑 Zelle 账号的人: key → [{account, name}]
 const EXP = new Set();            // 发票视图里展开看全卡片的老员工
+const COL = new Set();            // 发票视图里折叠成一行的新员工 (新员工默认展开)
+const isOpen = w => EXP.has(w.key) || (w.is_new && !COL.has(w.key));
+// 有东西等审核 / 等确认的: 系统匹配、别人选的、提交的修改
+const needsReview = w => !!(w.pending_review || w.pay_confirm || w.email_confirm || pcOf(c => c.kind === 'worker' && c.key === w.key).length);
+// 一键: all = 全部展开; none = 全部折叠; review = 只展开待审核的
+function foldAll(mode) {
+  EXP.clear(); COL.clear();
+  for (const w of D.rows) {
+    if (mode === 'all' || (mode === 'review' && needsReview(w))) EXP.add(w.key);
+    else COL.add(w.key);
+  }
+  renderList();
+}
+function foldOne(k) { const key = D.rows[k].key; EXP.delete(key); COL.add(key); renderList(); }
 const PM_LABEL = { gusto: 'Gusto 入职', cash: '现金', check: '支票', zelle: 'Zelle', cashapp: 'Cash App', ach: 'ACH 转账', skip: '不用处理' };
 
 function esc(s) { if (s == null) return ''; const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
@@ -433,8 +447,13 @@ function renderList() {
   const v = D.invoice;
   const head = v ? `<div class="row" style="margin-bottom:.5rem"><b style="color:#0f4c6b">📄 ${esc(v.invoice_number)} · ${esc(v.company)}</b>
       ${D.can_open_invoice ? `<a class="inv" href="/accounting?invoice=${v.id}" target="_blank">打开发票 ↗</a>` : ''}
-      <span class="muted">${v.workers} 人 · 新 ${v.new} · 待定 ${v.unsettled} · 进行中 ${v.progress || 0} · 已定 ${v.settled}</span></div>` : '';
-  el.innerHTML = head + rows.map((w, i) => v && !w.is_new && !EXP.has(w.key) ? oldRow(w, i) : card(w, i)).join('');
+      <span class="muted">${v.workers} 人 · 新 ${v.new} · 待定 ${v.unsettled} · 进行中 ${v.progress || 0} · 已定 ${v.settled}</span>
+      <span style="margin-left:auto;display:flex;gap:.3rem">
+        <button class="btn btn-outline btn-sm" onclick="foldAll('all')">全部展开</button>
+        <button class="btn btn-outline btn-sm" onclick="foldAll('none')">全部折叠</button>
+        <button class="btn btn-blue btn-sm" onclick="foldAll('review')" title="只展开有东西等审核 / 等确认的，其他折叠">只展开待审核（${rows.filter(needsReview).length}）</button>
+      </span></div>` : '';
+  el.innerHTML = head + rows.map((w, i) => v && !isOpen(w) ? oldRow(w, i) : card(w, i)).join('');
 }
 // 发票视图里的老员工: 一行, 能直接定付款方式, 点「展开」看全卡片
 function oldRow(w, k) {
@@ -442,7 +461,7 @@ function oldRow(w, k) {
   const pdis = D.can_edit && (w.employee || (w.pend && w.pend.emp)) ? '' : 'disabled';
   const pm = pmBtns(w, k, pdis, '');
   return `<div class="card old ${w.settled ? 'done' : ''}" style="${w.bank_alert_open ? 'border-left-color:var(--red)' : ''}">
-    <b>${esc(w.name)}</b><span class="tag" style="background:var(--g100);color:var(--g600)">老员工 · 第一次 ${esc(w.first_end)}</span>
+    <b>${esc(w.name)}</b><span class="tag" style="background:var(--g100);color:var(--g600)">${w.is_new ? "🆕 新" : "老员工"} · 第一次 ${esc(w.first_end)}</span>
     ${w.employee ? `<span class="tag" style="background:#dcfce7;color:#166534">👤 ${esc(w.employee.code || '#' + w.employee.id)}${w.employee.phone ? ' · ' + esc(w.employee.phone) : ''}</span>` : '<span class="tag" style="background:#fee2e2;color:#991b1b">未关联档案</span>'}${w.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff" title="发票是 ${esc((w.inv_states || []).join(' / '))}，档案是 ${esc(w.employee.state)}">⚠ 州不一致：发票 ${esc((w.inv_states || []).join('/'))} · 档案 ${esc(w.employee.state)}</span>` : ''}
     <span class="muted">${w.line.hours ? w.line.hours + 'h' : ''}${w.line.total != null ? ' · ' + money(w.line.total) : ''}</span>
     ${rvTags(w.review_people || 0, w.review_system || 0, k)}
@@ -521,7 +540,7 @@ function card(w, k) {
         <div class="row" style="margin-bottom:.15rem"><span class="name">${esc(w.name)}</span>${w.line && w.is_new ? '<span class="tag" style="background:#e0f2fe;color:#075985">🆕 新</span>' : ''}${w.done ? '<span class="tag" style="background:#dcfce7;color:#166534" title="全部做完、都审核过了">✓ 已定</span>'
           : w.stage === 'progress' ? '<span class="tag" style="background:#dbeafe;color:#1e40af" title="选了付款方式，步骤或审核还没做完">⏳ 进行中</span>'
           : '<span class="tag" style="background:#fef3c7;color:#92400e">待定</span>'}${rvTags((w.review_people || 0) + pcOf(c => c.kind === 'worker' && c.key === w.key).length, w.review_system || 0)}${w.bank_alert_open ? '<span class="tag" style="background:#fee2e2;color:#991b1b">⚠ 银行信息</span>' : ''}${w.pay_rejected ? '<span class="tag" style="background:#fee2e2;color:#991b1b">✗ 收款账号不对</span>' : ''}${w.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff">⚠ 州不一致</span>` : ''}
-          <button class="btn btn-outline btn-sm" onclick="showHistory(${k})">📜 历史</button></div>
+          <button class="btn btn-outline btn-sm" onclick="showHistory(${k})">📜 历史</button>${D.invoice ? `<button class="btn btn-outline btn-sm" onclick="foldOne(${k})">折叠</button>` : ''}</div>
         ${alias.length ? `<div class="muted">发票上写作：${esc(alias.join(' / '))}</div>` : ''}
         <div class="muted">第一次上账单：${esc(w.first_end)}${w.later_invoices ? ` · 之后还有 ${w.later_invoices} 张` : ''}</div>
         <div style="margin-top:.45rem"><div class="lbl">员工档案</div>${empBlock(w, k)}</div>
