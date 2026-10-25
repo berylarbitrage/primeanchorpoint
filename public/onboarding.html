@@ -328,6 +328,41 @@ function rvGate(key) {
   return false;
 }
 function rvSkip(k) { const key = D.rows[k].key; RV_SKIP.delete(key); RV_SKIP.add(key); COL.add(key); EXP.delete(key); _lastCur = ''; rvTurn(); if (CUR_KEY) EXP.add(CUR_KEY); renderList(); }
+// 一个人的所有待审核集中成一个清单 (卡片最上面), 按入职步骤排好 ①②③, 一条一条审;
+// 下面原来的各块还在。还没轮到这个人时整块灰掉不能点
+function reviewList(w, k) {
+  if (!(D.can_approve || D.can_confirm || D.can_decide_changes)) return '';
+  const it = [];   // {rank, html}
+  const kindRank = { accepted: 50, ready: 60 };
+  const line = (rank, what, body, btns) => it.push({ rank, html: `<span style="flex:1;min-width:0"><b>${esc(what)}</b> ${body}</span><span style="display:flex;gap:.25rem;flex-wrap:wrap;align-items:center">${btns}</span>` });
+  for (const x of w.employee_proposals || [])
+    line(10, '员工档案', `${esc(x.name)}${x.code ? ' <span class="muted">' + esc(x.code) + '</span>' : ''} ${rvMark(x.why)}`, reviewBtns(k, `{approve:'employee',id:${x.id}}`, `{reject:'employee',id:${x.id}}`));
+  if (w.pay_confirm && D.can_confirm)
+    line(20, '付款方式', `${esc(PM_LABEL[w.pay_method] || w.pay_method)} <span class="muted">· ${esc(w.pay_by || '别人')} 选的</span>`,
+      `<button class="btn btn-blue btn-sm" onclick="save(${k},{approve:'pay'})">✓ 对，确认</button><button class="btn btn-outline btn-sm" style="color:#dc2626" onclick="save(${k},{reject:'pay'})">✗ 不对</button>`);
+  if (['zelle', 'cashapp', 'ach'].includes(w.pay_method) && D.can_approve)
+    accsOf(w, w.pay_method).forEach((z, i) => { if (!z.ok && !z.rejected && !z.pend_new)
+      line(25, `${PM_LABEL[w.pay_method]} 账号`, `${z.routing ? '路由 ' + esc(z.routing) + ' · ' : ''}${esc(z.account)} <span class="muted">户主 ${esc(z.name)}</span>`,
+        `<button class="btn btn-blue btn-sm" onclick="if(rvGate(D.rows[${k}].key))zOpen(${k},${i})">🔍 看图审核</button>`); });
+  if (w.gusto_proposal) {
+    const gp = w.gusto_proposal;
+    line(30, 'Gusto 收款人', `${esc(gp.name)} ${rvMark(gp.why)}`, reviewBtns(k, `{approve:'gusto',uuid:'${esc(gp.uuid)}'}`, `{reject:'gusto',uuid:'${esc(gp.uuid)}'}`));
+  }
+  for (const e of w.email_proposals || [])
+    line(kindRank[e.kind] || 70, `Gusto 邮件${e.kind === 'accepted' ? '（第 2 步）' : e.kind === 'ready' ? '（第 3 步）' : ''}`, `${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)} ${rvMark('')}`,
+      reviewBtns(k, `{approve:'email',event_id:${e.id}}`, `{reject:'email',event_id:${e.id}}`, emailLock(w, e)));
+  if (D.can_confirm) for (const e of (w.emails || []).filter(e => !e.admin_ok))
+    line(kindRank[e.kind] || 70, `Gusto 邮件${e.kind === 'accepted' ? '（第 2 步）' : e.kind === 'ready' ? '（第 3 步）' : ''}`, `${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)} <span class="muted">· ${esc(e.by || '别人')} 通过</span>`,
+      `<button class="btn btn-blue btn-sm" onclick="confirmEmail(${k},${e.id},true)">✓ 对，确认</button><button class="btn btn-outline btn-sm" style="color:#dc2626" onclick="confirmEmail(${k},${e.id},false)">✗ 不是这个人</button>`);
+  if (D.can_decide_changes) for (const c of pcOf(c => c.kind === 'worker' && c.key === w.key))
+    line(c.step_rank || 90, `${c.by} 提交的修改`, `<span class="muted">${esc(c.items.join('；'))}</span>`, pcBtns(c).replace('class="pc-b"', ''));
+  if (!it.length) return '';
+  it.sort((a, b) => a.rank - b.rank);
+  const wait = rvWait(w.key);
+  return `<div style="border:2px solid ${wait ? '#e5e7eb' : '#38bdf8'};border-radius:10px;padding:.45rem .6rem;margin-bottom:.6rem;background:${wait ? '#f9fafb' : '#f0f9ff'}">
+    <div style="font-weight:700;font-size:.85rem;color:${wait ? '#6b7280' : '#075985'};margin-bottom:.3rem">📋 ${esc(w.name)} 的待审核（${it.length}）${wait ? ` <span class="muted" style="font-weight:400">🔒 ${esc(wait)}，再审这个人</span>` : ' <span class="muted" style="font-weight:400">从上往下一条一条审</span>'}</div>
+    <div style="${wait ? 'pointer-events:none;opacity:.55' : ''}">${it.map((x, i) => `<div class="row" style="margin:.2rem 0;padding:.25rem 0;border-top:${i ? '1px dashed #cbd5e1' : 'none'};align-items:center"><b style="color:#0369a1">${CIRC[i] || i + 1}</b>${x.html}</div>`).join('')}</div></div>`;
+}
 function foldAll(mode) {
   EXP.clear(); COL.clear();
   for (const w of D.rows) {
@@ -574,6 +609,7 @@ function card(w, k) {
   return `<div class="card w ${w.done ? 'done' : ''} ${bad || w.state_bad ? 'bad' : ''}" style="${w.key === CUR_KEY ? 'box-shadow:0 0 0 3px #38bdf8' : ''}">
     ${w.key === CUR_KEY ? `<div style="background:#e0f2fe;color:#075985;border-radius:8px;padding:.3rem .6rem;margin-bottom:.5rem;font-size:.82rem;font-weight:700">👉 现在审这个人：一条一条审完，再到下一个人<button class="btn btn-outline btn-sm" style="float:right;padding:0 .5rem" onclick="rvSkip(${k})" title="这个人现在审不下去（比如在等 Gusto），先审下一个">先跳过</button></div>`
       : wait ? `<div style="background:#f3f4f6;color:#6b7280;border-radius:8px;padding:.3rem .6rem;margin-bottom:.5rem;font-size:.82rem">🔒 ${esc(wait)}，再审这个人</div>` : ''}
+    ${reviewList(w, k)}
     <div class="w-main">
       <div>
         <div class="row" style="margin-bottom:.15rem"><span class="name">${esc(w.name)}</span>${w.line && w.is_new ? '<span class="tag" style="background:#e0f2fe;color:#075985">🆕 新</span>' : ''}${w.done ? '<span class="tag" style="background:#dcfce7;color:#166534" title="全部做完、都审核过了">✓ 已定</span>'
