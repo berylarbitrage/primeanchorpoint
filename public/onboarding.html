@@ -285,6 +285,7 @@ textarea{width:100%}
 
 <script>
 let TOKEN = localStorage.getItem('acct_token') || localStorage.getItem('adminToken') || '';
+let ROW_ORDER = { ctx: '', keys: [] };   // 这一页上次的人员顺序
 let D = null;                     // 最近一次 /api/acct/onboarding 的结果
 let VIEW = 'week', WEEK = '', INV = 0;
 const ZEDIT = {};
@@ -299,13 +300,15 @@ const needsReview = w => !!(w.pending_review || w.pay_confirm || w.email_confirm
 // 一键: all = 全部展开; none = 全部折叠; review = 只展开待审核的
 // 审核按人来: 一个人的待审核一条一条审完, 才能审下面的人。现在轮到的 = 列表里第一个还有「我能审的」的人
 const myReview = w => (w.pending_review || 0) + (D.can_decide_changes ? pcOf(c => c.kind === 'worker' && c.key === w.key).length : 0);
-let CUR_KEY = '', _lastCur = '';
+let CUR_KEY = '', _lastCur = '', RV_STICK = '';
 const RV_SKIP = new Set();        // 这次先跳过的人 (卡住了审不下去), 排到最后; 刷新页面就清掉
 function rvTurn() {
   const canReview = D.can_approve || D.can_confirm || D.can_decide_changes;
   const rows = (D.rows || []).filter(w => myReview(w) > 0);
-  const cur = canReview ? (rows.find(w => !RV_SKIP.has(w.key)) || rows[0]) : null;
-  CUR_KEY = cur ? cur.key : '';
+  // 正在审的人没审完就一直是他 (审了一条, 他的待审核变少, 别人排到前面也不换人)
+  const stuck = canReview && RV_STICK && !RV_SKIP.has(RV_STICK) ? rows.find(w => w.key === RV_STICK) : null;
+  const cur = stuck || (canReview ? (rows.find(w => !RV_SKIP.has(w.key)) || rows[0]) : null);
+  CUR_KEY = RV_STICK = cur ? cur.key : '';
   return cur;
 }
 // 不是现在轮到的人: 返回「先审完 X」; 轮到了 / 没东西审 / 不按人卡的返回 ''
@@ -337,7 +340,7 @@ function rvGate(key, tag) {
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   return false;
 }
-function rvSkip(k) { const key = D.rows[k].key; RV_SKIP.delete(key); RV_SKIP.add(key); COL.add(key); EXP.delete(key); _lastCur = ''; rvTurn(); if (CUR_KEY) EXP.add(CUR_KEY); renderList(); }
+function rvSkip(k) { const key = D.rows[k].key; RV_SKIP.delete(key); RV_SKIP.add(key); RV_STICK = ''; COL.add(key); EXP.delete(key); _lastCur = ''; rvTurn(); if (CUR_KEY) EXP.add(CUR_KEY); renderList(); }
 // 一个人的所有待审核集中成一个清单 (卡片最上面), 按入职步骤排好 ①②③, 一条一条审;
 // 下面原来的各块还在。还没轮到这个人时整块灰掉不能点
 // 这个人等我审的所有东西, 按入职步骤排好: 付款方式 → 收款账号 → Gusto 收款人 → 第 1 步打勾 → 第 2 步邮件 → 第 3 步邮件;
@@ -457,6 +460,13 @@ async function load() {
   let j;
   try { j = await api('/api/acct/onboarding' + q2); } catch (e) { return; }
   if (j.error) { document.getElementById('list').innerHTML = `<div class="empty" style="color:var(--red)">${esc(j.error)}</div>`; return; }
+  // 同一页刷新时保持原来的顺序 (服务器按待审核多少排, 审一条顺序就会变, 人会跳来跳去); 新出来的人排在后面
+  const ctx = VIEW + '|' + (j.week || '') + '|' + (j.invoice ? j.invoice.id : '');
+  if (ROW_ORDER.ctx === ctx && Array.isArray(j.rows)) {
+    const pos = new Map(ROW_ORDER.keys.map((key, i) => [key, i]));
+    j.rows = j.rows.map((w, i) => ({ w, i })).sort((a, b) => (pos.has(a.w.key) ? pos.get(a.w.key) : 1e6 + a.i) - (pos.has(b.w.key) ? pos.get(b.w.key) : 1e6 + b.i)).map(x => x.w);
+  }
+  ROW_ORDER = { ctx, keys: (j.rows || []).map(w => w.key) };
   D = j;
   applyPendingOverlay();
   WEEK = j.week;
