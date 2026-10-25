@@ -318,8 +318,18 @@ function rvWait(key) {
   return `先审完 ${cur ? cur.name : '上面的人'}`;
 }
 // 点审核按钮时再卡一次 (有些按钮是弹窗里的)
-function rvGate(key) {
-  const why = rvWait(key);
+function rvGate(key, tag) {
+  let why = rvWait(key);
+  // 同一个人也要按顺序: 只有清单里排第一的那条能审 (下面原来那些按钮也一样卡)
+  if (!why && tag) {
+    const k = D.rows.findIndex(x => x.key === key), first = k >= 0 ? reviewItems(D.rows[k], k)[0] : null;
+    if (first && first.tag !== tag) {
+      toast(`先审完 ${D.rows[k].name} 清单里的 ①「${first.what}」`, true);
+      const el = document.querySelectorAll('#list .w, #list .old')[k];
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return false;
+    }
+  }
   if (!why) return true;
   toast(why + '，再审下一个人', true);
   const i = D.rows.findIndex(x => x.key === CUR_KEY);
@@ -330,38 +340,49 @@ function rvGate(key) {
 function rvSkip(k) { const key = D.rows[k].key; RV_SKIP.delete(key); RV_SKIP.add(key); COL.add(key); EXP.delete(key); _lastCur = ''; rvTurn(); if (CUR_KEY) EXP.add(CUR_KEY); renderList(); }
 // 一个人的所有待审核集中成一个清单 (卡片最上面), 按入职步骤排好 ①②③, 一条一条审;
 // 下面原来的各块还在。还没轮到这个人时整块灰掉不能点
-function reviewList(w, k) {
-  if (!(D.can_approve || D.can_confirm || D.can_decide_changes)) return '';
-  const it = [];   // {rank, html}
+// 这个人等我审的所有东西, 按入职步骤排好: 付款方式 → 收款账号 → Gusto 收款人 → 第 1 步打勾 → 第 2 步邮件 → 第 3 步邮件;
+// tag 用来认「点的是哪一条」(只有排第一的那条能审)
+function reviewItems(w, k) {
+  if (!(D.can_approve || D.can_confirm || D.can_decide_changes)) return [];
+  const it = [];
   const kindRank = { accepted: 50, ready: 60 };
-  const line = (rank, what, body, btns) => it.push({ rank, html: `<span style="flex:1;min-width:0"><b>${esc(what)}</b> ${body}</span><span style="display:flex;gap:.25rem;flex-wrap:wrap;align-items:center">${btns}</span>` });
+  const line = (tag, rank, what, body, btns) => it.push({ tag, rank, what, html: `<span style="flex:1;min-width:0"><b>${esc(what)}</b> ${body}</span><span style="display:flex;gap:.25rem;flex-wrap:wrap;align-items:center">${btns}</span>` });
+  const stepTxt = kind => kind === 'accepted' ? '（第 2 步）' : kind === 'ready' ? '（第 3 步）' : '';
   for (const x of w.employee_proposals || [])
-    line(10, '员工档案', `${esc(x.name)}${x.code ? ' <span class="muted">' + esc(x.code) + '</span>' : ''} ${rvMark(x.why)}`, reviewBtns(k, `{approve:'employee',id:${x.id}}`, `{reject:'employee',id:${x.id}}`));
+    line('emp', 10, '员工档案', `${esc(x.name)}${x.code ? ' <span class="muted">' + esc(x.code) + '</span>' : ''} ${rvMark(x.why)}`, reviewBtns(k, `{approve:'employee',id:${x.id}}`, `{reject:'employee',id:${x.id}}`));
   if (w.pay_confirm && D.can_confirm)
-    line(20, '付款方式', `${esc(PM_LABEL[w.pay_method] || w.pay_method)} <span class="muted">· ${esc(w.pay_by || '别人')} 选的</span>`,
+    line('pay', 20, '付款方式', `${esc(PM_LABEL[w.pay_method] || w.pay_method)} <span class="muted">· ${esc(w.pay_by || '别人')} 选的</span>`,
       `<button class="btn btn-blue btn-sm" onclick="save(${k},{approve:'pay'})">✓ 对，确认</button><button class="btn btn-outline btn-sm" style="color:#dc2626" onclick="save(${k},{reject:'pay'})">✗ 不对</button>`);
   if (['zelle', 'cashapp', 'ach'].includes(w.pay_method) && D.can_approve)
     accsOf(w, w.pay_method).forEach((z, i) => { if (!z.ok && !z.rejected && !z.pend_new)
-      line(25, `${PM_LABEL[w.pay_method]} 账号`, `${z.routing ? '路由 ' + esc(z.routing) + ' · ' : ''}${esc(z.account)} <span class="muted">户主 ${esc(z.name)}</span>`,
-        `<button class="btn btn-blue btn-sm" onclick="if(rvGate(D.rows[${k}].key))zOpen(${k},${i})">🔍 看图审核</button>`); });
+      line('acc', 25, `${PM_LABEL[w.pay_method]} 账号`, `${z.routing ? '路由 ' + esc(z.routing) + ' · ' : ''}${esc(z.account)} <span class="muted">户主 ${esc(z.name)}</span>`,
+        `<button class="btn btn-blue btn-sm" onclick="zOpen(${k},${i})">🔍 看图审核</button>`); });
   if (w.gusto_proposal) {
     const gp = w.gusto_proposal;
-    line(30, 'Gusto 收款人', `${esc(gp.name)} ${rvMark(gp.why)}`, reviewBtns(k, `{approve:'gusto',uuid:'${esc(gp.uuid)}'}`, `{reject:'gusto',uuid:'${esc(gp.uuid)}'}`));
+    line('gusto', 30, 'Gusto 收款人', `${esc(gp.name)} ${rvMark(gp.why)}`, reviewBtns(k, `{approve:'gusto',uuid:'${esc(gp.uuid)}'}`, `{reject:'gusto',uuid:'${esc(gp.uuid)}'}`));
   }
+  if (w.step_confirm && D.can_confirm)
+    line('step', 40, '第 1 步打勾', `在 Gusto 添加合同工并发邀请 <span class="muted">· ${esc(w.step_by || '别人')} 打勾</span>`,
+      `<button class="btn btn-blue btn-sm" onclick="save(${k},{approve:'step'})">✓ 对，确认</button><button class="btn btn-outline btn-sm" style="color:#dc2626" onclick="save(${k},{reject:'step'})">✗ 不对</button>`);
   for (const e of w.email_proposals || [])
-    line(kindRank[e.kind] || 70, `Gusto 邮件${e.kind === 'accepted' ? '（第 2 步）' : e.kind === 'ready' ? '（第 3 步）' : ''}`, `${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)} ${rvMark('')}`,
+    line('email:' + e.id, kindRank[e.kind] || 70, `Gusto 邮件${stepTxt(e.kind)}`, `${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)} ${rvMark('')}`,
       reviewBtns(k, `{approve:'email',event_id:${e.id}}`, `{reject:'email',event_id:${e.id}}`, emailLock(w, e)));
   if (D.can_confirm) for (const e of (w.emails || []).filter(e => !e.admin_ok))
-    line(kindRank[e.kind] || 70, `Gusto 邮件${e.kind === 'accepted' ? '（第 2 步）' : e.kind === 'ready' ? '（第 3 步）' : ''}`, `${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)} <span class="muted">· ${esc(e.by || '别人')} 通过</span>`,
+    line('email:' + e.id, kindRank[e.kind] || 70, `Gusto 邮件${stepTxt(e.kind)}`, `${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)} <span class="muted">· ${esc(e.by || '别人')} 通过</span>`,
       `<button class="btn btn-blue btn-sm" onclick="confirmEmail(${k},${e.id},true)">✓ 对，确认</button><button class="btn btn-outline btn-sm" style="color:#dc2626" onclick="confirmEmail(${k},${e.id},false)">✗ 不是这个人</button>`);
   if (D.can_decide_changes) for (const c of pcOf(c => c.kind === 'worker' && c.key === w.key))
-    line(c.step_rank || 90, `${c.by} 提交的修改`, `<span class="muted">${esc(c.items.join('；'))}</span>`, pcBtns(c).replace('class="pc-b"', ''));
+    line('pc:' + c.id, c.step_rank || 90, `${c.by} 提交的修改`, `<span class="muted">${esc(c.items.join('；'))}</span>`, pcBtns(c).replace('class="pc-b"', ''));
+  return it.sort((a, b) => a.rank - b.rank);
+}
+// 一个人的待审核清单 (卡片最上面): 只有排第一的那条能点, 确认或者否掉了下一条才能点;
+// 还没轮到这个人时整块灰掉
+function reviewList(w, k) {
+  const it = reviewItems(w, k);
   if (!it.length) return '';
-  it.sort((a, b) => a.rank - b.rank);
   const wait = rvWait(w.key);
   return `<div style="border:2px solid ${wait ? '#e5e7eb' : '#38bdf8'};border-radius:10px;padding:.45rem .6rem;margin-bottom:.6rem;background:${wait ? '#f9fafb' : '#f0f9ff'}">
-    <div style="font-weight:700;font-size:.85rem;color:${wait ? '#6b7280' : '#075985'};margin-bottom:.3rem">📋 ${esc(w.name)} 的待审核（${it.length}）${wait ? ` <span class="muted" style="font-weight:400">🔒 ${esc(wait)}，再审这个人</span>` : ' <span class="muted" style="font-weight:400">从上往下一条一条审</span>'}</div>
-    <div style="${wait ? 'pointer-events:none;opacity:.55' : ''}">${it.map((x, i) => `<div class="row" style="margin:.2rem 0;padding:.25rem 0;border-top:${i ? '1px dashed #cbd5e1' : 'none'};align-items:center"><b style="color:#0369a1">${CIRC[i] || i + 1}</b>${x.html}</div>`).join('')}</div></div>`;
+    <div style="font-weight:700;font-size:.85rem;color:${wait ? '#6b7280' : '#075985'};margin-bottom:.3rem">📋 ${esc(w.name)} 的待审核（${it.length}）${wait ? ` <span class="muted" style="font-weight:400">🔒 ${esc(wait)}，再审这个人</span>` : ' <span class="muted" style="font-weight:400">从上往下一条一条审：这条确认或者否掉了，下一条才能点</span>'}</div>
+    <div style="${wait ? 'pointer-events:none;opacity:.55' : ''}">${it.map((x, i) => `<div class="row" style="margin:.2rem 0;padding:.25rem 0;border-top:${i ? '1px dashed #cbd5e1' : 'none'};align-items:center;${i && !wait ? 'opacity:.45;pointer-events:none' : ''}"><b style="color:#0369a1">${CIRC[i] || i + 1}</b>${x.html}${i && !wait ? '<span class="muted" style="white-space:nowrap">🔒 先审 ①</span>' : ''}</div>`).join('')}</div></div>`;
 }
 function foldAll(mode) {
   EXP.clear(); COL.clear();
@@ -783,7 +804,9 @@ async function ignoreEmail(evId, on) {
 }
 
 async function save(k, body) {
-  if ((body.approve || body.reject) && !rvGate(D.rows[k].key)) return false;
+  const what = body.approve || body.reject;
+  const tag = { employee: 'emp', pay: 'pay', step: 'step', gusto: 'gusto', zelle: 'acc', email: 'email:' + body.event_id }[what];
+  if (what && !rvGate(D.rows[k].key, tag)) return false;
   const j = await api('/api/acct/onboarding/' + encodeURIComponent(D.rows[k].key), { method: 'POST', body }).catch(e => ({ error: e.message }));
   // 员工档案和发票不是一个州: 报错, 确认了才关联
   if (j.state_mismatch) {
@@ -1002,7 +1025,7 @@ async function zReadShot(id, kind) {
 // 审核弹窗: 左边是被付款的员工信息, 中间 / 右边并排放大这个收款账号的截图和聊天记录 (能放大缩小),
 // 底下直接通过 / 不对。mode: 'ok' / 'no' 是从按钮点进来的 (先把对应操作准备好)
 let ZR = null;   // {k, i, zoom: {a, b}}
-function zReview(k, i, ok) { if (!rvGate(D.rows[k].key)) return; zOpen(k, i, ok ? 'ok' : 'no'); }
+function zReview(k, i, ok) { if (!rvGate(D.rows[k].key, 'acc')) return; zOpen(k, i, ok ? 'ok' : 'no'); }
 function zOpen(k, i, mode) {
   ZR = { k, i, zoom: { a: 0, b: 0 }, mode: mode || '' };   // zoom 0 = 适应宽度
   zrRender();
@@ -1294,7 +1317,7 @@ function undoApprove(k, what, evId) {
 }
 // admin 确认别人 (director / manager) 通过的 Gusto 邮件: 对 → 清单按这封邮件打勾; 不是 → 取消关联, 以后也不再对到这个人
 function confirmEmail(k, evId, ok) {
-  if (!rvGate(D.rows[k].key)) return;
+  if (!rvGate(D.rows[k].key, 'email:' + evId)) return;
   const w = D.rows[k], e = (w.emails || []).find(x => x.id === evId) || {};
   const run = async () => {
     const j = await api(`/api/acct/onboarding-mails/${evId}/confirm`, { method: 'POST', body: { ok } }).catch(x => ({ error: x.message }));
@@ -1475,7 +1498,7 @@ function renderPChanges() {
 }
 async function decideChange(id, ok) {
   const c = (D.pending_changes || []).find(x => x.id === id) || { items: [] };
-  if (c.key && !rvGate(c.key)) return;
+  if (c.key && !rvGate(c.key, 'pc:' + id)) return;
   confirmBox(ok ? '同意这个修改？' : '拒绝这个修改？', `<div style="font-size:.86rem"><b>${esc(c.by || '')}</b> 提交的：</div><ul style="font-size:.84rem;margin:.3rem 0 0 1.1rem;padding:0">${c.items.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
     <div class="muted" style="margin-top:.4rem">${ok ? '同意后马上按他提交的内容执行' : '拒绝后作废'}</div><input id="pcNote" placeholder="备注（可不填）" style="width:100%;margin-top:.5rem">`, async () => {
     const j = await api('/api/approvals/' + id, { method: 'POST', body: { approve: ok, note: document.getElementById('pcNote').value } }).catch(e => ({ error: e.message }));
