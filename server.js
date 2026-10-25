@@ -45020,6 +45020,16 @@ function _wobCascadeReady(key, by) {
     _wobLog(key, by, '第二步没通过，第三步跟着取消', `${ev.date} ${wob.EMAIL_KIND_LABEL.ready || 'ready'} · ${ev.name}`);
   }
 }
+// 前面一步被否掉: 跟着先做的、还没 admin 确认的后面几步邮件一起取消关联 (回到待审核)
+function _wobCascadeAfter(key, by, kinds, why) {
+  const now = new Date().toISOString();
+  const okAdmins = new Set(db.prepare("SELECT username FROM admin_users WHERE role='admin' AND COALESCE(needs_approval,0)=0").all().map(u => u.username));
+  for (const ev of db.prepare(`SELECT id, kind, name, date, review_by, admin_ok_by FROM gusto_email_events WHERE worker_key=? AND kind IN (${kinds.map(() => '?').join(',')})`).all(key, ...kinds)) {
+    if (ev.admin_ok_by || okAdmins.has(ev.review_by)) continue;
+    db.prepare("UPDATE gusto_email_events SET worker_key='', review_by=?, review_at=?, admin_ok_by='', admin_ok_at='' WHERE id=?").run(by || '', now, ev.id);
+    _wobLog(key, by, `${why}，后面的步骤跟着取消`, `${ev.date} ${wob.EMAIL_KIND_LABEL[ev.kind] || ev.kind} · ${ev.name}`);
+  }
+}
 function _wobLog(key, by, action, detail) {
   try { db.prepare('INSERT INTO new_hire_onboarding_log (name_key, by_user, action, detail) VALUES (?, ?, ?, ?)').run(key, by || '', action, String(detail || '').slice(0, 1000)); }
   catch (e) { console.log('[onboarding] log error:', e.message); }
@@ -45345,9 +45355,15 @@ function _wobBuild() {
     w.email_proposals = (proposed[w.key] || []).sort(byStep);
     // 清单只认 admin 确认过的邮件; 别人关联、等 admin 确认的显示成「等 admin 确认」
     w.email_confirm = w.emails.filter(e => !e.admin_ok).length;
+    // 第一步手动打勾也一样: admin 勾的 / admin 确认过的才算; 别人勾的等 admin 确认
+    const mOk = {}, mConf = {};
+    for (const [sid, m] of Object.entries(w.manual || {})) ((m && (m.ok_by || okAdmins.has(m.by))) ? mOk : mConf)[sid] = m;
     w.checklist = wob.buildChecklist({ contractor: w.gusto && w.gusto.link ? { raw: w.gusto.raw || {} } : null,
       emails: w.emails.filter(e => e.admin_ok), confirmEmails: w.emails.filter(e => !e.admin_ok),
-      pendingEmails: w.email_proposals, manual: w.manual, firstPayment: w.first_payment });
+      pendingEmails: w.email_proposals, manual: mOk, manualConfirm: mConf, firstPayment: w.first_payment });
+    const s1 = w.checklist.steps.find(s => s.id === 'added');
+    w.step_confirm = s1 && s1.awaiting && mConf.added ? 1 : 0;
+    w.step_by = w.step_confirm ? mConf.added.by || '' : '';
     if (w.gusto) delete w.gusto.raw;
     // Zelle / Cash App 账号的审核信息: 户主名字对不对、同一个账号还有谁在用、截图读到的对不对
     const names = [w.name, ...(w.invoice_names || []), w.employee && w.employee.name].filter(Boolean);
@@ -45662,6 +45678,7 @@ app.get('/api/acct/onboarding', requireAdmin, requireWobView, (req, res) => {
     const canConfirm = req.userRole === 'admin' && !req.needsApproval;
     if (canConfirm) for (const w of list) if (w.email_confirm) { w.pending_review += w.email_confirm; w.review_people += w.email_confirm; }
     if (canConfirm) for (const w of list) if (w.pay_confirm) { w.pending_review++; w.review_people++; }
+    if (canConfirm) for (const w of list) if (w.step_confirm) { w.pending_review++; w.review_people++; }
     const today = new Date().toISOString().slice(0, 10);
     const thisWeek = wob.weekStart(today);
     // 最近 12 周每周新人数 / 未处理数
@@ -45945,6 +45962,16 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
           .run(key, key, key, JSON.stringify(rej), req.userName || '', now, ev.id);
       }
     }
+    // director / manager 打勾的第一步: admin 确认 (approve: 'step') 或者否掉 (reject: 'step' = 取消打勾, 后面跟着先做的第 2 / 3 步邮件也取消)
+    if (b.approve === 'step' || b.reject === 'step') {
+      if (!_wobAdminOk(req)) return res.status(403).json({ error: '要 admin 确认' });
+      let ck = {};
+      try { ck = JSON.parse(next.checklist) || {}; } catch (e) {}
+      if (!ck.added) return res.status(400).json({ error: '第一步没有打勾，刷新再看' });
+      if (b.approve === 'step') ck.added = { ...ck.added, ok_by: _wobAdminOk(req), ok_at: now };
+      else delete ck.added;
+      next.checklist = JSON.stringify(ck);
+    }
     // director / manager 选的付款方式: admin 确认 (approve: 'pay') 或者否掉 (reject: 'pay' = 回到没选)
     if (b.approve === 'pay' || b.reject === 'pay') {
       if (!_wobAdminOk(req)) return res.status(403).json({ error: '付款方式要 admin 确认' });
@@ -45993,7 +46020,7 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       }
       let ck = {};
       try { ck = JSON.parse(next.checklist) || {}; } catch (e) {}
-      if (b.checked) ck[step] = { at: now, by: req.userName || '' };
+      if (b.checked) ck[step] = { at: now, by: req.userName || '', ok_by: _wobAdminOk(req) };
       else delete ck[step];
       next.checklist = JSON.stringify(ck);
     }
@@ -46019,6 +46046,8 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
     else if (b.reject === 'employee') logs.push(['否掉系统匹配的员工档案', empName(parseInt(b.id, 10))]);
     else if (String(cur.employee_id || '') !== String(next.employee_id || '') || (cur.emp_ok ? 1 : 0) !== next.emp_ok)
       logs.push([next.emp_ok ? '关联员工档案' : next.employee_id ? '手动选员工档案（待审核）' : '取消员工档案关联', empName(next.employee_id)]);
+    if (b.approve === 'step') logs.push(['admin 确认清单打勾', wob.GUSTO_STEPS[0].label]);
+    if (b.reject === 'step') logs.push(['admin 否掉清单打勾', wob.GUSTO_STEPS[0].label]);
     if (b.approve === 'pay') logs.push(['admin 确认付款方式', `${PM[next.pay_method] || next.pay_method}${next.pay_by ? '（' + next.pay_by + ' 选的）' : ''}`]);
     if (b.approve === 'gusto') logs.push(['审核通过 Gusto 收款人', gName(b.uuid)]);
     else if (b.reject === 'gusto') logs.push(['否掉系统匹配的 Gusto 收款人', gName(b.uuid)]);
@@ -46042,6 +46071,7 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
         pay_history=@pay_history, pay_since=@pay_since, pay_by=@pay_by, pay_ok_by=@pay_ok_by, pay_ok_at=@pay_ok_at, updated_by=@by, updated_at=datetime('now')`)
       .run({ key, ...next, by: req.userName || '' });
     for (const [action, detail] of logs) _wobLog(key, req.userName, action, detail);
+    if (b.reject === 'step') _wobCascadeAfter(key, req.userName, ['accepted', 'ready'], '第一步没通过');
     if (b.reject === 'email' || b.unapprove === 'email') {
       const ev = db.prepare('SELECT kind FROM gusto_email_events WHERE id=?').get(parseInt(b.event_id, 10) || 0);
       if (ev && ev.kind === 'accepted') _wobCascadeReady(key, req.userName);
