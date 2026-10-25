@@ -39557,9 +39557,9 @@ function renderInvpContainerTable(skipSave) {
       <th style="padding:5px 6px;text-align:left;white-space:nowrap">Unloading Week <button type="button" onclick="invpBatchSetWeek()" title="把所有 container 行的 Unloading Week 统一改成同一个值" style="margin-left:4px;font-size:.66rem;padding:1px 7px;border:1px solid #0E7BB8;color:#0E7BB8;background:#eff6ff;border-radius:4px;cursor:pointer;font-weight:600">批量</button></th>
       <th style="padding:5px 6px;text-align:left">Unloading Staffing</th>
       <th style="padding:5px 6px;text-align:center">Qty</th>
-      <th style="padding:5px 6px;text-align:right">Unit Price</th>
+      <th style="padding:5px 6px;text-align:right;white-space:nowrap">Unit Price <button type="button" onclick="invpBatchSetPrice('unit_price')" title="把所有卸柜行的 Unit Price 统一填成同一个价格（装柜行按满载度计费，不受影响）" style="margin-left:4px;font-size:.66rem;padding:1px 7px;border:1px solid #0E7BB8;color:#0E7BB8;background:#eff6ff;border-radius:4px;cursor:pointer;font-weight:600">批量</button></th>
       <th style="padding:5px 6px;text-align:right">Total</th>
-      <th style="padding:5px 6px;text-align:right;background:#e0f2fe;color:#0369a1" title="付给分包商/装卸公司的单价（仅用于分包商对账单 PDF）">分包价 Sub</th>
+      <th style="padding:5px 6px;text-align:right;white-space:nowrap;background:#e0f2fe;color:#0369a1" title="付给分包商/装卸公司的单价（仅用于分包商对账单 PDF）">分包价 Sub <button type="button" onclick="invpBatchSetPrice('sub_price')" title="把所有 container 行的分包价统一填成同一个价格" style="margin-left:4px;font-size:.66rem;padding:1px 7px;border:1px solid #0E7BB8;color:#0E7BB8;background:#eff6ff;border-radius:4px;cursor:pointer;font-weight:600">批量</button></th>
       <th style="padding:5px 6px;text-align:right;background:#e0f2fe;color:#0369a1">分包小计</th>
       <th style="padding:5px 4px;text-align:center" title="点击星标可标记一行做特殊处理">★</th>
       <th style="padding:5px 4px;text-align:center" title="生成现金回执 PDF">🧾</th>
@@ -39862,6 +39862,32 @@ async function invpBatchSetWeek() {
   window._invpDirty = true;
   renderInvpContainerTable(true);
   showToast(`已把 ${items.length} 行的 Unloading Week 改为「${v || '(空)'}」`);
+}
+
+// Batch-fill Unit Price or 分包价 Sub across container rows. Unit Price skips
+// 装柜 rows (they bill 满载金额 × 满载度%). When some rows already hold a
+// different price, ask whether to overwrite them or only fill the blanks.
+async function invpBatchSetPrice(field) {
+  _invpSaveContainerState();
+  const all = window._invpContainerItems || [];
+  const items = field === 'unit_price' ? all.filter(i => i.line_type !== 'load') : all;
+  if (!items.length) { showToast(field === 'unit_price' ? '没有可填 Unit Price 的卸柜行' : '请先添加 container 行', 'error'); return; }
+  const label = field === 'unit_price' ? 'Unit Price' : '分包价 Sub';
+  const cur = (items.find(i => parseFloat(i[field]) > 0) || {})[field] || '';
+  const val = await adminPrompt(`把 ${items.length} 行的 ${label} 统一填成（$）：`, `批量填 ${label}`, cur);
+  if (val === null) return;                     // cancelled
+  const v = val.trim().replace(/^\$/, '');
+  if (v !== '' && !(parseFloat(v) >= 0)) { showToast('请输入有效的金额', 'error'); return; }
+  const others = items.filter(i => String(i[field] || '').trim() !== '' && parseFloat(i[field]) !== parseFloat(v));
+  let targets = items;
+  if (others.length && others.length < items.length) {
+    const overwrite = await showConfirm(`有 ${others.length} 行已填了不同的 ${label}，要覆盖吗？`, { confirmLabel: '全部覆盖', cancelLabel: '只填空白行' });
+    if (!overwrite) targets = items.filter(i => String(i[field] || '').trim() === '');
+  }
+  targets.forEach(i => { i[field] = v; });
+  window._invpDirty = true;
+  renderInvpContainerTable(true);
+  showToast(`已把 ${targets.length} 行的 ${label} 填为「${v === '' ? '(空)' : '$' + v}」`);
 }
 
 function invpAddContainer() {
