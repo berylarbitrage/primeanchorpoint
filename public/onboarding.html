@@ -464,8 +464,8 @@ function oldRow(w, k) {
     <b>${esc(w.name)}</b><span class="tag" style="background:var(--g100);color:var(--g600)">${w.is_new ? "🆕 新" : "老员工"} · 第一次 ${esc(w.first_end)}</span>
     ${w.employee ? `<span class="tag" style="background:#dcfce7;color:#166534">👤 ${esc(w.employee.code || '#' + w.employee.id)}${w.employee.phone ? ' · ' + esc(w.employee.phone) : ''}</span>` : '<span class="tag" style="background:#fee2e2;color:#991b1b">未关联档案</span>'}${w.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff" title="发票是 ${esc((w.inv_states || []).join(' / '))}，档案是 ${esc(w.employee.state)}">⚠ 州不一致：发票 ${esc((w.inv_states || []).join('/'))} · 档案 ${esc(w.employee.state)}</span>` : ''}
     <span class="muted">${w.line.hours ? w.line.hours + 'h' : ''}${w.line.total != null ? ' · ' + money(w.line.total) : ''}</span>
-    ${rvTags(w.review_people || 0, w.review_system || 0, k)}
-    ${w.pend && w.pend.pay ? `<span class="tag" style="background:#fef3c7;color:#92400e">⏳ ${esc(PM_LABEL[w.pay_method] || '不选')} 等审批</span>` : w.pay_confirm ? `<span class="tag" style="${RV_PEOPLE}">👤 ${esc(PM_LABEL[w.pay_method] || w.pay_method)} · ${esc(w.pay_by || '别人')} 选的，等 admin 确认</span>${D.can_confirm ? `<button class="btn btn-blue btn-sm" onclick="save(${k},{approve:'pay'})">✓ 确认</button>` : ''}` : w.settled ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ 已定 · ${esc(PM_LABEL[w.pay_method] || 'Gusto 已付过')}</span>`
+    ${rvTags(w.review_people || 0, w.review_system || 0, k)}${confirmAllBtn(w, k)}
+    ${w.pend && w.pend.pay ? `<span class="tag" style="background:#fef3c7;color:#92400e">⏳ ${esc(PM_LABEL[w.pay_method] || '不选')} 等审批</span>` : w.pay_confirm ? `<span class="tag" style="${RV_PEOPLE}">👤 ${esc(PM_LABEL[w.pay_method] || w.pay_method)} · ${esc(w.pay_by || '别人')} 选的，等 admin 确认</span>` : w.settled ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ 已定 · ${esc(PM_LABEL[w.pay_method] || 'Gusto 已付过')}</span>`
       : w.stage === 'progress' ? `<span class="tag" style="background:#dbeafe;color:#1e40af" title="选了付款方式，步骤或审核还没做完">⏳ 进行中 · ${esc(PM_LABEL[w.pay_method] || 'Gusto')}</span>`
       : '<span class="tag" style="background:#fef3c7;color:#92400e">付款方式待定</span>'}
     ${w.pay_method === 'zelle' ? `<span class="muted">Zelle ${zList(w.zelle_accounts)}</span>` : w.pay_method === 'cashapp' ? `<span class="muted">Cash App ${zList(w.cashapp_accounts)}</span>` : w.pay_method === 'ach' ? `<span class="muted">ACH ${zList(w.ach_accounts)}</span>` : ''}
@@ -528,7 +528,7 @@ function card(w, k) {
         <span class="muted">${w.checklist.done_count}/${w.checklist.steps.length}</span></div>${emailProps}
         ${(w.emails || []).map(e => `<div class="row" style="margin:.2rem 0 0">${e.admin_ok
           ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ 邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span>`
-          : `${D.can_confirm ? rvMark(`${e.by || '别人'} 手动选的`) : ''}<span class="tag" style="background:#fef3c7;color:#92400e">邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span>`}${sentTag(e)}<span class="muted">${e.by ? esc(e.by) + ' 通过' : ''}${e.admin_ok ? (e.admin_ok !== e.by ? ` · ${esc(e.admin_ok)} 确认` : '') : '，等 admin 确认'}</span>${!e.admin_ok && D.can_confirm ? `<button class="btn btn-blue btn-sm" onclick="confirmEmail(${k},${e.id},true)">✓ 对，确认</button><button class="btn btn-outline btn-sm" style="color:#dc2626" onclick="confirmEmail(${k},${e.id},false)">✗ 不是这个人</button>` : ''}${D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="undoApprove(${k},'email',${e.id})">↩ 撤销通过</button>` : ''}</div>`).join('')}</div>
+          : `${D.can_confirm ? rvMark(`${e.by || '别人'} 手动选的`) : ''}<span class="tag" style="background:#fef3c7;color:#92400e">邮件 ${esc(e.date)} · ${esc(e.label)} · ${esc(e.name)}</span>`}${sentTag(e)}<span class="muted">${e.by ? esc(e.by) + ' 通过' : ''}${e.admin_ok ? (e.admin_ok !== e.by ? ` · ${esc(e.admin_ok)} 确认` : '') : '，等 admin 确认'}</span>${!e.admin_ok && D.can_confirm ? `<button class="btn btn-outline btn-sm" style="color:#dc2626" onclick="confirmEmail(${k},${e.id},false)">✗ 不是这个人</button>` : ''}${D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="undoApprove(${k},'email',${e.id})">↩ 撤销通过</button>` : ''}</div>`).join('')}</div>
       <div class="ck" style="grid-template-columns:repeat(3,minmax(0,1fr))">${steps}</div>`;
   }
   const bankBox = w.bank_alerts.length ? `<div class="ck" style="grid-template-columns:1fr;background:#fef2f2">${w.bank_alerts.map(b => `<div class="row" style="margin:0">
@@ -539,7 +539,7 @@ function card(w, k) {
       <div>
         <div class="row" style="margin-bottom:.15rem"><span class="name">${esc(w.name)}</span>${w.line && w.is_new ? '<span class="tag" style="background:#e0f2fe;color:#075985">🆕 新</span>' : ''}${w.done ? '<span class="tag" style="background:#dcfce7;color:#166534" title="全部做完、都审核过了">✓ 已定</span>'
           : w.stage === 'progress' ? '<span class="tag" style="background:#dbeafe;color:#1e40af" title="选了付款方式，步骤或审核还没做完">⏳ 进行中</span>'
-          : '<span class="tag" style="background:#fef3c7;color:#92400e">待定</span>'}${rvTags((w.review_people || 0) + pcOf(c => c.kind === 'worker' && c.key === w.key).length, w.review_system || 0)}${w.bank_alert_open ? '<span class="tag" style="background:#fee2e2;color:#991b1b">⚠ 银行信息</span>' : ''}${w.pay_rejected ? '<span class="tag" style="background:#fee2e2;color:#991b1b">✗ 收款账号不对</span>' : ''}${w.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff">⚠ 州不一致</span>` : ''}
+          : '<span class="tag" style="background:#fef3c7;color:#92400e">待定</span>'}${rvTags((w.review_people || 0) + pcOf(c => c.kind === 'worker' && c.key === w.key).length, w.review_system || 0)}${confirmAllBtn(w, k)}${w.bank_alert_open ? '<span class="tag" style="background:#fee2e2;color:#991b1b">⚠ 银行信息</span>' : ''}${w.pay_rejected ? '<span class="tag" style="background:#fee2e2;color:#991b1b">✗ 收款账号不对</span>' : ''}${w.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff">⚠ 州不一致</span>` : ''}
           <button class="btn btn-outline btn-sm" onclick="showHistory(${k})">📜 历史</button>${D.invoice ? `<button class="btn btn-outline btn-sm" onclick="foldOne(${k})">折叠</button>` : ''}</div>
         ${alias.length ? `<div class="muted">发票上写作：${esc(alias.join(' / '))}</div>` : ''}
         <div class="muted">第一次上账单：${esc(w.first_end)}${w.later_invoices ? ` · 之后还有 ${w.later_invoices} 张` : ''}</div>
@@ -577,12 +577,39 @@ function sentTag(e) {
   if (s.length === 1 && s[0].guess) return `<span class="tag" style="background:#f0fdf4;color:#166534" title="收到时系统自动转发给了当时的转发名单（具体发给谁那时还没记）">📨 已自动转发</span>`;
   return `<span class="tag" style="background:#f0fdf4;color:#166534" title="${esc(s.map(x => x.to + ' ' + fmtTime(String(x.at).replace(' ', 'T') + 'Z')).join('\n'))}">📨 已发给 ${esc(s.map(x => x.to.split('@')[0]).join('、'))}</span>`;
 }
+// 一个人别人选的东西 (付款方式 + 等 admin 确认的 Gusto 邮件) 一次全部确认; 哪条不对就在那一条点 ✗
+function toConfirm(w) {
+  const order = { accepted: 1, ready: 2 };
+  return [...(w.pay_confirm ? [{ pay: true, txt: `付款方式：${PM_LABEL[w.pay_method] || w.pay_method}（${w.pay_by || '别人'} 选的）` }] : []),
+    ...(w.emails || []).filter(e => !e.admin_ok).sort((a, b) => (order[a.kind] || 9) - (order[b.kind] || 9))
+      .map(e => ({ ev: e.id, txt: `邮件 ${e.date} · ${e.label} · ${e.name}（${e.by || '别人'} 通过）` }))];
+}
+function confirmAllBtn(w, k) {
+  if (!D.can_confirm) return '';
+  const n = toConfirm(w).length;
+  return n ? `<button class="btn btn-blue btn-sm" onclick="confirmAll(${k})" title="付款方式和 Gusto 邮件一次确认完；有哪条不对，先在那一条点 ✗">✓ 这个人全部确认（${n}）</button>` : '';
+}
+function confirmAll(k) {
+  const w = D.rows[k], items = toConfirm(w);
+  confirmBox('全部确认', `<div style="font-size:.88rem"><b>${esc(w.name)}</b> 这些一起确认：</div>
+    <ul style="font-size:.85rem;margin:.35rem 0 0 1.1rem">${items.map(x => `<li>${esc(x.txt)}</li>`).join('')}</ul>
+    <div class="muted" style="margin-top:.35rem">有哪条不对，先取消，在那一条点 ✗</div>`, async () => {
+    for (const x of items) {
+      const j = x.pay ? await api('/api/acct/onboarding/' + encodeURIComponent(w.key), { method: 'POST', body: { approve: 'pay' } }).catch(e => ({ error: e.message }))
+        : await api(`/api/acct/onboarding-mails/${x.ev}/confirm`, { method: 'POST', body: { ok: true } }).catch(e => ({ error: e.message }));
+      if (j.error) { toast(`${x.txt}：${j.error}`, true); load(); return true; }
+    }
+    toast(`已确认 ${w.name} 的 ${items.length} 条`);
+    load();
+    return true;
+  });
+}
 // director / manager 选的付款方式要 admin 确认; admin 在这里确认或者否掉 (否掉 = 回到没选)
 function payConfirm(w, k) {
   if (!w.pay_confirm) return '';
   return `<div class="row" style="margin:0 0 .4rem">${D.can_confirm ? `<span class="tag" style="${RV_PEOPLE}">👤 ${esc(w.pay_by || '别人')} 选的${esc(PM_LABEL[w.pay_method] || w.pay_method)}，等你确认</span>`
       : `<span class="tag" style="background:#fef3c7;color:#92400e">⏳ ${esc(PM_LABEL[w.pay_method] || w.pay_method)} · ${esc(w.pay_by || '')} 选的，等 admin 确认</span>`}
-    ${D.can_confirm ? `<button class="btn btn-blue btn-sm" onclick="save(${k},{approve:'pay'})">✓ 对，确认</button><button class="btn btn-outline btn-sm" style="color:#dc2626" onclick="save(${k},{reject:'pay'})">✗ 不对</button>` : ''}</div>`;
+    ${D.can_confirm ? `<button class="btn btn-outline btn-sm" style="color:#dc2626" onclick="save(${k},{reject:'pay'})">✗ 不对</button>` : ''}</div>`;
 }
 // 两种待审核用不同颜色: 👤 别人选的 (橙) / 🤖 系统匹配的 (蓝)
 const RV_PEOPLE = 'background:#ffedd5;color:#9a3412;border:1px solid #fdba74';
