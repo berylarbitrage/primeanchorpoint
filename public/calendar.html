@@ -50,9 +50,10 @@ label{font-size:.78rem;color:var(--g600);font-weight:600;display:block;margin:.5
 <div class="wrap" id="main" style="display:none">
   <div class="row" style="justify-content:space-between;flex-wrap:nowrap;align-items:flex-start">
     <div style="flex:1;min-width:0"><div style="font-size:1.2rem;font-weight:800;color:#0f4c6b">📅 公司日历</div>
-      <div class="muted">公司重要的事情。每个人都可以添加，admin 批准后才对所有人显示；还没批准的只有你自己（和 admin）能看到，显示为黄色虚线。每周五会自动显示「💰 发工资」，列出这周开出的所有 invoice。总监可以把事情标为完成，admin 审核确认。</div></div>
+      <div class="muted">公司重要的事情。每个人都可以添加，admin 批准后才对所有人显示；还没批准的只有你自己（和 admin）能看到，显示为黄色虚线。每周三自动提醒 Gusto payroll 截止、周四提醒取现金发工资截止，每周五自动显示「💰 发工资」，列出这周开出的所有 invoice。总监可以把事情标为完成，admin 审核确认。</div></div>
     <button class="btn btn-blue" onclick="openEdit(null, todayStr())">＋ 添加事情</button>
   </div>
+  <div id="remind" style="margin-top:12px"></div>
   <div id="pendBox" style="margin-top:12px"></div>
   <div class="card" style="margin-top:12px">
     <div class="row" style="justify-content:space-between">
@@ -164,11 +165,22 @@ function render() {
   document.getElementById('grid').innerHTML = html;
 
   const mStart = `${y}-${pad(m + 1)}-01`, mEnd = `${y}-${pad(m + 1)}-31`;
-  const inMonth = D.events.filter(e => e.start_date <= mEnd && (e.end_date || e.start_date) >= mStart);
+  const inMonth = D.events.filter(e => e.start_date <= mEnd && (e.end_date || e.start_date) >= mStart)
+    .sort((a, b) => a.start_date.localeCompare(b.start_date) || String(a.time || '').localeCompare(String(b.time || '')));
   document.getElementById('monthList').innerHTML = inMonth.map(e => `<div class="row" style="padding:.4rem 0;border-top:1px solid var(--g100);cursor:pointer" onclick="view('${e.id}')">
       <span style="font-family:monospace;font-size:.8rem;color:var(--g500);min-width:96px">${esc(range(e))}</span>
       <b style="font-size:.88rem">${esc(e.title)}</b>${e.time ? `<span class="muted">${esc(e.time)}</span>` : ''}${catTag(e)}${e.status !== 'approved' ? stTag(e) : ''}${doneTag(e)}
     </div>`).join('') || '<div class="muted">这个月还没有事项</div>';
+
+  // 提醒: 今天 / 明天到期、还没确认完成的
+  const tmr = new Date(); tmr.setDate(tmr.getDate() + 1);
+  const soon = [[today, '今天'], [ymd(tmr), '明天']].flatMap(([ds, lbl]) => D.events
+    .filter(e => e.status === 'approved' && onDay(e, ds) && !(e.done && e.done.status === 'approved')).map(e => [lbl, e]));
+  document.getElementById('remind').innerHTML = soon.length ? `<div class="card" style="border-left:4px solid #dc2626;background:#fff7f7">
+      <div style="font-weight:800;margin-bottom:.3rem">🔔 提醒</div>
+      ${soon.map(([lbl, e]) => `<div class="row" style="padding:.2rem 0;cursor:pointer" onclick="view('${e.id}')">
+        <span class="tag" style="background:${lbl === '今天' ? '#dc2626' : '#f59e0b'};color:#fff">${lbl}</span><b style="font-size:.88rem">${esc(e.title)}</b>${doneTag(e)}</div>`).join('')}
+    </div>` : '';
 
   // admin: 等批准的列表; 其他人: 自己等批准 / 被拒的
   const pend = D.events.filter(e => e.status === 'pending' || (!D.approver && e.status === 'rejected'));

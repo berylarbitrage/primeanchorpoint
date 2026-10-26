@@ -10416,6 +10416,7 @@ app.get('/api/calendar', requireAdmin, (req, res) => {
     ? db.prepare("SELECT * FROM company_events ORDER BY start_date, time, id").all()
     : db.prepare("SELECT * FROM company_events WHERE status='approved' OR created_by=? ORDER BY start_date, time, id").all(req.userId);
   if (['admin', 'staff'].includes(req.userRole)) rows.push(..._calInvoicePayDays());
+  rows.push(..._calWeeklyDeadlines());
   const done = {};
   for (const d of db.prepare('SELECT * FROM company_event_done').all()) done[d.event_key] = d;
   for (const r of rows) { r.key = r.auto ? r.id : 'ev-' + r.id; r.done = done[r.key] || null; }
@@ -10425,7 +10426,7 @@ app.get('/api/calendar', requireAdmin, (req, res) => {
 const _calKeyOk = key => {
   const m = /^ev-(\d+)$/.exec(key);
   if (m) { const ev = db.prepare('SELECT status FROM company_events WHERE id=?').get(m[1]); return !!ev && ev.status === 'approved'; }
-  return /^inv-\d{4}-\d{2}-\d{2}$/.test(key);
+  return /^(inv|rec-gusto|rec-cash)-\d{4}-\d{2}-\d{2}$/.test(key);
 };
 app.post('/api/calendar/done', requireAdmin, (req, res) => {
   const approver = _calApprover(req);
@@ -10456,6 +10457,24 @@ app.post('/api/calendar/done/review', requireAdmin, (req, res) => {
     .run(approve ? 'approved' : 'rejected', _calName(req), new Date().toISOString(), String((req.body && req.body.note) || '').trim().slice(0, 500), key);
   res.json({ success: true });
 });
+// 每周固定的发薪截止: 周三 Gusto payroll 截止、周四取现金发工资截止。现算, 往前 120 天、往后一年
+const _CAL_WEEKLY = [
+  { dow: 3, key: 'rec-gusto', title: '⏰ Gusto payroll 截止', description: '今天是 Gusto 跑 payroll 的截止日期，记得在 Gusto 提交本周工资。' },
+  { dow: 4, key: 'rec-cash', title: '💵 取现金发工资截止', description: '今天是取现金发工资的截止日期，记得去银行取好现金。' },
+];
+function _calWeeklyDeadlines() {
+  const out = [];
+  const today = new Date(_calChiDate.format(new Date()) + 'T00:00:00Z');
+  for (let i = -120; i <= 366; i++) {
+    const d = new Date(today); d.setUTCDate(d.getUTCDate() + i);
+    const w = _CAL_WEEKLY.find(x => x.dow === d.getUTCDay());
+    if (!w) continue;
+    const ds = d.toISOString().slice(0, 10);
+    out.push({ id: `${w.key}-${ds}`, auto: true, status: 'approved', category: 'deadline', start_date: ds, end_date: '', time: '',
+      title: w.title, description: w.description, created_by_name: '系统自动（每周固定）' });
+  }
+  return out;
+}
 // 每周五发工资: 每张发票 (草稿除外) 按开出那天 (芝加哥时间) 归到当周周五 — 周六 / 周日开的归下周五。
 // 不存表, 每次现算, 出了发票就自动显示; 只读, 不需要批准
 const _calChiDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' });
