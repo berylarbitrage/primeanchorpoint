@@ -33,7 +33,7 @@ label{font-size:.78rem;color:var(--g600);font-weight:600;display:block;margin:.5
 .pend{border-left:4px solid #f59e0b;margin-bottom:8px}
 .modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:50}
 .modal.show{display:flex}
-#payModal{z-index:60}
+#payModal,#ppModal{z-index:60}
 .modal .card{max-width:460px;width:100%;max-height:92vh;overflow:auto}
 @media (max-width:640px){.day{min-height:64px;padding:2px}.ev{font-size:0;height:6px;padding:0;margin-top:2px}.dn{font-size:.7rem}}
 </style>
@@ -75,6 +75,18 @@ label{font-size:.78rem;color:var(--g600);font-weight:600;display:block;margin:.5
 </div>
 
 <div class="modal" id="viewModal" onclick="if(event.target===this)closeM('viewModal')"><div class="card" id="viewBody"></div></div>
+<div class="modal" id="ppModal" onclick="if(event.target===this)closeM('ppModal')">
+  <div class="card">
+    <div style="font-weight:800;font-size:1.05rem">⏰ 推迟截止日期</div>
+    <div class="muted" id="ppTitle" style="margin-top:.2rem"></div>
+    <label>推迟到 *</label><input id="ppDate" type="date">
+    <label>推迟原因 *</label><textarea id="ppReason" rows="3" maxlength="500" placeholder="例如：客户付款晚了 / 银行周四休息…"></textarea>
+    <div class="row" style="justify-content:flex-end;margin-top:.8rem">
+      <button class="btn btn-outline" onclick="closeM('ppModal')">取消</button>
+      <button class="btn btn-blue" onclick="ppSave(PP_KEY, document.getElementById('ppDate').value)">保存</button>
+    </div>
+  </div>
+</div>
 <div class="modal" id="payModal" onclick="if(event.target===this)closeM('payModal')">
   <div class="card">
     <div style="font-weight:800;font-size:1.05rem">发工资标注</div>
@@ -196,7 +208,7 @@ function render() {
     .sort((a, b) => a.start_date.localeCompare(b.start_date) || String(a.time || '').localeCompare(String(b.time || '')));
   document.getElementById('monthList').innerHTML = inMonth.map(e => `<div class="row" style="padding:.4rem 0;border-top:1px solid var(--g100);cursor:pointer" onclick="view('${e.id}')">
       <span style="font-family:monospace;font-size:.8rem;color:var(--g500);min-width:96px">${esc(range(e))}</span>
-      <b style="font-size:.88rem">${esc(e.title)}</b>${e.time ? `<span class="muted">${esc(e.time)}</span>` : ''}${catTag(e)}${e.status !== 'approved' ? stTag(e) : ''}${e.progress ? `<span class="muted">已发 ${e.progress}</span>` : ''}${doneTag(e)}
+      <b style="font-size:.88rem">${esc(e.title)}</b>${e.time ? `<span class="muted">${esc(e.time)}</span>` : ''}${catTag(e)}${e.status !== 'approved' ? stTag(e) : ''}${e.progress ? `<span class="muted">已发 ${e.progress}</span>` : ''}${ppTag(e)}${doneTag(e)}${quick(e)}
     </div>`).join('') || '<div class="muted">这个月还没有事项</div>';
 
   // 提醒: 今天 / 明天到期、还没确认完成的
@@ -206,7 +218,7 @@ function render() {
   document.getElementById('remind').innerHTML = soon.length ? `<div class="card" style="border-left:4px solid #dc2626;background:#fff7f7">
       <div style="font-weight:800;margin-bottom:.3rem">🔔 提醒</div>
       ${soon.map(([lbl, e]) => `<div class="row" style="padding:.2rem 0;cursor:pointer" onclick="view('${e.id}')">
-        <span class="tag" style="background:${lbl === '今天' ? '#dc2626' : '#f59e0b'};color:#fff">${lbl}</span><b style="font-size:.88rem">${esc(e.title)}</b>${doneTag(e)}</div>`).join('')}
+        <span class="tag" style="background:${lbl === '今天' ? '#dc2626' : '#f59e0b'};color:#fff">${lbl}</span><b style="font-size:.88rem">${esc(e.title)}</b>${ppTag(e)}${doneTag(e)}${quick(e)}</div>`).join('')}
     </div>` : '';
 
   // admin: 等批准的列表; 其他人: 自己等批准 / 被拒的
@@ -229,7 +241,7 @@ function render() {
   const rev = D.approver ? D.events.filter(e => !e.invoices && e.done && e.done.status === 'pending_review') : [];
   const prev = D.approver ? D.events.filter(e => e.invoices).flatMap(e => e.invoices.filter(i => i.pay && i.pay.review_status === 'pending').map(i => [e, i])) : [];
   if (prev.length) document.getElementById('pendBox').innerHTML += `<div class="card" style="margin-top:12px">
-      <div style="font-weight:800;margin-bottom:.5rem">💰 发工资标注等你审核（${prev.length} 张）</div>
+      <div class="row" style="justify-content:space-between;margin-bottom:.5rem"><b>💰 发工资标注等你审核（${prev.length} 张）</b><button class="btn btn-green btn-sm" onclick="payReviewAll()">✓ 全部确认</button></div>
       ${prev.map(([e, i]) => `<div class="card pend" style="padding:10px 12px;border-left-color:${i.pay.status === 'done' ? '#16a34a' : '#dc2626'}">
         <div class="row"><b style="cursor:pointer" onclick="view('${e.id}')">${esc(i.number)}</b><span class="muted">${esc(i.company)} · ${esc(e.start_date)} 发工资</span>${payTag(i)}</div>
         ${payDetail(i)}
@@ -238,7 +250,7 @@ function render() {
       </div>`).join('')}
     </div>`;
   if (rev.length) document.getElementById('pendBox').innerHTML += `<div class="card" style="margin-top:12px">
-      <div style="font-weight:800;margin-bottom:.5rem">✔ 等你审核完成（${rev.length}）</div>
+      <div class="row" style="justify-content:space-between;margin-bottom:.5rem"><b>✔ 等你审核完成（${rev.length}）</b><button class="btn btn-green btn-sm" onclick="reviewAll()">✓ 全部确认</button></div>
       ${rev.map(e => `<div class="card pend" style="padding:10px 12px;border-left-color:#16a34a">
         <div class="row"><b style="cursor:pointer" onclick="view('${e.id}')">${esc(e.title)}</b><span class="muted">${esc(range(e))}</span>${catTag(e)}</div>
         <div class="muted" style="margin-top:.25rem">${esc(e.done.done_by)} 标完成 · ${esc(fmt(e.done.done_at))}${e.done.done_note ? ' · ' + esc(e.done.done_note) : ''}</div>
@@ -256,10 +268,11 @@ function view(id) {
   document.getElementById('viewBody').innerHTML = `
     <div class="row" style="justify-content:space-between"><div style="font-weight:800;font-size:1.05rem">${esc(e.title)}</div><button class="btn btn-outline btn-sm" onclick="closeM('viewModal')">✕</button></div>
     <div class="row" style="margin-top:.4rem">${catTag(e)}${stTag(e)}</div>
-    <div style="margin-top:.5rem;font-size:.88rem">📅 ${esc(range(e))}${e.time ? ' · ' + esc(e.time) : ''}</div>
+    <div style="margin-top:.5rem;font-size:.88rem">📅 ${esc(range(e))}${e.time ? ' · ' + esc(e.time) : ''}${e.postponed ? ` <span class="muted">（原 ${esc(e.orig_date)}）</span>` : ''}</div>
     ${e.description ? `<div style="margin-top:.5rem;font-size:.86rem;white-space:pre-wrap;background:#f8fafc;border-radius:8px;padding:.5rem .7rem">${esc(e.description)}</div>` : ''}
     ${e.invoices ? invTable(e) : ''}
     ${doneBox(e)}
+    ${ppBox(e)}
     <div class="muted" style="margin-top:.6rem">${esc(e.created_by_name)} 添加${e.decided_by ? ` · ${esc(e.decided_by)} ${e.status === 'approved' ? '批准' : '处理'}` : ''}${e.note ? ' · 备注：' + esc(e.note) : ''}</div>
     ${canEdit(e) ? `<div class="row" style="justify-content:flex-end;margin-top:.8rem">
       ${D.approver && e.status !== 'approved' ? `<button class="btn btn-green btn-sm" onclick="decide(${e.id},true)">✓ 批准</button>` : ''}
@@ -280,17 +293,61 @@ function doneBox(e) {
   if (btns.length) h += `<div class="row" style="margin-top:.45rem">${btns.join('')}</div>`;
   return h ? `<div style="margin-top:.6rem;border-top:1px solid var(--g100);padding-top:.4rem">${h}</div>` : '';
 }
+// 列表 / 提醒里直接点: 完成、推迟, 不用点开弹窗
+function quick(e) {
+  if (!D.canMark || e.status !== 'approved') return '';
+  const b = [];
+  if (!e.invoices && (!e.done || e.done.status === 'rejected')) b.push(`<button class="btn btn-green btn-sm" onclick="event.stopPropagation();markDone('${e.key}',true)">✓ 完成</button>`);
+  if (!(e.done && e.done.status === 'approved')) b.push(`<button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openPp('${e.id}')">⏰ 推迟</button>`);
+  return b.length ? `<span style="flex:1"></span>${b.join('')}` : '';
+}
+const ppTag = e => e.postponed ? `<span class="tag" style="background:#ede9fe;color:#6d28d9" title="${esc(e.postponed.reason)}">⏰ 已推迟（原 ${esc(e.orig_date.slice(5))}）</span>` : '';
+function ppBox(e) {
+  if (e.status !== 'approved') return '';
+  const p = e.postponed;
+  let h = p ? `<div style="font-size:.82rem">${ppTag(e)} <span class="muted">${esc(p.postponed_by)} · ${esc(fmt(p.postponed_at))}</span></div><div style="font-size:.8rem;margin-top:.2rem"><b>推迟原因：</b>${esc(p.reason)}</div>` : '';
+  if (D.canMark && !(e.done && e.done.status === 'approved')) h += `<div class="row" style="margin-top:.4rem"><button class="btn btn-outline btn-sm" onclick="openPp('${e.id}')">⏰ ${p ? '改推迟日期' : '推迟截止日期'}</button>${p ? `<button class="btn btn-outline btn-sm" onclick="ppSave('${e.key}',null)">取消推迟</button>` : ''}</div>`;
+  return h ? `<div style="margin-top:.6rem;border-top:1px solid var(--g100);padding-top:.4rem">${h}</div>` : '';
+}
+let PP_KEY = null;
+function openPp(id) {
+  const e = D.events.find(x => String(x.id) === String(id)); if (!e) return;
+  PP_KEY = e.key;
+  document.getElementById('ppTitle').textContent = `${e.title}（${e.postponed ? '原 ' + e.orig_date + '，现 ' : ''}${e.start_date}）`;
+  const d = new Date(e.start_date + 'T00:00:00'); d.setDate(d.getDate() + 1);
+  document.getElementById('ppDate').value = e.postponed ? e.start_date : ymd(d);
+  document.getElementById('ppReason').value = e.postponed ? e.postponed.reason : '';
+  document.getElementById('ppModal').classList.add('show');
+  setTimeout(() => document.getElementById('ppReason').focus(), 50);
+}
+async function ppSave(key, date) {
+  const reason = document.getElementById('ppReason').value.trim();
+  if (date !== null) { if (!date) return toast('请选新的日期', true); if (!reason) return toast('推迟要写原因', true); }
+  const j = await api('/api/calendar/postpone', { method: 'POST', body: { key, new_date: date, reason } }).catch(e => ({ error: e.message }));
+  if (j.error) return toast(j.error, true);
+  closeM('ppModal'); toast(date ? '已推迟到 ' + date : '已取消推迟'); reloadView();
+}
+async function reviewAll() {
+  const keys = D.events.filter(e => !e.invoices && e.done && e.done.status === 'pending_review').map(e => e.key);
+  for (const key of keys) { const j = await api('/api/calendar/done/review', { method: 'POST', body: { key, approve: true } }).catch(e => ({ error: e.message })); if (j.error) { toast(j.error, true); break; } }
+  toast(`已确认 ${keys.length} 件`); reloadView();
+}
+async function payReviewAll() {
+  const ids = D.events.filter(e => e.invoices).flatMap(e => e.invoices.filter(i => i.pay && i.pay.review_status === 'pending').map(i => i.id));
+  for (const id of ids) { const j = await api('/api/calendar/invpay/review', { method: 'POST', body: { invoice_id: id, approve: true } }).catch(e => ({ error: e.message })); if (j.error) { toast(j.error, true); break; } }
+  toast(`已确认 ${ids.length} 张`); reloadView();
+}
 async function markDone(key, done) {
   const n = document.getElementById('dnote');
   const j = await api('/api/calendar/done', { method: 'POST', body: { key, done, note: n ? n.value : '' } }).catch(e => ({ error: e.message }));
   if (j.error) return toast(j.error, true);
-  closeM('viewModal'); toast(!done ? '已撤回' : j.status === 'approved' ? '已标记完成' : '已标记完成，等 admin 审核'); load();
+  toast(!done ? '已撤回' : j.status === 'approved' ? '已标记完成' : '已标记完成，等 admin 审核'); reloadView();
 }
 async function review(key, ok, inputId) {
   const n = document.getElementById(inputId || 'rnote-' + key);
   const j = await api('/api/calendar/done/review', { method: 'POST', body: { key, approve: ok, note: n ? n.value : '' } }).catch(e => ({ error: e.message }));
   if (j.error) return toast(j.error, true);
-  closeM('viewModal'); toast(ok ? '已确认完成' : '已退回'); load();
+  toast(ok ? '已确认完成' : '已退回'); reloadView();
 }
 // 自动「发工资」事项: 这周开出的 invoice 列表
 function invTable(e) {
@@ -382,7 +439,6 @@ async function savePay() {
   closeM('payModal'); toast(j.review_status === 'approved' ? '已标注' : '已标注，等 admin 审核'); reloadView();
 }
 async function payUndo(id) {
-  if (!confirm('撤回这张的标注？')) return;
   const j = await api('/api/calendar/invpay', { method: 'POST', body: { invoice_id: id, status: null } }).catch(e => ({ error: e.message }));
   if (j.error) return toast(j.error, true);
   toast('已撤回'); reloadView();
