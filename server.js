@@ -10494,13 +10494,82 @@ function _calInvoicePayDays() {
     const fri = local.toISOString().slice(0, 10);
     if (!byFri.has(fri)) byFri.set(fri, []);
     byFri.get(fri).push({ id: inv.id, number: inv.invoice_number, company: inv.company_name, subtotal: Number(inv.subtotal) || 0,
-      paid: inv.payment_status === 'paid', sub_paid: inv.sub_payment_status === 'paid' });
+      paid: inv.payment_status === 'paid', sub_paid: inv.sub_payment_status === 'paid', pay: null });
   }
+  // 每张 invoice 的发工资标注
+  const pay = {};
+  try { for (const r of db.prepare('SELECT * FROM company_invoice_pay').all()) { try { r.photos = JSON.parse(r.photos || '[]'); } catch (e) { r.photos = []; } pay[r.invoice_id] = r; } } catch (e) {}
+  for (const list of byFri.values()) for (const i of list) i.pay = pay[i.id] || null;
   return [...byFri].map(([fri, list]) => ({
     id: 'inv-' + fri, auto: true, status: 'approved', category: 'payroll', start_date: fri, end_date: '', time: '',
     title: `💰 发工资 · ${list.length} 张 invoice`, description: '', created_by_name: '系统自动（按本周开出的 invoice）', invoices: list,
   }));
 }
+// 发工资按 invoice 一张一张标: 完成 / 没完成 (必须写原因), 可附备注和截图; 总监标, admin 审核每一张
+db.exec(`CREATE TABLE IF NOT EXISTS company_invoice_pay (
+  invoice_id INTEGER PRIMARY KEY,
+  status TEXT DEFAULT 'done',            -- done 已发 / not_done 没发 (note 写原因)
+  note TEXT DEFAULT '', photos TEXT DEFAULT '[]',
+  marked_by TEXT DEFAULT '', marked_at TEXT DEFAULT '',
+  review_status TEXT DEFAULT 'pending',  -- pending 等 admin 审核 / approved 已确认 / rejected 退回
+  reviewed_by TEXT DEFAULT '', reviewed_at TEXT DEFAULT '', review_note TEXT DEFAULT ''
+)`);
+// 截图: 前端压成 JPEG 后以 data URL 传上来
+app.post('/api/calendar/upload', requireAdmin, async (req, res) => {
+  if (!_calApprover(req) && !_calDirector(req)) return res.status(403).json({ error: '只有总监 / admin 能上传' });
+  const m = /^data:image\/(png|jpe?g|webp|gif);base64,(.+)$/.exec(String((req.body && req.body.data) || ''));
+  if (!m) return res.status(400).json({ error: '只能上传图片' });
+  const buf = Buffer.from(m[2], 'base64');
+  if (!buf.length || buf.length > 8 * 1024 * 1024) return res.status(400).json({ error: '图片太大（最多 8MB）' });
+  const ext = m[1] === 'jpeg' ? 'jpg' : m[1];
+  const key = `calendar/pay-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
+  try { await storage.putObject(key, buf, { contentType: 'image/' + (ext === 'jpg' ? 'jpeg' : ext) }); }
+  catch (e) { return res.status(500).json({ error: '上传失败：' + e.message }); }
+  res.json({ success: true, key });
+});
+app.get('/api/calendar/file/:name', requireAdmin, async (req, res) => {
+  const name = String(req.params.name || '');
+  if (!/^pay-\d+-[0-9a-f]+\.(jpg|png|webp|gif)$/.test(name)) return res.status(400).end();
+  try {
+    const buf = decryptFileBuf(await storage.getBuffer('calendar/' + name));
+    res.setHeader('Content-Type', 'image/' + (name.endsWith('.jpg') ? 'jpeg' : name.split('.').pop()));
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    res.send(buf);
+  } catch (e) { res.status(404).end(); }
+});
+app.post('/api/calendar/invpay', requireAdmin, (req, res) => {
+  const approver = _calApprover(req);
+  if (!approver && !_calDirector(req)) return res.status(403).json({ error: '只有总监 / admin 能标注' });
+  const b = req.body || {};
+  const id = parseInt(b.invoice_id, 10);
+  if (!id || !db.prepare('SELECT id FROM invoices WHERE id=?').get(id)) return res.status(404).json({ error: '找不到这张 invoice' });
+  const cur = db.prepare('SELECT * FROM company_invoice_pay WHERE invoice_id=?').get(id);
+  if (cur && cur.review_status === 'approved' && !approver) return res.status(403).json({ error: 'admin 已确认，只有 admin 能改' });
+  if (b.status == null) {   // 撤回
+    db.prepare('DELETE FROM company_invoice_pay WHERE invoice_id=?').run(id);
+    return res.json({ success: true });
+  }
+  const status = b.status === 'not_done' ? 'not_done' : 'done';
+  const note = String(b.note || '').trim().slice(0, 1000);
+  if (status === 'not_done' && !note) return res.status(400).json({ error: '没完成要写清楚原因' });
+  const photos = (Array.isArray(b.photos) ? b.photos : []).map(String).filter(k => /^calendar\/pay-\d+-[0-9a-f]+\.(jpg|png|webp|gif)$/.test(k)).slice(0, 10);
+  const name = _calName(req), now = new Date().toISOString();
+  db.prepare(`INSERT INTO company_invoice_pay (invoice_id, status, note, photos, marked_by, marked_at, review_status, reviewed_by, reviewed_at, review_note)
+    VALUES (?,?,?,?,?,?,?,?,?,'')
+    ON CONFLICT(invoice_id) DO UPDATE SET status=excluded.status, note=excluded.note, photos=excluded.photos, marked_by=excluded.marked_by, marked_at=excluded.marked_at,
+      review_status=excluded.review_status, reviewed_by=excluded.reviewed_by, reviewed_at=excluded.reviewed_at, review_note=''`)
+    .run(id, status, note, JSON.stringify(photos), name, now, approver ? 'approved' : 'pending', approver ? name : '', approver ? now : '');
+  res.json({ success: true, review_status: approver ? 'approved' : 'pending' });
+});
+app.post('/api/calendar/invpay/review', requireAdmin, (req, res) => {
+  if (!_calApprover(req)) return res.status(403).json({ error: '只有 admin 能审核' });
+  const id = parseInt((req.body && req.body.invoice_id), 10);
+  if (!db.prepare('SELECT invoice_id FROM company_invoice_pay WHERE invoice_id=?').get(id)) return res.status(404).json({ error: '这张还没被标注' });
+  const approve = !!(req.body && req.body.approve);
+  db.prepare('UPDATE company_invoice_pay SET review_status=?, reviewed_by=?, reviewed_at=?, review_note=? WHERE invoice_id=?')
+    .run(approve ? 'approved' : 'rejected', _calName(req), new Date().toISOString(), String((req.body && req.body.note) || '').trim().slice(0, 500), id);
+  res.json({ success: true });
+});
 app.post('/api/calendar', requireAdmin, (req, res) => {
   const b = req.body || {};
   const title = String(b.title || '').trim().slice(0, 200);
