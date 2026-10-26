@@ -10419,7 +10419,18 @@ app.get('/api/calendar', requireAdmin, (req, res) => {
   rows.push(..._calWeeklyDeadlines());
   const done = {};
   for (const d of db.prepare('SELECT * FROM company_event_done').all()) done[d.event_key] = d;
-  for (const r of rows) { r.key = r.auto ? r.id : 'ev-' + r.id; r.done = done[r.key] || null; }
+  const pp = {};
+  for (const d of db.prepare('SELECT * FROM company_event_postpone').all()) pp[d.event_key] = d;
+  for (const r of rows) {
+    r.key = r.auto ? r.id : 'ev-' + r.id; r.done = done[r.key] || null;
+    // 推迟: 显示在新日期, 多天的事整段平移
+    const p = pp[r.key];
+    if (p && p.new_date) {
+      r.postponed = p; r.orig_date = r.start_date;
+      if (r.end_date) { const span = (Date.parse(r.end_date) - Date.parse(r.start_date)) / 86400000; const e = new Date(p.new_date + 'T00:00:00Z'); e.setUTCDate(e.getUTCDate() + span); r.end_date = e.toISOString().slice(0, 10); }
+      r.start_date = p.new_date;
+    }
+  }
   res.json({ events: rows, approver, canMark: approver || _calDirector(req), me: req.userId });
 });
 // 标完成 / 撤回: 总监或 admin。只能标已批准显示的事项; admin 已确认的只有 admin 能撤回
@@ -10446,6 +10457,23 @@ app.post('/api/calendar/done', requireAdmin, (req, res) => {
       reviewed_by=excluded.reviewed_by, reviewed_at=excluded.reviewed_at, review_note=''`)
     .run(key, status, name, now, String((req.body && req.body.note) || '').trim().slice(0, 500), approver ? name : '', approver ? now : '');
   res.json({ success: true, status });
+});
+// 推迟截止日期: 总监 / admin, 必须写原因; new_date 为空 = 取消推迟
+db.exec(`CREATE TABLE IF NOT EXISTS company_event_postpone (
+  event_key TEXT PRIMARY KEY, new_date TEXT DEFAULT '', reason TEXT DEFAULT '', postponed_by TEXT DEFAULT '', postponed_at TEXT DEFAULT ''
+)`);
+app.post('/api/calendar/postpone', requireAdmin, (req, res) => {
+  if (!_calApprover(req) && !_calDirector(req)) return res.status(403).json({ error: '只有总监 / admin 能推迟' });
+  const key = String((req.body && req.body.key) || '');
+  if (!_calKeyOk(key)) return res.status(400).json({ error: '找不到这件事（或还没批准显示）' });
+  const nd = _calDate(req.body && req.body.new_date);
+  if (!nd) { db.prepare('DELETE FROM company_event_postpone WHERE event_key=?').run(key); return res.json({ success: true }); }
+  const reason = String((req.body && req.body.reason) || '').trim().slice(0, 500);
+  if (!reason) return res.status(400).json({ error: '推迟要写原因' });
+  db.prepare(`INSERT INTO company_event_postpone (event_key, new_date, reason, postponed_by, postponed_at) VALUES (?,?,?,?,?)
+    ON CONFLICT(event_key) DO UPDATE SET new_date=excluded.new_date, reason=excluded.reason, postponed_by=excluded.postponed_by, postponed_at=excluded.postponed_at`)
+    .run(key, nd, reason, _calName(req), new Date().toISOString());
+  res.json({ success: true });
 });
 app.post('/api/calendar/done/review', requireAdmin, (req, res) => {
   if (!_calApprover(req)) return res.status(403).json({ error: '只有 admin 能审核' });
