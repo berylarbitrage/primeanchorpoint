@@ -47,9 +47,9 @@ label{font-size:.78rem;color:var(--g600);font-weight:600;display:block;margin:.5
   </div>
 </div>
 <div class="wrap" id="main" style="display:none">
-  <div class="row" style="justify-content:space-between">
-    <div><div style="font-size:1.2rem;font-weight:800;color:#0f4c6b">📅 公司日历</div>
-      <div class="muted">公司重要的事情。每个人都可以添加，admin 批准后才对所有人显示；还没批准的只有你自己（和 admin）能看到，显示为黄色虚线。</div></div>
+  <div class="row" style="justify-content:space-between;flex-wrap:nowrap;align-items:flex-start">
+    <div style="flex:1;min-width:0"><div style="font-size:1.2rem;font-weight:800;color:#0f4c6b">📅 公司日历</div>
+      <div class="muted">公司重要的事情。每个人都可以添加，admin 批准后才对所有人显示；还没批准的只有你自己（和 admin）能看到，显示为黄色虚线。每周五会自动显示「💰 发工资」，列出这周开出的所有 invoice。</div></div>
     <button class="btn btn-blue" onclick="openEdit(null, todayStr())">＋ 添加事情</button>
   </div>
   <div id="pendBox" style="margin-top:12px"></div>
@@ -126,7 +126,7 @@ const cat = e => CATS[e.category] || CATS[''];
 const range = e => e.end_date && e.end_date !== e.start_date ? `${e.start_date} ~ ${e.end_date}` : e.start_date;
 const onDay = (e, ds) => ds >= e.start_date && ds <= (e.end_date || e.start_date);
 const ST = { pending: ['⏳ 等 admin 批准', '#92400e', '#fef3c7'], approved: ['✅ 已批准', '#166534', '#dcfce7'], rejected: ['✗ 未批准', '#4b5563', '#f3f4f6'] };
-const stTag = e => { const [l, c, b] = ST[e.status] || ST.pending; return `<span class="tag" style="background:${b};color:${c}">${l}</span>`; };
+const stTag = e => { if (e.auto) return '<span class="tag" style="background:#ccfbf1;color:#0f766e">⚙ 自动</span>'; const [l, c, b] = ST[e.status] || ST.pending; return `<span class="tag" style="background:${b};color:${c}">${l}</span>`; };
 const catTag = e => { const [l, c] = cat(e); return `<span class="tag" style="background:${c}1a;color:${c}">${esc(l)}</span>`; };
 
 async function load() {
@@ -153,14 +153,14 @@ function render() {
     const evs = shown.filter(e => onDay(e, ds));
     html += `<div class="day ${d.getMonth() !== m ? 'other' : ''} ${ds === today ? 'today' : ''}" onclick="openEdit(null,'${ds}')">
       <span class="dn">${d.getDate()}</span>
-      ${evs.map(e => `<span class="ev ${esc(e.status)}" style="background:${cat(e)[1]}" title="${esc(e.title)}" onclick="event.stopPropagation();view(${e.id})">${e.time ? esc(e.time) + ' ' : ''}${esc(e.title)}</span>`).join('')}
+      ${evs.map(e => `<span class="ev ${esc(e.status)}" style="background:${cat(e)[1]}" title="${esc(e.title)}" onclick="event.stopPropagation();view('${e.id}')">${e.time ? esc(e.time) + ' ' : ''}${esc(e.title)}</span>`).join('')}
     </div>`;
   }
   document.getElementById('grid').innerHTML = html;
 
   const mStart = `${y}-${pad(m + 1)}-01`, mEnd = `${y}-${pad(m + 1)}-31`;
   const inMonth = D.events.filter(e => e.start_date <= mEnd && (e.end_date || e.start_date) >= mStart);
-  document.getElementById('monthList').innerHTML = inMonth.map(e => `<div class="row" style="padding:.4rem 0;border-top:1px solid var(--g100);cursor:pointer" onclick="view(${e.id})">
+  document.getElementById('monthList').innerHTML = inMonth.map(e => `<div class="row" style="padding:.4rem 0;border-top:1px solid var(--g100);cursor:pointer" onclick="view('${e.id}')">
       <span style="font-family:monospace;font-size:.8rem;color:var(--g500);min-width:96px">${esc(range(e))}</span>
       <b style="font-size:.88rem">${esc(e.title)}</b>${e.time ? `<span class="muted">${esc(e.time)}</span>` : ''}${catTag(e)}${e.status !== 'approved' ? stTag(e) : ''}
     </div>`).join('') || '<div class="muted">这个月还没有事项</div>';
@@ -183,20 +183,34 @@ function render() {
     </div>` : '';
 }
 function fmt(t) { if (!t) return ''; const d = new Date(String(t).includes('T') ? t : String(t).replace(' ', 'T') + 'Z'); return isNaN(d) ? t : d.toLocaleString(); }
-function canEdit(e) { return D.approver || e.created_by === D.me; }
+function canEdit(e) { return !e.auto && (D.approver || e.created_by === D.me); }
 function view(id) {
-  const e = D.events.find(x => x.id === id); if (!e) return;
+  const e = D.events.find(x => String(x.id) === String(id)); if (!e) return;
   document.getElementById('viewBody').innerHTML = `
     <div class="row" style="justify-content:space-between"><div style="font-weight:800;font-size:1.05rem">${esc(e.title)}</div><button class="btn btn-outline btn-sm" onclick="closeM('viewModal')">✕</button></div>
     <div class="row" style="margin-top:.4rem">${catTag(e)}${stTag(e)}</div>
     <div style="margin-top:.5rem;font-size:.88rem">📅 ${esc(range(e))}${e.time ? ' · ' + esc(e.time) : ''}</div>
     ${e.description ? `<div style="margin-top:.5rem;font-size:.86rem;white-space:pre-wrap;background:#f8fafc;border-radius:8px;padding:.5rem .7rem">${esc(e.description)}</div>` : ''}
+    ${e.invoices ? invTable(e) : ''}
     <div class="muted" style="margin-top:.6rem">${esc(e.created_by_name)} 添加${e.decided_by ? ` · ${esc(e.decided_by)} ${e.status === 'approved' ? '批准' : '处理'}` : ''}${e.note ? ' · 备注：' + esc(e.note) : ''}</div>
     ${canEdit(e) ? `<div class="row" style="justify-content:flex-end;margin-top:.8rem">
       ${D.approver && e.status !== 'approved' ? `<button class="btn btn-green btn-sm" onclick="decide(${e.id},true)">✓ 批准</button>` : ''}
       <button class="btn btn-outline btn-sm" onclick="closeM('viewModal');openEdit(${e.id})">编辑</button>
       <button class="btn btn-red btn-sm" onclick="del(${e.id})">删除</button></div>` : ''}`;
   document.getElementById('viewModal').classList.add('show');
+}
+// 自动「发工资」事项: 这周开出的 invoice 列表
+function invTable(e) {
+  const money = n => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const tot = e.invoices.reduce((s, i) => s + i.subtotal, 0);
+  return `<div class="muted" style="margin-top:.5rem">这周开出的 invoice，周五要发工资：</div>
+    <table style="width:100%;border-collapse:collapse;font-size:.8rem;margin-top:.3rem">
+      <tr style="color:var(--g500);text-align:left"><th style="padding:3px 4px">Invoice #</th><th style="padding:3px 4px">公司</th><th style="padding:3px 4px;text-align:right">金额</th><th style="padding:3px 4px">状态</th></tr>
+      ${e.invoices.map(i => `<tr style="border-top:1px solid var(--g100)"><td style="padding:3px 4px;font-family:monospace">${esc(i.number)}</td><td style="padding:3px 4px">${esc(i.company)}</td>
+        <td style="padding:3px 4px;text-align:right">${money(i.subtotal)}</td>
+        <td style="padding:3px 4px;white-space:nowrap">${i.sub_paid ? '<span class="tag" style="background:#dcfce7;color:#166534">分包已付</span>' : ''}${i.paid ? ' <span class="tag" style="background:#e0f2fe;color:#075985">客户已付</span>' : ''}</td></tr>`).join('')}
+      <tr style="border-top:2px solid var(--g200);font-weight:700"><td style="padding:4px" colspan="2">合计 ${e.invoices.length} 张</td><td style="padding:4px;text-align:right">${money(tot)}</td><td></td></tr>
+    </table>`;
 }
 function closeM(id) { document.getElementById(id).classList.remove('show'); }
 function openEdit(id, date) {
