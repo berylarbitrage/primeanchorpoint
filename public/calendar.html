@@ -28,6 +28,7 @@ label{font-size:.78rem;color:var(--g600);font-weight:600;display:block;margin:.5
 .dn{font-size:.76rem;font-weight:700;color:var(--g600);display:inline-block;margin-bottom:2px}
 .ev{display:block;font-size:.72rem;line-height:1.25;border-radius:5px;padding:2px 5px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;color:#fff}
 .ev.pending{background:#fef3c7!important;color:#92400e;border:1px dashed #f59e0b}
+.ev.isdone{opacity:.55;text-decoration:line-through}
 .ev.rejected{background:var(--g100)!important;color:var(--g500);text-decoration:line-through}
 .pend{border-left:4px solid #f59e0b;margin-bottom:8px}
 .modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:50}
@@ -49,9 +50,10 @@ label{font-size:.78rem;color:var(--g600);font-weight:600;display:block;margin:.5
 <div class="wrap" id="main" style="display:none">
   <div class="row" style="justify-content:space-between;flex-wrap:nowrap;align-items:flex-start">
     <div style="flex:1;min-width:0"><div style="font-size:1.2rem;font-weight:800;color:#0f4c6b">📅 公司日历</div>
-      <div class="muted">公司重要的事情。每个人都可以添加，admin 批准后才对所有人显示；还没批准的只有你自己（和 admin）能看到，显示为黄色虚线。每周五会自动显示「💰 发工资」，列出这周开出的所有 invoice。</div></div>
+      <div class="muted">公司重要的事情。每个人都可以添加，admin 批准后才对所有人显示；还没批准的只有你自己（和 admin）能看到，显示为黄色虚线。每周三自动提醒 Gusto payroll 截止、周四提醒取现金发工资截止，每周五自动显示「💰 发工资」，列出这周开出的所有 invoice。总监可以把事情标为完成，admin 审核确认。</div></div>
     <button class="btn btn-blue" onclick="openEdit(null, todayStr())">＋ 添加事情</button>
   </div>
+  <div id="remind" style="margin-top:12px"></div>
   <div id="pendBox" style="margin-top:12px"></div>
   <div class="card" style="margin-top:12px">
     <div class="row" style="justify-content:space-between">
@@ -127,6 +129,10 @@ const range = e => e.end_date && e.end_date !== e.start_date ? `${e.start_date} 
 const onDay = (e, ds) => ds >= e.start_date && ds <= (e.end_date || e.start_date);
 const ST = { pending: ['⏳ 等 admin 批准', '#92400e', '#fef3c7'], approved: ['✅ 已批准', '#166534', '#dcfce7'], rejected: ['✗ 未批准', '#4b5563', '#f3f4f6'] };
 const stTag = e => { if (e.auto) return '<span class="tag" style="background:#ccfbf1;color:#0f766e">⚙ 自动</span>'; const [l, c, b] = ST[e.status] || ST.pending; return `<span class="tag" style="background:${b};color:${c}">${l}</span>`; };
+// 完成状态: 总监标完成 → admin 审核
+const DONE = { pending_review: ['⏳ 已标完成 · 等 admin 审核', '#92400e', '#fef3c7', '⏳'], approved: ['✔ 已完成', '#166534', '#dcfce7', '✔'], rejected: ['↩ admin 退回', '#991b1b', '#fee2e2', '↩'] };
+const doneTag = e => { const d = e.done && DONE[e.done.status]; return d ? `<span class="tag" style="background:${d[2]};color:${d[1]}">${d[0]}</span>` : ''; };
+const doneIcon = e => { const d = e.done && DONE[e.done.status]; return d ? d[3] + ' ' : ''; };
 const catTag = e => { const [l, c] = cat(e); return `<span class="tag" style="background:${c}1a;color:${c}">${esc(l)}</span>`; };
 
 async function load() {
@@ -153,17 +159,28 @@ function render() {
     const evs = shown.filter(e => onDay(e, ds));
     html += `<div class="day ${d.getMonth() !== m ? 'other' : ''} ${ds === today ? 'today' : ''}" onclick="openEdit(null,'${ds}')">
       <span class="dn">${d.getDate()}</span>
-      ${evs.map(e => `<span class="ev ${esc(e.status)}" style="background:${cat(e)[1]}" title="${esc(e.title)}" onclick="event.stopPropagation();view('${e.id}')">${e.time ? esc(e.time) + ' ' : ''}${esc(e.title)}</span>`).join('')}
+      ${evs.map(e => `<span class="ev ${esc(e.status)}${e.done && e.done.status === 'approved' ? ' isdone' : ''}" style="background:${cat(e)[1]}" title="${esc(e.title)}" onclick="event.stopPropagation();view('${e.id}')">${doneIcon(e)}${e.time ? esc(e.time) + ' ' : ''}${esc(e.title)}</span>`).join('')}
     </div>`;
   }
   document.getElementById('grid').innerHTML = html;
 
   const mStart = `${y}-${pad(m + 1)}-01`, mEnd = `${y}-${pad(m + 1)}-31`;
-  const inMonth = D.events.filter(e => e.start_date <= mEnd && (e.end_date || e.start_date) >= mStart);
+  const inMonth = D.events.filter(e => e.start_date <= mEnd && (e.end_date || e.start_date) >= mStart)
+    .sort((a, b) => a.start_date.localeCompare(b.start_date) || String(a.time || '').localeCompare(String(b.time || '')));
   document.getElementById('monthList').innerHTML = inMonth.map(e => `<div class="row" style="padding:.4rem 0;border-top:1px solid var(--g100);cursor:pointer" onclick="view('${e.id}')">
       <span style="font-family:monospace;font-size:.8rem;color:var(--g500);min-width:96px">${esc(range(e))}</span>
-      <b style="font-size:.88rem">${esc(e.title)}</b>${e.time ? `<span class="muted">${esc(e.time)}</span>` : ''}${catTag(e)}${e.status !== 'approved' ? stTag(e) : ''}
+      <b style="font-size:.88rem">${esc(e.title)}</b>${e.time ? `<span class="muted">${esc(e.time)}</span>` : ''}${catTag(e)}${e.status !== 'approved' ? stTag(e) : ''}${doneTag(e)}
     </div>`).join('') || '<div class="muted">这个月还没有事项</div>';
+
+  // 提醒: 今天 / 明天到期、还没确认完成的
+  const tmr = new Date(); tmr.setDate(tmr.getDate() + 1);
+  const soon = [[today, '今天'], [ymd(tmr), '明天']].flatMap(([ds, lbl]) => D.events
+    .filter(e => e.status === 'approved' && onDay(e, ds) && !(e.done && e.done.status === 'approved')).map(e => [lbl, e]));
+  document.getElementById('remind').innerHTML = soon.length ? `<div class="card" style="border-left:4px solid #dc2626;background:#fff7f7">
+      <div style="font-weight:800;margin-bottom:.3rem">🔔 提醒</div>
+      ${soon.map(([lbl, e]) => `<div class="row" style="padding:.2rem 0;cursor:pointer" onclick="view('${e.id}')">
+        <span class="tag" style="background:${lbl === '今天' ? '#dc2626' : '#f59e0b'};color:#fff">${lbl}</span><b style="font-size:.88rem">${esc(e.title)}</b>${doneTag(e)}</div>`).join('')}
+    </div>` : '';
 
   // admin: 等批准的列表; 其他人: 自己等批准 / 被拒的
   const pend = D.events.filter(e => e.status === 'pending' || (!D.approver && e.status === 'rejected'));
@@ -181,6 +198,17 @@ function render() {
         </div>
       </div>`).join('')}
     </div>` : '';
+  // admin: 总监标了完成、等审核的
+  const rev = D.approver ? D.events.filter(e => e.done && e.done.status === 'pending_review') : [];
+  if (rev.length) document.getElementById('pendBox').innerHTML += `<div class="card" style="margin-top:12px">
+      <div style="font-weight:800;margin-bottom:.5rem">✔ 等你审核完成（${rev.length}）</div>
+      ${rev.map(e => `<div class="card pend" style="padding:10px 12px;border-left-color:#16a34a">
+        <div class="row"><b style="cursor:pointer" onclick="view('${e.id}')">${esc(e.title)}</b><span class="muted">${esc(range(e))}</span>${catTag(e)}</div>
+        <div class="muted" style="margin-top:.25rem">${esc(e.done.done_by)} 标完成 · ${esc(fmt(e.done.done_at))}${e.done.done_note ? ' · ' + esc(e.done.done_note) : ''}</div>
+        <div class="row" style="margin-top:.45rem"><input id="rnote-${esc(e.key)}" placeholder="备注（可不填）" style="flex:1;min-width:160px;width:auto">
+          <button class="btn btn-green btn-sm" onclick="review('${e.key}',true)">✓ 确认完成</button><button class="btn btn-outline btn-sm" onclick="review('${e.key}',false)">↩ 退回</button></div>
+      </div>`).join('')}
+    </div>`;
 }
 function fmt(t) { if (!t) return ''; const d = new Date(String(t).includes('T') ? t : String(t).replace(' ', 'T') + 'Z'); return isNaN(d) ? t : d.toLocaleString(); }
 function canEdit(e) { return !e.auto && (D.approver || e.created_by === D.me); }
@@ -192,12 +220,38 @@ function view(id) {
     <div style="margin-top:.5rem;font-size:.88rem">📅 ${esc(range(e))}${e.time ? ' · ' + esc(e.time) : ''}</div>
     ${e.description ? `<div style="margin-top:.5rem;font-size:.86rem;white-space:pre-wrap;background:#f8fafc;border-radius:8px;padding:.5rem .7rem">${esc(e.description)}</div>` : ''}
     ${e.invoices ? invTable(e) : ''}
+    ${doneBox(e)}
     <div class="muted" style="margin-top:.6rem">${esc(e.created_by_name)} 添加${e.decided_by ? ` · ${esc(e.decided_by)} ${e.status === 'approved' ? '批准' : '处理'}` : ''}${e.note ? ' · 备注：' + esc(e.note) : ''}</div>
     ${canEdit(e) ? `<div class="row" style="justify-content:flex-end;margin-top:.8rem">
       ${D.approver && e.status !== 'approved' ? `<button class="btn btn-green btn-sm" onclick="decide(${e.id},true)">✓ 批准</button>` : ''}
       <button class="btn btn-outline btn-sm" onclick="closeM('viewModal');openEdit(${e.id})">编辑</button>
       <button class="btn btn-red btn-sm" onclick="del(${e.id})">删除</button></div>` : ''}`;
   document.getElementById('viewModal').classList.add('show');
+}
+function doneBox(e) {
+  if (e.status !== 'approved') return '';
+  const d = e.done;
+  let h = '';
+  if (d) h += `<div style="margin-top:.6rem">${doneTag(e)} <span class="muted">${esc(d.done_by)} 标完成 · ${esc(fmt(d.done_at))}${d.done_note ? ' · ' + esc(d.done_note) : ''}</span></div>`
+    + (d.reviewed_by && d.status !== 'pending_review' ? `<div class="muted">${esc(d.reviewed_by)} ${d.status === 'approved' ? '确认' : '退回'} · ${esc(fmt(d.reviewed_at))}${d.review_note ? ' · ' + esc(d.review_note) : ''}</div>` : '');
+  const btns = [];
+  if (D.canMark && (!d || d.status === 'rejected')) btns.push(`<input id="dnote" placeholder="完成说明（可不填）" style="flex:1;min-width:150px;width:auto"><button class="btn btn-green btn-sm" onclick="markDone('${e.key}',true)">✓ 标记完成</button>`);
+  if (D.approver && d && d.status === 'pending_review') btns.push(`<input id="mrnote" placeholder="备注（可不填）" style="flex:1;min-width:150px;width:auto"><button class="btn btn-green btn-sm" onclick="review('${e.key}',true,'mrnote')">✓ 确认完成</button><button class="btn btn-outline btn-sm" onclick="review('${e.key}',false,'mrnote')">↩ 退回</button>`);
+  if (d && d.status !== 'rejected' && (D.approver || (D.canMark && d.status === 'pending_review'))) btns.push(`<button class="btn btn-outline btn-sm" onclick="markDone('${e.key}',false)">撤回完成</button>`);
+  if (btns.length) h += `<div class="row" style="margin-top:.45rem">${btns.join('')}</div>`;
+  return h ? `<div style="margin-top:.6rem;border-top:1px solid var(--g100);padding-top:.4rem">${h}</div>` : '';
+}
+async function markDone(key, done) {
+  const n = document.getElementById('dnote');
+  const j = await api('/api/calendar/done', { method: 'POST', body: { key, done, note: n ? n.value : '' } }).catch(e => ({ error: e.message }));
+  if (j.error) return toast(j.error, true);
+  closeM('viewModal'); toast(!done ? '已撤回' : j.status === 'approved' ? '已标记完成' : '已标记完成，等 admin 审核'); load();
+}
+async function review(key, ok, inputId) {
+  const n = document.getElementById(inputId || 'rnote-' + key);
+  const j = await api('/api/calendar/done/review', { method: 'POST', body: { key, approve: ok, note: n ? n.value : '' } }).catch(e => ({ error: e.message }));
+  if (j.error) return toast(j.error, true);
+  closeM('viewModal'); toast(ok ? '已确认完成' : '已退回'); load();
 }
 // 自动「发工资」事项: 这周开出的 invoice 列表
 function invTable(e) {

@@ -10395,6 +10395,14 @@ db.exec(`CREATE TABLE IF NOT EXISTS company_events (
 )`);
 // 批准人: 真正的 admin (「所有修改需要审批」的账号不算)
 const _calApprover = req => req.userRole === 'admin' && !req.needsApproval;
+// 标注「已完成」: 总监 (admin / staff + 所有修改需要审批) 标, admin 审核; admin 自己标的直接算完成
+const _calDirector = req => ['admin', 'staff'].includes(req.userRole) && !!req.needsApproval;
+db.exec(`CREATE TABLE IF NOT EXISTS company_event_done (
+  event_key TEXT PRIMARY KEY,            -- 'ev-<company_events.id>' 或自动发工资事项 'inv-<周五日期>'
+  status TEXT DEFAULT 'pending_review',  -- pending_review 等 admin 审核 / approved 已确认完成 / rejected admin 退回
+  done_by TEXT DEFAULT '', done_at TEXT DEFAULT '', done_note TEXT DEFAULT '',
+  reviewed_by TEXT DEFAULT '', reviewed_at TEXT DEFAULT '', review_note TEXT DEFAULT ''
+)`);
 const _calDate = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : '';
 const _calName = req => {
   try { const u = db.prepare('SELECT display_name FROM admin_users WHERE id=?').get(req.userId); if (u && (u.display_name || '').trim()) return u.display_name.trim(); } catch (e) {}
@@ -10408,8 +10416,65 @@ app.get('/api/calendar', requireAdmin, (req, res) => {
     ? db.prepare("SELECT * FROM company_events ORDER BY start_date, time, id").all()
     : db.prepare("SELECT * FROM company_events WHERE status='approved' OR created_by=? ORDER BY start_date, time, id").all(req.userId);
   if (['admin', 'staff'].includes(req.userRole)) rows.push(..._calInvoicePayDays());
-  res.json({ events: rows, approver, me: req.userId });
+  rows.push(..._calWeeklyDeadlines());
+  const done = {};
+  for (const d of db.prepare('SELECT * FROM company_event_done').all()) done[d.event_key] = d;
+  for (const r of rows) { r.key = r.auto ? r.id : 'ev-' + r.id; r.done = done[r.key] || null; }
+  res.json({ events: rows, approver, canMark: approver || _calDirector(req), me: req.userId });
 });
+// 标完成 / 撤回: 总监或 admin。只能标已批准显示的事项; admin 已确认的只有 admin 能撤回
+const _calKeyOk = key => {
+  const m = /^ev-(\d+)$/.exec(key);
+  if (m) { const ev = db.prepare('SELECT status FROM company_events WHERE id=?').get(m[1]); return !!ev && ev.status === 'approved'; }
+  return /^(inv|rec-gusto|rec-cash)-\d{4}-\d{2}-\d{2}$/.test(key);
+};
+app.post('/api/calendar/done', requireAdmin, (req, res) => {
+  const approver = _calApprover(req);
+  if (!approver && !_calDirector(req)) return res.status(403).json({ error: '只有总监 / admin 能标注完成' });
+  const key = String((req.body && req.body.key) || '');
+  if (!_calKeyOk(key)) return res.status(400).json({ error: '找不到这件事（或还没批准显示）' });
+  const cur = db.prepare('SELECT * FROM company_event_done WHERE event_key=?').get(key);
+  const name = _calName(req), now = new Date().toISOString();
+  if (!(req.body && req.body.done)) {
+    if (cur && cur.status === 'approved' && !approver) return res.status(403).json({ error: 'admin 已确认完成，只有 admin 能撤回' });
+    db.prepare('DELETE FROM company_event_done WHERE event_key=?').run(key);
+    return res.json({ success: true, status: null });
+  }
+  const status = approver ? 'approved' : 'pending_review';
+  db.prepare(`INSERT INTO company_event_done (event_key, status, done_by, done_at, done_note, reviewed_by, reviewed_at, review_note) VALUES (?,?,?,?,?,?,?,'')
+    ON CONFLICT(event_key) DO UPDATE SET status=excluded.status, done_by=excluded.done_by, done_at=excluded.done_at, done_note=excluded.done_note,
+      reviewed_by=excluded.reviewed_by, reviewed_at=excluded.reviewed_at, review_note=''`)
+    .run(key, status, name, now, String((req.body && req.body.note) || '').trim().slice(0, 500), approver ? name : '', approver ? now : '');
+  res.json({ success: true, status });
+});
+app.post('/api/calendar/done/review', requireAdmin, (req, res) => {
+  if (!_calApprover(req)) return res.status(403).json({ error: '只有 admin 能审核' });
+  const key = String((req.body && req.body.key) || '');
+  const cur = db.prepare('SELECT * FROM company_event_done WHERE event_key=?').get(key);
+  if (!cur) return res.status(404).json({ error: '这件事还没被标完成' });
+  const approve = !!(req.body && req.body.approve);
+  db.prepare('UPDATE company_event_done SET status=?, reviewed_by=?, reviewed_at=?, review_note=? WHERE event_key=?')
+    .run(approve ? 'approved' : 'rejected', _calName(req), new Date().toISOString(), String((req.body && req.body.note) || '').trim().slice(0, 500), key);
+  res.json({ success: true });
+});
+// 每周固定的发薪截止: 周三 Gusto payroll 截止、周四取现金发工资截止。现算, 往前 120 天、往后一年
+const _CAL_WEEKLY = [
+  { dow: 3, key: 'rec-gusto', title: '⏰ Gusto payroll 截止', description: '今天是 Gusto 跑 payroll 的截止日期，记得在 Gusto 提交本周工资。' },
+  { dow: 4, key: 'rec-cash', title: '💵 取现金发工资截止', description: '今天是取现金发工资的截止日期，记得去银行取好现金。' },
+];
+function _calWeeklyDeadlines() {
+  const out = [];
+  const today = new Date(_calChiDate.format(new Date()) + 'T00:00:00Z');
+  for (let i = -120; i <= 366; i++) {
+    const d = new Date(today); d.setUTCDate(d.getUTCDate() + i);
+    const w = _CAL_WEEKLY.find(x => x.dow === d.getUTCDay());
+    if (!w) continue;
+    const ds = d.toISOString().slice(0, 10);
+    out.push({ id: `${w.key}-${ds}`, auto: true, status: 'approved', category: 'deadline', start_date: ds, end_date: '', time: '',
+      title: w.title, description: w.description, created_by_name: '系统自动（每周固定）' });
+  }
+  return out;
+}
 // 每周五发工资: 每张发票 (草稿除外) 按开出那天 (芝加哥时间) 归到当周周五 — 周六 / 周日开的归下周五。
 // 不存表, 每次现算, 出了发票就自动显示; 只读, 不需要批准
 const _calChiDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -10492,6 +10557,7 @@ app.delete('/api/calendar/:id', requireAdmin, (req, res) => {
   if (!ev) return res.status(404).json({ error: '找不到这件事' });
   if (!_calApprover(req) && ev.created_by !== req.userId) return res.status(403).json({ error: '只能删除自己添加的' });
   db.prepare('DELETE FROM company_events WHERE id=?').run(ev.id);
+  db.prepare('DELETE FROM company_event_done WHERE event_key=?').run('ev-' + ev.id);
   res.json({ success: true });
 });
 
