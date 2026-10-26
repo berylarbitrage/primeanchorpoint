@@ -33,6 +33,7 @@ label{font-size:.78rem;color:var(--g600);font-weight:600;display:block;margin:.5
 .pend{border-left:4px solid #f59e0b;margin-bottom:8px}
 .modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:50}
 .modal.show{display:flex}
+#payModal{z-index:60}
 .modal .card{max-width:460px;width:100%;max-height:92vh;overflow:auto}
 @media (max-width:640px){.day{min-height:64px;padding:2px}.ev{font-size:0;height:6px;padding:0;margin-top:2px}.dn{font-size:.7rem}}
 </style>
@@ -74,6 +75,24 @@ label{font-size:.78rem;color:var(--g600);font-weight:600;display:block;margin:.5
 </div>
 
 <div class="modal" id="viewModal" onclick="if(event.target===this)closeM('viewModal')"><div class="card" id="viewBody"></div></div>
+<div class="modal" id="payModal" onclick="if(event.target===this)closeM('payModal')">
+  <div class="card">
+    <div style="font-weight:800;font-size:1.05rem">发工资标注</div>
+    <div class="muted" id="payTitle" style="margin-top:.2rem"></div>
+    <div class="row" style="margin-top:.6rem;gap:1rem">
+      <label style="margin:0;display:flex;gap:.3rem;align-items:center;font-size:.88rem"><input type="radio" name="pst" value="done" style="width:auto" onchange="payStatusChanged()"> ✔ 已发</label>
+      <label style="margin:0;display:flex;gap:.3rem;align-items:center;font-size:.88rem;color:var(--red)"><input type="radio" name="pst" value="not_done" style="width:auto" onchange="payStatusChanged()"> ✗ 没发</label>
+    </div>
+    <label id="payNoteLbl">备注</label><textarea id="payNote" rows="3" maxlength="1000"></textarea>
+    <label>截图（可多张）</label>
+    <input type="file" id="payFile" accept="image/*" multiple onchange="addPayFiles(this)">
+    <div class="row" id="payPhotos" style="margin-top:.4rem"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:.8rem">
+      <button class="btn btn-outline" onclick="closeM('payModal')">取消</button>
+      <button class="btn btn-blue" onclick="savePay()">保存</button>
+    </div>
+  </div>
+</div>
 <div class="modal" id="editModal" onclick="if(event.target===this)closeM('editModal')">
   <div class="card">
     <div style="font-weight:800;font-size:1.05rem" id="editTitle">添加事情</div>
@@ -139,6 +158,14 @@ async function load() {
   let j; try { j = await api('/api/calendar'); } catch (e) { return; }
   document.getElementById('main').style.display = '';
   if (j.error) { toast(j.error, true); return; }
+  // 发工资事项: 按每张 invoice 的标注算整体状态 (全部已发且 admin 确认 = 完成)
+  for (const e of j.events) if (e.invoices) {
+    const ps = e.invoices.map(i => i.pay);
+    const ok = ps.filter(p => p && p.status === 'done' && p.review_status === 'approved').length;
+    e.progress = `${ok}/${ps.length}`;
+    e.done = ok === ps.length ? { status: 'approved' }
+      : ps.every(p => p && p.status === 'done' && p.review_status !== 'rejected') ? { status: 'pending_review' } : null;
+  }
   D = j; render();
 }
 function shift(n) { CUR.setMonth(CUR.getMonth() + n); render(); }
@@ -159,7 +186,7 @@ function render() {
     const evs = shown.filter(e => onDay(e, ds));
     html += `<div class="day ${d.getMonth() !== m ? 'other' : ''} ${ds === today ? 'today' : ''}" onclick="openEdit(null,'${ds}')">
       <span class="dn">${d.getDate()}</span>
-      ${evs.map(e => `<span class="ev ${esc(e.status)}${e.done && e.done.status === 'approved' ? ' isdone' : ''}" style="background:${cat(e)[1]}" title="${esc(e.title)}" onclick="event.stopPropagation();view('${e.id}')">${doneIcon(e)}${e.time ? esc(e.time) + ' ' : ''}${esc(e.title)}</span>`).join('')}
+      ${evs.map(e => `<span class="ev ${esc(e.status)}${e.done && e.done.status === 'approved' ? ' isdone' : ''}" style="background:${cat(e)[1]}" title="${esc(e.title)}" onclick="event.stopPropagation();view('${e.id}')">${doneIcon(e)}${e.time ? esc(e.time) + ' ' : ''}${esc(e.title)}${e.progress ? ' · ' + e.progress : ''}</span>`).join('')}
     </div>`;
   }
   document.getElementById('grid').innerHTML = html;
@@ -169,7 +196,7 @@ function render() {
     .sort((a, b) => a.start_date.localeCompare(b.start_date) || String(a.time || '').localeCompare(String(b.time || '')));
   document.getElementById('monthList').innerHTML = inMonth.map(e => `<div class="row" style="padding:.4rem 0;border-top:1px solid var(--g100);cursor:pointer" onclick="view('${e.id}')">
       <span style="font-family:monospace;font-size:.8rem;color:var(--g500);min-width:96px">${esc(range(e))}</span>
-      <b style="font-size:.88rem">${esc(e.title)}</b>${e.time ? `<span class="muted">${esc(e.time)}</span>` : ''}${catTag(e)}${e.status !== 'approved' ? stTag(e) : ''}${doneTag(e)}
+      <b style="font-size:.88rem">${esc(e.title)}</b>${e.time ? `<span class="muted">${esc(e.time)}</span>` : ''}${catTag(e)}${e.status !== 'approved' ? stTag(e) : ''}${e.progress ? `<span class="muted">已发 ${e.progress}</span>` : ''}${doneTag(e)}
     </div>`).join('') || '<div class="muted">这个月还没有事项</div>';
 
   // 提醒: 今天 / 明天到期、还没确认完成的
@@ -199,7 +226,17 @@ function render() {
       </div>`).join('')}
     </div>` : '';
   // admin: 总监标了完成、等审核的
-  const rev = D.approver ? D.events.filter(e => e.done && e.done.status === 'pending_review') : [];
+  const rev = D.approver ? D.events.filter(e => !e.invoices && e.done && e.done.status === 'pending_review') : [];
+  const prev = D.approver ? D.events.filter(e => e.invoices).flatMap(e => e.invoices.filter(i => i.pay && i.pay.review_status === 'pending').map(i => [e, i])) : [];
+  if (prev.length) document.getElementById('pendBox').innerHTML += `<div class="card" style="margin-top:12px">
+      <div style="font-weight:800;margin-bottom:.5rem">💰 发工资标注等你审核（${prev.length} 张）</div>
+      ${prev.map(([e, i]) => `<div class="card pend" style="padding:10px 12px;border-left-color:${i.pay.status === 'done' ? '#16a34a' : '#dc2626'}">
+        <div class="row"><b style="cursor:pointer" onclick="view('${e.id}')">${esc(i.number)}</b><span class="muted">${esc(i.company)} · ${esc(e.start_date)} 发工资</span>${payTag(i)}</div>
+        ${payDetail(i)}
+        <div class="row" style="margin-top:.45rem"><input id="prnote-${i.id}" placeholder="备注（可不填）" style="flex:1;min-width:160px;width:auto">
+          <button class="btn btn-green btn-sm" onclick="payReview(${i.id},true)">✓ 确认</button><button class="btn btn-outline btn-sm" onclick="payReview(${i.id},false)">↩ 退回</button></div>
+      </div>`).join('')}
+    </div>`;
   if (rev.length) document.getElementById('pendBox').innerHTML += `<div class="card" style="margin-top:12px">
       <div style="font-weight:800;margin-bottom:.5rem">✔ 等你审核完成（${rev.length}）</div>
       ${rev.map(e => `<div class="card pend" style="padding:10px 12px;border-left-color:#16a34a">
@@ -212,7 +249,9 @@ function render() {
 }
 function fmt(t) { if (!t) return ''; const d = new Date(String(t).includes('T') ? t : String(t).replace(' ', 'T') + 'Z'); return isNaN(d) ? t : d.toLocaleString(); }
 function canEdit(e) { return !e.auto && (D.approver || e.created_by === D.me); }
+let VIEW_ID = null;
 function view(id) {
+  VIEW_ID = id;
   const e = D.events.find(x => String(x.id) === String(id)); if (!e) return;
   document.getElementById('viewBody').innerHTML = `
     <div class="row" style="justify-content:space-between"><div style="font-weight:800;font-size:1.05rem">${esc(e.title)}</div><button class="btn btn-outline btn-sm" onclick="closeM('viewModal')">✕</button></div>
@@ -229,7 +268,7 @@ function view(id) {
   document.getElementById('viewModal').classList.add('show');
 }
 function doneBox(e) {
-  if (e.status !== 'approved') return '';
+  if (e.status !== 'approved' || e.invoices) return '';
   const d = e.done;
   let h = '';
   if (d) h += `<div style="margin-top:.6rem">${doneTag(e)} <span class="muted">${esc(d.done_by)} 标完成 · ${esc(fmt(d.done_at))}${d.done_note ? ' · ' + esc(d.done_note) : ''}</span></div>`
@@ -257,14 +296,108 @@ async function review(key, ok, inputId) {
 function invTable(e) {
   const money = n => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const tot = e.invoices.reduce((s, i) => s + i.subtotal, 0);
-  return `<div class="muted" style="margin-top:.5rem">这周开出的 invoice，周五要发工资：</div>
-    <table style="width:100%;border-collapse:collapse;font-size:.8rem;margin-top:.3rem">
-      <tr style="color:var(--g500);text-align:left"><th style="padding:3px 4px">Invoice #</th><th style="padding:3px 4px">公司</th><th style="padding:3px 4px;text-align:right">金额</th><th style="padding:3px 4px">状态</th></tr>
-      ${e.invoices.map(i => `<tr style="border-top:1px solid var(--g100)"><td style="padding:3px 4px;font-family:monospace">${esc(i.number)}</td><td style="padding:3px 4px">${esc(i.company)}</td>
-        <td style="padding:3px 4px;text-align:right">${money(i.subtotal)}</td>
-        <td style="padding:3px 4px;white-space:nowrap">${i.sub_paid ? '<span class="tag" style="background:#dcfce7;color:#166534">分包已付</span>' : ''}${i.paid ? ' <span class="tag" style="background:#e0f2fe;color:#075985">客户已付</span>' : ''}</td></tr>`).join('')}
-      <tr style="border-top:2px solid var(--g200);font-weight:700"><td style="padding:4px" colspan="2">合计 ${e.invoices.length} 张</td><td style="padding:4px;text-align:right">${money(tot)}</td><td></td></tr>
-    </table>`;
+  return `<div class="muted" style="margin-top:.5rem">这周开出的 invoice，周五要发工资（每张单独标注，已发 ${e.progress}）：</div>
+    <div style="margin-top:.3rem">
+      ${e.invoices.map(i => `<div style="border-top:1px solid var(--g100);padding:.4rem 0">
+        <div class="row" style="font-size:.8rem">
+          <span style="font-family:monospace;flex:1;min-width:150px">${esc(i.number)}</span><span style="min-width:110px">${esc(i.company)}</span>
+          <b style="min-width:80px;text-align:right">${money(i.subtotal)}</b>
+          ${i.sub_paid ? '<span class="tag" style="background:#dcfce7;color:#166534">分包已付</span>' : ''}${i.paid ? '<span class="tag" style="background:#e0f2fe;color:#075985">客户已付</span>' : ''}
+        </div>
+        <div class="row" style="margin-top:.25rem">${payTag(i)}${payButtons(i)}</div>
+        ${payDetail(i)}
+      </div>`).join('')}
+      <div class="row" style="border-top:2px solid var(--g200);padding-top:.35rem;font-weight:700;font-size:.82rem;justify-content:space-between"><span>合计 ${e.invoices.length} 张</span><span>${money(tot)}</span></div>
+    </div>`;
+}
+// 每张 invoice 的发工资标注
+const PAY = { done: ['✔ 已发', '#166534', '#dcfce7'], not_done: ['✗ 没发', '#991b1b', '#fee2e2'] };
+const REV = { pending: ['等 admin 审核', '#92400e', '#fef3c7'], approved: ['admin 已确认', '#166534', '#dcfce7'], rejected: ['admin 退回', '#991b1b', '#fee2e2'] };
+function payTag(i) {
+  if (!i.pay) return '<span class="tag" style="background:var(--g100);color:var(--g500)">未标注</span>';
+  const [l, c, b] = PAY[i.pay.status] || PAY.done, [rl, rc, rb] = REV[i.pay.review_status] || REV.pending;
+  return `<span class="tag" style="background:${b};color:${c}">${l}</span><span class="tag" style="background:${rb};color:${rc}">${rl}</span>`;
+}
+function payDetail(i) {
+  const p = i.pay; if (!p) return '';
+  return `<div style="font-size:.78rem;margin-top:.25rem;background:#f8fafc;border-radius:6px;padding:.35rem .5rem">
+    ${p.note ? `<div style="white-space:pre-wrap">${p.status === 'not_done' ? '<b>原因：</b>' : ''}${esc(p.note)}</div>` : ''}
+    ${p.photos && p.photos.length ? `<div class="row" style="margin-top:.25rem">${p.photos.map(k => { const u = '/api/calendar/file/' + encodeURIComponent(k.replace(/^calendar\//, '')); return `<a href="${u}" target="_blank"><img src="${u}" style="width:56px;height:56px;object-fit:cover;border-radius:5px;border:1px solid var(--g200)"></a>`; }).join('')}</div>` : ''}
+    <div class="muted" style="margin-top:.15rem">${esc(p.marked_by)} 标注 · ${esc(fmt(p.marked_at))}${p.reviewed_by && p.review_status !== 'pending' ? ` · ${esc(p.reviewed_by)} ${p.review_status === 'approved' ? '确认' : '退回'}${p.review_note ? '：' + esc(p.review_note) : ''}` : ''}</div>
+  </div>`;
+}
+function payButtons(i) {
+  const p = i.pay, b = [];
+  const locked = p && p.review_status === 'approved' && !D.approver;
+  if (D.canMark && !locked) b.push(`<button class="btn btn-green btn-sm" onclick="openPay(${i.id},'done')">✓ 已发</button><button class="btn btn-outline btn-sm" style="color:var(--red)" onclick="openPay(${i.id},'not_done')">✗ 没发</button>`);
+  if (D.approver && p && p.review_status === 'pending') b.push(`<button class="btn btn-green btn-sm" onclick="payReview(${i.id},true)">确认</button><button class="btn btn-outline btn-sm" onclick="payReview(${i.id},false)">退回</button>`);
+  if (D.canMark && p && !locked) b.push(`<button class="btn btn-outline btn-sm" onclick="payUndo(${i.id})">撤回</button>`);
+  return b.length ? `<span style="flex:1"></span>${b.join('')}` : '';
+}
+let PAY_ID = null, PAY_PHOTOS = [];
+function findInv(id) { for (const e of D.events) for (const i of (e.invoices || [])) if (i.id === id) return i; return null; }
+function openPay(id, status) {
+  const i = findInv(id); if (!i) return;
+  PAY_ID = id; PAY_PHOTOS = (i.pay && i.pay.photos) ? i.pay.photos.slice() : [];
+  document.getElementById('payTitle').textContent = `${i.number} · ${i.company}`;
+  document.querySelector(`input[name=pst][value=${status}]`).checked = true;
+  document.getElementById('payNote').value = i.pay ? (i.pay.note || '') : '';
+  document.getElementById('payFile').value = '';
+  payStatusChanged(); renderPayPhotos();
+  document.getElementById('payModal').classList.add('show');
+}
+function payStatusChanged() {
+  const nd = document.querySelector('input[name=pst]:checked').value === 'not_done';
+  document.getElementById('payNoteLbl').textContent = nd ? '没完成的原因 *（必填，写清楚）' : '备注（可不填）';
+  document.getElementById('payNote').placeholder = nd ? '例如：客户还没付款 / 工人银行信息不对 / 现金不够…' : '例如：已在 Gusto 提交 / 现金已发';
+}
+function renderPayPhotos() {
+  document.getElementById('payPhotos').innerHTML = PAY_PHOTOS.map((k, n) => { const u = '/api/calendar/file/' + encodeURIComponent(k.replace(/^calendar\//, ''));
+    return `<span style="position:relative;display:inline-block"><img src="${u}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--g200)"><button onclick="PAY_PHOTOS.splice(${n},1);renderPayPhotos()" style="position:absolute;top:-6px;right:-6px;border:none;border-radius:999px;background:#dc2626;color:#fff;width:18px;height:18px;font-size:.7rem;cursor:pointer">✕</button></span>`; }).join('');
+}
+// 截图压成最长边 1600px 的 JPEG 再传
+function shrink(file) {
+  return new Promise((ok, bad) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => { const r = Math.min(1, 1600 / Math.max(img.width, img.height)); const c = document.createElement('canvas');
+      c.width = Math.round(img.width * r); c.height = Math.round(img.height * r); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url); ok(c.toDataURL('image/jpeg', 0.85)); };
+    img.onerror = () => { URL.revokeObjectURL(url); bad(new Error('读不了这张图片')); };
+    img.src = url;
+  });
+}
+async function addPayFiles(inp) {
+  for (const f of [...inp.files]) {
+    if (PAY_PHOTOS.length >= 10) { toast('最多 10 张截图', true); break; }
+    try { const j = await api('/api/calendar/upload', { method: 'POST', body: { data: await shrink(f) } }); if (j.error) throw new Error(j.error); PAY_PHOTOS.push(j.key); renderPayPhotos(); }
+    catch (e) { toast(e.message, true); }
+  }
+  inp.value = '';
+}
+async function savePay() {
+  const status = document.querySelector('input[name=pst]:checked').value, note = document.getElementById('payNote').value.trim();
+  if (status === 'not_done' && !note) return toast('没完成要写清楚原因', true);
+  const j = await api('/api/calendar/invpay', { method: 'POST', body: { invoice_id: PAY_ID, status, note, photos: PAY_PHOTOS } }).catch(e => ({ error: e.message }));
+  if (j.error) return toast(j.error, true);
+  closeM('payModal'); toast(j.review_status === 'approved' ? '已标注' : '已标注，等 admin 审核'); reloadView();
+}
+async function payUndo(id) {
+  if (!confirm('撤回这张的标注？')) return;
+  const j = await api('/api/calendar/invpay', { method: 'POST', body: { invoice_id: id, status: null } }).catch(e => ({ error: e.message }));
+  if (j.error) return toast(j.error, true);
+  toast('已撤回'); reloadView();
+}
+async function payReview(id, ok) {
+  const n = document.getElementById('prnote-' + id);
+  const j = await api('/api/calendar/invpay/review', { method: 'POST', body: { invoice_id: id, approve: ok, note: n ? n.value : '' } }).catch(e => ({ error: e.message }));
+  if (j.error) return toast(j.error, true);
+  toast(ok ? '已确认' : '已退回'); reloadView();
+}
+// 改完重新加载, 弹窗开着的话刷新弹窗内容
+async function reloadView() {
+  const open = document.getElementById('viewModal').classList.contains('show') ? VIEW_ID : null;
+  await load();
+  if (open) view(open);
 }
 function closeM(id) { document.getElementById(id).classList.remove('show'); }
 function openEdit(id, date) {
