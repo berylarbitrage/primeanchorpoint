@@ -10407,8 +10407,35 @@ app.get('/api/calendar', requireAdmin, (req, res) => {
   const rows = approver
     ? db.prepare("SELECT * FROM company_events ORDER BY start_date, time, id").all()
     : db.prepare("SELECT * FROM company_events WHERE status='approved' OR created_by=? ORDER BY start_date, time, id").all(req.userId);
+  if (['admin', 'staff'].includes(req.userRole)) rows.push(..._calInvoicePayDays());
   res.json({ events: rows, approver, me: req.userId });
 });
+// 每周五发工资: 每张发票 (草稿除外) 按开出那天 (芝加哥时间) 归到当周周五 — 周六 / 周日开的归下周五。
+// 不存表, 每次现算, 出了发票就自动显示; 只读, 不需要批准
+const _calChiDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' });
+function _calInvoicePayDays() {
+  const since = new Date(Date.now() - 400 * 86400000).toISOString().slice(0, 10);
+  let invs = [];
+  try {
+    invs = db.prepare(`SELECT id, invoice_number, company_name, subtotal, payment_status, sub_payment_status, created_at FROM invoices
+      WHERE COALESCE(status,'') != 'draft' AND created_at >= ? ORDER BY created_at`).all(since);
+  } catch (e) { return []; }
+  const byFri = new Map();
+  for (const inv of invs) {
+    const t = new Date(String(inv.created_at).replace(' ', 'T') + (String(inv.created_at).includes('Z') ? '' : 'Z'));
+    if (isNaN(t)) continue;
+    const local = new Date(_calChiDate.format(t) + 'T00:00:00Z');
+    local.setUTCDate(local.getUTCDate() + ((5 - local.getUTCDay() + 7) % 7));
+    const fri = local.toISOString().slice(0, 10);
+    if (!byFri.has(fri)) byFri.set(fri, []);
+    byFri.get(fri).push({ id: inv.id, number: inv.invoice_number, company: inv.company_name, subtotal: Number(inv.subtotal) || 0,
+      paid: inv.payment_status === 'paid', sub_paid: inv.sub_payment_status === 'paid' });
+  }
+  return [...byFri].map(([fri, list]) => ({
+    id: 'inv-' + fri, auto: true, status: 'approved', category: 'payroll', start_date: fri, end_date: '', time: '',
+    title: `💰 发工资 · ${list.length} 张 invoice`, description: '', created_by_name: '系统自动（按本周开出的 invoice）', invoices: list,
+  }));
+}
 app.post('/api/calendar', requireAdmin, (req, res) => {
   const b = req.body || {};
   const title = String(b.title || '').trim().slice(0, 200);
