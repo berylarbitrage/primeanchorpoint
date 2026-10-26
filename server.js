@@ -9469,6 +9469,7 @@ const _approvalReplayDecider = new Map();   // token → 点同意的人 { name,
 function _isChangeRequest(req) {
   const p = req.originalUrl.split('?')[0];
   if (p === '/api/admin/logout' || p.startsWith('/api/approvals')) return false;
+  if (p.startsWith('/api/calendar')) return false;   // 公司日历有自己的 admin 批准流程
   // 只存截图 / 识别截图, 不改任何记录 (关联账号的保存才进审批)
   if (p === '/api/acct/onboarding-shot' || p === '/api/acct/onboarding-shot-read') return false;
   if (_isCsSmsSend(req, p)) return false;
@@ -9586,20 +9587,20 @@ function requireAdmin(req, res, next) {
   // (/api/plaid/ 与 /api/device-sms/ 下各端点再按 requireRole 细分), 其余管理后台一律 403
   if (session.role === 'cs') {
     const p = req.originalUrl.split('?')[0];
-    const csAllowed = p.startsWith('/api/sms/') || p.startsWith('/api/acct/') || p.startsWith('/api/admin/recruit-') || p.startsWith('/api/plaid/') || p.startsWith('/api/device-sms/') || p === '/api/admin/me' || p === '/api/admin/logout';
+    const csAllowed = p.startsWith('/api/sms/') || p.startsWith('/api/acct/') || p.startsWith('/api/admin/recruit-') || p.startsWith('/api/plaid/') || p.startsWith('/api/device-sms/') || p.startsWith('/api/calendar') || p === '/api/admin/me' || p === '/api/admin/logout';
     if (!csAllowed) return res.status(403).json({ error: '客服账号仅限使用 SMS Inbox (/sms-inbox)、会计对账 (/accounting)、银行对账 (/banking)、手机短信 (/phone-sms) 和每日招工 (/recruit)' });
   }
   // 会计(accounting)专用账号: 只读发票与银行流水 + 圈选批注 + 银行对账页
   // (/api/plaid/ 下只读+标注, 标注需管理员审核), 其余管理后台一律 403
   if (session.role === 'accounting') {
     const p = req.originalUrl.split('?')[0];
-    const acctAllowed = p.startsWith('/api/acct/') || p.startsWith('/api/plaid/') || p === '/api/admin/me' || p === '/api/admin/logout';
+    const acctAllowed = p.startsWith('/api/acct/') || p.startsWith('/api/plaid/') || p.startsWith('/api/calendar') || p === '/api/admin/me' || p === '/api/admin/logout';
     if (!acctAllowed) return res.status(403).json({ error: '会计账号仅限使用对账查看页 (/accounting) 和银行对账页 (/banking)' });
   }
   // 入职专员(onboarding): 在 /onboarding 自助注册、管理员批准的账号, 只能用新员工入职页, 并自动收 Gusto 入职邮件
   if (session.role === 'onboarding') {
     const p = req.originalUrl.split('?')[0];
-    const ok = p.startsWith('/api/acct/onboarding') || p === '/api/acct/gusto-payees' || p === '/api/admin/me' || p === '/api/admin/logout';
+    const ok = p.startsWith('/api/acct/onboarding') || p === '/api/acct/gusto-payees' || p.startsWith('/api/calendar') || p === '/api/admin/me' || p === '/api/admin/logout';
     if (!ok) return res.status(403).json({ error: '入职专员账号仅限使用新员工入职页 (/onboarding)' });
   }
   const _u = db.prepare('SELECT assigned_partner_ids, assigned_employee_ids, assigned_job_ids, cs_lead, wob_approver, needs_approval FROM admin_users WHERE id=?').get(session.userId);
@@ -10379,6 +10380,91 @@ app.delete('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, 
   const deleted = db.prepare('SELECT username, role FROM admin_users WHERE id = ?').get(req.params.id);
   db.prepare('DELETE FROM admin_users WHERE id = ?').run(req.params.id);
   auditLog('account_delete', req, { targetType: 'admin_user', targetId: req.params.id, details: { username: deleted?.username, role: deleted?.role } });
+  res.json({ success: true });
+});
+
+// ─── 📅 公司日历 (/calendar): 所有后台账号都能添加重要事情, admin 批准后才对大家显示 ───
+db.exec(`CREATE TABLE IF NOT EXISTS company_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT DEFAULT '', time TEXT DEFAULT '',
+  description TEXT DEFAULT '', category TEXT DEFAULT '',
+  status TEXT DEFAULT 'pending', note TEXT DEFAULT '',
+  created_by INTEGER, created_by_name TEXT DEFAULT '',
+  decided_by TEXT DEFAULT '', decided_at TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+// 批准人: 真正的 admin (「所有修改需要审批」的账号不算)
+const _calApprover = req => req.userRole === 'admin' && !req.needsApproval;
+const _calDate = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : '';
+const _calName = req => {
+  try { const u = db.prepare('SELECT display_name FROM admin_users WHERE id=?').get(req.userId); if (u && (u.display_name || '').trim()) return u.display_name.trim(); } catch (e) {}
+  return req.userName || '';
+};
+app.get('/calendar', (req, res) => res.sendFile(path.join(__dirname, 'public', 'calendar.html')));
+// 已批准的所有人可见; 自己提交的 (等批准 / 被拒) 自己可见; admin 能看到全部
+app.get('/api/calendar', requireAdmin, (req, res) => {
+  const approver = _calApprover(req);
+  const rows = approver
+    ? db.prepare("SELECT * FROM company_events ORDER BY start_date, time, id").all()
+    : db.prepare("SELECT * FROM company_events WHERE status='approved' OR created_by=? ORDER BY start_date, time, id").all(req.userId);
+  res.json({ events: rows, approver, me: req.userId });
+});
+app.post('/api/calendar', requireAdmin, (req, res) => {
+  const b = req.body || {};
+  const title = String(b.title || '').trim().slice(0, 200);
+  const start = _calDate(b.start_date);
+  let end = _calDate(b.end_date);
+  if (!title || !start) return res.status(400).json({ error: '请填写标题和日期' });
+  if (end && end < start) return res.status(400).json({ error: '结束日期不能早于开始日期' });
+  if (end === start) end = '';
+  const approver = _calApprover(req);
+  const name = _calName(req);
+  const r = db.prepare(`INSERT INTO company_events (title, start_date, end_date, time, description, category, status, created_by, created_by_name, decided_by, decided_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(title, start, end, String(b.time || '').trim().slice(0, 40), String(b.description || '').trim().slice(0, 2000),
+    String(b.category || '').trim().slice(0, 40), approver ? 'approved' : 'pending', req.userId, name,
+    approver ? name : '', approver ? new Date().toISOString() : '');
+  if (!approver) {
+    try {
+      const base = (process.env.BASE_URL || '').replace(/\/$/, '');
+      for (const a of db.prepare("SELECT email FROM admin_users WHERE role='admin' AND COALESCE(needs_approval,0)=0 AND COALESCE(active,1)=1 AND COALESCE(email,'')!=''").all()) {
+        sendEmail(a.email, `公司日历: ${name} 添加了「${title}」等你批准`, `${name} 在公司日历添加了一件事:\n${start}${end ? ' ~ ' + end : ''} ${title}\n\n去批准: ${base}/calendar`).catch(() => {});
+      }
+    } catch (e) { console.log('[calendar] notify error:', e.message); }
+  }
+  res.json({ success: true, id: r.lastInsertRowid, status: approver ? 'approved' : 'pending' });
+});
+// 修改: 提交人改自己的 (改完重新等批准), admin 随便改
+app.put('/api/calendar/:id', requireAdmin, (req, res) => {
+  const ev = db.prepare('SELECT * FROM company_events WHERE id=?').get(req.params.id);
+  if (!ev) return res.status(404).json({ error: '找不到这件事' });
+  const approver = _calApprover(req);
+  if (!approver && ev.created_by !== req.userId) return res.status(403).json({ error: '只能修改自己添加的' });
+  const b = req.body || {};
+  const title = String(b.title || '').trim().slice(0, 200);
+  const start = _calDate(b.start_date);
+  let end = _calDate(b.end_date);
+  if (!title || !start) return res.status(400).json({ error: '请填写标题和日期' });
+  if (end && end < start) return res.status(400).json({ error: '结束日期不能早于开始日期' });
+  if (end === start) end = '';
+  const status = approver ? ev.status : 'pending';
+  db.prepare('UPDATE company_events SET title=?, start_date=?, end_date=?, time=?, description=?, category=?, status=? WHERE id=?')
+    .run(title, start, end, String(b.time || '').trim().slice(0, 40), String(b.description || '').trim().slice(0, 2000), String(b.category || '').trim().slice(0, 40), status, ev.id);
+  res.json({ success: true, status });
+});
+app.post('/api/calendar/:id/decide', requireAdmin, (req, res) => {
+  if (!_calApprover(req)) return res.status(403).json({ error: '只有 admin 能批准' });
+  const ev = db.prepare('SELECT id FROM company_events WHERE id=?').get(req.params.id);
+  if (!ev) return res.status(404).json({ error: '找不到这件事' });
+  const approve = !!(req.body && req.body.approve);
+  db.prepare('UPDATE company_events SET status=?, note=?, decided_by=?, decided_at=? WHERE id=?')
+    .run(approve ? 'approved' : 'rejected', String((req.body && req.body.note) || '').trim().slice(0, 500), _calName(req), new Date().toISOString(), ev.id);
+  res.json({ success: true });
+});
+app.delete('/api/calendar/:id', requireAdmin, (req, res) => {
+  const ev = db.prepare('SELECT * FROM company_events WHERE id=?').get(req.params.id);
+  if (!ev) return res.status(404).json({ error: '找不到这件事' });
+  if (!_calApprover(req) && ev.created_by !== req.userId) return res.status(403).json({ error: '只能删除自己添加的' });
+  db.prepare('DELETE FROM company_events WHERE id=?').run(ev.id);
   res.json({ success: true });
 });
 
