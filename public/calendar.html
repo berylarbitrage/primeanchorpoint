@@ -34,6 +34,7 @@ label{font-size:.78rem;color:var(--g600);font-weight:600;display:block;margin:.5
 .modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:50}
 .modal.show{display:flex}
 #payModal,#ppModal{z-index:60}
+#askModal{z-index:80}
 .modal .card{max-width:460px;width:100%;max-height:92vh;overflow:auto}
 @media (max-width:640px){.day{min-height:64px;padding:2px}.ev{font-size:0;height:6px;padding:0;margin-top:2px}.dn{font-size:.7rem}}
 </style>
@@ -75,6 +76,16 @@ label{font-size:.78rem;color:var(--g600);font-weight:600;display:block;margin:.5
 </div>
 
 <div class="modal" id="viewModal" onclick="if(event.target===this)closeM('viewModal')"><div class="card" id="viewBody"></div></div>
+<div class="modal" id="askModal">
+  <div class="card" style="max-width:400px">
+    <div style="font-weight:800;font-size:1.05rem" id="askTitle"></div>
+    <div id="askBody" style="margin-top:.5rem;font-size:.88rem;white-space:pre-wrap;background:#f8fafc;border-radius:8px;padding:.55rem .7rem"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:.9rem">
+      <button class="btn btn-outline" id="askNo">取消</button>
+      <button class="btn btn-blue" id="askYes">确认</button>
+    </div>
+  </div>
+</div>
 <div class="modal" id="ppModal" onclick="if(event.target===this)closeM('ppModal')">
   <div class="card">
     <div style="font-weight:800;font-size:1.05rem">⏰ 推迟截止日期</div>
@@ -293,7 +304,23 @@ function doneBox(e) {
   if (btns.length) h += `<div class="row" style="margin-top:.45rem">${btns.join('')}</div>`;
   return h ? `<div style="margin-top:.6rem;border-top:1px solid var(--g100);padding-top:.4rem">${h}</div>` : '';
 }
-// 列表 / 提醒里直接点: 完成、推迟, 不用点开弹窗
+// 每个会改数据的操作都先弹窗确认, 写清楚要做什么
+function ask(title, body, okLabel, danger) {
+  return new Promise(done => {
+    const m = document.getElementById('askModal'), yes = document.getElementById('askYes'), no = document.getElementById('askNo');
+    document.getElementById('askTitle').textContent = title;
+    document.getElementById('askBody').textContent = body || '';
+    document.getElementById('askBody').style.display = body ? '' : 'none';
+    yes.textContent = okLabel || '确认';
+    yes.className = 'btn ' + (danger ? 'btn-red' : 'btn-blue');
+    const end = v => { m.classList.remove('show'); yes.onclick = no.onclick = null; done(v); };
+    yes.onclick = () => end(true); no.onclick = () => end(false);
+    m.classList.add('show'); yes.focus();
+  });
+}
+const evByKey = key => D.events.find(e => e.key === key) || {};
+const evLine = e => `${e.title || ''}${e.start_date ? '\n📅 ' + range(e) : ''}`;
+// 列表 / 提醒里直接点: 完成、推迟 (点了仍会弹窗确认)
 function quick(e) {
   if (!D.canMark || e.status !== 'approved') return '';
   const b = [];
@@ -323,28 +350,35 @@ function openPp(id) {
 async function ppSave(key, date) {
   const reason = document.getElementById('ppReason').value.trim();
   if (date !== null) { if (!date) return toast('请选新的日期', true); if (!reason) return toast('推迟要写原因', true); }
+  const e = evByKey(key);
+  if (!await ask(date ? '确认推迟截止日期？' : '确认取消推迟？', date ? `${e.title}\n${e.start_date} → ${date}\n原因：${reason}` : `${evLine(e)}\n取消后回到原来的日期 ${e.orig_date || ''}`, date ? '确认推迟' : '确认取消推迟')) return;
   const j = await api('/api/calendar/postpone', { method: 'POST', body: { key, new_date: date, reason } }).catch(e => ({ error: e.message }));
   if (j.error) return toast(j.error, true);
   closeM('ppModal'); toast(date ? '已推迟到 ' + date : '已取消推迟'); reloadView();
 }
 async function reviewAll() {
-  const keys = D.events.filter(e => !e.invoices && e.done && e.done.status === 'pending_review').map(e => e.key);
+  const evs = D.events.filter(e => !e.invoices && e.done && e.done.status === 'pending_review'), keys = evs.map(e => e.key);
+  if (!await ask(`确认全部 ${keys.length} 件都已完成？`, evs.map(e => `• ${e.start_date} ${e.title}（${e.done.done_by}）`).join('\n'), '全部确认')) return;
   for (const key of keys) { const j = await api('/api/calendar/done/review', { method: 'POST', body: { key, approve: true } }).catch(e => ({ error: e.message })); if (j.error) { toast(j.error, true); break; } }
   toast(`已确认 ${keys.length} 件`); reloadView();
 }
 async function payReviewAll() {
-  const ids = D.events.filter(e => e.invoices).flatMap(e => e.invoices.filter(i => i.pay && i.pay.review_status === 'pending').map(i => i.id));
+  const invs = D.events.filter(e => e.invoices).flatMap(e => e.invoices.filter(i => i.pay && i.pay.review_status === 'pending')), ids = invs.map(i => i.id);
+  if (!await ask(`确认全部 ${ids.length} 张发工资标注？`, invs.map(i => `• ${i.number} ${i.company}：${i.pay.status === 'done' ? '已发' : '没发（' + i.pay.note + '）'}`).join('\n'), '全部确认')) return;
   for (const id of ids) { const j = await api('/api/calendar/invpay/review', { method: 'POST', body: { invoice_id: id, approve: true } }).catch(e => ({ error: e.message })); if (j.error) { toast(j.error, true); break; } }
   toast(`已确认 ${ids.length} 张`); reloadView();
 }
 async function markDone(key, done) {
   const n = document.getElementById('dnote');
+  if (!await ask(done ? '确认这件事已经完成？' : '确认撤回「完成」？', evLine(evByKey(key)) + (done && n && n.value.trim() ? '\n说明：' + n.value.trim() : ''), done ? '确认完成' : '确认撤回')) return;
   const j = await api('/api/calendar/done', { method: 'POST', body: { key, done, note: n ? n.value : '' } }).catch(e => ({ error: e.message }));
   if (j.error) return toast(j.error, true);
   toast(!done ? '已撤回' : j.status === 'approved' ? '已标记完成' : '已标记完成，等 admin 审核'); reloadView();
 }
 async function review(key, ok, inputId) {
   const n = document.getElementById(inputId || 'rnote-' + key);
+  const e = evByKey(key);
+  if (!await ask(ok ? '确认这件事已完成？' : '确认退回？', evLine(e) + (e.done ? `\n${e.done.done_by} 标的完成` : '') + (n && n.value.trim() ? '\n备注：' + n.value.trim() : ''), ok ? '确认完成' : '确认退回', !ok)) return;
   const j = await api('/api/calendar/done/review', { method: 'POST', body: { key, approve: ok, note: n ? n.value : '' } }).catch(e => ({ error: e.message }));
   if (j.error) return toast(j.error, true);
   toast(ok ? '已确认完成' : '已退回'); reloadView();
@@ -434,17 +468,23 @@ async function addPayFiles(inp) {
 async function savePay() {
   const status = document.querySelector('input[name=pst]:checked').value, note = document.getElementById('payNote').value.trim();
   if (status === 'not_done' && !note) return toast('没完成要写清楚原因', true);
+  const i = findInv(PAY_ID) || {};
+  if (!await ask(status === 'done' ? '确认这张已经发了工资？' : '确认这张没发？', `${i.number} · ${i.company}${note ? `\n${status === 'done' ? '备注' : '原因'}：${note}` : ''}${PAY_PHOTOS.length ? `\n截图 ${PAY_PHOTOS.length} 张` : ''}`, '确认')) return;
   const j = await api('/api/calendar/invpay', { method: 'POST', body: { invoice_id: PAY_ID, status, note, photos: PAY_PHOTOS } }).catch(e => ({ error: e.message }));
   if (j.error) return toast(j.error, true);
   closeM('payModal'); toast(j.review_status === 'approved' ? '已标注' : '已标注，等 admin 审核'); reloadView();
 }
 async function payUndo(id) {
+  const i = findInv(id) || {};
+  if (!await ask('确认撤回这张的标注？', `${i.number} · ${i.company}`, '确认撤回')) return;
   const j = await api('/api/calendar/invpay', { method: 'POST', body: { invoice_id: id, status: null } }).catch(e => ({ error: e.message }));
   if (j.error) return toast(j.error, true);
   toast('已撤回'); reloadView();
 }
 async function payReview(id, ok) {
   const n = document.getElementById('prnote-' + id);
+  const i = findInv(id) || {};
+  if (!await ask(ok ? '确认这张的标注？' : '确认退回这张的标注？', `${i.number} · ${i.company}${i.pay ? `\n${i.pay.marked_by} 标：${i.pay.status === 'done' ? '已发' : '没发（' + i.pay.note + '）'}` : ''}${n && n.value.trim() ? '\n备注：' + n.value.trim() : ''}`, ok ? '确认' : '确认退回', !ok)) return;
   const j = await api('/api/calendar/invpay/review', { method: 'POST', body: { invoice_id: id, approve: ok, note: n ? n.value : '' } }).catch(e => ({ error: e.message }));
   if (j.error) return toast(j.error, true);
   toast(ok ? '已确认' : '已退回'); reloadView();
@@ -475,6 +515,7 @@ async function save() {
   const body = { title: document.getElementById('fTitle').value, start_date: document.getElementById('fStart').value, end_date: document.getElementById('fEnd').value,
     time: document.getElementById('fTime').value, category: document.getElementById('fCat').value, description: document.getElementById('fDesc').value };
   if (!body.title.trim() || !body.start_date) return toast('请填写标题和日期', true);
+  if (!await ask(EDIT_ID ? '确认保存修改？' : '确认添加这件事？', `${body.title.trim()}\n📅 ${body.start_date}${body.end_date && body.end_date !== body.start_date ? ' ~ ' + body.end_date : ''}${body.time ? ' · ' + body.time : ''}${D.approver ? '' : '\n（需要 admin 批准后才对所有人显示）'}`, '确认保存')) return;
   const btn = document.getElementById('saveBtn'); btn.disabled = true;
   const j = await api(EDIT_ID ? '/api/calendar/' + EDIT_ID : '/api/calendar', { method: EDIT_ID ? 'PUT' : 'POST', body }).catch(e => ({ error: e.message }));
   btn.disabled = false;
@@ -485,12 +526,14 @@ async function save() {
 }
 async function decide(id, ok) {
   const n = document.getElementById('note' + id);
+  const e = D.events.find(x => x.id === id) || {};
+  if (!await ask(ok ? '确认批准？批准后所有人都能看到' : '确认不批准？', evLine(e) + (n && n.value.trim() ? '\n备注：' + n.value.trim() : ''), ok ? '确认批准' : '确认不批准', !ok)) return;
   const j = await api(`/api/calendar/${id}/decide`, { method: 'POST', body: { approve: ok, note: n ? n.value : '' } }).catch(e => ({ error: e.message }));
   if (j.error) return toast(j.error, true);
   closeM('viewModal'); toast(ok ? '已批准，所有人可见' : '已标记为不批准'); load();
 }
 async function del(id) {
-  if (!confirm('删除这件事？')) return;
+  if (!await ask('确认删除这件事？删除后不能恢复', evLine(D.events.find(x => x.id === id) || {}), '确认删除', true)) return;
   const j = await api('/api/calendar/' + id, { method: 'DELETE' }).catch(e => ({ error: e.message }));
   if (j.error) return toast(j.error, true);
   closeM('viewModal'); toast('已删除'); load();
