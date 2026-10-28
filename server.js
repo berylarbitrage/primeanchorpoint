@@ -11349,6 +11349,7 @@ app.delete('/api/admin/foremen/:id', requireAdmin, (req, res) => {
 app.get('/foreman-register', (req, res) => res.sendFile(path.join(__dirname, 'public', 'apply.html')));
 app.get('/foreman-intake/:token', (req, res) => res.sendFile(path.join(__dirname, 'public', 'foreman-intake.html')));
 app.get('/foremen', (req, res) => res.sendFile(path.join(__dirname, 'public', 'foremen.html')));
+app.get('/idphoto', (req, res) => res.sendFile(path.join(__dirname, 'public', 'idphoto.html')));
 
 // ─── Worker Accounts (admin manages) ───
 app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
@@ -22523,6 +22524,29 @@ app.delete('/api/admin/employees/:id/hard-delete', requireAdmin, requireRole('ad
 });
 
 // ─── DOCUMENT ROUTES ───
+
+// 证件照拍摄页 (/idphoto)：输入手机号找员工，拍好的 2x2 证件照存成 doc_type='id_photo' 的员工文件
+app.get('/api/admin/idphoto/lookup', requireAdmin, blockManager, (req, res) => {
+  const norm = p => { const d = String(p || '').replace(/\D/g, ''); return d.length > 10 ? d.slice(-10) : d; };
+  const q = norm(req.query.phone);
+  if (q.length < 4) return res.status(400).json({ error: '请输入至少 4 位手机号' });
+  const parseArr = v => { try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
+  const rows = db.prepare(`SELECT id, employee_id, first_name, middle_name, last_name, phone, extra_phones, status, position
+    FROM employees`).all();
+  // 输满 10 位按整号匹配，不足 10 位按尾号匹配
+  const hit = ph => { const n = norm(ph); return n && (q.length >= 10 ? n === q : n.endsWith(q)); };
+  const matches = rows.filter(r => hit(r.phone) || parseArr(r.extra_phones).some(hit)).slice(0, 20);
+  const lastPhoto = db.prepare(`SELECT id, uploaded_at FROM employee_documents WHERE employee_id=? AND doc_type='id_photo' ORDER BY uploaded_at DESC, id DESC LIMIT 1`);
+  res.json(matches.map(r => {
+    const ph = lastPhoto.get(r.id);
+    return {
+      id: r.id, employee_id: r.employee_id || '', status: r.status || '', position: r.position || '',
+      name: [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' '),
+      phone: r.phone || '',
+      last_photo_id: ph ? ph.id : null, last_photo_at: ph ? ph.uploaded_at : null
+    };
+  }));
+});
 
 app.get('/api/admin/employees/:id/documents', requireAdmin, blockManager, (req, res) => {
   res.json(db.prepare('SELECT * FROM employee_documents WHERE employee_id=? ORDER BY uploaded_at DESC').all(req.params.id));
