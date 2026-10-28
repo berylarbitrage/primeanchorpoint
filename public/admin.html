@@ -7147,6 +7147,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <option value="forklift_operator">叉车操作员 / Forklift Operator</option>
       <option value="cdl_driver">CDL卡车司机 / CDL Truck Driver</option>
       <option value="delivery_driver">送货司机 / Delivery Driver</option>
+      <option value="order_checker">复核员 / Order Checker</option>
       <option value="shift_supervisor">班组长 / Shift Supervisor</option>
       <option value="site_manager">现场主管 / Site Manager</option>
       <option value="quality_inspector">质检员 / Quality Inspector</option>
@@ -7579,6 +7580,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <option value="forklift_operator">叉车操作员 / Forklift Operator</option>
       <option value="cdl_driver">CDL卡车司机 / CDL Truck Driver</option>
       <option value="delivery_driver">送货司机 / Delivery Driver</option>
+      <option value="order_checker">复核员 / Order Checker</option>
       <option value="shift_supervisor">班组长 / Shift Supervisor</option>
       <option value="site_manager">现场主管 / Site Manager</option>
       <option value="quality_inspector">质检员 / Quality Inspector</option>
@@ -38476,6 +38478,7 @@ function renderInvpManualTable(skipSave) {
       ['forklift_operator', '叉车操作员 / Forklift Operator'],
       ['cdl_driver', 'CDL卡车司机 / CDL Truck Driver'],
       ['delivery_driver', '送货司机 / Delivery Driver'],
+      ['order_checker', '复核员 / Order Checker'],
       ['shift_supervisor', '班组长 / Shift Supervisor'],
       ['site_manager', '现场主管 / Site Manager'],
       ['quality_inspector', '质检员 / Quality Inspector'],
@@ -41900,7 +41903,7 @@ async function generateInvpPreview() {
   const hasMarkup   = markupRate > 1;
   const servicePeriodLabel = fmtNiceRange(ps, pe);
 
-  const _catLabel = { warehouse_sorter:'Warehouse Sorter', labeler:'Labeler', packer:'Packer', forklift_operator:'Forklift Operator', cdl_driver:'CDL Truck Driver', delivery_driver:'Delivery Driver', shift_supervisor:'Shift Supervisor', site_manager:'Site Manager', quality_inspector:'Quality Inspector', machine_operator:'Machine Operator', assembly_line:'Assembly Line', material_handler:'Material Handler', inventory_clerk:'Inventory Clerk', general_labor:'General Labor', janitorial:'Janitorial', food_processing:'Food Processing', warehouse_lead:'Warehouse Lead', loading_unloading:'Loading/Unloading', order_picker:'Order Picker', welder:'Welder' };
+  const _catLabel = { warehouse_sorter:'Warehouse Sorter', labeler:'Labeler', packer:'Packer', forklift_operator:'Forklift Operator', cdl_driver:'CDL Truck Driver', delivery_driver:'Delivery Driver', order_checker:'Order Checker', shift_supervisor:'Shift Supervisor', site_manager:'Site Manager', quality_inspector:'Quality Inspector', machine_operator:'Machine Operator', assembly_line:'Assembly Line', material_handler:'Material Handler', inventory_clerk:'Inventory Clerk', general_labor:'General Labor', janitorial:'Janitorial', food_processing:'Food Processing', warehouse_lead:'Warehouse Lead', loading_unloading:'Loading/Unloading', order_picker:'Order Picker', welder:'Welder' };
 
   // Mode-specific aggregations
   let baseAmt, billedAmt, totalRegHrs = 0, totalOtHrs = 0, hasPosition = false, totalRowColspan = 3;
