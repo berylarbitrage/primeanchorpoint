@@ -9491,6 +9491,7 @@ function _isChangeRequest(req) {
   // 换号申请 / 批准本身就是一道审批, director 批准时不能再被拦去等审批
   if (p === '/api/device-sms/my-line' || p.startsWith('/api/device-sms/line-requests')) return false;
   if (_isWobGustoWork(req, p)) return false;
+  if (_isReferralWork(req, p)) return false;
   if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return true;
   return String(req.query && req.query.send) === '1';   // 带 ?send=1 的 GET 会真的发东西 (例如立刻发面试日报)
 }
@@ -9517,6 +9518,12 @@ function _isWobGustoWork(req, p) {
   if (req.method !== 'POST') return false;
   return /^\/api\/acct\/onboarding\/[^/]+$/.test(p)
     || ['/api/acct/onboarding-email-assign', '/api/acct/onboarding-email-ignore', '/api/acct/onboarding-bank-ack', '/api/acct/onboarding-emails'].includes(p);
+}
+// 总监做介绍费 (/accounting 介绍费) 的日常登记不用审批: 面试去没去 (标错可以改)、关联 / 取消关联员工档案、
+// 关联 / 改关联发票、开始上班、中途不去了 都直接生效。金额相关 (改介绍费、付款方式、核查支付、HR 奖励确认) 仍要 admin 审核。
+function _isReferralWork(req, p) {
+  if (req.method !== 'POST') return false;
+  return /^\/api\/acct\/referrals\/\d+\/(interview-status|profile|invoices|start|quit)$/.test(p);
 }
 async function _queueChange(req, res, session) {
   try {
