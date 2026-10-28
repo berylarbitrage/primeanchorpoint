@@ -112,6 +112,7 @@
   #annLightbox iframe{width:92vw;height:92vh;border:none;background:#fff;border-radius:8px}
   @media (max-width:640px){ .wrap{padding:12px 8px 60px} td,th{padding:8px 8px} }
 </style>
+<script src="/pa-dialog.js"></script>
 </head>
 <body>
 
@@ -278,7 +279,7 @@ async function setAcctLabel(accountId, v) {
     await api('/plaid/accounts/' + encodeURIComponent(accountId) + '/label', { method: 'POST', body: JSON.stringify({ company_label: String(v || '').trim() }) });
     await loadAccounts();
     loadTxns();
-  } catch (e) { alert(e.message); }
+  } catch (e) { showAlert(e.message); }
 }
 
 // 账户卡片默认收起, 点按钮才展开（余额不常看, 也避免旁人一眼看到）
@@ -290,12 +291,12 @@ function toggleAccts() {
 }
 
 async function unlinkItem(id, name) {
-  if (!confirm('确定解绑「' + name + '」这个银行连接吗？\n该连接下所有账户和已同步的交易记录都会删除。')) return;
+  if (!await showConfirm('确定解绑「' + name + '」这个银行连接吗？\n该连接下所有账户和已同步的交易记录都会删除。')) return;
   try {
     await api('/plaid/items/' + id, { method: 'DELETE' });
     await loadAccounts();
     await loadTxns();
-  } catch (e) { alert(e.message); }
+  } catch (e) { showAlert(e.message); }
 }
 
 function qDebounce(){ clearTimeout(qTimer); qTimer = setTimeout(loadTxns, 350); }
@@ -420,7 +421,7 @@ function openPlaidLink(linkToken, receivedRedirectUri) {
           institution: (metadata && metadata.institution && metadata.institution.name) || '' }) });
       }
       await syncNow();
-      if (isUpdate) alert('已重新授权 ✓\nPlaid 会在后台补拉历史交易（最多两年），完成后通过 webhook 自动入库，几分钟后刷新页面即可看到更早的数据。');
+      if (isUpdate) showAlert('已重新授权 ✓\nPlaid 会在后台补拉历史交易（最多两年），完成后通过 webhook 自动入库，几分钟后刷新页面即可看到更早的数据。');
     },
     onExit: () => { localStorage.removeItem('plaid_link_token'); localStorage.removeItem('plaid_link_update'); },
   });
@@ -435,20 +436,20 @@ async function connectBank() {
     localStorage.setItem('plaid_link_token', r.link_token);
     localStorage.removeItem('plaid_link_update');
     openPlaidLink(r.link_token);
-  } catch (e) { alert(e.message); }
+  } catch (e) { showAlert(e.message); }
 }
 
 // 重新授权已连的银行 (Plaid update 模式), 把历史抓取范围提到两年, 授权后
 // Plaid 后台补拉老交易再经 webhook 入库。不要用「解绑重连」来补历史 ——
 // 重连是新 Item, 交易 ID 全换, 已做的标注对不上还会出重复行。
 async function relinkItem(itemId, name) {
-  if (!confirm('重新授权「' + name + '」以补拉历史交易（最多两年）？\n会打开银行授权窗口，授权完成后 Plaid 在后台补拉，稍后自动入库。')) return;
+  if (!await showConfirm('重新授权「' + name + '」以补拉历史交易（最多两年）？\n会打开银行授权窗口，授权完成后 Plaid 在后台补拉，稍后自动入库。')) return;
   try {
     const r = await api('/plaid/link-token', { method: 'POST', body: JSON.stringify({ item_id: itemId }) });
     localStorage.setItem('plaid_link_token', r.link_token);
     localStorage.setItem('plaid_link_update', '1');
     openPlaidLink(r.link_token);
-  } catch (e) { alert(e.message); }
+  } catch (e) { showAlert(e.message); }
 }
 
 function plaidOauthResume() {
@@ -473,11 +474,11 @@ async function testWebhook() {
     await new Promise(r2 => setTimeout(r2, 2500));
     const ev = await api('/plaid/webhook-events');
     const recent = (ev.events || []).filter(e => e.webhook_code === 'NEW_ACCOUNTS_AVAILABLE').length;
-    alert('已请求 Plaid 发送 ' + ok + ' 条测试 webhook（地址: ' + r.webhook_url + '）\n'
+    showAlert('已请求 Plaid 发送 ' + ok + ' 条测试 webhook（地址: ' + r.webhook_url + '）\n'
       + '服务器已收到 NEW_ACCOUNTS_AVAILABLE 事件: ' + recent + ' 条'
       + (recent ? ' ✅' : '\n（还没收到 — 若服务器不是公网地址，Plaid 打不进来）')
       + (errs.length ? '\n失败: ' + errs.map(x => x.error).join('; ') : ''));
-  } catch (e) { alert(e.message); }
+  } catch (e) { showAlert(e.message); }
   finally { btn.disabled = false; btn.textContent = '📡 测试 Webhook'; }
 }
 
@@ -492,12 +493,12 @@ async function syncNow() {
     btn.textContent = '🔄 同步交易';
     document.getElementById('sumLine').textContent += ' · 刚同步: 新增/更新 ' + (r.added || 0) + ' 笔';
     if (r.errors && r.errors.length) {
-      alert('有 ' + r.errors.length + ' 个银行连接同步失败（其余已正常同步）：\n'
+      showAlert('有 ' + r.errors.length + ' 个银行连接同步失败（其余已正常同步）：\n'
         + r.errors.map(x => '· ' + (x.institution || '连接#' + x.id) + ': ' + x.error).join('\n')
         + '\n\n如果是切换环境后遗留的旧测试连接，点账户卡片右上角「✕ 解绑」删掉即可。');
     }
   } catch (e) {
-    alert(e.message);
+    showAlert(e.message);
     btn.textContent = '🔄 同步交易';
   } finally { btn.disabled = false; }
 }

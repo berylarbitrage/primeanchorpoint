@@ -55,6 +55,7 @@ tr.weekend td{opacity:.45}
 @media(max-width:600px){.meta-grid{grid-template-columns:1fr 1fr}.action-btns{flex-direction:column}.btn{width:100%}}
 @media(max-width:480px){.page{padding:1rem .75rem}table{font-size:.78rem}th,td{padding:6px 8px}}
 </style>
+<script src="/pa-dialog.js"></script>
 </head>
 <body>
 <div class="page">
@@ -268,7 +269,7 @@ function toggleDispute() {
 async function submitResponse(action) {
   const note = action === 'dispute' ? document.getElementById('disputeNote').value.trim() : '';
   if (action === 'dispute' && !note) {
-    alert('请填写反驳意见后再提交。/ Please describe the dispute before submitting.');
+    showAlert('请填写反驳意见后再提交。/ Please describe the dispute before submitting.');
     return;
   }
   try {
@@ -277,7 +278,7 @@ async function submitResponse(action) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, note })
     });
-    if (!res.ok) { alert('提交失败，请重试。/ Submission failed. Please try again.'); return; }
+    if (!res.ok) { showAlert('提交失败，请重试。/ Submission failed. Please try again.'); return; }
     document.getElementById('actionSection').style.display = 'none';
     const ty = document.getElementById('thankyou');
     const heading = document.getElementById('tyHeading');
@@ -291,7 +292,7 @@ async function submitResponse(action) {
     }
     ty.style.display = 'block';
   } catch(e) {
-    alert('提交出错，请稍后重试。/ Error submitting. Please try again later.');
+    showAlert('提交出错，请稍后重试。/ Error submitting. Please try again later.');
   }
 }
 

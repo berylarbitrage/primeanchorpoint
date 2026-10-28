@@ -314,6 +314,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gr
   .dash-stats{grid-template-columns:repeat(6,1fr)}
 }
 </style>
+<script src="/pa-dialog.js"></script>
 </head>
 <body>
 
@@ -3989,9 +3990,9 @@ async function testNotify() {
       body: JSON.stringify({ phone: '+13128437890' })
     });
     const msg = JSON.stringify(r, null, 2);
-    alert('Result:\n' + msg);
+    showAlert('Result:\n' + msg);
   } catch(e) {
-    alert('Error: ' + e.message);
+    showAlert('Error: ' + e.message);
   }
 }
 

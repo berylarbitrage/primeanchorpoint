@@ -82,6 +82,7 @@
     .qrcard { border-radius: 0; border-width: 0; padding-top: 60px; }
   }
 </style>
+<script src="/pa-dialog.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -355,12 +356,12 @@
     try {
       const r = await fetch('/api/admin/form-portal/qr?' + apiQ, { credentials: 'same-origin' });
       const data = await r.json().catch(() => ({}));
-      if (!r.ok) { alert(data.error || '二维码生成失败'); return; }
+      if (!r.ok) { showAlert(data.error || '二维码生成失败'); return; }
       document.getElementById('qrName').textContent = data.name;
       document.getElementById('qrImg').src = data.qr;
       document.getElementById('qrUrl').textContent = data.url;
       show('qrview');
-    } catch (e) { alert('网络错误：' + e.message); }
+    } catch (e) { showAlert('网络错误：' + e.message); }
   }
   function closeQr() { show('main'); }
 

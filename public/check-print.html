@@ -53,6 +53,7 @@
   }
   body.calib .perf { border-top-color: #cbd5e1 !important; } /* 对位测试页保留标线 */
 </style>
+<script src="/pa-dialog.js"></script>
 </head>
 <body>
 <div class="bar no-print">
@@ -540,7 +541,7 @@ async function printCheck(voided) {
   if (r && r.error) {
     if (r.duplicate) {
       const d = r.duplicate;
-      const useNext = confirm(`支票号 #${no} 已经用过（${d.payee || '—'} ${d.amount != null ? '$' + Number(d.amount).toFixed(2) : ''} ${d.check_date || ''}${d.voided ? ' VOID' : ''}）。\n\n点「确定」改用下一个可用号 #${r.next_no} 继续打印，点「取消」放弃。`);
+      const useNext = await showConfirm(`支票号 #${no} 已经用过（${d.payee || '—'} ${d.amount != null ? '$' + Number(d.amount).toFixed(2) : ''} ${d.check_date || ''}${d.voided ? ' VOID' : ''}）。\n\n点「确定」改用下一个可用号 #${r.next_no} 继续打印，点「取消」放弃。`);
       if (useNext) { document.getElementById('cNo').value = r.next_no; return printCheck(voided); }
       return;
     }

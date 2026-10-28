@@ -211,6 +211,7 @@ function googleTranslateElementInit() {
 </script>
 <script src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit" defer></script>
 <script src="https://cdn.docuseal.com/js/form.js" defer></script>
+<script src="/pa-dialog.js"></script>
 </head>
 <body>
 <div id="toast-wrap"></div>
@@ -4075,8 +4076,8 @@ function submitContractorInvoice(e) {
     if (k === 'confirmed') { body[k] = true; return; }
     body[k] = ['hours_worked','hourly_rate','flat_amount','total_amount','expenses','job_id'].includes(k) ? (parseFloat(v) || 0) : v;
   });
-  if (!body.confirmed) { alert('请勾选确认框 / Please check the confirmation box'); return; }
-  if (!body.total_amount || body.total_amount <= 0) { alert('总金额必须大于0 / Total must be > 0. 请填写工时。'); return; }
+  if (!body.confirmed) { showAlert('请勾选确认框 / Please check the confirmation box'); return; }
+  if (!body.total_amount || body.total_amount <= 0) { showAlert('总金额必须大于0 / Total must be > 0. 请填写工时。'); return; }
 
   // Store body and show summary for confirmation
   _pendingInvoiceBody = body;
@@ -4137,7 +4138,7 @@ async function confirmSubmitInvoice() {
     showToast('✅ Invoice submitted: ' + r.invoice_number);
     loadContractorInvoices();
   } else {
-    alert(r?.error || '提交失败');
+    showAlert(r?.error || '提交失败');
   }
 }
 

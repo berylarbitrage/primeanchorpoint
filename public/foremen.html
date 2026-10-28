@@ -32,6 +32,7 @@
   .modal img { width:100%; max-width:300px; height:auto; }
   .modal .url { font-size:.74rem; color:var(--gray); word-break:break-all; margin:.6rem 0; }
 </style>
+<script src="/pa-dialog.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -146,11 +147,11 @@ async function showIntakeQr(id, name) {
   } catch (e) {}
 }
 async function delForeman(id, name) {
-  if (!confirm('删除工头「' + name + '」及其所有已录入工人？\nDelete this foreman and all their collected workers?')) return;
+  if (!await showConfirm('删除工头「' + name + '」及其所有已录入工人？\nDelete this foreman and all their collected workers?')) return;
   try { await api('/api/admin/foremen/' + id, { method: 'DELETE' }); load(); } catch (e) {}
 }
 async function delWorker(id, fid) {
-  if (!confirm('删除这位工人记录？/ Delete this worker record?')) return;
+  if (!await showConfirm('删除这位工人记录？/ Delete this worker record?')) return;
   try { await api('/api/admin/foreman-workers/' + id, { method: 'DELETE' }); foremen = foremen.map(f => f.id===fid?{...f,worker_count:Math.max(0,f.worker_count-1)}:f); render(); toggleWorkers(fid); } catch (e) {}
 }
 
