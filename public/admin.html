@@ -615,6 +615,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <a onclick="showTab('bgchecks')" data-tab="bgchecks" data-role="admin,staff">🔍 背景调查</a>
       <a onclick="showTab('compliance')" data-tab="compliance" data-role="admin,staff">📑 合规审核</a>
       <a onclick="showTab('documents')" data-tab="documents" data-role="admin,staff">📄 HR 文件</a>
+      <a href="/idphoto" target="_blank" data-role="admin,staff" title="输入员工手机号，手机对着白墙拍 2x2 证件照，自动存进员工档案">📸 证件照拍摄 ↗</a>
       <a onclick="showTab('worker-docs')" data-tab="worker-docs" data-role="admin,staff">📎 员工文件二维码</a>
       <a onclick="showTab('referrals')" data-tab="referrals" data-role="admin,staff">🎁 推荐奖励</a>
       <a onclick="showTab('referrers')" data-tab="referrers" data-role="admin,staff">👥 推荐人</a>
@@ -3220,6 +3221,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <option value="i9">I-9 表格</option>
       <option value="w4">W-4 表格</option>
       <option value="bg_check">背景调查报告</option>
+      <option value="id_photo">证件照</option>
       <option value="other">其他</option>
     </select>
   </div>
@@ -8322,6 +8324,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <option value="i9">I-9 表格</option>
       <option value="w4">W-4 表格</option>
       <option value="bg_check">背景调查报告</option>
+      <option value="id_photo">证件照</option>
       <option value="other">其他</option>
     </select></div>
     <div class="field" id="docExpiryField"><label>到期日期 (如适用)</label><input id="docExpiry" type="date"></div>
@@ -17602,7 +17605,7 @@ async function viewEmployee(id) {
   const emp = await api(`/admin/employees/${id}`);
   currentEmpForDetail = emp;
   const CHK_TYPE = { criminal:'刑事', employment:'雇佣核实', education:'学历', drug:'药测', credit:'信用', full:'全面' };
-  const DOC_TYPE = { ssn:'SSN卡', drivers_license:'驾照', passport:'护照', work_permit:'工作许可证', i9:'I-9', w4:'W-4', bg_check:'背景报告', other:'其他' };
+  const DOC_TYPE = { ssn:'SSN卡', drivers_license:'驾照', passport:'护照', work_permit:'工作许可证', i9:'I-9', w4:'W-4', bg_check:'背景报告', id_photo:'证件照', other:'其他' };
   const BG_STATUS_LABEL = { ordered:'已下单', in_progress:'调查中', completed:'已完成', failed:'未通过' };
 
   const cols = (pairs) => `<div class="detail-grid">${pairs.map(([k,v])=>`<div class="detail-row"><span>${k}</span><span>${v||'—'}</span></div>`).join('')}</div>`;
@@ -17687,7 +17690,7 @@ async function viewEmployee(id) {
   </div>`;
 
   // Documents
-  html += `<div class="form-section"><h4>HR 文件 (${(emp.documents||[]).length} 份)</h4>
+  html += `<div class="form-section"><h4 style="display:flex;align-items:center;justify-content:space-between;gap:.5rem">HR 文件 (${(emp.documents||[]).length} 份)<a href="/idphoto?phone=${encodeURIComponent(emp.phone||'')}" target="_blank" class="btn btn-sm btn-outline" style="font-size:.78rem;text-decoration:none">📸 拍证件照</a></h4>
     ${emp.documents&&emp.documents.length?`<table><thead><tr><th>类型</th><th>标签</th><th>文件</th><th>到期日</th></tr></thead><tbody>
     ${emp.documents.map(d=>`<tr>
       <td><span class="badge badge-doc">${DOC_TYPE[d.doc_type]||d.doc_type}</span></td>
@@ -19883,7 +19886,7 @@ async function loadTsHistory() {
 // ══════════════════════════════════════════════════════
 // ─── DOCUMENTS (HR 文件) ───
 // ══════════════════════════════════════════════════════
-const DOC_TYPE_LABEL = { ssn:'SSN卡', drivers_license:'驾照', passport:'护照', work_permit:'工作许可证/EAD', i9:'I-9', w4:'W-4', bg_check:'背景报告', other:'其他' };
+const DOC_TYPE_LABEL = { ssn:'SSN卡', drivers_license:'驾照', passport:'护照', work_permit:'工作许可证/EAD', i9:'I-9', w4:'W-4', bg_check:'背景报告', id_photo:'证件照', other:'其他' };
 
 async function populateDocEmpFilter() {
   const emps = await api('/admin/employees');

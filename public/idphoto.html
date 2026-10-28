@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#92400e">
+<title>证件照拍摄 · Prime Anchor</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--blue:#92400e;--sky:#b45309;--sky-light:#fef3c7;--accent:#f59e0b;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A;--gray-800:#2D3748;--red:#E63946;--green:#2D9D78}
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; background: #fffbeb; color: var(--gray-800);
+    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .stage { display: none; min-height: 100vh; min-height: 100dvh; }
+  .stage.active { display: flex; flex-direction: column; }
+  header { padding: .9rem 1rem; background: var(--blue); color: #fff; display: flex; align-items: center; gap: .6rem; }
+  header h1 { margin: 0; font-size: 1.05rem; font-weight: 700; flex: 1; min-width: 0; }
+  header .sub { font-size: .78rem; opacity: .8; font-weight: 500; }
+  .wrap { width: 100%; max-width: 480px; margin: 0 auto; padding: 1.1rem 1rem 2rem; }
+  .card { background: #fff; border-radius: 12px; padding: 1.1rem; box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-bottom: .9rem; }
+  label.lbl { display: block; font-size: .82rem; font-weight: 600; color: var(--gray-600); margin-bottom: .4rem; }
+  input.inp { width: 100%; border: 1.5px solid var(--gray-200); border-radius: 10px; padding: .75rem .85rem; font-size: 1.15rem;
+    font-family: inherit; outline: none; letter-spacing: .03em; }
+  input.inp:focus { border-color: var(--sky); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; padding: .75rem 1.1rem; border-radius: 10px;
+    font-size: .95rem; font-weight: 700; border: 0; cursor: pointer; font-family: inherit; min-height: 46px; background: var(--sky); color: #fff;
+    touch-action: manipulation; }
+  .btn:active { background: var(--blue); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.outline { background: #fff; color: var(--gray-600); border: 1px solid var(--gray-200); }
+  .btn.green { background: var(--green); }
+  .btn.block { width: 100%; }
+  .row { display: flex; gap: .6rem; }
+  .row > .btn { flex: 1; }
+  .muted { font-size: .8rem; color: var(--gray-400); line-height: 1.55; }
+  .emp { display: flex; align-items: center; gap: .8rem; padding: .8rem; border: 1.5px solid var(--gray-200); border-radius: 10px;
+    margin-top: .6rem; cursor: pointer; background: #fff; }
+  .emp:active, .emp.sel { border-color: var(--sky); background: var(--sky-light); }
+  .emp .av { width: 46px; height: 46px; border-radius: 8px; background: #f1f5f9; flex-shrink: 0; object-fit: cover;
+    display: flex; align-items: center; justify-content: center; color: var(--gray-400); font-size: 1.2rem; }
+  .emp .nm { font-weight: 700; font-size: .98rem; }
+  .emp .meta { font-size: .78rem; color: var(--gray-600); margin-top: .1rem; }
+  .tips li { margin: .25rem 0; }
+
+  /* ── 相机 ── */
+  #stCam { background: #000; color: #fff; position: fixed; inset: 0; min-height: 0; }
+  #stCam.active { display: block; }
+  #video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  #video.mirror { transform: scaleX(-1); }
+  #overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .camTop { position: absolute; top: 0; left: 0; right: 0; padding: calc(.6rem + env(safe-area-inset-top)) .8rem .6rem;
+    display: flex; align-items: center; gap: .5rem; background: linear-gradient(rgba(0,0,0,.6), transparent); }
+  .camTop .who { flex: 1; min-width: 0; font-size: .9rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .iconBtn { width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255,255,255,.18); color: #fff; font-size: 1.1rem;
+    display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+  .camBottom { position: absolute; left: 0; right: 0; bottom: 0; padding: .7rem .8rem calc(1rem + env(safe-area-inset-bottom));
+    background: linear-gradient(transparent, rgba(0,0,0,.75) 30%); }
+  #instr { text-align: center; font-size: 1.15rem; font-weight: 700; min-height: 2.9em; display: flex; align-items: center; justify-content: center;
+    line-height: 1.35; padding: 0 .4rem; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
+  #instr.ok { color: #6ee7b7; }
+  .chips { display: flex; flex-wrap: wrap; gap: .35rem; justify-content: center; margin: .45rem 0 .7rem; }
+  .chip { font-size: .72rem; font-weight: 700; padding: .25rem .55rem; border-radius: 999px; background: rgba(255,255,255,.14); color: #e5e7eb; }
+  .chip.ok { background: rgba(16,185,129,.85); color: #fff; }
+  .chip.bad { background: rgba(230,57,70,.85); color: #fff; }
+  .chip.na { opacity: .45; }
+  .shutterRow { display: flex; align-items: center; justify-content: space-between; padding: 0 .6rem; }
+  #shutter { width: 72px; height: 72px; border-radius: 50%; border: 4px solid #fff; background: rgba(255,255,255,.25); cursor: pointer; }
+  #shutter.ready { background: #10b981; }
+  .auto { font-size: .78rem; display: flex; align-items: center; gap: .3rem; width: 84px; }
+  #countdown { position: absolute; left: 50%; top: 42%; transform: translate(-50%,-50%); font-size: 6rem; font-weight: 800; color: #fff;
+    text-shadow: 0 2px 12px rgba(0,0,0,.6); display: none; pointer-events: none; }
+  #loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .8rem;
+    background: rgba(0,0,0,.75); font-size: .95rem; text-align: center; padding: 1.5rem; }
+  .spin { width: 34px; height: 34px; border: 3px solid rgba(255,255,255,.25); border-top-color: #fff; border-radius: 50%; animation: sp 1s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .25s; }
+
+  /* ── 结果 ── */
+  .photoBox { position: relative; width: 100%; max-width: 360px; margin: 0 auto; aspect-ratio: 1; border-radius: 6px; overflow: hidden;
+    box-shadow: 0 2px 12px rgba(0,0,0,.15); background: #fff; }
+  .photoBox canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .checks { margin: .8rem 0 0; padding: 0; list-style: none; font-size: .84rem; }
+  .checks li { display: flex; justify-content: space-between; padding: .35rem 0; border-bottom: 1px dashed var(--gray-200); }
+  .checks li:last-child { border-bottom: 0; }
+  .checks .v.ok { color: var(--green); font-weight: 700; }
+  .checks .v.bad { color: var(--red); font-weight: 700; }
+  .tog { display: flex; align-items: center; gap: .5rem; font-size: .88rem; margin: .5rem 0; cursor: pointer; }
+  .tog input { width: 18px; height: 18px; accent-color: var(--sky); }
+</style>
+<script src="/pa-dialog.js"></script>
+</head>
+<body>
+
+<!-- ① 找员工 -->
+<section class="stage active" id="stLookup">
+  <header><h1>📸 证件照拍摄<div class="sub">输入员工手机号 → 拍照 → 自动存进员工档案</div></h1></header>
+  <div class="wrap">
+    <div class="card">
+      <label class="lbl" for="phone">员工手机号</label>
+      <input class="inp" id="phone" type="tel" inputmode="numeric" autocomplete="off" placeholder="例如 6265551234（也可输尾号）">
+      <button class="btn block" style="margin-top:.7rem" id="btnFind">查找员工</button>
+      <div id="results"></div>
+    </div>
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:.35rem">拍摄小贴士</div>
+      <ul class="muted tips" style="margin:0;padding-left:1.1rem">
+        <li>让员工站在<b>白墙前</b>，离墙半米左右（减少影子）</li>
+        <li>你站在离员工 <b>1 米左右</b>，手机和对方眼睛同高、<b>竖着拿</b></li>
+        <li>光线从正面来最好，别背对窗户</li>
+        <li>摘掉帽子和眼镜，头发别挡住脸，自然表情、闭嘴、睁眼</li>
+        <li>所有条件都对了会<b>自动拍</b>，你只要按屏幕提示调整手机</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ② 相机 -->
+<section class="stage" id="stCam">
+  <video id="video" playsinline muted autoplay></video>
+  <canvas id="overlay"></canvas>
+  <div id="flash"></div>
+  <div id="countdown"></div>
+  <div class="camTop">
+    <button class="iconBtn" id="btnCamBack" title="返回">←</button>
+    <div class="who" id="camWho"></div>
+    <button class="iconBtn" id="btnFlip" title="切换前后摄像头">🔄</button>
+  </div>
+  <div class="camBottom">
+    <div id="instr">正在启动相机…</div>
+    <div class="chips" id="chips"></div>
+    <div class="shutterRow">
+      <label class="auto"><input type="checkbox" id="autoShoot" checked> 自动拍</label>
+      <button id="shutter" title="拍照"></button>
+      <div style="width:84px"></div>
+    </div>
+  </div>
+  <div id="loading"><div class="spin"></div><div id="loadingTxt">正在加载人脸识别…<br><span class="muted" style="color:#cbd5e1">第一次打开需要几秒钟</span></div></div>
+</section>
+
+<!-- ③ 结果 -->
+<section class="stage" id="stReview">
+  <header><h1>✅ 证件照 <span class="sub" id="revWho"></span><div class="sub">美国 2×2 英寸规格（护照 / 证件通用）</div></h1></header>
+  <div class="wrap">
+    <div class="card">
+      <div class="photoBox"><canvas id="outCanvas" width="1200" height="1200"></canvas><canvas id="guideCanvas" width="1200" height="1200"></canvas></div>
+      <label class="tog"><input type="checkbox" id="optWhite" checked> 背景处理成纯白</label>
+      <label class="tog"><input type="checkbox" id="optGuide"> 显示规格线（头部 50–69%、眼睛位置）</label>
+      <ul class="checks" id="checks"></ul>
+    </div>
+    <div class="row" style="margin-bottom:.6rem">
+      <button class="btn outline" id="btnRetake">↺ 重拍</button>
+      <button class="btn green" id="btnSave">💾 存到员工档案</button>
+    </div>
+    <div class="row">
+      <button class="btn outline" id="btnDl">⬇ 下载照片</button>
+      <button class="btn outline" id="btnDlSheet">🖨 4×6 打印版</button>
+    </div>
+    <p class="muted" style="text-align:center;margin-top:.8rem">「4×6 打印版」一张 4×6 英寸相纸排 6 张，可以拿去 Walgreens / CVS 冲印后剪开。</p>
+  </div>
+</section>
+
+<script type="module">
+const MP_VER = '0.10.14';
+const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VER}`;
+const FACE_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+const SEG_MODEL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/1/selfie_segmenter.tflite';
+
+// 美国 2x2 证件照：头部（下巴到头顶）占 50–69%，眼睛在离底边 56–69% 的高度
+const OUT = 1200;
+const HEAD_RATIO = 0.60;   // 目标头部高度占比
+const EYE_FROM_TOP = 0.38; // 目标眼睛位置（离顶边）
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const token = (() => { try { return localStorage.getItem('adminToken') || ''; } catch (e) { return ''; } })();
+const authHeaders = () => token ? { Authorization: 'Bearer ' + token } : {};
+
+let emp = null;           // 选中的员工
+let facing = 'environment';
+let stream = null;
+let vision = null, landmarker = null, segmenter = null;
+let running = false, lastTs = 0, lastDetect = 0;
+let tilt = null;          // { beta, gamma } 或 null（没有陀螺仪）
+let history = [];         // 眼睛位置历史，判断是否拿稳
+let okSince = 0, countdownTimer = null;
+let shot = null;          // { canvas, landmarks, mask }
+let lastState = null;
+
+function show(id) { document.querySelectorAll('.stage').forEach(s => s.classList.toggle('active', s.id === id)); }
+
+// ─── ① 找员工 ───
+async function findEmp() {
+  const phone = $('phone').value.replace(/\D/g, '');
+  if (phone.length < 4) { showAlert('请输入至少 4 位手机号'); return; }
+  $('btnFind').disabled = true;
+  try {
+    const r = await fetch('/api/admin/idphoto/lookup?phone=' + encodeURIComponent(phone), { headers: authHeaders(), credentials: 'same-origin' });
+    if (r.status === 401 || r.status === 403) {
+      await showAlert('请先登录管理后台，再打开这个页面。', { title: '需要登录' });
+      location.href = '/admin'; return;
+    }
+    const list = await r.json();
+    if (!r.ok) throw new Error(list.error || '查找失败');
+    renderResults(list);
+  } catch (e) { showAlert('查找失败：' + e.message); }
+  finally { $('btnFind').disabled = false; }
+}
+function renderResults(list) {
+  const box = $('results');
+  if (!list.length) { box.innerHTML = '<p class="muted" style="margin:.8rem 0 0">没找到这个手机号的员工。请确认号码，或先在后台建好员工档案。</p>'; return; }
+  box.innerHTML = (list.length > 1 ? '<p class="muted" style="margin:.8rem 0 0">找到多个员工，点选要拍的那位：</p>' : '') +
+    list.map((e, i) => `<div class="emp" data-i="${i}">
+      ${e.last_photo_id ? `<img class="av" src="/api/admin/documents/${e.last_photo_id}/file" alt="">` : '<div class="av">👤</div>'}
+      <div style="min-width:0;flex:1">
+        <div class="nm">${esc(e.name)}</div>
+        <div class="meta">${esc(e.employee_id || '#' + e.id)} · ${esc(e.phone)}${e.position ? ' · ' + esc(e.position) : ''}${e.status && e.status !== 'active' ? ' · <span style="color:var(--red)">' + esc(e.status) + '</span>' : ''}</div>
+        <div class="meta">${e.last_photo_at ? '已有证件照（' + esc(String(e.last_photo_at).slice(0, 10)) + '），再拍会新增一张' : '还没有证件照'}</div>
+      </div>
+      <div style="font-size:1.3rem;color:var(--sky)">📸</div>
+    </div>`).join('');
+  box.querySelectorAll('.emp').forEach(el => el.onclick = () => startCamera(list[+el.dataset.i]));
+  if (list.length === 1) box.querySelector('.emp').classList.add('sel');
+}
+$('btnFind').onclick = findEmp;
+$('phone').addEventListener('keydown', e => { if (e.key === 'Enter') findEmp(); });
+
+// ─── ② 相机 ───
+async function startCamera(e) {
+  emp = e;
+  $('camWho').textContent = `${e.name} · ${e.employee_id || '#' + e.id}`;
+  show('stCam');
+  $('loading').style.display = 'flex';
+  // iOS 要在点击里申请陀螺仪权限
+  try {
+    if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') await DeviceOrientationEvent.requestPermission();
+  } catch (err) {}
+  window.addEventListener('deviceorientation', onOrient);
+  try {
+    await Promise.all([openStream(), loadModels()]);
+  } catch (err) {
+    $('loading').style.display = 'none';
+    await showAlert((err && err.name === 'NotAllowedError') ? '没有相机权限：请在浏览器设置里允许这个网站使用相机。' : '启动失败：' + (err && err.message || err));
+    stopCamera(); show('stLookup'); return;
+  }
+  $('loading').style.display = 'none';
+  running = true; history = []; okSince = 0;
+  requestAnimationFrame(loop);
+}
+function onOrient(e) { if (e.beta != null && e.gamma != null) tilt = { beta: e.beta, gamma: e.gamma }; }
+
+async function openStream() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('这个浏览器打不开相机：请用手机自带的 Safari / Chrome，并确认网址是 https 开头');
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = await navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: { facingMode: { ideal: facing }, width: { ideal: 1920 }, height: { ideal: 1920 } }
+  });
+  const v = $('video');
+  v.srcObject = stream;
+  v.classList.toggle('mirror', facing === 'user');
+  await v.play();
+  if (!v.videoWidth) await new Promise(r => v.onloadedmetadata = r);
+}
+async function loadModels() {
+  if (landmarker && segmenter) return;
+  const mp = await import(`${MP_BASE}/vision_bundle.mjs`);
+  vision = vision || await mp.FilesetResolver.forVisionTasks(`${MP_BASE}/wasm`);
+  const mk = async delegate => {
+    landmarker = landmarker || await mp.FaceLandmarker.createFromOptions(vision, {
+      baseOptions: { modelAssetPath: FACE_MODEL, delegate }, runningMode: 'VIDEO', numFaces: 2,
+      outputFaceBlendshapes: true, outputFacialTransformationMatrixes: true
+    });
+    segmenter = segmenter || await mp.ImageSegmenter.createFromOptions(vision, {
+      baseOptions: { modelAssetPath: SEG_MODEL, delegate }, runningMode: 'IMAGE', outputConfidenceMasks: true, outputCategoryMask: false
+    });
+  };
+  try { await mk('GPU'); } catch (e) { await mk('CPU'); }
+}
+function stopCamera() {
+  running = false;
+  clearCountdown();
+  window.removeEventListener('deviceorientation', onOrient);
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+}
+$('btnCamBack').onclick = () => { stopCamera(); show('stLookup'); };
+$('btnFlip').onclick = async () => {
+  facing = facing === 'environment' ? 'user' : 'environment';
+  try { await openStream(); history = []; } catch (e) { showAlert('切换摄像头失败：' + e.message); }
+};
+$('shutter').onclick = () => capture(false);
+
+// 分析用的小画布
+const ana = document.createElement('canvas');
+const anaCtx = ana.getContext('2d', { willReadFrequently: true });
+
+function loop(ts) {
+  if (!running) return;
+  const v = $('video');
+  if (v.readyState >= 2 && ts - lastDetect > 70) {
+    lastDetect = ts;
+    const t = Math.max(ts, lastTs + 1); lastTs = t;
+    let res = null;
+    try { res = landmarker.detectForVideo(v, t); } catch (e) {}
+    lastState = evaluate(v, res);
+    renderState(lastState);
+    handleAuto(lastState);
+  }
+  requestAnimationFrame(loop);
+}
+
+// 由人脸关键点算出 2x2 裁剪框（归一化坐标，基于画面宽高）
+function faceGeom(lm, W, H) {
+  const P = i => ({ x: lm[i].x * W, y: lm[i].y * H });
+  const top = P(10), chin = P(152), L = P(234), R = P(454), eL = P(33), eR = P(263), nose = P(1);
+  const faceH = chin.y - top.y, faceW = R.x - L.x;
+  const eyeY = (eL.y + eR.y) / 2;
+  const roll = Math.atan2(eR.y - eL.y, eR.x - eL.x) * 180 / Math.PI;
+  return { top, chin, L, R, eL, eR, nose, faceH, faceW, eyeY, cx: (L.x + R.x) / 2, roll, crownY: top.y - 0.30 * faceH };
+}
+function cropFor(g, crownY) {
+  const headH = g.chin.y - crownY;
+  const S = headH / HEAD_RATIO;
+  let top = g.eyeY - EYE_FROM_TOP * S;
+  // 头顶上方至少留 4%，下巴下方至少留 4%
+  top = Math.min(top, crownY - 0.04 * S);
+  top = Math.max(top, g.chin.y - 0.96 * S);
+  return { x: g.cx - S / 2, y: top, S };
+}
+function eulerFromMatrix(m) {
+  const d = m.data; // column-major 4x4
+  const r10 = d[1], r00 = d[0], r20 = d[2], r21 = d[6], r22 = d[10];
+  return {
+    pitch: Math.atan2(r21, r22) * 180 / Math.PI,
+    yaw: Math.asin(Math.max(-1, Math.min(1, -r20))) * 180 / Math.PI,
+    roll: Math.atan2(r10, r00) * 180 / Math.PI
+  };
+}
+function regionStats(x0, y0, x1, y1, step) {
+  const W = ana.width, H = ana.height;
+  x0 = Math.max(0, Math.floor(x0 * W)); x1 = Math.min(W, Math.ceil(x1 * W));
+  y0 = Math.max(0, Math.floor(y0 * H)); y1 = Math.min(H, Math.ceil(y1 * H));
+  if (x1 - x0 < 2 || y1 - y0 < 2) return null;
+  const img = anaCtx.getImageData(x0, y0, x1 - x0, y1 - y0).data;
+  let n = 0, sL = 0, sL2 = 0, sS = 0;
+  const w = x1 - x0;
+  for (let y = 0; y < y1 - y0; y += step) for (let x = 0; x < w; x += step) {
+    const i = (y * w + x) * 4, r = img[i], g = img[i + 1], b = img[i + 2];
+    const l = 0.299 * r + 0.587 * g + 0.114 * b;
+    n++; sL += l; sL2 += l * l; sS += Math.max(r, g, b) - Math.min(r, g, b);
+  }
+  if (!n) return null;
+  const mean = sL / n;
+  return { n, mean, std: Math.sqrt(Math.max(0, sL2 / n - mean * mean)), sat: sS / n };
+}
+function bs(res, name) {
+  const c = res.faceBlendshapes && res.faceBlendshapes[0] && res.faceBlendshapes[0].categories.find(c => c.categoryName === name);
+  return c ? c.score : 0;
+}
+
+// 逐项检查，返回 { checks: [{key,label,ok,na}], msg, allOk, crop }
+function evaluate(v, res) {
+  const W = v.videoWidth, H = v.videoHeight;
+  const checks = {};
+  const set = (key, label, ok, msg, na) => { checks[key] = { label, ok, msg, na: !!na }; };
+  // 手机姿态
+  const portrait = H >= W;
+  if (tilt) {
+    const b = tilt.beta, g = tilt.gamma;
+    let msg = '';
+    if (b < 82) msg = '手机往前立直一点（现在往后仰了）';
+    else if (b > 98) msg = '手机往后仰一点（现在往前倾了）';
+    else if (Math.abs(g) > 5) msg = '手机左右放平（别歪）';
+    set('tilt', '手机竖直', !msg, msg);
+  } else set('tilt', '手机竖直', true, '', true);
+  if (!portrait) set('tilt', '手机竖直', false, '请把手机竖过来拿');
+
+  const faces = res && res.faceLandmarks ? res.faceLandmarks : [];
+  if (!faces.length) {
+    set('face', '人脸', false, '没看到人脸：让员工站到框里、正对镜头（太远也认不出，靠近一点）');
+    return finish(checks, null);
+  }
+  if (faces.length > 1) {
+    set('face', '人脸', false, '画面里只能有一个人');
+    return finish(checks, null);
+  }
+  set('face', '人脸', true, '');
+  const lm = faces[0];
+  const g = faceGeom(lm, W, H);
+  const crop = cropFor(g, g.crownY);
+  const nx = { x: crop.x / W, y: crop.y / H, w: crop.S / W, h: crop.S / H };
+
+  // 距离：头部占画面高度
+  const headFrac = (g.chin.y - g.crownY) / H;
+  let dMsg = '';
+  if (headFrac > 0.46) dMsg = '离远一点（手机往后退）';
+  else if (headFrac < 0.2) dMsg = '靠近一点';
+  else if (nx.x < -0.01 || nx.x + nx.w > 1.01 || nx.y < -0.01 || nx.y + nx.h > 1.01) {
+    // 框出了画面：先看是不是位置偏了
+    if (nx.w > 0.98 || nx.h > 0.98) dMsg = '离远一点（手机往后退）';
+  }
+  set('dist', '距离', !dMsg, dMsg);
+
+  // 位置：脸在中间
+  const fx = g.cx / W, fy = g.eyeY / H;
+  let pMsg = '';
+  const mirror = facing === 'user';
+  if (fx < 0.4) pMsg = mirror ? '往画面中间挪一点' : '手机往左移一点';
+  else if (fx > 0.6) pMsg = mirror ? '往画面中间挪一点' : '手机往右移一点';
+  else if (nx.y < -0.01 || fy < 0.25) pMsg = '手机往上抬一点（头顶要留空）';
+  else if (nx.y + nx.h > 1.01 || fy > 0.6) pMsg = '手机往下放一点';
+  set('pos', '位置', !pMsg, pMsg);
+
+  // 头部姿态
+  let hMsg = '';
+  const m = res.facialTransformationMatrixes && res.facialTransformationMatrixes[0];
+  const e = m ? eulerFromMatrix(m) : { yaw: 0, pitch: 0 };
+  if (Math.abs(g.roll) > 8) hMsg = '请员工头摆正（别歪头）';
+  else if (Math.abs(e.yaw) > 8) hMsg = '请员工正对镜头（脸转向一边了）';
+  else if (Math.abs(e.pitch) > 12) hMsg = '请员工平视镜头（别抬头 / 低头）';
+  set('pose', '正脸', !hMsg, hMsg);
+
+  // 表情：睁眼、闭嘴
+  let xMsg = '';
+  if (bs(res, 'eyeBlinkLeft') > 0.5 || bs(res, 'eyeBlinkRight') > 0.5) xMsg = '请员工睁开眼睛';
+  else if (bs(res, 'jawOpen') > 0.2) xMsg = '请员工闭上嘴，自然表情';
+  set('expr', '表情', !xMsg, xMsg);
+
+  // 像素分析
+  const aw = W >= H ? 320 : Math.round(320 * W / H), ah = W >= H ? Math.round(320 * H / W) : 320;
+  if (ana.width !== aw || ana.height !== ah) { ana.width = aw; ana.height = ah; }
+  anaCtx.drawImage(v, 0, 0, aw, ah);
+  const cL = nx.x, cR = nx.x + nx.w, cT = nx.y;
+  const crownN = g.crownY / H, eyeN = g.eyeY / H, fL = g.L.x / W, fR = g.R.x / W, fW = fR - fL;
+  const parts = [
+    regionStats(cL + nx.w * 0.1, cT, cR - nx.w * 0.1, crownN - 0.02, 2),
+    regionStats(cL, crownN, fL - fW * 0.3, eyeN, 2),
+    regionStats(fR + fW * 0.3, crownN, cR, eyeN, 2)
+  ].filter(Boolean);
+  let bMsg = '', bNa = false;
+  if (parts.reduce((s, p) => s + p.n, 0) < 40) bNa = true;
+  else {
+    const n = parts.reduce((s, p) => s + p.n, 0);
+    const mean = parts.reduce((s, p) => s + p.mean * p.n, 0) / n;
+    const sat = parts.reduce((s, p) => s + p.sat * p.n, 0) / n;
+    const std = Math.max(...parts.map(p => p.std));
+    if (sat > 38) bMsg = '背景不是白色：请换到白墙前';
+    else if (std > 32) bMsg = '背景有杂物或阴影：换一块干净的白墙';
+    else if (mean < 130) bMsg = '背景太暗：开灯，或让员工离墙近一点';
+  }
+  set('bg', '白底', !bMsg, bMsg, bNa);
+
+  // 脸部光线：两侧脸颊亮度对比
+  const P = i => ({ x: lm[i].x, y: lm[i].y });
+  const r = fW * 0.07;
+  const cheek = p => regionStats(p.x - r, p.y - r, p.x + r, p.y + r, 1);
+  const cA = cheek(P(50)), cB = cheek(P(280)), fh = cheek(P(151));
+  let lMsg = '';
+  if (cA && cB && fh) {
+    const avg = (cA.mean + cB.mean + fh.mean) / 3;
+    const ratio = Math.min(cA.mean, cB.mean) / Math.max(cA.mean, cB.mean);
+    if (avg < 70) lMsg = '脸太暗：多开灯，或让员工面向窗户';
+    else if (avg > 225) lMsg = '脸太亮（过曝）：避开直射的强光';
+    else if (ratio < 0.72) lMsg = '脸一边亮一边暗：让员工转向光源，或在暗的一侧补光';
+  }
+  set('light', '光线', !lMsg, lMsg, !(cA && cB && fh));
+
+  // 拿稳
+  const now = performance.now();
+  history.push({ t: now, x: g.cx / W, y: g.eyeY / H });
+  // 看最近 0.6 秒；手机慢、帧少时放宽到 1.5 秒，至少要 3 帧
+  history = history.filter(h => now - h.t < 1500);
+  let recent = history.filter(h => now - h.t < 600);
+  if (recent.length < 3) recent = history.slice(-3);
+  const span = recent.length >= 3 ? Math.max(
+    Math.max(...recent.map(h => h.x)) - Math.min(...recent.map(h => h.x)),
+    Math.max(...recent.map(h => h.y)) - Math.min(...recent.map(h => h.y))) : 1;
+  set('still', '拿稳', span < 0.012, '拿稳手机，别晃');
+
+  return finish(checks, { nx, g, W, H });
+}
+const ORDER = ['tilt', 'face', 'dist', 'pos', 'pose', 'expr', 'bg', 'light', 'still'];
+function finish(checks, geo) {
+  const list = ORDER.filter(k => checks[k]).map(k => ({ key: k, ...checks[k] }));
+  const bad = list.find(c => !c.ok && !c.na);
+  const allOk = !!geo && !bad && list.length === ORDER.length;
+  return { list, msg: bad ? bad.msg : (allOk ? '完美！保持不动…' : ''), allOk, geo };
+}
+
+const LABELS = { tilt: '手机竖直', face: '人脸', dist: '距离', pos: '位置', pose: '正脸', expr: '表情', bg: '白底', light: '光线', still: '拿稳' };
+function renderState(st) {
+  const ins = $('instr');
+  ins.textContent = st.msg || '…';
+  ins.classList.toggle('ok', st.allOk);
+  const byKey = Object.fromEntries(st.list.map(c => [c.key, c]));
+  $('chips').innerHTML = ORDER.map(k => {
+    const c = byKey[k];
+    const cls = !c ? 'na' : c.na ? 'na' : c.ok ? 'ok' : 'bad';
+    return `<span class="chip ${cls}">${c && c.ok && !c.na ? '✓ ' : ''}${LABELS[k]}</span>`;
+  }).join('');
+  $('shutter').classList.toggle('ready', st.allOk);
+  drawOverlay(st);
+}
+function drawOverlay(st) {
+  const cv = $('overlay'), v = $('video');
+  const dpr = window.devicePixelRatio || 1;
+  const cw = cv.clientWidth, ch = cv.clientHeight;
+  if (cv.width !== Math.round(cw * dpr)) { cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr); }
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cw, ch);
+  const W = v.videoWidth, H = v.videoHeight;
+  if (!W) return;
+  const sc = Math.max(cw / W, ch / H), dx = (cw - W * sc) / 2, dy = (ch - H * sc) / 2;
+  const mir = facing === 'user';
+  const map = (nx, ny) => { let x = nx * W * sc + dx; if (mir) x = cw - x; return { x, y: ny * H * sc + dy }; };
+  // 目标框：画面中间的方框 + 头部椭圆，框外压暗
+  const side = Math.min(cw * 0.86, ch * 0.5);
+  const bx = (cw - side) / 2, by = ch * 0.42 - side / 2;
+  ctx.fillStyle = 'rgba(0,0,0,.35)';
+  ctx.beginPath(); ctx.rect(0, 0, cw, ch); ctx.rect(bx + side, by, -side, side); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 6]);
+  ctx.strokeRect(bx, by, side, side);
+  ctx.beginPath(); ctx.ellipse(cw / 2, by + side * 0.42, side * 0.24, side * 0.31, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
+  // 实际裁剪框
+  if (st.geo) {
+    const { nx } = st.geo;
+    const a = map(nx.x, nx.y), b = map(nx.x + nx.w, nx.y + nx.h);
+    ctx.strokeStyle = st.allOk ? '#10b981' : '#f59e0b'; ctx.lineWidth = 3;
+    ctx.strokeRect(Math.min(a.x, b.x), a.y, Math.abs(b.x - a.x), b.y - a.y);
+  }
+  // 水平仪
+  if (tilt) {
+    const r = 26, cx = cw - r - 14, cy = 74 + r;
+    ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2); ctx.stroke();
+    const ox = Math.max(-1, Math.min(1, tilt.gamma / 15)) * (r - 7), oy = Math.max(-1, Math.min(1, (90 - tilt.beta) / 15)) * (r - 7);
+    const lvl = Math.abs(tilt.gamma) <= 5 && tilt.beta >= 82 && tilt.beta <= 98;
+    ctx.fillStyle = lvl ? '#10b981' : '#f59e0b';
+    ctx.beginPath(); ctx.arc(cx + ox, cy + oy, 6, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+// 自动拍：所有条件满足 0.6 秒后倒数 3、2、1
+function clearCountdown() { if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; } $('countdown').style.display = 'none'; }
+function handleAuto(st) {
+  if (!$('autoShoot').checked) { clearCountdown(); okSince = 0; return; }
+  if (!st.allOk) { okSince = 0; clearCountdown(); return; }
+  const now = performance.now();
+  if (!okSince) okSince = now;
+  if (countdownTimer || now - okSince < 600) return;
+  let n = 3;
+  const cd = $('countdown');
+  cd.textContent = n; cd.style.display = 'block';
+  countdownTimer = setInterval(() => {
+    n--;
+    if (n > 0) { cd.textContent = n; return; }
+    clearCountdown();
+    if (lastState && lastState.allOk) capture(true);
+  }, 700);
+}
+
+async function capture(auto) {
+  const v = $('video');
+  if (!v.videoWidth || !running) return;
+  if (!auto && lastState && !lastState.allOk) {
+    if (!await showConfirm('还有没调好的地方：「' + (lastState.msg || '没检测到人脸') + '」\n还是要现在拍吗？', { confirmLabel: '照样拍' })) return;
+  }
+  const W = v.videoWidth, H = v.videoHeight;
+  const full = document.createElement('canvas');
+  full.width = W; full.height = H;
+  full.getContext('2d').drawImage(v, 0, 0, W, H);
+  $('flash').style.opacity = '1'; setTimeout(() => $('flash').style.opacity = '0', 120);
+  if (navigator.vibrate) navigator.vibrate(60);
+  const t = Math.max(performance.now(), lastTs + 1); lastTs = t;
+  const res = landmarker.detectForVideo(full, t);
+  if (!res.faceLandmarks || res.faceLandmarks.length !== 1) { showAlert('这张没认出人脸（或者不止一个人），请重拍'); return; }
+  running = false;
+  clearCountdown();
+  $('loading').style.display = 'flex'; $('loadingTxt').textContent = '正在生成证件照…';
+  try {
+    let mask = null;
+    try {
+      const sres = segmenter.segment(full);
+      const cm = sres.confidenceMasks && sres.confidenceMasks[0];
+      if (cm) { mask = { data: cm.getAsFloat32Array().slice(), w: cm.width, h: cm.height }; }
+      if (sres.close) sres.close();
+    } catch (e) { mask = null; }
+    shot = { canvas: full, lm: res.faceLandmarks[0], mask };
+    buildResult();
+    stopCamera();
+    $('revWho').textContent = '· ' + emp.name;
+    show('stReview');
+  } catch (e) {
+    showAlert('生成失败：' + e.message);
+    running = true; requestAnimationFrame(loop);
+  } finally { $('loading').style.display = 'none'; $('loadingTxt').innerHTML = '正在加载人脸识别…'; }
+}
+
+// ─── ③ 生成 2x2 证件照 ───
+function personAt(mask, x, y) {
+  const mx = Math.min(mask.w - 1, Math.max(0, Math.round(x * mask.w))), my = Math.min(mask.h - 1, Math.max(0, Math.round(y * mask.h)));
+  return mask.data[my * mask.w + mx];
+}
+// 用人像分割找真实头顶（含头发），找不到就按脸长估
+function findCrown(g, W, H, mask) {
+  if (!mask) return g.crownY;
+  const x0 = g.cx - g.faceW * 0.25, x1 = g.cx + g.faceW * 0.25;
+  const yMin = Math.max(0, g.top.y - g.faceH * 0.8);
+  let best = g.top.y;
+  for (let x = x0; x <= x1; x += Math.max(1, g.faceW / 20)) {
+    for (let y = yMin; y < g.top.y; y += 2) {
+      if (personAt(mask, x / W, y / H) > 0.5) { if (y < best) best = y; break; }
+    }
+  }
+  // 头发比额头最多高出 0.6 个脸长（防止把举起的手 / 杂物当头发）
+  return Math.max(best, g.top.y - g.faceH * 0.6);
+}
+function buildResult() {
+  const { canvas: full, lm, mask } = shot;
+  const W = full.width, H = full.height;
+  const g = faceGeom(lm, W, H);
+  const crownY = findCrown(g, W, H, mask);
+  const crop = cropFor(g, crownY);
+  shot.geo = { g, crownY, crop };
+  // 以眼睛中点为轴把歪头转正
+  const ang = -g.roll * Math.PI / 180;
+  const ex = (g.eL.x + g.eR.x) / 2, ey = g.eyeY;
+  const draw = (ctx, src) => {
+    ctx.save();
+    const k = OUT / crop.S;
+    ctx.setTransform(k, 0, 0, k, -crop.x * k, -crop.y * k);
+    ctx.translate(ex, ey); ctx.rotate(ang); ctx.translate(-ex, -ey);
+    ctx.drawImage(src, 0, 0);
+    ctx.restore();
+  };
+  const out = $('outCanvas'), ctx = out.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, OUT, OUT);
+  draw(ctx, full); // 前置摄像头也用原始（不镜像）方向，证件照要和真人左右一致
+  if ($('optWhite').checked && mask) {
+    // 把分割结果画成同样变换后的灰度图，再按人像概率把背景混成纯白
+    const mc = document.createElement('canvas'); mc.width = mask.w; mc.height = mask.h;
+    const mctx = mc.getContext('2d'); const id = mctx.createImageData(mask.w, mask.h);
+    for (let i = 0; i < mask.data.length; i++) { const a = Math.round(Math.min(1, Math.max(0, (mask.data[i] - 0.25) / 0.5)) * 255); id.data[i * 4] = id.data[i * 4 + 1] = id.data[i * 4 + 2] = a; id.data[i * 4 + 3] = 255; }
+    mctx.putImageData(id, 0, 0);
+    const big = document.createElement('canvas'); big.width = W; big.height = H;
+    const bctx = big.getContext('2d'); bctx.filter = 'blur(' + Math.max(1, Math.round(W / 600)) + 'px)'; bctx.drawImage(mc, 0, 0, W, H);
+    const mo = document.createElement('canvas'); mo.width = OUT; mo.height = OUT;
+    const moctx = mo.getContext('2d'); moctx.fillStyle = '#000'; moctx.fillRect(0, 0, OUT, OUT); draw(moctx, big);
+    const m = moctx.getImageData(0, 0, OUT, OUT).data;
+    const px = ctx.getImageData(0, 0, OUT, OUT); const d = px.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const a = m[i] / 255;
+      d[i] = d[i] * a + 255 * (1 - a); d[i + 1] = d[i + 1] * a + 255 * (1 - a); d[i + 2] = d[i + 2] * a + 255 * (1 - a);
+    }
+    ctx.putImageData(px, 0, 0);
+  }
+  drawGuides();
+  renderChecks();
+}
+function drawGuides() {
+  const gc = $('guideCanvas'), ctx = gc.getContext('2d');
+  ctx.clearRect(0, 0, OUT, OUT);
+  if (!$('optGuide').checked || !shot) return;
+  const y = f => OUT * f;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(37,99,235,.8)'; ctx.setLineDash([14, 10]);
+  [[1 - 0.69, '眼睛 69%'], [1 - 0.56, '眼睛 56%']].forEach(([f, t]) => { ctx.beginPath(); ctx.moveTo(0, y(f)); ctx.lineTo(OUT, y(f)); ctx.stroke(); ctx.fillStyle = 'rgba(37,99,235,.9)'; ctx.font = 'bold 34px sans-serif'; ctx.fillText(t, 14, y(f) - 10); });
+  ctx.strokeStyle = 'rgba(16,185,129,.85)';
+  const { g, crownY, crop } = shot.geo, k = OUT / crop.S;
+  const ct = (crownY - crop.y) * k, cb = (g.chin.y - crop.y) * k;
+  [[ct, '头顶'], [cb, '下巴']].forEach(([yy, t]) => { ctx.beginPath(); ctx.moveTo(OUT * 0.25, yy); ctx.lineTo(OUT * 0.75, yy); ctx.stroke(); ctx.fillStyle = 'rgba(16,185,129,.95)'; ctx.fillText(t, OUT * 0.76, yy + 12); });
+  ctx.setLineDash([]);
+}
+function renderChecks() {
+  const { g, crownY, crop } = shot.geo;
+  const headPct = (g.chin.y - crownY) / crop.S * 100;
+  const eyePct = (1 - (g.eyeY - crop.y) / crop.S) * 100;
+  const srcPx = Math.round(crop.S);
+  const rows = [
+    ['头部高度（要求 50–69%）', headPct.toFixed(0) + '%', headPct >= 50 && headPct <= 69],
+    ['眼睛离底边（要求 56–69%）', eyePct.toFixed(0) + '%', eyePct >= 56 && eyePct <= 69],
+    ['原始清晰度（至少 600px）', srcPx + 'px', srcPx >= 600],
+    ['输出尺寸', OUT + '×' + OUT + 'px（2×2 英寸 @600dpi）', true]
+  ];
+  $('checks').innerHTML = rows.map(([k, v, ok]) => `<li><span>${k}</span><span class="v ${ok ? 'ok' : 'bad'}">${ok ? '✓ ' : '✗ '}${v}</span></li>`).join('');
+}
+$('optWhite').onchange = () => shot && buildResult();
+$('optGuide').onchange = drawGuides;
+$('btnRetake').onclick = () => startCamera(emp);
+
+const fileBase = () => `idphoto-${(emp.employee_id || 'emp' + emp.id).replace(/[^\w-]/g, '')}-${new Date().toISOString().slice(0, 10)}`;
+const toBlob = (cv, q) => new Promise(r => cv.toBlob(r, 'image/jpeg', q));
+function download(blob, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+$('btnDl').onclick = async () => download(await toBlob($('outCanvas'), 0.95), fileBase() + '.jpg');
+$('btnDlSheet').onclick = async () => {
+  // 4x6 英寸 @300dpi = 1800x1200，3 列 x 2 行，每张 600x600（正好 2x2 英寸）
+  const s = document.createElement('canvas'); s.width = 1800; s.height = 1200;
+  const c = s.getContext('2d'); c.fillStyle = '#fff'; c.fillRect(0, 0, 1800, 1200);
+  for (let r = 0; r < 2; r++) for (let k = 0; k < 3; k++) c.drawImage($('outCanvas'), k * 600, r * 600, 600, 600);
+  c.strokeStyle = '#c8c8c8'; c.lineWidth = 2;
+  [600, 1200].forEach(x => { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, 1200); c.stroke(); });
+  c.beginPath(); c.moveTo(0, 600); c.lineTo(1800, 600); c.stroke();
+  download(await toBlob(s, 0.95), fileBase() + '-4x6.jpg');
+};
+$('btnSave').onclick = async () => {
+  const btn = $('btnSave'); btn.disabled = true; btn.textContent = '保存中…';
+  try {
+    const fd = new FormData();
+    fd.append('doc_type', 'id_photo');
+    fd.append('doc_label', '证件照 2x2');
+    fd.append('file', await toBlob($('outCanvas'), 0.95), fileBase() + '.jpg');
+    const r = await fetch(`/api/admin/employees/${emp.id}/documents`, { method: 'POST', body: fd, headers: authHeaders(), credentials: 'same-origin' });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.success) throw new Error(j.error || ('HTTP ' + r.status));
+    await showAlert(`已存到「${emp.name}」的员工档案（文件类型：证件照）。`, { title: '保存成功', color: 'green' });
+    $('phone').value = ''; $('results').innerHTML = ''; shot = null;
+    show('stLookup'); $('phone').focus();
+  } catch (e) { showAlert('保存失败：' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '💾 存到员工档案'; }
+};
+
+// 后台带过来的 ?phone=
+const qp = new URLSearchParams(location.search).get('phone');
+if (qp) { $('phone').value = qp; findEmp(); }
+</script>
+</body>
+</html>
