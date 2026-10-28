@@ -1,7 +1,7 @@
 // 站内样式弹窗（替代原生 alert / confirm / prompt），与后台 admin.html 同一风格：
 // 图标 + 彩色标题 + 说明。各页面 <script src="/pa-dialog.js"></script> 引入即可。
 //   showAlert(msg)                 → Promise<void>（不阻塞，后面的代码照常往下走）
-//   await showConfirm(msg, opts)   → true / false
+//   await showConfirm(msg, opts)   → true / false（opts.html:true 时 msg 按 HTML 插入，调用方负责转义）
 //   await showPrompt(msg, value)   → 字符串（可为 ''）/ 取消返回 null
 // 按钮文字跟页面语言走：window.PA_DLG_LANG → 页面的 currentLang → <html lang>；
 // 中英双语的提示（如 "提交失败 / Submission failed"，或中文下一行跟英文）按钮也用双语。
@@ -61,7 +61,7 @@
 
   const stack = [];
   // 返回 Promise：确认 → true（prompt 时为输入内容），取消 → false（prompt 时为 null）
-  function dialog({ title, message, color = 'blue', okText, cancelText = null, danger = false, input = null }) {
+  function dialog({ title, message, html = false, color = 'blue', okText, cancelText = null, danger = false, input = null }) {
     injectStyle();
     return new Promise(resolve => {
       const c = COLORS[color] || COLORS.blue;
@@ -82,7 +82,8 @@
           '</div>' +
         '</div>';
       bg.querySelector('.pa-dlg-title').textContent = title;
-      bg.querySelector('.pa-dlg-msg').textContent = message;
+      const msgEl = bg.querySelector('.pa-dlg-msg');
+      if (html) msgEl.innerHTML = message; else msgEl.textContent = message;
       const okBtn = bg.querySelector('.pa-dlg-ok'), cancelBtn = bg.querySelector('.pa-dlg-cancel'), inp = bg.querySelector('.pa-dlg-input');
       okBtn.textContent = okText;
       if (cancelBtn) cancelBtn.textContent = cancelText;
@@ -129,9 +130,9 @@
   };
   window.showConfirm = function (message, opts) {
     const m = message == null ? '' : String(message);
-    const o = opts || {}, t = labels(m);
+    const o = opts || {}, t = labels(o.html ? m.replace(/<[^>]*>/g, '') : m);
     const danger = o.danger != null ? o.danger : /删除|清空|撤销|撤回|作废|覆盖|失效|不可|解绑|移除|拒绝|delete|remove|block/i.test(m);
-    return dialog({ title: o.title || t.confirm, message: m, color: danger ? 'red' : 'amber', okText: o.confirmLabel || t.ok, cancelText: o.cancelLabel || t.cancel, danger });
+    return dialog({ title: o.title || t.confirm, message: m, html: !!o.html, color: danger ? 'red' : 'amber', okText: o.confirmLabel || t.ok, cancelText: o.cancelLabel || t.cancel, danger });
   };
   window.showPrompt = function (message, value, opts) {
     const m = message == null ? '' : String(message);

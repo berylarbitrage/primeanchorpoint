@@ -458,6 +458,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
 <script src="https://cdn.docuseal.com/js/form.js"></script>
+<script src="/pa-dialog.js"></script>
 </head>
 <body>
 <div id="toast-wrap"></div>
@@ -8725,93 +8726,7 @@ function populateScheduleTable(workSchedule, workDays, workStart, workEnd, tbody
 function collectScheduleTable() { return collectAllShifts(); }
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ─── 站内样式弹窗（替代原生 alert / confirm）：图标 + 彩色标题 + 说明，与 showInputPrompt 同一风格 ───
-const _PA_DLG_COLORS = {
-  blue:  { bg:'#DBEAFE', stroke:'#2563EB', title:'#1E40AF' },
-  green: { bg:'#D1FAE5', stroke:'#059669', title:'#065F46' },
-  red:   { bg:'#FEE2E2', stroke:'#DC2626', title:'#B91C1C' },
-  amber: { bg:'#FEF3C7', stroke:'#D97706', title:'#92400E' }
-};
-const _PA_DLG_ICONS = {
-  info:  '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
-  check: '<circle cx="12" cy="12" r="10"/><polyline points="8 12.5 11 15.5 16 9.5"/>',
-  warn:  '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>'
-};
-const _paDlgStack = [];
-// message 默认按纯文本显示；html:true 时按 HTML 插入（调用方负责转义）
-function _paDialog({ title, message, html = false, color = 'blue', icon, okText = '确定', cancelText = null, okClass = '', focusCancel = false }) {
-  return new Promise(resolve => {
-    const c = _PA_DLG_COLORS[color] || _PA_DLG_COLORS.blue;
-    const ic = _PA_DLG_ICONS[icon || (color === 'green' ? 'check' : color === 'blue' ? 'info' : 'warn')];
-    const bg = document.createElement('div');
-    bg.className = 'modal-bg show';
-    bg.style.zIndex = '10001';
-    bg.innerHTML =
-      '<div class="modal" style="max-width:420px;padding:1.6rem 1.75rem;margin:1rem;max-height:85vh;display:flex;flex-direction:column">' +
-        '<div style="display:flex;align-items:center;gap:.85rem;margin-bottom:.6rem;flex-shrink:0">' +
-          `<div style="width:44px;height:44px;border-radius:50%;background:${c.bg};display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c.stroke}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${ic}</svg></div>` +
-          `<h2 class="_pa-title" style="margin:0;font-size:1.05rem;color:${c.title};min-width:0;word-break:break-word"></h2>` +
-        '</div>' +
-        // 长内容在中间滚动，按钮始终可见
-        '<div class="_pa-msg" style="font-size:.86rem;color:var(--gray-600);line-height:1.65;white-space:pre-line;word-break:break-word;overflow-y:auto;flex:1 1 auto;min-height:0;overscroll-behavior:contain;padding-left:calc(44px + .85rem)"></div>' +
-        '<div style="display:flex;gap:.65rem;justify-content:flex-end;margin-top:1.2rem;flex-shrink:0">' +
-          (cancelText != null ? '<button class="btn btn-outline _pa-cancel"></button>' : '') +
-          `<button class="btn ${okClass} _pa-ok"></button>` +
-        '</div>' +
-      '</div>';
-    bg.querySelector('._pa-title').textContent = title || '提示';
-    const msgEl = bg.querySelector('._pa-msg');
-    if (html) msgEl.innerHTML = message; else msgEl.textContent = message == null ? '' : String(message);
-    const okBtn = bg.querySelector('._pa-ok'), cancelBtn = bg.querySelector('._pa-cancel');
-    okBtn.textContent = okText;
-    if (cancelBtn) cancelBtn.textContent = cancelText;
-    const onKey = e => {
-      if (_paDlgStack[_paDlgStack.length - 1] !== bg) return;
-      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(cancelBtn ? false : true); }
-    };
-    const done = r => {
-      document.removeEventListener('keydown', onKey, true);
-      const i = _paDlgStack.indexOf(bg); if (i >= 0) _paDlgStack.splice(i, 1);
-      bg.remove();
-      resolve(r);
-    };
-    okBtn.onclick = () => done(true);
-    if (cancelBtn) cancelBtn.onclick = () => done(false);
-    bg.onclick = e => { if (e.target === bg) done(cancelBtn ? false : true); };
-    document.addEventListener('keydown', onKey, true);
-    _paDlgStack.push(bg);
-    document.body.appendChild(bg);
-    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-    // 回车 = 点聚焦的按钮；危险操作默认聚焦「取消」防误按
-    setTimeout(() => ((focusCancel && cancelBtn) || okBtn).focus(), 0);
-  });
-}
-
-/** 替代原生 alert：按内容自动选颜色/标题（失败=红，提醒=琥珀，成功=绿，其余=蓝）。返回 Promise，关闭时 resolve。 */
-function showAlert(message, { title, color } = {}) {
-  const m = message == null ? '' : String(message);
-  if (!color) {
-    if (/失败|错误|出错|异常|error|fail/i.test(m)) color = 'red';
-    else if (/^\s*✅|成功|完成|已(保存|发送|复制|创建|更新|清空|删除|生成|提交|导入|同步|通过|添加|撤销|恢复)/.test(m)) color = 'green';
-    else if (/^\s*(⚠️|请)|不能|无法|不正确|不一致|无效|至少|必须|不可|未/.test(m)) color = 'amber';
-    else color = 'blue';
-  }
-  if (!title) title = { red: '出错了', green: '完成', amber: '请注意', blue: '提示' }[color];
-  return _paDialog({ title, message: m, color, okText: '知道了' }).then(() => {});
-}
-
-/** Promise-based confirm dialog matching site style. Returns Promise<boolean>.
- *  message 按 HTML 插入（老调用方会传 <b> 等）；plain:true 时按纯文本显示。 */
-function showConfirm(message, { confirmLabel = '确认', cancelLabel = '取消', danger = false, title, plain = false } = {}) {
-  return _paDialog({
-    title: title || '请确认',
-    message, html: !plain,
-    color: danger ? 'red' : 'amber',
-    okText: confirmLabel, cancelText: cancelLabel,
-    okClass: danger ? 'btn-red' : '',
-    focusCancel: danger
-  });
-}
+// showAlert / showConfirm / showPrompt 来自共用的 /pa-dialog.js
 
 let TOKEN = '';
 let USER_ROLE = '';
@@ -11935,7 +11850,7 @@ async function selectPartnerItem(id, name) {
   const msg = hasAddr
     ? `是否用「${name}」的公司地址<strong>覆盖</strong>当前工作地点？<br><br><span style="color:var(--sky)">${addr0Str}</span>`
     : `是否将「${name}」的公司地址导入到工作地点？<br><br><span style="color:var(--sky)">${addr0Str}</span>`;
-  const ok = await showConfirm(msg, { confirmLabel: hasAddr ? '覆盖' : '导入', danger: !!hasAddr });
+  const ok = await showConfirm(msg, { confirmLabel: hasAddr ? '覆盖' : '导入', danger: !!hasAddr, html: true });
   if (!ok) return;
 
   const parsed = parseAddressString(addr0Str);
@@ -12758,7 +12673,7 @@ async function saveAssignment() {
     const msg = ws.has_account
       ? '该工人尚未标记"可派工"（入职流程未完成），确定继续派工吗？'
       : '此人员尚未创建工人账户，确定继续派工吗？';
-    if (!await showConfirm(msg)) return;
+    if (!await showConfirm(msg, { html: true })) return;
   }
   let assignId;
   if (id) {
@@ -13027,7 +12942,7 @@ async function verifyLaborCompanyEin() {
 // (旧单文件删除入口已由 deleteLcFile 逐张删除取代, 保留函数防旧引用)
 async function deleteLaborCompanyW9() {
   const id = document.getElementById('lcId').value;
-  if (!id || !await showConfirm('确认删除 W-9 文件？', { plain: true, danger: true })) return;
+  if (!id || !await showConfirm('确认删除 W-9 文件？', { danger: true })) return;
   try {
     await api(`/admin/labor-companies/${id}/w9`, { method: 'DELETE' });
     await loadLaborCompanies();
@@ -13035,7 +12950,7 @@ async function deleteLaborCompanyW9() {
   } catch(e) { showToast('删除失败', 'error'); }
 }
 async function deleteLaborCompany(id) {
-  if (!await showConfirm('确认删除此分包商？此操作不可撤销。', { plain: true, danger: true })) return;
+  if (!await showConfirm('确认删除此分包商？此操作不可撤销。', { danger: true })) return;
   try {
     await api(`/admin/labor-companies/${id}`, { method: 'DELETE' });
     await loadLaborCompanies();
@@ -13079,7 +12994,7 @@ async function assignWorkerLaborCompany() {
   }
 }
 async function clearWorkerLaborCompany() {
-  if (!await showConfirm('确认取消分包商分配？任务将重置为待处理。', { plain: true })) return;
+  if (!await showConfirm('确认取消分包商分配？任务将重置为待处理。')) return;
   try {
     await api(`/admin/worker-accounts/${_onboardingWorkerId}/payment-labor-company`, { method: 'PUT', body: JSON.stringify({ labor_company_id: null }) });
     closePaymentLaborCompanyModal();
@@ -15306,7 +15221,7 @@ const _PREDEFINED_INDUSTRIES = ['物流 Logistics','制造业 Manufacturing','�
 async function confirmNewIndustry(el) {
   const val = el.value.trim();
   if (!val || _PREDEFINED_INDUSTRIES.includes(val)) return;
-  if (!await showConfirm(`确认新增行业 "${val}"？`, { plain: true })) el.value = '';
+  if (!await showConfirm(`确认新增行业 "${val}"？`)) el.value = '';
 }
 async function addNewSvcTag() {
   const input = document.getElementById('pSvcNewInput');
@@ -15314,7 +15229,7 @@ async function addNewSvcTag() {
   if (!val) return;
   const existing = document.querySelector(`#pSvcTags .svc-tag[data-v="${val.replace(/"/g,'&quot;')}"]`);
   if (existing) { existing.classList.add('active'); input.value = ''; return; }
-  if (!await showConfirm(`确认新增合作服务 "${val}"？`, { plain: true })) return;
+  if (!await showConfirm(`确认新增合作服务 "${val}"？`)) return;
   const tag = document.createElement('span');
   tag.className = 'svc-tag svc-tag-new active';
   tag.dataset.v = val; tag.dataset.custom = '1';
@@ -15667,7 +15582,7 @@ async function generateDefaultPartnerContract() {
 
 async function resetPartnerContract() {
   if (!_dsPartnerId) return;
-  if (!await showConfirm('确定要清空现有合同并重新生成新合同吗？\n\n现有合同文件及签署邀请将被删除/撤销，生成全新的默认合同模板。', { plain: true, danger: true })) return;
+  if (!await showConfirm('确定要清空现有合同并重新生成新合同吗？\n\n现有合同文件及签署邀请将被删除/撤销，生成全新的默认合同模板。', { danger: true })) return;
   const btn = document.getElementById('partnerDsResetBtn');
   btn.disabled = true;
   btn.textContent = '处理中…';
@@ -16695,7 +16610,7 @@ async function uploadEmpFile() {
 }
 
 async function deleteEmpFile(docId) {
-  if (!await showConfirm('确认删除此文件？', { plain: true, danger: true })) return;
+  if (!await showConfirm('确认删除此文件？', { danger: true })) return;
   const r = await api(`/admin/worker-accounts/${_empFilesWorkerId}/id-docs/${docId}`, { method: 'DELETE' });
   if (r?.success) {
     showToast('已删除');
@@ -17559,7 +17474,7 @@ async function _saveEmployeeInner() {
     const ex = r.existing || {};
     const exName = `${[ex.first_name, ex.middle_name, ex.last_name].filter(Boolean).join(' ')}（员工号：${ex.employee_id || ''}）`;
     const indep = await showConfirm(`📧 这个邮箱已登记在「${esc(exName)}」名下，但电话不同。\n\n按「一个电话一个档案」，电话不同就是另一个人：可以单独建档（两份档案都用这个邮箱）。\n如果其实是同一个人，点「对比处理」。`,
-      { confirmLabel: '电话不同，单独建档', cancelLabel: '对比处理' });
+      { confirmLabel: '电话不同，单独建档', cancelLabel: '对比处理', html: true });
     if (indep) { data.allow_email_dup = true; r = await doSave(data); }
   }
   // 系统里已有同名的档案, 电话邮箱对不上 (可能换过号) → 先问是不是同一人
@@ -17567,7 +17482,7 @@ async function _saveEmployeeInner() {
     const ex = r.existing || {};
     const exName = `${[ex.first_name, ex.middle_name, ex.last_name].filter(Boolean).join(' ')}（员工号：${ex.employee_id || ''}${ex.phone ? '，电话 ' + ex.phone : ''}${ex.status === 'active' ? '，在职' : ''}）`;
     const notSame = await showConfirm(`👤 系统里已有同名的员工「${esc(exName)}」，电话 / 邮箱和这次填的不一样。\n\n是同一个人（换过电话）就点「对比处理」，左右对照挑选保留哪些信息；\n不是同一个人就点「不是同一人，继续保存」。`,
-      { confirmLabel: '不是同一人，继续保存', cancelLabel: '对比处理' });
+      { confirmLabel: '不是同一人，继续保存', cancelLabel: '对比处理', html: true });
     if (notSame) { data.allow_name_dup = true; r = await doSave(data); }
     else {
       const p = { data, empId: id || null, field: 'name', fieldLabel: '姓名', existingEmpId: ex.id, existingEmpName: exName, convertFromWorkerId: _convertFromWorkerId || null, convertFromApplicantId: _convertFromApplicantId || null };
@@ -19843,7 +19758,7 @@ async function voteInvBatchDistributed(id) {
 }
 
 async function deleteInvBatch(id, name) {
-  if (!await showConfirm(`确定删除批次「${name}」？发票将回到承包商发票页面。`, { plain: true, danger: true })) return;
+  if (!await showConfirm(`确定删除批次「${name}」？发票将回到承包商发票页面。`, { danger: true })) return;
   try {
     const r = await api(`/admin/contractor-invoice-batches/${id}`, { method: 'DELETE' });
     if (r.ok) { showToast('批次已删除'); loadDividendInvBatches(); } else throw new Error(r.error);
@@ -20035,7 +19950,7 @@ function printWdocQr() {
 }
 
 async function regenWdocQr() {
-  if (!await showConfirm('重新生成会使旧二维码立即失效，已打印/分享的旧码将无法使用。确定继续？', { plain: true, danger: true })) return;
+  if (!await showConfirm('重新生成会使旧二维码立即失效，已打印/分享的旧码将无法使用。确定继续？', { danger: true })) return;
   try {
     await api('/admin/worker-doc-qr/regenerate', { method: 'POST' });
     await renderWdocQr();
@@ -20085,7 +20000,7 @@ async function viewWdocFiles(subId) {
 }
 
 async function deleteWdocSubmission(subId) {
-  if (!await showConfirm('确定删除这条提交及其所有文件？此操作不可撤销。', { plain: true, danger: true })) return;
+  if (!await showConfirm('确定删除这条提交及其所有文件？此操作不可撤销。', { danger: true })) return;
   try {
     await api(`/admin/worker-doc-submissions/${subId}`, { method: 'DELETE' });
     showToast('已删除', 'success', 2000);
@@ -20472,7 +20387,7 @@ async function createInviteLink() {
 }
 
 async function revokeInviteLink(id) {
-  if (!await showConfirm('确定撤销此邀请链接？', { plain: true, danger: true })) return;
+  if (!await showConfirm('确定撤销此邀请链接？', { danger: true })) return;
   await api('/admin/manager-invites/' + id, { method: 'DELETE' });
   loadManagerInviteLinks();
 }
@@ -20516,7 +20431,7 @@ function toggleAccPw(id) {
   el.dataset.shown = shown ? '0' : '1';
 }
 async function approveAccount(id, name) {
-  if (!await showConfirm(`批准「${name}」的会计账号？批准后对方即可登录会计对账页。`, { plain: true })) return;
+  if (!await showConfirm(`批准「${name}」的会计账号？批准后对方即可登录会计对账页。`)) return;
   const r = await api(`/admin/accounts/${id}/approve`, { method: 'POST' });
   if (r && r.success) { showToast('✅ 已批准'); loadAccounts(); }
   else showToast((r && r.error) || '操作失败', 'error');
@@ -24894,7 +24809,7 @@ async function doSendW9() {
   if (!email) { showToast('请填写工人邮箱', 'error'); return; }
   if (!phone) { showToast('请填写并确认工人手机号码', 'error'); return; }
   const confirmMsg = `确认发送 W-9 签字请求至：\n\n邮箱：${email}\n手机：${phone}\n\n系统将自动生成 W-9 并发送签字链接（邮件+短信），工人点击链接即可直接签字，无需登录门户。`;
-  if (!await showConfirm(confirmMsg)) return;
+  if (!await showConfirm(confirmMsg, { html: true })) return;
   const btn = document.getElementById('w9SendBtn');
   btn.disabled = true; btn.textContent = '发送中…';
   const sendBody = { worker_email: email, worker_phone: phone };
@@ -25340,7 +25255,7 @@ function _lcRenderFileList(containerId, files) {
     </div>`).join('');
 }
 async function deleteLcFile(fid) {
-  if (!await showConfirm('确定删除这张文件？', { plain: true, danger: true })) return;
+  if (!await showConfirm('确定删除这张文件？', { danger: true })) return;
   try {
     await api(`/admin/labor-companies/files/${fid}`, { method: 'DELETE' });
     await loadLaborCompanies();
@@ -26971,7 +26886,7 @@ function renderEmpInvoiceTable(rows) {
 
 // ── Mark invoice as dividend distributed ──
 async function markPendingDividend(id, invNum) {
-  if (!await showConfirm(`确定将发票 ${invNum} 标记为待分红？\n确认无误后此发票将进入待分红流程。`, { plain: true })) return;
+  if (!await showConfirm(`确定将发票 ${invNum} 标记为待分红？\n确认无误后此发票将进入待分红流程。`)) return;
   try {
     const r = await api(`/admin/contractor-invoices/${id}/mark-pending-dividend`, { method: 'POST' });
     if (r.ok) { showToast('✅ 已确认无误，进入待分红'); loadEmpInvoiceTab(); } else throw new Error(r.error);
@@ -26979,7 +26894,7 @@ async function markPendingDividend(id, invNum) {
 }
 
 async function markDividendDistributed(id, invNum) {
-  if (!await showConfirm(`确定将发票 ${invNum} 标记为已分红？\n标记后将移至历史发票页面。`, { plain: true })) return;
+  if (!await showConfirm(`确定将发票 ${invNum} 标记为已分红？\n标记后将移至历史发票页面。`)) return;
   try {
     const r = await api(`/admin/contractor-invoices/${id}/mark-dividend`, { method: 'POST' });
     if (r.ok) { showToast('已标记为已分红'); loadEmpInvoiceTab(); } else throw new Error(r.error);
@@ -26988,7 +26903,7 @@ async function markDividendDistributed(id, invNum) {
 
 // ── Undo dividend distributed ──
 async function undoDividendDistributed(id, invNum) {
-  if (!await showConfirm(`确定将发票 ${invNum} 撤回分红标记？\n将移回承包商发票页面。`, { plain: true, danger: true })) return;
+  if (!await showConfirm(`确定将发票 ${invNum} 撤回分红标记？\n将移回承包商发票页面。`, { danger: true })) return;
   try {
     const r = await api(`/admin/contractor-invoices/${id}/undo-dividend`, { method: 'POST' });
     if (r.ok) { showToast('已撤回分红标记'); loadEmpInvoiceHistoryTab(); } else throw new Error(r.error);
@@ -27415,9 +27330,9 @@ async function previewDsInvoice(invoiceId) {
 }
 
 async function revokeContractorInvoice(id, invoiceNumber) {
-  if (!await showConfirm(`第 1/3 次确认\n\n确认要撤回发票 ${invoiceNumber} 吗？\n撤回后 DocuSeal 签署链接将失效。`, { plain: true, danger: true })) return;
-  if (!await showConfirm(`第 2/3 次确认\n\n撤回后状态将变为「已撤回」，无法再次发送给承包商签署。`, { plain: true, danger: true })) return;
-  if (!await showConfirm(`第 3/3 次确认\n\n最后确认：确定撤回发票 ${invoiceNumber}？`, { plain: true, danger: true })) return;
+  if (!await showConfirm(`第 1/3 次确认\n\n确认要撤回发票 ${invoiceNumber} 吗？\n撤回后 DocuSeal 签署链接将失效。`, { danger: true })) return;
+  if (!await showConfirm(`第 2/3 次确认\n\n撤回后状态将变为「已撤回」，无法再次发送给承包商签署。`, { danger: true })) return;
+  if (!await showConfirm(`第 3/3 次确认\n\n最后确认：确定撤回发票 ${invoiceNumber}？`, { danger: true })) return;
   const r = await api(`/admin/contractor-invoices/${id}/revoke`, { method: 'POST' });
   if (r?.success) {
     showToast('✅ 发票已撤回');
@@ -27428,9 +27343,9 @@ async function revokeContractorInvoice(id, invoiceNumber) {
 }
 
 async function deleteContractorInvoice(id, invoiceNumber) {
-  if (!await showConfirm(`第 1/3 次确认\n\n确认要删除发票 ${invoiceNumber} 吗？\n此操作将永久删除记录，不可恢复！`, { plain: true, danger: true })) return;
-  if (!await showConfirm(`第 2/3 次确认\n\n发票记录将从数据库中永久删除，包括所有历史信息。`, { plain: true, danger: true })) return;
-  if (!await showConfirm(`第 3/3 次确认\n\n最后确认：确定永久删除发票 ${invoiceNumber}？`, { plain: true, danger: true })) return;
+  if (!await showConfirm(`第 1/3 次确认\n\n确认要删除发票 ${invoiceNumber} 吗？\n此操作将永久删除记录，不可恢复！`, { danger: true })) return;
+  if (!await showConfirm(`第 2/3 次确认\n\n发票记录将从数据库中永久删除，包括所有历史信息。`, { danger: true })) return;
+  if (!await showConfirm(`第 3/3 次确认\n\n最后确认：确定永久删除发票 ${invoiceNumber}？`, { danger: true })) return;
   const r = await api(`/admin/contractor-invoices/${id}`, { method: 'DELETE' });
   if (r?.success) {
     showToast('🗑️ 发票已删除');
@@ -27486,7 +27401,7 @@ async function openVoucherReceiptModal(invId, invoiceNumber, workerName, readOnl
 
 async function confirmVoucherLock() {
   if (!_vrInvId) return;
-  if (!await showConfirm('确认锁定凭证？锁定后将无法上传或删除凭证文件。', { plain: true, danger: true })) return;
+  if (!await showConfirm('确认锁定凭证？锁定后将无法上传或删除凭证文件。', { danger: true })) return;
   const btn = document.getElementById('vrConfirmBtn');
   btn.disabled = true; btn.textContent = '确认中…';
   const r = await api(`/admin/contractor-invoices/${_vrInvId}/voucher-confirm`, { method: 'POST' });
@@ -27564,7 +27479,7 @@ async function confirmUploadVoucherReceipts() {
 }
 
 async function deleteVoucherReceipt(invId, filename) {
-  if (!await showConfirm('确认删除此凭证图片？', { plain: true, danger: true })) return;
+  if (!await showConfirm('确认删除此凭证图片？', { danger: true })) return;
   const r = await api(`/admin/contractor-invoices/${invId}/voucher-receipts/${encodeURIComponent(filename)}`, { method: 'DELETE' });
   if (r?.success) {
     showToast('已删除');
@@ -30764,7 +30679,7 @@ async function saveReferrer() {
 }
 
 async function deleteReferrer(id, name) {
-  if (!await showConfirm(`确定删除推荐人「${name}」？\n（含未取消推荐记录时无法删除）`, { plain: true, danger: true })) return;
+  if (!await showConfirm(`确定删除推荐人「${name}」？\n（含未取消推荐记录时无法删除）`, { danger: true })) return;
   const res = await api(`/admin/referrers/${id}`, { method:'DELETE' });
   if (!res || res.error) { showToast(res?.error || '删除失败', 'error'); return; }
   showToast('已删除', 'success');
@@ -30843,7 +30758,7 @@ async function updateReferralRecStatus(recId, newStatus) {
 }
 
 async function deleteReferralRec(recId) {
-  if (!await showConfirm('确定删除这条推荐记录？', { plain: true, danger: true })) return;
+  if (!await showConfirm('确定删除这条推荐记录？', { danger: true })) return;
   const res = await api(`/admin/referrer-referrals/${recId}`, { method:'DELETE' });
   if (!res || res.error) { showToast(res?.error || '删除失败', 'error'); return; }
   openReferrerDetail(_refrCurrentDetailId);
@@ -32076,7 +31991,7 @@ async function _skillOptSave(id) {
 }
 
 async function _skillOptDelete(id) {
-  if (!await showConfirm('确认删除此技能选项？', { plain: true, danger: true })) return;
+  if (!await showConfirm('确认删除此技能选项？', { danger: true })) return;
   const res = await api(`/admin/skill-options/${id}`, { method:'DELETE' });
   if (res && res.success) { await loadSkillSettings(); showToast('已删除'); }
 }
@@ -32127,7 +32042,7 @@ async function _jtOptSave(id) {
   else showAlert('保存失败');
 }
 async function _jtOptDelete(id) {
-  if (!await showConfirm('确认删除此职位名称？', { plain: true, danger: true })) return;
+  if (!await showConfirm('确认删除此职位名称？', { danger: true })) return;
   const res = await api(`/admin/job-title-options/${id}`, { method:'DELETE' });
   if (res && res.success) { await loadSkillSettings(); showToast('已删除'); }
 }
@@ -32198,7 +32113,7 @@ async function _sfOptSave(id) {
   else showAlert('保存失败');
 }
 async function _sfOptDelete(id) {
-  if (!await showConfirm('确认删除此后缀词？', { plain: true, danger: true })) return;
+  if (!await showConfirm('确认删除此后缀词？', { danger: true })) return;
   const res = await api(`/admin/display-suffix-options/${id}`, { method:'DELETE' });
   if (res && res.success) { await loadSkillSettings(); showToast('已删除'); }
 }
@@ -32278,7 +32193,7 @@ async function _wpToggle(id, active) {
   if (res && res.success) { await loadSkillSettings(); showToast(active ? '已禁用' : '已启用'); }
 }
 async function _wpDelete(id) {
-  if (!await showConfirm('确认删除此职位？删除后历史评分数据中的 key 仍会保留，但职位不再显示在选项中。', { plain: true, danger: true })) return;
+  if (!await showConfirm('确认删除此职位？删除后历史评分数据中的 key 仍会保留，但职位不再显示在选项中。', { danger: true })) return;
   const res = await api(`/admin/worker-positions/${id}`, { method:'DELETE' });
   if (res && res.success) { await loadSkillSettings(); showToast('已删除'); }
 }
@@ -34040,7 +33955,7 @@ async function attemptCloseInvpBuilder(fromBackdrop) {
       dirty
         ? '⚠️ 有尚未保存的内容，关闭后将丢失。<br><br>确定要关闭吗？'
         : '确定关闭 Invoice 编辑窗口吗？',
-      { confirmLabel: '关闭', cancelLabel: '继续编辑', danger: dirty }
+      { confirmLabel: '关闭', cancelLabel: '继续编辑', danger: dirty, html: true }
     );
     if (!ok) return;
   }
@@ -36502,7 +36417,7 @@ async function moveInvpSubPayToReceived() {
   const row = (_invpAllRows || []).find(r => r.id === invId) || {};
   const amt = row.sub_payment_amount != null ? ' $' + Number(row.sub_payment_amount).toFixed(2) : '';
   window._invpMoveKeepRcpt = false;
-  if (!await showConfirm(`确定把这条分包付款${amt} 整体移到<b>收款回执</b>吗？<br><br>金额、日期、回执文件都会转过去，分包付款侧会被清空。<br><br><label style="display:flex;align-items:flex-start;gap:.4rem;cursor:pointer;font-size:.85rem;color:#374151"><input type="checkbox" style="margin-top:2px" onchange="window._invpMoveKeepRcpt=this.checked"><span>分包侧<b>保留回执图片</b>（回执文件两边都留，只转移金额/日期等记录）</span></label>`, { confirmLabel: '移到收款回执', cancelLabel: '取消' })) return;
+  if (!await showConfirm(`确定把这条分包付款${amt} 整体移到<b>收款回执</b>吗？<br><br>金额、日期、回执文件都会转过去，分包付款侧会被清空。<br><br><label style="display:flex;align-items:flex-start;gap:.4rem;cursor:pointer;font-size:.85rem;color:#374151"><input type="checkbox" style="margin-top:2px" onchange="window._invpMoveKeepRcpt=this.checked"><span>分包侧<b>保留回执图片</b>（回执文件两边都留，只转移金额/日期等记录）</span></label>`, { confirmLabel: '移到收款回执', cancelLabel: '取消', html: true })) return;
   try {
     const moveBody = JSON.stringify({ keep_receipts: !!window._invpMoveKeepRcpt });
     let r = await api(`/admin/invoices/${invId}/move-sub-to-received`, { method: 'POST', body: moveBody });
@@ -36516,7 +36431,7 @@ async function moveInvpSubPayToReceived() {
       ].filter(Boolean).join(' · ');
       const ok2 = await showConfirm(
         `收款侧已有记录${exBits ? '（' + esc(exBits) + '）' : ''}。<br><br>确定<b>覆盖</b>吗？收款记录的金额/日期/银行/经手人将替换为这条分包付款${amt} 的内容；<b>原有收款回执文件不会删除</b>，会一并保留在回执列表里。`,
-        { confirmLabel: '覆盖并转移', cancelLabel: '取消', danger: true });
+        { confirmLabel: '覆盖并转移', cancelLabel: '取消', danger: true, html: true });
       if (!ok2) return;
       r = await api(`/admin/invoices/${invId}/move-sub-to-received`, { method: 'POST', body: JSON.stringify({ force: true, keep_receipts: !!window._invpMoveKeepRcpt }) });
     }
@@ -37089,7 +37004,7 @@ async function whClaimApproval(id, action) {
 }
 
 async function deleteWhClaim(id) {
-  if (!await showConfirm('确定删除这条赔偿事故记录？此操作不可撤销。', { plain: true, danger: true })) return;
+  if (!await showConfirm('确定删除这条赔偿事故记录？此操作不可撤销。', { danger: true })) return;
   try {
     const resp = await fetch('/api/admin/warehouse-claims/' + id, { method: 'DELETE' });
     if (!resp.ok) throw new Error(await resp.text());
@@ -38078,7 +37993,7 @@ async function saveInvpInvoice(status) {
     const pdDays = Math.round((new Date(pe + 'T00:00:00') - new Date(ps + 'T00:00:00')) / 86400000) + 1;
     const ok = await showConfirm(
       `📅 请确认这张 Invoice 的<b>账期起止</b>：<br><br><div style="text-align:center;font-size:1.02rem;line-height:1.7"><b>${fmtPd(ps)}<br>～<br>${fmtPd(pe)}</b><br><span style="color:#64748b;font-size:.85rem">共 ${pdDays} 天 · ${esc(billName)}</span></div>`,
-      { confirmLabel: '账期无误，保存', cancelLabel: '返回修改账期' }
+      { confirmLabel: '账期无误，保存', cancelLabel: '返回修改账期', html: true }
     );
     if (!ok) return;
   }
@@ -38142,7 +38057,7 @@ async function saveInvpInvoice(status) {
         : '';
       const ok = await showConfirm(
         `⚠️ 保存前核对：发现 <strong>${conflicts.length}</strong> 个 container 号重复：<br><br>${conflicts.map(line).join('')}${scanNote}<br>重复的输入框已标红，可逐个点开核对。确定仍要保存吗？`,
-        { confirmLabel: '仍要保存', cancelLabel: '返回核对', danger: true }
+        { confirmLabel: '仍要保存', cancelLabel: '返回核对', danger: true, html: true }
       );
       if (!ok) return;
     } else if (scanOnly.length) {
@@ -38180,7 +38095,7 @@ async function saveInvpInvoice(status) {
     if (problems.length) {
       const ok = await showConfirm(
         `⚠️ 保存前核对，发现疑似重复的工人工时：<br><br>${[...new Set(problems)].join('<br><br>')}<br><br>确认这些不是重复录入、仍要保存吗？`,
-        { confirmLabel: '确认无误，保存', cancelLabel: '返回核对', danger: true }
+        { confirmLabel: '确认无误，保存', cancelLabel: '返回核对', danger: true, html: true }
       );
       if (!ok) return;
     }
@@ -38224,7 +38139,7 @@ async function saveInvpInvoice(status) {
   if (res && res.kind === 'details') {
     const ok = await showConfirm(
       `⚠️ ${esc(res.error || '')}<br><br>为避免重复开票已拦截。确定这不是重复、仍要保存吗？`,
-      { confirmLabel: '仍要保存', cancelLabel: '取消', danger: true }
+      { confirmLabel: '仍要保存', cancelLabel: '取消', danger: true, html: true }
     );
     if (!ok) return;
     payload.force = true;
@@ -39369,7 +39284,7 @@ async function invpGustoCsv(auto) {
     if (auto) return;
     const ok = await showConfirm(
       '还没有上传 <b>Gusto 合同工名册</b>。<br><br>去 Gusto 后台下载空白的 <b>contractor payment 模板 CSV</b>（含每人姓名、SSN 尾号、时薪），在这里上传一次即可；之后每张发票都能一键生成填好工时的付款 CSV。',
-      { confirmLabel: '选择名册 CSV 上传', cancelLabel: '取消' }
+      { confirmLabel: '选择名册 CSV 上传', cancelLabel: '取消', html: true }
     );
     if (ok) document.getElementById('invpGustoRosterFile').click();
     return;
@@ -40323,7 +40238,7 @@ async function _invpOpenMatchedInvoice(id) {
   if (window._invpDirty) {
     const ok = await showConfirm(
       '⚠️ 打开该 Invoice 会替换当前正在编辑、尚未保存的内容。<br><br>建议先点「保存草稿」再打开核对。确定直接打开吗？',
-      { confirmLabel: '直接打开', cancelLabel: '留在当前', danger: true }
+      { confirmLabel: '直接打开', cancelLabel: '留在当前', danger: true, html: true }
     );
     if (!ok) return;
   }
@@ -40578,7 +40493,7 @@ async function invpBulkReceipts(mode) {
     });
   if (!items.length) { showToast('没有可用的 container（请先填写 Container Number）', 'error'); return; }
   const verb = mode === 'preview' ? '预览' : '下载';
-  if (mode === 'download' && !await showConfirm(`将为 ${items.length} 个 container 生成合并的现金回执 PDF 并${verb}。\n（工人姓名 / SSN 留空给现场手写）\n继续？`, { plain: true })) return;
+  if (mode === 'download' && !await showConfirm(`将为 ${items.length} 个 container 生成合并的现金回执 PDF 并${verb}。\n（工人姓名 / SSN 留空给现场手写）\n继续？`)) return;
 
   const url = `/api/admin/invoices/${invId}/cash-receipts-bulk${mode === 'preview' ? '?inline=1' : ''}`;
   try {
@@ -42516,7 +42431,7 @@ function renderInvpProfilePreview() {
 }
 
 async function deleteInvpPreset(id, section) {
-  if (!await showConfirm('确定删除此预设？', { plain: true, danger: true })) return;
+  if (!await showConfirm('确定删除此预设？', { danger: true })) return;
   await api(`/admin/invoice-profiles/${id}`, { method: 'DELETE' });
   const saved = getInvpProfile();
   if (saved[section + '_preset_id'] == id) {
@@ -43848,7 +43763,7 @@ function printApplyQr46(i) {
 }
 async function regenerateApplyQr() {
   if (!_applyQrState.partnerId && !_applyQrState.generic) return;
-  if (!await showConfirm(APPLY_QR_I18N[_applyQrLang].regenConfirm, { plain: true })) return;
+  if (!await showConfirm(APPLY_QR_I18N[_applyQrLang].regenConfirm)) return;
   try {
     await api(_applyQrState.generic ? '/admin/applicant-qr/generic/regenerate' : `/admin/partners/${_applyQrState.partnerId}/applicant-qr/regenerate`, { method: 'POST' });
     openApplicantQrModal(_applyQrState.partnerId, _applyQrState.partnerName);
@@ -44370,7 +44285,7 @@ function _psPickDev(d) { _ps.entries.forEach(e => { if (e.device === d) _ps.selD
 async function doPunchSort() {
   const P = _ps; if (!P) return;
   const punches = [...P.selPunch].map(k => { const i = k.indexOf('|'); return { entry_id: parseInt(k.slice(0, i)), t: k.slice(i + 1) }; }).filter(x => !P.selDays.has(x.entry_id));
-  const ok = await showConfirm(`把 ${P.selDays.size} 整天${punches.length ? ` + ${punches.length} 单卡` : ''} 的打卡\n从「${esc(P.fromName)}」转到「${esc(P.toName)}」？\n\n每条都会记进编辑历史；同一天两边都有卡时会合并并重新归类上下班。`, { confirmLabel: '确认转移', cancelLabel: '再看看' });
+  const ok = await showConfirm(`把 ${P.selDays.size} 整天${punches.length ? ` + ${punches.length} 单卡` : ''} 的打卡\n从「${esc(P.fromName)}」转到「${esc(P.toName)}」？\n\n每条都会记进编辑历史；同一天两边都有卡时会合并并重新归类上下班。`, { confirmLabel: '确认转移', cancelLabel: '再看看', html: true });
   if (!ok) return;
   const btn = document.getElementById('psGo'); btn.disabled = true; btn.textContent = '转移中…';
   try {
@@ -44510,7 +44425,7 @@ async function _dupPickSeparate() {
   if (!aP || _dupSepPhones(b).includes(aP)) { showToast('两边电话相同 = 同一个人，不能分成两份档案', 'error', 5000); return; }
   const nm = e => titleCase([e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '));
   const ok = await showConfirm(`分成两份独立档案？\n\n「${esc(nm(a))}」（${esc(a.phone)}）${pend.empId ? '按新信息保存到它自己的档案' : '单独建一份新档案'}；\n「${esc(nm(b))}」（${esc(b.phone || '')}）${b.employee_id ? '· ' + esc(b.employee_id) : ''} 原样不动。\n\n两份档案可以共用同一个邮箱。`,
-    { confirmLabel: '分成两份档案', cancelLabel: '再看看' });
+    { confirmLabel: '分成两份档案', cancelLabel: '再看看', html: true });
   if (!ok) return;
   const data = { ...(pend.data || {}), allow_email_dup: true, allow_name_dup: true };   // 已确认是两个人
   if (!pend.empId && !data.status) data.status = 'onboarding';
@@ -46342,7 +46257,7 @@ async function saveCsubBulk() {
   // Targets = every pending row currently rendered with its 通过 box checked.
   const boxes = [...document.querySelectorAll('[data-csub-ok]')].filter(b => b.checked);
   if (!boxes.length) { showToast('没有勾选任何记录', 'error'); return; }
-  if (!await showConfirm(`确定通过审核所选的 <b>${boxes.length}</b> 条记录吗？价格以表格中当前填写的为准。`, { confirmLabel: `通过 ${boxes.length} 条`, cancelLabel: '取消' })) return;
+  if (!await showConfirm(`确定通过审核所选的 <b>${boxes.length}</b> 条记录吗？价格以表格中当前填写的为准。`, { confirmLabel: `通过 ${boxes.length} 条`, cancelLabel: '取消', html: true })) return;
   const btn = document.getElementById('csubBulkSaveBtn');
   if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
   let ok = 0; const fails = [];
@@ -46738,7 +46653,7 @@ function downloadPendingQr() {
   document.body.appendChild(a); a.click(); a.remove();
 }
 async function regeneratePendingQr() {
-  if (!await showConfirm('重新生成后，旧二维码将立即失效。确定继续？', { plain: true, danger: true })) return;
+  if (!await showConfirm('重新生成后，旧二维码将立即失效。确定继续？', { danger: true })) return;
   try {
     await api('/admin/pending-overview-link/regenerate', { method: 'POST' });
     openPendingQrModal();
@@ -46916,7 +46831,7 @@ function cwAddName() {
 async function cwDeleteSelected() {
   const name = _cwQrState.selected;
   if (!name) return; // generic can't be deleted
-  if (!await showConfirm(_cwT().delConfirm(name), { danger: true })) return;
+  if (!await showConfirm(_cwT().delConfirm(name), { danger: true, html: true })) return;
   _cwQrState.names = _cwQrState.names.filter(n => n !== name);
   _cwSaveNames();
   _cwQrState.selected = '';
@@ -47002,7 +46917,7 @@ function downloadAllCwQr() {
 }
 async function regenerateCwQr() {
   if (!_cwQrState.partnerId) return;
-  if (!await showConfirm(_cwT().regenConfirm, { danger: true })) return;
+  if (!await showConfirm(_cwT().regenConfirm, { danger: true, html: true })) return;
   try {
     await api(`/admin/partners/${_cwQrState.partnerId}/container-qr/regenerate`, { method: 'POST' });
     showToast(_cwT().regenDone);
@@ -47183,7 +47098,7 @@ function copyBlankWorksheetLink(token) {
 }
 
 async function deleteBlankWorksheet(id) {
-  if (!await showConfirm('确认删除这张工作单（及其所有照片）？此操作不可撤销。', { plain: true, danger: true })) return;
+  if (!await showConfirm('确认删除这张工作单（及其所有照片）？此操作不可撤销。', { danger: true })) return;
   try {
     const r = await fetch(`/api/admin/blank-worksheets/${id}`, { method: 'DELETE' });
     if (!r.ok) throw new Error('删除失败');
@@ -51560,7 +51475,7 @@ async function submitCpyBatch() {
     });
   }
   if (!items.length) { showAlert('请勾选至少一名工人并填入金额'); return; }
-  if (!await showConfirm(`确认给 ${partnerName} 的 ${items.length} 名工人付款，合计 ${_cpyFmtMoney(items.reduce((s, x) => s + x.amount, 0))}？`, { plain: true })) return;
+  if (!await showConfirm(`确认给 ${partnerName} 的 ${items.length} 名工人付款，合计 ${_cpyFmtMoney(items.reduce((s, x) => s + x.amount, 0))}？`)) return;
 
   try {
     const r = await api('/admin/company-payments/batch', {
@@ -51727,7 +51642,7 @@ async function submitCpySingle() {
 }
 
 async function deleteCpy(id) {
-  if (!await showConfirm('确认删除这条付款记录？', { plain: true, danger: true })) return;
+  if (!await showConfirm('确认删除这条付款记录？', { danger: true })) return;
   try {
     const r = await api(`/admin/company-payments/${id}`, { method: 'DELETE' });
     if (r && r.error) { showAlert('删除失败：' + r.error); return; }
@@ -51746,7 +51661,7 @@ async function cpyDeleteWorker(gIdx) {
   if (!ids.length) return;
   const month = document.getElementById('cpyFilterMonth').value;
   const scope = month ? `${month}` : '所有月份';
-  if (!await showConfirm(`确认删除工人「${g.worker_name}」（${g.partner_name}）在【${scope}】的全部 ${ids.length} 笔付款记录？\n\n此操作不可恢复。`, { plain: true, danger: true })) return;
+  if (!await showConfirm(`确认删除工人「${g.worker_name}」（${g.partner_name}）在【${scope}】的全部 ${ids.length} 笔付款记录？\n\n此操作不可恢复。`, { danger: true })) return;
   try {
     const r = await api('/admin/company-payments/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) });
     if (r && r.error) { showAlert('删除失败：' + r.error); return; }
@@ -52437,7 +52352,7 @@ async function copyCpyWkDay(rowIdx, srcDayIdx) {
       hasOther = true; break;
     }
   }
-  if (hasOther && !await showConfirm('其他天已有数据，确认全部覆盖？', { plain: true, danger: true })) return;
+  if (hasOther && !await showConfirm('其他天已有数据，确认全部覆盖？', { danger: true })) return;
   for (let j = 0; j < 7; j++) {
     if (j === srcDayIdx) continue;
     w._starts[j] = src.start;
@@ -52497,7 +52412,7 @@ async function copyCpyWkFirstFilled(rowIdx, scope) {
       hasOther = true; break;
     }
   }
-  if (hasOther && !await showConfirm(`将覆盖 ${targets.length} 天的现有数据，确认？`, { plain: true, danger: true })) return;
+  if (hasOther && !await showConfirm(`将覆盖 ${targets.length} 天的现有数据，确认？`, { danger: true })) return;
   for (const j of targets) {
     w._starts[j] = src.start;
     w._ends[j] = src.end;
@@ -52817,7 +52732,7 @@ async function pullCpyWeeklyHours(opts = {}) {
 }
 
 async function clearCpyWeeklyHours() {
-  if (!await showConfirm('确认清空所有上下班/午休时间（保留时薪）？', { plain: true, danger: true })) return;
+  if (!await showConfirm('确认清空所有上下班/午休时间（保留时薪）？', { danger: true })) return;
   _readCpyWkRowState();
   _cpyWkWorkers.forEach(w => {
     w._starts = new Array(7).fill('');
@@ -52894,7 +52809,7 @@ async function submitCpyWeekly() {
   const confirmMsg = editing
     ? `确认覆盖 ${partnerName} · ${items.map(i => i.worker_name).join('、')} 本周的付款记录，重新生成 ${totalRecords} 条按日记录，${moneyLine}？（本周原有记录将被替换）`
     : `确认给 ${partnerName} 的 ${items.length} 名工人生成 ${totalRecords} 条按日付款记录，${moneyLine}？`;
-  if (!await showConfirm(confirmMsg, { confirmLabel: editing ? '覆盖本周' : '确认生成', cancelLabel: '取消', danger: !!editing })) return;
+  if (!await showConfirm(confirmMsg, { confirmLabel: editing ? '覆盖本周' : '确认生成', cancelLabel: '取消', danger: !!editing, html: true })) return;
 
   try {
     const r = await api('/admin/company-payments/batch-weekly', {
