@@ -58,6 +58,7 @@
   @media(max-width:560px){body{padding:.75rem}.card{padding:1rem 1rem}}
   @media(max-width:480px){body{padding:.5rem}.card{padding:.75rem}}
 </style>
+<script src="/pa-dialog.js"></script>
 </head>
 <body>
 
@@ -251,12 +252,12 @@ async function submitForm() {
     if (data.success) {
       showCompleted();
     } else {
-      alert(data.error || '提交失败，请重试');
+      showAlert(data.error || '提交失败，请重试');
       btn.disabled = false;
       btn.textContent = '提交入职材料';
     }
   } catch(e) {
-    alert('网络错误，请检查连接后重试');
+    showAlert('网络错误，请检查连接后重试');
     btn.disabled = false;
     btn.textContent = '提交入职材料';
   }

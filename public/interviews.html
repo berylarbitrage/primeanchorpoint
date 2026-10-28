@@ -95,6 +95,7 @@
   .job-group .chip{font-size:.74rem;padding:3px 10px}
   .hint{font-size:.72rem;color:var(--gray-400);margin-top:4px}
 </style>
+<script src="/pa-dialog.js"></script>
 </head>
 <body>
 
@@ -809,7 +810,7 @@ async function save701() {
   const guide = document.getElementById('fGuide701').value.trim();
   closeModal();
   try { await api('/interview-registry/meta', { method: 'POST', body: JSON.stringify({ s701_address: addr, s701_guide: guide }) }); }
-  catch (e) { alert(e.message); }
+  catch (e) { showAlert(e.message); }
   load();
 }
 

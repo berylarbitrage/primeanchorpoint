@@ -28,6 +28,7 @@ input,select{padding:.4rem .5rem;border:1px solid var(--g300);border-radius:6px;
 .pill-in{display:inline-block;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;border-radius:999px;padding:.08rem .55rem;font-size:.72rem;font-weight:700}
 .pill-out{display:inline-block;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:999px;padding:.08rem .55rem;font-size:.72rem;font-weight:700}
 </style>
+<script src="/pa-dialog.js"></script>
 </head>
 <body>
 
@@ -352,8 +353,8 @@ async function pbMeta(id, field, value) {
   const r = await api('/pb/statements/' + id + '/meta', { method: 'PUT', body: JSON.stringify({ bank: s.bank, period_start: s.period_start, period_end: s.period_end }) });
   if (r.error) toast('保存失败：' + r.error, true); else toast('已保存 ✓');
 }
-function pbDelete(id) {
-  if (!confirm('删除这份账单和它的所有标注？')) return;
+async function pbDelete(id) {
+  if (!await showConfirm('删除这份账单和它的所有标注？')) return;
   api('/pb/statements/' + id, { method: 'DELETE' }).then(r => {
     if (r.error) toast('删除失败：' + r.error, true);
     else { toast('已删除'); pbLoad(); }
@@ -593,7 +594,7 @@ async function edUpdate(id, field, value, el) {
   if (field === 'direction' || field === 'category' || field === 'amount' || field === 'txn_date') renderBoxes();
 }
 async function edDelete(id) {
-  if (!confirm('删除这个标注？')) return;
+  if (!await showConfirm('删除这个标注？')) return;
   const r = await api('/pb/statements/' + _edId + '/boxes/' + id, { method: 'DELETE' });
   if (r.error) { toast('删除失败：' + r.error, true); return; }
   _edBoxes = _edBoxes.filter(b => b.id !== id);
@@ -739,7 +740,7 @@ async function pbPhotoAdd(boxId, files) {
   toast('证据照片已上传 ✓');
 }
 async function pbPhotoDel(boxId, url) {
-  if (!confirm('删除这张证据照片？')) return;
+  if (!await showConfirm('删除这张证据照片？')) return;
   const r = await api('/pb/statements/' + _edId + '/boxes/' + boxId + '/photos?photo=' + encodeURIComponent(url), { method: 'DELETE' });
   if (r.error) { toast('删除失败：' + r.error, true); return; }
   const b = _edBoxes.find(x => x.id === boxId);

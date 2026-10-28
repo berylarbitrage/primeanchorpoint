@@ -313,6 +313,7 @@ button,input,select,textarea{font-family:inherit}
   .back-btn{display:flex}
 }
 </style>
+<script src="/pa-dialog.js"></script>
 </head>
 <body>
 
@@ -865,11 +866,11 @@ function sendStatusHtml(m) {
 
 async function resendFailed(id) {
   const m = MESSAGES.find(x => Number(x.id) === id);
-  if (!m || !confirm('把这条重新排队发一次？\n\n' + String(m.body || '').slice(0, 200))) return;
+  if (!m || !await showConfirm('把这条重新排队发一次？\n\n' + String(m.body || '').slice(0, 200))) return;
   const r = await api('/device-sms/send', {
     method: 'POST', body: JSON.stringify({ to: m.address || m.peer, peer: m.peer, body: m.body, line: devLine(m.device_id) })
   });
-  if (!r.success) { alert(r.error || '排队失败'); return; }
+  if (!r.success) { showAlert(r.error || '排队失败'); return; }
   await load(true);
 }
 

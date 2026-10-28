@@ -94,7 +94,8 @@
     .sheet:last-of-type { page-break-after: auto; }
     .sheet.blank { display: none; }
   }
-</style></head>
+</style><script src="/pa-dialog.js"></script>
+</head>
 <body>
   <div class="top">
     <strong>Prime Anchor Workforce · 文件夹标签</strong>
@@ -181,7 +182,7 @@
   function addPage() { for (var i = 0; i < 30; i++) slots.push(null); save(); render(); }
   function removePage() {
     if (slots.length <= 30) return;
-    if (slots.slice(-30).some(function(x){ return x != null; })) { alert('最后一页上还有标签，先移走再删'); return; }
+    if (slots.slice(-30).some(function(x){ return x != null; })) { showAlert('最后一页上还有标签，先移走再删'); return; }
     slots.length -= 30;
     if (picked >= slots.length) picked = -1;
     save(); render();

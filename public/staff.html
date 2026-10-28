@@ -161,6 +161,7 @@ tr:hover td{background:#f0fdf4}
   .filter-bar input,.filter-bar select{width:100%}
 }
 </style>
+<script src="/pa-dialog.js"></script>
 </head>
 <body>
 
@@ -788,13 +789,13 @@ async function loadTsDividend(){
 
 async function voteDividendApprove(id){
   const r=await api(`/admin/timesheet-sheets/${id}/vote-approve`,{method:'POST',body:'{}'});
-  if(r.error){alert(r.error);return;}
+  if(r.error){showAlert(r.error);return;}
   showToast(r.all_approved?'全部无异议通过！':`已投无异议 (${r.approve_count}/${r.staff_count})`);
   loadTsDividend();
 }
 async function voteDividendDistributed(id){
   const r=await api(`/admin/timesheet-sheets/${id}/vote-distributed`,{method:'POST',body:'{}'});
-  if(r.error){alert(r.error);return;}
+  if(r.error){showAlert(r.error);return;}
   showToast(r.all_distributed?'全部确认分红，已归档':`已确认分红 (${r.dist_count}/${r.staff_count})`);
   loadTsDividend();
 }
@@ -953,12 +954,12 @@ async function submitPayment(){
     period_end:document.getElementById('payPeriodEnd').value||null,
     notes:document.getElementById('payNotes').value.trim()||null,
   };
-  if(!body.amount){ alert('请输入金额'); return; }
+  if(!body.amount){ showAlert('请输入金额'); return; }
   try {
     await api(`/admin/worker-accounts/${empId}/payments`,{method:'POST',body:JSON.stringify(body)});
     showToast('打款记录已保存');
     closePayModal();
-  } catch(e){ alert('保存失败: '+e.message); }
+  } catch(e){ showAlert('保存失败: '+e.message); }
 }
 
 // ── Auto-login from cookie ─────────────────────────────────────

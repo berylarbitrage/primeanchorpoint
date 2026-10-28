@@ -85,6 +85,7 @@ tr:hover td{background:var(--sky-light)}
   .header h1{font-size:.95rem}
 }
 </style>
+<script src="/pa-dialog.js"></script>
 </head>
 <body>
 
@@ -160,8 +161,8 @@ async function api(path, opts = {}) {
   const ct = res.headers.get('content-type') || '';
   if (!ct.includes('application/json')) return { error: '服务器返回异常' };
   const data = await res.json();
-  if (res.status === 401) { alert('登录已过期，请重新登录'); logout(); return data; }
-  if (res.status === 403) { alert('权限不足'); return data; }
+  if (res.status === 401) { showAlert('登录已过期，请重新登录'); logout(); return data; }
+  if (res.status === 403) { showAlert('权限不足'); return data; }
   return data;
 }
 
@@ -292,14 +293,14 @@ async function loadDividend() {
 
 async function voteDividendApprove(id) {
   const r = await api(`/admin/timesheet-sheets/${id}/vote-approve`, { method:'POST', body:'{}' });
-  if (r.error) { alert(r.error); return; }
+  if (r.error) { showAlert(r.error); return; }
   showToast(r.all_approved ? '✅ 全部无异议通过！可以确认分红' : `✅ 已投无异议 (${r.approve_count}/${r.staff_count})`);
   loadDividend();
 }
 
 async function voteDividendDistributed(id) {
   const r = await api(`/admin/timesheet-sheets/${id}/vote-distributed`, { method:'POST', body:'{}' });
-  if (r.error) { alert(r.error); return; }
+  if (r.error) { showAlert(r.error); return; }
   showToast(r.all_distributed ? '✅ 全部确认分红，已归档至工时历史' : `✅ 已确认分红 (${r.dist_count}/${r.staff_count})`);
   loadDividend();
 }

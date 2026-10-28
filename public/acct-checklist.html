@@ -37,6 +37,7 @@ h3{margin:0 0 .5rem;font-size:.98rem;color:var(--navy)}
 .inv{font-size:.8rem;margin:.1rem 0}
 .co-head td{background:#f8fafc;font-weight:800;color:var(--navy)}
 </style>
+<script src="/pa-dialog.js"></script>
 </head>
 <body>
 <div id="gate" style="position:fixed;inset:0;background:#eef3f8;display:none;align-items:center;justify-content:center;padding:16px">
@@ -244,7 +245,7 @@ async function unlink(invoiceId) {
 async function markNa(id) {
   const x = D.items.find(e => e.id === id);
   const weekly = x.freq === 'weekly';
-  const note = prompt(weekly ? '这张每周都该出，这周为什么没有？（例如：这周没干活 / 并到另一张账单里了）' : '确认这周没有这张账单。备注（可不填）：', '');
+  const note = await showPrompt(weekly ? '这张每周都该出，这周为什么没有？（例如：这周没干活 / 并到另一张账单里了）' : '确认这周没有这张账单。备注（可不填）：', '');
   if (note == null) return;
   if (weekly && !note.trim()) { toast('请写一下原因', true); return; }
   save('/api/acct/checklist/mark', { week: WEEK, expect_id: id, status: 'na', note });
@@ -253,8 +254,8 @@ function unmark(id) { save('/api/acct/checklist/mark', { week: WEEK, expect_id: 
 async function weekDone(done) {
   if (done) {
     const open = D.items.filter(x => x.state === 'missing' || x.state === 'confirm').length;
-    if (open && !confirm(`还有 ${open} 项没 link / 没确认，确定标记这周核对完成？`)) return;
-    if (D.unpaid.length && !confirm(`还有 ${D.unpaid.length} 张账单没收到款，确定标记这周核对完成？`)) return;
+    if (open && !await showConfirm(`还有 ${open} 项没 link / 没确认，确定标记这周核对完成？`)) return;
+    if (D.unpaid.length && !await showConfirm(`还有 ${D.unpaid.length} 张账单没收到款，确定标记这周核对完成？`)) return;
   }
   save('/api/acct/checklist/week-done', { week: WEEK, done });
 }
@@ -287,9 +288,9 @@ function panePay() {
   }
   return h + `</tbody></table></div>`;
 }
-function follow(id) {
+async function follow(id) {
   const all = [...D.unpaid, ...D.week_invoices], i = all.find(x => x.id === id);
-  const note = prompt('跟进备注（例如：10/24 已发邮件催款 / 客户说下周付）。清空 = 删除备注', (i && i.follow && i.follow.note) || '');
+  const note = await showPrompt('跟进备注（例如：10/24 已发邮件催款 / 客户说下周付）。清空 = 删除备注', (i && i.follow && i.follow.note) || '');
   if (note == null) return;
   save('/api/acct/checklist/pay-follow', { invoice_id: id, note });
 }
@@ -321,15 +322,15 @@ function addExpect() {
   if (!v('nCo').trim()) { toast('请填写公司 / 仓库名', true); return; }
   save('/api/acct/checklist/expect', { company_name: v('nCo'), kind: v('nKind'), freq: v('nFreq'), label: v('nLabel'), note: v('nNote') });
 }
-function editExpect(id) {
+async function editExpect(id) {
   const x = D.expects.find(e => e.id === id);
-  const label = prompt('标签（同公司同类型有两张时区分用，可留空）', x.label || '');
+  const label = await showPrompt('标签（同公司同类型有两张时区分用，可留空）', x.label || '');
   if (label == null) return;
-  const note = prompt('备注', x.note || '');
+  const note = await showPrompt('备注', x.note || '');
   if (note == null) return;
   save('/api/acct/checklist/expect/' + id, { label, note }, 'PUT');
 }
-function delExpect(id) { if (confirm('从清单删除这一条？（已 link 的记录也会一起删掉；不想核对了可以先「停用」）')) save('/api/acct/checklist/expect/' + id, null, 'DELETE'); }
+async function delExpect(id) { if (await showConfirm('从清单删除这一条？（已 link 的记录也会一起删掉；不想核对了可以先「停用」）')) save('/api/acct/checklist/expect/' + id, null, 'DELETE'); }
 
 if (TOKEN) load().catch(() => {}); else document.getElementById('gate').style.display = 'flex';
 </script>

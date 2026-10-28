@@ -114,6 +114,7 @@ tr:last-child td{border-bottom:none}
 .toast.in{opacity:1;transform:translateY(0)}
 .toast.success{background:#065F46;border-left:4px solid #34d399}
 </style>
+<script src="/pa-dialog.js"></script>
 </head>
 <body>
 <div id="toast-wrap"></div>
@@ -469,13 +470,13 @@ function _cMfaShow(on) {
 async function customerLogin() {
   const login = document.getElementById('cLogin').value.trim();
   const password = document.getElementById('cPassword').value;
-  if (!login || !password) return alert('请输入邮箱/电话和密码');
+  if (!login || !password) return showAlert('请输入邮箱/电话和密码');
   const r = await fetch('/api/customer/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ login, password })
   });
-  if (!r.ok) { const e = await r.json(); return alert(e.error || '登录失败'); }
+  if (!r.ok) { const e = await r.json(); return showAlert(e.error || '登录失败'); }
   const data = await r.json();
   if (data.mfa_required) {
     // 二次验证: 验证码已发到账号登记的手机/邮箱
@@ -1500,7 +1501,7 @@ function trStatsOpen(mode) {
 // 🖨 Letter 打印: 按天=每天一页(当日每班一行+日合计); 按周=每周一页(员工×周一..周日 每天工时+周合计)
 function trStatsPrint() {
   const entries = _tsvFilteredEntries();
-  if (!entries.length) { alert('当前筛选范围没有可打印的数据'); return; }
+  if (!entries.length) { showAlert('当前筛选范围没有可打印的数据'); return; }
   const byDay = {};
   entries.forEach(e => { const dk = _trDayKey(e); (byDay[dk] = byDay[dk] || []).push(e); });
   const dayKeys = Object.keys(byDay).sort();
@@ -1549,7 +1550,7 @@ function trStatsPrint() {
     }).join('');
   }
   const w = window.open('', '_blank');
-  if (!w) { alert('浏览器拦截了打印窗口，请允许弹窗后重试'); return; }
+  if (!w) { showAlert('浏览器拦截了打印窗口，请允许弹窗后重试'); return; }
   w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>工时表 ' + esc(_tsvFrom) + '~' + esc(_tsvTo) + '</title><style>' + css + '</style></head><body>' + secs + '<scr' + 'ipt>window.onload=function(){window.print()}</scr' + 'ipt></body></html>');
   w.document.close();
 }
@@ -1596,7 +1597,7 @@ function unloadRecPrint(withLogo) {
       <tbody>${rows}</tbody></table>
     <scr` + `ipt>window.onload=function(){setTimeout(function(){window.print()},150)}</scr` + `ipt></body></html>`;
   const w = window.open('', '_blank');
-  if (!w) { alert('浏览器拦截了打印窗口，请允许弹窗后重试'); return; }
+  if (!w) { showAlert('浏览器拦截了打印窗口，请允许弹窗后重试'); return; }
   w.document.write(html);
   w.document.close();
   document.getElementById('unloadRecModal').style.display = 'none';
@@ -1744,7 +1745,7 @@ async function submitPost() {
     notes: document.getElementById('pNotes').value.trim(),
     details_json: JSON.stringify(collectPostDetails())
   };
-  if (!d.title) return alert('请选择工种类别');
+  if (!d.title) return showAlert('请选择工种类别');
   const r = await cApi('/post-job', { method:'POST', body:JSON.stringify(d) });
   if (!r) return;
   if (r.success) {
@@ -1759,7 +1760,7 @@ async function submitPost() {
     document.getElementById('pRequirements').value = '';
     document.getElementById('pNotes').value = '';
     clearPostDetails();
-  } else alert(r.error || '提交失败');
+  } else showAlert(r.error || '提交失败');
 }
 
 function randomFillPost() {
@@ -1869,7 +1870,7 @@ async function wkManualAdd(eid, btn) {
   loadWorkers();
 }
 async function wkManualRemove(eid) {
-  if (!confirm('把这名手动添加的工人从列表移除？（不影响打卡数据）')) return;
+  if (!await showConfirm('把这名手动添加的工人从列表移除？（不影响打卡数据）')) return;
   const r = await cApi('/my-workers/' + eid, { method: 'DELETE' });
   if (!r || r.error) { showToast((r && r.error) || '移除失败', 'error'); return; }
   showToast('已移除');
@@ -1914,7 +1915,7 @@ async function wkCardOpen(eid) {
 }
 // 🧪 冒充模式专用: 派遣工人列表里就地标注/取消「测试号」(客户账号看不到这个入口, 服务端也拦)
 async function wkTestFlag(eid, v) {
-  if (!confirm(v ? '把这个工人标注为「测试号」？列表职位处会显示 🧪 标记。' : '取消这个工人的「测试号」标记？')) return;
+  if (!await showConfirm(v ? '把这个工人标注为「测试号」？列表职位处会显示 🧪 标记。' : '取消这个工人的「测试号」标记？')) return;
   const r = await cApi(`/my-workers/${eid}/test-flag`, { method: 'POST', body: JSON.stringify({ is_test: v }) });
   if (!r || r.error) { showToast((r && r.error) || '操作失败', 'error'); return; }
   showToast(v ? '✅ 已标注为测试号' : '✅ 已取消测试号标记');

@@ -26,6 +26,7 @@ input,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-radius:6p
 .kv .k{color:var(--g500)}.kv .v{word-break:break-all}
 .row{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
 </style>
+<script src="/pa-dialog.js"></script>
 </head>
 <body>
 <div id="gate" style="position:fixed;inset:0;background:#eef3f8;display:none;align-items:center;justify-content:center;padding:16px">
@@ -110,13 +111,13 @@ async function load() {
   }).join('') || `<div class="card muted">${TAB === 'pending' ? '🎉 没有等审批的修改' : '没有记录'}</div>`;
 }
 async function reopen(id) {
-  if (!confirm('恢复成等审批？（恢复后系统不会再自动关掉它）')) return;
+  if (!await showConfirm('恢复成等审批？（恢复后系统不会再自动关掉它）')) return;
   const j = await api('/api/approvals/' + id, { method: 'POST', body: { reopen: true } }).catch(e => ({ error: e.message }));
   if (j.error) toast(j.error, true); else { toast('已恢复，回到「等审批」'); TAB = 'pending'; }
   load();
 }
 async function decide(id, ok) {
-  if (!confirm(ok ? '同意并按他提交的内容执行这个修改？' : '拒绝这个修改？')) return;
+  if (!await showConfirm(ok ? '同意并按他提交的内容执行这个修改？' : '拒绝这个修改？')) return;
   const j = await api('/api/approvals/' + id, { method: 'POST', body: { approve: ok, note: document.getElementById('note' + id).value } }).catch(e => ({ error: e.message }));
   if (j.error) toast(j.error, true);
   else if (j.status === 'failed') toast(`执行出错（${j.result_status}）：${String(j.result_body || '').slice(0, 120)}`, true);
