@@ -8725,27 +8725,91 @@ function populateScheduleTable(workSchedule, workDays, workStart, workEnd, tbody
 function collectScheduleTable() { return collectAllShifts(); }
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Promise-based confirm dialog matching site style. Returns Promise<boolean>. */
-function showConfirm(message, { confirmLabel = '确认', cancelLabel = '取消', danger = false } = {}) {
+// ─── 站内样式弹窗（替代原生 alert / confirm）：图标 + 彩色标题 + 说明，与 showInputPrompt 同一风格 ───
+const _PA_DLG_COLORS = {
+  blue:  { bg:'#DBEAFE', stroke:'#2563EB', title:'#1E40AF' },
+  green: { bg:'#D1FAE5', stroke:'#059669', title:'#065F46' },
+  red:   { bg:'#FEE2E2', stroke:'#DC2626', title:'#B91C1C' },
+  amber: { bg:'#FEF3C7', stroke:'#D97706', title:'#92400E' }
+};
+const _PA_DLG_ICONS = {
+  info:  '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
+  check: '<circle cx="12" cy="12" r="10"/><polyline points="8 12.5 11 15.5 16 9.5"/>',
+  warn:  '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>'
+};
+const _paDlgStack = [];
+// message 默认按纯文本显示；html:true 时按 HTML 插入（调用方负责转义）
+function _paDialog({ title, message, html = false, color = 'blue', icon, okText = '确定', cancelText = null, okClass = '', focusCancel = false }) {
   return new Promise(resolve => {
-    const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:10000;font-family:\'DM Sans\',sans-serif';
-    const box = document.createElement('div');
-    // max-height + 内容区滚动: 提示很长时(如几十条工时查重)按钮仍固定可见, 中间可滑动
-    box.style.cssText = 'background:#fff;border-radius:12px;padding:1.75rem 2rem;width:100%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,.18);margin:1rem;max-height:85vh;display:flex;flex-direction:column';
-    const confirmBg = danger ? '#E63946' : '#b45309';
-    box.innerHTML =
-      '<div style="font-size:.9rem;color:#2D3748;line-height:1.7;margin-bottom:1.5rem;white-space:pre-line;overflow-y:auto;flex:1 1 auto;min-height:0;overscroll-behavior:contain;-webkit-overflow-scrolling:touch">' + message + '</div>' +
-      '<div style="display:flex;gap:.6rem;justify-content:flex-end">' +
-        '<button class="_sc-cancel" style="padding:8px 18px;border:1px solid #e2e5ea;border-radius:8px;background:transparent;color:#5F6B7A;font-weight:600;font-size:.82rem;cursor:pointer;font-family:inherit">' + cancelLabel + '</button>' +
-        '<button class="_sc-confirm" style="padding:8px 18px;border:none;border-radius:8px;background:' + confirmBg + ';color:#fff;font-weight:600;font-size:.82rem;cursor:pointer;font-family:inherit">' + confirmLabel + '</button>' +
+    const c = _PA_DLG_COLORS[color] || _PA_DLG_COLORS.blue;
+    const ic = _PA_DLG_ICONS[icon || (color === 'green' ? 'check' : color === 'blue' ? 'info' : 'warn')];
+    const bg = document.createElement('div');
+    bg.className = 'modal-bg show';
+    bg.style.zIndex = '10001';
+    bg.innerHTML =
+      '<div class="modal" style="max-width:420px;padding:1.6rem 1.75rem;margin:1rem;max-height:85vh;display:flex;flex-direction:column">' +
+        '<div style="display:flex;align-items:center;gap:.85rem;margin-bottom:.6rem;flex-shrink:0">' +
+          `<div style="width:44px;height:44px;border-radius:50%;background:${c.bg};display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c.stroke}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${ic}</svg></div>` +
+          `<h2 class="_pa-title" style="margin:0;font-size:1.05rem;color:${c.title};min-width:0;word-break:break-word"></h2>` +
+        '</div>' +
+        // 长内容在中间滚动，按钮始终可见
+        '<div class="_pa-msg" style="font-size:.86rem;color:var(--gray-600);line-height:1.65;white-space:pre-line;word-break:break-word;overflow-y:auto;flex:1 1 auto;min-height:0;overscroll-behavior:contain;padding-left:calc(44px + .85rem)"></div>' +
+        '<div style="display:flex;gap:.65rem;justify-content:flex-end;margin-top:1.2rem;flex-shrink:0">' +
+          (cancelText != null ? '<button class="btn btn-outline _pa-cancel"></button>' : '') +
+          `<button class="btn ${okClass} _pa-ok"></button>` +
+        '</div>' +
       '</div>';
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-    const cleanup = r => { document.body.removeChild(overlay); resolve(r); };
-    box.querySelector('._sc-confirm').onclick = () => cleanup(true);
-    box.querySelector('._sc-cancel').onclick  = () => cleanup(false);
-    overlay.onclick = e => { if (e.target === overlay) cleanup(false); };
+    bg.querySelector('._pa-title').textContent = title || '提示';
+    const msgEl = bg.querySelector('._pa-msg');
+    if (html) msgEl.innerHTML = message; else msgEl.textContent = message == null ? '' : String(message);
+    const okBtn = bg.querySelector('._pa-ok'), cancelBtn = bg.querySelector('._pa-cancel');
+    okBtn.textContent = okText;
+    if (cancelBtn) cancelBtn.textContent = cancelText;
+    const onKey = e => {
+      if (_paDlgStack[_paDlgStack.length - 1] !== bg) return;
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(cancelBtn ? false : true); }
+    };
+    const done = r => {
+      document.removeEventListener('keydown', onKey, true);
+      const i = _paDlgStack.indexOf(bg); if (i >= 0) _paDlgStack.splice(i, 1);
+      bg.remove();
+      resolve(r);
+    };
+    okBtn.onclick = () => done(true);
+    if (cancelBtn) cancelBtn.onclick = () => done(false);
+    bg.onclick = e => { if (e.target === bg) done(cancelBtn ? false : true); };
+    document.addEventListener('keydown', onKey, true);
+    _paDlgStack.push(bg);
+    document.body.appendChild(bg);
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    // 回车 = 点聚焦的按钮；危险操作默认聚焦「取消」防误按
+    setTimeout(() => ((focusCancel && cancelBtn) || okBtn).focus(), 0);
+  });
+}
+
+/** 替代原生 alert：按内容自动选颜色/标题（失败=红，提醒=琥珀，成功=绿，其余=蓝）。返回 Promise，关闭时 resolve。 */
+function showAlert(message, { title, color } = {}) {
+  const m = message == null ? '' : String(message);
+  if (!color) {
+    if (/失败|错误|出错|异常|error|fail/i.test(m)) color = 'red';
+    else if (/^\s*✅|成功|完成|已(保存|发送|复制|创建|更新|清空|删除|生成|提交|导入|同步|通过|添加|撤销|恢复)/.test(m)) color = 'green';
+    else if (/^\s*(⚠️|请)|不能|无法|不正确|不一致|无效|至少|必须|不可|未/.test(m)) color = 'amber';
+    else color = 'blue';
+  }
+  if (!title) title = { red: '出错了', green: '完成', amber: '请注意', blue: '提示' }[color];
+  return _paDialog({ title, message: m, color, okText: '知道了' }).then(() => {});
+}
+
+/** Promise-based confirm dialog matching site style. Returns Promise<boolean>.
+ *  message 按 HTML 插入（老调用方会传 <b> 等）；plain:true 时按纯文本显示。 */
+function showConfirm(message, { confirmLabel = '确认', cancelLabel = '取消', danger = false, title, plain = false } = {}) {
+  return _paDialog({
+    title: title || '请确认',
+    message, html: !plain,
+    color: danger ? 'red' : 'amber',
+    okText: confirmLabel, cancelText: cancelLabel,
+    okClass: danger ? 'btn-red' : '',
+    focusCancel: danger
   });
 }
 
@@ -8821,9 +8885,9 @@ async function api(path, opts = {}) {
     return { error: '服务器返回异常，请刷新页面或联系管理员重启服务器' };
   }
   const data = await res.json();
-  if (data && data.pending) { alert(data.message || '操作已提交审批'); return data; }
-  if (res.status === 401 && path !== '/admin/login') { alert('登录已过期，请重新登录'); logout(); return data; }
-  if (res.status === 403 && path !== '/admin/login') { alert('权限不足 / Permission denied'); return data; }
+  if (data && data.pending) { showAlert(data.message || '操作已提交审批'); return data; }
+  if (res.status === 401 && path !== '/admin/login') { showAlert('登录已过期，请重新登录'); logout(); return data; }
+  if (res.status === 403 && path !== '/admin/login') { showAlert('权限不足 / Permission denied'); return data; }
   return data;
 }
 
@@ -8946,7 +9010,7 @@ function openEmailCodeTestModal() {
 
 async function runEmailCodeTest() {
   const to = document.getElementById('emailCodeTestAddr').value.trim();
-  if (!to) { alert('请输入邮箱地址'); return; }
+  if (!to) { showAlert('请输入邮箱地址'); return; }
   const btn = document.getElementById('emailCodeTestBtn');
   btn.disabled = true; btn.textContent = '发送中…';
   const resultEl = document.getElementById('emailCodeTestResult');
@@ -9023,7 +9087,7 @@ async function loadKioskSmsLog() {
 
 async function runSmsTest() {
   const to = document.getElementById('smsTestPhone').value.trim();
-  if (!to) { alert('请输入手机号'); return; }
+  if (!to) { showAlert('请输入手机号'); return; }
   const btn = document.getElementById('smsTestBtn');
   btn.disabled = true; btn.textContent = '发送中…';
   const resultEl = document.getElementById('smsTestResult');
@@ -10347,7 +10411,7 @@ async function autoGenerateJobs() {
   const allPartners = Array.isArray(partnersResp) ? partnersResp : (partnersResp?.partners || []);
   const partners = allPartners.filter(p => p.active);
   if (!partners.length) {
-    alert('没有找到合作中的公司，请先添加合作公司');
+    showAlert('没有找到合作中的公司，请先添加合作公司');
     btn.disabled = false; btn.textContent = '开始生成'; return;
   }
 
@@ -10472,7 +10536,7 @@ async function autoGenerateJobs() {
   ];
 
   const pool = langFilter === 'mixed' ? fullPool : fullPool.filter(j => j.lang === langFilter);
-  if (!pool.length) { alert('该语言暂无职位模板'); btn.disabled = false; btn.textContent = '开始生成'; return; }
+  if (!pool.length) { showAlert('该语言暂无职位模板'); btn.disabled = false; btn.textContent = '开始生成'; return; }
 
   const locations = ['Chicago, IL','Cicero, IL','Melrose Park, IL','Elk Grove Village, IL','Addison, IL','Schaumburg, IL','Bolingbrook, IL','Aurora, IL','Berwyn, IL','Lyons, IL'];
 
@@ -10694,7 +10758,7 @@ function saveDescEntry() {
   const idx = parseInt(document.getElementById('descEditorIdx').value);
   const name = document.getElementById('descEditorName').value.trim();
   const text = document.getElementById('descEditorText').value.trim();
-  if (!name || !text) { alert('Please fill in both the label and the wording.'); return; }
+  if (!name || !text) { showAlert('Please fill in both the label and the wording.'); return; }
   const list = getDescBank();
   if (idx === -1) {
     list.push({ name, text, last_used: null });
@@ -10725,15 +10789,15 @@ async function saveJob() {
   const id = document.getElementById('jobId').value;
   const langNames = { en: 'English', zh: '中文', es: 'Español' };
   const checkedLangs = ['en','zh','es'].filter(l => document.getElementById('jLang'+l[0].toUpperCase()+l.slice(1)).checked);
-  if (!checkedLangs.length) return alert('请至少选择一种语言');
+  if (!checkedLangs.length) return showAlert('请至少选择一种语言');
   const langVal = checkedLangs[0];
   const partnerId = document.getElementById('jPartnerId').value || null;
   const partnerName = partnerId ? ((_jobPartners||[]).find(p=>p.id==partnerId)||{}).name||'' : '';
   const checkedShifts = [...document.querySelectorAll('.jShiftCheck:checked')].map(c => c.value);
-  if (!checkedShifts.length) return alert('请至少选择一个班次');
+  if (!checkedShifts.length) return showAlert('请至少选择一个班次');
   const { allShiftData, anyDay: _anyDay, allFilled: _allFilled, firstStart: _wStart, firstEnd: _wEnd, allDays } = collectAllShifts();
-  if (!_anyDay) return alert('请至少为每个班次选择一个工作日');
-  if (!_allFilled) return alert('请填写所有选中工作日的上班和下班时间');
+  if (!_anyDay) return showAlert('请至少为每个班次选择一个工作日');
+  if (!_allFilled) return showAlert('请填写所有选中工作日的上班和下班时间');
   const workDays = allDays.join(',');
   const benefits = [...document.querySelectorAll('#jBenefitsWrap .benefit-btn.active')].map(b=>b.dataset.val).join(',');
   const requiredSkills = [...document.getElementById('jRequiredSkills').selectedOptions].map(o=>o.value).join(',');
@@ -10787,15 +10851,15 @@ async function saveJob() {
     job_status: 'open',
     active: true
   };
-  if (!data.partner_id) return alert('请选择合作公司');
-  if (!data.title) return alert('请填写职位名称');
-  if (!data.type) return alert('请选择职位类型');
-  if (!data.employment_type) return alert('请选择雇佣性质');
+  if (!data.partner_id) return showAlert('请选择合作公司');
+  if (!data.title) return showAlert('请填写职位名称');
+  if (!data.type) return showAlert('请选择职位类型');
+  if (!data.employment_type) return showAlert('请选择雇佣性质');
   const jCity = document.getElementById('jCity').value.trim();
   const jState = document.getElementById('jState').value;
-  if (!jCity || !jState) return alert('请填写工作地点的城市和州');
+  if (!jCity || !jState) return showAlert('请填写工作地点的城市和州');
   const jZipErr = validateZip(document.getElementById('jZip').value.trim());
-  if (jZipErr) return alert(jZipErr);
+  if (jZipErr) return showAlert(jZipErr);
   const addrResult = await validateAddress({
     street: document.getElementById('jStreet').value.trim(),
     street2: document.getElementById('jStreet2').value.trim(),
@@ -10904,7 +10968,7 @@ function openCloseJobModal(job) {
 async function confirmCloseJob() {
   const id = document.getElementById('closeJobId').value;
   const reason = document.querySelector('#closeJobModal input[name=closeReason]:checked')?.value || '';
-  if (!reason) return alert('请选择关闭原因');
+  if (!reason) return showAlert('请选择关闭原因');
   const note = document.getElementById('closeJobNote').value;
   // Determine job_status from reason
   const statusMap = {
@@ -11190,7 +11254,7 @@ document.addEventListener('click', e => {
 async function saveProcessInquiry() {
   if (!currentInquiry) return;
   const checked = document.querySelector('input[name=procReason]:checked');
-  if (!checked) return alert('请选择处理原因');
+  if (!checked) return showAlert('请选择处理原因');
   const status = checked.value;
   const note = document.getElementById('procNote').value.trim();
   await api(`/admin/inquiries/${currentInquiry.id}/process`, { method: 'PUT', body: JSON.stringify({ status, note }) });
@@ -11619,10 +11683,10 @@ async function forceDownloadSigned(fileId) {
       showToast('✅ ' + r.message, 'success');
       if (currentPartner) await showPartnerById(currentPartner.id);
     } else {
-      alert(`未能获取已签版本：\n${r.message}\n\n状态: ${r.status}\n公司签署: ${r.companySigned||'未签'}\n对方签署: ${r.partnerSigned||'未签'}`);
+      showAlert(`未能获取已签版本：\n${r.message}\n\n状态: ${r.status}\n公司签署: ${r.companySigned||'未签'}\n对方签署: ${r.partnerSigned||'未签'}`);
     }
   } catch(e) {
-    alert('获取失败: ' + e.message);
+    showAlert('获取失败: ' + e.message);
   } finally {
     if (btn) { btn.textContent = origText; btn.disabled = false; }
   }
@@ -11644,13 +11708,13 @@ async function openContractEditorForNewPartnerContract(partnerId) {
 
 async function openContractEditorForPartnerFile() {
   const fileId = document.getElementById('partnerDsFileSelect').value;
-  if (!fileId) return alert('请先选择合同文件');
+  if (!fileId) return showAlert('请先选择合同文件');
   await _openContractEditor('partner-file', fileId, 'file', () => openPartnerDocuSign(_dsPartnerId));
 }
 
 async function openContractEditorForAssignment() {
   const id = document.getElementById('assignId').value;
-  if (!id) return alert('请先保存派工记录再编辑合同');
+  if (!id) return showAlert('请先保存派工记录再编辑合同');
   await _openContractEditor('assignment', id, 'assignment', r => {
     const fi = document.getElementById('aContractFileInfo');
     if (fi && r && r.fileName) fi.innerHTML = `✅ 合同已生成: <strong>${esc(r.fileName)}</strong>`;
@@ -11687,7 +11751,7 @@ async function _openContractEditor(mode, id, titleHint, onSuccess) {
     previewContractEditor();
   } catch (e) {
     document.getElementById('contractEditorTextarea').value = '';
-    alert('加载模板失败：' + e.message);
+    showAlert('加载模板失败：' + e.message);
   }
 }
 
@@ -12760,7 +12824,7 @@ async function confirmStatusChange() {
     selectEl.className = selectEl.className.replace(/badge-\S+/, `badge-${newStatus}`);
     selectEl.dataset.prevStatus = newStatus;
   } catch(e) {
-    alert('更新失败：' + e.message);
+    showAlert('更新失败：' + e.message);
     selectEl.value = prev;
   } finally {
     selectEl.disabled = false;
@@ -12963,7 +13027,7 @@ async function verifyLaborCompanyEin() {
 // (旧单文件删除入口已由 deleteLcFile 逐张删除取代, 保留函数防旧引用)
 async function deleteLaborCompanyW9() {
   const id = document.getElementById('lcId').value;
-  if (!id || !confirm('确认删除 W-9 文件？')) return;
+  if (!id || !await showConfirm('确认删除 W-9 文件？', { plain: true, danger: true })) return;
   try {
     await api(`/admin/labor-companies/${id}/w9`, { method: 'DELETE' });
     await loadLaborCompanies();
@@ -12971,7 +13035,7 @@ async function deleteLaborCompanyW9() {
   } catch(e) { showToast('删除失败', 'error'); }
 }
 async function deleteLaborCompany(id) {
-  if (!confirm('确认删除此分包商？此操作不可撤销。')) return;
+  if (!await showConfirm('确认删除此分包商？此操作不可撤销。', { plain: true, danger: true })) return;
   try {
     await api(`/admin/labor-companies/${id}`, { method: 'DELETE' });
     await loadLaborCompanies();
@@ -13015,7 +13079,7 @@ async function assignWorkerLaborCompany() {
   }
 }
 async function clearWorkerLaborCompany() {
-  if (!confirm('确认取消分包商分配？任务将重置为待处理。')) return;
+  if (!await showConfirm('确认取消分包商分配？任务将重置为待处理。', { plain: true })) return;
   try {
     await api(`/admin/worker-accounts/${_onboardingWorkerId}/payment-labor-company`, { method: 'PUT', body: JSON.stringify({ labor_company_id: null }) });
     closePaymentLaborCompanyModal();
@@ -13106,7 +13170,7 @@ function renderPartners(partners) {
 async function setPartnerAbolished(id, abolished) {
   try {
     await api(`/admin/partners/${id}/abolish`, { method:'POST', body: JSON.stringify({ abolished }) });
-  } catch (e) { alert('操作失败：' + (e && e.message ? e.message : e)); return; }
+  } catch (e) { showAlert('操作失败：' + (e && e.message ? e.message : e)); return; }
   const p = allPartners.find(x => x.id === id);
   if (p) { p.abolished = abolished ? 1 : 0; if (abolished) p.active = 0; }
   filterPartners();
@@ -13134,7 +13198,7 @@ function onPartnerSelectChange() {
 function printSelectedPartnerLabels() {
   const ids = _selectedPartnerCheckboxes().filter(x => x.checked).map(x => parseInt(x.value, 10));
   const items = ids.map(id => allPartners.find(p => p.id === id)).filter(p => p && !p.abolished);
-  if (!items.length) { alert('请先勾选要打印标签的公司'); return; }
+  if (!items.length) { showAlert('请先勾选要打印标签的公司'); return; }
   openPartnerLabelSheetPrint(items);
 }
 // Letter 纸批量标签：Avery 5160 版式（3 列 × 10 行 = 每页 30 个，1 × 2-5/8″）
@@ -13392,7 +13456,7 @@ function openPartnerLabelSheetPrint(items) {
   <\/script>
 </body></html>`;
   const w = window.open('', '_blank', 'width=900,height=700');
-  if (!w) { alert('请允许弹出窗口以打印标签'); return; }
+  if (!w) { showAlert('请允许弹出窗口以打印标签'); return; }
   w.document.open(); w.document.write(html); w.document.close();
 }
 
@@ -13485,7 +13549,7 @@ function printDocChecklistLabels() {
   <script>window.addEventListener('load', function(){ setTimeout(function(){ try { window.print(); } catch(e){} }, 250); });<\/script>
 </body></html>`;
   const w = window.open('', '_blank', 'width=920,height=720');
-  if (!w) { alert('请允许弹出窗口以打印标签'); return; }
+  if (!w) { showAlert('请允许弹出窗口以打印标签'); return; }
   w.document.open(); w.document.write(html); w.document.close();
 }
 
@@ -13841,7 +13905,7 @@ async function dsPrintQrLabels() {
   <\/script>
 </body></html>`;
   const w = window.open('', '_blank', 'width=980,height=760');
-  if (!w) { alert('请允许弹出窗口以打印标签'); return; }
+  if (!w) { showAlert('请允许弹出窗口以打印标签'); return; }
   w.document.open(); w.document.write(html); w.document.close();
 }
 
@@ -13950,7 +14014,7 @@ function openPartnerLabelPrint(id, name, number) {
   <\/script>
 </body></html>`;
   const w = window.open('', '_blank', 'width=520,height=420');
-  if (!w) { alert('请允许弹出窗口以打印标签'); return; }
+  if (!w) { showAlert('请允许弹出窗口以打印标签'); return; }
   w.document.open(); w.document.write(html); w.document.close();
 }
 
@@ -14134,7 +14198,7 @@ function _openQrPrintWindow(title, hintText, pagesHtml) {
   <\/script>
 </body></html>`;
   const w = window.open('', '_blank', 'width=980,height=760');
-  if (!w) { alert('请允许弹出窗口以打印二维码'); return; }
+  if (!w) { showAlert('请允许弹出窗口以打印二维码'); return; }
   w.document.open(); w.document.write(html); w.document.close();
 }
 async function printPartnerQrSheet(id, name, number) {
@@ -14150,7 +14214,7 @@ async function printPartnerQrSheet(id, name, number) {
 async function printSelectedPartnerQrSheets() {
   const ids = _selectedPartnerCheckboxes().filter(x => x.checked).map(x => parseInt(x.value, 10));
   const items = ids.map(pid => allPartners.find(p => p.id === pid)).filter(p => p && !p.abolished);
-  if (!items.length) { alert('请先勾选要打印二维码的公司'); return; }
+  if (!items.length) { showAlert('请先勾选要打印二维码的公司'); return; }
   showToast(`正在生成 ${items.length} 家公司的二维码…`);
   await _loadQRLib();
   const wdoc = await _wdocQrShared();
@@ -14178,7 +14242,7 @@ let _qrlItems = [], _qrlPages = [], _qrlPage = 0, _qrlSel = 0;
 async function openPartnerQrLabelModal() {
   const ids = _selectedPartnerCheckboxes().filter(x => x.checked).map(x => parseInt(x.value, 10));
   const partners = ids.map(pid => allPartners.find(p => p.id === pid)).filter(p => p && !p.abolished);
-  if (!partners.length) { alert('请先勾选要打标签的公司'); return; }
+  if (!partners.length) { showAlert('请先勾选要打标签的公司'); return; }
   showToast('正在生成二维码…');
   await _loadQRLib();
   const wdoc = await _wdocQrShared();
@@ -14382,7 +14446,7 @@ function _qrlPrint() {
   <script>window.addEventListener('load', function(){ setTimeout(function(){ try { window.print(); } catch(e){} }, 250); });<\/script>
 </body></html>`;
   const w = window.open('', '_blank', 'width=920,height=760');
-  if (!w) { alert('请允许弹出窗口以打印标签'); return; }
+  if (!w) { showAlert('请允许弹出窗口以打印标签'); return; }
   w.document.open(); w.document.write(html); w.document.close();
 }
 
@@ -15239,18 +15303,18 @@ function _initPartnerFileDrop() {
 }
 
 const _PREDEFINED_INDUSTRIES = ['物流 Logistics','制造业 Manufacturing','食品加工 Food Processing','餐饮 Restaurant','零售 Retail','建筑 Construction','农业 Agriculture','仓储 Warehousing','清洁 Cleaning','酒店 Hospitality','医疗 Healthcare','运输 Transportation','其他 Other'];
-function confirmNewIndustry(el) {
+async function confirmNewIndustry(el) {
   const val = el.value.trim();
   if (!val || _PREDEFINED_INDUSTRIES.includes(val)) return;
-  if (!confirm(`确认新增行业 "${val}"？`)) el.value = '';
+  if (!await showConfirm(`确认新增行业 "${val}"？`, { plain: true })) el.value = '';
 }
-function addNewSvcTag() {
+async function addNewSvcTag() {
   const input = document.getElementById('pSvcNewInput');
   const val = input.value.trim();
   if (!val) return;
   const existing = document.querySelector(`#pSvcTags .svc-tag[data-v="${val.replace(/"/g,'&quot;')}"]`);
   if (existing) { existing.classList.add('active'); input.value = ''; return; }
-  if (!confirm(`确认新增合作服务 "${val}"？`)) return;
+  if (!await showConfirm(`确认新增合作服务 "${val}"？`, { plain: true })) return;
   const tag = document.createElement('span');
   tag.className = 'svc-tag svc-tag-new active';
   tag.dataset.v = val; tag.dataset.custom = '1';
@@ -15286,9 +15350,9 @@ async function loadPartnerFiles(pid) {
 
 async function uploadPartnerFile() {
   const pid = document.getElementById('partnerId').value;
-  if (!pid) return alert('请先保存公司信息后再上传文件');
+  if (!pid) return showAlert('请先保存公司信息后再上传文件');
   const fileInput = document.getElementById('pFileInput');
-  if (!fileInput.files.length) return alert('请选择或拖入文件');
+  if (!fileInput.files.length) return showAlert('请选择或拖入文件');
   // The endpoint takes one file per request — upload each picked/dropped file in
   // turn, all under the same 类型/标签.
   let ok = 0; const fails = [];
@@ -15309,7 +15373,7 @@ async function uploadPartnerFile() {
     const nameEl = document.getElementById('pFileName'); if (nameEl) nameEl.textContent = '未选择文件';
     loadPartnerFiles(pid);
   }
-  if (fails.length) alert(`已上传 ${ok} 个；失败：\n${fails.join('\n')}`);
+  if (fails.length) showAlert(`已上传 ${ok} 个；失败：\n${fails.join('\n')}`);
   else if (ok) showToast(`已上传 ${ok} 个文件 ✓`);
 }
 
@@ -15321,7 +15385,7 @@ async function deletePartnerFile(fid, pid) {
 
 async function generateAgreementTemplate() {
   const pid = document.getElementById('partnerId').value;
-  if (!pid) return alert('请先保存公司信息后再生成模板');
+  if (!pid) return showAlert('请先保存公司信息后再生成模板');
   const btn = event.target;
   btn.disabled = true;
   btn.textContent = '生成中...';
@@ -15331,10 +15395,10 @@ async function generateAgreementTemplate() {
       await loadPartnerFiles(pid);
       showToast('合伙协议模板已生成，可直接发送 DocuSeal 签署');
     } else {
-      alert(r.error || '生成失败');
+      showAlert(r.error || '生成失败');
     }
   } catch(e) {
-    alert('生成失败：' + e.message);
+    showAlert('生成失败：' + e.message);
   } finally {
     btn.disabled = false;
     btn.textContent = '⚡ 生成合伙协议模板';
@@ -15410,7 +15474,7 @@ function renderContractPreview() {
 
 function openContractEditor() {
   const pid = document.getElementById('partnerId').value;
-  if (!pid) return alert('请先保存公司信息后再编辑合同');
+  if (!pid) return showAlert('请先保存公司信息后再编辑合同');
   _contractEditorPid = pid;
   const pName = document.getElementById('pName').value || 'Partner Company';
   const today = new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
@@ -15597,13 +15661,13 @@ async function generateDefaultPartnerContract() {
   } catch (e) {
     btn.disabled = false;
     btn.textContent = '📄 自动生成默认合同模板';
-    alert('生成失败：' + e.message);
+    showAlert('生成失败：' + e.message);
   }
 }
 
 async function resetPartnerContract() {
   if (!_dsPartnerId) return;
-  if (!confirm('确定要清空现有合同并重新生成新合同吗？\n\n现有合同文件及签署邀请将被删除/撤销，生成全新的默认合同模板。')) return;
+  if (!await showConfirm('确定要清空现有合同并重新生成新合同吗？\n\n现有合同文件及签署邀请将被删除/撤销，生成全新的默认合同模板。', { plain: true, danger: true })) return;
   const btn = document.getElementById('partnerDsResetBtn');
   btn.disabled = true;
   btn.textContent = '处理中…';
@@ -15615,7 +15679,7 @@ async function resetPartnerContract() {
       throw new Error(r?.error || '操作失败');
     }
   } catch (e) {
-    alert('操作失败：' + e.message);
+    showAlert('操作失败：' + e.message);
     btn.disabled = false;
     btn.textContent = '🔄 清空重新生成';
   }
@@ -15823,15 +15887,15 @@ async function savePartner() {
       LinkedIn: document.getElementById('pLinkedin').value
     })
   };
-  if (!data.name) return alert('请填写公司名称');
-  if (!data.industry) return alert('请选择行业');
+  if (!data.name) return showAlert('请填写公司名称');
+  if (!data.industry) return showAlert('请选择行业');
   // Validate: at least one named contact across all addresses
   const firstContact = contacts[0];
-  if (!firstContact || !(`${firstContact.first_name||''} ${firstContact.last_name||''}`.trim())) return alert('请至少填写一名联系人姓名（名 + 姓）');
+  if (!firstContact || !(`${firstContact.first_name||''} ${firstContact.last_name||''}`.trim())) return showAlert('请至少填写一名联系人姓名（名 + 姓）');
   // Validate at least one address
-  if (!addrs.length || !addrs.some(a => (a.street||a.address||'').trim())) return alert('请至少填写一个公司地址');
+  if (!addrs.length || !addrs.some(a => (a.street||a.address||'').trim())) return showAlert('请至少填写一个公司地址');
   // Validate at least one service
-  if (!allSvcs.length) return alert('请至少选择一项合作服务');
+  if (!allSvcs.length) return showAlert('请至少选择一项合作服务');
   // Guard: warn if trying to activate partner without a completed contract
   if (data.active && id) {
     const existingPartner = allPartners.find(p => p.id == id);
@@ -15901,9 +15965,9 @@ async function confirmDeletePartner() {
     const p = allPartners.find(x => x.id === id);
     if (p) { p.abolished = 1; p.active = 0; }
     if (ab && ab.success) {
-      alert('该公司有关联数据（合同/发票等），无法彻底删除，已改为「作废」——变灰保留，可随时点「↩ 恢复」还原。');
+      showAlert('该公司有关联数据（合同/发票等），无法彻底删除，已改为「作废」——变灰保留，可随时点「↩ 恢复」还原。');
     } else {
-      alert('删除失败，作废也未成功，请稍后重试或联系管理员。');
+      showAlert('删除失败，作废也未成功，请稍后重试或联系管理员。');
     }
   }
   document.getElementById('partnerDeleteModal').classList.remove('show');
@@ -15956,10 +16020,10 @@ async function runBackupNow() {
     if (r.success) {
       const ok = r.result.results.filter(x => x.status === 'ok').length;
       const fail = r.result.results.filter(x => x.status === 'error').length;
-      alert(`备份完成！成功: ${ok} 个位置${fail ? ', 失败: ' + fail + ' 个位置' : ''}`);
+      showAlert(`备份完成！成功: ${ok} 个位置${fail ? ', 失败: ' + fail + ' 个位置' : ''}`);
     }
   } catch (e) {
-    alert('备份失败: ' + e.message);
+    showAlert('备份失败: ' + e.message);
   }
   btn.disabled = false;
   btn.textContent = '立即备份';
@@ -16631,7 +16695,7 @@ async function uploadEmpFile() {
 }
 
 async function deleteEmpFile(docId) {
-  if (!confirm('确认删除此文件？')) return;
+  if (!await showConfirm('确认删除此文件？', { plain: true, danger: true })) return;
   const r = await api(`/admin/worker-accounts/${_empFilesWorkerId}/id-docs/${docId}`, { method: 'DELETE' });
   if (r?.success) {
     showToast('已删除');
@@ -17600,7 +17664,7 @@ async function deleteEmployee(id, name) {
   if (!confirmed) return;
   const result = await api(`/admin/employees/${id}/hard-delete`, { method: 'DELETE' });
   if (result && result.error) {
-    alert(`❌ 删除失败：${result.error}`);
+    showAlert(`❌ 删除失败：${result.error}`);
     return;
   }
   showToast('✅ 员工已永久删除');
@@ -18076,7 +18140,7 @@ async function saveRating() {
   };
   const allZero = !data.score_efficiency && !data.score_quality && !data.score_attendance &&
                   !data.score_safety && !data.score_teamwork && !data.score_skills;
-  if (allZero) return alert('请至少为一个维度打分');
+  if (allZero) return showAlert('请至少为一个维度打分');
   if (id) await api(`/admin/employee-ratings/${id}`, { method:'PUT', body:JSON.stringify(data) });
   else    await api('/admin/employee-ratings', { method:'POST', body:JSON.stringify(data) });
   clearModalState('ratingModal');
@@ -18238,22 +18302,22 @@ function getDocContactValues(type) {
 async function generateEmpDocLink() {
   const btn = document.getElementById('btnGenDocLink');
   const empId = document.getElementById('empDocLinkEmpId').value;
-  if (!empId) return alert('员工信息缺失，请关闭后重试');
+  if (!empId) return showAlert('员工信息缺失，请关闭后重试');
 
   const phoneChecked = document.getElementById('docReqViaPhone').checked;
   const emailChecked = document.getElementById('docReqViaEmail').checked;
-  if (!phoneChecked && !emailChecked) return alert('请至少选择一种发送方式');
+  if (!phoneChecked && !emailChecked) return showAlert('请至少选择一种发送方式');
 
   const phones = phoneChecked ? getDocContactValues('phone') : [];
   const emails = emailChecked ? getDocContactValues('email') : [];
-  if (phoneChecked && !phones.length) return alert('请填写至少一个手机号码');
-  if (emailChecked && !emails.length) return alert('请填写至少一个邮箱地址');
+  if (phoneChecked && !phones.length) return showAlert('请填写至少一个手机号码');
+  if (emailChecked && !emails.length) return showAlert('请填写至少一个邮箱地址');
 
   const note = document.getElementById('empDocAdminNote').value;
   const lang = document.getElementById('docReqLang').value;
   const docIds = { gov_id: 'docReqGovId', ssn: 'docReqSsn', work_card: 'docReqWorkCard' };
   const requestedDocs = Object.entries(docIds).filter(([,id]) => document.getElementById(id).checked).map(([k]) => k);
-  if (!requestedDocs.length) return alert('请至少选择一种材料');
+  if (!requestedDocs.length) return showAlert('请至少选择一种材料');
   const includePos = document.getElementById('docReqIncludePositions').checked;
   const positions = includePos
     ? Array.from(document.querySelectorAll('.docPosCheck:checked')).map(c => c.value)
@@ -18286,7 +18350,7 @@ async function generateEmpDocLink() {
         _empDocOrigPhones = [...phones];
         _empDocOrigEmails = [...emails];
       } catch(e) {
-        alert('更新联系方式失败：' + (e.message || '网络错误'));
+        showAlert('更新联系方式失败：' + (e.message || '网络错误'));
       }
     }
   }
@@ -18296,7 +18360,7 @@ async function generateEmpDocLink() {
   btn.textContent = '生成中…';
   try {
     const r = await api(`/admin/employees/${empId}/doc-request`, { method:'POST', body: JSON.stringify({ admin_note: note, requested_docs: requestedDocs, lang, positions }) });
-    if (r.error) { alert('生成失败：' + r.error); btn.disabled = false; btn.textContent = '生成链接'; return; }
+    if (r.error) { showAlert('生成失败：' + r.error); btn.disabled = false; btn.textContent = '生成链接'; return; }
     if (r.token) {
       _currentDocLinkUrl = location.origin + '/emp-docs.html?token=' + r.token + '&lang=' + lang;
       document.getElementById('empDocLinkUrl').textContent = _currentDocLinkUrl;
@@ -18319,12 +18383,12 @@ async function generateEmpDocLink() {
         document.getElementById('empDocLinkCopied').style.color = 'var(--blue)';
       }
     } else {
-      alert('生成失败，请重试');
+      showAlert('生成失败，请重试');
       btn.disabled = false;
       btn.textContent = '生成链接';
     }
   } catch(e) {
-    alert('请求失败：' + (e.message || '网络错误'));
+    showAlert('请求失败：' + (e.message || '网络错误'));
     btn.disabled = false;
     btn.textContent = '生成链接';
   }
@@ -18449,7 +18513,7 @@ function prefillJobRecord(record) {
 async function confirmAssignJob() {
   const empId = document.getElementById('assignJobEmpId').value;
   const jobId = document.getElementById('assignJobSelect').value;
-  if (!jobId) return alert('请选择一个职位');
+  if (!jobId) return showAlert('请选择一个职位');
   const pay = parseFloat(document.getElementById('ajEmpPay').value) || 0;
   const billed = parseFloat(document.getElementById('ajClientBilled').value) || 0;
   const body = {
@@ -18471,7 +18535,7 @@ async function confirmAssignJob() {
   };
   try {
     const r = await api(`/admin/employees/${empId}/assign-job`, { method:'POST', body: JSON.stringify(body) });
-    if (r.error) return alert('保存失败：' + r.error);
+    if (r.error) return showAlert('保存失败：' + r.error);
     clearModalState('assignJobModal');
     document.getElementById('assignJobModal').classList.remove('show');
     _allJobsCache = null;
@@ -18480,7 +18544,7 @@ async function confirmAssignJob() {
     // Refresh job records list in employee edit modal if open
     if (document.getElementById('empModal').classList.contains('show') && document.getElementById('empId').value == empId) loadEditEmpJobRecords(empId);
   } catch(e) {
-    alert('请求失败：' + (e.message || '网络错误'));
+    showAlert('请求失败：' + (e.message || '网络错误'));
   }
 }
 
@@ -18560,7 +18624,7 @@ async function exportAllContacts(qs) {
     a.download = ((r.headers.get('Content-Disposition') || '').match(/filename=([^;]+)/) || [])[1] || ('contacts-' + new Date().toISOString().slice(0, 10) + '.csv');
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-  } catch (e) { alert('导出失败：' + (e.message || e)); }
+  } catch (e) { showAlert('导出失败：' + (e.message || e)); }
   finally { btn.disabled = false; btn.textContent = old; }
 }
 function exportEmployeeCSV() {
@@ -19057,13 +19121,13 @@ async function saveTimeEntry() {
     job_id:      document.getElementById('tJob').value || null,
     notes:       document.getElementById('tNotes').value
   };
-  if (!data.employee_id) return alert('请选择员工');
-  if (!data.clock_in)    return alert('请填写上班时间');
+  if (!data.employee_id) return showAlert('请选择员工');
+  if (!data.clock_in)    return showAlert('请填写上班时间');
   const r = id
     ? await api(`/admin/time-entries/${id}`, { method:'PUT', body: JSON.stringify(data) })
     : await api('/admin/time-entries', { method:'POST', body: JSON.stringify(data) });
   if (r.success) { clearModalState('timeModal'); closeTimeModal(); loadTimeEntries(); }
-  else alert(r.error||'保存失败');
+  else showAlert(r.error||'保存失败');
 }
 
 async function clockOutEntry(id) {
@@ -19317,7 +19381,7 @@ function updateTsEmployeeInfo() {
 }
 
 async function saveBatchTimesheet() {
-  if (!tsSelectedEmps.length) return alert('请先搜索并添加至少一名员工');
+  if (!tsSelectedEmps.length) return showAlert('请先搜索并添加至少一名员工');
   const entries = [];
   let periodStart = '', periodEnd = '';
   let totalRows = 0, skippedRows = 0;
@@ -19347,8 +19411,8 @@ async function saveBatchTimesheet() {
       lunch_start: breaks[0]?.start || '', lunch_end: breaks[0]?.end || '' });
   });
   if (entries.length === 0) {
-    if (skippedRows > 0) return alert('有 ' + skippedRows + ' 天只填了上班或下班时间，请确保每天的上班时间和下班时间都填写完整。\n（午休时间可以不填）');
-    return alert('请至少填写一天的上班时间和下班时间。\n（午休时间可以不填）');
+    if (skippedRows > 0) return showAlert('有 ' + skippedRows + ' 天只填了上班或下班时间，请确保每天的上班时间和下班时间都填写完整。\n（午休时间可以不填）');
+    return showAlert('请至少填写一天的上班时间和下班时间。\n（午休时间可以不填）');
   }
   const jobId = document.getElementById('tsJob').value || null;
   const company = document.getElementById('tsCompany').value || '';
@@ -19366,7 +19430,7 @@ async function saveBatchTimesheet() {
         })
       });
       if (r.success) results.push({ emp, token: r.token, count: r.count });
-      else alert(`${emp.name} 保存失败: ${r.error || '未知错误'}`);
+      else showAlert(`${emp.name} 保存失败: ${r.error || '未知错误'}`);
     }
     if (results.length) {
       clearModalState('tsModal');
@@ -19379,7 +19443,7 @@ async function saveBatchTimesheet() {
       }
     }
   } catch(e) {
-    alert('网络错误，请检查连接后重试：' + e.message);
+    showAlert('网络错误，请检查连接后重试：' + e.message);
   }
 }
 
@@ -19401,7 +19465,7 @@ function showTsLink(token, count, emp) {
 }
 function copyTsLink() {
   const url = document.getElementById('tsLinkUrl').textContent;
-  navigator.clipboard.writeText(url).then(() => alert('链接已复制'));
+  navigator.clipboard.writeText(url).then(() => showAlert('链接已复制'));
 }
 function openTsEmail() {
   const url = document.getElementById('tsLinkUrl').textContent;
@@ -19421,7 +19485,7 @@ function openTsSms() {
 
 function printTimesheet() {
   const empId = document.getElementById('tsEmp').value;
-  if (!empId) return alert('请先选择员工');
+  if (!empId) return showAlert('请先选择员工');
   // Update print header info
   updateTsEmployeeInfo();
   const startDate = document.getElementById('tsStartDate').value;
@@ -19766,36 +19830,36 @@ async function loadDividendInvBatches() {
 
 async function voteInvBatchApprove(id) {
   const r = await api(`/admin/contractor-invoice-batches/${id}/vote-approve`, { method:'POST', body:'{}' });
-  if (r.error) { alert(r.error); return; }
+  if (r.error) { showAlert(r.error); return; }
   showToast(r.all_approved ? '✅ 全部无异议通过！可以确认分红' : `✅ 已投无异议 (${r.approve_count}/${r.staff_count})`);
   loadDividendInvBatches();
 }
 
 async function voteInvBatchDistributed(id) {
   const r = await api(`/admin/contractor-invoice-batches/${id}/vote-distributed`, { method:'POST', body:'{}' });
-  if (r.error) { alert(r.error); return; }
+  if (r.error) { showAlert(r.error); return; }
   showToast(r.all_distributed ? '✅ 全部确认分红，发票已归档至历史' : `✅ 已确认分红 (${r.dist_count}/${r.staff_count})`);
   loadDividendInvBatches();
 }
 
 async function deleteInvBatch(id, name) {
-  if (!confirm(`确定删除批次「${name}」？发票将回到承包商发票页面。`)) return;
+  if (!await showConfirm(`确定删除批次「${name}」？发票将回到承包商发票页面。`, { plain: true, danger: true })) return;
   try {
     const r = await api(`/admin/contractor-invoice-batches/${id}`, { method: 'DELETE' });
     if (r.ok) { showToast('批次已删除'); loadDividendInvBatches(); } else throw new Error(r.error);
-  } catch(e) { alert('操作失败: ' + e.message); }
+  } catch(e) { showAlert('操作失败: ' + e.message); }
 }
 
 async function voteDividendApprove(id) {
   const r = await api(`/admin/timesheet-sheets/${id}/vote-approve`, { method:'POST', body:'{}' });
-  if (r.error) { alert(r.error); return; }
+  if (r.error) { showAlert(r.error); return; }
   showToast(r.all_approved ? '✅ 全部无异议通过！可以确认分红' : `✅ 已投无异议 (${r.approve_count}/${r.staff_count})`);
   loadTsDividend();
 }
 
 async function voteDividendDistributed(id) {
   const r = await api(`/admin/timesheet-sheets/${id}/vote-distributed`, { method:'POST', body:'{}' });
-  if (r.error) { alert(r.error); return; }
+  if (r.error) { showAlert(r.error); return; }
   showToast(r.all_distributed ? '✅ 全部确认分红，已归档至工时历史' : `✅ 已确认分红 (${r.dist_count}/${r.staff_count})`);
   loadTsDividend();
 }
@@ -19846,14 +19910,14 @@ async function loadSysDividend() {
 
 async function sysVoteDividendApprove(id) {
   const r = await api(`/admin/timesheet-sheets/${id}/vote-approve`, { method:'POST', body:'{}' });
-  if (r.error) { alert(r.error); return; }
+  if (r.error) { showAlert(r.error); return; }
   showToast(r.all_approved ? '✅ 全部无异议通过！可以确认分红' : `✅ 已投无异议 (${r.approve_count}/${r.staff_count})`);
   loadSysDividend();
 }
 
 async function sysVoteDividendDistributed(id) {
   const r = await api(`/admin/timesheet-sheets/${id}/vote-distributed`, { method:'POST', body:'{}' });
-  if (r.error) { alert(r.error); return; }
+  if (r.error) { showAlert(r.error); return; }
   showToast(r.all_distributed ? '✅ 全部确认分红，已归档至已分红' : `✅ 已确认分红 (${r.dist_count}/${r.staff_count})`);
   loadSysDividend();
 }
@@ -19971,7 +20035,7 @@ function printWdocQr() {
 }
 
 async function regenWdocQr() {
-  if (!confirm('重新生成会使旧二维码立即失效，已打印/分享的旧码将无法使用。确定继续？')) return;
+  if (!await showConfirm('重新生成会使旧二维码立即失效，已打印/分享的旧码将无法使用。确定继续？', { plain: true, danger: true })) return;
   try {
     await api('/admin/worker-doc-qr/regenerate', { method: 'POST' });
     await renderWdocQr();
@@ -20021,7 +20085,7 @@ async function viewWdocFiles(subId) {
 }
 
 async function deleteWdocSubmission(subId) {
-  if (!confirm('确定删除这条提交及其所有文件？此操作不可撤销。')) return;
+  if (!await showConfirm('确定删除这条提交及其所有文件？此操作不可撤销。', { plain: true, danger: true })) return;
   try {
     await api(`/admin/worker-doc-submissions/${subId}`, { method: 'DELETE' });
     showToast('已删除', 'success', 2000);
@@ -20073,7 +20137,7 @@ function closeDocModal() { guardClose('docModal'); }
 
 async function uploadDoc() {
   const empId = document.getElementById('docEmpSel').value;
-  if (!empId) return alert('请选择员工');
+  if (!empId) return showAlert('请选择员工');
   const file = document.getElementById('docFile').files[0];
   const fd = new FormData();
   fd.append('doc_type',    document.getElementById('docType').value);
@@ -20088,7 +20152,7 @@ async function uploadDoc() {
   });
   const r = await res.json();
   if (r.success || r.id) { clearModalState('docModal'); closeDocModal(); loadDocuments(); }
-  else alert(r.error||'上传失败');
+  else showAlert(r.error||'上传失败');
 }
 
 async function deleteDoc(id) {
@@ -20178,7 +20242,7 @@ function closeBgModal() { guardClose('bgModal'); }
 async function saveBgCheck() {
   const id    = document.getElementById('bgId').value;
   const empId = document.getElementById('bgEmpSel').value;
-  if (!empId) return alert('请选择员工');
+  if (!empId) return showAlert('请选择员工');
   const file = document.getElementById('bgFile').files[0];
   const fd = new FormData();
   fd.append('employee_id',   empId);
@@ -20196,7 +20260,7 @@ async function saveBgCheck() {
   const res = await fetch(url, { method, headers:{'Authorization':`Bearer ${TOKEN}`}, body: fd });
   const r = await res.json();
   if (r.success || r.id) { clearModalState('bgModal'); closeBgModal(); loadBgChecks(); }
-  else alert(r.error||'保存失败');
+  else showAlert(r.error||'保存失败');
 }
 
 async function deleteBgCheck(id) {
@@ -20408,7 +20472,7 @@ async function createInviteLink() {
 }
 
 async function revokeInviteLink(id) {
-  if (!confirm('确定撤销此邀请链接？')) return;
+  if (!await showConfirm('确定撤销此邀请链接？', { plain: true, danger: true })) return;
   await api('/admin/manager-invites/' + id, { method: 'DELETE' });
   loadManagerInviteLinks();
 }
@@ -20452,7 +20516,7 @@ function toggleAccPw(id) {
   el.dataset.shown = shown ? '0' : '1';
 }
 async function approveAccount(id, name) {
-  if (!confirm(`批准「${name}」的会计账号？批准后对方即可登录会计对账页。`)) return;
+  if (!await showConfirm(`批准「${name}」的会计账号？批准后对方即可登录会计对账页。`, { plain: true })) return;
   const r = await api(`/admin/accounts/${id}/approve`, { method: 'POST' });
   if (r && r.success) { showToast('✅ 已批准'); loadAccounts(); }
   else showToast((r && r.error) || '操作失败', 'error');
@@ -20537,17 +20601,17 @@ async function saveAccount() {
     bank_ann_reviewer: document.getElementById('accAnnReviewer').checked ? 1 : 0
   };
   if (d.role === 'gm') d.role = 'admin';   // 总监存成 admin + needs_approval
-  if (!d.username) return alert('请输入用户名');
-  if (!id && !d.password) return alert('请输入密码');
+  if (!d.username) return showAlert('请输入用户名');
+  if (!id && !d.password) return showAlert('请输入密码');
   if (!d.password) delete d.password;
   let r;
   if (id) {
     r = await api(`/admin/accounts/${id}`, { method: 'PUT', body: JSON.stringify(d) });
   } else {
-    if (!d.password) return alert('请输入密码');
+    if (!d.password) return showAlert('请输入密码');
     r = await api('/admin/accounts', { method: 'POST', body: JSON.stringify(d) });
   }
-  if (!r || r.error) { alert('保存失败：' + (r && r.error ? r.error : '请重试')); return; }
+  if (!r || r.error) { showAlert('保存失败：' + (r && r.error ? r.error : '请重试')); return; }
   clearModalState('accountModal');
   closeModal('accountModal');
   loadAccounts();
@@ -25276,7 +25340,7 @@ function _lcRenderFileList(containerId, files) {
     </div>`).join('');
 }
 async function deleteLcFile(fid) {
-  if (!confirm('确定删除这张文件？')) return;
+  if (!await showConfirm('确定删除这张文件？', { plain: true, danger: true })) return;
   try {
     await api(`/admin/labor-companies/files/${fid}`, { method: 'DELETE' });
     await loadLaborCompanies();
@@ -25717,7 +25781,7 @@ async function paymentAuthAddCompany() {
   if (!_onboardingWorkerId) return;
   try {
     const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/payment-auth-add-company`, { method: 'POST' });
-    if (r.error) { alert('❌ ' + r.error); return; }
+    if (r.error) { showAlert('❌ ' + r.error); return; }
     if (r.companySignUrl) {
       window.open(r.companySignUrl, '_blank');
     } else if (r.needsResend) {
@@ -25727,9 +25791,9 @@ async function paymentAuthAddCompany() {
       );
       if (ok) openPaymentAuthModal();
     } else {
-      alert('⚠️ 未获取到公司签名链接，请检查 DocuSeal 配置');
+      showAlert('⚠️ 未获取到公司签名链接，请检查 DocuSeal 配置');
     }
-  } catch (e) { alert('❌ ' + e.message); }
+  } catch (e) { showAlert('❌ ' + e.message); }
 }
 
 let _payAuthCompanyInfo = null;
@@ -26300,7 +26364,7 @@ async function refreshTaxFilingDocsModal() {
 async function uploadTaxFilingDoc(workerId, formType, taxYear, input) {
   if (!input.files || !input.files[0]) return;
   const file = input.files[0];
-  if (file.size > 20 * 1024 * 1024) { alert('文件不能超过 20MB'); return; }
+  if (file.size > 20 * 1024 * 1024) { showAlert('文件不能超过 20MB'); return; }
   const fd = new FormData();
   fd.append('file', file);
   fd.append('form_type', formType);
@@ -26313,7 +26377,7 @@ async function uploadTaxFilingDoc(workerId, formType, taxYear, input) {
     }).then(r => r.json());
     await refreshTaxFilingDocsModal();
     loadWorkerAccounts(); // refresh table to update green/yellow button
-  } catch(e) { alert('上传失败: ' + e.message); }
+  } catch(e) { showAlert('上传失败: ' + e.message); }
 }
 
 async function deleteTaxFilingDoc(docId) {
@@ -26465,8 +26529,8 @@ async function saveWorkerAccount() {
     employee_id: document.getElementById('wAccEmployee').value || null,
     active: parseInt(document.getElementById('wAccActive').value)
   };
-  if (!d.username) return alert('请输入用户名');
-  if (!id && !d.password) return alert('请输入密码');
+  if (!d.username) return showAlert('请输入用户名');
+  if (!id && !d.password) return showAlert('请输入密码');
   if (!d.password) delete d.password;
   if (id) await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify(d) });
   else await api('/admin/worker-accounts', { method:'POST', body:JSON.stringify(d) });
@@ -26907,28 +26971,28 @@ function renderEmpInvoiceTable(rows) {
 
 // ── Mark invoice as dividend distributed ──
 async function markPendingDividend(id, invNum) {
-  if (!confirm(`确定将发票 ${invNum} 标记为待分红？\n确认无误后此发票将进入待分红流程。`)) return;
+  if (!await showConfirm(`确定将发票 ${invNum} 标记为待分红？\n确认无误后此发票将进入待分红流程。`, { plain: true })) return;
   try {
     const r = await api(`/admin/contractor-invoices/${id}/mark-pending-dividend`, { method: 'POST' });
     if (r.ok) { showToast('✅ 已确认无误，进入待分红'); loadEmpInvoiceTab(); } else throw new Error(r.error);
-  } catch(e) { alert('操作失败: ' + e.message); }
+  } catch(e) { showAlert('操作失败: ' + e.message); }
 }
 
 async function markDividendDistributed(id, invNum) {
-  if (!confirm(`确定将发票 ${invNum} 标记为已分红？\n标记后将移至历史发票页面。`)) return;
+  if (!await showConfirm(`确定将发票 ${invNum} 标记为已分红？\n标记后将移至历史发票页面。`, { plain: true })) return;
   try {
     const r = await api(`/admin/contractor-invoices/${id}/mark-dividend`, { method: 'POST' });
     if (r.ok) { showToast('已标记为已分红'); loadEmpInvoiceTab(); } else throw new Error(r.error);
-  } catch(e) { alert('操作失败: ' + e.message); }
+  } catch(e) { showAlert('操作失败: ' + e.message); }
 }
 
 // ── Undo dividend distributed ──
 async function undoDividendDistributed(id, invNum) {
-  if (!confirm(`确定将发票 ${invNum} 撤回分红标记？\n将移回承包商发票页面。`)) return;
+  if (!await showConfirm(`确定将发票 ${invNum} 撤回分红标记？\n将移回承包商发票页面。`, { plain: true, danger: true })) return;
   try {
     const r = await api(`/admin/contractor-invoices/${id}/undo-dividend`, { method: 'POST' });
     if (r.ok) { showToast('已撤回分红标记'); loadEmpInvoiceHistoryTab(); } else throw new Error(r.error);
-  } catch(e) { alert('操作失败: ' + e.message); }
+  } catch(e) { showAlert('操作失败: ' + e.message); }
 }
 
 // ── Load historical (dividend distributed) invoices ──
@@ -26976,7 +27040,7 @@ async function loadEmpInvoiceHistoryTab() {
 // ── Batch submit selected invoices to dividend page ──
 async function batchSubmitDividend() {
   const checks = document.querySelectorAll('.empInv-chk:checked');
-  if (!checks.length) { alert('请先勾选要提交分红的发票'); return; }
+  if (!checks.length) { showAlert('请先勾选要提交分红的发票'); return; }
   const ids = Array.from(checks).map(c => +c.value);
   const total = Array.from(checks).reduce((s, c) => s + parseFloat(c.dataset.amount || 0), 0);
   // Get date range from filter for label
@@ -26994,7 +27058,7 @@ async function batchSubmitDividend() {
       showToast(`已创建分红批次（${ids.length} 张发票）`);
       loadEmpInvoiceTab();
     } else throw new Error(r.error);
-  } catch(e) { alert('操作失败: ' + e.message); }
+  } catch(e) { showAlert('操作失败: ' + e.message); }
 }
 
 let _invMode = 'contractor'; // 'contractor', 'company', or 'voucher'
@@ -27351,9 +27415,9 @@ async function previewDsInvoice(invoiceId) {
 }
 
 async function revokeContractorInvoice(id, invoiceNumber) {
-  if (!confirm(`第 1/3 次确认\n\n确认要撤回发票 ${invoiceNumber} 吗？\n撤回后 DocuSeal 签署链接将失效。`)) return;
-  if (!confirm(`第 2/3 次确认\n\n撤回后状态将变为「已撤回」，无法再次发送给承包商签署。`)) return;
-  if (!confirm(`第 3/3 次确认\n\n最后确认：确定撤回发票 ${invoiceNumber}？`)) return;
+  if (!await showConfirm(`第 1/3 次确认\n\n确认要撤回发票 ${invoiceNumber} 吗？\n撤回后 DocuSeal 签署链接将失效。`, { plain: true, danger: true })) return;
+  if (!await showConfirm(`第 2/3 次确认\n\n撤回后状态将变为「已撤回」，无法再次发送给承包商签署。`, { plain: true, danger: true })) return;
+  if (!await showConfirm(`第 3/3 次确认\n\n最后确认：确定撤回发票 ${invoiceNumber}？`, { plain: true, danger: true })) return;
   const r = await api(`/admin/contractor-invoices/${id}/revoke`, { method: 'POST' });
   if (r?.success) {
     showToast('✅ 发票已撤回');
@@ -27364,9 +27428,9 @@ async function revokeContractorInvoice(id, invoiceNumber) {
 }
 
 async function deleteContractorInvoice(id, invoiceNumber) {
-  if (!confirm(`第 1/3 次确认\n\n确认要删除发票 ${invoiceNumber} 吗？\n此操作将永久删除记录，不可恢复！`)) return;
-  if (!confirm(`第 2/3 次确认\n\n发票记录将从数据库中永久删除，包括所有历史信息。`)) return;
-  if (!confirm(`第 3/3 次确认\n\n最后确认：确定永久删除发票 ${invoiceNumber}？`)) return;
+  if (!await showConfirm(`第 1/3 次确认\n\n确认要删除发票 ${invoiceNumber} 吗？\n此操作将永久删除记录，不可恢复！`, { plain: true, danger: true })) return;
+  if (!await showConfirm(`第 2/3 次确认\n\n发票记录将从数据库中永久删除，包括所有历史信息。`, { plain: true, danger: true })) return;
+  if (!await showConfirm(`第 3/3 次确认\n\n最后确认：确定永久删除发票 ${invoiceNumber}？`, { plain: true, danger: true })) return;
   const r = await api(`/admin/contractor-invoices/${id}`, { method: 'DELETE' });
   if (r?.success) {
     showToast('🗑️ 发票已删除');
@@ -27422,7 +27486,7 @@ async function openVoucherReceiptModal(invId, invoiceNumber, workerName, readOnl
 
 async function confirmVoucherLock() {
   if (!_vrInvId) return;
-  if (!confirm('确认锁定凭证？锁定后将无法上传或删除凭证文件。')) return;
+  if (!await showConfirm('确认锁定凭证？锁定后将无法上传或删除凭证文件。', { plain: true, danger: true })) return;
   const btn = document.getElementById('vrConfirmBtn');
   btn.disabled = true; btn.textContent = '确认中…';
   const r = await api(`/admin/contractor-invoices/${_vrInvId}/voucher-confirm`, { method: 'POST' });
@@ -27500,7 +27564,7 @@ async function confirmUploadVoucherReceipts() {
 }
 
 async function deleteVoucherReceipt(invId, filename) {
-  if (!confirm('确认删除此凭证图片？')) return;
+  if (!await showConfirm('确认删除此凭证图片？', { plain: true, danger: true })) return;
   const r = await api(`/admin/contractor-invoices/${invId}/voucher-receipts/${encodeURIComponent(filename)}`, { method: 'DELETE' });
   if (r?.success) {
     showToast('已删除');
@@ -27700,7 +27764,7 @@ async function loadTaxDocs() {
 
 async function uploadTaxDoc() {
   const file = document.getElementById('taxDocFile').files[0];
-  if (!file) return alert('请选择文件');
+  if (!file) return showAlert('请选择文件');
   const label = document.getElementById('taxDocLabel').value.trim();
   const fd = new FormData();
   fd.append('file', file);
@@ -27753,7 +27817,7 @@ async function sendResetLink(id, name) {
     if (r.email_sent) msgs.push('邮件已发送');
     if (!msgs.length) msgs.push('链接已生成（短信/邮件未配置）');
     showToast('✅ 重置链接已发送');
-    alert(`密码重置链接:\n${r.reset_url}\n\n${msgs.join(' | ')}\n\n链接24小时有效，用户点击后可自行重设密码。`);
+    showAlert(`密码重置链接:\n${r.reset_url}\n\n${msgs.join(' | ')}\n\n链接24小时有效，用户点击后可自行重设密码。`);
   } else {
     showToast('❌ ' + (r?.error || '发送失败'), 'error');
   }
@@ -28313,8 +28377,8 @@ async function saveCustomerAccount() {
     login_mfa: document.getElementById('cAccLoginMfa').value,
     active: parseInt(document.getElementById('cAccActive').value)
   };
-  if (!d.company_name || !d.email) return alert('请填写公司名和邮箱');
-  if (!id && !d.password) return alert('请输入密码');
+  if (!d.company_name || !d.email) return showAlert('请填写公司名和邮箱');
+  if (!id && !d.password) return showAlert('请输入密码');
   if (!d.password) delete d.password;
   if (id) await api(`/admin/customer-accounts/${id}`, { method:'PUT', body:JSON.stringify(d) });
   else await api('/admin/customer-accounts', { method:'POST', body:JSON.stringify(d) });
@@ -28325,21 +28389,21 @@ async function saveCustomerAccount() {
 
 async function deleteCustomerAccount(id, name) {
   const input = await showInputPrompt('删除客户账户', `确认删除客户账户 "${name}"？\n请输入 I confirm 确认删除 / Type "I confirm" to delete:`, 'I confirm', '确认删除', 'btn-red', 'red', null, { allowEmpty: true, singleLine: true });
-  if (input !== 'I confirm') { if (input !== null) alert('输入不正确，删除已取消'); return; }
+  if (input !== 'I confirm') { if (input !== null) showAlert('输入不正确，删除已取消'); return; }
   await api(`/admin/customer-accounts/${id}`, { method:'DELETE' });
   loadCustomerAccounts();
 }
 
 async function clearAllTestData() {
   const input = await showInputPrompt('清空所有测试数据', '⚠️ 这将删除所有工人账户和客户账户！\nThis will delete ALL worker and customer accounts!\n\n请输入 I confirm 确认 / Type "I confirm" to proceed:', 'I confirm', '确认清空', 'btn-red', 'red', null, { allowEmpty: true, singleLine: true });
-  if (input !== 'I confirm') { if (input !== null) alert('输入不正确，操作已取消'); return; }
+  if (input !== 'I confirm') { if (input !== null) showAlert('输入不正确，操作已取消'); return; }
   const r = await api('/admin/clear-test-data', { method:'POST', body: JSON.stringify({ confirm_text: 'I confirm' }) });
   if (r.success) {
-    alert(`已清空：${r.deleted_workers} 个工人账户，${r.deleted_customers} 个客户账户`);
+    showAlert(`已清空：${r.deleted_workers} 个工人账户，${r.deleted_customers} 个客户账户`);
     loadWorkerAccounts();
     loadCustomerAccounts();
   } else {
-    alert(r.error || '清空失败');
+    showAlert(r.error || '清空失败');
   }
 }
 
@@ -28363,7 +28427,7 @@ function resendWorkerVerify(id) {
       if (r.email_code) msgs.push(`⚠️ 邮件发送失败，邮箱验证码: ${r.email_code}`);
       if (!msgs.length) msgs.push('未配置短信/邮件发送');
       showToast('✅ 验证码已重新生成');
-      alert(msgs.join('\n'));
+      showAlert(msgs.join('\n'));
     }
   }, 'blue');
 }
@@ -28392,8 +28456,8 @@ async function saveResetPassword() {
   const id = document.getElementById('resetPwdId').value;
   const pwd = document.getElementById('resetPwdNew').value;
   const pwd2 = document.getElementById('resetPwdConfirm').value;
-  if (!pwd || pwd.length < 6) return alert('密码至少6位');
-  if (pwd !== pwd2) return alert('两次密码不一致');
+  if (!pwd || pwd.length < 6) return showAlert('密码至少6位');
+  if (pwd !== pwd2) return showAlert('两次密码不一致');
   const endpoint = type === 'worker' ? `/admin/worker-accounts/${id}` : `/admin/customer-accounts/${id}`;
   const r = await api(endpoint, { method:'PUT', body:JSON.stringify({ password: pwd }) });
   if (r && r.success !== false) {
@@ -28444,7 +28508,7 @@ async function importEntAsNewPartner() {
     notes: c.staffing_needs ? '人力需求：' + c.staffing_needs : '',
     active: 1
   })});
-  if (!r || r.error) return alert('新建合作公司失败：' + (r && r.error || '未知错误'));
+  if (!r || r.error) return showAlert('新建合作公司失败：' + (r && r.error || '未知错误'));
   // refresh partner list and select the new one
   _allPartners = await api('/admin/partners').catch(()=>[]);
   document.getElementById('entApprovalPartner').innerHTML = '<option value="">— 请选择关联公司 —</option>' +
@@ -28462,7 +28526,7 @@ function toggleEntRejectReason() {
 async function confirmApproveEnterprise() {
   const id = document.getElementById('entApprovalId').value;
   const partner_id = document.getElementById('entApprovalPartner').value;
-  if (!partner_id) return alert('请先选择关联的合作公司档案（必须）');
+  if (!partner_id) return showAlert('请先选择关联的合作公司档案（必须）');
   const r = await api(`/admin/approve-enterprise/${id}`, { method:'PUT', body:JSON.stringify({ partner_id }) });
   if (r && r.success !== false) {
     closeModal('entApprovalModal');
@@ -28474,7 +28538,7 @@ async function confirmApproveEnterprise() {
 async function rejectEnterpriseFromModal() {
   const id = document.getElementById('entApprovalId').value;
   const reason = document.getElementById('entRejectReason').value.trim();
-  if (!reason) { document.getElementById('entRejectReason').focus(); return alert('请填写拒绝原因'); }
+  if (!reason) { document.getElementById('entRejectReason').focus(); return showAlert('请填写拒绝原因'); }
   if (!await showConfirm('确认拒绝此企业注册申请？', { danger: true })) return;
   await api(`/admin/reject-enterprise/${id}`, { method:'PUT', body:JSON.stringify({ reason }) });
   closeModal('entApprovalModal');
@@ -30181,7 +30245,7 @@ async function saveIntegration() {
   };
   try {
     data.config = JSON.parse(document.getElementById('intConfig').value || '{}');
-  } catch { return alert('配置JSON格式错误'); }
+  } catch { return showAlert('配置JSON格式错误'); }
   await api(`/admin/integrations/${provider}`, { method:'PUT', body: JSON.stringify(data) });
   closeModal('integrationModal');
   showToast('✅ 集成设置已保存');
@@ -30700,7 +30764,7 @@ async function saveReferrer() {
 }
 
 async function deleteReferrer(id, name) {
-  if (!confirm(`确定删除推荐人「${name}」？\n（含未取消推荐记录时无法删除）`)) return;
+  if (!await showConfirm(`确定删除推荐人「${name}」？\n（含未取消推荐记录时无法删除）`, { plain: true, danger: true })) return;
   const res = await api(`/admin/referrers/${id}`, { method:'DELETE' });
   if (!res || res.error) { showToast(res?.error || '删除失败', 'error'); return; }
   showToast('已删除', 'success');
@@ -30779,7 +30843,7 @@ async function updateReferralRecStatus(recId, newStatus) {
 }
 
 async function deleteReferralRec(recId) {
-  if (!confirm('确定删除这条推荐记录？')) return;
+  if (!await showConfirm('确定删除这条推荐记录？', { plain: true, danger: true })) return;
   const res = await api(`/admin/referrer-referrals/${recId}`, { method:'DELETE' });
   if (!res || res.error) { showToast(res?.error || '删除失败', 'error'); return; }
   openReferrerDetail(_refrCurrentDetailId);
@@ -32008,11 +32072,11 @@ async function _skillOptSave(id) {
   if (!s) return;
   const res = await api(`/admin/skill-options/${id}`, { method:'PUT', body: JSON.stringify({ name_zh: s.name_zh, name_en: s.name_en, sort_order: s.sort_order }) });
   if (res && res.success) showToast('✅ 已保存');
-  else alert('保存失败');
+  else showAlert('保存失败');
 }
 
 async function _skillOptDelete(id) {
-  if (!confirm('确认删除此技能选项？')) return;
+  if (!await showConfirm('确认删除此技能选项？', { plain: true, danger: true })) return;
   const res = await api(`/admin/skill-options/${id}`, { method:'DELETE' });
   if (res && res.success) { await loadSkillSettings(); showToast('已删除'); }
 }
@@ -32020,7 +32084,7 @@ async function _skillOptDelete(id) {
 async function addSkillOption() {
   const zh = document.getElementById('newSkillZh').value.trim();
   const en = document.getElementById('newSkillEn').value.trim();
-  if (!zh) return alert('请输入技能名称（中文）');
+  if (!zh) return showAlert('请输入技能名称（中文）');
   const res = await api('/admin/skill-options', { method:'POST', body: JSON.stringify({ name_zh: zh, name_en: en }) });
   if (res && res.success) {
     document.getElementById('newSkillZh').value = '';
@@ -32060,10 +32124,10 @@ async function _jtOptSave(id) {
   if (!o) return;
   const res = await api(`/admin/job-title-options/${id}`, { method:'PUT', body: JSON.stringify({ name_en: o.name_en, name_zh: o.name_zh, name_es: o.name_es, sort_order: o.sort_order }) });
   if (res && res.success) showToast('✅ 已保存');
-  else alert('保存失败');
+  else showAlert('保存失败');
 }
 async function _jtOptDelete(id) {
-  if (!confirm('确认删除此职位名称？')) return;
+  if (!await showConfirm('确认删除此职位名称？', { plain: true, danger: true })) return;
   const res = await api(`/admin/job-title-options/${id}`, { method:'DELETE' });
   if (res && res.success) { await loadSkillSettings(); showToast('已删除'); }
 }
@@ -32071,7 +32135,7 @@ async function addJobTitleOption() {
   const en = document.getElementById('newJTEn').value.trim();
   const zh = document.getElementById('newJTZh').value.trim();
   const es = document.getElementById('newJTEs').value.trim();
-  if (!en) return alert('请输入英文职位名称 (English)');
+  if (!en) return showAlert('请输入英文职位名称 (English)');
   const res = await api('/admin/job-title-options', { method:'POST', body: JSON.stringify({ name_en: en, name_zh: zh, name_es: es }) });
   if (res && res.success) {
     document.getElementById('newJTEn').value = '';
@@ -32131,10 +32195,10 @@ async function _sfOptSave(id) {
   if (!o) return;
   const res = await api(`/admin/display-suffix-options/${id}`, { method:'PUT', body: JSON.stringify({ name_en: o.name_en, name_zh: o.name_zh, name_es: o.name_es, sort_order: o.sort_order }) });
   if (res && res.success) showToast('✅ 已保存');
-  else alert('保存失败');
+  else showAlert('保存失败');
 }
 async function _sfOptDelete(id) {
-  if (!confirm('确认删除此后缀词？')) return;
+  if (!await showConfirm('确认删除此后缀词？', { plain: true, danger: true })) return;
   const res = await api(`/admin/display-suffix-options/${id}`, { method:'DELETE' });
   if (res && res.success) { await loadSkillSettings(); showToast('已删除'); }
 }
@@ -32142,7 +32206,7 @@ async function addDisplaySuffixOption() {
   const en = document.getElementById('newSFEn').value.trim();
   const zh = document.getElementById('newSFZh').value.trim();
   const es = document.getElementById('newSFEs').value.trim();
-  if (!en) return alert('请输入英文后缀词 (English)');
+  if (!en) return showAlert('请输入英文后缀词 (English)');
   const res = await api('/admin/display-suffix-options', { method:'POST', body: JSON.stringify({ name_en: en, name_zh: zh, name_es: es }) });
   if (res && res.success) {
     document.getElementById('newSFEn').value = '';
@@ -32207,14 +32271,14 @@ async function _wpSave(id) {
   if (!p) return;
   const res = await api(`/admin/worker-positions/${id}`, { method:'PUT', body: JSON.stringify({ zh: p.name_zh, en: p.name_en, es: p.name_es }) });
   if (res && res.success) { _WORKER_POSITIONS = _wpData.filter(x => x.active); showToast('✅ 已保存'); }
-  else alert('保存失败');
+  else showAlert('保存失败');
 }
 async function _wpToggle(id, active) {
   const res = await api(`/admin/worker-positions/${id}`, { method:'PUT', body: JSON.stringify({ active: active ? 0 : 1 }) });
   if (res && res.success) { await loadSkillSettings(); showToast(active ? '已禁用' : '已启用'); }
 }
 async function _wpDelete(id) {
-  if (!confirm('确认删除此职位？删除后历史评分数据中的 key 仍会保留，但职位不再显示在选项中。')) return;
+  if (!await showConfirm('确认删除此职位？删除后历史评分数据中的 key 仍会保留，但职位不再显示在选项中。', { plain: true, danger: true })) return;
   const res = await api(`/admin/worker-positions/${id}`, { method:'DELETE' });
   if (res && res.success) { await loadSkillSettings(); showToast('已删除'); }
 }
@@ -32223,7 +32287,7 @@ async function addWorkerPosition() {
   const zh  = document.getElementById('newWPZh').value.trim();
   const en  = document.getElementById('newWPEn').value.trim();
   const es  = document.getElementById('newWPEs').value.trim();
-  if (!key || !zh || !en) return alert('请填写 key、中文名称、英文名称（均为必填）');
+  if (!key || !zh || !en) return showAlert('请填写 key、中文名称、英文名称（均为必填）');
   const res = await api('/admin/worker-positions', { method:'POST', body: JSON.stringify({ key, zh, en, es }) });
   if (res && res.id) {
     document.getElementById('newWPKey').value = '';
@@ -32234,7 +32298,7 @@ async function addWorkerPosition() {
     await loadSkillSettings();
     showToast('✅ 已添加');
   } else {
-    alert(res && res.error ? res.error : '添加失败');
+    showAlert(res && res.error ? res.error : '添加失败');
   }
 }
 
@@ -32372,7 +32436,7 @@ function _useWhPartnerAddr(el) {
 
 async function geocodeWhAddress() {
   const addr = document.getElementById('whAddress').value.trim();
-  if (!addr) { alert('请先输入地址'); return; }
+  if (!addr) { showAlert('请先输入地址'); return; }
   const btn = document.getElementById('whGeocodeBtn');
   btn.disabled = true; btn.textContent = '验证中...';
   try {
@@ -32385,7 +32449,7 @@ async function geocodeWhAddress() {
     verEl.textContent = '✅ ' + d.display;
     verEl.style.display = 'block';
   } catch(e) {
-    alert('地址验证失败: ' + e.message);
+    showAlert('地址验证失败: ' + e.message);
   } finally {
     btn.disabled = false; btn.textContent = '验证地址';
   }
@@ -32408,7 +32472,7 @@ async function saveWarehouse() {
     company_name: compNames.join(', ')
   };
   if (!payload.warehouse_code || !payload.warehouse_name || isNaN(payload.latitude) || isNaN(payload.longitude)) {
-    alert('请填写仓库代码、名称，并验证地址以获取经纬度');
+    showAlert('请填写仓库代码、名称，并验证地址以获取经纬度');
     return;
   }
   const btn = document.getElementById('whSaveBtn');
@@ -32421,7 +32485,7 @@ async function saveWarehouse() {
     document.getElementById('whModal').classList.remove('show');
     loadWarehouses();
   } catch (e) {
-    alert(e.message);
+    showAlert(e.message);
   } finally {
     btn.disabled = false; btn.textContent = '保存';
   }
@@ -32900,7 +32964,7 @@ async function confirmMgrSelfPunch(id) {
   try {
     await api(`/admin/manager-self-punch/${id}/confirm`, { method: 'POST' });
     loadAdminMgrSelfPunch();
-  } catch(e) { alert('操作失败: ' + e.message); }
+  } catch(e) { showAlert('操作失败: ' + e.message); }
 }
 
 async function loadAdminMgrDispatch() {
@@ -35211,7 +35275,7 @@ async function setInvpAbolished(id, abolished) {
   try {
     const res = await api(`/admin/invoices/${id}/abolish`, { method: 'POST', body: JSON.stringify({ abolished, reason }) });
     if (r) { r.abolished = res.abolished; r.abolished_reason = res.abolished_reason || ''; }
-  } catch (e) { alert('操作失败：' + (e && e.message ? e.message : e)); return; }
+  } catch (e) { showAlert('操作失败：' + (e && e.message ? e.message : e)); return; }
   renderInvpList();
 }
 
@@ -35481,7 +35545,7 @@ async function submitInvpReceipt() {
   // A file (or a picked bank-statement voucher) is required for the first upload;
   // when updating, the existing receipt is kept if no new file is chosen.
   if (!fileInput.files.length && !stmtId && !_invpReceiptIsUpdate) {
-    alert('请选择或拖入付款回执文件，或从对账单里选一条收入交易作为凭证');
+    showAlert('请选择或拖入付款回执文件，或从对账单里选一条收入交易作为凭证');
     return;
   }
   const btn = document.getElementById('invpReceiptSubmitBtn');
@@ -35525,7 +35589,7 @@ async function submitInvpReceipt() {
     closeInvpReceiptModal();
     loadInvpList();
   } catch (e) {
-    alert('上传失败：' + e.message);
+    showAlert('上传失败：' + e.message);
   } finally {
     btn.disabled = false;
     btn.textContent = origLabel;
@@ -36470,7 +36534,7 @@ async function submitInvpSubPay() {
   // Only honour the shared picker while it's mounted on this (分包) side.
   const stmtId = (_invpVoucherCtx === 'sub' && (document.getElementById('invpSubPayStmt') || {}).value) || '';
   if (!fileInput.files.length && !stmtId && !_invpSubPayIsUpdate) {
-    alert('请上传凭证文件，或选择一份已上传的对账单 PDF 作为凭证');
+    showAlert('请上传凭证文件，或选择一份已上传的对账单 PDF 作为凭证');
     return;
   }
   const btn = document.getElementById('invpSubPaySubmitBtn');
@@ -36519,7 +36583,7 @@ async function submitInvpSubPay() {
     closeInvpSubPayModal();
     loadInvpList();
   } catch (e) {
-    alert('上传失败：' + e.message);
+    showAlert('上传失败：' + e.message);
   } finally {
     btn.disabled = false;
     btn.textContent = origLabel;
@@ -36639,7 +36703,7 @@ function openInvpLpUpload(scope) {
   const unit = _invpLinePay.mode === 'container' ? '柜号' : '工人';
   if (scope === 'batch') {
     keys = _invpLinePaySelectedKeys();
-    if (!keys.length) { alert('请先勾选要上传凭证的条目'); return; }
+    if (!keys.length) { showAlert('请先勾选要上传凭证的条目'); return; }
     targetText = `已选 ${keys.length} 个${unit}`;
   } else {
     keys = [scope];
@@ -36693,7 +36757,7 @@ async function submitInvpLpUpload() {
   const meta = { amount: gv('invpLpAmount'), paid_date: gv('invpLpDate'), payee: gv('invpLpPayee'),
     bank: gv('invpLpBank'), handler: gv('invpLpHandler'), note: gv('invpLpNote') };
   if (!fileInput.files.length && !meta.amount && !meta.paid_date && !meta.payee && !meta.bank && !meta.handler && !meta.note) {
-    alert('请上传凭证文件，或至少填写银行 / 日期等付款信息'); return;
+    showAlert('请上传凭证文件，或至少填写银行 / 日期等付款信息'); return;
   }
   const btn = document.getElementById('invpLpUploadSubmitBtn');
   const orig = btn.textContent; btn.disabled = true; btn.textContent = '上传中…';
@@ -36718,7 +36782,7 @@ async function _invpLinePayDoUpload(keys, files, meta) {
     await reloadInvpLinePay();
     return true;
   } catch (e) {
-    alert('上传失败：' + e.message);
+    showAlert('上传失败：' + e.message);
     return false;
   }
 }
@@ -36728,7 +36792,7 @@ async function invpLinePayRemove(lineType, lineKey, filePath) {
   const r = await api('/admin/invoices/' + _invpLinePay.invoiceId + '/line-payments/remove', {
     method: 'POST', body: JSON.stringify({ line_type: lineType, line_key: lineKey, path: filePath })
   }).catch(() => null);
-  if (!r || r.error) { alert('删除失败'); return; }
+  if (!r || r.error) { showAlert('删除失败'); return; }
   await reloadInvpLinePay();
 }
 
@@ -36984,8 +37048,8 @@ async function saveWhClaim() {
   const opt = whSel.options[whSel.selectedIndex];
   const warehouseName = (opt && (opt.dataset.name || opt.textContent)) || '';
   const desc = document.getElementById('whClaimDesc').value.trim();
-  if (!whSel.value && !warehouseName) { alert('请选择仓库'); return; }
-  if (!desc) { alert('请填写事故描述'); return; }
+  if (!whSel.value && !warehouseName) { showAlert('请选择仓库'); return; }
+  if (!desc) { showAlert('请填写事故描述'); return; }
   const btn = document.getElementById('whClaimSaveBtn');
   const orig = btn.textContent;
   btn.disabled = true; btn.textContent = '保存中…';
@@ -37007,7 +37071,7 @@ async function saveWhClaim() {
     closeWhClaimModal();
     loadWarehouseClaims();
   } catch (e) {
-    alert('保存失败：' + e.message);
+    showAlert('保存失败：' + e.message);
   } finally {
     btn.disabled = false; btn.textContent = orig;
   }
@@ -37021,17 +37085,17 @@ async function whClaimApproval(id, action) {
     const r = await api('/acct/warehouse-claims/' + id + '/approval', { method: 'POST', body: JSON.stringify({ action, note }) });
     if (r && r.error) throw new Error(r.error);
     loadWarehouseClaims();
-  } catch (e) { alert('操作失败：' + (e.message || '')); }
+  } catch (e) { showAlert('操作失败：' + (e.message || '')); }
 }
 
 async function deleteWhClaim(id) {
-  if (!confirm('确定删除这条赔偿事故记录？此操作不可撤销。')) return;
+  if (!await showConfirm('确定删除这条赔偿事故记录？此操作不可撤销。', { plain: true, danger: true })) return;
   try {
     const resp = await fetch('/api/admin/warehouse-claims/' + id, { method: 'DELETE' });
     if (!resp.ok) throw new Error(await resp.text());
     loadWarehouseClaims();
   } catch (e) {
-    alert('删除失败：' + e.message);
+    showAlert('删除失败：' + e.message);
   }
 }
 
@@ -37953,7 +38017,7 @@ function updateInvpPreviewBtns() {
 
 async function invpSaveDraft() {
   const billName = document.getElementById('invPageBillName').value.trim();
-  if (!billName) { alert('请填写账单发往公司名称'); return; }
+  if (!billName) { showAlert('请填写账单发往公司名称'); return; }
   if (!document.getElementById('invPageNumber').value) await invpRefreshInvoiceNumber();
   return saveInvpInvoice('draft');
 }
@@ -38002,13 +38066,13 @@ async function saveInvpInvoice(status) {
   const billName= document.getElementById('invPageBillName').value.trim();
   const billAddr= document.getElementById('invPageBillAddr').value.trim();
   const editId  = document.getElementById('invPageEditId').value;
-  if (!invNum || !billName) { alert('请填写 Invoice 编号和客户公司名称'); return; }
+  if (!invNum || !billName) { showAlert('请填写 Invoice 编号和客户公司名称'); return; }
 
   // 账期确认：每张正式 Invoice 提交保存之前，必须核对服务周期（账期）起止日期。
   // 账期缺失或起止颠倒直接报错；草稿不强制弹窗。
   if (status !== 'draft') {
-    if (!ps || !pe) { alert('请先填写账期（服务周期）的开始和结束日期'); return; }
-    if (ps > pe) { alert('账期开始日期晚于结束日期，请检查'); return; }
+    if (!ps || !pe) { showAlert('请先填写账期（服务周期）的开始和结束日期'); return; }
+    if (ps > pe) { showAlert('账期开始日期晚于结束日期，请检查'); return; }
     const zhDow = ['日', '一', '二', '三', '四', '五', '六'];
     const fmtPd = d => { const dt = new Date(d + 'T00:00:00'); return `${d}（周${zhDow[dt.getDay()]}）`; };
     const pdDays = Math.round((new Date(pe + 'T00:00:00') - new Date(ps + 'T00:00:00')) / 86400000) + 1;
@@ -38024,13 +38088,13 @@ async function saveInvpInvoice(status) {
   let items, baseTotal, subtotal, containerItems;
   if (mode === 'container') {
     containerItems = getInvpContainerItems();
-    if (!containerItems.length) { alert('请至少添加一个 container 行'); return; }
+    if (!containerItems.length) { showAlert('请至少添加一个 container 行'); return; }
     items = []; // hourly items empty in container mode
     baseTotal = containerItems.reduce((s,i) => s+i.total, 0);
     subtotal = Math.round(baseTotal * markupRate * 100) / 100;
   } else {
     items = getInvpManualItems();
-    if (!items.length) { alert('请至少添加一名员工'); return; }
+    if (!items.length) { showAlert('请至少添加一名员工'); return; }
     baseTotal = items.reduce((s,i) => s+i.total, 0);
     containerItems = [];
     // 每行的账单额已在 getInvpManualItems 里按「正常×Markup + 加班×OT服务费」算好。
@@ -38194,7 +38258,7 @@ async function saveInvpInvoice(status) {
       return;
     }
   }
-  alert(res && res.error ? '保存失败：' + res.error : '保存失败，请重试');
+  showAlert(res && res.error ? '保存失败：' + res.error : '保存失败，请重试');
 }
 
 async function loadInvpCompanies() {
@@ -40514,7 +40578,7 @@ async function invpBulkReceipts(mode) {
     });
   if (!items.length) { showToast('没有可用的 container（请先填写 Container Number）', 'error'); return; }
   const verb = mode === 'preview' ? '预览' : '下载';
-  if (mode === 'download' && !confirm(`将为 ${items.length} 个 container 生成合并的现金回执 PDF 并${verb}。\n（工人姓名 / SSN 留空给现场手写）\n继续？`)) return;
+  if (mode === 'download' && !await showConfirm(`将为 ${items.length} 个 container 生成合并的现金回执 PDF 并${verb}。\n（工人姓名 / SSN 留空给现场手写）\n继续？`, { plain: true })) return;
 
   const url = `/api/admin/invoices/${invId}/cash-receipts-bulk${mode === 'preview' ? '?inline=1' : ''}`;
   try {
@@ -40689,7 +40753,7 @@ async function generateInvpSubcontractorStatement() {
 
   if (mode === 'container') {
     const containerItems = getInvpContainerItems();
-    if (!containerItems.length) { alert('请至少添加一个 container 行'); return; }
+    if (!containerItems.length) { showAlert('请至少添加一个 container 行'); return; }
 
     // Pick the specific subcontractor (the PAY TO recipient) from the managed
     // 分包商 list, so the statement carries its legal name + address + tax docs.
@@ -40774,14 +40838,14 @@ async function generateInvpSubcontractorStatement() {
   } else {
     // Hourly mode: subcontractor price = wages WITHOUT markup (base rate × hours)
     let items = getInvpManualItems();
-    if (!items.length) { alert('请至少添加一名员工并填写姓名'); return; }
+    if (!items.length) { showAlert('请至少添加一名员工并填写姓名'); return; }
 
     // Group workers by subcontractor. A 分包商 statement only lists workers that actually
     // have a 分包商 filled in — rows with an empty 分包商 are never included.
     const groupMap = {};
     items.forEach(i => { const k = (i.subcontractor || '').trim(); if (k) (groupMap[k] = groupMap[k] || []).push(i); });
     const groupKeys = Object.keys(groupMap);
-    if (!groupKeys.length) { alert('没有员工填写「分包商」。请先在上方「分包商」列填好需要对账的员工，再生成分包商对账单。'); return; }
+    if (!groupKeys.length) { showAlert('没有员工填写「分包商」。请先在上方「分包商」列填好需要对账的员工，再生成分包商对账单。'); return; }
     let chosenKey = window._invpStmtSubFilter;
     window._invpStmtSubFilter = null;
     if (!chosenKey || !groupMap[chosenKey]) {
@@ -41872,8 +41936,8 @@ async function generateInvpPreview() {
   const billName= document.getElementById('invPageBillName').value.trim();
   const billAddr= document.getElementById('invPageBillAddr').value.trim();
 
-  if (!billName)    { alert('请填写账单发往公司名称'); return; }
-  if (!ps || !pe)   { alert('请填写服务周期'); return; }
+  if (!billName)    { showAlert('请填写账单发往公司名称'); return; }
+  if (!ps || !pe)   { showAlert('请填写服务周期'); return; }
   // Auto-generate invoice number if not set
   if (!document.getElementById('invPageNumber').value) await invpRefreshInvoiceNumber();
   // Keep the number's state matching the bill-to address (corrects saved invoices
@@ -41885,10 +41949,10 @@ async function generateInvpPreview() {
   let items = [], containerItems = [];
   if (mode === 'container') {
     containerItems = getInvpContainerItems();
-    if (!containerItems.length) { alert('请至少添加一个 container 行（填写 Container 号或单价）'); return; }
+    if (!containerItems.length) { showAlert('请至少添加一个 container 行（填写 Container 号或单价）'); return; }
   } else {
     items = getInvpManualItems();
-    if (!items.length) { alert('请至少添加一名员工并填写姓名'); return; }
+    if (!items.length) { showAlert('请至少添加一名员工并填写姓名'); return; }
   }
 
   const profile = getInvpProfile();
@@ -42452,7 +42516,7 @@ function renderInvpProfilePreview() {
 }
 
 async function deleteInvpPreset(id, section) {
-  if (!confirm('确定删除此预设？')) return;
+  if (!await showConfirm('确定删除此预设？', { plain: true, danger: true })) return;
   await api(`/admin/invoice-profiles/${id}`, { method: 'DELETE' });
   const saved = getInvpProfile();
   if (saved[section + '_preset_id'] == id) {
@@ -42514,7 +42578,7 @@ async function loadInvoiceEmployees() {
   const company = document.getElementById('invCompanySelect').value;
   const ps = document.getElementById('invPeriodStart').value;
   const pe = document.getElementById('invPeriodEnd').value;
-  if (!company || !ps || !pe) { alert('请先选择公司和周期'); return; }
+  if (!company || !ps || !pe) { showAlert('请先选择公司和周期'); return; }
 
   const msg = document.getElementById('invMsg');
   msg.textContent = '加载中…'; msg.style.color = 'var(--gray-400)';
@@ -42785,10 +42849,10 @@ async function generateInvoice() {
   const company = document.getElementById('invCompanySelect').value;
   const ps = document.getElementById('invPeriodStart').value;
   const pe = document.getElementById('invPeriodEnd').value;
-  if (!company || !ps || !pe) { alert('请填写完整信息'); return; }
+  if (!company || !ps || !pe) { showAlert('请填写完整信息'); return; }
 
   const selected = [...document.querySelectorAll('.inv-emp-chk:checked')].map(c => parseInt(c.value));
-  if (!selected.length) { alert('请至少选择一名员工'); return; }
+  if (!selected.length) { showAlert('请至少选择一名员工'); return; }
 
   const bill_rates = {};
   document.querySelectorAll('.inv-rate-input').forEach(inp => {
@@ -42842,7 +42906,7 @@ async function generateInvoiceFromPayments() {
       linked_employee_id: g.employee_id || null, linked_employee_code: '', linked_employee_name: g.worker_name,
     });
   });
-  if (!emps.length) { alert('请至少选择一名工人（且金额大于 0）'); return; }
+  if (!emps.length) { showAlert('请至少选择一名工人（且金额大于 0）'); return; }
 
   // Partner billing address for the bill-to block.
   let partner = {};
@@ -43489,7 +43553,7 @@ function printInvoice() {
       await loadTimeEntries();
       // Give _punchEntries time to update
       setTimeout(() => openPunchMediaModal(_pmEntryId), 200);
-    } catch(e) { alert('上传失败: ' + e.message); }
+    } catch(e) { showAlert('上传失败: ' + e.message); }
     input.value = '';
   };
 })();
@@ -43755,7 +43819,7 @@ function printApplyQr46(i) {
   const esca = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const name = _applyQrState.generic ? t.genericName : (_applyQrState.partnerName || '');
   const w = window.open('', '_blank');
-  if (!w) { alert(t.printBlocked); return; }
+  if (!w) { showAlert(t.printBlocked); return; }
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>QR 4x6</title>
 <style>
   @page { size: 4in 6in; margin: 0; }
@@ -43784,11 +43848,11 @@ function printApplyQr46(i) {
 }
 async function regenerateApplyQr() {
   if (!_applyQrState.partnerId && !_applyQrState.generic) return;
-  if (!confirm(APPLY_QR_I18N[_applyQrLang].regenConfirm)) return;
+  if (!await showConfirm(APPLY_QR_I18N[_applyQrLang].regenConfirm, { plain: true })) return;
   try {
     await api(_applyQrState.generic ? '/admin/applicant-qr/generic/regenerate' : `/admin/partners/${_applyQrState.partnerId}/applicant-qr/regenerate`, { method: 'POST' });
     openApplicantQrModal(_applyQrState.partnerId, _applyQrState.partnerName);
-  } catch (e) { alert(APPLY_QR_I18N[_applyQrLang].regenFail + (e.message || e)); }
+  } catch (e) { showAlert(APPLY_QR_I18N[_applyQrLang].regenFail + (e.message || e)); }
 }
 
 // ── Applicant submissions inbox ──
@@ -46674,7 +46738,7 @@ function downloadPendingQr() {
   document.body.appendChild(a); a.click(); a.remove();
 }
 async function regeneratePendingQr() {
-  if (!confirm('重新生成后，旧二维码将立即失效。确定继续？')) return;
+  if (!await showConfirm('重新生成后，旧二维码将立即失效。确定继续？', { plain: true, danger: true })) return;
   try {
     await api('/admin/pending-overview-link/regenerate', { method: 'POST' });
     openPendingQrModal();
@@ -47119,7 +47183,7 @@ function copyBlankWorksheetLink(token) {
 }
 
 async function deleteBlankWorksheet(id) {
-  if (!confirm('确认删除这张工作单（及其所有照片）？此操作不可撤销。')) return;
+  if (!await showConfirm('确认删除这张工作单（及其所有照片）？此操作不可撤销。', { plain: true, danger: true })) return;
   try {
     const r = await fetch(`/api/admin/blank-worksheets/${id}`, { method: 'DELETE' });
     if (!r.ok) throw new Error('删除失败');
@@ -51468,9 +51532,9 @@ async function submitCpyBatch() {
   const month = document.getElementById('cpyBatchMonth').value;
   const date = document.getElementById('cpyBatchDate').value;
   const defaultMethod = document.getElementById('cpyBatchMethod').value || 'cash';
-  if (!partnerId) { alert('请选择公司'); return; }
-  if (!month) { alert('请选择月份'); return; }
-  if (!date) { alert('请选择付款日期'); return; }
+  if (!partnerId) { showAlert('请选择公司'); return; }
+  if (!month) { showAlert('请选择月份'); return; }
+  if (!date) { showAlert('请选择付款日期'); return; }
 
   const partnerName = _cpyPartners.find(p => String(p.id) === String(partnerId))?.name || '';
   const items = [];
@@ -51495,8 +51559,8 @@ async function submitCpyBatch() {
       notes
     });
   }
-  if (!items.length) { alert('请勾选至少一名工人并填入金额'); return; }
-  if (!confirm(`确认给 ${partnerName} 的 ${items.length} 名工人付款，合计 ${_cpyFmtMoney(items.reduce((s, x) => s + x.amount, 0))}？`)) return;
+  if (!items.length) { showAlert('请勾选至少一名工人并填入金额'); return; }
+  if (!await showConfirm(`确认给 ${partnerName} 的 ${items.length} 名工人付款，合计 ${_cpyFmtMoney(items.reduce((s, x) => s + x.amount, 0))}？`, { plain: true })) return;
 
   try {
     const r = await api('/admin/company-payments/batch', {
@@ -51510,13 +51574,13 @@ async function submitCpyBatch() {
         items
       })
     });
-    if (r && r.error) { alert('提交失败：' + r.error); return; }
+    if (r && r.error) { showAlert('提交失败：' + r.error); return; }
     if (r && r.pending) { closeCpyBatchModal(); return; }
     closeCpyBatchModal();
     showToast(`已记录 ${r.inserted} 条付款`, 'success');
     loadCpyList();
   } catch (e) {
-    alert('提交失败：' + (e.message || e));
+    showAlert('提交失败：' + (e.message || e));
   }
 }
 
@@ -51590,7 +51654,7 @@ async function openCpyEdit(id) {
     // Fetch full row (filter to that id via list endpoint is fine)
     const rows = await api('/admin/company-payments');
     const r = (Array.isArray(rows) ? rows : []).find(x => x.id === id);
-    if (!r) { alert('记录不存在'); return; }
+    if (!r) { showAlert('记录不存在'); return; }
     openCpySingleModal();
     document.getElementById('cpySingleTitle').textContent = '✏️ 编辑付款记录';
     document.getElementById('cpySingleId').value = r.id;
@@ -51607,7 +51671,7 @@ async function openCpyEdit(id) {
     document.getElementById('cpySingleMonth').value = r.year_month || (r.payment_date || '').slice(0, 7);
     document.getElementById('cpySingleMethod').value = r.payment_method || 'cash';
     document.getElementById('cpySingleNotes').value = r.notes || '';
-  } catch (e) { alert('加载失败：' + (e.message || e)); }
+  } catch (e) { showAlert('加载失败：' + (e.message || e)); }
 }
 
 async function submitCpySingle() {
@@ -51619,10 +51683,10 @@ async function submitCpySingle() {
   const month = document.getElementById('cpySingleMonth').value || (date ? date.slice(0, 7) : '');
   const method = document.getElementById('cpySingleMethod').value;
   const notes = document.getElementById('cpySingleNotes').value;
-  if (!partnerId) { alert('请选择公司'); return; }
-  if (!worker) { alert('请填写工人姓名'); return; }
-  if (!(amount > 0)) { alert('请填写有效金额'); return; }
-  if (!date) { alert('请选择付款日期'); return; }
+  if (!partnerId) { showAlert('请选择公司'); return; }
+  if (!worker) { showAlert('请填写工人姓名'); return; }
+  if (!(amount > 0)) { showAlert('请填写有效金额'); return; }
+  if (!date) { showAlert('请选择付款日期'); return; }
   // Try to match an employee from the datalist
   const dl = document.getElementById('cpySingleWorkerList');
   let empId = null;
@@ -51654,23 +51718,23 @@ async function submitCpySingle() {
       method: id ? 'PUT' : 'POST',
       body: JSON.stringify(body)
     });
-    if (r && r.error) { alert('保存失败：' + r.error); return; }
+    if (r && r.error) { showAlert('保存失败：' + r.error); return; }
     if (r && r.pending) { closeCpySingleModal(); return; }
     closeCpySingleModal();
     showToast(id ? '已更新' : '已保存', 'success');
     loadCpyList();
-  } catch (e) { alert('保存失败：' + (e.message || e)); }
+  } catch (e) { showAlert('保存失败：' + (e.message || e)); }
 }
 
 async function deleteCpy(id) {
-  if (!confirm('确认删除这条付款记录？')) return;
+  if (!await showConfirm('确认删除这条付款记录？', { plain: true, danger: true })) return;
   try {
     const r = await api(`/admin/company-payments/${id}`, { method: 'DELETE' });
-    if (r && r.error) { alert('删除失败：' + r.error); return; }
+    if (r && r.error) { showAlert('删除失败：' + r.error); return; }
     if (r && r.pending) return;
     showToast('已删除', 'success');
     loadCpyList();
-  } catch (e) { alert('删除失败：' + (e.message || e)); }
+  } catch (e) { showAlert('删除失败：' + (e.message || e)); }
 }
 
 // Delete every payment record for one worker, scoped to the current company/month filter.
@@ -51682,13 +51746,13 @@ async function cpyDeleteWorker(gIdx) {
   if (!ids.length) return;
   const month = document.getElementById('cpyFilterMonth').value;
   const scope = month ? `${month}` : '所有月份';
-  if (!confirm(`确认删除工人「${g.worker_name}」（${g.partner_name}）在【${scope}】的全部 ${ids.length} 笔付款记录？\n\n此操作不可恢复。`)) return;
+  if (!await showConfirm(`确认删除工人「${g.worker_name}」（${g.partner_name}）在【${scope}】的全部 ${ids.length} 笔付款记录？\n\n此操作不可恢复。`, { plain: true, danger: true })) return;
   try {
     const r = await api('/admin/company-payments/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) });
-    if (r && r.error) { alert('删除失败：' + r.error); return; }
+    if (r && r.error) { showAlert('删除失败：' + r.error); return; }
     showToast(`已删除 ${r && r.deleted != null ? r.deleted : ids.length} 笔记录`, 'success');
     loadCpyList();
-  } catch (e) { alert('删除失败：' + (e.message || e)); }
+  } catch (e) { showAlert('删除失败：' + (e.message || e)); }
 }
 
 // Set one company (bill) rate on all of a worker's records in the current filter, recomputing
@@ -51849,7 +51913,7 @@ function openCpyWeeklyEditWorker(idx) {
   // drop them — so block editing such weeks and point the user to 付款明细.
   const nonTime = g.records.filter(r => !(r.clock_in_time && r.clock_out_time));
   if (nonTime.length) {
-    alert(`该工人本周有 ${nonTime.length} 条没有上下班时间的记录（可能来自「按月批量」或「单条录入」），无法用「按周编辑」调整。\n请在「付款明细」里单独编辑这些记录。`);
+    showAlert(`该工人本周有 ${nonTime.length} 条没有上下班时间的记录（可能来自「按月批量」或「单条录入」），无法用「按周编辑」调整。\n请在「付款明细」里单独编辑这些记录。`);
     return;
   }
   openCpyWeeklyModal();
@@ -52346,7 +52410,7 @@ function updateCpyWkTotal() {
 }
 
 // Copy a single day's values (start/end/breaks/rate) to all OTHER days in the same row.
-function copyCpyWkDay(rowIdx, srcDayIdx) {
+async function copyCpyWkDay(rowIdx, srcDayIdx) {
   _readCpyWkRowState();
   const w = _cpyWkWorkers[rowIdx];
   if (!w) return;
@@ -52373,7 +52437,7 @@ function copyCpyWkDay(rowIdx, srcDayIdx) {
       hasOther = true; break;
     }
   }
-  if (hasOther && !confirm('其他天已有数据，确认全部覆盖？')) return;
+  if (hasOther && !await showConfirm('其他天已有数据，确认全部覆盖？', { plain: true, danger: true })) return;
   for (let j = 0; j < 7; j++) {
     if (j === srcDayIdx) continue;
     w._starts[j] = src.start;
@@ -52392,7 +52456,7 @@ function copyCpyWkDay(rowIdx, srcDayIdx) {
 
 // Copy the first-filled day's values to weekdays (Mon-Fri) or to the whole week.
 // scope: 'weekday' | 'all'
-function copyCpyWkFirstFilled(rowIdx, scope) {
+async function copyCpyWkFirstFilled(rowIdx, scope) {
   _readCpyWkRowState();
   const w = _cpyWkWorkers[rowIdx];
   if (!w) return;
@@ -52433,7 +52497,7 @@ function copyCpyWkFirstFilled(rowIdx, scope) {
       hasOther = true; break;
     }
   }
-  if (hasOther && !confirm(`将覆盖 ${targets.length} 天的现有数据，确认？`)) return;
+  if (hasOther && !await showConfirm(`将覆盖 ${targets.length} 天的现有数据，确认？`, { plain: true, danger: true })) return;
   for (const j of targets) {
     w._starts[j] = src.start;
     w._ends[j] = src.end;
@@ -52512,7 +52576,7 @@ async function _cpyParseTimeInput(raw, kind) {
     else { h = parseInt(cleaned.slice(0, 2)) || 0; m = parseInt(cleaned.slice(2, 4)) || 0; }
   }
   if (h > 23 || m > 59 || h < 0 || m < 0) {
-    alert(`「${raw}」不是有效时间，请输入 HH:MM（24 小时制）`);
+    showAlert(`「${raw}」不是有效时间，请输入 HH:MM（24 小时制）`);
     return { invalid: true };
   }
   // Trigger popup for ANY hour-only input (no colon, no minute supplied) so the user explicitly
@@ -52634,7 +52698,7 @@ function toggleCpyWkMonitor() {
 // Self-test: simulates the exact user scenario — 2 ad-hoc rows, fill row 0,
 // then "start typing in row 1", and verify row 0 data is still in the DOM.
 function runCpyWkSelfTest() {
-  if (!_cpyWkDays.length) { alert('请先选择公司和周起始日'); return; }
+  if (!_cpyWkDays.length) { showAlert('请先选择公司和周起始日'); return; }
   // Snapshot current state so we can restore it
   const snapshot = JSON.parse(JSON.stringify(_cpyWkWorkers));
   const logs = [];
@@ -52698,7 +52762,7 @@ function runCpyWkSelfTest() {
       (lost.length === 0
         ? `✅ PASS — row 0 数据完整保留。\n\n如果你手动操作时还是丢数据，说明是真实浏览器特定行为，请告诉我：丢失的具体字段（姓名/时间/时薪/备注？）+ 在哪个浏览器。\n浏览器: ${navigator.userAgent}`
         : `❌ FAIL — 丢失字段：${lost.join(', ')}。请截屏此弹窗发给开发。\n浏览器: ${navigator.userAgent}`);
-    alert(report);
+    showAlert(report);
   } finally {
     _cpyWkWorkers = snapshot;
     _cpyWkLastRenderCause = 'selfTest 恢复快照';
@@ -52752,8 +52816,8 @@ async function pullCpyWeeklyHours(opts = {}) {
   }
 }
 
-function clearCpyWeeklyHours() {
-  if (!confirm('确认清空所有上下班/午休时间（保留时薪）？')) return;
+async function clearCpyWeeklyHours() {
+  if (!await showConfirm('确认清空所有上下班/午休时间（保留时薪）？', { plain: true, danger: true })) return;
   _readCpyWkRowState();
   _cpyWkWorkers.forEach(w => {
     w._starts = new Array(7).fill('');
