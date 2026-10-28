@@ -2860,6 +2860,10 @@ try { db.exec(`ALTER TABLE invoices ADD COLUMN for_label TEXT`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN items_json TEXT`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN profile_json TEXT`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN status TEXT DEFAULT 'draft'`); } catch(e) {}
+// 作废 (abolished): 暂时不计入汇总, 但列表里照样能看到 (变灰), 随时可恢复
+try { db.exec(`ALTER TABLE invoices ADD COLUMN abolished INTEGER DEFAULT 0`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN abolished_reason TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN abolished_at TEXT DEFAULT NULL`); } catch(e) {}
 
 // ─── Company Worker Payments (monthly cash/transfer payouts to workers per company) ───
 db.exec(`CREATE TABLE IF NOT EXISTS company_worker_payments (
@@ -23447,9 +23451,25 @@ app.get('/api/admin/invoices/:id/wage-suggest', requireAdmin, (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST /api/admin/invoices/:id/abolish — 作废 / 恢复. Body: { abolished: true|false, reason }.
+// 作废的发票不删除: 列表里照样显示 (变灰), 只是不算进账单/工资/利润汇总。
+app.post('/api/admin/invoices/:id/abolish', requireAdmin, blockManager, (req, res) => {
+  const inv = db.prepare('SELECT id, abolished FROM invoices WHERE id=?').get(req.params.id);
+  if (!inv) return res.status(404).json({ error: '发票不存在' });
+  const ab = req.body && req.body.abolished === false ? 0 : 1;
+  const reason = ab ? String((req.body && req.body.reason) || '').trim().slice(0, 500) : '';
+  db.prepare('UPDATE invoices SET abolished=?, abolished_reason=?, abolished_at=? WHERE id=?')
+    .run(ab, reason, ab ? new Date().toISOString() : null, inv.id);
+  if (!!inv.abolished !== !!ab) {
+    db.prepare('INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)')
+      .run(inv.id, ab ? '作废' : '恢复作废', ab ? (reason ? `原因：${reason}（不计入汇总）` : '不计入汇总') : '重新计入汇总');
+  }
+  res.json({ success: true, abolished: ab, abolished_reason: reason });
+});
+
 // List invoices
 app.get('/api/admin/invoices', requireAdmin, (req, res) => {
-  const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, markup_rate, status, payment_status, payment_receipt_path, paid_at, payment_bank, payment_entity, payment_handler, payment_amount, payment_date, sub_payment_status, sub_payment_receipt_path, sub_paid_at, sub_payment_bank, sub_payment_entity, sub_payment_handler, sub_payment_amount, sub_payment_date, payment_receipt_paths, sub_payment_receipt_paths, created_at, items_json, profile_json FROM invoices ORDER BY created_at DESC`).all();
+  const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, markup_rate, status, payment_status, payment_receipt_path, paid_at, payment_bank, payment_entity, payment_handler, payment_amount, payment_date, sub_payment_status, sub_payment_receipt_path, sub_paid_at, sub_payment_bank, sub_payment_entity, sub_payment_handler, sub_payment_amount, sub_payment_date, payment_receipt_paths, sub_payment_receipt_paths, created_at, abolished, abolished_reason, abolished_at, items_json, profile_json FROM invoices ORDER BY created_at DESC`).all();
   // Sum of the bank-statement transactions linked to an invoice as its proof, per
   // side (recv = 收款回执 / sub = 分包回执). This IS the real 实付 / 分包付款金额
   // ("所有上传凭证的加和"), independent of any hand-entered amount.
@@ -42575,7 +42595,7 @@ app.delete('/api/acct/pay-notes/:id/photos', requireAdmin, requireAcctWrite, (re
 // Read-only invoice list (no payment receipts / internal cost fields).
 app.get('/api/acct/invoices', requireAdmin, requireAcctView, (req, res) => {
   try {
-    const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, subtotal, markup_rate, status, payment_status, created_at,
+    const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, subtotal, markup_rate, status, payment_status, created_at, abolished, abolished_reason,
         CASE WHEN json_valid(items_json) THEN json_array_length(items_json) ELSE 0 END AS line_n
       FROM invoices ORDER BY invoice_date DESC, id DESC`).all();
     const payNotes = _acctPayNotesFor('invoice');
@@ -42719,7 +42739,7 @@ const _ckOverlap = (r, a, b) => { const sp = _ckSpan(r); return !!sp && sp[0] <=
 app.get('/api/acct/checklist', requireAdmin, requireAcctView, (req, res) => {
   try {
     const ws = _ckWeekStart(req.query.week), we = _ckAddDays(ws, 6);
-    const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, subtotal, profile_json, created_at FROM invoices`).all();
+    const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, subtotal, profile_json, created_at FROM invoices WHERE COALESCE(abolished,0)=0`).all();
     for (const r of rows) {
       let p = {}; try { p = JSON.parse(r.profile_json || '{}') || {}; } catch (e) { p = {}; }
       r.kind = p.invoice_mode === 'container' ? 'container' : 'labor';
@@ -45186,7 +45206,7 @@ app.get('/api/acct/gusto/recon', requireAdmin, requireAcctView, (req, res) => {
     const pad = Math.min(60, Math.max(0, parseInt(req.query.pay_pad_days, 10) || 14));
     const payEnd = new Date(Date.parse(end + 'T00:00:00Z') + pad * 86400000).toISOString().slice(0, 10);
     const invRows = db.prepare(`SELECT id, invoice_number, company_name, period_start, period_end, items_json, profile_json
-      FROM invoices WHERE COALESCE(status,'')!='draft' AND period_end>=? AND period_end<=?
+      FROM invoices WHERE COALESCE(status,'')!='draft' AND COALESCE(abolished,0)=0 AND period_end>=? AND period_end<=?
       ORDER BY period_end, id`).all(start, end);
     const invoices = [];
     for (const r of invRows) {
@@ -47055,7 +47075,7 @@ app.get('/api/acct/payroll-summary', requireAdmin, requireAcctView, (req, res) =
       return res.status(400).json({ error: '请选择日期范围' });
     }
     const invRows = db.prepare(`SELECT id, invoice_number, company_name, period_start, period_end, items_json, profile_json
-      FROM invoices WHERE COALESCE(status,'')!='draft' AND period_end>=? AND period_end<=?
+      FROM invoices WHERE COALESCE(status,'')!='draft' AND COALESCE(abolished,0)=0 AND period_end>=? AND period_end<=?
       ORDER BY period_end, id`).all(start, end);
     const items = [];
     let invoiceCount = 0;

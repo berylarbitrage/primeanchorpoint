@@ -7124,18 +7124,21 @@ function _invFilteredRows() {
 }
 function renderInvList() {
   const rows = _invFilteredRows();
-  const nOf = st => _invList.filter(r => _acctPayStatus(r) === st).length;
+  // 已作废的发票 (在 Invoice 列表里作废的) 照样列出 (变灰), 但不计入合计/张数统计
+  const counted = rows.filter(r => !r.abolished), abN = rows.length - counted.length;
+  const nOf = st => _invList.filter(r => !r.abolished && _acctPayStatus(r) === st).length;
   const revN = nOf('review'), unN = nOf('unpaid');
-  const rs = _invRecvSums(rows);
-  document.getElementById('invStats').innerHTML = `共 ${rows.length} 张 · 合计 ${money(rows.reduce((s, r) => s + (Number(r.subtotal) || 0), 0))}`
+  const rs = _invRecvSums(counted);
+  document.getElementById('invStats').innerHTML = `共 ${counted.length} 张 · 合计 ${money(counted.reduce((s, r) => s + (Number(r.subtotal) || 0), 0))}`
+    + (abN ? ` · <span style="color:#64748b" data-tip="已作废的发票照样显示（变灰），但不计入合计">🚫 另有 ${abN} 张已作废，不计入</span>` : '')
     + ` · <b style="color:#047857" data-tip="当前列表里核查通过的到账合计">✅ 已收到 ${money(rs.got)}</b>`
     + ` · <b style="color:#b91c1c" data-tip="当前列表里每张发票还差的钱加起来（发票金额 − 已收到，多收的不抵别张）">❌ 未收到 ${money(rs.owe)}</b>`
     + `${revN ? ` · 🟣 待审核 ${revN} 张` : ''}${unN ? ` · ❌ 未收款 ${unN} 张` : ''}`;
   document.getElementById('invHeadRow').innerHTML = csfHeadHtml('inv');
   document.getElementById('invCsfClear').style.display = csfActive('inv') ? '' : 'none';
-  document.getElementById('invBody').innerHTML = rows.length ? rows.map(r => `<tr>
+  document.getElementById('invBody').innerHTML = rows.length ? rows.map(r => `<tr${r.abolished ? ' style="opacity:.5;background:#f1f5f9"' : ''}>
     <td style="white-space:nowrap"><button class="btn btn-view" onclick="openInvoice(${r.id})"><span class="ic">📄</span>查看 / 批注</button></td>
-    <td style="font-weight:700;white-space:nowrap">${esc(r.invoice_number)}</td>
+    <td style="font-weight:700;white-space:nowrap">${r.abolished ? `<span style="text-decoration:line-through">${esc(r.invoice_number)}</span> <span class="badge" style="color:#475569;background:#e2e8f0;border:1px solid #cbd5e1" data-tip="${esc('已作废，不计入合计' + (r.abolished_reason ? '\n原因：' + r.abolished_reason : '')).replace(/"/g, '&quot;')}">🚫 已作废</span>` : esc(r.invoice_number)}</td>
     <td>${_invLineBankState(r)[1]}</td>
     <td style="white-space:nowrap">${esc(r.invoice_date || '—')}</td>
     <td>${esc(r.company_name || '')}</td>
