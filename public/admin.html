@@ -8486,7 +8486,9 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 <script>
 let _ipmResolve = null;
 let _ipmDateMode = false;
-function showInputPrompt(title, desc, placeholder, btnText, btnClass, iconColor, inputType) {
+let _ipmAllowEmpty = false;
+// allowEmpty: 选填输入——空着点确认返回 ''（只有取消才返回 null）
+function showInputPrompt(title, desc, placeholder, btnText, btnClass, iconColor, inputType, allowEmpty) {
   const colors = {
     blue:  { bg:'#DBEAFE', stroke:'#2563EB', title:'#1E40AF' },
     green: { bg:'#D1FAE5', stroke:'#059669', title:'#065F46' },
@@ -8500,6 +8502,7 @@ function showInputPrompt(title, desc, placeholder, btnText, btnClass, iconColor,
   document.getElementById('ipmTitle').style.color = c.title;
   document.getElementById('ipmDesc').textContent = desc;
   _ipmDateMode = inputType === 'date';
+  _ipmAllowEmpty = !!allowEmpty;
   const ta = document.getElementById('ipmInput');
   const di = document.getElementById('ipmDateInput');
   if (_ipmDateMode) {
@@ -8521,7 +8524,7 @@ function closeInputPrompt() { document.getElementById('inputPromptModal').classL
 function execInputPrompt() {
   const v = _ipmDateMode ? document.getElementById('ipmDateInput').value.trim() : document.getElementById('ipmInput').value.trim();
   document.getElementById('inputPromptModal').classList.remove('show');
-  if (_ipmResolve) { _ipmResolve(v || null); _ipmResolve = null; }
+  if (_ipmResolve) { _ipmResolve(v || (_ipmAllowEmpty ? '' : null)); _ipmResolve = null; }
 }
 
 let _gcmCallback = null;
@@ -35194,9 +35197,9 @@ async function setInvpAbolished(id, abolished) {
   const num = r ? (r.invoice_number || '') : '';
   let reason = '';
   if (abolished) {
-    const v = prompt(`作废 Invoice ${num}？\n作废后列表里照样能看到（变灰），但不计入账单/工资/利润汇总，随时可「恢复」。\n\n原因（可不填）：`, '');
+    const v = await showInputPrompt(`作废 Invoice ${num}`, '作废后列表里照样能看到（变灰），但不计入账单/工资/利润汇总，随时可「恢复」。', '原因（可不填），例如：重复开单、客户取消、金额有误等', '确认作废', 'btn-red', 'red', null, true);
     if (v === null) return;
-    reason = v.trim();
+    reason = v;
   } else if (!await showConfirm(`恢复 Invoice ${num}？恢复后重新计入汇总。`)) return;
   try {
     const res = await api(`/admin/invoices/${id}/abolish`, { method: 'POST', body: JSON.stringify({ abolished, reason }) });
