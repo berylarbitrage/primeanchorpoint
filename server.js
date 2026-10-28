@@ -2138,6 +2138,7 @@ if (!db.prepare('SELECT id FROM worker_positions LIMIT 1').get()) {
     { key:'loading_unloading', zh:'装卸工',      en:'Loading / Unloading',   es:'Carga/Descarga' },
     { key:'order_picker',      zh:'拣货员',      en:'Order Picker',          es:'Surtidor de Pedidos' },
     { key:'welder',            zh:'焊接工',      en:'Welder',                es:'Soldador' },
+    { key:'order_checker',     zh:'复核员',      en:'Order Checker',         es:'Verificador de Pedidos' },
   ];
   const wpIns = db.prepare('INSERT INTO worker_positions (key, name_zh, name_en, name_es, sort_order) VALUES (?,?,?,?,?)');
   wpSeeds.forEach((p, i) => wpIns.run(p.key, p.zh, p.en, p.es, i));
@@ -3297,6 +3298,16 @@ try {
 // 一次性设置：发票的 发票抬头/收款银行/联系人页脚 三个板块默认选
 // Prime Anchor Workforce 的预设（银行板块有多条时优先 Chase 那条）。
 // 浏览器本地已选过的仍以本地选择优先，这里保证换浏览器/清缓存后也默认它。
+// One-time: add 复核员 / Order Checker to existing worker_positions (admin may delete it later)
+try {
+  if (!db.prepare("SELECT value FROM app_settings WHERE key='wp_order_checker_v1'").get()) {
+    const maxSort = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM worker_positions').get().m;
+    db.prepare('INSERT OR IGNORE INTO worker_positions (key, name_zh, name_en, name_es, sort_order) VALUES (?,?,?,?,?)')
+      .run('order_checker', '复核员', 'Order Checker', 'Verificador de Pedidos', maxSort + 1);
+    db.prepare("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('wp_order_checker_v1', ?)").run(new Date().toISOString());
+  }
+} catch (e) { console.error('[wp_order_checker_v1]', e.message); }
+
 try {
   const _pawDone = db.prepare("SELECT value FROM app_settings WHERE key='paw_default_presets_v1'").get();
   if (!_pawDone) {
