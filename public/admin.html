@@ -34521,8 +34521,11 @@ function renderInvpList() {
 
   // Summary reflects the currently-filtered set, so filtering by a company or a
   // date range shows that slice's totals (工资 = wages paid, 利润 = profit earned).
-  const totBill = list.reduce((s, r) => s + (r.subtotal || 0), 0);
-  const totWage = list.reduce((s, r) => s + (r.wage_cost || 0), 0);
+  // 已作废的发票照样列出 (变灰), 但不算进任何汇总
+  const counted = list.filter(r => !r.abolished);
+  const abolishedN = list.length - counted.length;
+  const totBill = counted.reduce((s, r) => s + (r.subtotal || 0), 0);
+  const totWage = counted.reduce((s, r) => s + (r.wage_cost || 0), 0);
   const totProfit = totBill - totWage;
   const isFiltered = !!(_invpFilter.company || _invpFilter.bank || _invpFilter.type || _invpFilter.state || _invpFilter.from || _invpFilter.to || _invpFilter.month || _invpFilter.q || _invpFilter.container || _invpFilter.amount);
   const money = n => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -34536,7 +34539,7 @@ function renderInvpList() {
   // are split by type at a glance. Only shown when ≥2 types are present — when
   // the type filter already isolates one type it would just repeat the cards.
   const byType = {};
-  for (const r of list) {
+  for (const r of counted) {
     const t = invpType(r);
     const b = byType[t] || (byType[t] = { n: 0, bill: 0, wage: 0 });
     b.n++; b.bill += (r.subtotal || 0); b.wage += (r.wage_cost || 0);
@@ -34562,6 +34565,7 @@ function renderInvpList() {
   // 当前选中的月份高亮，并可一键「显示全部」清掉日期筛选。
   const byMonth = {};
   for (const r of listAllDates) {
+    if (r.abolished) continue;
     const k = invpMonthKey(r);
     const b = byMonth[k] || (byMonth[k] = { n: 0, bill: 0, wage: 0 });
     b.n++; b.bill += (r.subtotal || 0); b.wage += (r.wage_cost || 0);
@@ -34620,7 +34624,7 @@ function renderInvpList() {
   let nameHitHtml = '';
   if (_invpFilter.q) {
     let hn = 0, hh = 0, hw = 0, hb = 0;
-    for (const r of list) for (const l of (r.worker_lines || [])) {
+    for (const r of counted) for (const l of (r.worker_lines || [])) {
       if ((l.n || '').toLowerCase().includes(_invpFilter.q)) { hn++; hh += Number(l.h) || 0; hw += Number(l.w) || 0; hb += Number(l.b) || 0; }
     }
     if (hn) nameHitHtml = `<div style="display:flex;align-items:center;gap:.9rem;flex-wrap:wrap;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.45rem .75rem;font-size:.8rem;color:#1d4ed8;margin-bottom:1.1rem">
@@ -34635,7 +34639,7 @@ function renderInvpList() {
   sumWrap.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:.4rem;margin-bottom:.5rem">
       <span style="font-weight:600;font-size:.9rem">📊 汇总${isFiltered ? '（按当前筛选）' : '（全部）'}</span>
-      <span style="font-size:.78rem;color:var(--gray-500)">${isFiltered ? `${list.length} / ${_invpAllRows.length}` : list.length} 张 Invoice</span>
+      <span style="font-size:.78rem;color:var(--gray-500)">${isFiltered ? `${list.length} / ${_invpAllRows.length}` : list.length} 张 Invoice${abolishedN ? `<span style="color:#64748b" title="已作废的发票照样显示（变灰），但不计入汇总">（其中 ${abolishedN} 张已作废，不计入）</span>` : ''}</span>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:${breakdownHtml ? '.6rem' : '1.1rem'}">
       ${card('账单总额', money(totBill))}
@@ -34646,6 +34650,10 @@ function renderInvpList() {
     ${monthlyHtml}
     ${nameHitHtml}`;
 
+  const abolishedBadge = r => `<span title="${esc(r.abolished_reason ? '作废原因：' + r.abolished_reason : '已作废')}（不计入汇总）" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#e2e8f0;color:#475569;border:1px solid #cbd5e1">🚫 已作废</span>`;
+  const abolishBtn = r => r.abolished
+    ? `<button class="btn btn-sm btn-outline" style="color:#059669;border-color:#bbf7d0" onclick="event.stopPropagation();setInvpAbolished(${r.id}, false)" title="恢复：重新计入汇总">↩ 恢复</button>`
+    : `<button class="btn btn-sm btn-outline" style="color:#64748b;border-color:#cbd5e1" onclick="event.stopPropagation();setInvpAbolished(${r.id}, true)" title="作废：暂时不计入汇总，列表里照样能看到（变灰），随时可恢复">🚫 作废</button>`;
   const statusBadge = s => s === 'saved'
     ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#dcfce7;color:#166534">已保存</span>'
     : '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#fef3c7;color:#92400e">草稿</span>';
@@ -34765,10 +34773,10 @@ function renderInvpList() {
         <div style="margin-top:.25rem;display:flex;flex-wrap:wrap;gap:.25rem">${r.container_nos.map(cn =>
           `<span style="font-family:monospace;font-size:.7rem;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:5px;padding:1px 6px">${esc(cn)}</span>`).join('')}</div>` : '';
       const bankLbl = _upBank(invpBankLabel(r), r.bank_account_last4);
-      return `<div style="background:#fff;border:1px solid var(--gray-200);border-radius:12px;padding:.75rem .85rem;margin-bottom:.6rem;cursor:pointer" onclick="invpToggleCard(this)">
+      return `<div style="background:${r.abolished ? '#f1f5f9;opacity:.6' : '#fff'};border:1px solid var(--gray-200);border-radius:12px;padding:.75rem .85rem;margin-bottom:.6rem;cursor:pointer" onclick="invpToggleCard(this)">
         <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:center;flex-wrap:wrap">
           <span style="font-family:monospace;font-weight:700;font-size:.84rem">${esc(r.invoice_number || '(无编号)')}</span>
-          <span style="display:flex;gap:.3rem">${statusBadge(r.status)}${paidBadge}</span>
+          <span style="display:flex;gap:.3rem">${r.abolished ? abolishedBadge(r) : ''}${statusBadge(r.status)}${paidBadge}</span>
         </div>
         <div style="font-size:.78rem;color:var(--gray-500);margin-top:.25rem">${typeIcon} ${esc(r.company_name || '—')}${r.bill_to_name ? ' (Bill To: ' + esc(r.bill_to_name) + ')' : ''} · ${esc(r.invoice_date || '')}</div>
         <div style="display:flex;gap:.9rem;margin-top:.45rem;font-size:.86rem;flex-wrap:wrap">
@@ -34788,6 +34796,7 @@ function renderInvpList() {
           <div style="display:flex;gap:.5rem;margin-top:.65rem;flex-wrap:wrap">
             <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();openInvpForEdit(${r.id})">📝 打开完整发票</button>
             <button class="btn btn-sm btn-outline" style="color:#0369a1;border-color:#7dd3fc" onclick="event.stopPropagation();openInvpEmail(${r.id})">✉️ 邮件</button>
+            ${abolishBtn(r)}
             ${isPaid
               ? `<button class="btn btn-sm btn-outline" style="color:var(--green);border-color:var(--green)" onclick="event.stopPropagation();openInvpReceiptModal(${r.id}, true)">收款回执</button>`
               : `<button class="btn btn-sm btn-blue" onclick="event.stopPropagation();openInvpReceiptModal(${r.id}, false)">上传回执</button>`}
@@ -34921,8 +34930,8 @@ function renderInvpList() {
           const settledMark = allSettled
             ? '<span title="收款与分包付款金额都核对无误" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;background:#16a34a;color:#fff;border-radius:50%;font-size:.62rem;font-weight:900;margin-right:5px;vertical-align:-2px">✓</span>'
             : '';
-          return `<tr style="border-top:1px solid var(--gray-100)">
-          <td class="invp-frz" style="padding:8px 10px;font-weight:600">${settledMark}<a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a>${invpMatchedContainers(r, _invpFilter.container)}</td>
+          return `<tr style="border-top:1px solid var(--gray-100)${r.abolished ? ';opacity:.5;background:#f1f5f9' : ''}"${r.abolished ? ' title="已作废：不计入汇总"' : ''}>
+          <td class="invp-frz" style="padding:8px 10px;font-weight:600${r.abolished ? ';text-decoration:line-through' : ''}">${settledMark}<a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a>${invpMatchedContainers(r, _invpFilter.container)}</td>
           <td class="invp-frz" style="padding:8px 10px">${esc(r.company_name||'')}${r.bill_to_name ? `<div style="font-size:.72rem;color:var(--gray-500)">Bill To: ${esc(r.bill_to_name)}</div>` : ''}${(() => {
             const q = _invpFilter.q;
             if (!q) return '';
@@ -34955,7 +34964,7 @@ function renderInvpList() {
           <td class="invp-frz" style="padding:8px 10px;text-align:right;white-space:nowrap;color:${subMismatch ? '#dc2626' : 'var(--gray-600)'}" ${subMismatch ? 'title="分包付款金额与工资不一致"' : wageUnknown ? 'title="这张发票没填工资，点 ✎ 填写"' : ''}>${wageUnknown ? '<span style="color:var(--gray-400)">未填</span>' : '$' + (r.wage_cost||0).toFixed(2)} <span onclick="event.stopPropagation();invpEditWageCost(${r.id},${wageUnknown?0:(r.wage_cost||0)},'${esc(r.invoice_mode||'')}')" title="手动修正这张发票的工资成本" style="cursor:pointer;color:#b45309;font-size:.72rem">✎</span></td>
           <td class="invp-frz" style="padding:8px 10px;text-align:right;font-weight:600;white-space:nowrap;color:${wageUnknown?'var(--gray-400)':profit>=0?'#16a34a':'#dc2626'}" ${wageUnknown ? 'title="没填工资，利润不确定"' : ''}>${wageUnknown ? '不确定' : '$' + profit.toFixed(2)}</td>
           <td class="invp-frz" style="padding:8px 10px;color:var(--gray-500)">${r.invoice_date||''}</td>
-          <td style="padding:8px 10px;text-align:center">${statusBadge(r.status)}</td>
+          <td style="padding:8px 10px;text-align:center">${r.abolished ? abolishedBadge(r) : statusBadge(r.status)}</td>
           <td style="padding:8px 10px;text-align:center">${paidStatusCell}</td>
           <td style="padding:8px 10px;text-align:right;white-space:nowrap;font-weight:600">${payAmountCell}</td>
           <td style="padding:8px 10px;color:var(--gray-500);white-space:nowrap">${payDateCell}</td>
@@ -34971,6 +34980,7 @@ function renderInvpList() {
               ${paidBtn}
               <button class="btn btn-sm btn-outline" style="color:#7c3aed;border-color:#c4b5fd" onclick="openInvpLinePayModal(${r.id}, '${esc(r.invoice_number)}')" title="按 container / 工人逐条或批量上传付款凭证">📎 分项凭证</button>
               <button class="btn btn-sm btn-outline" onclick="openInvpHistoryModal(${r.id}, '${esc(r.invoice_number)}')">历史</button>
+              ${abolishBtn(r)}
               <button class="btn btn-sm btn-outline" style="color:var(--red);border-color:var(--red)" onclick="deleteInvpRecord(${r.id})">删除</button>
             </div>
           </td>
@@ -35178,6 +35188,23 @@ async function scanInvpDuplicates() {
 }
 function closeInvpScanModal() { const o = document.getElementById('invpScanOverlay'); if (o) o.remove(); }
 
+// 作废 / 恢复：作废的发票照样显示（变灰），只是不计入汇总
+async function setInvpAbolished(id, abolished) {
+  const r = (_invpAllRows || []).find(x => x.id === id);
+  const num = r ? (r.invoice_number || '') : '';
+  let reason = '';
+  if (abolished) {
+    const v = prompt(`作废 Invoice ${num}？\n作废后列表里照样能看到（变灰），但不计入账单/工资/利润汇总，随时可「恢复」。\n\n原因（可不填）：`, '');
+    if (v === null) return;
+    reason = v.trim();
+  } else if (!await showConfirm(`恢复 Invoice ${num}？恢复后重新计入汇总。`)) return;
+  try {
+    const res = await api(`/admin/invoices/${id}/abolish`, { method: 'POST', body: JSON.stringify({ abolished, reason }) });
+    if (r) { r.abolished = res.abolished; r.abolished_reason = res.abolished_reason || ''; }
+  } catch (e) { alert('操作失败：' + (e && e.message ? e.message : e)); return; }
+  renderInvpList();
+}
+
 async function deleteInvpRecord(id) {
   if (!await showConfirm('确定删除此 Invoice 记录？', { danger: true })) return;
   await api('/admin/invoices/' + id, { method: 'DELETE' });
@@ -35210,6 +35237,8 @@ async function openInvpHistoryModal(invoiceId, invoiceNumber) {
     '标记分包已付款': '💸',
     '更新分包付款': '🔄',
     '取消分包已付款': '↩️',
+    '作废': '🚫',
+    '恢复作废': '↩️',
   };
   wrap.innerHTML = `<div style="display:flex;flex-direction:column;gap:0">
     ${rows.map((r, i) => {
