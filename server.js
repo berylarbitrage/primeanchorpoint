@@ -9520,10 +9520,13 @@ function _isWobGustoWork(req, p) {
     || ['/api/acct/onboarding-email-assign', '/api/acct/onboarding-email-ignore', '/api/acct/onboarding-bank-ack', '/api/acct/onboarding-emails'].includes(p);
 }
 // 总监做介绍费 (/accounting 介绍费) 的日常登记不用审批: 面试去没去 (标错可以改)、关联 / 取消关联员工档案、
-// 关联 / 改关联发票、开始上班、中途不去了 都直接生效。金额相关 (改介绍费、付款方式、核查支付、HR 奖励确认) 仍要 admin 审核。
+// 关联 / 改关联发票、开始上班、中途不去了、新增 / 编辑介绍记录 (含选介绍费金额)、每周选档 / 选金额 都直接生效。
+// 最后的金额要 admin 审核: 每周确认金额、HR 奖励确认、核查支付、付款方式、删除记录 仍进审批。
+// (每周金额 admin 确认过就锁住改不了, 见 PUT /api/acct/referral-weeks/:id)
 function _isReferralWork(req, p) {
-  if (req.method !== 'POST') return false;
-  return /^\/api\/acct\/referrals\/\d+\/(interview-status|profile|invoices|start|quit)$/.test(p);
+  if (req.method === 'POST') return p === '/api/acct/referrals' || /^\/api\/acct\/referrals\/\d+\/(interview-status|profile|invoices|start|quit)$/.test(p);
+  if (req.method === 'PUT') return /^\/api\/acct\/(referrals|referral-weeks)\/\d+$/.test(p);
+  return false;
 }
 async function _queueChange(req, res, session) {
   try {
