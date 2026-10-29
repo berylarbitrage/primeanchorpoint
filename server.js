@@ -17062,6 +17062,33 @@ app.post('/api/admin/short-link', requireAdmin, blockManager, (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// 员工代填: 请求带着管理后台的登录 (pa_token cookie / Bearer) 才算; 返回 { id, name }
+function _applyStaffUser(req) {
+  const auth = String(req.headers.authorization || '');
+  const m = (req.headers.cookie || '').match(/pa_token=([^;]+)/);
+  const s = getSession(auth.startsWith('Bearer ') ? auth.slice(7) : '') || getSession(m ? m[1] : '');
+  if (!s || s.role === 'onboarding') return null;
+  const u = db.prepare('SELECT username, display_name FROM admin_users WHERE id=?').get(s.userId) || {};
+  return { id: s.userId, name: u.display_name || u.username || s.username || '' };
+}
+// 员工代填入口: 打开通用申请表 (提交归入通用收件箱) 的员工模式, 页面会先确认登录;
+// 也可以在任何 /apply/<token> 链接后面加 ?staff=1
+app.get('/apply-staff', (req, res) => {
+  const row = db.prepare("SELECT value FROM app_settings WHERE key='generic_applicant_form_token'").get();
+  let token = (row && row.value) || '';
+  if (!token) {
+    token = crypto.randomBytes(20).toString('hex');
+    db.prepare("INSERT INTO app_settings (key, value) VALUES ('generic_applicant_form_token', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(token);
+  }
+  res.redirect('/apply/' + token + '?staff=1');
+});
+// 员工代填页面确认登录用 (没登录返回 401)
+app.get('/api/apply/staff-me', (req, res) => {
+  const u = _applyStaffUser(req);
+  if (!u) return res.status(401).json({ error: '员工代填要先登录管理后台' });
+  res.json({ ok: true, name: u.name });
+});
+
 // PUBLIC: short URL that serves the mobile applicant form.
 app.get('/apply/:token', (req, res) => {
   // 手机浏览器缓存过一份旧页面再打开就可能白屏，申请页禁缓存
@@ -17223,26 +17250,29 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
     // Only a well-formed 2-letter code is kept; anything else is treated as unset.
     const rawSt = String(d.st || d.apply_state || req.query.st || '').trim().toUpperCase();
     const applyState = /^[A-Z]{2}$/.test(rawSt) ? rawSt : '';
-    if (!name || !phone || !email || !position)
+    // 员工代填: 登录了管理后台的员工帮工人填, 不用手机 / 邮箱验证码, 邮箱也可以先空着
+    const staff = String(d.staff || '') === '1' ? _applyStaffUser(req) : null;
+    if (String(d.staff || '') === '1' && !staff) return res.status(401).json({ error: '员工代填要先登录管理后台' });
+    if (!name || !phone || (!email && !staff) || !position)
       return res.status(400).json({ error: '请填写姓名、电话、邮箱和职位 / Name, phone, email and position are required' });
     if (!_applyAddressComplete(country, address1, city, state, zip))
       return res.status(400).json({ error: _applyAddressError(country) });
     // Require a verified OTP for BOTH the submitted phone and email.
     const verified = (type, tgt) => !!db.prepare(`SELECT id FROM applicant_otp WHERE form_token=? AND type=? AND target=? AND verified=1 ORDER BY id DESC LIMIT 1`).get(token, type, tgt);
     // 中国申请不验证手机 (Twilio 发中国的验证码要先审核, 见 60220), 只核对是 11 位中国手机号
-    const phoneErr = _applyPhoneCheck(country, phone, verified);
+    const phoneErr = staff ? '' : _applyPhoneCheck(country, phone, verified);
     if (phoneErr) return res.status(400).json({ error: phoneErr });
-    if (!verified('email', email)) return res.status(400).json({ error: '请先完成邮箱验证 / Please verify your email first' });
+    if (!staff && !verified('email', email)) return res.status(400).json({ error: '请先完成邮箱验证 / Please verify your email first' });
     const files = req.files || {};
     const docErr = _applyDocsMissing(country, files);
     if (docErr) return res.status(400).json({ error: docErr });
     const r = db.prepare(`INSERT INTO applicant_submissions
       (partner_id, partner_name, name, phone, email, position, phone_verified, email_verified,
-       address1, address2, city, state, zip, address_verified, apply_state, country, user_agent)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
-        p.id, p.name, name, phone, email, position, country === 'CN' ? 0 : 1, 1,
+       address1, address2, city, state, zip, address_verified, apply_state, country, user_agent, entered_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+        p.id, p.name, name, phone, email, position, staff || country === 'CN' ? 0 : 1, staff ? 0 : 1,
         address1, address2, city, state, zip, addressVerified, applyState, country,
-        String(req.headers['user-agent'] || '').slice(0, 250));
+        String(req.headers['user-agent'] || '').slice(0, 250), staff ? staff.name : '');
     const subId = r.lastInsertRowid;
     const docMeta = [];
     for (const [docType, arr] of Object.entries(files)) {
@@ -17295,7 +17325,7 @@ app.post('/api/apply/submit', applicantDocUpload.fields([
     } catch (e) { console.error('[apply-dup] check failed:', e.message); }
     // Fire-and-forget: notify the company inbox with all applicant details + photo attachments.
     const address = { address1, address2, city, state, zip, country, verified: addressVerified };
-    notifyNewApplication({ subId, partner: p, name, position, phone, email, address, applyState, docMeta, dup })
+    notifyNewApplication({ subId, partner: p, name, position, phone, email, address, applyState, docMeta, dup, enteredBy: staff ? staff.name : '' })
       .catch(e => console.error('[apply-notify] failed:', e.message));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -17360,7 +17390,7 @@ const APPLICATION_NOTIFY_CC = [...new Set([
   // 2026-10 加: 不管环境变量怎么设, 这两个都要收到新申请通知
   'taosl19911203@outlook.com', 'z15725859500@outlook.com',
 ].map(s => s.trim()).filter(Boolean))];
-async function notifyNewApplication({ subId, partner, name, position, phone, email, address, applyState, docMeta, dup }) {
+async function notifyNewApplication({ subId, partner, name, position, phone, email, address, applyState, docMeta, dup, enteredBy }) {
   const docLabels = { ssn_front: 'SSN 正面 / Front', ssn_back: 'SSN 反面 / Back', ead_front: 'EAD 正面 / Front', ead_back: 'EAD 反面 / Back',
     cnid_front: '身份证 正面 / China ID Front', cnid_back: '身份证 反面 / China ID Back' };
   const when = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
@@ -17385,8 +17415,9 @@ async function notifyNewApplication({ subId, partner, name, position, phone, ema
     ...(applyState ? [['申请地点 / Location', applyState]] : []),
     ['姓名 / Name', name],
     ['职位 / Position', position],
-    ['电话 / Phone', phone + ' ✓ 已验证 / verified'],
-    ['邮箱 / Email', email + ' ✓ 已验证 / verified'],
+    ...(enteredBy ? [['代填 / Entered by', enteredBy + '（员工代填，电话和邮箱没有验证码验证）']] : []),
+    ['电话 / Phone', phone + (enteredBy ? '' : ' ✓ 已验证 / verified')],
+    ['邮箱 / Email', (email || '—') + (enteredBy || !email ? '' : ' ✓ 已验证 / verified')],
     ['地址 / Address', addrLine + (address && address.verified ? ' ✓ 已验证 / verified' : '')],
     ['提交时间 / Submitted', when + ' (PT)'],
     ['已上传证件 / Documents', docMeta.map(d => docLabels[d.docType] || d.docType).join('、') || '无'],
@@ -45370,7 +45401,9 @@ for (const col of ["gusto_ok INTEGER DEFAULT 0", "gusto_ok_by TEXT DEFAULT ''", 
   // 付款方式可以换, 换掉的留底: pay_history [{method, since, until, by, zelle: [...]}]; pay_since = 当前方式从什么时候开始
   "pay_history TEXT DEFAULT '[]'", "pay_since TEXT DEFAULT ''", "emp_ok_by TEXT DEFAULT ''", "emp_ok_at TEXT DEFAULT ''", "emp_rejected TEXT DEFAULT '[]'",
   // 谁选的这个付款方式; director / manager 选的要 admin 确认 (pay_ok_by)。pay_by 是 NULL 的是加这两列之前选的, 看修改历史
-  "pay_by TEXT DEFAULT NULL", "pay_ok_by TEXT DEFAULT ''", "pay_ok_at TEXT DEFAULT ''"]) {
+  "pay_by TEXT DEFAULT NULL", "pay_ok_by TEXT DEFAULT ''", "pay_ok_at TEXT DEFAULT ''",
+  // 系统里实在没有这个人的员工档案: 备注特例 (为什么没有) 就可以不关联档案直接选付款方式
+  "no_emp_note TEXT DEFAULT ''", "no_emp_by TEXT DEFAULT ''", "no_emp_at TEXT DEFAULT ''"]) {
   try { db.exec(`ALTER TABLE new_hire_onboarding ADD COLUMN ${col}`); } catch (e) {}
 }
 // 每个人的修改历史: 谁、什么时候、改了什么 (查看历史时再和发票 / 邮件这些系统事件按时间合在一起)
@@ -45663,6 +45696,7 @@ function _wobBuild() {
       pay_by: s.pay_by != null ? s.pay_by : (payLogBy[p.key] || ''),
       pay_confirm: !!s.pay_method && !s.pay_ok_by && (s.pay_by != null ? !payAdmins.has(s.pay_by) : !!payLogBy[p.key] && !payAdmins.has(payLogBy[p.key])),
       gusto, gusto_proposal: proposal, first_payment: firstPay, manual,
+      no_emp: s.no_emp_note ? { note: s.no_emp_note, by: s.no_emp_by || '', at: s.no_emp_at || '' } : null,
       updated_by: s.updated_by || '', updated_at: s.updated_at || '',
     });
   }
@@ -45771,12 +45805,12 @@ function _wobBuild() {
     // 已通过关联的 Gusto 收款人走完入职还付过钱的, 没手动选付款方式也算处理完
     // 全部做完才算: Gusto 三步都完成; Zelle / Cash App / ACH 的账号都审核通过了; 也没有还在等审核的
     const accOk = curAccs.length > 0 && curAccs.every(z => z.ok);
-    w.done = !!w.employee && !w.pending_review && !w.pay_confirm && (w.pay_method === 'skip'
+    w.done = !!(w.employee || w.no_emp) && !w.pending_review && !w.pay_confirm && (w.pay_method === 'skip'
       || (!!w.pay_method && (w.pay_method === 'gusto' ? w.checklist.done : ['zelle', 'cashapp', 'ach'].includes(w.pay_method) ? accOk : true))
       || (!w.pay_method && !!(w.gusto && w.gusto.link) && w.checklist.done));
     // 发票上的三种: 已定 = 全部做完; 进行中 = 选了付款方式但步骤 / 审核还没做完; 待定 = 还没选
     w.settled = w.done;
-    w.stage = w.done ? 'settled' : (w.employee && (w.pay_method || (w.gusto && w.gusto.link))) ? 'progress' : 'pending';
+    w.stage = w.done ? 'settled' : ((w.employee || w.no_emp) && (w.pay_method || (w.gusto && w.gusto.link))) ? 'progress' : 'pending';
   }
   return { list, unmatched, bank };
 }
@@ -46183,10 +46217,17 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       employee_id: cur.employee_id || null, emp_ok: cur.emp_ok ? 1 : 0, emp_ok_by: cur.emp_ok_by || '', emp_ok_at: cur.emp_ok_at || '',
       emp_rejected: cur.emp_rejected || '[]', zelle_account: cur.zelle_account || '', zelle_name: cur.zelle_name || '',
       zelle_accounts: JSON.stringify(_wobZelle(cur)), pay_history: cur.pay_history || '[]', pay_since: cur.pay_since || '',
-      pay_by: cur.pay_by != null ? cur.pay_by : null, pay_ok_by: cur.pay_ok_by || '', pay_ok_at: cur.pay_ok_at || '' };
+      pay_by: cur.pay_by != null ? cur.pay_by : null, pay_ok_by: cur.pay_ok_by || '', pay_ok_at: cur.pay_ok_at || '',
+      no_emp_note: cur.no_emp_note || '', no_emp_by: cur.no_emp_by || '', no_emp_at: cur.no_emp_at || '' };
     const str = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
     const now = new Date().toISOString();
     if (b.name !== undefined) next.name = str(b.name, 120);
+    // 没有员工档案的特例: 写原因就算过了第一步; 清空 = 撤销特例
+    if (b.no_emp_note !== undefined) {
+      next.no_emp_note = str(b.no_emp_note, 300);
+      next.no_emp_by = next.no_emp_note ? (req.userName || '') : '';
+      next.no_emp_at = next.no_emp_note ? now : '';
+    }
     if (b.phone !== undefined) next.phone = str(b.phone, 40);
     if (b.warehouse !== undefined) {
       // 只能从下拉里选: 合作公司, 或这个人发票上的客户公司
@@ -46401,10 +46442,10 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       else delete ck[step];
       next.checklist = JSON.stringify(ck);
     }
-    // 第一步一律是关联员工档案: 没有已通过的档案不能选付款方式
+    // 第一步一律是关联员工档案: 没有已通过的档案不能选付款方式 (备注了「没有档案」特例的除外)
     // (审批重放不卡: 总监先选了付款方式、档案关联还在等审批时, 不管先同意哪个都能生效)
-    if (next.pay_method && next.pay_method !== (cur.pay_method || '') && !(next.employee_id && next.emp_ok) && !req.isApprovalReplay) {
-      return res.status(400).json({ error: '先关联员工档案（并审核通过），再选付款方式' });
+    if (next.pay_method && next.pay_method !== (cur.pay_method || '') && !(next.employee_id && next.emp_ok) && !next.no_emp_note && !req.isApprovalReplay) {
+      return res.status(400).json({ error: '先关联员工档案（并审核通过），或者备注没有档案的特例，再选付款方式' });
     }
     // 修改历史: 一条一条记下改了什么
     const PM = { gusto: 'Gusto 入职', cash: '现金', check: '支票', zelle: 'Zelle', cashapp: 'Cash App', ach: 'ACH 转账', skip: '不用处理', '': '未选' };
@@ -46415,7 +46456,7 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
     const zl = v => { const a = _wobJson(v, []); return a.length ? a.map(z => `${z.type === 'cashapp' ? 'Cash App ' : z.type === 'ach' ? 'ACH 路由 ' + z.routing + ' 账号 ' : 'Zelle '}${z.account}（${z.name}）`).join('、') : '无'; };
     if (b.approve === 'zelle' || b.reject === 'zelle') logs.push([b.approve ? '审核通过收款账号' : '收款账号不对', `${{ cashapp: 'Cash App', ach: 'ACH' }[b.type] || 'Zelle'} ${b.account}${b.reject && b.note ? '：' + str(b.note, 300) : ''}`]);
     else if (zl(JSON.stringify(_wobZelle(cur))) !== zl(next.zelle_accounts)) logs.push(['Zelle / Cash App 账号', `${zl(JSON.stringify(_wobZelle(cur)))} → ${zl(next.zelle_accounts)}`]);
-    chg('warehouse', '仓库'); chg('pay_note', '备注'); chg('name', '名字');
+    chg('warehouse', '仓库'); chg('pay_note', '备注'); chg('name', '名字'); chg('no_emp_note', '没有员工档案（特例）');
     const empName = id => { if (!id) return '无'; const e = db.prepare('SELECT first_name, last_name, employee_id FROM employees WHERE id=?').get(id); return e ? `${e.first_name} ${e.last_name}${e.employee_id ? ' ' + e.employee_id : ''}` : '#' + id; };
     const gName = u => { if (!u) return '无'; const c = db.prepare('SELECT name FROM gusto_contractors WHERE uuid=?').get(u); return c ? c.name : u; };
     if (b.unapprove) logs.push(['撤销通过', { employee: '员工档案', gusto: 'Gusto 收款人', email: 'Gusto 邮件 #' + b.event_id }[b.unapprove] || b.unapprove]);
@@ -46438,14 +46479,14 @@ app.post('/api/acct/onboarding/:key', requireAdmin, requireWobWrite, (req, res) 
       logs.push([b.checked ? '清单打勾' : '清单取消打勾', st ? st.label : b.step]);
     }
     db.prepare(`INSERT INTO new_hire_onboarding (name_key, name, phone, warehouse, pay_method, pay_note, gusto_uuid, checklist,
-        gusto_ok, gusto_ok_by, gusto_ok_at, gusto_rejected, phone_rejected, employee_id, emp_ok, emp_ok_by, emp_ok_at, emp_rejected, zelle_account, zelle_name, zelle_accounts, pay_history, pay_since, pay_by, pay_ok_by, pay_ok_at, updated_by, updated_at)
+        gusto_ok, gusto_ok_by, gusto_ok_at, gusto_rejected, phone_rejected, employee_id, emp_ok, emp_ok_by, emp_ok_at, emp_rejected, zelle_account, zelle_name, zelle_accounts, pay_history, pay_since, pay_by, pay_ok_by, pay_ok_at, no_emp_note, no_emp_by, no_emp_at, updated_by, updated_at)
       VALUES (@key, @name, @phone, @warehouse, @pay_method, @pay_note, @gusto_uuid, @checklist,
-        @gusto_ok, @gusto_ok_by, @gusto_ok_at, @gusto_rejected, @phone_rejected, @employee_id, @emp_ok, @emp_ok_by, @emp_ok_at, @emp_rejected, @zelle_account, @zelle_name, @zelle_accounts, @pay_history, @pay_since, @pay_by, @pay_ok_by, @pay_ok_at, @by, datetime('now'))
+        @gusto_ok, @gusto_ok_by, @gusto_ok_at, @gusto_rejected, @phone_rejected, @employee_id, @emp_ok, @emp_ok_by, @emp_ok_at, @emp_rejected, @zelle_account, @zelle_name, @zelle_accounts, @pay_history, @pay_since, @pay_by, @pay_ok_by, @pay_ok_at, @no_emp_note, @no_emp_by, @no_emp_at, @by, datetime('now'))
       ON CONFLICT(name_key) DO UPDATE SET name=@name, phone=@phone, warehouse=@warehouse, pay_method=@pay_method, pay_note=@pay_note,
         gusto_uuid=@gusto_uuid, checklist=@checklist, gusto_ok=@gusto_ok, gusto_ok_by=@gusto_ok_by, gusto_ok_at=@gusto_ok_at,
         gusto_rejected=@gusto_rejected, phone_rejected=@phone_rejected, employee_id=@employee_id, emp_ok=@emp_ok, emp_ok_by=@emp_ok_by,
         emp_ok_at=@emp_ok_at, emp_rejected=@emp_rejected, zelle_account=@zelle_account, zelle_name=@zelle_name, zelle_accounts=@zelle_accounts,
-        pay_history=@pay_history, pay_since=@pay_since, pay_by=@pay_by, pay_ok_by=@pay_ok_by, pay_ok_at=@pay_ok_at, updated_by=@by, updated_at=datetime('now')`)
+        pay_history=@pay_history, pay_since=@pay_since, pay_by=@pay_by, pay_ok_by=@pay_ok_by, pay_ok_at=@pay_ok_at, no_emp_note=@no_emp_note, no_emp_by=@no_emp_by, no_emp_at=@no_emp_at, updated_by=@by, updated_at=datetime('now')`)
       .run({ key, ...next, by: req.userName || '' });
     for (const [action, detail] of logs) _wobLog(key, req.userName, action, detail);
     if (b.reject === 'step') _wobCascadeAfter(key, req.userName, ['accepted', 'ready'], '第一步没通过');
