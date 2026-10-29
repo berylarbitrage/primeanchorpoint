@@ -86,7 +86,7 @@ body{font-family:'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-ser
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="searchCard" style="display:none">
     <div class="searchrow">
       <input id="phoneInput" type="text" placeholder="电话号码 708-850-2703 或人名 Mercedes" autocomplete="off" autofocus>
       <select id="stateSel" title="按州筛选：申请看申请地点或住址州，员工看工作州或住址州，工头看名单里的州" onchange="stateChanged()"><option value="">全部州</option></select>
@@ -95,7 +95,8 @@ body{font-family:'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-ser
     <div class="hint">输入数字 = 按电话比对（自动忽略空格、括号、横线和开头的 1）；输入字母 = 按人名查（不分大小写，可只输名或姓，多个词都要匹配）；右边选州 = 只看这个州的记录，不输电话 / 人名直接查就列出这个州的全部记录。覆盖：📨 招工申请 · 👷 员工档案 · 🦺 工头。</div>
   </div>
 
-  <div id="loginTip" class="login-tip">⚠️ 需要先登录管理后台才能查询。<a href="/admin.html" target="_blank">去登录</a>，登录后回到本页重试。</div>
+  <div id="authWait" style="text-align:center;padding:1rem;color:#64748b;font-size:.9rem">正在确认登录…</div>
+  <div id="loginTip" class="login-tip">⚠️ 需要先登录管理后台才能查询。<a href="/admin.html" target="_blank">去登录</a>，登录后 <a href="javascript:location.reload()">刷新本页</a>。</div>
   <div id="banner" class="banner"></div>
   <div id="results"></div>
 </div>
@@ -203,7 +204,7 @@ async function doSearch(){
   try{
     const qs=stateOnly?'':(byName?'name=':'phone=')+encodeURIComponent(phone);
     const res=await fetch('/api/admin/phone-check?'+[qs,st?'state='+encodeURIComponent(st):''].filter(Boolean).join('&'),{credentials:'same-origin'});
-    if(res.status===401){ loginTip.style.display='block'; return; }
+    if(res.status===401){ pcShowLogin(); return; }
     const data=await res.json().catch(()=>null);
     if(!res.ok||!data||!data.ok) throw new Error((data&&data.error)||('HTTP '+res.status));
     const total=(data.applications||[]).length+(data.employees||[]).length+(data.foremen||[]).length;
@@ -1624,12 +1625,26 @@ function pcPrompt(label, value) {
     + '<button data-act="ok" style="' + _pcBtnStyle + ';background:#0F2B5B;color:#fff;border:none">保存</button>'
     + '</div>');
 }
-// /phone-check.html?q=电话或人名: 别的页面 (例如 /onboarding 关联员工档案) 直接跳过来查
-(function () {
+// 没登录不显示搜索框: 先问一下登录状态, 登录了才出搜索框
+function pcShowLogin() {
+  document.getElementById('searchCard').style.display = 'none';
+  document.getElementById('results').innerHTML = '';
+  document.getElementById('banner').className = 'banner';
+  document.getElementById('loginTip').style.display = 'block';
+}
+(async function () {
+  let ok = false;
+  try { ok = (await fetch('/api/admin/me', { credentials: 'same-origin' })).ok; } catch (e) {}
+  document.getElementById('authWait').style.display = 'none';
+  if (!ok) { pcShowLogin(); return; }
+  document.getElementById('searchCard').style.display = '';
+  const inp = document.getElementById('phoneInput');
+  inp.focus();
+  // /phone-check.html?q=电话或人名: 别的页面 (例如 /onboarding 关联员工档案) 直接跳过来查
   const q = new URLSearchParams(location.search).get('q');
   if (!q) return;
-  document.getElementById('phoneInput').value = q;
-  setTimeout(() => doSearch(), 0);
+  inp.value = q;
+  doSearch();
 })();
 </script>
 <div id="pcToastWrap" style="position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:15000;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none"></div>
