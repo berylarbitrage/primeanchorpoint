@@ -560,11 +560,11 @@ function renderList() {
 // 发票视图里的老员工: 一行, 能直接定付款方式, 点「展开」看全卡片
 function oldRow(w, k) {
   const dis = D.can_edit ? '' : 'disabled';
-  const pdis = D.can_edit && (w.employee || (w.pend && w.pend.emp)) ? '' : 'disabled';
+  const pdis = D.can_edit && hasEmp(w) ? '' : 'disabled';
   const pm = pmBtns(w, k, pdis, '');
   return `<div class="card old ${w.settled ? 'done' : ''}" style="${w.bank_alert_open ? 'border-left-color:var(--red)' : ''}">
     <b>${esc(w.name)}</b><span class="tag" style="background:var(--g100);color:var(--g600)">${w.is_new ? "🆕 新" : "老员工"} · 第一次 ${esc(w.first_end)}</span>
-    ${w.employee ? `<span class="tag" style="background:#dcfce7;color:#166534">👤 ${esc(w.employee.code || '#' + w.employee.id)}${w.employee.phone ? ' · ' + esc(w.employee.phone) : ''}</span>` : '<span class="tag" style="background:#fee2e2;color:#991b1b">未关联档案</span>'}${w.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff" title="发票是 ${esc((w.inv_states || []).join(' / '))}，档案是 ${esc(w.employee.state)}">⚠ 州不一致：发票 ${esc((w.inv_states || []).join('/'))} · 档案 ${esc(w.employee.state)}</span>` : ''}
+    ${w.employee ? `<span class="tag" style="background:#dcfce7;color:#166534">👤 ${esc(w.employee.code || '#' + w.employee.id)}${w.employee.phone ? ' · ' + esc(w.employee.phone) : ''}</span>` : w.no_emp ? `<span class="tag" style="background:#fef3c7;color:#92400e" title="${esc(w.no_emp.note)}">📝 没有档案 · 特例</span>` : '<span class="tag" style="background:#fee2e2;color:#991b1b">未关联档案</span>'}${w.state_bad ? `<span class="tag" style="background:#dc2626;color:#fff" title="发票是 ${esc((w.inv_states || []).join(' / '))}，档案是 ${esc(w.employee.state)}">⚠ 州不一致：发票 ${esc((w.inv_states || []).join('/'))} · 档案 ${esc(w.employee.state)}</span>` : ''}
     <span class="muted">${w.line.hours ? w.line.hours + 'h' : ''}${w.line.total != null ? ' · ' + money(w.line.total) : ''}</span>
     ${rvTags(w.review_people || 0, w.review_system || 0, k)}${w.key === CUR_KEY ? '<span class="tag" style="background:#0284c7;color:#fff">👉 现在审这个人</span>' : rvWait(w.key) ? '<span class="tag" style="background:#f3f4f6;color:#6b7280">🔒 排队</span>' : ''}
     ${w.pend && w.pend.pay ? `<span class="tag" style="background:#fef3c7;color:#92400e">⏳ ${esc(PM_LABEL[w.pay_method] || '不选')} 等审批</span>` : w.pay_confirm ? `<span class="tag" style="${RV_PEOPLE}">👤 ${esc(PM_LABEL[w.pay_method] || w.pay_method)} · ${esc(w.pay_by || '别人')} 选的，等 admin 确认</span>${D.can_confirm ? `<button class="btn btn-blue btn-sm" onclick="save(${k},{approve:'pay'})">✓ 确认</button>` : ''}` : w.settled ? `<span class="tag" style="background:#dcfce7;color:#166534">✓ 已定 · ${esc(PM_LABEL[w.pay_method] || 'Gusto 已付过')}</span>`
@@ -584,7 +584,7 @@ function card(w, k) {
   const invs = (w.line ? [{ ...w.line, invoice_id: D.invoice.id }] : w.invoices).map(l => `<a class="inv" ${D.can_open_invoice ? `href="/accounting?invoice=${l.invoice_id}" target="_blank"` : ''} title="${esc(l.company)} · ${esc(l.period_start)}~${esc(l.period_end)}">📄 ${esc(l.invoice_number)} <span style="font-weight:400">${md(l.period_end)}${l.hours ? ' · ' + l.hours + 'h' : ''}${l.total != null ? ' · ' + money(l.total) : ''}</span></a>`).join('');
   const alias = w.invoice_names.filter(n => n !== w.name);
   const sug = w.suggest && !w.pay_method ? w.suggest.method : '';
-  const pdis = D.can_edit && (w.employee || (w.pend && w.pend.emp)) ? '' : 'disabled';
+  const pdis = D.can_edit && hasEmp(w) ? '' : 'disabled';
   const pm = pmBtns(w, k, pdis, sug);
   let gusto = '';
   // 还没选 Gusto 时, Gusto 收款人 / 邮件的待审核也要能看到、能审 (单独一块)
@@ -661,7 +661,7 @@ function card(w, k) {
         <div class="lbl">怎么付${w.pend && w.pend.pay ? ' <span class="tag" style="text-transform:none;background:#fef3c7;color:#92400e">⏳ 等审批，下面可以先接着做</span>' : ''}${w.suggest && !w.pay_method ? ` <span style="text-transform:none;color:#0369a1;font-weight:400">· 建议 ${PM_LABEL[w.suggest.method] || w.suggest.method}（${esc(w.suggest.why)}）</span>` : ''}</div>
         <div class="pm" style="margin-bottom:.45rem">${pm}</div>
         ${payConfirm(w, k)}
-        ${w.employee || (w.pend && w.pend.emp) ? '' : '<div class="muted" style="margin:-.2rem 0 .4rem;color:#b45309">① 先关联员工档案，再选付款方式</div>'}
+        ${hasEmp(w) ? '' : '<div class="muted" style="margin:-.2rem 0 .4rem;color:#b45309">① 先关联员工档案（实在没有就备注特例），再选付款方式</div>'}
         ${zelleLine(w, k)}
         <textarea ${dis} rows="2" placeholder="备注：支票抬头 / 现金谁给 …" onchange="save(${k},{pay_note:this.value})">${esc(w.pay_note)}</textarea>
         ${w.updated_by ? `<div class="muted">最后修改 ${esc(w.updated_by)} ${esc((w.updated_at || '').slice(0, 16))}</div>` : ''}
@@ -1287,8 +1287,8 @@ function pmBtns(w, k, pdis, sug) {
     const cls = editing ? (m === editing ? 'on' : m === w.pay_method ? 'cur' : '') : (w.pay_method === m ? 'on' : '');
     const click = editing ? (m === editing ? '' : m === w.pay_method ? `delete ZEDIT[D.rows[${k}].key];renderList()` : `pickPay(${k},'${m}')`)
       : `pickPay(${k},'${w.pay_method === m ? '' : m}')`;
-    const tip = !w.employee ? '先关联员工档案' : editing && m === w.pay_method ? '现在的付款方式，点一下取消填写' : '';
-    return `<button ${pdis} title="${tip}" class="${cls} ${sug === m && w.employee ? 'sug' : ''}" ${click ? `onclick="${click}"` : ''}>${PM_LABEL[m]}${editing && m === w.pay_method && m !== editing ? '（现在）' : ''}</button>`;
+    const tip = !hasEmp(w) ? '先关联员工档案，或备注没有档案的特例' : editing && m === w.pay_method ? '现在的付款方式，点一下取消填写' : '';
+    return `<button ${pdis} title="${tip}" class="${cls} ${sug === m && hasEmp(w) ? 'sug' : ''}" ${click ? `onclick="${click}"` : ''}>${PM_LABEL[m]}${editing && m === w.pay_method && m !== editing ? '（现在）' : ''}</button>`;
   }).join('');
 }
 function pickPay(k, m) {
@@ -1578,8 +1578,32 @@ function empBlock(w, k) {
     <div class="row" style="margin:.2rem 0 0"><span class="muted">${esc(e.by)} 通过</span>${D.can_approve ? `<button class="btn btn-outline btn-sm" onclick="undoApprove(${k},'employee')">↩ 撤销通过</button>` : ''}${D.can_open_employee ? `<a class="btn btn-outline btn-sm" href="/admin.html?emp=${e.id}" target="_blank">打开档案 ↗</a>` : ''}${btn}</div>`;
   const props = (w.employee_proposals || []).map(x => `<div class="row" style="margin:.25rem 0 0;align-items:flex-start"><span class="tag" style="background:#eef2ff;color:#3730a3;font-size:.76rem;line-height:1.4;text-align:left">🔎 ${info(x)}</span>${rvMark(x.why)}
       ${reviewBtns(k, `{approve:'employee',id:${x.id}}`, `{reject:'employee',id:${x.id}}`)}</div>`).join('');
-  return (props || '<span class="tag" style="background:#fee2e2;color:#991b1b">系统里没找到这个人的档案</span>') +
-    `<div class="row" style="margin:.3rem 0 0">${btn}${w.phone_old ? `<span class="muted">之前手填的电话 ${esc(w.phone_old)}</span>` : ''}</div>`;
+  // 实在没有档案: 备注特例后可以直接选付款方式
+  const ne = w.no_emp;
+  const neTag = ne ? `<div class="row" style="margin:.25rem 0 0;align-items:flex-start"><span class="tag" style="background:#fef3c7;color:#92400e;font-size:.76rem;line-height:1.4;text-align:left;white-space:normal">📝 没有档案 · 特例：${esc(ne.note)}<br><span class="muted">${esc(ne.by)} ${esc(fmtTime(ne.at))}</span></span></div>` : '';
+  const neBtn = D.can_edit ? `<button class="btn btn-outline btn-sm" onclick="noEmpEdit(${k})">${ne ? '改特例备注' : '没有档案 · 备注特例'}</button>` : '';
+  return (neTag || props || '<span class="tag" style="background:#fee2e2;color:#991b1b">系统里没找到这个人的档案</span>') + (ne ? props : '') +
+    `<div class="row" style="margin:.3rem 0 0">${btn}${neBtn}${w.phone_old ? `<span class="muted">之前手填的电话 ${esc(w.phone_old)}</span>` : ''}</div>`;
+}
+// 第一步 = 关联员工档案或者备注了没有档案的特例; 都没有不能选付款方式
+function hasEmp(w) { return !!(w.employee || w.no_emp || (w.pend && w.pend.emp)); }
+function noEmpEdit(k) {
+  const w = D.rows[k];
+  const m = document.getElementById('gModal');
+  document.getElementById('gTitle').textContent = `没有员工档案 · 特例 · ${w.name}`;
+  document.getElementById('gBody').innerHTML = `<div class="muted" style="margin-bottom:.4rem">系统里实在没有这个人的档案时，写清楚原因（例如：临时工只做一天、本人不肯登记、由谁担保），备注后就可以直接选付款方式。之后建了档案再关联也可以。</div>
+    <textarea id="neNote" rows="3" style="width:100%" placeholder="为什么没有档案…">${esc(w.no_emp ? w.no_emp.note : '')}</textarea>
+    <div style="display:flex;justify-content:space-between;margin-top:.5rem">${w.no_emp ? `<button class="btn btn-outline btn-sm" style="color:#dc2626" onclick="document.getElementById('gModal').style.display='none';save(${k},{no_emp_note:''})">撤销特例</button>` : '<span></span>'}
+      <span><button class="btn btn-outline btn-sm" onclick="document.getElementById('gModal').style.display='none'">取消</button>
+      <button class="btn btn-blue btn-sm" onclick="noEmpSave(${k})">保存</button></span></div>`;
+  m.style.display = 'flex';
+  document.getElementById('neNote').focus();
+}
+function noEmpSave(k) {
+  const v = document.getElementById('neNote').value.trim();
+  if (!v) { document.getElementById('neNote').focus(); return; }
+  document.getElementById('gModal').style.display = 'none';
+  save(k, { no_emp_note: v });
 }
 async function pickEmployee(k) {
   const m = document.getElementById('gModal');

@@ -421,6 +421,18 @@ const FOREMAN = location.pathname.replace(/\/+$/, '') === '/foreman-register';
 const FOREMAN_TOKEN = '__foreman_reg__';
 const OTP_T = FOREMAN ? FOREMAN_TOKEN : TOKEN;
 if (FOREMAN) document.body.classList.add('fm');
+// 员工代填 (/apply-staff 或链接加 ?staff=1): 登录了管理后台的员工帮工人填, 不用手机 / 邮箱验证码
+const STAFF = !FOREMAN && params.get('staff') === '1';
+let STAFF_OK = false;
+function applyStaffMode(who) {
+  STAFF_OK = true;
+  const bar = document.createElement('div');
+  bar.style.cssText = 'background:#ecfeff;border:1px solid #67e8f9;color:#155e75;border-radius:10px;padding:.6rem .8rem;margin-bottom:.8rem;font-size:.88rem;line-height:1.5';
+  bar.textContent = '👤 员工代填' + (who ? ' · ' + who : '') + '：不需要手机 / 邮箱验证码，工人没有邮箱可以空着。提交后打卡码照样短信发到工人手机。';
+  const fm = document.getElementById('formMain');
+  fm.parentNode.insertBefore(bar, fm);
+  ['phoneSendBtn', 'emailSendBtn', 'phoneOtpBox', 'emailOtpBox'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+}
 
 let _partnerName = '';
 const _files = { ssn_front: null, ssn_back: null, ead_front: null, ead_back: null, cnid_front: null, cnid_back: null };
@@ -454,7 +466,7 @@ function refreshAddressLabels() {
   document.getElementById('fCity').placeholder = CN_MODE ? '广州市' : '';
   document.getElementById('fPhone').placeholder = CN_MODE ? '138 0013 8000' : '(555) 555-5555';
   // 中国申请不用手机验证码 (Twilio 发中国验证码要先审核), 只填号码
-  document.getElementById('phoneSendBtn').style.display = CN_MODE ? 'none' : (_verified.phone ? 'none' : '');
+  document.getElementById('phoneSendBtn').style.display = CN_MODE || STAFF_OK ? 'none' : (_verified.phone ? 'none' : '');
   // Google 地址验证不支持中国, 中国申请不显示验证按钮, 换成一句提示
   document.getElementById('addrVerifyBtn').style.display = CN_MODE ? 'none' : '';
   if (CN_MODE) setAddrMsg(L.addrCnNote, true);
@@ -487,6 +499,14 @@ async function init() {
   applyLang();
   if (FOREMAN) { document.getElementById('formMain').style.display = ''; return; }
   if (!TOKEN) { showErr(I18N[_lang].errNoToken); document.getElementById('partnerName').textContent = '—'; return; }
+  if (STAFF) {
+    // 员工代填: 先确认登录了管理后台, 没登录不出表单
+    let me = null;
+    try { const r = await fetch('/api/apply/staff-me', { credentials: 'same-origin' }); if (r.ok) me = await r.json(); } catch (e) {}
+    if (!me) { showErr('员工代填要先登录管理后台（/admin），登录后刷新本页。'); return; }
+    if (!localStorage.getItem('apply_lang')) setLang('zh');
+    applyStaffMode(me.name);
+  }
   // 表单先亮出来：查公司信息的请求在手机网络上可能很慢甚至挂住，
   // 不能让人对着白屏等。链接真失效了下面才收起表单报错；提交时服务器还会验 token。
   document.getElementById('formMain').style.display = '';
@@ -735,10 +755,10 @@ async function submitForm() {
   const city = document.getElementById('fCity').value.trim();
   const state = document.getElementById('fState').value.trim();
   const zip = document.getElementById('fZip').value.trim();
-  if (!name || (!FOREMAN && !position) || !phone || !email) { showErr(L.errFields); return; }
+  if (!name || (!FOREMAN && !position) || !phone || (!email && !STAFF_OK)) { showErr(L.errFields); return; }
   if (!addr1 || !city || (isUS() && (!state || !zip))) { showErr(isUS() ? L.errAddr : L.errAddrCn); return; }
-  if (CN_MODE ? !/^\+86 1\d{10}$/.test(phone) : !_verified.phone) { showErr(CN_MODE ? L.errPhoneCn : L.errPhone); return; }
-  if (!_verified.email) { showErr(L.errEmail); return; }
+  if (CN_MODE ? !/^\+86 1\d{10}$/.test(phone) : (!_verified.phone && !STAFF_OK)) { showErr(CN_MODE ? L.errPhoneCn : L.errPhone); return; }
+  if (!_verified.email && !STAFF_OK) { showErr(L.errEmail); return; }
   if (CN_MODE ? !(_files.cnid_front && _files.cnid_back) : (!_files.ssn_front || !_files.ead_front || !_files.ead_back)) {
     showErr(CN_MODE ? L.errDocsCn : L.errDocs); return;
   }
@@ -762,6 +782,7 @@ async function submitForm() {
     fd.append('country', CN_MODE ? 'CN' : 'US');
     fd.append('address_verified', addrVerified ? '1' : '0');
     if (!FOREMAN && APPLY_STATE) fd.append('st', APPLY_STATE);
+    if (STAFF_OK) fd.append('staff', '1');
     Object.entries(_files).forEach(([k, f]) => { if (f) fd.append(k, f); });
     const submitUrl = FOREMAN ? '/api/public/foreman-register' : ('/api/apply/submit?t=' + encodeURIComponent(TOKEN));
     const r = await fetch(submitUrl, { method: 'POST', body: fd });
