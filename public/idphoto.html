@@ -161,9 +161,14 @@
 
 <script type="module">
 const MP_VER = '0.10.14';
-const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VER}`;
-const FACE_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
-const SEG_MODEL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/1/selfie_segmenter.tflite';
+// 人脸识别文件先从我们自己的服务器拿 (/mp-assets, 服务器转存), 拿不到再直连 jsdelivr / Google
+const MP_SOURCES = [
+  { base: '/mp-assets', face: '/mp-assets/face_landmarker.task', seg: '/mp-assets/selfie_segmenter.tflite' },
+  { base: `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VER}`,
+    face: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+    seg: 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/1/selfie_segmenter.tflite' },
+];
+const IN_WECHAT = /MicroMessenger/i.test(navigator.userAgent);
 
 // 美国 2x2 证件照：头部（下巴到头顶）占 50–69%，眼睛在离底边 56–69% 的高度
 const OUT = 1200;
@@ -261,20 +266,69 @@ async function openStream() {
   await v.play();
   if (!v.videoWidth) await new Promise(r => v.onloadedmetadata = r);
 }
-async function loadModels() {
-  if (landmarker && segmenter) return;
-  const mp = await import(`${MP_BASE}/vision_bundle.mjs`);
-  vision = vision || await mp.FilesetResolver.forVisionTasks(`${MP_BASE}/wasm`);
+// 加载进度显示在转圈下面, 卡在哪一步一眼能看出来
+function setLoading(msg) {
+  $('loadingTxt').innerHTML = esc(msg) + '<br><span class="muted" style="color:#cbd5e1">第一次打开需要几秒钟</span>';
+}
+function withTimeout(p, ms, msg) {
+  let t;
+  return Promise.race([p, new Promise((_, rej) => { t = setTimeout(() => rej(new Error(msg)), ms); })]).finally(() => clearTimeout(t));
+}
+// 下载模型文件, 显示百分比; 太久没有新数据就算失败
+async function fetchModel(url, label) {
+  const ctl = new AbortController();
+  let idle = setTimeout(() => ctl.abort(), 20000);
+  try {
+    const r = await fetch(url, { signal: ctl.signal });
+    if (!r.ok) throw new Error(label + '下载失败（' + r.status + '）');
+    const total = +r.headers.get('content-length') || 0;
+    if (!r.body || !r.body.getReader) return new Uint8Array(await r.arrayBuffer());
+    const reader = r.body.getReader(), parts = [];
+    let got = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(value); got += value.length;
+      clearTimeout(idle); idle = setTimeout(() => ctl.abort(), 20000);
+      setLoading(`正在下载${label}… ${total ? Math.round(got * 100 / total) + '%' : (got / 1048576).toFixed(1) + ' MB'}`);
+    }
+    const out = new Uint8Array(got);
+    let o = 0; parts.forEach(b => { out.set(b, o); o += b.length; });
+    return out;
+  } catch (e) {
+    throw new Error(e && e.name === 'AbortError' ? label + '下载太慢，超时了' : (e && e.message || String(e)));
+  } finally { clearTimeout(idle); }
+}
+async function loadModelsFrom(src) {
+  setLoading('正在加载人脸识别程序…');
+  const mp = await withTimeout(import(`${src.base}/vision_bundle.mjs`), 30000, '人脸识别程序下载超时');
+  const files = await mp.FilesetResolver.forVisionTasks(`${src.base}/wasm`);
+  const face = await fetchModel(src.face, '人脸模型');
+  const seg = await fetchModel(src.seg, '抠图模型');
+  setLoading('正在启动人脸识别…');
   const mk = async delegate => {
-    landmarker = landmarker || await mp.FaceLandmarker.createFromOptions(vision, {
-      baseOptions: { modelAssetPath: FACE_MODEL, delegate }, runningMode: 'VIDEO', numFaces: 2,
+    const lm = await mp.FaceLandmarker.createFromOptions(files, {
+      baseOptions: { modelAssetBuffer: face, delegate }, runningMode: 'VIDEO', numFaces: 2,
       outputFaceBlendshapes: true, outputFacialTransformationMatrixes: true
     });
-    segmenter = segmenter || await mp.ImageSegmenter.createFromOptions(vision, {
-      baseOptions: { modelAssetPath: SEG_MODEL, delegate }, runningMode: 'IMAGE', outputConfidenceMasks: true, outputCategoryMask: false
+    const sg = await mp.ImageSegmenter.createFromOptions(files, {
+      baseOptions: { modelAssetBuffer: seg, delegate }, runningMode: 'IMAGE', outputConfidenceMasks: true, outputCategoryMask: false
     });
+    return [lm, sg];
   };
-  try { await mk('GPU'); } catch (e) { await mk('CPU'); }
+  // 有些手机 / 微信里 GPU 模式会一直卡着不报错: 等 15 秒不行就换 CPU
+  let pair;
+  try { pair = await withTimeout(mk('GPU'), 15000, 'GPU 启动超时'); }
+  catch (e) { setLoading('正在启动人脸识别（兼容模式）…'); pair = await withTimeout(mk('CPU'), 45000, '人脸识别启动超时'); }
+  vision = files; [landmarker, segmenter] = pair;
+}
+async function loadModels() {
+  if (landmarker && segmenter) return;
+  let lastErr = null;
+  for (const src of MP_SOURCES) {
+    try { await loadModelsFrom(src); return; } catch (e) { lastErr = e; console.warn('[idphoto] load from', src.base, 'failed:', e); }
+  }
+  throw new Error((lastErr && lastErr.message || '人脸识别加载失败') + '。请检查网络后重试' + (IN_WECHAT ? '；或者点右上角「…」选「在浏览器打开」' : ''));
 }
 function stopCamera() {
   running = false;
@@ -595,7 +649,7 @@ async function capture(auto) {
   } catch (e) {
     showAlert('生成失败：' + e.message);
     running = true; requestAnimationFrame(loop);
-  } finally { $('loading').style.display = 'none'; $('loadingTxt').innerHTML = '正在加载人脸识别…'; }
+  } finally { $('loading').style.display = 'none'; setLoading('正在加载人脸识别…'); }
 }
 
 // ─── ③ 生成 2x2 证件照 ───

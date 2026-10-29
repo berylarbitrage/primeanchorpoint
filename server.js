@@ -11368,6 +11368,45 @@ app.get('/foreman-register', (req, res) => res.sendFile(path.join(__dirname, 'pu
 app.get('/foreman-intake/:token', (req, res) => res.sendFile(path.join(__dirname, 'public', 'foreman-intake.html')));
 app.get('/foremen', (req, res) => res.sendFile(path.join(__dirname, 'public', 'foremen.html')));
 app.get('/idphoto', (req, res) => res.sendFile(path.join(__dirname, 'public', 'idphoto.html')));
+// 证件照页的人脸识别文件 (MediaPipe 程序 + 模型) 由我们自己的服务器转发: 手机直连 jsdelivr / Google 经常很慢
+// 或者打不开 (微信里尤其), 页面就一直卡在「正在加载人脸识别」。第一次用时服务器下载一份存到数据目录, 以后直接给。
+const _MP_VER = '0.10.14';
+const _MP_FILES = {
+  'vision_bundle.mjs': [`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${_MP_VER}/vision_bundle.mjs`, 'text/javascript'],
+  'wasm/vision_wasm_internal.js': [`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${_MP_VER}/wasm/vision_wasm_internal.js`, 'text/javascript'],
+  'wasm/vision_wasm_internal.wasm': [`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${_MP_VER}/wasm/vision_wasm_internal.wasm`, 'application/wasm'],
+  'wasm/vision_wasm_nosimd_internal.js': [`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${_MP_VER}/wasm/vision_wasm_nosimd_internal.js`, 'text/javascript'],
+  'wasm/vision_wasm_nosimd_internal.wasm': [`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${_MP_VER}/wasm/vision_wasm_nosimd_internal.wasm`, 'application/wasm'],
+  'face_landmarker.task': ['https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task', 'application/octet-stream'],
+  'selfie_segmenter.tflite': ['https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/1/selfie_segmenter.tflite', 'application/octet-stream'],
+};
+const _mpDownloading = {};   // 同一个文件同时只下载一次
+app.get(/^\/mp-assets\/(.+)$/, async (req, res) => {
+  const name = req.params[0];
+  const f = _MP_FILES[name];
+  if (!f) return res.status(404).end();
+  const file = path.join(dataDir, 'mp-cache', _MP_VER, name.replace(/\//g, '__'));
+  try {
+    if (!fs.existsSync(file)) {
+      _mpDownloading[name] = _mpDownloading[name] || (async () => {
+        const r = await fetch(f[0]);
+        if (!r.ok) throw new Error('upstream ' + r.status);
+        const buf = Buffer.from(await r.arrayBuffer());
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file + '.tmp', buf);
+        fs.renameSync(file + '.tmp', file);
+      })().finally(() => { delete _mpDownloading[name]; });
+      await _mpDownloading[name];
+    }
+    res.set('Content-Type', f[1]);
+    res.set('Cache-Control', 'public, max-age=31536000, immutable');
+    res.set('Access-Control-Allow-Origin', '*');
+    res.sendFile(path.resolve(file));
+  } catch (e) {
+    console.error('[mp-assets]', name, e.message);
+    res.status(502).json({ error: '人脸识别文件下载失败' });
+  }
+});
 
 // ─── Worker Accounts (admin manages) ───
 app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
