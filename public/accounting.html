@@ -503,6 +503,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <option value="pending">⏳ 待管理员核查</option>
         <option value="approved">✅ 同意支付 · 待付款</option>
         <option value="paid">💰 已付完</option>
+        <option value="bad">⚠ 有金额不对的（要撤销重新确认）</option>
         <option value="partpaid">🟡 付了一部分周</option>
         <option value="rejected">✖ 拒绝支付</option>
         <option value="noshow">❌ 没去面试</option>
@@ -2552,16 +2553,16 @@ function _refHr4w(r) {
     const row = (r.hr_bonus || {})['m4_' + w.id] || null;
     // 同一账期的第 2 张发票: 工时已经加进第 1 张那周; 之前单独确认过的列出来好撤销
     if (w.merged_into) {
-      if (row) out.push({ k: 'm4_' + w.id, label: '同一周的第 2 张发票（已并入，请撤销）', amt: 0, amount: row.amount, calc: '', cnt: 0, st: 'done', hint: '', period: _refInvPer(w), row });
+      if (row) out.push({ k: 'm4_' + w.id, label: '同一周的第 2 张发票（已并入，请撤销）', undo: true, amt: 0, amount: row.amount, calc: '', cnt: 0, st: 'done', hint: '', period: _refInvPer(w), row });
       continue;
     }
-    if (k > REF_HR_4W_TO) { if (row) out.push({ k: 'm4_' + w.id, label: `第 ${k} 周（超过第 ${REF_HR_4W_TO} 周，请撤销）`, amt: 0, amount: row.amount, calc: '', cnt: 0, st: 'done', hint: '', period: _refInvPer(w), row }); k += w.span_eff || 1; continue; }
+    if (k > REF_HR_4W_TO) { if (row) out.push({ k: 'm4_' + w.id, label: `第 ${k} 周（超过第 ${REF_HR_4W_TO} 周，请撤销）`, undo: true, amt: 0, amount: row.amount, calc: '', cnt: 0, st: 'done', hint: '', period: _refInvPer(w), row }); k += w.span_eff || 1; continue; }
     const n = w.span_eff || 1, end = k + n - 1;
     // 这张发票落在第 2–5 周里的那几周
     const from = Math.max(k, REF_HR_4W_FROM), to = Math.min(end, REF_HR_4W_TO), cnt = to - from + 1;
     if (cnt <= 0) {
       // 只有第 1 周的发票: 不算 (已在「满 1 周」里); 之前误确认过的列出来好撤销
-      if (row) out.push({ k: 'm4_' + w.id, label: `第 ${k} 周（和满 1 周重复，请撤销）`, amt: 0, amount: row.amount, calc: '', cnt: 0, st: 'done', hint: '', row });
+      if (row) out.push({ k: 'm4_' + w.id, label: `第 ${k} 周（和满 1 周重复，请撤销）`, undo: true, amt: 0, amount: row.amount, calc: '', cnt: 0, st: 'done', hint: '', row });
       k += n; continue;
     }
     // 基准工时按这一行算几周: 一周 40 工时, 两周一起算 (第 3–4 周) 80 工时;
@@ -2604,11 +2605,36 @@ function _refHrMgmt(r) {
   }
   // 之前按日期确认过、但发票还没关联到那周的, 照样列出来 (可以撤销)
   Object.keys(r.hr_bonus || {}).map(k => /^mgmt(\d+)$/.exec(k)).filter(m => m && +m[1] > units.length).sort((a, b) => a[1] - b[1]).forEach(m => {
-    out.push({ k: m[0], label: `第 ${m[1]} 周`, sub: '还没关联这周发票', amt: REF_HR_MGMT_AMT, amount: REF_HR_MGMT_AMT, st: 'done', calc: '', row: r.hr_bonus[m[0]] });
+    out.push({ k: m[0], label: `第 ${m[1]} 周`, sub: '还没关联这周发票', undo: true, amt: REF_HR_MGMT_AMT, amount: REF_HR_MGMT_AMT, st: 'done', calc: '', row: r.hr_bonus[m[0]] });
   });
   // 发票还没关联到第 6 周: 不列
   return out;
 }
+// ⚠ 新规则之前确认的金额不对: 确认 / 已付的金额 ≠ 现在算出来的, 或这一条按新规则不该有 (undo) → 标红, 撤销后重新确认
+function _refHbBad(b) {
+  const row = b && b.row;
+  if (!row || !['approved', 'paid'].includes(row.status)) return false;
+  return !!b.undo || (!!b.calc && Math.abs((Number(row.amount) || 0) - (Number(b.amount) || 0)) > 0.005);
+}
+// 每周介绍费: 管理员确认的金额 ≠ 现在算出来的 (没手写金额的; 并入同一周的发票算出来是 $0)
+function _refWeekBad(w) {
+  return w.kind !== 'iv' && w.admin_status === 'approved' && w.fee == null && w.fee_default != null
+    && Math.abs((Number(w.admin_fee) || 0) - (Number(w.fee_default) || 0)) > 0.005;
+}
+// 一条介绍里有几条金额不对 (每周介绍费 + HR 奖励)
+function _refBadN(r) {
+  let n = (r.weeks || []).filter(_refWeekBad).length;
+  if (_refHrOf(r)) {
+    const hasW1 = _refWeekUnits(r).length > 0;
+    const items0 = _refHrBonus(r).filter(b => b.k !== 'week1' || hasW1 || b.row), f4 = _refHr4w(r);
+    const m12 = _refHrMerge12(r, items0, f4);
+    const items = (m12 ? items0.map(b => b.k === 'week1' ? m12 : b) : items0)
+      .concat(m12 ? f4.filter(b => !m12.k.split(',').includes(b.k)) : f4, _refHrMgmt(r));
+    n += items.filter(_refHbBad).length;
+  }
+  return n;
+}
+const _REF_BAD_TAG = t => `<span style="display:inline-block;background:#dc2626;color:#fff;border-radius:4px;padding:0 6px;font-size:.68rem;font-weight:800;white-space:nowrap">⚠ ${t}</span>`;
 // HR 奖励节点的时间线步骤 (确认金额 → 确认支付 → 审核 → 记已付)
 function _refHbSteps(row) {
   return row ? [
@@ -2621,7 +2647,7 @@ function _refHrBonusRow(r) {
   const hr = _refHrOf(r);
   if (!hr) return '';
   const isAdmin = USER.role === 'admin', canPay = ['accounting', 'admin'].includes(USER.role);
-  let due = 0, paid = 0;
+  let due = 0, paid = 0, nBad = 0;
   const th = 'text-align:left;font-size:.68rem;color:var(--g400);font-weight:600;padding:.25rem .5rem;border-bottom:1px solid #e9d5ff;white-space:nowrap';
   const td = 'padding:.3rem .5rem;border-bottom:1px solid #f3e8ff;font-size:.78rem;vertical-align:middle';
   const line = b => {
@@ -2658,8 +2684,10 @@ function _refHrBonusRow(r) {
     if (!how && b.calc) how = `<span style="color:var(--g500)">${esc(b.calc)}${b.calc.includes('×') || b.calc.startsWith('每周') || b.calc.includes('给满') ? ` = <b style="color:#0f4c6b">${yuan(b.amount)}</b>` : ''}</span>`;
     // 已确认 / 已付的金额和现在算出来的不一样 (确认时改过, 或之后发票工时变了) 就标出来
     if ((st === 'approved' || st === 'paid') && b.calc && Math.abs((Number(row.amount) || 0) - (Number(b.amount) || 0)) > 0.005)
-      how += ` <span style="color:#b45309;white-space:nowrap">· 确认金额 ${yuan(row.amount)}（算出 ${yuan(b.amount)}）</span>`;
-    return `<tr><td style="${td};font-weight:700;color:#334155;white-space:nowrap">${b.label}${b.sub ? ` <span style="font-weight:400;font-size:.7rem;color:var(--g500)">${esc(b.sub)}</span>` : ''}${b.period ? `<div style="font-weight:400;font-size:.68rem;color:var(--g400)">${esc(b.period)}</div>` : ''}</td><td style="${td};color:var(--g500);white-space:nowrap">${yuan(b.amt)}</td>
+      how += ` <span style="color:#dc2626;font-weight:700;white-space:nowrap">· 确认金额 ${yuan(row.amount)}（算出 ${yuan(b.amount)}）</span>`;
+    const bad = _refHbBad(b);
+    if (bad) { nBad++; act = _REF_BAD_TAG(row.status === 'paid' ? '已付金额不对' : row.pay_req ? '金额不对 · 先退回确认支付再撤销' : '金额不对 · 请撤销重新确认') + ' ' + act; }
+    return `<tr${bad ? ' style="background:#fef2f2;box-shadow:inset 3px 0 0 #dc2626"' : ''}><td style="${td};font-weight:700;color:${bad ? '#b91c1c' : '#334155'};white-space:nowrap">${b.label}${b.sub ? ` <span style="font-weight:400;font-size:.7rem;color:var(--g500)">${esc(b.sub)}</span>` : ''}${b.period ? `<div style="font-weight:400;font-size:.68rem;color:var(--g400)">${esc(b.period)}</div>` : ''}</td><td style="${td};color:var(--g500);white-space:nowrap">${yuan(b.amt)}</td>
       <td style="${td}">${how}</td><td style="${td};text-align:right;white-space:nowrap">${amt}</td><td style="${td};white-space:nowrap">${act}${b.k && (row || String(b.k).split(',').some(k => ((r.pay_log || {})['hb:' + k] || []).length)) ? _refHistLink(hkey, hopen) : ''}</td></tr>`
       + (hopen ? `<tr><td colspan="5" style="background:#fff;padding:.35rem .9rem;font-size:.74rem;line-height:1.7;border-bottom:1px solid #f3e8ff">${_refTimeline(r, 'hb:' + b.k, '¥', _refHbSteps(row))}</td></tr>` : '');
   };
@@ -2679,7 +2707,7 @@ function _refHrBonusRow(r) {
   const sub = t => `<tr><td colspan="5" style="padding:.35rem .5rem .2rem;font-size:.74rem;font-weight:800;color:#6d28d9;background:#faf5ff">${t}</td></tr>`;
   return `<div class="ref-row" style="background:#faf5ff;flex-wrap:wrap"><b style="color:#6d28d9;white-space:nowrap">🙋 HR 奖励 · ${esc(hr)}</b>
       <span style="font-size:.74rem;color:var(--g500)">${r.hr_self ? 'HR 自己招的' : '工头介绍 · HR 提交'}</span><span style="flex:1"></span>
-      <span style="font-size:.76rem;color:var(--g500);white-space:nowrap">已确认 <b>${yuan(due)}</b> · 已付 <b style="color:#047857">${yuan(paid)}</b></span></div>
+      ${nBad ? _REF_BAD_TAG(`${nBad} 条金额不对，请撤销重新确认`) : ''}<span style="font-size:.76rem;color:var(--g500);white-space:nowrap">已确认 <b>${yuan(due)}</b> · 已付 <b style="color:#047857">${yuan(paid)}</b></span></div>
     <div class="ref-weeks"><table style="width:100%;border-collapse:collapse;min-width:640px"><thead><tr>
       <th style="${th}">奖励</th><th style="${th}">标准</th><th style="${th}">怎么算</th><th style="${th};text-align:right">金额</th><th style="${th}">确认 / 付款</th></tr></thead><tbody>
       ${sub('🎯 招工奖励')}${items}
@@ -2969,7 +2997,7 @@ function _refPayHrRows(list) {
       else if (row.pay_req === 'requested') st = 'review';
       else st = 'req';
       const lab = /^mgmt/.test(b.k) ? `管理奖励 ${b.label}` : /^m4_/.test(b.k) ? `${b.label}奖励` : b.label;
-      out.push({ hb: true, id: `h:${r.id}:${b.k}`, r, b, row, hr, lab, ps, pe, payee: hr, amt, est: !row, st });
+      out.push({ hb: true, id: `h:${r.id}:${b.k}`, r, b, row, hr, bad: _refHbBad(b), lab, ps, pe, payee: hr, amt, est: !row, st });
     });
   });
   return out;
@@ -2998,7 +3026,7 @@ function _refPayWeekRows(list) {
       else if (w.pay_req === 'approved') st = 'topay';
       else if (w.pay_req === 'requested') st = 'review';
       else st = 'req';
-      out.push({ r, w, lab: iv ? '' : labs[i], ps: v.period_start || v.invoice_date || '', pe: v.period_end || '', payee: r.foreman_name || '—', amt, est, st, partial: paid && pn.paid_status === 'partial' });
+      out.push({ r, w, bad: _refWeekBad(w), lab: iv ? '' : labs[i], ps: v.period_start || v.invoice_date || '', pe: v.period_end || '', payee: r.foreman_name || '—', amt, est, st, partial: paid && pn.paid_status === 'partial' });
     });
   });
   return out;
@@ -3102,14 +3130,14 @@ function _refPayWeeksHtml(list) {
         : x.st === 'topay' ? `🛡 ${esc(w.pay_ok_by)} ${esc(_refAt(w.pay_ok_at))}`
         : x.st === 'review' ? `💳 ${esc(w.pay_req_by)} ${esc(_refAt(w.pay_req_at))}`
         : x.st === 'req' ? `✅ ${esc(w.admin_by)} ${esc(_refAt(w.admin_at))}` : '';
-      return `<tr${x.st === 'nopay' ? ' style="color:var(--g400)"' : _refPwSel.has(w.id) ? ' style="background:#eff6ff"' : ''}>
+      return `<tr${x.bad ? ' style="background:#fef2f2;box-shadow:inset 3px 0 0 #dc2626"' : x.st === 'nopay' ? ' style="color:var(--g400)"' : _refPwSel.has(w.id) ? ' style="background:#eff6ff"' : ''}>
         <td style="${td};width:22px">${a ? `<input type="checkbox" ${_refPwSel.has(w.id) ? 'checked' : ''} onchange="refPwPick(${w.id}, this.checked)">` : ''}</td>
         <td style="${td};font-weight:700">${esc(x.payee)}${x.r.foreman_phone ? ` <span style="font-weight:400;font-size:.72rem;color:var(--g400)">${esc(x.r.foreman_phone)}</span>` : ''}</td>
         <td style="${td}"><a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="refJumpTo(${x.r.id})">${esc(x.r.worker_name || '—')}</a></td>
         <td style="${td};color:var(--g500)">${w.kind === 'iv' ? '🎯 过面试' : `第 ${x.lab} 周`}${tab === 'paid' || byPerson ? ` <span style="font-size:.72rem;color:var(--g400)">${esc(x.ps)} ~ ${esc(x.pe)}</span>` : ''}</td>
         <td style="${td};text-align:right;font-weight:800">${x.est ? '<span style="color:var(--g400);font-weight:400" title="还没确认金额">待确认</span>' : money(x.amt)}</td>
         <td style="${td};font-size:.72rem;color:var(--g500)">${esc(calc)}</td>
-        <td style="${td}"><span style="display:inline-block;padding:1px 8px;border-radius:999px;font-size:.72rem;font-weight:700;color:${fg};background:${bg}">${t}${x.partial ? '（部分）' : ''}</span> <span style="font-size:.7rem;color:var(--g400)">${when}</span>${_refHistLink(`${x.r.id}|w${w.id}`, _refHistOpen.has(`${x.r.id}|w${w.id}`))}</td></tr>`
+        <td style="${td}">${x.bad ? _REF_BAD_TAG('金额不对 · 点工人名字去撤销') + ' ' : ''}<span style="display:inline-block;padding:1px 8px;border-radius:999px;font-size:.72rem;font-weight:700;color:${fg};background:${bg}">${t}${x.partial ? '（部分）' : ''}</span> <span style="font-size:.7rem;color:var(--g400)">${when}</span>${_refHistLink(`${x.r.id}|w${w.id}`, _refHistOpen.has(`${x.r.id}|w${w.id}`))}</td></tr>`
         + (_refHistOpen.has(`${x.r.id}|w${w.id}`) ? `<tr><td></td><td colspan="6" style="background:#faf5ff;padding:.35rem .8rem;font-size:.74rem;line-height:1.7">${_refTimeline(x.r, 'w' + w.id, '$', [
             { action: w.admin_status === 'rejected' ? 'amount_reject' : 'amount_approve', alt: ['amount_approve', 'amount_reject'], at: w.admin_at, by: w.admin_by, amount: w.admin_status === 'approved' ? w.admin_fee : null },
             { action: 'payreq_request', at: w.pay_req_at, by: w.pay_req_by }, { action: 'payreq_approve', at: w.pay_ok_at, by: w.pay_ok_by },
@@ -3124,14 +3152,14 @@ function _refPayWeeksHtml(list) {
         : x.st === 'review' ? `💳 ${esc(row.pay_req_by || '')} ${esc(_refAt(row.pay_req_at))}`
         : x.st === 'req' ? `✅ ${esc(row.decided_by || '')} ${esc(_refAt(row.decided_at))}`
         : x.st === 'nopay' ? esc(row.note || '') : '';
-      return `<tr${x.st === 'nopay' ? ' style="color:var(--g400)"' : _refPwSel.has(x.id) ? ' style="background:#f5f3ff"' : ''}>
+      return `<tr${x.bad ? ' style="background:#fef2f2;box-shadow:inset 3px 0 0 #dc2626"' : x.st === 'nopay' ? ' style="color:var(--g400)"' : _refPwSel.has(x.id) ? ' style="background:#f5f3ff"' : ''}>
         <td style="${td};width:22px">${a ? `<input type="checkbox" ${_refPwSel.has(x.id) ? 'checked' : ''} onchange="refPwPick('${x.id}', this.checked)">` : ''}</td>
         <td style="${td};font-weight:700;color:#6d28d9">${esc(x.hr)} <span style="font-weight:400;font-size:.72rem;color:var(--g400)">${x.r.hr_self ? 'HR 自己招的' : '工头介绍 · HR 提交'}</span></td>
         <td style="${td}"><a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="refJumpTo(${x.r.id})">${esc(x.r.worker_name || '—')}</a></td>
         <td style="${td};color:var(--g500)">${esc(x.lab)}${(tab === 'paid' || byPerson) && (x.ps || x.pe) ? ` <span style="font-size:.72rem;color:var(--g400)">${esc(x.ps)} ~ ${esc(x.pe)}</span>` : ''}</td>
         <td style="${td};text-align:right;font-weight:800">${x.est ? `<span style="color:var(--g400);font-weight:400" title="还没确认金额，现在算出来的数">≈ ${yuan(x.amt)}</span>` : yuan(x.amt)}</td>
         <td style="${td};font-size:.72rem;color:var(--g500)">${esc(x.b.calc || '')}</td>
-        <td style="${td}"><span style="display:inline-block;padding:1px 8px;border-radius:999px;font-size:.72rem;font-weight:700;color:${fg};background:${bg}">${x.st === 'nopay' ? '✖ 不给' : t}</span> <span style="font-size:.7rem;color:var(--g400)">${when}</span>${x.row || ((x.r.pay_log || {})['hb:' + x.b.k] || []).length ? _refHistLink(hkey, hopen) : ''}</td></tr>`
+        <td style="${td}">${x.bad ? _REF_BAD_TAG('金额不对 · 点工人名字去撤销') + ' ' : ''}<span style="display:inline-block;padding:1px 8px;border-radius:999px;font-size:.72rem;font-weight:700;color:${fg};background:${bg}">${x.st === 'nopay' ? '✖ 不给' : t}</span> <span style="font-size:.7rem;color:var(--g400)">${when}</span>${x.row || ((x.r.pay_log || {})['hb:' + x.b.k] || []).length ? _refHistLink(hkey, hopen) : ''}</td></tr>`
         + (hopen ? `<tr><td></td><td colspan="6" style="background:#faf5ff;padding:.35rem .8rem;font-size:.74rem;line-height:1.7">${_refTimeline(x.r, 'hb:' + x.b.k, '¥', _refHbSteps(x.row))}</td></tr>` : '');
     }).join('');
     const thead = (who, col, amt) => `<thead><tr><th style="${th}"></th><th style="${th}">${who}</th><th style="${th}">介绍的工人</th><th style="${th}">${col}</th><th style="${th};text-align:right">${amt}</th><th style="${th}">怎么算</th><th style="${th}">状态 / 时间</th></tr></thead>`;
@@ -3372,6 +3400,7 @@ function renderRefList() {
     || (qd.length >= 4 && (dg(r.worker_phone).includes(qd) || dg(r.foreman_phone).includes(qd))));
   if (flt === 'noshow') list = list.filter(r => r.interview_status === 'no_show');
   else if (flt === 'failed') list = list.filter(r => r.interview_status === 'failed');
+  else if (flt === 'bad') list = list.filter(_refBadN);
   else if (flt) list = list.filter(r => _refOverall(r) === flt);
   if (by) list = list.filter(r => by === '__none__' ? !_refHrKey(r) : _refHrKey(r) === by);
   // 只看到上周为止: 本周才开始上班的 (还没账单) 不列; 没开始上班的不受影响
@@ -3418,6 +3447,8 @@ function renderRefList() {
     stat('共', _refList.length + ' 条'), stat('⏳ 待核查', pendN, '#c2410c'), stat('✅ 待付款', waitN, '#b45309'), stat('💰 已付完', paidN, '#047857'),
     stat('已付', money(tot.paid), '#047857'), stat('还要付（已确认）', money(Math.max(0, tot.due - tot.paid)), '#dc2626'),
     ...(tot.est ? [stat('待确认金额', tot.est + ' 周', '#64748b')] : []),
+    // 新规则之前确认的金额不对的: 点一下只看这些
+    ...(() => { const n = _refList.filter(_refBadN).length; return n ? [`<span style="background:#dc2626;color:#fff;border-radius:999px;padding:.15rem .65rem;white-space:nowrap;cursor:pointer;font-weight:700" title="点一下只看这些（各个阶段的数字也跟着变）" onclick="document.getElementById('refFilter').value='bad';renderRefList()">⚠ ${n} 条介绍有金额不对</span>`] : []; })(),
   ].join(' ');
   const badge = document.getElementById('refPendBadge');
   badge.style.display = pendN && USER.role === 'admin' ? '' : 'none';
@@ -3485,7 +3516,7 @@ function renderRefList() {
       // 确认后照样显示怎么算的; 管理员确认时改了金额就标出来
       : w.admin_status === 'approved' ? `<b>${money(w.admin_fee)}</b>${feeCalc(w)
           || (w.fee != null ? `<div style="font-size:.68rem;color:var(--g500);white-space:nowrap">手写 ${money(w.fee)}</div>` : w.fee_default != null ? `<div style="font-size:.68rem;color:var(--g500);white-space:nowrap">按介绍费 ${money(w.fee_default)}${(w.span_eff || 1) > 1 ? `（${w.span_eff} 周）` : ''}</div>` : '')}${
-          w.fee_default != null && w.fee == null && Math.abs(Number(w.admin_fee) - Number(w.fee_default)) > 0.005 ? `<div style="font-size:.68rem;color:#b45309;white-space:nowrap">算出 ${money(w.fee_default)}，确认时改成 ${money(w.admin_fee)}</div>` : ''}`
+          w.fee_default != null && w.fee == null && Math.abs(Number(w.admin_fee) - Number(w.fee_default)) > 0.005 ? `<div style="font-size:.68rem;color:#dc2626;font-weight:700;white-space:nowrap">算出 ${money(w.fee_default)}，确认的是 ${money(w.admin_fee)}</div>` : ''}`
       : w.admin_status === 'rejected' ? '<span style="color:var(--g400)">—</span>'
       : w.merged_into ? `<span style="color:var(--g400)">$0</span>${feeCalc(w)}`
       : canInv && r.review_status !== 'rejected' && r.fee_unit === 'container' ? `<div style="display:flex;gap:.25rem;align-items:center;justify-content:flex-end">
@@ -3531,7 +3562,7 @@ function renderRefList() {
       if (r.hr_self) return '<span style="color:var(--g400)">—</span>';
       const who = [w.admin_by, _refAt(w.admin_at)].filter(Boolean).join(' · ');
       const undo = isAdmin && !weekPaid(w) ? ` <a style="cursor:pointer;color:var(--g400);text-decoration:underline;font-size:.7rem" onclick="refWeekReview(${w.id},'reset')">撤销</a>` : '';
-      if (w.admin_status === 'approved') return `<span style="color:#047857;font-weight:700">✅ 金额已确认</span> <span style="font-size:.68rem;color:var(--g400)">${esc(who)}${w.admin_note ? ' · ' + esc(w.admin_note) : ''}${undo}</span>`;
+      if (w.admin_status === 'approved') return `${_refWeekBad(w) ? _REF_BAD_TAG(weekPaid(w) ? '已付金额不对' : '金额不对 · 请撤销重新确认') + '<br>' : ''}<span style="color:#047857;font-weight:700">✅ 金额已确认</span> <span style="font-size:.68rem;color:var(--g400)">${esc(who)}${w.admin_note ? ' · ' + esc(w.admin_note) : ''}${undo}</span>`;
       if (w.admin_status === 'rejected') return `<span style="color:#b91c1c;font-weight:700">✖ 这周不付</span> <span style="font-size:.68rem;color:var(--g400)">${esc(who)}${w.admin_note ? ' · ' + esc(w.admin_note) : ''}${undo}</span>`;
       if (r.review_status === 'rejected') return '<span style="color:var(--g400)">—</span>';
       if (!isAdmin) return '<span style="font-size:.72rem;color:#b45309">待管理员确认</span>';
@@ -3571,7 +3602,7 @@ function renderRefList() {
                 <option value="2" ${w.span === 2 ? 'selected' : ''}>按 2 周</option></select></div>`
             : n > 1 ? '<div style="font-size:.68rem;color:var(--g500);font-weight:400">两周的发票</div>' : '';
           const paid = w.pay_note && w.pay_note.paid_status === 'paid';
-          return `<tr style="${paid ? 'background:#f0fdf4' : w.admin_status === 'rejected' ? 'background:#fafafa;color:var(--g400)' : ''}">
+          return `<tr style="${_refWeekBad(w) ? 'background:#fef2f2;box-shadow:inset 3px 0 0 #dc2626' : paid ? 'background:#f0fdf4' : w.admin_status === 'rejected' ? 'background:#fafafa;color:var(--g400)' : ''}">
             <td style="${td};font-weight:800;color:#0f4c6b;white-space:nowrap">第 ${labs[i]} 周${w.merged_into ? '<div style="font-size:.68rem;color:#7c3aed;font-weight:400">同一周第 2 张发票 · 已并入</div>' : spanSel}</td>
             <td style="${td};white-space:nowrap">${v.period_start || v.period_end ? `${esc(v.period_start || '?')} ~ ${esc(v.period_end || '?')}` : `<span style="color:var(--g400)">开票 ${esc(v.invoice_date || '—')}</span>`}</td>
             <td style="${td}"><a onclick="openInvoice(${v.id})" style="cursor:pointer;color:#1d4ed8;font-weight:700;text-decoration:underline;white-space:nowrap">📄 ${esc(v.invoice_number || '')}</a> <span style="color:var(--g500);font-size:.74rem">${esc(v.company_name || '')}</span>
