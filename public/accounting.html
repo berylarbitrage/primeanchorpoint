@@ -2864,6 +2864,9 @@ function _refLastSunday() {
 function refPastOnly(on) { _refPastOnly = !!on; try { localStorage.setItem('ref_past_only', on ? '1' : '0'); } catch (e) {} renderRefList(); }
 let _refPwTab = (() => { try { return localStorage.getItem('ref_pw_tab') || 'todo'; } catch (e) { return 'todo'; } })();
 const _refPwSel = new Set();
+// 分组: period 按账期 (付款记录按付款日期) / person 按人 — 一个工头 / HR 所有账期加在一起 (记在浏览器里)
+let _refPwGroup = (() => { try { return localStorage.getItem('ref_pw_group') === 'person' ? 'person' : 'period'; } catch (e) { return 'period'; } })();
+function refPwGroup(v) { _refPwGroup = v; try { localStorage.setItem('ref_pw_group', v); } catch (e) {} renderRefList(); }
 function refPwTab(v) { _refPwTab = v; _refPwSel.clear(); try { localStorage.setItem('ref_pw_tab', v); } catch (e) {} renderRefList(); }
 const _REF_PW_TABS = { todo: ['amount', 'req', 'review'], topay: ['topay'], paid: ['paid'], all: null };
 // 勾选: 每行 / 每周全选 / 当前页签全选
@@ -2958,8 +2961,11 @@ function _refPayWeekRows(list) {
   list.forEach(r => {
     if (r.hr_self || r.review_status === 'rejected') return;
     const labs = _refWeekLabels(r);
-    (r.weeks || []).forEach((w, i) => {
-      const v = w.invoice || {};
+    // 工头过面试 $5 (kind='iv') 不对应发票: 跟第 1 张发票同一个账期
+    const v0 = ((r.weeks || [])[0] || {}).invoice || { invoice_date: String(r.interview_attended_at || r.interview_at || '').slice(0, 10) };
+    (r.iv_week ? [r.iv_week] : []).concat(r.weeks || []).forEach((w, i0) => {
+      const iv = w.kind === 'iv', i = r.iv_week ? i0 - 1 : i0;
+      const v = iv ? v0 : w.invoice || {};
       if (lastSun && String(v.period_end || v.invoice_date || '').slice(0, 10) > lastSun) return;   // 本周的不看
       const pn = w.pay_note;
       const paid = !!(pn && ['paid', 'partial'].includes(pn.paid_status));
@@ -2970,7 +2976,7 @@ function _refPayWeekRows(list) {
       else if (w.pay_req === 'approved') st = 'topay';
       else if (w.pay_req === 'requested') st = 'review';
       else st = 'req';
-      out.push({ r, w, lab: labs[i], ps: v.period_start || v.invoice_date || '', pe: v.period_end || '', payee: r.foreman_name || '—', amt, est, st, partial: paid && pn.paid_status === 'partial' });
+      out.push({ r, w, lab: iv ? '' : labs[i], ps: v.period_start || v.invoice_date || '', pe: v.period_end || '', payee: r.foreman_name || '—', amt, est, st, partial: paid && pn.paid_status === 'partial' });
     });
   });
   return out;
@@ -3000,6 +3006,7 @@ function _refPayWeeksHtml(list) {
   const allOn = pickable.length && pickable.every(id => _refPwSel.has(id));
   const bar = `<div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin-bottom:.1rem">
       ${tb('todo', '⏳ 待确认')}${tb('topay', '🛡 待付款')}${tb('paid', '💰 付款记录')}${tb('all', '全部')}
+      <span style="display:inline-flex;border:1px solid var(--g300);border-radius:6px;overflow:hidden;margin:0 .2rem">${[['period', tab === 'paid' ? '🗓 按付款日期' : '🗓 按账期'], ['person', '👤 按人（所有账期加起来）']].map(([v, t]) => `<button class="btn btn-sm" style="border:0;border-radius:0;${_refPwGroup === v ? 'background:#0f4c6b;color:#fff' : 'background:#fff;color:var(--g600)'}" onclick="refPwGroup('${v}')">${t}</button>`).join('')}</span>
       <span style="font-size:.74rem;color:var(--g500)">工头每周介绍费（美元）+ <b style="color:#6d28d9">🙋 HR 奖励（人民币）</b>。确认金额 → 会计确认支付 → 管理员审核 → 待付款 → 记已付；点工人名字跳到那条介绍。</span></div>
     ${pickable.length ? `<div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;background:#fff;border:1px solid var(--g200);border-radius:10px;padding:.4rem .6rem">
       <label style="font-size:.8rem;cursor:pointer;white-space:nowrap"><input type="checkbox" ${allOn ? 'checked' : ''} onchange="refPwPickMany('${pickable.join(',')}', this.checked)"> 全选这个页签（${pickable.length}）</label>
@@ -3009,14 +3016,20 @@ function _refPayWeeksHtml(list) {
     </div>` : ''}`;
   if (!rows.length) return bar + `<div class="card" style="color:var(--g400)">${{ todo: '没有待确认的每周付款。', topay: '没有待付款的。管理员审核通过的会到这里。', paid: '还没有付款记录。', all: '没有每周付款。' }[tab]}</div>`;
   // 分组: 付款记录按付款日期 (一周一付), 其它按发票账期
-  const keyOf = x => tab === 'paid' ? (x.hb ? _refAt(x.row && x.row.paid_at).slice(0, 10) : _refPwPaidDate(x.w)) || '?' : `${x.ps}~${x.pe}`;
+  const byPerson = _refPwGroup === 'person';
+  const keyOf = x => byPerson ? (x.hb ? `h|${x.hr}` : `w|${x.payee}|${String(x.r.foreman_phone || '').replace(/\D/g, '').slice(-10)}`) : tab === 'paid' ? (x.hb ? _refAt(x.row && x.row.paid_at).slice(0, 10) : _refPwPaidDate(x.w)) || '?' : `${x.ps}~${x.pe}`;
   const groups = {};
   rows.forEach(x => { const k = keyOf(x); (groups[k] = groups[k] || []).push(x); });
   const th = 'text-align:left;font-size:.68rem;color:var(--g400);font-weight:600;padding:.3rem .5rem;border-bottom:1px solid var(--g200);white-space:nowrap';
   const td = 'padding:.35rem .5rem;border-bottom:1px solid var(--g100);font-size:.8rem;vertical-align:middle;white-space:nowrap';
   const sumOf = a => a.reduce((t, x) => t + x.amt, 0);
-  const html = Object.keys(groups).sort((a, b) => b.localeCompare(a)).map(k => {
-    const gAll = groups[k].sort((a, b) => a.payee.localeCompare(b.payee) || String(a.r.worker_name || '').localeCompare(String(b.r.worker_name || '')));
+  // 按人: 拿得多的在上 (工头美元在前, HR 人民币在后); 按账期: 新的在上
+  const gTot = k => sumOf(groups[k].filter(x => x.st !== 'nopay' && !x.est));
+  const gKeys = byPerson ? Object.keys(groups).sort((a, b) => (a[0] === b[0] ? 0 : a[0] === 'w' ? -1 : 1) || gTot(b) - gTot(a) || a.localeCompare(b))
+    : Object.keys(groups).sort((a, b) => b.localeCompare(a));
+  const html = gKeys.map(k => {
+    const gAll = groups[k].sort(byPerson ? (a, b) => String(b.ps).localeCompare(String(a.ps)) || String(a.r.worker_name || '').localeCompare(String(b.r.worker_name || '')) || (a.w && b.w ? (a.w.kind === 'iv' ? -1 : b.w.kind === 'iv' ? 1 : 0) : 0)
+      : (a, b) => a.payee.localeCompare(b.payee) || String(a.r.worker_name || '').localeCompare(String(b.r.worker_name || '')));
     const g = gAll.filter(x => !x.hb), gh = gAll.filter(x => x.hb);
     const live = g.filter(x => x.st !== 'nopay');
     const conf = live.filter(x => !x.est), nEst = live.length - conf.length;
@@ -3034,7 +3047,15 @@ function _refPayWeeksHtml(list) {
     const hHead = gh.length ? `<span style="font-size:.78rem;color:#6d28d9">🙋 HR 奖励 ${hLive.length} 笔${hConf.length ? ` · 已确认 <b>${yuan(sumOf(hConf))}</b>` : ''}${hEst ? ` · <span style="color:#64748b">${hEst} 笔待确认金额</span>` : ''}${tab === 'all' ? ` · 已付 <b style="color:#047857">${yuan(sumOf(hLive.filter(x => x.st === 'paid')))}</b>` : ''}</span>` : '';
     const hByTxt = Object.entries(hBy).sort((a, b) => b[1] - a[1]).map(([n, a]) => `${esc(n)} <b>${yuan(a)}</b>`).join(' · ');
     let head;
-    if (!g.length) head = `<b style="color:${tab === 'paid' ? '#047857' : '#0f4c6b'}">${tab === 'paid' ? `💰 ${esc(k)} 付款` : `🗓 ${esc(k.split('~')[0] || '?')} ~ ${esc(k.split('~')[1] || '?')}`}</b>`;
+    if (byPerson) {
+      // 一个人所有账期加在一起: 几个工人、几个账期、已确认 / 已付 / 还差
+      const xs = gAll.filter(x => x.st !== 'nopay'), cf = xs.filter(x => !x.est), ne = xs.length - cf.length, m = gAll[0].hb ? yuan : money;
+      const tot = sumOf(cf), pd = sumOf(xs.filter(x => x.st === 'paid'));
+      const nW = new Set(xs.map(x => x.r.id)).size, nP = new Set(xs.map(x => `${x.ps}~${x.pe}`)).size;
+      const ph = gAll[0].hb ? '' : gAll[0].r.foreman_phone;
+      head = `<b style="color:${gAll[0].hb ? '#6d28d9' : '#0f4c6b'};font-size:.95rem">${gAll[0].hb ? '🙋 ' : '👷 '}${esc(gAll[0].payee)}</b>${ph ? ` <span style="font-size:.74rem;color:var(--g400)">${esc(ph)}</span>` : ''}
+        <span style="font-size:.78rem;color:var(--g500)">${nW} 个工人 · ${nP} 个账期 · ${xs.length} 笔 · 合计 <b style="color:#0f172a;font-size:.9rem">${m(tot)}</b>${ne ? ` · <span style="color:#64748b">${ne} 笔待确认金额${gAll[0].hb ? `（≈ ${yuan(sumOf(xs.filter(x => x.est)))}）` : ''}</span>` : ''}${tab === 'all' ? ` · 已付 <b style="color:#047857">${m(pd)}</b>${tot - pd > 0.005 ? ` · 还差 <b style="color:#dc2626">${m(tot - pd)}</b>` : ''}` : ''}</span>`;
+    } else if (!g.length) head = `<b style="color:${tab === 'paid' ? '#047857' : '#0f4c6b'}">${tab === 'paid' ? `💰 ${esc(k)} 付款` : `🗓 ${esc(k.split('~')[0] || '?')} ~ ${esc(k.split('~')[1] || '?')}`}</b>`;
     else if (tab === 'paid') {
       // 付款记录: 这天付了多少, 用了哪些银行记录
       const txns = {};
@@ -3045,13 +3066,13 @@ function _refPayWeeksHtml(list) {
     } else {
       const [ps, pe] = k.split('~');
       head = `<b style="color:#0f4c6b">🗓 ${esc(ps || '?')} ~ ${esc(pe || '?')}</b>
-        <span style="font-size:.78rem;color:var(--g500)">${live.length} 人${conf.length ? ` · 已确认 <b style="color:#0f172a">${money(total)}</b>` : ''}${nEst ? ` · <span style="color:#64748b">${nEst} 人待确认金额</span>` : ''}${tab === 'all' ? ` · 已付 <b style="color:#047857">${money(paidAmt)}</b>${total - paidAmt > 0.005 ? ` · 还差 <b style="color:#dc2626">${money(total - paidAmt)}</b>` : ''}` : ''}</span>`;
+        <span style="font-size:.78rem;color:var(--g500)">${new Set(live.map(x => x.r.id)).size} 人 · ${live.length} 笔${conf.length ? ` · 已确认 <b style="color:#0f172a">${money(total)}</b>` : ''}${nEst ? ` · <span style="color:#64748b">${nEst} 笔待确认金额</span>` : ''}${tab === 'all' ? ` · 已付 <b style="color:#047857">${money(paidAmt)}</b>${total - paidAmt > 0.005 ? ` · 还差 <b style="color:#dc2626">${money(total - paidAmt)}</b>` : ''}` : ''}</span>`;
     }
     const body = g.map(x => {
       const [t, fg, bg] = _REF_PW_ST[x.st];
       const w = x.w, n = w.span_eff || 1, a = actOf(x);
       const calc = x.r && x.r.fee_unit === 'container' ? (w.containers_eff != null ? `${money(x.r.amount)}/柜 × ${w.containers_eff} 柜` : '柜数未填')
-        : w.rate != null ? (w.hours != null && w.hours < 40 * n ? `${money(w.rate)} × ${w.hours}/40 工时` : `满周 ${money(w.rate)}${n > 1 ? ` × ${n}` : ''}`) : '';
+        : w.kind === 'iv' ? `过面试 ${money(w.fee_eff)}` : w.rate != null ? (w.hours != null && w.hours < 40 * n ? `${money(w.rate)} × ${w.hours}/40 工时` : `满周 ${money(w.rate)}${n > 1 ? ` × ${n}` : ''}`) : '';
       const pn = w.pay_note || {};
       const when = x.st === 'paid' ? `${esc(_refAt(pn.updated_at))}${pn.created_by ? ' · ' + esc(pn.created_by) : ''}${(pn.txns || []).length ? ` · 🏦 ${pn.txns.map(t => `${esc(t.date || '')} ${money(Math.abs(Number(t.amount) || 0))}`).join(' / ')}` : ''}`
         : x.st === 'topay' ? `🛡 ${esc(w.pay_ok_by)} ${esc(_refAt(w.pay_ok_at))}`
@@ -3061,7 +3082,7 @@ function _refPayWeeksHtml(list) {
         <td style="${td};width:22px">${a ? `<input type="checkbox" ${_refPwSel.has(w.id) ? 'checked' : ''} onchange="refPwPick(${w.id}, this.checked)">` : ''}</td>
         <td style="${td};font-weight:700">${esc(x.payee)}${x.r.foreman_phone ? ` <span style="font-weight:400;font-size:.72rem;color:var(--g400)">${esc(x.r.foreman_phone)}</span>` : ''}</td>
         <td style="${td}"><a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="refJumpTo(${x.r.id})">${esc(x.r.worker_name || '—')}</a></td>
-        <td style="${td};color:var(--g500)">第 ${x.lab} 周${tab === 'paid' ? ` <span style="font-size:.72rem;color:var(--g400)">${esc(x.ps)} ~ ${esc(x.pe)}</span>` : ''}</td>
+        <td style="${td};color:var(--g500)">${w.kind === 'iv' ? '🎯 过面试' : `第 ${x.lab} 周`}${tab === 'paid' || byPerson ? ` <span style="font-size:.72rem;color:var(--g400)">${esc(x.ps)} ~ ${esc(x.pe)}</span>` : ''}</td>
         <td style="${td};text-align:right;font-weight:800">${x.est ? '<span style="color:var(--g400);font-weight:400" title="还没确认金额">待确认</span>' : money(x.amt)}</td>
         <td style="${td};font-size:.72rem;color:var(--g500)">${esc(calc)}</td>
         <td style="${td}"><span style="display:inline-block;padding:1px 8px;border-radius:999px;font-size:.72rem;font-weight:700;color:${fg};background:${bg}">${t}${x.partial ? '（部分）' : ''}</span> <span style="font-size:.7rem;color:var(--g400)">${when}</span>${_refHistLink(`${x.r.id}|w${w.id}`, _refHistOpen.has(`${x.r.id}|w${w.id}`))}</td></tr>`
@@ -3083,7 +3104,7 @@ function _refPayWeeksHtml(list) {
         <td style="${td};width:22px">${a ? `<input type="checkbox" ${_refPwSel.has(x.id) ? 'checked' : ''} onchange="refPwPick('${x.id}', this.checked)">` : ''}</td>
         <td style="${td};font-weight:700;color:#6d28d9">${esc(x.hr)} <span style="font-weight:400;font-size:.72rem;color:var(--g400)">${x.r.hr_self ? 'HR 自己招的' : '工头介绍 · HR 提交'}</span></td>
         <td style="${td}"><a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="refJumpTo(${x.r.id})">${esc(x.r.worker_name || '—')}</a></td>
-        <td style="${td};color:var(--g500)">${esc(x.lab)}${tab === 'paid' && (x.ps || x.pe) ? ` <span style="font-size:.72rem;color:var(--g400)">${esc(x.ps)} ~ ${esc(x.pe)}</span>` : ''}</td>
+        <td style="${td};color:var(--g500)">${esc(x.lab)}${(tab === 'paid' || byPerson) && (x.ps || x.pe) ? ` <span style="font-size:.72rem;color:var(--g400)">${esc(x.ps)} ~ ${esc(x.pe)}</span>` : ''}</td>
         <td style="${td};text-align:right;font-weight:800">${x.est ? `<span style="color:var(--g400);font-weight:400" title="还没确认金额，现在算出来的数">≈ ${yuan(x.amt)}</span>` : yuan(x.amt)}</td>
         <td style="${td};font-size:.72rem;color:var(--g500)">${esc(x.b.calc || '')}</td>
         <td style="${td}"><span style="display:inline-block;padding:1px 8px;border-radius:999px;font-size:.72rem;font-weight:700;color:${fg};background:${bg}">${x.st === 'nopay' ? '✖ 不给' : t}</span> <span style="font-size:.7rem;color:var(--g400)">${when}</span>${x.row || ((x.r.pay_log || {})['hb:' + x.b.k] || []).length ? _refHistLink(hkey, hopen) : ''}</td></tr>`
@@ -3093,7 +3114,7 @@ function _refPayWeeksHtml(list) {
     return `<div class="card" style="padding:.6rem .7rem">
       <div style="display:flex;gap:.6rem;align-items:baseline;flex-wrap:wrap;margin-bottom:.3rem">
         ${gPick.length ? `<input type="checkbox" title="全选这一组" ${gOn ? 'checked' : ''} onchange="refPwPickMany('${gPick.join(',')}', this.checked)">` : ''}${head}
-        <span style="font-size:.74rem;color:var(--g500)">${byTxt}</span>${hHead}${hByTxt ? `<span style="font-size:.74rem;color:var(--g500)">${hByTxt}</span>` : ''}
+        ${byPerson ? '' : `<span style="font-size:.74rem;color:var(--g500)">${byTxt}</span>${hHead}`}${!byPerson && hByTxt ? `<span style="font-size:.74rem;color:var(--g500)">${hByTxt}</span>` : ''}
       </div>
       ${g.length ? `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:760px">${thead('工头（收款人）', '周', '介绍费')}
         <tbody>${body}</tbody></table></div>` : ''}
