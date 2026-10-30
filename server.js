@@ -43736,12 +43736,33 @@ function _referralOut(r, invMap, payNotes, weeksBy, weekNotes, linesByInv) {
   // 过面试 $5 那行 (kind='iv'): 不在 r.weeks 里, 单独 r.iv_week
   const ivRow = ((weeksBy && weeksBy[r.id]) || []).find(w => w.kind === 'iv');
   r.iv_week = ivRow ? _referralIvWeek(ivRow, weekNotes) : null;
-  // 按档算默认介绍费 (排好序后最早那周 = 第一周); 管理员确认过的按确认的金额; 这周不付 = 0
-  r.weeks.forEach((w, i) => {
-    w.tier_eff = w.tier || (i === 0 ? 'first' : 'after');
-    // 这周工时 = 勾的那几行加起来 (没勾行 / 行上没工时 = null, 按满周算)
+  // 这张发票上的工时 = 勾的那几行加起来 (没勾行 / 行上没工时 = null, 按满周算)
+  r.weeks.forEach(w => {
     const hl = w.lines.filter(l => l.hours != null);
     w.hours = hl.length ? Math.round(hl.reduce((t, l) => t + l.hours, 0) * 100) / 100 : null;
+  });
+  // 同一个账期关联了两张以上发票 (同一周在两家公司都干了) = 同一周: 工时加到最早那张上一起算 (满 40 封顶),
+  // 其他几张 merged_into = 那张的 id, 不另算一周、默认不另付 (管理员之前确认过的金额照旧)
+  const perFirst = {};
+  r.weeks.forEach(w => {
+    const v = w.invoice, k = v.period_start && v.period_end ? `${v.period_start}~${v.period_end}` : '';
+    if (!k) return;
+    const p = perFirst[k];
+    if (!p) { perFirst[k] = w; return; }
+    w.merged_into = p.id;
+    (p.merged_ids = p.merged_ids || []).push(w.id);
+    if (w.hours != null) { p.own_hours = p.own_hours !== undefined ? p.own_hours : p.hours; p.hours = Math.round(((p.hours || 0) + w.hours) * 100) / 100; }
+  });
+  // 按档算默认介绍费 (排好序后最早那周 = 第一周); 管理员确认过的按确认的金额; 这周不付 = 0
+  let wi = 0;
+  r.weeks.forEach(w => {
+    if (w.merged_into) {
+      w.tier_eff = w.tier || 'after'; w.span_auto = 1; w.span_eff = 0; w.ratio = 0; w.fee_default = 0;
+      w.fee_eff = w.admin_status === 'rejected' ? 0 : w.admin_status === 'approved' && w.admin_fee != null ? w.admin_fee : (w.fee != null ? w.fee : 0);
+      return;
+    }
+    const isFirst = wi++ === 0;
+    w.tier_eff = w.tier || (isFirst ? 'first' : 'after');
     // 算几周: 手选的为准, 没选按账期长短 (≥ 13 天 = 两周发一次)
     const pd = w.invoice.period_start && w.invoice.period_end ? Math.round((Date.parse(w.invoice.period_end) - Date.parse(w.invoice.period_start)) / 86400000) + 1 : 0;
     w.span_auto = pd >= 13 ? 2 : 1;
