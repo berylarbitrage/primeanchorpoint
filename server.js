@@ -1319,6 +1319,8 @@ try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_apl_tc_code ON applicant_su
 try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN ssn_encrypted TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN ssn_iv TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN ssn_last4 TEXT DEFAULT ''`); } catch(e) {}
+// 员工代填: 登录后台的员工帮工人填表时记下代填人名字; 工人自己扫码填的为空
+try { db.exec(`ALTER TABLE applicant_submissions ADD COLUMN entered_by TEXT DEFAULT ''`); } catch(e) {}
 db.exec(`CREATE TABLE IF NOT EXISTS applicant_docs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   submission_id INTEGER NOT NULL,
