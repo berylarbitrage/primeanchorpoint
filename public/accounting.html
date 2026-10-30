@@ -2441,7 +2441,7 @@ const REF_HR_BONUS = [
 // 4 周奖励 (原「满 1 个月 ¥150」): 第 2–5 周 (第 1 周已经算在「满 1 周 ¥100」里, 不重复),
 // 每周 ¥37.5 × 工时/40, 跟每周付款表一样按发票分组 (1 周一组 / 2 周一组)
 const REF_HR_4W = 4, REF_HR_4W_AMT = 37.5, REF_HR_4W_FROM = 2, REF_HR_4W_TO = REF_HR_4W_FROM + REF_HR_4W - 1;
-// 管理奖励: 上班第 6 周起, 每满一周 ¥25, 在岗就一直算 (中途不去了算到最后上班那天)
+// 管理奖励: 上班第 6 周起, 每周 ¥25 × 工时/40 (满 40 给满), 在岗就一直算 (中途不去了算到最后上班那天)
 const REF_HR_MGMT_FROM = 6, REF_HR_MGMT_AMT = 25;
 const yuan = n => '¥' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 });
 function _refHrOf(r) {
@@ -2584,7 +2584,12 @@ function _refHrMgmt(r) {
   const out = [];
   for (let k = REF_HR_MGMT_FROM; k <= units.length; k++) {
     const u = units[k - 1];
-    out.push({ k: 'mgmt' + k, label: `第 ${k} 周`, amt: REF_HR_MGMT_AMT, amount: REF_HR_MGMT_AMT, st: 'done', calc: '', period: _refInvPer(u.w), row: (r.hr_bonus || {})['mgmt' + k] || null });
+    // 按这周工时 /40 折算 (两周的发票工时平分); 没工时的先按满
+    const h = u.hours == null ? null : Number(u.hours), n = u.w.span_eff || 1;
+    const amount = h == null ? REF_HR_MGMT_AMT : Math.round(REF_HR_MGMT_AMT * Math.min(h, 40) / 40 * 100) / 100;
+    const note = n > 1 && h != null ? `（这张发票 ${n} 周 ${u.w.hours} 工时，这周算 ${h}）` : '';
+    const calc = h == null ? `这张发票没工时，先按满 ${yuan(REF_HR_MGMT_AMT)}` : h >= 40 ? `${h} 工时 ≥ 40 · 给满${note}` : `${yuan(REF_HR_MGMT_AMT)} × ${h}/40 工时${note}`;
+    out.push({ k: 'mgmt' + k, label: `第 ${k} 周`, amt: REF_HR_MGMT_AMT, amount, st: 'done', calc, period: _refInvPer(u.w), row: (r.hr_bonus || {})['mgmt' + k] || null });
   }
   // 之前按日期确认过、但发票还没关联到那周的, 照样列出来 (可以撤销)
   Object.keys(r.hr_bonus || {}).map(k => /^mgmt(\d+)$/.exec(k)).filter(m => m && +m[1] > units.length).sort((a, b) => a[1] - b[1]).forEach(m => {
@@ -2658,7 +2663,7 @@ function _refHrBonusRow(r) {
   const f4Items = f4.map(line).join('');
   const mg = _refHrMgmt(r);
   const mgOpen = mg.filter(b => b.k && b.st === 'done' && !b.row);
-  const mgAll = isAdmin && mgOpen.length > 1 ? ` <button class="btn btn-sm" style="background:#16a34a;color:#fff;padding:0 7px;font-size:.7rem" onclick="refHrConfirmAll(${r.id},'mgmt')">✅ 全部确认（${mgOpen.length} 周 ${yuan(mgOpen.length * REF_HR_MGMT_AMT)}）</button>` : '';
+  const mgAll = isAdmin && mgOpen.length > 1 ? ` <button class="btn btn-sm" style="background:#16a34a;color:#fff;padding:0 7px;font-size:.7rem" onclick="refHrConfirmAll(${r.id},'mgmt')">✅ 全部确认（${mgOpen.length} 周 ${yuan(mgOpen.reduce((t, b) => t + b.amount, 0))}）</button>` : '';
   const mgItems = mg.map(line).join('');
   const sub = t => `<tr><td colspan="5" style="padding:.35rem .5rem .2rem;font-size:.74rem;font-weight:800;color:#6d28d9;background:#faf5ff">${t}</td></tr>`;
   return `<div class="ref-row" style="background:#faf5ff;flex-wrap:wrap"><b style="color:#6d28d9;white-space:nowrap">🙋 HR 奖励 · ${esc(hr)}</b>
@@ -2668,7 +2673,7 @@ function _refHrBonusRow(r) {
       <th style="${th}">奖励</th><th style="${th}">标准</th><th style="${th}">怎么算</th><th style="${th};text-align:right">金额</th><th style="${th}">确认 / 付款</th></tr></thead><tbody>
       ${sub('🎯 招工奖励')}${items}
       ${f4.length ? sub(`📆 第 ${m12 ? REF_HR_4W_FROM + 1 : REF_HR_4W_FROM}–${REF_HR_4W_TO} 周 · 每周 ${yuan(REF_HR_4W_AMT)} × 工时/40（跟发票一样 1 周一组或 2 周一组）${f4All}`) + f4Items : ''}
-      ${mg.length ? sub(`🧑‍💼 管理奖励 · 第 ${REF_HR_MGMT_FROM} 周起 ${yuan(REF_HR_MGMT_AMT)}/周${mgAll}`) + mgItems : ''}
+      ${mg.length ? sub(`🧑‍💼 管理奖励 · 第 ${REF_HR_MGMT_FROM} 周起每周 ${yuan(REF_HR_MGMT_AMT)} × 工时/40${mgAll}`) + mgItems : ''}
     </tbody></table></div>`;
 }
 // 一次全部确认: mgmt 管理奖励 / f4 前 4 周奖励 (还没确认、已达成的, 按算出来的金额)

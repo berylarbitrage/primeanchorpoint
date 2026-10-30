@@ -1025,7 +1025,7 @@ try { db.exec(`ALTER TABLE referral_weeks ADD COLUMN containers REAL DEFAULT NUL
 // HR 招工节点奖励 (人民币): HR 自己招的 + 工头介绍、HR 提交的, 都按节点给 HR —
 // interview 过面试 ¥30 / week1 连续上满 1 周 ¥100 (按第 1 周工时 /40 折算) /
 // m4_<每周付款行 id> 前 4 周每周 ¥37.5 × 工时/40, 跟发票一样 1 周或 2 周一组 (原 month1 满 1 个月 ¥150, 旧记录保留);
-// 管理奖励 mgmt6, mgmt7 … = 上班第 6 周起每满一周 ¥25 (一直在岗就一直有)。
+// 管理奖励 mgmt6, mgmt7 … = 上班第 6 周起每周 ¥25 × 工时/40 (前端按发票工时算) (一直在岗就一直有)。
 // 达没达成前端按日期算; 这里只存管理员的决定: approved 确认 (带金额) | rejected 不给 | paid 已付
 try { db.exec(`CREATE TABLE IF NOT EXISTS referral_hr_bonus (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
