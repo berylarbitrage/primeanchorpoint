@@ -2073,10 +2073,10 @@ async function openPayNoteBatch(ids) {
   const rows = _refPayWeekRows(_refList).filter(x => ids.includes(x.w.id));
   if (!rows.length) return;
   await openPayNote('referralweek', rows[0].w.id);
-  _payTarget = { type: 'referralweek', id: rows[0].w.id, batch: rows.map(x => ({ id: x.w.id, amt: x.amt })) };
+  _payTarget = { type: 'referralweek', id: rows[0].w.id, batch: rows.map(x => ({ id: x.w.id, amt: x.amt, st: x.partial ? 'partial' : '' })) };
   _payTargetAmt = Math.round(rows.reduce((t, x) => t + x.amt, 0) * 100) / 100;
   const payees = [...new Set(rows.map(x => x.payee))];
-  document.getElementById('pnTitle').textContent = `💰 批量记已付 · ${rows.length} 笔 · 合计 ${money(_payTargetAmt)} · ${payees.join(' / ')}`;
+  document.getElementById('pnTitle').textContent = `🏦 批量关联银行记录 · ${rows.length} 笔 · 合计 ${money(_payTargetAmt)} · ${payees.join(' / ')}`;
   document.getElementById('pnStatus').value = 'paid';
   const amt = document.getElementById('pnAmount');
   amt.value = ''; amt.disabled = true; amt.placeholder = '每周按各自的金额记';
@@ -2235,12 +2235,6 @@ function closePayNote() { document.getElementById('payNoteModal').style.display 
 async function savePayNote() {
   if (!_payTarget) return;
   const btn = document.getElementById('pnSaveBtn');
-  // 介绍费记已付/部分付: 必须关联银行记录或上传付款截图
-  const _st = document.getElementById('pnStatus').value;
-  if (_payTarget.type === 'referralweek' && (_st === 'paid' || _st === 'partial') && !_pnSel.size && !_pnFiles.length) {
-    const cur = (_refWeeks.find(x => x.id === _payTarget.id) || {}).pay_note;
-    if (!(cur && (cur.photos_urls || []).length)) return toast('记已付款需要关联银行记录或上传付款截图', true);
-  }
   btn.disabled = true;
   if (_payTarget.batch) {
     // 批量: 每周各记一条, 金额按各自的, 银行记录 / 截图共用
@@ -2249,7 +2243,7 @@ async function savePayNote() {
       try {
         const r = await bapi('/api/acct/pay-note', { method: 'POST', body: JSON.stringify({
           pending_photos: _pnFiles.length, target_type: 'referralweek', target_id: b.id,
-          paid_status: document.getElementById('pnStatus').value, bank: document.getElementById('pnBank').value.trim(),
+          paid_status: b.st || document.getElementById('pnStatus').value, bank: document.getElementById('pnBank').value.trim(),
           amount: b.amt, note: document.getElementById('pnNote').value.trim(), txn_ids: [..._pnSel],
         }) });
         if (r && r.error) throw new Error(r.error);
@@ -2265,7 +2259,7 @@ async function savePayNote() {
     btn.disabled = false;
     closePayNote();
     _refPwSel.clear();
-    toast(`💰 已记已付 ${ok} 笔${err ? `；${_payTarget.batch.length - ok} 笔没成功（${err}）` : ''}`, !!err);
+    toast(`🏦 已关联银行记录 ${ok} 笔${err ? `；${_payTarget.batch.length - ok} 笔没成功（${err}）` : ''}`, !!err);
     loadRefList();
     return;
   }
@@ -2928,21 +2922,24 @@ function _refPwPaidDate(w) {
   const ds = ((w.pay_note && w.pay_note.txns) || []).map(t => t.date).filter(Boolean).sort();
   return ds[0] || (_refAt(w.pay_note && w.pay_note.updated_at) || '').slice(0, 10);
 }
-// 批量: amount 确认金额 (管理员) / request 确认支付 (会计) / approve 审核通过 (管理员) / pay 记已付 + 关联银行记录 (会计)
+// 批量: amount 确认金额 (管理员) / request 确认支付 (会计) / approve 审核通过 (管理员) / pay 记已付 (会计) / bank 已付的关联银行记录 (会计)
+// 记已付和关联银行记录是两步: 先记已付 (按各自金额), 银行记录之后在「付款记录」里勾上再关联
 async function refPwBatch(action) {
   const rows = _refPayWeekRows(_refList).filter(x => _refPwSel.has(x.w.id));
-  const need = { amount: 'amount', request: 'req', approve: 'review', pay: 'topay' }[action];
+  const need = { amount: 'amount', request: 'req', approve: 'review', pay: 'topay', bank: 'paid' }[action];
   const pick = rows.filter(x => x.st === need);
   if (!pick.length) return toast('勾选的里面没有可以这样操作的', true);
-  if (action === 'pay') return openPayNoteBatch(pick.map(x => x.w.id));
+  if (action === 'bank') return openPayNoteBatch(pick.map(x => x.w.id));
   const sum = pick.reduce((t, x) => t + x.amt, 0);
-  const label = { amount: '确认金额', request: '确认支付', approve: '审核通过支付' }[action];
+  const label = { amount: '确认金额', request: '确认支付', approve: '审核通过支付', pay: '记已付' }[action];
   if (!await pageConfirm(`${label} ${pick.length} 笔，合计 ${money(sum)}？`)) return;
   let ok = 0, err = '';
   for (const x of pick) {
     try {
       const r = action === 'amount'
         ? await api(`/api/acct/referral-weeks/${x.w.id}/review`, { method: 'POST', body: JSON.stringify({ action: 'approve', fee: x.amt }) })
+        : action === 'pay'
+        ? await api('/api/acct/pay-note', { method: 'POST', body: JSON.stringify({ target_type: 'referralweek', target_id: x.w.id, paid_status: 'paid', amount: x.amt, txn_ids: [] }) })
         : await api(`/api/acct/referral-weeks/${x.w.id}/pay-req`, { method: 'POST', body: JSON.stringify({ action }) });
       if (r && r.error) throw new Error(r.error);
       ok++;
@@ -3135,7 +3132,7 @@ function _refPayWeeksHtml(list) {
   const rows = all.filter(x => inTab(x, tab));
   const isAdmin = USER.role === 'admin', canAcct = ['accounting', 'admin'].includes(USER.role);
   // 这个页签里能勾的: 有下一步可做的行
-  const actOf = x => x.st === 'amount' ? (isAdmin ? 'amount' : '') : x.st === 'req' ? (canAcct ? 'request' : '') : x.st === 'review' ? (isAdmin ? 'approve' : '') : x.st === 'topay' ? (canAcct ? 'pay' : '') : '';
+  const actOf = x => x.st === 'amount' ? (isAdmin ? 'amount' : '') : x.st === 'req' ? (canAcct ? 'request' : '') : x.st === 'review' ? (isAdmin ? 'approve' : '') : x.st === 'topay' ? (canAcct ? 'pay' : '') : x.st === 'paid' && !x.hb ? (canAcct ? 'bank' : '') : '';
   [..._refPwSel].forEach(id => { if (!rows.some(x => _refPwKey(x) === id && actOf(x))) _refPwSel.delete(id); });
   const sel = rows.filter(x => _refPwSel.has(_refPwKey(x)));
   const selW = sel.filter(x => !x.hb), selH = sel.filter(x => x.hb);
@@ -3155,7 +3152,7 @@ function _refPayWeeksHtml(list) {
     ${pickable.length ? `<div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;background:#fff;border:1px solid var(--g200);border-radius:10px;padding:.4rem .6rem">
       <label style="font-size:.8rem;cursor:pointer;white-space:nowrap"><input type="checkbox" ${allOn ? 'checked' : ''} onchange="refPwPickMany('${pickable.join(',')}', this.checked)"> 全选这个页签（${pickable.length}）</label>
       <span style="font-size:.78rem;color:var(--g500)">已选 <b>${sel.length}</b> 笔${selW.some(x => !x.est) ? ` · <b>${money(selW.filter(x => !x.est).reduce((t, x) => t + x.amt, 0))}</b>` : ''}${selW.some(x => x.est) ? `（${selW.filter(x => x.est).length} 笔待确认金额）` : ''}${selH.length ? ` · HR <b style="color:#6d28d9">${yuan(selH.reduce((t, x) => t + x.amt, 0))}</b>` : ''}</span><span style="flex:1"></span>
-      ${bbtn('amount', '✅ 批量确认金额', '#16a34a')}${bbtn('request', '💳 批量确认支付', '#0f4c6b')}${bbtn('approve', '🛡 批量审核通过', '#16a34a')}${bbtn('pay', '💰 批量记已付 + 关联银行记录', '#047857')}
+      ${bbtn('amount', '✅ 批量确认金额', '#16a34a')}${bbtn('request', '💳 批量确认支付', '#0f4c6b')}${bbtn('approve', '🛡 批量审核通过', '#16a34a')}${bbtn('pay', '💰 批量记已付', '#047857')}${bbtn('bank', '🏦 批量关联银行记录', '#0369a1')}
       ${hbtn('amount', '确认金额', '#7c3aed')}${hbtn('request', '确认支付', '#6d28d9')}${hbtn('approve', '审核通过', '#7c3aed')}${hbtn('pay', '记已付', '#5b21b6')}
     </div>` : ''}`;
   if (!rows.length) return bar + `<div class="card" style="color:var(--g400)">${{ todo: '没有待确认的每周付款。', topay: '没有待付款的。管理员审核通过的会到这里。', paid: '还没有付款记录。', all: '没有每周付款。' }[tab]}</div>`;
@@ -3223,7 +3220,7 @@ function _refPayWeeksHtml(list) {
         : w.rate != null && w.hours != null && (w.merged_ids || []).length ? `${money(w.rate)} × ${Math.min(w.hours, 40 * n)}/${40 * n} 工时（${w.merged_ids.length + 1} 张发票合计 ${w.hours}）` : w.rate != null ? (w.hours != null && w.hours < 40 * n ? `${money(w.rate)} × ${w.hours}/40 工时` : `满周 ${money(w.rate)}${n > 1 ? ` × ${n}` : ''}`)
         : w.full_auto != null ? `自动 ${money(w.full_auto)}${n > 1 ? `（${n} 周）` : ''}${w.hours != null && w.hours < 40 * n ? ` × ${w.hours}/${40 * n} 工时` : ' 满'}` : '';
       const pn = w.pay_note || {};
-      const when = x.st === 'paid' ? `${esc(_refAt(pn.updated_at))}${pn.created_by ? ' · ' + esc(pn.created_by) : ''}${(pn.txns || []).length ? ` · 🏦 ${pn.txns.map(t => `${esc(t.date || '')} ${money(Math.abs(Number(t.amount) || 0))}`).join(' / ')}` : ''}`
+      const when = x.st === 'paid' ? `${esc(_refAt(pn.updated_at))}${pn.created_by ? ' · ' + esc(pn.created_by) : ''}${(pn.txns || []).length ? ` · 🏦 ${pn.txns.map(t => `${esc(t.date || '')} ${money(Math.abs(Number(t.amount) || 0))}`).join(' / ')}` : ' · <span style="color:#b45309;font-weight:700">🏦 还没关联银行记录</span>'}`
         : x.st === 'topay' ? `🛡 ${esc(w.pay_ok_by)} ${esc(_refAt(w.pay_ok_at))}`
         : x.st === 'review' ? `💳 ${esc(w.pay_req_by)} ${esc(_refAt(w.pay_req_at))}`
         : x.st === 'req' ? `✅ ${esc(w.admin_by)} ${esc(_refAt(w.admin_at))}` : '';
