@@ -42663,6 +42663,10 @@ app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
   if (target_type === 'referralweek' && (st === 'paid' || st === 'partial') && exists.pay_req !== 'approved'
     && !(prevNote && ['paid', 'partial'].includes(prevNote.paid_status)))
     return res.status(400).json({ error: exists.pay_req === 'requested' ? '会计已确认支付，等管理员审核通过后才能记已付' : '请先点「确认支付」，管理员审核通过后才能记已付' });
+  // 已付款的每周介绍费锁住: 状态和金额不能再改, 只能补关联银行记录 / 备注
+  if (target_type === 'referralweek' && prevNote && ['paid', 'partial'].includes(prevNote.paid_status)
+    && (st !== prevNote.paid_status || (prevNote.amount ?? null) !== amt))
+    return res.status(400).json({ error: '已付款的不能再修改（只能补关联银行记录）' });
   const ids = (Array.isArray(txn_ids) ? txn_ids : []).map(t => String(t).slice(0, 100)).filter(Boolean).slice(0, 20);
   // 记已付和关联银行记录分开做: 先记已付, 银行记录之后再关联 (不再强制要凭证)
   // 更新时保留已上传的 photos（本接口不改 photos，凭证由 /photos 子接口维护）
@@ -44458,7 +44462,7 @@ app.post('/api/acct/referral-weeks/:id/review', requireAdmin, requireRole('admin
   const action = String(b.action || '');
   if (!['approve', 'reject', 'reset'].includes(action)) return res.status(400).json({ error: '无效操作' });
   const paid = db.prepare(`SELECT id FROM acct_pay_notes WHERE target_type='referralweek' AND target_id=? AND paid_status IN ('paid','partial')`).get(w.id);
-  if (paid && action !== 'approve') return res.status(400).json({ error: '这周已记付款，不能撤销或改成不付（先改掉付款记录）' });
+  if (paid) return res.status(400).json({ error: '这周已付款，不能再修改' });
   let fee = null;
   if (action === 'approve') {
     const v = b.fee;
@@ -44711,6 +44715,10 @@ app.post('/api/acct/referrals/:id/interview-status', requireAdmin, requireRole('
 app.delete('/api/acct/referrals/:id', requireAdmin, requireRole('admin'), (req, res) => {
   const cur = db.prepare('SELECT * FROM referrals WHERE id=?').get(parseInt(req.params.id));
   if (!cur) return res.status(404).json({ error: '记录不存在' });
+  // 有已付款的 (每周介绍费 / HR 奖励) 不能删
+  const paidW = db.prepare(`SELECT 1 FROM acct_pay_notes WHERE target_type='referralweek' AND paid_status IN ('paid','partial') AND target_id IN (SELECT id FROM referral_weeks WHERE referral_id=?) LIMIT 1`).get(cur.id);
+  const paidH = db.prepare(`SELECT 1 FROM referral_hr_bonus WHERE referral_id=? AND status='paid' LIMIT 1`).get(cur.id);
+  if (paidW || paidH) return res.status(400).json({ error: '这条介绍已经有付款记录，不能删除' });
   _claimAtts(cur).forEach(a => _claimDeleteFile(a.path));
   db.prepare('DELETE FROM referrals WHERE id=?').run(cur.id);
   db.prepare(`DELETE FROM acct_pay_notes WHERE target_type='referral' AND target_id=?`).run(cur.id);
@@ -44750,7 +44758,9 @@ app.post('/api/acct/referrals/:id/hr-bonus', requireAdmin, requireRole('accounti
       if (!row.pay_req) return res.status(400).json({ error: '没有可退回的确认支付' });
       db.prepare(`UPDATE referral_hr_bonus SET pay_req='', pay_req_by='', pay_req_at=NULL, pay_ok_by='', pay_ok_at=NULL WHERE id=?`).run(row.id);
     }
-  } else if (action === 'paid' || action === 'unpaid') {
+  } else if (action === 'unpaid') {
+    return res.status(400).json({ error: '已付款的不能再修改' });
+  } else if (action === 'paid') {
     if (!row || !['approved', 'paid'].includes(row.status)) return res.status(400).json({ error: '管理员确认后才能记已付' });
     if (action === 'paid' && row.status !== 'paid' && row.pay_req !== 'approved')
       return res.status(400).json({ error: row.pay_req === 'requested' ? '等管理员审核通过确认支付后才能记已付' : '请先点「确认支付」，管理员审核通过后才能记已付' });

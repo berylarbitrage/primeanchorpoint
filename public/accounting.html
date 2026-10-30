@@ -2019,7 +2019,8 @@ function _pnHasContent(pn) {
 }
 // noNote: 备注不塞在格子里 (发票列表单独一列「付款备注」), 整格一行
 function payNoteCell(type, id, pn, showTodo, noNote) {
-  const edit = canAnnotate() ? ` <a style="cursor:pointer;font-size:.74rem;color:#0f4c6b;text-decoration:underline;white-space:nowrap" onclick="openPayNote('${type}', ${id})">${_pnHasContent(pn) ? '编辑' : '＋记录'}</a>` : '';
+  const lockedPaid = type === 'referralweek' && pn && ['paid', 'partial'].includes(pn.paid_status);
+  const edit = canAnnotate() ? ` <a style="cursor:pointer;font-size:.74rem;color:#0f4c6b;text-decoration:underline;white-space:nowrap" onclick="openPayNote('${type}', ${id})">${lockedPaid ? '🔒 关联银行记录' : _pnHasContent(pn) ? '编辑' : '＋记录'}</a>` : '';
   if (!_pnHasContent(pn)) {
     // 发票列表: 还没在会计系统记过款 → 明确标成待办; 赔偿/保险等列表保持原样的 —
     if (showTodo) return `<span style="background:#fffbeb;color:#b45309;border:1px solid #fcd34d;border-radius:8px;padding:1px 7px;font-size:.72rem;font-weight:700;white-space:nowrap">⏳ 待记录</span>${edit}`;
@@ -2078,6 +2079,7 @@ async function openPayNoteBatch(ids) {
   const payees = [...new Set(rows.map(x => x.payee))];
   document.getElementById('pnTitle').textContent = `🏦 批量关联银行记录 · ${rows.length} 笔 · 合计 ${money(_payTargetAmt)} · ${payees.join(' / ')}`;
   document.getElementById('pnStatus').value = 'paid';
+  document.getElementById('pnStatus').disabled = true;
   const amt = document.getElementById('pnAmount');
   amt.value = ''; amt.disabled = true; amt.placeholder = '每周按各自的金额记';
   document.getElementById('pnTxnAmtBtn').textContent = `🔎 找 ${money(_payTargetAmt)}`;
@@ -2114,6 +2116,10 @@ async function openPayNote(type, id) {
   document.getElementById('pnBank').value = pn.bank || '';
   document.getElementById('pnAmount').value = pn.amount != null ? pn.amount : '';
   document.getElementById('pnNote').value = pn.note || '';
+  // 已付款的每周介绍费锁住: 状态和金额不能改, 只能补关联银行记录 / 截图 / 备注
+  const locked = type === 'referralweek' && ['paid', 'partial'].includes(pn.paid_status);
+  document.getElementById('pnStatus').disabled = locked;
+  if (locked) { _amtIn.disabled = true; document.getElementById('pnTitle').textContent = '🔒 已付款（只能补关联银行记录）· ' + document.getElementById('pnTitle').textContent; }
   document.getElementById('pnFile').value = '';
   document.getElementById('pnFileMsg').textContent = '';
   document.getElementById('pnTxnAmt').value = '';
@@ -2652,7 +2658,7 @@ function _refHrBonusRow(r) {
     const undo = (a, t) => ` <a style="cursor:pointer;color:var(--g400);text-decoration:underline;font-size:.7rem" onclick="refHrBonus(${r.id},'${b.k}','${a}')">${t}</a>`;
     let how = '', amt = '', act = '';
     const tiny = 'color:var(--g400);font-size:.68rem;white-space:nowrap';
-    if (st === 'paid') { due += row.amount || 0; paid += row.amount || 0; amt = `<b>${yuan(row.amount)}</b>`; act = `<b style="color:#047857">💰 已付</b> <span style="${tiny}">${esc(row.paid_by || '')} ${esc(_refAt(row.paid_at))}</span>${canPay ? undo('unpaid', '撤回') : ''}`; }
+    if (st === 'paid') { due += row.amount || 0; paid += row.amount || 0; amt = `<b>${yuan(row.amount)}</b>`; act = `<b style="color:#047857">💰 已付</b> <span style="${tiny}">${esc(row.paid_by || '')} ${esc(_refAt(row.paid_at))}</span> <span style="font-size:.68rem;color:var(--g400)">🔒</span>`; }
     else if (st === 'approved') {
       // 金额已确认 → 会计确认支付 → 管理员审核通过 → 记已付
       due += row.amount || 0; amt = `<b>${yuan(row.amount)}</b>`;
@@ -3609,7 +3615,9 @@ function renderRefList() {
       + `<a class="btn btn-sm btn-outline" style="padding:.15rem .5rem;color:#0f4c6b;border-color:#93c5fd" title="一行: 工人 电话 地址 时间 工资 备注" onclick="refCopyLine(${r.id})">📋 一行</a>`
       + ` <a class="btn btn-sm btn-outline" style="padding:.15rem .5rem" title="复制这条介绍信息，粘贴发给经理" onclick="refCopyRow(${r.id})">📋 复制</a>`
       + (canEdit ? ` <a class="btn btn-sm btn-outline" style="padding:.15rem .5rem" onclick="openRefAdd(${r.id})">✎ 编辑</a>` : '')
-      + (USER.role === 'admin' ? ` <a class="btn btn-sm btn-outline" style="padding:.15rem .45rem;color:#b91c1c" title="删除这条介绍记录" onclick="refDelete(${r.id})">🗑</a>` : '');
+      // 有已付款的不能删 (服务器也会拒绝)
+      + (USER.role === 'admin' && !((r.weeks || []).concat(r.iv_week ? [r.iv_week] : []).some(w => w.pay_note && ['paid', 'partial'].includes(w.pay_note.paid_status)) || Object.values(r.hr_bonus || {}).some(b => b.status === 'paid'))
+        ? ` <a class="btn btn-sm btn-outline" style="padding:.15rem .45rem;color:#b91c1c" title="删除这条介绍记录" onclick="refDelete(${r.id})">🗑</a>` : '');
     // 管理员核查条
     const who = _refWhoChip(r.created_by, '提交') + (r.reviewed_by ? ' ' + _refWhoChip(r.reviewed_by, '核查') : '');
     const reviewBar = r.review_status === 'pending'
