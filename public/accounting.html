@@ -2420,7 +2420,7 @@ function _refWeekSums(r) {
   // 工头过面试 $5 那行也算应付, 但不算周数
   for (const w of (r.weeks || []).concat(r.iv_week ? [r.iv_week] : [])) {
     if (w.admin_status === 'rejected') continue;   // 管理员确认这周不付, 不算应付
-    if (w.kind !== 'iv') out.n += w.span_eff || 1;
+    if (w.kind !== 'iv' && !w.merged_into) out.n += w.span_eff || 1;   // 并入同一周的发票不另算一周
     const fee = Number(w.fee_eff) || 0;
     out.due += fee;
     const pn = w.pay_note;
@@ -2454,7 +2454,8 @@ function _refHrOf(r) {
 // 每周付款行摊成一周一周: 两周的发票算 2 周, 工时平分; 管理员标了不付的周跳过
 function _refWeekUnits(r) {
   const out = [];
-  (r.weeks || []).filter(w => w.admin_status !== 'rejected').forEach(w => {
+  // 同一账期的第 2 张发票 (merged_into) 已经并进第 1 张 (工时加在一起), 不另算一周
+  (r.weeks || []).filter(w => w.admin_status !== 'rejected' && !w.merged_into).forEach(w => {
     const n = w.span_eff || 1;
     for (let j = 0; j < n; j++) out.push({ w, hours: w.hours == null ? null : Math.round(Number(w.hours) / n * 100) / 100 });
   });
@@ -2462,8 +2463,13 @@ function _refWeekUnits(r) {
 }
 // 每周付款行的周号: 第 k 周 / 两周的发票 = 第 k–k+1 周
 function _refWeekLabels(r) {
+  // 并入同一周的发票跟那张用同一个周号
   let k = 1;
-  return (r.weeks || []).map(w => { const n = w.span_eff || 1, lab = n > 1 ? `${k}–${k + n - 1}` : String(k); k += n; return lab; });
+  const byId = {};
+  return (r.weeks || []).map(w => {
+    if (w.merged_into) return byId[w.merged_into] || String(k);
+    const n = w.span_eff || 1, lab = n > 1 ? `${k}–${k + n - 1}` : String(k); k += n; byId[w.id] = lab; return lab;
+  });
 }
 async function refWeekSpan(id, v) {
   try {
@@ -2543,9 +2549,14 @@ function _refHr4w(r) {
   const out = [];
   let k = 1;
   for (const w of r.weeks || []) {
-    if (k > REF_HR_4W_TO) break;
-    const n = w.span_eff || 1, end = k + n - 1;
     const row = (r.hr_bonus || {})['m4_' + w.id] || null;
+    // 同一账期的第 2 张发票: 工时已经加进第 1 张那周; 之前单独确认过的列出来好撤销
+    if (w.merged_into) {
+      if (row) out.push({ k: 'm4_' + w.id, label: '同一周的第 2 张发票（已并入，请撤销）', amt: 0, amount: row.amount, calc: '', cnt: 0, st: 'done', hint: '', period: _refInvPer(w), row });
+      continue;
+    }
+    if (k > REF_HR_4W_TO) { if (row) out.push({ k: 'm4_' + w.id, label: `第 ${k} 周（超过第 ${REF_HR_4W_TO} 周，请撤销）`, amt: 0, amount: row.amount, calc: '', cnt: 0, st: 'done', hint: '', period: _refInvPer(w), row }); k += w.span_eff || 1; continue; }
+    const n = w.span_eff || 1, end = k + n - 1;
     // 这张发票落在第 2–5 周里的那几周
     const from = Math.max(k, REF_HR_4W_FROM), to = Math.min(end, REF_HR_4W_TO), cnt = to - from + 1;
     if (cnt <= 0) {
@@ -2974,6 +2985,8 @@ function _refPayWeekRows(list) {
     const v0 = ((r.weeks || [])[0] || {}).invoice || { invoice_date: String(r.interview_attended_at || r.interview_at || '').slice(0, 10) };
     (r.iv_week ? [r.iv_week] : []).concat(r.weeks || []).forEach((w, i0) => {
       const iv = w.kind === 'iv', i = r.iv_week ? i0 - 1 : i0;
+      // 并入同一周的发票默认不另付; 管理员之前确认 / 付过的照样列出来
+      if (w.merged_into && !w.admin_status && !w.pay_req && !w.pay_note) return;
       const v = iv ? v0 : w.invoice || {};
       if (lastSun && String(v.period_end || v.invoice_date || '').slice(0, 10) > lastSun) return;   // 本周的不看
       const pn = w.pay_note;
@@ -3081,7 +3094,8 @@ function _refPayWeeksHtml(list) {
       const [t, fg, bg] = _REF_PW_ST[x.st];
       const w = x.w, n = w.span_eff || 1, a = actOf(x);
       const calc = x.r && x.r.fee_unit === 'container' ? (w.containers_eff != null ? `${money(x.r.amount)}/柜 × ${w.containers_eff} 柜` : '柜数未填')
-        : w.kind === 'iv' ? `过面试 ${money(w.fee_eff)}` : w.rate != null ? (w.hours != null && w.hours < 40 * n ? `${money(w.rate)} × ${w.hours}/40 工时` : `满周 ${money(w.rate)}${n > 1 ? ` × ${n}` : ''}`) : '';
+        : w.kind === 'iv' ? `过面试 ${money(w.fee_eff)}` : w.merged_into ? '同一周的第 2 张发票，工时已并入，不另付'
+        : w.rate != null && w.hours != null && (w.merged_ids || []).length ? `${money(w.rate)} × ${Math.min(w.hours, 40 * n)}/${40 * n} 工时（${w.merged_ids.length + 1} 张发票合计 ${w.hours}）` : w.rate != null ? (w.hours != null && w.hours < 40 * n ? `${money(w.rate)} × ${w.hours}/40 工时` : `满周 ${money(w.rate)}${n > 1 ? ` × ${n}` : ''}`) : '';
       const pn = w.pay_note || {};
       const when = x.st === 'paid' ? `${esc(_refAt(pn.updated_at))}${pn.created_by ? ' · ' + esc(pn.created_by) : ''}${(pn.txns || []).length ? ` · 🏦 ${pn.txns.map(t => `${esc(t.date || '')} ${money(Math.abs(Number(t.amount) || 0))}`).join(' / ')}` : ''}`
         : x.st === 'topay' ? `🛡 ${esc(w.pay_ok_by)} ${esc(_refAt(w.pay_ok_at))}`
@@ -3444,6 +3458,10 @@ function renderRefList() {
     const weeks = r.weeks || [];
     // 这周介绍费: 选满周价 (第一周 $25 / $50, 之后 $12.5 / $25, 都不要再手写), 按工时折算 — 满 40 工时给满, 不满按 工时/40
     const feeCalc = w => { const n = w.span_eff || 1;
+      if (w.merged_into) return '<div style="font-size:.68rem;color:var(--g500);white-space:nowrap">同一周的第 2 张发票 · 工时已并入，不另付</div>';
+      const mg = (w.merged_ids || []).length ? `<div style="font-size:.68rem;color:#7c3aed;white-space:nowrap">同一周 ${w.merged_ids.length + 1} 张发票工时合计 ${w.hours}（这张 ${w.own_hours != null ? w.own_hours : '—'}）</div>` : '';
+      return mg + feeCalc0(w, n); };
+    const feeCalc0 = (w, n) => {
       if (r.fee_unit === 'container') return `<div style="font-size:.68rem;color:${w.containers_eff == null ? '#b45309' : 'var(--g500)'};white-space:nowrap">${w.containers_eff == null
         ? `还不知道几个柜（发票里没勾柜子），填柜数`
         : `${money(r.amount)}/柜 × ${w.containers_eff} 柜${w.containers == null ? '（按勾的柜子）' : ''} = <b style="color:#0f4c6b">${money(w.fee_default)}</b>`}</div>`;
@@ -3460,6 +3478,7 @@ function renderRefList() {
           || (w.fee != null ? `<div style="font-size:.68rem;color:var(--g500);white-space:nowrap">手写 ${money(w.fee)}</div>` : w.fee_default != null ? `<div style="font-size:.68rem;color:var(--g500);white-space:nowrap">按介绍费 ${money(w.fee_default)}${(w.span_eff || 1) > 1 ? `（${w.span_eff} 周）` : ''}</div>` : '')}${
           w.fee_default != null && w.fee == null && Math.abs(Number(w.admin_fee) - Number(w.fee_default)) > 0.005 ? `<div style="font-size:.68rem;color:#b45309;white-space:nowrap">算出 ${money(w.fee_default)}，确认时改成 ${money(w.admin_fee)}</div>` : ''}`
       : w.admin_status === 'rejected' ? '<span style="color:var(--g400)">—</span>'
+      : w.merged_into ? `<span style="color:var(--g400)">$0</span>${feeCalc(w)}`
       : canInv && r.review_status !== 'rejected' && r.fee_unit === 'container' ? `<div style="display:flex;gap:.25rem;align-items:center;justify-content:flex-end">
             <input type="number" step="1" min="0" value="${w.containers != null ? w.containers : ''}" placeholder="${w.containers_auto != null ? w.containers_auto : '柜数'}" title="这周卸了几个柜；空 = 按发票里勾的柜子行数${w.containers_auto != null ? '（' + w.containers_auto + ' 个）' : ''}" onchange="refWeekContainers(${w.id}, this.value)" style="width:58px;padding:.15rem .3rem;font-size:.76rem;text-align:right"><span style="font-size:.74rem;color:var(--g500)">柜</span></div>${feeCalc(w)}`
       : canInv && r.review_status !== 'rejected' ? (() => {
@@ -3544,7 +3563,7 @@ function renderRefList() {
             : n > 1 ? '<div style="font-size:.68rem;color:var(--g500);font-weight:400">两周的发票</div>' : '';
           const paid = w.pay_note && w.pay_note.paid_status === 'paid';
           return `<tr style="${paid ? 'background:#f0fdf4' : w.admin_status === 'rejected' ? 'background:#fafafa;color:var(--g400)' : ''}">
-            <td style="${td};font-weight:800;color:#0f4c6b;white-space:nowrap">第 ${labs[i]} 周${spanSel}</td>
+            <td style="${td};font-weight:800;color:#0f4c6b;white-space:nowrap">第 ${labs[i]} 周${w.merged_into ? '<div style="font-size:.68rem;color:#7c3aed;font-weight:400">同一周第 2 张发票 · 已并入</div>' : spanSel}</td>
             <td style="${td};white-space:nowrap">${v.period_start || v.period_end ? `${esc(v.period_start || '?')} ~ ${esc(v.period_end || '?')}` : `<span style="color:var(--g400)">开票 ${esc(v.invoice_date || '—')}</span>`}</td>
             <td style="${td}"><a onclick="openInvoice(${v.id})" style="cursor:pointer;color:#1d4ed8;font-weight:700;text-decoration:underline;white-space:nowrap">📄 ${esc(v.invoice_number || '')}</a> <span style="color:var(--g500);font-size:.74rem">${esc(v.company_name || '')}</span>
               ${(w.lines || []).map(l => `<div style="font-size:.72rem;color:#0f4c6b">↳ 第 ${l.row} 行 · ${esc(l.line_label)}${l.hint ? ` · ${esc(l.hint)}` : ''} · ${money(l.billed)}</div>`).join('')}</td>
