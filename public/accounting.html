@@ -2563,7 +2563,11 @@ function _refHr4w(r) {
     const calc = h == null ? `这张发票没工时，先按满 ${yuan(full)}`
       : h >= base ? `${h} 工时 ≥ ${base} · 给满${note}`
       : `${yuan(full)}${cnt > 1 ? `（${cnt} 周）` : ''} × ${h}/${base} 工时${note}`;
-    out.push({ k: 'm4_' + w.id, label: wl([from, to]), amt: full, amount, calc, cnt, period: _refInvPer(w), ...stOf(to), row });
+    // 这周的发票已经关联、账期也过完了 = 达成 (跟每周付款表 / 管理奖励一样按发票算第几周);
+    // 不按上班日期推算, 上班日期跟第 1 张发票对不上时两边才不会差一周
+    const pe = String((w.invoice || {}).period_end || '').slice(0, 10);
+    const st = /^\d{4}-\d{2}-\d{2}$/.test(pe) && new Date(pe + 'T00:00:00') < today ? { st: 'done', hint: '' } : stOf(to);
+    out.push({ k: 'm4_' + w.id, label: wl([from, to]), amt: full, amount, calc, cnt, period: _refInvPer(w), ...st, row });
     k += n;
   }
   // 还没关联发票的周不列 (关联到哪周才显示哪周)
