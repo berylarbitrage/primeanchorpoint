@@ -416,17 +416,10 @@ function evaluate(v, res) {
   const W = v.videoWidth, H = v.videoHeight;
   const checks = {};
   const set = (key, label, ok, msg, na) => { checks[key] = { label, ok, msg, na: !!na }; };
-  // 手机姿态
+  // 手机姿态：只要求竖着拿。陀螺仪角度不再拦拍照 —— 实拍时点快门那一下就会晃出范围,
+  // 几乎拍不了；脸正不正交给「正脸」检查。右上角水平仪仍显示，仅作参考。
   const portrait = H >= W;
-  if (tilt) {
-    const b = tilt.beta, g = tilt.gamma;
-    let msg = '';
-    if (b < 82) msg = '手机往前立直一点（现在往后仰了）';
-    else if (b > 98) msg = '手机往后仰一点（现在往前倾了）';
-    else if (Math.abs(g) > 5) msg = '手机左右放平（别歪）';
-    set('tilt', '手机竖直', !msg, msg);
-  } else set('tilt', '手机竖直', true, '', true);
-  if (!portrait) set('tilt', '手机竖直', false, '请把手机竖过来拿');
+  set('tilt', '手机竖直', portrait, portrait ? '' : '请把手机竖过来拿');
 
   const faces = res && res.faceLandmarks ? res.faceLandmarks : [];
   if (!faces.length) {
