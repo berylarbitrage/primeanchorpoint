@@ -3037,6 +3037,97 @@ const _REF_PW_ST = {
   amount: ['待确认金额', '#64748b', '#f1f5f9'], req: ['待会计确认支付', '#b45309', '#fffbeb'], review: ['⏳ 待管理员审核', '#c2410c', '#fff7ed'],
   topay: ['🛡 已审核 · 待付款', '#1d4ed8', '#eff6ff'], paid: ['💰 已付', '#047857', '#ecfdf5'], nopay: ['✖ 不付', '#94a3b8', '#f8fafc'],
 };
+// ── ⬇ 英文付款明细导出: 按人 (工头 / HR), 当前页签里的每一笔 ──
+let _refPwExp = null;
+const _REF_ST_EN = { amount: 'Pending amount confirmation', req: 'Amount confirmed', review: 'Awaiting payment approval', topay: 'Approved - to be paid', paid: 'Paid', nopay: 'Not payable' };
+const _REF_TAB_EN = { todo: 'Pending', topay: 'To be paid', paid: 'Paid', all: 'All' };
+// 一笔 → 英文明细
+function _refPwEn(x) {
+  const r = x.r, cur = x.hb ? 'CNY' : 'USD';
+  const base = { payee: x.payee, payeePhone: x.hb ? '' : r.foreman_phone || '', worker: r.worker_name || '', workerPhone: r.worker_phone || '',
+    warehouse: r.warehouse_name || r.warehouse_address || '', start: x.ps || '', end: x.pe || '', amount: x.amt, est: x.est, cur, status: (_REF_ST_EN[x.st] || x.st) + (x.partial ? ' (partial)' : '') };
+  if (x.hb) {
+    const b = x.b, lab = b.k === 'interview' ? 'Passed interview' : b.k === 'week1' ? 'Week 1' : b.k === 'month1' ? 'Month 1 (old)'
+      : (/^mgmt/.test(b.k) ? 'Management bonus ' : '') + String(b.label || '').replace(/第 ([\d–]+) 周/, 'Week $1').replace(/（.*$/, '');
+    // 中文的算法说明翻成英文; 翻不了就只写标准
+    let calc = String(b.calc || '').replace(/（[^）]*）/g, '').replace(/工时/g, 'hrs').replace(/给满/g, 'full').replace(/这张发票没工时，先按满/, 'no hours on invoice, full')
+      .replace(/还没关联第 1 周发票 \/ 没工时，先按满额/, 'no invoice yet, full').replace(/每周/g, 'per week ');
+    if (/[一-鿿]/.test(calc)) calc = '';
+    const row = x.row || {};
+    return { ...base, type: 'HR bonus', item: lab, hours: '', calc: calc || `Standard ${yuan(b.amt)}`, paidDate: x.st === 'paid' ? _refAt(row.paid_at).slice(0, 10) : '', bank: '' };
+  }
+  const w = x.w, n = w.span_eff || 1;
+  let item, calc = '';
+  if (w.kind === 'iv') { item = 'Interview bonus'; calc = `Passed interview ${money(w.fee_eff)}`; }
+  else {
+    item = `Week ${x.lab}`;
+    if (w.merged_into) calc = 'Same week as another invoice (hours merged), not paid separately';
+    else if (r.fee_unit === 'container') calc = w.containers_eff != null ? `${money(r.amount)}/container × ${w.containers_eff}` : 'Containers not entered';
+    else {
+      const full = w.rate != null ? (w.tier_eff === 'first' && n > 1 && w.rate_after != null ? w.rate + w.rate_after * (n - 1) : w.rate * n) : w.full_auto;
+      const fullTxt = w.tier_eff === 'first' && n > 1 && w.rate_after != null ? `(${money(full - w.rate_after * (n - 1))} + ${money(w.rate_after * (n - 1))})` : money(full);
+      if (full != null) calc = w.hours == null ? `Full ${n > 1 ? n + ' weeks' : 'week'} ${money(full)}`
+        : w.hours >= 40 * n ? `${w.hours} hrs ≥ ${40 * n} · full ${fullTxt}` : `${fullTxt} × ${w.hours}/${40 * n} hrs`;
+    }
+  }
+  const pn = w.pay_note || {};
+  return { ...base, type: w.kind === 'iv' ? 'Interview bonus' : 'Weekly referral fee', item, hours: w.kind === 'iv' || w.hours == null ? '' : w.hours, calc,
+    paidDate: x.st === 'paid' ? _refPwPaidDate(w) : '', bank: (pn.txns || []).map(t => `${t.date || ''} ${money(Math.abs(Number(t.amount) || 0))}`).join(' / ') };
+}
+function refPwExport(gi, mode) {
+  if (!_refPwExp) return;
+  const E = _refPwExp;
+  // 导出全部也按人排 (跟「按人」一样); 单个人 = 那张卡
+  let rows;
+  if (gi < 0) {
+    const all = E.keys.flatMap(k => E.groups[k]);
+    rows = all.slice().sort((a, b) => (a.hb === b.hb ? 0 : a.hb ? 1 : -1) || String(a.payee).localeCompare(String(b.payee)) || String(b.ps).localeCompare(String(a.ps)) || String(a.r.worker_name || '').localeCompare(String(b.r.worker_name || '')));
+  } else rows = E.groups[E.keys[gi]] || [];
+  const items = rows.map(_refPwEn);
+  if (!items.length) return toast('没有可以导出的', true);
+  const today = _refYmd(new Date());
+  const fname = (gi < 0 ? 'referral-payments-all' : 'referral-payments-' + String(items[0].payee).replace(/[^\w.-]+/g, '_')) + `-${E.tab}-${today}`;
+  if (mode === 'csv') {
+    const q = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+    const head = ['Payee', 'Payee Phone', 'Type', 'Worker', 'Worker Phone', 'Warehouse', 'Item', 'Period Start', 'Period End', 'Hours', 'Calculation', 'Amount', 'Currency', 'Status', 'Paid Date', 'Bank Transaction'];
+    const lines = [head.map(q).join(',')].concat(items.map(i => [i.payee, i.payeePhone, i.type, i.worker, i.workerPhone, i.warehouse, i.item, i.start, i.end, i.hours, i.calc,
+      i.est ? '' : Number(i.amount).toFixed(2), i.cur, i.status, i.paidDate, i.bank].map(q).join(',')));
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
+    a.download = fname + '.csv';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    return;
+  }
+  // 🖨 英文对账单: 新窗口打开, 浏览器打印 / 存 PDF
+  const m = i => i.cur === 'CNY' ? yuan(i.amount) : money(i.amount);
+  const p0 = items[0], cf = items.filter(i => !i.est && !/^Not payable/.test(i.status));
+  const tot = cf.reduce((t, i) => t + Number(i.amount || 0), 0), paid = cf.filter(i => /^Paid/.test(i.status)).reduce((t, i) => t + Number(i.amount || 0), 0);
+  const M = v => p0.cur === 'CNY' ? yuan(v) : money(v);
+  const nEst = items.filter(i => i.est).length;
+  const h = s2 => esc(s2 == null ? '' : s2);
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${h(fname)}</title><style>
+    body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#0f172a;margin:28px;font-size:12px}
+    h1{font-size:20px;margin:0 0 4px} .sub{color:#64748b;margin-bottom:16px}
+    table{width:100%;border-collapse:collapse} th{text-align:left;font-size:11px;color:#64748b;border-bottom:2px solid #cbd5e1;padding:6px}
+    td{padding:6px;border-bottom:1px solid #e2e8f0;vertical-align:top} .r{text-align:right;white-space:nowrap}
+    .tot{margin-top:14px;display:flex;gap:28px;justify-content:flex-end;font-size:13px} .tot b{font-size:15px}
+    @media print{body{margin:10mm} button{display:none}}</style></head><body>
+    <button onclick="print()" style="float:right;padding:6px 14px">Print / Save as PDF</button>
+    <h1>Referral Payment Statement</h1>
+    <div class="sub">${gi < 0 ? 'All payees' : `Payee: <b>${h(p0.payee)}</b>${p0.payeePhone ? ' · ' + h(p0.payeePhone) : ''}`} · Status: ${h(_REF_TAB_EN[E.tab] || E.tab)} · Generated ${h(today)}</div>
+    <table><thead><tr>${gi < 0 ? '<th>Payee</th>' : ''}<th>Worker</th><th>Item</th><th>Period</th><th>Calculation</th><th class="r">Amount</th><th>Status</th><th>Paid</th></tr></thead><tbody>
+    ${items.map(i => `<tr>${gi < 0 ? `<td>${h(i.payee)}</td>` : ''}<td>${h(i.worker)}</td><td>${h(i.item)}</td><td style="white-space:nowrap">${h(i.start)}${i.end ? ' ~ ' + h(i.end) : ''}</td>
+      <td>${h(i.calc)}</td><td class="r"><b>${i.est ? '<span style="color:#94a3b8;font-weight:400">TBD</span>' : h(m(i))}</b></td><td>${h(i.status)}</td><td style="white-space:nowrap">${h(i.paidDate)}${i.bank ? `<div style="color:#64748b">${h(i.bank)}</div>` : ''}</td></tr>`).join('')}
+    </tbody></table>
+    ${gi < 0 ? '' : `<div class="tot"><span>Items: <b>${items.length}</b></span><span>Total (confirmed): <b>${h(M(tot))}</b></span><span>Paid: <b style="color:#047857">${h(M(paid))}</b></span><span>Outstanding: <b style="color:#dc2626">${h(M(tot - paid))}</b></span></div>
+    ${nEst ? `<div style="text-align:right;color:#64748b;margin-top:4px">${nEst} item(s) pending amount confirmation (TBD) are not included in the total.</div>` : ''}`}
+    </body></html>`;
+  const wdw = window.open('', '_blank');
+  if (!wdw) return toast('浏览器拦截了弹窗，请允许弹窗后再试', true);
+  wdw.document.write(html);
+  wdw.document.close();
+}
 function _refPayWeeksHtml(list) {
   const all = _refPayWeekRows(list).concat(_refPayHrRows(list));
   const tab = _REF_PW_TABS[_refPwTab] === undefined ? 'todo' : _refPwTab;
@@ -3059,6 +3150,7 @@ function _refPayWeeksHtml(list) {
   const bar = `<div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin-bottom:.1rem">
       ${tb('todo', '⏳ 待确认')}${tb('topay', '🛡 待付款')}${tb('paid', '💰 付款记录')}${tb('all', '全部')}
       <span style="display:inline-flex;border:1px solid var(--g300);border-radius:6px;overflow:hidden;margin:0 .2rem">${[['period', tab === 'paid' ? '🗓 按付款日期' : '🗓 按账期'], ['person', '👤 按人（所有账期加起来）']].map(([v, t]) => `<button class="btn btn-sm" style="border:0;border-radius:0;${_refPwGroup === v ? 'background:#0f4c6b;color:#fff' : 'background:#fff;color:var(--g600)'}" onclick="refPwGroup('${v}')">${t}</button>`).join('')}</span>
+      <button class="btn btn-sm btn-outline" title="这个页签里所有人的付款明细（英文 CSV，按人排）；要全部状态先点「全部」" onclick="refPwExport(-1,'csv')">⬇ 导出全部（英文 CSV）</button>
       <span style="font-size:.74rem;color:var(--g500)">工头每周介绍费（美元）+ <b style="color:#6d28d9">🙋 HR 奖励（人民币）</b>。确认金额 → 会计确认支付 → 管理员审核 → 待付款 → 记已付；点工人名字跳到那条介绍。</span></div>
     ${pickable.length ? `<div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;background:#fff;border:1px solid var(--g200);border-radius:10px;padding:.4rem .6rem">
       <label style="font-size:.8rem;cursor:pointer;white-space:nowrap"><input type="checkbox" ${allOn ? 'checked' : ''} onchange="refPwPickMany('${pickable.join(',')}', this.checked)"> 全选这个页签（${pickable.length}）</label>
@@ -3079,7 +3171,8 @@ function _refPayWeeksHtml(list) {
   const gTot = k => sumOf(groups[k].filter(x => x.st !== 'nopay' && !x.est));
   const gKeys = byPerson ? Object.keys(groups).sort((a, b) => (a[0] === b[0] ? 0 : a[0] === 'w' ? -1 : 1) || gTot(b) - gTot(a) || a.localeCompare(b))
     : Object.keys(groups).sort((a, b) => b.localeCompare(a));
-  const html = gKeys.map(k => {
+  _refPwExp = { groups, keys: gKeys, tab };
+  const html = gKeys.map((k, gi) => {
     const gAll = groups[k].sort(byPerson ? (a, b) => String(b.ps).localeCompare(String(a.ps)) || String(a.r.worker_name || '').localeCompare(String(b.r.worker_name || '')) || (a.w && b.w ? (a.w.kind === 'iv' ? -1 : b.w.kind === 'iv' ? 1 : 0) : 0)
       : (a, b) => a.payee.localeCompare(b.payee) || String(a.r.worker_name || '').localeCompare(String(b.r.worker_name || '')));
     const g = gAll.filter(x => !x.hb), gh = gAll.filter(x => x.hb);
@@ -3105,7 +3198,9 @@ function _refPayWeeksHtml(list) {
       const tot = sumOf(cf), pd = sumOf(xs.filter(x => x.st === 'paid'));
       const nW = new Set(xs.map(x => x.r.id)).size, nP = new Set(xs.map(x => `${x.ps}~${x.pe}`)).size;
       const ph = gAll[0].hb ? '' : gAll[0].r.foreman_phone;
-      head = `<b style="color:${gAll[0].hb ? '#6d28d9' : '#0f4c6b'};font-size:.95rem">${gAll[0].hb ? '🙋 ' : '👷 '}${esc(gAll[0].payee)}</b>${ph ? ` <span style="font-size:.74rem;color:var(--g400)">${esc(ph)}</span>` : ''}
+      const xb = (t, a, tip) => `<button class="btn btn-sm btn-outline" style="padding:0 7px;font-size:.7rem" title="${tip}" onclick="refPwExport(${gi},'${a}')">${t}</button>`;
+      head = `${xb('🖨 Statement (EN)', 'print', '英文付款明细，打开后可打印 / 存 PDF')}${xb('⬇ CSV (EN)', 'csv', '英文付款明细 CSV，Excel 能打开')}`;
+      head += `<b style="color:${gAll[0].hb ? '#6d28d9' : '#0f4c6b'};font-size:.95rem">${gAll[0].hb ? '🙋 ' : '👷 '}${esc(gAll[0].payee)}</b>${ph ? ` <span style="font-size:.74rem;color:var(--g400)">${esc(ph)}</span>` : ''}
         <span style="font-size:.78rem;color:var(--g500)">${nW} 个工人 · ${nP} 个账期 · ${xs.length} 笔 · 合计 <b style="color:#0f172a;font-size:.9rem">${m(tot)}</b>${ne ? ` · <span style="color:#64748b">${ne} 笔待确认金额${gAll[0].hb ? `（≈ ${yuan(sumOf(xs.filter(x => x.est)))}）` : ''}</span>` : ''}${tab === 'all' ? ` · 已付 <b style="color:#047857">${m(pd)}</b>${tot - pd > 0.005 ? ` · 还差 <b style="color:#dc2626">${m(tot - pd)}</b>` : ''}` : ''}</span>`;
     } else if (!g.length) head = `<b style="color:${tab === 'paid' ? '#047857' : '#0f4c6b'}">${tab === 'paid' ? `💰 ${esc(k)} 付款` : `🗓 ${esc(k.split('~')[0] || '?')} ~ ${esc(k.split('~')[1] || '?')}`}</b>`;
     else if (tab === 'paid') {
