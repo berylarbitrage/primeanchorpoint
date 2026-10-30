@@ -5662,7 +5662,7 @@ function cpRenderLines() {
     </div>`).join('');
   cpSum();
 }
-// 🔗 Bonus 关联介绍费 HR 奖励: 列出这个 HR 已确认支付 (审核通过 / 已付) 的 HR 奖励, 默认勾这个月账期的;
+// 🔗 Bonus 关联介绍费 HR 奖励: 列出这个 HR 已确认支付 (审核通过 / 已付) 的 HR 奖励, 默认按批次分组 (同一次记已付的一组);
 // 已经关联到别的工资记录的不列 (一笔只能进一次工资). 关联的 key = '<介绍 id>:<节点>' 存在这一项的 ref_hb 上
 let _cpRef = null;
 // 介绍费 HR 奖励 → 进了哪个月的国内工资 ('<介绍 id>:<节点>' → 'YYYY-MM')
@@ -5683,7 +5683,7 @@ async function cpRefPick() {
   _feeList.filter(f => f.fee_type === 'cnpay' && f.id !== _cnPay.recId && f.approval_status !== 'rejected').forEach(f => _cnLines(f).forEach(l => (l.ref_hb || []).forEach(k => used.add(k))));
   const mine = new Set(_cnPay.lines.flatMap(l => l.ref_hb || []));
   const month = document.getElementById('cpMonth').value || '';
-  _cpRef = { all, used, hr: hr0, month, sel: new Set(mine.size ? mine : all.filter(x => x.hr === hr0 && !used.has(x.id.slice(2)) && String(x.pe || x.ps).slice(0, 7) === month).map(x => x.id.slice(2))) };
+  _cpRef = { by: 'batch', all, used, hr: hr0, month, sel: new Set(mine) };   // 默认不勾 (按批次一勾整批); 编辑时保留之前关联的
   cpRefRender();
 }
 function cpRefRender() {
@@ -5700,17 +5700,32 @@ function cpRefRender() {
     <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:.5rem"><b style="color:#6d28d9">🔗 关联介绍费 HR 奖励</b>
       <select onchange="_cpRef.hr=this.value;_cpRef.sel.clear();cpRefRender()">${[...new Set(R.all.map(x => x.hr))].map(h => `<option ${h === R.hr ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select>
       <span style="font-size:.76rem;color:var(--g500)">只列已确认支付 / 已审核 / 已付的；已关联到别的工资记录的不列</span><span style="flex:1"></span>
+      <span style="display:inline-flex;border:1px solid var(--g300);border-radius:6px;overflow:hidden">${[['batch', '按批次'], ['period', '按账期']].map(([v, t]) => `<button class="btn btn-sm" style="border:0;border-radius:0;${(R.by || 'batch') === v ? 'background:#6d28d9;color:#fff' : 'background:#fff;color:var(--g600)'}" onclick="_cpRef.by='${v}';cpRefRender()">${t}</button>`).join('')}</span>
       <button class="btn btn-sm btn-outline" onclick="cpRefMonth()">只勾 ${esc(R.month || '本月')} 的</button>
       <button class="btn btn-sm btn-outline" onclick="cpRefAll(true)">全选</button><button class="btn btn-sm btn-outline" onclick="cpRefAll(false)">全不选</button></div>
     <div style="max-height:60vh;overflow:auto;border:1px solid var(--g200);border-radius:8px"><table style="width:100%;border-collapse:collapse">
       <thead><tr style="background:#faf5ff"><th></th><th style="${td};text-align:left">账期</th><th style="${td};text-align:left">工人</th><th style="${td};text-align:left">奖励</th><th style="${td};text-align:right">金额</th><th style="${td};text-align:left">状态</th></tr></thead><tbody>
-      ${rows.map(x => { const k = x.id.slice(2); return `<tr style="${R.sel.has(k) ? 'background:#f5f3ff' : ''}"><td style="${td}"><input type="checkbox" ${R.sel.has(k) ? 'checked' : ''} onchange="this.checked?_cpRef.sel.add('${k}'):_cpRef.sel.delete('${k}');cpRefRender()"></td>
-        <td style="${td}">${esc(x.ps)} ~ ${esc(x.pe)}</td><td style="${td}">${esc(x.r.worker_name || '')}</td><td style="${td}">${esc(x.lab)}</td><td style="${td};text-align:right;font-weight:700">${yuan(x.amt)}</td><td style="${td};color:${x.st === 'paid' ? '#047857' : '#b45309'}">${stTxt[x.st]}</td></tr>`; }).join('') || `<tr><td colspan="6" style="padding:1rem;color:var(--g400)">没有可以关联的 HR 奖励。</td></tr>`}
+      ${(() => {
+        const one = x => { const k = x.id.slice(2); return `<tr style="${R.sel.has(k) ? 'background:#f5f3ff' : ''}"><td style="${td}"><input type="checkbox" ${R.sel.has(k) ? 'checked' : ''} onchange="this.checked?_cpRef.sel.add('${k}'):_cpRef.sel.delete('${k}');cpRefRender()"></td>
+        <td style="${td}">${esc(x.ps)} ~ ${esc(x.pe)}</td><td style="${td}">${esc(x.r.worker_name || '')}</td><td style="${td}">${esc(x.lab)}</td><td style="${td};text-align:right;font-weight:700">${yuan(x.amt)}</td><td style="${td};color:${x.st === 'paid' ? '#047857' : '#b45309'}">${stTxt[x.st]}</td></tr>`; };
+        if (!rows.length) return `<tr><td colspan="6" style="padding:1rem;color:var(--g400)">没有可以关联的 HR 奖励。</td></tr>`;
+        if (R.by !== 'batch') return rows.map(one).join('');
+        // 按批次: 同一次（同一分钟）记已付 / 审核通过 / 确认支付的算一批, 一勾整批
+        const bk = x => { const w = x.row || {}; return x.st === 'paid' ? `paid|${_refAt(w.paid_at)}|${w.paid_by || ''}` : x.st === 'topay' ? `topay|${_refAt(w.pay_ok_at)}|${w.pay_ok_by || ''}` : `review|${_refAt(w.pay_req_at)}|${w.pay_req_by || ''}`; };
+        const g = {};
+        rows.forEach(x => { (g[bk(x)] = g[bk(x)] || []).push(x); });
+        return Object.keys(g).sort((a, b) => b.split('|')[1].localeCompare(a.split('|')[1])).map(key => {
+          const xs = g[key], ks = xs.map(x => x.id.slice(2)), on = ks.every(k => R.sel.has(k)), [st, at, by] = key.split('|');
+          return `<tr style="background:#ede9fe"><td style="${td}"><input type="checkbox" ${on ? 'checked' : ''} onchange="cpRefBatch('${ks.join(',')}', this.checked)"></td>
+            <td colspan="5" style="${td};font-weight:700;color:#5b21b6">${{ paid: '💰 一次记已付', topay: '🛡 一次审核通过', review: '💳 一次确认支付' }[st]} · ${esc(at || '?')}${by ? ' · ' + esc(by) : ''} · ${xs.length} 笔 · ${yuan(xs.reduce((t, x) => t + x.amt, 0))}</td></tr>` + xs.map(one).join('');
+        }).join('');
+      })()}
       </tbody></table></div>
     <div style="display:flex;gap:.5rem;align-items:center;margin-top:.6rem"><span style="font-size:.82rem">已选 <b>${sel.length}</b> 笔 · 合计 <b style="color:#6d28d9">${yuan(sel.reduce((t, x) => t + x.amt, 0))}</b></span><span style="flex:1"></span>
       <button class="btn btn-sm btn-outline" onclick="document.getElementById('cpRefOv').remove()">取消</button>
       <button class="btn btn-sm" style="background:#6d28d9;color:#fff" onclick="cpRefApply()">加到 Bonus 奖金</button></div></div>`;
 }
+function cpRefBatch(ks, on) { ks.split(',').forEach(k => on ? _cpRef.sel.add(k) : _cpRef.sel.delete(k)); cpRefRender(); }
 function cpRefMonth() { const R = _cpRef; R.sel = new Set(R.all.filter(x => x.hr === R.hr && !R.used.has(x.id.slice(2)) && String(x.pe || x.ps).slice(0, 7) === R.month).map(x => x.id.slice(2))); cpRefRender(); }
 function cpRefAll(on) { const R = _cpRef; R.sel = on ? new Set(R.all.filter(x => x.hr === R.hr && !R.used.has(x.id.slice(2))).map(x => x.id.slice(2))) : new Set(); cpRefRender(); }
 // 加成 (或替换) Bonus 里那一项: 金额 = 勾的合计, 备注列出每笔
