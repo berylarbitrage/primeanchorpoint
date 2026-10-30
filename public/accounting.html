@@ -3096,34 +3096,59 @@ function refPwExport(gi, mode) {
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     return;
   }
-  // 🖨 英文对账单: 新窗口打开, 浏览器打印 / 存 PDF
+  // 🖨 英文对账单: 在本页弹窗里显示 (方便截图 / 复制), 弹窗里可以复制表格或打印 / 存 PDF
   const m = i => i.cur === 'CNY' ? yuan(i.amount) : money(i.amount);
   const p0 = items[0], cf = items.filter(i => !i.est && !/^Not payable/.test(i.status));
   const tot = cf.reduce((t, i) => t + Number(i.amount || 0), 0), paid = cf.filter(i => /^Paid/.test(i.status)).reduce((t, i) => t + Number(i.amount || 0), 0);
   const M = v => p0.cur === 'CNY' ? yuan(v) : money(v);
   const nEst = items.filter(i => i.est).length;
   const h = s2 => esc(s2 == null ? '' : s2);
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${h(fname)}</title><style>
-    body{font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#0f172a;margin:28px;font-size:12px}
-    h1{font-size:20px;margin:0 0 4px} .sub{color:#64748b;margin-bottom:16px}
-    table{width:100%;border-collapse:collapse} th{text-align:left;font-size:11px;color:#64748b;border-bottom:2px solid #cbd5e1;padding:6px}
-    td{padding:6px;border-bottom:1px solid #e2e8f0;vertical-align:top} .r{text-align:right;white-space:nowrap}
-    .tot{margin-top:14px;display:flex;gap:28px;justify-content:flex-end;font-size:13px} .tot b{font-size:15px}
-    @media print{body{margin:10mm} button{display:none}}</style></head><body>
-    <button onclick="print()" style="float:right;padding:6px 14px">Print / Save as PDF</button>
-    <h1>Referral Payment Statement</h1>
-    <div class="sub">${gi < 0 ? 'All payees' : `Payee: <b>${h(p0.payee)}</b>${p0.payeePhone ? ' · ' + h(p0.payeePhone) : ''}`} · Status: ${h(_REF_TAB_EN[E.tab] || E.tab)} · Generated ${h(today)}</div>
-    <table><thead><tr>${gi < 0 ? '<th>Payee</th>' : ''}<th>Worker</th><th>Item</th><th>Period</th><th>Calculation</th><th class="r">Amount</th><th>Status</th><th>Paid</th></tr></thead><tbody>
-    ${items.map(i => `<tr>${gi < 0 ? `<td>${h(i.payee)}</td>` : ''}<td>${h(i.worker)}</td><td>${h(i.item)}</td><td style="white-space:nowrap">${h(i.start)}${i.end ? ' ~ ' + h(i.end) : ''}</td>
-      <td>${h(i.calc)}</td><td class="r"><b>${i.est ? '<span style="color:#94a3b8;font-weight:400">TBD</span>' : h(m(i))}</b></td><td>${h(i.status)}</td><td style="white-space:nowrap">${h(i.paidDate)}${i.bank ? `<div style="color:#64748b">${h(i.bank)}</div>` : ''}</td></tr>`).join('')}
+  const td = 'padding:5px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top;font-size:12px';
+  const th = 'text-align:left;font-size:11px;color:#64748b;border-bottom:2px solid #cbd5e1;padding:5px 8px';
+  // 内联样式, 复制到 Excel / 邮件里格式也保留
+  const body = `<div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#0f172a;background:#fff">
+    <div style="font-size:18px;font-weight:800;margin-bottom:2px">Referral Payment Statement</div>
+    <div style="color:#64748b;font-size:12px;margin-bottom:12px">${gi < 0 ? 'All payees' : `Payee: <b style="color:#0f172a">${h(p0.payee)}</b>${p0.payeePhone ? ' · ' + h(p0.payeePhone) : ''}`} · Status: ${h(_REF_TAB_EN[E.tab] || E.tab)} · Generated ${h(today)}</div>
+    <table style="width:100%;border-collapse:collapse"><thead><tr>${gi < 0 ? `<th style="${th}">Payee</th>` : ''}<th style="${th}">Worker</th><th style="${th}">Item</th><th style="${th}">Period</th><th style="${th}">Calculation</th><th style="${th};text-align:right">Amount</th><th style="${th}">Status</th><th style="${th}">Paid</th></tr></thead><tbody>
+    ${items.map(i => `<tr>${gi < 0 ? `<td style="${td}">${h(i.payee)}</td>` : ''}<td style="${td}">${h(i.worker)}</td><td style="${td};white-space:nowrap">${h(i.item)}</td><td style="${td};white-space:nowrap">${h(i.start)}${i.end ? ' ~ ' + h(i.end) : ''}</td>
+      <td style="${td}">${h(i.calc)}</td><td style="${td};text-align:right;white-space:nowrap;font-weight:700">${i.est ? '<span style="color:#94a3b8;font-weight:400">TBD</span>' : h(m(i))}</td><td style="${td};white-space:nowrap">${h(i.status)}</td><td style="${td};white-space:nowrap">${h(i.paidDate)}${i.bank ? `<div style="color:#64748b">${h(i.bank)}</div>` : ''}</td></tr>`).join('')}
     </tbody></table>
-    ${gi < 0 ? '' : `<div class="tot"><span>Items: <b>${items.length}</b></span><span>Total (confirmed): <b>${h(M(tot))}</b></span><span>Paid: <b style="color:#047857">${h(M(paid))}</b></span><span>Outstanding: <b style="color:#dc2626">${h(M(tot - paid))}</b></span></div>
-    ${nEst ? `<div style="text-align:right;color:#64748b;margin-top:4px">${nEst} item(s) pending amount confirmation (TBD) are not included in the total.</div>` : ''}`}
-    </body></html>`;
-  const wdw = window.open('', '_blank');
-  if (!wdw) return toast('浏览器拦截了弹窗，请允许弹窗后再试', true);
-  wdw.document.write(html);
-  wdw.document.close();
+    ${gi < 0 ? '' : `<div style="margin-top:12px;display:flex;gap:24px;justify-content:flex-end;font-size:13px;flex-wrap:wrap"><span>Items: <b>${items.length}</b></span><span>Total (confirmed): <b>${h(M(tot))}</b></span><span>Paid: <b style="color:#047857">${h(M(paid))}</b></span><span>Outstanding: <b style="color:#dc2626">${h(M(tot - paid))}</b></span></div>
+    ${nEst ? `<div style="text-align:right;color:#64748b;margin-top:4px;font-size:12px">${nEst} item(s) pending amount confirmation (TBD) are not included in the total.</div>` : ''}`}</div>`;
+  _refStmt = { html: body, title: fname, text: [['Worker', 'Item', 'Period', 'Calculation', 'Amount', 'Status', 'Paid'].join('\t')]
+    .concat(items.map(i => [(gi < 0 ? i.payee + ' / ' : '') + i.worker, i.item, `${i.start}${i.end ? ' ~ ' + i.end : ''}`, i.calc, i.est ? 'TBD' : m(i), i.status, i.paidDate].join('\t'))).join('\n') };
+  let ov = document.getElementById('refStmtOv');
+  if (!ov) { ov = document.createElement('div'); ov.id = 'refStmtOv'; document.body.appendChild(ov); }
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;overflow:auto';
+  ov.onclick = e => { if (e.target === ov) refStmtClose(); };
+  ov.innerHTML = `<div style="background:#fff;border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,.25);width:min(980px,100%);padding:18px 20px">
+      <div style="display:flex;gap:.4rem;justify-content:flex-end;margin-bottom:10px">
+        <button class="btn btn-sm btn-outline" onclick="refStmtCopy()">📋 复制表格</button>
+        <button class="btn btn-sm btn-outline" onclick="refStmtPrint()">🖨 打印 / 存 PDF</button>
+        <button class="btn btn-sm btn-outline" onclick="refStmtClose()">✕ 关闭</button></div>
+      <div id="refStmtBody">${body}</div></div>`;
+}
+let _refStmt = null;
+function refStmtClose() { const ov = document.getElementById('refStmtOv'); if (ov) ov.remove(); }
+// 复制: 带格式 (贴到 Excel / 邮件是表格), 不支持就复制选中的内容
+async function refStmtCopy() {
+  if (!_refStmt) return;
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([_refStmt.html], { type: 'text/html' }), 'text/plain': new Blob([_refStmt.text], { type: 'text/plain' }) })]);
+    return toast('📋 已复制，可以贴到 Excel / 邮件里');
+  } catch (e) {}
+  const el = document.getElementById('refStmtBody'), rg = document.createRange();
+  rg.selectNodeContents(el);
+  const sel = getSelection(); sel.removeAllRanges(); sel.addRange(rg);
+  const ok = document.execCommand('copy'); sel.removeAllRanges();
+  toast(ok ? '📋 已复制' : '复制不了，请手动选中复制', !ok);
+}
+function refStmtPrint() {
+  if (!_refStmt) return;
+  const w = window.open('', '_blank');
+  if (!w) return toast('浏览器拦截了弹窗，请允许弹窗后再试', true);
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(_refStmt.title)}</title><style>body{margin:24px}@media print{body{margin:10mm}}</style></head><body>${_refStmt.html}<script>onload=()=>print()<\/script></body></html>`);
+  w.document.close();
 }
 function _refPayWeeksHtml(list) {
   const all = _refPayWeekRows(list).concat(_refPayHrRows(list));
@@ -3196,7 +3221,7 @@ function _refPayWeeksHtml(list) {
       const nW = new Set(xs.map(x => x.r.id)).size, nP = new Set(xs.map(x => `${x.ps}~${x.pe}`)).size;
       const ph = gAll[0].hb ? '' : gAll[0].r.foreman_phone;
       const xb = (t, a, tip) => `<button class="btn btn-sm btn-outline" style="padding:0 7px;font-size:.7rem" title="${tip}" onclick="refPwExport(${gi},'${a}')">${t}</button>`;
-      head = `${xb('🖨 Statement (EN)', 'print', '英文付款明细，打开后可打印 / 存 PDF')}${xb('⬇ CSV (EN)', 'csv', '英文付款明细 CSV，Excel 能打开')}`;
+      head = `${xb('🖨 Statement (EN)', 'print', '英文付款明细，在本页弹窗显示，可截图 / 复制 / 打印')}${xb('⬇ CSV (EN)', 'csv', '英文付款明细 CSV，Excel 能打开')}`;
       head += `<b style="color:${gAll[0].hb ? '#6d28d9' : '#0f4c6b'};font-size:.95rem">${gAll[0].hb ? '🙋 ' : '👷 '}${esc(gAll[0].payee)}</b>${ph ? ` <span style="font-size:.74rem;color:var(--g400)">${esc(ph)}</span>` : ''}
         <span style="font-size:.78rem;color:var(--g500)">${nW} 个工人 · ${nP} 个账期 · ${xs.length} 笔 · 合计 <b style="color:#0f172a;font-size:.9rem">${m(tot)}</b>${ne ? ` · <span style="color:#64748b">${ne} 笔待确认金额${gAll[0].hb ? `（≈ ${yuan(sumOf(xs.filter(x => x.est)))}）` : ''}</span>` : ''}${tab === 'all' ? ` · 已付 <b style="color:#047857">${m(pd)}</b>${tot - pd > 0.005 ? ` · 还差 <b style="color:#dc2626">${m(tot - pd)}</b>` : ''}` : ''}</span>`;
     } else if (!g.length) head = `<b style="color:${tab === 'paid' ? '#047857' : '#0f4c6b'}">${tab === 'paid' ? `💰 ${esc(k)} 付款` : `🗓 ${esc(k.split('~')[0] || '?')} ~ ${esc(k.split('~')[1] || '?')}`}</b>`;
