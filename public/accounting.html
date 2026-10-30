@@ -2616,10 +2616,12 @@ function _refHbBad(b) {
   if (!row || !['approved', 'paid'].includes(row.status)) return false;
   return !!b.undo || (!!b.calc && Math.abs((Number(row.amount) || 0) - (Number(b.amount) || 0)) > 0.005);
 }
-// 每周介绍费: 管理员确认的金额 ≠ 现在算出来的 (没手写金额的; 并入同一周的发票算出来是 $0)
+// 每周介绍费: 管理员确认的金额 ≠ 按规则算出来的 (并入同一周的发票按规则是 $0)
 function _refWeekBad(w) {
-  return w.kind !== 'iv' && w.admin_status === 'approved' && w.fee == null && w.fee_default != null
-    && Math.abs((Number(w.admin_fee) || 0) - (Number(w.fee_default) || 0)) > 0.005;
+  // 按规则算 (第一周 $50 / 之后 $25; 2475 仓库 $25 / $12.5, 两周的第一张 $37.5) — 不管当时手选 / 手写了什么价
+  const rule = w.fee_rule != null ? w.fee_rule : w.fee == null ? w.fee_default : null;
+  return w.kind !== 'iv' && w.admin_status === 'approved' && rule != null
+    && Math.abs((Number(w.admin_fee) || 0) - (Number(rule) || 0)) > 0.005;
 }
 // 一条介绍里有几条金额不对 (每周介绍费 + HR 奖励)
 function _refBadN(r) {
@@ -3492,7 +3494,11 @@ function renderRefList() {
     const feeCalc = w => { const n = w.span_eff || 1;
       if (w.merged_into) return '<div style="font-size:.68rem;color:var(--g500);white-space:nowrap">同一周的第 2 张发票 · 工时已并入，不另付</div>';
       const mg = (w.merged_ids || []).length ? `<div style="font-size:.68rem;color:#7c3aed;white-space:nowrap">同一周 ${w.merged_ids.length + 1} 张发票工时合计 ${w.hours}（这张 ${w.own_hours != null ? w.own_hours : '—'}）</div>` : '';
-      return mg + feeCalc0(w, n); };
+      // 手选价 / 手写 / 确认的金额跟规则算出来的不一样: 标出规则金额
+      const cur = w.admin_status === 'approved' ? Number(w.admin_fee) : w.fee != null ? Number(w.fee) : Number(w.fee_default);
+      const rule = w.fee_rule != null && w.admin_status !== 'rejected' && Math.abs(cur - w.fee_rule) > 0.005
+        ? `<div style="font-size:.68rem;color:#dc2626;font-weight:700;white-space:nowrap">⚠ 按规则应是 ${money(w.fee_rule)}</div>` : '';
+      return mg + feeCalc0(w, n) + rule; };
     const feeCalc0 = (w, n) => {
       if (r.fee_unit === 'container') return `<div style="font-size:.68rem;color:${w.containers_eff == null ? '#b45309' : 'var(--g500)'};white-space:nowrap">${w.containers_eff == null
         ? `还不知道几个柜（发票里没勾柜子），填柜数`
@@ -3505,18 +3511,20 @@ function renderRefList() {
           : w.hours >= 40 * n ? `${w.hours} 工时 ≥ ${40 * n} · 给满 ${base} = ${money(w.fee_default)}`
           : `${n > 1 ? `(${base})` : base} × ${w.hours}/${40 * n} 工时 = <b style="color:#0f4c6b">${money(w.fee_default)}</b>`}</div>`;
       }
-      return w.rate == null ? '' : `<div style="font-size:.68rem;color:${w.hours == null ? '#b45309' : 'var(--g500)'};white-space:nowrap">${w.hours == null
+      if (w.rate == null) return '';
+      // 第一周那张两周的发票: 手选价 + 之后价
+      const fullTxt = w.tier_eff === 'first' && n > 1 && w.rate_after != null ? `(${money(w.rate)} + ${money(w.rate_after * (n - 1))})` : `${money(w.rate * n)}（${n} 周）`;
+      return `<div style="font-size:.68rem;color:${w.hours == null ? '#b45309' : 'var(--g500)'};white-space:nowrap">${w.hours == null
       ? `没勾发票行、没有工时，按满 ${n} 周 = ${money(w.fee_default)}`
       : w.hours >= 40 * n ? `${w.hours} 工时 ≥ ${40 * n} · 给满${n > 1 ? ` ${n} 周` : ''} ${money(w.fee_default)}`
-      : n > 1 ? `${money(w.rate * n)}（${n} 周）× ${w.hours}/${40 * n} 工时 = <b style="color:#0f4c6b">${money(w.fee_default)}</b>`
+      : n > 1 ? `${fullTxt} × ${w.hours}/${40 * n} 工时 = <b style="color:#0f4c6b">${money(w.fee_default)}</b>`
       : `${money(w.rate)} × ${w.hours}/40 工时 = <b style="color:#0f4c6b">${money(w.fee_default)}</b>`}</div>`; };
     const feeCell = w => w.kind === 'iv' ? (w.admin_status === 'approved' ? `<b>${money(w.admin_fee)}</b>` : w.admin_status === 'rejected' ? '<span style="color:var(--g400)">—</span>'
         : `<b>${money(w.fee_eff)}</b><div style="font-size:.68rem;color:var(--g500)">过面试奖励</div>`)
       : r.hr_self ? '<span style="font-size:.72rem;color:var(--g400)">HR 自己招的不付周介绍费</span>'
       // 确认后照样显示怎么算的; 管理员确认时改了金额就标出来
       : w.admin_status === 'approved' ? `<b>${money(w.admin_fee)}</b>${feeCalc(w)
-          || (w.fee != null ? `<div style="font-size:.68rem;color:var(--g500);white-space:nowrap">手写 ${money(w.fee)}</div>` : w.fee_default != null ? `<div style="font-size:.68rem;color:var(--g500);white-space:nowrap">按介绍费 ${money(w.fee_default)}${(w.span_eff || 1) > 1 ? `（${w.span_eff} 周）` : ''}</div>` : '')}${
-          w.fee_default != null && w.fee == null && Math.abs(Number(w.admin_fee) - Number(w.fee_default)) > 0.005 ? `<div style="font-size:.68rem;color:#dc2626;font-weight:700;white-space:nowrap">算出 ${money(w.fee_default)}，确认的是 ${money(w.admin_fee)}</div>` : ''}`
+          || (w.fee != null ? `<div style="font-size:.68rem;color:var(--g500);white-space:nowrap">手写 ${money(w.fee)}</div>` : w.fee_default != null ? `<div style="font-size:.68rem;color:var(--g500);white-space:nowrap">按介绍费 ${money(w.fee_default)}${(w.span_eff || 1) > 1 ? `（${w.span_eff} 周）` : ''}</div>` : '')}`
       : w.admin_status === 'rejected' ? '<span style="color:var(--g400)">—</span>'
       : w.merged_into ? `<span style="color:var(--g400)">$0</span>${feeCalc(w)}`
       : canInv && r.review_status !== 'rejected' && r.fee_unit === 'container' ? `<div style="display:flex;gap:.25rem;align-items:center;justify-content:flex-end">
@@ -3526,7 +3534,7 @@ function renderRefList() {
         const custom = w.rate != null && !presets.includes(Number(w.rate));
         // 两周的发票: 按钮上的钱翻倍 (2 周的价), 存的还是每周价
         const n = w.span_eff || 1;
-        const pb = p => `<button class="btn btn-sm ${Number(w.rate) === p ? '' : 'btn-outline'}" style="padding:1px 7px;font-size:.74rem;${Number(w.rate) === p ? 'background:#0f4c6b;color:#fff' : ''}" title="${n > 1 ? `每周 ${money(p)} × ${n} 周` : ''}" onclick="refWeekRate(${w.id}, ${p})">${money(p * n)}</button>`;
+        const pb = p => `<button class="btn btn-sm ${Number(w.rate) === p ? '' : 'btn-outline'}" style="padding:1px 7px;font-size:.74rem;${Number(w.rate) === p ? 'background:#0f4c6b;color:#fff' : ''}" title="${n > 1 ? `每周 ${money(p)} × ${n} 周` : ''}" onclick="refWeekRate(${w.id}, ${p})">${money(w.tier_eff === 'first' && n > 1 && w.rate_after != null ? p + w.rate_after * (n - 1) : p * n)}</button>`;
         return `<div style="display:flex;gap:.25rem;align-items:center;justify-content:flex-end;flex-wrap:wrap">
             <select title="这周按第一周还是之后每周的价选；自动 = 最早那周算第一周" onchange="refWeekTier(${w.id}, this.value)" style="padding:.1rem .2rem;font-size:.72rem">
               <option value="" ${!w.tier ? 'selected' : ''}>自动（${w.tier_eff === 'first' ? '第一周' : '之后'}）</option>
