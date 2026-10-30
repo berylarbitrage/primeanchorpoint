@@ -3102,12 +3102,16 @@ function refPwExport(gi, mode) {
   const tot = cf.reduce((t, i) => t + Number(i.amount || 0), 0), paid = cf.filter(i => /^Paid/.test(i.status)).reduce((t, i) => t + Number(i.amount || 0), 0);
   const M = v => p0.cur === 'CNY' ? yuan(v) : money(v);
   const nEst = items.filter(i => i.est).length;
+  // 涵盖的日期: 最早账期开始 ~ 最晚账期结束
+  const ds = items.flatMap(i => [i.start, i.end]).filter(v => /^\d{4}-\d{2}-\d{2}/.test(v || '')).map(v => v.slice(0, 10)).sort();
+  const range = ds.length ? `${ds[0]} ~ ${ds[ds.length - 1]}` : '';
   const h = s2 => esc(s2 == null ? '' : s2);
   const td = 'padding:5px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top;font-size:12px';
   const th = 'text-align:left;font-size:11px;color:#64748b;border-bottom:2px solid #cbd5e1;padding:5px 8px';
   // 内联样式, 复制到 Excel / 邮件里格式也保留
   const body = `<div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#0f172a;background:#fff">
     <div style="font-size:18px;font-weight:800;margin-bottom:2px">Referral Payment Statement</div>
+    ${range ? `<div style="font-size:14px;font-weight:700;color:#0f4c6b;margin-bottom:2px">Period: ${h(range)}</div>` : ''}
     <div style="color:#64748b;font-size:12px;margin-bottom:12px">${gi < 0 ? 'All payees' : `Payee: <b style="color:#0f172a">${h(p0.payee)}</b>${p0.payeePhone ? ' · ' + h(p0.payeePhone) : ''}`} · Status: ${h(_REF_TAB_EN[E.tab] || E.tab)} · Generated ${h(today)}</div>
     <table style="width:100%;border-collapse:collapse"><thead><tr>${gi < 0 ? `<th style="${th}">Payee</th>` : ''}<th style="${th}">Worker</th><th style="${th}">Item</th><th style="${th}">Period</th><th style="${th}">Calculation</th><th style="${th};text-align:right">Amount</th><th style="${th}">Status</th><th style="${th}">Paid</th></tr></thead><tbody>
     ${items.map(i => `<tr>${gi < 0 ? `<td style="${td}">${h(i.payee)}</td>` : ''}<td style="${td}">${h(i.worker)}</td><td style="${td};white-space:nowrap">${h(i.item)}</td><td style="${td};white-space:nowrap">${h(i.start)}${i.end ? ' ~ ' + h(i.end) : ''}</td>
@@ -3219,11 +3223,12 @@ function _refPayWeeksHtml(list) {
       const xs = gAll.filter(x => x.st !== 'nopay'), cf = xs.filter(x => !x.est), ne = xs.length - cf.length, m = gAll[0].hb ? yuan : money;
       const tot = sumOf(cf), pd = sumOf(xs.filter(x => x.st === 'paid'));
       const nW = new Set(xs.map(x => x.r.id)).size, nP = new Set(xs.map(x => `${x.ps}~${x.pe}`)).size;
+      const dd = xs.flatMap(x => [x.ps, x.pe]).filter(v => /^\d{4}-\d{2}-\d{2}/.test(v || '')).map(v => v.slice(0, 10)).sort();
       const ph = gAll[0].hb ? '' : gAll[0].r.foreman_phone;
       const xb = (t, a, tip) => `<button class="btn btn-sm btn-outline" style="padding:0 7px;font-size:.7rem" title="${tip}" onclick="refPwExport(${gi},'${a}')">${t}</button>`;
       head = `${xb('🖨 Statement (EN)', 'print', '英文付款明细，在本页弹窗显示，可截图 / 复制 / 打印')}${xb('⬇ CSV (EN)', 'csv', '英文付款明细 CSV，Excel 能打开')}`;
       head += `<b style="color:${gAll[0].hb ? '#6d28d9' : '#0f4c6b'};font-size:.95rem">${gAll[0].hb ? '🙋 ' : '👷 '}${esc(gAll[0].payee)}</b>${ph ? ` <span style="font-size:.74rem;color:var(--g400)">${esc(ph)}</span>` : ''}
-        <span style="font-size:.78rem;color:var(--g500)">${nW} 个工人 · ${nP} 个账期 · ${xs.length} 笔 · 合计 <b style="color:#0f172a;font-size:.9rem">${m(tot)}</b>${ne ? ` · <span style="color:#64748b">${ne} 笔待确认金额${gAll[0].hb ? `（≈ ${yuan(sumOf(xs.filter(x => x.est)))}）` : ''}</span>` : ''}${tab === 'all' ? ` · 已付 <b style="color:#047857">${m(pd)}</b>${tot - pd > 0.005 ? ` · 还差 <b style="color:#dc2626">${m(tot - pd)}</b>` : ''}` : ''}</span>`;
+        <span style="font-size:.78rem;color:var(--g500)">${dd.length ? `<b style="color:#0f4c6b">🗓 ${dd[0]} ~ ${dd[dd.length - 1]}</b> · ` : ''}${nW} 个工人 · ${nP} 个账期 · ${xs.length} 笔 · 合计 <b style="color:#0f172a;font-size:.9rem">${m(tot)}</b>${ne ? ` · <span style="color:#64748b">${ne} 笔待确认金额${gAll[0].hb ? `（≈ ${yuan(sumOf(xs.filter(x => x.est)))}）` : ''}</span>` : ''}${tab === 'all' ? ` · 已付 <b style="color:#047857">${m(pd)}</b>${tot - pd > 0.005 ? ` · 还差 <b style="color:#dc2626">${m(tot - pd)}</b>` : ''}` : ''}</span>`;
     } else if (!g.length) head = `<b style="color:${tab === 'paid' ? '#047857' : '#0f4c6b'}">${tab === 'paid' ? `💰 ${esc(k)} 付款` : `🗓 ${esc(k.split('~')[0] || '?')} ~ ${esc(k.split('~')[1] || '?')}`}</b>`;
     else if (tab === 'paid') {
       // 付款记录: 这天付了多少, 用了哪些银行记录
