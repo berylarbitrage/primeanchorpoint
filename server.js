@@ -1001,7 +1001,7 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS referral_weeks (
   UNIQUE(referral_id, invoice_id)
 )`); } catch(e) {}
 // 每周介绍费要管理员确认: 金额 + 付不付 ('' 待确认 | approved 确认支付 | rejected 这周不付)。
-// 确认后会计才能记这周的付款, 记「已付/部分付」必须关联银行记录或上传凭证图片。
+// 确认后会计才能记这周的付款, 记已付和关联银行记录分开: 先记已付, 银行记录 / 凭证之后再关联。
 for (const col of ["admin_status TEXT DEFAULT ''", 'admin_fee REAL DEFAULT NULL', "admin_by TEXT DEFAULT ''", 'admin_at TEXT DEFAULT NULL', "admin_note TEXT DEFAULT ''"]) {
   try { db.exec(`ALTER TABLE referral_weeks ADD COLUMN ${col}`); } catch(e) {}
 }
@@ -42664,13 +42664,7 @@ app.post('/api/acct/pay-note', requireAdmin, requireAcctWrite, (req, res) => {
     && !(prevNote && ['paid', 'partial'].includes(prevNote.paid_status)))
     return res.status(400).json({ error: exists.pay_req === 'requested' ? '会计已确认支付，等管理员审核通过后才能记已付' : '请先点「确认支付」，管理员审核通过后才能记已付' });
   const ids = (Array.isArray(txn_ids) ? txn_ids : []).map(t => String(t).slice(0, 100)).filter(Boolean).slice(0, 20);
-  // 介绍费记「已付/部分付」必须有凭证: 关联银行记录, 或者已有/这次要传的付款截图 (截图在批注存好后由 /photos 接口上传)
-  if (target_type === 'referralweek' && (st === 'paid' || st === 'partial') && !ids.length) {
-    const prev = db.prepare('SELECT photos FROM acct_pay_notes WHERE target_type=? AND target_id=?').get(target_type, tid);
-    let ph = []; try { ph = JSON.parse((prev && prev.photos) || '[]'); } catch (e) { ph = []; }
-    if (!(Array.isArray(ph) && ph.length) && !(parseInt((req.body || {}).pending_photos) > 0))
-      return res.status(400).json({ error: '记已付款需要关联银行记录或上传付款截图' });
-  }
+  // 记已付和关联银行记录分开做: 先记已付, 银行记录之后再关联 (不再强制要凭证)
   // 更新时保留已上传的 photos（本接口不改 photos，凭证由 /photos 子接口维护）
   db.prepare(`INSERT INTO acct_pay_notes (target_type, target_id, paid_status, bank, amount, note, txn_ids, created_by, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
