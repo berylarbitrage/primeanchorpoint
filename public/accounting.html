@@ -2689,7 +2689,8 @@ function _refHrBonusRow(r) {
       how += ` <span style="color:#dc2626;font-weight:700;white-space:nowrap">· 确认金额 ${yuan(row.amount)}（算出 ${yuan(b.amount)}）</span>`;
     const bad = _refHbBad(b);
     if (bad) { nBad++; act = _REF_BAD_TAG(row.status === 'paid' ? '已付金额不对' : row.pay_req ? '金额不对 · 先退回确认支付再撤销' : '金额不对 · 请撤销重新确认') + ' ' + act; }
-    return `<tr${bad ? ' style="background:#fef2f2;box-shadow:inset 3px 0 0 #dc2626"' : ''}><td style="${td};font-weight:700;color:${bad ? '#b91c1c' : '#334155'};white-space:nowrap">${b.label}${b.sub ? ` <span style="font-weight:400;font-size:.7rem;color:var(--g500)">${esc(b.sub)}</span>` : ''}${b.period ? `<div style="font-weight:400;font-size:.68rem;color:var(--g400)">${esc(b.period)}</div>` : ''}</td><td style="${td};color:var(--g500);white-space:nowrap">${yuan(b.amt)}</td>
+    // 已付的整行变绿 (锁住了)
+    return `<tr${bad ? ' style="background:#fef2f2;box-shadow:inset 3px 0 0 #dc2626"' : st === 'paid' ? ' style="background:#ecfdf5;box-shadow:inset 3px 0 0 #10b981"' : ''}><td style="${td};font-weight:700;color:${bad ? '#b91c1c' : '#334155'};white-space:nowrap">${b.label}${b.sub ? ` <span style="font-weight:400;font-size:.7rem;color:var(--g500)">${esc(b.sub)}</span>` : ''}${b.period ? `<div style="font-weight:400;font-size:.68rem;color:var(--g400)">${esc(b.period)}</div>` : ''}</td><td style="${td};color:var(--g500);white-space:nowrap">${yuan(b.amt)}</td>
       <td style="${td}">${how}</td><td style="${td};text-align:right;white-space:nowrap">${amt}</td><td style="${td};white-space:nowrap">${act}${b.k && (row || String(b.k).split(',').some(k => ((r.pay_log || {})['hb:' + k] || []).length)) ? _refHistLink(hkey, hopen) : ''}</td></tr>`
       + (hopen ? `<tr><td colspan="5" style="background:#fff;padding:.35rem .9rem;font-size:.74rem;line-height:1.7;border-bottom:1px solid #f3e8ff">${_refTimeline(r, 'hb:' + b.k, '¥', _refHbSteps(row))}</td></tr>` : '');
   };
@@ -3263,7 +3264,7 @@ function _refPayWeeksHtml(list) {
         : x.st === 'topay' ? `🛡 ${esc(w.pay_ok_by)} ${esc(_refAt(w.pay_ok_at))}`
         : x.st === 'review' ? `💳 ${esc(w.pay_req_by)} ${esc(_refAt(w.pay_req_at))}`
         : x.st === 'req' ? `✅ ${esc(w.admin_by)} ${esc(_refAt(w.admin_at))}` : '';
-      return `<tr${x.bad ? ' style="background:#fef2f2;box-shadow:inset 3px 0 0 #dc2626"' : x.st === 'nopay' ? ' style="color:var(--g400)"' : _refPwSel.has(w.id) ? ' style="background:#eff6ff"' : ''}>
+      return `<tr${x.bad ? ' style="background:#fef2f2;box-shadow:inset 3px 0 0 #dc2626"' : x.st === 'nopay' ? ' style="color:var(--g400)"' : x.st === 'paid' ? ' style="background:#ecfdf5;box-shadow:inset 3px 0 0 #10b981"' : _refPwSel.has(w.id) ? ' style="background:#eff6ff"' : ''}>
         <td style="${td};width:22px">${a ? `<input type="checkbox" ${_refPwSel.has(w.id) ? 'checked' : ''} onchange="refPwPick(${w.id}, this.checked)">` : ''}</td>
         <td style="${td};font-weight:700">${esc(x.payee)}${x.r.foreman_phone ? ` <span style="font-weight:400;font-size:.72rem;color:var(--g400)">${esc(x.r.foreman_phone)}</span>` : ''}</td>
         <td style="${td}"><a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="refJumpTo(${x.r.id})">${esc(x.r.worker_name || '—')}</a></td>
@@ -3285,7 +3286,7 @@ function _refPayWeeksHtml(list) {
         : x.st === 'review' ? `💳 ${esc(row.pay_req_by || '')} ${esc(_refAt(row.pay_req_at))}`
         : x.st === 'req' ? `✅ ${esc(row.decided_by || '')} ${esc(_refAt(row.decided_at))}`
         : x.st === 'nopay' ? esc(row.note || '') : '';
-      return `<tr${x.bad ? ' style="background:#fef2f2;box-shadow:inset 3px 0 0 #dc2626"' : x.st === 'nopay' ? ' style="color:var(--g400)"' : _refPwSel.has(x.id) ? ' style="background:#f5f3ff"' : ''}>
+      return `<tr${x.bad ? ' style="background:#fef2f2;box-shadow:inset 3px 0 0 #dc2626"' : x.st === 'nopay' ? ' style="color:var(--g400)"' : x.st === 'paid' ? ' style="background:#ecfdf5;box-shadow:inset 3px 0 0 #10b981"' : _refPwSel.has(x.id) ? ' style="background:#f5f3ff"' : ''}>
         <td style="${td};width:22px">${a ? `<input type="checkbox" ${_refPwSel.has(x.id) ? 'checked' : ''} onchange="refPwPick('${x.id}', this.checked)">` : ''}</td>
         <td style="${td};font-weight:700;color:#6d28d9">${esc(x.hr)} <span style="font-weight:400;font-size:.72rem;color:var(--g400)">${x.r.hr_self ? 'HR 自己招的' : '工头介绍 · HR 提交'}</span></td>
         <td style="${td}"><a style="cursor:pointer;color:#0f4c6b;text-decoration:underline" onclick="refJumpTo(${x.r.id})">${esc(x.r.worker_name || '—')}</a></td>
@@ -3731,7 +3732,7 @@ function renderRefList() {
       ? `<table style="width:100%;border-collapse:collapse;min-width:760px"><thead><tr>
           <th style="${th}">周</th><th style="${th}">账期</th><th style="${th}">发票</th><th style="${th};text-align:right">发票金额</th><th style="${th};text-align:right">这周介绍费</th><th style="${th}">管理员确认</th><th style="${th}">付款</th></tr></thead><tbody>`
         + (r.iv_week ? (() => { const w = r.iv_week; const paid = w.pay_note && w.pay_note.paid_status === 'paid';
-            return `<tr style="${paid ? 'background:#f0fdf4' : w.admin_status === 'rejected' ? 'background:#fafafa;color:var(--g400)' : 'background:#fffbeb'}">
+            return `<tr style="${paid ? 'background:#ecfdf5;box-shadow:inset 3px 0 0 #10b981' : w.admin_status === 'rejected' ? 'background:#fafafa;color:var(--g400)' : 'background:#fffbeb'}">
             <td style="${td};font-weight:800;color:#b45309;white-space:nowrap">🎯 过面试</td>
             <td style="${td};color:var(--g400)">—</td>
             <td style="${td};font-size:.74rem;color:var(--g500)">关联的发票上有工时就算通过面试</td>
@@ -3749,7 +3750,7 @@ function renderRefList() {
                 <option value="2" ${w.span === 2 ? 'selected' : ''}>按 2 周</option></select></div>`
             : n > 1 ? '<div style="font-size:.68rem;color:var(--g500);font-weight:400">两周的发票</div>' : '';
           const paid = w.pay_note && w.pay_note.paid_status === 'paid';
-          return `<tr style="${_refWeekBad(w) ? 'background:#fef2f2;box-shadow:inset 3px 0 0 #dc2626' : paid ? 'background:#f0fdf4' : w.admin_status === 'rejected' ? 'background:#fafafa;color:var(--g400)' : ''}">
+          return `<tr style="${_refWeekBad(w) ? 'background:#fef2f2;box-shadow:inset 3px 0 0 #dc2626' : paid ? 'background:#ecfdf5;box-shadow:inset 3px 0 0 #10b981' : w.admin_status === 'rejected' ? 'background:#fafafa;color:var(--g400)' : ''}">
             <td style="${td};font-weight:800;color:#0f4c6b;white-space:nowrap">第 ${labs[i]} 周${w.merged_into ? '<div style="font-size:.68rem;color:#7c3aed;font-weight:400">同一周第 2 张发票 · 已并入</div>' : spanSel}</td>
             <td style="${td};white-space:nowrap">${v.period_start || v.period_end ? `${esc(v.period_start || '?')} ~ ${esc(v.period_end || '?')}` : `<span style="color:var(--g400)">开票 ${esc(v.invoice_date || '—')}</span>`}</td>
             <td style="${td}"><a onclick="openInvoice(${v.id})" style="cursor:pointer;color:#1d4ed8;font-weight:700;text-decoration:underline;white-space:nowrap">📄 ${esc(v.invoice_number || '')}</a> <span style="color:var(--g500);font-size:.74rem">${esc(v.company_name || '')}</span>
