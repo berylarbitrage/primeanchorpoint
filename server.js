@@ -43757,7 +43757,7 @@ function _referralOut(r, invMap, payNotes, weeksBy, weekNotes, linesByInv) {
   let wi = 0;
   r.weeks.forEach(w => {
     if (w.merged_into) {
-      w.tier_eff = w.tier || 'after'; w.span_auto = 1; w.span_eff = 0; w.ratio = 0; w.fee_default = 0;
+      w.tier_eff = w.tier || 'after'; w.span_auto = 1; w.span_eff = 0; w.ratio = 0; w.fee_default = 0; w.fee_rule = 0;
       w.fee_eff = w.admin_status === 'rejected' ? 0 : w.admin_status === 'approved' && w.admin_fee != null ? w.admin_fee : (w.fee != null ? w.fee : 0);
       return;
     }
@@ -43774,13 +43774,19 @@ function _referralOut(r, invMap, payNotes, weeksBy, weekNotes, linesByInv) {
     const [rf, ra] = _referralRateStruct(r);
     w.rate_auto = w.tier_eff === 'first' ? rf : ra;
     w.full_auto = w.tier_eff === 'first' ? rf + ra * (w.span_eff - 1) : ra * w.span_eff;
-    w.fee_default = w.rate != null ? Math.round(w.rate * w.ratio * 100) / 100 : Math.round(w.full_auto * w.ratio / w.span_eff * 100) / 100;
+    w.rate_after = ra;
+    // 手选的满周价 = 这周的价; 第一周那张是两周的发票: 第 1 周按手选价 + 第 2 周按之后价 (跟自动一样)
+    const full = w.rate != null ? (w.tier_eff === 'first' ? w.rate + ra * (w.span_eff - 1) : w.rate * w.span_eff) : w.full_auto;
+    w.fee_default = Math.round(full * w.ratio / w.span_eff * 100) / 100;
+    // 按规则 (默认结构) 应付多少: 手选价 / 手写 / 管理员确认的金额跟它不一样, 前端标出来
+    w.fee_rule = Math.round(w.full_auto * w.ratio / w.span_eff * 100) / 100;
     // 按柜算: 每柜价 × 柜数 (手填的为准, 没填按这周勾的柜子行数; 都没有 = 还不知道几个柜)
     if (r.fee_unit === 'container') {
       const cl = w.lines.filter(l => l.line_type === 'container').length;
       w.containers_auto = cl || null;
       w.containers_eff = w.containers != null ? w.containers : w.containers_auto;
       w.fee_default = r.amount != null && w.containers_eff != null ? Math.round(r.amount * w.containers_eff * 100) / 100 : null;
+      w.fee_rule = null;   // 按柜算的不按周结构核对
     }
     // 工头介绍的: 第 1 周不到 16 工时 → 按比例的介绍费照算, 另加过面试 $5
     w.fee_eff = w.admin_status === 'rejected' ? 0 : w.admin_status === 'approved' && w.admin_fee != null ? w.admin_fee
