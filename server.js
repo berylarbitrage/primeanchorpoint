@@ -43547,6 +43547,9 @@ function _cnPayLines(raw, opt = {}) {
       amount: r2(l && l.amount),
       note: String((l && l.note) || '').trim().slice(0, 500),
     };
+    // Bonus 关联的介绍费 HR 奖励: '<介绍 id>:<节点>'
+    const ref = (Array.isArray(l && l.ref_hb) ? l.ref_hb : []).map(String).filter(k => /^\d{1,9}:[\w,]{1,40}$/.test(k)).slice(0, 300);
+    if (ref.length && kind === 'bonus') o.ref_hb = ref;
     if (kind === 'ot') { o.hours = r2(l && l.hours); o.rate = r2(l && l.rate); o.amount = r2(o.hours * o.rate); }
     const keep = (Array.isArray(l && l.files) ? l.files : []).map(f => oldBy.get(f && f.path)).filter(Boolean);
     const n = Math.max(0, Math.min(parseInt(l && l.new_files) || 0, uploads.length));
