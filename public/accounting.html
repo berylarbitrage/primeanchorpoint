@@ -3422,7 +3422,9 @@ function renderRefList() {
     + stBtn('noshow', '🚫 没去 / 没通过', '约了面试没去、或去了没通过的人')
     + `<button class="ref-stage${_refStageSel === 'payweeks' ? ' on' : ''}" onclick="refSetStage('payweeks')">💰 每周付款<b>${_refPayWeekRows(list).concat(_refPayHrRows(list)).filter(x => !['paid', 'nopay'].includes(x.st)).length}</b><small>每周付给哪些工头 / HR、多少钱 · 付款记录</small></button>`;
   const pwMode = _refStageSel === 'payweeks';
-  if (!pwMode) list = list.filter(r => _refStage(r) === _refStageSel);
+  // 筛「金额不对」时不分阶段: 不对的可能在任何一页 (没去 / 中途不去了 / 已满三个月…), 全部一起列出来
+  const badAll = flt === 'bad';
+  if (!pwMode && !badAll) list = list.filter(r => _refStage(r) === _refStageSel);
   // 默认按通过面试 (到场) 的时间排 (没到场的按约的面试时间), 新的在上; 下拉框换字段, 「⇅」按钮反过来 (记在本机)
   const desc = _refSortDesc(), sortBy = _refSortBy(), sortType = _REF_SORTS[sortBy][0];
   const sb = document.getElementById('refSortBtn');
@@ -3450,7 +3452,7 @@ function renderRefList() {
     stat('已付', money(tot.paid), '#047857'), stat('还要付（已确认）', money(Math.max(0, tot.due - tot.paid)), '#dc2626'),
     ...(tot.est ? [stat('待确认金额', tot.est + ' 周', '#64748b')] : []),
     // 新规则之前确认的金额不对的: 点一下只看这些
-    ...(() => { const n = _refList.filter(_refBadN).length; return n ? [`<span style="background:#dc2626;color:#fff;border-radius:999px;padding:.15rem .65rem;white-space:nowrap;cursor:pointer;font-weight:700" title="点一下只看这些（各个阶段的数字也跟着变）" onclick="document.getElementById('refFilter').value='bad';renderRefList()">⚠ ${n} 条介绍有金额不对</span>`] : []; })(),
+    ...(() => { const n = _refList.filter(_refBadN).length; return n ? [`<span style="background:#dc2626;color:#fff;border-radius:999px;padding:.15rem .65rem;white-space:nowrap;cursor:pointer;font-weight:700" title="点一下只看这些（各个阶段的数字也跟着变）" onclick="refShowBad()">⚠ ${n} 条介绍有金额不对</span>`] : []; })(),
   ].join(' ');
   const badge = document.getElementById('refPendBadge');
   badge.style.display = pendN && USER.role === 'admin' ? '' : 'none';
@@ -3463,7 +3465,11 @@ function renderRefList() {
   const canInv = ['accounting', 'admin'].includes(USER.role);
   // 客服也能关联发票, 只是要管理员审核通过才生效
   const canLinkInv = canInv || USER.role === 'cs';
-  document.getElementById('refBody').innerHTML = list.length ? list.map(r => {
+  const STN = { interview: '面试安排', attended: '已去面试', working: '上班中', ended: '已满三个月', quit: '中途不去了', noshow: '没去 / 没通过' };
+  const badBar = badAll ? `<div class="card" style="background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;font-size:.82rem;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+      <b>⚠ 所有阶段里金额不对的 ${list.length} 条</b><span style="color:#7f1d1d">（${[...new Set(list.map(_refStage))].map(k => STN[k] || k).join(' · ')}）标红的行撤销后重新确认</span><span style="flex:1"></span>
+      <button class="btn btn-sm btn-outline" onclick="document.getElementById('refFilter').value='';renderRefList()">清除筛选</button></div>` : '';
+  document.getElementById('refBody').innerHTML = badBar + (list.length ? list.map(r => {
     const ov = _refOverall(r);
     const ws = _refWeekSums(r);
     const statusPill = ov === 'pending' ? pill('⏳ 待管理员核查', '#fff7ed', '#fed7aa', '#c2410c')
@@ -3663,7 +3669,7 @@ function renderRefList() {
         ${legacy ? `<div class="ref-row">${legacy}</div>` : ''}
       </div>
     </div>`;
-  }).join('') : `<div class="card" style="color:var(--g400)">${{ interview: '没有在面试阶段的介绍。点「＋ 新增介绍」添加。', attended: '没有标了「去了」、还没开始上班的人。', working: '没有正在上班的介绍。面试通过后在「✅ 已去面试」里点「👷 开始上班」。', ended: '还没有满三个月的介绍。', quit: '没有中途不去了的人。', noshow: '没有标记「没去」或「没通过」的面试。' }[_refStageSel]}</div>`;
+  }).join('') : `<div class="card" style="color:var(--g400)">${{ interview: '没有在面试阶段的介绍。点「＋ 新增介绍」添加。', attended: '没有标了「去了」、还没开始上班的人。', working: '没有正在上班的介绍。面试通过后在「✅ 已去面试」里点「👷 开始上班」。', ended: '还没有满三个月的介绍。', quit: '没有中途不去了的人。', noshow: '没有标记「没去」或「没通过」的面试。' }[_refStageSel]}</div>`);
 }
 // ── Referral 阶段: 没上班日期 = 面试阶段; 上班日期起三个月内 = 上班中; 满三个月 = 结束 ──
 // 页面开着时每分钟重画一次: 面试时间一过没标记的马上变红
@@ -3672,6 +3678,12 @@ setInterval(() => {
   if (pane && pane.style.display !== 'none' && Array.isArray(_refList) && _refList.length && !document.querySelector('#refAddModal[style*="flex"]')) renderRefList();
 }, 60000);
 let _refStageSel = (() => { try { return localStorage.getItem('ref_stage') || 'interview'; } catch (e) { return 'interview'; } })();
+// 只看金额不对的: 所有阶段一起列; 在「每周付款」页就先跳回卡片页
+function refShowBad() {
+  document.getElementById('refFilter').value = 'bad';
+  if (_refStageSel === 'payweeks') { const r = _refList.find(_refBadN); if (r) return refSetStage(_refStage(r)); }
+  renderRefList();
+}
 function refSetStage(k) {
   _refStageSel = k;
   try { localStorage.setItem('ref_stage', k); } catch (e) {}
