@@ -2983,7 +2983,10 @@ function _refPayHrRows(list) {
     if (!hr) return;
     const v0 = ((r.weeks || [])[0] || {}).invoice || {};
     const hasW1 = _refWeekUnits(r).length > 0;
-    _refHrBonus(r).filter(b => b.k !== 'week1' || hasW1 || b.row).concat(_refHr4w(r), _refHrMgmt(r)).forEach(b => {
+    const items0 = _refHrBonus(r).filter(b => b.k !== 'week1' || hasW1 || b.row), f4 = _refHr4w(r);
+    // 卡片里「满 1 周 + 第 2 周」合成一行 (两周的第一张发票) 时按合计核对; 这里也一样, 两条拆开的金额差 1 分不算不对
+    const m12 = _refHrMerge12(r, items0, f4), m12Keys = m12 ? m12.k.split(',') : [], m12Bad = m12 ? _refHbBad(m12) : false;
+    items0.concat(f4, _refHrMgmt(r)).forEach(b => {
       const row = b.row;
       if (!b.k || (!row && (b.st !== 'done' || r.review_status === 'rejected'))) return;
       let [ps, pe] = b.period ? b.period.split(' ~ ').map(ymd) : [v0.period_start || v0.invoice_date || '', v0.period_end || ''];
@@ -2996,7 +2999,7 @@ function _refPayHrRows(list) {
       else if (row.pay_req === 'requested') st = 'review';
       else st = 'req';
       const lab = /^mgmt/.test(b.k) ? `管理奖励 ${b.label}` : /^m4_/.test(b.k) ? `${b.label}奖励` : b.label;
-      out.push({ hb: true, id: `h:${r.id}:${b.k}`, r, b, row, hr, bad: _refHbBad(b), lab, ps, pe, payee: hr, amt, est: !row, st });
+      out.push({ hb: true, id: `h:${r.id}:${b.k}`, r, b, row, hr, bad: m12Keys.includes(b.k) ? m12Bad : _refHbBad(b), lab, ps, pe, payee: hr, amt, est: !row, st });
     });
   });
   return out;
