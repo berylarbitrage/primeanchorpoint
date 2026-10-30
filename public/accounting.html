@@ -3095,7 +3095,8 @@ function _refPayWeeksHtml(list) {
       const w = x.w, n = w.span_eff || 1, a = actOf(x);
       const calc = x.r && x.r.fee_unit === 'container' ? (w.containers_eff != null ? `${money(x.r.amount)}/柜 × ${w.containers_eff} 柜` : '柜数未填')
         : w.kind === 'iv' ? `过面试 ${money(w.fee_eff)}` : w.merged_into ? '同一周的第 2 张发票，工时已并入，不另付'
-        : w.rate != null && w.hours != null && (w.merged_ids || []).length ? `${money(w.rate)} × ${Math.min(w.hours, 40 * n)}/${40 * n} 工时（${w.merged_ids.length + 1} 张发票合计 ${w.hours}）` : w.rate != null ? (w.hours != null && w.hours < 40 * n ? `${money(w.rate)} × ${w.hours}/40 工时` : `满周 ${money(w.rate)}${n > 1 ? ` × ${n}` : ''}`) : '';
+        : w.rate != null && w.hours != null && (w.merged_ids || []).length ? `${money(w.rate)} × ${Math.min(w.hours, 40 * n)}/${40 * n} 工时（${w.merged_ids.length + 1} 张发票合计 ${w.hours}）` : w.rate != null ? (w.hours != null && w.hours < 40 * n ? `${money(w.rate)} × ${w.hours}/40 工时` : `满周 ${money(w.rate)}${n > 1 ? ` × ${n}` : ''}`)
+        : w.full_auto != null ? `自动 ${money(w.full_auto)}${n > 1 ? `（${n} 周）` : ''}${w.hours != null && w.hours < 40 * n ? ` × ${w.hours}/${40 * n} 工时` : ' 满'}` : '';
       const pn = w.pay_note || {};
       const when = x.st === 'paid' ? `${esc(_refAt(pn.updated_at))}${pn.created_by ? ' · ' + esc(pn.created_by) : ''}${(pn.txns || []).length ? ` · 🏦 ${pn.txns.map(t => `${esc(t.date || '')} ${money(Math.abs(Number(t.amount) || 0))}`).join(' / ')}` : ''}`
         : x.st === 'topay' ? `🛡 ${esc(w.pay_ok_by)} ${esc(_refAt(w.pay_ok_at))}`
@@ -3465,6 +3466,14 @@ function renderRefList() {
       if (r.fee_unit === 'container') return `<div style="font-size:.68rem;color:${w.containers_eff == null ? '#b45309' : 'var(--g500)'};white-space:nowrap">${w.containers_eff == null
         ? `还不知道几个柜（发票里没勾柜子），填柜数`
         : `${money(r.amount)}/柜 × ${w.containers_eff} 柜${w.containers == null ? '（按勾的柜子）' : ''} = <b style="color:#0f4c6b">${money(w.fee_default)}</b>`}</div>`;
+      // 没手选满周价: 按默认结构自动算 (第一周 $50 / 之后 $25; 2475 仓库 $25 / $12.5), 两周的第一张 = 第一周价 + 之后价
+      if (w.rate == null && w.full_auto != null) {
+        const base = w.tier_eff === 'first' && n > 1 ? `${money(w.rate_auto)} + ${money(w.full_auto - w.rate_auto)}` : `${money(w.rate_auto)}${n > 1 ? ` × ${n}` : ''}`;
+        return `<div style="font-size:.68rem;color:${w.hours == null ? '#b45309' : 'var(--g500)'};white-space:nowrap">自动 · ${w.hours == null
+          ? `没有工时，按满 ${base} = ${money(w.fee_default)}`
+          : w.hours >= 40 * n ? `${w.hours} 工时 ≥ ${40 * n} · 给满 ${base} = ${money(w.fee_default)}`
+          : `${n > 1 ? `(${base})` : base} × ${w.hours}/${40 * n} 工时 = <b style="color:#0f4c6b">${money(w.fee_default)}</b>`}</div>`;
+      }
       return w.rate == null ? '' : `<div style="font-size:.68rem;color:${w.hours == null ? '#b45309' : 'var(--g500)'};white-space:nowrap">${w.hours == null
       ? `没勾发票行、没有工时，按满 ${n} 周 = ${money(w.fee_default)}`
       : w.hours >= 40 * n ? `${w.hours} 工时 ≥ ${40 * n} · 给满${n > 1 ? ` ${n} 周` : ''} ${money(w.fee_default)}`
@@ -3494,7 +3503,7 @@ function renderRefList() {
               <option value="after" ${w.tier === 'after' ? 'selected' : ''}>之后每周</option></select>
             ${presets.map(pb).join('')}
             <input type="number" step="0.01" min="0" value="${custom ? Math.round(w.rate * n * 100) / 100 : ''}" placeholder="手写" title="${presets.map(p => money(p * n)).join(' / ')} 都不合适才手写${n > 1 ? ` ${n} 周的` : '满周'}价，同样按工时折算" onchange="refWeekRate(${w.id}, this.value === '' ? '' : Number(this.value) / ${n})" style="width:62px;padding:.15rem .3rem;font-size:.76rem;text-align:right${custom ? ';border-color:#0f4c6b;font-weight:700' : ''}"></div>`
-          + (w.rate != null ? feeCalc(w)
+          + (w.rate != null || (w.fee == null && w.full_auto != null) ? feeCalc(w)
             : `<div style="font-size:.68rem;color:#b45309;white-space:nowrap">还没选${w.fee != null ? ` · 现在写的 ${money(w.fee)}` : w.fee_default != null ? ` · 现在按 ${money(w.fee_default)}` : ''}</div>`);
       })()
       : `<b>${w.fee_eff != null ? money(w.fee_eff) : '—'}</b>${feeCalc(w)}`;

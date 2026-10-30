@@ -43769,8 +43769,12 @@ function _referralOut(r, invMap, payNotes, weeksBy, weekNotes, linesByInv) {
     w.span_eff = w.span || w.span_auto;
     // 满周价按周数算: 两周的发票满 80 工时给 2 份, 不满按 工时/40 份
     w.ratio = w.hours == null ? w.span_eff : Math.min(w.hours, 40 * w.span_eff) / 40;
-    const tierFee = _referralTierFee(r, w.tier_eff);
-    w.fee_default = w.rate != null ? Math.round(w.rate * w.ratio * 100) / 100 : tierFee != null ? tierFee * w.span_eff : null;
+    // 没手选满周价的按默认结构自动算: 第一周 / 之后每周 (见 _referralRateStruct);
+    // 第一张是两周的发票: 第 1 周按第一周价 + 第 2 周按之后价 (2475 仓库 = $25 + $12.5 = $37.5), 再按 工时/(40×周数) 折算
+    const [rf, ra] = _referralRateStruct(r);
+    w.rate_auto = w.tier_eff === 'first' ? rf : ra;
+    w.full_auto = w.tier_eff === 'first' ? rf + ra * (w.span_eff - 1) : ra * w.span_eff;
+    w.fee_default = w.rate != null ? Math.round(w.rate * w.ratio * 100) / 100 : Math.round(w.full_auto * w.ratio / w.span_eff * 100) / 100;
     // 按柜算: 每柜价 × 柜数 (手填的为准, 没填按这周勾的柜子行数; 都没有 = 还不知道几个柜)
     if (r.fee_unit === 'container') {
       const cl = w.lines.filter(l => l.line_type === 'container').length;
@@ -43795,6 +43799,10 @@ function _referralIvWeek(w, weekNotes) {
   };
   o.fee_eff = o.admin_status === 'rejected' ? 0 : o.admin_status === 'approved' && o.admin_fee != null ? o.admin_fee : (o.fee != null ? o.fee : REF_FM_IV_FEE);
   return o;
+}
+// 每周介绍费默认结构 [第一周, 之后每周]: 都是 $50 / $25; 2475 Touhy 那个仓库 (两周一个账单) 是 $25 / $12.5
+function _referralRateStruct(r) {
+  return /\b2475\b/.test(`${r.warehouse_address || ''} ${r.warehouse_name || ''}`) ? [25, 12.5] : [50, 25];
 }
 // 第一周 / 之后每周 的介绍费: 没设第一周价的, 第一周也按 amount
 function _referralTierFee(r, tier) {
