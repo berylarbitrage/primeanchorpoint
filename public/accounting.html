@@ -2637,6 +2637,16 @@ function _refBadN(r) {
   return n;
 }
 const _REF_BAD_TAG = t => `<span style="display:inline-block;background:#dc2626;color:#fff;border-radius:4px;padding:0 6px;font-size:.68rem;font-weight:800;white-space:nowrap">⚠ ${t}</span>`;
+// HR 奖励按发票 (每周付款行) 归: 满 1 周 = 第 1 张, 第 2–5 周 = m4_<行 id>, 管理奖励第 N 周 = 第 N 周那张;
+// 一张发票对应的 HR 奖励全部已付 → 返回这些行 id (卡片里这张发票那行变绿)
+function _refHrPaidWeekIds(r) {
+  const units = _refWeekUnits(r), by = {};
+  const add = (id, b) => { if (id && (b.row || b.st === 'done')) (by[id] = by[id] || []).push(b); };
+  _refHrBonus(r).forEach(b => { if (b.k === 'week1' && units[0]) add(units[0].w.id, b); });
+  _refHr4w(r).forEach(b => { const m = /^m4_(\d+)$/.exec(b.k); if (m) add(+m[1], b); });
+  _refHrMgmt(r).forEach(b => { const m = /^mgmt(\d+)$/.exec(b.k), u = m && units[+m[1] - 1]; if (u) add(u.w.id, b); });
+  return new Set(Object.keys(by).filter(id => by[id].every(b => b.row && b.row.status === 'paid')).map(Number));
+}
 // HR 奖励节点的时间线步骤 (确认金额 → 确认支付 → 审核 → 记已付)
 function _refHbSteps(row) {
   return row ? [
@@ -3630,6 +3640,8 @@ function renderRefList() {
       : `<div class="ref-row" style="color:var(--g500)">${r.review_status === 'approved' ? '✅ 同意支付' : '✖ 拒绝支付'} ${who}${r.review_note ? ` · <span style="color:var(--g400)">${esc(r.review_note)}</span>` : ''}${USER.role === 'admin' ? ` · <a style="cursor:pointer;color:var(--g400);text-decoration:underline" onclick="refReview(${r.id},'reset')">撤销重审</a>` : ''}</div>`;
     // 每周付款表
     const weeks = r.weeks || [];
+    // HR 自己招的没有周介绍费: 这张发票对应的 HR 奖励都付了, 这一行也变绿
+    const hrPaidW = r.hr_self ? _refHrPaidWeekIds(r) : new Set();
     // 这周介绍费: 选满周价 (第一周 $25 / $50, 之后 $12.5 / $25, 都不要再手写), 按工时折算 — 满 40 工时给满, 不满按 工时/40
     const feeCalc = w => { const n = w.span_eff || 1;
       if (w.merged_into) return '<div style="font-size:.68rem;color:var(--g500);white-space:nowrap">同一周的第 2 张发票 · 工时已并入，不另付</div>';
@@ -3750,7 +3762,7 @@ function renderRefList() {
                 <option value="2" ${w.span === 2 ? 'selected' : ''}>按 2 周</option></select></div>`
             : n > 1 ? '<div style="font-size:.68rem;color:var(--g500);font-weight:400">两周的发票</div>' : '';
           const paid = w.pay_note && w.pay_note.paid_status === 'paid';
-          return `<tr style="${_refWeekBad(w) ? 'background:#fef2f2;box-shadow:inset 3px 0 0 #dc2626' : paid ? 'background:#ecfdf5;box-shadow:inset 3px 0 0 #10b981' : w.admin_status === 'rejected' ? 'background:#fafafa;color:var(--g400)' : ''}">
+          return `<tr style="${_refWeekBad(w) ? 'background:#fef2f2;box-shadow:inset 3px 0 0 #dc2626' : paid || hrPaidW.has(w.id) || hrPaidW.has(w.merged_into) ? 'background:#ecfdf5;box-shadow:inset 3px 0 0 #10b981' : w.admin_status === 'rejected' ? 'background:#fafafa;color:var(--g400)' : ''}">
             <td style="${td};font-weight:800;color:#0f4c6b;white-space:nowrap">第 ${labs[i]} 周${w.merged_into ? '<div style="font-size:.68rem;color:#7c3aed;font-weight:400">同一周第 2 张发票 · 已并入</div>' : spanSel}</td>
             <td style="${td};white-space:nowrap">${v.period_start || v.period_end ? `${esc(v.period_start || '?')} ~ ${esc(v.period_end || '?')}` : `<span style="color:var(--g400)">开票 ${esc(v.invoice_date || '—')}</span>`}</td>
             <td style="${td}"><a onclick="openInvoice(${v.id})" style="cursor:pointer;color:#1d4ed8;font-weight:700;text-decoration:underline;white-space:nowrap">📄 ${esc(v.invoice_number || '')}</a> <span style="color:var(--g500);font-size:.74rem">${esc(v.company_name || '')}</span>
