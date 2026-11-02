@@ -121,6 +121,10 @@ input,select,textarea{padding:.38rem .5rem;border:1px solid var(--g300);border-r
 .pm button.on{background:#0f4c6b;border-color:#0f4c6b;color:#fff}
 .pm button.cur{background:#fff;border-color:#0f4c6b;border-style:dashed;color:#0f4c6b}
 .pm button.sug{border-color:#7dd3fc;border-style:dashed}
+/* 以前用过的付款方式 (pay_history): 紫色 + 「用过」角标, 每周换方式时一眼看出哪些付过 */
+.pm button.used:not(.on){border-color:#a78bfa;background:#f5f3ff;color:#6d28d9}
+.pm button .pmu{display:inline-block;margin-left:.3rem;padding:0 .35rem;border-radius:999px;background:#7c3aed;color:#fff;font-size:.62rem;font-weight:700;vertical-align:1px}
+.pm button.on .pmu{background:#fff;color:#0f4c6b}
 .ck{border-top:1px solid var(--g100);background:#fbfcfe;padding:.55rem 1rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.35rem .9rem}
 .step{display:flex;gap:.45rem;align-items:flex-start;font-size:.8rem}
 .step input{margin-top:.15rem}
@@ -961,8 +965,8 @@ function zelleLine(w, k) {
     if ((w.ach_accounts || []).length) out += `<div class="muted" style="margin:-.1rem 0 .35rem">保留的 ACH 账户：${zList(w.ach_accounts)}</div>`;
   }
   if (w.pay_history.length) {
-    out += `<div class="muted" style="margin:-.1rem 0 .4rem">之前的付款方式：${w.pay_history.slice().reverse().map(h =>
-      `<span class="tag" style="background:var(--g100);color:var(--g600)">${esc(PM_SHORT[h.method] || h.method)}${h.zelle && h.zelle.length ? ' ' + zList(h.zelle) : ''} · ${h.since ? esc(h.since.slice(0, 10)) + ' ~ ' : '到 '}${esc((h.until || '').slice(0, 10))}</span>`).join(' ')}</div>`;
+    out += `<div class="muted" style="margin:-.1rem 0 .4rem">之前用过的付款方式（新的在前）：${w.pay_history.slice().reverse().map(h =>
+      `<span class="tag" style="background:#f5f3ff;color:#6d28d9">${esc(PM_SHORT[h.method] || h.method)}${h.zelle && h.zelle.length ? ' ' + zList(h.zelle) : ''} · ${h.since ? esc(h.since.slice(0, 10)) + ' ~ ' : '到 '}${esc((h.until || '').slice(0, 10))}</span>`).join(' ')}</div>`;
   }
   return out;
 }
@@ -1283,12 +1287,17 @@ async function zSave(k) {
 // 点它就是取消填写 (不是清空付款方式)
 function pmBtns(w, k, pdis, sug) {
   const editing = ZEDIT[w.key] && ZEDIT[w.key].type;
+  // 以前用过的方式: 用了几次、每次的时间段 (悬停看)
+  const used = {};
+  for (const h of w.pay_history || []) (used[h.method] = used[h.method] || []).push(`${h.since ? h.since.slice(0, 10) + ' ~ ' : '到 '}${(h.until || '').slice(0, 10)}`);
   return Object.keys(PM_LABEL).map(m => {
     const cls = editing ? (m === editing ? 'on' : m === w.pay_method ? 'cur' : '') : (w.pay_method === m ? 'on' : '');
     const click = editing ? (m === editing ? '' : m === w.pay_method ? `delete ZEDIT[D.rows[${k}].key];renderList()` : `pickPay(${k},'${m}')`)
       : `pickPay(${k},'${w.pay_method === m ? '' : m}')`;
-    const tip = !hasEmp(w) ? '先关联员工档案，或备注没有档案的特例' : editing && m === w.pay_method ? '现在的付款方式，点一下取消填写' : '';
-    return `<button ${pdis} title="${tip}" class="${cls} ${sug === m && hasEmp(w) ? 'sug' : ''}" ${click ? `onclick="${click}"` : ''}>${PM_LABEL[m]}${editing && m === w.pay_method && m !== editing ? '（现在）' : ''}</button>`;
+    const u = used[m];
+    const tip = [!hasEmp(w) ? '先关联员工档案，或备注没有档案的特例' : editing && m === w.pay_method ? '现在的付款方式，点一下取消填写' : '',
+      u ? `之前用过 ${u.length} 次：${u.join('，')}` : ''].filter(Boolean).join('\n');
+    return `<button ${pdis} title="${esc(tip)}" class="${cls} ${sug === m && hasEmp(w) ? 'sug' : ''} ${u ? 'used' : ''}" ${click ? `onclick="${click}"` : ''}>${PM_LABEL[m]}${editing && m === w.pay_method && m !== editing ? '（现在）' : ''}${u ? `<span class="pmu">用过${u.length > 1 ? ' ' + u.length + '次' : ''}</span>` : ''}</button>`;
   }).join('');
 }
 function pickPay(k, m) {
