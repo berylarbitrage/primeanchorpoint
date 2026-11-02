@@ -19349,6 +19349,10 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
     const subCodeStmt = db.prepare(`SELECT timeclock_code FROM applicant_submissions WHERE employee_id=? AND timeclock_code!='' ORDER BY id DESC LIMIT 1`);
     employees.forEach(e => {
       if (!e.timeclock_code) { try { const ls = subCodeStmt.get(e.id); if (ls) e.timeclock_code = ls.timeclock_code; } catch (_) {} }
+      // 档案和申请单上都没有的老员工: 直接补生成一个存到档案上, 查询页每个人都显示打卡码
+      if (!e.timeclock_code) {
+        try { const code = _genTimeclockCode(); db.prepare('UPDATE employees SET timeclock_code=? WHERE id=?').run(code, e.id); e.timeclock_code = code; } catch (_) {}
+      }
     });
     // 员工的证件散在四张表里, 这里全部汇总成一个列表, 页面直接看图:
     //   applicant_docs(扫码申请上传) / employee_documents(档案里上传) /
@@ -19418,7 +19422,17 @@ app.get('/api/admin/phone-check', requireAdmin, (req, res) => {
         a.name_mismatch = !!(official && String(a.name || '').trim().toLowerCase() !== official.toLowerCase());
         // 打卡码 / SSN 末四位: 申请单自己的优先, 没有就用档案上的 (SSN 以档案为准)
         if (!a.timeclock_code && emp.timeclock_code) a.timeclock_code = emp.timeclock_code;
+        if (!a.timeclock_code) { try { const ls = subCodeStmt.get(emp.id); if (ls) a.timeclock_code = ls.timeclock_code; } catch (_) {} }
         if (emp.ssn_last4) a.ssn_last4 = emp.ssn_last4;
+      }
+      // 申请单和对应档案都还没有打卡码 (老申请): 补生成一个存到申请单, 有档案的同时带到档案上
+      if (!a.timeclock_code) {
+        try {
+          const code = _genTimeclockCode();
+          db.prepare('UPDATE applicant_submissions SET timeclock_code=? WHERE id=?').run(code, a.id);
+          if (emp) db.prepare(`UPDATE employees SET timeclock_code=? WHERE id=? AND (timeclock_code IS NULL OR timeclock_code='')`).run(code, emp.id);
+          a.timeclock_code = code;
+        } catch (_) {}
       }
     });
     const foremen = db.prepare(`SELECT id, name, phone, email, warehouse, city, state, active, created_at FROM foremen`).all()
