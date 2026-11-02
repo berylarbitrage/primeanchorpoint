@@ -41,6 +41,9 @@ body{font-family:'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-ser
 .ktag.fm{background:#fffbeb;color:#b45309;border-color:#fcd34d}
 .ktag.todo{background:#fef2f2;color:#b91c1c;border-color:#fca5a5}
 .ktag.done{background:#f0fdf4;color:#15803d;border-color:#86efac}
+/* 打卡密码: 放在卡片最上面一行, 大一点好念给员工听 */
+.ktag.tc{background:#ecfdf5;color:#047857;border-color:#10b981;font-size:.8rem;letter-spacing:.06em}
+.ktag.tc b{font-family:ui-monospace,Consolas,monospace;letter-spacing:.12em}
 .ftabs{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;margin:-.3rem 0 .6rem}
 .ftabs .fl{font-size:.75rem;color:var(--gray-400);font-weight:700;margin-right:.1rem}
 .ftabs button{padding:.35rem .75rem;border-radius:999px;border:1.5px solid var(--gray-200);background:#fff;color:var(--gray-600);font-size:.8rem;font-weight:700;cursor:pointer;font-family:inherit}
@@ -244,14 +247,13 @@ async function doSearch(){
     if(emps.length){
       html+='<div class="sec" data-kind="emp"><div class="sec-title">👷 员工档案（'+emps.length+'）</div>';
       html+=emps.map(e=>`<div class="rec emp">
-        <div class="ktags"><span class="ktag emp">👷 员工档案</span></div>
+        <div class="ktags"><span class="ktag emp">👷 员工档案</span>${tcTag(e.timeclock_code)}</div>
         <div class="nm">${esc([e.first_name,e.last_name].filter(Boolean).join(' ')||'—')}</div>
         <div class="meta">
           ${kv('员工编号',e.employee_id)} ${kv('电话',e.phone)} ${kv('邮箱',e.email)}
           ${kv('备用电话',(e.extra_phones||[]).join('、'))} ${kv('备用邮箱',(e.extra_emails||[]).join('、'))}
           ${kv('职位',e.position)} ${kv('部门',e.department)} ${kv('状态',e.status)} ${kv('入职日期',e.hire_date)} ${dobKv(e.dob)}
           ${kv('工作州',e.work_state)} ${kv('住址',[e.city,e.state].filter(Boolean).join(', '))}
-          ${e.timeclock_code?`<span><span class="lbl">打卡码</span> <b style="font-family:ui-monospace,Consolas,monospace;letter-spacing:.08em;color:#047857">${esc(e.timeclock_code)}</b></span>`:''}
           ${e.ssn_last4?`<span><span class="lbl">SSN</span> <b>****${esc(e.ssn_last4)}</b></span>`:''}
         </div>
         ${ecrBlock(e)}
@@ -423,12 +425,16 @@ function appCardHtml(a) {
 }
 // 申请有没有对应的员工档案 (显式关联, 或同号码的档案)
 function appLinked(a) { return !!(a.employee_id || a.linked_employee); }
+function tcTag(code) {
+  return code ? '<span class="ktag tc" title="打卡机 / 签到页输入这串数字">🔑 打卡密码 <b>' + esc(code) + '</b></span>' : '';
+}
 function appTagsHtml(a) {
   const le = a.linked_employee;
   return '<div class="ktags"><span class="ktag app">📨 申请问卷</span>'
     + (appLinked(a)
       ? '<span class="ktag done" title="这个人已经有员工档案">✓ 已建档' + (le && le.employee_id ? ' ' + esc(le.employee_id) : '') + '</span>'
       : '<span class="ktag todo" title="还没有对应的员工档案">未建档</span>')
+    + tcTag(a.timeclock_code)
     + '</div>';
 }
 function appNameMismatch(a) {
@@ -450,7 +456,6 @@ function appCardInner(a) {
       ${kv('电话', a.phone)} ${kv('邮箱', a.email)} ${kv('职位', a.position)}
       ${kv('申请公司', a.partner_name)} ${kv('申请地点', a.apply_state)}
       ${kv('状态', a.status)} ${kv('提交时间', String(a.created_at || '').slice(0, 16))}
-      ${a.timeclock_code ? `<span><span class="lbl">打卡码</span> <b style="font-family:ui-monospace,Consolas,monospace;letter-spacing:.08em;color:#047857">${esc(a.timeclock_code)}</b></span>` : ''}
       ${a.ssn_last4 ? `<span><span class="lbl">SSN</span> <b>****${esc(a.ssn_last4)}</b></span>` : ''}
     </div>
     ${addr ? `<div class="meta">${kv('地址', addr)} ${a.address_verified ? '<span style="color:#059669;font-weight:700;font-size:11px;white-space:nowrap">✓ 地址已验证</span>' : ''}</div>` : ''}
