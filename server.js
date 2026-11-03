@@ -23965,12 +23965,12 @@ app.post('/api/admin/invoices/parse-excel', requireAdmin, invoiceXlsxUpload.sing
   }
 });
 
-// 下载空白时间表模板 (按周 weekly / 按日期 daily), 所有客户通用: 交给 AI 按客户工时填好,
+// 下载空白时间表模板 (按周 weekly / 按两周 biweekly / 按日期 daily / 按天分组 shift), 所有客户通用: 交给 AI 按客户工时填好,
 // 再从新建 Invoice 的「上传工资表 Excel」导入。
 const { buildTimesheetTemplate } = require('./timesheet-template');
 app.get('/api/admin/invoices/timesheet-template', requireAdmin, (req, res) => {
   try {
-    const out = buildTimesheetTemplate({ kind: ['daily', 'shift'].includes(req.query.kind) ? req.query.kind : 'weekly' });
+    const out = buildTimesheetTemplate({ kind: ['biweekly', 'daily', 'shift'].includes(req.query.kind) ? req.query.kind : 'weekly' });
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${out.fileName}"`);
     res.send(out.buffer);

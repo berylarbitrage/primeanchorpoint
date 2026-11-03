@@ -4,6 +4,8 @@
 // 两种模板, 都在第一页「Timesheet」, A1 写 "PA TIMESHEET" 作为识别标记:
 //   WEEKLY — 一人一行, 一周 7 天每天一列 (和 DV Fulfillment 发来的表一样)
 //            Name | Rate | OT Rate | Mon … Sun   (日期由 B3 Week Start 推出)
+//   BIWEEKLY — 和 WEEKLY 一样, 只是两周 (14 天) 一段, 一人一行 14 个日期列
+//            Name | Rate | OT Rate | Mon 1 … Sun 1 | Mon 2 … Sun 2   (日期由 B3 Period Start 推出)
 //   DAILY  — 按日期, 一人一天一行
 //            Date | Name | Rate | OT Rate | Time In | Time Out | Break (min) | Hours | Note
 //   SHIFT  — 按天 / 班次分组, 一人一班一行; 发票按「8/29 day」分组打印, 组内编号 + 每组小计 + 总计
@@ -14,7 +16,8 @@
 // 正常/加班按每周 (周一~周日) 超 40 小时拆分。
 
 const MARK = 'PA TIMESHEET';
-const KINDS = ['weekly', 'daily', 'shift'];
+const KINDS = ['weekly', 'biweekly', 'daily', 'shift'];
+const WEEK_KINDS = ['weekly', 'biweekly']; // 一人一行、每天一列的模板
 
 const r2 = n => Math.round(n * 100) / 100;
 const r3 = n => Math.round(n * 1000) / 1000;
@@ -93,6 +96,23 @@ const INSTRUCTIONS = {
     [],
     ['填写说明: 只改 Timesheet 页。B3 填本周第一天日期; 每人一行, Mon~Sun 每天填工时数字; 时薪/Markup 不知道就留空。'],
   ],
+  biweekly: [
+    ['HOW TO FILL — Biweekly timesheet (two weeks / 14 days; one row per worker, one column per day)'],
+    [],
+    ['Only edit the "Timesheet" sheet. Keep cell A1 = "PA TIMESHEET" and B1 = "BIWEEKLY". Do not rename or move the header row.'],
+    ['B2  Company', 'Client company name, e.g. DV Fulfillment LLC (optional, used to auto-select the client).'],
+    ['B3  Period Start', 'First date of the 2-week period as a date or text MM/DD/YYYY, e.g. 09/28/2026. Required.'],
+    ['B4  Markup', 'Bill multiplier, e.g. 1.25 for 25%. Leave blank if unknown.'],
+    ['Name', 'Worker full name, one row per worker. Add more rows below if needed.'],
+    ['Rate', 'Regular hourly pay rate (number, no $). Leave blank if unknown.'],
+    ['OT Rate', 'Only if overtime is NOT 1.5 x Rate. Usually leave blank.'],
+    ['Mon 1 … Sun 2', 'Hours worked that day as a number (8, 7.5). Leave blank or 0 if not worked. The 14 columns are the 14 days starting from Period Start ("… 1" = week 1, "… 2" = week 2).'],
+    [],
+    ['Overtime is calculated automatically: hours over 40 in each Mon–Sun week (not over 80 for the two weeks).'],
+    ['Then upload the file in Invoice → 新建 Invoice → 上传工资表 Excel.'],
+    [],
+    ['填写说明: 只改 Timesheet 页。B3 填两周的第一天日期; 每人一行, 第 1 周 Mon 1~Sun 1、第 2 周 Mon 2~Sun 2 每天填工时数字; 时薪/Markup 不知道就留空。加班按每周 (周一~周日) 超 40 小时分别计算。'],
+  ],
   daily: [
     ['HOW TO FILL — Daily timesheet (one row per worker per day)'],
     [],
@@ -146,6 +166,11 @@ function buildTimesheetTemplate(opts = {}) {
       ['Name', 'Rate', 'OT Rate', ...DAY_NAMES]];
     for (let i = 0; i < 30; i++) aoa.push(['']);
     cols = [26, 8, 8, 7, 7, 7, 7, 7, 7, 7];
+  } else if (kind === 'biweekly') {
+    aoa = [[MARK, 'BIWEEKLY'], ['Company', ''], ['Period Start', ''], ['Markup', ''], [],
+      ['Name', 'Rate', 'OT Rate', ...DAY_NAMES.map(d => d + ' 1'), ...DAY_NAMES.map(d => d + ' 2')]];
+    for (let i = 0; i < 30; i++) aoa.push(['']);
+    cols = [26, 8, 8, ...Array(14).fill(7)];
   } else if (kind === 'shift') {
     aoa = [[MARK, 'SHIFT'], ['Company', ''], ['Period Start', ''], ['Period End', ''], ['Markup', ''], [],
       ['Date', 'Shift', 'Name', 'Hours', 'Rate', 'Time In', 'Time Out', 'Break (min)']];
@@ -165,7 +190,7 @@ function buildTimesheetTemplate(opts = {}) {
   XLSX.utils.book_append_sheet(wb, ws, 'Timesheet');
   XLSX.utils.book_append_sheet(wb, help, 'Instructions');
   const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-  const label = { weekly: 'Weekly', daily: 'Daily', shift: 'Shift' }[kind];
+  const label = { weekly: 'Weekly', biweekly: 'Biweekly', daily: 'Daily', shift: 'Shift' }[kind];
   return { buffer: buf, fileName: `Timesheet_${label}_Template.xlsx`, kind };
 }
 
@@ -178,16 +203,16 @@ function parseTimesheetTemplate(rows) {
   const warnings = [];
   let markIdx = rows.findIndex(r => low((r || [])[0]) === MARK.toLowerCase());
   const kindCell = low((rows[markIdx] || [])[1]);
-  let kind = kindCell === 'daily' ? 'daily' : kindCell === 'shift' ? 'shift' : 'weekly';
+  let kind = kindCell === 'daily' ? 'daily' : kindCell === 'shift' ? 'shift' : kindCell === 'biweekly' ? 'biweekly' : 'weekly';
   const meta = {};
   let hdrIdx = -1;
   for (let i = markIdx + 1; i < Math.min(rows.length, markIdx + 20); i++) {
     const r = rows[i] || [];
     const k = low(r[0]);
-    if ((k === 'name' && kind === 'weekly') || (k === 'date' && kind !== 'weekly')) { hdrIdx = i; break; }
+    if ((k === 'name' && WEEK_KINDS.includes(kind)) || (k === 'date' && !WEEK_KINDS.includes(kind))) { hdrIdx = i; break; }
     if (k) meta[k] = r[1];
   }
-  if (hdrIdx < 0) throw new Error('时间表模板找不到表头行（' + (kind === 'weekly' ? 'Name' : 'Date') + '）');
+  if (hdrIdx < 0) throw new Error('时间表模板找不到表头行（' + (WEEK_KINDS.includes(kind) ? 'Name' : 'Date') + '）');
   if (kind === 'shift') return parseShift(rows, hdrIdx, meta, warnings);
   const company = str(meta.company);
   const mult = num(meta.markup) > 0 ? num(meta.markup) : null;
@@ -209,24 +234,28 @@ function parseTimesheetTemplate(rows) {
   };
   let periodStart = '', periodEnd = '';
 
-  if (kind === 'weekly') {
-    const weekStart = cellDate(meta['week start']);
+  if (WEEK_KINDS.includes(kind)) {
+    const weekStart = cellDate(meta['week start'] != null && meta['week start'] !== '' ? meta['week start'] : meta['period start']);
     const cName = colOf('name'), cRate = colOf('rate'), cOt = colOf('ot rate');
     // 日期列: 表头是 Mon~Sun → 落在 Week Start 起 7 天里同一个星期几的那天; 表头是日期就用日期
-    const dayCols = [];
+    // 两周模板表头是 "Mon 1" … "Sun 2": 末尾数字 = 第几周 (没写数字就按同名列第几次出现算), 每周再往后推 7 天
+    const dayCols = [], seenDay = {};
     hdr.forEach((h, c) => {
       if (c === cName || c === cRate || c === cOt || !h || h === 'total') return;
       const dn = DAY_NAMES.findIndex(d => h.startsWith(d.toLowerCase()));
       if (dn >= 0) {
         if (!weekStart) return;
-        const off = (dn - ((new Date(weekStart + 'T00:00:00Z').getUTCDay() + 6) % 7) + 7) % 7;
+        const wm = h.match(/(\d+)\s*$/);
+        const wk = wm && +wm[1] >= 1 ? +wm[1] - 1 : (seenDay[dn] || 0);
+        seenDay[dn] = (seenDay[dn] || 0) + 1;
+        const off = (dn - ((new Date(weekStart + 'T00:00:00Z').getUTCDay() + 6) % 7) + 7) % 7 + 7 * wk;
         dayCols.push({ c, iso: addDays(weekStart, off) });
         return;
       }
       const iso = cellDate((rows[hdrIdx] || [])[c], weekStart ? weekStart.slice(0, 4) : '');
       if (iso) dayCols.push({ c, iso });
     });
-    if (!dayCols.length) throw new Error('时间表模板读不出日期：请在 B3「Week Start」填本周第一天日期（如 09/28/2026）');
+    if (!dayCols.length) throw new Error(kind === 'biweekly' ? '时间表模板读不出日期：请在 B3「Period Start」填两周的第一天日期（如 09/28/2026）' : '时间表模板读不出日期：请在 B3「Week Start」填本周第一天日期（如 09/28/2026）');
     for (let i = hdrIdx + 1; i < rows.length; i++) {
       const r = rows[i] || [];
       const name = str(r[cName]);
