@@ -32947,14 +32947,28 @@ app.get('/api/customer/employee-search', requireCustomer, (req, res) => {
   const pid = req.customerPartnerId;
   const q = String(req.query.q || '').trim();
   if (!pid || !q) return res.json([]);
-  const like = '%' + q.replace(/[%_]/g, '') + '%';
+  // 在 JS 里匹配 (不用 SQL LIKE): 姓名去重音 (López→lopez)、连字符/多余空格合并,
+  // 按词逐个匹配 (词序不限, 没有中间名时不会因拼接出的双空格搜不到);
+  // 在职 = active + onboarding (还没打过第一次卡、自动建档的新工人也是 onboarding)
+  const norm = v => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const toks = norm(q).split(' ').filter(Boolean);
+  const qCode = q.toLowerCase().replace(/\s+/g, '');
+  const qDigits = q.replace(/\D/g, '');
   const rows = db.prepare(`
     SELECT id, first_name, middle_name, last_name, employee_id AS emp_code, position, phone
     FROM employees
-    WHERE COALESCE(customer_hidden,0)=0 AND COALESCE(status,'active')='active' AND (
-      (COALESCE(first_name,'')||' '||COALESCE(middle_name,'')||' '||COALESCE(last_name,'')) LIKE ? COLLATE NOCASE
-      OR employee_id LIKE ? OR phone LIKE ?)
-    ORDER BY first_name, middle_name, last_name LIMIT 20`).all(like, like, like);
+    WHERE COALESCE(customer_hidden,0)=0 AND COALESCE(status,'active') IN ('active','onboarding')`).all()
+    .filter(r => {
+      const name = ' ' + norm([r.first_name, r.middle_name, r.last_name].join(' ')) + ' ';
+      if (toks.length && toks.every(t => name.includes(t))) return true;
+      if (r.emp_code && String(r.emp_code).toLowerCase().includes(qCode)) return true;
+      if (qDigits.length >= 3 && qDigits.length === q.replace(/[\s()+\-.]/g, '').length
+        && String(r.phone || '').replace(/\D/g, '').includes(qDigits)) return true;
+      return false;
+    })
+    .sort((a, b) => norm([a.first_name, a.middle_name, a.last_name].join(' ')).localeCompare(norm([b.first_name, b.middle_name, b.last_name].join(' '))))
+    .slice(0, 20);
   const inList = new Set(db.prepare('SELECT employee_id FROM partner_workers WHERE partner_id=?').all(pid).map(r => r.employee_id));
   res.json(rows.map(r => ({ ...r, already: inList.has(r.id) })));
 });
@@ -32965,7 +32979,7 @@ app.post('/api/customer/my-workers', requireCustomer, (req, res) => {
   if (!pid) return res.status(400).json({ error: '账号未绑定合作公司' });
   const eid = parseInt((req.body || {}).employee_id);
   if (!eid) return res.status(400).json({ error: '缺少员工' });
-  const e = db.prepare(`SELECT id FROM employees WHERE id=? AND COALESCE(customer_hidden,0)=0 AND COALESCE(status,'active')='active'`).get(eid);
+  const e = db.prepare(`SELECT id FROM employees WHERE id=? AND COALESCE(customer_hidden,0)=0 AND COALESCE(status,'active') IN ('active','onboarding')`).get(eid);
   if (!e) return res.status(404).json({ error: '员工不存在或已离职' });
   let by = '管理员';
   if (!req.custImpersonation) {
