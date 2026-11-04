@@ -74,6 +74,10 @@ const BS_PAYEE_REFERRAL = '__referral__';
 const BS_REFERRAL_PREFIX = '推荐费:';
 const BS_PAYEE_WAGEBONUS = '__wagebonus__';
 const BS_WAGEBONUS_PREFIX = '发工资奖励:';
+// 帮别人代收 (收入): 钱是替别人收的, 选/填代收的是谁; 存成 '代收:<姓名>'
+const BS_PAYEE_COLLECT = '__collect__';
+const BS_COLLECT_PREFIX = '代收:';
+const BS_COLLECT_PEOPLE = ['Neal Yin'];
 // 借款 / 还款 (两个选项): 可选公司 (也可不选), 再填人名; 存成 '借款:<公司>|<姓名>' / '还款:<公司>|<姓名>'
 // 拆开前存的 '借款还款:' 旧值照样认, 下拉里只在当前值是它时才出现
 const BS_PAYEE_LOAN = '__loan__';
@@ -165,6 +169,7 @@ function _bsPayeeDisplay(payee) {
   if (p.indexOf('仓库押金:') === 0) { const w = p.slice('仓库押金:'.length); return '🏭 仓库押金' + (w ? ' · ' + w : ''); }
   if (p.indexOf('推荐费:') === 0) { const n = p.slice('推荐费:'.length); return '🤝 推荐费' + (n ? ' · ' + n : ''); }
   if (p.indexOf('发工资奖励:') === 0) { const n = p.slice('发工资奖励:'.length); return '🎁 发工资奖励' + (n ? ' · ' + n : ''); }
+  if (p.indexOf('代收:') === 0) { const n = p.slice('代收:'.length); return '🤲 帮别人代收' + (n ? ' · ' + n : ''); }
   if (_bsIsLoan(p)) { const s = _bsLoanSentinel(p), l = _bsLoanParse(p); return (s === BS_PAYEE_LOAN ? '💵 借款' : s === BS_PAYEE_REPAY ? '🔄 还款' : '🔄 借款还款') + ((l.co || l.name) ? ' · ' + [l.co, l.name].filter(Boolean).join(' · ') : ''); }
   return p;
 }
@@ -199,6 +204,7 @@ function _bsNoteSatisfied(box) {
   if (kind === 'whdep' && _bsWhdepParse(box.payee)) return true;
   if (kind === 'referral' && _bsReferralParse(box.payee)) return true;
   if (kind === 'wagebonus' && _bsWageBonusParse(box.payee)) return true;
+  if (kind === 'collect' && _bsCollectParse(box.payee)) return true;
   if (kind === 'loan' && _bsLoanParse(box.payee).name) return true;
   if ((kind === 'bankfee' || kind === 'office' || kind === 'compfee' || kind === 'meal' || kind === 'acct' || kind === 'personal') && String(box.purpose || '').trim()) return true;
   if (kind === 'employee' && String(box.invoice_number || '').trim()
@@ -227,6 +233,7 @@ function _bsPayeeKind(box) {
   if (_bsIsWhdep(p)) return 'whdep';
   if (_bsIsReferral(p)) return 'referral';
   if (_bsIsWageBonus(p)) return 'wagebonus';
+  if (_bsIsCollect(p)) return 'collect';
   if (_bsIsLoan(p)) return 'loan';
   if (BS_PAYEE_PEOPLE.includes(p)) return 'personal';
   if (p && p !== BS_PAYEE_CLAIM && p !== BS_PAYEE_CC && p !== BS_PAYEE_CC_BINTIQUE && p !== BS_PAYEE_CASH && p !== BS_PAYEE_CASH_DEP && p !== BS_PAYEE_LAWSUIT && p !== BS_PAYEE_LAWYER && p !== BS_PAYEE_NA && p !== BS_PAYEE_PAP && p !== BS_PAYEE_PAW && p !== BS_PAYEE_BINTIQUE && p !== BS_PAYEE_DREAMHORSE && p !== BS_PAYEE_DREAMHORSE_IN && p !== BS_PAYEE_RETURNED && p !== BS_PAYEE_TEST) return 'company';
@@ -295,6 +302,7 @@ function _bsPayeeOptionDefs(direction) {
     { v: BS_PAYEE_WHDEP, t: '🏭 仓库押金（选仓库）', d: 'out' },
     { v: BS_PAYEE_REFERRAL, t: '🤝 推荐费 Referral Fee（填推荐人）', d: 'out' },
     { v: BS_PAYEE_WAGEBONUS, t: '🎁 发工资奖励（填姓名）', d: 'out' },
+    { v: BS_PAYEE_COLLECT, t: '🤲 帮别人代收（选代收的人）', d: 'in' },
     { v: BS_PAYEE_CHECK_DEP, t: '📥 存支票（选对方）', d: 'in' },
     { v: BS_PAYEE_CHECK_WD, t: '📤 取支票（选对方）', d: 'out' },
     { v: BS_PAYEE_NA, t: '🚫 无关', d: 'both' },
@@ -409,6 +417,33 @@ function _bsIsWageBonus(payee) { return typeof payee === 'string' && payee.index
 function _bsWageBonusParse(payee) { return _bsIsWageBonus(payee) ? payee.slice(BS_WAGEBONUS_PREFIX.length) : ''; }
 function _bsWageBonusJoin(n) { return BS_WAGEBONUS_PREFIX + (n || ''); }
 function bsWageBonusUpdate(id, el) { bsUpdateBoxField(id, 'payee', _bsWageBonusJoin((el.value || '').trim())); bsUpdateBoxSections(id); }
+function _bsIsCollect(payee) { return typeof payee === 'string' && payee.indexOf(BS_COLLECT_PREFIX) === 0; }
+function _bsCollectParse(payee) { return _bsIsCollect(payee) ? payee.slice(BS_COLLECT_PREFIX.length) : ''; }
+function _bsCollectJoin(n) { return BS_COLLECT_PREFIX + (n || ''); }
+function _bsCollectNameOptions(current) {
+  const parts = ['<option value="">— 选择代收的人 —</option>'];
+  const names = BS_COLLECT_PEOPLE.slice();
+  if (current && !names.includes(current)) names.push(current);
+  names.forEach(n => parts.push(`<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`));
+  parts.push('<option value="__other__">其他（手动填写）…</option>');
+  return parts.join('');
+}
+function bsCollectUpdate(id, el) {
+  if (el.value === '__other__') {
+    const box = (_bsBoxList || []).find(b => b.id === id);
+    const cur = _bsCollectParse(box && box.payee);
+    const v = prompt('代收的人叫什么名字？', cur);
+    if (v == null || !v.trim()) { el.value = cur; return; }
+    const val = v.trim();
+    if (![...el.options].some(o => o.value === val)) {
+      const opt = document.createElement('option');
+      opt.value = val; opt.textContent = val;
+      el.insertBefore(opt, el.querySelector('option[value="__other__"]'));
+    }
+    el.value = val;
+  }
+  bsUpdateBoxField(id, 'payee', _bsCollectJoin(el.value)); bsUpdateBoxSections(id);
+}
 const _BS_LOAN_KINDS = [[BS_PAYEE_LOAN_OLD, BS_LOAN_PREFIX], [BS_PAYEE_LOAN, BS_BORROW_PREFIX], [BS_PAYEE_REPAY, BS_REPAY_PREFIX]];
 function _bsLoanKind(payee) { return typeof payee === 'string' ? (_BS_LOAN_KINDS.find(k => payee.indexOf(k[1]) === 0) || null) : null; }
 function _bsIsLoan(payee) { return !!_bsLoanKind(payee); }
@@ -498,10 +533,11 @@ function bsPayeeSelChange(id, sel) {
   const xwrap = item.querySelector('.bs-fx-wrap');
   const fwrap = item.querySelector('.bs-referral-wrap');
   const bwrap = item.querySelector('.bs-wagebonus-wrap');
+  const dwrap = item.querySelector('.bs-collect-wrap');
   const lwrap = item.querySelector('.bs-loan-wrap');
   const iwrap = item.querySelector('.bs-internal-wrap');
   const nwrap = item.querySelector('.bs-insur-wrap');
-  const hideAll = () => { if (wrap) wrap.style.display = 'none'; if (pwrap) pwrap.style.display = 'none'; if (cwrap) cwrap.style.display = 'none'; if (twrap) twrap.style.display = 'none'; if (iwrap) iwrap.style.display = 'none'; if (nwrap) nwrap.style.display = 'none'; if (uwrap) uwrap.style.display = 'none'; if (rwrap) rwrap.style.display = 'none'; if (wwrap) wwrap.style.display = 'none'; if (xwrap) xwrap.style.display = 'none'; if (fwrap) fwrap.style.display = 'none'; if (bwrap) bwrap.style.display = 'none'; if (lwrap) lwrap.style.display = 'none'; };
+  const hideAll = () => { if (wrap) wrap.style.display = 'none'; if (pwrap) pwrap.style.display = 'none'; if (cwrap) cwrap.style.display = 'none'; if (twrap) twrap.style.display = 'none'; if (iwrap) iwrap.style.display = 'none'; if (nwrap) nwrap.style.display = 'none'; if (uwrap) uwrap.style.display = 'none'; if (rwrap) rwrap.style.display = 'none'; if (wwrap) wwrap.style.display = 'none'; if (xwrap) xwrap.style.display = 'none'; if (fwrap) fwrap.style.display = 'none'; if (bwrap) bwrap.style.display = 'none'; if (dwrap) dwrap.style.display = 'none'; if (lwrap) lwrap.style.display = 'none'; };
   if (sel.value === BS_PAYEE_EMP) {
     hideAll();
     if (wrap) { wrap.style.display = ''; const co = wrap.querySelector('.bs-bx-emp-co'); if (co) co.focus(); bsEmpUpdate(id, co); }
@@ -539,6 +575,9 @@ function bsPayeeSelChange(id, sel) {
   } else if (sel.value === BS_PAYEE_WAGEBONUS) {
     hideAll();
     if (bwrap) { bwrap.style.display = ''; const c = bwrap.querySelector('.bs-bx-wagebonus-name'); if (c) { c.focus(); bsWageBonusUpdate(id, c); } }
+  } else if (sel.value === BS_PAYEE_COLLECT) {
+    hideAll();
+    if (dwrap) { dwrap.style.display = ''; const c = dwrap.querySelector('.bs-bx-collect-name'); if (c) { if (!c.value && BS_COLLECT_PEOPLE.length === 1) c.value = BS_COLLECT_PEOPLE[0]; c.focus(); bsCollectUpdate(id, c); } }
   } else if (_bsIsLoanSentinel(sel.value)) {
     hideAll();
     if (lwrap) { lwrap.style.display = ''; const c = lwrap.querySelector('.bs-bx-loan-co'); if (c) { c.focus(); bsLoanUpdate(id, c); } }
@@ -602,6 +641,8 @@ function bsUpdateBoxSections(id) {
   if (rfw) rfw.style.display = kind === 'referral' ? '' : 'none';
   const wbw = item.querySelector('.bs-wagebonus-wrap');
   if (wbw) wbw.style.display = kind === 'wagebonus' ? '' : 'none';
+  const clw = item.querySelector('.bs-collect-wrap');
+  if (clw) clw.style.display = kind === 'collect' ? '' : 'none';
   const lnw = item.querySelector('.bs-loan-wrap');
   if (lnw) lnw.style.display = kind === 'loan' ? '' : 'none';
   if (ofw) ofw.style.display = kind === 'office' ? '' : 'none';
@@ -1324,7 +1365,7 @@ function _bsRenderBoxPanel() {
       </div>
       ${_bsLinksHtml(box)}
       <div class="bs-date-err" style="color:#dc2626;font-size:.72rem;margin:-.1rem 0 .3rem;min-height:0"></div>
-      <select class="bs-bx-payee" onchange="bsPayeeSelChange(${box.id},this)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;background:#fff">${_bsPayeeOptions(_bsIsEmp(box.payee) ? BS_PAYEE_EMP : (_bsIsPallet(box.payee) ? BS_PAYEE_PALLET : (_bsIsCheck(box.payee) ? (_bsCheckParse(box.payee).type === 'wd' ? BS_PAYEE_CHECK_WD : BS_PAYEE_CHECK_DEP) : (_bsIsTruck(box.payee) ? BS_PAYEE_TRUCK : (_bsIsInternal(box.payee) ? BS_PAYEE_INTERNAL : (_bsIsUnload(box.payee) ? BS_PAYEE_UNLOAD : (_bsIsRent(box.payee) ? BS_PAYEE_RENT : (_bsIsInsur(box.payee) ? BS_PAYEE_INSUR : (_bsIsFx(box.payee) ? BS_PAYEE_FX : (_bsIsWhdep(box.payee) ? BS_PAYEE_WHDEP : (_bsIsReferral(box.payee) ? BS_PAYEE_REFERRAL : (_bsIsWageBonus(box.payee) ? BS_PAYEE_WAGEBONUS : (_bsIsLoan(box.payee) ? _bsLoanSentinel(box.payee) : (box.payee || ''))))))))))))), box.direction)}</select>
+      <select class="bs-bx-payee" onchange="bsPayeeSelChange(${box.id},this)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;background:#fff">${_bsPayeeOptions(_bsIsEmp(box.payee) ? BS_PAYEE_EMP : (_bsIsPallet(box.payee) ? BS_PAYEE_PALLET : (_bsIsCheck(box.payee) ? (_bsCheckParse(box.payee).type === 'wd' ? BS_PAYEE_CHECK_WD : BS_PAYEE_CHECK_DEP) : (_bsIsTruck(box.payee) ? BS_PAYEE_TRUCK : (_bsIsInternal(box.payee) ? BS_PAYEE_INTERNAL : (_bsIsUnload(box.payee) ? BS_PAYEE_UNLOAD : (_bsIsRent(box.payee) ? BS_PAYEE_RENT : (_bsIsInsur(box.payee) ? BS_PAYEE_INSUR : (_bsIsFx(box.payee) ? BS_PAYEE_FX : (_bsIsWhdep(box.payee) ? BS_PAYEE_WHDEP : (_bsIsReferral(box.payee) ? BS_PAYEE_REFERRAL : (_bsIsWageBonus(box.payee) ? BS_PAYEE_WAGEBONUS : (_bsIsCollect(box.payee) ? BS_PAYEE_COLLECT : (_bsIsLoan(box.payee) ? _bsLoanSentinel(box.payee) : (box.payee || '')))))))))))))), box.direction)}</select>
       <div class="bs-emp-wrap" style="display:${_bsIsEmp(box.payee) ? '' : 'none'};background:#f8fafc;border:1px dashed var(--gray-200);border-radius:6px;padding:.4rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:var(--gray-400);margin-bottom:.25rem">先选公司，再填员工姓名</div>
         <select class="bs-bx-emp-co" onchange="bsEmpUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;margin-bottom:.3rem;background:#fff">${_bsCompanyOptions(_bsEmpParse(box.payee).co)}</select>
@@ -1375,6 +1416,10 @@ function _bsRenderBoxPanel() {
       <div class="bs-wagebonus-wrap" style="display:${_bsIsWageBonus(box.payee) ? '' : 'none'};background:#fefce8;border:1px dashed #fde047;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:#a16207;margin-bottom:.25rem">奖励发给谁（姓名，多个用逗号隔开）</div>
         <input type="text" class="bs-bx-wagebonus-name" value="${esc(_bsWageBonusParse(box.payee))}" onchange="bsWageBonusUpdate(${box.id},this)" placeholder="姓名（多个用逗号隔开）" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">
+      </div>
+      <div class="bs-collect-wrap" style="display:${_bsIsCollect(box.payee) ? '' : 'none'};background:#f0f9ff;border:1px dashed #bae6fd;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
+        <div style="font-size:.72rem;color:#0369a1;margin-bottom:.25rem">帮谁代收的（选代收的人）</div>
+        <select class="bs-bx-collect-name" onchange="bsCollectUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">${_bsCollectNameOptions(_bsCollectParse(box.payee))}</select>
       </div>
       <div class="bs-loan-wrap" style="display:${_bsIsLoan(box.payee) ? '' : 'none'};background:#f0fdf4;border:1px dashed #bbf7d0;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
         <div style="font-size:.72rem;color:#15803d;margin-bottom:.25rem">公司可选（也可以不选），再填人名</div>
