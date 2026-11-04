@@ -5911,17 +5911,29 @@ function pmRender() {
   const sec = (title, body) => `<div style="border:1px solid var(--g200);border-radius:10px;padding:.8rem .9rem;margin-bottom:.8rem"><div style="font-weight:800;font-size:.88rem;color:#0f4c6b;margin-bottom:.5rem">${title}</div>${body}</div>`;
   const small = 'font-size:.76rem;color:var(--g500)';
   let conn;
-  if (!d.has_credentials || d._editCreds) {
-    conn = `<div style="${small};line-height:1.7;margin-bottom:.5rem">第一次用要在 Google Cloud 建一个 OAuth 客户端（类型选 <b>Web application</b>），启用 <b>Gmail API</b>，「已获授权的重定向 URI」填：<br>
+  {
+    const clients = d.clients || [];
+    const help = `<div style="${small};line-height:1.7;margin-bottom:.5rem">在 Google Cloud 建 OAuth 客户端（类型选 <b>Web application</b>），启用 <b>Gmail API</b>，「已获授权的重定向 URI」填：
       <code style="background:#f1f5f9;padding:1px 6px;border-radius:4px;user-select:all">${esc(d.redirect_uri)}</code><br>
-      公司邮箱是 Google Workspace 的话，OAuth 同意屏幕选 <b>Internal</b>（不用 Google 审核，授权也不会 7 天过期）。</div>
+      每个 Google Workspace 可以建一个 <b>Internal</b> 应用（只能连自己公司的邮箱）；别的公司的邮箱 / 私人 Gmail 用另一个 Client ID。</div>`;
+    const addForm = `<div style="background:#f8fafc;border:1px dashed var(--g300);border-radius:8px;padding:.6rem;margin-top:.4rem">
+      ${help}
       <div style="display:flex;gap:.4rem;flex-wrap:wrap">
-        <input id="pmCid" placeholder="Client ID" style="flex:1 1 260px">
-        <input id="pmCsec" placeholder="Client Secret" type="password" style="flex:1 1 200px">
-        <button class="btn btn-sm btn-blue" onclick="pmSaveCreds()">保存</button>
-        ${d.has_credentials ? '<button class="btn btn-sm" onclick="_pm._editCreds=false;pmRender()">取消</button>' : ''}
-      </div>`;
-  } else {
+        <input id="pmCname" placeholder="名称，例如 Prime Anchor Workspace" style="flex:1 1 200px">
+        <input id="pmCid" placeholder="Client ID" style="flex:2 1 260px">
+        <input id="pmCsec" placeholder="Client Secret" type="password" style="flex:1 1 180px">
+        <button class="btn btn-sm btn-blue" onclick="pmAddClient()">添加</button>
+        ${clients.length ? '<button class="btn btn-sm" onclick="_pm._addClient=false;pmRender()">取消</button>' : ''}
+      </div></div>`;
+    const clientRows = clients.map(c => `<tr style="border-top:1px solid var(--g100)">
+        <td style="padding:.4rem;font-weight:700;white-space:nowrap">🔑 ${esc(c.name)}</td>
+        <td style="${small};font-family:monospace">${esc(c.client_id)}</td>
+        <td style="${small};white-space:nowrap">${c.accounts} 个邮箱在用</td>
+        <td style="white-space:nowrap;text-align:right">
+          <a class="btn btn-sm btn-blue" href="/api/acct/pallet-mail/connect?client=${c.id}" style="text-decoration:none">＋ 用它连接邮箱</a>
+          <button class="btn btn-sm" onclick="pmEditClient(${c.id})">✏️ 改名 / 换 Secret</button>
+          <button class="btn btn-sm" style="color:#b91c1c" onclick="pmDeleteClient(${c.id})">🗑</button>
+        </td></tr>`).join('');
     const accRows = (d.accounts || []).map(a => {
       const r = a.last_poll_result;
       const st = !a.connected
@@ -5929,7 +5941,7 @@ function pmRender() {
         : `${a.last_poll_at ? '上次检查 ' + _pmFmt(a.last_poll_at) : '还没检查过'}${r && r.ok ? ` · 看了 ${r.checked} 封新邮件，转发 ${r.forwarded} 封${r.failed ? `，<span style="color:#b91c1c">失败 ${r.failed} 封</span>` : ''}${r.dup ? `，${r.dup} 封别的邮箱已转过` : ''}${r.label_found === false ? ' · <span style="color:#b45309">没找到标签「' + esc(d.label) + '」</span>' : ''}` : ''}`;
       return `<tr style="border-top:1px solid var(--g100)">
         <td style="padding:.4rem;font-weight:700;white-space:nowrap">${a.connected ? '✅' : '⚠️'} ${esc(a.email)}</td>
-        <td style="${small}">${a.connected_by ? esc(a.connected_by) + ' · ' : ''}从 ${_pmFmt(a.connected_at)} 起</td>
+        <td style="${small}">🔑 ${a.client_name ? esc(a.client_name) : '<span style="color:#b91c1c">Client ID 已删除</span>'}<br>${a.connected_by ? esc(a.connected_by) + ' · ' : ''}从 ${_pmFmt(a.connected_at)} 起</td>
         <td style="${small}">${st}${a.last_error && a.connected ? `<div style="color:#b91c1c">⚠ ${esc(a.last_error)}</div>` : ''}</td>
         <td style="white-space:nowrap;text-align:right">
           <label style="display:inline-flex;gap:.25rem;align-items:center;font-size:.78rem;margin-right:.3rem"><input type="checkbox" ${a.enabled ? 'checked' : ''} onchange="pmToggleAccount(${a.id}, this.checked)"> 自动转发</label>
@@ -5937,13 +5949,15 @@ function pmRender() {
           <button class="btn btn-sm" style="color:#b91c1c" onclick="pmDisconnect(${a.id})">断开</button>
         </td></tr>`;
     }).join('');
-    conn = `${accRows ? `<table style="width:100%;font-size:.82rem;border-collapse:collapse;margin-bottom:.5rem">${accRows}</table>` : `<div style="${small};margin-bottom:.5rem">还没有连接邮箱。</div>`}
-    <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
-      <a class="btn btn-sm btn-blue" href="/api/acct/pallet-mail/connect" style="text-decoration:none">＋ 连接${(d.accounts || []).length ? '另一个' : ''} Gmail 邮箱</a>
-      ${(d.accounts || []).some(a => a.connected && a.enabled) ? '<button class="btn btn-sm" onclick="pmPoll(this)">🔄 全部立即检查</button>' : ''}
-      <span style="${small}">每个邮箱只处理它连接之后收到的邮件；规则对所有邮箱通用，转发从收到邮件的那个邮箱发出；同一封邮件进了几个邮箱只转一次。</span>
-      <a onclick="_pm._editCreds=true;pmRender()" style="${small};cursor:pointer;text-decoration:underline;margin-left:auto">改 Client ID / Secret</a>
-    </div>`;
+    conn = `<div style="font-weight:700;font-size:.8rem;color:#475569;margin-bottom:.25rem">Google Client ID（可以加多个）</div>
+      ${clientRows ? `<table style="width:100%;font-size:.82rem;border-collapse:collapse">${clientRows}</table>` : ''}
+      ${!clients.length || _pm._addClient ? addForm : `<div style="margin:.35rem 0 .2rem"><a onclick="_pm._addClient=true;pmRender()" style="font-size:.8rem;color:#1d4ed8;cursor:pointer;text-decoration:underline">＋ 添加另一个 Client ID</a></div>`}
+      ${clients.length ? `<div style="font-weight:700;font-size:.8rem;color:#475569;margin:.8rem 0 .25rem">已连接的邮箱</div>
+      ${accRows ? `<table style="width:100%;font-size:.82rem;border-collapse:collapse;margin-bottom:.5rem">${accRows}</table>` : `<div style="${small};margin-bottom:.5rem">还没有连接邮箱。点上面 Client ID 那行的「＋ 用它连接邮箱」。</div>`}
+      <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+        ${(d.accounts || []).some(a => a.connected && a.enabled) ? '<button class="btn btn-sm" onclick="pmPoll(this)">🔄 全部立即检查</button>' : ''}
+        <span style="${small}">每个邮箱只处理它连接之后收到的邮件；规则对所有邮箱通用，转发从收到邮件的那个邮箱发出；同一封邮件进了几个邮箱只转一次。</span>
+      </div>` : ''}`;
   }
   const settings = `<div style="display:grid;grid-template-columns:150px 1fr;gap:.5rem .7rem;align-items:center;font-size:.83rem">
       <span>Gmail 标签（可选）</span>
@@ -5999,16 +6013,36 @@ function pmRender() {
       <div style="font-weight:800;font-size:1rem">📧 木板邮件自动转发</div>
       <div style="font-size:.78rem;color:var(--g500);margin-top:.15rem">连接 Gmail 邮箱后，客户 / 供应商发来的木板邮件按下面的规则自动转发给负责人（带原正文和附件）。</div>
     </div>
-    ${sec('① 连接的 Gmail 邮箱（可以连多个）', conn)}
+    ${sec('① Google Client ID 和连接的 Gmail 邮箱（都可以有多个）', conn)}
     ${sec('② 规则：哪个客户 / 供应商的邮件转给谁', rules)}
     ${sec('③ 其他设置', settings)}
     ${sec('④ 转发记录（可改发给别人）', log)}
   </div>`;
 }
 async function _pmReload() { try { _pm = await bapi('/api/acct/pallet-mail'); pmRender(); } catch (e) { toast(e.message, true); } }
-async function pmSaveCreds() {
+async function pmAddClient() {
+  const name = document.getElementById('pmCname').value.trim();
   const client_id = document.getElementById('pmCid').value.trim(), client_secret = document.getElementById('pmCsec').value.trim();
-  try { await bapi('/api/acct/pallet-mail/credentials', { method: 'POST', body: JSON.stringify({ client_id, client_secret }) }); toast('已保存，下一步点「连接 Gmail」'); _pmReload(); }
+  try {
+    await bapi('/api/acct/pallet-mail/clients', { method: 'POST', body: JSON.stringify({ name, client_id, client_secret }) });
+    toast('已添加，下一步点这个 Client ID 那行的「＋ 用它连接邮箱」');
+    _pm._addClient = false; _pmReload();
+  } catch (e) { toast(e.message, true); }
+}
+async function pmEditClient(id) {
+  const c = (_pm.clients || []).find(x => x.id === id);
+  if (!c) return;
+  const name = await pagePrompt('Client ID 的名称：', c.name);
+  if (name == null) return;
+  const secret = await pagePrompt('新的 Client Secret（不换就留空）：', '');
+  if (secret == null) return;
+  try { await bapi(`/api/acct/pallet-mail/clients/${id}`, { method: 'PUT', body: JSON.stringify({ name: name.trim(), client_secret: secret.trim() }) }); toast('已保存'); _pmReload(); }
+  catch (e) { toast(e.message, true); }
+}
+async function pmDeleteClient(id) {
+  const c = (_pm.clients || []).find(x => x.id === id);
+  if (!await pageConfirm(`删除 Client ID「${c ? c.name : ''}」？`)) return;
+  try { await bapi(`/api/acct/pallet-mail/clients/${id}`, { method: 'DELETE' }); toast('已删除'); _pmReload(); }
   catch (e) { toast(e.message, true); }
 }
 async function pmSaveSettings(body) {

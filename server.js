@@ -43409,8 +43409,6 @@ function _pmCfg() {
   let cfg = {}; try { cfg = JSON.parse(row.config || '{}'); } catch (e) { cfg = {}; }
   return {
     cfg,
-    clientId: row.api_key || process.env.GOOGLE_OAUTH_CLIENT_ID || '',
-    clientSecret: row.api_secret || process.env.GOOGLE_OAUTH_CLIENT_SECRET || '',
   };
 }
 function _pmSaveCfg(patch) {
@@ -43432,6 +43430,32 @@ try {
     _pmSaveCfg({ refresh_token: null, access_token: null, token_expires_at: null, email: null, connected_at: null, connected_by: null, enabled: null, last_poll_at: null, last_poll_result: null, last_error: null });
 } catch (e) { console.log('[pallet-mail] 旧账号迁移失败:', e.message); }
 
+// 可以有多个 Google OAuth 客户端 (Client ID / Secret): 例如不同公司的 Google Workspace 各建一个
+// Internal 应用, 每个只能授权自己公司的邮箱。每个邮箱记住它是用哪个客户端连的 (续期也要用同一个)。
+db.exec(`CREATE TABLE IF NOT EXISTS pallet_mail_clients (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT DEFAULT '',
+  client_id TEXT NOT NULL,
+  client_secret TEXT NOT NULL,
+  created_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec("ALTER TABLE pallet_mail_accounts ADD COLUMN client_ref INTEGER DEFAULT NULL"); } catch (e) {}
+// 旧版只有一组 Client ID (存在 integration_settings / 环境变量): 变成第一个客户端, 已连接的邮箱都归它
+try {
+  const row = _pmRow();
+  const olds = [[row.api_key, row.api_secret, '默认'], [process.env.GOOGLE_OAUTH_CLIENT_ID, process.env.GOOGLE_OAUTH_CLIENT_SECRET, '环境变量']];
+  for (const [cid, sec, name] of olds) {
+    if (!cid || !sec) continue;
+    if (!db.prepare('SELECT 1 FROM pallet_mail_clients WHERE client_id=?').get(String(cid).trim()))
+      db.prepare('INSERT INTO pallet_mail_clients (name, client_id, client_secret) VALUES (?, ?, ?)').run(name, String(cid).trim(), String(sec).trim());
+  }
+  if (row.api_key || row.api_secret) db.prepare("UPDATE integration_settings SET api_key='', api_secret='' WHERE provider='gmail_pallet'").run();
+  const first = db.prepare('SELECT id FROM pallet_mail_clients ORDER BY id LIMIT 1').get();
+  if (first) db.prepare('UPDATE pallet_mail_accounts SET client_ref=? WHERE client_ref IS NULL').run(first.id);
+} catch (e) { console.log('[pallet-mail] Client ID 迁移失败:', e.message); }
+function _pmClients() { return db.prepare('SELECT * FROM pallet_mail_clients ORDER BY id').all(); }
+function _pmClient(id) { return id ? db.prepare('SELECT * FROM pallet_mail_clients WHERE id=?').get(id) : null; }
 function _pmAccounts() { return db.prepare('SELECT * FROM pallet_mail_accounts ORDER BY id').all(); }
 function _pmAccount(id) { return db.prepare('SELECT * FROM pallet_mail_accounts WHERE id=?').get(id); }
 function _pmRedirectUri(req) {
@@ -43446,8 +43470,9 @@ async function _pmToken(accId) {
   if (!acc || !acc.refresh_token) throw new Error('这个邮箱还没连接或授权已失效，请重新连接');
   if (acc.access_token && (acc.token_expires_at || 0) - Date.now() > 60 * 1000) return acc.access_token;
   if (!_pmRefreshing.has(acc.id)) {
-    const { clientId, clientSecret } = _pmCfg();
-    _pmRefreshing.set(acc.id, pmail.refreshToken({ clientId, clientSecret, refreshToken: acc.refresh_token })
+    const cl = _pmClient(acc.client_ref);
+    if (!cl) throw new Error('这个邮箱当初用的 Client ID 已经删掉了，请选一个 Client ID 重新连接');
+    _pmRefreshing.set(acc.id, pmail.refreshToken({ clientId: cl.client_id, clientSecret: cl.client_secret, refreshToken: acc.refresh_token })
       .then(tk => {
         db.prepare('UPDATE pallet_mail_accounts SET access_token=?, token_expires_at=?, refresh_token=COALESCE(NULLIF(?,\'\'), refresh_token) WHERE id=?')
           .run(tk.access_token, tk.expires_at, tk.refresh_token || '', acc.id);
@@ -43571,15 +43596,21 @@ function _pmCleanEmails(v) {
 }
 
 app.get('/api/acct/pallet-mail', requireAdmin, requireRole('admin'), (req, res) => {
-  const { cfg, clientId, clientSecret } = _pmCfg();
+  const { cfg } = _pmCfg();
+  const accs = _pmAccounts();
+  const clients = _pmClients().map(c => ({
+    id: c.id, name: c.name, client_id: c.client_id.length > 24 ? c.client_id.slice(0, 18) + '…' + c.client_id.slice(-6) : c.client_id,
+    created_by: c.created_by, created_at: c.created_at, accounts: accs.filter(a => a.client_ref === c.id).length,
+  }));
   res.json({
-    has_credentials: !!(clientId && clientSecret),
-    client_id: clientId ? clientId.slice(0, 12) + '…' : '',
+    has_credentials: clients.length > 0,
+    clients,
     redirect_uri: _pmRedirectUri(req),
-    accounts: _pmAccounts().map(a => {
+    accounts: accs.map(a => {
       let r = null; try { r = a.last_poll_result ? JSON.parse(a.last_poll_result) : null; } catch (e) {}
+      const cl = clients.find(c => c.id === a.client_ref);
       return { id: a.id, email: a.email, connected: !!a.refresh_token, enabled: !!a.enabled, connected_at: a.connected_at, connected_by: a.connected_by,
-        last_poll_at: a.last_poll_at, last_poll_result: r, last_error: a.last_error };
+        client_ref: a.client_ref, client_name: cl ? cl.name : '', last_poll_at: a.last_poll_at, last_poll_result: r, last_error: a.last_error };
     }),
     label: cfg.label || '', default_to: cfg.default_to || '',
     rules: _pmRules(),
@@ -43598,25 +43629,50 @@ app.put('/api/acct/pallet-mail/people/:username/email', requireAdmin, requireRol
   auditLog('pallet_mail_set_user_email', req, { targetType: 'admin_user', targetId: u.id, details: { username: u.username, email } });
   res.json({ success: true });
 });
-app.post('/api/acct/pallet-mail/credentials', requireAdmin, requireRole('admin'), (req, res) => {
+// Client ID 管理: 新增 / 改名或换 Secret / 删除 (还有邮箱在用的不能删)
+app.post('/api/acct/pallet-mail/clients', requireAdmin, requireRole('admin'), (req, res) => {
   const b = req.body || {};
-  const id = String(b.client_id || '').trim(), sec = String(b.client_secret || '').trim();
-  if (!id || !sec) return res.status(400).json({ error: '请填写 Client ID 和 Client Secret' });
-  db.prepare("UPDATE integration_settings SET api_key=?, api_secret=?, updated_at=CURRENT_TIMESTAMP WHERE provider='gmail_pallet'").run(id.slice(0, 300), sec.slice(0, 300));
-  auditLog('pallet_mail_credentials', req, { targetType: 'integration', targetId: 'gmail_pallet' });
+  const cid = String(b.client_id || '').trim().slice(0, 300), sec = String(b.client_secret || '').trim().slice(0, 300);
+  const name = String(b.name || '').trim().slice(0, 80);
+  if (!cid || !sec) return res.status(400).json({ error: '请填写 Client ID 和 Client Secret' });
+  if (db.prepare('SELECT 1 FROM pallet_mail_clients WHERE client_id=?').get(cid)) return res.status(400).json({ error: '这个 Client ID 已经加过了' });
+  const n = db.prepare('SELECT COUNT(*) AS n FROM pallet_mail_clients').get().n;
+  const x = db.prepare('INSERT INTO pallet_mail_clients (name, client_id, client_secret, created_by) VALUES (?, ?, ?, ?)').run(name || `Client ${n + 1}`, cid, sec, req.userName || '');
+  auditLog('pallet_mail_client_create', req, { targetType: 'pallet_mail_client', targetId: x.lastInsertRowid, details: { name } });
+  res.json({ success: true, id: x.lastInsertRowid });
+});
+app.put('/api/acct/pallet-mail/clients/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const cl = _pmClient(req.params.id);
+  if (!cl) return res.status(404).json({ error: 'Client ID 不存在' });
+  const b = req.body || {};
+  const name = 'name' in b ? String(b.name || '').trim().slice(0, 80) : cl.name;
+  const sec = String(b.client_secret || '').trim().slice(0, 300) || cl.client_secret;
+  db.prepare('UPDATE pallet_mail_clients SET name=?, client_secret=? WHERE id=?').run(name || cl.name, sec, cl.id);
+  auditLog('pallet_mail_client_update', req, { targetType: 'pallet_mail_client', targetId: cl.id, details: { name, secret_changed: sec !== cl.client_secret } });
+  res.json({ success: true });
+});
+app.delete('/api/acct/pallet-mail/clients/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const cl = _pmClient(req.params.id);
+  if (!cl) return res.status(404).json({ error: 'Client ID 不存在' });
+  const used = db.prepare('SELECT email FROM pallet_mail_accounts WHERE client_ref=?').all(cl.id).map(a => a.email);
+  if (used.length) return res.status(400).json({ error: `还有邮箱在用这个 Client ID（${used.join('、')}），先断开这些邮箱再删` });
+  db.prepare('DELETE FROM pallet_mail_clients WHERE id=?').run(cl.id);
+  auditLog('pallet_mail_client_delete', req, { targetType: 'pallet_mail_client', targetId: cl.id, details: { name: cl.name } });
   res.json({ success: true });
 });
 // 浏览器直接导航过来 (凭 pa_token cookie 过 requireAdmin), 出错 302 回 /accounting 带参数。
-// ?hint=邮箱 → 重新连接某个邮箱时 Google 直接选中它; 不带 = 连接一个新邮箱 (Google 让你选账号)
+// ?client=<Client ID 的编号> 用哪个 Client ID 连 (不带 = 第一个);
+// ?hint=邮箱 → 重新连接某个邮箱时 Google 直接选中它 (不带 client 时用这个邮箱原来的 Client ID); 不带 = 连接新邮箱 (Google 让你选账号)
 app.get('/api/acct/pallet-mail/connect', requireAdmin, requireRole('admin'), (req, res) => {
-  const { clientId, clientSecret } = _pmCfg();
-  if (!clientId || !clientSecret) return res.redirect('/accounting?pmail=missing_credentials');
+  const hint = String(req.query.hint || '').trim();
+  const prev = hint ? db.prepare('SELECT client_ref FROM pallet_mail_accounts WHERE email=? COLLATE NOCASE').get(hint) : null;
+  const cl = _pmClient(Number(req.query.client) || 0) || _pmClient(prev && prev.client_ref) || _pmClients()[0];
+  if (!cl) return res.redirect('/accounting?pmail=missing_credentials');
   const state = crypto.randomBytes(24).toString('hex');
   const redirectUri = _pmRedirectUri(req);
   db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('gmail_pallet_oauth_state', ?, CURRENT_TIMESTAMP)")
-    .run(JSON.stringify({ state, at: Date.now(), by: req.userName || '', redirect_uri: redirectUri }));
-  const hint = String(req.query.hint || '').trim();
-  res.redirect(pmail.authorizeUrl({ clientId, redirectUri, state, loginHint: pmail.isEmail(hint) ? hint : '', selectAccount: !hint }));
+    .run(JSON.stringify({ state, at: Date.now(), by: req.userName || '', redirect_uri: redirectUri, client_ref: cl.id }));
+  res.redirect(pmail.authorizeUrl({ clientId: cl.client_id, redirectUri, state, loginHint: pmail.isEmail(hint) ? hint : '', selectAccount: !hint }));
 });
 app.get('/gmail/oauth/callback', async (req, res) => {
   const back = q => res.redirect('/accounting?pmail=' + q);
@@ -43626,26 +43682,28 @@ app.get('/gmail/oauth/callback', async (req, res) => {
     let st = {}; try { st = JSON.parse((stRow && stRow.value) || '{}'); } catch (e) {}
     if (req.query.error) return back(encodeURIComponent('denied:' + String(req.query.error).slice(0, 80)));
     if (!req.query.code || !st.state || String(req.query.state || '') !== st.state || Date.now() - (st.at || 0) > 15 * 60 * 1000) return back('state_mismatch');
-    const { clientId, clientSecret } = _pmCfg();
-    const tk = await pmail.exchangeCode({ clientId, clientSecret, redirectUri: st.redirect_uri, code: String(req.query.code) });
+    const cl = _pmClient(st.client_ref);
+    if (!cl) return back('missing_credentials');
+    const tk = await pmail.exchangeCode({ clientId: cl.client_id, clientSecret: cl.client_secret, redirectUri: st.redirect_uri, code: String(req.query.code) });
     const granted = String(tk.scope || '');
     if (!pmail.SCOPES.every(s => granted.includes(s))) return back('scope_missing');
     const prof = await pmail.profile(tk.access_token);
     const email = String(prof.emailAddress || '').trim();
     if (!email) return back(encodeURIComponent('error:拿不到邮箱地址'));
     const ex = db.prepare('SELECT * FROM pallet_mail_accounts WHERE email=? COLLATE NOCASE').get(email);
-    const rt = tk.refresh_token || (ex && ex.refresh_token) || '';
+    // 换了 Client ID 重连时, 旧 Client 的 refresh token 不能给新 Client 用
+    const rt = tk.refresh_token || (ex && ex.client_ref === cl.id && ex.refresh_token) || '';
     if (!rt) return back('no_refresh_token');
     if (ex) {
       // 重新连接同一个邮箱: 保留「从哪天开始处理」的起点, 免得断开期间的邮件全被跳过或重转
-      db.prepare(`UPDATE pallet_mail_accounts SET refresh_token=?, access_token=?, token_expires_at=?, connected_by=?, last_error='',
-        connected_at=COALESCE(NULLIF(connected_at,''), ?) WHERE id=?`).run(rt, tk.access_token, tk.expires_at, st.by || '', new Date().toISOString(), ex.id);
+      db.prepare(`UPDATE pallet_mail_accounts SET refresh_token=?, access_token=?, token_expires_at=?, connected_by=?, last_error='', client_ref=?,
+        connected_at=COALESCE(NULLIF(connected_at,''), ?) WHERE id=?`).run(rt, tk.access_token, tk.expires_at, st.by || '', cl.id, new Date().toISOString(), ex.id);
     } else {
-      db.prepare(`INSERT INTO pallet_mail_accounts (email, refresh_token, access_token, token_expires_at, enabled, connected_at, connected_by)
-        VALUES (?, ?, ?, ?, 1, ?, ?)`).run(email, rt, tk.access_token, tk.expires_at, new Date().toISOString(), st.by || '');
+      db.prepare(`INSERT INTO pallet_mail_accounts (email, refresh_token, access_token, token_expires_at, enabled, connected_at, connected_by, client_ref)
+        VALUES (?, ?, ?, ?, 1, ?, ?, ?)`).run(email, rt, tk.access_token, tk.expires_at, new Date().toISOString(), st.by || '', cl.id);
     }
     db.prepare("UPDATE integration_settings SET enabled=1, updated_at=CURRENT_TIMESTAMP WHERE provider='gmail_pallet'").run();
-    auditLog('pallet_mail_connected', req, { targetType: 'integration', targetId: 'gmail_pallet', details: { email, by: st.by || '', reconnect: !!ex } });
+    auditLog('pallet_mail_connected', req, { targetType: 'integration', targetId: 'gmail_pallet', details: { email, by: st.by || '', reconnect: !!ex, client: cl.name } });
     return back(ex ? 'reconnected' : 'connected');
   } catch (e) {
     console.log('[pallet-mail] oauth 回调失败:', e && e.message);
