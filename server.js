@@ -43561,6 +43561,7 @@ let _pmPolling = null;
 // 依次检查所有开着自动转发的邮箱 (串行, 这样 Message-ID 去重对同一轮里的几个邮箱也有效)
 function pmPollNow(reason, onlyId) {
   if (_pmPolling) return _pmPolling;
+  if (_pmHist && _pmHist.phase === 'forwarding') return Promise.resolve({ ok: false, error: '正在补转历史邮件，等它转完再检查' });
   _pmPolling = (async () => {
     const all = _pmAccounts();
     const accs = all.filter(a => a.refresh_token && (onlyId ? a.id === onlyId : a.enabled));
@@ -43778,6 +43779,118 @@ app.post('/api/acct/pallet-mail/poll', requireAdmin, requireRole('admin'), async
   const r = await pmPollNow('manual', id || undefined);
   if (!r.ok) return res.status(400).json({ error: r.error || '检查失败' });
   res.json(r);
+});
+// 📜 历史邮件补转: 选开始日期 (和邮箱), 先扫描出命中规则、还没转过的邮件 (不管规则 / 邮箱是什么时候
+// 连的), 管理员勾选后在后台按时间从旧到新补转。同一时间只跑一个; 补转时自动检查暂停, 免得同一封转两次。
+// 补转记成 by_user='auto' (reason 标「历史补转」), 以后自动检查就当它已经转过。
+const PM_HIST_MAX = 500;   // 每个邮箱一次最多扫这么多封
+let _pmHist = null;        // { phase: scanning|ready|forwarding|done|error, by, since, until, account_id, items, progress, ... }
+function _pmHistPublic() {
+  if (!_pmHist) return null;
+  const h = _pmHist;
+  return { phase: h.phase, by: h.by, since: h.since, until: h.until, account_id: h.account_id, started_at: h.started_at,
+    scanned: h.scanned, total_to_scan: h.total_to_scan, truncated: h.truncated, skipped_done: h.skipped_done, skipped_dup: h.skipped_dup,
+    forwarded: h.forwarded, failed: h.failed, done_count: h.done_count, selected: h.selected || 0, error: h.error, errors: h.errors,
+    items: h.items.map(({ meta, ...x }) => x) };
+}
+function _pmDayEpoch(d) { const t = Date.parse(String(d) + 'T00:00:00'); return Number.isFinite(t) ? Math.floor(t / 1000) : 0; }
+async function _pmHistScan(job) {
+  const all = _pmAccounts();
+  const accs = all.filter(a => a.refresh_token && (!job.account_id || a.id === job.account_id));
+  const cfg = _pmCfg().cfg, rules = _pmRules();
+  const ownEmails = new Set(all.map(a => String(a.email).toLowerCase()));
+  const seenMid = new Set();
+  for (const acc of accs) {
+    try {
+      const token = await _pmToken(acc.id);
+      let labelId = '';
+      if (cfg.label) {
+        const l = (await pmail.listLabels(token)).find(x => String(x.name).toLowerCase() === String(cfg.label).toLowerCase());
+        labelId = l ? l.id : '';
+      }
+      let q = `after:${_pmDayEpoch(job.since)} -from:me -in:sent -in:chats -in:spam -in:trash`;
+      if (job.until) q += ` before:${_pmDayEpoch(job.until) + 86400}`;
+      const ids = await pmail.listMessageIds(token, q, PM_HIST_MAX + 1);
+      if (ids.length > PM_HIST_MAX) { job.truncated = true; ids.length = PM_HIST_MAX; }
+      job.total_to_scan += ids.length;
+      for (const id of ids) {
+        job.scanned++;
+        if (_pmAutoDone(acc.id, id)) { job.skipped_done++; continue; }
+        const meta = await pmail.getMessageMeta(token, id);
+        if (pmail.header(meta, pmail.FORWARD_HEADER)) continue;
+        if (ownEmails.has(pmail.emailOf(pmail.header(meta, 'From')))) continue;
+        const m = { from: pmail.header(meta, 'From'), subject: pmail.header(meta, 'Subject'), snippet: meta.snippet || '', labelIds: meta.labelIds || [], internalDate: meta.internalDate };
+        const hit = pmail.matchMessage(m, rules, { labelId, defaultTo: cfg.default_to, ignoreSince: true });
+        if (!hit.to.length) continue;
+        const mid = pmail.header(meta, 'Message-ID');
+        if (mid && (seenMid.has(mid) || db.prepare("SELECT 1 FROM pallet_mail_log WHERE message_id=? AND by_user='auto' AND status='sent' LIMIT 1").get(mid))) { job.skipped_dup++; continue; }
+        if (mid) seenMid.add(mid);
+        job.items.push({
+          key: acc.id + ':' + id, account_id: acc.id, account_email: acc.email, gmail_id: id,
+          from: m.from, subject: m.subject, date: meta.internalDate ? new Date(Number(meta.internalDate)).toISOString() : '',
+          to: hit.to,
+          rule_names: hit.byLabel ? `标签 ${cfg.label}` : hit.rules.map(h => h.rule.name).join('、'),
+          reason: hit.byLabel ? `带 Gmail 标签「${cfg.label}」→ 默认负责人` : hit.rules.map(h => h.reason).join('；'),
+          status: '', error: '', meta,
+        });
+      }
+    } catch (e) { job.errors.push(`${acc.email}：${e.message}`); }
+  }
+  job.items.sort((a, b) => String(a.date).localeCompare(String(b.date)));   // 从旧到新
+  job.phase = 'ready';
+}
+async function _pmHistForward(job, keys) {
+  if (_pmPolling) { try { await _pmPolling; } catch (e) {} }
+  const want = new Set(keys);
+  const todo = job.items.filter(x => want.has(x.key) && x.status !== 'sent');
+  job.done_count = 0;
+  for (const it of todo) {
+    try {
+      const acc = _pmAccount(it.account_id);
+      if (!acc) throw new Error('这个邮箱已断开');
+      // 扫描之后可能被自动检查 / 别的邮箱转过了, 发之前再查一次
+      const mid = pmail.header(it.meta, 'Message-ID');
+      if (_pmAutoDone(acc.id, it.gmail_id) || (mid && db.prepare("SELECT 1 FROM pallet_mail_log WHERE message_id=? AND by_user='auto' AND status='sent' LIMIT 1").get(mid))) { it.status = 'skipped'; continue; }
+      const token = await _pmToken(acc.id);
+      const r = await _pmForwardAndLog(acc, token, { meta: it.meta, to: it.to, ruleNames: it.rule_names, reason: `历史补转（${job.by}）· ${it.reason}` });
+      if (r.ok) { it.status = 'sent'; job.forwarded++; } else { it.status = 'error'; it.error = r.error || ''; job.failed++; }
+    } catch (e) { it.status = 'error'; it.error = e.message; job.failed++; }
+    finally { job.done_count++; }
+  }
+  job.phase = 'done';
+}
+app.get('/api/acct/pallet-mail/history', requireAdmin, requireRole('admin'), (req, res) => res.json({ job: _pmHistPublic() }));
+app.post('/api/acct/pallet-mail/history/scan', requireAdmin, requireRole('admin'), (req, res) => {
+  if (_pmHist && ['scanning', 'forwarding'].includes(_pmHist.phase)) return res.status(400).json({ error: '已经有一个历史补转在进行中' });
+  const b = req.body || {};
+  const since = String(b.since || '').slice(0, 10), until = String(b.until || '').slice(0, 10);
+  if (!_pmDayEpoch(since)) return res.status(400).json({ error: '请选开始日期' });
+  if (until && _pmDayEpoch(until) < _pmDayEpoch(since)) return res.status(400).json({ error: '结束日期不能早于开始日期' });
+  const accountId = Number(b.account_id) || 0;
+  if (!_pmAccounts().some(a => a.refresh_token && (!accountId || a.id === accountId))) return res.status(400).json({ error: '没有可用的已连接邮箱' });
+  _pmHist = { phase: 'scanning', by: req.userName || '', since, until, account_id: accountId, started_at: new Date().toISOString(),
+    scanned: 0, total_to_scan: 0, truncated: false, skipped_done: 0, skipped_dup: 0, forwarded: 0, failed: 0, done_count: 0,
+    error: '', errors: [], items: [] };
+  const job = _pmHist;
+  _pmHistScan(job).catch(e => { job.phase = 'error'; job.error = e.message; });
+  auditLog('pallet_mail_history_scan', req, { targetType: 'integration', targetId: 'gmail_pallet', details: { since, until, account_id: accountId } });
+  res.json({ success: true });
+});
+app.post('/api/acct/pallet-mail/history/forward', requireAdmin, requireRole('admin'), (req, res) => {
+  const job = _pmHist;
+  if (!job || job.phase !== 'ready') return res.status(400).json({ error: '请先扫描' });
+  const keys = Array.isArray((req.body || {}).keys) ? req.body.keys.map(String) : [];
+  if (!keys.length) return res.status(400).json({ error: '没有选中要转发的邮件' });
+  job.phase = 'forwarding';
+  job.selected = keys.length;
+  _pmHistForward(job, keys).catch(e => { job.phase = 'error'; job.error = e.message; });
+  auditLog('pallet_mail_history_forward', req, { targetType: 'integration', targetId: 'gmail_pallet', details: { count: keys.length } });
+  res.json({ success: true });
+});
+app.post('/api/acct/pallet-mail/history/clear', requireAdmin, requireRole('admin'), (req, res) => {
+  if (_pmHist && ['scanning', 'forwarding'].includes(_pmHist.phase)) return res.status(400).json({ error: '还在进行中' });
+  _pmHist = null;
+  res.json({ success: true });
 });
 // 日志里的某封邮件改发 / 再发给别人 (从当初收到它的那个邮箱发)
 app.post('/api/acct/pallet-mail/log/:id/forward', requireAdmin, requireRole('admin'), async (req, res) => {

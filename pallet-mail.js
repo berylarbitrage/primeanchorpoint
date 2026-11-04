@@ -140,10 +140,11 @@ function ruleMatch(rule, m) {
 }
 // 一封邮件 → 命中的规则 (规则只管它建好之后收到的邮件, 免得新建规则把几天前的旧邮件全转一遍)。
 // 都没命中但带了指定的 Gmail 标签 → 用默认收件人。返回 { rules:[{rule,reason}], to:[], byLabel }
-function matchMessage(m, rules, { labelId, defaultTo, labelSince } = {}) {
+// ignoreSince: 历史补转用, 不管规则 / 标签是什么时候建的
+function matchMessage(m, rules, { labelId, defaultTo, labelSince, ignoreSince } = {}) {
   const hits = [];
   for (const r of rules || []) {
-    const since = Date.parse(r.created_at ? String(r.created_at).replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(r.created_at) ? '' : 'Z') : '') || 0;
+    const since = ignoreSince ? 0 : Date.parse(r.created_at ? String(r.created_at).replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(r.created_at) ? '' : 'Z') : '') || 0;
     if (since && m.internalDate && Number(m.internalDate) < since) continue;
     const why = ruleMatch(r, m);
     if (why) hits.push({ rule: r, reason: why });
@@ -153,7 +154,7 @@ function matchMessage(m, rules, { labelId, defaultTo, labelSince } = {}) {
   hits.forEach(h => splitList(h.rule.forward_to).forEach(add));
   let byLabel = false;
   if (!hits.length && labelId && (m.labelIds || []).includes(labelId)
-    && !(labelSince && m.internalDate && Number(m.internalDate) < labelSince)) {
+    && !(!ignoreSince && labelSince && m.internalDate && Number(m.internalDate) < labelSince)) {
     splitList(defaultTo).forEach(add);
     byLabel = to.length > 0;
   }
