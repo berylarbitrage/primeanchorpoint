@@ -43306,13 +43306,25 @@ app.post('/api/acct/pallet-manual', requireAdmin, requireRole('accounting', 'adm
     res.json({ success: true, id: r.lastInsertRowid, invoice_number: num, approval_status: isAdmin ? 'approved' : 'pending' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-// 管理员审核: approve 计入 / reject 驳回 (可带原因, 提交人能看到)
+// 管理员审核: approve 计入 / reject 驳回 (可带原因, 提交人能看到) /
+// revoke 撤回审核 (已通过 / 已驳回 → 回到待审核, 可以重新审核; 已记过付款批注的要先删批注)
 app.post('/api/acct/pallet-manual/:id/approval', requireAdmin, requireRole('admin'), (req, res) => {
   const cur = db.prepare('SELECT * FROM pallet_manual_invoices WHERE id=?').get(req.params.id);
   if (!cur) return res.status(404).json({ error: '记录不存在' });
-  if (cur.approval_status !== 'pending') return res.status(400).json({ error: '该发票不在待审核状态' });
   const action = String((req.body || {}).action || '');
-  if (!['approve', 'reject'].includes(action)) return res.status(400).json({ error: '无效操作' });
+  if (!['approve', 'reject', 'revoke'].includes(action)) return res.status(400).json({ error: '无效操作' });
+  if (action === 'revoke') {
+    if (cur.approval_status === 'pending') return res.status(400).json({ error: '该发票还在待审核状态，不用撤回' });
+    // 付款批注只能清空不能删: 记了已付/部分付、金额或关联了银行流水的才拦
+    const n = db.prepare(`SELECT paid_status, amount, txn_ids FROM acct_pay_notes WHERE target_type='palletmanual' AND target_id=?`).get(cur.id);
+    const linked = n && (() => { try { return (JSON.parse(n.txn_ids || '[]') || []).length > 0; } catch { return false; } })();
+    if (n && (['paid', 'partial'].includes(n.paid_status) || n.amount != null || linked))
+      return res.status(400).json({ error: '这张发票已经记过付款批注（已付金额 / 关联银行流水），请先在付款批注里清空再撤回审核' });
+    db.prepare(`UPDATE pallet_manual_invoices SET approval_status='pending', approved_by='', approval_note='', updated_at=datetime('now') WHERE id=?`).run(cur.id);
+    auditLog('pallet_manual_revoke', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers }, { targetType: 'pallet_manual_invoice', targetId: cur.id, details: { from: cur.approval_status, approved_by: cur.approved_by || '' } });
+    return res.json({ success: true });
+  }
+  if (cur.approval_status !== 'pending') return res.status(400).json({ error: '该发票不在待审核状态' });
   db.prepare(`UPDATE pallet_manual_invoices SET approval_status=?, approved_by=?, approval_note=?, updated_at=datetime('now') WHERE id=?`)
     .run(action === 'approve' ? 'approved' : 'rejected', req.userName || '',
       String((req.body || {}).note || '').trim().slice(0, 300), cur.id);
