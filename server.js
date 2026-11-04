@@ -24082,6 +24082,15 @@ const GUSTO_ALIAS_DEFAULTS = [
   { from: 'Oscar Hernández', to: 'Óscar Hernández Gonzále' },
   { from: 'Uriel Garcia Rodríguez', to: 'Uriel García Rodriguez' },
   { from: 'Eloiso Cornelio Herrera Cano', to: 'Eloiso Cornelio Herrera Cano' },
+  // 2026-11: 拣货的四个人周一到周四用本名、周五到周日用另一个名字, 另一个名字的钱并付给本人
+  // (to 和本名用同一个名册收款人; 工资表上的写法不一, 几种都认)
+  { from: 'Estiben Espinoza Aguilar', to: 'Óscar Hernández Gonzále' },
+  { from: 'Estiben Aguilar', to: 'Óscar Hernández Gonzále' },
+  { from: 'Kevin Gomez Lopez', to: 'Brayan Espinoza Orozco' },
+  { from: 'Kevin Gómez López', to: 'Brayan Espinoza Orozco' },
+  { from: 'Wilson R Lopez Cruz', to: 'Uriel García Rodriguez' },
+  { from: 'Wilson Lopez Cruz', to: 'Uriel García Rodriguez' },
+  { from: 'Gerardo Tecaxco Jr', to: 'Ramiro Montiel Carreon' },
 ];
 
 // 发工资时薪覆盖: 发票对客户照计费时薪开票（这三人 $18）, 发工资按这里的时薪
@@ -24162,6 +24171,8 @@ _gustoAliasUpsert('gusto_alias_2026_09_30', GUSTO_ALIAS_DEFAULTS.filter(a => /^(
 _gustoAliasUpsert('gusto_alias_2026_09_30b', GUSTO_ALIAS_DEFAULTS.filter(a => /^eloiso cornelio herrera cano$/i.test(a.from)));
 _gustoAliasBackfill('gusto_alias_tecaxco_backfilled', GUSTO_ALIAS_DEFAULTS.filter(a => a.to === 'Tecaxco, Bugui Boy'));
 _gustoAliasBackfill('gusto_alias_eloy_backfilled', GUSTO_ALIAS_DEFAULTS.filter(a => a.to === 'Eloiso Cornelio Herrera Cano'));
+// 2026-11: 拣货四人的另一个名字 → 本人
+_gustoAliasUpsert('gusto_alias_2026_11_pickers', GUSTO_ALIAS_DEFAULTS.filter(a => /^(estiben (espinoza )?aguilar|kevin g[oó]mez l[oó]pez|wilson (r )?lopez cruz|gerardo tecaxco jr)$/i.test(a.from)));
 
 app.get('/api/admin/gusto-pay-aliases', requireAdmin, (req, res) => {
   res.json({ aliases: _gustoAliases() });
