@@ -221,6 +221,12 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <button class="tab" id="tabTruck" onclick="showTab('truck')"><span class="t-zh">🚚 卡车费用</span><span class="t-en">Truck</span></button>
     <button class="tab" id="tabBank" onclick="showTab('bank')" style="display:none"><span class="t-zh">🔗 银行直连</span><span class="t-en">Bank Feed</span><span id="bankUnrevBadge" style="display:none;background:#dc2626;color:#fff;border-radius:10px;font-size:.68rem;padding:1px 7px;position:absolute;top:3px;right:4px"></span></button>
     <button class="tab" id="tabZelle" onclick="showTab('zelle')" style="display:none"><span class="t-zh">💸 Zelle</span><span class="t-en">Transfers</span></button>
+    <button class="tab" id="tabMail" onclick="showTab('mail')" style="display:none"><span class="t-zh">📧 邮件转发</span><span class="t-en">Mail</span></button>
+  </div>
+
+  <!-- 📧 木板邮件自动转发 (仅管理员): 连接 Gmail 邮箱, 按客户/供应商规则自动转发给负责人 -->
+  <div id="paneMail" style="display:none">
+    <div id="pmPane" style="max-width:1100px"></div>
   </div>
 
   <!-- 💸 Zelle 转账统计: 银行直连交易按收款人汇总, 每人所有时间点+金额, 可备注/关联员工·公司 -->
@@ -1141,7 +1147,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       </select>
       <span id="palletStats" style="font-size:.8rem;color:var(--g500)"></span>
       <button class="btn btn-sm" id="palletBatchApproveBtn" onclick="palletReviewStart()" style="display:none;color:#047857;border-color:#a7f3d0;font-weight:700"></button>
-      <button class="btn btn-sm" id="palletMailBtn" onclick="openPalletMail()" style="display:none" title="连接 Gmail，按客户/供应商把木板邮件自动转发给负责人">📧 邮件自动转发</button>
+      <button class="btn btn-sm" id="palletMailBtn" onclick="showTab('mail')" style="display:none" title="连接 Gmail，按客户/供应商把木板邮件自动转发给负责人">📧 邮件自动转发</button>
       <a id="palletCsfClear" onclick="csfClear('pallet')" style="display:none;font-size:.78rem;color:#1d4ed8;cursor:pointer;text-decoration:underline">✕ 清除表头排序/筛选</a>
     </div>
     <div class="card inv-scroll">
@@ -1479,6 +1485,7 @@ function enterMain() {
   // 银行直连: 仅 admin / 会计可见
   document.getElementById('tabBank').style.display = ['admin', 'accounting'].includes(USER.role) ? '' : 'none';
   document.getElementById('tabZelle').style.display = ['admin', 'accounting'].includes(USER.role) ? '' : 'none';
+  document.getElementById('tabMail').style.display = USER.role === 'admin' ? '' : 'none';
   // 新增赔偿事故 / 费用记录: 会计可提交(待管理员审核), admin 直接生效
   document.getElementById('btnClaimAdd').style.display = ['admin', 'accounting'].includes(USER.role) ? '' : 'none';
   document.getElementById('btnFeeAdd').style.display = ['admin', 'accounting'].includes(USER.role) ? '' : 'none';
@@ -1508,6 +1515,8 @@ function enterMain() {
   bankOauthResume();
   gustoOauthResume();
   pmailOauthResume();
+  // /accounting?tab=mail: 直接打开邮件转发页
+  if (new URLSearchParams(location.search).get('tab') === 'mail' && USER.role === 'admin') showTab('mail');
 }
 // 介绍费: 普通客服只看自己提交的 (页面上标出来); 管理员有「👥 客服账号」(批准注册 / 设客服主管)
 async function refScopeInit() {
@@ -1577,6 +1586,9 @@ function showTab(t) {
   document.getElementById('tabZelle').classList.toggle('on', t === 'zelle');
   document.getElementById('paneZelle').style.display = t === 'zelle' ? '' : 'none';
   if (t === 'zelle') zInit();
+  document.getElementById('tabMail').classList.toggle('on', t === 'mail');
+  document.getElementById('paneMail').style.display = t === 'mail' ? '' : 'none';
+  if (t === 'mail') openPalletMail();
   const isFee = t === 'feeins' || t === 'feelaw' || t === 'feeco';
   document.getElementById('paneFee').style.display = isFee ? '' : 'none';
   if (isFee) { _feeType = t === 'feeins' ? 'insurance' : (t === 'feelaw' ? 'legal' : 'company'); feeApplyType(); renderFeeList(); }
@@ -5834,7 +5846,7 @@ function pmailOauthResume() {
   const g = new URLSearchParams(location.search).get('pmail');
   if (!g) return;
   history.replaceState(null, '', location.pathname);
-  showTab('pallet');
+  if (USER.role === 'admin') showTab('mail');
   if (g === 'connected') toast('✅ Gmail 已连接，这个邮箱之后收到的木板邮件会按规则自动转发');
   else if (g === 'reconnected') toast('✅ 已重新连接这个邮箱');
   else if (g === 'missing_credentials') toast('请先填写并保存 Google OAuth 的 Client ID / Secret', true);
@@ -5843,20 +5855,11 @@ function pmailOauthResume() {
   else if (g === 'no_refresh_token') toast('Google 没有返回长期授权，请到 Google 账号「第三方访问」里移除这个应用后重新连接', true);
   else if (g.startsWith('denied:')) toast('Gmail 授权被拒绝：' + g.slice(7), true);
   else if (g.startsWith('error:')) toast('Gmail 连接失败：' + decodeURIComponent(g.slice(6)), true);
-  if (USER.role === 'admin') openPalletMail();
 }
 async function openPalletMail() {
-  let m = document.getElementById('pmModal');
-  if (!m) {
-    m = document.createElement('div');
-    m.id = 'pmModal';
-    m.style.cssText = 'display:none;position:fixed;inset:0;z-index:2000;background:rgba(15,23,42,.55);align-items:flex-start;justify-content:center;padding:2rem 1rem;overflow:auto';
-    m.onclick = e => { if (e.target === m) m.style.display = 'none'; };
-    document.body.appendChild(m);
-  }
-  m.style.display = 'flex';
-  m.innerHTML = '<div style="background:#fff;border-radius:12px;padding:1.2rem;width:min(96vw,980px);color:var(--g500)">加载中…</div>';
-  try { _pm = await bapi('/api/acct/pallet-mail'); } catch (e) { toast(e.message || '加载失败', true); m.style.display = 'none'; return; }
+  const m = document.getElementById('pmPane');
+  if (!_pm) m.innerHTML = '<div class="card" style="padding:1.2rem;color:var(--g500)">加载中…</div>';
+  try { _pm = await bapi('/api/acct/pallet-mail'); } catch (e) { m.innerHTML = `<div class="card" style="padding:1.2rem;color:#b91c1c">加载失败：${esc(e.message || '')}</div>`; return; }
   _pmEditId = null; _pmReId = null;
   pmRender();
 }
@@ -5867,15 +5870,30 @@ function _pmFmt(t) {
 }
 // 负责人选择: 邮箱输入框 (逗号隔开) + 从系统用户里加
 function _pmPeoplePicker(id, value) {
-  const opts = (_pm.people || []).map(p => `<option value="${esc(p.email)}">${esc(p.display_name || p.username)} · ${esc(p.email)}</option>`).join('');
+  const opts = (_pm.people || []).map(p => p.email
+    ? `<option value="${esc(p.email)}">${esc(p.display_name || p.username)} · ${esc(p.email)}</option>`
+    : `<option value="__setemail__:${esc(p.username)}">${esc(p.display_name || p.username)}（没填邮箱，点一下补上）</option>`).join('');
   return `<div style="display:flex;gap:.35rem;flex-wrap:wrap;align-items:center">
     <input id="${id}" value="${esc(value || '')}" placeholder="邮箱，多个用逗号隔开" style="flex:1 1 260px;min-width:200px">
     <select onchange="pmAddPerson('${id}',this)" style="flex:0 1 220px"><option value="">＋ 从系统用户选…</option>${opts}</select>
   </div>`;
 }
-function pmAddPerson(id, sel) {
-  const v = sel.value; sel.value = '';
+async function pmAddPerson(id, sel) {
+  let v = sel.value; sel.value = '';
   if (!v) return;
+  if (v.startsWith('__setemail__:')) {
+    // 系统用户还没填邮箱 (例如自己注册的会计账号): 当场补上, 存进这个账号
+    const username = v.slice('__setemail__:'.length);
+    const p = (_pm.people || []).find(x => x.username === username) || { username };
+    const email = await pagePrompt(`${p.display_name || username} 的账号还没填邮箱，填一下（会保存到这个账号）：`, '');
+    if (email == null || !email.trim()) return;
+    try { await bapi(`/api/acct/pallet-mail/people/${encodeURIComponent(username)}/email`, { method: 'PUT', body: JSON.stringify({ email: email.trim() }) }); }
+    catch (e) { toast(e.message, true); return; }
+    p.email = email.trim();
+    document.querySelectorAll(`option[value="${CSS.escape(v)}"]`).forEach(o => { o.value = p.email; o.textContent = `${p.display_name || username} · ${p.email}`; });
+    toast(`已保存 ${p.display_name || username} 的邮箱`);
+    v = p.email;
+  }
   const inp = document.getElementById(id);
   const list = inp.value.split(/[,，;；\s]+/).map(x => x.trim()).filter(Boolean);
   if (!list.some(x => x.toLowerCase() === v.toLowerCase())) list.push(v);
@@ -5887,7 +5905,8 @@ function _pmPersonLabel(email) {
 }
 function _pmToList(s) { return String(s || '').split(/\s*,\s*/).filter(Boolean).map(_pmPersonLabel).join('<br>'); }
 function pmRender() {
-  const m = document.getElementById('pmModal');
+  const m = document.getElementById('pmPane');
+  if (!m) return;
   const d = _pm;
   const sec = (title, body) => `<div style="border:1px solid var(--g200);border-radius:10px;padding:.8rem .9rem;margin-bottom:.8rem"><div style="font-weight:800;font-size:.88rem;color:#0f4c6b;margin-bottom:.5rem">${title}</div>${body}</div>`;
   const small = 'font-size:.76rem;color:var(--g500)';
@@ -5975,10 +5994,10 @@ function pmRender() {
         </div>
         <div style="text-align:right;margin-top:.4rem"><button class="btn btn-sm" onclick="_pmReId=null;pmRender()">取消</button> <button class="btn btn-sm btn-blue" onclick="pmReforward(${l.id}, this)">发送</button></div>
       </td></tr>` : ''}`).join('')}</table></div>` : `<div style="${small}">还没有转发过邮件。</div>`;
-  m.innerHTML = `<div style="background:#fff;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,.35);width:min(96vw,980px);padding:1rem 1.1rem" onclick="event.stopPropagation()">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.7rem">
+  m.innerHTML = `<div class="card" style="padding:1rem 1.1rem">
+    <div style="margin-bottom:.7rem">
       <div style="font-weight:800;font-size:1rem">📧 木板邮件自动转发</div>
-      <button onclick="document.getElementById('pmModal').style.display='none'" style="border:1px solid var(--g200);background:#fff;border-radius:8px;padding:.2rem .7rem;cursor:pointer;font-size:.8rem">✕ 关闭</button>
+      <div style="font-size:.78rem;color:var(--g500);margin-top:.15rem">连接 Gmail 邮箱后，客户 / 供应商发来的木板邮件按下面的规则自动转发给负责人（带原正文和附件）。</div>
     </div>
     ${sec('① 连接的 Gmail 邮箱（可以连多个）', conn)}
     ${sec('② 规则：哪个客户 / 供应商的邮件转给谁', rules)}

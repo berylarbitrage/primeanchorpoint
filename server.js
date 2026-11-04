@@ -43555,10 +43555,12 @@ setInterval(() => { pmPollNow('auto').catch(() => {}); }, 5 * 60 * 1000);
 // 日志只留 180 天
 setInterval(() => { try { db.prepare("DELETE FROM pallet_mail_log WHERE created_at < datetime('now','-180 days')").run(); } catch (e) {} }, 24 * 60 * 60 * 1000);
 
+// 负责人下拉: 所有在用的系统账号; 没填邮箱的 (例如自己注册的会计账号) 也列出来, 页面上可以当场补邮箱
 function _pmPeople() {
   try {
-    return db.prepare(`SELECT username, display_name, email FROM admin_users
-      WHERE COALESCE(active,1)=1 AND COALESCE(approval_status,'approved')='approved' AND COALESCE(email,'')!='' ORDER BY display_name COLLATE NOCASE`).all();
+    return db.prepare(`SELECT username, display_name, role, COALESCE(email,'') AS email FROM admin_users
+      WHERE COALESCE(active,1)=1 AND COALESCE(approval_status,'approved')='approved'
+      ORDER BY (COALESCE(email,'')='') , COALESCE(NULLIF(display_name,''), username) COLLATE NOCASE`).all();
   } catch (e) { return []; }
 }
 function _pmCleanEmails(v) {
@@ -43584,6 +43586,17 @@ app.get('/api/acct/pallet-mail', requireAdmin, requireRole('admin'), (req, res) 
     log: db.prepare('SELECT * FROM pallet_mail_log ORDER BY id DESC LIMIT 200').all(),
     people: _pmPeople(),
   });
+});
+// 给还没填邮箱的系统账号补邮箱 (只能补空的, 已有邮箱的去账户管理里改)
+app.put('/api/acct/pallet-mail/people/:username/email', requireAdmin, requireRole('admin'), (req, res) => {
+  const u = db.prepare('SELECT id, username, email FROM admin_users WHERE username=?').get(req.params.username);
+  if (!u) return res.status(404).json({ error: '账号不存在' });
+  const email = String((req.body || {}).email || '').trim().slice(0, 120);
+  if (!pmail.isEmail(email)) return res.status(400).json({ error: '邮箱格式不对' });
+  if (u.email && String(u.email).trim()) return res.status(400).json({ error: '这个账号已经有邮箱了，要改请去账户管理' });
+  db.prepare('UPDATE admin_users SET email=? WHERE id=?').run(email, u.id);
+  auditLog('pallet_mail_set_user_email', req, { targetType: 'admin_user', targetId: u.id, details: { username: u.username, email } });
+  res.json({ success: true });
 });
 app.post('/api/acct/pallet-mail/credentials', requireAdmin, requireRole('admin'), (req, res) => {
   const b = req.body || {};
