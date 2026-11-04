@@ -1141,6 +1141,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
       </select>
       <span id="palletStats" style="font-size:.8rem;color:var(--g500)"></span>
       <button class="btn btn-sm" id="palletBatchApproveBtn" onclick="palletReviewStart()" style="display:none;color:#047857;border-color:#a7f3d0;font-weight:700"></button>
+      <button class="btn btn-sm" id="palletMailBtn" onclick="openPalletMail()" style="display:none" title="连接 Gmail，按客户/供应商把木板邮件自动转发给负责人">📧 邮件自动转发</button>
       <a id="palletCsfClear" onclick="csfClear('pallet')" style="display:none;font-size:.78rem;color:#1d4ed8;cursor:pointer;text-decoration:underline">✕ 清除表头排序/筛选</a>
     </div>
     <div class="card inv-scroll">
@@ -1506,6 +1507,7 @@ function enterMain() {
   if (/^\d+$/.test(invQ || '')) openInvoice(Number(invQ));
   bankOauthResume();
   gustoOauthResume();
+  pmailOauthResume();
 }
 // 介绍费: 普通客服只看自己提交的 (页面上标出来); 管理员有「👥 客服账号」(批准注册 / 设客服主管)
 async function refScopeInit() {
@@ -5826,9 +5828,206 @@ async function cpSave() {
 
 // ── 🪵 木板账单 (Bintique)：全量账单台账, 一行一张发票, 不混银行流水 ──
 let _palletRows = [], _palletLoaded = false;
+// ── 📧 木板邮件自动转发 (仅管理员): 连接 Gmail → 按客户/供应商规则自动转发给负责人 ──
+let _pm = null, _pmEditId = null, _pmReId = null;
+function pmailOauthResume() {
+  const g = new URLSearchParams(location.search).get('pmail');
+  if (!g) return;
+  history.replaceState(null, '', location.pathname);
+  showTab('pallet');
+  if (g === 'connected') toast('✅ Gmail 已连接，之后收到的木板邮件会按规则自动转发');
+  else if (g === 'missing_credentials') toast('请先填写并保存 Google OAuth 的 Client ID / Secret', true);
+  else if (g === 'state_mismatch') toast('授权校验失败（链接过期），请重新点「连接 Gmail」', true);
+  else if (g === 'scope_missing') toast('授权时没有勾选「读取邮件」和「发送邮件」权限，请重新连接并全部允许', true);
+  else if (g === 'no_refresh_token') toast('Google 没有返回长期授权，请到 Google 账号「第三方访问」里移除这个应用后重新连接', true);
+  else if (g.startsWith('denied:')) toast('Gmail 授权被拒绝：' + g.slice(7), true);
+  else if (g.startsWith('error:')) toast('Gmail 连接失败：' + decodeURIComponent(g.slice(6)), true);
+  if (USER.role === 'admin') openPalletMail();
+}
+async function openPalletMail() {
+  let m = document.getElementById('pmModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'pmModal';
+    m.style.cssText = 'display:none;position:fixed;inset:0;z-index:2000;background:rgba(15,23,42,.55);align-items:flex-start;justify-content:center;padding:2rem 1rem;overflow:auto';
+    m.onclick = e => { if (e.target === m) m.style.display = 'none'; };
+    document.body.appendChild(m);
+  }
+  m.style.display = 'flex';
+  m.innerHTML = '<div style="background:#fff;border-radius:12px;padding:1.2rem;width:min(96vw,980px);color:var(--g500)">加载中…</div>';
+  try { _pm = await bapi('/api/acct/pallet-mail'); } catch (e) { toast(e.message || '加载失败', true); m.style.display = 'none'; return; }
+  _pmEditId = null; _pmReId = null;
+  pmRender();
+}
+function _pmFmt(t) {
+  if (!t) return '';
+  const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(t) ? t : String(t).replace(' ', 'T') + 'Z');
+  return isNaN(d) ? esc(t) : d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+// 负责人选择: 邮箱输入框 (逗号隔开) + 从系统用户里加
+function _pmPeoplePicker(id, value) {
+  const opts = (_pm.people || []).map(p => `<option value="${esc(p.email)}">${esc(p.display_name || p.username)} · ${esc(p.email)}</option>`).join('');
+  return `<div style="display:flex;gap:.35rem;flex-wrap:wrap;align-items:center">
+    <input id="${id}" value="${esc(value || '')}" placeholder="邮箱，多个用逗号隔开" style="flex:1 1 260px;min-width:200px">
+    <select onchange="pmAddPerson('${id}',this)" style="flex:0 1 220px"><option value="">＋ 从系统用户选…</option>${opts}</select>
+  </div>`;
+}
+function pmAddPerson(id, sel) {
+  const v = sel.value; sel.value = '';
+  if (!v) return;
+  const inp = document.getElementById(id);
+  const list = inp.value.split(/[,，;；\s]+/).map(x => x.trim()).filter(Boolean);
+  if (!list.some(x => x.toLowerCase() === v.toLowerCase())) list.push(v);
+  inp.value = list.join(', ');
+}
+function _pmPersonLabel(email) {
+  const p = (_pm.people || []).find(x => String(x.email).toLowerCase() === String(email).toLowerCase());
+  return p ? `${esc(p.display_name || p.username)} <span style="color:var(--g400)">${esc(email)}</span>` : esc(email);
+}
+function _pmToList(s) { return String(s || '').split(/\s*,\s*/).filter(Boolean).map(_pmPersonLabel).join('<br>'); }
+function pmRender() {
+  const m = document.getElementById('pmModal');
+  const d = _pm;
+  const sec = (title, body) => `<div style="border:1px solid var(--g200);border-radius:10px;padding:.8rem .9rem;margin-bottom:.8rem"><div style="font-weight:800;font-size:.88rem;color:#0f4c6b;margin-bottom:.5rem">${title}</div>${body}</div>`;
+  const small = 'font-size:.76rem;color:var(--g500)';
+  let conn;
+  if (!d.has_credentials || d._editCreds) {
+    conn = `<div style="${small};line-height:1.7;margin-bottom:.5rem">第一次用要在 Google Cloud 建一个 OAuth 客户端（类型选 <b>Web application</b>），启用 <b>Gmail API</b>，「已获授权的重定向 URI」填：<br>
+      <code style="background:#f1f5f9;padding:1px 6px;border-radius:4px;user-select:all">${esc(d.redirect_uri)}</code><br>
+      公司邮箱是 Google Workspace 的话，OAuth 同意屏幕选 <b>Internal</b>（不用 Google 审核，授权也不会 7 天过期）。</div>
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+        <input id="pmCid" placeholder="Client ID" style="flex:1 1 260px">
+        <input id="pmCsec" placeholder="Client Secret" type="password" style="flex:1 1 200px">
+        <button class="btn btn-sm btn-blue" onclick="pmSaveCreds()">保存</button>
+        ${d.has_credentials ? '<button class="btn btn-sm" onclick="_pm._editCreds=false;pmRender()">取消</button>' : ''}
+      </div>`;
+  } else if (!d.connected) {
+    conn = `<div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+      <a class="btn btn-sm btn-blue" href="/api/acct/pallet-mail/connect" style="text-decoration:none">🔗 连接 Gmail</a>
+      <span style="${small}">用要转发邮件的那个邮箱登录，允许「读取」和「发送」邮件。只会处理连接之后收到的邮件。</span>
+      <a onclick="_pm._editCreds=true;pmRender()" style="${small};cursor:pointer;text-decoration:underline;margin-left:auto">改 Client ID / Secret</a>
+    </div>${d.last_error ? `<div style="color:#b91c1c;font-size:.78rem;margin-top:.4rem">⚠ ${esc(d.last_error)}</div>` : ''}`;
+  } else {
+    const r = d.last_poll_result;
+    conn = `<div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+      <span>✅ 已连接 <b>${esc(d.email)}</b></span>
+      <span style="${small}">${d.connected_by ? esc(d.connected_by) + ' · ' : ''}从 ${_pmFmt(d.connected_at)} 之后的邮件开始处理</span>
+      <label style="display:flex;gap:.3rem;align-items:center;font-size:.82rem;margin-left:auto"><input type="checkbox" ${d.enabled ? 'checked' : ''} onchange="pmSaveSettings({enabled:this.checked})"> 自动转发（每 5 分钟）</label>
+      <button class="btn btn-sm" onclick="pmPoll(this)">🔄 立即检查</button>
+      <button class="btn btn-sm" style="color:#b91c1c" onclick="pmDisconnect()">断开</button>
+    </div>
+    <div style="${small};margin-top:.35rem">${d.last_poll_at ? '上次检查 ' + _pmFmt(d.last_poll_at) : '还没检查过'}${r && r.ok ? ` · 看了 ${r.checked} 封新邮件，转发 ${r.forwarded} 封${r.failed ? `，<span style="color:#b91c1c">失败 ${r.failed} 封</span>` : ''}${r.label_found === false ? ' · <span style="color:#b45309">Gmail 里没找到标签「' + esc(d.label) + '」</span>' : ''}` : ''}</div>
+    ${d.last_error ? `<div style="color:#b91c1c;font-size:.78rem;margin-top:.3rem">⚠ ${esc(d.last_error)}</div>` : ''}`;
+  }
+  const settings = `<div style="display:grid;grid-template-columns:150px 1fr;gap:.5rem .7rem;align-items:center;font-size:.83rem">
+      <span>Gmail 标签（可选）</span>
+      <div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap"><input id="pmLabel" value="${esc(d.label)}" placeholder="例如 Pallet" style="width:200px"><span style="${small}">你在 Gmail 里打了这个标签、但没命中下面规则的邮件，转给默认负责人</span></div>
+      <span>默认负责人</span>
+      ${_pmPeoplePicker('pmDefaultTo', d.default_to)}
+    </div>
+    <div style="text-align:right;margin-top:.5rem"><button class="btn btn-sm btn-blue" onclick="pmSaveSettings({label:document.getElementById('pmLabel').value, default_to:document.getElementById('pmDefaultTo').value})">保存设置</button></div>`;
+  const custs = [...new Set((_palletRows || []).map(r => r.customer).filter(Boolean))].sort();
+  const editing = _pmEditId != null ? (d.rules.find(r => r.id === _pmEditId) || {}) : {};
+  const form = `<div style="background:#f8fafc;border:1px dashed var(--g300);border-radius:8px;padding:.6rem;margin-top:.6rem">
+      <div style="font-weight:700;font-size:.8rem;margin-bottom:.4rem">${_pmEditId != null ? '✏️ 修改规则' : '＋ 新增规则'}</div>
+      <div style="display:grid;grid-template-columns:150px 1fr;gap:.45rem .7rem;align-items:center;font-size:.83rem">
+        <span>客户 / 供应商</span><input id="pmRName" list="pmCustList" value="${esc(editing.name || '')}" placeholder="例如 GOFO"><datalist id="pmCustList">${custs.map(c => `<option value="${esc(c)}"></option>`).join('')}</datalist>
+        <span>发件人邮箱 / 域名</span><input id="pmRSenders" value="${esc(editing.senders || '')}" placeholder="billing@gofo.com, @mspallet.com（逗号隔开）">
+        <span>关键词（可选）</span><input id="pmRKeywords" value="${esc(editing.keywords || '')}" placeholder="主题或正文里出现就算，例如 GOFO, MPINV-GOFO">
+        <span>转发给（负责人）</span>${_pmPeoplePicker('pmRTo', editing.forward_to || '')}
+        <span>启用</span><label style="display:flex;gap:.3rem;align-items:center"><input type="checkbox" id="pmRActive" ${editing.active === 0 ? '' : 'checked'}> 启用这条规则</label>
+      </div>
+      <div style="text-align:right;margin-top:.5rem;display:flex;gap:.4rem;justify-content:flex-end">
+        ${_pmEditId != null ? '<button class="btn btn-sm" onclick="_pmEditId=null;pmRender()">取消</button>' : ''}
+        <button class="btn btn-sm btn-blue" onclick="pmSaveRule()">${_pmEditId != null ? '保存修改' : '添加规则'}</button>
+      </div>
+      <div style="${small};margin-top:.3rem">发件人或关键词任一命中就转发；一封邮件命中多条规则会转给所有相关负责人。新规则只管它建好之后收到的邮件。</div>
+    </div>`;
+  const rules = (d.rules.length ? `<table style="width:100%;font-size:.8rem;border-collapse:collapse">
+      <tr style="text-align:left;color:var(--g500)"><th style="padding:.3rem">客户 / 供应商</th><th>发件人</th><th>关键词</th><th>转发给</th><th></th></tr>
+      ${d.rules.map(r => `<tr style="border-top:1px solid var(--g100);${r.active ? '' : 'opacity:.5'}">
+        <td style="padding:.35rem;font-weight:700">${esc(r.name)}${r.active ? '' : ' <span style="font-weight:400;color:var(--g400)">（停用）</span>'}</td>
+        <td style="word-break:break-all">${esc(r.senders) || '—'}</td><td>${esc(r.keywords) || '—'}</td>
+        <td>${_pmToList(r.forward_to)}</td>
+        <td style="white-space:nowrap;text-align:right"><button class="btn btn-sm" onclick="_pmEditId=${r.id};pmRender()">✏️ 修改</button> <button class="btn btn-sm" style="color:#b91c1c" onclick="pmDeleteRule(${r.id})">🗑</button></td>
+      </tr>`).join('')}</table>` : `<div style="${small}">还没有规则。把客户/供应商的邮箱填进来，选好负责人就行。</div>`) + form;
+  const log = d.log.length ? `<div style="max-height:340px;overflow:auto"><table style="width:100%;font-size:.78rem;border-collapse:collapse">
+      <tr style="text-align:left;color:var(--g500);position:sticky;top:0;background:#fff"><th style="padding:.3rem">时间</th><th>发件人 / 主题</th><th>规则</th><th>转发给</th><th>状态</th><th></th></tr>
+      ${d.log.map(l => `<tr style="border-top:1px solid var(--g100)">
+        <td style="padding:.35rem;white-space:nowrap">${_pmFmt(l.created_at)}</td>
+        <td style="max-width:320px"><div style="color:var(--g500);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.from_addr)}</div><div style="font-weight:600">${esc(l.subject) || '（无主题）'}</div></td>
+        <td><span data-tip="${esc(l.reason)}">${esc(l.rule_names) || '—'}</span>${l.by_user && l.by_user !== 'auto' ? `<div style="color:var(--g400)">${esc(l.by_user)} 手动改发</div>` : ''}</td>
+        <td>${_pmToList(l.forwarded_to)}</td>
+        <td>${l.status === 'sent' ? '<span style="color:#047857">✓ 已转发</span>' : `<span style="color:#b91c1c" data-tip="${esc(l.error)}">✗ 失败</span>`}</td>
+        <td style="text-align:right"><button class="btn btn-sm" onclick="_pmReId=${_pmReId === l.id ? 'null' : l.id};pmRender()">↪ 改发给…</button></td>
+      </tr>${_pmReId === l.id ? `<tr><td colspan="6" style="background:#f8fafc;padding:.5rem">
+        <div style="display:grid;grid-template-columns:90px 1fr;gap:.4rem .6rem;align-items:center">
+          <span>转发给</span>${_pmPeoplePicker('pmReTo', '')}
+          <span>附言（可选）</span><input id="pmReNote" placeholder="例如：这封请你跟进一下">
+        </div>
+        <div style="text-align:right;margin-top:.4rem"><button class="btn btn-sm" onclick="_pmReId=null;pmRender()">取消</button> <button class="btn btn-sm btn-blue" onclick="pmReforward(${l.id}, this)">发送</button></div>
+      </td></tr>` : ''}`).join('')}</table></div>` : `<div style="${small}">还没有转发过邮件。</div>`;
+  m.innerHTML = `<div style="background:#fff;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,.35);width:min(96vw,980px);padding:1rem 1.1rem" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.7rem">
+      <div style="font-weight:800;font-size:1rem">📧 木板邮件自动转发</div>
+      <button onclick="document.getElementById('pmModal').style.display='none'" style="border:1px solid var(--g200);background:#fff;border-radius:8px;padding:.2rem .7rem;cursor:pointer;font-size:.8rem">✕ 关闭</button>
+    </div>
+    ${sec('① 连接 Gmail', conn)}
+    ${sec('② 规则：哪个客户 / 供应商的邮件转给谁', rules)}
+    ${sec('③ 其他设置', settings)}
+    ${sec('④ 转发记录（可改发给别人）', log)}
+  </div>`;
+}
+async function _pmReload() { try { _pm = await bapi('/api/acct/pallet-mail'); pmRender(); } catch (e) { toast(e.message, true); } }
+async function pmSaveCreds() {
+  const client_id = document.getElementById('pmCid').value.trim(), client_secret = document.getElementById('pmCsec').value.trim();
+  try { await bapi('/api/acct/pallet-mail/credentials', { method: 'POST', body: JSON.stringify({ client_id, client_secret }) }); toast('已保存，下一步点「连接 Gmail」'); _pmReload(); }
+  catch (e) { toast(e.message, true); }
+}
+async function pmSaveSettings(body) {
+  try { await bapi('/api/acct/pallet-mail/settings', { method: 'PUT', body: JSON.stringify(body) }); toast('已保存'); _pmReload(); }
+  catch (e) { toast(e.message, true); }
+}
+async function pmDisconnect() {
+  if (!await pageConfirm('断开 Gmail？断开后不再自动转发（规则和记录保留）。')) return;
+  try { await bapi('/api/acct/pallet-mail/disconnect', { method: 'POST' }); toast('已断开'); _pmReload(); } catch (e) { toast(e.message, true); }
+}
+async function pmPoll(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '检查中…'; }
+  try { const r = await bapi('/api/acct/pallet-mail/poll', { method: 'POST' }); toast(`检查完成：转发 ${r.forwarded} 封${r.failed ? `，失败 ${r.failed} 封` : ''}`); }
+  catch (e) { toast(e.message, true); }
+  _pmReload();
+}
+async function pmSaveRule() {
+  const body = {
+    name: document.getElementById('pmRName').value, senders: document.getElementById('pmRSenders').value,
+    keywords: document.getElementById('pmRKeywords').value, forward_to: document.getElementById('pmRTo').value,
+    active: document.getElementById('pmRActive').checked,
+  };
+  try {
+    if (_pmEditId != null) await bapi(`/api/acct/pallet-mail/rules/${_pmEditId}`, { method: 'PUT', body: JSON.stringify(body) });
+    else await bapi('/api/acct/pallet-mail/rules', { method: 'POST', body: JSON.stringify(body) });
+    toast(_pmEditId != null ? '规则已保存' : '规则已添加');
+    _pmEditId = null;
+    _pmReload();
+  } catch (e) { toast(e.message, true); }
+}
+async function pmDeleteRule(id) {
+  const r = _pm.rules.find(x => x.id === id);
+  if (!await pageConfirm(`删除「${r ? r.name : ''}」这条转发规则？`)) return;
+  try { await bapi(`/api/acct/pallet-mail/rules/${id}`, { method: 'DELETE' }); toast('已删除'); _pmReload(); } catch (e) { toast(e.message, true); }
+}
+async function pmReforward(id, btn) {
+  const to = document.getElementById('pmReTo').value.trim(), note = document.getElementById('pmReNote').value.trim();
+  if (!to) { toast('请选择或填写转发给谁', true); return; }
+  if (btn) { btn.disabled = true; btn.textContent = '发送中…'; }
+  try { await bapi(`/api/acct/pallet-mail/log/${id}/forward`, { method: 'POST', body: JSON.stringify({ to, note }) }); toast('✅ 已转发'); _pmReId = null; _pmReload(); }
+  catch (e) { toast(e.message, true); if (btn) { btn.disabled = false; btn.textContent = '发送'; } }
+}
 function canAddPallet() { return ['accounting', 'admin'].includes(USER.role); }
 async function loadPalletList(force) {
   document.getElementById('palletAddBtn').style.display = canAddPallet() ? '' : 'none';
+  document.getElementById('palletMailBtn').style.display = USER.role === 'admin' ? '' : 'none';
   if (_palletLoaded && !force) { renderPalletList(); return; }
   try {
     const r = await api('/api/acct/pallet-bills');
