@@ -43344,14 +43344,32 @@ app.delete('/api/acct/pallet-manual/:id', requireAdmin, requireRole('accounting'
   res.json({ success: true });
 });
 
-// 📧 木板邮件自动转发: 连接管理员的 Gmail, 每 5 分钟看一眼新邮件, 命中规则 (按客户/供应商:
-// 发件人邮箱或域名 / 关键词) 的自动转发给负责人 (带原正文和附件); 都没命中但带了指定
-// Gmail 标签的转给默认收件人。每封转发记日志, 可以在日志里改发给别人。
-// 只处理连接之后收到的邮件; 每条规则只管它建好之后收到的邮件。
+// 📧 木板邮件自动转发: 可以连接多个 Gmail 邮箱, 每 5 分钟看一眼新邮件, 命中规则 (按客户/供应商:
+// 发件人邮箱或域名 / 关键词) 的自动转发给负责人 (带原正文和附件, 从收到这封邮件的那个邮箱发出);
+// 都没命中但带了指定 Gmail 标签的转给默认负责人。每封转发记日志, 可以在日志里改发给别人。
+// 规则对所有邮箱通用; 同一封邮件 (Message-ID 相同) 进了多个邮箱只转一次; 自己发的 / 已连接
+// 的邮箱发来的 / 带转发标记的邮件不处理, 免得几个邮箱之间转来转去。
+// 每个邮箱只处理它连接之后收到的邮件; 每条规则只管它建好之后收到的邮件。
 // 凭据: integration_settings provider='gmail_pallet' (api_key=Client ID, api_secret=Client Secret,
-// config=token/账号/标签/默认收件人等), 也可用环境变量 GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET。
+// config=标签/默认负责人), 也可用环境变量 GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET。
+// 每个邮箱的 token 存 pallet_mail_accounts。
 const pmail = require('./pallet-mail');
 db.prepare(`INSERT OR IGNORE INTO integration_settings (provider, enabled, config) VALUES ('gmail_pallet', 0, '{}')`).run();
+db.exec(`CREATE TABLE IF NOT EXISTS pallet_mail_accounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL,
+  refresh_token TEXT DEFAULT '',
+  access_token TEXT DEFAULT '',
+  token_expires_at INTEGER DEFAULT 0,
+  enabled INTEGER DEFAULT 1,
+  connected_at TEXT DEFAULT '',
+  connected_by TEXT DEFAULT '',
+  last_poll_at TEXT DEFAULT '',
+  last_poll_result TEXT DEFAULT '',
+  last_error TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_pallet_mail_accounts_email ON pallet_mail_accounts(email COLLATE NOCASE)'); } catch (e) {}
 db.exec(`CREATE TABLE IF NOT EXISTS pallet_mail_rules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT DEFAULT '',
@@ -43379,7 +43397,11 @@ db.exec(`CREATE TABLE IF NOT EXISTS pallet_mail_log (
   by_user TEXT DEFAULT 'auto',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
+try { db.exec("ALTER TABLE pallet_mail_log ADD COLUMN account_id INTEGER DEFAULT NULL"); } catch (e) {}
+try { db.exec("ALTER TABLE pallet_mail_log ADD COLUMN account_email TEXT DEFAULT ''"); } catch (e) {}
+try { db.exec("ALTER TABLE pallet_mail_log ADD COLUMN message_id TEXT DEFAULT ''"); } catch (e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_pallet_mail_log_gid ON pallet_mail_log(gmail_id)'); } catch (e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_pallet_mail_log_mid ON pallet_mail_log(message_id)'); } catch (e) {}
 
 function _pmRow() { return db.prepare("SELECT * FROM integration_settings WHERE provider='gmail_pallet'").get() || {}; }
 function _pmCfg() {
@@ -43397,107 +43419,139 @@ function _pmSaveCfg(patch) {
   db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='gmail_pallet'").run(JSON.stringify(cfg));
   return cfg;
 }
+// 旧版只能连一个邮箱, token 存在 config 里: 搬进 pallet_mail_accounts
+try {
+  const { cfg } = _pmCfg();
+  if (cfg.refresh_token && cfg.email) {
+    const ex = db.prepare('SELECT id FROM pallet_mail_accounts WHERE email=? COLLATE NOCASE').get(cfg.email);
+    const id = ex ? ex.id : db.prepare(`INSERT INTO pallet_mail_accounts (email, refresh_token, access_token, token_expires_at, enabled, connected_at, connected_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(cfg.email, cfg.refresh_token, cfg.access_token || '', cfg.token_expires_at || 0, cfg.enabled === false ? 0 : 1, cfg.connected_at || new Date().toISOString(), cfg.connected_by || '').lastInsertRowid;
+    db.prepare("UPDATE pallet_mail_log SET account_id=?, account_email=? WHERE account_id IS NULL").run(id, cfg.email);
+  }
+  if ('refresh_token' in cfg || 'access_token' in cfg || 'email' in cfg)
+    _pmSaveCfg({ refresh_token: null, access_token: null, token_expires_at: null, email: null, connected_at: null, connected_by: null, enabled: null, last_poll_at: null, last_poll_result: null, last_error: null });
+} catch (e) { console.log('[pallet-mail] 旧账号迁移失败:', e.message); }
+
+function _pmAccounts() { return db.prepare('SELECT * FROM pallet_mail_accounts ORDER BY id').all(); }
+function _pmAccount(id) { return db.prepare('SELECT * FROM pallet_mail_accounts WHERE id=?').get(id); }
 function _pmRedirectUri(req) {
   const proto = req.headers['x-forwarded-proto'] || req.protocol;
   const base = (process.env.BASE_URL || '').replace(/\/$/, '') || `${proto}://${req.get('host')}`;
   return base + '/gmail/oauth/callback';
 }
-// 可用的 access token, 快过期就续期 (Google 的 refresh token 可重复用, 串行只是省请求)
-let _pmRefreshing = null;
-async function _pmToken() {
-  const { cfg, clientId, clientSecret } = _pmCfg();
-  if (!cfg.refresh_token) throw new Error('还没连接 Gmail');
-  if (cfg.access_token && (cfg.token_expires_at || 0) - Date.now() > 60 * 1000) return cfg.access_token;
-  if (!_pmRefreshing) {
-    _pmRefreshing = pmail.refreshToken({ clientId, clientSecret, refreshToken: cfg.refresh_token })
-      .then(tk => { _pmSaveCfg({ access_token: tk.access_token, token_expires_at: tk.expires_at, ...(tk.refresh_token ? { refresh_token: tk.refresh_token } : {}) }); return tk.access_token; })
+// 某个邮箱可用的 access token, 快过期就续期 (同一个邮箱的续期串行)
+const _pmRefreshing = new Map();
+async function _pmToken(accId) {
+  const acc = _pmAccount(accId);
+  if (!acc || !acc.refresh_token) throw new Error('这个邮箱还没连接或授权已失效，请重新连接');
+  if (acc.access_token && (acc.token_expires_at || 0) - Date.now() > 60 * 1000) return acc.access_token;
+  if (!_pmRefreshing.has(acc.id)) {
+    const { clientId, clientSecret } = _pmCfg();
+    _pmRefreshing.set(acc.id, pmail.refreshToken({ clientId, clientSecret, refreshToken: acc.refresh_token })
+      .then(tk => {
+        db.prepare('UPDATE pallet_mail_accounts SET access_token=?, token_expires_at=?, refresh_token=COALESCE(NULLIF(?,\'\'), refresh_token) WHERE id=?')
+          .run(tk.access_token, tk.expires_at, tk.refresh_token || '', acc.id);
+        return tk.access_token;
+      })
       .catch(e => {
         // invalid_grant = 授权被撤销 / 过期, 只能重新连接
-        if (e.code === 'invalid_grant') _pmSaveCfg({ access_token: null, refresh_token: null, last_error: 'Gmail 授权已失效，请重新连接' });
+        if (e.code === 'invalid_grant') db.prepare("UPDATE pallet_mail_accounts SET access_token='', refresh_token='', last_error='Gmail 授权已失效，请重新连接' WHERE id=?").run(acc.id);
         throw e;
       })
-      .finally(() => { _pmRefreshing = null; });
+      .finally(() => { _pmRefreshing.delete(acc.id); }));
   }
-  return _pmRefreshing;
+  return _pmRefreshing.get(acc.id);
 }
 function _pmRules() { return db.prepare('SELECT * FROM pallet_mail_rules ORDER BY name COLLATE NOCASE, id').all(); }
-function _pmAutoDone(gid) {
-  // 自动转发成功过 → 不再处理; 失败的最多重试 3 次
-  const rows = db.prepare("SELECT status FROM pallet_mail_log WHERE gmail_id=? AND by_user='auto'").all(gid);
+function _pmAutoDone(accId, gid) {
+  // 这个邮箱的这封自动转发成功过 → 不再处理; 失败的最多重试 3 次
+  const rows = db.prepare("SELECT status FROM pallet_mail_log WHERE account_id=? AND gmail_id=? AND by_user='auto'").all(accId, gid);
   return rows.some(r => r.status === 'sent') || rows.filter(r => r.status === 'error').length >= 3;
 }
-async function _pmForwardAndLog(token, { meta, to, ruleNames, reason, by, note }) {
-  const { cfg } = _pmCfg();
+async function _pmForwardAndLog(acc, token, { meta, to, ruleNames, reason, by, note }) {
   const base = {
     gmail_id: meta.id, thread_id: meta.threadId || '',
     from_addr: pmail.header(meta, 'From').slice(0, 300), subject: pmail.header(meta, 'Subject').slice(0, 500),
     received_at: meta.internalDate ? new Date(Number(meta.internalDate)).toISOString() : '',
     rule_names: ruleNames || '', reason: reason || '', forwarded_to: to.join(', '), by_user: by || 'auto',
+    account_id: acc.id, account_email: acc.email, message_id: pmail.header(meta, 'Message-ID').slice(0, 300),
   };
+  const cols = 'gmail_id, thread_id, from_addr, subject, received_at, rule_names, reason, forwarded_to, by_user, account_id, account_email, message_id';
+  const vals = '@gmail_id, @thread_id, @from_addr, @subject, @received_at, @rule_names, @reason, @forwarded_to, @by_user, @account_id, @account_email, @message_id';
   try {
-    const sentId = await pmail.forwardMessage(token, { msgId: meta.id, from: cfg.email, to, note });
-    db.prepare(`INSERT INTO pallet_mail_log (gmail_id, thread_id, from_addr, subject, received_at, rule_names, reason, forwarded_to, status, sent_id, by_user)
-      VALUES (@gmail_id, @thread_id, @from_addr, @subject, @received_at, @rule_names, @reason, @forwarded_to, 'sent', @sent_id, @by_user)`).run({ ...base, sent_id: sentId });
+    const sentId = await pmail.forwardMessage(token, { msgId: meta.id, from: acc.email, to, note });
+    db.prepare(`INSERT INTO pallet_mail_log (${cols}, status, sent_id) VALUES (${vals}, 'sent', @sent_id)`).run({ ...base, sent_id: sentId });
     return { ok: true };
   } catch (e) {
-    db.prepare(`INSERT INTO pallet_mail_log (gmail_id, thread_id, from_addr, subject, received_at, rule_names, reason, forwarded_to, status, error, by_user)
-      VALUES (@gmail_id, @thread_id, @from_addr, @subject, @received_at, @rule_names, @reason, @forwarded_to, 'error', @error, @by_user)`).run({ ...base, error: String(e.message || e).slice(0, 300) });
+    db.prepare(`INSERT INTO pallet_mail_log (${cols}, status, error) VALUES (${vals}, 'error', @error)`).run({ ...base, error: String(e.message || e).slice(0, 300) });
+    return { ok: false, error: e.message };
+  }
+}
+async function _pmPollAccount(acc, ctx) {
+  const started = Date.now();
+  try {
+    const token = await _pmToken(acc.id);
+    // 标签名 → id (每个邮箱的标签 id 不一样, 标签也可能改名/删掉, 每轮重新查)
+    let labelId = '';
+    if (ctx.cfg.label) {
+      const labels = await pmail.listLabels(token);
+      const l = labels.find(x => String(x.name).toLowerCase() === String(ctx.cfg.label).toLowerCase());
+      labelId = l ? l.id : '';
+    }
+    const since = Math.floor((Date.parse(acc.connected_at || '') || Date.now()) / 1000);
+    // 最近 3 天、连接之后; 不看自己发的 (含转发出去的)
+    const q = `after:${since} newer_than:3d -from:me -in:sent -in:chats -in:spam -in:trash`;
+    const ids = await pmail.listMessageIds(token, q, 200);
+    let checked = 0, forwarded = 0, failed = 0, dup = 0;
+    for (const id of ids) {
+      if (_pmAutoDone(acc.id, id)) continue;
+      checked++;
+      const meta = await pmail.getMessageMeta(token, id);
+      // 本系统转发出去的 / 已连接的邮箱发来的 → 跳过, 免得几个邮箱之间来回转
+      if (pmail.header(meta, pmail.FORWARD_HEADER)) continue;
+      if (ctx.ownEmails.has(pmail.emailOf(pmail.header(meta, 'From')))) continue;
+      const m = { from: pmail.header(meta, 'From'), subject: pmail.header(meta, 'Subject'), snippet: meta.snippet || '', labelIds: meta.labelIds || [], internalDate: meta.internalDate };
+      const hit = pmail.matchMessage(m, ctx.rules, { labelId, defaultTo: ctx.cfg.default_to, labelSince: Date.parse(ctx.cfg.label_set_at || '') || 0 });
+      if (!hit.to.length) continue;
+      // 同一封邮件 (Message-ID) 别的邮箱已经自动转发过 → 不再转
+      const mid = pmail.header(meta, 'Message-ID');
+      if (mid && db.prepare("SELECT 1 FROM pallet_mail_log WHERE message_id=? AND by_user='auto' AND status='sent' AND account_id<>? LIMIT 1").get(mid, acc.id)) { dup++; continue; }
+      const r = await _pmForwardAndLog(acc, token, {
+        meta, to: hit.to,
+        ruleNames: hit.byLabel ? `标签 ${ctx.cfg.label}` : hit.rules.map(h => h.rule.name).join('、'),
+        reason: hit.byLabel ? `带 Gmail 标签「${ctx.cfg.label}」→ 默认负责人` : hit.rules.map(h => h.reason).join('；'),
+      });
+      if (r.ok) forwarded++; else failed++;
+    }
+    const result = { ok: true, scanned: ids.length, checked, forwarded, failed, dup, label_found: ctx.cfg.label ? !!labelId : null, ms: Date.now() - started };
+    db.prepare("UPDATE pallet_mail_accounts SET last_poll_at=?, last_poll_result=?, last_error='' WHERE id=?").run(new Date().toISOString(), JSON.stringify(result), acc.id);
+    return result;
+  } catch (e) {
+    db.prepare('UPDATE pallet_mail_accounts SET last_poll_at=?, last_error=? WHERE id=?').run(new Date().toISOString(), String(e.message || e).slice(0, 300), acc.id);
+    console.log(`[pallet-mail] ${acc.email} 检查失败:`, e.message);
     return { ok: false, error: e.message };
   }
 }
 let _pmPolling = null;
-function pmPollNow(reason) {
+// 依次检查所有开着自动转发的邮箱 (串行, 这样 Message-ID 去重对同一轮里的几个邮箱也有效)
+function pmPollNow(reason, onlyId) {
   if (_pmPolling) return _pmPolling;
   _pmPolling = (async () => {
-    const started = Date.now();
-    const { cfg } = _pmCfg();
-    if (!cfg.refresh_token) return { ok: false, error: '还没连接 Gmail' };
-    try {
-      const token = await _pmToken();
-      // 标签名 → id (标签可能改名/删掉, 每轮重新查)
-      let labelId = '';
-      if (cfg.label) {
-        const labels = await pmail.listLabels(token);
-        const l = labels.find(x => String(x.name).toLowerCase() === String(cfg.label).toLowerCase());
-        labelId = l ? l.id : '';
-      }
-      const since = Math.floor((Date.parse(cfg.connected_at || '') || Date.now()) / 1000);
-      // 最近 3 天、连接之后; 不看自己发的 (含转发出去的), 免得转来转去
-      const q = `after:${since} newer_than:3d -from:me -in:sent -in:chats -in:spam -in:trash`;
-      const ids = await pmail.listMessageIds(token, q, 200);
-      const rules = _pmRules();
-      let checked = 0, forwarded = 0, failed = 0;
-      for (const id of ids) {
-        if (_pmAutoDone(id)) continue;
-        checked++;
-        const meta = await pmail.getMessageMeta(token, id);
-        const m = { from: pmail.header(meta, 'From'), subject: pmail.header(meta, 'Subject'), snippet: meta.snippet || '', labelIds: meta.labelIds || [], internalDate: meta.internalDate };
-        const hit = pmail.matchMessage(m, rules, { labelId, defaultTo: cfg.default_to, labelSince: Date.parse(cfg.label_set_at || '') || 0 });
-        if (!hit.to.length) continue;
-        const r = await _pmForwardAndLog(token, {
-          meta, to: hit.to,
-          ruleNames: hit.byLabel ? `标签 ${cfg.label}` : hit.rules.map(h => h.rule.name).join('、'),
-          reason: hit.byLabel ? `带 Gmail 标签「${cfg.label}」→ 默认收件人` : hit.rules.map(h => h.reason).join('；'),
-        });
-        if (r.ok) forwarded++; else failed++;
-      }
-      const result = { ok: true, reason: reason || '', scanned: ids.length, checked, forwarded, failed, label_found: cfg.label ? !!labelId : null, ms: Date.now() - started };
-      _pmSaveCfg({ last_poll_at: new Date().toISOString(), last_poll_result: result, last_error: null });
-      return result;
-    } catch (e) {
-      _pmSaveCfg({ last_poll_at: new Date().toISOString(), last_error: String(e.message || e).slice(0, 300) });
-      console.log('[pallet-mail] 检查失败:', e.message);
-      return { ok: false, error: e.message };
+    const all = _pmAccounts();
+    const accs = all.filter(a => a.refresh_token && (onlyId ? a.id === onlyId : a.enabled));
+    if (!accs.length) return { ok: false, error: onlyId ? '这个邮箱还没连接或授权已失效' : '没有开着自动转发的邮箱' };
+    const ctx = { cfg: _pmCfg().cfg, rules: _pmRules(), ownEmails: new Set(all.map(a => String(a.email).toLowerCase())) };
+    const out = { ok: true, reason: reason || '', accounts: 0, forwarded: 0, failed: 0, errors: [] };
+    for (const a of accs) {
+      const r = await _pmPollAccount(a, ctx);
+      out.accounts++;
+      if (r.ok) { out.forwarded += r.forwarded; out.failed += r.failed; } else out.errors.push(`${a.email}：${r.error}`);
     }
+    return out;
   })().finally(() => { _pmPolling = null; });
   return _pmPolling;
 }
-setInterval(() => {
-  try {
-    const { cfg } = _pmCfg();
-    if (cfg.refresh_token && cfg.enabled !== false) pmPollNow('auto').catch(() => {});
-  } catch (e) { /* 下一轮再试 */ }
-}, 5 * 60 * 1000);
+setInterval(() => { pmPollNow('auto').catch(() => {}); }, 5 * 60 * 1000);
 // 日志只留 180 天
 setInterval(() => { try { db.prepare("DELETE FROM pallet_mail_log WHERE created_at < datetime('now','-180 days')").run(); } catch (e) {} }, 24 * 60 * 60 * 1000);
 
@@ -43520,10 +43574,12 @@ app.get('/api/acct/pallet-mail', requireAdmin, requireRole('admin'), (req, res) 
     has_credentials: !!(clientId && clientSecret),
     client_id: clientId ? clientId.slice(0, 12) + '…' : '',
     redirect_uri: _pmRedirectUri(req),
-    connected: !!cfg.refresh_token,
-    email: cfg.email || '', connected_at: cfg.connected_at || '', connected_by: cfg.connected_by || '',
-    enabled: cfg.enabled !== false, label: cfg.label || '', default_to: cfg.default_to || '',
-    last_poll_at: cfg.last_poll_at || '', last_poll_result: cfg.last_poll_result || null, last_error: cfg.last_error || '',
+    accounts: _pmAccounts().map(a => {
+      let r = null; try { r = a.last_poll_result ? JSON.parse(a.last_poll_result) : null; } catch (e) {}
+      return { id: a.id, email: a.email, connected: !!a.refresh_token, enabled: !!a.enabled, connected_at: a.connected_at, connected_by: a.connected_by,
+        last_poll_at: a.last_poll_at, last_poll_result: r, last_error: a.last_error };
+    }),
+    label: cfg.label || '', default_to: cfg.default_to || '',
     rules: _pmRules(),
     log: db.prepare('SELECT * FROM pallet_mail_log ORDER BY id DESC LIMIT 200').all(),
     people: _pmPeople(),
@@ -43537,15 +43593,17 @@ app.post('/api/acct/pallet-mail/credentials', requireAdmin, requireRole('admin')
   auditLog('pallet_mail_credentials', req, { targetType: 'integration', targetId: 'gmail_pallet' });
   res.json({ success: true });
 });
-// 浏览器直接导航过来 (凭 pa_token cookie 过 requireAdmin), 出错 302 回 /accounting 带参数
+// 浏览器直接导航过来 (凭 pa_token cookie 过 requireAdmin), 出错 302 回 /accounting 带参数。
+// ?hint=邮箱 → 重新连接某个邮箱时 Google 直接选中它; 不带 = 连接一个新邮箱 (Google 让你选账号)
 app.get('/api/acct/pallet-mail/connect', requireAdmin, requireRole('admin'), (req, res) => {
-  const { clientId, clientSecret, cfg } = _pmCfg();
+  const { clientId, clientSecret } = _pmCfg();
   if (!clientId || !clientSecret) return res.redirect('/accounting?pmail=missing_credentials');
   const state = crypto.randomBytes(24).toString('hex');
   const redirectUri = _pmRedirectUri(req);
   db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('gmail_pallet_oauth_state', ?, CURRENT_TIMESTAMP)")
     .run(JSON.stringify({ state, at: Date.now(), by: req.userName || '', redirect_uri: redirectUri }));
-  res.redirect(pmail.authorizeUrl({ clientId, redirectUri, state, loginHint: cfg.email || '' }));
+  const hint = String(req.query.hint || '').trim();
+  res.redirect(pmail.authorizeUrl({ clientId, redirectUri, state, loginHint: pmail.isEmail(hint) ? hint : '', selectAccount: !hint }));
 });
 app.get('/gmail/oauth/callback', async (req, res) => {
   const back = q => res.redirect('/accounting?pmail=' + q);
@@ -43555,33 +43613,44 @@ app.get('/gmail/oauth/callback', async (req, res) => {
     let st = {}; try { st = JSON.parse((stRow && stRow.value) || '{}'); } catch (e) {}
     if (req.query.error) return back(encodeURIComponent('denied:' + String(req.query.error).slice(0, 80)));
     if (!req.query.code || !st.state || String(req.query.state || '') !== st.state || Date.now() - (st.at || 0) > 15 * 60 * 1000) return back('state_mismatch');
-    const { clientId, clientSecret, cfg } = _pmCfg();
+    const { clientId, clientSecret } = _pmCfg();
     const tk = await pmail.exchangeCode({ clientId, clientSecret, redirectUri: st.redirect_uri, code: String(req.query.code) });
     const granted = String(tk.scope || '');
     if (!pmail.SCOPES.every(s => granted.includes(s))) return back('scope_missing');
-    const rt = tk.refresh_token || cfg.refresh_token;
-    if (!rt) return back('no_refresh_token');
     const prof = await pmail.profile(tk.access_token);
-    const sameAccount = cfg.email && String(cfg.email).toLowerCase() === String(prof.emailAddress || '').toLowerCase();
-    _pmSaveCfg({
-      access_token: tk.access_token, refresh_token: rt, token_expires_at: tk.expires_at,
-      email: prof.emailAddress || '', connected_by: st.by || '',
-      // 换了账号 (或第一次连) 才把「从这之后的邮件」起点重置为现在
-      connected_at: sameAccount && cfg.connected_at ? cfg.connected_at : new Date().toISOString(),
-      last_error: null,
-    });
+    const email = String(prof.emailAddress || '').trim();
+    if (!email) return back(encodeURIComponent('error:拿不到邮箱地址'));
+    const ex = db.prepare('SELECT * FROM pallet_mail_accounts WHERE email=? COLLATE NOCASE').get(email);
+    const rt = tk.refresh_token || (ex && ex.refresh_token) || '';
+    if (!rt) return back('no_refresh_token');
+    if (ex) {
+      // 重新连接同一个邮箱: 保留「从哪天开始处理」的起点, 免得断开期间的邮件全被跳过或重转
+      db.prepare(`UPDATE pallet_mail_accounts SET refresh_token=?, access_token=?, token_expires_at=?, connected_by=?, last_error='',
+        connected_at=COALESCE(NULLIF(connected_at,''), ?) WHERE id=?`).run(rt, tk.access_token, tk.expires_at, st.by || '', new Date().toISOString(), ex.id);
+    } else {
+      db.prepare(`INSERT INTO pallet_mail_accounts (email, refresh_token, access_token, token_expires_at, enabled, connected_at, connected_by)
+        VALUES (?, ?, ?, ?, 1, ?, ?)`).run(email, rt, tk.access_token, tk.expires_at, new Date().toISOString(), st.by || '');
+    }
     db.prepare("UPDATE integration_settings SET enabled=1, updated_at=CURRENT_TIMESTAMP WHERE provider='gmail_pallet'").run();
-    auditLog('pallet_mail_connected', req, { targetType: 'integration', targetId: 'gmail_pallet', details: { email: prof.emailAddress, by: st.by || '' } });
-    return back('connected');
+    auditLog('pallet_mail_connected', req, { targetType: 'integration', targetId: 'gmail_pallet', details: { email, by: st.by || '', reconnect: !!ex } });
+    return back(ex ? 'reconnected' : 'connected');
   } catch (e) {
     console.log('[pallet-mail] oauth 回调失败:', e && e.message);
     return back(encodeURIComponent('error:' + String((e && e.message) || '').slice(0, 140)));
   }
 });
-app.post('/api/acct/pallet-mail/disconnect', requireAdmin, requireRole('admin'), (req, res) => {
-  _pmSaveCfg({ access_token: null, refresh_token: null, token_expires_at: null, connected_at: null });
-  db.prepare("UPDATE integration_settings SET enabled=0, updated_at=CURRENT_TIMESTAMP WHERE provider='gmail_pallet'").run();
-  auditLog('pallet_mail_disconnected', req, { targetType: 'integration', targetId: 'gmail_pallet' });
+app.put('/api/acct/pallet-mail/accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const acc = _pmAccount(req.params.id);
+  if (!acc) return res.status(404).json({ error: '邮箱不存在' });
+  if ('enabled' in (req.body || {})) db.prepare('UPDATE pallet_mail_accounts SET enabled=? WHERE id=?').run(req.body.enabled ? 1 : 0, acc.id);
+  res.json({ success: true });
+});
+// 断开 = 删掉这个邮箱的授权 (转发记录保留)
+app.delete('/api/acct/pallet-mail/accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const acc = _pmAccount(req.params.id);
+  if (!acc) return res.status(404).json({ error: '邮箱不存在' });
+  db.prepare('DELETE FROM pallet_mail_accounts WHERE id=?').run(acc.id);
+  auditLog('pallet_mail_disconnected', req, { targetType: 'integration', targetId: 'gmail_pallet', details: { email: acc.email } });
   res.json({ success: true });
 });
 app.put('/api/acct/pallet-mail/settings', requireAdmin, requireRole('admin'), (req, res) => {
@@ -43589,7 +43658,6 @@ app.put('/api/acct/pallet-mail/settings', requireAdmin, requireRole('admin'), (r
   try {
     const { cfg } = _pmCfg();
     const patch = {};
-    if ('enabled' in b) patch.enabled = !!b.enabled;
     if ('label' in b) {
       const l = String(b.label || '').trim().slice(0, 100);
       if (l !== (cfg.label || '')) { patch.label = l; patch.label_set_at = new Date().toISOString(); }
@@ -43633,22 +43701,26 @@ app.delete('/api/acct/pallet-mail/rules/:id', requireAdmin, requireRole('admin')
   auditLog('pallet_mail_rule_delete', req, { targetType: 'pallet_mail_rule', targetId: req.params.id });
   res.json({ success: true });
 });
+// 立即检查: 不带 account_id = 所有开着的邮箱; 带 = 只查这一个 (关着自动转发的也能手动查)
 app.post('/api/acct/pallet-mail/poll', requireAdmin, requireRole('admin'), async (req, res) => {
-  const r = await pmPollNow('manual');
+  const id = Number((req.body || {}).account_id) || 0;
+  const r = await pmPollNow('manual', id || undefined);
   if (!r.ok) return res.status(400).json({ error: r.error || '检查失败' });
   res.json(r);
 });
-// 日志里的某封邮件改发 / 再发给别人
+// 日志里的某封邮件改发 / 再发给别人 (从当初收到它的那个邮箱发)
 app.post('/api/acct/pallet-mail/log/:id/forward', requireAdmin, requireRole('admin'), async (req, res) => {
   const row = db.prepare('SELECT * FROM pallet_mail_log WHERE id=?').get(req.params.id);
   if (!row) return res.status(404).json({ error: '记录不存在' });
+  const acc = row.account_id ? _pmAccount(row.account_id) : null;
+  if (!acc) return res.status(400).json({ error: `收到这封邮件的邮箱${row.account_email ? '（' + row.account_email + '）' : ''}已断开，请先重新连接` });
   let to;
   try { to = pmail.splitList(_pmCleanEmails((req.body || {}).to)); } catch (e) { return res.status(400).json({ error: e.message }); }
   if (!to.length) return res.status(400).json({ error: '请选择转发给谁' });
   try {
-    const token = await _pmToken();
+    const token = await _pmToken(acc.id);
     const meta = await pmail.getMessageMeta(token, row.gmail_id);
-    const r = await _pmForwardAndLog(token, {
+    const r = await _pmForwardAndLog(acc, token, {
       meta, to, ruleNames: row.rule_names, reason: '手动改发', by: req.userName || '',
       note: String((req.body || {}).note || '').trim().slice(0, 500),
     });

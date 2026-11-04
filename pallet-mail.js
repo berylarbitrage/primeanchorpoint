@@ -20,11 +20,14 @@ const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const API = 'https://gmail.googleapis.com/gmail/v1/users/me';
 const UPLOAD_API = 'https://gmail.googleapis.com/upload/gmail/v1/users/me';
+// 本系统转发出去的邮件都带这个头; 收到带它的邮件不再处理 (连了多个邮箱时防止互相转来转去)
+const FORWARD_HEADER = 'X-PAP-Pallet-Forward';
 
-function authorizeUrl({ clientId, redirectUri, state, loginHint }) {
+function authorizeUrl({ clientId, redirectUri, state, loginHint, selectAccount }) {
   const q = new URLSearchParams({
     client_id: clientId, redirect_uri: redirectUri, response_type: 'code',
-    scope: SCOPES.join(' '), access_type: 'offline', prompt: 'consent',
+    // select_account: 连接新邮箱时让 Google 弹出账号选择, 不直接用浏览器当前登录的那个
+    scope: SCOPES.join(' '), access_type: 'offline', prompt: selectAccount ? 'consent select_account' : 'consent',
     include_granted_scopes: 'true', state,
   });
   if (loginHint) q.set('login_hint', loginHint);
@@ -87,7 +90,7 @@ async function listMessageIds(token, q, max, f) {
 }
 function getMessageMeta(token, id, f) {
   const p = new URLSearchParams({ format: 'metadata' });
-  ['From', 'To', 'Cc', 'Subject', 'Date'].forEach(h => p.append('metadataHeaders', h));
+  ['From', 'To', 'Cc', 'Subject', 'Date', 'Message-ID', FORWARD_HEADER].forEach(h => p.append('metadataHeaders', h));
   return gmail(token, `/messages/${encodeURIComponent(id)}?` + p.toString(), {}, f);
 }
 const getMessageFull = (token, id, f) => gmail(token, `/messages/${encodeURIComponent(id)}?format=full`, {}, f);
@@ -204,6 +207,7 @@ function buildForward({ from, to, note, original, attachments }) {
     from, to: (to || []).join(', '),
     subject: /^\s*(fwd?|转发)\s*[:：]/i.test(subj) ? subj : 'Fwd: ' + subj,
     text, html,
+    headers: { [FORWARD_HEADER]: '1' },
     attachments: (attachments || []).map(a => ({
       filename: a.filename, contentType: a.mimeType, content: a.content,
       ...(a.cid ? { cid: a.cid } : {}),
@@ -235,7 +239,7 @@ async function forwardMessage(token, { msgId, from, to, note }, f) {
 }
 
 module.exports = {
-  SCOPES, authorizeUrl, exchangeCode, refreshToken,
+  SCOPES, FORWARD_HEADER, authorizeUrl, exchangeCode, refreshToken,
   profile, listLabels, listMessageIds, getMessageMeta, getMessageFull, forwardMessage,
   header, emailOf, splitList, isEmail, ruleMatch, matchMessage, walkParts, buildForward,
 };
