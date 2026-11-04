@@ -6351,6 +6351,9 @@ function _palletManualActions(r) {
     btns.push(`<button class="btn btn-sm" style="color:#047857;border-color:#a7f3d0" onclick="palletManualApprove(${r.manual_id}, 'approve')">✓ 审核通过</button>`);
     btns.push(`<button class="btn btn-sm" style="color:#b91c1c;border-color:#fecaca" onclick="palletManualApprove(${r.manual_id}, 'reject')">✗ 驳回</button>`);
   }
+  // 已通过 / 已驳回: 管理员可以撤回审核, 回到待审核
+  if (USER.role === 'admin' && (r.approval_status === 'approved' || r.approval_status === 'rejected'))
+    btns.push(`<button class="btn btn-sm" style="color:#b45309;border-color:#fcd34d" onclick="palletManualApprove(${r.manual_id}, 'revoke')">↩ 撤回审核</button>`);
   if (USER.role === 'admin' || (USER.role === 'accounting' && r.created_by === USER.username && r.approval_status !== 'approved'))
     btns.push(`<button class="btn btn-sm" style="color:#b91c1c" onclick="palletManualDelete(${r.manual_id})">🗑 删除</button>`);
   if (canAnnotate() && r.approval_status === 'approved')
@@ -6360,12 +6363,13 @@ function _palletManualActions(r) {
 async function palletManualApprove(id, action) {
   let note = '';
   if (action === 'reject') { note = await pagePrompt('驳回原因（提交人能看到，可不填）：', ''); if (note === null) return; }
+  if (action === 'revoke' && !await pageConfirm('撤回这张发票的审核？撤回后回到「待审核」，不计入汇总，可以重新通过或驳回。')) return;
   try {
     await bapi(`/api/acct/pallet-manual/${id}/approval`, { method: 'POST', body: JSON.stringify({ action, note }) });
-    toast(action === 'approve' ? '✅ 已审核通过' : '已驳回');
+    toast(action === 'approve' ? '✅ 已审核通过' : action === 'revoke' ? '↩ 已撤回审核，回到待审核' : '已驳回');
     _palletDetailClose();
     await loadPalletList(true);
-    if (_palletReview) { _palletReview.done++; palletReviewNext(); }
+    if (_palletReview && action !== 'revoke') { _palletReview.done++; palletReviewNext(); }
   } catch (e) { toast(e.message || '操作失败', true); }
 }
 // 明细弹窗可能还没建过 (直接在列表行里点 ✓/✗ 时), 关之前先判空
