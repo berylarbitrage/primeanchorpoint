@@ -5862,6 +5862,7 @@ async function openPalletMail() {
   try { _pm = await bapi('/api/acct/pallet-mail'); } catch (e) { m.innerHTML = `<div class="card" style="padding:1.2rem;color:#b91c1c">加载失败：${esc(e.message || '')}</div>`; return; }
   _pmEditId = null; _pmReId = null;
   pmRender();
+  pmHistLoad();
 }
 function _pmFmt(t) {
   if (!t) return '';
@@ -6015,9 +6016,100 @@ function pmRender() {
     </div>
     ${sec('① Google Client ID 和连接的 Gmail 邮箱（都可以有多个）', conn)}
     ${sec('② 规则：哪个客户 / 供应商的邮件转给谁', rules)}
-    ${sec('③ 其他设置', settings)}
-    ${sec('④ 转发记录（可改发给别人）', log)}
+    ${sec('③ 历史邮件补转（把以前的邮件按规则补转一遍）', '<div id="pmHist"></div>')}
+    ${sec('④ 其他设置', settings)}
+    ${sec('⑤ 转发记录（可改发给别人）', log)}
   </div>`;
+  pmHistRender();
+}
+// ── 📜 历史邮件补转 (单独刷新这一栏, 不重画整页, 免得正在填的规则表单被清掉) ──
+let _pmHistJob = null, _pmHistTimer = null, _pmHistUnchecked = new Set();
+async function pmHistLoad() {
+  try { _pmHistJob = (await bapi('/api/acct/pallet-mail/history')).job; } catch (e) { _pmHistJob = null; }
+  pmHistRender();
+  clearTimeout(_pmHistTimer);
+  const pane = document.getElementById('paneMail');
+  if (_pmHistJob && ['scanning', 'forwarding'].includes(_pmHistJob.phase) && pane && pane.style.display !== 'none')
+    _pmHistTimer = setTimeout(pmHistLoad, 2000);
+  else if (_pmHistJob && _pmHistJob.phase === 'done' && _pmHistJob._reloaded !== true) { _pmHistJob._reloaded = true; }
+}
+function pmHistRender() {
+  const box = document.getElementById('pmHist');
+  if (!box || !_pm) return;
+  const j = _pmHistJob;
+  const small = 'font-size:.76rem;color:var(--g500)';
+  const accs = (_pm.accounts || []).filter(a => a.connected);
+  if (!accs.length) { box.innerHTML = `<div style="${small}">先连接邮箱。</div>`; return; }
+  if (!j || j.phase === 'error' && !j.items.length) {
+    const d30 = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+    box.innerHTML = `${j && j.error ? `<div style="color:#b91c1c;font-size:.8rem;margin-bottom:.4rem">⚠ 上次失败：${esc(j.error)}</div>` : ''}
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;font-size:.83rem">
+        <span>从</span><input type="date" id="pmHSince" value="${d30}">
+        <span>到</span><input type="date" id="pmHUntil" title="不填 = 到今天">
+        <select id="pmHAcc"><option value="">全部已连接的邮箱</option>${accs.map(a => `<option value="${a.id}">${esc(a.email)}</option>`).join('')}</select>
+        <button class="btn btn-sm btn-blue" onclick="pmHistScan(this)">🔍 扫描</button>
+      </div>
+      <div style="${small};margin-top:.35rem">先扫描、列出会被转发的邮件（不会马上发），你勾选确认后再转发。已经转过的不会重复转；每个邮箱一次最多扫 ${500} 封。</div>`;
+    return;
+  }
+  const head = `<div style="${small};margin-bottom:.4rem">${esc(j.since)} ~ ${esc(j.until || '今天')} · ${j.account_id ? esc((accs.find(a => a.id === j.account_id) || {}).email || '') : '全部邮箱'} · ${esc(j.by)} 发起</div>`;
+  if (j.phase === 'scanning') {
+    box.innerHTML = head + `<div style="font-size:.85rem">⏳ 扫描中… 已看 ${j.scanned}${j.total_to_scan ? ' / ' + j.total_to_scan : ''} 封，找到 <b>${j.items.length}</b> 封要转发的</div>`;
+    return;
+  }
+  const stTag = it => it.status === 'sent' ? '<span style="color:#047857">✓ 已转发</span>' : it.status === 'error' ? `<span style="color:#b91c1c" data-tip="${esc(it.error)}">✗ 失败</span>` : it.status === 'skipped' ? '<span style="color:var(--g400)">已转过，跳过</span>' : '';
+  const ready = j.phase === 'ready';
+  const nSel = j.items.filter(it => !_pmHistUnchecked.has(it.key)).length;
+  const table = j.items.length ? `<div style="max-height:380px;overflow:auto;margin-top:.4rem"><table style="width:100%;font-size:.78rem;border-collapse:collapse">
+      <tr style="text-align:left;color:var(--g500);position:sticky;top:0;background:#fff">
+        ${ready ? `<th style="padding:.3rem"><input type="checkbox" ${nSel === j.items.length ? 'checked' : ''} onchange="pmHistAll(this.checked)"></th>` : '<th style="padding:.3rem">状态</th>'}
+        <th>日期</th><th>收件邮箱</th><th>发件人 / 主题</th><th>规则</th><th>转发给</th></tr>
+      ${j.items.map(it => `<tr style="border-top:1px solid var(--g100)">
+        <td style="padding:.3rem;white-space:nowrap">${ready ? `<input type="checkbox" ${_pmHistUnchecked.has(it.key) ? '' : 'checked'} onchange="pmHistPick('${esc(it.key)}', this.checked)">` : stTag(it)}</td>
+        <td style="white-space:nowrap">${_pmFmt(it.date)}</td>
+        <td style="color:var(--g500);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(it.account_email)}</td>
+        <td style="max-width:320px"><div style="color:var(--g500);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(it.from)}</div><div style="font-weight:600">${esc(it.subject) || '（无主题）'}</div></td>
+        <td><span data-tip="${esc(it.reason)}">${esc(it.rule_names)}</span></td>
+        <td>${_pmToList(it.to.join(', '))}</td></tr>`).join('')}
+    </table></div>` : '';
+  const stats = `看了 ${j.scanned} 封${j.truncated ? `（<span style="color:#b45309">有邮箱超过 500 封，只扫了最新的 500 封，可以把开始日期往后挪一点分几次扫</span>）` : ''}，找到 <b>${j.items.length}</b> 封要转发${j.skipped_done ? `，${j.skipped_done} 封以前已转过` : ''}${j.skipped_dup ? `，${j.skipped_dup} 封别的邮箱已转过 / 重复` : ''}`;
+  const errs = j.errors && j.errors.length ? `<div style="color:#b91c1c;font-size:.78rem">⚠ ${j.errors.map(esc).join('；')}</div>` : '';
+  if (ready) {
+    box.innerHTML = head + `<div style="font-size:.84rem">${stats}</div>${errs}${table}
+      <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:.5rem">
+        <button class="btn btn-sm" onclick="pmHistClear()">取消</button>
+        ${j.items.length ? `<button class="btn btn-sm btn-blue" onclick="pmHistForward(this)" ${nSel ? '' : 'disabled'}>📤 转发选中的 ${nSel} 封</button>` : ''}
+      </div>`;
+  } else if (j.phase === 'forwarding') {
+    box.innerHTML = head + `<div style="font-size:.85rem">⏳ 正在转发… ${j.done_count} / ${j.selected}（成功 ${j.forwarded}${j.failed ? `，失败 ${j.failed}` : ''}）。可以离开这个页面，后台会继续转。</div>${table}`;
+  } else {
+    box.innerHTML = head + `<div style="font-size:.85rem">${j.phase === 'error' ? `<span style="color:#b91c1c">⚠ 出错：${esc(j.error)}</span> · ` : '✅ 补转完成：'}转发 <b>${j.forwarded}</b> 封${j.failed ? `，<span style="color:#b91c1c">失败 ${j.failed} 封</span>` : ''}</div>${errs}${table}
+      <div style="text-align:right;margin-top:.5rem"><button class="btn btn-sm btn-blue" onclick="pmHistClear()">完成</button></div>`;
+  }
+}
+function pmHistPick(key, on) { if (on) _pmHistUnchecked.delete(key); else _pmHistUnchecked.add(key); pmHistRender(); }
+function pmHistAll(on) { _pmHistUnchecked = on ? new Set() : new Set((_pmHistJob.items || []).map(x => x.key)); pmHistRender(); }
+async function pmHistScan(btn) {
+  const since = document.getElementById('pmHSince').value, until = document.getElementById('pmHUntil').value, account_id = document.getElementById('pmHAcc').value;
+  if (btn) btn.disabled = true;
+  try { await bapi('/api/acct/pallet-mail/history/scan', { method: 'POST', body: JSON.stringify({ since, until, account_id }) }); _pmHistUnchecked = new Set(); }
+  catch (e) { toast(e.message, true); if (btn) btn.disabled = false; return; }
+  pmHistLoad();
+}
+async function pmHistForward(btn) {
+  const keys = _pmHistJob.items.filter(it => !_pmHistUnchecked.has(it.key)).map(it => it.key);
+  if (!keys.length) return;
+  if (!await pageConfirm(`现在把这 ${keys.length} 封邮件转发给对应的负责人？发出去就收不回了。`)) return;
+  if (btn) btn.disabled = true;
+  try { await bapi('/api/acct/pallet-mail/history/forward', { method: 'POST', body: JSON.stringify({ keys }) }); }
+  catch (e) { toast(e.message, true); if (btn) btn.disabled = false; return; }
+  pmHistLoad();
+}
+async function pmHistClear() {
+  try { await bapi('/api/acct/pallet-mail/history/clear', { method: 'POST' }); } catch (e) { toast(e.message, true); return; }
+  const wasDone = _pmHistJob && _pmHistJob.phase === 'done';
+  _pmHistJob = null; _pmHistUnchecked = new Set();
+  if (wasDone) _pmReload(); else pmHistRender();
 }
 async function _pmReload() { try { _pm = await bapi('/api/acct/pallet-mail'); pmRender(); } catch (e) { toast(e.message, true); } }
 async function pmAddClient() {
