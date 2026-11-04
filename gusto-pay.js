@@ -174,13 +174,26 @@ function parseRoster(csvText) {
 
 // ── 生成 ──
 // employees: [{ name, total, rate, regHours, otHours }]（发票生成器的行, total = 应付工资）
-// opts.aliases: 收款人对照表 [{from, to}]（见文件头注释）
+// opts.aliases: 收款人对照表 [{from, to, scope?}]（见文件头注释）。scope = 只对这个客户的发票生效
+//   (按 opts.company 宽松比: 去大小写/空格/符号后包含 scope 即算; 同一家公司的几个名字见 COMPANY_GROUPS)。
+//   同一个 from 既有限定客户的、又有不限的: 客户对得上用限定的, 对不上用不限的; 只有限定的且客户对不上 = 当没这条。
+// opts.company: 这张发票的客户名 (对账时按每张发票传)
 // opts.payRates: 发工资时薪覆盖 [{name, rate}]。发票对客户照计费时薪开票不动,
 //   这些人发工资按 rate 算: 应付 = 发票应付 − (计费时薪 − rate) × (正常 + 1.5×加班)
 //   工时——按时薪差回扣, 发票里另加的补差金额原样保留。按工资表姓名分词精确对,
 //   现金/跳过行同样生效。
 // 返回 { csv, matches, unmatched, ambiguous, skipped, needConfirm, warnings, matchedCount, totalPay, untouched }
 const ALIAS_SKIP_WORDS = new Set(['现金', '发现金', 'cash', '跳过', 'skip', '忽略']);
+// 同一家公司的几个名字 (和银行核对的同名组一致): 对照表 scope 写其中任何一个都认
+const COMPANY_GROUPS = [['nexware', 'wecharmer', 'maynmarch']];
+const coNorm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+function scopeMatches(scope, company) {
+  const sc = coNorm(scope), co = coNorm(company);
+  if (!sc) return true;
+  if (!co) return false;
+  if (co.includes(sc)) return true;
+  return COMPANY_GROUPS.some(g => g.some(n => co.includes(n)) && g.some(n => sc.includes(n) || n.includes(sc)));
+}
 
 // ── 员工 → 名册匹配核心 ──
 // entries/tokenCount 可以来自 parseRoster（CSV 模板）也可以来自 contractorEntries
@@ -200,9 +213,14 @@ function matchEmployees(entries, tokenCount, employees, opts) {
     if (!from || !to) continue;
     const key = joined(nameTokens(from));
     if (!key) continue;
+    const scope = String((a && a.scope) || '').trim();
+    if (scope && !scopeMatches(scope, opts.company)) continue;   // 限定别的客户的, 这张发票不用
+    // 限定客户的优先于不限的 (同一个 from 两条都有时)
+    const cur = aliasMap.get(key);
+    if (cur && cur.scoped && !scope) continue;
     aliasMap.set(key, ALIAS_SKIP_WORDS.has(to.toLowerCase())
-      ? { skip: true, reason: to }
-      : { toName: to, toTokens: nameTokens(to) });
+      ? { skip: true, reason: to, scoped: !!scope }
+      : { toName: to, toTokens: nameTokens(to), scoped: !!scope });
   }
   // 发工资时薪覆盖: 分词集合 key → 时薪
   const payRateMap = new Map();
@@ -466,7 +484,7 @@ function buildGustoRecon(contractors, invoices, payments, opts) {
       period_start: String(inv.period_start || ''),
       period_end: String(inv.period_end || ''),
     };
-    const m = matchEmployees(entries, tokenCount, inv.employees || [], opts);
+    const m = matchEmployees(entries, tokenCount, inv.employees || [], { ...opts, company: inv.company_name || '' });
     for (const g of m.byRosterIdx.values()) {
       const row = rowFor(g.entry.uuid || `name:${g.entry.label}`, g.entry.label);
       for (const s of g.sources) {
@@ -533,4 +551,4 @@ function buildGustoRecon(contractors, invoices, payments, opts) {
   return { rows, cash, problems, warnings, totals };
 }
 
-module.exports = { buildGustoCsv, buildGustoRecon, contractorEntries, matchEmployees, parseRoster, parseCsv, stringifyCsv };
+module.exports = { scopeMatches, buildGustoCsv, buildGustoRecon, contractorEntries, matchEmployees, parseRoster, parseCsv, stringifyCsv };

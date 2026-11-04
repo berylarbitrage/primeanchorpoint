@@ -3163,7 +3163,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <div id="gustoCsvBody" style="max-height:55vh;overflow-y:auto;margin:.5rem 0 .75rem"></div>
     <div id="gustoModeNote" style="font-size:.74rem;color:var(--gray-400);line-height:1.55;border-top:1px solid var(--gray-100);padding-top:.5rem"></div>
     <div id="gustoAliasPanel" style="display:none;margin:.55rem 0 .2rem;padding:.55rem .7rem;background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px">
-      <div style="font-size:.76rem;color:#6d28d9;line-height:1.55;margin-bottom:.35rem"><b>收款人对照表</b> —— 每行一条：<code>工资表姓名 → Gusto 名册收款人</code>。花名/错拼（Luis Cartz → Luis Cortez）、几个人的钱并付给同一个收款人（会自动合并成一笔）、付给公司行的都写在这里；写 <code>→ 现金</code> 表示不走 Gusto，生成时跳过。</div>
+      <div style="font-size:.76rem;color:#6d28d9;line-height:1.55;margin-bottom:.35rem"><b>收款人对照表</b> —— 每行一条：<code>工资表姓名 → Gusto 名册收款人</code>。花名/错拼（Luis Cartz → Luis Cortez）、几个人的钱并付给同一个收款人（会自动合并成一笔）、付给公司行的都写在这里；写 <code>→ 现金</code> 表示不走 Gusto，生成时跳过。开头加 <code>[客户名]</code> 表示只对这个客户的发票生效，例如 <code>[Nexware] Kevin Gomez Lopez → Brayan Espinoza Orozco</code>，别的客户的发票不管这一条。</div>
       <textarea id="gustoAliasText" rows="9" spellcheck="false" style="width:100%;font-size:.78rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;border:1px solid #e9d5ff;border-radius:6px;padding:.4rem .55rem;line-height:1.55;resize:vertical"></textarea>
       <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:.45rem">
         <button class="btn btn-outline" style="font-size:.78rem;color:var(--gray-500)" onclick="document.getElementById('gustoAliasPanel').style.display='none'">收起</button>
@@ -39282,6 +39282,7 @@ async function invpGustoCsv(auto) {
     method: 'POST',
     body: JSON.stringify({
       employees,
+      company: (document.getElementById('invPageBillName').value || '').trim(),
       period_start: document.getElementById('invPageStart').value,
       period_end: document.getElementById('invPageEnd').value,
       mode: _invpGustoMode(),
@@ -39371,7 +39372,7 @@ async function invpGustoAliasToggle() {
   if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
   const res = await api('/admin/gusto-pay-aliases').catch(() => null);
   document.getElementById('gustoAliasText').value =
-    ((res && res.aliases) || []).map(a => `${a.from} → ${a.to}`).join('\n');
+    ((res && res.aliases) || []).map(a => `${a.scope ? '[' + a.scope + '] ' : ''}${a.from} → ${a.to}`).join('\n');
   panel.style.display = 'block';
 }
 async function invpGustoAliasSave() {
@@ -39379,8 +39380,12 @@ async function invpGustoAliasSave() {
     .map(l => l.trim())
     .filter(l => l && !l.startsWith('#'))
     .map(l => {
+      // 开头写 [客户名] = 只对这个客户的发票生效, 例如 [Nexware] Kevin Gomez Lopez → Brayan Espinoza Orozco
+      let scope = '';
+      const sm = l.match(/^[\[［【]([^\]］】]+)[\]］】]\s*/);
+      if (sm) { scope = sm[1].trim(); l = l.slice(sm[0].length); }
       const parts = l.split(/\s*(?:→|->|=>|＝|=)\s*/);
-      return { from: (parts[0] || '').trim(), to: parts.slice(1).join(' ').trim() };
+      return { from: (parts[0] || '').trim(), to: parts.slice(1).join(' ').trim(), ...(scope ? { scope } : {}) };
     })
     .filter(a => a.from && a.to);
   const res = await api('/admin/gusto-pay-aliases', { method: 'POST', body: JSON.stringify({ aliases }) })
