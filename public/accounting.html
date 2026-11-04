@@ -5835,7 +5835,8 @@ function pmailOauthResume() {
   if (!g) return;
   history.replaceState(null, '', location.pathname);
   showTab('pallet');
-  if (g === 'connected') toast('✅ Gmail 已连接，之后收到的木板邮件会按规则自动转发');
+  if (g === 'connected') toast('✅ Gmail 已连接，这个邮箱之后收到的木板邮件会按规则自动转发');
+  else if (g === 'reconnected') toast('✅ 已重新连接这个邮箱');
   else if (g === 'missing_credentials') toast('请先填写并保存 Google OAuth 的 Client ID / Secret', true);
   else if (g === 'state_mismatch') toast('授权校验失败（链接过期），请重新点「连接 Gmail」', true);
   else if (g === 'scope_missing') toast('授权时没有勾选「读取邮件」和「发送邮件」权限，请重新连接并全部允许', true);
@@ -5901,23 +5902,29 @@ function pmRender() {
         <button class="btn btn-sm btn-blue" onclick="pmSaveCreds()">保存</button>
         ${d.has_credentials ? '<button class="btn btn-sm" onclick="_pm._editCreds=false;pmRender()">取消</button>' : ''}
       </div>`;
-  } else if (!d.connected) {
-    conn = `<div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
-      <a class="btn btn-sm btn-blue" href="/api/acct/pallet-mail/connect" style="text-decoration:none">🔗 连接 Gmail</a>
-      <span style="${small}">用要转发邮件的那个邮箱登录，允许「读取」和「发送」邮件。只会处理连接之后收到的邮件。</span>
-      <a onclick="_pm._editCreds=true;pmRender()" style="${small};cursor:pointer;text-decoration:underline;margin-left:auto">改 Client ID / Secret</a>
-    </div>${d.last_error ? `<div style="color:#b91c1c;font-size:.78rem;margin-top:.4rem">⚠ ${esc(d.last_error)}</div>` : ''}`;
   } else {
-    const r = d.last_poll_result;
-    conn = `<div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
-      <span>✅ 已连接 <b>${esc(d.email)}</b></span>
-      <span style="${small}">${d.connected_by ? esc(d.connected_by) + ' · ' : ''}从 ${_pmFmt(d.connected_at)} 之后的邮件开始处理</span>
-      <label style="display:flex;gap:.3rem;align-items:center;font-size:.82rem;margin-left:auto"><input type="checkbox" ${d.enabled ? 'checked' : ''} onchange="pmSaveSettings({enabled:this.checked})"> 自动转发（每 5 分钟）</label>
-      <button class="btn btn-sm" onclick="pmPoll(this)">🔄 立即检查</button>
-      <button class="btn btn-sm" style="color:#b91c1c" onclick="pmDisconnect()">断开</button>
-    </div>
-    <div style="${small};margin-top:.35rem">${d.last_poll_at ? '上次检查 ' + _pmFmt(d.last_poll_at) : '还没检查过'}${r && r.ok ? ` · 看了 ${r.checked} 封新邮件，转发 ${r.forwarded} 封${r.failed ? `，<span style="color:#b91c1c">失败 ${r.failed} 封</span>` : ''}${r.label_found === false ? ' · <span style="color:#b45309">Gmail 里没找到标签「' + esc(d.label) + '」</span>' : ''}` : ''}</div>
-    ${d.last_error ? `<div style="color:#b91c1c;font-size:.78rem;margin-top:.3rem">⚠ ${esc(d.last_error)}</div>` : ''}`;
+    const accRows = (d.accounts || []).map(a => {
+      const r = a.last_poll_result;
+      const st = !a.connected
+        ? `<span style="color:#b91c1c">⚠ 授权已失效</span> <a class="btn btn-sm btn-blue" href="/api/acct/pallet-mail/connect?hint=${encodeURIComponent(a.email)}" style="text-decoration:none">重新连接</a>`
+        : `${a.last_poll_at ? '上次检查 ' + _pmFmt(a.last_poll_at) : '还没检查过'}${r && r.ok ? ` · 看了 ${r.checked} 封新邮件，转发 ${r.forwarded} 封${r.failed ? `，<span style="color:#b91c1c">失败 ${r.failed} 封</span>` : ''}${r.dup ? `，${r.dup} 封别的邮箱已转过` : ''}${r.label_found === false ? ' · <span style="color:#b45309">没找到标签「' + esc(d.label) + '」</span>' : ''}` : ''}`;
+      return `<tr style="border-top:1px solid var(--g100)">
+        <td style="padding:.4rem;font-weight:700;white-space:nowrap">${a.connected ? '✅' : '⚠️'} ${esc(a.email)}</td>
+        <td style="${small}">${a.connected_by ? esc(a.connected_by) + ' · ' : ''}从 ${_pmFmt(a.connected_at)} 起</td>
+        <td style="${small}">${st}${a.last_error && a.connected ? `<div style="color:#b91c1c">⚠ ${esc(a.last_error)}</div>` : ''}</td>
+        <td style="white-space:nowrap;text-align:right">
+          <label style="display:inline-flex;gap:.25rem;align-items:center;font-size:.78rem;margin-right:.3rem"><input type="checkbox" ${a.enabled ? 'checked' : ''} onchange="pmToggleAccount(${a.id}, this.checked)"> 自动转发</label>
+          ${a.connected ? `<button class="btn btn-sm" onclick="pmPoll(this, ${a.id})">🔄 检查</button>` : ''}
+          <button class="btn btn-sm" style="color:#b91c1c" onclick="pmDisconnect(${a.id})">断开</button>
+        </td></tr>`;
+    }).join('');
+    conn = `${accRows ? `<table style="width:100%;font-size:.82rem;border-collapse:collapse;margin-bottom:.5rem">${accRows}</table>` : `<div style="${small};margin-bottom:.5rem">还没有连接邮箱。</div>`}
+    <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+      <a class="btn btn-sm btn-blue" href="/api/acct/pallet-mail/connect" style="text-decoration:none">＋ 连接${(d.accounts || []).length ? '另一个' : ''} Gmail 邮箱</a>
+      ${(d.accounts || []).some(a => a.connected && a.enabled) ? '<button class="btn btn-sm" onclick="pmPoll(this)">🔄 全部立即检查</button>' : ''}
+      <span style="${small}">每个邮箱只处理它连接之后收到的邮件；规则对所有邮箱通用，转发从收到邮件的那个邮箱发出；同一封邮件进了几个邮箱只转一次。</span>
+      <a onclick="_pm._editCreds=true;pmRender()" style="${small};cursor:pointer;text-decoration:underline;margin-left:auto">改 Client ID / Secret</a>
+    </div>`;
   }
   const settings = `<div style="display:grid;grid-template-columns:150px 1fr;gap:.5rem .7rem;align-items:center;font-size:.83rem">
       <span>Gmail 标签（可选）</span>
@@ -5952,15 +5959,16 @@ function pmRender() {
         <td style="white-space:nowrap;text-align:right"><button class="btn btn-sm" onclick="_pmEditId=${r.id};pmRender()">✏️ 修改</button> <button class="btn btn-sm" style="color:#b91c1c" onclick="pmDeleteRule(${r.id})">🗑</button></td>
       </tr>`).join('')}</table>` : `<div style="${small}">还没有规则。把客户/供应商的邮箱填进来，选好负责人就行。</div>`) + form;
   const log = d.log.length ? `<div style="max-height:340px;overflow:auto"><table style="width:100%;font-size:.78rem;border-collapse:collapse">
-      <tr style="text-align:left;color:var(--g500);position:sticky;top:0;background:#fff"><th style="padding:.3rem">时间</th><th>发件人 / 主题</th><th>规则</th><th>转发给</th><th>状态</th><th></th></tr>
+      <tr style="text-align:left;color:var(--g500);position:sticky;top:0;background:#fff"><th style="padding:.3rem">时间</th><th>收件邮箱</th><th>发件人 / 主题</th><th>规则</th><th>转发给</th><th>状态</th><th></th></tr>
       ${d.log.map(l => `<tr style="border-top:1px solid var(--g100)">
         <td style="padding:.35rem;white-space:nowrap">${_pmFmt(l.created_at)}</td>
+        <td style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--g500)" title="${esc(l.account_email || '')}">${esc(l.account_email || '—')}</td>
         <td style="max-width:320px"><div style="color:var(--g500);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.from_addr)}</div><div style="font-weight:600">${esc(l.subject) || '（无主题）'}</div></td>
         <td><span data-tip="${esc(l.reason)}">${esc(l.rule_names) || '—'}</span>${l.by_user && l.by_user !== 'auto' ? `<div style="color:var(--g400)">${esc(l.by_user)} 手动改发</div>` : ''}</td>
         <td>${_pmToList(l.forwarded_to)}</td>
         <td>${l.status === 'sent' ? '<span style="color:#047857">✓ 已转发</span>' : `<span style="color:#b91c1c" data-tip="${esc(l.error)}">✗ 失败</span>`}</td>
         <td style="text-align:right"><button class="btn btn-sm" onclick="_pmReId=${_pmReId === l.id ? 'null' : l.id};pmRender()">↪ 改发给…</button></td>
-      </tr>${_pmReId === l.id ? `<tr><td colspan="6" style="background:#f8fafc;padding:.5rem">
+      </tr>${_pmReId === l.id ? `<tr><td colspan="7" style="background:#f8fafc;padding:.5rem">
         <div style="display:grid;grid-template-columns:90px 1fr;gap:.4rem .6rem;align-items:center">
           <span>转发给</span>${_pmPeoplePicker('pmReTo', '')}
           <span>附言（可选）</span><input id="pmReNote" placeholder="例如：这封请你跟进一下">
@@ -5972,7 +5980,7 @@ function pmRender() {
       <div style="font-weight:800;font-size:1rem">📧 木板邮件自动转发</div>
       <button onclick="document.getElementById('pmModal').style.display='none'" style="border:1px solid var(--g200);background:#fff;border-radius:8px;padding:.2rem .7rem;cursor:pointer;font-size:.8rem">✕ 关闭</button>
     </div>
-    ${sec('① 连接 Gmail', conn)}
+    ${sec('① 连接的 Gmail 邮箱（可以连多个）', conn)}
     ${sec('② 规则：哪个客户 / 供应商的邮件转给谁', rules)}
     ${sec('③ 其他设置', settings)}
     ${sec('④ 转发记录（可改发给别人）', log)}
@@ -5988,14 +5996,21 @@ async function pmSaveSettings(body) {
   try { await bapi('/api/acct/pallet-mail/settings', { method: 'PUT', body: JSON.stringify(body) }); toast('已保存'); _pmReload(); }
   catch (e) { toast(e.message, true); }
 }
-async function pmDisconnect() {
-  if (!await pageConfirm('断开 Gmail？断开后不再自动转发（规则和记录保留）。')) return;
-  try { await bapi('/api/acct/pallet-mail/disconnect', { method: 'POST' }); toast('已断开'); _pmReload(); } catch (e) { toast(e.message, true); }
+async function pmDisconnect(id) {
+  const a = (_pm.accounts || []).find(x => x.id === id);
+  if (!await pageConfirm(`断开 ${a ? a.email : '这个邮箱'}？断开后这个邮箱不再自动转发（规则和转发记录保留，以后可以重新连接）。`)) return;
+  try { await bapi(`/api/acct/pallet-mail/accounts/${id}`, { method: 'DELETE' }); toast('已断开'); _pmReload(); } catch (e) { toast(e.message, true); }
 }
-async function pmPoll(btn) {
-  if (btn) { btn.disabled = true; btn.textContent = '检查中…'; }
-  try { const r = await bapi('/api/acct/pallet-mail/poll', { method: 'POST' }); toast(`检查完成：转发 ${r.forwarded} 封${r.failed ? `，失败 ${r.failed} 封` : ''}`); }
+async function pmToggleAccount(id, on) {
+  try { await bapi(`/api/acct/pallet-mail/accounts/${id}`, { method: 'PUT', body: JSON.stringify({ enabled: on }) }); toast(on ? '已开启自动转发' : '已暂停这个邮箱的自动转发'); _pmReload(); }
   catch (e) { toast(e.message, true); }
+}
+async function pmPoll(btn, accountId) {
+  if (btn) { btn.disabled = true; btn.textContent = '检查中…'; }
+  try {
+    const r = await bapi('/api/acct/pallet-mail/poll', { method: 'POST', body: JSON.stringify(accountId ? { account_id: accountId } : {}) });
+    toast(`检查完成（${r.accounts} 个邮箱）：转发 ${r.forwarded} 封${r.failed ? `，失败 ${r.failed} 封` : ''}${r.errors && r.errors.length ? '；' + r.errors.join('；') : ''}`, !!(r.errors && r.errors.length));
+  } catch (e) { toast(e.message, true); }
   _pmReload();
 }
 async function pmSaveRule() {
