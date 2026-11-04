@@ -24082,19 +24082,18 @@ const GUSTO_ALIAS_DEFAULTS = [
   { from: 'Oscar Hernández', to: 'Óscar Hernández Gonzále' },
   { from: 'Uriel Garcia Rodríguez', to: 'Uriel García Rodriguez' },
   { from: 'Eloiso Cornelio Herrera Cano', to: 'Eloiso Cornelio Herrera Cano' },
-  // 2026-11: 拣货的四个人周一到周四用本名、周五到周日用另一个名字, 另一个名字的钱并付给本人
-  // (to 和本名用同一个名册收款人; 工资表上的写法不一, 几种都认)
-  { from: 'Estiben Espinoza Aguilar', to: 'Óscar Hernández Gonzále' },
-  { from: 'Estiben Aguilar', to: 'Óscar Hernández Gonzále' },
-  // 工资表上实际写的是 Espinosa (s), 两种拼法都认
-  { from: 'Estiben Espinosa Aguilar', to: 'Óscar Hernández Gonzále' },
-  { from: 'Estiben Espinosa', to: 'Óscar Hernández Gonzále' },
-  { from: 'Estiben Espinoza', to: 'Óscar Hernández Gonzále' },
-  { from: 'Kevin Gomez Lopez', to: 'Brayan Espinoza Orozco' },
-  { from: 'Kevin Gómez López', to: 'Brayan Espinoza Orozco' },
-  { from: 'Wilson R Lopez Cruz', to: 'Uriel García Rodriguez' },
-  { from: 'Wilson Lopez Cruz', to: 'Uriel García Rodriguez' },
-  { from: 'Gerardo Tecaxco Jr', to: 'Ramiro Montiel Carreon' },
+  // 2026-11: Nexware 的拣货四人周一到周四用本名、周五到周日用另一个名字, 另一个名字的钱并付给本人
+  // (to 和本名用同一个名册收款人; 工资表上的写法不一, 几种都认)。只对 Nexware 的发票生效, 别的客户不管。
+  { from: 'Estiben Espinoza Aguilar', to: 'Óscar Hernández Gonzále', scope: 'Nexware' },
+  { from: 'Estiben Espinosa Aguilar', to: 'Óscar Hernández Gonzále', scope: 'Nexware' },
+  { from: 'Estiben Espinosa', to: 'Óscar Hernández Gonzále', scope: 'Nexware' },
+  { from: 'Estiben Espinoza', to: 'Óscar Hernández Gonzále', scope: 'Nexware' },
+  { from: 'Estiben Aguilar', to: 'Óscar Hernández Gonzále', scope: 'Nexware' },
+  { from: 'Kevin Gomez Lopez', to: 'Brayan Espinoza Orozco', scope: 'Nexware' },
+  { from: 'Kevin Gómez López', to: 'Brayan Espinoza Orozco', scope: 'Nexware' },
+  { from: 'Wilson R Lopez Cruz', to: 'Uriel García Rodriguez', scope: 'Nexware' },
+  { from: 'Wilson Lopez Cruz', to: 'Uriel García Rodriguez', scope: 'Nexware' },
+  { from: 'Gerardo Tecaxco Jr', to: 'Ramiro Montiel Carreon', scope: 'Nexware' },
 ];
 
 // 发工资时薪覆盖: 发票对客户照计费时薪开票（这三人 $18）, 发工资按这里的时薪
@@ -24175,9 +24174,10 @@ _gustoAliasUpsert('gusto_alias_2026_09_30', GUSTO_ALIAS_DEFAULTS.filter(a => /^(
 _gustoAliasUpsert('gusto_alias_2026_09_30b', GUSTO_ALIAS_DEFAULTS.filter(a => /^eloiso cornelio herrera cano$/i.test(a.from)));
 _gustoAliasBackfill('gusto_alias_tecaxco_backfilled', GUSTO_ALIAS_DEFAULTS.filter(a => a.to === 'Tecaxco, Bugui Boy'));
 _gustoAliasBackfill('gusto_alias_eloy_backfilled', GUSTO_ALIAS_DEFAULTS.filter(a => a.to === 'Eloiso Cornelio Herrera Cano'));
-// 2026-11: 拣货四人的另一个名字 → 本人
-_gustoAliasUpsert('gusto_alias_2026_11_pickers_b', GUSTO_ALIAS_DEFAULTS.filter(a => /^estiben espino[sz]a( aguilar)?$/i.test(a.from)));
-_gustoAliasUpsert('gusto_alias_2026_11_pickers', GUSTO_ALIAS_DEFAULTS.filter(a => /^(estiben (espinoza )?aguilar|kevin g[oó]mez l[oó]pez|wilson (r )?lopez cruz|gerardo tecaxco jr)$/i.test(a.from)));
+// 2026-11: Nexware 拣货四人的另一个名字 → 本人 (只限 Nexware 的发票)。
+// 第一版 (gusto_alias_2026_11_pickers) 没限定客户, 这里把同名条目整体换成限定 Nexware 的
+_gustoAliasUpsert('gusto_alias_2026_11_pickers', GUSTO_ALIAS_DEFAULTS.filter(a => a.scope === 'Nexware'));
+_gustoAliasUpsert('gusto_alias_2026_11_pickers_nexware', GUSTO_ALIAS_DEFAULTS.filter(a => a.scope === 'Nexware'));
 
 app.get('/api/admin/gusto-pay-aliases', requireAdmin, (req, res) => {
   res.json({ aliases: _gustoAliases() });
@@ -24187,7 +24187,12 @@ app.post('/api/admin/gusto-pay-aliases', requireAdmin, (req, res) => {
   let list = (req.body && req.body.aliases) || [];
   if (!Array.isArray(list)) return res.status(400).json({ error: 'aliases 需要是数组' });
   list = list.slice(0, 500)
-    .map(a => ({ from: String((a && a.from) || '').trim().slice(0, 120), to: String((a && a.to) || '').trim().slice(0, 120) }))
+    .map(a => {
+      const o = { from: String((a && a.from) || '').trim().slice(0, 120), to: String((a && a.to) || '').trim().slice(0, 120) };
+      const sc = String((a && a.scope) || '').trim().slice(0, 80);
+      if (sc) o.scope = sc;   // 只对这个客户的发票生效
+      return o;
+    })
     .filter(a => a.from && a.to);
   db.prepare('INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)')
     .run('gusto_pay_aliases', JSON.stringify(list));
@@ -24231,6 +24236,7 @@ app.post('/api/admin/gusto-pay-csv', requireAdmin, (req, res) => {
       period_start: req.body.period_start || '',
       period_end: req.body.period_end || '',
       mode: req.body.mode === 'hours' ? 'hours' : 'bonus',
+      company: String(req.body.company || ''),   // 这张发票的客户: 对照表里限定客户的条目按它生效
       aliases: _gustoAliases(),
       payRates: GUSTO_PAY_RATE_OVERRIDES, hoursMerge: GUSTO_HOURS_MERGE,
     });
