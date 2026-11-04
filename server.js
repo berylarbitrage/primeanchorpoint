@@ -24086,6 +24086,10 @@ const GUSTO_ALIAS_DEFAULTS = [
   // (to 和本名用同一个名册收款人; 工资表上的写法不一, 几种都认)
   { from: 'Estiben Espinoza Aguilar', to: 'Óscar Hernández Gonzále' },
   { from: 'Estiben Aguilar', to: 'Óscar Hernández Gonzále' },
+  // 工资表上实际写的是 Espinosa (s), 两种拼法都认
+  { from: 'Estiben Espinosa Aguilar', to: 'Óscar Hernández Gonzále' },
+  { from: 'Estiben Espinosa', to: 'Óscar Hernández Gonzále' },
+  { from: 'Estiben Espinoza', to: 'Óscar Hernández Gonzále' },
   { from: 'Kevin Gomez Lopez', to: 'Brayan Espinoza Orozco' },
   { from: 'Kevin Gómez López', to: 'Brayan Espinoza Orozco' },
   { from: 'Wilson R Lopez Cruz', to: 'Uriel García Rodriguez' },
@@ -24172,6 +24176,7 @@ _gustoAliasUpsert('gusto_alias_2026_09_30b', GUSTO_ALIAS_DEFAULTS.filter(a => /^
 _gustoAliasBackfill('gusto_alias_tecaxco_backfilled', GUSTO_ALIAS_DEFAULTS.filter(a => a.to === 'Tecaxco, Bugui Boy'));
 _gustoAliasBackfill('gusto_alias_eloy_backfilled', GUSTO_ALIAS_DEFAULTS.filter(a => a.to === 'Eloiso Cornelio Herrera Cano'));
 // 2026-11: 拣货四人的另一个名字 → 本人
+_gustoAliasUpsert('gusto_alias_2026_11_pickers_b', GUSTO_ALIAS_DEFAULTS.filter(a => /^estiben espino[sz]a( aguilar)?$/i.test(a.from)));
 _gustoAliasUpsert('gusto_alias_2026_11_pickers', GUSTO_ALIAS_DEFAULTS.filter(a => /^(estiben (espinoza )?aguilar|kevin g[oó]mez l[oó]pez|wilson (r )?lopez cruz|gerardo tecaxco jr)$/i.test(a.from)));
 
 app.get('/api/admin/gusto-pay-aliases', requireAdmin, (req, res) => {
