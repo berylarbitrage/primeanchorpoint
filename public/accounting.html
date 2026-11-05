@@ -7465,7 +7465,7 @@ function renderGustoPayList() {
 }
 // ── 关联核对: 银行转账日期要在付款日期前后 GUSTO_LINK_MAX_DAYS 天内, 金额要对上
 // (一笔转账挂了几笔付款时, 这几笔付款合计 = 转账金额) ──
-const GUSTO_LINK_MAX_DAYS = 2;
+const GUSTO_LINK_MAX_DAYS = 3;
 function _gustoDayDiff(a, b) {
   const x = Date.parse(String(a || '').slice(0, 10) + 'T00:00:00Z'), y = Date.parse(String(b || '').slice(0, 10) + 'T00:00:00Z');
   return isNaN(x) || isNaN(y) ? null : Math.round(Math.abs(x - y) / 86400000);
@@ -7616,7 +7616,7 @@ async function gustoBankReview(uuid, action) {
   if (r && r.ok) { toast(action === 'approve' ? '✅ 已通过' : '已驳回并解除'); gustoLoadPayments(); _gustoAnnRefresh(); }
   else toast((r && r.error) || '操作失败', true);
 }
-// ⚡ 自动配对: 金额一致 + 日期 ±GUSTO_LINK_MAX_DAYS 天 (服务端同样 ±2 天)
+// ⚡ 自动配对: 金额一致 + 日期 ±GUSTO_LINK_MAX_DAYS 天 (服务端同样 ±3 天)
 async function gustoBankAutoMatch() {
   if (!await pageConfirm(`自动把未关联的付款和金额一致、日期相近（±${GUSTO_LINK_MAX_DAYS}天）的 Gusto 银行转账配对？配不上的留着手动。`)) return;
   const r = await api('/api/acct/gusto/bank-auto-match', { method: 'POST', body: JSON.stringify({}) }).catch(e => ({ error: e.message }));
