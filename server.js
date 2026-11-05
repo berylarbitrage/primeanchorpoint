@@ -37558,7 +37558,28 @@ app.get('/api/plaid/ann-options', requireAdmin, requireRole('admin', 'cs', 'acco
       companies: db.prepare('SELECT name FROM partners WHERE COALESCE(abolished,0)=0 ORDER BY name').all().map(r => r.name).filter(Boolean),
       warehouses: db.prepare('SELECT name FROM job_sites WHERE active=1 ORDER BY name').all().map(r => r.name).filter(Boolean),
       referrers: db.prepare('SELECT name FROM referrers ORDER BY name').all().map(r => r.name).filter(Boolean),
+      cn_staff: _cnStaffList(),
     });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// 国内员工名单 (标注「🇨🇳 国内员工工资」的下拉用): 存 app_settings.cn_staff (JSON 数组);
+// 还没存过时用默认两个人。admin/客服/会计都能在标注面板里加人、删人。
+const CN_STAFF_DEFAULT = ['Ni Zhang', 'Siliang Tao'];
+function _cnStaffList() {
+  const row = db.prepare("SELECT value FROM app_settings WHERE key='cn_staff'").get();
+  if (!row) return CN_STAFF_DEFAULT.slice();
+  try { const a = JSON.parse(row.value || '[]'); return Array.isArray(a) ? a.map(String).filter(Boolean) : CN_STAFF_DEFAULT.slice(); }
+  catch (e) { return CN_STAFF_DEFAULT.slice(); }
+}
+app.post('/api/plaid/ann-options/cn-staff', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
+  try {
+    const raw = (req.body || {}).names;
+    if (!Array.isArray(raw)) return res.status(400).json({ error: 'names 必须是数组' });
+    const names = [];
+    raw.forEach(n => { const v = String(n == null ? '' : n).trim().slice(0, 60); if (v && !names.includes(v)) names.push(v); });
+    if (names.length > 200) return res.status(400).json({ error: '名单太长' });
+    db.prepare(`INSERT INTO app_settings (key, value) VALUES ('cn_staff', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(JSON.stringify(names));
+    res.json({ ok: true, cn_staff: names });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -42178,6 +42199,7 @@ function _bsPayeeDisplaySrv(payee) {
   if (p.indexOf('推荐费:') === 0) { const n = p.slice(4); return '推荐费' + (n ? ' · ' + n : ''); }
   if (p.indexOf('发工资奖励:') === 0) { const n = p.slice('发工资奖励:'.length); return '发工资奖励' + (n ? ' · ' + n : ''); }
   if (p.indexOf('代收:') === 0) { const n = p.slice('代收:'.length); return '帮别人代收' + (n ? ' · ' + n : ''); }
+  if (p.indexOf('国内员工:') === 0) { const n = p.slice('国内员工:'.length); return '国内员工工资' + (n ? ' · ' + n : ''); }
   if (p.indexOf('借款:') === 0 || p.indexOf('还款:') === 0) { const lbl = p.slice(0, 2), rest = p.slice(3), i = rest.indexOf('|'); const co = i < 0 ? '' : rest.slice(0, i); const nm = i < 0 ? rest : rest.slice(i + 1); const v = [co, nm].filter(Boolean).join(' · '); return lbl + (v ? ' · ' + v : ''); }
   if (p.indexOf('借款还款:') === 0) { const rest = p.slice('借款还款:'.length), i = rest.indexOf('|'); const co = i < 0 ? '' : rest.slice(0, i); const nm = i < 0 ? rest : rest.slice(i + 1); const v = [co, nm].filter(Boolean).join(' · '); return '借款还款' + (v ? ' · ' + v : ''); }
   return p;
@@ -45968,7 +45990,7 @@ app.post('/api/acct/gusto/bank-auto-match', requireAdmin, requireAcctWrite, (req
           if (used.has(t.txn_id)) continue;
           if (Math.abs(Math.abs(Number(t.amount)) - Math.abs(Number(p.wage_total))) > 0.005) continue;
           const gap = Math.abs((Date.parse(t.date + 'T00:00:00Z') || 0) - pd);
-          if (gap <= 7 * dayMs && gap < bestGap) { best = t; bestGap = gap; }
+          if (gap <= 2 * dayMs && gap < bestGap) { best = t; bestGap = gap; } // 与前端「关联核对」一致: 日期 ±2 天内
         }
         if (!best) continue;
         used.add(best.txn_id);
