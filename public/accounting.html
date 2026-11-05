@@ -8023,17 +8023,38 @@ function ensureViewer() {
   const m = document.createElement('div');
   m.id = 'vwModal';
   m.style.cssText = 'display:none;position:fixed;inset:0;z-index:1500;background:rgba(15,23,42,.55)';
-  m.innerHTML = `<div style="position:absolute;inset:2%;background:#eef2f7;border-radius:12px;display:flex;flex-direction:column;overflow:hidden">
-    <div style="display:flex;align-items:center;gap:.5rem;padding:.55rem .8rem;background:#fff;border-bottom:1px solid var(--g200);flex-wrap:wrap">
+  // 打印 (按钮或 Ctrl+P): 只打印左边的文件本身——工具栏、右边批注栏、发票里的「付款备注(内部)」列和圈选框都不打
+  if (!document.getElementById('vwPrintCss')) {
+    const st = document.createElement('style');
+    st.id = 'vwPrintCss';
+    st.textContent = `@media print {
+      @page { size: letter; margin: 10mm; }
+      body.vw-open { background: #fff !important; }
+      body.vw-open > *:not(#vwModal) { display: none !important; }
+      body.vw-open #vwModal { position: static !important; display: block !important; background: none !important; }
+      #vwModal > .vw-shell { position: static !important; inset: auto !important; display: block !important; background: #fff !important; border-radius: 0 !important; overflow: visible !important; }
+      #vwBar, #vwSide, .vw-ann, .vw-lp { display: none !important; }
+      #vwBody { display: block !important; overflow: visible !important; }
+      #vwPages { display: block !important; overflow: visible !important; padding: 0 !important; }
+      #vwPages .vw-page { width: auto !important; max-width: none !important; margin: 0 !important; box-shadow: none !important; break-after: page; }
+      #vwPages .vw-page:last-child { break-after: auto; }
+      #vwPages .vw-page canvas { max-width: 100% !important; height: auto !important; }
+      * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }`;
+    document.head.appendChild(st);
+  }
+  m.innerHTML = `<div class="vw-shell" style="position:absolute;inset:2%;background:#eef2f7;border-radius:12px;display:flex;flex-direction:column;overflow:hidden">
+    <div id="vwBar" style="display:flex;align-items:center;gap:.5rem;padding:.55rem .8rem;background:#fff;border-bottom:1px solid var(--g200);flex-wrap:wrap">
       <strong id="vwTitle" style="font-size:.92rem;flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></strong>
       <span style="font-size:.74rem;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:.1rem .45rem">只读 · 不可修改原件</span>
       <span id="vwStatus" style="font-size:.78rem;color:var(--g400)"></span>
       <button class="btn btn-sm" id="vwDrawBtn" onclick="vwToggleDraw()" style="border:1px solid var(--g200)">⭕ 圈选批注：关</button>
+      <button class="btn btn-sm" onclick="window.print()" style="border:1px solid var(--g200)" title="只打印文件本身，不带批注栏和内部付款备注">🖨 打印</button>
       <button class="btn btn-sm btn-outline" onclick="closeViewer()">✕ 关闭</button>
     </div>
-    <div style="flex:1;display:flex;overflow:hidden">
+    <div id="vwBody" style="flex:1;display:flex;overflow:hidden">
       <div id="vwPages" style="flex:1;overflow:auto;padding:1rem;display:flex;flex-direction:column;align-items:center;gap:1rem"></div>
-      <div style="width:330px;border-left:1px solid var(--g200);background:#fff;display:flex;flex-direction:column">
+      <div id="vwSide" style="width:330px;border-left:1px solid var(--g200);background:#fff;display:flex;flex-direction:column">
         <div style="padding:.55rem .65rem;border-bottom:1px solid var(--g100)">
           <div style="font-weight:700;font-size:.85rem">✏️ 批注</div>
           <div id="vwPanelHint" style="font-size:.75rem;color:var(--g400);margin-top:.2rem">开启「圈选批注」后在左侧文件上<strong>拖动圈出</strong>位置，再在这里填备注。</div>
@@ -8047,6 +8068,7 @@ function ensureViewer() {
 function setVwStatus(t) { const s = document.getElementById('vwStatus'); if (s) { s.textContent = t; if (t) setTimeout(() => { if (s.textContent === t) s.textContent = ''; }, 1400); } }
 function closeViewer() {
   document.getElementById('vwModal').style.display = 'none';
+  document.body.classList.remove('vw-open');
   _view = null;
   if (EMBED) { window.parent.postMessage('pa-inv-close', location.origin); return; }
   loadAll(); // 刷新批注数
@@ -8071,6 +8093,7 @@ function vwApplyDraw() {
 async function openInvoice(id) {
   ensureViewer();
   document.getElementById('vwModal').style.display = 'block';
+  document.body.classList.add('vw-open');
   const cont = document.getElementById('vwPages');
   cont.innerHTML = '<div style="color:var(--g400);padding:2rem">加载中…</div>';
   try {
@@ -8506,7 +8529,7 @@ function renderInvoiceDoc(inv) {
   if (profile.invoice_mode === 'container' && contItems.length) {
     baseSum = Math.round(contItems.reduce((s, c) => s + (Number(c.total != null ? c.total : (Number(c.qty) || 0) * (Number(c.unit_price) || 0)) || 0), 0) * 100) / 100;
     lineTable = `<table style="width:100%;border-collapse:collapse;margin-bottom:.6rem">
-      <thead><tr><th style="${th}">#</th><th style="${th}">Type</th><th style="${th}">Container / Week</th><th style="${thR}">Qty</th><th style="${thR}">Unit Price</th><th style="${thR}">Amount</th><th style="${th};color:#94a3b8">付款备注<span style="font-size:.6rem">(内部)</span></th></tr></thead>
+      <thead><tr><th style="${th}">#</th><th style="${th}">Type</th><th style="${th}">Container / Week</th><th style="${thR}">Qty</th><th style="${thR}">Unit Price</th><th style="${thR}">Amount</th><th class="vw-lp" style="${th};color:#94a3b8">付款备注<span style="font-size:.6rem">(内部)</span></th></tr></thead>
       <tbody>${contItems.map((c, i) => `<tr>
         <td style="${td}">${i + 1}</td>
         <td style="${td}">${c.line_type === 'load' ? '装柜 Load' : '卸柜 Unload'}</td>
@@ -8514,7 +8537,7 @@ function renderInvoiceDoc(inv) {
         <td style="${tdR}">${Number(c.qty) || 0}</td>
         <td style="${tdR}">${money(c.unit_price)}</td>
         <td style="${tdR};font-weight:700">${money(c.total != null ? c.total : (Number(c.qty) || 0) * (Number(c.unit_price) || 0))}</td>
-        <td style="${td};width:36%;overflow-wrap:anywhere" id="lpCell${i}">${_lpChip(i)}</td>
+        <td class="vw-lp" style="${td};width:36%;overflow-wrap:anywhere" id="lpCell${i}">${_lpChip(i)}</td>
       </tr>`).join('')}</tbody></table>`;
   } else {
     const hasOt = items.some(it => Number(it.otHours) > 0);
@@ -8526,7 +8549,7 @@ function renderInvoiceDoc(inv) {
     const totOt = items.reduce((s, it) => s + (Number(it.otHours) || 0), 0);
     baseSum = Math.round(items.reduce((s, it) => s + rawAmt(it), 0) * 100) / 100;
     lineTable = `<table style="width:100%;border-collapse:collapse;margin-bottom:.6rem">
-      <thead><tr><th style="${th}">#</th><th style="${th}">Worker</th><th style="${thR}">Reg Hrs</th>${hasOt ? `<th style="${thR}">OT Hrs</th>` : ''}<th style="${thR}">Rate</th>${hasOt ? `<th style="${thR}">OT Rate</th>` : ''}<th style="${thR}">Amount</th><th style="${th};color:#94a3b8">付款备注<span style="font-size:.6rem">(内部)</span></th></tr></thead>
+      <thead><tr><th style="${th}">#</th><th style="${th}">Worker</th><th style="${thR}">Reg Hrs</th>${hasOt ? `<th style="${thR}">OT Hrs</th>` : ''}<th style="${thR}">Rate</th>${hasOt ? `<th style="${thR}">OT Rate</th>` : ''}<th style="${thR}">Amount</th><th class="vw-lp" style="${th};color:#94a3b8">付款备注<span style="font-size:.6rem">(内部)</span></th></tr></thead>
       <tbody>${items.map((it, i) => `<tr>
           <td style="${td}">${i + 1}</td>
           <td style="${td}">${esc(it.name || '')}</td>
@@ -8535,7 +8558,7 @@ function renderInvoiceDoc(inv) {
           <td style="${tdR}">${money(it.rate)}</td>
           ${hasOt ? `<td style="${tdR}">${money(it.otRate)}</td>` : ''}
           <td style="${tdR};font-weight:700">${money(rawAmt(it))}</td>
-          <td style="${td};width:36%;overflow-wrap:anywhere" id="lpCell${i}">${_lpChip(i)}</td>
+          <td class="vw-lp" style="${td};width:36%;overflow-wrap:anywhere" id="lpCell${i}">${_lpChip(i)}</td>
         </tr>`).join('')}
         <tr style="background:#e8f5fb;font-weight:700;color:#1e293b">
           <td colspan="2" style="${tdR};text-transform:uppercase;letter-spacing:.04em;border-top:2px solid #29AAE1;border-bottom:none">Total</td>
@@ -8543,7 +8566,7 @@ function renderInvoiceDoc(inv) {
           ${hasOt ? `<td style="${tdR};border-top:2px solid #29AAE1;border-bottom:none">${totOt > 0 ? totOt.toFixed(2) + 'h' : '—'}</td>` : ''}
           <td colspan="${hasOt ? 2 : 1}" style="${td};border-top:2px solid #29AAE1;border-bottom:none"></td>
           <td style="${tdR};font-weight:700;border-top:2px solid #29AAE1;border-bottom:none">${money(baseSum)}</td>
-          <td style="${td};border-top:2px solid #29AAE1;border-bottom:none"></td>
+          <td class="vw-lp" style="${td};border-top:2px solid #29AAE1;border-bottom:none"></td>
         </tr></tbody></table>`;
   }
 
@@ -8639,6 +8662,7 @@ async function openStatement(id) {
   const s = _stmtList.find(x => x.id === id) || {};
   document.getElementById('vwTitle').textContent = `🏦 ${[s.bank, s.account_name, s.file_name].filter(Boolean).join(' · ')}`;
   document.getElementById('vwModal').style.display = 'block';
+  document.body.classList.add('vw-open');
   const cont = document.getElementById('vwPages');
   cont.innerHTML = '<div style="color:var(--g400);padding:2rem">加载中…</div>';
   try {
