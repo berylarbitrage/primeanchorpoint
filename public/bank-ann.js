@@ -193,6 +193,8 @@ function _bsPalletAmountOk(box) {
 }
 function _bsNoteSatisfied(box) {
   if (_bsIsNA(box)) return true;
+  // 工资退回: 必须填发票号 + 账期, 只写备注不算
+  if (_bsIsPayrollReturn(box)) return _bsHasInvoiceInfo(box);
   if (box.note && String(box.note).trim()) return true;
   const kind = _bsPayeeKind(box);
   if (_bsPalletAmountOnly(box)) return _bsPalletAmountOk(box);
@@ -250,7 +252,18 @@ function _bsPayeeKind(box) {
 }
 function _bsWantsInvoice(box) {
   const k = _bsPayeeKind(box);
-  return k === 'employee' || k === 'unload' || k === 'pallet' || (k === 'company' && box.direction === 'in');
+  return k === 'employee' || k === 'unload' || k === 'pallet' || (k === 'company' && box.direction === 'in')
+    || (box && box.payee === BS_PAYEE_RETURNED);
+}
+// 工资退回 = 选了「退回款」且银行描述是 Gusto 的 (发不出去的工资被 Gusto 退回来):
+// 必须写清是哪张 invoice / 哪个账期的工资, 和「公司员工」一样填 Invoice 信息
+function _bsTxnName(box) {
+  const t = box && box.plaid_txn_id ? (_TXNS || []).find(x => x.txn_id === box.plaid_txn_id) : null;
+  return t ? String(t.name || '') + ' ' + String(t.merchant || '') : '';
+}
+function _bsIsPayrollReturn(box) { return !!box && box.payee === BS_PAYEE_RETURNED && /gusto/i.test(_bsTxnName(box)); }
+function _bsHasInvoiceInfo(box) {
+  return !!(String(box.invoice_number || '').trim() && String(box.period_start || '').trim() && String(box.period_end || '').trim());
 }
 // 选项统一走 /plaid/ann-options (admin/客服/会计都可读, 之前调 /admin/* 会让客服和会计拿到空列表)
 let _bsOptsLoaded = false;
@@ -769,7 +782,10 @@ function bsAmtInput(id, el) {
 function _bsNoteMissing(box) {
   const kind = _bsPayeeKind(box);
   const missing = [];
-  if (kind === 'company' && box.direction === 'in') {
+  if (_bsIsPayrollReturn(box)) {
+    if (!String(box.invoice_number || '').trim()) missing.push('发票号');
+    if (!String(box.period_start || '').trim() || !String(box.period_end || '').trim()) missing.push('账期');
+  } else if (kind === 'company' && box.direction === 'in') {
     if (!String(box.purpose || '').trim()) missing.push('用途');
     if (!String(box.invoice_number || '').trim()) missing.push('发票号');
     if (!String(box.period_start || '').trim() || !String(box.period_end || '').trim()) missing.push('账期');
@@ -788,6 +804,7 @@ function _bsNoteMissing(box) {
 // 备注框占位提示: 不满足免填条件时直接说缺什么, 别让人猜「为什么要我备注」
 function _bsNoteHint(box) {
   if (_bsNoteSatisfied(box)) return '原因 / 备注（选填）';
+  if (_bsIsPayrollReturn(box)) return '工资退回：必须在上面 Invoice 里填「' + _bsNoteMissing(box).join('、') + '」（只写备注不行）';
   const missing = _bsNoteMissing(box);
   return missing.length ? `原因 / 备注（需补上——或把「${missing.join('、')}」填上即可免填）` : '原因 / 备注（需补上）';
 }
@@ -995,6 +1012,7 @@ function _bsAnnCheckMode(box) {
   if (k === 'company' && box.direction === 'in') return 'full';
   if (k === 'pallet') return 'full'; // 木板钱: 发票号去 Bintique 账单里核对 (号码/账期/金额/公司)
   if (k === 'employee') return 'exist';
+  if (box.payee === BS_PAYEE_RETURNED) return 'exist'; // 退回款: 填了发票号就核对系统里有没有这张发票
   return null;
 }
 async function _bsAnnCheckRun(boxId) {
@@ -1349,6 +1367,10 @@ async function annDeleteBox(id) {
 // 不符, 且没写备注解释的, 不给通过)
 async function annApprove(id) {
   const box = _bsBoxList.find(b => b.id === id); if (!box) return;
+  if (_bsIsPayrollReturn(box) && !_bsHasInvoiceInfo(box)) {
+    showToast('工资退回必须填 Invoice 信息（' + _bsNoteMissing(box).join('、') + '）才能审核通过', 'error');
+    return;
+  }
   const d = _bsAmtDiff(box);
   if (d && Math.abs(d.diff) >= 0.01 && !String(box.note || '').trim()) {
     showToast('银行到账 ' + money(d.bank) + ' 与发票合计 ' + money(d.sum) + ' 差 ' + money(Math.abs(d.diff)) + '：必须在「原因/备注」里说明差额原因（可附照片）才能审核通过', 'error');
