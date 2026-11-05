@@ -45990,7 +45990,7 @@ app.post('/api/acct/gusto/bank-auto-match', requireAdmin, requireAcctWrite, (req
           if (used.has(t.txn_id)) continue;
           if (Math.abs(Math.abs(Number(t.amount)) - Math.abs(Number(p.wage_total))) > 0.005) continue;
           const gap = Math.abs((Date.parse(t.date + 'T00:00:00Z') || 0) - pd);
-          if (gap <= 2 * dayMs && gap < bestGap) { best = t; bestGap = gap; } // 与前端「关联核对」一致: 日期 ±2 天内
+          if (gap <= 3 * dayMs && gap < bestGap) { best = t; bestGap = gap; } // 与前端「关联核对」一致: 日期 ±3 天内
         }
         if (!best) continue;
         used.add(best.txn_id);
