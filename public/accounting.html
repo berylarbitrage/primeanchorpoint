@@ -7361,6 +7361,7 @@ function renderGustoPayList() {
     `${from || to ? `${from || '…'} ~ ${to || '…'} · ` : ''}${rows.length} 笔 · 合计 ${money(rows.reduce((s2, x) => s2 + (+x.wage_total || 0), 0))}${w2Sum ? `（其中 W-2 员工工资 ${money(w2Sum)}）` : ''} · ${grpLabel}`;
   // 分组: payroll = 同一付款日的一次发薪; 服务器按日期倒序给行, 依出现顺序建组 = 最近的在最上面
   const groups = new Map();
+  const _chk = _gustoLinkCheckMap();
   for (const p of rows) {
     let k, label;
     if (grp === 'payroll') {
@@ -7370,11 +7371,12 @@ function renderGustoPayList() {
     else if (grp === 'month') { k = String(p.date || '').slice(0, 7); label = `🗓️ ${k}`; }
     else if (grp === 'dept') { k = p.department || '（没有部门）'; label = `🏢 ${k}`; }
     else { k = ''; label = ''; }
-    if (!groups.has(k)) groups.set(k, { label, rows: [], sum: 0, linked: 0, invLinked: 0, people: new Set() });
+    if (!groups.has(k)) groups.set(k, { label, rows: [], sum: 0, linked: 0, invLinked: 0, bad: 0, people: new Set() });
     const g = groups.get(k);
     g.rows.push(p);
     g.sum += (+p.wage_total || 0);
     if (p.bank_txn_id) g.linked++;
+    if (p.bank_txn_id && _chk[p.uuid] && !_chk[p.uuid].ok) g.bad++;
     if (p.bank_txn_id && (_gustoInvLinks[p.bank_txn_id] || []).length) g.invLinked++;
     g.people.add(p.contractor_name);
   }
@@ -7409,6 +7411,7 @@ function renderGustoPayList() {
         ? 'color:#92400e;background:#fef3c7;border:1px solid #fcd34d'
         : 'color:#166534;background:#dcfce7;border:1px solid #bbf7d0';
       return `<span title="${esc(tip)}" style="font-size:.72rem;${style};border-radius:6px;padding:1px 6px;white-space:nowrap">🏦 ${esc(label)}${pending ? ' · 待审核' : ''}</span>` +
+        _gustoLinkCheckBadge(_chk[p.uuid]) +
         (pending && isAdmin
           ? ` <a style="cursor:pointer;font-size:.74rem;color:#166534;text-decoration:underline" title="审核通过" onclick="gustoBankReview('${esc(p.uuid)}','approve')">✓通过</a>` +
             ` <a style="cursor:pointer;font-size:.74rem;color:#dc2626;text-decoration:underline" title="驳回并解除关联" onclick="gustoBankReview('${esc(p.uuid)}','reject')">✕驳回</a>`
@@ -7455,9 +7458,40 @@ function renderGustoPayList() {
         <td colspan="10" style="font-weight:700;font-size:.8rem;padding:.4rem .5rem">${esc(g.label)}
           <span style="color:var(--g500);font-weight:400">· ${g.rows.length} 笔 · ${g.people.size} 人 · 小计</span> ${money(g.sum)}
           <span style="font-weight:400;font-size:.74rem;color:${g.linked === g.rows.length ? '#166534' : '#b45309'}">· 银行已关联 ${g.linked}/${g.rows.length}</span>
-          <span style="font-weight:400;font-size:.74rem;color:${g.invLinked === g.rows.length ? '#166534' : '#b45309'}">· Invoice 已关联 ${g.invLinked}/${g.rows.length}</span></td>
+          <span style="font-weight:400;font-size:.74rem;color:${g.invLinked === g.rows.length ? '#166534' : '#b45309'}">· Invoice 已关联 ${g.invLinked}/${g.rows.length}</span>${g.bad ? `
+          <span title="银行转账日期不在付款日期 ${GUSTO_LINK_MAX_DAYS} 天内, 或金额对不上" style="font-size:.74rem;color:#fff;background:#dc2626;border-radius:6px;padding:0 6px">⚠ ${g.bad} 笔关联对不上</span>` : ''}</td>
       </tr>` : '') + g.rows.map(rowHtml).join('')).join('')
     : `<tr><td colspan="10" style="color:var(--g400)">${_gustoPayRows.length ? '这个时间范围 / 搜索条件下没有付款' : '还没有 Gusto 付款记录'}</td></tr>`;
+}
+// ── 关联核对: 银行转账日期要在付款日期前后 GUSTO_LINK_MAX_DAYS 天内, 金额要对上
+// (一笔转账挂了几笔付款时, 这几笔付款合计 = 转账金额) ──
+const GUSTO_LINK_MAX_DAYS = 2;
+function _gustoDayDiff(a, b) {
+  const x = Date.parse(String(a || '').slice(0, 10) + 'T00:00:00Z'), y = Date.parse(String(b || '').slice(0, 10) + 'T00:00:00Z');
+  return isNaN(x) || isNaN(y) ? null : Math.round(Math.abs(x - y) / 86400000);
+}
+// uuid → { days, amtDiff, dateOk, amtOk, ok } —— 只给已关联且银行记录找得到的付款
+function _gustoLinkCheckMap() {
+  const sums = {};
+  _gustoPayRows.forEach(x => { if (x.bank_txn_id) sums[x.bank_txn_id] = (sums[x.bank_txn_id] || 0) + Math.abs(+x.wage_total || 0); });
+  const out = {};
+  _gustoPayRows.forEach(x => {
+    const t = x.bank_txn_id ? _gustoBankTxns[x.bank_txn_id] : null;
+    if (!t) return;
+    const days = _gustoDayDiff(x.date, t.date);
+    const amtDiff = Math.round((Math.abs(+t.amount || 0) - sums[x.bank_txn_id]) * 100) / 100;
+    const dateOk = days != null && days <= GUSTO_LINK_MAX_DAYS, amtOk = Math.abs(amtDiff) < 0.005;
+    out[x.uuid] = { days, amtDiff, dateOk, amtOk, ok: dateOk && amtOk };
+  });
+  return out;
+}
+function _gustoLinkCheckBadge(c) {
+  if (!c) return '';
+  if (c.ok) return ` <span title="日期相差 ${c.days} 天（${GUSTO_LINK_MAX_DAYS} 天内）· 金额一致" style="font-size:.72rem;color:#166534;font-weight:700">✓对上</span>`;
+  const why = [];
+  if (!c.dateOk) why.push(c.days == null ? '日期缺失' : `日期相差 ${c.days} 天`);
+  if (!c.amtOk) why.push(`金额${c.amtDiff > 0 ? '多' : '少'} ${money(Math.abs(c.amtDiff))}`);
+  return ` <span title="付款日期和银行转账日期要在 ${GUSTO_LINK_MAX_DAYS} 天内, 金额要一致 (合并扣款按合计算)" style="font-size:.72rem;color:#fff;background:#dc2626;border-radius:6px;padding:1px 6px;white-space:nowrap">⚠ ${esc(why.join(' · '))}</span>`;
 }
 // ── 🏦 付款 ↔ 银行转账关联: 候选只有银行历史里的 Gusto 交易, 其他转账不能挂 ──
 let _gustoInvLinks = {};  // bank txn_id → [发票逐行付款备注关联], 见 /api/acct/gusto/payments
@@ -7519,9 +7553,13 @@ function renderGustoBankList() {
   // 这笔转账上已挂、但不在这次选的付款里的金额 —— 要一起算进合计
   const otherSum = t => (t.linked && t.linked.pays ? t.linked.pays : []).filter(x => !P.uuids.has(x.uuid)).reduce((a, x) => a + Math.abs(+x.amt || 0), 0);
   const usable = t => Math.abs(Math.abs(+t.amount) - otherSum(t) - P.total) <= 0.005;
-  rows = [...rows.filter(usable), ...rows.filter(t => !usable(t))];
+  // 这次要挂的付款里最早/最晚的日期; 转账日期离这些付款超过 GUSTO_LINK_MAX_DAYS 天就提醒
+  const pdates = P.pays.map(x => x.date).filter(Boolean);
+  const dayGap = t => pdates.length ? Math.max(...pdates.map(d => _gustoDayDiff(d, t.date) ?? 999)) : null;
+  const byGap = (a, b) => (dayGap(a) ?? 999) - (dayGap(b) ?? 999);
+  rows = [...rows.filter(usable).sort(byGap), ...rows.filter(t => !usable(t))];
   document.getElementById('gustoBankList').innerHTML = rows.length ? rows.map(t => {
-    const ok = usable(t), amtMatch = ok;
+    const ok = usable(t), amtMatch = ok, gap = dayGap(t);
     const os = otherSum(t);
     const reason = (t.linked ? `已挂 ${t.linked.n} 笔${t.linked.n === 1 ? '：' + (t.linked.name || '') + ' ' + (t.linked.date || '') : ' · ' + money(t.linked.sum)}${t.linked.status === 'pending' ? '（待审核）' : ''}` : '')
       + (!amtMatch ? `${t.linked ? ' · ' : ''}金额对不上${os ? `（还差 ${money(Math.abs(+t.amount) - os)}）` : ''}` : '');
@@ -7534,6 +7572,9 @@ function renderGustoBankList() {
           <span style="font-weight:700">${esc(_gustoTxnTitle(t))}</span>
           ${t.pending ? '<i style="color:#b45309;font-size:.74rem">(pending)</i>' : ''}
           ${reason ? `<span style="font-size:.72rem;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:0 6px;white-space:nowrap">${esc(reason)}</span>` : ''}
+          ${gap == null ? '' : gap <= GUSTO_LINK_MAX_DAYS
+            ? `<span style="font-size:.72rem;color:#166534;white-space:nowrap">✓ 日期相差 ${gap} 天</span>`
+            : `<span title="付款日期和银行转账日期要在 ${GUSTO_LINK_MAX_DAYS} 天内" style="font-size:.72rem;color:#fff;background:#dc2626;border-radius:6px;padding:0 6px;white-space:nowrap">⚠ 日期相差 ${gap} 天</span>`}
           <b style="margin-left:auto;white-space:nowrap;font-size:1.08rem;${amtMatch ? 'color:#166534' : ''}">${money(Math.abs(t.amount))}</b>
         </span>
         <span style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;font-size:.78rem;margin-top:3px">
@@ -7553,6 +7594,11 @@ function _gustoAnnRefresh() { if (typeof annLoadAll === 'function') annLoadAll()
 async function submitGustoBankLink() {
   if (!_gustoBankTarget) return;
   if (!_gustoBankSel) return toast('请先选择一笔金额对得上的 Gusto 银行转账', true);
+  const selT = (_gustoBankRows || []).find(t => t.txn_id === _gustoBankSel);
+  if (selT) {
+    const far = _gustoBankTarget.pays.map(x => _gustoDayDiff(x.date, selT.date)).filter(d => d == null || d > GUSTO_LINK_MAX_DAYS);
+    if (far.length && !await pageConfirm(`这笔银行转账（${selT.date}）和付款日期相差超过 ${GUSTO_LINK_MAX_DAYS} 天，确定要关联吗？`)) return;
+  }
   const r = await api('/api/acct/gusto/bank-link',
     { method: 'POST', body: JSON.stringify({ uuids: [..._gustoBankTarget.uuids], txn_id: _gustoBankSel }) }).catch(e => ({ error: e.message }));
   if (r && r.ok) {
@@ -7570,9 +7616,9 @@ async function gustoBankReview(uuid, action) {
   if (r && r.ok) { toast(action === 'approve' ? '✅ 已通过' : '已驳回并解除'); gustoLoadPayments(); _gustoAnnRefresh(); }
   else toast((r && r.error) || '操作失败', true);
 }
-// ⚡ 自动配对: 金额一致 + 日期 ±7 天
+// ⚡ 自动配对: 金额一致 + 日期 ±GUSTO_LINK_MAX_DAYS 天 (服务端同样 ±2 天)
 async function gustoBankAutoMatch() {
-  if (!await pageConfirm('自动把未关联的付款和金额一致、日期相近（±7天）的 Gusto 银行转账配对？配不上的留着手动。')) return;
+  if (!await pageConfirm(`自动把未关联的付款和金额一致、日期相近（±${GUSTO_LINK_MAX_DAYS}天）的 Gusto 银行转账配对？配不上的留着手动。`)) return;
   const r = await api('/api/acct/gusto/bank-auto-match', { method: 'POST', body: JSON.stringify({}) }).catch(e => ({ error: e.message }));
   if (r && r.ok) {
     toast(`⚡ 自动关联 ${r.linked} 笔${r.status === 'pending' ? '（待管理员审核）' : ''}，还剩 ${r.remaining} 笔没配上`);
