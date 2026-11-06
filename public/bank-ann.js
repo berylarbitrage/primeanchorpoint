@@ -41,6 +41,8 @@ const BS_PAYEE_CASH_DEP = '存现金';
 const BS_PAYEE_LAWSUIT = '诉讼费';
 const BS_PAYEE_LAWYER = '律师费用';
 const BS_PAYEE_RETURNED = '退回款 Returned Payment';
+// 员工工资退回款 (收入): 发给员工的工资被退回来 (Gusto 退回等), 必须填是哪张 invoice / 哪个账期
+const BS_PAYEE_WAGERETURN = '员工工资退回款';
 const BS_PAYEE_TEST = '测试转账 Test Transfer'; // 银行验证小额测试转账, 不归任何公司
 const BS_PAYEE_NA = '无关';
 const BS_PAYEE_PALLET = '__pallet__';
@@ -193,6 +195,8 @@ function _bsPalletAmountOk(box) {
 }
 function _bsNoteSatisfied(box) {
   if (_bsIsNA(box)) return true;
+  // 员工工资退回款: 必须填发票号 + 账期, 只写备注不算
+  if (box.payee === BS_PAYEE_WAGERETURN) return _bsHasInvoiceInfo(box);
   if (box.note && String(box.note).trim()) return true;
   const kind = _bsPayeeKind(box);
   if (_bsPalletAmountOnly(box)) return _bsPalletAmountOk(box);
@@ -229,6 +233,7 @@ function _bsPayeeKind(box) {
   if (p === BS_PAYEE_COMPFEE) return 'compfee';
   if (p === BS_PAYEE_MEAL) return 'meal';
   if (p === BS_PAYEE_ACCT) return 'acct';
+  if (p === BS_PAYEE_WAGERETURN) return 'wagereturn';
   if (_bsIsEmp(p)) return 'employee';
   if (_bsIsPallet(p)) return 'pallet';
   if (_bsIsCheck(p)) return 'check';
@@ -250,7 +255,10 @@ function _bsPayeeKind(box) {
 }
 function _bsWantsInvoice(box) {
   const k = _bsPayeeKind(box);
-  return k === 'employee' || k === 'unload' || k === 'pallet' || (k === 'company' && box.direction === 'in');
+  return k === 'employee' || k === 'unload' || k === 'pallet' || k === 'wagereturn' || (k === 'company' && box.direction === 'in');
+}
+function _bsHasInvoiceInfo(box) {
+  return !!(String(box.invoice_number || '').trim() && String(box.period_start || '').trim() && String(box.period_end || '').trim());
 }
 // 选项统一走 /plaid/ann-options (admin/客服/会计都可读, 之前调 /admin/* 会让客服和会计拿到空列表)
 let _bsOptsLoaded = false;
@@ -305,6 +313,7 @@ function _bsPayeeOptionDefs(direction) {
     { v: BS_PAYEE_CASH, t: '💵 取现金', d: 'out' },
     { v: BS_PAYEE_CASH_DEP, t: '💰 存现金', d: 'in' },
     { v: BS_PAYEE_RETURNED, t: '↩️ 退回款 Returned Payment', d: 'both' },
+    { v: BS_PAYEE_WAGERETURN, t: '↩️ 员工工资退回款（填 Invoice）', d: 'in' },
     { v: BS_PAYEE_TEST, t: '🧪 测试转账 Test Transfer', d: 'both' },
     { v: BS_PAYEE_TRUCK, t: '🚚 卡车费（选公司）', d: 'out' },
     { v: BS_PAYEE_RENT, t: '🏠 付房租（选公司）', d: 'out' },
@@ -769,7 +778,10 @@ function bsAmtInput(id, el) {
 function _bsNoteMissing(box) {
   const kind = _bsPayeeKind(box);
   const missing = [];
-  if (kind === 'company' && box.direction === 'in') {
+  if (kind === 'wagereturn') {
+    if (!String(box.invoice_number || '').trim()) missing.push('发票号');
+    if (!String(box.period_start || '').trim() || !String(box.period_end || '').trim()) missing.push('账期');
+  } else if (kind === 'company' && box.direction === 'in') {
     if (!String(box.purpose || '').trim()) missing.push('用途');
     if (!String(box.invoice_number || '').trim()) missing.push('发票号');
     if (!String(box.period_start || '').trim() || !String(box.period_end || '').trim()) missing.push('账期');
@@ -788,6 +800,7 @@ function _bsNoteMissing(box) {
 // 备注框占位提示: 不满足免填条件时直接说缺什么, 别让人猜「为什么要我备注」
 function _bsNoteHint(box) {
   if (_bsNoteSatisfied(box)) return '原因 / 备注（选填）';
+  if (box.payee === BS_PAYEE_WAGERETURN) return '员工工资退回款：必须在上面 Invoice 里填「' + _bsNoteMissing(box).join('、') + '」（只写备注不行）';
   const missing = _bsNoteMissing(box);
   return missing.length ? `原因 / 备注（需补上——或把「${missing.join('、')}」填上即可免填）` : '原因 / 备注（需补上）';
 }
@@ -995,6 +1008,7 @@ function _bsAnnCheckMode(box) {
   if (k === 'company' && box.direction === 'in') return 'full';
   if (k === 'pallet') return 'full'; // 木板钱: 发票号去 Bintique 账单里核对 (号码/账期/金额/公司)
   if (k === 'employee') return 'exist';
+  if (k === 'wagereturn') return 'exist'; // 员工工资退回款: 核对系统里有没有这张发票、账期对不对
   return null;
 }
 async function _bsAnnCheckRun(boxId) {
@@ -1349,6 +1363,10 @@ async function annDeleteBox(id) {
 // 不符, 且没写备注解释的, 不给通过)
 async function annApprove(id) {
   const box = _bsBoxList.find(b => b.id === id); if (!box) return;
+  if (box.payee === BS_PAYEE_WAGERETURN && !_bsHasInvoiceInfo(box)) {
+    showToast('员工工资退回款必须填 Invoice 信息（' + _bsNoteMissing(box).join('、') + '）才能审核通过', 'error');
+    return;
+  }
   const d = _bsAmtDiff(box);
   if (d && Math.abs(d.diff) >= 0.01 && !String(box.note || '').trim()) {
     showToast('银行到账 ' + money(d.bank) + ' 与发票合计 ' + money(d.sum) + ' 差 ' + money(Math.abs(d.diff)) + '：必须在「原因/备注」里说明差额原因（可附照片）才能审核通过', 'error');
