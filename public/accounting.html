@@ -8246,7 +8246,18 @@ async function lpApprove() {
 // Gusto 扣款按工人名字筛: 银行描述里没有人名, 名字来自这笔交易的标注 (员工:公司|姓名)
 // 和「Gusto 工资」页签挂的付款 (contractor_name)。名字按词比较, 一方的词全在另一方里就算同一人
 // (Carlos Hernandez ↔ Carlos Hernandez Fabian; 「Moyado, Jesus」也认)。
-function _lpNameTokens(n) { return String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z\u4e00-\u9fff]+/g, ' ').trim().split(/\s+/).filter(Boolean); }
+// 单个字母 (中间名缩写 "Adeanys J Artiles") 不参与比较, 和 Gusto 付款模板的姓名匹配一致
+function _lpNameTokens(n) { return String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z\u4e00-\u9fff]+/g, ' ').trim().split(/\s+/).filter(t => t.length > 1 || /[\u4e00-\u9fff]/.test(t)); }
+// 这一行按 Gusto 付款规则 (收款人对照表 / 发工资时薪 / 并付) 的结果, 服务端 _invGustoRules 算的
+function _lpRule(i) { return ((_invDoc && _invDoc.gusto_rules) || [])[i] || {}; }
+// 收款人是不是本行工人: 名字对上, 或者是 Gusto 规则里这一行付给的收款人
+function _lpPayeeIsWorker(payee, i, worker) {
+  if (_lpNameMatch(payee, worker)) return 'name';
+  const r = _lpRule(i);
+  if (r.payee && _lpNameMatch(payee, r.payee)) return r.payee;
+  if (r.alias && _lpNameMatch(payee, r.alias)) return r.alias;
+  return false;
+}
 function _lpNameMatch(a, b) {
   const ta = _lpNameTokens(a), tb = _lpNameTokens(b);
   if (!ta.length || !tb.length) return false;
@@ -8294,7 +8305,12 @@ function _lpAnnCheck(ann) {
 function _lpChip(i) {
   const n = (_invDoc && _invDoc.line_pay_notes && _invDoc.line_pay_notes[i]) || null;
   const has = n && (n.paid_status || n.pay_method || n.note || (n.txn_ids || []).length || (n.photos_urls || []).length);
-  if (!has) return canAnnotate() ? `<button class="ann-add" onclick="openLinePay(${i})">＋ 付款备注</button>` : '<span style="color:#cbd5e1">—</span>';
+  if (!has) {
+    // 并付给别人的行: 钱在同组另一行的付款备注里一起付了, 提示去那一行看
+    const host = (_lpRule(i).group || []).find(k => { const h = _invDoc.line_pay_notes && _invDoc.line_pay_notes[k]; return h && (h.txn_ids || []).length; });
+    const hint = host != null ? `<div style="font-size:.7rem;color:#6d28d9" title="Gusto 付款模板的收款人对照表">💸 并付：和第 ${host + 1} 行 ${esc(_lpLabel(host))} 一起付${_lpRule(i).payee ? '给 ' + esc(_lpRule(i).payee) : ''}</div>` : '';
+    return hint + (canAnnotate() ? `<button class="ann-add" onclick="openLinePay(${i})">＋ 付款备注</button>` : (hint ? '' : '<span style="color:#cbd5e1">—</span>'));
+  }
   const st = _LP_ST[n.paid_status];
   const badge = st ? `<span style="background:${st[1]};color:${st[2]};border-radius:8px;padding:1px 7px;font-size:.7rem;font-weight:700;white-space:nowrap">${st[0]}</span>` : '';
   const bits = [];
@@ -8327,8 +8343,9 @@ function _lpChip(i) {
       }
       const payeeHtml = payees.length
         ? payees.map(x => {
-            const ok = worker ? _lpNameMatch(x.name, worker) : null;
-            const chk = ok === true ? ' <span style="color:#15803d;font-weight:700">✓ 同本行工人</span>'
+            const ok = worker ? _lpPayeeIsWorker(x.name, i, worker) : null;
+            const chk = ok === 'name' ? ' <span style="color:#15803d;font-weight:700">✓ 同本行工人</span>'
+              : ok ? ` <span style="color:#15803d;font-weight:700" title="Gusto 付款模板的收款人对照表: 这一行的钱付给 ${esc(ok)}">✓ 按 Gusto 规则付给这个收款人</span>`
               : ok === false ? ` <span style="color:#b91c1c;font-weight:700">⚠ 不是 ${esc(worker)}</span>` : '';
             return `<div>👤 收款人 <b style="color:#0f172a">${esc(x.name || '')}</b> <span style="color:#94a3b8">(${x.src}${x.extra ? ' · ' + x.extra : ''})</span>${chk}</div>`;
           }).join('')
@@ -8347,7 +8364,12 @@ function _lpChip(i) {
     }).join('');
     // 全额 / 部分 和金额对一下: 付齐了还标部分, 或标全额却没付齐
     const pps = txns.map(t => t.ann && t.ann.pay_portion).filter(Boolean);
-    const paidUp = Math.abs(d) < 0.01;
+    // 并付: 收款人对照表把别的行 (例: Wilson 并付给 Uriel) 的钱并到这个收款人, 一笔转账付了几行 → 按合计对
+    const grp = (_lpRule(i).group || []).filter(k => k !== i);
+    const grpAmt = grp.length ? Math.round((lineAmt + grp.reduce((s2, k) => s2 + _lpLineAmt(k), 0)) * 100) / 100 : null;
+    const grpOk = grpAmt != null && Math.abs(d) >= 0.01 && Math.abs(sum - grpAmt) < 0.01;
+    const grpTxt = grp.length ? `本行 ${money(lineAmt)} + ` + grp.map(k => `${esc(_lpLabel(k))} ${money(_lpLineAmt(k))}`).join(' + ') : '';
+    const paidUp = Math.abs(d) < 0.01 || grpOk;
     const portionChk = !pps.length ? ''
       : paidUp && txns.length === 1 && pps[0] === 'partial' ? ' <span style="color:#b45309;font-weight:700">⚠ 已付齐，但标注是「部分」</span>'
       : !paidUp && d < 0 && pps.includes('full') && !pps.includes('partial') ? ' <span style="color:#b91c1c;font-weight:700">⚠ 标注「全额」但没付齐</span>'
@@ -8356,9 +8378,11 @@ function _lpChip(i) {
     const missing = ids.length - txns.length;
     const miss = missing > 0 ? `<div style="color:#b45309;font-weight:700">⚠ ${missing} 笔找不到银行记录</div>` : '';
     const tot = txns.length
-      ? `<div style="white-space:nowrap">${txns.length > 1 ? `合计 <b style="color:#1e293b">${money(sum)}</b> ` : ''}${Math.abs(d) < 0.01
+      ? `<div style="white-space:nowrap">${txns.length > 1 ? `合计 <b style="color:#1e293b">${money(sum)}</b> ` : ''}${grpOk
+          ? `<span style="color:#15803d;font-weight:700" title="Gusto 付款模板的收款人对照表: 这几行的钱并付给同一个收款人">✓ 与并付合计一致</span> <span style="color:#94a3b8;white-space:normal">(${grpTxt})</span>`
+          : Math.abs(d) < 0.01
           ? '<span style="color:#15803d;font-weight:700">✓ 与本行金额一致</span>'
-          : `<span style="color:${d < 0 ? '#b91c1c' : '#1d4ed8'};font-weight:700">${d < 0 ? '少' : '多'} ${money(Math.abs(d))}</span> <span style="color:#94a3b8">(本行 ${money(lineAmt)})</span>`}${portionChk}</div>`
+          : `<span style="color:${d < 0 ? '#b91c1c' : '#1d4ed8'};font-weight:700">${d < 0 ? '少' : '多'} ${money(Math.abs(d))}</span> <span style="color:#94a3b8">(本行 ${money(lineAmt)}${grpAmt != null ? `；并付合计 ${money(grpAmt)}` : ''})</span>`}${portionChk}</div>`
       : '';
     txnHtml = `<div style="font-size:.72rem;color:#475569;margin-top:.2rem;line-height:1.45">${rows}${miss}${tot}</div>`;
   }
@@ -8396,7 +8420,7 @@ function _lpLineAmt(i) {
   const it = (Array.isArray(_invDoc.items) ? _invDoc.items : [])[i] || {};
   // 填了「实付时薪」(收客户的时薪 ≠ 付给员工的): 按实付算 —— 正常工时 × 实付时薪
   // + 加班工时 × 实付时薪 × (加班时薪/时薪 的倍数, 一口价的就是 1), 和服务端算工资成本同一口径
-  const w = Number(it.wage_rate);
+  const w = _lpWageRate(i);
   if (w > 0) {
     const r = Number(it.rate) || 0, o = Number(it.otRate) || 0;
     const otMult = r > 0 && o > 0 ? o / r : 1;
@@ -8408,10 +8432,22 @@ function _lpLineAmt(i) {
 }
 // ── 实付时薪 (内部): 收客户的时薪 ≠ 付给员工的时薪时, 在这里填实际付给员工的 (存 items[i].wage_rate,
 // 和后台发票编辑页的「实付时薪」是同一个字段; 不改发票金额)。付款备注按它算「本行工资」。
+// 实付时薪: 手动填的优先, 没填就用 Gusto 付款模板的发工资时薪 (GUSTO_PAY_RATE_OVERRIDES)
+function _lpWageRate(i) {
+  const it = ((_invDoc && _invDoc.items) || [])[i] || {};
+  if (Number(it.wage_rate) > 0) return Number(it.wage_rate);
+  const pr = Number(_lpRule(i).pay_rate);
+  return pr > 0 && Math.abs(pr - (Number(it.rate) || 0)) > 0.005 ? pr : 0;
+}
 function _lpWageCell(i) {
   const it = ((_invDoc && _invDoc.items) || [])[i] || {};
   const w = Number(it.wage_rate);
   const edit = canAnnotate();
+  const rw = !(w > 0) ? _lpWageRate(i) : 0;
+  if (rw > 0) {
+    return `<span title="${esc(`按 Gusto 付款规则的发工资时薪 $${rw.toFixed(2)}/h（发票时薪 ${money(it.rate)}）· 本行工资 ${money(_lpLineAmt(i))}`)}" style="font-weight:700;color:#7c3aed">${money(rw)}</span> <span style="font-size:.64rem;color:#94a3b8">规则</span>`
+      + (edit ? ` <a onclick="lpWageEdit(${i})" title="改实付时薪" style="cursor:pointer;color:#64748b">✎</a>` : '');
+  }
   if (w > 0) {
     const tip = `实付 $${w.toFixed(2)}/h（发票时薪 ${money(it.rate)}）· 本行工资 ${money(_lpLineAmt(i))}${it.wage_rate_by ? ' · ' + it.wage_rate_by + ' 填' : ''}`;
     return `<span title="${esc(tip)}" style="font-weight:700;color:#7c3aed">${money(w)}</span>`
