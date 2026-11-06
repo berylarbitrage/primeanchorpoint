@@ -3019,6 +3019,8 @@ try { db.exec(`CREATE INDEX IF NOT EXISTS idx_bstxn_plaid ON bank_statement_txns
 // 'pending'=客服提交待审核, 'approved'=管理员已审核; ann_by=标注人用户名
 try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN ann_status TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN ann_by TEXT DEFAULT ''`); } catch(e) {}
+// 自动填的标注来源 ('gusto' = 按 Gusto 关联自动填); 有人手动改过就清空, 之后自动同步不再覆盖
+try { db.exec(`ALTER TABLE bank_statement_txns ADD COLUMN auto_src TEXT DEFAULT ''`); } catch(e) {}
 // 以梦为马 eBay 货款原来只有一个「退回」选项, 收入也被迫选了它; 现在收入用「收到」,
 // 把旧的收入标注一次性改过来 (幂等: 再跑不会命中任何行)。
 try { db.prepare(`UPDATE bank_statement_txns SET payee=? WHERE payee=? AND direction='in'`).run('收到以梦为马的 eBay 货款', '退回以梦为马的 eBay 货款'); } catch(e) {}
@@ -38226,6 +38228,10 @@ app.put('/api/plaid/annotations/:id', requireAdmin, requireRole('admin', 'cs', '
       has('period_end') ? String(b.period_end || '').slice(0, 40) : row.period_end,
       has('pay_portion') ? String(b.pay_portion || '').slice(0, 20) : row.pay_portion,
       invItemsVal, noteItemsVal, annStatus, annBy, id);
+    // 手动改了标注内容 → 不再算自动填的, Gusto 同步不覆盖
+    if (['note', 'payee', 'purpose', 'invoice_number', 'period_start', 'period_end', 'pay_portion', 'inv_items', 'note_items'].some(has)) {
+      db.prepare(`UPDATE bank_statement_txns SET auto_src='' WHERE id=?`).run(id);
+    }
     res.json({ success: true, ann_status: annStatus, ann_by: annBy });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -45919,19 +45925,108 @@ function _gustoAnnFill(txnId) {
   if (!pays.length) return null;
   const dept = pays.map(p => _gustoPayDept(p.raw_json)).find(Boolean) || '';
   const names = [...new Set(pays.map(p => String(p.contractor_name || '').trim()).filter(Boolean))];
-  const payee = '员工:' + _gustoDeptToPartner(dept) + '|' + names.join(', ');
-  const note = GUSTO_ANN_NOTE_PREFIX + ' · ' + pays.map(p => `${p.date} $${(Number(p.wage_total) || 0).toFixed(2)} ${p.contractor_name || ''}`.trim()).join('；');
-  // 逐行付款备注里连了这笔转账的发票号
-  const invs = new Set();
+  // 逐行付款备注里连了这笔转账的发票 (人工指定的, 优先用)
+  const linkedInv = new Set();
   try {
-    db.prepare(`SELECT n.txn_ids, COALESCE(i.invoice_number,'') AS invoice_number FROM acct_line_pay_notes n
-        LEFT JOIN invoices i ON i.id = n.invoice_id WHERE n.txn_ids LIKE ?`).all('%' + txnId + '%')
+    db.prepare(`SELECT n.invoice_id, n.txn_ids FROM acct_line_pay_notes n WHERE n.txn_ids LIKE ?`).all('%' + txnId + '%')
       .forEach(n => {
         let ids = []; try { ids = JSON.parse(n.txn_ids || '[]'); } catch (e) { ids = []; }
-        if (Array.isArray(ids) && ids.includes(txnId) && n.invoice_number) invs.add(n.invoice_number);
+        if (Array.isArray(ids) && ids.includes(txnId)) linkedInv.add(n.invoice_id);
       });
   } catch (e) {}
-  return { payee, note, invoice_number: [...invs].join(', '), pending: pays.some(p => p.bank_link_status === 'pending') };
+  // 每笔 Gusto 付款对到发票上的工资行 (Gusto 付款模板同一套规则: 收款人对照表 / 发工资时薪 / 并付)
+  const items = [], notes = [];
+  let allFull = true, invCompany = '';
+  for (const p of pays) {
+    const hit = _gustoPayInvoiceLines(p, linkedInv);
+    if (!hit) { allFull = false; continue; }
+    hit.invs.forEach(x => items.push({ inv: x.invoice_number, ps: x.period_start || '', pe: x.period_end || '', amt: x.amt.toFixed(2) }));
+    if (!invCompany) invCompany = (hit.invs[0] || {}).company_name || '';
+    if (!hit.full) allFull = false;
+    notes.push(...hit.notes);
+  }
+  const first = items[0] || {};
+  // 公司: Gusto 付款的部门 (Department), 没有就用对上的发票的客户
+  const payee = '员工:' + _gustoDeptToPartner(dept || invCompany) + '|' + names.join(', ');
+  return {
+    payee,
+    // 只有两种情况写备注: 帮别人收钱 (并付 / 用别人名字打卡)、实付时薪和发票时薪不一样; 其他都填进字段, 不用备注
+    note: notes.join('；'),
+    inv_items: items.length ? JSON.stringify(items) : '',
+    invoice_number: [...new Set(items.map(x => x.inv))].join(', '),
+    period_start: first.ps || '', period_end: first.pe || '',
+    pay_portion: items.length && allFull ? 'full' : '',
+    pending: pays.some(p => p.bank_link_status === 'pending'),
+  };
+}
+// 一笔 Gusto 付款 → 发票工资行。候选发票: 逐行付款备注连了这笔转账的; 没有就找账期在付款日前 9 天内结束的。
+// 每张发票用 _invGustoRules 把工资行对到 Gusto 收款人, 收款人是这笔付款的那几行就是这笔付的。
+// 返回 { invs: [{invoice_number, period_start, period_end, amt}], full: 合计 = 实付, notes: [...] }
+function _gustoPayInvoiceLines(p, linkedInv) {
+  const tk = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(t => t.length > 1);
+  const same = (a, b) => { const x = tk(a), y = tk(b); if (!x.length || !y.length) return false; const [s, l] = x.length <= y.length ? [x, y] : [y, x]; return s.every(t => l.includes(t)); };
+  const paid = Math.round((Number(p.wage_total) || 0) * 100) / 100;
+  const d = String(p.date || '').slice(0, 10);
+  if (!d || !(paid > 0)) return null;
+  const rows = linkedInv && linkedInv.size
+    ? db.prepare(`SELECT id, invoice_number, company_name, period_start, period_end, items_json, profile_json FROM invoices
+        WHERE id IN (${[...linkedInv].map(() => '?').join(',')})`).all(...linkedInv)
+    : db.prepare(`SELECT id, invoice_number, company_name, period_start, period_end, items_json, profile_json FROM invoices
+        WHERE COALESCE(status,'')!='draft' AND COALESCE(abolished,0)=0 AND period_end<=? AND period_end>=date(?, '-9 days')
+        ORDER BY period_end DESC, id`).all(d, d);
+  const cands = [];
+  for (const r of rows) {
+    let its = [], prof = {};
+    try { its = JSON.parse(r.items_json || '[]'); } catch (e) {}
+    try { prof = JSON.parse(r.profile_json || '{}'); } catch (e) {}
+    if (!Array.isArray(its) || !its.length || prof.invoice_mode === 'container') continue;
+    let rules = null;
+    try { rules = _invGustoRules({ items: its, profile: prof, company_name: r.company_name }); } catch (e) {}
+    const lines = [];
+    its.forEach((it, k) => {
+      const ru = (rules && rules[k]) || {};
+      if (ru.skip) return;
+      const to = ru.payee || ru.alias || '';
+      if (to ? same(to, p.contractor_name) : same(it && it.name, p.contractor_name)) lines.push({ it, ru, k });
+    });
+    if (!lines.length) continue;
+    // 实付 = 工时 × 实付时薪 (发票页手填的 wage_rate > Gusto 发工资时薪 > 发票时薪)
+    let amt = 0;
+    const rateBy = {};   // '实付时薪 $16.00（发票 $18.00）' → [姓名]
+    lines.forEach(({ it, ru }) => {
+      const r0 = Number(it.rate) || 0, o0 = Number(it.otRate) || 0;
+      const w = Number(it.wage_rate) > 0 ? Number(it.wage_rate) : (Number(ru.pay_rate) > 0 ? Number(ru.pay_rate) : 0);
+      const reg = Number(it.regHours != null ? it.regHours : it.hours) || 0, ot = Number(it.otHours) || 0;
+      let a;
+      if (w > 0 && Math.abs(w - r0) > 0.005) {
+        const m = r0 > 0 && o0 > 0 ? o0 / r0 : 1;
+        a = reg * w + ot * w * m;
+        const key = `实付时薪 $${w.toFixed(2)}（发票 $${r0.toFixed(2)}）`;
+        (rateBy[key] = rateBy[key] || []).push(it.name);
+      } else a = it.total != null ? Number(it.total) || 0 : reg * r0 + ot * o0;
+      amt += a;
+    });
+    amt = Math.round(amt * 100) / 100;
+    // 帮别人收钱: 几行并付给同一个收款人
+    let mergeNote = '';
+    if (lines.length > 1) {
+      const kind = (lines[0].ru || {}).kind;
+      const names = lines.filter(({ it }) => !same(it.name, p.contractor_name)).map(({ it }) => it.name);
+      mergeNote = kind === 'crew'
+        ? `帮别人收钱：${names.join('、')} 的工资也发给 ${p.contractor_name}（不同的人，钱都发给他）`
+        : `帮别人收钱：含 ${names.join('、')} 名下的工资（用别人名字打卡，同一个人）`;
+    }
+    const rateNotes = Object.entries(rateBy).map(([k, ns]) => `${k}：${ns.join('、')}`);
+    cands.push({ invoice_number: r.invoice_number, company_name: r.company_name, period_start: r.period_start, period_end: r.period_end, amt,
+      notes: [mergeNote, ...rateNotes].filter(Boolean) });
+  }
+  if (!cands.length) return null;
+  const sum = Math.round(cands.reduce((s, c) => s + c.amt, 0) * 100) / 100;
+  if (Math.abs(sum - paid) < 0.01) return { invs: cands, full: true, notes: cands.flatMap(c => c.notes) };
+  // 几张发票合计对不上: 只有一张刚好等于实付就用那一张
+  const one = cands.find(c => Math.abs(c.amt - paid) < 0.01);
+  if (one) return { invs: [one], full: true, notes: one.notes };
+  return { invs: cands, full: false, notes: cands.flatMap(c => c.notes) };
 }
 function _gustoSyncBankAnn(txnId, byName) {
   if (!txnId) return;
@@ -45940,38 +46035,46 @@ function _gustoSyncBankAnn(txnId, byName) {
     if (!txn) return;
     const fill = _gustoAnnFill(txnId);
     let row = db.prepare(`SELECT * FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id=?`).get(txnId);
-    const autoFilled = r => r && String(r.note || '').indexOf(GUSTO_ANN_NOTE_PREFIX) === 0 && String(r.payee || '').indexOf('员工:') === 0;
+    // 自动填的: 标了 auto_src='gusto', 或者旧版自动填的 (备注以「Gusto 工资」开头 + 公司员工)
+    const autoFilled = r => r && (r.auto_src === 'gusto'
+      || (String(r.note || '').indexOf(GUSTO_ANN_NOTE_PREFIX) === 0 && String(r.payee || '').indexOf('员工:') === 0));
     if (!fill) {
       // 关联没了: 还是自动填的原样就清回空白
       if (autoFilled(row)) {
-        db.prepare(`UPDATE bank_statement_txns SET payee='', note='', ann_status='', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(row.id);
+        db.prepare(`UPDATE bank_statement_txns SET payee='', note='', note_items='', invoice_number='', period_start='', period_end='',
+            pay_portion='', inv_items='', auto_src='', ann_status='', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(row.id);
       }
       return;
     }
     const status = fill.pending ? 'pending' : '';
     if (!row) {
       db.prepare(`INSERT INTO bank_statement_txns (statement_id, kind, plaid_txn_id, txn_date, amount, direction, description,
-          payee, note, invoice_number, ann_status, ann_by)
-        VALUES (?,'box',?,?,?,?,?,?,?,?,?,?)`).run(plaidAnnStatementId(txn.account_id), txnId, txn.date || '', Math.abs(txn.amount || 0),
+          payee, note, invoice_number, period_start, period_end, pay_portion, inv_items, auto_src, ann_status, ann_by)
+        VALUES (?,'box',?,?,?,?,?,?,?,?,?,?,?,?,'gusto',?,?)`).run(plaidAnnStatementId(txn.account_id), txnId, txn.date || '', Math.abs(txn.amount || 0),
           (txn.amount || 0) > 0 ? 'out' : 'in', txn.merchant || txn.name || '',
-          fill.payee, fill.note, fill.invoice_number, status, byName || '');
+          fill.payee, fill.note, fill.invoice_number, fill.period_start, fill.period_end, fill.pay_portion, fill.inv_items, status, byName || '');
       return;
     }
-    if (row.ann_status === 'approved' && !autoFilled(row)) return;
     const blank = !String(row.payee || '').trim();
-    if (!blank && !autoFilled(row)) return; // 人工选了别的, 不动
-    db.prepare(`UPDATE bank_statement_txns SET payee=?, note=?, invoice_number=?, ann_status=?, ann_by=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-      .run(fill.payee, (blank && String(row.note || '').trim()) ? row.note : fill.note,
-        String(row.invoice_number || '').trim() || fill.invoice_number,
+    if (!blank && !autoFilled(row)) return; // 人工选了别的 / 改过, 不动
+    // 空白标注上人工写过的备注留着; 自动填的整套按最新 Gusto 关联重填
+    const keepNote = blank && String(row.note || '').trim() && !autoFilled(row);
+    db.prepare(`UPDATE bank_statement_txns SET payee=?, note=?, note_items=?, invoice_number=?, period_start=?, period_end=?, pay_portion=?, inv_items=?,
+        auto_src='gusto', ann_status=?, ann_by=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(fill.payee, keepNote ? row.note : fill.note, keepNote ? row.note_items : '',
+        fill.invoice_number, fill.period_start, fill.period_end, fill.pay_portion, fill.inv_items,
         row.ann_status === 'approved' && !fill.pending ? 'approved' : status, byName || row.ann_by || '', row.id);
   } catch (e) { console.error('[gusto] 自动填银行标注失败', txnId, e.message); }
 }
 // 启动时补一轮: 加这个功能之前就挂好的关联, 标注还空着的补填上
 setTimeout(() => {
   try {
+    // 标注还空着的, 以及自动填的但还没有 Invoice 信息的 (加自动填 Invoice 之前填的) 都补一轮
     const ids = db.prepare(`SELECT DISTINCT g.bank_txn_id AS id FROM gusto_payments g
       WHERE g.bank_txn_id!='' AND NOT EXISTS (SELECT 1 FROM bank_statement_txns b
-        WHERE b.kind='box' AND b.plaid_txn_id=g.bank_txn_id AND TRIM(COALESCE(b.payee,''))!='')`).all().map(r => r.id);
+        WHERE b.kind='box' AND b.plaid_txn_id=g.bank_txn_id AND TRIM(COALESCE(b.payee,''))!=''
+          AND NOT ((COALESCE(b.auto_src,'')='gusto' OR (b.note LIKE ? AND b.payee LIKE '员工:%'))
+                   AND TRIM(COALESCE(b.invoice_number,''))=''))`).all(GUSTO_ANN_NOTE_PREFIX + '%').map(r => r.id);
     ids.forEach(id => _gustoSyncBankAnn(id, 'Gusto 关联'));
     if (ids.length) console.log(`[gusto] 已按 Gusto 关联补填 ${ids.length} 条银行标注`);
   } catch (e) { console.error('[gusto] 补填银行标注失败', e.message); }
