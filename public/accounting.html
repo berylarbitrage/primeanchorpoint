@@ -8374,8 +8374,52 @@ function _lpLineAmt(i) {
   // 付款备注记的是付给工人的钱, 按「工资金额」(工时×时薪, markup 前) 算——和发票表格里每行显示的
   // Amount 一致
   const it = (Array.isArray(_invDoc.items) ? _invDoc.items : [])[i] || {};
+  // 填了「实付时薪」(收客户的时薪 ≠ 付给员工的): 按实付算 —— 正常工时 × 实付时薪
+  // + 加班工时 × 实付时薪 × (加班时薪/时薪 的倍数, 一口价的就是 1), 和服务端算工资成本同一口径
+  const w = Number(it.wage_rate);
+  if (w > 0) {
+    const r = Number(it.rate) || 0, o = Number(it.otRate) || 0;
+    const otMult = r > 0 && o > 0 ? o / r : 1;
+    const reg = Number(it.regHours != null ? it.regHours : it.hours) || 0;
+    return Math.round((reg * w + (Number(it.otHours) || 0) * w * otMult) * 100) / 100;
+  }
   if (it.total != null) return Number(it.total) || 0;
   return Math.round(((Number(it.regHours != null ? it.regHours : it.hours) || 0) * (Number(it.rate) || 0) + (Number(it.otHours) || 0) * (Number(it.otRate) || 0)) * 100) / 100;
+}
+// ── 实付时薪 (内部): 收客户的时薪 ≠ 付给员工的时薪时, 在这里填实际付给员工的 (存 items[i].wage_rate,
+// 和后台发票编辑页的「实付时薪」是同一个字段; 不改发票金额)。付款备注按它算「本行工资」。
+function _lpWageCell(i) {
+  const it = ((_invDoc && _invDoc.items) || [])[i] || {};
+  const w = Number(it.wage_rate);
+  const edit = canAnnotate();
+  if (w > 0) {
+    const tip = `实付 $${w.toFixed(2)}/h（发票时薪 ${money(it.rate)}）· 本行工资 ${money(_lpLineAmt(i))}${it.wage_rate_by ? ' · ' + it.wage_rate_by + ' 填' : ''}`;
+    return `<span title="${esc(tip)}" style="font-weight:700;color:#7c3aed">${money(w)}</span>`
+      + (edit ? ` <a onclick="lpWageEdit(${i})" title="改实付时薪" style="cursor:pointer;color:#64748b">✎</a>` : '');
+  }
+  return edit ? `<a onclick="lpWageEdit(${i})" title="实际付给员工的时薪和发票时薪不一样时填" style="cursor:pointer;color:#94a3b8;font-size:.72rem;text-decoration:underline">同发票 · 改</a>` : '<span style="color:#cbd5e1">—</span>';
+}
+async function lpWageEdit(i) {
+  if (!_invDoc) return;
+  const items = _invDoc.items || [];
+  const all = i < 0;
+  const it = all ? (items.find(x => Number(x.wage_rate) > 0) || items[0] || {}) : (items[i] || {});
+  const cur = Number(it.wage_rate) > 0 ? String(Number(it.wage_rate)) : '';
+  const v = await pagePrompt((all ? '整张发票每一行' : `第 ${i + 1} 行 ${it.name || ''}`)
+    + `：实际付给员工的时薪（发票时薪 ${money(it.rate)}；留空 = 和发票时薪一样）`, cur);
+  if (v == null) return;
+  const s = String(v).trim();
+  const n = s === '' ? 0 : parseFloat(s);
+  if (s !== '' && (!(n > 0) || n > 1000)) return toast('请输入正确的时薪，例如 17', true);
+  const r = await api(`/api/acct/invoices/${_invDoc.id}/wage-rate`, { method: 'POST', body: JSON.stringify(all ? { all: true, wage_rate: n } : { line_idx: i, wage_rate: n }) }).catch(e => ({ error: e.message }));
+  if (!r || r.pending) return;
+  if (r.error || !Array.isArray(r.items)) return toast((r && r.error) || '保存失败', true);
+  _invDoc.items = r.items;
+  r.items.forEach((_, k) => {
+    const wc = document.getElementById('lpWage' + k); if (wc) wc.innerHTML = _lpWageCell(k);
+    const lc = document.getElementById('lpCell' + k); if (lc) lc.innerHTML = _lpChip(k);
+  });
+  toast(n > 0 ? `✅ 实付时薪改成 ${money(n)}` : '✅ 已改回和发票时薪一样');
 }
 async function openLinePay(i) {
   if (!_invDoc) return;
@@ -8595,7 +8639,7 @@ function renderInvoiceDoc(inv) {
     const totOt = items.reduce((s, it) => s + (Number(it.otHours) || 0), 0);
     baseSum = Math.round(items.reduce((s, it) => s + rawAmt(it), 0) * 100) / 100;
     lineTable = `<table style="width:100%;border-collapse:collapse;margin-bottom:.6rem">
-      <thead><tr><th style="${th}">#</th><th style="${th}">Worker</th><th style="${thR}">Reg Hrs</th>${hasOt ? `<th style="${thR}">OT Hrs</th>` : ''}<th style="${thR}">Rate</th>${hasOt ? `<th style="${thR}">OT Rate</th>` : ''}<th style="${thR}">Amount</th><th class="vw-lp" style="${th};color:#94a3b8">付款备注<span style="font-size:.6rem">(内部)</span></th></tr></thead>
+      <thead><tr><th style="${th}">#</th><th style="${th}">Worker</th><th style="${thR}">Reg Hrs</th>${hasOt ? `<th style="${thR}">OT Hrs</th>` : ''}<th style="${thR}">Rate</th>${hasOt ? `<th style="${thR}">OT Rate</th>` : ''}<th style="${thR}">Amount</th><th class="vw-lp" style="${thR};color:#94a3b8;white-space:nowrap" title="实际付给员工的时薪 (内部用, 不改发票金额)。付款备注按它核对付了多少">实付时薪<span style="font-size:.6rem">(内部)</span>${canAnnotate() ? ` <a onclick="lpWageEdit(-1)" title="整张发票每一行都设成同一个实付时薪" style="cursor:pointer;color:#0f4c6b;text-decoration:underline;font-size:.66rem;text-transform:none">全部改</a>` : ''}</th><th class="vw-lp" style="${th};color:#94a3b8">付款备注<span style="font-size:.6rem">(内部)</span></th></tr></thead>
       <tbody>${items.map((it, i) => `<tr>
           <td style="${td}">${i + 1}</td>
           <td style="${td}">${esc(it.name || '')}</td>
@@ -8604,6 +8648,7 @@ function renderInvoiceDoc(inv) {
           <td style="${tdR}">${money(it.rate)}</td>
           ${hasOt ? `<td style="${tdR}">${money(it.otRate)}</td>` : ''}
           <td style="${tdR};font-weight:700">${money(rawAmt(it))}</td>
+          <td class="vw-lp" style="${tdR};white-space:nowrap" id="lpWage${i}">${_lpWageCell(i)}</td>
           <td class="vw-lp" style="${td};width:36%;overflow-wrap:anywhere" id="lpCell${i}">${_lpChip(i)}</td>
         </tr>`).join('')}
         <tr style="background:#e8f5fb;font-weight:700;color:#1e293b">
@@ -8612,6 +8657,7 @@ function renderInvoiceDoc(inv) {
           ${hasOt ? `<td style="${tdR};border-top:2px solid #29AAE1;border-bottom:none">${totOt > 0 ? totOt.toFixed(2) + 'h' : '—'}</td>` : ''}
           <td colspan="${hasOt ? 2 : 1}" style="${td};border-top:2px solid #29AAE1;border-bottom:none"></td>
           <td style="${tdR};font-weight:700;border-top:2px solid #29AAE1;border-bottom:none">${money(baseSum)}</td>
+          <td class="vw-lp" style="${td};border-top:2px solid #29AAE1;border-bottom:none"></td>
           <td class="vw-lp" style="${td};border-top:2px solid #29AAE1;border-bottom:none"></td>
         </tr></tbody></table>`;
   }

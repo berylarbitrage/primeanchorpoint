@@ -43110,6 +43110,36 @@ app.post('/api/acct/invoices/:id/line-pay-note', requireAdmin, requireAcctWrite,
   res.json({ success: true, note: _lineNoteOut(db.prepare('SELECT * FROM acct_line_pay_notes WHERE invoice_id=? AND line_idx=?').get(inv.id, idx)) });
 });
 
+// 实付时薪 (内部): 收客户的时薪 ≠ 实际付给员工的时薪时, 会计页逐行 (或整张) 填 items[i].wage_rate。
+// 只改这个字段, 不动发票金额; 与后台发票编辑页的「实付时薪」同一个字段, 算工资成本 / 付款备注核对都用它。
+// 传 0 / 空 = 去掉 (按发票时薪算)。
+app.post('/api/acct/invoices/:id/wage-rate', requireAdmin, requireAcctWrite, (req, res) => {
+  try {
+    const row = db.prepare('SELECT id, items_json FROM invoices WHERE id=?').get(parseInt(req.params.id));
+    if (!row) return res.status(404).json({ error: '发票不存在' });
+    let items = [];
+    try { items = JSON.parse(row.items_json || '[]'); } catch (e) { items = []; }
+    if (!Array.isArray(items) || !items.length) return res.status(400).json({ error: '这张发票没有工时明细' });
+    const b = req.body || {};
+    const w = Number(b.wage_rate);
+    if (b.wage_rate != null && b.wage_rate !== '' && (isNaN(w) || w < 0 || w > 1000)) return res.status(400).json({ error: '时薪不对' });
+    let idxs;
+    if (b.all) idxs = items.map((_, k) => k);
+    else {
+      const k = parseInt(b.line_idx);
+      if (isNaN(k) || k < 0 || k >= items.length) return res.status(400).json({ error: '无效行号' });
+      idxs = [k];
+    }
+    idxs.forEach(k => {
+      const it = items[k];
+      if (!it || typeof it !== 'object') return;
+      if (w > 0) { it.wage_rate = Math.round(w * 10000) / 10000; it.wage_rate_by = req.userName || ''; }
+      else { delete it.wage_rate; delete it.wage_rate_by; }
+    });
+    db.prepare('UPDATE invoices SET items_json=? WHERE id=?').run(JSON.stringify(items), row.id);
+    res.json({ success: true, items });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 // 逐行付款备注: 审核通过 (admin 或有银行标注审核权的账号)
 app.post('/api/acct/line-pay-notes/:id/approve', requireAdmin, requireAcctWrite, (req, res) => {
   if (!annCanReview(req)) return res.status(403).json({ error: '此账号没有审核权限' });
