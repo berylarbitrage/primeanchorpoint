@@ -8250,6 +8250,20 @@ async function lpApprove() {
 function _lpNameTokens(n) { return String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z\u4e00-\u9fff]+/g, ' ').trim().split(/\s+/).filter(t => t.length > 1 || /[\u4e00-\u9fff]/.test(t)); }
 // 这一行按 Gusto 付款规则 (收款人对照表 / 发工资时薪 / 并付) 的结果, 服务端 _invGustoRules 算的
 function _lpRule(i) { return ((_invDoc && _invDoc.gusto_rules) || [])[i] || {}; }
+// 用别人名字打卡: 本行工人在收款人对照表里 (并付 / 改名的那几个人), 收款人又是这张发票另一行
+// 的 Gusto 收款人 → 不算错, 自动写一句说明; 和对照表毫无关系的才标红「⚠ 不是」
+function _lpBorrowedNameNote(payee, i, worker) {
+  const items = (_invDoc && _invDoc.items) || [];
+  const inRules = k => { const r = _lpRule(k); return !!(r.alias || (r.group || []).length); };
+  if (!inRules(i)) return ` <span style="color:#b91c1c;font-weight:700">⚠ 不是 ${esc(worker)}</span>`;
+  const k = items.findIndex((_, j) => j !== i && (() => {
+    const r = _lpRule(j);
+    return (r.payee && _lpNameMatch(payee, r.payee)) || (r.alias && _lpNameMatch(payee, r.alias)) || _lpNameMatch(payee, _lpLabel(j));
+  })());
+  if (k < 0) return ` <span style="color:#b91c1c;font-weight:700">⚠ 不是 ${esc(worker)}</span>`;
+  const grp = [k, ...(_lpRule(k).group || [])].filter((v, x, a) => a.indexOf(v) === x).map(j => `第 ${j + 1} 行 ${esc(_lpLabel(j))}`).join('、');
+  return `<div style="color:#6d28d9" title="Gusto 付款模板的收款人对照表">📝 用别人名字打卡：按收款人对照表，${esc(payee)} 是 ${grp} 的 Gusto 收款人</div>`;
+}
 // 收款人是不是本行工人: 名字对上, 或者是 Gusto 规则里这一行付给的收款人
 function _lpPayeeIsWorker(payee, i, worker) {
   if (_lpNameMatch(payee, worker)) return 'name';
@@ -8346,7 +8360,7 @@ function _lpChip(i) {
             const ok = worker ? _lpPayeeIsWorker(x.name, i, worker) : null;
             const chk = ok === 'name' ? ' <span style="color:#15803d;font-weight:700">✓ 同本行工人</span>'
               : ok ? ` <span style="color:#15803d;font-weight:700" title="Gusto 付款模板的收款人对照表: 这一行的钱付给 ${esc(ok)}">✓ 按 Gusto 规则付给这个收款人</span>`
-              : ok === false ? ` <span style="color:#b91c1c;font-weight:700">⚠ 不是 ${esc(worker)}</span>` : '';
+              : ok === false ? _lpBorrowedNameNote(x.name, i, worker) : '';
             return `<div>👤 收款人 <b style="color:#0f172a">${esc(x.name || '')}</b> <span style="color:#94a3b8">(${x.src}${x.extra ? ' · ' + x.extra : ''})</span>${chk}</div>`;
           }).join('')
         : '<div style="color:#b45309">👤 收款人未标注（银行交易没做标注，也没挂 Gusto 付款）</div>';
