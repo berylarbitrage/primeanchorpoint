@@ -42873,11 +42873,19 @@ function _invGustoRules(inv) {
   }));
   const m = _wobMatch(entries, tokenCount, emps, { aliases: _gustoAliases(), payRates: GUSTO_PAY_RATE_OVERRIDES, company: inv.company_name });
   const out = items.map(() => ({}));
+  // 并付分两种:
+  //   crew     = 不同的人, 钱都发给同一个收款人 (GUSTO_HOURS_MERGE, 例: Rattia 班组三人都发给 Jose Gabriel Rattia)
+  //   borrowed = 用别人的名字打卡 (同一个人, 例: Uriel 周五到周日用 Wilson 的名字), 工资算到本人 (host) 那行
+  const nk = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(t => t.length > 1).sort().join(' ');
+  const crewKeys = new Set(GUSTO_HOURS_MERGE.map(nk));
   for (const { entry, sources } of m.byRosterIdx.values()) {
-    sources.forEach(src => {
-      if (src.idx == null) return;
+    const srcs = sources.filter(o => o.idx != null);
+    const kind = srcs.length < 2 ? '' : crewKeys.has(nk(entry.label)) ? 'crew' : 'borrowed';
+    // 本人: 原名和收款人最像的那行 (对照表并进来的人 selfScore 低)
+    const host = srcs.length < 2 ? null : srcs.slice().sort((a, b) => (b.selfScore || 0) - (a.selfScore || 0))[0].idx;
+    srcs.forEach(src => {
       out[src.idx] = { payee: entry.label, alias: src.aliasTo || '', pay_rate: src.payRate || null,
-        group: sources.filter(o => o.idx !== src.idx && o.idx != null).map(o => o.idx) };
+        group: srcs.filter(o => o.idx !== src.idx).map(o => o.idx), kind, host };
     });
   }
   m.skipped.forEach(x => { if (x.idx != null) out[x.idx] = { skip: x.reason }; });

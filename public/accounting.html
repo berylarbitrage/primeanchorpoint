@@ -8322,7 +8322,12 @@ function _lpChip(i) {
   if (!has) {
     // 并付给别人的行: 钱在同组另一行的付款备注里一起付了, 提示去那一行看
     const host = (_lpRule(i).group || []).find(k => { const h = _invDoc.line_pay_notes && _invDoc.line_pay_notes[k]; return h && (h.txn_ids || []).length; });
-    const hint = host != null ? `<div style="font-size:.7rem;color:#6d28d9" title="Gusto 付款模板的收款人对照表">💸 并付：和第 ${host + 1} 行 ${esc(_lpLabel(host))} 一起付${_lpRule(i).payee ? '给 ' + esc(_lpRule(i).payee) : ''}</div>` : '';
+    const rk = _lpRule(i).kind;
+    const hint = host != null ? `<div style="font-size:.7rem;color:${rk === 'crew' ? '#0f766e' : '#6d28d9'}" title="Gusto 付款模板的收款人对照表">${rk === 'borrowed'
+      ? `📝 用别人名字打卡：这行是第 ${host + 1} 行 ${esc(_lpLabel(host))} 本人的工时，一起付了`
+      : rk === 'crew'
+      ? `👥 不同的人，钱都发给 ${esc(_lpRule(i).payee || '')}：和第 ${host + 1} 行 ${esc(_lpLabel(host))} 一起付`
+      : `💸 并付：和第 ${host + 1} 行 ${esc(_lpLabel(host))} 一起付${_lpRule(i).payee ? '给 ' + esc(_lpRule(i).payee) : ''}`}</div>` : '';
     return hint + (canAnnotate() ? `<button class="ann-add" onclick="openLinePay(${i})">＋ 付款备注</button>` : (hint ? '' : '<span style="color:#cbd5e1">—</span>'));
   }
   const st = _LP_ST[n.paid_status];
@@ -8393,7 +8398,7 @@ function _lpChip(i) {
     const miss = missing > 0 ? `<div style="color:#b45309;font-weight:700">⚠ ${missing} 笔找不到银行记录</div>` : '';
     const tot = txns.length
       ? `<div style="white-space:nowrap">${txns.length > 1 ? `合计 <b style="color:#1e293b">${money(sum)}</b> ` : ''}${grpOk
-          ? `<span style="color:#15803d;font-weight:700" title="Gusto 付款模板的收款人对照表: 这几行的钱并付给同一个收款人">✓ 与并付合计一致</span> <span style="color:#94a3b8;white-space:normal">(${grpTxt})</span>`
+          ? `<span style="color:#15803d;font-weight:700" title="Gusto 付款模板的收款人对照表: 这几行的钱并付给同一个收款人">✓ 与并付合计一致</span> <span style="color:#94a3b8;white-space:normal">(${grpTxt})</span>${_lpRule(i).kind === 'borrowed' ? '<div style="color:#6d28d9;white-space:normal">📝 用别人名字打卡：同一个人，工资合在一起付</div>' : _lpRule(i).kind === 'crew' ? `<div style="color:#0f766e;white-space:normal">👥 不同的人，钱都发给 ${esc(_lpRule(i).payee || '')}</div>` : ''}`
           : Math.abs(d) < 0.01
           ? '<span style="color:#15803d;font-weight:700">✓ 与本行金额一致</span>'
           : `<span style="color:${d < 0 ? '#b91c1c' : '#1d4ed8'};font-weight:700">${d < 0 ? '少' : '多'} ${money(Math.abs(d))}</span> <span style="color:#94a3b8">(本行 ${money(lineAmt)}${grpAmt != null ? `；并付合计 ${money(grpAmt)}` : ''})</span>`}${portionChk}</div>`
@@ -8476,10 +8481,23 @@ function _lpInvAmt(i) {
     : Math.round(((Number(it.regHours != null ? it.regHours : it.hours) || 0) * (Number(it.rate) || 0) + (Number(it.otHours) || 0) * (Number(it.otRate) || 0)) * 100) / 100;
 }
 function _lpPayCell(i) {
+  const r = _lpRule(i), grp = (r.group || []).filter(k => k !== i);
+  // 用别人名字打卡 (同一个人): 工资并到本人那行; 借来的名字那行写「并入」
+  if (r.kind === 'borrowed' && grp.length && r.host != null) {
+    if (r.host !== i) {
+      return `<span style="color:#94a3b8;font-size:.72rem" title="${esc(_lpLabel(r.host))} 用 ${esc(_lpLabel(i))} 的名字打卡，这行的工资就是他的">并入第 ${r.host + 1} 行<br>${esc(_lpLabel(r.host))}</span>`
+        + `<div style="font-size:.62rem;color:#6d28d9">📝 用别人名字打卡</div><div style="font-size:.64rem;color:#94a3b8">本行 ${money(_lpLineAmt(i))}</div>`;
+    }
+    const tot = Math.round(([i, ...grp]).reduce((s, k) => s + _lpLineAmt(k), 0) * 100) / 100;
+    return `<b style="color:#7c3aed" title="${esc(grp.map(k => _lpLabel(k)).join('、'))} 是他用别人的名字打卡的工时">${money(tot)}</b>`
+      + `<div style="font-size:.64rem;color:#94a3b8">本人 ${money(_lpLineAmt(i))} + ${grp.map(k => `${esc(_lpLabel(k))} ${money(_lpLineAmt(k))}`).join(' + ')}</div>`
+      + `<div style="font-size:.62rem;color:#6d28d9">📝 用别人名字打卡</div>`;
+  }
+  const crewTag = r.kind === 'crew' && r.payee ? `<div style="font-size:.62rem;color:#0f766e" title="不同的人，钱都发给同一个收款人">👥 钱发给 ${esc(r.payee)}</div>` : '';
   const pay = _lpLineAmt(i), inv = _lpInvAmt(i);
   const diff = Math.round((pay - inv) * 100) / 100;
-  if (Math.abs(diff) < 0.005) return `<span style="color:#64748b">${money(pay)}</span>`;
-  return `<b style="color:#7c3aed" title="发票金额 ${money(inv)}，实际付给员工 ${money(pay)}">${money(pay)}</b><div style="font-size:.64rem;color:#94a3b8">发票 ${money(inv)}</div>`;
+  if (Math.abs(diff) < 0.005) return `<span style="color:#64748b">${money(pay)}</span>${crewTag}`;
+  return `<b style="color:#7c3aed" title="发票金额 ${money(inv)}，实际付给员工 ${money(pay)}">${money(pay)}</b><div style="font-size:.64rem;color:#94a3b8">发票 ${money(inv)}</div>${crewTag}`;
 }
 function _lpPayTotCell() {
   const items = (_invDoc && _invDoc.items) || [];
@@ -8739,7 +8757,7 @@ function renderInvoiceDoc(inv) {
           ${hasOt ? `<td style="${tdR}">${money(it.otRate)}</td>` : ''}
           <td style="${tdR};font-weight:700">${money(rawAmt(it))}</td>
           <td class="vw-lp" style="${tdR};white-space:nowrap" id="lpWage${i}">${_lpWageCell(i)}</td>
-          <td class="vw-lp" style="${tdR};white-space:nowrap" id="lpPay${i}">${_lpPayCell(i)}</td>
+          <td class="vw-lp" style="${tdR};white-space:normal;width:110px;max-width:120px;line-height:1.35" id="lpPay${i}">${_lpPayCell(i)}</td>
           <td class="vw-lp" style="${td};width:36%;overflow-wrap:anywhere" id="lpCell${i}">${_lpChip(i)}</td>
         </tr>`).join('')}
         <tr style="background:#e8f5fb;font-weight:700;color:#1e293b">
