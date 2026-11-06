@@ -9494,6 +9494,12 @@ function _isChangeRequest(req) {
   if (p === '/api/device-sms/my-line' || p.startsWith('/api/device-sms/line-requests')) return false;
   if (_isWobGustoWork(req, p)) return false;
   if (_isReferralWork(req, p)) return false;
+  // 打开银行交易标注: 这个 POST 是「找到或新建」, 已经有标注时只是读出来、什么都不改 ——
+  // 总监要能直接看会计 / 客服写的标注和备注, 不能被拦去等审批 (还没有标注时新建照样要审批)
+  if (req.method === 'POST' && p === '/api/plaid/annotations') {
+    const txnId = String((req.body && req.body.txn_id) || '');
+    if (txnId && db.prepare("SELECT 1 FROM bank_statement_txns WHERE kind='box' AND plaid_txn_id=?").get(txnId)) return false;
+  }
   if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return true;
   return String(req.query && req.query.send) === '1';   // 带 ?send=1 的 GET 会真的发东西 (例如立刻发面试日报)
 }
