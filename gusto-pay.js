@@ -253,7 +253,7 @@ function matchEmployees(entries, tokenCount, employees, opts) {
       }
     }
     const alias = aliasMap.get(joined(selfT));
-    if (alias && alias.skip) { skipped.push({ name, owed, reason: alias.reason }); continue; }
+    if (alias && alias.skip) { skipped.push({ name, owed, reason: alias.reason, idx: emp.idx }); continue; }
     const empT = alias ? alias.toTokens : selfT;
     let best = 0, hits = [];
     for (const entry of entries) {
@@ -272,9 +272,9 @@ function matchEmployees(entries, tokenCount, employees, opts) {
         [...empT].every(a => [...e.tokens].some(b => near(a, b))));
       best = hits.length ? 80 : 0;
     }
-    if (!best) { unmatched.push({ name, owed, aliasTo: alias ? alias.toName : undefined }); continue; }
+    if (!best) { unmatched.push({ name, owed, aliasTo: alias ? alias.toName : undefined, idx: emp.idx, payRate: payRate || null }); continue; }
     if (hits.length > 1) {
-      ambiguous.push({ name, owed, candidates: hits.map(h => h.label) });
+      ambiguous.push({ name, owed, candidates: hits.map(h => h.label), idx: emp.idx, payRate: payRate || null });
       continue;
     }
     const entry = hits[0];
@@ -285,11 +285,11 @@ function matchEmployees(entries, tokenCount, employees, opts) {
       const firstT = [...entry.tokens].filter(t => !entry.lastTokens.has(t));
       const extras = [...empT].filter(a => ![...entry.lastTokens].some(b => near(a, b)));
       const evidence = !extras.length || extras.some(a => firstT.some(b => near(a, b)));
-      if (!evidence) { needConfirm.push({ name, owed, candidate: entry.label }); continue; }
+      if (!evidence) { needConfirm.push({ name, owed, candidate: entry.label, idx: emp.idx, payRate: payRate || null }); continue; }
     }
     if (!byRosterIdx.has(entry.idx)) byRosterIdx.set(entry.idx, { entry, sources: [] });
     byRosterIdx.get(entry.idx).sources.push({
-      name, owed,
+      name, owed, idx: emp.idx,
       rate: empRate,
       actualHours: r2((Number(emp.regHours) || 0) + (Number(emp.otHours) || 0)),
       payRate: payRate || null,

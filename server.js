@@ -24102,6 +24102,30 @@ const GUSTO_ALIAS_DEFAULTS = [
   { from: 'Gerardo Tecaxco Jr', to: 'Ramiro Montiel Carreon', scope: 'Nexware' },
 ];
 
+// Gusto 收款人名册: API 拉的合同工; 还没连 API 时用生成付款 CSV 的模板名册兜底
+function _gustoContractorList() {
+  let contractors = db.prepare('SELECT uuid, first_name, last_name, business_name, hourly_rate FROM gusto_contractors').all();
+  let rosterSource = contractors.length ? 'api' : 'none';
+  if (!contractors.length) {
+    // API 还没连上（过渡期只有导入的报告）→ 用生成付款 CSV 的模板名册兜底,
+    // 导入行按姓名照样归到收款人头上, 对账口径不变
+    const tpl = _gustoRoster();
+    if (tpl) {
+      try {
+        const pr = parseRoster(tpl.csv);
+        contractors = pr.entries.map(e => ({
+          uuid: '',
+          first_name: pr.cols.first >= 0 ? String(e.cells[pr.cols.first] || '') : '',
+          last_name: pr.cols.last >= 0 ? String(e.cells[pr.cols.last] || '') : '',
+          business_name: pr.cols.business >= 0 ? String(e.cells[pr.cols.business] || '') : '',
+          hourly_rate: e.rate,
+        }));
+        rosterSource = 'template';
+      } catch (e) { /* 模板解析不了就当没有名册 */ }
+    }
+  }
+  return { contractors, rosterSource };
+}
 // 发工资时薪覆盖: 发票对客户照计费时薪开票（这三人 $18）, 发工资按这里的时薪
 // 算, 应付按时薪差回扣（见 gusto-pay.js opts.payRates）。2026-09 确认: Rattia
 // 班组三人（都并付给 Jose Gabriel Rattia）计费 $18、发工资 $16。
@@ -42827,9 +42851,45 @@ app.get('/api/acct/invoices/:id', requireAdmin, requireAcctView, (req, res) => {
     // 逐行付款备注: {line_idx: note}; 关联交易补上概要信息, 照片转可访问 URL
     row.line_pay_notes = {};
     db.prepare('SELECT * FROM acct_line_pay_notes WHERE invoice_id=?').all(row.id).forEach(n => { row.line_pay_notes[n.line_idx] = _lineNoteOut(n); });
+    try { row.gusto_rules = _invGustoRules(row); } catch (e) { row.gusto_rules = null; }
     res.json(row);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// 发票每一行按 Gusto 付款模板同一套规则 (收款人对照表 / 发工资时薪 / 并付) 对到 Gusto 收款人:
+// [{ payee: 名册收款人, alias: 对照表指定的收款人, pay_rate: 发工资时薪, group: [并付给同一人的其他行号], skip: 现金/跳过 }]
+// 会计页付款备注用它认收款人、算本行工资、核对并付合计。
+function _invGustoRules(inv) {
+  const items = Array.isArray(inv.items) ? inv.items : [];
+  if ((inv.profile || {}).invoice_mode === 'container' || !items.length) return null;
+  const { contractors } = _gustoContractorList();
+  const { entries, tokenCount } = _wobEntries(contractors);
+  const emps = items.map((it, idx) => ({
+    idx, name: String((it && it.name) || ''),
+    total: Number(it && it.total) || 1,   // 0 元行也要对人 (matchEmployees 跳过 0 元)
+    rate: Number(it && it.rate) || null,
+    regHours: Number(it && (it.regHours != null ? it.regHours : it.hours)) || 0,
+    otHours: Number(it && it.otHours) || 0,
+  }));
+  const m = _wobMatch(entries, tokenCount, emps, { aliases: _gustoAliases(), payRates: GUSTO_PAY_RATE_OVERRIDES, company: inv.company_name });
+  const out = items.map(() => ({}));
+  for (const { entry, sources } of m.byRosterIdx.values()) {
+    sources.forEach(src => {
+      if (src.idx == null) return;
+      out[src.idx] = { payee: entry.label, alias: src.aliasTo || '', pay_rate: src.payRate || null,
+        group: sources.filter(o => o.idx !== src.idx && o.idx != null).map(o => o.idx) };
+    });
+  }
+  m.skipped.forEach(x => { if (x.idx != null) out[x.idx] = { skip: x.reason }; });
+  [...m.unmatched, ...m.ambiguous, ...m.needConfirm].forEach(x => {
+    if (x.idx != null) out[x.idx] = { alias: x.aliasTo || '', pay_rate: x.payRate || null, unmatched: true };
+  });
+  // 名册里没对上、但对照表指定了同一个收款人的几行, 也算并付
+  const byAlias = {};
+  out.forEach((r, k) => { if (r.unmatched && r.alias) (byAlias[r.alias.toLowerCase()] = byAlias[r.alias.toLowerCase()] || []).push(k); });
+  Object.values(byAlias).forEach(ks => ks.forEach(k => { out[k].group = ks.filter(x => x !== k); }));
+  return out;
+}
 
 // ─── 会计每周核对清单 (/acct-checklist) ───────────────────────────────────────
 // 每周五会计核对两件事: ① 该出的账单都出了没有 (一个仓库可能既有卸柜又有劳务, 各算一张)
@@ -46083,26 +46143,7 @@ app.get('/api/acct/gusto/recon', requireAdmin, requireAcctView, (req, res) => {
           period_start: r.period_start, period_end: r.period_end, employees });
       }
     }
-    let contractors = db.prepare('SELECT uuid, first_name, last_name, business_name, hourly_rate FROM gusto_contractors').all();
-    let rosterSource = contractors.length ? 'api' : 'none';
-    if (!contractors.length) {
-      // API 还没连上（过渡期只有导入的报告）→ 用生成付款 CSV 的模板名册兜底,
-      // 导入行按姓名照样归到收款人头上, 对账口径不变
-      const tpl = _gustoRoster();
-      if (tpl) {
-        try {
-          const pr = parseRoster(tpl.csv);
-          contractors = pr.entries.map(e => ({
-            uuid: '',
-            first_name: pr.cols.first >= 0 ? String(e.cells[pr.cols.first] || '') : '',
-            last_name: pr.cols.last >= 0 ? String(e.cells[pr.cols.last] || '') : '',
-            business_name: pr.cols.business >= 0 ? String(e.cells[pr.cols.business] || '') : '',
-            hourly_rate: e.rate,
-          }));
-          rosterSource = 'template';
-        } catch (e) { /* 模板解析不了就当没有名册 */ }
-      }
-    }
+    const { contractors, rosterSource } = _gustoContractorList();
     // W-2 员工工资不参与合同工对账（发票工资表里没有内勤员工）
     const payments = db.prepare(`SELECT uuid, contractor_uuid, contractor_name, date, payment_method, status,
         hours, wage, bonus, reimbursement, wage_total, source
