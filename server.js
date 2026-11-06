@@ -43148,6 +43148,14 @@ app.post('/api/acct/line-pay-notes/:id/approve', requireAdmin, requireAcctWrite,
   db.prepare(`UPDATE acct_line_pay_notes SET review_status='approved', reviewed_by=? WHERE id=?`).run(req.userName || '', n.id);
   res.json({ success: true, note: _lineNoteOut(db.prepare('SELECT * FROM acct_line_pay_notes WHERE id=?').get(n.id)) });
 });
+// 逐行付款备注: 撤回审核 (已审核 → 待审核), 同样只有能审核的账号可以
+app.post('/api/acct/line-pay-notes/:id/unapprove', requireAdmin, requireAcctWrite, (req, res) => {
+  if (!annCanReview(req)) return res.status(403).json({ error: '此账号没有审核权限' });
+  const n = db.prepare('SELECT * FROM acct_line_pay_notes WHERE id=?').get(parseInt(req.params.id));
+  if (!n) return res.status(404).json({ error: 'not found' });
+  db.prepare(`UPDATE acct_line_pay_notes SET review_status='pending', reviewed_by='' WHERE id=?`).run(n.id);
+  res.json({ success: true, note: _lineNoteOut(db.prepare('SELECT * FROM acct_line_pay_notes WHERE id=?').get(n.id)) });
+});
 // 逐行付款备注: 上传凭证截图/PDF (追加)
 app.post('/api/acct/line-pay-notes/:id/photos', requireAdmin, requireAcctWrite, containerSubmitPhotoUpload.array('photos', 12), (req, res) => {
   const n = db.prepare('SELECT * FROM acct_line_pay_notes WHERE id=?').get(parseInt(req.params.id));
