@@ -8469,6 +8469,24 @@ function _lpWageCell(i) {
   }
   return edit ? `<a onclick="lpWageEdit(${i})" title="实际付给员工的时薪和发票时薪不一样时填" style="cursor:pointer;color:#94a3b8;font-size:.72rem;text-decoration:underline">同发票 · 改</a>` : '<span style="color:#cbd5e1">—</span>';
 }
+// 实付工资 (内部): 每行实际付给员工的钱 (工时 × 实付时薪; 没填实付时薪 = 发票金额), 发票本身不变
+function _lpInvAmt(i) {
+  const it = ((_invDoc && _invDoc.items) || [])[i] || {};
+  return it.total != null ? (Number(it.total) || 0)
+    : Math.round(((Number(it.regHours != null ? it.regHours : it.hours) || 0) * (Number(it.rate) || 0) + (Number(it.otHours) || 0) * (Number(it.otRate) || 0)) * 100) / 100;
+}
+function _lpPayCell(i) {
+  const pay = _lpLineAmt(i), inv = _lpInvAmt(i);
+  const diff = Math.round((pay - inv) * 100) / 100;
+  if (Math.abs(diff) < 0.005) return `<span style="color:#64748b">${money(pay)}</span>`;
+  return `<b style="color:#7c3aed" title="发票金额 ${money(inv)}，实际付给员工 ${money(pay)}">${money(pay)}</b><div style="font-size:.64rem;color:#94a3b8">发票 ${money(inv)}</div>`;
+}
+function _lpPayTotCell() {
+  const items = (_invDoc && _invDoc.items) || [];
+  const pay = Math.round(items.reduce((s, _, k) => s + _lpLineAmt(k), 0) * 100) / 100;
+  const inv = Math.round(items.reduce((s, _, k) => s + _lpInvAmt(k), 0) * 100) / 100;
+  return `<b style="color:${Math.abs(pay - inv) < 0.005 ? '#1e293b' : '#7c3aed'}">${money(pay)}</b>`;
+}
 async function lpWageEdit(i) {
   if (!_invDoc) return;
   const items = _invDoc.items || [];
@@ -8487,8 +8505,10 @@ async function lpWageEdit(i) {
   _invDoc.items = r.items;
   r.items.forEach((_, k) => {
     const wc = document.getElementById('lpWage' + k); if (wc) wc.innerHTML = _lpWageCell(k);
+    const pc = document.getElementById('lpPay' + k); if (pc) pc.innerHTML = _lpPayCell(k);
     const lc = document.getElementById('lpCell' + k); if (lc) lc.innerHTML = _lpChip(k);
   });
+  const pt = document.getElementById('lpPayTot'); if (pt) pt.innerHTML = _lpPayTotCell();
   toast(n > 0 ? `✅ 实付时薪改成 ${money(n)}` : '✅ 已改回和发票时薪一样');
 }
 async function openLinePay(i) {
@@ -8709,7 +8729,7 @@ function renderInvoiceDoc(inv) {
     const totOt = items.reduce((s, it) => s + (Number(it.otHours) || 0), 0);
     baseSum = Math.round(items.reduce((s, it) => s + rawAmt(it), 0) * 100) / 100;
     lineTable = `<table style="width:100%;border-collapse:collapse;margin-bottom:.6rem">
-      <thead><tr><th style="${th}">#</th><th style="${th}">Worker</th><th style="${thR}">Reg Hrs</th>${hasOt ? `<th style="${thR}">OT Hrs</th>` : ''}<th style="${thR}">Rate</th>${hasOt ? `<th style="${thR}">OT Rate</th>` : ''}<th style="${thR}">Amount</th><th class="vw-lp" style="${thR};color:#94a3b8;white-space:nowrap" title="实际付给员工的时薪 (内部用, 不改发票金额)。付款备注按它核对付了多少">实付时薪<span style="font-size:.6rem">(内部)</span>${canAnnotate() ? ` <a onclick="lpWageEdit(-1)" title="整张发票每一行都设成同一个实付时薪" style="cursor:pointer;color:#0f4c6b;text-decoration:underline;font-size:.66rem;text-transform:none">全部改</a>` : ''}</th><th class="vw-lp" style="${th};color:#94a3b8">付款备注<span style="font-size:.6rem">(内部)</span></th></tr></thead>
+      <thead><tr><th style="${th}">#</th><th style="${th}">Worker</th><th style="${thR}">Reg Hrs</th>${hasOt ? `<th style="${thR}">OT Hrs</th>` : ''}<th style="${thR}">Rate</th>${hasOt ? `<th style="${thR}">OT Rate</th>` : ''}<th style="${thR}">Amount</th><th class="vw-lp" style="${thR};color:#94a3b8;white-space:nowrap" title="实际付给员工的时薪 (内部用, 不改发票金额)。付款备注按它核对付了多少">实付时薪<span style="font-size:.6rem">(内部)</span>${canAnnotate() ? ` <a onclick="lpWageEdit(-1)" title="整张发票每一行都设成同一个实付时薪" style="cursor:pointer;color:#0f4c6b;text-decoration:underline;font-size:.66rem;text-transform:none">全部改</a>` : ''}</th><th class="vw-lp" style="${thR};color:#94a3b8;white-space:nowrap" title="实际付给员工的工资 = 工时 × 实付时薪 (内部用, 发票金额不变)">实付工资<span style="font-size:.6rem">(内部)</span></th><th class="vw-lp" style="${th};color:#94a3b8">付款备注<span style="font-size:.6rem">(内部)</span></th></tr></thead>
       <tbody>${items.map((it, i) => `<tr>
           <td style="${td}">${i + 1}</td>
           <td style="${td}">${esc(it.name || '')}</td>
@@ -8719,6 +8739,7 @@ function renderInvoiceDoc(inv) {
           ${hasOt ? `<td style="${tdR}">${money(it.otRate)}</td>` : ''}
           <td style="${tdR};font-weight:700">${money(rawAmt(it))}</td>
           <td class="vw-lp" style="${tdR};white-space:nowrap" id="lpWage${i}">${_lpWageCell(i)}</td>
+          <td class="vw-lp" style="${tdR};white-space:nowrap" id="lpPay${i}">${_lpPayCell(i)}</td>
           <td class="vw-lp" style="${td};width:36%;overflow-wrap:anywhere" id="lpCell${i}">${_lpChip(i)}</td>
         </tr>`).join('')}
         <tr style="background:#e8f5fb;font-weight:700;color:#1e293b">
@@ -8728,6 +8749,7 @@ function renderInvoiceDoc(inv) {
           <td colspan="${hasOt ? 2 : 1}" style="${td};border-top:2px solid #29AAE1;border-bottom:none"></td>
           <td style="${tdR};font-weight:700;border-top:2px solid #29AAE1;border-bottom:none">${money(baseSum)}</td>
           <td class="vw-lp" style="${td};border-top:2px solid #29AAE1;border-bottom:none"></td>
+          <td class="vw-lp" style="${tdR};border-top:2px solid #29AAE1;border-bottom:none;white-space:nowrap" id="lpPayTot">${_lpPayTotCell()}</td>
           <td class="vw-lp" style="${td};border-top:2px solid #29AAE1;border-bottom:none"></td>
         </tr></tbody></table>`;
   }
