@@ -890,6 +890,8 @@ try { db.exec("ALTER TABLE cn_employees ADD COLUMN view_pw_hash TEXT DEFAULT ''"
 try { db.exec("ALTER TABLE cn_employees ADD COLUMN view_pw_salt TEXT DEFAULT ''"); } catch(e) {}
 // 关联的登录账号 (admin_users.username): 客服账号只看得到关联到自己的那个员工
 try { db.exec("ALTER TABLE cn_employees ADD COLUMN login_username TEXT DEFAULT ''"); } catch(e) {}
+// 🇺🇸 美国员工工资和国内工资共用这套 (名册 + fee_type='cnpay' 记录, 权限 / 查看密码 / 审核都一样), 按员工的 region 分页签
+try { db.exec("ALTER TABLE cn_employees ADD COLUMN region TEXT DEFAULT 'cn'"); } catch(e) {}
 // 🪵 会计手动添加的木板发票 (照 pallet.bintique.com 的 New Order 表单): 会计提交为
 // approval_status='pending', 管理员审核通过才计入木板账单汇总 / 才能记付款批注。
 // 付款批注 target_type='palletmanual' (与 Bintique 账单 id 分开编号)。
@@ -44185,13 +44187,32 @@ function _pxCleanProfile(p) {
   return o;
 }
 
+// 一次性: 加发票预设 抬头「Prime Anchor Point」+ 联系人「Betty」(信息照代开发票 INV-M-NJ-DL-110726-0001),
+// 并记成代开发票的默认抬头 / 联系人 (不改劳务发票的默认, 那边仍是 Prime Anchor Workforce)。已有同名预设就直接用它。
+try {
+  if (!db.prepare("SELECT value FROM app_settings WHERE key='proxy_inv_presets_v1'").get()) {
+    const ensure = (section, name, data) => {
+      const hit = db.prepare('SELECT id FROM invoice_profiles WHERE section=? AND name=?').get(section, name);
+      return hit ? hit.id : db.prepare('INSERT INTO invoice_profiles (name, section, data) VALUES (?,?,?)').run(name, section, JSON.stringify(data)).lastInsertRowid;
+    };
+    const sender = ensure('sender', 'Prime Anchor Point', { sender_name: 'Prime Anchor Point', sender_address: '18 Congress West, Roselle, IL', sender_phone: '224-447-3669', sender_email: 'info@primeanchorpoint.com' });
+    const contact = ensure('contact', 'Betty', { contact_name: 'Betty', contact_phone: '224-447-3669', contact_email: 'info@primeanchorpoint.com' });
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('proxy_inv_defaults', ?)").run(JSON.stringify({ sender, contact }));
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('proxy_inv_presets_v1', ?)").run(new Date().toISOString());
+    console.log(`[migration] 代开发票预设: 抬头 #${sender} Prime Anchor Point, 联系人 #${contact} Betty`);
+  }
+} catch (e) { console.log('[migration] proxy invoice presets error:', e.message); }
+function _pxDefaults() {
+  try { return JSON.parse((db.prepare("SELECT value FROM app_settings WHERE key='proxy_inv_defaults'").get() || {}).value || '{}'); } catch (_) { return {}; }
+}
+
 // 发票预设 (抬头 / 收款银行 / 联系人) — 会计账号碰不到 /api/admin/*, 这里给一份只读的
 app.get('/api/acct/proxy-invoices/meta', requireAdmin, requireAcctView, (req, res) => {
   const profiles = db.prepare('SELECT id, name, section, data, is_default FROM invoice_profiles ORDER BY section, name').all().map(p => {
     let data = {}; try { data = JSON.parse(p.data || '{}'); } catch (_) {}
     return { id: p.id, name: p.name, section: p.section, is_default: !!p.is_default, data: _pxCleanProfile(data) };
   });
-  res.json({ profiles, categories: PROXY_INV_CATEGORIES, can_edit: ['accounting', 'admin'].includes(req.userRole), can_delete: req.userRole === 'admin' });
+  res.json({ profiles, defaults: _pxDefaults(), categories: PROXY_INV_CATEGORIES, can_edit: ['accounting', 'admin'].includes(req.userRole), can_delete: req.userRole === 'admin' });
 });
 app.get('/api/acct/proxy-invoices/next-number', requireAdmin, requireAcctView, (req, res) => {
   const c = db.prepare('SELECT * FROM proxy_inv_clients WHERE id=?').get(parseInt(req.query.client_id));
@@ -44397,7 +44418,7 @@ app.get('/api/acct/cn-employees', requireAdmin, requireAcctView, (req, res) => {
   res.json(rows.map(r => ({ ..._cnEmpOut(r), note: r.note, currency: r.currency, profile_id: r.profile_id, profile_code: r.profile_code,
     login_username: r.login_username || '', created_by: r.created_by })));
 });
-function _cnEmpOut(r) { return { id: r.id, name: r.name, title: r.title, has_pw: !!r.view_pw_hash }; }
+function _cnEmpOut(r) { return { id: r.id, name: r.name, title: r.title, region: r.region === 'us' ? 'us' : 'cn', has_pw: !!r.view_pw_hash }; }
 function _cnSeeAll(req) { return req.userRole === 'admin' || req.userRole === 'accounting'; }
 function _cnIsOwn(req, r) { return !!r.login_username && String(r.login_username).toLowerCase() === String(req.userName || '').toLowerCase(); }
 // 关联登录账号: 必须是存在的客服 / staff 账号, 否则当没关联
@@ -44471,9 +44492,10 @@ app.post('/api/acct/cn-employees', requireAdmin, requireRole('admin'), (req, res
   const login = _cnLoginUser(b.login_username);
   if (login === null) return res.status(400).json({ error: '关联的登录账号不存在或不是客服账号' });
   if (login && db.prepare('SELECT 1 FROM cn_employees WHERE login_username=? COLLATE NOCASE').get(login)) return res.status(400).json({ error: '这个登录账号已经关联到别的员工了' });
-  const r = db.prepare('INSERT INTO cn_employees (name, title, note, currency, profile_id, login_username, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)')
+  const region = b.region === 'us' ? 'us' : 'cn';
+  const r = db.prepare('INSERT INTO cn_employees (name, title, note, currency, profile_id, login_username, created_by, region) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
     .run(name, String(b.title || '').trim().slice(0, 100), String(b.note || '').trim().slice(0, 500),
-      ['CNY', 'USD'].includes(String(b.currency || '')) ? String(b.currency) : 'CNY', pid, login, req.userName || '');
+      ['CNY', 'USD'].includes(String(b.currency || '')) ? String(b.currency) : (region === 'us' ? 'USD' : 'CNY'), pid, login, req.userName || '', region);
   _cnSetPw(r.lastInsertRowid, pw);
   res.json({ success: true, id: r.lastInsertRowid });
 });

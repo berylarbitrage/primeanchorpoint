@@ -217,6 +217,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <button class="tab" id="tabFeeLaw" onclick="showTab('feelaw')"><span class="t-zh">⚖️ 律师费</span><span class="t-en">Legal</span></button>
     <button class="tab" id="tabFeeCo" onclick="showTab('feeco')"><span class="t-zh">🏢 公司支出</span><span class="t-en">Expenses</span></button>
     <button class="tab" id="tabFeeCn" onclick="showTab('feecn')"><span class="t-zh">🏮 国内工资</span><span class="t-en">CN Payroll</span></button>
+    <button class="tab" id="tabFeeUs" onclick="showTab('feeus')"><span class="t-zh">🇺🇸 美国员工工资</span><span class="t-en">US Payroll</span></button>
     <button class="tab" id="tabPallet" onclick="showTab('pallet')"><span class="t-zh">🪵 木板账单</span><span class="t-en">Pallet</span></button>
     <button class="tab" id="tabTruck" onclick="showTab('truck')"><span class="t-zh">🚚 卡车费用</span><span class="t-en">Truck</span></button>
     <button class="tab" id="tabProxy" onclick="showTab('proxy')"><span class="t-zh">🧾 代开发票</span><span class="t-en">Proxy Invoices</span></button>
@@ -927,7 +928,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
   <!-- 👤 添加 / 编辑国内员工 -->
   <div id="cnEmpModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:92;align-items:center;justify-content:center;padding:16px">
     <div class="card" style="max-width:400px;width:100%;padding:1.2rem 1.2rem 1rem">
-      <div id="cnEmpTitle" style="font-weight:800;margin-bottom:.7rem">👤 添加国内员工</div>
+      <div id="cnEmpTitle" style="font-weight:800;margin-bottom:.7rem">👤 添加员工</div>
       <label style="font-size:.76rem;color:var(--g500)">姓名（输入名字 / 工号 / 电话，从员工档案里找）</label>
       <div style="position:relative">
         <input type="text" id="ceName" placeholder="🔍 搜员工档案…" autocomplete="off" oninput="ceSearch()" onfocus="ceSearch()" onblur="setTimeout(()=>{document.getElementById('ceDrop').style.display='none'},200)" style="width:100%;margin:.15rem 0 .3rem">
@@ -1704,8 +1705,11 @@ function showTab(t) {
   document.getElementById('tabFeeLaw').classList.toggle('on', t === 'feelaw');
   document.getElementById('tabFeeCo').classList.toggle('on', t === 'feeco');
   document.getElementById('tabFeeCn').classList.toggle('on', t === 'feecn');
-  document.getElementById('paneCn').style.display = t === 'feecn' ? '' : 'none';
-  if (t === 'feecn') cnLoad(); else _cnUnlocked.clear();   // 离开页签就重新锁上
+  document.getElementById('tabFeeUs').classList.toggle('on', t === 'feeus');
+  // 国内工资 / 美国员工工资 共用一个面板, 按员工 region 分开显示
+  document.getElementById('paneCn').style.display = (t === 'feecn' || t === 'feeus') ? '' : 'none';
+  if (t === 'feecn' || t === 'feeus') { const rg = t === 'feeus' ? 'us' : 'cn'; if (rg !== _cnRegion) { _cnUnlocked.clear(); _cnOpen.clear(); } _cnRegion = rg; cnLoad(); }
+  else _cnUnlocked.clear();   // 离开页签就重新锁上
   document.getElementById('tabPallet').classList.toggle('on', t === 'pallet');
   document.getElementById('panePallet').style.display = t === 'pallet' ? '' : 'none';
   if (t === 'pallet') loadPalletList();
@@ -2245,7 +2249,7 @@ async function openPayNote(type, id) {
   document.getElementById('pnTitle').textContent = type === 'invoice'
     ? `发票 ${item.invoice_number || ''} · ${item.company_name || ''} · ${money(item.subtotal)}`
     : type === 'fee'
-      ? `${item.fee_type === 'cnpay' ? '🏮 国内工资' : (FEE_CFG[item.fee_type] || FEE_CFG.insurance).title} · ${item.party_name || ''}${item.fee_type === 'cnpay' ? ' · ' + (item.fee_date || '') : ''} · ${item.amount != null ? (item.fee_type === 'cnpay' ? _cnMoney(item.amount, item.currency) : money(item.amount)) : ''}`
+      ? `${item.fee_type === 'cnpay' ? (_cnEmpRegion(item.employee_id) === 'us' ? '🇺🇸 美国员工工资' : '🏮 国内工资') : (FEE_CFG[item.fee_type] || FEE_CFG.insurance).title} · ${item.party_name || ''}${item.fee_type === 'cnpay' ? ' · ' + (item.fee_date || '') : ''} · ${item.amount != null ? (item.fee_type === 'cnpay' ? _cnMoney(item.amount, item.currency) : money(item.amount)) : ''}`
       : type === 'referralweek'
         ? `🤝 介绍费 · 第 ${item.week_no} 周 · ${item.ref.worker_name || ''}（工头 ${item.ref.foreman_name || ''}）· 发票 ${item.invoice.invoice_number || ''} ${item.invoice.period_start ? item.invoice.period_start + ' ~ ' + (item.invoice.period_end || '') : ''}${item.amount != null ? ' · ' + money(item.amount) : ''}`
       : type === 'referral'
@@ -5554,6 +5558,10 @@ let _cnEmps = null, _cnEmpEdit = null, _cnPay = null, _ceProfile = null, _ceMatc
 const _cnOpen = new Set();
 // 国内工资只有管理员能录入 / 修改; 会计能看全部; 客服只看关联到自己账号的员工, 还要输查看密码
 function canEditCn() { return USER.role === 'admin'; }
+// 当前页签: 'cn' 国内工资 / 'us' 美国员工工资 (同一套名册和记录, 按员工 region 分开)
+let _cnRegion = 'cn';
+const _cnRegionLabel = rg => rg === 'us' ? '美国员工' : '国内员工';
+const _cnEmpRegion = id => { const e = (_cnEmps || []).find(x => x.id === id); return e ? (e.region || 'cn') : 'cn'; };
 function canSeeAllCn() { return ['admin', 'accounting'].includes(USER.role); }
 const _cnUnlocked = new Map();   // empId → 输密码后拿到的工资记录 (只在内存, 离开页签 / 刷新即清)
 let _cnPwEmp = null;
@@ -5597,8 +5605,10 @@ function cnRender() {
   const admin = USER.role === 'admin', seeAll = canSeeAllCn();
   const recs = seeAll ? _feeList.filter(f => f.fee_type === 'cnpay') : [..._cnUnlocked.values()].flat();
   // 名册里的员工 + 没挂名册的早期记录 (按名字归组)
-  const groups = _cnEmps.map(e => ({ emp: e, name: e.name, recs: recs.filter(f => f.employee_id === e.id) }));
-  recs.filter(f => !f.employee_id || !_cnEmps.some(e => e.id === f.employee_id)).forEach(f => {
+  const emps = _cnEmps.filter(e => (e.region || 'cn') === _cnRegion);
+  const groups = emps.map(e => ({ emp: e, name: e.name, recs: recs.filter(f => f.employee_id === e.id) }));
+  // 没挂名册的早期记录都是国内工资
+  if (_cnRegion === 'cn') recs.filter(f => !f.employee_id || !_cnEmps.some(e => e.id === f.employee_id)).forEach(f => {
     let g = groups.find(x => !x.emp && x.name === f.party_name);
     if (!g) groups.push(g = { emp: null, name: f.party_name || '(未命名)', recs: [] });
     g.recs.push(f);
@@ -5617,12 +5627,13 @@ function cnRender() {
     });
     return Object.entries(by).map(([c, t]) => `Base ${_cnMoney(t.base, c)} · Bonus ${_cnMoney(t.bonus, c)}${t.ot ? ` · 加班 ${_cnMoney(t.ot, c)}` : ''} · 报销 ${_cnMoney(t.reimb, c)} · <b style="color:#dc2626">合计 ${_cnMoney(t.total, c)}</b>`).join('<br>');
   };
-  const pendN = recs.filter(f => f.approval_status === 'pending').length;
+  const regRecs = groups.flatMap(g => g.recs);
+  const pendN = regRecs.filter(f => f.approval_status === 'pending').length;
   document.getElementById('cnStats').innerHTML = seeAll
-    ? `${_cnEmps.length} 名员工 · ${recs.length} 条工资记录` + (pendN ? ` · ⏳ 待审核 ${pendN} 条` : '')
-    : (_cnEmps.length ? '🔒 点「输入密码查看」看自己的工资明细' : '');
+    ? `${emps.length} 名${_cnRegionLabel(_cnRegion)} · ${regRecs.length} 条工资记录` + (pendN ? ` · ⏳ 待审核 ${pendN} 条` : '')
+    : (emps.length ? '🔒 点「输入密码查看」看自己的工资明细' : '');
   if (!shown.length) {
-    document.getElementById('cnBody').innerHTML = `<div class="card" style="color:var(--g400);padding:1rem">${q ? '没有匹配的记录。' : admin ? '还没有国内员工，先点「＋ 添加员工」，再给员工录入每月工资。' : seeAll ? '还没有国内员工。' : '你的账号还没关联国内员工，看不到工资记录。请联系管理员。'}</div>`;
+    document.getElementById('cnBody').innerHTML = `<div class="card" style="color:var(--g400);padding:1rem">${q ? '没有匹配的记录。' : admin ? `还没有${_cnRegionLabel(_cnRegion)}，先点「＋ 添加员工」，再给员工录入每月工资。` : seeAll ? `还没有${_cnRegionLabel(_cnRegion)}。` : `你的账号还没关联${_cnRegionLabel(_cnRegion)}，看不到工资记录。请联系管理员。`}</div>`;
     return;
   }
   document.getElementById('cnBody').innerHTML = shown.map(g => {
@@ -5699,10 +5710,10 @@ async function cnStatusToggle(id, status) {
 function cnEmpOpen(id) {
   _cnEmpEdit = id ? _cnEmps.find(e => e.id === id) : null;
   const e = _cnEmpEdit || {};
-  document.getElementById('cnEmpTitle').textContent = _cnEmpEdit ? '✏️ 编辑员工' : '👤 添加国内员工';
+  document.getElementById('cnEmpTitle').textContent = _cnEmpEdit ? '✏️ 编辑员工' : '👤 添加' + _cnRegionLabel(_cnRegion);
   document.getElementById('ceName').value = e.name || '';
   document.getElementById('ceTitle').value = e.title || '';
-  document.getElementById('ceCur').value = e.currency || 'CNY';
+  document.getElementById('ceCur').value = e.currency || (_cnRegion === 'us' ? 'USD' : 'CNY');
   document.getElementById('ceNote').value = e.note || '';
   document.getElementById('cePw').value = '';
   const loginSel = document.getElementById('ceLogin');
@@ -5753,7 +5764,7 @@ function ceRenderLinked() {
     : '<span style="color:var(--g400)">未关联员工档案（直接输入的名字）</span>';
 }
 async function cnEmpSave() {
-  const body = { name: document.getElementById('ceName').value.trim(), title: document.getElementById('ceTitle').value.trim(), currency: document.getElementById('ceCur').value, note: document.getElementById('ceNote').value.trim(), profile_id: _ceProfile ? _ceProfile.id : null, password: document.getElementById('cePw').value, login_username: document.getElementById('ceLogin').value };
+  const body = { name: document.getElementById('ceName').value.trim(), title: document.getElementById('ceTitle').value.trim(), currency: document.getElementById('ceCur').value, note: document.getElementById('ceNote').value.trim(), profile_id: _ceProfile ? _ceProfile.id : null, password: document.getElementById('cePw').value, login_username: document.getElementById('ceLogin').value, region: _cnRegion };
   if (!body.name) return toast('请填写员工姓名', true);
   if ((!_cnEmpEdit || !_cnEmpEdit.has_pw || body.password) && body.password.length < 4) return toast('请设置查看密码（至少 4 位）', true);
   const r = await api('/api/acct/cn-employees' + (_cnEmpEdit ? '/' + _cnEmpEdit.id : ''), { method: _cnEmpEdit ? 'PUT' : 'POST', body: JSON.stringify(body) }).catch(e => ({ error: e.message }));
@@ -5780,7 +5791,7 @@ function cpOpen(empId, recId) {
   document.getElementById('cpHint').textContent = USER.role === 'admin' ? '管理员保存直接生效。' : '保存后需管理员审核通过才计入。';
   const d = new Date();
   document.getElementById('cpMonth').value = rec ? (rec.fee_date || '') : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  document.getElementById('cpCur').value = rec ? (rec.currency || 'CNY') : ((emp && emp.currency) || 'CNY');
+  document.getElementById('cpCur').value = rec ? (rec.currency || 'CNY') : ((emp && emp.currency) || (emp && emp.region === 'us' ? 'USD' : 'CNY'));
   document.getElementById('cpDesc').value = rec ? (rec.description || '') : '';
   cpRenderLines(); cpRenderFiles();
   document.getElementById('cnPayModal').style.display = 'flex';
@@ -9104,7 +9115,8 @@ function _pxProfileOpts(section, wantData) {
   // 编辑旧发票: 当时存的那份放第一个 (预设之后改过也照原样)
   const saved = wantData && Object.keys(wantData).length ? `<option value="saved">（这张发票原来的）</option>` : '';
   sel.innerHTML = saved + list.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('') + '<option value="">（不显示）</option>';
-  const def = list.find(p => p.is_default) || list[0];
+  const pref = (_px.meta.defaults || {})[section];
+  const def = list.find(p => String(p.id) === String(pref)) || list.find(p => p.is_default) || list[0];
   sel.value = saved ? 'saved' : (def ? String(def.id) : '');
 }
 const _PX_SECTION_KEYS = {
