@@ -43507,6 +43507,68 @@ app.delete('/api/acct/pallet-manual/:id', requireAdmin, requireRole('accounting'
   db.prepare(`DELETE FROM acct_pay_notes WHERE target_type='palletmanual' AND target_id=?`).run(cur.id);
   res.json({ success: true });
 });
+// ✏️ 修改手动木板发票 (只限管理员): 日期/客户/发票号/数量×单价/折扣/金额/账期/地址/PO/备注/附件都能改。
+// 审核状态保持不变; 附件: keep_attachments = 要保留的旧附件路径 (JSON 数组), 新上传的追加在后面, 去掉的旧文件删除。
+// 改了什么记进 admin_audit_log (pallet_manual_edit, 带改前改后)。
+app.put('/api/acct/pallet-manual/:id', requireAdmin, requireRole('admin'), claimUpload.array('invoice', 50), async (req, res) => {
+  try {
+    const cur = db.prepare('SELECT * FROM pallet_manual_invoices WHERE id=?').get(req.params.id);
+    if (!cur) return res.status(404).json({ error: '记录不存在' });
+    const b = req.body || {};
+    const type = b.invoice_type === 'purchase' ? 'purchase' : 'sales';
+    const customer = String(b.customer || '').trim().slice(0, 200);
+    if (!customer) return res.status(400).json({ error: type === 'purchase' ? '请填写供应商' : '请填写客户' });
+    const invDate = String(b.invoice_date || '').trim().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(invDate)) return res.status(400).json({ error: '请选择服务日期 / 发票日期' });
+    const numOr = v => (v == null || v === '' || isNaN(Number(v))) ? null : Number(v);
+    const qty = numOr(b.quantity), price = numOr(b.unit_price), disc = numOr(b.discount_value);
+    const total = numOr(b.total_amount);
+    if (!(total > 0)) return res.status(400).json({ error: '总金额必须大于 0' });
+    const pFrom = String(b.period_from || '').trim().slice(0, 10), pTo = String(b.period_to || '').trim().slice(0, 10);
+    if (pFrom && pTo && pTo < pFrom) return res.status(400).json({ error: '账期结束不能早于开始' });
+    // 发票号: 不填就沿用原号; 改了新号要查重 (排除自己)
+    let num = String(b.invoice_number || '').trim().toUpperCase().slice(0, 80) || cur.invoice_number;
+    if (String(num).toUpperCase() !== String(cur.invoice_number || '').trim().toUpperCase()) {
+      const dup = _palletManualByNum(num);
+      if (dup && dup.id !== cur.id) return res.status(400).json({ error: `发票号 ${num} 已经存在（手动木板发票）` });
+      if (db.prepare('SELECT id FROM invoices WHERE TRIM(invoice_number)=? COLLATE NOCASE').get(num)) return res.status(400).json({ error: `发票号 ${num} 和系统里的发票重号` });
+      const normN = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+      if (((await _palletFetchInvoices()) || []).some(x => normN(x.invoice_number) === normN(num))) return res.status(400).json({ error: `发票号 ${num} 在 Bintique 已经有了` });
+    }
+    // 附件: 保留勾着的旧附件 + 新上传的; 去掉的旧文件从存储里删
+    const oldAtts = _claimAtts(cur);
+    let keep = null;
+    try { keep = JSON.parse(b.keep_attachments || 'null'); } catch { keep = null; }
+    const kept = Array.isArray(keep) ? oldAtts.filter(a => keep.includes(a.path)) : oldAtts;
+    const files = Array.isArray(req.files) ? req.files : [];
+    const atts = kept.concat(files.map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) })));
+    const S = (v, n) => String(v || '').trim().slice(0, n);
+    const next = {
+      invoice_type: type, invoice_number: num, customer, invoice_date: invDate, period_from: pFrom, period_to: pTo,
+      quantity: qty, quantity_unit: b.quantity_unit === 'truck' ? 'truck' : 'pallet', unit_price: price, discount_value: disc,
+      discount_type: ['%', '$/pl', '$'].includes(String(b.discount_type || '')) ? String(b.discount_type) : '%',
+      total_amount: Math.round(total * 100) / 100, delivery_address: S(b.delivery_address, 300), city: S(b.city, 100),
+      state: S(b.state, 40), zip: S(b.zip, 20), linked_po: S(b.linked_po, 120), notes: S(b.notes, 2000),
+    };
+    const changes = {};
+    for (const k of Object.keys(next)) {
+      const a = cur[k] == null ? '' : String(cur[k]), z = next[k] == null ? '' : String(next[k]);
+      if (a !== z) changes[k] = { from: cur[k], to: next[k] };
+    }
+    const removed = oldAtts.filter(a => !kept.includes(a));
+    if (removed.length || files.length) changes.attachments = { removed: removed.map(a => a.name || a.path), added: files.map(fl => _claimFname(fl)) };
+    if (!Object.keys(changes).length) return res.json({ success: true, changed: false });
+    db.prepare(`UPDATE pallet_manual_invoices SET invoice_type=?, invoice_number=?, customer=?, invoice_date=?, period_from=?, period_to=?,
+      quantity=?, quantity_unit=?, unit_price=?, discount_value=?, discount_type=?, total_amount=?, delivery_address=?, city=?, state=?, zip=?,
+      linked_po=?, notes=?, attachments=?, updated_at=datetime('now') WHERE id=?`)
+      .run(next.invoice_type, next.invoice_number, next.customer, next.invoice_date, next.period_from, next.period_to,
+        next.quantity, next.quantity_unit, next.unit_price, next.discount_value, next.discount_type, next.total_amount,
+        next.delivery_address, next.city, next.state, next.zip, next.linked_po, next.notes, JSON.stringify(atts), cur.id);
+    removed.forEach(a => _claimDeleteFile(a.path));
+    auditLog('pallet_manual_edit', { userId: req.userId, userName: req.userName, ip: req.ip, connection: req.connection, headers: req.headers }, { targetType: 'pallet_manual_invoice', targetId: cur.id, details: changes });
+    res.json({ success: true, changed: true, invoice_number: num });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // 📧 木板邮件自动转发: 可以连接多个 Gmail 邮箱, 每 5 分钟看一眼新邮件, 命中规则 (按客户/供应商:
 // 发件人邮箱或域名 / 关键词) 的自动转发给负责人 (带原正文和附件, 从收到这封邮件的那个邮箱发出);
