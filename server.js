@@ -44097,6 +44097,212 @@ async function _truckFetchOrders() {
   } catch (e) { /* pallet 不可达: 沿用旧缓存 / 静默降级 */ }
   return _truckOrdCache.orders;
 }
+// ─── 🧾 代开发票 (Proxy invoices) ────────────────────────────────────────────
+// 替别的公司代开的发票 (例如材料费): 客户是单独一套 (不是劳务客户), 明细是自己加的项目
+// (描述 × 数量 × 单价), 不按人头/工时算。抬头 / 收款银行 / 联系人用发票预设 (invoice_profiles)。
+// 发票号: INV-<类别>-<州>-<客户简称>-<MMDDYY>-<流水号>, 例 INV-M-NJ-DL-110726-0001 (M = 材料)
+db.exec(`CREATE TABLE IF NOT EXISTS proxy_inv_clients (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  code TEXT DEFAULT '',
+  state TEXT DEFAULT '',
+  address TEXT DEFAULT '',
+  contact TEXT DEFAULT '',
+  phone TEXT DEFAULT '',
+  email TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS proxy_invoices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_number TEXT NOT NULL UNIQUE,
+  client_id INTEGER,
+  client_name TEXT DEFAULT '',
+  client_address TEXT DEFAULT '',
+  category TEXT DEFAULT 'M',
+  invoice_date TEXT DEFAULT '',
+  payment_terms TEXT DEFAULT '',
+  description TEXT DEFAULT '',
+  table_caption TEXT DEFAULT '',
+  items_json TEXT DEFAULT '[]',
+  subtotal REAL DEFAULT 0,
+  tax_rate REAL DEFAULT 0,
+  tax_amount REAL DEFAULT 0,
+  total REAL DEFAULT 0,
+  profile_json TEXT DEFAULT '{}',
+  notes TEXT DEFAULT '',
+  payment_status TEXT DEFAULT 'unpaid',
+  paid_amount REAL DEFAULT 0,
+  paid_date TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+const PROXY_INV_CATEGORIES = { M: 'Materials 材料' };
+const _pxStr = (v, n = 300) => String(v == null ? '' : v).trim().slice(0, n);
+const _pxNum = v => { const n = Number(String(v == null ? '' : v).replace(/[$,\s]/g, '')); return Number.isFinite(n) ? n : 0; };
+const _pxR2 = v => Math.round((Number(v) || 0) * 100) / 100;
+const _pxCode = v => _pxStr(v, 12).toUpperCase().replace(/[^A-Z0-9]/g, '');
+const requirePxWrite = requireRole('accounting', 'admin');
+function _pxClientRow(c) {
+  const st = db.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(total),0) AS total, COALESCE(SUM(CASE WHEN payment_status=\'paid\' THEN total ELSE paid_amount END),0) AS paid FROM proxy_invoices WHERE client_id=?').get(c.id);
+  return { ...c, invoice_count: st.n, invoice_total: _pxR2(st.total), invoice_paid: _pxR2(st.paid) };
+}
+function _pxInvoiceRow(r) {
+  let items = [], profile = {};
+  try { items = JSON.parse(r.items_json || '[]'); } catch (_) {}
+  try { profile = JSON.parse(r.profile_json || '{}'); } catch (_) {}
+  const { items_json, profile_json, ...rest } = r;
+  return { ...rest, items: Array.isArray(items) ? items : [], profile };
+}
+// 发票号前缀 INV-M-NJ-DL-110726- ; 流水号按同一客户 (类别+州+简称) 累计, 不按天重置
+function _pxPrefix(category, state, code) {
+  return ['INV', _pxCode(category) || 'M', _pxCode(state), _pxCode(code)].filter(Boolean).join('-') + '-';
+}
+function _pxNextNumber(category, state, code, date) {
+  const pre = _pxPrefix(category, state, code);
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? date : new Date().toISOString().slice(0, 10);
+  const mmddyy = d.slice(5, 7) + d.slice(8, 10) + d.slice(2, 4);
+  let max = 0;
+  for (const r of db.prepare('SELECT invoice_number FROM proxy_invoices WHERE invoice_number LIKE ?').all(pre + '%')) {
+    const m = String(r.invoice_number).slice(pre.length).match(/^\d{6}-(\d+)$/);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `${pre}${mmddyy}-${String(max + 1).padStart(4, '0')}`;
+}
+function _pxCleanItems(list) {
+  return (Array.isArray(list) ? list : []).map(it => {
+    const qty = _pxNum(it.qty), unit = _pxNum(it.unit_price);
+    return { description: _pxStr(it.description, 500), qty, unit_price: _pxR2(unit), total: _pxR2(qty * unit) };
+  }).filter(it => it.description || it.qty || it.unit_price).slice(0, 200);
+}
+const _PX_PROFILE_KEYS = ['sender_name', 'sender_address', 'sender_phone', 'sender_email', 'contact_name', 'contact_phone', 'contact_email',
+  'bank_name', 'bank_account_name', 'bank_account_no', 'bank_routing_no', 'bank_wire_routing', 'bank_paper_routing', 'bank_swift_code'];
+function _pxCleanProfile(p) {
+  const o = {};
+  for (const k of _PX_PROFILE_KEYS) { const v = _pxStr(p && p[k], 300); if (v) o[k] = v; }
+  return o;
+}
+
+// 发票预设 (抬头 / 收款银行 / 联系人) — 会计账号碰不到 /api/admin/*, 这里给一份只读的
+app.get('/api/acct/proxy-invoices/meta', requireAdmin, requireAcctView, (req, res) => {
+  const profiles = db.prepare('SELECT id, name, section, data, is_default FROM invoice_profiles ORDER BY section, name').all().map(p => {
+    let data = {}; try { data = JSON.parse(p.data || '{}'); } catch (_) {}
+    return { id: p.id, name: p.name, section: p.section, is_default: !!p.is_default, data: _pxCleanProfile(data) };
+  });
+  res.json({ profiles, categories: PROXY_INV_CATEGORIES, can_edit: ['accounting', 'admin'].includes(req.userRole), can_delete: req.userRole === 'admin' });
+});
+app.get('/api/acct/proxy-invoices/next-number', requireAdmin, requireAcctView, (req, res) => {
+  const c = db.prepare('SELECT * FROM proxy_inv_clients WHERE id=?').get(parseInt(req.query.client_id));
+  if (!c) return res.json({ invoice_number: '' });
+  res.json({ invoice_number: _pxNextNumber(req.query.category || 'M', c.state, c.code, String(req.query.date || '')) });
+});
+
+// 客户
+app.get('/api/acct/proxy-clients', requireAdmin, requireAcctView, (req, res) => {
+  res.json(db.prepare('SELECT * FROM proxy_inv_clients ORDER BY name COLLATE NOCASE').all().map(_pxClientRow));
+});
+function _pxClientFromBody(b) {
+  return { name: _pxStr(b.name, 200), code: _pxCode(b.code), state: _pxCode(b.state).slice(0, 4), address: _pxStr(b.address, 400),
+    contact: _pxStr(b.contact, 120), phone: _pxStr(b.phone, 60), email: _pxStr(b.email, 160), notes: _pxStr(b.notes, 1000) };
+}
+app.post('/api/acct/proxy-clients', requireAdmin, requirePxWrite, (req, res) => {
+  const v = _pxClientFromBody(req.body || {});
+  if (!v.name) return res.status(400).json({ error: '请填写客户公司名' });
+  if (!v.code) return res.status(400).json({ error: '请填写客户简称（发票号里用，例如 DL）' });
+  const r = db.prepare('INSERT INTO proxy_inv_clients (name, code, state, address, contact, phone, email, notes, created_by) VALUES (@name,@code,@state,@address,@contact,@phone,@email,@notes,@by)').run({ ...v, by: req.userName || '' });
+  auditLog('proxy_client_create', req, { targetType: 'proxy_inv_client', targetId: r.lastInsertRowid, details: { name: v.name } });
+  res.json(_pxClientRow(db.prepare('SELECT * FROM proxy_inv_clients WHERE id=?').get(r.lastInsertRowid)));
+});
+app.put('/api/acct/proxy-clients/:id', requireAdmin, requirePxWrite, (req, res) => {
+  const c = db.prepare('SELECT * FROM proxy_inv_clients WHERE id=?').get(parseInt(req.params.id));
+  if (!c) return res.status(404).json({ error: '客户不存在' });
+  const v = _pxClientFromBody(req.body || {});
+  if (!v.name) return res.status(400).json({ error: '请填写客户公司名' });
+  if (!v.code) return res.status(400).json({ error: '请填写客户简称（发票号里用，例如 DL）' });
+  db.prepare('UPDATE proxy_inv_clients SET name=@name, code=@code, state=@state, address=@address, contact=@contact, phone=@phone, email=@email, notes=@notes WHERE id=@id').run({ ...v, id: c.id });
+  auditLog('proxy_client_update', req, { targetType: 'proxy_inv_client', targetId: c.id, details: { name: v.name } });
+  res.json(_pxClientRow(db.prepare('SELECT * FROM proxy_inv_clients WHERE id=?').get(c.id)));
+});
+app.delete('/api/acct/proxy-clients/:id', requireAdmin, requirePxWrite, (req, res) => {
+  const c = db.prepare('SELECT * FROM proxy_inv_clients WHERE id=?').get(parseInt(req.params.id));
+  if (!c) return res.status(404).json({ error: '客户不存在' });
+  const n = db.prepare('SELECT COUNT(*) AS n FROM proxy_invoices WHERE client_id=?').get(c.id).n;
+  if (n) return res.status(400).json({ error: `这个客户还有 ${n} 张代开发票，先删发票再删客户` });
+  db.prepare('DELETE FROM proxy_inv_clients WHERE id=?').run(c.id);
+  auditLog('proxy_client_delete', req, { targetType: 'proxy_inv_client', targetId: c.id, details: { name: c.name } });
+  res.json({ success: true });
+});
+
+// 发票
+app.get('/api/acct/proxy-invoices', requireAdmin, requireAcctView, (req, res) => {
+  res.json(db.prepare('SELECT * FROM proxy_invoices ORDER BY invoice_date DESC, id DESC').all().map(_pxInvoiceRow));
+});
+function _pxInvoiceFromBody(b, client) {
+  const items = _pxCleanItems(b.items);
+  const subtotal = _pxR2(items.reduce((s, it) => s + it.total, 0));
+  const taxRate = Math.max(0, _pxNum(b.tax_rate));
+  const taxAmount = b.tax_amount != null && b.tax_amount !== '' && !taxRate ? _pxR2(_pxNum(b.tax_amount)) : _pxR2(subtotal * taxRate / 100);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(b.invoice_date || '') ? b.invoice_date : new Date().toISOString().slice(0, 10);
+  return {
+    client_id: client.id, client_name: _pxStr(b.client_name, 200) || client.name, client_address: _pxStr(b.client_address, 400) || client.address,
+    category: _pxCode(b.category) || 'M', invoice_date: date, payment_terms: _pxStr(b.payment_terms, 120),
+    description: _pxStr(b.description, 300), table_caption: _pxStr(b.table_caption, 300),
+    items_json: JSON.stringify(items), subtotal, tax_rate: taxRate, tax_amount: taxAmount, total: _pxR2(subtotal + taxAmount),
+    profile_json: JSON.stringify(_pxCleanProfile(b.profile || {})), notes: _pxStr(b.notes, 2000), _items: items,
+  };
+}
+app.post('/api/acct/proxy-invoices', requireAdmin, requirePxWrite, (req, res) => {
+  const b = req.body || {};
+  const client = db.prepare('SELECT * FROM proxy_inv_clients WHERE id=?').get(parseInt(b.client_id));
+  if (!client) return res.status(400).json({ error: '请选择客户' });
+  const v = _pxInvoiceFromBody(b, client);
+  if (!v._items.length) return res.status(400).json({ error: '至少加一个项目' });
+  const num = _pxStr(b.invoice_number, 80) || _pxNextNumber(v.category, client.state, client.code, v.invoice_date);
+  if (db.prepare('SELECT 1 FROM proxy_invoices WHERE invoice_number=?').get(num)) return res.status(400).json({ error: `发票号 ${num} 已经用过了` });
+  const { _items, ...cols } = v;
+  const r = db.prepare(`INSERT INTO proxy_invoices (invoice_number, ${Object.keys(cols).join(', ')}, created_by) VALUES (@invoice_number, ${Object.keys(cols).map(k => '@' + k).join(', ')}, @created_by)`)
+    .run({ ...cols, invoice_number: num, created_by: req.userName || '' });
+  auditLog('proxy_invoice_create', req, { targetType: 'proxy_invoice', targetId: r.lastInsertRowid, details: { invoice_number: num, total: v.total } });
+  res.json(_pxInvoiceRow(db.prepare('SELECT * FROM proxy_invoices WHERE id=?').get(r.lastInsertRowid)));
+});
+app.put('/api/acct/proxy-invoices/:id', requireAdmin, requirePxWrite, (req, res) => {
+  const inv = db.prepare('SELECT * FROM proxy_invoices WHERE id=?').get(parseInt(req.params.id));
+  if (!inv) return res.status(404).json({ error: '发票不存在' });
+  const b = req.body || {};
+  const client = db.prepare('SELECT * FROM proxy_inv_clients WHERE id=?').get(parseInt(b.client_id));
+  if (!client) return res.status(400).json({ error: '请选择客户' });
+  const v = _pxInvoiceFromBody(b, client);
+  if (!v._items.length) return res.status(400).json({ error: '至少加一个项目' });
+  const num = _pxStr(b.invoice_number, 80) || inv.invoice_number;
+  if (num !== inv.invoice_number && db.prepare('SELECT 1 FROM proxy_invoices WHERE invoice_number=?').get(num)) return res.status(400).json({ error: `发票号 ${num} 已经用过了` });
+  const { _items, ...cols } = v;
+  db.prepare(`UPDATE proxy_invoices SET invoice_number=@invoice_number, ${Object.keys(cols).map(k => `${k}=@${k}`).join(', ')}, updated_at=CURRENT_TIMESTAMP WHERE id=@id`)
+    .run({ ...cols, invoice_number: num, id: inv.id });
+  auditLog('proxy_invoice_update', req, { targetType: 'proxy_invoice', targetId: inv.id, details: { invoice_number: num, total: v.total } });
+  res.json(_pxInvoiceRow(db.prepare('SELECT * FROM proxy_invoices WHERE id=?').get(inv.id)));
+});
+// 记录收款: paid_amount ≥ total → 已付清; 0 → 未付; 其余 → 部分付款
+app.post('/api/acct/proxy-invoices/:id/payment', requireAdmin, requirePxWrite, (req, res) => {
+  const inv = db.prepare('SELECT * FROM proxy_invoices WHERE id=?').get(parseInt(req.params.id));
+  if (!inv) return res.status(404).json({ error: '发票不存在' });
+  const b = req.body || {};
+  const amt = Math.max(0, _pxR2(_pxNum(b.paid_amount)));
+  const status = amt <= 0 ? 'unpaid' : amt >= inv.total - 0.005 ? 'paid' : 'partial';
+  const date = status === 'unpaid' ? '' : (/^\d{4}-\d{2}-\d{2}$/.test(b.paid_date || '') ? b.paid_date : new Date().toISOString().slice(0, 10));
+  db.prepare('UPDATE proxy_invoices SET paid_amount=?, paid_date=?, payment_status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(amt, date, status, inv.id);
+  auditLog('proxy_invoice_payment', req, { targetType: 'proxy_invoice', targetId: inv.id, details: { invoice_number: inv.invoice_number, paid_amount: amt, status } });
+  res.json(_pxInvoiceRow(db.prepare('SELECT * FROM proxy_invoices WHERE id=?').get(inv.id)));
+});
+app.delete('/api/acct/proxy-invoices/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const inv = db.prepare('SELECT * FROM proxy_invoices WHERE id=?').get(parseInt(req.params.id));
+  if (!inv) return res.status(404).json({ error: '发票不存在' });
+  db.prepare('DELETE FROM proxy_invoices WHERE id=?').run(inv.id);
+  auditLog('proxy_invoice_delete', req, { targetType: 'proxy_invoice', targetId: inv.id, details: { invoice_number: inv.invoice_number, total: inv.total } });
+  res.json({ success: true });
+});
+
 app.get('/api/acct/truck-bills', requireAdmin, requireAcctView, async (req, res) => {
   try {
     const orders = (await _truckFetchOrders()) || [];
