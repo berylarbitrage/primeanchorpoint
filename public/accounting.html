@@ -9104,7 +9104,8 @@ function _pxProfileOpts(section, wantData) {
   // 编辑旧发票: 当时存的那份放第一个 (预设之后改过也照原样)
   const saved = wantData && Object.keys(wantData).length ? `<option value="saved">（这张发票原来的）</option>` : '';
   sel.innerHTML = saved + list.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('') + '<option value="">（不显示）</option>';
-  const def = list.find(p => p.is_default) || list[0];
+  const pref = (_px.meta.defaults || {})[section];
+  const def = list.find(p => String(p.id) === String(pref)) || list.find(p => p.is_default) || list[0];
   sel.value = saved ? 'saved' : (def ? String(def.id) : '');
 }
 const _PX_SECTION_KEYS = {

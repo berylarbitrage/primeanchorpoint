@@ -44185,13 +44185,32 @@ function _pxCleanProfile(p) {
   return o;
 }
 
+// 一次性: 加发票预设 抬头「Prime Anchor Point」+ 联系人「Betty」(信息照代开发票 INV-M-NJ-DL-110726-0001),
+// 并记成代开发票的默认抬头 / 联系人 (不改劳务发票的默认, 那边仍是 Prime Anchor Workforce)。已有同名预设就直接用它。
+try {
+  if (!db.prepare("SELECT value FROM app_settings WHERE key='proxy_inv_presets_v1'").get()) {
+    const ensure = (section, name, data) => {
+      const hit = db.prepare('SELECT id FROM invoice_profiles WHERE section=? AND name=?').get(section, name);
+      return hit ? hit.id : db.prepare('INSERT INTO invoice_profiles (name, section, data) VALUES (?,?,?)').run(name, section, JSON.stringify(data)).lastInsertRowid;
+    };
+    const sender = ensure('sender', 'Prime Anchor Point', { sender_name: 'Prime Anchor Point', sender_address: '18 Congress West, Roselle, IL', sender_phone: '224-447-3669', sender_email: 'info@primeanchorpoint.com' });
+    const contact = ensure('contact', 'Betty', { contact_name: 'Betty', contact_phone: '224-447-3669', contact_email: 'info@primeanchorpoint.com' });
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('proxy_inv_defaults', ?)").run(JSON.stringify({ sender, contact }));
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('proxy_inv_presets_v1', ?)").run(new Date().toISOString());
+    console.log(`[migration] 代开发票预设: 抬头 #${sender} Prime Anchor Point, 联系人 #${contact} Betty`);
+  }
+} catch (e) { console.log('[migration] proxy invoice presets error:', e.message); }
+function _pxDefaults() {
+  try { return JSON.parse((db.prepare("SELECT value FROM app_settings WHERE key='proxy_inv_defaults'").get() || {}).value || '{}'); } catch (_) { return {}; }
+}
+
 // 发票预设 (抬头 / 收款银行 / 联系人) — 会计账号碰不到 /api/admin/*, 这里给一份只读的
 app.get('/api/acct/proxy-invoices/meta', requireAdmin, requireAcctView, (req, res) => {
   const profiles = db.prepare('SELECT id, name, section, data, is_default FROM invoice_profiles ORDER BY section, name').all().map(p => {
     let data = {}; try { data = JSON.parse(p.data || '{}'); } catch (_) {}
     return { id: p.id, name: p.name, section: p.section, is_default: !!p.is_default, data: _pxCleanProfile(data) };
   });
-  res.json({ profiles, categories: PROXY_INV_CATEGORIES, can_edit: ['accounting', 'admin'].includes(req.userRole), can_delete: req.userRole === 'admin' });
+  res.json({ profiles, defaults: _pxDefaults(), categories: PROXY_INV_CATEGORIES, can_edit: ['accounting', 'admin'].includes(req.userRole), can_delete: req.userRole === 'admin' });
 });
 app.get('/api/acct/proxy-invoices/next-number', requireAdmin, requireAcctView, (req, res) => {
   const c = db.prepare('SELECT * FROM proxy_inv_clients WHERE id=?').get(parseInt(req.query.client_id));
