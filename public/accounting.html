@@ -219,6 +219,7 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <button class="tab" id="tabFeeCn" onclick="showTab('feecn')"><span class="t-zh">🏮 国内工资</span><span class="t-en">CN Payroll</span></button>
     <button class="tab" id="tabPallet" onclick="showTab('pallet')"><span class="t-zh">🪵 木板账单</span><span class="t-en">Pallet</span></button>
     <button class="tab" id="tabTruck" onclick="showTab('truck')"><span class="t-zh">🚚 卡车费用</span><span class="t-en">Truck</span></button>
+    <button class="tab" id="tabProxy" onclick="showTab('proxy')"><span class="t-zh">🧾 代开发票</span><span class="t-en">Proxy Invoices</span></button>
     <button class="tab" id="tabBank" onclick="showTab('bank')" style="display:none"><span class="t-zh">🔗 银行直连</span><span class="t-en">Bank Feed</span><span id="bankUnrevBadge" style="display:none;background:#dc2626;color:#fff;border-radius:10px;font-size:.68rem;padding:1px 7px;position:absolute;top:3px;right:4px"></span></button>
     <button class="tab" id="tabZelle" onclick="showTab('zelle')" style="display:none"><span class="t-zh">💸 Zelle</span><span class="t-en">Transfers</span></button>
     <button class="tab" id="tabMail" onclick="showTab('mail')" style="display:none"><span class="t-zh">📧 邮件转发</span><span class="t-en">Mail</span></button>
@@ -1226,6 +1227,137 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
     <p style="font-size:.75rem;color:var(--g400);margin-top:.5rem">这里显示 pallet.bintique.com 的全部卡车订单（一行一单，不从银行流水抓）+ 客服手动添加的卡车费用；付款状态只认这边会计的付款批注，「Bintique 参考」列是对方系统的收付记录，仅供参考。</p>
   </div>
 
+  <!-- 🧾 代开发票: 单独的客户 + 自己加项目 (描述 × 数量 × 单价), 不按人头算 -->
+  <div id="paneProxy" style="display:none">
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
+      <button class="btn btn-sm btn-blue pxw" onclick="pxOpenEditor()">＋ 新建代开发票</button>
+      <button class="btn btn-sm btn-outline" onclick="pxOpenClients()">🏢 代开客户</button>
+      <input type="text" id="pxSearch" placeholder="搜发票号 / 客户 / 项目…" oninput="pxRender()" style="width:220px">
+      <select id="pxFltClient" onchange="pxRender()"><option value="">全部客户</option></select>
+      <select id="pxFltStatus" onchange="pxRender()">
+        <option value="">收款：全部</option>
+        <option value="unpaid">未付款</option>
+        <option value="partial">部分付款</option>
+        <option value="paid">已付清</option>
+      </select>
+      <input type="date" id="pxFrom" onchange="pxRender()"> <span style="color:var(--g400)">→</span> <input type="date" id="pxTo" onchange="pxRender()">
+      <span id="pxStats" style="font-size:.8rem;color:var(--g500)"></span>
+    </div>
+    <div class="card" style="overflow-x:auto">
+      <table><thead><tr>
+        <th>发票号</th><th>日期</th><th>客户</th><th>描述 / 项目</th><th style="text-align:right">金额</th><th>收款</th><th style="text-align:right">操作</th>
+      </tr></thead><tbody id="pxBody"><tr><td colspan="7" style="color:var(--g400)">加载中…</td></tr></tbody></table>
+    </div>
+    <p style="font-size:.75rem;color:var(--g400);margin-top:.5rem">代开发票的客户是单独一套（不是劳务客户）；明细自己加项目：描述 × 数量 × 单价。发票号自动生成：INV-类别-州-客户简称-日期(MMDDYY)-流水号，例如 INV-M-NJ-DL-110726-0001（M = 材料）。抬头、收款银行、联系人用发票预设，开票时可以换。</p>
+  </div>
+
+  <!-- 🏢 代开客户 -->
+  <div id="pxClientModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:96;align-items:center;justify-content:center;padding:14px">
+    <div class="card" style="max-width:min(980px,97vw);width:100%;max-height:94vh;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.5rem">
+        <b style="font-size:1rem">🏢 代开客户</b>
+        <span style="font-size:.78rem;color:var(--g500)">和劳务客户分开管理</span>
+        <span style="margin-left:auto;display:flex;gap:.35rem">
+          <button class="btn btn-sm btn-blue pxw" onclick="pxEditClient()">＋ 新客户</button>
+          <button class="btn btn-sm btn-outline" onclick="document.getElementById('pxClientModal').style.display='none'">关闭</button>
+        </span>
+      </div>
+      <div style="flex:1;overflow:auto;border:1px solid var(--g200);border-radius:8px">
+        <table><thead><tr><th>公司名</th><th>简称</th><th>州</th><th>地址</th><th>联系人</th><th style="text-align:right">发票</th><th style="text-align:right">未收</th><th></th></tr></thead>
+        <tbody id="pxClientBody"></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ✎ 代开客户 新建 / 编辑 -->
+  <div id="pxCeModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:98;align-items:center;justify-content:center;padding:14px">
+    <div class="card" style="max-width:560px;width:100%;max-height:94vh;overflow:auto">
+      <b id="pxCeTitle" style="font-size:1rem">新客户</b>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem .7rem;margin-top:.7rem;font-size:.78rem;color:var(--g500)">
+        <label style="grid-column:1/-1">公司名 *<input id="pxCeName" type="text" placeholder="DL TRADING LLC" style="width:100%;margin-top:.15rem"></label>
+        <label>简称 *（发票号里用）<input id="pxCeCode" type="text" placeholder="DL" maxlength="12" style="width:100%;margin-top:.15rem;text-transform:uppercase"></label>
+        <label>州（发票号里用）<input id="pxCeState" type="text" placeholder="NJ" maxlength="4" style="width:100%;margin-top:.15rem;text-transform:uppercase"></label>
+        <label style="grid-column:1/-1">地址<input id="pxCeAddr" type="text" placeholder="115 Mount Holly Bypass, Lumberton, NJ 08048" style="width:100%;margin-top:.15rem"></label>
+        <label>联系人<input id="pxCeContact" type="text" style="width:100%;margin-top:.15rem"></label>
+        <label>电话<input id="pxCePhone" type="text" style="width:100%;margin-top:.15rem"></label>
+        <label style="grid-column:1/-1">邮箱<input id="pxCeEmail" type="text" style="width:100%;margin-top:.15rem"></label>
+        <label style="grid-column:1/-1">备注<textarea id="pxCeNotes" rows="2" style="width:100%;margin-top:.15rem;resize:vertical"></textarea></label>
+      </div>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:.8rem">
+        <button class="btn btn-outline" onclick="document.getElementById('pxCeModal').style.display='none'">取消</button>
+        <button class="btn btn-blue" id="pxCeSave" onclick="pxSaveClient()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🧾 代开发票 编辑 (左边填, 右边实时预览) -->
+  <div id="pxEdModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:97;align-items:flex-start;justify-content:center;padding:12px;overflow:auto">
+    <div class="card" style="max-width:1500px;width:100%;padding:1rem 1.1rem">
+      <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.6rem;flex-wrap:wrap">
+        <b id="pxEdTitle" style="font-size:1.05rem">🧾 新建代开发票</b>
+        <span style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
+          <button class="btn btn-outline" onclick="pxCloseEditor()">取消</button>
+          <button class="btn btn-outline pxw" id="pxEdSave" onclick="pxSaveInvoice(false)">💾 保存</button>
+          <button class="btn btn-blue pxw" id="pxEdSavePrint" onclick="pxSaveInvoice(true)">💾 保存并打印 / PDF</button>
+        </span>
+      </div>
+      <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-start">
+        <div style="flex:1 1 440px;min-width:300px;font-size:.78rem;color:var(--g500)">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.45rem .7rem">
+            <label style="grid-column:1/-1">客户 *
+              <span style="display:flex;gap:.35rem;margin-top:.15rem"><select id="pxEdClient" onchange="pxClientChanged()" style="flex:1"></select>
+              <button class="btn btn-sm btn-outline pxw" onclick="pxEditClient(null, true)" title="新建代开客户">＋ 新客户</button></span></label>
+            <label>类别（发票号里的字母）
+              <select id="pxEdCat" onchange="pxRenumber()" style="width:100%;margin-top:.15rem"></select></label>
+            <label>开票日期<input id="pxEdDate" type="date" onchange="pxRenumber()" style="width:100%;margin-top:.15rem"></label>
+            <label style="grid-column:1/-1">发票号（自动生成，可以改）<input id="pxEdNo" type="text" oninput="pxEdNoTouched=true;pxPreview()" style="width:100%;margin-top:.15rem;font-family:monospace"></label>
+            <label style="grid-column:1/-1">BILL TO 公司名<input id="pxEdBillName" type="text" oninput="pxPreview()" style="width:100%;margin-top:.15rem"></label>
+            <label style="grid-column:1/-1">BILL TO 地址<input id="pxEdBillAddr" type="text" oninput="pxPreview()" style="width:100%;margin-top:.15rem"></label>
+            <label>DESCRIPTION（发票上的说明）<input id="pxEdDesc" type="text" placeholder="Materials supplied" oninput="pxPreview()" style="width:100%;margin-top:.15rem"></label>
+            <label>付款条件<input id="pxEdTerms" type="text" list="pxTermsList" placeholder="Due upon receipt" oninput="pxPreview()" style="width:100%;margin-top:.15rem"></label>
+            <label style="grid-column:1/-1">表格上方说明<input id="pxEdCaption" type="text" placeholder="Materials purchased by DL TRADING LLC" oninput="pxPreview()" style="width:100%;margin-top:.15rem"></label>
+          </div>
+          <datalist id="pxTermsList"><option value="Due upon receipt"><option value="Net 7"><option value="Net 15"><option value="Net 30"></datalist>
+
+          <div style="margin:.75rem 0 .3rem;font-weight:700;color:#0f4c6b">项目明细</div>
+          <table style="font-size:.8rem"><thead><tr><th style="width:24px">#</th><th>描述</th><th style="width:70px;text-align:right">数量</th><th style="width:100px;text-align:right">单价 $</th><th style="width:90px;text-align:right">金额</th><th style="width:28px"></th></tr></thead>
+            <tbody id="pxEdItems"></tbody></table>
+          <button class="btn btn-sm btn-outline" onclick="pxAddItem()" style="margin-top:.35rem">＋ 加一项</button>
+          <div style="display:flex;justify-content:flex-end;align-items:center;gap:.5rem;margin-top:.5rem">
+            <label>Sales Tax %<input id="pxEdTax" type="number" step="0.001" min="0" value="0" oninput="pxPreview()" style="width:80px;margin-left:.3rem;text-align:right"></label>
+            <span id="pxEdTotals" style="font-size:.85rem;color:#1e293b"></span>
+          </div>
+
+          <div style="margin:.75rem 0 .3rem;font-weight:700;color:#0f4c6b">抬头 / 收款 / 联系人（发票预设）</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.45rem .6rem">
+            <label>抬头<select id="pxEdSender" onchange="pxPreview()" style="width:100%;margin-top:.15rem"></select></label>
+            <label>收款银行<select id="pxEdBank" onchange="pxPreview()" style="width:100%;margin-top:.15rem"></select></label>
+            <label>联系人<select id="pxEdContact" onchange="pxPreview()" style="width:100%;margin-top:.15rem"></select></label>
+          </div>
+          <label style="display:block;margin-top:.55rem">内部备注（不打印）<textarea id="pxEdNotes" rows="2" style="width:100%;margin-top:.15rem;resize:vertical"></textarea></label>
+        </div>
+        <div style="flex:1 1 560px;min-width:320px">
+          <div style="font-size:.75rem;color:var(--g500);margin-bottom:.3rem">预览</div>
+          <div id="pxEdPreview" style="background:#fff;border:1px solid var(--g200);box-shadow:0 1px 6px rgba(0,0,0,.12);max-width:850px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 💵 代开发票 记录收款 -->
+  <div id="pxPayModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:98;align-items:center;justify-content:center;padding:14px">
+    <div class="card" style="max-width:400px;width:100%">
+      <b>💵 记录收款</b>
+      <div id="pxPayInfo" style="font-size:.78rem;color:var(--g500);margin:.25rem 0 .6rem"></div>
+      <label style="font-size:.78rem;color:var(--g500)">已收金额 $<input id="pxPayAmt" type="number" step="0.01" min="0" style="width:100%;margin:.15rem 0 .5rem"></label>
+      <label style="font-size:.78rem;color:var(--g500)">收款日期<input id="pxPayDate" type="date" style="width:100%;margin:.15rem 0 .7rem"></label>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="document.getElementById('pxPayModal').style.display='none'">取消</button>
+        <button class="btn btn-blue" id="pxPaySave" onclick="pxSavePay()">保存</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 🔗 银行直连 Bank Feed (Plaid 自动同步) -->
   <div id="paneBank" style="display:none">
     <!-- 未配置密钥 (仅 admin) -->
@@ -1580,6 +1712,9 @@ function showTab(t) {
   document.getElementById('tabTruck').classList.toggle('on', t === 'truck');
   document.getElementById('paneTruck').style.display = t === 'truck' ? '' : 'none';
   if (t === 'truck') loadTruckList();
+  document.getElementById('tabProxy').classList.toggle('on', t === 'proxy');
+  document.getElementById('paneProxy').style.display = t === 'proxy' ? '' : 'none';
+  if (t === 'proxy') pxInit();
   document.getElementById('tabBank').classList.toggle('on', t === 'bank');
   document.getElementById('paneBank').style.display = t === 'bank' ? '' : 'none';
   if (t === 'bank') bankInit();
@@ -8841,6 +8976,382 @@ function renderInvoiceDoc(inv) {
     </div>
     ${bankLines ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:.55rem .8rem;font-size:.78rem;line-height:1.6;margin-bottom:.5rem"><div style="font-weight:700;color:#0f4c6b;margin-bottom:.15rem">PAYMENT INFORMATION</div>${bankLines}</div>` : ''}
     ${(profile.contact_phone || profile.contact_email) ? `<div style="font-size:.75rem;color:#475569;margin-bottom:.4rem">For questions regarding this invoice, please contact: <b>${[profile.contact_name, profile.contact_phone, profile.contact_email].filter(Boolean).map(esc).join(' | ')}</b></div>` : ''}
+    <div style="border-top:1px solid #e2e8f0;padding-top:.5rem;text-align:center;font-size:.75rem;color:#29AAE1;font-weight:700;letter-spacing:.06em">THANK YOU FOR YOUR BUSINESS!</div>
+  </div>`;
+}
+
+// ── 🧾 代开发票: 单独的客户 + 自己加项目 (描述 × 数量 × 单价) ──
+let _px = { loaded: false, meta: null, clients: [], invoices: [] };
+let _pxEdit = null, pxEdNoTouched = false, _pxCeId = null, _pxCeFromEditor = false, _pxPayId = null;
+const _pxCanEdit = () => !!(_px.meta && _px.meta.can_edit);
+const _PX_STATUS = { paid: ['已付清', '#16a34a', '#dcfce7'], partial: ['部分付款', '#b45309', '#fef3c7'], unpaid: ['未付款', '#dc2626', '#fee2e2'] };
+async function pxInit() {
+  try {
+    const [meta, clients, invoices] = await Promise.all([api('/api/acct/proxy-invoices/meta'), api('/api/acct/proxy-clients'), api('/api/acct/proxy-invoices')]);
+    if (meta.error) throw new Error(meta.error);
+    _px = { loaded: true, meta, clients: Array.isArray(clients) ? clients : [], invoices: Array.isArray(invoices) ? invoices : [] };
+  } catch (e) {
+    document.getElementById('pxBody').innerHTML = `<tr><td colspan="7" style="color:var(--red)">加载失败：${esc(e.message)}</td></tr>`;
+    return;
+  }
+  document.querySelectorAll('.pxw').forEach(el => el.style.display = _pxCanEdit() ? '' : 'none');
+  pxFillClientFilter();
+  pxRender();
+}
+function pxFillClientFilter() {
+  const sel = document.getElementById('pxFltClient'), cur = sel.value;
+  sel.innerHTML = '<option value="">全部客户</option>' + _px.clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  sel.value = _px.clients.some(c => String(c.id) === cur) ? cur : '';
+}
+function pxRender() {
+  const q = document.getElementById('pxSearch').value.trim().toLowerCase();
+  const cid = document.getElementById('pxFltClient').value, st = document.getElementById('pxFltStatus').value;
+  const from = document.getElementById('pxFrom').value, to = document.getElementById('pxTo').value;
+  const rows = _px.invoices.filter(i => (!cid || String(i.client_id) === cid) && (!st || i.payment_status === st)
+    && (!from || i.invoice_date >= from) && (!to || i.invoice_date <= to)
+    && (!q || [i.invoice_number, i.client_name, i.description, i.notes, ...(i.items || []).map(it => it.description)].join(' ').toLowerCase().includes(q)));
+  const tot = rows.reduce((s, i) => s + (i.total || 0), 0);
+  const got = rows.reduce((s, i) => s + (i.payment_status === 'paid' ? i.total : (i.paid_amount || 0)), 0);
+  document.getElementById('pxStats').innerHTML = `${rows.length} 张 · 合计 <b>${money(tot)}</b> · 已收 ${money(got)} · <span style="color:${tot - got > 0.005 ? 'var(--red)' : 'inherit'}">未收 ${money(tot - got)}</span>`;
+  const fmtD = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+  document.getElementById('pxBody').innerHTML = rows.map(i => {
+    const s = _PX_STATUS[i.payment_status] || _PX_STATUS.unpaid;
+    const items = i.items || [];
+    const itemTxt = items.slice(0, 2).map(it => esc(it.description)).join('、') + (items.length > 2 ? ` 等 ${items.length} 项` : '');
+    return `<tr>
+      <td style="font-family:monospace;font-size:.8rem;white-space:nowrap">${esc(i.invoice_number)}</td>
+      <td style="white-space:nowrap">${fmtD(i.invoice_date)}</td>
+      <td><b>${esc(i.client_name)}</b></td>
+      <td style="font-size:.8rem">${esc(i.description || '')}${i.description && itemTxt ? '<br>' : ''}<span style="color:var(--g500)">${itemTxt}</span></td>
+      <td style="text-align:right;font-weight:700;white-space:nowrap">${money(i.total)}${i.tax_amount ? `<div style="font-size:.7rem;color:var(--g400);font-weight:400">含税 ${money(i.tax_amount)}</div>` : ''}</td>
+      <td style="white-space:nowrap"><span style="background:${s[2]};color:${s[1]};border-radius:999px;padding:.12rem .55rem;font-size:.74rem;font-weight:700">${s[0]}</span>
+        ${i.payment_status === 'partial' ? `<div style="font-size:.7rem;color:var(--g500)">已收 ${money(i.paid_amount)}</div>` : ''}${i.paid_date ? `<div style="font-size:.7rem;color:var(--g400)">${esc(i.paid_date)}</div>` : ''}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="btn btn-sm btn-view" onclick="pxPrint(${i.id})">🖨 打印 / PDF</button>
+        ${_pxCanEdit() ? `<button class="btn btn-sm btn-outline" onclick="pxOpenEditor(${i.id})">✎ 编辑</button>
+        <button class="btn btn-sm btn-outline" onclick="pxOpenPay(${i.id})">💵 收款</button>
+        <button class="btn btn-sm btn-outline" onclick="pxOpenEditor(${i.id}, true)" title="照这张复制一张新的">⧉ 复制</button>` : ''}
+        ${_px.meta.can_delete ? `<button class="btn btn-sm btn-outline" style="color:var(--red)" onclick="pxDeleteInvoice(${i.id})">删除</button>` : ''}
+      </td></tr>`;
+  }).join('') || `<tr><td colspan="7" style="color:var(--g400);padding:1rem">${_px.invoices.length ? '没有符合条件的发票' : '还没有代开发票。先在「🏢 代开客户」里加客户，再点「＋ 新建代开发票」。'}</td></tr>`;
+}
+
+// 客户
+function pxOpenClients() {
+  document.getElementById('pxClientModal').style.display = 'flex';
+  pxRenderClients();
+}
+function pxRenderClients() {
+  document.getElementById('pxClientBody').innerHTML = _px.clients.map(c => `<tr>
+    <td><b>${esc(c.name)}</b>${c.notes ? `<div style="font-size:.72rem;color:var(--g400)">${esc(c.notes)}</div>` : ''}</td>
+    <td style="font-family:monospace">${esc(c.code)}</td><td>${esc(c.state)}</td>
+    <td style="font-size:.8rem">${esc(c.address)}</td>
+    <td style="font-size:.8rem">${esc([c.contact, c.phone, c.email].filter(Boolean).join(' · '))}</td>
+    <td style="text-align:right">${c.invoice_count} 张<div style="font-size:.72rem;color:var(--g500)">${money(c.invoice_total)}</div></td>
+    <td style="text-align:right;color:${c.invoice_total - c.invoice_paid > 0.005 ? 'var(--red)' : 'var(--g400)'}">${money(c.invoice_total - c.invoice_paid)}</td>
+    <td style="text-align:right;white-space:nowrap">${_pxCanEdit() ? `<button class="btn btn-sm btn-outline" onclick="pxEditClient(${c.id})">✎</button>
+      <button class="btn btn-sm btn-outline" style="color:var(--red)" onclick="pxDeleteClient(${c.id})">删除</button>` : ''}</td></tr>`).join('')
+    || '<tr><td colspan="8" style="color:var(--g400);padding:1rem">还没有代开客户</td></tr>';
+}
+function pxEditClient(id, fromEditor) {
+  const c = _px.clients.find(x => x.id === id) || {};
+  _pxCeId = c.id || null; _pxCeFromEditor = !!fromEditor;
+  document.getElementById('pxCeTitle').textContent = c.id ? '编辑代开客户' : '新代开客户';
+  const set = (k, v) => document.getElementById(k).value = v || '';
+  set('pxCeName', c.name); set('pxCeCode', c.code); set('pxCeState', c.state); set('pxCeAddr', c.address);
+  set('pxCeContact', c.contact); set('pxCePhone', c.phone); set('pxCeEmail', c.email); set('pxCeNotes', c.notes);
+  document.getElementById('pxCeModal').style.display = 'flex';
+  setTimeout(() => document.getElementById('pxCeName').focus(), 0);
+}
+async function pxSaveClient() {
+  const g = k => document.getElementById(k).value.trim();
+  const body = { name: g('pxCeName'), code: g('pxCeCode'), state: g('pxCeState'), address: g('pxCeAddr'), contact: g('pxCeContact'), phone: g('pxCePhone'), email: g('pxCeEmail'), notes: g('pxCeNotes') };
+  if (!body.name) return toast('请填写公司名', true);
+  if (!body.code) return toast('请填写简称（例如 DL）', true);
+  const btn = document.getElementById('pxCeSave'); btn.disabled = true;
+  try {
+    const j = await api('/api/acct/proxy-clients' + (_pxCeId ? '/' + _pxCeId : ''), { method: _pxCeId ? 'PUT' : 'POST', body: JSON.stringify(body) });
+    if (j.error) throw new Error(j.error);
+    const i = _px.clients.findIndex(c => c.id === j.id);
+    if (i >= 0) _px.clients[i] = j; else _px.clients.push(j);
+    _px.clients.sort((a, b) => a.name.localeCompare(b.name));
+    document.getElementById('pxCeModal').style.display = 'none';
+    pxFillClientFilter(); pxRenderClients();
+    if (_pxCeFromEditor && document.getElementById('pxEdModal').style.display !== 'none') {
+      pxFillClientSelect(j.id); pxClientChanged();
+    }
+    toast('✅ 客户已保存');
+  } catch (e) { toast(e.message, true); }
+  finally { btn.disabled = false; }
+}
+async function pxDeleteClient(id) {
+  const c = _px.clients.find(x => x.id === id); if (!c) return;
+  if (!(await pageConfirm(`删除代开客户「${c.name}」？`))) return;
+  const j = await api('/api/acct/proxy-clients/' + id, { method: 'DELETE' });
+  if (j.error) return toast(j.error, true);
+  _px.clients = _px.clients.filter(x => x.id !== id);
+  pxFillClientFilter(); pxRenderClients(); toast('已删除');
+}
+
+// 编辑器
+function pxFillClientSelect(selId) {
+  document.getElementById('pxEdClient').innerHTML = '<option value="">— 选择客户 —</option>' + _px.clients.map(c => `<option value="${c.id}">${esc(c.name)}${c.code ? ` (${esc(c.code)})` : ''}</option>`).join('');
+  document.getElementById('pxEdClient').value = selId || '';
+}
+function _pxProfileOpts(section, wantData) {
+  const list = (_px.meta.profiles || []).filter(p => p.section === section);
+  const sel = document.getElementById({ sender: 'pxEdSender', bank: 'pxEdBank', contact: 'pxEdContact' }[section]);
+  // 编辑旧发票: 当时存的那份放第一个 (预设之后改过也照原样)
+  const saved = wantData && Object.keys(wantData).length ? `<option value="saved">（这张发票原来的）</option>` : '';
+  sel.innerHTML = saved + list.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('') + '<option value="">（不显示）</option>';
+  const def = list.find(p => p.is_default) || list[0];
+  sel.value = saved ? 'saved' : (def ? String(def.id) : '');
+}
+const _PX_SECTION_KEYS = {
+  sender: ['sender_name', 'sender_address', 'sender_phone', 'sender_email'],
+  bank: ['bank_name', 'bank_account_name', 'bank_account_no', 'bank_routing_no', 'bank_wire_routing', 'bank_paper_routing', 'bank_swift_code'],
+  contact: ['contact_name', 'contact_phone', 'contact_email'],
+};
+function _pxPick(obj, keys) { const o = {}; keys.forEach(k => { if (obj && obj[k]) o[k] = obj[k]; }); return o; }
+function pxCollectProfile() {
+  const prof = {};
+  for (const [section, id] of [['sender', 'pxEdSender'], ['bank', 'pxEdBank'], ['contact', 'pxEdContact']]) {
+    const v = document.getElementById(id).value;
+    if (v === 'saved') Object.assign(prof, _pxPick((_pxEdit && _pxEdit.profile) || {}, _PX_SECTION_KEYS[section]));
+    else if (v) { const p = (_px.meta.profiles || []).find(x => String(x.id) === v); if (p) Object.assign(prof, _pxPick(p.data, _PX_SECTION_KEYS[section])); }
+  }
+  return prof;
+}
+function pxOpenEditor(id, copy) {
+  if (!_px.loaded) return;
+  const src = id ? _px.invoices.find(i => i.id === id) : null;
+  _pxEdit = src && !copy ? src : (src ? { ...src, id: null, invoice_number: '', payment_status: 'unpaid' } : null);
+  pxEdNoTouched = !!(_pxEdit && _pxEdit.id);
+  document.getElementById('pxEdTitle').textContent = _pxEdit && _pxEdit.id ? `✎ 编辑代开发票 ${_pxEdit.invoice_number}` : '🧾 新建代开发票';
+  const cats = _px.meta.categories || { M: 'Materials 材料' };
+  const catSel = document.getElementById('pxEdCat');
+  const curCat = (src && src.category) || 'M';
+  catSel.innerHTML = Object.entries(cats).map(([k, v]) => `<option value="${k}">${k} · ${esc(v)}</option>`).join('')
+    + (cats[curCat] ? '' : `<option value="${esc(curCat)}">${esc(curCat)}</option>`) + '<option value="__other">其他字母…</option>';
+  catSel.value = curCat;
+  catSel.onchange = async () => {
+    if (catSel.value === '__other') {
+      const v = ((await pagePrompt('类别字母（发票号里用，例如 S）', '')) || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+      if (v && ![...catSel.options].some(o => o.value === v)) catSel.insertAdjacentHTML('afterbegin', `<option value="${v}">${v}</option>`);
+      catSel.value = v || 'M';
+    }
+    pxRenumber();
+  };
+  pxFillClientSelect(src ? src.client_id : (_px.clients.length === 1 ? _px.clients[0].id : ''));
+  document.getElementById('pxEdDate').value = src && !copy ? src.invoice_date : new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  document.getElementById('pxEdNo').value = _pxEdit && _pxEdit.id ? _pxEdit.invoice_number : '';
+  document.getElementById('pxEdBillName').value = src ? src.client_name : '';
+  document.getElementById('pxEdBillAddr').value = src ? src.client_address : '';
+  document.getElementById('pxEdDesc').value = src ? src.description : 'Materials supplied';
+  document.getElementById('pxEdTerms').value = src ? src.payment_terms : 'Due upon receipt';
+  document.getElementById('pxEdCaption').value = src ? src.table_caption : '';
+  document.getElementById('pxEdTax').value = src ? (src.tax_rate || 0) : 0;
+  document.getElementById('pxEdNotes').value = src ? (src.notes || '') : '';
+  document.getElementById('pxEdItems').innerHTML = '';
+  ((src && src.items && src.items.length) ? src.items : [{ description: 'Materials', qty: 1, unit_price: '' }]).forEach(it => pxAddItem(it));
+  _pxProfileOpts('sender', src && _pxPick(src.profile, _PX_SECTION_KEYS.sender));
+  _pxProfileOpts('bank', src && _pxPick(src.profile, _PX_SECTION_KEYS.bank));
+  _pxProfileOpts('contact', src && _pxPick(src.profile, _PX_SECTION_KEYS.contact));
+  document.getElementById('pxEdModal').style.display = 'flex';
+  if (!src) pxClientChanged(); else { if (copy) pxRenumber(); pxPreview(); }
+}
+function pxCloseEditor() { document.getElementById('pxEdModal').style.display = 'none'; _pxEdit = null; }
+function pxClientChanged() {
+  const c = _px.clients.find(x => String(x.id) === document.getElementById('pxEdClient').value);
+  const oldName = document.getElementById('pxEdBillName').value;
+  document.getElementById('pxEdBillName').value = c ? c.name : '';
+  document.getElementById('pxEdBillAddr').value = c ? c.address : '';
+  const cap = document.getElementById('pxEdCaption');
+  if (c && (!cap.value || cap.value === `Materials purchased by ${oldName}`)) cap.value = `Materials purchased by ${c.name}`;
+  pxRenumber();
+}
+let _pxNumSeq = 0;
+async function pxRenumber() {
+  if (pxEdNoTouched && _pxEdit && _pxEdit.id) { pxPreview(); return; }
+  const cid = document.getElementById('pxEdClient').value, cat = document.getElementById('pxEdCat').value;
+  const seq = ++_pxNumSeq;
+  if (!cid || cat === '__other') { document.getElementById('pxEdNo').value = ''; pxPreview(); return; }
+  const j = await api(`/api/acct/proxy-invoices/next-number?client_id=${cid}&category=${encodeURIComponent(cat)}&date=${document.getElementById('pxEdDate').value}`).catch(() => ({}));
+  if (seq !== _pxNumSeq) return;
+  if (!pxEdNoTouched) document.getElementById('pxEdNo').value = j.invoice_number || '';
+  pxPreview();
+}
+function pxAddItem(it) {
+  it = it || { description: '', qty: 1, unit_price: '' };
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td class="pxN" style="color:var(--g400)"></td>
+    <td><input class="pxD" type="text" value="${esc(it.description || '')}" placeholder="例如 Materials" style="width:100%"></td>
+    <td><input class="pxQ" type="number" step="any" value="${esc(it.qty != null ? it.qty : 1)}" style="width:100%;text-align:right"></td>
+    <td><input class="pxU" type="number" step="0.01" value="${esc(it.unit_price != null ? it.unit_price : '')}" style="width:100%;text-align:right"></td>
+    <td class="pxT" style="text-align:right;white-space:nowrap;font-weight:700"></td>
+    <td><button class="btn btn-sm btn-outline" title="删除这一项" style="padding:.15rem .4rem">✕</button></td>`;
+  tr.querySelectorAll('input').forEach(i => i.addEventListener('input', pxPreview));
+  tr.querySelector('button').onclick = () => { tr.remove(); pxPreview(); };
+  document.getElementById('pxEdItems').appendChild(tr);
+  if (!arguments.length) setTimeout(() => tr.querySelector('.pxD').focus(), 0);
+  pxPreview();
+}
+function pxCollectItems() {
+  return [...document.querySelectorAll('#pxEdItems tr')].map(tr => {
+    const qty = Number(tr.querySelector('.pxQ').value) || 0, unit = Number(tr.querySelector('.pxU').value) || 0;
+    return { description: tr.querySelector('.pxD').value.trim(), qty, unit_price: unit, total: Math.round(qty * unit * 100) / 100, _tr: tr };
+  });
+}
+function pxCollect() {
+  const items = pxCollectItems();
+  const subtotal = Math.round(items.reduce((s, it) => s + it.total, 0) * 100) / 100;
+  const taxRate = Math.max(0, Number(document.getElementById('pxEdTax').value) || 0);
+  const tax = Math.round(subtotal * taxRate) / 100;
+  return {
+    client_id: document.getElementById('pxEdClient').value, category: document.getElementById('pxEdCat').value,
+    invoice_date: document.getElementById('pxEdDate').value, invoice_number: document.getElementById('pxEdNo').value.trim(),
+    client_name: document.getElementById('pxEdBillName').value.trim(), client_address: document.getElementById('pxEdBillAddr').value.trim(),
+    description: document.getElementById('pxEdDesc').value.trim(), payment_terms: document.getElementById('pxEdTerms').value.trim(),
+    table_caption: document.getElementById('pxEdCaption').value.trim(), tax_rate: taxRate, notes: document.getElementById('pxEdNotes').value.trim(),
+    profile: pxCollectProfile(), items, subtotal, tax_amount: tax, total: Math.round((subtotal + tax) * 100) / 100,
+  };
+}
+function pxPreview() {
+  const v = pxCollect();
+  v.items.forEach((it, i) => { it._tr.querySelector('.pxN').textContent = i + 1; it._tr.querySelector('.pxT').textContent = money(it.total); });
+  document.getElementById('pxEdTotals').innerHTML = `Subtotal ${money(v.subtotal)} + Tax ${money(v.tax_amount)} = <b>${money(v.total)}</b>`;
+  document.getElementById('pxEdPreview').innerHTML = renderProxyInvoiceDoc({ ...v, items: v.items.filter(it => it.description || it.qty || it.unit_price) });
+}
+async function pxSaveInvoice(andPrint) {
+  const v = pxCollect();
+  if (!v.client_id) return toast('请选择客户', true);
+  if (v.category === '__other') return toast('请选择类别', true);
+  const items = v.items.filter(it => it.description || it.qty || it.unit_price).map(({ _tr, ...it }) => it);
+  if (!items.length) return toast('至少加一个项目', true);
+  if (items.some(it => !it.description)) return toast('每个项目都要写描述', true);
+  const { items: _i, subtotal, tax_amount, total, ...body } = v;
+  body.items = items;
+  const editing = _pxEdit && _pxEdit.id;
+  ['pxEdSave', 'pxEdSavePrint'].forEach(k => document.getElementById(k).disabled = true);
+  try {
+    const j = await api('/api/acct/proxy-invoices' + (editing ? '/' + _pxEdit.id : ''), { method: editing ? 'PUT' : 'POST', body: JSON.stringify(body) });
+    if (j.error) throw new Error(j.error);
+    const i = _px.invoices.findIndex(x => x.id === j.id);
+    if (i >= 0) _px.invoices[i] = j; else _px.invoices.unshift(j);
+    _px.invoices.sort((a, b) => (b.invoice_date || '').localeCompare(a.invoice_date || '') || b.id - a.id);
+    pxCloseEditor(); pxRender();
+    api('/api/acct/proxy-clients').then(c => { if (Array.isArray(c)) _px.clients = c; }).catch(() => {});
+    toast(`✅ 已保存 ${j.invoice_number}`);
+    if (andPrint) pxPrint(j.id);
+  } catch (e) { toast(e.message, true); }
+  finally { ['pxEdSave', 'pxEdSavePrint'].forEach(k => document.getElementById(k).disabled = false); }
+}
+async function pxDeleteInvoice(id) {
+  const inv = _px.invoices.find(x => x.id === id); if (!inv) return;
+  if (!(await pageConfirm(`删除代开发票 ${inv.invoice_number}（${money(inv.total)}）？删除后不能恢复。`))) return;
+  const j = await api('/api/acct/proxy-invoices/' + id, { method: 'DELETE' });
+  if (j.error) return toast(j.error, true);
+  _px.invoices = _px.invoices.filter(x => x.id !== id);
+  pxRender(); toast('已删除');
+}
+function pxOpenPay(id) {
+  const inv = _px.invoices.find(x => x.id === id); if (!inv) return;
+  _pxPayId = id;
+  document.getElementById('pxPayInfo').textContent = `${inv.invoice_number} · ${inv.client_name} · 应收 ${money(inv.total)}`;
+  document.getElementById('pxPayAmt').value = inv.payment_status === 'unpaid' ? inv.total : (inv.payment_status === 'paid' && !inv.paid_amount ? inv.total : inv.paid_amount);
+  document.getElementById('pxPayDate').value = inv.paid_date || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  document.getElementById('pxPayModal').style.display = 'flex';
+}
+async function pxSavePay() {
+  const btn = document.getElementById('pxPaySave'); btn.disabled = true;
+  try {
+    const j = await api(`/api/acct/proxy-invoices/${_pxPayId}/payment`, { method: 'POST', body: JSON.stringify({ paid_amount: document.getElementById('pxPayAmt').value, paid_date: document.getElementById('pxPayDate').value }) });
+    if (j.error) throw new Error(j.error);
+    const i = _px.invoices.findIndex(x => x.id === j.id); if (i >= 0) _px.invoices[i] = j;
+    document.getElementById('pxPayModal').style.display = 'none';
+    pxRender(); toast('✅ 收款已记录（填 0 = 改回未付款）');
+  } catch (e) { toast(e.message, true); }
+  finally { btn.disabled = false; }
+}
+function pxPrint(id) {
+  const inv = _px.invoices.find(x => x.id === id); if (!inv) return;
+  const w = window.open('', '_blank');
+  if (!w) return toast('浏览器拦截了弹窗，请允许弹窗后再试', true);
+  const title = `Invoice_${inv.invoice_number}_${(inv.client_name || '').replace(/[^\w]+/g, '_')}`;
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>@page{size:letter;margin:0}body{margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}</style></head><body>${renderProxyInvoiceDoc(inv, location.origin)}<script>onload=()=>setTimeout(()=>print(),150)<\/script></body></html>`);
+  w.document.close();
+}
+// 代开发票纸: 抬头 + INVOICE NO./DATE/PAYMENT TERMS + BILL TO/ADDRESS/DESCRIPTION + 项目表 + 小计/税/TOTAL DUE + 收款信息
+function renderProxyInvoiceDoc(inv, origin) {
+  const p = inv.profile || {};
+  const items = Array.isArray(inv.items) ? inv.items : [];
+  const fmtLong = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '—';
+  const qtyFmt = n => (Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 3 });
+  const th = 'padding:7px 10px;background:#e8f5fb;border-bottom:2px solid #29AAE1;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:#0f4c6b;text-align:left;white-space:nowrap';
+  const thR = th + ';text-align:right';
+  const td = 'padding:7px 10px;border-bottom:1px solid #e2e8f0;font-size:.82rem;vertical-align:top';
+  const tdR = td + ';text-align:right;white-space:nowrap';
+  const lbl = 'padding:3px 16px 3px 0;color:#64748b;font-weight:700;text-transform:uppercase;font-size:.7rem;white-space:nowrap;vertical-align:top';
+  const totQty = items.reduce((s, it) => s + (Number(it.qty) || 0), 0);
+  const sub = inv.subtotal != null ? Number(inv.subtotal) : items.reduce((s, it) => s + (Number(it.total) || 0), 0);
+  const tax = Number(inv.tax_amount) || 0, total = inv.total != null ? Number(inv.total) : sub + tax;
+  const bankLines = [
+    p.bank_name ? ['Bank', p.bank_name] : null, p.bank_account_name ? ['Account Name', p.bank_account_name] : null,
+    p.bank_routing_no ? ['Routing No', p.bank_routing_no] : null, p.bank_account_no ? ['Account No', p.bank_account_no] : null,
+    p.bank_wire_routing ? ['Wire Routing', p.bank_wire_routing] : null, p.bank_paper_routing ? ['Paper Routing', p.bank_paper_routing] : null,
+    p.bank_swift_code ? ['SWIFT', p.bank_swift_code] : null,
+  ].filter(Boolean);
+  return `<div style="padding:0.55in 0.6in;font-family:'Helvetica Neue',Arial,sans-serif;color:#1e293b;background:#fff">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;margin-bottom:1rem">
+      <div style="display:flex;align-items:center;gap:.85rem;flex:1;min-width:0">
+        <img src="${origin || ''}/logo.svg" style="height:64px;width:auto;flex-shrink:0" alt="Logo">
+        <div style="line-height:1.55;font-size:.8rem">
+          ${p.sender_name ? `<div style="font-size:1.05rem;font-weight:800;color:#29AAE1">${esc(p.sender_name)}</div>` : ''}
+          ${p.sender_address ? `<div>${esc(p.sender_address)}</div>` : ''}
+          ${p.sender_phone ? `<div>Phone: ${esc(p.sender_phone)}</div>` : ''}
+          ${p.sender_email ? `<div>Email: ${esc(p.sender_email)}</div>` : ''}
+          ${p.contact_name ? `<div>Contact: ${esc(p.contact_name)}</div>` : ''}
+        </div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:1.9rem;font-weight:900;letter-spacing:4px;color:#29AAE1;line-height:1;margin-bottom:.5rem">INVOICE</div>
+        <table style="border-collapse:collapse;margin-left:auto;font-size:.76rem;border:1px solid #cbd5e1;background:#f8fafc">
+          <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:4px 10px;color:#64748b;background:#e8f5fb;font-weight:600;font-size:.68rem;text-transform:uppercase">Invoice No.</td><td style="padding:4px 10px;font-weight:700;text-align:right">${esc(inv.invoice_number || '—')}</td></tr>
+          <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:4px 10px;color:#64748b;background:#e8f5fb;font-weight:600;font-size:.68rem;text-transform:uppercase">Invoice Date</td><td style="padding:4px 10px;font-weight:600;text-align:right">${fmtLong(inv.invoice_date)}</td></tr>
+          ${inv.payment_terms ? `<tr><td style="padding:4px 10px;color:#64748b;background:#e8f5fb;font-weight:600;font-size:.68rem;text-transform:uppercase">Payment Terms</td><td style="padding:4px 10px;font-weight:600;text-align:right">${esc(inv.payment_terms)}</td></tr>` : ''}
+        </table>
+      </div>
+    </div>
+    <div style="border-top:2.5px solid #29AAE1;margin-bottom:.8rem"></div>
+    <table style="border-collapse:collapse;margin-bottom:.9rem;font-size:.85rem;line-height:1.55">
+      <tr><td style="${lbl}">Bill To:</td><td style="padding:3px 0;font-weight:700;color:#29AAE1;font-size:.95rem">${esc(inv.client_name || '')}</td></tr>
+      ${inv.client_address ? `<tr><td style="${lbl}">Address:</td><td style="padding:3px 0">${esc(inv.client_address)}</td></tr>` : ''}
+      ${inv.description ? `<tr><td style="${lbl}">Description:</td><td style="padding:3px 0">${esc(inv.description)}</td></tr>` : ''}
+    </table>
+    ${inv.table_caption ? `<div style="font-size:.85rem;font-weight:700;color:#0f4c6b;margin-bottom:.35rem">${esc(inv.table_caption)}</div>` : ''}
+    <table style="width:100%;border-collapse:collapse;margin-bottom:.6rem">
+      <thead><tr><th style="${th};width:50px">Item</th><th style="${th}">Description</th><th style="${thR};width:70px">Qty</th><th style="${thR};width:120px">Unit Price</th><th style="${thR};width:120px">Total</th></tr></thead>
+      <tbody>${items.map((it, i) => `<tr>
+        <td style="${td}">${i + 1}</td><td style="${td}">${esc(it.description || '')}</td>
+        <td style="${tdR}">${qtyFmt(it.qty)}</td><td style="${tdR}">${money(it.unit_price)}</td><td style="${tdR};font-weight:700">${money(it.total)}</td></tr>`).join('')}
+        <tr style="font-weight:700">
+          <td colspan="2" style="${tdR};text-transform:uppercase;letter-spacing:.04em;border-top:2px solid #29AAE1;border-bottom:none">Total</td>
+          <td style="${tdR};border-top:2px solid #29AAE1;border-bottom:none">${qtyFmt(totQty)}</td>
+          <td style="${td};border-top:2px solid #29AAE1;border-bottom:none"></td>
+          <td style="${tdR};border-top:2px solid #29AAE1;border-bottom:none">${money(sub)}</td>
+        </tr></tbody></table>
+    <div style="display:flex;justify-content:flex-end;margin:.5rem 0 1rem">
+      <table style="border-collapse:collapse;font-size:.86rem;min-width:280px">
+        <tr><td colspan="2" style="padding:0 0 .4rem 0;text-align:right;font-size:.78rem;color:#64748b;white-space:nowrap">Subtotal ${money(sub)} &nbsp;+&nbsp; Sales Tax ${money(tax)}${inv.tax_rate ? ` (${Number(inv.tax_rate)}%)` : ''}</td></tr>
+        <tr>
+          <td style="padding:7px 16px 7px 0;border-top:2px solid #29AAE1;border-bottom:2px solid #29AAE1;color:#29AAE1;font-weight:700;text-align:right;text-transform:uppercase;white-space:nowrap">Total Due</td>
+          <td style="padding:7px 0;border-top:2px solid #29AAE1;border-bottom:2px solid #29AAE1;color:#29AAE1;font-weight:800;text-align:right;font-size:1.15rem;white-space:nowrap">${money(total)}</td>
+        </tr></table>
+    </div>
+    ${bankLines.length ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:.6rem .85rem;font-size:.78rem;line-height:1.6;margin-bottom:.6rem">
+      <div style="display:flex;justify-content:space-between;gap:1rem;margin-bottom:.2rem"><b style="color:#0f4c6b">PAYMENT INFORMATION</b>${inv.payment_terms ? `<span style="color:#64748b">Payment ${esc(/^due/i.test(inv.payment_terms) ? inv.payment_terms.charAt(0).toLowerCase() + inv.payment_terms.slice(1) : 'terms: ' + inv.payment_terms)}</span>` : ''}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 1.5rem">${bankLines.map(([k, v]) => `<div><span style="color:#64748b">${k}:</span> <b>${esc(v)}</b></div>`).join('')}</div></div>` : ''}
+    ${(p.contact_name || p.contact_phone || p.contact_email) ? `<div style="font-size:.75rem;color:#475569;margin-bottom:.45rem">For questions regarding this invoice, please contact: <b>${[p.contact_name, p.contact_phone, p.contact_email].filter(Boolean).map(esc).join(' | ')}</b></div>` : ''}
     <div style="border-top:1px solid #e2e8f0;padding-top:.5rem;text-align:center;font-size:.75rem;color:#29AAE1;font-weight:700;letter-spacing:.06em">THANK YOU FOR YOUR BUSINESS!</div>
   </div>`;
 }
