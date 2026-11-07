@@ -890,6 +890,8 @@ try { db.exec("ALTER TABLE cn_employees ADD COLUMN view_pw_hash TEXT DEFAULT ''"
 try { db.exec("ALTER TABLE cn_employees ADD COLUMN view_pw_salt TEXT DEFAULT ''"); } catch(e) {}
 // 关联的登录账号 (admin_users.username): 客服账号只看得到关联到自己的那个员工
 try { db.exec("ALTER TABLE cn_employees ADD COLUMN login_username TEXT DEFAULT ''"); } catch(e) {}
+// 🇺🇸 美国员工工资和国内工资共用这套 (名册 + fee_type='cnpay' 记录, 权限 / 查看密码 / 审核都一样), 按员工的 region 分页签
+try { db.exec("ALTER TABLE cn_employees ADD COLUMN region TEXT DEFAULT 'cn'"); } catch(e) {}
 // 🪵 会计手动添加的木板发票 (照 pallet.bintique.com 的 New Order 表单): 会计提交为
 // approval_status='pending', 管理员审核通过才计入木板账单汇总 / 才能记付款批注。
 // 付款批注 target_type='palletmanual' (与 Bintique 账单 id 分开编号)。
@@ -44416,7 +44418,7 @@ app.get('/api/acct/cn-employees', requireAdmin, requireAcctView, (req, res) => {
   res.json(rows.map(r => ({ ..._cnEmpOut(r), note: r.note, currency: r.currency, profile_id: r.profile_id, profile_code: r.profile_code,
     login_username: r.login_username || '', created_by: r.created_by })));
 });
-function _cnEmpOut(r) { return { id: r.id, name: r.name, title: r.title, has_pw: !!r.view_pw_hash }; }
+function _cnEmpOut(r) { return { id: r.id, name: r.name, title: r.title, region: r.region === 'us' ? 'us' : 'cn', has_pw: !!r.view_pw_hash }; }
 function _cnSeeAll(req) { return req.userRole === 'admin' || req.userRole === 'accounting'; }
 function _cnIsOwn(req, r) { return !!r.login_username && String(r.login_username).toLowerCase() === String(req.userName || '').toLowerCase(); }
 // 关联登录账号: 必须是存在的客服 / staff 账号, 否则当没关联
@@ -44490,9 +44492,10 @@ app.post('/api/acct/cn-employees', requireAdmin, requireRole('admin'), (req, res
   const login = _cnLoginUser(b.login_username);
   if (login === null) return res.status(400).json({ error: '关联的登录账号不存在或不是客服账号' });
   if (login && db.prepare('SELECT 1 FROM cn_employees WHERE login_username=? COLLATE NOCASE').get(login)) return res.status(400).json({ error: '这个登录账号已经关联到别的员工了' });
-  const r = db.prepare('INSERT INTO cn_employees (name, title, note, currency, profile_id, login_username, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)')
+  const region = b.region === 'us' ? 'us' : 'cn';
+  const r = db.prepare('INSERT INTO cn_employees (name, title, note, currency, profile_id, login_username, created_by, region) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
     .run(name, String(b.title || '').trim().slice(0, 100), String(b.note || '').trim().slice(0, 500),
-      ['CNY', 'USD'].includes(String(b.currency || '')) ? String(b.currency) : 'CNY', pid, login, req.userName || '');
+      ['CNY', 'USD'].includes(String(b.currency || '')) ? String(b.currency) : (region === 'us' ? 'USD' : 'CNY'), pid, login, req.userName || '', region);
   _cnSetPw(r.lastInsertRowid, pw);
   res.json({ success: true, id: r.lastInsertRowid });
 });
