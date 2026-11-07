@@ -6859,6 +6859,8 @@ function _palletManualActions(r) {
   // 已通过 / 已驳回: 管理员可以撤回审核, 回到待审核
   if (USER.role === 'admin' && (r.approval_status === 'approved' || r.approval_status === 'rejected'))
     btns.push(`<button class="btn btn-sm" style="color:#b45309;border-color:#fcd34d" onclick="palletManualApprove(${r.manual_id}, 'revoke')">↩ 撤回审核</button>`);
+  if (USER.role === 'admin')
+    btns.push(`<button class="btn btn-sm" style="color:#0f4c6b;border-color:#bae6fd" onclick="openPalletEdit(${r.manual_id})">✏️ 编辑</button>`);
   if (USER.role === 'admin' || (USER.role === 'accounting' && r.created_by === USER.username && r.approval_status !== 'approved'))
     btns.push(`<button class="btn btn-sm" style="color:#b91c1c" onclick="palletManualDelete(${r.manual_id})">🗑 删除</button>`);
   if (canAnnotate() && r.approval_status === 'approved')
@@ -6913,6 +6915,8 @@ async function palletManualDelete(id) {
 // 折扣 % / $/pl / $ total、服务日期、送货地址、关联 PO、备注) + 发票号 / 账期 / 附件。
 // 会计提交的进「待审核」, 管理员在查看明细里通过/驳回; 管理员自己加的直接通过。
 let _pmaFiles = [], _pmaType = 'sales', _pmaDisc = '%', _pmaUnit = 'pallet';
+// 编辑模式 (管理员 ✏️ 编辑): _pmaEditId = 手动发票 id, _pmaKeepAtts = 还保留的旧附件
+let _pmaEditId = null, _pmaKeepAtts = [];
 function _pmaUnitZh(u) { return u === 'truck' ? '车' : '板'; }
 // 数量单位: 按板 (pallet) 或按车 (truck) 算钱; 单价和「每单位减 $」折扣跟着单位走
 function _pmaSetUnit(u) {
@@ -6927,10 +6931,12 @@ function _pmaSetUnit(u) {
 }
 function _pmaRenderFiles() {
   const el = document.getElementById('pmaFileList');
-  el.innerHTML = _pmaFiles.length
+  const old = _pmaKeepAtts.map((a, i) => `<span style="display:inline-flex;align-items:center;gap:4px;border:1px solid #bae6fd;border-radius:6px;padding:2px 8px;margin:2px 4px 2px 0;font-size:.74rem;background:#f0f9ff">${/\.pdf(\?|$)/i.test(a.path) ? '📄' : '🖼️'} <a onclick="${/\.pdf(\?|$)/i.test(a.path) ? 'showFileLightbox' : 'showImgLightbox'}('${esc(a.path)}')" style="cursor:pointer;color:#0f4c6b">${esc(a.name || '附件')}</a> <span style="color:var(--g400)">(原有)</span> <a onclick="_pmaKeepAtts.splice(${i},1);_pmaRenderFiles()" title="移除" style="cursor:pointer;color:#dc2626;font-weight:700">✕</a></span>`).join('');
+  if (old && !_pmaFiles.length) { el.innerHTML = old; return; }
+  el.innerHTML = old + (_pmaFiles.length
     ? _pmaFiles.map((f, i) => `<span style="display:inline-flex;align-items:center;gap:4px;border:1px solid var(--g200);border-radius:6px;padding:2px 8px;margin:2px 4px 2px 0;font-size:.74rem;background:#f8fafc">${(/pdf/i.test(f.type) || /\.pdf$/i.test(f.name)) ? '📄' : '🖼️'} ${esc(f.name)} <a onclick="_pmaFiles.splice(${i},1);_pmaRenderFiles()" title="移除" style="cursor:pointer;color:#dc2626;font-weight:700">✕</a></span>`).join('')
-      + `<span style="font-size:.72rem;color:var(--g400);margin-left:4px">共 ${_pmaFiles.length} 个</span>`
-    : '<span style="font-size:.74rem;color:var(--g400)">还没选文件</span>';
+      + `<span style="font-size:.72rem;color:var(--g400);margin-left:4px">新加 ${_pmaFiles.length} 个</span>`
+    : '<span style="font-size:.74rem;color:var(--g400)">还没选文件</span>');
 }
 function _pmaAddFiles(files) {
   for (const f of files) {
@@ -6989,7 +6995,7 @@ function openPalletAdd() {
     const DB = 'border:none;padding:.3rem .7rem;cursor:pointer;font-weight:700;font-size:.8rem;';
     m.innerHTML = `<div style="background:#fff;border-radius:14px;box-shadow:0 12px 48px rgba(0,0,0,.35);width:min(94vw,560px);max-height:92vh;overflow:auto;padding:1.1rem 1.25rem" onclick="event.stopPropagation()">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem">
-        <div style="font-weight:800;font-size:1rem;color:#1f2937">＋ 添加木板发票 / New Invoice</div>
+        <div id="pmaTitle" style="font-weight:800;font-size:1rem;color:#1f2937">＋ 添加木板发票 / New Invoice</div>
         <button onclick="document.getElementById('palletAddModal').style.display='none'" style="border:1px solid var(--g200);background:#fff;border-radius:8px;padding:.2rem .7rem;cursor:pointer;font-size:.8rem">✕</button>
       </div>
       <div style="display:flex;border:1px solid var(--g200);border-radius:10px;overflow:hidden;margin-bottom:.8rem">
@@ -7061,6 +7067,9 @@ function openPalletAdd() {
     drop.ondrop = e => { e.preventDefault(); drop.style.background = '#f8fafc'; drop.style.borderColor = 'var(--g300)'; _pmaAddFiles(e.dataTransfer.files); };
     document.getElementById('pmaFiles').onchange = function () { _pmaAddFiles(this.files); this.value = ''; };
   }
+  _pmaEditId = null; _pmaKeepAtts = [];
+  document.getElementById('pmaTitle').textContent = '＋ 添加木板发票 / New Invoice';
+  document.getElementById('pmaNum').placeholder = '不填自动编号（MINV- / MPINV-…）';
   _pmaSetType('sales');
   ['pmaNum', 'pmaPrice', 'pmaTotal', 'pmaFrom', 'pmaTo', 'pmaAddr', 'pmaCity', 'pmaState', 'pmaZip', 'pmaPo', 'pmaNote'].forEach(id => { document.getElementById(id).value = ''; });
   document.getElementById('pmaQty').value = '1';
@@ -7073,6 +7082,39 @@ function openPalletAdd() {
   _pmaFiles = [];
   _pmaRenderFiles();
   m.style.display = 'flex';
+}
+// ✏️ 编辑手动木板发票 (管理员): 用添加表单, 填好现有内容; 保存后审核状态不变
+function openPalletEdit(manualId) {
+  const r = _palletRows.find(x => x.manual && x.manual_id === manualId);
+  if (!r) return;
+  _palletDetailClose();
+  openPalletAdd();
+  _pmaEditId = manualId;
+  _pmaKeepAtts = (r.attachments || []).slice();
+  document.getElementById('pmaTitle').textContent = '✏️ 编辑木板发票 / Edit Invoice';
+  _pmaSetType(r.direction === 'out' ? 'purchase' : 'sales');
+  const sel = document.getElementById('pmaPartySel'), nw = document.getElementById('pmaPartyNew');
+  if ([...sel.options].some(o => o.value === r.customer)) { sel.value = r.customer; nw.style.display = 'none'; }
+  else { sel.value = '__new__'; nw.value = r.customer || ''; nw.style.display = ''; }
+  const set = (id, v) => { document.getElementById(id).value = v == null ? '' : v; };
+  set('pmaNum', r.invoice_number);
+  document.getElementById('pmaNum').placeholder = '不填沿用原号';
+  set('pmaQty', r.quantity);
+  set('pmaPrice', r.unit_price);
+  set('pmaDisc', Number(r.discount_value) > 0 ? r.discount_value : 0);
+  set('pmaDate', r.invoice_date || r.date);
+  set('pmaFrom', r.period_start); set('pmaTo', r.period_end);
+  set('pmaAddr', r.delivery_address); set('pmaCity', r.city); set('pmaState', r.state); set('pmaZip', r.zip);
+  set('pmaPo', r.linked_po); set('pmaNote', r.notes);
+  _pmaSetDisc(r.discount_type || '%');
+  _pmaSetUnit(r.quantity_unit);
+  // 总金额用存的数 (可能是手改过的), 不按数量×单价重算覆盖
+  set('pmaTotal', Number(r.amount).toFixed(2));
+  document.getElementById('pmaTotalShow').textContent = money(Number(r.amount) || 0);
+  const hint = document.getElementById('pmaHint');
+  hint.textContent = `改完审核状态不变（现在：${r.approval_status === 'approved' ? '已审核通过' : r.approval_status === 'rejected' ? '已驳回' : '待审核'}），修改记录会留在操作日志里。${r.pay_note ? '这张已有付款批注，改了金额记得核对批注。' : ''}`;
+  hint.style.display = '';
+  _pmaRenderFiles();
 }
 async function submitPalletAdd() {
   const v = id => document.getElementById(id).value.trim();
@@ -7105,11 +7147,20 @@ async function submitPalletAdd() {
     fd.append('linked_po', v('pmaPo'));
     fd.append('notes', v('pmaNote'));
     _pmaFiles.forEach(f => fd.append('invoice', f));
-    const res = await fetch('/api/acct/pallet-manual', { method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd }).then(x => x.json());
+    const editing = _pmaEditId;
+    if (editing) fd.append('keep_attachments', JSON.stringify(_pmaKeepAtts.map(a => a.path)));
+    const res = await fetch(editing ? `/api/acct/pallet-manual/${editing}` : '/api/acct/pallet-manual', { method: editing ? 'PUT' : 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd }).then(x => x.json());
     if (res.error) throw new Error(res.error);
     document.getElementById('palletAddModal').style.display = 'none';
-    toast(`✅ 已添加 ${res.invoice_number || ''}${res.approval_status === 'pending' ? '，待管理员审核' : ''}`);
-    loadPalletList(true);
+    if (editing) {
+      _pmaEditId = null;
+      toast(res.changed === false ? '没有改动' : '✅ 已保存修改');
+      await loadPalletList(true);
+      openPalletDetail('m-' + editing);
+    } else {
+      toast(`✅ 已添加 ${res.invoice_number || ''}${res.approval_status === 'pending' ? '，待管理员审核' : ''}`);
+      loadPalletList(true);
+    }
   } catch (e) { msg(e.message || '保存失败'); }
   btn.disabled = false;
 }
