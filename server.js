@@ -44595,6 +44595,153 @@ app.delete('/api/acct/cn-employees/:id', requireAdmin, requireRole('admin'), (re
 // 国内工资明细: 清洗前端传来的 lines, 按 base/bonus/ot/reimb 加总; 加班 (ot) 金额 = 小时 × 时薪
 // 每项明细可带凭证 files [{path,name}]: opt.uploads = 这次上传给明细的文件 (按顺序, 每行 new_files 张),
 // opt.old = 原记录明细里的文件 (编辑时只认原来就有的 path, 不信前端随便传的)
+// ─── 🇺🇸 美国员工工资: 导入 Gusto「Payroll Journal」工资单 ───
+// 每个「员工 × 一次发薪」记一条 fee_type='cnpay' 工资记录 (region=us 的员工, 美元):
+//   Base = Regular (+ PTO / Holiday 等其他收入项), 加班 = Overtime, Bonus, 报销 = Reimbursements;
+//   合计 = 税前 Gross + 报销; 税 / 401k / 实发 Net Pay / 雇主成本 写进备注。
+// 按 import_key (人 + 发薪日 + 工资期 + 发薪类型) 去重: 每次下载全年报告整份上传即可, 已导过的跳过。
+// 先 dry_run 预览 (每个名字对应哪个员工 / 新建), 管理员确认后再写入; 可撤销上次导入。
+try { db.exec("ALTER TABLE fee_records ADD COLUMN import_key TEXT DEFAULT NULL"); } catch(e) {}
+const gustoJournal = require('./gusto-payroll-journal');
+const usPayrollUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null,
+    /\.(csv|xlsx|xls)$/i.test(file.originalname || '') || /csv|text\/plain|spreadsheet|excel/i.test(file.mimetype || '')),
+});
+function _usPayKey(x) {
+  return `gusto-pj:${gustoJournal.nameKey(x.name)}:${x.pay_day}:${x.period_start || ''}-${x.period_end || ''}:${String(x.run_type || '').toLowerCase()}`;
+}
+function _usPayLines(x) {
+  const r2 = v => Math.round((Number(v) || 0) * 100) / 100;
+  const per = x.period_start ? `工资期 ${x.period_raw}` : x.run_type;
+  const lines = [];
+  if (x.regular_amount) lines.push({ kind: 'base', desc: `Regular${x.regular_hours ? ` ${x.regular_hours}h` : ''}${x.regular_rate ? ` × $${x.regular_rate.toFixed(2)}` : ''}`, date: x.pay_day, amount: r2(x.regular_amount), note: per });
+  (x.other_earnings || []).forEach(o => lines.push({ kind: 'base', desc: `${o.label}${o.hours ? ` ${o.hours}h` : ''}`, date: x.pay_day, amount: r2(o.amount), note: per }));
+  // 报告里的 Regular + 加班 + Bonus + 其他项 和 Gross 对不上的差额 (报告没列出来的收入项)
+  const listed = r2((x.regular_amount || 0) + (x.ot_amount || 0) + (x.bonus || 0) + (x.other_earnings || []).reduce((s, o) => s + o.amount, 0));
+  if (Math.abs(r2(x.gross - listed)) >= 0.01) lines.push({ kind: 'base', desc: '其他收入（Gross 差额）', date: x.pay_day, amount: r2(x.gross - listed), note: per });
+  if (x.ot_amount) lines.push({ kind: 'ot', desc: 'Overtime', date: x.pay_day, hours: r2(x.ot_hours), rate: r2(x.ot_rate || (x.ot_hours ? x.ot_amount / x.ot_hours : 0)), amount: r2(x.ot_amount), amt_fixed: true, note: per });
+  if (x.bonus) lines.push({ kind: 'bonus', desc: 'Bonus', date: x.pay_day, amount: r2(x.bonus), note: per });
+  if (x.reimbursement) lines.push({ kind: 'reimb', desc: 'Reimbursement', date: x.pay_day, amount: r2(x.reimbursement), note: per });
+  const sum = k => r2(lines.filter(l => l.kind === k).reduce((s, l) => s + l.amount, 0));
+  const base = sum('base'), bonus = sum('bonus'), ot = sum('ot'), reimb = sum('reimb');
+  return { lines, base, bonus, ot, reimb, total: r2(base + bonus + ot + reimb) };
+}
+function _usPayDesc(x) {
+  const m = v => '$' + (Number(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return [
+    `Gusto 工资单导入 · ${x.run_type}${x.period_start ? ` · 工资期 ${x.period_raw}` : ''} · 发薪日 ${x.pay_day_raw}`,
+    `税前 Gross ${m(x.gross)} · 员工税 ${m(x.employee_taxes)}（联邦 ${m(x.fed_tax)} / Social Security ${m(x.ss_employee)} / Medicare ${m(x.medicare_employee)} / 州税 ${m(x.state_tax)}）`
+      + (x.k401_employee ? ` · 401k 员工扣 ${m(x.k401_employee)}` : '')
+      + ` · 实发 Net Pay ${m(x.net_pay)}${x.payment ? `（${x.payment}）` : ''}`,
+    `雇主税 ${m(x.employer_taxes)}${x.k401_company ? ` · 401k 公司配 ${m(x.k401_company)}` : ''} · 雇主总成本 ${m(x.employer_cost)}${x.employee_type ? ` · ${x.employee_type}` : ''}`,
+  ].join('\n');
+}
+app.post('/api/acct/us-payroll/import', requireAdmin, requireRole('admin'), usPayrollUpload.single('file'), (req, res) => {
+  if (!req.file || !req.file.buffer) return res.status(400).json({ error: '请上传 Gusto Payroll Journal 报告（CSV 或 Excel）' });
+  let csv;
+  try {
+    if (/\.xlsx?$/i.test(req.file.originalname || '') || req.file.buffer.slice(0, 2).toString() === 'PK') {
+      const XLSX = require('xlsx');
+      const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      if (!ws) return res.status(400).json({ error: 'Excel 文件里没有工作表' });
+      csv = XLSX.utils.sheet_to_csv(ws);
+    } else csv = req.file.buffer.toString('utf8');
+  } catch (e) { return res.status(400).json({ error: '文件读不出来：' + e.message }); }
+  let parsed;
+  try { parsed = gustoJournal.parsePayrollJournalCsv(csv); } catch (e) { return res.status(400).json({ error: e.message }); }
+  const items = parsed.filter(x => !x.skip && x.pay_day);
+  if (!items.length) return res.status(400).json({ error: '报告里没有可导入的工资（全是 0 或税务调整）' });
+  const usEmps = db.prepare("SELECT id, name FROM cn_employees WHERE region='us' ORDER BY name COLLATE NOCASE").all();
+  const byKey = new Map(usEmps.map(e => [gustoJournal.nameKey(e.name), e]));
+  // 管理员在预览里手动指定的对应: { "Siqi Fang": 12 | "new" }
+  let map = {};
+  try { map = JSON.parse((req.body || {}).map || '{}') || {}; } catch (e) { map = {}; }
+  const names = [...new Set(items.map(x => x.name))];
+  const nameTo = {};
+  names.forEach(n => {
+    const v = map[n];
+    if (v === 'new') nameTo[n] = { id: null, isNew: true };
+    else if (v && usEmps.some(e => e.id === Number(v))) nameTo[n] = { id: Number(v), isNew: false };
+    else { const e = byKey.get(gustoJournal.nameKey(n)); nameTo[n] = e ? { id: e.id, isNew: false, auto: true } : { id: null, isNew: true }; }
+  });
+  // 同一份报告里 key 撞了 (同一天两次同类发薪) 加序号
+  const seen = new Map();
+  items.forEach(x => { const k = _usPayKey(x); const n = (seen.get(k) || 0) + 1; seen.set(k, n); x.import_key = n > 1 ? `${k}#${n}` : k; });
+  const existsStmt = db.prepare("SELECT id, employee_id FROM fee_records WHERE fee_type='cnpay' AND import_key=?");
+  const preview = items.map(x => {
+    const ex = existsStmt.get(x.import_key);
+    const c = _usPayLines(x);
+    return { name: x.name, run_type: x.run_type, pay_day: x.pay_day, period: x.period_start ? `${x.period_start} ~ ${x.period_end}` : '',
+      gross: x.gross, net_pay: x.net_pay, employer_cost: x.employer_cost, total: c.total, exists: !!ex };
+  });
+  const newRows = preview.filter(p => !p.exists).length;
+  if (String((req.body || {}).dry_run || '') === '1') {
+    return res.json({ dry_run: true, file: req.file.originalname || '', rows: preview, new_rows: newRows, skipped_zero: parsed.length - items.length,
+      names: names.map(n => ({ name: n, emp_id: nameTo[n].id, is_new: nameTo[n].isNew, auto: !!nameTo[n].auto })), employees: usEmps });
+  }
+  // 写入
+  const createdEmps = [], createdIds = [];
+  const insEmp = db.prepare("INSERT INTO cn_employees (name, title, note, currency, created_by, region) VALUES (?, '', ?, 'USD', ?, 'us')");
+  const insRec = db.prepare(`INSERT INTO fee_records
+    (fee_type, party_name, fee_date, amount, description, base_amount, bonus_amount, reimb_amount, ot_amount, currency, lines, employee_id, status, attachments, approval_status, created_by, approved_by, import_key)
+    VALUES ('cnpay', ?, ?, ?, ?, ?, ?, ?, ?, 'USD', ?, ?, 'resolved', '[]', 'approved', ?, ?, ?)`);
+  try {
+    db.transaction(() => {
+      const empOf = {};
+      for (const x of items) {
+        if (existsStmt.get(x.import_key)) continue;
+        let empId = nameTo[x.name].id;
+        if (!empId) {
+          if (!empOf[x.name]) {
+            // 同名员工已在国内名册里也没关系, 美国名册另建一个 (名字唯一约束是按全名册的, 撞了加后缀)
+            let nm = x.name.slice(0, 100);
+            if (db.prepare('SELECT 1 FROM cn_employees WHERE name=? COLLATE NOCASE').get(nm)) nm = `${nm} (US)`;
+            empOf[x.name] = insEmp.run(nm, 'Gusto 工资单导入时自动建档', req.userName || '').lastInsertRowid;
+            createdEmps.push(empOf[x.name]);
+          }
+          empId = empOf[x.name];
+        }
+        const emp = db.prepare('SELECT name FROM cn_employees WHERE id=?').get(empId);
+        const c = _usPayLines(x);
+        createdIds.push(insRec.run(emp ? emp.name : x.name, x.pay_day, c.total, _usPayDesc(x), c.base, c.bonus, c.reimb, c.ot,
+          JSON.stringify(c.lines), empId, req.userName || '', req.userName || '', x.import_key).lastInsertRowid);
+      }
+    })();
+  } catch (e) { return res.status(500).json({ error: '导入失败：' + e.message }); }
+  db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('us_payroll_last_import', ?, CURRENT_TIMESTAMP)")
+    .run(JSON.stringify({ file: req.file.originalname || '', at: new Date().toISOString(), by: req.userName || '', record_ids: createdIds, employee_ids: createdEmps }));
+  auditLog('us_payroll_import', req, { targetType: 'fee_records', targetId: req.file.originalname || 'payroll-journal',
+    details: { added: createdIds.length, skipped_existing: items.length - createdIds.length, new_employees: createdEmps.length } });
+  res.json({ success: true, added: createdIds.length, skipped_existing: items.length - createdIds.length, new_employees: createdEmps.length });
+});
+app.get('/api/acct/us-payroll/last-import', requireAdmin, requireRole('admin'), (req, res) => {
+  const row = db.prepare("SELECT value FROM app_settings WHERE key='us_payroll_last_import'").get();
+  let info = null; try { info = row ? JSON.parse(row.value) : null; } catch (e) { info = null; }
+  res.json(info ? { file: info.file, at: info.at, by: info.by, records: (info.record_ids || []).length, employees: (info.employee_ids || []).length } : null);
+});
+// 撤销上次导入: 删掉那次新增的工资记录 (连同付款批注) 和那次自动建的、已经没有工资记录的员工
+app.post('/api/acct/us-payroll/import-undo', requireAdmin, requireRole('admin'), (req, res) => {
+  const row = db.prepare("SELECT value FROM app_settings WHERE key='us_payroll_last_import'").get();
+  let info = null; try { info = row ? JSON.parse(row.value) : null; } catch (e) { info = null; }
+  if (!info) return res.status(400).json({ error: '没有可撤销的导入' });
+  let removed = 0, empRemoved = 0;
+  db.transaction(() => {
+    for (const id of info.record_ids || []) {
+      const r = db.prepare("DELETE FROM fee_records WHERE id=? AND fee_type='cnpay' AND import_key IS NOT NULL").run(id);
+      if (r.changes) { removed++; db.prepare("DELETE FROM acct_pay_notes WHERE target_type='fee' AND target_id=?").run(id); }
+    }
+    for (const id of info.employee_ids || []) {
+      if (db.prepare("SELECT 1 FROM fee_records WHERE fee_type='cnpay' AND employee_id=?").get(id)) continue;
+      empRemoved += db.prepare("DELETE FROM cn_employees WHERE id=? AND region='us'").run(id).changes;
+    }
+    db.prepare("DELETE FROM app_settings WHERE key='us_payroll_last_import'").run();
+  })();
+  auditLog('us_payroll_import_undo', req, { targetType: 'fee_records', targetId: info.file || '', details: { removed, employees_removed: empRemoved } });
+  res.json({ success: true, removed, employees_removed: empRemoved });
+});
 function _cnPayLines(raw, opt = {}) {
   const uploads = (opt.uploads || []).slice();
   const oldBy = new Map();
@@ -44614,7 +44761,13 @@ function _cnPayLines(raw, opt = {}) {
     // Bonus 关联的介绍费 HR 奖励: '<介绍 id>:<节点>'
     const ref = (Array.isArray(l && l.ref_hb) ? l.ref_hb : []).map(String).filter(k => /^\d{1,9}:[\w,]{1,40}$/.test(k)).slice(0, 300);
     if (ref.length && kind === 'bonus') o.ref_hb = ref;
-    if (kind === 'ot') { o.hours = r2(l && l.hours); o.rate = r2(l && l.rate); o.amount = r2(o.hours * o.rate); }
+    if (kind === 'ot') {
+      o.hours = r2(l && l.hours); o.rate = r2(l && l.rate);
+      // Gusto 导入的加班: 时薪是四舍五入过的, 报告金额和 小时×时薪 差几分钱 → 小时 / 时薪没改就保留报告金额
+      const calc = r2(o.hours * o.rate), given = r2(l && l.amount);
+      if (l && l.amt_fixed && given && Math.abs(given - calc) <= o.hours * 0.005 + 0.01) { o.amount = given; o.amt_fixed = true; }
+      else o.amount = calc;
+    }
     const keep = (Array.isArray(l && l.files) ? l.files : []).map(f => oldBy.get(f && f.path)).filter(Boolean);
     const n = Math.max(0, Math.min(parseInt(l && l.new_files) || 0, uploads.length));
     const files = keep.concat(uploads.splice(0, n).map(fl => ({ path: `/uploads/${fl.filename}`, name: _claimFname(fl) })));
