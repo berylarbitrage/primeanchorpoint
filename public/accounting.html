@@ -919,6 +919,10 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
   <div id="paneCn" style="display:none">
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
       <input type="text" id="cnSearch" placeholder="搜员工 / 月份 / 明细…" oninput="cnRender()" style="width:220px">
+      <span id="cnViewSw" style="display:none;border:1px solid var(--g200);border-radius:8px;overflow:hidden">
+        <button data-v="emp" onclick="cnSetView('emp')" style="border:none;padding:.4rem .8rem;cursor:pointer;font-weight:700;font-size:.8rem">👤 按员工</button>
+        <button data-v="day" onclick="cnSetView('day')" style="border:none;border-left:1px solid var(--g200);padding:.4rem .8rem;cursor:pointer;font-weight:700;font-size:.8rem">📅 按发薪日</button>
+      </span>
       <button class="btn btn-blue" id="btnCnEmpAdd" onclick="cnEmpOpen()" style="display:none">＋ 添加员工</button>
       <button class="btn btn-outline" id="btnUsImport" onclick="usImpOpen()" style="display:none;color:#b45309;border-color:#fcd34d" title="Gusto → Reports → Payroll Journal 导出的 CSV / Excel">📥 导入 Gusto 工资单</button>
       <span id="usImpLast" style="font-size:.74rem;color:var(--g500)"></span>
@@ -5659,6 +5663,19 @@ const _cnOpen = new Set();
 function canEditCn() { return USER.role === 'admin'; }
 // 当前页签: 'cn' 国内工资 / 'us' 美国员工工资 (同一套名册和记录, 按员工 region 分开)
 let _cnRegion = 'cn';
+// 美国员工工资的看法: 'emp' 按员工 / 'day' 按发薪日 (记在本机浏览器)
+let _cnView = (() => { try { return localStorage.getItem('us_pay_view') === 'day' ? 'day' : 'emp'; } catch (e) { return 'emp'; } })();
+function cnSetView(v) {
+  _cnView = v === 'day' ? 'day' : 'emp';
+  try { localStorage.setItem('us_pay_view', _cnView); } catch (e) {}
+  _cnViewBtns();
+  cnRender();
+}
+function _cnViewBtns() {
+  const box = document.getElementById('cnViewSw');
+  box.style.display = _cnRegion === 'us' ? 'inline-flex' : 'none';
+  box.querySelectorAll('button').forEach(b => { const on = b.dataset.v === _cnView; b.style.background = on ? '#0f4c6b' : '#fff'; b.style.color = on ? '#fff' : '#1f2937'; });
+}
 const _cnRegionLabel = rg => rg === 'us' ? '美国员工' : '国内员工';
 const _cnEmpRegion = id => { const e = (_cnEmps || []).find(x => x.id === id); return e ? (e.region || 'cn') : 'cn'; };
 function canSeeAllCn() { return ['admin', 'accounting'].includes(USER.role); }
@@ -5693,6 +5710,7 @@ function _cnLines(f) {
 }
 async function cnLoad() {
   document.getElementById('btnCnEmpAdd').style.display = canEditCn() ? '' : 'none';
+  _cnViewBtns();
   const usAdmin = _cnRegion === 'us' && USER.role === 'admin';
   document.getElementById('btnUsImport').style.display = usAdmin ? '' : 'none';
   document.getElementById('usImpLast').innerHTML = '';
@@ -5730,6 +5748,42 @@ function cnRender() {
     });
     return Object.entries(by).map(([c, t]) => `Base ${_cnMoney(t.base, c)} · Bonus ${_cnMoney(t.bonus, c)}${t.ot ? ` · 加班 ${_cnMoney(t.ot, c)}` : ''} · 报销 ${_cnMoney(t.reimb, c)} · <b style="color:#dc2626">合计 ${_cnMoney(t.total, c)}</b>`).join('<br>');
   };
+  // 一条工资记录的表格行 (+ 展开的明细); byName: 第一列显示员工名 (按发薪日看时)
+  const rowHtml = (f, e, byName) => {
+    const ls = _cnLines(f), open = _cnOpen.has(f.id), cur = f.currency || 'CNY';
+    const ap = f.approval_status || 'approved';
+    const atts = Array.isArray(f.attachments) ? f.attachments : [];
+    // 明细行上的凭证只显示个数, 展开明细看具体哪一项
+    const lineN = ls.reduce((t, l) => t + ((l.files || []).length), 0);
+    const files = (atts.length ? atts.map((a, i) => `<a href="${esc(a.path)}" target="_blank" title="${esc(a.name || '')}" style="color:#0f4c6b;text-decoration:underline;margin-right:5px;white-space:nowrap">${atts.length > 1 ? '文件' + (i + 1) : '查看'}</a>`).join('') : lineN ? '' : '<span style="color:var(--g400)">—</span>')
+      + (lineN ? `<a style="cursor:pointer;font-size:.72rem;color:var(--g500);white-space:nowrap" onclick="cnToggle(${f.id})" title="展开明细看每一项的凭证">📎 明细 ${lineN} 个</a>` : '');
+    const status = ap === 'pending'
+      ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#fff7ed;color:#c2410c;border:1px solid #fed7aa">⏳ 待审核</span>'
+        + (f.created_by ? `<div style="font-size:.68rem;color:var(--g400)">${esc(f.created_by)} 提交</div>` : '')
+        + (USER.role === 'admin' ? `<div style="white-space:nowrap"><a style="cursor:pointer;color:#15803d;font-size:.74rem;text-decoration:underline" onclick="feeApprove(${f.id},'approve')">✅ 通过</a><a style="cursor:pointer;color:#dc2626;font-size:.74rem;text-decoration:underline;margin-left:8px" onclick="feeApprove(${f.id},'reject')">✖ 拒绝</a></div>` : '')
+      : ap === 'rejected'
+        ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#f3f4f6;color:#6b7280">✖ 已拒绝</span>' + (f.approval_note ? `<div style="font-size:.68rem;color:var(--g400)">${esc(f.approval_note)}</div>` : '')
+        : _feeStatusBadge(f).replace(/feeStatusToggle\(/, 'cnStatusToggle(');
+    const canEdit = e && canEditCn() && (USER.role === 'admin' || ap !== 'approved');
+    const col = k => `<td style="text-align:right;white-space:nowrap">${f[k + '_amount'] != null ? _cnMoney(f[k + '_amount'], cur) : '<span style="color:var(--g300)">—</span>'}<div style="font-size:.68rem;color:var(--g400)">${ls.filter(l => l.kind === k).length || ''}${ls.some(l => l.kind === k) ? ' 项' : ''}</div></td>`;
+    const detail = open ? `<tr><td colspan="10" style="background:#f8fafc;padding:.5rem .8rem">
+        <div style="display:flex;gap:1rem;flex-wrap:wrap">${CN_KINDS.map(([k, label]) => {
+          const items = ls.filter(l => l.kind === k);
+          return `<div style="flex:1;min-width:200px"><div style="font-weight:700;font-size:.78rem;margin-bottom:.2rem">${label}</div>`
+            + (items.length ? `<table style="width:100%;font-size:.78rem">${items.map(l => `<tr><td style="padding:2px 4px">${esc(l.desc || '—')}${l.kind === 'ot' ? `<div style="font-size:.7rem;color:var(--g500)">⏱ ${Number(l.hours) || 0} 小时 × ${_cnMoney(l.rate, cur)}/小时</div>` : ''}${l.note ? `<div style="font-size:.7rem;color:var(--g500)">💬 ${esc(l.note)}</div>` : ''}${(l.files || []).length ? `<div style="font-size:.7rem">${l.files.map((f, j) => `<a href="${esc(f.path)}" target="_blank" title="${esc(f.name || '')}" style="color:#0f4c6b;text-decoration:underline;margin-right:6px;white-space:nowrap">📎 ${l.files.length > 1 ? '凭证' + (j + 1) : '凭证'}</a>`).join('')}</div>` : ''}</td><td style="padding:2px 4px;color:var(--g400);white-space:nowrap">${esc(l.date || '')}</td><td style="padding:2px 4px;text-align:right;white-space:nowrap">${_cnMoney(l.amount, cur)}</td></tr>`).join('')}</table>`
+              : '<div style="font-size:.76rem;color:var(--g400)">无</div>') + '</div>';
+        }).join('')}</div>
+        ${f.description ? `<div style="font-size:.76rem;color:var(--g500);margin-top:.4rem;white-space:pre-line">备注：${esc(f.description)}</div>` : ''}
+      </td></tr>` : '';
+    return `<tr${ap === 'rejected' ? ' style="opacity:.55"' : ''}>
+      <td style="white-space:nowrap"><a style="cursor:pointer;color:#0f4c6b;font-weight:600" onclick="cnToggle(${f.id})">${open ? '▾' : '▸'} ${byName ? esc(f.party_name || (e && e.name) || '—') : esc(f.fee_date || '—')}</a></td>
+      ${col('base')}${col('bonus')}${col('ot')}${col('reimb')}
+      <td style="text-align:right;font-weight:700;color:#dc2626;white-space:nowrap">${_cnMoney(f.amount, cur)}</td>
+      <td>${status}</td><td>${files}</td><td>${seeAll ? payNoteCell('fee', f.id, f.pay_note) : payNoteCell('fee', f.id, f.pay_note).replace(/ <a [^>]*openPayNote[^>]*>[^<]*<\/a>/, '')}</td>
+      <td style="white-space:nowrap">${canEdit ? `<a style="cursor:pointer;font-size:.8rem" title="编辑明细" onclick="cpOpen(${e.id}, ${f.id})">✏️</a>` : ''}
+        ${USER.role === 'admin' ? `<a style="cursor:pointer;color:#b91c1c;font-size:.78rem;margin-left:6px" title="删除" onclick="feeDelete(${f.id})">🗑</a>` : ''}</td>
+    </tr>${detail}`;
+  };
   const regRecs = groups.flatMap(g => g.recs);
   const pendN = regRecs.filter(f => f.approval_status === 'pending').length;
   document.getElementById('cnStats').innerHTML = seeAll
@@ -5737,6 +5791,35 @@ function cnRender() {
     : (emps.length ? '🔒 点「输入密码查看」看自己的工资明细' : '');
   if (!shown.length) {
     document.getElementById('cnBody').innerHTML = `<div class="card" style="color:var(--g400);padding:1rem">${q ? '没有匹配的记录。' : admin ? `还没有${_cnRegionLabel(_cnRegion)}，先点「＋ 添加员工」，再给员工录入每月工资。` : seeAll ? `还没有${_cnRegionLabel(_cnRegion)}。` : `你的账号还没关联${_cnRegionLabel(_cnRegion)}，看不到工资记录。请联系管理员。`}</div>`;
+    return;
+  }
+  // 🇺🇸 📅 按发薪日看: 同一天发的工资放一起, 带这次发薪的合计 + 整次关联银行
+  if (_cnRegion === 'us' && _cnView === 'day') {
+    const empOf = f => _cnEmps.find(x => x.id === f.employee_id) || null;
+    const days = {};
+    shown.flatMap(g => g.recs).forEach(f => (days[f.fee_date || '—'] = days[f.fee_date || '—'] || []).push(f));
+    document.getElementById('cnBody').innerHTML = Object.keys(days).sort((a, b) => b.localeCompare(a)).map(day => {
+      const list = days[day].sort((a, b) => String(a.party_name || '').localeCompare(String(b.party_name || '')));
+      const imp = list.filter(f => f.import_key && (f.approval_status || 'approved') !== 'rejected');
+      const r2 = v => Math.round(v * 100) / 100;
+      const mt = k => r2(imp.reduce((t, f) => t + (Number(_usMeta(f)[k]) || 0), 0));
+      const per = ((imp[0] && imp[0].description) || '').match(/工资期 ([\d/]+ - [\d/]+)/);
+      const paidN = list.filter(f => f.pay_note && f.pay_note.paid_status === 'paid').length;
+      const linkedN = list.filter(f => f.pay_note && (f.pay_note.txn_ids || []).length).length;
+      const bankBtn = imp.length && seeAll && canAnnotate()
+        ? `<button class="btn btn-sm ${linkedN === list.length ? 'btn-outline' : 'btn-blue'}" onclick="openPayNoteUsRun('${esc(day)}')">🏦 ${linkedN ? '查看 / 修改关联银行' : '关联银行记录'}</button>` : '';
+      return `<div class="card" style="margin-bottom:.7rem;overflow-x:auto">
+        <div style="display:flex;gap:.6rem;align-items:flex-start;flex-wrap:wrap;margin-bottom:.4rem">
+          <div><div style="font-weight:800;font-size:1rem">📅 ${/^\d{4}-\d{2}-\d{2}$/.test(day) ? '发薪日' : '月份'} ${esc(day)} <span style="font-weight:400;font-size:.8rem;color:var(--g500)">· ${list.length} 人${per ? ' · 工资期 ' + esc(per[1]) : ''}</span></div>
+            <div style="font-size:.78rem;color:var(--g600);margin-top:.15rem">${sumBy(list) || '<span style="color:var(--g400)">暂无已通过的工资</span>'}</div>
+            ${imp.length ? `<div style="font-size:.76rem;color:var(--g500);margin-top:.1rem">Gusto：实发合计 <b>${money(mt('net_pay'))}</b> · 税（员工 + 雇主）${money(r2(mt('employee_taxes') + mt('employer_taxes')))}${mt('k401_employee') + mt('k401_company') ? ` · 401k ${money(r2(mt('k401_employee') + mt('k401_company')))}` : ''} · 雇主总成本 ${money(mt('employer_cost'))}</div>` : ''}
+            <div style="font-size:.74rem;margin-top:.1rem">${paidN === list.length ? '<span style="color:#15803d">✅ 全部已付</span>' : `<span style="color:#b45309">已付 ${paidN} / ${list.length}</span>`}${linkedN ? ` · 🏦 已关联银行 ${linkedN} / ${list.length}` : ''}</div></div>
+          <span style="flex:1"></span>${bankBtn}
+        </div>
+        <table><thead><tr><th>员工</th><th style="text-align:right">Base 底薪</th><th style="text-align:right">Bonus 奖金</th><th style="text-align:right">加班</th><th style="text-align:right">报销</th><th style="text-align:right">合计</th><th>状态</th><th>凭证</th><th>付款批注（会计）</th><th></th></tr></thead>
+        <tbody>${list.map(f => rowHtml(f, empOf(f), true)).join('')}</tbody></table>
+      </div>`;
+    }).join('') || '<div class="card" style="color:var(--g400);padding:1rem">还没有工资记录。</div>';
     return;
   }
   document.getElementById('cnBody').innerHTML = shown.map(g => {
@@ -5752,41 +5835,7 @@ function cnRender() {
           : `<button class="btn btn-sm btn-blue" onclick="cnPwOpen(${e.id})" ${e.has_pw ? '' : 'disabled style="opacity:.45;cursor:not-allowed" title="管理员还没给这个员工设查看密码"'}>🔒 输入密码查看</button>`)
         : '';
     const locked = e && !seeAll && !_cnUnlocked.has(e.id);
-    const rows = g.recs.map(f => {
-      const ls = _cnLines(f), open = _cnOpen.has(f.id), cur = f.currency || 'CNY';
-      const ap = f.approval_status || 'approved';
-      const atts = Array.isArray(f.attachments) ? f.attachments : [];
-      // 明细行上的凭证只显示个数, 展开明细看具体哪一项
-      const lineN = ls.reduce((t, l) => t + ((l.files || []).length), 0);
-      const files = (atts.length ? atts.map((a, i) => `<a href="${esc(a.path)}" target="_blank" title="${esc(a.name || '')}" style="color:#0f4c6b;text-decoration:underline;margin-right:5px;white-space:nowrap">${atts.length > 1 ? '文件' + (i + 1) : '查看'}</a>`).join('') : lineN ? '' : '<span style="color:var(--g400)">—</span>')
-        + (lineN ? `<a style="cursor:pointer;font-size:.72rem;color:var(--g500);white-space:nowrap" onclick="cnToggle(${f.id})" title="展开明细看每一项的凭证">📎 明细 ${lineN} 个</a>` : '');
-      const status = ap === 'pending'
-        ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#fff7ed;color:#c2410c;border:1px solid #fed7aa">⏳ 待审核</span>'
-          + (f.created_by ? `<div style="font-size:.68rem;color:var(--g400)">${esc(f.created_by)} 提交</div>` : '')
-          + (USER.role === 'admin' ? `<div style="white-space:nowrap"><a style="cursor:pointer;color:#15803d;font-size:.74rem;text-decoration:underline" onclick="feeApprove(${f.id},'approve')">✅ 通过</a><a style="cursor:pointer;color:#dc2626;font-size:.74rem;text-decoration:underline;margin-left:8px" onclick="feeApprove(${f.id},'reject')">✖ 拒绝</a></div>` : '')
-        : ap === 'rejected'
-          ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#f3f4f6;color:#6b7280">✖ 已拒绝</span>' + (f.approval_note ? `<div style="font-size:.68rem;color:var(--g400)">${esc(f.approval_note)}</div>` : '')
-          : _feeStatusBadge(f).replace(/feeStatusToggle\(/, 'cnStatusToggle(');
-      const canEdit = e && canEditCn() && (USER.role === 'admin' || ap !== 'approved');
-      const col = k => `<td style="text-align:right;white-space:nowrap">${f[k + '_amount'] != null ? _cnMoney(f[k + '_amount'], cur) : '<span style="color:var(--g300)">—</span>'}<div style="font-size:.68rem;color:var(--g400)">${ls.filter(l => l.kind === k).length || ''}${ls.some(l => l.kind === k) ? ' 项' : ''}</div></td>`;
-      const detail = open ? `<tr><td colspan="10" style="background:#f8fafc;padding:.5rem .8rem">
-          <div style="display:flex;gap:1rem;flex-wrap:wrap">${CN_KINDS.map(([k, label]) => {
-            const items = ls.filter(l => l.kind === k);
-            return `<div style="flex:1;min-width:200px"><div style="font-weight:700;font-size:.78rem;margin-bottom:.2rem">${label}</div>`
-              + (items.length ? `<table style="width:100%;font-size:.78rem">${items.map(l => `<tr><td style="padding:2px 4px">${esc(l.desc || '—')}${l.kind === 'ot' ? `<div style="font-size:.7rem;color:var(--g500)">⏱ ${Number(l.hours) || 0} 小时 × ${_cnMoney(l.rate, cur)}/小时</div>` : ''}${l.note ? `<div style="font-size:.7rem;color:var(--g500)">💬 ${esc(l.note)}</div>` : ''}${(l.files || []).length ? `<div style="font-size:.7rem">${l.files.map((f, j) => `<a href="${esc(f.path)}" target="_blank" title="${esc(f.name || '')}" style="color:#0f4c6b;text-decoration:underline;margin-right:6px;white-space:nowrap">📎 ${l.files.length > 1 ? '凭证' + (j + 1) : '凭证'}</a>`).join('')}</div>` : ''}</td><td style="padding:2px 4px;color:var(--g400);white-space:nowrap">${esc(l.date || '')}</td><td style="padding:2px 4px;text-align:right;white-space:nowrap">${_cnMoney(l.amount, cur)}</td></tr>`).join('')}</table>`
-                : '<div style="font-size:.76rem;color:var(--g400)">无</div>') + '</div>';
-          }).join('')}</div>
-          ${f.description ? `<div style="font-size:.76rem;color:var(--g500);margin-top:.4rem;white-space:pre-line">备注：${esc(f.description)}</div>` : ''}
-        </td></tr>` : '';
-      return `<tr${ap === 'rejected' ? ' style="opacity:.55"' : ''}>
-        <td style="white-space:nowrap"><a style="cursor:pointer;color:#0f4c6b;font-weight:600" onclick="cnToggle(${f.id})">${open ? '▾' : '▸'} ${esc(f.fee_date || '—')}</a></td>
-        ${col('base')}${col('bonus')}${col('ot')}${col('reimb')}
-        <td style="text-align:right;font-weight:700;color:#dc2626;white-space:nowrap">${_cnMoney(f.amount, cur)}</td>
-        <td>${status}</td><td>${files}</td><td>${seeAll ? payNoteCell('fee', f.id, f.pay_note) : payNoteCell('fee', f.id, f.pay_note).replace(/ <a [^>]*openPayNote[^>]*>[^<]*<\/a>/, '')}</td>
-        <td style="white-space:nowrap">${canEdit ? `<a style="cursor:pointer;font-size:.8rem" title="编辑明细" onclick="cpOpen(${e.id}, ${f.id})">✏️</a>` : ''}
-          ${USER.role === 'admin' ? `<a style="cursor:pointer;color:#b91c1c;font-size:.78rem;margin-left:6px" title="删除" onclick="feeDelete(${f.id})">🗑</a>` : ''}</td>
-      </tr>${detail}`;
-    }).join('');
+    const rows = g.recs.map(f => rowHtml(f, e)).join('');
     return `<div class="card" style="margin-bottom:.7rem;overflow-x:auto">
       <div style="display:flex;gap:.6rem;align-items:flex-start;flex-wrap:wrap;margin-bottom:.4rem">
         <div><div style="font-weight:800;font-size:1rem">👤 ${esc(g.name)}${e && e.title ? ` <span style="font-weight:400;font-size:.8rem;color:var(--g500)">· ${esc(e.title)}</span>` : ''}${e && e.profile_id ? ` <a href="/admin.html?emp=${e.profile_id}" target="_blank" title="打开员工档案" style="font-size:.72rem;font-weight:700;color:#047857;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:6px;padding:1px 6px;text-decoration:none">🔗 员工档案${e.profile_code ? ' ' + esc(e.profile_code) : ''}</a>` : ''}</div>
