@@ -44009,7 +44009,10 @@ app.post('/api/acct/pallet-mail/poll', requireAdmin, requireRole('admin'), async
 // 📜 历史邮件补转: 选开始日期 (和邮箱), 先扫描出命中规则、还没转过的邮件 (不管规则 / 邮箱是什么时候
 // 连的), 管理员勾选后在后台按时间从旧到新补转。同一时间只跑一个; 补转时自动检查暂停, 免得同一封转两次。
 // 补转记成 by_user='auto' (reason 标「历史补转」), 以后自动检查就当它已经转过。
-const PM_HIST_MAX = 500;   // 每个邮箱一次最多扫这么多封
+// 扫描时先用规则拼的 Gmail 搜索条件粗筛 (只列出可能命中的邮件), 再并发取邮件头精确比对,
+// 所以上限可以放宽很多。
+const PM_HIST_MAX = 5000;      // 每个邮箱一次最多看这么多封 (粗筛之后的)
+const PM_HIST_CONCURRENCY = 8; // 同时取几封的邮件头 (Gmail 每个账号每秒约 50 次 get, 8 个并发很安全)
 let _pmHist = null;        // { phase: scanning|ready|forwarding|done|error, by, since, until, account_id, items, progress, ... }
 function _pmHistPublic() {
   if (!_pmHist) return null;
@@ -44034,15 +44037,28 @@ async function _pmHistScan(job) {
         const l = (await pmail.listLabels(token)).find(x => String(x.name).toLowerCase() === String(cfg.label).toLowerCase());
         labelId = l ? l.id : '';
       }
+      // 只有设了标签而且这个邮箱里真有这个标签, 才把标签放进粗筛条件
+      const pre = pmail.prefilterQuery(rules, labelId ? cfg.label : '');
+      if (pre === '') continue;   // 没有生效的规则也没有标签 → 这个邮箱没东西可转
       let q = `after:${_pmDayEpoch(job.since)} -from:me -in:sent -in:chats -in:spam -in:trash`;
       if (job.until) q += ` before:${_pmDayEpoch(job.until) + 86400}`;
+      if (pre) q += ' ' + pre;
       const ids = await pmail.listMessageIds(token, q, PM_HIST_MAX + 1);
       if (ids.length > PM_HIST_MAX) { job.truncated = true; ids.length = PM_HIST_MAX; }
       job.total_to_scan += ids.length;
+      const todo = [];
       for (const id of ids) {
-        job.scanned++;
-        if (_pmAutoDone(acc.id, id)) { job.skipped_done++; continue; }
-        const meta = await pmail.getMessageMeta(token, id);
+        if (_pmAutoDone(acc.id, id)) { job.skipped_done++; job.scanned++; } else todo.push(id);
+      }
+      // 并发取邮件头; 下面比对 / 去重仍按 Gmail 返回的顺序一封封做, 结果和以前一样
+      const metas = await pmail.mapLimit(todo, PM_HIST_CONCURRENCY, async id => {
+        try { return await pmail.getMessageMeta(token, id); }
+        catch (e) { job.errors.push(`${acc.email}：${id} ${e.message}`); return null; }
+        finally { job.scanned++; }
+      });
+      for (let i = 0; i < todo.length; i++) {
+        const id = todo[i], meta = metas[i];
+        if (!meta) continue;
         if (pmail.header(meta, pmail.FORWARD_HEADER)) continue;
         if (ownEmails.has(pmail.emailOf(pmail.header(meta, 'From')))) continue;
         const m = { from: pmail.header(meta, 'From'), subject: pmail.header(meta, 'Subject'), snippet: meta.snippet || '', labelIds: meta.labelIds || [], internalDate: meta.internalDate };

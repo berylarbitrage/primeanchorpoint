@@ -6429,7 +6429,7 @@ function pmHistRender() {
         <select id="pmHAcc"><option value="">全部已连接的邮箱</option>${accs.map(a => `<option value="${a.id}">${esc(a.email)}</option>`).join('')}</select>
         <button class="btn btn-sm btn-blue" onclick="pmHistScan(this)">🔍 扫描</button>
       </div>
-      <div style="${small};margin-top:.35rem">先扫描、列出会被转发的邮件（不会马上发），你勾选确认后再转发。已经转过的不会重复转；每个邮箱一次最多扫 ${500} 封。</div>`;
+      <div style="${small};margin-top:.35rem">先扫描、列出会被转发的邮件（不会马上发），你勾选确认后再转发。已经转过的不会重复转。只看发件人 / 关键词 / 标签对得上的邮件，每个邮箱一次最多 5000 封。</div>`;
     return;
   }
   const head = `<div style="${small};margin-bottom:.4rem">${esc(j.since)} ~ ${esc(j.until || '今天')} · ${j.account_id ? esc((accs.find(a => a.id === j.account_id) || {}).email || '') : '全部邮箱'} · ${esc(j.by)} 发起</div>`;
@@ -6452,7 +6452,7 @@ function pmHistRender() {
         <td><span data-tip="${esc(it.reason)}">${esc(it.rule_names)}</span></td>
         <td>${_pmToList(it.to.join(', '))}</td></tr>`).join('')}
     </table></div>` : '';
-  const stats = `看了 ${j.scanned} 封${j.truncated ? `（<span style="color:#b45309">有邮箱超过 500 封，只扫了最新的 500 封，可以把开始日期往后挪一点分几次扫</span>）` : ''}，找到 <b>${j.items.length}</b> 封要转发${j.skipped_done ? `，${j.skipped_done} 封以前已转过` : ''}${j.skipped_dup ? `，${j.skipped_dup} 封别的邮箱已转过 / 重复` : ''}`;
+  const stats = `看了 ${j.scanned} 封${j.truncated ? `（<span style="color:#b45309">有邮箱对得上规则的邮件超过 5000 封，只扫了最新的 5000 封，可以把开始日期往后挪一点分几次扫</span>）` : ''}，找到 <b>${j.items.length}</b> 封要转发${j.skipped_done ? `，${j.skipped_done} 封以前已转过` : ''}${j.skipped_dup ? `，${j.skipped_dup} 封别的邮箱已转过 / 重复` : ''}`;
   const errs = j.errors && j.errors.length ? `<div style="color:#b91c1c;font-size:.78rem">⚠ ${j.errors.map(esc).join('；')}</div>` : '';
   if (ready) {
     box.innerHTML = head + `<div style="font-size:.84rem">${stats}</div>${errs}${table}

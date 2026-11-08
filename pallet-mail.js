@@ -60,13 +60,22 @@ function refreshToken({ clientId, clientSecret, refreshToken: rt }, fetchImpl) {
   return _tokenReq({ client_id: clientId, client_secret: clientSecret, refresh_token: rt, grant_type: 'refresh_token' }, fetchImpl);
 }
 
+const _sleep = ms => new Promise(r => setTimeout(r, ms));
 async function gmail(token, path, opts = {}, fetchImpl) {
-  const r = await (fetchImpl || fetch)((opts.upload ? UPLOAD_API : API) + path, {
-    method: opts.method || 'GET',
-    headers: { Authorization: 'Bearer ' + token, ...(opts.headers || {}) },
-    body: opts.body,
-  });
-  const j = await r.json().catch(() => ({}));
+  const method = opts.method || 'GET';
+  let r, j;
+  // 只读请求遇到限流 (429) / Google 临时错误 (5xx) 等一下重试; 发信不重试, 免得重复发
+  for (let attempt = 0; ; attempt++) {
+    r = await (fetchImpl || fetch)((opts.upload ? UPLOAD_API : API) + path, {
+      method,
+      headers: { Authorization: 'Bearer ' + token, ...(opts.headers || {}) },
+      body: opts.body,
+    });
+    j = await r.json().catch(() => ({}));
+    const retryable = method === 'GET' && (r.status === 429 || r.status >= 500);
+    if (!retryable || attempt >= 4) break;
+    await _sleep((opts.retryBaseMs != null ? opts.retryBaseMs : 1000) * 2 ** attempt);
+  }
   if (!r.ok) {
     const e = new Error((j.error && (j.error.message || j.error.status)) || ('Gmail HTTP ' + r.status));
     e.status = r.status;
@@ -80,12 +89,44 @@ async function listMessageIds(token, q, max, f) {
   const out = [];
   let pageToken = '';
   do {
-    const p = new URLSearchParams({ q, maxResults: String(Math.min(100, max - out.length)) });
+    // Gmail 一页最多 500 个 id
+    const p = new URLSearchParams({ q, maxResults: String(Math.min(500, max - out.length)) });
     if (pageToken) p.set('pageToken', pageToken);
     const j = await gmail(token, '/messages?' + p.toString(), {}, f);
     (j.messages || []).forEach(m => out.push(m.id));
     pageToken = j.nextPageToken || '';
   } while (pageToken && out.length < max);
+  return out;
+}
+// 按规则拼一个 Gmail 搜索条件, 让 Gmail 先替我们筛: 只列出「发件人在名单里 / 含关键词 / 带指定标签」的邮件,
+// 不用把这段时间的所有邮件一封封取回来比对。这只是粗筛, 列出来的每封还会用 ruleMatch 精确判断一次。
+// 返回 '' = 没有任何可筛的条件 (没有生效的规则也没设标签)。条件太长 (规则特别多) 返回 null = 不粗筛, 全扫。
+const _qTerm = s => /^[^\s"(){}]+$/.test(s) ? s : '"' + String(s).replace(/["(){}]/g, ' ').trim() + '"';
+function prefilterQuery(rules, labelName) {
+  const terms = [];
+  const add = t => { if (t && !terms.includes(t)) terms.push(t); };
+  for (const r of rules || []) {
+    if (!r || !r.active) continue;
+    for (const raw of splitList(r.senders)) {
+      const v = raw.toLowerCase().replace(/^.*<|>.*$/g, '').replace(/^@/, '').trim();
+      if (v) add('from:' + _qTerm(v));
+    }
+    for (const k of splitList(r.keywords)) {
+      const v = k.replace(/["(){}]/g, ' ').trim();
+      if (v) add('"' + v + '"');
+    }
+  }
+  if (labelName) add('label:' + _qTerm(String(labelName).trim().replace(/\s+/g, '-')));
+  if (!terms.length) return '';
+  const q = '{' + terms.join(' ') + '}';   // Gmail 里 {a b c} = a OR b OR c
+  return q.length > 1800 ? null : q;
+}
+// 并发跑 fn(item), 同时最多 limit 个, 结果按原顺序返回
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => { while (next < items.length) { const i = next++; out[i] = await fn(items[i], i); } };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
   return out;
 }
 function getMessageMeta(token, id, f) {
@@ -241,6 +282,6 @@ async function forwardMessage(token, { msgId, from, to, note }, f) {
 
 module.exports = {
   SCOPES, FORWARD_HEADER, authorizeUrl, exchangeCode, refreshToken,
-  profile, listLabels, listMessageIds, getMessageMeta, getMessageFull, forwardMessage,
+  profile, listLabels, listMessageIds, prefilterQuery, mapLimit, getMessageMeta, getMessageFull, forwardMessage,
   header, emailOf, splitList, isEmail, ruleMatch, matchMessage, walkParts, buildForward,
 };
