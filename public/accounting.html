@@ -2260,7 +2260,40 @@ async function openPayNoteBatch(ids) {
   document.getElementById('pnTxnAmtBtn').textContent = `🔎 找 ${money(_payTargetAmt)}`;
   pnTxnSumRefresh();
 }
-async function openPayNote(type, id) {
+// 🇺🇸 Gusto 导入的工资: 同一发薪日的所有人一起关联银行记录
+const _usMeta = f => { try { return (typeof f.payroll_meta === 'string' ? JSON.parse(f.payroll_meta || 'null') : f.payroll_meta) || {}; } catch (e) { return {}; } };
+async function openPayNoteUsRun(day, clickedId) {
+  const rows = _feeList.filter(f => f.fee_type === 'cnpay' && f.import_key && f.fee_date === day && (f.approval_status || 'approved') !== 'rejected');
+  if (!rows.length) return;
+  const r2 = v => Math.round(v * 100) / 100;
+  const tot = k => r2(rows.reduce((s, f) => s + (Number(_usMeta(f)[k]) || 0), 0));
+  const run = { net: tot('net_pay'), tax: r2(tot('employee_taxes') + tot('employer_taxes')), k401: r2(tot('k401_employee') + tot('k401_company')), cost: tot('employer_cost') };
+  const first = rows.find(f => f.id === clickedId) || rows[0];
+  await openPayNote('fee', first.id, true);
+  _payTarget = { type: 'fee', id: first.id, usRun: rows.map(f => ({ id: f.id, amt: Number(_usMeta(f).net_pay) || Number(f.amount) || 0 })), usRunTot: run };
+  _payTargetAmt = run.net;
+  // 已经关联过的银行记录 (任何一个人身上的) 都先勾上
+  rows.forEach(f => ((f.pay_note && f.pay_note.txns) || []).forEach(t => { _pnSel.add(t.txn_id); _pnTxnInfo[t.txn_id] = t; }));
+  document.getElementById('pnTitle').innerHTML = `🇺🇸 Gusto 发薪日 <b>${esc(day)}</b> · ${rows.length} 人（${rows.map(f => esc(f.party_name)).join('、')}）`
+    + `<br>实发合计 <b>${money(run.net)}</b> · 税（员工 + 雇主）<b>${money(run.tax)}</b>${run.k401 ? ` · 401k ${money(run.k401)}` : ''} · 雇主总成本 ${money(run.cost)}`
+    + `<br><span style="color:#b45309">Gusto 每次发薪一般从银行扣两笔：实发合计一笔、税一笔。勾上之后这次发薪的每个人都关联到这些银行记录，按各自的实发记已付。</span>`
+    + ` <a style="cursor:pointer;text-decoration:underline;color:#0f4c6b" onclick="closePayNote();openPayNote('fee', ${first.id}, true)">只关联 ${esc(first.party_name)} 这一笔</a>`;
+  document.getElementById('pnStatus').value = 'paid';
+  const amt = document.getElementById('pnAmount');
+  amt.value = ''; amt.disabled = true; amt.placeholder = '每人按自己的实发 Net Pay 记';
+  const dd = (d, n) => { const x = new Date(d + 'T00:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
+  window._pnUsFilt = true;
+  document.getElementById('pnTxnQ').value = 'gusto';
+  document.getElementById('pnTxnFrom').value = dd(day, -10);
+  document.getElementById('pnTxnTo').value = dd(day, 3);
+  document.getElementById('pnTxnAmtBtn').textContent = `🔎 找 ${money(run.net)}`;
+  pnTxnLoad();
+}
+async function openPayNote(type, id, single) {
+  // Gusto 导入的美国员工工资: 按整次发薪 (同一发薪日的所有人) 一起关联银行
+  if (type === 'fee' && !single) { const f = _feeList.find(x => x.id === id); if (f && f.fee_type === 'cnpay' && f.import_key) return openPayNoteUsRun(f.fee_date, id); }
+  // 上一次按发薪日关联时自动填的筛选 (gusto / 日期) 清掉, 别带到别的记录上
+  if (window._pnUsFilt) { window._pnUsFilt = false; ['pnTxnQ', 'pnTxnFrom', 'pnTxnTo'].forEach(k => { document.getElementById(k).value = ''; }); }
   const _amtIn = document.getElementById('pnAmount');
   _amtIn.disabled = false; _amtIn.placeholder = '例：1770.65';
   const list = type === 'invoice' ? _invList : type === 'fee' ? _feeList : type === 'referralweek' ? _refWeeks : type === 'referral' ? _refList : (type === 'pallet' || type === 'palletbill' || type === 'palletmanual') ? _palletRows : (type === 'truck' || type === 'truckfee' || type === 'truckorder') ? _truckRows : _claimList;
@@ -2365,6 +2398,14 @@ function pnTxnToggle(cb) {
 }
 function pnTxnSumRefresh() {
   const sum = [..._pnSel].reduce((s, id) => s + Math.abs(Number((_pnTxnInfo[id] || {}).amount) || 0), 0);
+  const run = _payTarget && _payTarget.usRunTot;
+  if (run && _pnSel.size) {
+    // Gusto 一次发薪通常扣两笔: 实发合计 + 税 (有 401k 的还有一笔); 选中的合计对上其中一种组合就算吻合
+    const combos = [['实发合计', run.net], ['实发 + 税', run.net + run.tax], ['实发 + 税 + 401k', run.net + run.tax + run.k401], ['税', run.tax], ['雇主总成本', run.cost]];
+    const hit = combos.find(([, v]) => v > 0 && Math.abs(sum - v) < 0.01);
+    document.getElementById('pnTxnSum').innerHTML = `已选 <b>${_pnSel.size}</b> 笔 · 合计 <b>${money(sum)}</b>　实发合计 ${money(run.net)} · 税 ${money(run.tax)} ${hit ? `<span style="color:#15803d">✓ 等于${hit[0]}</span>` : `<span style="color:#b45309">和实发合计差 ${money(Math.abs(sum - run.net))}</span>`}`;
+    return;
+  }
   const ok = Math.abs(sum - _payTargetAmt) < 0.01 && sum > 0;
   document.getElementById('pnTxnSum').innerHTML = _pnSel.size
     ? `已选 <b>${_pnSel.size}</b> 笔 · 合计 <b>${money(sum)}</b>　应收 ${money(_payTargetAmt)} ${ok ? '<span style="color:#15803d">✓ 金额吻合</span>' : `<span style="color:#b45309">差 ${money(Math.abs(sum - _payTargetAmt))}</span>`}`
@@ -2417,6 +2458,37 @@ async function savePayNote() {
   if (!_payTarget) return;
   const btn = document.getElementById('pnSaveBtn');
   btn.disabled = true;
+  if (_payTarget.usRun) {
+    // 美国员工工资 · 整次发薪: 每人各记一条已付 (金额 = 自己的实发 Net Pay), 银行记录 / 截图共用
+    let ok = 0, err = '';
+    for (const b of _payTarget.usRun) {
+      try {
+        const r = await bapi('/api/acct/pay-note', { method: 'POST', body: JSON.stringify({
+          target_type: 'fee', target_id: b.id, paid_status: document.getElementById('pnStatus').value,
+          bank: document.getElementById('pnBank').value.trim(), amount: b.amt,
+          note: document.getElementById('pnNote').value.trim(), txn_ids: [..._pnSel],
+        }) });
+        if (r && r.error) throw new Error(r.error);
+        let pn = r.pay_note;
+        if (_pnFiles.length && pn && pn.id) {
+          const fd = new FormData();
+          _pnFiles.forEach(f => fd.append('photos', f));
+          const up = await fetch(`/api/acct/pay-notes/${pn.id}/photos`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd }).then(x => x.json());
+          if (up.error) throw new Error(up.error);
+          pn.photos_urls = up.photos_urls || [];
+        }
+        const item = _feeList.find(x => x.id === b.id);
+        if (item) item.pay_note = pn;
+        ok++;
+      } catch (e) { err = err || e.message; }
+    }
+    btn.disabled = false;
+    const n = _payTarget.usRun.length;
+    closePayNote();
+    toast(`🏦 已关联 ${ok} 笔工资${err ? `；${n - ok} 笔没成功（${err}）` : ''}`, !!err);
+    cnRender();
+    return;
+  }
   if (_payTarget.batch) {
     // 批量: 每周各记一条, 金额按各自的, 银行记录 / 截图共用
     let ok = 0, err = '';

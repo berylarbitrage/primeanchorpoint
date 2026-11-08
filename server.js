@@ -44602,6 +44602,22 @@ app.delete('/api/acct/cn-employees/:id', requireAdmin, requireRole('admin'), (re
 // 按 import_key (人 + 发薪日 + 工资期 + 发薪类型) 去重: 每次下载全年报告整份上传即可, 已导过的跳过。
 // 先 dry_run 预览 (每个名字对应哪个员工 / 新建), 管理员确认后再写入; 可撤销上次导入。
 try { db.exec("ALTER TABLE fee_records ADD COLUMN import_key TEXT DEFAULT NULL"); } catch(e) {}
+// 导入时的 Gusto 数字 (JSON): gross / net_pay / employee_taxes / employer_taxes / k401_employee / k401_company / employer_cost,
+// 关联银行时按发薪日汇总 (Gusto 每次发薪从银行扣: 实发合计一笔、税一笔)
+try { db.exec("ALTER TABLE fee_records ADD COLUMN payroll_meta TEXT DEFAULT NULL"); } catch(e) {}
+// 这个字段上线前导入的记录: 从备注文字里把数字补出来
+try {
+  const num = (d, re) => { const m = String(d || '').match(re); return m ? Number(m[1].replace(/,/g, '')) || 0 : 0; };
+  db.prepare("SELECT id, description FROM fee_records WHERE fee_type='cnpay' AND import_key IS NOT NULL AND payroll_meta IS NULL").all().forEach(r => {
+    const d = r.description;
+    db.prepare('UPDATE fee_records SET payroll_meta=? WHERE id=?').run(JSON.stringify({
+      gross: num(d, /税前 Gross \$([\d,.]+)/), net_pay: num(d, /实发 Net Pay \$([\d,.]+)/),
+      employee_taxes: num(d, /员工税 \$([\d,.]+)/), employer_taxes: num(d, /雇主税 \$([\d,.]+)/),
+      k401_employee: num(d, /401k 员工扣 \$([\d,.]+)/), k401_company: num(d, /401k 公司配 \$([\d,.]+)/),
+      employer_cost: num(d, /雇主总成本 \$([\d,.]+)/),
+    }), r.id);
+  });
+} catch(e) { console.error('[us-payroll] payroll_meta backfill', e.message); }
 const gustoJournal = require('./gusto-payroll-journal');
 const usPayrollUpload = multer({
   storage: multer.memoryStorage(),
@@ -44686,8 +44702,8 @@ app.post('/api/acct/us-payroll/import', requireAdmin, requireRole('admin'), usPa
   const createdEmps = [], createdIds = [];
   const insEmp = db.prepare("INSERT INTO cn_employees (name, title, note, currency, created_by, region) VALUES (?, '', ?, 'USD', ?, 'us')");
   const insRec = db.prepare(`INSERT INTO fee_records
-    (fee_type, party_name, fee_date, amount, description, base_amount, bonus_amount, reimb_amount, ot_amount, currency, lines, employee_id, status, attachments, approval_status, created_by, approved_by, import_key)
-    VALUES ('cnpay', ?, ?, ?, ?, ?, ?, ?, ?, 'USD', ?, ?, 'resolved', '[]', 'approved', ?, ?, ?)`);
+    (fee_type, party_name, fee_date, amount, description, base_amount, bonus_amount, reimb_amount, ot_amount, currency, lines, employee_id, status, attachments, approval_status, created_by, approved_by, import_key, payroll_meta)
+    VALUES ('cnpay', ?, ?, ?, ?, ?, ?, ?, ?, 'USD', ?, ?, 'resolved', '[]', 'approved', ?, ?, ?, ?)`);
   try {
     db.transaction(() => {
       const empOf = {};
@@ -44707,7 +44723,9 @@ app.post('/api/acct/us-payroll/import', requireAdmin, requireRole('admin'), usPa
         const emp = db.prepare('SELECT name FROM cn_employees WHERE id=?').get(empId);
         const c = _usPayLines(x);
         createdIds.push(insRec.run(emp ? emp.name : x.name, x.pay_day, c.total, _usPayDesc(x), c.base, c.bonus, c.reimb, c.ot,
-          JSON.stringify(c.lines), empId, req.userName || '', req.userName || '', x.import_key).lastInsertRowid);
+          JSON.stringify(c.lines), empId, req.userName || '', req.userName || '', x.import_key,
+          JSON.stringify({ gross: x.gross, net_pay: x.net_pay, employee_taxes: x.employee_taxes, employer_taxes: x.employer_taxes,
+            k401_employee: x.k401_employee, k401_company: x.k401_company, employer_cost: x.employer_cost })).lastInsertRowid);
       }
     })();
   } catch (e) { return res.status(500).json({ error: '导入失败：' + e.message }); }
