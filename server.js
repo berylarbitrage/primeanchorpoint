@@ -37596,38 +37596,32 @@ app.get('/api/plaid/ann-options', requireAdmin, requireRole('admin', 'cs', 'acco
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-// 💵 取现金标注: 每一笔可以选人 → 选这个人的账单 / 账期 (从最近 200 天的发票工资行里找), 也可以写柜号。
-// 返回 people: [{ name, invs: [{ inv, ps, pe, co, amt }] }], containers: [{ ctr, inv, ps, pe, co }]
-app.get('/api/plaid/cash-people', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
+// 💵 取现金标注: 每一笔 先选公司 → 填员工姓名 → 选这家公司的 Invoice (带出账期), 也可以写柜号。
+// 返回最近 200 天的发票 invoices: [{ inv, ps, pe, co, total, workers: [{ name, amt }] }] 和卸柜发票的柜号 containers: [{ ctr, inv, ps, pe, co }]
+app.get('/api/plaid/cash-invoices', requireAdmin, requireRole('admin', 'cs', 'accounting'), (req, res) => {
   try {
     const since = new Date(Date.now() - 200 * 86400000).toISOString().slice(0, 10);
-    const rows = db.prepare(`SELECT invoice_number, company_name, period_start, period_end, items_json, profile_json FROM invoices
+    const rows = db.prepare(`SELECT invoice_number, company_name, period_start, period_end, subtotal, items_json, profile_json FROM invoices
       WHERE COALESCE(status,'') <> 'draft' AND COALESCE(NULLIF(period_end,''), invoice_date, '') >= ? ORDER BY period_end DESC, id DESC`).all(since);
-    const people = new Map(), containers = [];
-    const keyOf = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const invoices = [], containers = [];
     for (const r of rows) {
       const base = { inv: r.invoice_number || '', ps: r.period_start || '', pe: r.period_end || '', co: r.company_name || '' };
+      if (!base.inv) continue;
       let items = [], profile = {};
       try { items = JSON.parse(r.items_json || '[]'); } catch (_) {}
       try { profile = JSON.parse(r.profile_json || '{}'); } catch (_) {}
-      for (const it of Array.isArray(items) ? items : []) {
-        const name = String((it && it.name) || '').trim();
-        if (!name) continue;
-        const amt = it.total != null ? (Number(it.total) || 0)
-          : (Number(it.regHours != null ? it.regHours : it.hours) || 0) * (Number(it.rate) || 0) + (Number(it.otHours) || 0) * (Number(it.otRate) || 0);
-        const k = keyOf(name);
-        if (!people.has(k)) people.set(k, { name, invs: [] });
-        const p = people.get(k);
-        const hit = p.invs.find(x => x.inv === base.inv);
-        if (hit) hit.amt = Math.round((hit.amt + amt) * 100) / 100;
-        else if (p.invs.length < 40) p.invs.push({ ...base, amt: Math.round(amt * 100) / 100 });
-      }
+      const workers = (Array.isArray(items) ? items : []).filter(it => it && String(it.name || '').trim()).map(it => ({
+        name: String(it.name).trim(),
+        amt: Math.round((it.total != null ? (Number(it.total) || 0)
+          : (Number(it.regHours != null ? it.regHours : it.hours) || 0) * (Number(it.rate) || 0) + (Number(it.otHours) || 0) * (Number(it.otRate) || 0)) * 100) / 100,
+      }));
+      invoices.push({ ...base, total: Number(r.subtotal) || 0, workers });
       for (const c of Array.isArray(profile.container_items) ? profile.container_items : []) {
         const ctr = String((c && c.container_no) || '').trim();
         if (ctr && containers.length < 2000) containers.push({ ctr, ...base });
       }
     }
-    res.json({ people: [...people.values()].sort((a, b) => a.name.localeCompare(b.name)), containers });
+    res.json({ invoices, containers });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // 国内员工名单 (标注「🇨🇳 国内员工工资」的下拉用): 存 app_settings.cn_staff (JSON 数组);
@@ -38244,8 +38238,8 @@ app.put('/api/plaid/annotations/:id', requireAdmin, requireRole('admin', 'cs', '
         const arr = typeof b.note_items === 'string' ? JSON.parse(b.note_items) : b.note_items;
         noteItemsVal = JSON.stringify((Array.isArray(arr) ? arr : []).slice(0, 30).map(x => ({
           t: String((x && x.t) || '').slice(0, 200), amt: String((x && x.amt) || '').slice(0, 20),
-          // 取现金: 每笔可带 人 / 账单号 / 账期 / 柜号 (没填就不存)
-          ...Object.fromEntries([['who', 80], ['inv', 80], ['ps', 20], ['pe', 20], ['ctr', 60]]
+          // 取现金: 每笔可带 公司 / 员工姓名 / Invoice / 账期 / 柜号 (没填就不存)
+          ...Object.fromEntries([['co', 120], ['who', 200], ['inv', 80], ['ps', 20], ['pe', 20], ['ctr', 60]]
             .map(([k, n]) => [k, String((x && x[k]) || '').trim().slice(0, n)]).filter(([, v]) => v)),
         })));
       } catch (e2) { noteItemsVal = row.note_items; }
