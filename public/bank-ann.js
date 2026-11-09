@@ -821,7 +821,7 @@ function _bsNoteItems(box) {
 }
 // 一条备注的文字: 取现金的 公司 / 员工 / Invoice / 账期 / 柜号 也拼进去 (列表 / 搜索 / 必填检查都看 note)
 function _bsNoteLabel(x) {
-  return [x.kind === 'pr' ? '公关费' : '', x.co, x.who, x.inv, x.ps || x.pe ? _bsCashPeriod(x.ps, x.pe) : '', x.ctr ? '柜 ' + x.ctr : '', x.t.trim()].filter(Boolean).join(' ');
+  return [BS_CASH_KIND_TAG[x.kind] || '', x.co, x.who, x.inv, x.ps || x.pe ? _bsCashPeriod(x.ps, x.pe) : '', x.ctr ? '柜 ' + x.ctr : '', x.t.trim()].filter(Boolean).join(' ');
 }
 function _bsNoteJoin(items) {
   const filled = items.filter(x => _bsNoteLabel(x) || x.amt.trim());
@@ -881,14 +881,15 @@ function _bsCashWorkerAmt(x, who) {
   return (x.workers || []).filter(w => names.includes(_bsCashKey(w.name))).reduce((s, w) => s + (Number(w.amt) || 0), 0);
 }
 // 每一笔的类型: 员工工资 (公司 / 姓名 / Invoice / 账期) · 柜号 · 公关费 · 只写备注; 不管哪种都必须填金额
-const BS_CASH_KINDS = [['wage', '👷 员工工资'], ['ctr', '📦 柜号'], ['pr', '🤝 公关费'], ['note', '📝 备注']];
+const BS_CASH_KINDS = [['wage', '👷 员工工资'], ['ctr', '📦 柜号'], ['pr', '🤝 公关费'], ['neal', '🙋 帮 Neal 代收'], ['note', '📝 备注']];
+const BS_CASH_KIND_TAG = { pr: '公关费', neal: '帮 Neal 代收' };
 function _bsCashKind(it) {
   if (BS_CASH_KINDS.some(([k]) => k === it.kind)) return it.kind;
   if (it.co || it.who || it.inv) return 'wage';
   if (it.ctr) return 'ctr';
   return String(it.t || '').trim() ? 'note' : 'wage';
 }
-const _bsCashFilled = it => !!(String(it.t || '').trim() || it.co || it.who || it.inv || it.ctr || it.kind === 'pr' || String(it.amt || '').trim());
+const _bsCashFilled = it => !!(String(it.t || '').trim() || it.co || it.who || it.inv || it.ctr || !!BS_CASH_KIND_TAG[it.kind] || String(it.amt || '').trim());
 // 取现金缺什么: 每一笔都要有金额; 一笔都没写算缺明细
 function _bsCashMissing(box) {
   const items = _bsNoteItems(box).filter(_bsCashFilled);
@@ -902,7 +903,7 @@ function _bsCashRowHtml(box, it, i, multi) {
   const invs = _bsCashCoInvs(it.co);
   const invPh = it.co ? (invs.length ? `Invoice number（${it.co} 有 ${invs.length} 张，可选）` : 'Invoice number') : 'Invoice number（先选公司）';
   const ctrInp = w => `<input type="text" list="bsCashCtr" placeholder="📦 柜号" value="${esc(it.ctr)}" onchange="bsCashCtr(${box.id},${i},this.value)" style="${w};${inp}">`;
-  const body = kind === 'wage' ? `
+  const fields = (withCtr) => `
     <select onchange="bsCashCo(${box.id},${i},this.value)" style="width:100%;margin-bottom:.25rem;${inp};background:#fff">${_bsCompanyOptions(it.co)}</select>
     <input type="text" placeholder="员工姓名（多个用逗号隔开）" value="${esc(it.who)}" onchange="bsCashWho(${box.id},${i},this.value)" style="width:100%;margin-bottom:.25rem;${inp}">
     <input type="text" list="bsCashInv-${box.id}-${i}" placeholder="${esc(invPh)}" value="${esc(it.inv)}" onchange="bsCashInv(${box.id},${i},this.value)" style="width:100%;margin-bottom:.25rem;${inp}">
@@ -910,11 +911,12 @@ function _bsCashRowHtml(box, it, i, multi) {
     <div style="display:flex;gap:.3rem;margin-bottom:.25rem">
       <input type="date" title="账期开始" value="${esc(it.ps)}" onchange="bsNoteItemField(${box.id},${i},'ps',this.value)" style="flex:1;min-width:0;${inp}">
       <input type="date" title="账期结束" value="${esc(it.pe)}" onchange="bsNoteItemField(${box.id},${i},'pe',this.value)" style="flex:1;min-width:0;${inp}">
-      ${ctrInp('flex:1;min-width:0')}
-    </div>`
-    : kind === 'ctr' ? `<div style="margin-bottom:.25rem">${ctrInp('width:100%')}${it.inv ? `<div style="font-size:.7rem;color:var(--gray-500);margin-top:.15rem">${esc([it.co, it.inv, _bsCashPeriod(it.ps, it.pe)].filter(Boolean).join(' · '))}</div>` : ''}</div>`
+      ${withCtr ? ctrInp('flex:1;min-width:0') : ''}
+    </div>`;
+  const body = kind === 'wage' ? fields(true)
+    : kind === 'ctr' ? `<div style="margin-bottom:.25rem">${ctrInp('width:100%')}</div>` + fields(false)
     : '';
-  const notePh = kind === 'note' ? '备注（写清楚这笔钱干什么）' : kind === 'pr' ? '公关费：给谁 / 干什么（可选）' : '备注（可选）';
+  const notePh = kind === 'note' ? '备注（写清楚这笔钱干什么）' : kind === 'pr' ? '公关费：给谁 / 干什么（可选）' : kind === 'neal' ? '帮 Neal 代收：什么钱 / 谁给的（可选）' : '备注（可选）';
   return `<div class="bs-note-item" style="border:1px solid #fde68a;background:#fffdf5;border-radius:6px;padding:.35rem .4rem;margin-bottom:.35rem">
     <div style="display:flex;gap:.3rem;align-items:center;margin-bottom:.25rem">
       <span style="font-size:.7rem;color:#b45309;font-weight:700;flex:0 0 auto">#${i + 1}</span>
@@ -930,8 +932,7 @@ function _bsCashRowHtml(box, it, i, multi) {
 function bsCashKind(boxId, idx, val) {
   _bsCashUpdate(boxId, idx, it => {
     it.kind = val;
-    if (val !== 'wage') it.who = '';
-    if (val === 'pr' || val === 'note') { it.co = ''; it.inv = ''; it.ps = ''; it.pe = ''; it.ctr = ''; }
+    if (val !== 'wage' && val !== 'ctr') { it.co = ''; it.who = ''; it.inv = ''; it.ps = ''; it.pe = ''; it.ctr = ''; }
   });
 }
 function _bsCashItemsHtml(box, items) {
@@ -939,7 +940,7 @@ function _bsCashItemsHtml(box, items) {
   const multi = items.length > 1;
   const ctrs = (_bsCashIdx && _bsCashIdx.containers) || [];
   return `<div class="bs-note-items" style="margin-bottom:.4rem">
-      <div style="font-size:.72rem;color:#b45309;margin-bottom:.3rem">💵 取现金：每一笔先选类型 —— 员工工资（公司 / 姓名 / Invoice / 账期）、柜号、公关费，或者只写备注；<b>每一笔都要写金额</b>${_bsCashIdx ? '' : ' · <span style="color:var(--gray-400)">发票加载中…</span>'}</div>
+      <div style="font-size:.72rem;color:#b45309;margin-bottom:.3rem">💵 取现金：每一笔先选类型 —— 员工工资、柜号（都写公司 / 姓名 / Invoice / 账期）、公关费、帮 Neal 代收，或者只写备注；<b>每一笔都要写金额</b>${_bsCashIdx ? '' : ' · <span style="color:var(--gray-400)">发票加载中…</span>'}</div>
       ${items.map((it, i) => _bsCashRowHtml(box, it, i, multi)).join('')}
       <datalist id="bsCashCtr">${ctrs.map(c => `<option value="${esc(c.ctr)}">${esc(`${c.co} · ${c.inv} · ${c.ps}~${c.pe}`)}</option>`).join('')}</datalist>
       <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.75rem">
