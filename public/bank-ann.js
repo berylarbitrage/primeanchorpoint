@@ -195,6 +195,7 @@ function _bsPalletAmountOk(box) {
 }
 function _bsNoteSatisfied(box) {
   if (_bsIsNA(box)) return true;
+  if (box.payee === BS_PAYEE_CASH) return !_bsCashMissing(box).length;
   // 员工工资退回款: 必须填发票号 + 账期, 只写备注不算
   if (box.payee === BS_PAYEE_WAGERETURN) return _bsHasInvoiceInfo(box);
   if (box.note && String(box.note).trim()) return true;
@@ -776,6 +777,7 @@ function bsAmtInput(id, el) {
 // 免填备注还差哪些字段 (备注框提示和列表徽章共用): 公司收入等类型把
 // 用途/发票号/账期 填齐备注就是选填, 缺哪个点名哪个; 没有免填路径的返回 []。
 function _bsNoteMissing(box) {
+  if (box.payee === BS_PAYEE_CASH) return _bsCashMissing(box);
   const kind = _bsPayeeKind(box);
   const missing = [];
   if (kind === 'wagereturn') {
@@ -812,14 +814,14 @@ function _bsNoteItems(box) {
   if (!Array.isArray(a)) a = [];
   a = a.map(x => ({ t: String((x && x.t) || ''), amt: String((x && x.amt) || ''),
     // 取现金每笔: 公司 / 员工姓名 / Invoice / 账期 / 柜号
-    co: String((x && x.co) || ''), who: String((x && x.who) || ''), inv: String((x && x.inv) || ''), ps: String((x && x.ps) || ''), pe: String((x && x.pe) || ''), ctr: String((x && x.ctr) || '') }));
+    kind: String((x && x.kind) || ''), co: String((x && x.co) || ''), who: String((x && x.who) || ''), inv: String((x && x.inv) || ''), ps: String((x && x.ps) || ''), pe: String((x && x.pe) || ''), ctr: String((x && x.ctr) || '') }));
   // 旧标注只有 note 没有 note_items (或 note 是别处自动写的): 当成一条备注
   if (!a.some(x => x.t.trim() || x.co || x.who || x.inv || x.ctr)) a = [{ co: '', who: '', inv: '', ps: '', pe: '', ctr: '', ...(a[0] || {}), t: String(box.note || ''), amt: (a[0] && a[0].amt) || '' }].concat(a.slice(1));
   return a;
 }
 // 一条备注的文字: 取现金的 公司 / 员工 / Invoice / 账期 / 柜号 也拼进去 (列表 / 搜索 / 必填检查都看 note)
 function _bsNoteLabel(x) {
-  return [x.co, x.who, x.inv, x.ps || x.pe ? _bsCashPeriod(x.ps, x.pe) : '', x.ctr ? '柜 ' + x.ctr : '', x.t.trim()].filter(Boolean).join(' ');
+  return [x.kind === 'pr' ? '公关费' : '', x.co, x.who, x.inv, x.ps || x.pe ? _bsCashPeriod(x.ps, x.pe) : '', x.ctr ? '柜 ' + x.ctr : '', x.t.trim()].filter(Boolean).join(' ');
 }
 function _bsNoteJoin(items) {
   const filled = items.filter(x => _bsNoteLabel(x) || x.amt.trim());
@@ -878,35 +880,66 @@ function _bsCashWorkerAmt(x, who) {
   if (!x || !names.length) return 0;
   return (x.workers || []).filter(w => names.includes(_bsCashKey(w.name))).reduce((s, w) => s + (Number(w.amt) || 0), 0);
 }
+// 每一笔的类型: 员工工资 (公司 / 姓名 / Invoice / 账期) · 柜号 · 公关费 · 只写备注; 不管哪种都必须填金额
+const BS_CASH_KINDS = [['wage', '👷 员工工资'], ['ctr', '📦 柜号'], ['pr', '🤝 公关费'], ['note', '📝 备注']];
+function _bsCashKind(it) {
+  if (BS_CASH_KINDS.some(([k]) => k === it.kind)) return it.kind;
+  if (it.co || it.who || it.inv) return 'wage';
+  if (it.ctr) return 'ctr';
+  return String(it.t || '').trim() ? 'note' : 'wage';
+}
+const _bsCashFilled = it => !!(String(it.t || '').trim() || it.co || it.who || it.inv || it.ctr || it.kind === 'pr' || String(it.amt || '').trim());
+// 取现金缺什么: 每一笔都要有金额; 一笔都没写算缺明细
+function _bsCashMissing(box) {
+  const items = _bsNoteItems(box).filter(_bsCashFilled);
+  if (!items.length) return ['明细'];
+  return items.some(it => !(parseFloat(it.amt) > 0 || parseFloat(it.amt) < 0)) ? ['金额'] : [];
+}
 function _bsCashRowHtml(box, it, i, multi) {
   const inp = 'box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem';
+  const kind = _bsCashKind(it);
+  const noAmt = _bsCashFilled(it) && !(parseFloat(it.amt) > 0 || parseFloat(it.amt) < 0);
   const invs = _bsCashCoInvs(it.co);
   const invPh = it.co ? (invs.length ? `Invoice number（${it.co} 有 ${invs.length} 张，可选）` : 'Invoice number') : 'Invoice number（先选公司）';
-  return `<div class="bs-note-item" style="border:1px solid #fde68a;background:#fffdf5;border-radius:6px;padding:.35rem .4rem;margin-bottom:.35rem">
-    <div style="display:flex;gap:.3rem;align-items:center;margin-bottom:.25rem">
-      <span style="font-size:.7rem;color:#b45309;font-weight:700;flex:0 0 auto">#${i + 1}</span>
-      <select onchange="bsCashCo(${box.id},${i},this.value)" style="flex:1;min-width:0;${inp};background:#fff">${_bsCompanyOptions(it.co)}</select>
-      <span style="color:#94a3b8;font-size:.82rem">$</span>
-      <input type="number" step="0.01" placeholder="金额" value="${esc(it.amt)}" oninput="bsNoteItemField(${box.id},${i},'amt',this.value)" style="width:90px;${inp}">
-      ${multi ? `<button onclick="bsNoteItemDel(${box.id},${i})" title="删除这一笔" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:.9rem;padding:0 .15rem">✕</button>` : ''}
-    </div>
+  const ctrInp = w => `<input type="text" list="bsCashCtr" placeholder="📦 柜号" value="${esc(it.ctr)}" onchange="bsCashCtr(${box.id},${i},this.value)" style="${w};${inp}">`;
+  const body = kind === 'wage' ? `
+    <select onchange="bsCashCo(${box.id},${i},this.value)" style="width:100%;margin-bottom:.25rem;${inp};background:#fff">${_bsCompanyOptions(it.co)}</select>
     <input type="text" placeholder="员工姓名（多个用逗号隔开）" value="${esc(it.who)}" onchange="bsCashWho(${box.id},${i},this.value)" style="width:100%;margin-bottom:.25rem;${inp}">
     <input type="text" list="bsCashInv-${box.id}-${i}" placeholder="${esc(invPh)}" value="${esc(it.inv)}" onchange="bsCashInv(${box.id},${i},this.value)" style="width:100%;margin-bottom:.25rem;${inp}">
     <datalist id="bsCashInv-${box.id}-${i}">${invs.map(x => `<option value="${esc(x.inv)}">${esc(`${x.ps} ~ ${x.pe} · $${Number(x.total || 0).toFixed(2)}`)}</option>`).join('')}</datalist>
     <div style="display:flex;gap:.3rem;margin-bottom:.25rem">
       <input type="date" title="账期开始" value="${esc(it.ps)}" onchange="bsNoteItemField(${box.id},${i},'ps',this.value)" style="flex:1;min-width:0;${inp}">
       <input type="date" title="账期结束" value="${esc(it.pe)}" onchange="bsNoteItemField(${box.id},${i},'pe',this.value)" style="flex:1;min-width:0;${inp}">
-      <input type="text" list="bsCashCtr" placeholder="📦 柜号" value="${esc(it.ctr)}" onchange="bsCashCtr(${box.id},${i},this.value)" style="flex:1;min-width:0;${inp}">
-    </div>
-    <input type="text" class="bs-bx-note" placeholder="${esc(i === 0 ? _bsNoteHint(box) : '备注（可选）')}" value="${esc(it.t)}" oninput="bsNoteItemField(${box.id},${i},'t',this.value)" style="width:100%;${inp}">
+      ${ctrInp('flex:1;min-width:0')}
+    </div>`
+    : kind === 'ctr' ? `<div style="margin-bottom:.25rem">${ctrInp('width:100%')}${it.inv ? `<div style="font-size:.7rem;color:var(--gray-500);margin-top:.15rem">${esc([it.co, it.inv, _bsCashPeriod(it.ps, it.pe)].filter(Boolean).join(' · '))}</div>` : ''}</div>`
+    : '';
+  const notePh = kind === 'note' ? '备注（写清楚这笔钱干什么）' : kind === 'pr' ? '公关费：给谁 / 干什么（可选）' : '备注（可选）';
+  return `<div class="bs-note-item" style="border:1px solid #fde68a;background:#fffdf5;border-radius:6px;padding:.35rem .4rem;margin-bottom:.35rem">
+    <div style="display:flex;gap:.3rem;align-items:center;margin-bottom:.25rem">
+      <span style="font-size:.7rem;color:#b45309;font-weight:700;flex:0 0 auto">#${i + 1}</span>
+      <select onchange="bsCashKind(${box.id},${i},this.value)" style="flex:1;min-width:0;${inp};background:#fff">${BS_CASH_KINDS.map(([k, t]) => `<option value="${k}"${k === kind ? ' selected' : ''}>${t}</option>`).join('')}</select>
+      <span style="color:#94a3b8;font-size:.82rem">$</span>
+      <input type="number" step="0.01" placeholder="金额（必填）" title="每一笔都要写金额" value="${esc(it.amt)}" oninput="bsNoteItemField(${box.id},${i},'amt',this.value);this.style.borderColor=this.value?'':'#dc2626';this.style.background=this.value?'':'#fff5f5'" style="width:100px;${inp}${noAmt ? ';border-color:#dc2626;background:#fff5f5' : ''}">
+      ${multi ? `<button onclick="bsNoteItemDel(${box.id},${i})" title="删除这一笔" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:.9rem;padding:0 .15rem">✕</button>` : ''}
+    </div>${body}
+    <input type="text" class="bs-bx-note" placeholder="${esc(notePh)}" value="${esc(it.t)}" oninput="bsNoteItemField(${box.id},${i},'t',this.value)" style="width:100%;${inp}">
   </div>`;
+}
+// 换类型: 用不到的栏清掉, 免得拼进备注文字
+function bsCashKind(boxId, idx, val) {
+  _bsCashUpdate(boxId, idx, it => {
+    it.kind = val;
+    if (val !== 'wage') it.who = '';
+    if (val === 'pr' || val === 'note') { it.co = ''; it.inv = ''; it.ps = ''; it.pe = ''; it.ctr = ''; }
+  });
 }
 function _bsCashItemsHtml(box, items) {
   _bsEnsureCashIdx();
   const multi = items.length > 1;
   const ctrs = (_bsCashIdx && _bsCashIdx.containers) || [];
   return `<div class="bs-note-items" style="margin-bottom:.4rem">
-      <div style="font-size:.72rem;color:#b45309;margin-bottom:.3rem">💵 取现金：每一笔先选公司，再填员工姓名、Invoice / 账期（选了 Invoice 自动带出账期），可以写柜号${_bsCashIdx ? '' : ' · <span style="color:var(--gray-400)">发票加载中…</span>'}</div>
+      <div style="font-size:.72rem;color:#b45309;margin-bottom:.3rem">💵 取现金：每一笔先选类型 —— 员工工资（公司 / 姓名 / Invoice / 账期）、柜号、公关费，或者只写备注；<b>每一笔都要写金额</b>${_bsCashIdx ? '' : ' · <span style="color:var(--gray-400)">发票加载中…</span>'}</div>
       ${items.map((it, i) => _bsCashRowHtml(box, it, i, multi)).join('')}
       <datalist id="bsCashCtr">${ctrs.map(c => `<option value="${esc(c.ctr)}">${esc(`${c.co} · ${c.inv} · ${c.ps}~${c.pe}`)}</option>`).join('')}</datalist>
       <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.75rem">
@@ -984,7 +1017,7 @@ function bsNoteItemField(boxId, idx, key, val) {
 function bsNoteItemAdd(boxId) {
   const box = _bsBoxList.find(b => b.id === boxId); if (!box) return;
   const items = _bsNoteItems(box);
-  items.push({ t: '', amt: '', co: '', who: '', inv: '', ps: '', pe: '', ctr: '' });
+  items.push({ t: '', amt: '', kind: '', co: '', who: '', inv: '', ps: '', pe: '', ctr: '' });
   _bsNoteItemsSave(box, items);
   _bsRenderBoxPanel();
 }
