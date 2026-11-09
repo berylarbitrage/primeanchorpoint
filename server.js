@@ -38239,7 +38239,7 @@ app.put('/api/plaid/annotations/:id', requireAdmin, requireRole('admin', 'cs', '
         noteItemsVal = JSON.stringify((Array.isArray(arr) ? arr : []).slice(0, 30).map(x => ({
           t: String((x && x.t) || '').slice(0, 200), amt: String((x && x.amt) || '').slice(0, 20),
           // 取现金: 每笔可带 公司 / 员工姓名 / Invoice / 账期 / 柜号 (没填就不存)
-          ...Object.fromEntries([['co', 120], ['who', 200], ['inv', 80], ['ps', 20], ['pe', 20], ['ctr', 60]]
+          ...Object.fromEntries([['kind', 12], ['co', 120], ['who', 200], ['inv', 80], ['ps', 20], ['pe', 20], ['ctr', 60]]
             .map(([k, n]) => [k, String((x && x[k]) || '').trim().slice(0, n)]).filter(([, v]) => v)),
         })));
       } catch (e2) { noteItemsVal = row.note_items; }
