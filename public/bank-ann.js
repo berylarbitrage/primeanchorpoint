@@ -1289,17 +1289,33 @@ function _bsAnnCheckHtml(box, items, mode) {
       if (it.ps === info.period_start && it.pe === info.period_end) oks.push('账期');
       else probs.push(`账期不符（发票是 ${esc(info.period_start)} ~ ${esc(info.period_end)}）`);
     }
+    let paidLine = '';
     if (_bsAmtMode(box) === 'emp') {
       const who = _bsEmpParse(box.payee).name;
       const wage = _bsWorkerWage(box, info);
       const filled = parseFloat(it.amt);
+      const others = _bsInvPaidOthers(box, num, info);
       if (wage == null) {
         if (who && Array.isArray(info.workers)) probs.push(`发票上没有「${esc(who)}」（检查姓名或发票号）`);
       } else if (box.pay_portion === 'partial') {
-        oks.push(`${esc(who)} 这张工资 ${money(wage)}，部分付款${filled > 0 ? ' ' + money(filled) : ''}`);
-      } else if (filled > 0 && Math.abs(filled - wage) >= 0.01) {
-        probs.push(`金额差 ${money(Math.abs(filled - wage))}（${esc(who)} 这张工资 ${money(wage)}，填了 ${money(filled)}）`);
-      } else oks.push(`${esc(who)} 工资 ${money(wage)}`);
+        // 部分付款: 之前已付 + 这笔 和他这张的工资比, 看付清了没有
+        oks.push(`${esc(who)} 这张工资 ${money(wage)}`);
+        const mine = _bsEmpThisAmt(box, it, info);
+        if (mine > 0) {
+          const prev = others.reduce((s, o) => s + o.amt, 0);
+          const left = Math.round((wage - prev - mine) * 100) / 100;
+          const calc = (others.length ? '之前已付 ' + others.map(o => `${money(o.amt)}（${esc(o.date.slice(5) || '?')}）`).join(' + ') + ' + ' : '') + `这笔 ${money(mine)}` + (others.length ? ` = ${money(prev + mine)}` : '');
+          paidLine = Math.abs(left) < 0.01
+            ? `<div style="color:#059669;font-weight:600;padding-left:1.1rem">💰 ${calc} → ✅ 这张已付清</div>`
+            : left > 0
+            ? `<div style="color:#b45309;font-weight:600;padding-left:1.1rem">💰 ${calc} → 还差 ${money(left)} 没付</div>`
+            : `<div style="color:#dc2626;font-weight:700;padding-left:1.1rem">💰 ${calc} → ⚠️ 多付了 ${money(-left)}（超过这张工资 ${money(wage)}）</div>`;
+        }
+      } else {
+        if (filled > 0 && Math.abs(filled - wage) >= 0.01) probs.push(`金额差 ${money(Math.abs(filled - wage))}（${esc(who)} 这张工资 ${money(wage)}，填了 ${money(filled)}）`);
+        else oks.push(`${esc(who)} 工资 ${money(wage)}`);
+        if (others.length) probs.push(`这张之前已经付过 ${others.map(o => `${money(o.amt)}（${esc(o.date.slice(5) || '?')}）`).join('、')}，这笔又选了全额，检查是不是重复付了`);
+      }
     }
     if (mode === 'full') {
       // 金额: 多张发票用各张填的金额; 单张没填时用这笔交易金额
@@ -1324,8 +1340,8 @@ function _bsAnnCheckHtml(box, items, mode) {
         if (m[1] === 'C' && purpose.indexOf('劳务') >= 0) probs.push('C 开头是 Container 卸柜发票，用途却填了劳务工资');
       }
     }
-    if (probs.length) return `<div style="color:#dc2626">⚠️ ${numHtml}：${probs.join('；')}</div>`;
-    return `<div style="color:#059669">✅ ${numHtml}：与系统发票一致${oks.length ? '（' + oks.join('/') + '）' : ''}</div>`;
+    if (probs.length) return `<div style="color:#dc2626">⚠️ ${numHtml}：${probs.join('；')}</div>` + paidLine;
+    return `<div style="color:#059669">✅ ${numHtml}：与系统发票一致${oks.length ? '（' + oks.join('/') + '）' : ''}</div>` + paidLine;
   }).filter(Boolean);
   if (!lines.length) return '';
   // 银行到账 vs 应付合计 (发票 + 车补/介绍费/其他): 发票本身对得上不代表钱对 ——
@@ -1335,7 +1351,11 @@ function _bsAnnCheckHtml(box, items, mode) {
   if (amode) {
     const d = _bsAmtDiff(box);
     const note = _bsDiffNote(box);
-    if (d) {
+    const autoPartial = amode === 'emp' && box.pay_portion === 'partial' && !items.some(it => parseFloat(it.amt) > 0);
+    if (d && autoPartial) {
+      const ex = _bsExtras(box);
+      if (ex.parts.length) bankLine = `<div style="color:#64748b">银行金额 ${money(d.bank)} = 工资 ${money(d.inv)}${ex.parts.map(p => ' + ' + esc(p.label) + ' ' + money(p.amt)).join('')}</div>`;
+    } else if (d) {
       const lbl = esc(_bsAmtSumLabel(box, d));
       bankLine = Math.abs(d.diff) < 0.01
         ? `<div style="color:#059669;font-weight:600">✅ 银行金额 ${money(d.bank)} = ${lbl}</div>`
@@ -1344,7 +1364,7 @@ function _bsAnnCheckHtml(box, items, mode) {
         : `<div style="color:#dc2626;font-weight:700;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:2px 8px;margin-top:2px">⚠️ 银行金额 ${money(d.bank)} ≠ ${lbl}，${d.diff > 0 ? '多' : '少'} ${money(Math.abs(d.diff))}<div style="font-weight:400;font-size:.68rem">有车补 / 介绍费 / 其他金额的，在下面加一条选对类型并填金额；其他原因写在「备注」里</div></div>`;
     } else if (amode === 'emp') {
       const why = box.pay_portion === 'partial'
-        ? '部分付款：在每张发票的「这张金额」填这次付了多少，才能核对银行金额'
+        ? '部分付款付了好几张发票：在每张的「这张金额」填这次付了多少，才能核对'
         : !box.pay_portion ? '先选「全额 / 部分」才能核对银行金额'
         : '发票上找不到这个员工的工资：在「这张金额」手填，才能核对银行金额';
       bankLine = `<div style="color:#b45309">ℹ️ ${why}</div>`;
@@ -1800,8 +1820,54 @@ function _bsWorkerWage(box, info) {
 function _bsInvExpected(box, it, amode) {
   const info = _bsInvCheckCache[String(it.inv || '').trim().toUpperCase()];
   if (amode === 'full') return (info && info.found && Number(info.subtotal)) || 0;
-  if (box.pay_portion === 'partial') return 0;
+  if (box.pay_portion === 'partial') return _bsEmpPartialAuto(box);
   return _bsWorkerWage(box, info) || 0;
+}
+// 部分付款只有一张发票: 这次付在这张发票上的 = 银行金额 − 车补/介绍费/其他 (不用手填);
+// 好几张发票的算不出分到哪张, 要在各张填金额
+function _bsEmpPartialAuto(box) {
+  if (_bsInvItems(box).filter(it => String(it.inv || '').trim()).length !== 1) return 0;
+  return Math.max(0, Math.round((Math.abs(Number(box.amount) || 0) - _bsExtras(box).sum) * 100) / 100);
+}
+// 这笔交易付在这张发票上的金额: 填了用填的, 没填按 全额=发票上工资 / 部分=自动算
+function _bsEmpThisAmt(box, it, info) {
+  const a = parseFloat(it.amt);
+  if (a > 0) return a;
+  return box.pay_portion === 'partial' ? _bsEmpPartialAuto(box) : (_bsWorkerWage(box, info) || 0);
+}
+// 别的交易里付给这个员工、这张发票的钱 [{date, amt}] (银行员工工资标注 + 取现金), 不含这一笔;
+// 银行直连和 PDF 框出的同一笔按 日期+金额 只算一次
+function _bsInvPaidOthers(box, num, info) {
+  if (!info || !Array.isArray(info.payments)) return [];
+  const name = _bsCashKey(_bsEmpParse(box.payee).name);
+  if (!name) return [];
+  const N = String(num || '').trim().toUpperCase();
+  const out = [], seen = new Set();
+  const key = (d, a) => (d || '') + '|' + a.toFixed(2);
+  const self = _bsInvItems(box).find(x => String(x.inv || '').trim().toUpperCase() === N);
+  if (self) { const a = _bsEmpThisAmt(box, self, info); if (a > 0) seen.add(key(box.txn_date, a)); }
+  const add = (d, a) => { if (!(a > 0) || seen.has(key(d, a))) return; seen.add(key(d, a)); out.push({ date: d || '', amt: a }); };
+  for (const r of info.payments) {
+    if (r.id === box.id || (box.plaid_txn_id && r.plaid_txn_id === box.plaid_txn_id)) continue;
+    if (_bsIsEmp(r.payee)) {
+      if (_bsCashKey(_bsEmpParse(r.payee).name) !== name) continue;
+      const its = _bsInvItems(r).filter(x => String(x.inv || '').trim());
+      const it = its.find(x => x.inv.trim().toUpperCase() === N);
+      if (!it) continue;
+      let a = parseFloat(it.amt);
+      if (!(a > 0)) a = r.pay_portion === 'partial'
+        ? (its.length === 1 ? Math.abs(Number(r.amount) || 0) - _bsExtras(r).sum : 0)
+        : (_bsWorkerWage(r, info) || 0);
+      add(r.txn_date, Math.round(a * 100) / 100);
+    } else if (r.payee === BS_PAYEE_CASH) {
+      for (const x of _bsNoteItems(r)) {
+        if (String(x.inv || '').trim().toUpperCase() !== N) continue;
+        if (!String(x.who || '').split(/[,，、]/).map(_bsCashKey).includes(name)) continue;
+        add(r.txn_date, parseFloat(x.amt));
+      }
+    }
+  }
+  return out;
 }
 function _bsAmtDiff(box) {
   const amode = _bsAmtMode(box);

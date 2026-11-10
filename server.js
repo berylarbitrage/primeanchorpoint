@@ -38458,6 +38458,16 @@ app.get('/api/plaid/invoice-check', requireAdmin, requireRole('admin', 'cs', 'ac
         subtotal: Number(pm.total_amount) || 0, approval_status: pm.approval_status || '',
       };
     }
+    // 这张发票以前标注过的付款 (员工工资分几次付 / 取现金付): 前端按员工姓名算累计已付,
+    // 部分付款不用手填金额也能看出付清没有
+    const payQ = db.prepare(`SELECT id, plaid_txn_id, txn_date, amount, payee, pay_portion, inv_items, invoice_number, note_items, note
+      FROM bank_statement_txns WHERE (UPPER(COALESCE(inv_items,'')) LIKE ? OR UPPER(TRIM(COALESCE(invoice_number,''))) = ? OR UPPER(COALESCE(note_items,'')) LIKE ?)
+      AND COALESCE(payee,'') <> '' ORDER BY txn_date LIMIT 200`);
+    for (const n of nums) {
+      if (!out[n] || !out[n].found) continue;
+      const N = n.toUpperCase();
+      out[n].payments = payQ.all('%' + N + '%', N, '%' + N + '%');
+    }
     res.json({ invoices: out });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
