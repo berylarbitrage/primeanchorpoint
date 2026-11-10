@@ -5659,8 +5659,8 @@ const _CUR_SYM = { CNY: '¥', USD: '$' };
 const _cnMoney = (v, cur) => (_CUR_SYM[cur] || '¥') + (Number(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 let _cnEmps = null, _cnEmpEdit = null, _cnPay = null, _ceProfile = null, _ceMatches = [], _ceTimer = null;
 const _cnOpen = new Set();
-// 国内工资管理员 / 会计能添加员工、录入 / 修改 (会计改的进「待审核」), 删除只有管理员; 客服只看关联到自己账号的员工, 还要输查看密码
-function canEditCn() { return USER.role === 'admin' || (USER.role === 'accounting' && _cnRegion === 'cn'); }
+// 国内 / 美国员工工资: 管理员 / 会计能添加员工、录入 / 修改 (会计改的进「待审核」), 删除只有管理员; 客服只看关联到自己账号的员工, 还要输查看密码
+function canEditCn() { return ['admin', 'accounting'].includes(USER.role); }
 // 当前页签: 'cn' 国内工资 / 'us' 美国员工工资 (同一套名册和记录, 按员工 region 分开)
 let _cnRegion = 'cn';
 // 美国员工工资的看法: 'emp' 按员工 / 'day' 按发薪日 (记在本机浏览器)
