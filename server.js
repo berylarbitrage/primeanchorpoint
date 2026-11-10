@@ -38389,12 +38389,29 @@ app.get('/api/plaid/invoice-check', requireAdmin, requireRole('admin', 'cs', 'ac
   try {
     const nums = String(req.query.nums || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 30);
     const out = {};
-    const q = db.prepare('SELECT id, invoice_number, company_name, period_start, period_end, subtotal, payment_status FROM invoices WHERE TRIM(invoice_number)=? COLLATE NOCASE');
+    const q = db.prepare('SELECT id, invoice_number, company_name, period_start, period_end, subtotal, payment_status, items_json FROM invoices WHERE TRIM(invoice_number)=? COLLATE NOCASE');
+    // 每个工人在这张发票上的工资 (标注「公司员工」时核对金额用):
+    // 填了实付时薪 wage_rate 的按 工时 × 实付时薪 (加班按倍数), 否则用行合计
+    const invWorkers = itemsJson => {
+      let items = [];
+      try { items = JSON.parse(itemsJson || '[]'); } catch (_) {}
+      const by = new Map();
+      for (const it of Array.isArray(items) ? items : []) {
+        const name = String((it && it.name) || '').trim();
+        if (!name) continue;
+        const r = Number(it.rate) || 0, o = Number(it.otRate) || 0, w = Number(it.wage_rate) || 0;
+        const reg = Number(it.regHours != null ? it.regHours : it.hours) || 0, ot = Number(it.otHours) || 0;
+        const amt = w > 0 ? reg * w + ot * w * (r > 0 && o > 0 ? o / r : 1)
+          : it.total != null ? Number(it.total) || 0 : reg * r + ot * o;
+        by.set(name, (by.get(name) || 0) + amt);
+      }
+      return [...by].map(([name, amt]) => ({ name, amt: Math.round(amt * 100) / 100 }));
+    };
     const sysHit = rows => ({
       found: true, matches: rows.length, id: rows[0].id, invoice_number: rows[0].invoice_number,
       company_name: rows[0].company_name || '', period_start: rows[0].period_start || '',
       period_end: rows[0].period_end || '', subtotal: Number(rows[0].subtotal) || 0,
-      payment_status: rows[0].payment_status || '',
+      payment_status: rows[0].payment_status || '', workers: invWorkers(rows[0].items_json),
     });
     // BINV/BPINV 是 Bintique 的号段: 先认 Bintique 现行账单 (合并发票会改版,
     // 本系统里同号的手工旧档案不许挡在前面拿旧金额报错), Bintique 没有这个号

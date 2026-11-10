@@ -816,12 +816,12 @@ function _bsNoteItems(box) {
     // 取现金每笔: 公司 / 员工姓名 / Invoice / 账期 / 柜号
     kind: String((x && x.kind) || ''), co: String((x && x.co) || ''), who: String((x && x.who) || ''), inv: String((x && x.inv) || ''), ps: String((x && x.ps) || ''), pe: String((x && x.pe) || ''), ctr: String((x && x.ctr) || '') }));
   // 旧标注只有 note 没有 note_items (或 note 是别处自动写的): 当成一条备注
-  if (!a.some(x => x.t.trim() || x.co || x.who || x.inv || x.ctr)) a = [{ co: '', who: '', inv: '', ps: '', pe: '', ctr: '', ...(a[0] || {}), t: String(box.note || ''), amt: (a[0] && a[0].amt) || '' }].concat(a.slice(1));
+  if (!a.some(x => x.t.trim() || x.co || x.who || x.inv || x.ctr || BS_NOTE_KIND_TAG[x.kind])) a = [{ co: '', who: '', inv: '', ps: '', pe: '', ctr: '', ...(a[0] || {}), t: String(box.note || ''), amt: (a[0] && a[0].amt) || '' }].concat(a.slice(1));
   return a;
 }
 // 一条备注的文字: 取现金的 公司 / 员工 / Invoice / 账期 / 柜号 也拼进去 (列表 / 搜索 / 必填检查都看 note)
 function _bsNoteLabel(x) {
-  return [BS_CASH_KIND_TAG[x.kind] || '', x.co, x.who, x.inv, x.ps || x.pe ? _bsCashPeriod(x.ps, x.pe) : '', x.ctr ? '柜 ' + x.ctr : '', x.t.trim()].filter(Boolean).join(' ');
+  return [BS_CASH_KIND_TAG[x.kind] || BS_NOTE_KIND_TAG[x.kind] || '', x.co, x.who, x.inv, x.ps || x.pe ? _bsCashPeriod(x.ps, x.pe) : '', x.ctr ? '柜 ' + x.ctr : '', x.t.trim()].filter(Boolean).join(' ');
 }
 function _bsNoteJoin(items) {
   const filled = items.filter(x => _bsNoteLabel(x) || x.amt.trim());
@@ -831,7 +831,32 @@ function _bsNoteJoin(items) {
     return (_bsNoteLabel(x) + (isNaN(n) ? '' : ' ' + money(n))).trim();
   }).join('；');
 }
+// ── 备注每条可选类型: 备注 / 车补 / 介绍费 / 其他金额 ──
+// 车补、介绍费、其他金额 是这笔付款里除发票以外的钱, 加进应付合计和银行金额核对;
+// 普通「备注」的金额只是说明, 不加进去。
+const BS_NOTE_KINDS = [['', '📝 备注'], ['car', '🚗 车补'], ['ref', '🤝 介绍费'], ['other', '➕ 其他金额']];
+const BS_NOTE_KIND_TAG = { car: '车补', ref: '介绍费', other: '其他' };
+function _bsExtras(box) {
+  if (!box || box.payee === BS_PAYEE_CASH) return { sum: 0, parts: [] };
+  const parts = [];
+  for (const x of _bsNoteItems(box)) {
+    const tag = BS_NOTE_KIND_TAG[x.kind];
+    const n = parseFloat(x.amt);
+    if (tag && !isNaN(n) && n !== 0) parts.push({ label: x.kind === 'other' && x.t.trim() ? x.t.trim() : tag, amt: n });
+  }
+  return { sum: parts.reduce((s, p) => s + p.amt, 0), parts };
+}
+// 解释差额的备注: 只算「备注」类型写的文字 (车补/介绍费本身不算解释)
+function _bsDiffNote(box) {
+  if (!box) return '';
+  return _bsNoteItems(box).filter(x => !BS_NOTE_KIND_TAG[x.kind] && x.t.trim()).map(x => x.t.trim()).join('；');
+}
 function _bsNoteSumLineHtml(box, items) {
+  // 有发票金额核对的 (员工工资 / 公司收入): 银行金额核对在上面的自动核对里, 这里只显示附加金额合计
+  if (_bsAmtMode(box) && _bsInvItems(box).some(it => String(it.inv || '').trim())) {
+    const ex = _bsExtras(box);
+    return ex.parts.length ? `附加金额（车补/介绍费/其他）合计 <b>${money(ex.sum)}</b>，已加进上面的应付合计` : '';
+  }
   if (items.length < 2 && !items.some(x => x.amt.trim())) return '';
   const sum = items.reduce((s, x) => s + (parseFloat(x.amt) || 0), 0);
   const bank = Math.abs(Number(box.amount) || 0);
@@ -845,14 +870,15 @@ function _bsNoteItemsHtml(box) {
   const ok = _bsNoteSatisfied(box);
   const multi = items.length > 1;
   const rows = items.map((it, i) => `<div class="bs-note-item" style="display:flex;gap:.3rem;align-items:center;margin-bottom:.3rem">
-      <input type="text" class="bs-bx-note" placeholder="${esc(i === 0 ? _bsNoteHint(box) : '原因 / 备注')}" value="${esc(it.t)}" oninput="bsNoteItemField(${box.id},${i},'t',this.value)" style="flex:1;min-width:0;box-sizing:border-box;padding:.32rem .4rem;border:1px solid ${ok ? 'var(--gray-200)' : '#dc2626'};border-radius:6px;font-size:.82rem;${ok ? '' : 'background:#fff5f5'}">
+      <select title="这条是什么钱：车补 / 介绍费 / 其他金额 会加进应付合计核对银行金额" onchange="bsNoteItemKind(${box.id},${i},this.value)" style="flex:0 0 auto;max-width:96px;box-sizing:border-box;padding:.32rem .2rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem;background:#fff">${BS_NOTE_KINDS.map(([k, t]) => `<option value="${k}"${k === (BS_NOTE_KIND_TAG[it.kind] ? it.kind : '') ? ' selected' : ''}>${t}</option>`).join('')}</select>
+      <input type="text" class="bs-bx-note" placeholder="${esc(BS_NOTE_KIND_TAG[it.kind] ? (it.kind === 'other' ? '其他金额：写清楚是什么钱' : BS_NOTE_KIND_TAG[it.kind] + '（说明可选）') : i === 0 ? _bsNoteHint(box) : '原因 / 备注')}" value="${esc(it.t)}" oninput="bsNoteItemField(${box.id},${i},'t',this.value)" style="flex:1;min-width:0;box-sizing:border-box;padding:.32rem .4rem;border:1px solid ${ok ? 'var(--gray-200)' : '#dc2626'};border-radius:6px;font-size:.82rem;${ok ? '' : 'background:#fff5f5'}">
       <span style="color:#94a3b8;font-size:.82rem">$</span>
       <input type="number" step="0.01" placeholder="金额" value="${esc(it.amt)}" oninput="bsNoteItemField(${box.id},${i},'amt',this.value)" style="width:90px;box-sizing:border-box;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
       ${multi ? `<button onclick="bsNoteItemDel(${box.id},${i})" title="删除这条备注" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:.9rem;padding:0 .15rem">✕</button>` : ''}
     </div>`).join('');
   return `<div class="bs-note-items" style="margin-bottom:.4rem">${rows}
       <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.75rem">
-        <span onclick="bsNoteItemAdd(${box.id})" style="cursor:pointer;color:#2563eb;font-weight:600">＋ 再加一条备注</span>
+        <span onclick="bsNoteItemAdd(${box.id})" style="cursor:pointer;color:#2563eb;font-weight:600">＋ 再加一条（备注 / 车补 / 介绍费 / 其他）</span>
         <span class="bs-note-sum" style="color:var(--gray-500)">${_bsNoteSumLineHtml(box, items)}</span>
       </div>
     </div>`;
@@ -1015,6 +1041,14 @@ function bsNoteItemField(boxId, idx, key, val) {
   items[idx][key] = String(val || '');
   _bsNoteItemsSave(box, items);
 }
+function bsNoteItemKind(boxId, idx, val) {
+  const box = _bsBoxList.find(b => b.id === boxId); if (!box) return;
+  const items = _bsNoteItems(box);
+  if (!items[idx]) return;
+  items[idx].kind = BS_NOTE_KIND_TAG[val] ? val : '';
+  _bsNoteItemsSave(box, items);
+  _bsRenderBoxPanel();
+}
 function bsNoteItemAdd(boxId) {
   const box = _bsBoxList.find(b => b.id === boxId); if (!box) return;
   const items = _bsNoteItems(box);
@@ -1053,7 +1087,7 @@ async function bsUpdateBoxField(id, field, value) {
     const s = document.getElementById('bsEdStatus'); if (s) { s.textContent = '已保存 ✓'; setTimeout(() => { if (s.textContent === '已保存 ✓') s.textContent = ''; }, 1200); }
   } catch (e) { showToast('保存失败：' + (e.message || e), 'error'); }
   bsRefreshNoteState(id);
-  if (field === 'payee' || field === 'purpose') _bsAnnCheckSchedule(id);
+  if (field === 'payee' || field === 'purpose' || field === 'pay_portion') { _bsAnnCheckSchedule(id); annRefreshChip(box); }
   if (field === 'direction') {
     const isIn = value === 'in';
     const color = isIn ? '#059669' : '#dc2626';
@@ -1183,8 +1217,10 @@ function _bsInvAutoFill(box, mode) {
     const info = _bsInvCheckCache[String(it.inv || '').trim().toUpperCase()];
     if (!info || !info.found) return;
     const w = wraps[i];
-    if (mode === 'full' && !String(it.amt).trim() && Number(info.subtotal) > 0) {
-      it.amt = Number(info.subtotal).toFixed(2); changed = true;
+    const fillAmt = mode === 'full' ? Number(info.subtotal)
+      : _bsAmtMode(box) === 'emp' && box.pay_portion === 'full' ? Number(_bsWorkerWage(box, info)) : 0;
+    if (!String(it.amt).trim() && fillAmt > 0) {
+      it.amt = fillAmt.toFixed(2); changed = true;
       const a = w && w.querySelector('.bs-bx-inv-amt'); if (a) a.value = it.amt;
     }
     if (!it.ps && !it.pe && info.period_start && info.period_end) {
@@ -1253,6 +1289,18 @@ function _bsAnnCheckHtml(box, items, mode) {
       if (it.ps === info.period_start && it.pe === info.period_end) oks.push('账期');
       else probs.push(`账期不符（发票是 ${esc(info.period_start)} ~ ${esc(info.period_end)}）`);
     }
+    if (_bsAmtMode(box) === 'emp') {
+      const who = _bsEmpParse(box.payee).name;
+      const wage = _bsWorkerWage(box, info);
+      const filled = parseFloat(it.amt);
+      if (wage == null) {
+        if (who && Array.isArray(info.workers)) probs.push(`发票上没有「${esc(who)}」（检查姓名或发票号）`);
+      } else if (box.pay_portion === 'partial') {
+        oks.push(`${esc(who)} 这张工资 ${money(wage)}，部分付款${filled > 0 ? ' ' + money(filled) : ''}`);
+      } else if (filled > 0 && Math.abs(filled - wage) >= 0.01) {
+        probs.push(`金额差 ${money(Math.abs(filled - wage))}（${esc(who)} 这张工资 ${money(wage)}，填了 ${money(filled)}）`);
+      } else oks.push(`${esc(who)} 工资 ${money(wage)}`);
+    }
     if (mode === 'full') {
       // 金额: 多张发票用各张填的金额; 单张没填时用这笔交易金额
       const amt = parseFloat(it.amt) || (!many ? Math.abs(Number(box.amount) || 0) : 0);
@@ -1280,27 +1328,26 @@ function _bsAnnCheckHtml(box, items, mode) {
     return `<div style="color:#059669">✅ ${numHtml}：与系统发票一致${oks.length ? '（' + oks.join('/') + '）' : ''}</div>`;
   }).filter(Boolean);
   if (!lines.length) return '';
-  // 银行到账 vs 发票合计: 发票本身对得上不代表钱到齐了 —— 银行实际金额
-  // 和发票合计(多张发票加总)有差就显眼提示, 分毫不差才给绿勾。
+  // 银行到账 vs 应付合计 (发票 + 车补/介绍费/其他): 发票本身对得上不代表钱对 ——
+  // 银行实际金额和应付合计有差就显眼提示, 分毫不差才给绿勾。
   let bankLine = '';
-  if (mode === 'full') {
-    const bank = Math.abs(Number(box.amount) || 0);
-    let sum = 0, complete = bank > 0;
-    for (const it of items) {
-      const info = _bsInvCheckCache[String(it.inv || '').trim().toUpperCase()];
-      const a = parseFloat(it.amt) || (info && info.found && Number(info.subtotal)) || 0;
-      if (!(a > 0)) { complete = false; break; }
-      sum += a;
-    }
-    if (complete && sum > 0) {
-      const diff = bank - sum;
-      // 有差额但「原因/备注」已经解释过 → 不再红色警告, 灰色列出差额并附上备注
-      const note = String(box.note || '').trim();
-      bankLine = Math.abs(diff) < 0.01
-        ? `<div style="color:#059669">✅ 银行到账 ${money(bank)} 与发票合计一致</div>`
+  const amode = _bsAmtMode(box);
+  if (amode) {
+    const d = _bsAmtDiff(box);
+    const note = _bsDiffNote(box);
+    if (d) {
+      const lbl = esc(_bsAmtSumLabel(box, d));
+      bankLine = Math.abs(d.diff) < 0.01
+        ? `<div style="color:#059669;font-weight:600">✅ 银行金额 ${money(d.bank)} = ${lbl}</div>`
         : note
-        ? `<div style="color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:2px 8px;margin-top:2px">📝 银行到账 ${money(bank)}，发票合计 ${money(sum)}（${diff > 0 ? '多收' : '少收'} ${money(Math.abs(diff))}）<div style="color:#0f4c6b;font-weight:600">已备注：${esc(note)}</div></div>`
-        : `<div style="color:#dc2626;font-weight:700;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:2px 8px;margin-top:2px">⚠️ 银行到账 ${money(bank)} ≠ 发票合计 ${money(sum)}（${diff > 0 ? '多收' : '少收'} ${money(Math.abs(diff))}）</div>`;
+        ? `<div style="color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:2px 8px;margin-top:2px">📝 银行金额 ${money(d.bank)}，${lbl}（${d.diff > 0 ? '多' : '少'} ${money(Math.abs(d.diff))}）<div style="color:#0f4c6b;font-weight:600">已备注：${esc(note)}</div></div>`
+        : `<div style="color:#dc2626;font-weight:700;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:2px 8px;margin-top:2px">⚠️ 银行金额 ${money(d.bank)} ≠ ${lbl}，${d.diff > 0 ? '多' : '少'} ${money(Math.abs(d.diff))}<div style="font-weight:400;font-size:.68rem">有车补 / 介绍费 / 其他金额的，在下面加一条选对类型并填金额；其他原因写在「备注」里</div></div>`;
+    } else if (amode === 'emp') {
+      const why = box.pay_portion === 'partial'
+        ? '部分付款：在每张发票的「这张金额」填这次付了多少，才能核对银行金额'
+        : !box.pay_portion ? '先选「全额 / 部分」才能核对银行金额'
+        : '发票上找不到这个员工的工资：在「这张金额」手填，才能核对银行金额';
+      bankLine = `<div style="color:#b45309">ℹ️ ${why}</div>`;
     }
   }
   return `<div style="color:#64748b">🤖 与系统发票自动核对：<span style="font-size:.68rem;color:#94a3b8">点发票号看明细</span></div>` + lines.join('') + bankLine;
@@ -1508,8 +1555,8 @@ async function annApprove(id) {
     return;
   }
   const d = _bsAmtDiff(box);
-  if (d && Math.abs(d.diff) >= 0.01 && !String(box.note || '').trim()) {
-    showToast('银行到账 ' + money(d.bank) + ' 与发票合计 ' + money(d.sum) + ' 差 ' + money(Math.abs(d.diff)) + '：必须在「原因/备注」里说明差额原因（可附照片）才能审核通过', 'error');
+  if (d && Math.abs(d.diff) >= 0.01 && !_bsDiffNote(box)) {
+    showToast('银行金额 ' + money(d.bank) + ' 与' + _bsAmtSumLabel(box, d) + ' 差 ' + money(Math.abs(d.diff)) + '：必须在「原因/备注」里说明差额原因（可附照片）才能审核通过', 'error');
     return;
   }
   const comp = _bsCompanyProbs(box);
@@ -1732,20 +1779,51 @@ function _bsRenderBoxPanel() {
 // ── 银行到账 vs 发票合计 (行内徽章与审核闸门共用) ──
 // 返回 {bank, sum, diff}; 金额取不齐 (发票没查到又没填金额) 时返回 null。
 // 各张填的金额优先, 没填的用系统发票金额 (_bsInvCheckCache 里查到的)。
+// 员工工资也核对: 发票上这个员工的工资 (全额) 或各张填的金额 (部分付款);
+// 应付合计 = 发票金额 + 备注里的 车补 / 介绍费 / 其他金额。
+// 返回 {bank, inv, extras, sum, diff} (sum = 应付合计)。
+function _bsAmtMode(box) {
+  const m = _bsAnnCheckMode(box);
+  if (m === 'full') return 'full';
+  if (m === 'exist' && _bsPayeeKind(box) === 'employee') return 'emp';
+  return null;
+}
+// 员工在这张发票上的工资; 查不到 (发票没查回来 / 名字不在发票上) 返回 null
+function _bsWorkerWage(box, info) {
+  if (!info || !info.found || !Array.isArray(info.workers)) return null;
+  const name = _bsCashKey(_bsEmpParse(box.payee).name);
+  if (!name) return null;
+  const hits = info.workers.filter(w => _bsCashKey(w.name) === name);
+  return hits.length ? hits.reduce((s, w) => s + (Number(w.amt) || 0), 0) : null;
+}
+// 这张发票按系统算应付多少 (没填「这张金额」时用): 公司收入 = 发票金额; 员工全额 = 他在发票上的工资; 员工部分付款 = 算不出 (要手填)
+function _bsInvExpected(box, it, amode) {
+  const info = _bsInvCheckCache[String(it.inv || '').trim().toUpperCase()];
+  if (amode === 'full') return (info && info.found && Number(info.subtotal)) || 0;
+  if (box.pay_portion === 'partial') return 0;
+  return _bsWorkerWage(box, info) || 0;
+}
 function _bsAmtDiff(box) {
-  if (_bsAnnCheckMode(box) !== 'full') return null;
+  const amode = _bsAmtMode(box);
+  if (!amode) return null;
   const items = _bsInvItems(box).filter(it => String(it.inv || '').trim());
   if (!items.length) return null;
   const bank = Math.abs(Number(box.amount) || 0);
   if (!(bank > 0)) return null;
-  let sum = 0;
+  let inv = 0;
   for (const it of items) {
-    const info = _bsInvCheckCache[String(it.inv).trim().toUpperCase()];
-    const a = parseFloat(it.amt) || (info && info.found && Number(info.subtotal)) || 0;
+    const a = parseFloat(it.amt) || _bsInvExpected(box, it, amode);
     if (!(a > 0)) return null;
-    sum += a;
+    inv += a;
   }
-  return { bank, sum, diff: bank - sum };
+  const extras = _bsExtras(box).sum;
+  const sum = inv + extras;
+  return { bank, inv, extras, sum, diff: bank - sum };
+}
+// 「发票合计 $X」或「应付 $Z（发票 $X + 车补 $Y …）」
+function _bsAmtSumLabel(box, d) {
+  if (!d.extras) return '发票合计 ' + money(d.inv);
+  return '应付合计 ' + money(d.sum) + '（发票 ' + money(d.inv) + _bsExtras(box).parts.map(p => ' + ' + p.label + ' ' + money(p.amt)).join('') + '）';
 }
 // ── 公司不符 (行内徽章与审核闸门共用) ──
 // 标注选的公司和发票抬头对不上的 [{num, company}]; 发票信息还没查到的不算。
@@ -1771,7 +1849,7 @@ function _bsCompanyProbs(box) {
 async function annCheckScanAll() {
   const need = new Set();
   for (const b of _bsBoxList) {
-    if (_bsAnnCheckMode(b) !== 'full') continue;
+    if (!_bsAmtMode(b)) continue;
     for (const it of _bsInvItems(b)) {
       const n = String(it.inv || '').trim().toUpperCase();
       if (n && !(n in _bsInvCheckCache)) need.add(n);
@@ -1784,7 +1862,7 @@ async function annCheckScanAll() {
       Object.assign(_bsInvCheckCache, (r && r.invoices) || {});
     } catch (e) { break; }
   }
-  _bsBoxList.forEach(b => { if (_bsAnnCheckMode(b) === 'full') annRefreshChip(b); });
+  _bsBoxList.forEach(b => { if (_bsAmtMode(b)) annRefreshChip(b); });
 }
 // 「标注」筛选: none=未标注 / done=已标注 / incomplete=标注了但信息不全 (行内显示 ⚠缺… 的那些)
 function annFilterRows(rows, mode) {
@@ -1807,11 +1885,11 @@ function annChipHtml(txnId) {
       : ' <span style="color:#dc2626" title="需要在「原因/备注」里写说明，或补全标注信息">⚠缺备注</span>';
   }
   const d = _bsAmtDiff(b);
-  const hasNote = !!String(b.note || '').trim();
-  const amtWarn = d && Math.abs(d.diff) >= 0.01 && hasNote
-    ? ' <span style="color:#64748b" title="银行到账 ' + money(d.bank) + ' ≠ 发票合计 ' + money(d.sum) + '；已备注：' + esc(String(b.note).trim()).replace(/"/g, '&quot;') + '">📝差' + money(Math.abs(d.diff)) + '（已备注）</span>'
+  const diffNote = _bsDiffNote(b);
+  const amtWarn = d && Math.abs(d.diff) >= 0.01 && diffNote
+    ? ' <span style="color:#64748b" title="银行金额 ' + money(d.bank) + ' ≠ ' + esc(_bsAmtSumLabel(b, d)) + '；已备注：' + esc(diffNote).replace(/"/g, '&quot;') + '">📝差' + money(Math.abs(d.diff)) + '（已备注）</span>'
     : d && Math.abs(d.diff) >= 0.01
-    ? ' <span style="color:#dc2626;font-weight:800" title="银行到账 ' + money(d.bank) + ' ≠ 发票合计 ' + money(d.sum) + '，需在备注里解释">⚠️差' + money(Math.abs(d.diff)) + '</span>'
+    ? ' <span style="color:#dc2626;font-weight:800" title="银行金额 ' + money(d.bank) + ' ≠ ' + esc(_bsAmtSumLabel(b, d)) + '，需在备注里解释">⚠️差' + money(Math.abs(d.diff)) + '</span>'
     : '';
   const comp = _bsCompanyProbs(b);
   const compWarn = comp.length
