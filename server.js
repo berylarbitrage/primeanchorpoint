@@ -44540,6 +44540,8 @@ app.get('/api/acct/cn-employees', requireAdmin, requireAcctView, (req, res) => {
 });
 function _cnEmpOut(r) { return { id: r.id, name: r.name, title: r.title, region: r.region === 'us' ? 'us' : 'cn', has_pw: !!r.view_pw_hash }; }
 function _cnSeeAll(req) { return req.userRole === 'admin' || req.userRole === 'accounting'; }
+// 国内员工 (region=cn) 的名册和工资: 管理员 / 会计能添加和编辑; 美国员工只有管理员
+function _cnCanEdit(req, region) { return req.userRole === 'admin' || (req.userRole === 'accounting' && region !== 'us'); }
 function _cnIsOwn(req, r) { return !!r.login_username && String(r.login_username).toLowerCase() === String(req.userName || '').toLowerCase(); }
 // 关联登录账号: 必须是存在的客服 / staff 账号, 否则当没关联
 function _cnLoginUser(v) {
@@ -44549,7 +44551,7 @@ function _cnLoginUser(v) {
   return row ? row.username : null;
 }
 // 可关联的登录账号 (客服 / staff; 会计和管理员本来就能看全部)
-app.get('/api/acct/cn-login-accounts', requireAdmin, requireRole('admin'), (req, res) => {
+app.get('/api/acct/cn-login-accounts', requireAdmin, requireRole('admin', 'accounting'), (req, res) => {
   res.json(db.prepare("SELECT username, display_name, role FROM admin_users WHERE role IN ('cs','staff') AND COALESCE(active,1)=1 ORDER BY username COLLATE NOCASE").all());
 });
 function _cnSetPw(id, pw) {
@@ -44580,7 +44582,7 @@ app.post('/api/acct/cn-employees/:id/unlock', requireAdmin, requireAcctView, (re
   res.json({ employee: _cnEmpOut(emp), records: rows });
 });
 // 添加国内员工时按名字 / 工号 / 电话搜员工档案
-app.get('/api/acct/cn-employee-search', requireAdmin, requireRole('admin'), (req, res) => {
+app.get('/api/acct/cn-employee-search', requireAdmin, requireRole('admin', 'accounting'), (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
   if (!q) return res.json({ matches: [] });
   const digits = q.replace(/\D/g, '');
@@ -44600,7 +44602,7 @@ function _cnProfileId(v) {
   const id = Number(v) || 0;
   return id && db.prepare('SELECT 1 FROM employees WHERE id=?').get(id) ? id : null;
 }
-app.post('/api/acct/cn-employees', requireAdmin, requireRole('admin'), (req, res) => {
+app.post('/api/acct/cn-employees', requireAdmin, requireRole('admin', 'accounting'), (req, res) => {
   const b = req.body || {};
   const name = String(b.name || '').trim().slice(0, 100);
   if (!name) return res.status(400).json({ error: '请填写员工姓名' });
@@ -44613,15 +44615,17 @@ app.post('/api/acct/cn-employees', requireAdmin, requireRole('admin'), (req, res
   if (login === null) return res.status(400).json({ error: '关联的登录账号不存在或不是客服账号' });
   if (login && db.prepare('SELECT 1 FROM cn_employees WHERE login_username=? COLLATE NOCASE').get(login)) return res.status(400).json({ error: '这个登录账号已经关联到别的员工了' });
   const region = b.region === 'us' ? 'us' : 'cn';
+  if (!_cnCanEdit(req, region)) return res.status(403).json({ error: '美国员工只有管理员能添加' });
   const r = db.prepare('INSERT INTO cn_employees (name, title, note, currency, profile_id, login_username, created_by, region) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
     .run(name, String(b.title || '').trim().slice(0, 100), String(b.note || '').trim().slice(0, 500),
       ['CNY', 'USD'].includes(String(b.currency || '')) ? String(b.currency) : (region === 'us' ? 'USD' : 'CNY'), pid, login, req.userName || '', region);
   _cnSetPw(r.lastInsertRowid, pw);
   res.json({ success: true, id: r.lastInsertRowid });
 });
-app.put('/api/acct/cn-employees/:id', requireAdmin, requireRole('admin'), (req, res) => {
+app.put('/api/acct/cn-employees/:id', requireAdmin, requireRole('admin', 'accounting'), (req, res) => {
   const cur = db.prepare('SELECT * FROM cn_employees WHERE id=?').get(req.params.id);
   if (!cur) return res.status(404).json({ error: '员工不存在' });
+  if (!_cnCanEdit(req, cur.region)) return res.status(403).json({ error: '美国员工只有管理员能修改' });
   const b = req.body || {};
   const name = String(b.name || '').trim().slice(0, 100);
   if (!name) return res.status(400).json({ error: '请填写员工姓名' });
@@ -44873,7 +44877,8 @@ app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin
   if (!FEE_RECORD_TYPES.includes(feeType)) return res.status(400).json({ error: '无效费用类型' });
   // 客服只能添加卡车费用 (卡车页签「客服可以自己加」); 其他费用类型仍限 会计/admin
   if (req.userRole === 'cs' && feeType !== 'truck') return res.status(403).json({ error: '客服只能添加卡车费用' });
-  if (feeType === 'cnpay' && req.userRole !== 'admin') return res.status(403).json({ error: '国内工资只有管理员能录入' });
+  // 国内工资: 管理员 / 会计能录入 (会计录的进「待审核」, 管理员通过)
+  if (feeType === 'cnpay' && !_cnSeeAll(req)) return res.status(403).json({ error: '国内工资只有管理员 / 会计能录入' });
   let party = String(b.party_name || '').trim().slice(0, 200);
   if (!party && feeType !== 'cnpay') return res.status(400).json({ error: feeType === 'insurance' ? '请填写保险公司' : feeType === 'legal' ? '请填写律师 / 律所' : feeType === 'truck' ? '请填写卡车公司' : feeType === 'cnpay' ? '请填写员工姓名' : '请填写收款方 / 供应商' });
   let amtNum = Number(b.amount);
@@ -44882,6 +44887,7 @@ app.post('/api/acct/fee-records', requireAdmin, requireRole('accounting', 'admin
   if (feeType === 'cnpay') {
     const emp = db.prepare('SELECT * FROM cn_employees WHERE id=?').get(Number(b.employee_id) || 0);
     if (!emp) return res.status(400).json({ error: '请先选择员工' });
+    if (!_cnCanEdit(req, emp.region)) return res.status(403).json({ error: '美国员工工资只有管理员能录入' });
     const up = _cnSplitUploads(req);
     const c = _cnPayLines(b.lines, { uploads: up.lineUps });
     if (!c.lines.length) return res.status(400).json({ error: '请至少填写一项明细' });
@@ -44918,10 +44924,12 @@ app.put('/api/acct/fee-records/:id', requireAdmin, requireRole('accounting', 'ad
   if (!cur) return res.status(404).json({ error: '记录不存在' });
   if (cur.fee_type !== 'truck' && cur.fee_type !== 'cnpay') return res.status(400).json({ error: '只能修改卡车费用 / 国内工资' });
   const isAdmin = req.userRole === 'admin';
-  if (!isAdmin && cur.approval_status === 'approved') return res.status(403).json({ error: '已审核通过的记录只有管理员能改' });
+  // 国内工资 (国内员工): 会计也能改已通过的, 改完回到「待审核」由管理员重新审; 卡车费用通过后只有 admin 能改
+  if (!isAdmin && cur.approval_status === 'approved' && cur.fee_type !== 'cnpay') return res.status(403).json({ error: '已审核通过的记录只有管理员能改' });
   const b = req.body || {};
   if (cur.fee_type === 'cnpay') {
-    if (!isAdmin) return res.status(403).json({ error: '国内工资只有管理员能修改' });
+    const emp = db.prepare('SELECT region FROM cn_employees WHERE id=?').get(cur.employee_id || 0);
+    if (!_cnCanEdit(req, emp ? emp.region : 'cn')) return res.status(403).json({ error: '只有管理员能修改这条工资' });
     const up = _cnSplitUploads(req);
     let oldLines = []; try { oldLines = JSON.parse(cur.lines || '[]') || []; } catch (e) { oldLines = []; }
     const c = _cnPayLines(b.lines, { uploads: up.lineUps, old: oldLines });
