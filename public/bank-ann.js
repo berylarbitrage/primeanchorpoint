@@ -256,7 +256,7 @@ function _bsPayeeKind(box) {
 }
 function _bsWantsInvoice(box) {
   const k = _bsPayeeKind(box);
-  return k === 'employee' || k === 'unload' || k === 'pallet' || k === 'wagereturn' || (k === 'company' && box.direction === 'in');
+  return k === 'employee' || k === 'unload' || k === 'pallet' || k === 'wagereturn' || k === 'truck' || (k === 'company' && box.direction === 'in');
 }
 function _bsHasInvoiceInfo(box) {
   return !!(String(box.invoice_number || '').trim() && String(box.period_start || '').trim() && String(box.period_end || '').trim());
@@ -377,7 +377,7 @@ function _bsTruckCoOptions(current) {
   names.forEach(n => parts.push(`<option value="${esc(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`));
   return parts.join('');
 }
-function bsTruckUpdate(id, el) { bsUpdateBoxField(id, 'payee', _bsTruckJoin(el.value)); bsUpdateBoxSections(id); }
+function bsTruckUpdate(id, el) { bsUpdateBoxField(id, 'payee', _bsTruckJoin(el.value)); bsUpdateBoxSections(id); _bsTruckInvsLoad(); _bsTruckDlRefresh(); _bsAnnCheckSchedule(id); }
 function _bsIsInternal(payee) { return typeof payee === 'string' && payee.indexOf(BS_INTERNAL_PREFIX) === 0; }
 function _bsInternalParse(payee) { return _bsIsInternal(payee) ? payee.slice(BS_INTERNAL_PREFIX.length) : ''; }
 function _bsInternalJoin(co) { return BS_INTERNAL_PREFIX + (co || ''); }
@@ -734,6 +734,8 @@ function bsUpdateBoxSections(id) {
   if (fw) fw.style.display = kind === 'bankfee' ? '' : 'none';
   if (pw) pw.style.display = kind === 'personal' ? '' : 'none';
   if (iw) iw.style.display = _bsWantsInvoice(box) ? '' : 'none';
+  if (kind === 'truck') _bsTruckInvsLoad();
+  if (box.id === _annOpenId) _bsTruckDlRefresh();
   if (pr) pr.style.display = (kind === 'company' && isIn) ? '' : 'none';
   if (por) por.style.display = kind === 'employee' ? '' : 'none';
 }
@@ -1145,14 +1147,58 @@ function _bsInvSumLineHtml(box, items) {
   const match = !boxAmt || !sum || Math.abs(sum - boxAmt) < 0.01;
   return `<span style="color:${match ? '#059669' : '#dc2626'}">各张金额合计 $${sum.toFixed(2)}${boxAmt ? `（这笔支出 $${boxAmt.toFixed(2)}${Math.abs(sum - boxAmt) < 0.01 ? ' ✓' : sum ? '，不一致 ⚠' : ''}）` : ''}</span>`;
 }
+// ── 🚚 卡车费: 「Invoice number」可以直接选这家卡车公司的卡车单 (卡车费用页签的行) ──
+// 数据来自 /plaid/truck-invoices (Bintique 卡车订单 + 手动添加的卡车费用), 打开卡车费标注时加载一次
+let _bsTruckInvs = null, _bsTruckInvsP = null;
+function _bsTruckInvsLoad() {
+  if (_bsTruckInvs || _bsTruckInvsP) return _bsTruckInvsP;
+  _bsTruckInvsP = annApi('/plaid/truck-invoices').then(r => { _bsTruckInvs = (r && r.rows) || []; })
+    .catch(() => { _bsTruckInvs = []; }).then(() => { _bsTruckInvsP = null; _bsTruckDlRefresh(); });
+  return _bsTruckInvsP;
+}
+function _bsTruckCoInvs(co) {
+  const k = _bsCashKey(co);
+  return (_bsTruckInvs || []).filter(t => { const c = _bsCashKey(t.company); return !k || (c && (c === k || c.includes(k) || k.includes(c))); });
+}
+function _bsTruckDlHtml(box) {
+  const rows = _bsTruckCoInvs(_bsTruckParse(box.payee));
+  return rows.map(t => `<option value="${esc(t.code)}">${esc([t.company, t.ps + (t.pe && t.pe !== t.ps ? ' ~ ' + t.pe : ''), '$' + Number(t.amount || 0).toFixed(2),
+    t.paid === 'paid' ? '已付' : t.paid === 'partial' ? '部分已付' : '', t.source === 'manual' ? '手动添加' : ''].filter(Boolean).join(' · '))}</option>`).join('');
+}
+// 换了付给谁 / 卡车公司 (面板不重画): 发票号输入框挂上 / 摘掉卡车单下拉, 提示跟着公司走
+function _bsTruckDlRefresh() {
+  const box = _bsBoxList.find(b => b.id === _annOpenId);
+  if (!box) return;
+  const item = document.querySelector(`.bs-box-item[data-id="${box.id}"]`);
+  if (!item) return;
+  const isTruck = _bsPayeeKind(box) === 'truck';
+  let dl = document.getElementById('bsTruckInvList');
+  if (isTruck && !dl) {
+    dl = document.createElement('datalist'); dl.id = 'bsTruckInvList';
+    const w = item.querySelector('.bs-income-wrap'); if (w) w.appendChild(dl);
+  }
+  if (dl) dl.innerHTML = isTruck ? _bsTruckDlHtml(box) : '';
+  item.querySelectorAll('.bs-bx-inv').forEach(el => {
+    if (isTruck) { el.setAttribute('list', 'bsTruckInvList'); el.placeholder = _bsTruckInvPh(box); el.title = '选这家卡车公司的卡车单 (卡车费用页签)，也可以填对方发票号'; }
+    else if (el.getAttribute('list') === 'bsTruckInvList') { el.removeAttribute('list'); el.placeholder = 'Invoice number'; el.title = ''; }
+  });
+}
+function _bsTruckInvPh(box) {
+  const co = _bsTruckParse(box.payee);
+  if (!_bsTruckInvs) return '卡车单号 / Invoice（加载中…）';
+  const n = _bsTruckCoInvs(co).length;
+  return co ? (n ? `卡车单号 / Invoice（${co} 有 ${n} 张，可选）` : '卡车单号 / Invoice（这家公司没有卡车单）') : '卡车单号 / Invoice（先选公司）';
+}
 function _bsInvItemsHtml(box) {
   const items = _bsInvItems(box);
   const many = items.length > 1;
+  const isTruck = _bsPayeeKind(box) === 'truck';
+  if (isTruck) _bsTruckInvsLoad();
   const rows = items.map((it, i) => `
     <div class="bs-inv-item" style="${many ? 'border:1px solid #bbf7d0;border-radius:6px;padding:.35rem .4rem;background:#fff;' : ''}margin-bottom:.3rem">
       <div style="display:flex;gap:.3rem;align-items:center;margin-bottom:.25rem">
         ${many ? `<span style="font-size:.7rem;color:#059669;font-weight:700;flex:0 0 auto">#${i + 1}</span>` : ''}
-        <input type="text" class="bs-bx-inv" placeholder="Invoice number" value="${esc(it.inv)}" onchange="bsInvItemField(${box.id},${i},'inv',this.value)" style="flex:1;min-width:0;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+        <input type="text" class="bs-bx-inv" ${isTruck ? `list="bsTruckInvList" title="选这家卡车公司的卡车单 (卡车费用页签)，也可以填对方发票号"` : ''} placeholder="${isTruck ? esc(_bsTruckInvPh(box)) : 'Invoice number'}" value="${esc(it.inv)}" onchange="bsInvItemField(${box.id},${i},'inv',this.value)" style="flex:1;min-width:0;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
         ${many ? `<a onclick="bsInvItemDel(${box.id},${i})" title="删除这张发票" style="flex:0 0 auto;color:#dc2626;cursor:pointer;font-weight:700;padding:0 .2rem">✕</a>` : ''}
       </div>
       <input type="text" class="bs-bx-period" placeholder="账期：可粘贴 2026-03-16 ~ 2026-03-22" value="${(it.ps || it.pe) ? esc((it.ps || '') + ' ~ ' + (it.pe || '')) : ''}" oninput="bsInvItemPeriod(${box.id},${i},this)" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;margin-bottom:.3rem">
@@ -1162,7 +1208,7 @@ function _bsInvItemsHtml(box) {
         <input type="number" step="0.01" class="bs-bx-inv-amt" placeholder="这张金额" title="这张发票对应的金额" value="${esc(it.amt)}" onchange="bsInvItemField(${box.id},${i},'amt',this.value)" style="flex:0 0 96px;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
       </div>
     </div>`).join('');
-  return rows
+  return (isTruck ? `<datalist id="bsTruckInvList">${_bsTruckDlHtml(box)}</datalist>` : '') + rows
     + `<div class="bs-inv-sum" style="font-size:.72rem;margin-bottom:.25rem">${_bsInvSumLineHtml(box, items)}</div>`
     + `<button type="button" onclick="bsInvItemAdd(${box.id})" style="font-size:.74rem;padding:.2rem .6rem;border:1px dashed #059669;background:#f0fdf4;color:#047857;border-radius:6px;cursor:pointer;font-weight:600">＋ 再加一张发票（各自账期/金额）</button>`
     + `<div class="bs-ann-check" style="font-size:.72rem;line-height:1.55;margin-top:.35rem"></div>`;
@@ -1181,6 +1227,7 @@ function _bsAnnCheckMode(box) {
   const k = _bsPayeeKind(box);
   if (k === 'company' && box.direction === 'in') return 'full';
   if (k === 'pallet') return 'full'; // 木板钱: 发票号去 Bintique 账单里核对 (号码/账期/金额/公司)
+  if (k === 'truck') return 'full'; // 卡车费: 关联卡车单 (卡车费用页签), 核对 公司/账期/金额 + 有没有被别的交易付过
   if (k === 'employee') return 'exist';
   if (k === 'wagereturn') return 'exist'; // 员工工资退回款: 核对系统里有没有这张发票、账期对不对
   return null;
@@ -1276,11 +1323,13 @@ function _bsAnnCheckHtml(box, items, mode) {
     const num = it.inv.trim().toUpperCase();
     const info = _bsInvCheckCache[num];
     if (!info) return '';
-    if (!info.found) return `<div style="color:#dc2626">⚠️ ${esc(num)}：本系统和 Bintique 里都没有这张发票（检查号码有没有打错）</div>`;
+    if (!info.found) return `<div style="color:#dc2626">⚠️ ${esc(num)}：${_bsPayeeKind(box) === 'truck' ? '卡车费用里找不到这张卡车单，本系统和 Bintique 也没有这张发票' : '本系统和 Bintique 里都没有这张发票'}（检查号码有没有打错）</div>`;
     // 发票号可点击 → 本系统发票弹窗看明细; Bintique 账单开新窗口看账单页。
     // 号后面标明数据来源, 金额对不上时一眼能看出比的是哪边的数。
-    const srcTag = `<span style="color:#94a3b8;font-size:.66rem;font-weight:400">（${info.source === 'bintique' ? 'Bintique账单' : '本系统发票'}）</span>`;
-    const numHtml = (info.source === 'bintique'
+    const srcTag = `<span style="color:#94a3b8;font-size:.66rem;font-weight:400">（${info.source === 'truck' ? (info.truck_source === 'manual' ? '卡车单·手动添加' : '卡车单·Bintique') : info.source === 'bintique' ? 'Bintique账单' : '本系统发票'}）</span>`;
+    const numHtml = (info.source === 'truck' && !info.doc_url
+      ? `<a href="#" onclick="event.preventDefault();annShowTruckInv('${esc(num)}')" title="点击查看这张卡车单" style="color:inherit;font-weight:700;text-decoration:underline">${esc(num)}</a>`
+      : (info.source === 'bintique' || info.source === 'truck')
       ? (info.doc_url ? `<a href="${esc(info.doc_url)}" target="_blank" rel="noopener" title="在新窗口打开这张 Bintique 账单" style="color:inherit;font-weight:700;text-decoration:underline">${esc(num)}</a>` : esc(num))
       : info.id ? `<a href="#" onclick="event.preventDefault();annShowInvoice(${info.id})" title="点击查看这张发票的明细" style="color:inherit;font-weight:700;text-decoration:underline">${esc(num)}</a>` : esc(num)) + srcTag;
     const probs = [], oks = [];
@@ -1340,8 +1389,15 @@ function _bsAnnCheckHtml(box, items, mode) {
         if (m[1] === 'C' && purpose.indexOf('劳务') >= 0) probs.push('C 开头是 Container 卸柜发票，用途却填了劳务工资');
       }
     }
+    // 卡车单: 有没有被别的银行交易标注付过 / 卡车费用里已记已付 → 提醒是不是重复付了
+    if (info.source === 'truck') {
+      const others = (info.payments || []).filter(r => r.id !== box.id && !(box.plaid_txn_id && r.plaid_txn_id === box.plaid_txn_id));
+      if (others.length) probs.push(`这张卡车单已经被别的交易标注付过：${others.map(r => `${esc(String(r.txn_date || '').slice(5) || '?')} ${money(Math.abs(Number(r.amount) || 0))}`).join('、')}，检查是不是重复付了`);
+      else if (info.truck_paid === 'paid') oks.push('卡车费用里已记已付');
+      if (info.approval_status === 'pending') probs.push('这张手动添加的卡车费用还在待审核');
+    }
     if (probs.length) return `<div style="color:#dc2626">⚠️ ${numHtml}：${probs.join('；')}</div>` + paidLine;
-    return `<div style="color:#059669">✅ ${numHtml}：与系统发票一致${oks.length ? '（' + oks.join('/') + '）' : ''}</div>` + paidLine;
+    return `<div style="color:#059669">✅ ${numHtml}：与系统${info.source === 'truck' ? '卡车单' : '发票'}一致${oks.length ? '（' + oks.join('/') + '）' : ''}</div>` + paidLine;
   }).filter(Boolean);
   if (!lines.length) return '';
   // 银行到账 vs 应付合计 (发票 + 车补/介绍费/其他): 发票本身对得上不代表钱对 ——
@@ -1370,7 +1426,35 @@ function _bsAnnCheckHtml(box, items, mode) {
       bankLine = `<div style="color:#b45309">ℹ️ ${why}</div>`;
     }
   }
-  return `<div style="color:#64748b">🤖 与系统发票自动核对：<span style="font-size:.68rem;color:#94a3b8">点发票号看明细</span></div>` + lines.join('') + bankLine;
+  return `<div style="color:#64748b">🤖 与系统${_bsPayeeKind(box) === 'truck' ? '卡车单' : '发票'}自动核对：<span style="font-size:.68rem;color:#94a3b8">点发票号看明细</span></div>` + lines.join('') + bankLine;
+}
+// 手动添加的卡车单没有 Bintique 页面: 点号码弹个小卡片看明细 (公司/日期/金额/付款)
+function annShowTruckInv(num) {
+  const info = _bsInvCheckCache[String(num || '').trim().toUpperCase()] || {};
+  const t = (_bsTruckInvs || []).find(x => String(x.code).toUpperCase() === String(num).toUpperCase()) || {};
+  let m = document.getElementById('annInvModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'annInvModal';
+    m.style.cssText = 'display:none;position:fixed;inset:0;z-index:10070;background:rgba(15,23,42,.55);align-items:center;justify-content:center;padding:1rem';
+    m.onclick = e => { if (e.target === m) m.style.display = 'none'; };
+    document.body.appendChild(m);
+  }
+  const pays = (info.payments || []).map(r => `<div>${esc(r.txn_date || '')} · ${money(Math.abs(Number(r.amount) || 0))}${r.note ? ' · ' + esc(String(r.note).slice(0, 60)) : ''}</div>`).join('');
+  const row = (k, v) => `<tr><td style="color:#64748b;padding:.25rem .6rem .25rem 0;white-space:nowrap;vertical-align:top">${k}</td><td style="padding:.25rem 0">${v}</td></tr>`;
+  m.innerHTML = `<div onclick="event.stopPropagation()" style="background:#fff;border-radius:10px;padding:1rem 1.1rem;min-width:280px;max-width:420px;font-size:.82rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem"><div style="font-weight:800;color:#0f4c6b">🚚 ${esc(num)}</div>
+      <a href="#" onclick="event.preventDefault();document.getElementById('annInvModal').style.display='none'" style="color:#94a3b8;font-size:1.1rem;text-decoration:none">✕</a></div>
+    <table style="border-collapse:collapse;width:100%">
+      ${row('公司', `<b style="color:#0E7BB8">${esc(info.company_name || t.company || '')}</b>`)}
+      ${row('日期', esc((info.period_start || '') + (info.period_end && info.period_end !== info.period_start ? ' ~ ' + info.period_end : '')))}
+      ${row('金额', `<b>${money(Number(info.subtotal) || 0)}</b>`)}
+      ${row('来源', info.truck_source === 'manual' ? '手动添加的卡车费用' + (info.approval_status === 'pending' ? '（待审核）' : '') : 'Bintique 卡车订单')}
+      ${row('卡车费用付款', info.truck_paid === 'paid' ? '<span style="color:#059669">已付</span>' : info.truck_paid === 'partial' ? '部分已付' : '<span style="color:#94a3b8">未记</span>')}
+      ${row('银行交易标注', pays || '<span style="color:#94a3b8">—</span>')}
+      ${t.note ? row('说明', esc(t.note)) : ''}
+    </table></div>`;
+  m.style.display = 'flex';
 }
 // ── 点自动核对里的发票号 → 弹窗看发票明细 (两个宿主页通用, 数据走 /api/acct/invoices/:id) ──
 async function annShowInvoice(id) {
