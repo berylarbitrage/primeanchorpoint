@@ -38296,7 +38296,8 @@ app.post('/api/plaid/annotations/:id/approve', requireAdmin, requireRole('admin'
     // 银行到账 vs 发票合计有差额的标注 (收入, 以及木板钱两个方向): 必须填了
     // 「原因/备注」(可附照片) 说明差额原因才能通过审核 —— 没解释不给过。
     // 发票号本系统找不到时去 Bintique 账单里找 (木板钱的 BINV/BPINV)。
-    if (box.direction === 'in' || String(box.payee || '').indexOf('木板钱') === 0) {
+    const isTruckAnn = String(box.payee || '').indexOf('卡车费:') === 0;
+    if (box.direction === 'in' || String(box.payee || '').indexOf('木板钱') === 0 || isTruckAnn) {
       let items = []; try { items = JSON.parse(box.inv_items || '[]'); } catch (e2) { items = []; }
       if (!Array.isArray(items)) items = [];
       items = items.filter(it => it && String(it.inv || '').trim());
@@ -38305,7 +38306,7 @@ app.post('/api/plaid/annotations/:id/approve', requireAdmin, requireRole('admin'
         const q = db.prepare('SELECT subtotal, company_name FROM invoices WHERE TRIM(invoice_number)=? COLLATE NOCASE');
         const normN = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
         const normC = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        let binvMap = null;
+        let binvMap = null, truckList = null;
         let sum = 0, complete = true, compMiss = null, sameCompNote = null;
         for (const it of items) {
           const numStr = String(it.inv).trim();
@@ -38330,6 +38331,12 @@ app.post('/api/plaid/annotations/:id/approve', requireAdmin, requireRole('admin'
           if (!inv && !bi) {
             const pm = _palletManualByNum(numStr);
             if (pm) inv = { subtotal: pm.total_amount, company_name: pm.customer };
+          }
+          // 卡车费: 再找卡车单 (卡车费用页签)
+          if (!inv && !bi && isTruckAnn) {
+            if (!truckList) truckList = await _truckInvList();
+            const tk = _truckFindByNum(truckList, numStr);
+            if (tk) inv = { subtotal: tk.amount, company_name: tk.company };
           }
           let a = parseFloat(it.amt) || (inv ? Number(inv.subtotal) : 0) || 0;
           let company = inv ? String(inv.company_name || '') : '';
@@ -38457,6 +38464,19 @@ app.get('/api/plaid/invoice-check', requireAdmin, requireRole('admin', 'cs', 'ac
         company_name: pm.customer || '', period_start: pm.period_from || '', period_end: pm.period_to || '',
         subtotal: Number(pm.total_amount) || 0, approval_status: pm.approval_status || '',
       };
+    }
+    // 还没找到的: 卡车单 (卡车费用页签: Bintique 卡车订单 / 手动添加的卡车费用)
+    if (nums.some(n => !(out[n] && out[n].found))) {
+      const trucks = await _truckInvList();
+      for (const n of nums) {
+        if (out[n] && out[n].found) continue;
+        const tk = _truckFindByNum(trucks, n);
+        if (tk) out[n] = {
+          found: true, source: 'truck', truck_source: tk.source, invoice_number: tk.code, company_name: tk.company,
+          period_start: tk.ps, period_end: tk.pe, subtotal: tk.amount, doc_url: tk.url, truck_paid: tk.paid,
+          approval_status: tk.approval_status || '',
+        };
+      }
     }
     // 这张发票以前标注过的付款 (员工工资分几次付 / 取现金付): 前端按员工姓名算累计已付,
     // 部分付款不用手填金额也能看出付清没有
@@ -43484,6 +43504,41 @@ function _palletManualByNum(num) {
   return db.prepare(`SELECT * FROM pallet_manual_invoices WHERE UPPER(TRIM(invoice_number))=UPPER(?) AND approval_status<>'rejected'
     ORDER BY CASE WHEN approval_status='approved' THEN 0 ELSE 1 END, id DESC LIMIT 1`).get(n) || null;
 }
+// 🚚 卡车单 (卡车费用页签那些行) 当成「卡车 invoice」给银行标注关联 / 核对:
+// Bintique 卡车订单用它的租车单号 (rental_code, 没有时 TRK-B<id>), 也认对方发票号;
+// 手动添加的卡车费用 (fee_records) 用 TRK-M<id>。
+async function _truckInvList() {
+  const orders = (await _truckFetchOrders()) || [];
+  const paidOf = type => { const m = {}; db.prepare('SELECT target_id, paid_status FROM acct_pay_notes WHERE target_type=?').all(type).forEach(n => { m[n.target_id] = n.paid_status || ''; }); return m; };
+  const ordPaid = paidOf('truckorder'), feePaid = paidOf('fee');
+  const out = orders.map(o => ({
+    code: String(o.rental_code || ('TRK-B' + o.id)), alt: [o.invoice_no, o.invoice_number, o.their_invoice_no].map(x => String(x || '').trim()).filter(Boolean),
+    company: o.truck_company || '', ps: o.date || '', pe: o.date_end || o.date || '', amount: Number(o.amount) || 0,
+    url: o.url || '', paid: ordPaid[o.id] || (o.status === 'paid' || o.payment_date ? 'paid' : ''), source: 'bintique',
+  }));
+  for (const f of db.prepare("SELECT * FROM fee_records WHERE fee_type='truck' AND COALESCE(approval_status,'approved')<>'rejected' ORDER BY fee_date DESC, id DESC").all()) {
+    out.push({ code: 'TRK-M' + f.id, alt: [], company: f.party_name || '', ps: f.fee_date || '', pe: f.fee_date_end || f.fee_date || '',
+      amount: Number(f.amount) || 0, url: '', paid: feePaid[f.id] || '', source: 'manual', note: String(f.description || '').slice(0, 80),
+      approval_status: f.approval_status || 'approved' });
+  }
+  return out;
+}
+const _truckNormN = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+function _truckFindByNum(list, num) {
+  const k = _truckNormN(num);
+  if (!k) return null;
+  return list.find(t => _truckNormN(t.code) === k) || list.find(t => t.alt.some(a => _truckNormN(a) === k)) || null;
+}
+// 银行标注「卡车费」里选卡车单用: 列出卡车单 (可按公司过滤), 最近的在前
+app.get('/api/plaid/truck-invoices', requireAdmin, requireRole('admin', 'cs', 'accounting'), async (req, res) => {
+  try {
+    const list = await _truckInvList();
+    const co = _truckNormN(req.query.co);
+    const rows = co ? list.filter(t => { const c = _truckNormN(t.company); return c && (c === co || c.includes(co) || co.includes(c)); }) : list;
+    rows.sort((a, b) => String(b.ps || '').localeCompare(String(a.ps || '')));
+    res.json({ rows: rows.slice(0, 300), configured: !!process.env.PALLET_API_KEY });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.post('/api/acct/pallet-manual', requireAdmin, requireRole('accounting', 'admin'), claimUpload.array('invoice', 50), async (req, res) => {
   try {
     const b = req.body || {};
