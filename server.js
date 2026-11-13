@@ -9498,6 +9498,7 @@ function _isChangeRequest(req) {
   if (p === '/api/device-sms/my-line' || p.startsWith('/api/device-sms/line-requests')) return false;
   if (_isWobGustoWork(req, p)) return false;
   if (_isReferralWork(req, p)) return false;
+  if (_isCnPayWork(req, p)) return false;
   // 打开银行交易标注: 这个 POST 是「找到或新建」, 已经有标注时只是读出来、什么都不改 ——
   // 总监要能直接看会计 / 客服写的标注和备注, 不能被拦去等审批 (还没有标注时新建照样要审批)
   if (req.method === 'POST' && p === '/api/plaid/annotations') {
@@ -9539,6 +9540,16 @@ function _isReferralWork(req, p) {
   if (req.method === 'POST') return p === '/api/acct/referrals' || /^\/api\/acct\/referrals\/\d+\/(interview-status|profile|invoices|start|quit)$/.test(p);
   if (req.method === 'PUT') return /^\/api\/acct\/(referrals|referral-weeks)\/\d+$/.test(p);
   return false;
+}
+// 总监改 / 删国内 · 美国员工工资 (/accounting 国内工资、美国员工工资页签) 不用审批, 直接生效:
+// 工资记录 (fee_type='cnpay') 的修改 / 删除, 员工名册的修改 / 删除。录入新工资、审核通过 / 拒绝不在内。
+// 只放行 admin 账号的总监 (这几个接口本来就要 admin 角色); 改完的审核状态跟 admin 自己改一样不变。
+function _isCnPayWork(req, p) {
+  if (req.userRole !== 'admin') return false;
+  if (!['PUT', 'DELETE'].includes(req.method)) return false;
+  if (/^\/api\/acct\/cn-employees\/\d+$/.test(p)) return true;
+  const m = p.match(/^\/api\/acct\/fee-records\/(\d+)$/);
+  return !!(m && db.prepare("SELECT 1 FROM fee_records WHERE id=? AND fee_type='cnpay'").get(Number(m[1])));
 }
 async function _queueChange(req, res, session) {
   try {
