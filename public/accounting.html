@@ -2699,7 +2699,7 @@ const yuan = n => '¥' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleStri
 function _refHrOf(r) {
   // HR 自己招的: 选了哪个 HR 就算谁的; 没选的按提交人 (提交人在 HR 名单里才算)
   if (r.hr_self) return r.hr_name || (REF_HRS.includes(r.hr_credit) ? r.hr_credit : '');
-  // 工头介绍的: 提交人在 HR 名单里 (张倪 / 陶斯亮) 才算给他; 其他客服 / 会计提交的不算
+  // 工头介绍的: 提交人在 HR 名单里 (张倪 / 陶斯亮 / 陈淑媛) 才算给他; 其他客服 / 会计提交的不算
   return REF_HRS.includes(r.hr_credit) ? r.hr_credit : '';
 }
 // 每个节点: done 达成 / wait 还没到 / lost 没达成 + 应得金额 (按日期自动判断, 管理员确认后才算数)
@@ -4951,7 +4951,7 @@ function raWageUnitGuess() {
 }
 // 介绍费快速填: 第一周一个价、之后每周另一个价
 // HR 名单: 自己招的要选是哪个 HR
-const REF_HRS = ['张倪', '陶斯亮'];
+const REF_HRS = ['张倪', '陶斯亮', '陈淑媛'];
 let _raHrName = '';
 function raHrWhoRender() {
   document.getElementById('raHrWho').innerHTML = REF_HRS.concat(_raHrName && !REF_HRS.includes(_raHrName) ? [_raHrName] : []).map(n =>
