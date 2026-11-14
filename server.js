@@ -45676,11 +45676,12 @@ function _referralInvoiceIds(b) {
   return ids.length ? db.prepare(`SELECT id FROM invoices WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids).map(v => v.id) : [];
 }
 // 已记了付款的那周不能取消关联 (先把那周的付款批注清掉)
+// 工头「过面试 $5」那行 (kind='iv', invoice_id = -介绍记录id) 不是发票, 改关联也不会删它, 不拦
 function _referralPaidGoneError(refId, ok) {
   const keep = new Set(ok);
   const paidGone = db.prepare(`SELECT w.invoice_id, i.invoice_number FROM referral_weeks w
       JOIN acct_pay_notes n ON n.target_type='referralweek' AND n.target_id=w.id AND n.paid_status IN ('paid','partial')
-      LEFT JOIN invoices i ON i.id=w.invoice_id WHERE w.referral_id=?`).all(refId).filter(w => !keep.has(w.invoice_id));
+      LEFT JOIN invoices i ON i.id=w.invoice_id WHERE w.referral_id=? AND COALESCE(w.kind,'')<>'iv'`).all(refId).filter(w => !keep.has(w.invoice_id));
   return paidGone.length ? `发票 ${paidGone.map(w => w.invoice_number || w.invoice_id).join(', ')} 那周已记付款，不能取消关联（先改掉那周的付款记录）` : '';
 }
 // 勾的发票条目: 只收还关联着的发票里真实存在的行
