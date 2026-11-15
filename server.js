@@ -16971,6 +16971,33 @@ function _applyAddressComplete(country, address1, city, state, zip) {
   return country !== 'US' || (!!state && !!zip);
 }
 
+// Distinct 2-letter states a company has an address in, in first-seen order.
+// Handles structured addresses ({state:'IL'}) AND legacy shapes where the state
+// only lives inside a formatted string ('…, IL 60601') or a bare-string entry —
+// mirroring the fallbacks the invoice-number migration relies on.
+function _partnerAddrStates(p) {
+  const states = [];
+  const seen = new Set();
+  const stateFromStr = s => { const m = String(s || '').match(/,\s*([A-Z]{2})\s+\d{5}/); return m ? m[1] : ''; };
+  const addSt = raw => {
+    const st = String(raw || '').trim().toUpperCase();
+    if (/^[A-Z]{2}$/.test(st) && !seen.has(st)) { seen.add(st); states.push(st); }
+  };
+  const stateOfEntry = a => {
+    if (typeof a === 'string') return stateFromStr(a);
+    if (!a || typeof a !== 'object') return '';
+    const s = String(a.state || '').trim().toUpperCase();
+    return /^[A-Z]{2}$/.test(s) ? s : stateFromStr(a.address);
+  };
+  try {
+    const addrs = JSON.parse(p.addresses || '[]');
+    if (Array.isArray(addrs)) for (const a of addrs) addSt(stateOfEntry(a));
+  } catch (_) { /* malformed JSON → fall through to the legacy single-address field */ }
+  // Legacy single-address column as a last resort when the array yielded nothing.
+  if (!states.length && p.address) addSt(stateFromStr(p.address));
+  return states;
+}
+
 // ADMIN: get or lazily create the applicant-form token + QR for a company.
 app.get('/api/admin/partners/:id/applicant-qr', requireAdmin, blockManager, async (req, res) => {
   try {
@@ -16986,28 +17013,7 @@ app.get('/api/admin/partners/:id/applicant-qr', requireAdmin, blockManager, asyn
     // Distinct 2-letter states the company has an address in, in first-seen order.
     // A company operating in more than one state gets one QR per state so each
     // location's applicants can be told apart (the state rides the URL as ?st=XX).
-    // Handles structured addresses ({state:'IL'}) AND legacy shapes where the state
-    // only lives inside a formatted string ('…, IL 60601') or a bare-string entry —
-    // mirroring the fallbacks the invoice-number migration relies on.
-    const states = [];
-    const seen = new Set();
-    const stateFromStr = s => { const m = String(s || '').match(/,\s*([A-Z]{2})\s+\d{5}/); return m ? m[1] : ''; };
-    const addSt = raw => {
-      const st = String(raw || '').trim().toUpperCase();
-      if (/^[A-Z]{2}$/.test(st) && !seen.has(st)) { seen.add(st); states.push(st); }
-    };
-    const stateOfEntry = a => {
-      if (typeof a === 'string') return stateFromStr(a);
-      if (!a || typeof a !== 'object') return '';
-      const s = String(a.state || '').trim().toUpperCase();
-      return /^[A-Z]{2}$/.test(s) ? s : stateFromStr(a.address);
-    };
-    try {
-      const addrs = JSON.parse(p.addresses || '[]');
-      if (Array.isArray(addrs)) for (const a of addrs) addSt(stateOfEntry(a));
-    } catch (_) { /* malformed JSON → fall through to the legacy single-address field */ }
-    // Legacy single-address column as a last resort when the array yielded nothing.
-    if (!states.length && p.address) addSt(stateFromStr(p.address));
+    const states = _partnerAddrStates(p);
     // One QR per state; when the company has no usable state, a single plain QR
     // (unchanged legacy behaviour). URLs with ?st=XX tag the resulting application.
     const qrs = states.length
@@ -17041,7 +17047,14 @@ app.get('/api/admin/applicant-qr/generic', requireAdmin, blockManager, async (re
     }
     const url = `${_applyQrBase(req)}/apply/${token}`;
     const qrDataUrl = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 280 });
-    res.json({ token, url, base_url: url, states: [], qrs: [{ state: '', url }], qr_data_url: qrDataUrl, partner_name: '', generic: true });
+    // 通用码可按州出码 (?st=XX, 和多州公司同一套): 合作公司地址里出现过的州排在选择器最前面,
+    // 按出现的公司数从多到少
+    const stCount = new Map();
+    for (const p of db.prepare('SELECT addresses, address FROM partners').all()) {
+      for (const st of _partnerAddrStates(p)) stCount.set(st, (stCount.get(st) || 0) + 1);
+    }
+    const knownStates = [...stCount.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(x => x[0]);
+    res.json({ token, url, base_url: url, states: [], known_states: knownStates, qrs: [{ state: '', url }], qr_data_url: qrDataUrl, partner_name: '', generic: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

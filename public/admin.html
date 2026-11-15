@@ -2471,7 +2471,10 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     <button id="applyInboxTabReview" class="btn btn-sm" style="background:#fff;color:var(--gray-500);border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;font-weight:600" onclick="switchApplicantInboxTab('review')" title="已建档但入职审核没完成（证件没裁剪 / 生日、社安号没填）— 集中在这里处理">📋 待审核 <span id="applyInboxCountReview" style="font-weight:700;color:#b91c1c"></span></button>
     <button id="applyInboxTabHistory" class="btn btn-sm" style="background:#fff;color:var(--gray-500);border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;font-weight:600" onclick="switchApplicantInboxTab('history')">🗂️ 历史 <span id="applyInboxCountHistory" style="font-weight:600;color:var(--gray-400)"></span></button>
   </div>
-  <div id="applyInboxCount" style="font-size:.8rem;color:var(--gray-400);margin-bottom:.7rem"></div>
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap;margin-bottom:.7rem">
+    <div id="applyInboxCount" style="font-size:.8rem;color:var(--gray-400)"></div>
+    <select id="applyInboxStateSel" onchange="setApplicantInboxState(this.value)" title="按扫码的州筛选（州二维码 ?st=XX）" style="display:none;border:1px solid var(--gray-200);border-radius:8px;padding:.2rem .4rem;font-size:.8rem"></select>
+  </div>
   <div id="applyInboxBody" style="overflow-y:auto;flex:1;margin:0 -.3rem;padding:0 .3rem">
     <div style="padding:1.2rem;color:var(--gray-400);text-align:center">加载中…</div>
   </div>
@@ -43592,6 +43595,8 @@ const APPLY_QR_I18N = {
     regenTitle: '作废旧二维码并生成新的', loadFail: '加载失败：',
     copied: '已复制链接', regenConfirm: '重新生成后，旧二维码将立即失效。确定继续？', regenFail: '失败：',
     genericName: '通用（不限公司）', cnLabel: '🇨🇳 中国申请', usLabel: '美国', cnHint: '给在中国的应聘者：中国手机号（+86）和中国地址',
+    stPick: '州：', stAny: '不限州（通用）', stCommon: '常用（合作公司所在州）', stAll: '全部州',
+    stHint: '每个州一个固定二维码，申请会自动标上该州，收件箱里可按州筛选。',
     multiNote: '📍 该公司在多个州设有地址，请在下方选择州查看对应二维码，并按地点分发。应聘者扫描哪个州的码，其申请就归入该地点。',
     note: '📲 应聘者扫码后填写<strong>姓名 / 电话 / 邮箱 / 职位</strong>，需通过<strong>短信 + 邮箱验证码</strong>验证，并上传 <strong>SSN 正反面</strong> 与 <strong>EAD 正反面</strong>。支持中文 / English / Español。所有申请进入「📨 申请收件箱」。',
   },
@@ -43602,6 +43607,8 @@ const APPLY_QR_I18N = {
     regenTitle: 'Void the old QR code and generate a new one', loadFail: 'Load failed: ',
     copied: 'Link copied', regenConfirm: 'Regenerating will immediately invalidate the old QR code. Continue?', regenFail: 'Failed: ',
     genericName: 'General (any company)', cnLabel: '🇨🇳 China applicants', usLabel: 'US', cnHint: 'For applicants in China: Chinese mobile (+86) and Chinese address',
+    stPick: 'State: ', stAny: 'Any state (general)', stCommon: 'Common (partner locations)', stAll: 'All states',
+    stHint: 'Each state has its own fixed QR; applications are tagged with that state and can be filtered by state in the inbox.',
     multiNote: '📍 This company has addresses in multiple states. Pick a state below to see its QR, and distribute by location; whichever state code an applicant scans, their application is filed under that location.',
     note: '📲 After scanning, the applicant fills in <strong>name / phone / email / position</strong>, verifies via <strong>SMS + email code</strong>, and uploads <strong>SSN (front & back)</strong> and <strong>EAD (front & back)</strong>. Available in 中文 / English / Español. All submissions go to the “📨 Applicant Inbox”.',
   },
@@ -43612,10 +43619,29 @@ const APPLY_QR_I18N = {
     regenTitle: 'Anular el QR anterior y generar uno nuevo', loadFail: 'Error al cargar: ',
     copied: 'Enlace copiado', regenConfirm: 'Al regenerar, el QR anterior quedará invalidado de inmediato. ¿Continuar?', regenFail: 'Error: ',
     genericName: 'General (cualquier empresa)', cnLabel: '🇨🇳 Solicitantes en China', usLabel: 'EE. UU.', cnHint: 'Para solicitantes en China: móvil chino (+86) y dirección en China',
+    stPick: 'Estado: ', stAny: 'Cualquier estado (general)', stCommon: 'Comunes (ubicaciones de socios)', stAll: 'Todos los estados',
+    stHint: 'Cada estado tiene su propio QR fijo; las solicitudes quedan marcadas con ese estado y se pueden filtrar por estado en la bandeja.',
     multiNote: '📍 Esta empresa tiene direcciones en varios estados. Elija un estado abajo para ver su QR y distribúyalos por ubicación; el estado del código que escanee el solicitante determina la ubicación de su solicitud.',
     note: '📲 Tras escanear, el solicitante completa <strong>nombre / teléfono / correo / puesto</strong>, verifica con <strong>código por SMS + correo</strong> y sube <strong>SSN (frente y reverso)</strong> y <strong>EAD (frente y reverso)</strong>. Disponible en 中文 / English / Español. Todas las solicitudes llegan a «📨 Bandeja de solicitudes».',
   },
 };
+// 通用码按州出码用的州列表 (50 州 + DC)
+const APPLY_US_STATES = [['AL','Alabama'],['AK','Alaska'],['AZ','Arizona'],['AR','Arkansas'],['CA','California'],['CO','Colorado'],['CT','Connecticut'],['DE','Delaware'],['DC','District of Columbia'],['FL','Florida'],['GA','Georgia'],['HI','Hawaii'],['ID','Idaho'],['IL','Illinois'],['IN','Indiana'],['IA','Iowa'],['KS','Kansas'],['KY','Kentucky'],['LA','Louisiana'],['ME','Maine'],['MD','Maryland'],['MA','Massachusetts'],['MI','Michigan'],['MN','Minnesota'],['MS','Mississippi'],['MO','Missouri'],['MT','Montana'],['NE','Nebraska'],['NV','Nevada'],['NH','New Hampshire'],['NJ','New Jersey'],['NM','New Mexico'],['NY','New York'],['NC','North Carolina'],['ND','North Dakota'],['OH','Ohio'],['OK','Oklahoma'],['OR','Oregon'],['PA','Pennsylvania'],['RI','Rhode Island'],['SC','South Carolina'],['SD','South Dakota'],['TN','Tennessee'],['TX','Texas'],['UT','Utah'],['VT','Vermont'],['VA','Virginia'],['WA','Washington'],['WV','West Virginia'],['WI','Wisconsin'],['WY','Wyoming']];
+// 当前显示的二维码 (通用码的美国卡选了州时, 链接加 ?st=XX; 中国卡不分州)
+function _applyQrEffective(i) {
+  const q = (_applyQrState.qrs || [])[i];
+  if (!q) return null;
+  const gs = _applyQrState.genState;
+  if (_applyQrState.generic && !q.cn && gs)
+    return { ...q, state: gs, url: q.url + (q.url.includes('?') ? '&' : '?') + 'st=' + gs };
+  return q;
+}
+function setApplyQrGenState(st) {
+  st = String(st || '').toUpperCase();
+  _applyQrState.genState = /^[A-Z]{2}$/.test(st) ? st : '';
+  try { localStorage.setItem('applyQrGenState', _applyQrState.genState); } catch (_) {}
+  renderApplyQrList();
+}
 function setApplyQrLang(lang) {
   _applyQrLang = APPLY_QR_I18N[lang] ? lang : 'zh';
   const t = APPLY_QR_I18N[_applyQrLang];
@@ -43646,7 +43672,10 @@ function setApplyQrLang(lang) {
 async function openApplicantQrModal(partnerId, partnerName) {
   // partnerId 0 (or null) → the generic company-less QR.
   const generic = !partnerId;
-  _applyQrState = { partnerId: partnerId || 0, partnerName, generic, qrs: [], selected: 0 };
+  let genState = '';
+  if (generic) { try { genState = localStorage.getItem('applyQrGenState') || ''; } catch (_) {} }
+  if (!/^[A-Z]{2}$/.test(genState)) genState = '';
+  _applyQrState = { partnerId: partnerId || 0, partnerName, generic, qrs: [], selected: 0, genState, knownStates: [] };
   document.getElementById('applyQrList').innerHTML = '';
   const ld = document.getElementById('applyQrLoading');
   ld.dataset.failed = '0';
@@ -43661,6 +43690,7 @@ async function openApplicantQrModal(partnerId, partnerName) {
     if (!qrs.length) throw new Error(r && r.error || 'failed');
     // 通用码再配一张「中国申请」: 同一个链接加 ?cn=1, 表单固定 +86 手机号和中国地址
     // (短信只开通了美国和中国, 所以不让应聘者自己选国家)
+    if (generic) _applyQrState.knownStates = Array.isArray(r.known_states) ? r.known_states.filter(x => /^[A-Z]{2}$/.test(x)) : [];
     if (generic) qrs.push({ state: '', cn: true, url: qrs[0].url + (qrs[0].url.includes('?') ? '&' : '?') + 'cn=1' });
     _applyQrState.qrs = qrs;
     await _loadQRLib();
@@ -43685,8 +43715,25 @@ function renderApplyQrList() {
   let sel = _applyQrState.selected || 0;
   if (sel < 0 || sel >= qrs.length) sel = 0;
   _applyQrState.selected = sel;
-  const q = qrs[sel];
+  const q = _applyQrEffective(sel);
   const size = 220;
+  // 通用码的美国卡: 选州 → 每个州一个固定二维码 (?st=XX)
+  let stPicker = '';
+  if (_applyQrState.generic && !q.cn) {
+    const gs = _applyQrState.genState || '';
+    const nameOf = Object.fromEntries(APPLY_US_STATES);
+    const known = (_applyQrState.knownStates || []).filter(c => nameOf[c]);
+    const opt = c => `<option value="${c}"${c === gs ? ' selected' : ''}>${c} · ${esc(nameOf[c])}</option>`;
+    stPicker = `<div style="display:flex;align-items:center;gap:.35rem;justify-content:center;flex-wrap:wrap;font-size:.85rem;color:var(--gray-600)">
+        <label for="applyQrGenStateSel" style="font-weight:600">${esc(t.stPick)}</label>
+        <select id="applyQrGenStateSel" onchange="setApplyQrGenState(this.value)" style="border:1px solid #c7d2fe;border-radius:8px;padding:.25rem .4rem;font-size:.85rem;max-width:230px">
+          <option value="">${esc(t.stAny)}</option>
+          ${known.length ? `<optgroup label="${esc(t.stCommon)}">${known.map(opt).join('')}</optgroup>` : ''}
+          <optgroup label="${esc(t.stAll)}">${APPLY_US_STATES.filter(([c]) => !known.includes(c)).map(([c]) => opt(c)).join('')}</optgroup>
+        </select>
+      </div>
+      <div style="font-size:.72rem;color:var(--gray-500);max-width:250px">${esc(t.stHint)}</div>`;
+  }
   const picker = multi ? `
     <div style="display:flex;gap:.4rem;justify-content:center;flex-wrap:wrap;width:100%;margin-bottom:.2rem">
       ${qrs.map((x, i) => `<button type="button" onclick="selectApplyQrState(${i})"
@@ -43696,6 +43743,7 @@ function renderApplyQrList() {
     <div style="flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:.4rem;border:1px solid var(--gray-200);border-radius:12px;padding:.7rem;background:#fff">
       ${q.cn ? `<div style="font-weight:700;color:#b91c1c;font-size:1rem">${esc(t.cnLabel)}</div><div style="font-size:.74rem;color:var(--gray-500);max-width:250px">${esc(t.cnHint)}</div>`
         : q.state ? `<div style="font-weight:700;color:#3730a3;font-size:1rem">📍 ${esc(q.state)}</div>` : ''}
+      ${stPicker}
       <div id="applyQrBoxSel" style="display:inline-block;padding:8px;background:#fff;border-radius:8px"></div>
       <div style="font-family:monospace;font-size:.62rem;color:var(--gray-500);word-break:break-all;max-width:${size + 24}px">${esc(q.url)}</div>
       <div style="display:flex;gap:.35rem;flex-wrap:wrap;justify-content:center">
@@ -43717,7 +43765,7 @@ function selectApplyQrState(i) {
 }
 function closeApplicantQrModal() { document.getElementById('applyQrModal').classList.remove('show'); }
 function copyApplyUrlFor(i) {
-  const q = (_applyQrState.qrs || [])[i];
+  const q = _applyQrEffective(i);
   if (!q || !q.url) return;
   navigator.clipboard.writeText(q.url).then(() => { if (typeof toast === 'function') toast(APPLY_QR_I18N[_applyQrLang].copied); }).catch(() => {});
 }
@@ -43728,7 +43776,7 @@ function downloadApplyQrFor(i) {
   const img = box.querySelector('img') || box.querySelector('canvas');
   if (!img) return;
   const src = img.tagName === 'CANVAS' ? img.toDataURL('image/png') : img.src;
-  const q = (_applyQrState.qrs || [])[i] || {};
+  const q = _applyQrEffective(i) || {};
   const stateSuffix = q.cn ? '-中国' : q.state ? '-' + q.state : '';
   const a = document.createElement('a');
   a.href = src;
@@ -43738,7 +43786,7 @@ function downloadApplyQrFor(i) {
 // 🖨 把当前二维码打成一张 4×6 寸标签（热敏/标签打印机常用尺寸），自动弹打印
 function printApplyQr46(i) {
   const t = APPLY_QR_I18N[_applyQrLang];
-  const q = (_applyQrState.qrs || [])[i];
+  const q = _applyQrEffective(i);
   const box = document.getElementById('applyQrBoxSel');
   const img = box && (box.querySelector('img') || box.querySelector('canvas'));
   if (!q || !img) return;
@@ -43794,6 +43842,31 @@ async function regenerateApplyQr() {
 // APIs the 电话查重 page uses.
 let _inboxPartnerId = null, _inboxPartnerName = '', _inboxSubmissions = [], _inboxTab = 'active';
 let _inboxNameEditId = null;   // submission id whose name is being edited inline
+let _inboxStateFilter = '';    // '' = 全部州; 'XX' = 只看该州二维码来的申请; '-' = 没标州的
+function setApplicantInboxState(v) {
+  _inboxStateFilter = v || '';
+  _inboxNameEditId = null;
+  renderApplicantInbox();
+}
+// 州筛选下拉: 只在有申请带州时出现, 选项 = 收件箱里实际出现过的州 (带数量)
+function _renderApplicantInboxStateSel() {
+  const sel = document.getElementById('applyInboxStateSel');
+  if (!sel) return;
+  const cnt = {};
+  let none = 0;
+  for (const s of _inboxSubmissions || []) {
+    const st = String(s.apply_state || '').toUpperCase();
+    if (st) cnt[st] = (cnt[st] || 0) + 1; else none++;
+  }
+  const states = Object.keys(cnt).sort();
+  if (!states.length) { sel.style.display = 'none'; _inboxStateFilter = ''; return; }
+  if (_inboxStateFilter && _inboxStateFilter !== '-' && !cnt[_inboxStateFilter]) _inboxStateFilter = '';
+  const opt = (v, label) => `<option value="${v}"${v === _inboxStateFilter ? ' selected' : ''}>${esc(label)}</option>`;
+  sel.innerHTML = opt('', `📍 全部州 (${(_inboxSubmissions || []).length})`)
+    + states.map(st => opt(st, `📍 ${st} (${cnt[st]})`)).join('')
+    + (none ? opt('-', `未标州 (${none})`) : '');
+  sel.style.display = '';
+}
 async function openApplicantInbox(partnerId, partnerName) {
   _inboxPartnerId = partnerId;
   _inboxPartnerName = partnerName || '';
@@ -43801,6 +43874,8 @@ async function openApplicantInbox(partnerId, partnerName) {
   const _backToReview = _inboxTab === 'review';
   _inboxTab = 'active';
   _inboxNameEditId = null;
+  _inboxStateFilter = '';
+  { const ss = document.getElementById('applyInboxStateSel'); if (ss) ss.style.display = 'none'; }
   document.getElementById('applyInboxPartner').textContent = partnerName ? '· ' + partnerName : '';
   document.getElementById('applyInboxCount').textContent = '';
   { const cn = document.getElementById('applyInboxCountNew'); if (cn) cn.textContent = ''; }
@@ -43929,7 +44004,12 @@ function applicantStage(s) {
 }
 function renderApplicantInbox() {
   const body = document.getElementById('applyInboxBody');
-  const all = _inboxSubmissions || [];
+  _renderApplicantInboxStateSel();
+  const _stF = _inboxStateFilter;
+  const all = (_inboxSubmissions || []).filter(s => {
+    const st = String(s.apply_state || '').toUpperCase();
+    return !_stF || (_stF === '-' ? !st : st === _stF);
+  });
   // 三个页签互斥: 未建档（还没有员工档案, 需要点「创建员工」）/ 已建档·待入职 / 历史
   const stageOf = {};
   all.forEach(s => { stageOf[s.id] = applicantStage(s); });
