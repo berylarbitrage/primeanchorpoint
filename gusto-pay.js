@@ -375,6 +375,7 @@ function buildGustoCsv(templateCsv, employees, opts) {
       }
       totalPay = r2(totalPay + amount);
       matches.push({
+        row: outRows.length, // 这一行在 rows 里的下标 (前端取消勾选时清空这一行的填写列)
         label: entry.label, ssn: entry.ssn, rate: rate || entry.rate,
         hours, bonus, fixed, amount, diff: r2(amount - owed),
         sources: m.sources,
@@ -416,6 +417,8 @@ function buildGustoCsv(templateCsv, employees, opts) {
   const filename = 'gusto_contractor_pay' + (ps && pe ? `_${ps}_${pe}` : '') + '.csv';
   return {
     csv: stringifyCsv(outRows),
+    rows: outRows,
+    fillCols: [roster.cols.hours, roster.cols.bonus, roster.cols.fixed].filter(c => c >= 0),
     filename,
     mode,
     matches, unmatched, ambiguous, skipped, needConfirm, warnings,
