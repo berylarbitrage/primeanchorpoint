@@ -2227,8 +2227,8 @@ tr:hover td.invp-frz{background:var(--sky-light)}
       <label>默认午休</label>
       <select id="cpyWkDefaultBreak" onchange="applyCpyWkDefaultBreak()">
         <option value="0">不扣</option>
-        <option value="30">自动扣 30 分钟</option>
-        <option value="60">自动扣 60 分钟</option>
+        <option value="30">自动扣 30 分钟（超过 4 小时才扣）</option>
+        <option value="60">自动扣 60 分钟（超过 4 小时才扣）</option>
         <option value="custom">自定义…</option>
       </select>
     </div>
@@ -2275,7 +2275,7 @@ tr:hover td.invp-frz{background:var(--sky-light)}
 
   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1rem;font-size:.9rem">
     <div style="color:var(--gray-500)">
-      每天填上下班时间，金额 = (下班−上班−午休) × 时薪。工时或时薪为 0 的天会被跳过。提交后每人每天生成一条记录。
+      每天填上下班时间，金额 = (下班−上班−午休) × 时薪；午休分钟只在当天超过 4 小时才扣（填了午休时段的按实际扣）。工时或时薪为 0 的天会被跳过。提交后每人每天生成一条记录。
     </div>
     <div><strong>合计：</strong><span id="cpyWkTotal">$0.00</span> · <span id="cpyWkRecCount">0</span> 条</div>
   </div>
@@ -52019,6 +52019,23 @@ function _cpyComputeHours(start, end, breakMin) {
   return Math.round((mins / 60) * 100) / 100;
 }
 
+// 午休规则: 按分钟扣的午休 (默认「自动扣 30 分钟」或手填分钟) 只在当天上班超过 4 小时才扣;
+// 4 小时及以内不扣。填了午休开始/结束时间的按实际时段扣, 不受此限制。
+const CPY_BREAK_MIN_SHIFT_MIN = 4 * 60;
+function _cpyShiftMins(start, end) {
+  const ms = /^(\d{1,2}):(\d{2})$/.exec(start || '');
+  const me = /^(\d{1,2}):(\d{2})$/.exec(end || '');
+  if (!ms || !me) return 0;
+  let mins = (parseInt(me[1]) * 60 + parseInt(me[2])) - (parseInt(ms[1]) * 60 + parseInt(ms[2]));
+  if (mins < 0) mins += 24 * 60;
+  return mins;
+}
+function _cpyBreakForShift(start, end, breakStart, breakEnd, breakMin) {
+  if (breakStart && breakEnd) return Math.max(0, Math.round(_cpyComputeHours(breakStart, breakEnd, 0) * 60));
+  if (_cpyShiftMins(start, end) <= CPY_BREAK_MIN_SHIFT_MIN) return 0;
+  return Math.max(0, Number(breakMin) || 0);
+}
+
 function _cpyCurrentDefaultBreak() {
   const sel = document.getElementById('cpyWkDefaultBreak');
   const v = sel ? sel.value : '0';
@@ -52421,11 +52438,9 @@ function _readCpyWkRowState() {
 function _cpyEffectiveBreakMin(tr, j) {
   const bs = tr.querySelector(`.cpyWkBreakStart[data-day="${j}"]`)?.value || '';
   const be = tr.querySelector(`.cpyWkBreakEnd[data-day="${j}"]`)?.value || '';
-  if (bs && be) {
-    const h = _cpyComputeHours(bs, be, 0);
-    return Math.max(0, Math.round(h * 60));
-  }
-  return Math.max(0, Number(tr.querySelector(`.cpyWkBreak[data-day="${j}"]`)?.value) || 0);
+  const s = tr.querySelector(`.cpyWkStart[data-day="${j}"]`)?.value || '';
+  const e = tr.querySelector(`.cpyWkEnd[data-day="${j}"]`)?.value || '';
+  return _cpyBreakForShift(s, e, bs, be, tr.querySelector(`.cpyWkBreak[data-day="${j}"]`)?.value);
 }
 
 function onCpyWkCellChange() {
@@ -52516,6 +52531,9 @@ function updateCpyWkTotal() {
         if (bs && be) {
           minRow.style.opacity = '0.4';
           minRow.title = '使用上方午休时段（已自动算出分钟数）';
+        } else if (s && e && _cpyShiftMins(s, e) <= CPY_BREAK_MIN_SHIFT_MIN) {
+          minRow.style.opacity = '0.4';
+          minRow.title = '当天不超过 4 小时，不扣午休';
         } else {
           minRow.style.opacity = '1';
           minRow.title = '';
@@ -53005,9 +53023,7 @@ async function submitCpyWeekly() {
       const bs = w._breakStarts[j] || '';
       const be = w._breakEnds[j] || '';
       // Effective break minutes: prefer break time range, else explicit minutes
-      let b;
-      if (bs && be) b = Math.max(0, Math.round(_cpyComputeHours(bs, be, 0) * 60));
-      else b = Math.max(0, Number(w._breaks[j]) || 0);
+      const b = _cpyBreakForShift(s, e, bs, be, w._breaks[j]);
       let r = Number(w._rates[j]) || 0;
       if (!(r > 0)) r = defRate;
       let br = (w._billRates && Number(w._billRates[j])) || 0;
