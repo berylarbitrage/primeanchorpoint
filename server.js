@@ -49673,6 +49673,8 @@ app.post('/api/admin/company-payments/batch-weekly', requireAdmin, blockManager,
           } else {
             dayBreak = rowBreak;
           }
+          // 按分钟扣的午休只在当天超过 4 小时才扣 (填了午休时段的按实际扣)
+          if (!(breakStartT && breakEndT) && _cwpHoursFromTimes(startT, endT, 0) <= 4) dayBreak = 0;
           let hours = Number(day.hours) || 0;
           if (!(hours > 0) && startT && endT) hours = _cwpHoursFromTimes(startT, endT, dayBreak);
           const rate = Number(day.rate) || 0;
