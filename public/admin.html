@@ -39268,7 +39268,12 @@ function _invpNameKey(n) {
 // ── Gusto 付款模板 CSV（按合同工名册把本张发票的应付工资折成 hours）──
 // auto=true 是保存正式 Invoice 后的自动弹出：名册没配置 / 一个都对不上（比如
 // 分包商班组不走 Gusto）就安静跳过，不打扰保存流程。
-async function invpGustoCsv(auto) {
+// 预览里取消勾选的人 (key = 名册姓名|SSN 尾号): 下载的 CSV 里这些行留空, Gusto 上传时跳过。
+// 从按钮重新打开时清空; 切换口径 / 改对照表 / 更新名册重新生成时保留。
+window._gustoExcluded = window._gustoExcluded || new Set();
+const _gustoKey = m => `${m.label}|${m.ssn || ''}`;
+async function invpGustoCsv(auto, keepSel) {
+  if (!keepSel) window._gustoExcluded = new Set();
   if ((window._invpMode || 'hourly') === 'container') {
     if (!auto) showToast('Gusto 付款模板只适用于工时计费发票', 'warning', 4000);
     return;
@@ -39311,8 +39316,7 @@ async function invpGustoCsv(auto) {
 }
 
 function renderGustoCsvModal(res) {
-  const info = document.getElementById('gustoTplInfo');
-  if (info) info.textContent = `名册：${res.template_name || '—'}${res.template_uploaded_at ? '（上传于 ' + String(res.template_uploaded_at).slice(0, 10) + '）' : ''} · 匹配 ${res.matchedCount} 行 · 付款合计 $${(res.totalPay || 0).toFixed(2)}`;
+  _gustoUpdateSelInfo(res);
   document.querySelectorAll('input[name="gustoMode"]').forEach(r => { r.checked = (r.value === (res.mode || 'bonus')); });
   const note = document.getElementById('gustoModeNote');
   if (note) note.textContent = (res.mode === 'hours')
@@ -39328,7 +39332,9 @@ function renderGustoCsvModal(res) {
     const diff = m.diff ? ` <span style="color:#b45309;font-size:.72rem" title="向上取整到 0.01 小时产生的差额">（${m.diff > 0 ? '+' : ''}${m.diff.toFixed(2)}）</span>` : '';
     const mergeTag = m.merged ? ` <span style="font-size:.68rem;background:#fef3c7;color:#92400e;border-radius:4px;padding:0 5px;font-weight:600">合并 ${m.sources.length} 行</span>` : '';
     const bonusTag = m.bonus ? `<div style="font-size:.72rem;color:#047857;font-weight:600">+ $${(+m.bonus).toFixed(2)} bonus</div>` : '';
-    return `<tr style="border-bottom:1px solid var(--gray-100)${m.merged ? ';background:#fffbeb' : ''}">
+    const on = !window._gustoExcluded.has(_gustoKey(m));
+    return `<tr class="gustoRow" data-key="${esc(_gustoKey(m))}" style="border-bottom:1px solid var(--gray-100)${m.merged ? ';background:#fffbeb' : ''}${on ? '' : ';opacity:.45'}">
+      <td style="padding:.4rem .3rem .4rem .5rem;width:1%"><input type="checkbox" class="gustoRowChk" ${on ? 'checked' : ''} onchange="invpGustoToggleRow(this)" title="勾选 = 生成到 Gusto CSV；不勾 = 这个人这次不走 Gusto（CSV 里留空）" style="width:16px;height:16px;cursor:pointer"></td>
       <td style="padding:.4rem .5rem"><span style="font-weight:600">${esc(m.label)}</span>${mergeTag}<div style="font-size:.7rem;color:var(--gray-400)">${esc(m.ssn || '')}</div></td>
       <td style="padding:.4rem .5rem;text-align:right;white-space:nowrap">${m.rate != null ? '$' + m.rate : '—'}</td>
       <td style="padding:.4rem .5rem;text-align:right;font-weight:700;white-space:nowrap">${m.hours != null ? m.hours.toFixed(2) + ' h' + bonusTag : (m.fixed != null ? '固定金额' : '—')}</td>
@@ -39357,6 +39363,7 @@ function renderGustoCsvModal(res) {
   if (body) body.innerHTML = `
     <table style="width:100%;border-collapse:collapse;font-size:.83rem">
       <thead><tr style="border-bottom:2px solid var(--gray-200);color:var(--gray-500);font-size:.74rem">
+        <th style="padding:.3rem .3rem .3rem .5rem;text-align:left;width:1%"><input type="checkbox" id="gustoChkAll" onchange="invpGustoToggleAll(this.checked)" title="全选 / 全不选" style="width:16px;height:16px;cursor:pointer"></th>
         <th style="padding:.3rem .5rem;text-align:left">Gusto 名册（付给谁）</th>
         <th style="padding:.3rem .5rem;text-align:right">时薪</th>
         <th style="padding:.3rem .5rem;text-align:right">填入 hours / bonus</th>
@@ -39367,6 +39374,50 @@ function renderGustoCsvModal(res) {
     </table>
     ${res.untouched ? `<div style="margin-top:.45rem;font-size:.74rem;color:var(--gray-400)">名册其余 ${res.untouched} 行本周没有工时，保持空白。</div>` : ''}
     ${unmatchedBlock}${skippedBlock}${warnBlock}`;
+  _gustoUpdateSelInfo(res);
+}
+
+// 名册信息 + 已勾选人数 / 金额, 全选框状态
+function _gustoUpdateSelInfo(res) {
+  res = res || window._gustoCsvRes;
+  if (!res) return;
+  const ms = res.matches || [];
+  const sel = ms.filter(m => !window._gustoExcluded.has(_gustoKey(m)));
+  const selPay = sel.reduce((t, m) => t + (+m.amount || 0), 0);
+  const info = document.getElementById('gustoTplInfo');
+  if (info) info.textContent = `名册：${res.template_name || '—'}${res.template_uploaded_at ? '（上传于 ' + String(res.template_uploaded_at).slice(0, 10) + '）' : ''} · 匹配 ${res.matchedCount} 行 · `
+    + (sel.length === ms.length ? `付款合计 $${(res.totalPay || 0).toFixed(2)}` : `已勾选 ${sel.length}/${ms.length} 人 · 付款合计 $${selPay.toFixed(2)}（全部 $${(res.totalPay || 0).toFixed(2)}）`);
+  const all = document.getElementById('gustoChkAll');
+  if (all) { all.checked = sel.length === ms.length && ms.length > 0; all.indeterminate = sel.length > 0 && sel.length < ms.length; }
+}
+function invpGustoToggleRow(cb) {
+  const tr = cb.closest('tr');
+  const key = tr.getAttribute('data-key');
+  if (cb.checked) window._gustoExcluded.delete(key); else window._gustoExcluded.add(key);
+  tr.style.opacity = cb.checked ? '' : '.45';
+  _gustoUpdateSelInfo();
+}
+function invpGustoToggleAll(on) {
+  const res = window._gustoCsvRes;
+  if (!res) return;
+  window._gustoExcluded = on ? new Set() : new Set((res.matches || []).map(_gustoKey));
+  document.querySelectorAll('#gustoCsvBody tr.gustoRow').forEach(tr => {
+    const cb = tr.querySelector('.gustoRowChk');
+    if (cb) cb.checked = on;
+    tr.style.opacity = on ? '' : '.45';
+  });
+  _gustoUpdateSelInfo(res);
+}
+// 按勾选生成 CSV: 没勾的人那一行的 hours / bonus / flat_amount 留空 (Gusto 上传时跳过)
+function _gustoSelectedCsv(res) {
+  if (!res.rows || !window._gustoExcluded.size) return res.csv;
+  const blank = new Set((res.matches || []).filter(m => window._gustoExcluded.has(_gustoKey(m))).map(m => m.row));
+  const cell = v => { const s = String(v == null ? '' : v); return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  return res.rows.map((r, i) => {
+    const cells = r.slice();
+    if (blank.has(i)) for (const c of (res.fillCols || [])) if (c < cells.length) cells[c] = '';
+    return cells.map(cell).join(',');
+  }).join('\r\n') + '\r\n';
 }
 
 // ── 收款人对照表（工资表姓名 → Gusto 名册收款人；「现金」= 不走 Gusto）──
@@ -39396,7 +39447,7 @@ async function invpGustoAliasSave() {
   if (!res || !res.success) { showToast('收款人对照表保存失败：' + ((res && res.error) || '未知错误'), 'error', 7000); return; }
   document.getElementById('gustoAliasPanel').style.display = 'none';
   showToast(`✓ 收款人对照表已保存（${res.count} 条），已按新对照表重新生成`, 'success', 4000);
-  await invpGustoCsv();
+  await invpGustoCsv(false, true);
 }
 
 // 折算口径（bonus = 实际工时+差额放bonus；hours = 全折进工时），记住上次的选择
@@ -39405,21 +39456,25 @@ function _invpGustoMode() {
 }
 async function invpGustoModeChanged(v) {
   try { localStorage.setItem('invpGustoMode', v === 'hours' ? 'hours' : 'bonus'); } catch (_) {}
-  await invpGustoCsv(); // 按新口径重新生成并刷新预览
+  await invpGustoCsv(false, true); // 按新口径重新生成并刷新预览
 }
 
 function invpGustoDownload() {
   const res = window._gustoCsvRes;
   if (!res || !res.csv) return;
+  const nSel = (res.matches || []).filter(m => !window._gustoExcluded.has(_gustoKey(m))).length;
+  if (!nSel) { showToast('一个人都没勾选，没有可以下载的', 'warning', 4000); return; }
+  const csvText = _gustoSelectedCsv(res);
   // 不加 BOM：保持和 Gusto 自己导出的模板字节一致，纯 ASCII 内容 Excel 也能正常打开
-  const blob = new Blob([res.csv], { type: 'text/csv;charset=utf-8' });
+  const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = res.filename || 'gusto_contractor_pay.csv';
   document.body.appendChild(a);
   a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-  showToast('✓ 已下载 Gusto 付款 CSV，去 Gusto 批量付款页上传即可', 'success', 5000);
+  const nAll = (res.matches || []).length;
+  showToast(`✓ 已下载 Gusto 付款 CSV（${nSel === nAll ? '全部 ' + nAll : nSel + '/' + nAll} 人），去 Gusto 批量付款页上传即可`, 'success', 5000);
 }
 
 // 上传/更新 Gusto 合同工名册（Gusto 后台导出的空白 contractor payment 模板）
@@ -39434,7 +39489,7 @@ async function invpGustoUploadRoster(input) {
     const data = await resp.json().catch(() => null);
     if (!resp.ok || !data || !data.success) throw new Error((data && data.error) || ('HTTP ' + resp.status));
     showToast(`✓ Gusto 名册已更新：${data.name}（${data.contractors} 行合同工）`, 'success', 5000);
-    invpGustoCsv(); // 名册就位后马上按当前工时明细重新生成
+    invpGustoCsv(false, true); // 名册就位后马上按当前工时明细重新生成
   } catch (e) {
     showToast('名册上传失败：' + (e.message || e), 'error', 7000);
   }
