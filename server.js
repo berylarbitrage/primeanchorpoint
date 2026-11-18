@@ -24128,6 +24128,8 @@ const GUSTO_ALIAS_DEFAULTS = [
   { from: 'Wilson R Lopez Cruz', to: 'Uriel García Rodriguez', scope: 'Nexware' },
   { from: 'Wilson Lopez Cruz', to: 'Uriel García Rodriguez', scope: 'Nexware' },
   { from: 'Gerardo Tecaxco Jr', to: 'Ramiro Montiel Carreon', scope: 'Nexware' },
+  // 2026-11-18: 工资表的 Mauricio García 名册里没有, 他的工资付给名册的「García, Gustavo」
+  { from: 'Mauricio García', to: 'García, Gustavo' },
 ];
 
 // Gusto 收款人名册: API 拉的合同工; 还没连 API 时用生成付款 CSV 的模板名册兜底
@@ -24236,6 +24238,8 @@ _gustoAliasBackfill('gusto_alias_eloy_backfilled', GUSTO_ALIAS_DEFAULTS.filter(a
 // 第一版 (gusto_alias_2026_11_pickers) 没限定客户, 这里把同名条目整体换成限定 Nexware 的
 _gustoAliasUpsert('gusto_alias_2026_11_pickers', GUSTO_ALIAS_DEFAULTS.filter(a => a.scope === 'Nexware'));
 _gustoAliasUpsert('gusto_alias_2026_11_pickers_nexware', GUSTO_ALIAS_DEFAULTS.filter(a => a.scope === 'Nexware'));
+// 2026-11-18: Mauricio García → García, Gustavo
+_gustoAliasUpsert('gusto_alias_2026_11_18_mauricio', GUSTO_ALIAS_DEFAULTS.filter(a => /^mauricio garc[ií]a$/i.test(a.from)));
 
 app.get('/api/admin/gusto-pay-aliases', requireAdmin, (req, res) => {
   res.json({ aliases: _gustoAliases() });
