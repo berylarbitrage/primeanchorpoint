@@ -290,6 +290,9 @@ button,input,select,textarea{font-family:inherit}
 .qr-wait{width:190px;height:190px;border:2px dashed #e5e7eb;border-radius:10px;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--gray-400);font-size:.85rem;background:#fff}
 .qr-n{position:absolute;left:10px;top:8px;font-size:1.2rem;font-weight:800;color:var(--sky)}
 .dev-meta{font-size:.75rem;color:var(--gray-600);min-width:120px}
+.sim-box{display:grid;gap:6px;margin:-2px 0 4px 18px;padding:8px 10px;border:1px dashed #a5b4fc;border-radius:10px;background:#eef2ff}
+.sim-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.modal .sim-row select{width:auto;max-width:240px;padding:6px 10px;font-size:.82rem}
 .modal .dev-row input,.modal .dev-row select{width:auto;padding:6px 10px;font-size:.82rem}
 .modal .dev-row select{max-width:240px}
 .rate-group{font-size:.75rem;font-weight:800;color:var(--gray-600);background:var(--gray-100);border-radius:8px;padding:.35rem .6rem;margin:.35rem 0 .1rem}
@@ -405,6 +408,8 @@ function fmtPhone(e164) {
 }
 /* ── 手机号 (line) ── */
 function devLine(deviceId) { const d = DEVICES.find(x => Number(x.id) === Number(deviceId)); return d ? (d.line || '') : ''; }
+/** 这条短信是哪个号的: 服务器按卡算好放在 m.line (双卡手机一张卡一个号), 老数据按设备 */
+function msgLine(m) { return m.line || (m.queued ? '' : devLine(m.device_id)); }
 function lineName(line) {
   if (!line) return '未标号码';
   const l = LINES.find(x => x.line === line);
@@ -727,7 +732,7 @@ async function load(silent, fromPoll) {
     }
     renderTagRow();
     renderLineBar();
-    const shownDevs = DEVICES.filter(d => d.active && (!LINE || (d.line || 'none') === LINE));
+    const shownDevs = DEVICES.filter(d => d.active && (!LINE || (d.line || 'none') === LINE || (d.sim_lines || []).includes(LINE)));
     document.getElementById('deviceInfo').textContent = shownDevs.length
       ? shownDevs.map(d => (d.name || '电脑') + (d.last_push_at ? ' · ' + timeAgo(d.last_push_at) + '同步' : ' · 还没推过')).join('　')
       : '还没连电脑 — 点 ⚙';
@@ -826,7 +831,7 @@ function dedupeMessages(list) {
       const m = arr[i];
       const close = new Date(sqlTime(m.sent_at)) - new Date(sqlTime(kept.sent_at)) <= 180000;
       // 不同手机号各收到一份是两条真短信, 只合并同一个号的设备推的
-      if (close && m.device_id !== kept.device_id && devLine(m.device_id) === devLine(kept.device_id)) {
+      if (close && m.device_id !== kept.device_id && msgLine(m) === msgLine(kept)) {
         // 两份各有所长时合到留下的那份上: 一份有译文, 另一份可能才有图片
         // (电脑端先推了没图的那份, 手机 App 后推、图片挂在自己那份上)
         const keptMedia = inMedia(kept).length ? kept.media : '', otherMedia = inMedia(m).length ? m.media : '';
@@ -868,7 +873,7 @@ async function resendFailed(id) {
   const m = MESSAGES.find(x => Number(x.id) === id);
   if (!m || !await showConfirm('把这条重新排队发一次？\n\n' + String(m.body || '').slice(0, 200))) return;
   const r = await api('/device-sms/send', {
-    method: 'POST', body: JSON.stringify({ to: m.address || m.peer, peer: m.peer, body: m.body, line: devLine(m.device_id) })
+    method: 'POST', body: JSON.stringify({ to: m.address || m.peer, peer: m.peer, body: m.body, line: msgLine(m) })
   });
   if (!r.success) { showAlert(r.error || '排队失败'); return; }
   await load(true);
@@ -917,7 +922,7 @@ function conversations() {
     const real = list.filter(m => !m.queued);
     const address = (real.length ? real[real.length - 1].address : last.address) || peer;
     // 这个人跟哪几个号聊过; 回复默认用最近一条真实短信所在的号
-    const lineOf = m => m.queued ? (m.line || '') : devLine(m.device_id);
+    const lineOf = msgLine;
     const lines = [...new Set(list.map(lineOf).filter(Boolean))];
     const line = real.length ? lineOf(real[real.length - 1]) : lineOf(last);
     // 审核通过（建了员工档案）的号码自动用档案里的名字；手动备注的别名优先
@@ -1097,7 +1102,7 @@ function renderDetail(convos) {
       + ' onclick="toggleStar(' + m.id + ',' + (Number(m.starred) ? 0 : 1) + ')">'
       + (Number(m.starred) ? '★' : '☆') + '</button>'
       + '<span>' + fmtClock(m.sent_at) + '</span>'
-      + (!LINE && LINES.length > 1 && devLine(m.device_id) ? '<span class="line-tag" title="' + (m.direction === 'out' ? '用这个号发的' : '发到这个号') + '">📱 ' + esc(lineName(devLine(m.device_id))) + '</span>' : '')
+      + (!LINE && LINES.length > 1 && msgLine(m) ? '<span class="line-tag" title="' + (m.direction === 'out' ? '用这个号发的' : '发到这个号') + '">📱 ' + esc(lineName(msgLine(m))) + '</span>' : '')
       + (m.direction === 'out' ? sendStatusHtml(m) : '')
       + (m.star_note ? '<span style="color:var(--blue)">📌 ' + esc(m.star_note) + '</span>' : '')
       + (m.kind === 'mms' ? '<span>图片短信</span>' : '')
@@ -2245,13 +2250,16 @@ async function openSetup(tab) {
   const lines = new Map();
   for (const l of r.lines || []) lines.set(l.line, { line: l.line, label: l.label || '', devices: [] });
   const devs = (r.devices || []).filter(d => d.active || d.message_count);   // 停用了又没推过短信的不用看
+  // 双卡手机: 两张卡各归一个号, 两个号下面都列这台手机
+  const simLines = d => (d.sims || []).map(x => x.line).filter(Boolean);
   for (const d of devs) {
-    if (!d.line) continue;
-    if (!lines.has(d.line)) lines.set(d.line, { line: d.line, label: '', devices: [] });
-    lines.get(d.line).devices.push(d);
+    for (const ln of new Set([d.line, ...simLines(d)].filter(Boolean))) {
+      if (!lines.has(ln)) lines.set(ln, { line: ln, label: '', devices: [] });
+      lines.get(ln).devices.push(d);
+    }
   }
   const prev = SETUP ? SETUP.tab : '';
-  SETUP = { devices: devs, lines: [...lines.values()], none: devs.filter(d => !d.line && d.active), token: null };
+  SETUP = { devices: devs, lines: [...lines.values()], none: devs.filter(d => !d.line && !simLines(d).length && d.active), token: null };
   const ok = t => t === 'none' ? SETUP.none.length : t === 'add' || t === 'help' || SETUP.lines.some(l => l.line === t);
   SETUP.tab = [tab, prev, LINE].find(t => t && ok(t)) || (SETUP.lines[0] && SETUP.lines[0].line) || (SETUP.none.length ? 'none' : 'add');
   renderSetup();
@@ -2273,7 +2281,25 @@ function renderSetup() {
     + '<option value=""' + (d.line ? '' : ' selected') + '>未标号码</option></select>'
     + '<button class="action-btn" style="padding:4px 12px" onclick="saveDevice(' + d.id + ')">保存</button>'
     + (d.active ? '<button class="action-btn" style="padding:4px 10px;color:var(--red)" onclick="revoke(' + d.id + ')">停用</button>' : '')
-    + '</div>';
+    + '</div>' + simBlock(d);
+  // 双卡手机: 每张卡一行, 选它是哪个号 (没认出来的卡, 短信算在设备的号上)
+  function simBlock(d) {
+    if (!d.sims || d.sims.length < 2) return '';
+    return '<div class="sim-box"><div class="hint" style="margin:0"><b>📶 双卡</b>：每张卡是哪个号，短信就分开显示在哪个号下面</div>'
+      + d.sims.map(sm => {
+        const key = d.id + '_' + sm.sub_id, st = SIMIDENT[key];
+        return '<div class="sim-row">'
+          + '<b>卡' + (sm.slot != null ? sm.slot + 1 : '?') + '</b>'
+          + '<span class="dev-meta">' + esc([sm.carrier || sm.display_name, sm.reported_number ? '卡里号码 ' + fmtPhone(sm.reported_number) : '', (sm.message_count || 0) + ' 条'].filter(Boolean).join(' · ')) + '</span>'
+          + '<select id="sim' + key + '" style="' + inp + '">'
+          + S.lines.map(l => '<option value="' + l.line + '"' + (l.line === sm.line ? ' selected' : '') + '>📱 ' + esc(l.label ? l.label + ' ' + fmtPhone(l.line) : fmtPhone(l.line)) + '</option>').join('')
+          + '<option value=""' + (sm.line ? '' : ' selected') + '>还没认号</option></select>'
+          + '<button class="action-btn" style="padding:4px 12px" onclick="saveSim(' + d.id + ',' + sm.sub_id + ')">保存</button>'
+          + (d.active ? '<button class="action-btn" style="padding:4px 10px" onclick="identifySim(' + d.id + ',' + sm.sub_id + ')" title="让这张卡给公司号发一条短信，公司号收到就知道它的号">认号</button>' : '')
+          + (st ? '<span class="dev-meta" style="color:' + (st.err ? 'var(--red)' : 'var(--gray-600)') + '">' + esc(st.err || '认号中…这张卡在给公司号发短信') + '</span>' : '')
+          + '</div>';
+      }).join('') + '</div>';
+  }
   let body = '';
   if (S.tab === 'add') {
     body = '<div class="hint">加一个手机号（比如新弄的芝加哥号码）。加好以后在这个号下面「连一台新设备」，扫码连上那部手机。</div>'
@@ -2313,7 +2339,7 @@ function renderSetup() {
           + '<span style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap">' + (S.lines.length ? '<span style="color:var(--gray-600);font-size:.8rem">或新号码</span>' : '')
           + '<input id="nn' + d.id + '" placeholder="号码，如 (224) 591-5888" style="' + inp + ';width:190px">'
           + '<input id="nl' + d.id + '" placeholder="叫什么，如 芝加哥1" style="' + inp + ';width:140px">'
-          + '<button class="action-btn primary" style="padding:6px 14px" onclick="assignNewLine(' + d.id + ')">确定</button></span></div></div>').join('')
+          + '<button class="action-btn primary" style="padding:6px 14px" onclick="assignNewLine(' + d.id + ')">确定</button></span></div>' + simBlock(d) + '</div>').join('')
         : '<div class="hint">没有最近在同步、又没设号码的手机。</div>')
       + '</div></div>'
       + (old.length ? '<div class="simple-step"><div class="step-n">2</div><div style="flex:1;display:grid;gap:8px">'
@@ -2369,6 +2395,34 @@ async function identify(id, again) {
     if (g.number) { delete IDENT[id]; openSetup('none'); return; }
     if (g.sent === 'failed') { IDENT[id] = { err: '手机没发出去' + (g.note ? '（' + g.note + '）' : '') }; renderSetup(); return; }
     if (Date.now() - IDENT[id].started > 150000) { IDENT[id] = { err: '等了两分多钟公司号还没收到。手机要开着「短信同步」App；也可以直接填号码' }; renderSetup(); return; }
+    setTimeout(poll, 4000);
+  };
+  setTimeout(poll, 4000);
+}
+// 双卡: 标某张卡是哪个号
+async function saveSim(id, subId) {
+  const line = document.getElementById('sim' + id + '_' + subId).value;
+  const r = await api('/device-sms/devices/' + id + '/sims/' + subId, { method: 'POST', body: JSON.stringify({ line }) });
+  if (!r.success) { pToast(r.error || '没存上', true); return; }
+  pToast(line ? '好了，这张卡是 ' + fmtPhone(line) + '，以前的短信也归过去了' : '已清掉');
+  await load(true);
+  openSetup(line || SETUP.tab);
+}
+// 双卡: 让这张卡给公司号发认号短信, 公司号收到就自动归号
+const SIMIDENT = {};
+async function identifySim(id, subId, again) {
+  const key = id + '_' + subId;
+  SIMIDENT[key] = { started: Date.now() };
+  const r = await api('/device-sms/devices/' + id + '/sims/' + subId + '/identify', { method: 'POST', body: JSON.stringify({ again: !!again }) });
+  if (!r.success) SIMIDENT[key] = { err: r.error || '发不出去' };
+  if (SETUP) renderSetup();
+  if (!r.success) return;
+  const poll = async () => {
+    if (!document.querySelector('.modal.setup')) { delete SIMIDENT[key]; return; }
+    const g = await api('/device-sms/devices/' + id + '/sims/' + subId + '/identify').catch(() => ({}));
+    if (g.number) { delete SIMIDENT[key]; pToast('认出来了：' + fmtPhone(g.number)); await load(true); openSetup(g.number); return; }
+    if (g.sent === 'failed') { SIMIDENT[key] = { err: '这张卡没发出去' + (g.note ? '（' + g.note + '）' : '') }; renderSetup(); return; }
+    if (Date.now() - SIMIDENT[key].started > 150000) { SIMIDENT[key] = { err: '两分多钟公司号还没收到，可以直接在左边选号码' }; renderSetup(); return; }
     setTimeout(poll, 4000);
   };
   setTimeout(poll, 4000);

@@ -53,9 +53,11 @@ final class MmsRepo {
         long maxDate = sinceMs;
         long maxId = sinceId == Long.MAX_VALUE ? 0 : sinceId;
 
+        String[] projection = Sims.withSubId(context, Telephony.Mms.CONTENT_URI,
+                new String[]{"_id", "date", "msg_box", "sub"});
         try (Cursor cursor = context.getContentResolver().query(
                 Telephony.Mms.CONTENT_URI,
-                new String[]{"_id", "date", "msg_box", "sub"},
+                projection,
                 WHERE,
                 // 彩信的 date 是秒
                 new String[]{String.valueOf(sinceMs / 1000), String.valueOf(sinceId)},
@@ -110,6 +112,8 @@ final class MmsRepo {
                 message.put("date", date);
                 message.put("body", text);
                 message.put("has_media", imageCount > 0);
+                int subId = Sims.subId(cursor, projection);
+                if (subId >= 0) message.put("sub_id", subId);
                 if ("out".equals(direction)) message.put("send_status", sendStatus(box));
                 messages.put(message);
 

@@ -37,6 +37,7 @@ public class MainActivity extends Activity {
 
     private static final int REQ_START = 1;
     private static final int REQ_FIX = 2;
+    private static final int REQ_SIMS = 3;
     /** 服务每 10 秒写一次心跳；超过这个时长没写，就是被系统杀了。 */
     private static final long BEAT_STALE_MS = 35_000;
 
@@ -142,6 +143,17 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         ui.post(refresh);
+        askSimsOnce();
+    }
+
+    /** 升级上来的老用户没给过「读卡信息」权限: 问一次 (双卡分号要用), 拒绝了就不再烦。 */
+    private void askSimsOnce() {
+        SharedPreferences prefs = getSharedPreferences("cfg", MODE_PRIVATE);
+        if (prefs.getString("token", "").isEmpty() || prefs.getBoolean("askedSims", false)) return;
+        if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) return;
+        prefs.edit().putBoolean("askedSims", true).apply();
+        requestPermissions(new String[]{Manifest.permission.READ_PHONE_STATE,
+                Manifest.permission.READ_PHONE_NUMBERS}, REQ_SIMS);
     }
 
     @Override
@@ -428,9 +440,10 @@ public class MainActivity extends Activity {
         // READ_PHONE_NUMBERS: 读本机号码给网站自动认号; 拒绝了也照常同步
         String[] permissions = Build.VERSION.SDK_INT >= 33
                 ? new String[]{Manifest.permission.READ_SMS, Manifest.permission.SEND_SMS,
-                        Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.READ_PHONE_NUMBERS}
+                        Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.READ_PHONE_NUMBERS,
+                        Manifest.permission.READ_PHONE_STATE}
                 : new String[]{Manifest.permission.READ_SMS, Manifest.permission.SEND_SMS,
-                        Manifest.permission.READ_PHONE_NUMBERS};
+                        Manifest.permission.READ_PHONE_NUMBERS, Manifest.permission.READ_PHONE_STATE};
         requestPermissions(permissions, REQ_START);
     }
 

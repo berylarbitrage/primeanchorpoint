@@ -157,6 +157,7 @@ public class SyncService extends Service {
         JSONObject body = new JSONObject();
         body.put("device_serial", serial());
         body.put("own_number", ownNumber());
+        body.put("sims", Sims.list(this));
         body.put("messages", batch.messages);
         JSONObject resp = Api.postJson(api + "/push", token, body);
 
@@ -352,7 +353,7 @@ public class SyncService extends Service {
             boolean ok;
             String note;
             try {
-                sendSms(item.getString("to_address"), item.getString("body"));
+                sendSms(item.getString("to_address"), item.getString("body"), item.optInt("sub_id", -1));
                 ok = true;
                 note = "已从手机直接发出";
             } catch (Exception e) {
@@ -368,10 +369,17 @@ public class SyncService extends Service {
         return sent;
     }
 
-    private void sendSms(String to, String body) {
+    /** subId = 网站指定用哪张卡发（双卡手机两个号）；-1 = 手机的默认短信卡。 */
+    @SuppressWarnings("deprecation")
+    private void sendSms(String to, String body, int subId) {
         SmsManager manager = Build.VERSION.SDK_INT >= 31
                 ? getSystemService(SmsManager.class)
                 : SmsManager.getDefault();
+        if (subId >= 0) {
+            manager = Build.VERSION.SDK_INT >= 31
+                    ? manager.createForSubscriptionId(subId)
+                    : SmsManager.getSmsManagerForSubscriptionId(subId);
+        }
         ArrayList<String> parts = manager.divideMessage(body);
         // 系统会替非默认短信 App 把发出的短信写进短信库，下一轮 pushNew 自然带上去
         if (parts.size() == 1) {
