@@ -38,9 +38,10 @@ final class SmsRepo {
         JSONArray messages = new JSONArray();
         long maxDate = sinceMs;
 
+        String[] projection = Sims.withSubId(context, Telephony.Sms.CONTENT_URI, PROJECTION);
         try (Cursor cursor = context.getContentResolver().query(
                 Telephony.Sms.CONTENT_URI,
-                PROJECTION,
+                projection,
                 "date > ?",
                 new String[]{String.valueOf(sinceMs)},
                 "date ASC")) {
@@ -48,7 +49,7 @@ final class SmsRepo {
 
             int count = 0;
             while (cursor.moveToNext() && count < limit) {
-                JSONObject message = fromCursor(cursor);
+                JSONObject message = fromCursor(cursor, projection);
                 if (message == null) continue;
                 messages.put(message);
 
@@ -70,9 +71,10 @@ final class SmsRepo {
      */
     static JSONArray readRecentOutgoing(Context context, long sinceMs, int limit) {
         JSONArray messages = new JSONArray();
+        String[] projection = Sims.withSubId(context, Telephony.Sms.CONTENT_URI, PROJECTION);
         try (Cursor cursor = context.getContentResolver().query(
                 Telephony.Sms.CONTENT_URI,
-                PROJECTION,
+                projection,
                 "date > ? AND type != ? AND type != ?",
                 new String[]{String.valueOf(sinceMs),
                         String.valueOf(Telephony.Sms.MESSAGE_TYPE_INBOX),
@@ -80,7 +82,7 @@ final class SmsRepo {
                 "date DESC")) {
             if (cursor == null) return messages;
             while (cursor.moveToNext() && messages.length() < limit) {
-                JSONObject message = fromCursor(cursor);
+                JSONObject message = fromCursor(cursor, projection);
                 if (message != null) messages.put(message);
             }
         } catch (Exception e) {
@@ -93,7 +95,7 @@ final class SmsRepo {
             {"_id", "address", "date", "type", "read", "body", "status"};
 
     /** 一行短信库 → 推送格式；草稿返回 null。 */
-    private static JSONObject fromCursor(Cursor cursor) throws Exception {
+    private static JSONObject fromCursor(Cursor cursor, String[] projection) throws Exception {
         long id = cursor.getLong(0);
         String address = cursor.getString(1) == null ? "" : cursor.getString(1);
         long date = cursor.getLong(2);
@@ -116,6 +118,9 @@ final class SmsRepo {
         message.put("kind", "sms");
         message.put("date", date);
         message.put("body", body);
+        // 双卡: 哪张卡收发的, 网站按卡分开两个号显示
+        int subId = Sims.subId(cursor, projection);
+        if (subId >= 0) message.put("sub_id", subId);
         if ("out".equals(direction)) message.put("send_status", sendStatus(type, status));
         return message;
     }

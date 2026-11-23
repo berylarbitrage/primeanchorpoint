@@ -36748,6 +36748,39 @@ function _smsLineDecide(r, actor, approve, note, req) {
 }
 // 手机自己报的号码 (短信同步 App 新版会报; 运营商不给的话是空的)
 try { db.exec(`ALTER TABLE device_sms_devices ADD COLUMN reported_number TEXT DEFAULT ''`); } catch(e) {}
+
+// ─── 双卡手机: 一台设备两个号 ───
+// 手机 App (0.8.0+) 每条短信带上是哪张卡 (sub_id) 收发的, 推送时附上卡的列表。
+// 每张卡对应一个手机号 (device_sms_sims.line): 运营商把号码写进卡里就自动认, 认不出来
+// 在「手机号和设备」里选, 或点「认号」让那张卡给公司号发一条。
+// 短信自己的号 (device_sms_messages.line) 优先; 空的 (单卡 / 电脑版 / 卡还没认号) 按设备的号算。
+db.exec(`CREATE TABLE IF NOT EXISTS device_sms_sims (
+  device_id INTEGER NOT NULL,
+  sub_id INTEGER NOT NULL,
+  slot INTEGER DEFAULT NULL,
+  carrier TEXT DEFAULT '',
+  display_name TEXT DEFAULT '',
+  reported_number TEXT DEFAULT '',
+  line TEXT DEFAULT '',
+  last_seen_at TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (device_id, sub_id)
+)`);
+try { db.exec(`ALTER TABLE device_sms_messages ADD COLUMN sub_id INTEGER DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE device_sms_messages ADD COLUMN line TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE device_sms_outbox ADD COLUMN sub_id INTEGER DEFAULT NULL`); } catch(e) {}
+// 新泽西的新号 (双卡手机的第二张卡), 先把备注名放上; 认号以后短信自动归到这个号
+db.prepare(`INSERT OR IGNORE INTO device_sms_lines (line, label) VALUES (?, ?)`).run('8622981493', 'NJ 新泽西');
+// 一条短信实际是哪个号的 (SQL 表达式, 消息表别名必须是 m)
+const DSMS_MLINE = `COALESCE(NULLIF(m.line,''), (SELECT COALESCE(dl.line,'') FROM device_sms_devices dl WHERE dl.id=m.device_id), '')`;
+// 某张卡认出号码以后: 记下, 并把这张卡以前推上来的短信都归过去
+function deviceSmsSetSimLine(deviceId, subId, line) {
+  db.prepare(`UPDATE device_sms_sims SET line=? WHERE device_id=? AND sub_id=?`).run(line, deviceId, subId);
+  db.prepare(`UPDATE device_sms_messages SET line=? WHERE device_id=? AND sub_id=?`).run(line, deviceId, subId);
+}
+// 一台设备各张卡的号 (已认出来的)
+function deviceSmsSimLines(deviceId) {
+  return db.prepare(`SELECT sub_id, line FROM device_sms_sims WHERE device_id=? AND COALESCE(line,'')!=''`).all(deviceId);
+}
 // 猜这台设备是哪个手机号: 拿它的短信去对公司 Twilio 号的收发记录 ——
 //   公司号发给它的短信 (Twilio 那边 outbound, to_number = 它的号) 它这边是收到;
 //   它发给公司号的短信 (Twilio 那边 inbound, from_number = 它的号) 它这边是发出。
@@ -36791,6 +36824,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS device_sms_identify (
   created_at TEXT DEFAULT (datetime('now')),
   done_at TEXT DEFAULT NULL
 )`);
+// 双卡: 认的是哪张卡 (空 = 整台设备)
+try { db.exec(`ALTER TABLE device_sms_identify ADD COLUMN sub_id INTEGER DEFAULT NULL`); } catch(e) {}
 // Twilio 收到短信时先看是不是认号短信: 是就记下号码, 不进收件箱
 function deviceSmsIdentifyHit(from, body) {
   try {
@@ -36801,6 +36836,13 @@ function deviceSmsIdentifyHit(from, body) {
     const num = String(from || '').replace(/\D/g, '').slice(-10);
     if (num.length !== 10) return false;
     db.prepare(`UPDATE device_sms_identify SET number=?, done_at=datetime('now') WHERE code=?`).run(num, m[1]);
+    if (row.sub_id != null) {
+      // 双卡里认的是某一张卡: 公司号看到的发件号就是这张卡的号, 直接归过去
+      db.prepare(`UPDATE device_sms_sims SET reported_number=? WHERE device_id=? AND sub_id=?`).run(num, row.device_id, row.sub_id);
+      deviceSmsSetSimLine(row.device_id, row.sub_id, num);
+      console.log('[Device SMS] identify: device', row.device_id, 'sim', row.sub_id, '=', num);
+      return true;
+    }
     db.prepare(`UPDATE device_sms_devices SET reported_number=? WHERE id=?`).run(num, row.device_id);
     console.log('[Device SMS] identify: device', row.device_id, '=', num);
     return true;
@@ -38671,11 +38713,31 @@ app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
     const serial = String(body.device_serial || '').slice(0, 80);
     const own = (() => { const d = String(body.own_number || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : ''; })();
     if (own) db.prepare(`UPDATE device_sms_devices SET reported_number=? WHERE id=?`).run(own, req.smsDevice.id);
+    // 双卡: 手机报上来的卡 (sub_id / 卡槽 / 运营商 / 卡里写的号码)。卡里有号码、这张卡还没认号的, 自动认上
+    if (Array.isArray(body.sims)) {
+      const upSim = db.prepare(`INSERT INTO device_sms_sims (device_id, sub_id, slot, carrier, display_name, reported_number, last_seen_at)
+        VALUES (?,?,?,?,?,?,datetime('now'))
+        ON CONFLICT(device_id, sub_id) DO UPDATE SET slot=excluded.slot, carrier=excluded.carrier,
+          display_name=excluded.display_name, last_seen_at=datetime('now'),
+          reported_number=COALESCE(NULLIF(excluded.reported_number,''), device_sms_sims.reported_number)`);
+      for (const sim of body.sims.slice(0, 4)) {
+        const subId = parseInt(sim && sim.sub_id, 10);
+        if (!Number.isFinite(subId) || subId < 0) continue;
+        const num = deviceSmsLine(sim.number);
+        upSim.run(req.smsDevice.id, subId, Number.isFinite(parseInt(sim.slot, 10)) ? parseInt(sim.slot, 10) : null,
+          String(sim.carrier || '').slice(0, 40), String(sim.name || '').slice(0, 40), num);
+        const cur = db.prepare(`SELECT line FROM device_sms_sims WHERE device_id=? AND sub_id=?`).get(req.smsDevice.id, subId);
+        if (num && cur && !cur.line) deviceSmsSetSimLine(req.smsDevice.id, subId, num);
+      }
+    }
+    const simLine = new Map(deviceSmsSimLines(req.smsDevice.id).map(r => [r.sub_id, r.line]));
     const upsert = db.prepare(`INSERT INTO device_sms_messages
         (device_id, remote_id, peer, address, contact, direction, kind, body, translated_body, source_lang,
-         risk_score, risk_category, risk_summary, has_media, sent_at, send_status, updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+         risk_score, risk_category, risk_summary, has_media, sent_at, send_status, sub_id, line, updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
       ON CONFLICT(device_id, remote_id) DO UPDATE SET
+        sub_id=COALESCE(excluded.sub_id, device_sms_messages.sub_id),
+        line=COALESCE(NULLIF(excluded.line,''), device_sms_messages.line),
         peer=excluded.peer, address=excluded.address,
         direction=excluded.direction, kind=excluded.kind, body=excluded.body,
         has_media=excluded.has_media, sent_at=excluded.sent_at, updated_at=datetime('now'),
@@ -38699,11 +38761,11 @@ app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
     const existsSelf = db.prepare('SELECT id FROM device_sms_messages WHERE device_id=? AND remote_id=?');
     const saveAlias = db.prepare(`INSERT OR REPLACE INTO device_sms_aliases (device_id, remote_id, message_id) VALUES (?,?,?)`);
     // 只跟同一个手机号的设备去重: 两个号码各收到同一个人发的同一句话是两条真短信
-    const existsOther = db.prepare(`SELECT id FROM device_sms_messages
-      WHERE device_id != ? AND peer=? AND direction=? AND body=?
-        AND device_id IN (SELECT id FROM device_sms_devices WHERE COALESCE(line,'')=?)
-        AND ABS(strftime('%s', sent_at) - strftime('%s', ?)) <= 180 LIMIT 1`);
-    const myLine = req.smsDevice.line || '';
+    // (双卡手机按每条短信自己那张卡的号算)
+    const existsOther = db.prepare(`SELECT m.id FROM device_sms_messages m
+      WHERE m.device_id != ? AND m.peer=? AND m.direction=? AND m.body=?
+        AND ${DSMS_MLINE}=?
+        AND ABS(strftime('%s', m.sent_at) - strftime('%s', ?)) <= 180 LIMIT 1`);
 
     let saved = 0;
     const write = db.transaction((rows) => {
@@ -38717,6 +38779,9 @@ app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
         // 自动认号发给公司号的那条, 不放进短信列表
         if (/^Prime Anchor 认号 [A-Z0-9]{6}/.test(bodyText)) continue;
         const sentIso = new Date(sentAt).toISOString();
+        const subId = Number.isFinite(parseInt(m.sub_id, 10)) && parseInt(m.sub_id, 10) >= 0 ? parseInt(m.sub_id, 10) : null;
+        const msgLine = (subId != null && simLine.get(subId)) || '';
+        const myLine = msgLine || req.smsDevice.line || '';
         // 纯图片彩信没有正文, 也按同人同方向同时间去重 (电脑端和手机 App 都会推彩信)
         if ((bodyText.trim() || m.kind === 'mms') && !existsSelf.get(req.smsDevice.id, remoteId)) {
           const dup = existsOther.get(req.smsDevice.id, peerKey, direction, bodyText, myLine, sentIso);
@@ -38737,7 +38802,8 @@ app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
           String(m.risk_category || '').slice(0, 30), String(m.risk_summary || '').slice(0, 300),
           m.has_media ? 1 : 0,
           sentIso,
-          direction === 'out' && DEVICE_SMS_SEND_STATUSES.has(m.send_status) ? m.send_status : ''
+          direction === 'out' && DEVICE_SMS_SEND_STATUSES.has(m.send_status) ? m.send_status : '',
+          subId, msgLine
         );
         saved++;
       }
@@ -38896,7 +38962,8 @@ app.post('/api/device-sms/send', requireAdmin, requireRole('admin', 'cs'), (req,
     if (myLine && (req.body || {}).line && deviceSmsLine(req.body.line) !== myLine) {
       return res.status(403).json({ error: '你的账号绑的是 ' + myLine + '，只能用这个号发。要换号请在页面上申请' });
     }
-    if (line && !db.prepare(`SELECT 1 FROM device_sms_devices WHERE line=? AND active=1`).get(line)) {
+    if (line && !db.prepare(`SELECT 1 FROM device_sms_devices WHERE line=? AND active=1`).get(line)
+        && !db.prepare(`SELECT 1 FROM device_sms_sims s JOIN device_sms_devices d ON d.id=s.device_id WHERE s.line=? AND d.active=1`).get(line)) {
       return res.status(400).json({ error: '这个手机号没有连着的设备，发不出去' });
     }
     const info = db.prepare(`INSERT INTO device_sms_outbox (to_address, peer, body, translate_to, created_by, line) VALUES (?,?,?,?,?,?)`)
@@ -38910,10 +38977,22 @@ app.get('/api/device-sms/outbox', deviceSmsAuth, (req, res) => {
   try {
     // 别把同一条同时发给两台机器（电脑和手机 App 都在轮询时会双发短信）：
     // 被别的设备取走不到 60 秒的先跳过，它没回报结果才轮得到下一个。
-    const rows = db.prepare(`SELECT id, to_address, peer, body, attempts, translate_to FROM device_sms_outbox
+    // 双卡手机两个号的都归它发; 每条告诉它用哪张卡 (sub_id), 没有就用手机的默认短信卡
+    const sims = deviceSmsSimLines(req.smsDevice.id);
+    const myLines = [...new Set([req.smsDevice.line || '', ...sims.map(x => x.line)].filter(Boolean))];
+    const rows = db.prepare(`SELECT id, to_address, peer, body, attempts, translate_to, COALESCE(line,'') AS line, sub_id FROM device_sms_outbox
       WHERE status='pending' AND (taken_at IS NULL OR device_id=? OR taken_at < datetime('now','-60 seconds'))
-        AND ((target_device_id IS NULL AND (COALESCE(line,'')='' OR line=?)) OR target_device_id=?)
-      ORDER BY id ASC LIMIT 10`).all(req.smsDevice.id, req.smsDevice.line || '', req.smsDevice.id);
+        AND ((target_device_id IS NULL AND (COALESCE(line,'')='' OR line IN (${myLines.map(() => '?').join(',') || "''"}))) OR target_device_id=?)
+      ORDER BY id ASC LIMIT 10`).all(req.smsDevice.id, ...myLines, req.smsDevice.id);
+    // 只认出一张卡的双卡手机: 设备的号就是另一张 (没认号的那张) 卡
+    const unmapped = db.prepare(`SELECT sub_id FROM device_sms_sims WHERE device_id=? AND COALESCE(line,'')=''
+      AND last_seen_at >= datetime('now','-7 days')`).all(req.smsDevice.id);
+    for (const row of rows) {
+      if (row.sub_id == null && row.line) { const sim = sims.find(x => x.line === row.line); if (sim) row.sub_id = sim.sub_id; }
+      if (row.sub_id == null && row.line && row.line === req.smsDevice.line && sims.length && unmapped.length === 1) row.sub_id = unmapped[0].sub_id;
+      if (row.sub_id == null) delete row.sub_id;
+      delete row.line;
+    }
     if (rows.length) {
       const mark = db.prepare(`UPDATE device_sms_outbox SET attempts=attempts+1, taken_at=datetime('now'), device_id=? WHERE id=?`);
       for (const row of rows) mark.run(req.smsDevice.id, row.id);
@@ -39145,7 +39224,7 @@ app.get('/api/device-sms/messages', requireAdmin, requireRole('admin', 'cs'), (r
     // 绑了号的账号只看自己的号, 不管页面传什么
     const myLine = deviceSmsMyLine(req);
     const line = myLine || (lineQ === 'none' ? 'none' : deviceSmsLine(lineQ));
-    if (line) { where += " AND m.device_id IN (SELECT id FROM device_sms_devices WHERE COALESCE(line,'')=?)"; params.push(line === 'none' ? '' : line); }
+    if (line) { where += ` AND ${DSMS_MLINE}=?`; params.push(line === 'none' ? '' : line); }
     if (String(req.query.starred || '') === '1') where += ' AND m.starred=1';
     if (q) {
       where += ' AND (m.body LIKE ? OR m.translated_body LIKE ? OR m.contact LIKE ? OR m.address LIKE ? OR n.alias LIKE ? OR n.note LIKE ?)';
@@ -39157,24 +39236,36 @@ app.get('/api/device-sms/messages', requireAdmin, requireRole('admin', 'cs'), (r
     if (status === 'open') where += " AND COALESCE(n.status,'open') = 'open'";
     if (status === 'closed') where += " AND COALESCE(n.status,'open') = 'closed'";
 
-    const rows = db.prepare(`SELECT m.* FROM device_sms_messages m
+    // line 给的是这条短信实际的号 (双卡手机按卡算, 其他按设备算)
+    const rows = db.prepare(`SELECT m.*, ${DSMS_MLINE} AS eff_line FROM device_sms_messages m
       LEFT JOIN device_sms_peer_notes n ON n.peer = m.peer
-      WHERE ${where} ORDER BY m.sent_at DESC LIMIT ? OFFSET ?`).all(...params, limit, offset);
+      WHERE ${where} ORDER BY m.sent_at DESC LIMIT ? OFFSET ?`).all(...params, limit, offset)
+      .map(r => { r.line = r.eff_line; delete r.eff_line; return r; });
     const total = db.prepare(`SELECT COUNT(*) AS n FROM device_sms_messages m
       LEFT JOIN device_sms_peer_notes n ON n.peer = m.peer WHERE ${where}`).get(...params).n;
     const devices = db.prepare(`SELECT id, name, serial, last_push_at, message_count, active, COALESCE(line,'') AS line
       FROM device_sms_devices WHERE active=1 OR message_count>0`).all();
-    // 号码切换条: 每个号码有几个会话没读 (进行中的)
-    const lines = db.prepare(`SELECT COALESCE(d.line,'') AS line, COALESCE(l.label,'') AS label,
-        MAX(d.active) AS active, MAX(d.last_push_at) AS last_push_at,
-        (SELECT COUNT(DISTINCT m.peer) FROM device_sms_messages m
-           JOIN device_sms_devices d2 ON d2.id=m.device_id AND COALESCE(d2.line,'')=COALESCE(d.line,'')
-           LEFT JOIN device_sms_peer_notes n ON n.peer=m.peer
-          WHERE m.direction='in' AND COALESCE(n.status,'open')='open'
-            AND (n.read_at IS NULL OR m.sent_at > n.read_at)) AS unread
-      FROM device_sms_devices d LEFT JOIN device_sms_lines l ON l.line=d.line
-      WHERE d.active=1 OR d.message_count>0
-      GROUP BY COALESCE(d.line,'') ORDER BY COALESCE(d.line,'')=''`).all();
+    for (const d of devices) d.sim_lines = deviceSmsSimLines(d.id).map(x => x.line);
+    // 号码切换条: 每个号码有几个会话没读 (进行中的)。双卡手机的每张卡各算一个号
+    const labels = new Map(db.prepare('SELECT line, label FROM device_sms_lines').all().map(l => [l.line, l.label || '']));
+    const unread = new Map(db.prepare(`SELECT ${DSMS_MLINE} AS line, COUNT(DISTINCT m.peer) AS n FROM device_sms_messages m
+        LEFT JOIN device_sms_peer_notes n ON n.peer=m.peer
+      WHERE m.direction='in' AND COALESCE(n.status,'open')='open'
+        AND (n.read_at IS NULL OR m.sent_at > n.read_at)
+      GROUP BY 1`).all().map(r => [r.line, r.n]));
+    const byLine = new Map();
+    const addLine = (ln, d) => {
+      const cur = byLine.get(ln) || { line: ln, label: labels.get(ln) || '', active: 0, last_push_at: null, unread: unread.get(ln) || 0 };
+      cur.active = Math.max(cur.active, d.active ? 1 : 0);
+      if (d.last_push_at && (!cur.last_push_at || d.last_push_at > cur.last_push_at)) cur.last_push_at = d.last_push_at;
+      byLine.set(ln, cur);
+    };
+    for (const d of devices) {
+      // 卡都认了号的双卡手机, 不用再单独列一个「未标号码」
+      if (d.line || !d.sim_lines.length) addLine(d.line || '', d);
+      for (const ln of d.sim_lines) addLine(ln, d);
+    }
+    const lines = [...byLine.values()].sort((a, b) => (a.line === '') - (b.line === '') || a.line.localeCompare(b.line));
     // 还没发出去的 / 发失败的也一起给, 页面上排在对话末尾显示状态。
     // 刚发出去(sent)的也带上: 电脑发完到手机把真实短信推回来之间有几分钟空档,
     // 不带的话消息会先消失一阵, 像没发出去一样; 前端等真实消息到了自动去重隐藏。
@@ -39182,7 +39273,7 @@ app.get('/api/device-sms/messages', requireAdmin, requireRole('admin', 'cs'), (r
     const outbox = db.prepare(`SELECT id, to_address, peer, body, status, note, created_at, COALESCE(line,'') AS line FROM device_sms_outbox
       WHERE target_device_id IS NULL AND (status IN ('pending','failed')
          OR (status='sent' AND done_at >= datetime('now','-2 days')))
-        ${line ? `AND COALESCE(NULLIF(line,''), (SELECT COALESCE(d.line,'') FROM device_sms_devices d WHERE d.id=device_sms_outbox.device_id), ?) = ?` : ''}
+        ${line ? `AND COALESCE(NULLIF(line,''), (SELECT NULLIF(s.line,'') FROM device_sms_sims s WHERE s.device_id=device_sms_outbox.device_id AND s.sub_id=device_sms_outbox.sub_id), (SELECT COALESCE(d.line,'') FROM device_sms_devices d WHERE d.id=device_sms_outbox.device_id), ?) = ?` : ''}
       ORDER BY id ASC LIMIT 100`).all(...(line ? [line === 'none' ? '' : line, line === 'none' ? '' : line] : []));
     const notes = db.prepare(`SELECT peer, alias, note, tags, status, contact_lang, agent_lang,
       auto_translate, read_at, spoken_langs, ratings, us_state FROM device_sms_peer_notes`).all();
@@ -39198,9 +39289,13 @@ app.get('/api/device-sms/devices', requireAdmin, requireRole('admin'), (req, res
         FROM device_sms_devices ORDER BY id DESC`).all().map(d => {
         // 还没设号码、在用的: 帮着认一下号码 (手机自己报的优先, 没有就拿公司号的收发记录去对)
         if (!d.line && d.active) {
-          const idf = d.reported_number && db.prepare(`SELECT 1 FROM device_sms_identify WHERE device_id=? AND number=?`).get(d.id, d.reported_number);
+          const idf = d.reported_number && db.prepare(`SELECT 1 FROM device_sms_identify WHERE device_id=? AND sub_id IS NULL AND number=?`).get(d.id, d.reported_number);
           d.guess = d.reported_number ? { line: d.reported_number, how: idf ? 'identify' : 'phone' } : (d.message_count ? deviceSmsGuessLine(d.id) : null);
         }
+        // 双卡手机的卡 (手机 App 0.8.0+ 才会报)
+        d.sims = db.prepare(`SELECT sub_id, slot, carrier, display_name, reported_number, COALESCE(line,'') AS line, last_seen_at,
+            (SELECT COUNT(*) FROM device_sms_messages m WHERE m.device_id=s.device_id AND m.sub_id=s.sub_id) AS message_count
+          FROM device_sms_sims s WHERE device_id=? ORDER BY COALESCE(slot, 99), sub_id`).all(d.id);
         return d;
       }),
       lines: db.prepare('SELECT line, label FROM device_sms_lines').all()
@@ -39360,7 +39455,7 @@ app.post('/api/device-sms/devices/:id/identify', requireAdmin, requireRole('admi
     const to = TWILIO_FROM;
     if (!to) return res.status(400).json({ error: '公司号 (TWILIO_PHONE_NUMBER) 没配置，没法自动认号' });
     // 一小时内已经发过、还没认出来的, 不再重复发 (每发一次就是一条真短信)
-    const recent = db.prepare(`SELECT code FROM device_sms_identify WHERE device_id=? AND done_at IS NULL AND created_at >= datetime('now','-1 hour') ORDER BY created_at DESC LIMIT 1`).get(dev.id);
+    const recent = db.prepare(`SELECT code FROM device_sms_identify WHERE device_id=? AND sub_id IS NULL AND done_at IS NULL AND created_at >= datetime('now','-1 hour') ORDER BY created_at DESC LIMIT 1`).get(dev.id);
     if (recent && !(req.body || {}).again) return res.json({ success: true, code: recent.code, reused: true });
     const code = crypto.randomBytes(6).toString('base64').replace(/[^A-Z0-9]/gi, '').toUpperCase().padEnd(6, '7').slice(0, 6);
     db.prepare(`INSERT INTO device_sms_identify (code, device_id) VALUES (?,?)`).run(code, dev.id);
@@ -39371,8 +39466,52 @@ app.post('/api/device-sms/devices/:id/identify', requireAdmin, requireRole('admi
 });
 app.get('/api/device-sms/devices/:id/identify', requireAdmin, requireRole('admin'), (req, res) => {
   try {
-    const row = db.prepare(`SELECT number, done_at, created_at FROM device_sms_identify WHERE device_id=? ORDER BY created_at DESC LIMIT 1`).get(req.params.id);
-    const ob = db.prepare(`SELECT status, note FROM device_sms_outbox WHERE target_device_id=? ORDER BY id DESC LIMIT 1`).get(req.params.id);
+    const row = db.prepare(`SELECT number, done_at, created_at FROM device_sms_identify WHERE device_id=? AND sub_id IS NULL ORDER BY created_at DESC LIMIT 1`).get(req.params.id);
+    const ob = db.prepare(`SELECT status, note FROM device_sms_outbox WHERE target_device_id=? AND sub_id IS NULL ORDER BY id DESC LIMIT 1`).get(req.params.id);
+    res.json({ number: row && row.number || '', sent: ob ? ob.status : '', note: ob ? ob.note : '' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/device-sms/devices/:id/sims/:subId — 双卡手机: 标这张卡是哪个手机号 (以前这张卡的短信一起归过去)
+app.post('/api/device-sms/devices/:id/sims/:subId', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const body = req.body || {};
+    const sim = db.prepare('SELECT device_id, sub_id FROM device_sms_sims WHERE device_id=? AND sub_id=?').get(req.params.id, parseInt(req.params.subId, 10));
+    if (!sim) return res.status(404).json({ error: '没有这张卡' });
+    const line = deviceSmsLine(body.line);
+    if (String(body.line || '').trim() && !line) return res.status(400).json({ error: '手机号要 10 位数字' });
+    deviceSmsSetSimLine(sim.device_id, sim.sub_id, line);
+    if (line && body.label !== undefined) {
+      db.prepare(`INSERT INTO device_sms_lines (line, label) VALUES (?,?) ON CONFLICT(line) DO UPDATE SET label=excluded.label`)
+        .run(line, String(body.label).trim().slice(0, 30));
+    }
+    auditLog('sms_sim_line', req, { targetType: 'device_sms_device', targetId: sim.device_id, details: { sub_id: sim.sub_id, line } });
+    res.json({ success: true, line });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// POST /api/device-sms/devices/:id/sims/:subId/identify — 让这张卡给公司号发一条认号短信 (GET 看认出来没有)
+app.post('/api/device-sms/devices/:id/sims/:subId/identify', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const dev = db.prepare('SELECT id, active FROM device_sms_devices WHERE id=?').get(req.params.id);
+    if (!dev || !dev.active) return res.status(404).json({ error: '这台设备没在用' });
+    const subId = parseInt(req.params.subId, 10);
+    if (!db.prepare('SELECT 1 FROM device_sms_sims WHERE device_id=? AND sub_id=?').get(dev.id, subId)) return res.status(404).json({ error: '没有这张卡' });
+    const to = TWILIO_FROM;
+    if (!to) return res.status(400).json({ error: '公司号 (TWILIO_PHONE_NUMBER) 没配置，没法自动认号' });
+    const recent = db.prepare(`SELECT code FROM device_sms_identify WHERE device_id=? AND sub_id=? AND done_at IS NULL AND created_at >= datetime('now','-1 hour') ORDER BY created_at DESC LIMIT 1`).get(dev.id, subId);
+    if (recent && !(req.body || {}).again) return res.json({ success: true, code: recent.code, reused: true });
+    const code = crypto.randomBytes(6).toString('base64').replace(/[^A-Z0-9]/gi, '').toUpperCase().padEnd(6, '7').slice(0, 6);
+    db.prepare(`INSERT INTO device_sms_identify (code, device_id, sub_id) VALUES (?,?,?)`).run(code, dev.id, subId);
+    db.prepare(`INSERT INTO device_sms_outbox (to_address, peer, body, created_by, target_device_id, sub_id) VALUES (?,?,?,?,?,?)`)
+      .run(to, String(to).replace(/\D/g, '').slice(-10), `Prime Anchor 认号 ${code}（系统自动发的，用来认出这张卡的号码，可以忽略）`, req.userName || '', dev.id, subId);
+    res.json({ success: true, code });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/device-sms/devices/:id/sims/:subId/identify', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const subId = parseInt(req.params.subId, 10);
+    const row = db.prepare(`SELECT number FROM device_sms_identify WHERE device_id=? AND sub_id=? ORDER BY created_at DESC LIMIT 1`).get(req.params.id, subId);
+    const ob = db.prepare(`SELECT status, note FROM device_sms_outbox WHERE target_device_id=? AND sub_id=? ORDER BY id DESC LIMIT 1`).get(req.params.id, subId);
     res.json({ number: row && row.number || '', sent: ob ? ob.status : '', note: ob ? ob.note : '' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
