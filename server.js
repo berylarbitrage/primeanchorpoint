@@ -38720,6 +38720,8 @@ app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
         ON CONFLICT(device_id, sub_id) DO UPDATE SET slot=excluded.slot, carrier=excluded.carrier,
           display_name=excluded.display_name, last_seen_at=datetime('now'),
           reported_number=COALESCE(NULLIF(excluded.reported_number,''), device_sms_sims.reported_number)`);
+      // 单卡手机不按卡分号, 照旧用设备的号 (免得卡里写的旧号码把短信归错)
+      const dual = body.sims.length >= 2;
       for (const sim of body.sims.slice(0, 4)) {
         const subId = parseInt(sim && sim.sub_id, 10);
         if (!Number.isFinite(subId) || subId < 0) continue;
@@ -38727,7 +38729,7 @@ app.post('/api/device-sms/push', deviceSmsAuth, (req, res) => {
         upSim.run(req.smsDevice.id, subId, Number.isFinite(parseInt(sim.slot, 10)) ? parseInt(sim.slot, 10) : null,
           String(sim.carrier || '').slice(0, 40), String(sim.name || '').slice(0, 40), num);
         const cur = db.prepare(`SELECT line FROM device_sms_sims WHERE device_id=? AND sub_id=?`).get(req.smsDevice.id, subId);
-        if (num && cur && !cur.line) deviceSmsSetSimLine(req.smsDevice.id, subId, num);
+        if (dual && num && cur && !cur.line) deviceSmsSetSimLine(req.smsDevice.id, subId, num);
       }
     }
     const simLine = new Map(deviceSmsSimLines(req.smsDevice.id).map(r => [r.sub_id, r.line]));
