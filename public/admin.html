@@ -41800,6 +41800,63 @@ function invpOtMultChanged() {
 
 // ── 加班计费系数（合同：加班费的 1.5× 工资部分不吃 Markup，只加 OT 服务费）──
 // 输入框留空 → null → 旧算法：加班和正常工资一起 × Markup。
+// 发票 Markup 计算说明：按每个员工实际生效的 markup 分组，每组一行算式，
+// 让客户看得出总额怎么来的（「Markup per worker」这种笼统说法不再出现）。
+// 只有一种 markup → 一行「Wage Subtotal $X × Markup 1.25 = $Y」；
+// 多种 → 每组「名字/N workers: $X × Markup 1.25 = $Y」，最后一行合计。
+// 加班服务费模式 (otFee) → 每组拆成「Reg $a × Markup + OT $b × otFee」。
+// 返回 HTML 行数组（每个元素一行，调用方自己包 <div>），没有 markup 返回 []。
+function _invMarkupLines(items, defMk, otFee, billedTotal, money, esc, nameOf) {
+  const r2 = v => Math.round(v * 100) / 100;
+  const def = Number(defMk) > 0 ? Number(defMk) : 1;
+  const fee = Number(otFee) > 0 ? Number(otFee) : 0;
+  const groups = [];
+  const byKey = new Map();
+  for (const it of (items || [])) {
+    const mk = Number(it.markup) > 0 ? Number(it.markup) : def;
+    const total = Number(it.total) || 0;
+    const otAmt = it.otAmt != null ? (Number(it.otAmt) || 0) : (Number(it.otHours) || 0) * (Number(it.otRate) || 0);
+    const regAmt = it.regAmt != null ? (Number(it.regAmt) || 0) : total - otAmt;
+    const billed = (it.billed != null && Number.isFinite(Number(it.billed)))
+      ? Number(it.billed)
+      : r2(fee ? regAmt * mk + otAmt * fee : total * mk);
+    const key = mk.toFixed(4);
+    let g = byKey.get(key);
+    if (!g) { g = { mk, names: [], base: 0, reg: 0, ot: 0, billed: 0 }; byKey.set(key, g); groups.push(g); }
+    g.names.push(nameOf ? nameOf(it.name) : String(it.name || ''));
+    g.base += total; g.reg += regAmt; g.ot += otAmt; g.billed += billed;
+  }
+  const sumBilled = r2(groups.reduce((s, g) => s + g.billed, 0));
+  const sumBase = r2(groups.reduce((s, g) => s + g.base, 0));
+  const anyMk = groups.some(g => Math.abs(g.mk - 1) > 0.00005) || Math.abs(sumBilled - sumBase) > 0.005;
+  if (!groups.length || !anyMk) return [];
+  const B = v => `<strong style="color:#1e293b">${money(v)}</strong>`;
+  const expr = g => (fee && g.ot > 0.005)
+    ? `Reg ${money(r2(g.reg))} × Markup ${g.mk.toFixed(2)} &nbsp;+&nbsp; OT ${money(r2(g.ot))} × ${fee.toFixed(2)}`
+    : `${money(r2(g.base))} &nbsp;×&nbsp; Markup ${g.mk.toFixed(2)}`;
+  const target = (billedTotal != null && Number.isFinite(Number(billedTotal))) ? r2(Number(billedTotal)) : sumBilled;
+  const lines = [];
+  if (groups.length === 1) {
+    const g = groups[0];
+    lines.push(`${(fee && g.ot > 0.005) ? '' : 'Wage Subtotal '}${expr(g)} &nbsp;=&nbsp; ${B(r2(g.billed))}`);
+  } else {
+    // 人多的组放前面；少数几个人（≤3）直接写名字，方便核对
+    groups.sort((a, b) => b.names.length - a.names.length);
+    for (const g of groups) {
+      const label = g.names.length <= 3
+        ? g.names.map(n => esc(n)).join(', ')
+        : `${g.names.length} workers`;
+      lines.push(`<span style="white-space:normal">${label}</span>: ${expr(g)} &nbsp;=&nbsp; ${money(r2(g.billed))}`);
+    }
+    lines.push(`Total &nbsp;=&nbsp; ${groups.map(g => money(r2(g.billed))).join(' + ')} &nbsp;=&nbsp; ${B(sumBilled)}`);
+  }
+  // 保存的总额与逐行算出的不一致（手动改过金额等）——如实列出差额，不让算式对不上
+  if (Math.abs(target - sumBilled) > 0.02) {
+    const d = r2(target - sumBilled);
+    lines.push(`Adjustment ${d > 0 ? '+' : '−'}${money(Math.abs(d))} &nbsp;=&nbsp; ${B(target)}`);
+  }
+  return lines;
+}
 function _invpOtFeeRate() {
   const el = document.getElementById('invPageOtFeeRate');
   const v = parseFloat(el && el.value);
@@ -42343,23 +42400,14 @@ async function generateInvpPreview() {
       <div style="display:flex;justify-content:flex-end;margin-top:.7rem;margin-bottom:.85rem">
         <table style="border-collapse:collapse;font-size:.86rem;min-width:280px">
           ${(() => {
-            const showSummary = (mode === 'container' ? hasMarkup : Math.abs(billedAmt - baseAmt) > 0.005);
-            if (!showSummary) return '';
-            let mkText;
-            if (mode === 'container') { mkText = `Markup ${markupRate.toFixed(2)}`; }
-            else {
-              const effMks = items.map(i => (i.markup && i.markup > 0) ? i.markup : markupRate);
-              const uniqueMks = [...new Set(effMks.map(v => Math.round(v * 10000) / 10000))];
-              mkText = uniqueMks.length === 1 ? `Markup ${uniqueMks[0].toFixed(2)}` : 'Markup per worker';
-              // 加班服务费模式：正常工资 × Markup + 加班工资 × OT 系数，两段分开列明。
-              const otFee = _invpOtFeeRate();
-              const otBase = items.reduce((s, i) => s + (i.otAmt || 0), 0);
-              if (otFee != null && otBase > 0.005) {
-                const regBase = items.reduce((s, i) => s + (i.regAmt != null ? i.regAmt : (i.total || 0)), 0);
-                return `<tr><td colspan="2" style="padding:0 0 .35rem 0;text-align:right;font-size:.78rem;color:#64748b;white-space:nowrap">Reg $${regBase.toFixed(2)} × ${mkText} &nbsp;+&nbsp; OT $${otBase.toFixed(2)} × ${otFee.toFixed(2)} &nbsp;=&nbsp; <strong style="color:#1e293b">$${billedAmt.toFixed(2)}</strong></td></tr>`;
-              }
+            if (mode === 'container') {
+              if (!hasMarkup) return '';
+              return `<tr><td colspan="2" style="padding:0 0 .35rem 0;text-align:right;font-size:.78rem;color:#64748b;white-space:nowrap">Subtotal $${baseAmt.toFixed(2)} &nbsp;×&nbsp; Markup ${markupRate.toFixed(2)} &nbsp;=&nbsp; <strong style="color:#1e293b">$${billedAmt.toFixed(2)}</strong></td></tr>`;
             }
-            return `<tr><td colspan="2" style="padding:0 0 .35rem 0;text-align:right;font-size:.78rem;color:#64748b;white-space:nowrap">${mode === 'container' ? 'Subtotal' : 'Wage Subtotal'} $${baseAmt.toFixed(2)} &nbsp;×&nbsp; ${mkText} &nbsp;=&nbsp; <strong style="color:#1e293b">$${billedAmt.toFixed(2)}</strong></td></tr>`;
+            // 只要有 markup，就逐组列出算式（多种 markup 时每组一行 + 合计）
+            const lines = _invMarkupLines(items, markupRate, _invpOtFeeRate(), billedAmt, v => '$' + (Number(v) || 0).toFixed(2), esc, _invpDisplayWorkerName);
+            if (!lines.length) return '';
+            return `<tr><td colspan="2" style="padding:0 0 .35rem 0;text-align:right;font-size:.78rem;color:#64748b;white-space:nowrap;line-height:1.6">${lines.map(l => `<div>${l}</div>`).join('')}</td></tr>`;
           })()}
           <tr>
             <td style="padding:7px 16px 7px 0;border-top:2px solid #29AAE1;border-bottom:2px solid #29AAE1;color:#29AAE1;font-weight:700;text-align:right;font-size:.9rem;letter-spacing:.05em;white-space:nowrap;text-transform:uppercase">Total Due</td>

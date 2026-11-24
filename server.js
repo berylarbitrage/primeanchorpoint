@@ -32919,6 +32919,10 @@ app.get('/api/customer/invoices/:id', requireCustomer, (req, res) => {
     otRate: Number(it.otRate) || 0,
     total: Number(it.total) || 0,
     billed: it.billed != null ? Math.round((Number(it.billed) || 0) * 100) / 100 : null,
+    // Markup 计算说明要用（发票纸上本来就印着 markup）
+    markup: Number(it.markup) > 0 ? Number(it.markup) : null,
+    regAmt: it.regAmt != null ? Number(it.regAmt) || 0 : null,
+    otAmt: it.otAmt != null ? Number(it.otAmt) || 0 : null,
   }));
   // profile 白名单: 抬头/联系人/收款银行 + container 行的账单侧 (qty × unit_price; 分包价不出)
   const P = {};
@@ -32927,6 +32931,7 @@ app.get('/api/customer/invoices/:id', requireCustomer, (req, res) => {
     'bank_routing_no', 'bank_wire_routing', 'bank_paper_routing', 'bank_swift_code']) {
     if (profile[k] != null && profile[k] !== '') P[k] = String(profile[k]);
   }
+  if (Number(profile.ot_fee_rate) > 0) P.ot_fee_rate = Number(profile.ot_fee_rate);
   if (Array.isArray(profile.container_items)) {
     P.container_items = profile.container_items.map(c => ({
       line_type: String(c.line_type || ''), container_no: String(c.container_no || ''), week: String(c.week || ''),

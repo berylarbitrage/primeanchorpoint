@@ -1960,6 +1960,63 @@ async function wkPosEdit(eid, cur) {
 }
 
 // ── 历史账单 Invoices: 仅显式勾选了 invoice 权限的账号可见 (接口同样校验), 只读 ──
+// 发票 Markup 计算说明：按每个员工实际生效的 markup 分组，每组一行算式，
+// 让客户看得出总额怎么来的（「Markup per worker」这种笼统说法不再出现）。
+// 只有一种 markup → 一行「Wage Subtotal $X × Markup 1.25 = $Y」；
+// 多种 → 每组「名字/N workers: $X × Markup 1.25 = $Y」，最后一行合计。
+// 加班服务费模式 (otFee) → 每组拆成「Reg $a × Markup + OT $b × otFee」。
+// 返回 HTML 行数组（每个元素一行，调用方自己包 <div>），没有 markup 返回 []。
+function _invMarkupLines(items, defMk, otFee, billedTotal, money, esc, nameOf) {
+  const r2 = v => Math.round(v * 100) / 100;
+  const def = Number(defMk) > 0 ? Number(defMk) : 1;
+  const fee = Number(otFee) > 0 ? Number(otFee) : 0;
+  const groups = [];
+  const byKey = new Map();
+  for (const it of (items || [])) {
+    const mk = Number(it.markup) > 0 ? Number(it.markup) : def;
+    const total = Number(it.total) || 0;
+    const otAmt = it.otAmt != null ? (Number(it.otAmt) || 0) : (Number(it.otHours) || 0) * (Number(it.otRate) || 0);
+    const regAmt = it.regAmt != null ? (Number(it.regAmt) || 0) : total - otAmt;
+    const billed = (it.billed != null && Number.isFinite(Number(it.billed)))
+      ? Number(it.billed)
+      : r2(fee ? regAmt * mk + otAmt * fee : total * mk);
+    const key = mk.toFixed(4);
+    let g = byKey.get(key);
+    if (!g) { g = { mk, names: [], base: 0, reg: 0, ot: 0, billed: 0 }; byKey.set(key, g); groups.push(g); }
+    g.names.push(nameOf ? nameOf(it.name) : String(it.name || ''));
+    g.base += total; g.reg += regAmt; g.ot += otAmt; g.billed += billed;
+  }
+  const sumBilled = r2(groups.reduce((s, g) => s + g.billed, 0));
+  const sumBase = r2(groups.reduce((s, g) => s + g.base, 0));
+  const anyMk = groups.some(g => Math.abs(g.mk - 1) > 0.00005) || Math.abs(sumBilled - sumBase) > 0.005;
+  if (!groups.length || !anyMk) return [];
+  const B = v => `<strong style="color:#1e293b">${money(v)}</strong>`;
+  const expr = g => (fee && g.ot > 0.005)
+    ? `Reg ${money(r2(g.reg))} × Markup ${g.mk.toFixed(2)} &nbsp;+&nbsp; OT ${money(r2(g.ot))} × ${fee.toFixed(2)}`
+    : `${money(r2(g.base))} &nbsp;×&nbsp; Markup ${g.mk.toFixed(2)}`;
+  const target = (billedTotal != null && Number.isFinite(Number(billedTotal))) ? r2(Number(billedTotal)) : sumBilled;
+  const lines = [];
+  if (groups.length === 1) {
+    const g = groups[0];
+    lines.push(`${(fee && g.ot > 0.005) ? '' : 'Wage Subtotal '}${expr(g)} &nbsp;=&nbsp; ${B(r2(g.billed))}`);
+  } else {
+    // 人多的组放前面；少数几个人（≤3）直接写名字，方便核对
+    groups.sort((a, b) => b.names.length - a.names.length);
+    for (const g of groups) {
+      const label = g.names.length <= 3
+        ? g.names.map(n => esc(n)).join(', ')
+        : `${g.names.length} workers`;
+      lines.push(`<span style="white-space:normal">${label}</span>: ${expr(g)} &nbsp;=&nbsp; ${money(r2(g.billed))}`);
+    }
+    lines.push(`Total &nbsp;=&nbsp; ${groups.map(g => money(r2(g.billed))).join(' + ')} &nbsp;=&nbsp; ${B(sumBilled)}`);
+  }
+  // 保存的总额与逐行算出的不一致（手动改过金额等）——如实列出差额，不让算式对不上
+  if (Math.abs(target - sumBilled) > 0.02) {
+    const d = r2(target - sumBilled);
+    lines.push(`Adjustment ${d > 0 ? '+' : '−'}${money(Math.abs(d))} &nbsp;=&nbsp; ${B(target)}`);
+  }
+  return lines;
+}
 const _invMoney = n => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const _invNiceD = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
 function _invPayBadge(r) {
@@ -2029,11 +2086,17 @@ function _invDocHTML(inv) {
       </tr>`).join('')}</tbody></table>`;
   }
   // 行金额合计 ≠ 发票总额 (总额含 Markup) 时列出换算说明; Markup 数字只有在乘得上时才标
-  const diff = Math.abs((Number(inv.subtotal) || 0) - lineSum) > 0.02;
-  const mkFits = inv.markup_rate > 0 && Math.abs(lineSum * inv.markup_rate - (Number(inv.subtotal) || 0)) <= 0.02;
-  const mkLine = diff
-    ? `<tr><td colspan="2" style="padding:0 0 .35rem 0;text-align:right;font-size:.78rem;color:#64748b;white-space:nowrap">${p.invoice_mode === 'container' ? 'Subtotal' : 'Wage Subtotal'} ${_invMoney(lineSum)}${mkFits ? ` &nbsp;×&nbsp; Markup ${Number(inv.markup_rate).toFixed(2)}` : ''} &nbsp;${mkFits ? '=' : '→'}&nbsp; <strong style="color:#1e293b">${_invMoney(inv.subtotal)}</strong></td></tr>`
-    : '';
+  const _mkTd = inner => `<tr><td colspan="2" style="padding:0 0 .35rem 0;text-align:right;font-size:.78rem;color:#64748b;white-space:nowrap;line-height:1.6">${inner}</td></tr>`;
+  let mkLine = '';
+  if (p.invoice_mode === 'container') {
+    const diff = Math.abs((Number(inv.subtotal) || 0) - lineSum) > 0.02;
+    const mkFits = inv.markup_rate > 0 && Math.abs(lineSum * inv.markup_rate - (Number(inv.subtotal) || 0)) <= 0.02;
+    if (diff) mkLine = _mkTd(`Subtotal ${_invMoney(lineSum)}${mkFits ? ` &nbsp;×&nbsp; Markup ${Number(inv.markup_rate).toFixed(2)}` : ''} &nbsp;${mkFits ? '=' : '→'}&nbsp; <strong style="color:#1e293b">${_invMoney(inv.subtotal)}</strong>`);
+  } else {
+    // 只要有 markup，就逐组列出算式（多种 markup 时每组一行 + 合计）
+    const lines = _invMarkupLines(Array.isArray(inv.items) ? inv.items : [], inv.markup_rate, p.ot_fee_rate, Number(inv.subtotal) || 0, _invMoney, esc);
+    if (lines.length) mkLine = _mkTd(lines.map(l => `<div>${l}</div>`).join(''));
+  }
   const bk = (k, v) => v ? `<span style="white-space:nowrap"><span style="color:#64748b">${k}:</span>&nbsp;<strong>${esc(v)}</strong></span>` : '';
   const bankBits = [
     bk('Payable To', p.bank_account_name), bk('Bank', p.bank_name), bk('Account No', p.bank_account_no),
