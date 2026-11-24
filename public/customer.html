@@ -2050,7 +2050,11 @@ async function loadInvoices() {
 function _invDocHTML(inv) {
   const p = inv.profile || {};
   const period = `${_invNiceD(inv.period_start)} — ${_invNiceD(inv.period_end)}`;
-  const th = 'padding:6px 8px;border-bottom:2px solid #29AAE1;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:#0f4c6b;text-align:left;white-space:nowrap';
+  // 账期 (Net N 天): 到期日 = Invoice 日期 + N 天
+  const termsN = Math.max(0, parseInt(inv.payment_terms_days, 10) || 0);
+  const _dm = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(inv.invoice_date || ''));
+  const dueD = termsN && _dm ? new Date(Date.UTC(+_dm[1], +_dm[2] - 1, +_dm[3] + termsN)).toISOString().slice(0, 10) : '';
+  const th ='padding:6px 8px;border-bottom:2px solid #29AAE1;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:#0f4c6b;text-align:left;white-space:nowrap';
   const thR = th + ';text-align:right';
   const td = 'padding:5px 8px;border-bottom:1px solid #e2e8f0;font-size:.8rem';
   const tdR = td + ';text-align:right;white-space:nowrap';
@@ -2124,6 +2128,8 @@ function _invDocHTML(inv) {
           <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:4px 10px;color:#64748b;background:#e8f5fb;font-weight:600;font-size:.7rem;text-transform:uppercase">Invoice No.</td><td style="padding:4px 10px;font-weight:700;text-align:right">${esc(inv.invoice_number || '—')}</td></tr>
           <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:4px 10px;color:#64748b;background:#e8f5fb;font-weight:600;font-size:.7rem;text-transform:uppercase">Invoice Date</td><td style="padding:4px 10px;font-weight:600;text-align:right">${_invNiceD(inv.invoice_date)}</td></tr>
           <tr><td style="padding:4px 10px;color:#64748b;background:#e8f5fb;font-weight:600;font-size:.7rem;text-transform:uppercase">Service Period</td><td style="padding:4px 10px;font-weight:600;text-align:right">${period}</td></tr>
+          ${termsN ? `<tr style="border-top:1px solid #e2e8f0"><td style="padding:4px 10px;color:#64748b;background:#e8f5fb;font-weight:600;font-size:.7rem;text-transform:uppercase">Terms</td><td style="padding:4px 10px;font-weight:600;text-align:right">Net ${termsN}</td></tr>` : ''}
+          ${dueD ? `<tr style="border-top:1px solid #e2e8f0"><td style="padding:4px 10px;color:#64748b;background:#e8f5fb;font-weight:600;font-size:.7rem;text-transform:uppercase">Due Date</td><td style="padding:4px 10px;font-weight:700;text-align:right">${_invNiceD(dueD)}</td></tr>` : ''}
         </table>
         ${paidStamp}
       </div>
@@ -2145,7 +2151,7 @@ function _invDocHTML(inv) {
       </table>
     </div>
     ${bankBits.length ? `<div style="margin-bottom:.7rem;padding:.6rem .9rem;border:1px solid #cbd5e1;border-radius:4px;background:#f8fafc;font-size:.8rem">
-      <div style="font-weight:700;text-transform:uppercase;font-size:.72rem;letter-spacing:.08em;color:#29AAE1;border-bottom:1px solid #e2e8f0;padding-bottom:.3rem;margin-bottom:.4rem">Payment Information</div>
+      <div style="font-weight:700;text-transform:uppercase;font-size:.72rem;letter-spacing:.08em;color:#29AAE1;border-bottom:1px solid #e2e8f0;padding-bottom:.3rem;margin-bottom:.4rem;display:flex;justify-content:space-between;align-items:baseline">Payment Information<span style="font-weight:400;text-transform:none;letter-spacing:0;color:#64748b">${termsN ? `Net ${termsN}${dueD ? ` · Payment due by <strong style="color:#1e293b">${_invNiceD(dueD)}</strong>` : ''}` : 'Payment due upon receipt'}</span></div>
       <div style="display:flex;gap:1.4rem;flex-wrap:wrap;line-height:1.7">${bankBits.join('')}</div>
     </div>` : ''}
     ${(p.contact_phone || p.contact_email) ? `<div style="font-size:.78rem;color:#475569;margin-bottom:.4rem">For questions regarding this invoice, please contact: <strong>${[p.contact_name, p.contact_phone, p.contact_email].filter(Boolean).map(s => esc(s)).join('&nbsp; | &nbsp;')}</strong></div>` : ''}
