@@ -18245,6 +18245,16 @@ app.put('/api/admin/partners/:id', requireAdmin, blockManager, staffGuard('updat
   res.json({ success: true });
 });
 
+// Invoice 页直接改公司账期 (Net 天数), 只动这一个字段
+app.put('/api/admin/partners/:id/payment-terms', requireAdmin, blockManager, (req, res) => {
+  try {
+    const days = _payTermsDays(req.body && req.body.payment_terms_days);
+    const r = db.prepare('UPDATE partners SET payment_terms_days=? WHERE id=?').run(days, req.params.id);
+    if (!r.changes) return res.status(404).json({ error: '没找到这家公司' });
+    res.json({ success: true, payment_terms_days: days });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // POST /api/admin/partners/:id/abolish — soft "abolish" (grey out) instead of hard delete.
 // Body: { abolished: true|false }. Abolished companies stay in the DB but are marked inactive.
 app.post('/api/admin/partners/:id/abolish', requireAdmin, blockManager, (req, res) => {
