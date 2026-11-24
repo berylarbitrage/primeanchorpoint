@@ -35961,8 +35961,9 @@ function _invpFillSubPayFilterOptions() {
       // (so picking "SLM GROUP" surfaces every worker paid under it) plus the
       // per-person display.
       const e = _bsEmpParse(b.payee);
-      const nm = (e.name || '').trim(), co = (e.co || '').trim();
-      if (co) { raw.add(co); if (nm) withCo.add(nm); }
+      // 一笔可以付给几个人、几家公司 (公司「 + 」连, 姓名逗号连): 每家公司、每个人各算一项
+      const cos = _bsEmpCos(b.payee), nms = _bsEmpNames(b.payee);
+      if (cos.length) { cos.forEach(c => raw.add(c)); nms.forEach(n => withCo.add(n)); }
       const p = (_bsPayeeDisplay(b.payee) || '').trim(); if (p) raw.add(p);
       return;
     }
@@ -36350,8 +36351,8 @@ function _invpSubPayPayeeMatch(b, fPayee) {
   const fName = _invpPayeeOptName(fPayee);
   if (_bsIsEmp(b.payee)) {
     const e = _bsEmpParse(b.payee);
-    if ((e.co || '').trim() === fPayee) return true;
-    if (fName && (e.name || '').trim() === fName) return true;
+    if ((e.co || '').trim() === fPayee || _bsEmpCos(b.payee).includes(fPayee)) return true;
+    if (fName && ((e.name || '').trim() === fName || _bsEmpNames(b.payee).includes(fName))) return true;
   }
   if (typeof b.payee === 'string' && fName && b.payee.trim() === fName) return true;
   if (_bsIsCheck(b.payee) && _bsCheckParse(b.payee).names.some(n => { const t = (n || '').trim(); return t === fPayee || (fName && t === fName); })) return true;
@@ -49908,8 +49909,9 @@ function _bsRenderBoxPanel() {
       <div class="bs-date-err" style="color:#dc2626;font-size:.72rem;margin:-.1rem 0 .3rem;min-height:0"></div>
       <select class="bs-bx-payee" onchange="bsPayeeSelChange(${box.id},this)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;background:#fff">${_bsPayeeOptions(_bsIsEmp(box.payee) ? BS_PAYEE_EMP : (_bsIsPallet(box.payee) ? BS_PAYEE_PALLET : (_bsIsCheck(box.payee) ? (_bsCheckParse(box.payee).type === 'wd' ? BS_PAYEE_CHECK_WD : BS_PAYEE_CHECK_DEP) : (_bsIsTruck(box.payee) ? BS_PAYEE_TRUCK : (_bsIsInternal(box.payee) ? BS_PAYEE_INTERNAL : (_bsIsUnload(box.payee) ? BS_PAYEE_UNLOAD : (_bsIsRent(box.payee) ? BS_PAYEE_RENT : (_bsIsInsur(box.payee) ? BS_PAYEE_INSUR : (_bsIsFx(box.payee) ? BS_PAYEE_FX : (_bsIsWhdep(box.payee) ? BS_PAYEE_WHDEP : (_bsIsReferral(box.payee) ? BS_PAYEE_REFERRAL : (_bsIsWageBonus(box.payee) ? BS_PAYEE_WAGEBONUS : (_bsIsCollect(box.payee) ? BS_PAYEE_COLLECT : (_bsIsCnStaff(box.payee) ? BS_PAYEE_CNSTAFF : (_bsIsLoan(box.payee) ? _bsLoanSentinel(box.payee) : (box.payee || ''))))))))))))))), box.direction)}</select>
       <div class="bs-emp-wrap" style="display:${_bsIsEmp(box.payee) ? '' : 'none'};background:#f8fafc;border:1px dashed var(--gray-200);border-radius:6px;padding:.4rem;margin-bottom:.35rem">
-        <div style="font-size:.72rem;color:var(--gray-400);margin-bottom:.25rem">先选公司，再填员工姓名</div>
-        <select class="bs-bx-emp-co" onchange="bsEmpUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;margin-bottom:.3rem;background:#fff">${_bsCompanyOptions(_bsEmpParse(box.payee).co)}</select>
+        <div style="font-size:.72rem;color:var(--gray-400);margin-bottom:.25rem">先选公司，再填员工姓名（在几家公司干活就加几家）</div>
+        <div class="bs-emp-co-list">${_bsEmpCoListHtml(box)}</div>
+        <button type="button" onclick="bsEmpCoAdd(${box.id},this)" style="border:1px dashed var(--gray-300);background:#fff;color:#0369a1;border-radius:6px;cursor:pointer;font-size:.74rem;padding:.15rem .5rem;margin-bottom:.3rem">＋ 再加一家公司</button>
         <input type="text" class="bs-bx-emp-name" placeholder="员工姓名（多个用逗号隔开）" value="${esc(_bsEmpParse(box.payee).name)}" onchange="bsEmpUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
       </div>
       <div class="bs-pallet-wrap" style="display:${_bsIsPallet(box.payee) ? '' : 'none'};background:#fefce8;border:1px dashed #fde68a;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
@@ -50099,6 +50101,11 @@ function _bsEmpParse(payee) {
   return i < 0 ? { co: '', name: rest } : { co: rest.slice(0, i), name: rest.slice(i + 1) };
 }
 function _bsEmpJoin(co, name) { return BS_EMP_PREFIX + (co || '') + '|' + (name || ''); }
+// 一笔转账可以付给几个人、他们在几家公司干活（几张账单）：公司之间用「 + 」连，
+// 姓名用逗号连（中英文逗号、顿号、分号都认）。
+const BS_EMP_CO_SEP = ' + ';
+function _bsEmpCos(payee) { return String(_bsEmpParse(payee).co || '').split(/\s\+\s/).map(s => s.trim()).filter(Boolean); }
+function _bsEmpNames(payee) { return String(_bsEmpParse(payee).name || '').split(/[,，、;；]/).map(s => s.trim()).filter(Boolean); }
 // 木板钱 payee is stored as "木板钱:<customer>".
 function _bsIsPallet(payee) { return typeof payee === 'string' && payee.indexOf(BS_PALLET_PREFIX) === 0; }
 function _bsPalletParse(payee) { return _bsIsPallet(payee) ? payee.slice(BS_PALLET_PREFIX.length) : ''; }
@@ -50487,9 +50494,30 @@ function bsPayeeSelChange(id, sel) {
 function bsEmpUpdate(id, el) {
   const wrap = el.closest('.bs-emp-wrap');
   if (!wrap) return;
-  const co = wrap.querySelector('.bs-bx-emp-co').value;
+  const cos = [...new Set([...wrap.querySelectorAll('.bs-bx-emp-co')].map(s => s.value.trim()).filter(Boolean))];
   const name = wrap.querySelector('.bs-bx-emp-name').value.trim();
-  bsUpdateBoxField(id, 'payee', _bsEmpJoin(co, name));
+  bsUpdateBoxField(id, 'payee', _bsEmpJoin(cos.join(BS_EMP_CO_SEP), name));
+}
+// 公司下拉（每家一个），第一个之后的带 ✕
+function _bsEmpCoSelHtml(id, co, removable) {
+  return `<div class="bs-emp-co-row" style="display:flex;gap:.25rem;margin-bottom:.3rem">
+    <select class="bs-bx-emp-co" onchange="bsEmpUpdate(${id},this)" style="flex:1;min-width:0;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;background:#fff">${_bsCompanyOptions(co)}</select>
+    ${removable ? `<button type="button" onclick="bsEmpCoRemove(${id},this)" title="去掉这家公司" style="border:none;background:none;color:#dc2626;cursor:pointer;font-size:1rem;padding:0 .3rem">✕</button>` : ''}
+  </div>`;
+}
+function _bsEmpCoListHtml(box) {
+  const cos = _bsEmpCos(box.payee);
+  if (!cos.length) cos.push('');
+  return cos.map((c, i) => _bsEmpCoSelHtml(box.id, c, i > 0)).join('');
+}
+function bsEmpCoAdd(id, btn) {
+  const list = btn.closest('.bs-emp-wrap').querySelector('.bs-emp-co-list');
+  list.insertAdjacentHTML('beforeend', _bsEmpCoSelHtml(id, '', true));
+}
+function bsEmpCoRemove(id, btn) {
+  const wrap = btn.closest('.bs-emp-wrap');
+  btn.closest('.bs-emp-co-row').remove();
+  bsEmpUpdate(id, wrap.querySelector('.bs-bx-emp-name'));
 }
 // A box's amount counts as filled only when it's a non-zero number.
 function _bsAmtFilled(box) { if (_bsIsNA(box)) return true; const v = parseFloat(box && box.amount); return !isNaN(v) && v !== 0; }
