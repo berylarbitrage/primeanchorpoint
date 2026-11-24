@@ -1486,6 +1486,63 @@ function esc(s) { if (s == null) return ''; const d = document.createElement('di
 let ROLE = '';  // 与 /banking 同名: 'admin' | 'cs' | 'accounting' | 'staff'
 function annApi(path, opts) { return bapi('/api' + path, opts); }
 function loadTxns() { bankLoadTxns(); }  // 待审核筛选切换时由 bank-ann.js 调用
+// 发票 Markup 计算说明：按每个员工实际生效的 markup 分组，每组一行算式，
+// 让客户看得出总额怎么来的（「Markup per worker」这种笼统说法不再出现）。
+// 只有一种 markup → 一行「Wage Subtotal $X × Markup 1.25 = $Y」；
+// 多种 → 每组「名字/N workers: $X × Markup 1.25 = $Y」，最后一行合计。
+// 加班服务费模式 (otFee) → 每组拆成「Reg $a × Markup + OT $b × otFee」。
+// 返回 HTML 行数组（每个元素一行，调用方自己包 <div>），没有 markup 返回 []。
+function _invMarkupLines(items, defMk, otFee, billedTotal, money, esc, nameOf) {
+  const r2 = v => Math.round(v * 100) / 100;
+  const def = Number(defMk) > 0 ? Number(defMk) : 1;
+  const fee = Number(otFee) > 0 ? Number(otFee) : 0;
+  const groups = [];
+  const byKey = new Map();
+  for (const it of (items || [])) {
+    const mk = Number(it.markup) > 0 ? Number(it.markup) : def;
+    const total = Number(it.total) || 0;
+    const otAmt = it.otAmt != null ? (Number(it.otAmt) || 0) : (Number(it.otHours) || 0) * (Number(it.otRate) || 0);
+    const regAmt = it.regAmt != null ? (Number(it.regAmt) || 0) : total - otAmt;
+    const billed = (it.billed != null && Number.isFinite(Number(it.billed)))
+      ? Number(it.billed)
+      : r2(fee ? regAmt * mk + otAmt * fee : total * mk);
+    const key = mk.toFixed(4);
+    let g = byKey.get(key);
+    if (!g) { g = { mk, names: [], base: 0, reg: 0, ot: 0, billed: 0 }; byKey.set(key, g); groups.push(g); }
+    g.names.push(nameOf ? nameOf(it.name) : String(it.name || ''));
+    g.base += total; g.reg += regAmt; g.ot += otAmt; g.billed += billed;
+  }
+  const sumBilled = r2(groups.reduce((s, g) => s + g.billed, 0));
+  const sumBase = r2(groups.reduce((s, g) => s + g.base, 0));
+  const anyMk = groups.some(g => Math.abs(g.mk - 1) > 0.00005) || Math.abs(sumBilled - sumBase) > 0.005;
+  if (!groups.length || !anyMk) return [];
+  const B = v => `<strong style="color:#1e293b">${money(v)}</strong>`;
+  const expr = g => (fee && g.ot > 0.005)
+    ? `Reg ${money(r2(g.reg))} × Markup ${g.mk.toFixed(2)} &nbsp;+&nbsp; OT ${money(r2(g.ot))} × ${fee.toFixed(2)}`
+    : `${money(r2(g.base))} &nbsp;×&nbsp; Markup ${g.mk.toFixed(2)}`;
+  const target = (billedTotal != null && Number.isFinite(Number(billedTotal))) ? r2(Number(billedTotal)) : sumBilled;
+  const lines = [];
+  if (groups.length === 1) {
+    const g = groups[0];
+    lines.push(`${(fee && g.ot > 0.005) ? '' : 'Wage Subtotal '}${expr(g)} &nbsp;=&nbsp; ${B(r2(g.billed))}`);
+  } else {
+    // 人多的组放前面；少数几个人（≤3）直接写名字，方便核对
+    groups.sort((a, b) => b.names.length - a.names.length);
+    for (const g of groups) {
+      const label = g.names.length <= 3
+        ? g.names.map(n => esc(n)).join(', ')
+        : `${g.names.length} workers`;
+      lines.push(`<span style="white-space:normal">${label}</span>: ${expr(g)} &nbsp;=&nbsp; ${money(r2(g.billed))}`);
+    }
+    lines.push(`Total &nbsp;=&nbsp; ${groups.map(g => money(r2(g.billed))).join(' + ')} &nbsp;=&nbsp; ${B(sumBilled)}`);
+  }
+  // 保存的总额与逐行算出的不一致（手动改过金额等）——如实列出差额，不让算式对不上
+  if (Math.abs(target - sumBilled) > 0.02) {
+    const d = r2(target - sumBilled);
+    lines.push(`Adjustment ${d > 0 ? '+' : '−'}${money(Math.abs(d))} &nbsp;=&nbsp; ${B(target)}`);
+  }
+  return lines;
+}
 function money(v) { return '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 // 「📧 立刻发面试日报」: 先弹窗预览这封邮件 (按当前状态), 确认后马上发, 不等定时那几封
 async function sendIvDigestNow() {
@@ -9212,17 +9269,7 @@ function renderInvoiceDoc(inv) {
       const mk = Number(inv.markup_rate) > 0 ? Number(inv.markup_rate) : billedTotal / baseSum;
       mkSummary = `Subtotal ${money(baseSum)} &nbsp;×&nbsp; Markup ${mk.toFixed(2)} &nbsp;=&nbsp; <strong style="color:#1e293b">${money(billedTotal)}</strong>`;
     } else {
-      const effMks = items.map(it => Number(it.markup) > 0 ? Number(it.markup) : (Number(inv.markup_rate) || 1));
-      const uniq = [...new Set(effMks.map(v => Math.round(v * 10000) / 10000))];
-      const mkText = uniq.length === 1 ? `Markup ${uniq[0].toFixed(2)}` : 'Markup per worker';
-      const otFee = Number(profile.ot_fee_rate) || 0;
-      const otBase = items.reduce((s, it) => s + (it.otAmt != null ? (Number(it.otAmt) || 0) : (Number(it.otHours) || 0) * (Number(it.otRate) || 0)), 0);
-      if (otFee > 0 && otBase > 0.005) {
-        const regBase = Math.round((baseSum - otBase) * 100) / 100;
-        mkSummary = `Reg ${money(regBase)} × ${mkText} &nbsp;+&nbsp; OT ${money(otBase)} × ${otFee.toFixed(2)} &nbsp;=&nbsp; <strong style="color:#1e293b">${money(billedTotal)}</strong>`;
-      } else {
-        mkSummary = `Wage Subtotal ${money(baseSum)} &nbsp;×&nbsp; ${mkText} &nbsp;=&nbsp; <strong style="color:#1e293b">${money(billedTotal)}</strong>`;
-      }
+      mkSummary = _invMarkupLines(items, inv.markup_rate, profile.ot_fee_rate, billedTotal, money, esc).map(l => `<div>${l}</div>`).join('');
     }
   }
 
