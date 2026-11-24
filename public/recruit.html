@@ -679,6 +679,8 @@ function setTab(t) {
 }
 function setFilter(f) {
   _filter = f;
+  // 「全部」顺带清掉 州 / 仓库 筛选
+  if (f === 'all') ['stFilter', 'whFilter'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.querySelectorAll('.fchip').forEach(b => b.classList.toggle('on', b.getAttribute('data-f') === f));
   render();
 }
