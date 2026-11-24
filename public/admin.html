@@ -7835,6 +7835,12 @@ tr:hover td.invp-frz{background:var(--sky-light)}
     </div>
   </div>
 
+  <div class="form-section"><h4>Invoice 账期</h4>
+    <div class="field"><label>付款期限（Net 天数）</label>
+      <input id="pPayTermsDays" type="number" min="0" max="365" step="1" placeholder="空 = 收到即付 (Due upon receipt)" style="max-width:260px">
+      <div style="font-size:.75rem;color:#64748b;margin-top:.2rem">填 30 → 这家公司的 Invoice 自动写「Net 30」和到期日（Invoice 日期 + 30 天）</div></div>
+  </div>
+
   <div class="form-section"><h4>备注</h4>
     <div class="field"><textarea id="pNotes" placeholder="合作细节、合同信息等..."></textarea></div>
   </div>
@@ -15144,6 +15150,7 @@ function openPartnerModal(p) {
   document.getElementById('pName').value = p ? p.name : '';
   document.getElementById('pIndustry').value = p ? (p.industry||'') : '';
   document.getElementById('pNotes').value = p ? p.notes : '';
+  document.getElementById('pPayTermsDays').value = p && Number(p.payment_terms_days) > 0 ? Number(p.payment_terms_days) : '';
   document.getElementById('pActive').checked = p ? !!p.active : true;
   // Addresses (each carries its own contacts now). Legacy data stays compatible:
   // a flat company-level contacts array is migrated onto the FIRST address.
@@ -15800,6 +15807,7 @@ async function savePartner() {
     industry: document.getElementById('pIndustry').value,
     services: JSON.stringify(allSvcs),
     notes: document.getElementById('pNotes').value,
+    payment_terms_days: Math.max(0, Math.min(365, parseInt(document.getElementById('pPayTermsDays').value, 10) || 0)),
     active: document.getElementById('pActive').checked,
     contacts: JSON.stringify(contacts),
     addresses: JSON.stringify(addrs),
@@ -37601,6 +37609,20 @@ function _parseStateFromAddrStr(s) {
   return m ? m[1] : null;
 }
 
+// 账期: 按开票公司名 (或 Bill To 名) 找公司设置里的 Net 天数; 没设 = 0 (收到即付)
+function _invpTermsDays(billName) {
+  const k = s => String(s || '').trim().toLowerCase();
+  const names = [k(billName), k(typeof _invpBillToName === 'function' ? _invpBillToName() : '')].filter(Boolean);
+  const p = (window._invpPartners || []).find(x => names.includes(k(x.name)));
+  return p ? Math.max(0, parseInt(p.payment_terms_days, 10) || 0) : 0;
+}
+// 'YYYY-MM-DD' + n 天 → 'YYYY-MM-DD'
+function _invpAddDays(d, n) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || ''));
+  if (!m) return '';
+  const t = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + n));
+  return t.toISOString().slice(0, 10);
+}
 async function _getPartnerStateFromData(billName) {
   const partners = window._invpPartners || [];
   const partner = partners.find(p => p.name === billName);
@@ -42023,6 +42045,13 @@ async function generateInvpPreview() {
   const markupRate  = parseFloat(document.getElementById('invPageMarkupRate').value) || 1;
   const hasMarkup   = markupRate > 1;
   const servicePeriodLabel = fmtNiceRange(ps, pe);
+  // 账期: 公司设置里填了 Net 天数的, 自动写「Net N」+ 到期日 (Invoice 日期 + N 天)
+  const termsDays = _invpTermsDays(billName);
+  const dueDate = termsDays ? _invpAddDays(invDate, termsDays) : '';
+  const termsRows = termsDays ? `
+            <tr style="border-top:1px solid #e2e8f0"><td style="padding:5px 12px 5px 10px;color:#64748b;text-align:left;white-space:nowrap;background:#e8f5fb;font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Terms</td><td style="padding:5px 12px;font-weight:600;text-align:right;white-space:nowrap">Net ${termsDays}</td></tr>
+            ${dueDate ? `<tr style="border-top:1px solid #e2e8f0"><td style="padding:5px 12px 5px 10px;color:#64748b;text-align:left;white-space:nowrap;background:#e8f5fb;font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Due Date</td><td style="padding:5px 12px;font-weight:700;text-align:right;white-space:nowrap">${fmtNice(dueDate)}</td></tr>` : ''}` : '';
+  const termsText = termsDays ? `Net ${termsDays}${dueDate ? ` · Payment due by <strong style="color:#1e293b">${fmtNice(dueDate)}</strong>` : ''}` : 'Payment due upon receipt';
 
   const _catLabel = { warehouse_sorter:'Warehouse Sorter', labeler:'Labeler', packer:'Packer', forklift_operator:'Forklift Operator', cdl_driver:'CDL Truck Driver', delivery_driver:'Delivery Driver', order_checker:'Order Checker', shift_supervisor:'Shift Supervisor', site_manager:'Site Manager', quality_inspector:'Quality Inspector', machine_operator:'Machine Operator', assembly_line:'Assembly Line', material_handler:'Material Handler', inventory_clerk:'Inventory Clerk', general_labor:'General Labor', janitorial:'Janitorial', food_processing:'Food Processing', warehouse_lead:'Warehouse Lead', loading_unloading:'Loading/Unloading', order_picker:'Order Picker', welder:'Welder' };
 
@@ -42351,7 +42380,7 @@ async function generateInvpPreview() {
     <div style="margin-bottom:.7rem;padding:.6rem .9rem;border:1px solid #cbd5e1;border-radius:4px;background:#f8fafc;font-size:.8rem;color:#1e293b">
       <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:.4rem;border-bottom:1px solid #e2e8f0;padding-bottom:.3rem">
         <span style="font-weight:700;text-transform:uppercase;font-size:.72rem;letter-spacing:.08em;color:#29AAE1">Payment Information</span>
-        <span style="font-size:.72rem;color:#64748b">Payment due upon receipt</span>
+        <span style="font-size:.72rem;color:#64748b">${termsText}</span>
       </div>
       <div style="line-height:1.7">
         ${bankLine1.length ? `<div style="display:flex;gap:1.4rem;flex-wrap:wrap">${bankLine1.join('')}</div>` : ''}
@@ -42384,7 +42413,7 @@ async function generateInvpPreview() {
           <table style="border-collapse:collapse;margin-left:auto;font-size:.8rem;border:1px solid #cbd5e1;border-radius:3px;overflow:hidden;background:#f8fafc">
             <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:5px 12px 5px 10px;color:#64748b;text-align:left;white-space:nowrap;background:#e8f5fb;font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Invoice No.</td><td style="padding:5px 12px;font-weight:700;text-align:right;white-space:nowrap">${esc(invNum||'—')}</td></tr>
             <tr style="border-bottom:1px solid #e2e8f0"><td style="padding:5px 12px 5px 10px;color:#64748b;text-align:left;white-space:nowrap;background:#e8f5fb;font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Invoice Date</td><td style="padding:5px 12px;font-weight:600;text-align:right;white-space:nowrap">${fmtNice(invDate)}</td></tr>
-            <tr><td style="padding:5px 12px 5px 10px;color:#64748b;text-align:left;white-space:nowrap;background:#e8f5fb;font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Service Period</td><td style="padding:5px 12px;font-weight:600;text-align:right;white-space:nowrap">${servicePeriodLabel}</td></tr>
+            <tr><td style="padding:5px 12px 5px 10px;color:#64748b;text-align:left;white-space:nowrap;background:#e8f5fb;font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Service Period</td><td style="padding:5px 12px;font-weight:600;text-align:right;white-space:nowrap">${servicePeriodLabel}</td></tr>${termsRows}
           </table>
         </div>
       </div>

@@ -1179,6 +1179,9 @@ partnerMigrations.forEach(col => {
   try { db.exec(`ALTER TABLE partners ADD COLUMN ${col} TEXT DEFAULT '${col.includes('s')&&!col.includes('_')?'[]':'{}'}'`); } catch {}
 });
 try { db.exec(`ALTER TABLE partners ADD COLUMN company_number TEXT DEFAULT ''`); } catch {}
+// Invoice 账期: 付款期限天数 (Net N); 0 = 收到即付 (Due upon receipt)
+try { db.exec(`ALTER TABLE partners ADD COLUMN payment_terms_days INTEGER DEFAULT 0`); } catch {}
+const _payTermsDays = v => Math.max(0, Math.min(365, parseInt(v, 10) || 0));
 try { db.exec(`ALTER TABLE partners ADD COLUMN abolished INTEGER DEFAULT 0`); } catch {}
 try { db.exec(`ALTER TABLE partners ADD COLUMN container_submit_token TEXT DEFAULT ''`); } catch {}
 try { db.exec(`ALTER TABLE partners ADD COLUMN label_printed_at TEXT DEFAULT ''`); } catch {}
@@ -18223,6 +18226,7 @@ app.post('/api/admin/partners', requireAdmin, blockManager, (req, res) => {
     d.name, d.contact_person||'', d.phone||'', d.email||'', d.address||'',
     d.industry||'', d.services||'', d.notes||'', 0,
     d.contacts||'[]', d.addresses||'[]', d.social_media||'{}', d.links||'{}', companyNumber);
+  if (d.payment_terms_days !== undefined) db.prepare('UPDATE partners SET payment_terms_days=? WHERE id=?').run(_payTermsDays(d.payment_terms_days), r.lastInsertRowid);
   res.json({ success: true, id: r.lastInsertRowid, company_number: companyNumber });
 });
 
@@ -18232,6 +18236,8 @@ app.put('/api/admin/partners/:id', requireAdmin, blockManager, staffGuard('updat
     .run(d.name, d.contact_person||'', d.phone||'', d.email||'', d.address||'',
       d.industry||'', d.services||'', d.notes||'', d.active!==false?1:0,
       d.contacts||'[]', d.addresses||'[]', d.social_media||'{}', d.links||'{}', req.params.id);
+  // 账期只在带了这个字段时才改 (别的地方调这个接口不会把它清掉)
+  if (d.payment_terms_days !== undefined) db.prepare('UPDATE partners SET payment_terms_days=? WHERE id=?').run(_payTermsDays(d.payment_terms_days), req.params.id);
   // 公司改名时同步付款记录里的名字快照，避免按月/按周汇总同一公司拆成两行
   try {
     db.prepare('UPDATE company_worker_payments SET partner_name=? WHERE partner_id=?').run(d.name, req.params.id);
@@ -32947,6 +32953,8 @@ app.get('/api/customer/invoices/:id', requireCustomer, (req, res) => {
     payment_status: row.payment_status === 'paid' ? 'paid' : (row.payment_status === 'partial' ? 'partial' : 'unpaid'),
     paid_at: (row.paid_at || row.payment_date || '').slice(0, 10),
     items: outItems, profile: P,
+    // 账期 (Net N 天): 公司设置里填的; 0 = 收到即付
+    payment_terms_days: (() => { try { return Number((db.prepare('SELECT payment_terms_days FROM partners WHERE id=?').get(req.customerPartnerId) || {}).payment_terms_days) || 0; } catch (_) { return 0; } })(),
   });
 });
 
