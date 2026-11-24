@@ -43229,6 +43229,13 @@ const _ckKey = (company, kind, label) => _ckNorm(company) + '|' + kind + '|' + _
     ].forEach(([c, k, l, f, n]) => { if (!have.has(_ckKey(c, k, l))) ins.run(c, k, l, f, n); });
     db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('acct_checklist_seed_v1', '1')`).run();
   }
+  // 后加的每周劳务账单: Discovery SCM USA Ltd (没有就加上; 被停用了就重新启用)
+  if (!db.prepare(`SELECT value FROM app_settings WHERE key='acct_checklist_add_discovery'`).get()) {
+    const dsc = db.prepare('SELECT * FROM acct_checklist_expect').all().find(x => _ckKey(x.company_name, x.kind, x.label) === _ckKey('Discovery SCM USA Ltd', 'labor', ''));
+    if (dsc) db.prepare('UPDATE acct_checklist_expect SET active=1 WHERE id=?').run(dsc.id);
+    else db.prepare(`INSERT INTO acct_checklist_expect (company_name, kind, label, freq, note, created_by) VALUES (?, 'labor', '', 'weekly', '', 'system')`).run('Discovery SCM USA Ltd');
+    db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES ('acct_checklist_add_discovery', '1')`).run();
+  }
   // Albatross 只有劳务账单 (第一版种的是「不限类型」, 已经种过的改过来)
   if (!db.prepare(`SELECT value FROM app_settings WHERE key='acct_checklist_fix_albatross'`).get()) {
     db.prepare('SELECT id, company_name FROM acct_checklist_expect WHERE kind=?').all('any')
