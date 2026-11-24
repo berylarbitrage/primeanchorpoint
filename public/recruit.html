@@ -64,6 +64,9 @@ label{display:block;font-size:.74rem;font-weight:700;color:var(--gray-500);margi
 
 /* ── 招工卡片 ── */
 .job-card{border:1.5px solid #f0e3c4;background:#fff;border-radius:12px;padding:0;margin-bottom:12px;overflow:hidden;box-shadow:0 1px 3px rgba(146,64,14,.05)}
+.st-head{font-weight:800;color:#92400e;font-size:.9rem;margin:16px 2px 8px;padding-bottom:4px;border-bottom:2px solid #fde68a}
+.st-head:first-child{margin-top:4px}
+.st-head span{font-weight:400;color:#9ca3af;font-size:.78rem;margin-left:4px}
 .job-card.unchecked{border-color:#fca5a5}
 .job-card.done{opacity:.88}
 .jc-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 14px;background:#fffbeb;border-bottom:1px solid #f6ecd6}
@@ -309,6 +312,7 @@ i.req{color:#dc2626;font-style:normal;margin-left:1px}
       </div>
       <div class="toolbar" id="listToolbar" style="display:none">
         <input type="search" id="q" placeholder="🔍 搜仓库 / 工种 / 内容…" oninput="render()">
+        <select id="stFilter" onchange="render()" title="按州筛选"></select>
         <select id="whFilter" onchange="render()"></select>
         <button type="button" class="fchip" data-f="all" onclick="setFilter('all')">全部</button>
         <span class="open-only" style="display:contents">
@@ -699,6 +703,37 @@ function _detailsHtml(j) {
 function _mapLink(addr) {
   return '<div class="addr">📍 <a href="https://maps.google.com/?q=' + encodeURIComponent(addr) + '" target="_blank" rel="noopener" title="在 Google 地图打开">' + esc(addr) + '</a></div>';
 }
+// 地址认州: 「, GA 30518」/「GA 30518」这种州缩写 + 邮编优先, 没有就按邮编前三位认, 再不行按州全名
+const _US_ST_ZH = { AL:'阿拉巴马', AK:'阿拉斯加', AZ:'亚利桑那', AR:'阿肯色', CA:'加州', CO:'科罗拉多', CT:'康涅狄格', DE:'特拉华', DC:'华盛顿特区', FL:'佛州', GA:'佐治亚', HI:'夏威夷', ID:'爱达荷', IL:'伊利诺伊', IN:'印第安纳', IA:'艾奥瓦', KS:'堪萨斯', KY:'肯塔基', LA:'路易斯安那', ME:'缅因', MD:'马里兰', MA:'麻州', MI:'密歇根', MN:'明尼苏达', MS:'密西西比', MO:'密苏里', MT:'蒙大拿', NE:'内布拉斯加', NV:'内华达', NH:'新罕布什尔', NJ:'新泽西', NM:'新墨西哥', NY:'纽约', NC:'北卡', ND:'北达科他', OH:'俄亥俄', OK:'俄克拉荷马', OR:'俄勒冈', PA:'宾州', RI:'罗得岛', SC:'南卡', SD:'南达科他', TN:'田纳西', TX:'德州', UT:'犹他', VT:'佛蒙特', VA:'弗吉尼亚', WA:'华盛顿州', WV:'西弗吉尼亚', WI:'威斯康星', WY:'怀俄明' };
+const _US_ST_NAMES = { ALABAMA:'AL', ALASKA:'AK', ARIZONA:'AZ', ARKANSAS:'AR', CALIFORNIA:'CA', COLORADO:'CO', CONNECTICUT:'CT', DELAWARE:'DE', FLORIDA:'FL', GEORGIA:'GA', HAWAII:'HI', IDAHO:'ID', ILLINOIS:'IL', INDIANA:'IN', IOWA:'IA', KANSAS:'KS', KENTUCKY:'KY', LOUISIANA:'LA', MAINE:'ME', MARYLAND:'MD', MASSACHUSETTS:'MA', MICHIGAN:'MI', MINNESOTA:'MN', MISSISSIPPI:'MS', MISSOURI:'MO', MONTANA:'MT', NEBRASKA:'NE', NEVADA:'NV', 'NEW HAMPSHIRE':'NH', 'NEW JERSEY':'NJ', 'NEW MEXICO':'NM', 'NEW YORK':'NY', 'NORTH CAROLINA':'NC', 'NORTH DAKOTA':'ND', OHIO:'OH', OKLAHOMA:'OK', OREGON:'OR', PENNSYLVANIA:'PA', 'RHODE ISLAND':'RI', 'SOUTH CAROLINA':'SC', 'SOUTH DAKOTA':'SD', TENNESSEE:'TN', TEXAS:'TX', UTAH:'UT', VERMONT:'VT', VIRGINIA:'VA', WASHINGTON:'WA', 'WEST VIRGINIA':'WV', WISCONSIN:'WI', WYOMING:'WY' };
+const _ZIP3_ST = [[201,201,'VA'],[733,733,'TX'],[885,885,'TX'],[10,27,'MA'],[28,29,'RI'],[30,38,'NH'],[39,49,'ME'],[50,59,'VT'],[60,69,'CT'],[70,89,'NJ'],
+  [100,149,'NY'],[150,196,'PA'],[197,199,'DE'],[200,205,'DC'],[206,219,'MD'],[220,246,'VA'],[247,268,'WV'],[270,289,'NC'],[290,299,'SC'],[300,319,'GA'],[320,349,'FL'],[350,369,'AL'],[370,385,'TN'],[386,397,'MS'],[398,399,'GA'],
+  [400,427,'KY'],[430,459,'OH'],[460,479,'IN'],[480,499,'MI'],[500,528,'IA'],[530,549,'WI'],[550,567,'MN'],[570,577,'SD'],[580,588,'ND'],[590,599,'MT'],[600,629,'IL'],[630,658,'MO'],[660,679,'KS'],[680,693,'NE'],
+  [700,714,'LA'],[716,729,'AR'],[730,749,'OK'],[750,799,'TX'],[800,816,'CO'],[820,831,'WY'],[832,838,'ID'],[840,847,'UT'],[850,865,'AZ'],[870,884,'NM'],[889,898,'NV'],[900,961,'CA'],[967,968,'HI'],[970,979,'OR'],[980,994,'WA'],[995,999,'AK']];
+function _addrState(a) {
+  const u = String(a || '').toUpperCase();
+  if (!u.trim()) return '';
+  let m = u.match(/\b([A-Z]{2})\.?\s*,?\s*(\d{5})(?:-\d{4})?\b(?!.*\b[A-Z]{2}\.?\s*,?\s*\d{5})/);
+  if (m && _US_ST_ZH[m[1]]) return m[1];
+  m = u.match(/\b(\d{5})(?:-\d{4})?\s*(?:,?\s*(?:USA|US|UNITED STATES))?\s*$/);
+  if (m) { const p = parseInt(m[1].slice(0, 3), 10); const hit = _ZIP3_ST.find(([a1, b1]) => p >= a1 && p <= b1); if (hit) return hit[2]; }
+  for (const nm of Object.keys(_US_ST_NAMES).sort((x, y) => y.length - x.length)) if (new RegExp('\\b' + nm + '\\b').test(u)) return _US_ST_NAMES[nm];
+  m = u.match(/,\s*([A-Z]{2})\s*(?:,|$)/);
+  return m && _US_ST_ZH[m[1]] ? m[1] : '';
+}
+// 招工需求认州: 先看需求自己的地址; 没有就看仓库名单里同名公司的地址 (都在同一个州才算)
+function _jobState(j) {
+  if (j._st !== undefined) return j._st;
+  let st = _addrState(j.address);
+  if (!st) {
+    const nm = String(j.warehouse || '').trim().toLowerCase();
+    const sts = nm ? [...new Set(_whList.filter(w => String(w.name || '').trim().toLowerCase() === nm).map(w => _addrState(w.address)).filter(Boolean))] : [];
+    st = sts.length === 1 ? sts[0] : _addrState(j.warehouse);
+  }
+  return (j._st = st);
+}
+const _stLabel = st => st ? (_US_ST_ZH[st] ? _US_ST_ZH[st] + ' ' + st : st) : '没认出州';
+const _stSort = (a, b) => (!a) - (!b) || a.localeCompare(b);
 function render() {
   document.getElementById('dateNow').textContent = '📅 ' + _today;
   const open = _jobs.filter(j => j.status === 'open');
@@ -730,15 +765,22 @@ function render() {
   document.querySelectorAll('.closed-only').forEach(e => { e.style.display = _tab === 'closed' ? 'contents' : 'none'; });
   const tabList = _tab === 'open' ? open : done;
   document.getElementById('listToolbar').style.display = tabList.length ? '' : 'none';
+  const stSel = document.getElementById('stFilter');
+  const prevSt = stSel.value;
+  const stCnt = {};
+  tabList.forEach(j => { const k = _jobState(j); stCnt[k] = (stCnt[k] || 0) + 1; });
+  stSel.innerHTML = '<option value="">全部州</option>' + Object.keys(stCnt).sort(_stSort).map(k => '<option value="' + (k || '~') + '"' + ((k || '~') === prevSt ? ' selected' : '') + '>📍 ' + esc(_stLabel(k)) + '（' + stCnt[k] + '）</option>').join('');
+  const sf = stSel.value;
+  const stOk = j => !sf || (_jobState(j) || '~') === sf;
   const whSel = document.getElementById('whFilter');
   const prevWh = whSel.value;
-  const whs = [...new Set(tabList.map(j => j.warehouse).filter(Boolean))];
+  const whs = [...new Set(tabList.filter(stOk).map(j => j.warehouse).filter(Boolean))];
   whSel.innerHTML = '<option value="">全部仓库</option>' + whs.map(w => '<option value="' + esc(w) + '"' + (w === prevWh ? ' selected' : '') + '>🏭 ' + esc(w) + '</option>').join('');
   if (!document.querySelector('.fchip.on')) document.querySelector('.fchip[data-f="all"]').classList.add('on');
   // 筛选
   const q = (document.getElementById('q').value || '').toLowerCase().trim();
   const wf = whSel.value;
-  let shown = open;
+  let shown = open.filter(stOk);
   if (wf) shown = shown.filter(j => j.warehouse === wf);
   if (_filter === 'unchecked') shown = shown.filter(j => j.last_check_date !== _today);
   if (_filter === 'ead') shown = shown.filter(j => j.ead_required);
@@ -748,8 +790,11 @@ function render() {
   shown = shown.slice().sort((a, b) => {
     const au = a.last_check_date !== _today ? 0 : 1;
     const bu = b.last_check_date !== _today ? 0 : 1;
-    return au - bu || b.id - a.id;
+    return _stSort(_jobState(a), _jobState(b)) || au - bu || b.id - a.id;
   });
+  const shownStN = {};
+  shown.forEach(j => { const k = _jobState(j); shownStN[k] = (shownStN[k] || 0) + 1; });
+  let _lastSt = null;
 
   document.getElementById('openSec').style.display = _tab === 'open' && open.length ? '' : 'none';
   document.getElementById('emptySec').style.display = _tab === 'open' && !open.length ? '' : 'none';
@@ -757,7 +802,10 @@ function render() {
   document.getElementById('openList').innerHTML = shown.length ? shown.map(j => {
     const checkedToday = j.last_check_date === _today;
     const days = _daysBetween(j.created_at, _today);
-    return '<div class="job-card' + (checkedToday ? '' : ' unchecked') + '">'
+    const st = _jobState(j);
+    const stHead = st === _lastSt ? '' : '<div class="st-head">📍 ' + esc(_stLabel(st)) + ' <span>' + shownStN[st] + ' 条</span></div>';
+    _lastSt = st;
+    return stHead + '<div class="job-card' + (checkedToday ? '' : ' unchecked') + '">'
       + '<div class="jc-head">'
       + '<span class="wh-badge">🏭 ' + esc(j.warehouse) + '</span>'
       + '<span class="day-pill">已招 ' + (days === 0 ? '今天发布' : days + ' 天') + '</span>'
@@ -788,7 +836,7 @@ function render() {
   }).join('') : '<div class="hint">没有符合筛选条件的 — 点「全部」清掉筛选</div>';
 
   // 已关闭 tab: 仓库 / 搜索 / 找到人了·不需要了 筛选
-  let doneShown = done;
+  let doneShown = done.filter(stOk);
   if (wf) doneShown = doneShown.filter(j => j.warehouse === wf);
   if (_filter === 'filled' || _filter === 'closed') doneShown = doneShown.filter(j => j.status === _filter);
   if (q) doneShown = doneShown.filter(j => [j.warehouse, j.position, j.details, j.address].some(v => String(v || '').toLowerCase().includes(q)));
@@ -859,7 +907,8 @@ async function copyAllOpen() {
   const lang = document.getElementById('allLang').value || 'zh';
   const q = (document.getElementById('q').value || '').toLowerCase().trim();
   const wf = document.getElementById('whFilter').value;
-  let open = _jobs.filter(j => j.status === 'open');
+  const sf = document.getElementById('stFilter').value;
+  let open = _jobs.filter(j => j.status === 'open' && (!sf || (_jobState(j) || '~') === sf));
   if (wf) open = open.filter(j => j.warehouse === wf);
   if (_filter === 'unchecked') open = open.filter(j => j.last_check_date !== _today);
   if (_filter === 'ead') open = open.filter(j => j.ead_required);

@@ -4647,6 +4647,33 @@ function _raJobLabel(j) {
 }
 // 地址比对口径 (和服务端仓库名单去重一致): 小写、去标点空格、ZIP+4 只看前 5 位
 function _raAddrKey(a) { return String(a || '').toLowerCase().replace(/\b(\d{5})-\d{4}\b/, '$1').replace(/[^a-z0-9]+/g, ''); }
+// 地址认州: 「, GA 30518」/「GA 30518」这种州缩写 + 邮编优先, 没有就按邮编前三位认, 再不行按州全名
+const _US_ST_ZH = { AL:'阿拉巴马', AK:'阿拉斯加', AZ:'亚利桑那', AR:'阿肯色', CA:'加州', CO:'科罗拉多', CT:'康涅狄格', DE:'特拉华', DC:'华盛顿特区', FL:'佛州', GA:'佐治亚', HI:'夏威夷', ID:'爱达荷', IL:'伊利诺伊', IN:'印第安纳', IA:'艾奥瓦', KS:'堪萨斯', KY:'肯塔基', LA:'路易斯安那', ME:'缅因', MD:'马里兰', MA:'麻州', MI:'密歇根', MN:'明尼苏达', MS:'密西西比', MO:'密苏里', MT:'蒙大拿', NE:'内布拉斯加', NV:'内华达', NH:'新罕布什尔', NJ:'新泽西', NM:'新墨西哥', NY:'纽约', NC:'北卡', ND:'北达科他', OH:'俄亥俄', OK:'俄克拉荷马', OR:'俄勒冈', PA:'宾州', RI:'罗得岛', SC:'南卡', SD:'南达科他', TN:'田纳西', TX:'德州', UT:'犹他', VT:'佛蒙特', VA:'弗吉尼亚', WA:'华盛顿州', WV:'西弗吉尼亚', WI:'威斯康星', WY:'怀俄明' };
+const _US_ST_NAMES = { ALABAMA:'AL', ALASKA:'AK', ARIZONA:'AZ', ARKANSAS:'AR', CALIFORNIA:'CA', COLORADO:'CO', CONNECTICUT:'CT', DELAWARE:'DE', FLORIDA:'FL', GEORGIA:'GA', HAWAII:'HI', IDAHO:'ID', ILLINOIS:'IL', INDIANA:'IN', IOWA:'IA', KANSAS:'KS', KENTUCKY:'KY', LOUISIANA:'LA', MAINE:'ME', MARYLAND:'MD', MASSACHUSETTS:'MA', MICHIGAN:'MI', MINNESOTA:'MN', MISSISSIPPI:'MS', MISSOURI:'MO', MONTANA:'MT', NEBRASKA:'NE', NEVADA:'NV', 'NEW HAMPSHIRE':'NH', 'NEW JERSEY':'NJ', 'NEW MEXICO':'NM', 'NEW YORK':'NY', 'NORTH CAROLINA':'NC', 'NORTH DAKOTA':'ND', OHIO:'OH', OKLAHOMA:'OK', OREGON:'OR', PENNSYLVANIA:'PA', 'RHODE ISLAND':'RI', 'SOUTH CAROLINA':'SC', 'SOUTH DAKOTA':'SD', TENNESSEE:'TN', TEXAS:'TX', UTAH:'UT', VERMONT:'VT', VIRGINIA:'VA', WASHINGTON:'WA', 'WEST VIRGINIA':'WV', WISCONSIN:'WI', WYOMING:'WY' };
+const _ZIP3_ST = [[201,201,'VA'],[733,733,'TX'],[885,885,'TX'],[10,27,'MA'],[28,29,'RI'],[30,38,'NH'],[39,49,'ME'],[50,59,'VT'],[60,69,'CT'],[70,89,'NJ'],
+  [100,149,'NY'],[150,196,'PA'],[197,199,'DE'],[200,205,'DC'],[206,219,'MD'],[220,246,'VA'],[247,268,'WV'],[270,289,'NC'],[290,299,'SC'],[300,319,'GA'],[320,349,'FL'],[350,369,'AL'],[370,385,'TN'],[386,397,'MS'],[398,399,'GA'],
+  [400,427,'KY'],[430,459,'OH'],[460,479,'IN'],[480,499,'MI'],[500,528,'IA'],[530,549,'WI'],[550,567,'MN'],[570,577,'SD'],[580,588,'ND'],[590,599,'MT'],[600,629,'IL'],[630,658,'MO'],[660,679,'KS'],[680,693,'NE'],
+  [700,714,'LA'],[716,729,'AR'],[730,749,'OK'],[750,799,'TX'],[800,816,'CO'],[820,831,'WY'],[832,838,'ID'],[840,847,'UT'],[850,865,'AZ'],[870,884,'NM'],[889,898,'NV'],[900,961,'CA'],[967,968,'HI'],[970,979,'OR'],[980,994,'WA'],[995,999,'AK']];
+function _addrState(a) {
+  const u = String(a || '').toUpperCase();
+  if (!u.trim()) return '';
+  let m = u.match(/\b([A-Z]{2})\.?\s*,?\s*(\d{5})(?:-\d{4})?\b(?!.*\b[A-Z]{2}\.?\s*,?\s*\d{5})/);
+  if (m && _US_ST_ZH[m[1]]) return m[1];
+  m = u.match(/\b(\d{5})(?:-\d{4})?\s*(?:,?\s*(?:USA|US|UNITED STATES))?\s*$/);
+  if (m) { const p = parseInt(m[1].slice(0, 3), 10); const hit = _ZIP3_ST.find(([a1, b1]) => p >= a1 && p <= b1); if (hit) return hit[2]; }
+  for (const nm of Object.keys(_US_ST_NAMES).sort((x, y) => y.length - x.length)) if (new RegExp('\\b' + nm + '\\b').test(u)) return _US_ST_NAMES[nm];
+  m = u.match(/,\s*([A-Z]{2})\s*(?:,|$)/);
+  return m && _US_ST_ZH[m[1]] ? m[1] : '';
+}
+// 每日招工需求认州: 先看需求自己的地址; 没有就看仓库名单里同名公司的地址 (都在同一个州才算)
+function _raRecruitState(j, whs) {
+  const st = _addrState(j.address);
+  if (st) return st;
+  const nm = String(j.warehouse || '').trim().toLowerCase();
+  if (!nm) return _addrState(j.warehouse);
+  const sts = [...new Set((whs || []).filter(w => String(w.name || '').trim().toLowerCase() === nm).map(w => _addrState(w.address)).filter(Boolean))];
+  return sts.length === 1 ? sts[0] : _addrState(j.warehouse);
+}
 function raFillSelects(r) {
   const fm = (_refOpts && _refOpts.foremen) || [];
   const whs = (_refOpts && _refOpts.warehouses) || [];
@@ -4658,10 +4685,14 @@ function raFillSelects(r) {
   // 选项值 r:需求id:班次序号 / j:岗位id。编辑时已关闭/删除的, 用存的快照补一个选项照样显示
   const rec = (_refOpts && _refOpts.recruit) || [];
   const jSel = document.getElementById('raJobSel');
-  const recOpts = rec.map(j => (j.shifts.length ? j.shifts.map((sh, i) => ({ v: `r:${j.id}:${i}`, t: `📢 ${j.warehouse || ''} · ${j.position || ''} · ${sh.shift}${sh.worker_pay || j.worker_pay ? '（' + (sh.worker_pay || j.worker_pay) + '）' : ''}` }))
-    : [{ v: `r:${j.id}:`, t: `📢 ${j.warehouse || ''} · ${j.position || ''}${j.worker_pay ? '（' + j.worker_pay + '）' : ''}` }])).flat();
+  const recOpts = rec.map(j => { const st = _raRecruitState(j, whs); return (j.shifts.length ? j.shifts.map((sh, i) => ({ st, v: `r:${j.id}:${i}`, t: `📢 ${j.warehouse || ''} · ${j.position || ''} · ${sh.shift}${sh.worker_pay || j.worker_pay ? '（' + (sh.worker_pay || j.worker_pay) + '）' : ''}` }))
+    : [{ st, v: `r:${j.id}:`, t: `📢 ${j.warehouse || ''} · ${j.position || ''}${j.worker_pay ? '（' + j.worker_pay + '）' : ''}` }]); }).flat();
+  // 按州分组: 州从岗位地址认; 没写地址的按同名仓库的地址认 (那家公司仓库都在同一个州才算); 认不出的放最后
+  const byState = {};
+  recOpts.forEach(o => { const st = o.st || ''; (byState[st] = byState[st] || []).push(o); });
+  const stKeys = Object.keys(byState).sort((a, b) => (!a) - (!b) || a.localeCompare(b));
   jSel.innerHTML = '<option value="">— 请选择岗位 —</option>'
-    + (recOpts.length ? `<optgroup label="📢 每日招工（在招的，按班次选）">${recOpts.map(o => `<option value="${o.v}">${esc(o.t)}</option>`).join('')}</optgroup>` : '');
+    + stKeys.map(st => `<optgroup label="📢 ${st ? (_US_ST_ZH[st] ? _US_ST_ZH[st] + ' ' + st : st) : '没认出州'}（${byState[st].length}）">${byState[st].map(o => `<option value="${o.v}">${esc(o.t)}</option>`).join('')}</optgroup>`).join('');
   // post 的招聘岗位不再列出 (只用每日招工); 老记录关联过的照样在下面补一个选项显示
   const ensure = (v, label) => {
     jSel.value = v;
