@@ -2980,6 +2980,15 @@ tr:hover td.invp-frz{background:var(--sky-light)}
           <select id="invPageAddrSelect" onchange="onInvPageAddrSelect()" style="display:none;width:100%;margin-bottom:.4rem;padding:.5rem;border:1px solid var(--sky);border-radius:6px;font-size:.85rem;background:#f0f9ff"></select>
           <input type="text" id="invPageBillAddr" placeholder="客户地址">
         </div>
+        <div class="field">
+          <label style="color:#0e7490;font-weight:600">账期（付款期限）</label>
+          <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+            <span style="font-weight:600;color:#0e7490">Net</span>
+            <input type="number" id="invPageTerms" placeholder="空 = 收到即付" min="0" max="365" step="1" style="width:120px;border:1px solid #0891b2;border-radius:6px;padding:5px 8px;font-size:.88rem;font-weight:600;color:#0e7490" oninput="_invpTermsHint()" onchange="_invpTermsSave()">
+            <span style="font-weight:600;color:#0e7490">天</span>
+            <span id="invPageTermsHint" style="font-size:.8rem;color:var(--gray-400)"></span>
+          </div>
+        </div>
         <div class="field" id="invPageMarkupRateWrap">
           <label style="color:#92400e;font-weight:600">Markup Rate（加价系数，默认）</label>
           <div style="display:flex;align-items:center;gap:.5rem">
@@ -33804,6 +33813,7 @@ async function openInvpForEdit(id) {
   document.getElementById('invPageStart').value = inv.period_start || '';
   document.getElementById('invPageEnd').value = inv.period_end || '';
   document.getElementById('invPageBillName').value = inv.company_name || '';
+  setTimeout(() => _invpTermsSync(true), 0);
   { const bt = document.getElementById('invPageBillToName'); if (bt) bt.value = (inv.profile && inv.profile.bill_to_name) || ''; }
   document.getElementById('invPageBillAddr').value = inv.bill_to_addr || '';
 
@@ -37616,6 +37626,47 @@ function _invpTermsDays(billName) {
   const p = (window._invpPartners || []).find(x => names.includes(k(x.name)));
   return p ? Math.max(0, parseInt(p.payment_terms_days, 10) || 0) : 0;
 }
+// Invoice 页的「账期」框: 换公司时按公司设置带出; 改了自动存回这家公司 (以后它的 Invoice 都按这个写)
+function _invpTermsPartner(billName) {
+  const k = String(billName || '').trim().toLowerCase();
+  return k ? (window._invpPartners || []).find(x => String(x.name || '').trim().toLowerCase() === k) : null;
+}
+function _invpTermsSync(force) {
+  const el = document.getElementById('invPageTerms');
+  if (!el) return;
+  const name = (document.getElementById('invPageBillName').value || '').trim();
+  if (!force && el.dataset.for === name) return;
+  // 公司名单还没加载完就先不记, 等下次 (生成预览时) 再带出
+  if ((window._invpPartners || []).length) el.dataset.for = name;
+  const p = _invpTermsPartner(name);
+  const d = p ? Math.max(0, parseInt(p.payment_terms_days, 10) || 0) : 0;
+  el.value = d ? d : '';
+  _invpTermsHint();
+}
+function _invpTermsHint() {
+  const el = document.getElementById('invPageTerms'), h = document.getElementById('invPageTermsHint');
+  if (!el || !h) return;
+  const d = Math.max(0, parseInt(el.value, 10) || 0);
+  const due = d ? _invpAddDays(document.getElementById('invPageDate').value, d) : '';
+  const nm = (document.getElementById('invPageBillName').value || '').trim();
+  const p = _invpTermsPartner(nm);
+  h.innerHTML = (d ? 'Invoice 写「Net ' + d + '」' + (due ? '，到期日 <b style="color:#0e7490">' + due + '</b>' : '') : 'Invoice 写「Payment due upon receipt」')
+    + (p || !nm ? '' :' <span style="color:#b45309">· 公司名单里没有这个名字, 改了不会存到公司</span>');
+}
+// 改了 Invoice 日期, 账期旁边的到期日跟着变
+document.addEventListener('change', e => { if (e.target && e.target.id === 'invPageDate') _invpTermsHint(); });
+async function _invpTermsSave() {
+  const el = document.getElementById('invPageTerms');
+  const d = Math.max(0, Math.min(365, parseInt(el.value, 10) || 0));
+  el.value = d ? d : '';
+  _invpTermsHint();
+  const p = _invpTermsPartner(document.getElementById('invPageBillName').value);
+  if (!p) return;
+  const r = await api('/admin/partners/' + p.id + '/payment-terms', { method: 'PUT', body: JSON.stringify({ payment_terms_days: d }) }).catch(e => ({ error: e.message }));
+  if (r && r.error) { showAlert('账期保存失败：' + r.error); return; }
+  p.payment_terms_days = d;
+  showToast(d ? `✅ 已存到「${p.name}」：以后它的 Invoice 自动写 Net ${d} + 到期日` : `✅ 已存到「${p.name}」：收到即付`);
+}
 // 'YYYY-MM-DD' + n 天 → 'YYYY-MM-DD'
 function _invpAddDays(d, n) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || ''));
@@ -38304,6 +38355,7 @@ function selectInvPartner(id) {
   const sr = document.getElementById('invPageCompanySearch');
   if (sr) sr.value = partner.name;
   document.getElementById('invPageBillName').value = partner.name;
+  setTimeout(() => _invpTermsSync(true), 0);
   // Parse this partner's addresses (fall back to the legacy single string).
   let addrs = [];
   try { addrs = JSON.parse(partner.addresses || '[]'); } catch {}
@@ -38325,6 +38377,7 @@ function selectInvPartner(id) {
 // keep their own billing entity/bank instead of everyone sharing one global default.
 // Does not change the global default (uses _suppressApi) and never overrides an edit.
 async function _invpApplyCustomerPresets(companyName) {
+  _invpTermsSync();
   companyName = (companyName || '').trim();
   if (!companyName) return;
   const editEl = document.getElementById('invPageEditId');
@@ -38365,6 +38418,7 @@ async function _invpApplyCustomerPresets(companyName) {
 }
 
 function onInvBillNameInput() {
+  setTimeout(() => _invpTermsSync(), 0);
   // If user manually types company name, clear partner state selection
   const sr = document.getElementById('invPageCompanySearch');
   const billName = document.getElementById('invPageBillName').value.trim();
@@ -42046,7 +42100,9 @@ async function generateInvpPreview() {
   const hasMarkup   = markupRate > 1;
   const servicePeriodLabel = fmtNiceRange(ps, pe);
   // 账期: 公司设置里填了 Net 天数的, 自动写「Net N」+ 到期日 (Invoice 日期 + N 天)
-  const termsDays = _invpTermsDays(billName);
+  _invpTermsSync();   // 换了公司 (含打开旧发票) 先按公司设置带出
+  const _tEl = document.getElementById('invPageTerms');
+  const termsDays = _tEl ? Math.max(0, Math.min(365, parseInt(_tEl.value, 10) || 0)) : _invpTermsDays(billName);
   const dueDate = termsDays ? _invpAddDays(invDate, termsDays) : '';
   const termsRows = termsDays ? `
             <tr style="border-top:1px solid #e2e8f0"><td style="padding:5px 12px 5px 10px;color:#64748b;text-align:left;white-space:nowrap;background:#e8f5fb;font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Terms</td><td style="padding:5px 12px;font-weight:600;text-align:right;white-space:nowrap">Net ${termsDays}</td></tr>
@@ -42986,6 +43042,7 @@ async function generateInvoiceFromPayments() {
   window._invpMode = 'hourly';
   document.querySelectorAll('input[name="invpMode"]').forEach(r => { r.checked = (r.value === 'hourly'); });
   document.getElementById('invPageBillName').value = ctx.partner_name || partner.name || '';
+  setTimeout(() => _invpTermsSync(true), 0);
   document.getElementById('invPageBillAddr').value = partner.address || '';
   document.getElementById('invPageStart').value = ps;
   document.getElementById('invPageEnd').value = pe;
