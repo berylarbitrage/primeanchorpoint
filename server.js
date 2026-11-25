@@ -38322,6 +38322,9 @@ app.put('/api/plaid/annotations/:id', requireAdmin, requireRole('admin', 'cs', '
         invItemsVal = JSON.stringify((Array.isArray(arr) ? arr : []).slice(0, 30).map(x => ({
           inv: String((x && x.inv) || '').slice(0, 80), ps: String((x && x.ps) || '').slice(0, 40),
           pe: String((x && x.pe) || '').slice(0, 40), amt: String((x && x.amt) || '').slice(0, 20),
+          // 员工工资: 这张发票归哪家公司 / 算谁的工资
+          ...((x && x.co) ? { co: String(x.co).slice(0, 160) } : {}),
+          ...((x && x.who) ? { who: String(x.who).slice(0, 300) } : {}),
         })));
       } catch (e2) { invItemsVal = row.inv_items; }
     }
@@ -42392,6 +42395,8 @@ app.put('/api/admin/bank-statements/:id/boxes/:txnId', requireAdmin, blockManage
           ps: String((x && x.ps) || '').slice(0, 40),
           pe: String((x && x.pe) || '').slice(0, 40),
           amt: String((x && x.amt) || '').slice(0, 20),
+          ...((x && x.co) ? { co: String(x.co).slice(0, 160) } : {}),
+          ...((x && x.who) ? { who: String(x.who).slice(0, 300) } : {}),
         })));
       } catch (e2) { invItemsVal = row.inv_items; }
     }

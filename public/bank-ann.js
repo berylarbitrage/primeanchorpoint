@@ -355,6 +355,11 @@ function _bsEmpParse(payee) {
   return i < 0 ? { co: '', name: rest } : { co: rest.slice(0, i), name: rest.slice(i + 1) };
 }
 function _bsEmpJoin(co, name) { return BS_EMP_PREFIX + (co || '') + '|' + (name || ''); }
+// 一笔转账可以付给几个人、他们在几家公司干活（几张账单）：公司之间用「 + 」连，
+// 姓名用逗号连（中英文逗号、顿号、分号都认）。
+const BS_EMP_CO_SEP = ' + ';
+function _bsEmpCos(payee) { return String(_bsEmpParse(payee).co || '').split(/\s\+\s/).map(s => s.trim()).filter(Boolean); }
+function _bsEmpNames(payee) { return String(_bsEmpParse(payee).name || '').split(/[,，、;；]/).map(s => s.trim()).filter(Boolean); }
 function _bsIsPallet(payee) { return typeof payee === 'string' && payee.indexOf(BS_PALLET_PREFIX) === 0; }
 function _bsPalletParse(payee) { return _bsIsPallet(payee) ? payee.slice(BS_PALLET_PREFIX.length) : ''; }
 function _bsPalletJoin(cust) { return BS_PALLET_PREFIX + (cust || ''); }
@@ -602,6 +607,8 @@ function _bsCompanyOptions(current) {
 }
 function bsPayeeSelChange(id, sel) {
   const item = sel.closest('.bs-box-item');
+  const _bx0 = _bsBoxList.find(b => b.id === id);
+  const wasEmp = !!(_bx0 && _bsIsEmp(_bx0.payee));
   const wrap = item.querySelector('.bs-emp-wrap');
   const pwrap = item.querySelector('.bs-pallet-wrap');
   const cwrap = item.querySelector('.bs-check-wrap');
@@ -620,7 +627,8 @@ function bsPayeeSelChange(id, sel) {
   const hideAll = () => { if (wrap) wrap.style.display = 'none'; if (pwrap) pwrap.style.display = 'none'; if (cwrap) cwrap.style.display = 'none'; if (twrap) twrap.style.display = 'none'; if (iwrap) iwrap.style.display = 'none'; if (nwrap) nwrap.style.display = 'none'; if (uwrap) uwrap.style.display = 'none'; if (rwrap) rwrap.style.display = 'none'; if (wwrap) wwrap.style.display = 'none'; if (xwrap) xwrap.style.display = 'none'; if (fwrap) fwrap.style.display = 'none'; if (bwrap) bwrap.style.display = 'none'; if (dwrap) dwrap.style.display = 'none'; if (cnwrap) cnwrap.style.display = 'none'; if (lwrap) lwrap.style.display = 'none'; };
   if (sel.value === BS_PAYEE_EMP) {
     hideAll();
-    if (wrap) { wrap.style.display = ''; const co = wrap.querySelector('.bs-bx-emp-co'); if (co) co.focus(); bsEmpUpdate(id, co); }
+    const bx = _bsBoxList.find(b => b.id === id);
+    if (bx && !_bsIsEmp(bx.payee)) bsUpdateBoxField(id, 'payee', _bsEmpJoin('', ''));
   } else if (sel.value === BS_PAYEE_PALLET) {
     hideAll();
     if (pwrap) { pwrap.style.display = ''; const c = pwrap.querySelector('.bs-bx-pallet-cust'); if (c) { c.focus(); bsPalletUpdate(id, c); } }
@@ -676,13 +684,8 @@ function bsPayeeSelChange(id, sel) {
     bsUpdateBoxField(id, 'payee', sel.value);
   }
   bsUpdateBoxSections(id);
-}
-function bsEmpUpdate(id, el) {
-  const wrap = el.closest('.bs-emp-wrap');
-  if (!wrap) return;
-  const co = wrap.querySelector('.bs-bx-emp-co').value;
-  const name = wrap.querySelector('.bs-bx-emp-name').value.trim();
-  bsUpdateBoxField(id, 'payee', _bsEmpJoin(co, name));
+  const _bx1 = _bsBoxList.find(b => b.id === id);
+  if (_bx1 && wasEmp !== _bsIsEmp(_bx1.payee)) _bsRenderBoxPanel();
 }
 function bsUpdateBoxSections(id) {
   const box = _bsBoxList.find(b => b.id === id);
@@ -1136,7 +1139,7 @@ function _bsInvItems(box) {
   let a = box.inv_items;
   if (typeof a === 'string') { try { a = JSON.parse(a || '[]'); } catch (e) { a = []; } }
   if (!Array.isArray(a)) a = [];
-  a = a.map(x => ({ inv: String((x && x.inv) || ''), ps: String((x && x.ps) || ''), pe: String((x && x.pe) || ''), amt: String((x && x.amt) || '') }));
+  a = a.map(x => ({ inv: String((x && x.inv) || ''), ps: String((x && x.ps) || ''), pe: String((x && x.pe) || ''), amt: String((x && x.amt) || ''), co: String((x && x.co) || ''), who: String((x && x.who) || '') }));
   if (!a.length) a = [{ inv: box.invoice_number || '', ps: box.period_start || '', pe: box.period_end || '', amt: '' }];
   return a;
 }
@@ -1175,17 +1178,105 @@ function _bsTruckInvPh(box) {
   const co = _bsTruckParse(box.payee);
   return co ? '卡车单号 / Invoice（手输入，自动核对金额）' : '卡车单号 / Invoice（先选公司）';
 }
-function _bsInvItemsHtml(box) {
+// ── 👷 员工工资: 公司 + 员工 + 它的发票 放在一起 ──
+// 每家公司一块: 选公司、填在这家干活的员工姓名、下面放这家公司的发票 (可以几张)。
+// 一个人给几家公司干活 / 一笔付几个人几张账单, 就加几块。每张发票存它属于哪家公司
+// (co) 和算谁的工资 (who); 整笔的「付给」(payee) 由各块的公司、姓名汇总出来。
+// 老数据发票上没存公司/姓名的, 按整笔的公司/姓名显示。
+function _bsEmpItems(box) {
   const items = _bsInvItems(box);
-  const many = items.length > 1;
+  // 只有老数据 (没有一张发票存了公司 / 姓名) 才按整笔的补; 新加的空白公司块不能被补成第一家
+  const cos = _bsEmpCos(box.payee), names = _bsEmpNames(box.payee).join(', ');
+  if (cos.length && items.every(it => !it.co)) items.forEach(it => { it.co = cos[0]; });
+  if (names && items.every(it => !it.who)) items.forEach(it => { it.who = names; });
+  return items;
+}
+// 连续、同公司同姓名的发票算一块 (存的时候同一块的发票总是挨着放)
+function _bsEmpBlocks(items) {
+  const blocks = [];
+  items.forEach((it, i) => {
+    const last = blocks[blocks.length - 1];
+    if (last && last.co === it.co && last.who === it.who) last.idx.push(i);
+    else blocks.push({ co: it.co, who: it.who, idx: [i] });
+  });
+  return blocks;
+}
+function _bsEmpSyncPayee(box, items) {
+  const cos = [...new Set(items.map(it => String(it.co || '').trim()).filter(Boolean))];
+  const seen = new Set(), names = [];
+  items.forEach(it => String(it.who || '').split(/[,，、;；]/).map(s => s.trim()).filter(Boolean).forEach(n => {
+    const k = _bsCashKey(n); if (k && !seen.has(k)) { seen.add(k); names.push(n); }
+  }));
+  const payee = _bsEmpJoin(cos.join(BS_EMP_CO_SEP), names.join(', '));
+  if (payee !== box.payee) bsUpdateBoxField(box.id, 'payee', payee);
+}
+function _bsEmpSave(box, items, rerender) {
+  _bsInvItemsSave(box, items);
+  _bsEmpSyncPayee(box, items);
+  if (rerender) _bsRenderBoxPanel();
+}
+function bsEmpBlockSet(boxId, b, key, val) {
+  const box = _bsBoxList.find(x => x.id === boxId); if (!box) return;
+  const items = _bsEmpItems(box);
+  const blk = _bsEmpBlocks(items)[b]; if (!blk) return;
+  blk.idx.forEach(i => { items[i][key] = String(val || '').trim(); });
+  _bsEmpSave(box, items, key === 'co');
+}
+function bsEmpBlockInvAdd(boxId, b) {
+  const box = _bsBoxList.find(x => x.id === boxId); if (!box) return;
+  const items = _bsEmpItems(box);
+  const blk = _bsEmpBlocks(items)[b]; if (!blk) return;
+  items.splice(blk.idx[blk.idx.length - 1] + 1, 0, { inv: '', ps: '', pe: '', amt: '', co: blk.co, who: blk.who });
+  _bsEmpSave(box, items, true);
+}
+function bsEmpBlockAdd(boxId) {
+  const box = _bsBoxList.find(x => x.id === boxId); if (!box) return;
+  const items = _bsEmpItems(box);
+  const blocks = _bsEmpBlocks(items);
+  const last = blocks[blocks.length - 1];
+  if (last && !last.co) { showToast('先给上面这块选好公司，再新加一个公司', 'error'); return; }
+  // 默认同一个人 (一个人给几家公司干活最常见), 不对可以改
+  items.push({ inv: '', ps: '', pe: '', amt: '', co: '', who: (blocks[0] && blocks[0].who) || '' });
+  _bsEmpSave(box, items, true);
+}
+function bsEmpBlockDel(boxId, b) {
+  const box = _bsBoxList.find(x => x.id === boxId); if (!box) return;
+  let items = _bsEmpItems(box);
+  const blk = _bsEmpBlocks(items)[b]; if (!blk) return;
+  if (!confirm(`去掉「${blk.co || '这家公司'}」和它下面的 ${blk.idx.length} 张发票？`)) return;
+  items = items.filter((_, i) => !blk.idx.includes(i));
+  if (!items.length) items.push({ inv: '', ps: '', pe: '', amt: '', co: '', who: '' });
+  _bsEmpSave(box, items, true);
+}
+function _bsEmpBlocksHtml(box) {
+  const items = _bsEmpItems(box);
+  const blocks = _bsEmpBlocks(items);
+  const inp = 'padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff';
+  const html = blocks.map((blk, b) => `
+    <div class="bs-emp-block" style="border:1px solid #86efac;border-left:3px solid #059669;border-radius:8px;padding:.4rem .45rem;background:#fff;margin-bottom:.45rem">
+      <div style="display:flex;gap:.3rem;align-items:center;margin-bottom:.3rem">
+        <span style="flex:0 0 auto;font-size:.72rem;color:#047857;font-weight:700">🏢 ${blocks.length > 1 ? '公司 ' + (b + 1) : '公司'}</span>
+        <select class="bs-bx-emp-co" onchange="bsEmpBlockSet(${box.id},${b},'co',this.value)" style="flex:1;min-width:0;${inp};${blk.co ? '' : 'border-color:#dc2626'}">${_bsCompanyOptions(blk.co)}</select>
+        ${blocks.length > 1 ? `<a onclick="bsEmpBlockDel(${box.id},${b})" title="去掉这家公司和它的发票" style="flex:0 0 auto;color:#dc2626;cursor:pointer;font-weight:700;padding:0 .2rem">✕</a>` : ''}
+      </div>
+      <input type="text" class="bs-bx-emp-name" placeholder="在这家公司干活的员工姓名（多个用逗号隔开）" value="${esc(blk.who)}" onchange="bsEmpBlockSet(${box.id},${b},'who',this.value)" style="width:100%;box-sizing:border-box;${inp};margin-bottom:.35rem">
+      ${blk.idx.map(i => _bsInvRowHtml(box, items[i], i, items.length > 1, blk.idx.length > 1)).join('')}
+      <button type="button" onclick="bsEmpBlockInvAdd(${box.id},${b})" style="font-size:.72rem;padding:.15rem .5rem;border:1px dashed #059669;background:#f0fdf4;color:#047857;border-radius:6px;cursor:pointer">＋ 这家公司再加一张发票</button>
+    </div>`).join('');
+  return html
+    + `<div class="bs-inv-sum" style="font-size:.72rem;margin-bottom:.25rem">${_bsInvSumLineHtml(box, items)}</div>`
+    + `<button type="button" onclick="bsEmpBlockAdd(${box.id})" style="font-size:.74rem;padding:.2rem .6rem;border:1px dashed #059669;background:#f0fdf4;color:#047857;border-radius:6px;cursor:pointer;font-weight:600">＋ 新加一个公司（和它的发票）</button>`
+    + `<div class="bs-ann-check" style="font-size:.72rem;line-height:1.55;margin-top:.35rem"></div>`;
+}
+// 一张发票的输入行 (发票号 / 账期 / 金额); showNo = 标 #序号, canDel = 带 ✕
+function _bsInvRowHtml(box, it, i, showNo, canDel) {
   const isTruck = _bsPayeeKind(box) === 'truck';
-  if (isTruck) _bsTruckInvsLoad();
-  const rows = items.map((it, i) => `
-    <div class="bs-inv-item" style="${many ? 'border:1px solid #bbf7d0;border-radius:6px;padding:.35rem .4rem;background:#fff;' : ''}margin-bottom:.3rem">
+  return `
+    <div class="bs-inv-item" style="${showNo ? 'border:1px solid #bbf7d0;border-radius:6px;padding:.35rem .4rem;background:#fff;' : ''}margin-bottom:.3rem">
       <div style="display:flex;gap:.3rem;align-items:center;margin-bottom:.25rem">
-        ${many ? `<span style="font-size:.7rem;color:#059669;font-weight:700;flex:0 0 auto">#${i + 1}</span>` : ''}
+        ${showNo ? `<span style="font-size:.7rem;color:#059669;font-weight:700;flex:0 0 auto">#${i + 1}</span>` : ''}
         <input type="text" class="bs-bx-inv" ${isTruck ? `title="${_BS_TRUCK_INV_TITLE}"` : ''} placeholder="${isTruck ? esc(_bsTruckInvPh(box)) : 'Invoice number'}" value="${esc(it.inv)}" onchange="bsInvItemField(${box.id},${i},'inv',this.value)" style="flex:1;min-width:0;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
-        ${many ? `<a onclick="bsInvItemDel(${box.id},${i})" title="删除这张发票" style="flex:0 0 auto;color:#dc2626;cursor:pointer;font-weight:700;padding:0 .2rem">✕</a>` : ''}
+        ${canDel ? `<a onclick="bsInvItemDel(${box.id},${i})" title="删除这张发票" style="flex:0 0 auto;color:#dc2626;cursor:pointer;font-weight:700;padding:0 .2rem">✕</a>` : ''}
       </div>
       <input type="text" class="bs-bx-period" placeholder="账期：可粘贴 2026-03-16 ~ 2026-03-22" value="${(it.ps || it.pe) ? esc((it.ps || '') + ' ~ ' + (it.pe || '')) : ''}" oninput="bsInvItemPeriod(${box.id},${i},this)" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;margin-bottom:.3rem">
       <div style="display:flex;gap:.3rem">
@@ -1193,7 +1284,14 @@ function _bsInvItemsHtml(box) {
         <input type="date" class="bs-bx-pend" title="账期结束" value="${esc(it.pe)}" onchange="bsInvItemField(${box.id},${i},'pe',this.value)" style="flex:1;min-width:0;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
         <input type="number" step="0.01" class="bs-bx-inv-amt" placeholder="这张金额" title="这张发票对应的金额" value="${esc(it.amt)}" onchange="bsInvItemField(${box.id},${i},'amt',this.value)" style="flex:0 0 96px;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.78rem">
       </div>
-    </div>`).join('');
+    </div>`;
+}
+function _bsInvItemsHtml(box) {
+  if (_bsPayeeKind(box) === 'employee' && _bsIsEmp(box.payee)) return _bsEmpBlocksHtml(box);
+  const items = _bsInvItems(box);
+  const many = items.length > 1;
+  if (_bsPayeeKind(box) === 'truck') _bsTruckInvsLoad();
+  const rows = items.map((it, i) => _bsInvRowHtml(box, it, i, many, many)).join('');
   return rows
     + `<div class="bs-inv-sum" style="font-size:.72rem;margin-bottom:.25rem">${_bsInvSumLineHtml(box, items)}</div>`
     + `<button type="button" onclick="bsInvItemAdd(${box.id})" style="font-size:.74rem;padding:.2rem .6rem;border:1px dashed #059669;background:#f0fdf4;color:#047857;border-radius:6px;cursor:pointer;font-weight:600">＋ 再加一张发票（各自账期/金额）</button>`
@@ -1251,7 +1349,7 @@ function _bsInvAutoFill(box, mode) {
     if (!info || !info.found) return;
     const w = wraps[i];
     const fillAmt = mode === 'full' ? Number(info.subtotal)
-      : _bsAmtMode(box) === 'emp' && box.pay_portion === 'full' ? Number(_bsWorkerWage(box, info)) : 0;
+      : _bsAmtMode(box) === 'emp' && box.pay_portion === 'full' ? Number(_bsWorkerWage(box, info, it)) : 0;
     if (!String(it.amt).trim() && fillAmt > 0) {
       it.amt = fillAmt.toFixed(2); changed = true;
       const a = w && w.querySelector('.bs-bx-inv-amt'); if (a) a.value = it.amt;
@@ -1326,12 +1424,15 @@ function _bsAnnCheckHtml(box, items, mode) {
     }
     let paidLine = '';
     if (_bsAmtMode(box) === 'emp') {
-      const who = _bsEmpParse(box.payee).name;
-      const wage = _bsWorkerWage(box, info);
+      // 填了几个人时, 这张上只算在这张上的人 (各人在各自公司的账单上)
+      const allWho = _bsItemNames(box, it).join(', ');
+      const hit = _bsWorkerHits(box, info, it);
+      const who = hit && hit.found.length ? hit.found.join(', ') : allWho;
+      const wage = _bsWorkerWage(box, info, it);
       const filled = parseFloat(it.amt);
       const others = _bsInvPaidOthers(box, num, info);
       if (wage == null) {
-        if (who && Array.isArray(info.workers)) probs.push(`发票上没有「${esc(who)}」（检查姓名或发票号）`);
+        if (allWho && Array.isArray(info.workers)) probs.push(`发票上没有「${esc(allWho)}」（检查姓名或发票号）`);
       } else if (box.pay_portion === 'partial') {
         // 部分付款: 之前已付 + 这笔 和他这张的工资比, 看付清了没有
         oks.push(`${esc(who)} 这张工资 ${money(wage)}`);
@@ -1736,11 +1837,6 @@ function _bsRenderBoxPanel() {
       ${_bsLinksHtml(box)}
       <div class="bs-date-err" style="color:#dc2626;font-size:.72rem;margin:-.1rem 0 .3rem;min-height:0"></div>
       <select class="bs-bx-payee" onchange="bsPayeeSelChange(${box.id},this)" style="width:100%;padding:.32rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;margin-bottom:.35rem;background:#fff">${_bsPayeeOptions(_bsIsEmp(box.payee) ? BS_PAYEE_EMP : (_bsIsPallet(box.payee) ? BS_PAYEE_PALLET : (_bsIsCheck(box.payee) ? (_bsCheckParse(box.payee).type === 'wd' ? BS_PAYEE_CHECK_WD : BS_PAYEE_CHECK_DEP) : (_bsIsTruck(box.payee) ? BS_PAYEE_TRUCK : (_bsIsInternal(box.payee) ? BS_PAYEE_INTERNAL : (_bsIsUnload(box.payee) ? BS_PAYEE_UNLOAD : (_bsIsRent(box.payee) ? BS_PAYEE_RENT : (_bsIsInsur(box.payee) ? BS_PAYEE_INSUR : (_bsIsFx(box.payee) ? BS_PAYEE_FX : (_bsIsWhdep(box.payee) ? BS_PAYEE_WHDEP : (_bsIsReferral(box.payee) ? BS_PAYEE_REFERRAL : (_bsIsWageBonus(box.payee) ? BS_PAYEE_WAGEBONUS : (_bsIsCollect(box.payee) ? BS_PAYEE_COLLECT : (_bsIsCnStaff(box.payee) ? BS_PAYEE_CNSTAFF : (_bsIsLoan(box.payee) ? _bsLoanSentinel(box.payee) : (box.payee || ''))))))))))))))), box.direction)}</select>
-      <div class="bs-emp-wrap" style="display:${_bsIsEmp(box.payee) ? '' : 'none'};background:#f8fafc;border:1px dashed var(--gray-200);border-radius:6px;padding:.4rem;margin-bottom:.35rem">
-        <div style="font-size:.72rem;color:var(--gray-400);margin-bottom:.25rem">先选公司，再填员工姓名</div>
-        <select class="bs-bx-emp-co" onchange="bsEmpUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;margin-bottom:.3rem;background:#fff">${_bsCompanyOptions(_bsEmpParse(box.payee).co)}</select>
-        <input type="text" class="bs-bx-emp-name" placeholder="员工姓名（多个用逗号隔开）" value="${esc(_bsEmpParse(box.payee).name)}" onchange="bsEmpUpdate(${box.id},this)" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
-      </div>
       <div class="bs-pallet-wrap" style="display:${_bsIsPallet(box.payee) ? '' : 'none'};background:#fefce8;border:1px dashed #fde68a;border-radius:6px;padding:.4rem;margin-bottom:.35rem">
         <div class="bs-pallet-label" style="font-size:.72rem;color:#92400e;margin-bottom:.25rem">${box.direction === 'in' ? '选择客户（木板卖给谁）' : '选择供应商（木板从谁那买）'}</div>
         <select class="bs-bx-pallet-cust" onchange="bsPalletUpdate(${box.id},this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">${_bsPalletCustOptions(_bsPalletParse(box.payee), box.direction)}</select>
@@ -1827,7 +1923,7 @@ function _bsRenderBoxPanel() {
         <input type="text" class="bs-bx-cat" list="bsPersonalCatList" placeholder="换汇 / 自己工资 / 公司转账" value="${esc(_bsPayeeKind(box) === 'personal' ? (box.purpose || '') : '')}" onchange="bsUpdateBoxField(${box.id},'purpose',this.value)" style="width:100%;box-sizing:border-box;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
       </div>
       <div class="bs-income-wrap" style="display:${_bsWantsInvoice(box) ? '' : 'none'};background:#f0fdf4;border:1px dashed #bbf7d0;border-radius:6px;padding:.45rem .5rem;margin-bottom:.35rem">
-        <div style="font-size:.72rem;color:#059669;margin-bottom:.3rem">Invoice / 账期</div>
+        <div class="bs-income-title" style="font-size:.72rem;color:#059669;margin-bottom:.3rem">${_bsIsEmp(box.payee) ? '公司 / 员工 / Invoice（每家公司下面放它的发票；给几家公司干活就加几家）' : 'Invoice / 账期'}</div>
         <div class="bs-portion-row" style="display:${_bsPayeeKind(box) === 'employee' ? '' : 'none'};margin-bottom:.3rem">
           <select class="bs-bx-portion" onchange="bsUpdateBoxField(${box.id},'pay_portion',this.value);bsRecolorPortion(this)" style="width:100%;padding:.3rem .4rem;border:1px solid ${box.pay_portion ? 'var(--gray-200)' : '#dc2626'};border-radius:6px;font-size:.82rem;${box.pay_portion ? 'background:#fff' : 'background:#fff5f5'}">
             <option value="">— 全额 / 部分（必选）—</option>
@@ -1879,19 +1975,38 @@ function _bsAmtMode(box) {
   return null;
 }
 // 员工在这张发票上的工资; 查不到 (发票没查回来 / 名字不在发票上) 返回 null
-function _bsWorkerWage(box, info) {
+// 填了几个人: 每个人各自去发票上找, 在这张上的人工资加起来 (几个人在不同公司 /
+// 不同账单上干活时, 每张只算在这张上的人)
+function _bsEmpKeys(payee) { return [...new Set(_bsEmpNames(payee).map(_bsCashKey).filter(Boolean))]; }
+// 这张发票算谁: 发票填在哪家公司下面, 就用那家公司填的员工姓名; 老数据没分公司的用整笔的姓名
+function _bsItemNames(box, it) {
+  const w = it && String(it.who || '').trim();
+  return w ? w.split(/[,，、;；]/).map(s => s.trim()).filter(Boolean) : _bsEmpNames(box.payee);
+}
+function _bsWorkerHits(box, info, it) {
   if (!info || !info.found || !Array.isArray(info.workers)) return null;
-  const name = _bsCashKey(_bsEmpParse(box.payee).name);
-  if (!name) return null;
-  const hits = info.workers.filter(w => _bsCashKey(w.name) === name);
-  return hits.length ? hits.reduce((s, w) => s + (Number(w.amt) || 0), 0) : null;
+  const names = _bsItemNames(box, it);
+  if (!names.length) return null;
+  const found = [], missing = [];
+  let wage = 0;
+  for (const n of names) {
+    const k = _bsCashKey(n);
+    const hits = k ? info.workers.filter(w => _bsCashKey(w.name) === k) : [];
+    if (hits.length) { found.push(n); wage += hits.reduce((s, w) => s + (Number(w.amt) || 0), 0); }
+    else missing.push(n);
+  }
+  return { found, missing, wage: Math.round(wage * 100) / 100 };
+}
+function _bsWorkerWage(box, info, it) {
+  const h = _bsWorkerHits(box, info, it);
+  return h && h.found.length ? h.wage : null;
 }
 // 这张发票按系统算应付多少 (没填「这张金额」时用): 公司收入 = 发票金额; 员工全额 = 他在发票上的工资; 员工部分付款 = 算不出 (要手填)
 function _bsInvExpected(box, it, amode) {
   const info = _bsInvCheckCache[String(it.inv || '').trim().toUpperCase()];
   if (amode === 'full') return (info && info.found && Number(info.subtotal)) || 0;
   if (box.pay_portion === 'partial') return _bsEmpPartialAuto(box);
-  return _bsWorkerWage(box, info) || 0;
+  return _bsWorkerWage(box, info, it) || 0;
 }
 // 部分付款只有一张发票: 这次付在这张发票上的 = 银行金额 − 车补/介绍费/其他 (不用手填);
 // 好几张发票的算不出分到哪张, 要在各张填金额
@@ -1903,36 +2018,36 @@ function _bsEmpPartialAuto(box) {
 function _bsEmpThisAmt(box, it, info) {
   const a = parseFloat(it.amt);
   if (a > 0) return a;
-  return box.pay_portion === 'partial' ? _bsEmpPartialAuto(box) : (_bsWorkerWage(box, info) || 0);
+  return box.pay_portion === 'partial' ? _bsEmpPartialAuto(box) : (_bsWorkerWage(box, info, it) || 0);
 }
 // 别的交易里付给这个员工、这张发票的钱 [{date, amt}] (银行员工工资标注 + 取现金), 不含这一笔;
 // 银行直连和 PDF 框出的同一笔按 日期+金额 只算一次
 function _bsInvPaidOthers(box, num, info) {
   if (!info || !Array.isArray(info.payments)) return [];
-  const name = _bsCashKey(_bsEmpParse(box.payee).name);
-  if (!name) return [];
   const N = String(num || '').trim().toUpperCase();
+  const self = _bsInvItems(box).find(x => String(x.inv || '').trim().toUpperCase() === N);
+  const keys = [...new Set(_bsItemNames(box, self).map(_bsCashKey).filter(Boolean))];
+  if (!keys.length) return [];
   const out = [], seen = new Set();
   const key = (d, a) => (d || '') + '|' + a.toFixed(2);
-  const self = _bsInvItems(box).find(x => String(x.inv || '').trim().toUpperCase() === N);
   if (self) { const a = _bsEmpThisAmt(box, self, info); if (a > 0) seen.add(key(box.txn_date, a)); }
   const add = (d, a) => { if (!(a > 0) || seen.has(key(d, a))) return; seen.add(key(d, a)); out.push({ date: d || '', amt: a }); };
   for (const r of info.payments) {
     if (r.id === box.id || (box.plaid_txn_id && r.plaid_txn_id === box.plaid_txn_id)) continue;
     if (_bsIsEmp(r.payee)) {
-      if (_bsCashKey(_bsEmpParse(r.payee).name) !== name) continue;
       const its = _bsInvItems(r).filter(x => String(x.inv || '').trim());
       const it = its.find(x => x.inv.trim().toUpperCase() === N);
       if (!it) continue;
+      if (!_bsItemNames(r, it).map(_bsCashKey).some(k => keys.includes(k))) continue;
       let a = parseFloat(it.amt);
       if (!(a > 0)) a = r.pay_portion === 'partial'
         ? (its.length === 1 ? Math.abs(Number(r.amount) || 0) - _bsExtras(r).sum : 0)
-        : (_bsWorkerWage(r, info) || 0);
+        : (_bsWorkerWage(r, info, it) || 0);
       add(r.txn_date, Math.round(a * 100) / 100);
     } else if (r.payee === BS_PAYEE_CASH) {
       for (const x of _bsNoteItems(r)) {
         if (String(x.inv || '').trim().toUpperCase() !== N) continue;
-        if (!String(x.who || '').split(/[,，、]/).map(_bsCashKey).includes(name)) continue;
+        if (!String(x.who || '').split(/[,，、;；]/).map(_bsCashKey).some(k => keys.includes(k))) continue;
         add(r.txn_date, parseFloat(x.amt));
       }
     }
