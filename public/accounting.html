@@ -2963,6 +2963,38 @@ function _refHbSteps(row) {
     { action: 'paid', at: row.status === 'paid' ? row.paid_at : null, by: row.paid_by, amount: row.amount },
   ] : [];
 }
+// ── HR 奖励折叠: 整块 + 每组 (招工奖励 / 第 2–5 周 / 管理奖励) 都能点开收起 ──
+// 默认: 有要处理的 (金额不对 / 已达成还没确认 / 确认了还没付) 才展开, 全办完了就收起;
+// 手动点过的记住 (这次打开页面内), 重画列表不会弹回去。
+const _refHrFold = new Map();   // `${介绍id}|${组}` → true 展开 / false 收起
+function refHrFoldToggle(key, def) {
+  const cur = _refHrFold.has(key) ? _refHrFold.get(key) : !!def;
+  _refHrFold.set(key, !cur);
+  renderRefList();
+}
+function _refHrFoldOpen(key, def) { return _refHrFold.has(key) ? _refHrFold.get(key) : !!def; }
+function _refHbPending(list) {
+  return list.some(b => _refHbBad(b) || (b.row ? b.row.status === 'approved' : (b.k && b.st === 'done')));
+}
+// 收起时标题后面的一句话: 几条、已付多少、还有几条待确认 / 待付 / 还没到
+function _refHbSummary(list) {
+  let paid = 0, paidAmt = 0, conf = 0, open = 0, wait = 0, no = 0;
+  list.forEach(b => {
+    const st = b.row && b.row.status;
+    if (st === 'paid') { paid++; paidAmt += Number(b.row.amount) || 0; }
+    else if (st === 'approved') conf++;
+    else if (st === 'rejected' || b.st === 'lost') no++;
+    else if (b.k && b.st === 'done') open++;
+    else wait++;
+  });
+  return [
+    paid ? `<span style="color:#047857">💰 已付 ${paid} 条 ${yuan(paidAmt)}</span>` : '',
+    conf ? `<span style="color:#1d4ed8">✅ 已确认待付 ${conf} 条</span>` : '',
+    open ? `<span style="color:#b45309">⏳ 待确认 ${open} 条</span>` : '',
+    wait ? `<span style="color:var(--g400)">还没到 ${wait} 条</span>` : '',
+    no ? `<span style="color:var(--g400)">没达成 / 不给 ${no} 条</span>` : '',
+  ].filter(Boolean).join(' · ');
+}
 function _refHrBonusRow(r) {
   const hr = _refHrOf(r);
   if (!hr) return '';
@@ -3016,25 +3048,34 @@ function _refHrBonusRow(r) {
   const hasW1 = _refWeekUnits(r).length > 0;
   const items0 = _refHrBonus(r).filter(b => b.k !== 'week1' || hasW1 || b.row), f40 = _refHr4w(r);
   const m12 = _refHrMerge12(r, items0, f40);
-  const items = (m12 ? items0.map(b => b.k === 'week1' ? m12 : b) : items0).map(line).join('');
+  const itemsArr = m12 ? items0.map(b => b.k === 'week1' ? m12 : b) : items0;
+  const items = itemsArr.map(line).join('');
   const f4 = m12 ? f40.filter(b => !m12.k.split(',').includes(b.k)) : f40;
   const f4Open = f4.filter(b => b.k && b.st === 'done' && !b.row);
-  const f4All = isAdmin && f4Open.length > 1 ? ` <button class="btn btn-sm" style="background:#16a34a;color:#fff;padding:0 7px;font-size:.7rem" onclick="refHrConfirmAll(${r.id},'f4')">✅ 全部确认（${f4Open.length} 条 ${yuan(f4Open.reduce((t, b) => t + b.amount, 0))}）</button>` : '';
+  const f4All = isAdmin && f4Open.length > 1 ? ` <button class="btn btn-sm" style="background:#16a34a;color:#fff;padding:0 7px;font-size:.7rem" onclick="event.stopPropagation();refHrConfirmAll(${r.id},'f4')">✅ 全部确认（${f4Open.length} 条 ${yuan(f4Open.reduce((t, b) => t + b.amount, 0))}）</button>` : '';
   const f4Items = f4.map(line).join('');
   const mg = _refHrMgmt(r);
   const mgOpen = mg.filter(b => b.k && b.st === 'done' && !b.row);
-  const mgAll = isAdmin && mgOpen.length > 1 ? ` <button class="btn btn-sm" style="background:#16a34a;color:#fff;padding:0 7px;font-size:.7rem" onclick="refHrConfirmAll(${r.id},'mgmt')">✅ 全部确认（${mgOpen.length} 周 ${yuan(mgOpen.reduce((t, b) => t + b.amount, 0))}）</button>` : '';
+  const mgAll = isAdmin && mgOpen.length > 1 ? ` <button class="btn btn-sm" style="background:#16a34a;color:#fff;padding:0 7px;font-size:.7rem" onclick="event.stopPropagation();refHrConfirmAll(${r.id},'mgmt')">✅ 全部确认（${mgOpen.length} 周 ${yuan(mgOpen.reduce((t, b) => t + b.amount, 0))}）</button>` : '';
   const mgItems = mg.map(line).join('');
-  const sub = t => `<tr><td colspan="5" style="padding:.35rem .5rem .2rem;font-size:.74rem;font-weight:800;color:#6d28d9;background:#faf5ff">${t}</td></tr>`;
-  return `<div class="ref-row" style="background:#faf5ff;flex-wrap:wrap"><b style="color:#6d28d9;white-space:nowrap">🙋 HR 奖励 · ${esc(hr)}</b>
+  // 每组的标题点一下展开 / 收起; 收起时只显示这一行 + 小结
+  const grp = (t, g, list, body) => {
+    const key = `${r.id}|${g}`, def = _refHbPending(list), open = _refHrFoldOpen(key, def);
+    return `<tr onclick="refHrFoldToggle('${key}',${def})" style="cursor:pointer" title="${open ? '点一下收起' : '点一下展开'}"><td colspan="5" style="padding:.35rem .5rem .2rem;font-size:.74rem;font-weight:800;color:#6d28d9;background:#faf5ff">
+      <span style="display:inline-block;width:1em;color:#a78bfa">${open ? '▾' : '▸'}</span>${t}${open ? '' : ` <span style="font-weight:500;font-size:.72rem;margin-left:.4rem">${_refHbSummary(list) || `${list.length} 条`}</span>`}</td></tr>${open ? body : ''}`;
+  };
+  const allList = [...itemsArr, ...f4, ...mg];
+  const allKey = `${r.id}|hr`, allDef = _refHbPending(allList) || nBad > 0, allOpen = _refHrFoldOpen(allKey, allDef);
+  return `<div class="ref-row" onclick="if(!event.target.closest('button,a,input,select'))refHrFoldToggle('${allKey}',${allDef})" title="${allOpen ? '点一下收起' : '点一下展开'}" style="background:#faf5ff;flex-wrap:wrap;cursor:pointer"><b style="color:#6d28d9;white-space:nowrap"><span style="display:inline-block;width:1em;color:#a78bfa">${allOpen ? '▾' : '▸'}</span>🙋 HR 奖励 · ${esc(hr)}</b>
       <span style="font-size:.74rem;color:var(--g500)">${r.hr_self ? 'HR 自己招的' : '工头介绍 · HR 提交'}</span><span style="flex:1"></span>
+      ${allOpen ? '' : `<span style="font-size:.72rem">${_refHbSummary(allList)}</span>`}
       ${nBad ? _REF_BAD_TAG(`${nBad} 条金额不对，请撤销重新确认`) : ''}<span style="font-size:.76rem;color:var(--g500);white-space:nowrap">已确认 <b>${yuan(due)}</b> · 已付 <b style="color:#047857">${yuan(paid)}</b></span></div>
-    <div class="ref-weeks"><table style="width:100%;border-collapse:collapse;min-width:640px"><thead><tr>
+    ${allOpen ? `<div class="ref-weeks"><table style="width:100%;border-collapse:collapse;min-width:640px"><thead><tr>
       <th style="${th}">奖励</th><th style="${th}">标准</th><th style="${th}">怎么算</th><th style="${th};text-align:right">金额</th><th style="${th}">确认 / 付款</th></tr></thead><tbody>
-      ${sub('🎯 招工奖励')}${items}
-      ${f4.length ? sub(`📆 第 ${m12 ? REF_HR_4W_FROM + 1 : REF_HR_4W_FROM}–${REF_HR_4W_TO} 周 · 每周 ${yuan(REF_HR_4W_AMT)} × 工时/40（跟发票一样 1 周一组或 2 周一组）${f4All}`) + f4Items : ''}
-      ${mg.length ? sub(`🧑‍💼 管理奖励 · 第 ${REF_HR_MGMT_FROM} 周起每周 ${yuan(REF_HR_MGMT_AMT)} × 工时/40${mgAll}`) + mgItems : ''}
-    </tbody></table></div>`;
+      ${grp('🎯 招工奖励', 'hire', itemsArr, items)}
+      ${f4.length ? grp(`📆 第 ${m12 ? REF_HR_4W_FROM + 1 : REF_HR_4W_FROM}–${REF_HR_4W_TO} 周 · 每周 ${yuan(REF_HR_4W_AMT)} × 工时/40（跟发票一样 1 周一组或 2 周一组）${f4All}`, 'f4', f4, f4Items) : ''}
+      ${mg.length ? grp(`🧑‍💼 管理奖励 · 第 ${REF_HR_MGMT_FROM} 周起每周 ${yuan(REF_HR_MGMT_AMT)} × 工时/40${mgAll}`, 'mgmt', mg, mgItems) : ''}
+    </tbody></table></div>` : ''}`;
 }
 // 一次全部确认: mgmt 管理奖励 / f4 前 4 周奖励 (还没确认、已达成的, 按算出来的金额)
 // 第一张发票是两周的: 「满 1 周 ¥100」和「第 2 周 ¥37.5」合成一行「第 1–2 周 ¥137.5」, 按 80 工时一起算。
