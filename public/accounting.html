@@ -540,10 +540,11 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <b style="font-size:.92rem">💸 按 Invoice 生成 Gusto 工资表</b>
         <select id="gaInvSel" style="min-width:260px;max-width:100%"><option value="">加载发票中…</option></select>
         <button class="btn btn-sm btn-blue" onclick="gaOpen(document.getElementById('gaInvSel').value)">生成</button>
-        <button class="btn btn-sm btn-outline" onclick="gaPickRoster()" title="Gusto 后台导出的空白 contractor payment 模板 CSV（人员或时薪变了的时候重新上传）">🔄 上传 / 更新名册</button>
+        <button class="btn btn-sm btn-outline" id="gaCardRosterBtn" onclick="gaPickRoster()" title="Gusto 后台导出的空白 contractor payment 模板 CSV（人员或时薪变了的时候重新上传）">🔄 上传 / 更新名册</button>
         <span id="gaRosterInfo" style="font-size:.76rem;color:#94a3b8"></span>
       </div>
-      <div style="font-size:.74rem;color:#94a3b8;margin-top:.35rem">选一张工时发票 → 按 Gusto 名册把每个人的应付填进 contractor pay 模板（模板有 invoice_number 列会填上发票号）。预览里每个人都能改「实际收款人 / 实发时薪」，确认后下载 CSV 上传到 Gusto。发票查看页右上角也有这个按钮。</div>
+      <div id="gaPendingList" style="margin-top:.45rem"></div>
+      <div style="font-size:.74rem;color:#94a3b8;margin-top:.35rem">选一张工时发票 → 按 Gusto 名册把每个人的应付填进 contractor pay 模板（模板有 invoice_number 列会填上发票号）。预览里每个人都能改「实际收款人 / 实发时薪」。<b>会计账号</b>提交的是待审核，<b>总监 / admin 确认</b>后才生效、才能下载 CSV 上传到 Gusto；确认过的发票在 Invoice 列表旁边显示「💸 Gusto ✓ 已确认」。</div>
     </div>
     <div class="card" style="margin-bottom:.7rem">
       <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.55rem">
@@ -8558,7 +8559,7 @@ function renderInvList() {
   document.getElementById('invHeadRow').innerHTML = csfHeadHtml('inv');
   document.getElementById('invCsfClear').style.display = csfActive('inv') ? '' : 'none';
   document.getElementById('invBody').innerHTML = rows.length ? rows.map(r => `<tr${r.abolished ? ' style="opacity:.5;background:#f1f5f9"' : ''}>
-    <td style="white-space:nowrap"><button class="btn btn-view" onclick="openInvoice(${r.id})"><span class="ic">📄</span>查看 / 批注</button></td>
+    <td style="white-space:nowrap"><button class="btn btn-view" onclick="openInvoice(${r.id})"><span class="ic">📄</span>查看 / 批注</button>${gaRunBadge(r.gusto_run, r.id)}</td>
     <td style="font-weight:700;white-space:nowrap">${r.abolished ? `<span style="text-decoration:line-through">${esc(r.invoice_number)}</span> <span class="badge" style="color:#475569;background:#e2e8f0;border:1px solid #cbd5e1" data-tip="${esc('已作废，不计入合计' + (r.abolished_reason ? '\n原因：' + r.abolished_reason : '')).replace(/"/g, '&quot;')}">🚫 已作废</span>` : esc(r.invoice_number)}</td>
     <td>${_invLineBankState(r)[1]}</td>
     <td style="white-space:nowrap">${esc(r.invoice_date || '—')}</td>
@@ -8647,7 +8648,18 @@ function ensureViewer() {
 // 后端 /api/acct/gusto-pay/*: 按发票里的工资行 + Gusto 名册生成 contractor pay CSV,
 // 收款人对照表 / 发工资时薪表与管理后台发票生成器共用。
 function gaCanUse() { return ['accounting', 'admin', 'staff'].includes(ROLE); }
+// 能确认 / 直接改全局表的: admin 账号 (含总监)。会计 / staff 的修改只进这次提交 (待审核)
+function gaCanApprove() { return ROLE === 'admin'; }
 let _gaRes = null, _gaInvId = null, _gaExcluded = new Set(), _gaEdits = [];
+let _gaDraft = { aliases: [], payRates: [] }, _gaRuns = [], _gaReviewRun = null;
+// 发票列表 / 查看器旁边的 Gusto 状态徽章
+function gaRunBadge(run, invId) {
+  if (!run) return '';
+  const ok = run.status === 'approved';
+  const tip = ok ? `Gusto 工资表已确认：${run.matched_count} 人 · $${(+run.total_pay || 0).toFixed(2)} · ${run.reviewed_by || ''} ${String(run.reviewed_at || '').slice(0, 10)}`
+    : `Gusto 工资表待总监 / admin 确认：${run.created_by || ''} 提交于 ${String(run.created_at || '').slice(0, 16)}`;
+  return ` <a ${invId && gaCanUse() ? `onclick="gaOpen(${invId})" ` : ''}title="${esc(tip)}" style="cursor:pointer;text-decoration:none;font-size:.7rem;font-weight:700;border-radius:6px;padding:1px 6px;white-space:nowrap;${ok ? 'background:#dcfce7;color:#166534' : 'background:#fef3c7;color:#92400e'}">💸 Gusto ${ok ? '✓ 已确认' : '⏳ 待审核'}</a>`;
+}
 const _gaKey = m => `${m.label}|${m.ssn || ''}`;
 function _gaMode() { try { return localStorage.getItem('gaGustoMode') === 'hours' ? 'hours' : 'bonus'; } catch (_) { return 'bonus'; } }
 function ensureGaModal() {
@@ -8671,10 +8683,11 @@ function ensureGaModal() {
     </div>
     <div id="gaBody" style="flex:1;overflow:auto;margin:.5rem 0"></div>
     <div style="display:flex;justify-content:space-between;gap:.5rem;flex-wrap:wrap;border-top:1px solid #f1f5f9;padding-top:.6rem">
-      <button class="btn btn-sm btn-outline" onclick="gaPickRoster()" title="Gusto 后台导出的空白 contractor payment 模板 CSV">🔄 更新名册</button>
-      <div style="display:flex;gap:.5rem">
+      <button class="btn btn-sm btn-outline" id="gaRosterBtn" onclick="gaPickRoster()" title="Gusto 后台导出的空白 contractor payment 模板 CSV">🔄 更新名册</button>
+      <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+        <span id="gaActHint" style="font-size:.74rem;color:#94a3b8"></span>
         <button class="btn btn-sm btn-outline" onclick="gaClose()">关闭</button>
-        <button class="btn btn-sm" style="background:#16a34a;color:#fff" onclick="gaDownload()">⬇️ 下载 CSV（上传到 Gusto）</button>
+        <button class="btn btn-sm" id="gaSubmitBtn" style="background:#16a34a;color:#fff" onclick="gaSubmit()"></button>
       </div>
     </div>
   </div>`;
@@ -8692,12 +8705,24 @@ async function gaInitCard() {
   const card = document.getElementById('gaCard');
   if (!card || !gaCanUse()) return;
   card.style.display = '';
+  const rb = document.getElementById('gaCardRosterBtn');
+  if (rb) rb.style.display = gaCanApprove() ? '' : 'none';
   gaLoadRosterInfo();
+  gaLoadPending();
   const sel = document.getElementById('gaInvSel');
   const list = await api('/api/acct/invoices').catch(() => []);
   const rows = (Array.isArray(list) ? list : []).filter(r => !r.abolished);
   sel.innerHTML = '<option value="">— 选一张发票 —</option>' + rows.slice(0, 300).map(r =>
     `<option value="${r.id}">${esc(r.invoice_number || '#' + r.id)} · ${esc(r.company_name || '')} · ${esc(r.period_start || '')}~${esc(r.period_end || '')} · $${(+r.subtotal || 0).toFixed(2)}</option>`).join('');
+}
+// 待确认的提交 (总监 / admin 看全部, 会计看自己能看到的全部)
+async function gaLoadPending() {
+  const el = document.getElementById('gaPendingList');
+  if (!el) return;
+  const r = await api('/api/acct/gusto-pay/runs?status=pending').catch(() => null);
+  const runs = (r && r.runs) || [];
+  el.innerHTML = runs.length ? `<div style="font-size:.8rem;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.4rem .6rem;line-height:1.7">
+    ⏳ 待总监 / admin 确认 ${runs.length} 条：${runs.map(x => `<a onclick="gaOpen(${x.invoice_id})" style="cursor:pointer;text-decoration:underline;color:#92400e;white-space:nowrap">${esc(x.invoice_number || '#' + x.invoice_id)} · ${esc(x.company || '')} · $${(+x.total_pay || 0).toFixed(2)} · ${esc(x.created_by || '')}</a>`).join('　')}</div>` : '';
 }
 async function gaLoadRosterInfo() {
   const el = document.getElementById('gaRosterInfo');
@@ -8724,9 +8749,13 @@ async function gaUploadRoster(input) {
 async function gaOpen(invId, keepSel) {
   if (!invId) { toast('先选一张发票', true); return; }
   ensureGaModal();
-  if (!keepSel || String(invId) !== String(_gaInvId)) _gaExcluded = new Set();
+  if (!keepSel || String(invId) !== String(_gaInvId)) { _gaExcluded = new Set(); _gaDraft = { aliases: [], payRates: [] }; _gaReviewRun = null; }
   _gaInvId = invId;
-  const res = await api('/api/acct/gusto-pay/csv', { method: 'POST', body: JSON.stringify({ invoice_id: Number(invId), mode: _gaMode() }) }).catch(e => ({ error: e.message }));
+  const [res, runsRes] = await Promise.all([
+    api('/api/acct/gusto-pay/csv', { method: 'POST', body: JSON.stringify({ invoice_id: Number(invId), mode: _gaMode(), draft: _gaDraft }) }).catch(e => ({ error: e.message })),
+    api('/api/acct/gusto-pay/runs?invoice_id=' + Number(invId)).catch(() => null),
+  ]);
+  _gaRuns = (runsRes && runsRes.runs) || [];
   if (res && res.no_template) {
     const ok = await showConfirm('还没有上传 Gusto 合同工名册。去 Gusto 后台下载空白的 contractor payment 模板 CSV，在这里上传一次即可。', { confirmLabel: '选择名册 CSV 上传', cancelLabel: '取消' });
     if (ok) gaPickRoster();
@@ -8794,7 +8823,24 @@ function gaRender() {
       不走 Gusto（现金 / 跳过）：${res.skipped.map(sk => { const k = reg({ name: sk.name, sheetRate: sk.sheetRate || null, curRate: sk.payRate || sk.sheetRate || null, curPayee: '现金', pre: [] });
         return `${esc(sk.name)} $${(+sk.owed).toFixed(2)}（${esc(sk.reason || '')}）<a href="javascript:void 0" onclick="gaEditToggle(${k})" style="font-size:.7rem;color:#6d28d9"> ✎ 改</a><div id="gaEdTr-${k}" style="display:none;margin:.25rem 0">${gaEditor(k)}</div>`; }).join('<br>')}</div>` : '';
   const warnHtml = (res.warnings || []).length ? `<div style="margin-top:.6rem;padding:.5rem .7rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:.76rem;color:#92400e;line-height:1.6">${res.warnings.map(w => '⚠️ ' + esc(w)).join('<br>')}</div>` : '';
-  document.getElementById('gaBody').innerHTML = `
+  const stBadge = st => st === 'approved' ? '<b style="color:#166534">✓ 已确认</b>' : st === 'rejected' ? '<b style="color:#b91c1c">✗ 已退回</b>' : '<b style="color:#92400e">⏳ 待审核</b>';
+  const runsHtml = _gaRuns.length ? `<div style="margin-bottom:.6rem;padding:.45rem .7rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:.78rem;line-height:1.75">
+      <b>这张发票的 Gusto 工资表记录</b>
+      ${_gaRuns.slice(0, 8).map(x => {
+        const nCh = ((x.draft && x.draft.aliases) || []).length + ((x.draft && x.draft.payRates) || []).length;
+        const acts = x.status === 'approved' ? `<a onclick="gaRunDownload(${x.id})" style="cursor:pointer;color:#166534;text-decoration:underline">⬇️ 下载 CSV</a>`
+          : x.status === 'pending' ? (gaCanApprove()
+            ? `<a onclick="gaRunView(${x.id})" style="cursor:pointer;color:#1d4ed8;text-decoration:underline">👁 查看</a> · <a onclick="gaRunApprove(${x.id})" style="cursor:pointer;color:#166534;font-weight:700;text-decoration:underline">✓ 确认</a> · <a onclick="gaRunReject(${x.id})" style="cursor:pointer;color:#b91c1c;text-decoration:underline">✗ 退回</a>`
+            : '<span style="color:#94a3b8">等总监 / admin 确认</span>') : '';
+        return `<div${_gaReviewRun && _gaReviewRun.id === x.id ? ' style="background:#eff6ff;border-radius:6px;padding:0 .3rem"' : ''}>${stBadge(x.status)} · ${x.matched_count} 人 · $${(+x.total_pay || 0).toFixed(2)}${nCh ? ` · 含 ${nCh} 处修改` : ''}${x.problems ? ` · <span style="color:#b91c1c">${x.problems} 人没对上</span>` : ''} · ${esc(x.created_by || '')} ${esc(String(x.created_at || '').slice(0, 16))}${x.reviewed_by ? ` · ${x.status === 'rejected' ? '退回' : '确认'}：${esc(x.reviewed_by)}` : ''}${x.review_note ? `（${esc(x.review_note)}）` : ''} · ${acts}</div>`;
+      }).join('')}</div>` : '';
+  const dr = _gaDraft || { aliases: [], payRates: [] };
+  const draftHtml = (dr.aliases.length || dr.payRates.length) ? `<div style="margin-bottom:.6rem;padding:.45rem .7rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:.78rem;color:#1e40af;line-height:1.7">
+      <b>${_gaReviewRun ? `正在查看 ${esc(_gaReviewRun.created_by || '')} 提交的修改` : '本次修改'}</b>（${gaCanApprove() ? '确认后写进收款人对照表 / 实发时薪表' : '提交后由总监 / admin 确认才生效'}）：<br>
+      ${dr.aliases.map(a => `· ${esc(a.from)} → 收款人 ${esc(a.to)}${a.scope ? `（只限 ${esc(a.scope)}）` : ''}`).join('<br>')}${dr.aliases.length && dr.payRates.length ? '<br>' : ''}
+      ${dr.payRates.map(p => `· ${esc(p.name)} → 实发时薪 $${p.rate}${p.scope ? `（只限 ${esc(p.scope)}）` : ''}`).join('<br>')}
+      ${!_gaReviewRun ? ' <a onclick="gaDraftClear()" style="cursor:pointer;color:#64748b;text-decoration:underline;margin-left:.3rem">清空</a>' : ''}</div>` : '';
+  document.getElementById('gaBody').innerHTML = runsHtml + draftHtml + `
     <table style="width:100%;border-collapse:collapse;font-size:.83rem">
       <thead><tr style="border-bottom:2px solid #e2e8f0;color:#64748b;font-size:.74rem">
         <th style="padding:.3rem .3rem .3rem .5rem;width:1%"><input type="checkbox" id="gaChkAll" onchange="gaToggleAll(this.checked)" title="全选 / 全不选"></th>
@@ -8808,6 +8854,12 @@ function gaRender() {
     ${res.untouched ? `<div style="margin-top:.45rem;font-size:.74rem;color:#94a3b8">名册其余 ${res.untouched} 人这张发票没有工时，保持空白（Gusto 上传时跳过）。</div>` : ''}
     ${probHtml}${skipHtml}${warnHtml}`;
   gaUpdateInfo();
+  // 底部按钮: 总监 / admin = 确认并下载 (查看别人的提交时 = 确认这条); 会计 / staff = 提交审核
+  const btn = document.getElementById('gaSubmitBtn'), hint = document.getElementById('gaActHint');
+  if (btn) btn.textContent = gaCanApprove() ? (_gaReviewRun ? '✅ 确认这条提交并下载 CSV' : '✅ 确认并下载 CSV') : '📤 提交审核';
+  if (hint) hint.textContent = gaCanApprove() ? '' : '提交后由总监 / admin 确认，确认后才能下载 CSV';
+  const rb = document.getElementById('gaRosterBtn');
+  if (rb) rb.style.display = gaCanApprove() ? '' : 'none';
 }
 function gaToggleRow(cb) {
   const tr = cb.closest('tr'), key = tr.getAttribute('data-key');
@@ -8820,24 +8872,92 @@ function gaToggleAll(on) {
   document.querySelectorAll('#gaBody tr.gaRow').forEach(tr => { tr.querySelector('.gaChk').checked = on; tr.style.opacity = on ? '' : '.45'; });
   gaUpdateInfo();
 }
-function gaDownload() {
-  const res = _gaRes; if (!res) return;
-  const ms = res.matches || [];
-  if (!ms.some(m => !_gaExcluded.has(_gaKey(m)))) { toast('没有勾选任何人', true); return; }
-  let csv = res.csv;
-  if (res.rows && _gaExcluded.size) {
-    const blank = new Set(ms.filter(m => _gaExcluded.has(_gaKey(m))).map(m => m.row));
-    const cell = v => { const x = String(v == null ? '' : v); return /[",\r\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; };
-    csv = res.rows.map((r, i) => { const c = r.slice(); if (blank.has(i)) for (const k of (res.fillCols || [])) if (k < c.length) c[k] = ''; return c.map(cell).join(','); }).join('\r\n') + '\r\n';
-  }
+function _gaSaveFile(csv, filename) {
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = res.filename || 'gusto_contractor_pay.csv';
+  a.download = filename || 'gusto_contractor_pay.csv';
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-  toast('✅ 已下载，去 Gusto → Pay contractors → Upload CSV 上传');
 }
+// 提交 (会计 / staff → 待审核) 或 确认 (总监 / admin → 已确认并下载)
+async function gaSubmit() {
+  const res = _gaRes; if (!res) return;
+  const ms = res.matches || [];
+  if (!ms.some(m => !_gaExcluded.has(_gaKey(m)))) { toast('没有勾选任何人', true); return; }
+  // 总监 / admin 在看会计的提交且没再改动: 直接确认那一条
+  if (gaCanApprove() && _gaReviewRun && _gaReviewRun.status === 'pending' && JSON.stringify([..._gaExcluded].sort()) === JSON.stringify([...(_gaReviewRun.excluded || [])].sort())
+      && JSON.stringify(_gaDraft) === JSON.stringify(_gaReviewRun.draft || { aliases: [], payRates: [] }) && (_gaReviewRun.mode || 'bonus') === _gaMode()) {
+    return gaRunApprove(_gaReviewRun.id);
+  }
+  const btn = document.getElementById('gaSubmitBtn');
+  if (btn) btn.disabled = true;
+  const r = await api('/api/acct/gusto-pay/runs', { method: 'POST', body: JSON.stringify({ invoice_id: Number(_gaInvId), mode: _gaMode(), draft: _gaDraft, excluded: [..._gaExcluded] }) }).catch(e => ({ error: e.message }));
+  if (btn) btn.disabled = false;
+  if (!r || !r.success) { toast('提交失败：' + ((r && r.error) || '未知错误'), true); return; }
+  // 总监 / admin 自己生成的直接算确认; 若是在别人的提交基础上改过, 那条原提交标退回
+  if (gaCanApprove() && _gaReviewRun && _gaReviewRun.status === 'pending') {
+    await api(`/api/acct/gusto-pay/runs/${_gaReviewRun.id}/reject`, { method: 'POST', body: JSON.stringify({ note: '总监 / admin 改过后重新确认' }) }).catch(() => null);
+  }
+  if (r.run.status === 'approved' && r.run.csv) {
+    _gaSaveFile(r.run.csv, r.run.filename);
+    toast('✅ 已确认并下载，去 Gusto → Pay contractors → Upload CSV 上传');
+  } else {
+    toast('📤 已提交，等总监 / admin 确认');
+  }
+  _gaDraft = { aliases: [], payRates: [] }; _gaReviewRun = null;
+  gaAfterRunChange();
+  await gaOpen(_gaInvId, true);
+}
+function gaAfterRunChange() {
+  gaLoadPending();
+  if (typeof loadAll === 'function' && document.getElementById('invBody')) { try { loadAll(); } catch (_) {} }
+}
+async function gaRunDownload(id) {
+  const r = await api(`/api/acct/gusto-pay/runs/${id}/csv`).catch(e => ({ error: e.message }));
+  if (!r || !r.csv) { toast('下载失败：' + ((r && r.error) || '未知错误'), true); return; }
+  _gaSaveFile(r.csv, r.filename);
+}
+// 总监 / admin 查看一条待审核的提交: 按它的口径 / 修改 / 取消勾选重新生成预览
+async function gaRunView(id) {
+  const run = _gaRuns.find(x => x.id === id);
+  if (!run) return;
+  _gaReviewRun = run;
+  _gaDraft = JSON.parse(JSON.stringify(run.draft || { aliases: [], payRates: [] }));
+  if (!_gaDraft.aliases) _gaDraft.aliases = [];
+  if (!_gaDraft.payRates) _gaDraft.payRates = [];
+  _gaExcluded = new Set(run.excluded || []);
+  try { localStorage.setItem('gaGustoMode', run.mode === 'hours' ? 'hours' : 'bonus'); } catch (_) {}
+  const keepRun = run;
+  await gaOpen(_gaInvId, true);
+  _gaReviewRun = keepRun;
+  gaRender();
+}
+async function gaRunApprove(id) {
+  const run = _gaRuns.find(x => x.id === id);
+  if (!run) return;
+  const ok = await showConfirm(`确认 ${run.created_by || ''} 提交的 Gusto 工资表？\n${run.matched_count} 人 · $${(+run.total_pay || 0).toFixed(2)}${((run.draft && run.draft.aliases) || []).length + ((run.draft && run.draft.payRates) || []).length ? '\n里面的收款人 / 实发时薪修改会一起写进对照表' : ''}`);
+  if (!ok) return;
+  const r = await api(`/api/acct/gusto-pay/runs/${id}/approve`, { method: 'POST', body: '{}' }).catch(e => ({ error: e.message }));
+  if (!r || !r.success) { toast('确认失败：' + ((r && r.error) || '未知错误'), true); return; }
+  if (r.run && r.run.csv) _gaSaveFile(r.run.csv, r.run.filename);
+  toast('✅ 已确认并下载');
+  _gaDraft = { aliases: [], payRates: [] }; _gaReviewRun = null;
+  gaAfterRunChange();
+  await gaOpen(_gaInvId, true);
+}
+async function gaRunReject(id) {
+  const note = await pagePrompt('退回原因（会显示给提交的人）', '');
+  if (note == null) return;
+  const r = await api(`/api/acct/gusto-pay/runs/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }).catch(e => ({ error: e.message }));
+  if (!r || !r.success) { toast('退回失败：' + ((r && r.error) || '未知错误'), true); return; }
+  toast('已退回');
+  if (_gaReviewRun && _gaReviewRun.id === id) { _gaDraft = { aliases: [], payRates: [] }; _gaReviewRun = null; }
+  gaAfterRunChange();
+  await gaOpen(_gaInvId, true);
+}
+function gaDraftClear() { _gaDraft = { aliases: [], payRates: [] }; gaOpen(_gaInvId, true); }
+
 // 每个人的编辑器: 实际收款人 (名册任一行 / 现金) + 实发时薪 + 只限这个客户
 function gaEditor(k) {
   const e = _gaEdits[k], res = _gaRes || {};
@@ -8881,6 +9001,22 @@ async function gaEditSave(k) {
   const rateChanged = rate != null && (e.curRate == null || Math.abs(rate - e.curRate) > 0.005);
   if (!payee && !e.curPayee && !rateChanged) { toast('先选 Gusto 名册里的收款人', true); return; }
   if (!payeeChanged && !rateChanged) { toast('没有改动'); return; }
+  if (!gaCanApprove() || _gaReviewRun) {
+    // 草稿: 同一人同一范围的旧修改换成新的
+    if (payeeChanged) {
+      _gaDraft.aliases = _gaDraft.aliases.filter(a => !same(a.from, a.scope));
+      _gaDraft.aliases.push({ from: e.name, to: payee, ...(scope ? { scope } : {}) });
+    }
+    if (rateChanged) {
+      _gaDraft.payRates = _gaDraft.payRates.filter(p => !same(p.name, p.scope));
+      _gaDraft.payRates.push({ name: e.name, rate, ...(scope ? { scope } : {}) });
+    }
+    toast(`✏️ ${e.name}：已加进本次修改${gaCanApprove() ? '' : '（提交后由总监 / admin 确认才生效）'}`);
+    const keep = _gaReviewRun;
+    await gaOpen(_gaInvId, true);
+    if (keep) { _gaReviewRun = keep; gaRender(); }
+    return;
+  }
   const done = [];
   if (payeeChanged) {
     const cur = await api('/api/acct/gusto-pay/aliases').catch(() => null);
