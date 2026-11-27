@@ -187,6 +187,8 @@ function parseRoster(csvText) {
     // Gusto 新版模板把整额列叫 flat_amount, 旧版叫 fixed_amount, 两个名字都认
     fixed: col('flat_amount') >= 0 ? col('flat_amount') : col('fixed_amount'),
     bonus: col('bonus'), note: col('note'),
+    // 新版模板带 invoice_number 列: 生成时给有付款的行填上这张发票的编号 (opts.invoice_number)
+    inv: col('invoice_number'),
   };
   const entries = rows.slice(1).map((cells, i) => {
     const last = String(cells[cols.last] || '').trim();
@@ -418,6 +420,8 @@ function buildGustoCsv(templateCsv, employees, opts) {
         if (roster.cols.fixed >= 0) cells[roster.cols.fixed] = owed.toFixed(2);
         else cells[roster.cols.hours] = ''; // 没有 fixed_amount 列又没时薪 → 只能报警告
       }
+      const invNo = String(opts.invoice_number || '').trim();
+      if (invNo && roster.cols.inv >= 0) cells[roster.cols.inv] = invNo;
       totalPay = r2(totalPay + amount);
       matches.push({
         row: outRows.length, // 这一行在 rows 里的下标 (前端取消勾选时清空这一行的填写列)
@@ -466,11 +470,12 @@ function buildGustoCsv(templateCsv, employees, opts) {
     .sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
 
   const ps = String(opts.period_start || '').trim(), pe = String(opts.period_end || '').trim();
-  const filename = 'gusto_contractor_pay' + (ps && pe ? `_${ps}_${pe}` : '') + '.csv';
+  const invTag = String(opts.invoice_number || '').trim().replace(/[^A-Za-z0-9_-]+/g, '');
+  const filename = 'gusto_contractor_pay' + (invTag ? `_${invTag}` : '') + (ps && pe ? `_${ps}_${pe}` : '') + '.csv';
   return {
     csv: stringifyCsv(outRows),
     rows: outRows,
-    fillCols: [roster.cols.hours, roster.cols.bonus, roster.cols.fixed].filter(c => c >= 0),
+    fillCols: [roster.cols.hours, roster.cols.bonus, roster.cols.fixed, roster.cols.inv].filter(c => c >= 0),
     filename,
     mode,
     matches, unmatched, ambiguous, skipped, needConfirm, warnings,

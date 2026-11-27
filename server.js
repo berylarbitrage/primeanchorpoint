@@ -9497,6 +9497,8 @@ function _isChangeRequest(req) {
   // 只存截图 / 识别截图, 不改任何记录 (关联账号的保存才进审批)
   if (p === '/api/acct/onboarding-shot' || p === '/api/acct/onboarding-shot-read') return false;
   if (_isCsSmsSend(req, p)) return false;
+  // 会计页「按 invoice 生成 Gusto 工资表」: 总监生成 CSV、上传名册、改收款人 / 实发时薪直接生效 (都记审计日志)
+  if (p.startsWith('/api/acct/gusto-pay/')) return false;
   // 换号申请 / 批准本身就是一道审批, director 批准时不能再被拦去等审批
   if (p === '/api/device-sms/my-line' || p.startsWith('/api/device-sms/line-requests')) return false;
   if (_isWobGustoWork(req, p)) return false;
@@ -24349,6 +24351,108 @@ app.post('/api/admin/gusto-pay-csv', requireAdmin, (req, res) => {
     res.json({ ok: true, template_name: tpl.name || '', template_uploaded_at: tpl.uploaded_at || '', ...out });
   } catch (e) {
     res.status(400).json({ error: 'Gusto 模板生成失败：' + (e && e.message ? e.message : String(e)) });
+  }
+});
+
+// ═══════════ 会计页 (/accounting): 按 invoice 生成 Gusto 工资表 ═══════════
+// 会计 (accounting)、admin (含总监)、staff 都能用: 选一张正式工时发票 → 按 Gusto 名册生成
+// contractor pay CSV (模板里有 invoice_number 列就填上发票号), 预览里改收款人 / 实发时薪,
+// 名册也能在这里更新。总监的这些操作不进审批 (见 _isChangeRequest), 全部记审计日志。
+const requireGustoPayWork = requireRole('accounting', 'admin', 'staff');
+function _gustoAliasesSave(req, list) {
+  list = (Array.isArray(list) ? list : []).slice(0, 500)
+    .map(a => {
+      const o = { from: String((a && a.from) || '').trim().slice(0, 120), to: String((a && a.to) || '').trim().slice(0, 120) };
+      const sc = String((a && a.scope) || '').trim().slice(0, 80);
+      if (sc) o.scope = sc;
+      return o;
+    })
+    .filter(a => a.from && a.to);
+  db.prepare('INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)')
+    .run('gusto_pay_aliases', JSON.stringify(list));
+  auditLog('gusto_alias_save', req, { targetType: 'gusto_pay_aliases', targetId: 'gusto_pay_aliases', details: { count: list.length, via: 'accounting' } });
+  return list.length;
+}
+function _gustoPayRatesSave(req, list) {
+  list = (Array.isArray(list) ? list : []).slice(0, 500)
+    .map(p => {
+      const o = { name: String((p && p.name) || '').trim().slice(0, 120), rate: Math.round((parseFloat(p && p.rate) || 0) * 100) / 100 };
+      const sc = String((p && p.scope) || '').trim().slice(0, 80);
+      if (sc) o.scope = sc;
+      return o;
+    })
+    .filter(p => p.name && p.rate > 0 && p.rate < 1000);
+  db.prepare('INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)')
+    .run('gusto_pay_rates', JSON.stringify(list));
+  auditLog('gusto_pay_rates_save', req, { targetType: 'gusto_pay_rates', targetId: 'gusto_pay_rates', details: { count: list.length, via: 'accounting' } });
+  return list.length;
+}
+app.get('/api/acct/gusto-pay/template', requireAdmin, requireGustoPayWork, (req, res) => {
+  const tpl = _gustoRoster();
+  if (!tpl) return res.json({ has: false });
+  let contractors = 0;
+  try { contractors = parseRoster(tpl.csv).entries.length; } catch (_) {}
+  res.json({ has: true, name: tpl.name || '', uploaded_at: tpl.uploaded_at || '', by: tpl.by || '', contractors });
+});
+app.post('/api/acct/gusto-pay/template', requireAdmin, requireGustoPayWork, gustoRosterUpload.single('file'), (req, res) => {
+  if (!req.file || !req.file.buffer) return res.status(400).json({ error: '请上传 Gusto contractor payment 模板 .csv 文件' });
+  const csv = req.file.buffer.toString('utf8');
+  let entries;
+  try { entries = parseRoster(csv).entries; } catch (e) {
+    return res.status(400).json({ error: e.message || 'CSV 解析失败' });
+  }
+  const tpl = { name: req.file.originalname || 'gusto_template.csv', csv, uploaded_at: new Date().toISOString(), by: req.userName || '' };
+  db.prepare('INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)')
+    .run('gusto_pay_template', JSON.stringify(tpl));
+  auditLog('gusto_template_upload', req, { targetType: 'gusto_pay_template', targetId: tpl.name, details: { contractors: entries.length, via: 'accounting' } });
+  res.json({ success: true, contractors: entries.length, name: tpl.name });
+});
+app.get('/api/acct/gusto-pay/aliases', requireAdmin, requireGustoPayWork, (req, res) => res.json({ aliases: _gustoAliases() }));
+app.post('/api/acct/gusto-pay/aliases', requireAdmin, requireGustoPayWork, (req, res) => {
+  const list = req.body && req.body.aliases;
+  if (!Array.isArray(list)) return res.status(400).json({ error: 'aliases 需要是数组' });
+  res.json({ success: true, count: _gustoAliasesSave(req, list) });
+});
+app.get('/api/acct/gusto-pay/rates', requireAdmin, requireGustoPayWork, (req, res) => res.json({ payRates: _gustoPayRates() }));
+app.post('/api/acct/gusto-pay/rates', requireAdmin, requireGustoPayWork, (req, res) => {
+  const list = req.body && req.body.payRates;
+  if (!Array.isArray(list)) return res.status(400).json({ error: 'payRates 需要是数组' });
+  res.json({ success: true, count: _gustoPayRatesSave(req, list) });
+});
+// 按一张已保存的发票生成: 员工行取发票里的工资表 (姓名 / 应付 / 时薪 / 正常与加班工时)
+app.post('/api/acct/gusto-pay/csv', requireAdmin, requireGustoPayWork, (req, res) => {
+  const tpl = _gustoRoster();
+  if (!tpl) return res.status(404).json({ error: '还没有上传 Gusto 合同工名册（contractor payment 模板 CSV）', no_template: true });
+  const inv = db.prepare('SELECT id, invoice_number, company_name, period_start, period_end, items_json, profile_json FROM invoices WHERE id=?')
+    .get(parseInt((req.body && req.body.invoice_id) || 0, 10));
+  if (!inv) return res.status(404).json({ error: '发票不存在' });
+  let items = [], profile = {};
+  try { items = JSON.parse(inv.items_json || '[]'); } catch (_) {}
+  try { profile = JSON.parse(inv.profile_json || '{}') || {}; } catch (_) {}
+  if (profile.invoice_mode === 'container') return res.status(400).json({ error: 'Container 计费的发票没有工人工资行，不能生成 Gusto 工资表' });
+  const employees = (Array.isArray(items) ? items : []).map((it, idx) => ({
+    idx, name: String((it && it.name) || '').trim(),
+    total: Number(it && it.total) || 0,
+    rate: Number(it && it.rate) || null,
+    regHours: Number(it && (it.regHours != null ? it.regHours : it.hours)) || 0,
+    otHours: Number(it && it.otHours) || 0,
+  })).filter(e => e.name && e.total > 0);
+  if (!employees.length) return res.status(400).json({ error: '这张发票没有有金额的员工行' });
+  try {
+    const out = buildGustoCsv(tpl.csv, employees, {
+      period_start: inv.period_start || '', period_end: inv.period_end || '',
+      mode: req.body.mode === 'hours' ? 'hours' : 'bonus',
+      company: String(inv.company_name || ''),
+      invoice_number: String(inv.invoice_number || ''),
+      aliases: _gustoAliases(),
+      payRates: _gustoPayRates(), hoursMerge: GUSTO_HOURS_MERGE,
+    });
+    auditLog('gusto_pay_csv', req, { targetType: 'invoice', targetId: String(inv.id), details: { invoice_number: inv.invoice_number, matched: out.matchedCount, total: out.totalPay } });
+    res.json({ ok: true, invoice_id: inv.id, invoice_number: inv.invoice_number || '', company: inv.company_name || '',
+      period_start: inv.period_start || '', period_end: inv.period_end || '',
+      template_name: tpl.name || '', template_uploaded_at: tpl.uploaded_at || '', ...out });
+  } catch (e) {
+    res.status(400).json({ error: 'Gusto 工资表生成失败：' + (e && e.message ? e.message : String(e)) });
   }
 });
 
