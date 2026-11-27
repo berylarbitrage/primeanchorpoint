@@ -129,6 +129,44 @@ function matchScore(empT, entry, tokenCount) {
   return 0;
 }
 
+// 名册候选排序（只给前端「指定收款人」下拉框排顺序, 不参与自动匹配）:
+// 工资表每个词找名册行里最像的词, 按 1 − 编辑距离/词长 累加。
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+function rosterSimilarity(name, entry) {
+  const empT = [...nameTokens(name)], rosterT = [...entry.tokens];
+  if (!empT.length || !rosterT.length) return 0;
+  let sc = 0;
+  for (const a of empT) {
+    let best = 0;
+    for (const b of rosterT) {
+      let v = 1 - levenshtein(a, b) / Math.max(a.length, b.length);
+      if (a.length >= 3 && b.length >= 3 && (a.startsWith(b) || b.startsWith(a))) v = Math.max(v, 0.75);
+      if (v > best) best = v;
+    }
+    if (best >= 0.5) sc += best;
+  }
+  return sc / Math.max(empT.length, rosterT.length) ** 0.5;
+}
+function rosterSuggestions(name, entries, n) {
+  return entries
+    .map(e => ({ label: e.label, sim: rosterSimilarity(name, e) }))
+    .filter(x => x.sim > 0)
+    .sort((a, b) => b.sim - a.sim)
+    .slice(0, n || 5)
+    .map(x => x.label);
+}
+
 const r2 = v => Math.round(v * 100) / 100;
 // 向上取整到 0.01（留一点浮点余量, 41.9952 → 42.00, 40.93 → 40.93）
 const ceil2 = v => Math.ceil(v * 100 - 1e-7) / 100;
@@ -413,6 +451,13 @@ function buildGustoCsv(templateCsv, employees, opts) {
   for (const a of ambiguous) warnings.push(`「${a.name}」（应付 $${a.owed.toFixed(2)}）在名册里有多个可能匹配（${a.candidates.join('、')}），没敢自动填，请手动处理。`);
   for (const nc of needConfirm) warnings.push(`「${nc.name}」（应付 $${nc.owed.toFixed(2)}）只有姓氏和名册的「${nc.candidate}」对得上、名字对不上——同姓可能不是同一个人，没敢自动填。是同一个人的话请在收款人对照表里指定。`);
 
+  // 没写进 CSV 的人附上名册里最像的几行, 前端下拉框据此一键指定收款人
+  for (const list of [unmatched, ambiguous, needConfirm]) {
+    for (const u of list) u.suggestions = rosterSuggestions(u.aliasTo || u.name, roster.entries, 5);
+  }
+  const rosterLabels = [...new Set(roster.entries.map(e => e.label))]
+    .sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
+
   const ps = String(opts.period_start || '').trim(), pe = String(opts.period_end || '').trim();
   const filename = 'gusto_contractor_pay' + (ps && pe ? `_${ps}_${pe}` : '') + '.csv';
   return {
@@ -422,6 +467,7 @@ function buildGustoCsv(templateCsv, employees, opts) {
     filename,
     mode,
     matches, unmatched, ambiguous, skipped, needConfirm, warnings,
+    rosterLabels,
     matchedCount: matches.length,
     untouched: roster.entries.length - matches.length,
     totalPay,
