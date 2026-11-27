@@ -39460,7 +39460,7 @@ function renderGustoCsvModal(res) {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    ${res.untouched ? `<div style="margin-top:.45rem;font-size:.74rem;color:var(--gray-400)">名册其余 ${res.untouched} 行本周没有工时，保持空白。</div>` : ''}
+    ${res.untouched ? `<div style="margin-top:.45rem;font-size:.74rem;color:var(--gray-400)">名册其余 ${res.untouched} 人本周没有工时，不写进 CSV。</div>` : ''}
     ${unmatchedBlock}${skippedBlock}${warnBlock}`;
   _gustoUpdateSelInfo(res);
 }
@@ -39496,16 +39496,13 @@ function invpGustoToggleAll(on) {
   });
   _gustoUpdateSelInfo(res);
 }
-// 按勾选生成 CSV: 没勾的人那一行的 hours / bonus / flat_amount 留空 (Gusto 上传时跳过)
+// 按勾选生成 CSV: 只写表头 + 勾选了的、有付款的人 (没勾的、名册里没工时的都不写)
 function _gustoSelectedCsv(res) {
-  if (!res.rows || !window._gustoExcluded.size) return res.csv;
-  const blank = new Set((res.matches || []).filter(m => window._gustoExcluded.has(_gustoKey(m))).map(m => m.row));
-  const cell = v => { const s = String(v == null ? '' : v); return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-  return res.rows.map((r, i) => {
-    const cells = r.slice();
-    if (blank.has(i)) for (const c of (res.fillCols || [])) if (c < cells.length) cells[c] = '';
-    return cells.map(cell).join(',');
-  }).join('\r\n') + '\r\n';
+  if (!res.rows || !window._gustoExcluded.size) return res.csv;   // res.csv 已经只有有付款的行
+  // 只写表头 + 勾选了的人
+  const keep = new Set((res.matches || []).filter(m => !window._gustoExcluded.has(_gustoKey(m))).map(m => m.row));
+  const cellQ = v => { const s = String(v == null ? '' : v); return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  return res.rows.filter((r, i) => i === 0 || keep.has(i)).map(r => r.map(cellQ).join(',')).join('\r\n') + '\r\n';
 }
 
 // ── 收款人对照表（工资表姓名 → Gusto 名册收款人；「现金」= 不走 Gusto）──
@@ -39767,7 +39764,18 @@ function invpGustoDownload() {
   a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   const nAll = (res.matches || []).length;
-  showToast(`✓ 已下载 Gusto 付款 CSV（${nSel === nAll ? '全部 ' + nAll : nSel + '/' + nAll} 人），去 Gusto 批量付款页上传即可`, 'success', 5000);
+  showToast(`✓ 已下载 Gusto 付款 CSV（${nSel === nAll ? '全部 ' + nAll : nSel + '/' + nAll} 人），去 Gusto 批量付款页上传即可；文件已存档到会计页「Gusto 工资」`, 'success', 5000);
+  // 下载的文件存一份到系统 (会计页「💸 Gusto 工资」→ 已生成的文件 可以再下载)
+  const sel = (res.matches || []).filter(m => !window._gustoExcluded.has(_gustoKey(m)));
+  api('/admin/gusto-pay-files', { method: 'POST', body: JSON.stringify({
+    csv: csvText, filename: res.filename, mode: res.mode,
+    invoice_id: Number((document.getElementById('invPageEditId') || {}).value) || 0,
+    invoice_number: ((document.getElementById('invPageNumber') || {}).value || '').trim(),
+    company: ((document.getElementById('invPageBillName') || {}).value || '').trim(),
+    period_start: (document.getElementById('invPageStart') || {}).value || '', period_end: (document.getElementById('invPageEnd') || {}).value || '',
+    matched_count: sel.length, total_pay: sel.reduce((t, m) => t + (+m.amount || 0), 0),
+    problems: (res.unmatched || []).length + (res.ambiguous || []).length + (res.needConfirm || []).length,
+  }) }).catch(e => showToast('文件存档失败（已下载的文件不受影响）：' + (e.message || e), 'warning', 6000));
 }
 
 // 上传/更新 Gusto 合同工名册（Gusto 后台导出的空白 contractor payment 模板）
