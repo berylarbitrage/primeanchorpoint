@@ -24359,6 +24359,8 @@ app.post('/api/admin/gusto-pay-csv', requireAdmin, (req, res) => {
 // contractor pay CSV (模板里有 invoice_number 列就填上发票号), 预览里改收款人 / 实发时薪,
 // 名册也能在这里更新。总监的这些操作不进审批 (见 _isChangeRequest), 全部记审计日志。
 const requireGustoPayWork = requireRole('accounting', 'admin', 'staff');
+// 能确认 Gusto 工资表 / 直接改全局对照表、时薪表、名册的: admin 账号 (含总监)
+const requireGustoPayApprover = requireRole('admin');
 function _gustoAliasesSave(req, list) {
   list = (Array.isArray(list) ? list : []).slice(0, 500)
     .map(a => {
@@ -24394,7 +24396,7 @@ app.get('/api/acct/gusto-pay/template', requireAdmin, requireGustoPayWork, (req,
   try { contractors = parseRoster(tpl.csv).entries.length; } catch (_) {}
   res.json({ has: true, name: tpl.name || '', uploaded_at: tpl.uploaded_at || '', by: tpl.by || '', contractors });
 });
-app.post('/api/acct/gusto-pay/template', requireAdmin, requireGustoPayWork, gustoRosterUpload.single('file'), (req, res) => {
+app.post('/api/acct/gusto-pay/template', requireAdmin, requireGustoPayApprover, gustoRosterUpload.single('file'), (req, res) => {
   if (!req.file || !req.file.buffer) return res.status(400).json({ error: '请上传 Gusto contractor payment 模板 .csv 文件' });
   const csv = req.file.buffer.toString('utf8');
   let entries;
@@ -24408,28 +24410,49 @@ app.post('/api/acct/gusto-pay/template', requireAdmin, requireGustoPayWork, gust
   res.json({ success: true, contractors: entries.length, name: tpl.name });
 });
 app.get('/api/acct/gusto-pay/aliases', requireAdmin, requireGustoPayWork, (req, res) => res.json({ aliases: _gustoAliases() }));
-app.post('/api/acct/gusto-pay/aliases', requireAdmin, requireGustoPayWork, (req, res) => {
+app.post('/api/acct/gusto-pay/aliases', requireAdmin, requireGustoPayApprover, (req, res) => {
   const list = req.body && req.body.aliases;
   if (!Array.isArray(list)) return res.status(400).json({ error: 'aliases 需要是数组' });
   res.json({ success: true, count: _gustoAliasesSave(req, list) });
 });
 app.get('/api/acct/gusto-pay/rates', requireAdmin, requireGustoPayWork, (req, res) => res.json({ payRates: _gustoPayRates() }));
-app.post('/api/acct/gusto-pay/rates', requireAdmin, requireGustoPayWork, (req, res) => {
+app.post('/api/acct/gusto-pay/rates', requireAdmin, requireGustoPayApprover, (req, res) => {
   const list = req.body && req.body.payRates;
   if (!Array.isArray(list)) return res.status(400).json({ error: 'payRates 需要是数组' });
   res.json({ success: true, count: _gustoPayRatesSave(req, list) });
 });
-// 按一张已保存的发票生成: 员工行取发票里的工资表 (姓名 / 应付 / 时薪 / 正常与加班工时)
-app.post('/api/acct/gusto-pay/csv', requireAdmin, requireGustoPayWork, (req, res) => {
+// 本次修改 (draft): 会计在预览里改的收款人 / 实发时薪, 不写全局表, 只叠加在这次生成上;
+// 同一人同一范围 (scope) 的全局条目被 draft 覆盖。总监 / admin 确认时才写进全局表。
+function _gustoNameKey(n) {
+  return String(n || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(t => t.length > 1).sort().join(' ');
+}
+const _gustoScKey = v => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+function _gustoCleanDraft(d) {
+  d = d || {};
+  const aliases = (Array.isArray(d.aliases) ? d.aliases : []).slice(0, 200).map(a => ({
+    from: String((a && a.from) || '').trim().slice(0, 120), to: String((a && a.to) || '').trim().slice(0, 120),
+    ...(String((a && a.scope) || '').trim() ? { scope: String(a.scope).trim().slice(0, 80) } : {}),
+  })).filter(a => a.from && a.to);
+  const payRates = (Array.isArray(d.payRates) ? d.payRates : []).slice(0, 200).map(p => ({
+    name: String((p && p.name) || '').trim().slice(0, 120), rate: Math.round((parseFloat(p && p.rate) || 0) * 100) / 100,
+    ...(String((p && p.scope) || '').trim() ? { scope: String(p.scope).trim().slice(0, 80) } : {}),
+  })).filter(p => p.name && p.rate > 0 && p.rate < 1000);
+  return { aliases, payRates };
+}
+function _gustoMergeDraft(base, draft, nameField) {
+  const hit = new Set(draft.map(x => _gustoNameKey(x[nameField]) + '|' + _gustoScKey(x.scope)));
+  return [...base.filter(x => !hit.has(_gustoNameKey(x[nameField]) + '|' + _gustoScKey(x.scope))), ...draft];
+}
+function _gustoBuildForInvoice(invoiceId, mode, draft, excluded) {
   const tpl = _gustoRoster();
-  if (!tpl) return res.status(404).json({ error: '还没有上传 Gusto 合同工名册（contractor payment 模板 CSV）', no_template: true });
+  if (!tpl) return { status: 404, body: { error: '还没有上传 Gusto 合同工名册（contractor payment 模板 CSV）', no_template: true } };
   const inv = db.prepare('SELECT id, invoice_number, company_name, period_start, period_end, items_json, profile_json FROM invoices WHERE id=?')
-    .get(parseInt((req.body && req.body.invoice_id) || 0, 10));
-  if (!inv) return res.status(404).json({ error: '发票不存在' });
+    .get(parseInt(invoiceId || 0, 10));
+  if (!inv) return { status: 404, body: { error: '发票不存在' } };
   let items = [], profile = {};
   try { items = JSON.parse(inv.items_json || '[]'); } catch (_) {}
   try { profile = JSON.parse(inv.profile_json || '{}') || {}; } catch (_) {}
-  if (profile.invoice_mode === 'container') return res.status(400).json({ error: 'Container 计费的发票没有工人工资行，不能生成 Gusto 工资表' });
+  if (profile.invoice_mode === 'container') return { status: 400, body: { error: 'Container 计费的发票没有工人工资行，不能生成 Gusto 工资表' } };
   const employees = (Array.isArray(items) ? items : []).map((it, idx) => ({
     idx, name: String((it && it.name) || '').trim(),
     total: Number(it && it.total) || 0,
@@ -24437,23 +24460,154 @@ app.post('/api/acct/gusto-pay/csv', requireAdmin, requireGustoPayWork, (req, res
     regHours: Number(it && (it.regHours != null ? it.regHours : it.hours)) || 0,
     otHours: Number(it && it.otHours) || 0,
   })).filter(e => e.name && e.total > 0);
-  if (!employees.length) return res.status(400).json({ error: '这张发票没有有金额的员工行' });
+  if (!employees.length) return { status: 400, body: { error: '这张发票没有有金额的员工行' } };
+  const d = _gustoCleanDraft(draft);
+  let out;
   try {
-    const out = buildGustoCsv(tpl.csv, employees, {
+    out = buildGustoCsv(tpl.csv, employees, {
       period_start: inv.period_start || '', period_end: inv.period_end || '',
-      mode: req.body.mode === 'hours' ? 'hours' : 'bonus',
+      mode: mode === 'hours' ? 'hours' : 'bonus',
       company: String(inv.company_name || ''),
       invoice_number: String(inv.invoice_number || ''),
-      aliases: _gustoAliases(),
-      payRates: _gustoPayRates(), hoursMerge: GUSTO_HOURS_MERGE,
+      aliases: _gustoMergeDraft(_gustoAliases(), d.aliases, 'from'),
+      payRates: _gustoMergeDraft(_gustoPayRates(), d.payRates, 'name'), hoursMerge: GUSTO_HOURS_MERGE,
     });
-    auditLog('gusto_pay_csv', req, { targetType: 'invoice', targetId: String(inv.id), details: { invoice_number: inv.invoice_number, matched: out.matchedCount, total: out.totalPay } });
-    res.json({ ok: true, invoice_id: inv.id, invoice_number: inv.invoice_number || '', company: inv.company_name || '',
-      period_start: inv.period_start || '', period_end: inv.period_end || '',
-      template_name: tpl.name || '', template_uploaded_at: tpl.uploaded_at || '', ...out });
   } catch (e) {
-    res.status(400).json({ error: 'Gusto 工资表生成失败：' + (e && e.message ? e.message : String(e)) });
+    return { status: 400, body: { error: 'Gusto 工资表生成失败：' + (e && e.message ? e.message : String(e)) } };
   }
+  // 取消勾选的人: CSV 里这些行的填写列留空 (Gusto 上传时跳过)
+  const ex = new Set(Array.isArray(excluded) ? excluded.map(String) : []);
+  const keyOf = m => `${m.label}|${m.ssn || ''}`;
+  const kept = out.matches.filter(m => !ex.has(keyOf(m)));
+  let csvSel = out.csv;
+  if (ex.size) {
+    const blank = new Set(out.matches.filter(m => ex.has(keyOf(m))).map(m => m.row));
+    csvSel = stringifyGustoRows(out.rows.map((r, i) => {
+      const c = r.slice();
+      if (blank.has(i)) for (const k of out.fillCols) if (k < c.length) c[k] = '';
+      return c;
+    }));
+  }
+  return { status: 200, inv, tpl, draft: d, body: { ok: true, invoice_id: inv.id, invoice_number: inv.invoice_number || '', company: inv.company_name || '',
+    period_start: inv.period_start || '', period_end: inv.period_end || '',
+    template_name: tpl.name || '', template_uploaded_at: tpl.uploaded_at || '', ...out },
+    selected: { csv: csvSel, count: kept.length, total: Math.round(kept.reduce((t, m) => t + (Number(m.amount) || 0), 0) * 100) / 100 } };
+}
+function stringifyGustoRows(rows) {
+  const cell = v => { const x = String(v == null ? '' : v); return /[",\r\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; };
+  return rows.map(r => r.map(cell).join(',')).join('\r\n') + '\r\n';
+}
+// 预览 (不留记录): 带 draft 时按 draft 叠加
+app.post('/api/acct/gusto-pay/csv', requireAdmin, requireGustoPayWork, (req, res) => {
+  const b = req.body || {};
+  const r = _gustoBuildForInvoice(b.invoice_id, b.mode, b.draft, null);
+  res.status(r.status).json(r.body);
+});
+
+// ── 生成记录 (提交 / 确认) ──
+// 会计 / staff 提交 → pending (待审核, 不能下载); 总监 / admin 确认 → approved, 这时才把 draft 写进
+// 全局对照表 / 时薪表, CSV 可下载; 退回 → rejected。总监 / admin 自己生成的直接算确认。
+db.exec(`CREATE TABLE IF NOT EXISTS gusto_pay_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_id INTEGER NOT NULL,
+  invoice_number TEXT DEFAULT '',
+  company TEXT DEFAULT '',
+  status TEXT DEFAULT 'pending',
+  mode TEXT DEFAULT 'bonus',
+  draft_json TEXT DEFAULT '{}',
+  excluded_json TEXT DEFAULT '[]',
+  csv TEXT DEFAULT '',
+  filename TEXT DEFAULT '',
+  matched_count INTEGER DEFAULT 0,
+  total_pay REAL DEFAULT 0,
+  problems INTEGER DEFAULT 0,
+  note TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  created_role TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now')),
+  reviewed_by TEXT DEFAULT '',
+  reviewed_at TEXT DEFAULT '',
+  review_note TEXT DEFAULT ''
+)`);
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_gusto_pay_runs_inv ON gusto_pay_runs(invoice_id)'); } catch (_) {}
+function _gustoRunOut(r, withCsv) {
+  let draft = {}, excluded = [];
+  try { draft = JSON.parse(r.draft_json || '{}'); } catch (_) {}
+  try { excluded = JSON.parse(r.excluded_json || '[]'); } catch (_) {}
+  const o = { id: r.id, invoice_id: r.invoice_id, invoice_number: r.invoice_number, company: r.company, status: r.status, mode: r.mode,
+    draft, excluded, filename: r.filename, matched_count: r.matched_count, total_pay: r.total_pay, problems: r.problems, note: r.note,
+    created_by: r.created_by, created_role: r.created_role, created_at: r.created_at,
+    reviewed_by: r.reviewed_by, reviewed_at: r.reviewed_at, review_note: r.review_note };
+  if (withCsv) o.csv = r.csv;
+  return o;
+}
+// 每张发票最新一条生成记录 (发票列表旁边显示): {invoice_id: {status, ...}}
+function _gustoLatestRuns() {
+  const out = {};
+  db.prepare(`SELECT r.* FROM gusto_pay_runs r JOIN (SELECT invoice_id, MAX(id) AS mid FROM gusto_pay_runs WHERE status != 'rejected' GROUP BY invoice_id) x ON r.id = x.mid`).all()
+    .forEach(r => { out[r.invoice_id] = { id: r.id, status: r.status, total_pay: r.total_pay, matched_count: r.matched_count, created_by: r.created_by, created_at: r.created_at, reviewed_by: r.reviewed_by, reviewed_at: r.reviewed_at }; });
+  return out;
+}
+function _gustoApplyDraft(req, draft) {
+  const d = _gustoCleanDraft(draft);
+  if (d.aliases.length) _gustoAliasesSave(req, _gustoMergeDraft(_gustoAliases(), d.aliases, 'from'));
+  if (d.payRates.length) _gustoPayRatesSave(req, _gustoMergeDraft(_gustoPayRates(), d.payRates, 'name'));
+}
+app.get('/api/acct/gusto-pay/runs', requireAdmin, requireGustoPayWork, (req, res) => {
+  const invId = parseInt(req.query.invoice_id || 0, 10);
+  const rows = invId
+    ? db.prepare('SELECT * FROM gusto_pay_runs WHERE invoice_id=? ORDER BY id DESC LIMIT 50').all(invId)
+    : db.prepare(`SELECT * FROM gusto_pay_runs ${req.query.status ? 'WHERE status=?' : ''} ORDER BY id DESC LIMIT 200`).all(...(req.query.status ? [String(req.query.status)] : []));
+  res.json({ runs: rows.map(r => _gustoRunOut(r, false)), can_approve: req.userRole === 'admin' });
+});
+app.post('/api/acct/gusto-pay/runs', requireAdmin, requireGustoPayWork, (req, res) => {
+  const b = req.body || {};
+  const approver = req.userRole === 'admin';
+  const r = _gustoBuildForInvoice(b.invoice_id, b.mode, b.draft, b.excluded);
+  if (r.status !== 200) return res.status(r.status).json(r.body);
+  if (!r.selected.count) return res.status(400).json({ error: '没有勾选任何人' });
+  const o = r.body;
+  const problems = (o.unmatched || []).length + (o.ambiguous || []).length + (o.needConfirm || []).length;
+  const ins = db.prepare(`INSERT INTO gusto_pay_runs (invoice_id, invoice_number, company, status, mode, draft_json, excluded_json, csv, filename,
+      matched_count, total_pay, problems, note, created_by, created_role, reviewed_by, reviewed_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    o.invoice_id, o.invoice_number, o.company, approver ? 'approved' : 'pending', o.mode,
+    JSON.stringify(r.draft), JSON.stringify(Array.isArray(b.excluded) ? b.excluded.map(String).slice(0, 500) : []),
+    r.selected.csv, o.filename, r.selected.count, r.selected.total, problems, String(b.note || '').slice(0, 500),
+    req.userName || '', req.userRole || '', approver ? (req.userName || '') : '', approver ? new Date().toISOString() : '');
+  if (approver) _gustoApplyDraft(req, r.draft);
+  auditLog(approver ? 'gusto_pay_run_approved' : 'gusto_pay_run_submit', req, { targetType: 'invoice', targetId: String(o.invoice_id),
+    details: { run_id: ins.lastInsertRowid, invoice_number: o.invoice_number, total: r.selected.total, count: r.selected.count } });
+  const row = db.prepare('SELECT * FROM gusto_pay_runs WHERE id=?').get(ins.lastInsertRowid);
+  res.json({ success: true, run: _gustoRunOut(row, approver) });
+});
+app.post('/api/acct/gusto-pay/runs/:id/approve', requireAdmin, requireGustoPayApprover, (req, res) => {
+  const row = db.prepare('SELECT * FROM gusto_pay_runs WHERE id=?').get(parseInt(req.params.id, 10));
+  if (!row) return res.status(404).json({ error: '记录不存在' });
+  if (row.status !== 'pending') return res.status(400).json({ error: '这条已经处理过了' });
+  let draft = {};
+  try { draft = JSON.parse(row.draft_json || '{}'); } catch (_) {}
+  _gustoApplyDraft(req, draft);
+  db.prepare("UPDATE gusto_pay_runs SET status='approved', reviewed_by=?, reviewed_at=?, review_note=? WHERE id=?")
+    .run(req.userName || '', new Date().toISOString(), String((req.body && req.body.note) || '').slice(0, 500), row.id);
+  auditLog('gusto_pay_run_approved', req, { targetType: 'invoice', targetId: String(row.invoice_id), details: { run_id: row.id, invoice_number: row.invoice_number, total: row.total_pay } });
+  res.json({ success: true, run: _gustoRunOut(db.prepare('SELECT * FROM gusto_pay_runs WHERE id=?').get(row.id), true) });
+});
+app.post('/api/acct/gusto-pay/runs/:id/reject', requireAdmin, requireGustoPayApprover, (req, res) => {
+  const row = db.prepare('SELECT * FROM gusto_pay_runs WHERE id=?').get(parseInt(req.params.id, 10));
+  if (!row) return res.status(404).json({ error: '记录不存在' });
+  if (row.status !== 'pending') return res.status(400).json({ error: '这条已经处理过了' });
+  db.prepare("UPDATE gusto_pay_runs SET status='rejected', reviewed_by=?, reviewed_at=?, review_note=? WHERE id=?")
+    .run(req.userName || '', new Date().toISOString(), String((req.body && req.body.note) || '').slice(0, 500), row.id);
+  auditLog('gusto_pay_run_rejected', req, { targetType: 'invoice', targetId: String(row.invoice_id), details: { run_id: row.id, invoice_number: row.invoice_number } });
+  res.json({ success: true });
+});
+// 下载: 只有已确认的能下载
+app.get('/api/acct/gusto-pay/runs/:id/csv', requireAdmin, requireGustoPayWork, (req, res) => {
+  const row = db.prepare('SELECT * FROM gusto_pay_runs WHERE id=?').get(parseInt(req.params.id, 10));
+  if (!row) return res.status(404).json({ error: '记录不存在' });
+  if (row.status !== 'approved') return res.status(403).json({ error: '还没有被总监 / admin 确认，不能下载' });
+  res.json({ csv: row.csv, filename: row.filename || 'gusto_contractor_pay.csv' });
 });
 
 // ═══════════ Gusto API 实时同步（合同工实发工资） ═══════════
@@ -43232,6 +43386,8 @@ app.get('/api/acct/invoices', requireAdmin, requireAcctView, (req, res) => {
         CASE WHEN json_valid(items_json) THEN json_array_length(items_json) ELSE 0 END AS line_n
       FROM invoices ORDER BY invoice_date DESC, id DESC`).all();
     const payNotes = _acctPayNotesFor('invoice');
+    let gustoRuns = {};
+    try { gustoRuns = _gustoLatestRuns(); } catch (_) {}
     // 逐行(每个工人)付款备注: 几行关联了银行记录 / 几行记了已付 —— 列表上一眼看出这张发票的人是不是都付到了
     const linePay = {};
     db.prepare(`SELECT invoice_id,
@@ -43246,6 +43402,7 @@ app.get('/api/acct/invoices', requireAdmin, requireAcctView, (req, res) => {
       delete r.line_n;
       r.annotation_count = _acctAnnCount.get('invoice', r.id).n;
       r.pay_note = payNotes[r.id] || null;
+      r.gusto_run = gustoRuns[r.id] || null;
     }
     _acctRecoverTxns(rows, 'invoice');
     _acctAttachAnnTxns(rows);
