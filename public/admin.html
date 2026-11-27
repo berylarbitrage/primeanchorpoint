@@ -39399,13 +39399,19 @@ function renderGustoCsvModal(res) {
   if (note) note.textContent = (res.mode === 'hours')
     ? 'hours = 应付工资 ÷ Gusto 名册时薪（加班按 1.5× 折进金额），向上取整到 0.01 小时——宁可多几分钱，不让工人少拿。名册里没排班的行保持空白，Gusto 上传时会跳过。'
     : 'hours = 实际打卡工时，加班溢价（0.5×）和时薪差额放进 bonus 列，付款总额与工资表一分不差。多人合并付给同一人的行，hours 只填本人的实际工时，另外那位的钱全额进 bonus。名册里没排班的行保持空白，Gusto 上传时会跳过。';
+  const _co = ((document.getElementById('invPageBillName') || {}).value || '').trim();
+  window._gustoEdits = [];
+  const edReg = o => window._gustoEdits.push(o) - 1;
   const rows = (res.matches || []).map(m => {
+    const edKeys = (m.sources || []).map(s => edReg({ name: s.name, sheetRate: s.sheetRate || null, curRate: s.rate || s.sheetRate || null, curPayee: m.label, pre: [] }));
     const split = m.merged && (m.sources || []).some(s => s.primary);
     const srcTag = s => !split ? '' : (s.primary
       ? ' <span style="font-size:.66rem;background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:0 4px;font-weight:600">hours 本人</span>'
       : ' <span style="font-size:.66rem;background:#d1fae5;color:#047857;border-radius:4px;padding:0 4px;font-weight:600">→ bonus</span>');
     const aliasTag = s => s.aliasTo ? ' <span style="font-size:.66rem;background:#ede9fe;color:#6d28d9;border-radius:4px;padding:0 4px;font-weight:600" title="按收款人对照表付到这一行">对照表</span>' : '';
-    const src = (m.sources || []).map(s => `${esc(s.name)} <span style="color:var(--gray-400)">$${(+s.owed).toFixed(2)}</span>${aliasTag(s)}${srcTag(s)}`).join('<br>');
+    const rateTag = s => (s.payRate && s.sheetRate && Math.abs(s.payRate - s.sheetRate) > 0.005) ? ` <span style="font-size:.66rem;background:#fee2e2;color:#b91c1c;border-radius:4px;padding:0 4px;font-weight:600;white-space:nowrap" title="发工资时薪已改（工资表 $${s.sheetRate}）">发 $${s.payRate}</span>` : '';
+    const editLink = k => ` <a href="javascript:void 0" onclick="invpGustoEditToggle(${k})" style="font-size:.7rem;color:#6d28d9;white-space:nowrap" title="改实际收款人 / 实际发的时薪">✎ 改</a>`;
+    const src = (m.sources || []).map((s, si) => `${esc(s.name)} <span style="color:var(--gray-400)">$${(+s.owed).toFixed(2)}</span>${aliasTag(s)}${rateTag(s)}${srcTag(s)}${editLink(edKeys[si])}`).join('<br>');
     const diff = m.diff ? ` <span style="color:#b45309;font-size:.72rem" title="向上取整到 0.01 小时产生的差额">（${m.diff > 0 ? '+' : ''}${m.diff.toFixed(2)}）</span>` : '';
     const mergeTag = m.merged ? ` <span style="font-size:.68rem;background:#fef3c7;color:#92400e;border-radius:4px;padding:0 5px;font-weight:600">合并 ${m.sources.length} 行</span>` : '';
     const bonusTag = m.bonus ? `<div style="font-size:.72rem;color:#047857;font-weight:600">+ $${(+m.bonus).toFixed(2)} bonus</div>` : '';
@@ -39417,40 +39423,25 @@ function renderGustoCsvModal(res) {
       <td style="padding:.4rem .5rem;text-align:right;font-weight:700;white-space:nowrap">${m.hours != null ? m.hours.toFixed(2) + ' h' + bonusTag : (m.fixed != null ? '固定金额' : '—')}</td>
       <td style="padding:.4rem .5rem;text-align:right;white-space:nowrap">$${(+m.amount).toFixed(2)}${diff}</td>
       <td style="padding:.4rem .5rem;font-size:.78rem;line-height:1.5">${src}</td>
-    </tr>`;
+    </tr>${edKeys.map(k => `<tr id="gustoEdTr-${k}" style="display:none"><td colspan="6" style="padding:.1rem .5rem .5rem">${gustoEditor(k)}</td></tr>`).join('')}`;
   }).join('');
-  // 每个没写进 CSV 的人后面带一个「指定收款人」下拉框: 名册里最像的几行排最前,
-  // 其余名册行按字母排, 选好点「指定」= 写进收款人对照表并重新生成
-  const _co = ((document.getElementById('invPageBillName') || {}).value || '').trim();
-  const pickRow = (p, i) => {
-    const sug = (p.candidates && p.candidates.length) ? p.candidates : (p.suggestions || []);
-    const pre = p.candidate ? [p.candidate, ...sug.filter(x => x !== p.candidate)] : sug;
-    const rest = (res.rosterLabels || []).filter(l => !pre.includes(l));
-    const opt = l => `<option value="${esc(l)}">${esc(l)}</option>`;
-    return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:.35rem;margin:.25rem 0 .35rem .8rem">
-      <select class="gustoPick" data-i="${i}" style="font-size:.78rem;padding:.15rem .3rem;border:1px solid #fecaca;border-radius:6px;max-width:260px;color:var(--gray-700)">
-        <option value="">— 选 Gusto 名册里的收款人 —</option>
-        ${pre.length ? `<optgroup label="最像的">${pre.map(opt).join('')}</optgroup>` : ''}
-        <optgroup label="不走 Gusto"><option value="现金">现金（生成时跳过）</option></optgroup>
-        ${rest.length ? `<optgroup label="全部名册">${rest.map(opt).join('')}</optgroup>` : ''}
-      </select>
-      ${_co ? `<label style="font-size:.74rem;color:var(--gray-500);display:flex;align-items:center;gap:.2rem;cursor:pointer" title="勾上 = 这条对应只用于 ${esc(_co)} 的发票；不勾 = 所有客户的发票都按这条付"><input type="checkbox" class="gustoPickScope" data-i="${i}" checked> 只限 ${esc(_co)}</label>` : ''}
-      <button class="btn btn-outline" style="font-size:.74rem;padding:.12rem .55rem;color:#6d28d9" onclick="invpGustoPickSave(${i})">✔ 指定</button>
-    </div>`;
-  };
   const probs = [
     ...(res.unmatched || []).map(u => ({ ...u, msg: u.aliasTo ? `按对照表应付给「${esc(u.aliasTo)}」，但名册里没有这一行（先在 Gusto 添加再重新上传名册，或在下面改指定）` : '名册里找不到' })),
     ...(res.ambiguous || []).map(a => ({ ...a, msg: `有多个可能匹配（${esc((a.candidates || []).join('、'))}）` })),
     ...(res.needConfirm || []).map(n => ({ ...n, msg: `只有姓氏和「${esc(n.candidate)}」对得上、名字对不上，同姓可能不是同一个人；确认是同一人就在下面指定` })),
   ];
-  window._gustoProbs = probs;
+  const probKeys = probs.map(p => {
+    const sug = (p.candidates && p.candidates.length) ? p.candidates : (p.suggestions || []);
+    const pre = p.candidate ? [p.candidate, ...sug.filter(x => x !== p.candidate)] : sug;
+    return edReg({ name: p.name, sheetRate: p.sheetRate || null, curRate: p.payRate || p.sheetRate || null, curPayee: '', pre });
+  });
   const unmatchedBlock = probs.length ? `
     <div style="margin-top:.6rem;padding:.5rem .7rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:.8rem;color:#b91c1c;line-height:1.6">
-      ❗ 以下员工<b>没有</b>写进 CSV —— 在下拉框里选他在 Gusto 名册里对应的人，点「指定」就会记住（存进收款人对照表），以后同名自动对上：<br>${probs.map((p, i) => `· ${esc(p.name)} $${(+p.owed).toFixed(2)} —— ${p.msg}${pickRow(p, i)}`).join('')}
+      ❗ 以下员工<b>没有</b>写进 CSV —— 选他在 Gusto 名册里对应的收款人（需要的话改发工资时薪），点「保存」就会记住，以后同名自动对上：<br>${probs.map((p, i) => `· ${esc(p.name)} $${(+p.owed).toFixed(2)} —— ${p.msg}<div style="margin:.25rem 0 .4rem .8rem">${gustoEditor(probKeys[i])}</div>`).join('')}
     </div>` : '';
   const skippedBlock = (res.skipped || []).length ? `
     <div style="margin-top:.6rem;padding:.5rem .7rem;background:#f8fafc;border:1px solid var(--gray-100);border-radius:8px;font-size:.78rem;color:var(--gray-500);line-height:1.6">
-      按收款人对照表跳过（不走 Gusto）：${res.skipped.map(s => `${esc(s.name)} $${(+s.owed).toFixed(2)}（${esc(s.reason || '')}）`).join('、')}
+      按收款人对照表跳过（不走 Gusto）：${res.skipped.map(s => { const k = edReg({ name: s.name, sheetRate: s.sheetRate || null, curRate: s.payRate || s.sheetRate || null, curPayee: '现金', pre: s.suggestions || [] }); return `${esc(s.name)} $${(+s.owed).toFixed(2)}（${esc(s.reason || '')}）<a href="javascript:void 0" onclick="invpGustoEditToggle(${k})" style="font-size:.7rem;color:#6d28d9"> ✎ 改</a><div id="gustoEdTr-${k}" style="display:none;margin:.25rem 0">${gustoEditor(k)}</div>`; }).join('<br>')}
     </div>` : '';
   const warnBlock = (res.warnings || []).length ? `
     <div style="margin-top:.6rem;padding:.5rem .7rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:.78rem;color:#92400e;line-height:1.6">
@@ -39547,26 +39538,78 @@ async function invpGustoAliasSave() {
   await invpGustoCsv(false, true);
 }
 
-// 预览里直接给没对上的人指定收款人: 追加 / 覆盖收款人对照表的一条, 再重新生成
-async function invpGustoPickSave(i) {
-  const p = (window._gustoProbs || [])[i];
-  const sel = document.querySelector(`#gustoCsvBody select.gustoPick[data-i="${i}"]`);
-  if (!p || !sel) return;
-  const to = sel.value;
-  if (!to) { showToast('先在下拉框里选 Gusto 名册里的收款人', 'warning', 3500); return; }
-  const scopeCb = document.querySelector(`#gustoCsvBody input.gustoPickScope[data-i="${i}"]`);
+// ── 预览里改「实际收款人 / 实际发的时薪」──
+// 收款人改了 → 写进收款人对照表 (工资表姓名 → 名册收款人 / 现金);
+// 时薪改了 → 写进发工资时薪表 (应付 = 工资表应付 − (工资表时薪 − 新时薪) × (正常 + 1.5×加班), 发票金额不变)。
+// 「只限 <客户>」勾上 = 两条都只对这个客户的发票生效。保存后重新生成预览。
+function gustoEditor(k) {
+  const e = (window._gustoEdits || [])[k];
+  const res = window._gustoCsvRes || {};
+  if (!e) return '';
+  const co = ((document.getElementById('invPageBillName') || {}).value || '').trim();
+  const pre = (e.pre || []).filter(l => l !== e.curPayee);
+  const top = e.curPayee && e.curPayee !== '现金' ? [e.curPayee, ...pre] : pre;
+  const rest = (res.rosterLabels || []).filter(l => !top.includes(l));
+  const opt = l => `<option value="${esc(l)}"${l === e.curPayee ? ' selected' : ''}>${esc(l)}</option>`;
+  return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;padding:.35rem .55rem;background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;font-size:.76rem;color:var(--gray-600)">
+    <b style="color:#6d28d9">${esc(e.name)}</b>
+    <span>收款人</span>
+    <select id="gustoEdPay-${k}" style="font-size:.76rem;padding:.12rem .3rem;border:1px solid #e9d5ff;border-radius:6px;max-width:240px">
+      ${e.curPayee ? '' : '<option value="">— 选 Gusto 名册里的收款人 —</option>'}
+      ${top.length ? `<optgroup label="${e.curPayee && e.curPayee !== '现金' ? '当前 / 最像的' : '最像的'}">${top.map(opt).join('')}</optgroup>` : ''}
+      <optgroup label="不走 Gusto"><option value="现金"${e.curPayee === '现金' ? ' selected' : ''}>现金（生成时跳过）</option></optgroup>
+      ${rest.length ? `<optgroup label="全部名册">${rest.map(opt).join('')}</optgroup>` : ''}
+    </select>
+    <span>实发时薪 $</span>
+    <input id="gustoEdRate-${k}" type="number" step="0.01" min="0" value="${e.curRate != null ? e.curRate : ''}" ${e.sheetRate ? '' : 'disabled title="工资表这行没有时薪，不能按时薪改"'} style="width:72px;font-size:.76rem;padding:.12rem .3rem;border:1px solid #e9d5ff;border-radius:6px">
+    ${e.sheetRate ? `<span style="color:var(--gray-400)">工资表 $${e.sheetRate}</span>` : ''}
+    ${co ? `<label style="display:flex;align-items:center;gap:.2rem;cursor:pointer" title="勾上 = 只用于 ${esc(co)} 的发票；不勾 = 所有客户的发票都按这个改"><input type="checkbox" id="gustoEdScope-${k}" checked> 只限 ${esc(co)}</label>` : ''}
+    <button class="btn btn-outline" style="font-size:.74rem;padding:.12rem .55rem;color:#6d28d9" onclick="invpGustoEditSave(${k})">💾 保存</button>
+  </div>`;
+}
+function invpGustoEditToggle(k) {
+  const tr = document.getElementById('gustoEdTr-' + k);
+  if (tr) tr.style.display = tr.style.display === 'none' ? '' : 'none';
+}
+async function invpGustoEditSave(k) {
+  const e = (window._gustoEdits || [])[k];
+  if (!e) return;
+  const payee = (document.getElementById('gustoEdPay-' + k) || {}).value || '';
+  const rateEl = document.getElementById('gustoEdRate-' + k);
+  const rateStr = rateEl && !rateEl.disabled ? String(rateEl.value || '').trim() : '';
+  const rate = rateStr === '' ? null : Math.round(parseFloat(rateStr) * 100) / 100;
+  if (rateStr !== '' && !(rate > 0 && rate < 1000)) { showToast('时薪要填一个大于 0 的数字', 'warning', 3500); return; }
+  const scopeCb = document.getElementById('gustoEdScope-' + k);
   const scope = scopeCb && scopeCb.checked ? ((document.getElementById('invPageBillName') || {}).value || '').trim() : '';
-  const cur = await api('/admin/gusto-pay-aliases').catch(() => null);
-  if (!cur || !Array.isArray(cur.aliases)) { showToast('读取收款人对照表失败，请稍后再试', 'error', 5000); return; }
-  const key = n => String(n || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().split(' ').sort().join(' ');
+  const key = n => String(n || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(t => t.length > 1).sort().join(' ');
   const scKey = v => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  // 同一个人、同一个限定范围的旧条目换成新的
-  const aliases = cur.aliases.filter(a => !(key(a.from) === key(p.name) && scKey(a.scope) === scKey(scope)));
-  aliases.push({ from: p.name, to, ...(scope ? { scope } : {}) });
-  const res = await api('/admin/gusto-pay-aliases', { method: 'POST', body: JSON.stringify({ aliases }) })
-    .catch(e => ({ error: e.message }));
-  if (!res || !res.success) { showToast('保存失败：' + ((res && res.error) || '未知错误'), 'error', 7000); return; }
-  showToast(`✓ 已记住：${p.name} → ${to}${scope ? `（只限 ${scope}）` : ''}`, 'success', 4000);
+  const same = (n, sc) => key(n) === key(e.name) && scKey(sc) === scKey(scope);
+  const payeeChanged = !!payee && payee !== e.curPayee;
+  const rateChanged = rate != null && (e.curRate == null || Math.abs(rate - e.curRate) > 0.005);
+  if (!payee && !e.curPayee && !rateChanged) { showToast('先在下拉框里选 Gusto 名册里的收款人', 'warning', 3500); return; }
+  if (!payeeChanged && !rateChanged) { showToast('没有改动', 'info', 2500); return; }
+  const done = [];
+  if (payeeChanged) {
+    const cur = await api('/admin/gusto-pay-aliases').catch(() => null);
+    if (!cur || !Array.isArray(cur.aliases)) { showToast('读取收款人对照表失败，请稍后再试', 'error', 5000); return; }
+    const aliases = cur.aliases.filter(a => !same(a.from, a.scope));
+    aliases.push({ from: e.name, to: payee, ...(scope ? { scope } : {}) });
+    const r = await api('/admin/gusto-pay-aliases', { method: 'POST', body: JSON.stringify({ aliases }) }).catch(err => ({ error: err.message }));
+    if (!r || !r.success) { showToast('收款人保存失败：' + ((r && r.error) || '未知错误'), 'error', 7000); return; }
+    done.push(`收款人 → ${payee}`);
+  }
+  if (rateChanged) {
+    const cur = await api('/admin/gusto-pay-rates').catch(() => null);
+    if (!cur || !Array.isArray(cur.payRates)) { showToast('读取发工资时薪表失败，请稍后再试', 'error', 5000); return; }
+    const payRates = cur.payRates.filter(p => !same(p.name, p.scope));
+    // 改回工资表时薪: 只删本范围的旧条目; 但还有别的(不限客户)条目会生效时, 显式写一条工资表时薪压住它
+    const otherLeft = payRates.some(p => key(p.name) === key(e.name));
+    if (!e.sheetRate || Math.abs(rate - e.sheetRate) > 0.005 || otherLeft) payRates.push({ name: e.name, rate, ...(scope ? { scope } : {}) });
+    const r = await api('/admin/gusto-pay-rates', { method: 'POST', body: JSON.stringify({ payRates }) }).catch(err => ({ error: err.message }));
+    if (!r || !r.success) { showToast('时薪保存失败：' + ((r && r.error) || '未知错误'), 'error', 7000); return; }
+    done.push(`实发时薪 $${rate}`);
+  }
+  showToast(`✓ ${e.name}：${done.join('，')}${scope ? `（只限 ${scope}）` : ''}`, 'success', 4500);
   const panel = document.getElementById('gustoAliasPanel');
   if (panel && panel.style.display !== 'none') panel.style.display = 'none';
   await invpGustoCsv(false, true);
