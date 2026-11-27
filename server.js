@@ -24187,6 +24187,14 @@ const GUSTO_PAY_RATE_OVERRIDES = [
 ];
 // 合并付款时「所有人的工时都进 hours」的收款人 (同一班组同一时薪; 其余合并行只填本人工时, 别人的钱进 bonus)
 const GUSTO_HOURS_MERGE = ['Jose Gabriel Rattia'];
+// 发工资时薪: 界面保存过就用保存的表 (gusto_pay_rates), 否则用上面的默认表
+function _gustoPayRates() {
+  const row = db.prepare("SELECT value FROM app_settings WHERE key='gusto_pay_rates'").get();
+  if (row && row.value) {
+    try { const v = JSON.parse(row.value); if (Array.isArray(v)) return v; } catch (_) {}
+  }
+  return GUSTO_PAY_RATE_OVERRIDES;
+}
 function _gustoAliases() {
   const row = db.prepare("SELECT value FROM app_settings WHERE key='gusto_pay_aliases'").get();
   if (row && row.value) {
@@ -24278,6 +24286,26 @@ app.post('/api/admin/gusto-pay-aliases', requireAdmin, (req, res) => {
   res.json({ success: true, count: list.length });
 });
 
+app.get('/api/admin/gusto-pay-rates', requireAdmin, (req, res) => {
+  res.json({ payRates: _gustoPayRates() });
+});
+app.post('/api/admin/gusto-pay-rates', requireAdmin, (req, res) => {
+  let list = (req.body && req.body.payRates) || [];
+  if (!Array.isArray(list)) return res.status(400).json({ error: 'payRates 需要是数组' });
+  list = list.slice(0, 500)
+    .map(p => {
+      const o = { name: String((p && p.name) || '').trim().slice(0, 120), rate: Math.round((parseFloat(p && p.rate) || 0) * 100) / 100 };
+      const sc = String((p && p.scope) || '').trim().slice(0, 80);
+      if (sc) o.scope = sc;
+      return o;
+    })
+    .filter(p => p.name && p.rate > 0 && p.rate < 1000);
+  db.prepare('INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)')
+    .run('gusto_pay_rates', JSON.stringify(list));
+  auditLog('gusto_pay_rates_save', req, { targetType: 'gusto_pay_rates', targetId: 'gusto_pay_rates', details: { count: list.length } });
+  res.json({ success: true, count: list.length });
+});
+
 // 名册状态（不回传 CSV 内容本身，SSN 尾号只在生成预览里出现）
 app.get('/api/admin/gusto-pay-template', requireAdmin, (req, res) => {
   const tpl = _gustoRoster();
@@ -24316,7 +24344,7 @@ app.post('/api/admin/gusto-pay-csv', requireAdmin, (req, res) => {
       mode: req.body.mode === 'hours' ? 'hours' : 'bonus',
       company: String(req.body.company || ''),   // 这张发票的客户: 对照表里限定客户的条目按它生效
       aliases: _gustoAliases(),
-      payRates: GUSTO_PAY_RATE_OVERRIDES, hoursMerge: GUSTO_HOURS_MERGE,
+      payRates: _gustoPayRates(), hoursMerge: GUSTO_HOURS_MERGE,
     });
     res.json({ ok: true, template_name: tpl.name || '', template_uploaded_at: tpl.uploaded_at || '', ...out });
   } catch (e) {
@@ -43154,7 +43182,7 @@ function _invGustoRules(inv) {
     regHours: Number(it && (it.regHours != null ? it.regHours : it.hours)) || 0,
     otHours: Number(it && it.otHours) || 0,
   }));
-  const m = _wobMatch(entries, tokenCount, emps, { aliases: _gustoAliases(), payRates: GUSTO_PAY_RATE_OVERRIDES, company: inv.company_name });
+  const m = _wobMatch(entries, tokenCount, emps, { aliases: _gustoAliases(), payRates: _gustoPayRates(), company: inv.company_name });
   const out = items.map(() => ({}));
   // 并付分两种:
   //   crew     = 不同的人, 钱都发给同一个收款人 (GUSTO_HOURS_MERGE, 例: Rattia 班组三人都发给 Jose Gabriel Rattia)
@@ -47040,7 +47068,7 @@ app.get('/api/acct/gusto/recon', requireAdmin, requireAcctView, (req, res) => {
     const payments = db.prepare(`SELECT uuid, contractor_uuid, contractor_name, date, payment_method, status,
         hours, wage, bonus, reimbursement, wage_total, source
       FROM gusto_payments WHERE COALESCE(wage_type,'')!='W2' AND date>=? AND date<=?`).all(start, payEnd);
-    const recon = buildGustoRecon(contractors, invoices, payments, { aliases: _gustoAliases(), payRates: GUSTO_PAY_RATE_OVERRIDES, hoursMerge: GUSTO_HOURS_MERGE });
+    const recon = buildGustoRecon(contractors, invoices, payments, { aliases: _gustoAliases(), payRates: _gustoPayRates(), hoursMerge: GUSTO_HOURS_MERGE });
     res.json({ ok: true, start, end, pay_end: payEnd, pay_pad_days: pad, invoice_count: invoices.length, roster_source: rosterSource, ...recon });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

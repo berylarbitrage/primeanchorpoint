@@ -216,7 +216,7 @@ function parseRoster(csvText) {
 //   (按 opts.company 宽松比: 去大小写/空格/符号后包含 scope 即算; 同一家公司的几个名字见 COMPANY_GROUPS)。
 //   同一个 from 既有限定客户的、又有不限的: 客户对得上用限定的, 对不上用不限的; 只有限定的且客户对不上 = 当没这条。
 // opts.company: 这张发票的客户名 (对账时按每张发票传)
-// opts.payRates: 发工资时薪覆盖 [{name, rate}]。发票对客户照计费时薪开票不动,
+// opts.payRates: 发工资时薪覆盖 [{name, rate, scope?}]（scope 同对照表: 只对这个客户的发票生效, 限定的优先）。发票对客户照计费时薪开票不动,
 //   这些人发工资按 rate 算: 应付 = 发票应付 − (计费时薪 − rate) × (正常 + 1.5×加班)
 //   工时——按时薪差回扣, 发票里另加的补差金额原样保留。按工资表姓名分词精确对,
 //   现金/跳过行同样生效。
@@ -261,13 +261,18 @@ function matchEmployees(entries, tokenCount, employees, opts) {
       : { toName: to, toTokens: nameTokens(to), scoped: !!scope });
   }
   // 发工资时薪覆盖: 分词集合 key → 时薪
-  const payRateMap = new Map();
+  const payRateMap = new Map(), payRateScoped = new Set();
   for (const p of opts.payRates || []) {
     const nm = String((p && p.name) || '').trim();
     const rt = parseFloat(p && p.rate);
     if (!nm || !Number.isFinite(rt) || rt <= 0) continue;
     const key = joined(nameTokens(nm));
-    if (key) payRateMap.set(key, rt);
+    if (!key) continue;
+    const scope = String((p && p.scope) || '').trim();
+    if (scope && !scopeMatches(scope, opts.company)) continue;
+    if (!scope && payRateScoped.has(key)) continue;   // 限定客户的优先
+    payRateMap.set(key, rt);
+    if (scope) payRateScoped.add(key);
   }
   // 相同或近似拼写（一个字母之差）
   const near = (a, b) => a === b || (a.length >= 4 && b.length >= 4 && editDist1(a, b));
@@ -276,6 +281,7 @@ function matchEmployees(entries, tokenCount, employees, opts) {
     const name = String(emp.name || '').trim();
     let owed = r2(Number(emp.total) || 0);
     let empRate = Number(emp.rate) || null;
+    const sheetRate = empRate;   // 工资表原时薪（预览里改发工资时薪时作对照）
     if (!name || owed <= 0) continue;
     const selfT = nameTokens(name);
     const payRate = payRateMap.get(joined(selfT));
@@ -291,7 +297,7 @@ function matchEmployees(entries, tokenCount, employees, opts) {
       }
     }
     const alias = aliasMap.get(joined(selfT));
-    if (alias && alias.skip) { skipped.push({ name, owed, reason: alias.reason, idx: emp.idx }); continue; }
+    if (alias && alias.skip) { skipped.push({ name, owed, reason: alias.reason, idx: emp.idx, payRate: payRate || null, sheetRate }); continue; }
     const empT = alias ? alias.toTokens : selfT;
     let best = 0, hits = [];
     for (const entry of entries) {
@@ -310,9 +316,9 @@ function matchEmployees(entries, tokenCount, employees, opts) {
         [...empT].every(a => [...e.tokens].some(b => near(a, b))));
       best = hits.length ? 80 : 0;
     }
-    if (!best) { unmatched.push({ name, owed, aliasTo: alias ? alias.toName : undefined, idx: emp.idx, payRate: payRate || null }); continue; }
+    if (!best) { unmatched.push({ name, owed, aliasTo: alias ? alias.toName : undefined, idx: emp.idx, payRate: payRate || null, sheetRate }); continue; }
     if (hits.length > 1) {
-      ambiguous.push({ name, owed, candidates: hits.map(h => h.label), idx: emp.idx, payRate: payRate || null });
+      ambiguous.push({ name, owed, candidates: hits.map(h => h.label), idx: emp.idx, payRate: payRate || null, sheetRate });
       continue;
     }
     const entry = hits[0];
@@ -323,12 +329,13 @@ function matchEmployees(entries, tokenCount, employees, opts) {
       const firstT = [...entry.tokens].filter(t => !entry.lastTokens.has(t));
       const extras = [...empT].filter(a => ![...entry.lastTokens].some(b => near(a, b)));
       const evidence = !extras.length || extras.some(a => firstT.some(b => near(a, b)));
-      if (!evidence) { needConfirm.push({ name, owed, candidate: entry.label, idx: emp.idx, payRate: payRate || null }); continue; }
+      if (!evidence) { needConfirm.push({ name, owed, candidate: entry.label, idx: emp.idx, payRate: payRate || null, sheetRate }); continue; }
     }
     if (!byRosterIdx.has(entry.idx)) byRosterIdx.set(entry.idx, { entry, sources: [] });
     byRosterIdx.get(entry.idx).sources.push({
       name, owed, idx: emp.idx,
       rate: empRate,
+      sheetRate,
       actualHours: r2((Number(emp.regHours) || 0) + (Number(emp.otHours) || 0)),
       payRate: payRate || null,
       fuzzy: (best === 50 || best === 70) && !alias,
