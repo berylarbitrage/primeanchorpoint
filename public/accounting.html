@@ -8794,14 +8794,15 @@ function gaRender() {
       + (s.aliasTo ? tag('对照表', '#ede9fe', '#6d28d9', '按收款人对照表付到这一行') : '')
       + ((s.payRate && s.sheetRate && Math.abs(s.payRate - s.sheetRate) > 0.005) ? tag('发 $' + s.payRate, '#fee2e2', '#b91c1c', '实发时薪已改（工资表 $' + s.sheetRate + '）') : '')
       + (split ? (s.primary ? tag('hours 本人', '#dbeafe', '#1d4ed8') : tag('→ bonus', '#d1fae5', '#047857')) : '')
-      + ` <a href="javascript:void 0" onclick="gaEditToggle(${keys[i]})" style="font-size:.7rem;color:#6d28d9;white-space:nowrap">✎ 改</a>`).join('<br>');
+      + ` <a href="javascript:void 0" onclick="gaEditToggle(${keys[i]})" style="font-size:.7rem;color:#6d28d9;white-space:nowrap">✎ 改</a>`
+      + ((s.rate && m.rate && Math.abs(s.rate - m.rate) > 0.005) ? ` <button type="button" onclick="gaQuickRate(${keys[i]}, ${m.rate})" title="发票时薪 $${s.rate}，Gusto 名册时薪 $${m.rate}。点了 = 这个人按 $${m.rate} 发（应付按时薪差调整，发票金额不变），会记住" style="font-size:.68rem;padding:0 6px;border:1px solid #f59e0b;background:#fffbeb;color:#b45309;border-radius:5px;cursor:pointer;white-space:nowrap">按 Gusto $${m.rate} 算</button>` : '')).join('<br>');
     const on = !_gaExcluded.has(_gaKey(m));
     const diff = m.diff ? ` <span style="color:#b45309;font-size:.72rem">（${m.diff > 0 ? '+' : ''}${m.diff.toFixed(2)}）</span>` : '';
     return `<tr class="gaRow" data-key="${esc(_gaKey(m))}" style="border-bottom:1px solid #f1f5f9${m.merged ? ';background:#fffbeb' : ''}${on ? '' : ';opacity:.45'}">
       <td style="padding:.4rem .3rem .4rem .5rem;width:1%"><input type="checkbox" class="gaChk" ${on ? 'checked' : ''} onchange="gaToggleRow(this)" title="不勾 = 这次不走 Gusto（CSV 里留空）"></td>
       <td style="padding:.4rem .5rem"><b>${esc(m.label)}</b>${m.merged ? tag('合并 ' + m.sources.length + ' 行', '#fef3c7', '#92400e') : ''}<div style="font-size:.7rem;color:#94a3b8">${esc(m.ssn || '')}</div></td>
       <td style="padding:.4rem .5rem;text-align:right;white-space:nowrap">${m.rate != null ? '$' + m.rate : '—'}</td>
-      <td style="padding:.4rem .5rem;text-align:right;font-weight:700;white-space:nowrap">${m.hours != null ? m.hours.toFixed(2) + ' h' + (m.bonus ? `<div style="font-size:.72rem;color:#047857">+ $${(+m.bonus).toFixed(2)} bonus</div>` : '') : (m.fixed != null ? '固定金额' : '—')}</td>
+      <td style="padding:.4rem .5rem;text-align:right;font-weight:700;white-space:nowrap">${m.hours != null ? m.hours.toFixed(2) + ' h' + (m.hoursScaled ? `<div style="font-size:.68rem;color:#b45309;font-weight:600" title="按应付金额 ÷ Gusto 时薪折算的工时，不是实际工时">实际 ${(+m.actualHours).toFixed(2)} h</div>` : '') + (m.bonus ? `<div style="font-size:.72rem;color:#047857">+ $${(+m.bonus).toFixed(2)} bonus</div>` : '') : (m.fixed != null ? '固定金额' : '—')}</td>
       <td style="padding:.4rem .5rem;text-align:right;white-space:nowrap">$${(+m.amount).toFixed(2)}${diff}</td>
       <td style="padding:.4rem .5rem;font-size:.78rem;line-height:1.55">${src}</td>
     </tr>${keys.map(k => `<tr id="gaEdTr-${k}" style="display:none"><td colspan="6" style="padding:.1rem .5rem .5rem">${gaEditor(k)}</td></tr>`).join('')}`;
@@ -9102,6 +9103,13 @@ function gaEditor(k) {
     ${co ? `<label style="display:flex;align-items:center;gap:.2rem;cursor:pointer" title="勾上 = 只用于 ${esc(co)} 的发票；不勾 = 所有客户都按这个"><input type="checkbox" id="gaEdScope-${k}" checked> 只限 ${esc(co)}</label>` : ''}
     <button class="btn btn-sm btn-outline" style="font-size:.74rem;padding:.12rem .55rem;color:#6d28d9" onclick="gaEditSave(${k})">💾 保存</button>
   </div>`;
+}
+// 时薪不一致时一键「按 Gusto 名册时薪算」: 等于在编辑器里把实发时薪改成名册时薪再保存
+function gaQuickRate(k, rate) {
+  const el = document.getElementById('gaEdRate-' + k);
+  if (!el || el.disabled) { toast('发票这行没有时薪，不能按时薪改', true); return; }
+  el.value = rate;
+  gaEditSave(k);
 }
 function gaEditToggle(k) { const tr = document.getElementById('gaEdTr-' + k); if (tr) tr.style.display = tr.style.display === 'none' ? '' : 'none'; }
 async function gaEditSave(k) {
