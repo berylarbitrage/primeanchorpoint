@@ -294,7 +294,7 @@ function matchEmployees(entries, tokenCount, employees, opts) {
       const hrs = (Number(emp.regHours) || 0) + 1.5 * (Number(emp.otHours) || 0);
       const adj = r2(owed - (empRate - payRate) * hrs);
       if (hrs > 0 && adj > 0) {
-        warnings.push(`「${name}」发工资时薪按 $${payRate}（发票计费 $${empRate}）：应付 $${owed.toFixed(2)} → $${adj.toFixed(2)}，发票金额不变。`);
+        warnings.push(`「${name}」实发时薪按 $${payRate}（发票时薪 $${empRate}）：应付 $${owed.toFixed(2)} → $${adj.toFixed(2)}，发票金额不变。`);
         owed = adj;
         empRate = payRate;
       } else {
@@ -342,6 +342,8 @@ function matchEmployees(entries, tokenCount, employees, opts) {
       rate: empRate,
       sheetRate,
       actualHours: r2((Number(emp.regHours) || 0) + (Number(emp.otHours) || 0)),
+      regHours: Number(emp.regHours) || 0,
+      otHours: Number(emp.otHours) || 0,
       payRate: payRate || null,
       fuzzy: (best === 50 || best === 70) && !alias,
       score: best,
@@ -371,7 +373,7 @@ function buildGustoCsv(templateCsv, employees, opts) {
     const m = byRosterIdx.get(entry.idx);
     if (m) {
       const owed = r2(m.sources.reduce((s, x) => s + x.owed, 0));
-      let hours = null, bonus = null, fixed = null, amount;
+      let hours = null, bonus = null, fixed = null, amount, fellBack = false, actualAll = null;
       // 名册没填时薪 = Gusto 里是固定金额付款的合同工: Gusto 不接受给他填 hours
       // （"Hours cannot be set for contractors without hourly compensation"）, 只能填 flat_amount。
       // 各行配了发工资时薪 (opts.payRates) 的, 应付已按那个时薪折算好, 照样填进 flat_amount。
@@ -399,6 +401,7 @@ function buildGustoCsv(templateCsv, employees, opts) {
         const actual = primary
           ? r2(primary.actualHours || 0)
           : r2(m.sources.reduce((s, x) => s + (x.actualHours || 0), 0));
+        actualAll = actual;
         if (mode === 'bonus' && actual > 0 && roster.cols.bonus >= 0) {
           const base = r2(actual * rate);
           const b = r2(owed - base);
@@ -409,7 +412,9 @@ function buildGustoCsv(templateCsv, employees, opts) {
             if (b > 0) { bonus = b; cells[roster.cols.bonus] = b.toFixed(2); }
             if (primary) primary.primary = true;
           } else {
-            warnings.push(`「${entry.label}」按实际工时 ${actual.toFixed(2)}h × 名册时薪 $${rate} 已超过应付 $${owed.toFixed(2)}（名册时薪偏高），这行改按金额折算工时。`);
+            fellBack = true;
+            const mism = m.sources.some(x => x.rate && Math.abs(x.rate - rate) > 0.005);
+            if (!mism) warnings.push(`「${entry.label}」按实际工时 ${actual.toFixed(2)}h × 名册时薪 $${rate} 已超过应付 $${owed.toFixed(2)}（名册时薪偏高），这行改按金额折算工时。`);
           }
         }
         if (hours == null) {
@@ -430,6 +435,10 @@ function buildGustoCsv(templateCsv, employees, opts) {
         row: outRows.length, // 这一行在 rows 里的下标 (前端取消勾选时清空这一行的填写列)
         label: entry.label, ssn: entry.ssn, rate: rate || entry.rate,
         hours, bonus, fixed, amount, diff: r2(amount - owed),
+        actualHours: actualAll,
+        // 按金额折算了工时 (hours ≠ 实际工时): 前端在 hours 旁边标出实际工时
+        hoursScaled: hours != null && actualAll != null && actualAll > 0 && Math.abs(hours - actualAll) > 0.005,
+        fellBack,
         sources: m.sources,
         merged: m.sources.length > 1,
       });
@@ -452,7 +461,13 @@ function buildGustoCsv(templateCsv, employees, opts) {
         if (s.rate && entry.rate && Math.abs(s.rate - entry.rate) > 0.005) {
           // 合并行里整笔进 bonus 的那位，合并警告里已讲清去向，不再重复
           if (m.sources.length > 1 && !s.primary && bonus != null) continue;
-          warnings.push(`「${s.name}」工资表时薪 $${s.rate} ≠ Gusto 名册时薪 $${entry.rate}（${entry.label}），${bonus != null ? '差额已计入 bonus' : '已按应付金额折算工时'}。`);
+          const wh = (Number(s.regHours) || 0) + 1.5 * (Number(s.otHours) || 0);
+          const atRoster = wh > 0 ? r2(s.owed + (entry.rate - s.rate) * wh) : null;
+          const how = bonus != null
+            ? `hours 填实际工时，差额（加班溢价${entry.rate < s.rate ? ' + 时薪差' : ''}）计入 bonus`
+            : `Gusto 按 $${entry.rate}/h 付，所以 hours 折成 ${hours != null ? hours.toFixed(2) : '—'}h（实际 ${(s.actualHours || 0).toFixed(2)}h）`;
+          warnings.push(`「${s.name}」发票时薪 $${s.rate}，Gusto 名册时薪 $${entry.rate}（${entry.label}）：现在按发票 $${s.rate} 算应付 $${s.owed.toFixed(2)}，${how}。`
+            + (atRoster != null ? `实际要按 Gusto $${entry.rate} 发（应付 $${atRoster.toFixed(2)}），点这一行的「按 Gusto $${entry.rate} 算」。` : ''));
         }
       }
     }
