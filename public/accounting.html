@@ -8958,6 +8958,131 @@ async function gaRunReject(id) {
 }
 function gaDraftClear() { _gaDraft = { aliases: [], payRates: [] }; gaOpen(_gaInvId, true); }
 
+
+// ── 收款人选择框: 输入关键词筛选 Gusto 名册; 空的时候显示「当前 / 推荐（按姓名最像）/ 现金 / 全部名册」 ──
+// 键盘 ↑↓ 选、Enter 确定、Esc 关; 选中的值存在 input.dataset.val, 保存时用 ppValue() 取。
+window._ppOpts = window._ppOpts || {};
+window._ppItems = window._ppItems || {};
+document.addEventListener('scroll', ev => { const t = ev.target; if (t && t.id && /-pplist$/.test(t.id)) return; document.querySelectorAll('[id$="-pplist"]').forEach(el => { el.style.display = 'none'; }); }, true);
+function _ppNorm(v) { return String(v || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9一-鿿]+/g, ' ').trim(); }
+function _ppLev(a, b) {
+  const m = a.length, n = b.length; let p = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) { const c = [i]; for (let j = 1; j <= n; j++) c[j] = Math.min(p[j] + 1, c[j - 1] + 1, p[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); p = c; }
+  return p[n];
+}
+function ppHtml(id, cur, pre, all) {
+  _ppOpts[id] = { cur: cur || '', pre: (pre || []).filter(l => l && l !== cur), all: all || [] };
+  const shown = cur === '现金' ? '现金（不走 Gusto）' : (cur || '');
+  return `<span style="position:relative;display:inline-block">
+    <input id="${id}" data-val="${esc(cur || '')}" data-shown="${esc(shown)}" value="${esc(shown)}" placeholder="输入姓名关键词筛选名册…" autocomplete="off" spellcheck="false"
+      oninput="ppFilter('${id}')" onfocus="this.select();ppFilter('${id}')" onblur="setTimeout(()=>ppHide('${id}'),180)" onkeydown="ppKey(event,'${id}')"
+      style="width:250px;font-size:.76rem;padding:.15rem .4rem;border:1px solid #c4b5fd;border-radius:6px;background:#fff">
+  </span>`;
+}
+function _ppList(id) {
+  let el = document.getElementById(id + '-pplist');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = id + '-pplist';
+    el.style.cssText = 'display:none;position:fixed;z-index:10050;width:320px;max-height:280px;overflow:auto;background:#fff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,.18);font-size:.8rem';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+function ppFilter(id) {
+  const inp = document.getElementById(id), o = _ppOpts[id];
+  if (!inp || !o) return;
+  let q = inp.value.trim();
+  if (q === inp.dataset.shown) q = '';   // 还是当前选中的那个 → 当没输入, 显示推荐
+  const items = [];   // {type:'head'|'opt', label, value}
+  if (!q) {
+    if (o.cur && o.cur !== '现金') items.push({ type: 'head', label: '当前' }, { type: 'opt', label: o.cur, value: o.cur });
+    if (o.pre.length) { items.push({ type: 'head', label: '推荐（按姓名最像）' }); o.pre.forEach(l => items.push({ type: 'opt', label: l, value: l, rec: true })); }
+    items.push({ type: 'head', label: '不走 Gusto' }, { type: 'opt', label: '现金（生成时跳过）', value: '现金' });
+    const rest = o.all.filter(l => l !== o.cur && !o.pre.includes(l));
+    if (rest.length) { items.push({ type: 'head', label: `全部名册（${o.all.length} 人，输入关键词筛选）` }); rest.forEach(l => items.push({ type: 'opt', label: l, value: l })); }
+  } else {
+    const qt = _ppNorm(q).split(' ').filter(Boolean);
+    const scored = [];
+    for (const l of o.all) {
+      const lt = _ppNorm(l).split(' ').filter(Boolean);
+      let sc = 0, okAll = true;
+      for (const a of qt) {
+        let best = 0;
+        for (const b of lt) {
+          if (b === a) best = Math.max(best, 4);
+          else if (b.startsWith(a)) best = Math.max(best, 3);
+          else if (b.includes(a)) best = Math.max(best, 2);
+          else if (a.length >= 4 && b.length >= 4 && _ppLev(a, b) <= 1) best = Math.max(best, 1.5);   // 拼错一个字母也能搜到
+        }
+        if (!best) { okAll = false; break; }
+        sc += best;
+      }
+      if (okAll) scored.push({ l, sc: sc + (o.pre.includes(l) ? 0.5 : 0) });
+    }
+    scored.sort((x, y) => y.sc - x.sc || x.l.localeCompare(y.l));
+    if (/^(现|cash|xj|跳)/i.test(q)) items.push({ type: 'opt', label: '现金（生成时跳过）', value: '现金' });
+    scored.slice(0, 80).forEach(x => items.push({ type: 'opt', label: x.l, value: x.l, rec: o.pre.includes(x.l) }));
+    if (!items.length) items.push({ type: 'head', label: `名册里没有「${q}」——试试只输姓或名，或者先在 Gusto 添加这个人` });
+  }
+  _ppItems[id] = { items, active: items.findIndex(it => it.type === 'opt' && (q ? true : it.value === inp.dataset.val)) };
+  if (_ppItems[id].active < 0) _ppItems[id].active = items.findIndex(it => it.type === 'opt');
+  _ppRender(id);
+}
+function _ppRender(id) {
+  const inp = document.getElementById(id), st = _ppItems[id];
+  if (!inp || !st) return;
+  const el = _ppList(id);
+  el.innerHTML = st.items.map((it, i) => it.type === 'head'
+    ? `<div style="padding:.3rem .6rem .15rem;font-size:.7rem;font-weight:700;color:#64748b;background:#f8fafc">${esc(it.label)}</div>`
+    : `<div data-i="${i}" onmousedown="event.preventDefault();ppChoose('${id}',${i})" onmouseenter="_ppItems['${id}'].active=${i};_ppRender('${id}')"
+        style="padding:.28rem .7rem;cursor:pointer;${i === st.active ? 'background:#ede9fe;color:#4c1d95;' : ''}${it.value === inp.dataset.val ? 'font-weight:700;' : ''}">${esc(it.label)}${it.rec ? ' <span style="font-size:.66rem;color:#7c3aed">推荐</span>' : ''}</div>`).join('');
+  const r = inp.getBoundingClientRect();
+  const h = Math.min(280, el.scrollHeight || 280);
+  const below = window.innerHeight - r.bottom;
+  el.style.left = Math.max(4, Math.min(r.left, window.innerWidth - 324)) + 'px';
+  el.style.top = (below < h + 8 && r.top > below ? Math.max(4, r.top - h - 2) : r.bottom + 2) + 'px';
+  el.style.display = 'block';
+  const act = el.querySelector(`[data-i="${st.active}"]`);
+  if (act) act.scrollIntoView({ block: 'nearest' });
+}
+function ppHide(id) { const el = document.getElementById(id + '-pplist'); if (el) el.style.display = 'none'; }
+function ppChoose(id, i) {
+  const inp = document.getElementById(id), st = _ppItems[id];
+  const it = st && st.items[i];
+  if (!inp || !it || it.type !== 'opt') return;
+  inp.dataset.val = it.value;
+  inp.dataset.shown = it.value === '现金' ? '现金（不走 Gusto）' : it.value;
+  inp.value = inp.dataset.shown;
+  ppHide(id);
+}
+function ppKey(ev, id) {
+  const st = _ppItems[id];
+  if (ev.key === 'Escape') { ppHide(id); return; }
+  if (!st) return;
+  const opts = st.items.map((it, i) => it.type === 'opt' ? i : -1).filter(i => i >= 0);
+  if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+    ev.preventDefault();
+    const pos = opts.indexOf(st.active);
+    st.active = opts[Math.max(0, Math.min(opts.length - 1, (pos < 0 ? -1 : pos) + (ev.key === 'ArrowDown' ? 1 : -1)))];
+    _ppRender(id);
+  } else if (ev.key === 'Enter') {
+    ev.preventDefault();
+    if (st.active >= 0) ppChoose(id, st.active);
+  }
+}
+// 取选中的收款人; 输了字却没从列表里选 → 名字和名册完全一样也算, 否则返回 null
+function ppValue(id) {
+  const inp = document.getElementById(id);
+  if (!inp) return '';
+  const v = inp.value.trim();
+  if (!v || v === inp.dataset.shown) return v ? inp.dataset.val : '';
+  if (/^现金/.test(v)) return '现金';
+  const o = _ppOpts[id] || { all: [] };
+  const hit = o.all.find(l => _ppNorm(l) === _ppNorm(v));
+  return hit || null;
+}
+
 // 每个人的编辑器: 实际收款人 (名册任一行 / 现金) + 实发时薪 + 只限这个客户
 function gaEditor(k) {
   const e = _gaEdits[k], res = _gaRes || {};
@@ -8970,12 +9095,7 @@ function gaEditor(k) {
   return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;padding:.35rem .55rem;background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;font-size:.76rem;color:#475569">
     <b style="color:#6d28d9">${esc(e.name)}</b>
     <span>实际收款人</span>
-    <select id="gaEdPay-${k}" style="font-size:.76rem;padding:.12rem .3rem;max-width:240px">
-      ${e.curPayee ? '' : '<option value="">— 选 Gusto 名册里的收款人 —</option>'}
-      ${top.length ? `<optgroup label="${e.curPayee && e.curPayee !== '现金' ? '当前 / 最像的' : '最像的'}">${top.map(opt).join('')}</optgroup>` : ''}
-      <optgroup label="不走 Gusto"><option value="现金"${e.curPayee === '现金' ? ' selected' : ''}>现金（生成时跳过）</option></optgroup>
-      ${rest.length ? `<optgroup label="全部名册">${rest.map(opt).join('')}</optgroup>` : ''}
-    </select>
+    ${ppHtml('gaEdPay-' + k, e.curPayee, top, (res.rosterLabels || []))}
     <span>实发时薪 $</span>
     <input id="gaEdRate-${k}" type="number" step="0.01" min="0" value="${e.curRate != null ? e.curRate : ''}" ${e.sheetRate ? '' : 'disabled title="发票这行没有时薪，不能按时薪改"'} style="width:72px;font-size:.76rem;padding:.12rem .3rem">
     ${e.sheetRate ? `<span style="color:#94a3b8">发票 $${e.sheetRate}</span>` : ''}
@@ -8987,7 +9107,8 @@ function gaEditToggle(k) { const tr = document.getElementById('gaEdTr-' + k); if
 async function gaEditSave(k) {
   const e = _gaEdits[k];
   if (!e) return;
-  const payee = (document.getElementById('gaEdPay-' + k) || {}).value || '';
+  const payee = ppValue('gaEdPay-' + k);
+  if (payee === null) { toast('请从下拉列表里选一个 Gusto 名册里的收款人', true); return; }
   const rateEl = document.getElementById('gaEdRate-' + k);
   const rateStr = rateEl && !rateEl.disabled ? String(rateEl.value || '').trim() : '';
   const rate = rateStr === '' ? null : Math.round(parseFloat(rateStr) * 100) / 100;

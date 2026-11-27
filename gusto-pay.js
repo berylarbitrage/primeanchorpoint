@@ -146,7 +146,7 @@ function levenshtein(a, b) {
 function rosterSimilarity(name, entry) {
   const empT = [...nameTokens(name)], rosterT = [...entry.tokens];
   if (!empT.length || !rosterT.length) return 0;
-  let sc = 0;
+  let sc = 0, strong = 0;
   for (const a of empT) {
     let best = 0;
     for (const b of rosterT) {
@@ -154,8 +154,11 @@ function rosterSimilarity(name, entry) {
       if (a.length >= 3 && b.length >= 3 && (a.startsWith(b) || b.startsWith(a))) v = Math.max(v, 0.75);
       if (v > best) best = v;
     }
-    if (best >= 0.5) sc += best;
+    if (best >= 0.6) sc += best;
+    if (best > strong) strong = best;
   }
+  // 至少要有一个词明显对得上 (完全一样 / 前缀 / 差一两个字母), 否则不推荐——宁可空着让人搜
+  if (strong < 0.75) return 0;
   return sc / Math.max(empT.length, rosterT.length) ** 0.5;
 }
 function rosterSuggestions(name, entries, n) {
