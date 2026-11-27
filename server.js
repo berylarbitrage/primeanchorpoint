@@ -9499,6 +9499,7 @@ function _isChangeRequest(req) {
   if (_isCsSmsSend(req, p)) return false;
   // 会计页「按 invoice 生成 Gusto 工资表」: 总监生成 CSV、上传名册、改收款人 / 实发时薪直接生效 (都记审计日志)
   if (p.startsWith('/api/acct/gusto-pay/')) return false;
+  if (p === '/api/admin/gusto-pay-csv' || p === '/api/admin/gusto-pay-files') return false;
   // 换号申请 / 批准本身就是一道审批, director 批准时不能再被拦去等审批
   if (p === '/api/device-sms/my-line' || p.startsWith('/api/device-sms/line-requests')) return false;
   if (_isWobGustoWork(req, p)) return false;
@@ -24479,15 +24480,9 @@ function _gustoBuildForInvoice(invoiceId, mode, draft, excluded) {
   const ex = new Set(Array.isArray(excluded) ? excluded.map(String) : []);
   const keyOf = m => `${m.label}|${m.ssn || ''}`;
   const kept = out.matches.filter(m => !ex.has(keyOf(m)));
-  let csvSel = out.csv;
-  if (ex.size) {
-    const blank = new Set(out.matches.filter(m => ex.has(keyOf(m))).map(m => m.row));
-    csvSel = stringifyGustoRows(out.rows.map((r, i) => {
-      const c = r.slice();
-      if (blank.has(i)) for (const k of out.fillCols) if (k < c.length) c[k] = '';
-      return c;
-    }));
-  }
+  // CSV 只写勾选了的、有付款的行 (表头 + 这些人)
+  const keepRows = new Set(kept.map(m => m.row));
+  const csvSel = stringifyGustoRows(out.rows.filter((r, i) => i === 0 || keepRows.has(i)));
   return { status: 200, inv, tpl, draft: d, body: { ok: true, invoice_id: inv.id, invoice_number: inv.invoice_number || '', company: inv.company_name || '',
     period_start: inv.period_start || '', period_end: inv.period_end || '',
     template_name: tpl.name || '', template_uploaded_at: tpl.uploaded_at || '', ...out },
@@ -24530,6 +24525,14 @@ db.exec(`CREATE TABLE IF NOT EXISTS gusto_pay_runs (
   review_note TEXT DEFAULT ''
 )`);
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_gusto_pay_runs_inv ON gusto_pay_runs(invoice_id)'); } catch (_) {}
+// 下载过的文件都留在系统里: 记下载次数 / 最后谁下载; source = accounting (会计页) | generator (管理后台发票生成器)
+for (const col of ["download_count INTEGER DEFAULT 0", "last_downloaded_at TEXT DEFAULT ''", "last_downloaded_by TEXT DEFAULT ''", "source TEXT DEFAULT 'accounting'", "period_start TEXT DEFAULT ''", "period_end TEXT DEFAULT ''"]) {
+  try { db.exec(`ALTER TABLE gusto_pay_runs ADD COLUMN ${col}`); } catch (_) {}
+}
+function _gustoRunDownloaded(id, req) {
+  db.prepare("UPDATE gusto_pay_runs SET download_count=COALESCE(download_count,0)+1, last_downloaded_at=?, last_downloaded_by=? WHERE id=?")
+    .run(new Date().toISOString(), req.userName || '', id);
+}
 function _gustoRunOut(r, withCsv) {
   let draft = {}, excluded = [];
   try { draft = JSON.parse(r.draft_json || '{}'); } catch (_) {}
@@ -24537,6 +24540,8 @@ function _gustoRunOut(r, withCsv) {
   const o = { id: r.id, invoice_id: r.invoice_id, invoice_number: r.invoice_number, company: r.company, status: r.status, mode: r.mode,
     draft, excluded, filename: r.filename, matched_count: r.matched_count, total_pay: r.total_pay, problems: r.problems, note: r.note,
     created_by: r.created_by, created_role: r.created_role, created_at: r.created_at,
+    download_count: r.download_count || 0, last_downloaded_at: r.last_downloaded_at || '', last_downloaded_by: r.last_downloaded_by || '',
+    source: r.source || 'accounting', period_start: r.period_start || '', period_end: r.period_end || '',
     reviewed_by: r.reviewed_by, reviewed_at: r.reviewed_at, review_note: r.review_note };
   if (withCsv) o.csv = r.csv;
   return o;
@@ -24575,7 +24580,8 @@ app.post('/api/acct/gusto-pay/runs', requireAdmin, requireGustoPayWork, (req, re
     JSON.stringify(r.draft), JSON.stringify(Array.isArray(b.excluded) ? b.excluded.map(String).slice(0, 500) : []),
     r.selected.csv, o.filename, r.selected.count, r.selected.total, problems, String(b.note || '').slice(0, 500),
     req.userName || '', req.userRole || '', approver ? (req.userName || '') : '', approver ? new Date().toISOString() : '');
-  if (approver) _gustoApplyDraft(req, r.draft);
+  db.prepare('UPDATE gusto_pay_runs SET period_start=?, period_end=? WHERE id=?').run(o.period_start || '', o.period_end || '', ins.lastInsertRowid);
+  if (approver) { _gustoApplyDraft(req, r.draft); _gustoRunDownloaded(ins.lastInsertRowid, req); }
   auditLog(approver ? 'gusto_pay_run_approved' : 'gusto_pay_run_submit', req, { targetType: 'invoice', targetId: String(o.invoice_id),
     details: { run_id: ins.lastInsertRowid, invoice_number: o.invoice_number, total: r.selected.total, count: r.selected.count } });
   const row = db.prepare('SELECT * FROM gusto_pay_runs WHERE id=?').get(ins.lastInsertRowid);
@@ -24590,6 +24596,7 @@ app.post('/api/acct/gusto-pay/runs/:id/approve', requireAdmin, requireGustoPayAp
   _gustoApplyDraft(req, draft);
   db.prepare("UPDATE gusto_pay_runs SET status='approved', reviewed_by=?, reviewed_at=?, review_note=? WHERE id=?")
     .run(req.userName || '', new Date().toISOString(), String((req.body && req.body.note) || '').slice(0, 500), row.id);
+  _gustoRunDownloaded(row.id, req);   // 确认时前端直接下载
   auditLog('gusto_pay_run_approved', req, { targetType: 'invoice', targetId: String(row.invoice_id), details: { run_id: row.id, invoice_number: row.invoice_number, total: row.total_pay } });
   res.json({ success: true, run: _gustoRunOut(db.prepare('SELECT * FROM gusto_pay_runs WHERE id=?').get(row.id), true) });
 });
@@ -24607,7 +24614,29 @@ app.get('/api/acct/gusto-pay/runs/:id/csv', requireAdmin, requireGustoPayWork, (
   const row = db.prepare('SELECT * FROM gusto_pay_runs WHERE id=?').get(parseInt(req.params.id, 10));
   if (!row) return res.status(404).json({ error: '记录不存在' });
   if (row.status !== 'approved') return res.status(403).json({ error: '还没有被总监 / admin 确认，不能下载' });
+  _gustoRunDownloaded(row.id, req);
   res.json({ csv: row.csv, filename: row.filename || 'gusto_contractor_pay.csv' });
+});
+// 管理后台发票生成器里下载的 Gusto CSV 也存一份 (发票还没保存时 invoice_id 按发票号找, 找不到记 0)
+app.post('/api/admin/gusto-pay-files', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const b = req.body || {};
+  const csv = String(b.csv || '');
+  if (!csv || csv.length > 2 * 1024 * 1024) return res.status(400).json({ error: 'CSV 为空或太大' });
+  const invNo = String(b.invoice_number || '').trim().slice(0, 80);
+  let invId = parseInt(b.invoice_id || 0, 10) || 0;
+  if (!invId && invNo) { const f = db.prepare('SELECT id FROM invoices WHERE invoice_number=? ORDER BY id DESC LIMIT 1').get(invNo); if (f) invId = f.id; }
+  const approver = req.userRole === 'admin';
+  const now = new Date().toISOString();
+  const ins = db.prepare(`INSERT INTO gusto_pay_runs (invoice_id, invoice_number, company, status, mode, csv, filename, matched_count, total_pay, problems,
+      created_by, created_role, reviewed_by, reviewed_at, download_count, last_downloaded_at, last_downloaded_by, source, period_start, period_end)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 'generator', ?, ?)`).run(
+    invId, invNo, String(b.company || '').slice(0, 160), approver ? 'approved' : 'pending', b.mode === 'hours' ? 'hours' : 'bonus',
+    csv, String(b.filename || 'gusto_contractor_pay.csv').slice(0, 160), parseInt(b.matched_count || 0, 10) || 0,
+    Math.round((parseFloat(b.total_pay) || 0) * 100) / 100, parseInt(b.problems || 0, 10) || 0,
+    req.userName || '', req.userRole || '', approver ? (req.userName || '') : '', approver ? now : '', now, req.userName || '',
+    String(b.period_start || '').slice(0, 20), String(b.period_end || '').slice(0, 20));
+  auditLog('gusto_pay_file_saved', req, { targetType: 'invoice', targetId: String(invId || invNo), details: { run_id: ins.lastInsertRowid, total: b.total_pay } });
+  res.json({ success: true, id: ins.lastInsertRowid, invoice_id: invId });
 });
 
 // ═══════════ Gusto API 实时同步（合同工实发工资） ═══════════

@@ -544,6 +544,8 @@ input,select,textarea{padding:.4rem .5rem;border:1px solid var(--g300);border-ra
         <span id="gaRosterInfo" style="font-size:.76rem;color:#94a3b8"></span>
       </div>
       <div id="gaPendingList" style="margin-top:.45rem"></div>
+      <details id="gaFilesBox" style="margin-top:.45rem"><summary style="cursor:pointer;font-size:.82rem;font-weight:700;color:#334155">📁 已生成 / 下载过的 Gusto 文件 <span id="gaFilesCount" style="font-weight:400;color:#94a3b8"></span></summary>
+        <div id="gaFilesList" style="margin-top:.35rem"></div></details>
       <div style="font-size:.74rem;color:#94a3b8;margin-top:.35rem">选一张工时发票 → 按 Gusto 名册把每个人的应付填进 contractor pay 模板（模板有 invoice_number 列会填上发票号）。预览里每个人都能改「实际收款人 / 实发时薪」。<b>会计账号</b>提交的是待审核，<b>总监 / admin 确认</b>后才生效、才能下载 CSV 上传到 Gusto；确认过的发票在 Invoice 列表旁边显示「💸 Gusto ✓ 已确认」。</div>
     </div>
     <div class="card" style="margin-bottom:.7rem">
@@ -8709,6 +8711,7 @@ async function gaInitCard() {
   if (rb) rb.style.display = gaCanApprove() ? '' : 'none';
   gaLoadRosterInfo();
   gaLoadPending();
+  gaLoadFiles();
   const sel = document.getElementById('gaInvSel');
   const list = await api('/api/acct/invoices').catch(() => []);
   const rows = (Array.isArray(list) ? list : []).filter(r => !r.abolished);
@@ -8723,6 +8726,26 @@ async function gaLoadPending() {
   const runs = (r && r.runs) || [];
   el.innerHTML = runs.length ? `<div style="font-size:.8rem;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.4rem .6rem;line-height:1.7">
     ⏳ 待总监 / admin 确认 ${runs.length} 条：${runs.map(x => `<a onclick="gaOpen(${x.invoice_id})" style="cursor:pointer;text-decoration:underline;color:#92400e;white-space:nowrap">${esc(x.invoice_number || '#' + x.invoice_id)} · ${esc(x.company || '')} · $${(+x.total_pay || 0).toFixed(2)} · ${esc(x.created_by || '')}</a>`).join('　')}</div>` : '';
+}
+// 已生成 / 下载过的文件: 每次生成的 CSV 都存在系统里, 已确认的随时再下载
+async function gaLoadFiles() {
+  const el = document.getElementById('gaFilesList');
+  if (!el) return;
+  const r = await api('/api/acct/gusto-pay/runs').catch(() => null);
+  const runs = ((r && r.runs) || []).filter(x => x.status !== 'rejected');
+  document.getElementById('gaFilesCount').textContent = runs.length ? `（${runs.length}）` : '（还没有）';
+  const st = x => x.status === 'approved' ? '<span style="color:#166534;font-weight:700">✓ 已确认</span>' : '<span style="color:#92400e;font-weight:700">⏳ 待审核</span>';
+  el.innerHTML = runs.length ? `<table style="width:100%;border-collapse:collapse;font-size:.78rem">
+    <thead><tr style="color:#64748b;text-align:left;border-bottom:1px solid #e2e8f0"><th style="padding:.25rem .4rem">发票</th><th>账期</th><th style="text-align:right">人数</th><th style="text-align:right">金额</th><th>状态</th><th>生成</th><th>下载</th><th></th></tr></thead>
+    <tbody>${runs.map(x => `<tr style="border-bottom:1px solid #f1f5f9">
+      <td style="padding:.25rem .4rem">${x.invoice_id ? `<a onclick="gaOpen(${x.invoice_id})" style="cursor:pointer;color:#1d4ed8;text-decoration:underline">${esc(x.invoice_number || '#' + x.invoice_id)}</a>` : esc(x.invoice_number || '（未保存的发票）')} <span style="color:#94a3b8">${esc(x.company || '')}</span></td>
+      <td style="white-space:nowrap">${esc(x.period_start || '')}${x.period_end ? ' ~ ' + esc(x.period_end) : ''}</td>
+      <td style="text-align:right">${x.matched_count}</td><td style="text-align:right">$${(+x.total_pay || 0).toFixed(2)}</td>
+      <td style="white-space:nowrap">${st(x)}</td>
+      <td style="white-space:nowrap">${esc(x.created_by || '')} ${esc(String(x.created_at || '').slice(0, 16).replace('T', ' '))}${x.source === 'generator' ? ' <span style="color:#94a3b8">(发票生成器)</span>' : ''}</td>
+      <td style="white-space:nowrap">${x.download_count ? `${x.download_count} 次 · ${esc(x.last_downloaded_by || '')} ${esc(String(x.last_downloaded_at || '').slice(0, 10))}` : '<span style="color:#94a3b8">没下载过</span>'}</td>
+      <td>${x.status === 'approved' ? `<a onclick="gaRunDownload(${x.id})" style="cursor:pointer;color:#166534;text-decoration:underline;white-space:nowrap">⬇️ 下载</a>` : ''}</td>
+    </tr>`).join('')}</tbody></table>` : '<div style="font-size:.78rem;color:#94a3b8">还没有生成过</div>';
 }
 async function gaLoadRosterInfo() {
   const el = document.getElementById('gaRosterInfo');
@@ -8852,7 +8875,7 @@ function gaRender() {
         <th style="padding:.3rem .5rem;text-align:left">来源（发票工资行 · 应付）</th>
       </tr></thead><tbody>${rows || '<tr><td colspan="6" style="padding:.6rem;color:#94a3b8">没有对上名册的人</td></tr>'}</tbody>
     </table>
-    ${res.untouched ? `<div style="margin-top:.45rem;font-size:.74rem;color:#94a3b8">名册其余 ${res.untouched} 人这张发票没有工时，保持空白（Gusto 上传时跳过）。</div>` : ''}
+    ${res.untouched ? `<div style="margin-top:.45rem;font-size:.74rem;color:#94a3b8">名册其余 ${res.untouched} 人这张发票没有工时，不写进 CSV。</div>` : ''}
     ${probHtml}${skipHtml}${warnHtml}`;
   gaUpdateInfo();
   // 底部按钮: 总监 / admin = 确认并下载 (查看别人的提交时 = 确认这条); 会计 / staff = 提交审核
@@ -8912,12 +8935,14 @@ async function gaSubmit() {
 }
 function gaAfterRunChange() {
   gaLoadPending();
+  gaLoadFiles();
   if (typeof loadAll === 'function' && document.getElementById('invBody')) { try { loadAll(); } catch (_) {} }
 }
 async function gaRunDownload(id) {
   const r = await api(`/api/acct/gusto-pay/runs/${id}/csv`).catch(e => ({ error: e.message }));
   if (!r || !r.csv) { toast('下载失败：' + ((r && r.error) || '未知错误'), true); return; }
   _gaSaveFile(r.csv, r.filename);
+  gaLoadFiles();
 }
 // 总监 / admin 查看一条待审核的提交: 按它的口径 / 修改 / 取消勾选重新生成预览
 async function gaRunView(id) {

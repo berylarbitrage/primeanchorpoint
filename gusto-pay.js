@@ -490,8 +490,10 @@ function buildGustoCsv(templateCsv, employees, opts) {
   const ps = String(opts.period_start || '').trim(), pe = String(opts.period_end || '').trim();
   const invTag = String(opts.invoice_number || '').trim().replace(/[^A-Za-z0-9_-]+/g, '');
   const filename = 'gusto_contractor_pay' + (invTag ? `_${invTag}` : '') + (ps && pe ? `_${ps}_${pe}` : '') + '.csv';
+  // CSV 只写有付款的行 (表头 + 这次有工时的人); rows 仍是整张名册, 前端按 row 下标取消勾选
+  const paidRows = new Set(matches.map(m => m.row));
   return {
-    csv: stringifyCsv(outRows),
+    csv: stringifyCsv(outRows.filter((r, i) => i === 0 || paidRows.has(i))),
     rows: outRows,
     fillCols: [roster.cols.hours, roster.cols.bonus, roster.cols.fixed, roster.cols.inv].filter(c => c >= 0),
     filename,
